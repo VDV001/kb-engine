@@ -72,6 +72,20 @@ func TestRun_checkFilter(t *testing.T) {
 	}
 }
 
+func TestRun_dedup(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"A","url":"https://dup/x","category":"golang","status":"keep"},
+		{"id":2,"habr_id":2,"title":"B","url":"https://dup/x","category":"golang","status":"keep"}
+	]}`)
+	var out, errb bytes.Buffer
+	if code := run([]string{"dedup", "--catalog", path}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "exact-url") {
+		t.Errorf("expected an exact-url duplicate group:\n%s", out.String())
+	}
+}
+
 func TestRun_unknownCommand(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"bogus"}, &out, &errb); code == 0 {
