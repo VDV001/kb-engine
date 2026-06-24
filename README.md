@@ -66,7 +66,19 @@ just cover       # coverage summary
 just cover-gate  # fail if total coverage drops below 80%
 just hooks       # install git hooks (gitleaks + Conventional Commits)
 just web         # rebuild the embedded frontend after UI changes
+just docker      # build the container image (kbengine:dev)
 just ci          # full gate (tidy + lint + race tests + coverage gate)
+```
+
+### Docker
+
+The image is a ~9 MB distroless/static binary with the dashboard embedded.
+The catalog is runtime data, so mount it and pass `--catalog`:
+
+```sh
+just docker
+docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
+  kbengine:dev serve --catalog /data/catalog.json
 ```
 
 Hooks require [`lefthook`](https://github.com/evilmartians/lefthook) and

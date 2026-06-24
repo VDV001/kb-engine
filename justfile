@@ -37,6 +37,14 @@ build:
 serve catalog:
     go run ./cmd/kbengine serve --catalog {{catalog}}
 
+# Build the container image (tag defaults to kbengine:dev)
+docker tag="kbengine:dev":
+    docker build -t {{tag}} .
+
+# Run the containerized dashboard against a catalog dir mounted at /data
+docker-serve catalog tag="kbengine:dev":
+    docker run --rm -p 8080:8080 -v {{catalog}}:/data:ro {{tag}} serve --catalog /data/catalog.json
+
 # Tidy modules
 tidy:
     go mod tidy
