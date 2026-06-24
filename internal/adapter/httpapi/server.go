@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
@@ -38,19 +39,27 @@ type Analyzer interface {
 	Categories() ([]analytics.CategorySize, error)
 }
 
-// NewServer builds the HTTP handler. If frontend is non-nil its files are served
-// at the root (with index.html fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, frontend fs.FS) http.Handler {
+// NewServer builds the HTTP handler. cfg is the curated analytics config (empty
+// when none is configured). If frontend is non-nil its files are served at the
+// root (with index.html fallback for client-side routes).
+func NewServer(q Querier, a Auditor, an Analyzer, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", handleStats(q))
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
+	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
 	}
 	return mux
+}
+
+func handleAnalyticsConfig(cfg analyticsconfig.Config) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, cfg)
+	}
 }
 
 func handleAnalytics(an Analyzer) http.HandlerFunc {

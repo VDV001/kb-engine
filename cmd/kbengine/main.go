@@ -10,6 +10,7 @@ import (
 	"time"
 
 	root "github.com/daniil/kb-engine"
+	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
@@ -51,6 +52,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
 	addr := fs.String("addr", ":8080", "address to listen on")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -60,7 +62,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -78,13 +80,21 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildServeHandler(catalogPath string) (http.Handler, error) {
+func buildServeHandler(catalogPath, configPath string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
 		return nil, err
 	}
-	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader), analytics.NewService(loader), front), nil
+	var cfg analyticsconfig.Config
+	if configPath != "" {
+		cfg, err = analyticsconfig.Load(configPath)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
+		analytics.NewService(loader), cfg, front), nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {

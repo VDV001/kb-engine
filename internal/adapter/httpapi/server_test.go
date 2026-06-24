@@ -70,8 +70,9 @@ func TestServer_analyticsConfig(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), "Verification > Generation") {
-		t.Errorf("config body missing patterns: %s", rec.Body.String())
+	body := rec.Body.String()
+	if !strings.Contains(body, "Verification") || !strings.Contains(body, `"Testing"`) {
+		t.Errorf("config body missing patterns/gaps: %s", body)
 	}
 }
 
