@@ -41,6 +41,7 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		URL:         "https://habr.com/x/",
 		ReadState:   &rs,
 		Description: p.description,
+		RelatedIDs:  p.relatedIDs,
 	}
 	if p.verdict != "" {
 		v, err := domain.NewVerdict(p.verdict)
@@ -61,6 +62,7 @@ type articleParams struct {
 	description string
 	lifecycle   string
 	verdict     string
+	relatedIDs  []int
 }
 
 func TestOutdatedCandidates(t *testing.T) {
@@ -126,6 +128,41 @@ func TestOutdatedCandidates_wordBoundary(t *testing.T) {
 	}
 	if !got[13] { // "удалена" is a real removal signal
 		t.Error("entry 13 (удалена) should be flagged")
+	}
+}
+
+func TestCanonicalCandidates(t *testing.T) {
+	ref := func(id int, target int, lifecycle string) domain.Entry {
+		return article(t, id, articleParams{title: "t", lifecycle: lifecycle, verdict: "keep", relatedIDs: []int{target}})
+	}
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "Highly referenced", lifecycle: "active", verdict: "keep"}),
+		ref(10, 1, "active"), ref(11, 1, "active"), ref(12, 1, "active"), // 1 referenced 3x
+		article(t, 2, articleParams{title: "Barely referenced", lifecycle: "active", verdict: "keep"}),
+		ref(13, 2, "active"), // 2 referenced 1x
+		article(t, 3, articleParams{title: "Already canonical", lifecycle: "canonical", verdict: "keep"}),
+		ref(14, 3, "active"), ref(15, 3, "active"), ref(16, 3, "active"), // 3 referenced 3x but canonical
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).CanonicalCandidates()
+	if err != nil {
+		t.Fatalf("CanonicalCandidates: %v", err)
+	}
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+	if !got[1] {
+		t.Error("entry 1 (referenced 3x) should be a canonical candidate")
+	}
+	if got[2] {
+		t.Error("entry 2 (referenced 1x) should not be a candidate")
+	}
+	if got[3] {
+		t.Error("entry 3 (already canonical) should not be a candidate")
 	}
 }
 
