@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -20,9 +21,48 @@ import (
 // verdict, read-state or publish-stage.
 var ErrUnknownStatus = errors.New("unknown status")
 
+// flexInt decodes a JSON field that the catalog stores inconsistently as a
+// number, a numeric string, or null/absent (e.g. habr_id).
+type flexInt struct {
+	value int
+	set   bool
+}
+
+func (f *flexInt) UnmarshalJSON(b []byte) error {
+	if string(b) == "null" {
+		return nil
+	}
+	if n, err := strconv.Atoi(string(b)); err == nil { // bare JSON number
+		f.value, f.set = n, true
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return fmt.Errorf("habr_id: %w", err)
+	}
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		return fmt.Errorf("habr_id %q is not an integer: %w", s, err)
+	}
+	f.value, f.set = n, true
+	return nil
+}
+
+// pointer returns a *int, or nil when the value was absent/null.
+func (f flexInt) pointer() *int {
+	if !f.set {
+		return nil
+	}
+	v := f.value
+	return &v
+}
+
 type entryDTO struct {
 	ID          int      `json:"id"`
-	HabrID      *int     `json:"habr_id"`
+	HabrID      flexInt  `json:"habr_id"`
 	Title       string   `json:"title"`
 	URL         string   `json:"url"`
 	Category    string   `json:"category"`
@@ -115,7 +155,7 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		Title:        dto.Title,
 		Category:     cat,
 		Lifecycle:    lc,
-		HabrID:       dto.HabrID,
+		HabrID:       dto.HabrID.pointer(),
 		URL:          dto.URL,
 		Verdict:      tr.verdict,
 		ReadState:    tr.readState,
