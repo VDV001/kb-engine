@@ -7,11 +7,16 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
+
+// growthWeeks is how many weeks of growth history the analytics endpoint serves.
+const growthWeeks = 12
 
 // Querier is the read-query port the API depends on.
 type Querier interface {
@@ -27,18 +32,44 @@ type Auditor interface {
 	Duplicates() ([]audit.DuplicateGroup, error)
 }
 
+// Analyzer is the analytics port the API depends on.
+type Analyzer interface {
+	Growth(now time.Time, weeks int) ([]analytics.WeekCount, error)
+	Categories() ([]analytics.CategorySize, error)
+}
+
 // NewServer builds the HTTP handler. If frontend is non-nil its files are served
 // at the root (with index.html fallback for client-side routes).
-func NewServer(q Querier, a Auditor, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/stats", handleStats(q))
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
+	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
 	}
 	return mux
+}
+
+func handleAnalytics(an Analyzer) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		growth, err := an.Growth(time.Now(), growthWeeks)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		categories, err := an.Categories()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{
+			"growth":     growth,
+			"categories": categories,
+		})
+	}
 }
 
 func handleStats(q Querier) http.HandlerFunc {

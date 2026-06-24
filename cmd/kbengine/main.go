@@ -12,6 +12,7 @@ import (
 	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
@@ -83,7 +84,7 @@ func buildServeHandler(catalogPath string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader), front), nil
+	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader), analytics.NewService(loader), front), nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {
