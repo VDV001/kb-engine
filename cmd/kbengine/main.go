@@ -126,7 +126,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|supersession|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

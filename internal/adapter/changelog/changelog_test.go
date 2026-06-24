@@ -86,6 +86,35 @@ func TestParse_DropsEmptyUnreleased(t *testing.T) {
 	}
 }
 
+func TestParse_MergesDuplicateSections(t *testing.T) {
+	const in = `## [1.0.0] — 2026-01-01
+### Added
+- first
+### Changed
+- a change
+### Added
+- second
+`
+	doc := changelog.Parse(in)
+	if len(doc.Releases) != 1 {
+		t.Fatalf("releases = %d, want 1", len(doc.Releases))
+	}
+	r := doc.Releases[0]
+	// The two "Added" blocks must merge into one section (valid JSON object keys).
+	added := 0
+	for _, s := range r.Sections {
+		if s.Name == "Added" {
+			added++
+			if len(s.Items) != 2 {
+				t.Errorf("merged Added items = %v, want [first second]", s.Items)
+			}
+		}
+	}
+	if added != 1 {
+		t.Errorf("Added section appears %d times, want 1 (merged)", added)
+	}
+}
+
 func TestParse_NoReleases(t *testing.T) {
 	doc := changelog.Parse("# Changelog\n\njust prose, no versions\n")
 	if len(doc.Releases) != 0 {
