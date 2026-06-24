@@ -37,8 +37,8 @@ type fakeAudit struct{}
 func (fakeAudit) OutdatedCandidates() ([]audit.Finding, error) {
 	return []audit.Finding{{EntryID: 1, Title: "Hello", Current: "active", Reasons: []string{"keyword:removed"}}}, nil
 }
-func (fakeAudit) CanonicalCandidates() ([]audit.Finding, error)  { return nil, nil }
-func (fakeAudit) SupersessionIssues() ([]audit.Finding, error)   { return nil, nil }
+func (fakeAudit) CanonicalCandidates() ([]audit.Finding, error) { return nil, nil }
+func (fakeAudit) SupersessionIssues() ([]audit.Finding, error)  { return nil, nil }
 func (fakeAudit) Duplicates() ([]audit.DuplicateGroup, error) {
 	return []audit.DuplicateGroup{{Kind: "exact-url", Key: "https://h/x", EntryIDs: []int{1, 2}}}, nil
 }
