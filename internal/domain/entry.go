@@ -15,16 +15,15 @@ var ErrUnknownKind = errors.New("unknown entry kind")
 // kindSpec declares which optional aspects a kind requires. To add a new entry
 // kind, add one row to kindSpecs below — NewEntry needs no other change.
 type kindSpec struct {
-	requireHabrID       bool
-	requireURL          bool
 	requireReadState    bool
 	requirePublishStage bool
 }
 
 var kindSpecs = map[string]kindSpec{
 	// An article always carries a read/unread triage state; a verdict appears
-	// only once it has been read and decided, so verdict stays optional.
-	"article":  {requireHabrID: true, requireURL: true, requireReadState: true},
+	// only once read and decided. habr_id and url are optional — many real
+	// entries (bot-inbox links) have neither.
+	"article":  {requireReadState: true},
 	"creation": {requirePublishStage: true},
 }
 
@@ -104,12 +103,6 @@ func cloneTags(tags []string) []string {
 }
 
 func checkRequired(p EntryParams, spec kindSpec) error {
-	if spec.requireHabrID && p.HabrID == nil {
-		return fmt.Errorf("%w: kind %q requires habr_id", ErrInvalidEntry, p.Kind)
-	}
-	if spec.requireURL && strings.TrimSpace(p.URL) == "" {
-		return fmt.Errorf("%w: kind %q requires url", ErrInvalidEntry, p.Kind)
-	}
 	if spec.requireReadState && p.ReadState == nil {
 		return fmt.Errorf("%w: kind %q requires read state", ErrInvalidEntry, p.Kind)
 	}
