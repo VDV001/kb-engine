@@ -76,10 +76,18 @@ The image is a ~9 MB distroless/static binary with the dashboard embedded.
 The catalog is runtime data, so mount it and pass `--catalog`:
 
 ```sh
+# Pull a released multi-arch image from GHCR...
+docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
+  ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json
+
+# ...or build it locally:
 just docker
 docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
   kbengine:dev serve --catalog /data/catalog.json
 ```
+
+Released tags (`v*`) publish `linux/amd64` + `linux/arm64` images to
+`ghcr.io/vdv001/kb-engine` (`latest`, `MAJOR.MINOR`, and the full version).
 
 Hooks require [`lefthook`](https://github.com/evilmartians/lefthook) and
 [`gitleaks`](https://github.com/gitleaks/gitleaks) on `PATH`. CI also runs

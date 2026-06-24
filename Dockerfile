@@ -2,7 +2,9 @@
 
 # --- build stage -------------------------------------------------------------
 # Pinned by digest (Dependabot's docker ecosystem keeps tag+digest current).
-FROM golang:1.26-bookworm@sha256:5ae05f331ade3e10c2647be439a4f42dae789002f7d2e2112dcbf3d26bec25e9 AS build
+# Runs on the native BUILDPLATFORM and cross-compiles to TARGET* so multi-arch
+# builds need no QEMU emulation (CGO is disabled).
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:5ae05f331ade3e10c2647be439a4f42dae789002f7d2e2112dcbf3d26bec25e9 AS build
 WORKDIR /src
 
 # The module has no third-party dependencies (stdlib only), so there is no
@@ -14,7 +16,9 @@ RUN go mod download
 # produces a self-contained binary with the dashboard inside it.
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/kbengine ./cmd/kbengine
+ARG TARGETOS TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
+    go build -trimpath -ldflags="-s -w -X main.version=${VERSION}" -o /out/kbengine ./cmd/kbengine
 
 # --- runtime stage -----------------------------------------------------------
 # distroless/static: no shell, no package manager, runs as a non-root user.
