@@ -61,9 +61,9 @@ func ids(tasks []taskaudit.Task) []string {
 
 func TestAudit(t *testing.T) {
 	c := catalog(t,
-		entry(t, 1, "https://habr.com/ru/articles/100/", 0),           // present via URL
+		entry(t, 1, "https://habr.com/ru/articles/100/", 0),             // present via URL
 		entry(t, 2, "https://habr.com/ru/companies/x/articles/200/", 0), // present via URL (company path)
-		entry(t, 3, "https://example.com/no-article-id", 300),          // present via habr_id field only
+		entry(t, 3, "https://example.com/no-article-id", 300),           // present via habr_id field only
 	)
 
 	tasks := []taskaudit.Task{
