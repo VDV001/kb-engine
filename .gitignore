@@ -1,6 +1,6 @@
 # Binaries
 /bin/
-kbengine
+/kbengine
 *.exe
 
 # Test / coverage

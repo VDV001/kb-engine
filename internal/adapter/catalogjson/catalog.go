@@ -152,3 +152,14 @@ func Load(path string) (*domain.Catalog, error) {
 	defer func() { _ = f.Close() }()
 	return Decode(f)
 }
+
+// FileLoader loads a catalog from a fixed file path. It satisfies the
+// CatalogLoader port expected by use cases.
+type FileLoader struct {
+	Path string
+}
+
+// Load reads and decodes the catalog at the configured path.
+func (l FileLoader) Load() (*domain.Catalog, error) {
+	return Load(l.Path)
+}
