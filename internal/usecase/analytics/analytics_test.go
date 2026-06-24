@@ -40,11 +40,11 @@ func at(y int, m time.Month, d int) *time.Time {
 func TestGrowthByWeek(t *testing.T) {
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 	cat, err := domain.NewCatalog([]domain.Entry{
-		mkEntry(t, 1, "golang", at(2026, 6, 23)),  // 1 day ago  -> week 0
-		mkEntry(t, 2, "golang", at(2026, 6, 20)),  // 4 days ago -> week 0
-		mkEntry(t, 3, "golang", at(2026, 6, 15)),  // 9 days ago -> week 1
-		mkEntry(t, 4, "golang", at(2025, 1, 1)),   // way older  -> ignored
-		mkEntry(t, 5, "golang", nil),              // no date    -> ignored
+		mkEntry(t, 1, "golang", at(2026, 6, 23)), // 1 day ago  -> week 0
+		mkEntry(t, 2, "golang", at(2026, 6, 20)), // 4 days ago -> week 0
+		mkEntry(t, 3, "golang", at(2026, 6, 15)), // 9 days ago -> week 1
+		mkEntry(t, 4, "golang", at(2025, 1, 1)),  // way older  -> ignored
+		mkEntry(t, 5, "golang", nil),             // no date    -> ignored
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
