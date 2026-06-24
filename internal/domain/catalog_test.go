@@ -78,6 +78,41 @@ func TestCatalog_AddAndFind(t *testing.T) {
 	}
 }
 
+func TestCatalog_NextID(t *testing.T) {
+	t.Run("empty catalog starts at 1", func(t *testing.T) {
+		c, err := domain.NewCatalog(nil)
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if got := c.NextID(); got != 1 {
+			t.Errorf("NextID() = %d, want 1", got)
+		}
+	})
+
+	t.Run("returns max id plus one", func(t *testing.T) {
+		c, err := domain.NewCatalog([]domain.Entry{entryWithID(t, 3), entryWithID(t, 7), entryWithID(t, 5)})
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if got := c.NextID(); got != 8 {
+			t.Errorf("NextID() = %d, want 8", got)
+		}
+	})
+
+	t.Run("reflects entries added later", func(t *testing.T) {
+		c, err := domain.NewCatalog([]domain.Entry{entryWithID(t, 4)})
+		if err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := c.Add(entryWithID(t, 10)); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+		if got := c.NextID(); got != 11 {
+			t.Errorf("NextID() = %d, want 11", got)
+		}
+	})
+}
+
 func TestCatalog_EntriesIsACopy(t *testing.T) {
 	c, err := domain.NewCatalog([]domain.Entry{entryWithID(t, 1)})
 	if err != nil {
