@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Stats } from './api'
 import { ErrorBox, Spinner } from './components/ui'
-import { AnalyticsView, AuditsView, DuplicatesView, EntriesView, OverviewView } from './views'
+import {
+  AnalyticsView,
+  ArchivesView,
+  AuditsView,
+  DuplicatesView,
+  EntriesView,
+  OverviewView,
+  SettingsView,
+} from './views'
 
-type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates'
+type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Обзор' },
@@ -12,6 +20,8 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'analytics', label: 'Аналитика' },
   { id: 'audits', label: 'Аудиты' },
   { id: 'duplicates', label: 'Дубликаты' },
+  { id: 'archives', label: 'Архив' },
+  { id: 'settings', label: 'Сводка' },
 ]
 
 interface Data {
@@ -78,6 +88,8 @@ export default function App() {
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
+            {tab === 'archives' && <ArchivesView entries={data.entries} />}
+            {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}
       </main>

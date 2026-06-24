@@ -268,6 +268,58 @@ export function AnalyticsView({
   )
 }
 
+const archivedLifecycles = ['outdated', 'superseded', 'dead-end']
+
+export function ArchivesView({ entries }: { entries: Entry[] }) {
+  const archived = useMemo(
+    () => entries.filter((e) => archivedLifecycles.includes(e.lifecycle)),
+    [entries],
+  )
+  return (
+    <Section title="Архив" subtitle={`${archived.length} записей (outdated / superseded / dead-end)`}>
+      <div className="space-y-2">
+        {archived.map((e) => (
+          <Card key={e.id}>
+            <div className="flex items-center gap-2">
+              <Badge value={e.lifecycle} />
+              <span className="text-sm text-slate-700 dark:text-slate-200">{e.title}</span>
+            </div>
+            {e.url && (
+              <a href={e.url} className="text-xs text-sky-600 hover:underline dark:text-sky-400">
+                {e.url}
+              </a>
+            )}
+          </Card>
+        ))}
+        {archived.length === 0 && <p className="text-sm text-slate-400">Архив пуст.</p>}
+      </div>
+    </Section>
+  )
+}
+
+export function SettingsView({ stats }: { stats: Stats }) {
+  return (
+    <Section title="Сводка" subtitle="Состав базы знаний">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Всего записей" value={stats.total} />
+        <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
+        <Stat label="Типов записей" value={Object.keys(stats.by_kind).length} />
+        <Stat label="Статусов жизни" value={Object.keys(stats.by_lifecycle).length} />
+      </div>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <Card>
+          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">По жизненному циклу</h3>
+          <BarList data={stats.by_lifecycle} />
+        </Card>
+        <Card>
+          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">По типу</h3>
+          <BarList data={stats.by_kind} />
+        </Card>
+      </div>
+    </Section>
+  )
+}
+
 export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
   return (
     <Section title="Дубликаты" subtitle={`${groups.length} групп`}>
