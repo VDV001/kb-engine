@@ -8,7 +8,9 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
-dist
+# dist is intentionally committed: web.go go:embed's frontend/dist so the
+# kbengine binary builds standalone (a fresh `git clone` + `go build` has no
+# Node toolchain to regenerate it). Rebuild with `just web` after UI changes.
 dist-ssr
 *.local
 
