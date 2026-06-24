@@ -75,8 +75,7 @@ func (p *parser) feed(line string) {
 		return
 	}
 	if m := reSection.FindStringSubmatch(line); m != nil {
-		p.current.Sections = append(p.current.Sections, Section{Name: m[1]})
-		p.section = &p.current.Sections[len(p.current.Sections)-1]
+		p.startSection(m[1])
 		return
 	}
 	p.feedItem(line)
@@ -86,6 +85,20 @@ func (p *parser) startRelease(r *Release) {
 	p.current = r
 	p.section = nil
 	p.releases = append(p.releases, r)
+}
+
+// startSection points the parser at the named section, reusing an existing one
+// of the same name (so repeated "### Added" blocks merge into one) rather than
+// emitting a duplicate key in the JSON sections object.
+func (p *parser) startSection(name string) {
+	for i := range p.current.Sections {
+		if p.current.Sections[i].Name == name {
+			p.section = &p.current.Sections[i]
+			return
+		}
+	}
+	p.current.Sections = append(p.current.Sections, Section{Name: name})
+	p.section = &p.current.Sections[len(p.current.Sections)-1]
 }
 
 // feedItem handles bullets and indented continuation lines within a section.
