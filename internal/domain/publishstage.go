@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // ErrInvalidPublishStage is returned when a publish-stage value is not canonical.
 var ErrInvalidPublishStage = errors.New("invalid publish stage")
@@ -23,8 +20,8 @@ var canonicalPublishStages = map[string]struct{}{
 // NewPublishStage validates raw against the canonical set and returns a
 // PublishStage.
 func NewPublishStage(raw string) (PublishStage, error) {
-	if _, ok := canonicalPublishStages[raw]; !ok {
-		return PublishStage{}, fmt.Errorf("%w: %q", ErrInvalidPublishStage, raw)
+	if err := validateEnum(raw, canonicalPublishStages, ErrInvalidPublishStage); err != nil {
+		return PublishStage{}, err
 	}
 	return PublishStage{value: raw}, nil
 }

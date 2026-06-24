@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // ErrInvalidReadState is returned when a read-state value is not canonical.
 var ErrInvalidReadState = errors.New("invalid read state")
@@ -21,8 +18,8 @@ var canonicalReadStates = map[string]struct{}{
 
 // NewReadState validates raw against the canonical set and returns a ReadState.
 func NewReadState(raw string) (ReadState, error) {
-	if _, ok := canonicalReadStates[raw]; !ok {
-		return ReadState{}, fmt.Errorf("%w: %q", ErrInvalidReadState, raw)
+	if err := validateEnum(raw, canonicalReadStates, ErrInvalidReadState); err != nil {
+		return ReadState{}, err
 	}
 	return ReadState{value: raw}, nil
 }

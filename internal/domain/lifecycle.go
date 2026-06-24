@@ -2,10 +2,7 @@
 // It has no I/O and no dependency on infrastructure.
 package domain
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // ErrInvalidLifecycle is returned when a lifecycle value is not one of the
 // canonical states.
@@ -29,8 +26,8 @@ var canonicalLifecycles = map[string]struct{}{
 // Matching is strict (case-sensitive); normalizing messy input is a loader
 // concern, kept out of the domain.
 func NewLifecycle(raw string) (Lifecycle, error) {
-	if _, ok := canonicalLifecycles[raw]; !ok {
-		return Lifecycle{}, fmt.Errorf("%w: %q", ErrInvalidLifecycle, raw)
+	if err := validateEnum(raw, canonicalLifecycles, ErrInvalidLifecycle); err != nil {
+		return Lifecycle{}, err
 	}
 	return Lifecycle{value: raw}, nil
 }

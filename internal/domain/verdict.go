@@ -1,9 +1,6 @@
 package domain
 
-import (
-	"errors"
-	"fmt"
-)
+import "errors"
 
 // ErrInvalidVerdict is returned when a verdict value is not one of the
 // canonical values.
@@ -28,8 +25,8 @@ var canonicalVerdicts = map[string]struct{}{
 
 // NewVerdict validates raw against the canonical set and returns a Verdict.
 func NewVerdict(raw string) (Verdict, error) {
-	if _, ok := canonicalVerdicts[raw]; !ok {
-		return Verdict{}, fmt.Errorf("%w: %q", ErrInvalidVerdict, raw)
+	if err := validateEnum(raw, canonicalVerdicts, ErrInvalidVerdict); err != nil {
+		return Verdict{}, err
 	}
 	return Verdict{value: raw}, nil
 }
