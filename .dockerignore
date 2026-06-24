@@ -1,0 +1,12 @@
+# Keep the build context small and reproducible. frontend/dist is required
+# (embedded via go:embed) and must NOT be ignored.
+.git
+.github
+bin/
+*.out
+coverage.out
+gitleaks*
+frontend/node_modules
+*.md
+.gitleaks.toml
+lefthook.yml
