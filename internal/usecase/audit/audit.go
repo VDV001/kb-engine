@@ -2,10 +2,15 @@
 package audit
 
 import (
+	"fmt"
 	"regexp"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
+
+// canonicalReferenceThreshold is how many other entries must reference an entry
+// (via related_ids) before it is suggested for canonical status.
+const canonicalReferenceThreshold = 3
 
 // CatalogLoader is the port the audit depends on to obtain the catalog. The
 // concrete implementation is wired by the caller (Dependency Inversion).
@@ -75,6 +80,40 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 		}
 	}
 	return findings, nil
+}
+
+// CanonicalCandidates returns entries referenced by at least
+// canonicalReferenceThreshold other entries that are not already canonical.
+func (s *Service) CanonicalCandidates() ([]Finding, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return nil, err
+	}
+	return canonicalCandidates(c), nil
+}
+
+func canonicalCandidates(c *domain.Catalog) []Finding {
+	refCount := make(map[int]int)
+	for _, e := range c.Entries() {
+		for _, rid := range e.RelatedIDs() {
+			refCount[rid]++
+		}
+	}
+	var findings []Finding
+	for _, e := range c.Entries() {
+		if e.Lifecycle().IsCanonical() {
+			continue
+		}
+		if n := refCount[e.ID()]; n >= canonicalReferenceThreshold {
+			findings = append(findings, Finding{
+				EntryID: e.ID(),
+				Title:   e.Title(),
+				Current: e.Lifecycle().String(),
+				Reasons: []string{fmt.Sprintf("referenced by %d entries", n)},
+			})
+		}
+	}
+	return findings
 }
 
 func outdatedReasons(e domain.Entry) []string {
