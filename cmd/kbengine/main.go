@@ -127,7 +127,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|supersession|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|age|all)\n", *check)
 		return 2
 	}
 
