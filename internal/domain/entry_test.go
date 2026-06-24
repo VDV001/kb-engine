@@ -1,0 +1,135 @@
+package domain_test
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+// helpers build valid VOs so each test case can mutate one thing at a time.
+
+func mustCategory(t *testing.T) domain.Category {
+	t.Helper()
+	c, err := domain.NewCategory("ai-agents-tools")
+	if err != nil {
+		t.Fatalf("setup category: %v", err)
+	}
+	return c
+}
+
+func mustLifecycle(t *testing.T) domain.Lifecycle {
+	t.Helper()
+	lc, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("setup lifecycle: %v", err)
+	}
+	return lc
+}
+
+func mustVerdict(t *testing.T) domain.Verdict {
+	t.Helper()
+	v, err := domain.NewVerdict("keep")
+	if err != nil {
+		t.Fatalf("setup verdict: %v", err)
+	}
+	return v
+}
+
+func mustPublishStage(t *testing.T) domain.PublishStage {
+	t.Helper()
+	ps, err := domain.NewPublishStage("published")
+	if err != nil {
+		t.Fatalf("setup publish stage: %v", err)
+	}
+	return ps
+}
+
+func validArticle(t *testing.T) domain.EntryParams {
+	t.Helper()
+	habrID := 1049782
+	v := mustVerdict(t)
+	return domain.EntryParams{
+		ID:        1,
+		Kind:      "article",
+		Title:     "Some article",
+		Category:  mustCategory(t),
+		Lifecycle: mustLifecycle(t),
+		HabrID:    &habrID,
+		URL:       "https://habr.com/ru/articles/1049782/",
+		Verdict:   &v,
+	}
+}
+
+func validCreation(t *testing.T) domain.EntryParams {
+	t.Helper()
+	ps := mustPublishStage(t)
+	return domain.EntryParams{
+		ID:           2,
+		Kind:         "creation",
+		Title:        "My research",
+		Category:     mustCategory(t),
+		Lifecycle:    mustLifecycle(t),
+		PublishStage: &ps,
+	}
+}
+
+func TestNewEntry_valid(t *testing.T) {
+	t.Run("article", func(t *testing.T) {
+		e, err := domain.NewEntry(validArticle(t))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if e.ID() != 1 || e.Kind() != "article" || e.Title() != "Some article" {
+			t.Errorf("unexpected entry: id=%d kind=%q title=%q", e.ID(), e.Kind(), e.Title())
+		}
+		if e.Verdict() == nil || e.Verdict().String() != "keep" {
+			t.Errorf("verdict = %v, want keep", e.Verdict())
+		}
+	})
+
+	t.Run("creation", func(t *testing.T) {
+		e, err := domain.NewEntry(validCreation(t))
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if e.PublishStage() == nil || e.PublishStage().String() != "published" {
+			t.Errorf("publish stage = %v, want published", e.PublishStage())
+		}
+	})
+}
+
+func TestNewEntry_invalid(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(p *domain.EntryParams)
+		wantErr error
+	}{
+		{"non-positive id", func(p *domain.EntryParams) { p.ID = 0 }, domain.ErrInvalidEntry},
+		{"empty title", func(p *domain.EntryParams) { p.Title = "  " }, domain.ErrInvalidEntry},
+		{"unknown kind", func(p *domain.EntryParams) { p.Kind = "bogus" }, domain.ErrUnknownKind},
+		{"article without url", func(p *domain.EntryParams) { p.URL = "" }, domain.ErrInvalidEntry},
+		{"article without verdict", func(p *domain.EntryParams) { p.Verdict = nil }, domain.ErrInvalidEntry},
+		{"article without habr id", func(p *domain.EntryParams) { p.HabrID = nil }, domain.ErrInvalidEntry},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := validArticle(t)
+			tt.mutate(&p)
+			_, err := domain.NewEntry(p)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("err = %v, want %v", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNewEntry_creationRequiresPublishStage(t *testing.T) {
+	p := validCreation(t)
+	p.PublishStage = nil
+	_, err := domain.NewEntry(p)
+	if !errors.Is(err, domain.ErrInvalidEntry) {
+		t.Fatalf("err = %v, want ErrInvalidEntry", err)
+	}
+}
