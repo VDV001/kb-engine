@@ -1,0 +1,43 @@
+package domain_test
+
+import (
+	"errors"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+func TestNewLifecycle(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr bool
+	}{
+		{"active", "active", false},
+		{"canonical", "canonical", false},
+		{"outdated", "outdated", false},
+		{"superseded", "superseded", false},
+		{"dead-end", "dead-end", false},
+		{"unknown value", "bogus", true},
+		{"empty", "", true},
+		{"wrong case is strict", "Active", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lc, err := domain.NewLifecycle(tt.raw)
+			if tt.wantErr {
+				if !errors.Is(err, domain.ErrInvalidLifecycle) {
+					t.Fatalf("NewLifecycle(%q) err = %v, want ErrInvalidLifecycle", tt.raw, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("NewLifecycle(%q) unexpected error: %v", tt.raw, err)
+			}
+			if lc.String() != tt.raw {
+				t.Errorf("String() = %q, want %q", lc.String(), tt.raw)
+			}
+		})
+	}
+}
