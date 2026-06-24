@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import type { Audits, DuplicateGroup, Entry, Stats } from './api'
+import type { Analytics, Audits, DuplicateGroup, Entry, Stats } from './api'
 import { ErrorBox, Spinner } from './components/ui'
-import { AuditsView, DuplicatesView, EntriesView, OverviewView } from './views'
+import { AnalyticsView, AuditsView, DuplicatesView, EntriesView, OverviewView } from './views'
 
-type Tab = 'overview' | 'entries' | 'audits' | 'duplicates'
+type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Обзор' },
   { id: 'entries', label: 'Записи' },
+  { id: 'analytics', label: 'Аналитика' },
   { id: 'audits', label: 'Аудиты' },
   { id: 'duplicates', label: 'Дубликаты' },
 ]
@@ -18,6 +19,7 @@ interface Data {
   entries: Entry[]
   audits: Audits
   duplicates: DuplicateGroup[]
+  analytics: Analytics
 }
 
 export default function App() {
@@ -26,8 +28,10 @@ export default function App() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([api.stats(), api.entries(), api.audits(), api.duplicates()])
-      .then(([stats, entries, audits, duplicates]) => setData({ stats, entries, audits, duplicates }))
+    Promise.all([api.stats(), api.entries(), api.audits(), api.duplicates(), api.analytics()])
+      .then(([stats, entries, audits, duplicates, analytics]) =>
+        setData({ stats, entries, audits, duplicates, analytics }),
+      )
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
@@ -61,6 +65,7 @@ export default function App() {
           <>
             {tab === 'overview' && <OverviewView stats={data.stats} />}
             {tab === 'entries' && <EntriesView entries={data.entries} />}
+            {tab === 'analytics' && <AnalyticsView analytics={data.analytics} />}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
           </>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Audits, DuplicateGroup, Entry, Finding, Stats } from './api'
+import type { Analytics, Audits, DuplicateGroup, Entry, Finding, Stats } from './api'
 import { Badge, BarList, Card, Section, Stat } from './components/ui'
 
 export function OverviewView({ stats }: { stats: Stats }) {
@@ -146,6 +146,49 @@ export function AuditsView({ audits }: { audits: Audits }) {
       <FindingsList title="Outdated-кандидаты" findings={audits.outdated} />
       <FindingsList title="Canonical-кандидаты" findings={audits.canonical} />
       <FindingsList title="Проблемы supersession" findings={audits.supersession} />
+    </div>
+  )
+}
+
+export function AnalyticsView({ analytics }: { analytics: Analytics }) {
+  const maxWeek = Math.max(1, ...analytics.growth.map((w) => w.count))
+  const totalRecent = analytics.growth.reduce((sum, w) => sum + w.count, 0)
+  const categoryData = Object.fromEntries(analytics.categories.map((c) => [c.category, c.count]))
+
+  return (
+    <div className="space-y-6">
+      <Section title="Аналитика" subtitle="Динамика и распределение базы знаний">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Категорий" value={analytics.categories.length} />
+          <Stat label="Записей за окно" value={totalRecent} />
+          <Stat label="Недель в окне" value={analytics.growth.length} />
+          <Stat label="Пик/неделю" value={maxWeek} />
+        </div>
+      </Section>
+
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
+          Рост по неделям (по дате создания)
+        </h3>
+        <div className="flex items-end gap-1" style={{ height: 140 }}>
+          {analytics.growth.map((w) => (
+            <div key={w.week} className="flex flex-1 flex-col items-center justify-end gap-1">
+              <span className="text-[10px] tabular-nums text-slate-400">{w.count}</span>
+              <div
+                className="w-full rounded-t bg-sky-500"
+                style={{ height: `${(w.count / maxWeek) * 100}%`, minHeight: w.count > 0 ? 2 : 0 }}
+                title={`${w.week}: ${w.count}`}
+              />
+              <span className="text-[10px] text-slate-400">{w.week}</span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
+        <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Размеры категорий</h3>
+        <BarList data={categoryData} />
+      </Card>
     </div>
   )
 }

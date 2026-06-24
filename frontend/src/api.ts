@@ -44,6 +44,21 @@ export interface DuplicateGroup {
   EntryIDs: number[]
 }
 
+export interface WeekCount {
+  week: string
+  count: number
+}
+
+export interface CategorySize {
+  category: string
+  count: number
+}
+
+export interface Analytics {
+  growth: WeekCount[]
+  categories: CategorySize[]
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -57,4 +72,5 @@ export const api = {
   entries: () => getJSON<Entry[]>('/api/entries'),
   audits: () => getJSON<Audits>('/api/audits'),
   duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
+  analytics: () => getJSON<Analytics>('/api/analytics'),
 }
