@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
@@ -43,8 +46,31 @@ func (fakeAudit) Duplicates() ([]audit.DuplicateGroup, error) {
 	return []audit.DuplicateGroup{{Kind: "exact-url", Key: "https://h/x", EntryIDs: []int{1, 2}}}, nil
 }
 
+type fakeAnalytics struct{}
+
+func (fakeAnalytics) Growth(_ time.Time, weeks int) ([]analytics.WeekCount, error) {
+	return []analytics.WeekCount{{Week: "17.06", Count: 3}}, nil
+}
+func (fakeAnalytics) Categories() ([]analytics.CategorySize, error) {
+	return []analytics.CategorySize{{Category: "golang", Count: 5}}, nil
+}
+
 func newTestServer() http.Handler {
-	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, nil)
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil)
+}
+
+func TestServer_analytics(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/analytics")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"growth"`) || !strings.Contains(body, `"categories"`) {
+		t.Errorf("analytics body missing keys: %s", body)
+	}
+	if !strings.Contains(body, `"golang"`) {
+		t.Errorf("analytics body missing category data: %s", body)
+	}
 }
 
 func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
