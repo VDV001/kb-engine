@@ -3,6 +3,7 @@ package domain_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -196,6 +197,59 @@ func TestNewEntry_creationRequiresPublishStage(t *testing.T) {
 	_, err := domain.NewEntry(p)
 	if !errors.Is(err, domain.ErrInvalidEntry) {
 		t.Fatalf("err = %v, want ErrInvalidEntry", err)
+	}
+}
+
+func TestNewEntry_metadata(t *testing.T) {
+	p := validArticle(t)
+	sup := 5
+	added := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+	created := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p.Source = "bot-inbox"
+	p.Author = "Some Author"
+	p.Notes = "a note"
+	p.SupersedesID = &sup
+	p.RelatedIDs = []int{2, 3}
+	p.DateAdded = &added
+	p.DateCreated = &created
+
+	e, err := domain.NewEntry(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if e.Source() != "bot-inbox" || e.Author() != "Some Author" || e.Notes() != "a note" {
+		t.Errorf("metadata mismatch: source=%q author=%q notes=%q", e.Source(), e.Author(), e.Notes())
+	}
+	if e.SupersedesID() == nil || *e.SupersedesID() != 5 {
+		t.Errorf("supersedesID = %v, want 5", e.SupersedesID())
+	}
+	if got := e.RelatedIDs(); len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Errorf("relatedIDs = %v, want [2 3]", got)
+	}
+	if e.DateAdded() == nil || !e.DateAdded().Equal(added) {
+		t.Errorf("dateAdded = %v, want %v", e.DateAdded(), added)
+	}
+	if e.DateCreated() == nil || !e.DateCreated().Equal(created) {
+		t.Errorf("dateCreated = %v, want %v", e.DateCreated(), created)
+	}
+}
+
+func TestNewEntry_relatedIDsAreImmutable(t *testing.T) {
+	p := validArticle(t)
+	src := []int{2, 3}
+	p.RelatedIDs = src
+
+	e, err := domain.NewEntry(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	src[0] = 999
+	if got := e.RelatedIDs(); got[0] != 2 {
+		t.Errorf("related id changed via source slice: %v", got)
+	}
+	e.RelatedIDs()[1] = 999
+	if got := e.RelatedIDs(); got[1] != 3 {
+		t.Errorf("related id changed via returned slice: %v", got)
 	}
 }
 
