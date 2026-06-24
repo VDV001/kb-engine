@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"io/fs"
 	"net/http"
-	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -33,9 +32,10 @@ type Auditor interface {
 	Duplicates() ([]audit.DuplicateGroup, error)
 }
 
-// Analyzer is the analytics port the API depends on.
+// Analyzer is the analytics port the API depends on. It owns its own clock, so
+// the handler never reads the wall clock.
 type Analyzer interface {
-	Growth(now time.Time, weeks int) ([]analytics.WeekCount, error)
+	Growth(weeks int) ([]analytics.WeekCount, error)
 	Categories() ([]analytics.CategorySize, error)
 }
 
@@ -64,7 +64,7 @@ func handleAnalyticsConfig(cfg analyticsconfig.Config) http.HandlerFunc {
 
 func handleAnalytics(an Analyzer) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		growth, err := an.Growth(time.Now(), growthWeeks)
+		growth, err := an.Growth(growthWeeks)
 		if err != nil {
 			writeError(w, err)
 			return

@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
@@ -49,7 +48,7 @@ func (fakeAudit) Duplicates() ([]audit.DuplicateGroup, error) {
 
 type fakeAnalytics struct{}
 
-func (fakeAnalytics) Growth(_ time.Time, weeks int) ([]analytics.WeekCount, error) {
+func (fakeAnalytics) Growth(weeks int) ([]analytics.WeekCount, error) {
 	return []analytics.WeekCount{{Week: "17.06", Count: 3}}, nil
 }
 func (fakeAnalytics) Categories() ([]analytics.CategorySize, error) {

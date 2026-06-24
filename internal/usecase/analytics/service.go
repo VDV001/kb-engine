@@ -12,23 +12,32 @@ type CatalogLoader interface {
 	Load() (*domain.Catalog, error)
 }
 
-// Service computes analytics over a loaded catalog.
+// Service computes analytics over a loaded catalog. It owns its clock so the
+// delivery layer (HTTP handler) never reads the wall clock itself.
 type Service struct {
 	loader CatalogLoader
+	now    func() time.Time
 }
 
-// NewService returns a Service backed by loader.
+// NewService returns a Service backed by loader, using the real wall clock.
 func NewService(loader CatalogLoader) *Service {
-	return &Service{loader: loader}
+	return &Service{loader: loader, now: time.Now}
 }
 
-// Growth returns entry growth over the last `weeks` weeks as of now.
-func (s *Service) Growth(now time.Time, weeks int) ([]WeekCount, error) {
+// NewServiceWithClock is NewService with an injectable clock, for deterministic
+// tests.
+func NewServiceWithClock(loader CatalogLoader, now func() time.Time) *Service {
+	return &Service{loader: loader, now: now}
+}
+
+// Growth returns entry growth over the last `weeks` weeks, as of the service's
+// clock.
+func (s *Service) Growth(weeks int) ([]WeekCount, error) {
 	c, err := s.loader.Load()
 	if err != nil {
 		return nil, err
 	}
-	return GrowthByWeek(c, now, weeks), nil
+	return GrowthByWeek(c, s.now(), weeks), nil
 }
 
 // Categories returns per-category entry counts, largest first.

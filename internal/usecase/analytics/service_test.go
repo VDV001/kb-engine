@@ -26,9 +26,9 @@ func TestService(t *testing.T) {
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
 	}
-	svc := analytics.NewService(fakeLoader{c: c})
+	svc := analytics.NewServiceWithClock(fakeLoader{c: c}, func() time.Time { return now })
 
-	growth, err := svc.Growth(now, 4)
+	growth, err := svc.Growth(4)
 	if err != nil {
 		t.Fatalf("Growth: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestService(t *testing.T) {
 
 func TestService_LoadError(t *testing.T) {
 	svc := analytics.NewService(fakeLoader{err: errors.New("boom")})
-	if _, err := svc.Growth(time.Now(), 4); err == nil {
+	if _, err := svc.Growth(4); err == nil {
 		t.Error("Growth should propagate loader error")
 	}
 	if _, err := svc.Categories(); err == nil {
