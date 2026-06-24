@@ -118,7 +118,7 @@ func TestAppendEntries(t *testing.T) {
 	if !strings.Contains(text, "utm_source=a&utm_medium=rss") {
 		t.Errorf("ampersand URL not preserved literally:\n%s", text)
 	}
-	if strings.Contains(text, `&`) {
+	if strings.Contains(text, `\u0026`) {
 		t.Errorf("ampersand was HTML-escaped to \\u0026")
 	}
 	if !strings.Contains(text, `"description": "тестовый каталог"`) {
