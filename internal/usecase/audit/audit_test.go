@@ -32,13 +32,13 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		t.Fatalf("lifecycle: %v", err)
 	}
 	ep := domain.EntryParams{
-		ID:          id,
-		Kind:        "article",
-		Title:       p.title,
-		Category:    cat,
-		Lifecycle:   lc,
-		HabrID:      &habrID,
-		URL:         "https://habr.com/x/",
+		ID:           id,
+		Kind:         "article",
+		Title:        p.title,
+		Category:     cat,
+		Lifecycle:    lc,
+		HabrID:       &habrID,
+		URL:          "https://habr.com/x/",
 		ReadState:    &rs,
 		Description:  p.description,
 		RelatedIDs:   p.relatedIDs,
@@ -59,9 +59,9 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 }
 
 type articleParams struct {
-	title       string
-	description string
-	lifecycle   string
+	title        string
+	description  string
+	lifecycle    string
 	verdict      string
 	relatedIDs   []int
 	supersedesID *int

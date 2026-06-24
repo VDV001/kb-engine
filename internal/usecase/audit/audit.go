@@ -116,6 +116,75 @@ func canonicalCandidates(c *domain.Catalog) []Finding {
 	return findings
 }
 
+// SupersessionIssues returns entries whose supersedes_id is dangling (target
+// missing) or part of a cycle.
+func (s *Service) SupersessionIssues() ([]Finding, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return nil, err
+	}
+	return supersessionIssues(c), nil
+}
+
+func supersessionIssues(c *domain.Catalog) []Finding {
+	byID := make(map[int]domain.Entry)
+	for _, e := range c.Entries() {
+		byID[e.ID()] = e
+	}
+
+	var findings []Finding
+	for _, e := range c.Entries() {
+		sup := e.SupersedesID()
+		if sup == nil {
+			continue
+		}
+		var reason string
+		switch {
+		case !exists(byID, *sup):
+			reason = fmt.Sprintf("supersedes_id %d does not exist", *sup)
+		case supersedesCycle(e.ID(), byID):
+			reason = "supersedes_id forms a cycle"
+		}
+		if reason != "" {
+			findings = append(findings, Finding{
+				EntryID: e.ID(),
+				Title:   e.Title(),
+				Current: e.Lifecycle().String(),
+				Reasons: []string{reason},
+			})
+		}
+	}
+	return findings
+}
+
+func exists(byID map[int]domain.Entry, id int) bool {
+	_, ok := byID[id]
+	return ok
+}
+
+// supersedesCycle reports whether following supersedes_id from start eventually
+// loops back into a node already on the path.
+func supersedesCycle(start int, byID map[int]domain.Entry) bool {
+	visited := make(map[int]bool)
+	cur := start
+	for {
+		e, ok := byID[cur]
+		if !ok {
+			return false
+		}
+		sup := e.SupersedesID()
+		if sup == nil {
+			return false
+		}
+		next := *sup
+		if next == start || visited[next] {
+			return true
+		}
+		visited[next] = true
+		cur = next
+	}
+}
+
 func outdatedReasons(e domain.Entry) []string {
 	var reasons []string
 	haystack := e.Title() + " " + e.Description()
