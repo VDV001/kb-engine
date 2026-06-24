@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -38,14 +39,14 @@ func (f *flexInt) UnmarshalJSON(b []byte) error {
 	}
 	var s string
 	if err := json.Unmarshal(b, &s); err != nil {
-		return fmt.Errorf("habr_id: %w", err)
+		return fmt.Errorf("flexInt: %w", err)
 	}
 	if strings.TrimSpace(s) == "" {
 		return nil
 	}
 	n, err := strconv.Atoi(s)
 	if err != nil {
-		return fmt.Errorf("habr_id %q is not an integer: %w", s, err)
+		return fmt.Errorf("%q is not an integer: %w", s, err)
 	}
 	f.value, f.set = n, true
 	return nil
@@ -61,15 +62,22 @@ func (f flexInt) pointer() *int {
 }
 
 type entryDTO struct {
-	ID          int      `json:"id"`
-	HabrID      flexInt  `json:"habr_id"`
-	Title       string   `json:"title"`
-	URL         string   `json:"url"`
-	Category    string   `json:"category"`
-	Status      string   `json:"status"`
-	Lifecycle   string   `json:"lifecycle"`
-	Description string   `json:"description"`
-	Tags        []string `json:"tags"`
+	ID           int       `json:"id"`
+	HabrID       flexInt   `json:"habr_id"`
+	Title        string    `json:"title"`
+	URL          string    `json:"url"`
+	Category     string    `json:"category"`
+	Status       string    `json:"status"`
+	Lifecycle    string    `json:"lifecycle"`
+	Description  string    `json:"description"`
+	Tags         []string  `json:"tags"`
+	Source       string    `json:"source"`
+	Author       string    `json:"author"`
+	Notes        string    `json:"notes"`
+	SupersedesID flexInt   `json:"supersedes_id"`
+	RelatedIDs   []flexInt `json:"related_ids"`
+	DateAdded    string    `json:"date_added"`
+	DateCreated  string    `json:"date_created"`
 }
 
 type catalogDTO struct {
@@ -149,6 +157,14 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 	if err != nil {
 		return domain.Entry{}, err
 	}
+	dateAdded, err := parseDate(dto.DateAdded)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("date_added: %w", err)
+	}
+	dateCreated, err := parseDate(dto.DateCreated)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("date_created: %w", err)
+	}
 	return domain.NewEntry(domain.EntryParams{
 		ID:           dto.ID,
 		Kind:         tr.kind,
@@ -162,7 +178,44 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		PublishStage: tr.publishStage,
 		Tags:         dto.Tags,
 		Description:  dto.Description,
+		Source:       dto.Source,
+		Author:       dto.Author,
+		Notes:        dto.Notes,
+		SupersedesID: dto.SupersedesID.pointer(),
+		RelatedIDs:   flexIntsToInts(dto.RelatedIDs),
+		DateAdded:    dateAdded,
+		DateCreated:  dateCreated,
 	})
+}
+
+// parseDate parses a "YYYY-MM-DD" date (ignoring any time suffix). Empty input
+// yields nil; a malformed value is an error.
+func parseDate(s string) (*time.Time, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, nil
+	}
+	if len(s) > 10 {
+		s = s[:10]
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil, fmt.Errorf("%q: %w", s, err)
+	}
+	return &t, nil
+}
+
+func flexIntsToInts(fs []flexInt) []int {
+	if len(fs) == 0 {
+		return nil
+	}
+	out := make([]int, 0, len(fs))
+	for _, f := range fs {
+		if f.set {
+			out = append(out, f.value)
+		}
+	}
+	return out
 }
 
 // Decode reads a catalog JSON document and builds a domain Catalog. Any entry
