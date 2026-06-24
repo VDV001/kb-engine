@@ -36,3 +36,10 @@ func NewLifecycle(raw string) (Lifecycle, error) {
 func (l Lifecycle) String() string {
 	return l.value
 }
+
+const lifecycleOutdated = "outdated"
+
+// IsOutdated reports whether the lifecycle is the outdated state.
+func (l Lifecycle) IsOutdated() bool {
+	return l.value == lifecycleOutdated
+}

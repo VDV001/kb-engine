@@ -35,3 +35,11 @@ func NewVerdict(raw string) (Verdict, error) {
 func (v Verdict) String() string {
 	return v.value
 }
+
+const verdictSkipUnavailable = "skip-unavailable"
+
+// IsSkipUnavailable reports whether the verdict marks a source that is no
+// longer available (HTTP 403 / taken down).
+func (v Verdict) IsSkipUnavailable() bool {
+	return v.value == verdictSkipUnavailable
+}
