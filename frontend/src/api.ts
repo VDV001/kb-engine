@@ -59,6 +59,39 @@ export interface Analytics {
   categories: CategorySize[]
 }
 
+export interface Pattern {
+  name: string
+  clusters: string[] | null
+  desc: string
+}
+
+export interface Gap {
+  topic: string
+  clusters: string[] | null
+  priority: string
+}
+
+export interface Contradiction {
+  title: string
+  a: string
+  b: string
+  resolution: string
+}
+
+export interface ManifestoQuote {
+  quote: string
+  source: string
+  date: string
+  weight: string
+}
+
+export interface AnalyticsConfig {
+  patterns: Pattern[] | null
+  gaps: Gap[] | null
+  contradictions: Contradiction[] | null
+  manifesto_quotes: ManifestoQuote[] | null
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -73,4 +106,5 @@ export const api = {
   audits: () => getJSON<Audits>('/api/audits'),
   duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
   analytics: () => getJSON<Analytics>('/api/analytics'),
+  analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
 }

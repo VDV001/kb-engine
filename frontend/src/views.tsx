@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Analytics, Audits, DuplicateGroup, Entry, Finding, Stats } from './api'
+import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finding, Stats } from './api'
 import { Badge, BarList, Card, Section, Stat } from './components/ui'
 
 export function OverviewView({ stats }: { stats: Stats }) {
@@ -150,10 +150,20 @@ export function AuditsView({ audits }: { audits: Audits }) {
   )
 }
 
-export function AnalyticsView({ analytics }: { analytics: Analytics }) {
+export function AnalyticsView({
+  analytics,
+  config,
+}: {
+  analytics: Analytics
+  config: AnalyticsConfig
+}) {
   const maxWeek = Math.max(1, ...analytics.growth.map((w) => w.count))
   const totalRecent = analytics.growth.reduce((sum, w) => sum + w.count, 0)
   const categoryData = Object.fromEntries(analytics.categories.map((c) => [c.category, c.count]))
+  const patterns = config.patterns ?? []
+  const contradictions = config.contradictions ?? []
+  const gaps = config.gaps ?? []
+  const quotes = config.manifesto_quotes ?? []
 
   return (
     <div className="space-y-6">
@@ -189,6 +199,71 @@ export function AnalyticsView({ analytics }: { analytics: Analytics }) {
         <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Размеры категорий</h3>
         <BarList data={categoryData} />
       </Card>
+
+      {quotes.length > 0 && (
+        <Section title="Манифест" subtitle={`${quotes.length} тезисов`}>
+          <div className="space-y-2">
+            {quotes.map((q, i) => (
+              <Card key={i}>
+                <p className="text-sm italic text-slate-700 dark:text-slate-200">«{q.quote}»</p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {q.source} · {q.date} {q.weight && <Badge value={q.weight} />}
+                </p>
+              </Card>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {patterns.length > 0 && (
+        <Section title="Паттерны" subtitle={`${patterns.length} сквозных тем`}>
+          <div className="space-y-2">
+            {patterns.map((p, i) => (
+              <Card key={i}>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{p.name}</span>
+                  {(p.clusters ?? []).map((c) => (
+                    <Badge key={c} value={c} />
+                  ))}
+                </div>
+                {p.desc && <p className="mt-1 text-xs text-slate-500">{p.desc}</p>}
+              </Card>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {contradictions.length > 0 && (
+        <Section title="Противоречия" subtitle={`${contradictions.length}`}>
+          <div className="space-y-2">
+            {contradictions.map((c, i) => (
+              <Card key={i}>
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{c.title}</p>
+                <p className="mt-1 text-xs text-slate-500">A: {c.a}</p>
+                <p className="text-xs text-slate-500">B: {c.b}</p>
+                {c.resolution && (
+                  <p className="mt-1 text-xs text-sky-600 dark:text-sky-400">→ {c.resolution}</p>
+                )}
+              </Card>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {gaps.length > 0 && (
+        <Section title="Пробелы" subtitle={`${gaps.length} тем`}>
+          <div className="space-y-2">
+            {gaps.map((g, i) => (
+              <Card key={i}>
+                <div className="flex items-center gap-2">
+                  <Badge value={g.priority} />
+                  <span className="text-sm text-slate-700 dark:text-slate-200">{g.topic}</span>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </Section>
+      )}
     </div>
   )
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import type { Analytics, Audits, DuplicateGroup, Entry, Stats } from './api'
+import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Stats } from './api'
 import { ErrorBox, Spinner } from './components/ui'
 import { AnalyticsView, AuditsView, DuplicatesView, EntriesView, OverviewView } from './views'
 
@@ -20,6 +20,7 @@ interface Data {
   audits: Audits
   duplicates: DuplicateGroup[]
   analytics: Analytics
+  analyticsConfig: AnalyticsConfig
 }
 
 export default function App() {
@@ -28,9 +29,16 @@ export default function App() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    Promise.all([api.stats(), api.entries(), api.audits(), api.duplicates(), api.analytics()])
-      .then(([stats, entries, audits, duplicates, analytics]) =>
-        setData({ stats, entries, audits, duplicates, analytics }),
+    Promise.all([
+      api.stats(),
+      api.entries(),
+      api.audits(),
+      api.duplicates(),
+      api.analytics(),
+      api.analyticsConfig(),
+    ])
+      .then(([stats, entries, audits, duplicates, analytics, analyticsConfig]) =>
+        setData({ stats, entries, audits, duplicates, analytics, analyticsConfig }),
       )
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
@@ -65,7 +73,9 @@ export default function App() {
           <>
             {tab === 'overview' && <OverviewView stats={data.stats} />}
             {tab === 'entries' && <EntriesView entries={data.entries} />}
-            {tab === 'analytics' && <AnalyticsView analytics={data.analytics} />}
+            {tab === 'analytics' && (
+              <AnalyticsView analytics={data.analytics} config={data.analyticsConfig} />
+            )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
           </>
