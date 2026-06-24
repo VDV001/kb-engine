@@ -19,16 +19,43 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, dedup")
 		return 2
 	}
 	switch args[0] {
 	case "audit":
 		return runAudit(args[1:], stdout, stderr)
+	case "dedup":
+		return runDedup(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+}
+
+func runDedup(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("dedup", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "dedup: --catalog is required")
+		return 2
+	}
+
+	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
+	groups, err := svc.Duplicates()
+	if err != nil {
+		fmt.Fprintf(stderr, "dedup: %v\n", err)
+		return 1
+	}
+	for _, g := range groups {
+		fmt.Fprintf(stdout, "[%s] ids=%v key=%q\n", g.Kind, g.EntryIDs, g.Key)
+	}
+	fmt.Fprintf(stdout, "%d duplicate group(s)\n", len(groups))
+	return 0
 }
 
 func runAudit(args []string, stdout, stderr io.Writer) int {
