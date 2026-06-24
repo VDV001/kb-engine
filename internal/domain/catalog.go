@@ -49,6 +49,18 @@ func (c *Catalog) Find(id int) (Entry, bool) {
 // Len returns the number of entries.
 func (c *Catalog) Len() int { return len(c.entries) }
 
+// NextID returns the id to assign to the next entry: one past the highest
+// present id, or 1 for an empty catalog. ids are not reused.
+func (c *Catalog) NextID() int {
+	max := 0
+	for _, e := range c.entries {
+		if e.id > max {
+			max = e.id
+		}
+	}
+	return max + 1
+}
+
 // Entries returns a copy of the entries, so callers cannot mutate the catalog's
 // backing array.
 func (c *Catalog) Entries() []Entry {
