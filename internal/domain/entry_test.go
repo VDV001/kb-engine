@@ -146,6 +146,24 @@ func TestNewEntry_valid(t *testing.T) {
 			t.Errorf("read state = %v, want read", e.ReadState())
 		}
 	})
+
+	t.Run("minimal article without habr_id or url is allowed", func(t *testing.T) {
+		// Real data: bot-inbox links are articles with neither a parsed habr_id
+		// nor always a url. The only article invariant is a read-state.
+		p := validArticle(t)
+		p.HabrID = nil
+		p.URL = ""
+		e, err := domain.NewEntry(p)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if e.HabrID() != nil {
+			t.Errorf("habrID = %v, want nil", e.HabrID())
+		}
+		if e.URL() != "" {
+			t.Errorf("url = %q, want empty", e.URL())
+		}
+	})
 }
 
 func TestNewEntry_invalid(t *testing.T) {
@@ -157,8 +175,6 @@ func TestNewEntry_invalid(t *testing.T) {
 		{"non-positive id", func(p *domain.EntryParams) { p.ID = 0 }, domain.ErrInvalidEntry},
 		{"empty title", func(p *domain.EntryParams) { p.Title = "  " }, domain.ErrInvalidEntry},
 		{"unknown kind", func(p *domain.EntryParams) { p.Kind = "bogus" }, domain.ErrUnknownKind},
-		{"article without url", func(p *domain.EntryParams) { p.URL = "" }, domain.ErrInvalidEntry},
-		{"article without habr id", func(p *domain.EntryParams) { p.HabrID = nil }, domain.ErrInvalidEntry},
 		{"article without read state", func(p *domain.EntryParams) { p.ReadState = nil }, domain.ErrInvalidEntry},
 	}
 
