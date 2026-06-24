@@ -35,6 +35,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|supersession|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -44,16 +45,47 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	}
 
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	findings, err := svc.OutdatedCandidates()
-	if err != nil {
-		fmt.Fprintf(stderr, "audit: %v\n", err)
-		return 1
+	selected, ok := selectAudits(*check, svc)
+	if !ok {
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|supersession|all)\n", *check)
+		return 2
 	}
 
-	for _, f := range findings {
-		fmt.Fprintf(stdout, "id=%d lifecycle=%s reasons=%v title=%q\n",
-			f.EntryID, f.Current, f.Reasons, f.Title)
+	total := 0
+	for _, a := range selected {
+		findings, err := a.run()
+		if err != nil {
+			fmt.Fprintf(stderr, "audit: %v\n", err)
+			return 1
+		}
+		for _, f := range findings {
+			fmt.Fprintf(stdout, "[%s] id=%d lifecycle=%s reasons=%v title=%q\n",
+				a.name, f.EntryID, f.Current, f.Reasons, f.Title)
+		}
+		total += len(findings)
 	}
-	fmt.Fprintf(stdout, "%d outdated candidate(s)\n", len(findings))
+	fmt.Fprintf(stdout, "%d finding(s)\n", total)
 	return 0
+}
+
+type namedAudit struct {
+	name string
+	run  func() ([]audit.Finding, error)
+}
+
+func selectAudits(check string, svc *audit.Service) ([]namedAudit, bool) {
+	all := []namedAudit{
+		{"outdated", svc.OutdatedCandidates},
+		{"canonical", svc.CanonicalCandidates},
+		{"supersession", svc.SupersessionIssues},
+	}
+	if check == "all" {
+		return all, true
+	}
+	for _, a := range all {
+		if a.name == check {
+			return []namedAudit{a}, true
+		}
+	}
+	return nil, false
 }

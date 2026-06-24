@@ -50,6 +50,28 @@ func TestRun_catalogFlagRequired(t *testing.T) {
 	}
 }
 
+func TestRun_unknownCheck(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[]}`)
+	var out, errb bytes.Buffer
+	if code := run([]string{"audit", "--catalog", path, "--check", "bogus"}, &out, &errb); code == 0 {
+		t.Fatal("expected non-zero exit for unknown --check")
+	}
+}
+
+func TestRun_checkFilter(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"Статья удалена","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	var out, errb bytes.Buffer
+	if code := run([]string{"audit", "--catalog", path, "--check", "canonical"}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	// outdated finding (id=1) must NOT appear when only canonical is selected
+	if strings.Contains(out.String(), "id=1") {
+		t.Errorf("canonical-only run leaked outdated finding:\n%s", out.String())
+	}
+}
+
 func TestRun_unknownCommand(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"bogus"}, &out, &errb); code == 0 {
