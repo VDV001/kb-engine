@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -157,5 +158,38 @@ func TestServer_unknownRoute(t *testing.T) {
 	rec := get(t, newTestServer(), "/api/nope")
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
+
+func TestServer_healthz(t *testing.T) {
+	rec := get(t, newTestServer(), "/healthz")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "ok") {
+		t.Errorf("healthz body = %q, want it to contain \"ok\"", rec.Body.String())
+	}
+}
+
+func TestServer_readyz_ok(t *testing.T) {
+	rec := get(t, newTestServer(), "/readyz")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+// fakeQueryErr reuses fakeQuery's Entries but fails Stats, modelling a catalog
+// that cannot be loaded.
+type fakeQueryErr struct{ fakeQuery }
+
+func (fakeQueryErr) Stats() (query.Stats, error) {
+	return query.Stats{}, errors.New("catalog unavailable")
+}
+
+func TestServer_readyz_unavailable(t *testing.T) {
+	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, testConfig, nil)
+	rec := get(t, srv, "/readyz")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 }
