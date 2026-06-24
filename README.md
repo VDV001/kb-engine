@@ -89,6 +89,9 @@ docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
 Released tags (`v*`) publish `linux/amd64` + `linux/arm64` images to
 `ghcr.io/vdv001/kb-engine` (`latest`, `MAJOR.MINOR`, and the full version).
 
+The server exposes `GET /healthz` (liveness, always 200) and `GET /readyz`
+(readiness, 503 until the catalog loads) for container/orchestrator probes.
+
 Hooks require [`lefthook`](https://github.com/evilmartians/lefthook) and
 [`gitleaks`](https://github.com/gitleaks/gitleaks) on `PATH`. CI also runs
 gitleaks and enforces the coverage gate independently.

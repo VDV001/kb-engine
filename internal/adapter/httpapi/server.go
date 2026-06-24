@@ -44,6 +44,8 @@ type Analyzer interface {
 // root (with index.html fallback for client-side routes).
 func NewServer(q Querier, a Auditor, an Analyzer, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", handleHealthz())
+	mux.HandleFunc("GET /readyz", handleReadyz(q))
 	mux.HandleFunc("GET /api/stats", handleStats(q))
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
@@ -54,6 +56,29 @@ func NewServer(q Querier, a Auditor, an Analyzer, cfg analyticsconfig.Config, fr
 		mux.Handle("/", spaHandler(frontend))
 	}
 	return mux
+}
+
+// handleHealthz is a liveness probe: it returns 200 as long as the process can
+// serve requests. It does no I/O.
+func handleHealthz() http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ok\n"))
+	}
+}
+
+// handleReadyz is a readiness probe: it returns 200 only when the catalog can
+// be loaded, and 503 otherwise, so an orchestrator holds traffic until the data
+// source is reachable.
+func handleReadyz(q Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if _, err := q.Stats(); err != nil {
+			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("ready\n"))
+	}
 }
 
 func handleAnalyticsConfig(cfg analyticsconfig.Config) http.HandlerFunc {
