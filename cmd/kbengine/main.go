@@ -5,10 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"time"
 
+	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
+	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
 func main() {
@@ -19,7 +24,7 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, dedup")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, dedup, serve")
 		return 2
 	}
 	switch args[0] {
@@ -27,10 +32,52 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runAudit(args[1:], stdout, stderr)
 	case "dedup":
 		return runDedup(args[1:], stdout, stderr)
+	case "serve":
+		return runServe(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+}
+
+func runServe(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	addr := fs.String("addr", ":8080", "address to listen on")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "serve: --catalog is required")
+		return 2
+	}
+
+	handler, err := buildServeHandler(*catalogPath)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
+	}
+	srv := &http.Server{
+		Addr:              *addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
+	if err := srv.ListenAndServe(); err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+func buildServeHandler(catalogPath string) (http.Handler, error) {
+	loader := catalogjson.FileLoader{Path: catalogPath}
+	front, err := root.Frontend()
+	if err != nil {
+		return nil, err
+	}
+	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader), front), nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {
