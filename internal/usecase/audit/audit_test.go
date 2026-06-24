@@ -14,6 +14,48 @@ func daysAgo(now time.Time, days int) *time.Time {
 	return &d
 }
 
+func TestCanonicalHealthIssues(t *testing.T) {
+	healthy := articleParams{
+		title: "Healthy canonical", lifecycle: "canonical",
+		description: "has a description", notes: "has notes", relatedIDs: []int{2, 3},
+	}
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, healthy),
+		// canonical but missing description
+		article(t, 2, articleParams{title: "No desc", lifecycle: "canonical", notes: "n", relatedIDs: []int{1}}),
+		// canonical but missing notes and related
+		article(t, 3, articleParams{title: "No notes/related", lifecycle: "canonical", description: "d"}),
+		// non-canonical with nothing → not a canonical-health concern
+		article(t, 4, articleParams{title: "Plain", lifecycle: "active"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	svc := audit.NewService(fakeLoader{catalog: cat})
+	findings, err := svc.CanonicalHealthIssues()
+	if err != nil {
+		t.Fatalf("CanonicalHealthIssues: %v", err)
+	}
+
+	byID := map[int][]string{}
+	for _, f := range findings {
+		byID[f.EntryID] = f.Reasons
+	}
+	if _, ok := byID[1]; ok {
+		t.Errorf("healthy canonical 1 should have no issues")
+	}
+	if _, ok := byID[4]; ok {
+		t.Errorf("non-canonical 4 should not be checked")
+	}
+	if len(byID[2]) != 1 {
+		t.Errorf("entry 2 should report exactly 1 issue (missing description), got %v", byID[2])
+	}
+	if len(byID[3]) != 2 {
+		t.Errorf("entry 3 should report 2 issues (missing notes + related), got %v", byID[3])
+	}
+}
+
 func TestAgeCandidates(t *testing.T) {
 	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
 
@@ -92,6 +134,7 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		RelatedIDs:   p.relatedIDs,
 		SupersedesID: p.supersedesID,
 		DateCreated:  p.dateCreated,
+		Notes:        p.notes,
 	}
 	if !p.noHabrID {
 		ep.HabrID = &habrID
@@ -120,6 +163,7 @@ type articleParams struct {
 	url          string
 	dateCreated  *time.Time
 	noHabrID     bool
+	notes        string
 }
 
 func TestOutdatedCandidates(t *testing.T) {
