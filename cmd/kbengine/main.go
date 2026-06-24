@@ -157,6 +157,7 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 	all := []namedAudit{
 		{"outdated", svc.OutdatedCandidates},
 		{"canonical", svc.CanonicalCandidates},
+		{"canonical-health", svc.CanonicalHealthIssues},
 		{"supersession", svc.SupersessionIssues},
 		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
