@@ -17,12 +17,14 @@ var ErrUnknownKind = errors.New("unknown entry kind")
 type kindSpec struct {
 	requireHabrID       bool
 	requireURL          bool
-	requireVerdict      bool
+	requireReadState    bool
 	requirePublishStage bool
 }
 
 var kindSpecs = map[string]kindSpec{
-	"article":  {requireHabrID: true, requireURL: true, requireVerdict: true},
+	// An article always carries a read/unread triage state; a verdict appears
+	// only once it has been read and decided, so verdict stays optional.
+	"article":  {requireHabrID: true, requireURL: true, requireReadState: true},
 	"creation": {requirePublishStage: true},
 }
 
@@ -99,8 +101,8 @@ func checkRequired(p EntryParams, spec kindSpec) error {
 	if spec.requireURL && strings.TrimSpace(p.URL) == "" {
 		return fmt.Errorf("%w: kind %q requires url", ErrInvalidEntry, p.Kind)
 	}
-	if spec.requireVerdict && p.Verdict == nil {
-		return fmt.Errorf("%w: kind %q requires verdict", ErrInvalidEntry, p.Kind)
+	if spec.requireReadState && p.ReadState == nil {
+		return fmt.Errorf("%w: kind %q requires read state", ErrInvalidEntry, p.Kind)
 	}
 	if spec.requirePublishStage && p.PublishStage == nil {
 		return fmt.Errorf("%w: kind %q requires publish stage", ErrInvalidEntry, p.Kind)
