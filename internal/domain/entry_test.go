@@ -60,15 +60,17 @@ func validArticle(t *testing.T) domain.EntryParams {
 	v := mustVerdict(t)
 	rs := mustReadState(t)
 	return domain.EntryParams{
-		ID:        1,
-		Kind:      "article",
-		Title:     "Some article",
-		Category:  mustCategory(t),
-		Lifecycle: mustLifecycle(t),
-		HabrID:    &habrID,
-		URL:       "https://habr.com/ru/articles/1049782/",
-		ReadState: &rs,
-		Verdict:   &v,
+		ID:          1,
+		Kind:        "article",
+		Title:       "Some article",
+		Category:    mustCategory(t),
+		Lifecycle:   mustLifecycle(t),
+		HabrID:      &habrID,
+		URL:         "https://habr.com/ru/articles/1049782/",
+		ReadState:   &rs,
+		Verdict:     &v,
+		Tags:        []string{"agent-security", "mcp"},
+		Description: "prod-debug via narrow read-only MCP",
 	}
 }
 
@@ -86,7 +88,7 @@ func validCreation(t *testing.T) domain.EntryParams {
 }
 
 func TestNewEntry_valid(t *testing.T) {
-	t.Run("article", func(t *testing.T) {
+	t.Run("article preserves every field", func(t *testing.T) {
 		e, err := domain.NewEntry(validArticle(t))
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
@@ -94,8 +96,29 @@ func TestNewEntry_valid(t *testing.T) {
 		if e.ID() != 1 || e.Kind() != "article" || e.Title() != "Some article" {
 			t.Errorf("unexpected entry: id=%d kind=%q title=%q", e.ID(), e.Kind(), e.Title())
 		}
+		if e.Category().String() != "ai-agents-tools" {
+			t.Errorf("category = %q, want ai-agents-tools", e.Category().String())
+		}
+		if e.Lifecycle().String() != "active" {
+			t.Errorf("lifecycle = %q, want active", e.Lifecycle().String())
+		}
+		if e.HabrID() == nil || *e.HabrID() != 1049782 {
+			t.Errorf("habrID = %v, want 1049782", e.HabrID())
+		}
+		if e.URL() != "https://habr.com/ru/articles/1049782/" {
+			t.Errorf("url = %q", e.URL())
+		}
+		if e.ReadState() == nil || e.ReadState().String() != "read" {
+			t.Errorf("read state = %v, want read", e.ReadState())
+		}
 		if e.Verdict() == nil || e.Verdict().String() != "keep" {
 			t.Errorf("verdict = %v, want keep", e.Verdict())
+		}
+		if got := e.Tags(); len(got) != 2 || got[0] != "agent-security" || got[1] != "mcp" {
+			t.Errorf("tags = %v, want [agent-security mcp]", got)
+		}
+		if e.Description() != "prod-debug via narrow read-only MCP" {
+			t.Errorf("description = %q", e.Description())
 		}
 	})
 
