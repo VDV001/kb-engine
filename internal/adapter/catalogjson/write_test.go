@@ -129,6 +129,76 @@ func TestAppendEntries(t *testing.T) {
 	}
 }
 
+// TestAppendEntries_StatusRoundTripsAllKinds backfills coverage for the
+// writer's "always loadable" contract: every status aspect a domain-valid entry
+// can carry (read-state, verdict, publish-stage) must survive a write→reload.
+// This locks the legacyStatus branches so none can ever emit an unloadable
+// status field.
+func TestAppendEntries_StatusRoundTripsAllKinds(t *testing.T) {
+	cat, err := domain.NewCategory("golang")
+	if err != nil {
+		t.Fatalf("category: %v", err)
+	}
+	lc, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("lifecycle: %v", err)
+	}
+
+	readState, err := domain.NewReadState("read")
+	if err != nil {
+		t.Fatalf("readstate: %v", err)
+	}
+	verdict, err := domain.NewVerdict("keep")
+	if err != nil {
+		t.Fatalf("verdict: %v", err)
+	}
+	stage, err := domain.NewPublishStage("published")
+	if err != nil {
+		t.Fatalf("publishstage: %v", err)
+	}
+
+	// A read article carrying a verdict (status -> "keep").
+	verdictArticle, err := domain.NewEntry(domain.EntryParams{
+		ID: 10, Kind: domain.KindArticle, Title: "Reviewed", Category: cat, Lifecycle: lc,
+		URL: "https://h/reviewed", ReadState: &readState, Verdict: &verdict,
+	})
+	if err != nil {
+		t.Fatalf("verdict article: %v", err)
+	}
+	// A creation carrying a publish stage (status -> "published").
+	creation, err := domain.NewEntry(domain.EntryParams{
+		ID: 11, Kind: domain.KindCreation, Title: "Article draft", Category: cat, Lifecycle: lc,
+		PublishStage: &stage,
+	})
+	if err != nil {
+		t.Fatalf("creation: %v", err)
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "catalog.json")
+	if err := os.WriteFile(path, []byte(`{"meta":{},"entries":[]}`), 0o644); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if err := catalogjson.AppendEntries(path, []domain.Entry{verdictArticle, creation}); err != nil {
+		t.Fatalf("AppendEntries: %v", err)
+	}
+
+	// The crux: the file the writer produced must reload without error.
+	c, err := catalogjson.Load(path)
+	if err != nil {
+		t.Fatalf("writer produced an unloadable file: %v", err)
+	}
+
+	got, ok := c.Find(10)
+	if !ok || got.Verdict() == nil || got.Verdict().String() != "keep" {
+		t.Errorf("verdict article did not round-trip: ok=%v verdict=%v", ok, got.Verdict())
+	}
+	gotCreation, ok := c.Find(11)
+	if !ok || gotCreation.PublishStage() == nil || gotCreation.PublishStage().String() != "published" {
+		t.Errorf("creation did not round-trip: ok=%v stage=%v", ok, gotCreation.PublishStage())
+	}
+}
+
 func TestAppendEntries_RejectsUnknownTopLevelKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "catalog.json")

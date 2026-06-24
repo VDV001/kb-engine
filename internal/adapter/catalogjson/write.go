@@ -38,6 +38,11 @@ type legacyEntry struct {
 // existing meta and entries (re-indented uniformly, as the legacy Python tool
 // also did) and writing atomically. It rejects a file with unexpected top-level
 // keys rather than risk dropping data.
+//
+// It is intended for freshly created entries (e.g. inbox imports). Existing
+// entries already in the file are preserved verbatim as raw JSON, never re-
+// encoded — so the lossy projection in toLegacy (which only models the fields
+// the domain knows) is never applied to data loaded from disk.
 func AppendEntries(path string, entries []domain.Entry) error {
 	raw, err := os.ReadFile(path)
 	if err != nil {
