@@ -1,0 +1,119 @@
+package httpapi_test
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/audit"
+	"github.com/daniil/kb-engine/internal/usecase/query"
+)
+
+type fakeQuery struct{}
+
+func (fakeQuery) Stats() (query.Stats, error) {
+	return query.Stats{Total: 2, ByCategory: map[string]int{"golang": 2}}, nil
+}
+
+func (fakeQuery) Entries() ([]domain.Entry, error) {
+	habrID := 1
+	rs, _ := domain.NewReadState("read")
+	cat, _ := domain.NewCategory("golang")
+	lc, _ := domain.NewLifecycle("active")
+	v, _ := domain.NewVerdict("keep")
+	e, _ := domain.NewEntry(domain.EntryParams{
+		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
+		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
+		Tags: []string{"go"},
+	})
+	return []domain.Entry{e}, nil
+}
+
+type fakeAudit struct{}
+
+func (fakeAudit) OutdatedCandidates() ([]audit.Finding, error) {
+	return []audit.Finding{{EntryID: 1, Title: "Hello", Current: "active", Reasons: []string{"keyword:removed"}}}, nil
+}
+func (fakeAudit) CanonicalCandidates() ([]audit.Finding, error)  { return nil, nil }
+func (fakeAudit) SupersessionIssues() ([]audit.Finding, error)   { return nil, nil }
+func (fakeAudit) Duplicates() ([]audit.DuplicateGroup, error) {
+	return []audit.DuplicateGroup{{Kind: "exact-url", Key: "https://h/x", EntryIDs: []int{1, 2}}}, nil
+}
+
+func newTestServer() http.Handler {
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, nil)
+}
+
+func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestServer_stats(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/stats")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var st query.Stats
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if st.Total != 2 {
+		t.Errorf("total = %d, want 2", st.Total)
+	}
+}
+
+func TestServer_entries(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/entries")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(entries) != 1 || entries[0]["id"].(float64) != 1 || entries[0]["title"] != "Hello" {
+		t.Errorf("entries = %v", entries)
+	}
+}
+
+func TestServer_audits(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/audits")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body map[string][]audit.Finding
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body["outdated"]) != 1 {
+		t.Errorf("outdated = %v", body["outdated"])
+	}
+}
+
+func TestServer_duplicates(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/duplicates")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var groups []audit.DuplicateGroup
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(groups) != 1 || len(groups[0].EntryIDs) != 2 {
+		t.Errorf("groups = %v", groups)
+	}
+}
+
+func TestServer_unknownRoute(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/nope")
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("status = %d, want 404", rec.Code)
+	}
+}
