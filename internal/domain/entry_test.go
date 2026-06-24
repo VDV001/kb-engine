@@ -45,10 +45,20 @@ func mustPublishStage(t *testing.T) domain.PublishStage {
 	return ps
 }
 
+func mustReadState(t *testing.T) domain.ReadState {
+	t.Helper()
+	rs, err := domain.NewReadState("read")
+	if err != nil {
+		t.Fatalf("setup read state: %v", err)
+	}
+	return rs
+}
+
 func validArticle(t *testing.T) domain.EntryParams {
 	t.Helper()
 	habrID := 1049782
 	v := mustVerdict(t)
+	rs := mustReadState(t)
 	return domain.EntryParams{
 		ID:        1,
 		Kind:      "article",
@@ -57,6 +67,7 @@ func validArticle(t *testing.T) domain.EntryParams {
 		Lifecycle: mustLifecycle(t),
 		HabrID:    &habrID,
 		URL:       "https://habr.com/ru/articles/1049782/",
+		ReadState: &rs,
 		Verdict:   &v,
 	}
 }
@@ -97,6 +108,21 @@ func TestNewEntry_valid(t *testing.T) {
 			t.Errorf("publish stage = %v, want published", e.PublishStage())
 		}
 	})
+
+	t.Run("article without verdict is allowed (read but not yet decided)", func(t *testing.T) {
+		p := validArticle(t)
+		p.Verdict = nil
+		e, err := domain.NewEntry(p)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if e.Verdict() != nil {
+			t.Errorf("verdict = %v, want nil", e.Verdict())
+		}
+		if e.ReadState() == nil || e.ReadState().String() != "read" {
+			t.Errorf("read state = %v, want read", e.ReadState())
+		}
+	})
 }
 
 func TestNewEntry_invalid(t *testing.T) {
@@ -109,8 +135,8 @@ func TestNewEntry_invalid(t *testing.T) {
 		{"empty title", func(p *domain.EntryParams) { p.Title = "  " }, domain.ErrInvalidEntry},
 		{"unknown kind", func(p *domain.EntryParams) { p.Kind = "bogus" }, domain.ErrUnknownKind},
 		{"article without url", func(p *domain.EntryParams) { p.URL = "" }, domain.ErrInvalidEntry},
-		{"article without verdict", func(p *domain.EntryParams) { p.Verdict = nil }, domain.ErrInvalidEntry},
 		{"article without habr id", func(p *domain.EntryParams) { p.HabrID = nil }, domain.ErrInvalidEntry},
+		{"article without read state", func(p *domain.EntryParams) { p.ReadState = nil }, domain.ErrInvalidEntry},
 	}
 
 	for _, tt := range tests {
