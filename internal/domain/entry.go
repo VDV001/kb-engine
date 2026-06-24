@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ErrInvalidEntry is returned when an entry violates an invariant.
@@ -48,6 +49,13 @@ type EntryParams struct {
 	PublishStage *PublishStage
 	Tags         []string
 	Description  string
+	Source       string
+	Author       string
+	Notes        string
+	SupersedesID *int
+	RelatedIDs   []int
+	DateAdded    *time.Time
+	DateCreated  *time.Time
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
@@ -65,6 +73,13 @@ type Entry struct {
 	publishStage *PublishStage
 	tags         []string
 	description  string
+	source       string
+	author       string
+	notes        string
+	supersedesID *int
+	relatedIDs   []int
+	dateAdded    *time.Time
+	dateCreated  *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -96,6 +111,13 @@ func NewEntry(p EntryParams) (Entry, error) {
 		publishStage: p.PublishStage,
 		tags:         cloneTags(p.Tags),
 		description:  p.Description,
+		source:       p.Source,
+		author:       p.Author,
+		notes:        p.Notes,
+		supersedesID: clonePtrInt(p.SupersedesID),
+		relatedIDs:   cloneInts(p.RelatedIDs),
+		dateAdded:    clonePtrTime(p.DateAdded),
+		dateCreated:  clonePtrTime(p.DateCreated),
 	}, nil
 }
 
@@ -106,6 +128,29 @@ func cloneTags(tags []string) []string {
 		return nil
 	}
 	return append([]string(nil), tags...)
+}
+
+func cloneInts(s []int) []int {
+	if s == nil {
+		return nil
+	}
+	return append([]int(nil), s...)
+}
+
+func clonePtrInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func clonePtrTime(p *time.Time) *time.Time {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func checkRequired(p EntryParams, spec kindSpec) error {
@@ -154,3 +199,24 @@ func (e Entry) Tags() []string { return cloneTags(e.tags) }
 
 // Description returns the entry's description.
 func (e Entry) Description() string { return e.description }
+
+// Source returns the entry's source (e.g. "bot-inbox", "manual").
+func (e Entry) Source() string { return e.source }
+
+// Author returns the entry's author.
+func (e Entry) Author() string { return e.author }
+
+// Notes returns the entry's free-form notes.
+func (e Entry) Notes() string { return e.notes }
+
+// SupersedesID returns the id this entry supersedes, or nil.
+func (e Entry) SupersedesID() *int { return clonePtrInt(e.supersedesID) }
+
+// RelatedIDs returns a copy of the related entry ids.
+func (e Entry) RelatedIDs() []int { return cloneInts(e.relatedIDs) }
+
+// DateAdded returns when the entry was added to the catalog, or nil.
+func (e Entry) DateAdded() *time.Time { return clonePtrTime(e.dateAdded) }
+
+// DateCreated returns when the source content was created, or nil.
+func (e Entry) DateCreated() *time.Time { return clonePtrTime(e.dateCreated) }
