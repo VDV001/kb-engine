@@ -59,3 +59,21 @@ func TestLifecycle_IsOutdated(t *testing.T) {
 		t.Error("IsOutdated() = true for active, want false")
 	}
 }
+
+func TestLifecycle_IsCanonical(t *testing.T) {
+	canonical, err := domain.NewLifecycle("canonical")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !canonical.IsCanonical() {
+		t.Error("IsCanonical() = false for canonical, want true")
+	}
+
+	active, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if active.IsCanonical() {
+		t.Error("IsCanonical() = true for active, want false")
+	}
+}
