@@ -23,7 +23,7 @@ func TestAgeCandidates(t *testing.T) {
 		// ~6 months old -> not yet
 		article(t, 2, articleParams{title: "Recent habr", lifecycle: "active", verdict: "keep", dateCreated: daysAgo(now, 180)}),
 		// old but non-habr URL -> not a habr candidate
-		article(t, 3, articleParams{title: "Old non-habr", lifecycle: "active", verdict: "keep", url: "https://example.com/x", dateCreated: daysAgo(now, 800)}),
+		article(t, 3, articleParams{title: "Old non-habr", lifecycle: "active", verdict: "keep", url: "https://example.com/x", noHabrID: true, dateCreated: daysAgo(now, 800)}),
 		// old habr but already outdated -> skip
 		article(t, 4, articleParams{title: "Old already-marked", lifecycle: "outdated", verdict: "keep", dateCreated: daysAgo(now, 800)}),
 		// old habr but no date -> can't assess
@@ -86,13 +86,15 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		Title:        p.title,
 		Category:     cat,
 		Lifecycle:    lc,
-		HabrID:       &habrID,
 		URL:          url,
 		ReadState:    &rs,
 		Description:  p.description,
 		RelatedIDs:   p.relatedIDs,
 		SupersedesID: p.supersedesID,
 		DateCreated:  p.dateCreated,
+	}
+	if !p.noHabrID {
+		ep.HabrID = &habrID
 	}
 	if p.verdict != "" {
 		v, err := domain.NewVerdict(p.verdict)
@@ -117,6 +119,7 @@ type articleParams struct {
 	supersedesID *int
 	url          string
 	dateCreated  *time.Time
+	noHabrID     bool
 }
 
 func TestOutdatedCandidates(t *testing.T) {

@@ -4,6 +4,8 @@ package audit
 import (
 	"fmt"
 	"regexp"
+	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -11,6 +13,11 @@ import (
 // canonicalReferenceThreshold is how many other entries must reference an entry
 // (via related_ids) before it is suggested for canonical status.
 const canonicalReferenceThreshold = 3
+
+// ageMonthsThreshold is how old a Habr article may get before it is suggested
+// for an outdated-lifecycle review (Habr links drift faster than evergreen
+// content).
+const ageMonthsThreshold = 18
 
 // CatalogLoader is the port the audit depends on to obtain the catalog. The
 // concrete implementation is wired by the caller (Dependency Inversion).
@@ -80,6 +87,40 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 		}
 	}
 	return findings, nil
+}
+
+// AgeCandidates returns Habr articles older than ageMonthsThreshold that are
+// not already marked outdated — candidates for an outdated-lifecycle review.
+// now is supplied by the caller so the audit is deterministic and testable.
+func (s *Service) AgeCandidates(now time.Time) ([]Finding, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return nil, err
+	}
+	cutoff := now.AddDate(0, -ageMonthsThreshold, 0)
+	var findings []Finding
+	for _, e := range c.Entries() {
+		if e.Lifecycle().IsOutdated() || !isHabr(e) {
+			continue
+		}
+		created := e.DateCreated()
+		if created == nil || !created.Before(cutoff) {
+			continue
+		}
+		findings = append(findings, Finding{
+			EntryID: e.ID(),
+			Title:   e.Title(),
+			Current: e.Lifecycle().String(),
+			Reasons: []string{fmt.Sprintf("habr article older than %d months (created %s)",
+				ageMonthsThreshold, created.Format("2006-01-02"))},
+		})
+	}
+	return findings, nil
+}
+
+// isHabr reports whether an entry points at a Habr article, by URL or habr_id.
+func isHabr(e domain.Entry) bool {
+	return e.HabrID() != nil || strings.Contains(e.URL(), "habr.com")
 }
 
 // CanonicalCandidates returns entries referenced by at least
