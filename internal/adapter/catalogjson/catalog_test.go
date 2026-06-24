@@ -2,6 +2,8 @@ package catalogjson_test
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -99,6 +101,10 @@ func TestDecode_errors(t *testing.T) {
 	}{
 		{"unknown status", articleJSON("bogus")},
 		{"invalid json", `{"entries":[`},
+		{"invalid category", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
+			`"url":"https://h/","category":"Bad Category","status":"read"}]}`},
+		{"invalid lifecycle", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
+			`"url":"https://h/","category":"golang","status":"read","lifecycle":"bogus"}]}`},
 		{"duplicate id", `{"entries":[` +
 			`{"id":1,"habr_id":1,"title":"A","url":"https://h/","category":"golang","status":"read"},` +
 			`{"id":1,"habr_id":2,"title":"B","url":"https://h/","category":"golang","status":"read"}]}`},
@@ -109,6 +115,34 @@ func TestDecode_errors(t *testing.T) {
 				t.Fatal("expected error, got nil")
 			}
 		})
+	}
+}
+
+func TestLoad_fromFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "catalog.json")
+	if err := os.WriteFile(path, []byte(articleJSON("keep")), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	c, err := catalogjson.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if c.Len() != 1 {
+		t.Errorf("Len() = %d, want 1", c.Len())
+	}
+}
+
+func TestLoad_openError(t *testing.T) {
+	if _, err := catalogjson.Load(filepath.Join(t.TempDir(), "nope.json")); err == nil {
+		t.Fatal("expected error opening missing file, got nil")
+	}
+}
+
+func TestDecode_unknownStatusIsTyped(t *testing.T) {
+	_, err := catalogjson.Decode(strings.NewReader(articleJSON("bogus")))
+	if !errors.Is(err, catalogjson.ErrUnknownStatus) {
+		t.Fatalf("err = %v, want ErrUnknownStatus", err)
 	}
 }
 
