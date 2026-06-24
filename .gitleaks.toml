@@ -1,0 +1,13 @@
+title = "kb-engine gitleaks config"
+
+# Build on top of the upstream default ruleset, then narrow with an allowlist.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Ignore generated/vendored assets and checksum files that trip default rules"
+paths = [
+  '''frontend/dist/.*''',
+  '''(.*/)?go\.sum$''',
+  '''(.*/)?package-lock\.json$''',
+]

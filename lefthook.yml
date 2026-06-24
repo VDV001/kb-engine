@@ -1,0 +1,15 @@
+# Git hooks managed by lefthook. One-time setup: `just hooks` (needs lefthook
+# and gitleaks on PATH). Skip a hook ad hoc with e.g. `LEFTHOOK=0 git commit`.
+pre-commit:
+  parallel: true
+  commands:
+    gofmt:
+      glob: "*.go"
+      run: test -z "$(gofmt -l {staged_files})"
+    gitleaks:
+      run: gitleaks dir --no-banner --redact --exit-code 1 .
+
+commit-msg:
+  commands:
+    conventional:
+      run: bash scripts/commit-msg-lint.sh {1}

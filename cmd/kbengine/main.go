@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"runtime/debug"
 	"time"
 
 	root "github.com/daniil/kb-engine"
@@ -18,6 +19,10 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
+// version is the build version. It defaults to "dev" and is overridden at
+// release time via -ldflags "-X main.version=<tag>" (see .goreleaser.yaml).
+var version = "dev"
+
 func main() {
 	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
@@ -26,10 +31,12 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, inbox, serve")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, inbox, serve, version")
 		return 2
 	}
 	switch args[0] {
+	case "version":
+		return runVersion(stdout)
 	case "audit":
 		return runAudit(args[1:], stdout, stderr)
 	case "audit-tasks":
@@ -46,6 +53,34 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+}
+
+// runVersion prints the build version, plus VCS revision and build time when
+// the binary carries Go module build info (e.g. installed via `go install`).
+func runVersion(stdout io.Writer) int {
+	v := version
+	var commit, date string
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+			v = info.Main.Version
+		}
+		for _, s := range info.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				commit = s.Value
+			case "vcs.time":
+				date = s.Value
+			}
+		}
+	}
+	fmt.Fprintf(stdout, "kbengine %s\n", v)
+	if commit != "" {
+		fmt.Fprintf(stdout, "commit: %s\n", commit)
+	}
+	if date != "" {
+		fmt.Fprintf(stdout, "built:  %s\n", date)
+	}
+	return 0
 }
 
 func runServe(args []string, stdout, stderr io.Writer) int {

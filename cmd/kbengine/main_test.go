@@ -107,6 +107,16 @@ func TestServe_handler(t *testing.T) {
 	}
 }
 
+func TestRun_version(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run([]string{"version"}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.HasPrefix(out.String(), "kbengine ") {
+		t.Errorf("expected output to start with %q, got: %s", "kbengine ", out.String())
+	}
+}
+
 func TestRun_unknownCommand(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := run([]string{"bogus"}, &out, &errb); code == 0 {
