@@ -19,9 +19,17 @@ cover:
 lint:
     golangci-lint run ./...
 
-# Build the CLI
+# Build the embedded frontend (run after changing frontend/)
+web:
+    cd frontend && npm install && npm run build
+
+# Build the CLI (assumes frontend/dist exists; run `just web` first if changed)
 build:
     go build -o bin/kbengine ./cmd/kbengine
+
+# Run the dashboard server against a catalog
+serve catalog:
+    go run ./cmd/kbengine serve --catalog {{catalog}}
 
 # Tidy modules
 tidy:
