@@ -159,3 +159,26 @@ func TestNewEntry_creationRequiresPublishStage(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInvalidEntry", err)
 	}
 }
+
+func TestEntry_tagsAreImmutable(t *testing.T) {
+	p := validArticle(t)
+	src := []string{"go", "ddd"}
+	p.Tags = src
+
+	e, err := domain.NewEntry(p)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Mutating the caller's slice must not reach into the entry.
+	src[0] = "MUTATED"
+	if got := e.Tags(); got[0] != "go" {
+		t.Errorf("entry tag changed via source slice: %v", got)
+	}
+
+	// Mutating the returned slice must not reach into the entry either.
+	e.Tags()[1] = "MUTATED"
+	if got := e.Tags(); got[1] != "ddd" {
+		t.Errorf("entry tag changed via returned slice: %v", got)
+	}
+}
