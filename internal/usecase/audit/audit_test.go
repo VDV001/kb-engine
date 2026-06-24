@@ -99,6 +99,36 @@ func TestOutdatedCandidates(t *testing.T) {
 	}
 }
 
+func TestOutdatedCandidates_wordBoundary(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 10, articleParams{title: "Удалёнка убивает тело", lifecycle: "active", verdict: "keep"}),
+		article(t, 11, articleParams{title: "Снятся ли ИИ овцы", lifecycle: "active", verdict: "keep"}),
+		article(t, 12, articleParams{title: "Решение удаления терминов", lifecycle: "active", verdict: "keep"}),
+		article(t, 13, articleParams{title: "Статья удалена автором", lifecycle: "active", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).OutdatedCandidates()
+	if err != nil {
+		t.Fatalf("OutdatedCandidates: %v", err)
+	}
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+
+	for _, notWant := range []int{10, 11, 12} { // удалёнка / снятся / удаления — different words
+		if got[notWant] {
+			t.Errorf("entry %d falsely flagged (substring false positive)", notWant)
+		}
+	}
+	if !got[13] { // "удалена" is a real removal signal
+		t.Error("entry 13 (удалена) should be flagged")
+	}
+}
+
 func TestOutdatedCandidates_loaderError(t *testing.T) {
 	sentinel := errors.New("boom")
 	svc := audit.NewService(fakeLoader{err: sentinel})
