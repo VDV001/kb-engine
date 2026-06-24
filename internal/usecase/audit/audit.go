@@ -123,6 +123,42 @@ func isHabr(e domain.Entry) bool {
 	return e.HabrID() != nil || strings.Contains(e.URL(), "habr.com")
 }
 
+// CanonicalHealthIssues returns canonical entries missing the context a
+// canonical reference should carry: a description, notes, or related_ids. (An
+// entry's lifecycle is always set by construction, so the legacy "lifecycle
+// consistency" check is enforced by the domain, not audited here.)
+func (s *Service) CanonicalHealthIssues() ([]Finding, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return nil, err
+	}
+	var findings []Finding
+	for _, e := range c.Entries() {
+		if !e.Lifecycle().IsCanonical() {
+			continue
+		}
+		var reasons []string
+		if strings.TrimSpace(e.Description()) == "" {
+			reasons = append(reasons, "canonical entry missing description")
+		}
+		if strings.TrimSpace(e.Notes()) == "" {
+			reasons = append(reasons, "canonical entry missing notes")
+		}
+		if len(e.RelatedIDs()) == 0 {
+			reasons = append(reasons, "canonical entry has no related_ids")
+		}
+		if len(reasons) > 0 {
+			findings = append(findings, Finding{
+				EntryID: e.ID(),
+				Title:   e.Title(),
+				Current: e.Lifecycle().String(),
+				Reasons: reasons,
+			})
+		}
+	}
+	return findings, nil
+}
+
 // CanonicalCandidates returns entries referenced by at least
 // canonicalReferenceThreshold other entries that are not already canonical.
 func (s *Service) CanonicalCandidates() ([]Finding, error) {
