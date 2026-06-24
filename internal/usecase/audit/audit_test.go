@@ -39,9 +39,10 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		Lifecycle:   lc,
 		HabrID:      &habrID,
 		URL:         "https://habr.com/x/",
-		ReadState:   &rs,
-		Description: p.description,
-		RelatedIDs:  p.relatedIDs,
+		ReadState:    &rs,
+		Description:  p.description,
+		RelatedIDs:   p.relatedIDs,
+		SupersedesID: p.supersedesID,
 	}
 	if p.verdict != "" {
 		v, err := domain.NewVerdict(p.verdict)
@@ -61,8 +62,9 @@ type articleParams struct {
 	title       string
 	description string
 	lifecycle   string
-	verdict     string
-	relatedIDs  []int
+	verdict      string
+	relatedIDs   []int
+	supersedesID *int
 }
 
 func TestOutdatedCandidates(t *testing.T) {
@@ -163,6 +165,41 @@ func TestCanonicalCandidates(t *testing.T) {
 	}
 	if got[3] {
 		t.Error("entry 3 (already canonical) should not be a candidate")
+	}
+}
+
+func TestSupersessionIssues(t *testing.T) {
+	id := func(n int) *int { return &n }
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "dangling", lifecycle: "active", verdict: "keep", supersedesID: id(99)}),
+		article(t, 2, articleParams{title: "cycle-a", lifecycle: "active", verdict: "keep", supersedesID: id(3)}),
+		article(t, 3, articleParams{title: "cycle-b", lifecycle: "active", verdict: "keep", supersedesID: id(2)}),
+		article(t, 4, articleParams{title: "valid super", lifecycle: "active", verdict: "keep", supersedesID: id(1)}),
+		article(t, 5, articleParams{title: "no super", lifecycle: "active", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).SupersessionIssues()
+	if err != nil {
+		t.Fatalf("SupersessionIssues: %v", err)
+	}
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+	if !got[1] {
+		t.Error("entry 1 (supersedes a missing id 99) should be flagged")
+	}
+	if !got[2] || !got[3] {
+		t.Error("entries 2 and 3 (cycle) should be flagged")
+	}
+	if got[4] {
+		t.Error("entry 4 (supersedes existing id 1) should not be flagged")
+	}
+	if got[5] {
+		t.Error("entry 5 (no supersedes_id) should not be flagged")
 	}
 }
 
