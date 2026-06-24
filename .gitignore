@@ -10,6 +10,9 @@ coverage.*
 # Go
 /vendor/
 
+# Frontend deps (built dist IS committed so `go build` works standalone)
+/frontend/node_modules/
+
 # Editor / OS
 .DS_Store
 .idea/

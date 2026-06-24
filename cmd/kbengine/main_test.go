@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -83,6 +85,25 @@ func TestRun_dedup(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "exact-url") {
 		t.Errorf("expected an exact-url duplicate group:\n%s", out.String())
+	}
+}
+
+func TestServe_handler(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	h, err := buildServeHandler(path)
+	if err != nil {
+		t.Fatalf("buildServeHandler: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"total":1`) {
+		t.Errorf("body missing total: %s", rec.Body.String())
 	}
 }
 
