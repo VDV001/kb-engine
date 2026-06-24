@@ -31,6 +31,10 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 	if err != nil {
 		t.Fatalf("lifecycle: %v", err)
 	}
+	url := p.url
+	if url == "" {
+		url = "https://habr.com/x/"
+	}
 	ep := domain.EntryParams{
 		ID:           id,
 		Kind:         "article",
@@ -38,7 +42,7 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		Category:     cat,
 		Lifecycle:    lc,
 		HabrID:       &habrID,
-		URL:          "https://habr.com/x/",
+		URL:          url,
 		ReadState:    &rs,
 		Description:  p.description,
 		RelatedIDs:   p.relatedIDs,
@@ -65,6 +69,7 @@ type articleParams struct {
 	verdict      string
 	relatedIDs   []int
 	supersedesID *int
+	url          string
 }
 
 func TestOutdatedCandidates(t *testing.T) {
@@ -200,6 +205,43 @@ func TestSupersessionIssues(t *testing.T) {
 	}
 	if got[5] {
 		t.Error("entry 5 (no supersedes_id) should not be flagged")
+	}
+}
+
+func TestDuplicates(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		// same URL → exact-url duplicate
+		article(t, 1, articleParams{title: "Alpha one two three", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
+		article(t, 2, articleParams{title: "Beta four five six", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
+		// same normalized title (часть N stripped) → similar-title duplicate
+		article(t, 3, articleParams{title: "Машинное обучение для всех часть 1", lifecycle: "active", verdict: "keep", url: "https://a.example/1"}),
+		article(t, 4, articleParams{title: "Машинное обучение для всех часть 2", lifecycle: "active", verdict: "keep", url: "https://a.example/2"}),
+		// unique
+		article(t, 5, articleParams{title: "Совершенно уникальный заголовок здесь", lifecycle: "active", verdict: "keep", url: "https://u.example/9"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	groups, err := audit.NewService(fakeLoader{catalog: cat}).Duplicates()
+	if err != nil {
+		t.Fatalf("Duplicates: %v", err)
+	}
+
+	var url, title *audit.DuplicateGroup
+	for i := range groups {
+		switch groups[i].Kind {
+		case "exact-url":
+			url = &groups[i]
+		case "similar-title":
+			title = &groups[i]
+		}
+	}
+	if url == nil || len(url.EntryIDs) != 2 {
+		t.Errorf("expected exact-url group of 2, got %+v", url)
+	}
+	if title == nil || len(title.EntryIDs) != 2 {
+		t.Errorf("expected similar-title group of 2 (часть 1/2), got %+v", title)
 	}
 }
 
