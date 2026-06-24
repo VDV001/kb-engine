@@ -41,3 +41,21 @@ func TestNewLifecycle(t *testing.T) {
 		})
 	}
 }
+
+func TestLifecycle_IsOutdated(t *testing.T) {
+	outdated, err := domain.NewLifecycle("outdated")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !outdated.IsOutdated() {
+		t.Error("IsOutdated() = false for outdated, want true")
+	}
+
+	active, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if active.IsOutdated() {
+		t.Error("IsOutdated() = true for active, want false")
+	}
+}

@@ -41,3 +41,21 @@ func TestNewVerdict(t *testing.T) {
 		})
 	}
 }
+
+func TestVerdict_IsSkipUnavailable(t *testing.T) {
+	su, err := domain.NewVerdict("skip-unavailable")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if !su.IsSkipUnavailable() {
+		t.Error("IsSkipUnavailable() = false for skip-unavailable, want true")
+	}
+
+	keep, err := domain.NewVerdict("keep")
+	if err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if keep.IsSkipUnavailable() {
+		t.Error("IsSkipUnavailable() = true for keep, want false")
+	}
+}
