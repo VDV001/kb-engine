@@ -37,9 +37,17 @@ func (l Lifecycle) String() string {
 	return l.value
 }
 
-const lifecycleOutdated = "outdated"
+const (
+	lifecycleOutdated  = "outdated"
+	lifecycleCanonical = "canonical"
+)
 
 // IsOutdated reports whether the lifecycle is the outdated state.
 func (l Lifecycle) IsOutdated() bool {
 	return l.value == lifecycleOutdated
+}
+
+// IsCanonical reports whether the lifecycle is the canonical state.
+func (l Lifecycle) IsCanonical() bool {
+	return l.value == lifecycleCanonical
 }
