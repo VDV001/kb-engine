@@ -26,7 +26,7 @@ linters:
   exclusions:
     rules:
       # Tests may use longer functions and table-driven helpers.
-      - path: _test\.go
+      - path: '(.+_test\.go)'
         linters:
           - gocyclo
 

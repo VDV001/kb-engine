@@ -14,16 +14,17 @@
 
 ## Стек
 
-Go 1.26 · стандартная библиотека · golangci-lint · GitHub Actions CI.
+Go 1.26 · стандартная библиотека · golangci-lint v2 · just · GitHub Actions CI.
 
 ## Разработка
 
 ```sh
-make test        # юнит-тесты
-make test-race   # с детектором гонок
-make lint        # golangci-lint
-make cover       # покрытие
-make ci          # полный гейт (как в CI)
+just             # список рецептов
+just test        # юнит-тесты
+just test-race   # с детектором гонок
+just lint        # golangci-lint
+just cover       # покрытие
+just ci          # полный гейт (как в CI)
 ```
 
 ## Архитектура (Clean Architecture)
@@ -37,4 +38,4 @@ internal/adapter    JSON-каталог, рендер отчётов
 
 ## Лицензия
 
-AGPL-3.0-or-later. См. [LICENSE](LICENSE).
+MIT. См. [LICENSE](LICENSE).

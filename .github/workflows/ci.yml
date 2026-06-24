@@ -5,24 +5,31 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26"
+  GOLANGCI_LINT_VERSION: v2.12
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.26"
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: Verify gofmt
         run: test -z "$(gofmt -l .)"
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
 
       - name: Test (race + coverage)
         run: go test -race -coverprofile=coverage.out ./...
