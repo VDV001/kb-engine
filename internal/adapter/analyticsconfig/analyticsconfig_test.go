@@ -21,7 +21,7 @@ const sample = `{
     {"title": "Будущее профессии", "a": "Исчезнет", "b": "Трансформируется", "resolution": "Фильтрация по глубине"}
   ],
   "manifesto_quotes": [
-    {"quote": "AI — мультипликатор экспертизы", "source": "KB Даниила", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей"]}
+    {"quote": "AI — мультипликатор экспертизы", "source": "KB Даниила", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей", {"shape": "object, not string"}]}
   ],
   "graph": [{"unmodelled": true}]
 }`

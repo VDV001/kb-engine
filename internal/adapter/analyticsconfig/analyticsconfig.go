@@ -32,14 +32,15 @@ type Contradiction struct {
 	Resolution string `json:"resolution"`
 }
 
-// ManifestoQuote is a headline synthesis quote with provenance.
+// ManifestoQuote is a headline synthesis quote with provenance. (The free-form
+// "supports" provenance field is intentionally not modelled — it is mixed-shape
+// in real data and not rendered.)
 type ManifestoQuote struct {
-	Quote    string   `json:"quote"`
-	Source   string   `json:"source"`
-	Date     string   `json:"date"`
-	Type     string   `json:"type"`
-	Weight   string   `json:"weight"`
-	Supports []string `json:"supports"`
+	Quote  string `json:"quote"`
+	Source string `json:"source"`
+	Date   string `json:"date"`
+	Type   string `json:"type"`
+	Weight string `json:"weight"`
 }
 
 // Config is the modelled subset of analytics_config.json.
