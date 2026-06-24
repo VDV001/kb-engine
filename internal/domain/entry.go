@@ -89,9 +89,18 @@ func NewEntry(p EntryParams) (Entry, error) {
 		verdict:      p.Verdict,
 		readState:    p.ReadState,
 		publishStage: p.PublishStage,
-		tags:         p.Tags,
+		tags:         cloneTags(p.Tags),
 		description:  p.Description,
 	}, nil
+}
+
+// cloneTags returns an independent copy so the entity does not alias the
+// caller's slice. nil in stays nil out.
+func cloneTags(tags []string) []string {
+	if tags == nil {
+		return nil
+	}
+	return append([]string(nil), tags...)
 }
 
 func checkRequired(p EntryParams, spec kindSpec) error {
@@ -140,8 +149,9 @@ func (e Entry) ReadState() *ReadState { return e.readState }
 // PublishStage returns the publish stage, or nil if absent.
 func (e Entry) PublishStage() *PublishStage { return e.publishStage }
 
-// Tags returns the entry's tags.
-func (e Entry) Tags() []string { return e.tags }
+// Tags returns a copy of the entry's tags, so callers cannot mutate the
+// entity's internal state.
+func (e Entry) Tags() []string { return cloneTags(e.tags) }
 
 // Description returns the entry's description.
 func (e Entry) Description() string { return e.description }
