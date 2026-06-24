@@ -45,7 +45,7 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 	}
 	var findings []Finding
 	for _, e := range c.Entries() {
-		if e.Lifecycle().String() == "outdated" {
+		if e.Lifecycle().IsOutdated() {
 			continue
 		}
 		if reasons := outdatedReasons(e); len(reasons) > 0 {
@@ -68,7 +68,7 @@ func outdatedReasons(e domain.Entry) []string {
 			reasons = append(reasons, "keyword:"+kw)
 		}
 	}
-	if v := e.Verdict(); v != nil && v.String() == "skip-unavailable" {
+	if v := e.Verdict(); v != nil && v.IsSkipUnavailable() {
 		reasons = append(reasons, "verdict:skip-unavailable")
 	}
 	return reasons
