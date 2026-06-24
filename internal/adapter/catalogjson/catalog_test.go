@@ -62,6 +62,37 @@ func TestDecode_articleStatusMapping(t *testing.T) {
 	}
 }
 
+func TestDecode_habrIDAcceptsStringOrNumber(t *testing.T) {
+	tests := []struct {
+		name string
+		raw  string // value of the habr_id field, verbatim JSON
+		want *int
+	}{
+		{"number", `1049782`, intPtr(1049782)},
+		{"numeric string", `"1049782"`, intPtr(1049782)},
+		{"null", `null`, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			src := `{"entries":[{"id":1,"habr_id":` + tt.raw +
+				`,"title":"T","url":"https://h/","category":"golang","status":"read"}]}`
+			c, err := catalogjson.Decode(strings.NewReader(src))
+			if err != nil {
+				t.Fatalf("Decode: %v", err)
+			}
+			e, _ := c.Find(1)
+			switch {
+			case tt.want == nil && e.HabrID() != nil:
+				t.Errorf("habrID = %v, want nil", *e.HabrID())
+			case tt.want != nil && (e.HabrID() == nil || *e.HabrID() != *tt.want):
+				t.Errorf("habrID = %v, want %d", e.HabrID(), *tt.want)
+			}
+		})
+	}
+}
+
+func intPtr(n int) *int { return &n }
+
 func TestDecode_creation(t *testing.T) {
 	src := `{"entries":[{"id":2,"title":"My research",` +
 		`"category":"creations","status":"published","lifecycle":"active"}]}`
