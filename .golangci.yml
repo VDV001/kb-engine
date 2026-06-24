@@ -18,6 +18,12 @@ linters:
   settings:
     gocyclo:
       min-complexity: 12
+    errcheck:
+      # Writes to stdout/stderr in a CLI are not meaningfully recoverable.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
     revive:
       rules:
         - name: exported
