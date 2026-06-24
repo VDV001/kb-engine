@@ -47,6 +47,7 @@ kbengine dedup        --catalog X
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
 kbengine audit-tasks  --catalog X [--json] < tasklist
 kbengine changelog    --in CHANGELOG.md --out changelog.json
+kbengine version
 ```
 
 ## Stack
@@ -62,9 +63,15 @@ just test        # unit tests
 just test-race   # with the race detector
 just lint        # golangci-lint
 just cover       # coverage summary
+just cover-gate  # fail if total coverage drops below 80%
+just hooks       # install git hooks (gitleaks + Conventional Commits)
 just web         # rebuild the embedded frontend after UI changes
-just ci          # full gate (tidy + lint + race tests + coverage)
+just ci          # full gate (tidy + lint + race tests + coverage gate)
 ```
+
+Hooks require [`lefthook`](https://github.com/evilmartians/lefthook) and
+[`gitleaks`](https://github.com/gitleaks/gitleaks) on `PATH`. CI also runs
+gitleaks and enforces the coverage gate independently.
 
 ## Architecture (Clean Architecture)
 
