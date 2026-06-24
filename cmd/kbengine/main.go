@@ -125,9 +125,9 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	}
 
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	selected, ok := selectAudits(*check, svc)
+	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|supersession|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|supersession|age|all)\n", *check)
 		return 2
 	}
 
@@ -153,11 +153,12 @@ type namedAudit struct {
 	run  func() ([]audit.Finding, error)
 }
 
-func selectAudits(check string, svc *audit.Service) ([]namedAudit, bool) {
+func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit, bool) {
 	all := []namedAudit{
 		{"outdated", svc.OutdatedCandidates},
 		{"canonical", svc.CanonicalCandidates},
 		{"supersession", svc.SupersessionIssues},
+		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
 	if check == "all" {
 		return all, true
