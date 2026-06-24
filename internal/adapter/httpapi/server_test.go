@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
@@ -55,8 +56,23 @@ func (fakeAnalytics) Categories() ([]analytics.CategorySize, error) {
 	return []analytics.CategorySize{{Category: "golang", Count: 5}}, nil
 }
 
+var testConfig = analyticsconfig.Config{
+	Patterns: []analyticsconfig.Pattern{{Name: "Verification > Generation", Desc: "d"}},
+	Gaps:     []analyticsconfig.Gap{{Topic: "Testing", Priority: "low"}},
+}
+
 func newTestServer() http.Handler {
-	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil)
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, testConfig, nil)
+}
+
+func TestServer_analyticsConfig(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/analytics-config")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Verification > Generation") {
+		t.Errorf("config body missing patterns: %s", rec.Body.String())
+	}
 }
 
 func TestServer_analytics(t *testing.T) {
