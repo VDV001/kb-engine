@@ -12,6 +12,12 @@ var ErrInvalidEntry = errors.New("invalid entry")
 // ErrUnknownKind is returned when an entry's kind has no registered spec.
 var ErrUnknownKind = errors.New("unknown entry kind")
 
+// Entry kinds.
+const (
+	KindArticle  = "article"
+	KindCreation = "creation"
+)
+
 // kindSpec declares which optional aspects a kind requires. To add a new entry
 // kind, add one row to kindSpecs below — NewEntry needs no other change.
 type kindSpec struct {
@@ -23,8 +29,8 @@ var kindSpecs = map[string]kindSpec{
 	// An article always carries a read/unread triage state; a verdict appears
 	// only once read and decided. habr_id and url are optional — many real
 	// entries (bot-inbox links) have neither.
-	"article":  {requireReadState: true},
-	"creation": {requirePublishStage: true},
+	KindArticle:  {requireReadState: true},
+	KindCreation: {requirePublishStage: true},
 }
 
 // EntryParams is the input to NewEntry. Value-object fields must already be

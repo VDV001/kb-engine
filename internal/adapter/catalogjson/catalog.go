@@ -113,21 +113,21 @@ func mapStatus(raw string) (triage, error) {
 		if err != nil {
 			return triage{}, err
 		}
-		return triage{kind: "article", verdict: &v, readState: &rs}, nil
+		return triage{kind: domain.KindArticle, verdict: &v, readState: &rs}, nil
 	}
 	if _, ok := readStateValues[raw]; ok {
 		rs, err := domain.NewReadState(raw)
 		if err != nil {
 			return triage{}, err
 		}
-		return triage{kind: "article", readState: &rs}, nil
+		return triage{kind: domain.KindArticle, readState: &rs}, nil
 	}
 	if _, ok := publishStageValues[raw]; ok {
 		ps, err := domain.NewPublishStage(raw)
 		if err != nil {
 			return triage{}, err
 		}
-		return triage{kind: "creation", publishStage: &ps}, nil
+		return triage{kind: domain.KindCreation, publishStage: &ps}, nil
 	}
 	return triage{}, fmt.Errorf("%w: %q", ErrUnknownStatus, raw)
 }
