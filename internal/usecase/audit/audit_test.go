@@ -3,10 +3,55 @@ package audit_test
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 )
+
+func daysAgo(now time.Time, days int) *time.Time {
+	d := now.AddDate(0, 0, -days)
+	return &d
+}
+
+func TestAgeCandidates(t *testing.T) {
+	now := time.Date(2026, 6, 24, 0, 0, 0, 0, time.UTC)
+
+	cat, err := domain.NewCatalog([]domain.Entry{
+		// ~20 months old habr, active -> candidate
+		article(t, 1, articleParams{title: "Old habr", lifecycle: "active", verdict: "keep", dateCreated: daysAgo(now, 610)}),
+		// ~6 months old -> not yet
+		article(t, 2, articleParams{title: "Recent habr", lifecycle: "active", verdict: "keep", dateCreated: daysAgo(now, 180)}),
+		// old but non-habr URL -> not a habr candidate
+		article(t, 3, articleParams{title: "Old non-habr", lifecycle: "active", verdict: "keep", url: "https://example.com/x", dateCreated: daysAgo(now, 800)}),
+		// old habr but already outdated -> skip
+		article(t, 4, articleParams{title: "Old already-marked", lifecycle: "outdated", verdict: "keep", dateCreated: daysAgo(now, 800)}),
+		// old habr but no date -> can't assess
+		article(t, 5, articleParams{title: "No date", lifecycle: "active", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	svc := audit.NewService(fakeLoader{catalog: cat})
+	findings, err := svc.AgeCandidates(now)
+	if err != nil {
+		t.Fatalf("AgeCandidates: %v", err)
+	}
+
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+	if !got[1] {
+		t.Errorf("entry 1 (20mo old habr) should be an age candidate; got %v", got)
+	}
+	for _, notWanted := range []int{2, 3, 4, 5} {
+		if got[notWanted] {
+			t.Errorf("entry %d should NOT be an age candidate; got %v", notWanted, got)
+		}
+	}
+}
 
 // fakeLoader is a test double for the CatalogLoader port.
 type fakeLoader struct {
@@ -47,6 +92,7 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		Description:  p.description,
 		RelatedIDs:   p.relatedIDs,
 		SupersedesID: p.supersedesID,
+		DateCreated:  p.dateCreated,
 	}
 	if p.verdict != "" {
 		v, err := domain.NewVerdict(p.verdict)
@@ -70,6 +116,7 @@ type articleParams struct {
 	relatedIDs   []int
 	supersedesID *int
 	url          string
+	dateCreated  *time.Time
 }
 
 func TestOutdatedCandidates(t *testing.T) {
