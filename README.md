@@ -1,41 +1,81 @@
 # kb-engine
 
-Движок для персональной базы знаний (knowledge base): загрузка каталога записей,
-аудиты жизненного цикла и «стюардшип» (дубликаты, дрейф, свежесть), генерация
-отчётов. Data-agnostic — работает с любой KB, путь задаётся флагом, личные данные
-в репозиторий не входят.
+Data-agnostic knowledge-base engine in Go. It loads a catalog of entries
+(articles, notes, creations), runs lifecycle and stewardship audits, finds
+duplicates, ingests new entries, computes analytics, and serves an embedded
+React dashboard — all from a single static binary.
 
-> Переписан с нуля на Go по TDD + DDD + Clean Architecture. Предыстория и принципы —
-> в [docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
+The engine is data-agnostic: the catalog path is passed by flag, so it works
+with any knowledge base. No personal data lives in this repository.
 
-## Статус
+Built with TDD + DDD + Clean Architecture. Design notes:
+[docs/adr/0001-architecture.md](docs/adr/0001-architecture.md).
 
-Ранняя разработка (v0.1, вертикальный срез). Не готов к продакшену.
+## Features
 
-## Стек
+- **Catalog model** — entries with typed value objects (verdict, read-state,
+  publish-stage, lifecycle, category) and enforced invariants.
+- **Audits** — outdated candidates (keyword + skip-unavailable), canonical
+  candidates (by reference count), canonical health, supersession integrity,
+  age (Habr articles older than 18 months).
+- **Duplicate detection** — exact-URL and normalized-title grouping.
+- **Inbox ingestion** — map bot-collected articles into the catalog with
+  deduplication and a faithful, non-lossy writer.
+- **Analytics** — growth over time, category sizes, plus an optional curated
+  semantic layer (patterns / gaps / contradictions / manifesto).
+- **Changelog** — parse a Keep-a-Changelog `CHANGELOG.md` into structured JSON.
+- **Dashboard** — embedded React + Vite SPA (Overview, Entries, Analytics,
+  Audits, Duplicates, Archives, Summary), served live by the binary.
 
-Go 1.26 · стандартная библиотека · golangci-lint v2 · just · GitHub Actions CI.
-
-## Разработка
+## Quick start
 
 ```sh
-just             # список рецептов
-just test        # юнит-тесты
-just test-race   # с детектором гонок
+# Build (needs only Go; the dashboard is embedded via go:embed)
+just build            # or: go build -o bin/kbengine ./cmd/kbengine
+
+# Serve the dashboard against a catalog
+./bin/kbengine serve --catalog path/to/catalog.json
+# → open http://localhost:8080
+```
+
+## Commands
+
+```
+kbengine serve        --catalog X [--analytics-config Y] [--addr :8080]
+kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|age|all]
+kbengine dedup        --catalog X
+kbengine inbox        --catalog X --inbox DIR [--processed DIR]
+kbengine audit-tasks  --catalog X [--json] < tasklist
+kbengine changelog    --in CHANGELOG.md --out changelog.json
+```
+
+## Stack
+
+Go 1.26 · standard library · React + Vite + Tailwind · golangci-lint v2 · just ·
+GitHub Actions CI.
+
+## Development
+
+```sh
+just             # list recipes
+just test        # unit tests
+just test-race   # with the race detector
 just lint        # golangci-lint
-just cover       # покрытие
-just ci          # полный гейт (как в CI)
+just cover       # coverage summary
+just web         # rebuild the embedded frontend after UI changes
+just ci          # full gate (tidy + lint + race tests + coverage)
 ```
 
-## Архитектура (Clean Architecture)
+## Architecture (Clean Architecture)
 
 ```
-cmd/kbengine        CLI: флаги → usecase → вывод (без бизнес-логики)
-internal/domain     Entities/VO с инвариантами, доменные ошибки (без I/O)
-internal/usecase    сценарии + интерфейсы репозиториев (DIP)
-internal/adapter    JSON-каталог, рендер отчётов
+cmd/kbengine        CLI: flags → use case → output (no business logic)
+internal/domain     entities / value objects with invariants (no I/O)
+internal/usecase    scenarios + repository interfaces (DIP)
+internal/adapter    catalog JSON, HTTP API, parsers, report rendering
+frontend/           React dashboard, embedded into the binary via go:embed
 ```
 
-## Лицензия
+## License
 
-MIT. См. [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
