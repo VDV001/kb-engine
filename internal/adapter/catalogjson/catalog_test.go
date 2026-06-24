@@ -93,6 +93,41 @@ func TestDecode_habrIDAcceptsStringOrNumber(t *testing.T) {
 
 func intPtr(n int) *int { return &n }
 
+func TestDecode_metadataFields(t *testing.T) {
+	src := `{"entries":[{"id":1,"habr_id":1,"title":"T","url":"https://h/",` +
+		`"category":"golang","status":"keep","source":"bot-inbox","author":"A",` +
+		`"notes":"a note","supersedes_id":42,"related_ids":[2,"3"],` +
+		`"date_added":"2026-04-24","date_created":"2026-03-24"}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	e, _ := c.Find(1)
+	if e.Source() != "bot-inbox" || e.Author() != "A" || e.Notes() != "a note" {
+		t.Errorf("metadata: source=%q author=%q notes=%q", e.Source(), e.Author(), e.Notes())
+	}
+	if e.SupersedesID() == nil || *e.SupersedesID() != 42 {
+		t.Errorf("supersedesID = %v, want 42", e.SupersedesID())
+	}
+	if got := e.RelatedIDs(); len(got) != 2 || got[0] != 2 || got[1] != 3 {
+		t.Errorf("relatedIDs = %v, want [2 3] (mixed int/string)", got)
+	}
+	if e.DateAdded() == nil || e.DateAdded().Format("2006-01-02") != "2026-04-24" {
+		t.Errorf("dateAdded = %v, want 2026-04-24", e.DateAdded())
+	}
+	if e.DateCreated() == nil || e.DateCreated().Format("2006-01-02") != "2026-03-24" {
+		t.Errorf("dateCreated = %v, want 2026-03-24", e.DateCreated())
+	}
+}
+
+func TestDecode_invalidDate(t *testing.T) {
+	src := `{"entries":[{"id":1,"habr_id":1,"title":"T","url":"https://h/",` +
+		`"category":"golang","status":"keep","date_added":"not-a-date"}]}`
+	if _, err := catalogjson.Decode(strings.NewReader(src)); err == nil {
+		t.Fatal("expected error for invalid date")
+	}
+}
+
 func TestDecode_creation(t *testing.T) {
 	src := `{"entries":[{"id":2,"title":"My research",` +
 		`"category":"creations","status":"published","lifecycle":"active"}]}`
