@@ -14,6 +14,7 @@ linters:
     - unconvert
     - errorlint
     - bodyclose
+    - modernize
 
   settings:
     gocyclo:

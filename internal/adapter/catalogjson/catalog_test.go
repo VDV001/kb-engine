@@ -68,8 +68,8 @@ func TestDecode_habrIDAcceptsStringOrNumber(t *testing.T) {
 		raw  string // value of the habr_id field, verbatim JSON
 		want *int
 	}{
-		{"number", `1049782`, intPtr(1049782)},
-		{"numeric string", `"1049782"`, intPtr(1049782)},
+		{"number", `1049782`, new(1049782)},
+		{"numeric string", `"1049782"`, new(1049782)},
 		{"null", `null`, nil},
 	}
 	for _, tt := range tests {
@@ -90,8 +90,6 @@ func TestDecode_habrIDAcceptsStringOrNumber(t *testing.T) {
 		})
 	}
 }
-
-func intPtr(n int) *int { return &n }
 
 func TestDecode_metadataFields(t *testing.T) {
 	src := `{"entries":[{"id":1,"habr_id":1,"title":"T","url":"https://h/",` +
