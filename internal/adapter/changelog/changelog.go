@@ -44,7 +44,7 @@ var (
 // (newest first by convention). An empty Unreleased block is dropped.
 func Parse(text string) Document {
 	var p parser
-	for _, raw := range strings.Split(text, "\n") {
+	for raw := range strings.SplitSeq(text, "\n") {
 		p.feed(strings.TrimRight(raw, " \t\r"))
 	}
 	return assemble(p.releases)

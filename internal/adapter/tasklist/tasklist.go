@@ -26,7 +26,7 @@ var (
 // that do not match the "#N [status] subject" shape are ignored.
 func ParsePlain(text string) ([]taskaudit.Task, error) {
 	var tasks []taskaudit.Task
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		m := reLine.FindStringSubmatch(line)
 		if m == nil {
 			continue
