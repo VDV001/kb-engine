@@ -4,7 +4,7 @@
 # Pinned by digest (Dependabot's docker ecosystem keeps tag+digest current).
 # Runs on the native BUILDPLATFORM and cross-compiles to TARGET* so multi-arch
 # builds need no QEMU emulation (CGO is disabled).
-FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:5ae05f331ade3e10c2647be439a4f42dae789002f7d2e2112dcbf3d26bec25e9 AS build
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm@sha256:1ecb7edf62a0408027bd5729dfd6b1b8766e578e8df93995b225dfd0944eb651 AS build
 WORKDIR /src
 
 # The module has no third-party dependencies (stdlib only), so there is no
@@ -22,7 +22,7 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
 
 # --- runtime stage -----------------------------------------------------------
 # distroless/static: no shell, no package manager, runs as a non-root user.
-FROM gcr.io/distroless/static-debian12:nonroot@sha256:d093aa3e30dbadd3efe1310db061a14da60299baff8450a17fe0ccc514a16639
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:aef9602f8710ec12bde19d593fed1f76c708531bb7aba205110f1029786ead7b
 COPY --from=build /out/kbengine /kbengine
 EXPOSE 8080
 USER nonroot:nonroot
