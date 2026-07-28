@@ -27,7 +27,7 @@ func fixture(t *testing.T) string {
 	// Money format matching the real workbook: a thousands separator and a
 	// currency suffix. Reading formatted values would yield "1,600.00 ₽" here,
 	// which is exactly what broke the first import of the live ledger.
-	money, err := f.NewStyle(&excelize.Style{CustomNumFmt: strPtr(`#,##0.00" ₽"`)})
+	money, err := f.NewStyle(&excelize.Style{CustomNumFmt: new(`#,##0.00" ₽"`)})
 	must(err)
 
 	// --- Расходы: Дата | Категория | Подкатегория | Место | Описание | Сумма | Источник
@@ -71,8 +71,6 @@ func fixture(t *testing.T) string {
 	must(f.SaveAs(path))
 	return path
 }
-
-func strPtr(s string) *string { return &s }
 
 func clock() func() time.Time {
 	return func() time.Time { return time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC) }
