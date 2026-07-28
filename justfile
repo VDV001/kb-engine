@@ -49,9 +49,17 @@ docker-serve catalog tag="kbengine:dev":
 tidy:
     go mod tidy
 
-# Install git hooks (lefthook: gitleaks pre-commit + conventional commit-msg)
+# Install git hooks (lefthook: 18 gates — see scripts/gates/README.md)
 hooks:
     lefthook install
 
+# Architectural gates only (DDD/Clean, fast — no build required)
+gates:
+    ./scripts/gates/arch.sh
+
+# Everything pre-push runs, without pushing
+gates-full:
+    ./scripts/gates/push.sh
+
 # Full gate, same as CI
-ci: tidy lint test-race cover-gate
+ci: tidy lint test-race cover-gate gates
