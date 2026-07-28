@@ -31,10 +31,14 @@ pre-commit:
       glob: "*.go"
       run: ./scripts/gates/arch.sh {staged_files}
 
-    # ---- correctness ------------------------------------------------------
+    # ---- correctness (warn-only, deliberately) ----------------------------
+    # A TDD RED commit references symbols that do not exist yet, so vet fails
+    # by design at that point. Blocking here would force --no-verify, which is
+    # worse than a missing signal: pre-push runs vet as part of build+test+lint,
+    # where no half-written state legitimately remains.
     vet:
       glob: "*.go"
-      run: go vet ./...
+      run: go vet ./... || echo "⚠ go vet reported issues (expected on a TDD RED commit; pre-push blocks)"
 
     # ---- secrets ----------------------------------------------------------
     # --staged scans exactly what is about to be committed, unlike a full dir scan.

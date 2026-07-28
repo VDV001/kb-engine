@@ -25,7 +25,9 @@ if [ ${#staged[@]} -gt 0 ]; then
 
   ./scripts/gates/arch.sh "${staged[@]}"
 
-  go vet ./... || exit 1
+  # Warn-only on purpose: a TDD RED commit references symbols that do not exist
+  # yet, so vet fails by design there. pre-push blocks on build+test+lint.
+  go vet ./... || echo "⚠ go vet reported issues (expected on a TDD RED commit; pre-push blocks)"
 fi
 
 if command -v gitleaks >/dev/null 2>&1; then
