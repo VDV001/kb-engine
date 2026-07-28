@@ -119,6 +119,37 @@ func TestNewTransaction_categoryIsOpenButNormalized(t *testing.T) {
 	}
 }
 
+// A transaction read from a spreadsheet carries a positional id ("expense-r42")
+// that stops being meaningful the moment a row is inserted above it. On first
+// import it is given a stable one, and everything else about the transaction
+// must survive the swap untouched.
+func TestTransaction_WithID(t *testing.T) {
+	tx, err := domain.NewTransaction(txParams())
+	if err != nil {
+		t.Fatalf("NewTransaction: %v", err)
+	}
+
+	renamed, err := tx.WithID("  01JQ0000000000000000000001  ")
+	if err != nil {
+		t.Fatalf("WithID: %v", err)
+	}
+	if got := renamed.ID(); got != "01JQ0000000000000000000001" {
+		t.Errorf("ID = %q, want the trimmed new id", got)
+	}
+	if renamed.Category() != tx.Category() || renamed.Amount() != tx.Amount() || !renamed.Date().Equal(tx.Date()) {
+		t.Error("WithID changed a field other than the id")
+	}
+	// The receiver is a value: the original must still carry its own id, or two
+	// records built from one row would silently share an identity.
+	if tx.ID() != txParams().ID {
+		t.Errorf("original ID = %q, want it unchanged", tx.ID())
+	}
+
+	if _, err := tx.WithID("   "); !errors.Is(err, domain.ErrInvalidTransaction) {
+		t.Errorf("WithID(blank) error = %v, want ErrInvalidTransaction", err)
+	}
+}
+
 // The real ledger records refunds as negative expenses ("Продажа игры
 // (возврат)", −5500, twice in April). Rejecting them would make the engine
 // refuse the user's actual history, so a negative expense is valid and must
