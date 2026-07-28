@@ -51,12 +51,12 @@ type line struct {
 	UpdatedAt   string `json:"updated_at"`
 }
 
-// Load reads every record from path.
+// Load reads every record from path, validating each against the given clock.
 //
 // A missing file is an error, not an empty ledger: reporting zero transactions
 // because the file was not where it was expected is how a balance silently
 // becomes wrong.
-func Load(path string) ([]finance.Record, error) {
+func Load(path string, now func() time.Time) ([]finance.Record, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("open ledger: %w", err)
@@ -73,7 +73,7 @@ func Load(path string) ([]finance.Record, error) {
 		if len(raw) == 0 {
 			continue
 		}
-		rec, err := decode(raw)
+		rec, err := decode(raw, now)
 		if err != nil {
 			return nil, fmt.Errorf("%s line %d: %w", filepath.Base(path), n, err)
 		}
@@ -93,7 +93,7 @@ func Load(path string) ([]finance.Record, error) {
 // decode turns one line into a validated record. Every failure carries the
 // error of the layer that rejected it, so the caller can tell a typo in the
 // file from a violated invariant.
-func decode(raw []byte) (finance.Record, error) {
+func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	// A field the struct does not know is a typo in a hand-edited file far more
 	// often than it is a record from the future. Refusing beats importing a row
@@ -118,9 +118,11 @@ func decode(raw []byte) (finance.Record, error) {
 		return finance.Record{}, err
 	}
 
-	// The clock is the record's own timestamp, not the wall clock: re-reading a
-	// ledger must not start rejecting rows just because the machine's date moved,
-	// and a row written yesterday was already validated against yesterday.
+	// The clock belongs to the load, not to the record. Validating a row against
+	// its own updated_at looks reproducible and is wrong: an entry made at 02:43
+	// east of UTC is dated the 29th and stamped 21:43Z on the 28th, so it would be
+	// a future entry forever and could never be read back. Time only ever makes a
+	// date less future, so a real clock cannot reject what was accepted on write.
 	tx, err := domain.NewTransaction(domain.TransactionParams{
 		ID:          l.ID,
 		Kind:        l.Kind,
@@ -131,7 +133,7 @@ func decode(raw []byte) (finance.Record, error) {
 		Place:       l.Place,
 		Description: l.Description,
 		Source:      l.Source,
-		Now:         func() time.Time { return updatedAt },
+		Now:         now,
 	})
 	if err != nil {
 		return finance.Record{}, err

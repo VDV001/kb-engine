@@ -150,7 +150,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	recs, err := financejsonl.Load(*ledgerPath)
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
@@ -196,7 +196,7 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	recs, err := financejsonl.Load(*ledgerPath)
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin list: %v\n", err)
 		return 1
@@ -227,7 +227,7 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	recs, err := financejsonl.Load(*ledgerPath)
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin report: %v\n", err)
 		return 1
