@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -204,7 +205,122 @@ func TestRun_fin_requiresLedger(t *testing.T) {
 
 func TestRun_fin_unknownSubcommand(t *testing.T) {
 	var out, errb bytes.Buffer
-	if code := run([]string{"fin", "sync"}, &out, &errb); code != 2 {
-		t.Errorf("exit = %d, want 2 for a subcommand that does not exist yet", code)
+	if code := run([]string{"fin", "reconcile"}, &out, &errb); code != 2 {
+		t.Errorf("exit = %d, want 2 for a subcommand that does not exist", code)
 	}
+}
+
+// --init is what pairs the two files: every row gets an id, the workbook
+// learns it, and the ledger is written from the same pass. Without that single
+// pass the two sides have no way to recognize each other's rows.
+func TestRun_finSyncInit(t *testing.T) {
+	xlsx := workbook(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin sync --init exit = %d, stderr = %s", code, errb.String())
+	}
+
+	raw, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(lines) != 3 {
+		t.Fatalf("ledger has %d lines, want 3:\n%s", len(lines), raw)
+	}
+
+	// The same ids on both sides is the entire point.
+	ledgerIDs := map[string]bool{}
+	for _, line := range lines {
+		var rec struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal([]byte(line), &rec); err != nil {
+			t.Fatalf("decode %q: %v", line, err)
+		}
+		if len(rec.ID) != 26 {
+			t.Errorf("id %q is not a ULID", rec.ID)
+		}
+		ledgerIDs[rec.ID] = true
+	}
+	for _, ref := range []struct{ sheet, cell string }{
+		{"Расходы", "H3"}, {"Расходы", "H4"}, {"Доходы", "E3"},
+	} {
+		got := sheetCell(t, xlsx, ref.sheet, ref.cell)
+		if !ledgerIDs[got] {
+			t.Errorf("%s!%s = %q, which is not one of the ledger ids", ref.sheet, ref.cell, got)
+		}
+	}
+}
+
+// Re-running after the ledger is removed must not mint new ids: the workbook
+// already carries them, and reassigning would orphan every reference to the
+// old ones.
+func TestRun_finSyncInit_reusesIDsAlreadyInTheWorkbook(t *testing.T) {
+	xlsx := workbook(t)
+	dir := t.TempDir()
+	ledger := filepath.Join(dir, "transactions.jsonl")
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("first init exit = %d, stderr = %s", code, errb.String())
+	}
+	first := sheetCell(t, xlsx, "Расходы", "H3")
+
+	if err := os.Remove(ledger); err != nil {
+		t.Fatalf("remove ledger: %v", err)
+	}
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("second init exit = %d, stderr = %s", code, errb.String())
+	}
+	if second := sheetCell(t, xlsx, "Расходы", "H3"); second != first {
+		t.Errorf("id changed between runs: %q → %q", first, second)
+	}
+}
+
+// An existing ledger may hold entries made with fin add that the workbook has
+// never seen. Re-pairing would silently drop them, so init refuses and leaves
+// the decision to a person.
+func TestRun_finSyncInit_refusesAnExistingLedger(t *testing.T) {
+	xlsx := workbook(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, xlsx, ledger)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code == 0 {
+		t.Error("init over an existing ledger should fail")
+	}
+	if !strings.Contains(errb.String(), "already exists") {
+		t.Errorf("error should say the ledger already exists, got: %s", errb.String())
+	}
+}
+
+// Two-way sync is the next piece of work. Until it exists, saying so beats
+// pretending the flag is optional.
+func TestRun_finSync_withoutInitIsNotImplemented(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--ledger", "x", "--from", "y"}, &out, &errb); code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "--init") {
+		t.Errorf("error should point at --init, got: %s", errb.String())
+	}
+}
+
+func sheetCell(t *testing.T, path, sheet, cell string) string {
+	t.Helper()
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open workbook: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+	v, err := f.GetCellValue(sheet, cell)
+	if err != nil {
+		t.Fatalf("read %s!%s: %v", sheet, cell, err)
+	}
+	return v
 }
