@@ -11,9 +11,9 @@ import (
 // invariant.
 var ErrInvalidTransaction = errors.New("invalid transaction")
 
-// Transaction kinds. Expenses are stored as positive amounts (that is how the
-// ledger sheet keeps them) and only become negative when summed — see
-// SignedAmount.
+// Transaction kinds. The sheet stores expenses as positive amounts and flips
+// the sign only when summing (see SignedAmount); a negative expense is a
+// refund and therefore adds to the balance.
 const (
 	KindExpense = "expense"
 	KindIncome  = "income"
@@ -69,10 +69,12 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 	if p.Date.IsZero() {
 		return Transaction{}, fmt.Errorf("%w: date is required", ErrInvalidTransaction)
 	}
-	if p.Amount.Kopecks() <= 0 {
-		// Sign is carried by the kind, not by the amount: a negative expense and
-		// a positive expense would otherwise mean the same thing stored twice.
-		return Transaction{}, fmt.Errorf("%w: amount must be positive, got %s", ErrInvalidTransaction, p.Amount)
+	if p.Amount.IsZero() {
+		// Zero is the one amount that carries no information — a blank row, not a
+		// transaction. Negative amounts are legitimate: the ledger records refunds
+		// as negative expenses ("Продажа игры (возврат)"), and SignedAmount turns
+		// those back into money returning to the balance.
+		return Transaction{}, fmt.Errorf("%w: amount must not be zero", ErrInvalidTransaction)
 	}
 
 	now := p.Now
@@ -113,7 +115,8 @@ func (t Transaction) IsExpense() bool { return t.kind == KindExpense }
 // Date returns the date the transaction happened.
 func (t Transaction) Date() time.Time { return t.date }
 
-// Amount returns the magnitude, always positive.
+// Amount returns the amount as recorded, before the kind's sign is applied.
+// Negative for a refund.
 func (t Transaction) Amount() Money { return t.amount }
 
 // SignedAmount returns the amount as it contributes to a balance: negative for

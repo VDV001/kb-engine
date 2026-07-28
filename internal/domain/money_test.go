@@ -80,3 +80,29 @@ func TestMoney_String(t *testing.T) {
 		}
 	}
 }
+
+// Spreadsheets store amounts as binary floats, so a cell holding 89.99 reads
+// back as "89.98999999999999". That is the storage layer's noise, not a user
+// typing more precision than a kopeck — it must round to the nearest kopeck
+// rather than be rejected the way ParseMoney rejects "10.005".
+func TestMoneyFromFloat(t *testing.T) {
+	tests := []struct {
+		name string
+		in   float64
+		want int64
+	}{
+		{"float artifact below", 89.98999999999999, 8999},
+		{"float artifact above", 202.45000000000002, 20245},
+		{"exact", 500, 50000},
+		{"half kopeck rounds away from zero", 0.125, 13},
+		{"negative artifact", -5500.000000001, -550000},
+		{"zero", 0, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := domain.MoneyFromFloat(tt.in); got.Kopecks() != tt.want {
+				t.Errorf("MoneyFromFloat(%v) = %d kopecks, want %d", tt.in, got.Kopecks(), tt.want)
+			}
+		})
+	}
+}

@@ -68,7 +68,6 @@ func TestNewTransaction_invariants(t *testing.T) {
 		{"unknown kind", func(p *domain.TransactionParams) { p.Kind = "refund" }, domain.ErrInvalidTransaction},
 		{"zero date", func(p *domain.TransactionParams) { p.Date = time.Time{} }, domain.ErrInvalidTransaction},
 		{"zero amount", func(p *domain.TransactionParams) { p.Amount = domain.NewMoney(0) }, domain.ErrInvalidTransaction},
-		{"negative amount", func(p *domain.TransactionParams) { p.Amount = domain.NewMoney(-1) }, domain.ErrInvalidTransaction},
 		{"expense without category", func(p *domain.TransactionParams) { p.Category = "" }, domain.ErrInvalidTransaction},
 		{
 			"date in the future",
@@ -117,5 +116,23 @@ func TestNewTransaction_categoryIsOpenButNormalized(t *testing.T) {
 	}
 	if tx.Category() != "Долги" {
 		t.Errorf("Category = %q, want %q (trimmed)", tx.Category(), "Долги")
+	}
+}
+
+// The real ledger records refunds as negative expenses ("Продажа игры
+// (возврат)", −5500, twice in April). Rejecting them would make the engine
+// refuse the user's actual history, so a negative expense is valid and must
+// increase the balance — the sign flips exactly once, in SignedAmount.
+func TestNewTransaction_refundIsANegativeExpense(t *testing.T) {
+	p := txParams()
+	p.Amount = domain.NewMoney(-550000)
+	p.Description = "Продажа игры (возврат)"
+
+	tx, err := domain.NewTransaction(p)
+	if err != nil {
+		t.Fatalf("a refund must be accepted: %v", err)
+	}
+	if got := tx.SignedAmount().Kopecks(); got != 550000 {
+		t.Errorf("refund SignedAmount = %d kopecks, want +550000 (money came back)", got)
 	}
 }

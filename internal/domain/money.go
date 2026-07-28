@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 )
@@ -23,6 +24,17 @@ type Money struct {
 
 // NewMoney builds an amount from an exact number of kopecks.
 func NewMoney(kopecks int64) Money { return Money{kopecks: kopecks} }
+
+// MoneyFromFloat converts a spreadsheet amount to exact kopecks.
+//
+// Separate from ParseMoney on purpose. ParseMoney reads text a person typed and
+// refuses anything finer than a kopeck, because "10.005" is a mistake worth
+// surfacing. A float comes from storage, where 89.99 is genuinely held as
+// 89.98999999999999 — that is representation noise, not intent, so it rounds to
+// the nearest kopeck (halves away from zero) instead of being rejected.
+func MoneyFromFloat(f float64) Money {
+	return Money{kopecks: int64(math.Round(f * 100))}
+}
 
 // Kopecks returns the amount as a whole number of kopecks.
 func (m Money) Kopecks() int64 { return m.kopecks }
