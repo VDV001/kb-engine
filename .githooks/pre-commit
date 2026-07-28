@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Native git hook — works without lefthook. Mirrors the pre-commit section of
+# lefthook.yml so the gates apply whether or not lefthook is installed.
+# Activation: git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+# Prefer lefthook when present: it runs the same gates in parallel.
+if command -v lefthook >/dev/null 2>&1; then
+  exec lefthook run pre-commit
+fi
+
+staged=()
+while IFS= read -r line; do
+  [ -n "$line" ] && staged+=("$line")
+done < <(git diff --cached --name-only --diff-filter=ACMR | grep '\.go$' || true)
+
+if [ ${#staged[@]} -gt 0 ]; then
+  unformatted="$(gofmt -l "${staged[@]}" 2>/dev/null || true)"
+  if [ -n "$unformatted" ]; then
+    echo "✘ gofmt: not formatted:"; echo "$unformatted" | sed 's/^/    /'
+    echo "  fix: gofmt -w $unformatted"
+    exit 1
+  fi
+
+  ./scripts/gates/arch.sh "${staged[@]}"
+
+  go vet ./... || exit 1
+fi
+
+if command -v gitleaks >/dev/null 2>&1; then
+  gitleaks protect --staged --no-banner --redact --exit-code 1 || exit 1
+else
+  echo "⚠ gitleaks not installed — skipping (brew install gitleaks)"
+fi
+
+echo "✓ pre-commit gates passed"
