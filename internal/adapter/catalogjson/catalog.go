@@ -137,6 +137,18 @@ func mapStatus(raw string) (triage, error) {
 		}
 		return triage{kind: domain.KindCreation, publishStage: &ps}, nil
 	}
+	// A lifecycle value echoed into status (id=1312: status="active" next to
+	// lifecycle="active") is storage noise, not triage. The entry was looked at,
+	// but no verdict was recorded — decode it as read-without-verdict. The domain
+	// constructor is the membership test on purpose: duplicating the lifecycle
+	// list here would let the two drift apart.
+	if _, err := domain.NewLifecycle(raw); err == nil {
+		rs, err := domain.NewReadState("read")
+		if err != nil {
+			return triage{}, err
+		}
+		return triage{kind: domain.KindArticle, readState: &rs}, nil
+	}
 	return triage{}, fmt.Errorf("%w: %q", ErrUnknownStatus, raw)
 }
 
