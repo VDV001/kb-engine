@@ -33,6 +33,16 @@ func TestDecode_articleStatusMapping(t *testing.T) {
 		{"skip-unavailable", "SKIP-unavailable", "skip-unavailable", "read"},
 		{"read without verdict", "read", "", "read"},
 		{"unread without verdict", "unread", "", "unread"},
+		// Some legacy entries echo the lifecycle into the status field: catalog
+		// id=1312 stores status="active" next to lifecycle="active". That is
+		// storage noise, not triage — the entry was looked at, but no verdict was
+		// ever recorded. Decode it as read-without-verdict instead of failing the
+		// whole catalog on one malformed field.
+		{"lifecycle echo: active", "active", "", "read"},
+		{"lifecycle echo: canonical", "canonical", "", "read"},
+		{"lifecycle echo: outdated", "outdated", "", "read"},
+		{"lifecycle echo: superseded", "superseded", "", "read"},
+		{"lifecycle echo: dead-end", "dead-end", "", "read"},
 	}
 
 	for _, tt := range tests {
