@@ -216,10 +216,12 @@ func TestLoad_failsClosed(t *testing.T) {
 // The line number is the whole point of the error: a 580-line ledger with one
 // bad row is fixed in seconds if the message says which row.
 func TestLoad_reportsTheOffendingLine(t *testing.T) {
-	good := `{"id":"01A","kind":"expense","date":"2026-03-29","amount":"1.00","category":"Еда","rev":1,"updated_at":"2026-07-29T02:00:00Z"}`
+	good := func(id string) string {
+		return `{"id":"` + id + `","kind":"expense","date":"2026-03-29","amount":"1.00","category":"Еда","rev":1,"updated_at":"2026-07-29T02:00:00Z"}`
+	}
 	path := filepath.Join(t.TempDir(), "transactions.jsonl")
-	content := good + "\n" + good + "\n" + `{"id":` + "\n"
-	if err := os.WriteFile(path, []byte(strings.ReplaceAll(content, `"01A"`, `"01A"`)), 0o600); err != nil {
+	content := good("01A") + "\n" + good("01B") + "\n" + `{"id":` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
 	_, err := financejsonl.Load(path)
