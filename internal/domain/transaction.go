@@ -106,6 +106,21 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 // ID returns the stable identifier used to match rows across storage formats.
 func (t Transaction) ID() string { return t.id }
 
+// WithID returns a copy carrying a different identity, leaving every other
+// field alone. Used on first import, where a row read out of the spreadsheet
+// arrives with a positional id and is given a stable one.
+//
+// The receiver is a value on purpose: the original keeps its own id, so a
+// caller cannot accidentally end up with two records sharing an identity.
+func (t Transaction) WithID(id string) (Transaction, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Transaction{}, fmt.Errorf("%w: id is required", ErrInvalidTransaction)
+	}
+	t.id = id
+	return t, nil
+}
+
 // Kind reports whether this is an expense or an income.
 func (t Transaction) Kind() string { return t.kind }
 
