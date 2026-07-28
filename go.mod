@@ -2,7 +2,10 @@ module github.com/daniil/kb-engine
 
 go 1.26.3
 
-require github.com/xuri/excelize/v2 v2.11.0
+require (
+	github.com/oklog/ulid/v2 v2.1.1
+	github.com/xuri/excelize/v2 v2.11.0
+)
 
 require (
 	github.com/richardlehane/mscfb v1.0.7 // indirect
