@@ -275,3 +275,11 @@ func chooseIDColumn(rows [][]string) int {
 	}
 	return maxCol + 1
 }
+
+// IsPositionalID reports whether an id is the sheet-and-row placeholder Read
+// hands out for a sheet that has no id column yet. The format is this package's
+// invention, so the test for it belongs here rather than at the call site.
+func IsPositionalID(id string) bool {
+	_, _, err := parsePositionalID(id)
+	return err == nil
+}

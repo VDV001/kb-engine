@@ -245,12 +245,15 @@ func TestRun_finSyncInit(t *testing.T) {
 		}
 		ledgerIDs[rec.ID] = true
 	}
-	for _, ref := range []struct{ sheet, cell string }{
-		{"Расходы", "H3"}, {"Расходы", "H4"}, {"Доходы", "E3"},
+	for _, ref := range []struct {
+		sheet string
+		row   int
+	}{
+		{"Расходы", 3}, {"Расходы", 4}, {"Доходы", 3},
 	} {
-		got := sheetCell(t, xlsx, ref.sheet, ref.cell)
+		got := storedID(t, xlsx, ref.sheet, ref.row)
 		if !ledgerIDs[got] {
-			t.Errorf("%s!%s = %q, which is not one of the ledger ids", ref.sheet, ref.cell, got)
+			t.Errorf("%s row %d id = %q, which is not one of the ledger ids", ref.sheet, ref.row, got)
 		}
 	}
 }
@@ -267,7 +270,7 @@ func TestRun_finSyncInit_reusesIDsAlreadyInTheWorkbook(t *testing.T) {
 	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
 		t.Fatalf("first init exit = %d, stderr = %s", code, errb.String())
 	}
-	first := sheetCell(t, xlsx, "Расходы", "H3")
+	first := storedID(t, xlsx, "Расходы", 3)
 
 	if err := os.Remove(ledger); err != nil {
 		t.Fatalf("remove ledger: %v", err)
@@ -277,7 +280,7 @@ func TestRun_finSyncInit_reusesIDsAlreadyInTheWorkbook(t *testing.T) {
 	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
 		t.Fatalf("second init exit = %d, stderr = %s", code, errb.String())
 	}
-	if second := sheetCell(t, xlsx, "Расходы", "H3"); second != first {
+	if second := storedID(t, xlsx, "Расходы", 3); second != first {
 		t.Errorf("id changed between runs: %q → %q", first, second)
 	}
 }
@@ -311,13 +314,38 @@ func TestRun_finSync_withoutInitIsNotImplemented(t *testing.T) {
 	}
 }
 
-func sheetCell(t *testing.T, path, sheet, cell string) string {
+// storedID reads the id of a row by locating the column that carries the "id"
+// header, rather than by a hardcoded letter. Which column that is depends on
+// how wide the sheet already is, and pinning a coordinate would test the
+// fixture instead of the behaviour.
+func storedID(t *testing.T, path, sheet string, row int) string {
 	t.Helper()
 	f, err := excelize.OpenFile(path)
 	if err != nil {
 		t.Fatalf("open workbook: %v", err)
 	}
 	defer func() { _ = f.Close() }()
+
+	rows, err := f.GetRows(sheet)
+	if err != nil {
+		t.Fatalf("read sheet %s: %v", sheet, err)
+	}
+	if len(rows) < 2 {
+		t.Fatalf("sheet %s has no header row", sheet)
+	}
+	col := 0
+	for i, v := range rows[1] {
+		if strings.TrimSpace(v) == "id" {
+			col = i + 1
+		}
+	}
+	if col == 0 {
+		t.Fatalf("sheet %s has no id column", sheet)
+	}
+	cell, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		t.Fatalf("cell name: %v", err)
+	}
 	v, err := f.GetCellValue(sheet, cell)
 	if err != nil {
 		t.Fatalf("read %s!%s: %v", sheet, cell, err)
