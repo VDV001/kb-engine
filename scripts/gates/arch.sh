@@ -38,6 +38,18 @@ fi
 
 fail=0
 
+# code_of <file> — strips line comments before matching, so a comment that
+# *mentions* a banned construct (explaining why it is avoided) does not trip the
+# gate. Line numbers are preserved so reports stay accurate.
+#
+# ponytail: sed, not a Go AST parser. Ceiling — a // sequence inside a string
+# literal (a URL) loses the tail of that line for matching purposes; none of the
+# five gates matches on URLs, so the blind spot is inert. Upgrade path if that
+# ever bites: a tiny go/ast-based checker invoked from here.
+code_of() {
+  sed 's|//.*||' "$1"
+}
+
 # report <gate> <file> <hits>
 report() {
   echo "✘ $1"
@@ -53,7 +65,7 @@ for f in "${files[@]}"; do
   # &domain.X{...} outside the domain package bypasses NewXxx(...) and its
   # invariant validation. Inside the package it is legitimate.
   if [ "$in_domain" -eq 0 ]; then
-    if hits="$(grep -nE '&domain\.[A-Z][A-Za-z0-9]*\{' "$f" || true)" && [ -n "$hits" ]; then
+    if hits="$(code_of "$f" | grep -nE '&domain\.[A-Z][A-Za-z0-9]*\{' || true)" && [ -n "$hits" ]; then
       report "DDD: domain struct built outside domain/ — use NewXxx(...)" "$f" "$hits"
     fi
   fi
@@ -62,7 +74,7 @@ for f in "${files[@]}"; do
   # Repository/Store ports belong to the consumer (usecase/), not the domain.
   # DIP by the book: the inner layer declares nothing about persistence.
   if [ "$in_domain" -eq 1 ] && [ "$is_test" -eq 0 ]; then
-    if hits="$(grep -nE 'type +[A-Za-z0-9]*(Repository|Repo|Store) +interface' "$f" || true)" && [ -n "$hits" ]; then
+    if hits="$(code_of "$f" | grep -nE 'type +[A-Za-z0-9]*(Repository|Repo|Store) +interface' || true)" && [ -n "$hits" ]; then
       report "CA/DIP: persistence port declared in domain/ — move it to usecase/" "$f" "$hits"
     fi
   fi
@@ -70,7 +82,7 @@ for f in "${files[@]}"; do
   # ---------------------------------------------------------------- gate 3
   # The dependency rule: domain imports nothing from the outer layers.
   if [ "$in_domain" -eq 1 ]; then
-    if hits="$(grep -nE '"github\.com/daniil/kb-engine/internal/(adapter|usecase)' "$f" || true)" && [ -n "$hits" ]; then
+    if hits="$(code_of "$f" | grep -nE '"github\.com/daniil/kb-engine/internal/(adapter|usecase)' || true)" && [ -n "$hits" ]; then
       report "CA: domain/ imports an outer layer — the dependency rule points inward only" "$f" "$hits"
     fi
   fi
@@ -80,7 +92,7 @@ for f in "${files[@]}"; do
   # passed in by the caller — otherwise the same entry yields different results
   # on two runs and nothing about it is reproducible or testable.
   if [ "$in_domain" -eq 1 ] && [ "$is_test" -eq 0 ]; then
-    if hits="$(grep -nE '\b(time\.Now|rand\.|uuid\.New)' "$f" || true)" && [ -n "$hits" ]; then
+    if hits="$(code_of "$f" | grep -nE '\b(time\.Now|rand\.|uuid\.New)' || true)" && [ -n "$hits" ]; then
       report "Facet #8: non-determinism in domain/ — pass the clock/id in as a parameter" "$f" "$hits"
     fi
   fi
@@ -91,7 +103,7 @@ for f in "${files[@]}"; do
   case "$f" in
     internal/*)
       if [ "$is_test" -eq 0 ]; then
-        if hits="$(grep -nE '\bfmt\.Print(ln|f)?\(' "$f" || true)" && [ -n "$hits" ]; then
+        if hits="$(code_of "$f" | grep -nE '\bfmt\.Print(ln|f)?\(' || true)" && [ -n "$hits" ]; then
           report "hygiene: fmt.Print* in internal/ — return an error or use the logger" "$f" "$hits"
         fi
       fi
