@@ -13,7 +13,12 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
-var writtenAt = time.Date(2026, 7, 29, 2, 0, 0, 0, time.UTC)
+var (
+	writtenAt = time.Date(2026, 7, 29, 2, 0, 0, 0, time.UTC)
+	// loadedAt is the clock a load is checked against. Later than writtenAt, the
+	// way a real load always is.
+	loadedAt = func() time.Time { return time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC) }
+)
 
 func record(t *testing.T, id string, p domain.TransactionParams) finance.Record {
 	t.Helper()
@@ -57,7 +62,7 @@ func TestSaveLoad_roundTripsEveryField(t *testing.T) {
 	if err := financejsonl.Save(path, want); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	got, err := financejsonl.Load(path)
+	got, err := financejsonl.Load(path, loadedAt)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -140,7 +145,7 @@ func TestSave_replacesAtomically(t *testing.T) {
 		t.Fatalf("second Save: %v", err)
 	}
 
-	got, err := financejsonl.Load(path)
+	got, err := financejsonl.Load(path, loadedAt)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -157,6 +162,34 @@ func TestSave_replacesAtomically(t *testing.T) {
 			names = append(names, e.Name())
 		}
 		t.Errorf("temp files left behind: %v", names)
+	}
+}
+
+// A row is validated against the clock at load time, not against its own
+// updated_at.
+//
+// Found by adding an entry at 02:43 local time east of UTC: the row was dated
+// the 29th and stamped 2026-07-28T21:43Z, so checking it against its own
+// timestamp made it a future entry that could never be read back. Time only
+// ever makes a date less future, so a real clock cannot reject a row that was
+// accepted when it was written.
+func TestLoad_validatesAgainstTheClockNotTheRecord(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "transactions.jsonl")
+	content := `{"id":"01A","kind":"expense","date":"2026-07-29","amount":"1500.50","category":"Еда","rev":1,"updated_at":"2026-07-28T21:43:21Z"}` + "\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if _, err := financejsonl.Load(path, loadedAt); err != nil {
+		t.Errorf("Load: %v — a row written today must survive being read back", err)
+	}
+
+	// It still fails closed on a date that is genuinely ahead of the clock.
+	ahead := `{"id":"01B","kind":"expense","date":"2026-07-30","amount":"1.00","category":"Еда","rev":1,"updated_at":"2026-07-29T12:00:00Z"}` + "\n"
+	if err := os.WriteFile(path, []byte(ahead), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+	if _, err := financejsonl.Load(path, loadedAt); !errors.Is(err, domain.ErrInvalidTransaction) {
+		t.Errorf("Load() error = %v, want a tomorrow-dated row rejected", err)
 	}
 }
 
@@ -206,7 +239,7 @@ func TestLoad_failsClosed(t *testing.T) {
 			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
 				t.Fatalf("write fixture: %v", err)
 			}
-			if _, err := financejsonl.Load(path); !errors.Is(err, tt.want) {
+			if _, err := financejsonl.Load(path, loadedAt); !errors.Is(err, tt.want) {
 				t.Errorf("Load() error = %v, want %v", err, tt.want)
 			}
 		})
@@ -224,7 +257,7 @@ func TestLoad_reportsTheOffendingLine(t *testing.T) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	_, err := financejsonl.Load(path)
+	_, err := financejsonl.Load(path, loadedAt)
 	if err == nil || !strings.Contains(err.Error(), "line 3") {
 		t.Errorf("Load() error = %v, want it to name line 3", err)
 	}
@@ -234,7 +267,7 @@ func TestLoad_reportsTheOffendingLine(t *testing.T) {
 // because the file was not where it was expected is exactly the failure mode
 // that overwrote the finances on 2026-07-28.
 func TestLoad_missingFileIsAnError(t *testing.T) {
-	_, err := financejsonl.Load(filepath.Join(t.TempDir(), "nope.jsonl"))
+	_, err := financejsonl.Load(filepath.Join(t.TempDir(), "nope.jsonl"), loadedAt)
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("Load() error = %v, want it to wrap os.ErrNotExist", err)
 	}
@@ -246,7 +279,7 @@ func TestLoad_ignoresBlankLines(t *testing.T) {
 	if err := os.WriteFile(path, []byte("\n"+good+"\n\n"), 0o600); err != nil {
 		t.Fatalf("write fixture: %v", err)
 	}
-	got, err := financejsonl.Load(path)
+	got, err := financejsonl.Load(path, loadedAt)
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
