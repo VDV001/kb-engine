@@ -9,7 +9,7 @@ header="$(head -n1 "$msg_file")"
 # Assistant / co-author trailers are banned on EVERY commit, checked before the
 # merge/revert skip so no commit type slips past. Project rule, same as
 # deal-sense and floq: authorship of a commit is a person, not a tool.
-if grep -qiE 'co-authored-by:[[:space:]]*(claude|anthropic|.*noreply@anthropic)|generated with \[?claude|🤖[[:space:]]*generated' "$msg_file"; then
+if grep -qiE '(co-authored-by|assisted-by|generated-by|authored-by):[[:space:]]*(claude|anthropic|.*noreply@anthropic)|generated with \[?claude|🤖[[:space:]]*generated' "$msg_file"; then
   {
     echo "✖ commit message carries an assistant trailer"
     echo "  (Co-Authored-By: Claude / Generated with Claude Code)"
