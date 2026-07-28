@@ -57,6 +57,18 @@ type TransactionParams struct {
 	Now         func() time.Time
 }
 
+// Day reduces an instant to the calendar day it falls on, in its own location,
+// expressed as midnight UTC.
+//
+// The ledger records days, not moments, so "in the future" has to be a question
+// about days. Comparing a day against an instant mixes units, and the mistake
+// is invisible at UTC: at 02:41 in Yekaterinburg it is already the 29th while
+// UTC still reads the 28th, and an entry made then is not a future entry.
+func Day(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
+}
+
 // NewTransaction validates the parameters and returns a Transaction.
 func NewTransaction(p TransactionParams) (Transaction, error) {
 	id := strings.TrimSpace(p.ID)
@@ -81,7 +93,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 	if now == nil {
 		return Transaction{}, fmt.Errorf("%w: clock is required", ErrInvalidTransaction)
 	}
-	if p.Date.After(now()) {
+	if Day(p.Date).After(Day(now())) {
 		return Transaction{}, fmt.Errorf("%w: date %s is in the future", ErrInvalidTransaction, p.Date.Format(time.DateOnly))
 	}
 

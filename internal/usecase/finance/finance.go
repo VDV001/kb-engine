@@ -107,8 +107,7 @@ type AddParams struct {
 func Add(p AddParams, newID func() string, now func() time.Time) (Record, error) {
 	date := p.Date
 	if date.IsZero() {
-		t := now()
-		date = time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+		date = domain.Day(now())
 	}
 
 	tx, err := domain.NewTransaction(domain.TransactionParams{
