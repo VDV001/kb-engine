@@ -1,15 +1,55 @@
 # Git hooks managed by lefthook. One-time setup: `just hooks` (needs lefthook
 # and gitleaks on PATH). Skip a hook ad hoc with e.g. `LEFTHOOK=0 git commit`.
+#
+# Split by cost, not by importance:
+#   pre-commit — must stay fast, or people reach for --no-verify and the whole
+#                system is worth nothing. Also must let a TDD RED commit land.
+#   pre-push   — last point before work becomes shared; hard thresholds live here.
+#
+# Every gate is verified in BOTH directions (passes clean code, fails a planted
+# violation) — see scripts/gates/README.md. A gate never tested against a real
+# violation is a rule living on someone's honest word.
+
 pre-commit:
   parallel: true
   commands:
+    # ---- formatting -------------------------------------------------------
     gofmt:
       glob: "*.go"
-      run: test -z "$(gofmt -l {staged_files})"
+      run: |
+        unformatted="$(gofmt -l {staged_files})"
+        if [ -n "$unformatted" ]; then
+          echo "✘ gofmt: not formatted:"; echo "$unformatted" | sed 's/^/    /'
+          echo "  fix: gofmt -w $unformatted"
+          exit 1
+        fi
+
+    # ---- architecture: DDD + Clean, 5 blocking gates ----------------------
+    # domain struct literals outside domain/, persistence ports inside domain/,
+    # domain importing an outer layer, non-determinism in domain/, debug prints.
+    arch:
+      glob: "*.go"
+      run: ./scripts/gates/arch.sh {staged_files}
+
+    # ---- correctness ------------------------------------------------------
+    vet:
+      glob: "*.go"
+      run: go vet ./...
+
+    # ---- secrets ----------------------------------------------------------
+    # --staged scans exactly what is about to be committed, unlike a full dir scan.
     gitleaks:
-      run: gitleaks dir --no-banner --redact --exit-code 1 .
+      run: gitleaks protect --staged --no-banner --redact --exit-code 1
 
 commit-msg:
   commands:
+    # Conventional Commits + assistant-trailer ban, in one dependency-free script.
     conventional:
       run: bash scripts/commit-msg-lint.sh {1}
+
+pre-push:
+  commands:
+    # branch guard, go mod tidy, build, full arch sweep, test -race,
+    # coverage floor, golangci-lint (incl. modernize), gitleaks over history.
+    gates:
+      run: ./scripts/gates/push.sh
