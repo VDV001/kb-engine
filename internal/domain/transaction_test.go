@@ -119,6 +119,51 @@ func TestNewTransaction_categoryIsOpenButNormalized(t *testing.T) {
 	}
 }
 
+// A transaction is dated by day, so "in the future" is a question about days
+// and not about instants. Comparing the two mixes units, and the mistake only
+// shows up east of UTC: at 02:41 in Yekaterinburg it is already the 29th while
+// UTC still says the 28th, and an entry made then is not a future entry.
+func TestNewTransaction_futureIsMeasuredInDays(t *testing.T) {
+	yekaterinburg := time.FixedZone("YEKT", 5*60*60)
+	tests := []struct {
+		name       string
+		date       time.Time
+		now        time.Time
+		wantReject bool
+	}{
+		{
+			name: "today, clock later the same day",
+			date: time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC),
+			now:  time.Date(2026, 7, 29, 21, 41, 0, 0, time.UTC),
+		},
+		{
+			name: "today east of UTC, where UTC is still yesterday",
+			date: time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC),
+			now:  time.Date(2026, 7, 29, 2, 41, 0, 0, yekaterinburg),
+		},
+		{
+			name:       "tomorrow",
+			date:       time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC),
+			now:        time.Date(2026, 7, 29, 2, 41, 0, 0, yekaterinburg),
+			wantReject: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p := txParams()
+			p.Date = tt.date
+			p.Now = func() time.Time { return tt.now }
+			_, err := domain.NewTransaction(p)
+			if tt.wantReject && !errors.Is(err, domain.ErrInvalidTransaction) {
+				t.Errorf("NewTransaction() error = %v, want it rejected", err)
+			}
+			if !tt.wantReject && err != nil {
+				t.Errorf("NewTransaction() = %v, want it accepted", err)
+			}
+		})
+	}
+}
+
 // A transaction read from a spreadsheet carries a positional id ("expense-r42")
 // that stops being meaningful the moment a row is inserted above it. On first
 // import it is given a stable one, and everything else about the transaction
