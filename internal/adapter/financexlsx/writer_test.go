@@ -284,3 +284,27 @@ func TestRead_prefersTheStoredID(t *testing.T) {
 		}
 	}
 }
+
+// The workbook is personal and is kept at 0600. Saving must not widen that:
+// excelize creates its own file, and a ledger that quietly becomes
+// world-readable — or executable — is a worse outcome than a failed write.
+func TestAssignIDs_preservesFileMode(t *testing.T) {
+	path := workbookWithExtraColumn(t)
+	if err := os.Chmod(path, 0o600); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+	before, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if err := financexlsx.AssignIDs(path, map[string]string{"expense-r3": "01A"}, writeClock); err != nil {
+		t.Fatalf("AssignIDs: %v", err)
+	}
+	after, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if after.Mode().Perm() != before.Mode().Perm() {
+		t.Errorf("mode = %04o, want %04o unchanged", after.Mode().Perm(), before.Mode().Perm())
+	}
+}
