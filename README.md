@@ -41,7 +41,7 @@ just build            # or: go build -o bin/kbengine ./cmd/kbengine
 ## Commands
 
 ```
-kbengine serve        --catalog X [--analytics-config Y] [--addr :8080]
+kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--addr HOST:PORT]
 kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|age|all]
 kbengine dedup        --catalog X
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
@@ -78,12 +78,12 @@ The catalog is runtime data, so mount it and pass `--catalog`:
 ```sh
 # Pull a released multi-arch image from GHCR...
 docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
-  ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json
+  ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json --addr :8080
 
 # ...or build it locally:
 just docker
 docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
-  kbengine:dev serve --catalog /data/catalog.json
+  kbengine:dev serve --catalog /data/catalog.json --addr :8080
 ```
 
 Released tags (`v*`) publish `linux/amd64` + `linux/arm64` images to

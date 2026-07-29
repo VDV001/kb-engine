@@ -44,7 +44,7 @@ const (
 // where half the rows carry an identity is the hardest state to recover from,
 // so the choice is all or nothing.
 func AssignIDs(path string, assign map[string]string, now func() time.Time) error {
-	if err := checkLock(path); err != nil {
+	if err := CheckLock(path); err != nil {
 		return err
 	}
 
@@ -109,7 +109,7 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 		}
 		col, ok := idCols[sheet]
 		if !ok {
-			col = chooseIDColumn(rows, len(dataColumns(kindOf(sheet))))
+			col = chooseIDColumn(rows, reservedWidth(kindOf(sheet)))
 			idCols[sheet] = col
 		}
 		cell, err := excelize.CoordinatesToCellName(col, row)
@@ -130,11 +130,15 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 	return writes, idCols, nil
 }
 
-// checkLock reports whether an editor is holding the workbook. LibreOffice
+// CheckLock reports whether an editor is holding the workbook. LibreOffice
 // leaves .~lock.<name># next to the file for as long as it is open, and writing
 // underneath that produces two divergent versions — one of which disappears
 // without warning when the editor saves.
-func checkLock(path string) error {
+//
+// Exported so a caller that is only planning a write — a dry run, say — can ask
+// the same question the write will ask, instead of promising an outcome the
+// real run would refuse.
+func CheckLock(path string) error {
 	lock := filepath.Join(filepath.Dir(path), ".~lock."+filepath.Base(path)+"#")
 	if _, err := os.Stat(lock); err == nil {
 		return fmt.Errorf("%w: close it and try again (%s)", ErrWorkbookLocked, lock)

@@ -27,5 +27,11 @@ COPY --from=build /out/kbengine /kbengine
 EXPOSE 8080
 USER nonroot:nonroot
 ENTRYPOINT ["/kbengine"]
-# Run e.g. `docker run -p 8080:8080 -v $PWD/data:/data kbengine \
-#   serve --catalog /data/catalog.json` (catalog is runtime data, not baked in).
+# The server binds loopback by default, which inside a container means the
+# published port reaches nothing. In a container the interface is the container's
+# boundary, so pass --addr :8080 explicitly:
+#
+#   docker run -p 8080:8080 -v $PWD/data:/data kbengine \
+#     serve --catalog /data/catalog.json --addr :8080
+#
+# (the catalog is runtime data, not baked into the image).

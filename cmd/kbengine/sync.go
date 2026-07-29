@@ -74,6 +74,15 @@ func pairWorkbookWithLedger(from, ledgerPath string, dryRun bool, stdout, stderr
 		return 1
 	}
 
+	// Asked before the read, and before the dry-run branch: a dry run answers
+	// "what would happen", and what would happen to a workbook someone has open
+	// is a refusal. Read does not check the lock — only the writers do — so
+	// without this a dry run reports rows it could never have paired.
+	if err := financexlsx.CheckLock(from); err != nil {
+		fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
+		return 1
+	}
+
 	now := time.Now()
 	led, err := financexlsx.Read(from, time.Now)
 	if err != nil {

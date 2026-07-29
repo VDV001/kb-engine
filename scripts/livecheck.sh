@@ -34,6 +34,13 @@ if [[ -z "$BOOK_SRC" ]]; then
   exit 2
 fi
 
+# Без unzip fingerprint() молча вернёт пусто и до, и после — и сравнение
+# «отпечаток не изменился» пройдёт, ничего не проверив.
+if ! command -v unzip >/dev/null; then
+  echo "нужен unzip: без него проверка формул превращается в тавтологию" >&2
+  exit 2
+fi
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN="$(mktemp -d)/kbengine"
 echo "→ сборка движка"
@@ -77,7 +84,13 @@ echo "$FP_BEFORE" | sed 's/^/    /'
 
 # --- 1. dry-run на --init обязан быть сухим (дефект 6) ---------------------
 echo "→ dry-run на --init"
-"$BIN" fin sync --init --dry-run --from "$BOOK" --ledger "$LEDGER" >/dev/null 2>&1
+if "$BIN" fin sync --init --dry-run --from "$BOOK" --ledger "$LEDGER" >/dev/null 2>&1; then
+  ok "сухой прогон отработал"
+else
+  # Иначе три проверки ниже пройдут тривиально: упавший бинарник тоже ничего
+  # не пишет, и «леджер не создан» перестаёт что-либо значить.
+  fail "сухой прогон завершился ошибкой — проверки ниже недействительны"
+fi
 [[ -e "$LEDGER" ]] && fail "dry-run создал леджер" || ok "леджер не создан"
 [[ -e "$WORK/.sync-state.json" ]] && fail "dry-run создал baseline" || ok "baseline не создан"
 [[ "$(shasum "$BOOK" | cut -d' ' -f1)" == "$SHA_BEFORE" ]] \
@@ -109,9 +122,17 @@ grep -q "nothing to do" <<<"$OUT" \
   && ok "обе стороны согласны" || fail "ожидалось «nothing to do», получено: $OUT"
 
 # --- 5. добавленная строка доезжает до книги -------------------------------
+# Итог расходов до вставки — чтобы после круга сверить не форму, а деньги.
+REPORT_BEFORE="$("$BIN" fin report --ledger "$LEDGER" 2>/dev/null | awk '/^expenses/{print $2}')"
+
 echo "→ fin add → sync"
 MARK="livecheck-$$"
-"$BIN" fin add --ledger "$LEDGER" --amount 1 --cat "Прочее" --note "$MARK" --date 2026-01-01 >/dev/null 2>&1
+# Со счётом И способом записи: это та форма строки, где счёт уезжает в колонку
+# рядом с «Источник», и именно там жили оба дефекта записи, найденные ревью.
+ACCOUNT="$("$BIN" fin report --ledger "$LEDGER" 2>/dev/null | tail -5 | head -1 | sed 's/^ *//;s/  .*//')"
+[[ -n "$ACCOUNT" ]] || ACCOUNT="Сбербанк"
+"$BIN" fin add --ledger "$LEDGER" --amount 1 --cat "Прочее" --note "$MARK" --date 2026-01-01 \
+  --account "$ACCOUNT" --source "Чек" >/dev/null 2>&1 || fail "fin add завершился ошибкой"
 OUT="$("$BIN" fin sync --from "$BOOK" --ledger "$LEDGER" 2>&1)"
 grep -q "ledger → workbook" <<<"$OUT" \
   && ok "направление ledger → workbook" || fail "ожидалось «ledger → workbook», получено: $OUT"
@@ -130,6 +151,31 @@ fi
 OUT="$("$BIN" fin sync --from "$BOOK" --ledger "$LEDGER" 2>&1)"
 grep -q "nothing to do" <<<"$OUT" \
   && ok "baseline обновлён" || fail "после записи baseline не сошёлся: $OUT"
+
+REPORT_AFTER="$("$BIN" fin report --ledger "$LEDGER" 2>/dev/null | awk '/^expenses/{print $2}')"
+REPORT_AFTER_EXPECTED="$(awk -v a="$REPORT_BEFORE" 'BEGIN{printf "%.2f", a + 1}')"
+
+# --- 6. счёт пережил круг через книгу --------------------------------------
+# Проверка формы («колонка не сдвинулась») не поймала бы ни один из двух
+# дефектов записи счёта: значение возвращалось в книгу, но не то.
+echo "→ счёт после круга"
+# grep -c, не grep -q: под `set -o pipefail` тихий grep закрывает пайп на первом
+# совпадении, fin list получает SIGPIPE, и найденная строка выглядит как провал.
+if [[ "$("$BIN" fin list --ledger "$LEDGER" --account "$ACCOUNT" 2>/dev/null | grep -c "$MARK")" -gt 0 ]]; then
+  ok "счёт «${ACCOUNT}» читается обратно"
+else
+  fail "строка $MARK потеряла счёт «${ACCOUNT}» после круга через книгу"
+fi
+
+# --- 7. итоги не поехали ----------------------------------------------------
+# Всё выше проверяет форму файла. Эта проверка — единственная, которая смотрит
+# на СУММЫ: цикл записи обязан оставить отчёт тем же, кроме добавленного рубля.
+echo "→ итоги до и после"
+if [[ "$REPORT_AFTER" == "$REPORT_AFTER_EXPECTED" ]]; then
+  ok "расходы сошлись: $REPORT_AFTER (было $REPORT_BEFORE + 1.00)"
+else
+  fail "расходы разошлись: было $REPORT_BEFORE, стало $REPORT_AFTER, ожидалось $REPORT_AFTER_EXPECTED"
+fi
 
 # --- итог ------------------------------------------------------------------
 echo

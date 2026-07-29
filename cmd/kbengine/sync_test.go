@@ -319,3 +319,25 @@ func workbookHas(t *testing.T, path, want string) bool {
 	}
 	return false
 }
+
+// A dry run has to predict the real run, including its refusals. The workbook
+// is locked by LibreOffice while it is open, and --init refuses to write into a
+// locked book — so a dry run that reports "N rows would be paired" against a
+// lock is telling you about a run that cannot happen.
+func TestRun_finSync_initDryRunRefusesALockedWorkbook(t *testing.T) {
+	xlsx := workbook(t)
+	ledger := filepath.Join(filepath.Dir(xlsx), "transactions.jsonl")
+	lock := filepath.Join(filepath.Dir(xlsx), ".~lock."+filepath.Base(xlsx)+"#")
+	if err := os.WriteFile(lock, []byte(",user,host,29.07.2026 20:00,"), 0o600); err != nil {
+		t.Fatalf("write lock: %v", err)
+	}
+
+	var out, errb bytes.Buffer
+	code := run([]string{"fin", "sync", "--init", "--dry-run", "--from", xlsx, "--ledger", ledger}, &out, &errb)
+	if code == 0 {
+		t.Errorf("exit = 0 on a locked workbook; stdout = %q", out.String())
+	}
+	if !strings.Contains(strings.ToLower(errb.String()), "lock") {
+		t.Errorf("stderr = %q, want it to name the lock", errb.String())
+	}
+}
