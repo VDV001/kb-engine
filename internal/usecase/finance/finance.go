@@ -97,6 +97,7 @@ type AddParams struct {
 	Place       string
 	Description string
 	Source      string
+	Account     string
 }
 
 // Add builds a first-revision record for one new entry.
@@ -120,6 +121,7 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 		Place:       p.Place,
 		Description: p.Description,
 		Source:      p.Source,
+		Account:     p.Account,
 		Now:         now,
 	})
 	if err != nil {

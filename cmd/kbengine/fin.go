@@ -49,12 +49,13 @@ func ledgerFlags(fs *flag.FlagSet) *string {
 }
 
 // filterFlags adds the flags that narrow a ledger.
-func filterFlags(fs *flag.FlagSet) (year, month *int, category, kind *string) {
+func filterFlags(fs *flag.FlagSet) (year, month *int, category, account, kind *string) {
 	year = fs.Int("year", 0, "restrict to a year")
 	month = fs.Int("month", 0, "restrict to a month (1-12)")
 	category = fs.String("cat", "", "restrict to a category")
+	account = fs.String("account", "", "restrict to an account")
 	kind = fs.String("kind", "", "restrict to expense or income")
-	return year, month, category, kind
+	return year, month, category, account, kind
 }
 
 // runFinImport is the one-time migration out of the spreadsheet.
@@ -123,7 +124,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	sub := fs.String("sub", "", "subcategory")
 	place := fs.String("place", "", "where the money went")
 	note := fs.String("note", "", "free-form description")
-	source := fs.String("source", "", "origin of the record")
+	source := fs.String("source", "", "how the record was captured, e.g. Чек")
+	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -166,6 +168,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Place:       *place,
 		Description: *note,
 		Source:      *source,
+		Account:     *account,
 	}, newULID, time.Now)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
@@ -189,7 +192,7 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin list", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
-	year, month, category, kind := filterFlags(fs)
+	year, month, category, account, kind := filterFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -204,7 +207,7 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	matched := finance.Match(recs, finance.Filter{
-		Year: *year, Month: time.Month(*month), Category: *category, Kind: *kind,
+		Year: *year, Month: time.Month(*month), Category: *category, Account: *account, Kind: *kind,
 	})
 	for _, r := range matched {
 		tx := r.Transaction()
@@ -220,7 +223,7 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin report", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
-	year, month, category, kind := filterFlags(fs)
+	year, month, category, account, kind := filterFlags(fs)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -235,17 +238,23 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	s := finance.Summarize(finance.Match(recs, finance.Filter{
-		Year: *year, Month: time.Month(*month), Category: *category, Kind: *kind,
+		Year: *year, Month: time.Month(*month), Category: *category, Account: *account, Kind: *kind,
 	}))
 
 	fmt.Fprintf(stdout, "expenses  %14s  (%d)\n", s.Expenses, s.ExpenseCount)
 	fmt.Fprintf(stdout, "income    %14s  (%d)\n", s.Income, s.IncomeCount)
 	fmt.Fprintf(stdout, "net       %14s\n", s.Net)
-	if len(s.ByCategory) > 0 {
-		fmt.Fprintln(stdout, "")
-		for _, c := range s.ByCategory {
-			fmt.Fprintf(stdout, "  %-20s %14s  (%d)\n", c.Category, c.Total, c.Count)
-		}
-	}
+	writeBreakdown(stdout, s.ByCategory)
+	writeBreakdown(stdout, s.ByAccount)
 	return 0
+}
+
+func writeBreakdown(stdout io.Writer, rows []finance.CategoryTotal) {
+	if len(rows) == 0 {
+		return
+	}
+	fmt.Fprintln(stdout, "")
+	for _, c := range rows {
+		fmt.Fprintf(stdout, "  %-22s %14s  (%d)\n", c.Category, c.Total, c.Count)
+	}
 }
