@@ -165,7 +165,8 @@ func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dr
 	now := time.Now()
 	switch direction {
 	case finance.DirectionConflict:
-		return reportConflict(ledgerPath, plan, now, stdout, stderr)
+		return reportConflict(ledgerPath, plan, describeRecords(recs), describeTransactions(led.Transactions),
+			now, stdout, stderr)
 
 	case finance.DirectionNone:
 		// A first sync after --init predates the baseline in older setups; record
@@ -197,15 +198,17 @@ func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dr
 // The engine can lay out what differs; it cannot decide which version is the
 // one you meant. A merge here would eventually lose a transaction quietly,
 // which is worse than any amount of stopping.
-func reportConflict(ledgerPath string, plan finance.Plan, now time.Time, stdout, stderr io.Writer) int {
+func reportConflict(ledgerPath string, plan finance.Plan, inLedger, inWorkbook map[string]string,
+	now time.Time, stdout, stderr io.Writer,
+) int {
 	name := fmt.Sprintf(".conflict-%s.md", now.UTC().Format("2006-01-02T15-04-05Z"))
 	path := filepath.Join(filepath.Dir(ledgerPath), name)
 
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Sync conflict — %s\n\n", now.UTC().Format(time.RFC3339))
 	fmt.Fprintf(&b, "%s\n\nNothing was written. Both files are exactly as they were.\n\n", plan.Reason)
-	writeSide(&b, "Ledger", plan.Ledger)
-	writeSide(&b, "Workbook", plan.Workbook)
+	writeSide(&b, "Ledger", plan.Ledger, inLedger, inWorkbook)
+	writeSide(&b, "Workbook", plan.Workbook, inWorkbook, inLedger)
 	b.WriteString("## Resolving\n\n" +
 		"Pick a side explicitly, having looked at what each one costs:\n\n" +
 		"    kbengine fin sync --resolve jsonl   # the ledger wins\n" +
@@ -223,7 +226,42 @@ func reportConflict(ledgerPath string, plan finance.Plan, now time.Time, stdout,
 	return 1
 }
 
-func writeSide(b *strings.Builder, title string, s finance.Side) {
+// describeRecords and describeTransactions render each row as a line a person
+// can weigh: an identifier alone cannot answer which version of the money is
+// the one that was meant.
+func describeRecords(recs []finance.Record) map[string]string {
+	out := make(map[string]string, len(recs))
+	for _, r := range recs {
+		out[r.Transaction().ID()] = describeTx(r.Transaction())
+	}
+	return out
+}
+
+func describeTransactions(txs []domain.Transaction) map[string]string {
+	out := make(map[string]string, len(txs))
+	for _, tx := range txs {
+		out[tx.ID()] = describeTx(tx)
+	}
+	return out
+}
+
+func describeTx(tx domain.Transaction) string {
+	parts := []string{tx.Date().Format(time.DateOnly), tx.Amount().String()}
+	if c := tx.Category(); c != "" {
+		parts = append(parts, c)
+	}
+	if d := tx.Description(); d != "" {
+		parts = append(parts, d)
+	}
+	if s := tx.Source(); s != "" && !tx.IsExpense() {
+		parts = append(parts, s)
+	}
+	return strings.Join(parts, "  ")
+}
+
+// writeSide lists one side's changes. Rows it no longer holds are described
+// from the other side, which is the only place they still exist.
+func writeSide(b *strings.Builder, title string, s finance.Side, primary, fallback map[string]string) {
 	fmt.Fprintf(b, "## %s\n\n", title)
 	if !s.Moved() {
 		b.WriteString("unchanged\n\n")
@@ -240,7 +278,14 @@ func writeSide(b *strings.Builder, title string, s finance.Side) {
 		}
 		fmt.Fprintf(b, "%s (%d):\n\n", group.label, len(group.ids))
 		for _, id := range group.ids {
-			fmt.Fprintf(b, "- `%s`\n", id)
+			what := primary[id]
+			if what == "" {
+				what = fallback[id]
+			}
+			if what == "" {
+				what = "(no longer on either side)"
+			}
+			fmt.Fprintf(b, "- `%s` — %s\n", id, what)
 		}
 		b.WriteString("\n")
 	}
