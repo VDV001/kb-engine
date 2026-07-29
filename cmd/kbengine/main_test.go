@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -104,6 +105,64 @@ func TestServe_handler(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"total":1`) {
 		t.Errorf("body missing total: %s", rec.Body.String())
+	}
+}
+
+// Serving finances means reading two sources at once: the ledger holds the
+// rows, but the account balances only exist in the workbook's «Счета» sheet.
+func TestServe_handler_finances(t *testing.T) {
+	catalog := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	xlsx := workbook(t)
+	ledger := filepath.Join(filepath.Dir(xlsx), "transactions.jsonl")
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin sync --init: %s", errb.String())
+	}
+
+	h, err := buildServeHandler(catalog, "", ledger, xlsx)
+	if err != nil {
+		t.Fatalf("buildServeHandler: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/finances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Transactions []map[string]any `json:"transactions"`
+		Accounts     []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Transactions) == 0 {
+		t.Error("no transactions served from the ledger")
+	}
+	if len(body.Accounts) == 0 {
+		t.Error("no account balances served from the workbook")
+	}
+}
+
+// Without a ledger the dashboard still serves; finances are simply empty.
+func TestServe_handler_withoutLedger(t *testing.T) {
+	catalog := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	h, err := buildServeHandler(catalog, "", "", "")
+	if err != nil {
+		t.Fatalf("buildServeHandler: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/finances", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), `"transactions":[]`) {
+		t.Errorf("body = %s, want empty transactions", rec.Body.String())
 	}
 }
 
