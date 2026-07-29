@@ -31,7 +31,7 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, inbox, serve, version")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, fin, inbox, serve, version")
 		return 2
 	}
 	switch args[0] {
@@ -45,6 +45,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runChangelog(args[1:], stdout, stderr)
 	case "dedup":
 		return runDedup(args[1:], stdout, stderr)
+	case "fin":
+		return runFin(args[1:], stdout, stderr)
 	case "inbox":
 		return runInbox(args[1:], stdout, stderr)
 	case "serve":

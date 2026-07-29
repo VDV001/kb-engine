@@ -1,0 +1,213 @@
+// Package financexlsx reads the hand-kept finance workbook into the domain.
+// It is the anti-corruption layer for the ledger: blank rows, mixed date
+// encodings and amounts written with commas or grouping spaces are normalized
+// here so the domain stays strict.
+package financexlsx
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/xuri/excelize/v2"
+)
+
+// Sheet and column layout of Учёт_финансов.xlsx. Data starts at row 3: row 1 is
+// a title, row 2 the header.
+const (
+	sheetExpenses = "Расходы"
+	sheetIncome   = "Доходы"
+	sheetAccounts = "Счета"
+	firstDataRow  = 3
+)
+
+// Ledger is everything the workbook holds, already validated.
+type Ledger struct {
+	Transactions []domain.Transaction
+	Accounts     []domain.Account
+}
+
+// TotalBalance sums the balances across accounts.
+func (l Ledger) TotalBalance() domain.Money {
+	var total domain.Money
+	for _, a := range l.Accounts {
+		total = total.Add(a.Balance())
+	}
+	return total
+}
+
+// Net sums signed transaction amounts: income minus expenses.
+func (l Ledger) Net() domain.Money {
+	var total domain.Money
+	for _, t := range l.Transactions {
+		total = total.Add(t.SignedAmount())
+	}
+	return total
+}
+
+// Read loads the workbook at path. The clock is passed through to the domain so
+// validation does not depend on ambient time.
+func Read(path string, now func() time.Time) (Ledger, error) {
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return Ledger{}, fmt.Errorf("open workbook: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	var led Ledger
+
+	expenses, err := readTransactions(f, sheetExpenses, domain.KindExpense, now)
+	if err != nil {
+		return Ledger{}, err
+	}
+	income, err := readTransactions(f, sheetIncome, domain.KindIncome, now)
+	if err != nil {
+		return Ledger{}, err
+	}
+	led.Transactions = append(expenses, income...)
+
+	if led.Accounts, err = readAccounts(f, now); err != nil {
+		return Ledger{}, err
+	}
+	return led, nil
+}
+
+// column indexes differ per sheet; expenses carry the richer layout.
+func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time) ([]domain.Transaction, error) {
+	// RawCellValue: the workbook applies a display format (thousands separator,
+	// currency suffix, locale-dependent dates), and reading formatted values
+	// hands that presentation to the parser. Raw values are the numbers Excel
+	// actually stores — "1600" and a date serial — which is what the domain wants.
+	rows, err := f.GetRows(sheet, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return nil, fmt.Errorf("read sheet %q: %w", sheet, err)
+	}
+
+	var out []domain.Transaction
+	for i, row := range rows {
+		rowNum := i + 1
+		if rowNum < firstDataRow {
+			continue
+		}
+
+		p := domain.TransactionParams{Kind: kind, Now: now}
+		var rawAmount string
+		if kind == domain.KindExpense {
+			// Дата | Категория | Подкатегория | Место | Описание | Сумма | Источник
+			p.Category, p.Subcategory = cell(row, 1), cell(row, 2)
+			p.Place, p.Description = cell(row, 3), cell(row, 4)
+			rawAmount, p.Source = cell(row, 5), cell(row, 6)
+		} else {
+			// Дата | Источник | Описание | Сумма
+			p.Source, p.Description = cell(row, 1), cell(row, 2)
+			rawAmount = cell(row, 3)
+		}
+
+		// A blank row mid-sheet is normal in a hand-kept ledger — skip it rather
+		// than importing a zero transaction.
+		if rawAmount == "" && p.Category == "" && p.Source == "" {
+			continue
+		}
+
+		if p.Amount, err = parseAmount(rawAmount); err != nil {
+			return nil, fmt.Errorf("%s row %d: amount: %w", sheet, rowNum, err)
+		}
+		if p.Date, err = parseDate(cell(row, 0)); err != nil {
+			return nil, fmt.Errorf("%s row %d: date: %w", sheet, rowNum, err)
+		}
+
+		// ponytail: identity is positional until the sync step adds an id column
+		// to the workbook (see the migration plan, §5.1). Ceiling — inserting a
+		// row above shifts every id below it, so this is stable enough to read
+		// and report, but NOT enough to diff two sides of a sync. Upgrade path:
+		// write ULIDs into a dedicated column on first migration and read them
+		// here instead.
+		p.ID = fmt.Sprintf("%s-r%d", kind, rowNum)
+
+		tx, err := domain.NewTransaction(p)
+		if err != nil {
+			return nil, fmt.Errorf("%s row %d: %w", sheet, rowNum, err)
+		}
+		out = append(out, tx)
+	}
+	return out, nil
+}
+
+func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, error) {
+	rows, err := f.GetRows(sheetAccounts, excelize.Options{RawCellValue: true})
+	if err != nil {
+		// The sheet is optional: an older workbook may not have it yet.
+		return nil, nil //nolint:nilerr // absence of the sheet is not a failure
+	}
+
+	var out []domain.Account
+	for i, row := range rows {
+		rowNum := i + 1
+		if rowNum < firstDataRow {
+			continue
+		}
+		bank, rawBalance := cell(row, 0), cell(row, 1)
+		if bank == "" && rawBalance == "" {
+			continue
+		}
+		balance, err := parseAmount(rawBalance)
+		if err != nil {
+			return nil, fmt.Errorf("%s row %d: balance: %w", sheetAccounts, rowNum, err)
+		}
+		updated, err := parseDate(cell(row, 2))
+		if err != nil {
+			return nil, fmt.Errorf("%s row %d: updated: %w", sheetAccounts, rowNum, err)
+		}
+		acc, err := domain.NewAccount(bank, balance, updated, now)
+		if err != nil {
+			return nil, fmt.Errorf("%s row %d: %w", sheetAccounts, rowNum, err)
+		}
+		out = append(out, acc)
+	}
+	return out, nil
+}
+
+// parseAmount reads a raw cell into exact kopecks.
+//
+// A numeric cell is a float in storage — 89.99 comes back as
+// "89.98999999999999" — so it goes through MoneyFromFloat and rounds to the
+// kopeck. Anything non-numeric was typed as text and goes through the strict
+// parser, which still rejects more precision than a kopeck.
+func parseAmount(raw string) (domain.Money, error) {
+	if f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
+		return domain.MoneyFromFloat(f), nil
+	}
+	return domain.ParseMoney(raw)
+}
+
+// cell returns a trimmed value, or "" when the row is shorter than the index.
+func cell(row []string, i int) string {
+	if i >= len(row) {
+		return ""
+	}
+	return strings.TrimSpace(row[i])
+}
+
+// parseDate accepts what raw cells contain: an Excel date serial (the usual
+// case — 46110 is 2026-03-29) or a text date typed by hand.
+func parseDate(raw string) (time.Time, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty date")
+	}
+	if serial, err := strconv.ParseFloat(s, 64); err == nil {
+		t, err := excelize.ExcelDateToTime(serial, false)
+		if err != nil {
+			return time.Time{}, fmt.Errorf("date serial %s: %w", s, err)
+		}
+		return t, nil
+	}
+	for _, layout := range []string{time.DateOnly, "2006-01-02 15:04:05", "02.01.2006", time.RFC3339} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unrecognized date %q", raw)
+}

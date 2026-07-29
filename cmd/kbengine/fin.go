@@ -1,0 +1,249 @@
+package main
+
+import (
+	"flag"
+	"fmt"
+	"io"
+	"os"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
+	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
+	"github.com/oklog/ulid/v2"
+)
+
+// runFin dispatches the ledger subcommands.
+func runFin(args []string, stdout, stderr io.Writer) int {
+	if len(args) == 0 {
+		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|list|report> [flags]")
+		return 2
+	}
+	switch args[0] {
+	case "import":
+		return runFinImport(args[1:], stdout, stderr)
+	case "add":
+		return runFinAdd(args[1:], stdout, stderr)
+	case "list":
+		return runFinList(args[1:], stdout, stderr)
+	case "report":
+		return runFinReport(args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "unknown fin subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+// newULID hands out sortable identifiers. ULID rather than UUIDv4 because the
+// ledger is kept in file order: an id that sorts by creation time keeps a
+// same-day tie-break meaningful instead of random.
+func newULID() string { return ulid.Make().String() }
+
+// ledgerFlags adds the flags every subcommand shares and returns the accessor
+// for the ledger path.
+func ledgerFlags(fs *flag.FlagSet) *string {
+	return fs.String("ledger", "", "path to transactions.jsonl")
+}
+
+// filterFlags adds the flags that narrow a ledger.
+func filterFlags(fs *flag.FlagSet) (year, month *int, category, kind *string) {
+	year = fs.Int("year", 0, "restrict to a year")
+	month = fs.Int("month", 0, "restrict to a month (1-12)")
+	category = fs.String("cat", "", "restrict to a category")
+	kind = fs.String("kind", "", "restrict to expense or income")
+	return year, month, category, kind
+}
+
+// runFinImport is the one-time migration out of the spreadsheet.
+func runFinImport(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("fin import", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ledgerPath := ledgerFlags(fs)
+	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *ledgerPath == "" {
+		fmt.Fprintln(stderr, "fin import: --ledger is required")
+		return 2
+	}
+	if *from == "" {
+		fmt.Fprintln(stderr, "fin import: --from is required")
+		return 2
+	}
+	// Import is a migration, not a sync: it has no way to tell which of the two
+	// files is ahead, so it refuses rather than guessing with the whole ledger
+	// at stake.
+	if _, err := os.Stat(*ledgerPath); err == nil {
+		fmt.Fprintf(stderr, "fin import: %s already exists — import is a one-time migration, use fin sync afterwards\n", *ledgerPath)
+		return 1
+	}
+
+	now := time.Now()
+	led, err := financexlsx.Read(*from, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin import: %v\n", err)
+		return 1
+	}
+	recs, err := finance.Import(led.Transactions, newULID, now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin import: %v\n", err)
+		return 1
+	}
+	finance.Sort(recs)
+	if err := financejsonl.Save(*ledgerPath, recs); err != nil {
+		fmt.Fprintf(stderr, "fin import: %v\n", err)
+		return 1
+	}
+
+	// These counts are the reconciliation against the previous build. They are
+	// printed even on success because the migration is only trustworthy if they
+	// match what the spreadsheet reported.
+	s := finance.Summarize(recs)
+	fmt.Fprintf(stdout, "fin import: %d expense(s) %s, %d income(s) %s, net %s → %s\n",
+		s.ExpenseCount, s.Expenses, s.IncomeCount, s.Income, s.Net, *ledgerPath)
+	if len(led.Accounts) > 0 {
+		fmt.Fprintf(stdout, "fin import: %d account(s), balance %s (from the workbook)\n",
+			len(led.Accounts), led.TotalBalance())
+	}
+	return 0
+}
+
+// runFinAdd appends one entry.
+func runFinAdd(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("fin add", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ledgerPath := ledgerFlags(fs)
+	amount := fs.String("amount", "", "amount, e.g. 1500 or 1 500,50")
+	kind := fs.String("kind", domain.KindExpense, "expense or income")
+	category := fs.String("cat", "", "category (required for an expense)")
+	sub := fs.String("sub", "", "subcategory")
+	place := fs.String("place", "", "where the money went")
+	note := fs.String("note", "", "free-form description")
+	source := fs.String("source", "", "origin of the record")
+	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *ledgerPath == "" {
+		fmt.Fprintln(stderr, "fin add: --ledger is required")
+		return 2
+	}
+	if *amount == "" {
+		fmt.Fprintln(stderr, "fin add: --amount is required")
+		return 2
+	}
+
+	// ParseMoney, not MoneyFromFloat: this is text a person typed, so more
+	// precision than a kopeck is a typo and gets reported rather than rounded.
+	money, err := domain.ParseMoney(*amount)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+	var when time.Time
+	if *date != "" {
+		if when, err = time.Parse(time.DateOnly, *date); err != nil {
+			fmt.Fprintf(stderr, "fin add: --date %q: expected YYYY-MM-DD\n", *date)
+			return 1
+		}
+	}
+
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+	rec, err := finance.Add(finance.AddParams{
+		Kind:        *kind,
+		Date:        when,
+		Amount:      money,
+		Category:    *category,
+		Subcategory: *sub,
+		Place:       *place,
+		Description: *note,
+		Source:      *source,
+	}, newULID, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+
+	recs = append(recs, rec)
+	finance.Sort(recs)
+	if err := financejsonl.Save(*ledgerPath, recs); err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+	tx := rec.Transaction()
+	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
+		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(), tx.Category(), tx.Description())
+	return 0
+}
+
+// runFinList prints the matching rows.
+func runFinList(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("fin list", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ledgerPath := ledgerFlags(fs)
+	year, month, category, kind := filterFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *ledgerPath == "" {
+		fmt.Fprintln(stderr, "fin list: --ledger is required")
+		return 2
+	}
+
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin list: %v\n", err)
+		return 1
+	}
+	matched := finance.Match(recs, finance.Filter{
+		Year: *year, Month: time.Month(*month), Category: *category, Kind: *kind,
+	})
+	for _, r := range matched {
+		tx := r.Transaction()
+		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s\n",
+			tx.Date().Format(time.DateOnly), tx.ID(), tx.Amount(), tx.Category(), tx.Description())
+	}
+	fmt.Fprintf(stdout, "fin list: %d of %d record(s)\n", len(matched), len(recs))
+	return 0
+}
+
+// runFinReport prints the totals.
+func runFinReport(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("fin report", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	ledgerPath := ledgerFlags(fs)
+	year, month, category, kind := filterFlags(fs)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *ledgerPath == "" {
+		fmt.Fprintln(stderr, "fin report: --ledger is required")
+		return 2
+	}
+
+	recs, err := financejsonl.Load(*ledgerPath, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin report: %v\n", err)
+		return 1
+	}
+	s := finance.Summarize(finance.Match(recs, finance.Filter{
+		Year: *year, Month: time.Month(*month), Category: *category, Kind: *kind,
+	}))
+
+	fmt.Fprintf(stdout, "expenses  %14s  (%d)\n", s.Expenses, s.ExpenseCount)
+	fmt.Fprintf(stdout, "income    %14s  (%d)\n", s.Income, s.IncomeCount)
+	fmt.Fprintf(stdout, "net       %14s\n", s.Net)
+	if len(s.ByCategory) > 0 {
+		fmt.Fprintln(stdout, "")
+		for _, c := range s.ByCategory {
+			fmt.Fprintf(stdout, "  %-20s %14s  (%d)\n", c.Category, c.Total, c.Count)
+		}
+	}
+	return 0
+}
