@@ -160,6 +160,13 @@ func TestRun_finSync_conflictStopsAndReports(t *testing.T) {
 			t.Errorf("report does not mention %q:\n%s", want, body)
 		}
 	}
+	// And it has to say what each row is. Choosing a side means weighing two
+	// versions of the money, which an opaque identifier cannot help with.
+	for _, want := range []string{"2026-05-01", "777.00", "из терминала", "999.99"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("report does not describe the row (%q missing):\n%s", want, body)
+		}
+	}
 }
 
 func TestRun_finSync_resolveWorkbook(t *testing.T) {
