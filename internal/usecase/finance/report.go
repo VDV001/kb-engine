@@ -15,6 +15,7 @@ type Filter struct {
 	Year     int
 	Month    time.Month
 	Category string
+	Account  string
 	Kind     string
 }
 
@@ -40,8 +41,11 @@ func (f Filter) accepts(r Record) bool {
 	if f.Kind != "" && tx.Kind() != f.Kind {
 		return false
 	}
-	// Categories are typed by hand into a spreadsheet; case is not a distinction
-	// anyone making the entry intended to draw.
+	// Typed by hand into a spreadsheet; case is not a distinction anyone making
+	// the entry intended to draw.
+	if f.Account != "" && !strings.EqualFold(tx.Account(), f.Account) {
+		return false
+	}
 	return f.Category == "" || strings.EqualFold(tx.Category(), f.Category)
 }
 
@@ -62,6 +66,9 @@ type Summary struct {
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
+	// ByAccount is the same breakdown by the account the money left from. Rows
+	// that name no account are left out rather than lumped into a blank one.
+	ByAccount []CategoryTotal
 }
 
 // Summarize totals the records.
@@ -73,6 +80,7 @@ type Summary struct {
 func Summarize(recs []Record) Summary {
 	var s Summary
 	byCategory := make(map[string]CategoryTotal)
+	byAccount := make(map[string]CategoryTotal)
 
 	for _, r := range recs {
 		tx := r.Transaction()
@@ -85,23 +93,36 @@ func Summarize(recs []Record) Summary {
 		s.ExpenseCount++
 		s.Expenses = s.Expenses.Add(tx.Amount())
 
-		c := byCategory[tx.Category()]
-		c.Category = tx.Category()
-		c.Total = c.Total.Add(tx.Amount())
-		c.Count++
-		byCategory[tx.Category()] = c
+		byCategory[tx.Category()] = addTo(byCategory[tx.Category()], tx.Category(), tx.Amount())
+		if a := tx.Account(); a != "" {
+			byAccount[a] = addTo(byAccount[a], a, tx.Amount())
+		}
 	}
 
-	s.ByCategory = make([]CategoryTotal, 0, len(byCategory))
-	for _, c := range byCategory {
-		s.ByCategory = append(s.ByCategory, c)
+	s.ByCategory = ranked(byCategory)
+	s.ByAccount = ranked(byAccount)
+	return s
+}
+
+func addTo(t CategoryTotal, name string, amount domain.Money) CategoryTotal {
+	t.Category = name
+	t.Total = t.Total.Add(amount)
+	t.Count++
+	return t
+}
+
+// ranked flattens a breakdown, biggest first, with the name breaking ties so
+// the order is the same on every run.
+func ranked(m map[string]CategoryTotal) []CategoryTotal {
+	out := make([]CategoryTotal, 0, len(m))
+	for _, c := range m {
+		out = append(out, c)
 	}
-	slices.SortFunc(s.ByCategory, func(a, b CategoryTotal) int {
-		// Descending by amount, then by name so the order is stable across runs.
+	slices.SortFunc(out, func(a, b CategoryTotal) int {
 		if c := cmp.Compare(b.Total.Kopecks(), a.Total.Kopecks()); c != 0 {
 			return c
 		}
 		return cmp.Compare(a.Category, b.Category)
 	})
-	return s
+	return out
 }
