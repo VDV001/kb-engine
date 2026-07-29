@@ -53,9 +53,18 @@ export function BarList({ data, valueClassName = '' }: { data: Record<string, nu
             {label}
           </span>
           <div className="h-4 flex-1 rounded bg-slate-100 dark:bg-slate-700">
-            <div className="h-4 rounded bg-sky-500" style={{ width: `${(n / max) * 100}%` }} />
+            {/* Clamped at zero: a negative width is invalid CSS, the browser falls
+                back to auto, and the block child then fills its parent — so a
+                category that is net negative for the month (a refund and no
+                purchases) would draw as the largest bar on screen. */}
+            <div
+              className={`h-4 rounded ${n < 0 ? 'bg-amber-500' : 'bg-sky-500'}`}
+              style={{ width: `${Math.max(0, n / max) * 100}%` }}
+            />
           </div>
-          <span className={`w-10 shrink-0 text-right tabular-nums text-slate-500 ${valueClassName}`}>{n}</span>
+          {/* Wide enough for rouble totals, not just the 1-3 digit counts this
+              list was first built for. */}
+          <span className={`w-16 shrink-0 text-right tabular-nums text-slate-500 ${valueClassName}`}>{n}</span>
         </div>
       ))}
     </div>

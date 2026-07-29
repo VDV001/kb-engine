@@ -390,3 +390,38 @@ func TestRun_finAdd_withAccount(t *testing.T) {
 		t.Errorf("filtering by account did not narrow the listing:\n%s", out.String())
 	}
 }
+
+// The two breakdowns have to say which is which. Unlabelled, they run together
+// — and the live ledger has a category literally called «Банк» four lines above
+// the block listing banks, which only domain knowledge tells apart.
+func TestRun_finReport_labelsBothBreakdowns(t *testing.T) {
+	xlsx := workbook(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, xlsx, ledger)
+
+	// The account breakdown only appears when something names an account.
+	var addOut, addErr bytes.Buffer
+	if code := run([]string{
+		"fin", "add", "--ledger", ledger, "--amount", "100", "--cat", "Банк",
+		"--date", "2026-05-01", "--account", "Сбербанк",
+	}, &addOut, &addErr); code != 0 {
+		t.Fatalf("fin add exit = %d, stderr = %s", code, addErr.String())
+	}
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "report", "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin report exit = %d, stderr = %s", code, errb.String())
+	}
+	got := out.String()
+	byCategory := strings.Index(got, "по категориям")
+	byAccount := strings.Index(got, "по счетам")
+	if byCategory < 0 {
+		t.Errorf("no heading for the category breakdown:\n%s", got)
+	}
+	if byAccount < 0 {
+		t.Errorf("no heading for the account breakdown:\n%s", got)
+	}
+	if byCategory >= 0 && byAccount >= 0 && byCategory > byAccount {
+		t.Errorf("headings are in the wrong order:\n%s", got)
+	}
+}

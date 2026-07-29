@@ -1,0 +1,34 @@
+{
+  "_comment": "Один набор строк, прогоняемый двумя реализациями: finance.Summarize в Go и функциями money.ts на фронте. Существует потому, что дашборд считает итоги сам, а не берёт готовые с сервера — значит арифметика живёт в двух местах и обязана совпадать. Случаи подобраны по тем краям, где две реализации расходятся молча: возврат (отрицательный расход), строка без счёта (расход без категории домен не допускает — это проверяет отдельный тест), копейки, которые в float поехали бы.",
+  "transactions": [
+    {"id": "01", "kind": "expense", "date": "2026-03-29", "amount": "500.00", "category": "Еда", "account": "Сбербанк", "source": "Чек"},
+    {"id": "02", "kind": "expense", "date": "2026-03-30", "amount": "89.99", "category": "Еда", "account": "Сбербанк"},
+    {"id": "03", "kind": "expense", "date": "2026-04-01", "amount": "1500.50", "category": "Транспорт", "account": "Альфа-Банк"},
+    {"id": "04", "kind": "expense", "date": "2026-04-02", "amount": "0.01", "category": "Банк", "account": "Альфа-Банк"},
+    {"id": "05", "kind": "expense", "date": "2026-04-15", "amount": "-5500.00", "category": "Развлечения", "account": "Сбербанк"},
+    {"id": "06", "kind": "expense", "date": "2026-05-03", "amount": "742.30", "category": "Здоровье", "account": "Т-Банк"},
+    {"id": "07", "kind": "expense", "date": "2026-05-04", "amount": "310.00", "category": "Еда", "source": "Чек"},
+    {"id": "08", "kind": "expense", "date": "2026-07-01", "amount": "1279.00", "category": "Транспорт", "account": "Сбербанк"},
+    {"id": "09", "kind": "income", "date": "2026-04-05", "amount": "90000.00", "source": "Зарплата"},
+    {"id": "10", "kind": "income", "date": "2026-05-05", "amount": "1300.55", "source": "Перевод от мамы"}
+  ],
+  "expected": {
+    "expenseCount": 8,
+    "expenses": "-1078.20",
+    "incomeCount": 2,
+    "income": "91300.55",
+    "net": "92378.75",
+    "byCategory": [
+      {"category": "Транспорт", "total": "2779.50", "count": 2},
+      {"category": "Еда", "total": "899.99", "count": 3},
+      {"category": "Здоровье", "total": "742.30", "count": 1},
+      {"category": "Банк", "total": "0.01", "count": 1},
+      {"category": "Развлечения", "total": "-5500.00", "count": 1}
+    ],
+    "byAccount": [
+      {"category": "Альфа-Банк", "total": "1500.51", "count": 2},
+      {"category": "Т-Банк", "total": "742.30", "count": 1},
+      {"category": "Сбербанк", "total": "-3631.01", "count": 4}
+    ]
+  }
+}
