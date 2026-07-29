@@ -340,3 +340,43 @@ func storedID(t *testing.T, path, sheet string, row int) string {
 	}
 	return v
 }
+
+// The account is the field the ledger was missing, so it has to be reachable
+// from the command that creates entries — and visible in the report, which is
+// the whole reason for having it.
+func TestRun_finAdd_withAccount(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, workbook(t), ledger)
+
+	var out, errb bytes.Buffer
+	code := run([]string{
+		"fin", "add", "--ledger", ledger, "--amount", "500", "--cat", "Еда",
+		"--account", "Сбербанк", "--source", "Чек",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("fin add exit = %d, stderr = %s", code, errb.String())
+	}
+	raw, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	if !strings.Contains(string(raw), `"account":"Сбербанк"`) {
+		t.Errorf("the account did not reach the ledger:\n%s", raw)
+	}
+
+	out.Reset()
+	if code := run([]string{"fin", "report", "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin report exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "Сбербанк") {
+		t.Errorf("report has no breakdown by account:\n%s", out.String())
+	}
+
+	out.Reset()
+	if code := run([]string{"fin", "list", "--ledger", ledger, "--account", "сбербанк"}, &out, &errb); code != 0 {
+		t.Fatalf("fin list exit = %d", code)
+	}
+	if !strings.Contains(out.String(), "1 of 4") {
+		t.Errorf("filtering by account did not narrow the listing:\n%s", out.String())
+	}
+}
