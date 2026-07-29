@@ -271,7 +271,7 @@ func (fakeQueryErr) Stats() (query.Stats, error) {
 }
 
 func TestServer_readyz_unavailable(t *testing.T) {
-	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, testConfig, nil)
+	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
 	rec := get(t, srv, "/readyz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)

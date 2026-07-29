@@ -41,6 +41,16 @@ func workbook(t *testing.T) string {
 	must(f.SetCellValue("Доходы", "B3", "Зарплата"))
 	must(f.SetCellValue("Доходы", "D3", 90000))
 
+	// The real book carries balances on their own sheet, and those names are the
+	// vocabulary that tells an account from a way a row was captured. A fixture
+	// without the sheet exercises a shape the owner's file never has.
+	_, err = f.NewSheet("Счета")
+	must(err)
+	must(f.SetCellValue("Счета", "A2", "Банк"))
+	must(f.SetCellValue("Счета", "A3", "Сбербанк"))
+	must(f.SetCellValue("Счета", "B3", 1000.50))
+	must(f.SetCellValue("Счета", "C3", time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)))
+
 	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
 	must(f.SaveAs(path))
 	return path

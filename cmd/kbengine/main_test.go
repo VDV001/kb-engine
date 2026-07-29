@@ -93,7 +93,7 @@ func TestServe_handler(t *testing.T) {
 	path := writeCatalog(t, `{"entries":[
 		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
 	]}`)
-	h, err := buildServeHandler(path, "")
+	h, err := buildServeHandler(path, "", "", "")
 	if err != nil {
 		t.Fatalf("buildServeHandler: %v", err)
 	}

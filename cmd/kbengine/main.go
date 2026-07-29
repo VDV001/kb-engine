@@ -13,7 +13,10 @@ import (
 	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
+	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/query"
@@ -90,6 +93,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
+	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
+	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
 	addr := fs.String("addr", ":8080", "address to listen on")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -99,7 +104,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -117,7 +122,35 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func buildServeHandler(catalogPath, configPath string) (http.Handler, error) {
+// ledgerFinances reads the two sources the Finances view needs. The rows live
+// in the ledger; the account balances exist only in the workbook, so a
+// deployment can have rows and no balances (workbook path empty) but not the
+// other way round.
+//
+// Both files are read per request rather than cached: they are edited by hand
+// while the dashboard is open, and a stale balance is worse than a re-read.
+type ledgerFinances struct{ ledgerPath, workbookPath string }
+
+func (f ledgerFinances) Finances() (httpapi.Finances, error) {
+	recs, err := financejsonl.Load(f.ledgerPath, time.Now)
+	if err != nil {
+		return httpapi.Finances{}, err
+	}
+	out := httpapi.Finances{Transactions: make([]domain.Transaction, 0, len(recs))}
+	for _, r := range recs {
+		out.Transactions = append(out.Transactions, r.Transaction())
+	}
+	if f.workbookPath != "" {
+		led, err := financexlsx.Read(f.workbookPath, time.Now)
+		if err != nil {
+			return httpapi.Finances{}, err
+		}
+		out.Accounts = led.Accounts
+	}
+	return out, nil
+}
+
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -130,8 +163,14 @@ func buildServeHandler(catalogPath, configPath string) (http.Handler, error) {
 			return nil, err
 		}
 	}
+	// Nil, not an empty struct: the handler distinguishes "no ledger configured"
+	// from "ledger configured and unreadable", and only the second is an error.
+	var fin httpapi.Financier
+	if ledgerPath != "" {
+		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
+	}
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), cfg, front), nil
+		analytics.NewService(loader), fin, cfg, front), nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {
