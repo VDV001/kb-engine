@@ -91,13 +91,19 @@ func TestApplyToLedger_leavesUntouchedRowsAlone(t *testing.T) {
 	}
 }
 
-// The ledger stays chronological whichever way the sync ran.
+// The ledger stays chronological whichever way the sync ran, even when the
+// workbook hands the rows over in sheet order.
 func TestApplyToLedger_keepsTheFileSorted(t *testing.T) {
 	a := expenseTx(t, "01A", 30, 100, "Еда", "")
 	b := expenseTx(t, "01B", 29, 100, "Еда", "")
-	plan := finance.Diff(nil, []domain.Transaction{a, b}, finance.SyncState{Rows: map[string]string{"01X": "gone"}})
+	ledger := []finance.Record{recordOf(t, a, 1), recordOf(t, b, 1)}
+	workbook := []domain.Transaction{a, b}
 
-	got, err := finance.ApplyToLedger(nil, []domain.Transaction{a, b}, plan, syncedAt)
+	plan := finance.Diff(ledger, workbook, stateOf(t, a, b))
+	if plan.Direction != finance.DirectionNone {
+		t.Fatalf("Direction = %v, want None", plan.Direction)
+	}
+	got, err := finance.ApplyToLedger(ledger, workbook, plan, syncedAt)
 	if err != nil {
 		t.Fatalf("ApplyToLedger: %v", err)
 	}
