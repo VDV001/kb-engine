@@ -3,6 +3,7 @@ package financexlsx
 import (
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -19,6 +20,11 @@ func dataColumns(kind string) []int {
 	// Дата | Источник | Описание | Сумма
 	return []int{1, 2, 3, 4}
 }
+
+// besideSourceColumn is the unlabelled column immediately after the documented
+// ones, where the live ledger keeps the account for rows whose Источник records
+// how the record was captured instead.
+func besideSourceColumn() int { return len(dataColumns(domain.KindExpense)) + 1 }
 
 // sheetIndex is what one sheet looks like before anything is written.
 type sheetIndex struct {
@@ -57,6 +63,10 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err != nil {
 		return err
 	}
+	accounts, err := knownAccounts(f, now)
+	if err != nil {
+		return err
+	}
 	plan, err := planRowWrites(index, upserts, removals)
 	if err != nil {
 		return err
@@ -65,7 +75,7 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err := backup(path, now); err != nil {
 		return err
 	}
-	if err := plan.apply(f); err != nil {
+	if err := plan.apply(f, accounts); err != nil {
 		return err
 	}
 	return saveAtomically(f, path)
@@ -175,10 +185,24 @@ func locate(index map[string]sheetIndex, id string) (sheet string, row int, ok b
 	return "", 0, false
 }
 
-func (p rowPlan) apply(f *excelize.File) error {
+// knownAccounts is the vocabulary from the Счета sheet, used to tell an account
+// sitting beside Источник from a note the owner keeps there.
+func knownAccounts(f *excelize.File, now func() time.Time) (map[string]struct{}, error) {
+	accs, err := readAccounts(f, now)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]struct{}, len(accs))
+	for _, a := range accs {
+		out[a.Bank()] = struct{}{}
+	}
+	return out, nil
+}
+
+func (p rowPlan) apply(f *excelize.File, accounts map[string]struct{}) error {
 	for _, w := range p {
 		if w.tx == nil {
-			if err := clearRow(f, w); err != nil {
+			if err := clearRow(f, w, accounts); err != nil {
 				return err
 			}
 			continue
@@ -195,8 +219,23 @@ func (p rowPlan) apply(f *excelize.File) error {
 // Only the columns the sheet actually uses. Доходы is four wide, and blanking
 // seven would reach past it into whatever the owner keeps out there — the same
 // mistake the id column was placed to avoid.
-func clearRow(f *excelize.File, w rowWrite) error {
+func clearRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error {
 	cols := append(slices.Clone(dataColumns(w.kind)), w.idCol)
+	// The account may be in the column beside Источник. Clear it only when it is
+	// one — anything else there is the owner's note, not ours to remove.
+	if w.kind == domain.KindExpense {
+		name, err := excelize.CoordinatesToCellName(besideSourceColumn(), w.row)
+		if err != nil {
+			return fmt.Errorf("%s row %d: %w", w.sheet, w.row, err)
+		}
+		v, err := f.GetCellValue(w.sheet, name)
+		if err != nil {
+			return fmt.Errorf("%s!%s: %w", w.sheet, name, err)
+		}
+		if _, ok := accounts[strings.TrimSpace(v)]; ok {
+			cols = append(cols, besideSourceColumn())
+		}
+	}
 	for _, col := range cols {
 		name, err := excelize.CoordinatesToCellName(col, w.row)
 		if err != nil {
@@ -231,7 +270,18 @@ func writeRow(f *excelize.File, w rowWrite) error {
 		values[cols[3]] = tx.Place()
 		values[cols[4]] = tx.Description()
 		values[cols[5]] = float64(tx.Amount().Kopecks()) / 100
-		values[cols[6]] = tx.Source()
+		// Источник carries the account unless the row records how it was
+		// captured, in which case the account goes to the column beside it. This
+		// is the arrangement the sheet already uses, so writing a row back
+		// unchanged leaves the file alone.
+		if tx.Source() == "" {
+			values[cols[6]] = tx.Account()
+		} else {
+			values[cols[6]] = tx.Source()
+			if tx.Account() != "" {
+				values[besideSourceColumn()] = tx.Account()
+			}
+		}
 	} else {
 		values[cols[1]] = tx.Source()
 		values[cols[2]] = tx.Description()

@@ -46,6 +46,7 @@ func expense(t *testing.T, id string) finance.Record {
 		Place:       "Пятёрочка",
 		Description: "хлеб & молоко <2 шт>",
 		Source:      "Чек",
+		Account:     "Сбербанк",
 	})
 }
 
@@ -74,7 +75,8 @@ func TestSaveLoad_roundTripsEveryField(t *testing.T) {
 		if g.ID() != w.ID() || g.Kind() != w.Kind() || !g.Date().Equal(w.Date()) ||
 			g.Amount() != w.Amount() || g.Category() != w.Category() ||
 			g.Subcategory() != w.Subcategory() || g.Place() != w.Place() ||
-			g.Description() != w.Description() || g.Source() != w.Source() {
+			g.Description() != w.Description() || g.Source() != w.Source() ||
+			g.Account() != w.Account() {
 			t.Errorf("record %d did not round-trip:\n got %+v\nwant %+v", i, g, w)
 		}
 		if got[i].Rev() != want[i].Rev() || !got[i].UpdatedAt().Equal(want[i].UpdatedAt()) {
@@ -97,7 +99,7 @@ func TestSave_writesReadableLines(t *testing.T) {
 		t.Fatalf("read back: %v", err)
 	}
 	line := string(raw)
-	for _, want := range []string{`"amount":"202.45"`, `"date":"2026-03-29"`, `"Еда"`, `&`, `<2 шт>`} {
+	for _, want := range []string{`"amount":"202.45"`, `"date":"2026-03-29"`, `"Еда"`, `"account":"Сбербанк"`, `&`, `<2 шт>`} {
 		if !strings.Contains(line, want) {
 			t.Errorf("written line is missing %s:\n%s", want, line)
 		}
@@ -125,7 +127,7 @@ func TestSave_omitsEmptyOptionalFields(t *testing.T) {
 		t.Fatalf("Save: %v", err)
 	}
 	raw, _ := os.ReadFile(path)
-	for _, unwanted := range []string{`"category"`, `"place"`, `"subcategory"`, `"description"`} {
+	for _, unwanted := range []string{`"category"`, `"place"`, `"subcategory"`, `"description"`, `"account"`} {
 		if strings.Contains(string(raw), unwanted) {
 			t.Errorf("empty %s should not be written:\n%s", unwanted, raw)
 		}

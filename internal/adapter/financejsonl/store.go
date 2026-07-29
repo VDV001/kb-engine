@@ -48,6 +48,7 @@ type line struct {
 	Place       string `json:"place,omitempty"`
 	Description string `json:"description,omitempty"`
 	Source      string `json:"source,omitempty"`
+	Account     string `json:"account,omitempty"`
 	Rev         int    `json:"rev"`
 	UpdatedAt   string `json:"updated_at"`
 }
@@ -134,6 +135,7 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 		Place:       l.Place,
 		Description: l.Description,
 		Source:      l.Source,
+		Account:     l.Account,
 		Now:         now,
 	})
 	if err != nil {
@@ -216,6 +218,7 @@ func encodeLine(r finance.Record) line {
 		Place:       tx.Place(),
 		Description: tx.Description(),
 		Source:      tx.Source(),
+		Account:     tx.Account(),
 		Rev:         r.Rev(),
 		UpdatedAt:   r.UpdatedAt().UTC().Format(time.RFC3339),
 	}

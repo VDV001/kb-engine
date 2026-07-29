@@ -164,6 +164,28 @@ func TestNewTransaction_futureIsMeasuredInDays(t *testing.T) {
 	}
 }
 
+// The account is which of your banks the money moved through. Open like the
+// category: the workbook names five accounts on its Счета sheet, and a closed
+// enum would reject a sixth the day one is opened.
+func TestNewTransaction_account(t *testing.T) {
+	p := txParams()
+	p.Account = "  Сбербанк  "
+	tx, err := domain.NewTransaction(p)
+	if err != nil {
+		t.Fatalf("NewTransaction: %v", err)
+	}
+	if got := tx.Account(); got != "Сбербанк" {
+		t.Errorf("Account = %q, want it trimmed", got)
+	}
+
+	// Absent is legitimate: 32 of the 507 rows in the real ledger record no
+	// account at all, and refusing them would refuse the user's history.
+	p.Account = ""
+	if _, err := domain.NewTransaction(p); err != nil {
+		t.Errorf("a transaction without an account must be accepted: %v", err)
+	}
+}
+
 // A transaction read from a spreadsheet carries a positional id ("expense-r42")
 // that stops being meaningful the moment a row is inserted above it. On first
 // import it is given a stable one, and everything else about the transaction
