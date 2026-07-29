@@ -85,6 +85,11 @@ func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time
 		return nil, fmt.Errorf("read sheet %q: %w", sheet, err)
 	}
 
+	// Once the workbook carries ids, they are the identity. A sheet that has
+	// never been synced has no id column, and the positional fallback below
+	// stands in until AssignIDs retires it.
+	idCol := findIDColumn(rows)
+
 	var out []domain.Transaction
 	for i, row := range rows {
 		rowNum := i + 1
@@ -118,13 +123,7 @@ func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time
 			return nil, fmt.Errorf("%s row %d: date: %w", sheet, rowNum, err)
 		}
 
-		// ponytail: identity is positional until the sync step adds an id column
-		// to the workbook (see the migration plan, §5.1). Ceiling — inserting a
-		// row above shifts every id below it, so this is stable enough to read
-		// and report, but NOT enough to diff two sides of a sync. Upgrade path:
-		// write ULIDs into a dedicated column on first migration and read them
-		// here instead.
-		p.ID = fmt.Sprintf("%s-r%d", kind, rowNum)
+		p.ID = rowID(row, idCol, kind, rowNum)
 
 		tx, err := domain.NewTransaction(p)
 		if err != nil {
@@ -133,6 +132,22 @@ func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time
 		out = append(out, tx)
 	}
 	return out, nil
+}
+
+// rowID returns the identity of a row: the stored id when the workbook has an
+// id column, and a positional one otherwise.
+//
+// Positional identity is the fallback, not the plan: inserting a row above
+// shifts every id below it, which is stable enough to read and report but not
+// to diff two sides of a sync. AssignIDs replaces it with a stored ULID, and
+// from then on that column wins.
+func rowID(row []string, idCol int, kind string, rowNum int) string {
+	if idCol != 0 {
+		if stored := cell(row, idCol-1); stored != "" {
+			return stored
+		}
+	}
+	return fmt.Sprintf("%s-r%d", kind, rowNum)
 }
 
 func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, error) {
