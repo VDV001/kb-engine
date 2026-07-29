@@ -134,6 +134,12 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 // leaves .~lock.<name># next to the file for as long as it is open, and writing
 // underneath that produces two divergent versions — one of which disappears
 // without warning when the editor saves.
+// CheckLock reports whether the workbook is open in an editor, without opening
+// or touching it. Exported so that a caller planning a write — a dry run, say —
+// can ask the same question the write itself will ask, instead of promising an
+// outcome the real run would refuse.
+func CheckLock(path string) error { return checkLock(path) }
+
 func checkLock(path string) error {
 	lock := filepath.Join(filepath.Dir(path), ".~lock."+filepath.Base(path)+"#")
 	if _, err := os.Stat(lock); err == nil {
