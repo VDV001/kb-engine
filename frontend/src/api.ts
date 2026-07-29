@@ -92,6 +92,34 @@ export interface AnalyticsConfig {
   manifesto_quotes: ManifestoQuote[] | null
 }
 
+// Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as
+// int64 so that 89.99 stays 89.99, and parsing straight into a float would put
+// 89.98999999999999 back on the screen. Anything that sums amounts goes through
+// kopecks (see toKopecks in views).
+export interface Transaction {
+  id: string
+  kind: 'expense' | 'income'
+  date: string
+  amount: string
+  category?: string
+  subcategory?: string
+  place?: string
+  description?: string
+  account?: string
+  source?: string
+}
+
+export interface Account {
+  bank: string
+  balance: string
+  updated: string
+}
+
+export interface Finances {
+  transactions: Transaction[]
+  accounts: Account[]
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -107,4 +135,5 @@ export const api = {
   duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
+  finances: () => getJSON<Finances>('/api/finances'),
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Stats } from './api'
+import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
 import { ErrorBox, Spinner } from './components/ui'
 import {
   AnalyticsView,
@@ -8,11 +8,12 @@ import {
   AuditsView,
   DuplicatesView,
   EntriesView,
+  FinancesView,
   OverviewView,
   SettingsView,
 } from './views'
 
-type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'settings'
+type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'finances' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Обзор' },
@@ -21,6 +22,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'audits', label: 'Аудиты' },
   { id: 'duplicates', label: 'Дубликаты' },
   { id: 'archives', label: 'Архив' },
+  { id: 'finances', label: 'Финансы' },
   { id: 'settings', label: 'Сводка' },
 ]
 
@@ -31,6 +33,7 @@ interface Data {
   duplicates: DuplicateGroup[]
   analytics: Analytics
   analyticsConfig: AnalyticsConfig
+  finances: Finances
 }
 
 export default function App() {
@@ -46,9 +49,10 @@ export default function App() {
       api.duplicates(),
       api.analytics(),
       api.analyticsConfig(),
+      api.finances(),
     ])
-      .then(([stats, entries, audits, duplicates, analytics, analyticsConfig]) =>
-        setData({ stats, entries, audits, duplicates, analytics, analyticsConfig }),
+      .then(([stats, entries, audits, duplicates, analytics, analyticsConfig, finances]) =>
+        setData({ stats, entries, audits, duplicates, analytics, analyticsConfig, finances }),
       )
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
@@ -89,6 +93,7 @@ export default function App() {
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
             {tab === 'archives' && <ArchivesView entries={data.entries} />}
+            {tab === 'finances' && <FinancesView finances={data.finances} />}
             {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}

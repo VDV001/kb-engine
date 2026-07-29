@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finding, Stats } from './api'
+import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Finding, Stats, Transaction } from './api'
 import { Badge, BarList, Card, Section, Stat } from './components/ui'
 
 export function OverviewView({ stats }: { stats: Stats }) {
@@ -334,6 +334,194 @@ export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
           </Card>
         ))}
       </div>
+    </Section>
+  )
+}
+
+// --- Finances ---------------------------------------------------------------
+
+// Amounts cross the wire as decimal strings so that kopecks survive the trip
+// (see the note in api.ts). Summing happens in integer kopecks and formatting
+// happens once, at the end — never on an accumulated float.
+function toKopecks(amount: string): number {
+  const [rub, kop = '0'] = amount.split('.')
+  const sign = rub.startsWith('-') ? -1 : 1
+  return sign * (Math.abs(parseInt(rub, 10)) * 100 + parseInt(kop.padEnd(2, '0'), 10))
+}
+
+function formatRub(kopecks: number): string {
+  const sign = kopecks < 0 ? '-' : ''
+  const abs = Math.abs(kopecks)
+  const rub = Math.floor(abs / 100).toLocaleString('ru-RU')
+  return `${sign}${rub},${String(abs % 100).padStart(2, '0')} ₽`
+}
+
+// monthOf takes the "YYYY-MM" prefix of an ISO date without constructing a Date:
+// parsing would drag in a timezone, and a purchase made on the 1st must not
+// slide into the previous month because the browser sits west of UTC.
+function monthOf(date: string): string {
+  return date.slice(0, 7)
+}
+
+const monthNames = [
+  'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
+  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
+]
+
+function monthLabel(month: string): string {
+  const [year, m] = month.split('-')
+  return `${monthNames[parseInt(m, 10) - 1]} ${year}`
+}
+
+function sumBy(txs: Transaction[], key: (t: Transaction) => string): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const t of txs) {
+    const k = key(t)
+    if (k === '') continue
+    out[k] = (out[k] ?? 0) + toKopecks(t.amount)
+  }
+  return out
+}
+
+// BarList counts in whole units, so rouble totals go in as rounded roubles and
+// the exact kopecks are shown separately.
+function toRoubleBars(byKopecks: Record<string, number>): Record<string, number> {
+  return Object.fromEntries(Object.entries(byKopecks).map(([k, v]) => [k, Math.round(v / 100)]))
+}
+
+export function FinancesView({ finances }: { finances: Finances }) {
+  const [month, setMonth] = useState('')
+
+  const months = useMemo(
+    () => Array.from(new Set(finances.transactions.map((t) => monthOf(t.date)))).sort().reverse(),
+    [finances.transactions],
+  )
+
+  const shown = useMemo(
+    () => (month === '' ? finances.transactions : finances.transactions.filter((t) => monthOf(t.date) === month)),
+    [finances.transactions, month],
+  )
+
+  const expenses = shown.filter((t) => t.kind === 'expense')
+  const income = shown.filter((t) => t.kind === 'income')
+  // Expenses are summed as recorded, so a refund (a negative expense) comes off
+  // the total instead of adding to it — the same arithmetic the CLI report does.
+  const spent = expenses.reduce((n, t) => n + toKopecks(t.amount), 0)
+  const earned = income.reduce((n, t) => n + toKopecks(t.amount), 0)
+  const balance = finances.accounts.reduce((n, a) => n + toKopecks(a.balance), 0)
+
+  const byCategory = sumBy(expenses, (t) => t.category ?? '')
+  const byAccount = sumBy(expenses, (t) => t.account ?? '')
+  const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
+
+  if (finances.transactions.length === 0 && finances.accounts.length === 0) {
+    return (
+      <Section title="Финансы" subtitle="Леджер не подключён">
+        <Card>
+          <p className="text-sm text-slate-500">
+            Запусти <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">kbengine serve</code> с
+            флагами <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">--ledger</code> и{' '}
+            <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">--from</code>, чтобы увидеть финансы.
+          </p>
+        </Card>
+      </Section>
+    )
+  }
+
+  return (
+    <Section
+      title="Финансы"
+      subtitle={month === '' ? `${shown.length} записей за всё время` : `${shown.length} записей за ${monthLabel(month)}`}
+    >
+      <div className="flex flex-wrap gap-2">
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
+        >
+          <option value="">За всё время</option>
+          {months.map((m) => (
+            <option key={m} value={m}>
+              {monthLabel(m)}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat label="Баланс по счетам" value={formatRub(balance)} />
+        <Stat label={`Расходы (${expenses.length})`} value={formatRub(spent)} />
+        <Stat label={`Доходы (${income.length})`} value={formatRub(earned)} />
+        <Stat label="Разница" value={formatRub(earned - spent)} />
+      </div>
+
+      {top && (
+        <Card>
+          <div className="text-sm text-slate-500">Топ категория</div>
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{top[0]}</span>
+            <span className="tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
+            <span className="text-sm text-slate-400">
+              {spent === 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
+            </span>
+          </div>
+        </Card>
+      )}
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по категориям, ₽</h3>
+          <BarList data={toRoubleBars(byCategory)} />
+        </Card>
+        <div className="space-y-4">
+          <Card>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по счетам, ₽</h3>
+            <BarList data={toRoubleBars(byAccount)} />
+          </Card>
+          <Card>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Остатки по счетам</h3>
+            <div className="space-y-1 text-sm">
+              {finances.accounts.map((a) => (
+                <div key={a.bank} className="flex items-center justify-between gap-2">
+                  <span className="truncate text-slate-600 dark:text-slate-300">{a.bank}</span>
+                  <span className="shrink-0 tabular-nums text-slate-800 dark:text-slate-100">
+                    {formatRub(toKopecks(a.balance))}
+                  </span>
+                  <span className="w-24 shrink-0 text-right text-xs text-slate-400">{a.updated}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <Card>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Последние записи</h3>
+        <div className="space-y-1 text-sm">
+          {shown
+            .slice()
+            .sort((a, b) => b.date.localeCompare(a.date))
+            .slice(0, 50)
+            .map((t) => (
+              <div key={t.id} className="flex items-center gap-2 border-b border-slate-100 py-1 last:border-0 dark:border-slate-700">
+                <span className="w-24 shrink-0 tabular-nums text-slate-400">{t.date}</span>
+                <span className="w-28 shrink-0 truncate text-slate-600 dark:text-slate-300">{t.category ?? '—'}</span>
+                <span className="flex-1 truncate text-slate-500" title={t.description ?? t.place ?? ''}>
+                  {t.place ?? t.description ?? ''}
+                </span>
+                <span className="w-24 shrink-0 truncate text-xs text-slate-400">{t.account ?? ''}</span>
+                <span
+                  className={`w-28 shrink-0 text-right tabular-nums ${
+                    t.kind === 'income' ? 'text-emerald-600' : 'text-slate-800 dark:text-slate-100'
+                  }`}
+                >
+                  {t.kind === 'income' ? '+' : ''}
+                  {formatRub(toKopecks(t.amount))}
+                </span>
+              </div>
+            ))}
+        </div>
+      </Card>
     </Section>
   )
 }

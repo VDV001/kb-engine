@@ -39,10 +39,28 @@ type Analyzer interface {
 	Categories() ([]analytics.CategorySize, error)
 }
 
+// Finances is what the finance port hands over: the ledger rows and the account
+// balances. Aggregation is deliberately not here — the view filters by month
+// and totals what it filtered, so the arithmetic lives in one place instead of
+// being split between a server-side summary and a client-side one that must
+// agree with it.
+type Finances struct {
+	Transactions []domain.Transaction
+	Accounts     []domain.Account
+}
+
+// Financier is the finance port the API depends on. A nil Financier means no
+// ledger is configured, which is a valid deployment: the rest of the dashboard
+// works and the Finances view shows nothing.
+type Financier interface {
+	Finances() (Finances, error)
+}
+
 // NewServer builds the HTTP handler. cfg is the curated analytics config (empty
-// when none is configured). If frontend is non-nil its files are served at the
-// root (with index.html fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
+// when none is configured). fin may be nil when no ledger is configured. If
+// frontend is non-nil its files are served at the root (with index.html
+// fallback for client-side routes).
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -52,6 +70,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, cfg analyticsconfig.Config, fr
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
+	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
 	}
@@ -154,6 +173,28 @@ func handleAudits(a Auditor) http.HandlerFunc {
 			"canonical":    canonical,
 			"supersession": supersession,
 		})
+	}
+}
+
+func handleFinances(fin Financier) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		// Empty rather than 404: the view asks unconditionally, and "no ledger
+		// configured" is a shape it can render, not an error it has to handle.
+		txs, accounts := []transactionDTO{}, []accountDTO{}
+		if fin != nil {
+			f, err := fin.Finances()
+			if err != nil {
+				writeError(w, err)
+				return
+			}
+			for _, t := range f.Transactions {
+				txs = append(txs, toTransactionDTO(t))
+			}
+			for _, a := range f.Accounts {
+				accounts = append(accounts, toAccountDTO(a))
+			}
+		}
+		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts})
 	}
 }
 
