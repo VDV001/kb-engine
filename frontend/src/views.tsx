@@ -389,8 +389,33 @@ function toRoubleBars(byKopecks: Record<string, number>): Record<string, number>
   return Object.fromEntries(Object.entries(byKopecks).map(([k, v]) => [k, Math.round(v / 100)]))
 }
 
+
+// Trend renders the shape of spending over the period: by day when a month is
+// picked, by month otherwise. The Python dashboard always showed the last seven
+// days; with a month picker on the same screen, matching the picker is the same
+// idea applied consistently.
+function Trend({ points }: { points: { label: string; kopecks: number }[] }) {
+  if (points.length === 0) return null
+  const max = Math.max(1, ...points.map((p) => p.kopecks))
+  return (
+    <div className="flex items-end gap-1" style={{ height: 64 }}>
+      {points.map((p) => (
+        <div
+          key={p.label}
+          title={`${p.label}: ${formatRub(p.kopecks)}`}
+          className="min-w-1 flex-1 rounded-t bg-sky-500"
+          style={{ height: Math.max(Math.round((p.kopecks / max) * 64), 2) }}
+        />
+      ))}
+    </div>
+  )
+}
+
 export function FinancesView({ finances }: { finances: Finances }) {
   const [month, setMonth] = useState('')
+  // Hidden by default, like the Python dashboard: the safe state is the one you
+  // land on, not the one you have to remember to switch to.
+  const [masked, setMasked] = useState(true)
 
   const months = useMemo(
     () => Array.from(new Set(finances.transactions.map((t) => monthOf(t.date)))).sort().reverse(),
@@ -409,6 +434,20 @@ export function FinancesView({ finances }: { finances: Finances }) {
   const spent = expenses.reduce((n, t) => n + toKopecks(t.amount), 0)
   const earned = income.reduce((n, t) => n + toKopecks(t.amount), 0)
   const balance = finances.accounts.reduce((n, a) => n + toKopecks(a.balance), 0)
+
+  // By day inside a picked month, by month over all time. Days with no spending
+  // stay in the series as zeroes — a gap is information, and dropping it would
+  // make three scattered purchases look like a steady week.
+  const trend = useMemo(() => {
+    const bucket = month === '' ? (t: Transaction) => monthOf(t.date) : (t: Transaction) => t.date
+    const sums = sumBy(expenses, bucket)
+    const labels =
+      month === ''
+        ? Object.keys(sums).sort()
+        : Array.from({ length: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate() },
+            (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
+    return labels.map((label) => ({ label, kopecks: sums[label] ?? 0 }))
+  }, [expenses, month])
 
   const byCategory = sumBy(expenses, (t) => t.category ?? '')
   const byAccount = sumBy(expenses, (t) => t.account ?? '')
@@ -433,6 +472,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
       title="Финансы"
       subtitle={month === '' ? `${shown.length} записей за всё время` : `${shown.length} записей за ${monthLabel(month)}`}
     >
+      <div className={masked ? 'privacy-on space-y-4' : 'space-y-4'}>
       <div className="flex flex-wrap gap-2">
         <select
           value={month}
@@ -446,21 +486,37 @@ export function FinancesView({ finances }: { finances: Finances }) {
             </option>
           ))}
         </select>
+        <button
+          onClick={() => setMasked((v) => !v)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+        >
+          {masked ? 'Показать суммы' : 'Скрыть суммы'}
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Баланс по счетам" value={formatRub(balance)} />
-        <Stat label={`Расходы (${expenses.length})`} value={formatRub(spent)} />
-        <Stat label={`Доходы (${income.length})`} value={formatRub(earned)} />
-        <Stat label="Разница" value={formatRub(earned - spent)} />
+        <Stat label="Баланс по счетам" value={<span className="privacy-mask">{formatRub(balance)}</span>} />
+        <Stat label={`Расходы (${expenses.length})`} value={<span className="privacy-mask">{formatRub(spent)}</span>} />
+        <Stat label={`Доходы (${income.length})`} value={<span className="privacy-mask">{formatRub(earned)}</span>} />
+        <Stat label="Разница" value={<span className="privacy-mask">{formatRub(earned - spent)}</span>} />
       </div>
+
+      <Card>
+        <div className="mb-2 flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+            {month === '' ? 'Расходы по месяцам' : 'Расходы по дням'}
+          </h3>
+          <span className="text-xs text-slate-400">{trend.length} точек</span>
+        </div>
+        <Trend points={trend} />
+      </Card>
 
       {top && (
         <Card>
           <div className="text-sm text-slate-500">Топ категория</div>
           <div className="mt-1 flex items-baseline gap-2">
             <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{top[0]}</span>
-            <span className="tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
+            <span className="privacy-mask tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
             <span className="text-sm text-slate-400">
               {spent === 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
             </span>
@@ -471,12 +527,12 @@ export function FinancesView({ finances }: { finances: Finances }) {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по категориям, ₽</h3>
-          <BarList data={toRoubleBars(byCategory)} />
+          <BarList data={toRoubleBars(byCategory)} valueClassName="privacy-mask" />
         </Card>
         <div className="space-y-4">
           <Card>
             <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по счетам, ₽</h3>
-            <BarList data={toRoubleBars(byAccount)} />
+            <BarList data={toRoubleBars(byAccount)} valueClassName="privacy-mask" />
           </Card>
           <Card>
             <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Остатки по счетам</h3>
@@ -484,7 +540,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
               {finances.accounts.map((a) => (
                 <div key={a.bank} className="flex items-center justify-between gap-2">
                   <span className="truncate text-slate-600 dark:text-slate-300">{a.bank}</span>
-                  <span className="shrink-0 tabular-nums text-slate-800 dark:text-slate-100">
+                  <span className="privacy-mask shrink-0 tabular-nums text-slate-800 dark:text-slate-100">
                     {formatRub(toKopecks(a.balance))}
                   </span>
                   <span className="w-24 shrink-0 text-right text-xs text-slate-400">{a.updated}</span>
@@ -511,7 +567,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
                 </span>
                 <span className="w-24 shrink-0 truncate text-xs text-slate-400">{t.account ?? ''}</span>
                 <span
-                  className={`w-28 shrink-0 text-right tabular-nums ${
+                  className={`privacy-mask w-28 shrink-0 text-right tabular-nums ${
                     t.kind === 'income' ? 'text-emerald-600' : 'text-slate-800 dark:text-slate-100'
                   }`}
                 >
@@ -522,6 +578,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
             ))}
         </div>
       </Card>
+      </div>
     </Section>
   )
 }
