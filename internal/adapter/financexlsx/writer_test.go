@@ -37,6 +37,9 @@ func workbookWithExtraColumn(t *testing.T) string {
 	must(f.SetCellValue("Расходы", "A4", time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)))
 	must(f.SetCellValue("Расходы", "B4", "Транспорт"))
 	must(f.SetCellValue("Расходы", "F4", 1500))
+	// Exactly the live shape: the source column says the record came from a
+	// receipt, and the bank went into the unlabelled column beside it.
+	must(f.SetCellValue("Расходы", "G4", "Чек"))
 	// The currency format the live sheet uses, so an appended row has something
 	// worth inheriting.
 	money, err := f.NewStyle(&excelize.Style{CustomNumFmt: new(`#,##0.00" ₽"`)})
@@ -54,6 +57,19 @@ func workbookWithExtraColumn(t *testing.T) string {
 	must(f.SetCellValue("Доходы", "A3", time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC)))
 	must(f.SetCellValue("Доходы", "B3", "Зарплата"))
 	must(f.SetCellValue("Доходы", "D3", 90000))
+
+	// Счета is the vocabulary that decides what counts as an account.
+	_, err = f.NewSheet("Счета")
+	must(err)
+	must(f.SetCellValue("Счета", "A2", "Банк"))
+	for i, bank := range []string{"Сбербанк", "Альфа-Банк", "Т-Банк"} {
+		cell, _ := excelize.CoordinatesToCellName(1, i+3)
+		must(f.SetCellValue("Счета", cell, bank))
+		amount, _ := excelize.CoordinatesToCellName(2, i+3)
+		must(f.SetCellValue("Счета", amount, 100))
+		updated, _ := excelize.CoordinatesToCellName(3, i+3)
+		must(f.SetCellValue("Счета", updated, time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)))
+	}
 
 	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
 	must(f.SaveAs(path))
