@@ -10,6 +10,7 @@ import {
   sumBy,
   sumByAccount,
   toKopecks,
+  plural,
   toRoubleBars,
 } from './money'
 
@@ -469,7 +470,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
             {month === '' ? 'Расходы по месяцам' : 'Расходы по дням'}
           </h3>
-          <span className="text-xs text-slate-400">{trend.length} точек</span>
+          <span className="text-xs text-slate-400">{plural(trend.length, 'точка', 'точки', 'точек')}</span>
         </div>
         <Trend points={trend} masked={masked} />
       </Card>
@@ -481,7 +482,10 @@ export function FinancesView({ finances }: { finances: Finances }) {
             <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{top[0]}</span>
             <span className="privacy-mask tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
             <span className="text-sm text-slate-400">
-              {spent === 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
+              {/* A share of a negative total is not a share of anything: when
+                  refunds outweigh purchases the percentage flips sign and reads
+                  as nonsense. */}
+              {spent <= 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
             </span>
           </div>
         </Card>

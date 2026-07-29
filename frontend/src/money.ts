@@ -110,3 +110,15 @@ export function monthsBetween(first: string, last: string): string[] {
   }
   return out
 }
+
+// plural picks the Russian form for a count: 1 точка, 2 точки, 5 точек. The
+// teens are the exception that a naive mod-10 rule gets wrong (11 точек, not
+// 11 точка).
+export function plural(n: number, one: string, few: string, many: string): string {
+  const mod100 = n % 100
+  const mod10 = n % 10
+  if (mod100 >= 11 && mod100 <= 14) return `${n} ${many}`
+  if (mod10 === 1) return `${n} ${one}`
+  if (mod10 >= 2 && mod10 <= 4) return `${n} ${few}`
+  return `${n} ${many}`
+}

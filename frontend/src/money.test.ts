@@ -8,6 +8,7 @@ import {
   monthLabel,
   monthOf,
   monthsBetween,
+  plural,
   sumBy,
   sumByAccount,
   toKopecks,
@@ -93,6 +94,25 @@ describe('monthsBetween', () => {
 
   it('is empty when there is nothing to span', () => {
     expect(monthsBetween('', '')).toEqual([])
+  })
+})
+
+describe('plural', () => {
+  it.each([
+    [1, '1 точка'],
+    [2, '2 точки'],
+    [4, '4 точки'],
+    [5, '5 точек'],
+    [11, '11 точек'], // the teens are where a naive mod-10 rule breaks
+    [12, '12 точек'],
+    [14, '14 точек'],
+    [21, '21 точка'],
+    [22, '22 точки'],
+    [25, '25 точек'],
+    [31, '31 точка'],
+    [0, '0 точек'],
+  ])('%d', (n, want) => {
+    expect(plural(n, 'точка', 'точки', 'точек')).toBe(want)
   })
 })
 
