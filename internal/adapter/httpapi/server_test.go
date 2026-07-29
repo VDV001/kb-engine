@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
@@ -61,8 +62,91 @@ var testConfig = analyticsconfig.Config{
 	Gaps:     []analyticsconfig.Gap{{Topic: "Testing", Priority: "low"}},
 }
 
+type fakeFinance struct{ err error }
+
+func (f fakeFinance) Finances() (httpapi.Finances, error) {
+	if f.err != nil {
+		return httpapi.Finances{}, f.err
+	}
+	now := func() time.Time { return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC) }
+	amount, _ := domain.ParseMoney("500.00")
+	tx, _ := domain.NewTransaction(domain.TransactionParams{
+		ID: "01ABC", Kind: "expense", Date: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC),
+		Amount: amount, Category: "Еда", Subcategory: "Продукты", Place: "Лавка",
+		Account: "Сбербанк", Source: "Чек", Now: now,
+	})
+	balance, _ := domain.ParseMoney("1000.00")
+	acc, _ := domain.NewAccount("Сбербанк", balance, time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC), now)
+	return httpapi.Finances{
+		Transactions: []domain.Transaction{tx},
+		Accounts:     []domain.Account{acc},
+	}, nil
+}
+
 func newTestServer() http.Handler {
-	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, testConfig, nil)
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
+}
+
+// The dashboard needs the rows and the balances; it does the filtering by month
+// and the totals itself, the same way the entries view already filters entries.
+// Money crosses as a decimal string, not a float — the ledger is kopecks, and a
+// float would put 89.98999999999999 on screen.
+func TestServer_finances(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/finances")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Transactions []map[string]any `json:"transactions"`
+		Accounts     []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Transactions) != 1 || len(body.Accounts) != 1 {
+		t.Fatalf("got %d transactions and %d accounts, want 1 and 1",
+			len(body.Transactions), len(body.Accounts))
+	}
+	tx := body.Transactions[0]
+	for field, want := range map[string]any{
+		"kind": "expense", "date": "2026-07-01", "amount": "500.00",
+		"category": "Еда", "account": "Сбербанк",
+	} {
+		if tx[field] != want {
+			t.Errorf("transaction[%q] = %v, want %v", field, tx[field], want)
+		}
+	}
+	if acc := body.Accounts[0]; acc["bank"] != "Сбербанк" || acc["balance"] != "1000.00" {
+		t.Errorf("account = %v", acc)
+	}
+}
+
+// Finances are optional: a deployment with no ledger configured still serves the
+// rest of the dashboard, and the view says there is nothing rather than breaking.
+func TestServer_finances_notConfigured(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil, testConfig, nil)
+	rec := get(t, srv, "/api/finances")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Transactions []map[string]any `json:"transactions"`
+		Accounts     []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Transactions) != 0 || len(body.Accounts) != 0 {
+		t.Errorf("body = %+v, want both empty", body)
+	}
+}
+
+func TestServer_finances_error(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
+		fakeFinance{err: errors.New("ledger unreadable")}, testConfig, nil)
+	if rec := get(t, srv, "/api/finances"); rec.Code != http.StatusInternalServerError {
+		t.Errorf("status = %d, want 500", rec.Code)
+	}
 }
 
 func TestServer_analyticsConfig(t *testing.T) {
