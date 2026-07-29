@@ -13,12 +13,20 @@ import (
 func ledger(t *testing.T) []finance.Record {
 	t.Helper()
 	build := func(id, kind string, y int, m time.Month, d int, amount int64, category string) finance.Record {
+		account := "Сбербанк"
+		if id == "01B" {
+			account = "Альфа-Банк"
+		}
+		if kind == domain.KindIncome {
+			account = ""
+		}
 		tx, err := domain.NewTransaction(domain.TransactionParams{
 			ID:       id,
 			Kind:     kind,
 			Date:     time.Date(y, m, d, 0, 0, 0, 0, time.UTC),
 			Amount:   domain.NewMoney(amount),
 			Category: category,
+			Account:  account,
 			Now:      clock,
 		})
 		if err != nil {
@@ -53,6 +61,8 @@ func TestMatch(t *testing.T) {
 		// everyone except a case-sensitive comparison.
 		{"category ignores case", finance.Filter{Category: "еДа"}, []string{"01A", "01C"}},
 		{"kind", finance.Filter{Kind: domain.KindIncome}, []string{"01D"}},
+		{"account", finance.Filter{Account: "Альфа-Банк"}, []string{"01B"}},
+		{"account ignores case", finance.Filter{Account: "сбербанк"}, []string{"01A", "01C"}},
 		{"combined", finance.Filter{Year: 2026, Month: time.April, Kind: domain.KindExpense}, []string{"01C"}},
 		{"no match is empty, not everything", finance.Filter{Category: "Ничего"}, nil},
 	}
@@ -106,6 +116,38 @@ func TestSummarize(t *testing.T) {
 		if got.Category != w.category || got.Total.Kopecks() != w.kopecks || got.Count != w.count {
 			t.Errorf("category %d = %s %d kopecks x%d, want %s %d x%d",
 				i, got.Category, got.Total.Kopecks(), got.Count, w.category, w.kopecks, w.count)
+		}
+	}
+}
+
+// Which card the money left from is the question the account was added to
+// answer, so the summary breaks spending down by it the same way it does by
+// category.
+func TestSummarize_byAccount(t *testing.T) {
+	s := finance.Summarize(ledger(t))
+	want := []struct {
+		account string
+		kopecks int64
+		count   int
+	}{
+		{"Сбербанк", 50245, 2},
+		{"Альфа-Банк", 150000, 1},
+	}
+	got := map[string]finance.CategoryTotal{}
+	for _, a := range s.ByAccount {
+		got[a.Category] = a
+	}
+	if len(s.ByAccount) != len(want) {
+		t.Fatalf("got %d accounts, want %d: %+v", len(s.ByAccount), len(want), s.ByAccount)
+	}
+	for _, w := range want {
+		a, ok := got[w.account]
+		if !ok {
+			t.Errorf("account %s missing from the breakdown", w.account)
+			continue
+		}
+		if a.Total.Kopecks() != w.kopecks || a.Count != w.count {
+			t.Errorf("%s = %d kopecks x%d, want %d x%d", w.account, a.Total.Kopecks(), a.Count, w.kopecks, w.count)
 		}
 	}
 }
