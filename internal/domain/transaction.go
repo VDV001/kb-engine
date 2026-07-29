@@ -11,6 +11,14 @@ import (
 // invariant.
 var ErrInvalidTransaction = errors.New("invalid transaction")
 
+// ErrAccountNotApplicable is returned when an income is given an account.
+//
+// Доходы records where money came from — a salary, a transfer — and has no
+// column for which account it landed in. Accepting the value and dropping it on
+// the way to the sheet is what made a written transaction come back different
+// from itself.
+var ErrAccountNotApplicable = errors.New("an income does not carry an account")
+
 // Transaction kinds. The sheet stores expenses as positive amounts and flips
 // the sign only when summing (see SignedAmount); a negative expense is a
 // refund and therefore adds to the balance.
@@ -104,6 +112,11 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		return Transaction{}, fmt.Errorf("%w: expense requires a category", ErrInvalidTransaction)
 	}
 
+	account := strings.TrimSpace(p.Account)
+	if p.Kind == KindIncome && account != "" {
+		return Transaction{}, fmt.Errorf("%w: %w (got %q)", ErrInvalidTransaction, ErrAccountNotApplicable, account)
+	}
+
 	return Transaction{
 		id:          id,
 		kind:        p.Kind,
@@ -114,7 +127,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		place:       strings.TrimSpace(p.Place),
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
-		account:     strings.TrimSpace(p.Account),
+		account:     account,
 	}, nil
 }
 
