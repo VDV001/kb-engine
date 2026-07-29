@@ -179,8 +179,8 @@
   --color-tag-text-3: var(--tag-text-3);
   --color-tag-text-4: var(--tag-text-4);
   --color-tertiary-fixed: var(--tertiary-fixed);
-  --font-display: "Newsreader", ui-serif, Georgia, serif;
-  --font-label: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "PT Serif", ui-serif, Georgia, serif;
+  --font-label: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
 }
