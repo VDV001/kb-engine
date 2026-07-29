@@ -39,7 +39,7 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *initialize {
-		return pairWorkbookWithLedger(*from, *ledgerPath, stdout, stderr)
+		return pairWorkbookWithLedger(*from, *ledgerPath, *dryRun, stdout, stderr)
 	}
 	forced, ok := forcedDirection(*resolve)
 	if !ok {
@@ -66,7 +66,7 @@ func forcedDirection(resolve string) (finance.Direction, bool) {
 
 // pairWorkbookWithLedger gives every row a stable id on both sides and writes
 // the ledger and the baseline from the same read.
-func pairWorkbookWithLedger(from, ledgerPath string, stdout, stderr io.Writer) int {
+func pairWorkbookWithLedger(from, ledgerPath string, dryRun bool, stdout, stderr io.Writer) int {
 	// An existing ledger may hold entries made with fin add that the workbook has
 	// never seen. Re-pairing would drop them, so the decision stays with a person.
 	if _, err := os.Stat(ledgerPath); err == nil {
@@ -94,15 +94,12 @@ func pairWorkbookWithLedger(from, ledgerPath string, stdout, stderr io.Writer) i
 		ids = append(ids, id)
 	}
 
-	if len(assign) > 0 {
-		if err := financexlsx.AssignIDs(from, assign, time.Now); err != nil {
-			fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
-			return 1
-		}
-	}
-
 	// The ids are already decided, so the generator hands out the prepared ones in
 	// order — Import still does the duplicate check and the record building.
+	//
+	// Import runs before anything is written so that a dry run reports the same
+	// count the real run would, and so that a workbook that fails the check keeps
+	// its rows unmarked.
 	next := 0
 	recs, err := finance.Import(led.Transactions, func() string {
 		id := ids[next]
@@ -114,6 +111,19 @@ func pairWorkbookWithLedger(from, ledgerPath string, stdout, stderr io.Writer) i
 		return 1
 	}
 	finance.Sort(recs)
+
+	if dryRun {
+		fmt.Fprintf(stdout, "fin sync --init (dry run): %d row(s) would be paired, %d newly identified — nothing written\n",
+			len(recs), len(assign))
+		return 0
+	}
+
+	if len(assign) > 0 {
+		if err := financexlsx.AssignIDs(from, assign, time.Now); err != nil {
+			fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
+			return 1
+		}
+	}
 	if err := financejsonl.Save(ledgerPath, recs); err != nil {
 		fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
 		return 1

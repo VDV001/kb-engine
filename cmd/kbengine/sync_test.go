@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,43 @@ func TestRun_finSync_nothingToDo(t *testing.T) {
 	if !strings.Contains(stdout, "nothing to do") {
 		t.Errorf("output = %q, want it to say there is nothing to do", stdout)
 	}
+}
+
+// A dry run has to be dry on both paths. --init is the one that writes to a
+// workbook that has never been touched before, so a dry run that lies here
+// costs more than anywhere else: the owner asked what would happen and got it.
+func TestRun_finSync_initDryRunWritesNothing(t *testing.T) {
+	xlsx := workbook(t)
+	ledger := filepath.Join(filepath.Dir(xlsx), "transactions.jsonl")
+	before := fileDigest(t, xlsx)
+
+	var out, errb bytes.Buffer
+	code := run([]string{"fin", "sync", "--init", "--dry-run", "--from", xlsx, "--ledger", ledger}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "dry run") {
+		t.Errorf("output = %q, want it marked as a dry run", out.String())
+	}
+	if _, err := os.Stat(ledger); !os.IsNotExist(err) {
+		t.Error("a dry run wrote the ledger")
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(ledger), ".sync-state.json")); !os.IsNotExist(err) {
+		t.Error("a dry run wrote the baseline")
+	}
+	if after := fileDigest(t, xlsx); after != before {
+		t.Error("a dry run changed the workbook")
+	}
+}
+
+// fileDigest is enough to tell "untouched" from "rewritten".
+func fileDigest(t *testing.T, path string) [32]byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return sha256.Sum256(b)
 }
 
 func TestRun_finSync_ledgerWins(t *testing.T) {
