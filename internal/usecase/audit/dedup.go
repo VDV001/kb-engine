@@ -48,7 +48,16 @@ func normalizeTitle(title string) string {
 }
 
 func duplicates(c *domain.Catalog) []DuplicateGroup {
-	entries := c.Entries()
+	// A superseded entry is a duplicate someone has already dealt with: it stays
+	// in the catalog as the record of an entry filed twice, and reporting it
+	// again would keep a resolved pair in the output forever.
+	var entries []domain.Entry
+	for _, e := range c.Entries() {
+		if !e.Lifecycle().IsSuperseded() {
+			entries = append(entries, e)
+		}
+	}
+
 	groups := groupBy(entries, "exact-url", func(e domain.Entry) string { return e.URL() })
 	groups = append(groups, groupBy(entries, "similar-title", func(e domain.Entry) string {
 		n := normalizeTitle(e.Title())

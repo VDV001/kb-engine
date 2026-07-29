@@ -38,8 +38,9 @@ func (l Lifecycle) String() string {
 }
 
 const (
-	lifecycleOutdated  = "outdated"
-	lifecycleCanonical = "canonical"
+	lifecycleOutdated   = "outdated"
+	lifecycleCanonical  = "canonical"
+	lifecycleSuperseded = "superseded"
 )
 
 // IsOutdated reports whether the lifecycle is the outdated state.
@@ -50,4 +51,10 @@ func (l Lifecycle) IsOutdated() bool {
 // IsCanonical reports whether the lifecycle is the canonical state.
 func (l Lifecycle) IsCanonical() bool {
 	return l.value == lifecycleCanonical
+}
+
+// IsSuperseded reports whether the entry has been replaced by another one and
+// is kept only for the record.
+func (l Lifecycle) IsSuperseded() bool {
+	return l.value == lifecycleSuperseded
 }
