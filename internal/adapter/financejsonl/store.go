@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -147,10 +148,31 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 // halfway through must leave the previous ledger intact rather than a truncated
 // one. Same directory because rename is only atomic within a filesystem.
 func Save(path string, recs []finance.Record) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, ".tmp-"+filepath.Base(path)+"-*")
+	return writeAtomically(path, func(w io.Writer) error {
+		enc := json.NewEncoder(w)
+		// The ledger holds descriptions with ampersands and angle brackets in them.
+		// Go's default HTML escaping rewrites those as numeric escapes: correct
+		// JSON, unreadable text. This file is read by eye.
+		enc.SetEscapeHTML(false)
+		for _, r := range recs {
+			if err := enc.Encode(encodeLine(r)); err != nil {
+				return fmt.Errorf("encode record %s: %w", r.Transaction().ID(), err)
+			}
+		}
+		return nil
+	})
+}
+
+// writeAtomically replaces path with whatever write produces, via a temp file
+// in the same directory and a rename.
+//
+// Same directory because rename is only atomic within a filesystem, and sync
+// before rename because otherwise the new name can become visible while its
+// contents are still in flight.
+func writeAtomically(path string, write func(io.Writer) error) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".tmp-"+filepath.Base(path)+"-*")
 	if err != nil {
-		return fmt.Errorf("create temp ledger: %w", err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
 	tmpName := tmp.Name()
 	// Removing a name that was already renamed away is a no-op, so this is safe
@@ -158,35 +180,26 @@ func Save(path string, recs []finance.Record) error {
 	defer func() { _ = os.Remove(tmpName) }()
 
 	w := bufio.NewWriter(tmp)
-	enc := json.NewEncoder(w)
-	// The ledger holds descriptions with ampersands and angle brackets in them.
-	// Go's default HTML escaping rewrites those as numeric escapes: correct
-	// JSON, unreadable text. This file is read by eye.
-	enc.SetEscapeHTML(false)
-	for _, r := range recs {
-		if err := enc.Encode(encodeLine(r)); err != nil {
-			_ = tmp.Close()
-			return fmt.Errorf("encode record %s: %w", r.Transaction().ID(), err)
-		}
+	if err := write(w); err != nil {
+		_ = tmp.Close()
+		return err
 	}
 	if err := w.Flush(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("write ledger: %w", err)
+		return fmt.Errorf("write %s: %w", filepath.Base(path), err)
 	}
-	// Durability before visibility: rename can otherwise publish a name whose
-	// contents have not reached the disk yet.
 	if err := tmp.Sync(); err != nil {
 		_ = tmp.Close()
-		return fmt.Errorf("sync ledger: %w", err)
+		return fmt.Errorf("sync %s: %w", filepath.Base(path), err)
 	}
 	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("close temp ledger: %w", err)
+		return fmt.Errorf("close temp file: %w", err)
 	}
 	if err := os.Chmod(tmpName, 0o600); err != nil {
-		return fmt.Errorf("chmod ledger: %w", err)
+		return fmt.Errorf("chmod %s: %w", filepath.Base(path), err)
 	}
 	if err := os.Rename(tmpName, path); err != nil {
-		return fmt.Errorf("replace ledger: %w", err)
+		return fmt.Errorf("replace %s: %w", filepath.Base(path), err)
 	}
 	return nil
 }
