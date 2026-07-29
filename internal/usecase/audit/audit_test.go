@@ -2,6 +2,7 @@ package audit_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -378,5 +379,51 @@ func TestOutdatedCandidates_loaderError(t *testing.T) {
 	svc := audit.NewService(fakeLoader{err: sentinel})
 	if _, err := svc.OutdatedCandidates(); !errors.Is(err, sentinel) {
 		t.Fatalf("err = %v, want sentinel", err)
+	}
+}
+
+// A merge has two sides: the surviving entry points at the one it replaced, and
+// that one is marked superseded. Writing only one side leaves a pair that looks
+// resolved from one direction and untouched from the other.
+//
+// This became load-bearing when dedup started skipping superseded entries: a
+// half-done merge no longer shows up there either, so nothing is left to notice
+// it. The catalog is edited by hand, which is exactly when a detector earns its
+// keep.
+func TestSupersessionIssues_reportsHalfDoneMerges(t *testing.T) {
+	target := func(id int) *int { return &id }
+	cat, err := domain.NewCatalog([]domain.Entry{
+		// Done properly: 1 replaced 2, and 2 says so.
+		article(t, 1, articleParams{title: "Survivor entry one", lifecycle: "active", verdict: "keep", supersedesID: target(2)}),
+		article(t, 2, articleParams{title: "Replaced entry two", lifecycle: "superseded", verdict: "keep"}),
+		// Only the pointer was written: 4 is still active.
+		article(t, 3, articleParams{title: "Survivor entry three", lifecycle: "active", verdict: "keep", supersedesID: target(4)}),
+		article(t, 4, articleParams{title: "Still active entry four", lifecycle: "active", verdict: "keep"}),
+		// Only the mark was written: nobody claims to have replaced 5.
+		article(t, 5, articleParams{title: "Orphaned superseded five", lifecycle: "superseded", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).SupersessionIssues()
+	if err != nil {
+		t.Fatalf("SupersessionIssues: %v", err)
+	}
+	got := map[int]string{}
+	for _, f := range findings {
+		got[f.EntryID] = strings.Join(f.Reasons, "; ")
+	}
+
+	for _, clean := range []int{1, 2} {
+		if _, flagged := got[clean]; flagged {
+			t.Errorf("entry %d is a complete merge and must not be flagged: %s", clean, got[clean])
+		}
+	}
+	if _, flagged := got[3]; !flagged {
+		t.Error("entry 3 points at an entry that was never marked superseded — not flagged")
+	}
+	if _, flagged := got[5]; !flagged {
+		t.Error("entry 5 is marked superseded with nothing pointing at it — not flagged")
 	}
 }
