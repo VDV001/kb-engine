@@ -94,6 +94,7 @@ func Fingerprint(tx domain.Transaction) string {
 		tx.Place(),
 		tx.Description(),
 		tx.Source(),
+		tx.Account(),
 	}, fingerprintSep)))
 	// Half the digest. A ledger holds hundreds of rows, not billions, and the
 	// state file stays readable at this width.

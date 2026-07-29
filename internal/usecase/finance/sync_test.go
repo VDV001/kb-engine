@@ -25,6 +25,24 @@ func expenseTx(t *testing.T, id string, day int, kopecks int64, category, note s
 	return out
 }
 
+func expenseWithAccount(t *testing.T, id string, day int, amount int64, category, note, account string) domain.Transaction {
+	t.Helper()
+	out, err := domain.NewTransaction(domain.TransactionParams{
+		ID:          id,
+		Kind:        domain.KindExpense,
+		Date:        time.Date(2026, 3, day, 0, 0, 0, 0, time.UTC),
+		Amount:      domain.NewMoney(amount),
+		Category:    category,
+		Description: note,
+		Account:     account,
+		Now:         clock,
+	})
+	if err != nil {
+		t.Fatalf("build transaction: %v", err)
+	}
+	return out
+}
+
 func recordOf(t *testing.T, tx domain.Transaction, rev int) finance.Record {
 	t.Helper()
 	r, err := finance.NewRecord(tx, rev, importedAt)
