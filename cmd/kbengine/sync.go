@@ -25,17 +25,26 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 	ledgerPath := ledgerFlags(fs)
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
 	initialize := fs.Bool("init", false, "give every row a stable id on both sides")
+	migrateIDs := fs.Bool("migrate-ids", false,
+		"move ids off the column the account uses, on a book paired by an older version")
 	resolve := fs.String("resolve", "", "on a conflict, take one side: jsonl or xlsx")
 	dryRun := fs.Bool("dry-run", false, "report what would happen and change nothing")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *ledgerPath == "" {
-		fmt.Fprintln(stderr, "fin sync: --ledger is required")
-		return 2
-	}
 	if *from == "" {
 		fmt.Fprintln(stderr, "fin sync: --from is required")
+		return 2
+	}
+	// Ahead of the --ledger check: this repairs the workbook's own layout and
+	// has no pairing to keep in step. Demanding the ledger here would send
+	// someone who is holding a refusal looking for a second path they do not
+	// need yet.
+	if *migrateIDs {
+		return migrateWorkbookIDs(*from, stdout, stderr)
+	}
+	if *ledgerPath == "" {
+		fmt.Fprintln(stderr, "fin sync: --ledger is required")
 		return 2
 	}
 	if *initialize {
@@ -47,6 +56,26 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return syncWorkbookAndLedger(*from, *ledgerPath, forced, *dryRun, stdout, stderr)
+}
+
+// migrateWorkbookIDs moves the ids off the column the account uses, on a book
+// paired before that placement rule existed.
+//
+// Every write into such a book is refused, so this is the only way out of that
+// state and reports plainly which of the two things happened — a book that
+// needed nothing is a normal outcome, not a failure.
+func migrateWorkbookIDs(from string, stdout, stderr io.Writer) int {
+	m, err := financexlsx.MigrateIDColumn(from, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin sync --migrate-ids: %v\n", err)
+		return 1
+	}
+	if m.Moved == 0 {
+		fmt.Fprintf(stdout, "fin sync --migrate-ids: nothing to move — ids are already in column %s\n", m.Column)
+		return 0
+	}
+	fmt.Fprintf(stdout, "fin sync --migrate-ids: %d id(s) moved to column %s → %s\n", m.Moved, m.Column, from)
+	return 0
 }
 
 // forcedDirection turns --resolve into a direction. An empty flag means "follow

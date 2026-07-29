@@ -44,7 +44,7 @@ func TestApplyRows_refusesABookWhoseIDColumnHoldsTheAccount(t *testing.T) {
 func TestMigrateIDColumn_movesIDsPastTheAccountColumn(t *testing.T) {
 	path := pairedByOlderEngine(t)
 
-	if err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
+	if _, err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
 		t.Fatalf("MigrateIDColumn: %v", err)
 	}
 
@@ -76,7 +76,7 @@ func TestMigrateIDColumn_leavesAWellPlacedBookAlone(t *testing.T) {
 		before[cell] = cellValue(t, path, "Расходы", cell)
 	}
 
-	if err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
+	if _, err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
 		t.Fatalf("MigrateIDColumn: %v", err)
 	}
 

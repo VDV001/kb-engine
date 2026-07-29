@@ -86,7 +86,7 @@ func pairedByOlderEngine(t *testing.T) string {
 func pairedThenMigrated(t *testing.T) string {
 	t.Helper()
 	path := pairedByOlderEngine(t)
-	if err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
+	if _, err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
 		t.Fatalf("MigrateIDColumn: %v", err)
 	}
 	return path

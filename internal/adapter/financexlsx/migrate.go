@@ -27,13 +27,20 @@ func idColumnCollides(idCol int) bool { return idCol == besideSourceColumn() }
 // refusal that does not say how to proceed leaves the owner with a book no
 // command will touch.
 func collisionError(idCol int) error {
-	name, err := excelize.ColumnNumberToName(idCol)
-	if err != nil {
-		name = fmt.Sprint(idCol)
-	}
+	name := columnName(idCol)
 	return fmt.Errorf("%w: %s keeps ids in column %s, which is where the account goes "+
 		"when Источник records how the row was captured — run `kbengine fin sync --migrate-ids` "+
 		"to move them", ErrIDColumnCollides, sheetExpenses, name)
+}
+
+// Migration says what MigrateIDColumn did. A caller that cannot tell a repaired
+// book from one that needed nothing has to report one of them wrongly.
+type Migration struct {
+	// Moved counts the rows whose id changed column, header excluded. Zero means
+	// the book was already in order.
+	Moved int
+	// Column is where the ids live once the call returns, in spreadsheet letters.
+	Column string
 }
 
 // MigrateIDColumn moves the ids off the account's column, header included.
@@ -41,45 +48,64 @@ func collisionError(idCol int) error {
 // A book already in order is left untouched, so running this twice is not a way
 // to lose a column. The same three guards as every other write apply: the lock,
 // a backup, and an atomic save.
-func MigrateIDColumn(path string, now func() time.Time) error {
+func MigrateIDColumn(path string, now func() time.Time) (Migration, error) {
 	if err := CheckLock(path); err != nil {
-		return err
+		return Migration{}, err
 	}
 
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return fmt.Errorf("open workbook: %w", err)
+		return Migration{}, fmt.Errorf("open workbook: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
 	rows, err := f.GetRows(sheetExpenses, excelize.Options{RawCellValue: true})
 	if err != nil {
-		return fmt.Errorf("read sheet %q: %w", sheetExpenses, err)
+		return Migration{}, fmt.Errorf("read sheet %q: %w", sheetExpenses, err)
 	}
 	idCol := findIDColumn(rows)
 	if !idColumnCollides(idCol) {
-		return nil
+		return Migration{Column: columnName(idCol)}, nil
 	}
 
-	moves, err := planIDMoves(rows, idCol, firstFreeColumn(rows, reservedWidth(domain.KindExpense)))
+	target := firstFreeColumn(rows, reservedWidth(domain.KindExpense))
+	moves, err := planIDMoves(rows, idCol, target)
 	if err != nil {
-		return err
+		return Migration{}, err
 	}
 
 	if err := backup(path, now); err != nil {
-		return err
+		return Migration{}, err
 	}
 	for _, m := range moves {
 		// SetCellStr for both ends: a ULID is a string, and letting the
 		// spreadsheet guess would turn some of them into numbers or dates.
 		if err := f.SetCellStr(sheetExpenses, m.to, m.value); err != nil {
-			return fmt.Errorf("%s!%s: %w", sheetExpenses, m.to, err)
+			return Migration{}, fmt.Errorf("%s!%s: %w", sheetExpenses, m.to, err)
 		}
 		if err := f.SetCellStr(sheetExpenses, m.from, ""); err != nil {
-			return fmt.Errorf("%s!%s: %w", sheetExpenses, m.from, err)
+			return Migration{}, fmt.Errorf("%s!%s: %w", sheetExpenses, m.from, err)
 		}
 	}
-	return saveAtomically(f, path)
+	if err := saveAtomically(f, path); err != nil {
+		return Migration{}, err
+	}
+	// The header is one of the moves and is not a row anyone counts.
+	return Migration{Moved: len(moves) - 1, Column: columnName(target)}, nil
+}
+
+// columnName renders a column for a person to read, falling back to the number
+// when the spreadsheet library will not name it. A report is not worth failing
+// a completed migration over.
+func columnName(col int) string {
+	if col == 0 {
+		return ""
+	}
+	name, err := excelize.ColumnNumberToName(col)
+	if err != nil {
+		return fmt.Sprint(col)
+	}
+	return name
 }
 
 // idMove is one resolved relocation: the cell to empty, the cell to fill, and
