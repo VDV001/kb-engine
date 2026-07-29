@@ -35,10 +35,16 @@ export function Header<T extends string>({
           <Logo />
         </a>
 
-        {/* The nav scrolls sideways rather than wrapping or disappearing below
-            the medium breakpoint: hiding it leaves a narrow window with no way
-            to navigate, and wrapping turns the bar into three ragged lines. */}
-        <nav className="-mx-1 order-last w-full overflow-x-auto md:order-none md:mx-0 md:w-auto md:flex-1 md:overflow-visible">
+        {/* The nav scrolls sideways rather than wrapping or disappearing: hiding
+            it leaves a narrow window with no way to navigate, and wrapping turns
+            the bar into ragged lines.
+
+            It joins the first row only at lg. At md the eight items and the
+            controls together are just too wide, and the controls were the ones
+            that wrapped — leaving a second row holding nothing but a toggle and
+            a badge. Below lg the nav takes that second row instead, which is
+            the thing worth the space. */}
+        <nav className="-mx-1 order-last w-full overflow-x-auto lg:order-none lg:mx-0 lg:w-auto lg:flex-1 lg:overflow-visible">
           <ul className="flex items-center gap-5 whitespace-nowrap px-1 lg:gap-8">
             {tabs.map((t) => {
               const active = t.id === current

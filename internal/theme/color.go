@@ -109,3 +109,38 @@ func parseRGBA(s string) (r, g, b uint8, alpha float64, err error) {
 }
 
 func hex(r, g, b uint8) string { return fmt.Sprintf("#%02x%02x%02x", r, g, b) }
+
+// Contrast returns the WCAG contrast ratio between two solid colours, from 1
+// (identical) to 21 (black against white).
+//
+// Small text needs 4.5 to pass AA. The palette has already produced one pair
+// that failed it in one theme and passed comfortably in the other — a label
+// that inverts with its card and a token that did not — so the ratio is worth
+// being able to assert rather than eyeball.
+func Contrast(a, b string) (float64, error) {
+	la, err := luminance(a)
+	if err != nil {
+		return 0, err
+	}
+	lb, err := luminance(b)
+	if err != nil {
+		return 0, err
+	}
+	return (max(la, lb) + 0.05) / (min(la, lb) + 0.05), nil
+}
+
+// luminance is the WCAG relative luminance of an opaque colour.
+func luminance(hex string) (float64, error) {
+	r, g, b, err := ParseHex(hex)
+	if err != nil {
+		return 0, err
+	}
+	channel := func(v uint8) float64 {
+		f := float64(v) / 255
+		if f <= 0.03928 {
+			return f / 12.92
+		}
+		return math.Pow((f+0.055)/1.055, 2.4)
+	}
+	return 0.2126*channel(r) + 0.7152*channel(g) + 0.0722*channel(b), nil
+}
