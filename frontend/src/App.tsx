@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
-import { ThemeToggle } from './components/ThemeToggle'
+import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import {
   AnalyticsView,
@@ -17,14 +17,14 @@ import {
 type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'finances' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Обзор' },
-  { id: 'entries', label: 'Записи' },
-  { id: 'analytics', label: 'Аналитика' },
-  { id: 'audits', label: 'Аудиты' },
-  { id: 'duplicates', label: 'Дубликаты' },
-  { id: 'archives', label: 'Архив' },
-  { id: 'finances', label: 'Финансы' },
-  { id: 'settings', label: 'Сводка' },
+  { id: 'overview', label: 'Dashboard' },
+  { id: 'entries', label: 'Entries' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'audits', label: 'Audits' },
+  { id: 'duplicates', label: 'Duplicates' },
+  { id: 'archives', label: 'Archives' },
+  { id: 'finances', label: 'Finances' },
+  { id: 'settings', label: 'Summary' },
 ]
 
 interface Data {
@@ -64,31 +64,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-bg text-on-surface">
-      <header className="flex items-center justify-between border-b border-outline-variant bg-surface-low px-6 py-4">
-        <div>
-          <h1 className="text-xl">kb-engine</h1>
-          <p className="text-sm text-on-surface-variant">Дашборд базы знаний</p>
-        </div>
-        <ThemeToggle />
-      </header>
+      <Header tabs={tabs} current={tab} onSelect={setTab} count={data?.stats.total} />
 
-      <nav className="flex gap-1 border-b border-outline-variant bg-surface-low px-6">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === t.id
-                ? 'border-secondary text-secondary'
-                : 'border-transparent text-on-surface-variant hover:text-on-surface'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="mx-auto max-w-6xl p-6">
+      <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-8">
         {error && <ErrorBox message={error} />}
         {!error && !data && <Spinner />}
         {data && (
