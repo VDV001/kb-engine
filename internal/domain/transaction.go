@@ -36,6 +36,7 @@ type Transaction struct {
 	place       string
 	description string
 	source      string
+	account     string
 }
 
 // TransactionParams carries the raw values for NewTransaction.
@@ -54,6 +55,7 @@ type TransactionParams struct {
 	Place       string
 	Description string
 	Source      string
+	Account     string
 	Now         func() time.Time
 }
 
@@ -112,6 +114,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		place:       strings.TrimSpace(p.Place),
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
+		account:     strings.TrimSpace(p.Account),
 	}, nil
 }
 
@@ -168,5 +171,10 @@ func (t Transaction) Place() string { return t.place }
 // Description returns the free-form note, empty when absent.
 func (t Transaction) Description() string { return t.description }
 
-// Source returns the origin of the record (a receipt, a transfer, a salary).
+// Source returns how the record came to be — a receipt, or entered by hand.
 func (t Transaction) Source() string { return t.source }
+
+// Account returns which account the money moved through, empty when the row
+// does not say. Open by design: the workbook lists five, and a closed set would
+// reject the sixth on the day one is opened.
+func (t Transaction) Account() string { return t.account }
