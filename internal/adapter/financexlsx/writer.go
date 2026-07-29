@@ -206,10 +206,23 @@ func pruneBackups(dir string) error {
 
 // saveAtomically writes to a temp file in the same directory and renames over
 // the original, so an interrupted save cannot leave a truncated workbook.
+//
+// The original's permissions are carried over. excelize creates its own file
+// with its own mode, and a personal ledger that quietly becomes world-readable
+// is a worse outcome than a write that fails.
 func saveAtomically(f *excelize.File, path string) error {
+	mode := os.FileMode(0o600)
+	if info, err := os.Stat(path); err == nil {
+		mode = info.Mode().Perm()
+	}
+
 	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+filepath.Base(path))
 	if err := f.SaveAs(tmp); err != nil {
 		return fmt.Errorf("write workbook: %w", err)
+	}
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("set workbook permissions: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
