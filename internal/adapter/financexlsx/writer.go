@@ -109,7 +109,7 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 		}
 		col, ok := idCols[sheet]
 		if !ok {
-			col = chooseIDColumn(rows)
+			col = chooseIDColumn(rows, len(dataColumns(kindOf(sheet))))
 			idCols[sheet] = col
 		}
 		cell, err := excelize.CoordinatesToCellName(col, row)
@@ -255,16 +255,21 @@ func findIDColumn(rows [][]string) int {
 }
 
 // chooseIDColumn returns the column to write ids into: the existing one, or the
-// first column that is free across the whole sheet.
+// first column past both the sheet's documented width and everything it
+// actually holds.
 //
-// Free across the whole sheet, not merely past the documented headers. The live
-// ledger has an unlabelled eighth column holding bank names on 19 rows, and
-// appending after the seven named columns would overwrite them.
-func chooseIDColumn(rows [][]string) int {
+// Both bounds are needed, and each was learned the hard way. Past the filled
+// cells, because the live ledger keeps bank names in an unlabelled eighth
+// column on 19 rows and appending after the seven named ones would overwrite
+// them. Past the documented width, because Источник is the seventh column and
+// is usually empty, which makes it look free — ids written there are invisible
+// until something reads the sheet back and finds a ULID where the source of the
+// record should be.
+func chooseIDColumn(rows [][]string, documented int) int {
 	if col := findIDColumn(rows); col != 0 {
 		return col
 	}
-	maxCol := 0
+	maxCol := documented
 	for _, row := range rows {
 		for c, v := range slices.Backward(row) {
 			if strings.TrimSpace(v) != "" {

@@ -110,6 +110,53 @@ func TestAssignIDs_writesIntoTheFirstFreeColumn(t *testing.T) {
 	}
 }
 
+// The id column must clear the sheet's documented columns too, not just the
+// cells that happen to be filled.
+//
+// Источник is the seventh column of Расходы and is often empty, which makes it
+// look free. Writing ids there is invisible until something reads the sheet
+// back and finds a ULID where the source of the record should be.
+func TestAssignIDs_skipsDocumentedColumnsThatLookEmpty(t *testing.T) {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A sheet whose rightmost filled cell is the amount in F: columns C, D, E and
+	// G carry nothing at all.
+	must(f.SetSheetName("Sheet1", "Расходы"))
+	must(f.SetCellValue("Расходы", "A2", "Дата"))
+	must(f.SetCellValue("Расходы", "A3", time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)))
+	must(f.SetCellValue("Расходы", "B3", "Еда"))
+	must(f.SetCellValue("Расходы", "F3", 202.45))
+	_, err := f.NewSheet("Доходы")
+	must(err)
+	must(f.SetCellValue("Доходы", "A2", "Дата"))
+	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
+	must(f.SaveAs(path))
+
+	if err := financexlsx.AssignIDs(path, map[string]string{"expense-r3": "01A"}, writeClock); err != nil {
+		t.Fatalf("AssignIDs: %v", err)
+	}
+	if got := cellValue(t, path, "Расходы", "G3"); got != "" {
+		t.Errorf("Расходы!G3 = %q — the id landed in Источник", got)
+	}
+
+	led, readErr := financexlsx.Read(path, writeClock)
+	if readErr != nil {
+		t.Fatalf("Read: %v", readErr)
+	}
+	if len(led.Transactions) != 1 {
+		t.Fatalf("read %d transactions, want 1", len(led.Transactions))
+	}
+	if src := led.Transactions[0].Source(); src != "" {
+		t.Errorf("Source = %q, want empty — the id was read back as the source", src)
+	}
+}
+
 // Run twice, the same column is reused rather than a second one appearing next
 // to it.
 func TestAssignIDs_isIdempotent(t *testing.T) {

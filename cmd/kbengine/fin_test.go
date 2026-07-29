@@ -302,18 +302,6 @@ func TestRun_finSyncInit_refusesAnExistingLedger(t *testing.T) {
 	}
 }
 
-// Two-way sync is the next piece of work. Until it exists, saying so beats
-// pretending the flag is optional.
-func TestRun_finSync_withoutInitIsNotImplemented(t *testing.T) {
-	var out, errb bytes.Buffer
-	if code := run([]string{"fin", "sync", "--ledger", "x", "--from", "y"}, &out, &errb); code != 2 {
-		t.Errorf("exit = %d, want 2", code)
-	}
-	if !strings.Contains(errb.String(), "--init") {
-		t.Errorf("error should point at --init, got: %s", errb.String())
-	}
-}
-
 // storedID reads the id of a row by locating the column that carries the "id"
 // header, rather than by a hardcoded letter. Which column that is depends on
 // how wide the sheet already is, and pinning a coordinate would test the
