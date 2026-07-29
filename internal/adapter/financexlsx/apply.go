@@ -42,6 +42,41 @@ func reservedWidth(kind string) int {
 	return len(dataColumns(kind))
 }
 
+// placeSourceAndAccount decides the two cells that carry where the money was
+// and how the row was captured.
+//
+// Источник carries the account unless the row records a capture method, in
+// which case the account goes to the column beside it. That is the arrangement
+// the sheet already uses, so writing a row back unchanged leaves the file alone.
+//
+// Both outcomes are written, not only the one that adds. An account removed
+// through the ledger has to disappear from the sheet too: Fingerprint covers
+// Account, so a cell left behind makes the next sync read the workbook as
+// changed and pull the old value back, undoing the deletion. Clearing stays
+// limited to a cell holding one of our own account names — anything else there
+// is the owner's.
+func placeSourceAndAccount(f *excelize.File, w rowWrite, tx domain.Transaction,
+	sourceCol int, accounts map[string]struct{}, values map[int]any,
+) error {
+	if tx.Source() == "" {
+		values[sourceCol] = tx.Account()
+		return nil
+	}
+	values[sourceCol] = tx.Source()
+	if tx.Account() != "" {
+		values[besideSourceColumn()] = tx.Account()
+		return nil
+	}
+	ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
+	if err != nil {
+		return err
+	}
+	if ours {
+		values[besideSourceColumn()] = ""
+	}
+	return nil
+}
+
 // holdsAnAccount reports whether a cell contains one of the workbook's own
 // account names. Anything else there belongs to the owner, and neither writing
 // nor clearing a row may touch it.
@@ -81,7 +116,7 @@ type sheetIndex struct {
 // Every change is resolved before anything is written, and the same three
 // guards as AssignIDs apply: the lock, a backup, and an atomic save.
 func ApplyRows(path string, upserts []domain.Transaction, removals []string, now func() time.Time) error {
-	if err := checkLock(path); err != nil {
+	if err := CheckLock(path); err != nil {
 		return err
 	}
 
@@ -298,31 +333,8 @@ func writeRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 		values[cols[3]] = tx.Place()
 		values[cols[4]] = tx.Description()
 		values[cols[5]] = float64(tx.Amount().Kopecks()) / 100
-		// Источник carries the account unless the row records how it was
-		// captured, in which case the account goes to the column beside it. This
-		// is the arrangement the sheet already uses, so writing a row back
-		// unchanged leaves the file alone.
-		if tx.Source() == "" {
-			values[cols[6]] = tx.Account()
-		} else {
-			values[cols[6]] = tx.Source()
-			// Both outcomes have to be written, not just the one that adds. An
-			// account removed through the ledger has to disappear from the sheet
-			// too — Fingerprint covers Account, so a cell left behind makes the
-			// next sync read the workbook as changed and pull the old value back,
-			// undoing the deletion. Clearing is still limited to a cell that holds
-			// one of our own account names; anything else there is the owner's.
-			if tx.Account() != "" {
-				values[besideSourceColumn()] = tx.Account()
-			} else {
-				ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
-				if err != nil {
-					return err
-				}
-				if ours {
-					values[besideSourceColumn()] = ""
-				}
-			}
+		if err := placeSourceAndAccount(f, w, tx, cols[6], accounts, values); err != nil {
+			return err
 		}
 	} else {
 		values[cols[1]] = tx.Source()
