@@ -58,24 +58,30 @@ func Read(path string, now func() time.Time) (Ledger, error) {
 
 	var led Ledger
 
-	expenses, err := readTransactions(f, sheetExpenses, domain.KindExpense, now)
+	// Accounts first: their names are the vocabulary that decides whether
+	// Источник is naming an account or a way the record was captured.
+	if led.Accounts, err = readAccounts(f, now); err != nil {
+		return Ledger{}, err
+	}
+	known := make(map[string]struct{}, len(led.Accounts))
+	for _, a := range led.Accounts {
+		known[a.Bank()] = struct{}{}
+	}
+
+	expenses, err := readTransactions(f, sheetExpenses, domain.KindExpense, known, now)
 	if err != nil {
 		return Ledger{}, err
 	}
-	income, err := readTransactions(f, sheetIncome, domain.KindIncome, now)
+	income, err := readTransactions(f, sheetIncome, domain.KindIncome, known, now)
 	if err != nil {
 		return Ledger{}, err
 	}
 	led.Transactions = append(expenses, income...)
-
-	if led.Accounts, err = readAccounts(f, now); err != nil {
-		return Ledger{}, err
-	}
 	return led, nil
 }
 
 // column indexes differ per sheet; expenses carry the richer layout.
-func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time) ([]domain.Transaction, error) {
+func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]struct{}, now func() time.Time) ([]domain.Transaction, error) {
 	// RawCellValue: the workbook applies a display format (thousands separator,
 	// currency suffix, locale-dependent dates), and reading formatted values
 	// hands that presentation to the parser. Raw values are the numbers Excel
@@ -103,7 +109,8 @@ func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time
 			// Дата | Категория | Подкатегория | Место | Описание | Сумма | Источник
 			p.Category, p.Subcategory = cell(row, 1), cell(row, 2)
 			p.Place, p.Description = cell(row, 3), cell(row, 4)
-			rawAmount, p.Source = cell(row, 5), cell(row, 6)
+			rawAmount = cell(row, 5)
+			p.Account, p.Source = splitAccount(row, accounts)
 		} else {
 			// Дата | Источник | Описание | Сумма
 			p.Source, p.Description = cell(row, 1), cell(row, 2)
@@ -132,6 +139,29 @@ func readTransactions(f *excelize.File, sheet, kind string, now func() time.Time
 		out = append(out, tx)
 	}
 	return out, nil
+}
+
+// splitAccount separates the two things the Источник column has been holding:
+// which account the money moved through, and how the record was captured.
+//
+// A value the Счета sheet names is the account. Anything else — "Чек",
+// "Вручную" — stays the source, and for those rows the account may be in the
+// unlabelled column immediately after the documented ones, which is where the
+// live ledger keeps it on 19 rows.
+//
+// That trailing column is only read when it holds a name the Счета sheet
+// recognizes. It is the owner's column, and guessing at whatever else might sit
+// there is exactly the mistake the id column was placed to avoid.
+func splitAccount(row []string, accounts map[string]struct{}) (account, source string) {
+	source = cell(row, 6)
+	if _, ok := accounts[source]; ok {
+		return source, ""
+	}
+	beside := cell(row, len(dataColumns(domain.KindExpense)))
+	if _, ok := accounts[beside]; ok {
+		return beside, source
+	}
+	return "", source
 }
 
 // rowID returns the identity of a row: the stored id when the workbook has an
