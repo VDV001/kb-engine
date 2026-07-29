@@ -21,5 +21,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Тесты собираются отдельным проектом: им нужен доступ к node (чтение общего
+  // golden-файла), а приложению — нет, и незачем давать.
+  "exclude": ["src/**/*.test.ts"]
 }

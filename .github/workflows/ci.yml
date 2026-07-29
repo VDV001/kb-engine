@@ -40,6 +40,44 @@ jobs:
           echo "total coverage: ${total}%"
           awk -v t="$total" 'BEGIN { if (t+0 < 80.0) { print "coverage below 80% threshold"; exit 1 } }'
 
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npx oxlint src
+
+      - name: Test
+        working-directory: frontend
+        run: npx vitest run
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build
+
+      # dist/ is committed because the Go binary embeds it. Nothing rebuilt it on
+      # the way in, so a change to src with a stale dist would ship the old
+      # bundle with every Go test still green.
+      - name: dist matches src
+        run: |
+          if ! git diff --quiet -- frontend/dist; then
+            echo "frontend/dist is stale — run 'npm run build' in frontend/ and commit the result"
+            git diff --stat -- frontend/dist
+            exit 1
+          fi
+
   govulncheck:
     runs-on: ubuntu-latest
     steps:

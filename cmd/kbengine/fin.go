@@ -244,16 +244,20 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "expenses  %14s  (%d)\n", s.Expenses, s.ExpenseCount)
 	fmt.Fprintf(stdout, "income    %14s  (%d)\n", s.Income, s.IncomeCount)
 	fmt.Fprintf(stdout, "net       %14s\n", s.Net)
-	writeBreakdown(stdout, s.ByCategory)
-	writeBreakdown(stdout, s.ByAccount)
+	writeBreakdown(stdout, "по категориям", s.ByCategory)
+	writeBreakdown(stdout, "по счетам", s.ByAccount)
 	return 0
 }
 
-func writeBreakdown(stdout io.Writer, rows []finance.CategoryTotal) {
+// writeBreakdown prints one titled block. The title is not decoration: the two
+// blocks are the same shape, and the ledger has a category called «Банк» that
+// otherwise sits four lines above a list of banks with nothing to tell them
+// apart.
+func writeBreakdown(stdout io.Writer, title string, rows []finance.CategoryTotal) {
 	if len(rows) == 0 {
 		return
 	}
-	fmt.Fprintln(stdout, "")
+	fmt.Fprintf(stdout, "\n  %s\n", title)
 	for _, c := range rows {
 		fmt.Fprintf(stdout, "  %-22s %14s  (%d)\n", c.Category, c.Total, c.Count)
 	}

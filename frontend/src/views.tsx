@@ -1,6 +1,18 @@
 import { useMemo, useState } from 'react'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Finding, Stats, Transaction } from './api'
 import { Badge, BarList, Card, Section, Stat } from './components/ui'
+import {
+  daysOfMonth,
+  formatRub,
+  monthLabel,
+  monthOf,
+  monthsBetween,
+  sumBy,
+  sumByAccount,
+  toKopecks,
+  plural,
+  toRoubleBars,
+} from './money'
 
 export function OverviewView({ stats }: { stats: Stats }) {
   return (
@@ -340,61 +352,11 @@ export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
 
 // --- Finances ---------------------------------------------------------------
 
-// Amounts cross the wire as decimal strings so that kopecks survive the trip
-// (see the note in api.ts). Summing happens in integer kopecks and formatting
-// happens once, at the end — never on an accumulated float.
-function toKopecks(amount: string): number {
-  const [rub, kop = '0'] = amount.split('.')
-  const sign = rub.startsWith('-') ? -1 : 1
-  return sign * (Math.abs(parseInt(rub, 10)) * 100 + parseInt(kop.padEnd(2, '0'), 10))
-}
-
-function formatRub(kopecks: number): string {
-  const sign = kopecks < 0 ? '-' : ''
-  const abs = Math.abs(kopecks)
-  const rub = Math.floor(abs / 100).toLocaleString('ru-RU')
-  return `${sign}${rub},${String(abs % 100).padStart(2, '0')} ₽`
-}
-
-// monthOf takes the "YYYY-MM" prefix of an ISO date without constructing a Date:
-// parsing would drag in a timezone, and a purchase made on the 1st must not
-// slide into the previous month because the browser sits west of UTC.
-function monthOf(date: string): string {
-  return date.slice(0, 7)
-}
-
-const monthNames = [
-  'январь', 'февраль', 'март', 'апрель', 'май', 'июнь',
-  'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь',
-]
-
-function monthLabel(month: string): string {
-  const [year, m] = month.split('-')
-  return `${monthNames[parseInt(m, 10) - 1]} ${year}`
-}
-
-function sumBy(txs: Transaction[], key: (t: Transaction) => string): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const t of txs) {
-    const k = key(t)
-    if (k === '') continue
-    out[k] = (out[k] ?? 0) + toKopecks(t.amount)
-  }
-  return out
-}
-
-// BarList counts in whole units, so rouble totals go in as rounded roubles and
-// the exact kopecks are shown separately.
-function toRoubleBars(byKopecks: Record<string, number>): Record<string, number> {
-  return Object.fromEntries(Object.entries(byKopecks).map(([k, v]) => [k, Math.round(v / 100)]))
-}
-
-
 // Trend renders the shape of spending over the period: by day when a month is
 // picked, by month otherwise. The Python dashboard always showed the last seven
 // days; with a month picker on the same screen, matching the picker is the same
 // idea applied consistently.
-function Trend({ points }: { points: { label: string; kopecks: number }[] }) {
+function Trend({ points, masked }: { points: { label: string; kopecks: number }[]; masked: boolean }) {
   if (points.length === 0) return null
   const max = Math.max(1, ...points.map((p) => p.kopecks))
   return (
@@ -402,7 +364,9 @@ function Trend({ points }: { points: { label: string; kopecks: number }[] }) {
       {points.map((p) => (
         <div
           key={p.label}
-          title={`${p.label}: ${formatRub(p.kopecks)}`}
+          // No amount in the tooltip while masked: filter: blur does not reach a
+          // native tooltip, so hovering would read out what the mask hides.
+          title={masked ? p.label : `${p.label}: ${formatRub(p.kopecks)}`}
           className="min-w-1 flex-1 rounded-t bg-sky-500"
           style={{ height: Math.max(Math.round((p.kopecks / max) * 64), 2) }}
         />
@@ -441,16 +405,16 @@ export function FinancesView({ finances }: { finances: Finances }) {
   const trend = useMemo(() => {
     const bucket = month === '' ? (t: Transaction) => monthOf(t.date) : (t: Transaction) => t.date
     const sums = sumBy(expenses, bucket)
+    const keys = Object.keys(sums).sort()
     const labels =
       month === ''
-        ? Object.keys(sums).sort()
-        : Array.from({ length: new Date(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 0).getDate() },
-            (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)
+        ? monthsBetween(keys[0] ?? '', keys[keys.length - 1] ?? '')
+        : daysOfMonth(month)
     return labels.map((label) => ({ label, kopecks: sums[label] ?? 0 }))
   }, [expenses, month])
 
   const byCategory = sumBy(expenses, (t) => t.category ?? '')
-  const byAccount = sumBy(expenses, (t) => t.account ?? '')
+  const byAccount = sumByAccount(expenses)
   const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
 
   if (finances.transactions.length === 0 && finances.accounts.length === 0) {
@@ -506,9 +470,9 @@ export function FinancesView({ finances }: { finances: Finances }) {
           <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
             {month === '' ? 'Расходы по месяцам' : 'Расходы по дням'}
           </h3>
-          <span className="text-xs text-slate-400">{trend.length} точек</span>
+          <span className="text-xs text-slate-400">{plural(trend.length, 'точка', 'точки', 'точек')}</span>
         </div>
-        <Trend points={trend} />
+        <Trend points={trend} masked={masked} />
       </Card>
 
       {top && (
@@ -518,7 +482,10 @@ export function FinancesView({ finances }: { finances: Finances }) {
             <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{top[0]}</span>
             <span className="privacy-mask tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
             <span className="text-sm text-slate-400">
-              {spent === 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
+              {/* A share of a negative total is not a share of anything: when
+                  refunds outweigh purchases the percentage flips sign and reads
+                  as nonsense. */}
+              {spent <= 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
             </span>
           </div>
         </Card>
