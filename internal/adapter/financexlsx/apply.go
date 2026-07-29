@@ -26,6 +26,38 @@ func dataColumns(kind string) []int {
 // how the record was captured instead.
 func besideSourceColumn() int { return len(dataColumns(domain.KindExpense)) + 1 }
 
+// reservedWidth is how many columns a sheet's write contract owns: the
+// documented ones, plus — for Расходы — the column beside Источник, which is
+// where the account goes when Источник is busy recording how the row was
+// captured.
+//
+// The id column is chosen from past this, so the two can never land on the same
+// cell. They used to be decided by unrelated rules: on a book whose eighth
+// column happened to be empty both picked 8, and the id overwrote the account
+// in the same pass.
+func reservedWidth(kind string) int {
+	if kind == domain.KindExpense {
+		return besideSourceColumn()
+	}
+	return len(dataColumns(kind))
+}
+
+// holdsAnAccount reports whether a cell contains one of the workbook's own
+// account names. Anything else there belongs to the owner, and neither writing
+// nor clearing a row may touch it.
+func holdsAnAccount(f *excelize.File, sheet string, col, row int, accounts map[string]struct{}) (bool, error) {
+	name, err := excelize.CoordinatesToCellName(col, row)
+	if err != nil {
+		return false, fmt.Errorf("%s row %d: %w", sheet, row, err)
+	}
+	v, err := f.GetCellValue(sheet, name)
+	if err != nil {
+		return false, fmt.Errorf("%s!%s: %w", sheet, name, err)
+	}
+	_, ok := accounts[strings.TrimSpace(v)]
+	return ok, nil
+}
+
 // sheetIndex is what one sheet looks like before anything is written.
 type sheetIndex struct {
 	idCol   int
@@ -207,7 +239,7 @@ func (p rowPlan) apply(f *excelize.File, accounts map[string]struct{}) error {
 			}
 			continue
 		}
-		if err := writeRow(f, w); err != nil {
+		if err := writeRow(f, w, accounts); err != nil {
 			return err
 		}
 	}
@@ -224,15 +256,11 @@ func clearRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 	// The account may be in the column beside Источник. Clear it only when it is
 	// one — anything else there is the owner's note, not ours to remove.
 	if w.kind == domain.KindExpense {
-		name, err := excelize.CoordinatesToCellName(besideSourceColumn(), w.row)
+		ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
 		if err != nil {
-			return fmt.Errorf("%s row %d: %w", w.sheet, w.row, err)
+			return err
 		}
-		v, err := f.GetCellValue(w.sheet, name)
-		if err != nil {
-			return fmt.Errorf("%s!%s: %w", w.sheet, name, err)
-		}
-		if _, ok := accounts[strings.TrimSpace(v)]; ok {
+		if ours {
 			cols = append(cols, besideSourceColumn())
 		}
 	}
@@ -250,7 +278,7 @@ func clearRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 
 // writeRow puts a transaction into its row, preserving the formatting that was
 // already there and inheriting it from the row above for a freshly appended one.
-func writeRow(f *excelize.File, w rowWrite) error {
+func writeRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error {
 	tx := *w.tx
 	cols := dataColumns(tx.Kind())
 
@@ -278,8 +306,22 @@ func writeRow(f *excelize.File, w rowWrite) error {
 			values[cols[6]] = tx.Account()
 		} else {
 			values[cols[6]] = tx.Source()
+			// Both outcomes have to be written, not just the one that adds. An
+			// account removed through the ledger has to disappear from the sheet
+			// too — Fingerprint covers Account, so a cell left behind makes the
+			// next sync read the workbook as changed and pull the old value back,
+			// undoing the deletion. Clearing is still limited to a cell that holds
+			// one of our own account names; anything else there is the owner's.
 			if tx.Account() != "" {
 				values[besideSourceColumn()] = tx.Account()
+			} else {
+				ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
+				if err != nil {
+					return err
+				}
+				if ours {
+					values[besideSourceColumn()] = ""
+				}
 			}
 		}
 	} else {

@@ -109,7 +109,7 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 		}
 		col, ok := idCols[sheet]
 		if !ok {
-			col = chooseIDColumn(rows, len(dataColumns(kindOf(sheet))))
+			col = chooseIDColumn(rows, reservedWidth(kindOf(sheet)))
 			idCols[sheet] = col
 		}
 		cell, err := excelize.CoordinatesToCellName(col, row)
