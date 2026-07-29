@@ -95,7 +95,11 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
 	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
 	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
-	addr := fs.String("addr", ":8080", "address to listen on")
+	// Loopback by default. With --ledger this process serves four years of
+	// personal transactions with places, notes and balances; ":8080" would hand
+	// them to anyone on the network. Binding wider stays possible, but as a
+	// choice someone makes rather than one they inherit.
+	addr := fs.String("addr", "127.0.0.1:8080", "address to listen on")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}

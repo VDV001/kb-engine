@@ -6,6 +6,7 @@ package httpapi
 import (
 	"encoding/json"
 	"io/fs"
+	"log"
 	"net/http"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
@@ -184,7 +185,11 @@ func handleFinances(fin Financier) http.HandlerFunc {
 		if fin != nil {
 			f, err := fin.Finances()
 			if err != nil {
-				writeError(w, err)
+				// The message carries the path to a personal finance file, which is
+				// not something to hand to whoever asked. The operator gets it on
+				// stderr; the client gets that it failed.
+				log.Printf("finances: %v", err)
+				http.Error(w, "finances unavailable", http.StatusInternalServerError)
 				return
 			}
 			for _, t := range f.Transactions {

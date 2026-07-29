@@ -43,7 +43,7 @@ docker tag="kbengine:dev":
 
 # Run the containerized dashboard against a catalog dir mounted at /data
 docker-serve catalog tag="kbengine:dev":
-    docker run --rm -p 8080:8080 -v {{catalog}}:/data:ro {{tag}} serve --catalog /data/catalog.json
+    docker run --rm -p 8080:8080 -v {{catalog}}:/data:ro {{tag}} serve --catalog /data/catalog.json --addr :8080
 
 # Tidy modules
 tidy:

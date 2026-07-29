@@ -49,7 +49,11 @@ export default function App() {
       api.duplicates(),
       api.analytics(),
       api.analyticsConfig(),
-      api.finances(),
+      // Finances read two files that are edited by hand while the dashboard is
+      // open, so this request can fail on its own — while LibreOffice is saving,
+      // for instance. That must not take the other six views down with it: the
+      // finances view already renders an empty state.
+      api.finances().catch(() => ({ transactions: [], accounts: [] })),
     ])
       .then(([stats, entries, audits, duplicates, analytics, analyticsConfig, finances]) =>
         setData({ stats, entries, audits, duplicates, analytics, analyticsConfig, finances }),
