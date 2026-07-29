@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
+import { ThemeToggle } from './components/ThemeToggle'
 import { ErrorBox, Spinner } from './components/ui'
 import {
   AnalyticsView,
@@ -62,21 +63,24 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-      <header className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-700 dark:bg-slate-800">
-        <h1 className="text-xl font-bold">kb-engine</h1>
-        <p className="text-sm text-slate-500">Дашборд базы знаний</p>
+    <div className="min-h-screen bg-bg text-on-surface">
+      <header className="flex items-center justify-between border-b border-outline-variant bg-surface-low px-6 py-4">
+        <div>
+          <h1 className="text-xl">kb-engine</h1>
+          <p className="text-sm text-on-surface-variant">Дашборд базы знаний</p>
+        </div>
+        <ThemeToggle />
       </header>
 
-      <nav className="flex gap-1 border-b border-slate-200 bg-white px-6 dark:border-slate-700 dark:bg-slate-800">
+      <nav className="flex gap-1 border-b border-outline-variant bg-surface-low px-6">
         {tabs.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
               tab === t.id
-                ? 'border-sky-500 text-sky-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
+                ? 'border-secondary text-secondary'
+                : 'border-transparent text-on-surface-variant hover:text-on-surface'
             }`}
           >
             {t.label}

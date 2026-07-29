@@ -3,12 +3,44 @@
 @import "./tokens.css";
 @import "./fonts.css";
 
-:root {
-  color-scheme: light dark;
-}
+/* Tailwind's dark: variant follows prefers-color-scheme by default. The theme
+   is a deliberate choice stored per browser, and the class is the same
+   mechanism the Python dashboard uses, so the variant is pointed at it. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 body {
   margin: 0;
+  background: var(--bg);
+  color: var(--on-surface);
+  font-family: var(--font-sans);
+  /* The palette is warm paper rather than white, and Inter at its default
+     grade looks thin on it. */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Headings carry the character; PT Serif is the reason the dashboard does not
+   look like every other admin panel. */
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* Small uppercase labels, in the text face rather than a fourth family: at this
+   size the spacing does the work, not the letterforms. */
+.label {
+  font-family: var(--font-label);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
+/* Figures line up in columns only if they are the same width. */
+.tabular {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
 }
 
 /* Privacy mask for the finances view. Amounts are blurred by default so the
