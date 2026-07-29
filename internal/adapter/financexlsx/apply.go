@@ -25,6 +25,11 @@ type sheetIndex struct {
 	idCol   int
 	rowByID map[string]int
 	lastRow int
+	// lastDataRow is the last row that actually holds a transaction. The live
+	// sheet reports 1156 rows for 507 records, because the rows past the data
+	// carry formatting; inheriting from those gives a new row a border and no
+	// currency format.
+	lastDataRow int
 }
 
 // ApplyRows writes transaction changes into the workbook: upserts are matched
@@ -103,6 +108,7 @@ func indexSheets(f *excelize.File) (map[string]sheetIndex, error) {
 				}
 				if id := cell(row, idx.idCol-1); id != "" {
 					idx.rowByID[id] = rowNum
+					idx.lastDataRow = max(idx.lastDataRow, rowNum)
 				}
 			}
 		}
@@ -138,7 +144,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if !known {
 			// Append below the last row, and take the formatting with it: a date
 			// rendered as 46110 and an amount with no currency read as a broken file.
-			styleFrom = idx.lastRow
+			styleFrom = idx.lastDataRow
 			idx.lastRow++
 			row = idx.lastRow
 			idx.rowByID[tx.ID()] = row

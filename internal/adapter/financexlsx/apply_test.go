@@ -134,6 +134,66 @@ func TestApplyRows_appendedRowInheritsFormatting(t *testing.T) {
 	}
 }
 
+// Formatting is inherited from the last row that has data, not from the last
+// row of the sheet.
+//
+// The live ledger has blank rows after the data — 1156 rows for 507 records —
+// so taking the style from the row immediately above lands on an unformatted
+// one, and the appended amount comes out as 1234.56 with no currency. That is
+// what a person sees when they open the file and conclude the tool broke it.
+func TestApplyRows_inheritsFormattingAcrossTrailingBlankRows(t *testing.T) {
+	path := paired(t)
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	// Two rows that carry formatting but no value — which is exactly why the live
+	// sheet reports 1156 rows for 507 records.
+	blank, err := f.NewStyle(&excelize.Style{Border: []excelize.Border{{Type: "bottom", Style: 1}}})
+	if err != nil {
+		t.Fatalf("style: %v", err)
+	}
+	if err := f.SetCellStyle("Расходы", "A5", "I6", blank); err != nil {
+		t.Fatalf("pad: %v", err)
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	_ = f.Close()
+
+	added := tx(t, "01D", domain.KindExpense,
+		time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), 33300, "Подписки", "")
+	if err := financexlsx.ApplyRows(path, []domain.Transaction{added}, nil, writeClock); err != nil {
+		t.Fatalf("ApplyRows: %v", err)
+	}
+
+	g, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = g.Close() }()
+
+	want, err := g.GetCellStyle("Расходы", "F4")
+	if err != nil {
+		t.Fatalf("style of F4: %v", err)
+	}
+	rows, err := g.GetRows("Расходы")
+	if err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	appended, err := excelize.CoordinatesToCellName(6, len(rows))
+	if err != nil {
+		t.Fatalf("cell name: %v", err)
+	}
+	got, err := g.GetCellStyle("Расходы", appended)
+	if err != nil {
+		t.Fatalf("style of %s: %v", appended, err)
+	}
+	if got != want {
+		t.Errorf("appended amount style = %d, want %d (from the last row with data)", got, want)
+	}
+}
+
 // Removal clears the row instead of deleting it. Deleting shifts every row
 // below, which moves data out from under the formulas on Сводка; a blank row
 // mid-sheet is something this ledger already contains and the reader skips.

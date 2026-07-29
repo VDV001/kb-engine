@@ -37,10 +37,15 @@ func workbookWithExtraColumn(t *testing.T) string {
 	must(f.SetCellValue("Расходы", "A4", time.Date(2026, 4, 2, 0, 0, 0, 0, time.UTC)))
 	must(f.SetCellValue("Расходы", "B4", "Транспорт"))
 	must(f.SetCellValue("Расходы", "F4", 1500))
+	// The currency format the live sheet uses, so an appended row has something
+	// worth inheriting.
+	money, err := f.NewStyle(&excelize.Style{CustomNumFmt: new(`#,##0.00" ₽"`)})
+	must(err)
+	must(f.SetCellStyle("Расходы", "F3", "F4", money))
 	// The undocumented eighth column, exactly as in the live workbook.
 	must(f.SetCellValue("Расходы", "H4", "Сбербанк"))
 
-	_, err := f.NewSheet("Доходы")
+	_, err = f.NewSheet("Доходы")
 	must(err)
 	for i, h := range []string{"Дата", "Источник", "Описание", "Сумма (₽)"} {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 2)
