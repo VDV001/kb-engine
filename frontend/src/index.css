@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Generated from design/tokens.json — the same source the TUI reads. */
+@import "./tokens.css";
 
 :root {
   color-scheme: light dark;
