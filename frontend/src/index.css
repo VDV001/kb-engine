@@ -7,3 +7,12 @@
 body {
   margin: 0;
 }
+
+/* Privacy mask for the finances view. Amounts are blurred by default so the
+   dashboard can be shown or screenshotted without exposing the numbers; the
+   toggle reveals them. Selection is disabled while masked — a blur that can be
+   copied out as text is not a mask. */
+.privacy-on .privacy-mask {
+  filter: blur(8px);
+  user-select: none;
+}

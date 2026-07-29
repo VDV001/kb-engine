@@ -40,7 +40,9 @@ export function Badge({ value }: { value: string }) {
 }
 
 // BarList renders a sorted horizontal bar chart from a label→count map.
-export function BarList({ data }: { data: Record<string, number> }) {
+// valueClassName lets a caller style just the numbers — the finances view masks
+// the amounts while leaving the labels and the bar shapes readable.
+export function BarList({ data, valueClassName = '' }: { data: Record<string, number>; valueClassName?: string }) {
   const entries = Object.entries(data).sort((a, b) => b[1] - a[1])
   const max = Math.max(1, ...entries.map(([, n]) => n))
   return (
@@ -53,14 +55,16 @@ export function BarList({ data }: { data: Record<string, number> }) {
           <div className="h-4 flex-1 rounded bg-slate-100 dark:bg-slate-700">
             <div className="h-4 rounded bg-sky-500" style={{ width: `${(n / max) * 100}%` }} />
           </div>
-          <span className="w-10 shrink-0 text-right tabular-nums text-slate-500">{n}</span>
+          <span className={`w-10 shrink-0 text-right tabular-nums text-slate-500 ${valueClassName}`}>{n}</span>
         </div>
       ))}
     </div>
   )
 }
 
-export function Stat({ label, value }: { label: string; value: number | string }) {
+// value is a ReactNode so a caller can wrap it — the finances view puts its
+// amounts in a maskable span.
+export function Stat({ label, value }: { label: string; value: ReactNode }) {
   return (
     <Card>
       <div className="text-3xl font-bold tabular-nums text-slate-800 dark:text-slate-100">{value}</div>
