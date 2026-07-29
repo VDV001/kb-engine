@@ -209,18 +209,33 @@ func supersessionIssues(c *domain.Catalog) []Finding {
 		byID[e.ID()] = e
 	}
 
+	// Who is claimed as replaced, so an entry marked superseded with nobody
+	// pointing at it can be told from one that is properly accounted for.
+	claimed := make(map[int]struct{})
+	for _, e := range c.Entries() {
+		if sup := e.SupersedesID(); sup != nil {
+			claimed[*sup] = struct{}{}
+		}
+	}
+
 	var findings []Finding
 	for _, e := range c.Entries() {
 		sup := e.SupersedesID()
-		if sup == nil {
-			continue
-		}
 		var reason string
 		switch {
+		case sup == nil:
+			// The two halves of a merge have to agree. A mark with nothing pointing
+			// at it is the half that used to be invisible — and since dedup started
+			// skipping superseded entries, nothing else would report it either.
+			if e.Lifecycle().IsSuperseded() && !exists(claimed, e.ID()) {
+				reason = "marked superseded but no entry supersedes it"
+			}
 		case !exists(byID, *sup):
 			reason = fmt.Sprintf("supersedes_id %d does not exist", *sup)
 		case supersedesCycle(e.ID(), byID):
 			reason = "supersedes_id forms a cycle"
+		case !byID[*sup].Lifecycle().IsSuperseded():
+			reason = fmt.Sprintf("supersedes_id %d is not marked superseded", *sup)
 		}
 		if reason != "" {
 			findings = append(findings, Finding{
@@ -234,8 +249,10 @@ func supersessionIssues(c *domain.Catalog) []Finding {
 	return findings
 }
 
-func exists(byID map[int]domain.Entry, id int) bool {
-	_, ok := byID[id]
+// exists is generic so the same check reads the same whether the map holds
+// entries or just the ids claimed by a supersession.
+func exists[V any](m map[int]V, id int) bool {
+	_, ok := m[id]
 	return ok
 }
 

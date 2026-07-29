@@ -274,8 +274,11 @@ func TestSupersessionIssues(t *testing.T) {
 		article(t, 1, articleParams{title: "dangling", lifecycle: "active", verdict: "keep", supersedesID: id(99)}),
 		article(t, 2, articleParams{title: "cycle-a", lifecycle: "active", verdict: "keep", supersedesID: id(3)}),
 		article(t, 3, articleParams{title: "cycle-b", lifecycle: "active", verdict: "keep", supersedesID: id(2)}),
-		article(t, 4, articleParams{title: "valid super", lifecycle: "active", verdict: "keep", supersedesID: id(1)}),
+		// Points at an entry that is itself marked superseded — a complete merge,
+		// which is what "valid" has to mean now that both halves are checked.
+		article(t, 4, articleParams{title: "valid super", lifecycle: "active", verdict: "keep", supersedesID: id(6)}),
 		article(t, 5, articleParams{title: "no super", lifecycle: "active", verdict: "keep"}),
+		article(t, 6, articleParams{title: "replaced by four", lifecycle: "superseded", verdict: "keep"}),
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
