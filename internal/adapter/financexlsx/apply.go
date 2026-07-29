@@ -55,18 +55,27 @@ func reservedWidth(kind string) int {
 // changed and pull the old value back, undoing the deletion. Clearing stays
 // limited to a cell holding one of our own account names — anything else there
 // is the owner's.
+//
+// Whether the cell beside Источник has to be cleared depends on the account
+// alone, not on the source. Deciding it inside the branch for rows that have a
+// source left the other branch to return early, so a row that lost both values
+// kept its bank in the column next door and the next sync read the deletion as
+// a change and put it back.
 func placeSourceAndAccount(f *excelize.File, w rowWrite, tx domain.Transaction,
 	sourceCol int, accounts map[string]struct{}, values map[int]any,
 ) error {
 	if tx.Source() == "" {
 		values[sourceCol] = tx.Account()
-		return nil
+	} else {
+		values[sourceCol] = tx.Source()
+		if tx.Account() != "" {
+			values[besideSourceColumn()] = tx.Account()
+			return nil
+		}
 	}
-	values[sourceCol] = tx.Source()
-	if tx.Account() != "" {
-		values[besideSourceColumn()] = tx.Account()
-		return nil
-	}
+
+	// The account is not going beside Источник — either it is empty or it fits
+	// in Источник itself — so whatever of ours sits there is stale.
 	ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
 	if err != nil {
 		return err
@@ -129,6 +138,12 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	index, err := indexSheets(f)
 	if err != nil {
 		return err
+	}
+	// Refused for the whole book, not only the rows in this call: a sheet whose
+	// ids sit on the account's column reads wrong as well as writes wrong, so
+	// there is no part of it that is safe to touch meanwhile.
+	if idCol := index[sheetExpenses].idCol; idColumnCollides(idCol) {
+		return collisionError(idCol)
 	}
 	accounts, err := knownAccounts(f, now)
 	if err != nil {

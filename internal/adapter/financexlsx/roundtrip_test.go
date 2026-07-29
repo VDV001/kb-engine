@@ -79,6 +79,19 @@ func pairedByOlderEngine(t *testing.T) string {
 	return path
 }
 
+// pairedThenMigrated is that same book after the migration that moves ids off
+// the account's column. Writing to it has to be as safe as writing to a book
+// this engine paired itself — a migration that leaves the book almost right is
+// worth less than the refusal it replaces.
+func pairedThenMigrated(t *testing.T) string {
+	t.Helper()
+	path := pairedByOlderEngine(t)
+	if err := financexlsx.MigrateIDColumn(path, writeClock); err != nil {
+		t.Fatalf("MigrateIDColumn: %v", err)
+	}
+	return path
+}
+
 // formTx builds a transaction of the given form, filling every field the form's
 // sheet has a column for so the round trip has something to lose.
 func formTx(t *testing.T, id string, form rowForm) domain.Transaction {
@@ -131,7 +144,7 @@ func TestApplyRows_roundTripsEveryRowForm(t *testing.T) {
 		build func(*testing.T) string
 	}{
 		{"paired by this engine", paired},
-		{"paired by an older engine", pairedByOlderEngine},
+		{"paired by an older engine, then migrated", pairedThenMigrated},
 	}
 	// Which row the form is written over matters as much as the form itself: a
 	// row that already carries an account and a capture method is the one a

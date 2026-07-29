@@ -286,6 +286,14 @@ func chooseIDColumn(rows [][]string, documented int) int {
 	if col := findIDColumn(rows); col != 0 {
 		return col
 	}
+	return firstFreeColumn(rows, documented)
+}
+
+// firstFreeColumn returns the first column past both the documented width and
+// everything the sheet actually holds, ignoring any id column already there.
+// MigrateIDColumn needs that ignorance: it is called precisely when the
+// existing id column is the one to vacate.
+func firstFreeColumn(rows [][]string, documented int) int {
 	maxCol := documented
 	for _, row := range rows {
 		for c, v := range slices.Backward(row) {
