@@ -339,6 +339,40 @@ func TestDuplicates(t *testing.T) {
 	}
 }
 
+// A duplicate that has already been dealt with is marked superseded, not
+// deleted — the catalog keeps the trace of an entry filed twice by two
+// different routes. Reporting it forever would mean "dedup is clean" can never
+// be a state you reach, only noise you learn to skip.
+func TestDuplicates_skipsSuperseded(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		// The pair was merged: 1 survives, 2 was superseded by it.
+		article(t, 1, articleParams{title: "Alpha one two three", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
+		article(t, 2, articleParams{title: "Beta four five six", lifecycle: "superseded", verdict: "keep", url: "https://dup.example/x"}),
+		// A live pair still has to be reported.
+		article(t, 3, articleParams{title: "Gamma seven eight nine", lifecycle: "active", verdict: "keep", url: "https://live.example/y"}),
+		article(t, 4, articleParams{title: "Delta ten eleven twelve", lifecycle: "active", verdict: "keep", url: "https://live.example/y"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	groups, err := audit.NewService(fakeLoader{catalog: cat}).Duplicates()
+	if err != nil {
+		t.Fatalf("Duplicates: %v", err)
+	}
+
+	for _, g := range groups {
+		for _, id := range g.EntryIDs {
+			if id == 2 {
+				t.Errorf("superseded entry 2 reported in %s group %q", g.Kind, g.Key)
+			}
+		}
+	}
+	if len(groups) != 1 || len(groups[0].EntryIDs) != 2 {
+		t.Fatalf("groups = %+v, want exactly the live pair 3/4", groups)
+	}
+}
+
 func TestOutdatedCandidates_loaderError(t *testing.T) {
 	sentinel := errors.New("boom")
 	svc := audit.NewService(fakeLoader{err: sentinel})

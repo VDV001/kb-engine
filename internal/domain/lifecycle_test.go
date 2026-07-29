@@ -60,6 +60,31 @@ func TestLifecycle_IsOutdated(t *testing.T) {
 	}
 }
 
+func TestLifecycle_IsSuperseded(t *testing.T) {
+	tests := []struct {
+		raw  string
+		want bool
+	}{
+		{"superseded", true},
+		{"active", false},
+		{"canonical", false},
+		{"outdated", false},
+		{"dead-end", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.raw, func(t *testing.T) {
+			lc, err := domain.NewLifecycle(tt.raw)
+			if err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			if got := lc.IsSuperseded(); got != tt.want {
+				t.Errorf("IsSuperseded() = %v for %q, want %v", got, tt.raw, tt.want)
+			}
+		})
+	}
+}
+
 func TestLifecycle_IsCanonical(t *testing.T) {
 	canonical, err := domain.NewLifecycle("canonical")
 	if err != nil {
