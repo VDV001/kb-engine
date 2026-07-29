@@ -21,12 +21,11 @@ func TestApplyToLedger(t *testing.T) {
 	workbook := []domain.Transaction{editedA, c}
 
 	ledger := []finance.Record{recordOf(t, a, 3), recordOf(t, b, 1)}
-	plan := finance.Diff(ledger, workbook, baseline)
-	if plan.Direction != finance.DirectionToLedger {
+	if plan := finance.Diff(ledger, workbook, baseline); plan.Direction != finance.DirectionToLedger {
 		t.Fatalf("Direction = %v, want ToLedger", plan.Direction)
 	}
 
-	got, err := finance.ApplyToLedger(ledger, workbook, plan, syncedAt)
+	got, err := finance.ApplyToLedger(ledger, workbook, syncedAt)
 	if err != nil {
 		t.Fatalf("ApplyToLedger: %v", err)
 	}
@@ -67,14 +66,12 @@ func TestApplyToLedger(t *testing.T) {
 func TestApplyToLedger_leavesUntouchedRowsAlone(t *testing.T) {
 	a := expenseTx(t, "01A", 29, 20245, "Еда", "хлеб")
 	b := expenseTx(t, "01B", 30, 50000, "Транспорт", "")
-	baseline := stateOf(t, a, b)
 
 	editedB := expenseTx(t, "01B", 30, 77700, "Транспорт", "")
 	ledger := []finance.Record{recordOf(t, a, 5), recordOf(t, b, 2)}
 	workbook := []domain.Transaction{a, editedB}
 
-	plan := finance.Diff(ledger, workbook, baseline)
-	got, err := finance.ApplyToLedger(ledger, workbook, plan, syncedAt)
+	got, err := finance.ApplyToLedger(ledger, workbook, syncedAt)
 	if err != nil {
 		t.Fatalf("ApplyToLedger: %v", err)
 	}
@@ -99,11 +96,7 @@ func TestApplyToLedger_keepsTheFileSorted(t *testing.T) {
 	ledger := []finance.Record{recordOf(t, a, 1), recordOf(t, b, 1)}
 	workbook := []domain.Transaction{a, b}
 
-	plan := finance.Diff(ledger, workbook, stateOf(t, a, b))
-	if plan.Direction != finance.DirectionNone {
-		t.Fatalf("Direction = %v, want None", plan.Direction)
-	}
-	got, err := finance.ApplyToLedger(ledger, workbook, plan, syncedAt)
+	got, err := finance.ApplyToLedger(ledger, workbook, syncedAt)
 	if err != nil {
 		t.Fatalf("ApplyToLedger: %v", err)
 	}
@@ -112,12 +105,45 @@ func TestApplyToLedger_keepsTheFileSorted(t *testing.T) {
 	}
 }
 
-// Applying is only ever a consequence of a decision already made. Being handed
-// a conflict means the caller skipped the decision.
-func TestApplyToLedger_refusesAConflict(t *testing.T) {
-	_, err := finance.ApplyToLedger(nil, nil, finance.Plan{Direction: finance.DirectionConflict}, syncedAt)
-	if err == nil {
-		t.Error("expected a refusal when handed a conflicting plan")
+// Applying makes one side match the other, so it is measured against that
+// side and not against the baseline.
+//
+// The first version took the plan and read its Modified list to decide what to
+// rewrite. That works while the direction follows the diff and breaks the
+// moment --resolve overrides it: resolving to the ledger would leave an edit
+// the workbook made in place, because the baseline said the ledger had not
+// touched that row. Comparing the two sides directly has no such gap, and the
+// conflict decision moves to the caller, which is where it belongs.
+func TestToWorkbook_makesTheWorkbookMatchTheLedger(t *testing.T) {
+	a := expenseTx(t, "01A", 29, 20245, "Еда", "хлеб")
+	b := expenseTx(t, "01B", 30, 50000, "Транспорт", "")
+	onlyInLedger := expenseTx(t, "01C", 31, 10000, "Подписки", "из терминала")
+
+	// The workbook: 01A edited behind the ledger's back, 01B untouched, 01D is
+	// a row the ledger does not have.
+	editedA := expenseTx(t, "01A", 29, 99900, "Еда", "переписано")
+	onlyInWorkbook := expenseTx(t, "01D", 28, 40000, "Еда", "")
+
+	upserts, removals := finance.ToWorkbook(
+		[]finance.Record{recordOf(t, a, 1), recordOf(t, b, 1), recordOf(t, onlyInLedger, 1)},
+		[]domain.Transaction{editedA, b, onlyInWorkbook},
+	)
+
+	got := map[string]bool{}
+	for _, tx := range upserts {
+		got[tx.ID()] = true
+	}
+	if !got["01A"] {
+		t.Error("a row the workbook edited must be written back from the ledger")
+	}
+	if !got["01C"] {
+		t.Error("a row only the ledger has must be added to the workbook")
+	}
+	if got["01B"] {
+		t.Error("an identical row must not be rewritten")
+	}
+	if len(removals) != 1 || removals[0] != "01D" {
+		t.Errorf("removals = %v, want [01D] — the workbook holds a row the ledger does not", removals)
 	}
 }
 
