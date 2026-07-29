@@ -76,6 +76,32 @@ func workbookWithExtraColumn(t *testing.T) string {
 	return path
 }
 
+// workbookWithoutExtraColumn is the same book before anyone put bank names in
+// the eighth column: seven documented columns and nothing past them.
+//
+// It exists because a fixture modelled on one file can only exercise the states
+// that file happens to be in. The owner's book has that column filled, which
+// pushes the id column to I and hides every conflict over column H. A fresh
+// book — anyone else's, or this one a year ago — does not.
+func workbookWithoutExtraColumn(t *testing.T) string {
+	t.Helper()
+	path := workbookWithExtraColumn(t)
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	if err := f.SetCellStr("Расходы", "H4", ""); err != nil {
+		t.Fatalf("clear H4: %v", err)
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return path
+}
+
 func cellValue(t *testing.T, path, sheet, cell string) string {
 	t.Helper()
 	f, err := excelize.OpenFile(path)
