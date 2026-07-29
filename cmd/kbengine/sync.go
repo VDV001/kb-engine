@@ -180,28 +180,58 @@ func statePath(ledgerPath string) string {
 	return filepath.Join(filepath.Dir(ledgerPath), syncStateName)
 }
 
-// syncWorkbookAndLedger moves data one way, or refuses to move any.
-func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dryRun bool, stdout, stderr io.Writer) int {
+// syncInputs is everything a sync reads before it decides anything: both sides
+// and the baseline they last agreed on.
+type syncInputs struct {
+	state    finance.SyncState
+	records  []finance.Record
+	workbook financexlsx.Ledger
+}
+
+// loadSyncInputs reads all three or none. Kept apart from the decision it feeds
+// so the decision stays readable — the three identical failure branches were
+// most of what made it hard to follow.
+func loadSyncInputs(from, ledgerPath string) (syncInputs, error) {
 	st, err := financejsonl.LoadState(statePath(ledgerPath))
 	if err != nil {
-		fmt.Fprintf(stderr, "fin sync: %v\n", err)
-		return 1
+		return syncInputs{}, err
 	}
 	recs, err := financejsonl.Load(ledgerPath, time.Now)
 	if err != nil {
-		fmt.Fprintf(stderr, "fin sync: %v\n", err)
-		return 1
+		return syncInputs{}, err
 	}
 	led, err := financexlsx.Read(from, time.Now)
+	if err != nil {
+		return syncInputs{}, err
+	}
+	return syncInputs{state: st, records: recs, workbook: led}, nil
+}
+
+// syncWorkbookAndLedger moves data one way, or refuses to move any.
+func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dryRun bool, stdout, stderr io.Writer) int {
+	in, err := loadSyncInputs(from, ledgerPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin sync: %v\n", err)
 		return 1
 	}
+	st, recs, led := in.state, in.records, in.workbook
 
 	plan := finance.Diff(recs, led.Transactions, st)
 	direction := plan.Direction
 	if forced != finance.DirectionNone {
 		direction = forced
+	}
+
+	// Asked once, for the dry run and the real one alike. --init has asked it
+	// since it was written; this path had not, so a dry run announced a push
+	// into a book an editor was holding and the command that followed refused
+	// it. Only a direction that writes the workbook needs the answer — refusing
+	// to read while the book is open would make the lock the larger problem.
+	if direction == finance.DirectionToWorkbook {
+		if err := financexlsx.CheckLock(from); err != nil {
+			fmt.Fprintf(stderr, "fin sync: %v\n", err)
+			return 1
+		}
 	}
 
 	if dryRun {
