@@ -58,6 +58,9 @@ func TestFingerprint(t *testing.T) {
 		{"date", expenseTx(t, "01A", 30, 20245, "Еда", "хлеб")},
 		{"category", expenseTx(t, "01A", 29, 20245, "Транспорт", "хлеб")},
 		{"description", expenseTx(t, "01A", 29, 20245, "Еда", "молоко")},
+		// Moving the same spend from one card to another is a real change, and a
+		// sync that cannot see it would leave the two sides silently disagreeing.
+		{"account", expenseWithAccount(t, "01A", 29, 20245, "Еда", "хлеб", "Альфа-Банк")},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if finance.Fingerprint(base) == finance.Fingerprint(tt.tx) {
