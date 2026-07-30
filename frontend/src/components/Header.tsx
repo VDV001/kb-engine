@@ -1,3 +1,6 @@
+import { useRef, useState } from 'react'
+import { useCssVarHeight } from '../hooks/useCssVarHeight'
+import { Icon } from './Icon'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -15,14 +18,23 @@ export function Header<T extends string>({
   current,
   onSelect,
   count,
+  extra,
 }: {
   tabs: { id: T; label: string }[]
   current: T
   onSelect: (id: T) => void
   count?: number
+  /** Управление, относящееся к текущему виду: на финансах — переключатель сумм. */
+  extra?: React.ReactNode
 }) {
+  const ref = useRef<HTMLElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  // Высота шапки уезжает в CSS-переменную: прилипающие полосы внутри страниц
+  // встают под ней, не завися от захардкоженного числа.
+  useCssVarHeight(ref, '--nav-h')
+
   return (
-    <header className="sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
+    <header ref={ref} className="sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
       <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:gap-x-12 lg:px-8">
         <a
           href="#"
@@ -35,20 +47,21 @@ export function Header<T extends string>({
           <Logo />
         </a>
 
-        {/* The nav scrolls sideways rather than wrapping or disappearing: hiding
-            it leaves a narrow window with no way to navigate, and wrapping turns
-            the bar into ragged lines.
+        {/* До lg навигация уезжает в бургер, а не на второй ряд.
+            Раньше здесь стояло обратное решение — второй ряд, потому что
+            «спрятать навигацию значит оставить окно без неё». Бургер эту
+            причину снимает: навигация не исчезает, а сворачивается, зато
+            шапка остаётся одноэтажной, а второй этаж съедал полосу высотой
+            в 41 пиксель на каждом экране уже кого угодно ноутбука.
 
-            It joins the first row only at lg. At md the eight items and the
-            controls together are just too wide, and the controls were the ones
-            that wrapped — leaving a second row holding nothing but a toggle and
-            a badge. Below lg the nav takes that second row instead, which is
-            the thing worth the space. */}
-        {/* min-w-0: флекс-элемент по умолчанию не сжимается ниже контента
-            (min-width:auto), и десятая вкладка растягивала страницу вместо
-            того, чтобы уйти в прокрутку. */}
-        <nav className="-mx-1 order-last w-full min-w-0 overflow-x-auto lg:order-none lg:mx-0 lg:w-auto lg:flex-1 lg:overflow-x-auto">
-          <ul className="flex items-center gap-5 whitespace-nowrap px-1 lg:gap-8">
+            Порог xl, а не lg, посчитан: десять вкладок занимают 841px, логотип
+            и правые элементы — 137, промежутки 96, паддинги 64, итого ~1138.
+            На финансах в шапке ещё переключатель сумм, и нужно уже ~1250.
+            На lg (1024) навигация не влезала и начинала скроллиться вбок —
+            прокрутка внутри шапки хуже бургера. Горизонтальной прокрутки тут
+            больше нет: не влезает — значит в бургер. */}
+        <nav className="hidden min-w-0 flex-1 xl:block">
+          <ul className="flex items-center gap-5 whitespace-nowrap px-1 xl:gap-8">
             {tabs.map((t) => {
               const active = t.id === current
               return (
@@ -57,9 +70,9 @@ export function Header<T extends string>({
                     type="button"
                     onClick={() => onSelect(t.id)}
                     aria-current={active ? 'page' : undefined}
-                    // The active item is dark text with a coloured rule, not
-                    // coloured text: colouring both makes the accent shout and
-                    // leaves nothing to mark the page you are on.
+                    // Активный пункт — тёмный текст с цветной чертой, а не
+                    // цветной текст: красить и то, и другое значит заставить
+                    // акцент кричать и не оставить признака текущей страницы.
                     className={`border-b-2 pb-1 text-sm font-medium transition-colors ${
                       active
                         ? 'border-secondary text-on-surface'
@@ -75,6 +88,16 @@ export function Header<T extends string>({
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-expanded={menuOpen}
+            aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+            className="flex h-9 w-9 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-high hover:text-on-surface xl:hidden"
+          >
+            <Icon name={menuOpen ? 'close' : 'menu'} className="text-xl" />
+          </button>
+          {extra}
           <ThemeToggle />
           {count !== undefined && (
             <span
@@ -86,6 +109,37 @@ export function Header<T extends string>({
           )}
         </div>
       </div>
+
+      {/* Панель бургера: под шапкой, на всю ширину. Закрывается выбором —
+          оставлять её открытой после перехода незачем, страница уже сменилась. */}
+      {menuOpen && (
+        <div className="border-t border-outline-variant bg-nav-bg backdrop-blur-xl xl:hidden">
+          <ul className="mx-auto max-w-screen-2xl px-4 py-2 sm:px-6">
+            {tabs.map((t) => {
+              const active = t.id === current
+              return (
+                <li key={t.id}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelect(t.id)
+                      setMenuOpen(false)
+                    }}
+                    aria-current={active ? 'page' : undefined}
+                    className={`w-full border-l-2 px-3 py-2.5 text-left text-sm font-medium transition-colors ${
+                      active
+                        ? 'border-secondary bg-surface-high text-on-surface'
+                        : 'border-transparent text-on-surface-variant hover:bg-surface-low hover:text-on-surface'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
     </header>
   )
 }

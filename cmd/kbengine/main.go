@@ -20,6 +20,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
@@ -157,6 +158,17 @@ func (f ledgerFinances) Finances() (httpapi.Finances, error) {
 		out.Accounts = led.Accounts
 	}
 	return out, nil
+}
+
+// Summary totals the months asked for. Re-reads per request for the same reason
+// Finances does, and takes the period as an argument rather than handing the
+// whole history over: that keeps the arithmetic on this side of the wire.
+func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
+	recs, err := financejsonl.Load(f.ledgerPath, time.Now)
+	if err != nil {
+		return finance.Summary{}, err
+	}
+	return finance.Summarize(finance.Match(recs, finance.Filter{Months: months})), nil
 }
 
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath string) (http.Handler, error) {

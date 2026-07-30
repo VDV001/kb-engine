@@ -143,7 +143,7 @@ var Dark = Palette{
 	Kpi3Sub:            "#99462a",
 	Kpi3Text:           "#1a1a1a",
 	NavBg:              "#1a1a1a",
-	NavBorder:          "#252525",
+	NavBorder:          "#1a1a1a",
 	OnErrorContainer:   "#ffdad6",
 	OnPrimary:          "#1a1a1a",
 	OnPrimaryContainer: "#fbf9f2",

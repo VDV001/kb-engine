@@ -9,12 +9,14 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
@@ -67,10 +69,8 @@ type Documents struct {
 }
 
 // Finances is what the finance port hands over: the ledger rows and the account
-// balances. Aggregation is deliberately not here — the view filters by month
-// and totals what it filtered, so the arithmetic lives in one place instead of
-// being split between a server-side summary and a client-side one that must
-// agree with it.
+// balances, unaggregated. The journal needs the rows themselves — it lists,
+// filters and sorts them — so this endpoint stays.
 type Finances struct {
 	Transactions []domain.Transaction
 	Accounts     []domain.Account
@@ -79,8 +79,16 @@ type Finances struct {
 // Financier is the finance port the API depends on. A nil Financier means no
 // ledger is configured, which is a valid deployment: the rest of the dashboard
 // works and the Finances view shows nothing.
+//
+// Summary takes the period rather than returning everything and letting the
+// client narrow it. That ordering is the whole point: the arithmetic still lives
+// in exactly one place, and now that place is the server. Returning a
+// full-history summary and having the view re-total a filtered subset would put
+// a second implementation on the client that has to agree with this one — which
+// is the split the earlier design avoided by keeping all of it client-side.
 type Financier interface {
 	Finances() (Finances, error)
+	Summary(months []string) (finance.Summary, error)
 }
 
 // NewServer builds the HTTP handler. cfg is the curated analytics config (empty
@@ -103,6 +111,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
+	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
 	}
@@ -300,6 +309,40 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			}
 		}
 		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts})
+	}
+}
+
+// parseMonths splits the ?months= parameter into a set of YYYY-MM keys.
+//
+// Empty elements are dropped rather than passed on. «2026-07,» would otherwise
+// become a set containing an empty string, which matches no record at all, and
+// the caller would get an empty report for a month that has data — a wrong
+// answer that looks like a legitimate one.
+func parseMonths(raw string) []string {
+	var out []string
+	for part := range strings.SplitSeq(raw, ",") {
+		if m := strings.TrimSpace(part); m != "" {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+func handleFinanceSummary(fin Financier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var s finance.Summary
+		if fin != nil {
+			var err error
+			if s, err = fin.Summary(parseMonths(r.URL.Query().Get("months"))); err != nil {
+				// Same reasoning as handleFinances: the message names a personal
+				// finance file. The operator gets the path, the client gets that it
+				// failed.
+				log.Printf("finances summary: %v", err)
+				http.Error(w, "finances unavailable", http.StatusInternalServerError)
+				return
+			}
+		}
+		writeJSON(w, toFinanceSummaryDTO(s))
 	}
 }
 

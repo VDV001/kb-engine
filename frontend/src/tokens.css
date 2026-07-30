@@ -81,7 +81,7 @@
   --kpi-3-sub: #99462a;
   --kpi-3-text: #1A1A1A;
   --nav-bg: rgba(26,26,26,0.8);
-  --nav-border: rgba(255,255,255,0.05);
+  --nav-border: transparent;
   --on-error-container: #ffdad6;
   --on-primary: #1A1A1A;
   --on-primary-container: #FBF9F2;
