@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import type { Audits, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
-import { Badge, BarList, Card, Ring, Section, Stat } from './components/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from './api'
+import type { Audits, Changelog, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
 import {
   daysOfMonth,
   formatRub,
@@ -108,25 +109,101 @@ export function AuditsView({ audits }: { audits: Audits }) {
 }
 
 export function SettingsView({ stats }: { stats: Stats }) {
+  const [log, setLog] = useState<Changelog | null>(null)
+  useEffect(() => {
+    api.changelog().then(setLog).catch(() => setLog(null))
+  }, [])
+
+  const boxes = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
+  const empty = boxes.filter(([, n]) => n === 0).length
+  const latest = (log?.releases ?? []).slice(0, 3)
+
   return (
-    <Section title="Сводка" subtitle="Состав базы знаний">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Всего записей" value={stats.total} />
-        <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
-        <Stat label="Типов записей" value={Object.keys(stats.by_kind).length} />
-        <Stat label="Статусов жизни" value={Object.keys(stats.by_lifecycle).length} />
+    <div className="space-y-6">
+      <header>
+        <Label className="text-secondary">Визуализация и кастомизация</Label>
+        <h1 className="mt-1 text-4xl">Настройки базы.</h1>
+        <p className="mt-2 text-sm text-on-surface-variant">
+          Каталог знаний как физический артефакт. Каждый ящик — категория.
+        </p>
+      </header>
+
+      <div className="flex flex-col gap-8 xl:flex-row">
+        {/* Ящики: структура — прямые углы, стопка с волосяными разделителями. */}
+        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low">
+          {boxes.map(([cat, n]) => (
+            <div key={cat} className="flex items-center justify-between gap-3 px-5 py-4">
+              <span className="truncate text-sm" title={cat}>
+                {cat}
+              </span>
+              <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 font-mono text-xs font-bold text-white tabular-nums">
+                {n}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <aside className="shrink-0 space-y-4 xl:w-96">
+          <Card className="border-l-2 border-l-secondary">
+            <h2 className="text-xl">Информация о базе</h2>
+            <dl className="mt-3 divide-y divide-outline-variant text-sm">
+              {(
+                [
+                  ['Записей', String(stats.total)],
+                  ['Категорий', String(boxes.length)],
+                  ['Версия каталога', log?.current_version ? `v${log.current_version} · ${log.current_date ?? '—'}` : '—'],
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between py-2">
+                  <dt className="label">{k}</dt>
+                  <dd className="font-mono text-xs tabular-nums text-secondary">{v}</dd>
+                </div>
+              ))}
+            </dl>
+            {log?.current_tagline && (
+              <p className="mt-2 text-xs italic text-on-surface-variant">{log.current_tagline}</p>
+            )}
+          </Card>
+
+          <div className="grid grid-cols-2 gap-4">
+            <Stat label="Активные ящики" value={boxes.length - empty} />
+            <Stat label="Пустые ящики" value={empty} tone="muted" />
+          </div>
+
+          {latest.length > 0 && (
+            <Card>
+              <Label>Что нового</Label>
+              <div className="mt-3 space-y-4">
+                {latest.map((r, i) => (
+                  <div key={r.version} className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-headline text-base font-bold">v{r.version}</span>
+                      {i === 0 && (
+                        <span className="rounded bg-secondary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase text-white">
+                          latest
+                        </span>
+                      )}
+                      <span className="ml-auto label">{r.date ?? ''}</span>
+                    </div>
+                    {r.tagline && <p className="text-xs italic text-on-surface-variant">{r.tagline}</p>}
+                    {Object.entries(r.sections).map(([name, items]) => (
+                      <div key={name}>
+                        <span className="label text-secondary">{name}</span>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-on-surface-variant">
+                          {items.slice(0, 3).map((it, j) => (
+                            <li key={j}>{it.length > 160 ? `${it.slice(0, 160)}…` : it}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </aside>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-on-surface">По жизненному циклу</h3>
-          <BarList data={stats.by_lifecycle} />
-        </Card>
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-on-surface">По типу</h3>
-          <BarList data={stats.by_kind} />
-        </Card>
-      </div>
-    </Section>
+    </div>
   )
 }
 
