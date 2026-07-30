@@ -229,3 +229,18 @@ func TestDecode_duplicateIDIsDomainError(t *testing.T) {
 		t.Fatalf("err = %v, want ErrDuplicateID", err)
 	}
 }
+
+// Словарь категорий лежит в meta.categories: ключ и человеческое название с
+// описанием через двоеточие. Читаем строку целиком — где её обрезать, решает
+// показ, а описание пригодится подсказкой.
+func TestDecode_categoryLabels(t *testing.T) {
+	src := `{"meta":{"categories":{"golang":"Go: язык и экосистема"}},` +
+		`"entries":[{"id":1,"title":"T","category":"golang","status":"keep"}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got := c.CategoryLabel("golang"); got != "Go: язык и экосистема" {
+		t.Errorf("CategoryLabel = %q, want %q", got, "Go: язык и экосистема")
+	}
+}

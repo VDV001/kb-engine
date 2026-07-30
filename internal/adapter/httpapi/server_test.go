@@ -375,3 +375,23 @@ func TestServer_documents(t *testing.T) {
 		t.Errorf("unconfigured projects = %d %q, want 200 null", rec.Code, rec.Body.String())
 	}
 }
+
+// Сайдбар архива печатает названия категорий, а не их ключи, поэтому словарь
+// обязан доехать до фронта — считать его там неоткуда.
+func TestServer_statsCarriesCategoryLabels(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/stats")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var st map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &st); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	labels, ok := st["category_labels"].(map[string]any)
+	if !ok {
+		t.Fatalf("category_labels = %v, want an object", st["category_labels"])
+	}
+	if labels["golang"] != "Go: язык и экосистема" {
+		t.Errorf("label of golang = %v, want %q", labels["golang"], "Go: язык и экосистема")
+	}
+}

@@ -129,3 +129,27 @@ func TestCatalog_EntriesIsACopy(t *testing.T) {
 		t.Errorf("Entries() shares backing array: id = %d, want 1", again[0].ID())
 	}
 }
+
+// Каталог несёт не только записи, но и словарь своих категорий: ключ вида
+// "claude-ecosystem" и человеческое название рядом с ним. Без словаря вид
+// вынужден показывать ключ, а ключ — это идентификатор, не имя.
+func TestCatalog_categoryLabels(t *testing.T) {
+	labels := map[string]string{"local-ai": "Локальный AI: запуск моделей на своём железе"}
+	c, err := domain.NewCatalog(nil, domain.WithCategoryLabels(labels))
+	if err != nil {
+		t.Fatalf("new catalog: %v", err)
+	}
+	if got := c.CategoryLabel("local-ai"); got != labels["local-ai"] {
+		t.Errorf("CategoryLabel = %q, want %q", got, labels["local-ai"])
+	}
+	// Незнакомая категория возвращает пустую строку, а не выдуманное имя:
+	// решение, что показать вместо него, принимает вызывающий.
+	if got := c.CategoryLabel("нет-такой"); got != "" {
+		t.Errorf("CategoryLabel of an unknown category = %q, want empty", got)
+	}
+	// Словарь копируется: каталог не должен меняться из-под чужой карты.
+	labels["local-ai"] = "подменено"
+	if c.CategoryLabel("local-ai") == "подменено" {
+		t.Error("CategoryLabel follows the caller's map after construction")
+	}
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Entry } from './api'
 import {
+  categoryLabel,
   dateOf,
   emptyFilter,
   filterEntries,
@@ -131,6 +132,24 @@ describe('sortByDate', () => {
       entry({ id: 9, date_added: '2026-07-01' }),
     ])
     expect(sorted.map((e) => e.id)).toEqual([9, 7])
+  })
+})
+
+describe('categoryLabel', () => {
+  const labels = { 'local-ai': 'Локальный AI: запуск моделей на своём железе' }
+
+  // В словаре лежит «Название: описание» одной строкой. Списку нужно название,
+  // описание уходит в подсказку — поэтому режем, а не храним два поля.
+  it('shows the name, not the whole line', () => {
+    expect(categoryLabel('local-ai', labels)).toBe('Локальный AI')
+  })
+
+  it('falls back to the key when the catalog has no name for it', () => {
+    expect(categoryLabel('нет-такой', labels)).toBe('нет-такой')
+  })
+
+  it('survives a label without a description', () => {
+    expect(categoryLabel('x', { x: 'Просто имя' })).toBe('Просто имя')
   })
 })
 
