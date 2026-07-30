@@ -20,14 +20,46 @@ COVERAGE_FLOOR="${COVERAGE_FLOOR:-80}"
 # ------------------------------------------------------- 1. branch guard
 # Facet #8 applied to the workflow: publishing to a protected branch is the
 # irreversible step, so it is blocked mechanically rather than by remembering.
+#
+# Decided from what is actually being pushed, not from where HEAD happens to
+# sit. git feeds a pre-push hook one line per ref on stdin:
+#
+#   <local ref> <local sha> <remote ref> <remote sha>
+#
+# Reading HEAD instead blocked `git push origin v0.2.0` while standing on main —
+# a tag writes to refs/tags and touches no branch, so the refusal was about the
+# wrong thing and every release tripped over it.
+#
+# Falls back to the HEAD check when stdin carries no refspec (a direct
+# invocation, or a hook runner that does not forward it). Silence must not be
+# read as permission: the fallback is what keeps this gate from weakening into
+# nothing the day the runner changes.
 branch="$(git rev-parse --abbrev-ref HEAD)"
-case "$branch" in
-  main|master)
-    echo "✘ direct push to $branch is blocked — open a PR from a feature branch"
+saw_refspec=0
+protected_ref=""
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  [ -z "$remote_ref" ] && continue
+  saw_refspec=1
+  case "$remote_ref" in
+    refs/heads/main|refs/heads/master) protected_ref="${remote_ref#refs/heads/}" ;;
+  esac
+done
+
+if [ "$saw_refspec" -eq 1 ]; then
+  if [ -n "$protected_ref" ]; then
+    echo "✘ direct push to $protected_ref is blocked — open a PR from a feature branch"
     echo "  (project red line: no pushing straight to main)"
     exit 1
-    ;;
-esac
+  fi
+else
+  case "$branch" in
+    main|master)
+      echo "✘ direct push to $branch is blocked — open a PR from a feature branch"
+      echo "  (project red line: no pushing straight to main)"
+      exit 1
+      ;;
+  esac
+fi
 
 # ------------------------------------------------------ 2. go.mod is tidy
 # A stale go.mod/go.sum breaks CI for everyone else, not for the author.
