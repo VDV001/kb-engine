@@ -20,6 +20,7 @@ export interface Entry {
   read_state?: string
   publish_stage?: string
   tags?: string[]
+  date_added?: string
   description?: string
   author?: string
   source?: string
