@@ -57,6 +57,12 @@ func (fakeAnalytics) Growth(weeks int) ([]analytics.WeekCount, error) {
 func (fakeAnalytics) Categories() ([]analytics.CategorySize, error) {
 	return []analytics.CategorySize{{Category: "golang", Count: 5}}, nil
 }
+func (fakeAnalytics) Graph() (analytics.Graph, error) {
+	return analytics.Graph{
+		Nodes: []analytics.GraphNode{{Category: "golang", Count: 5}},
+		Edges: []analytics.GraphEdge{{From: "golang", To: "meta", Weight: 2}},
+	}, nil
+}
 
 var testConfig = analyticsconfig.Config{
 	Patterns: []analyticsconfig.Pattern{{Name: "Verification > Generation", Desc: "d"}},
@@ -85,7 +91,8 @@ func (f fakeFinance) Finances() (httpapi.Finances, error) {
 }
 
 func newTestServer() http.Handler {
-	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
 }
 
 // The dashboard needs the rows and the balances; it does the filtering by month
@@ -125,7 +132,8 @@ func TestServer_finances(t *testing.T) {
 // Finances are optional: a deployment with no ledger configured still serves the
 // rest of the dashboard, and the view says there is nothing rather than breaking.
 func TestServer_finances_notConfigured(t *testing.T) {
-	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil, testConfig, nil)
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil,
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
 	rec := get(t, srv, "/api/finances")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -144,7 +152,8 @@ func TestServer_finances_notConfigured(t *testing.T) {
 
 func TestServer_finances_error(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
-		fakeFinance{err: errors.New("ledger unreadable")}, testConfig, nil)
+		fakeFinance{err: errors.New("ledger unreadable")},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
 	if rec := get(t, srv, "/api/finances"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
@@ -278,7 +287,8 @@ func (fakeQueryErr) Stats() (query.Stats, error) {
 }
 
 func TestServer_readyz_unavailable(t *testing.T) {
-	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
+	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
 	rec := get(t, srv, "/readyz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)

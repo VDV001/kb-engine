@@ -48,3 +48,13 @@ func (s *Service) Categories() ([]CategorySize, error) {
 	}
 	return CategorySizes(c), nil
 }
+
+// Graph returns the tag-intersection knowledge graph, recomputed from the
+// catalog on every call so new entries reshape it without a restart.
+func (s *Service) Graph() (Graph, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return Graph{}, err
+	}
+	return TagGraph(c), nil
+}
