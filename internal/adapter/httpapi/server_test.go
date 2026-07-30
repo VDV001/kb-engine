@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
@@ -72,6 +73,15 @@ var testConfig = analyticsconfig.Config{
 
 type fakeFinance struct{ err error }
 
+// Summary — часть порта; тестам этого файла достаточно пустой сводки, разрезы
+// проверяются в finance_summary_test.go.
+func (f fakeFinance) Summary([]string) (finance.Summary, error) {
+	if f.err != nil {
+		return finance.Summary{}, f.err
+	}
+	return finance.Summary{}, nil
+}
+
 func (f fakeFinance) Finances() (httpapi.Finances, error) {
 	if f.err != nil {
 		return httpapi.Finances{}, f.err
@@ -99,8 +109,10 @@ func newTestServer() http.Handler {
 		}, httpapi.Documents{}, nil)
 }
 
-// The dashboard needs the rows and the balances; it does the filtering by month
-// and the totals itself, the same way the entries view already filters entries.
+// The journal needs the rows themselves — it lists, filters and sorts them — so
+// this endpoint serves them unaggregated. Totals now come from
+// /api/finances/summary rather than being re-derived on the client.
+//
 // Money crosses as a decimal string, not a float — the ledger is kopecks, and a
 // float would put 89.98999999999999 on screen.
 func TestServer_finances(t *testing.T) {

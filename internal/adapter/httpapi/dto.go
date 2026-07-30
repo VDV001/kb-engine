@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // transactionDTO is one ledger row on the wire.
@@ -22,6 +23,94 @@ type transactionDTO struct {
 	Description string `json:"description,omitempty"`
 	Account     string `json:"account,omitempty"`
 	Source      string `json:"source,omitempty"`
+}
+
+// namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
+// many rows went into it. Used for every cut whose key is a single string —
+// category, place, payment source, income source.
+type namedTotalDTO struct {
+	Name  string `json:"name"`
+	Total string `json:"total"`
+	Count int    `json:"count"`
+}
+
+// subcategoryTotalDTO keeps the category and the subcategory apart. The
+// dashboard shows them joined as «Категория → Подкатегория», but that arrow is
+// a label and belongs to the view, not to the wire.
+type subcategoryTotalDTO struct {
+	Category    string `json:"category"`
+	Subcategory string `json:"subcategory"`
+	Total       string `json:"total"`
+	Count       int    `json:"count"`
+}
+
+// periodTotalDTO is one calendar period: YYYY-MM for months, YYYY-MM-DD for
+// days. Only periods that actually have expenses appear — filling the gaps needs
+// a window, and the window belongs to whichever chart is drawing it.
+type periodTotalDTO struct {
+	Period string `json:"period"`
+	Total  string `json:"total"`
+	Count  int    `json:"count"`
+}
+
+// financeSummaryDTO is the finance view's arithmetic, done once, on the server.
+//
+// Every list is present even when empty: a missing field is indistinguishable
+// from "no data" in the client, and the chart would quietly disappear instead of
+// rendering an empty state.
+type financeSummaryDTO struct {
+	ExpenseCount   int                   `json:"expenseCount"`
+	Expenses       string                `json:"expenses"`
+	IncomeCount    int                   `json:"incomeCount"`
+	Income         string                `json:"income"`
+	Net            string                `json:"net"`
+	ByCategory     []namedTotalDTO       `json:"byCategory"`
+	ByAccount      []namedTotalDTO       `json:"byAccount"`
+	ByPlace        []namedTotalDTO       `json:"byPlace"`
+	BySource       []namedTotalDTO       `json:"bySource"`
+	IncomeBySource []namedTotalDTO       `json:"incomeBySource"`
+	BySubcategory  []subcategoryTotalDTO `json:"bySubcategory"`
+	ByMonth        []periodTotalDTO      `json:"byMonth"`
+	ByDay          []periodTotalDTO      `json:"byDay"`
+}
+
+func toNamedTotals(in []finance.CategoryTotal) []namedTotalDTO {
+	out := make([]namedTotalDTO, 0, len(in))
+	for _, c := range in {
+		out = append(out, namedTotalDTO{Name: c.Category, Total: c.Total.String(), Count: c.Count})
+	}
+	return out
+}
+
+func toFinanceSummaryDTO(s finance.Summary) financeSummaryDTO {
+	dto := financeSummaryDTO{
+		ExpenseCount:   s.ExpenseCount,
+		Expenses:       s.Expenses.String(),
+		IncomeCount:    s.IncomeCount,
+		Income:         s.Income.String(),
+		Net:            s.Net.String(),
+		ByCategory:     toNamedTotals(s.ByCategory),
+		ByAccount:      toNamedTotals(s.ByAccount),
+		ByPlace:        toNamedTotals(s.ByPlace),
+		BySource:       toNamedTotals(s.BySource),
+		IncomeBySource: toNamedTotals(s.IncomeBySource),
+		BySubcategory:  make([]subcategoryTotalDTO, 0, len(s.BySubcategory)),
+		ByMonth:        make([]periodTotalDTO, 0, len(s.ByMonth)),
+		ByDay:          make([]periodTotalDTO, 0, len(s.ByDay)),
+	}
+	for _, c := range s.BySubcategory {
+		dto.BySubcategory = append(dto.BySubcategory, subcategoryTotalDTO{
+			Category: c.Category, Subcategory: c.Subcategory,
+			Total: c.Total.String(), Count: c.Count,
+		})
+	}
+	for _, m := range s.ByMonth {
+		dto.ByMonth = append(dto.ByMonth, periodTotalDTO{Period: m.Month, Total: m.Total.String(), Count: m.Count})
+	}
+	for _, d := range s.ByDay {
+		dto.ByDay = append(dto.ByDay, periodTotalDTO{Period: d.Date, Total: d.Total.String(), Count: d.Count})
+	}
+	return dto
 }
 
 // accountDTO is one balance from the workbook's «Счета» sheet.
