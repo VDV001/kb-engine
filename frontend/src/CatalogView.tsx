@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Entry } from './api'
+import type { Entry, Health } from './api'
 import {
   categoryLabel,
   dateOf,
@@ -12,6 +12,7 @@ import {
   type CatalogFilter,
 } from './catalog'
 import { Label } from './components/ui'
+import { HealthCard, SpotlightCard } from './HealthCards'
 
 // Пятнадцать, как в исходном дашборде: столько строк помещается на экран
 // ноутбука без прокрутки до пагинации.
@@ -106,11 +107,13 @@ const selectClass =
 export function CatalogView({
   entries,
   labels,
+  health,
   search,
   onSearchChange,
 }: {
   entries: Entry[]
   labels: Record<string, string>
+  health: Health
   /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
   search: string
   onSearchChange: (v: string) => void
@@ -119,6 +122,12 @@ export function CatalogView({
   const [page, setPage] = useState(1)
   const [grid, setGrid] = useState(false)
   const [withDescriptions, setWithDescriptions] = useState(true)
+  const [spotlightOpen, setSpotlightOpen] = useState(false)
+
+  // Спотлайт показывает самую свежую запись КАТАЛОГА, а не текущей выдачи:
+  // «последнее добавление», которое меняется от фильтра, — это уже не то, что
+  // подписано на карточке.
+  const newest = useMemo(() => sortByDate(entries)[0], [entries])
 
   const set = (patch: Partial<CatalogFilter>) => {
     setFilter((f) => ({ ...f, ...patch }))
@@ -395,6 +404,17 @@ export function CatalogView({
           </span>
           <Pagination page={current} pages={pages} onPage={setPage} />
         </div>
+
+        {/* items-start: у карточек резко разный объём содержимого, и растягивать
+            правую до высоты левой незачем — она берёт высоту по своему. */}
+        <section className="grid grid-cols-1 items-start gap-6 pt-8 md:grid-cols-3">
+          <SpotlightCard
+            entry={newest}
+            expanded={spotlightOpen}
+            onToggle={() => setSpotlightOpen((v) => !v)}
+          />
+          <HealthCard health={health} />
+        </section>
       </div>
     </div>
   )

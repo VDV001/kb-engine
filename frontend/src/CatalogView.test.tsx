@@ -21,9 +21,17 @@ const many: Entry[] = Array.from({ length: 40 }, (_, i) => ({
   date_added: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
 }))
 
+const health = { total: 40, processed: 30, with_notes: 4, score: 43 }
+
 const view = (search: string, onSearchChange = () => {}) =>
   render(
-    <CatalogView entries={many} labels={{ meta: 'Мета: про базу' }} search={search} onSearchChange={onSearchChange} />,
+    <CatalogView
+      entries={many}
+      labels={{ meta: 'Мета: про базу' }}
+      health={health}
+      search={search}
+      onSearchChange={onSearchChange}
+    />,
   )
 
 describe('CatalogView', () => {
@@ -41,7 +49,7 @@ describe('CatalogView', () => {
     expect(screen.getByText(/Показано 31–40/).textContent).toContain('31–40')
 
     rerender(
-      <CatalogView entries={many} labels={{}} search="Go" onSearchChange={() => {}} />,
+      <CatalogView entries={many} labels={{}} health={health} search="Go" onSearchChange={() => {}} />,
     )
     expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
   })
@@ -63,5 +71,32 @@ describe('CatalogView', () => {
     cleanup()
     view('Go')
     expect((screen.getByText('Сбросить') as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
+// Карточки внизу архива: обе показывают то, что посчитано на сервере, и обе
+// раньше отсутствовали в движке целиком.
+describe('bottom cards', () => {
+  it('shows the health figures from the server, not its own arithmetic', () => {
+    view('')
+    // 30 из 40 = 75%, 4 из 40 = 10%, общий счёт приходит готовым.
+    expect(screen.getByText('75%')).toBeDefined()
+    expect(screen.getByText('10%')).toBeDefined()
+    expect(screen.getByText('43%')).toBeDefined()
+    expect(screen.getByText('30 из 40')).toBeDefined()
+  })
+
+  // Спотлайт берёт самую свежую запись КАТАЛОГА. При запросе, сужающем выдачу
+  // до другой записи, карточка обязана остаться прежней — иначе «последнее
+  // добавление» означало бы «последнее среди найденного».
+  it('keeps the newest entry of the whole catalog under a query', () => {
+    view('')
+    const newest = screen.getByText('Последнее добавление').parentElement
+    const title = newest?.querySelector('h3')?.textContent
+    cleanup()
+    view('Go')
+    expect(
+      screen.getByText('Последнее добавление').parentElement?.querySelector('h3')?.textContent,
+    ).toBe(title)
   })
 })

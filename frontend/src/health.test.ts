@@ -16,15 +16,22 @@ describe('ecg', () => {
   // путь на -50%, и без точного повтора на стыке будет виден рывок.
   it('repeats itself so the scroll has no seam', () => {
     const { d, width } = ecg(70)
-    const points = d.slice(1).split(' L').map((p) => p.split(',').map(Number))
+    const points = d
+      .slice(1)
+      .split(' L')
+      .map((p) => p.split(',').map(Number) as [number, number])
     const half = width / 2
-    const first = points.filter(([x]) => x < half)
-    const second = points.filter(([x]) => x >= half && x < width)
-    expect(second.length).toBe(first.length)
-    second.forEach(([x, y], i) => {
-      expect(x - half).toBeCloseTo(first[i][0], 6)
-      expect(y).toBeCloseTo(first[i][1], 6)
-    })
+
+    // У каждой точки первой половины есть двойник ровно на половину правее.
+    // Сравниваем именно так, а не двумя списками подряд: на самом стыке точки
+    // с координатой half две — конец первой половины и начало второй, — и
+    // деление списка пополам спотыкается об это, хотя путь бесшовен.
+    const at = (x: number, y: number) =>
+      points.some(([px, py]) => Math.abs(px - x) < 1e-6 && Math.abs(py - y) < 1e-6)
+
+    const firstHalf = points.filter(([x]) => x < half)
+    expect(firstHalf.length).toBeGreaterThan(8)
+    firstHalf.forEach(([x, y]) => expect(at(x + half, y)).toBe(true))
   })
 
   // Пустая база — почти ровная линия, полное здоровье — размашистые пики.
