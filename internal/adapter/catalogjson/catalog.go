@@ -74,6 +74,7 @@ type entryDTO struct {
 	Source       string    `json:"source"`
 	Author       string    `json:"author"`
 	Notes        string    `json:"notes"`
+	File         string    `json:"file"`
 	SupersedesID flexInt   `json:"supersedes_id"`
 	RelatedIDs   []flexInt `json:"related_ids"`
 	DateAdded    string    `json:"date_added"`
@@ -200,6 +201,7 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		Source:       dto.Source,
 		Author:       dto.Author,
 		Notes:        dto.Notes,
+		NotesFile:    dto.File,
 		SupersedesID: dto.SupersedesID.pointer(),
 		RelatedIDs:   flexIntsToInts(dto.RelatedIDs),
 		DateAdded:    dateAdded,

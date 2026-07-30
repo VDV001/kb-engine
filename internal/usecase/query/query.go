@@ -63,3 +63,47 @@ func (s *Service) Stats() (Stats, error) {
 	}
 	return st, nil
 }
+
+// Health is how far the catalog is from being worked through: how many entries
+// have been triaged, how many carry a write-up, and the average of the two.
+type Health struct {
+	Total     int `json:"total"`
+	Processed int `json:"processed"`
+	WithNotes int `json:"with_notes"`
+	Score     int `json:"score"`
+}
+
+// Health computes the two shares the dashboard shows on its health card.
+//
+// An entry counts as processed when a verdict was recorded for it, or when it
+// was read. Deliberately not the literal statuses «read» and «на подумать» the
+// Python dashboard compares against: on the live catalog that misses 275 KEEP
+// and 66 SKIP entries — all of them decided — and reports 61% where the honest
+// figure is 88%.
+func (s *Service) Health() (Health, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return Health{}, err
+	}
+	h := Health{Total: c.Len()}
+	for _, e := range c.Entries() {
+		if e.Verdict() != nil || (e.ReadState() != nil && e.ReadState().String() == "read") {
+			h.Processed++
+		}
+		if e.NotesFile() != "" {
+			h.WithNotes++
+		}
+	}
+	if h.Total > 0 {
+		h.Score = (percent(h.Processed, h.Total) + percent(h.WithNotes, h.Total)) / 2
+	}
+	return h, nil
+}
+
+func percent(part, total int) int {
+	if total == 0 {
+		return 0
+	}
+	// Округление к ближайшему: 49.6% должно читаться как 50, а не как 49.
+	return (part*200 + total) / (total * 2)
+}
