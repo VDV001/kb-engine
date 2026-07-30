@@ -118,7 +118,16 @@ func checkVocabulary(txs []domain.Transaction, accounts map[string]struct{}) err
 					ErrUnknownAccount, acc, tx.ID())
 			}
 		}
-		if src := tx.Source(); src != "" {
+		// Expenses only. splitAccount consults the vocabulary when reading Расходы,
+		// which is what makes a source spelled like an account ambiguous there. On
+		// Доходы the reader takes column B literally and never assigns an account, so
+		// the same value round-trips — and the live book has such a row: a cashback
+		// whose Источник is the bank it arrived in.
+		//
+		// Refusing it broke data already on disk, and the fix this error names is
+		// forbidden by the domain, which leaves no way out. The narrow rule is the
+		// correct one.
+		if src := tx.Source(); src != "" && tx.IsExpense() {
 			if _, isAccount := accounts[src]; isAccount {
 				return fmt.Errorf("%w: %q is on the Счета sheet, so it would read back as the account — "+
 					"pass it as the account instead (row %s)", ErrSourceNamesAnAccount, src, tx.ID())
