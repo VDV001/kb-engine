@@ -3,7 +3,6 @@ package financexlsx
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filebackup"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/xuri/excelize/v2"
 )
@@ -150,62 +150,11 @@ func CheckLock(path string) error {
 // directory to the most recent backupsKept files.
 //
 // The workbook is four years of hand-kept records with no version history
-// behind it, so every write leaves a way back.
+// behind it, so every write leaves a way back. The ledger on the other side of
+// the sync needs the identical guarantee, so the mechanism lives in one place
+// and this is the workbook's name for it.
 func backup(path string, now func() time.Time) error {
-	dir := filepath.Join(filepath.Dir(path), backupDirName)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create backup directory: %w", err)
-	}
-
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	stamp := now().UTC().Format("2006-01-02T15-04-05Z")
-	dst := filepath.Join(dir, fmt.Sprintf("%s.%s.xlsx", base, stamp))
-
-	if err := copyFile(path, dst); err != nil {
-		return err
-	}
-	return pruneBackups(dir)
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open workbook for backup: %w", err)
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("create backup: %w", err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return fmt.Errorf("write backup: %w", err)
-	}
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		return fmt.Errorf("sync backup: %w", err)
-	}
-	return out.Close()
-}
-
-// pruneBackups keeps the newest backupsKept files. Names carry a sortable
-// timestamp, so lexical order is chronological order.
-func pruneBackups(dir string) error {
-	found, err := filepath.Glob(filepath.Join(dir, "*.xlsx"))
-	if err != nil {
-		return fmt.Errorf("list backups: %w", err)
-	}
-	if len(found) <= backupsKept {
-		return nil
-	}
-	slices.Sort(found)
-	for _, old := range found[:len(found)-backupsKept] {
-		if err := os.Remove(old); err != nil {
-			return fmt.Errorf("prune backup: %w", err)
-		}
-	}
-	return nil
+	return filebackup.Snapshot(path, now, backupsKept)
 }
 
 // saveAtomically writes to a temp file in the same directory and renames over
