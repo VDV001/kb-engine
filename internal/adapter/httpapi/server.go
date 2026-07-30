@@ -320,7 +320,7 @@ func handleFinances(fin Financier) http.HandlerFunc {
 // answer that looks like a legitimate one.
 func parseMonths(raw string) []string {
 	var out []string
-	for _, part := range strings.Split(raw, ",") {
+	for part := range strings.SplitSeq(raw, ",") {
 		if m := strings.TrimSpace(part); m != "" {
 			out = append(out, m)
 		}
