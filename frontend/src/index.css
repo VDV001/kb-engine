@@ -56,3 +56,23 @@ h1, h2, h3 {
   filter: blur(8px);
   user-select: none;
 }
+
+/* Markdown в Now: полтора десятка правил вместо зависимости typography. */
+.now-prose h1, .now-prose h2, .now-prose h3 { margin: 1.4em 0 0.5em; }
+.now-prose h2 { font-size: 1.35rem; }
+.now-prose h3 { font-size: 1.1rem; }
+.now-prose p, .now-prose li { font-size: 0.9rem; line-height: 1.65; color: var(--on-surface); }
+.now-prose ul, .now-prose ol { padding-left: 1.4rem; margin: 0.5em 0; list-style: disc; }
+.now-prose ol { list-style: decimal; }
+.now-prose blockquote { border-left: 2px solid var(--secondary); padding-left: 1rem; color: var(--on-surface-variant); margin: 0.8em 0; }
+.now-prose code { font-family: var(--font-mono); font-size: 0.85em; background: var(--surface-high); padding: 0.1em 0.35em; border-radius: 4px; }
+.now-prose table { border-collapse: collapse; margin: 0.8em 0; width: 100%; display: block; overflow-x: auto; }
+.now-prose th, .now-prose td { border: 1px solid var(--outline-variant); padding: 0.45em 0.7em; font-size: 0.85rem; text-align: left; }
+.now-prose th { background: var(--surface-low); font-family: var(--font-label); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; }
+/* И заголовки тоже: в active-pipeline встречаются [[wiki-ссылки]] длиннее
+   мобильного экрана одним словом. */
+.now-prose p, .now-prose li, .now-prose code, .now-prose h1, .now-prose h2, .now-prose h3 { overflow-wrap: anywhere; }
+.now-prose pre { overflow-x: auto; background: var(--surface-high); padding: 0.7em; border-radius: 4px; }
+.now-prose hr { border: none; border-top: 1px solid var(--outline-variant); margin: 1.5em 0; }
+.now-prose strong { font-weight: 650; }
+.now-prose a { color: var(--secondary); }
