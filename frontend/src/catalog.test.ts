@@ -28,7 +28,7 @@ describe('statusOf', () => {
   // отфильтровать вообще: их не было в списке значений фильтра.
   it.each([
     ['keep', 'keep', 'KEEP'],
-    ['napodumat', 'napodumat', 'На подумать'],
+    ['consider', 'consider', 'На подумать'],
     ['skip', 'skip', 'SKIP'],
     ['skip-unavailable', 'skip-unavailable', 'SKIP · нет доступа'],
   ])('verdict %s outranks the read state', (verdict, key, label) => {

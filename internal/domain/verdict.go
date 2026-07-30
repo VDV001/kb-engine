@@ -10,15 +10,15 @@ var ErrInvalidVerdict = errors.New("invalid verdict")
 // and always holds one of the canonical values; construct it via NewVerdict.
 //
 // Canonical values are English lowercase. Legacy encodings found in stored data
-// (e.g. "KEEP", "на подумать") are normalized by the loader before reaching the
-// domain, which stays strict.
+// (e.g. "KEEP", "на подумать", "napodumat") are normalized by the loader before
+// reaching the domain, which stays strict.
 type Verdict struct {
 	value string
 }
 
 var canonicalVerdicts = map[string]struct{}{
 	"keep":             {},
-	"napodumat":        {},
+	"consider":         {},
 	"skip":             {},
 	"skip-unavailable": {},
 }

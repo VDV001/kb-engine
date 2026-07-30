@@ -27,8 +27,8 @@ func TestDecode_articleStatusMapping(t *testing.T) {
 	}{
 		{"keep", "keep", "keep", "read"},
 		{"uppercase KEEP normalized", "KEEP", "keep", "read"},
-		{"cyrillic legacy normalized", "на подумать", "napodumat", "read"},
-		{"napodumat", "napodumat", "napodumat", "read"},
+		{"cyrillic legacy normalized", "на подумать", "consider", "read"},
+		{"transliterated legacy normalized", "napodumat", "consider", "read"},
 		{"skip", "skip", "skip", "read"},
 		{"skip-unavailable", "SKIP-unavailable", "skip-unavailable", "read"},
 		{"read without verdict", "read", "", "read"},

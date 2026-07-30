@@ -45,7 +45,7 @@ export interface StatusView {
 // старом дашборде именно потому, что копий было две.
 const STATUS_STYLE: Record<string, [tone: string, label: string]> = {
   keep: ['var(--status-keep)', 'KEEP'],
-  napodumat: ['var(--status-napodumat)', 'На подумать'],
+  consider: ['var(--status-napodumat)', 'На подумать'],
   skip: ['var(--on-surface-variant)', 'SKIP'],
   'skip-unavailable': ['var(--on-surface-variant)', 'SKIP · нет доступа'],
   unread: ['var(--status-published)', 'Unread'],

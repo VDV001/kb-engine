@@ -14,7 +14,7 @@ func TestNewVerdict(t *testing.T) {
 		wantErr bool
 	}{
 		{"keep", "keep", false},
-		{"napodumat", "napodumat", false},
+		{"consider", "consider", false},
 		{"skip", "skip", false},
 		{"skip-unavailable", "skip-unavailable", false},
 		{"uppercase is not canonical", "KEEP", true},
