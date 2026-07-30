@@ -20,15 +20,59 @@ export const emptyFilter: CatalogFilter = {
 }
 
 /**
- * statusOf reduces an entry's three status-ish fields to the one label the
- * catalog shows, the same way the Python dashboard does: the verdict
- * «на подумать» outranks the read state, because it is a decision and the
- * read state is only a bookmark.
+ * categoryLabel turns a category key into the name a person reads. The catalog
+ * stores «Название: описание» on one line; a list wants the name, and the
+ * description belongs in a tooltip. An undescribed category falls back to its
+ * own key rather than to a made-up name — a missing entry in the naming is
+ * something to notice, not to paper over.
  */
-export function statusOf(e: Entry): string {
-  if (e.verdict === 'napodumat') return 'на подумать'
-  if (e.read_state) return e.read_state
-  return e.lifecycle
+export function categoryLabel(key: string, labels: Record<string, string>): string {
+  const full = labels[key]
+  if (!full) return key
+  return full.split(':')[0].trim()
+}
+
+/** One status as the catalog shows it: the value filters match on, the words a
+ * person reads, and the colour both the dot and the caption take. */
+export interface StatusView {
+  key: string
+  label: string
+  tone: string
+}
+
+// Подписи и тона статусов — один источник на всё приложение. Раньше они лежали
+// двумя словарями внутри CatalogView, и таблица с сеткой уже расходились в
+// старом дашборде именно потому, что копий было две.
+const STATUS_STYLE: Record<string, [tone: string, label: string]> = {
+  keep: ['var(--status-keep)', 'KEEP'],
+  napodumat: ['var(--status-napodumat)', 'На подумать'],
+  skip: ['var(--on-surface-variant)', 'SKIP'],
+  'skip-unavailable': ['var(--on-surface-variant)', 'SKIP · нет доступа'],
+  unread: ['var(--status-published)', 'Unread'],
+  read: ['var(--status-review)', 'Прочитано'],
+}
+
+/**
+ * statusOf reduces an entry's status-ish fields to the one status the catalog
+ * shows. Order is the point: a verdict outranks the read state, because the
+ * reader reads an article in order to decide about it — «прочитано» next to a
+ * recorded verdict says nothing the verdict has not already said. A publish
+ * stage comes next: owner creations never go through triage at all. Lifecycle
+ * is the last resort, not the second one.
+ */
+export function statusOf(e: Entry): StatusView {
+  const key = e.verdict || e.read_state || e.publish_stage || e.lifecycle
+  return statusStyle(key)
+}
+
+/** statusStyle keeps an unrecognised value visible and verbatim: the tone stays
+ * readable and the caption prints the value itself. Nine entries still carry
+ * statuses from older vocabularies, and hiding them would hide the cleanup they
+ * are asking for — status-draft (#c9c4bc on #fbf9f2, contrast 1.6) hides them. */
+export function statusStyle(key: string): StatusView {
+  const hit = STATUS_STYLE[key.trim().toLowerCase()]
+  if (hit) return { key, label: hit[1], tone: hit[0] }
+  return { key, label: key.trim() || '—', tone: 'var(--on-surface-variant)' }
 }
 
 export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
@@ -36,7 +80,7 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
   return entries.filter(
     (e) =>
       (f.category === '' || e.category === f.category) &&
-      (f.status === '' || statusOf(e) === f.status) &&
+      (f.status === '' || statusOf(e).key === f.status) &&
       (f.source === '' || (e.source ?? '') === f.source) &&
       (f.lifecycle === '' || e.lifecycle === f.lifecycle) &&
       (q === '' ||
@@ -46,13 +90,28 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
   )
 }
 
+/**
+ * dateOf is the one date the catalog shows. Entries carry one of two fields and
+ * almost never both: date_added for what the bot and the owner filed away,
+ * date_created for the owner's own material. Reading a single field left a
+ * third of the archive dateless — not because the date was missing, but because
+ * the view looked in the other place. When both exist, the archive column means
+ * «when this joined the base», so date_added wins.
+ */
+export function dateOf(e: Entry): string {
+  return e.date_added || e.date_created || ''
+}
+
 /** Newest first; entries without a date sink to the bottom in id order, so the
- * bot-imported tail without dates does not shuffle randomly. */
+ * dateless tail does not shuffle randomly. Ties break by id descending, the way
+ * the source dashboard does it — a batch import shares one date across dozens
+ * of entries, and without the tiebreak their order is whatever sort felt like. */
 export function sortByDate(entries: Entry[]): Entry[] {
   return [...entries].sort((a, b) => {
-    if (a.date_added && b.date_added) return b.date_added.localeCompare(a.date_added)
-    if (a.date_added) return -1
-    if (b.date_added) return 1
+    const [da, db] = [dateOf(a), dateOf(b)]
+    if (da && db) return db.localeCompare(da) || b.id - a.id
+    if (da) return -1
+    if (db) return 1
     return b.id - a.id
   })
 }

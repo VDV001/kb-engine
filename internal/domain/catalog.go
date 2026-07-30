@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"maps"
 )
 
 // ErrDuplicateID is returned when an entry with an already-present id is added.
@@ -11,20 +12,48 @@ var ErrDuplicateID = errors.New("duplicate entry id")
 // Catalog is the aggregate of KB entries. It enforces that ids are unique.
 // Construct it via NewCatalog; the zero value is not usable.
 type Catalog struct {
-	entries []Entry
-	byID    map[int]int // id -> index into entries
+	entries        []Entry
+	byID           map[int]int // id -> index into entries
+	categoryLabels map[string]string
+}
+
+// CatalogOption configures a Catalog at construction time.
+type CatalogOption func(*Catalog)
+
+// WithCategoryLabels attaches the catalog's own naming of its categories: the
+// key an entry stores against the name a person reads. The map is copied, so a
+// caller that keeps editing its own copy cannot reshape a built catalog.
+func WithCategoryLabels(labels map[string]string) CatalogOption {
+	return func(c *Catalog) {
+		c.categoryLabels = maps.Clone(labels)
+	}
 }
 
 // NewCatalog builds a Catalog from entries, rejecting duplicate ids. A nil or
 // empty slice yields an empty catalog.
-func NewCatalog(entries []Entry) (*Catalog, error) {
+func NewCatalog(entries []Entry, opts ...CatalogOption) (*Catalog, error) {
 	c := &Catalog{byID: make(map[int]int, len(entries))}
+	for _, opt := range opts {
+		opt(c)
+	}
 	for _, e := range entries {
 		if err := c.Add(e); err != nil {
 			return nil, err
 		}
 	}
 	return c, nil
+}
+
+// CategoryLabels returns a copy of how the catalog names its categories: the
+// key an entry stores against the name a person reads. A category the catalog
+// has not described is simply absent — what to show instead is the caller's
+// decision, and inventing a name here would hide the gap.
+func (c *Catalog) CategoryLabels() map[string]string {
+	// Не maps.Clone: он вернул бы nil у каталога без словаря, а вызывающий
+	// вправе писать в полученную карту — в nil-карту запись паникует.
+	out := make(map[string]string, len(c.categoryLabels))
+	maps.Copy(out, c.categoryLabels)
+	return out
 }
 
 // Add appends an entry, returning ErrDuplicateID if its id is already present.

@@ -74,6 +74,7 @@ type entryDTO struct {
 	Source       string    `json:"source"`
 	Author       string    `json:"author"`
 	Notes        string    `json:"notes"`
+	File         string    `json:"file"`
 	SupersedesID flexInt   `json:"supersedes_id"`
 	RelatedIDs   []flexInt `json:"related_ids"`
 	DateAdded    string    `json:"date_added"`
@@ -81,7 +82,14 @@ type entryDTO struct {
 }
 
 type catalogDTO struct {
+	Meta    metaDTO    `json:"meta"`
 	Entries []entryDTO `json:"entries"`
+}
+
+// metaDTO is the catalog's own header. Only the naming of categories is read:
+// the rest of meta is bookkeeping the engine derives for itself.
+type metaDTO struct {
+	Categories map[string]string `json:"categories"`
 }
 
 // verdictAliases maps legacy status spellings to the canonical verdict value.
@@ -193,6 +201,7 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		Source:       dto.Source,
 		Author:       dto.Author,
 		Notes:        dto.Notes,
+		NotesFile:    dto.File,
 		SupersedesID: dto.SupersedesID.pointer(),
 		RelatedIDs:   flexIntsToInts(dto.RelatedIDs),
 		DateAdded:    dateAdded,
@@ -245,7 +254,7 @@ func Decode(r io.Reader) (*domain.Catalog, error) {
 		}
 		entries = append(entries, e)
 	}
-	return domain.NewCatalog(entries)
+	return domain.NewCatalog(entries, domain.WithCategoryLabels(dto.Meta.Categories))
 }
 
 // Load reads and decodes a catalog from the file at path.

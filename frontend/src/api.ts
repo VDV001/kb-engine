@@ -6,6 +6,17 @@ export interface Stats {
   by_lifecycle: Record<string, number>
   by_verdict: Record<string, number>
   by_kind: Record<string, number>
+  /** Как каталог называет свои категории: ключ → «Название: описание». */
+  category_labels?: Record<string, string>
+  health: Health
+}
+
+/** Насколько база разобрана: доли и их среднее, посчитанные на сервере. */
+export interface Health {
+  total: number
+  processed: number
+  with_notes: number
+  score: number
 }
 
 export interface Entry {
@@ -21,6 +32,7 @@ export interface Entry {
   publish_stage?: string
   tags?: string[]
   date_added?: string
+  date_created?: string
   description?: string
   author?: string
   source?: string

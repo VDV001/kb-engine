@@ -88,3 +88,17 @@ h1, h2, h3 {
 .toggle-switch input:checked + .toggle-slider { background: var(--secondary); }
 .toggle-switch input:checked + .toggle-slider:before { transform: translateX(20px); }
 .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid var(--secondary); outline-offset: 2px; }
+
+/* Кардиограмма на карточке здоровья. Путь состоит из двух одинаковых половин,
+   поэтому сдвиг ровно на -50% замыкается без рывка; длительность задаётся
+   инлайном — она считается из счёта здоровья. */
+@keyframes ecgScroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.ecg-line { animation: ecgScroll linear infinite; }
+
+/* Кольца и полоса не должны дёргаться у тех, кто просил меньше движения. */
+@media (prefers-reduced-motion: reduce) {
+  .ecg-line { animation: none; }
+}

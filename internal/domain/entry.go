@@ -52,6 +52,7 @@ type EntryParams struct {
 	Source       string
 	Author       string
 	Notes        string
+	NotesFile    string
 	SupersedesID *int
 	RelatedIDs   []int
 	DateAdded    *time.Time
@@ -76,6 +77,7 @@ type Entry struct {
 	source       string
 	author       string
 	notes        string
+	notesFile    string
 	supersedesID *int
 	relatedIDs   []int
 	dateAdded    *time.Time
@@ -114,6 +116,7 @@ func NewEntry(p EntryParams) (Entry, error) {
 		source:       p.Source,
 		author:       p.Author,
 		notes:        p.Notes,
+		notesFile:    p.NotesFile,
 		supersedesID: clonePtrInt(p.SupersedesID),
 		relatedIDs:   cloneInts(p.RelatedIDs),
 		dateAdded:    clonePtrTime(p.DateAdded),
@@ -208,6 +211,11 @@ func (e Entry) Author() string { return e.author }
 
 // Notes returns the entry's free-form notes.
 func (e Entry) Notes() string { return e.notes }
+
+// NotesFile returns the path to the entry's write-up, or "" when none was
+// written. It is the one signal for «этот материал разобран, а не только
+// прочитан» that the catalog carries.
+func (e Entry) NotesFile() string { return e.notesFile }
 
 // SupersedesID returns the id this entry supersedes, or nil.
 func (e Entry) SupersedesID() *int { return clonePtrInt(e.supersedesID) }

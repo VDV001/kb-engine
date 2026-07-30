@@ -9,13 +9,15 @@ type CatalogLoader interface {
 	Load() (*domain.Catalog, error)
 }
 
-// Stats are aggregate counts over the catalog.
+// Stats are aggregate counts over the catalog, plus how the catalog names its
+// own categories: a count is of little use to a reader who sees only the key.
 type Stats struct {
-	Total       int            `json:"total"`
-	ByCategory  map[string]int `json:"by_category"`
-	ByLifecycle map[string]int `json:"by_lifecycle"`
-	ByVerdict   map[string]int `json:"by_verdict"`
-	ByKind      map[string]int `json:"by_kind"`
+	Total          int               `json:"total"`
+	ByCategory     map[string]int    `json:"by_category"`
+	ByLifecycle    map[string]int    `json:"by_lifecycle"`
+	ByVerdict      map[string]int    `json:"by_verdict"`
+	ByKind         map[string]int    `json:"by_kind"`
+	CategoryLabels map[string]string `json:"category_labels,omitempty"`
 }
 
 // Service answers read queries over a loaded catalog.
@@ -44,10 +46,11 @@ func (s *Service) Stats() (Stats, error) {
 		return Stats{}, err
 	}
 	st := Stats{
-		ByCategory:  make(map[string]int),
-		ByLifecycle: make(map[string]int),
-		ByVerdict:   make(map[string]int),
-		ByKind:      make(map[string]int),
+		ByCategory:     make(map[string]int),
+		ByLifecycle:    make(map[string]int),
+		ByVerdict:      make(map[string]int),
+		ByKind:         make(map[string]int),
+		CategoryLabels: c.CategoryLabels(),
 	}
 	for _, e := range c.Entries() {
 		st.Total++
@@ -59,4 +62,48 @@ func (s *Service) Stats() (Stats, error) {
 		}
 	}
 	return st, nil
+}
+
+// Health is how far the catalog is from being worked through: how many entries
+// have been triaged, how many carry a write-up, and the average of the two.
+type Health struct {
+	Total     int `json:"total"`
+	Processed int `json:"processed"`
+	WithNotes int `json:"with_notes"`
+	Score     int `json:"score"`
+}
+
+// Health computes the two shares the dashboard shows on its health card.
+//
+// An entry counts as processed when a verdict was recorded for it, or when it
+// was read. Deliberately not the literal statuses «read» and «на подумать» the
+// Python dashboard compares against: on the live catalog that misses 275 KEEP
+// and 66 SKIP entries — all of them decided — and reports 61% where the honest
+// figure is 88%.
+func (s *Service) Health() (Health, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return Health{}, err
+	}
+	h := Health{Total: c.Len()}
+	for _, e := range c.Entries() {
+		if e.Verdict() != nil || (e.ReadState() != nil && e.ReadState().String() == "read") {
+			h.Processed++
+		}
+		if e.NotesFile() != "" {
+			h.WithNotes++
+		}
+	}
+	if h.Total > 0 {
+		h.Score = (percent(h.Processed, h.Total) + percent(h.WithNotes, h.Total)) / 2
+	}
+	return h, nil
+}
+
+func percent(part, total int) int {
+	if total == 0 {
+		return 0
+	}
+	// Округление к ближайшему: 49.6% должно читаться как 50, а не как 49.
+	return (part*200 + total) / (total * 2)
 }

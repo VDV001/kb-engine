@@ -27,6 +27,7 @@ const growthWeeks = 12
 type Querier interface {
 	Stats() (query.Stats, error)
 	Entries() ([]domain.Entry, error)
+	Health() (query.Health, error)
 }
 
 // Auditor is the audit port the API depends on.
@@ -242,7 +243,17 @@ func handleStats(q Querier) http.HandlerFunc {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, st)
+		// Здоровье едет вместе со статистикой, а не отдельным запросом: это
+		// такой же агрегат по тому же каталогу, и рисуются они на одном экране.
+		h, err := q.Health()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, struct {
+			query.Stats
+			Health query.Health `json:"health"`
+		}{st, h})
 	}
 }
 

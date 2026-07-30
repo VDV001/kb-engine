@@ -39,6 +39,12 @@ func TestTokenPairsAreReadable(t *testing.T) {
 		{"tag-text-2", "tag-bg-2"},
 		{"tag-text-3", "tag-bg-3"},
 		{"tag-text-4", "tag-bg-4"},
+		// Статусы каталога — тоже мелкий текст на фоне: подпись рядом с точкой
+		// красится тем же тоном. Таблица и сетка стоят на surface-lowest.
+		{"status-keep", "surface-lowest"},
+		{"status-napodumat", "surface-lowest"},
+		{"status-published", "surface-lowest"},
+		{"status-review", "surface-lowest"},
 	}
 
 	for _, theming := range []struct {

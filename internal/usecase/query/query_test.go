@@ -95,3 +95,89 @@ func TestStats_loaderError(t *testing.T) {
 		t.Fatalf("err = %v, want sentinel", err)
 	}
 }
+
+// Здоровье базы — две доли и их среднее: сколько записей разобрано и у скольких
+// есть конспект. Считаем здесь, а не в браузере, по той же причине, по которой
+// там уже считаются финансы: иначе арифметика заведётся вторым экземпляром и
+// разойдётся с первым.
+//
+// Разобрана запись, у которой есть вердикт ИЛИ она прочитана. Именно вердикт, а
+// не буквальные «read» и «на подумать»: на живом каталоге строгое сравнение не
+// считает разобранными 275 KEEP и 66 SKIP и занижает долю с 88% до 61%, то есть
+// врёт про уже сделанную работу.
+func TestService_health(t *testing.T) {
+	entries := []domain.Entry{
+		health(t, 1, "keep", "read", "notes/a.md"),
+		health(t, 2, "skip", "read", ""),
+		health(t, 3, "", "read", ""),
+		health(t, 4, "", "unread", ""),
+	}
+	cat, err := domain.NewCatalog(entries)
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	h, err := query.NewService(fakeLoader{catalog: cat}).Health()
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if h.Total != 4 || h.Processed != 3 || h.WithNotes != 1 {
+		t.Errorf("health = %+v, want total 4, processed 3, withNotes 1", h)
+	}
+	// 75% разобрано и 25% с конспектом дают 50.
+	if h.Score != 50 {
+		t.Errorf("Score = %d, want 50", h.Score)
+	}
+}
+
+func TestService_health_emptyCatalog(t *testing.T) {
+	cat, err := domain.NewCatalog(nil)
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+	h, err := query.NewService(fakeLoader{catalog: cat}).Health()
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	// Пустая база — нули, а не деление на ноль.
+	if h.Total != 0 || h.Score != 0 {
+		t.Errorf("health = %+v, want zeroes", h)
+	}
+}
+
+// health строит запись с нужными для этой карточки полями: вердикт может
+// отсутствовать, конспект тоже.
+func health(t *testing.T, id int, verdict, readState, notesFile string) domain.Entry {
+	t.Helper()
+	cat, err := domain.NewCategory("golang")
+	if err != nil {
+		t.Fatalf("category: %v", err)
+	}
+	lc, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("lifecycle: %v", err)
+	}
+	p := domain.EntryParams{
+		ID: id, Kind: "article", Title: "t", Category: cat, Lifecycle: lc,
+		NotesFile: notesFile,
+	}
+	if verdict != "" {
+		v, err := domain.NewVerdict(verdict)
+		if err != nil {
+			t.Fatalf("verdict: %v", err)
+		}
+		p.Verdict = &v
+	}
+	if readState != "" {
+		rs, err := domain.NewReadState(readState)
+		if err != nil {
+			t.Fatalf("read state: %v", err)
+		}
+		p.ReadState = &rs
+	}
+	e, err := domain.NewEntry(p)
+	if err != nil {
+		t.Fatalf("entry: %v", err)
+	}
+	return e
+}

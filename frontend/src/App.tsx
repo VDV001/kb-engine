@@ -8,6 +8,7 @@ import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import { FinancesView } from './FinancesView'
 import { PrivacyToggle } from './components/PrivacyToggle'
+import { SearchBox } from './components/SearchBox'
 import { AuditsView, DuplicatesView, OverviewView, SettingsView } from './views'
 
 type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
@@ -30,6 +31,8 @@ export default function App() {
   // Маска сумм живёт здесь, потому что переключатель стоит в шапке, а
   // применяется она к виду финансов.
   const [masked, setMasked] = useState(true)
+  // Поиск тоже поднят сюда: поле стоит в шапке, а фильтрует каталог.
+  const [search, setSearch] = useState('')
   const dashboard = useResource(api.dashboard)
   const data = dashboard.status === 'ready' ? dashboard.data : null
 
@@ -45,7 +48,16 @@ export default function App() {
           if (t === 'finances') setMasked(true)
         }}
         count={data?.stats.total}
-        extra={tab === 'finances' ? <PrivacyToggle masked={masked} onChange={setMasked} /> : undefined}
+        // Поиск показывается только на архиве: он и фильтрует только архив, а
+        // поле, которое видно всегда и работает через раз, обещает больше, чем
+        // делает.
+        extra={
+          tab === 'finances' ? (
+            <PrivacyToggle masked={masked} onChange={setMasked} />
+          ) : tab === 'archives' ? (
+            <SearchBox value={search} onChange={setSearch} />
+          ) : undefined
+        }
       />
 
       <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-8">
@@ -60,7 +72,15 @@ export default function App() {
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
-            {tab === 'archives' && <CatalogView entries={data.entries} />}
+            {tab === 'archives' && (
+              <CatalogView
+                entries={data.entries}
+                labels={data.stats.category_labels ?? {}}
+                health={data.stats.health}
+                search={search}
+                onSearchChange={setSearch}
+              />
+            )}
             {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
             {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" />}

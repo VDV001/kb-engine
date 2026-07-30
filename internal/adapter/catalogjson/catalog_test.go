@@ -229,3 +229,34 @@ func TestDecode_duplicateIDIsDomainError(t *testing.T) {
 		t.Fatalf("err = %v, want ErrDuplicateID", err)
 	}
 }
+
+// Словарь категорий лежит в meta.categories: ключ и человеческое название с
+// описанием через двоеточие. Читаем строку целиком — где её обрезать, решает
+// показ, а описание пригодится подсказкой.
+func TestDecode_categoryLabels(t *testing.T) {
+	src := `{"meta":{"categories":{"golang":"Go: язык и экосистема"}},` +
+		`"entries":[{"id":1,"title":"T","category":"golang","status":"keep"}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got := c.CategoryLabels()["golang"]; got != "Go: язык и экосистема" {
+		t.Errorf("label = %q, want %q", got, "Go: язык и экосистема")
+	}
+}
+
+// Конспект записи лежит в поле file — путь к markdown-файлу разбора. Карточка
+// «Здоровье базы» считает, у скольких записей он есть, поэтому поле обязано
+// доехать до домена: в движке его не было вовсе.
+func TestDecode_notesFile(t *testing.T) {
+	src := `{"entries":[{"id":1,"title":"T","category":"golang","status":"keep",` +
+		`"file":"notes/2026-05-01_разбор.md"}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	e, _ := c.Find(1)
+	if got := e.NotesFile(); got != "notes/2026-05-01_разбор.md" {
+		t.Errorf("NotesFile = %q, want the path from file", got)
+	}
+}

@@ -1,16 +1,22 @@
 import { useMemo, useState } from 'react'
-import type { Entry } from './api'
+import type { Entry, Health } from './api'
 import {
+  categoryLabel,
+  dateOf,
   emptyFilter,
   filterEntries,
   pageWindow,
   sortByDate,
   statusOf,
+  statusStyle,
   type CatalogFilter,
 } from './catalog'
 import { Label } from './components/ui'
+import { HealthCard, SpotlightCard } from './HealthCards'
 
-const PAGE_SIZE = 20
+// Пятнадцать, как в исходном дашборде: столько строк помещается на экран
+// ноутбука без прокрутки до пагинации.
+const PAGE_SIZE = 15
 
 // Tag pills cycle through the first three tag roles, the way the Python
 // dashboard colours them: by position, not by meaning — the meaning is the
@@ -21,24 +27,14 @@ const tagTone = [
   'bg-tag-bg-3 text-tag-text-3',
 ]
 
-const statusDot: Record<string, string> = {
-  unread: 'bg-status-published',
-  'на подумать': 'bg-status-napodumat',
-  read: 'bg-status-review',
-}
-
-const statusLabel: Record<string, string> = {
-  unread: 'Unread',
-  read: 'Прочитано',
-  'на подумать': 'На подумать',
-}
-
 function Status({ e }: { e: Entry }) {
   const s = statusOf(e)
   return (
     <span className="flex items-center gap-2 whitespace-nowrap">
-      <span className={`h-1.5 w-1.5 rounded-full ${statusDot[s] ?? 'bg-status-draft'}`} />
-      <span className="label">{statusLabel[s] ?? s}</span>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.tone }} />
+      <span className="label" style={{ color: s.tone }}>
+        {s.label}
+      </span>
     </span>
   )
 }
@@ -108,11 +104,30 @@ const selectClass =
  * paginated. Everything recomputes from the entries prop, so a changed catalog
  * reshapes the whole view on the next fetch — nothing here is baked.
  */
-export function CatalogView({ entries }: { entries: Entry[] }) {
+export function CatalogView({
+  entries,
+  labels,
+  health,
+  search,
+  onSearchChange,
+}: {
+  entries: Entry[]
+  labels: Record<string, string>
+  health: Health
+  /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
+  search: string
+  onSearchChange: (v: string) => void
+}) {
   const [filter, setFilter] = useState<CatalogFilter>(emptyFilter)
   const [page, setPage] = useState(1)
   const [grid, setGrid] = useState(false)
   const [withDescriptions, setWithDescriptions] = useState(true)
+  const [spotlightOpen, setSpotlightOpen] = useState(false)
+
+  // Спотлайт показывает самую свежую запись КАТАЛОГА, а не текущей выдачи:
+  // «последнее добавление», которое меняется от фильтра, — это уже не то, что
+  // подписано на карточке.
+  const newest = useMemo(() => sortByDate(entries)[0], [entries])
 
   const set = (patch: Partial<CatalogFilter>) => {
     setFilter((f) => ({ ...f, ...patch }))
@@ -133,16 +148,31 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
     () => [...new Set(entries.map((e) => e.lifecycle))].sort(),
     [entries],
   )
+  // Список строится из того, что реально лежит в каталоге, а не из зашитого
+  // перечня: пункт, который ничего не найдёт, хуже отсутствующего.
   const statuses = useMemo(
-    () => [...new Set(entries.map((e) => statusOf(e)))].sort(),
+    () => [...new Set(entries.map((e) => statusOf(e).key))].sort().map(statusStyle),
     [entries],
   )
 
-  const filtered = useMemo(() => sortByDate(filterEntries(entries, filter)), [entries, filter])
+  // Новый запрос возвращает на первую страницу — иначе, стоя на пятой, ищешь и
+  // видишь пустоту, потому что у найденного столько страниц нет. Подстройка
+  // состояния при рендере, а не useEffect: эффект дорисовал бы кадр со старой
+  // страницей и тут же перерисовал, да и гейт слоёв держит useEffect в hooks/.
+  const [searchShown, setSearchShown] = useState(search)
+  if (searchShown !== search) {
+    setSearchShown(search)
+    setPage(1)
+  }
+
+  // Запрос из шапки подмешивается к остальным фильтрам, а не живёт отдельной
+  // веткой: для filterEntries он такое же условие, как категория или статус.
+  const active = useMemo(() => ({ ...filter, search }), [filter, search])
+  const filtered = useMemo(() => sortByDate(filterEntries(entries, active)), [entries, active])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const slice = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
-  const isFiltered = filter !== emptyFilter && JSON.stringify(filter) !== JSON.stringify(emptyFilter)
+  const isFiltered = JSON.stringify(active) !== JSON.stringify(emptyFilter)
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
@@ -171,8 +201,11 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                <span className="truncate" title={cat}>
-                  {cat}
+                {/* Подсказкой — полная строка из каталога: в ней после
+                    двоеточия лежит описание, которое в узкий сайдбар не
+                    влезает, но объясняет, что за категория. */}
+                <span className="truncate" title={labels[cat] || cat}>
+                  {categoryLabel(cat, labels)}
                 </span>
                 <span className="font-mono text-xs tabular-nums">{n}</span>
               </button>
@@ -208,17 +241,14 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
         </header>
 
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-outline-variant bg-surface-low p-4">
-          <input
-            value={filter.search}
-            onChange={(e) => set({ search: e.target.value })}
-            placeholder="Поиск по записям…"
-            className={`${selectClass} min-w-40 flex-1`}
-          />
+          {/* Поля поиска здесь больше нет: оно переехало в шапку, как в
+              исходном дашборде. Два поля на один запрос — это два места, где
+              видно разное, стоит забыть синхронизировать одно из них. */}
           <select value={filter.status} onChange={(e) => set({ status: e.target.value })} className={selectClass}>
             <option value="">Любой статус</option>
             {statuses.map((s) => (
-              <option key={s} value={s}>
-                {statusLabel[s] ?? s}
+              <option key={s.key} value={s.key}>
+                {s.label}
               </option>
             ))}
           </select>
@@ -242,19 +272,28 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
               </option>
             ))}
           </select>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-on-surface-variant">
-            <input
-              type="checkbox"
-              checked={withDescriptions}
-              onChange={(e) => setWithDescriptions(e.target.checked)}
-              className="accent-[var(--secondary)]"
-            />
-            Описания
-          </label>
+          {/* Тумблер, а не галочка: в исходном дашборде это переключатель, и
+              такой же стоит в шапке у сумм — две разные механики для одного и
+              того же действия читаются как разные по смыслу. */}
+          <div className="flex items-center gap-2">
+            <span className="label text-[10px] text-on-surface-variant">Описания</span>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={withDescriptions}
+                onChange={(e) => setWithDescriptions(e.target.checked)}
+                aria-label={withDescriptions ? 'Скрыть описания' : 'Показать описания'}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
           <button
             type="button"
             onClick={() => {
               setFilter(emptyFilter)
+              // И запрос из шапки тоже: кнопка обещает сбросить фильтры, а не
+              // выборочно те из них, что нарисованы рядом с ней.
+              onSearchChange('')
               setPage(1)
             }}
             disabled={!isFiltered}
@@ -269,7 +308,9 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
             {slice.map((e) => (
               <div key={e.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-lowest p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-label text-xs text-on-surface-variant">{e.date_added ?? '—'}</span>
+                  <span className="font-label text-xs text-on-surface-variant">
+                    {dateOf(e) || '—'}
+                  </span>
                   <Status e={e} />
                 </div>
                 <a
@@ -305,7 +346,7 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                 {slice.map((e) => (
                   <tr key={e.id} className="border-t border-outline-variant align-top">
                     <td className="whitespace-nowrap px-4 py-4 font-label text-xs text-on-surface-variant">
-                      {e.date_added ?? '—'}
+                      {dateOf(e) || '—'}
                     </td>
                     <td className="max-w-md px-4 py-4">
                       <a
@@ -329,7 +370,7 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                     </td>
                     <td className="px-4 py-4">
                       <span className="whitespace-nowrap rounded-full border border-outline-variant bg-surface-high px-3 py-1 text-xs text-on-surface-variant">
-                        {e.category}
+                        {categoryLabel(e.category, labels)}
                       </span>
                     </td>
                     <td className="px-4 py-4">
@@ -363,6 +404,17 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
           </span>
           <Pagination page={current} pages={pages} onPage={setPage} />
         </div>
+
+        {/* items-start: у карточек резко разный объём содержимого, и растягивать
+            правую до высоты левой незачем — она берёт высоту по своему. */}
+        <section className="grid grid-cols-1 items-start gap-6 pt-8 md:grid-cols-3">
+          <SpotlightCard
+            entry={newest}
+            expanded={spotlightOpen}
+            onToggle={() => setSpotlightOpen((v) => !v)}
+          />
+          <HealthCard health={health} />
+        </section>
       </div>
     </div>
   )
