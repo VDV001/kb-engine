@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useResource } from './useResource'
 
@@ -21,6 +21,10 @@ function Probe({
 }
 
 afterEach(() => {
+  // Автоочистка @testing-library включается только при globals: true, а его у
+  // нас нет — без этой строки разметка прошлого теста остаётся в документе и
+  // getByText находит два совпадения вместо одного.
+  cleanup()
   vi.restoreAllMocks()
 })
 

@@ -157,7 +157,7 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
   // Граф грузится только когда на вкладку зашли, и один раз за жизнь вида.
   // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
   // каталога, и пустая картинка честнее ошибки на весь экран.
-  const res = useResource(api.graph, tab === 'граф')
+  const res = useResource(api.graph, { enabled: tab === 'граф' })
   const graph: Graph | null =
     res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
