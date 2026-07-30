@@ -32,8 +32,19 @@ func NewMoney(kopecks int64) Money { return Money{kopecks: kopecks} }
 // surfacing. A float comes from storage, where 89.99 is genuinely held as
 // 89.98999999999999 — that is representation noise, not intent, so it rounds to
 // the nearest kopeck (halves away from zero) instead of being rejected.
-func MoneyFromFloat(f float64) Money {
-	return Money{kopecks: int64(math.Round(f * 100))}
+//
+// A value that does not fit in kopecks is refused rather than saturated. The
+// bound is int64 itself, not a guess at how much money is plausible: the domain
+// either represents the amount exactly or says it cannot. One comparison covers
+// NaN and both infinities too, since every comparison against NaN is false.
+func MoneyFromFloat(f float64) (Money, error) {
+	k := math.Round(f * 100)
+	// float64(math.MaxInt64) rounds up to 2^63, so a strict < is the exact
+	// boundary; MinInt64 is representable and stays inclusive.
+	if !(k >= math.MinInt64 && k < -float64(math.MinInt64)) {
+		return Money{}, fmt.Errorf("%w: %v is not an amount in kopecks", ErrInvalidMoney, f)
+	}
+	return Money{kopecks: int64(k)}, nil
 }
 
 // Kopecks returns the amount as a whole number of kopecks.
@@ -48,12 +59,18 @@ func (m Money) IsZero() bool { return m.kopecks == 0 }
 // String renders the amount with two decimal places and no thousands
 // separators, e.g. "166703.82". Suitable for storage; formatting for humans
 // belongs to the presentation layer.
+//
+// The magnitude is taken in uint64, not by negating in int64: negating the most
+// negative int64 leaves it negative, and this string is what the ledger stores
+// in its amount field and what every fingerprint is built from.
 func (m Money) String() string {
-	k, sign := m.kopecks, ""
-	if k < 0 {
-		k, sign = -k, "-"
+	sign, abs := "", uint64(m.kopecks)
+	if m.kopecks < 0 {
+		// -(k+1)+1 keeps the intermediate inside int64 for every input, MinInt64
+		// included.
+		sign, abs = "-", uint64(-(m.kopecks+1))+1
 	}
-	return fmt.Sprintf("%s%d.%02d", sign, k/100, k%100)
+	return fmt.Sprintf("%s%d.%02d", sign, abs/100, abs%100)
 }
 
 // moneyCleaner strips the decorations a spreadsheet cell may carry: the ruble
@@ -104,9 +121,28 @@ func ParseMoney(raw string) (Money, error) {
 		}
 	}
 
-	total := rubles*100 + kopecks
+	// The magnitude is built in uint64 and bounded before the multiply, because
+	// rubles×100 wraps into a small or negative amount long before rubles itself
+	// stops fitting in an int64.
+	//
+	// The negative side reaches one kopeck further than the positive one: MinInt64
+	// has no positive counterpart. That extra step is not a curiosity — String can
+	// emit "-92233720368547758.08", and a value this package can write has to be
+	// one it can read back.
+	maxMag := uint64(math.MaxInt64)
 	if neg {
-		total = -total
+		maxMag++
 	}
-	return Money{kopecks: total}, nil
+	mag := uint64(rubles)
+	if mag > (maxMag-uint64(kopecks))/100 {
+		return Money{}, fmt.Errorf("%w: %q is larger than an amount in kopecks can hold", ErrInvalidMoney, raw)
+	}
+	mag = mag*100 + uint64(kopecks)
+
+	if neg {
+		// Stepping down from -1 rather than negating, so the intermediate stays
+		// inside int64 even when mag is exactly 2^63.
+		return Money{kopecks: -int64(mag-1) - 1}, nil
+	}
+	return Money{kopecks: int64(mag)}, nil
 }

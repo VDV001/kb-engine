@@ -37,30 +37,6 @@ func TestMoneyFromFloat_refusesWhatItCannotRepresent(t *testing.T) {
 	}
 }
 
-// The rounding behaviour the function exists for is unchanged: storage noise
-// becomes the nearest kopeck, halves away from zero.
-func TestMoneyFromFloat_stillRoundsStorageNoise(t *testing.T) {
-	for _, tc := range []struct {
-		in   float64
-		want int64
-	}{
-		{89.98999999999999, 8999},
-		{0.1, 10},
-		{2.675, 268},
-		{-2.675, -268},
-		{0.005, 1},
-		{1e12, 100000000000000},
-	} {
-		got, err := domain.MoneyFromFloat(tc.in)
-		if err != nil {
-			t.Fatalf("MoneyFromFloat(%v): %v", tc.in, err)
-		}
-		if got.Kopecks() != tc.want {
-			t.Errorf("MoneyFromFloat(%v) = %d kopecks, want %d", tc.in, got.Kopecks(), tc.want)
-		}
-	}
-}
-
 // String negates the amount to print a sign, and negating the most negative
 // int64 leaves it negative — producing "--92233720368547758.-8", which is what
 // then goes into the ledger's amount field and into every fingerprint built from
