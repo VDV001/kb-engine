@@ -97,6 +97,9 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
 	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
 	changelogPath := fs.String("changelog", "", "optional path to CHANGELOG.md («Что нового» in Settings)")
+	nowPath := fs.String("now", "", "optional path to active-pipeline.md (the Now view)")
+	teamPath := fs.String("team", "", "optional path to team.json (the Team view)")
+	projectsPath := fs.String("projects", "", "optional path to projects.json (the Projects view)")
 	// Loopback by default. With --ledger this process serves four years of
 	// personal transactions with places, notes and balances; ":8080" would hand
 	// them to anyone on the network. Binding wider stays possible, but as a
@@ -110,7 +113,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -156,7 +159,7 @@ func (f ledgerFinances) Finances() (httpapi.Finances, error) {
 	return out, nil
 }
 
-func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath string) (http.Handler, error) {
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -178,6 +181,11 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	if ledgerPath != "" {
 		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
 	}
+	docs, err := buildDocuments(nowPath, teamPath, projectsPath)
+	if err != nil {
+		return nil, err
+	}
+
 	var chlog httpapi.ChangelogLoader
 	if changelogPath != "" {
 		if _, err := os.ReadFile(changelogPath); err != nil {
@@ -192,7 +200,42 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 		}
 	}
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, chlog, front), nil
+		analytics.NewService(loader), fin, cfg, chlog, docs, front), nil
+}
+
+// buildDocuments wires the owner's personal views. Each path is optional;
+// a configured one is read once at startup so a typo fails at serve time,
+// then re-read per request so edits show up on reload.
+func buildDocuments(nowPath, teamPath, projectsPath string) (httpapi.Documents, error) {
+	var docs httpapi.Documents
+	if nowPath != "" {
+		if _, err := os.ReadFile(nowPath); err != nil {
+			return httpapi.Documents{}, fmt.Errorf("now: %w", err)
+		}
+		docs.Now = func() (string, error) {
+			raw, err := os.ReadFile(nowPath)
+			return string(raw), err
+		}
+	}
+	fileJSON := func(name, path string) (func() ([]byte, error), error) {
+		if _, err := os.ReadFile(path); err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		return func() ([]byte, error) { return os.ReadFile(path) }, nil
+	}
+	if teamPath != "" {
+		var err error
+		if docs.Team, err = fileJSON("team", teamPath); err != nil {
+			return httpapi.Documents{}, err
+		}
+	}
+	if projectsPath != "" {
+		var err error
+		if docs.Projects, err = fileJSON("projects", projectsPath); err != nil {
+			return httpapi.Documents{}, err
+		}
+	}
+	return docs, nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {
