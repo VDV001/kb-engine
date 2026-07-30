@@ -1,20 +1,12 @@
 import { useMemo, useState } from 'react'
 import { api } from './api'
-import type { Audits, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import type { Audits, DuplicateGroup, Finances, Finding, NamedTotal, Stats } from './api'
 import { useResource } from './hooks/useResource'
-import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
-import {
-  daysOfMonth,
-  formatRub,
-  monthLabel,
-  monthOf,
-  monthsBetween,
-  sumBy,
-  sumByAccount,
-  toKopecks,
-  plural,
-  toRoubleBars,
-} from './money'
+import { PeriodBars, ShareBars } from './FinanceCharts'
+import type { Share } from './FinanceCharts'
+import { dayBars, monthBars } from './financeSeries'
+import { Badge, BarList, Card, ErrorBox, Label, Ring, Section, Spinner, Stat } from './components/ui'
+import { formatRub, monthLabel, monthOf, toKopecks } from './money'
 
 export function OverviewView({ stats }: { stats: Stats }) {
   // The spotlight card is the one the eye lands on, so it carries the most
@@ -229,27 +221,9 @@ export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
 
 // --- Finances ---------------------------------------------------------------
 
-// Trend renders the shape of spending over the period: by day when a month is
-// picked, by month otherwise. The Python dashboard always showed the last seven
-// days; with a month picker on the same screen, matching the picker is the same
-// idea applied consistently.
-function Trend({ points, masked }: { points: { label: string; kopecks: number }[]; masked: boolean }) {
-  if (points.length === 0) return null
-  const max = Math.max(1, ...points.map((p) => p.kopecks))
-  return (
-    <div className="flex items-end gap-1" style={{ height: 64 }}>
-      {points.map((p) => (
-        <div
-          key={p.label}
-          // No amount in the tooltip while masked: filter: blur does not reach a
-          // native tooltip, so hovering would read out what the mask hides.
-          title={masked ? p.label : `${p.label}: ${formatRub(p.kopecks)}`}
-          className="min-w-1 flex-1 rounded-t bg-donut-primary"
-          style={{ height: Math.max(Math.round((p.kopecks / max) * 64), 2) }}
-        />
-      ))}
-    </div>
-  )
+/** NamedTotal с провода → строка списка долей. */
+function toShare(t: NamedTotal): Share {
+  return { name: t.name, kopecks: toKopecks(t.total) }
 }
 
 export function FinancesView({ finances }: { finances: Finances }) {
@@ -263,36 +237,25 @@ export function FinancesView({ finances }: { finances: Finances }) {
     [finances.transactions],
   )
 
+  // Арифметику считает сервер. Период уходит туда же ключом ресурса: смена
+  // месяца — это другой запрос, а не пересчёт готовой сводки здесь, иначе
+  // рядом с серверной реализацией появилась бы вторая, обязанная совпадать.
+  const summaryRes = useResource(() => api.financeSummary(month === '' ? [] : [month]), { key: month })
+  const summary = summaryRes.status === 'ready' ? summaryRes.data : null
+
+  // Сегодня — параметром, а не внутри подготовки рядов: так ряды остаются
+  // чистыми функциями и проверяются без подмены часов.
+  const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
+
   const shown = useMemo(
     () => (month === '' ? finances.transactions : finances.transactions.filter((t) => monthOf(t.date) === month)),
     [finances.transactions, month],
   )
 
-  const expenses = shown.filter((t) => t.kind === 'expense')
-  const income = shown.filter((t) => t.kind === 'income')
-  // Expenses are summed as recorded, so a refund (a negative expense) comes off
-  // the total instead of adding to it — the same arithmetic the CLI report does.
-  const spent = expenses.reduce((n, t) => n + toKopecks(t.amount), 0)
-  const earned = income.reduce((n, t) => n + toKopecks(t.amount), 0)
   const balance = finances.accounts.reduce((n, a) => n + toKopecks(a.balance), 0)
-
-  // By day inside a picked month, by month over all time. Days with no spending
-  // stay in the series as zeroes — a gap is information, and dropping it would
-  // make three scattered purchases look like a steady week.
-  const trend = useMemo(() => {
-    const bucket = month === '' ? (t: Transaction) => monthOf(t.date) : (t: Transaction) => t.date
-    const sums = sumBy(expenses, bucket)
-    const keys = Object.keys(sums).sort()
-    const labels =
-      month === ''
-        ? monthsBetween(keys[0] ?? '', keys[keys.length - 1] ?? '')
-        : daysOfMonth(month)
-    return labels.map((label) => ({ label, kopecks: sums[label] ?? 0 }))
-  }, [expenses, month])
-
-  const byCategory = sumBy(expenses, (t) => t.category ?? '')
-  const byAccount = sumByAccount(expenses)
-  const top = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
+  const spent = summary ? toKopecks(summary.expenses) : 0
+  const earned = summary ? toKopecks(summary.income) : 0
+  const top = summary?.byCategory[0]
 
   if (finances.transactions.length === 0 && finances.accounts.length === 0) {
     return (
@@ -337,63 +300,115 @@ export function FinancesView({ finances }: { finances: Finances }) {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Баланс по счетам" value={<span className="privacy-mask">{formatRub(balance)}</span>} />
-        <Stat label={`Расходы (${expenses.length})`} value={<span className="privacy-mask">{formatRub(spent)}</span>} />
-        <Stat label={`Доходы (${income.length})`} value={<span className="privacy-mask">{formatRub(earned)}</span>} />
+        <Stat
+          label={`Расходы (${summary?.expenseCount ?? 0})`}
+          value={<span className="privacy-mask">{formatRub(spent)}</span>}
+        />
+        <Stat
+          label={`Доходы (${summary?.incomeCount ?? 0})`}
+          value={<span className="privacy-mask">{formatRub(earned)}</span>}
+        />
         <Stat label="Разница" value={<span className="privacy-mask">{formatRub(earned - spent)}</span>} />
       </div>
 
-      <Card>
-        <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-on-surface">
-            {month === '' ? 'Расходы по месяцам' : 'Расходы по дням'}
-          </h3>
-          <span className="text-xs text-on-surface-variant">{plural(trend.length, 'точка', 'точки', 'точек')}</span>
-        </div>
-        <Trend points={trend} masked={masked} />
-      </Card>
+      {summaryRes.status === 'failed' && <ErrorBox message={summaryRes.error} />}
+      {summaryRes.status === 'loading' && <Spinner />}
 
-      {top && (
-        <Card>
-          <div className="text-sm text-on-surface-variant">Топ категория</div>
-          <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-on-surface">{top[0]}</span>
-            <span className="privacy-mask tabular-nums text-on-surface-variant">{formatRub(top[1])}</span>
-            <span className="text-sm text-on-surface-variant">
-              {/* A share of a negative total is not a share of anything: when
-                  refunds outweigh purchases the percentage flips sign and reads
-                  as nonsense. */}
-              {spent <= 0 ? '—' : `${Math.round((top[1] / spent) * 100)}% расходов`}
-            </span>
-          </div>
-        </Card>
-      )}
+      {summary && (
+        <>
+          {/* Bento категорий: доля каждой в расходах периода. */}
+          {summary.byCategory.length > 0 && (
+            <Card>
+              <h3 className="mb-2 text-sm font-semibold text-on-surface">Распределение по категориям</h3>
+              <div className="grid grid-cols-2 gap-px bg-outline-variant sm:grid-cols-4 xl:grid-cols-6">
+                {summary.byCategory.map((c) => (
+                  <div key={c.name} className="bg-surface-low">
+                    <Ring
+                      percent={spent > 0 ? Math.round((toKopecks(c.total) / spent) * 100) : 0}
+                      label={c.name}
+                    />
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-on-surface">Расходы по категориям, ₽</h3>
-          <BarList data={toRoubleBars(byCategory)} valueClassName="privacy-mask" />
-        </Card>
-        <div className="space-y-4">
-          <Card>
-            <h3 className="mb-2 text-sm font-semibold text-on-surface">Расходы по счетам, ₽</h3>
-            <BarList data={toRoubleBars(byAccount)} valueClassName="privacy-mask" />
-          </Card>
-          <Card>
-            <h3 className="mb-2 text-sm font-semibold text-on-surface">Остатки по счетам</h3>
-            <div className="space-y-1 text-sm">
-              {finances.accounts.map((a) => (
-                <div key={a.bank} className="flex items-center justify-between gap-2">
-                  <span className="truncate text-on-surface-variant">{a.bank}</span>
-                  <span className="privacy-mask shrink-0 tabular-nums text-on-surface">
-                    {formatRub(toKopecks(a.balance))}
-                  </span>
-                  <span className="w-24 shrink-0 text-right text-xs text-on-surface-variant">{a.updated}</span>
-                </div>
-              ))}
+          {top && (
+            <Card>
+              <div className="text-sm text-on-surface-variant">Топ категория</div>
+              <div className="mt-1 flex items-baseline gap-2">
+                <span className="text-2xl font-bold text-on-surface">{top.name}</span>
+                <span className="privacy-mask tabular-nums text-on-surface-variant">
+                  {formatRub(toKopecks(top.total))}
+                </span>
+                <span className="text-sm text-on-surface-variant">
+                  {/* Доля от отрицательной суммы — не доля ни от чего: когда
+                      возвраты перевешивают покупки, процент меняет знак и
+                      читается как бессмыслица. */}
+                  {spent <= 0 ? '—' : `${Math.round((toKopecks(top.total) / spent) * 100)}% расходов`}
+                </span>
+              </div>
+            </Card>
+          )}
+
+          <div className="grid gap-4 xl:grid-cols-3">
+            <div className="space-y-4 xl:col-span-2">
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Помесячная динамика</h3>
+                <PeriodBars bars={monthBars(summary.byMonth, today)} />
+              </Card>
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Плотность транзакций (31 день)</h3>
+                <PeriodBars bars={dayBars(summary.byDay, today)} height="h-36" />
+              </Card>
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Детализация подкатегорий</h3>
+                <ShareBars
+                  items={summary.bySubcategory.map((s) => ({
+                    // Стрелка живёт здесь: на проводе категория и подкатегория
+                    // приходят разными полями, потому что это подпись, а не данные.
+                    name: `${s.category} → ${s.subcategory}`,
+                    kopecks: toKopecks(s.total),
+                  }))}
+                />
+              </Card>
             </div>
-          </Card>
-        </div>
-      </div>
+
+            <div className="space-y-4">
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Потоки доходов</h3>
+                <ShareBars items={summary.incomeBySource.map(toShare)} limit={10} />
+              </Card>
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Топ мест</h3>
+                <ShareBars items={summary.byPlace.map(toShare)} limit={12} />
+              </Card>
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Источники оплаты</h3>
+                <ShareBars items={summary.bySource.map(toShare)} limit={8} />
+              </Card>
+              <Card>
+                <h3 className="mb-3 text-sm font-semibold text-on-surface">Расходы по счетам</h3>
+                <ShareBars items={summary.byAccount.map(toShare)} limit={8} />
+              </Card>
+              <Card>
+                <h3 className="mb-2 text-sm font-semibold text-on-surface">Остатки по счетам</h3>
+                <div className="space-y-1 text-sm">
+                  {finances.accounts.map((a) => (
+                    <div key={a.bank} className="flex items-center justify-between gap-2">
+                      <span className="truncate text-on-surface-variant">{a.bank}</span>
+                      <span className="privacy-mask shrink-0 tabular-nums text-on-surface">
+                        {formatRub(toKopecks(a.balance))}
+                      </span>
+                      <span className="w-24 shrink-0 text-right text-xs text-on-surface-variant">{a.updated}</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            </div>
+          </div>
+        </>
+      )}
 
       <Card>
         <h3 className="mb-2 text-sm font-semibold text-on-surface">Последние записи</h3>
