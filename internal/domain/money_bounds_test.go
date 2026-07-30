@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -69,5 +70,26 @@ func TestParseMoney_refusesAnAmountThatOverflows(t *testing.T) {
 		if got, err := domain.ParseMoney(raw); !errors.Is(err, domain.ErrInvalidMoney) {
 			t.Errorf("ParseMoney(%q) = %v, %v — want ErrInvalidMoney", raw, got, err)
 		}
+	}
+}
+
+// SignedAmount flips the sign of an expense, and the most negative int64 has no
+// positive counterpart — negating it yields itself. A refund of that size would
+// subtract from the balance instead of adding to it.
+//
+// The transaction constructor is where this has to stop. Money itself stays a
+// plain wrapper over kopecks, so the check belongs to the entity that gives an
+// amount its direction.
+func TestNewTransaction_refusesAnAmountWithNoOppositeSign(t *testing.T) {
+	_, err := domain.NewTransaction(domain.TransactionParams{
+		ID:       "01A",
+		Kind:     domain.KindExpense,
+		Date:     time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC),
+		Amount:   domain.NewMoney(math.MinInt64),
+		Category: "Еда",
+		Now:      func() time.Time { return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC) },
+	})
+	if !errors.Is(err, domain.ErrInvalidTransaction) {
+		t.Fatalf("NewTransaction with MinInt64 kopecks = %v, want ErrInvalidTransaction", err)
 	}
 }
