@@ -106,9 +106,14 @@ const selectClass =
 export function CatalogView({
   entries,
   labels,
+  search,
+  onSearchChange,
 }: {
   entries: Entry[]
   labels: Record<string, string>
+  /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
+  search: string
+  onSearchChange: (v: string) => void
 }) {
   const [filter, setFilter] = useState<CatalogFilter>(emptyFilter)
   const [page, setPage] = useState(1)
@@ -141,11 +146,24 @@ export function CatalogView({
     [entries],
   )
 
-  const filtered = useMemo(() => sortByDate(filterEntries(entries, filter)), [entries, filter])
+  // Новый запрос возвращает на первую страницу — иначе, стоя на пятой, ищешь и
+  // видишь пустоту, потому что у найденного столько страниц нет. Подстройка
+  // состояния при рендере, а не useEffect: эффект дорисовал бы кадр со старой
+  // страницей и тут же перерисовал, да и гейт слоёв держит useEffect в hooks/.
+  const [searchShown, setSearchShown] = useState(search)
+  if (searchShown !== search) {
+    setSearchShown(search)
+    setPage(1)
+  }
+
+  // Запрос из шапки подмешивается к остальным фильтрам, а не живёт отдельной
+  // веткой: для filterEntries он такое же условие, как категория или статус.
+  const active = useMemo(() => ({ ...filter, search }), [filter, search])
+  const filtered = useMemo(() => sortByDate(filterEntries(entries, active)), [entries, active])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const slice = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
-  const isFiltered = filter !== emptyFilter && JSON.stringify(filter) !== JSON.stringify(emptyFilter)
+  const isFiltered = JSON.stringify(active) !== JSON.stringify(emptyFilter)
 
   return (
     <div className="flex flex-col gap-8 lg:flex-row">
@@ -214,12 +232,9 @@ export function CatalogView({
         </header>
 
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-outline-variant bg-surface-low p-4">
-          <input
-            value={filter.search}
-            onChange={(e) => set({ search: e.target.value })}
-            placeholder="Поиск по записям…"
-            className={`${selectClass} min-w-40 flex-1`}
-          />
+          {/* Поля поиска здесь больше нет: оно переехало в шапку, как в
+              исходном дашборде. Два поля на один запрос — это два места, где
+              видно разное, стоит забыть синхронизировать одно из них. */}
           <select value={filter.status} onChange={(e) => set({ status: e.target.value })} className={selectClass}>
             <option value="">Любой статус</option>
             {statuses.map((s) => (
@@ -248,19 +263,28 @@ export function CatalogView({
               </option>
             ))}
           </select>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-on-surface-variant">
-            <input
-              type="checkbox"
-              checked={withDescriptions}
-              onChange={(e) => setWithDescriptions(e.target.checked)}
-              className="accent-[var(--secondary)]"
-            />
-            Описания
-          </label>
+          {/* Тумблер, а не галочка: в исходном дашборде это переключатель, и
+              такой же стоит в шапке у сумм — две разные механики для одного и
+              того же действия читаются как разные по смыслу. */}
+          <div className="flex items-center gap-2">
+            <span className="label text-[10px] text-on-surface-variant">Описания</span>
+            <label className="toggle-switch">
+              <input
+                type="checkbox"
+                checked={withDescriptions}
+                onChange={(e) => setWithDescriptions(e.target.checked)}
+                aria-label={withDescriptions ? 'Скрыть описания' : 'Показать описания'}
+              />
+              <span className="toggle-slider" />
+            </label>
+          </div>
           <button
             type="button"
             onClick={() => {
               setFilter(emptyFilter)
+              // И запрос из шапки тоже: кнопка обещает сбросить фильтры, а не
+              // выборочно те из них, что нарисованы рядом с ней.
+              onSearchChange('')
               setPage(1)
             }}
             disabled={!isFiltered}
