@@ -6,6 +6,8 @@ export interface Stats {
   by_lifecycle: Record<string, number>
   by_verdict: Record<string, number>
   by_kind: Record<string, number>
+  /** Как каталог называет свои категории: ключ → «Название: описание». */
+  category_labels?: Record<string, string>
 }
 
 export interface Entry {

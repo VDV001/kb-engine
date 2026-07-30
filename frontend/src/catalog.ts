@@ -19,6 +19,19 @@ export const emptyFilter: CatalogFilter = {
   search: '',
 }
 
+/**
+ * categoryLabel turns a category key into the name a person reads. The catalog
+ * stores «Название: описание» on one line; a list wants the name, and the
+ * description belongs in a tooltip. An undescribed category falls back to its
+ * own key rather than to a made-up name — a missing entry in the naming is
+ * something to notice, not to paper over.
+ */
+export function categoryLabel(key: string, labels: Record<string, string>): string {
+  const full = labels[key]
+  if (!full) return key
+  return full.split(':')[0].trim()
+}
+
 /** One status as the catalog shows it: the value filters match on, the words a
  * person reads, and the colour both the dot and the caption take. */
 export interface StatusView {

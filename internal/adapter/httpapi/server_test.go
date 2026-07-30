@@ -22,7 +22,11 @@ import (
 type fakeQuery struct{}
 
 func (fakeQuery) Stats() (query.Stats, error) {
-	return query.Stats{Total: 2, ByCategory: map[string]int{"golang": 2}}, nil
+	return query.Stats{
+		Total:          2,
+		ByCategory:     map[string]int{"golang": 2},
+		CategoryLabels: map[string]string{"golang": "Go: язык и экосистема"},
+	}, nil
 }
 
 func (fakeQuery) Entries() ([]domain.Entry, error) {

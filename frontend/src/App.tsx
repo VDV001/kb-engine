@@ -60,7 +60,9 @@ export default function App() {
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
-            {tab === 'archives' && <CatalogView entries={data.entries} />}
+            {tab === 'archives' && (
+              <CatalogView entries={data.entries} labels={data.stats.category_labels ?? {}} />
+            )}
             {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
             {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" />}

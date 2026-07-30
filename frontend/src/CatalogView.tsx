@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Entry } from './api'
 import {
+  categoryLabel,
   dateOf,
   emptyFilter,
   filterEntries,
@@ -102,7 +103,13 @@ const selectClass =
  * paginated. Everything recomputes from the entries prop, so a changed catalog
  * reshapes the whole view on the next fetch — nothing here is baked.
  */
-export function CatalogView({ entries }: { entries: Entry[] }) {
+export function CatalogView({
+  entries,
+  labels,
+}: {
+  entries: Entry[]
+  labels: Record<string, string>
+}) {
   const [filter, setFilter] = useState<CatalogFilter>(emptyFilter)
   const [page, setPage] = useState(1)
   const [grid, setGrid] = useState(false)
@@ -167,8 +174,11 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                     : 'text-on-surface-variant hover:text-on-surface'
                 }`}
               >
-                <span className="truncate" title={cat}>
-                  {cat}
+                {/* Подсказкой — полная строка из каталога: в ней после
+                    двоеточия лежит описание, которое в узкий сайдбар не
+                    влезает, но объясняет, что за категория. */}
+                <span className="truncate" title={labels[cat] || cat}>
+                  {categoryLabel(cat, labels)}
                 </span>
                 <span className="font-mono text-xs tabular-nums">{n}</span>
               </button>
@@ -327,7 +337,7 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                     </td>
                     <td className="px-4 py-4">
                       <span className="whitespace-nowrap rounded-full border border-outline-variant bg-surface-high px-3 py-1 text-xs text-on-surface-variant">
-                        {e.category}
+                        {categoryLabel(e.category, labels)}
                       </span>
                     </td>
                     <td className="px-4 py-4">

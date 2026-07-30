@@ -11,20 +11,56 @@ var ErrDuplicateID = errors.New("duplicate entry id")
 // Catalog is the aggregate of KB entries. It enforces that ids are unique.
 // Construct it via NewCatalog; the zero value is not usable.
 type Catalog struct {
-	entries []Entry
-	byID    map[int]int // id -> index into entries
+	entries        []Entry
+	byID           map[int]int // id -> index into entries
+	categoryLabels map[string]string
+}
+
+// CatalogOption configures a Catalog at construction time.
+type CatalogOption func(*Catalog)
+
+// WithCategoryLabels attaches the catalog's own naming of its categories: the
+// key an entry stores against the name a person reads. The map is copied, so a
+// caller that keeps editing its own copy cannot reshape a built catalog.
+func WithCategoryLabels(labels map[string]string) CatalogOption {
+	return func(c *Catalog) {
+		c.categoryLabels = make(map[string]string, len(labels))
+		for k, v := range labels {
+			c.categoryLabels[k] = v
+		}
+	}
 }
 
 // NewCatalog builds a Catalog from entries, rejecting duplicate ids. A nil or
 // empty slice yields an empty catalog.
-func NewCatalog(entries []Entry) (*Catalog, error) {
+func NewCatalog(entries []Entry, opts ...CatalogOption) (*Catalog, error) {
 	c := &Catalog{byID: make(map[int]int, len(entries))}
+	for _, opt := range opts {
+		opt(c)
+	}
 	for _, e := range entries {
 		if err := c.Add(e); err != nil {
 			return nil, err
 		}
 	}
 	return c, nil
+}
+
+// CategoryLabel returns how the catalog names a category, or "" when it names
+// no such category. The caller decides what to show instead — inventing a name
+// here would hide a category the catalog has not described yet.
+func (c *Catalog) CategoryLabel(category string) string {
+	return c.categoryLabels[category]
+}
+
+// CategoryLabels returns a copy of the whole naming, for callers that ship it
+// onward rather than asking one key at a time.
+func (c *Catalog) CategoryLabels() map[string]string {
+	out := make(map[string]string, len(c.categoryLabels))
+	for k, v := range c.categoryLabels {
+		out[k] = v
+	}
+	return out
 }
 
 // Add appends an entry, returning ErrDuplicateID if its id is already present.

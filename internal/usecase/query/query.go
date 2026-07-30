@@ -9,13 +9,15 @@ type CatalogLoader interface {
 	Load() (*domain.Catalog, error)
 }
 
-// Stats are aggregate counts over the catalog.
+// Stats are aggregate counts over the catalog, plus how the catalog names its
+// own categories: a count is of little use to a reader who sees only the key.
 type Stats struct {
-	Total       int            `json:"total"`
-	ByCategory  map[string]int `json:"by_category"`
-	ByLifecycle map[string]int `json:"by_lifecycle"`
-	ByVerdict   map[string]int `json:"by_verdict"`
-	ByKind      map[string]int `json:"by_kind"`
+	Total          int               `json:"total"`
+	ByCategory     map[string]int    `json:"by_category"`
+	ByLifecycle    map[string]int    `json:"by_lifecycle"`
+	ByVerdict      map[string]int    `json:"by_verdict"`
+	ByKind         map[string]int    `json:"by_kind"`
+	CategoryLabels map[string]string `json:"category_labels,omitempty"`
 }
 
 // Service answers read queries over a loaded catalog.
@@ -44,10 +46,11 @@ func (s *Service) Stats() (Stats, error) {
 		return Stats{}, err
 	}
 	st := Stats{
-		ByCategory:  make(map[string]int),
-		ByLifecycle: make(map[string]int),
-		ByVerdict:   make(map[string]int),
-		ByKind:      make(map[string]int),
+		ByCategory:     make(map[string]int),
+		ByLifecycle:    make(map[string]int),
+		ByVerdict:      make(map[string]int),
+		ByKind:         make(map[string]int),
+		CategoryLabels: c.CategoryLabels(),
 	}
 	for _, e := range c.Entries() {
 		st.Total++
