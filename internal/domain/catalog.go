@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"maps"
 )
 
 // ErrDuplicateID is returned when an entry with an already-present id is added.
@@ -24,10 +25,7 @@ type CatalogOption func(*Catalog)
 // caller that keeps editing its own copy cannot reshape a built catalog.
 func WithCategoryLabels(labels map[string]string) CatalogOption {
 	return func(c *Catalog) {
-		c.categoryLabels = make(map[string]string, len(labels))
-		for k, v := range labels {
-			c.categoryLabels[k] = v
-		}
+		c.categoryLabels = maps.Clone(labels)
 	}
 }
 
@@ -51,10 +49,10 @@ func NewCatalog(entries []Entry, opts ...CatalogOption) (*Catalog, error) {
 // has not described is simply absent — what to show instead is the caller's
 // decision, and inventing a name here would hide the gap.
 func (c *Catalog) CategoryLabels() map[string]string {
+	// Не maps.Clone: он вернул бы nil у каталога без словаря, а вызывающий
+	// вправе писать в полученную карту — в nil-карту запись паникует.
 	out := make(map[string]string, len(c.categoryLabels))
-	for k, v := range c.categoryLabels {
-		out[k] = v
-	}
+	maps.Copy(out, c.categoryLabels)
 	return out
 }
 
