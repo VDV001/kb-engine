@@ -294,3 +294,20 @@ func TestServer_readyz_unavailable(t *testing.T) {
 		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 }
+
+// Settings' «Что нового» reads the changelog through the API rather than a
+// baked copy: the loader is called per request, so a released version shows up
+// on the next reload like every other data source here.
+func TestServer_changelog(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/changelog")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc["current_version"] != "0.9.0" {
+		t.Errorf("current_version = %v, want 0.9.0", doc["current_version"])
+	}
+}
