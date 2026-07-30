@@ -29,10 +29,11 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 	cat, _ := domain.NewCategory("golang")
 	lc, _ := domain.NewLifecycle("active")
 	v, _ := domain.NewVerdict("keep")
+	added := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
 	e, _ := domain.NewEntry(domain.EntryParams{
 		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
 		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
-		Tags: []string{"go"},
+		Tags: []string{"go"}, DateAdded: &added,
 	})
 	return []domain.Entry{e}, nil
 }
@@ -207,6 +208,12 @@ func TestServer_entries(t *testing.T) {
 	}
 	if len(entries) != 1 || entries[0]["id"].(float64) != 1 || entries[0]["title"] != "Hello" {
 		t.Errorf("entries = %v", entries)
+	}
+	// The catalog view sorts and displays by the date an entry joined the
+	// catalog; without it every row reads "—" and sorting is by id pretending
+	// to be chronology.
+	if entries[0]["date_added"] != "2026-07-11" {
+		t.Errorf("date_added = %v, want 2026-07-11", entries[0]["date_added"])
 	}
 }
 
