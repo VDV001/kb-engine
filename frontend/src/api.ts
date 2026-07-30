@@ -195,6 +195,51 @@ export interface Finances {
   accounts: Account[]
 }
 
+/** Одна строка разреза с одним ключом: категория, место, источник. */
+export interface NamedTotal {
+  name: string
+  total: string
+  count: number
+}
+
+/** Подкатегория внутри категории. Склейка «Категория → Подкатегория» — дело вида. */
+export interface SubcategoryTotal {
+  category: string
+  subcategory: string
+  total: string
+  count: number
+}
+
+/** Календарный период: YYYY-MM для месяцев, YYYY-MM-DD для дней. */
+export interface PeriodTotal {
+  period: string
+  total: string
+  count: number
+}
+
+/**
+ * Арифметика финансов, посчитанная сервером. Считает он, а не фронт: иначе
+ * реализаций было бы две и они обязаны были бы совпадать.
+ *
+ * Периоды приходят только те, где расходы ЕСТЬ. Заполнять пропуски — дело
+ * графика, потому что окно (плотность за 31 день) знает он.
+ */
+export interface FinanceSummary {
+  expenseCount: number
+  expenses: string
+  incomeCount: number
+  income: string
+  net: string
+  byCategory: NamedTotal[]
+  byAccount: NamedTotal[]
+  byPlace: NamedTotal[]
+  bySource: NamedTotal[]
+  incomeBySource: NamedTotal[]
+  bySubcategory: SubcategoryTotal[]
+  byMonth: PeriodTotal[]
+  byDay: PeriodTotal[]
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -227,6 +272,20 @@ export const api = {
   team: () => getJSON<Document | null>('/api/team'),
   projects: () => getJSON<Document | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
+
+  /**
+   * Сводка за выбранные месяцы (YYYY-MM). Пустой список — за всё время.
+   *
+   * Период уходит на сервер, а не применяется к готовой полной сводке здесь:
+   * иначе рядом с серверной арифметикой появилась бы вторая, клиентская,
+   * обязанная с ней совпадать.
+   */
+  financeSummary: (months: string[] = []) =>
+    getJSON<FinanceSummary>(
+      months.length > 0
+        ? `/api/finances/summary?months=${encodeURIComponent(months.join(','))}`
+        : '/api/finances/summary',
+    ),
 
   async dashboard(): Promise<Dashboard> {
     const [stats, entries, audits, duplicates, analytics, analyticsConfig, finances] =
