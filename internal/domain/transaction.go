@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -99,6 +100,13 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 	}
 	if p.Date.IsZero() {
 		return Transaction{}, fmt.Errorf("%w: date is required", ErrInvalidTransaction)
+	}
+	if p.Amount.Kopecks() == math.MinInt64 {
+		// SignedAmount negates an expense, and this is the one amount that negates to
+		// itself — a refund of this size would subtract from the balance instead of
+		// adding to it. Refused here rather than handled there: an amount whose
+		// direction cannot be expressed is not an amount.
+		return Transaction{}, fmt.Errorf("%w: amount is too large to carry a sign", ErrInvalidTransaction)
 	}
 	if p.Amount.IsZero() {
 		// Zero is the one amount that carries no information — a blank row, not a

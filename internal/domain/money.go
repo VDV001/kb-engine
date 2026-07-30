@@ -51,6 +51,15 @@ func MoneyFromFloat(f float64) (Money, error) {
 func (m Money) Kopecks() int64 { return m.kopecks }
 
 // Add returns the sum of two amounts. Exact by construction.
+//
+// ponytail: int64 addition, so two amounts near the top of the range wrap
+// silently — 92233720368547758.07 twice over reports -0.02. Not guarded, because
+// a transaction that large is refused by NewTransaction (an amount has to carry a
+// sign) and the real ledger totals eight digits of kopecks, four orders of
+// magnitude short of a wrap even summed a million times. The upgrade path is a
+// checked add returning an error, which would touch every caller of Summarize;
+// the ceiling to watch is a single amount above ~9.2e16 kopecks entering through
+// NewMoney, the one constructor with no bound.
 func (m Money) Add(other Money) Money { return Money{kopecks: m.kopecks + other.kopecks} }
 
 // IsZero reports whether the amount is exactly zero.
