@@ -16,7 +16,8 @@ export interface Health {
   total: number
   processed: number
   with_notes: number
-  score: number
+  /** Знаменатель доли конспектов: разобранные статьи, без своих материалов. */
+  notes_base: number
 }
 
 export interface Entry {

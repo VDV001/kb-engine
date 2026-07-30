@@ -64,22 +64,36 @@ func (s *Service) Stats() (Stats, error) {
 	return st, nil
 }
 
-// Health is how far the catalog is from being worked through: how many entries
-// have been triaged, how many carry a write-up, and the average of the two.
+// Health is how far the catalog is from being worked through. Two shares with
+// DIFFERENT denominators, because they answer different questions — see Health.
 type Health struct {
 	Total     int `json:"total"`
 	Processed int `json:"processed"`
 	WithNotes int `json:"with_notes"`
-	Score     int `json:"score"`
+	/** Знаменатель второй доли: разобранные статьи, без творений владельца. */
+	NotesBase int `json:"notes_base"`
 }
 
-// Health computes the two shares the dashboard shows on its health card.
+// Health computes the two shares the dashboard shows on its health card. They
+// deliberately do NOT share a denominator, and there is deliberately no single
+// averaged number.
 //
-// An entry counts as processed when a verdict was recorded for it, or when it
-// was read. Deliberately not the literal statuses «read» and «на подумать» the
-// Python dashboard compares against: on the live catalog that misses 275 KEEP
-// and 66 SKIP entries — all of them decided — and reports 61% where the honest
-// figure is 88%.
+// Processed / Total — triage applies to every entry. An entry counts as
+// processed when a verdict was recorded, or when it was read. Deliberately not
+// the literal statuses the Python dashboard compares against: on the live
+// catalog that misses 275 keep and 66 skip entries — all decided — and reports
+// 61% where the honest figure is 88%.
+//
+// WithNotes / NotesBase — depth, over processed ARTICLES only. A write-up for
+// an unread article cannot exist, so the 150 unread entries are structurally
+// unreachable and have no business in the denominator. The owner's own
+// creations are excluded from both sides: there, NotesFile is the document
+// itself rather than a write-up of someone else's, and all eight carry one by
+// definition.
+//
+// The two are not averaged into a «health score». 88% and 3% are not
+// commensurable, and averaging them announced «45%» about a catalog that is
+// almost fully triaged.
 func (s *Service) Health() (Health, error) {
 	c, err := s.loader.Load()
 	if err != nil {
@@ -87,23 +101,17 @@ func (s *Service) Health() (Health, error) {
 	}
 	h := Health{Total: c.Len()}
 	for _, e := range c.Entries() {
-		if e.Verdict() != nil || (e.ReadState() != nil && e.ReadState().String() == "read") {
-			h.Processed++
+		if e.Kind() == domain.KindCreation {
+			continue
 		}
+		if e.Verdict() == nil && (e.ReadState() == nil || e.ReadState().String() != "read") {
+			continue
+		}
+		h.Processed++
+		h.NotesBase++
 		if e.NotesFile() != "" {
 			h.WithNotes++
 		}
 	}
-	if h.Total > 0 {
-		h.Score = (percent(h.Processed, h.Total) + percent(h.WithNotes, h.Total)) / 2
-	}
 	return h, nil
-}
-
-func percent(part, total int) int {
-	if total == 0 {
-		return 0
-	}
-	// Округление к ближайшему: 49.6% должно читаться как 50, а не как 49.
-	return (part*200 + total) / (total * 2)
 }

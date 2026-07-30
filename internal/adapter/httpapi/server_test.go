@@ -30,7 +30,7 @@ func (fakeQuery) Stats() (query.Stats, error) {
 }
 
 func (fakeQuery) Health() (query.Health, error) {
-	return query.Health{Total: 4, Processed: 3, WithNotes: 1, Score: 50}, nil
+	return query.Health{Total: 4, Processed: 3, WithNotes: 1, NotesBase: 3}, nil
 }
 
 func (fakeQuery) Entries() ([]domain.Entry, error) {
