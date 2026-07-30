@@ -5,6 +5,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
@@ -51,6 +52,20 @@ type ConfigLoader func() (analyticsconfig.Config, error)
 // Also called per request, for the same reason.
 type ChangelogLoader func() (changelog.Document, error)
 
+// Documents are the owner's personal views — Now, Team, Projects — served from
+// files the engine is pointed at. The repo carries only the renderer: an
+// AGPL-public engine must never embed anyone's team or projects. Each loader
+// is optional and called per request; nil means the view is not configured,
+// which is a smaller KB, not an error.
+type Documents struct {
+	// Now returns markdown (the active pipeline document).
+	Now func() (string, error)
+	// Team and Projects return the owner's JSON verbatim — the engine does
+	// not reshape content it does not own.
+	Team     func() ([]byte, error)
+	Projects func() ([]byte, error)
+}
+
 // Finances is what the finance port hands over: the ledger rows and the account
 // balances. Aggregation is deliberately not here — the view filters by month
 // and totals what it filtered, so the arithmetic lives in one place instead of
@@ -72,7 +87,7 @@ type Financier interface {
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -84,6 +99,9 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an))
 	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
+	mux.HandleFunc("GET /api/now", handleNow(docs.Now))
+	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
+	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
@@ -122,6 +140,43 @@ func handleAnalyticsConfig(cfg ConfigLoader) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, c)
+	}
+}
+
+func handleNow(load func() (string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if load == nil {
+			writeJSON(w, nil)
+			return
+		}
+		md, err := load()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"markdown": md})
+	}
+}
+
+// handleRawJSON serves an owner-supplied JSON file byte-for-byte.
+func handleRawJSON(load func() ([]byte, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if load == nil {
+			writeJSON(w, nil)
+			return
+		}
+		raw, err := load()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if !json.Valid(raw) {
+			// Отдать битый файл — значит сломать view молча; ошибка честнее.
+			writeError(w, fmt.Errorf("document is not valid JSON"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(raw)
 	}
 }
 
