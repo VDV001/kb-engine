@@ -222,7 +222,7 @@ func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, err
 // parser, which still rejects more precision than a kopeck.
 func parseAmount(raw string) (domain.Money, error) {
 	if f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
-		return domain.MoneyFromFloat(f), nil
+		return domain.MoneyFromFloat(f)
 	}
 	return domain.ParseMoney(raw)
 }

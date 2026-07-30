@@ -3,7 +3,6 @@ package financexlsx
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filebackup"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/xuri/excelize/v2"
 )
@@ -25,9 +25,6 @@ const (
 	idHeader = "id"
 	// headerRow is where the workbook keeps its column names; row 1 is a title.
 	headerRow = 2
-	// backupDirName lives next to the workbook, hidden, so backups travel with
-	// the file they protect.
-	backupDirName = ".backup"
 	// backupsKept is enough to undo a bad afternoon and few enough that the
 	// directory stays readable.
 	backupsKept = 10
@@ -53,6 +50,22 @@ func AssignIDs(path string, assign map[string]string, now func() time.Time) erro
 		return fmt.Errorf("open workbook: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+
+	// The same refusal ApplyRows makes, for the same reason: a sheet whose ids sit
+	// on the account's column reads wrong as well as writes wrong, so no part of it
+	// is safe to touch. Both writers reach that column, so both have to ask —
+	// a guard installed in one writer out of two is a guard with a documented
+	// bypass.
+	//
+	// Before placements are resolved, so a book in that state is refused for what
+	// it is rather than for whichever row the caller happened to name first.
+	rows, err := f.GetRows(sheetExpenses, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return fmt.Errorf("read sheet %q: %w", sheetExpenses, err)
+	}
+	if idCol := findIDColumn(rows); idColumnCollides(idCol) {
+		return collisionError(idCol)
+	}
 
 	writes, idCols, err := resolvePlacements(f, assign)
 	if err != nil {
@@ -130,18 +143,35 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 	return writes, idCols, nil
 }
 
-// CheckLock reports whether an editor is holding the workbook. LibreOffice
-// leaves .~lock.<name># next to the file for as long as it is open, and writing
-// underneath that produces two divergent versions — one of which disappears
-// without warning when the editor saves.
+// CheckLock reports whether an editor is holding the workbook. Writing
+// underneath an open editor produces two divergent versions, and the editor's
+// wins the moment it saves — taking the rows written meanwhile with it.
+//
+// Both families of editors are checked, because the owner opens this file in
+// whatever is at hand:
+//
+//	LibreOffice   .~lock.Учёт_финансов.xlsx#
+//	Excel         ~$Учёт_финансов.xlsx
+//
+// A stat that fails for any reason other than "not there" is reported rather
+// than swallowed: a check that cannot look is not a check that found nothing,
+// and treating the two the same is indistinguishable from not checking at all.
 //
 // Exported so a caller that is only planning a write — a dry run, say — can ask
 // the same question the write will ask, instead of promising an outcome the
 // real run would refuse.
 func CheckLock(path string) error {
-	lock := filepath.Join(filepath.Dir(path), ".~lock."+filepath.Base(path)+"#")
-	if _, err := os.Stat(lock); err == nil {
-		return fmt.Errorf("%w: close it and try again (%s)", ErrWorkbookLocked, lock)
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	for _, lock := range []string{
+		filepath.Join(dir, ".~lock."+base+"#"),
+		filepath.Join(dir, "~$"+base),
+	} {
+		switch _, err := os.Stat(lock); {
+		case err == nil:
+			return fmt.Errorf("%w: close it and try again (%s)", ErrWorkbookLocked, lock)
+		case !os.IsNotExist(err):
+			return fmt.Errorf("check whether %s is open: %w", base, err)
+		}
 	}
 	return nil
 }
@@ -150,62 +180,11 @@ func CheckLock(path string) error {
 // directory to the most recent backupsKept files.
 //
 // The workbook is four years of hand-kept records with no version history
-// behind it, so every write leaves a way back.
+// behind it, so every write leaves a way back. The ledger on the other side of
+// the sync needs the identical guarantee, so the mechanism lives in one place
+// and this is the workbook's name for it.
 func backup(path string, now func() time.Time) error {
-	dir := filepath.Join(filepath.Dir(path), backupDirName)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return fmt.Errorf("create backup directory: %w", err)
-	}
-
-	base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	stamp := now().UTC().Format("2006-01-02T15-04-05Z")
-	dst := filepath.Join(dir, fmt.Sprintf("%s.%s.xlsx", base, stamp))
-
-	if err := copyFile(path, dst); err != nil {
-		return err
-	}
-	return pruneBackups(dir)
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return fmt.Errorf("open workbook for backup: %w", err)
-	}
-	defer func() { _ = in.Close() }()
-
-	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("create backup: %w", err)
-	}
-	if _, err := io.Copy(out, in); err != nil {
-		_ = out.Close()
-		return fmt.Errorf("write backup: %w", err)
-	}
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		return fmt.Errorf("sync backup: %w", err)
-	}
-	return out.Close()
-}
-
-// pruneBackups keeps the newest backupsKept files. Names carry a sortable
-// timestamp, so lexical order is chronological order.
-func pruneBackups(dir string) error {
-	found, err := filepath.Glob(filepath.Join(dir, "*.xlsx"))
-	if err != nil {
-		return fmt.Errorf("list backups: %w", err)
-	}
-	if len(found) <= backupsKept {
-		return nil
-	}
-	slices.Sort(found)
-	for _, old := range found[:len(found)-backupsKept] {
-		if err := os.Remove(old); err != nil {
-			return fmt.Errorf("prune backup: %w", err)
-		}
-	}
-	return nil
+	return filebackup.Snapshot(path, now, backupsKept)
 }
 
 // saveAtomically writes to a temp file in the same directory and renames over
@@ -286,6 +265,17 @@ func chooseIDColumn(rows [][]string, documented int) int {
 	if col := findIDColumn(rows); col != 0 {
 		return col
 	}
+	return firstFreeColumn(rows, documented)
+}
+
+// firstFreeColumn returns the first column past both the documented width and
+// everything the sheet actually holds — the id column included, when there is
+// one.
+//
+// Counting it is what MigrateIDColumn needs, not an oversight: the migration is
+// called precisely when the existing id column is the one to vacate, and
+// skipping it would put the target back on the column being emptied.
+func firstFreeColumn(rows [][]string, documented int) int {
 	maxCol := documented
 	for _, row := range rows {
 		for c, v := range slices.Backward(row) {
