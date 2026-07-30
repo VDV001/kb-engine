@@ -149,7 +149,9 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 // Through a temp file in the same directory and an atomic rename: a crash
 // halfway through must leave the previous ledger intact rather than a truncated
 // one. Same directory because rename is only atomic within a filesystem.
-func Save(path string, recs []finance.Record) error {
+//
+// The clock names the backup this write leaves behind.
+func Save(path string, recs []finance.Record, now func() time.Time) error {
 	return writeAtomically(path, func(w io.Writer) error {
 		enc := json.NewEncoder(w)
 		// The ledger holds descriptions with ampersands and angle brackets in them.

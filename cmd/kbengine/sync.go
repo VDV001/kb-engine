@@ -162,7 +162,7 @@ func pairWorkbookWithLedger(from, ledgerPath string, dryRun bool, stdout, stderr
 			return 1
 		}
 	}
-	if err := financejsonl.Save(ledgerPath, recs); err != nil {
+	if err := financejsonl.Save(ledgerPath, recs, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
 		return 1
 	}
@@ -411,7 +411,7 @@ func pullFromWorkbook(ledgerPath string, recs []finance.Record, workbook []domai
 		fmt.Fprintf(stderr, "fin sync: %v\n", err)
 		return 1
 	}
-	if err := financejsonl.Save(ledgerPath, out); err != nil {
+	if err := financejsonl.Save(ledgerPath, out, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin sync: %v\n", err)
 		return 1
 	}

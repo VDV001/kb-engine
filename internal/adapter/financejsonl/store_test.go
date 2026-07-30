@@ -60,7 +60,7 @@ func TestSaveLoad_roundTripsEveryField(t *testing.T) {
 	})
 	want := []finance.Record{expense(t, "01A"), income}
 
-	if err := financejsonl.Save(path, want); err != nil {
+	if err := financejsonl.Save(path, want, savedAt); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	got, err := financejsonl.Load(path, loadedAt)
@@ -91,7 +91,7 @@ func TestSaveLoad_roundTripsEveryField(t *testing.T) {
 // no \u04xx for Cyrillic.
 func TestSave_writesReadableLines(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transactions.jsonl")
-	if err := financejsonl.Save(path, []finance.Record{expense(t, "01A")}); err != nil {
+	if err := financejsonl.Save(path, []finance.Record{expense(t, "01A")}, savedAt); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	raw, err := os.ReadFile(path)
@@ -123,7 +123,7 @@ func TestSave_omitsEmptyOptionalFields(t *testing.T) {
 		Amount: domain.NewMoney(9000000),
 		Source: "Зарплата",
 	})
-	if err := financejsonl.Save(path, []finance.Record{income}); err != nil {
+	if err := financejsonl.Save(path, []finance.Record{income}, savedAt); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	raw, _ := os.ReadFile(path)
@@ -140,10 +140,10 @@ func TestSave_omitsEmptyOptionalFields(t *testing.T) {
 func TestSave_replacesAtomically(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "transactions.jsonl")
-	if err := financejsonl.Save(path, []finance.Record{expense(t, "01A"), expense(t, "01B")}); err != nil {
+	if err := financejsonl.Save(path, []finance.Record{expense(t, "01A"), expense(t, "01B")}, savedAt); err != nil {
 		t.Fatalf("first Save: %v", err)
 	}
-	if err := financejsonl.Save(path, []finance.Record{expense(t, "01C")}); err != nil {
+	if err := financejsonl.Save(path, []finance.Record{expense(t, "01C")}, savedAt); err != nil {
 		t.Fatalf("second Save: %v", err)
 	}
 
