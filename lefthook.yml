@@ -40,6 +40,13 @@ pre-commit:
       glob: "*.go"
       run: go vet ./... || echo "⚠ go vet reported issues (expected on a TDD RED commit; pre-push blocks)"
 
+    # ---- слои фронта ------------------------------------------------------
+    # Запросы в api.ts, загрузка в hooks/. Обычный grep по дереву — дешёвый,
+    # поэтому на commit, а не на push.
+    web-data-layer:
+      glob: "frontend/src/**/*.{ts,tsx}"
+      run: ./scripts/gates/web-data-layer.sh
+
     # ---- secrets ----------------------------------------------------------
     # --staged scans exactly what is about to be committed, unlike a full dir scan.
     gitleaks:
