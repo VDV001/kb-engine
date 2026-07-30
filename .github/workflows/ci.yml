@@ -59,6 +59,11 @@ jobs:
         working-directory: frontend
         run: npx oxlint src
 
+      # Слои: запросы в api.ts, загрузка в hooks/. Ни tsc, ни oxlint этого не
+      # видят — для них скопированный в компонент useEffect совершенно легален.
+      - name: Data-layer gate
+        run: ./scripts/gates/web-data-layer.sh
+
       - name: Test
         working-directory: frontend
         run: npx vitest run

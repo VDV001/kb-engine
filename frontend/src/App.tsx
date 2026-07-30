@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from './api'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
+import { useResource } from './hooks/useResource'
 import { AnalyticsView } from './AnalyticsView'
 import { CatalogView } from './CatalogView'
 import { DocumentView, NowView } from './DocViews'
@@ -29,48 +29,18 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'settings', label: 'Summary' },
 ]
 
-interface Data {
-  stats: Stats
-  entries: Entry[]
-  audits: Audits
-  duplicates: DuplicateGroup[]
-  analytics: Analytics
-  analyticsConfig: AnalyticsConfig
-  finances: Finances
-}
-
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview')
-  const [data, setData] = useState<Data | null>(null)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    Promise.all([
-      api.stats(),
-      api.entries(),
-      api.audits(),
-      api.duplicates(),
-      api.analytics(),
-      api.analyticsConfig(),
-      // Finances read two files that are edited by hand while the dashboard is
-      // open, so this request can fail on its own — while LibreOffice is saving,
-      // for instance. That must not take the other six views down with it: the
-      // finances view already renders an empty state.
-      api.finances().catch(() => ({ transactions: [], accounts: [] })),
-    ])
-      .then(([stats, entries, audits, duplicates, analytics, analyticsConfig, finances]) =>
-        setData({ stats, entries, audits, duplicates, analytics, analyticsConfig, finances }),
-      )
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [])
+  const dashboard = useResource(api.dashboard)
+  const data = dashboard.status === 'ready' ? dashboard.data : null
 
   return (
     <div className="min-h-screen bg-bg text-on-surface">
       <Header tabs={tabs} current={tab} onSelect={setTab} count={data?.stats.total} />
 
       <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-8">
-        {error && <ErrorBox message={error} />}
-        {!error && !data && <Spinner />}
+        {dashboard.status === 'failed' && <ErrorBox message={dashboard.error} />}
+        {dashboard.status === 'loading' && <Spinner />}
         {data && (
           <>
             {tab === 'overview' && <OverviewView stats={data.stats} />}

@@ -30,6 +30,10 @@ if [ ${#staged[@]} -gt 0 ]; then
   go vet ./... || echo "⚠ go vet reported issues (expected on a TDD RED commit; pre-push blocks)"
 fi
 
+if git diff --cached --name-only --diff-filter=ACMR | grep -qE '^frontend/src/.*\.(ts|tsx)$'; then
+  ./scripts/gates/web-data-layer.sh
+fi
+
 if command -v gitleaks >/dev/null 2>&1; then
   gitleaks protect --staged --no-banner --redact --exit-code 1 || exit 1
 else

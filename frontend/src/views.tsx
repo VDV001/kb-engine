@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from './api'
-import type { Audits, Changelog, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import type { Audits, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import { useResource } from './hooks/useResource'
 import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
 import {
   daysOfMonth,
@@ -109,10 +110,11 @@ export function AuditsView({ audits }: { audits: Audits }) {
 }
 
 export function SettingsView({ stats }: { stats: Stats }) {
-  const [log, setLog] = useState<Changelog | null>(null)
-  useEffect(() => {
-    api.changelog().then(setLog).catch(() => setLog(null))
-  }, [])
+  // Changelog не критичен для этого вида: без него просто нет версии и трёх
+  // последних релизов, поэтому падение запроса рендерится как отсутствие
+  // данных, а не как ошибка страницы.
+  const res = useResource(api.changelog)
+  const log = res.status === 'ready' ? res.data : null
 
   const boxes = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
   const empty = boxes.filter(([, n]) => n === 0).length
