@@ -122,24 +122,9 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 	}
 
 	account := strings.TrimSpace(p.Account)
-	if p.Kind == KindIncome && account != "" {
-		return Transaction{}, fmt.Errorf("%w: %w (got %q)", ErrInvalidTransaction, ErrAccountNotApplicable, account)
-	}
-
 	subcategory, place := strings.TrimSpace(p.Subcategory), strings.TrimSpace(p.Place)
-	if p.Kind == KindIncome {
-		// Named one by one rather than reported as "an expense field", because the
-		// owner passed a specific flag and has to know which one to drop.
-		for _, f := range []struct{ name, value string }{
-			{"category", category},
-			{"subcategory", subcategory},
-			{"place", place},
-		} {
-			if f.value != "" {
-				return Transaction{}, fmt.Errorf("%w: %w: %s (got %q)",
-					ErrInvalidTransaction, ErrIncomeFieldNotApplicable, f.name, f.value)
-			}
-		}
+	if err := checkIncomeCarriesNothingElse(p.Kind, account, category, subcategory, place); err != nil {
+		return Transaction{}, err
 	}
 
 	return Transaction{
@@ -154,6 +139,37 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		source:      strings.TrimSpace(p.Source),
 		account:     account,
 	}, nil
+}
+
+// checkIncomeCarriesNothingElse refuses the four fields Доходы has no column
+// for. An expense passes untouched.
+//
+// One place for all four because they are one rule — a value this side accepts
+// and the sheet cannot hold comes back missing. Keeping them apart is what let
+// three of them stay open after the fourth was closed.
+//
+// The account keeps its own sentinel: it was named before the others and callers
+// match on it.
+func checkIncomeCarriesNothingElse(kind, account, category, subcategory, place string) error {
+	if kind != KindIncome {
+		return nil
+	}
+	if account != "" {
+		return fmt.Errorf("%w: %w (got %q)", ErrInvalidTransaction, ErrAccountNotApplicable, account)
+	}
+	// Named one at a time rather than reported together as "an expense field": the
+	// owner passed a specific flag and has to know which one to drop.
+	for _, f := range []struct{ name, value string }{
+		{"category", category},
+		{"subcategory", subcategory},
+		{"place", place},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("%w: %w: %s (got %q)",
+				ErrInvalidTransaction, ErrIncomeFieldNotApplicable, f.name, f.value)
+		}
+	}
+	return nil
 }
 
 // ID returns the stable identifier used to match rows across storage formats.

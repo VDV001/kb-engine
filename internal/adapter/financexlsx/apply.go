@@ -254,6 +254,14 @@ func indexSheets(f *excelize.File) (map[string]sheetIndex, error) {
 	return out, nil
 }
 
+// otherSheet returns the sheet a row of the opposite kind lives on.
+func otherSheet(sheet string) string {
+	if sheet == sheetExpenses {
+		return sheetIncome
+	}
+	return sheetExpenses
+}
+
 // planRowWrites resolves every change to a cell range, failing before anything
 // is written if a change cannot be placed.
 func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, removals []string) (rowPlan, error) {
@@ -271,6 +279,19 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		sheet := sheetExpenses
 		if !tx.IsExpense() {
 			sheet = sheetIncome
+		}
+		// A row whose kind was corrected changes sheet, and the row it came from has
+		// to be vacated in the same plan. Nothing else can ask for that: the ledger
+		// still holds the id, so it produces no removal, and the sheet the row is
+		// leaving is only knowable here. Left in place, the workbook holds the id
+		// twice and both amounts sum into any selection over the columns.
+		if other := otherSheet(sheet); index[other].idCol != 0 {
+			oidx := index[other]
+			if orow, moved := oidx.rowByID[tx.ID()]; moved {
+				plan = append(plan, rowWrite{sheet: other, row: orow, idCol: oidx.idCol, kind: kindOf(other)})
+				delete(oidx.rowByID, tx.ID())
+				index[other] = oidx
+			}
 		}
 		idx := index[sheet]
 		if idx.idCol == 0 {
