@@ -6,13 +6,8 @@ import { CatalogView } from './CatalogView'
 import { DocumentView, NowView } from './DocViews'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
-import {
-  AuditsView,
-  DuplicatesView,
-  FinancesView,
-  OverviewView,
-  SettingsView,
-} from './views'
+import { FinancesView } from './FinancesView'
+import { AuditsView, DuplicatesView, OverviewView, SettingsView } from './views'
 
 type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
