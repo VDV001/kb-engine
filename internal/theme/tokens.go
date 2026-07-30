@@ -44,6 +44,7 @@ type Palette struct {
 	SidebarActiveText  string
 	SidebarBg          string
 	StatusDraft        string
+	StatusKeep         string
 	StatusNapodumat    string
 	StatusPublished    string
 	StatusReview       string
@@ -103,6 +104,7 @@ var Light = Palette{
 	SidebarActiveText:  "#99462a",
 	SidebarBg:          "#f6f4ec",
 	StatusDraft:        "#c9c4bc",
+	StatusKeep:         "#2a3550",
 	StatusNapodumat:    "#6b3d2e",
 	StatusPublished:    "#99462a",
 	StatusReview:       "#2e2e2e",
@@ -162,7 +164,8 @@ var Dark = Palette{
 	SidebarActiveText:  "#e67e51",
 	SidebarBg:          "#121212",
 	StatusDraft:        "#383838",
-	StatusNapodumat:    "#9e6048",
+	StatusKeep:         "#8fa3c4",
+	StatusNapodumat:    "#b07a52",
 	StatusPublished:    "#d4866a",
 	StatusReview:       "#8a8a8a",
 	Surface:            "#1a1a1a",

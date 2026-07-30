@@ -6,6 +6,7 @@ import {
   pageWindow,
   sortByDate,
   statusOf,
+  statusStyle,
   type CatalogFilter,
 } from './catalog'
 import { Label } from './components/ui'
@@ -21,24 +22,14 @@ const tagTone = [
   'bg-tag-bg-3 text-tag-text-3',
 ]
 
-const statusDot: Record<string, string> = {
-  unread: 'bg-status-published',
-  'на подумать': 'bg-status-napodumat',
-  read: 'bg-status-review',
-}
-
-const statusLabel: Record<string, string> = {
-  unread: 'Unread',
-  read: 'Прочитано',
-  'на подумать': 'На подумать',
-}
-
 function Status({ e }: { e: Entry }) {
   const s = statusOf(e)
   return (
     <span className="flex items-center gap-2 whitespace-nowrap">
-      <span className={`h-1.5 w-1.5 rounded-full ${statusDot[s] ?? 'bg-status-draft'}`} />
-      <span className="label">{statusLabel[s] ?? s}</span>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: s.tone }} />
+      <span className="label" style={{ color: s.tone }}>
+        {s.label}
+      </span>
     </span>
   )
 }
@@ -133,8 +124,10 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
     () => [...new Set(entries.map((e) => e.lifecycle))].sort(),
     [entries],
   )
+  // Список строится из того, что реально лежит в каталоге, а не из зашитого
+  // перечня: пункт, который ничего не найдёт, хуже отсутствующего.
   const statuses = useMemo(
-    () => [...new Set(entries.map((e) => statusOf(e)))].sort(),
+    () => [...new Set(entries.map((e) => statusOf(e).key))].sort().map(statusStyle),
     [entries],
   )
 
@@ -217,8 +210,8 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
           <select value={filter.status} onChange={(e) => set({ status: e.target.value })} className={selectClass}>
             <option value="">Любой статус</option>
             {statuses.map((s) => (
-              <option key={s} value={s}>
-                {statusLabel[s] ?? s}
+              <option key={s.key} value={s.key}>
+                {s.label}
               </option>
             ))}
           </select>

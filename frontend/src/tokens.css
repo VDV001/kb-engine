@@ -39,6 +39,7 @@
   --sidebar-active-text: #99462a;
   --sidebar-bg: #f6f4ec;
   --status-draft: #c9c4bc;
+  --status-keep: #2a3550;
   --status-napodumat: #6b3d2e;
   --status-published: #99462a;
   --status-review: #2e2e2e;
@@ -100,7 +101,8 @@
   --sidebar-active-text: #E67E51;
   --sidebar-bg: #121212;
   --status-draft: rgba(175,175,175,0.2);
-  --status-napodumat: #9e6048;
+  --status-keep: #8fa3c4;
+  --status-napodumat: #b07a52;
   --status-published: #d4866a;
   --status-review: #8a8a8a;
   --surface: #1A1A1A;
@@ -161,6 +163,7 @@
   --color-sidebar-active-text: var(--sidebar-active-text);
   --color-sidebar-bg: var(--sidebar-bg);
   --color-status-draft: var(--status-draft);
+  --color-status-keep: var(--status-keep);
   --color-status-napodumat: var(--status-napodumat);
   --color-status-published: var(--status-published);
   --color-status-review: var(--status-review);

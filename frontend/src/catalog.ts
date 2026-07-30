@@ -19,16 +19,47 @@ export const emptyFilter: CatalogFilter = {
   search: '',
 }
 
+/** One status as the catalog shows it: the value filters match on, the words a
+ * person reads, and the colour both the dot and the caption take. */
+export interface StatusView {
+  key: string
+  label: string
+  tone: string
+}
+
+// Подписи и тона статусов — один источник на всё приложение. Раньше они лежали
+// двумя словарями внутри CatalogView, и таблица с сеткой уже расходились в
+// старом дашборде именно потому, что копий было две.
+const STATUS_STYLE: Record<string, [tone: string, label: string]> = {
+  keep: ['var(--status-keep)', 'KEEP'],
+  napodumat: ['var(--status-napodumat)', 'На подумать'],
+  skip: ['var(--on-surface-variant)', 'SKIP'],
+  'skip-unavailable': ['var(--on-surface-variant)', 'SKIP · нет доступа'],
+  unread: ['var(--status-published)', 'Unread'],
+  read: ['var(--status-review)', 'Прочитано'],
+}
+
 /**
- * statusOf reduces an entry's three status-ish fields to the one label the
- * catalog shows, the same way the Python dashboard does: the verdict
- * «на подумать» outranks the read state, because it is a decision and the
- * read state is only a bookmark.
+ * statusOf reduces an entry's status-ish fields to the one status the catalog
+ * shows. Order is the point: a verdict outranks the read state, because the
+ * reader reads an article in order to decide about it — «прочитано» next to a
+ * recorded verdict says nothing the verdict has not already said. A publish
+ * stage comes next: owner creations never go through triage at all. Lifecycle
+ * is the last resort, not the second one.
  */
-export function statusOf(e: Entry): string {
-  if (e.verdict === 'napodumat') return 'на подумать'
-  if (e.read_state) return e.read_state
-  return e.lifecycle
+export function statusOf(e: Entry): StatusView {
+  const key = e.verdict || e.read_state || e.publish_stage || e.lifecycle
+  return statusStyle(key)
+}
+
+/** statusStyle keeps an unrecognised value visible and verbatim: the tone stays
+ * readable and the caption prints the value itself. Nine entries still carry
+ * statuses from older vocabularies, and hiding them would hide the cleanup they
+ * are asking for — status-draft (#c9c4bc on #fbf9f2, contrast 1.6) hides them. */
+export function statusStyle(key: string): StatusView {
+  const hit = STATUS_STYLE[key.trim().toLowerCase()]
+  if (hit) return { key, label: hit[1], tone: hit[0] }
+  return { key, label: key.trim() || '—', tone: 'var(--on-surface-variant)' }
 }
 
 export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
@@ -36,7 +67,7 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
   return entries.filter(
     (e) =>
       (f.category === '' || e.category === f.category) &&
-      (f.status === '' || statusOf(e) === f.status) &&
+      (f.status === '' || statusOf(e).key === f.status) &&
       (f.source === '' || (e.source ?? '') === f.source) &&
       (f.lifecycle === '' || e.lifecycle === f.lifecycle) &&
       (q === '' ||
