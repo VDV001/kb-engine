@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from './api'
 import type { AnalyticsConfig, Graph, ManifestoQuote, Stats, Support } from './api'
+import { useResource } from './hooks/useResource'
 import { Card, Label } from './components/ui'
 
 // The meta-analytics view, ported from the KB dashboard: five tabs over the
@@ -153,13 +154,12 @@ const priorityTone: Record<string, string> = {
 
 export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stats: Stats }) {
   const [tab, setTab] = useState<TabId>('манифест')
-  const [graph, setGraph] = useState<Graph | null>(null)
-
-  useEffect(() => {
-    if (tab === 'граф' && graph === null) {
-      api.graph().then(setGraph).catch(() => setGraph({ nodes: [], edges: [] }))
-    }
-  }, [tab, graph])
+  // Граф грузится только когда на вкладку зашли, и один раз за жизнь вида.
+  // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
+  // каталога, и пустая картинка честнее ошибки на весь экран.
+  const res = useResource(api.graph, tab === 'граф')
+  const graph: Graph | null =
+    res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
   const patterns = config.patterns ?? []
   const contradictions = config.contradictions ?? []

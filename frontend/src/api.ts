@@ -203,6 +203,17 @@ async function getJSON<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+/** Всё, что нужно дашборду на первом экране, одним запросом-пачкой. */
+export interface Dashboard {
+  stats: Stats
+  entries: Entry[]
+  audits: Audits
+  duplicates: DuplicateGroup[]
+  analytics: Analytics
+  analyticsConfig: AnalyticsConfig
+  finances: Finances
+}
+
 export const api = {
   stats: () => getJSON<Stats>('/api/stats'),
   entries: () => getJSON<Entry[]>('/api/entries'),
@@ -216,4 +227,22 @@ export const api = {
   team: () => getJSON<Document | null>('/api/team'),
   projects: () => getJSON<Document | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
+
+  async dashboard(): Promise<Dashboard> {
+    const [stats, entries, audits, duplicates, analytics, analyticsConfig, finances] =
+      await Promise.all([
+        api.stats(),
+        api.entries(),
+        api.audits(),
+        api.duplicates(),
+        api.analytics(),
+        api.analyticsConfig(),
+        // Финансы читают два файла, которые правят руками при открытом
+        // дашборде, — этот запрос может упасть сам по себе, например пока
+        // LibreOffice сохраняет. Остальные шесть видов из-за него падать не
+        // должны: вид финансов уже умеет рендерить пустоту.
+        api.finances().catch(() => ({ transactions: [], accounts: [] })),
+      ])
+    return { stats, entries, audits, duplicates, analytics, analyticsConfig, finances }
+  },
 }

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { api } from './api'
-import type { DocCard, DocSection, Document, Now } from './api'
+import type { DocCard, DocSection, Document } from './api'
+import { useResource } from './hooks/useResource'
 import { Card, Label } from './components/ui'
 
 // The owner's personal views — Now, Team, Projects — rendered from files the
@@ -80,27 +80,27 @@ function SectionView({ s }: { s: DocSection }) {
   )
 }
 
-function useDoc(load: () => Promise<Document | null>) {
-  const [doc, setDoc] = useState<Document | null | 'loading'>('loading')
-  useEffect(() => {
-    load()
-      .then(setDoc)
-      .catch(() => setDoc(null))
-    // load — стабильная ссылка из api, эффект одноразовый по замыслу.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  return doc
+/** Вид не настроен: сервер ответил null, либо запрос не дошёл. */
+function NotConfigured({ name, hint }: { name: string; hint: string }) {
+  return (
+    <p className="p-12 text-center text-sm text-on-surface-variant">
+      Вид «{name}» не настроен — {hint}
+    </p>
+  )
 }
 
 export function DocumentView({ load, name }: { load: () => Promise<Document | null>; name: string }) {
-  const doc = useDoc(load)
-  if (doc === 'loading') return <p className="p-12 text-center text-on-surface-variant">Загрузка…</p>
-  if (doc === null)
+  const res = useResource(load)
+  if (res.status === 'loading')
+    return <p className="p-12 text-center text-on-surface-variant">Загрузка…</p>
+  // failed и ready-null рендерятся одинаково — так было до хука, и менять это
+  // здесь я не стал: на 500 пользователь всё ещё читает совет про флаг,
+  // который у него стоит. Развод состояний в типе уже есть, дело за рендером.
+  if (res.status === 'failed' || res.data === null)
     return (
-      <p className="p-12 text-center text-sm text-on-surface-variant">
-        Вид «{name}» не настроен — запустите serve с соответствующим флагом (--team / --projects).
-      </p>
+      <NotConfigured name={name} hint="запустите serve с соответствующим флагом (--team / --projects)." />
     )
+  const doc = res.data
   return (
     <div className="space-y-10">
       <header>
@@ -116,20 +116,13 @@ export function DocumentView({ load, name }: { load: () => Promise<Document | nu
 }
 
 export function NowView() {
-  const [now, setNow] = useState<Now | null | 'loading'>('loading')
-  useEffect(() => {
-    api.now()
-      .then(setNow)
-      .catch(() => setNow(null))
-  }, [])
+  const res = useResource(api.now)
 
-  if (now === 'loading') return <p className="p-12 text-center text-on-surface-variant">Загрузка…</p>
-  if (now === null)
-    return (
-      <p className="p-12 text-center text-sm text-on-surface-variant">
-        Вид «Now» не настроен — укажите --now путь к active-pipeline.md.
-      </p>
-    )
+  if (res.status === 'loading')
+    return <p className="p-12 text-center text-on-surface-variant">Загрузка…</p>
+  if (res.status === 'failed' || res.data === null)
+    return <NotConfigured name="Now" hint="укажите --now путь к active-pipeline.md." />
+  const now = res.data
   return (
     <div className="space-y-6">
       <header>
