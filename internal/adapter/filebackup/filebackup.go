@@ -49,13 +49,44 @@ func Snapshot(path string, now func() time.Time, keep int) error {
 
 	ext := filepath.Ext(path)
 	base := strings.TrimSuffix(filepath.Base(path), ext)
-	stamp := now().UTC().Format("2006-01-02T15-04-05Z")
-	dst := filepath.Join(dir, fmt.Sprintf("%s.%s%s", base, stamp, ext))
+	dst, err := freeName(dir, base, now().UTC().Format("2006-01-02T15-04-05Z"), ext)
+	if err != nil {
+		return err
+	}
 
 	if err := copyFile(path, dst); err != nil {
 		return err
 	}
-	return prune(dir, ext, keep)
+	return prune(dir, base, ext, keep)
+}
+
+// freeName returns a path no backup occupies yet.
+//
+// The stamp is only precise to a second, and two writes inside one second are
+// ordinary — two `fin add` calls, a loop, one skill recording several
+// transactions. Copying onto the existing name would leave the earlier state
+// unrecoverable while the directory still looked like a history, so a collision
+// takes a suffix instead.
+//
+// "~N" rather than "-N" so that lexical order stays chronological: '~' sorts
+// after the '.' that begins the extension, which keeps the plain name first.
+func freeName(dir, base, stamp, ext string) (string, error) {
+	plain := filepath.Join(dir, base+"."+stamp+ext)
+	if _, err := os.Stat(plain); err != nil {
+		if os.IsNotExist(err) {
+			return plain, nil
+		}
+		return "", fmt.Errorf("check backup name: %w", err)
+	}
+	for n := 1; ; n++ {
+		candidate := filepath.Join(dir, fmt.Sprintf("%s.%s~%d%s", base, stamp, n, ext))
+		if _, err := os.Stat(candidate); err != nil {
+			if os.IsNotExist(err) {
+				return candidate, nil
+			}
+			return "", fmt.Errorf("check backup name: %w", err)
+		}
+	}
 }
 
 func copyFile(src, dst string) error {
@@ -80,10 +111,14 @@ func copyFile(src, dst string) error {
 	return out.Close()
 }
 
-// prune keeps the newest keep files carrying ext. Names carry a sortable
+// prune keeps the newest keep backups of one file. Names carry a sortable
 // timestamp, so lexical order is chronological order.
-func prune(dir, ext string, keep int) error {
-	found, err := filepath.Glob(filepath.Join(dir, "*"+ext))
+//
+// Scoped by base name as well as extension. Extension alone was not enough: a
+// ledger and an archive are both .jsonl, and rotating one deleted the other's
+// history entirely.
+func prune(dir, base, ext string, keep int) error {
+	found, err := filepath.Glob(filepath.Join(dir, base+".*"+ext))
 	if err != nil {
 		return fmt.Errorf("list backups: %w", err)
 	}
