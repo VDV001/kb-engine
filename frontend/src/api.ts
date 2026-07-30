@@ -126,6 +126,20 @@ export interface Graph {
   edges: GraphEdge[]
 }
 
+export interface ChangelogRelease {
+  version: string
+  date: string | null
+  tagline: string
+  sections: Record<string, string[]>
+}
+
+export interface Changelog {
+  current_version: string
+  current_date: string | null
+  current_tagline: string
+  releases: ChangelogRelease[] | null
+}
+
 // Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as
 // int64 so that 89.99 stays 89.99, and parsing straight into a float would put
 // 89.98999999999999 back on the screen. Anything that sums amounts goes through
@@ -170,5 +184,6 @@ export const api = {
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
   graph: () => getJSON<Graph>('/api/graph'),
+  changelog: () => getJSON<Changelog>('/api/changelog'),
   finances: () => getJSON<Finances>('/api/finances'),
 }
