@@ -80,17 +80,50 @@ export interface Contradiction {
 }
 
 export interface ManifestoQuote {
+  supports?: Support[] | null
+  type?: string
   quote: string
   source: string
   date: string
   weight: string
 }
 
+export interface Support {
+  text?: string
+  catalog_id?: number
+  title?: string
+  insight?: string
+}
+
+export interface ChainLink {
+  cluster: string
+  evidence: string
+}
+
 export interface AnalyticsConfig {
+  pull_quote?: string
+  pull_quote_meta?: string
+  inference_chain?: ChainLink[] | null
   patterns: Pattern[] | null
   gaps: Gap[] | null
   contradictions: Contradiction[] | null
   manifesto_quotes: ManifestoQuote[] | null
+}
+
+export interface GraphNode {
+  category: string
+  count: number
+}
+
+export interface GraphEdge {
+  from: string
+  to: string
+  weight: number
+}
+
+export interface Graph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
 }
 
 // Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as
@@ -136,5 +169,6 @@ export const api = {
   duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
+  graph: () => getJSON<Graph>('/api/graph'),
   finances: () => getJSON<Finances>('/api/finances'),
 }
