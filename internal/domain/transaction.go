@@ -19,6 +19,15 @@ var ErrInvalidTransaction = errors.New("invalid transaction")
 // from itself.
 var ErrAccountNotApplicable = errors.New("an income does not carry an account")
 
+// ErrIncomeFieldNotApplicable is returned when an income is given a field only
+// an expense has.
+//
+// Доходы has columns for the day, the source, the amount and a description, and
+// none for a category, a subcategory or a place. Same reasoning as the account
+// above: a value this side accepts and the sheet cannot hold comes back missing,
+// so it is refused where it is offered rather than dropped in transit.
+var ErrIncomeFieldNotApplicable = errors.New("an income does not carry this field")
+
 // Transaction kinds. The sheet stores expenses as positive amounts and flips
 // the sign only when summing (see SignedAmount); a negative expense is a
 // refund and therefore adds to the balance.
@@ -117,14 +126,30 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		return Transaction{}, fmt.Errorf("%w: %w (got %q)", ErrInvalidTransaction, ErrAccountNotApplicable, account)
 	}
 
+	subcategory, place := strings.TrimSpace(p.Subcategory), strings.TrimSpace(p.Place)
+	if p.Kind == KindIncome {
+		// Named one by one rather than reported as "an expense field", because the
+		// owner passed a specific flag and has to know which one to drop.
+		for _, f := range []struct{ name, value string }{
+			{"category", category},
+			{"subcategory", subcategory},
+			{"place", place},
+		} {
+			if f.value != "" {
+				return Transaction{}, fmt.Errorf("%w: %w: %s (got %q)",
+					ErrInvalidTransaction, ErrIncomeFieldNotApplicable, f.name, f.value)
+			}
+		}
+	}
+
 	return Transaction{
 		id:          id,
 		kind:        p.Kind,
 		date:        p.Date,
 		amount:      p.Amount,
 		category:    category,
-		subcategory: strings.TrimSpace(p.Subcategory),
-		place:       strings.TrimSpace(p.Place),
+		subcategory: subcategory,
+		place:       place,
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
 		account:     account,

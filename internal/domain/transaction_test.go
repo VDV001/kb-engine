@@ -44,7 +44,9 @@ func TestNewTransaction_valid(t *testing.T) {
 func TestNewTransaction_incomeIsPositive(t *testing.T) {
 	p := txParams()
 	p.Kind = "income"
-	p.Category = ""
+	// The expense-shaped fields are cleared, not only the category: Доходы has no
+	// column for any of them, and this test is about the sign of the amount.
+	p.Category, p.Subcategory, p.Place = "", "", ""
 	p.Source = "Зарплата"
 	tx, err := domain.NewTransaction(p)
 	if err != nil {
