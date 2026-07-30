@@ -38,7 +38,13 @@ type Auditor interface {
 type Analyzer interface {
 	Growth(weeks int) ([]analytics.WeekCount, error)
 	Categories() ([]analytics.CategorySize, error)
+	Graph() (analytics.Graph, error)
 }
+
+// ConfigLoader supplies the curated analytics config. Called per request, so
+// an edited analytics_config.json shows up on the next reload without
+// restarting the engine — the same liveness the catalog already has.
+type ConfigLoader func() (analyticsconfig.Config, error)
 
 // Finances is what the finance port hands over: the ledger rows and the account
 // balances. Aggregation is deliberately not here — the view filters by month
@@ -61,7 +67,7 @@ type Financier interface {
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -71,6 +77,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg analyticsco
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
+	mux.HandleFunc("GET /api/graph", handleGraph(an))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
@@ -101,9 +108,25 @@ func handleReadyz(q Querier) http.HandlerFunc {
 	}
 }
 
-func handleAnalyticsConfig(cfg analyticsconfig.Config) http.HandlerFunc {
+func handleAnalyticsConfig(cfg ConfigLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, cfg)
+		c, err := cfg()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, c)
+	}
+}
+
+func handleGraph(an Analyzer) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		g, err := an.Graph()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, g)
 	}
 }
 

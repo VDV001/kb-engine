@@ -16,8 +16,9 @@ func graphCatalog(t *testing.T) *domain.Catalog {
 			t.Fatal(err)
 		}
 		lc, _ := domain.NewLifecycle("active")
+		rs, _ := domain.NewReadState("read")
 		e, err := domain.NewEntry(domain.EntryParams{
-			ID: id, Kind: "article", Title: "t", Category: cat, Lifecycle: lc, Tags: tags,
+			ID: id, Kind: "article", Title: "t", Category: cat, Lifecycle: lc, Tags: tags, ReadState: &rs,
 		})
 		if err != nil {
 			t.Fatal(err)

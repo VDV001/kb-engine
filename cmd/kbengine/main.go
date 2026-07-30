@@ -160,12 +160,15 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath string)
 	if err != nil {
 		return nil, err
 	}
-	var cfg analyticsconfig.Config
+	// Перечитывается на каждый запрос — как и каталог. Отсутствие пути — не
+	// ошибка, а пустой семантический слой; падение при старте проверяет, что
+	// файл хотя бы читается сейчас.
+	cfg := func() (analyticsconfig.Config, error) { return analyticsconfig.Config{}, nil }
 	if configPath != "" {
-		cfg, err = analyticsconfig.Load(configPath)
-		if err != nil {
+		if _, err := analyticsconfig.Load(configPath); err != nil {
 			return nil, err
 		}
+		cfg = func() (analyticsconfig.Config, error) { return analyticsconfig.Load(configPath) }
 	}
 	// Nil, not an empty struct: the handler distinguishes "no ledger configured"
 	// from "ledger configured and unreadable", and only the second is an error.
