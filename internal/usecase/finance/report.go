@@ -18,6 +18,11 @@ type Filter struct {
 	Category string
 	Account  string
 	Kind     string
+	// Months narrows to a set of calendar months, each YYYY-MM. It exists next to
+	// Year+Month because the dashboard's period picker allows several months at
+	// once, which a single Year+Month pair cannot express. An empty slice means
+	// "any", like every other field here.
+	Months []string
 }
 
 // Match returns the records the filter accepts, in the order given.
@@ -37,6 +42,9 @@ func (f Filter) accepts(r Record) bool {
 		return false
 	}
 	if f.Month != 0 && tx.Date().Month() != f.Month {
+		return false
+	}
+	if len(f.Months) > 0 && !slices.Contains(f.Months, tx.Date().Format("2006-01")) {
 		return false
 	}
 	if f.Kind != "" && tx.Kind() != f.Kind {
