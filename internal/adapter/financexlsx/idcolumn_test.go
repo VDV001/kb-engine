@@ -1,0 +1,90 @@
+package financexlsx_test
+
+import (
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
+	"github.com/xuri/excelize/v2"
+)
+
+// pairedByOlderEngineWithABankName is the colliding book with a row added by
+// hand afterwards: the owner filled the eighth column the way the rest of the
+// book uses it, with the name of an account, not knowing the engine had claimed
+// that column for ids.
+func pairedByOlderEngineWithABankName(t *testing.T) string {
+	t.Helper()
+	path := pairedByOlderEngine(t)
+
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	if err := f.SetCellStr("Расходы", "H4", "Сбербанк"); err != nil {
+		t.Fatalf("Расходы!H4: %v", err)
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	return path
+}
+
+// ApplyRows refuses a colliding book. AssignIDs writes into the same column of
+// the same book and did not ask, so the guard covered one writer out of the
+// three that reach that column — and the way to reach AssignIDs is ordinary:
+// `fin sync --init` against a ledger path that does not exist yet.
+//
+// What it costs: a ULID written over a bank name, backup taken, success
+// reported.
+func TestAssignIDs_refusesABookWhoseIDColumnHoldsTheAccount(t *testing.T) {
+	path := pairedByOlderEngineWithABankName(t)
+
+	err := financexlsx.AssignIDs(path, map[string]string{"expense-r5": "01D"}, writeClock)
+	if !errors.Is(err, financexlsx.ErrIDColumnCollides) {
+		t.Fatalf("AssignIDs error = %v, want ErrIDColumnCollides", err)
+	}
+	if got := cellValue(t, path, "Расходы", "H4"); got != "Сбербанк" {
+		t.Errorf("Расходы!H4 = %q after a refused write, want Сбербанк", got)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".backup")); !os.IsNotExist(err) {
+		t.Error("a refused write took a backup")
+	}
+}
+
+// The migration moved whatever it found, so the command offered as the way out
+// of a collision could make the book worse: a bank name became the identity of
+// its row, and the account it named was gone. Two such rows read back as one
+// duplicate id, which fails every later sync until someone repairs the file by
+// hand.
+//
+// A cell that cannot be an id means the book is not in the state this migration
+// repairs, so it declines and says which cell to look at.
+func TestMigrateIDColumn_refusesToMoveWhatIsNotAnID(t *testing.T) {
+	path := pairedByOlderEngineWithABankName(t)
+
+	_, err := financexlsx.MigrateIDColumn(path, writeClock)
+	if !errors.Is(err, financexlsx.ErrIDColumnHoldsForeignData) {
+		t.Fatalf("MigrateIDColumn error = %v, want ErrIDColumnHoldsForeignData", err)
+	}
+	// The refusal has to be actionable: the owner has one cell to look at, and the
+	// message is the only place that says which.
+	if got := err.Error(); !strings.Contains(got, "H4") || !strings.Contains(got, "Сбербанк") {
+		t.Errorf("error %q names neither the cell nor what is in it", got)
+	}
+
+	// Nothing moved and nothing was copied: refused before the first mutation.
+	for cell, want := range map[string]string{"H3": "01A", "H4": "Сбербанк", "I3": "", "I4": ""} {
+		if got := cellValue(t, path, "Расходы", cell); got != want {
+			t.Errorf("Расходы!%s = %q after a refused migration, want %q", cell, got, want)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".backup")); !os.IsNotExist(err) {
+		t.Error("a refused migration took a backup")
+	}
+}

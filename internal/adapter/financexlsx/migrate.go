@@ -19,6 +19,13 @@ import (
 // name and reports success, so the write is refused instead.
 var ErrIDColumnCollides = errors.New("the id column sits where the account goes")
 
+// ErrIDColumnHoldsForeignData is returned when the column the ids sit in also
+// holds something that cannot be an id.
+//
+// The book is then not in the state this migration repairs, and moving the cell
+// anyway is how a bank name becomes the identity of its row.
+var ErrIDColumnHoldsForeignData = errors.New("the id column holds something that is not an id")
+
 // idColumnCollides reports whether an expense sheet's id column is the one the
 // account needs.
 func idColumnCollides(idCol int) bool { return idCol == besideSourceColumn() }
