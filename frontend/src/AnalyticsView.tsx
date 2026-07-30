@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { api } from './api'
 import type { AnalyticsConfig, Graph, ManifestoQuote, Stats, Support } from './api'
 import { useResource } from './hooks/useResource'
+import { layoutGraph } from './graphLayout'
+import { categoryLabel } from './catalog'
 import { Card, Label } from './components/ui'
 
 // The meta-analytics view, ported from the KB dashboard: five tabs over the
@@ -55,95 +57,107 @@ function QuoteCard({ q, first }: { q: ManifestoQuote; first: boolean }) {
 }
 
 /**
- * KnowledgeGraph draws the tag-intersection topology: the largest category in
- * the centre, the rest on a circle, edges weighted by shared tags.
+ * KnowledgeGraph рисует топологию по пересечению тегов: самая крупная категория
+ * в центре, остальные двумя эллиптическими кольцами, толщина связи — число
+ * общих меток. Рядом нумерованный список: на холсте у узла тот же номер.
  *
- * The layout is deterministic — position comes from the node's rank, not from
- * a simulation — so the same catalog always draws the same picture and a
- * screenshot is comparable with yesterday's.
+ * Раскладка детерминирована и живёт в graphLayout — позиция считается из
+ * порядкового номера, а не из симуляции, поэтому одна и та же база даёт одну и
+ * ту же картинку, и снимок сравним со вчерашним.
  */
-function KnowledgeGraph({ graph }: { graph: Graph }) {
-  const nodes = graph.nodes.slice(0, 24)
-  if (nodes.length === 0) return <p className="text-sm text-on-surface-variant">Нет данных.</p>
-
+function KnowledgeGraph({ graph, labels, total }: { graph: Graph; labels: Record<string, string>; total: number }) {
   const W = 900
-  const H = 560
-  const cx = W / 2
-  const cy = H / 2
-  const pos = new Map<string, { x: number; y: number }>()
-  pos.set(nodes[0].category, { x: cx, y: cy })
-  const ring = nodes.slice(1)
-  ring.forEach((n, i) => {
-    // Два радиуса вперемежку, чтобы соседние подписи не слипались.
-    const r = i % 2 === 0 ? 230 : 165
-    const a = (2 * Math.PI * i) / ring.length - Math.PI / 2
-    pos.set(n.category, { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) })
-  })
-
-  const maxW = Math.max(1, ...graph.edges.map((e) => e.weight))
-  // Сильнейшие 64: живой каталог даёт 200+ рёбер, и все разом — это войлок,
-  // а не граф. Рёбра приходят по весу, так что срез — это и есть отбор.
-  const edges = graph.edges.filter((e) => pos.has(e.from) && pos.has(e.to)).slice(0, 64)
+  const H = 580
+  const l = layoutGraph(graph, { width: W, height: H })
+  if (l.nodes.length === 0) return <p className="text-sm text-on-surface-variant">Нет данных.</p>
 
   return (
     <div className="overflow-x-auto border border-outline-variant bg-surface-lowest">
-      <svg viewBox={`0 0 ${W} ${H}`} className="min-w-[40rem]" role="img" aria-label="Граф знаний">
-        {edges.map((e) => {
-          const a = pos.get(e.from)!
-          const b = pos.get(e.to)!
-          return (
+      <div className="flex min-w-[48rem]">
+        <svg
+          viewBox={`0 0 ${l.canvasWidth} ${H}`}
+          style={{ width: `${(l.canvasWidth / W) * 100}%` }}
+          role="img"
+          aria-label="Граф знаний: топология категорий по общим тегам"
+        >
+          {/* Перекрестье и штампы — та же техническая рамка, что в исходном
+              дашборде: они на пороге видимости и держат холст, а не украшают. */}
+          <line x1={l.canvasWidth / 2} y1={0} x2={l.canvasWidth / 2} y2={H} stroke="currentColor" strokeWidth={0.5} opacity={0.04} />
+          <line x1={0} y1={H / 2} x2={l.canvasWidth} y2={H / 2} stroke="currentColor" strokeWidth={0.5} opacity={0.04} />
+          <rect x={14} y={14} width={96} height={18} fill="none" stroke="currentColor" strokeWidth={0.5} opacity={0.1} />
+          <text x={18} y={26} className="font-label" fontSize={7} fill="currentColor" opacity={0.15} letterSpacing={1.5}>
+            REF: KG-{String(l.nodes.length).padStart(2, '0')}-VX
+          </text>
+          <text x={l.canvasWidth - 12} y={H - 12} textAnchor="end" className="font-label" fontSize={6.5} fill="currentColor" opacity={0.1} letterSpacing={1}>
+            VECTOR.MAP · {total} ENTRIES
+          </text>
+
+          {l.edges.map((e) => (
             <line
               key={`${e.from}-${e.to}`}
-              x1={a.x}
-              y1={a.y}
-              x2={b.x}
-              y2={b.y}
+              x1={e.x1}
+              y1={e.y1}
+              x2={e.x2}
+              y2={e.y2}
               stroke="var(--secondary)"
-              strokeWidth={0.5 + (e.weight / maxW) * 2}
-              opacity={0.12 + (e.weight / maxW) * 0.35}
+              strokeWidth={e.strokeWidth}
+              opacity={e.opacity}
+              strokeDasharray={e.strong ? undefined : '4 6'}
             />
-          )
-        })}
-        {nodes.map((n, i) => {
-          const p = pos.get(n.category)!
-          const centre = i === 0
-          const label = n.category.length > 14 ? `${n.category.slice(0, 13)}…` : n.category
-          return (
-            <g key={n.category}>
+          ))}
+
+          {l.nodes.map((n) => (
+            <g key={n.key}>
               <rect
-                x={p.x - 52}
-                y={p.y - 16}
-                width={104}
-                height={32}
+                x={n.x - n.width / 2}
+                y={n.y - n.height / 2}
+                width={n.width}
+                height={n.height}
                 rx={4}
-                fill={centre ? 'var(--surface-high)' : 'var(--surface-lowest)'}
+                fill={n.isHub ? 'var(--surface-high)' : 'var(--surface-lowest)'}
                 stroke="var(--secondary)"
-                strokeOpacity={centre ? 0.9 : 0.45}
+                strokeOpacity={n.isHub ? 0.9 : 0.45}
               />
-              <text
-                x={p.x}
-                y={p.y - 1}
-                textAnchor="middle"
-                fill="var(--on-surface)"
-                style={{ font: '600 9px var(--font-label)', textTransform: 'uppercase', letterSpacing: '0.06em' }}
-              >
-                {label}
+              <text x={n.x - n.width / 2 + 6} y={n.y - n.height / 2 + 12} className="font-label" fontSize={7} fill="var(--on-surface-variant)" opacity={0.6}>
+                {String(n.index).padStart(2, '0')}
               </text>
-              <text
-                x={p.x}
-                y={p.y + 11}
-                textAnchor="middle"
-                fill="var(--on-surface-variant)"
-                style={{ font: '9px var(--font-mono)' }}
-              >
+              <text x={n.x} y={n.y + 1} textAnchor="middle" fill="var(--on-surface)" style={{ font: `600 ${n.isHub ? 11 : 9}px var(--font-label)`, letterSpacing: '0.06em' }}>
+                {truncate(categoryLabel(n.key, labels), n.isHub ? 16 : 12)}
+              </text>
+              <text x={n.x} y={n.y + (n.isHub ? 18 : 13)} textAnchor="middle" fill="var(--on-surface-variant)" style={{ font: '9px var(--font-mono)' }}>
                 {n.count}
               </text>
             </g>
-          )
-        })}
-      </svg>
+          ))}
+        </svg>
+
+        {/* Список узлов: на холсте подписи обрезаны по ширине прямоугольника,
+            и полное имя категории видно только здесь. */}
+        <aside className="shrink-0 border-l border-outline-variant p-4" style={{ width: `${(l.sideWidth / W) * 100}%` }}>
+          <p className="label mb-3">Node index</p>
+          <ol className="space-y-1.5">
+            {l.nodes.map((n) => (
+              <li key={n.key} className="flex items-baseline gap-2 text-xs">
+                <span className="font-mono text-[10px] text-on-surface-variant tabular-nums">
+                  {String(n.index).padStart(2, '0')}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-on-surface" title={labels[n.key] || n.key}>
+                  {categoryLabel(n.key, labels)}
+                </span>
+                <span className="font-mono text-[10px] text-on-surface-variant tabular-nums">{n.count}</span>
+              </li>
+            ))}
+          </ol>
+        </aside>
+      </div>
     </div>
   )
+}
+
+/** Подпись обрезается по числу знаков, а не по ширине: ширина прямоугольника
+ * известна заранее, и мерить текст в SVG значит считать то, что уже посчитано. */
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }
 
 const priorityTone: Record<string, string> = {
@@ -268,7 +282,7 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
               {graph === null ? (
                 <p className="p-8 text-center text-on-surface-variant">Загрузка…</p>
               ) : (
-                <KnowledgeGraph graph={graph} />
+                <KnowledgeGraph graph={graph} labels={stats.category_labels ?? {}} total={stats.total} />
               )}
             </div>
           )}
