@@ -46,15 +46,10 @@ func NewCatalog(entries []Entry, opts ...CatalogOption) (*Catalog, error) {
 	return c, nil
 }
 
-// CategoryLabel returns how the catalog names a category, or "" when it names
-// no such category. The caller decides what to show instead — inventing a name
-// here would hide a category the catalog has not described yet.
-func (c *Catalog) CategoryLabel(category string) string {
-	return c.categoryLabels[category]
-}
-
-// CategoryLabels returns a copy of the whole naming, for callers that ship it
-// onward rather than asking one key at a time.
+// CategoryLabels returns a copy of how the catalog names its categories: the
+// key an entry stores against the name a person reads. A category the catalog
+// has not described is simply absent — what to show instead is the caller's
+// decision, and inventing a name here would hide the gap.
 func (c *Catalog) CategoryLabels() map[string]string {
 	out := make(map[string]string, len(c.categoryLabels))
 	for k, v := range c.categoryLabels {

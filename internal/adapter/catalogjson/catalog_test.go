@@ -240,7 +240,7 @@ func TestDecode_categoryLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Decode: %v", err)
 	}
-	if got := c.CategoryLabel("golang"); got != "Go: язык и экосистема" {
-		t.Errorf("CategoryLabel = %q, want %q", got, "Go: язык и экосистема")
+	if got := c.CategoryLabels()["golang"]; got != "Go: язык и экосистема" {
+		t.Errorf("label = %q, want %q", got, "Go: язык и экосистема")
 	}
 }

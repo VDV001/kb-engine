@@ -139,17 +139,20 @@ func TestCatalog_categoryLabels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new catalog: %v", err)
 	}
-	if got := c.CategoryLabel("local-ai"); got != labels["local-ai"] {
-		t.Errorf("CategoryLabel = %q, want %q", got, labels["local-ai"])
+	const want = "Локальный AI: запуск моделей на своём железе"
+	if got := c.CategoryLabels()["local-ai"]; got != want {
+		t.Errorf("label = %q, want %q", got, want)
 	}
-	// Незнакомая категория возвращает пустую строку, а не выдуманное имя:
-	// решение, что показать вместо него, принимает вызывающий.
-	if got := c.CategoryLabel("нет-такой"); got != "" {
-		t.Errorf("CategoryLabel of an unknown category = %q, want empty", got)
+	// Неописанная категория просто отсутствует, а не получает выдуманное имя:
+	// что показать вместо него, решает вызывающий.
+	if got, ok := c.CategoryLabels()["нет-такой"]; ok {
+		t.Errorf("unknown category present with %q, want absent", got)
 	}
-	// Словарь копируется: каталог не должен меняться из-под чужой карты.
+	// Копия в обе стороны: ни правка исходной карты после конструирования, ни
+	// правка выданной копии не меняют каталог.
 	labels["local-ai"] = "подменено"
-	if c.CategoryLabel("local-ai") == "подменено" {
-		t.Error("CategoryLabel follows the caller's map after construction")
+	c.CategoryLabels()["local-ai"] = "тоже подменено"
+	if got := c.CategoryLabels()["local-ai"]; got != want {
+		t.Errorf("label = %q after mutating both maps, want the original", got)
 	}
 }
