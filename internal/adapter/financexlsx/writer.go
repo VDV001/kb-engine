@@ -25,9 +25,6 @@ const (
 	idHeader = "id"
 	// headerRow is where the workbook keeps its column names; row 1 is a title.
 	headerRow = 2
-	// backupDirName lives next to the workbook, hidden, so backups travel with
-	// the file they protect.
-	backupDirName = ".backup"
 	// backupsKept is enough to undo a bad afternoon and few enough that the
 	// directory stays readable.
 	backupsKept = 10
@@ -130,18 +127,35 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 	return writes, idCols, nil
 }
 
-// CheckLock reports whether an editor is holding the workbook. LibreOffice
-// leaves .~lock.<name># next to the file for as long as it is open, and writing
-// underneath that produces two divergent versions — one of which disappears
-// without warning when the editor saves.
+// CheckLock reports whether an editor is holding the workbook. Writing
+// underneath an open editor produces two divergent versions, and the editor's
+// wins the moment it saves — taking the rows written meanwhile with it.
+//
+// Both families of editors are checked, because the owner opens this file in
+// whatever is at hand:
+//
+//	LibreOffice   .~lock.Учёт_финансов.xlsx#
+//	Excel         ~$Учёт_финансов.xlsx
+//
+// A stat that fails for any reason other than "not there" is reported rather
+// than swallowed: a check that cannot look is not a check that found nothing,
+// and treating the two the same is indistinguishable from not checking at all.
 //
 // Exported so a caller that is only planning a write — a dry run, say — can ask
 // the same question the write will ask, instead of promising an outcome the
 // real run would refuse.
 func CheckLock(path string) error {
-	lock := filepath.Join(filepath.Dir(path), ".~lock."+filepath.Base(path)+"#")
-	if _, err := os.Stat(lock); err == nil {
-		return fmt.Errorf("%w: close it and try again (%s)", ErrWorkbookLocked, lock)
+	dir, base := filepath.Dir(path), filepath.Base(path)
+	for _, lock := range []string{
+		filepath.Join(dir, ".~lock."+base+"#"),
+		filepath.Join(dir, "~$"+base),
+	} {
+		switch _, err := os.Stat(lock); {
+		case err == nil:
+			return fmt.Errorf("%w: close it and try again (%s)", ErrWorkbookLocked, lock)
+		case !os.IsNotExist(err):
+			return fmt.Errorf("check whether %s is open: %w", base, err)
+		}
 	}
 	return nil
 }
