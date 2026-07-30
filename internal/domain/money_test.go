@@ -97,10 +97,16 @@ func TestMoneyFromFloat(t *testing.T) {
 		{"half kopeck rounds away from zero", 0.125, 13},
 		{"negative artifact", -5500.000000001, -550000},
 		{"zero", 0, 0},
+		{"smallest amount that survives rounding", 0.005, 1},
+		{"a trillion rubles is still representable", 1e12, 100000000000000},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := domain.MoneyFromFloat(tt.in); got.Kopecks() != tt.want {
+			got, err := domain.MoneyFromFloat(tt.in)
+			if err != nil {
+				t.Fatalf("MoneyFromFloat(%v): %v", tt.in, err)
+			}
+			if got.Kopecks() != tt.want {
 				t.Errorf("MoneyFromFloat(%v) = %d kopecks, want %d", tt.in, got.Kopecks(), tt.want)
 			}
 		})

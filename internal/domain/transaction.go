@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 )
@@ -10,6 +11,23 @@ import (
 // ErrInvalidTransaction is returned when transaction parameters violate an
 // invariant.
 var ErrInvalidTransaction = errors.New("invalid transaction")
+
+// ErrAccountNotApplicable is returned when an income is given an account.
+//
+// Доходы records where money came from — a salary, a transfer — and has no
+// column for which account it landed in. Accepting the value and dropping it on
+// the way to the sheet is what made a written transaction come back different
+// from itself.
+var ErrAccountNotApplicable = errors.New("an income does not carry an account")
+
+// ErrIncomeFieldNotApplicable is returned when an income is given a field only
+// an expense has.
+//
+// Доходы has columns for the day, the source, the amount and a description, and
+// none for a category, a subcategory or a place. Same reasoning as the account
+// above: a value this side accepts and the sheet cannot hold comes back missing,
+// so it is refused where it is offered rather than dropped in transit.
+var ErrIncomeFieldNotApplicable = errors.New("an income does not carry this field")
 
 // Transaction kinds. The sheet stores expenses as positive amounts and flips
 // the sign only when summing (see SignedAmount); a negative expense is a
@@ -83,6 +101,13 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 	if p.Date.IsZero() {
 		return Transaction{}, fmt.Errorf("%w: date is required", ErrInvalidTransaction)
 	}
+	if p.Amount.Kopecks() == math.MinInt64 {
+		// SignedAmount negates an expense, and this is the one amount that negates to
+		// itself — a refund of this size would subtract from the balance instead of
+		// adding to it. Refused here rather than handled there: an amount whose
+		// direction cannot be expressed is not an amount.
+		return Transaction{}, fmt.Errorf("%w: amount is too large to carry a sign", ErrInvalidTransaction)
+	}
 	if p.Amount.IsZero() {
 		// Zero is the one amount that carries no information — a blank row, not a
 		// transaction. Negative amounts are legitimate: the ledger records refunds
@@ -104,18 +129,55 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		return Transaction{}, fmt.Errorf("%w: expense requires a category", ErrInvalidTransaction)
 	}
 
+	account := strings.TrimSpace(p.Account)
+	subcategory, place := strings.TrimSpace(p.Subcategory), strings.TrimSpace(p.Place)
+	if err := checkIncomeCarriesNothingElse(p.Kind, account, category, subcategory, place); err != nil {
+		return Transaction{}, err
+	}
+
 	return Transaction{
 		id:          id,
 		kind:        p.Kind,
 		date:        p.Date,
 		amount:      p.Amount,
 		category:    category,
-		subcategory: strings.TrimSpace(p.Subcategory),
-		place:       strings.TrimSpace(p.Place),
+		subcategory: subcategory,
+		place:       place,
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
-		account:     strings.TrimSpace(p.Account),
+		account:     account,
 	}, nil
+}
+
+// checkIncomeCarriesNothingElse refuses the four fields Доходы has no column
+// for. An expense passes untouched.
+//
+// One place for all four because they are one rule — a value this side accepts
+// and the sheet cannot hold comes back missing. Keeping them apart is what let
+// three of them stay open after the fourth was closed.
+//
+// The account keeps its own sentinel: it was named before the others and callers
+// match on it.
+func checkIncomeCarriesNothingElse(kind, account, category, subcategory, place string) error {
+	if kind != KindIncome {
+		return nil
+	}
+	if account != "" {
+		return fmt.Errorf("%w: %w (got %q)", ErrInvalidTransaction, ErrAccountNotApplicable, account)
+	}
+	// Named one at a time rather than reported together as "an expense field": the
+	// owner passed a specific flag and has to know which one to drop.
+	for _, f := range []struct{ name, value string }{
+		{"category", category},
+		{"subcategory", subcategory},
+		{"place", place},
+	} {
+		if f.value != "" {
+			return fmt.Errorf("%w: %w: %s (got %q)",
+				ErrInvalidTransaction, ErrIncomeFieldNotApplicable, f.name, f.value)
+		}
+	}
+	return nil
 }
 
 // ID returns the stable identifier used to match rows across storage formats.
