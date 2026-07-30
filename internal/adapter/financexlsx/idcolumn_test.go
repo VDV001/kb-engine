@@ -57,6 +57,44 @@ func TestAssignIDs_refusesABookWhoseIDColumnHoldsTheAccount(t *testing.T) {
 	}
 }
 
+// A date read with RawCellValue is a serial number — "46218" is how the reader
+// itself receives 30.07.2026 (see parseDate). A number in the id column is
+// therefore the likeliest foreign value in this book, more likely than any word,
+// and the alphabet test alone accepted every one of them: digits are all valid
+// id characters.
+//
+// Accepted as an id, a serial date becomes the identity of its row, the value it
+// held is gone, and two rows carrying the same number produce a duplicate id that
+// fails every later sync.
+func TestMigrateIDColumn_refusesANumberAsAnID(t *testing.T) {
+	for _, value := range []string{"46218", "2026", "500", "0"} {
+		t.Run(value, func(t *testing.T) {
+			path := pairedByOlderEngine(t)
+			f, err := excelize.OpenFile(path)
+			if err != nil {
+				t.Fatalf("open: %v", err)
+			}
+			if err := f.SetCellStr("Расходы", "H4", value); err != nil {
+				t.Fatalf("set H4: %v", err)
+			}
+			if err := f.Save(); err != nil {
+				t.Fatalf("save: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				t.Fatalf("close: %v", err)
+			}
+
+			_, err = financexlsx.MigrateIDColumn(path, writeClock)
+			if !errors.Is(err, financexlsx.ErrIDColumnHoldsForeignData) {
+				t.Fatalf("MigrateIDColumn with %q in the id column = %v, want ErrIDColumnHoldsForeignData", value, err)
+			}
+			if got := cellValue(t, path, "Расходы", "H4"); got != value {
+				t.Errorf("Расходы!H4 = %q after a refused migration, want %q", got, value)
+			}
+		})
+	}
+}
+
 // The migration moved whatever it found, so the command offered as the way out
 // of a collision could make the book worse: a bank name became the identity of
 // its row, and the account it named was gone. Two such rows read back as one
