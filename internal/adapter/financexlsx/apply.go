@@ -191,6 +191,9 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err != nil {
 		return err
 	}
+	if err := checkVocabulary(upserts, accounts); err != nil {
+		return err
+	}
 	plan, err := planRowWrites(index, upserts, removals)
 	if err != nil {
 		return err
