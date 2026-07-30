@@ -96,8 +96,9 @@ type metaDTO struct {
 var verdictAliases = map[string]string{
 	"keep":             "keep",
 	"KEEP":             "keep",
-	"napodumat":        "napodumat",
-	"на подумать":      "napodumat",
+	"consider":         "consider",
+	"napodumat":        "consider",
+	"на подумать":      "consider",
 	"skip":             "skip",
 	"SKIP":             "skip",
 	"skip-unavailable": "skip-unavailable",

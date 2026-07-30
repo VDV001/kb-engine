@@ -47,7 +47,7 @@ func article(t *testing.T, id int, category, lifecycle, verdict string) domain.E
 func TestStats(t *testing.T) {
 	cat, err := domain.NewCatalog([]domain.Entry{
 		article(t, 1, "golang", "active", "keep"),
-		article(t, 2, "golang", "active", "napodumat"),
+		article(t, 2, "golang", "active", "consider"),
 		article(t, 3, "management", "canonical", "keep"),
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestStats(t *testing.T) {
 	if st.ByLifecycle["active"] != 2 || st.ByLifecycle["canonical"] != 1 {
 		t.Errorf("ByLifecycle = %v", st.ByLifecycle)
 	}
-	if st.ByVerdict["keep"] != 2 || st.ByVerdict["napodumat"] != 1 {
+	if st.ByVerdict["keep"] != 2 || st.ByVerdict["consider"] != 1 {
 		t.Errorf("ByVerdict = %v", st.ByVerdict)
 	}
 	if st.ByKind["article"] != 3 {

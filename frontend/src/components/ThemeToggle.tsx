@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Icon } from './Icon'
 import { applyTheme, initialTheme, nextTheme, type Theme } from '../theme'
 
 /**
@@ -23,9 +24,13 @@ export function ThemeToggle() {
       // icon alone reads as "you are in dark mode" to about half of people.
       aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
       title={theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}
-      className="rounded-md border border-outline-variant bg-surface-low px-2.5 py-1.5 text-on-surface-variant transition-colors hover:bg-surface-high hover:text-on-surface"
+      // Ни фона, ни рамки: в шапке это одна из нескольких иконок, и единственная
+      // в рамке читалась как кнопка другого рода. Размер общий для всех — h-9,
+      // иконка text-xl; раньше здесь стоял текстовый символ ☾, который жил в
+      // своём масштабе и ломал ряд.
+      className="flex h-9 w-9 items-center justify-center text-on-surface-variant transition-colors hover:text-on-surface"
     >
-      {theme === 'dark' ? '☀' : '☾'}
+      <Icon name={theme === 'dark' ? 'light_mode' : 'dark_mode'} className="text-xl" />
     </button>
   )
 }

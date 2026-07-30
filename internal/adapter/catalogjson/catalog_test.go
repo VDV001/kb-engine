@@ -27,8 +27,8 @@ func TestDecode_articleStatusMapping(t *testing.T) {
 	}{
 		{"keep", "keep", "keep", "read"},
 		{"uppercase KEEP normalized", "KEEP", "keep", "read"},
-		{"cyrillic legacy normalized", "на подумать", "napodumat", "read"},
-		{"napodumat", "napodumat", "napodumat", "read"},
+		{"cyrillic legacy normalized", "на подумать", "consider", "read"},
+		{"transliterated legacy normalized", "napodumat", "consider", "read"},
 		{"skip", "skip", "skip", "read"},
 		{"skip-unavailable", "SKIP-unavailable", "skip-unavailable", "read"},
 		{"read without verdict", "read", "", "read"},
@@ -258,5 +258,24 @@ func TestDecode_notesFile(t *testing.T) {
 	e, _ := c.Find(1)
 	if got := e.NotesFile(); got != "notes/2026-05-01_разбор.md" {
 		t.Errorf("NotesFile = %q, want the path from file", got)
+	}
+}
+
+// Загрузчик — антикоррупционный слой: он обязан принимать всё, что уже лежит
+// в файле, включая написания, которые каталог перерастёт после миграции.
+// Иначе откат данных или файл со старого бэкапа перестанут читаться.
+func TestDecode_considerAliases(t *testing.T) {
+	for _, raw := range []string{"consider", "napodumat", "на подумать"} {
+		t.Run(raw, func(t *testing.T) {
+			src := `{"entries":[{"id":1,"title":"T","category":"golang","status":"` + raw + `"}]}`
+			c, err := catalogjson.Decode(strings.NewReader(src))
+			if err != nil {
+				t.Fatalf("Decode(%q): %v", raw, err)
+			}
+			e, _ := c.Find(1)
+			if e.Verdict() == nil || e.Verdict().String() != "consider" {
+				t.Errorf("verdict = %v, want consider", e.Verdict())
+			}
+		})
 	}
 }

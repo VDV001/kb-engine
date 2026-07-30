@@ -102,7 +102,7 @@ const badgeTone: Record<string, string> = {
   keep: 'bg-tag-bg-2 text-tag-text-2',
   active: 'bg-tag-bg-2 text-tag-text-2',
   canonical: 'bg-tag-bg-1 text-tag-text-1',
-  napodumat: 'bg-tag-bg-3 text-tag-text-3',
+  consider: 'bg-tag-bg-3 text-tag-text-3',
   skip: 'bg-tag-bg-3 text-tag-text-3',
   superseded: 'bg-tag-bg-3 text-tag-text-3',
   outdated: 'bg-tag-bg-3 text-tag-text-3',
