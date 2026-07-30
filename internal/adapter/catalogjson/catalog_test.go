@@ -260,3 +260,22 @@ func TestDecode_notesFile(t *testing.T) {
 		t.Errorf("NotesFile = %q, want the path from file", got)
 	}
 }
+
+// Загрузчик — антикоррупционный слой: он обязан принимать всё, что уже лежит
+// в файле, включая написания, которые каталог перерастёт после миграции.
+// Иначе откат данных или файл со старого бэкапа перестанут читаться.
+func TestDecode_considerAliases(t *testing.T) {
+	for _, raw := range []string{"consider", "napodumat", "на подумать"} {
+		t.Run(raw, func(t *testing.T) {
+			src := `{"entries":[{"id":1,"title":"T","category":"golang","status":"` + raw + `"}]}`
+			c, err := catalogjson.Decode(strings.NewReader(src))
+			if err != nil {
+				t.Fatalf("Decode(%q): %v", raw, err)
+			}
+			e, _ := c.Find(1)
+			if e.Verdict() == nil || e.Verdict().String() != "consider" {
+				t.Errorf("verdict = %v, want consider", e.Verdict())
+			}
+		})
+	}
+}

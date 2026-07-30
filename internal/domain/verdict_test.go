@@ -59,3 +59,23 @@ func TestVerdict_IsSkipUnavailable(t *testing.T) {
 		t.Error("IsSkipUnavailable() = true for keep, want false")
 	}
 }
+
+// Вердикт «отложено на подумать» назывался napodumat — транслитом, хотя
+// комментарий над каноническим набором с самого начала обещал английские
+// значения. Данные и домен переходят на английский enum, потому что база
+// знаний идёт к i18n: язык интерфейса выбирается при показе, а в хранилище
+// лежит одно машинное значение.
+func TestNewVerdict_consider(t *testing.T) {
+	v, err := domain.NewVerdict("consider")
+	if err != nil {
+		t.Fatalf("NewVerdict(consider): %v", err)
+	}
+	if v.String() != "consider" {
+		t.Errorf("String() = %q, want consider", v.String())
+	}
+	// Транслит больше не канон: его место — в алиасах загрузчика, а не в
+	// домене, иначе одно и то же значение снова окажется двумя.
+	if _, err := domain.NewVerdict("napodumat"); err == nil {
+		t.Error("NewVerdict(napodumat) = nil error, want rejection")
+	}
+}
