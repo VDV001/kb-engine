@@ -68,6 +68,7 @@ type entryDTO struct {
 	ReadState    *string  `json:"read_state,omitempty"`
 	PublishStage *string  `json:"publish_stage,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
+	DateAdded    string   `json:"date_added,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Author       string   `json:"author,omitempty"`
 	Source       string   `json:"source,omitempty"`
@@ -98,6 +99,9 @@ func toDTO(e domain.Entry) entryDTO {
 	if p := e.PublishStage(); p != nil {
 		s := p.String()
 		d.PublishStage = &s
+	}
+	if t := e.DateAdded(); t != nil {
+		d.DateAdded = t.Format(time.DateOnly)
 	}
 	return d
 }
