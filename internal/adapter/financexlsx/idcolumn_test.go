@@ -57,6 +57,67 @@ func TestAssignIDs_refusesABookWhoseIDColumnHoldsTheAccount(t *testing.T) {
 	}
 }
 
+// Moved is what the CLI decides between "nothing to move" and a report of work,
+// so a wrong count is a wrong story about a file that was rewritten.
+//
+// Two ways it lied. A book whose only occupant of the column is the header gets
+// backed up and rewritten, and reports "nothing to move" — Moved is len(moves)-1
+// and the header is one of the moves. A book with no id column at all reports
+// "ids are already in column " with the letter missing.
+func TestMigrateIDColumn_reportsWhatItDid(t *testing.T) {
+	t.Run("header only", func(t *testing.T) {
+		path := pairedByOlderEngine(t)
+		f, err := excelize.OpenFile(path)
+		if err != nil {
+			t.Fatalf("open: %v", err)
+		}
+		// Ids gone, header left behind — the state a book reaches when its rows were
+		// cleared by hand.
+		for _, cell := range []string{"H3", "H4"} {
+			if err := f.SetCellStr("Расходы", cell, ""); err != nil {
+				t.Fatalf("clear %s: %v", cell, err)
+			}
+		}
+		if err := f.Save(); err != nil {
+			t.Fatalf("save: %v", err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatalf("close: %v", err)
+		}
+
+		m, err := financexlsx.MigrateIDColumn(path, writeClock)
+		if err != nil {
+			t.Fatalf("MigrateIDColumn: %v", err)
+		}
+		// The header did move, so this is not "nothing to move".
+		if got := cellValue(t, path, "Расходы", "I2"); got != "id" {
+			t.Fatalf("Расходы!I2 = %q, want the header to have moved", got)
+		}
+		if m.Moved == 0 {
+			t.Error("Moved = 0 for a book that was rewritten and backed up")
+		}
+		if m.Column != "I" {
+			t.Errorf("Column = %q, want I", m.Column)
+		}
+	})
+
+	t.Run("no id column at all", func(t *testing.T) {
+		path := workbookWithoutExtraColumn(t)
+
+		m, err := financexlsx.MigrateIDColumn(path, writeClock)
+		if err != nil {
+			t.Fatalf("MigrateIDColumn: %v", err)
+		}
+		if m.Moved != 0 {
+			t.Errorf("Moved = %d for a book with no ids, want 0", m.Moved)
+		}
+		// "ids are already in column " with nothing after it is not a sentence.
+		if m.Column == "" {
+			t.Error("Column is empty — the report has a hole where the column goes")
+		}
+	})
+}
+
 // A date read with RawCellValue is a serial number — "46218" is how the reader
 // itself receives 30.07.2026 (see parseDate). A number in the id column is
 // therefore the likeliest foreign value in this book, more likely than any word,
