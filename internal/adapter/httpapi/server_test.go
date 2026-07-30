@@ -32,10 +32,11 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 	lc, _ := domain.NewLifecycle("active")
 	v, _ := domain.NewVerdict("keep")
 	added := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
+	created := time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)
 	e, _ := domain.NewEntry(domain.EntryParams{
 		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
 		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
-		Tags: []string{"go"}, DateAdded: &added,
+		Tags: []string{"go"}, DateAdded: &added, DateCreated: &created,
 	})
 	return []domain.Entry{e}, nil
 }
@@ -239,6 +240,12 @@ func TestServer_entries(t *testing.T) {
 	// to be chronology.
 	if entries[0]["date_added"] != "2026-07-11" {
 		t.Errorf("date_added = %v, want 2026-07-11", entries[0]["date_added"])
+	}
+	// Оба поля даты должны переезжать через границу API. Домен и адаптер
+	// каталога читают их оба, но DTO отдавал только date_added — и 461 запись
+	// из 1340 приезжала на фронт без даты вовсе, хотя дата у них есть.
+	if entries[0]["date_created"] != "2026-04-15" {
+		t.Errorf("date_created = %v, want 2026-04-15", entries[0]["date_created"])
 	}
 }
 

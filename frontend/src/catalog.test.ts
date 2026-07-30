@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Entry } from './api'
-import { emptyFilter, filterEntries, pageWindow, sortByDate, statusOf } from './catalog'
+import {
+  dateOf,
+  emptyFilter,
+  filterEntries,
+  pageWindow,
+  sortByDate,
+  statusOf,
+} from './catalog'
 
 const entry = (over: Partial<Entry>): Entry => ({
   id: 1,
@@ -75,6 +82,27 @@ describe('filterEntries', () => {
   })
 })
 
+// В каталоге живут ДВА поля даты, и они почти не пересекаются: 862 записи
+// только с date_added, 461 только с date_created, две с обоими, пятнадцать без
+// даты вовсе. Пока вид смотрел в одно поле, у 461 записи в колонке стоял
+// прочерк, и все они проваливались в бесдатный хвост сортировки. Старый
+// дашборд смотрел в другое поле и ровно так же терял 862.
+describe('dateOf', () => {
+  it('takes whichever of the two date fields the entry carries', () => {
+    expect(dateOf(entry({ date_added: '2026-07-01' }))).toBe('2026-07-01')
+    expect(dateOf(entry({ date_created: '2026-04-15' }))).toBe('2026-04-15')
+    expect(dateOf(entry({}))).toBe('')
+  })
+
+  // У id=294 поля разошлись на тринадцать дней: создана 15.04, добавлена
+  // 28.04. Колонка в Архиве про каталог, поэтому побеждает «когда добавлено».
+  it('prefers the date the entry entered the base', () => {
+    expect(dateOf(entry({ date_created: '2026-04-15', date_added: '2026-04-28' }))).toBe(
+      '2026-04-28',
+    )
+  })
+})
+
 describe('sortByDate', () => {
   it('newest first, dateless tail in stable id order', () => {
     const sorted = sortByDate([
@@ -84,6 +112,25 @@ describe('sortByDate', () => {
       entry({ id: 4 }),
     ])
     expect(sorted.map((e) => e.id)).toEqual([3, 2, 4, 1])
+  })
+
+  it('sorts entries dated by either field against each other', () => {
+    const sorted = sortByDate([
+      entry({ id: 1, date_created: '2026-07-10' }),
+      entry({ id: 2, date_added: '2026-07-20' }),
+      entry({ id: 3, date_created: '2026-07-15' }),
+    ])
+    expect(sorted.map((e) => e.id)).toEqual([2, 3, 1])
+  })
+
+  // Эталон при равных датах ставит новый id выше: внутри одного дня разбора
+  // порядок иначе плавал бы от запуска к запуску.
+  it('breaks a tie by id, newest first', () => {
+    const sorted = sortByDate([
+      entry({ id: 7, date_added: '2026-07-01' }),
+      entry({ id: 9, date_added: '2026-07-01' }),
+    ])
+    expect(sorted.map((e) => e.id)).toEqual([9, 7])
   })
 })
 
