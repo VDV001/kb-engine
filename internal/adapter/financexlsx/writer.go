@@ -51,6 +51,22 @@ func AssignIDs(path string, assign map[string]string, now func() time.Time) erro
 	}
 	defer func() { _ = f.Close() }()
 
+	// The same refusal ApplyRows makes, for the same reason: a sheet whose ids sit
+	// on the account's column reads wrong as well as writes wrong, so no part of it
+	// is safe to touch. Both writers reach that column, so both have to ask —
+	// a guard installed in one writer out of two is a guard with a documented
+	// bypass.
+	//
+	// Before placements are resolved, so a book in that state is refused for what
+	// it is rather than for whichever row the caller happened to name first.
+	rows, err := f.GetRows(sheetExpenses, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return fmt.Errorf("read sheet %q: %w", sheetExpenses, err)
+	}
+	if idCol := findIDColumn(rows); idColumnCollides(idCol) {
+		return collisionError(idCol)
+	}
+
 	writes, idCols, err := resolvePlacements(f, assign)
 	if err != nil {
 		return err
@@ -253,9 +269,12 @@ func chooseIDColumn(rows [][]string, documented int) int {
 }
 
 // firstFreeColumn returns the first column past both the documented width and
-// everything the sheet actually holds, ignoring any id column already there.
-// MigrateIDColumn needs that ignorance: it is called precisely when the
-// existing id column is the one to vacate.
+// everything the sheet actually holds — the id column included, when there is
+// one.
+//
+// Counting it is what MigrateIDColumn needs, not an oversight: the migration is
+// called precisely when the existing id column is the one to vacate, and
+// skipping it would put the target back on the column being emptied.
 func firstFreeColumn(rows [][]string, documented int) int {
 	maxCol := documented
 	for _, row := range rows {

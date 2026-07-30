@@ -3,6 +3,7 @@ package financexlsx
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -75,8 +76,12 @@ func MigrateIDColumn(path string, now func() time.Time) (Migration, error) {
 		return Migration{Column: columnName(idCol)}, nil
 	}
 
+	accounts, err := knownAccounts(f, now)
+	if err != nil {
+		return Migration{}, err
+	}
 	target := firstFreeColumn(rows, reservedWidth(domain.KindExpense))
-	moves, err := planIDMoves(rows, idCol, target)
+	moves, err := planIDMoves(rows, idCol, target, accounts)
 	if err != nil {
 		return Migration{}, err
 	}
@@ -121,10 +126,44 @@ type idMove struct {
 	from, to, value string
 }
 
+// idAlphabet is what a generated id is made of — Crockford base32, which drops
+// I, L, O and U so nothing reads as a digit it is not.
+const idAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+// checkIsID rejects a cell the migration must not move, naming it in a way the
+// owner can act on.
+//
+// Two tests, because either one alone lets a real case through. The alphabet
+// catches anything written for a person to read — Cyrillic, spaces, punctuation
+// — which is what bank names in this book look like. The accounts sheet catches
+// a name that happens to be spelled in the alphabet's letters.
+//
+// ponytail: a latin word using only these letters and absent from the accounts
+// sheet still passes as an id ("BANK" would). Tightening it means requiring the
+// full 26-character ULID shape, which is the upgrade path if a book ever turns
+// up where that matters; today every such value in the owner's book is a bank
+// name in Cyrillic, and both tests catch those.
+func checkIsID(value string, accounts map[string]struct{}, col, row int) error {
+	if _, isAccount := accounts[value]; !isAccount && strings.IndexFunc(strings.ToUpper(value), notInIDAlphabet) < 0 {
+		return nil
+	}
+	where := columnName(col) + fmt.Sprint(row)
+	return fmt.Errorf("%w: %s!%s holds %q — move it out of the id column by hand, then run this again",
+		ErrIDColumnHoldsForeignData, sheetExpenses, where, value)
+}
+
+func notInIDAlphabet(r rune) bool { return !strings.ContainsRune(idAlphabet, r) }
+
 // planIDMoves resolves every cell before anything is written. A workbook where
 // half the ids moved is the hardest state to recover from, so the choice stays
 // all or nothing — the same reason AssignIDs resolves first.
-func planIDMoves(rows [][]string, from, to int) ([]idMove, error) {
+//
+// A cell that cannot be an id stops the plan. This migration exists to move ids
+// off a column an account needs, which means the column holds both meanings and
+// the migration cannot tell them apart by position — only by looking at what is
+// there. Moving a bank name into the id column costs the account and hands the
+// row an identity it shares with every other row named after the same bank.
+func planIDMoves(rows [][]string, from, to int, accounts map[string]struct{}) ([]idMove, error) {
 	var out []idMove
 	for i, row := range rows {
 		rowNum := i + 1
@@ -136,6 +175,8 @@ func planIDMoves(rows [][]string, from, to int) ([]idMove, error) {
 			value = idHeader
 		} else if value == "" {
 			continue
+		} else if err := checkIsID(value, accounts, from, rowNum); err != nil {
+			return nil, err
 		}
 		fromCell, err := excelize.CoordinatesToCellName(from, rowNum)
 		if err != nil {
