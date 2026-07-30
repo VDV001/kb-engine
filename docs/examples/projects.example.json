@@ -1,0 +1,13 @@
+{
+  "label": "Projects",
+  "title": "Projects.",
+  "subtitle": "Point the engine at your own file with --projects. Badges: prod, dev, published, private, paused.",
+  "sections": [
+    {
+      "title": "Products",
+      "cards": [
+        {"title": "example-service", "badge": "prod", "url": "https://example.com", "body": "What it does, one sentence.", "tags": ["Go", "PostgreSQL"]}
+      ]
+    }
+  ]
+}

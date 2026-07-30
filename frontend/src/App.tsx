@@ -3,6 +3,7 @@ import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
 import { AnalyticsView } from './AnalyticsView'
 import { CatalogView } from './CatalogView'
+import { DocumentView, NowView } from './DocViews'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import {
@@ -13,7 +14,7 @@ import {
   SettingsView,
 } from './views'
 
-type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'settings'
+type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Dashboard' },
@@ -22,6 +23,9 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'audits', label: 'Audits' },
   { id: 'duplicates', label: 'Duplicates' },
   { id: 'finances', label: 'Finances' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'team', label: 'Team' },
+  { id: 'now', label: 'Now' },
   { id: 'settings', label: 'Summary' },
 ]
 
@@ -78,6 +82,9 @@ export default function App() {
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
             {tab === 'archives' && <CatalogView entries={data.entries} />}
             {tab === 'finances' && <FinancesView finances={data.finances} />}
+            {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
+            {tab === 'team' && <DocumentView load={api.team} name="Team" />}
+            {tab === 'now' && <NowView />}
             {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}

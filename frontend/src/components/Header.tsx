@@ -44,7 +44,10 @@ export function Header<T extends string>({
             that wrapped — leaving a second row holding nothing but a toggle and
             a badge. Below lg the nav takes that second row instead, which is
             the thing worth the space. */}
-        <nav className="-mx-1 order-last w-full overflow-x-auto lg:order-none lg:mx-0 lg:w-auto lg:flex-1 lg:overflow-visible">
+        {/* min-w-0: флекс-элемент по умолчанию не сжимается ниже контента
+            (min-width:auto), и десятая вкладка растягивала страницу вместо
+            того, чтобы уйти в прокрутку. */}
+        <nav className="-mx-1 order-last w-full min-w-0 overflow-x-auto lg:order-none lg:mx-0 lg:w-auto lg:flex-1 lg:overflow-x-auto">
           <ul className="flex items-center gap-5 whitespace-nowrap px-1 lg:gap-8">
             {tabs.map((t) => {
               const active = t.id === current
