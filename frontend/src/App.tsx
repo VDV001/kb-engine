@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
+import { AnalyticsView } from './AnalyticsView'
 import { CatalogView } from './CatalogView'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import {
-  AnalyticsView,
   AuditsView,
   DuplicatesView,
   FinancesView,
@@ -72,7 +72,7 @@ export default function App() {
             {tab === 'overview' && <OverviewView stats={data.stats} />}
 
             {tab === 'analytics' && (
-              <AnalyticsView analytics={data.analytics} config={data.analyticsConfig} />
+              <AnalyticsView config={data.analyticsConfig} stats={data.stats} />
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
