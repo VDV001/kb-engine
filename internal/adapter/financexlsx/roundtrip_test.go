@@ -16,8 +16,22 @@ import (
 //
 // The table below enumerates the forms a row can take rather than the bugs that
 // were found, so a form nobody has hit yet fails here before it reaches the
-// book. Fields the sheet has no column for — a category on Доходы — are not
-// part of the property and are left unset.
+// book.
+//
+// It does not enumerate every form the *columns* can hold, and that distinction
+// cost a round of review. A form only belongs here if the book is allowed to
+// store it; the ones it cannot are refused at a boundary and tested where the
+// refusal lives:
+//
+//	a field Доходы has no column for       → domain, ErrIncomeFieldNotApplicable
+//	an account the Счета sheet cannot name → financexlsx, ErrUnknownAccount
+//	a source spelled like a known account  → financexlsx, ErrSourceNamesAnAccount
+//
+// Which is the honest scope of this property: write→read holds for every row the
+// book accepts, and a row it cannot represent is rejected rather than stored
+// differently from itself. The earlier version of this comment declared such
+// fields "not part of the property and left unset" — that sentence was the hole,
+// because it described a value being dropped as if it were a decision.
 
 // rowForm is one shape a transaction can have on its way to a cell.
 type rowForm struct {
