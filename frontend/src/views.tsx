@@ -321,7 +321,9 @@ export function ArchivesView({ entries }: { entries: Entry[] }) {
               <span className="text-sm text-on-surface">{e.title}</span>
             </div>
             {e.url && (
-              <a href={e.url} className="text-xs text-secondary hover:underline">
+              // break-all, потому что URL — одно «слово» на сотню символов:
+              // без принудительного разлома он и растягивал страницу на 390px.
+              <a href={e.url} className="text-xs break-all text-secondary hover:underline">
                 {e.url}
               </a>
             )}
