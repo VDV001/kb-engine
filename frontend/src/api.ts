@@ -20,6 +20,7 @@ export interface Entry {
   read_state?: string
   publish_stage?: string
   tags?: string[]
+  date_added?: string
   description?: string
   author?: string
   source?: string
@@ -79,17 +80,91 @@ export interface Contradiction {
 }
 
 export interface ManifestoQuote {
+  supports?: Support[] | null
+  type?: string
   quote: string
   source: string
   date: string
   weight: string
 }
 
+export interface Support {
+  text?: string
+  catalog_id?: number
+  title?: string
+  insight?: string
+}
+
+export interface ChainLink {
+  cluster: string
+  evidence: string
+}
+
 export interface AnalyticsConfig {
+  pull_quote?: string
+  pull_quote_meta?: string
+  inference_chain?: ChainLink[] | null
   patterns: Pattern[] | null
   gaps: Gap[] | null
   contradictions: Contradiction[] | null
   manifesto_quotes: ManifestoQuote[] | null
+}
+
+export interface GraphNode {
+  category: string
+  count: number
+}
+
+export interface GraphEdge {
+  from: string
+  to: string
+  weight: number
+}
+
+export interface Graph {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+}
+
+export interface ChangelogRelease {
+  version: string
+  date: string | null
+  tagline: string
+  sections: Record<string, string[]>
+}
+
+export interface DocCard {
+  title: string
+  body?: string
+  meta?: string
+  badge?: string
+  url?: string
+  tags?: string[]
+}
+
+export interface DocSection {
+  title: string
+  note?: string
+  cards?: DocCard[]
+}
+
+/** The generic shape of an owner-supplied view (team.json / projects.json). */
+export interface Document {
+  label?: string
+  title?: string
+  subtitle?: string
+  sections?: DocSection[]
+}
+
+export interface Now {
+  markdown: string
+}
+
+export interface Changelog {
+  current_version: string
+  current_date: string | null
+  current_tagline: string
+  releases: ChangelogRelease[] | null
 }
 
 // Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as
@@ -135,5 +210,10 @@ export const api = {
   duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
+  graph: () => getJSON<Graph>('/api/graph'),
+  changelog: () => getJSON<Changelog>('/api/changelog'),
+  now: () => getJSON<Now | null>('/api/now'),
+  team: () => getJSON<Document | null>('/api/team'),
+  projects: () => getJSON<Document | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
 }

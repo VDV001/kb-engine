@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Finding, Stats, Transaction } from './api'
-import { Badge, BarList, Card, Ring, Section, Stat } from './components/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from './api'
+import type { Audits, Changelog, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
 import {
   daysOfMonth,
   formatRub,
@@ -70,85 +71,6 @@ export function OverviewView({ stats }: { stats: Stats }) {
   )
 }
 
-export function EntriesView({ entries }: { entries: Entry[] }) {
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-
-  const categories = useMemo(
-    () => Array.from(new Set(entries.map((e) => e.category))).sort(),
-    [entries],
-  )
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return entries.filter(
-      (e) =>
-        (category === '' || e.category === category) &&
-        (q === '' || e.title.toLowerCase().includes(q)),
-    )
-  }, [entries, search, category])
-
-  return (
-    <Section title="Записи" subtitle={`${filtered.length} из ${entries.length}`}>
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по названию…"
-          className="flex-1 rounded-lg border border-outline-variant px-3 py-1.5 text-sm"
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded-lg border border-outline-variant px-3 py-1.5 text-sm"
-        >
-          <option value="">Все категории</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-outline-variant text-on-surface-variant">
-            <tr>
-              <th className="p-2">id</th>
-              <th className="p-2">Название</th>
-              <th className="p-2">Категория</th>
-              <th className="p-2">Цикл</th>
-              <th className="p-2">Вердикт</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice(0, 300).map((e) => (
-              <tr key={e.id} className="border-b border-outline-variant/50">
-                <td className="p-2 tabular-nums text-on-surface-variant">{e.id}</td>
-                <td className="p-2">
-                  {e.url ? (
-                    <a href={e.url} target="_blank" rel="noreferrer" className="text-secondary hover:underline">
-                      {e.title}
-                    </a>
-                  ) : (
-                    e.title
-                  )}
-                </td>
-                <td className="p-2 text-on-surface-variant">{e.category}</td>
-                <td className="p-2"><Badge value={e.lifecycle} /></td>
-                <td className="p-2">{e.verdict ? <Badge value={e.verdict} /> : <span className="text-on-surface-variant">—</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      {filtered.length > 300 && (
-        <p className="text-xs text-on-surface-variant">Показаны первые 300 — уточните фильтр.</p>
-      )}
-    </Section>
-  )
-}
-
 function FindingsList({ title, findings }: { title: string; findings: Finding[] | null }) {
   const items = findings ?? []
   return (
@@ -186,175 +108,102 @@ export function AuditsView({ audits }: { audits: Audits }) {
   )
 }
 
-export function AnalyticsView({
-  analytics,
-  config,
-}: {
-  analytics: Analytics
-  config: AnalyticsConfig
-}) {
-  const maxWeek = Math.max(1, ...analytics.growth.map((w) => w.count))
-  const totalRecent = analytics.growth.reduce((sum, w) => sum + w.count, 0)
-  const categoryData = Object.fromEntries(analytics.categories.map((c) => [c.category, c.count]))
-  const patterns = config.patterns ?? []
-  const contradictions = config.contradictions ?? []
-  const gaps = config.gaps ?? []
-  const quotes = config.manifesto_quotes ?? []
+export function SettingsView({ stats }: { stats: Stats }) {
+  const [log, setLog] = useState<Changelog | null>(null)
+  useEffect(() => {
+    api.changelog().then(setLog).catch(() => setLog(null))
+  }, [])
+
+  const boxes = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
+  const empty = boxes.filter(([, n]) => n === 0).length
+  const latest = (log?.releases ?? []).slice(0, 3)
 
   return (
     <div className="space-y-6">
-      <Section title="Аналитика" subtitle="Динамика и распределение базы знаний">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Категорий" value={analytics.categories.length} />
-          <Stat label="Записей за окно" value={totalRecent} />
-          <Stat label="Недель в окне" value={analytics.growth.length} tone="muted" />
-          <Stat label="Пик/неделю" value={maxWeek} tone="spotlight" />
-        </div>
-      </Section>
+      <header>
+        <Label className="text-secondary">Визуализация и кастомизация</Label>
+        <h1 className="mt-1 text-4xl">Настройки базы.</h1>
+        <p className="mt-2 text-sm text-on-surface-variant">
+          Каталог знаний как физический артефакт. Каждый ящик — категория.
+        </p>
+      </header>
 
-      <Card>
-        <h3 className="mb-3 text-sm font-semibold text-on-surface">
-          Рост по неделям (по дате создания)
-        </h3>
-        <div className="flex items-end gap-1" style={{ height: 140 }}>
-          {analytics.growth.map((w) => (
-            <div key={w.week} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="text-[10px] tabular-nums text-on-surface-variant">{w.count}</span>
-              <div
-                className="w-full rounded-t bg-donut-primary"
-                style={{ height: `${(w.count / maxWeek) * 100}%`, minHeight: w.count > 0 ? 2 : 0 }}
-                title={`${w.week}: ${w.count}`}
-              />
-              <span className="text-[10px] text-on-surface-variant">{w.week}</span>
+      <div className="flex flex-col gap-8 xl:flex-row">
+        {/* Ящики: структура — прямые углы, стопка с волосяными разделителями. */}
+        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low">
+          {boxes.map(([cat, n]) => (
+            <div key={cat} className="flex items-center justify-between gap-3 px-5 py-4">
+              <span className="truncate text-sm" title={cat}>
+                {cat}
+              </span>
+              <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 font-mono text-xs font-bold text-white tabular-nums">
+                {n}
+              </span>
             </div>
           ))}
         </div>
-      </Card>
 
-      <Card>
-        <h3 className="mb-3 text-sm font-semibold text-on-surface">Размеры категорий</h3>
-        <BarList data={categoryData} />
-      </Card>
-
-      {quotes.length > 0 && (
-        <Section title="Манифест" subtitle={`${quotes.length} тезисов`}>
-          <div className="space-y-2">
-            {quotes.map((q, i) => (
-              <Card key={i}>
-                <p className="text-sm italic text-on-surface">«{q.quote}»</p>
-                <p className="mt-1 text-xs text-on-surface-variant">
-                  {q.source} · {q.date} {q.weight && <Badge value={q.weight} />}
-                </p>
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {patterns.length > 0 && (
-        <Section title="Паттерны" subtitle={`${patterns.length} сквозных тем`}>
-          <div className="space-y-2">
-            {patterns.map((p, i) => (
-              <Card key={i}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-on-surface">{p.name}</span>
-                  {(p.clusters ?? []).map((c) => (
-                    <Badge key={c} value={c} />
-                  ))}
+        <aside className="shrink-0 space-y-4 xl:w-96">
+          <Card className="border-l-2 border-l-secondary">
+            <h2 className="text-xl">Информация о базе</h2>
+            <dl className="mt-3 divide-y divide-outline-variant text-sm">
+              {(
+                [
+                  ['Записей', String(stats.total)],
+                  ['Категорий', String(boxes.length)],
+                  ['Версия каталога', log?.current_version ? `v${log.current_version} · ${log.current_date ?? '—'}` : '—'],
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between py-2">
+                  <dt className="label">{k}</dt>
+                  <dd className="font-mono text-xs tabular-nums text-secondary">{v}</dd>
                 </div>
-                {p.desc && <p className="mt-1 text-xs text-on-surface-variant">{p.desc}</p>}
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {contradictions.length > 0 && (
-        <Section title="Противоречия" subtitle={`${contradictions.length}`}>
-          <div className="space-y-2">
-            {contradictions.map((c, i) => (
-              <Card key={i}>
-                <p className="text-sm font-semibold text-on-surface">{c.title}</p>
-                <p className="mt-1 text-xs text-on-surface-variant">A: {c.a}</p>
-                <p className="text-xs text-on-surface-variant">B: {c.b}</p>
-                {c.resolution && (
-                  <p className="mt-1 text-xs text-secondary">→ {c.resolution}</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {gaps.length > 0 && (
-        <Section title="Пробелы" subtitle={`${gaps.length} тем`}>
-          <div className="space-y-2">
-            {gaps.map((g, i) => (
-              <Card key={i}>
-                <div className="flex items-center gap-2">
-                  <Badge value={g.priority} />
-                  <span className="text-sm text-on-surface">{g.topic}</span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-    </div>
-  )
-}
-
-const archivedLifecycles = ['outdated', 'superseded', 'dead-end']
-
-export function ArchivesView({ entries }: { entries: Entry[] }) {
-  const archived = useMemo(
-    () => entries.filter((e) => archivedLifecycles.includes(e.lifecycle)),
-    [entries],
-  )
-  return (
-    <Section title="Архив" subtitle={`${archived.length} записей (outdated / superseded / dead-end)`}>
-      <div className="space-y-2">
-        {archived.map((e) => (
-          <Card key={e.id}>
-            <div className="flex items-center gap-2">
-              <Badge value={e.lifecycle} />
-              <span className="text-sm text-on-surface">{e.title}</span>
-            </div>
-            {e.url && (
-              // break-all, потому что URL — одно «слово» на сотню символов:
-              // без принудительного разлома он и растягивал страницу на 390px.
-              <a href={e.url} className="text-xs break-all text-secondary hover:underline">
-                {e.url}
-              </a>
+              ))}
+            </dl>
+            {log?.current_tagline && (
+              <p className="mt-2 text-xs italic text-on-surface-variant">{log.current_tagline}</p>
             )}
           </Card>
-        ))}
-        {archived.length === 0 && <p className="text-sm text-on-surface-variant">Архив пуст.</p>}
-      </div>
-    </Section>
-  )
-}
 
-export function SettingsView({ stats }: { stats: Stats }) {
-  return (
-    <Section title="Сводка" subtitle="Состав базы знаний">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Всего записей" value={stats.total} />
-        <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
-        <Stat label="Типов записей" value={Object.keys(stats.by_kind).length} />
-        <Stat label="Статусов жизни" value={Object.keys(stats.by_lifecycle).length} />
+          <div className="grid grid-cols-2 gap-4">
+            <Stat label="Активные ящики" value={boxes.length - empty} />
+            <Stat label="Пустые ящики" value={empty} tone="muted" />
+          </div>
+
+          {latest.length > 0 && (
+            <Card>
+              <Label>Что нового</Label>
+              <div className="mt-3 space-y-4">
+                {latest.map((r, i) => (
+                  <div key={r.version} className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-headline text-base font-bold">v{r.version}</span>
+                      {i === 0 && (
+                        <span className="rounded bg-secondary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase text-white">
+                          latest
+                        </span>
+                      )}
+                      <span className="ml-auto label">{r.date ?? ''}</span>
+                    </div>
+                    {r.tagline && <p className="text-xs italic text-on-surface-variant">{r.tagline}</p>}
+                    {Object.entries(r.sections).map(([name, items]) => (
+                      <div key={name}>
+                        <span className="label text-secondary">{name}</span>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-on-surface-variant">
+                          {items.slice(0, 3).map((it, j) => (
+                            <li key={j}>{it.length > 160 ? `${it.slice(0, 160)}…` : it}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </aside>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-on-surface">По жизненному циклу</h3>
-          <BarList data={stats.by_lifecycle} />
-        </Card>
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-on-surface">По типу</h3>
-          <BarList data={stats.by_kind} />
-        </Card>
-      </div>
-    </Section>
+    </div>
   )
 }
 

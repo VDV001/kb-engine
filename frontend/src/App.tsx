@@ -1,29 +1,31 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
+import { AnalyticsView } from './AnalyticsView'
+import { CatalogView } from './CatalogView'
+import { DocumentView, NowView } from './DocViews'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import {
-  AnalyticsView,
-  ArchivesView,
   AuditsView,
   DuplicatesView,
-  EntriesView,
   FinancesView,
   OverviewView,
   SettingsView,
 } from './views'
 
-type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'finances' | 'settings'
+type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Dashboard' },
-  { id: 'entries', label: 'Entries' },
+  { id: 'archives', label: 'Archives' },
   { id: 'analytics', label: 'Analytics' },
   { id: 'audits', label: 'Audits' },
   { id: 'duplicates', label: 'Duplicates' },
-  { id: 'archives', label: 'Archives' },
   { id: 'finances', label: 'Finances' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'team', label: 'Team' },
+  { id: 'now', label: 'Now' },
   { id: 'settings', label: 'Summary' },
 ]
 
@@ -72,14 +74,17 @@ export default function App() {
         {data && (
           <>
             {tab === 'overview' && <OverviewView stats={data.stats} />}
-            {tab === 'entries' && <EntriesView entries={data.entries} />}
+
             {tab === 'analytics' && (
-              <AnalyticsView analytics={data.analytics} config={data.analyticsConfig} />
+              <AnalyticsView config={data.analyticsConfig} stats={data.stats} />
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
-            {tab === 'archives' && <ArchivesView entries={data.entries} />}
+            {tab === 'archives' && <CatalogView entries={data.entries} />}
             {tab === 'finances' && <FinancesView finances={data.finances} />}
+            {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
+            {tab === 'team' && <DocumentView load={api.team} name="Team" />}
+            {tab === 'now' && <NowView />}
             {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}
