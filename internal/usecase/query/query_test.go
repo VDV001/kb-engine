@@ -96,21 +96,26 @@ func TestStats_loaderError(t *testing.T) {
 	}
 }
 
-// Здоровье базы — две доли и их среднее: сколько записей разобрано и у скольких
-// есть конспект. Считаем здесь, а не в браузере, по той же причине, по которой
-// там уже считаются финансы: иначе арифметика заведётся вторым экземпляром и
-// разойдётся с первым.
+// Здоровье базы — две доли, и у них РАЗНЫЕ знаменатели, потому что это разные
+// вопросы. «Разобрано» — доля от всего каталога: триаж применим к каждой
+// записи. «С конспектом» — доля от разобранных СТАТЕЙ, потому что конспект к
+// непрочитанной статье невозможен, а собственные материалы владельца несут
+// путь к файлу по определению: файл и есть сам материал, а не разбор чужого.
 //
-// Разобрана запись, у которой есть вердикт ИЛИ она прочитана. Именно вердикт, а
-// не буквальные «read» и «на подумать»: на живом каталоге строгое сравнение не
-// считает разобранными 275 KEEP и 66 SKIP и занижает долю с 88% до 61%, то есть
-// врёт про уже сделанную работу.
+// На живом каталоге это видно прямо: восемь записей-творений, и у всех восьми
+// поле file заполнено. Считать их «конспектами» значит льстить метрике на
+// ровном месте.
+//
+// Единого усреднённого числа здесь больше нет. Две доли несоизмеримы: 88% и
+// 3% в среднем дают «здоровье 45%», что говорит неправду о базе, в которой
+// разобрано почти всё. Полосу рисует главная ось — разобранность.
 func TestService_health(t *testing.T) {
 	entries := []domain.Entry{
 		health(t, 1, "keep", "read", "notes/a.md"),
 		health(t, 2, "skip", "read", ""),
 		health(t, 3, "", "read", ""),
-		health(t, 4, "", "unread", ""),
+		health(t, 4, "", "unread", "notes/b.md"), // конспект к непрочитанному — не бывает, но данные всякие
+		creation(t, 5, "draft", "standards/x.md"),
 	}
 	cat, err := domain.NewCatalog(entries)
 	if err != nil {
@@ -121,12 +126,20 @@ func TestService_health(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
-	if h.Total != 4 || h.Processed != 3 || h.WithNotes != 1 {
-		t.Errorf("health = %+v, want total 4, processed 3, withNotes 1", h)
+	if h.Total != 5 {
+		t.Errorf("Total = %d, want 5", h.Total)
 	}
-	// 75% разобрано и 25% с конспектом дают 50.
-	if h.Score != 50 {
-		t.Errorf("Score = %d, want 50", h.Score)
+	if h.Processed != 3 {
+		t.Errorf("Processed = %d, want 3 (три статьи с вердиктом или прочитанные)", h.Processed)
+	}
+	// Знаменатель второй доли: разобранные статьи, без творений.
+	if h.NotesBase != 3 {
+		t.Errorf("NotesBase = %d, want 3", h.NotesBase)
+	}
+	// Числитель: конспект у разобранной статьи. Ни творение с его собственным
+	// файлом, ни непрочитанное сюда не попадают.
+	if h.WithNotes != 1 {
+		t.Errorf("WithNotes = %d, want 1", h.WithNotes)
 	}
 }
 
@@ -139,10 +152,35 @@ func TestService_health_emptyCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Health: %v", err)
 	}
-	// Пустая база — нули, а не деление на ноль.
-	if h.Total != 0 || h.Score != 0 {
+	if h.Total != 0 || h.Processed != 0 || h.NotesBase != 0 || h.WithNotes != 0 {
 		t.Errorf("health = %+v, want zeroes", h)
 	}
+}
+
+// creation — собственный материал владельца: у него стадия публикации вместо
+// триажа, и путь к файлу есть всегда.
+func creation(t *testing.T, id int, stage, notesFile string) domain.Entry {
+	t.Helper()
+	cat, err := domain.NewCategory("golang")
+	if err != nil {
+		t.Fatalf("category: %v", err)
+	}
+	lc, err := domain.NewLifecycle("active")
+	if err != nil {
+		t.Fatalf("lifecycle: %v", err)
+	}
+	ps, err := domain.NewPublishStage(stage)
+	if err != nil {
+		t.Fatalf("publish stage: %v", err)
+	}
+	e, err := domain.NewEntry(domain.EntryParams{
+		ID: id, Kind: domain.KindCreation, Title: "t", Category: cat, Lifecycle: lc,
+		PublishStage: &ps, NotesFile: notesFile,
+	})
+	if err != nil {
+		t.Fatalf("entry: %v", err)
+	}
+	return e
 }
 
 // health строит запись с нужными для этой карточки полями: вердикт может
