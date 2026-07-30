@@ -9,10 +9,12 @@ import { Icon } from './Icon'
  */
 export function PrivacyToggle({ masked, onChange }: { masked: boolean; onChange: (v: boolean) => void }) {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex h-9 items-center gap-2">
+      {/* text-xl и высота 9, как у остальных иконок ряда: раньше здесь стоял
+          text-sm, и глаз был заметно мельче бургера рядом. */}
       <Icon
         name={masked ? 'visibility_off' : 'visibility'}
-        className="text-sm text-on-surface-variant"
+        className="text-xl text-on-surface-variant"
       />
       <label className="toggle-switch">
         <input

@@ -101,7 +101,9 @@ export function Header<T extends string>({
           <ThemeToggle />
           {count !== undefined && (
             <span
-              className="rounded-md bg-secondary px-2 py-1 font-mono text-xs tabular-nums text-white"
+              // Высота как у иконок ряда — 9. Раньше бейдж набирал её из
+              // собственных паддингов и вставал чуть выше остальных.
+              className="flex h-9 items-center rounded-md bg-secondary px-2.5 font-mono text-xs tabular-nums text-white"
               title="Записей в каталоге"
             >
               {count}
