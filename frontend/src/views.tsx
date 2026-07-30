@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Finding, Stats, Transaction } from './api'
+import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
 import { Badge, BarList, Card, Ring, Section, Stat } from './components/ui'
 import {
   daysOfMonth,
@@ -67,85 +67,6 @@ export function OverviewView({ stats }: { stats: Stats }) {
         </div>
       </div>
     </div>
-  )
-}
-
-export function EntriesView({ entries }: { entries: Entry[] }) {
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-
-  const categories = useMemo(
-    () => Array.from(new Set(entries.map((e) => e.category))).sort(),
-    [entries],
-  )
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return entries.filter(
-      (e) =>
-        (category === '' || e.category === category) &&
-        (q === '' || e.title.toLowerCase().includes(q)),
-    )
-  }, [entries, search, category])
-
-  return (
-    <Section title="Записи" subtitle={`${filtered.length} из ${entries.length}`}>
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по названию…"
-          className="flex-1 rounded-lg border border-outline-variant px-3 py-1.5 text-sm"
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded-lg border border-outline-variant px-3 py-1.5 text-sm"
-        >
-          <option value="">Все категории</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-outline-variant text-on-surface-variant">
-            <tr>
-              <th className="p-2">id</th>
-              <th className="p-2">Название</th>
-              <th className="p-2">Категория</th>
-              <th className="p-2">Цикл</th>
-              <th className="p-2">Вердикт</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice(0, 300).map((e) => (
-              <tr key={e.id} className="border-b border-outline-variant/50">
-                <td className="p-2 tabular-nums text-on-surface-variant">{e.id}</td>
-                <td className="p-2">
-                  {e.url ? (
-                    <a href={e.url} target="_blank" rel="noreferrer" className="text-secondary hover:underline">
-                      {e.title}
-                    </a>
-                  ) : (
-                    e.title
-                  )}
-                </td>
-                <td className="p-2 text-on-surface-variant">{e.category}</td>
-                <td className="p-2"><Badge value={e.lifecycle} /></td>
-                <td className="p-2">{e.verdict ? <Badge value={e.verdict} /> : <span className="text-on-surface-variant">—</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      {filtered.length > 300 && (
-        <p className="text-xs text-on-surface-variant">Показаны первые 300 — уточните фильтр.</p>
-      )}
-    </Section>
   )
 }
 
@@ -301,37 +222,6 @@ export function AnalyticsView({
         </Section>
       )}
     </div>
-  )
-}
-
-const archivedLifecycles = ['outdated', 'superseded', 'dead-end']
-
-export function ArchivesView({ entries }: { entries: Entry[] }) {
-  const archived = useMemo(
-    () => entries.filter((e) => archivedLifecycles.includes(e.lifecycle)),
-    [entries],
-  )
-  return (
-    <Section title="Архив" subtitle={`${archived.length} записей (outdated / superseded / dead-end)`}>
-      <div className="space-y-2">
-        {archived.map((e) => (
-          <Card key={e.id}>
-            <div className="flex items-center gap-2">
-              <Badge value={e.lifecycle} />
-              <span className="text-sm text-on-surface">{e.title}</span>
-            </div>
-            {e.url && (
-              // break-all, потому что URL — одно «слово» на сотню символов:
-              // без принудительного разлома он и растягивал страницу на 390px.
-              <a href={e.url} className="text-xs break-all text-secondary hover:underline">
-                {e.url}
-              </a>
-            )}
-          </Card>
-        ))}
-        {archived.length === 0 && <p className="text-sm text-on-surface-variant">Архив пуст.</p>}
-      </div>
-    </Section>
   )
 }
 
