@@ -4,6 +4,7 @@ import type { Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
+import { CollapsibleSection, SectionHead } from './components/SectionHead'
 import { ErrorBox, Spinner } from './components/ui'
 import { filterJournal, sortJournal } from './financeJournal'
 import { dayBars, monthBars } from './financeSeries'
@@ -15,17 +16,6 @@ import { formatRub, monthLabel, monthOf, toKopecks } from './money'
 // фильтрует сами строки, поэтому берёт их из /api/finances.
 
 const PAGE_SIZE = 20
-
-/** Заголовок секции: подпись вразрядку и волосяная линия на всю оставшуюся ширину. */
-function SectionHead({ title, right }: { title: string; right?: React.ReactNode }) {
-  return (
-    <div className="mb-6 flex items-center justify-between gap-8">
-      <h3 className="label shrink-0 tracking-[0.3em] opacity-40">{title}</h3>
-      <div className="h-px flex-1 bg-outline-variant opacity-20" />
-      {right && <span className="label shrink-0 text-[10px] opacity-40">{right}</span>}
-    </div>
-  )
-}
 
 const CATEGORY_ICONS: Record<string, IconName> = {
   Еда: 'restaurant',
@@ -92,11 +82,10 @@ function Bars({
   )
 }
 
-export function FinancesView({ finances }: { finances: Finances }) {
+export function FinancesView({ finances, masked }: { finances: Finances; masked: boolean }) {
   // Несколько месяцев сразу — как в исходном дашборде. Пустой набор значит
   // «за всё время».
   const [selected, setSelected] = useState<string[]>([])
-  const [masked, setMasked] = useState(true)
   const [showFilters, setShowFilters] = useState(false)
   const [filterCat, setFilterCat] = useState('all')
   const [dateFrom, setDateFrom] = useState('')
@@ -289,14 +278,6 @@ export function FinancesView({ finances }: { finances: Finances }) {
                 {monthLabel(m)}
               </button>
             ))}
-            <button
-              type="button"
-              onClick={() => setMasked((v) => !v)}
-              className="label ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] text-on-surface-variant hover:text-on-surface"
-            >
-              <Icon name="visibility_off" className="text-sm" />
-              {masked ? 'Показать суммы' : 'Скрыть суммы'}
-            </button>
           </div>
         </div>
 
@@ -416,8 +397,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
                 </div>
               </section>
 
-              <section>
-                <SectionHead title="Детализация подкатегорий" />
+              <CollapsibleSection title="Детализация подкатегорий" count={summary.bySubcategory.length}>
                 <div className="space-y-3">
                   {summary.bySubcategory.slice(0, 15).map((s) => {
                     const kop = toKopecks(s.total)
@@ -447,7 +427,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
                     <p className="label opacity-40">Нет данных</p>
                   )}
                 </div>
-              </section>
+              </CollapsibleSection>
             </div>
 
             <div className="space-y-10 lg:col-span-4">
@@ -477,8 +457,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
                 </div>
               </section>
 
-              <section>
-                <SectionHead title="Топ мест" />
+              <CollapsibleSection title="Топ мест" count={summary.byPlace.length}>
                 <div className="max-h-[420px] overflow-y-auto rounded-lg bg-surface-low">
                   {summary.byPlace.length === 0 && <p className="label p-6 opacity-40">Нет данных</p>}
                   {summary.byPlace.slice(0, 12).map((p, idx) => {
@@ -508,10 +487,9 @@ export function FinancesView({ finances }: { finances: Finances }) {
                     )
                   })}
                 </div>
-              </section>
+              </CollapsibleSection>
 
-              <section>
-                <SectionHead title="Подкатегории" />
+              <CollapsibleSection title="Подкатегории" count={subcatCloud.length} defaultOpen={false}>
                 <div className="flex flex-wrap gap-2">
                   {subcatCloud.length === 0 && <p className="label opacity-40">Нет данных</p>}
                   {subcatCloud.map(([name, kop]) => {
@@ -528,10 +506,9 @@ export function FinancesView({ finances }: { finances: Finances }) {
                     )
                   })}
                 </div>
-              </section>
+              </CollapsibleSection>
 
-              <section>
-                <SectionHead title="Источники оплаты" />
+              <CollapsibleSection title="Источники оплаты" count={summary.bySource.length}>
                 <div className="space-y-3 rounded-lg bg-surface-low p-6">
                   {summary.bySource.length === 0 && <p className="label opacity-40">Нет данных</p>}
                   {summary.bySource.map((s) => {
@@ -558,7 +535,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
                     )
                   })}
                 </div>
-              </section>
+              </CollapsibleSection>
             </div>
           </div>
         </>

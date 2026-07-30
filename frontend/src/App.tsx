@@ -7,6 +7,7 @@ import { DocumentView, NowView } from './DocViews'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import { FinancesView } from './FinancesView'
+import { PrivacyToggle } from './components/PrivacyToggle'
 import { AuditsView, DuplicatesView, OverviewView, SettingsView } from './views'
 
 type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
@@ -26,12 +27,26 @@ const tabs: { id: Tab; label: string }[] = [
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('overview')
+  // Маска сумм живёт здесь, потому что переключатель стоит в шапке, а
+  // применяется она к виду финансов.
+  const [masked, setMasked] = useState(true)
   const dashboard = useResource(api.dashboard)
   const data = dashboard.status === 'ready' ? dashboard.data : null
 
   return (
     <div className="min-h-screen bg-bg text-on-surface">
-      <Header tabs={tabs} current={tab} onSelect={setTab} count={data?.stats.total} />
+      <Header
+        tabs={tabs}
+        current={tab}
+        // Заход на финансы всегда прячет суммы заново: безопасное состояние —
+        // то, в котором оказываешься, а не то, которое надо не забыть включить.
+        onSelect={(t) => {
+          setTab(t)
+          if (t === 'finances') setMasked(true)
+        }}
+        count={data?.stats.total}
+        extra={tab === 'finances' ? <PrivacyToggle masked={masked} onChange={setMasked} /> : undefined}
+      />
 
       <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-8">
         {dashboard.status === 'failed' && <ErrorBox message={dashboard.error} />}
@@ -46,7 +61,7 @@ export default function App() {
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
             {tab === 'archives' && <CatalogView entries={data.entries} />}
-            {tab === 'finances' && <FinancesView finances={data.finances} />}
+            {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
             {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" />}
             {tab === 'now' && <NowView />}

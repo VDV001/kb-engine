@@ -18,11 +18,11 @@ const NAMES = [
   'code', 'construction', 'credit_card', 'dark_mode', 'dashboard', 'date_range', 'devices',
   'directions_car', 'download', 'filter_list', 'filter_list_off', 'fitness_center', 'flight',
   'health_and_safety', 'history', 'home', 'hub', 'keyboard_arrow_down', 'keyboard_arrow_up',
-  'lock', 'mail', 'menu_book', 'mobile', 'more_horiz', 'open_in_new', 'payments', 'person',
+  'close', 'lock', 'mail', 'menu', 'menu_book', 'mobile', 'more_horiz', 'open_in_new', 'payments', 'person',
   'point_of_sale', 'precision_manufacturing', 'psychology', 'receipt_long', 'redeem',
   'restaurant', 'school', 'search', 'search_off', 'send', 'settings', 'smart_toy', 'spa',
   'sports_esports', 'subscriptions', 'swap_horiz', 'trending_up', 'unfold_more', 'update',
-  'verified_user', 'visibility_off',
+  'verified_user', 'visibility', 'visibility_off',
 ]
 
 const SRC = 'node_modules/@material-symbols/svg-400/outlined'
