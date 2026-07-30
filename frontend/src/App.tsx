@@ -1,29 +1,32 @@
 import { useEffect, useState } from 'react'
 import { api } from './api'
 import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Stats } from './api'
+import { AnalyticsView } from './AnalyticsView'
+import { CatalogView } from './CatalogView'
+import { DocumentView, NowView } from './DocViews'
+import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import {
-  AnalyticsView,
-  ArchivesView,
   AuditsView,
   DuplicatesView,
-  EntriesView,
   FinancesView,
   OverviewView,
   SettingsView,
 } from './views'
 
-type Tab = 'overview' | 'entries' | 'analytics' | 'audits' | 'duplicates' | 'archives' | 'finances' | 'settings'
+type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
 const tabs: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Обзор' },
-  { id: 'entries', label: 'Записи' },
-  { id: 'analytics', label: 'Аналитика' },
-  { id: 'audits', label: 'Аудиты' },
-  { id: 'duplicates', label: 'Дубликаты' },
-  { id: 'archives', label: 'Архив' },
-  { id: 'finances', label: 'Финансы' },
-  { id: 'settings', label: 'Сводка' },
+  { id: 'overview', label: 'Dashboard' },
+  { id: 'archives', label: 'Archives' },
+  { id: 'analytics', label: 'Analytics' },
+  { id: 'audits', label: 'Audits' },
+  { id: 'duplicates', label: 'Duplicates' },
+  { id: 'finances', label: 'Finances' },
+  { id: 'projects', label: 'Projects' },
+  { id: 'team', label: 'Team' },
+  { id: 'now', label: 'Now' },
+  { id: 'settings', label: 'Summary' },
 ]
 
 interface Data {
@@ -62,42 +65,26 @@ export default function App() {
   }, [])
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-      <header className="border-b border-slate-200 bg-white px-6 py-4 dark:border-slate-700 dark:bg-slate-800">
-        <h1 className="text-xl font-bold">kb-engine</h1>
-        <p className="text-sm text-slate-500">Дашборд базы знаний</p>
-      </header>
+    <div className="min-h-screen bg-bg text-on-surface">
+      <Header tabs={tabs} current={tab} onSelect={setTab} count={data?.stats.total} />
 
-      <nav className="flex gap-1 border-b border-slate-200 bg-white px-6 dark:border-slate-700 dark:bg-slate-800">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm font-medium ${
-              tab === t.id
-                ? 'border-sky-500 text-sky-600'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </nav>
-
-      <main className="mx-auto max-w-6xl p-6">
+      <main className="mx-auto max-w-screen-2xl px-4 py-8 sm:px-6 lg:px-8">
         {error && <ErrorBox message={error} />}
         {!error && !data && <Spinner />}
         {data && (
           <>
             {tab === 'overview' && <OverviewView stats={data.stats} />}
-            {tab === 'entries' && <EntriesView entries={data.entries} />}
+
             {tab === 'analytics' && (
-              <AnalyticsView analytics={data.analytics} config={data.analyticsConfig} />
+              <AnalyticsView config={data.analyticsConfig} stats={data.stats} />
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
-            {tab === 'archives' && <ArchivesView entries={data.entries} />}
+            {tab === 'archives' && <CatalogView entries={data.entries} />}
             {tab === 'finances' && <FinancesView finances={data.finances} />}
+            {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
+            {tab === 'team' && <DocumentView load={api.team} name="Team" />}
+            {tab === 'now' && <NowView />}
             {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}

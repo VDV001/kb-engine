@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
@@ -29,10 +30,11 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 	cat, _ := domain.NewCategory("golang")
 	lc, _ := domain.NewLifecycle("active")
 	v, _ := domain.NewVerdict("keep")
+	added := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
 	e, _ := domain.NewEntry(domain.EntryParams{
 		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
 		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
-		Tags: []string{"go"},
+		Tags: []string{"go"}, DateAdded: &added,
 	})
 	return []domain.Entry{e}, nil
 }
@@ -55,6 +57,12 @@ func (fakeAnalytics) Growth(weeks int) ([]analytics.WeekCount, error) {
 }
 func (fakeAnalytics) Categories() ([]analytics.CategorySize, error) {
 	return []analytics.CategorySize{{Category: "golang", Count: 5}}, nil
+}
+func (fakeAnalytics) Graph() (analytics.Graph, error) {
+	return analytics.Graph{
+		Nodes: []analytics.GraphNode{{Category: "golang", Count: 5}},
+		Edges: []analytics.GraphEdge{{From: "golang", To: "meta", Weight: 2}},
+	}, nil
 }
 
 var testConfig = analyticsconfig.Config{
@@ -84,7 +92,11 @@ func (f fakeFinance) Finances() (httpapi.Finances, error) {
 }
 
 func newTestServer() http.Handler {
-	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
+	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) {
+			return changelog.Document{CurrentVersion: "0.9.0"}, nil
+		}, httpapi.Documents{}, nil)
 }
 
 // The dashboard needs the rows and the balances; it does the filtering by month
@@ -124,7 +136,8 @@ func TestServer_finances(t *testing.T) {
 // Finances are optional: a deployment with no ledger configured still serves the
 // rest of the dashboard, and the view says there is nothing rather than breaking.
 func TestServer_finances_notConfigured(t *testing.T) {
-	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil, testConfig, nil)
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil,
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
 	rec := get(t, srv, "/api/finances")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -143,7 +156,8 @@ func TestServer_finances_notConfigured(t *testing.T) {
 
 func TestServer_finances_error(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
-		fakeFinance{err: errors.New("ledger unreadable")}, testConfig, nil)
+		fakeFinance{err: errors.New("ledger unreadable")},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
 	if rec := get(t, srv, "/api/finances"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
@@ -208,6 +222,12 @@ func TestServer_entries(t *testing.T) {
 	if len(entries) != 1 || entries[0]["id"].(float64) != 1 || entries[0]["title"] != "Hello" {
 		t.Errorf("entries = %v", entries)
 	}
+	// The catalog view sorts and displays by the date an entry joined the
+	// catalog; without it every row reads "—" and sorting is by id pretending
+	// to be chronology.
+	if entries[0]["date_added"] != "2026-07-11" {
+		t.Errorf("date_added = %v, want 2026-07-11", entries[0]["date_added"])
+	}
 }
 
 func TestServer_audits(t *testing.T) {
@@ -271,9 +291,68 @@ func (fakeQueryErr) Stats() (query.Stats, error) {
 }
 
 func TestServer_readyz_unavailable(t *testing.T) {
-	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{}, testConfig, nil)
+	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
 	rec := get(t, srv, "/readyz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+// Settings' «Что нового» reads the changelog through the API rather than a
+// baked copy: the loader is called per request, so a released version shows up
+// on the next reload like every other data source here.
+func TestServer_changelog(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/changelog")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if doc["current_version"] != "0.9.0" {
+		t.Errorf("current_version = %v, want 0.9.0", doc["current_version"])
+	}
+}
+
+// Now, Team and Projects are personal content served from files the owner
+// points the engine at — the repo carries only the renderer. All three read
+// per request, so editing the file updates the view on the next reload, and
+// all three are optional: unconfigured is a valid deployment, not an error.
+func TestServer_documents(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
+		httpapi.Documents{
+			Now:      func() (string, error) { return "# Сейчас\n\n- работа", nil },
+			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
+			Projects: nil, // не настроен
+		}, nil)
+
+	rec := get(t, srv, "/api/now")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("now status = %d", rec.Code)
+	}
+	var now map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &now); err != nil {
+		t.Fatalf("decode now: %v", err)
+	}
+	if !strings.Contains(now["markdown"].(string), "# Сейчас") {
+		t.Errorf("now markdown = %q", now["markdown"])
+	}
+
+	rec = get(t, srv, "/api/team")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Team"`) {
+		t.Errorf("team = %d %q", rec.Code, rec.Body.String())
+	}
+	// JSON-файл владельца отдаётся как есть — движок не пересобирает чужой
+	// контент, поэтому Content-Type обязан остаться JSON.
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("team content-type = %q", ct)
+	}
+
+	rec = get(t, srv, "/api/projects")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "null" {
+		t.Errorf("unconfigured projects = %d %q, want 200 null", rec.Code, rec.Body.String())
 	}
 }

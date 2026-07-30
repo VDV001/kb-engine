@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react'
-import type { Analytics, AnalyticsConfig, Audits, DuplicateGroup, Entry, Finances, Finding, Stats, Transaction } from './api'
-import { Badge, BarList, Card, Section, Stat } from './components/ui'
+import { useEffect, useMemo, useState } from 'react'
+import { api } from './api'
+import type { Audits, Changelog, DuplicateGroup, Finances, Finding, Stats, Transaction } from './api'
+import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
 import {
   daysOfMonth,
   formatRub,
@@ -15,14 +16,38 @@ import {
 } from './money'
 
 export function OverviewView({ stats }: { stats: Stats }) {
+  // The spotlight card is the one the eye lands on, so it carries the most
+  // telling figure rather than whichever happened to be fourth. A zero in the
+  // loudest slot tells the reader nothing and wastes the emphasis.
+  const categories = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
+  const [topCategory, topCount] = categories[0] ?? ['—', 0]
+  const share = stats.total > 0 ? Math.round((topCount / stats.total) * 100) : 0
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className="space-y-8">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Всего записей" value={stats.total} />
         <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
-        <Stat label="Canonical" value={stats.by_lifecycle['canonical'] ?? 0} />
-        <Stat label="Outdated" value={stats.by_lifecycle['outdated'] ?? 0} />
+        <Stat label="Canonical" value={stats.by_lifecycle['canonical'] ?? 0} tone="muted" />
+        <Stat
+          label="Топ категория"
+          value={topCount}
+          tone="spotlight"
+          hint={`${topCategory} · ${share}% каталога`}
+        />
       </div>
+      <Section title="Распределение по категориям" subtitle="Доля восьми крупнейших от каталога">
+        <div className="grid grid-cols-2 divide-x divide-y divide-outline-variant border border-outline-variant sm:grid-cols-4 xl:grid-cols-8">
+          {categories.slice(0, 8).map(([name, n]) => (
+            <Ring
+              key={name}
+              label={name}
+              percent={stats.total > 0 ? Math.round((n / stats.total) * 100) : 0}
+            />
+          ))}
+        </div>
+      </Section>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <Section title="По категориям">
@@ -46,100 +71,21 @@ export function OverviewView({ stats }: { stats: Stats }) {
   )
 }
 
-export function EntriesView({ entries }: { entries: Entry[] }) {
-  const [search, setSearch] = useState('')
-  const [category, setCategory] = useState('')
-
-  const categories = useMemo(
-    () => Array.from(new Set(entries.map((e) => e.category))).sort(),
-    [entries],
-  )
-
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    return entries.filter(
-      (e) =>
-        (category === '' || e.category === category) &&
-        (q === '' || e.title.toLowerCase().includes(q)),
-    )
-  }, [entries, search, category])
-
-  return (
-    <Section title="Записи" subtitle={`${filtered.length} из ${entries.length}`}>
-      <div className="flex flex-wrap gap-2">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Поиск по названию…"
-          className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
-        />
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
-        >
-          <option value="">Все категории</option>
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-      </div>
-      <Card className="overflow-x-auto p-0">
-        <table className="w-full text-left text-sm">
-          <thead className="border-b border-slate-200 text-slate-500 dark:border-slate-700">
-            <tr>
-              <th className="p-2">id</th>
-              <th className="p-2">Название</th>
-              <th className="p-2">Категория</th>
-              <th className="p-2">Цикл</th>
-              <th className="p-2">Вердикт</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.slice(0, 300).map((e) => (
-              <tr key={e.id} className="border-b border-slate-100 dark:border-slate-700/50">
-                <td className="p-2 tabular-nums text-slate-400">{e.id}</td>
-                <td className="p-2">
-                  {e.url ? (
-                    <a href={e.url} target="_blank" rel="noreferrer" className="text-sky-600 hover:underline">
-                      {e.title}
-                    </a>
-                  ) : (
-                    e.title
-                  )}
-                </td>
-                <td className="p-2 text-slate-500">{e.category}</td>
-                <td className="p-2"><Badge value={e.lifecycle} /></td>
-                <td className="p-2">{e.verdict ? <Badge value={e.verdict} /> : <span className="text-slate-300">—</span>}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Card>
-      {filtered.length > 300 && (
-        <p className="text-xs text-slate-400">Показаны первые 300 — уточните фильтр.</p>
-      )}
-    </Section>
-  )
-}
-
 function FindingsList({ title, findings }: { title: string; findings: Finding[] | null }) {
   const items = findings ?? []
   return (
     <Card>
       <Section title={`${title} (${items.length})`}>
         {items.length === 0 ? (
-          <p className="text-sm text-slate-400">Нет кандидатов.</p>
+          <p className="text-sm text-on-surface-variant">Нет кандидатов.</p>
         ) : (
           <ul className="space-y-1.5">
             {items.map((f) => (
               <li key={f.EntryID} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="tabular-nums text-slate-400">#{f.EntryID}</span>
+                <span className="tabular-nums text-on-surface-variant">#{f.EntryID}</span>
                 <span className="flex-1 truncate" title={f.Title}>{f.Title}</span>
                 {f.Reasons.map((r) => (
-                  <span key={r} className="rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500 dark:bg-slate-700">
+                  <span key={r} className="rounded bg-surface-high px-1.5 py-0.5 text-xs text-on-surface-variant">
                     {r}
                   </span>
                 ))}
@@ -162,173 +108,102 @@ export function AuditsView({ audits }: { audits: Audits }) {
   )
 }
 
-export function AnalyticsView({
-  analytics,
-  config,
-}: {
-  analytics: Analytics
-  config: AnalyticsConfig
-}) {
-  const maxWeek = Math.max(1, ...analytics.growth.map((w) => w.count))
-  const totalRecent = analytics.growth.reduce((sum, w) => sum + w.count, 0)
-  const categoryData = Object.fromEntries(analytics.categories.map((c) => [c.category, c.count]))
-  const patterns = config.patterns ?? []
-  const contradictions = config.contradictions ?? []
-  const gaps = config.gaps ?? []
-  const quotes = config.manifesto_quotes ?? []
+export function SettingsView({ stats }: { stats: Stats }) {
+  const [log, setLog] = useState<Changelog | null>(null)
+  useEffect(() => {
+    api.changelog().then(setLog).catch(() => setLog(null))
+  }, [])
+
+  const boxes = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
+  const empty = boxes.filter(([, n]) => n === 0).length
+  const latest = (log?.releases ?? []).slice(0, 3)
 
   return (
     <div className="space-y-6">
-      <Section title="Аналитика" subtitle="Динамика и распределение базы знаний">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Stat label="Категорий" value={analytics.categories.length} />
-          <Stat label="Записей за окно" value={totalRecent} />
-          <Stat label="Недель в окне" value={analytics.growth.length} />
-          <Stat label="Пик/неделю" value={maxWeek} />
-        </div>
-      </Section>
+      <header>
+        <Label className="text-secondary">Визуализация и кастомизация</Label>
+        <h1 className="mt-1 text-4xl">Настройки базы.</h1>
+        <p className="mt-2 text-sm text-on-surface-variant">
+          Каталог знаний как физический артефакт. Каждый ящик — категория.
+        </p>
+      </header>
 
-      <Card>
-        <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">
-          Рост по неделям (по дате создания)
-        </h3>
-        <div className="flex items-end gap-1" style={{ height: 140 }}>
-          {analytics.growth.map((w) => (
-            <div key={w.week} className="flex flex-1 flex-col items-center justify-end gap-1">
-              <span className="text-[10px] tabular-nums text-slate-400">{w.count}</span>
-              <div
-                className="w-full rounded-t bg-sky-500"
-                style={{ height: `${(w.count / maxWeek) * 100}%`, minHeight: w.count > 0 ? 2 : 0 }}
-                title={`${w.week}: ${w.count}`}
-              />
-              <span className="text-[10px] text-slate-400">{w.week}</span>
+      <div className="flex flex-col gap-8 xl:flex-row">
+        {/* Ящики: структура — прямые углы, стопка с волосяными разделителями. */}
+        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low">
+          {boxes.map(([cat, n]) => (
+            <div key={cat} className="flex items-center justify-between gap-3 px-5 py-4">
+              <span className="truncate text-sm" title={cat}>
+                {cat}
+              </span>
+              <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 font-mono text-xs font-bold text-white tabular-nums">
+                {n}
+              </span>
             </div>
           ))}
         </div>
-      </Card>
 
-      <Card>
-        <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-200">Размеры категорий</h3>
-        <BarList data={categoryData} />
-      </Card>
-
-      {quotes.length > 0 && (
-        <Section title="Манифест" subtitle={`${quotes.length} тезисов`}>
-          <div className="space-y-2">
-            {quotes.map((q, i) => (
-              <Card key={i}>
-                <p className="text-sm italic text-slate-700 dark:text-slate-200">«{q.quote}»</p>
-                <p className="mt-1 text-xs text-slate-400">
-                  {q.source} · {q.date} {q.weight && <Badge value={q.weight} />}
-                </p>
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {patterns.length > 0 && (
-        <Section title="Паттерны" subtitle={`${patterns.length} сквозных тем`}>
-          <div className="space-y-2">
-            {patterns.map((p, i) => (
-              <Card key={i}>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{p.name}</span>
-                  {(p.clusters ?? []).map((c) => (
-                    <Badge key={c} value={c} />
-                  ))}
+        <aside className="shrink-0 space-y-4 xl:w-96">
+          <Card className="border-l-2 border-l-secondary">
+            <h2 className="text-xl">Информация о базе</h2>
+            <dl className="mt-3 divide-y divide-outline-variant text-sm">
+              {(
+                [
+                  ['Записей', String(stats.total)],
+                  ['Категорий', String(boxes.length)],
+                  ['Версия каталога', log?.current_version ? `v${log.current_version} · ${log.current_date ?? '—'}` : '—'],
+                ] as const
+              ).map(([k, v]) => (
+                <div key={k} className="flex items-center justify-between py-2">
+                  <dt className="label">{k}</dt>
+                  <dd className="font-mono text-xs tabular-nums text-secondary">{v}</dd>
                 </div>
-                {p.desc && <p className="mt-1 text-xs text-slate-500">{p.desc}</p>}
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {contradictions.length > 0 && (
-        <Section title="Противоречия" subtitle={`${contradictions.length}`}>
-          <div className="space-y-2">
-            {contradictions.map((c, i) => (
-              <Card key={i}>
-                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{c.title}</p>
-                <p className="mt-1 text-xs text-slate-500">A: {c.a}</p>
-                <p className="text-xs text-slate-500">B: {c.b}</p>
-                {c.resolution && (
-                  <p className="mt-1 text-xs text-sky-600 dark:text-sky-400">→ {c.resolution}</p>
-                )}
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-
-      {gaps.length > 0 && (
-        <Section title="Пробелы" subtitle={`${gaps.length} тем`}>
-          <div className="space-y-2">
-            {gaps.map((g, i) => (
-              <Card key={i}>
-                <div className="flex items-center gap-2">
-                  <Badge value={g.priority} />
-                  <span className="text-sm text-slate-700 dark:text-slate-200">{g.topic}</span>
-                </div>
-              </Card>
-            ))}
-          </div>
-        </Section>
-      )}
-    </div>
-  )
-}
-
-const archivedLifecycles = ['outdated', 'superseded', 'dead-end']
-
-export function ArchivesView({ entries }: { entries: Entry[] }) {
-  const archived = useMemo(
-    () => entries.filter((e) => archivedLifecycles.includes(e.lifecycle)),
-    [entries],
-  )
-  return (
-    <Section title="Архив" subtitle={`${archived.length} записей (outdated / superseded / dead-end)`}>
-      <div className="space-y-2">
-        {archived.map((e) => (
-          <Card key={e.id}>
-            <div className="flex items-center gap-2">
-              <Badge value={e.lifecycle} />
-              <span className="text-sm text-slate-700 dark:text-slate-200">{e.title}</span>
-            </div>
-            {e.url && (
-              <a href={e.url} className="text-xs text-sky-600 hover:underline dark:text-sky-400">
-                {e.url}
-              </a>
+              ))}
+            </dl>
+            {log?.current_tagline && (
+              <p className="mt-2 text-xs italic text-on-surface-variant">{log.current_tagline}</p>
             )}
           </Card>
-        ))}
-        {archived.length === 0 && <p className="text-sm text-slate-400">Архив пуст.</p>}
-      </div>
-    </Section>
-  )
-}
 
-export function SettingsView({ stats }: { stats: Stats }) {
-  return (
-    <Section title="Сводка" subtitle="Состав базы знаний">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Всего записей" value={stats.total} />
-        <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
-        <Stat label="Типов записей" value={Object.keys(stats.by_kind).length} />
-        <Stat label="Статусов жизни" value={Object.keys(stats.by_lifecycle).length} />
+          <div className="grid grid-cols-2 gap-4">
+            <Stat label="Активные ящики" value={boxes.length - empty} />
+            <Stat label="Пустые ящики" value={empty} tone="muted" />
+          </div>
+
+          {latest.length > 0 && (
+            <Card>
+              <Label>Что нового</Label>
+              <div className="mt-3 space-y-4">
+                {latest.map((r, i) => (
+                  <div key={r.version} className="space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-headline text-base font-bold">v{r.version}</span>
+                      {i === 0 && (
+                        <span className="rounded bg-secondary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase text-white">
+                          latest
+                        </span>
+                      )}
+                      <span className="ml-auto label">{r.date ?? ''}</span>
+                    </div>
+                    {r.tagline && <p className="text-xs italic text-on-surface-variant">{r.tagline}</p>}
+                    {Object.entries(r.sections).map(([name, items]) => (
+                      <div key={name}>
+                        <span className="label text-secondary">{name}</span>
+                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-on-surface-variant">
+                          {items.slice(0, 3).map((it, j) => (
+                            <li key={j}>{it.length > 160 ? `${it.slice(0, 160)}…` : it}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
+        </aside>
       </div>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">По жизненному циклу</h3>
-          <BarList data={stats.by_lifecycle} />
-        </Card>
-        <Card>
-          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">По типу</h3>
-          <BarList data={stats.by_kind} />
-        </Card>
-      </div>
-    </Section>
+    </div>
   )
 }
 
@@ -340,9 +215,9 @@ export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
           <Card key={i}>
             <div className="flex items-center gap-2 text-sm">
               <Badge value={g.Kind} />
-              <span className="tabular-nums text-slate-500">ids: {g.EntryIDs.join(', ')}</span>
+              <span className="tabular-nums text-on-surface-variant">ids: {g.EntryIDs.join(', ')}</span>
             </div>
-            <div className="mt-1 truncate text-xs text-slate-400" title={g.Key}>{g.Key}</div>
+            <div className="mt-1 truncate text-xs text-on-surface-variant" title={g.Key}>{g.Key}</div>
           </Card>
         ))}
       </div>
@@ -367,7 +242,7 @@ function Trend({ points, masked }: { points: { label: string; kopecks: number }[
           // No amount in the tooltip while masked: filter: blur does not reach a
           // native tooltip, so hovering would read out what the mask hides.
           title={masked ? p.label : `${p.label}: ${formatRub(p.kopecks)}`}
-          className="min-w-1 flex-1 rounded-t bg-sky-500"
+          className="min-w-1 flex-1 rounded-t bg-donut-primary"
           style={{ height: Math.max(Math.round((p.kopecks / max) * 64), 2) }}
         />
       ))}
@@ -421,10 +296,10 @@ export function FinancesView({ finances }: { finances: Finances }) {
     return (
       <Section title="Финансы" subtitle="Леджер не подключён">
         <Card>
-          <p className="text-sm text-slate-500">
-            Запусти <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">kbengine serve</code> с
-            флагами <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">--ledger</code> и{' '}
-            <code className="rounded bg-slate-100 px-1 dark:bg-slate-700">--from</code>, чтобы увидеть финансы.
+          <p className="text-sm text-on-surface-variant">
+            Запусти <code className="rounded bg-surface-high px-1">kbengine serve</code> с
+            флагами <code className="rounded bg-surface-high px-1">--ledger</code> и{' '}
+            <code className="rounded bg-surface-high px-1">--from</code>, чтобы увидеть финансы.
           </p>
         </Card>
       </Section>
@@ -441,7 +316,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
         <select
           value={month}
           onChange={(e) => setMonth(e.target.value)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
+          className="rounded-lg border border-outline-variant px-3 py-1.5 text-sm"
         >
           <option value="">За всё время</option>
           {months.map((m) => (
@@ -452,7 +327,7 @@ export function FinancesView({ finances }: { finances: Finances }) {
         </select>
         <button
           onClick={() => setMasked((v) => !v)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+          className="rounded-lg border border-outline-variant px-3 py-1.5 text-sm text-on-surface-variant hover:bg-surface-high dark:hover:bg-surface-high"
         >
           {masked ? 'Показать суммы' : 'Скрыть суммы'}
         </button>
@@ -467,21 +342,21 @@ export function FinancesView({ finances }: { finances: Finances }) {
 
       <Card>
         <div className="mb-2 flex items-baseline justify-between">
-          <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+          <h3 className="text-sm font-semibold text-on-surface">
             {month === '' ? 'Расходы по месяцам' : 'Расходы по дням'}
           </h3>
-          <span className="text-xs text-slate-400">{plural(trend.length, 'точка', 'точки', 'точек')}</span>
+          <span className="text-xs text-on-surface-variant">{plural(trend.length, 'точка', 'точки', 'точек')}</span>
         </div>
         <Trend points={trend} masked={masked} />
       </Card>
 
       {top && (
         <Card>
-          <div className="text-sm text-slate-500">Топ категория</div>
+          <div className="text-sm text-on-surface-variant">Топ категория</div>
           <div className="mt-1 flex items-baseline gap-2">
-            <span className="text-2xl font-bold text-slate-800 dark:text-slate-100">{top[0]}</span>
-            <span className="privacy-mask tabular-nums text-slate-600 dark:text-slate-300">{formatRub(top[1])}</span>
-            <span className="text-sm text-slate-400">
+            <span className="text-2xl font-bold text-on-surface">{top[0]}</span>
+            <span className="privacy-mask tabular-nums text-on-surface-variant">{formatRub(top[1])}</span>
+            <span className="text-sm text-on-surface-variant">
               {/* A share of a negative total is not a share of anything: when
                   refunds outweigh purchases the percentage flips sign and reads
                   as nonsense. */}
@@ -493,24 +368,24 @@ export function FinancesView({ finances }: { finances: Finances }) {
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по категориям, ₽</h3>
+          <h3 className="mb-2 text-sm font-semibold text-on-surface">Расходы по категориям, ₽</h3>
           <BarList data={toRoubleBars(byCategory)} valueClassName="privacy-mask" />
         </Card>
         <div className="space-y-4">
           <Card>
-            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Расходы по счетам, ₽</h3>
+            <h3 className="mb-2 text-sm font-semibold text-on-surface">Расходы по счетам, ₽</h3>
             <BarList data={toRoubleBars(byAccount)} valueClassName="privacy-mask" />
           </Card>
           <Card>
-            <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Остатки по счетам</h3>
+            <h3 className="mb-2 text-sm font-semibold text-on-surface">Остатки по счетам</h3>
             <div className="space-y-1 text-sm">
               {finances.accounts.map((a) => (
                 <div key={a.bank} className="flex items-center justify-between gap-2">
-                  <span className="truncate text-slate-600 dark:text-slate-300">{a.bank}</span>
-                  <span className="privacy-mask shrink-0 tabular-nums text-slate-800 dark:text-slate-100">
+                  <span className="truncate text-on-surface-variant">{a.bank}</span>
+                  <span className="privacy-mask shrink-0 tabular-nums text-on-surface">
                     {formatRub(toKopecks(a.balance))}
                   </span>
-                  <span className="w-24 shrink-0 text-right text-xs text-slate-400">{a.updated}</span>
+                  <span className="w-24 shrink-0 text-right text-xs text-on-surface-variant">{a.updated}</span>
                 </div>
               ))}
             </div>
@@ -519,23 +394,23 @@ export function FinancesView({ finances }: { finances: Finances }) {
       </div>
 
       <Card>
-        <h3 className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-200">Последние записи</h3>
+        <h3 className="mb-2 text-sm font-semibold text-on-surface">Последние записи</h3>
         <div className="space-y-1 text-sm">
           {shown
             .slice()
             .sort((a, b) => b.date.localeCompare(a.date))
             .slice(0, 50)
             .map((t) => (
-              <div key={t.id} className="flex items-center gap-2 border-b border-slate-100 py-1 last:border-0 dark:border-slate-700">
-                <span className="w-24 shrink-0 tabular-nums text-slate-400">{t.date}</span>
-                <span className="w-28 shrink-0 truncate text-slate-600 dark:text-slate-300">{t.category ?? '—'}</span>
-                <span className="flex-1 truncate text-slate-500" title={t.description ?? t.place ?? ''}>
+              <div key={t.id} className="flex items-center gap-2 border-b border-outline-variant py-1 last:border-0">
+                <span className="w-24 shrink-0 tabular-nums text-on-surface-variant">{t.date}</span>
+                <span className="w-28 shrink-0 truncate text-on-surface-variant">{t.category ?? '—'}</span>
+                <span className="flex-1 truncate text-on-surface-variant" title={t.description ?? t.place ?? ''}>
                   {t.place ?? t.description ?? ''}
                 </span>
-                <span className="w-24 shrink-0 truncate text-xs text-slate-400">{t.account ?? ''}</span>
+                <span className="w-24 shrink-0 truncate text-xs text-on-surface-variant">{t.account ?? ''}</span>
                 <span
                   className={`privacy-mask w-28 shrink-0 text-right tabular-nums ${
-                    t.kind === 'income' ? 'text-emerald-600' : 'text-slate-800 dark:text-slate-100'
+                    t.kind === 'income' ? 'text-secondary' : 'text-on-surface'
                   }`}
                 >
                   {t.kind === 'income' ? '+' : ''}

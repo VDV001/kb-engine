@@ -1,0 +1,21 @@
+{
+  "label": "Engineering · operating model",
+  "title": "Team",
+  "subtitle": "Who owns what and how work moves. This file is yours: point the engine at it with --team; the repo only ships the renderer.",
+  "sections": [
+    {
+      "title": "Sources of truth",
+      "note": "One owner per question.",
+      "cards": [
+        {"title": "Priority", "meta": "Team lead", "body": "What we do first."},
+        {"title": "Status", "meta": "Tracker", "body": "The board, not «someone said»."}
+      ]
+    },
+    {
+      "title": "Roles",
+      "cards": [
+        {"title": "Team lead", "meta": "core", "body": "People, process, priorities.", "tags": ["single entry point", "1:1s"]}
+      ]
+    }
+  ]
+}
