@@ -13,6 +13,7 @@ import (
 	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
@@ -95,6 +96,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
 	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
 	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
+	changelogPath := fs.String("changelog", "", "optional path to CHANGELOG.md («Что нового» in Settings)")
 	// Loopback by default. With --ledger this process serves four years of
 	// personal transactions with places, notes and balances; ":8080" would hand
 	// them to anyone on the network. Binding wider stays possible, but as a
@@ -108,7 +110,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -154,7 +156,7 @@ func (f ledgerFinances) Finances() (httpapi.Finances, error) {
 	return out, nil
 }
 
-func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath string) (http.Handler, error) {
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -176,8 +178,21 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath string)
 	if ledgerPath != "" {
 		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
 	}
+	var chlog httpapi.ChangelogLoader
+	if changelogPath != "" {
+		if _, err := os.ReadFile(changelogPath); err != nil {
+			return nil, fmt.Errorf("changelog: %w", err)
+		}
+		chlog = func() (changelog.Document, error) {
+			raw, err := os.ReadFile(changelogPath)
+			if err != nil {
+				return changelog.Document{}, err
+			}
+			return changelog.Parse(string(raw)), nil
+		}
+	}
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, front), nil
+		analytics.NewService(loader), fin, cfg, chlog, front), nil
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {
