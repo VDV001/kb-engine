@@ -44,10 +44,15 @@ func collisionError(idCol int) error {
 // Migration says what MigrateIDColumn did. A caller that cannot tell a repaired
 // book from one that needed nothing has to report one of them wrongly.
 type Migration struct {
-	// Moved counts the rows whose id changed column, header excluded. Zero means
-	// the book was already in order.
+	// Moved counts the rows whose id changed column, header excluded. Zero on its
+	// own does not mean the file was left alone — see Rewrote.
 	Moved int
+	// Rewrote reports whether the workbook was written to. A book can be rewritten
+	// while Moved is zero: the header occupies the column on its own, which is
+	// still a change to the file and still takes a backup.
+	Rewrote bool
 	// Column is where the ids live once the call returns, in spreadsheet letters.
+	// For a book that has no ids yet, where they would go.
 	Column string
 }
 
@@ -73,7 +78,14 @@ func MigrateIDColumn(path string, now func() time.Time) (Migration, error) {
 	}
 	idCol := findIDColumn(rows)
 	if !idColumnCollides(idCol) {
-		return Migration{Column: columnName(idCol)}, nil
+		// A book with no id column at all has no letter to name, and "ids are already
+		// in column " is not a sentence. Where they will go once there are any is the
+		// answer to the question actually being asked.
+		col := idCol
+		if col == 0 {
+			col = firstFreeColumn(rows, reservedWidth(domain.KindExpense))
+		}
+		return Migration{Column: columnName(col)}, nil
 	}
 
 	accounts, err := knownAccounts(f, now)
@@ -89,21 +101,44 @@ func MigrateIDColumn(path string, now func() time.Time) (Migration, error) {
 	if err := backup(path, now); err != nil {
 		return Migration{}, err
 	}
-	for _, m := range moves {
-		// SetCellStr for both ends: a ULID is a string, and letting the
-		// spreadsheet guess would turn some of them into numbers or dates.
-		if err := f.SetCellStr(sheetExpenses, m.to, m.value); err != nil {
-			return Migration{}, fmt.Errorf("%s!%s: %w", sheetExpenses, m.to, err)
-		}
-		if err := f.SetCellStr(sheetExpenses, m.from, ""); err != nil {
-			return Migration{}, fmt.Errorf("%s!%s: %w", sheetExpenses, m.from, err)
-		}
+	if err := applyIDMoves(f, moves); err != nil {
+		return Migration{}, err
 	}
 	if err := saveAtomically(f, path); err != nil {
 		return Migration{}, err
 	}
-	// The header is one of the moves and is not a row anyone counts.
-	return Migration{Moved: len(moves) - 1, Column: columnName(target)}, nil
+	return Migration{Moved: countMovedRows(moves), Rewrote: true, Column: columnName(target)}, nil
+}
+
+// applyIDMoves writes the resolved relocations.
+//
+// SetCellStr for both ends: a ULID is a string, and letting the spreadsheet guess
+// would turn some of them into numbers or dates.
+func applyIDMoves(f *excelize.File, moves []idMove) error {
+	for _, m := range moves {
+		if err := f.SetCellStr(sheetExpenses, m.to, m.value); err != nil {
+			return fmt.Errorf("%s!%s: %w", sheetExpenses, m.to, err)
+		}
+		if err := f.SetCellStr(sheetExpenses, m.from, ""); err != nil {
+			return fmt.Errorf("%s!%s: %w", sheetExpenses, m.from, err)
+		}
+	}
+	return nil
+}
+
+// countMovedRows counts the data rows among the moves.
+//
+// Counted rather than derived as len-1: the header is always one of the moves, and
+// subtracting it made a header-only migration report zero, which reads as "nothing
+// happened" about a book that had just been backed up and rewritten.
+func countMovedRows(moves []idMove) int {
+	n := 0
+	for _, m := range moves {
+		if m.value != idHeader {
+			n++
+		}
+	}
+	return n
 }
 
 // columnName renders a column for a person to read, falling back to the number
@@ -133,18 +168,29 @@ const idAlphabet = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 // checkIsID rejects a cell the migration must not move, naming it in a way the
 // owner can act on.
 //
-// Two tests, because either one alone lets a real case through. The alphabet
-// catches anything written for a person to read — Cyrillic, spaces, punctuation
-// — which is what bank names in this book look like. The accounts sheet catches
-// a name that happens to be spelled in the alphabet's letters.
+// Three tests, because each one alone lets a real case through:
 //
-// ponytail: a latin word using only these letters and absent from the accounts
-// sheet still passes as an id ("BANK" would). Tightening it means requiring the
-// full 26-character ULID shape, which is the upgrade path if a book ever turns
-// up where that matters; today every such value in the owner's book is a bank
-// name in Cyrillic, and both tests catch those.
+//   - the alphabet catches anything written for a person to read — Cyrillic,
+//     spaces, punctuation — which is what bank names in this book look like;
+//   - all-digits catches numbers, and a number is the likeliest foreign value
+//     here: with RawCellValue a date arrives as its serial ("46218"), and every
+//     digit is a valid id character, so the alphabet test waves it through;
+//   - the accounts sheet catches a name spelled in the alphabet's own letters.
+//
+// ponytail: a latin word made only of these letters, containing a letter, and
+// absent from the accounts sheet still passes as an id ("BANK", "SBER"). The
+// upgrade path is to require the full 26-character ULID shape — deliberately not
+// taken, because the fixtures across this package use short readable ids and the
+// value it would buy is a case this book has never held. The two classes it does
+// hold, Cyrillic names and numbers, are both caught.
+//
+// Not tightened by checking the ledger's own ids either: the migration is the only
+// way out of a refused-write state, and a book whose ids ran ahead of the ledger
+// would then have no way out at all.
 func checkIsID(value string, accounts map[string]struct{}, col, row int) error {
-	if _, isAccount := accounts[value]; !isAccount && strings.IndexFunc(strings.ToUpper(value), notInIDAlphabet) < 0 {
+	_, isAccount := accounts[value]
+	inAlphabet := strings.IndexFunc(strings.ToUpper(value), notInIDAlphabet) < 0
+	if !isAccount && inAlphabet && strings.IndexFunc(value, isNotDigit) >= 0 {
 		return nil
 	}
 	where := columnName(col) + fmt.Sprint(row)
@@ -153,6 +199,8 @@ func checkIsID(value string, accounts map[string]struct{}, col, row int) error {
 }
 
 func notInIDAlphabet(r rune) bool { return !strings.ContainsRune(idAlphabet, r) }
+
+func isNotDigit(r rune) bool { return r < '0' || r > '9' }
 
 // planIDMoves resolves every cell before anything is written. A workbook where
 // half the ids moved is the hardest state to recover from, so the choice stays

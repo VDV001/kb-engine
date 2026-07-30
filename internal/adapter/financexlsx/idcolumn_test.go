@@ -93,8 +93,13 @@ func TestMigrateIDColumn_reportsWhatItDid(t *testing.T) {
 		if got := cellValue(t, path, "Расходы", "I2"); got != "id" {
 			t.Fatalf("Расходы!I2 = %q, want the header to have moved", got)
 		}
-		if m.Moved == 0 {
-			t.Error("Moved = 0 for a book that was rewritten and backed up")
+		// Moved counts rows, and no row carried an id — so the honest report is
+		// Moved=0 with Rewrote=true, not a fabricated count of one.
+		if m.Moved != 0 {
+			t.Errorf("Moved = %d, want 0 — no row carried an id", m.Moved)
+		}
+		if !m.Rewrote {
+			t.Error("Rewrote = false for a book that was backed up and written to")
 		}
 		if m.Column != "I" {
 			t.Errorf("Column = %q, want I", m.Column)

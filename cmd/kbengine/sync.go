@@ -70,11 +70,17 @@ func migrateWorkbookIDs(from string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin sync --migrate-ids: %v\n", err)
 		return 1
 	}
-	if m.Moved == 0 {
+	switch {
+	case !m.Rewrote:
 		fmt.Fprintf(stdout, "fin sync --migrate-ids: nothing to move — ids are already in column %s\n", m.Column)
-		return 0
+	case m.Moved == 0:
+		// The file was rewritten even though no row carried an id, and saying
+		// "nothing to move" about a book that now has a backup behind it is the kind
+		// of report that makes the backup surprising.
+		fmt.Fprintf(stdout, "fin sync --migrate-ids: no ids to move — the header moved to column %s → %s\n", m.Column, from)
+	default:
+		fmt.Fprintf(stdout, "fin sync --migrate-ids: %d id(s) moved to column %s → %s\n", m.Moved, m.Column, from)
 	}
-	fmt.Fprintf(stdout, "fin sync --migrate-ids: %d id(s) moved to column %s → %s\n", m.Moved, m.Column, from)
 	return 0
 }
 
