@@ -1,6 +1,7 @@
 package financexlsx
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -82,6 +83,47 @@ func placeSourceAndAccount(f *excelize.File, w rowWrite, tx domain.Transaction,
 	}
 	if ours {
 		values[besideSourceColumn()] = ""
+	}
+	return nil
+}
+
+// ErrUnknownAccount is returned when a row carries an account the Счета sheet
+// does not list.
+//
+// That sheet is the vocabulary the reader uses to tell an account from a source,
+// so a name missing from it cannot be read back as an account — it returns as a
+// source, or not at all.
+var ErrUnknownAccount = errors.New("the workbook does not know this account")
+
+// ErrSourceNamesAnAccount is returned when a row's source is spelled like one of
+// the known accounts.
+//
+// The reader would take it for the account, dropping the source. Which of the
+// two was meant is not something this layer can decide.
+var ErrSourceNamesAnAccount = errors.New("the source names a known account")
+
+// checkVocabulary rejects rows the workbook cannot store without changing their
+// meaning.
+//
+// The check lives here rather than in the domain on purpose: the domain leaves
+// the set of accounts open — the sheet lists five and a closed set would reject
+// the sixth on the day one is opened — while this workbook can only store what
+// its Счета sheet names. That is a property of the storage, so it is enforced at
+// the boundary, before anything is written.
+func checkVocabulary(txs []domain.Transaction, accounts map[string]struct{}) error {
+	for _, tx := range txs {
+		if acc := tx.Account(); acc != "" {
+			if _, known := accounts[acc]; !known {
+				return fmt.Errorf("%w: %q — add it to the Счета sheet, then run this again (row %s)",
+					ErrUnknownAccount, acc, tx.ID())
+			}
+		}
+		if src := tx.Source(); src != "" {
+			if _, isAccount := accounts[src]; isAccount {
+				return fmt.Errorf("%w: %q is on the Счета sheet, so it would read back as the account — "+
+					"pass it as the account instead (row %s)", ErrSourceNamesAnAccount, src, tx.ID())
+			}
+		}
 	}
 	return nil
 }
