@@ -11,6 +11,7 @@ import {
   statusStyle,
   type CatalogFilter,
 } from './catalog'
+import { Icon } from './components/Icon'
 import { Label } from './components/ui'
 import { HealthCard, SpotlightCard } from './HealthCards'
 
@@ -123,6 +124,9 @@ export function CatalogView({
   const [grid, setGrid] = useState(false)
   const [withDescriptions, setWithDescriptions] = useState(true)
   const [spotlightOpen, setSpotlightOpen] = useState(false)
+  // Свёрнутый сайдбар отдаёт таблице свои 256px. Ниже xl он свёрнут по
+  // умолчанию: там места нет, а разворачивать его — осознанный выбор.
+  const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 1280)
 
   // Спотлайт показывает самую свежую запись КАТАЛОГА, а не текущей выдачи:
   // «последнее добавление», которое меняется от фильтра, — это уже не то, что
@@ -175,42 +179,70 @@ export function CatalogView({
   const isFiltered = JSON.stringify(active) !== JSON.stringify(emptyFilter)
 
   return (
-    <div className="flex flex-col gap-8 lg:flex-row">
+    <div className="flex flex-col gap-6 lg:flex-row">
       {/* Sidebar: structure, so square corners and a hairline — not a card. */}
-      <aside className="shrink-0 lg:w-64">
+      {/* Сайдбар сворачивается до ширины своей же кнопки: на 1024 он забирал
+          256px, и таблице оставалось 670 при нужных ~830. */}
+      {/* Свёрнутый — по размеру содержимого, а не во всю ширину: до lg строка
+          вертикальная, и полоса на весь экран с одинокой стрелкой читалась как
+          неизвестно что. Там же у кнопки появляется подпись. */}
+      <aside className={`shrink-0 ${sideOpen ? 'w-full lg:w-64' : 'w-fit lg:w-12'}`}>
         <div className="border border-outline-variant bg-surface-low">
-          <button
-            type="button"
-            onClick={() => set({ category: '' })}
-            className={`flex w-full items-center justify-between px-4 py-2.5 text-left text-sm ${
-              filter.category === '' ? 'bg-surface-high font-semibold text-secondary' : 'text-on-surface'
-            }`}
-          >
-            <span>Все записи</span>
-            <span className="font-mono text-xs tabular-nums">{entries.length}</span>
-          </button>
-          <div className="max-h-[26rem] overflow-y-auto border-t border-outline-variant lg:max-h-none lg:overflow-visible">
-            {categories.map(([cat, n]) => (
+          <div className="flex items-center justify-between border-b border-outline-variant">
+            {sideOpen && (
               <button
-                key={cat}
                 type="button"
-                onClick={() => set({ category: cat === filter.category ? '' : cat })}
-                className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm ${
-                  filter.category === cat
-                    ? 'bg-surface-high font-semibold text-secondary'
-                    : 'text-on-surface-variant hover:text-on-surface'
+                onClick={() => set({ category: '' })}
+                className={`flex flex-1 items-center justify-between px-4 py-2.5 text-left text-sm ${
+                  filter.category === '' ? 'bg-surface-high font-semibold text-secondary' : 'text-on-surface'
                 }`}
               >
-                {/* Подсказкой — полная строка из каталога: в ней после
-                    двоеточия лежит описание, которое в узкий сайдбар не
-                    влезает, но объясняет, что за категория. */}
-                <span className="truncate" title={labels[cat] || cat}>
-                  {categoryLabel(cat, labels)}
-                </span>
-                <span className="font-mono text-xs tabular-nums">{n}</span>
+                <span>Все записи</span>
+                <span className="font-mono text-xs tabular-nums">{entries.length}</span>
               </button>
-            ))}
+            )}
+            <button
+              type="button"
+              onClick={() => setSideOpen((v) => !v)}
+              aria-expanded={sideOpen}
+              aria-label={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
+              title={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
+              className="relative flex h-11 shrink-0 items-center justify-center gap-1.5 px-3 text-on-surface-variant hover:text-on-surface lg:w-12 lg:px-0"
+            >
+              <Icon name={sideOpen ? 'chevron_left' : 'chevron_right'} className="text-xl" />
+              {/* До lg рядом со стрелкой стоит слово: там кнопка лежит поперёк
+                  страницы, и одна стрелка не объясняет, что за ней. */}
+              {!sideOpen && <span className="text-sm lg:hidden">Категории</span>}
+              {/* Точка говорит, что фильтр по категории включён: в свёрнутом
+                  виде списка не видно, и выборка иначе выглядела бы поломкой. */}
+              {!sideOpen && filter.category !== '' && (
+                <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-secondary" />
+              )}
+            </button>
           </div>
+          {sideOpen && (
+            <div className="max-h-[26rem] overflow-y-auto lg:max-h-none lg:overflow-visible">
+              {categories.map(([cat, n]) => (
+                <button
+                  key={cat}
+                  type="button"
+                  onClick={() => set({ category: cat === filter.category ? '' : cat })}
+                  className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm ${
+                    filter.category === cat
+                      ? 'bg-surface-high font-semibold text-secondary'
+                      : 'text-on-surface-variant hover:text-on-surface'
+                  }`}
+                >
+                  {/* Подсказкой — полная строка из каталога: после двоеточия
+                      лежит описание, которое в узкий сайдбар не влезает. */}
+                  <span className="truncate" title={labels[cat] || cat}>
+                    {categoryLabel(cat, labels)}
+                  </span>
+                  <span className="font-mono text-xs tabular-nums">{n}</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </aside>
 
@@ -331,69 +363,59 @@ export function CatalogView({
             ))}
           </div>
         ) : (
-          <div className="overflow-x-auto border border-outline-variant bg-surface-lowest">
-            <table className="w-full min-w-[52rem] text-left text-sm">
-              <thead className="bg-surface-low">
-                <tr>
-                  {['Дата', 'Название', 'Теги', 'Категория', 'Статус', ''].map((h) => (
-                    <th key={h} className="label px-4 py-3 font-semibold">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {slice.map((e) => (
-                  <tr key={e.id} className="border-t border-outline-variant align-top">
-                    <td className="whitespace-nowrap px-4 py-4 font-label text-xs text-on-surface-variant">
+          /* Список, а не таблица. Колонки требовали, чтобы длинный заголовок
+             жил в узкой доле ширины, и он ломался по одному слову, пока
+             соседние колонки пустовали. Здесь метаданные идут одной строкой
+             сверху, а текст занимает всю ширину блока. */
+          <ul className="border border-outline-variant bg-surface-lowest">
+            {slice.map((e) => (
+              <li key={e.id} className="border-t border-outline-variant first:border-t-0">
+                <div className="px-5 py-4">
+                  {/* Одна строка метаданных: перенос разрешён, чтобы на узком
+                      экране они переехали, а не наехали друг на друга. */}
+                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <span className="font-label text-xs whitespace-nowrap text-on-surface-variant">
                       {dateOf(e) || '—'}
-                    </td>
-                    <td className="max-w-md px-4 py-4">
+                    </span>
+                    <span
+                      className="max-w-[14rem] truncate rounded-full border border-outline-variant bg-surface-high px-2.5 py-0.5 text-xs text-on-surface-variant"
+                      title={labels[e.category] || e.category}
+                    >
+                      {categoryLabel(e.category, labels)}
+                    </span>
+                    <Tags tags={e.tags} />
+                    <Status e={e} />
+                    {e.url && (
                       <a
-                        href={e.url || undefined}
+                        href={e.url}
                         target="_blank"
                         rel="noreferrer"
-                        className="font-headline text-base font-bold hover:underline"
+                        className="ml-auto shrink-0 text-secondary hover:underline"
+                        aria-label="Открыть источник"
+                        title="Открыть источник"
                       >
-                        {e.title}
+                        <Icon name="open_in_new" className="text-base" />
                       </a>
-                      {withDescriptions && e.description && (
-                        <p className="mt-1 text-sm text-on-surface-variant">
-                          {e.description.length > 150
-                            ? `${e.description.slice(0, 150)}…`
-                            : e.description}
-                        </p>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
-                      <Tags tags={e.tags} />
-                    </td>
-                    <td className="px-4 py-4">
-                      <span className="whitespace-nowrap rounded-full border border-outline-variant bg-surface-high px-3 py-1 text-xs text-on-surface-variant">
-                        {categoryLabel(e.category, labels)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-4">
-                      <Status e={e} />
-                    </td>
-                    <td className="px-4 py-4 text-right">
-                      {e.url && (
-                        <a
-                          href={e.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-secondary hover:underline"
-                          aria-label="Открыть источник"
-                        >
-                          ↗
-                        </a>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                    )}
+                  </div>
+
+                  <a
+                    href={e.url || undefined}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-headline text-base font-bold hover:underline"
+                  >
+                    {e.title}
+                  </a>
+                  {withDescriptions && e.description && (
+                    <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
+                      {e.description}
+                    </p>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">

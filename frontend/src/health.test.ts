@@ -48,15 +48,16 @@ describe('ecg', () => {
     expect(spread(100)).toBeGreaterThan(spread(45))
   })
 
-  // Чем здоровее база, тем быстрее и заметнее пульс — но линия не должна
-  // становиться ни невидимой, ни глухой заливкой.
+  // Чем здоровее база, тем быстрее и заметнее пульс — но это подложка под
+  // заголовком и кольцами, а не самостоятельный график. Потолок 0.3: на 0.64
+  // линия читалась наравне с текстом и выглядела наездом на него.
   it('keeps speed and opacity within a sane band', () => {
     for (const score of [0, 45, 100]) {
       const { speed, opacity, strokeWidth } = ecg(score)
       expect(speed).toBeGreaterThanOrEqual(2.5)
       expect(speed).toBeLessThanOrEqual(8)
-      expect(opacity).toBeGreaterThanOrEqual(0.2)
-      expect(opacity).toBeLessThanOrEqual(0.7)
+      expect(opacity).toBeGreaterThanOrEqual(0.1)
+      expect(opacity).toBeLessThanOrEqual(0.3)
       expect(strokeWidth).toBeGreaterThanOrEqual(1.5)
     }
     expect(ecg(100).speed).toBeLessThan(ecg(0).speed)

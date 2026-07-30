@@ -65,7 +65,7 @@ export function HealthCard({ health }: { health: Health }) {
   const pulse = ecg(processed)
 
   return (
-    <div className="relative flex flex-col justify-between overflow-hidden rounded-2xl border border-outline-variant bg-surface-highest p-8">
+    <div className="relative flex flex-col justify-between overflow-hidden rounded-2xl border border-outline-variant bg-surface-highest p-8 pt-10">
       <div className="pointer-events-none absolute top-0 right-0 left-0 h-[120px] overflow-hidden">
         <svg
           viewBox={`0 0 ${pulse.width} 100`}
@@ -86,9 +86,9 @@ export function HealthCard({ health }: { health: Health }) {
       </div>
 
       <div className="relative z-10">
-        <Icon name="analytics" className="mb-4 text-3xl text-secondary" />
-        <h4 className="mb-2 font-headline text-lg font-bold">Здоровье базы</h4>
-        <div className="space-y-5">
+        <Icon name="analytics" className="mb-5 text-3xl text-secondary" />
+        <h4 className="mb-8 font-headline text-lg font-bold">Здоровье базы</h4>
+        <div className="space-y-8">
           <Ring
             percent={processed}
             label="Разобрано"

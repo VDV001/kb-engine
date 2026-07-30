@@ -46,7 +46,10 @@ export function ecg(score: number): Ecg {
     d: `M0,${MID} ${segment(0)} L${cycle},${MID} ${segment(cycle)} L${cycle * 2},${MID}`,
     width: cycle * 2,
     speed: 8 - h * 5.5,
-    opacity: 0.2 + h * 0.5,
+    // Потолок 0.3, а не 0.7: это фон под заголовком и кольцами, и при здоровой
+    // базе прежняя формула давала 0.64 — линия читалась наравне с текстом и
+    // выглядела как наезд, а не как подложка.
+    opacity: 0.12 + h * 0.18,
     strokeWidth: 1.5 + h,
   }
 }
