@@ -158,6 +158,7 @@ type entryDTO struct {
 	PublishStage *string  `json:"publish_stage,omitempty"`
 	Tags         []string `json:"tags,omitempty"`
 	DateAdded    string   `json:"date_added,omitempty"`
+	DateCreated  string   `json:"date_created,omitempty"`
 	Description  string   `json:"description,omitempty"`
 	Author       string   `json:"author,omitempty"`
 	Source       string   `json:"source,omitempty"`
@@ -189,8 +190,14 @@ func toDTO(e domain.Entry) entryDTO {
 		s := p.String()
 		d.PublishStage = &s
 	}
+	// Оба поля, а не одно: они почти не пересекаются, и запись обычно несёт
+	// ровно одно из двух. Какое показывать — решает вид, но выбирать он может
+	// только из того, что доехало.
 	if t := e.DateAdded(); t != nil {
 		d.DateAdded = t.Format(time.DateOnly)
+	}
+	if t := e.DateCreated(); t != nil {
+		d.DateCreated = t.Format(time.DateOnly)
 	}
 	return d
 }

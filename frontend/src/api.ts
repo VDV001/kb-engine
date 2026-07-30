@@ -21,6 +21,7 @@ export interface Entry {
   publish_stage?: string
   tags?: string[]
   date_added?: string
+  date_created?: string
   description?: string
   author?: string
   source?: string

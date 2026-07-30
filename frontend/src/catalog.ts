@@ -77,13 +77,28 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
   )
 }
 
+/**
+ * dateOf is the one date the catalog shows. Entries carry one of two fields and
+ * almost never both: date_added for what the bot and the owner filed away,
+ * date_created for the owner's own material. Reading a single field left a
+ * third of the archive dateless — not because the date was missing, but because
+ * the view looked in the other place. When both exist, the archive column means
+ * «when this joined the base», so date_added wins.
+ */
+export function dateOf(e: Entry): string {
+  return e.date_added || e.date_created || ''
+}
+
 /** Newest first; entries without a date sink to the bottom in id order, so the
- * bot-imported tail without dates does not shuffle randomly. */
+ * dateless tail does not shuffle randomly. Ties break by id descending, the way
+ * the source dashboard does it — a batch import shares one date across dozens
+ * of entries, and without the tiebreak their order is whatever sort felt like. */
 export function sortByDate(entries: Entry[]): Entry[] {
   return [...entries].sort((a, b) => {
-    if (a.date_added && b.date_added) return b.date_added.localeCompare(a.date_added)
-    if (a.date_added) return -1
-    if (b.date_added) return 1
+    const [da, db] = [dateOf(a), dateOf(b)]
+    if (da && db) return db.localeCompare(da) || b.id - a.id
+    if (da) return -1
+    if (db) return 1
     return b.id - a.id
   })
 }

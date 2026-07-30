@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import type { Entry } from './api'
 import {
+  dateOf,
   emptyFilter,
   filterEntries,
   pageWindow,
@@ -11,7 +12,9 @@ import {
 } from './catalog'
 import { Label } from './components/ui'
 
-const PAGE_SIZE = 20
+// Пятнадцать, как в исходном дашборде: столько строк помещается на экран
+// ноутбука без прокрутки до пагинации.
+const PAGE_SIZE = 15
 
 // Tag pills cycle through the first three tag roles, the way the Python
 // dashboard colours them: by position, not by meaning — the meaning is the
@@ -262,7 +265,9 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
             {slice.map((e) => (
               <div key={e.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-lowest p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-label text-xs text-on-surface-variant">{e.date_added ?? '—'}</span>
+                  <span className="font-label text-xs text-on-surface-variant">
+                    {dateOf(e) || '—'}
+                  </span>
                   <Status e={e} />
                 </div>
                 <a
@@ -298,7 +303,7 @@ export function CatalogView({ entries }: { entries: Entry[] }) {
                 {slice.map((e) => (
                   <tr key={e.id} className="border-t border-outline-variant align-top">
                     <td className="whitespace-nowrap px-4 py-4 font-label text-xs text-on-surface-variant">
-                      {e.date_added ?? '—'}
+                      {dateOf(e) || '—'}
                     </td>
                     <td className="max-w-md px-4 py-4">
                       <a
