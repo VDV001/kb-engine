@@ -244,3 +244,19 @@ func TestDecode_categoryLabels(t *testing.T) {
 		t.Errorf("label = %q, want %q", got, "Go: язык и экосистема")
 	}
 }
+
+// Конспект записи лежит в поле file — путь к markdown-файлу разбора. Карточка
+// «Здоровье базы» считает, у скольких записей он есть, поэтому поле обязано
+// доехать до домена: в движке его не было вовсе.
+func TestDecode_notesFile(t *testing.T) {
+	src := `{"entries":[{"id":1,"title":"T","category":"golang","status":"keep",` +
+		`"file":"notes/2026-05-01_разбор.md"}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	e, _ := c.Find(1)
+	if got := e.NotesFile(); got != "notes/2026-05-01_разбор.md" {
+		t.Errorf("NotesFile = %q, want the path from file", got)
+	}
+}
