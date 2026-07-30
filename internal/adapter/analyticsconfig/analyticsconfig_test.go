@@ -10,7 +10,11 @@ import (
 
 const sample = `{
   "_comment": "ignored",
-  "pull_quote": "ignored too",
+  "pull_quote": "AI — мультипликатор экспертизы",
+  "pull_quote_meta": "Вывод мета-анализа · июль 2026",
+  "inference_chain": [
+    {"cluster": "vibe-coding", "evidence": "архитектурный вкус решает"}
+  ],
   "patterns": [
     {"name": "Verification > Generation", "clusters": ["ai-agents-tools", "dev-practices"], "desc": "Верификация важнее"}
   ],
@@ -21,7 +25,7 @@ const sample = `{
     {"title": "Будущее профессии", "a": "Исчезнет", "b": "Трансформируется", "resolution": "Фильтрация по глубине"}
   ],
   "manifesto_quotes": [
-    {"quote": "AI — мультипликатор экспертизы", "source": "KB Даниила", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей", {"shape": "object, not string"}]}
+    {"quote": "AI — мультипликатор экспертизы", "source": "KB Даниила", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей", {"catalog_id": 897, "title": "NLA", "insight": "operational definition"}]}
   ],
   "graph": [{"unmodelled": true}]
 }`
@@ -52,6 +56,25 @@ func TestLoad(t *testing.T) {
 	}
 	if len(cfg.ManifestoQuotes) != 1 || cfg.ManifestoQuotes[0].Weight != "primary" {
 		t.Errorf("quotes = %+v", cfg.ManifestoQuotes)
+	}
+
+	// The full analytics view renders these; a subset that drops them renders
+	// an empty right rail while the file plainly carries the content.
+	if cfg.PullQuote != "AI — мультипликатор экспертизы" || cfg.PullQuoteMeta == "" {
+		t.Errorf("pull quote = %q / %q", cfg.PullQuote, cfg.PullQuoteMeta)
+	}
+	if len(cfg.InferenceChain) != 1 || cfg.InferenceChain[0].Cluster != "vibe-coding" {
+		t.Errorf("inference chain = %+v", cfg.InferenceChain)
+	}
+
+	// Supports come in two shapes in the real file — a plain sentence and a
+	// structured catalog reference — and the manifesto cards render both.
+	sup := cfg.ManifestoQuotes[0].Supports
+	if len(sup) != 2 || sup[0].Text != "503+ статей" {
+		t.Fatalf("supports = %+v", sup)
+	}
+	if sup[1].CatalogID != 897 || sup[1].Title != "NLA" || sup[1].Insight != "operational definition" {
+		t.Errorf("structured support = %+v", sup[1])
 	}
 }
 

@@ -5,11 +5,13 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"log"
 	"net/http"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
@@ -38,6 +40,30 @@ type Auditor interface {
 type Analyzer interface {
 	Growth(weeks int) ([]analytics.WeekCount, error)
 	Categories() ([]analytics.CategorySize, error)
+	Graph() (analytics.Graph, error)
+}
+
+// ConfigLoader supplies the curated analytics config. Called per request, so
+// an edited analytics_config.json shows up on the next reload without
+// restarting the engine — the same liveness the catalog already has.
+type ConfigLoader func() (analyticsconfig.Config, error)
+
+// ChangelogLoader supplies the parsed changelog, nil when none is configured.
+// Also called per request, for the same reason.
+type ChangelogLoader func() (changelog.Document, error)
+
+// Documents are the owner's personal views — Now, Team, Projects — served from
+// files the engine is pointed at. The repo carries only the renderer: an
+// AGPL-public engine must never embed anyone's team or projects. Each loader
+// is optional and called per request; nil means the view is not configured,
+// which is a smaller KB, not an error.
+type Documents struct {
+	// Now returns markdown (the active pipeline document).
+	Now func() (string, error)
+	// Team and Projects return the owner's JSON verbatim — the engine does
+	// not reshape content it does not own.
+	Team     func() ([]byte, error)
+	Projects func() ([]byte, error)
 }
 
 // Finances is what the finance port hands over: the ledger rows and the account
@@ -61,7 +87,7 @@ type Financier interface {
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg analyticsconfig.Config, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -71,6 +97,11 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg analyticsco
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
+	mux.HandleFunc("GET /api/graph", handleGraph(an))
+	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
+	mux.HandleFunc("GET /api/now", handleNow(docs.Now))
+	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
+	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
@@ -101,9 +132,78 @@ func handleReadyz(q Querier) http.HandlerFunc {
 	}
 }
 
-func handleAnalyticsConfig(cfg analyticsconfig.Config) http.HandlerFunc {
+func handleAnalyticsConfig(cfg ConfigLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, cfg)
+		c, err := cfg()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, c)
+	}
+}
+
+func handleNow(load func() (string, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if load == nil {
+			writeJSON(w, nil)
+			return
+		}
+		md, err := load()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"markdown": md})
+	}
+}
+
+// handleRawJSON serves an owner-supplied JSON file byte-for-byte.
+func handleRawJSON(load func() ([]byte, error)) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if load == nil {
+			writeJSON(w, nil)
+			return
+		}
+		raw, err := load()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if !json.Valid(raw) {
+			// Отдать битый файл — значит сломать view молча; ошибка честнее.
+			writeError(w, fmt.Errorf("document is not valid JSON"))
+			return
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		_, _ = w.Write(raw)
+	}
+}
+
+func handleChangelog(chlog ChangelogLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if chlog == nil {
+			// Не настроен — валидное развёртывание: view покажет пусто.
+			writeJSON(w, changelog.Document{})
+			return
+		}
+		doc, err := chlog()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, doc)
+	}
+}
+
+func handleGraph(an Analyzer) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		g, err := an.Graph()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, g)
 	}
 }
 

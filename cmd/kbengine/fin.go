@@ -95,7 +95,7 @@ func runFinImport(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	finance.Sort(recs)
-	if err := financejsonl.Save(*ledgerPath, recs); err != nil {
+	if err := financejsonl.Save(*ledgerPath, recs, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin import: %v\n", err)
 		return 1
 	}
@@ -177,7 +177,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 
 	recs = append(recs, rec)
 	finance.Sort(recs)
-	if err := financejsonl.Save(*ledgerPath, recs); err != nil {
+	if err := financejsonl.Save(*ledgerPath, recs, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}

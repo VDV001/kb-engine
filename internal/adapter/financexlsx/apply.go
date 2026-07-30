@@ -1,6 +1,7 @@
 package financexlsx
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -55,24 +56,83 @@ func reservedWidth(kind string) int {
 // changed and pull the old value back, undoing the deletion. Clearing stays
 // limited to a cell holding one of our own account names — anything else there
 // is the owner's.
+//
+// Whether the cell beside Источник has to be cleared depends on the account
+// alone, not on the source. Deciding it inside the branch for rows that have a
+// source left the other branch to return early, so a row that lost both values
+// kept its bank in the column next door and the next sync read the deletion as
+// a change and put it back.
 func placeSourceAndAccount(f *excelize.File, w rowWrite, tx domain.Transaction,
 	sourceCol int, accounts map[string]struct{}, values map[int]any,
 ) error {
 	if tx.Source() == "" {
 		values[sourceCol] = tx.Account()
-		return nil
+	} else {
+		values[sourceCol] = tx.Source()
+		if tx.Account() != "" {
+			values[besideSourceColumn()] = tx.Account()
+			return nil
+		}
 	}
-	values[sourceCol] = tx.Source()
-	if tx.Account() != "" {
-		values[besideSourceColumn()] = tx.Account()
-		return nil
-	}
+
+	// The account is not going beside Источник — either it is empty or it fits
+	// in Источник itself — so whatever of ours sits there is stale.
 	ours, err := holdsAnAccount(f, w.sheet, besideSourceColumn(), w.row, accounts)
 	if err != nil {
 		return err
 	}
 	if ours {
 		values[besideSourceColumn()] = ""
+	}
+	return nil
+}
+
+// ErrUnknownAccount is returned when a row carries an account the Счета sheet
+// does not list.
+//
+// That sheet is the vocabulary the reader uses to tell an account from a source,
+// so a name missing from it cannot be read back as an account — it returns as a
+// source, or not at all.
+var ErrUnknownAccount = errors.New("the workbook does not know this account")
+
+// ErrSourceNamesAnAccount is returned when a row's source is spelled like one of
+// the known accounts.
+//
+// The reader would take it for the account, dropping the source. Which of the
+// two was meant is not something this layer can decide.
+var ErrSourceNamesAnAccount = errors.New("the source names a known account")
+
+// checkVocabulary rejects rows the workbook cannot store without changing their
+// meaning.
+//
+// The check lives here rather than in the domain on purpose: the domain leaves
+// the set of accounts open — the sheet lists five and a closed set would reject
+// the sixth on the day one is opened — while this workbook can only store what
+// its Счета sheet names. That is a property of the storage, so it is enforced at
+// the boundary, before anything is written.
+func checkVocabulary(txs []domain.Transaction, accounts map[string]struct{}) error {
+	for _, tx := range txs {
+		if acc := tx.Account(); acc != "" {
+			if _, known := accounts[acc]; !known {
+				return fmt.Errorf("%w: %q — add it to the Счета sheet, then run this again (row %s)",
+					ErrUnknownAccount, acc, tx.ID())
+			}
+		}
+		// Expenses only. splitAccount consults the vocabulary when reading Расходы,
+		// which is what makes a source spelled like an account ambiguous there. On
+		// Доходы the reader takes column B literally and never assigns an account, so
+		// the same value round-trips — and the live book has such a row: a cashback
+		// whose Источник is the bank it arrived in.
+		//
+		// Refusing it broke data already on disk, and the fix this error names is
+		// forbidden by the domain, which leaves no way out. The narrow rule is the
+		// correct one.
+		if src := tx.Source(); src != "" && tx.IsExpense() {
+			if _, isAccount := accounts[src]; isAccount {
+				return fmt.Errorf("%w: %q is on the Счета sheet, so it would read back as the account — "+
+					"pass it as the account instead (row %s)", ErrSourceNamesAnAccount, src, tx.ID())
+			}
+		}
 	}
 	return nil
 }
@@ -130,8 +190,17 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err != nil {
 		return err
 	}
+	// Refused for the whole book, not only the rows in this call: a sheet whose
+	// ids sit on the account's column reads wrong as well as writes wrong, so
+	// there is no part of it that is safe to touch meanwhile.
+	if idCol := index[sheetExpenses].idCol; idColumnCollides(idCol) {
+		return collisionError(idCol)
+	}
 	accounts, err := knownAccounts(f, now)
 	if err != nil {
+		return err
+	}
+	if err := checkVocabulary(upserts, accounts); err != nil {
 		return err
 	}
 	plan, err := planRowWrites(index, upserts, removals)
@@ -194,6 +263,14 @@ func indexSheets(f *excelize.File) (map[string]sheetIndex, error) {
 	return out, nil
 }
 
+// otherSheet returns the sheet a row of the opposite kind lives on.
+func otherSheet(sheet string) string {
+	if sheet == sheetExpenses {
+		return sheetIncome
+	}
+	return sheetExpenses
+}
+
 // planRowWrites resolves every change to a cell range, failing before anything
 // is written if a change cannot be placed.
 func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, removals []string) (rowPlan, error) {
@@ -211,6 +288,19 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		sheet := sheetExpenses
 		if !tx.IsExpense() {
 			sheet = sheetIncome
+		}
+		// A row whose kind was corrected changes sheet, and the row it came from has
+		// to be vacated in the same plan. Nothing else can ask for that: the ledger
+		// still holds the id, so it produces no removal, and the sheet the row is
+		// leaving is only knowable here. Left in place, the workbook holds the id
+		// twice and both amounts sum into any selection over the columns.
+		if other := otherSheet(sheet); index[other].idCol != 0 {
+			oidx := index[other]
+			if orow, moved := oidx.rowByID[tx.ID()]; moved {
+				plan = append(plan, rowWrite{sheet: other, row: orow, idCol: oidx.idCol, kind: kindOf(other)})
+				delete(oidx.rowByID, tx.ID())
+				index[other] = oidx
+			}
 		}
 		idx := index[sheet]
 		if idx.idCol == 0 {
