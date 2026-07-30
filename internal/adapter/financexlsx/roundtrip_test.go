@@ -54,6 +54,14 @@ func incomeForms() []rowForm {
 	return []rowForm{
 		{name: "source only", kind: domain.KindIncome, source: "Зарплата"},
 		{name: "neither", kind: domain.KindIncome},
+		// The form the live book actually contains: Доходы row 1081 records a
+		// cashback with Источник = "Альфа-Банк", a name the Счета sheet lists.
+		//
+		// On Доходы that is not ambiguous — the reader takes column B literally and
+		// never assigns an account there — so this row round-trips and must not be
+		// refused. Missing from this table, it was the one form the vocabulary check
+		// broke, and it broke it on data already on disk.
+		{name: "source naming an account", kind: domain.KindIncome, source: "Альфа-Банк"},
 	}
 }
 
