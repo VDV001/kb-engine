@@ -53,11 +53,16 @@ function Ring({ percent, label, detail, tone }: {
  * же арифметика завелась бы вторым экземпляром и однажды разошлась с первым.
  */
 export function HealthCard({ health }: { health: Health }) {
-  const pct = (part: number) =>
-    health.total > 0 ? Math.round((part / health.total) * 100) : 0
-  const processed = pct(health.processed)
-  const withNotes = pct(health.with_notes)
-  const pulse = ecg(health.score)
+  // Знаменатели РАЗНЫЕ и это не описка: триаж применим к каждой записи, а
+  // конспект — только к разобранной статье. Считать оба от всего каталога
+  // значило бы включить в знаменатель глубины 150 непрочитанных, до которых
+  // конспект не может дойти по определению.
+  const pct = (part: number, base: number) => (base > 0 ? Math.round((part / base) * 100) : 0)
+  const processed = pct(health.processed, health.total)
+  const withNotes = pct(health.with_notes, health.notes_base)
+  // Пульс идёт по главной оси. Раньше здесь был усреднённый «score», из-за
+  // которого фон карточки выглядел вдвое хуже, чем база на самом деле.
+  const pulse = ecg(processed)
 
   return (
     <div className="relative flex flex-col justify-between overflow-hidden rounded-2xl border border-outline-variant bg-surface-highest p-8">
@@ -86,31 +91,16 @@ export function HealthCard({ health }: { health: Health }) {
         <div className="space-y-5">
           <Ring
             percent={processed}
-            label="Обработано"
-            detail={`${health.processed} из ${health.total}`}
+            label="Разобрано"
+            detail={`${health.processed} из ${health.total} записей`}
             tone="var(--secondary)"
           />
           <Ring
             percent={withNotes}
-            label="С конспектами"
-            detail={`${health.with_notes} из ${health.total}`}
+            label="С конспектом"
+            detail={`${health.with_notes} из ${health.notes_base} разобранных статей`}
             tone="var(--donut-primary)"
           />
-          <div className="border-t border-outline-variant pt-3">
-            <div className="mb-2 flex items-center justify-between">
-              <span className="label">Общее здоровье</span>
-              <span className="font-label text-xs font-bold text-secondary">{health.score}%</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-surface-high">
-              <div
-                className="h-full rounded-full transition-[width] duration-1000 ease-out"
-                style={{
-                  width: `${health.score}%`,
-                  background: 'linear-gradient(90deg, var(--secondary), var(--secondary-light))',
-                }}
-              />
-            </div>
-          </div>
         </div>
       </div>
     </div>

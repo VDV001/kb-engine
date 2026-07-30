@@ -21,7 +21,8 @@ const many: Entry[] = Array.from({ length: 40 }, (_, i) => ({
   date_added: `2026-07-${String((i % 28) + 1).padStart(2, '0')}`,
 }))
 
-const health = { total: 40, processed: 30, with_notes: 4, score: 43 }
+// Знаменатели разные: 30 разобрано из 40 записей, 4 конспекта из 30 статей.
+const health = { total: 40, processed: 30, with_notes: 4, notes_base: 30 }
 
 const view = (search: string, onSearchChange = () => {}) =>
   render(
@@ -77,13 +78,14 @@ describe('CatalogView', () => {
 // Карточки внизу архива: обе показывают то, что посчитано на сервере, и обе
 // раньше отсутствовали в движке целиком.
 describe('bottom cards', () => {
-  it('shows the health figures from the server, not its own arithmetic', () => {
+  it('shows each share against its own denominator', () => {
     view('')
-    // 30 из 40 = 75%, 4 из 40 = 10%, общий счёт приходит готовым.
+    // 30 из 40 записей = 75% разобрано; 4 конспекта из 30 разобранных = 13%.
+    // Второе число НЕ 10%: знаменатель тут разобранные статьи, а не каталог.
     expect(screen.getByText('75%')).toBeDefined()
-    expect(screen.getByText('10%')).toBeDefined()
-    expect(screen.getByText('43%')).toBeDefined()
-    expect(screen.getByText('30 из 40')).toBeDefined()
+    expect(screen.getByText('13%')).toBeDefined()
+    expect(screen.getByText('30 из 40 записей')).toBeDefined()
+    expect(screen.getByText('4 из 30 разобранных статей')).toBeDefined()
   })
 
   // Спотлайт берёт самую свежую запись КАТАЛОГА. При запросе, сужающем выдачу
