@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
@@ -46,6 +47,10 @@ type Analyzer interface {
 // restarting the engine — the same liveness the catalog already has.
 type ConfigLoader func() (analyticsconfig.Config, error)
 
+// ChangelogLoader supplies the parsed changelog, nil when none is configured.
+// Also called per request, for the same reason.
+type ChangelogLoader func() (changelog.Document, error)
+
 // Finances is what the finance port hands over: the ledger rows and the account
 // balances. Aggregation is deliberately not here — the view filters by month
 // and totals what it filtered, so the arithmetic lives in one place instead of
@@ -67,7 +72,7 @@ type Financier interface {
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -78,6 +83,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an))
+	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
@@ -116,6 +122,22 @@ func handleAnalyticsConfig(cfg ConfigLoader) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, c)
+	}
+}
+
+func handleChangelog(chlog ChangelogLoader) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if chlog == nil {
+			// Не настроен — валидное развёртывание: view покажет пусто.
+			writeJSON(w, changelog.Document{})
+			return
+		}
+		doc, err := chlog()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, doc)
 	}
 }
 

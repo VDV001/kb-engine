@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
@@ -92,7 +93,10 @@ func (f fakeFinance) Finances() (httpapi.Finances, error) {
 
 func newTestServer() http.Handler {
 	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) {
+			return changelog.Document{CurrentVersion: "0.9.0"}, nil
+		}, nil)
 }
 
 // The dashboard needs the rows and the balances; it does the filtering by month
@@ -133,7 +137,7 @@ func TestServer_finances(t *testing.T) {
 // rest of the dashboard, and the view says there is nothing rather than breaking.
 func TestServer_finances_notConfigured(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil,
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, nil)
 	rec := get(t, srv, "/api/finances")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -153,7 +157,7 @@ func TestServer_finances_notConfigured(t *testing.T) {
 func TestServer_finances_error(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
 		fakeFinance{err: errors.New("ledger unreadable")},
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, nil)
 	if rec := get(t, srv, "/api/finances"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
@@ -288,7 +292,7 @@ func (fakeQueryErr) Stats() (query.Stats, error) {
 
 func TestServer_readyz_unavailable(t *testing.T) {
 	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, nil)
 	rec := get(t, srv, "/readyz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
