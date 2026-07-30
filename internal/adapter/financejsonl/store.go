@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filebackup"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
@@ -27,6 +28,10 @@ var ErrMalformedLine = errors.New("malformed ledger line")
 // limit exists so an unbounded read cannot be mistaken for a valid one, and it
 // is reported as an error rather than truncating the ledger silently.
 const maxLineBytes = 1 << 20
+
+// backupsKept is enough to undo a bad afternoon and few enough that the
+// directory stays readable — the bound the workbook already uses.
+const backupsKept = 10
 
 // line is the wire shape of one record.
 //
@@ -150,8 +155,21 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 // halfway through must leave the previous ledger intact rather than a truncated
 // one. Same directory because rename is only atomic within a filesystem.
 //
-// The clock names the backup this write leaves behind.
+// A rotating copy of the previous contents is kept first. The atomic rename
+// below protects against a crash halfway through; it does nothing about a write
+// that completes and is wrong — a sync resolving the wrong way replaces the
+// ledger with whatever the workbook remembers, and the workbook can be a
+// restored copy that never saw the last few rows. The workbook has had ten
+// copies behind every write since the first version; this is the same guarantee
+// for the side that gets overwritten, and there is no git history underneath to
+// fall back on.
+//
+// The backup is taken before anything is encoded, so a record that fails to
+// encode still leaves the copy in place.
 func Save(path string, recs []finance.Record, now func() time.Time) error {
+	if err := filebackup.Snapshot(path, now, backupsKept); err != nil {
+		return err
+	}
 	return writeAtomically(path, func(w io.Writer) error {
 		enc := json.NewEncoder(w)
 		// The ledger holds descriptions with ampersands and angle brackets in them.

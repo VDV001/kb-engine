@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filebackup"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
@@ -158,12 +159,18 @@ func TestSave_replacesAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadDir: %v", err)
 	}
-	if len(entries) != 1 {
-		var names []string
-		for _, e := range entries {
-			names = append(names, e.Name())
+	// The ledger and its backup directory, and nothing else. The point of this
+	// check is that no half-written temp file survives — .backup is a deliberate
+	// artefact, so it is named rather than counted.
+	var leftover []string
+	for _, e := range entries {
+		if e.Name() == "transactions.jsonl" || e.Name() == filebackup.DirName {
+			continue
 		}
-		t.Errorf("temp files left behind: %v", names)
+		leftover = append(leftover, e.Name())
+	}
+	if len(leftover) != 0 {
+		t.Errorf("temp files left behind: %v", leftover)
 	}
 }
 
