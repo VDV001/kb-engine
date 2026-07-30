@@ -315,3 +315,44 @@ func TestServer_changelog(t *testing.T) {
 		t.Errorf("current_version = %v, want 0.9.0", doc["current_version"])
 	}
 }
+
+// Now, Team and Projects are personal content served from files the owner
+// points the engine at — the repo carries only the renderer. All three read
+// per request, so editing the file updates the view on the next reload, and
+// all three are optional: unconfigured is a valid deployment, not an error.
+func TestServer_documents(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
+		httpapi.Documents{
+			Now:      func() (string, error) { return "# Сейчас\n\n- работа", nil },
+			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
+			Projects: nil, // не настроен
+		}, nil)
+
+	rec := get(t, srv, "/api/now")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("now status = %d", rec.Code)
+	}
+	var now map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &now); err != nil {
+		t.Fatalf("decode now: %v", err)
+	}
+	if !strings.Contains(now["markdown"].(string), "# Сейчас") {
+		t.Errorf("now markdown = %q", now["markdown"])
+	}
+
+	rec = get(t, srv, "/api/team")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Team"`) {
+		t.Errorf("team = %d %q", rec.Code, rec.Body.String())
+	}
+	// JSON-файл владельца отдаётся как есть — движок не пересобирает чужой
+	// контент, поэтому Content-Type обязан остаться JSON.
+	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
+		t.Errorf("team content-type = %q", ct)
+	}
+
+	rec = get(t, srv, "/api/projects")
+	if rec.Code != http.StatusOK || strings.TrimSpace(rec.Body.String()) != "null" {
+		t.Errorf("unconfigured projects = %d %q, want 200 null", rec.Code, rec.Body.String())
+	}
+}
