@@ -381,7 +381,7 @@ func TestServer_documents(t *testing.T) {
 			Now:      func() (string, error) { return "# Сейчас\n\n- работа", nil },
 			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
 			Projects: nil, // не настроен
-		}, nil)
+		}, testEngine, nil)
 
 	rec := get(t, srv, "/api/now")
 	if rec.Code != http.StatusOK {
