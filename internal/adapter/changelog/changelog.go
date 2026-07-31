@@ -70,8 +70,15 @@ func (p *parser) feed(line string) {
 	if p.current == nil {
 		return
 	}
-	if m := reTagline.FindStringSubmatch(line); m != nil && p.current.Tagline == "" {
-		p.current.Tagline = m[1]
+	// Аннотация переносится по ширине файла, поэтому строки блока цитаты
+	// склеиваются в одну фразу. Раньше бралась только первая, и релиз
+	// показывался предложением, оборванным на полуслове.
+	if m := reTagline.FindStringSubmatch(line); m != nil && p.section == nil {
+		if p.current.Tagline == "" {
+			p.current.Tagline = m[1]
+		} else {
+			p.current.Tagline += " " + m[1]
+		}
 		return
 	}
 	if m := reSection.FindStringSubmatch(line); m != nil {

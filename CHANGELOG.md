@@ -8,6 +8,77 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-07-31
+
+> The dashboard port lands: every view but Projects now reads from the engine,
+> and the knowledge graph says something the numbers on it did not already say.
+
+### Added
+
+- **Dashboard ported 1:1** — KPI row, per-day bars, category donut, status
+  bars, the 21-week activity strip, the tag cloud and the knowledge graph.
+  - The donut is real: the original drew a ring of two fixed-width colours that
+    was not tied to the data at all. Shares and percentages now come from the
+    catalog.
+  - The tag cloud is collapsed by default. Expanded it fills the screen, and it
+    is read rarely.
+  - The activity strip counts by `date_added`, where the original counted by
+    `date_created` under a caption promising added entries. On this catalog
+    those are different facts: 862 entries carry only `date_added`, 461 only
+    `date_created`.
+  - The second KPI is throughput over 30 days against the previous 30. It used
+    to be "categories", which the donut below already answers; throughput was
+    the one question no tile answered.
+- **Knowledge graph: the ring now means closeness to the core.** It used to
+  mean size — chosen for layout reasons, since the outer ring's longer arc
+  keeps small boxes from colliding. That made the radius repeat what the node's
+  count and area already said. Inner ring: topics fused with the core by shared
+  vocabulary. Outer ring: islands with their own. Non-overlap is now a test,
+  because the old ordering held it by accident and the new one does not.
+- **Conclusions under the graph** — core, fused topics and islands, each with
+  the tags the link is actually made of. Selection is by shared tags **per
+  entry**, not by their absolute number: measured against the live catalog, the
+  absolute figure merely tracks category size (95 shared tags for the largest,
+  4 for the smallest), so the core came out connected to all 23 categories and
+  no islands existed. Density separates them cleanly, from 3.4 down to 0.3.
+- **Analytics brought to the original's layout** — manifesto cards with a
+  coloured spine per thesis type, pattern cards with an N/12 reach bar,
+  contradictions as two columns and a resolution, gap cards with priority and
+  clusters, and a research-brief sidebar. Long blocks collapse while their
+  heading and reach stay visible.
+- **Archives ported 1:1** and **finance charts**, with the arithmetic moved
+  server-side so it lives in one place.
+
+### Fixed
+
+- **`kbengine inbox` could not write the live catalog at all.** `AppendEntries`
+  refused any file carrying an unknown top-level key, and the live catalog
+  carries `last_updated`, written by the Python dashboard. The refusal was
+  deliberate and aimed at not losing data, but in practice it protected nothing
+  and blocked the command. Unknown keys are now carried through verbatim and in
+  their original order — order is what keeps a rewrite out of the diff.
+- **No cache headers were served**, so browsers held a stale `index.html`,
+  which references the bundle by content hash. Rebuilt pages did not reach the
+  reader. `assets/*` are immutable, `index.html` is `no-cache`.
+- **Horizontal scroll on narrow screens**: a grid item does not shrink below
+  its content without `min-w-0`, and the dashboard pushed the whole page to 497
+  pixels in a 390-pixel viewport.
+- Database health reports two honest fractions with their own denominators
+  instead of one averaged score that meant nothing.
+
+### Changed
+
+- Catalog statuses are an English enum under future i18n (`consider` rather
+  than a transliteration); 712 entries migrated, and the legacy Python
+  dashboard was updated in the same step — it compared the status against a
+  literal in five places.
+- One loading hook instead of four copies, with an architectural gate keeping
+  requests in `api.ts` and loading in `hooks/`.
+
+### Removed
+
+- `OverviewView` and `BarList`, unused once the dashboard landed.
+
 ## [0.2.0] — 2026-07-30
 
 > A finance module, a design system with one source of colour for web and
