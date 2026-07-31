@@ -32,11 +32,14 @@ const CATEGORY_ICONS: Record<string, IconName> = {
   Спорт: 'fitness_center',
 }
 
-const SOURCE_ICONS: Record<string, IconName> = {
-  Карта: 'credit_card',
+// Иконки счетов, с которых платят. Раньше карточка показывала не счета, а
+// поле source: у дохода это «Зарплата» или «Перевод от мамы», а у расхода —
+// способ, которым запись попала в книгу («Чек», «Вручную»). Под заголовком
+// «Источники оплаты» это читалось как мусор, потому что мусором и было:
+// два несовместимых смысла в одном поле.
+const ACCOUNT_ICONS: Record<string, IconName> = {
   Наличные: 'payments',
-  Перевод: 'swap_horiz',
-  Касса: 'point_of_sale',
+  Карта: 'credit_card',
 }
 
 function pct(part: number, whole: number): number {
@@ -180,26 +183,24 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
     }
   }
 
-  function exportCSV() {
-    const head = 'Дата,Категория,Подкатегория,Место,Описание,Сумма,Источник\n'
-    const body = journal
-      .map((t) =>
-        [
-          `"${t.date}"`,
-          `"${t.category ?? ''}"`,
-          `"${t.subcategory ?? ''}"`,
-          `"${t.place ?? ''}"`,
-          `"${(t.description ?? '').replace(/"/g, '""')}"`,
-          t.amount,
-          `"${t.source ?? ''}"`,
-        ].join(','),
-      )
-      .join('\n')
-    // BOM — иначе Excel читает кириллицу как мусор.
-    const blob = new Blob([`﻿${head}${body}\n`], { type: 'text/csv;charset=utf-8;' })
+  // Экспорт делает сервер: excelize у движка уже есть, а собирать zip с XML
+  // в браузере ради того же результата — лишняя библиотека. Строки уходят
+  // ровно те, что на экране, поэтому фильтрация остаётся в одном месте.
+  async function exportXLSX() {
+    const blob = await api.financeExport(
+      journal.map((t) => ({
+        date: t.date,
+        category: t.category ?? '',
+        subcategory: t.subcategory ?? '',
+        place: t.place ?? '',
+        description: t.description ?? '',
+        amount: String(t.amount ?? ''),
+        account: t.account ?? '',
+      })),
+    )
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
-    a.download = 'finances_export.csv'
+    a.download = 'finances.xlsx'
     a.click()
     URL.revokeObjectURL(a.href)
   }
@@ -508,14 +509,14 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
                 </div>
               </CollapsibleSection>
 
-              <CollapsibleSection title="Источники оплаты" count={summary.bySource.length}>
+              <CollapsibleSection title="Счета" count={summary.byAccount.length}>
                 <div className="space-y-3 rounded-lg bg-surface-low p-6">
-                  {summary.bySource.length === 0 && <p className="label opacity-40">Нет данных</p>}
-                  {summary.bySource.map((s) => {
+                  {summary.byAccount.length === 0 && <p className="label opacity-40">Нет данных</p>}
+                  {summary.byAccount.map((s) => {
                     const kop = toKopecks(s.total)
                     return (
                       <div key={s.name} className="flex items-center gap-3">
-                        <Icon name={SOURCE_ICONS[s.name] ?? 'account_balance_wallet'} className="text-base opacity-40" />
+                        <Icon name={ACCOUNT_ICONS[s.name] ?? 'account_balance_wallet'} className="text-base opacity-40" />
                         <div className="flex-1">
                           <div className="flex items-center justify-between">
                             <span className="label text-xs">{s.name}</span>
@@ -558,7 +559,7 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
             </button>
             <button
               type="button"
-              onClick={exportCSV}
+              onClick={exportXLSX}
               className="label flex items-center gap-2 bg-primary px-4 py-2 text-xs text-on-primary"
             >
               <Icon name="download" className="text-sm" /> Экспорт

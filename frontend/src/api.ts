@@ -345,6 +345,17 @@ export interface Dashboard {
   finances: Finances
 }
 
+/** Одна строка журнала так, как её увозят в книгу. */
+export interface FinanceExportRow {
+  date: string
+  category: string
+  subcategory: string
+  place: string
+  description: string
+  amount: string
+  account: string
+}
+
 export const api = {
   stats: () => getJSON<Stats>('/api/stats'),
   entries: () => getJSON<Entry[]>('/api/entries'),
@@ -372,6 +383,21 @@ export const api = {
         ? `/api/finances/summary?months=${encodeURIComponent(months.join(','))}`
         : '/api/finances/summary',
     ),
+
+  /**
+   * Экспорт журнала книгой xlsx. Отправляем строки, а не параметры фильтра:
+   * фильтрует и сортирует вид, и повторять эти правила на сервере значило бы
+   * держать две реализации одного, обязанные совпадать.
+   */
+  async financeExport(rows: FinanceExportRow[]): Promise<Blob> {
+    const res = await fetch('/api/finances/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows }),
+    })
+    if (!res.ok) throw new Error(`export failed: ${res.status}`)
+    return res.blob()
+  },
 
   async dashboard(): Promise<Dashboard> {
     const [stats, entries, audits, duplicates, analytics, analyticsConfig, finances] =
