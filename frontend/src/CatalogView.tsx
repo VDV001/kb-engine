@@ -116,6 +116,8 @@ export function CatalogView({
   tagLabels,
   pickedTag,
   onPickedTagChange,
+  pickedCategory,
+  onPickedCategoryChange,
   health,
   search,
   onSearchChange,
@@ -128,6 +130,9 @@ export function CatalogView({
   /** Тег, выбранный в облаке на дашборде: выбирают там, применяется здесь. */
   pickedTag: string
   onPickedTagChange: (t: string) => void
+  /** Категория, выбранная ящиком на About — тот же путь, что у тега. */
+  pickedCategory: string
+  onPickedCategoryChange: (c: string) => void
   health: Health
   /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
   search: string
@@ -185,6 +190,15 @@ export function CatalogView({
   const [tagShown, setTagShown] = useState(pickedTag)
   if (tagShown !== pickedTag) {
     setTagShown(pickedTag)
+    setPage(1)
+  }
+  // Категория, пришедшая снаружи, ложится в тот же фильтр, что и выбранная
+  // селектом: иначе на экране оказались бы два состояния одной категории, и
+  // сброс одного не убирал бы другое.
+  const [categoryShown, setCategoryShown] = useState(pickedCategory)
+  if (categoryShown !== pickedCategory) {
+    setCategoryShown(pickedCategory)
+    if (pickedCategory !== '') setFilter((f) => ({ ...f, category: pickedCategory }))
     setPage(1)
   }
 
@@ -373,6 +387,10 @@ export function CatalogView({
               // И тег, пришедший из облака на дашборде: он не нарисован среди
               // селекторов, но он такой же действующий фильтр.
               onPickedTagChange('')
+              // Категория с About видна в своём селекторе и снимается вместе с
+              // ним, но забыть её наверху нельзя: иначе повторный клик по тому
+              // же ящику не сменит состояние и фильтр не вернётся.
+              onPickedCategoryChange('')
               setPage(1)
             }}
             disabled={!isFiltered}

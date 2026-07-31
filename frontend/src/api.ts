@@ -265,6 +265,14 @@ export interface Changelog {
   releases: ChangelogRelease[] | null
 }
 
+/** Сборка движка, которая прямо сейчас отвечает на запросы. Версия базы и
+ * версия движка — разные вещи: первая про содержимое, вторая про программу. */
+export interface Engine {
+  version: string
+  commit: string
+  built: string
+}
+
 // Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as
 // int64 so that 89.99 stays 89.99, and parsing straight into a float would put
 // 89.98999999999999 back on the screen. Anything that sums amounts goes through
@@ -377,6 +385,7 @@ export const api = {
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
   graph: () => getJSON<Graph>('/api/graph'),
   changelog: () => getJSON<Changelog>('/api/changelog'),
+  engine: () => getJSON<Engine>('/api/engine'),
   now: () => getJSON<Now | null>('/api/now'),
   team: () => getJSON<Document | null>('/api/team'),
   projects: () => getJSON<ProjectDoc | null>('/api/projects'),

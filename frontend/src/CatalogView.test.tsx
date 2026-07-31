@@ -32,6 +32,8 @@ const view = (search: string, onSearchChange = () => {}) =>
       tagLabels={{}}
       pickedTag=""
       onPickedTagChange={() => {}}
+      pickedCategory=""
+      onPickedCategoryChange={() => {}}
       health={health}
       search={search}
       onSearchChange={onSearchChange}
@@ -53,7 +55,7 @@ describe('CatalogView', () => {
     expect(screen.getByText(/Показано 31–40/).textContent).toContain('31–40')
 
     rerender(
-      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
+      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} pickedCategory="" onPickedCategoryChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
     )
     expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
   })
