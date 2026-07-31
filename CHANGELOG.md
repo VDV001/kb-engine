@@ -8,6 +8,59 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-31
+
+> The licence changes to AGPL-3.0-or-later with a commercial alternative, and
+> the catalog stops hiding metadata inside its own content: translations,
+> verdicts and tag names each move into a field of their own.
+
+### Changed
+
+- **Licence is now AGPL-3.0-or-later**, with a commercial alternative described
+  in `COMMERCIAL-LICENSE.md`. Releases up to and including `0.3.0` were
+  published under MIT and stay under MIT — that grant cannot be withdrawn after
+  the fact. These terms apply from this release onward.
+- The dashboard footer offers the source and names the licence. This is not
+  decoration: AGPL §13 entitles anyone using the engine over a network to its
+  source, and the engine is served over HTTP. A test keeps the link from being
+  removed by a later markup edit.
+
+### Added
+
+- **Tag labels** — `meta.tag_labels` maps a tag key to a readable name, the way
+  `meta.categories` already does for categories. Russian tags could be neither
+  translated nor merged with their English synonyms while the key *was* the
+  name; now `job-market` carries «Рынок труда» beside it. The dictionary is
+  separate from the category one on purpose: a category label is
+  «Name: description» and gets cut at the colon, a tag label is a name and a
+  colon inside it belongs to the name.
+- **Translation as a field** — `is_translation` replaces the `[Перевод]` prefix
+  that used to live inside the title. Sixty entries carried it that way, and it
+  would have stayed Russian through any interface translation, because it sat
+  in content rather than in data. The archive shows a badge and filters on it.
+- **Tag filter and a clickable tag cloud** — there was no way to filter by tag
+  at all, with 3853 tags against 24 categories; search was the only route and it
+  also matched titles and descriptions. Clicking a tag in the cloud now opens
+  the archive filtered by it, as the original dashboard's caption promised. The
+  picked tag shows as a removable chip: it has no selector of its own, and
+  without the chip a narrowed result looked unexplained.
+- **The projects page prints to PDF** — print styles rather than an engine
+  command. A headless renderer would put Chromium next to a binary that has two
+  direct dependencies and a 9 MB image. Details expand, cover gradients survive
+  `print-color-adjust`, cards do not break across sheets, and links print with
+  their address.
+- **Summary view completed** — entry source, the changelog origin line, an
+  expandable release history and the editorial section at the foot.
+
+### Fixed
+
+- `Ledger.Net` removed: its only caller was its own test, and the production
+  sum runs through `report.go`. `NewServiceWithClock` was kept — it is a clock
+  seam, not forgotten code.
+- `npm run lint` no longer scans `frontend/dist`. It reported twelve warnings in
+  a minified bundle against zero in the sources; CI had been calling
+  `oxlint src` and was right. A linter that is always red stops being read.
+
 ## [0.3.0] — 2026-07-31
 
 > The dashboard port lands: every view but Projects now reads from the engine,
