@@ -1,13 +1,84 @@
 {
   "label": "Projects",
   "title": "Projects.",
-  "subtitle": "Point the engine at your own file with --projects. Badges: prod, dev, published, private, paused.",
+  "subtitle": "Point the engine at your own file with --projects, and at a directory of screenshots with --media.",
+  "stats": [
+    {"value": "3", "label": "projects"},
+    {"value": "1200+", "label": "commits"},
+    {"value": "Go", "label": "+ TypeScript"},
+    {"value": "1", "label": "OSS release"}
+  ],
   "sections": [
     {
       "title": "Products",
       "cards": [
-        {"title": "example-service", "badge": "prod", "url": "https://example.com", "body": "What it does, one sentence.", "tags": ["Go", "PostgreSQL"]}
+        {
+          "title": "example-service",
+          "short": "Example",
+          "kicker": "B2B SaaS · Self-hosted",
+          "badge": "Production",
+          "note": "v1.4.0 · MIT",
+          "plain": "The pain your client recognises, then what the product does about it — in the words they use, not yours.",
+          "body": "The engineering summary: architecture, stack, the decisions worth naming.",
+          "tags": ["go", "nextjs"],
+          "metrics": [
+            {"value": "640", "label": "commits"},
+            {"value": "130+", "label": "tests"}
+          ],
+          "links": [{"label": "GitHub", "url": "https://example.com"}],
+          "image": "/media/example-service.png",
+          "accent": "floq",
+          "span": "full"
+        },
+        {
+          "title": "example-tool",
+          "short": "Tool",
+          "kicker": "CLI · Go",
+          "badge": "Опубликован OSS",
+          "plain": "No screenshot here: the card falls back to the accent gradient and shows the project's mark instead.",
+          "body": "accent takes a palette name (floq, akadem, estimate, lexis, dealsense) or a ready CSS gradient string.",
+          "tags": ["go"],
+          "accent": "linear-gradient(135deg,#04141a 0%,#0b3a45 55%,#1b7f92 100%)",
+          "span": "half",
+          "code": ["$ example serve --port 8080", "→ ready"]
+        },
+        {
+          "title": "example-course",
+          "short": "Course",
+          "kicker": "HTML · zero-build",
+          "badge": "Прод · Vercel",
+          "plain": "span controls width: full spans the row, half takes a column, third makes a compact card.",
+          "tags": ["edu"],
+          "links": [{"label": "Open", "url": "https://example.com"}],
+          "accent": "lexis",
+          "span": "half"
+        }
       ]
     }
-  ]
+  ],
+  "tech": [
+    {
+      "title": "Backend",
+      "items": [
+        {"name": "Go", "value": "1.26"},
+        {"name": "PostgreSQL", "value": "18"}
+      ]
+    },
+    {
+      "title": "Frontend",
+      "items": [
+        {"name": "TypeScript", "value": "strict"},
+        {"name": "Tailwind CSS", "value": "v4"}
+      ]
+    }
+  ],
+  "contacts": [
+    {"icon": "mail", "label": "Email", "value": "you@example.com", "url": "mailto:you@example.com"},
+    {"icon": "code", "label": "GitHub", "value": "example", "url": "https://github.com/"}
+  ],
+  "footer": {
+    "name": "Your Name",
+    "tagline": "Go · TypeScript · what you want remembered",
+    "place": "Your City · 2026"
+  }
 }
