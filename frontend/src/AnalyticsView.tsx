@@ -1,12 +1,12 @@
 import { useState } from 'react'
 import { api } from './api'
-import type { AnalyticsConfig, Contradiction, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
+import type { AnalyticsConfig, Contradiction, Gap, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
 import { useResource } from './hooks/useResource'
 import { categoryLabel } from './catalog'
 import { GraphConclusions } from './components/KnowledgeGraph'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
-import { Card, Label } from './components/ui'
+import { Label } from './components/ui'
 
 // The meta-analytics view, ported from the KB dashboard: five tabs over the
 // curated semantic layer, a dark summary card on the right. Everything comes
@@ -211,11 +211,60 @@ function ContradictionCard({ c, index }: { c: Contradiction; index: number }) {
   )
 }
 
-const priorityTone: Record<string, string> = {
-  high: 'bg-tag-bg-4 text-tag-text-4',
-  medium: 'bg-tag-bg-2 text-tag-text-2',
-  low: 'bg-tag-bg-3 text-tag-text-3',
+
+/** Приоритет пробела: подпись, иконка и цвет полосы. Иконки взяты из набора
+ * движка — «!» и «внимание» в нём нет, роль играют смысловые ближайшие. */
+const GAP_PRIORITY: Record<string, { label: string; icon: IconName; bar: string }> = {
+  high: { label: 'Высокий', icon: 'trending_up', bar: 'var(--primary)' },
+  medium: { label: 'Средний', icon: 'update', bar: 'var(--secondary)' },
+  low: { label: 'Низкий', icon: 'history', bar: 'var(--outline-variant)' },
 }
+
+/** Сколько кластеров считается полным охватом пробела — знаменатель исходника. */
+const GAP_FULL = 5
+
+/** GapCard — карточка пробела: приоритет, тема, кластеры и полоса охвата.
+ * Здесь сворачивать нечего: у пробела нет длинного описания, только тема и метки. */
+function GapCard({ gap }: { gap: Gap }) {
+  const clusters = gap.clusters ?? []
+  const m = GAP_PRIORITY[gap.priority] ?? GAP_PRIORITY.low
+  const pct = Math.min(100, Math.round((clusters.length / GAP_FULL) * 100))
+
+  return (
+    <article className="flex min-h-[13rem] flex-col justify-between rounded-xl border border-outline-variant bg-surface-lowest p-7">
+      <div>
+        <div className="mb-4 flex items-start justify-between gap-3">
+          <span className="label rounded-sm bg-surface-high px-2.5 py-1">{m.label}</span>
+          <Icon name={m.icon} className="size-5 text-outline-variant" />
+        </div>
+        <h3 className="mb-3 font-headline text-base font-bold leading-snug">{gap.topic}</h3>
+        {clusters.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {clusters.map((c) => (
+              <span
+                key={c}
+                className="rounded-sm border border-outline-variant bg-surface-high px-1.5 py-0.5 text-[10px] text-on-surface-variant"
+              >
+                {c}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="mt-5">
+        <div className="mb-1.5 flex items-end justify-between">
+          <span className="label text-secondary">Кластеров</span>
+          <span className="font-headline text-sm italic text-primary">{clusters.length}</span>
+        </div>
+        <div className="h-0.5 w-full bg-outline-variant">
+          <div className="h-0.5" style={{ width: `${pct}%`, background: m.bar }} />
+        </div>
+      </div>
+    </article>
+  )
+}
+
 
 export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stats: Stats }) {
   const [tab, setTab] = useState<TabId>('манифест')
@@ -301,19 +350,12 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
           )}
 
           {tab === 'пробелы' && (
-            <div className="grid gap-4 lg:grid-cols-2">
-              {gaps.map((g) => (
-                <Card key={g.topic} className="flex items-start justify-between gap-3">
-                  <span className="text-sm">{g.topic}</span>
-                  <span
-                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
-                      priorityTone[g.priority] ?? priorityTone.low
-                    }`}
-                  >
-                    {g.priority}
-                  </span>
-                </Card>
-              ))}
+            <div className="grid gap-5 xl:grid-cols-2">
+              {[...gaps]
+                .sort((a, b) => (b.clusters?.length ?? 0) - (a.clusters?.length ?? 0))
+                .map((g) => (
+                  <GapCard key={g.topic} gap={g} />
+                ))}
             </div>
           )}
 
