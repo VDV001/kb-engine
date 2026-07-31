@@ -34,7 +34,7 @@ export function Header<T extends string>({
   useCssVarHeight(ref, '--nav-h')
 
   return (
-    <header ref={ref} className="sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
+    <header ref={ref} className="no-print sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
       <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:gap-x-12 lg:px-8">
         <a
           href="#"
