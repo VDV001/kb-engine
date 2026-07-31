@@ -202,18 +202,6 @@ func TestAppendEntries_StatusRoundTripsAllKinds(t *testing.T) {
 	}
 }
 
-func TestAppendEntries_RejectsUnknownTopLevelKeys(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "catalog.json")
-	if err := os.WriteFile(path, []byte(`{"meta":{},"entries":[],"stray":1}`), 0o644); err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	err := catalogjson.AppendEntries(path, []domain.Entry{newArticleEntry(t, 1, "X", "u")})
-	if err == nil {
-		t.Fatal("expected error for unknown top-level key, got nil")
-	}
-}
-
 // The live catalog carries a third top-level key, "last_updated", written by the
 // Python dashboard. Refusing it did protect the key from being dropped, but it
 // also meant the command could not run against the only catalog that matters.
