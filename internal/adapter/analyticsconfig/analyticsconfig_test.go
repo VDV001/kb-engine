@@ -83,3 +83,41 @@ func TestLoad_MissingFile(t *testing.T) {
 		t.Fatal("expected error for missing file")
 	}
 }
+
+// Правый столбец аналитики в исходном дашборде несёт четыре блока, которых в
+// движке не было: опоры под выводом, разрешение противоречия и разбиение
+// кластеров на «усиливает / заменяет / нейтрально». Данные лежали в файле всё
+// это время — их обрезала структура, а не отсутствие.
+//
+// «Рост за 12 недель» и «центральные узлы графа» сюда намеренно не входят:
+// первое уже есть на дашборде лентой за 21 неделю, второе — самим графом.
+func TestLoad_sidebarBlocks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	src := `{
+	  "pull_quote": "тезис",
+	  "pull_quote_supports": [{"cluster": "vibe-coding", "claim": "вкус решает"}],
+	  "contradiction_resolution": "усиливает 16 против заменяет 2",
+	  "amplify_clusters": ["claude-ecosystem", "devops"],
+	  "replace_clusters": ["services-reference"],
+	  "neutral_clusters": ["meta"],
+	  "patterns": [], "gaps": [], "contradictions": [], "manifesto_quotes": []
+	}`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := analyticsconfig.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.PullQuoteSupports) != 1 || cfg.PullQuoteSupports[0].Cluster != "vibe-coding" {
+		t.Errorf("PullQuoteSupports = %+v", cfg.PullQuoteSupports)
+	}
+	if cfg.ContradictionResolution != "усиливает 16 против заменяет 2" {
+		t.Errorf("ContradictionResolution = %q", cfg.ContradictionResolution)
+	}
+	if len(cfg.AmplifyClusters) != 2 || len(cfg.ReplaceClusters) != 1 || len(cfg.NeutralClusters) != 1 {
+		t.Errorf("направления: %v / %v / %v",
+			cfg.AmplifyClusters, cfg.ReplaceClusters, cfg.NeutralClusters)
+	}
+}
