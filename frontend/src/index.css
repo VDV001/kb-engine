@@ -103,6 +103,82 @@ h1, h2, h3 {
   .ecg-line { animation: none; }
 }
 
+/* --- Проекты: перенос из исходного дашборда ---
+   Страницу показывают заказчикам, поэтому превью-плашки остаются тёмными в
+   обеих темах: это «обложка» продукта, а не поверхность интерфейса. Всё
+   остальное на странице живёт на токенах. */
+
+/* Именованные градиенты обложек. Живут в репозитории, карточка ссылается на
+   них по имени: градиент — код, а не личное содержимое владельца. Файл
+   владельца может задать и готовую строку CSS, тогда она идёт инлайном. */
+.proj-floq      { background: linear-gradient(135deg, #1a0a00 0%, #5c1e0b 50%, #99462a 100%); }
+.proj-akadem    { background: linear-gradient(135deg, #0f1209 0%, #2f312a 55%, #474741 100%); }
+.proj-estimate  { background: linear-gradient(135deg, #140c00 0%, #3d2910 55%, #7a5530 100%); }
+.proj-lexis     { background: linear-gradient(135deg, #1a1c16 0%, #55433d 50%, #88726c 100%); }
+.proj-dealsense { background: linear-gradient(135deg, #0a1420 0%, #1e3a5f 50%, #4a7ba8 100%); }
+
+/* Сетка поверх обложки: она даёт плашке масштаб, иначе градиент читается как
+   пустая заливка. */
+.proj-grid {
+  background-image:
+    repeating-linear-gradient(0deg, rgba(250,250,239,0.06) 0, rgba(250,250,239,0.06) 1px, transparent 1px, transparent 48px),
+    repeating-linear-gradient(90deg, rgba(250,250,239,0.06) 0, rgba(250,250,239,0.06) 1px, transparent 1px, transparent 96px);
+}
+
+.proj-pill {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  background: var(--surface-high); color: var(--on-surface-variant);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+/* Пилюля на обложке: та же форма, но поверх тёмной плашки, поэтому цвета
+   заданы прозрачным белым, а не токеном темы. */
+.proj-pill-dark {
+  display: inline-flex; align-items: center;
+  padding: 3px 10px; border-radius: 999px;
+  background: rgba(255,255,255,0.12); color: rgba(255,255,255,0.65);
+  font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+/* Кнопка-ссылка в углу обложки. Цвета заданы жёстко, а не ролями темы:
+   плашка тёмная в обеих темах, а роль текста инвертируется — в тёмной теме
+   подпись становилась светлой на белом и кнопка превращалась в белое пятно. */
+.proj-chip {
+  display: inline-flex; align-items: center;
+  padding: 6px 12px; border-radius: 999px;
+  background: rgba(255,255,255,0.92); color: #1b1c18;
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  transition: background 0.15s ease;
+}
+.proj-chip:hover { background: #ffffff; }
+
+.proj-card { transition: transform 0.2s ease; }
+.proj-card:hover { transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) {
+  .proj-card { transition: none; }
+  .proj-card:hover { transform: none; }
+}
+
+/* Бейджи статуса. Здесь свои цвета, а не роли tag-*: статус проекта —
+   светофор («работает» / «в работе» / «закрыт»), и зелёное с жёлтым читаются
+   без легенды, чего пары tag-bg дать не могут. */
+.badge-prod      { background: #e5f4e8; color: #2d6a38; border: 1px solid #b7dfc0; }
+.badge-dev       { background: #fff4e0; color: #8a5a00; border: 1px solid #f0d08a; }
+.badge-published { background: #e0eaf7; color: #1e4a82; border: 1px solid #a8c0e0; }
+.badge-private   { background: #eeefe4; color: #5f5e5d; border: 1px solid #dbc1b9; }
+.dark .badge-prod      { background: rgba(45,106,56,0.25); color: #6fcf7e; border-color: rgba(111,207,126,0.2); }
+.dark .badge-dev       { background: rgba(138,90,0,0.2); color: #fbbf24; border-color: rgba(251,191,36,0.2); }
+.dark .badge-published { background: rgba(30,74,130,0.25); color: #7eb6ff; border-color: rgba(126,182,255,0.2); }
+.dark .badge-private   { background: rgba(95,94,93,0.2); color: var(--on-surface-variant); border-color: rgba(175,175,175,0.15); }
+
+/* Полоса метрик: ячейки разделены волосяной линией и не скругляются — это
+   структура внутри карточки, а не отдельные объекты. */
+.proj-metric { border-right: 1px solid var(--outline-variant); }
+.proj-metric:last-child { border-right: none; }
+
 /* --- Граф знаний: перенос из исходного дашборда --- */
 /* Точечная сетка холста — она держит пространство, по ней читается масштаб. */
 .kg-canvas {

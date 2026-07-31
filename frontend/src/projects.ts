@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import type { ProjectCard, ProjectSection } from './api'
 
 // Pure logic behind the projects view: which cards a filter leaves standing and
@@ -101,4 +102,55 @@ export function filterSections(sections: ProjectSection[], filter: ProjectFilter
 
 export function countCards(sections: ProjectSection[]): number {
   return sections.reduce((n, s) => n + (s.cards?.length ?? 0), 0)
+}
+
+/** Как нарисовать обложку карточки: класс из палитры и/или инлайновый фон. */
+export interface Cover {
+  className: string
+  style: CSSProperties | undefined
+}
+
+// Имя акцента подставляется в класс, а файл владельца правится руками, поэтому
+// в класс проходят только буквы, цифры и дефис. Всё прочее — не имя палитры, и
+// карточка получает нейтральную плашку вместо разметки с чужой кавычкой.
+const ACCENT_NAME = /^[a-z0-9-]+$/
+
+/**
+ * cover решает, чем закрашена подложка карточки: именованный градиент палитры,
+ * готовая строка CSS из файла владельца или нейтральная тёмная плашка.
+ *
+ * Скриншот сюда не входит намеренно. Фоном он либо обрезается по краям
+ * (background-size: cover срезал шапку снимка — владелец это и увидел), либо
+ * оставляет непредсказуемые поля, и подпись поверх него всё равно наезжает на
+ * содержимое. Картинка рисуется отдельным слоем и вписывается целиком, а
+ * подпись остаётся на градиенте, где она читается всегда.
+ */
+export function cover(card: ProjectCard): Cover {
+  const accent = card.accent ?? ''
+  if (accent.startsWith('linear-gradient') || accent.startsWith('radial-gradient')) {
+    return { className: '', style: { background: accent } }
+  }
+  if (ACCENT_NAME.test(accent)) {
+    return { className: `proj-${accent}`, style: undefined }
+  }
+  return { className: '', style: { background: 'var(--card-spotlight-bg)' } }
+}
+
+// Статусы владелец пишет словами, и слов больше, чем состояний. Сопоставление
+// живёт здесь одной таблицей, а не условиями в разметке.
+const BADGE_TONE: Record<string, string> = {
+  Production: 'badge-prod',
+  'Прод · Vercel': 'badge-prod',
+  'В разработке': 'badge-dev',
+  Pilot: 'badge-dev',
+  MVP: 'badge-dev',
+  'Опубликован OSS': 'badge-published',
+  Опубликована: 'badge-published',
+  'Private repo': 'badge-private',
+}
+
+/** Незнакомый статус получает нейтральный тон: выдать непонятое за «работает» —
+ * худшее из умолчаний, потому что именно этому бейджу заказчик верит. */
+export function badgeTone(badge: string): string {
+  return BADGE_TONE[badge] ?? 'badge-private'
 }

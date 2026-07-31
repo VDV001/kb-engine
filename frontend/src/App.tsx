@@ -10,6 +10,7 @@ import { FinancesView } from './FinancesView'
 import { PrivacyToggle } from './components/PrivacyToggle'
 import { SearchBox } from './components/SearchBox'
 import { DashboardView } from './DashboardView'
+import { ProjectsView } from './ProjectsView'
 import { AuditsView, DuplicatesView, SettingsView } from './views'
 
 type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
@@ -83,7 +84,7 @@ export default function App() {
               />
             )}
             {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
-            {tab === 'projects' && <DocumentView load={api.projects} name="Projects" />}
+            {tab === 'projects' && <ProjectsView />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" />}
             {tab === 'now' && <NowView />}
             {tab === 'settings' && <SettingsView stats={data.stats} />}
