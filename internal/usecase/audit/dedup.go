@@ -32,18 +32,27 @@ func (s *Service) Duplicates() ([]DuplicateGroup, error) {
 var (
 	reTranslatePrefix = regexp.MustCompile(`(?i)^\[перевод\]\s*`)
 	reTranslateSuffix = regexp.MustCompile(`(?i)\s*\(перевод\)\s*$`)
-	rePartSuffix      = regexp.MustCompile(`(?i)\s*ч(асть)?\s*\d+\s*$`)
-	reVersionSuffix   = regexp.MustCompile(`\s*v?\d+(\.\d+)*\s*$`)
+	// Номер части — часть названия, а не шум в конце: «Часть 1» и «Часть 2»
+	// разные материалы. Раньше он срезался, и единственная находка дедупа на
+	// живом каталоге оказалась ложной парой из двух половин одной статьи.
+	rePartSuffix    = regexp.MustCompile(`(?i)\s*(часть|ч\.)\s*\d+\s*$`)
+	reVersionSuffix = regexp.MustCompile(`\s*v?\d+(\.\d+)*\s*$`)
 )
 
-// normalizeTitle strips translation markers and trailing part/version markers so
-// that "… часть 1" and "… часть 2" collapse to the same key.
+// normalizeTitle strips translation markers and a trailing version marker, so
+// that two editions of one document ("… v1" / "… v2") collapse to one key.
+//
+// A part number does NOT collapse. Two rules used to erase it — the part suffix
+// itself and the version suffix, which happily eats any trailing digit — so
+// removing one of them changed nothing: the pair stayed. The version rule is
+// therefore applied only when the tail is not a part number.
 func normalizeTitle(title string) string {
 	t := strings.ToLower(strings.TrimSpace(title))
 	t = reTranslatePrefix.ReplaceAllString(t, "")
 	t = reTranslateSuffix.ReplaceAllString(t, "")
-	t = rePartSuffix.ReplaceAllString(t, "")
-	t = reVersionSuffix.ReplaceAllString(t, "")
+	if !rePartSuffix.MatchString(t) {
+		t = reVersionSuffix.ReplaceAllString(t, "")
+	}
 	return strings.TrimSpace(t)
 }
 
