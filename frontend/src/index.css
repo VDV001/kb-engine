@@ -1,4 +1,9 @@
-@import "tailwindcss";
+/* source("./") ограничивает поиск классов папкой src.
+   Без него Tailwind v4 сканирует весь репозиторий, и правка README или примера
+   в docs/ меняла содержимое CSS-бандла: имя файла зависит от хеша содержимого,
+   поэтому закоммиченный dist переставал совпадать с пересобранным на CI —
+   ровно на этом и упала проверка «dist matches src». */
+@import "tailwindcss" source("./");
 /* Generated from design/tokens.json — the same source the TUI reads. */
 @import "./tokens.css";
 @import "./fonts.css";
