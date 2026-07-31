@@ -312,6 +312,35 @@ func TestServer_duplicates(t *testing.T) {
 	}
 }
 
+// emptyAudit — каталог, в котором аудиту нечего сказать. Ровно это и случилось
+// на живых данных: после починки дедупа последняя ложная группа исчезла.
+type emptyAudit struct{}
+
+func (emptyAudit) OutdatedCandidates() ([]audit.Finding, error)  { return nil, nil }
+func (emptyAudit) CanonicalCandidates() ([]audit.Finding, error) { return nil, nil }
+func (emptyAudit) SupersessionIssues() ([]audit.Finding, error)  { return nil, nil }
+func (emptyAudit) Duplicates() ([]audit.DuplicateGroup, error)   { return nil, nil }
+
+// Пустой список — это `[]`, а не `null`. Разница не косметическая: nil-слайс
+// уходит в JSON как null, клиент считает его длину, и вся страница снимается
+// с одной непроверенной точки. Клиент от этого защищён отдельно, но контракт
+// чинится здесь: «находок нет» — законный ответ, и выглядеть он должен как
+// пустой список, а не как отсутствие ответа.
+func TestServer_duplicates_emptyIsAnArrayNotNull(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, emptyAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) { return changelog.Document{}, nil },
+		httpapi.Documents{}, testEngine, nil)
+
+	rec := get(t, srv, "/api/duplicates")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if got := strings.TrimSpace(rec.Body.String()); got != "[]" {
+		t.Errorf("body = %s, want []", got)
+	}
+}
+
 func TestServer_unknownRoute(t *testing.T) {
 	rec := get(t, newTestServer(), "/api/nope")
 	if rec.Code != http.StatusNotFound {

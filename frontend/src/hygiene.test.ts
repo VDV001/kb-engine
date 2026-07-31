@@ -187,4 +187,17 @@ describe('findingCount', () => {
   it('пустые данные дают ноль', () => {
     expect(findingCount({ outdated: null, canonical: null, supersession: null }, [])).toBe(0)
   })
+
+  // Пустой список дублей приходит с сервера как null, а не как []: Go
+  // сериализует nil-слайс именно так. Пока в каталоге находилась хоть одна
+  // группа, этого никто не видел — на живых данных её не стало после починки
+  // дедупа, счётчик упал на null.length, и React снял всё дерево. Белый экран
+  // на Dashboard, хотя ломался бейдж вкладки Health.
+  //
+  // Разделы аудита в этой же функции защищены `?.` — дубли нет. Тест держит
+  // клиент устойчивым независимо от того, что решит сервер.
+  it('null вместо пустого списка дублей не роняет счётчик', () => {
+    const empty: Audits = { outdated: null, canonical: null, supersession: null }
+    expect(findingCount(empty, null as unknown as DuplicateGroup[])).toBe(0)
+  })
 })
