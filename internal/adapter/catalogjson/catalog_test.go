@@ -245,6 +245,21 @@ func TestDecode_categoryLabels(t *testing.T) {
 	}
 }
 
+// Подписи тегов лежат рядом с подписями категорий, в meta.tag_labels. Они
+// появились, когда русские теги свели к латинским ключам: ключ уехал в записи,
+// читаемое название осталось в словаре.
+func TestDecode_tagLabels(t *testing.T) {
+	src := `{"meta":{"tag_labels":{"job-market":"Рынок труда"}},` +
+		`"entries":[{"id":1,"title":"T","category":"golang","status":"keep","tags":["job-market"]}]}`
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if got := c.TagLabels()["job-market"]; got != "Рынок труда" {
+		t.Errorf("label = %q, want %q", got, "Рынок труда")
+	}
+}
+
 // Конспект записи лежит в поле file — путь к markdown-файлу разбора. Карточка
 // «Здоровье базы» считает, у скольких записей он есть, поэтому поле обязано
 // доехать до домена: в движке его не было вовсе.
