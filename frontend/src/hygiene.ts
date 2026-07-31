@@ -127,5 +127,7 @@ export function conflictingIds(audits: Audits): number[] {
 /** Объём работы для счётчика во вкладке: находки аудита плюс группы дублей. */
 export function findingCount(audits: Audits, duplicates: DuplicateGroup[]): number {
   const sections = [audits.outdated, audits.canonical, audits.supersession]
-  return sections.reduce((n, s) => n + (s?.length ?? 0), 0) + duplicates.length
+  // Группы дублей считаются так же осторожно, как разделы аудита. Асимметрия
+  // ровно здесь и стоила белого экрана: разделы были защищены, список групп нет.
+  return sections.reduce((n, s) => n + (s?.length ?? 0), 0) + (duplicates?.length ?? 0)
 }
