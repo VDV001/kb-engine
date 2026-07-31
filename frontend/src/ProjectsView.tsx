@@ -325,7 +325,19 @@ export function ProjectsView() {
             <span className="h-px w-8 bg-secondary" />
             <span className="label text-secondary">{doc.label ?? 'Projects'}</span>
           </div>
-          <h1 className="text-4xl leading-[0.95] sm:text-5xl">{doc.title ?? 'Проекты'}</h1>
+          <div className="flex flex-wrap items-end gap-4">
+            <h1 className="text-4xl leading-[0.95] sm:text-5xl">{doc.title ?? 'Проекты'}</h1>
+            {/* Страницу отправляют заказчикам файлом. Печать делает браузер —
+                кнопка только открывает его диалог, где и выбирают «Сохранить
+                как PDF». Своего рендера у движка нет и не нужно. */}
+            <button
+              type="button"
+              onClick={() => window.print()}
+              className="no-print mb-1 rounded border border-outline-variant px-3 py-1.5 font-label text-[10px] uppercase tracking-wider text-on-surface-variant transition-colors hover:border-secondary hover:text-secondary"
+            >
+              Сохранить в PDF
+            </button>
+          </div>
           {doc.subtitle && (
             <p className="mt-5 max-w-xl leading-relaxed text-on-surface-variant">{doc.subtitle}</p>
           )}
