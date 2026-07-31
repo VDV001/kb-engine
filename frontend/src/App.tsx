@@ -36,6 +36,9 @@ export default function App() {
   const [masked, setMasked] = useState(true)
   // Поиск тоже поднят сюда: поле стоит в шапке, а фильтрует каталог.
   const [search, setSearch] = useState('')
+  // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
+  // на одной вкладке, а применяется он на другой.
+  const [pickedTag, setPickedTag] = useState('')
   const dashboard = useResource(api.dashboard)
   const data = dashboard.status === 'ready' ? dashboard.data : null
 
@@ -68,7 +71,19 @@ export default function App() {
         {dashboard.status === 'loading' && <Spinner />}
         {data && (
           <>
-            {tab === 'overview' && <DashboardView stats={data.stats} entries={data.entries} />}
+            {tab === 'overview' && (
+              <DashboardView
+                stats={data.stats}
+                entries={data.entries}
+                // Клик по тегу в облаке переносит в архив вместе с фильтром:
+                // облако показывает, ЧТО в базе есть, а читать это всё равно
+                // идёшь в архив.
+                onPickTag={(t) => {
+                  setPickedTag(t)
+                  setTab('archives')
+                }}
+              />
+            )}
 
             {tab === 'analytics' && (
               <AnalyticsView config={data.analyticsConfig} stats={data.stats} />
@@ -80,6 +95,8 @@ export default function App() {
                 entries={data.entries}
                 labels={data.stats.category_labels ?? {}}
                 tagLabels={data.stats.tag_labels ?? {}}
+                pickedTag={pickedTag}
+                onPickedTagChange={setPickedTag}
                 health={data.stats.health}
                 search={search}
                 onSearchChange={setSearch}

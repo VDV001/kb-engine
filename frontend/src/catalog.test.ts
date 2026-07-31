@@ -263,3 +263,25 @@ describe('translation filter', () => {
     expect(filterEntries(data, emptyFilter)).toHaveLength(2)
   })
 })
+
+// Фильтра по тегу не было вовсе, хотя тег — главный способ, которым база
+// связана внутри себя: 3853 тега против 24 категорий. Единственным способом
+// отобрать по тегу был поиск, а он ищет ещё и в заголовке с описанием и
+// поэтому приносит лишнее.
+describe('tag filter', () => {
+  const data = [
+    entry({ id: 1, tags: ['go', 'mcp'] }),
+    entry({ id: 2, tags: ['mcp'] }),
+    entry({ id: 3, title: 'Про mcp в заголовке', tags: [] }),
+  ]
+
+  it('matches the tag exactly, not the text', () => {
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' })
+    expect(got.map((e) => e.id)).toEqual([1, 2])
+  })
+
+  it('composes with the other filters', () => {
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp', search: 'заголовке' })
+    expect(got).toHaveLength(0)
+  })
+})

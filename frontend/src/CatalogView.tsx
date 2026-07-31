@@ -114,6 +114,8 @@ export function CatalogView({
   entries,
   labels,
   tagLabels,
+  pickedTag,
+  onPickedTagChange,
   health,
   search,
   onSearchChange,
@@ -123,6 +125,9 @@ export function CatalogView({
   /** Подписи тегов — свой словарь: у категории есть описание после двоеточия,
    * у тега его нет, и путать их значило бы резать название тега пополам. */
   tagLabels: Record<string, string>
+  /** Тег, выбранный в облаке на дашборде: выбирают там, применяется здесь. */
+  pickedTag: string
+  onPickedTagChange: (t: string) => void
   health: Health
   /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
   search: string
@@ -177,10 +182,18 @@ export function CatalogView({
     setSearchShown(search)
     setPage(1)
   }
+  const [tagShown, setTagShown] = useState(pickedTag)
+  if (tagShown !== pickedTag) {
+    setTagShown(pickedTag)
+    setPage(1)
+  }
 
   // Запрос из шапки подмешивается к остальным фильтрам, а не живёт отдельной
   // веткой: для filterEntries он такое же условие, как категория или статус.
-  const active = useMemo(() => ({ ...filter, search }), [filter, search])
+  const active = useMemo(
+    () => ({ ...filter, search, tag: pickedTag }),
+    [filter, search, pickedTag],
+  )
   const filtered = useMemo(() => sortByDate(filterEntries(entries, active)), [entries, active])
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const current = Math.min(page, pages)
@@ -339,6 +352,16 @@ export function CatalogView({
               />
               <span className="toggle-slider" />
             </label>
+            {pickedTag && (
+              <button
+                type="button"
+                onClick={() => onPickedTagChange('')}
+                className="flex items-center gap-1.5 rounded-full border border-secondary px-3 py-1 font-label text-[10px] uppercase tracking-wider text-secondary hover:bg-surface-high"
+                title="Снять фильтр по тегу"
+              >
+                {tagLabel(pickedTag, tagLabels)} ✕
+              </button>
+            )}
           </div>
           <button
             type="button"
@@ -347,6 +370,9 @@ export function CatalogView({
               // И запрос из шапки тоже: кнопка обещает сбросить фильтры, а не
               // выборочно те из них, что нарисованы рядом с ней.
               onSearchChange('')
+              // И тег, пришедший из облака на дашборде: он не нарисован среди
+              // селекторов, но он такой же действующий фильтр.
+              onPickedTagChange('')
               setPage(1)
             }}
             disabled={!isFiltered}
