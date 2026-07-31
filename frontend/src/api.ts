@@ -40,6 +40,8 @@ export interface Entry {
   description?: string
   author?: string
   source?: string
+  /** Перевод чужого оригинала. Раньше жило словом «[Перевод]» в заголовке. */
+  is_translation?: boolean
 }
 
 export interface Finding {

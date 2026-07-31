@@ -37,51 +37,53 @@ var kindSpecs = map[string]kindSpec{
 // EntryParams is the input to NewEntry. Value-object fields must already be
 // constructed (hence valid); optional aspects are nil when absent.
 type EntryParams struct {
-	ID           int
-	Kind         string
-	Title        string
-	Category     Category
-	Lifecycle    Lifecycle
-	HabrID       *int
-	URL          string
-	Verdict      *Verdict
-	ReadState    *ReadState
-	PublishStage *PublishStage
-	Tags         []string
-	Description  string
-	Source       string
-	Author       string
-	Notes        string
-	NotesFile    string
-	SupersedesID *int
-	RelatedIDs   []int
-	DateAdded    *time.Time
-	DateCreated  *time.Time
+	ID            int
+	Kind          string
+	Title         string
+	Category      Category
+	Lifecycle     Lifecycle
+	HabrID        *int
+	URL           string
+	Verdict       *Verdict
+	ReadState     *ReadState
+	PublishStage  *PublishStage
+	Tags          []string
+	Description   string
+	Source        string
+	Author        string
+	Notes         string
+	NotesFile     string
+	IsTranslation bool
+	SupersedesID  *int
+	RelatedIDs    []int
+	DateAdded     *time.Time
+	DateCreated   *time.Time
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
 // common invariants and the kind-specific requirements.
 type Entry struct {
-	id           int
-	kind         string
-	title        string
-	category     Category
-	lifecycle    Lifecycle
-	habrID       *int
-	url          string
-	verdict      *Verdict
-	readState    *ReadState
-	publishStage *PublishStage
-	tags         []string
-	description  string
-	source       string
-	author       string
-	notes        string
-	notesFile    string
-	supersedesID *int
-	relatedIDs   []int
-	dateAdded    *time.Time
-	dateCreated  *time.Time
+	id            int
+	kind          string
+	title         string
+	category      Category
+	lifecycle     Lifecycle
+	habrID        *int
+	url           string
+	verdict       *Verdict
+	readState     *ReadState
+	publishStage  *PublishStage
+	tags          []string
+	description   string
+	source        string
+	author        string
+	notes         string
+	notesFile     string
+	isTranslation bool
+	supersedesID  *int
+	relatedIDs    []int
+	dateAdded     *time.Time
+	dateCreated   *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -101,26 +103,27 @@ func NewEntry(p EntryParams) (Entry, error) {
 		return Entry{}, err
 	}
 	return Entry{
-		id:           p.ID,
-		kind:         p.Kind,
-		title:        p.Title,
-		category:     p.Category,
-		lifecycle:    p.Lifecycle,
-		habrID:       p.HabrID,
-		url:          p.URL,
-		verdict:      p.Verdict,
-		readState:    p.ReadState,
-		publishStage: p.PublishStage,
-		tags:         cloneTags(p.Tags),
-		description:  p.Description,
-		source:       p.Source,
-		author:       p.Author,
-		notes:        p.Notes,
-		notesFile:    p.NotesFile,
-		supersedesID: clonePtrInt(p.SupersedesID),
-		relatedIDs:   cloneInts(p.RelatedIDs),
-		dateAdded:    clonePtrTime(p.DateAdded),
-		dateCreated:  clonePtrTime(p.DateCreated),
+		id:            p.ID,
+		kind:          p.Kind,
+		title:         p.Title,
+		category:      p.Category,
+		lifecycle:     p.Lifecycle,
+		habrID:        p.HabrID,
+		url:           p.URL,
+		verdict:       p.Verdict,
+		readState:     p.ReadState,
+		publishStage:  p.PublishStage,
+		tags:          cloneTags(p.Tags),
+		description:   p.Description,
+		source:        p.Source,
+		author:        p.Author,
+		notes:         p.Notes,
+		notesFile:     p.NotesFile,
+		isTranslation: p.IsTranslation,
+		supersedesID:  clonePtrInt(p.SupersedesID),
+		relatedIDs:    cloneInts(p.RelatedIDs),
+		dateAdded:     clonePtrTime(p.DateAdded),
+		dateCreated:   clonePtrTime(p.DateCreated),
 	}, nil
 }
 
@@ -216,6 +219,11 @@ func (e Entry) Notes() string { return e.notes }
 // written. It is the one signal for «этот материал разобран, а не только
 // прочитан» that the catalog carries.
 func (e Entry) NotesFile() string { return e.notesFile }
+
+// IsTranslation reports whether the entry is a translation of a foreign
+// original. Absent the field the answer is «no», which is what 1280 of the
+// 1340 catalog entries mean by staying silent about it.
+func (e Entry) IsTranslation() bool { return e.isTranslation }
 
 // SupersedesID returns the id this entry supersedes, or nil.
 func (e Entry) SupersedesID() *int { return clonePtrInt(e.supersedesID) }
