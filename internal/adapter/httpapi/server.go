@@ -67,6 +67,10 @@ type Documents struct {
 	// not reshape content it does not own.
 	Team     func() ([]byte, error)
 	Projects func() ([]byte, error)
+	// Media is the owner's image directory, served under /media/. Screenshots
+	// referenced from projects.json live there rather than in the bundle, for
+	// the same reason the JSON does: they are his content, not the engine's.
+	Media fs.FS
 }
 
 // Finances is what the finance port hands over: the ledger rows and the account
@@ -113,6 +117,9 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
+	if docs.Media != nil {
+		mux.Handle("GET /media/", http.StripPrefix("/media/", mediaHandler(docs.Media)))
+	}
 	if frontend != nil {
 		mux.Handle("/", spaHandler(frontend))
 	}
