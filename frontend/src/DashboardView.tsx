@@ -64,10 +64,13 @@ export function DashboardView({
             Темп — единственный вопрос, на который на дашборде нет ответа числом:
             лента активности показывает форму, но не итог. */}
         <Kpi label="Добавлено за месяц" value={lastMonth} bg="bg-kpi-2-bg">
+          {/* «−53% к прошлому» не говорило, к чему именно: читатель видел долю
+              без второго числа и не мог её проверить. Теперь рядом стоит само
+              число за предыдущие 30 дней. */}
           {perWeek} в неделю ·{' '}
           {prevMonth === 0
-            ? 'прошлый месяц пустой'
-            : `${lastMonth >= prevMonth ? '+' : ''}${Math.round(((lastMonth - prevMonth) / prevMonth) * 100)}% к прошлому`}
+            ? 'за предыдущие 30 дней — ничего'
+            : `${lastMonth >= prevMonth ? '+' : ''}${Math.round(((lastMonth - prevMonth) / prevMonth) * 100)}% к предыдущим 30 дням (${prevMonth})`}
         </Kpi>
         <Kpi label="Из Telegram бота" value={fromBot} bg="bg-kpi-3-bg" tone="text-kpi-3-text">
           {stats.total > 0 ? Math.round((fromBot / stats.total) * 100) : 0}% базы приехало ботом

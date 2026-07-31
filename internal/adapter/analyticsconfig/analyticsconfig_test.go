@@ -3,6 +3,7 @@ package analyticsconfig_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
@@ -81,5 +82,55 @@ func TestLoad(t *testing.T) {
 func TestLoad_MissingFile(t *testing.T) {
 	if _, err := analyticsconfig.Load("/no/such/config.json"); err == nil {
 		t.Fatal("expected error for missing file")
+	}
+}
+
+// Правый столбец аналитики в исходном дашборде несёт четыре блока, которых в
+// движке не было: опоры под выводом, разрешение противоречия и разбиение
+// кластеров на «усиливает / заменяет / нейтрально». Данные лежали в файле всё
+// это время — их обрезала структура, а не отсутствие.
+//
+// «Рост за 12 недель» и «центральные узлы графа» сюда намеренно не входят:
+// первое уже есть на дашборде лентой за 21 неделю, второе — самим графом.
+func TestLoad_sidebarBlocks(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cfg.json")
+	src := `{
+	  "pull_quote": "тезис",
+	  "pull_quote_supports": [
+	    {"cluster": "vibe-coding", "claim": "вкус решает"},
+	    "«Агент — это новый посредник.» — Kikodoc (catalog#1011)"
+	  ],
+	  "contradiction_resolution": "усиливает 16 против заменяет 2",
+	  "amplify_clusters": ["claude-ecosystem", "devops"],
+	  "replace_clusters": ["services-reference"],
+	  "neutral_clusters": ["meta"],
+	  "patterns": [], "gaps": [], "contradictions": [], "manifesto_quotes": []
+	}`
+	if err := os.WriteFile(path, []byte(src), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	cfg, err := analyticsconfig.Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// Поле разнородное на живых данных: 50 объектов и 19 голых цитат. Обе формы
+	// осмысленны, и переписывать файл владельца ради единообразия дороже, чем
+	// принять обе: у цитаты просто нет кластера.
+	if len(cfg.PullQuoteSupports) != 2 {
+		t.Fatalf("опор = %d, want 2", len(cfg.PullQuoteSupports))
+	}
+	if cfg.PullQuoteSupports[0].Cluster != "vibe-coding" || cfg.PullQuoteSupports[0].Claim != "вкус решает" {
+		t.Errorf("объектная опора = %+v", cfg.PullQuoteSupports[0])
+	}
+	if cfg.PullQuoteSupports[1].Cluster != "" || !strings.Contains(cfg.PullQuoteSupports[1].Claim, "посредник") {
+		t.Errorf("строковая опора = %+v", cfg.PullQuoteSupports[1])
+	}
+	if cfg.ContradictionResolution != "усиливает 16 против заменяет 2" {
+		t.Errorf("ContradictionResolution = %q", cfg.ContradictionResolution)
+	}
+	if len(cfg.AmplifyClusters) != 2 || len(cfg.ReplaceClusters) != 1 || len(cfg.NeutralClusters) != 1 {
+		t.Errorf("направления: %v / %v / %v",
+			cfg.AmplifyClusters, cfg.ReplaceClusters, cfg.NeutralClusters)
 	}
 }

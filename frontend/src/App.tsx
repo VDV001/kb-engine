@@ -86,7 +86,7 @@ export default function App() {
             )}
 
             {tab === 'analytics' && (
-              <AnalyticsView config={data.analyticsConfig} stats={data.stats} />
+              <AnalyticsView config={data.analyticsConfig} stats={data.stats} entries={data.entries} />
             )}
             {tab === 'audits' && <AuditsView audits={data.audits} />}
             {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}

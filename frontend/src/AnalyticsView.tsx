@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from './api'
-import type { AnalyticsConfig, Contradiction, Gap, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
+import type { AnalyticsConfig, Contradiction, Entry, Gap, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
 import { useResource } from './hooks/useResource'
+import { staleCategories, weeklyGrowth } from './analyticsSidebar'
 import { categoryLabel } from './catalog'
 import { GraphConclusions } from './components/KnowledgeGraph'
 import { Icon } from './components/Icon'
@@ -266,13 +267,25 @@ function GapCard({ gap }: { gap: Gap }) {
 }
 
 
-export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stats: Stats }) {
+export function AnalyticsView({
+  config,
+  stats,
+  entries,
+}: {
+  config: AnalyticsConfig
+  stats: Stats
+  /** Записи нужны сайдбару: давность пополнения и рост по неделям считаются
+   * из них, и сервер для этого трогать не пришлось. */
+  entries: Entry[]
+}) {
   const [tab, setTab] = useState<TabId>('манифест')
   const [chainOpen, setChainOpen] = useState(false)
-  // Граф грузится только когда на вкладку зашли, и один раз за жизнь вида.
+  const [supportsOpen, setSupportsOpen] = useState(false)
+  // Граф грузится сразу: на нём держится не только вкладка, но и «центральные
+  // узлы» в сайдбаре, который виден со всех вкладок.
   // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
   // каталога, и пустая картинка честнее ошибки на весь экран.
-  const res = useResource(api.graph, { enabled: tab === 'граф' })
+  const res = useResource(api.graph)
   const graph: Graph | null =
     res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
@@ -281,6 +294,26 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
   const gaps = config.gaps ?? []
   const quotes = config.manifesto_quotes ?? []
   const chain = config.inference_chain ?? []
+  // Правый столбец: опоры под выводом и разбиение категорий по тому, что с
+  // ними делает AI. Всё это лежало в конфиге и обрезалось по дороге.
+  const supports = config.pull_quote_supports ?? []
+  const amplify = config.amplify_clusters ?? []
+  const replace = config.replace_clusters ?? []
+  const neutral = config.neutral_clusters ?? []
+  const now = useMemo(() => new Date(), [])
+  const stale = useMemo(() => staleCategories(entries, now, 6), [entries, now])
+  const growth = useMemo(() => weeklyGrowth(entries, now, 12), [entries, now])
+  // Центральный узел — тот, у кого больше связей. Считаем по рёбрам графа,
+  // который уже посчитан сервером, а не заново по тегам.
+  const central = useMemo(() => {
+    if (!graph) return []
+    const deg = new Map<string, number>()
+    for (const e of graph.edges) {
+      deg.set(e.from, (deg.get(e.from) ?? 0) + 1)
+      deg.set(e.to, (deg.get(e.to) ?? 0) + 1)
+    }
+    return [...deg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+  }, [graph])
   const clusters = Object.keys(stats.by_category).length
   const topClusters = Object.entries(stats.by_category)
     .sort((a, b) => b[1] - a[1])
@@ -448,6 +481,153 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
                     )}
                   </div>
                 )}
+              </div>
+            )}
+
+            {config.contradiction_resolution && (
+              <div className="border-b border-outline-variant bg-surface-high px-6 py-5">
+                <p className="label mb-2 text-secondary">Разрешение противоречия</p>
+                <p className="text-[11px] leading-relaxed text-on-surface-variant">
+                  {config.contradiction_resolution}
+                </p>
+              </div>
+            )}
+
+            {supports.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                {/* Опор почти семьдесят: развёрнутые они длиннее самой страницы,
+                    поэтому свёрнуты, но счётчик обещает ровно то, что раскроется. */}
+                <button
+                  type="button"
+                  onClick={() => setSupportsOpen(!supportsOpen)}
+                  className="flex w-full items-center justify-between gap-2"
+                  aria-expanded={supportsOpen}
+                >
+                  <span className="label">Опоры вывода</span>
+                  <span className="label opacity-60">
+                    {supportsOpen ? 'скрыть' : String(supports.length)}
+                  </span>
+                </button>
+                {supportsOpen && (
+                  <dl className="mt-3 space-y-2.5">
+                    {supports.map((sp, i) => (
+                      <div key={`${sp.cluster}-${i}`} className="grid grid-cols-[7rem_1fr] gap-2">
+                        <dt className="text-[11px] font-bold text-secondary">{sp.cluster}</dt>
+                        <dd className="text-[11px] leading-relaxed text-on-surface-variant">
+                          {sp.claim}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            )}
+
+            {(amplify.length > 0 || replace.length > 0 || neutral.length > 0) && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Направление кластеров</p>
+                {/* Три группы, а не диаграмма: вопрос здесь «какие именно», и
+                    имя категории отвечает на него, а доля — нет. */}
+                {(
+                  [
+                    ['AI усиливает', amplify, 'text-on-surface'],
+                    ['AI заменяет', replace, 'text-secondary'],
+                    ['Нейтрально', neutral, 'text-on-surface-variant'],
+                  ] as const
+                ).map(([title, list, tone]) =>
+                  list.length === 0 ? null : (
+                    <div key={title} className="mb-3 last:mb-0">
+                      <div className="flex items-baseline justify-between">
+                        <span className={`label ${tone}`}>{title}</span>
+                        <span className="font-headline text-xs font-bold italic tabular-nums">
+                          {list.length}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {list.map((c) => (
+                          <span
+                            key={c}
+                            className="rounded border border-outline-variant bg-surface-high px-2 py-0.5 text-[10px]"
+                            title={c}
+                          >
+                            {categoryLabel(c, stats.category_labels ?? {})}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+
+            {stale.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Давно не пополнялись</p>
+                <ul className="space-y-2">
+                  {stale.map((c) => (
+                    <li key={c.category} className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="min-w-0 flex-1 truncate" title={c.category}>
+                        {categoryLabel(c.category, stats.category_labels ?? {})}
+                      </span>
+                      <span className="shrink-0 font-label text-[10px] italic text-on-surface-variant">
+                        {c.weeks} нед · {c.count} зап.
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {growth.total > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <div className="mb-3 flex items-baseline justify-between gap-2">
+                  <span className="label">Рост за 12 недель</span>
+                  <span className="font-label text-[10px] text-on-surface-variant">
+                    +{growth.total} · ср. {growth.perWeek}/нед
+                  </span>
+                </div>
+                {/* Столбики, а не линия: на этих данных линия вырождалась в
+                    один пик и плоскость, по которой ничего не прочесть. */}
+                <div className="flex h-12 items-end gap-1">
+                  {growth.weeks.map((n, i) => {
+                    const max = Math.max(1, ...growth.weeks)
+                    return (
+                      <div
+                        key={i}
+                        className="flex-1 rounded-sm bg-secondary"
+                        style={{ height: `${Math.max(4, (n / max) * 100)}%`, opacity: n === 0 ? 0.15 : 0.85 }}
+                        title={`${n} записей`}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {central.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Центральные узлы графа</p>
+                <ul className="space-y-2.5">
+                  {central.map(([cat, deg]) => {
+                    const max = central[0][1]
+                    return (
+                      <li key={cat} className="flex items-center gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate" title={cat}>
+                          {categoryLabel(cat, stats.category_labels ?? {})}
+                        </span>
+                        <span className="h-px w-16 bg-outline-variant">
+                          <span
+                            className="block h-px bg-on-surface"
+                            style={{ width: `${(deg / max) * 100}%` }}
+                          />
+                        </span>
+                        <span className="w-6 shrink-0 text-right font-label text-[10px] text-secondary tabular-nums">
+                          {deg}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             )}
 

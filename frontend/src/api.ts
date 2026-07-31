@@ -126,6 +126,18 @@ export interface AnalyticsConfig {
   gaps: Gap[] | null
   contradictions: Contradiction[] | null
   manifesto_quotes: ManifestoQuote[] | null
+  /** Опоры под выводом: без них счётчик «9 опор» — обещание без покрытия. */
+  pull_quote_supports?: QuoteSupport[] | null
+  contradiction_resolution?: string
+  /** Что AI делает с категорией. Ядро первого манифестного тезиса. */
+  amplify_clusters?: string[] | null
+  replace_clusters?: string[] | null
+  neutral_clusters?: string[] | null
+}
+
+export interface QuoteSupport {
+  cluster: string
+  claim: string
 }
 
 export interface GraphNode {
