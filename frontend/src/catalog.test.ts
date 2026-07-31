@@ -8,6 +8,7 @@ import {
   pageWindow,
   sortByDate,
   statusOf,
+  topTags,
 } from './catalog'
 
 const entry = (over: Partial<Entry>): Entry => ({
@@ -168,5 +169,51 @@ describe('pageWindow', () => {
   it('tiny sets have no ellipsis', () => {
     expect(pageWindow(1, 2)).toEqual([1, 2])
     expect(pageWindow(1, 1)).toEqual([1])
+  })
+})
+
+// Облако тегов: частоты считаются по каталогу, а размер знака — по месту тега
+// в этой выборке. Без нормализации внутри выборки редкие теги оказываются
+// неразличимо мелкими рядом с сотенными.
+describe('topTags', () => {
+  const entries = [
+    { id: 1, tags: ['llm', 'go', 'mcp'] },
+    { id: 2, tags: ['llm', 'go'] },
+    { id: 3, tags: ['llm'] },
+    { id: 4, tags: ['mcp'] },
+    { id: 5, tags: [] },
+    { id: 6 },
+  ] as Entry[]
+
+  it('считает частоты и отдаёт самые частые первыми', () => {
+    const top = topTags(entries, 10)
+    expect(top.map((t) => [t.tag, t.count])).toEqual([
+      ['llm', 3],
+      ['go', 2],
+      ['mcp', 2],
+    ])
+  })
+
+  it('режет до предела и не падает на записях без тегов', () => {
+    expect(topTags(entries, 2).map((t) => t.tag)).toEqual(['llm', 'go'])
+    expect(topTags([], 5)).toEqual([])
+  })
+
+  it('ставит равным по частоте тегам устойчивый порядок', () => {
+    // go и mcp встречаются поровну — порядок по алфавиту, иначе облако
+    // перетасовывается от запроса к запросу без единой правки в каталоге.
+    expect(topTags(entries, 10).map((t) => t.tag)).toEqual(['llm', 'go', 'mcp'])
+  })
+
+  it('нормализует масштаб от самого редкого в выборке к самому частому', () => {
+    const top = topTags(entries, 10)
+    expect(top[0].scale).toBe(1)
+    expect(top.at(-1)!.scale).toBe(0)
+    expect(top.every((t) => t.scale >= 0 && t.scale <= 1)).toBe(true)
+  })
+
+  it('не делит на ноль, когда все теги равны по частоте', () => {
+    const flat = [{ id: 1, tags: ['a'] }, { id: 2, tags: ['b'] }] as Entry[]
+    expect(topTags(flat, 5).every((t) => t.scale === 1)).toBe(true)
   })
 })
