@@ -161,12 +161,80 @@ export interface DocSection {
   cards?: DocCard[]
 }
 
-/** The generic shape of an owner-supplied view (team.json / projects.json). */
+/** The generic shape of an owner-supplied view (team.json). */
 export interface Document {
   label?: string
   title?: string
   subtitle?: string
   sections?: DocSection[]
+}
+
+/** Одна цифра с подписью: и в шапке страницы, и в полосе метрик карточки. */
+export interface Metric {
+  value: string
+  label: string
+}
+
+export interface DocLink {
+  label: string
+  url: string
+}
+
+/**
+ * Ширина карточки в сетке. Лежит в данных, а не выводится из их полноты:
+ * правило вида «карточка с кодом — широкая» тихо переставляет вёрстку в тот
+ * день, когда у проекта появляется ещё одна метрика.
+ */
+export type CardSpan = 'full' | 'half' | 'third'
+
+/**
+ * Карточка проекта. Шире DocCard, потому что страницу показывают заказчику:
+ * plain объясняет продукт через боль без терминов, image даёт скриншот вместо
+ * абстрактного градиента, metrics и links отвечают на «а это работает?».
+ */
+export interface ProjectCard extends DocCard {
+  short?: string
+  kicker?: string
+  note?: string
+  plain?: string
+  image?: string
+  span?: CardSpan
+  metrics?: Metric[]
+  links?: DocLink[]
+  /** Имя градиента из палитры или готовое значение CSS. */
+  accent?: string
+  code?: string[]
+}
+
+export interface ProjectSection {
+  title: string
+  note?: string
+  cards?: ProjectCard[]
+}
+
+export interface TechGroup {
+  title: string
+  items: { name: string; value?: string }[]
+}
+
+export interface Contact {
+  /** Имя иконки из ICONS; неизвестное имя рисуется без иконки. */
+  icon?: string
+  label: string
+  value?: string
+  url: string
+}
+
+/** The owner-supplied Projects view: a portfolio he shows to clients. */
+export interface ProjectDoc {
+  label?: string
+  title?: string
+  subtitle?: string
+  stats?: Metric[]
+  sections?: ProjectSection[]
+  tech?: TechGroup[]
+  contacts?: Contact[]
+  footer?: { name?: string; tagline?: string; place?: string }
 }
 
 export interface Now {
@@ -283,7 +351,7 @@ export const api = {
   changelog: () => getJSON<Changelog>('/api/changelog'),
   now: () => getJSON<Now | null>('/api/now'),
   team: () => getJSON<Document | null>('/api/team'),
-  projects: () => getJSON<Document | null>('/api/projects'),
+  projects: () => getJSON<ProjectDoc | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
 
   /**

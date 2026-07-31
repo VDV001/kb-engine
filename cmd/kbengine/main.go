@@ -101,6 +101,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	nowPath := fs.String("now", "", "optional path to active-pipeline.md (the Now view)")
 	teamPath := fs.String("team", "", "optional path to team.json (the Team view)")
 	projectsPath := fs.String("projects", "", "optional path to projects.json (the Projects view)")
+	mediaPath := fs.String("media", "", "optional path to a directory of the owner's images, served at /media/")
 	// Loopback by default. With --ledger this process serves four years of
 	// personal transactions with places, notes and balances; ":8080" would hand
 	// them to anyone on the network. Binding wider stays possible, but as a
@@ -114,7 +115,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -171,7 +172,7 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 	return finance.Summarize(finance.Match(recs, finance.Filter{Months: months})), nil
 }
 
-func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath string) (http.Handler, error) {
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -193,7 +194,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	if ledgerPath != "" {
 		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
 	}
-	docs, err := buildDocuments(nowPath, teamPath, projectsPath)
+	docs, err := buildDocuments(nowPath, teamPath, projectsPath, mediaPath)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +219,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 // buildDocuments wires the owner's personal views. Each path is optional;
 // a configured one is read once at startup so a typo fails at serve time,
 // then re-read per request so edits show up on reload.
-func buildDocuments(nowPath, teamPath, projectsPath string) (httpapi.Documents, error) {
+func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.Documents, error) {
 	var docs httpapi.Documents
 	if nowPath != "" {
 		if _, err := os.ReadFile(nowPath); err != nil {
@@ -246,6 +247,19 @@ func buildDocuments(nowPath, teamPath, projectsPath string) (httpapi.Documents, 
 		if docs.Projects, err = fileJSON("projects", projectsPath); err != nil {
 			return httpapi.Documents{}, err
 		}
+	}
+	// Каталог проверяется тем же правилом, что и файлы выше: опечатка в пути
+	// должна падать при старте, а не превращаться в страницу с пустыми
+	// рамками вместо скриншотов.
+	if mediaPath != "" {
+		info, err := os.Stat(mediaPath)
+		if err != nil {
+			return httpapi.Documents{}, fmt.Errorf("media: %w", err)
+		}
+		if !info.IsDir() {
+			return httpapi.Documents{}, fmt.Errorf("media: %s is not a directory", mediaPath)
+		}
+		docs.Media = os.DirFS(mediaPath)
 	}
 	return docs, nil
 }
