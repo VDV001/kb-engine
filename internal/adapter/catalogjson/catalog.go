@@ -62,23 +62,24 @@ func (f flexInt) pointer() *int {
 }
 
 type entryDTO struct {
-	ID           int       `json:"id"`
-	HabrID       flexInt   `json:"habr_id"`
-	Title        string    `json:"title"`
-	URL          string    `json:"url"`
-	Category     string    `json:"category"`
-	Status       string    `json:"status"`
-	Lifecycle    string    `json:"lifecycle"`
-	Description  string    `json:"description"`
-	Tags         []string  `json:"tags"`
-	Source       string    `json:"source"`
-	Author       string    `json:"author"`
-	Notes        string    `json:"notes"`
-	File         string    `json:"file"`
-	SupersedesID flexInt   `json:"supersedes_id"`
-	RelatedIDs   []flexInt `json:"related_ids"`
-	DateAdded    string    `json:"date_added"`
-	DateCreated  string    `json:"date_created"`
+	ID            int       `json:"id"`
+	HabrID        flexInt   `json:"habr_id"`
+	Title         string    `json:"title"`
+	URL           string    `json:"url"`
+	Category      string    `json:"category"`
+	Status        string    `json:"status"`
+	Lifecycle     string    `json:"lifecycle"`
+	Description   string    `json:"description"`
+	Tags          []string  `json:"tags"`
+	Source        string    `json:"source"`
+	Author        string    `json:"author"`
+	Notes         string    `json:"notes"`
+	File          string    `json:"file"`
+	IsTranslation bool      `json:"is_translation"`
+	SupersedesID  flexInt   `json:"supersedes_id"`
+	RelatedIDs    []flexInt `json:"related_ids"`
+	DateAdded     string    `json:"date_added"`
+	DateCreated   string    `json:"date_created"`
 }
 
 type catalogDTO struct {
@@ -188,26 +189,27 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		return domain.Entry{}, fmt.Errorf("date_created: %w", err)
 	}
 	return domain.NewEntry(domain.EntryParams{
-		ID:           dto.ID,
-		Kind:         tr.kind,
-		Title:        dto.Title,
-		Category:     cat,
-		Lifecycle:    lc,
-		HabrID:       dto.HabrID.pointer(),
-		URL:          dto.URL,
-		Verdict:      tr.verdict,
-		ReadState:    tr.readState,
-		PublishStage: tr.publishStage,
-		Tags:         dto.Tags,
-		Description:  dto.Description,
-		Source:       dto.Source,
-		Author:       dto.Author,
-		Notes:        dto.Notes,
-		NotesFile:    dto.File,
-		SupersedesID: dto.SupersedesID.pointer(),
-		RelatedIDs:   flexIntsToInts(dto.RelatedIDs),
-		DateAdded:    dateAdded,
-		DateCreated:  dateCreated,
+		ID:            dto.ID,
+		Kind:          tr.kind,
+		Title:         dto.Title,
+		Category:      cat,
+		Lifecycle:     lc,
+		HabrID:        dto.HabrID.pointer(),
+		URL:           dto.URL,
+		Verdict:       tr.verdict,
+		ReadState:     tr.readState,
+		PublishStage:  tr.publishStage,
+		Tags:          dto.Tags,
+		Description:   dto.Description,
+		Source:        dto.Source,
+		Author:        dto.Author,
+		Notes:         dto.Notes,
+		NotesFile:     dto.File,
+		IsTranslation: dto.IsTranslation,
+		SupersedesID:  dto.SupersedesID.pointer(),
+		RelatedIDs:    flexIntsToInts(dto.RelatedIDs),
+		DateAdded:     dateAdded,
+		DateCreated:   dateCreated,
 	})
 }
 

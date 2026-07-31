@@ -275,3 +275,30 @@ func TestEntry_tagsAreImmutable(t *testing.T) {
 		t.Errorf("entry tag changed via returned slice: %v", got)
 	}
 }
+
+// Признак перевода жил префиксом «[Перевод]» внутри заголовка — метаданные
+// в строке контента. Шестьдесят записей каталога несли его так, и при
+// переводе интерфейса это слово осталось бы русским: оно лежало не в поле,
+// а в тексте. Теперь это поле, и заголовок снова только заголовок.
+func TestEntry_isTranslation(t *testing.T) {
+	p := validArticle(t)
+	p.IsTranslation = true
+	e, err := domain.NewEntry(p)
+	if err != nil {
+		t.Fatalf("new entry: %v", err)
+	}
+	if !e.IsTranslation() {
+		t.Error("IsTranslation = false, want true")
+	}
+
+	p2 := validArticle(t)
+	e2, err := domain.NewEntry(p2)
+	if err != nil {
+		t.Fatalf("new entry: %v", err)
+	}
+	// Умолчание — «не перевод»: так записано у 1280 записей из 1340, и
+	// отсутствие поля обязано читаться именно так, а не как «неизвестно».
+	if e2.IsTranslation() {
+		t.Error("IsTranslation = true for an entry without the field, want false")
+	}
+}

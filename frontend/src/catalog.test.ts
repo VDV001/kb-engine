@@ -239,3 +239,27 @@ describe('topTags', () => {
     expect(topTags(flat, 5).every((t) => t.scale === 1)).toBe(true)
   })
 })
+
+// Перевод — свойство записи, которое до сих пор было видно только по слову
+// «[Перевод]» в начале заголовка. Слово убрали в поле, значит фильтр обязан
+// уметь то, что раньше делал поиск по этому слову: их шестьдесят из 1340.
+describe('translation filter', () => {
+  const data = [
+    entry({ id: 1, title: 'Оригинал' }),
+    entry({ id: 2, title: 'Переведённая', is_translation: true }),
+  ]
+
+  it('keeps only translations when asked', () => {
+    const got = filterEntries(data, { ...emptyFilter, translation: 'yes' })
+    expect(got.map((e) => e.id)).toEqual([2])
+  })
+
+  it('keeps only originals when asked', () => {
+    const got = filterEntries(data, { ...emptyFilter, translation: 'no' })
+    expect(got.map((e) => e.id)).toEqual([1])
+  })
+
+  it('an unset filter touches nothing', () => {
+    expect(filterEntries(data, emptyFilter)).toHaveLength(2)
+  })
+})

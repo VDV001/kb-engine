@@ -313,6 +313,18 @@ export function CatalogView({
               </option>
             ))}
           </select>
+          {/* Переводов в базе шестьдесят. Пока признак жил словом в заголовке,
+              отобрать их можно было только поиском по этому слову — и поиск
+              заодно приносил всё, где «перевод» упомянут в описании. */}
+          <select
+            value={filter.translation}
+            onChange={(e) => set({ translation: e.target.value })}
+            className={selectClass}
+          >
+            <option value="">Оригиналы и переводы</option>
+            <option value="yes">Только переводы</option>
+            <option value="no">Только оригиналы</option>
+          </select>
           {/* Тумблер, а не галочка: в исходном дашборде это переключатель, и
               такой же стоит в шапке у сумм — две разные механики для одного и
               того же действия читаются как разные по смыслу. */}
@@ -362,6 +374,16 @@ export function CatalogView({
                 >
                   {e.title}
                 </a>
+                {/* Метка, а не слово в заголовке: заголовок принадлежит
+                    автору оригинала, а «перевод» — это про запись. */}
+                {e.is_translation && (
+                  <span
+                    className="ml-2 align-middle rounded border border-outline-variant px-1.5 py-0.5 font-label text-[9px] uppercase tracking-wider text-on-surface-variant"
+                    title="Перевод чужого оригинала"
+                  >
+                    перевод
+                  </span>
+                )}
                 {withDescriptions && e.description && (
                   <p className="text-sm text-on-surface-variant">
                     {e.description.length > 150 ? `${e.description.slice(0, 150)}…` : e.description}
