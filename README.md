@@ -109,4 +109,16 @@ frontend/           React dashboard, embedded into the binary via go:embed
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+AGPL-3.0-or-later. See [LICENSE](LICENSE).
+
+The engine is free to run, modify and self-host. AGPL adds one condition that
+matters here: if you run a modified version as a network service, the people
+using that service are entitled to its source. For a knowledge base that is the
+point — improvements to it should reach the people whose knowledge it holds.
+
+A commercial licence is available for organisations that cannot accept those
+terms — see [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Releases up to and including `v0.3.0` were published under MIT. That grant is
+irrevocable for those versions: anyone who obtained them under MIT keeps MIT
+terms for that code. The change applies from `v0.4.0` onward.
