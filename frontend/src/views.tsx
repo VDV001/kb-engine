@@ -1,63 +1,7 @@
 import { api } from './api'
 import type { Audits, DuplicateGroup, Finding, Stats } from './api'
 import { useResource } from './hooks/useResource'
-import { Badge, BarList, Card, Label, Ring, Section, Stat } from './components/ui'
-
-export function OverviewView({ stats }: { stats: Stats }) {
-  // The spotlight card is the one the eye lands on, so it carries the most
-  // telling figure rather than whichever happened to be fourth. A zero in the
-  // loudest slot tells the reader nothing and wastes the emphasis.
-  const categories = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
-  const [topCategory, topCount] = categories[0] ?? ['—', 0]
-  const share = stats.total > 0 ? Math.round((topCount / stats.total) * 100) : 0
-
-  return (
-    <div className="space-y-8">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Stat label="Всего записей" value={stats.total} />
-        <Stat label="Категорий" value={Object.keys(stats.by_category).length} />
-        <Stat label="Canonical" value={stats.by_lifecycle['canonical'] ?? 0} tone="muted" />
-        <Stat
-          label="Топ категория"
-          value={topCount}
-          tone="spotlight"
-          hint={`${topCategory} · ${share}% каталога`}
-        />
-      </div>
-      <Section title="Распределение по категориям" subtitle="Доля восьми крупнейших от каталога">
-        <div className="grid grid-cols-2 divide-x divide-y divide-outline-variant border border-outline-variant sm:grid-cols-4 xl:grid-cols-8">
-          {categories.slice(0, 8).map(([name, n]) => (
-            <Ring
-              key={name}
-              label={name}
-              percent={stats.total > 0 ? Math.round((n / stats.total) * 100) : 0}
-            />
-          ))}
-        </div>
-      </Section>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <Section title="По категориям">
-            <BarList data={stats.by_category} />
-          </Section>
-        </Card>
-        <div className="space-y-4">
-          <Card>
-            <Section title="По жизненному циклу">
-              <BarList data={stats.by_lifecycle} />
-            </Section>
-          </Card>
-          <Card>
-            <Section title="По вердикту">
-              <BarList data={stats.by_verdict} />
-            </Section>
-          </Card>
-        </div>
-      </div>
-    </div>
-  )
-}
+import { Badge, Card, Label, Section, Stat } from './components/ui'
 
 function FindingsList({ title, findings }: { title: string; findings: Finding[] | null }) {
   const items = findings ?? []
