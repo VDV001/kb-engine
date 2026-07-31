@@ -165,7 +165,11 @@ export interface ChangelogRelease {
 
 export interface DocCard {
   title: string
+  /** Подпись над заголовком: чья это роль, а не кто её занимает. */
+  eyebrow?: string
   body?: string
+  /** Зона ответственности по пунктам. Абзацем её не читают — ищут свою строку. */
+  points?: string[]
   meta?: string
   badge?: string
   url?: string
@@ -175,6 +179,13 @@ export interface DocCard {
 export interface DocSection {
   title: string
   note?: string
+  /**
+   * В секции есть персональные данные — под маской заголовки её карточек
+   * скрываются. Признак идёт из файла, а не выводится рендером: в одном
+   * разделе заголовок карточки — имя человека, в другом — шаг процесса
+   * («Продажник → отдел»), и спрятать второе значит стереть саму схему.
+   */
+  sensitive?: boolean
   cards?: DocCard[]
 }
 
