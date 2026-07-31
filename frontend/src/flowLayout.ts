@@ -31,6 +31,26 @@ export interface FlowLayout {
   height: number
 }
 
+/**
+ * Концы потока: кому работу никто не ставит (вход) и кто её дальше не передаёт
+ * (исполнитель). Считаются по задачам — статус наверх это отчёт, а не работа,
+ * ушедшая кому-то ещё.
+ *
+ * Нужны легенде и выводятся из схемы, а не пишутся рядом руками: отдельный
+ * список разошёлся бы с картинкой в первый же день, когда в файле появится
+ * новый участник.
+ */
+export function flowEnds(flow: FlowLayout): { sources: string[]; sinks: string[] } {
+  const task = flow.edges.filter((e) => e.kind === 'task')
+  const incoming = new Set(task.map((e) => e.to))
+  const outgoing = new Set(task.map((e) => e.from))
+  const ids = flow.nodes.map((n) => n.id)
+  return {
+    sources: ids.filter((id) => !incoming.has(id)),
+    sinks: ids.filter((id) => !outgoing.has(id)),
+  }
+}
+
 const NODE_WIDTH = 168
 const NODE_HEIGHT = 44
 const GAP_X = 28

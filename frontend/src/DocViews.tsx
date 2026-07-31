@@ -3,7 +3,8 @@ import remarkGfm from 'remark-gfm'
 import { api } from './api'
 import type { DocCard, DocSection, Document } from './api'
 import { useResource } from './hooks/useResource'
-import { layoutFlow } from './flowLayout'
+import { flowEnds, layoutFlow } from './flowLayout'
+import type { FlowLayout } from './flowLayout'
 import { Card, Label } from './components/ui'
 
 // The owner's personal views — Now, Team, Projects — rendered from files the
@@ -109,6 +110,82 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
  * телефона значило бы налепить подписи друг на друга, а нечитаемая схема хуже
  * её отсутствия.
  */
+/** Образец линии для легенды: та же геометрия, что и на схеме. */
+function LegendLine({ status }: { status: boolean }) {
+  return (
+    <svg width="34" height="12" viewBox="0 0 34 12" aria-hidden="true" className="shrink-0">
+      <path
+        d="M2 6 H26"
+        stroke={status ? 'var(--donut-secondary)' : 'var(--on-surface-variant)'}
+        strokeWidth={status ? 1 : 1.5}
+        strokeDasharray={status ? '4 3' : undefined}
+      />
+      <path
+        d="M26 2 L32 6 L26 10 z"
+        fill={status ? 'var(--donut-secondary)' : 'var(--on-surface-variant)'}
+      />
+    </svg>
+  )
+}
+
+/**
+ * Легенда занимает место справа от схемы, которое иначе пустует: сама схема
+ * узкая, а секция широкая. Она объясняет нотацию — то, что нарисовано, — а
+ * состав участников берёт из самой схемы, чтобы список не разошёлся с
+ * картинкой при первом же изменении файла.
+ */
+function FlowLegend({ flow }: { flow: FlowLayout }) {
+  const { sources, sinks } = flowEnds(flow)
+  const tiers = new Set(flow.nodes.map((n) => n.tier)).size
+  const statuses = flow.edges.filter((e) => e.kind === 'status').length
+
+  return (
+    // Занимает весь остаток строки, а не фиксированную колонку: схема узкая, и
+    // рядом с ней оставался пустой правый край во всю ширину секции.
+    <aside className="w-full space-y-4 rounded-xl border border-outline-variant bg-surface-container/60 p-5 text-sm lg:flex-1">
+      <p className="label">Как читать схему</p>
+
+      <dl className="space-y-3">
+        <div className="flex items-start gap-3">
+          <LegendLine status={false} />
+          <div>
+            <dt className="font-medium">Задача вниз</dt>
+            <dd className="text-on-surface-variant">
+              Кто кому ставит работу. Сплошная линия, {flow.edges.length - statuses} на схеме.
+            </dd>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <LegendLine status />
+          <div>
+            <dt className="font-medium">Статус наверх</dt>
+            <dd className="text-on-surface-variant">
+              Отчёты, блокеры, эскалация. Пунктир, {statuses} на схеме; уведён вбок, чтобы не лечь
+              поверх встречной задачи.
+            </dd>
+          </div>
+        </div>
+      </dl>
+
+      <div className="space-y-2 border-t border-outline-variant pt-4 text-on-surface-variant">
+        <p>
+          <span className="font-medium text-on-surface">Ярусы</span> — расстояние от входа, а не
+          порядок карточек: {tiers} уровня, {flow.nodes.length} участников.
+        </p>
+        <p>
+          <span className="font-medium text-on-surface">Входы</span> — им работу не ставит никто:{' '}
+          {sources.join(', ')}.
+        </p>
+        <p>
+          <span className="font-medium text-on-surface">Дальше не передают</span> — на них поток
+          заканчивается: {sinks.join(', ')}.
+        </p>
+        <p>Каждая стрелка описана карточкой ниже — там, что именно на ней происходит.</p>
+      </div>
+    </aside>
+  )
+}
+
 function FlowGraph({ cards }: { cards: DocCard[] }) {
   const flow = layoutFlow(cards)
   if (flow.edges.length === 0) return null
@@ -119,7 +196,11 @@ function FlowGraph({ cards }: { cards: DocCard[] }) {
   }
 
   return (
-    <div className="-mx-1 overflow-x-auto px-1 pb-2">
+    // Схема и легенда стоят рядом, пока хватает ширины: место справа от узкой
+    // схемы всё равно пустует, а объяснение нужнее всего рядом с картинкой.
+    // На узком экране легенда уходит под схему, а не сжимает её.
+    <div className="flex flex-col gap-6 pb-2 lg:flex-row lg:items-start lg:gap-10">
+      <div className="-mx-1 overflow-x-auto px-1">
       <svg
         width={flow.width}
         height={flow.height}
@@ -185,7 +266,10 @@ function FlowGraph({ cards }: { cards: DocCard[] }) {
             </text>
           </g>
         ))}
-      </svg>
+        </svg>
+      </div>
+
+      <FlowLegend flow={flow} />
     </div>
   )
 }

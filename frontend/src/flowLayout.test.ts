@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { layoutFlow } from './flowLayout'
+import { flowEnds, layoutFlow } from './flowLayout'
 import type { DocCard } from './api'
 
 /** Карточка-ребро в том виде, в каком её пишет владелец в team.json. */
@@ -91,5 +91,39 @@ describe('layoutFlow', () => {
 
     expect(flow.nodes).toHaveLength(0)
     expect(flow.edges).toHaveLength(0)
+  })
+})
+
+// Легенда объясняет нарисованное, поэтому её содержимое выводится из схемы, а
+// не пишется рядом руками: список, набранный отдельно, разойдётся с картинкой в
+// первый же день, когда в team.json появится новый участник.
+describe('flowEnds', () => {
+  it('вход — тот, кому никто не ставит задачу', () => {
+    const flow = layoutFlow([
+      edge('Заказчик', 'Даниил'),
+      edge('Генеральный', 'Даниил'),
+      edge('Даниил', 'Разработчики'),
+    ])
+
+    expect(flowEnds(flow).sources).toEqual(['Заказчик', 'Генеральный'])
+  })
+
+  it('исполнитель — тот, кто дальше задачу не передаёт', () => {
+    const flow = layoutFlow([edge('Генеральный', 'Даниил'), edge('Даниил', 'Разработчики')])
+
+    expect(flowEnds(flow).sinks).toEqual(['Разработчики'])
+  })
+
+  // Статус наверх не делает получателя исполнителем: «Разработчики → Даниил»
+  // это отчёт, а не работа, переданная дальше.
+  it('статусы не путаются с передачей работы', () => {
+    const flow = layoutFlow([
+      edge('Генеральный', 'Даниил'),
+      edge('Даниил', 'Генеральный', { kind: 'status' }),
+    ])
+
+    const { sources, sinks } = flowEnds(flow)
+    expect(sources).toEqual(['Генеральный'])
+    expect(sinks).toEqual(['Даниил'])
   })
 })
