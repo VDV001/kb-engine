@@ -13,6 +13,16 @@ import { ThemeToggle } from './ThemeToggle'
  * needs a padding that has to be kept equal to a height nobody remembers to
  * measure again; sticky keeps the same effect and cannot drift.
  */
+/** Число ждущей работы рядом с названием вкладки. Тон приглушённый: это
+ * счётчик, а не тревога — база живёт и с полусотней кандидатов в аудите. */
+function TabBadge({ value }: { value: number }) {
+  return (
+    <span className="ml-1.5 rounded-full bg-surface-high px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-on-surface-variant">
+      {value}
+    </span>
+  )
+}
+
 export function Header<T extends string>({
   tabs,
   current,
@@ -20,7 +30,8 @@ export function Header<T extends string>({
   count,
   extra,
 }: {
-  tabs: { id: T; label: string }[]
+  /** badge — число, которое вкладка несёт с собой: сколько там ждёт работы. */
+  tabs: { id: T; label: string; badge?: number }[]
   current: T
   onSelect: (id: T) => void
   count?: number
@@ -80,6 +91,7 @@ export function Header<T extends string>({
                     }`}
                   >
                     {t.label}
+                    {t.badge ? <TabBadge value={t.badge} /> : null}
                   </button>
                 </li>
               )
@@ -135,6 +147,7 @@ export function Header<T extends string>({
                     }`}
                   >
                     {t.label}
+                    {t.badge ? <TabBadge value={t.badge} /> : null}
                   </button>
                 </li>
               )

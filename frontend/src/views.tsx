@@ -1,45 +1,8 @@
 import { useState } from 'react'
 import { api } from './api'
-import type { Audits, DuplicateGroup, Finding, Stats } from './api'
+import type { Stats } from './api'
 import { useResource } from './hooks/useResource'
-import { Badge, Card, Label, Section, Stat } from './components/ui'
-
-function FindingsList({ title, findings }: { title: string; findings: Finding[] | null }) {
-  const items = findings ?? []
-  return (
-    <Card>
-      <Section title={`${title} (${items.length})`}>
-        {items.length === 0 ? (
-          <p className="text-sm text-on-surface-variant">Нет кандидатов.</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {items.map((f) => (
-              <li key={f.EntryID} className="flex flex-wrap items-center gap-2 text-sm">
-                <span className="tabular-nums text-on-surface-variant">#{f.EntryID}</span>
-                <span className="flex-1 truncate" title={f.Title}>{f.Title}</span>
-                {f.Reasons.map((r) => (
-                  <span key={r} className="rounded bg-surface-high px-1.5 py-0.5 text-xs text-on-surface-variant">
-                    {r}
-                  </span>
-                ))}
-              </li>
-            ))}
-          </ul>
-        )}
-      </Section>
-    </Card>
-  )
-}
-
-export function AuditsView({ audits }: { audits: Audits }) {
-  return (
-    <div className="space-y-4">
-      <FindingsList title="Outdated-кандидаты" findings={audits.outdated} />
-      <FindingsList title="Canonical-кандидаты" findings={audits.canonical} />
-      <FindingsList title="Проблемы supersession" findings={audits.supersession} />
-    </div>
-  )
-}
+import { Card, Label, Stat } from './components/ui'
 
 export function SettingsView({ stats }: { stats: Stats }) {
   // Changelog не критичен для этого вида: без него просто нет версии и трёх
@@ -201,24 +164,6 @@ export function SettingsView({ stats }: { stats: Stats }) {
         </div>
       </section>
     </div>
-  )
-}
-
-export function DuplicatesView({ groups }: { groups: DuplicateGroup[] }) {
-  return (
-    <Section title="Дубликаты" subtitle={`${groups.length} групп`}>
-      <div className="space-y-2">
-        {groups.map((g, i) => (
-          <Card key={i}>
-            <div className="flex items-center gap-2 text-sm">
-              <Badge value={g.Kind} />
-              <span className="tabular-nums text-on-surface-variant">ids: {g.EntryIDs.join(', ')}</span>
-            </div>
-            <div className="mt-1 truncate text-xs text-on-surface-variant" title={g.Key}>{g.Key}</div>
-          </Card>
-        ))}
-      </div>
-    </Section>
   )
 }
 
