@@ -10,6 +10,8 @@ export interface CatalogFilter {
   lifecycle: string
   /** '' — не спрашиваем, 'yes' — только переводы, 'no' — только оригиналы. */
   translation: string
+  /** Точное совпадение с одним из тегов записи, не подстрока. */
+  tag: string
   search: string
 }
 
@@ -19,6 +21,7 @@ export const emptyFilter: CatalogFilter = {
   source: '',
   lifecycle: '',
   translation: '',
+  tag: '',
   search: '',
 }
 
@@ -98,6 +101,7 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
       (f.source === '' || (e.source ?? '') === f.source) &&
       (f.lifecycle === '' || e.lifecycle === f.lifecycle) &&
       (f.translation === '' || (f.translation === 'yes') === Boolean(e.is_translation)) &&
+      (f.tag === '' || (e.tags ?? []).includes(f.tag)) &&
       (q === '' ||
         e.title.toLowerCase().includes(q) ||
         (e.description ?? '').toLowerCase().includes(q) ||
