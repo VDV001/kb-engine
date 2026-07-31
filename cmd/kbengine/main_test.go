@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeCatalog(t *testing.T, body string) string {
@@ -163,6 +164,67 @@ func TestServe_handler_withoutLedger(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), `"transactions":[]`) {
 		t.Errorf("body = %s, want empty transactions", rec.Body.String())
+	}
+}
+
+// A workbook that cannot be read is a startup error, not a surprise on the
+// Finances tab. Until this held, a typo in --from let the engine start with its
+// usual line and answered every other view normally; the mistake surfaced later
+// as «finances unavailable» with a 500, naming neither the flag nor the path.
+// --analytics-config has always failed at startup with the reason. This is the
+// same contract for the other file the server is handed.
+func TestServe_handler_unreadableWorkbookFailsAtStartup(t *testing.T) {
+	catalog := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	xlsx := workbook(t)
+	ledger := filepath.Join(filepath.Dir(xlsx), "transactions.jsonl")
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "sync", "--init", "--from", xlsx, "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin sync --init: %s", errb.String())
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-workbook.xlsx")
+
+	_, err := buildServeHandler(catalog, "", ledger, missing, "", "", "", "", "")
+	if err == nil {
+		t.Fatal("buildServeHandler accepted an unreadable workbook; it must refuse at startup")
+	}
+	if !strings.Contains(err.Error(), missing) {
+		t.Errorf("error does not name the file that could not be read: %v", err)
+	}
+}
+
+// --from carries account balances, which are only ever shown beside ledger rows,
+// so without --ledger the engine has nothing to do with the file. It used to
+// take the flag and drop it: /api/finances answered 200 with no balances, and
+// nothing said the file had been ignored. Silence is the failure — a flag that
+// cannot take effect is a mistake in the command, so say so and stop.
+func TestRun_serve_fromWithoutLedgerIsAnError(t *testing.T) {
+	catalog := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	xlsx := workbook(t)
+
+	// run() is used rather than a validation helper called directly: the point is
+	// that the real command refuses, not that some function would have. It has to
+	// answer before the listener starts, so a run that keeps serving is the
+	// failure — hence the timeout, and :0 so a stuck run cannot squat on 8080.
+	var out, errb bytes.Buffer
+	done := make(chan int, 1)
+	go func() {
+		done <- run([]string{"serve", "--catalog", catalog, "--from", xlsx, "--addr", "127.0.0.1:0"}, &out, &errb)
+	}()
+
+	select {
+	case code := <-done:
+		if code == 0 {
+			t.Fatal("serve accepted --from without --ledger; the workbook would be silently ignored")
+		}
+		if !strings.Contains(errb.String(), "--ledger") {
+			t.Errorf("message does not point at the missing flag: %s", errb.String())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("serve started listening instead of refusing --from without --ledger")
 	}
 }
 
