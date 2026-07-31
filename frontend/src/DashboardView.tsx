@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api } from './api'
 import type { Entry, Graph, Stats } from './api'
 import { buildActivity, DAY_LABELS } from './activity'
-import { categoryLabel, statusOf, topTags } from './catalog'
+import { categoryLabel, statusOf, tagLabel, topTags } from './catalog'
 import { KnowledgeGraph } from './components/KnowledgeGraph'
 import { useResource } from './hooks/useResource'
 
@@ -16,7 +16,15 @@ const BAR_DAYS = 30
 /** Верхушка облака. Хвост базы — теги-одиночки, их тут тысячи. */
 const CLOUD_TAGS = 80
 
-export function DashboardView({ stats, entries }: { stats: Stats; entries: Entry[] }) {
+export function DashboardView({
+  stats,
+  entries,
+  onPickTag,
+}: {
+  stats: Stats
+  entries: Entry[]
+  onPickTag: (tag: string) => void
+}) {
   const graphRes = useResource(api.graph)
   const graph: Graph | null =
     graphRes.status === 'ready'
@@ -88,7 +96,7 @@ export function DashboardView({ stats, entries }: { stats: Stats; entries: Entry
         <Heatmap activity={activity} />
       </Section>
 
-      <TagCloud entries={entries} />
+      <TagCloud entries={entries} labels={stats.tag_labels ?? {}} onPickTag={onPickTag} />
 
       <Section title="Граф знаний" subtitle="Связи категорий через общие теги. Пересчёт при каждом обращении — данные факт">
         {graph === null ? (
@@ -334,14 +342,24 @@ function Heatmap({ activity }: { activity: ReturnType<typeof buildActivity> }) {
 
 /** Облако свёрнуто по умолчанию: развёрнутое оно занимает экран целиком, а
  * читают его редко. */
-function TagCloud({ entries }: { entries: Entry[] }) {
+function TagCloud({
+  entries,
+  labels,
+  onPickTag,
+}: {
+  entries: Entry[]
+  labels: Record<string, string>
+  /** Клик уводит в архив с этим тегом: в исходном дашборде под облаком так и
+   * написано «клик → фильтр в архиве», и без этого облако — просто картинка. */
+  onPickTag: (tag: string) => void
+}) {
   const [open, setOpen] = useState(false)
   const tags = topTags(entries, CLOUD_TAGS)
 
   return (
     <Section
       title="Облако тегов"
-      subtitle={`${CLOUD_TAGS} самых частых из ${countTags(entries)} тегов базы`}
+      subtitle={`${CLOUD_TAGS} самых частых из ${countTags(entries)} тегов базы · клик открывает архив`}
       aside={
         <button
           type="button"
@@ -356,14 +374,16 @@ function TagCloud({ entries }: { entries: Entry[] }) {
       {open && (
         <div className="flex flex-wrap justify-center gap-3">
           {tags.map((t) => (
-            <span
+            <button
+              type="button"
               key={t.tag}
-              className="border border-outline-variant px-2 py-1 text-on-surface"
+              onClick={() => onPickTag(t.tag)}
+              className="border border-outline-variant px-2 py-1 text-on-surface transition-colors hover:border-secondary hover:text-secondary"
               style={{ fontSize: `${0.75 + t.scale * 0.9}rem`, opacity: 0.55 + t.scale * 0.45 }}
-              title={`${t.count} записей`}
+              title={`${t.count} записей · ${t.tag}`}
             >
-              {t.tag}
-            </span>
+              {tagLabel(t.tag, labels)}
+            </button>
           ))}
         </div>
       )}
