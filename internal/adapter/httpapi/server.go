@@ -112,6 +112,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an))
 	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
+	mux.HandleFunc("POST /api/finances/export", handleFinanceExport())
 	mux.HandleFunc("GET /api/now", handleNow(docs.Now))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
