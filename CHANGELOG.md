@@ -8,6 +8,69 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-07-31
+
+> Housekeeping stops being a place the interface abandons you: findings are
+> readable, clickable and grouped, and the two views that held them collapse
+> into one. The engine also starts saying which build is answering — and admits
+> when it did not understand the file it was handed.
+
+### Added
+
+- **Health** — one view for catalog hygiene, replacing the `Audits` and
+  `Duplicates` tabs. Neither had enough to fill a top-level tab: on 1340
+  entries dedup finds one group and supersession none. Machine reasons are
+  translated and grouped, so `verdict:skip-unavailable` becomes one collapsed
+  section «Автор снял статью · 48» instead of the same badge printed fifty-one
+  times down the page. A finding opens its entry in the archive, and entries
+  landing in two audit sections at once are raised to the top: the engine is
+  proposing two things that cannot both be done, which is a question rather
+  than two pieces of advice.
+- **Duplicate groups show entries, not ids.** A group used to render as
+  `ids: 1044, 1050` plus a normalised key — enough to know something matched,
+  never enough to decide whether it should have. Titles, dates, statuses and
+  links now sit side by side. The first thing this showed on live data was that
+  the only duplicate in the catalog is a false positive: «Часть 1» and
+  «Часть 2» of one article, joined because `normalizeTitle` drops the part
+  number.
+- **`#481` in the archive search** matches the entry with that id rather than
+  the substring — `481` would also match 1481 and any title containing it.
+- **`/api/engine`** serves the running build: version, commit and build time.
+  They existed only behind `kbengine version` in a terminal, while the footer
+  offered sources under AGPL §13 without saying sources of *what*. `kbengine
+  version` and the endpoint read the same function and cannot drift.
+- **About** replaces `Summary`, which called itself three different things and
+  configured none of them. Categories carry their readable names and open in
+  the archive on click; an engine card names the version, build, licence and
+  links to releases rather than embedding their history in the bundle.
+
+### Fixed
+
+- **An unparsed changelog no longer reports itself as version `0.0.0`.**
+  `--changelog` expects `CHANGELOG.md`, while `changelog.json` — the parsed
+  form of the same file — sits next to the catalog, so handing over the second
+  is an easy mistake, and the markdown parser answered it with an empty
+  document. Startup now says it found no releases and, for a `.json` path,
+  which file it actually wanted. A warning rather than an error: a young
+  project's changelog may legitimately have none yet.
+- **Go's pseudo-version is shortened for display** —
+  `v0.4.1-0.20260731180902-9f258b58e907+dirty` reads as `v0.4.1-dev+правки`.
+  The date and commit inside it repeat the two rows underneath, and the string
+  wrapped onto two lines. Irrelevant for a tagged release, unavoidable for
+  anyone building from source.
+- **Finance export** produces a real `.xlsx` instead of comma-separated CSV,
+  which a Russian-locale Excel loaded into a single column; the accounts card
+  lists accounts rather than how a row was entered.
+- **The analytics sidebar carries all eight blocks**, not three. The data had
+  been in the config all along; the `Config` struct truncated it, leaving a
+  «9 опор» counter with no supports behind it. An earlier parity audit had
+  filed the difference under deliberate deviation without checking it.
+- **The AGPL §13 footer is silent on a loopback address.** It cannot be removed
+  — §13 covers anyone using the engine over a network — but on `127.0.0.1`
+  there is nobody to offer sources to.
+- **The image size in the README is measured, not guessed**: 13.5 MB, against
+  «~9 MB» and «8.5 МБ» claimed in two different places.
+
 ## [0.4.0] — 2026-07-31
 
 > The licence changes to AGPL-3.0-or-later with a commercial alternative, and
