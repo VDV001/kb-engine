@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Entry } from './api'
 import {
   categoryLabel,
+  tagLabel,
   dateOf,
   emptyFilter,
   filterEntries,
@@ -151,6 +152,27 @@ describe('categoryLabel', () => {
 
   it('survives a label without a description', () => {
     expect(categoryLabel('x', { x: 'Просто имя' })).toBe('Просто имя')
+  })
+})
+
+describe('tagLabel', () => {
+  // Подписи есть у двух десятков тегов из без малого четырёх тысяч: они
+  // появились там, где русский тег свели к латинскому ключу. Остальные теги
+  // читаемы сами по себе, и ключ для них — это и есть название.
+  const labels = { 'job-market': 'Рынок труда' }
+
+  it('shows the readable name when the catalog has one', () => {
+    expect(tagLabel('job-market', labels)).toBe('Рынок труда')
+  })
+
+  it('falls back to the key, which for most tags is already the name', () => {
+    expect(tagLabel('mcp', labels)).toBe('mcp')
+  })
+
+  // В отличие от категории, подпись тега не режется по двоеточию: у тега нет
+  // описания, и двоеточие внутри названия — часть названия.
+  it('keeps a colon inside the name', () => {
+    expect(tagLabel('x', { x: 'Go: язык' })).toBe('Go: язык')
   })
 })
 

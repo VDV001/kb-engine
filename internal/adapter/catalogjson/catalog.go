@@ -90,6 +90,7 @@ type catalogDTO struct {
 // the rest of meta is bookkeeping the engine derives for itself.
 type metaDTO struct {
 	Categories map[string]string `json:"categories"`
+	TagLabels  map[string]string `json:"tag_labels"`
 }
 
 // verdictAliases maps legacy status spellings to the canonical verdict value.
@@ -255,7 +256,10 @@ func Decode(r io.Reader) (*domain.Catalog, error) {
 		}
 		entries = append(entries, e)
 	}
-	return domain.NewCatalog(entries, domain.WithCategoryLabels(dto.Meta.Categories))
+	return domain.NewCatalog(entries,
+		domain.WithCategoryLabels(dto.Meta.Categories),
+		domain.WithTagLabels(dto.Meta.TagLabels),
+	)
 }
 
 // Load reads and decodes a catalog from the file at path.

@@ -9,6 +9,7 @@ import {
   sortByDate,
   statusOf,
   statusStyle,
+  tagLabel,
   type CatalogFilter,
 } from './catalog'
 import { Icon } from './components/Icon'
@@ -40,15 +41,19 @@ function Status({ e }: { e: Entry }) {
   )
 }
 
-function Tags({ tags }: { tags?: string[] }) {
+function Tags({ tags, labels }: { tags?: string[]; labels: Record<string, string> }) {
   return (
     <span className="flex flex-wrap gap-1.5">
       {(tags ?? []).slice(0, 3).map((t, i) => (
         <span
           key={t}
+          // Ключ остаётся в title: подпись отвечает на «что это», ключ — на
+          // «что искать», и после сведения русских тегов к латинским ключам
+          // второе перестало быть очевидным из первого.
+          title={t}
           className={`rounded px-2 py-0.5 font-label text-[10px] font-bold uppercase ${tagTone[i]}`}
         >
-          {t}
+          {tagLabel(t, labels)}
         </span>
       ))}
     </span>
@@ -108,12 +113,16 @@ const selectClass =
 export function CatalogView({
   entries,
   labels,
+  tagLabels,
   health,
   search,
   onSearchChange,
 }: {
   entries: Entry[]
   labels: Record<string, string>
+  /** Подписи тегов — свой словарь: у категории есть описание после двоеточия,
+   * у тега его нет, и путать их значило бы резать название тега пополам. */
+  tagLabels: Record<string, string>
   health: Health
   /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
   search: string
@@ -358,7 +367,7 @@ export function CatalogView({
                     {e.description.length > 150 ? `${e.description.slice(0, 150)}…` : e.description}
                   </p>
                 )}
-                <Tags tags={e.tags} />
+                <Tags tags={e.tags} labels={tagLabels} />
               </div>
             ))}
           </div>
@@ -383,7 +392,7 @@ export function CatalogView({
                     >
                       {categoryLabel(e.category, labels)}
                     </span>
-                    <Tags tags={e.tags} />
+                    <Tags tags={e.tags} labels={tagLabels} />
                     <Status e={e} />
                     {e.url && (
                       <a
