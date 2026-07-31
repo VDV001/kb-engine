@@ -138,7 +138,14 @@ export function CatalogView({
   search: string
   onSearchChange: (v: string) => void
 }) {
-  const [filter, setFilter] = useState<CatalogFilter>(emptyFilter)
+  // Категория, пришедшая снаружи, попадает в фильтр СРАЗУ при создании вида, а
+  // не только при последующей смене: переключение вкладки монтирует компонент
+  // заново, и сверке «показано не то, что пришло» в этот момент не с чем
+  // сравнивать — она видит первое значение как исходное и молчит.
+  const [filter, setFilter] = useState<CatalogFilter>(() => ({
+    ...emptyFilter,
+    category: pickedCategory,
+  }))
   const [page, setPage] = useState(1)
   const [grid, setGrid] = useState(false)
   const [withDescriptions, setWithDescriptions] = useState(true)
