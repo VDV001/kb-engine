@@ -92,10 +92,20 @@ export function statusStyle(key: string): StatusView {
   return { key, label: key.trim() || '—', tone: 'var(--on-surface-variant)' }
 }
 
+/** «#481» — запрос про запись с этим номером, а не про текст. Гигиена и любой
+ * другой вид ссылаются на находку номером, и открыть надо ровно её: подстрока
+ * «481» нашла бы ещё и 1481, и заголовок с этим числом. */
+const BY_ID = /^#(\d+)$/
+
 export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
-  const q = f.search.trim().toLowerCase()
+  const raw = f.search.trim().toLowerCase()
+  const byID = raw.match(BY_ID)
+  // Одинокая решётка — это начало запроса про номер, а не сам запрос: пока
+  // цифру не набрали, список ещё не должен схлопываться в пустоту.
+  const q = raw === '#' ? '' : raw
   return entries.filter(
     (e) =>
+      (byID === null || e.id === Number(byID[1])) &&
       (f.category === '' || e.category === f.category) &&
       (f.status === '' || statusOf(e).key === f.status) &&
       (f.source === '' || (e.source ?? '') === f.source) &&
@@ -103,6 +113,7 @@ export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
       (f.translation === '' || (f.translation === 'yes') === Boolean(e.is_translation)) &&
       (f.tag === '' || (e.tags ?? []).includes(f.tag)) &&
       (q === '' ||
+        byID !== null ||
         e.title.toLowerCase().includes(q) ||
         (e.description ?? '').toLowerCase().includes(q) ||
         (e.tags ?? []).some((t) => t.toLowerCase().includes(q))),

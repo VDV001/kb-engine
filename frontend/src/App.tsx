@@ -11,21 +11,26 @@ import { PrivacyToggle } from './components/PrivacyToggle'
 import { SearchBox } from './components/SearchBox'
 import { SourceOffer } from './components/SourceOffer'
 import { DashboardView } from './DashboardView'
+import { HealthView } from './HealthView'
+import { findingCount } from './hygiene'
 import { ProjectsView } from './ProjectsView'
-import { AuditsView, DuplicatesView, SettingsView } from './views'
+import { SettingsView } from './views'
 
-type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
+type Tab = 'overview' | 'archives' | 'analytics' | 'health' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
+// Порядок вкладок — это четыре группы, а не список: база знаний, витрина и
+// оперативка, приватное, служебное. Audits и Duplicates стояли третьей и
+// четвёртой, разрывая читательский блок служебной работой; теперь это один
+// раздел «Health» в служебном хвосте.
 const tabs: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Dashboard' },
   { id: 'archives', label: 'Archives' },
   { id: 'analytics', label: 'Analytics' },
-  { id: 'audits', label: 'Audits' },
-  { id: 'duplicates', label: 'Duplicates' },
-  { id: 'finances', label: 'Finances' },
   { id: 'projects', label: 'Projects' },
-  { id: 'team', label: 'Team' },
   { id: 'now', label: 'Now' },
+  { id: 'team', label: 'Team' },
+  { id: 'finances', label: 'Finances' },
+  { id: 'health', label: 'Health' },
   { id: 'settings', label: 'Summary' },
 ]
 
@@ -45,7 +50,11 @@ export default function App() {
   return (
     <div className="min-h-screen bg-bg text-on-surface">
       <Header
-        tabs={tabs}
+        // Счётчик показывает объём работы прямо во вкладке: гигиена — то, куда
+        // не заходят по расписанию, и заметить её можно только мимоходом.
+        tabs={tabs.map((t) =>
+          t.id === 'health' && data ? { ...t, badge: findingCount(data.audits, data.duplicates) } : t,
+        )}
         current={tab}
         // Заход на финансы всегда прячет суммы заново: безопасное состояние —
         // то, в котором оказываешься, а не то, которое надо не забыть включить.
@@ -88,8 +97,21 @@ export default function App() {
             {tab === 'analytics' && (
               <AnalyticsView config={data.analyticsConfig} stats={data.stats} entries={data.entries} />
             )}
-            {tab === 'audits' && <AuditsView audits={data.audits} />}
-            {tab === 'duplicates' && <DuplicatesView groups={data.duplicates} />}
+            {tab === 'health' && (
+              <HealthView
+                audits={data.audits}
+                duplicates={data.duplicates}
+                entries={data.entries}
+                // Находка ссылается на запись номером, и открывать её надо в
+                // архиве: гигиена показывает, что не так, читают — там же, где
+                // читают всё остальное.
+                onOpenEntry={(id) => {
+                  setSearch(`#${id}`)
+                  setPickedTag('')
+                  setTab('archives')
+                }}
+              />
+            )}
             {tab === 'archives' && (
               <CatalogView
                 entries={data.entries}
