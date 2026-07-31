@@ -222,7 +222,12 @@ function Donut({
 
   return (
     <div className="flex min-w-0 flex-1 flex-col items-center">
-      <svg viewBox="0 0 160 160" className="h-48 w-48 -rotate-90">
+      {/* Поворот на группе, а не на самом svg: иначе повернулся бы и текст
+          внутри. Число и подпись живут в svg, потому что снаружи их
+          приходилось накладывать отрицательными отступами — от этого подпись
+          и упиралась в кольцо, а сверху копился лишний воздух. */}
+      <svg viewBox="0 0 160 160" className="h-44 w-44">
+        <g transform="rotate(-90 80 80)">
         {slices.map(([key, n], i) => {
           const len = total > 0 ? (n / total) * C : 0
           const dash = `${len} ${C - len}`
@@ -243,11 +248,27 @@ function Donut({
           offset += len
           return el
         })}
+        </g>
+        <text
+          x={80}
+          y={80}
+          textAnchor="middle"
+          dominantBaseline="central"
+          className="fill-on-surface font-headline text-[22px] font-bold tabular-nums"
+        >
+          {categories.length}
+        </text>
+        <text
+          x={80}
+          y={98}
+          textAnchor="middle"
+          className="fill-on-surface-variant font-label text-[7px] uppercase tracking-[0.2em]"
+        >
+          категорий
+        </text>
       </svg>
-      <p className="-mt-28 font-headline text-2xl font-bold tabular-nums">{categories.length}</p>
-      <p className="label mt-16">категорий</p>
 
-      <ul className="mt-8 w-full space-y-2 text-sm">
+      <ul className="mt-6 w-full space-y-2.5 text-sm">
         {slices.map(([key, n], i) => (
           <li key={key} className="flex items-baseline gap-2">
             <span className="size-2.5 shrink-0 bg-secondary" style={{ opacity: 1 - i * 0.15 }} />
