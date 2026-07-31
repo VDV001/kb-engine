@@ -3,6 +3,9 @@
 /kbengine
 *.exe
 
+# goreleaser's output directory (a local `goreleaser build` writes here)
+/dist/
+
 # Test / coverage
 *.out
 coverage.*
@@ -10,8 +13,13 @@ coverage.*
 # Go
 /vendor/
 
-# Frontend deps (built dist IS committed so `go build` works standalone)
+# Frontend deps and build output. dist/ is a build artifact and is NOT
+# committed: it has no correct side in a merge, so two branches touching the
+# frontend conflicted on a file nobody edits by hand, and the only honest
+# resolution was always "rebuild". Everything that ships a binary builds it
+# first (Dockerfile stage, goreleaser hook, CI) — see CONTRIBUTING.md.
 /frontend/node_modules/
+/frontend/dist/
 
 # Editor / OS
 .DS_Store

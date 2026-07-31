@@ -87,6 +87,16 @@ fi
 rm -rf "$tidy_backup"
 
 # ---------------------------------------------------------- 3. it builds
+# The bundle is a build artifact and is not in the repository, so a fresh clone
+# has no frontend/dist and every Go build below fails on the go:embed pattern.
+# Go's own message ("pattern all:frontend/dist: no matching files found") does
+# not say what to run, so say it here instead of letting people guess.
+if [ ! -f frontend/dist/index.html ]; then
+  echo "✘ frontend/dist is missing — the dashboard bundle is built, not committed"
+  echo "  fix: just web    (or: cd frontend && npm ci && npm run build)"
+  exit 1
+fi
+
 echo "→ go build ./..."
 if ! go build ./... 2>&1; then
   echo "✘ build failed — do not push a tree that does not compile"

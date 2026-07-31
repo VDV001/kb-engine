@@ -29,8 +29,15 @@ Built with TDD + DDD + Clean Architecture. Design notes:
 
 ## Quick start
 
+Released binaries and the container image are self-contained — the dashboard is
+already inside them. Building **from source** needs Node as well as Go: the
+bundle is a build artifact, so it is not kept in the repository.
+
 ```sh
-# Build (needs only Go; the dashboard is embedded via go:embed)
+# Build the dashboard bundle (needs Node; repeat after frontend/ changes)
+just web
+
+# Build the binary — go:embed folds the bundle into it
 just build            # or: go build -o bin/kbengine ./cmd/kbengine
 
 # Serve the dashboard against a catalog

@@ -1,5 +1,19 @@
 # syntax=docker/dockerfile:1
 
+# --- web stage ---------------------------------------------------------------
+# The dashboard bundle is a build artifact, not a source file, so it is not in
+# the repository — the image builds it. Runs on the native BUILDPLATFORM: the
+# output is plain static assets, identical for every target architecture.
+#
+# package.json and the lockfile are copied first so `npm ci` reuses its layer
+# whenever only src/ changed.
+FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS web
+WORKDIR /web
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
 # --- build stage -------------------------------------------------------------
 # Pinned by digest (Dependabot's docker ecosystem keeps tag+digest current).
 # Runs on the native BUILDPLATFORM and cross-compiles to TARGET* so multi-arch
@@ -12,9 +26,11 @@ WORKDIR /src
 COPY go.mod ./
 RUN go mod download
 
-# frontend/dist is committed and embedded via go:embed, so a plain Go build
-# produces a self-contained binary with the dashboard inside it.
+# The bundle comes from the web stage, never from the build context: a stale
+# local dist/ must not be able to reach a released image. go:embed then folds it
+# into the binary, so the runtime stage stays a single static file.
 COPY . .
+COPY --from=web /web/dist ./frontend/dist
 ARG VERSION=dev
 ARG TARGETOS TARGETARCH
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \

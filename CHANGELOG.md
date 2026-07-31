@@ -8,6 +8,29 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Changed
+
+- **The dashboard bundle left the repository.** `frontend/dist` was committed so
+  a build needed nothing but Go. The bill came in merges: a generated file has no
+  correct side, so two branches touching the UI conflicted on it and the only
+  honest resolution was ever «rebuild». It is now an ordinary build artifact, and
+  every path that produces a binary builds it first — a Node stage in the image,
+  a goreleaser before-hook for releases, one step in each CI job that compiles Go.
+- **Building from source now needs Node as well as Go.** That is the price, and
+  it is stated where people meet it: README, CONTRIBUTING, and the pre-push gate,
+  which checks for the bundle and prints `just web` rather than leaving Go's
+  «pattern all:frontend/dist: no matching files found» to be decoded.
+- Released binaries and the container image are unaffected — the dashboard is
+  built into them exactly as before.
+
+### Removed
+
+- **The «dist matches src» CI gate**, with nothing put in its place. It guarded a
+  real hole — an edit to `src` without a rebuild would have shipped the old bundle
+  with every Go test still green — but that hole existed only because the bundle
+  lived in git. With the file gone the failure cannot happen, so the cause is
+  removed instead of watched.
+
 ## [0.5.0] — 2026-07-31
 
 > Housekeeping stops being a place the interface abandons you: findings are

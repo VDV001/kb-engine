@@ -19,6 +19,14 @@ jobs:
         with:
           go-version: "1.26"
 
+      # goreleaser's before-hooks build the dashboard bundle (it is not in the
+      # repository), so this job needs Node as well as Go.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
       - name: Install syft (for SBOM generation)
         uses: anchore/sbom-action/download-syft@e22c389904149dbc22b58101806040fa8d37a610 # v0
 
