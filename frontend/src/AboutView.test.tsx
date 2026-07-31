@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { AboutView } from './AboutView'
+import { AboutView, engineVersionLabel } from './AboutView'
 
 const changelog = vi.hoisted(() => ({
   value: {
@@ -58,6 +58,26 @@ describe('AboutView', () => {
     render(<AboutView stats={stats} onPickCategory={(c) => picked.push(c)} />)
     fireEvent.click(screen.getByText('AI-агенты и MCP'))
     expect(picked).toEqual(['ai-agents-tools'])
+  })
+})
+
+// Go подставляет собственную псевдоверсию, когда бинарь собран не из тега:
+// «v0.4.1-0.20260731180902-9f258b58e907+dirty». Для релиза это неважно, но
+// движок открытый — собирать его из исходников будут постоянно, и на карточке
+// такая строка ломается на две и читается как мусор. Дата и полный коммит в
+// ней дублируют соседние строки «Сборка» и «Собран».
+describe('engineVersionLabel', () => {
+  const cases: [string, string][] = [
+    ['v0.4.0', 'v0.4.0'],
+    ['0.4.0', '0.4.0'],
+    ['v0.4.1-0.20260731180902-9f258b58e907', 'v0.4.1-dev'],
+    ['v0.4.1-0.20260731180902-9f258b58e907+dirty', 'v0.4.1-dev+правки'],
+    ['v0.5.0+dirty', 'v0.5.0+правки'],
+    ['dev', 'dev'],
+    ['', '—'],
+  ]
+  it.each(cases)('%s → %s', (raw, want) => {
+    expect(engineVersionLabel(raw)).toBe(want)
   })
 })
 
