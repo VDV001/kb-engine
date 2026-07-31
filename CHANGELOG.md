@@ -10,6 +10,17 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Fixed
 
+- **The dashboard went blank when the catalog had no duplicates.** `/api/duplicates`
+  answered `null` rather than `[]` — Go writes a nil slice that way — and the tab
+  badge took `.length` of it, so React tore down the whole tree. The page that
+  broke was Dashboard; the code that broke belonged to Health. Nobody had seen it
+  because the catalog always had at least one group to report, and the previous
+  release's dedup fix removed the last one. The server now answers with an empty
+  list, as its neighbours (entries, finances) already did, and the client
+  normalises what it receives besides — an older engine on the other end is not a
+  reason for a white screen. Found by opening the page, not by a test: every test
+  fixture has duplicates in it.
+
 - **`--from` now says why, instead of failing later or not at all.** Two
   silences, both measured against a running engine rather than assumed. A path
   that could not be read let the server start with its usual line and answer

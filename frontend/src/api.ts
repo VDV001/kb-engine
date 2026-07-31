@@ -391,7 +391,11 @@ export const api = {
   stats: () => getJSON<Stats>('/api/stats'),
   entries: () => getJSON<Entry[]>('/api/entries'),
   audits: () => getJSON<Audits>('/api/audits'),
-  duplicates: () => getJSON<DuplicateGroup[]>('/api/duplicates'),
+  // Пустой список приходил как null: тип обещал массив, а сервер писал nil-слайс.
+  // Сервер это чинит у себя, но нормализация остаётся и здесь — клиент не должен
+  // белеть от того, чем ему ответили, а сервером может оказаться и старая сборка.
+  duplicates: () =>
+    getJSON<DuplicateGroup[] | null>('/api/duplicates').then((groups) => groups ?? []),
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
   graph: () => getJSON<Graph>('/api/graph'),
