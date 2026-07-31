@@ -9,6 +9,7 @@ import { ErrorBox, Spinner } from './components/ui'
 import { FinancesView } from './FinancesView'
 import { PrivacyToggle } from './components/PrivacyToggle'
 import { SearchBox } from './components/SearchBox'
+import { SourceOffer } from './components/SourceOffer'
 import { DashboardView } from './DashboardView'
 import { ProjectsView } from './ProjectsView'
 import { AuditsView, DuplicatesView, SettingsView } from './views'
@@ -90,6 +91,7 @@ export default function App() {
             {tab === 'settings' && <SettingsView stats={data.stats} />}
           </>
         )}
+        <SourceOffer />
       </main>
     </div>
   )
