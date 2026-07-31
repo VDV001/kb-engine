@@ -1,8 +1,11 @@
 package catalogjson_test
 
 import (
+	"bytes"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -199,14 +202,76 @@ func TestAppendEntries_StatusRoundTripsAllKinds(t *testing.T) {
 	}
 }
 
-func TestAppendEntries_RejectsUnknownTopLevelKeys(t *testing.T) {
+// The live catalog carries a third top-level key, "last_updated", written by the
+// Python dashboard. Refusing it did protect the key from being dropped, but it
+// also meant the command could not run against the only catalog that matters.
+// Carrying such keys through verbatim protects the data and does the work.
+func TestAppendEntries_PreservesUnknownTopLevelKeys(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "catalog.json")
-	if err := os.WriteFile(path, []byte(`{"meta":{},"entries":[],"stray":1}`), 0o644); err != nil {
+	seed := `{"meta":{"created":"2026-03-24"},"entries":[],"last_updated":"2026-07-28","stray":{"n":1}}`
+	if err := os.WriteFile(path, []byte(seed), 0o644); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	err := catalogjson.AppendEntries(path, []domain.Entry{newArticleEntry(t, 1, "X", "u")})
-	if err == nil {
-		t.Fatal("expected error for unknown top-level key, got nil")
+
+	if err := catalogjson.AppendEntries(path, []domain.Entry{newArticleEntry(t, 1, "X", "u")}); err != nil {
+		t.Fatalf("append: %v", err)
 	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &top); err != nil {
+		t.Fatalf("parse result: %v", err)
+	}
+	for key, want := range map[string]string{
+		"last_updated": `"2026-07-28"`,
+		"stray":        `{"n":1}`,
+	} {
+		got, ok := top[key]
+		if !ok {
+			t.Errorf("key %q was dropped", key)
+			continue
+		}
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, got); err != nil {
+			t.Fatalf("compact %q: %v", key, err)
+		}
+		if compact.String() != want {
+			t.Errorf("key %q = %s, want %s", key, compact.String(), want)
+		}
+	}
+
+	// Key order is what keeps a rewrite out of the diff for every other line.
+	if order := topLevelOrder(t, raw); !slices.Equal(order, []string{"meta", "entries", "last_updated", "stray"}) {
+		t.Errorf("top-level key order = %v, want the order the file already had", order)
+	}
+}
+
+// topLevelOrder reports the object's keys in the order they appear on disk.
+func topLevelOrder(t *testing.T, raw []byte) []string {
+	t.Helper()
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if _, err := dec.Token(); err != nil { // opening brace
+		t.Fatalf("read opening brace: %v", err)
+	}
+	var keys []string
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			t.Fatalf("read key: %v", err)
+		}
+		key, ok := tok.(string)
+		if !ok {
+			t.Fatalf("expected a string key, got %T", tok)
+		}
+		keys = append(keys, key)
+		var skip json.RawMessage
+		if err := dec.Decode(&skip); err != nil {
+			t.Fatalf("skip value of %q: %v", key, err)
+		}
+	}
+	return keys
 }
