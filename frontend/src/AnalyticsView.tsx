@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { api } from './api'
-import type { AnalyticsConfig, Contradiction, Gap, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
+import type { AnalyticsConfig, Contradiction, Entry, Gap, Graph, ManifestoQuote, Pattern, Stats, Support } from './api'
 import { useResource } from './hooks/useResource'
+import { staleCategories, weeklyGrowth } from './analyticsSidebar'
 import { categoryLabel } from './catalog'
 import { GraphConclusions } from './components/KnowledgeGraph'
 import { Icon } from './components/Icon'
@@ -266,14 +267,25 @@ function GapCard({ gap }: { gap: Gap }) {
 }
 
 
-export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stats: Stats }) {
+export function AnalyticsView({
+  config,
+  stats,
+  entries,
+}: {
+  config: AnalyticsConfig
+  stats: Stats
+  /** Записи нужны сайдбару: давность пополнения и рост по неделям считаются
+   * из них, и сервер для этого трогать не пришлось. */
+  entries: Entry[]
+}) {
   const [tab, setTab] = useState<TabId>('манифест')
   const [chainOpen, setChainOpen] = useState(false)
   const [supportsOpen, setSupportsOpen] = useState(false)
-  // Граф грузится только когда на вкладку зашли, и один раз за жизнь вида.
+  // Граф грузится сразу: на нём держится не только вкладка, но и «центральные
+  // узлы» в сайдбаре, который виден со всех вкладок.
   // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
   // каталога, и пустая картинка честнее ошибки на весь экран.
-  const res = useResource(api.graph, { enabled: tab === 'граф' })
+  const res = useResource(api.graph)
   const graph: Graph | null =
     res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
@@ -288,6 +300,20 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
   const amplify = config.amplify_clusters ?? []
   const replace = config.replace_clusters ?? []
   const neutral = config.neutral_clusters ?? []
+  const now = useMemo(() => new Date(), [])
+  const stale = useMemo(() => staleCategories(entries, now, 6), [entries, now])
+  const growth = useMemo(() => weeklyGrowth(entries, now, 12), [entries, now])
+  // Центральный узел — тот, у кого больше связей. Считаем по рёбрам графа,
+  // который уже посчитан сервером, а не заново по тегам.
+  const central = useMemo(() => {
+    if (!graph) return []
+    const deg = new Map<string, number>()
+    for (const e of graph.edges) {
+      deg.set(e.from, (deg.get(e.from) ?? 0) + 1)
+      deg.set(e.to, (deg.get(e.to) ?? 0) + 1)
+    }
+    return [...deg.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3)
+  }, [graph])
   const clusters = Object.keys(stats.by_category).length
   const topClusters = Object.entries(stats.by_category)
     .sort((a, b) => b[1] - a[1])
@@ -531,6 +557,77 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
                     </div>
                   ),
                 )}
+              </div>
+            )}
+
+            {stale.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Давно не пополнялись</p>
+                <ul className="space-y-2">
+                  {stale.map((c) => (
+                    <li key={c.category} className="flex items-baseline justify-between gap-2 text-xs">
+                      <span className="min-w-0 flex-1 truncate" title={c.category}>
+                        {categoryLabel(c.category, stats.category_labels ?? {})}
+                      </span>
+                      <span className="shrink-0 font-label text-[10px] italic text-on-surface-variant">
+                        {c.weeks} нед · {c.count} зап.
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {growth.total > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <div className="mb-3 flex items-baseline justify-between gap-2">
+                  <span className="label">Рост за 12 недель</span>
+                  <span className="font-label text-[10px] text-on-surface-variant">
+                    +{growth.total} · ср. {growth.perWeek}/нед
+                  </span>
+                </div>
+                {/* Столбики, а не линия: на этих данных линия вырождалась в
+                    один пик и плоскость, по которой ничего не прочесть. */}
+                <div className="flex h-12 items-end gap-1">
+                  {growth.weeks.map((n, i) => {
+                    const max = Math.max(1, ...growth.weeks)
+                    return (
+                      <div
+                        key={i}
+                        className="flex-1 rounded-sm bg-secondary"
+                        style={{ height: `${Math.max(4, (n / max) * 100)}%`, opacity: n === 0 ? 0.15 : 0.85 }}
+                        title={`${n} записей`}
+                      />
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {central.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Центральные узлы графа</p>
+                <ul className="space-y-2.5">
+                  {central.map(([cat, deg]) => {
+                    const max = central[0][1]
+                    return (
+                      <li key={cat} className="flex items-center gap-2 text-xs">
+                        <span className="min-w-0 flex-1 truncate" title={cat}>
+                          {categoryLabel(cat, stats.category_labels ?? {})}
+                        </span>
+                        <span className="h-px w-16 bg-outline-variant">
+                          <span
+                            className="block h-px bg-on-surface"
+                            style={{ width: `${(deg / max) * 100}%` }}
+                          />
+                        </span>
+                        <span className="w-6 shrink-0 text-right font-label text-[10px] text-secondary tabular-nums">
+                          {deg}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
               </div>
             )}
 
