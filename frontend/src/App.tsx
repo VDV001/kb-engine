@@ -14,9 +14,9 @@ import { DashboardView } from './DashboardView'
 import { HealthView } from './HealthView'
 import { findingCount } from './hygiene'
 import { ProjectsView } from './ProjectsView'
-import { SettingsView } from './views'
+import { AboutView } from './AboutView'
 
-type Tab = 'overview' | 'archives' | 'analytics' | 'health' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
+type Tab = 'overview' | 'archives' | 'analytics' | 'health' | 'finances' | 'projects' | 'team' | 'now' | 'about'
 
 // Порядок вкладок — это четыре группы, а не список: база знаний, витрина и
 // оперативка, приватное, служебное. Audits и Duplicates стояли третьей и
@@ -31,7 +31,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'team', label: 'Team' },
   { id: 'finances', label: 'Finances' },
   { id: 'health', label: 'Health' },
-  { id: 'settings', label: 'Summary' },
+  { id: 'about', label: 'About' },
 ]
 
 export default function App() {
@@ -44,6 +44,9 @@ export default function App() {
   // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
   // на одной вкладке, а применяется он на другой.
   const [pickedTag, setPickedTag] = useState('')
+  // Категория, выбранная ящиком на About — по той же причине, что и тег:
+  // выбирают на одной вкладке, применяется на другой.
+  const [pickedCategory, setPickedCategory] = useState('')
   const dashboard = useResource(api.dashboard)
   const data = dashboard.status === 'ready' ? dashboard.data : null
 
@@ -119,6 +122,8 @@ export default function App() {
                 tagLabels={data.stats.tag_labels ?? {}}
                 pickedTag={pickedTag}
                 onPickedTagChange={setPickedTag}
+                pickedCategory={pickedCategory}
+                onPickedCategoryChange={setPickedCategory}
                 health={data.stats.health}
                 search={search}
                 onSearchChange={setSearch}
@@ -128,7 +133,19 @@ export default function App() {
             {tab === 'projects' && <ProjectsView />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" />}
             {tab === 'now' && <NowView />}
-            {tab === 'settings' && <SettingsView stats={data.stats} />}
+            {tab === 'about' && (
+              <AboutView
+                stats={data.stats}
+                // Ящик показывает, сколько записей в категории; читают их всё
+                // равно в архиве, поэтому клик ведёт туда с фильтром.
+                onPickCategory={(c) => {
+                  setPickedCategory(c)
+                  setPickedTag('')
+                  setSearch('')
+                  setTab('archives')
+                }}
+              />
+            )}
           </>
         )}
         <SourceOffer />

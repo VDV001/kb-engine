@@ -32,6 +32,8 @@ const view = (search: string, onSearchChange = () => {}) =>
       tagLabels={{}}
       pickedTag=""
       onPickedTagChange={() => {}}
+      pickedCategory=""
+      onPickedCategoryChange={() => {}}
       health={health}
       search={search}
       onSearchChange={onSearchChange}
@@ -39,6 +41,34 @@ const view = (search: string, onSearchChange = () => {}) =>
   )
 
 describe('CatalogView', () => {
+  // Категория приходит снаружи — ящиком на About — и вид открывается уже
+  // отфильтрованным. Проверка именно на монтировании: при переключении вкладки
+  // компонент создаётся заново, и сверка «пришло не то, что показано» в этот
+  // момент не срабатывает — сравнивать не с чем. На живых данных это выглядело
+  // так: клик по ящику переносил в архив и показывал все 1340 записей.
+  it('открывается с фильтром по категории, пришедшей снаружи', () => {
+    const mixed: Entry[] = [
+      ...many.slice(0, 5),
+      { id: 100, title: 'Про Go', category: 'golang', kind: 'article', lifecycle: 'active' },
+    ]
+    render(
+      <CatalogView
+        entries={mixed}
+        labels={{}}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory="golang"
+        onPickedCategoryChange={() => {}}
+        health={health}
+        search=""
+        onSearchChange={() => {}}
+      />,
+    )
+    expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
+    expect(screen.getByText('Про Go')).toBeDefined()
+  })
+
   it('shows the category name from the catalog, not the key', () => {
     view('')
     expect(screen.getAllByText('Мета').length).toBeGreaterThan(0)
@@ -53,7 +83,7 @@ describe('CatalogView', () => {
     expect(screen.getByText(/Показано 31–40/).textContent).toContain('31–40')
 
     rerender(
-      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
+      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} pickedCategory="" onPickedCategoryChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
     )
     expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
   })

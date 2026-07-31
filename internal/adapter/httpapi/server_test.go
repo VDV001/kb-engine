@@ -110,12 +110,39 @@ func (f fakeFinance) Finances() (httpapi.Finances, error) {
 	}, nil
 }
 
+var testEngine = httpapi.EngineInfo{
+	Version: "0.9.9",
+	Commit:  "abc1234",
+	Built:   "2026-07-31T17:21:48Z",
+}
+
 func newTestServer() http.Handler {
 	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
 		func() (analyticsconfig.Config, error) { return testConfig, nil },
 		func() (changelog.Document, error) {
 			return changelog.Document{CurrentVersion: "0.9.0"}, nil
-		}, httpapi.Documents{}, nil)
+		}, httpapi.Documents{}, testEngine, nil)
+}
+
+// Версия движка живёт в бинаре, и на странице её иначе не показать. Нужна она
+// не из любопытства: подвал предлагает исходники по AGPL §13, а предложение без
+// версии неполно — непонятно, исходники какой именно сборки предлагаются.
+func TestServer_engine(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/engine")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	for field, want := range map[string]string{
+		"version": "0.9.9", "commit": "abc1234", "built": "2026-07-31T17:21:48Z",
+	} {
+		if body[field] != want {
+			t.Errorf("engine[%q] = %q, want %q", field, body[field], want)
+		}
+	}
 }
 
 // The journal needs the rows themselves — it lists, filters and sorts them — so
@@ -158,7 +185,7 @@ func TestServer_finances(t *testing.T) {
 // rest of the dashboard, and the view says there is nothing rather than breaking.
 func TestServer_finances_notConfigured(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, nil,
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, testEngine, nil)
 	rec := get(t, srv, "/api/finances")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
@@ -178,7 +205,7 @@ func TestServer_finances_notConfigured(t *testing.T) {
 func TestServer_finances_error(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
 		fakeFinance{err: errors.New("ledger unreadable")},
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, testEngine, nil)
 	if rec := get(t, srv, "/api/finances"); rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
@@ -319,7 +346,7 @@ func (fakeQueryErr) Stats() (query.Stats, error) {
 
 func TestServer_readyz_unavailable(t *testing.T) {
 	srv := httpapi.NewServer(fakeQueryErr{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
-		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, nil)
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil, httpapi.Documents{}, testEngine, nil)
 	rec := get(t, srv, "/readyz")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
@@ -354,7 +381,7 @@ func TestServer_documents(t *testing.T) {
 			Now:      func() (string, error) { return "# Сейчас\n\n- работа", nil },
 			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
 			Projects: nil, // не настроен
-		}, nil)
+		}, testEngine, nil)
 
 	rec := get(t, srv, "/api/now")
 	if rec.Code != http.StatusOK {
