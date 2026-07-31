@@ -32,6 +32,17 @@ export function categoryLabel(key: string, labels: Record<string, string>): stri
   return full.split(':')[0].trim()
 }
 
+/**
+ * tagLabel turns a tag key into the name a person reads. Unlike a category,
+ * a tag has no description to strip: the whole label is the name. Most tags
+ * carry no label at all and do not need one — the key is already readable
+ * («mcp», «claude-code»). Labels exist for the two dozen keys that replaced
+ * Russian tags, where the key alone would no longer say what the tag means.
+ */
+export function tagLabel(key: string, labels: Record<string, string>): string {
+  return labels[key] ?? key
+}
+
 /** One status as the catalog shows it: the value filters match on, the words a
  * person reads, and the colour both the dot and the caption take. */
 export interface StatusView {

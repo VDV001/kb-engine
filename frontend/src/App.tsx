@@ -78,6 +78,7 @@ export default function App() {
               <CatalogView
                 entries={data.entries}
                 labels={data.stats.category_labels ?? {}}
+                tagLabels={data.stats.tag_labels ?? {}}
                 health={data.stats.health}
                 search={search}
                 onSearchChange={setSearch}

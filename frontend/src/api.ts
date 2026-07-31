@@ -8,6 +8,9 @@ export interface Stats {
   by_kind: Record<string, number>
   /** Как каталог называет свои категории: ключ → «Название: описание». */
   category_labels?: Record<string, string>
+  /** Читаемые названия тегов. Есть только у тех ключей, что заменили русские
+   * теги: остальные читаемы сами по себе и в словаре отсутствуют. */
+  tag_labels?: Record<string, string>
   health: Health
 }
 

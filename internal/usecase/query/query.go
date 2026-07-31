@@ -18,6 +18,7 @@ type Stats struct {
 	ByVerdict      map[string]int    `json:"by_verdict"`
 	ByKind         map[string]int    `json:"by_kind"`
 	CategoryLabels map[string]string `json:"category_labels,omitempty"`
+	TagLabels      map[string]string `json:"tag_labels,omitempty"`
 }
 
 // Service answers read queries over a loaded catalog.
@@ -51,6 +52,7 @@ func (s *Service) Stats() (Stats, error) {
 		ByVerdict:      make(map[string]int),
 		ByKind:         make(map[string]int),
 		CategoryLabels: c.CategoryLabels(),
+		TagLabels:      c.TagLabels(),
 	}
 	for _, e := range c.Entries() {
 		st.Total++

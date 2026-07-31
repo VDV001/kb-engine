@@ -15,6 +15,7 @@ type Catalog struct {
 	entries        []Entry
 	byID           map[int]int // id -> index into entries
 	categoryLabels map[string]string
+	tagLabels      map[string]string
 }
 
 // CatalogOption configures a Catalog at construction time.
@@ -26,6 +27,15 @@ type CatalogOption func(*Catalog)
 func WithCategoryLabels(labels map[string]string) CatalogOption {
 	return func(c *Catalog) {
 		c.categoryLabels = maps.Clone(labels)
+	}
+}
+
+// WithTagLabels attaches readable names for tag keys. Only tags whose key is
+// not already readable need one — the catalog describes 24 of them against
+// nearly four thousand keys, so most tags legitimately have none.
+func WithTagLabels(labels map[string]string) CatalogOption {
+	return func(c *Catalog) {
+		c.tagLabels = maps.Clone(labels)
 	}
 }
 
@@ -53,6 +63,15 @@ func (c *Catalog) CategoryLabels() map[string]string {
 	// вправе писать в полученную карту — в nil-карту запись паникует.
 	out := make(map[string]string, len(c.categoryLabels))
 	maps.Copy(out, c.categoryLabels)
+	return out
+}
+
+// TagLabels returns a copy of the readable names for tag keys. A tag without
+// one is absent rather than named after itself: whether to fall back to the
+// key is the view's decision.
+func (c *Catalog) TagLabels() map[string]string {
+	out := make(map[string]string, len(c.tagLabels))
+	maps.Copy(out, c.tagLabels)
 	return out
 }
 
