@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { Graph } from './api'
+import type { Entry, Graph } from './api'
 import { graphInsights } from './graphInsights'
 import { layoutGraph } from './graphLayout'
 
@@ -87,5 +87,41 @@ describe('graphInsights', () => {
   it('не считает ядро связанным само с собой', () => {
     expect(insights.fused.map((f) => f.key)).not.toContain('ai-agents')
     expect(insights.islands.map((i) => i.key)).not.toContain('ai-agents')
+  })
+})
+
+// Число «95 общих тегов» не проверяемо: читателю не видно, каких именно. Сами
+// теги превращают вывод в утверждение, которое можно оспорить.
+describe('graphInsights: словарь связи', () => {
+  const entries = [
+    { id: 1, category: 'ai-agents', tags: ['mcp', 'claude-code', 'agents'] },
+    { id: 2, category: 'ai-agents', tags: ['mcp', 'llm'] },
+    { id: 3, category: 'knowledge', tags: ['mcp', 'claude-code', 'notes'] },
+    { id: 4, category: 'knowledge', tags: ['mcp'] },
+    { id: 5, category: 'databases', tags: ['postgres', 'sql'] },
+    { id: 6, category: 'databases', tags: ['postgres'] },
+  ] as Entry[]
+
+  const withTags = graphInsights(layoutGraph(graph, box), { total: 1000, entries })
+
+  it('показывает у ядра размер его словаря', () => {
+    expect(withTags.core?.vocabulary).toBe(4) // mcp, claude-code, agents, llm
+  })
+
+  it('называет общие с ядром теги у сросшейся темы', () => {
+    const k = withTags.fused.find((f) => f.key === 'knowledge')
+    expect(k?.sharedTags).toEqual(['mcp', 'claude-code'])
+  })
+
+  it('называет собственные теги острова — те, которых у ядра нет', () => {
+    const db = withTags.islands.find((i) => i.key === 'databases')
+    expect(db?.ownTags).toEqual(['postgres', 'sql'])
+    expect(db?.sharedTags).toEqual([])
+  })
+
+  it('без записей молчит, а не выдумывает', () => {
+    const bare = graphInsights(layoutGraph(graph, box), { total: 1000 })
+    expect(bare.core?.vocabulary).toBe(0)
+    expect(bare.fused.every((f) => f.sharedTags.length === 0)).toBe(true)
   })
 })
