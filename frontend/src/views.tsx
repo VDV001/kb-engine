@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { api } from './api'
 import type { Audits, DuplicateGroup, Finding, Stats } from './api'
 import { useResource } from './hooks/useResource'
@@ -47,9 +48,11 @@ export function SettingsView({ stats }: { stats: Stats }) {
   const res = useResource(api.changelog)
   const log = res.status === 'ready' ? res.data : null
 
+  const [fullHistory, setFullHistory] = useState(false)
   const boxes = Object.entries(stats.by_category).sort((a, b) => b[1] - a[1])
   const empty = boxes.filter(([, n]) => n === 0).length
-  const latest = (log?.releases ?? []).slice(0, 3)
+  const all = log?.releases ?? []
+  const latest = fullHistory ? all : all.slice(0, 3)
 
   return (
     <div className="space-y-6">
@@ -84,6 +87,7 @@ export function SettingsView({ stats }: { stats: Stats }) {
                 [
                   ['Записей', String(stats.total)],
                   ['Категорий', String(boxes.length)],
+                  ['Источник', 'Telegram Bot + Ручное'],
                   ['Версия каталога', log?.current_version ? `v${log.current_version} · ${log.current_date ?? '—'}` : '—'],
                 ] as const
               ).map(([k, v]) => (
@@ -106,6 +110,7 @@ export function SettingsView({ stats }: { stats: Stats }) {
           {latest.length > 0 && (
             <Card>
               <Label>Что нового</Label>
+              <span className="ml-2 font-mono text-[10px] text-on-surface-variant">из CHANGELOG.md</span>
               <div className="mt-3 space-y-4">
                 {latest.map((r, i) => (
                   <div key={r.version} className="space-y-1.5">
@@ -132,10 +137,69 @@ export function SettingsView({ stats }: { stats: Stats }) {
                   </div>
                 ))}
               </div>
+              {all.length > 3 && (
+                <button
+                  type="button"
+                  onClick={() => setFullHistory((v) => !v)}
+                  className="mt-4 w-full rounded border border-outline-variant bg-surface-high py-2 font-label text-xs uppercase tracking-wider text-on-surface-variant transition-colors hover:text-on-surface"
+                >
+                  {fullHistory ? 'Свернуть историю' : `Показать всю историю (${all.length})`}
+                </button>
+              )}
             </Card>
           )}
+
+          {/* Что впереди. Список не скопирован из исходного дашборда: там в
+              «скоро» до сих пор числятся lifecycle и публичный дашборд, а
+              движок делает и то, и другое — обещать сделанное значит врать
+              про собственную зрелость. */}
+          <Card>
+            <h2 className="text-xl">Скоро</h2>
+            <p className="mt-2 text-sm leading-relaxed text-on-surface-variant">
+              Семантический поиск по базе, экспорт каталога, печатная версия страницы
+              проектов и словарь тем, который разложит теговый хвост.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {['Семантический поиск', 'Экспорт', 'PDF проектов', 'Словарь тем'].map((t) => (
+                <span
+                  key={t}
+                  className="rounded border border-outline-variant bg-surface-low px-3 py-1 font-label text-[10px] uppercase tracking-wider text-on-surface-variant"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+          </Card>
         </aside>
       </div>
+
+      {/* Редакторская секция исходника. Текст переписан под движок: старая
+          «Автоматизация» описывала build_dashboard.py, которого здесь нет. */}
+      <section className="mt-24 grid gap-12 border-t border-outline-variant pt-12 md:grid-cols-3">
+        <div>
+          <h3 className="font-headline text-xl font-bold">Категории как ящики</h3>
+          <p className="mt-4 text-sm leading-relaxed text-on-surface-variant">
+            Каждый ящик — категория в структуре базы. Ключ хранится в записи, читаемое
+            название живёт в каталоге рядом с ним, поэтому переименование категории не
+            трогает ни одной записи.
+          </p>
+        </div>
+        <div>
+          <h3 className="font-headline text-xl font-bold">Откуда приходят записи</h3>
+          <p className="mt-4 text-sm leading-relaxed text-on-surface-variant">
+            Телеграм-бот складывает ссылки в инбокс, движок разбирает его командой
+            inbox и дописывает каталог, не перекодируя то, что в нём уже лежит.
+          </p>
+        </div>
+        <div>
+          <h3 className="font-headline text-xl font-bold">Один источник оформления</h3>
+          <p className="mt-4 text-sm leading-relaxed text-on-surface-variant">
+            Палитра, шрифты и размеры заданы токенами в одном месте и раздаются
+            и вебу, и терминалу. Светлая и тёмная тема — две ветки одних и тех же
+            значений, а не два набора.
+          </p>
+        </div>
+      </section>
     </div>
   )
 }
