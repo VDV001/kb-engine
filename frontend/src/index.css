@@ -102,3 +102,38 @@ h1, h2, h3 {
 @media (prefers-reduced-motion: reduce) {
   .ecg-line { animation: none; }
 }
+
+/* --- Граф знаний: перенос из исходного дашборда --- */
+/* Точечная сетка холста — она держит пространство, по ней читается масштаб. */
+.kg-canvas {
+  background-color: var(--surface-low);
+  background-size: 40px 40px;
+  background-image: radial-gradient(circle, var(--outline-variant) 1px, transparent 1px);
+}
+/* Слабая связь течёт пунктиром, сильная — сплошная. Разница видна без легенды. */
+.kg-line-flow {
+  stroke-dasharray: 4 10;
+  animation: kg-flow 1.2s linear infinite;
+}
+@keyframes kg-flow {
+  to { stroke-dashoffset: -24; }
+}
+/* Внутренняя пунктирная рамка медленно вращается: узел выглядит живым, но
+   ничего не сообщает движением — данные в нём статичны. */
+.kg-inner-dashed {
+  animation: kg-inner-spin 18s linear infinite;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+@keyframes kg-inner-spin {
+  to { transform: rotate(360deg); }
+}
+.kg-node rect:first-child {
+  transition: stroke-opacity 0.2s ease;
+}
+.kg-node:hover rect:first-child {
+  stroke-opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .kg-line-flow, .kg-inner-dashed { animation: none; }
+}

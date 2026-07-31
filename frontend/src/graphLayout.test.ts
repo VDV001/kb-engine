@@ -97,3 +97,74 @@ describe('layoutGraph', () => {
     expect(l.edges).toHaveLength(0)
   })
 })
+
+// Кольцо теперь означает связь с ядром, а не размер: размер уже показан числом
+// на узле и площадью прямоугольника, и третий канал под то же самое —
+// потраченная ось. Ближнее кольцо читается как «грани основной линии»,
+// дальнее — как «острова со своим словарём».
+describe('layoutGraph: слои по связи с ядром', () => {
+  const byLink: Graph = {
+    nodes: [
+      { category: 'hub', count: 100 },
+      { category: 'big-island', count: 90 }, // крупная, но с ядром не связана
+      { category: 'small-core', count: 4 }, // мелкая, но связана сильно
+      { category: 'mid', count: 40 },
+      { category: 'lonely', count: 30 },
+    ],
+    edges: [
+      { from: 'hub', to: 'small-core', weight: 12 },
+      { from: 'hub', to: 'mid', weight: 5 },
+      { from: 'big-island', to: 'mid', weight: 7 }, // связь мимо ядра не приближает
+    ],
+  }
+
+  it('ставит сильно связанную с ядром категорию ближе, даже если она мелкая', () => {
+    const l = layoutGraph(byLink, box)
+    const ring = (key: string) => l.nodes.find((n) => n.key === key)!.ring
+
+    expect(ring('hub')).toBe('core')
+    expect(ring('small-core')).toBe('inner')
+    expect(ring('big-island')).toBe('outer')
+  })
+
+  it('кладёт категорию без связей с ядром во внешнее кольцо', () => {
+    const l = layoutGraph(byLink, box)
+    const lonely = l.nodes.find((n) => n.key === 'lonely')!
+    expect(lonely.linkToHub).toBe(0)
+    expect(lonely.ring).toBe('outer')
+  })
+
+  it('считает связь с ядром весом ребра, в любую сторону', () => {
+    const l = layoutGraph(byLink, box)
+    expect(l.nodes.find((n) => n.key === 'small-core')!.linkToHub).toBe(12)
+    expect(l.nodes.find((n) => n.key === 'mid')!.linkToHub).toBe(5)
+    // Связь big-island↔mid идёт мимо ядра и на близость не влияет.
+    expect(l.nodes.find((n) => n.key === 'big-island')!.linkToHub).toBe(0)
+  })
+
+  it('чем сильнее связь, тем ближе узел к центру', () => {
+    const l = layoutGraph(byLink, box)
+    const dist = (key: string) => {
+      const n = l.nodes.find((x) => x.key === key)!
+      return Math.hypot(n.x - l.canvasWidth / 2, n.y - box.height / 2)
+    }
+    expect(dist('small-core')).toBeLessThan(dist('lonely'))
+    expect(dist('mid')).toBeLessThan(dist('big-island'))
+  })
+
+  // Прямоугольники не должны наезжать друг на друга: прежняя раскладка держала
+  // это тем, что мелкие уходили на длинную внешнюю дугу, а порядок теперь другой.
+  it('не даёт прямоугольникам перекрываться', () => {
+    const l = layoutGraph(graph, box)
+    for (let i = 0; i < l.nodes.length; i++) {
+      for (let j = i + 1; j < l.nodes.length; j++) {
+        const a = l.nodes[i]
+        const b = l.nodes[j]
+        const apart =
+          Math.abs(a.x - b.x) >= (a.width + b.width) / 2 ||
+          Math.abs(a.y - b.y) >= (a.height + b.height) / 2
+        expect(apart, `${a.key} перекрывает ${b.key}`).toBe(true)
+      }
+    }
+  })
+})

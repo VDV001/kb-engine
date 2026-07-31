@@ -9,7 +9,8 @@ import { ErrorBox, Spinner } from './components/ui'
 import { FinancesView } from './FinancesView'
 import { PrivacyToggle } from './components/PrivacyToggle'
 import { SearchBox } from './components/SearchBox'
-import { AuditsView, DuplicatesView, OverviewView, SettingsView } from './views'
+import { DashboardView } from './DashboardView'
+import { AuditsView, DuplicatesView, SettingsView } from './views'
 
 type Tab = 'overview' | 'archives' | 'analytics' | 'audits' | 'duplicates' | 'finances' | 'projects' | 'team' | 'now' | 'settings'
 
@@ -65,7 +66,7 @@ export default function App() {
         {dashboard.status === 'loading' && <Spinner />}
         {data && (
           <>
-            {tab === 'overview' && <OverviewView stats={data.stats} />}
+            {tab === 'overview' && <DashboardView stats={data.stats} entries={data.entries} />}
 
             {tab === 'analytics' && (
               <AnalyticsView config={data.analyticsConfig} stats={data.stats} />

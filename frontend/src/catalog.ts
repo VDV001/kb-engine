@@ -134,3 +134,40 @@ export function pageWindow(current: number, total: number): (number | null)[] {
   }
   return out
 }
+
+export interface TagWeight {
+  tag: string
+  count: number
+  /** Место тега в выборке: 0 — самый редкий из показанных, 1 — самый частый. */
+  scale: number
+}
+
+/**
+ * topTags — самые частые теги каталога для облака.
+ *
+ * Масштаб нормализуется внутри выборки, а не по всему словарю: у базы длинный
+ * хвост из тегов-одиночек, и по нему верхние два десятка различались бы только
+ * в последних процентах размера.
+ */
+export function topTags(entries: Entry[], limit: number): TagWeight[] {
+  const counts = new Map<string, number>()
+  for (const e of entries) {
+    for (const tag of e.tags ?? []) {
+      counts.set(tag, (counts.get(tag) ?? 0) + 1)
+    }
+  }
+
+  const top = [...counts.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, limit)
+  if (top.length === 0) return []
+
+  const most = top[0][1]
+  const least = top[top.length - 1][1]
+  const span = most - least
+  return top.map(([tag, count]) => ({
+    tag,
+    count,
+    scale: span === 0 ? 1 : (count - least) / span,
+  }))
+}

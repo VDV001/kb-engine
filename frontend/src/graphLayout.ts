@@ -10,6 +10,10 @@ export interface GraphNodeBox {
   height: number
   count: number
   isHub: boolean
+  /** Число общих тегов с ядром: 0 — тема живёт своим словарём. */
+  linkToHub: number
+  /** Слой: ядро, сросшиеся с ним темы, острова. */
+  ring: 'core' | 'inner' | 'outer'
 }
 
 export interface GraphEdgeLine {
@@ -19,6 +23,8 @@ export interface GraphEdgeLine {
   y1: number
   x2: number
   y2: number
+  /** Число общих тегов — то, из чего считается вся видимая сила связи. */
+  weight: number
   strokeWidth: number
   opacity: number
   /** Сильная связь рисуется сплошной, слабая — пунктиром. */
@@ -38,7 +44,7 @@ const MAX_NODES = 24
 
 /** Связь считается сильной с трёх общих тегов: одна-две пересекающиеся метки
  * бывают и у соседних тем, три — это уже общая область. */
-const STRONG_FROM = 3
+export const STRONG_FROM = 3
 
 function dims(count: number, max: number, hub: boolean): { width: number; height: number } {
   if (hub) return { width: 132, height: 82 }
@@ -73,20 +79,41 @@ export function layoutGraph(
   const cx = canvasWidth / 2
   const cy = box.height / 2
   const max = Math.max(1, ...shown.map((n) => n.count))
-  const ring = shown.slice(1)
-  // Крупные — внутрь, мелкие — наружу: у внешнего кольца длиннее дуга, и
-  // маленькие прямоугольники расходятся на ней, не задевая друг друга.
-  const innerCount = Math.ceil(ring.length * 0.45)
+  const hubKey = shown[0].category
+
+  // Связь с ядром — вес ребра в любую сторону. Ребро мимо ядра к центру не
+  // приближает: слой отвечает на вопрос «насколько тема сплетена с главной
+  // линией», а не «насколько она вообще с кем-то связана».
+  const linkToHub = new Map<string, number>()
+  for (const e of graph.edges) {
+    if (e.from === hubKey) linkToHub.set(e.to, Math.max(linkToHub.get(e.to) ?? 0, e.weight))
+    else if (e.to === hubKey) linkToHub.set(e.from, Math.max(linkToHub.get(e.from) ?? 0, e.weight))
+  }
+
+  // Порядок по силе связи, при равной — по размеру (входной порядок).
+  // Сортировка устойчивая, поэтому картинка остаётся детерминированной.
+  const orbit = shown
+    .slice(1)
+    .map((n, i) => ({ node: n, order: i, link: linkToHub.get(n.category) ?? 0 }))
+    .sort((a, b) => b.link - a.link || a.order - b.order)
+
+  // Внутреннее кольцо короче внешнего: у него дуга меньше, и класть на неё
+  // половину узлов значит сталкивать прямоугольники.
+  const innerCount = Math.ceil(orbit.length * 0.45)
+  const place = new Map(orbit.map((o, rank) => [o.node.category, rank]))
 
   const nodes = shown.map((n, i): GraphNodeBox => {
     const hub = i === 0
     const { width, height } = dims(n.count, max, hub)
+    const link = linkToHub.get(n.category) ?? 0
     let x = cx
     let y = cy
+    let ring: GraphNodeBox['ring'] = 'core'
     if (!hub) {
-      const r = i - 1
+      const r = place.get(n.category) ?? 0
       const inner = r < innerCount
-      const list = inner ? innerCount : ring.length - innerCount
+      ring = inner ? 'inner' : 'outer'
+      const list = inner ? innerCount : orbit.length - innerCount
       const at = inner ? r : r - innerCount
       // Внешнее кольцо сдвинуто на полшага, чтобы его узлы вставали в
       // промежутки внутреннего, а не в затылок им.
@@ -107,6 +134,8 @@ export function layoutGraph(
       height,
       count: n.count,
       isHub: hub,
+      linkToHub: link,
+      ring,
     }
   })
 
@@ -127,6 +156,7 @@ export function layoutGraph(
         y1: a.y,
         x2: b.x,
         y2: b.y,
+        weight: e.weight,
         strokeWidth: 0.5 + share * 1.3,
         opacity: 0.07 + share * 0.3,
         strong: e.weight >= STRONG_FROM,

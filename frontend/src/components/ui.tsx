@@ -151,47 +151,6 @@ export function Chip({
 // BarList renders a sorted horizontal bar chart from a label→count map.
 // valueClassName lets a caller style just the numbers — the finances view masks
 // the amounts while leaving the labels and the bar shapes readable.
-export function BarList({
-  data,
-  valueClassName = '',
-}: {
-  data: Record<string, number>
-  valueClassName?: string
-}) {
-  const entries = Object.entries(data).sort((a, b) => b[1] - a[1])
-  const max = Math.max(1, ...entries.map(([, n]) => n))
-  return (
-    <div className="space-y-1.5">
-      {entries.map(([label, n]) => (
-        <div key={label} className="flex items-center gap-3 text-sm">
-          <span className="w-40 shrink-0 truncate text-on-surface-variant" title={label}>
-            {label}
-          </span>
-          <div className="h-2 flex-1 rounded-full bg-surface-high">
-            {/* Clamped at zero: a negative width is invalid CSS, the browser falls
-                back to auto, and the block child then fills its parent — so a
-                category that is net negative for the month (a refund and no
-                purchases) would draw as the largest bar on screen. */}
-            <div
-              className={`h-2 rounded-full ${n < 0 ? 'bg-secondary-light' : 'bg-donut-primary'}`}
-              style={{ width: `${Math.max(0, n / max) * 100}%` }}
-            />
-          </div>
-          {/* Wide enough for rouble totals, not just the 1-3 digit counts this
-              list was first built for. */}
-          <span
-            className={`w-16 shrink-0 text-right font-mono text-xs tabular-nums text-on-surface-variant ${valueClassName}`}
-          >
-            {n}
-          </span>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// value is a ReactNode so a caller can wrap it — the finances view puts its
-// amounts in a maskable span.
 export function Stat({
   label,
   value,
