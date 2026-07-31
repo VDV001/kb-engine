@@ -3,6 +3,7 @@ package analyticsconfig_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
@@ -95,7 +96,10 @@ func TestLoad_sidebarBlocks(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "cfg.json")
 	src := `{
 	  "pull_quote": "тезис",
-	  "pull_quote_supports": [{"cluster": "vibe-coding", "claim": "вкус решает"}],
+	  "pull_quote_supports": [
+	    {"cluster": "vibe-coding", "claim": "вкус решает"},
+	    "«Агент — это новый посредник.» — Kikodoc (catalog#1011)"
+	  ],
 	  "contradiction_resolution": "усиливает 16 против заменяет 2",
 	  "amplify_clusters": ["claude-ecosystem", "devops"],
 	  "replace_clusters": ["services-reference"],
@@ -110,8 +114,17 @@ func TestLoad_sidebarBlocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(cfg.PullQuoteSupports) != 1 || cfg.PullQuoteSupports[0].Cluster != "vibe-coding" {
-		t.Errorf("PullQuoteSupports = %+v", cfg.PullQuoteSupports)
+	// Поле разнородное на живых данных: 50 объектов и 19 голых цитат. Обе формы
+	// осмысленны, и переписывать файл владельца ради единообразия дороже, чем
+	// принять обе: у цитаты просто нет кластера.
+	if len(cfg.PullQuoteSupports) != 2 {
+		t.Fatalf("опор = %d, want 2", len(cfg.PullQuoteSupports))
+	}
+	if cfg.PullQuoteSupports[0].Cluster != "vibe-coding" || cfg.PullQuoteSupports[0].Claim != "вкус решает" {
+		t.Errorf("объектная опора = %+v", cfg.PullQuoteSupports[0])
+	}
+	if cfg.PullQuoteSupports[1].Cluster != "" || !strings.Contains(cfg.PullQuoteSupports[1].Claim, "посредник") {
+		t.Errorf("строковая опора = %+v", cfg.PullQuoteSupports[1])
 	}
 	if cfg.ContradictionResolution != "усиливает 16 против заменяет 2" {
 		t.Errorf("ContradictionResolution = %q", cfg.ContradictionResolution)

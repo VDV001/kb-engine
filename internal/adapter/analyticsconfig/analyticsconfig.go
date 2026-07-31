@@ -85,6 +85,45 @@ type Config struct {
 	Gaps            []Gap            `json:"gaps"`
 	Contradictions  []Contradiction  `json:"contradictions"`
 	ManifestoQuotes []ManifestoQuote `json:"manifesto_quotes"`
+
+	// Правый столбец аналитики. Данные лежали в файле и до сих пор, но их
+	// обрезала эта структура: вид показывал под выводом число опор и не мог
+	// показать сами опоры.
+	PullQuoteSupports       []QuoteSupport `json:"pull_quote_supports,omitempty"`
+	ContradictionResolution string         `json:"contradiction_resolution,omitempty"`
+	// Разбиение категорий по тому, что с ними делает AI. Это ядро первого
+	// манифестного тезиса, и нигде больше в движке его нет.
+	AmplifyClusters []string `json:"amplify_clusters,omitempty"`
+	ReplaceClusters []string `json:"replace_clusters,omitempty"`
+	NeutralClusters []string `json:"neutral_clusters,omitempty"`
+}
+
+// QuoteSupport is one claim the pull quote rests on, and the cluster it came
+// from. A count of supports without the supports themselves is a promise the
+// reader cannot check.
+type QuoteSupport struct {
+	Cluster string `json:"cluster"`
+	Claim   string `json:"claim"`
+}
+
+// UnmarshalJSON accepts both shapes the config uses: an object with a cluster
+// and a claim, and a bare string — a quote with its attribution, which belongs
+// to no cluster. On the live config that is 50 objects against 19 strings, and
+// rewriting the owner's file for uniformity costs more than reading both.
+func (q *QuoteSupport) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		q.Cluster, q.Claim = "", s
+		return nil
+	}
+	// Псевдоним разрывает рекурсию: без него json снова позвал бы этот метод.
+	type plain QuoteSupport
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return fmt.Errorf("quote support: %w", err)
+	}
+	*q = QuoteSupport(p)
+	return nil
 }
 
 // Load reads and decodes the analytics config at path. Unknown fields are

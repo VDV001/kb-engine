@@ -269,6 +269,7 @@ function GapCard({ gap }: { gap: Gap }) {
 export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stats: Stats }) {
   const [tab, setTab] = useState<TabId>('манифест')
   const [chainOpen, setChainOpen] = useState(false)
+  const [supportsOpen, setSupportsOpen] = useState(false)
   // Граф грузится только когда на вкладку зашли, и один раз за жизнь вида.
   // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
   // каталога, и пустая картинка честнее ошибки на весь экран.
@@ -281,6 +282,12 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
   const gaps = config.gaps ?? []
   const quotes = config.manifesto_quotes ?? []
   const chain = config.inference_chain ?? []
+  // Правый столбец: опоры под выводом и разбиение категорий по тому, что с
+  // ними делает AI. Всё это лежало в конфиге и обрезалось по дороге.
+  const supports = config.pull_quote_supports ?? []
+  const amplify = config.amplify_clusters ?? []
+  const replace = config.replace_clusters ?? []
+  const neutral = config.neutral_clusters ?? []
   const clusters = Object.keys(stats.by_category).length
   const topClusters = Object.entries(stats.by_category)
     .sort((a, b) => b[1] - a[1])
@@ -447,6 +454,82 @@ export function AnalyticsView({ config, stats }: { config: AnalyticsConfig; stat
                       </dl>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+
+            {config.contradiction_resolution && (
+              <div className="border-b border-outline-variant bg-surface-high px-6 py-5">
+                <p className="label mb-2 text-secondary">Разрешение противоречия</p>
+                <p className="text-[11px] leading-relaxed text-on-surface-variant">
+                  {config.contradiction_resolution}
+                </p>
+              </div>
+            )}
+
+            {supports.length > 0 && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                {/* Опор почти семьдесят: развёрнутые они длиннее самой страницы,
+                    поэтому свёрнуты, но счётчик обещает ровно то, что раскроется. */}
+                <button
+                  type="button"
+                  onClick={() => setSupportsOpen(!supportsOpen)}
+                  className="flex w-full items-center justify-between gap-2"
+                  aria-expanded={supportsOpen}
+                >
+                  <span className="label">Опоры вывода</span>
+                  <span className="label opacity-60">
+                    {supportsOpen ? 'скрыть' : String(supports.length)}
+                  </span>
+                </button>
+                {supportsOpen && (
+                  <dl className="mt-3 space-y-2.5">
+                    {supports.map((sp, i) => (
+                      <div key={`${sp.cluster}-${i}`} className="grid grid-cols-[7rem_1fr] gap-2">
+                        <dt className="text-[11px] font-bold text-secondary">{sp.cluster}</dt>
+                        <dd className="text-[11px] leading-relaxed text-on-surface-variant">
+                          {sp.claim}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </div>
+            )}
+
+            {(amplify.length > 0 || replace.length > 0 || neutral.length > 0) && (
+              <div className="border-b border-outline-variant px-6 py-5">
+                <p className="label mb-3">Направление кластеров</p>
+                {/* Три группы, а не диаграмма: вопрос здесь «какие именно», и
+                    имя категории отвечает на него, а доля — нет. */}
+                {(
+                  [
+                    ['AI усиливает', amplify, 'text-on-surface'],
+                    ['AI заменяет', replace, 'text-secondary'],
+                    ['Нейтрально', neutral, 'text-on-surface-variant'],
+                  ] as const
+                ).map(([title, list, tone]) =>
+                  list.length === 0 ? null : (
+                    <div key={title} className="mb-3 last:mb-0">
+                      <div className="flex items-baseline justify-between">
+                        <span className={`label ${tone}`}>{title}</span>
+                        <span className="font-headline text-xs font-bold italic tabular-nums">
+                          {list.length}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {list.map((c) => (
+                          <span
+                            key={c}
+                            className="rounded border border-outline-variant bg-surface-high px-2 py-0.5 text-[10px]"
+                            title={c}
+                          >
+                            {categoryLabel(c, stats.category_labels ?? {})}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ),
                 )}
               </div>
             )}
