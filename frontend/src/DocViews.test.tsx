@@ -12,6 +12,7 @@ const team: Document = {
   sections: [
     {
       title: 'Состав',
+      sensitive: true,
       cards: [
         { title: 'Кирилл', meta: 'Тим-лид и тех-лид', badge: 'работает', body: 'Формальный лидер разработки' },
         { title: 'Ваня', meta: 'DevOps', badge: 'уходит', body: 'Компетенция уходит из компании целиком' },
@@ -58,6 +59,45 @@ describe('DocumentView: три состояния вместо одного', ()
   })
 })
 
+describe('DocumentView: карточка роли', () => {
+  // Формат исходного дашборда: подпись-роль сверху капсом, бейдж справа, имя
+  // крупно, описание и список обязанностей. Обязанности — не абзац: их читают
+  // глазами по одной, чтобы найти свою зону, и слипшийся текст этого не даёт.
+  const roles: Document = {
+    sections: [
+      {
+        title: 'Роли',
+        sensitive: true,
+        cards: [
+          {
+            title: 'Даниил',
+            eyebrow: 'Лид отдела',
+            badge: 'ядро',
+            body: 'Люди, процессы, приоритеты.',
+            points: ['Единый вход проектов', 'Онбординг продажников'],
+          },
+        ],
+      },
+    ],
+  }
+
+  it('печатает подпись-роль и обязанности списком', async () => {
+    render(<DocumentView load={async () => roles} name="Team" />)
+    expect(await screen.findByText('Лид отдела')).toBeDefined()
+    expect(screen.getByText('Единый вход проектов')).toBeDefined()
+    expect(screen.getByText('Онбординг продажников')).toBeDefined()
+  })
+
+  // Обязанности — это зона ответственности роли, а не факт о человеке: под
+  // маской скрыто имя, а кто за что отвечает, страница обязана показывать,
+  // иначе она перестаёт быть операционной моделью.
+  it('под маской обязанности остаются, имя — нет', async () => {
+    render(<DocumentView load={async () => roles} name="Team" masked />)
+    expect(await screen.findByText('Единый вход проектов')).toBeDefined()
+    expect(screen.queryByText('Даниил')).toBeNull()
+  })
+})
+
 describe('DocumentView: маска', () => {
   // Состав отдела — данные о третьих лицах: кто уходит, кто на чём держится.
   // Маска по умолчанию включена по той же причине, что и в финансах: безопасное
@@ -76,5 +116,19 @@ describe('DocumentView: маска', () => {
     render(<DocumentView load={async () => team} name="Team" />)
     expect(await screen.findByText('Кирилл')).toBeDefined()
     expect(screen.getByText(/Формальный лидер/)).toBeDefined()
+  })
+
+  // Схема потока живёт в заголовках карточек: «Продажник → отдел» — это шаг, а
+  // не человек. Секция без пометки остаётся читаемой под маской, иначе маска
+  // стирает модель процесса вместо персональных данных. На живом экране это и
+  // случилось: скрылись названия зон, а имена рядом с ними остались видны.
+  it('секцию без пометки не трогает', async () => {
+    const flow: Document = {
+      sections: [
+        { title: 'Поток', cards: [{ title: 'Продажник → отдел', body: 'Зовёт нас на тех-часть' }] },
+      ],
+    }
+    render(<DocumentView load={async () => flow} name="Team" masked />)
+    expect(await screen.findByText('Продажник → отдел')).toBeDefined()
   })
 })

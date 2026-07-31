@@ -63,14 +63,16 @@ export default function App() {
         // то, в котором оказываешься, а не то, которое надо не забыть включить.
         onSelect={(t) => {
           setTab(t)
-          if (t === 'finances') setMasked(true)
+          // Финансы и состав команды — оба про то, что не показывают через
+          // плечо; заход возвращает маску, а не оставляет прошлое решение.
+          if (t === 'finances' || t === 'team') setMasked(true)
         }}
         count={data?.stats.total}
         // Поиск показывается только на архиве: он и фильтрует только архив, а
         // поле, которое видно всегда и работает через раз, обещает больше, чем
         // делает.
         extra={
-          tab === 'finances' ? (
+          tab === 'finances' || tab === 'team' ? (
             <PrivacyToggle masked={masked} onChange={setMasked} />
           ) : tab === 'archives' ? (
             <SearchBox value={search} onChange={setSearch} />
@@ -131,7 +133,7 @@ export default function App() {
             )}
             {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
             {tab === 'projects' && <ProjectsView />}
-            {tab === 'team' && <DocumentView load={api.team} name="Team" />}
+            {tab === 'team' && <DocumentView load={api.team} name="Team" masked={masked} />}
             {tab === 'now' && <NowView />}
             {tab === 'about' && (
               <AboutView
