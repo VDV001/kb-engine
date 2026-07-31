@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	root "github.com/daniil/kb-engine"
@@ -62,32 +63,59 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 }
 
+// buildInfo — версия, коммит и время сборки текущего бинаря. Одно место на
+// весь процесс: их печатает `kbengine version` и их же отдаёт /api/engine,
+// и расходиться этим двум ответам не с чего.
+func buildInfo() httpapi.EngineInfo {
+	e := httpapi.EngineInfo{Version: version}
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return e
+	}
+	if e.Version == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
+		e.Version = info.Main.Version
+	}
+	for _, s := range info.Settings {
+		switch s.Key {
+		case "vcs.revision":
+			e.Commit = s.Value
+		case "vcs.time":
+			e.Built = s.Value
+		}
+	}
+	return e
+}
+
 // runVersion prints the build version, plus VCS revision and build time when
 // the binary carries Go module build info (e.g. installed via `go install`).
 func runVersion(stdout io.Writer) int {
-	v := version
-	var commit, date string
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if v == "dev" && info.Main.Version != "" && info.Main.Version != "(devel)" {
-			v = info.Main.Version
-		}
-		for _, s := range info.Settings {
-			switch s.Key {
-			case "vcs.revision":
-				commit = s.Value
-			case "vcs.time":
-				date = s.Value
-			}
-		}
+	e := buildInfo()
+	fmt.Fprintf(stdout, "kbengine %s\n", e.Version)
+	if e.Commit != "" {
+		fmt.Fprintf(stdout, "commit: %s\n", e.Commit)
 	}
-	fmt.Fprintf(stdout, "kbengine %s\n", v)
-	if commit != "" {
-		fmt.Fprintf(stdout, "commit: %s\n", commit)
-	}
-	if date != "" {
-		fmt.Fprintf(stdout, "built:  %s\n", date)
+	if e.Built != "" {
+		fmt.Fprintf(stdout, "built:  %s\n", e.Built)
 	}
 	return 0
+}
+
+// changelogWarning — текст предупреждения, когда из указанного файла не вышло
+// ни одного релиза. Пустая строка означает «всё в порядке».
+//
+// Молчать здесь нельзя: пустой разбор доезжает до страницы как «v0.0.0 · —»,
+// то есть выглядит фактом о базе, а не сообщением о том, что движок не понял
+// файл. Ошибкой это тоже не сделать — у молодого проекта CHANGELOG.md без
+// релизов законен, и падать на нём значит требовать релиз ради запуска.
+func changelogWarning(path string, releases int) string {
+	if releases > 0 {
+		return ""
+	}
+	msg := fmt.Sprintf("changelog: в %s не нашлось ни одного релиза — «Что нового» будет пустым", path)
+	if strings.HasSuffix(strings.ToLower(path), ".json") {
+		msg += "\n  --changelog ждёт CHANGELOG.md (сам markdown), а не changelog.json, собранный из него"
+	}
+	return msg
 }
 
 func runServe(args []string, stdout, stderr io.Writer) int {
@@ -119,6 +147,16 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
+	}
+	// Разбор changelog проверяется на старте, а не при первом запросе: увидеть
+	// предупреждение в момент запуска можно, а поймать его посреди работы —
+	// уже нет, потому что смотрят в этот момент на страницу, а не в терминал.
+	if *changelogPath != "" {
+		if raw, err := os.ReadFile(*changelogPath); err == nil {
+			if w := changelogWarning(*changelogPath, len(changelog.Parse(string(raw)).Releases)); w != "" {
+				fmt.Fprintln(stderr, w)
+			}
+		}
 	}
 	srv := &http.Server{
 		Addr:              *addr,
@@ -213,7 +251,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 		}
 	}
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, chlog, docs, front), nil
+		analytics.NewService(loader), fin, cfg, chlog, docs, buildInfo(), front), nil
 }
 
 // buildDocuments wires the owner's personal views. Each path is optional;

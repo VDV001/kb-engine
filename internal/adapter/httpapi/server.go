@@ -73,6 +73,18 @@ type Documents struct {
 	Media fs.FS
 }
 
+// EngineInfo — сборка, которая прямо сейчас отвечает на запросы. Приходит
+// снаружи, а не читается здесь из runtime/debug: адаптер отдаёт то, что ему
+// дали, и тогда его можно проверить тестом, не собирая бинарь.
+//
+// Нужна она не для украшения: подвал предлагает исходники по AGPL §13, а
+// предложение без версии не отвечает на вопрос «исходники чего именно».
+type EngineInfo struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit"`
+	Built   string `json:"built"`
+}
+
 // Finances is what the finance port hands over: the ledger rows and the account
 // balances, unaggregated. The journal needs the rows themselves — it lists,
 // filters and sorts them — so this endpoint stays.
@@ -100,7 +112,7 @@ type Financier interface {
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
@@ -112,6 +124,9 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an))
 	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
+	mux.HandleFunc("GET /api/engine", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, engine)
+	})
 	mux.HandleFunc("POST /api/finances/export", handleFinanceExport())
 	mux.HandleFunc("GET /api/now", handleNow(docs.Now))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
