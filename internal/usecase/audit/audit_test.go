@@ -311,9 +311,16 @@ func TestDuplicates(t *testing.T) {
 		// same URL → exact-url duplicate
 		article(t, 1, articleParams{title: "Alpha one two three", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
 		article(t, 2, articleParams{title: "Beta four five six", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
-		// same normalized title (часть N stripped) → similar-title duplicate
+		// Части одного цикла — РАЗНЫЕ материалы, а не одна запись, заведённая
+		// дважды. Раньше они схлопывались намеренно, и на живом каталоге это
+		// дало единственную находку дедупа — ложную: «Разбираемся в ML без
+		// воды. Часть 1» и «Часть 2» стояли в паре как дубликаты.
 		article(t, 3, articleParams{title: "Машинное обучение для всех часть 1", lifecycle: "active", verdict: "keep", url: "https://a.example/1"}),
 		article(t, 4, articleParams{title: "Машинное обучение для всех часть 2", lifecycle: "active", verdict: "keep", url: "https://a.example/2"}),
+		// Тот же заголовок с версионным суффиксом — одна вещь в двух
+		// редакциях, и это по-прежнему дубликат.
+		article(t, 6, articleParams{title: "Руководство по настройке кластера v1", lifecycle: "active", verdict: "keep", url: "https://v.example/1"}),
+		article(t, 7, articleParams{title: "Руководство по настройке кластера v2", lifecycle: "active", verdict: "keep", url: "https://v.example/2"}),
 		// unique
 		article(t, 5, articleParams{title: "Совершенно уникальный заголовок здесь", lifecycle: "active", verdict: "keep", url: "https://u.example/9"}),
 	})
@@ -326,20 +333,31 @@ func TestDuplicates(t *testing.T) {
 		t.Fatalf("Duplicates: %v", err)
 	}
 
-	var url, title *audit.DuplicateGroup
+	var url *audit.DuplicateGroup
+	var titles []audit.DuplicateGroup
 	for i := range groups {
 		switch groups[i].Kind {
 		case "exact-url":
 			url = &groups[i]
 		case "similar-title":
-			title = &groups[i]
+			titles = append(titles, groups[i])
 		}
 	}
 	if url == nil || len(url.EntryIDs) != 2 {
 		t.Errorf("expected exact-url group of 2, got %+v", url)
 	}
-	if title == nil || len(title.EntryIDs) != 2 {
-		t.Errorf("expected similar-title group of 2 (часть 1/2), got %+v", title)
+	if len(titles) != 1 {
+		t.Fatalf("expected exactly one similar-title group (версии), got %+v", titles)
+	}
+	if got := titles[0].EntryIDs; len(got) != 2 || got[0] != 6 || got[1] != 7 {
+		t.Errorf("similar-title group = %v, want [6 7] — версии одного руководства", got)
+	}
+	for _, g := range titles {
+		for _, id := range g.EntryIDs {
+			if id == 3 || id == 4 {
+				t.Errorf("части одного цикла попали в дубликаты: %v", g.EntryIDs)
+			}
+		}
 	}
 }
 
