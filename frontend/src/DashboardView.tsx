@@ -66,7 +66,7 @@ export function DashboardView({ stats, entries }: { stats: Stats; entries: Entry
         </Kpi>
       </div>
 
-      <div className="grid gap-6 md:grid-cols-12">
+      <div className="grid min-w-0 gap-6 md:grid-cols-12">
         <Panel className="md:col-span-8" title="Записи по дням" subtitle={`Появление записей за последние ${BAR_DAYS} дней`}>
           <DayBars days={recent} />
         </Panel>
@@ -115,7 +115,7 @@ function Kpi({
   children?: React.ReactNode
 }) {
   return (
-    <div className={`border border-outline-variant p-8 ${bg} ${tone}`}>
+    <div className={`min-w-0 border border-outline-variant p-5 sm:p-8 ${bg} ${tone}`}>
       <p className="label mb-4">{label}</p>
       <p className="font-headline text-5xl font-bold tracking-tighter tabular-nums">{value}</p>
       <p className="mt-3 text-sm opacity-70">{children}</p>
@@ -134,8 +134,10 @@ function Panel({
   className?: string
   children: React.ReactNode
 }) {
+  // min-w-0: без него грид-элемент не сжимается ниже своего содержимого, и
+  // панель распирает страницу в горизонтальный скролл на узком экране.
   return (
-    <div className={`flex flex-col border border-outline-variant bg-surface-lowest p-8 ${className}`}>
+    <div className={`flex min-w-0 flex-col border border-outline-variant bg-surface-lowest p-5 sm:p-8 ${className}`}>
       <h4 className="font-headline text-lg font-bold tracking-tight">{title}</h4>
       <p className="mb-8 text-sm text-on-surface-variant">{subtitle}</p>
       {children}
@@ -172,7 +174,7 @@ function Section({
 function DayBars({ days }: { days: { date: string; count: number }[] }) {
   const max = Math.max(1, ...days.map((d) => d.count))
   return (
-    <div className="flex h-[200px] flex-1 items-end gap-1">
+    <div className="flex h-[200px] min-w-0 flex-1 items-end gap-0.5 sm:gap-1">
       {days.map((d) => (
         <div
           key={d.date}
@@ -208,7 +210,7 @@ function Donut({
   let offset = 0
 
   return (
-    <div className="flex flex-1 flex-col items-center">
+    <div className="flex min-w-0 flex-1 flex-col items-center">
       <svg viewBox="0 0 160 160" className="h-48 w-48 -rotate-90">
         {slices.map(([key, n], i) => {
           const len = total > 0 ? (n / total) * C : 0
