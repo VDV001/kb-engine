@@ -12,6 +12,24 @@ import { Card, Label, Stat } from './components/ui'
 // есть на самом деле (тема и маска сумм), живут в шапке, рядом с тем, на что
 // они действуют, и отдельной страницы под них заводить не за чем.
 
+/**
+ * engineVersionLabel сокращает псевдоверсию Go до читаемой подписи.
+ *
+ * Бинарь, собранный не из тега, получает от Go версию вида
+ * «v0.4.1-0.20260731180902-9f258b58e907+dirty». Дата и коммит в ней дублируют
+ * соседние строки карточки, а сама строка ломается на две и читается как сбой.
+ * Для релиза это неважно, но движок открытый: собирать его из исходников будут
+ * постоянно, и именно такую строку люди увидят первой.
+ */
+export function engineVersionLabel(raw: string): string {
+  if (raw === '') return '—'
+  const dirty = raw.endsWith('+dirty')
+  const base = dirty ? raw.slice(0, -'+dirty'.length) : raw
+  // Псевдоверсия: базовая версия, «-0.<время сборки>-<коммит>».
+  const pseudo = base.replace(/-0\.\d{14}-[0-9a-f]+$/, '-dev')
+  return dirty ? `${pseudo}+правки` : pseudo
+}
+
 export function AboutView({
   stats,
   onPickCategory,
@@ -167,7 +185,7 @@ export function AboutView({
             <dl className="mt-3 divide-y divide-outline-variant text-sm">
               {(
                 [
-                  ['Версия', engine?.version || '—'],
+                  ['Версия', engineVersionLabel(engine?.version ?? '')],
                   ['Сборка', engine?.commit ? engine.commit.slice(0, 7) : '—'],
                   ['Собран', engine?.built ? engine.built.slice(0, 10) : '—'],
                   ['Лицензия', 'AGPL-3.0-or-later'],
