@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectSection } from './api'
-import { countCards, filterSections, projectFilters } from './projects'
+import { badgeTone, countCards, cover, filterSections, projectFilters } from './projects'
 
 const sections: ProjectSection[] = [
   {
@@ -93,6 +93,72 @@ describe('filterSections', () => {
     const got = filterSections(sections, { tag: 'edu', query: '' })
     expect(got.map((s) => s.title)).toEqual(['Обучающие продукты'])
   })
+})
+
+describe('cover', () => {
+  // Скриншот вытесняет градиент: заказчику показывают продукт, а абстрактная
+  // заливка не говорит о нём ничего.
+  it('картинка сильнее акцента', () => {
+    expect(cover({ title: 'a', image: '/media/floq.png', accent: 'floq' })).toEqual({
+      className: '',
+      style: {
+        backgroundImage: 'url("/media/floq.png")',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+      },
+    })
+  })
+
+  // Имя из палитры репозитория. Градиенты — код, они не уезжают в файл
+  // владельца вместе с содержимым.
+  it('имя акцента становится классом', () => {
+    expect(cover({ title: 'a', accent: 'dealsense' })).toEqual({ className: 'proj-dealsense', style: undefined })
+  })
+
+  // Файл владельца может задать и готовый градиент — тогда он идёт инлайном,
+  // потому что в таблице стилей репозитория его нет.
+  it('готовый градиент идёт инлайном', () => {
+    const g = 'linear-gradient(135deg,#04141a 0%,#1b7f92 100%)'
+    expect(cover({ title: 'a', accent: g })).toEqual({ className: '', style: { background: g } })
+  })
+
+  // Без акцента — тёмная поверхность из токенов, а не случайный цвет: пустая
+  // белая рамка выглядит как незагрузившаяся картинка.
+  it('без акцента — нейтральная тёмная плашка', () => {
+    expect(cover({ title: 'a' })).toEqual({
+      className: '',
+      style: { background: 'var(--card-spotlight-bg)' },
+    })
+  })
+
+  // Имя подставляется в класс, поэтому оно не должно уметь вырваться из него:
+  // кавычка в accent прошла бы в разметку.
+  it('акцент с посторонними символами не становится классом', () => {
+    expect(cover({ title: 'a', accent: 'floq" onload="x' })).toEqual({
+      className: '',
+      style: { background: 'var(--card-spotlight-bg)' },
+    })
+  })
+})
+
+describe('badgeTone', () => {
+  const tests: [string, string][] = [
+    ['Production', 'badge-prod'],
+    ['Прод · Vercel', 'badge-prod'],
+    ['В разработке', 'badge-dev'],
+    ['Pilot', 'badge-dev'],
+    ['Опубликован OSS', 'badge-published'],
+    ['Опубликована', 'badge-published'],
+    ['Private repo', 'badge-private'],
+    // Незнакомый статус получает нейтральный тон, а не зелёный: выдать
+    // непонятое за «работает» — худшее из возможных умолчаний.
+    ['Черновик', 'badge-private'],
+  ]
+  for (const [badge, want] of tests) {
+    it(`${badge} → ${want}`, () => {
+      expect(badgeTone(badge)).toBe(want)
+    })
+  }
 })
 
 describe('countCards', () => {
