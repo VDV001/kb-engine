@@ -33,7 +33,7 @@ func serverWith(fin httpapi.Financier) http.Handler {
 	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fin,
 		func() (analyticsconfig.Config, error) { return testConfig, nil },
 		func() (changelog.Document, error) { return changelog.Document{CurrentVersion: "0.9.0"}, nil },
-		httpapi.Documents{}, nil)
+		httpapi.Documents{}, testEngine, nil)
 }
 
 func getJSON(t *testing.T, h http.Handler, path string) map[string]any {
