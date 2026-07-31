@@ -23,6 +23,10 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
+      # The corner-stone package embeds frontend/dist, so nothing here compiles
+      # — not the tests, not the linter — until the bundle exists on disk.
+      - uses: ./.github/actions/frontend-dist
+
       - name: Verify gofmt
         run: test -z "$(gofmt -l .)"
 
@@ -68,20 +72,12 @@ jobs:
         working-directory: frontend
         run: npx vitest run
 
+      # No "dist matches src" check follows any more, and nothing replaced it:
+      # the bundle is no longer committed, so it cannot be stale. Every path that
+      # produces a binary (image, release, this CI) builds it from src first.
       - name: Build
         working-directory: frontend
         run: npm run build
-
-      # dist/ is committed because the Go binary embeds it. Nothing rebuilt it on
-      # the way in, so a change to src with a stale dist would ship the old
-      # bundle with every Go test still green.
-      - name: dist matches src
-        run: |
-          if ! git diff --quiet -- frontend/dist; then
-            echo "frontend/dist is stale — run 'npm run build' in frontend/ and commit the result"
-            git diff --stat -- frontend/dist
-            exit 1
-          fi
 
   govulncheck:
     runs-on: ubuntu-latest
@@ -92,6 +88,10 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+
+      # govulncheck compiles the packages it analyses, so it needs the embedded
+      # bundle on disk like any other Go build here.
+      - uses: ./.github/actions/frontend-dist
 
       - name: Run govulncheck
         run: |

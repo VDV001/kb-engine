@@ -1,5 +1,6 @@
-# Keep the build context small and reproducible. frontend/dist is required
-# (embedded via go:embed) and must NOT be ignored.
+# Keep the build context small and reproducible. frontend/dist is deliberately
+# excluded: the web stage builds the bundle inside the image, so whatever a
+# developer happens to have lying around locally cannot leak into an image.
 .git
 .github
 bin/
@@ -7,6 +8,7 @@ bin/
 coverage.out
 gitleaks*
 frontend/node_modules
+frontend/dist
 *.md
 .gitleaks.toml
 lefthook.yml

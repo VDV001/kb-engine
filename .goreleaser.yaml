@@ -1,9 +1,18 @@
 version: 2
 project_name: kbengine
 
+# The dashboard bundle is a build artifact and is not in the repository, so the
+# release builds it before Go compiles. go:embed reads frontend/dist from disk at
+# compile time: without these hooks the build fails outright, which is the point
+# — a release must not be able to quietly ship a binary with no dashboard.
+# Plain string hooks on purpose: the `cmd:`/`dir:` form is a Pro feature for
+# global hooks, and this repository releases with the OSS build. `--prefix` does
+# the same job — npm runs the script with frontend/ as its working directory.
 before:
   hooks:
     - go mod tidy
+    - npm --prefix frontend ci
+    - npm --prefix frontend run build
 
 builds:
   - id: kbengine

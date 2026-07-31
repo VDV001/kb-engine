@@ -20,12 +20,18 @@ Thanks for your interest in kb-engine.
   invariants live in `internal/domain`; handlers and the CLI carry no business
   logic; repository interfaces live with their consumer (`internal/usecase`).
 - **Tooling**: `just` for tasks, `golangci-lint` for linting, `gofmt` for
-  formatting. Keep the dashboard in sync with `just web` (the built
-  `frontend/dist` is committed for `go:embed`).
+  formatting.
+- **Frontend bundle**: `frontend/dist` is a build artifact and is **not**
+  committed — run `just web` once after cloning, and again after any change under
+  `frontend/`. Everything that compiles Go reads it from disk through `go:embed`,
+  so without it even `just test` fails; the pre-push gate says what to run. It
+  used to be committed, and every second branch touching the UI then conflicted
+  on generated files that have no correct side in a merge.
 
 ## Local checks
 
 ```sh
+just web         # build the dashboard bundle (first clone / after frontend/ changes)
 just test        # unit tests
 just test-race   # race detector
 just lint        # golangci-lint

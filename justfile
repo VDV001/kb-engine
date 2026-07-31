@@ -25,11 +25,12 @@ cover-gate: cover
 lint:
     golangci-lint run ./...
 
-# Build the embedded frontend (run after changing frontend/)
+# Build the dashboard bundle (once after cloning, then after frontend/ changes)
 web:
     cd frontend && npm install && npm run build
 
-# Build the CLI (assumes frontend/dist exists; run `just web` first if changed)
+# Build the CLI. frontend/dist is a build artifact and is not in the repository:
+# run `just web` first, or go:embed fails and nothing in this file compiles.
 build:
     go build -o bin/kbengine ./cmd/kbengine
 
