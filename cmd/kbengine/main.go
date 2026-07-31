@@ -142,6 +142,16 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "serve: --catalog is required")
 		return 2
 	}
+	// The workbook holds account balances, and balances are only ever shown beside
+	// ledger rows. Without --ledger there is nothing to attach them to, so the
+	// flag used to be taken and dropped: /api/finances answered 200 with no
+	// balances and nothing said the file had been ignored. A flag that cannot take
+	// effect is a mistake in the command, so it stops here instead of at the point
+	// where someone wonders why the balances are missing.
+	if *workbookPath != "" && *ledgerPath == "" {
+		fmt.Fprintln(stderr, "serve: --from needs --ledger (the workbook holds account balances; the rows come from the ledger)")
+		return 2
+	}
 
 	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)
 	if err != nil {
@@ -230,6 +240,19 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	// from "ledger configured and unreadable", and only the second is an error.
 	var fin httpapi.Financier
 	if ledgerPath != "" {
+		// Read once here for the same reason the analytics config is: the file is
+		// re-read per request, so this proves nothing about later reads, but it
+		// turns a typo in --from from a 500 on one tab into a refusal to start.
+		// Without it the engine printed its usual serving line and answered every
+		// other view, and the mistake only surfaced as «finances unavailable».
+		if workbookPath != "" {
+			if _, err := financexlsx.Read(workbookPath, time.Now); err != nil {
+				// Names the flag and nothing else: the reader already says "open
+				// workbook" and the path, and a third layer of prose around it
+				// reads worse than the failure it describes.
+				return nil, fmt.Errorf("--from: %w", err)
+			}
+		}
 		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
 	}
 	docs, err := buildDocuments(nowPath, teamPath, projectsPath, mediaPath)
