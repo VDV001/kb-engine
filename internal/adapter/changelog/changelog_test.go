@@ -124,3 +124,36 @@ func TestParse_NoReleases(t *testing.T) {
 		t.Errorf("current version = %q, want 0.0.0 fallback", doc.CurrentVersion)
 	}
 }
+
+// Аннотация релиза переносится по ширине файла, а склеивать её никто не
+// склеивал: в JSON уезжала только первая строка, и все три релиза
+// показывались фразой, оборванной на запятой.
+func TestParse_MultilineTaglineIsJoined(t *testing.T) {
+	doc := changelog.Parse(`# Changelog
+
+## [0.3.0] — 2026-07-31
+
+> The dashboard port lands: every view but Projects now reads
+> from the engine, and the graph says something new.
+
+### Added
+
+- A thing.
+`)
+	if len(doc.Releases) != 1 {
+		t.Fatalf("releases = %d, want 1", len(doc.Releases))
+	}
+
+	want := "The dashboard port lands: every view but Projects now reads from the engine, and the graph says something new."
+	if got := doc.Releases[0].Tagline; got != want {
+		t.Errorf("tagline =\n%q\nwant\n%q", got, want)
+	}
+	// Строки цитаты не должны просочиться в пункты раздела.
+	for _, s := range doc.Releases[0].Sections {
+		for _, item := range s.Items {
+			if strings.Contains(item, "from the engine") {
+				t.Errorf("хвост аннотации уехал в пункты раздела: %q", item)
+			}
+		}
+	}
+}
