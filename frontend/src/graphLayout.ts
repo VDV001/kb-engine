@@ -23,6 +23,8 @@ export interface GraphEdgeLine {
   y1: number
   x2: number
   y2: number
+  /** Число общих тегов — то, из чего считается вся видимая сила связи. */
+  weight: number
   strokeWidth: number
   opacity: number
   /** Сильная связь рисуется сплошной, слабая — пунктиром. */
@@ -42,7 +44,7 @@ const MAX_NODES = 24
 
 /** Связь считается сильной с трёх общих тегов: одна-две пересекающиеся метки
  * бывают и у соседних тем, три — это уже общая область. */
-const STRONG_FROM = 3
+export const STRONG_FROM = 3
 
 function dims(count: number, max: number, hub: boolean): { width: number; height: number } {
   if (hub) return { width: 132, height: 82 }
@@ -154,6 +156,7 @@ export function layoutGraph(
         y1: a.y,
         x2: b.x,
         y2: b.y,
+        weight: e.weight,
         strokeWidth: 0.5 + share * 1.3,
         opacity: 0.07 + share * 0.3,
         strong: e.weight >= STRONG_FROM,
