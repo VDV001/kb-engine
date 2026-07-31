@@ -38,15 +38,6 @@ func (l Ledger) TotalBalance() domain.Money {
 	return total
 }
 
-// Net sums signed transaction amounts: income minus expenses.
-func (l Ledger) Net() domain.Money {
-	var total domain.Money
-	for _, t := range l.Transactions {
-		total = total.Add(t.SignedAmount())
-	}
-	return total
-}
-
 // Read loads the workbook at path. The clock is passed through to the domain so
 // validation does not depend on ambient time.
 func Read(path string, now func() time.Time) (Ledger, error) {
