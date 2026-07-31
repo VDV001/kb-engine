@@ -156,3 +156,30 @@ func TestCatalog_categoryLabels(t *testing.T) {
 		t.Errorf("label = %q after mutating both maps, want the original", got)
 	}
 }
+
+// У тега, в отличие от категории, ключ и подпись исторически были одним и тем
+// же словом, поэтому русский тег невозможно ни перевести, ни слить с
+// английским синонимом. Словарь разводит их так же, как у категорий: ключ
+// латиницей в записи, читаемая подпись рядом с ним.
+func TestCatalog_tagLabels(t *testing.T) {
+	labels := map[string]string{"job-market": "Рынок труда"}
+	c, err := domain.NewCatalog(nil, domain.WithTagLabels(labels))
+	if err != nil {
+		t.Fatalf("new catalog: %v", err)
+	}
+	const want = "Рынок труда"
+	if got := c.TagLabels()["job-market"]; got != want {
+		t.Errorf("label = %q, want %q", got, want)
+	}
+	// Тег без подписи отсутствует: показывать сам ключ — решение вида, а не
+	// каталога. Подписей 24 на без малого четыре тысячи тегов, так что
+	// отсутствие здесь — норма, а не сбой.
+	if got, ok := c.TagLabels()["mcp"]; ok {
+		t.Errorf("undescribed tag present with %q, want absent", got)
+	}
+	labels["job-market"] = "подменено"
+	c.TagLabels()["job-market"] = "тоже подменено"
+	if got := c.TagLabels()["job-market"]; got != want {
+		t.Errorf("label = %q after mutating both maps, want the original", got)
+	}
+}
