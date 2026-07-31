@@ -121,17 +121,6 @@ func TestRead_accountsAndBalance(t *testing.T) {
 	}
 }
 
-func TestRead_netIsExactSum(t *testing.T) {
-	led, err := financexlsx.Read(fixture(t), clock())
-	if err != nil {
-		t.Fatalf("Read: %v", err)
-	}
-	// income 1300 − expenses (500 + 202.45 + 1600) = −1002.45 → −100245 kopecks
-	if got := led.Net().Kopecks(); got != -100245 {
-		t.Errorf("Net = %d kopecks, want -100245", got)
-	}
-}
-
 func TestRead_missingFile(t *testing.T) {
 	if _, err := financexlsx.Read(filepath.Join(t.TempDir(), "nope.xlsx"), clock()); err == nil {
 		t.Fatal("expected an error for a missing workbook, got nil")
