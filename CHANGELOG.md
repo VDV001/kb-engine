@@ -8,6 +8,18 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Fixed
+
+- **`--from` now says why, instead of failing later or not at all.** Two
+  silences, both measured against a running engine rather than assumed. A path
+  that could not be read let the server start with its usual line and answer
+  every other view; the mistake surfaced only on the Finances tab, as a 500
+  reading «finances unavailable» that named neither the flag nor the file. And
+  `--from` without `--ledger` was accepted and dropped — `/api/finances` replied
+  200 with no balances, and nothing said the workbook had been ignored. Both stop
+  at startup with the reason now, which is the contract `--analytics-config` has
+  had all along. This was the last flag that took an unusable value in silence.
+
 ### Changed
 
 - **The dashboard bundle left the repository.** `frontend/dist` was committed so
