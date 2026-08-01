@@ -485,6 +485,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	related := fs.String("related", "", "comma-separated ids replacing related_ids (empty list clears it: --related=)")
 	version := fs.String("version", "", "semver of an own artefact, e.g. 1.5.1 (clears revision)")
 	revision := fs.Int("revision", 0, "edition counter of a card for someone else's material (clears version)")
+	verdict := fs.String("verdict", "", "triage verdict: keep|consider|skip|skip-unavailable")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -504,6 +505,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		RemoveTags: splitList(*removeTags),
 		Version:    *version,
 		Revision:   *revision,
+		Verdict:    *verdict,
 	}
 	// Distinguishes "--related was not passed" from "--related= was passed to
 	// clear the list": both look like an empty string, and only the second is an

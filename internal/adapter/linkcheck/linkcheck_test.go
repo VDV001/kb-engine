@@ -15,12 +15,12 @@ func TestHead_returnsStatusCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	code, err := linkcheck.New(2*time.Second, 0).Head(srv.URL)
+	resp, err := linkcheck.New(2*time.Second, 0).Head(srv.URL)
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
-	if code != http.StatusNotFound {
-		t.Fatalf("code = %d, want 404", code)
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("code = %d, want 404", resp.Code)
 	}
 }
 
@@ -37,12 +37,17 @@ func TestHead_doesNotFollowRedirects(t *testing.T) {
 	}))
 	defer moved.Close()
 
-	code, err := linkcheck.New(2*time.Second, 0).Head(moved.URL)
+	resp, err := linkcheck.New(2*time.Second, 0).Head(moved.URL)
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
-	if code != http.StatusMovedPermanently {
-		t.Fatalf("code = %d, want 301", code)
+	if resp.Code != http.StatusMovedPermanently {
+		t.Fatalf("code = %d, want 301", resp.Code)
+	}
+	// The target is the point: the catalog stores addresses, and a moved one
+	// has to be knowable without a second request.
+	if resp.Location != final.URL {
+		t.Fatalf("Location = %q, want %q", resp.Location, final.URL)
 	}
 }
 

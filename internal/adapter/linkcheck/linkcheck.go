@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/usecase/drift"
 )
 
 // Checker performs one HEAD request per URL, pausing Delay between them.
@@ -34,8 +36,10 @@ func New(timeout, delay time.Duration) *Checker {
 	}
 }
 
-// Head returns the status code for url.
-func (c *Checker) Head(url string) (int, error) {
+// Head returns the status code for url, and for a redirect the address it
+// points at — the catalog stores addresses, so a moved one is a fact about the
+// entry, not only about the request.
+func (c *Checker) Head(url string) (drift.Response, error) {
 	if !c.lastHit.IsZero() {
 		if wait := c.Delay - time.Since(c.lastHit); wait > 0 {
 			time.Sleep(wait)
@@ -45,7 +49,7 @@ func (c *Checker) Head(url string) (int, error) {
 
 	req, err := http.NewRequest(http.MethodHead, url, nil)
 	if err != nil {
-		return 0, fmt.Errorf("build request: %w", err)
+		return drift.Response{}, fmt.Errorf("build request: %w", err)
 	}
 	// Without a User-Agent many hosts answer 403 to the default Go client, and
 	// that 403 would be recorded as a fact about the article rather than about
@@ -54,8 +58,8 @@ func (c *Checker) Head(url string) (int, error) {
 
 	resp, err := c.Client.Do(req)
 	if err != nil {
-		return 0, err
+		return drift.Response{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	return resp.StatusCode, nil
+	return drift.Response{Code: resp.StatusCode, Location: resp.Header.Get("Location")}, nil
 }

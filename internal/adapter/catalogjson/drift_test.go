@@ -147,3 +147,40 @@ func TestApplyDrift_unknownEntryWritesNothing(t *testing.T) {
 		t.Error("a refused apply still wrote to the catalog")
 	}
 }
+
+// Habr moved 179 of the catalog's addresses. Writing the canonical one is a
+// separate decision from stamping the check: an address is what the entry IS,
+// and overwriting it on every scan would let one bad redirect rewrite the base.
+func TestApplyDrift_writesTheNewURLOnlyWhenAsked(t *testing.T) {
+	day := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	records := []catalogjson.DriftRecord{
+		{EntryID: 1, CheckedAt: day, Code: 302, NewURL: "https://example.com/moved"},
+	}
+
+	t.Run("not asked", func(t *testing.T) {
+		path := driftCatalog(t)
+		if _, err := catalogjson.ApplyDrift(path, records); err != nil {
+			t.Fatalf("ApplyDrift: %v", err)
+		}
+		url, _ := member(t, path, 1, "url")
+		if string(url) != `"https://example.com/a"` {
+			t.Fatalf("url = %s, want the original — the new address was not asked for", url)
+		}
+	})
+
+	t.Run("asked", func(t *testing.T) {
+		path := driftCatalog(t)
+		if _, err := catalogjson.ApplyDriftWithURLs(path, records); err != nil {
+			t.Fatalf("ApplyDriftWithURLs: %v", err)
+		}
+		url, _ := member(t, path, 1, "url")
+		if string(url) != `"https://example.com/moved"` {
+			t.Fatalf("url = %s, want the redirect target", url)
+		}
+		// The check itself is still recorded — updating an address does not
+		// replace saying when it was verified.
+		if date, ok := member(t, path, 1, "drift_check_date"); !ok || string(date) != `"2026-08-01"` {
+			t.Errorf("drift_check_date = %s (present %v)", date, ok)
+		}
+	})
+}

@@ -12,12 +12,14 @@ import (
 // own verb rather than under `set`, which stays a targeted edit by id.
 func runMigrate(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions")
+		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls")
 		return 2
 	}
 	switch args[0] {
 	case "versions":
 		return runMigrateVersions(args[1:], stdout, stderr)
+	case "urls":
+		return runMigrateURLs(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "migrate: unknown target %q\n", args[0])
 		return 2
@@ -64,5 +66,42 @@ func runMigrateVersions(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(stdout, "migrate versions: %d запис(ей) переехали из version в revision\n", len(plan.Moved))
+	return 0
+}
+
+// runMigrateURLs strips campaign tracking from the catalog's addresses.
+func runMigrateURLs(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("migrate urls", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "migrate urls: --catalog is required")
+		return 2
+	}
+
+	changes, err := catalogjson.MigrateURLs(*catalogPath, *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "migrate urls: %v\n", err)
+		return 1
+	}
+	if len(changes) == 0 {
+		fmt.Fprintln(stdout, "migrate urls: нечего чистить")
+		return 0
+	}
+
+	// The resulting address is printed, not just a count: this rewrites what an
+	// entry is, and it has to be readable before it happens.
+	for _, c := range changes {
+		fmt.Fprintf(stdout, "  id=%d\n      было:  %s\n      стало: %s\n", c.EntryID, c.From, c.To)
+	}
+	if !*apply {
+		fmt.Fprintf(stdout, "migrate urls: %d адрес(ов) потеряют кампанейский хвост (файл не тронут, для записи добавьте --apply)\n", len(changes))
+		return 0
+	}
+	fmt.Fprintf(stdout, "migrate urls: %d адрес(ов) очищено\n", len(changes))
 	return 0
 }

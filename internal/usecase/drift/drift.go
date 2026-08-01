@@ -19,18 +19,27 @@ type CatalogLoader interface {
 	Load() (*domain.Catalog, error)
 }
 
-// LinkChecker asks one URL for its status code. Implementations do network I/O.
+// Response is what one URL answered: the status code and, for a redirect, the
+// address it points at.
+type Response struct {
+	Code     int
+	Location string
+}
+
+// LinkChecker asks one URL for its status. Implementations do network I/O.
 type LinkChecker interface {
-	Head(url string) (int, error)
+	Head(url string) (Response, error)
 }
 
 // Result is what the scan learned about one entry's URL.
 type Result struct {
-	EntryID   int
-	Title     string
-	URL       string
-	Code      int
-	Status    domain.LinkStatus
+	EntryID int
+	Title   string
+	URL     string
+	Code    int
+	Status  domain.LinkStatus
+	// Location is where a redirect points. Empty for everything else.
+	Location  string
 	CheckedAt time.Time
 }
 
@@ -84,6 +93,19 @@ func (r Report) Actionable() []Result {
 	return out
 }
 
+// Moved returns entries whose address redirects somewhere else, together with
+// the target. A redirect that names no target is left out: there is nothing to
+// act on.
+func (r Report) Moved() []Result {
+	var out []Result
+	for _, res := range r.Results {
+		if res.Status.String() == "moved" && res.Location != "" {
+			out = append(out, res)
+		}
+	}
+	return out
+}
+
 // Service runs drift scans.
 type Service struct {
 	loader  CatalogLoader
@@ -118,20 +140,20 @@ func (s *Service) Scan(now time.Time) (Report, error) {
 			continue
 		}
 		asked++
-		code, err := s.checker.Head(url)
+		resp, err := s.checker.Head(url)
 		if err != nil {
 			rep.Unreachable = append(rep.Unreachable, Unreachable{
 				EntryID: e.ID(), Title: e.Title(), URL: url, Err: err,
 			})
 			continue
 		}
-		status, err := domain.ClassifyLinkStatus(code)
+		status, err := domain.ClassifyLinkStatus(resp.Code)
 		if err != nil {
 			return Report{}, fmt.Errorf("entry %d: %w", e.ID(), err)
 		}
 		rep.Results = append(rep.Results, Result{
 			EntryID: e.ID(), Title: e.Title(), URL: url,
-			Code: code, Status: status, CheckedAt: now,
+			Code: resp.Code, Status: status, Location: resp.Location, CheckedAt: now,
 		})
 	}
 	return rep, nil
