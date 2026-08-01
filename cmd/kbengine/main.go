@@ -23,6 +23,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/tui"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
@@ -54,6 +55,7 @@ var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"inbox":       runInbox,
 	"migrate":     runMigrate,
 	"serve":       runServe,
+	"tui":         runTUI,
 	"version":     func(_ []string, o, _ io.Writer) int { return runVersion(o) },
 }
 
@@ -132,6 +134,28 @@ func changelogWarning(path string, releases int) string {
 		msg += "\n  --changelog ждёт CHANGELOG.md (сам markdown), а не changelog.json, собранный из него"
 	}
 	return msg
+}
+
+// runTUI opens the catalog in the terminal. It is the second face on the same
+// use cases the dashboard serves — reading goes through the same query service,
+// so the two surfaces cannot disagree about what the catalog says.
+func runTUI(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "tui: --catalog is required")
+		return 2
+	}
+	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
+	if err := tui.Run(svc, os.Stdin, stdout); err != nil {
+		fmt.Fprintf(stderr, "tui: %v\n", err)
+		return 1
+	}
+	return 0
 }
 
 func runServe(args []string, stdout, stderr io.Writer) int {
