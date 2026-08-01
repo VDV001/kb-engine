@@ -58,6 +58,17 @@ type EntryParams struct {
 	RelatedIDs    []int
 	DateAdded     *time.Time
 	DateCreated   *time.Time
+	// Version is the semver of an artefact the owner versions himself; Revision
+	// counts editions of the card for someone else's material. At most one may
+	// be set — see checkVersioning.
+	Version  *Version
+	Revision *int
+	// SourceBatch is the import batch the entry arrived in, and SourceDate when
+	// that material was published. Both are determined by the batch and stored
+	// on every entry — a deliberate denormalization (ADR-0002) guarded by the
+	// batch-consistency audit.
+	SourceBatch *int
+	SourceDate  *time.Time
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
@@ -84,6 +95,10 @@ type Entry struct {
 	relatedIDs    []int
 	dateAdded     *time.Time
 	dateCreated   *time.Time
+	version       *Version
+	revision      *int
+	sourceBatch   *int
+	sourceDate    *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -100,6 +115,9 @@ func NewEntry(p EntryParams) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: title must not be empty", ErrInvalidEntry)
 	}
 	if err := checkRequired(p, spec); err != nil {
+		return Entry{}, err
+	}
+	if err := checkVersioning(p); err != nil {
 		return Entry{}, err
 	}
 	return Entry{
@@ -124,7 +142,26 @@ func NewEntry(p EntryParams) (Entry, error) {
 		relatedIDs:    cloneInts(p.RelatedIDs),
 		dateAdded:     clonePtrTime(p.DateAdded),
 		dateCreated:   clonePtrTime(p.DateCreated),
+		version:       clonePtrVersion(p.Version),
+		revision:      clonePtrInt(p.Revision),
+		sourceBatch:   clonePtrInt(p.SourceBatch),
+		sourceDate:    clonePtrTime(p.SourceDate),
 	}, nil
+}
+
+// checkVersioning enforces that an entry carries at most one notion of version.
+// Both at once is what the single legacy field allowed, and the live catalog
+// shows where that leads: one artefact versioned as "2.0.0" in one entry and as
+// 5 in another.
+func checkVersioning(p EntryParams) error {
+	if p.Version != nil && p.Revision != nil {
+		return fmt.Errorf("%w: version %s and revision %d are both set; an entry carries one or the other",
+			ErrInvalidEntry, p.Version, *p.Revision)
+	}
+	if p.Revision != nil && *p.Revision < 1 {
+		return fmt.Errorf("%w: revision must be positive, got %d", ErrInvalidEntry, *p.Revision)
+	}
+	return nil
 }
 
 // cloneTags returns an independent copy so the entity does not alias the
@@ -144,6 +181,14 @@ func cloneInts(s []int) []int {
 }
 
 func clonePtrInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func clonePtrVersion(p *Version) *Version {
 	if p == nil {
 		return nil
 	}
@@ -236,3 +281,52 @@ func (e Entry) DateAdded() *time.Time { return clonePtrTime(e.dateAdded) }
 
 // DateCreated returns when the source content was created, or nil.
 func (e Entry) DateCreated() *time.Time { return clonePtrTime(e.dateCreated) }
+
+// ownArtefactTrees are the paths under which the owner's own writing lives.
+var ownArtefactTrees = []string{"standards/", "creations/", "docs/"}
+
+// ownArtefactCategories are the categories that are owner output by definition.
+var ownArtefactCategories = map[string]struct{}{"creations": {}, "standards": {}}
+
+// IsOwnArtefact reports whether the entry is something the owner wrote and
+// versions himself — a standard, an article draft, a course module, a deep-read
+// write-up — as opposed to material collected from elsewhere.
+//
+// It decides which notion of version the entry may carry: an own artefact has a
+// semver that also lives in the file itself; someone else's material has at
+// most a revision counter for the card.
+func (e Entry) IsOwnArtefact() bool {
+	return IsOwnArtefact(e.category.String(), e.notesFile)
+}
+
+// IsOwnArtefact answers the same question for a category and file path that have
+// not been built into an Entry yet — the migration works on raw JSON members and
+// needs the rule before the loader runs. One implementation, so the two callers
+// cannot drift apart.
+func IsOwnArtefact(category, file string) bool {
+	if _, ok := ownArtefactCategories[category]; ok {
+		return true
+	}
+	for _, tree := range ownArtefactTrees {
+		if strings.HasPrefix(file, tree) {
+			return true
+		}
+	}
+	return false
+}
+
+// Version returns the semver of an owner artefact, or nil when the entry is not
+// one. The catalog's copy can fall behind the artefact file, which is what the
+// version audit compares.
+func (e Entry) Version() *Version { return clonePtrVersion(e.version) }
+
+// Revision returns how many times the card for someone else's material was
+// rewritten, or nil when it was never rewritten.
+func (e Entry) Revision() *int { return clonePtrInt(e.revision) }
+
+// SourceBatch returns the import batch the entry arrived in, or nil for entries
+// added outside a batch.
+func (e Entry) SourceBatch() *int { return clonePtrInt(e.sourceBatch) }
+
+// SourceDate returns when the source material was published, or nil.
+func (e Entry) SourceDate() *time.Time { return clonePtrTime(e.sourceDate) }

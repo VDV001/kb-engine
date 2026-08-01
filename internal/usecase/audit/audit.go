@@ -36,6 +36,9 @@ type Finding struct {
 // Service runs audits over a loaded catalog.
 type Service struct {
 	loader CatalogLoader
+	// artefactVersions is optional: only the version-drift audit needs it, and
+	// that audit refuses to run without one rather than reporting a clean sheet.
+	artefactVersions ArtefactVersions
 }
 
 // NewService returns a Service backed by loader.

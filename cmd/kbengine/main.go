@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"runtime/debug"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/artefactfs"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
@@ -38,7 +40,7 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, fin, inbox, serve, set, version")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, fin, inbox, migrate, serve, set, version")
 		return 2
 	}
 	switch args[0] {
@@ -58,6 +60,8 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return runFin(args[1:], stdout, stderr)
 	case "inbox":
 		return runInbox(args[1:], stdout, stderr)
+	case "migrate":
+		return runMigrate(args[1:], stdout, stderr)
 	case "serve":
 		return runServe(args[1:], stdout, stderr)
 	default:
@@ -357,7 +361,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|age|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|batch|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -367,9 +371,12 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	}
 
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
+	// Artefact paths in the catalog are relative to the KB root, which is the
+	// parent of the _data directory the catalog lives in.
+	svc.WithArtefactVersions(artefactfs.Reader{Root: filepath.Dir(filepath.Dir(*catalogPath))})
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|batch|age|all)\n", *check)
 		return 2
 	}
 
@@ -402,6 +409,8 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 		{"canonical-health", svc.CanonicalHealthIssues},
 		{"supersession", svc.SupersessionIssues},
 		{"integrity", svc.IntegrityIssues},
+		{"versions", svc.VersionDriftIssues},
+		{"batch", svc.BatchConsistencyIssues},
 		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
 	if check == "all" {
@@ -433,6 +442,8 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	addTags := fs.String("add-tag", "", "comma-separated tags to add")
 	removeTags := fs.String("remove-tag", "", "comma-separated tags to remove")
 	related := fs.String("related", "", "comma-separated ids replacing related_ids (empty list clears it: --related=)")
+	version := fs.String("version", "", "semver of an own artefact, e.g. 1.5.1 (clears revision)")
+	revision := fs.Int("revision", 0, "edition counter of a card for someone else's material (clears version)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -450,6 +461,8 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		Lifecycle:  *lifecycle,
 		AddTags:    splitList(*addTags),
 		RemoveTags: splitList(*removeTags),
+		Version:    *version,
+		Revision:   *revision,
 	}
 	// Distinguishes "--related was not passed" from "--related= was passed to
 	// clear the list": both look like an empty string, and only the second is an

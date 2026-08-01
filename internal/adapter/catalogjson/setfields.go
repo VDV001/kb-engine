@@ -27,10 +27,16 @@ type Changes struct {
 	// what the whole list is for: it is short, and a partial edit would need a
 	// second flag to say "remove" that nobody would remember.
 	Related []int
+	// Version sets the semver of an own artefact; Revision sets the edition
+	// counter of someone else's card. Writing either clears the other, because
+	// an entry holding both is one the domain refuses to load.
+	Version  string
+	Revision int
 }
 
 func (c Changes) empty() bool {
-	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil
+	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
+		c.Version == "" && c.Revision == 0
 }
 
 // SetFields edits the given entries in the catalog file and returns how many
@@ -75,7 +81,20 @@ func (c Changes) validate(ids []int) error {
 		return errors.New("no entry ids given")
 	}
 	if c.empty() {
-		return errors.New("nothing to change: pass at least one of --lifecycle, --add-tag, --remove-tag, --related")
+		return errors.New("nothing to change: pass at least one of --lifecycle, --add-tag, --remove-tag, --related, --version, --revision")
+	}
+	if c.Version != "" && c.Revision != 0 {
+		return errors.New("--version and --revision are mutually exclusive: an entry carries one or the other")
+	}
+	if c.Version != "" {
+		// The shape of a version belongs to the domain and is asked for here, so
+		// a bad value never reaches the file.
+		if _, err := domain.NewVersion(c.Version); err != nil {
+			return fmt.Errorf("--version: %w", err)
+		}
+	}
+	if c.Revision < 0 {
+		return fmt.Errorf("--revision: must be positive, got %d", c.Revision)
 	}
 	if c.Lifecycle != "" {
 		// The list of valid states belongs to the domain and is asked for here,
@@ -192,7 +211,33 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		members = setMember(members, "related_ids", encoded)
 	}
 
+	members, err = applyVersioning(members, ch)
+	if err != nil {
+		return nil, err
+	}
+
 	return assembleObject(members)
+}
+
+// applyVersioning writes whichever of the two version fields was asked for and
+// removes the other. Validation already ruled out both at once.
+func applyVersioning(members []member, ch Changes) ([]member, error) {
+	switch {
+	case ch.Version != "":
+		encoded, err := marshalNoEscape(ch.Version)
+		if err != nil {
+			return nil, err
+		}
+		return setMember(dropMember(members, "revision"), "version", encoded), nil
+	case ch.Revision != 0:
+		encoded, err := marshalNoEscape(ch.Revision)
+		if err != nil {
+			return nil, err
+		}
+		return setMember(dropMember(members, "version"), "revision", encoded), nil
+	default:
+		return members, nil
+	}
 }
 
 func editTags(members []member, ch Changes) ([]string, error) {
@@ -213,6 +258,12 @@ func editTags(members []member, ch Changes) ([]string, error) {
 	return slices.DeleteFunc(tags, func(t string) bool {
 		return slices.Contains(ch.RemoveTags, t)
 	}), nil
+}
+
+// dropMember removes a key entirely. Setting it to null would leave the reader
+// with a member that has to be checked for emptiness everywhere it is read.
+func dropMember(members []member, key string) []member {
+	return slices.DeleteFunc(members, func(m member) bool { return m.key == key })
 }
 
 func setMember(members []member, key string, val json.RawMessage) []member {
