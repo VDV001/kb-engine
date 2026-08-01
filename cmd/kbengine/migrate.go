@@ -12,7 +12,7 @@ import (
 // own verb rather than under `set`, which stays a targeted edit by id.
 func runMigrate(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls")
+		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls, writeups")
 		return 2
 	}
 	switch args[0] {
@@ -20,6 +20,8 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		return runMigrateVersions(args[1:], stdout, stderr)
 	case "urls":
 		return runMigrateURLs(args[1:], stdout, stderr)
+	case "writeups":
+		return runMigrateWriteups(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "migrate: unknown target %q\n", args[0])
 		return 2

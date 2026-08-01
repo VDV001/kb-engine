@@ -535,6 +535,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	revision := fs.Int("revision", 0, "edition counter of a card for someone else's material (clears version)")
 	verdict := fs.String("verdict", "", "triage verdict: keep|consider|skip|skip-unavailable")
 	notesFile := fs.String("file", "", "path to the write-up, relative to the knowledge base")
+	category := fs.String("category", "", "catalog category to move the entry into")
 	sourceURL := fs.String("url", "", "http(s) address of the original material (--url= removes it)")
 	notes := fs.String("notes", "", "free-text note on the entry")
 	author := fs.String("author", "", "author of the material")
@@ -566,6 +567,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		Revision:    *revision,
 		Verdict:     *verdict,
 		NotesFile:   *notesFile,
+		Category:    *category,
 		URL:         *sourceURL,
 		Notes:       *notes,
 		Author:      *author,

@@ -111,7 +111,11 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 	if err != nil {
 		t.Fatalf("read state: %v", err)
 	}
-	cat, err := domain.NewCategory("golang")
+	categoryName := p.category
+	if categoryName == "" {
+		categoryName = "golang"
+	}
+	cat, err := domain.NewCategory(categoryName)
 	if err != nil {
 		t.Fatalf("category: %v", err)
 	}
@@ -136,6 +140,7 @@ func article(t *testing.T, id int, p articleParams) domain.Entry {
 		SupersedesID: p.supersedesID,
 		DateCreated:  p.dateCreated,
 		Notes:        p.notes,
+		NotesFile:    p.file,
 	}
 	if !p.noHabrID {
 		ep.HabrID = &habrID
@@ -165,6 +170,8 @@ type articleParams struct {
 	dateCreated  *time.Time
 	noHabrID     bool
 	notes        string
+	category     string
+	file         string
 }
 
 func TestOutdatedCandidates(t *testing.T) {
@@ -244,6 +251,12 @@ func TestCanonicalCandidates(t *testing.T) {
 		ref(13, 2, "active"), // 2 referenced 1x
 		article(t, 3, articleParams{title: "Already canonical", lifecycle: "canonical", verdict: "keep"}),
 		ref(14, 3, "active"), ref(15, 3, "active"), ref(16, 3, "active"), // 3 referenced 3x but canonical
+		// A write-up is cited by every article it covers — that is what it is
+		// for, not evidence that it is a canonical source. Once the write-ups
+		// became entries of their own, fifty of them turned up here at once and
+		// buried the findings that needed a decision.
+		article(t, 4, articleParams{title: "Batch write-up", lifecycle: "active", verdict: "keep", category: "writeups"}),
+		ref(17, 4, "active"), ref(18, 4, "active"), ref(19, 4, "active"),
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
@@ -265,6 +278,9 @@ func TestCanonicalCandidates(t *testing.T) {
 	}
 	if got[3] {
 		t.Error("entry 3 (already canonical) should not be a candidate")
+	}
+	if got[4] {
+		t.Error("entry 4 (a write-up cited by the articles it covers) should not be a candidate")
 	}
 }
 

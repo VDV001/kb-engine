@@ -291,7 +291,12 @@ func (e Entry) DateCreated() *time.Time { return clonePtrTime(e.dateCreated) }
 var ownArtefactTrees = []string{"standards/", "creations/", "docs/"}
 
 // ownArtefactCategories are the categories that are owner output by definition.
-var ownArtefactCategories = map[string]struct{}{"creations": {}, "standards": {}}
+//
+// "writeups" holds the owner's notes on someone else's material: he wrote the
+// note and versions it, so its file is its identity — which is exactly what
+// separates the note from the article it is about. Before the write-ups became
+// entries of their own, both meanings sat on the article's card at once.
+var ownArtefactCategories = map[string]struct{}{"creations": {}, "standards": {}, "writeups": {}}
 
 // IsOwnArtefact reports whether the entry is something the owner wrote and
 // versions himself — a standard, an article draft, a course module, a deep-read
