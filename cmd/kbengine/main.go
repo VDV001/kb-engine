@@ -486,6 +486,8 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	version := fs.String("version", "", "semver of an own artefact, e.g. 1.5.1 (clears revision)")
 	revision := fs.Int("revision", 0, "edition counter of a card for someone else's material (clears version)")
 	verdict := fs.String("verdict", "", "triage verdict: keep|consider|skip|skip-unavailable")
+	notesFile := fs.String("file", "", "path to the write-up, relative to the knowledge base")
+	sourceURL := fs.String("url", "", "http(s) address of the original material (--url= removes it)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -506,6 +508,13 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		Version:    *version,
 		Revision:   *revision,
 		Verdict:    *verdict,
+		NotesFile:  *notesFile,
+		URL:        *sourceURL,
+	}
+	// "--url=" passed with nothing after it is an instruction to remove the
+	// address; "--url" not passed at all is not. Both look like "".
+	if isFlagSet(fs, "url") && *sourceURL == "" {
+		ch.ClearURL = true
 	}
 	// Distinguishes "--related was not passed" from "--related= was passed to
 	// clear the list": both look like an empty string, and only the second is an

@@ -36,11 +36,21 @@ type Changes struct {
 	// field, but only with a value that IS a verdict — not with a read state or
 	// a publish stage, which the same field also carries for other kinds.
 	Verdict string
+	// NotesFile points at the write-up inside the knowledge base; URL points at
+	// the original material outside it. They are separate flags because the
+	// catalog already proved they get confused: several entries carry a file
+	// path in url and nothing in file.
+	NotesFile string
+	URL       string
+	// ClearURL removes the url instead of replacing it. Kept apart from URL
+	// because an empty string means "the flag was not passed", and a forgotten
+	// flag must never wipe a field.
+	ClearURL bool
 }
 
 func (c Changes) empty() bool {
 	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
-		c.Version == "" && c.Revision == 0 && c.Verdict == ""
+		c.Version == "" && c.Revision == 0 && c.Verdict == "" && c.NotesFile == "" && c.URL == "" && !c.ClearURL
 }
 
 // SetFields edits the given entries in the catalog file and returns how many
@@ -85,31 +95,56 @@ func (c Changes) validate(ids []int) error {
 		return errors.New("no entry ids given")
 	}
 	if c.empty() {
-		return errors.New("nothing to change: pass at least one of --lifecycle, --add-tag, --remove-tag, --related, --version, --revision")
+		return errors.New("nothing to change: pass at least one of --lifecycle, --add-tag, --remove-tag, --related, --version, --revision, --verdict, --file, --url")
 	}
-	if c.Version != "" && c.Revision != 0 {
-		return errors.New("--version and --revision are mutually exclusive: an entry carries one or the other")
+	if err := c.validateVersioning(); err != nil {
+		return err
 	}
-	if c.Version != "" {
-		// The shape of a version belongs to the domain and is asked for here, so
-		// a bad value never reaches the file.
-		if _, err := domain.NewVersion(c.Version); err != nil {
-			return fmt.Errorf("--version: %w", err)
-		}
+	if err := c.validateLocations(); err != nil {
+		return err
 	}
+	// The lists of valid values belong to the domain and are asked for here, so
+	// a bad one never reaches the file.
 	if c.Verdict != "" {
 		if _, err := domain.NewVerdict(c.Verdict); err != nil {
 			return fmt.Errorf("--verdict: %w", err)
 		}
 	}
+	if c.Lifecycle != "" {
+		if _, err := domain.NewLifecycle(c.Lifecycle); err != nil {
+			return fmt.Errorf("--lifecycle: %w", err)
+		}
+	}
+	return nil
+}
+
+func (c Changes) validateVersioning() error {
+	if c.Version != "" && c.Revision != 0 {
+		return errors.New("--version and --revision are mutually exclusive: an entry carries one or the other")
+	}
+	if c.Version != "" {
+		if _, err := domain.NewVersion(c.Version); err != nil {
+			return fmt.Errorf("--version: %w", err)
+		}
+	}
 	if c.Revision < 0 {
 		return fmt.Errorf("--revision: must be positive, got %d", c.Revision)
 	}
-	if c.Lifecycle != "" {
-		// The list of valid states belongs to the domain and is asked for here,
-		// so a bad value never reaches the file.
-		if _, err := domain.NewLifecycle(c.Lifecycle); err != nil {
-			return fmt.Errorf("--lifecycle: %w", err)
+	return nil
+}
+
+func (c Changes) validateLocations() error {
+	if c.ClearURL && c.URL != "" {
+		return errors.New("--url and clearing the url are opposite instructions: pass one")
+	}
+	if c.URL != "" {
+		if _, err := domain.NewExternalURL(c.URL); err != nil {
+			return fmt.Errorf("--url: %w", err)
+		}
+	}
+	if c.NotesFile != "" {
+		if _, err := domain.NewNotesPath(c.NotesFile); err != nil {
+			return fmt.Errorf("--file: %w", err)
 		}
 	}
 	return nil
@@ -200,16 +235,9 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		members = setMember(members, "lifecycle", encoded)
 	}
 
-	if len(ch.AddTags) > 0 || len(ch.RemoveTags) > 0 {
-		tags, err := editTags(members, ch)
-		if err != nil {
-			return nil, err
-		}
-		encoded, err := marshalNoEscape(tags)
-		if err != nil {
-			return nil, err
-		}
-		members = setMember(members, "tags", encoded)
+	members, err = applyTags(members, ch)
+	if err != nil {
+		return nil, err
 	}
 
 	if ch.Related != nil {
@@ -230,7 +258,58 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		return nil, err
 	}
 
+	members, err = applyLocations(members, ch)
+	if err != nil {
+		return nil, err
+	}
+
 	return assembleObject(members)
+}
+
+// applyTags rewrites the tag list when either tag flag was passed.
+func applyTags(members []member, ch Changes) ([]member, error) {
+	if len(ch.AddTags) == 0 && len(ch.RemoveTags) == 0 {
+		return members, nil
+	}
+	tags, err := editTags(members, ch)
+	if err != nil {
+		return nil, err
+	}
+	encoded, err := marshalNoEscape(tags)
+	if err != nil {
+		return nil, err
+	}
+	return setMember(members, "tags", encoded), nil
+}
+
+// applyLocations writes the two reference fields. Validation already ruled out
+// a path in url and an escaping file, so the values are normalised copies of
+// what the domain accepted.
+func applyLocations(members []member, ch Changes) ([]member, error) {
+	if ch.ClearURL {
+		members = dropMember(members, "url")
+	}
+	for _, f := range []struct {
+		key, raw string
+	}{{"file", ch.NotesFile}, {"url", ch.URL}} {
+		if f.raw == "" {
+			continue
+		}
+		normalised := f.raw
+		if f.key == "file" {
+			p, err := domain.NewNotesPath(f.raw)
+			if err != nil {
+				return nil, err
+			}
+			normalised = p.String()
+		}
+		encoded, err := marshalNoEscape(normalised)
+		if err != nil {
+			return nil, err
+		}
+		members = setMember(members, f.key, encoded)
+	}
+	return members, nil
 }
 
 // applyVerdict replaces the entry's verdict, refusing to overwrite a publish
