@@ -14,6 +14,11 @@ import (
 // (via related_ids) before it is suggested for canonical status.
 const canonicalReferenceThreshold = 3
 
+// writeupCategory names the owner's notes on someone else's material. Kept as
+// a literal here rather than imported from the adapter: the usecase must not
+// depend on the layer that writes the file.
+const writeupCategory = "writeups"
+
 // ageMonthsThreshold is how old a Habr article may get before it is suggested
 // for an outdated-lifecycle review (Habr links drift faster than evergreen
 // content).
@@ -188,6 +193,13 @@ func canonicalCandidates(c *domain.Catalog) []Finding {
 	var findings []Finding
 	for _, e := range c.Entries() {
 		if e.Lifecycle().IsCanonical() {
+			continue
+		}
+		// A write-up is cited by every article it covers — that is its job, not
+		// evidence that it is a canonical source. Counting those links put fifty
+		// notes on this list at once and buried the findings that need a
+		// decision.
+		if e.Category().String() == writeupCategory {
 			continue
 		}
 		if n := refCount[e.ID()]; n >= canonicalReferenceThreshold {

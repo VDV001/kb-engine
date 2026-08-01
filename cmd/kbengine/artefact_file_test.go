@@ -138,3 +138,39 @@ func TestAudit_filesNamesEntriesWhoseWriteUpIsGone(t *testing.T) {
 		t.Errorf("audit reported an entry that carries no file at all:\n%s", got)
 	}
 }
+
+// The write-ups migration introduced a category the catalog had no way to
+// change: an entry created before it existed sits in the wrong one, and the
+// only alternative was editing the JSON by hand — which is how fields the
+// domain does not model get lost.
+func TestSet_categoryMovesOneEntry(t *testing.T) {
+	path := baseWithCatalog(t)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"set", "--catalog", path, "--ids", "1", "--category", "writeups"}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if got := memberString(t, path, 1, "category"); got != "writeups" {
+		t.Errorf("category = %q, want writeups", got)
+	}
+}
+
+func TestSet_categoryRefusesWhatIsNotACategory(t *testing.T) {
+	path := baseWithCatalog(t)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"set", "--catalog", path, "--ids", "1", "--category", "Не Категория"}, &out, &errb); code == 0 {
+		t.Error("set accepted a category the domain rejects")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("a refused --category still wrote to the catalog")
+	}
+}

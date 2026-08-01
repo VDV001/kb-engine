@@ -22,10 +22,11 @@ func writeupBase(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	for path, body := range map[string]string{
-		"notes/batch9.md":         "# Batch 9 — разбор двадцати статей\n\nтекст\n",
-		"notes/solo.md":           "# Solo — разбор одной статьи\n",
-		"standards/harness/v1.md": "# Harness\nversion: 1.0.0\n",
-		"docs/deepread.md":        "# Deepread\n",
+		"notes/batch9.md":                 "# Batch 9 — разбор двадцати статей\n\nтекст\n",
+		"notes/rescued/6_dead-article.md": "# Чужая статья D\n\nспасённый текст\n",
+		"notes/solo.md":                   "# Solo — разбор одной статьи\n",
+		"standards/harness/v1.md":         "# Harness\nversion: 1.0.0\n",
+		"docs/deepread.md":                "# Deepread\n",
 	} {
 		full := filepath.Join(root, filepath.FromSlash(path))
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -39,6 +40,7 @@ func writeupBase(t *testing.T) string {
 		t.Fatalf("mkdir: %v", err)
 	}
 	doc := `{"entries":[
+{"id":6,"title":"Чужая статья D","url":"https://h/d","category":"golang","status":"keep","lifecycle":"active","file":"notes/rescued/6_dead-article.md","tags":["rescued"]},
 {"id":1,"title":"Чужая статья A","url":"https://h/a","category":"golang","status":"keep","lifecycle":"active","file":"notes/batch9.md"},
 {"id":2,"title":"Чужая статья B","url":"https://h/b","category":"golang","status":"keep","lifecycle":"active","file":"notes/batch9.md","related_ids":[4]},
 {"id":3,"title":"Чужая статья C","url":"https://h/c","category":"security","status":"consider","lifecycle":"active","file":"notes/solo.md"},
@@ -105,17 +107,17 @@ func TestMigrateWriteups_applySplitsTheTwoMeanings(t *testing.T) {
 	}
 
 	got := entriesByID(t, path)
-	if len(got) != 7 {
-		t.Fatalf("entries = %d, want 7 (5 + one per write-up)", len(got))
+	if len(got) != 8 {
+		t.Fatalf("entries = %d, want 8 (6 + one per write-up)", len(got))
 	}
 
 	// the write-up entries carry the file and take their title from it
 	var batch9, solo int
 	for id, e := range got {
-		if e["file"] == "notes/batch9.md" && id > 5 {
+		if e["file"] == "notes/batch9.md" && id > 6 {
 			batch9 = id
 		}
-		if e["file"] == "notes/solo.md" && id > 5 {
+		if e["file"] == "notes/solo.md" && id > 6 {
 			solo = id
 		}
 	}
@@ -147,6 +149,32 @@ func TestMigrateWriteups_applySplitsTheTwoMeanings(t *testing.T) {
 	// own artefacts are left exactly as they were
 	if got[4]["file"] != "standards/harness/v1.md" || got[5]["file"] != "docs/deepread.md" {
 		t.Errorf("an own artefact lost its file: %v %v", got[4]["file"], got[5]["file"])
+	}
+}
+
+// A rescued copy is the article's own body, not a write-up about it: the file
+// is named after the entry that owns it and lives under notes/rescued/. Turning
+// it into a separate "write-up" entry would duplicate the article's title and
+// claim the owner wrote the text — which he did not.
+//
+// This is the third meaning the file member carried, and it only showed up on
+// live data: the fixture had no rescued copies until this case was added.
+func TestMigrateWriteups_leavesRescuedCopiesAlone(t *testing.T) {
+	path := writeupBase(t)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"migrate", "writeups", "--catalog", path, "--apply"}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+
+	got := entriesByID(t, path)
+	if got[6]["file"] != "notes/rescued/6_dead-article.md" {
+		t.Errorf("the rescued copy was taken off its entry: %v", got[6]["file"])
+	}
+	for id, e := range got {
+		if id > 6 && e["file"] == "notes/rescued/6_dead-article.md" {
+			t.Errorf("a rescued copy became a write-up entry: id=%d", id)
+		}
 	}
 }
 

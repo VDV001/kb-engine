@@ -25,6 +25,10 @@ func TestEntryIsOwnArtefact(t *testing.T) {
 		{name: "standard by path", category: "ai-agents-tools", file: "standards/kb-as-product/v1.md", want: true},
 		{name: "article draft by path", category: "ai-agents-tools", file: "creations/habr/2026-04-28_brain-fry/v5-final.md", want: true},
 		{name: "deepread by path", category: "knowledge-management", file: "docs/2026-05-07_claude-config-as-code-deepread_v1.md", want: true},
+		// A write-up of someone else's article is still the owner's own text: he
+		// wrote it and versions it. The case could not arise before write-ups
+		// became entries of their own — the note lived on the article's card.
+		{name: "writeups category", category: "writeups", want: true},
 		{name: "someone else's article", category: "ai-agents-tools"},
 		{name: "note file outside the owner's trees", category: "ai-agents-tools", file: "notes/2026-05-01_x.md"},
 		{name: "path that merely mentions docs", category: "ai-agents-tools", file: "vendor/docs/x.md"},

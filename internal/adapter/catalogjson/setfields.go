@@ -41,7 +41,11 @@ type Changes struct {
 	// catalog already proved they get confused: several entries carry a file
 	// path in url and nothing in file.
 	NotesFile string
-	URL       string
+	// Category moves an entry between categories. Validated by the domain like
+	// every other value: a category the loader would reject must not reach the
+	// file.
+	Category string
+	URL      string
 	// ClearURL removes the url instead of replacing it. Kept apart from URL
 	// because an empty string means "the flag was not passed", and a forgotten
 	// flag must never wipe a field.
@@ -60,7 +64,7 @@ type Changes struct {
 func (c Changes) empty() bool {
 	// Listed rather than compared against a zero value: Changes holds slices,
 	// and a struct with slices is not comparable.
-	for _, text := range []string{c.Lifecycle, c.Version, c.Verdict, c.NotesFile, c.URL,
+	for _, text := range []string{c.Lifecycle, c.Version, c.Verdict, c.NotesFile, c.URL, c.Category,
 		c.Notes, c.Author, c.Title, c.Description} {
 		if text != "" {
 			return false
@@ -185,6 +189,11 @@ func (c Changes) validateLocations() error {
 	if c.NotesFile != "" {
 		if _, err := domain.NewNotesPath(c.NotesFile); err != nil {
 			return fmt.Errorf("--file: %w", err)
+		}
+	}
+	if c.Category != "" {
+		if _, err := domain.NewCategory(c.Category); err != nil {
+			return fmt.Errorf("--category: %w", err)
 		}
 	}
 	return nil
@@ -340,6 +349,7 @@ func applyText(members []member, ch Changes) ([]member, error) {
 	for _, f := range []struct{ key, raw string }{
 		{"notes", ch.Notes}, {"author", ch.Author},
 		{"title", ch.Title}, {"description", ch.Description},
+		{"category", ch.Category},
 	} {
 		if f.raw == "" {
 			continue
