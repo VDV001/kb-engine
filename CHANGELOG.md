@@ -8,6 +8,24 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Added
+
+- **Team draws the flow it describes.** The cards in «как движутся задачи» were
+  already edges — every title reads «A → B», and the section's own note says
+  tasks go down and statuses come back up — but the reader had to assemble the
+  picture in their head from eight cards in file order. Now a card can carry
+  `from` / `to` (plus `via` for a step that passes through someone, and `kind`
+  for a status going back up), and the section renders participants with arrows
+  above the cards. Tiers are computed as distance from the entry point rather
+  than card order, so the diagram says something the list did not.
+- Links are declared in the file, not parsed out of the title: the same
+  participant is written «Отдел» in one card and «отдел» in another, and a parser
+  would have drawn two boxes. A card without `from`/`to` stays a plain card.
+- **A legend beside the diagram** explains the notation and fills the space a
+  narrow diagram left empty. Its counts, entry points and end points are derived
+  from the diagram itself — a hand-written list would disagree with the picture
+  the first time the file changed.
+
 ### Fixed
 
 - **The dashboard went blank when the catalog had no duplicates.** `/api/duplicates`

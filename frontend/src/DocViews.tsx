@@ -3,6 +3,8 @@ import remarkGfm from 'remark-gfm'
 import { api } from './api'
 import type { DocCard, DocSection, Document } from './api'
 import { useResource } from './hooks/useResource'
+import { flowEnds, layoutFlow } from './flowLayout'
+import type { FlowLayout } from './flowLayout'
 import { Card, Label } from './components/ui'
 
 // The owner's personal views — Now, Team, Projects — rendered from files the
@@ -99,6 +101,179 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
   )
 }
 
+/**
+ * Схема потока: участники и стрелки между ними. Рисуется над карточками той же
+ * секции, а не вместо них — граф отвечает «куда идёт работа», карточка «что там
+ * происходит», и второе списком читается лучше, чем подписью на стрелке.
+ *
+ * Ширина фиксированная и скроллится по горизонтали: сжимать схему до ширины
+ * телефона значило бы налепить подписи друг на друга, а нечитаемая схема хуже
+ * её отсутствия.
+ */
+/** Образец линии для легенды: та же геометрия, что и на схеме. */
+function LegendLine({ status }: { status: boolean }) {
+  return (
+    <svg width="34" height="12" viewBox="0 0 34 12" aria-hidden="true" className="shrink-0">
+      <path
+        d="M2 6 H26"
+        stroke={status ? 'var(--donut-secondary)' : 'var(--on-surface-variant)'}
+        strokeWidth={status ? 1 : 1.5}
+        strokeDasharray={status ? '4 3' : undefined}
+      />
+      <path
+        d="M26 2 L32 6 L26 10 z"
+        fill={status ? 'var(--donut-secondary)' : 'var(--on-surface-variant)'}
+      />
+    </svg>
+  )
+}
+
+/**
+ * Легенда занимает место справа от схемы, которое иначе пустует: сама схема
+ * узкая, а секция широкая. Она объясняет нотацию — то, что нарисовано, — а
+ * состав участников берёт из самой схемы, чтобы список не разошёлся с
+ * картинкой при первом же изменении файла.
+ */
+function FlowLegend({ flow }: { flow: FlowLayout }) {
+  const { sources, sinks } = flowEnds(flow)
+  const tiers = new Set(flow.nodes.map((n) => n.tier)).size
+  const statuses = flow.edges.filter((e) => e.kind === 'status').length
+
+  return (
+    // Занимает весь остаток строки, а не фиксированную колонку: схема узкая, и
+    // рядом с ней оставался пустой правый край во всю ширину секции.
+    <aside className="w-full space-y-4 rounded-xl border border-outline-variant bg-surface-container/60 p-5 text-sm lg:flex-1">
+      <p className="label">Как читать схему</p>
+
+      <dl className="space-y-3">
+        <div className="flex items-start gap-3">
+          <LegendLine status={false} />
+          <div>
+            <dt className="font-medium">Задача вниз</dt>
+            <dd className="text-on-surface-variant">
+              Кто кому ставит работу. Сплошная линия, {flow.edges.length - statuses} на схеме.
+            </dd>
+          </div>
+        </div>
+        <div className="flex items-start gap-3">
+          <LegendLine status />
+          <div>
+            <dt className="font-medium">Статус наверх</dt>
+            <dd className="text-on-surface-variant">
+              Отчёты, блокеры, эскалация. Пунктир, {statuses} на схеме; уведён вбок, чтобы не лечь
+              поверх встречной задачи.
+            </dd>
+          </div>
+        </div>
+      </dl>
+
+      <div className="space-y-2 border-t border-outline-variant pt-4 text-on-surface-variant">
+        <p>
+          <span className="font-medium text-on-surface">Ярусы</span> — расстояние от входа, а не
+          порядок карточек: {tiers} уровня, {flow.nodes.length} участников.
+        </p>
+        <p>
+          <span className="font-medium text-on-surface">Входы</span> — им работу не ставит никто:{' '}
+          {sources.join(', ')}.
+        </p>
+        <p>
+          <span className="font-medium text-on-surface">Дальше не передают</span> — на них поток
+          заканчивается: {sinks.join(', ')}.
+        </p>
+        <p>Каждая стрелка описана карточкой ниже — там, что именно на ней происходит.</p>
+      </div>
+    </aside>
+  )
+}
+
+function FlowGraph({ cards }: { cards: DocCard[] }) {
+  const flow = layoutFlow(cards)
+  if (flow.edges.length === 0) return null
+
+  const center = (id: string) => {
+    const n = flow.nodes.find((x) => x.id === id)!
+    return { x: n.x + n.width / 2, y: n.y + n.height / 2, top: n.y, bottom: n.y + n.height }
+  }
+
+  return (
+    // Схема и легенда стоят рядом, пока хватает ширины: место справа от узкой
+    // схемы всё равно пустует, а объяснение нужнее всего рядом с картинкой.
+    // На узком экране легенда уходит под схему, а не сжимает её.
+    <div className="flex flex-col gap-6 pb-2 lg:flex-row lg:items-start lg:gap-10">
+      <div className="-mx-1 overflow-x-auto px-1">
+      <svg
+        width={flow.width}
+        height={flow.height}
+        viewBox={`0 0 ${flow.width} ${flow.height}`}
+        className="max-w-none"
+        role="img"
+        aria-label="Схема движения задач между участниками"
+      >
+        <defs>
+          <marker id="flow-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0 0 L7 3.5 L0 7 z" fill="var(--on-surface-variant)" />
+          </marker>
+          <marker id="flow-arrow-status" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0 0 L7 3.5 L0 7 z" fill="var(--donut-secondary)" />
+          </marker>
+        </defs>
+
+        {flow.edges.map((e, i) => {
+          const a = center(e.from)
+          const b = center(e.to)
+          const down = b.top >= a.bottom
+          // Линия цепляется за края блоков, а не за их центры: иначе стрелка
+          // упирается в текст и указывает как будто внутрь слова.
+          const y1 = down ? a.bottom : a.top
+          const y2 = down ? b.top : b.bottom
+          const status = e.kind === 'status'
+          // Статусы уводятся вбок: они идут по той же паре, что и задача, и
+          // ровно поверх неё их было бы не видно как отдельный поток.
+          const bend = status ? 26 : 0
+          return (
+            <path
+              key={`${e.from}-${e.to}-${i}`}
+              d={`M${a.x + bend} ${y1} C ${a.x + bend} ${(y1 + y2) / 2}, ${b.x + bend} ${(y1 + y2) / 2}, ${b.x + bend} ${y2}`}
+              fill="none"
+              stroke={status ? 'var(--donut-secondary)' : 'var(--on-surface-variant)'}
+              strokeWidth={status ? 1 : 1.5}
+              strokeDasharray={status ? '4 3' : undefined}
+              markerEnd={`url(#${status ? 'flow-arrow-status' : 'flow-arrow'})`}
+              opacity={status ? 0.75 : 0.9}
+            />
+          )
+        })}
+
+        {flow.nodes.map((n) => (
+          <g key={n.id}>
+            <rect
+              x={n.x}
+              y={n.y}
+              width={n.width}
+              height={n.height}
+              rx={10}
+              fill="var(--surface)"
+              stroke="var(--outline-variant)"
+            />
+            <text
+              x={n.x + n.width / 2}
+              y={n.y + n.height / 2}
+              dominantBaseline="central"
+              textAnchor="middle"
+              className="fill-on-surface text-[13px]"
+            >
+              {n.id}
+            </text>
+          </g>
+        ))}
+        </svg>
+      </div>
+
+      <FlowLegend flow={flow} />
+    </div>
+  )
+}
+
 function SectionView({ s, masked = false }: { s: DocSection; masked?: boolean }) {
   const cols =
     (s.cards?.length ?? 0) >= 4
@@ -111,6 +286,7 @@ function SectionView({ s, masked = false }: { s: DocSection; masked?: boolean })
         <span className="h-px flex-1 bg-outline-variant" />
       </div>
       {s.note && <p className="max-w-2xl text-sm text-on-surface-variant">{s.note}</p>}
+      <FlowGraph cards={s.cards ?? []} />
       {(s.cards ?? []).length > 0 && (
         <div className={`grid gap-4 ${cols}`}>
           {s.cards!.map((c) => (

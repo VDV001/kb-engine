@@ -131,4 +131,39 @@ describe('DocumentView: маска', () => {
     render(<DocumentView load={async () => flow} name="Team" masked />)
     expect(await screen.findByText('Продажник → отдел')).toBeDefined()
   })
+
+  // Проверяется нарисованное, а не то, что раскладку позвали: подписи узлов
+  // должны оказаться на экране, а стрелок должно быть ровно столько, сколько
+  // связей. Саму раскладку проверяет flowLayout.test.ts.
+  it('рисует участников и стрелки, когда у карточек есть связи', async () => {
+    const flow: Document = {
+      sections: [
+        {
+          title: 'Поток',
+          cards: [
+            { title: 'Генеральный → Даниил', from: 'Генеральный', to: 'Даниил' },
+            { title: 'Даниил → Генеральный', from: 'Даниил', to: 'Генеральный', kind: 'status' },
+          ],
+        },
+      ],
+    }
+    const { container } = render(<DocumentView load={async () => flow} name="Team" />)
+
+    expect(await screen.findByRole('img', { name: /Схема движения задач/ })).toBeDefined()
+    const labels = Array.from(container.querySelectorAll('svg text'), (t) => t.textContent)
+    expect(labels).toEqual(['Генеральный', 'Даниил'])
+    expect(container.querySelectorAll('svg path[marker-end]')).toHaveLength(2)
+  })
+
+  // У прочих секций Team связей нет, и пустой холст над списком ролей был бы
+  // мусором: рисовать нечего.
+  it('без связей схему не рисует', async () => {
+    const plain: Document = {
+      sections: [{ title: 'Роли', cards: [{ title: 'Кирилл', body: 'Тим-лид' }] }],
+    }
+    const { container } = render(<DocumentView load={async () => plain} name="Team" />)
+
+    expect(await screen.findByText('Кирилл')).toBeDefined()
+    expect(container.querySelector('svg')).toBeNull()
+  })
 })
