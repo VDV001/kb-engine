@@ -287,3 +287,82 @@ func TestSetFields_clearURLConflictsWithURL(t *testing.T) {
 		t.Fatal("expected an error: cannot set and clear the same field")
 	}
 }
+
+// Аудит требует у канонической записи заметку, а править её было нечем: движок
+// читал notes, description, title и author, но не писал ни одного из них.
+func TestSetFields_writesTextFields(t *testing.T) {
+	path := writeFixture(t)
+
+	if _, err := catalogjson.SetFields(path, []int{2}, catalogjson.Changes{
+		Notes:       "Опора Правила 11: невыразимые дефекты.",
+		Description: "Разбор того, почему проверка ИИ не равна независимой проверке.",
+		Title:       "ИИ уже пишет 80% кода Anthropic",
+		Author:      "Sergei Ustiugov",
+	}); err != nil {
+		t.Fatalf("SetFields: %v", err)
+	}
+
+	e := entryByID(t, load(t, path), 2)
+	for field, want := range map[string]string{
+		"notes":       "Опора Правила 11: невыразимые дефекты.",
+		"description": "Разбор того, почему проверка ИИ не равна независимой проверке.",
+		"title":       "ИИ уже пишет 80% кода Anthropic",
+		"author":      "Sergei Ustiugov",
+	} {
+		if got := e[field]; got != want {
+			t.Errorf("%s = %v, want %v", field, got, want)
+		}
+	}
+}
+
+// Заголовок и описание уникальны для записи: записать их сразу нескольким —
+// это почти наверняка ошибка в командной строке, а не намерение.
+func TestSetFields_uniqueFieldsRefuseSeveralIDs(t *testing.T) {
+	path := writeFixture(t)
+
+	for name, ch := range map[string]catalogjson.Changes{
+		"title":       {Title: "Один на всех"},
+		"description": {Description: "Одно на всех"},
+		"supersedes":  {SupersedesID: new(1)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := catalogjson.SetFields(path, []int{1, 2}, ch); err == nil {
+				t.Errorf("%s записался сразу нескольким записям", name)
+			}
+		})
+	}
+}
+
+// Заметку и автора массово ставить осмысленно: серия статей одного автора,
+// одинаковая пометка на группу.
+func TestSetFields_notesAndAuthorMayBeSetOnSeveralIDs(t *testing.T) {
+	path := writeFixture(t)
+
+	if _, err := catalogjson.SetFields(path, []int{1, 2}, catalogjson.Changes{
+		Notes: "Спасено из веб-архива 01.08", Author: "Никита Филонов",
+	}); err != nil {
+		t.Fatalf("SetFields: %v", err)
+	}
+	doc := load(t, path)
+	for _, id := range []float64{1, 2} {
+		if got := entryByID(t, doc, id)["notes"]; got != "Спасено из веб-архива 01.08" {
+			t.Errorf("id=%v notes = %v", id, got)
+		}
+	}
+}
+
+// Замещение указывает на существующую запись — иначе в каталоге появится
+// ссылка в никуда, ровно та, что ловит --check integrity.
+func TestSetFields_supersedesMustExist(t *testing.T) {
+	path := writeFixture(t)
+
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(999)}); err == nil {
+		t.Error("принята ссылка на несуществующую запись")
+	}
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(1)}); err == nil {
+		t.Error("запись принята как замещающая саму себя")
+	}
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(2)}); err != nil {
+		t.Errorf("корректное замещение отвергнуто: %v", err)
+	}
+}

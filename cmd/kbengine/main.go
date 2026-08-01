@@ -526,6 +526,11 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	verdict := fs.String("verdict", "", "triage verdict: keep|consider|skip|skip-unavailable")
 	notesFile := fs.String("file", "", "path to the write-up, relative to the knowledge base")
 	sourceURL := fs.String("url", "", "http(s) address of the original material (--url= removes it)")
+	notes := fs.String("notes", "", "free-text note on the entry")
+	author := fs.String("author", "", "author of the material")
+	title := fs.String("title", "", "entry title (one id at a time)")
+	description := fs.String("description", "", "one or two sentences on what this is (one id at a time)")
+	supersedes := fs.Int("supersedes", 0, "id of the entry this one replaces (one id at a time)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -540,14 +545,21 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	}
 
 	ch := catalogjson.Changes{
-		Lifecycle:  *lifecycle,
-		AddTags:    splitList(*addTags),
-		RemoveTags: splitList(*removeTags),
-		Version:    *version,
-		Revision:   *revision,
-		Verdict:    *verdict,
-		NotesFile:  *notesFile,
-		URL:        *sourceURL,
+		Lifecycle:   *lifecycle,
+		AddTags:     splitList(*addTags),
+		RemoveTags:  splitList(*removeTags),
+		Version:     *version,
+		Revision:    *revision,
+		Verdict:     *verdict,
+		NotesFile:   *notesFile,
+		URL:         *sourceURL,
+		Notes:       *notes,
+		Author:      *author,
+		Title:       *title,
+		Description: *description,
+	}
+	if isFlagSet(fs, "supersedes") {
+		ch.SupersedesID = supersedes
 	}
 	// "--url=" passed with nothing after it is an instruction to remove the
 	// address; "--url" not passed at all is not. Both look like "".
