@@ -1,5 +1,6 @@
 import type { Entry, Graph } from '../api'
 import { categoryLabel } from '../catalog'
+import { coverageNote, curatedRows, pairKey, unplacedNote } from '../curatedLinks'
 import { graphInsights, type LinkInsight } from '../graphInsights'
 import { layoutGraph, type GraphNodeBox } from '../graphLayout'
 
@@ -43,6 +44,10 @@ export function KnowledgeGraph({
   const hub = l.nodes.find((n) => n.isHub)
   const hubGlow = hub ? Math.hypot(hub.width, hub.height) / 2 : 0
 
+  const rows = curatedRows(graph, labels)
+  const curatedPairs = new Set(rows.map((r) => pairKey(r.from, r.to)))
+  const unplaced = unplacedNote(graph)
+
   return (
     <div className="space-y-4">
       <div className="overflow-x-auto rounded-xl border border-outline-variant">
@@ -76,19 +81,25 @@ export function KnowledgeGraph({
                 </circle>
               ))}
 
-            {l.edges.map((e) => (
-              <line
-                key={`${e.from}-${e.to}`}
-                className={e.strong ? undefined : 'kg-line-flow'}
-                x1={e.x1}
-                y1={e.y1}
-                x2={e.x2}
-                y2={e.y2}
-                stroke="var(--secondary)"
-                strokeWidth={e.strokeWidth}
-                opacity={e.opacity}
-              />
-            ))}
+            {l.edges.map((e) => {
+              // Подписанная связь рисуется сплошной и заметнее прочих: это
+              // единственный признак на холсте, отличающий проведённое рукой
+              // от выведенного по общим тегам.
+              const curated = curatedPairs.has(pairKey(e.from, e.to))
+              return (
+                <line
+                  key={`${e.from}-${e.to}`}
+                  className={curated || e.strong ? undefined : 'kg-line-flow'}
+                  x1={e.x1}
+                  y1={e.y1}
+                  x2={e.x2}
+                  y2={e.y2}
+                  stroke={curated ? 'var(--primary)' : 'var(--secondary)'}
+                  strokeWidth={curated ? Math.max(e.strokeWidth, 1.6) : e.strokeWidth}
+                  opacity={curated ? 0.85 : e.opacity}
+                />
+              )
+            })}
 
             {l.nodes.map((n) => {
               const x = n.x - n.width / 2
@@ -159,6 +170,7 @@ export function KnowledgeGraph({
       </div>
 
       <GraphLegend />
+      <CuratedLinks rows={rows} note={coverageNote(graph)} unplaced={unplaced} />
       <GraphConclusions graph={graph} labels={labels} total={total} entries={entries} />
     </div>
   )
@@ -377,6 +389,58 @@ function LinkCard({
           <p className="mt-auto pt-4 text-xs text-on-surface-variant">{note}</p>
         </>
       )}
+    </div>
+  )
+}
+
+/**
+ * CuratedLinks — то, что владелец написал про связи своими словами.
+ *
+ * Эти подписи лежали в analytics_config и не читались движком вовсе: холст
+ * показывал, ЧТО связано, и молчал о том, ПОЧЕМУ. Подписи не помещаются на
+ * линии — двести сорок пять связей и подпись в предложение превращают холст в
+ * войлок, — поэтому на холсте связь выделена цветом, а смысл читается здесь.
+ *
+ * Строка покрытия обязательна: без неё несколько выделенных линий читаются как
+ * «здесь всё продумано», хотя подписана меньше десятой части.
+ */
+function CuratedLinks({
+  rows,
+  note,
+  unplaced,
+}: {
+  rows: ReturnType<typeof curatedRows>
+  note: string
+  unplaced: string | null
+}) {
+  if (rows.length === 0) {
+    return <p className="text-xs text-on-surface-variant">{note}</p>
+  }
+  return (
+    <div className="rounded-xl border border-outline-variant p-4">
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <h4 className="font-label text-xs uppercase tracking-wider text-on-surface-variant">
+          Смысловые связи
+        </h4>
+        <p className="text-xs text-on-surface-variant">{note}</p>
+      </div>
+      <ul className="grid gap-2 sm:grid-cols-2">
+        {rows.map((r) => (
+          <li key={`${r.from}-${r.to}`} className="min-w-0 rounded-lg bg-surface-lowest p-3">
+            <p className="truncate text-sm font-medium" title={`${r.fromLabel} ↔ ${r.toLabel}`}>
+              {r.fromLabel} <span className="text-on-surface-variant">↔</span> {r.toLabel}
+            </p>
+            <ul className="mt-1 space-y-1">
+              {r.labels.map((label) => (
+                <li key={label} className="text-xs text-on-surface-variant">
+                  · {label}
+                </li>
+              ))}
+            </ul>
+          </li>
+        ))}
+      </ul>
+      {unplaced && <p className="mt-3 text-xs text-on-surface-variant">{unplaced}</p>}
     </div>
   )
 }

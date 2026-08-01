@@ -149,11 +149,27 @@ export interface GraphEdge {
   from: string
   to: string
   weight: number
+  /** Подписи владельца: у одной связи бывает несколько смыслов сразу. */
+  labels?: string[]
+}
+
+/** Подпись, которой не нашлось ребра в вычисленном графе. */
+export interface CuratedLink {
+  from: string
+  to: string
+  label: string
 }
 
 export interface Graph {
   nodes: GraphNode[]
   edges: GraphEdge[]
+  /** Сколько связей подписано вручную и сколько нет — без этих чисел
+   * несколько выделенных связей читаются как размеченный целиком граф. */
+  labeled?: number
+  unlabeled?: number
+  /** Подписей всего: больше, чем labeled, когда связь несёт несколько смыслов. */
+  label_count?: number
+  unplaced_links?: CuratedLink[]
 }
 
 export interface ChangelogRelease {
