@@ -46,11 +46,28 @@ type Changes struct {
 	// because an empty string means "the flag was not passed", and a forgotten
 	// flag must never wipe a field.
 	ClearURL bool
+	// Notes and Author describe the entry and may be set on a group: a series by
+	// one author, one note across a batch. Title, Description and SupersedesID
+	// belong to a single entry, and writing them to several at once is a mistake
+	// in the command line rather than an intention.
+	Notes        string
+	Author       string
+	Title        string
+	Description  string
+	SupersedesID *int
 }
 
 func (c Changes) empty() bool {
-	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
-		c.Version == "" && c.Revision == 0 && c.Verdict == "" && c.NotesFile == "" && c.URL == "" && !c.ClearURL
+	// Listed rather than compared against a zero value: Changes holds slices,
+	// and a struct with slices is not comparable.
+	for _, text := range []string{c.Lifecycle, c.Version, c.Verdict, c.NotesFile, c.URL,
+		c.Notes, c.Author, c.Title, c.Description} {
+		if text != "" {
+			return false
+		}
+	}
+	return len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
+		c.Revision == 0 && !c.ClearURL && c.SupersedesID == nil
 }
 
 // SetFields edits the given entries in the catalog file and returns how many
@@ -72,6 +89,10 @@ func SetFields(path string, ids []int, ch Changes) (int, error) {
 
 	members, entries, err := readEntries(path)
 	if err != nil {
+		return 0, err
+	}
+
+	if err := checkSupersedes(entries, ids, ch); err != nil {
 		return 0, err
 	}
 
@@ -103,6 +124,9 @@ func (c Changes) validate(ids []int) error {
 	if err := c.validateLocations(); err != nil {
 		return err
 	}
+	if err := c.validateSingleEntryFields(ids); err != nil {
+		return err
+	}
 	// The lists of valid values belong to the domain and are asked for here, so
 	// a bad one never reaches the file.
 	if c.Verdict != "" {
@@ -129,6 +153,22 @@ func (c Changes) validateVersioning() error {
 	}
 	if c.Revision < 0 {
 		return fmt.Errorf("--revision: must be positive, got %d", c.Revision)
+	}
+	return nil
+}
+
+// validateSingleEntryFields guards the fields that describe one entry and not a
+// group. A title written to fifty entries at once is not an edit anyone meant.
+func (c Changes) validateSingleEntryFields(ids []int) error {
+	if len(ids) == 1 {
+		return nil
+	}
+	for name, set := range map[string]bool{
+		"--title": c.Title != "", "--description": c.Description != "", "--supersedes": c.SupersedesID != nil,
+	} {
+		if set {
+			return fmt.Errorf("%s describes one entry: pass a single id, got %d", name, len(ids))
+		}
 	}
 	return nil
 }
@@ -173,6 +213,29 @@ func readEntries(path string) ([]member, []json.RawMessage, error) {
 // editEntries rewrites the matching entries in place and reports how many.
 // A missing id is an error raised before anything is written: a typo in one id
 // of fifty must not leave the catalog half-edited with no sign of which half.
+// checkSupersedes verifies the link points at an entry that exists and is not
+// the entry itself. Both are exactly what --check integrity reports later; the
+// cheaper moment to notice is before the write.
+func checkSupersedes(entries []json.RawMessage, ids []int, ch Changes) error {
+	if ch.SupersedesID == nil {
+		return nil
+	}
+	target := *ch.SupersedesID
+	if len(ids) == 1 && ids[0] == target {
+		return fmt.Errorf("--supersedes: entry %d cannot supersede itself", target)
+	}
+	for _, raw := range entries {
+		id, err := entryID(raw)
+		if err != nil {
+			return err
+		}
+		if id == target {
+			return nil
+		}
+	}
+	return fmt.Errorf("--supersedes: no entry with id %d — the link would point nowhere", target)
+}
+
 func editEntries(entries []json.RawMessage, ids []int, ch Changes) (int, error) {
 	wanted := make(map[int]bool, len(ids))
 	for _, id := range ids {
@@ -263,7 +326,38 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		return nil, err
 	}
 
+	members, err = applyText(members, ch)
+	if err != nil {
+		return nil, err
+	}
+
 	return assembleObject(members)
+}
+
+// applyText writes the free-text fields and the supersedes link. Each is skipped
+// when not asked for: an empty string means the flag was absent, never "erase".
+func applyText(members []member, ch Changes) ([]member, error) {
+	for _, f := range []struct{ key, raw string }{
+		{"notes", ch.Notes}, {"author", ch.Author},
+		{"title", ch.Title}, {"description", ch.Description},
+	} {
+		if f.raw == "" {
+			continue
+		}
+		encoded, err := marshalNoEscape(f.raw)
+		if err != nil {
+			return nil, err
+		}
+		members = setMember(members, f.key, encoded)
+	}
+	if ch.SupersedesID != nil {
+		encoded, err := marshalNoEscape(*ch.SupersedesID)
+		if err != nil {
+			return nil, err
+		}
+		members = setMember(members, "supersedes_id", encoded)
+	}
+	return members, nil
 }
 
 // applyTags rewrites the tag list when either tag flag was passed.

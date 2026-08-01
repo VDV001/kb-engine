@@ -323,7 +323,7 @@ func TestSetFields_uniqueFieldsRefuseSeveralIDs(t *testing.T) {
 	for name, ch := range map[string]catalogjson.Changes{
 		"title":       {Title: "Один на всех"},
 		"description": {Description: "Одно на всех"},
-		"supersedes":  {SupersedesID: intp(1)},
+		"supersedes":  {SupersedesID: new(1)},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := catalogjson.SetFields(path, []int{1, 2}, ch); err == nil {
@@ -356,15 +356,13 @@ func TestSetFields_notesAndAuthorMayBeSetOnSeveralIDs(t *testing.T) {
 func TestSetFields_supersedesMustExist(t *testing.T) {
 	path := writeFixture(t)
 
-	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: intp(999)}); err == nil {
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(999)}); err == nil {
 		t.Error("принята ссылка на несуществующую запись")
 	}
-	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: intp(1)}); err == nil {
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(1)}); err == nil {
 		t.Error("запись принята как замещающая саму себя")
 	}
-	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: intp(2)}); err != nil {
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{SupersedesID: new(2)}); err != nil {
 		t.Errorf("корректное замещение отвергнуто: %v", err)
 	}
 }
-
-func intp(v int) *int { return &v }

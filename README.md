@@ -72,6 +72,7 @@ kbengine drift        --catalog X [--apply] [--update-urls] [--limit N] [--delay
 kbengine migrate      <versions|urls> --catalog X [--apply]
 kbengine set          --catalog X --ids 1,2,3 [--lifecycle V] [--verdict V] [--add-tag T] [--remove-tag T]
                       [--related IDS] [--version SEMVER | --revision N] [--file PATH] [--url ADDR]
+                      [--notes N] [--author A] [--title T] [--description D] [--supersedes ID]
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
 kbengine audit-tasks  --catalog X [--json] < tasklist
 kbengine changelog    --in CHANGELOG.md --out changelog.json
@@ -90,6 +91,10 @@ kbengine set --catalog X --ids 42 --add-tag go,harness --remove-tag old
 kbengine set --catalog X --ids 42 --related 469,478      # --related= clears the list
 kbengine set --catalog X --ids 42 --file notes/2026-08-01_x.md --url=   # move a path out of url
 ```
+
+`--title`, `--description` and `--supersedes` describe a single entry and refuse
+several ids: a title written to fifty entries at once is not an edit anyone
+meant. `--notes` and `--author` may be set on a group.
 
 An empty string means "the flag was not passed", never "clear the field": a
 forgotten flag must not wipe data. Clearing is a separate instruction — `--url=`
