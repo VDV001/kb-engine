@@ -58,6 +58,11 @@ type EntryParams struct {
 	RelatedIDs    []int
 	DateAdded     *time.Time
 	DateCreated   *time.Time
+	// Version is the semver of an artefact the owner versions himself; Revision
+	// counts editions of the card for someone else's material. At most one may
+	// be set — see checkVersioning.
+	Version  *Version
+	Revision *int
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
@@ -84,6 +89,8 @@ type Entry struct {
 	relatedIDs    []int
 	dateAdded     *time.Time
 	dateCreated   *time.Time
+	version       *Version
+	revision      *int
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -100,6 +107,9 @@ func NewEntry(p EntryParams) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: title must not be empty", ErrInvalidEntry)
 	}
 	if err := checkRequired(p, spec); err != nil {
+		return Entry{}, err
+	}
+	if err := checkVersioning(p); err != nil {
 		return Entry{}, err
 	}
 	return Entry{
@@ -124,7 +134,24 @@ func NewEntry(p EntryParams) (Entry, error) {
 		relatedIDs:    cloneInts(p.RelatedIDs),
 		dateAdded:     clonePtrTime(p.DateAdded),
 		dateCreated:   clonePtrTime(p.DateCreated),
+		version:       clonePtrVersion(p.Version),
+		revision:      clonePtrInt(p.Revision),
 	}, nil
+}
+
+// checkVersioning enforces that an entry carries at most one notion of version.
+// Both at once is what the single legacy field allowed, and the live catalog
+// shows where that leads: one artefact versioned as "2.0.0" in one entry and as
+// 5 in another.
+func checkVersioning(p EntryParams) error {
+	if p.Version != nil && p.Revision != nil {
+		return fmt.Errorf("%w: version %s and revision %d are both set; an entry carries one or the other",
+			ErrInvalidEntry, p.Version, *p.Revision)
+	}
+	if p.Revision != nil && *p.Revision < 1 {
+		return fmt.Errorf("%w: revision must be positive, got %d", ErrInvalidEntry, *p.Revision)
+	}
+	return nil
 }
 
 // cloneTags returns an independent copy so the entity does not alias the
@@ -144,6 +171,14 @@ func cloneInts(s []int) []int {
 }
 
 func clonePtrInt(p *int) *int {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func clonePtrVersion(p *Version) *Version {
 	if p == nil {
 		return nil
 	}
@@ -236,3 +271,12 @@ func (e Entry) DateAdded() *time.Time { return clonePtrTime(e.dateAdded) }
 
 // DateCreated returns when the source content was created, or nil.
 func (e Entry) DateCreated() *time.Time { return clonePtrTime(e.dateCreated) }
+
+// Version returns the semver of an owner artefact, or nil when the entry is not
+// one. The catalog's copy can fall behind the artefact file, which is what the
+// version audit compares.
+func (e Entry) Version() *Version { return clonePtrVersion(e.version) }
+
+// Revision returns how many times the card for someone else's material was
+// rewritten, or nil when it was never rewritten.
+func (e Entry) Revision() *int { return clonePtrInt(e.revision) }
