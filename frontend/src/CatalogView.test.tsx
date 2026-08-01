@@ -213,3 +213,65 @@ describe('CatalogView: связь с разбором', () => {
     for (const el of shown) expect(el.tagName).not.toBe('A')
   })
 })
+
+// Сетка — вторая раскладка того же списка, и до этих проверок она держалась
+// на одном просмотре глазами: тесты выше рендерят вид в раскладке по
+// умолчанию, то есть списком. Покрытие задним числом, не TDD.
+describe('CatalogView: сетка показывает то же, что список', () => {
+  const pair: Entry[] = [
+    {
+      id: 1,
+      title: 'Статья про MCP',
+      category: 'meta',
+      kind: 'article',
+      lifecycle: 'active',
+      url: 'https://habr.com/x',
+      related_ids: [10],
+    },
+    {
+      id: 10,
+      title: 'Разбор: MCP',
+      category: 'writeups',
+      kind: 'article',
+      lifecycle: 'active',
+      file: 'notes/2026-08-02_mcp.md',
+    },
+  ]
+
+  const gridView = (onSearchChange = () => {}) => {
+    render(
+      <CatalogView
+        entries={pair}
+        labels={{ meta: 'Мета: про базу', writeups: 'Разборы: мои конспекты' }}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory=""
+        onPickedCategoryChange={() => {}}
+        health={health}
+        search=""
+        onSearchChange={onSearchChange}
+      />,
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Grid view' }))
+  }
+
+  it('ведёт от статьи к её разбору', () => {
+    const onSearchChange = vi.fn()
+    gridView(onSearchChange)
+    fireEvent.click(screen.getAllByRole('button', { name: /^разбор$/i })[0])
+    expect(onSearchChange).toHaveBeenCalledWith('#10')
+  })
+
+  it('показывает покрытие разбора', () => {
+    gridView()
+    expect(screen.getByText(/разбирает 1 запись/i)).toBeTruthy()
+  })
+
+  it('не рисует заголовок ссылкой, когда ссылки нет', () => {
+    gridView()
+    const shown = screen.getAllByText('Разбор: MCP')
+    expect(shown.length).toBeGreaterThan(0)
+    for (const el of shown) expect(el.tagName).not.toBe('A')
+  })
+})
