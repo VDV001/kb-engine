@@ -24,11 +24,11 @@ func TestLabelEdges(t *testing.T) {
 
 	got := analytics.LabelEdges(g, labels)
 
-	if got.Edges[0].Label != "MCP/протоколы" {
-		t.Errorf("edge a→b label = %q, want %q", got.Edges[0].Label, "MCP/протоколы")
+	if len(got.Edges[0].Labels) != 1 || got.Edges[0].Labels[0] != "MCP/протоколы" {
+		t.Errorf("edge a→b labels = %v, want [MCP/протоколы]", got.Edges[0].Labels)
 	}
-	if got.Edges[1].Label != "" {
-		t.Errorf("edge b→c label = %q, want empty", got.Edges[1].Label)
+	if len(got.Edges[1].Labels) != 0 {
+		t.Errorf("edge b→c labels = %v, want none", got.Edges[1].Labels)
 	}
 	// The counts are what keeps the screen honest: a graph showing two labels
 	// out of 245 edges must be able to say so, or the reader assumes the whole
@@ -46,8 +46,8 @@ func TestLabelEdges_matchesRegardlessOfDirection(t *testing.T) {
 	labels := []analytics.CuratedLink{{From: "b", To: "a", Label: "обратная"}}
 
 	got := analytics.LabelEdges(g, labels)
-	if got.Edges[0].Label != "обратная" {
-		t.Fatalf("label = %q, want it matched regardless of direction", got.Edges[0].Label)
+	if len(got.Edges[0].Labels) != 1 || got.Edges[0].Labels[0] != "обратная" {
+		t.Fatalf("labels = %v, want the link matched regardless of direction", got.Edges[0].Labels)
 	}
 }
 
@@ -63,5 +63,34 @@ func TestLabelEdges_reportsUnplacedLinks(t *testing.T) {
 	got := analytics.LabelEdges(g, labels)
 	if len(got.UnplacedLinks) != 1 || got.UnplacedLinks[0].Label != "негде разместить" {
 		t.Fatalf("UnplacedLinks = %+v, want the one link with no matching edge", got.UnplacedLinks)
+	}
+}
+
+// Seven pairs in the live config carry two or three labels each: one connection
+// described from several angles. ai-agents-tools ↔ security is written three
+// times — prompt injection, the AI-SAFE levels, OAuth for MCP. Keeping one
+// label per pair would drop nine of the thirty-two without a word.
+func TestLabelEdges_keepsEveryLabelOfAPair(t *testing.T) {
+	g := analytics.Graph{Edges: []analytics.GraphEdge{{From: "ai-agents-tools", To: "security", Weight: 5}}}
+	labels := []analytics.CuratedLink{
+		{From: "ai-agents-tools", To: "security", Label: "prompt injection"},
+		{From: "ai-agents-tools", To: "security", Label: "AI-SAFE 5 уровней"},
+		{From: "security", To: "ai-agents-tools", Label: "OAuth для MCP"},
+	}
+
+	got := analytics.LabelEdges(g, labels)
+
+	if len(got.Edges[0].Labels) != 3 {
+		t.Fatalf("labels = %v, want all three kept", got.Edges[0].Labels)
+	}
+	if len(got.UnplacedLinks) != 0 {
+		t.Fatalf("UnplacedLinks = %+v, want none — every label found its edge", got.UnplacedLinks)
+	}
+	// Labeled counts edges, not labels; both numbers matter to a reader.
+	if got.Labeled != 1 {
+		t.Errorf("Labeled = %d, want 1 edge", got.Labeled)
+	}
+	if got.LabelCount != 3 {
+		t.Errorf("LabelCount = %d, want 3 labels", got.LabelCount)
 	}
 }
