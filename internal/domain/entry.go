@@ -63,6 +63,12 @@ type EntryParams struct {
 	// be set — see checkVersioning.
 	Version  *Version
 	Revision *int
+	// SourceBatch is the import batch the entry arrived in, and SourceDate when
+	// that material was published. Both are determined by the batch and stored
+	// on every entry — a deliberate denormalization (ADR-0002) guarded by the
+	// batch-consistency audit.
+	SourceBatch *int
+	SourceDate  *time.Time
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
@@ -91,6 +97,8 @@ type Entry struct {
 	dateCreated   *time.Time
 	version       *Version
 	revision      *int
+	sourceBatch   *int
+	sourceDate    *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -136,6 +144,8 @@ func NewEntry(p EntryParams) (Entry, error) {
 		dateCreated:   clonePtrTime(p.DateCreated),
 		version:       clonePtrVersion(p.Version),
 		revision:      clonePtrInt(p.Revision),
+		sourceBatch:   clonePtrInt(p.SourceBatch),
+		sourceDate:    clonePtrTime(p.SourceDate),
 	}, nil
 }
 
@@ -313,3 +323,10 @@ func (e Entry) Version() *Version { return clonePtrVersion(e.version) }
 // Revision returns how many times the card for someone else's material was
 // rewritten, or nil when it was never rewritten.
 func (e Entry) Revision() *int { return clonePtrInt(e.revision) }
+
+// SourceBatch returns the import batch the entry arrived in, or nil for entries
+// added outside a batch.
+func (e Entry) SourceBatch() *int { return clonePtrInt(e.sourceBatch) }
+
+// SourceDate returns when the source material was published, or nil.
+func (e Entry) SourceDate() *time.Time { return clonePtrTime(e.sourceDate) }

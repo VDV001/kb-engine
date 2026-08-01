@@ -85,6 +85,10 @@ type entryDTO struct {
 	// the field written after the migration. mapVersioning sorts them out.
 	Version  json.RawMessage `json:"version"`
 	Revision flexInt         `json:"revision"`
+	// SourceBatch and SourceDate are determined by the import batch and stored
+	// on every entry (ADR-0002); the batch-consistency audit compares them.
+	SourceBatch flexInt `json:"source_batch"`
+	SourceDate  string  `json:"source_date"`
 }
 
 type catalogDTO struct {
@@ -236,6 +240,10 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 	if err != nil {
 		return domain.Entry{}, err
 	}
+	sourceDate, err := parseDate(dto.SourceDate)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("source_date: %w", err)
+	}
 	return domain.NewEntry(domain.EntryParams{
 		ID:            dto.ID,
 		Kind:          tr.kind,
@@ -260,6 +268,8 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		DateCreated:   dateCreated,
 		Version:       version,
 		Revision:      revision,
+		SourceBatch:   dto.SourceBatch.pointer(),
+		SourceDate:    sourceDate,
 	})
 }
 
