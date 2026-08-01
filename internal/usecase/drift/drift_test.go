@@ -89,11 +89,18 @@ func TestScan_reportsWhatItCouldNotEstablish(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 
-	if got := len(rep.Results); got != 4 {
-		t.Fatalf("checked %d urls, want 4 (entry without a url is not a check)", got)
+	if got := len(rep.Results); got != 3 {
+		t.Fatalf("got %d answered urls, want 3 (no url and no answer are not answers)", got)
 	}
 	if rep.WithoutURL != 1 {
 		t.Errorf("WithoutURL = %d, want 1", rep.WithoutURL)
+	}
+	// Every entry must land in exactly one bucket. This is the property that
+	// makes the report honest: if the three numbers do not add up to the
+	// catalog size, the scan is silently dropping entries.
+	if sum := len(rep.Results) + len(rep.Unreachable) + rep.WithoutURL; sum != rep.TotalEntries {
+		t.Fatalf("answered %d + unreachable %d + without url %d = %d, but the catalog has %d entries",
+			len(rep.Results), len(rep.Unreachable), rep.WithoutURL, sum, rep.TotalEntries)
 	}
 
 	byStatus := map[string]int{}
