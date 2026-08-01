@@ -19,8 +19,9 @@ type EntryLoader interface {
 // after the user quits.
 //
 // The saver may be nil, and then the screen is read-only: it offers no editing
-// keys at all rather than keys that quietly do nothing.
-func Run(loader EntryLoader, saver EntrySaver, in io.Reader, out io.Writer) error {
+// keys at all rather than keys that quietly do nothing. The same holds for fin:
+// nil means no ledger is configured and the finances key is simply absent.
+func Run(loader EntryLoader, saver EntrySaver, fin FinanceLoader, in io.Reader, out io.Writer) error {
 	entries, err := loader.Entries()
 	if err != nil {
 		return fmt.Errorf("load catalog: %w", err)
@@ -28,6 +29,9 @@ func Run(loader EntryLoader, saver EntrySaver, in io.Reader, out io.Writer) erro
 	model := NewModel(entries)
 	if saver != nil {
 		model = NewEditableModel(entries, saver, loader)
+	}
+	if fin != nil {
+		model = model.WithFinances(fin)
 	}
 	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()
