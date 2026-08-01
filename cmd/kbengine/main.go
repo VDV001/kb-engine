@@ -370,7 +370,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|batch|age|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -385,7 +385,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	svc.WithArtefactVersions(artefactfs.Reader{Root: filepath.Dir(filepath.Dir(*catalogPath))})
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|batch|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all)\n", *check)
 		return 2
 	}
 
@@ -403,7 +403,36 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		total += len(findings)
 	}
 	fmt.Fprintf(stdout, "%d finding(s)\n", total)
+
+	// Link coverage is a different genre: it is not a lifecycle decision but a
+	// statement about what the base has not looked at. Listing 527 entries here
+	// would bury the findings that need one, so --check all says it in a line.
+	if *check == "all" {
+		if s := linkCoverageLine(svc, time.Now()); s != "" {
+			fmt.Fprintln(stdout, s)
+		}
+	}
 	return 0
+}
+
+// linkCoverageLine summarises what the base does not know about its own links.
+// An empty string means every link was checked recently — the only case where
+// saying nothing is honest.
+func linkCoverageLine(svc *audit.Service, now time.Time) string {
+	findings, err := svc.UncheckedLinkIssues(now)
+	if err != nil || len(findings) == 0 {
+		return ""
+	}
+	never, stale := 0, 0
+	for _, f := range findings {
+		if strings.Contains(strings.Join(f.Reasons, " "), "ни разу") {
+			never++
+			continue
+		}
+		stale++
+	}
+	return fmt.Sprintf("ссылки: %d не проверялись ни разу, %d проверялись больше двух месяцев назад — kbengine audit --check links",
+		never, stale)
 }
 
 type namedAudit struct {
@@ -424,6 +453,9 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 	}
 	if check == "all" {
 		return all, true
+	}
+	if check == "links" {
+		return []namedAudit{{"links", func() ([]audit.Finding, error) { return svc.UncheckedLinkIssues(now) }}}, true
 	}
 	for _, a := range all {
 		if a.name == check {

@@ -18,6 +18,7 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	timeout := fs.Duration("timeout", 10*time.Second, "per-request timeout")
 	delay := fs.Duration("delay", 500*time.Millisecond, "pause between requests")
 	limit := fs.Int("limit", 0, "check at most N urls (0 = all)")
+	apply := fs.Bool("apply", false, "record the results in the catalog (drift_check_date / drift_http_code)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -34,6 +35,23 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	printDriftReport(stdout, rep)
+
+	if !*apply {
+		if len(rep.Results) > 0 {
+			fmt.Fprintln(stdout, "\n(результат нигде не сохранён — добавьте --apply, чтобы база запомнила проверку)")
+		}
+		return 0
+	}
+	records := make([]catalogjson.DriftRecord, 0, len(rep.Results))
+	for _, r := range rep.Results {
+		records = append(records, catalogjson.DriftRecord{EntryID: r.EntryID, CheckedAt: r.CheckedAt, Code: r.Code})
+	}
+	n, err := catalogjson.ApplyDrift(*catalogPath, records)
+	if err != nil {
+		fmt.Fprintf(stderr, "drift: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "\nзаписано в каталог: %d запис(ей)\n", n)
 	return 0
 }
 

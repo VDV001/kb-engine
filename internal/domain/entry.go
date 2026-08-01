@@ -69,36 +69,40 @@ type EntryParams struct {
 	// batch-consistency audit.
 	SourceBatch *int
 	SourceDate  *time.Time
+	// DriftCheckDate is when the entry's url was last asked for its status.
+	// Absent means never — which is a fact the base has to be able to state.
+	DriftCheckDate *time.Time
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
 // common invariants and the kind-specific requirements.
 type Entry struct {
-	id            int
-	kind          string
-	title         string
-	category      Category
-	lifecycle     Lifecycle
-	habrID        *int
-	url           string
-	verdict       *Verdict
-	readState     *ReadState
-	publishStage  *PublishStage
-	tags          []string
-	description   string
-	source        string
-	author        string
-	notes         string
-	notesFile     string
-	isTranslation bool
-	supersedesID  *int
-	relatedIDs    []int
-	dateAdded     *time.Time
-	dateCreated   *time.Time
-	version       *Version
-	revision      *int
-	sourceBatch   *int
-	sourceDate    *time.Time
+	id             int
+	kind           string
+	title          string
+	category       Category
+	lifecycle      Lifecycle
+	habrID         *int
+	url            string
+	verdict        *Verdict
+	readState      *ReadState
+	publishStage   *PublishStage
+	tags           []string
+	description    string
+	source         string
+	author         string
+	notes          string
+	notesFile      string
+	isTranslation  bool
+	supersedesID   *int
+	relatedIDs     []int
+	dateAdded      *time.Time
+	dateCreated    *time.Time
+	version        *Version
+	revision       *int
+	sourceBatch    *int
+	sourceDate     *time.Time
+	driftCheckDate *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -121,31 +125,32 @@ func NewEntry(p EntryParams) (Entry, error) {
 		return Entry{}, err
 	}
 	return Entry{
-		id:            p.ID,
-		kind:          p.Kind,
-		title:         p.Title,
-		category:      p.Category,
-		lifecycle:     p.Lifecycle,
-		habrID:        p.HabrID,
-		url:           p.URL,
-		verdict:       p.Verdict,
-		readState:     p.ReadState,
-		publishStage:  p.PublishStage,
-		tags:          cloneTags(p.Tags),
-		description:   p.Description,
-		source:        p.Source,
-		author:        p.Author,
-		notes:         p.Notes,
-		notesFile:     p.NotesFile,
-		isTranslation: p.IsTranslation,
-		supersedesID:  clonePtrInt(p.SupersedesID),
-		relatedIDs:    cloneInts(p.RelatedIDs),
-		dateAdded:     clonePtrTime(p.DateAdded),
-		dateCreated:   clonePtrTime(p.DateCreated),
-		version:       clonePtrVersion(p.Version),
-		revision:      clonePtrInt(p.Revision),
-		sourceBatch:   clonePtrInt(p.SourceBatch),
-		sourceDate:    clonePtrTime(p.SourceDate),
+		id:             p.ID,
+		kind:           p.Kind,
+		title:          p.Title,
+		category:       p.Category,
+		lifecycle:      p.Lifecycle,
+		habrID:         p.HabrID,
+		url:            p.URL,
+		verdict:        p.Verdict,
+		readState:      p.ReadState,
+		publishStage:   p.PublishStage,
+		tags:           cloneTags(p.Tags),
+		description:    p.Description,
+		source:         p.Source,
+		author:         p.Author,
+		notes:          p.Notes,
+		notesFile:      p.NotesFile,
+		isTranslation:  p.IsTranslation,
+		supersedesID:   clonePtrInt(p.SupersedesID),
+		relatedIDs:     cloneInts(p.RelatedIDs),
+		dateAdded:      clonePtrTime(p.DateAdded),
+		dateCreated:    clonePtrTime(p.DateCreated),
+		version:        clonePtrVersion(p.Version),
+		revision:       clonePtrInt(p.Revision),
+		sourceBatch:    clonePtrInt(p.SourceBatch),
+		sourceDate:     clonePtrTime(p.SourceDate),
+		driftCheckDate: clonePtrTime(p.DriftCheckDate),
 	}, nil
 }
 
@@ -330,3 +335,7 @@ func (e Entry) SourceBatch() *int { return clonePtrInt(e.sourceBatch) }
 
 // SourceDate returns when the source material was published, or nil.
 func (e Entry) SourceDate() *time.Time { return clonePtrTime(e.sourceDate) }
+
+// DriftCheckDate returns when the entry's url was last checked, or nil when it
+// never was.
+func (e Entry) DriftCheckDate() *time.Time { return clonePtrTime(e.driftCheckDate) }

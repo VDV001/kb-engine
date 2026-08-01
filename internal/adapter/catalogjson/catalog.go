@@ -87,8 +87,9 @@ type entryDTO struct {
 	Revision flexInt         `json:"revision"`
 	// SourceBatch and SourceDate are determined by the import batch and stored
 	// on every entry (ADR-0002); the batch-consistency audit compares them.
-	SourceBatch flexInt `json:"source_batch"`
-	SourceDate  string  `json:"source_date"`
+	SourceBatch    flexInt `json:"source_batch"`
+	SourceDate     string  `json:"source_date"`
+	DriftCheckDate string  `json:"drift_check_date"`
 }
 
 type catalogDTO struct {
@@ -244,32 +245,37 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 	if err != nil {
 		return domain.Entry{}, fmt.Errorf("source_date: %w", err)
 	}
+	driftChecked, err := parseDate(dto.DriftCheckDate)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("drift_check_date: %w", err)
+	}
 	return domain.NewEntry(domain.EntryParams{
-		ID:            dto.ID,
-		Kind:          tr.kind,
-		Title:         dto.Title,
-		Category:      cat,
-		Lifecycle:     lc,
-		HabrID:        dto.HabrID.pointer(),
-		URL:           dto.URL,
-		Verdict:       tr.verdict,
-		ReadState:     tr.readState,
-		PublishStage:  tr.publishStage,
-		Tags:          dto.Tags,
-		Description:   dto.Description,
-		Source:        dto.Source,
-		Author:        dto.Author,
-		Notes:         dto.Notes,
-		NotesFile:     dto.File,
-		IsTranslation: dto.IsTranslation,
-		SupersedesID:  dto.SupersedesID.pointer(),
-		RelatedIDs:    flexIntsToInts(dto.RelatedIDs),
-		DateAdded:     dateAdded,
-		DateCreated:   dateCreated,
-		Version:       version,
-		Revision:      revision,
-		SourceBatch:   dto.SourceBatch.pointer(),
-		SourceDate:    sourceDate,
+		ID:             dto.ID,
+		Kind:           tr.kind,
+		Title:          dto.Title,
+		Category:       cat,
+		Lifecycle:      lc,
+		HabrID:         dto.HabrID.pointer(),
+		URL:            dto.URL,
+		Verdict:        tr.verdict,
+		ReadState:      tr.readState,
+		PublishStage:   tr.publishStage,
+		Tags:           dto.Tags,
+		Description:    dto.Description,
+		Source:         dto.Source,
+		Author:         dto.Author,
+		Notes:          dto.Notes,
+		NotesFile:      dto.File,
+		IsTranslation:  dto.IsTranslation,
+		SupersedesID:   dto.SupersedesID.pointer(),
+		RelatedIDs:     flexIntsToInts(dto.RelatedIDs),
+		DateAdded:      dateAdded,
+		DateCreated:    dateCreated,
+		Version:        version,
+		Revision:       revision,
+		SourceBatch:    dto.SourceBatch.pointer(),
+		SourceDate:     sourceDate,
+		DriftCheckDate: driftChecked,
 	})
 }
 
