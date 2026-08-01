@@ -295,3 +295,48 @@ func outdatedReasons(e domain.Entry) []string {
 	}
 	return reasons
 }
+
+// IntegrityIssues reports links that point nowhere: a related_ids entry with no
+// such id in the catalog, or one pointing at itself.
+//
+// Nothing on any screen shows this — a broken link simply does not draw, so the
+// graph looks thinner than it is and nobody can tell why. The live catalog had
+// one: a standard referenced 1028104, which is the Habr article number from
+// another entry's URL. An id from a foreign numbering system in a field that
+// expects catalog ids is the same class of defect the flags used to have, and it
+// survived precisely because nothing checked.
+func (s *Service) IntegrityIssues() ([]Finding, error) {
+	c, err := s.loader.Load()
+	if err != nil {
+		return nil, err
+	}
+
+	known := make(map[int]struct{}, len(c.Entries()))
+	for _, e := range c.Entries() {
+		known[e.ID()] = struct{}{}
+	}
+
+	var findings []Finding
+	for _, e := range c.Entries() {
+		var reasons []string
+		for _, r := range e.RelatedIDs() {
+			switch {
+			case r == e.ID():
+				reasons = append(reasons, fmt.Sprintf("related_ids points at itself (%d)", r))
+			default:
+				if _, ok := known[r]; !ok {
+					reasons = append(reasons, fmt.Sprintf("related_ids has no entry %d", r))
+				}
+			}
+		}
+		if len(reasons) > 0 {
+			findings = append(findings, Finding{
+				EntryID: e.ID(),
+				Title:   e.Title(),
+				Current: e.Lifecycle().String(),
+				Reasons: reasons,
+			})
+		}
+	}
+	return findings, nil
+}

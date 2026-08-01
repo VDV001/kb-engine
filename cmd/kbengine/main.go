@@ -357,7 +357,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|age|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -369,7 +369,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|age|all)\n", *check)
 		return 2
 	}
 
@@ -401,6 +401,7 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 		{"canonical", svc.CanonicalCandidates},
 		{"canonical-health", svc.CanonicalHealthIssues},
 		{"supersession", svc.SupersessionIssues},
+		{"integrity", svc.IntegrityIssues},
 		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
 	if check == "all" {

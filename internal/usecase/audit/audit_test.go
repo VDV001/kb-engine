@@ -483,3 +483,64 @@ func TestOutdatedCandidates_skipsTerminalLifecycles(t *testing.T) {
 		t.Error("an active entry with skip-unavailable must stay a candidate")
 	}
 }
+
+// Ссылка в никуда — дефект, который не виден ни на одном экране: связь просто
+// не рисуется. На живом каталоге такая нашлась только при ручном разборе:
+// стандарт ссылался на 1028104 — номер статьи Хабра из URL другой записи, то
+// есть id чужой системы нумерации в поле, которое ждёт id каталога.
+func TestIntegrityIssues_reportsBrokenRelatedIDs(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "A", description: "x", lifecycle: "active", verdict: "keep", relatedIDs: []int{2, 1028104}}),
+		article(t, 2, articleParams{title: "B", description: "y", lifecycle: "active", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).IntegrityIssues()
+	if err != nil {
+		t.Fatalf("IntegrityIssues: %v", err)
+	}
+	if len(findings) != 1 || findings[0].EntryID != 1 {
+		t.Fatalf("findings = %+v, want one for entry 1", findings)
+	}
+	if !strings.Contains(strings.Join(findings[0].Reasons, " "), "1028104") {
+		t.Errorf("reason does not name the missing id: %v", findings[0].Reasons)
+	}
+}
+
+// Запись, ссылающаяся сама на себя, — это не связь, а шум в графе.
+func TestIntegrityIssues_reportsSelfReference(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 7, articleParams{title: "A", description: "x", lifecycle: "active", verdict: "keep", relatedIDs: []int{7}}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).IntegrityIssues()
+	if err != nil {
+		t.Fatalf("IntegrityIssues: %v", err)
+	}
+	if len(findings) != 1 {
+		t.Fatalf("findings = %+v, want one", findings)
+	}
+}
+
+func TestIntegrityIssues_cleanCatalogIsSilent(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "A", description: "x", lifecycle: "active", verdict: "keep", relatedIDs: []int{2}}),
+		article(t, 2, articleParams{title: "B", description: "y", lifecycle: "active", verdict: "keep"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).IntegrityIssues()
+	if err != nil {
+		t.Fatalf("IntegrityIssues: %v", err)
+	}
+	if len(findings) != 0 {
+		t.Errorf("clean catalog reported %+v", findings)
+	}
+}
