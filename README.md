@@ -24,8 +24,12 @@ Built with TDD + DDD + Clean Architecture. Design notes:
 - **Analytics** — growth over time, category sizes, plus an optional curated
   semantic layer (patterns / gaps / contradictions / manifesto).
 - **Changelog** — parse a Keep-a-Changelog `CHANGELOG.md` into structured JSON.
-- **Dashboard** — embedded React + Vite SPA (Overview, Entries, Analytics,
-  Audits, Duplicates, Archives, Summary), served live by the binary.
+- **Dashboard** — embedded React + Vite SPA (Dashboard, Archives, Analytics,
+  Projects, Now, Team, Finances, Health, About), served live by the binary.
+  `Audits` and `Duplicates` merged into `Health` in 0.5.0; `Summary` became
+  `About`.
+- **Entry editing** — `set` changes lifecycle, tags and links in place, keeping
+  fields the domain does not model untouched.
 
 ## Quick start
 
@@ -48,15 +52,32 @@ just build            # or: go build -o bin/kbengine ./cmd/kbengine
 ## Commands
 
 ```
-kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--addr HOST:PORT]
-                      [--now N] [--team T] [--projects P] [--media DIR]
-kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|age|all]
+kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--changelog C]
+                      [--now N] [--team T] [--projects P] [--media DIR] [--addr HOST:PORT]
+kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|integrity|age|all]
 kbengine dedup        --catalog X
+kbengine set          --catalog X --ids 1,2,3 [--lifecycle V] [--add-tag T] [--remove-tag T] [--related IDS]
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
 kbengine audit-tasks  --catalog X [--json] < tasklist
 kbengine changelog    --in CHANGELOG.md --out changelog.json
+kbengine fin          <import|add|list|report|sync> [flags]
 kbengine version
 ```
+
+`set` is the only command that edits existing entries. It rewrites them member by
+member in the order the file already has, so fields the domain does not model are
+carried through untouched, and it applies either every id or none — a typo in one
+id of fifty leaves the catalog exactly as it was:
+
+```sh
+kbengine set --catalog X --ids 809,1087 --lifecycle outdated
+kbengine set --catalog X --ids 42 --add-tag go,harness --remove-tag old
+kbengine set --catalog X --ids 42 --related 469,478      # --related= clears the list
+```
+
+`--check integrity` reports links that point nowhere: a `related_ids` value with
+no such entry, or one pointing at itself. Neither shows up on any screen — a
+broken link simply does not draw.
 
 ## Stack
 
