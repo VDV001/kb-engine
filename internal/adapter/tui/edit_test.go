@@ -62,6 +62,9 @@ func TestModel_changingLifecycleFromTheCard(t *testing.T) {
 	if loader.calls == 0 {
 		t.Error("каталог не перечитан после записи — экран показывает надежду, а не файл")
 	}
+	if view := m.View(); !strings.Contains(view, "dead-end") {
+		t.Errorf("после записи экран не назвал новое значение:\n%s", view)
+	}
 }
 
 func TestModel_changingVerdictFromTheCard(t *testing.T) {
@@ -108,5 +111,37 @@ func TestModel_readOnlyModelIgnoresEditKeys(t *testing.T) {
 
 	if strings.Contains(m.View(), "dead-end") {
 		t.Error("экран только для чтения предложил правку")
+	}
+}
+
+// Успех обязан быть виден так же, как отказ: иначе единственный признак того,
+// что правка прошла, — отсутствие ошибки, а это не признак.
+func TestModel_saysWhatWasWritten(t *testing.T) {
+	m := send(editable(t, &saverSpy{}, &reloadSpy{entries: fixture(t)}), "enter", "v", "down", "enter")
+
+	view := m.View()
+	if !strings.Contains(view, "записано") {
+		t.Errorf("успешная правка молчит:\n%s", view)
+	}
+	if !strings.Contains(view, "вердикт") {
+		t.Errorf("не названо, какое поле изменилось:\n%s", view)
+	}
+}
+
+// Выбор открывается на текущем значении: промахнувшийся Enter не должен
+// поменять состояние записи на первое из списка.
+//
+// Запись берётся НЕ в состоянии active: оно первое в списке, и на нём тест
+// прошёл бы даже с курсором, прибитым к нулю. Проверено подсадкой дефекта.
+func TestModel_pickerStartsOnTheCurrentValue(t *testing.T) {
+	saver := &saverSpy{}
+	entries := []domain.Entry{withLifecycle(t, mustEntry(t, 7, "канонический разбор", "ai-agents", nil), "canonical")}
+	send(tui.NewEditableModel(entries, saver, &reloadSpy{entries: entries}), "enter", "l", "enter")
+
+	if len(saver.got) != 1 {
+		t.Fatalf("записей = %d, want 1", len(saver.got))
+	}
+	if got := saver.got[0].Lifecycle; got != "canonical" {
+		t.Errorf("записано %q, want canonical — выбор открылся не на текущем значении", got)
 	}
 }

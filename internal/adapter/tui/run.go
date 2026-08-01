@@ -17,12 +17,19 @@ type EntryLoader interface {
 
 // Run loads the catalog and hands the terminal to the search screen. It returns
 // after the user quits.
-func Run(loader EntryLoader, in io.Reader, out io.Writer) error {
+//
+// The saver may be nil, and then the screen is read-only: it offers no editing
+// keys at all rather than keys that quietly do nothing.
+func Run(loader EntryLoader, saver EntrySaver, in io.Reader, out io.Writer) error {
 	entries, err := loader.Entries()
 	if err != nil {
 		return fmt.Errorf("load catalog: %w", err)
 	}
-	p := tea.NewProgram(NewModel(entries), tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
+	model := NewModel(entries)
+	if saver != nil {
+		model = NewEditableModel(entries, saver, loader)
+	}
+	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()
 	return err
 }

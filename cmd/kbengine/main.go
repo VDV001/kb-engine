@@ -151,11 +151,24 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	if err := tui.Run(svc, os.Stdin, stdout); err != nil {
+	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// catalogWriter turns an edit made on a card into the same call the set command
+// makes. One write path for both surfaces: a second one would eventually apply
+// different rules to the same file.
+type catalogWriter struct{ path string }
+
+func (w catalogWriter) Save(e tui.Edit) error {
+	_, err := catalogjson.SetFields(w.path, []int{e.ID}, catalogjson.Changes{
+		Lifecycle: e.Lifecycle,
+		Verdict:   e.Verdict,
+	})
+	return err
 }
 
 func runServe(args []string, stdout, stderr io.Writer) int {
