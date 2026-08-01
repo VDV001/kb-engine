@@ -24,6 +24,27 @@ type Reader struct {
 	Root string
 }
 
+// Exists reports whether the write-up is on disk. It implements the audit's
+// ArtefactFiles port.
+//
+// An empty path is answered "no", not "yes": whether an entry without a
+// write-up is worth reporting is the audit's decision, and answering "yes" here
+// would make the same case true in two places — so removing the audit's own
+// guard would change nothing, and no test could tell.
+func (r Reader) Exists(file string) (bool, error) {
+	if strings.TrimSpace(file) == "" {
+		return false, nil
+	}
+	switch _, err := os.Stat(filepath.Join(r.Root, filepath.Clean("/"+file))); {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, fs.ErrNotExist):
+		return false, nil
+	default:
+		return false, fmt.Errorf("stat artefact %s: %w", file, err)
+	}
+}
+
 // VersionOf returns the version declared in the artefact's front matter.
 //
 // A missing file is not an error: the catalog outlived several directory
