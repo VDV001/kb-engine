@@ -211,23 +211,33 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		members = setMember(members, "related_ids", encoded)
 	}
 
-	if ch.Version != "" {
+	members, err = applyVersioning(members, ch)
+	if err != nil {
+		return nil, err
+	}
+
+	return assembleObject(members)
+}
+
+// applyVersioning writes whichever of the two version fields was asked for and
+// removes the other. Validation already ruled out both at once.
+func applyVersioning(members []member, ch Changes) ([]member, error) {
+	switch {
+	case ch.Version != "":
 		encoded, err := marshalNoEscape(ch.Version)
 		if err != nil {
 			return nil, err
 		}
-		members = setMember(dropMember(members, "revision"), "version", encoded)
-	}
-
-	if ch.Revision != 0 {
+		return setMember(dropMember(members, "revision"), "version", encoded), nil
+	case ch.Revision != 0:
 		encoded, err := marshalNoEscape(ch.Revision)
 		if err != nil {
 			return nil, err
 		}
-		members = setMember(dropMember(members, "version"), "revision", encoded)
+		return setMember(dropMember(members, "version"), "revision", encoded), nil
+	default:
+		return members, nil
 	}
-
-	return assembleObject(members)
 }
 
 func editTags(members []member, ch Changes) ([]string, error) {

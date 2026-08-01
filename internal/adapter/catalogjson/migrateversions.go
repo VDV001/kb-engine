@@ -40,29 +40,9 @@ func MigrateVersions(path string, apply bool) (VersionMigration, error) {
 		return VersionMigration{}, err
 	}
 
-	var plan VersionMigration
-	rewritten := make(map[int]json.RawMessage, len(entries))
-
-	for i, raw := range entries {
-		id, err := entryID(raw)
-		if err != nil {
-			return VersionMigration{}, err
-		}
-		decision, err := decideVersion(raw, id)
-		if err != nil {
-			return VersionMigration{}, fmt.Errorf("entry %d: %w", id, err)
-		}
-		switch {
-		case decision.conflict != nil:
-			plan.Undecidable = append(plan.Undecidable, *decision.conflict)
-		case decision.revision > 0:
-			plan.Moved = append(plan.Moved, id)
-			edited, err := moveVersionToRevision(raw, decision.revision)
-			if err != nil {
-				return VersionMigration{}, fmt.Errorf("entry %d: %w", id, err)
-			}
-			rewritten[i] = edited
-		}
+	plan, rewritten, err := planMigration(entries)
+	if err != nil {
+		return VersionMigration{}, err
 	}
 
 	if len(plan.Undecidable) > 0 {
@@ -83,6 +63,39 @@ func MigrateVersions(path string, apply bool) (VersionMigration, error) {
 		return VersionMigration{}, err
 	}
 	return plan, nil
+}
+
+// planMigration decides every entry and returns the plan together with the
+// rewritten entries, keyed by their position. Nothing is written here: the
+// caller stops on conflicts and honours the dry run.
+func planMigration(entries []json.RawMessage) (VersionMigration, map[int]json.RawMessage, error) {
+	var plan VersionMigration
+	rewritten := make(map[int]json.RawMessage, len(entries))
+
+	for i, raw := range entries {
+		id, err := entryID(raw)
+		if err != nil {
+			return VersionMigration{}, nil, err
+		}
+		decision, err := decideVersion(raw, id)
+		if err != nil {
+			return VersionMigration{}, nil, fmt.Errorf("entry %d: %w", id, err)
+		}
+		if decision.conflict != nil {
+			plan.Undecidable = append(plan.Undecidable, *decision.conflict)
+			continue
+		}
+		if decision.revision == 0 {
+			continue
+		}
+		edited, err := moveVersionToRevision(raw, decision.revision)
+		if err != nil {
+			return VersionMigration{}, nil, fmt.Errorf("entry %d: %w", id, err)
+		}
+		plan.Moved = append(plan.Moved, id)
+		rewritten[i] = edited
+	}
+	return plan, rewritten, nil
 }
 
 // versionDecision is what one entry needs: a revision to move to, a conflict
