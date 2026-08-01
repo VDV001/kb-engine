@@ -14,3 +14,13 @@ func validateEnum(raw string, set map[string]struct{}, invalidErr error) error {
 	}
 	return nil
 }
+
+// setOf turns a canonical list into the set used for validation, so a value
+// exists in exactly one place.
+func setOf(values []string) map[string]struct{} {
+	set := make(map[string]struct{}, len(values))
+	for _, v := range values {
+		set[v] = struct{}{}
+	}
+	return set
+}

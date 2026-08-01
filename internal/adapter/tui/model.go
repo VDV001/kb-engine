@@ -27,6 +27,13 @@ type Model struct {
 	cursor  int
 	onCard  bool
 	height  int
+
+	// saver is nil on a read-only screen; picker is open while a value is being
+	// chosen; status carries the last outcome to the person who caused it.
+	saver  EntrySaver
+	loader EntryLoader
+	picker picker
+	status string
 }
 
 // NewModel returns the screen showing every entry.
@@ -53,10 +60,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = max(msg.Height-6, 3)
 		return m, nil
 	case tea.KeyMsg:
-		if m.onCard {
+		switch {
+		case m.picker.open():
+			return m.updatePicker(msg)
+		case m.onCard:
 			return m.updateCard(msg)
+		default:
+			return m.updateList(msg)
 		}
-		return m.updateList(msg)
 	}
 	return m, nil
 }
@@ -67,9 +78,17 @@ func (m Model) updateCard(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.onCard = false
 	case tea.KeyCtrlC:
 		return m, tea.Quit
+	case tea.KeyRunes:
+		// Letters on the card are not search — otherwise leaving the card would
+		// silently change what the list behind it shows. Two of them ask for an
+		// edit instead, and only when this screen may write.
+		switch string(msg.Runes) {
+		case "l":
+			return m.openPicker(fieldLifecycle), nil
+		case "v":
+			return m.openPicker(fieldVerdict), nil
+		}
 	}
-	// Letters on the card are not search: otherwise leaving the card would
-	// silently change what the list behind it shows.
 	return m, nil
 }
 
@@ -107,10 +126,25 @@ func (m Model) search(query string) Model {
 
 // View renders the screen.
 func (m Model) View() string {
-	if m.onCard && len(m.visible) > 0 {
-		return renderCard(m.visible[m.cursor])
+	switch {
+	case m.picker.open():
+		return m.renderPicker()
+	case m.onCard && len(m.visible) > 0:
+		return m.renderCardWithStatus()
+	default:
+		return m.renderList()
 	}
-	return m.renderList()
+}
+
+func (m Model) renderCardWithStatus() string {
+	card := renderCard(m.visible[m.cursor])
+	if m.saver != nil {
+		card += "\n" + styleDim.Render(hintCardEdit)
+	}
+	if m.status != "" {
+		card += "\n" + styleQuery.Render(m.status)
+	}
+	return card
 }
 
 func (m Model) renderList() string {
@@ -176,8 +210,9 @@ func renderCard(e domain.Entry) string {
 }
 
 const (
-	hintList = "печатать — искать · ↑↓ — выбор · Enter — карточка · Esc — выход"
-	hintCard = "Esc — назад к списку"
+	hintList     = "печатать — искать · ↑↓ — выбор · Enter — карточка · Esc — выход"
+	hintCard     = "Esc — назад к списку"
+	hintCardEdit = "l — состояние · v — вердикт"
 )
 
 func lifecycleOf(e domain.Entry) string { return e.Lifecycle().String() }

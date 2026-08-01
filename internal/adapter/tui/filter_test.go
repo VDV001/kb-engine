@@ -96,3 +96,25 @@ func TestFilter_allWordsMustMatch(t *testing.T) {
 		t.Errorf("got %v, want [] — слова из разных записей не должны совпасть", got)
 	}
 }
+
+// withLifecycle rebuilds an entry in another lifecycle state — the constructor
+// takes it up front, and the domain keeps entries immutable.
+func withLifecycle(t *testing.T, e domain.Entry, state string) domain.Entry {
+	t.Helper()
+	life, err := domain.NewLifecycle(state)
+	if err != nil {
+		t.Fatalf("lifecycle %q: %v", state, err)
+	}
+	read, err := domain.NewReadState("read")
+	if err != nil {
+		t.Fatalf("readstate: %v", err)
+	}
+	out, err := domain.NewEntry(domain.EntryParams{
+		ID: e.ID(), Kind: e.Kind(), Title: e.Title(),
+		Category: e.Category(), Lifecycle: life, ReadState: &read, Tags: e.Tags(),
+	})
+	if err != nil {
+		t.Fatalf("rebuild entry: %v", err)
+	}
+	return out
+}
