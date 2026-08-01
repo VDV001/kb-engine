@@ -29,7 +29,9 @@ func artefactParams(t *testing.T, title, file string) domain.EntryParams {
 	}
 }
 
-func catalogWith(t *testing.T, entries ...domain.Entry) *domain.Catalog {
+// catalogOf builds a catalog from ready entries. The neighbouring test file has
+// its own helper keyed by url; artefacts have no url, so this one takes entries.
+func catalogOf(t *testing.T, entries ...domain.Entry) *domain.Catalog {
 	t.Helper()
 	c, err := domain.NewCatalog(entries)
 	if err != nil {
@@ -42,7 +44,7 @@ func catalogWith(t *testing.T, entries ...domain.Entry) *domain.Catalog {
 // путь добавления его отбрасывает: он дедуплицирует по url и молча пропускает
 // всё, у чего url пуст.
 func TestPlanArtefacts_addsAnEntryWithoutAURL(t *testing.T) {
-	c := catalogWith(t)
+	c := catalogOf(t)
 	p := artefactParams(t, "Harness Engineering Defaults v1.3.0", "standards/harness-engineering-defaults/v1.md")
 
 	added, rep, err := ingest.PlanArtefacts(c, []domain.EntryParams{p}, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
@@ -66,13 +68,13 @@ func TestPlanArtefacts_addsAnEntryWithoutAURL(t *testing.T) {
 // Дедуп идёт по файлу, а не по адресу: второй раз добавленный тот же стандарт
 // создал бы две записи об одном файле, и обе были бы «правдой».
 func TestPlanArtefacts_skipsAFileAlreadyInTheCatalog(t *testing.T) {
-	first, _, err := ingest.PlanArtefacts(catalogWith(t),
+	first, _, err := ingest.PlanArtefacts(catalogOf(t),
 		[]domain.EntryParams{artefactParams(t, "Стандарт", "standards/x/v1.md")}, time.Now())
 	if err != nil {
 		t.Fatalf("первый прогон: %v", err)
 	}
 
-	_, rep, err := ingest.PlanArtefacts(catalogWith(t, first...),
+	_, rep, err := ingest.PlanArtefacts(catalogOf(t, first...),
 		[]domain.EntryParams{artefactParams(t, "Стандарт ещё раз", "standards/x/v1.md")}, time.Now())
 	if err != nil {
 		t.Fatalf("второй прогон: %v", err)
@@ -87,7 +89,7 @@ func TestPlanArtefacts_skipsAFileAlreadyInTheCatalog(t *testing.T) {
 func TestPlanArtefacts_skipsADuplicateWithinTheBatch(t *testing.T) {
 	p := artefactParams(t, "Стандарт", "standards/x/v1.md")
 
-	_, rep, err := ingest.PlanArtefacts(catalogWith(t), []domain.EntryParams{p, p}, time.Now())
+	_, rep, err := ingest.PlanArtefacts(catalogOf(t), []domain.EntryParams{p, p}, time.Now())
 	if err != nil {
 		t.Fatalf("PlanArtefacts: %v", err)
 	}
@@ -101,7 +103,7 @@ func TestPlanArtefacts_skipsADuplicateWithinTheBatch(t *testing.T) {
 func TestPlanArtefacts_refusesAnEntryWithoutAFile(t *testing.T) {
 	p := artefactParams(t, "Без файла", "")
 
-	if _, _, err := ingest.PlanArtefacts(catalogWith(t), []domain.EntryParams{p}, time.Now()); err == nil {
+	if _, _, err := ingest.PlanArtefacts(catalogOf(t), []domain.EntryParams{p}, time.Now()); err == nil {
 		t.Fatal("ожидалась ошибка: артефакту нужен файл")
 	} else if !strings.Contains(err.Error(), "Без файла") {
 		t.Errorf("ошибка не называет запись: %v", err)
@@ -114,7 +116,7 @@ func TestPlanArtefacts_abortsTheWholeBatchOnAnInvalidEntry(t *testing.T) {
 	good := artefactParams(t, "Хороший", "standards/a/v1.md")
 	bad := artefactParams(t, "", "standards/b/v1.md") // пустой заголовок
 
-	added, _, err := ingest.PlanArtefacts(catalogWith(t), []domain.EntryParams{good, bad}, time.Now())
+	added, _, err := ingest.PlanArtefacts(catalogOf(t), []domain.EntryParams{good, bad}, time.Now())
 	if err == nil {
 		t.Fatal("ожидалась ошибка на записи без заголовка")
 	}
