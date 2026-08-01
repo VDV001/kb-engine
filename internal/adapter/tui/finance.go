@@ -63,8 +63,8 @@ func (m Model) renderFinances() string {
 	}
 
 	s := m.summary
-	b.WriteString(fmt.Sprintf("расходы %s (%d)  ·  доходы %s (%d)  ·  итог %s\n\n",
-		s.Expenses, s.ExpenseCount, s.Income, s.IncomeCount, s.Net))
+	fmt.Fprintf(&b, "расходы %s (%d)  ·  доходы %s (%d)  ·  итог %s\n\n",
+		s.Expenses, s.ExpenseCount, s.Income, s.IncomeCount, s.Net)
 
 	writeTotals(&b, "по категориям", s.ByCategory)
 	writeTotals(&b, "по счетам", s.ByAccount)
@@ -81,7 +81,7 @@ func writeTotals(b *strings.Builder, title string, rows []finance.CategoryTotal)
 		return
 	}
 	for _, r := range rows[:min(len(rows), financeRows)] {
-		b.WriteString(fmt.Sprintf("  %-24s %12s  %3d\n", r.Category, r.Total, r.Count))
+		fmt.Fprintf(b, "  %-24s %12s  %3d\n", r.Category, r.Total, r.Count)
 	}
 	if len(rows) > financeRows {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  … ещё %d\n", len(rows)-financeRows)))
