@@ -1,6 +1,9 @@
 package domain
 
-import "errors"
+import (
+	"errors"
+	"slices"
+)
 
 // ErrInvalidVerdict is returned when a verdict value is not one of the
 // canonical values.
@@ -16,12 +19,14 @@ type Verdict struct {
 	value string
 }
 
-var canonicalVerdicts = map[string]struct{}{
-	"keep":             {},
-	"consider":         {},
-	"skip":             {},
-	"skip-unavailable": {},
-}
+// verdictOrder is the canonical set in triage order: what to do with the
+// material, from keeping it to finding it gone. The set is built from it.
+var verdictOrder = []string{"keep", "consider", "skip", "skip-unavailable"}
+
+var canonicalVerdicts = setOf(verdictOrder)
+
+// Verdicts returns the canonical verdicts in display order.
+func Verdicts() []string { return slices.Clone(verdictOrder) }
 
 // NewVerdict validates raw against the canonical set and returns a Verdict.
 func NewVerdict(raw string) (Verdict, error) {

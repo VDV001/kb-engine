@@ -2,7 +2,10 @@
 // It has no I/O and no dependency on infrastructure.
 package domain
 
-import "errors"
+import (
+	"errors"
+	"slices"
+)
 
 // ErrInvalidLifecycle is returned when a lifecycle value is not one of the
 // canonical states.
@@ -14,13 +17,16 @@ type Lifecycle struct {
 	value string
 }
 
-var canonicalLifecycles = map[string]struct{}{
-	"active":     {},
-	"canonical":  {},
-	"outdated":   {},
-	"superseded": {},
-	"dead-end":   {},
-}
+// lifecycleOrder is the canonical set, in the order a reader thinks about it:
+// from a live entry to a closed one. The set below is built from this slice, so
+// the list offered for choice and the values accepted on write are one thing —
+// two declarations would drift the first time a state is added.
+var lifecycleOrder = []string{"active", "outdated", "canonical", "superseded", "dead-end"}
+
+var canonicalLifecycles = setOf(lifecycleOrder)
+
+// Lifecycles returns the canonical states in display order.
+func Lifecycles() []string { return slices.Clone(lifecycleOrder) }
 
 // NewLifecycle validates raw against the canonical set and returns a Lifecycle.
 // Matching is strict (case-sensitive); normalizing messy input is a loader
