@@ -10,19 +10,20 @@ import (
 )
 
 type stubChecker struct {
-	codes map[string]int
-	errs  map[string]error
+	codes     map[string]int
+	locations map[string]string
+	errs      map[string]error
 }
 
-func (s stubChecker) Head(url string) (int, error) {
+func (s stubChecker) Head(url string) (drift.Response, error) {
 	if err, ok := s.errs[url]; ok {
-		return 0, err
+		return drift.Response{}, err
 	}
 	code, ok := s.codes[url]
 	if !ok {
-		return 0, errors.New("unexpected url " + url)
+		return drift.Response{}, errors.New("unexpected url " + url)
 	}
-	return code, nil
+	return drift.Response{Code: code, Location: s.locations[url]}, nil
 }
 
 type fixedLoader struct{ c *domain.Catalog }
@@ -189,5 +190,44 @@ func TestScan_limitStopsEarlyAndSaysSo(t *testing.T) {
 	}
 	if sum := len(rep.Results) + len(rep.Unreachable) + rep.WithoutURL + rep.NotAttempted; sum != rep.TotalEntries {
 		t.Fatalf("buckets sum to %d, catalog has %d", sum, rep.TotalEntries)
+	}
+}
+
+// Habr moved 179 of the catalog's addresses: a company renamed itself, articles
+// crossed between sections. The old address still redirects, so the link works
+// — but the catalog stores an address that is no longer the canonical one, and
+// the day habr drops those redirects all 179 die at once.
+func TestScan_carriesTheRedirectTarget(t *testing.T) {
+	c := catalogOf(t, entry(t, 51, "https://habr.com/ru/companies/pgk/articles/1013700/"))
+	checker := stubChecker{
+		codes:     map[string]int{"https://habr.com/ru/companies/pgk/articles/1013700/": 302},
+		locations: map[string]string{"https://habr.com/ru/companies/pgk/articles/1013700/": "https://habr.com/ru/companies/pgkdigital/articles/1013700/"},
+	}
+
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if got := rep.Results[0].Location; got != "https://habr.com/ru/companies/pgkdigital/articles/1013700/" {
+		t.Fatalf("Location = %q, want the redirect target", got)
+	}
+	moved := rep.Moved()
+	if len(moved) != 1 || moved[0].EntryID != 51 {
+		t.Fatalf("Moved() = %+v, want the one redirected entry", moved)
+	}
+}
+
+// A redirect without a target tells the owner nothing to act on, so it must not
+// appear in the list of addresses to update.
+func TestReport_movedSkipsRedirectsWithoutATarget(t *testing.T) {
+	c := catalogOf(t, entry(t, 1, "https://example.com/x"))
+	checker := stubChecker{codes: map[string]int{"https://example.com/x": 302}}
+
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if got := rep.Moved(); len(got) != 0 {
+		t.Fatalf("Moved() = %+v, want none — there is no new address to write", got)
 	}
 }
