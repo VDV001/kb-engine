@@ -42,6 +42,11 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	if err := checkArtefactExists(*catalogPath, *file); err != nil {
+		fmt.Fprintf(stderr, "add: --file: %v\n", err)
+		return 2
+	}
+
 	params, err := artefactParams(*title, *category, *file, *description, *tags, *version, *lifecycle, *source)
 	if err != nil {
 		fmt.Fprintf(stderr, "add: %v\n", err)

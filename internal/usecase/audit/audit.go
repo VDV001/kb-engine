@@ -39,6 +39,9 @@ type Service struct {
 	// artefactVersions is optional: only the version-drift audit needs it, and
 	// that audit refuses to run without one rather than reporting a clean sheet.
 	artefactVersions ArtefactVersions
+	// artefactFiles is optional in the same way: only the missing-file audit
+	// needs it, and it refuses to run without one.
+	artefactFiles ArtefactFiles
 }
 
 // NewService returns a Service backed by loader.

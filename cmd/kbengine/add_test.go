@@ -9,9 +9,26 @@ import (
 	"testing"
 )
 
+// emptyCatalog lays the catalog out the way the real base does — under _data/,
+// with the write-ups beside it — because add now refuses a --file that points
+// at nothing, and the path is resolved against the base the catalog sits in.
+// The two artefacts these tests name are created for the same reason.
 func emptyCatalog(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "catalog.json")
+	root := t.TempDir()
+	for _, rel := range []string{"standards/harness-engineering-defaults/v1.md", "standards/x/v1.md"} {
+		full := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir: %v", err)
+		}
+		if err := os.WriteFile(full, []byte("# artefact\n"), 0o600); err != nil {
+			t.Fatalf("write artefact: %v", err)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(root, "_data"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	path := filepath.Join(root, "_data", "catalog.json")
 	if err := os.WriteFile(path, []byte(`{"entries":[],"last_updated":"2026-08-01"}`), 0o600); err != nil {
 		t.Fatalf("write catalog: %v", err)
 	}

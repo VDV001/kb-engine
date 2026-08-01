@@ -8,7 +8,6 @@ import (
 	"maps"
 	"net/http"
 	"os"
-	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"strconv"
@@ -416,7 +415,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|links|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -428,10 +427,12 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	svc := audit.NewService(catalogjson.FileLoader{Path: *catalogPath})
 	// Artefact paths in the catalog are relative to the KB root, which is the
 	// parent of the _data directory the catalog lives in.
-	svc.WithArtefactVersions(artefactfs.Reader{Root: filepath.Dir(filepath.Dir(*catalogPath))})
+	artefacts := artefactfs.Reader{Root: artefactRoot(*catalogPath)}
+	svc.WithArtefactVersions(artefacts)
+	svc.WithArtefactFiles(artefacts)
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|links|age|all)\n", *check)
 		return 2
 	}
 
@@ -494,6 +495,7 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 		{"supersession", svc.SupersessionIssues},
 		{"integrity", svc.IntegrityIssues},
 		{"versions", svc.VersionDriftIssues},
+		{"files", svc.MissingFileIssues},
 		{"batch", svc.BatchConsistencyIssues},
 		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
@@ -549,6 +551,10 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	parsed, err := parseIDs(*ids)
 	if err != nil {
 		fmt.Fprintf(stderr, "set: --ids: %v\n", err)
+		return 2
+	}
+	if err := checkArtefactExists(*catalogPath, *notesFile); err != nil {
+		fmt.Fprintf(stderr, "set: --file: %v\n", err)
 		return 2
 	}
 
