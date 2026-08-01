@@ -26,8 +26,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   отказывался заводить запись для конспекта, чей путь уже стоял на статьях,
   которые его цитируют. Теперь каждый разбор — запись, которой файл принадлежит,
   а статьи ссылаются на неё через `related_ids`. План по умолчанию, запись по
-  `--apply`, идемпотентна. На живой базе: 333 записи переехали на ссылку,
-  разборов заведено 50, записей с `file` стало 122 вместо 405.
+  `--apply`, идемпотентна. На живой базе сотни записей перешли на ссылку,
+  и поле `file` осталось только у тех, кому оно принадлежит.
 - **`audit --check files`** — записи, чей конспект не лежит на диске. Раньше
   сказать это мог только написанный от руки скрипт. Проверка дешёвая (`stat`),
   поэтому входит в `--check all` — в отличие от `--check links`.
@@ -99,7 +99,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   зависимостей с двух до четырёх и добавили около мегабайта к бинарю.
 
 - **`kbengine drift` — проверка живости ссылок.** Первая с середины мая: покрытие
-  выросло с 786 записей до 1309, нашлись 5 мёртвых адресов и 179 неканонических
+  выросло более чем в полтора раза, нашлись мёртвые адреса и неканонические
   — habr переименовывал компании и переносил статьи между разделами. `--apply`
   записывает результат в каталог (`drift_check_date`, `drift_http_code`),
   `--update-urls` заменяет адрес на канонический из редиректа. **Отчёт начинается
@@ -110,7 +110,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   артефакта и счётчик редакции карточки чужого материала жили в одном поле и
   спорили друг с другом: одна и та же вещь версионировалась то как `1.0.0`, то
   как `5`. Теперь это разные поля, а запись, несущая оба сразу, отвергается
-  доменом. Мигрировано 187 записей.
+  доменом. Затронутые записи мигрированы.
 
 - **Три новые проверки аудита.** `versions` ловит отставание копии версии в
   каталоге от front matter файла — на живой базе нашлись два стандарта, у которых
@@ -139,7 +139,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Changed
 
-- **`audit --check links` намеренно не входит в `--check all`.** 527 записей на
+- **`audit --check links` намеренно не входит в `--check all`.** Сотни записей на
   тот момент не проверялись ни разу, и их список похоронил бы горстку настоящих
   находок. Вместо перечня `all` печатает одну строку-сводку и называет команду,
   которой проверку можно запустить.
@@ -253,7 +253,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 ### Added
 
 - **Health** — one view for catalog hygiene, replacing the `Audits` and
-  `Duplicates` tabs. Neither had enough to fill a top-level tab: on 1340
+  `Duplicates` tabs. Neither had enough to fill a top-level tab: on the owner's
   entries dedup finds one group and supersession none. Machine reasons are
   translated and grouped, so `verdict:skip-unavailable` becomes one collapsed
   section «Автор снял статью · 48» instead of the same badge printed fifty-one
@@ -333,7 +333,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   «Name: description» and gets cut at the colon, a tag label is a name and a
   colon inside it belongs to the name.
 - **Translation as a field** — `is_translation` replaces the `[Перевод]` prefix
-  that used to live inside the title. Sixty entries carried it that way, and it
+  that used to live inside the title. Dozens of entries carried it that way, and it
   would have stayed Russian through any interface translation, because it sat
   in content rather than in data. The archive shows a badge and filters on it.
 - **Tag filter and a clickable tag cloud** — there was no way to filter by tag
@@ -375,7 +375,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
     is read rarely.
   - The activity strip counts by `date_added`, where the original counted by
     `date_created` under a caption promising added entries. On this catalog
-    those are different facts: 862 entries carry only `date_added`, 461 only
+    those are different facts: most entries carry only `date_added`, many only
     `date_created`.
   - The second KPI is throughput over 30 days against the previous 30. It used
     to be "categories", which the donut below already answers; throughput was
@@ -420,7 +420,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 ### Changed
 
 - Catalog statuses are an English enum under future i18n (`consider` rather
-  than a transliteration); 712 entries migrated, and the legacy Python
+  than a transliteration); the affected entries migrated, and the legacy Python
   dashboard was updated in the same step — it compared the status against a
   literal in five places.
 - One loading hook instead of four copies, with an architectural gate keeping
