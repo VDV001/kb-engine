@@ -272,6 +272,31 @@ func (e Entry) DateAdded() *time.Time { return clonePtrTime(e.dateAdded) }
 // DateCreated returns when the source content was created, or nil.
 func (e Entry) DateCreated() *time.Time { return clonePtrTime(e.dateCreated) }
 
+// ownArtefactTrees are the paths under which the owner's own writing lives.
+var ownArtefactTrees = []string{"standards/", "creations/", "docs/"}
+
+// ownArtefactCategories are the categories that are owner output by definition.
+var ownArtefactCategories = map[string]struct{}{"creations": {}, "standards": {}}
+
+// IsOwnArtefact reports whether the entry is something the owner wrote and
+// versions himself — a standard, an article draft, a course module, a deep-read
+// write-up — as opposed to material collected from elsewhere.
+//
+// It decides which notion of version the entry may carry: an own artefact has a
+// semver that also lives in the file itself; someone else's material has at
+// most a revision counter for the card.
+func (e Entry) IsOwnArtefact() bool {
+	if _, ok := ownArtefactCategories[e.category.String()]; ok {
+		return true
+	}
+	for _, tree := range ownArtefactTrees {
+		if strings.HasPrefix(e.notesFile, tree) {
+			return true
+		}
+	}
+	return false
+}
+
 // Version returns the semver of an owner artefact, or nil when the entry is not
 // one. The catalog's copy can fall behind the artefact file, which is what the
 // version audit compares.
