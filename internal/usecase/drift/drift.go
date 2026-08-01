@@ -51,6 +51,9 @@ type Report struct {
 	Unreachable []Unreachable
 	// WithoutURL counts entries the scan could not even attempt.
 	WithoutURL int
+	// NotAttempted counts entries left untouched because Limit was reached. A
+	// partial scan must never read as a complete one.
+	NotAttempted int
 	// TotalEntries is the catalog size, so a reader can see the coverage of
 	// this scan without computing it.
 	TotalEntries int
@@ -85,6 +88,9 @@ func (r Report) Actionable() []Result {
 type Service struct {
 	loader  CatalogLoader
 	checker LinkChecker
+	// Limit caps how many urls are asked (0 = all). A full pass over the live
+	// catalog is 1313 requests, so a first run is usually a sample.
+	Limit int
 }
 
 // NewService returns a Service backed by loader and checker.
@@ -100,12 +106,18 @@ func (s *Service) Scan(now time.Time) (Report, error) {
 	}
 
 	rep := Report{TotalEntries: len(c.Entries())}
+	asked := 0
 	for _, e := range c.Entries() {
 		url := e.URL()
 		if url == "" {
 			rep.WithoutURL++
 			continue
 		}
+		if s.Limit > 0 && asked >= s.Limit {
+			rep.NotAttempted++
+			continue
+		}
+		asked++
 		code, err := s.checker.Head(url)
 		if err != nil {
 			rep.Unreachable = append(rep.Unreachable, Unreachable{

@@ -158,3 +158,36 @@ func TestScan_stampsEveryResult(t *testing.T) {
 		t.Fatalf("CheckedAt = %v, want %v", rep.Results[0].CheckedAt, when)
 	}
 }
+
+// A full scan of the live catalog is 1313 requests at half a second each. The
+// limit exists so a first run can be a sample — and the report must then say
+// the coverage is partial, not look like a complete scan.
+func TestScan_limitStopsEarlyAndSaysSo(t *testing.T) {
+	c := catalogOf(t,
+		entry(t, 1, "https://example.com/a"),
+		entry(t, 2, "https://example.com/b"),
+		entry(t, 3, "https://example.com/c"),
+	)
+	checker := stubChecker{codes: map[string]int{
+		"https://example.com/a": 200,
+		"https://example.com/b": 200,
+		"https://example.com/c": 200,
+	}}
+
+	svc := drift.NewService(fixedLoader{c}, checker)
+	svc.Limit = 2
+
+	rep, err := svc.Scan(time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(rep.Results) != 2 {
+		t.Fatalf("checked %d urls, want 2", len(rep.Results))
+	}
+	if rep.NotAttempted != 1 {
+		t.Fatalf("NotAttempted = %d, want 1 — a partial scan must not read as a complete one", rep.NotAttempted)
+	}
+	if sum := len(rep.Results) + len(rep.Unreachable) + rep.WithoutURL + rep.NotAttempted; sum != rep.TotalEntries {
+		t.Fatalf("buckets sum to %d, catalog has %d", sum, rep.TotalEntries)
+	}
+}
