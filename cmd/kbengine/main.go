@@ -5,10 +5,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -38,38 +40,43 @@ func main() {
 
 // run dispatches a subcommand and returns the process exit code. It takes its
 // I/O as parameters so it is testable without touching os globals.
+// commands maps a verb to its handler. A table rather than a switch: every new
+// command was making the dispatcher itself more complex, though dispatching
+// never got harder.
+var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"set":         runSet,
+	"audit":       runAudit,
+	"audit-tasks": func(a []string, o, e io.Writer) int { return runAuditTasks(a, os.Stdin, o, e) },
+	"changelog":   runChangelog,
+	"dedup":       runDedup,
+	"drift":       runDrift,
+	"fin":         runFin,
+	"inbox":       runInbox,
+	"migrate":     runMigrate,
+	"serve":       runServe,
+	"version":     func(_ []string, o, _ io.Writer) int { return runVersion(o) },
+}
+
+// usageLine lists the verbs in a stable order, so the help text does not
+// reshuffle itself between runs the way a map iteration would.
+func usageLine() string {
+	verbs := slices.Sorted(maps.Keys(commands))
+	return "usage: kbengine <command> [flags]\ncommands: " + strings.Join(verbs, ", ")
+}
+
+// run dispatches a subcommand and returns the process exit code. It takes its
+// I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, drift, fin, inbox, migrate, serve, set, version")
+		fmt.Fprintln(stderr, usageLine())
 		return 2
 	}
-	switch args[0] {
-	case "set":
-		return runSet(args[1:], stdout, stderr)
-	case "version":
-		return runVersion(stdout)
-	case "audit":
-		return runAudit(args[1:], stdout, stderr)
-	case "audit-tasks":
-		return runAuditTasks(args[1:], os.Stdin, stdout, stderr)
-	case "changelog":
-		return runChangelog(args[1:], stdout, stderr)
-	case "drift":
-		return runDrift(args[1:], stdout, stderr)
-	case "dedup":
-		return runDedup(args[1:], stdout, stderr)
-	case "fin":
-		return runFin(args[1:], stdout, stderr)
-	case "inbox":
-		return runInbox(args[1:], stdout, stderr)
-	case "migrate":
-		return runMigrate(args[1:], stdout, stderr)
-	case "serve":
-		return runServe(args[1:], stdout, stderr)
-	default:
+	cmd, ok := commands[args[0]]
+	if !ok {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
+	return cmd(args[1:], stdout, stderr)
 }
 
 // buildInfo — версия, коммит и время сборки текущего бинаря. Одно место на
