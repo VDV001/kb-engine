@@ -39,7 +39,7 @@ func StripTrackingParams(raw string) string {
 	// reshuffled query would show up as a change on entries where nothing but
 	// the tracking tail was removed.
 	kept := make([]string, 0, 4)
-	for _, pair := range strings.Split(u.RawQuery, "&") {
+	for pair := range strings.SplitSeq(u.RawQuery, "&") {
 		if pair == "" {
 			continue
 		}

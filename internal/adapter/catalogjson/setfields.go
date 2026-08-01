@@ -32,11 +32,15 @@ type Changes struct {
 	// an entry holding both is one the domain refuses to load.
 	Version  string
 	Revision int
+	// Verdict replaces the entry's triage verdict. It writes the legacy status
+	// field, but only with a value that IS a verdict — not with a read state or
+	// a publish stage, which the same field also carries for other kinds.
+	Verdict string
 }
 
 func (c Changes) empty() bool {
 	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
-		c.Version == "" && c.Revision == 0
+		c.Version == "" && c.Revision == 0 && c.Verdict == ""
 }
 
 // SetFields edits the given entries in the catalog file and returns how many
@@ -91,6 +95,11 @@ func (c Changes) validate(ids []int) error {
 		// a bad value never reaches the file.
 		if _, err := domain.NewVersion(c.Version); err != nil {
 			return fmt.Errorf("--version: %w", err)
+		}
+	}
+	if c.Verdict != "" {
+		if _, err := domain.NewVerdict(c.Verdict); err != nil {
+			return fmt.Errorf("--verdict: %w", err)
 		}
 	}
 	if c.Revision < 0 {
@@ -216,7 +225,39 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 		return nil, err
 	}
 
+	members, err = applyVerdict(members, ch.Verdict)
+	if err != nil {
+		return nil, err
+	}
+
 	return assembleObject(members)
+}
+
+// applyVerdict replaces the entry's verdict, refusing to overwrite a publish
+// stage. The legacy status field holds three different axes depending on the
+// entry's kind, and writing a verdict over a stage would silently change what
+// kind of thing the entry is.
+func applyVerdict(members []member, verdict string) ([]member, error) {
+	if verdict == "" {
+		return members, nil
+	}
+	for _, m := range members {
+		if m.key != "status" {
+			continue
+		}
+		var current string
+		if err := json.Unmarshal(m.val, &current); err != nil {
+			return nil, fmt.Errorf("parse status: %w", err)
+		}
+		if _, err := domain.NewPublishStage(current); err == nil {
+			return nil, fmt.Errorf("status %q is a publish stage, not a verdict — refusing to change what kind of entry this is", current)
+		}
+	}
+	encoded, err := marshalNoEscape(verdict)
+	if err != nil {
+		return nil, err
+	}
+	return setMember(members, "status", encoded), nil
 }
 
 // applyVersioning writes whichever of the two version fields was asked for and
