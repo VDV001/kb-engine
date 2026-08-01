@@ -206,6 +206,22 @@ export function writeupLinks(entries: Entry[]): WriteupLinks {
   return { writeupOf, coverage }
 }
 
+// Формы слова берёт платформа, а не самописный список хвостов: правило для
+// русского уже лежит в Intl, и повторять его руками значило бы завести второй
+// источник истины ради трёх слов.
+const RU_PLURAL = new Intl.PluralRules('ru')
+const ENTRY_FORMS: Record<string, string> = {
+  one: 'запись',
+  few: 'записи',
+  many: 'записей',
+  other: 'записи',
+}
+
+/** «2 записи», «5 записей» — подпись покрытия разбора. */
+export function entriesWord(n: number): string {
+  return ENTRY_FORMS[RU_PLURAL.select(n)] ?? ENTRY_FORMS.other
+}
+
 export interface TagWeight {
   tag: string
   count: number

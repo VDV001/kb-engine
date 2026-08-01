@@ -205,7 +205,11 @@ describe('CatalogView: связь с разбором', () => {
   // вела. Таких записей в базе 122.
   it('не рисует заголовок ссылкой, когда ссылки нет', () => {
     pairView()
-    const heading = screen.getByText('Разбор: MCP')
-    expect(heading.tagName).not.toBe('A')
+    // Все вхождения, а не первое: запись попадает и в список, и в карточку
+    // «последнее добавление», и достаточно одного места, где она снова
+    // притворяется ссылкой.
+    const shown = screen.getAllByText('Разбор: MCP')
+    expect(shown.length).toBeGreaterThan(0)
+    for (const el of shown) expect(el.tagName).not.toBe('A')
   })
 })
