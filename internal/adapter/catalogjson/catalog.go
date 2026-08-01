@@ -80,6 +80,11 @@ type entryDTO struct {
 	RelatedIDs    []flexInt `json:"related_ids"`
 	DateAdded     string    `json:"date_added"`
 	DateCreated   string    `json:"date_created"`
+	// Version holds whatever the file stores: a semver string for an owner
+	// artefact, or a legacy number that actually meant a revision. Revision is
+	// the field written after the migration. mapVersioning sorts them out.
+	Version  json.RawMessage `json:"version"`
+	Revision flexInt         `json:"revision"`
 }
 
 type catalogDTO struct {
@@ -163,6 +168,45 @@ func mapStatus(raw string) (triage, error) {
 	return triage{}, fmt.Errorf("%w: %q", ErrUnknownStatus, raw)
 }
 
+// mapVersioning decides which of the two fields a stored value belongs to. The
+// shape on disk is the whole signal: three components mean an artefact the
+// owner versions himself, anything else numeric is a revision counter.
+//
+// The legacy spellings kept alive here are the ones the live catalog holds:
+// version:1 on 182 entries, "1.0" on five, and a bare "5" on one. They are read
+// as revisions, which is what they always meant.
+func mapVersioning(dto entryDTO) (*domain.Version, *int, error) {
+	revision := dto.Revision.pointer()
+
+	raw := strings.TrimSpace(string(dto.Version))
+	if raw == "" || raw == "null" {
+		return nil, revision, nil
+	}
+	var s string
+	if err := json.Unmarshal(dto.Version, &s); err != nil {
+		s = raw // a bare JSON number arrives unquoted
+	}
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, revision, nil
+	}
+
+	if v, err := domain.NewVersion(s); err == nil {
+		return &v, revision, nil
+	}
+	// Not a semver: the legacy encodings of a revision. "1.0" carries only its
+	// leading number, which is the count the field ever held.
+	head, _, _ := strings.Cut(s, ".")
+	n, err := strconv.Atoi(head)
+	if err != nil {
+		return nil, nil, fmt.Errorf("version %q is neither a semver nor a revision number", s)
+	}
+	if revision != nil {
+		return nil, nil, fmt.Errorf("both a legacy version %q and a revision %d are stored", s, *revision)
+	}
+	return nil, &n, nil
+}
+
 func toEntry(dto entryDTO) (domain.Entry, error) {
 	cat, err := domain.NewCategory(dto.Category)
 	if err != nil {
@@ -188,6 +232,10 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 	if err != nil {
 		return domain.Entry{}, fmt.Errorf("date_created: %w", err)
 	}
+	version, revision, err := mapVersioning(dto)
+	if err != nil {
+		return domain.Entry{}, err
+	}
 	return domain.NewEntry(domain.EntryParams{
 		ID:            dto.ID,
 		Kind:          tr.kind,
@@ -210,6 +258,8 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		RelatedIDs:    flexIntsToInts(dto.RelatedIDs),
 		DateAdded:     dateAdded,
 		DateCreated:   dateCreated,
+		Version:       version,
+		Revision:      revision,
 	})
 }
 
