@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/theme"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // listWindow is how many rows the list shows at once. Fixed rather than read
@@ -34,6 +35,13 @@ type Model struct {
 	loader EntryLoader
 	picker picker
 	status string
+
+	// finances is nil when no ledger is configured; summary and finErr hold the
+	// last report and the reason it failed, so the screen can name either.
+	finances   FinanceLoader
+	onFinances bool
+	summary    finance.Summary
+	finErr     error
 }
 
 // NewModel returns the screen showing every entry.
@@ -63,6 +71,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.picker.open():
 			return m.updatePicker(msg)
+		case m.onFinances:
+			return m.updateFinances(msg)
 		case m.onCard:
 			return m.updateCard(msg)
 		default:
@@ -104,6 +114,10 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if len(m.visible) > 0 {
 			m.onCard = true
 		}
+	case tea.KeyTab:
+		if m.finances != nil {
+			return m.openFinances()
+		}
 	case tea.KeyBackspace:
 		if m.query != "" {
 			runes := []rune(m.query)
@@ -129,6 +143,8 @@ func (m Model) View() string {
 	switch {
 	case m.picker.open():
 		return m.renderPicker()
+	case m.onFinances:
+		return m.renderFinances()
 	case m.onCard && len(m.visible) > 0:
 		return m.renderCardWithStatus()
 	default:

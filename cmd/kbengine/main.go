@@ -144,6 +144,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("tui", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	ledgerPath := fs.String("ledger", "", "path to the finance ledger (enables the finances screen)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -151,8 +152,15 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "tui: --catalog is required")
 		return 2
 	}
+	// No ledger means no finances key at all, rather than a key that opens an
+	// empty screen. The same ledgerFinances the HTTP API uses, so both surfaces
+	// total the same way.
+	var fin tui.FinanceLoader
+	if *ledgerPath != "" {
+		fin = ledgerFinances{ledgerPath: *ledgerPath}
+	}
 	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, os.Stdin, stdout); err != nil {
+	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, fin, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
 	}
