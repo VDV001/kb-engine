@@ -10,6 +10,7 @@ import {
   sortByDate,
   statusOf,
   topTags,
+  writeupLinks,
 } from './catalog'
 
 const entry = (over: Partial<Entry>): Entry => ({
@@ -303,5 +304,52 @@ describe('tag filter', () => {
   it('composes with the other filters', () => {
     const got = filterEntries(data, { ...emptyFilter, tag: 'mcp', search: 'заголовке' })
     expect(got).toHaveLength(0)
+  })
+})
+
+// После ADR-0004 разбор — отдельная запись категории writeups, и связь
+// односторонняя: статья ссылается на свой разбор, разбор на статьи — нет.
+// Поэтому «что разбирает этот разбор» считается обратным индексом, иначе
+// на его карточке видно только то, что она ничего не сообщает.
+describe('writeupLinks', () => {
+  const data = [
+    entry({ id: 1, title: 'Статья A', related_ids: [10] }),
+    entry({ id: 2, title: 'Статья B', related_ids: [10] }),
+    entry({ id: 3, title: 'Статья C', related_ids: [4] }),
+    entry({ id: 4, title: 'Статья D' }),
+    entry({ id: 10, title: 'Разбор: A и B', category: 'writeups', file: 'notes/ab.md' }),
+  ]
+
+  it('points an article at its write-up', () => {
+    const { writeupOf } = writeupLinks(data)
+    expect(writeupOf.get(1)).toBe(10)
+    expect(writeupOf.get(2)).toBe(10)
+  })
+
+  // Связь на обычную запись — не разбор. Категория цели и есть признак:
+  // related_ids несёт любые связи, и считать разбором каждую значило бы
+  // рисовать «Разбор» там, где его нет.
+  it('ignores a related entry that is not a write-up', () => {
+    const { writeupOf } = writeupLinks(data)
+    expect(writeupOf.has(3)).toBe(false)
+  })
+
+  it('counts what a write-up covers, back from the articles', () => {
+    const { coverage } = writeupLinks(data)
+    expect(coverage.get(10)).toBe(2)
+  })
+
+  // Разбор, на который никто не сослался, — не ноль, а отсутствие: ноль
+  // означал бы «проверено, связей нет», а этого мы не знаем.
+  it('leaves an uncited write-up out rather than storing a zero', () => {
+    const { coverage } = writeupLinks([entry({ id: 11, category: 'writeups' })])
+    expect(coverage.has(11)).toBe(false)
+  })
+
+  // Ссылка в никуда не должна ни падать, ни считаться разбором: аудит
+  // integrity такие ловит отдельно, вид обязан просто их пережить.
+  it('survives a link to a missing entry', () => {
+    const { writeupOf } = writeupLinks([entry({ id: 1, related_ids: [999] })])
+    expect(writeupOf.has(1)).toBe(false)
   })
 })

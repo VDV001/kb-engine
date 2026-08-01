@@ -165,6 +165,63 @@ export function pageWindow(current: number, total: number): (number | null)[] {
   return out
 }
 
+/** Категория, в которой живут разборы чужих материалов. Своя запись у разбора
+ * появилась в ADR-0004: до него путь к конспекту стоял полем `file` сразу у
+ * всех статей, которые он разбирает, и одно поле значило две разные вещи. */
+export const WRITEUP_CATEGORY = 'writeups'
+
+export interface WriteupLinks {
+  /** id статьи → id её разбора. */
+  writeupOf: Map<number, number>
+  /** id разбора → сколько записей на него ссылаются. */
+  coverage: Map<number, number>
+}
+
+/**
+ * writeupLinks reads the one-directional article→write-up link in both
+ * directions. The catalog stores it one way on purpose: the article points at
+ * the write-up, and the write-up's own file already lists what it covers. A
+ * view showing the write-up still needs the count, and the only place to get
+ * it is back through the articles.
+ *
+ * Being a write-up is decided by the target's category, not by the link
+ * existing: related_ids carries every kind of relation, and treating each of
+ * them as a write-up would print «Разбор» where there is none.
+ */
+export function writeupLinks(entries: Entry[]): WriteupLinks {
+  const writeups = new Set(
+    entries.filter((e) => e.category === WRITEUP_CATEGORY).map((e) => e.id),
+  )
+  const writeupOf = new Map<number, number>()
+  const coverage = new Map<number, number>()
+  for (const e of entries) {
+    for (const id of e.related_ids ?? []) {
+      // Ссылка в никуда сюда не попадает: её ловит audit --check integrity, а
+      // вид обязан просто пережить её, не рисуя разбор, которого нет.
+      if (!writeups.has(id)) continue
+      writeupOf.set(e.id, id)
+      coverage.set(id, (coverage.get(id) ?? 0) + 1)
+    }
+  }
+  return { writeupOf, coverage }
+}
+
+// Формы слова берёт платформа, а не самописный список хвостов: правило для
+// русского уже лежит в Intl, и повторять его руками значило бы завести второй
+// источник истины ради трёх слов.
+const RU_PLURAL = new Intl.PluralRules('ru')
+const ENTRY_FORMS: Record<string, string> = {
+  one: 'запись',
+  few: 'записи',
+  many: 'записей',
+  other: 'записи',
+}
+
+/** «2 записи», «5 записей» — подпись покрытия разбора. */
+export function entriesWord(n: number): string {
+  return ENTRY_FORMS[RU_PLURAL.select(n)] ?? ENTRY_FORMS.other
+}
+
 export interface TagWeight {
   tag: string
   count: number

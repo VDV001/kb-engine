@@ -135,3 +135,81 @@ describe('bottom cards', () => {
     ).toBe(title)
   })
 })
+
+// 52 записи категории writeups лежали в общем списке и выглядели обычными
+// статьями, а 357 связей «статья → её разбор» на экране не существовали
+// вовсе: API их не отдавал. Здесь проверяется то, ради чего делалась
+// миграция ADR-0004 — что от статьи видно дорогу к разбору и обратно.
+describe('CatalogView: связь с разбором', () => {
+  const pair: Entry[] = [
+    {
+      id: 1,
+      title: 'Статья про MCP',
+      category: 'meta',
+      kind: 'article',
+      lifecycle: 'active',
+      url: 'https://habr.com/x',
+      related_ids: [10],
+    },
+    {
+      id: 2,
+      title: 'Вторая статья',
+      category: 'meta',
+      kind: 'article',
+      lifecycle: 'active',
+      url: 'https://habr.com/y',
+      related_ids: [10],
+    },
+    {
+      id: 10,
+      title: 'Разбор: MCP',
+      category: 'writeups',
+      kind: 'article',
+      lifecycle: 'active',
+      file: 'notes/2026-08-02_mcp.md',
+    },
+  ]
+
+  const pairView = (onSearchChange = () => {}) =>
+    render(
+      <CatalogView
+        entries={pair}
+        labels={{ meta: 'Мета: про базу', writeups: 'Разборы: мои конспекты чужих материалов' }}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory=""
+        onPickedCategoryChange={() => {}}
+        health={health}
+        search=""
+        onSearchChange={onSearchChange}
+      />,
+    )
+
+  it('ведёт от статьи к её разбору поиском по номеру', () => {
+    const onSearchChange = vi.fn()
+    pairView(onSearchChange)
+    fireEvent.click(screen.getAllByRole('button', { name: /разбор/i })[0])
+    expect(onSearchChange).toHaveBeenCalledWith('#10')
+  })
+
+  // Число на карточке разбора — единственное место, где видно, что он
+  // покрывает: связь односторонняя, и сам разбор о статьях не знает.
+  it('показывает на разборе, сколько записей он покрывает', () => {
+    pairView()
+    expect(screen.getByText(/разбирает 2/i)).toBeTruthy()
+  })
+
+  // У записи с собственным файлом адреса нет, а заголовок всё равно рисовался
+  // ссылкой с подчёркиванием при наведении — она обещала переход и никуда не
+  // вела. Таких записей в базе 122.
+  it('не рисует заголовок ссылкой, когда ссылки нет', () => {
+    pairView()
+    // Все вхождения, а не первое: запись попадает и в список, и в карточку
+    // «последнее добавление», и достаточно одного места, где она снова
+    // притворяется ссылкой.
+    const shown = screen.getAllByText('Разбор: MCP')
+    expect(shown.length).toBeGreaterThan(0)
+    for (const el of shown) expect(el.tagName).not.toBe('A')
+  })
+})

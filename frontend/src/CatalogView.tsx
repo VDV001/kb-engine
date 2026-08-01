@@ -7,9 +7,12 @@ import {
   filterEntries,
   pageWindow,
   sortByDate,
+  entriesWord,
   statusOf,
   statusStyle,
   tagLabel,
+  writeupLinks,
+  WRITEUP_CATEGORY,
   type CatalogFilter,
 } from './catalog'
 import { Icon } from './components/Icon'
@@ -56,6 +59,50 @@ function Tags({ tags, labels }: { tags?: string[]; labels: Record<string, string
           {tagLabel(t, labels)}
         </span>
       ))}
+    </span>
+  )
+}
+
+/**
+ * Title — заголовок записи. Ссылкой он становится только при адресе: у 122
+ * записей каталога адреса нет вовсе (свой файл вместо чужой статьи), а
+ * подчёркивание при наведении обещало переход, которого не происходило.
+ */
+function Title({ e, className = '' }: { e: Entry; className?: string }) {
+  const base = `font-headline text-base font-bold ${className}`
+  if (!e.url) return <span className={base}>{e.title}</span>
+  return (
+    <a href={e.url} target="_blank" rel="noreferrer" className={`${base} hover:underline`}>
+      {e.title}
+    </a>
+  )
+}
+
+/**
+ * WriteupLink — дорога от статьи к её разбору. Ведёт поиском по номеру, тем
+ * же путём, которым открывает запись гигиена: читают разбор там же, где
+ * читают всё остальное, и заводить ради него вторую поверхность незачем.
+ */
+function WriteupLink({ id, onOpen }: { id: number; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Открыть разбор этой записи (#${id})`}
+      className="flex items-center gap-1 whitespace-nowrap text-secondary hover:underline"
+    >
+      <Icon name="menu_book" className="text-sm" />
+      <span className="font-label text-[10px] font-semibold tracking-wider uppercase">Разбор</span>
+    </button>
+  )
+}
+
+/** Сколько записей покрывает разбор. Считается обратным индексом: связь
+ * односторонняя, и сам разбор о цитирующих его статьях не знает. */
+function Coverage({ n }: { n: number }) {
+  return (
+    <span className="whitespace-nowrap font-label text-[10px] tracking-wider uppercase text-on-surface-variant">
+      Разбирает {n} {entriesWord(n)}
     </span>
   )
 }
@@ -158,6 +205,21 @@ export function CatalogView({
   // «последнее добавление», которое меняется от фильтра, — это уже не то, что
   // подписано на карточке.
   const newest = useMemo(() => sortByDate(entries)[0], [entries])
+
+  // Связь считается по всему каталогу, а не по текущей выдаче: разбор и
+  // статья почти никогда не попадают в одну страницу фильтра, и счёт по
+  // видимому куску показывал бы «разбирает 1» там, где записей десять.
+  const { writeupOf, coverage } = useMemo(() => writeupLinks(entries), [entries])
+  // Открыть разбор — это поиск по его номеру: тот же путь, которым гигиена
+  // открывает свою находку. Фильтры при этом снимаются, иначе искомая запись
+  // может не пройти сквозь них и экран окажется пустым.
+  const openEntry = (id: number) => {
+    setFilter(emptyFilter)
+    onPickedTagChange('')
+    onPickedCategoryChange('')
+    onSearchChange(`#${id}`)
+    setPage(1)
+  }
 
   const set = (patch: Partial<CatalogFilter>) => {
     setFilter((f) => ({ ...f, ...patch }))
@@ -417,14 +479,7 @@ export function CatalogView({
                   </span>
                   <Status e={e} />
                 </div>
-                <a
-                  href={e.url || undefined}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-headline text-base font-bold hover:underline"
-                >
-                  {e.title}
-                </a>
+                <Title e={e} />
                 {/* Метка, а не слово в заголовке: заголовок принадлежит
                     автору оригинала, а «перевод» — это про запись. */}
                 {e.is_translation && (
@@ -440,7 +495,15 @@ export function CatalogView({
                     {e.description.length > 150 ? `${e.description.slice(0, 150)}…` : e.description}
                   </p>
                 )}
-                <Tags tags={e.tags} labels={tagLabels} />
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <Tags tags={e.tags} labels={tagLabels} />
+                  {writeupOf.has(e.id) && (
+                    <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
+                  )}
+                  {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
+                    <Coverage n={coverage.get(e.id)!} />
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -467,6 +530,15 @@ export function CatalogView({
                     </span>
                     <Tags tags={e.tags} labels={tagLabels} />
                     <Status e={e} />
+                    {/* Дорога к разбору стоит среди метаданных записи, а не
+                        под текстом: это свойство записи, как её статус или
+                        категория, и искать его глазами в другом месте не надо. */}
+                    {writeupOf.has(e.id) && (
+                      <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
+                    )}
+                    {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
+                      <Coverage n={coverage.get(e.id)!} />
+                    )}
                     {e.url && (
                       <a
                         href={e.url}
@@ -481,14 +553,7 @@ export function CatalogView({
                     )}
                   </div>
 
-                  <a
-                    href={e.url || undefined}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-headline text-base font-bold hover:underline"
-                  >
-                    {e.title}
-                  </a>
+                  <Title e={e} />
                   {withDescriptions && e.description && (
                     <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
                       {e.description}
