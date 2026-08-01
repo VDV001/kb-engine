@@ -45,6 +45,7 @@ func main() {
 // command was making the dispatcher itself more complex, though dispatching
 // never got harder.
 var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"add":         runAdd,
 	"set":         runSet,
 	"audit":       runAudit,
 	"audit-tasks": func(a []string, o, e io.Writer) int { return runAuditTasks(a, os.Stdin, o, e) },
