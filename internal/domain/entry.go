@@ -286,11 +286,19 @@ var ownArtefactCategories = map[string]struct{}{"creations": {}, "standards": {}
 // semver that also lives in the file itself; someone else's material has at
 // most a revision counter for the card.
 func (e Entry) IsOwnArtefact() bool {
-	if _, ok := ownArtefactCategories[e.category.String()]; ok {
+	return IsOwnArtefact(e.category.String(), e.notesFile)
+}
+
+// IsOwnArtefact answers the same question for a category and file path that have
+// not been built into an Entry yet — the migration works on raw JSON members and
+// needs the rule before the loader runs. One implementation, so the two callers
+// cannot drift apart.
+func IsOwnArtefact(category, file string) bool {
+	if _, ok := ownArtefactCategories[category]; ok {
 		return true
 	}
 	for _, tree := range ownArtefactTrees {
-		if strings.HasPrefix(e.notesFile, tree) {
+		if strings.HasPrefix(file, tree) {
 			return true
 		}
 	}
