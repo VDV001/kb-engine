@@ -19,6 +19,7 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	delay := fs.Duration("delay", 500*time.Millisecond, "pause between requests")
 	limit := fs.Int("limit", 0, "check at most N urls (0 = all)")
 	apply := fs.Bool("apply", false, "record the results in the catalog (drift_check_date / drift_http_code)")
+	updateURLs := fs.Bool("update-urls", false, "also replace an entry's url with the address its redirect points at (needs --apply)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -35,6 +36,12 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	printDriftReport(stdout, rep)
+	printMoved(stdout, rep, *updateURLs, *apply)
+
+	if *updateURLs && !*apply {
+		fmt.Fprintln(stderr, "drift: --update-urls меняет адреса записей и требует --apply")
+		return 2
+	}
 
 	if !*apply {
 		if len(rep.Results) > 0 {
@@ -44,15 +51,43 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	}
 	records := make([]catalogjson.DriftRecord, 0, len(rep.Results))
 	for _, r := range rep.Results {
-		records = append(records, catalogjson.DriftRecord{EntryID: r.EntryID, CheckedAt: r.CheckedAt, Code: r.Code})
+		records = append(records, catalogjson.DriftRecord{
+			EntryID: r.EntryID, CheckedAt: r.CheckedAt, Code: r.Code, NewURL: r.Location,
+		})
 	}
-	n, err := catalogjson.ApplyDrift(*catalogPath, records)
+	write := catalogjson.ApplyDrift
+	if *updateURLs {
+		write = catalogjson.ApplyDriftWithURLs
+	}
+	n, err := write(*catalogPath, records)
 	if err != nil {
 		fmt.Fprintf(stderr, "drift: %v\n", err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "\nзаписано в каталог: %d запис(ей)\n", n)
 	return 0
+}
+
+// printMoved lists the addresses that redirect elsewhere. It prints whether or
+// not they will be written: the owner has to see what an address change would
+// do before asking for it, and has to know the addresses are stale even if he
+// never asks.
+func printMoved(stdout io.Writer, rep drift.Report, updating, applying bool) {
+	moved := rep.Moved()
+	if len(moved) == 0 {
+		return
+	}
+	verb := "устарели (адрес в базе не канонический)"
+	if updating && applying {
+		verb = "будут обновлены"
+	}
+	fmt.Fprintf(stdout, "\nадреса, отвечающие редиректом — %d %s:\n", len(moved), verb)
+	for _, r := range moved {
+		fmt.Fprintf(stdout, "  id=%d %s\n      → %s\n", r.EntryID, r.URL, r.Location)
+	}
+	if !updating {
+		fmt.Fprintln(stdout, "  (обновить: --update-urls вместе с --apply)")
+	}
 }
 
 // printDriftReport prints what was established and — first — what was not.

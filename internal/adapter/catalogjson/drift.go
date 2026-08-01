@@ -12,6 +12,8 @@ type DriftRecord struct {
 	EntryID   int
 	CheckedAt time.Time
 	Code      int
+	// NewURL is where a redirect points. Written only by ApplyDriftWithURLs.
+	NewURL string
 }
 
 // ApplyDrift records link checks in the catalog and returns how many entries
@@ -25,6 +27,17 @@ type DriftRecord struct {
 // checked entry, drift_http_code only when the answer was not 200. Either every
 // record lands or none does.
 func ApplyDrift(path string, records []DriftRecord) (int, error) {
+	return applyDrift(path, records, false)
+}
+
+// ApplyDriftWithURLs does the same and additionally replaces the entry's url
+// with the redirect target. Separated from ApplyDrift on purpose: the address
+// is what the entry is, and rewriting it must be something the owner asked for.
+func ApplyDriftWithURLs(path string, records []DriftRecord) (int, error) {
+	return applyDrift(path, records, true)
+}
+
+func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) {
 	if len(records) == 0 {
 		return 0, nil
 	}
@@ -49,7 +62,7 @@ func ApplyDrift(path string, records []DriftRecord) (int, error) {
 		if !ok {
 			continue
 		}
-		edited, err := applyDriftToEntry(raw, rec)
+		edited, err := applyDriftToEntry(raw, rec, withURLs)
 		if err != nil {
 			return 0, fmt.Errorf("entry %d: %w", id, err)
 		}
@@ -77,10 +90,18 @@ func ApplyDrift(path string, records []DriftRecord) (int, error) {
 	return updated, nil
 }
 
-func applyDriftToEntry(raw json.RawMessage, rec DriftRecord) (json.RawMessage, error) {
+func applyDriftToEntry(raw json.RawMessage, rec DriftRecord, withURLs bool) (json.RawMessage, error) {
 	members, err := readTopLevel(raw)
 	if err != nil {
 		return nil, err
+	}
+
+	if withURLs && rec.NewURL != "" {
+		url, err := marshalNoEscape(rec.NewURL)
+		if err != nil {
+			return nil, err
+		}
+		members = setMember(members, "url", url)
 	}
 
 	date, err := marshalNoEscape(rec.CheckedAt.Format("2006-01-02"))
