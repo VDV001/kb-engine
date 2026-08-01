@@ -74,7 +74,10 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 	}
 	var findings []Finding
 	for _, e := range c.Entries() {
-		if e.Lifecycle().IsOutdated() {
+		// Пропускаются все терминальные состояния, а не одно outdated: dead-end и
+		// superseded — тоже уже принятые решения, и предлагать по ним работу
+		// значит показывать 49 находок там, где её ноль.
+		if e.Lifecycle().IsTerminal() {
 			continue
 		}
 		if reasons := outdatedReasons(e); len(reasons) > 0 {

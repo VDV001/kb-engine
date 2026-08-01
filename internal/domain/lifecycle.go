@@ -41,7 +41,24 @@ const (
 	lifecycleOutdated   = "outdated"
 	lifecycleCanonical  = "canonical"
 	lifecycleSuperseded = "superseded"
+	lifecycleDeadEnd    = "dead-end"
 )
+
+// IsTerminal reports whether the entry has already been dealt with and needs no
+// further lifecycle decision: outdated says exactly that, dead-end says the
+// trail stops here, superseded says another entry took over.
+//
+// Audits ask this before proposing work. A suggestion that repeats a decision
+// already made is not advice: on the live catalog 49 of 52 «outdated candidates»
+// were entries long since filed as dead-end, and acting on that list would have
+// replaced a specific state with a vaguer one.
+func (l Lifecycle) IsTerminal() bool {
+	switch l.value {
+	case lifecycleOutdated, lifecycleDeadEnd, lifecycleSuperseded:
+		return true
+	}
+	return false
+}
 
 // IsOutdated reports whether the lifecycle is the outdated state.
 func (l Lifecycle) IsOutdated() bool {

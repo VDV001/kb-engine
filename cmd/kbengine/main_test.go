@@ -251,3 +251,61 @@ func TestRun_noArgs(t *testing.T) {
 		t.Fatal("expected non-zero exit with no args")
 	}
 }
+
+// Правка каталога из терминала. До неё любое изменение lifecycle, тегов или
+// связей шло мимо движка сторонним скриптом — тот же класс, что уже кусал,
+// когда в каталог писали в обход.
+func TestRun_set_changesLifecycleAndReportsCount(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"A","url":"https://h/1/","category":"golang","status":"keep","lifecycle":"canonical"},
+		{"id":2,"habr_id":2,"title":"B","url":"https://h/2/","category":"golang","status":"keep","lifecycle":"active"}
+	]}`)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"set", "--catalog", path, "--ids", "1,2", "--lifecycle", "outdated"}, &out, &errb); code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "2") {
+		t.Errorf("output does not report how many changed: %s", out.String())
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if strings.Contains(string(raw), `"canonical"`) {
+		t.Errorf("lifecycle not changed:\n%s", raw)
+	}
+}
+
+// Ошибочное значение не должно доехать до файла: домен знает список, и знать
+// его должен один раз он, а не каждый вызывающий.
+func TestRun_set_rejectsUnknownLifecycleBeforeWriting(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"A","url":"https://h/1/","category":"golang","status":"keep","lifecycle":"active"}
+	]}`)
+	before, _ := os.ReadFile(path)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"set", "--catalog", path, "--ids", "1", "--lifecycle", "неведомо"}, &out, &errb); code == 0 {
+		t.Fatal("expected a non-zero exit for an unknown lifecycle")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Error("file was written despite the rejected value")
+	}
+}
+
+func TestRun_set_requiresSomethingToChange(t *testing.T) {
+	path := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"A","url":"https://h/1/","category":"golang","status":"keep","lifecycle":"active"}
+	]}`)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"set", "--catalog", path, "--ids", "1"}, &out, &errb); code == 0 {
+		t.Fatal("expected a non-zero exit when no change was requested")
+	}
+	if !strings.Contains(errb.String(), "--lifecycle") {
+		t.Errorf("message does not say what to pass: %s", errb.String())
+	}
+}
