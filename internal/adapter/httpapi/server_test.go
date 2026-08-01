@@ -45,8 +45,16 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
 		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
 		Tags: []string{"go"}, DateAdded: &added, DateCreated: &created,
+		RelatedIDs: []int{2},
 	})
-	return []domain.Entry{e}, nil
+	// Разбор — отдельная запись, а не поле первой: после ADR-0004 конспект
+	// живёт собственной записью, у которой есть файл и нет адреса.
+	wcat, _ := domain.NewCategory("writeups")
+	w, _ := domain.NewEntry(domain.EntryParams{
+		ID: 2, Kind: "article", Title: "Разбор: Hello", Category: wcat, Lifecycle: lc,
+		ReadState: &rs, NotesFile: "notes/2026-08-02_hello.md", DateAdded: &added,
+	})
+	return []domain.Entry{e, w}, nil
 }
 
 type fakeAudit struct{}
@@ -267,7 +275,7 @@ func TestServer_entries(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(entries) != 1 || entries[0]["id"].(float64) != 1 || entries[0]["title"] != "Hello" {
+	if len(entries) != 2 || entries[0]["id"].(float64) != 1 || entries[0]["title"] != "Hello" {
 		t.Errorf("entries = %v", entries)
 	}
 	// The catalog view sorts and displays by the date an entry joined the
@@ -281,6 +289,37 @@ func TestServer_entries(t *testing.T) {
 	// из 1340 приезжала на фронт без даты вовсе, хотя дата у них есть.
 	if entries[0]["date_created"] != "2026-04-15" {
 		t.Errorf("date_created = %v, want 2026-04-15", entries[0]["date_created"])
+	}
+}
+
+// Связь «статья → её разбор» и путь к собственному тексту записи обязаны
+// доехать до фронта: после ADR-0004 разбор — отдельная запись, и без этих
+// двух полей 357 связей и 122 файла живой базы для дашборда не существуют.
+func TestServer_entriesCarryWriteupLink(t *testing.T) {
+	rec := get(t, newTestServer(), "/api/entries")
+	var entries []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &entries); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("entries = %d, want 2", len(entries))
+	}
+
+	related, ok := entries[0]["related_ids"].([]any)
+	if !ok || len(related) != 1 || related[0].(float64) != 2 {
+		t.Errorf("related_ids = %v, want [2]", entries[0]["related_ids"])
+	}
+	// У статьи файла нет — поле не должно появляться пустым: «нет разбора» и
+	// «разбор по пустому пути» на экране выглядели бы одинаково.
+	if _, present := entries[0]["file"]; present {
+		t.Errorf("file = %v, want absent for an entry without one", entries[0]["file"])
+	}
+
+	if entries[1]["file"] != "notes/2026-08-02_hello.md" {
+		t.Errorf("file = %v, want the write-up path", entries[1]["file"])
+	}
+	if _, present := entries[1]["related_ids"]; present {
+		t.Errorf("related_ids = %v, want absent: связь односторонняя", entries[1]["related_ids"])
 	}
 }
 
