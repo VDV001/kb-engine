@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/daniil/kb-engine/internal/usecase/analytics"
 )
 
 // Pattern is a recurring theme observed across catalog clusters.
@@ -93,6 +95,11 @@ type Config struct {
 	ContradictionResolution string         `json:"contradiction_resolution,omitempty"`
 	// Разбиение категорий по тому, что с ними делает AI. Это ядро первого
 	// манифестного тезиса, и нигде больше в движке его нет.
+	// Graph is the owner's own topology: which categories he considers linked
+	// and what he calls the link. The computed graph knows the first, never the
+	// second.
+	Graph []analytics.CuratedLink `json:"graph,omitempty"`
+
 	AmplifyClusters []string `json:"amplify_clusters,omitempty"`
 	ReplaceClusters []string `json:"replace_clusters,omitempty"`
 	NeutralClusters []string `json:"neutral_clusters,omitempty"`

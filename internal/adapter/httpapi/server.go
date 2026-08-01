@@ -122,7 +122,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
-	mux.HandleFunc("GET /api/graph", handleGraph(an))
+	mux.HandleFunc("GET /api/graph", handleGraph(an, cfg))
 	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
 	mux.HandleFunc("GET /api/engine", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, engine)
@@ -229,12 +229,20 @@ func handleChangelog(chlog ChangelogLoader) http.HandlerFunc {
 	}
 }
 
-func handleGraph(an Analyzer) http.HandlerFunc {
+// handleGraph serves the computed topology with the owner's labels laid over
+// it. The two come from different places on purpose: the catalog knows which
+// categories are connected, and only the config knows what he calls the link.
+func handleGraph(an Analyzer, cfg ConfigLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		g, err := an.Graph()
 		if err != nil {
 			writeError(w, err)
 			return
+		}
+		// A missing or unreadable config must not cost the topology: the graph
+		// is still true without labels, it is only less explained.
+		if c, err := cfg(); err == nil {
+			g = analytics.LabelEdges(g, c.Graph)
 		}
 		writeJSON(w, g)
 	}
