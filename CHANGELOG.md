@@ -8,6 +8,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-08-01
+
+> Движок перестаёт быть витриной: он умеет менять каталог, а не только показывать
+> его. Заодно перестаёт советовать работу, которая давно сделана, и перестаёт
+> белеть на базе, где всё в порядке.
+
 ### Added
 
 - **`kbengine set` — правка записей, которых движку не хватало.** Он умел
@@ -20,28 +26,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   `--status` намеренно отсутствует: легаси-поле смешивает вердикт, состояние
   прочтения и стадию публикации, и запись его одной строкой отменила бы
   разбор, который загрузчик делает при чтении.
-
-### Added
-
 - **`--check integrity` — ссылки, ведущие в никуда.** Битая связь не видна ни на
   одном экране: она просто не рисуется, граф выглядит реже, чем есть, и понять
   почему нельзя. В живом каталоге такая нашлась только при ручном разборе —
   стандарт ссылался на `1028104`, номер статьи Хабра из URL другой записи, то
   есть id чужой системы нумерации в поле, которое ждёт id каталога. Проверка
   ловит это и ссылку записи на саму себя.
-
-### Fixed
-
-- **Аудит перестал предлагать работу, которая уже сделана.** `outdated`-кандидаты
-  пропускали только записи, уже помеченные `outdated`, но не `dead-end` и не
-  `superseded` — тоже принятые решения. На живом каталоге из 52 «кандидатов» 49
-  давно лежали в `dead-end`, и правка по такому списку заменила бы конкретное
-  состояние более общим. Терминальность теперь спрашивается у домена
-  (`Lifecycle.IsTerminal`), и находок стало 5 вместо 54 — **без единой правки
-  данных**.
-
-### Added
-
 - **Team draws the flow it describes.** The cards in «как движутся задачи» were
   already edges — every title reads «A → B», and the section's own note says
   tasks go down and statuses come back up — but the reader had to assemble the
@@ -60,6 +50,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Fixed
 
+- **Аудит перестал предлагать работу, которая уже сделана.** `outdated`-кандидаты
+  пропускали только записи, уже помеченные `outdated`, но не `dead-end` и не
+  `superseded` — тоже принятые решения. На живом каталоге из 52 «кандидатов» 49
+  давно лежали в `dead-end`, и правка по такому списку заменила бы конкретное
+  состояние более общим. Терминальность теперь спрашивается у домена
+  (`Lifecycle.IsTerminal`), и находок стало 5 вместо 54 — **без единой правки
+  данных**.
 - **The dashboard went blank when the catalog had no duplicates.** `/api/duplicates`
   answered `null` rather than `[]` — Go writes a nil slice that way — and the tab
   badge took `.length` of it, so React tore down the whole tree. The page that
