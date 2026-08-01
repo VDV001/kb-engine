@@ -28,8 +28,14 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   Projects, Now, Team, Finances, Health, About), served live by the binary.
   `Audits` and `Duplicates` merged into `Health` in 0.5.0; `Summary` became
   `About`.
-- **Entry editing** — `set` changes lifecycle, tags and links in place, keeping
-  fields the domain does not model untouched.
+- **Entry editing** — `set` changes lifecycle, verdict, tags, versions and links
+  in place, keeping fields the domain does not model untouched.
+- **Terminal UI** — `tui` opens the same catalog in the terminal: type to filter,
+  arrows to move, Enter for the entry card. It reads through the same use case
+  the dashboard does, so the two surfaces cannot disagree.
+- **Link drift** — `drift` checks whether the catalog's urls are still alive,
+  records the verdict, and can replace an address with the canonical one from a
+  redirect. Its report starts with what it did **not** check.
 
 ## Quick start
 
@@ -54,9 +60,13 @@ just build            # or: go build -o bin/kbengine ./cmd/kbengine
 ```
 kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--changelog C]
                       [--now N] [--team T] [--projects P] [--media DIR] [--addr HOST:PORT]
-kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|integrity|age|all]
+kbengine tui          --catalog X
+kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all]
 kbengine dedup        --catalog X
-kbengine set          --catalog X --ids 1,2,3 [--lifecycle V] [--add-tag T] [--remove-tag T] [--related IDS]
+kbengine drift        --catalog X [--apply] [--update-urls] [--limit N] [--delay D] [--timeout T]
+kbengine migrate      <versions|urls> --catalog X [--apply]
+kbengine set          --catalog X --ids 1,2,3 [--lifecycle V] [--verdict V] [--add-tag T] [--remove-tag T]
+                      [--related IDS] [--version SEMVER | --revision N] [--file PATH] [--url ADDR]
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
 kbengine audit-tasks  --catalog X [--json] < tasklist
 kbengine changelog    --in CHANGELOG.md --out changelog.json
@@ -73,7 +83,16 @@ id of fifty leaves the catalog exactly as it was:
 kbengine set --catalog X --ids 809,1087 --lifecycle outdated
 kbengine set --catalog X --ids 42 --add-tag go,harness --remove-tag old
 kbengine set --catalog X --ids 42 --related 469,478      # --related= clears the list
+kbengine set --catalog X --ids 42 --file notes/2026-08-01_x.md --url=   # move a path out of url
 ```
+
+An empty string means "the flag was not passed", never "clear the field": a
+forgotten flag must not wipe data. Clearing is a separate instruction — `--url=`
+and `--related=` — and it conflicts with setting the same field.
+
+`--check links` is deliberately **not** part of `--check all`. With hundreds of
+entries never checked, its output would bury the handful of real findings; `all`
+prints a one-line summary and names the command instead.
 
 `--check integrity` reports links that point nowhere: a `related_ids` value with
 no such entry, or one pointing at itself. Neither shows up on any screen — a
