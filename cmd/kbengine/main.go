@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,10 +38,12 @@ func main() {
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, fin, inbox, serve, version")
+		fmt.Fprintln(stderr, "usage: kbengine <command> [flags]\ncommands: audit, audit-tasks, changelog, dedup, fin, inbox, serve, set, version")
 		return 2
 	}
 	switch args[0] {
+	case "set":
+		return runSet(args[1:], stdout, stderr)
 	case "version":
 		return runVersion(stdout)
 	case "audit":
@@ -409,4 +412,99 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 		}
 	}
 	return nil, false
+}
+
+// runSet edits entries already in the catalog. Until it existed the engine could
+// only append: every change to a lifecycle, a tag or a link went through a
+// script that read the file into a map and wrote it back, which is precisely how
+// fields the domain does not model get lost quietly.
+//
+// Flags mirror what the catalog is actually curated with. --status is absent on
+// purpose: the legacy status field conflates verdict, read-state and publish
+// stage, and a flag that writes it back as one string would undo the split the
+// loader performs on read.
+func runSet(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("set", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	ids := fs.String("ids", "", "comma-separated entry ids to change")
+	lifecycle := fs.String("lifecycle", "", "new lifecycle: active|outdated|canonical|superseded|dead-end")
+	addTags := fs.String("add-tag", "", "comma-separated tags to add")
+	removeTags := fs.String("remove-tag", "", "comma-separated tags to remove")
+	related := fs.String("related", "", "comma-separated ids replacing related_ids (empty list clears it: --related=)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "set: --catalog is required")
+		return 2
+	}
+	parsed, err := parseIDs(*ids)
+	if err != nil {
+		fmt.Fprintf(stderr, "set: --ids: %v\n", err)
+		return 2
+	}
+
+	ch := catalogjson.Changes{
+		Lifecycle:  *lifecycle,
+		AddTags:    splitList(*addTags),
+		RemoveTags: splitList(*removeTags),
+	}
+	// Distinguishes "--related was not passed" from "--related= was passed to
+	// clear the list": both look like an empty string, and only the second is an
+	// instruction.
+	if isFlagSet(fs, "related") {
+		ch.Related, err = parseIDs(*related)
+		if err != nil {
+			fmt.Fprintf(stderr, "set: --related: %v\n", err)
+			return 2
+		}
+		if ch.Related == nil {
+			ch.Related = []int{}
+		}
+	}
+
+	n, err := catalogjson.SetFields(*catalogPath, parsed, ch)
+	if err != nil {
+		fmt.Fprintf(stderr, "set: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "%d entry(ies) updated\n", n)
+	return 0
+}
+
+func isFlagSet(fs *flag.FlagSet, name string) bool {
+	seen := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			seen = true
+		}
+	})
+	return seen
+}
+
+func splitList(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+func parseIDs(s string) ([]int, error) {
+	var out []int
+	for _, p := range splitList(s) {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, fmt.Errorf("%q is not an entry id", p)
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }

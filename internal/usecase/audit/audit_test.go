@@ -448,3 +448,38 @@ func TestSupersessionIssues_reportsHalfDoneMerges(t *testing.T) {
 		t.Error("entry 5 is marked superseded with nothing pointing at it — not flagged")
 	}
 }
+
+// Совет имеет смысл, только если его можно выполнить. Запись в терминальном
+// состоянии уже разобрана: dead-end означает «тупик», superseded — «заменена и
+// хранится для истории», и пометить их устаревшими нечего добавить.
+//
+// На живом каталоге это была не мелочь: из 52 кандидатов 49 уже лежали в
+// dead-end, и массовая правка по такому списку стёрла бы осмысленный статус,
+// заменив его более общим. Аудит должен показывать работу, а не повторять
+// сделанную.
+func TestOutdatedCandidates_skipsTerminalLifecycles(t *testing.T) {
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "Gone", description: "x", lifecycle: "dead-end", verdict: "skip-unavailable"}),
+		article(t, 2, articleParams{title: "Replaced", description: "y", lifecycle: "superseded", verdict: "skip-unavailable"}),
+		article(t, 3, articleParams{title: "Still here", description: "z", lifecycle: "active", verdict: "skip-unavailable"}),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).OutdatedCandidates()
+	if err != nil {
+		t.Fatalf("OutdatedCandidates: %v", err)
+	}
+
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+	if got[1] || got[2] {
+		t.Errorf("terminal lifecycles proposed as candidates: %v", got)
+	}
+	if !got[3] {
+		t.Error("an active entry with skip-unavailable must stay a candidate")
+	}
+}
