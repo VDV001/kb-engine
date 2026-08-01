@@ -49,8 +49,8 @@ func TestGraphEndpoint_carriesCuratedLabels(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("parse body: %v", err)
 	}
-	if got.Edges[0].Label != "MCP/протоколы" {
-		t.Errorf("edge label = %q, want the curated one (direction must not matter)", got.Edges[0].Label)
+	if len(got.Edges[0].Labels) != 1 || got.Edges[0].Labels[0] != "MCP/протоколы" {
+		t.Errorf("edge labels = %v, want the curated one (direction must not matter)", got.Edges[0].Labels)
 	}
 	if got.Labeled != 1 || got.Unlabeled != 1 {
 		t.Errorf("Labeled/Unlabeled = %d/%d, want 1/1", got.Labeled, got.Unlabeled)

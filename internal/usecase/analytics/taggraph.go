@@ -20,12 +20,24 @@ type GraphEdge struct {
 	From   string `json:"from"`
 	To     string `json:"to"`
 	Weight int    `json:"weight"`
+	// Labels are what the owner wrote about this connection. A list, not a
+	// string: seven pairs in the live config carry two or three meanings each.
+	Labels []string `json:"labels,omitempty"`
 }
 
 // Graph is the knowledge topology: categories connected through shared tags.
 type Graph struct {
 	Nodes []GraphNode `json:"nodes"`
 	Edges []GraphEdge `json:"edges"`
+	// Labeled and Unlabeled let the view state how much of the topology was
+	// drawn by hand. Without them a few labelled edges read as a curated graph.
+	Labeled   int `json:"labeled"`
+	Unlabeled int `json:"unlabeled"`
+	// LabelCount is how many labels there are in total — larger than Labeled
+	// whenever a connection carries more than one meaning.
+	LabelCount int `json:"label_count"`
+	// UnplacedLinks are the owner's connections that no computed edge matched.
+	UnplacedLinks []CuratedLink `json:"unplaced_links,omitempty"`
 }
 
 // TagGraph computes the graph from the catalog alone. Nothing is hand-drawn:
