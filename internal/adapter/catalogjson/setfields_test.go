@@ -254,3 +254,36 @@ func TestSetFields_rejectsAnEscapingNotesFile(t *testing.T) {
 		}
 	}
 }
+
+// У записей 1235-1237 в url лежит путь к файлу. Перенести его в file мало —
+// неверный адрес надо убрать, иначе путаница остаётся ровно там, где была.
+func TestSetFields_clearsURLWhenAskedExplicitly(t *testing.T) {
+	path := writeFixture(t)
+
+	if _, err := catalogjson.SetFields(path, []int{2}, catalogjson.Changes{
+		NotesFile: "creations/research/x.md",
+		ClearURL:  true,
+	}); err != nil {
+		t.Fatalf("SetFields: %v", err)
+	}
+
+	e := entryByID(t, load(t, path), 2)
+	if got, ok := e["url"]; ok && got != "" {
+		t.Errorf("url = %v, want cleared", got)
+	}
+	if got := e["file"]; got != "creations/research/x.md" {
+		t.Errorf("file = %v", got)
+	}
+}
+
+// Стереть и записать одним вызовом — это два противоположных намерения.
+func TestSetFields_clearURLConflictsWithURL(t *testing.T) {
+	path := writeFixture(t)
+
+	if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{
+		URL:      "https://h/9/",
+		ClearURL: true,
+	}); err == nil {
+		t.Fatal("expected an error: cannot set and clear the same field")
+	}
+}
