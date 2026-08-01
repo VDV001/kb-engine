@@ -42,11 +42,15 @@ type Changes struct {
 	// path in url and nothing in file.
 	NotesFile string
 	URL       string
+	// ClearURL removes the url instead of replacing it. Kept apart from URL
+	// because an empty string means "the flag was not passed", and a forgotten
+	// flag must never wipe a field.
+	ClearURL bool
 }
 
 func (c Changes) empty() bool {
 	return c.Lifecycle == "" && len(c.AddTags) == 0 && len(c.RemoveTags) == 0 && c.Related == nil &&
-		c.Version == "" && c.Revision == 0 && c.Verdict == "" && c.NotesFile == "" && c.URL == ""
+		c.Version == "" && c.Revision == 0 && c.Verdict == "" && c.NotesFile == "" && c.URL == "" && !c.ClearURL
 }
 
 // SetFields edits the given entries in the catalog file and returns how many
@@ -130,6 +134,9 @@ func (c Changes) validateVersioning() error {
 }
 
 func (c Changes) validateLocations() error {
+	if c.ClearURL && c.URL != "" {
+		return errors.New("--url and clearing the url are opposite instructions: pass one")
+	}
 	if c.URL != "" {
 		if _, err := domain.NewExternalURL(c.URL); err != nil {
 			return fmt.Errorf("--url: %w", err)
@@ -279,6 +286,9 @@ func applyTags(members []member, ch Changes) ([]member, error) {
 // a path in url and an escaping file, so the values are normalised copies of
 // what the domain accepted.
 func applyLocations(members []member, ch Changes) ([]member, error) {
+	if ch.ClearURL {
+		members = dropMember(members, "url")
+	}
 	for _, f := range []struct {
 		key, raw string
 	}{{"file", ch.NotesFile}, {"url", ch.URL}} {
