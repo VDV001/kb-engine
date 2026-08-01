@@ -163,6 +163,13 @@ type entryDTO struct {
 	Author        string   `json:"author,omitempty"`
 	Source        string   `json:"source,omitempty"`
 	IsTranslation bool     `json:"is_translation,omitempty"`
+	// Путь к собственному тексту записи и ссылки на связанные записи. После
+	// ADR-0004 вдвоём они и есть связь «статья → её разбор»: файл принадлежит
+	// той записи, чей он, а цитирующие статьи держат related_ids. Оба поля
+	// опускаются пустыми — «разбора нет» и «разбор по пустому пути» на экране
+	// выглядели бы одинаково.
+	File       string `json:"file,omitempty"`
+	RelatedIDs []int  `json:"related_ids,omitempty"`
 }
 
 func toDTO(e domain.Entry) entryDTO {
@@ -179,6 +186,8 @@ func toDTO(e domain.Entry) entryDTO {
 		Author:        e.Author(),
 		Source:        e.Source(),
 		IsTranslation: e.IsTranslation(),
+		File:          e.NotesFile(),
+		RelatedIDs:    e.RelatedIDs(),
 	}
 	if v := e.Verdict(); v != nil {
 		s := v.String()
