@@ -30,6 +30,9 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   `About`.
 - **Entry editing** — `set` changes lifecycle, verdict, tags, versions and links
   in place, keeping fields the domain does not model untouched.
+- **Own artefacts** — `add` puts a standard, a write-up or a draft into the
+  catalog. Such an entry has no address on the internet: it is identified by the
+  file it lives in, and that file is what the dedup keys on.
 - **Terminal UI** — `tui` opens the same catalog in the terminal: type to filter,
   arrows to move, Enter for the entry card. It reads through the same use case
   the dashboard does, so the two surfaces cannot disagree.
@@ -60,6 +63,8 @@ just build            # or: go build -o bin/kbengine ./cmd/kbengine
 ```
 kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--changelog C]
                       [--now N] [--team T] [--projects P] [--media DIR] [--addr HOST:PORT]
+kbengine add          --catalog X --title T --category C --file PATH [--description D] [--tags T]
+                      [--version SEMVER] [--lifecycle L] [--source S]
 kbengine tui          --catalog X
 kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all]
 kbengine dedup        --catalog X

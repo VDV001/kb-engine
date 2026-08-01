@@ -32,6 +32,9 @@ type legacyEntry struct {
 	SupersedesID *int     `json:"supersedes_id,omitempty"`
 	RelatedIDs   []int    `json:"related_ids,omitempty"`
 	Notes        string   `json:"notes"`
+	File         string   `json:"file,omitempty"`
+	Version      string   `json:"version,omitempty"`
+	Revision     *int     `json:"revision,omitempty"`
 }
 
 // member is one top-level key with its raw value, kept in file order.
@@ -228,7 +231,19 @@ func toLegacy(e domain.Entry) legacyEntry {
 		SupersedesID: e.SupersedesID(),
 		RelatedIDs:   e.RelatedIDs(),
 		Notes:        e.Notes(),
+		File:         e.NotesFile(),
+		Version:      versionString(e),
+		Revision:     e.Revision(),
 	}
+}
+
+// versionString renders the semver of an own artefact, or "" when the entry
+// carries an edition counter instead — the domain refuses to hold both.
+func versionString(e domain.Entry) string {
+	if v := e.Version(); v != nil {
+		return v.String()
+	}
+	return ""
 }
 
 // legacyType maps a domain kind to the legacy "type" field. Bot-imported
