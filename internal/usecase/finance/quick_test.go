@@ -122,3 +122,41 @@ func TestParseQuick_refusesLineWithoutAmount(t *testing.T) {
 		})
 	}
 }
+
+// Название из двух слов — одно слово словаря. «Своя компания» разбиралась как
+// «своя» плюс непонятная «компания», и экран спрашивал про слово, которое уже
+// разобрано: место найдено, а лишний хвост всё равно требовал решения.
+func TestParseQuick_readsMultiWordNames(t *testing.T) {
+	v := finance.Vocabulary{
+		Accounts: map[string]string{"сбер": "Сбербанк", "альфа": "Альфа-Банк"},
+		Places: map[string]finance.PlaceRule{
+			"своякомпания": {Category: "Еда", Subcategory: "Рестораны/кафе", Place: "Своя Компания"},
+			"аражарит":     {Category: "Еда", Subcategory: "Фастфуд", Place: "Ара Жарит"},
+			"яндекстакси":  {Category: "Транспорт", Subcategory: "Такси", Place: "Яндекс Такси"},
+			"такси":        {Category: "Транспорт", Subcategory: "Такси", Place: "Такси"},
+		},
+	}
+	for _, c := range []struct{ name, line, place, account string }{
+		{"два слова", "800 своя компания альфа", "Своя Компания", "Альфа-Банк"},
+		{"два слова без счёта", "320 ара жарит", "Ара Жарит", ""},
+		// Длинное совпадение важнее короткого: «яндекс такси» — своё место, и
+		// разобрать его как «такси» значило бы потерять, у кого куплено.
+		{"длинное совпадение важнее", "418 яндекс такси сбер", "Яндекс Такси", "Сбербанк"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := finance.ParseQuick(c.line, v)
+			if err != nil {
+				t.Fatalf("ParseQuick(%q): %v", c.line, err)
+			}
+			if len(got.Unknown) != 0 {
+				t.Errorf("нераспознанные слова: %v — название из двух слов разорвано", got.Unknown)
+			}
+			if got.Params.Place != c.place {
+				t.Errorf("место = %q, ожидалось %q", got.Params.Place, c.place)
+			}
+			if got.Params.Account != c.account {
+				t.Errorf("счёт = %q, ожидалось %q", got.Params.Account, c.account)
+			}
+		})
+	}
+}
