@@ -53,41 +53,62 @@ func NormalizeWord(w string) string {
 	return w
 }
 
+// maxNameWords is how many neighbouring words may form one name. Three covers
+// what the vocabulary holds («Италиан Пицца», «Заморозка → Вклад») without
+// turning the scan into a search over the whole line.
+const maxNameWords = 3
+
 // ParseQuick reads one line typed the way a person speaks: an amount and a few
 // words. Word order is free — the words name different things, so their
 // position carries nothing.
+//
+// Names of several words are matched before single ones, longest first: «яндекс
+// такси» is a place of its own, and reading it as «такси» would drop where the
+// ride was bought.
 func ParseQuick(line string, v Vocabulary) (QuickEntry, error) {
 	var out QuickEntry
 	out.Params.Kind = domain.KindExpense
 
+	words := strings.Fields(line)
 	var seenAmount bool
-	for _, word := range strings.Fields(line) {
-		key := NormalizeWord(word)
-		if key == "" {
-			continue
-		}
-
+	for i := 0; i < len(words); {
 		// The amount is recognised by being a number, not by position. A second
 		// number is not silently dropped: it is reported like any other word the
 		// engine cannot place.
 		if !seenAmount {
-			if m, err := domain.ParseMoney(word); err == nil {
+			if m, err := domain.ParseMoney(words[i]); err == nil {
 				out.Params.Amount, seenAmount = m, true
+				i++
 				continue
 			}
 		}
 
-		if account, ok := v.Accounts[key]; ok {
-			out.Params.Account = account
-			continue
+		matched := false
+		for n := min(maxNameWords, len(words)-i); n >= 1 && !matched; n-- {
+			key := NormalizeWord(strings.Join(words[i:i+n], ""))
+			if key == "" {
+				continue
+			}
+			switch {
+			case v.Accounts[key] != "":
+				out.Params.Account = v.Accounts[key]
+				matched = true
+			default:
+				if rule, ok := v.Places[key]; ok {
+					out.Params.Category = rule.Category
+					out.Params.Subcategory = rule.Subcategory
+					out.Params.Place = rule.Place
+					matched = true
+				}
+			}
+			if matched {
+				i += n
+			}
 		}
-		if rule, ok := v.Places[key]; ok {
-			out.Params.Category = rule.Category
-			out.Params.Subcategory = rule.Subcategory
-			out.Params.Place = rule.Place
-			continue
+		if !matched {
+			out.Unknown = append(out.Unknown, words[i])
+			i++
 		}
-		out.Unknown = append(out.Unknown, word)
 	}
 
 	if !seenAmount {
