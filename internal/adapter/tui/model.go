@@ -58,9 +58,14 @@ type Model struct {
 	// is being typed; finStatus carries the last write's outcome. Kept apart from
 	// status above: that one belongs to the card, and a note about money written
 	// here would otherwise reappear over an entry the person opened afterwards.
-	ledger    FinanceWriter
-	form      entryForm
-	finStatus string
+	// syncer is nil when no workbook is configured; workbookBehind says whether
+	// a row written here has yet to reach the spreadsheet, so the screen asks for
+	// a sync exactly when one is owed and stops asking once it is done.
+	ledger         FinanceWriter
+	syncer         WorkbookSyncer
+	form           entryForm
+	finStatus      string
+	workbookBehind bool
 }
 
 // NewModel returns the screen showing every entry.

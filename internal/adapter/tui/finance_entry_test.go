@@ -253,3 +253,94 @@ func TestFinancesOffersNoFormWithoutAWriter(t *testing.T) {
 		t.Errorf("read-only screen advertises a key that cannot write\n--- view ---\n%s", view)
 	}
 }
+
+// stubSyncer stands in for the workbook side. It counts calls, because the
+// point of the key is that the terminal runs the same sync the command does —
+// not that it prints something reassuring.
+type stubSyncer struct {
+	report string
+	err    error
+	calls  int
+}
+
+func (s *stubSyncer) Sync() (string, error) {
+	s.calls++
+	return s.report, s.err
+}
+
+func withSyncer(sync *stubSyncer) (tui.Model, *stubFinances, *stubWriter) {
+	fin := &stubFinances{sum: sampleSummary()}
+	w := &stubWriter{}
+	return tui.NewModel(nil).WithFinances(fin).WithFinanceWriter(w).WithWorkbookSyncer(sync), fin, w
+}
+
+// The written row has to reach the workbook without leaving the screen. Until
+// now the only way was to quit, remember the command and type it.
+func TestFinancesSyncsTheWorkbook(t *testing.T) {
+	sync := &stubSyncer{report: "fin sync: pushed 1 row(s) → workbook"}
+	m, _, _ := withSyncer(sync)
+
+	m = press(press(m, tab()), runes("s"))
+
+	if sync.calls != 1 {
+		t.Fatalf("sync called %d time(s), want 1", sync.calls)
+	}
+	if view := m.View(); !strings.Contains(view, "pushed 1 row(s)") {
+		t.Errorf("view does not show what the sync did\n--- view ---\n%s", view)
+	}
+}
+
+// A locked workbook is the common case — the book is open in an editor. It must
+// read as a refusal, not as a quiet success.
+func TestFinancesNamesASyncFailure(t *testing.T) {
+	sync := &stubSyncer{err: errors.New("fin sync: Учёт_финансов.xlsx is open in another program")}
+	m, _, _ := withSyncer(sync)
+
+	m = press(press(m, tab()), runes("s"))
+
+	view := m.View()
+	if !strings.Contains(view, "is open in another program") {
+		t.Errorf("view does not name the refusal\n--- view ---\n%s", view)
+	}
+	if !strings.Contains(view, "не синхронизировано") {
+		t.Errorf("view does not say the sync failed\n--- view ---\n%s", view)
+	}
+}
+
+// The note about the workbook being behind is true right after a write and
+// false right after a sync. Leaving it up would keep telling the person to run
+// a command they just ran from this very screen.
+func TestFinancesDropsTheWorkbookNoteAfterSyncing(t *testing.T) {
+	sync := &stubSyncer{report: "fin sync: pushed 1 row(s) → workbook"}
+	m, _, w := withSyncer(sync)
+
+	m = press(press(m, tab()), runes("a"))
+	m = fill(m, "100")
+	m = fill(m, "Еда")
+	m = press(m, enter())
+	if len(w.got) != 1 {
+		t.Fatalf("ledger written %d time(s), want 1", len(w.got))
+	}
+	if !strings.Contains(m.View(), "Учёт_финансов.xlsx") {
+		t.Fatal("после записи не сказано, что книга отстала")
+	}
+
+	m = press(m, runes("s"))
+
+	if view := m.View(); strings.Contains(view, "Учёт_финансов.xlsx") {
+		t.Errorf("после синхронизации экран всё ещё говорит, что книга отстала\n--- view ---\n%s", view)
+	}
+}
+
+// Without --from there is nothing to sync with, so the key is absent rather
+// than present and inert — the rule every other key on this screen follows.
+func TestFinancesOffersNoSyncKeyWithoutAWorkbook(t *testing.T) {
+	fin := &stubFinances{sum: sampleSummary()}
+	m := tui.NewModel(nil).WithFinances(fin).WithFinanceWriter(&stubWriter{})
+
+	m = press(press(m, tab()), runes("s"))
+
+	if view := m.View(); strings.Contains(view, "s — книга") {
+		t.Errorf("экран без книги предлагает клавишу, которой нечего делать\n--- view ---\n%s", view)
+	}
+}

@@ -15,28 +15,39 @@ type EntryLoader interface {
 	Entries() ([]domain.Entry, error)
 }
 
+// Sources is what the screen may reach. Every field but Entries is optional,
+// and a nil one means the keys that need it are absent rather than present and
+// inert — the rule this screen follows everywhere.
+//
+// Named fields rather than positional arguments: five dependencies read as five
+// nils at the call site, and the next source would make it six.
+type Sources struct {
+	Entries  EntryLoader
+	Saver    EntrySaver
+	Finances FinanceLoader
+	Ledger   FinanceWriter
+	Workbook WorkbookSyncer
+}
+
 // Run loads the catalog and hands the terminal to the search screen. It returns
 // after the user quits.
-//
-// The saver may be nil, and then the screen is read-only: it offers no editing
-// keys at all rather than keys that quietly do nothing. The same holds for fin
-// and ledger: nil means no ledger is configured, so the finances key is simply
-// absent, and a ledger that can be read but not written keeps the entry keys
-// off the same way.
-func Run(loader EntryLoader, saver EntrySaver, fin FinanceLoader, ledger FinanceWriter, in io.Reader, out io.Writer) error {
-	entries, err := loader.Entries()
+func Run(s Sources, in io.Reader, out io.Writer) error {
+	entries, err := s.Entries.Entries()
 	if err != nil {
 		return fmt.Errorf("load catalog: %w", err)
 	}
 	model := NewModel(entries)
-	if saver != nil {
-		model = NewEditableModel(entries, saver, loader)
+	if s.Saver != nil {
+		model = NewEditableModel(entries, s.Saver, s.Entries)
 	}
-	if fin != nil {
-		model = model.WithFinances(fin)
+	if s.Finances != nil {
+		model = model.WithFinances(s.Finances)
 	}
-	if ledger != nil {
-		model = model.WithFinanceWriter(ledger)
+	if s.Ledger != nil {
+		model = model.WithFinanceWriter(s.Ledger)
+	}
+	if s.Workbook != nil {
+		model = model.WithWorkbookSyncer(s.Workbook)
 	}
 	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()

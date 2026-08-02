@@ -29,6 +29,41 @@ func (m Model) WithFinanceWriter(w FinanceWriter) Model {
 	return m
 }
 
+// WorkbookSyncer carries written rows over to the spreadsheet and returns what
+// the sync did, in the words the command uses. The screen shows that line
+// rather than inventing its own — the terminal and this screen cannot then
+// describe the same run differently.
+type WorkbookSyncer interface {
+	Sync() (string, error)
+}
+
+// WithWorkbookSyncer lets the finances screen catch the workbook up. Without a
+// workbook there is nothing to sync with, so the key is absent rather than
+// present and inert.
+func (m Model) WithWorkbookSyncer(s WorkbookSyncer) Model {
+	m.syncer = s
+	return m
+}
+
+// syncWorkbook runs the sync and reports it in one line.
+//
+// The note about the workbook lagging is dropped only on success: after a
+// refusal the book really is still behind, and clearing the warning then would
+// leave the person believing the opposite of what happened.
+func (m Model) syncWorkbook() Model {
+	if m.syncer == nil {
+		return m
+	}
+	report, err := m.syncer.Sync()
+	if err != nil {
+		m.finStatus = fmt.Sprintf("не синхронизировано: %v", err)
+		return m
+	}
+	m.finStatus = report
+	m.workbookBehind = false
+	return m
+}
+
 // OnForm reports whether the entry form is open.
 func (m Model) OnForm() bool { return m.form.open() }
 
@@ -168,6 +203,7 @@ func (m Model) submitForm() Model {
 	// screen must show what the ledger says, not what the write hoped to do.
 	m.form = entryForm{}
 	m.finStatus = fmt.Sprintf("записано: %s %s %s", kindName(p.Kind), p.Amount, or(p.Category, p.Source))
+	m.workbookBehind = true
 	m.summary, m.finErr = m.finances.Summary(nil)
 	return m
 }
