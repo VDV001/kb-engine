@@ -140,16 +140,67 @@ func TestServer_engine(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
-	var body map[string]string
+	var body struct {
+		Version string `json:"version"`
+		Commit  string `json:"commit"`
+		Built   string `json:"built"`
+	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	for field, want := range map[string]string{
-		"version": "0.9.9", "commit": "abc1234", "built": "2026-07-31T17:21:48Z",
+	for field, got := range map[string]string{
+		"version": body.Version, "commit": body.Commit, "built": body.Built,
 	} {
-		if body[field] != want {
-			t.Errorf("engine[%q] = %q, want %q", field, body[field], want)
+		want := map[string]string{
+			"version": "0.9.9", "commit": "abc1234", "built": "2026-07-31T17:21:48Z",
+		}[field]
+		if got != want {
+			t.Errorf("engine[%q] = %q, want %q", field, got, want)
 		}
+	}
+}
+
+// Тот же вопрос, что задают логу запуска, страница должна уметь задать по HTTP:
+// какие источники движку передали, а какие нет. Без этого вкладка, читающая
+// непереданный файл, может только нарисовать пустоту — и пустота неотличима от
+// «в базе действительно ничего нет».
+//
+// Список приходит снаружи вместе с версией: адаптер отдаёт то, что ему дали, и
+// не выясняет сам, чем его запустили.
+func TestServer_engine_sources(t *testing.T) {
+	engine := httpapi.EngineInfo{
+		Version: "0.9.9",
+		Sources: []httpapi.SourceStatus{
+			{Flag: "analytics-config", Connected: false},
+			{Flag: "ledger", Connected: true},
+		},
+	}
+	h := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) { return changelog.Document{}, nil },
+		httpapi.Documents{}, engine, nil)
+
+	rec := get(t, h, "/api/engine")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var body struct {
+		Sources []struct {
+			Flag      string `json:"flag"`
+			Connected bool   `json:"connected"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Sources) != 2 {
+		t.Fatalf("sources = %d, want 2: %s", len(body.Sources), rec.Body.String())
+	}
+	if body.Sources[0].Flag != "analytics-config" || body.Sources[0].Connected {
+		t.Errorf("первый источник = %+v, ждали неподключённый analytics-config", body.Sources[0])
+	}
+	if body.Sources[1].Flag != "ledger" || !body.Sources[1].Connected {
+		t.Errorf("второй источник = %+v, ждали подключённый ledger", body.Sources[1])
 	}
 }
 

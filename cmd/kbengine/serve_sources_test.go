@@ -2,6 +2,11 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	// Пакет объявляет собственный sync (команда `fin sync`), поэтому импорт
 	// стандартного идёт под псевдонимом — иначе имена сталкиваются.
@@ -93,6 +98,55 @@ func TestStartupSources_namesTheConsequence(t *testing.T) {
 	got := strings.Join(startupSources([]source{{flag: "analytics-config"}}), "\n")
 	if !strings.Contains(got, "empty") {
 		t.Errorf("строка не объясняет, что вкладки останутся пустыми: %s", got)
+	}
+}
+
+// Лог видит тот, кто запускал; вкладку — тот, кто смотрит в браузер, и это
+// нередко один и тот же человек через час. Поэтому тот же ответ движок обязан
+// давать по HTTP: страница должна уметь отличить «данных нет» от «файл не
+// передали», а сама она о флагах командной строки ничего не знает.
+func TestBuildServeHandler_reportsSourceStatuses(t *testing.T) {
+	catalog := writeCatalog(t, `{"entries":[
+		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
+	]}`)
+	cfg := filepath.Join(t.TempDir(), "analytics_config.json")
+	if err := os.WriteFile(cfg, []byte(`{"patterns":[]}`), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	statuses := func(t *testing.T, configPath string) map[string]bool {
+		t.Helper()
+		h, err := buildServeHandler(catalog, configPath, "", "", "", "", "", "", "")
+		if err != nil {
+			t.Fatalf("buildServeHandler: %v", err)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/engine", nil))
+		var body struct {
+			Sources []struct {
+				Flag      string `json:"flag"`
+				Connected bool   `json:"connected"`
+			} `json:"sources"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatalf("decode: %v (%s)", err, rec.Body.String())
+		}
+		out := map[string]bool{}
+		for _, s := range body.Sources {
+			out[s.Flag] = s.Connected
+		}
+		return out
+	}
+
+	without := statuses(t, "")
+	if _, ok := without["analytics-config"]; !ok {
+		t.Fatalf("движок не упоминает семантический слой вовсе: %v", without)
+	}
+	if without["analytics-config"] {
+		t.Error("движок называет семантический слой подключённым, хотя флаг не передавали")
+	}
+	if with := statuses(t, cfg); !with["analytics-config"] {
+		t.Errorf("движок не признаёт переданный --analytics-config подключённым: %v", with)
 	}
 }
 
