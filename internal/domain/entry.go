@@ -72,6 +72,14 @@ type EntryParams struct {
 	// DriftCheckDate is when the entry's url was last asked for its status.
 	// Absent means never — which is a fact the base has to be able to state.
 	DriftCheckDate *time.Time
+	// HabrDate is when the material came out at its author, and DeepReadDate
+	// when it was read here in full rather than skimmed. Neither is derivable
+	// from the other dates: DateAdded is when the entry appeared in the base,
+	// SourceDate is one value per import batch, and the age of the material
+	// itself is a third question — the one that says whether an article about
+	// tooling is still worth acting on.
+	HabrDate     *time.Time
+	DeepReadDate *time.Time
 	// DriftHTTPCode is what the url answered, recorded only when that answer
 	// was not 200. Absent alongside a check date therefore means "alive", and
 	// absent without one means "never asked" — two different silences, and
@@ -109,6 +117,8 @@ type Entry struct {
 	sourceDate     *time.Time
 	driftCheckDate *time.Time
 	driftHTTPCode  *int
+	habrDate       *time.Time
+	deepReadDate   *time.Time
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -158,6 +168,8 @@ func NewEntry(p EntryParams) (Entry, error) {
 		sourceDate:     clonePtrTime(p.SourceDate),
 		driftCheckDate: clonePtrTime(p.DriftCheckDate),
 		driftHTTPCode:  clonePtrInt(p.DriftHTTPCode),
+		habrDate:       clonePtrTime(p.HabrDate),
+		deepReadDate:   clonePtrTime(p.DeepReadDate),
 	}, nil
 }
 
@@ -351,6 +363,12 @@ func (e Entry) SourceDate() *time.Time { return clonePtrTime(e.sourceDate) }
 // DriftCheckDate returns when the entry's url was last checked, or nil when it
 // never was.
 func (e Entry) DriftCheckDate() *time.Time { return clonePtrTime(e.driftCheckDate) }
+
+// HabrDate returns when the material was published at its author, or nil.
+func (e Entry) HabrDate() *time.Time { return clonePtrTime(e.habrDate) }
+
+// DeepReadDate returns when the material was read here in full, or nil.
+func (e Entry) DeepReadDate() *time.Time { return clonePtrTime(e.deepReadDate) }
 
 // DriftHTTPCode returns the non-200 status the url answered on the last check,
 // or nil — which means either «answered 200» or «never checked», told apart by

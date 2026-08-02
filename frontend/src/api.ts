@@ -36,6 +36,10 @@ export interface Entry {
   publish_stage?: string
   tags?: string[]
   date_added?: string
+  /** Когда материал вышел у автора — не то же, что дата попадания в базу. */
+  habr_date?: string
+  /** Когда его прочли здесь целиком, а не пролистали. */
+  deep_read_date?: string
   date_created?: string
   description?: string
   author?: string
