@@ -95,7 +95,7 @@ func TestMoneyFromFloat(t *testing.T) {
 		{"float artifact above", 202.45000000000002, 20245},
 		{"exact", 500, 50000},
 		{"half kopeck rounds away from zero", 0.125, 13},
-		{"negative artifact", -5500.000000001, -550000},
+		{"negative artifact", -4321.000000001, -432100},
 		{"zero", 0, 0},
 		{"smallest amount that survives rounding", 0.005, 1},
 		{"a trillion rubles is still representable", 1e12, 100000000000000},

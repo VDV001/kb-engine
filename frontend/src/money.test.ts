@@ -8,7 +8,7 @@ describe('toKopecks', () => {
     ['500.00', 50000],
     ['89.99', 8999],
     ['0.01', 1],
-    ['-5500.00', -550000],
+    ['-4321.00', -432100],
     ['-0.50', -50],
     ['07.08', 708], // leading zero must not be read as octal
     ['1.5', 150], // one decimal place pads, not truncates
@@ -29,7 +29,7 @@ describe('formatRub', () => {
   it.each([
     [50000, '500,00 ₽'],
     [1, '0,01 ₽'],
-    [-550000, '-5 500,00 ₽'],
+    [-432100, '-4 321,00 ₽'],
     [0, '0,00 ₽'],
   ])('formats %d kopecks', (input, want) => {
     expect(formatRub(input).replace(/ /g, ' ')).toBe(want)

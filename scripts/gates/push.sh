@@ -111,6 +111,95 @@ if ! ./scripts/gates/arch.sh; then
   exit 1
 fi
 
+# ------------------------------------------- 5. owner's data must not leave
+# The repository is public. Amounts, balances and transaction ids out of the
+# owner's ledger have no business in code, in the journal or in a commit
+# message. The rule was written down in May and broken anyway — by hand, while
+# describing the work with real numbers — so it stops being a rule and becomes
+# a check.
+#
+# The markers are read from the live ledger at push time and never stored here:
+# a list of someone's balances committed into a public gate would be the very
+# leak it guards against.
+#
+# What it cannot see, said out loud rather than left to be assumed: values that
+# no longer appear in the current ledger (an old balance), amounts small enough
+# to be indistinguishable from a fixture, and anything already pushed — history
+# is not rewritten from here.
+if [ "${DATA_SKIP:-0}" != "1" ]; then
+  # Its own base. The journal gate above defines one inside its own block, and
+  # with CHANGELOG_SKIP=1 that block never runs — this check would then compare
+  # against an empty string and pass everything without saying so.
+  data_base="origin/main"
+  ledger="${KB_LEDGER:-$HOME/claude-cowork/finances/transactions.jsonl}"
+  if [ ! -f "$ledger" ]; then
+    echo "⚠ ledger not found at $ledger — owner-data check skipped (set KB_LEDGER)"
+  elif git rev-parse --verify --quiet "$data_base" >/dev/null; then
+    marks="$(mktemp)"
+    # Amounts from a thousand up that are not round thousands, plus every
+    # transaction id and both totals.
+    #
+    # Both cuts exist because the first version cried wolf: below a thousand a
+    # number is indistinguishable from a fixture, and a round 1000.00 in a test
+    # matched a real expense of the same size. A gate that fires on ordinary
+    # test data is one somebody switches off within a week.
+    python3 - "$ledger" > "$marks" <<'PY'
+import json, sys
+from decimal import Decimal
+out, total = set(), {"expense": Decimal(0), "income": Decimal(0)}
+for line in open(sys.argv[1], encoding="utf-8"):
+    r = json.loads(line)
+    a = Decimal(r["amount"])
+    total[r["kind"]] = total.get(r["kind"], Decimal(0)) + a
+    if a >= 1000 and a % 1000 != 0:
+        out.add(f"{a:.2f}")
+    out.add(r["id"])
+for v in total.values():
+    out.add(f"{v:.2f}")
+out.add(f"{total['income'] - total['expense']:.2f}")
+import re
+# An amount leaks in the shape a human reads, not the shape it is stored in.
+# The engine itself prints money with grouped digits, so every marker is
+# expanded into all the shapes the same number can take: either decimal
+# separator, grouped or not, with a plain space or a non-breaking one, and with
+# the sign dropped (prose says "expenses are ...", never "expenses are -...").
+#
+# Each of those variations was a hole. The first version compared stored
+# strings only and let every total through. The second grouped the digits but
+# kept the original separator, so it looked for a dot where the leak carries a
+# comma. And both totals are negative in the ledger, so a pattern anchored at a
+# digit never matched them at all. All three were found by planting a real
+# total and watching the gate stay silent - not by reading the code.
+forms = set()
+for m in (x for x in out if x and x != "0.00"):
+    forms.add(m)
+    mm = re.fullmatch(r"-?(\d+)[.,](\d{2})", m)
+    if not mm:
+        continue  # a transaction id: no numeric shapes to expand
+    whole, frac = mm.groups()
+    groupings = [whole]
+    if len(whole) > 3:
+        parts = [whole[max(0, k - 3):k] for k in range(len(whole), 0, -3)][::-1]
+        groupings += ["\u0020".join(parts), "\u00a0".join(parts)]
+    for g in groupings:
+        for sep in (".", ","):
+            forms.add(f"{g}{sep}{frac}")
+for m in sorted(forms):
+    print(m)
+PY
+    hits="$(git diff --unified=0 "$data_base...HEAD" 2>/dev/null | grep '^+' | grep -F -f "$marks" | head -5 || true)"
+    msgs="$(git log "$data_base..HEAD" --format=%B 2>/dev/null | grep -F -f "$marks" | head -5 || true)"
+    rm -f "$marks"
+    if [ -n "$hits$msgs" ]; then
+      echo "✘ в изменениях есть числа из живого ledger — репозиторий публичный"
+      [ -n "$hits" ] && { echo "  в коде:"; echo "$hits" | sed 's/^/    /'; }
+      [ -n "$msgs" ] && { echo "  в сообщениях коммитов:"; echo "$msgs" | sed 's/^/    /'; }
+      echo "  Замените выдуманными значениями. Осознанно: DATA_SKIP=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
 if [ "${SKIP_SLOW:-0}" = "1" ]; then
   echo "⚠ SKIP_SLOW=1 — skipped tests, coverage and lint (CI still gates them)"
   exit 0
