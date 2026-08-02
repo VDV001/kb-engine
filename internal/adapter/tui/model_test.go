@@ -11,7 +11,9 @@ import (
 )
 
 func key(s string) tea.KeyMsg {
-	if len(s) == 1 {
+	// По рунам, а не по байтам: кириллическая буква занимает два байта и
+	// уходила в switch ниже, где её ждала паника «unknown key».
+	if len([]rune(s)) == 1 {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
 	switch s {
