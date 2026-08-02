@@ -407,6 +407,22 @@ func TestQuickEntry_writesFromOneLine(t *testing.T) {
 			t.Errorf("%s = %q, ожидалось %q", c.name, c.got, c.want)
 		}
 	}
+
+	// Запись видна и на экране: форма закрыта, трата названа, книга помечена
+	// отставшей. Без этого «записано» знает только стаб-писатель, а человек
+	// перед терминалом — нет.
+	if m.OnQuickEntry() {
+		t.Error("форма осталась открытой после записи")
+	}
+	view := m.View()
+	for _, want := range []string{"записано", "418", "Транспорт"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
+		}
+	}
+	if !strings.Contains(view, "книга") {
+		t.Errorf("экран не сказал, что книга отстала\n--- view ---\n%s", view)
+	}
 }
 
 // Разобранное показывается ДО записи: догадка видна в момент, когда её ещё
@@ -445,6 +461,14 @@ func TestQuickEntry_refusesToGuessAnUnknownWord(t *testing.T) {
 	m = press(m, enter())
 	if len(w.got) != 0 {
 		t.Error("трата записана с нераспознанным словом, хотя категория неизвестна")
+	}
+	// Отказ оставляет строку там, где её можно поправить, и называет причину.
+	// Закрыться молча значило бы потерять набранное и не объяснить, почему.
+	if !m.OnQuickEntry() {
+		t.Error("форма закрылась после отказа — набранная строка потеряна")
+	}
+	if view := m.View(); !strings.Contains(view, "не знаю") {
+		t.Errorf("экран не назвал причину отказа\n--- view ---\n%s", view)
 	}
 }
 
