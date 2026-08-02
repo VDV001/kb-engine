@@ -64,6 +64,9 @@ func (fakeAudit) OutdatedCandidates() ([]audit.Finding, error) {
 }
 func (fakeAudit) CanonicalCandidates() ([]audit.Finding, error) { return nil, nil }
 func (fakeAudit) SupersessionIssues() ([]audit.Finding, error)  { return nil, nil }
+func (fakeAudit) LinkHealth() (audit.LinkHealth, error) {
+	return audit.LinkHealth{Alive: 4, Moved: 2, Gone: 1, Undecidable: 2, Unchecked: 1, WithURL: 10}, nil
+}
 func (fakeAudit) Duplicates() ([]audit.DuplicateGroup, error) {
 	return []audit.DuplicateGroup{{Kind: "exact-url", Key: "https://h/x", EntryIDs: []int{1, 2}}}, nil
 }
@@ -410,6 +413,7 @@ func (emptyAudit) OutdatedCandidates() ([]audit.Finding, error)  { return nil, n
 func (emptyAudit) CanonicalCandidates() ([]audit.Finding, error) { return nil, nil }
 func (emptyAudit) SupersessionIssues() ([]audit.Finding, error)  { return nil, nil }
 func (emptyAudit) Duplicates() ([]audit.DuplicateGroup, error)   { return nil, nil }
+func (emptyAudit) LinkHealth() (audit.LinkHealth, error)         { return audit.LinkHealth{}, nil }
 
 // Пустой список — это `[]`, а не `null`. Разница не косметическая: nil-слайс
 // уходит в JSON как null, клиент считает его длину, и вся страница снимается
