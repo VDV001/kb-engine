@@ -18,6 +18,37 @@ import { Label } from './components/ui'
 type TabId = 'манифест' | 'паттерны' | 'противоречия' | 'пробелы' | 'граф'
 const tabIds: TabId[] = ['манифест', 'паттерны', 'противоречия', 'пробелы', 'граф']
 
+/**
+ * Подпись вместо пустоты на вкладке, которой нечего показать.
+ *
+ * Повод конкретный: дашборд подняли одним `--catalog`, четыре вкладки оказались
+ * пустыми, и экран прочитался как поломка сборки — хотя файл семантического
+ * слоя просто не попросили загрузить. Пустая вкладка обязана сама сказать,
+ * какого из двух случаев она стоит.
+ *
+ * `connected === null` — сборка, которая о своих источниках не сообщает
+ * (движок старее этого поля). Тогда молчим: выдуманная причина хуже пустоты.
+ */
+function EmptyTabNote({ what, connected }: { what: string; connected: boolean | null }) {
+  if (connected === null) return null
+  return (
+    <p className="rounded-lg border border-outline-variant bg-surface-container p-4 text-sm text-on-surface-variant">
+      {connected ? (
+        <>
+          Семантический слой подключён, но {what} в нём нет — вкладка пуста из-за содержимого
+          файла <code>analytics_config.json</code>, а не из-за того, как запущен движок.
+        </>
+      ) : (
+        <>
+          Семантический слой не подключён: движок запущен без{' '}
+          <code className="text-on-surface">--analytics-config</code>. Здесь пусто не потому, что
+          {' '}{what} нет, а потому что файл не попросили загрузить.
+        </>
+      )}
+    </p>
+  )
+}
+
 function supportLine(s: Support): string {
   if (s.text) return s.text
   const ref = [s.catalog_id ? `catalog#${s.catalog_id}` : '', s.title].filter(Boolean).join(', ')
@@ -289,6 +320,15 @@ export function AnalyticsView({
   const graph: Graph | null =
     res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
+  // Подключён ли семантический слой — знает только движок: страница о флагах
+  // командной строки не осведомлена. null означает «ответа ещё нет либо сборка
+  // о своих источниках не сообщает», и на нём подпись молчит.
+  const eng = useResource(api.engine)
+  const semanticLayer: boolean | null =
+    eng.status === 'ready'
+      ? (eng.data.sources?.find((s) => s.flag === 'analytics-config')?.connected ?? null)
+      : null
+
   const patterns = config.patterns ?? []
   const contradictions = config.contradictions ?? []
   const gaps = config.gaps ?? []
@@ -360,37 +400,48 @@ export function AnalyticsView({
                   Фундаментальные тезисы, на которых строится KB
                 </p>
               </div>
-              {quotes.map((q, i) => (
-                <QuoteCard key={i} q={q} index={i} first={i === 0} />
-              ))}
+              {quotes.length === 0 ? (
+                <EmptyTabNote what="манифестных тезисов" connected={semanticLayer} />
+              ) : (
+                quotes.map((q, i) => <QuoteCard key={i} q={q} index={i} first={i === 0} />)
+              )}
             </div>
           )}
 
-          {tab === 'паттерны' && (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {patterns.map((p, i) => (
-                <PatternCard key={p.name} pattern={p} rank={i} />
-              ))}
-            </div>
-          )}
-
-          {tab === 'противоречия' && (
-            <div className="space-y-5">
-              {contradictions.map((c, i) => (
-                <ContradictionCard key={c.title} c={c} index={i} />
-              ))}
-            </div>
-          )}
-
-          {tab === 'пробелы' && (
-            <div className="grid gap-5 xl:grid-cols-2">
-              {[...gaps]
-                .sort((a, b) => (b.clusters?.length ?? 0) - (a.clusters?.length ?? 0))
-                .map((g) => (
-                  <GapCard key={g.topic} gap={g} />
+          {tab === 'паттерны' &&
+            (patterns.length === 0 ? (
+              <EmptyTabNote what="паттернов" connected={semanticLayer} />
+            ) : (
+              <div className="grid gap-5 xl:grid-cols-2">
+                {patterns.map((p, i) => (
+                  <PatternCard key={p.name} pattern={p} rank={i} />
                 ))}
-            </div>
-          )}
+              </div>
+            ))}
+
+          {tab === 'противоречия' &&
+            (contradictions.length === 0 ? (
+              <EmptyTabNote what="противоречий" connected={semanticLayer} />
+            ) : (
+              <div className="space-y-5">
+                {contradictions.map((c, i) => (
+                  <ContradictionCard key={c.title} c={c} index={i} />
+                ))}
+              </div>
+            ))}
+
+          {tab === 'пробелы' &&
+            (gaps.length === 0 ? (
+              <EmptyTabNote what="пробелов" connected={semanticLayer} />
+            ) : (
+              <div className="grid gap-5 xl:grid-cols-2">
+                {[...gaps]
+                  .sort((a, b) => (b.clusters?.length ?? 0) - (a.clusters?.length ?? 0))
+                  .map((g) => (
+                    <GapCard key={g.topic} gap={g} />
+                  ))}
+              </div>
+            ))}
 
           {tab === 'граф' && (
             <div className="space-y-3">

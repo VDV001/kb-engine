@@ -236,17 +236,9 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
 	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
-	// смотреть в него будут ровно в этот момент. Порядок — как у флагов выше.
-	for _, line := range startupSources([]source{
-		{flag: "analytics-config", path: *configPath},
-		{flag: "ledger", path: *ledgerPath},
-		{flag: "from", path: *workbookPath},
-		{flag: "changelog", path: *changelogPath},
-		{flag: "now", path: *nowPath},
-		{flag: "team", path: *teamPath},
-		{flag: "projects", path: *projectsPath},
-		{flag: "media", path: *mediaPath},
-	}) {
+	// смотреть в него будут ровно в этот момент.
+	for _, line := range startupSources(serveSources(*configPath, *ledgerPath, *workbookPath,
+		*changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)) {
 		fmt.Fprintln(stdout, line)
 	}
 	if err := srv.ListenAndServe(); err != nil {
@@ -348,8 +340,13 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 			return changelog.Parse(string(raw)), nil
 		}
 	}
+	// Тот же список, из которого печатается строка запуска: страница задаёт
+	// движку тот же вопрос, что и терминал, и ответ обязан совпадать.
+	engine := buildInfo()
+	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
+		changelogPath, nowPath, teamPath, projectsPath, mediaPath))
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, chlog, docs, buildInfo(), front), nil
+		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
 }
 
 // buildDocuments wires the owner's personal views. Each path is optional;

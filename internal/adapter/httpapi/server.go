@@ -83,6 +83,23 @@ type EngineInfo struct {
 	Version string `json:"version"`
 	Commit  string `json:"commit"`
 	Built   string `json:"built"`
+	// Sources — какие необязательные файлы движку передали, а какие нет.
+	// Приходит снаружи вместе с версией, по той же причине: адаптер не
+	// выясняет сам, чем его запустили.
+	//
+	// Нужно оно затем же, зачем строка о них в логе запуска: вкладка, читающая
+	// непереданный файл, иначе может нарисовать только пустоту, а пустота
+	// неотличима от «в базе действительно ничего нет».
+	Sources []SourceStatus `json:"sources"`
+}
+
+// SourceStatus — один необязательный источник и факт его подключения. Флаг
+// назван ровно так же, как в командной строке: страница показывает его тому,
+// кто будет перезапускать движок, и переименование по дороге превратило бы
+// подсказку в совет, который не сработает.
+type SourceStatus struct {
+	Flag      string `json:"flag"`
+	Connected bool   `json:"connected"`
 }
 
 // Finances is what the finance port hands over: the ledger rows and the account
