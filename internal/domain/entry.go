@@ -72,6 +72,11 @@ type EntryParams struct {
 	// DriftCheckDate is when the entry's url was last asked for its status.
 	// Absent means never — which is a fact the base has to be able to state.
 	DriftCheckDate *time.Time
+	// DriftHTTPCode is what the url answered, recorded only when that answer
+	// was not 200. Absent alongside a check date therefore means "alive", and
+	// absent without one means "never asked" — two different silences, and
+	// reading them as one loses either the healthy links or the unknown ones.
+	DriftHTTPCode *int
 }
 
 // Entry is the central KB entity. Construct it via NewEntry, which enforces the
@@ -103,6 +108,7 @@ type Entry struct {
 	sourceBatch    *int
 	sourceDate     *time.Time
 	driftCheckDate *time.Time
+	driftHTTPCode  *int
 }
 
 // NewEntry validates p and returns an Entry. Common invariants are checked
@@ -151,6 +157,7 @@ func NewEntry(p EntryParams) (Entry, error) {
 		sourceBatch:    clonePtrInt(p.SourceBatch),
 		sourceDate:     clonePtrTime(p.SourceDate),
 		driftCheckDate: clonePtrTime(p.DriftCheckDate),
+		driftHTTPCode:  clonePtrInt(p.DriftHTTPCode),
 	}, nil
 }
 
@@ -344,3 +351,8 @@ func (e Entry) SourceDate() *time.Time { return clonePtrTime(e.sourceDate) }
 // DriftCheckDate returns when the entry's url was last checked, or nil when it
 // never was.
 func (e Entry) DriftCheckDate() *time.Time { return clonePtrTime(e.driftCheckDate) }
+
+// DriftHTTPCode returns the non-200 status the url answered on the last check,
+// or nil — which means either «answered 200» or «never checked», told apart by
+// DriftCheckDate.
+func (e Entry) DriftHTTPCode() *int { return clonePtrInt(e.driftHTTPCode) }
