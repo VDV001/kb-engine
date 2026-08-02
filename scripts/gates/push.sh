@@ -197,4 +197,63 @@ if [ "${CHANGELOG_SKIP:-0}" != "1" ]; then
   fi
 fi
 
+# ------------------------------------------ 10. owner's data must not leave
+# The repository is public. Amounts, balances and transaction ids out of the
+# owner's ledger have no business in code, in the journal or in a commit
+# message. The rule was written down in May and broken anyway — by hand, while
+# describing the work with real numbers — so it stops being a rule and becomes
+# a check.
+#
+# The markers are read from the live ledger at push time and never stored here:
+# a list of someone's balances committed into a public gate would be the very
+# leak it guards against.
+#
+# What it cannot see, said out loud rather than left to be assumed: values that
+# no longer appear in the current ledger (an old balance), amounts small enough
+# to be indistinguishable from a fixture, and anything already pushed — history
+# is not rewritten from here.
+if [ "${DATA_SKIP:-0}" != "1" ]; then
+  # Its own base. The journal gate above defines one inside its own block, and
+  # with CHANGELOG_SKIP=1 that block never runs — this check would then compare
+  # against an empty string and pass everything without saying so.
+  data_base="origin/main"
+  ledger="${KB_LEDGER:-$HOME/claude-cowork/finances/transactions.jsonl}"
+  if [ ! -f "$ledger" ]; then
+    echo "⚠ ledger not found at $ledger — owner-data check skipped (set KB_LEDGER)"
+  elif git rev-parse --verify --quiet "$data_base" >/dev/null; then
+    marks="$(mktemp)"
+    # Amounts from a thousand up, plus every transaction id. Below a thousand a
+    # number is indistinguishable from a test fixture, and crying wolf there is
+    # how a gate gets switched off for good.
+    python3 - "$ledger" > "$marks" <<'PY'
+import json, sys
+from decimal import Decimal
+out, total = set(), {"expense": Decimal(0), "income": Decimal(0)}
+for line in open(sys.argv[1], encoding="utf-8"):
+    r = json.loads(line)
+    a = Decimal(r["amount"])
+    total[r["kind"]] = total.get(r["kind"], Decimal(0)) + a
+    if a >= 1000:
+        out.add(f"{a:.2f}")
+    out.add(r["id"])
+for v in total.values():
+    out.add(f"{v:.2f}")
+out.add(f"{total['income'] - total['expense']:.2f}")
+for m in sorted(x for x in out if x and x != "0.00"):
+    print(m)
+    print(m.replace(".", ","))
+PY
+    hits="$(git diff --unified=0 "$data_base...HEAD" 2>/dev/null | grep '^+' | grep -F -f "$marks" | head -5 || true)"
+    msgs="$(git log "$data_base..HEAD" --format=%B 2>/dev/null | grep -F -f "$marks" | head -5 || true)"
+    rm -f "$marks"
+    if [ -n "$hits$msgs" ]; then
+      echo "✘ в изменениях есть числа из живого ledger — репозиторий публичный"
+      [ -n "$hits" ] && { echo "  в коде:"; echo "$hits" | sed 's/^/    /'; }
+      [ -n "$msgs" ] && { echo "  в сообщениях коммитов:"; echo "$msgs" | sed 's/^/    /'; }
+      echo "  Замените выдуманными значениями. Осознанно: DATA_SKIP=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
 echo "✓ pre-push gates passed"
