@@ -8,8 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	// Пакет объявляет собственный sync (команда `fin sync`), поэтому импорт
-	// стандартного идёт под псевдонимом — иначе имена сталкиваются.
 	gosync "sync"
 	"testing"
 	"time"
@@ -152,6 +150,9 @@ func TestBuildServeHandler_reportsSourceStatuses(t *testing.T) {
 
 // syncBuffer нужен потому, что serve пишет из своей горутины, пока тест читает:
 // обычный bytes.Buffer здесь ловится детектором гонок, который гоняет CI.
+//
+// Стандартный sync импортирован как gosync: пакет объявляет собственный sync
+// (команда `fin sync`), и без псевдонима имена сталкиваются.
 type syncBuffer struct {
 	mu  gosync.Mutex
 	buf bytes.Buffer
