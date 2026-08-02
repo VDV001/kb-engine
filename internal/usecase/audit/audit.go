@@ -184,15 +184,37 @@ func (s *Service) CanonicalCandidates() ([]Finding, error) {
 }
 
 func canonicalCandidates(c *domain.Catalog) []Finding {
+	// Mutual links are not support. Two entries pointing at each other say "we
+	// are one series"; leaning on something is one-way. Five cheat sheets linked
+	// each-to-each hand one another four references apiece and all five arrive
+	// here, though nobody outside the series ever cited them.
+	links := make(map[int]map[int]bool, len(c.Entries()))
+	for _, e := range c.Entries() {
+		targets := make(map[int]bool, len(e.RelatedIDs()))
+		for _, rid := range e.RelatedIDs() {
+			targets[rid] = true
+		}
+		links[e.ID()] = targets
+	}
+
 	refCount := make(map[int]int)
 	for _, e := range c.Entries() {
 		for _, rid := range e.RelatedIDs() {
+			if links[rid][e.ID()] {
+				continue
+			}
 			refCount[rid]++
 		}
 	}
+
 	var findings []Finding
 	for _, e := range c.Entries() {
-		if e.Lifecycle().IsCanonical() {
+		// Canonical needs no promoting, and a terminal lifecycle — outdated,
+		// dead-end, superseded — is a decision already taken about the entry that
+		// a reference count is in no position to argue with. The same question
+		// the outdated audit already asks, and for the same reason: two such
+		// findings sat on the live base asking for an action nobody would take.
+		if e.Lifecycle().IsCanonical() || e.Lifecycle().IsTerminal() {
 			continue
 		}
 		// A write-up is cited by every article it covers — that is its job, not
