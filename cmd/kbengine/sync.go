@@ -412,6 +412,29 @@ func pushToWorkbook(from, ledgerPath string, recs []finance.Record, workbook []d
 func pullFromWorkbook(ledgerPath string, recs []finance.Record, workbook []domain.Transaction,
 	now time.Time, stdout, stderr io.Writer,
 ) int {
+	// Rows repeating what the ledger already holds are refused before anything is
+	// written. Accepting them quietly is how one expense becomes two: a row put
+	// into the cells past the engine carries no id, so the sync cannot tell it is
+	// the same purchase and adopts it as new.
+	//
+	// Refused rather than skipped — skipping would drop a row that might be
+	// genuine — and named on the way out, because the fix is in the workbook and
+	// the person is the only one who can make it.
+	if repeats := finance.RepeatsFromWorkbook(recs, workbook); len(repeats) > 0 {
+		fmt.Fprintf(stderr, "fin sync: в книге повторов уже записанного: %d\n", len(repeats))
+		for _, r := range repeats {
+			row, was := r.Row, r.Existing.Transaction()
+			what := row.Place()
+			if what == "" {
+				what = row.Source()
+			}
+			fmt.Fprintf(stderr, "  %s · %s · %s · %s — уже записано как %s\n",
+				row.Date().Format(time.DateOnly), row.Amount(), what, row.Account(), was.ID())
+		}
+		fmt.Fprintln(stderr, "  удалите лишнюю строку из книги, если это повтор")
+		return 1
+	}
+
 	out, err := finance.ApplyToLedger(recs, workbook, now)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin sync: %v\n", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -129,6 +130,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	source := fs.String("source", "", "how the record was captured, e.g. Чек")
 	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
+	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -156,7 +158,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	rec, err := appendToLedger(*ledgerPath, finance.AddParams{
+	rec, err := appendChecked(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
 		Date:        when,
 		Amount:      money,
@@ -166,7 +168,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Description: *note,
 		Source:      *source,
 		Account:     *account,
-	})
+	}, *force)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
@@ -184,9 +186,38 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 // is how the ledger ends up with rows that only one surface can read — the
 // spreadsheet already taught that lesson at the cost of fourteen rows.
 func appendToLedger(ledgerPath string, p finance.AddParams) (finance.Record, error) {
+	return appendChecked(ledgerPath, p, false)
+}
+
+// ErrRepeat is returned when the entry repeats one already in the ledger.
+//
+// A sentinel rather than a plain error so every surface can tell "this is a
+// repeat" from "the file would not open" and offer the right thing: confirming
+// a repeat is a decision, failing to write is not.
+var ErrRepeat = errors.New("такая запись уже есть")
+
+// appendChecked is the single write path, and the single place the repeat check
+// lives.
+//
+// Deliberately here rather than in each surface: the command, the entry form,
+// the one-line entry and anything added later all go through this function, so
+// a guard placed here cannot be walked around by using a different screen.
+// Placed in any of them, it would be a rule the next surface forgets.
+func appendChecked(ledgerPath string, p finance.AddParams, force bool) (finance.Record, error) {
 	recs, err := financejsonl.Load(ledgerPath, time.Now)
 	if err != nil {
 		return finance.Record{}, err
+	}
+	if !force {
+		if dup := finance.Duplicate(recs, p); dup != nil {
+			tx := dup.Transaction()
+			what := tx.Place()
+			if what == "" {
+				what = tx.Source()
+			}
+			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
+				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(), what, tx.Account(), tx.ID())
+		}
 	}
 	rec, err := finance.Add(p, newULID, time.Now)
 	if err != nil {
