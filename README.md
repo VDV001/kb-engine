@@ -36,9 +36,11 @@ Built with TDD + DDD + Clean Architecture. Design notes:
 - **Terminal UI** — `tui` opens the same catalog in the terminal: type to filter,
   arrows to move, Enter for the entry card. With `--ledger` it also opens the
   finances screen on `Tab`, where `a` records an expense and `i` an income
-  through the same use case `fin add` writes with. Add `--from` and `s` carries
-  the rows over to the workbook — the same sync `fin sync` runs. It reads through the same use
-  case the dashboard does, so the two surfaces cannot disagree.
+  through the same use case `fin add` writes with, and `q` takes the whole entry
+  as one line. Add `--from` and `s` carries the rows over to the workbook — the
+  same sync `fin sync` runs — while `b` shows what each account holds and records
+  a new balance, the same write `fin balance` performs. It reads through the same
+  use case the dashboard does, so the two surfaces cannot disagree.
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.
@@ -79,7 +81,7 @@ kbengine set          --catalog X --ids 1,2,3 [--lifecycle V] [--verdict V] [--a
 kbengine inbox        --catalog X --inbox DIR [--processed DIR]
 kbengine audit-tasks  --catalog X [--json] < tasklist
 kbengine changelog    --in CHANGELOG.md --out changelog.json
-kbengine fin          <import|add|list|report|sync> [flags]
+kbengine fin          <import|add|balance|list|report|sync> [flags]
 kbengine version
 ```
 
