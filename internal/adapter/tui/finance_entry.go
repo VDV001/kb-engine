@@ -166,21 +166,36 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// Back to the finances screen, not out of it: Esc cancels the entry, and
 		// leaving the screen as well would cost a keystroke nobody asked for.
 		m.form = entryForm{}
-	case tea.KeyTab, tea.KeyDown:
-		m.form.cursor = min(m.form.cursor+1, len(m.form.fields)-1)
-	case tea.KeyShiftTab, tea.KeyUp:
-		m.form.cursor = max(m.form.cursor-1, 0)
 	case tea.KeyEnter:
 		return m.submitForm(), nil
-	case tea.KeyBackspace:
-		if v := m.form.fields[m.form.cursor].value; v != "" {
-			runes := []rune(v)
-			m.form.fields[m.form.cursor].value = string(runes[:len(runes)-1])
-		}
-	case tea.KeyRunes, tea.KeySpace:
-		m.form.fields[m.form.cursor].value += string(msg.Runes)
+	default:
+		m.form.fields, m.form.cursor = typeIntoFields(m.form.fields, m.form.cursor, msg)
 	}
 	return m, nil
+}
+
+// typeIntoFields applies one key to a list of labelled fields: moving between
+// them, adding a rune, taking one back.
+//
+// Shared by both forms on the finances screen rather than written twice. Two
+// copies of "what Tab does here" are how one form ends up stopping at the last
+// field while the other wraps, and nobody notices until a value lands in the
+// wrong place.
+func typeIntoFields(fields []field, cursor int, msg tea.KeyMsg) ([]field, int) {
+	switch msg.Type {
+	case tea.KeyTab, tea.KeyDown:
+		return fields, min(cursor+1, len(fields)-1)
+	case tea.KeyShiftTab, tea.KeyUp:
+		return fields, max(cursor-1, 0)
+	case tea.KeyBackspace:
+		if v := fields[cursor].value; v != "" {
+			runes := []rune(v)
+			fields[cursor].value = string(runes[:len(runes)-1])
+		}
+	case tea.KeyRunes, tea.KeySpace:
+		fields[cursor].value += string(msg.Runes)
+	}
+	return fields, cursor
 }
 
 // submitForm writes the entry and re-reads the report.
@@ -249,6 +264,7 @@ const (
 	fieldNote        = "заметка"
 	fieldDate        = "дата"
 	fieldSource      = "источник"
+	fieldBalance     = "баланс"
 
 	hintForm = "Tab/↑↓ — поле · Enter — записать · Esc — отмена"
 )

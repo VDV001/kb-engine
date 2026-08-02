@@ -64,7 +64,9 @@ type Model struct {
 	ledger         FinanceWriter
 	syncer         WorkbookSyncer
 	vocab          VocabularySource
+	accounts       AccountsSource
 	quick          quickForm
+	balance        balanceForm
 	form           entryForm
 	finStatus      string
 	workbookBehind bool
@@ -97,6 +99,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case m.quick.open:
 			return m.updateQuick(msg)
+		case m.balance.open:
+			return m.updateBalance(msg)
 		case m.form.open():
 			return m.updateForm(msg)
 		case m.picker.open():
@@ -173,6 +177,8 @@ func (m Model) View() string {
 	switch {
 	case m.quick.open:
 		return m.renderQuick()
+	case m.balance.open:
+		return m.renderBalanceForm()
 	case m.form.open():
 		return m.renderForm()
 	case m.picker.open():

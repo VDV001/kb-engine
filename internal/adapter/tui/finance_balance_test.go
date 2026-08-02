@@ -98,6 +98,14 @@ func TestBalances_writesFromTheScreen(t *testing.T) {
 	if acc.got[0].amount.Kopecks() != 144712 {
 		t.Errorf("сумма = %d копеек, ожидалось 144712", acc.got[0].amount.Kopecks())
 	}
+	// And the screen says so: a write only the stub knows about is one the
+	// person in front of the terminal cannot confirm.
+	if m.OnBalanceForm() {
+		t.Error("форма осталась открытой после записи")
+	}
+	if view := m.View(); !strings.Contains(view, "баланс: Альфа-Банк") {
+		t.Errorf("экран не назвал записанный баланс\n--- view ---\n%s", view)
+	}
 }
 
 // A refused write is named and costs nothing typed: the bank the book does not
@@ -150,7 +158,12 @@ func TestBalances_keyIsAbsentWithoutASource(t *testing.T) {
 
 	m = press(press(m, tab()), runes("b"))
 
-	if strings.Contains(m.View(), "b —") {
+	// The whole caption, not just "b —": that fragment also occurs inside
+	// "Tab — назад к поиску", and the first version of this test failed on it.
+	if strings.Contains(m.View(), "b — баланс") {
 		t.Errorf("экран предлагает клавишу без источника балансов\n--- view ---\n%s", m.View())
+	}
+	if m.OnBalanceForm() {
+		t.Error("форма баланса открылась без источника балансов")
 	}
 }
