@@ -92,6 +92,22 @@ var moneyCleaner = strings.NewReplacer(
 	"₽", "",
 )
 
+// rubleWords are the ways a person writes the currency after the number. The
+// sign itself is handled by moneyCleaner; these are the letters, and only as a
+// suffix — a word in the middle is a typo, not a decoration.
+var rubleWords = []string{"рублей", "рубля", "рубль", "руб.", "руб", "р.", "р"}
+
+// trimRubleWord drops one trailing currency word, longest first so that "руб"
+// does not eat the tail of "рублей" and leave "лей" behind.
+func trimRubleWord(s string) string {
+	for _, w := range rubleWords {
+		if cut, ok := strings.CutSuffix(s, w); ok {
+			return cut
+		}
+	}
+	return s
+}
+
 // ParseMoney reads a raw amount into exact kopecks.
 //
 // Accepts what the ledger actually contains: plain numbers, a comma or a dot as
@@ -104,6 +120,7 @@ var moneyCleaner = strings.NewReplacer(
 func ParseMoney(raw string) (Money, error) {
 	s := moneyCleaner.Replace(strings.TrimSpace(raw))
 	s = strings.ReplaceAll(s, ",", ".")
+	s = trimRubleWord(s)
 	if s == "" {
 		return Money{}, fmt.Errorf("%w: empty amount", ErrInvalidMoney)
 	}
