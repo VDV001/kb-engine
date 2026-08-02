@@ -145,13 +145,20 @@ func (m Model) writeBalances(b *strings.Builder) {
 		return
 	}
 
-	b.WriteString(styleTitle.Render("балансы") + "\n")
+	// Итог сверху, счета под ним: первым читают «сколько у меня всего», а не
+	// «сколько на Сбербанке». Это же число показывает веб как «на счетах».
+	var total domain.Money
+	for _, a := range accs {
+		total = total.Add(a.Balance())
+	}
+	fmt.Fprintf(b, "%s %s\n", styleDim.Render("на счетах"), styleAccent.Render(human(total)))
 	for _, a := range accs {
 		when := "—"
 		if !a.Updated().IsZero() {
-			when = a.Updated().Format("02.01.2006")
+			when = a.Updated().Format("02.01")
 		}
-		fmt.Fprintf(b, "  %-24s %12s  %s\n", a.Bank(), a.Balance(), styleDim.Render(when))
+		fmt.Fprintf(b, "  %-22s %12s  %s\n",
+			trim(a.Bank(), 22), human(a.Balance()), styleDim.Render(when))
 	}
 	b.WriteString("\n")
 }

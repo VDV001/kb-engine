@@ -70,7 +70,9 @@ func TestBalances_areShownOnTheFinancesScreen(t *testing.T) {
 	m = press(m, tab())
 
 	view := m.View()
-	for _, want := range []string{"Сбербанк", "1000.50", "Альфа-Банк", "1507.12"} {
+	// Суммы на экране — в человеческом виде: разряды разделены, копейки через
+	// запятую. Хранит и печатает в CLI движок их иначе, и это намеренно.
+	for _, want := range []string{"Сбербанк", "1 000,50", "Альфа-Банк", "1 507,12"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
 		}

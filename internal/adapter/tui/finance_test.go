@@ -62,7 +62,8 @@ func TestTabOpensFinancesWhenLedgerConfigured(t *testing.T) {
 		t.Fatal("Tab did not open the finances screen")
 	}
 	view := m.View()
-	for _, want := range []string{"Еда", "Транспорт", "Альфа-Банк", "1500.00", "9000.00"} {
+	// Суммы — в том виде, в каком их читает человек: разряды разделены.
+	for _, want := range []string{"Еда", "Транспорт", "Альфа-Банк", "1 500,00", "9 000,00"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("finances view is missing %q\n--- view ---\n%s", want, view)
 		}

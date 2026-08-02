@@ -77,7 +77,7 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderFinances() string {
 	var b strings.Builder
-	b.WriteString(styleQuery.Render("финансы: за всё время") + "\n\n")
+	b.WriteString(screenHead("финансы", "за всё время"))
 
 	if m.finErr != nil {
 		b.WriteString(styleTitle.Render("отчёт не построен") + "\n")
@@ -85,13 +85,21 @@ func (m Model) renderFinances() string {
 		return b.String() + "\n" + m.financeHint()
 	}
 
-	s := m.summary
-	fmt.Fprintf(&b, "расходы %s (%d)  ·  доходы %s (%d)  ·  итог %s\n\n",
-		s.Expenses, s.ExpenseCount, s.Income, s.IncomeCount, s.Net)
-
-	writeTotals(&b, "по категориям", s.ByCategory)
-	writeTotals(&b, "по счетам", s.ByAccount)
 	m.writeBalances(&b)
+
+	s := m.summary
+	fmt.Fprintf(&b, "%s %s %s    %s %s %s\n",
+		styleDim.Render("потрачено"), styleAccent.Render(human(s.Expenses)),
+		styleDim.Render(fmt.Sprintf("(%d)", s.ExpenseCount)),
+		styleDim.Render("получено"), styleAccent.Render(human(s.Income)),
+		styleDim.Render(fmt.Sprintf("(%d)", s.IncomeCount)))
+	fmt.Fprintf(&b, "%s %s\n\n", styleDim.Render("разница"), styleTitle.Render(human(s.Net)))
+
+	// «Расходы по …», а не «по …»: рядом стоят балансы счетов, и подпись «по
+	// счетам» над суммами трат читается как остаток на карте. Владелец сравнил
+	// её с балансом в вебе и увидел разные числа под одним словом.
+	writeTotals(&b, "расходы по категориям", s.ByCategory)
+	writeTotals(&b, "расходы по счетам", s.ByAccount)
 
 	if m.finStatus != "" {
 		b.WriteString(styleQuery.Render(m.finStatus) + "\n")
@@ -130,16 +138,46 @@ func (m Model) financeHint() string {
 	return styleDim.Render(keys + " · " + hintFinances)
 }
 
-// writeTotals prints one breakdown. An empty breakdown says so rather than
-// leaving a blank space that reads as "nothing was spent".
+// human formats an amount for reading rather than for storage: thousands are
+// separated by a narrow space, exactly as the dashboard prints them.
+//
+// Money.String stays untouched — it is what the ledger, the CLI and the tests
+// speak, and putting spaces into that would mean the engine writes a number it
+// cannot read back.
+func human(m domain.Money) string {
+	s := m.String()
+	whole, frac, _ := strings.Cut(s, ".")
+	sign := ""
+	if strings.HasPrefix(whole, "-") {
+		sign, whole = "-", whole[1:]
+	}
+	var out []byte
+	for i, r := range []byte(whole) {
+		if i > 0 && (len(whole)-i)%3 == 0 {
+			out = append(out, ' ')
+		}
+		out = append(out, r)
+	}
+	return sign + string(out) + "," + frac
+}
+
+// writeTotals prints one breakdown, with a bar showing each row against the
+// largest one — the column answers "what dominates" at a glance, which a column
+// of numbers does not.
 func writeTotals(b *strings.Builder, title string, rows []finance.CategoryTotal) {
 	b.WriteString(styleTitle.Render(title) + "\n")
 	if len(rows) == 0 {
 		b.WriteString(styleDim.Render("  нет данных") + "\n\n")
 		return
 	}
+	var largest int64
+	for _, r := range rows {
+		largest = max(largest, r.Total.Kopecks())
+	}
 	for _, r := range rows[:min(len(rows), financeRows)] {
-		fmt.Fprintf(b, "  %-24s %12s  %3d\n", r.Category, r.Total, r.Count)
+		fmt.Fprintf(b, "  %-22s %12s %s %s\n",
+			trim(r.Category, 22), human(r.Total), bar(r.Total.Kopecks(), largest, barWidth),
+			styleDim.Render(fmt.Sprintf("%4d", r.Count)))
 	}
 	if len(rows) > financeRows {
 		b.WriteString(styleDim.Render(fmt.Sprintf("  … ещё %d\n", len(rows)-financeRows)))
@@ -150,7 +188,7 @@ func writeTotals(b *strings.Builder, title string, rows []finance.CategoryTotal)
 const (
 	// financeRows caps each breakdown so both fit one screen.
 	financeRows       = 8
-	hintFinances      = "Tab — назад к поиску · Esc — назад · Ctrl+C — выход"
+	hintFinances      = "Tab — следующий экран · Esc — к поиску · Ctrl+C — выход"
 	hintFinancesWrite = "a — расход · i — доход"
 	hintFinancesSync  = "s — книга"
 	hintBalanceKey    = "b — баланс"
