@@ -77,14 +77,56 @@ func TestSetBalance_refusesABankTheSheetDoesNotKnow(t *testing.T) {
 // would notice.
 func TestSetBalance_keepsTheCellFormatting(t *testing.T) {
 	path := workbookWithExtraColumn(t)
-	before := cellStyle(t, path, "Счета", "B4")
+	// The formatting has to be put there first: the shared fixture leaves the
+	// Счета sheet unstyled, and a test comparing one unstyled cell to another
+	// passes whatever the code does — this one did.
+	//
+	// What it guards is the property, not one line of ours: the balance may be
+	// rewritten by any means as long as the owner's currency and date formats
+	// survive it. Today excelize keeps them on its own; a future version that
+	// rebuilt the row instead would break this and say so.
+	styleAccountCells(t, path)
+	before := map[string]int{"B4": cellStyle(t, path, "Счета", "B4"), "C4": cellStyle(t, path, "Счета", "C4")}
 
 	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), fixedClock(2026, 8, 2)); err != nil {
 		t.Fatalf("SetBalance: %v", err)
 	}
 
-	if after := cellStyle(t, path, "Счета", "B4"); after != before {
-		t.Errorf("стиль ячейки = %d, был %d — форматирование потеряно", after, before)
+	for cell, want := range before {
+		if got := cellStyle(t, path, "Счета", cell); got != want {
+			t.Errorf("стиль %s = %d, был %d — форматирование потеряно", cell, got, want)
+		}
+	}
+}
+
+// styleAccountCells puts the owner's currency and date formats onto the account
+// row, the way the live workbook has them.
+func styleAccountCells(t *testing.T, path string) {
+	t.Helper()
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer func() { _ = f.Close() }()
+
+	rub := `#,##0.00" ₽"`
+	money, err := f.NewStyle(&excelize.Style{CustomNumFmt: &rub})
+	if err != nil {
+		t.Fatalf("NewStyle money: %v", err)
+	}
+	dmy := "DD.MM.YYYY"
+	date, err := f.NewStyle(&excelize.Style{CustomNumFmt: &dmy})
+	if err != nil {
+		t.Fatalf("NewStyle date: %v", err)
+	}
+	if err := f.SetCellStyle("Счета", "B3", "B5", money); err != nil {
+		t.Fatalf("SetCellStyle balance: %v", err)
+	}
+	if err := f.SetCellStyle("Счета", "C3", "C5", date); err != nil {
+		t.Fatalf("SetCellStyle updated: %v", err)
+	}
+	if err := f.Save(); err != nil {
+		t.Fatalf("save: %v", err)
 	}
 }
 
