@@ -235,6 +235,20 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
+	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
+	// смотреть в него будут ровно в этот момент. Порядок — как у флагов выше.
+	for _, line := range startupSources([]source{
+		{flag: "analytics-config", path: *configPath},
+		{flag: "ledger", path: *ledgerPath},
+		{flag: "from", path: *workbookPath},
+		{flag: "changelog", path: *changelogPath},
+		{flag: "now", path: *nowPath},
+		{flag: "team", path: *teamPath},
+		{flag: "projects", path: *projectsPath},
+		{flag: "media", path: *mediaPath},
+	}) {
+		fmt.Fprintln(stdout, line)
+	}
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
