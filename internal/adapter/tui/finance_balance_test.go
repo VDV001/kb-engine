@@ -70,7 +70,9 @@ func TestBalances_areShownOnTheFinancesScreen(t *testing.T) {
 	m = press(m, tab())
 
 	view := m.View()
-	for _, want := range []string{"Сбербанк", "1000.50", "Альфа-Банк", "1507.12"} {
+	// Суммы на экране — в человеческом виде: разряды разделены, копейки через
+	// запятую. Хранит и печатает в CLI движок их иначе, и это намеренно.
+	for _, want := range []string{"Сбербанк", "1 000,50", "Альфа-Банк", "1 507,12"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
 		}
@@ -86,7 +88,7 @@ func TestBalances_writesFromTheScreen(t *testing.T) {
 
 	m = press(press(m, tab()), runes("b"))
 	m = fill(m, "Альфа-Банк") // счёт
-	m = press(m, runes("1447,12"))
+	m = press(m, runes("4321,55"))
 	m = press(m, enter())
 
 	if len(acc.got) != 1 {
@@ -95,8 +97,8 @@ func TestBalances_writesFromTheScreen(t *testing.T) {
 	if acc.got[0].bank != "Альфа-Банк" {
 		t.Errorf("счёт = %q, ожидался Альфа-Банк", acc.got[0].bank)
 	}
-	if acc.got[0].amount.Kopecks() != 144712 {
-		t.Errorf("сумма = %d копеек, ожидалось 144712", acc.got[0].amount.Kopecks())
+	if acc.got[0].amount.Kopecks() != 432155 {
+		t.Errorf("сумма = %d копеек, ожидалось 432155", acc.got[0].amount.Kopecks())
 	}
 	// And the screen says so: a write only the stub knows about is one the
 	// person in front of the terminal cannot confirm.

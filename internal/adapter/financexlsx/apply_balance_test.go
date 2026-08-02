@@ -18,13 +18,13 @@ func TestSetBalance_writesTheBalanceAndTheDate(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	clock := fixedClock(2026, 8, 2)
 
-	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), clock); err != nil {
+	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "4321,55"), clock); err != nil {
 		t.Fatalf("SetBalance: %v", err)
 	}
 
 	acc := accountOnSheet(t, path, "Альфа-Банк")
-	if acc.Balance().Kopecks() != 144712 {
-		t.Errorf("баланс = %d копеек, ожидалось 144712", acc.Balance().Kopecks())
+	if acc.Balance().Kopecks() != 432155 {
+		t.Errorf("баланс = %d копеек, ожидалось 432155", acc.Balance().Kopecks())
 	}
 	if got := acc.Updated().Format(time.DateOnly); got != "2026-08-02" {
 		t.Errorf("дата обновления = %s, ожидалось 2026-08-02", got)
@@ -38,7 +38,7 @@ func TestSetBalance_writesTheBalanceAndTheDate(t *testing.T) {
 func TestSetBalance_leavesTheOtherAccountsAlone(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), fixedClock(2026, 8, 2)); err != nil {
+	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "4321,55"), fixedClock(2026, 8, 2)); err != nil {
 		t.Fatalf("SetBalance: %v", err)
 	}
 
@@ -88,7 +88,7 @@ func TestSetBalance_keepsTheCellFormatting(t *testing.T) {
 	styleAccountCells(t, path)
 	before := map[string]int{"B4": cellStyle(t, path, "Счета", "B4"), "C4": cellStyle(t, path, "Счета", "C4")}
 
-	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), fixedClock(2026, 8, 2)); err != nil {
+	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "4321,55"), fixedClock(2026, 8, 2)); err != nil {
 		t.Fatalf("SetBalance: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestSetBalance_theDateStillReadsAsADate(t *testing.T) {
 	// A clock with a time of day, like the real one: writing the moment instead
 	// of the day leaves a fraction in the cell, and the workbook shows it.
 	clock := func() time.Time { return time.Date(2026, 8, 2, 16, 38, 0, 0, time.UTC) }
-	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), clock); err != nil {
+	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "4321,55"), clock); err != nil {
 		t.Fatalf("SetBalance: %v", err)
 	}
 

@@ -245,27 +245,31 @@ func (m Model) renderCardWithStatus() string {
 
 func (m Model) renderList() string {
 	var b strings.Builder
-	b.WriteString(styleQuery.Render("поиск: "+m.query) + "\n")
-	b.WriteString(styleDim.Render(fmt.Sprintf("%d из %d", len(m.visible), len(m.all))) + "\n\n")
+	b.WriteString(screenHead("поиск: "+m.query, fmt.Sprintf("%d из %d", len(m.visible), len(m.all))))
 
 	if len(m.visible) == 0 {
 		b.WriteString(styleDim.Render("ничего не найдено") + "\n")
-		return b.String() + "\n" + styleDim.Render(hintList)
+		return b.String() + "\n" + styleDim.Render(m.listHint())
 	}
 
 	for i, e := range m.window() {
 		idx := m.first() + i
-		line := fmt.Sprintf("%5d  %-9s %s", e.ID(), lifecycleOf(e), e.Title())
+		// Состояние приглушено, если решение по записи уже принято: канон,
+		// устаревшее, тупик. Так глаз в списке из 1400 строк цепляется за то,
+		// что ещё живо, а не за ровный столбец слова «active».
+		state := lifecycleOf(e)
+		line := fmt.Sprintf("%5d  %-9s %s", e.ID(), state, e.Title())
 		if idx == m.cursor {
 			b.WriteString(styleSelected.Render("▸ "+line) + "\n")
 			continue
 		}
-		b.WriteString("  " + line + "\n")
+		b.WriteString("  " + fmt.Sprintf("%5d  ", e.ID()) +
+			lifecycleStyle(e).Render(fmt.Sprintf("%-9s", state)) + e.Title() + "\n")
 	}
 	if len(m.visible) > m.height {
 		b.WriteString(styleDim.Render(fmt.Sprintf("\n… ещё %d", len(m.visible)-m.first()-len(m.window()))) + "\n")
 	}
-	return b.String() + "\n" + styleDim.Render(hintList)
+	return b.String() + "\n" + styleDim.Render(m.listHint())
 }
 
 // first is the index the visible window starts at — the cursor is kept in the
@@ -305,8 +309,44 @@ func renderCard(e domain.Entry) string {
 	return b.String() + "\n" + styleDim.Render(hintCard)
 }
 
+// listHint names the keys this screen actually has, Tab included.
+//
+// Tab was missing from the line entirely while the key already worked, so the
+// second screen existed and nothing on the first one said so. A key nobody is
+// told about is a key nobody presses.
+func (m Model) listHint() string {
+	keys := hintList
+	if next := m.nextScreenName(); next != "" {
+		keys += " · Tab — " + next
+	}
+	return keys + " · Esc — выход"
+}
+
+// nextScreenName is what Tab opens from the search screen, or empty when there
+// is nothing else configured.
+func (m Model) nextScreenName() string {
+	switch {
+	case m.finances != nil:
+		return "финансы"
+	case m.health != nil:
+		return "здоровье"
+	default:
+		return ""
+	}
+}
+
+// lifecycleStyle dims a state that is already decided. Canonical, outdated,
+// dead-end and superseded are conclusions; active is the only one still asking
+// for something.
+func lifecycleStyle(e domain.Entry) lipgloss.Style {
+	if e.Lifecycle().IsTerminal() || e.Lifecycle().IsCanonical() {
+		return styleDim
+	}
+	return styleTitle
+}
+
 const (
-	hintList     = "печатать — искать · ↑↓ — выбор · Enter — карточка · Esc — выход"
+	hintList     = "печатать — искать · ↑↓ — выбор · Enter — карточка"
 	hintCard     = "Esc — назад к списку"
 	hintCardEdit = "l — состояние · v — вердикт"
 )
@@ -337,6 +377,51 @@ var (
 	styleTitle    = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.OnSurface })).Bold(true)
 	styleQuery    = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.Secondary })).Bold(true)
 	styleDim      = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.OnSurfaceVariant }))
+	// styleAccent — суммы и всё, что читают первым: тот же акцент, что несёт
+	// заголовок экрана, чтобы глаз находил числа без подписей.
+	styleAccent = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.Primary })).Bold(true)
+	// styleBar и styleBarRest — заполненная и пустая часть полоски доли.
+	styleBar     = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.Primary }))
+	styleBarRest = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.ChartBorder }))
+	styleRule    = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.ChartBorder }))
+)
+
+// screenHead is the heading every screen wears: name on the left, context on
+// the right, a rule under both.
+//
+// One function rather than each screen printing its own line — three screens
+// with three slightly different headers read as three programs.
+func screenHead(title, context string) string {
+	head := styleQuery.Render(title)
+	if context != "" {
+		head += "  " + styleDim.Render(context)
+	}
+	return head + "\n" + styleRule.Render(strings.Repeat("─", headRule)) + "\n"
+}
+
+// bar draws the share a row takes of the largest row: filled blocks against the
+// rest.
+//
+// Against the largest rather than against the total, on purpose: with a long
+// tail every bar measured against the total is a sliver, and the column exists
+// to show which rows dominate.
+func bar(value, largest int64, width int) string {
+	if largest <= 0 || width <= 0 {
+		return ""
+	}
+	filled := int(value * int64(width) / largest)
+	filled = max(0, min(filled, width))
+	return styleBar.Render(strings.Repeat("█", filled)) +
+		styleBarRest.Render(strings.Repeat("·", width-filled))
+}
+
+const (
+	// headRule is how wide the rule under a heading runs. Fixed rather than the
+	// terminal width: the tests drive a screen that never receives a size
+	// message, and a rule collapsing to nothing there would hide regressions.
+	headRule = 64
+	// barWidth is the width of the share column in a breakdown.
+	barWidth = 14
 )
 
 func adaptive(pick func(theme.Palette) string) lipgloss.AdaptiveColor {

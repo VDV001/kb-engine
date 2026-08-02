@@ -21,7 +21,7 @@ type PlaceRule struct {
 // Vocabulary maps the words a person types onto the values the ledger stores.
 //
 // One vocabulary for every surface: the terminal reads it, and so does the
-// assistant in the chat. Two copies would file the same «Живика» under
+// assistant in the chat. Two copies would file the same shop under
 // different categories inside a month, and the breakdown by category would
 // quietly split in two.
 //

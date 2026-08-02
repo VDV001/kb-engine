@@ -12,7 +12,7 @@ import (
 //
 // Written as a question asked at write time rather than a report produced later.
 // A repeated expense is the failure that happens on its own — a session drops
-// half-way, the person types it again, and the book carries two rows of 140 ₽.
+// half-way, the person types it again, and the book carries the same purchase twice.
 // Found on the dashboard a week later it is nearly unresolvable: nobody can say
 // which of the two was the real purchase.
 //
@@ -44,7 +44,7 @@ func Duplicate(existing []Record, p AddParams) *Record {
 }
 
 // same compares two field values the way a person would: surrounding spaces and
-// case are not a difference. «Живика» and «живика » are one shop.
+// case are not a difference. «Магнит» and «магнит » are one shop.
 func same(a, b string) bool {
 	return strings.EqualFold(strings.TrimSpace(a), strings.TrimSpace(b))
 }
