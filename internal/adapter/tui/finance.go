@@ -59,6 +59,8 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openForm(domain.KindExpense), nil
 		case "i":
 			return m.openForm(domain.KindIncome), nil
+		case "s":
+			return m.syncWorkbook(), nil
 		}
 	}
 	return m, nil
@@ -83,10 +85,17 @@ func (m Model) renderFinances() string {
 
 	if m.finStatus != "" {
 		b.WriteString(styleQuery.Render(m.finStatus) + "\n")
-		// The workbook is a second file this screen does not touch. Saying so is
-		// the difference between a person knowing the book is behind and finding
-		// out weeks later — the engine names what it did not do.
-		b.WriteString(styleDim.Render(hintWorkbook) + "\n")
+	}
+	if m.workbookBehind {
+		// The workbook is a second file, and until it is caught up the engine
+		// says so: the difference between knowing the book is behind and finding
+		// out weeks later. With a workbook configured the key is named here, so
+		// nobody has to leave the screen for it.
+		note := hintWorkbook
+		if m.syncer != nil {
+			note = hintWorkbookKey
+		}
+		b.WriteString(styleDim.Render(note) + "\n")
 	}
 
 	return b.String() + "\n" + m.financeHint()
@@ -98,7 +107,11 @@ func (m Model) financeHint() string {
 	if m.ledger == nil {
 		return styleDim.Render(hintFinances)
 	}
-	return styleDim.Render(hintFinancesWrite + " · " + hintFinances)
+	keys := hintFinancesWrite
+	if m.syncer != nil {
+		keys += " · " + hintFinancesSync
+	}
+	return styleDim.Render(keys + " · " + hintFinances)
 }
 
 // writeTotals prints one breakdown. An empty breakdown says so rather than
@@ -123,5 +136,7 @@ const (
 	financeRows       = 8
 	hintFinances      = "Tab — назад к поиску · Esc — назад · Ctrl+C — выход"
 	hintFinancesWrite = "a — расход · i — доход"
+	hintFinancesSync  = "s — книга"
 	hintWorkbook      = "книга Учёт_финансов.xlsx не тронута — kbengine fin sync"
+	hintWorkbookKey   = "книга Учёт_финансов.xlsx отстала — s синхронизирует"
 )

@@ -2,6 +2,8 @@
 package main
 
 import (
+	"bytes"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -144,6 +146,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	ledgerPath := fs.String("ledger", "", "path to the finance ledger (enables the finances screen)")
+	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (enables the sync key)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -151,17 +154,35 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "tui: --catalog is required")
 		return 2
 	}
+	// Same refusal serve makes: the workbook is only ever synced against the
+	// ledger, so a workbook without one is a mistake in the command rather than
+	// a key that quietly does nothing.
+	if *workbookPath != "" && *ledgerPath == "" {
+		fmt.Fprintln(stderr, "tui: --from needs --ledger (the workbook is synced against the ledger)")
+		return 2
+	}
 	// No ledger means no finances key at all, rather than a key that opens an
 	// empty screen. The same ledgerFinances the HTTP API uses, so both surfaces
 	// total the same way.
 	var fin tui.FinanceLoader
 	var ledger tui.FinanceWriter
+	var syncer tui.WorkbookSyncer
 	if *ledgerPath != "" {
-		l := ledgerFinances{ledgerPath: *ledgerPath}
+		l := ledgerFinances{ledgerPath: *ledgerPath, workbookPath: *workbookPath}
 		fin, ledger = l, l
+		if *workbookPath != "" {
+			syncer = l
+		}
 	}
 	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, fin, ledger, os.Stdin, stdout); err != nil {
+	screen := tui.Sources{
+		Entries:  svc,
+		Saver:    catalogWriter{path: *catalogPath},
+		Finances: fin,
+		Ledger:   ledger,
+		Workbook: syncer,
+	}
+	if err := tui.Run(screen, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
 	}
@@ -299,6 +320,22 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 func (f ledgerFinances) Add(p finance.AddParams) error {
 	_, err := appendToLedger(f.ledgerPath, p)
 	return err
+}
+
+// Sync runs the very sync the fin sync command runs — the same function, handed
+// buffers instead of the terminal. A second implementation would eventually
+// resolve a conflict differently from the command, and the person would have no
+// way of telling which rules applied to their book.
+func (f ledgerFinances) Sync() (string, error) {
+	var out, errOut bytes.Buffer
+	if code := syncWorkbookAndLedger(f.workbookPath, f.ledgerPath, finance.DirectionNone, false, &out, &errOut); code != 0 {
+		msg := strings.TrimSpace(errOut.String())
+		if msg == "" {
+			msg = strings.TrimSpace(out.String())
+		}
+		return "", errors.New(msg)
+	}
+	return strings.TrimSpace(out.String()), nil
 }
 
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string) (http.Handler, error) {

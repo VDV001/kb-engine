@@ -321,14 +321,14 @@ func TestFinancesDropsTheWorkbookNoteAfterSyncing(t *testing.T) {
 	if len(w.got) != 1 {
 		t.Fatalf("ledger written %d time(s), want 1", len(w.got))
 	}
-	if !strings.Contains(m.View(), "kbengine fin sync") {
+	if !strings.Contains(m.View(), "Учёт_финансов.xlsx") {
 		t.Fatal("после записи не сказано, что книга отстала")
 	}
 
 	m = press(m, runes("s"))
 
-	if view := m.View(); strings.Contains(view, "kbengine fin sync") {
-		t.Errorf("после синхронизации экран всё ещё зовёт запускать её руками\n--- view ---\n%s", view)
+	if view := m.View(); strings.Contains(view, "Учёт_финансов.xlsx") {
+		t.Errorf("после синхронизации экран всё ещё говорит, что книга отстала\n--- view ---\n%s", view)
 	}
 }
 
