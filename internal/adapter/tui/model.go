@@ -63,6 +63,8 @@ type Model struct {
 	// a sync exactly when one is owed and stops asking once it is done.
 	ledger         FinanceWriter
 	syncer         WorkbookSyncer
+	vocab          VocabularySource
+	quick          quickForm
 	form           entryForm
 	finStatus      string
 	workbookBehind bool
@@ -93,6 +95,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch {
+		case m.quick.open:
+			return m.updateQuick(msg)
 		case m.form.open():
 			return m.updateForm(msg)
 		case m.picker.open():
@@ -167,6 +171,8 @@ func (m Model) search(query string) Model {
 // View renders the screen.
 func (m Model) View() string {
 	switch {
+	case m.quick.open:
+		return m.renderQuick()
 	case m.form.open():
 		return m.renderForm()
 	case m.picker.open():

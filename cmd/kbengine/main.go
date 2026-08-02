@@ -22,6 +22,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
+	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/tui"
@@ -167,9 +168,10 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	var fin tui.FinanceLoader
 	var ledger tui.FinanceWriter
 	var syncer tui.WorkbookSyncer
+	var vocab tui.VocabularySource
 	if *ledgerPath != "" {
 		l := ledgerFinances{ledgerPath: *ledgerPath, workbookPath: *workbookPath}
-		fin, ledger = l, l
+		fin, ledger, vocab = l, l, l
 		if *workbookPath != "" {
 			syncer = l
 		}
@@ -181,6 +183,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		Finances: fin,
 		Ledger:   ledger,
 		Workbook: syncer,
+		Words:    vocab,
 	}
 	if err := tui.Run(screen, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
@@ -320,6 +323,20 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 func (f ledgerFinances) Add(p finance.AddParams) error {
 	_, err := appendToLedger(f.ledgerPath, p)
 	return err
+}
+
+// Vocabulary reads the words the owner types for accounts and places. Re-read
+// per call, like everything else here: the file is edited by hand and written
+// by the assistant in the chat, so a cached copy would be stale exactly when a
+// new shop is added.
+func (f ledgerFinances) Vocabulary() (finance.Vocabulary, error) {
+	return financevocab.Load(financevocab.PathNextTo(f.ledgerPath))
+}
+
+// Remember teaches one new word. It goes into the same file the chat reads, so
+// a shop named once in the terminal is known in both places afterwards.
+func (f ledgerFinances) Remember(word string, rule finance.PlaceRule) error {
+	return financevocab.RememberPlace(financevocab.PathNextTo(f.ledgerPath), word, rule)
 }
 
 // Sync runs the very sync the fin sync command runs — the same function, handed

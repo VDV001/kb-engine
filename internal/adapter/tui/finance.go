@@ -61,6 +61,8 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.openForm(domain.KindIncome), nil
 		case "s":
 			return m.syncWorkbook(), nil
+		case "q":
+			return m.openQuick(), nil
 		}
 	}
 	return m, nil
@@ -108,6 +110,9 @@ func (m Model) financeHint() string {
 		return styleDim.Render(hintFinances)
 	}
 	keys := hintFinancesWrite
+	if m.vocab != nil {
+		keys += " · " + hintQuickKey
+	}
 	if m.syncer != nil {
 		keys += " · " + hintFinancesSync
 	}
