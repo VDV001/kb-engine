@@ -56,7 +56,7 @@ func TestFinancesWritesAnExpense(t *testing.T) {
 	m = fill(m, "Магнит")   // место
 	m = fill(m, "Сбербанк") // счёт
 	m = fill(m, "по пути")  // заметка
-	m = press(m, enter())
+	press(m, enter())
 
 	if len(w.got) != 1 {
 		t.Fatalf("ledger written %d time(s), want 1", len(w.got))
@@ -97,7 +97,7 @@ func TestFinancesWritesAnIncome(t *testing.T) {
 	m = fill(m, "90000")    // сумма
 	m = fill(m, "Зарплата") // источник
 	m = fill(m, "за июль")  // заметка
-	m = press(m, enter())
+	press(m, enter())
 
 	if len(w.got) != 1 {
 		t.Fatalf("ledger written %d time(s), want 1", len(w.got))
