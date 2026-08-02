@@ -62,6 +62,23 @@ export interface Audits {
   supersession: Finding[] | null
 }
 
+/**
+ * Что последний скан узнал про адреса базы.
+ *
+ * `alive` считается вычитанием на сервере: код ответа записывается только для
+ * не-200, поэтому у живой ссылки есть дата проверки и нет кода. `undecidable` —
+ * отдельное состояние намеренно: habr отвечает 403 и на снятую статью, и на
+ * бота, и приписать такие к живым или к мёртвым значило бы соврать.
+ */
+export interface LinkHealth {
+  alive: number
+  moved: number
+  gone: number
+  undecidable: number
+  unchecked: number
+  with_url: number
+}
+
 export interface DuplicateGroup {
   Kind: string
   Key: string
@@ -444,6 +461,7 @@ export const api = {
   // белеть от того, чем ему ответили, а сервером может оказаться и старая сборка.
   duplicates: () =>
     getJSON<DuplicateGroup[] | null>('/api/duplicates').then((groups) => groups ?? []),
+  linkHealth: () => getJSON<LinkHealth>('/api/link-health'),
   analytics: () => getJSON<Analytics>('/api/analytics'),
   analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
   graph: () => getJSON<Graph>('/api/graph'),

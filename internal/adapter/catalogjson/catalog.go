@@ -90,6 +90,9 @@ type entryDTO struct {
 	SourceBatch    flexInt `json:"source_batch"`
 	SourceDate     string  `json:"source_date"`
 	DriftCheckDate string  `json:"drift_check_date"`
+	// DriftHTTPCode is written only for a non-200 answer, so its absence is
+	// meaningful rather than missing data — see domain.EntryParams.
+	DriftHTTPCode flexInt `json:"drift_http_code"`
 }
 
 type catalogDTO struct {
@@ -276,6 +279,7 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		SourceBatch:    dto.SourceBatch.pointer(),
 		SourceDate:     sourceDate,
 		DriftCheckDate: driftChecked,
+		DriftHTTPCode:  dto.DriftHTTPCode.pointer(),
 	})
 }
 

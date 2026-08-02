@@ -35,6 +35,10 @@ type Auditor interface {
 	OutdatedCandidates() ([]audit.Finding, error)
 	CanonicalCandidates() ([]audit.Finding, error)
 	SupersessionIssues() ([]audit.Finding, error)
+	// LinkHealth is what the last drift scan learned about the base's own urls.
+	// Separate from the findings above because it is not a list of problems but
+	// a state of affairs — including how much of the base was never asked.
+	LinkHealth() (audit.LinkHealth, error)
 	Duplicates() ([]audit.DuplicateGroup, error)
 }
 
@@ -137,6 +141,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
+	mux.HandleFunc("GET /api/link-health", handleLinkHealth(a))
 	mux.HandleFunc("GET /api/analytics", handleAnalytics(an))
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an, cfg))
@@ -342,6 +347,20 @@ func handleAudits(a Auditor) http.HandlerFunc {
 			"canonical":    canonical,
 			"supersession": supersession,
 		})
+	}
+}
+
+// handleLinkHealth serves the drift summary. Its own endpoint rather than a
+// field on /api/audits: that one answers with lists of findings, and a счётчик
+// among them would have to pretend to be a finding to fit the shape.
+func handleLinkHealth(a Auditor) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		h, err := a.LinkHealth()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		writeJSON(w, h)
 	}
 }
 

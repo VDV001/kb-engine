@@ -1,5 +1,7 @@
 import { useState } from 'react'
+import { api } from './api'
 import type { Audits, DuplicateGroup, Entry, Finding } from './api'
+import { useResource } from './hooks/useResource'
 import { dateOf, statusOf } from './catalog'
 import { Card, Chip, Label, Section } from './components/ui'
 import {
@@ -263,6 +265,53 @@ function DuplicateCard({
   )
 }
 
+
+const DRIFT_COMMAND = 'kbengine drift --catalog "$KB_CATALOG" --apply'
+
+/**
+ * Что скан узнал про адреса базы.
+ *
+ * Существует потому, что до этого не существовало: результат проверки лежал в
+ * каталоге с 01.08 и не попадал ни на один экран — база знала про свои ссылки
+ * больше, чем могла сказать.
+ *
+ * Непроверенные показываются всегда, включая ноль. Это Правило 11 в исходной
+ * формулировке: доля живых без числа непроверенных читается как утверждение обо
+ * всей базе, хотя относится только к спрошенной её части.
+ */
+function LinkHealthSection() {
+  const res = useResource(api.linkHealth)
+  if (res.status !== 'ready') return null
+  const h = res.data
+  if (h.with_url === 0) return null
+
+  const cells: { n: number; label: string; hint: string; tone: string }[] = [
+    { n: h.alive, label: 'отвечают', hint: 'ответ 200', tone: 'text-on-surface' },
+    { n: h.moved, label: 'переехали', hint: 'редирект: материал на месте, адрес устарел', tone: 'text-secondary' },
+    { n: h.gone, label: 'исчезли', hint: '404 или 410', tone: 'text-primary' },
+    { n: h.undecidable, label: 'не знаем', hint: '403 — так отвечают и на снятую статью, и на бота', tone: 'text-on-surface-variant' },
+    { n: h.unchecked, label: 'не спрашивали', hint: 'адрес есть, проверки не было ни разу', tone: 'text-on-surface-variant' },
+  ]
+
+  return (
+    <Section
+      title="Здоровье ссылок"
+      subtitle={`${h.with_url} ${plural(h.with_url, ['запись с адресом', 'записи с адресом', 'записей с адресом'])} · по последней проверке`}
+      aside={<CopyButton text={DRIFT_COMMAND} title="Перепроверить" />}
+    >
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {cells.map((c) => (
+          <Card key={c.label} className="min-w-0">
+            <div className={`text-3xl ${c.tone}`}>{c.n}</div>
+            <div className="mt-1 text-sm text-on-surface">{c.label}</div>
+            <p className="mt-1 text-xs text-on-surface-variant">{c.hint}</p>
+          </Card>
+        ))}
+      </div>
+    </Section>
+  )
+}
+
 export function HealthView({
   audits,
   duplicates,
@@ -313,6 +362,8 @@ export function HealthView({
           </div>
         </Card>
       )}
+
+      <LinkHealthSection />
 
       <AuditSection
         title="Похоже на устаревшие"
