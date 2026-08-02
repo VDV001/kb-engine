@@ -344,3 +344,159 @@ func TestFinancesOffersNoSyncKeyWithoutAWorkbook(t *testing.T) {
 		t.Errorf("экран без книги предлагает клавишу, которой нечего делать\n--- view ---\n%s", view)
 	}
 }
+
+// stubVocab отдаёт словарь и запоминает то, что экран просит запомнить.
+type stubVocab struct {
+	v         finance.Vocabulary
+	err       error
+	learned   map[string]finance.PlaceRule
+	learnFail error
+}
+
+func (s *stubVocab) Vocabulary() (finance.Vocabulary, error) { return s.v, s.err }
+
+func (s *stubVocab) Remember(word string, rule finance.PlaceRule) error {
+	if s.learnFail != nil {
+		return s.learnFail
+	}
+	if s.learned == nil {
+		s.learned = map[string]finance.PlaceRule{}
+	}
+	s.learned[word] = rule
+	return nil
+}
+
+func knownWords() *stubVocab {
+	return &stubVocab{v: finance.Vocabulary{
+		Accounts: map[string]string{"сбер": "Сбербанк", "альфа": "Альфа-Банк"},
+		Places: map[string]finance.PlaceRule{
+			"такси":  {Category: "Транспорт", Subcategory: "Такси", Place: "Такси"},
+			"магнит": {Category: "Еда", Subcategory: "Продукты", Place: "Магнит"},
+		},
+	}}
+}
+
+func quickModel(voc *stubVocab) (tui.Model, *stubWriter) {
+	fin := &stubFinances{sum: sampleSummary()}
+	w := &stubWriter{}
+	return tui.NewModel(nil).WithFinances(fin).WithFinanceWriter(w).WithVocabulary(voc), w
+}
+
+// Одна строка вместо семи полей — ровно то, как владелец пишет трату в чате.
+func TestQuickEntry_writesFromOneLine(t *testing.T) {
+	m, w := quickModel(knownWords())
+
+	m = press(press(m, tab()), runes("q"))
+	m = press(m, runes("418р такси сбер"))
+	m = press(m, enter()) // показать распознанное
+	m = press(m, enter()) // подтвердить запись
+
+	if len(w.got) != 1 {
+		t.Fatalf("записано %d раз, ожидался 1", len(w.got))
+	}
+	got := w.got[0]
+	if got.Amount.Kopecks() != 41800 {
+		t.Errorf("сумма = %d копеек, ожидалось 41800", got.Amount.Kopecks())
+	}
+	for _, c := range []struct{ name, got, want string }{
+		{"категория", got.Category, "Транспорт"},
+		{"подкатегория", got.Subcategory, "Такси"},
+		{"счёт", got.Account, "Сбербанк"},
+	} {
+		if c.got != c.want {
+			t.Errorf("%s = %q, ожидалось %q", c.name, c.got, c.want)
+		}
+	}
+
+	// Запись видна и на экране: форма закрыта, трата названа, книга помечена
+	// отставшей. Без этого «записано» знает только стаб-писатель, а человек
+	// перед терминалом — нет.
+	if m.OnQuickEntry() {
+		t.Error("форма осталась открытой после записи")
+	}
+	view := m.View()
+	for _, want := range []string{"записано", "418", "Транспорт"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
+		}
+	}
+	if !strings.Contains(view, "книга") {
+		t.Errorf("экран не сказал, что книга отстала\n--- view ---\n%s", view)
+	}
+}
+
+// Разобранное показывается ДО записи: догадка видна в момент, когда её ещё
+// можно отменить, а не после того, как строка ушла в файл.
+func TestQuickEntry_showsWhatItUnderstoodBeforeWriting(t *testing.T) {
+	m, w := quickModel(knownWords())
+
+	m = press(press(m, tab()), runes("q"))
+	m = press(m, runes("565,44 магнит альфа"))
+	m = press(m, enter())
+
+	if len(w.got) != 0 {
+		t.Fatal("строка записана до подтверждения")
+	}
+	view := m.View()
+	for _, want := range []string{"565.44", "Еда", "Продукты", "Магнит", "Альфа-Банк"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
+		}
+	}
+}
+
+// Незнакомое слово названо, и записать вслепую нельзя: движок предлагает, но
+// не принимает решение за человека.
+func TestQuickEntry_refusesToGuessAnUnknownWord(t *testing.T) {
+	m, w := quickModel(knownWords())
+
+	m = press(press(m, tab()), runes("q"))
+	m = press(m, runes("140 живика альфа"))
+	m = press(m, enter())
+
+	view := m.View()
+	if !strings.Contains(view, "живика") {
+		t.Errorf("экран не назвал незнакомое слово\n--- view ---\n%s", view)
+	}
+	m = press(m, enter())
+	if len(w.got) != 0 {
+		t.Error("трата записана с нераспознанным словом, хотя категория неизвестна")
+	}
+	// Отказ оставляет строку там, где её можно поправить, и называет причину.
+	// Закрыться молча значило бы потерять набранное и не объяснить, почему.
+	if !m.OnQuickEntry() {
+		t.Error("форма закрылась после отказа — набранная строка потеряна")
+	}
+	if view := m.View(); !strings.Contains(view, "не знаю") {
+		t.Errorf("экран не назвал причину отказа\n--- view ---\n%s", view)
+	}
+}
+
+// Строка без числа отвергается там же, где набрана.
+func TestQuickEntry_namesALineWithoutAmount(t *testing.T) {
+	m, w := quickModel(knownWords())
+
+	m = press(press(m, tab()), runes("q"))
+	m = press(m, runes("такси сбер"))
+	m = press(m, enter())
+
+	if len(w.got) != 0 {
+		t.Fatal("строка без суммы записана")
+	}
+	if view := m.View(); !strings.Contains(view, "сумм") {
+		t.Errorf("отказ не называет сумму\n--- view ---\n%s", view)
+	}
+}
+
+// Без словаря клавиши нет вовсе — правило, которому следуют все остальные
+// клавиши этого экрана.
+func TestQuickEntry_absentWithoutVocabulary(t *testing.T) {
+	fin := &stubFinances{sum: sampleSummary()}
+	m := tui.NewModel(nil).WithFinances(fin).WithFinanceWriter(&stubWriter{})
+
+	m = press(press(m, tab()), runes("q"))
+
+	if view := m.View(); strings.Contains(view, "q — строкой") {
+		t.Errorf("экран без словаря предлагает клавишу, которой нечего делать\n--- view ---\n%s", view)
+	}
+}
