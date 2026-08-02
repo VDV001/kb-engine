@@ -37,7 +37,12 @@ func (s *Service) LinkHealth() (LinkHealth, error) {
 	if err != nil {
 		return LinkHealth{}, err
 	}
+	return linkHealth(c)
+}
 
+// linkHealth totals one already-loaded catalog, so a caller collecting several
+// checks at once reads the file once rather than once per check.
+func linkHealth(c *domain.Catalog) (LinkHealth, error) {
 	var h LinkHealth
 	for _, e := range c.Entries() {
 		if e.URL() == "" {

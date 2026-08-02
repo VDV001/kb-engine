@@ -83,6 +83,10 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 	if err != nil {
 		return nil, err
 	}
+	return outdatedCandidates(c), nil
+}
+
+func outdatedCandidates(c *domain.Catalog) []Finding {
 	var findings []Finding
 	for _, e := range c.Entries() {
 		// Пропускаются все терминальные состояния, а не одно outdated: dead-end и
@@ -100,7 +104,7 @@ func (s *Service) OutdatedCandidates() ([]Finding, error) {
 			})
 		}
 	}
-	return findings, nil
+	return findings
 }
 
 // AgeCandidates returns Habr articles older than ageMonthsThreshold that are

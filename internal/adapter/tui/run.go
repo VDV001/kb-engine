@@ -29,6 +29,7 @@ type Sources struct {
 	Workbook WorkbookSyncer
 	Words    VocabularySource
 	Accounts AccountsSource
+	Health   HealthSource
 }
 
 // Run loads the catalog and hands the terminal to the search screen. It returns
@@ -56,6 +57,9 @@ func Run(s Sources, in io.Reader, out io.Writer) error {
 	}
 	if s.Accounts != nil {
 		model = model.WithAccounts(s.Accounts)
+	}
+	if s.Health != nil {
+		model = model.WithHealth(s.Health)
 	}
 	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()
