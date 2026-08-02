@@ -16,6 +16,17 @@ import (
 // tests do not send; Update replaces it as soon as the real one arrives.
 const listWindow = 15
 
+// listChrome is how many lines the list screen spends on everything that is not
+// an entry: the query, the counter and the blank after them (3), the blank and
+// the "… ещё N" line under a long list (2), the blank and the hint at the
+// bottom (2).
+//
+// It counts the tallest case, not the usual one. Counting six — the screen
+// without "… ещё" — made the view one line taller than the window exactly when
+// the list was long: the terminal scrolled, and the query line, the only thing
+// saying what was typed, went off the top edge.
+const listChrome = 7
+
 // Model is the search screen: a query, the entries matching it, and either the
 // list or one entry's card.
 //
@@ -73,7 +84,7 @@ func (m Model) OnCard() bool { return m.onCard }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.height = max(msg.Height-6, 3)
+		m.height = max(msg.Height-listChrome, 3)
 		return m, nil
 	case tea.KeyMsg:
 		switch {

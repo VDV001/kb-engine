@@ -11,7 +11,9 @@ import (
 )
 
 func key(s string) tea.KeyMsg {
-	if len(s) == 1 {
+	// По рунам, а не по байтам: кириллическая буква занимает два байта и
+	// уходила в switch ниже, где её ждала паника «unknown key».
+	if len([]rune(s)) == 1 {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
 	switch s {
@@ -186,5 +188,51 @@ func TestModel_cardFallsBackToReadState(t *testing.T) {
 	m := send(tui.NewModel(fixture(t)), "enter")
 	if got := m.View(); !strings.Contains(got, "read") {
 		t.Errorf("карточка не показала состояние чтения:\n%s", got)
+	}
+}
+
+// Экран обязан помещаться в окно целиком. Одна лишняя строка стоит верхней:
+// терминал прокручивает вывод, и строка поиска — то единственное, что говорит,
+// что именно набрано, — уезжает за верхний край.
+//
+// Проверяется на длинном списке, потому что дефект живёт именно там: когда
+// найденного больше, чем влезает, снизу добавляется блок «… ещё N», которого
+// при коротком результате нет. Поэтому же баг и выглядел плавающим — при двух
+// найденных записях всё было видно.
+func TestModel_viewFitsTheWindow(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		height, found int
+	}{
+		{"низкое окно, длинный список", 24, 1000},
+		{"обычное окно, длинный список", 40, 1000},
+		{"крошечное окно", 10, 1000},
+		{"список короче окна", 24, 3},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := resize(tui.NewModel(manyEntries(t, c.found)), 100, c.height)
+
+			got := strings.Count(m.View(), "\n") + 1
+			if got > c.height {
+				t.Errorf("экран занимает %d строк при окне %d — верх уедет за край\n--- view ---\n%s",
+					got, c.height, m.View())
+			}
+		})
+	}
+}
+
+// Строка поиска — первая строка экрана, и она обязана остаться видимой на
+// длинном списке: без неё не видно, что набрано.
+func TestModel_queryStaysOnScreen(t *testing.T) {
+	m := resize(tui.NewModel(manyEntries(t, 1000)), 100, 24)
+	m = send(m, "з")
+
+	view := m.View()
+	first, _, _ := strings.Cut(view, "\n")
+	if !strings.Contains(first, "поиск: з") {
+		t.Errorf("первая строка экрана = %q, ожидалась строка поиска", first)
+	}
+	if n := strings.Count(view, "\n") + 1; n > 24 {
+		t.Errorf("экран %d строк при окне 24 — первая строка уедет вверх", n)
 	}
 }

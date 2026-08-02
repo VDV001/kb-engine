@@ -67,8 +67,13 @@ export function AboutView({
       </header>
 
       <div className="flex flex-col gap-8 xl:flex-row">
-        {/* Ящики: структура — прямые углы, стопка с волосяными разделителями. */}
-        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low">
+        {/* Ящики: структура — прямые углы, стопка с волосяными разделителями.
+            xl:self-start — только в ряду: по умолчанию flex тянет колонку до
+            высоты соседней, и рамка со списком категорий уезжала на всю длину
+            истории релизов справа, оставляя больше пустого места, чем самих
+            ящиков. В колоночной раскладке self-start сузил бы блок по
+            содержимому, поэтому правило и стоит за брейкпоинтом. */}
+        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low xl:self-start">
           {boxes.map(([cat, n]) => (
             <button
               key={cat}
