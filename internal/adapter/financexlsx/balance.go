@@ -93,19 +93,31 @@ func accountRow(f *excelize.File, bank string) (int, error) {
 		ErrUnknownAccount, bank, sheetAccounts, strings.Join(known, ", "))
 }
 
-// writeBalance puts the amount and the date into the account's row.
+// writeBalance puts the amount and the date into the account's row, keeping the
+// formatting those cells already carry.
 //
-// No styles are restored afterwards, and that is measured rather than assumed:
-// on a cell that already carries a format, excelize leaves the style untouched
-// when the value changes, and every cell on this sheet in the live workbook has
-// the owner's currency or date format on it. The one case where a write does
-// impose a format — a date into a cell that had no style at all — is exactly the
-// case rowStyles/applyStyles cannot restore either, since they skip style 0. So
-// the restore pass here would have been code that runs and changes nothing.
+// Both halves of this were learned on the owner's book rather than on a fixture,
+// and neither showed up in tests written before it was tried:
+//
+// The date is stored as a whole day. A spreadsheet keeps dates as days since
+// 1900, so writing the moment leaves 46236.69 in the cell — a balance is
+// confirmed on a day, and the fraction is the clock leaking into the record.
+//
+// The styles are put back because on the live workbook a date write replaces
+// them: measured 104 → 53, and 53 carries no format at all, so the cell stopped
+// reading as a date and started reading as 46236.69. A fixture built by excelize
+// does not reproduce that — it keeps its own custom formats — which is why the
+// first version of this function skipped the restore and the tests agreed.
 func writeBalance(f *excelize.File, row int, balance domain.Money, updated time.Time) error {
+	styles, err := rowStyles(f, sheetAccounts, row, []int{balanceColumn, updatedColumn})
+	if err != nil {
+		return err
+	}
+
+	y, m, d := updated.Date()
 	values := map[int]any{
 		balanceColumn: float64(balance.Kopecks()) / 100,
-		updatedColumn: updated,
+		updatedColumn: time.Date(y, m, d, 0, 0, 0, 0, updated.Location()),
 	}
 	for col, v := range values {
 		name, err := excelize.CoordinatesToCellName(col, row)
@@ -116,5 +128,8 @@ func writeBalance(f *excelize.File, row int, balance domain.Money, updated time.
 			return fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
 		}
 	}
-	return nil
+
+	// Styles last: writing a time.Time applies a format of its own, and the
+	// sheet's own formatting has to win over it.
+	return applyStyles(f, sheetAccounts, row, styles)
 }

@@ -130,6 +130,61 @@ func styleAccountCells(t *testing.T, path string) {
 	}
 }
 
+// The date has to read as a date in the book, not as the number a date is
+// underneath. This is checked through the formatted value rather than the style
+// id, because that is what the owner sees when the file is opened — and because
+// the style-id version of this test passed on the live workbook while the cell
+// there had turned into 46236.69.
+func TestSetBalance_theDateStillReadsAsADate(t *testing.T) {
+	path := workbookWithExtraColumn(t)
+	styleAccountCells(t, path)
+
+	// A clock with a time of day, like the real one: writing the moment instead
+	// of the day leaves a fraction in the cell, and the workbook shows it.
+	clock := func() time.Time { return time.Date(2026, 8, 2, 16, 38, 0, 0, time.UTC) }
+	if err := financexlsx.SetBalance(path, "Альфа-Банк", money(t, "1447,12"), clock); err != nil {
+		t.Fatalf("SetBalance: %v", err)
+	}
+
+	// The stored number is a whole day. A spreadsheet keeps a date as days since
+	// 1900, so a moment lands as 46236.69 — and whether that shows as a date or
+	// as 46236.69 then depends on a format the writer does not control.
+	raw := rawCell(t, path, "Счета", "C4")
+	if strings.Contains(raw, ".") {
+		t.Errorf("в ячейке %s — баланс подтверждается днём, а записан момент", raw)
+	}
+	if got := formattedCell(t, path, "Счета", "C4"); !strings.Contains(got, "2026") {
+		t.Errorf("дата в книге = %q — читается не как дата", got)
+	}
+}
+
+// formattedCell returns the cell as the spreadsheet displays it, formatting
+// applied — the value a person reads, not the number underneath.
+func formattedCell(t *testing.T, path, sheet, cell string) string {
+	t.Helper()
+	return readCell(t, path, sheet, cell)
+}
+
+// rawCell returns the number stored in the cell, formatting ignored.
+func rawCell(t *testing.T, path, sheet, cell string) string {
+	t.Helper()
+	return readCell(t, path, sheet, cell, excelize.Options{RawCellValue: true})
+}
+
+func readCell(t *testing.T, path, sheet, cell string, opts ...excelize.Options) string {
+	t.Helper()
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		t.Fatalf("open %s: %v", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	v, err := f.GetCellValue(sheet, cell, opts...)
+	if err != nil {
+		t.Fatalf("GetCellValue %s!%s: %v", sheet, cell, err)
+	}
+	return v
+}
+
 func fixedClock(y int, m time.Month, d int) func() time.Time {
 	return func() time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 }
