@@ -315,6 +315,21 @@ export interface Engine {
   version: string
   commit: string
   built: string
+  /**
+   * Какие необязательные источники движку передали при запуске.
+   *
+   * Нужно затем, чтобы вкладка могла отличить «в базе ничего нет» от «файл не
+   * попросили загрузить»: о флагах командной строки она сама не знает, а
+   * пустой список этих двух случаев не различает. Старая сборка поля не
+   * отдаёт вовсе — отсюда `?`, и промолчать тогда честнее, чем выдумать.
+   */
+  sources?: SourceStatus[] | null
+}
+
+/** Один необязательный источник: имя флага, как в команде, и факт подключения. */
+export interface SourceStatus {
+  flag: string
+  connected: boolean
 }
 
 // Amounts arrive as decimal strings, not numbers: the ledger stores kopecks as

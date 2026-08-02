@@ -235,6 +235,12 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
+	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
+	// смотреть в него будут ровно в этот момент.
+	for _, line := range startupSources(serveSources(*configPath, *ledgerPath, *workbookPath,
+		*changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)) {
+		fmt.Fprintln(stdout, line)
+	}
 	if err := srv.ListenAndServe(); err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -334,8 +340,13 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 			return changelog.Parse(string(raw)), nil
 		}
 	}
+	// Тот же список, из которого печатается строка запуска: страница задаёт
+	// движку тот же вопрос, что и терминал, и ответ обязан совпадать.
+	engine := buildInfo()
+	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
+		changelogPath, nowPath, teamPath, projectsPath, mediaPath))
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, chlog, docs, buildInfo(), front), nil
+		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
 }
 
 // buildDocuments wires the owner's personal views. Each path is optional;
