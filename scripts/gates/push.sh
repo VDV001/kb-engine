@@ -157,4 +157,44 @@ else
   echo "⚠ gitleaks not installed — skipping (install: brew install gitleaks)"
 fi
 
+# ------------------------------------------- 9. behaviour reaches the journal
+# A branch that changes behaviour has to say so in CHANGELOG.md.
+#
+# This gate exists because the same miss happened twice in two days: the
+# one-line quick entry, then the health screen and the repeat guard — none of
+# them reached the journal on the way in. Both times it was caught by hand,
+# comparing Unreleased against the git history right before cutting a version,
+# which works exactly as long as somebody remembers to compare.
+#
+# The entry is written on the branch that makes the change, while what changed
+# is still fresh, rather than reconstructed at release time from commit
+# subjects.
+#
+# The escape hatch is deliberate and named: refactors, docs and CI work change
+# no behaviour and have nothing to write. CHANGELOG_SKIP=1 says that out loud
+# instead of quietly weakening the gate for everyone.
+if [ "${CHANGELOG_SKIP:-0}" != "1" ]; then
+  base="origin/main"
+  if git rev-parse --verify --quiet "$base" >/dev/null; then
+    # Only the subjects of commits actually being pushed, and only the two
+    # prefixes that mean "behaviour moved": feat and fix.
+    behaviour="$(git log "$base..HEAD" --format=%s | grep -cE '^(feat|fix)(\(.+\))?!?:' || true)"
+    # Counted as commits touching the file, not as a diff against the base, and
+    # release commits do not count.
+    #
+    # Both parts are measured, not assumed. A branch cut from a release branch
+    # carries that release's changelog commit along, and a plain diff then shows
+    # CHANGELOG.md as "touched" — the health screen branch passed this gate that
+    # way while carrying no entry of its own.
+    touched="$(git log "$base..HEAD" --format=%s -- CHANGELOG.md | grep -cvE '^docs\(changelog\): релиз' || true)"
+    if [ "$behaviour" -gt 0 ] && [ "$touched" -eq 0 ]; then
+      echo "✘ ветка меняет поведение (коммитов feat/fix: $behaviour), но CHANGELOG.md не тронут"
+      echo "  Допишите абзац в раздел [Unreleased] здесь, на этой ветке,"
+      echo "  пока помните, что именно изменилось."
+      echo "  Если поведение не менялось: CHANGELOG_SKIP=1 git push"
+      exit 1
+    fi
+  fi
+fi
+
 echo "✓ pre-push gates passed"
