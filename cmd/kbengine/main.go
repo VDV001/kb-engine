@@ -155,11 +155,13 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	// empty screen. The same ledgerFinances the HTTP API uses, so both surfaces
 	// total the same way.
 	var fin tui.FinanceLoader
+	var ledger tui.FinanceWriter
 	if *ledgerPath != "" {
-		fin = ledgerFinances{ledgerPath: *ledgerPath}
+		l := ledgerFinances{ledgerPath: *ledgerPath}
+		fin, ledger = l, l
 	}
 	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
-	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, fin, os.Stdin, stdout); err != nil {
+	if err := tui.Run(svc, catalogWriter{path: *catalogPath}, fin, ledger, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
 		return 1
 	}
@@ -285,6 +287,18 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 		return finance.Summary{}, err
 	}
 	return finance.Summarize(finance.Match(recs, finance.Filter{Months: months})), nil
+}
+
+// Add records one entry typed in the terminal. It goes through the same
+// append the fin add command uses, so the two surfaces write the ledger the
+// same way — including the id source, the sort order and the save.
+//
+// The workbook is deliberately left alone: writing it here would be a third
+// path into the spreadsheet, and the screen says out loud that the book is
+// behind rather than quietly touching it.
+func (f ledgerFinances) Add(p finance.AddParams) error {
+	_, err := appendToLedger(f.ledgerPath, p)
+	return err
 }
 
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string) (http.Handler, error) {

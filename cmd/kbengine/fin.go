@@ -154,12 +154,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	recs, err := financejsonl.Load(*ledgerPath, time.Now)
-	if err != nil {
-		fmt.Fprintf(stderr, "fin add: %v\n", err)
-		return 1
-	}
-	rec, err := finance.Add(finance.AddParams{
+	rec, err := appendToLedger(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
 		Date:        when,
 		Amount:      money,
@@ -169,15 +164,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Description: *note,
 		Source:      *source,
 		Account:     *account,
-	}, newULID, time.Now)
+	})
 	if err != nil {
-		fmt.Fprintf(stderr, "fin add: %v\n", err)
-		return 1
-	}
-
-	recs = append(recs, rec)
-	finance.Sort(recs)
-	if err := financejsonl.Save(*ledgerPath, recs, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
@@ -185,6 +173,29 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
 		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(), tx.Category(), tx.Description())
 	return 0
+}
+
+// appendToLedger records one new entry in the ledger and returns it.
+//
+// One function for every surface that writes: the command below and the
+// terminal's entry form both call it. A second copy of load → add → sort → save
+// is how the ledger ends up with rows that only one surface can read — the
+// spreadsheet already taught that lesson at the cost of fourteen rows.
+func appendToLedger(ledgerPath string, p finance.AddParams) (finance.Record, error) {
+	recs, err := financejsonl.Load(ledgerPath, time.Now)
+	if err != nil {
+		return finance.Record{}, err
+	}
+	rec, err := finance.Add(p, newULID, time.Now)
+	if err != nil {
+		return finance.Record{}, err
+	}
+	recs = append(recs, rec)
+	finance.Sort(recs)
+	if err := financejsonl.Save(ledgerPath, recs, time.Now); err != nil {
+		return finance.Record{}, err
+	}
+	return rec, nil
 }
 
 // runFinList prints the matching rows.

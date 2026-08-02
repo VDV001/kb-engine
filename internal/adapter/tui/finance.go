@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
@@ -48,6 +49,17 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case tea.KeyTab, tea.KeyEsc:
 		m.onFinances = false
 		return m, nil
+	case tea.KeyRunes:
+		// Two letters start an entry, and only when this screen may write. The
+		// kind is chosen by the key rather than inside the form: an expense and an
+		// income do not carry the same fields, so the form has to know which one
+		// it is before it can show anything.
+		switch string(msg.Runes) {
+		case "a":
+			return m.openForm(domain.KindExpense), nil
+		case "i":
+			return m.openForm(domain.KindIncome), nil
+		}
 	}
 	return m, nil
 }
@@ -59,7 +71,7 @@ func (m Model) renderFinances() string {
 	if m.finErr != nil {
 		b.WriteString(styleTitle.Render("отчёт не построен") + "\n")
 		b.WriteString(m.finErr.Error() + "\n")
-		return b.String() + "\n" + styleDim.Render(hintFinances)
+		return b.String() + "\n" + m.financeHint()
 	}
 
 	s := m.summary
@@ -69,7 +81,24 @@ func (m Model) renderFinances() string {
 	writeTotals(&b, "по категориям", s.ByCategory)
 	writeTotals(&b, "по счетам", s.ByAccount)
 
-	return b.String() + "\n" + styleDim.Render(hintFinances)
+	if m.finStatus != "" {
+		b.WriteString(styleQuery.Render(m.finStatus) + "\n")
+		// The workbook is a second file this screen does not touch. Saying so is
+		// the difference between a person knowing the book is behind and finding
+		// out weeks later — the engine names what it did not do.
+		b.WriteString(styleDim.Render(hintWorkbook) + "\n")
+	}
+
+	return b.String() + "\n" + m.financeHint()
+}
+
+// financeHint lists only the keys this screen actually has. The entry keys are
+// absent without a writer rather than present and inert.
+func (m Model) financeHint() string {
+	if m.ledger == nil {
+		return styleDim.Render(hintFinances)
+	}
+	return styleDim.Render(hintFinancesWrite + " · " + hintFinances)
 }
 
 // writeTotals prints one breakdown. An empty breakdown says so rather than
@@ -91,6 +120,8 @@ func writeTotals(b *strings.Builder, title string, rows []finance.CategoryTotal)
 
 const (
 	// financeRows caps each breakdown so both fit one screen.
-	financeRows  = 8
-	hintFinances = "Tab — назад к поиску · Esc — назад · Ctrl+C — выход"
+	financeRows       = 8
+	hintFinances      = "Tab — назад к поиску · Esc — назад · Ctrl+C — выход"
+	hintFinancesWrite = "a — расход · i — доход"
+	hintWorkbook      = "книга Учёт_финансов.xlsx не тронута — kbengine fin sync"
 )

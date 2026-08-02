@@ -42,6 +42,14 @@ type Model struct {
 	onFinances bool
 	summary    finance.Summary
 	finErr     error
+
+	// ledger is nil on a read-only finances screen; form is open while an entry
+	// is being typed; finStatus carries the last write's outcome. Kept apart from
+	// status above: that one belongs to the card, and a note about money written
+	// here would otherwise reappear over an entry the person opened afterwards.
+	ledger    FinanceWriter
+	form      entryForm
+	finStatus string
 }
 
 // NewModel returns the screen showing every entry.
@@ -69,6 +77,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch {
+		case m.form.open():
+			return m.updateForm(msg)
 		case m.picker.open():
 			return m.updatePicker(msg)
 		case m.onFinances:
@@ -141,6 +151,8 @@ func (m Model) search(query string) Model {
 // View renders the screen.
 func (m Model) View() string {
 	switch {
+	case m.form.open():
+		return m.renderForm()
 	case m.picker.open():
 		return m.renderPicker()
 	case m.onFinances:

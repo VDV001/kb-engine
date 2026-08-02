@@ -34,8 +34,10 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   catalog. Such an entry has no address on the internet: it is identified by the
   file it lives in, and that file is what the dedup keys on.
 - **Terminal UI** — `tui` opens the same catalog in the terminal: type to filter,
-  arrows to move, Enter for the entry card. It reads through the same use case
-  the dashboard does, so the two surfaces cannot disagree.
+  arrows to move, Enter for the entry card. With `--ledger` it also opens the
+  finances screen on `Tab`, where `a` records an expense and `i` an income
+  through the same use case `fin add` writes with. It reads through the same use
+  case the dashboard does, so the two surfaces cannot disagree.
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.
@@ -65,7 +67,7 @@ kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [
                       [--now N] [--team T] [--projects P] [--media DIR] [--addr HOST:PORT]
 kbengine add          --catalog X --title T --category C --file PATH [--description D] [--tags T]
                       [--version SEMVER] [--lifecycle L] [--source S]
-kbengine tui          --catalog X
+kbengine tui          --catalog X [--ledger L]
 kbengine audit        --catalog X [--check outdated|canonical|canonical-health|supersession|integrity|versions|batch|links|age|all]
 kbengine dedup        --catalog X
 kbengine drift        --catalog X [--apply] [--update-urls] [--limit N] [--delay D] [--timeout T]
