@@ -560,3 +560,78 @@ func TestIntegrityIssues_cleanCatalogIsSilent(t *testing.T) {
 		t.Errorf("clean catalog reported %+v", findings)
 	}
 }
+
+// Запись, которую уже сняли с дистанции, не может быть кандидатом в канон.
+// «Замещена» и «тупик» — это решения, принятые про неё; предлагать их пересмотреть
+// по счётчику ссылок значит спорить с решением, которого проверка не читала.
+// На живой базе так висели две находки, и обе годами не требовали действия.
+func TestCanonicalCandidates_skipsRetiredEntries(t *testing.T) {
+	ref := func(id, target int) domain.Entry {
+		return article(t, id, articleParams{title: "t", lifecycle: "active", verdict: "keep", relatedIDs: []int{target}})
+	}
+	cat, err := domain.NewCatalog([]domain.Entry{
+		article(t, 1, articleParams{title: "Замещена", lifecycle: "superseded", verdict: "keep"}),
+		ref(10, 1), ref(11, 1), ref(12, 1),
+		article(t, 2, articleParams{title: "Тупик", lifecycle: "dead-end", verdict: "keep"}),
+		ref(13, 2), ref(14, 2), ref(15, 2),
+	})
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).CanonicalCandidates()
+	if err != nil {
+		t.Fatalf("CanonicalCandidates: %v", err)
+	}
+	for _, f := range findings {
+		t.Errorf("снятая с дистанции запись предложена в канон: id=%d lifecycle=%s", f.EntryID, f.Current)
+	}
+}
+
+// Взаимная ссылка — это «мы одна серия», а не «я на тебя опираюсь». Пять
+// шпаргалок, связанных каждая с каждой, дают друг другу по четыре ссылки и все
+// пятеро попадают в кандидаты, хотя ни на одну из них никто снаружи не сослался.
+// Тот же класс шума, что и разборы, только приходит он не от категории.
+func TestCanonicalCandidates_ignoresMutualLinks(t *testing.T) {
+	series := make([]domain.Entry, 0, 5)
+	ids := []int{101, 102, 103, 104, 105}
+	for _, id := range ids {
+		others := make([]int, 0, 4)
+		for _, other := range ids {
+			if other != id {
+				others = append(others, other)
+			}
+		}
+		series = append(series, article(t, id, articleParams{
+			title: "Серия", lifecycle: "active", verdict: "keep", relatedIDs: others,
+		}))
+	}
+	// Рядом — запись, на которую ссылаются односторонне: она обязана остаться.
+	series = append(series,
+		article(t, 200, articleParams{title: "Опора", lifecycle: "active", verdict: "keep"}),
+		article(t, 201, articleParams{title: "a", lifecycle: "active", verdict: "keep", relatedIDs: []int{200}}),
+		article(t, 202, articleParams{title: "b", lifecycle: "active", verdict: "keep", relatedIDs: []int{200}}),
+		article(t, 203, articleParams{title: "c", lifecycle: "active", verdict: "keep", relatedIDs: []int{200}}),
+	)
+	cat, err := domain.NewCatalog(series)
+	if err != nil {
+		t.Fatalf("catalog: %v", err)
+	}
+
+	findings, err := audit.NewService(fakeLoader{catalog: cat}).CanonicalCandidates()
+	if err != nil {
+		t.Fatalf("CanonicalCandidates: %v", err)
+	}
+	got := map[int]bool{}
+	for _, f := range findings {
+		got[f.EntryID] = true
+	}
+	for _, id := range ids {
+		if got[id] {
+			t.Errorf("участник серии предложен в канон по взаимным ссылкам: id=%d", id)
+		}
+	}
+	if !got[200] {
+		t.Error("запись с тремя односторонними ссылками пропала из кандидатов")
+	}
+}
