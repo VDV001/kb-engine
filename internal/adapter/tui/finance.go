@@ -46,7 +46,12 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlC:
 		return m, tea.Quit
-	case tea.KeyTab, tea.KeyEsc:
+	case tea.KeyTab:
+		return m.nextScreen()
+	case tea.KeyEsc:
+		// Esc — назад в поиск, а не следующий экран: выйти и перебирать дальше
+		// это разные намерения, и один Tab для обоих отнимал бы у человека
+		// возможность просто уйти.
 		m.onFinances = false
 		return m, nil
 	case tea.KeyRunes:

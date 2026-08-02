@@ -179,9 +179,14 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 			syncer, accounts = l, l
 		}
 	}
-	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
+	loader := catalogjson.FileLoader{Path: *catalogPath}
+	svc := query.NewService(loader)
 	screen := tui.Sources{
-		Entries:  svc,
+		Entries: svc,
+		// The audit reads the same catalog the screen lists, through the same
+		// service the dashboard uses — so the two cannot report different health
+		// for one file.
+		Health:   audit.NewService(loader),
 		Saver:    catalogWriter{path: *catalogPath},
 		Finances: fin,
 		Ledger:   ledger,

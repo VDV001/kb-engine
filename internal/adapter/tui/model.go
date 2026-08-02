@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/theme"
+	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
@@ -70,6 +71,14 @@ type Model struct {
 	form           entryForm
 	finStatus      string
 	workbookBehind bool
+
+	// health is nil when no audit source is configured, and then the screen is
+	// absent from the Tab cycle rather than present and empty. The summary and
+	// the reason it failed are kept apart, so the screen can name either.
+	health        HealthSource
+	onHealth      bool
+	healthSummary audit.Health
+	healthErr     error
 }
 
 // NewModel returns the screen showing every entry.
@@ -107,6 +116,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updatePicker(msg)
 		case m.onFinances:
 			return m.updateFinances(msg)
+		case m.onHealth:
+			return m.updateHealth(msg)
 		case m.onCard:
 			return m.updateCard(msg)
 		default:
@@ -149,9 +160,7 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.onCard = true
 		}
 	case tea.KeyTab:
-		if m.finances != nil {
-			return m.openFinances()
-		}
+		return m.nextScreen()
 	case tea.KeyBackspace:
 		if m.query != "" {
 			runes := []rune(m.query)
@@ -161,6 +170,35 @@ func (m Model) updateList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m = m.search(m.query + string(msg.Runes))
 	}
 	return m, nil
+}
+
+// nextScreen moves to the next screen in the cycle: search → finances → health
+// → search.
+//
+// A cycle rather than a key per screen, because on the search screen every rune
+// goes into the query — there are no free letters there to hang a second screen
+// on. A screen with no source configured is not in the cycle at all, the rule
+// the writing keys already follow: absent beats present and inert.
+func (m Model) nextScreen() (tea.Model, tea.Cmd) {
+	switch {
+	case m.onFinances:
+		m.onFinances = false
+		if m.health != nil {
+			return m.openHealth()
+		}
+		return m, nil
+	case m.onHealth:
+		m.onHealth = false
+		return m, nil
+	default:
+		if m.finances != nil {
+			return m.openFinances()
+		}
+		if m.health != nil {
+			return m.openHealth()
+		}
+		return m, nil
+	}
 }
 
 // search re-runs the filter and pulls the cursor back inside the result: a
@@ -185,6 +223,8 @@ func (m Model) View() string {
 		return m.renderPicker()
 	case m.onFinances:
 		return m.renderFinances()
+	case m.onHealth:
+		return m.renderHealth()
 	case m.onCard && len(m.visible) > 0:
 		return m.renderCardWithStatus()
 	default:
