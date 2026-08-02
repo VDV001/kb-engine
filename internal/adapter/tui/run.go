@@ -28,6 +28,7 @@ type Sources struct {
 	Ledger   FinanceWriter
 	Workbook WorkbookSyncer
 	Words    VocabularySource
+	Accounts AccountsSource
 }
 
 // Run loads the catalog and hands the terminal to the search screen. It returns
@@ -52,6 +53,9 @@ func Run(s Sources, in io.Reader, out io.Writer) error {
 	}
 	if s.Words != nil {
 		model = model.WithVocabulary(s.Words)
+	}
+	if s.Accounts != nil {
+		model = model.WithAccounts(s.Accounts)
 	}
 	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()

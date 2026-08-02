@@ -169,11 +169,14 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	var ledger tui.FinanceWriter
 	var syncer tui.WorkbookSyncer
 	var vocab tui.VocabularySource
+	// Balances come from the workbook, so without --from there is no source for
+	// them and the key is absent rather than opening a form that cannot write.
+	var accounts tui.AccountsSource
 	if *ledgerPath != "" {
 		l := ledgerFinances{ledgerPath: *ledgerPath, workbookPath: *workbookPath}
 		fin, ledger, vocab = l, l, l
 		if *workbookPath != "" {
-			syncer = l
+			syncer, accounts = l, l
 		}
 	}
 	svc := query.NewService(catalogjson.FileLoader{Path: *catalogPath})
@@ -184,6 +187,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		Ledger:   ledger,
 		Workbook: syncer,
 		Words:    vocab,
+		Accounts: accounts,
 	}
 	if err := tui.Run(screen, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
@@ -337,6 +341,27 @@ func (f ledgerFinances) Vocabulary() (finance.Vocabulary, error) {
 // a shop named once in the terminal is known in both places afterwards.
 func (f ledgerFinances) Remember(word string, rule finance.PlaceRule) error {
 	return financevocab.RememberPlace(financevocab.PathNextTo(f.ledgerPath), word, rule)
+}
+
+// Accounts reads what the banks hold. Balances live in the workbook rather than
+// the ledger: one is a snapshot of what a bank says today, and nothing in a list
+// of transactions produces it.
+func (f ledgerFinances) Accounts() ([]domain.Account, error) {
+	led, err := financexlsx.Read(f.workbookPath, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	return led.Accounts, nil
+}
+
+// SetBalance records a new balance through the same writer fin balance uses, so
+// the terminal and the command cannot file it differently.
+//
+// This is the one write to the workbook outside a sync, and it can be: the
+// Счета sheet carries no transactions, so nothing written here can disagree
+// with the ledger.
+func (f ledgerFinances) SetBalance(bank string, amount domain.Money) error {
+	return financexlsx.SetBalance(f.workbookPath, bank, amount, time.Now)
 }
 
 // Sync runs the very sync the fin sync command runs — the same function, handed

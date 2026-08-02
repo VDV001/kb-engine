@@ -63,6 +63,8 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.syncWorkbook(), nil
 		case "q":
 			return m.openQuick(), nil
+		case "b":
+			return m.openBalance(), nil
 		}
 	}
 	return m, nil
@@ -84,6 +86,7 @@ func (m Model) renderFinances() string {
 
 	writeTotals(&b, "по категориям", s.ByCategory)
 	writeTotals(&b, "по счетам", s.ByAccount)
+	m.writeBalances(&b)
 
 	if m.finStatus != "" {
 		b.WriteString(styleQuery.Render(m.finStatus) + "\n")
@@ -112,6 +115,9 @@ func (m Model) financeHint() string {
 	keys := hintFinancesWrite
 	if m.vocab != nil {
 		keys += " · " + hintQuickKey
+	}
+	if m.accounts != nil {
+		keys += " · " + hintBalanceKey
 	}
 	if m.syncer != nil {
 		keys += " · " + hintFinancesSync
@@ -142,6 +148,7 @@ const (
 	hintFinances      = "Tab — назад к поиску · Esc — назад · Ctrl+C — выход"
 	hintFinancesWrite = "a — расход · i — доход"
 	hintFinancesSync  = "s — книга"
+	hintBalanceKey    = "b — баланс"
 	hintWorkbook      = "книга Учёт_финансов.xlsx не тронута — kbengine fin sync"
 	hintWorkbookKey   = "книга Учёт_финансов.xlsx отстала — s синхронизирует"
 )
