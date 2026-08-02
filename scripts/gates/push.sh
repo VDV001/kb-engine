@@ -157,9 +157,26 @@ for line in open(sys.argv[1], encoding="utf-8"):
 for v in total.values():
     out.add(f"{v:.2f}")
 out.add(f"{total['income'] - total['expense']:.2f}")
-for m in sorted(x for x in out if x and x != "0.00"):
+import re
+forms = set()
+for m in (x for x in out if x and x != "0.00"):
+    forms.add(m)
+    forms.add(m.replace(".", ","))
+    # The engine itself prints money with grouped digits — 275 015,96, not
+    # 275015.96 — so that is the form a leaked total actually takes in prose.
+    # The first version of this check compared plain strings only and let every
+    # such total through; it was found by scanning the repository by hand, not
+    # by the gate. Both spaces are generated: a plain one and U+00A0, because a
+    # terminal renders one and a Markdown journal often carries the other.
+    mm = re.fullmatch(r"(\d+)([.,])(\d{2})", m)
+    if mm:
+        i, sep, frac = mm.groups()
+        if len(i) > 3:
+            parts = [i[max(0, k - 3):k] for k in range(len(i), 0, -3)][::-1]
+            for space in (" ", " "):
+                forms.add(f"{space.join(parts)}{sep}{frac}")
+for m in sorted(forms):
     print(m)
-    print(m.replace(".", ","))
 PY
     hits="$(git diff --unified=0 "$data_base...HEAD" 2>/dev/null | grep '^+' | grep -F -f "$marks" | head -5 || true)"
     msgs="$(git log "$data_base..HEAD" --format=%B 2>/dev/null | grep -F -f "$marks" | head -5 || true)"

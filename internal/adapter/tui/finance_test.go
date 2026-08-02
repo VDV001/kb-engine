@@ -31,7 +31,7 @@ func (s *stubFinances) Summary(months []string) (finance.Summary, error) {
 func sampleSummary() finance.Summary {
 	return finance.Summary{
 		ExpenseCount: 3,
-		Expenses:     domain.NewMoney(150000),
+		Expenses:     domain.NewMoney(123400),
 		IncomeCount:  1,
 		Income:       domain.NewMoney(900000),
 		Net:          domain.NewMoney(750000),
@@ -40,7 +40,7 @@ func sampleSummary() finance.Summary {
 			{Category: "Транспорт", Total: domain.NewMoney(50000), Count: 1},
 		},
 		ByAccount: []finance.CategoryTotal{
-			{Category: "Альфа-Банк", Total: domain.NewMoney(150000), Count: 3},
+			{Category: "Альфа-Банк", Total: domain.NewMoney(123400), Count: 3},
 		},
 	}
 }
@@ -63,7 +63,7 @@ func TestTabOpensFinancesWhenLedgerConfigured(t *testing.T) {
 	}
 	view := m.View()
 	// Суммы — в том виде, в каком их читает человек: разряды разделены.
-	for _, want := range []string{"Еда", "Транспорт", "Альфа-Банк", "1 500,00", "9 000,00"} {
+	for _, want := range []string{"Еда", "Транспорт", "Альфа-Банк", "1 234,00", "9 000,00"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("finances view is missing %q\n--- view ---\n%s", want, view)
 		}

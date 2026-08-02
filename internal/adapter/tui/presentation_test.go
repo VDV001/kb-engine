@@ -10,18 +10,18 @@ import (
 )
 
 // Суммы на экране читаются человеком, а не парсером: разряды разделены, как в
-// дашборде. 275015.96 и 275 015,96 — одно число, но найти в первом ошибку
+// дашборде. 1234567.89 и 1 234 567,89 — одно число, но найти в первом ошибку
 // на порядок глазом нельзя.
 func TestFinances_amountsAreReadable(t *testing.T) {
 	fin := &stubFinances{sum: finance.Summary{
-		ExpenseCount: 528, IncomeCount: 74,
-		Expenses: amountOf(t, "275015.96"), Income: amountOf(t, "658796.87"), Net: amountOf(t, "383780.91"),
+		ExpenseCount: 12, IncomeCount: 3,
+		Expenses: amountOf(t, "1234567.89"), Income: amountOf(t, "7654321.00"), Net: amountOf(t, "6419753.11"),
 	}}
 	m := tui.NewModel(nil).WithFinances(fin)
 
 	view := press(m, tab()).View()
 
-	for _, want := range []string{"275 015,96", "658 796,87", "383 780,91"} {
+	for _, want := range []string{"1 234 567,89", "7 654 321,00", "6 419 753,11"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("на экране нет %q — суммы без разрядов\n--- view ---\n%s", want, view)
 		}
