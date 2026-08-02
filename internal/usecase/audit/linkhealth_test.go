@@ -35,8 +35,6 @@ func healthEntry(t *testing.T, id int, url, checked string, code *int) domain.En
 	return e
 }
 
-func httpCode(n int) *int { return &n }
-
 // Сводка отвечает на вопрос, который база держала при себе: что она узнала про
 // собственные ссылки. Скан пишет результат в каталог с 01.08, но ни один экран
 // его не показывал — сотня отказов 403 существовала только внутри файла.
@@ -46,13 +44,13 @@ func httpCode(n int) *int { return &n }
 // а не собственным полем — и это ровно та деталь, которую легко переврать.
 func TestService_LinkHealth(t *testing.T) {
 	c := catalogOf(t,
-		healthEntry(t, 1, "https://h/1", "2026-08-01", nil),           // 200
-		healthEntry(t, 2, "https://h/2", "2026-08-01", nil),           // 200
-		healthEntry(t, 3, "https://h/3", "2026-08-01", httpCode(302)), // переехала
-		healthEntry(t, 4, "https://h/4", "2026-08-01", httpCode(404)), // удалена
-		healthEntry(t, 5, "https://h/5", "2026-08-01", httpCode(403)), // не знаем
-		healthEntry(t, 6, "https://h/6", "", nil),                     // не спрашивали
-		healthEntry(t, 7, "", "", nil),                                // свой артефакт
+		healthEntry(t, 1, "https://h/1", "2026-08-01", nil),      // 200
+		healthEntry(t, 2, "https://h/2", "2026-08-01", nil),      // 200
+		healthEntry(t, 3, "https://h/3", "2026-08-01", new(302)), // переехала
+		healthEntry(t, 4, "https://h/4", "2026-08-01", new(404)), // удалена
+		healthEntry(t, 5, "https://h/5", "2026-08-01", new(403)), // не знаем
+		healthEntry(t, 6, "https://h/6", "", nil),                // не спрашивали
+		healthEntry(t, 7, "", "", nil),                           // свой артефакт
 	)
 
 	got, err := audit.NewService(fakeLoader{catalog: c}).LinkHealth()
@@ -90,8 +88,8 @@ func TestService_LinkHealth_entriesWithoutURLAreNotCounted(t *testing.T) {
 // знает», и оно обязано быть видно отдельным числом, а не растворяться.
 func TestService_LinkHealth_403IsItsOwnState(t *testing.T) {
 	c := catalogOf(t,
-		healthEntry(t, 1, "https://h/1", "2026-08-01", httpCode(403)),
-		healthEntry(t, 2, "https://h/2", "2026-08-01", httpCode(451)),
+		healthEntry(t, 1, "https://h/1", "2026-08-01", new(403)),
+		healthEntry(t, 2, "https://h/2", "2026-08-01", new(451)),
 	)
 	got, err := audit.NewService(fakeLoader{catalog: c}).LinkHealth()
 	if err != nil {
