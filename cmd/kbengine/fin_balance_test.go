@@ -21,8 +21,10 @@ func TestRun_finBalance(t *testing.T) {
 	}
 
 	// The new balance is reported back, so the person sees what the file now
-	// says rather than only that something was written.
-	for _, want := range []string{"Сбербанк", "1447,12"} {
+	// says rather than only that something was written. Printed the way Money
+	// prints everywhere in the engine — with a dot — even though the flag
+	// accepts the comma a person types.
+	for _, want := range []string{"Сбербанк", "1447.12"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("вывод не содержит %q:\n%s", want, out.String())
 		}

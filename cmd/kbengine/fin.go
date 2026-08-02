@@ -17,7 +17,7 @@ import (
 // runFin dispatches the ledger subcommands.
 func runFin(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|list|report|sync> [flags]")
+		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|balance|list|report|sync> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -25,6 +25,8 @@ func runFin(args []string, stdout, stderr io.Writer) int {
 		return runFinImport(args[1:], stdout, stderr)
 	case "add":
 		return runFinAdd(args[1:], stdout, stderr)
+	case "balance":
+		return runFinBalance(args[1:], stdout, stderr)
 	case "list":
 		return runFinList(args[1:], stdout, stderr)
 	case "report":
