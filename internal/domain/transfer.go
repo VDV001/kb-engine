@@ -18,7 +18,7 @@ const (
 //
 // Such a row is neither an expense nor an income: the money did not arrive and
 // did not leave, it was moved. Adding it to real spending says the person spent
-// more than they did — on the live book, exactly 2000 ₽ more.
+// more than they did.
 //
 // The rule lives here rather than in whatever assembles a report, because both
 // surfaces have to answer the same question the same way. It used to live in

@@ -16,7 +16,7 @@ func TestRun_finBalance(t *testing.T) {
 	book := workbook(t)
 
 	var out, errb bytes.Buffer
-	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Сбербанк", "--amount", "1447,12"}, &out, &errb); code != 0 {
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Сбербанк", "--amount", "4321,55"}, &out, &errb); code != 0 {
 		t.Fatalf("fin balance exit = %d, stderr = %s", code, errb.String())
 	}
 
@@ -24,13 +24,13 @@ func TestRun_finBalance(t *testing.T) {
 	// says rather than only that something was written. Printed the way Money
 	// prints everywhere in the engine — with a dot — even though the flag
 	// accepts the comma a person types.
-	for _, want := range []string{"Сбербанк", "1447.12"} {
+	for _, want := range []string{"Сбербанк", "4321.55"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("вывод не содержит %q:\n%s", want, out.String())
 		}
 	}
-	if got := accountBalance(t, book, "Сбербанк"); got != "1447.12" {
-		t.Errorf("баланс в книге = %s, ожидалось 1447.12", got)
+	if got := accountBalance(t, book, "Сбербанк"); got != "4321.55" {
+		t.Errorf("баланс в книге = %s, ожидалось 4321.55", got)
 	}
 }
 

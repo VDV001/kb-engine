@@ -21,7 +21,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
 	bank := fs.String("bank", "", "account name as the Счета sheet spells it")
-	amount := fs.String("amount", "", "new balance, e.g. 1447,12")
+	amount := fs.String("amount", "", "new balance, e.g. 4321,55")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
