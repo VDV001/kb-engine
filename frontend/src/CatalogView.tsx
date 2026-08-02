@@ -157,6 +157,22 @@ const selectClass =
  * paginated. Everything recomputes from the entries prop, so a changed catalog
  * reshapes the whole view on the next fetch — nothing here is baked.
  */
+
+/**
+ * Дата, относящаяся к самому материалу, а не к записи о нём.
+ *
+ * Подпись обязательна: рядом уже стоит дата попадания в базу, и три числа без
+ * слов читаются как одно и то же в трёх вариантах. Вопросы разные — «насколько
+ * это свежее» и «когда я разобрал это всерьёз».
+ */
+function MaterialDate({ label, date, title }: { label: string; date: string; title: string }) {
+  return (
+    <span className="font-label text-xs whitespace-nowrap text-on-surface-variant" title={title}>
+      {label} {date}
+    </span>
+  )
+}
+
 export function CatalogView({
   entries,
   labels,
@@ -522,6 +538,20 @@ export function CatalogView({
                     <span className="font-label text-xs whitespace-nowrap text-on-surface-variant">
                       {dateOf(e) || '—'}
                     </span>
+                    {e.habr_date && (
+                      <MaterialDate
+                        label="вышла"
+                        date={e.habr_date}
+                        title="Дата публикации у автора — не дата попадания в базу"
+                      />
+                    )}
+                    {e.deep_read_date && (
+                      <MaterialDate
+                        label="разобрана"
+                        date={e.deep_read_date}
+                        title="Когда материал прочли целиком, а не пролистали"
+                      />
+                    )}
                     <span
                       className="max-w-[14rem] truncate rounded-full border border-outline-variant bg-surface-high px-2.5 py-0.5 text-xs text-on-surface-variant"
                       title={labels[e.category] || e.category}

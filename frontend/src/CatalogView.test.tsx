@@ -275,3 +275,68 @@ describe('CatalogView: сетка показывает то же, что спи�
     for (const el of shown) expect(el.tagName).not.toBe('A')
   })
 })
+
+// Две даты, которые база хранила и не показывала: когда материал вышел у
+// автора и когда его разобрали здесь. Обе отвечают на вопросы, на которые
+// «дата попадания в базу» не отвечает — свежесть материала и глубина работы
+// с ним, — и без подписи в строке метаданных читались бы как одно и то же.
+describe('CatalogView — даты материала', () => {
+  const dated: Entry[] = [
+    {
+      id: 791,
+      title: 'AI Review не делает код лучше',
+      category: 'meta',
+      kind: 'article',
+      lifecycle: 'active',
+      date_created: '2026-05-12',
+      habr_date: '2026-05-11',
+      deep_read_date: '2026-05-16',
+    },
+    {
+      id: 792,
+      title: 'Запись без дат материала',
+      category: 'meta',
+      kind: 'article',
+      lifecycle: 'active',
+      date_added: '2026-07-01',
+    },
+  ]
+
+  const render2 = () =>
+    render(
+      <CatalogView
+        entries={dated}
+        labels={{ meta: 'Мета: про базу' }}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory=""
+        onPickedCategoryChange={() => {}}
+        health={{ total: 2, processed: 2, with_notes: 0, notes_base: 2 }}
+        search=""
+        onSearchChange={() => {}}
+      />,
+    )
+
+  it('показывает дату выхода у автора', () => {
+    render2()
+    expect(screen.getByText(/2026-05-11/)).toBeDefined()
+  })
+
+  it('показывает дату глубокого разбора', () => {
+    render2()
+    expect(screen.getByText(/2026-05-16/)).toBeDefined()
+  })
+
+  // Без подписи три даты в одной строке неразличимы, и читатель решит, что
+  // видит одну и ту же в трёх вариантах.
+  //
+  // Ищется подпись ВМЕСТЕ с датой: слово «разобрано» уже стоит в шапке вида
+  // («разобрано N из M»), и проверка по одному слову находила бы её, ничего
+  // не говоря о метке на записи.
+  it('подписывает, что это за даты', () => {
+    render2()
+    expect(screen.getByText(/вышла 2026-05-11/i)).toBeDefined()
+    expect(screen.getByText(/разобрана 2026-05-16/i)).toBeDefined()
+  })
+})
