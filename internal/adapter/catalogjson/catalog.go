@@ -87,9 +87,14 @@ type entryDTO struct {
 	Revision flexInt         `json:"revision"`
 	// SourceBatch and SourceDate are determined by the import batch and stored
 	// on every entry (ADR-0002); the batch-consistency audit compares them.
-	SourceBatch    flexInt `json:"source_batch"`
-	SourceDate     string  `json:"source_date"`
-	DriftCheckDate string  `json:"drift_check_date"`
+	SourceBatch flexInt `json:"source_batch"`
+	SourceDate  string  `json:"source_date"`
+	// HabrDate is the publication date at the author, DeepReadDate when it was
+	// read here in full. Both optional and both distinct from source_date,
+	// which is one value per import batch.
+	HabrDate       string `json:"habr_date"`
+	DeepReadDate   string `json:"deep_read_date"`
+	DriftCheckDate string `json:"drift_check_date"`
 	// DriftHTTPCode is written only for a non-200 answer, so its absence is
 	// meaningful rather than missing data — see domain.EntryParams.
 	DriftHTTPCode flexInt `json:"drift_http_code"`
@@ -252,6 +257,14 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 	if err != nil {
 		return domain.Entry{}, fmt.Errorf("drift_check_date: %w", err)
 	}
+	habrDate, err := parseDate(dto.HabrDate)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("habr_date: %w", err)
+	}
+	deepRead, err := parseDate(dto.DeepReadDate)
+	if err != nil {
+		return domain.Entry{}, fmt.Errorf("deep_read_date: %w", err)
+	}
 	return domain.NewEntry(domain.EntryParams{
 		ID:             dto.ID,
 		Kind:           tr.kind,
@@ -280,6 +293,8 @@ func toEntry(dto entryDTO) (domain.Entry, error) {
 		SourceDate:     sourceDate,
 		DriftCheckDate: driftChecked,
 		DriftHTTPCode:  dto.DriftHTTPCode.pointer(),
+		HabrDate:       habrDate,
+		DeepReadDate:   deepRead,
 	})
 }
 

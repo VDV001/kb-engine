@@ -41,11 +41,16 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 	v, _ := domain.NewVerdict("keep")
 	added := time.Date(2026, 7, 11, 0, 0, 0, 0, time.UTC)
 	created := time.Date(2026, 4, 15, 0, 0, 0, 0, time.UTC)
+	habrPublished := time.Date(2026, 5, 11, 0, 0, 0, 0, time.UTC)
+	deepRead := time.Date(2026, 5, 16, 0, 0, 0, 0, time.UTC)
 	e, _ := domain.NewEntry(domain.EntryParams{
 		ID: 1, Kind: "article", Title: "Hello", Category: cat, Lifecycle: lc,
 		HabrID: &habrID, URL: "https://h/x", ReadState: &rs, Verdict: &v,
 		Tags: []string{"go"}, DateAdded: &added, DateCreated: &created,
 		RelatedIDs: []int{2},
+		// Дата выхода у автора и дата глубокого разбора: обе живут в каталоге и
+		// до сих пор не доезжали до вида.
+		HabrDate: &habrPublished, DeepReadDate: &deepRead,
 	})
 	// Разбор — отдельная запись, а не поле первой: после ADR-0004 конспект
 	// живёт собственной записью, у которой есть файл и нет адреса.

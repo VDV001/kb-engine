@@ -168,8 +168,12 @@ type entryDTO struct {
 	// той записи, чей он, а цитирующие статьи держат related_ids. Оба поля
 	// опускаются пустыми — «разбора нет» и «разбор по пустому пути» на экране
 	// выглядели бы одинаково.
-	File       string `json:"file,omitempty"`
-	RelatedIDs []int  `json:"related_ids,omitempty"`
+	// Дата выхода у автора и дата глубокого разбора. Обе опускаются пустыми:
+	// «даты нет» и «дата пустая» на экране выглядели бы одинаково.
+	HabrDate     string `json:"habr_date,omitempty"`
+	DeepReadDate string `json:"deep_read_date,omitempty"`
+	File         string `json:"file,omitempty"`
+	RelatedIDs   []int  `json:"related_ids,omitempty"`
 }
 
 func toDTO(e domain.Entry) entryDTO {
@@ -209,6 +213,12 @@ func toDTO(e domain.Entry) entryDTO {
 	}
 	if t := e.DateCreated(); t != nil {
 		d.DateCreated = t.Format(time.DateOnly)
+	}
+	if t := e.HabrDate(); t != nil {
+		d.HabrDate = t.Format(time.DateOnly)
+	}
+	if t := e.DeepReadDate(); t != nil {
+		d.DeepReadDate = t.Format(time.DateOnly)
 	}
 	return d
 }
