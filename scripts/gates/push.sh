@@ -158,23 +158,32 @@ for v in total.values():
     out.add(f"{v:.2f}")
 out.add(f"{total['income'] - total['expense']:.2f}")
 import re
+# An amount leaks in the shape a human reads, not the shape it is stored in.
+# The engine itself prints money with grouped digits, so every marker is
+# expanded into all the shapes the same number can take: either decimal
+# separator, grouped or not, with a plain space or a non-breaking one, and with
+# the sign dropped (prose says "expenses are ...", never "expenses are -...").
+#
+# Each of those variations was a hole. The first version compared stored
+# strings only and let every total through. The second grouped the digits but
+# kept the original separator, so it looked for a dot where the leak carries a
+# comma. And both totals are negative in the ledger, so a pattern anchored at a
+# digit never matched them at all. All three were found by planting a real
+# total and watching the gate stay silent - not by reading the code.
 forms = set()
 for m in (x for x in out if x and x != "0.00"):
     forms.add(m)
-    forms.add(m.replace(".", ","))
-    # The engine itself prints money with grouped digits — 275 015,96, not
-    # 275015.96 — so that is the form a leaked total actually takes in prose.
-    # The first version of this check compared plain strings only and let every
-    # such total through; it was found by scanning the repository by hand, not
-    # by the gate. Both spaces are generated: a plain one and U+00A0, because a
-    # terminal renders one and a Markdown journal often carries the other.
-    mm = re.fullmatch(r"(\d+)([.,])(\d{2})", m)
-    if mm:
-        i, sep, frac = mm.groups()
-        if len(i) > 3:
-            parts = [i[max(0, k - 3):k] for k in range(len(i), 0, -3)][::-1]
-            for space in (" ", " "):
-                forms.add(f"{space.join(parts)}{sep}{frac}")
+    mm = re.fullmatch(r"-?(\d+)[.,](\d{2})", m)
+    if not mm:
+        continue  # a transaction id: no numeric shapes to expand
+    whole, frac = mm.groups()
+    groupings = [whole]
+    if len(whole) > 3:
+        parts = [whole[max(0, k - 3):k] for k in range(len(whole), 0, -3)][::-1]
+        groupings += ["\u0020".join(parts), "\u00a0".join(parts)]
+    for g in groupings:
+        for sep in (".", ","):
+            forms.add(f"{g}{sep}{frac}")
 for m in sorted(forms):
     print(m)
 PY
