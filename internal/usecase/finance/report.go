@@ -150,6 +150,14 @@ func Summarize(recs []Record) Summary {
 
 	for _, r := range recs {
 		tx := r.Transaction()
+		// Перекладывание денег между своими счетами проходит мимо всех итогов:
+		// деньги не пришли и не ушли. Строка остаётся в ledger и в списках — это
+		// событие, которое было, — но в сумму расходов, в разбивки и в итог не
+		// входит, иначе отчёт утверждает, что человек потратил больше, чем
+		// потратил.
+		if tx.IsInternalTransfer() {
+			continue
+		}
 		s.Net = s.Net.Add(tx.SignedAmount())
 		if !tx.IsExpense() {
 			s.IncomeCount++
