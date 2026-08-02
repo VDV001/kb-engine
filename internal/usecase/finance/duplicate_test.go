@@ -15,7 +15,7 @@ import (
 //
 // Поэтому вопрос задаётся в момент записи, когда ответ ещё очевиден.
 func TestDuplicate_findsTheSameExpenseOnTheSameDay(t *testing.T) {
-	existing := recordOf(t, addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", ""))
+	existing := expenseRecord(t, addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", ""))
 
 	got := finance.Duplicate([]finance.Record{existing}, addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", ""))
 
@@ -31,7 +31,7 @@ func TestDuplicate_findsTheSameExpenseOnTheSameDay(t *testing.T) {
 // минут в самокате, две поездки по одному тарифу. Их различает описание, и
 // пока оно различается, движок молчит.
 func TestDuplicate_allowsTwoSimilarExpensesToldApartByTheirNote(t *testing.T) {
-	existing := recordOf(t, addParams(t, "2026-07-31", "96", "Транспорт", "Самокат", "Юрент", "Сбербанк", "Пакет минут"))
+	existing := expenseRecord(t, addParams(t, "2026-07-31", "96", "Транспорт", "Самокат", "Юрент", "Сбербанк", "Пакет минут"))
 
 	got := finance.Duplicate([]finance.Record{existing}, addParams(t, "2026-07-31", "96", "Транспорт", "Самокат", "Юрент", "Сбербанк", "Страховка"))
 
@@ -44,7 +44,7 @@ func TestDuplicate_allowsTwoSimilarExpensesToldApartByTheirNote(t *testing.T) {
 // разный счёт — разные траты.
 func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 	base := addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", "")
-	existing := recordOf(t, base)
+	existing := expenseRecord(t, base)
 
 	for _, c := range []struct {
 		name string
@@ -67,7 +67,7 @@ func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 // когда дату не пишут.
 func TestDuplicate_resolvesAnEmptyDateToTheSameDayTheRecordWouldGet(t *testing.T) {
 	today := time.Now().UTC().Format(time.DateOnly)
-	existing := recordOf(t, addParams(t, today, "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", ""))
+	existing := expenseRecord(t, addParams(t, today, "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", ""))
 
 	p := addParams(t, "", "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", "")
 	if got := finance.Duplicate([]finance.Record{existing}, p); got == nil {
@@ -93,7 +93,7 @@ func addParams(t *testing.T, date, amount, cat, sub, place, account, note string
 	}
 }
 
-func recordOf(t *testing.T, p finance.AddParams) finance.Record {
+func expenseRecord(t *testing.T, p finance.AddParams) finance.Record {
 	t.Helper()
 	rec, err := finance.Add(p, func() string { return "01TEST" }, time.Now)
 	if err != nil {
