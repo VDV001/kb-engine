@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { AccountsCard } from './AccountsCard'
 import { api } from './api'
 import type { Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
@@ -117,7 +118,6 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
 
   const spent = summary ? toKopecks(summary.expenses) : 0
   const earned = summary ? toKopecks(summary.income) : 0
-  const balance = finances.accounts.reduce((n, a) => n + toKopecks(a.balance), 0)
   const periodText = selected.length === 0 ? 'За всё время' : [...selected].sort().map(monthLabel).join(' · ')
 
   // Место → категория, чтобы подобрать иконку. Это не пересчёт сумм, а поиск
@@ -218,6 +218,22 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
 
   return (
     <div className={masked ? 'privacy-on' : undefined}>
+      {/* Карточка счетов идёт колонкой слева и не уезжает при прокрутке: она
+          отвечает на вопрос «где деньги», который задают в любом месте
+          страницы. На узком экране колонка схлопывается и карточка встаёт
+          сверху — там же, где она была в мобильном виде старого дашборда. */}
+      <div className="flex flex-col gap-8 xl:flex-row">
+        <aside className="shrink-0 xl:w-72">
+          <div className="xl:sticky xl:top-24">
+            <AccountsCard
+              accounts={finances.accounts}
+              expenses={summary?.expenses ?? '0'}
+              income={summary?.income ?? '0'}
+              today={today}
+            />
+          </div>
+        </aside>
+        <div className="min-w-0 flex-1">
       {/* ===== Шапка ===== */}
       <section className="mb-16">
         <div className="mb-12 flex flex-col justify-between gap-6 md:flex-row md:items-baseline">
@@ -228,10 +244,11 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
               Структурированный учёт расходов и доходов. Данные из леджера, перечитываются на каждый запрос.
             </p>
           </div>
+          {/* Итог по счетам переехал в карточку слева и здесь больше не
+              повторяется: одно и то же число дважды на одном экране заставляет
+              искать между ними разницу, которой нет. */}
           <div className="flex flex-col items-end">
-            <span className="label mb-2 text-secondary">Баланс</span>
-            <span className="privacy-mask text-4xl font-bold">{formatRub(balance)}</span>
-            <div className="mt-4 flex gap-2">
+            <div className="flex gap-2">
               <span className="label bg-surface-high px-2 py-1 text-[10px]">
                 {summary?.expenseCount ?? 0} записей
               </span>
@@ -728,6 +745,8 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
           </div>
         )}
       </section>
+        </div>
+      </div>
     </div>
   )
 }

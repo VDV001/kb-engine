@@ -6,6 +6,11 @@ import type { Account } from './api'
 
 afterEach(cleanup)
 
+// Суммы печатаются с НЕразрывным пробелом между разрядами, а в исходнике теста
+// стоит обычный. Сверять надо в той форме, в какой число читает человек, —
+// иначе верный вывод выглядит ошибкой (и наоборот).
+const spaced = (el: HTMLElement) => (el.textContent ?? '').replace(/ /g, ' ')
+
 const accounts: Account[] = [
   { bank: 'Сбербанк', balance: '1234.50', updated: '2026-08-03' },
   { bank: 'Альфа-Банк', balance: '600.00', updated: '2026-07-31' },
@@ -23,7 +28,7 @@ describe('AccountsCard — где лежат деньги', () => {
     expect(screen.getByText('Альфа-Банк')).toBeDefined()
     expect(screen.getByText('Заморозка → Вклад')).toBeDefined()
     // Итог — сумма счетов, а не одно из слагаемых.
-    expect(screen.getByTestId('accounts-total').textContent).toContain('1 834')
+    expect(spaced(screen.getByTestId('accounts-total'))).toContain('1 834')
   })
 
   it('показывает расходы и доходы периода', () => {
