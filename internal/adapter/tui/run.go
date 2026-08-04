@@ -30,6 +30,7 @@ type Sources struct {
 	Words    VocabularySource
 	Accounts AccountsSource
 	Health   HealthSource
+	Editor   EntryEditor
 }
 
 // Run loads the catalog and hands the terminal to the search screen. It returns
@@ -60,6 +61,9 @@ func Run(s Sources, in io.Reader, out io.Writer) error {
 	}
 	if s.Health != nil {
 		model = model.WithHealth(s.Health)
+	}
+	if s.Editor != nil {
+		model = model.WithEntryEditor(s.Editor)
 	}
 	p := tea.NewProgram(model, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen())
 	_, err = p.Run()

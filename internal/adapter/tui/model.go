@@ -62,13 +62,17 @@ type Model struct {
 	// syncer is nil when no workbook is configured; workbookBehind says whether
 	// a row written here has yet to reach the spreadsheet, so the screen asks for
 	// a sync exactly when one is owed and stops asking once it is done.
-	ledger         FinanceWriter
-	syncer         WorkbookSyncer
-	vocab          VocabularySource
-	accounts       AccountsSource
-	quick          quickForm
-	balance        balanceForm
-	form           entryForm
+	ledger   FinanceWriter
+	syncer   WorkbookSyncer
+	vocab    VocabularySource
+	accounts AccountsSource
+	quick    quickForm
+	balance  balanceForm
+	form     entryForm
+	// editor is nil when nothing can rewrite an entry, and then the key is
+	// absent rather than opening a screen that cannot save.
+	editor         EntryEditor
+	entries        entryList
 	finStatus      string
 	workbookBehind bool
 
@@ -112,6 +116,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateBalance(msg)
 		case m.form.open():
 			return m.updateForm(msg)
+		case m.entries.open:
+			return m.updateEntryList(msg)
 		case m.picker.open():
 			return m.updatePicker(msg)
 		case m.onFinances:
@@ -219,6 +225,8 @@ func (m Model) View() string {
 		return m.renderBalanceForm()
 	case m.form.open():
 		return m.renderForm()
+	case m.entries.open:
+		return m.renderEntryList()
 	case m.picker.open():
 		return m.renderPicker()
 	case m.onFinances:

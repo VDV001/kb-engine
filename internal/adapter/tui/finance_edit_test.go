@@ -92,8 +92,11 @@ func TestFinances_editFormWritesTheChange(t *testing.T) {
 	m = press(press(m, tab()), runes("e")) // список
 	m = press(m, enter())                  // выбрать запись под курсором
 	// Форма открыта на выбранной записи: доходим до поля счёта и вписываем банк.
+	// Проверять надо значением, которого нет среди подсказок: слово
+	// «Транспорт» стоит примером в пустом поле категории, и проверка по нему
+	// проходила бы на незаполненной форме. Сумма записи с примером не совпадает.
 	view := m.View()
-	if !strings.Contains(view, "Транспорт") {
+	if !strings.Contains(view, "322.00") {
 		t.Fatalf("форма не заполнена значениями записи:\n%s", view)
 	}
 	for range 4 {
@@ -121,5 +124,26 @@ func TestFinances_escFromEditFormReturnsToList(t *testing.T) {
 
 	if !strings.Contains(view, "такси до центра") {
 		t.Errorf("Esc из формы не вернул к списку:\n%s", view)
+	}
+}
+
+// Форма правки не должна выглядеть как форма новой записи: заголовок называет,
+// что именно происходит, а пустое поле в ней означает «поле пустое», а не «не
+// знаю, что вписать». Пример-подсказка здесь читался бы как значение записи.
+func TestFinances_editFormLooksLikeAnEdit(t *testing.T) {
+	m, _ := editorModel(t)
+
+	m = press(press(m, tab()), runes("e"))
+	view := press(m, enter()).View()
+
+	if strings.Contains(view, "новая запись") {
+		t.Errorf("форма правки представилась новой записью:\n%s", view)
+	}
+	if !strings.Contains(view, "правка записи") {
+		t.Errorf("заголовок не говорит, что это правка:\n%s", view)
+	}
+	// У записи пустое место — в форме правки там не должно стоять примера.
+	if strings.Contains(view, "Яндекс Такси") {
+		t.Errorf("пример подставлен вместо пустого значения записи:\n%s", view)
 	}
 }
