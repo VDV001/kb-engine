@@ -321,6 +321,33 @@ export interface ProjectDoc {
 
 export interface Now {
   markdown: string
+  /** Когда файл правили последний раз; пусто — время узнать не удалось. */
+  edited_at?: string
+  /** Отстала ли страница от базы. Отсутствует у сборки сервера старше проверки. */
+  freshness?: Freshness
+}
+
+/**
+ * Ответ движка на вопрос «не отстала ли страница».
+ *
+ * `behind` и `unknown` — разные вещи: «не знаю, когда правили» нельзя
+ * показывать как «всё в порядке», иначе страница выглядит проверенной, не
+ * будучи ею.
+ */
+export interface Freshness {
+  behind: boolean
+  unknown: boolean
+  edited_at?: string
+  facts: FreshnessFact[]
+  draft?: string
+}
+
+/** Одна причина считать страницу отставшей, в терминах её источника. */
+export interface FreshnessFact {
+  kind: string
+  text: string
+  count?: number
+  ids?: number[]
 }
 
 export interface Changelog {

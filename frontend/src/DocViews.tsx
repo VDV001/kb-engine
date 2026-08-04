@@ -3,6 +3,7 @@ import remarkGfm from 'remark-gfm'
 import { api } from './api'
 import type { DocCard, DocSection, Document } from './api'
 import { useResource } from './hooks/useResource'
+import { FreshnessBanner } from './FreshnessBanner'
 import { flowEnds, layoutFlow } from './flowLayout'
 import type { FlowLayout } from './flowLayout'
 import { Card, Label } from './components/ui'
@@ -390,6 +391,9 @@ export function NowView() {
           каждом обращении.
         </p>
       </header>
+      {/* Полоса свежести стоит НАД текстом, а не под ним: читать страницу,
+          не зная, что она отстала, — ровно то, от чего она заводилась. */}
+      <FreshnessBanner freshness={now.freshness} />
       {/* prose-стили руками: tailwind typography — ещё одна зависимость ради
           одного view, а нужных правил здесь полтора десятка. */}
       <div className="now-prose max-w-4xl">

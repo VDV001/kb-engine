@@ -150,7 +150,8 @@ func draft(in Input, added []EntryFact) string {
 		}
 	}
 	if ops > 0 {
-		fmt.Fprintf(&b, "- финансы: %d операций, последняя %s\n", ops, last.Format(time.DateOnly))
+		fmt.Fprintf(&b, "- финансы: %s, последняя %s\n",
+			plural(ops, "операция", "операции", "операций"), last.Format(time.DateOnly))
 	}
 	return b.String()
 }

@@ -134,3 +134,20 @@ func TestCheck_limitsHowManyEntriesItNames(t *testing.T) {
 		}
 	}
 }
+
+// «51 операций» читается как поломка — форму слова человек замечает мгновенно.
+// Поймано не тестом, а прогоном на живых данных: в факте форма была верной, а в
+// черновике стояло жёсткое «операций».
+func TestCheck_draftAgreesWithNumbers(t *testing.T) {
+	var ops []time.Time
+	for range 51 {
+		ops = append(ops, day(2026, 8, 5))
+	}
+	got := freshness.Check(freshness.Input{
+		Now: day(2026, 8, 10), EditedAt: day(2026, 8, 4), Operations: ops,
+	})
+
+	if !strings.Contains(got.Draft, "51 операция") {
+		t.Errorf("в черновике неверная форма слова:\n%s", got.Draft)
+	}
+}
