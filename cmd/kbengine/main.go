@@ -522,6 +522,21 @@ func readNowDoc(path string) (httpapi.NowDoc, error) {
 	return doc, nil
 }
 
+// readFileDoc читает файл владельца вместе со временем его правки — тем же
+// вызовом, что и содержимое: страницы сверяют себя по этой дате, и разъехаться
+// две половины одного знания не должны.
+func readFileDoc(path string) (httpapi.FileDoc, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return httpapi.FileDoc{}, err
+	}
+	doc := httpapi.FileDoc{Bytes: raw}
+	if st, err := os.Stat(path); err == nil {
+		doc.EditedAt = st.ModTime()
+	}
+	return doc, nil
+}
+
 // buildDocuments wires the owner's personal views. Each path is optional;
 // a configured one is read once at startup so a typo fails at serve time,
 // then re-read per request so edits show up on reload.
@@ -533,11 +548,11 @@ func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.
 		}
 		docs.Now = func() (httpapi.NowDoc, error) { return readNowDoc(nowPath) }
 	}
-	fileJSON := func(name, path string) (func() ([]byte, error), error) {
+	fileJSON := func(name, path string) (func() (httpapi.FileDoc, error), error) {
 		if _, err := os.ReadFile(path); err != nil {
 			return nil, fmt.Errorf("%s: %w", name, err)
 		}
-		return func() ([]byte, error) { return os.ReadFile(path) }, nil
+		return func() (httpapi.FileDoc, error) { return readFileDoc(path) }, nil
 	}
 	if teamPath != "" {
 		var err error

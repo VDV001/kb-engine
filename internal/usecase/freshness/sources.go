@@ -1,0 +1,112 @@
+package freshness
+
+import (
+	"fmt"
+	"regexp"
+	"strings"
+	"time"
+)
+
+// Source — один подключённый источник страницы: чем его правят и когда правили.
+//
+// Facts приходят снаружи, потому что опоры у страниц разные: у Now это записи
+// каталога и операции, у Projects — версия, которую страница называет о самом
+// движке. Собирать их здесь значило бы затащить в usecase знание обо всех
+// источниках разом.
+type Source struct {
+	Name     string
+	Flag     string
+	Now      time.Time
+	EditedAt time.Time
+	// Anchored — у этого источника вообще есть с чем сверяться. Отдельно от
+	// наличия находок: «опор нет» и «опоры есть, всё сошлось» — разные ответы,
+	// и путать их значит показывать проверенным то, что не проверялось.
+	Anchored bool
+	Facts    []Fact
+}
+
+// SourceState — что известно про свежесть одного источника.
+type SourceState struct {
+	Name     string
+	Flag     string
+	EditedAt time.Time
+	Behind   bool
+	// Unknown — дату правки прочитать не удалось.
+	Unknown bool
+	// NoAnchors — сверять не с чем: у этого источника нет опор в базе, и
+	// возраст сам по себе приговором не является. Признак отдельный, потому
+	// что зелёная галочка здесь означала бы «проверено», а проверки не было.
+	NoAnchors bool
+	// AgeDays — сколько дней прошло с правки. Факт, даже когда он не приговор:
+	// человеку полезно видеть, что страницу не трогали полгода, даже если
+	// сверить её не с чем.
+	AgeDays int
+	Facts   []Fact
+}
+
+// CheckSource приводит один источник к общему виду.
+func CheckSource(s Source) SourceState {
+	out := SourceState{Name: s.Name, Flag: s.Flag, EditedAt: s.EditedAt, Facts: s.Facts}
+	if s.EditedAt.IsZero() {
+		out.Unknown = true
+		return out
+	}
+	if !s.Now.IsZero() {
+		out.AgeDays = int(s.Now.Sub(s.EditedAt).Hours() / 24)
+	}
+	out.Behind = len(s.Facts) > 0
+	out.NoAnchors = !s.Anchored
+	return out
+}
+
+// versionPattern — версия в том виде, в каком её пишут в тексте страницы.
+var versionPattern = regexp.MustCompile(`v(\d+\.\d+\.\d+)`)
+
+// releaseVersion — чистый семвер и ничего больше. Сборка из исходников даёт
+// псевдоверсию вида 0.15.1-0.20260804145247-fea441f0ae51+dirty, и сравнивать с
+// ней нельзя: на экран уехало бы «сейчас v0.15.1-0.2026…+dirty», что не
+// является ответом на вопрос, какая версия сейчас.
+var releaseVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// IsReleaseVersion сообщает, знает ли движок о себе чистую версию выпуска.
+// Вызывающему это нужно, чтобы решить, есть ли у страницы опора вообще.
+func IsReleaseVersion(v string) bool {
+	return releaseVersion.MatchString(strings.TrimPrefix(v, "v"))
+}
+
+// VersionMention ищет строку, где страница называет версию продукта, и
+// сравнивает её с настоящей.
+//
+// Опора живая: карточка kb-engine на странице Projects говорила v0.5.0, когда
+// движок отвечал 0.15.0 — страница врала о собственном проекте втрое, и заметить
+// это можно было только вручную.
+//
+// Проверяются строковые значения целиком, а не весь файл разом: версия и имя
+// должны стоять рядом, иначе «v0.113.0» соседнего проекта прочиталось бы как
+// версия этого. Своя версия неизвестна (сборка из исходников даёт псевдоверсию)
+// — молчим: судить, не зная о себе правды, хуже, чем не судить.
+func VersionMention(text, product, current string) *Fact {
+	if product == "" || !releaseVersion.MatchString(strings.TrimPrefix(current, "v")) {
+		return nil
+	}
+	current = strings.TrimPrefix(current, "v")
+	for line := range strings.SplitSeq(text, "\n") {
+		for chunk := range strings.SplitSeq(line, `","`) {
+			if !strings.Contains(strings.ToLower(chunk), strings.ToLower(product)) {
+				continue
+			}
+			m := versionPattern.FindStringSubmatch(chunk)
+			if m == nil {
+				continue
+			}
+			if m[1] == current {
+				return nil
+			}
+			return &Fact{
+				Kind: "version-mention",
+				Text: fmt.Sprintf("страница называет %s v%s, сейчас %s", product, m[1], current),
+			}
+		}
+	}
+	return nil
+}
