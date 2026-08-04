@@ -14,9 +14,11 @@ import (
 // stubAccounts stands in for the workbook's Счета sheet: what the banks say
 // today, and the one way to change it.
 type stubAccounts struct {
-	list []domain.Account
-	got  []balanceCall
-	err  error
+	list      []domain.Account
+	got       []balanceCall
+	created   []balanceCall
+	err       error
+	createErr error
 }
 
 type balanceCall struct {
@@ -33,6 +35,17 @@ func (s *stubAccounts) Balances() ([]finance.AccountBalance, error) {
 		return nil, s.err
 	}
 	return finance.CurrentBalances(s.list, nil), nil
+}
+
+// AddAccount заводит счёт, которого на листе ещё нет. Отдельный метод, а не
+// флаг у SetBalance: экран обязан различать «поправил число» и «пополнил
+// словарь, решающий, что вообще считается счётом».
+func (s *stubAccounts) AddAccount(bank string, amount domain.Money) error {
+	if s.createErr != nil {
+		return s.createErr
+	}
+	s.created = append(s.created, balanceCall{bank, amount})
+	return nil
 }
 
 func (s *stubAccounts) SetBalance(bank string, amount domain.Money) error {
