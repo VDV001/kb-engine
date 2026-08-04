@@ -291,16 +291,19 @@ type sourceStateDTO struct {
 	Unknown  bool   `json:"unknown"`
 	// NoAnchors — сверять не с чем. Отдельно от behind=false, потому что
 	// «проверено, всё хорошо» и «проверять нечем» — разные вещи.
-	NoAnchors bool            `json:"no_anchors"`
-	AgeDays   int             `json:"age_days"`
-	Facts     []freshnessFact `json:"facts"`
-	Draft     string          `json:"draft,omitempty"`
+	NoAnchors bool `json:"no_anchors"`
+	// StaleBuild — страница называет версию новее собранной: обновлять надо
+	// движок, а не файл. Отдельно от behind, потому что чинится другим.
+	StaleBuild bool            `json:"stale_build"`
+	AgeDays    int             `json:"age_days"`
+	Facts      []freshnessFact `json:"facts"`
+	Draft      string          `json:"draft,omitempty"`
 }
 
 func toSourceDTO(s freshness.SourceState, draft string) sourceStateDTO {
 	out := sourceStateDTO{
 		Name: s.Name, Flag: s.Flag, Behind: s.Behind, Unknown: s.Unknown,
-		NoAnchors: s.NoAnchors, AgeDays: s.AgeDays, Draft: draft,
+		NoAnchors: s.NoAnchors, StaleBuild: s.StaleBuild, AgeDays: s.AgeDays, Draft: draft,
 		Facts: []freshnessFact{},
 	}
 	if !s.EditedAt.IsZero() {
