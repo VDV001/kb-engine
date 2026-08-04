@@ -42,6 +42,7 @@ func (m Model) openBalance() Model {
 	if m.accounts == nil {
 		return m
 	}
+	m = m.refreshAccounts()
 	m.balance = balanceForm{
 		open:   true,
 		fields: []field{{label: fieldAccount}, {label: fieldBalance}},
@@ -87,7 +88,9 @@ func (m Model) submitBalance() Model {
 
 	m.balance = balanceForm{}
 	m.finStatus = fmt.Sprintf("баланс: %s %s", bank, amount)
-	return m
+	// Снимок устарел ровно сейчас: баланс, который только что записали, должен
+	// быть виден на экране, а не через один вход-выход.
+	return m.refreshAccounts()
 }
 
 func (m Model) renderBalanceForm() string {
@@ -115,10 +118,7 @@ func (m Model) renderBalanceForm() string {
 }
 
 func (m Model) accountNames() string {
-	accs, err := m.accounts.Accounts()
-	if err != nil {
-		return ""
-	}
+	accs := m.accountSnapshot
 	names := make([]string, 0, len(accs))
 	for _, a := range accs {
 		names = append(names, a.Bank())
@@ -135,12 +135,12 @@ func (m Model) writeBalances(b *strings.Builder) {
 	if m.accounts == nil {
 		return
 	}
-	accs, err := m.accounts.Accounts()
-	if err != nil {
+	if m.accountErr != nil {
 		b.WriteString(styleTitle.Render("балансы не прочитаны") + "\n")
-		b.WriteString(err.Error() + "\n\n")
+		b.WriteString(m.accountErr.Error() + "\n\n")
 		return
 	}
+	accs := m.accountSnapshot
 	if len(accs) == 0 {
 		return
 	}
@@ -161,4 +161,17 @@ func (m Model) writeBalances(b *strings.Builder) {
 			trim(a.Bank(), 22), human(a.Balance()), styleDim.Render(when))
 	}
 	b.WriteString("\n")
+}
+
+// refreshAccounts перечитывает счета и запоминает результат.
+//
+// Единственное место, где книга читается ради экрана. Зовётся на входе и после
+// записи — то есть тогда, когда данные могли измениться, а не на каждый кадр.
+func (m Model) refreshAccounts() Model {
+	if m.accounts == nil {
+		m.accountSnapshot, m.accountErr = nil, nil
+		return m
+	}
+	m.accountSnapshot, m.accountErr = m.accounts.Accounts()
+	return m
 }

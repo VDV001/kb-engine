@@ -309,8 +309,8 @@ func (m Model) accountHint() string {
 	if m.accounts == nil {
 		return "книга не подключена (--from)"
 	}
-	list, err := m.accounts.Accounts()
-	if err != nil || len(list) == 0 {
+	list := m.accountSnapshot
+	if m.accountErr != nil || len(list) == 0 {
 		return "счетов в книге нет"
 	}
 	names := make([]string, 0, len(list))
