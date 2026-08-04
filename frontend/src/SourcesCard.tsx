@@ -33,7 +33,9 @@ export function SourcesCard({ sources }: { sources: SourceState[] }) {
               <span className="text-xs text-on-surface-variant tabular">
                 {s.edited_at ? `${shortDate(s.edited_at)} · ${s.age_days} дн` : 'дата правки неизвестна'}
                 {' · '}
-                <span className={s.behind ? 'font-bold text-secondary' : ''}>{verdict(s)}</span>
+                <span className={s.behind || s.stale_build ? 'font-bold text-secondary' : ''}>
+                  {verdict(s)}
+                </span>
               </span>
             </div>
             {s.facts.length > 0 && (
@@ -55,10 +57,13 @@ export function SourcesCard({ sources }: { sources: SourceState[] }) {
   )
 }
 
-/** Три состояния, и каждое названо своим словом. */
+/** Четыре состояния, и каждое названо своим словом. */
 function verdict(s: SourceState): string {
   if (s.unknown) return 'дату правки не знаем'
   if (s.behind) return 'отстала'
+  // Не «отстала»: страница называет версию новее собранной, и править надо не
+  // её. Так выглядит день выпуска, пока локальная копия не подтянула тег.
+  if (s.stale_build) return 'старая сборка движка'
   if (s.no_anchors) return 'сверять не с чем'
   return 'свежая'
 }
