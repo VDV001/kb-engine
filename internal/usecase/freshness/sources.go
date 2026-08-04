@@ -90,8 +90,8 @@ func VersionMention(text, product, current string) *Fact {
 		return nil
 	}
 	current = strings.TrimPrefix(current, "v")
-	for _, line := range strings.Split(text, "\n") {
-		for _, chunk := range strings.Split(line, `","`) {
+	for line := range strings.SplitSeq(text, "\n") {
+		for chunk := range strings.SplitSeq(line, `","`) {
 			if !strings.Contains(strings.ToLower(chunk), strings.ToLower(product)) {
 				continue
 			}
