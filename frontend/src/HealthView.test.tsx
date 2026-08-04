@@ -30,7 +30,7 @@ const emptyAudits: Audits = { outdated: [], canonical: [], supersession: [] }
 describe('HealthView — здоровье ссылок', () => {
   it('показывает, что скан узнал про адреса', async () => {
     render(
-      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} onOpenEntry={() => {}} />,
+      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} sources={[]} onOpenEntry={() => {}} />,
     )
     expect(await screen.findByText(/1004/)).toBeDefined()
     expect(screen.getByText(/179/)).toBeDefined()
@@ -42,7 +42,7 @@ describe('HealthView — здоровье ссылок', () => {
   // экран соврёт увереннее, чем данные позволяют.
   it('называет неопределимые ссылки незнанием, а не поломкой', async () => {
     render(
-      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} onOpenEntry={() => {}} />,
+      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} sources={[]} onOpenEntry={() => {}} />,
     )
     expect(await screen.findByText(/не знаем|неизвестн/i)).toBeDefined()
   })
@@ -53,7 +53,7 @@ describe('HealthView — здоровье ссылок', () => {
   it('называет число непроверенных даже когда оно ноль', async () => {
     linkHealth.value = { alive: 3, moved: 0, gone: 0, undecidable: 0, unchecked: 0, with_url: 3 }
     render(
-      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} onOpenEntry={() => {}} />,
+      <HealthView audits={emptyAudits} duplicates={[]} entries={[]} sources={[]} onOpenEntry={() => {}} />,
     )
     expect(await screen.findByText(/не спрашивали|не провер/i)).toBeDefined()
   })

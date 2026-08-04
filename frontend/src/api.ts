@@ -342,6 +342,25 @@ export interface Freshness {
   draft?: string
 }
 
+/**
+ * Свежесть одного источника страницы.
+ *
+ * `behind`, `no_anchors` и `unknown` — три разных ответа: «отстала»,
+ * «сверять не с чем» и «дату правки не знаем». Сводить их к двум значит
+ * показывать проверенным то, что не проверялось.
+ */
+export interface SourceState {
+  name: string
+  flag: string
+  edited_at?: string
+  behind: boolean
+  unknown: boolean
+  no_anchors: boolean
+  age_days: number
+  facts: FreshnessFact[]
+  draft?: string
+}
+
 /** Одна причина считать страницу отставшей, в терминах её источника. */
 export interface FreshnessFact {
   kind: string
@@ -484,6 +503,7 @@ export interface Dashboard {
   analytics: Analytics
   analyticsConfig: AnalyticsConfig
   finances: Finances
+  sources: SourceState[]
 }
 
 /** Одна строка журнала так, как её увозят в книгу. */
@@ -513,6 +533,7 @@ export const api = {
   changelog: () => getJSON<Changelog>('/api/changelog'),
   engine: () => getJSON<Engine>('/api/engine'),
   now: () => getJSON<Now | null>('/api/now'),
+  sources: () => getJSON<{ sources: SourceState[] }>('/api/sources'),
   team: () => getJSON<Document | null>('/api/team'),
   projects: () => getJSON<ProjectDoc | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
@@ -547,7 +568,7 @@ export const api = {
   },
 
   async dashboard(): Promise<Dashboard> {
-    const [stats, entries, audits, duplicates, analytics, analyticsConfig, finances] =
+    const [stats, entries, audits, duplicates, analytics, analyticsConfig, finances, sources] =
       await Promise.all([
         api.stats(),
         api.entries(),
@@ -560,7 +581,13 @@ export const api = {
         // LibreOffice сохраняет. Остальные шесть видов из-за него падать не
         // должны: вид финансов уже умеет рендерить пустоту.
         api.finances().catch(() => ({ transactions: [], accounts: [] })),
+        // Свежесть источников — та же история: страница со сводкой не должна
+        // падать из-за сборки сервера, которая этого эндпоинта не знает.
+        api.sources().catch(() => ({ sources: [] })),
       ])
-    return { stats, entries, audits, duplicates, analytics, analyticsConfig, finances }
+    return {
+      stats, entries, audits, duplicates, analytics, analyticsConfig, finances,
+      sources: sources.sources ?? [],
+    }
   },
 }

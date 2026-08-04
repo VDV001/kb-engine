@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from './api'
-import type { Audits, DuplicateGroup, Entry, Finding } from './api'
+import type { Audits, DuplicateGroup, Entry, Finding, SourceState } from './api'
+import { SourcesCard } from './SourcesCard'
 import { useResource } from './hooks/useResource'
 import { dateOf, statusOf } from './catalog'
 import { Card, Chip, Label, Section } from './components/ui'
@@ -316,11 +317,13 @@ export function HealthView({
   audits,
   duplicates,
   entries,
+  sources,
   onOpenEntry,
 }: {
   audits: Audits
   duplicates: DuplicateGroup[]
   entries: Entry[]
+  sources: SourceState[]
   onOpenEntry: (id: number) => void
 }) {
   const byID = new Map(entries.map((e) => [e.id, e]))
@@ -338,6 +341,8 @@ export function HealthView({
           канонические, сломанные ссылки замены и совпадающие записи. Это предложения, а не
           изменения — каталог правишь ты.
         </p>
+        {/* Свежесть страниц стоит здесь же, где гигиена каталога: и то и
+            другое — вопрос «что в базе разошлось с правдой». */}
         {total === 0 && (
           <p className="mt-4 text-sm text-on-surface-variant">
             Находок нет: аудит и поиск дублей ничего не вернули.
@@ -406,6 +411,7 @@ export function HealthView({
           </div>
         </Section>
       )}
+      <SourcesCard sources={sources} />
     </div>
   )
 }

@@ -107,6 +107,7 @@ export default function App() {
                 audits={data.audits}
                 duplicates={data.duplicates}
                 entries={data.entries}
+                sources={data.sources}
                 // Находка ссылается на запись номером, и открывать её надо в
                 // архиве: гигиена показывает, что не так, читают — там же, где
                 // читают всё остальное.
