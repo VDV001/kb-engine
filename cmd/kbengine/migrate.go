@@ -12,7 +12,7 @@ import (
 // own verb rather than under `set`, which stays a targeted edit by id.
 func runMigrate(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls, writeups")
+		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls, writeups, habr-ids")
 		return 2
 	}
 	switch args[0] {
@@ -22,6 +22,8 @@ func runMigrate(args []string, stdout, stderr io.Writer) int {
 		return runMigrateURLs(args[1:], stdout, stderr)
 	case "writeups":
 		return runMigrateWriteups(args[1:], stdout, stderr)
+	case "habr-ids":
+		return runMigrateHabrIDs(args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "migrate: unknown target %q\n", args[0])
 		return 2
@@ -68,6 +70,53 @@ func runMigrateVersions(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprintf(stdout, "migrate versions: %d запис(ей) переехали из version в revision\n", len(plan.Moved))
+	return 0
+}
+
+// runMigrateHabrIDs проставляет номер статьи там, где он известен из адреса.
+//
+// Отдельная команда, а не часть аудита: аудит называет расхождения, а это
+// разовый перенос уже известного значения в поле, где его ждут.
+func runMigrateHabrIDs(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("migrate habr-ids", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *catalogPath == "" {
+		fmt.Fprintln(stderr, "migrate habr-ids: --catalog is required")
+		return 2
+	}
+
+	plan, err := catalogjson.MigrateHabrIDs(*catalogPath, *apply)
+	if err != nil {
+		fmt.Fprintf(stderr, "migrate habr-ids: %v\n", err)
+		return 1
+	}
+
+	// Расхождения называются всегда — и до записи, и после: движок не знает,
+	// что верно, поле или адрес, и решать это не его дело.
+	for _, c := range plan.Conflicts {
+		fmt.Fprintf(stderr, "migrate habr-ids: #%d habr_id=%d, а в адресе %d — %s\n",
+			c.EntryID, c.Stored, c.InURL, c.Title)
+	}
+	if len(plan.Conflicts) > 0 {
+		fmt.Fprintf(stderr, "  %d расхожден(ий) оставлено как есть — решать вам\n", len(plan.Conflicts))
+	}
+
+	if len(plan.Filled) == 0 && len(plan.Normalized) == 0 {
+		fmt.Fprintln(stdout, "migrate habr-ids: нечего заполнять")
+		return 0
+	}
+	verb := "проставится/приведётся"
+	tail := " (файл не тронут, для записи добавьте --apply)"
+	if *apply {
+		verb, tail = "проставлено/приведено", ""
+	}
+	fmt.Fprintf(stdout, "migrate habr-ids: %s — %d пустых заполняется из адреса, %d строковых приводится к числу%s\n",
+		verb, len(plan.Filled), len(plan.Normalized), tail)
 	return 0
 }
 

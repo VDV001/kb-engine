@@ -106,8 +106,17 @@ func MapArticle(a Article, now time.Time) (domain.EntryParams, error) {
 
 	created := parseCreatedDate(a.CreatedAt, now)
 
+	// Номер статьи есть в адресе, и не перенести его — значит потерять то, что
+	// уже известно. Чужой источник номера не получает: пустое поле честнее
+	// выдуманного, потому что по этому полю потом ищут дубли.
+	var habrID *int
+	if id := HabrIDFromURL(a.URL); id != 0 {
+		habrID = &id
+	}
+
 	return domain.EntryParams{
 		Kind:        domain.KindArticle,
+		HabrID:      habrID,
 		Title:       title,
 		Category:    cat,
 		Lifecycle:   lc,
