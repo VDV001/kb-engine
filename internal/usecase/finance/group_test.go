@@ -17,9 +17,9 @@ import (
 // двух местах и однажды разойтись.
 func TestTotalsByGroup(t *testing.T) {
 	balances := []finance.AccountBalance{
-		{Bank: "Сбербанк", Current: money(t, "1000")},
+		{Bank: "Сбербанк", Current: money(t, "2000")},
 		{Bank: "Заморозка → Хранение", Current: money(t, "150000")},
-		{Bank: "Альфа-Банк", Current: money(t, "500")},
+		{Bank: "Альфа-Банк", Current: money(t, "1000")},
 		{Bank: "Долг → Отец", Current: money(t, "3000")},
 		{Bank: "Заморозка → Вклад", Current: money(t, "0")},
 	}
@@ -33,7 +33,7 @@ func TestTotalsByGroup(t *testing.T) {
 	}{
 		// Счета без группы идут первыми и одной строкой: это деньги, которыми
 		// человек располагает сейчас, и ради них экран открывают.
-		{"", "1500.00", 2},
+		{"", "3000.00", 2},
 		{"Заморозка", "150000.00", 2},
 		{"Долг", "3000.00", 1},
 	}
