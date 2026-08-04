@@ -5,6 +5,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
+	"github.com/daniil/kb-engine/internal/usecase/freshness"
 )
 
 // transactionDTO is one ledger row on the wire.
@@ -241,4 +242,42 @@ func toDTO(e domain.Entry) entryDTO {
 		d.DeepReadDate = t.Format(time.DateOnly)
 	}
 	return d
+}
+
+// freshnessDTO — ответ на вопрос «не отстала ли страница».
+//
+// Behind и Unknown — разные вещи, и обе едут наружу: «не знаю, когда правили»
+// нельзя показывать как «всё в порядке», иначе страница выглядит проверенной,
+// не будучи ею.
+type freshnessDTO struct {
+	Behind   bool            `json:"behind"`
+	Unknown  bool            `json:"unknown"`
+	EditedAt string          `json:"edited_at,omitempty"`
+	Facts    []freshnessFact `json:"facts"`
+	Draft    string          `json:"draft,omitempty"`
+}
+
+type freshnessFact struct {
+	Kind  string `json:"kind"`
+	Text  string `json:"text"`
+	Count int    `json:"count,omitempty"`
+	IDs   []int  `json:"ids,omitempty"`
+}
+
+func toFreshnessDTO(r freshness.Report) freshnessDTO {
+	out := freshnessDTO{
+		Behind:  r.Behind,
+		Unknown: r.Unknown,
+		Draft:   r.Draft,
+		// Пустой список, а не null: nil-слайс Go пишет как null, и `.length` у
+		// него роняет всё дерево React — этой граблёй уже белел дашборд.
+		Facts: []freshnessFact{},
+	}
+	if !r.EditedAt.IsZero() {
+		out.EditedAt = r.EditedAt.Format(time.RFC3339)
+	}
+	for _, f := range r.Facts {
+		out.Facts = append(out.Facts, freshnessFact{Kind: f.Kind, Text: f.Text, Count: f.Count, IDs: f.IDs})
+	}
+	return out
 }

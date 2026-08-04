@@ -514,9 +514,20 @@ func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.
 		if _, err := os.ReadFile(nowPath); err != nil {
 			return httpapi.Documents{}, fmt.Errorf("now: %w", err)
 		}
-		docs.Now = func() (string, error) {
+		docs.Now = func() (httpapi.NowDoc, error) {
 			raw, err := os.ReadFile(nowPath)
-			return string(raw), err
+			if err != nil {
+				return httpapi.NowDoc{}, err
+			}
+			// Время правки читается тем же вызовом, что и текст: страница
+			// сравнивает себя с тем, что случилось после неё, и без этой даты
+			// сравнивать не с чем. Ошибка stat не роняет страницу — документ
+			// показывается, а проверка честно говорит «не знаю».
+			doc := httpapi.NowDoc{Markdown: string(raw)}
+			if st, err := os.Stat(nowPath); err == nil {
+				doc.EditedAt = st.ModTime()
+			}
+			return doc, nil
 		}
 	}
 	fileJSON := func(name, path string) (func() ([]byte, error), error) {
