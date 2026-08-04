@@ -88,11 +88,12 @@ func (m Model) submitBalance() Model {
 	bank := strings.TrimSpace(m.balance.fields[0].value)
 	raw := strings.TrimSpace(m.balance.fields[1].value)
 
-	// ParseMoney, not MoneyFromFloat: this is text a person typed, so more
-	// precision than a kopeck is a typo and gets reported rather than rounded.
-	amount, err := domain.ParseMoney(raw)
+	// parseAmount, а не domain.ParseMoney: разбор один на все формы, и отказ
+	// он объясняет по-человечески. Пустое поле отделено от нечитаемого — это
+	// разные положения, и второе не лечится тем же движением, что первое.
+	amount, err := parseAmount(raw)
 	if err != nil {
-		m.balance.err = fmt.Sprintf("сумма: %v", err)
+		m.balance.err = fmt.Sprintf("сумма %v", err)
 		return m
 	}
 
@@ -127,7 +128,14 @@ func (m Model) renderBalanceForm() string {
 	b.WriteString(styleQuery.Render("баланс счёта") + "\n\n")
 
 	for i, f := range m.balance.fields {
-		line := fmt.Sprintf("%-14s %s", f.label, f.value)
+		// Пустое поле показывает пример — то же правило, что и в остальных
+		// формах. Форма баланса из него выпадала, и цена была видна: на пустой
+		// сумме экран отвечал машинным текстом вместо подсказки, чего он ждёт.
+		value := f.value
+		if value == "" {
+			value = styleDim.Render(m.hintFor(f.label))
+		}
+		line := fmt.Sprintf("%-14s %s", f.label, value)
 		if i == m.balance.cursor {
 			b.WriteString(styleSelected.Render("▸ "+line) + "\n")
 			continue
@@ -155,9 +163,9 @@ func (m Model) createAccount() Model {
 		return m
 	}
 	bank := strings.TrimSpace(m.balance.fields[0].value)
-	amount, err := domain.ParseMoney(strings.TrimSpace(m.balance.fields[1].value))
+	amount, err := parseAmount(m.balance.fields[1].value)
 	if err != nil {
-		m.balance.err = fmt.Sprintf("сумма: %v", err)
+		m.balance.err = fmt.Sprintf("сумма %v", err)
 		return m
 	}
 	if err := m.accounts.AddAccount(bank, amount); err != nil {

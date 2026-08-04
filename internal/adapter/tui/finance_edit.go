@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
@@ -149,7 +148,7 @@ func (f entryForm) editParams() (finance.EditParams, error) {
 		ClearAccount:     f.value(fieldAccount) == "",
 	}
 	if raw := f.value(fieldAmount); raw != "" {
-		amount, err := domain.ParseMoney(raw)
+		amount, err := parseAmount(raw)
 		if err != nil {
 			return finance.EditParams{}, fmt.Errorf("%s: %w", fieldAmount, err)
 		}
