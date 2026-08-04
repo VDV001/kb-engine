@@ -297,15 +297,6 @@ func (m Model) knowsAccount(bank string) bool {
 	return false
 }
 
-func (m Model) accountNames() string {
-	accs := m.accountSnapshot
-	names := make([]string, 0, len(accs))
-	for _, a := range accs {
-		names = append(names, a.Bank)
-	}
-	return strings.Join(names, ", ")
-}
-
 // writeBalances prints what each account holds, with the date the number was
 // last confirmed.
 //
