@@ -61,22 +61,30 @@ const groupSeparator = "→"
 // сумма. Итог, который складывает их молча, отвечает не на тот вопрос, который
 // задают, глядя на него.
 func (a Account) Group() string {
-	group, _, found := strings.Cut(a.bank, groupSeparator)
-	if !found {
-		return ""
-	}
-	return strings.TrimSpace(group)
+	group, _ := SplitAccountName(a.bank)
+	return group
 }
 
 // NameWithinGroup returns what the account is called inside its group, or the
 // whole name when it has none. Only the first arrow splits: a second one is
 // part of the name, not a third level.
 func (a Account) NameWithinGroup() string {
-	_, rest, found := strings.Cut(a.bank, groupSeparator)
+	_, rest := SplitAccountName(a.bank)
+	return rest
+}
+
+// SplitAccountName splits an account name into its group and what it is called
+// inside that group. A name without an arrow has no group and stays whole.
+//
+// Callers that hold a name rather than an Account use this directly — a screen
+// that re-derives the group from the string itself is a second copy of the rule,
+// and the copy is the one that starts splitting differently.
+func SplitAccountName(bank string) (group, name string) {
+	before, after, found := strings.Cut(bank, groupSeparator)
 	if !found {
-		return a.bank
+		return "", strings.TrimSpace(bank)
 	}
-	return strings.TrimSpace(rest)
+	return strings.TrimSpace(before), strings.TrimSpace(after)
 }
 
 // SameAccountName reports whether two spellings name the same account.

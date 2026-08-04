@@ -25,6 +25,51 @@ type AccountBalance struct {
 	// настолько, что поступления, которых движок не видит, уже случились.
 	// Число при этом не прячется: оно показывает, насколько далеко всё зашло.
 	NeedsConfirmation bool
+	// Group — род счёта, прочитанный из его имени («Заморозка → Хранение» →
+	// «Заморозка»), и пустой у обычного счёта. Разбирает имя домен, а не
+	// витрина: разбирая его сама, каждая витрина однажды разберёт иначе.
+	Group           string
+	NameWithinGroup string
+}
+
+// GroupTotal — сколько денег в одном роде счетов.
+//
+// Пустая группа означает обычные счета: деньги, которыми человек располагает
+// сейчас. Ради них экран и открывают, поэтому они идут первыми.
+type GroupTotal struct {
+	Group string
+	Total domain.Money
+	Count int
+}
+
+// TotalsByGroup складывает остатки по родам счетов.
+//
+// Одно число «итого» смешивает три разные вещи: деньги на карте, деньги,
+// отложенные и намеренно недоступные, и деньги, которых сейчас нет, потому что
+// их занял человек. Складывать их молча — значит отвечать не на тот вопрос,
+// который задают, глядя на итог.
+//
+// Порядок — тот, в котором группы встретились в книге. Владелец сам решил, что
+// за чем идёт на листе «Счета», и витрине незачем это переставлять.
+func TotalsByGroup(balances []AccountBalance) []GroupTotal {
+	var out []GroupTotal
+	at := make(map[string]int, len(balances))
+	for _, b := range balances {
+		// Группа берётся из имени, а не из поля рядом: поле — копия для
+		// отображения, и вызывающий, собравший AccountBalance сам, оставил бы
+		// его пустым. Тогда всё сложилось бы в одну кучу, и куча выглядела бы
+		// правдоподобно.
+		group, _ := domain.SplitAccountName(b.Bank)
+		i, seen := at[group]
+		if !seen {
+			out = append(out, GroupTotal{Group: group})
+			i = len(out) - 1
+			at[group] = i
+		}
+		out[i].Total = out[i].Total.Add(b.Current)
+		out[i].Count++
+	}
+	return out
 }
 
 // CurrentBalances считает остаток каждого счёта на сейчас.
@@ -48,9 +93,11 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []Acco
 	out := make([]AccountBalance, 0, len(accounts))
 	for _, a := range accounts {
 		b := AccountBalance{
-			Bank:      a.Bank(),
-			Confirmed: a.Balance(),
-			Current:   a.Balance(),
+			Bank:            a.Bank(),
+			Confirmed:       a.Balance(),
+			Current:         a.Balance(),
+			Group:           a.Group(),
+			NameWithinGroup: a.NameWithinGroup(),
 		}
 		if !a.Updated().IsZero() {
 			b.ConfirmedOn = a.Updated().Format("2006-01-02")
