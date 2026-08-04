@@ -24,6 +24,9 @@ func TestHabrIDFromURL(t *testing.T) {
 		{"https://habr.com/ru/companies/otus/articles/1022618/", 1022618},
 		{"https://habr.com/ru/companies/cloud4y/articles/999001/", 999001},
 		{"https://habr.com/ru/post/123456/", 123456},
+		// Спецпроект — тоже материал со своим номером. Форму нашла миграция на
+		// живом каталоге: из 1266 адресов один остался неразобранным.
+		{"https://habr.com/ru/specials/1034800/", 1034800},
 		{"https://habr.com/ru/company/haulmont/blog/654321/", 654321},
 		// Чужие адреса номера статьи не несут — и выдумывать его нельзя.
 		{"https://example.com/ru/articles/1065834/", 0},
