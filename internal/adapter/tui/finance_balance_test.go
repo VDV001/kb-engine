@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/tui"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // stubAccounts stands in for the workbook's Счета sheet: what the banks say
@@ -24,6 +25,15 @@ type balanceCall struct {
 }
 
 func (s *stubAccounts) Accounts() ([]domain.Account, error) { return s.list, s.err }
+
+// Balances отдаёт то же, что посчитал бы usecase на этих счетах без трат:
+// стаб стоит вместо книги, а не вместо арифметики.
+func (s *stubAccounts) Balances() ([]finance.AccountBalance, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return finance.CurrentBalances(s.list, nil), nil
+}
 
 func (s *stubAccounts) SetBalance(bank string, amount domain.Money) error {
 	if s.err != nil {

@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // AccountsSource is what the finances screen needs about balances: what the
@@ -15,7 +16,10 @@ import (
 // Reading and writing sit in one interface because they are one question — a
 // balance is only worth changing on a screen that shows what it currently is.
 type AccountsSource interface {
-	Accounts() ([]domain.Account, error)
+	// Balances отдаёт остатки, уже посчитанные: подтверждённое число, сколько
+	// ушло после подтверждения и что осталось. Считает usecase, а не экран —
+	// иначе терминал и веб посчитали бы по-разному, и разошлись бы молча.
+	Balances() ([]finance.AccountBalance, error)
 	SetBalance(bank string, amount domain.Money) error
 }
 
@@ -121,7 +125,7 @@ func (m Model) accountNames() string {
 	accs := m.accountSnapshot
 	names := make([]string, 0, len(accs))
 	for _, a := range accs {
-		names = append(names, a.Bank())
+		names = append(names, a.Bank)
 	}
 	return strings.Join(names, ", ")
 }
@@ -145,21 +149,39 @@ func (m Model) writeBalances(b *strings.Builder) {
 		return
 	}
 
-	// Итог сверху, счета под ним: первым читают «сколько у меня всего», а не
-	// «сколько на Сбербанке». Это же число показывает веб как «на счетах».
+	// Два числа рядом: сверху остаток на сейчас, под ним — подтверждённое
+	// значение с датой и тем, сколько ушло после неё. Одно вместо другого
+	// показывать нельзя: подтверждённое — единственный факт, сверенный с
+	// банком, а расчётное отвечает на вопрос «сколько сейчас».
+	balances := accs
+
 	var total domain.Money
-	for _, a := range accs {
-		total = total.Add(a.Balance())
+	for _, x := range balances {
+		total = total.Add(x.Current)
 	}
 	fmt.Fprintf(b, "%s %s\n", styleDim.Render("на счетах"), styleAccent.Render(human(total)))
-	for _, a := range accs {
+	for _, x := range balances {
+		fmt.Fprintf(b, "  %-22s %12s\n", trim(x.Bank, 22), human(x.Current))
 		when := "—"
-		if !a.Updated().IsZero() {
-			when = a.Updated().Format("02.01")
+		if x.ConfirmedOn != "" {
+			when = x.ConfirmedOn[8:] + "." + x.ConfirmedOn[5:7]
 		}
-		fmt.Fprintf(b, "  %-22s %12s  %s\n",
-			trim(a.Bank(), 22), human(a.Balance()), styleDim.Render(when))
+		note := fmt.Sprintf("подтверждён %s · %s", human(x.Confirmed), when)
+		if !x.Spent.IsZero() {
+			note += fmt.Sprintf(" · после этого −%s", human(x.Spent))
+		}
+		if x.NeedsConfirmation {
+			// Минус не значит долг: доходы счёта не имеют, поэтому на старом
+			// подтверждении траты неизбежно съедают остаток. Число оставлено,
+			// но названо тем, что оно есть, — просьбой сверить с банком.
+			note += " · ⚠ пора подтвердить"
+		}
+		fmt.Fprintf(b, "  %s\n", styleDim.Render("  "+note))
 	}
+	// Ограничение названо вслух: доходу домен не даёт счёта, поэтому поступления
+	// в расчёт не входят и остаток может быть занижен. Умолчать об этом значило
+	// бы выдать оценку за факт.
+	b.WriteString(styleDim.Render("  доходы в расчёт не входят — у них нет счёта") + "\n")
 	b.WriteString("\n")
 }
 
@@ -172,6 +194,6 @@ func (m Model) refreshAccounts() Model {
 		m.accountSnapshot, m.accountErr = nil, nil
 		return m
 	}
-	m.accountSnapshot, m.accountErr = m.accounts.Accounts()
+	m.accountSnapshot, m.accountErr = m.accounts.Balances()
 	return m
 }

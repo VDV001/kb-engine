@@ -388,6 +388,28 @@ func (f ledgerFinances) Accounts() ([]domain.Account, error) {
 	return led.Accounts, nil
 }
 
+// Balances считает остаток каждого счёта на сейчас: подтверждённое число минус
+// траты, записанные после подтверждения.
+//
+// Считает usecase, а не поверхность. Терминал и веб зовут одно и то же, поэтому
+// не могут показать разные остатки для одной книги — та же причина, по которой
+// период передаётся аргументом в Summary, а не считается на каждой стороне.
+func (f ledgerFinances) Balances() ([]finance.AccountBalance, error) {
+	accounts, err := f.Accounts()
+	if err != nil {
+		return nil, err
+	}
+	recs, err := financejsonl.Load(f.ledgerPath, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	txs := make([]domain.Transaction, 0, len(recs))
+	for _, r := range recs {
+		txs = append(txs, r.Transaction())
+	}
+	return finance.CurrentBalances(accounts, txs), nil
+}
+
 // SetBalance records a new balance through the same writer fin balance uses, so
 // the terminal and the command cannot file it differently.
 //

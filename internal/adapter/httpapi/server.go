@@ -382,8 +382,10 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			for _, t := range f.Transactions {
 				txs = append(txs, toTransactionDTO(t))
 			}
-			for _, a := range f.Accounts {
-				accounts = append(accounts, toAccountDTO(a))
+			// Остаток считает тот же usecase, что и терминал: две реализации
+			// одной арифметики однажды разойдутся, и разойдутся молча.
+			for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions) {
+				accounts = append(accounts, toBalanceDTO(b))
 			}
 		}
 		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts})

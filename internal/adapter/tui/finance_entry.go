@@ -315,7 +315,7 @@ func (m Model) accountHint() string {
 	}
 	names := make([]string, 0, len(list))
 	for _, a := range list {
-		names = append(names, a.Bank())
+		names = append(names, a.Bank)
 	}
 	if len(names) > 3 {
 		return strings.Join(names[:3], " · ") + " · …"

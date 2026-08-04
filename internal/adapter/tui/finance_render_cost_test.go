@@ -5,6 +5,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/tui"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // Отрисовка не должна читать файлы.
@@ -25,6 +26,13 @@ type countingAccounts struct {
 func (c *countingAccounts) Accounts() ([]domain.Account, error) {
 	c.reads++
 	return c.inner.Accounts()
+}
+
+// Balances — то самое обращение, стоимость которого измеряется: на живом файле
+// оно читает книгу и леджер, и в отрисовке ему не место.
+func (c *countingAccounts) Balances() ([]finance.AccountBalance, error) {
+	c.reads++
+	return c.inner.Balances()
 }
 
 func (c *countingAccounts) SetBalance(bank string, amount domain.Money) error {

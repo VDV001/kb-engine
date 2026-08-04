@@ -62,6 +62,11 @@ func (m Money) Kopecks() int64 { return m.kopecks }
 // NewMoney, the one constructor with no bound.
 func (m Money) Add(other Money) Money { return Money{kopecks: m.kopecks + other.kopecks} }
 
+// Sub вычитает одну сумму из другой. Результат может быть отрицательным: остаток
+// счёта, с которого списали больше, чем на нём числилось, — это факт, а не
+// ошибка вычисления, и прятать его знаком было бы враньём.
+func (m Money) Sub(other Money) Money { return Money{kopecks: m.kopecks - other.kopecks} }
+
 // IsZero reports whether the amount is exactly zero.
 func (m Money) IsZero() bool { return m.kopecks == 0 }
 

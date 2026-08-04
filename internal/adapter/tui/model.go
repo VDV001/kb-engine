@@ -75,7 +75,7 @@ type Model struct {
 	// список нужен отрисовке — то есть каждому нажатию клавиши. Владелец увидел
 	// это как «буквы не появляются»: восемь букв давали больше полусекунды
 	// отставания. Отрисовка обязана быть дешёвой и не ходить в файлы.
-	accountSnapshot []domain.Account
+	accountSnapshot []finance.AccountBalance
 	accountErr      error
 
 	// editor is nil when nothing can rewrite an entry, and then the key is
