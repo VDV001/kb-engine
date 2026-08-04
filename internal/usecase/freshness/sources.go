@@ -3,6 +3,7 @@ package freshness
 import (
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -68,10 +69,38 @@ var versionPattern = regexp.MustCompile(`v(\d+\.\d+\.\d+)`)
 // является ответом на вопрос, какая версия сейчас.
 var releaseVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
-// IsReleaseVersion сообщает, знает ли движок о себе чистую версию выпуска.
-// Вызывающему это нужно, чтобы решить, есть ли у страницы опора вообще.
+// pseudoVersion — версия сборки из исходников, как её строит Go:
+// 0.15.1-0.20260804151919-e9b33a0aa068, иногда с суффиксом +dirty.
+var pseudoVersion = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)-0\.\d{14}-[0-9a-f]+`)
+
+// BaseRelease возвращает последний выпуск, о котором версия говорит, или "",
+// когда она не говорит ни о чём.
+//
+// Псевдоверсия — не «не знаю». Go строит её как следующий patch после
+// последнего тега, поэтому 0.15.1-0.… означает «собрано после 0.15.0». Разница
+// принципиальная: `kbup` собирает движок из исходников, и пока такая версия
+// считалась неизвестной, проверка Projects не срабатывала никогда именно в том
+// сценарии, ради которого заводилась.
+func BaseRelease(v string) string {
+	v = strings.TrimPrefix(strings.TrimSpace(v), "v")
+	if releaseVersion.MatchString(v) {
+		return v
+	}
+	m := pseudoVersion.FindStringSubmatch(v)
+	if m == nil {
+		return ""
+	}
+	patch, err := strconv.Atoi(m[3])
+	if err != nil || patch == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s.%d", m[1], m[2], patch-1)
+}
+
+// IsReleaseVersion сообщает, знает ли движок о себе версию, с которой можно
+// сверяться, — выпуск или сборку после известного выпуска.
 func IsReleaseVersion(v string) bool {
-	return releaseVersion.MatchString(strings.TrimPrefix(v, "v"))
+	return BaseRelease(v) != ""
 }
 
 // VersionMention ищет строку, где страница называет версию продукта, и
@@ -86,10 +115,10 @@ func IsReleaseVersion(v string) bool {
 // версия этого. Своя версия неизвестна (сборка из исходников даёт псевдоверсию)
 // — молчим: судить, не зная о себе правды, хуже, чем не судить.
 func VersionMention(text, product, current string) *Fact {
-	if product == "" || !releaseVersion.MatchString(strings.TrimPrefix(current, "v")) {
+	current = BaseRelease(current)
+	if product == "" || current == "" {
 		return nil
 	}
-	current = strings.TrimPrefix(current, "v")
 	for line := range strings.SplitSeq(text, "\n") {
 		for chunk := range strings.SplitSeq(line, `","`) {
 			if !strings.Contains(strings.ToLower(chunk), strings.ToLower(product)) {
