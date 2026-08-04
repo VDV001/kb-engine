@@ -11,12 +11,16 @@ import (
 	"net/http"
 	"strings"
 
+	"time"
+
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
+
+	"github.com/daniil/kb-engine/internal/usecase/freshness"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
@@ -65,8 +69,10 @@ type ChangelogLoader func() (changelog.Document, error)
 // is optional and called per request; nil means the view is not configured,
 // which is a smaller KB, not an error.
 type Documents struct {
-	// Now returns markdown (the active pipeline document).
-	Now func() (string, error)
+	// Now returns the active pipeline document together with when it was last
+	// edited. Время правки приходит вместе с текстом, а не отдельным вызовом:
+	// это одно знание об одном файле, и разъехаться они не должны.
+	Now func() (NowDoc, error)
 	// Team and Projects return the owner's JSON verbatim — the engine does
 	// not reshape content it does not own.
 	Team     func() ([]byte, error)
@@ -150,7 +156,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		writeJSON(w, engine)
 	})
 	mux.HandleFunc("POST /api/finances/export", handleFinanceExport())
-	mux.HandleFunc("GET /api/now", handleNow(docs.Now))
+	mux.HandleFunc("GET /api/now", handleNow(docs.Now, q, chlog, fin))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
@@ -198,19 +204,85 @@ func handleAnalyticsConfig(cfg ConfigLoader) http.HandlerFunc {
 	}
 }
 
-func handleNow(load func() (string, error)) http.HandlerFunc {
+// NowDoc — документ «что в работе сейчас» и время его последней правки.
+type NowDoc struct {
+	Markdown string
+	EditedAt time.Time
+}
+
+// handleNow отдаёт документ вместе с ответом на вопрос, не отстал ли он.
+//
+// Страница тухнет тихо: текст остаётся правдоподобным, а мир вокруг уходит
+// вперёд. Считать отставание по возрасту файла нельзя — документ, которого не
+// касались месяц, но и база вокруг которого не менялась, верен. Поэтому
+// сравниваются события: записи, версия базы, операции ПОСЛЕ последней правки.
+//
+// Проверка необязательна: без каталога, журнала и книги остаётся один markdown,
+// и это меньшая страница, а не ошибка.
+func handleNow(load func() (NowDoc, error), q Querier, chlog ChangelogLoader, fin Financier) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if load == nil {
 			writeJSON(w, nil)
 			return
 		}
-		md, err := load()
+		doc, err := load()
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		writeJSON(w, map[string]string{"markdown": md})
+		writeJSON(w, map[string]any{
+			"markdown":  doc.Markdown,
+			"edited_at": timeOrEmpty(doc.EditedAt),
+			"freshness": toFreshnessDTO(checkNowFreshness(doc, q, chlog, fin)),
+		})
 	}
+}
+
+// checkNowFreshness собирает состояние мира для проверки.
+//
+// Источник, который не отдался, просто не участвует: сказать «отстал», не
+// прочитав каталог, — то же самое, что сказать «свеж», не прочитав его.
+func checkNowFreshness(doc NowDoc, q Querier, chlog ChangelogLoader, fin Financier) freshness.Report {
+	in := freshness.Input{Now: time.Now(), EditedAt: doc.EditedAt}
+
+	if q != nil {
+		if entries, err := q.Entries(); err == nil {
+			for _, e := range entries {
+				if added := e.DateAdded(); added != nil {
+					in.Entries = append(in.Entries, freshness.EntryFact{
+						ID: e.ID(), Title: e.Title(), Added: *added,
+					})
+				}
+			}
+		}
+	}
+	if chlog != nil {
+		if cl, err := chlog(); err == nil {
+			// Дата приходит строкой, как её написали в журнале. Нечитаемая — это
+			// «не знаю, когда»: тогда версия в расчёт не идёт вовсе, вместо того
+			// чтобы попасть туда с нулевым временем и объявить отставание всегда.
+			if d, err := time.Parse(time.DateOnly, cl.CurrentDate); err == nil {
+				in.Version, in.VersionDate = cl.CurrentVersion, d
+			}
+		}
+	}
+	if fin != nil {
+		if f, err := fin.Finances(); err == nil {
+			for _, t := range f.Transactions {
+				in.Operations = append(in.Operations, t.Date())
+			}
+		}
+	}
+	return freshness.Check(in)
+}
+
+// timeOrEmpty печатает дату, а нулевое время — пустой строкой: «0001-01-01»
+// на экране читается как дата, которой не было.
+func timeOrEmpty(t time.Time) string {
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
 }
 
 // handleRawJSON serves an owner-supplied JSON file byte-for-byte.

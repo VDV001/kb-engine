@@ -506,7 +506,9 @@ func TestServer_documents(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
 		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
 		httpapi.Documents{
-			Now:      func() (string, error) { return "# Сейчас\n\n- работа", nil },
+			Now: func() (httpapi.NowDoc, error) {
+				return httpapi.NowDoc{Markdown: "# Сейчас\n\n- работа"}, nil
+			},
 			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
 			Projects: nil, // не настроен
 		}, testEngine, nil)
@@ -556,5 +558,67 @@ func TestServer_statsCarriesCategoryLabels(t *testing.T) {
 	}
 	if labels["golang"] != "Go: язык и экосистема" {
 		t.Errorf("label of golang = %v, want %q", labels["golang"], "Go: язык и экосистема")
+	}
+}
+
+// Страница «что в работе сейчас» должна говорить, что отстала, — иначе она
+// тухнет тихо: текст остаётся правдоподобным, а база уходит вперёд.
+func TestServer_now_reportsThatThePageFellBehind(t *testing.T) {
+	// Раньше и записи каталога фикстуры (11.07), и её траты (01.07): обе
+	// случились после правки, значит страница отстала от обеих.
+	edited := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
+		httpapi.Documents{
+			Now: func() (httpapi.NowDoc, error) {
+				return httpapi.NowDoc{Markdown: "# Сейчас", EditedAt: edited}, nil
+			},
+		}, testEngine, nil)
+
+	rec := get(t, srv, "/api/now")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var body struct {
+		Markdown  string `json:"markdown"`
+		EditedAt  string `json:"edited_at"`
+		Freshness struct {
+			Behind  bool `json:"behind"`
+			Unknown bool `json:"unknown"`
+			Facts   []struct {
+				Kind string `json:"kind"`
+			} `json:"facts"`
+			Draft string `json:"draft"`
+		} `json:"freshness"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if body.Markdown == "" || body.EditedAt == "" {
+		t.Fatalf("документ или дата правки не отданы: %+v", body)
+	}
+	if !body.Freshness.Behind {
+		t.Errorf("отставание не объявлено: %+v", body.Freshness)
+	}
+	if body.Freshness.Draft == "" {
+		t.Error("черновик блока не предложен")
+	}
+	if len(body.Freshness.Facts) == 0 {
+		t.Error("причины отставания не названы")
+	}
+}
+
+// Пустой список фактов уезжает как [], а не null: nil-слайс Go пишется как
+// null, и `.length` у него роняет всё дерево React — этой граблёй дашборд уже
+// белел целиком.
+func TestServer_now_freshnessFactsAreNeverNull(t *testing.T) {
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
+		httpapi.Documents{
+			Now: func() (httpapi.NowDoc, error) { return httpapi.NowDoc{Markdown: "# Сейчас"}, nil },
+		}, testEngine, nil)
+
+	if body := get(t, srv, "/api/now").Body.String(); strings.Contains(body, `"facts":null`) {
+		t.Errorf("факты уехали как null:\n%s", body)
 	}
 }
