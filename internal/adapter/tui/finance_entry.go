@@ -309,13 +309,13 @@ func (m Model) accountHint() string {
 	if m.accounts == nil {
 		return "книга не подключена (--from)"
 	}
-	list, err := m.accounts.Accounts()
-	if err != nil || len(list) == 0 {
+	list := m.accountSnapshot
+	if m.accountErr != nil || len(list) == 0 {
 		return "счетов в книге нет"
 	}
 	names := make([]string, 0, len(list))
 	for _, a := range list {
-		names = append(names, a.Bank())
+		names = append(names, a.Bank)
 	}
 	if len(names) > 3 {
 		return strings.Join(names[:3], " · ") + " · …"

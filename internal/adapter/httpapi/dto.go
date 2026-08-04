@@ -118,6 +118,12 @@ type accountDTO struct {
 	Bank    string `json:"bank"`
 	Balance string `json:"balance"`
 	Updated string `json:"updated"`
+	// Current — остаток на сейчас: подтверждённое число минус траты, записанные
+	// после подтверждения. Spent — сколько именно ушло. Оба считает usecase, а
+	// не страница: иначе веб и терминал разошлись бы в арифметике молча.
+	Current           string `json:"current"`
+	Spent             string `json:"spent"`
+	NeedsConfirmation bool   `json:"needs_confirmation"`
 }
 
 func toTransactionDTO(t domain.Transaction) transactionDTO {
@@ -135,11 +141,15 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 	}
 }
 
-func toAccountDTO(a domain.Account) accountDTO {
+// toBalanceDTO собирает счёт вместе с расчётом остатка.
+func toBalanceDTO(b finance.AccountBalance) accountDTO {
 	return accountDTO{
-		Bank:    a.Bank(),
-		Balance: a.Balance().String(),
-		Updated: a.Updated().Format(time.DateOnly),
+		Bank:              b.Bank,
+		Balance:           b.Confirmed.String(),
+		Updated:           b.ConfirmedOn,
+		Current:           b.Current.String(),
+		Spent:             b.Spent.String(),
+		NeedsConfirmation: b.NeedsConfirmation,
 	}
 }
 

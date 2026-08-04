@@ -69,6 +69,15 @@ type Model struct {
 	quick    quickForm
 	balance  balanceForm
 	form     entryForm
+	// accountSnapshot — счета, прочитанные при входе на экран финансов.
+	//
+	// Снимок, а не запрос по месту: чтение книги стоит 74 мс на живом файле, а
+	// список нужен отрисовке — то есть каждому нажатию клавиши. Владелец увидел
+	// это как «буквы не появляются»: восемь букв давали больше полусекунды
+	// отставания. Отрисовка обязана быть дешёвой и не ходить в файлы.
+	accountSnapshot []finance.AccountBalance
+	accountErr      error
+
 	// editor is nil when nothing can rewrite an entry, and then the key is
 	// absent rather than opening a screen that cannot save.
 	editor         EntryEditor

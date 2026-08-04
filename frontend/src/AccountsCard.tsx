@@ -48,7 +48,11 @@ export function AccountsCard({
   income: string
   today: string
 }) {
-  const total = accounts.reduce((n, a) => n + toKopecks(a.balance), 0)
+  // Итог складывается из остатков на сейчас, а не из подтверждённых чисел:
+  // записал трату — итог обязан уменьшиться, иначе экран показывает вчерашний
+  // день и выглядит сломанным.
+  const now = (a: Account) => toKopecks(a.current ?? a.balance)
+  const total = accounts.reduce((n, a) => n + now(a), 0)
 
   return (
     <div className="rounded-xl bg-primary-container p-5 text-on-primary">
@@ -80,15 +84,21 @@ export function AccountsCard({
                 />
                 <span className="label flex-1 text-[10px] opacity-80">{a.bank}</span>
                 <span className="flex flex-col items-end">
-                  <span className="privacy-mask text-xs font-bold">{formatRub(toKopecks(a.balance))}</span>
+                  <span className="privacy-mask text-xs font-bold">{formatRub(now(a))}</span>
                   {a.updated !== '' && (
                     <span
-                      className={`label text-[8px] ${stale ? 'opacity-90' : 'opacity-40'}`}
+                      className={`label text-[8px] ${stale || a.needs_confirmation ? 'opacity-90' : 'opacity-40'}`}
                       data-testid={`confirmed-${a.bank}`}
-                      title={`Баланс подтверждён ${shortDate(a.updated)}, ${age} дн. назад`}
+                      title={
+                        `Подтверждён ${formatRub(toKopecks(a.balance))} ${shortDate(a.updated)}` +
+                        (a.spent && toKopecks(a.spent) > 0 ? `, после этого списано ${formatRub(toKopecks(a.spent))}` : '')
+                      }
                     >
-                      {stale && <span data-testid={`stale-${a.bank}`}>⚠ </span>}
+                      {(stale || a.needs_confirmation) && <span data-testid={`stale-${a.bank}`}>⚠ </span>}
                       {shortDate(a.updated)}
+                      {a.spent && toKopecks(a.spent) > 0 && (
+                        <span className="privacy-mask"> −{formatRub(toKopecks(a.spent))}</span>
+                      )}
                     </span>
                   )}
                 </span>

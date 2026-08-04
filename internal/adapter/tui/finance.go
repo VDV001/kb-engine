@@ -38,7 +38,9 @@ func (m Model) OnFinances() bool { return m.onFinances }
 func (m Model) openFinances() (tea.Model, tea.Cmd) {
 	m.onFinances = true
 	m.summary, m.finErr = m.finances.Summary(nil)
-	return m, nil
+	// Счета читаются здесь, на входе, а не из отрисовки: чтение книги стоит
+	// 74 мс, и в рендере оно превращалось в задержку на каждое нажатие.
+	return m.refreshAccounts(), nil
 }
 
 // updateFinances handles one key on the finances screen.

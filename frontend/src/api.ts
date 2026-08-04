@@ -374,6 +374,12 @@ export interface Account {
   bank: string
   balance: string
   updated: string
+  /** Остаток на сейчас: подтверждённое число минус траты после подтверждения. */
+  current?: string
+  /** Сколько ушло с этого счёта после даты подтверждения. */
+  spent?: string
+  /** Расчёт ушёл в минус — подтверждение устарело, число просит сверки. */
+  needs_confirmation?: boolean
 }
 
 export interface Finances {

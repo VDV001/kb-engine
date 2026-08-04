@@ -67,3 +67,35 @@ describe('AccountsCard — где лежат деньги', () => {
     expect(screen.getByText(/Счета не подключены/)).toBeDefined()
   })
 })
+
+// Итог и строка счёта показывают остаток на сейчас, а не подтверждённое число.
+// Владелец записал трату и увидел прежний итог — экран выглядел сломанным,
+// хотя данные были верны: он показывал вчерашний подтверждённый остаток.
+describe('AccountsCard — остаток на сейчас', () => {
+  const withSpending: Account[] = [
+    { bank: 'Сбербанк', balance: '1000.00', updated: '2026-08-04', current: '977.00', spent: '23.00' },
+  ]
+
+  it('в итоге стоит остаток на сейчас, а не подтверждённый', () => {
+    render(<AccountsCard accounts={withSpending} expenses="23.00" income="0" today="2026-08-04" />)
+
+    expect(spaced(screen.getByTestId('accounts-total'))).toContain('977')
+  })
+
+  it('называет, сколько списано после подтверждения', () => {
+    render(<AccountsCard accounts={withSpending} expenses="23.00" income="0" today="2026-08-04" />)
+
+    expect(spaced(screen.getByTestId('confirmed-Сбербанк'))).toContain('23')
+  })
+
+  // Расчёт, ушедший в минус, — признак устаревшего подтверждения, а не долг:
+  // доходы счёта не имеют, и движок их не видит.
+  it('помечает счёт, у которого расчёт ушёл в минус', () => {
+    const negative: Account[] = [
+      { bank: 'Т-Банк', balance: '40.00', updated: '2026-08-04', current: '-557.00', spent: '597.00', needs_confirmation: true },
+    ]
+    render(<AccountsCard accounts={negative} expenses="0" income="0" today="2026-08-04" />)
+
+    expect(screen.getByTestId('stale-Т-Банк')).toBeDefined()
+  })
+})
