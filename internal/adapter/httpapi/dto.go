@@ -281,3 +281,33 @@ func toFreshnessDTO(r freshness.Report) freshnessDTO {
 	}
 	return out
 }
+
+// sourceStateDTO — свежесть одного источника страницы.
+type sourceStateDTO struct {
+	Name     string `json:"name"`
+	Flag     string `json:"flag"`
+	EditedAt string `json:"edited_at,omitempty"`
+	Behind   bool   `json:"behind"`
+	Unknown  bool   `json:"unknown"`
+	// NoAnchors — сверять не с чем. Отдельно от behind=false, потому что
+	// «проверено, всё хорошо» и «проверять нечем» — разные вещи.
+	NoAnchors bool            `json:"no_anchors"`
+	AgeDays   int             `json:"age_days"`
+	Facts     []freshnessFact `json:"facts"`
+	Draft     string          `json:"draft,omitempty"`
+}
+
+func toSourceDTO(s freshness.SourceState, draft string) sourceStateDTO {
+	out := sourceStateDTO{
+		Name: s.Name, Flag: s.Flag, Behind: s.Behind, Unknown: s.Unknown,
+		NoAnchors: s.NoAnchors, AgeDays: s.AgeDays, Draft: draft,
+		Facts: []freshnessFact{},
+	}
+	if !s.EditedAt.IsZero() {
+		out.EditedAt = s.EditedAt.Format(time.RFC3339)
+	}
+	for _, f := range s.Facts {
+		out.Facts = append(out.Facts, freshnessFact{Kind: f.Kind, Text: f.Text, Count: f.Count, IDs: f.IDs})
+	}
+	return out
+}

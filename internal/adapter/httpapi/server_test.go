@@ -509,7 +509,9 @@ func TestServer_documents(t *testing.T) {
 			Now: func() (httpapi.NowDoc, error) {
 				return httpapi.NowDoc{Markdown: "# Сейчас\n\n- работа"}, nil
 			},
-			Team:     func() ([]byte, error) { return []byte(`{"title":"Team"}`), nil },
+			Team: func() (httpapi.FileDoc, error) {
+				return httpapi.FileDoc{Bytes: []byte(`{"title":"Team"}`)}, nil
+			},
 			Projects: nil, // не настроен
 		}, testEngine, nil)
 
@@ -620,5 +622,70 @@ func TestServer_now_freshnessFactsAreNeverNull(t *testing.T) {
 
 	if body := get(t, srv, "/api/now").Body.String(); strings.Contains(body, `"facts":null`) {
 		t.Errorf("факты уехали как null:\n%s", body)
+	}
+}
+
+// Страницы Team и Projects тухнут так же, как Now, но смотрят на них реже —
+// значит врут дольше. Один эндпоинт отвечает про все сразу, и у каждой честно
+// назван её случай: отстала, свежая или сверять не с чем.
+func TestServer_sources(t *testing.T) {
+	edited := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil }, nil,
+		httpapi.Documents{
+			Now: func() (httpapi.NowDoc, error) {
+				return httpapi.NowDoc{Markdown: "# Сейчас", EditedAt: edited}, nil
+			},
+			// Карточка называет версию движка, и она отстала на несколько
+			// выпусков — ровно то, что нашлось на живом файле владельца.
+			Projects: func() (httpapi.FileDoc, error) {
+				return httpapi.FileDoc{
+					Bytes:    []byte(`{"note":"v0.5.0 · github.com/VDV001/kb-engine"}`),
+					EditedAt: edited,
+				}, nil
+			},
+			Team: func() (httpapi.FileDoc, error) {
+				return httpapi.FileDoc{Bytes: []byte(`{"title":"Team"}`), EditedAt: edited}, nil
+			},
+		}, testEngine, nil)
+
+	rec := get(t, srv, "/api/sources")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var body struct {
+		Sources []struct {
+			Name      string `json:"name"`
+			Behind    bool   `json:"behind"`
+			NoAnchors bool   `json:"no_anchors"`
+			AgeDays   int    `json:"age_days"`
+			Facts     []struct {
+				Kind string `json:"kind"`
+				Text string `json:"text"`
+			} `json:"facts"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(body.Sources) != 3 {
+		t.Fatalf("источников = %d, ожидалось 3: %+v", len(body.Sources), body.Sources)
+	}
+
+	by := map[string]int{}
+	for i, s := range body.Sources {
+		by[s.Name] = i
+	}
+	if p := body.Sources[by["Projects"]]; !p.Behind || len(p.Facts) == 0 ||
+		!strings.Contains(p.Facts[0].Text, "v0.5.0") {
+		t.Errorf("Projects не назвал отставшую версию: %+v", p)
+	}
+	// Team сверять не с чем — и это отдельное состояние, не «всё хорошо».
+	if tm := body.Sources[by["Team"]]; tm.Behind || !tm.NoAnchors {
+		t.Errorf("Team: behind=%v no_anchors=%v, ожидалось false/true", tm.Behind, tm.NoAnchors)
+	}
+	// Возраст называется даже там, где он не приговор.
+	if tm := body.Sources[by["Team"]]; tm.AgeDays <= 0 {
+		t.Errorf("возраст не посчитан: %d", tm.AgeDays)
 	}
 }

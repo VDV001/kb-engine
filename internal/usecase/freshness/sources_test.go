@@ -80,6 +80,7 @@ func TestSource_saysWhenThereIsNothingToCompareWith(t *testing.T) {
 		Name: "Team", Flag: "--team",
 		EditedAt: time.Date(2026, 7, 12, 0, 0, 0, 0, time.UTC),
 		Now:      time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+		// Anchored не выставлен: у состава отдела нет опор в базе.
 	})
 
 	if got.Behind {
@@ -97,7 +98,7 @@ func TestSource_saysWhenThereIsNothingToCompareWith(t *testing.T) {
 // Источник с опорами ведёт себя как Now: называет, что случилось после правки.
 func TestSource_carriesTheFactsItWasGiven(t *testing.T) {
 	got := freshness.CheckSource(freshness.Source{
-		Name: "Projects", Flag: "--projects",
+		Name: "Projects", Flag: "--projects", Anchored: true,
 		EditedAt: time.Date(2026, 7, 19, 0, 0, 0, 0, time.UTC),
 		Now:      time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
 		Facts: []freshness.Fact{
@@ -110,5 +111,32 @@ func TestSource_carriesTheFactsItWasGiven(t *testing.T) {
 	}
 	if got.NoAnchors {
 		t.Error("сказал «сверять не с чем», имея находку")
+	}
+}
+
+// «Опор нет» и «опоры есть, но всё сошлось» — разные вещи, и путать их нельзя.
+// Поймано живым прогоном: страница Now, у которой опор три, показывалась как
+// «сверять не с чем» ровно потому, что в тот день ничего не разошлось.
+func TestSource_distinguishesNothingToCompareFromNothingFound(t *testing.T) {
+	fresh := freshness.CheckSource(freshness.Source{
+		Name: "Now", Flag: "--now", Anchored: true,
+		EditedAt: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+		Now:      time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+	})
+	if fresh.NoAnchors {
+		t.Error("источник с опорами назван «сверять не с чем» только потому, что находок нет")
+	}
+	if fresh.Behind {
+		t.Error("отставание объявлено без единой находки")
+	}
+}
+
+// Своя версия — псевдоверсия локальной сборки: сравнивать с ней нельзя, иначе
+// на экран уезжает «сейчас v0.15.1-0.2026…+dirty», и это не ответ на вопрос.
+func TestVersionMention_ignoresAPseudoVersion(t *testing.T) {
+	got := freshness.VersionMention(`{"note":"v0.5.0 · kb-engine"}`, "kb-engine",
+		"v0.15.1-0.20260804145247-fea441f0ae51+dirty")
+	if got != nil {
+		t.Errorf("сравнил с псевдоверсией: %q", got.Text)
 	}
 }

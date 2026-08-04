@@ -74,9 +74,10 @@ type Documents struct {
 	// это одно знание об одном файле, и разъехаться они не должны.
 	Now func() (NowDoc, error)
 	// Team and Projects return the owner's JSON verbatim — the engine does
-	// not reshape content it does not own.
-	Team     func() ([]byte, error)
-	Projects func() ([]byte, error)
+	// not reshape content it does not own. Время правки едет рядом, а не
+	// отдельным вызовом: это одно знание об одном файле.
+	Team     func() (FileDoc, error)
+	Projects func() (FileDoc, error)
 	// Media is the owner's image directory, served under /media/. Screenshots
 	// referenced from projects.json live there rather than in the bundle, for
 	// the same reason the JSON does: they are his content, not the engine's.
@@ -157,6 +158,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	})
 	mux.HandleFunc("POST /api/finances/export", handleFinanceExport())
 	mux.HandleFunc("GET /api/now", handleNow(docs.Now, q, chlog, fin))
+	mux.HandleFunc("GET /api/sources", handleSources(docs, q, chlog, fin, engine))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
@@ -238,6 +240,58 @@ func handleNow(load func() (NowDoc, error), q Querier, chlog ChangelogLoader, fi
 	}
 }
 
+// handleSources отвечает на вопрос «какие страницы отстали» разом.
+//
+// Отдельно от /api/engine, где перечислено, какие флаги переданы: там про
+// запуск, здесь про содержимое. Страница, у которой опор для сверки нет,
+// говорит именно это — зелёная галочка означала бы «проверено», а проверки не
+// было.
+func handleSources(docs Documents, q Querier, chlog ChangelogLoader, fin Financier, engine EngineInfo) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		out := []sourceStateDTO{}
+
+		if docs.Now != nil {
+			if doc, err := docs.Now(); err == nil {
+				r := checkNowFreshness(doc, q, chlog, fin)
+				out = append(out, toSourceDTO(freshness.CheckSource(freshness.Source{
+					Name: "Now", Flag: "--now", Now: time.Now(), Anchored: true,
+					EditedAt: doc.EditedAt, Facts: r.Facts,
+				}), r.Draft))
+			}
+		}
+		// Projects знает о самом движке: карточка называет его версию, и она
+		// живёт своей жизнью. На живом файле там стояло v0.5.0 при 0.15.0 —
+		// страница врала о собственном проекте втрое.
+		if docs.Projects != nil {
+			if doc, err := docs.Projects(); err == nil {
+				var facts []freshness.Fact
+				if f := freshness.VersionMention(string(doc.Bytes), "kb-engine", engine.Version); f != nil {
+					facts = append(facts, *f)
+				}
+				// Опора у Projects есть ровно тогда, когда движок знает о себе
+				// правду: у сборки из исходников версия псевдо, и сверять с ней
+				// нечего.
+				out = append(out, toSourceDTO(freshness.CheckSource(freshness.Source{
+					Name: "Projects", Flag: "--projects", Now: time.Now(),
+					Anchored: freshness.IsReleaseVersion(engine.Version),
+					EditedAt: doc.EditedAt, Facts: facts,
+				}), ""))
+			}
+		}
+		// У Team опор нет вовсе: состав отдела меняется вне базы, и движку
+		// сверять его не с чем. Он показывает дату и возраст и говорит об этом
+		// прямо, вместо того чтобы молча выглядеть проверенным.
+		if docs.Team != nil {
+			if doc, err := docs.Team(); err == nil {
+				out = append(out, toSourceDTO(freshness.CheckSource(freshness.Source{
+					Name: "Team", Flag: "--team", Now: time.Now(), EditedAt: doc.EditedAt,
+				}), ""))
+			}
+		}
+		writeJSON(w, map[string]any{"sources": out})
+	}
+}
+
 // checkNowFreshness собирает состояние мира для проверки.
 //
 // Источник, который не отдался, просто не участвует: сказать «отстал», не
@@ -285,25 +339,31 @@ func timeOrEmpty(t time.Time) string {
 	return t.Format(time.RFC3339)
 }
 
+// FileDoc — файл владельца и время его последней правки.
+type FileDoc struct {
+	Bytes    []byte
+	EditedAt time.Time
+}
+
 // handleRawJSON serves an owner-supplied JSON file byte-for-byte.
-func handleRawJSON(load func() ([]byte, error)) http.HandlerFunc {
+func handleRawJSON(load func() (FileDoc, error)) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if load == nil {
 			writeJSON(w, nil)
 			return
 		}
-		raw, err := load()
+		doc, err := load()
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		if !json.Valid(raw) {
+		if !json.Valid(doc.Bytes) {
 			// Отдать битый файл — значит сломать view молча; ошибка честнее.
 			writeError(w, fmt.Errorf("document is not valid JSON"))
 			return
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = w.Write(raw)
+		_, _ = w.Write(doc.Bytes)
 	}
 }
 
