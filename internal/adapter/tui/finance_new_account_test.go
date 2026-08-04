@@ -110,7 +110,7 @@ func TestNewAccount_doesNothingWithoutTheOffer(t *testing.T) {
 	m = press(press(m, tab()), runes("b"))
 	m = fill(m, "Сбербанк")
 	m = press(m, runes("500"))
-	m = press(m, ctrlN())
+	press(m, ctrlN())
 
 	if len(acc.created) != 0 {
 		t.Fatalf("счёт заведён без предложения: %+v", acc.created)
@@ -127,7 +127,7 @@ func TestNewAccount_doesNotOfferForAKnownSpelling(t *testing.T) {
 	m = press(press(m, tab()), runes("b"))
 	m = fill(m, "сбербанк")
 	m = press(m, runes("500"))
-	m = press(m, enter())
+	press(m, enter())
 
 	// Это обычная запись баланса: домен считает написания одним счётом.
 	if len(acc.created) != 0 {

@@ -254,25 +254,7 @@ func (m Model) writeBalances(b *strings.Builder) {
 			if gr != g.Group {
 				continue
 			}
-			// Внутри рода счёт назван коротким именем: слово «Долг» уже стоит
-			// строкой выше, и повторять его значит тратить ширину терминала,
-			// которой у колонки в 22 знака и так немного.
-			fmt.Fprintf(b, "  %-22s %12s\n", trim(name, 22), human(x.Current))
-			when := "—"
-			if x.ConfirmedOn != "" {
-				when = x.ConfirmedOn[8:] + "." + x.ConfirmedOn[5:7]
-			}
-			note := fmt.Sprintf("подтверждён %s · %s", human(x.Confirmed), when)
-			if !x.Spent.IsZero() {
-				note += fmt.Sprintf(" · после этого −%s", human(x.Spent))
-			}
-			if x.NeedsConfirmation {
-				// Минус не значит долг: доходы счёта не имеют, поэтому на старом
-				// подтверждении траты неизбежно съедают остаток. Число оставлено,
-				// но названо тем, что оно есть, — просьбой сверить с банком.
-				note += " · ⚠ пора подтвердить"
-			}
-			fmt.Fprintf(b, "  %s\n", styleDim.Render("  "+note))
+			writeBalanceLine(b, x, name)
 		}
 	}
 	// Ограничение названо вслух: доходу домен не даёт счёта, поэтому поступления
@@ -280,6 +262,31 @@ func (m Model) writeBalances(b *strings.Builder) {
 	// бы выдать оценку за факт.
 	b.WriteString(styleDim.Render("  доходы в расчёт не входят — у них нет счёта") + "\n")
 	b.WriteString("\n")
+}
+
+// writeBalanceLine печатает один счёт: остаток на сейчас, а под ним —
+// подтверждённое число с датой и тем, сколько ушло после неё.
+//
+// Имя приходит параметром: внутри рода счёт зовётся коротко, потому что слово
+// рода уже стоит строкой выше, а колонка в терминале шириной в 22 знака.
+func writeBalanceLine(b *strings.Builder, x finance.AccountBalance, name string) {
+	fmt.Fprintf(b, "  %-22s %12s\n", trim(name, 22), human(x.Current))
+
+	when := "—"
+	if x.ConfirmedOn != "" {
+		when = x.ConfirmedOn[8:] + "." + x.ConfirmedOn[5:7]
+	}
+	note := fmt.Sprintf("подтверждён %s · %s", human(x.Confirmed), when)
+	if !x.Spent.IsZero() {
+		note += fmt.Sprintf(" · после этого −%s", human(x.Spent))
+	}
+	if x.NeedsConfirmation {
+		// Минус не значит долг: доходы счёта не имеют, поэтому на старом
+		// подтверждении траты неизбежно съедают остаток. Число оставлено, но
+		// названо тем, что оно есть, — просьбой сверить с банком.
+		note += " · ⚠ пора подтвердить"
+	}
+	fmt.Fprintf(b, "  %s\n", styleDim.Render("  "+note))
 }
 
 // refreshAccounts перечитывает счета и запоминает результат.
