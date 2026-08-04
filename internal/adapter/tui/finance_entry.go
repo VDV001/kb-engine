@@ -128,7 +128,7 @@ func (f entryForm) value(label string) string {
 // default, and copying that rule here is how two surfaces start disagreeing
 // about what "no date" means.
 func (f entryForm) params() (finance.AddParams, error) {
-	amount, err := domain.ParseMoney(f.value(fieldAmount))
+	amount, err := parseAmount(f.value(fieldAmount))
 	if err != nil {
 		return finance.AddParams{}, fmt.Errorf("%s: %w", fieldAmount, err)
 	}
@@ -300,6 +300,10 @@ func (m Model) hintFor(label string) string {
 		return "сегодня"
 	case fieldAccount:
 		return m.accountHint()
+	case fieldBalance:
+		// Пример показывает заодно форму записи: копейки через запятую
+		// принимаются наравне с точкой, и больше об этом сказать негде.
+		return "4321,55"
 	}
 	return ""
 }
@@ -343,6 +347,9 @@ const (
 
 	hintForm     = "Tab/↑↓ — поле · Enter — записать · Esc — отмена"
 	hintEditForm = "Tab/↑↓ — поле · Enter — сохранить · Esc — назад к списку"
+	// У формы баланса своя подсказка: стрелки листают счета книги, и клавиша,
+	// о которой не сказано, для человека не существует.
+	hintBalanceForm = "←→ — счёт · буквы — новое имя · Tab — поле · Enter — записать · Esc — отмена"
 )
 
 // correctionNote дописывает к статусу то, что движок поправил при записи.
