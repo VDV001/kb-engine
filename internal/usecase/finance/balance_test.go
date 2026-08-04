@@ -61,8 +61,9 @@ func accountAt(t *testing.T, bank, amount, confirmed string) domain.Account {
 func TestCurrentBalance_subtractsExpensesAfterConfirmation(t *testing.T) {
 	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
 	recs := []domain.Transaction{
-		expenseOn(t, "01A", "Сбербанк", "2026-08-04", "23.00"),  // в день подтверждения
-		expenseOn(t, "01B", "Сбербанк", "2026-08-03", "500.00"), // до — не считается
+		expenseOn(t, "01A", "Сбербанк", "2026-08-05", "23.00"),  // после — считается
+		expenseOn(t, "01B", "Сбербанк", "2026-08-04", "500.00"), // в день подтверждения — нет
+		expenseOn(t, "01C", "Сбербанк", "2026-08-03", "100.00"), // до — нет
 	}
 
 	got := finance.CurrentBalances(accounts, recs)
@@ -141,7 +142,7 @@ func TestCurrentBalance_marksTheResultAsStaleWhenItGoesNegative(t *testing.T) {
 // Обычный счёт метки не получает: иначе она стоит на всех сразу и ничего не значит.
 func TestCurrentBalance_doesNotMarkAHealthyAccount(t *testing.T) {
 	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
-	recs := []domain.Transaction{expenseOn(t, "01A", "Сбербанк", "2026-08-04", "23.00")}
+	recs := []domain.Transaction{expenseOn(t, "01A", "Сбербанк", "2026-08-05", "23.00")}
 
 	if finance.CurrentBalances(accounts, recs)[0].NeedsConfirmation {
 		t.Error("здоровый счёт помечен как требующий подтверждения")
