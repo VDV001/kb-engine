@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -26,8 +27,11 @@ func TestRun_finBalanceCreatesANewAccount(t *testing.T) {
 			t.Errorf("вывод не содержит %q:\n%s", want, out.String())
 		}
 	}
-	if got := accountBalance(t, book, "Долг → Отец"); got != "3000.00" {
-		t.Errorf("баланс в книге = %s, ожидалось 3000.00", got)
+	// Сравнение числом, а не строкой: сколько знаков после запятой покажет
+	// ячейка, решает её формат, и в фикстуре его нет. Наследование формата —
+	// вопрос отдельного теста в адаптере, здесь проверяется записанная сумма.
+	if got := accountBalanceValue(t, book, "Долг → Отец"); got != 3000 {
+		t.Errorf("баланс в книге = %v, ожидалось 3000", got)
 	}
 }
 
@@ -49,9 +53,21 @@ func TestRun_finBalanceCreateRefusesAnAccountThatExists(t *testing.T) {
 			t.Errorf("отказ не назвал %q:\n%s", want, errb.String())
 		}
 	}
-	if got := accountBalance(t, book, "Сбербанк"); got == "500.00" {
+	if got := accountBalanceValue(t, book, "Сбербанк"); got == 500 {
 		t.Error("баланс существующего счёта переписан отказавшей командой")
 	}
+}
+
+// accountBalanceValue reads a balance as a number, leaving how many decimals
+// the cell shows to the cell's own format.
+func accountBalanceValue(t *testing.T, path, bank string) float64 {
+	t.Helper()
+	raw := accountBalance(t, path, bank)
+	v, err := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
+	if err != nil {
+		t.Fatalf("баланс %q не число: %v", raw, err)
+	}
+	return v
 }
 
 // Without the flag nothing changes about how an unknown name is treated: the
