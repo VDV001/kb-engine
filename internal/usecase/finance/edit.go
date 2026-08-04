@@ -10,6 +10,14 @@ import (
 // ErrNothingToEdit сообщает, что правка не назвала ни одного поля.
 var ErrNothingToEdit = errors.New("nothing to edit")
 
+// ErrNoChange сообщает, что поля названы, но запись от них не меняется.
+//
+// Отдельно от ErrNothingToEdit, потому что это разные ошибки человека: там
+// забыли флаг, здесь передали значение, которое уже стоит. Обе одинаково
+// опасны молчаливым успехом: ревизия выросла бы впустую, синк увидел бы
+// запись изменённой и пошёл переписывать строку, которую переписывать нечем.
+var ErrNoChange = errors.New("запись уже такая")
+
 // EditParams — что именно меняется в существующей записи.
 //
 // Пустое поле означает «не передавали», а не «сотри»: правка суммы не должна
@@ -111,6 +119,11 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 	edited, err := domain.NewTransaction(params)
 	if err != nil {
 		return Record{}, err
+	}
+	// «Одинаковость» берётся у синка, а не считается заново: два определения
+	// того, что запись не менялась, однажды разойдутся, и разойдутся молча.
+	if Fingerprint(edited) == Fingerprint(tx) {
+		return Record{}, ErrNoChange
 	}
 	return NewRecord(edited, rec.Rev()+1, now())
 }

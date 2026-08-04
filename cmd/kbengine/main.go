@@ -710,6 +710,13 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "set: %v\n", err)
 		return 1
 	}
+	// Ноль изменений — не успех. Записи нашлись (иначе выше была бы ошибка), но
+	// значения в них уже такие, какие просили поставить. Промолчать здесь значит
+	// отчитаться о правке, которой не было.
+	if n == 0 {
+		fmt.Fprintln(stderr, "set: записи уже в этом состоянии — ничего не изменилось")
+		return 1
+	}
 	fmt.Fprintf(stdout, "%d entry(ies) updated\n", n)
 	return 0
 }

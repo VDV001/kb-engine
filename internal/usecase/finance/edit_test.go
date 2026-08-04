@@ -130,3 +130,21 @@ func TestEditKeepsDomainRules(t *testing.T) {
 		t.Error("счёт у дохода принят, а домен его не допускает")
 	}
 }
+
+// Правка, не меняющая ничего, — не успех. Ревизия при ней растёт, синк видит
+// запись изменённой и идёт переписывать строку в книге, хотя переписывать
+// нечего. Это тот же класс, что «выполнено» с пустым результатом: после такого
+// ответа никто не приходит проверять.
+func TestEditRefusesAChangeThatChangesNothing(t *testing.T) {
+	rec := editable(t)
+	later := func() time.Time { return day(2026, time.August, 4) }
+
+	// Ровно те значения, что уже стоят в записи.
+	_, err := finance.Edit(rec, finance.EditParams{
+		Category:    "Транспорт",
+		Description: "такси до центра",
+	}, later)
+	if !errors.Is(err, finance.ErrNoChange) {
+		t.Errorf("err = %v, ожидался ErrNoChange", err)
+	}
+}
