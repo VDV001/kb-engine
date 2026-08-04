@@ -68,6 +68,8 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.syncWorkbook(), nil
 		case "q":
 			return m.openQuick(), nil
+		case "e":
+			return m.openEntryList(), nil
 		case "b":
 			return m.openBalance(), nil
 		}
@@ -128,6 +130,9 @@ func (m Model) financeHint() string {
 	keys := hintFinancesWrite
 	if m.vocab != nil {
 		keys += " · " + hintQuickKey
+	}
+	if m.editor != nil {
+		keys += " · " + hintEditKey
 	}
 	if m.accounts != nil {
 		keys += " · " + hintBalanceKey

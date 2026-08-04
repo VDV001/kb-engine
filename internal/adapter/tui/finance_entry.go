@@ -80,6 +80,9 @@ type entryForm struct {
 	fields []field
 	cursor int
 	err    string
+	// editing непусто, когда форма правит существующую запись: тогда Enter
+	// не добавляет новую строку, а переписывает названную.
+	editing string
 }
 
 func (f entryForm) open() bool { return f.kind != "" }
@@ -167,6 +170,12 @@ func (m Model) updateForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		// leaving the screen as well would cost a keystroke nobody asked for.
 		m.form = entryForm{}
 	case tea.KeyEnter:
+		// Форма одна на два намерения, и решает не клавиша, а то, открыта ли она
+		// на существующей записи: добавить новую строку там, где человек правил
+		// старую, — ошибка, которую он увидит только в отчёте.
+		if m.form.editing != "" {
+			return m.submitEdit(), nil
+		}
 		return m.submitForm(), nil
 	default:
 		m.form.fields, m.form.cursor = typeIntoFields(m.form.fields, m.form.cursor, msg)
@@ -225,14 +234,21 @@ func (m Model) submitForm() Model {
 
 func (m Model) renderForm() string {
 	var b strings.Builder
-	b.WriteString(styleQuery.Render("новая запись: "+kindName(m.form.kind)) + "\n\n")
+	title := "новая запись: " + kindName(m.form.kind)
+	if m.form.editing != "" {
+		title = "правка записи: " + kindName(m.form.kind)
+	}
+	b.WriteString(styleQuery.Render(title) + "\n\n")
 
 	for i, f := range m.form.fields {
 		value := f.value
-		if value == "" {
+		if value == "" && m.form.editing == "" {
 			// Пустое поле показывает пример того, что в него кладут. Одно
 			// название поля этого не объясняет: «счёт» прочли как что угодно,
 			// кроме банка, и трата ушла в ledger ничьей.
+			//
+			// В правке примеров нет: там пустое поле означает, что у записи это
+			// значение пустое, и подсказка читалась бы как её содержимое.
 			value = styleDim.Render(m.hintFor(f.label))
 		}
 		line := fmt.Sprintf("%-14s %s", f.label, value)
@@ -246,7 +262,11 @@ func (m Model) renderForm() string {
 	if m.form.err != "" {
 		b.WriteString("\n" + styleTitle.Render(m.form.err) + "\n")
 	}
-	return b.String() + "\n" + styleDim.Render(hintForm)
+	hint := hintForm
+	if m.form.editing != "" {
+		hint = hintEditForm
+	}
+	return b.String() + "\n" + styleDim.Render(hint)
 }
 
 // hintFor возвращает пример для пустого поля.
@@ -316,5 +336,6 @@ const (
 	fieldSource      = "источник"
 	fieldBalance     = "баланс"
 
-	hintForm = "Tab/↑↓ — поле · Enter — записать · Esc — отмена"
+	hintForm     = "Tab/↑↓ — поле · Enter — записать · Esc — отмена"
+	hintEditForm = "Tab/↑↓ — поле · Enter — сохранить · Esc — назад к списку"
 )

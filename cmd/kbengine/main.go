@@ -172,9 +172,11 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	// Balances come from the workbook, so without --from there is no source for
 	// them and the key is absent rather than opening a form that cannot write.
 	var accounts tui.AccountsSource
+	// Правка живёт там же, где леджер: без него нечего ни показывать, ни менять.
+	var editor tui.EntryEditor
 	if *ledgerPath != "" {
 		l := ledgerFinances{ledgerPath: *ledgerPath, workbookPath: *workbookPath}
-		fin, ledger, vocab = l, l, l
+		fin, ledger, vocab, editor = l, l, l, l
 		if *workbookPath != "" {
 			syncer, accounts = l, l
 		}
@@ -193,6 +195,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 		Workbook: syncer,
 		Words:    vocab,
 		Accounts: accounts,
+		Editor:   editor,
 	}
 	if err := tui.Run(screen, os.Stdin, stdout); err != nil {
 		fmt.Fprintf(stderr, "tui: %v\n", err)
@@ -331,6 +334,29 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 // behind rather than quietly touching it.
 func (f ledgerFinances) Add(p finance.AddParams) error {
 	_, err := appendToLedger(f.ledgerPath, p)
+	return err
+}
+
+// Recent returns the last n entries, newest first: правят почти всегда только
+// что записанное, а список от старых к новым заставлял бы листать до конца.
+func (f ledgerFinances) Recent(n int) ([]finance.Record, error) {
+	recs, err := financejsonl.Load(f.ledgerPath, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	finance.Sort(recs)
+	slices.Reverse(recs)
+	if len(recs) > n {
+		recs = recs[:n]
+	}
+	return recs, nil
+}
+
+// EditEntry rewrites one entry through the same path the fin edit command uses.
+// A second copy of load → edit → sort → save is how the ledger ends up with
+// rows only one surface can read.
+func (f ledgerFinances) EditEntry(id string, p finance.EditParams) error {
+	_, err := editInLedger(f.ledgerPath, id, p)
 	return err
 }
 
