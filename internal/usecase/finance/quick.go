@@ -45,13 +45,11 @@ type QuickEntry struct {
 // NormalizeWord reduces a word to what two spellings of it have in common:
 // case, «ё» and hyphens carry no meaning here. «Т-Банк», «т банк» and «тбанк»
 // are one word; «Сбер» and «сбер» are one word.
-func NormalizeWord(w string) string {
-	w = strings.ToLower(strings.TrimSpace(w))
-	w = strings.ReplaceAll(w, "ё", "е")
-	w = strings.ReplaceAll(w, "-", "")
-	w = strings.ReplaceAll(w, " ", "")
-	return w
-}
+// The rule itself lives in the domain: the Счета sheet asks the same question
+// when it has to refuse a second row for an account it already holds under
+// another spelling, and two copies of one rule are how one surface starts
+// folding «ё» while the other stops.
+func NormalizeWord(w string) string { return domain.FoldName(w) }
 
 // maxNameWords is how many neighbouring words may form one name. Three covers
 // what the vocabulary holds («Италиан Пицца», «Заморозка → Вклад») without
