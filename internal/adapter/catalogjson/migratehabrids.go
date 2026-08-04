@@ -75,51 +75,13 @@ func MigrateHabrIDs(path string, apply bool) (HabrIDPlan, error) {
 
 	var plan HabrIDPlan
 	for i, raw := range entries {
-		var head struct {
-			ID    int    `json:"id"`
-			Title string `json:"title"`
-			URL   string `json:"url"`
-			// Сырым: поле хранит номер то числом, то строкой, и разбор в int
-			// падает на половине живого каталога.
-			HabrID json.RawMessage `json:"habr_id"`
-		}
-		if err := json.Unmarshal(raw, &head); err != nil {
-			return HabrIDPlan{}, fmt.Errorf("parse entry: %w", err)
-		}
-		inURL := botinbox.HabrIDFromURL(head.URL)
-		if inURL == 0 {
-			continue
-		}
-		stored, wasString, present := readHabrID(head.HabrID)
-		switch {
-		case present && stored != inURL:
-			// Что верно — поле или адрес — движок не знает, и молча выбрав
-			// одно, он стёр бы решение человека.
-			plan.Conflicts = append(plan.Conflicts, HabrIDConflict{
-				EntryID: head.ID, Title: head.Title, Stored: stored, InURL: inURL,
-			})
-			continue
-		case present && !wasString:
-			continue // уже число и уже верно — трогать нечего
-		case present:
-			plan.Normalized = append(plan.Normalized, HabrIDFill{EntryID: head.ID, Title: head.Title, HabrID: inURL})
-		default:
-			plan.Filled = append(plan.Filled, HabrIDFill{EntryID: head.ID, Title: head.Title, HabrID: inURL})
-		}
-
-		encoded, err := marshalNoEscape(inURL)
+		edited, changed, err := fillHabrID(raw, &plan)
 		if err != nil {
 			return HabrIDPlan{}, err
 		}
-		edited, err := readTopLevel(raw)
-		if err != nil {
-			return HabrIDPlan{}, err
+		if changed {
+			entries[i] = edited
 		}
-		obj, err := assembleObject(setMember(edited, "habr_id", encoded))
-		if err != nil {
-			return HabrIDPlan{}, err
-		}
-		entries[i] = obj
 	}
 
 	if !apply || (len(plan.Filled) == 0 && len(plan.Normalized) == 0) {
@@ -133,4 +95,56 @@ func MigrateHabrIDs(path string, apply bool) (HabrIDPlan, error) {
 		return plan, err
 	}
 	return plan, nil
+}
+
+// fillHabrID решает судьбу одной записи и возвращает её обновлённой, когда
+// номер надо записать. Вынесено из цикла: решений здесь пять, и вместе с
+// обходом каталога они читались как одно длинное.
+func fillHabrID(raw json.RawMessage, plan *HabrIDPlan) (json.RawMessage, bool, error) {
+	var head struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		URL   string `json:"url"`
+		// Сырым: поле хранит номер то числом, то строкой, и разбор в int
+		// падает на половине живого каталога.
+		HabrID json.RawMessage `json:"habr_id"`
+	}
+	if err := json.Unmarshal(raw, &head); err != nil {
+		return nil, false, fmt.Errorf("parse entry: %w", err)
+	}
+	inURL := botinbox.HabrIDFromURL(head.URL)
+	if inURL == 0 {
+		return nil, false, nil
+	}
+
+	stored, wasString, present := readHabrID(head.HabrID)
+	switch {
+	case present && stored != inURL:
+		// Что верно — поле или адрес — движок не знает, и молча выбрав одно,
+		// он стёр бы решение человека.
+		plan.Conflicts = append(plan.Conflicts, HabrIDConflict{
+			EntryID: head.ID, Title: head.Title, Stored: stored, InURL: inURL,
+		})
+		return nil, false, nil
+	case present && !wasString:
+		return nil, false, nil // уже число и уже верно — трогать нечего
+	case present:
+		plan.Normalized = append(plan.Normalized, HabrIDFill{EntryID: head.ID, Title: head.Title, HabrID: inURL})
+	default:
+		plan.Filled = append(plan.Filled, HabrIDFill{EntryID: head.ID, Title: head.Title, HabrID: inURL})
+	}
+
+	encoded, err := marshalNoEscape(inURL)
+	if err != nil {
+		return nil, false, err
+	}
+	edited, err := readTopLevel(raw)
+	if err != nil {
+		return nil, false, err
+	}
+	obj, err := assembleObject(setMember(edited, "habr_id", encoded))
+	if err != nil {
+		return nil, false, err
+	}
+	return obj, true, nil
 }
