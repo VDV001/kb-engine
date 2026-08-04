@@ -63,6 +63,11 @@ func TestBalanceForm_typingReplacesTheChoice(t *testing.T) {
 	if !strings.Contains(view, "Долг → Отец") {
 		t.Errorf("набранное имя не встало в поле\n--- view ---\n%s", view)
 	}
+	// И подставленное имя ушло целиком: проверка на вхождение подстроки
+	// проходила и на «СбербанкДолг → Отец» — то есть не проверяла ничего.
+	if strings.Contains(view, "Сбербанк") {
+		t.Errorf("набор дописался к подставленному имени\n--- view ---\n%s", view)
+	}
 	// И форма говорит, что такого счёта на листе нет, — до нажатия Enter.
 	if !strings.Contains(strings.ToLower(view), "ctrl+n") {
 		t.Errorf("форма не сказала, что счёт незнакомый\n--- view ---\n%s", view)

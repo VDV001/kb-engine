@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,6 +46,10 @@ type balanceForm struct {
 	// ctrl+n. Заводить молча нельзя: незнакомое имя чаще опечатка, чем новый
 	// счёт, и каждая промашка в раскладке пополняла бы словарь книги.
 	offerCreate bool
+	// chosen — имя счёта пришло из книги, а не из-под пальцев. Тогда первая
+	// набранная буква заменяет его целиком: дописывать к подставленному имени
+	// человек не собирался, он начал набирать другое.
+	chosen bool
 }
 
 // OnBalanceForm reports whether the balance entry is open.
@@ -59,7 +64,50 @@ func (m Model) openBalance() Model {
 		open:   true,
 		fields: []field{{label: fieldAccount}, {label: fieldBalance}},
 	}
+	// Форма открывается на первом счёте книги, а не на пустом поле. Набирать
+	// имя, которое движок только что показал списком, — работа, которой не
+	// должно быть, и каждая буква в ней может стать опечаткой.
+	if len(m.accountSnapshot) > 0 && m.accountErr == nil {
+		m.balance.fields[0].value = m.accountSnapshot[0].Bank
+		m.balance.chosen = true
+	}
 	m.finStatus = ""
+	return m
+}
+
+// walkAccounts переводит выбор на соседний счёт книги.
+//
+// По кругу: тупик в конце списка человек читает как поломку клавиши, а не как
+// конец перечня. Счёт, набранный руками, в списке не находится — тогда шаг
+// отсчитывается от начала, и это правильно: выбор из книги отменяет набранное
+// именно потому, что человек его позвал.
+func (m Model) walkAccounts(step int) Model {
+	list := m.accountSnapshot
+	if len(list) == 0 || m.accountErr != nil {
+		return m
+	}
+	at := -1
+	for i, a := range list {
+		if domain.SameAccountName(a.Bank, m.balance.fields[0].value) {
+			at = i
+			break
+		}
+	}
+	next := ((at+step)%len(list) + len(list)) % len(list)
+
+	// Слайс полей копируется перед правкой. Model передаётся по значению, но
+	// слайс внутри неё — общая память: без копии «прежняя» модель меняется
+	// вместе с новой, и шаг, сделанный от неё, отсчитывается не оттуда.
+	fields := slices.Clone(m.balance.fields)
+	fields[0].value = list[next].Bank
+	m.balance.fields = fields
+	// Значение пришло из книги, а не из-под пальцев: первая набранная буква
+	// заменит его целиком, а не допишется к нему.
+	m.balance.chosen = true
+	// Прежний отказ относился к прежнему счёту: оставить его на экране рядом с
+	// новым именем значит сказать неправду о том, что сейчас не так.
+	m.balance.err = ""
+	m.balance.offerCreate = false
 	return m
 }
 
@@ -73,8 +121,29 @@ func (m Model) updateBalance(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.submitBalance(), nil
 	case tea.KeyCtrlN:
 		return m.createAccount(), nil
+	case tea.KeyLeft, tea.KeyRight:
+		// Стрелки листают счёт только когда курсор на нём: на поле суммы они
+		// сменили бы счёт, в который уйдёт набранное число, и человек об этом
+		// не узнал бы — он смотрит на сумму.
+		if m.balance.cursor != 0 {
+			return m, nil
+		}
+		step := 1
+		if msg.Type == tea.KeyLeft {
+			step = -1
+		}
+		return m.walkAccounts(step), nil
 	default:
-		m.balance.fields, m.balance.cursor = typeIntoFields(m.balance.fields, m.balance.cursor, msg)
+		// Набор поверх подставленного имени начинает новое, а не дописывает к
+		// нему: «СбербанкДолг → Отец» — не то, что имел в виду человек, и
+		// увидел бы он это только в отказе.
+		if m.balance.chosen && m.balance.cursor == 0 && msg.Type == tea.KeyRunes {
+			fields := slices.Clone(m.balance.fields)
+			fields[0].value = ""
+			m.balance.fields = fields
+			m.balance.chosen = false
+		}
+		m.balance.fields, m.balance.cursor = typeIntoFields(slices.Clone(m.balance.fields), m.balance.cursor, msg)
 	}
 	return m, nil
 }
@@ -143,15 +212,45 @@ func (m Model) renderBalanceForm() string {
 		b.WriteString("  " + line + "\n")
 	}
 
-	// The banks the book knows are listed under the form. The refusal names them
-	// too, but reading them before typing is cheaper than reading them after.
-	if names := m.accountNames(); names != "" {
-		b.WriteString("\n" + styleDim.Render("на листе «Счета»: "+names) + "\n")
-	}
+	// Что у выбранного счёта записано сейчас — прямо под формой.
+	//
+	// Форма закрывает собой экран финансов, где это число стоит, и закрывает
+	// ровно в тот момент, когда по нему принимают решение: подтверждают баланс,
+	// глядя на прежний и на дату, до которой он был верен.
+	b.WriteString("\n" + styleDim.Render(m.chosenAccountNote()) + "\n")
+
 	if m.balance.err != "" {
 		b.WriteString("\n" + styleTitle.Render(m.balance.err) + "\n")
 	}
-	return b.String() + "\n" + styleDim.Render(hintForm)
+	return b.String() + "\n" + styleDim.Render(hintBalanceForm)
+}
+
+// chosenAccountNote описывает счёт, который сейчас в поле: что у него записано
+// и когда подтверждено — или что такого счёта на листе нет.
+//
+// Про незнакомое имя говорится до Enter, а не после: человек уже набрал его и
+// уже знает, чего хочет, а узнать, что счёта нет, только по отказу — значит
+// узнать это на один шаг позже, чем можно.
+func (m Model) chosenAccountNote() string {
+	name := strings.TrimSpace(m.balance.fields[0].value)
+	if name == "" {
+		return "счёт не выбран · ←→ листают счета книги"
+	}
+	for _, a := range m.accountSnapshot {
+		if domain.SameAccountName(a.Bank, name) {
+			when := "не подтверждался"
+			if a.ConfirmedOn != "" {
+				when = "подтверждён " + a.ConfirmedOn[8:] + "." + a.ConfirmedOn[5:7]
+			}
+			return fmt.Sprintf("сейчас записано %s · %s", human(a.Confirmed), when)
+		}
+	}
+	if !m.knowsAccountList() {
+		// Книга не прочитана: сказать «счёта нет» здесь значило бы выдать
+		// незнание за факт.
+		return "счета книги не прочитаны"
+	}
+	return fmt.Sprintf("счёта «%s» на листе нет — ctrl+n заведёт его", name)
 }
 
 // createAccount заводит счёт, о котором движок только что сказал «такого нет».
