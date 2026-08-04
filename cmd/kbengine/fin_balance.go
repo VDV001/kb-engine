@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
 	bank := fs.String("bank", "", "account name as the Счета sheet spells it")
 	amount := fs.String("amount", "", "new balance, e.g. 4321,55")
+	create := fs.Bool("create", false, "add the account to the Счета sheet (it must not be there yet)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -48,8 +50,19 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	// проверять, хотя изменилась только дата подтверждения.
 	before, known := balanceOf(*from, *bank)
 
+	if *create {
+		return createAccount(*from, *bank, money, stdout, stderr)
+	}
+
 	if err := financexlsx.SetBalance(*from, *bank, money, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", err)
+		// Незнакомое имя — это либо опечатка, либо счёт, которого ещё нет.
+		// Движок не может решить, какое из двух, но обязан назвать выход из
+		// второго случая: иначе человек ищет его вне движка, а вне движка
+		// единственный способ — писать в ячейки мимо него.
+		if errors.Is(err, financexlsx.ErrUnknownAccount) {
+			fmt.Fprintf(stderr, "  если это новый счёт, а не опечатка — тот же вызов с --create заведёт его\n")
+		}
 		return 1
 	}
 
@@ -63,6 +76,26 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	default:
 		fmt.Fprintf(stdout, "%s: %s (%s)\n", *bank, money, today)
 	}
+	return 0
+}
+
+// createAccount заводит счёт, которого на листе «Счета» ещё нет.
+//
+// Отдельная функция, а не ветка внутри команды: заведение и правка баланса —
+// разные намерения, и читаются они врозь.
+func createAccount(path, bank string, amount domain.Money, stdout, stderr io.Writer) int {
+	if err := financexlsx.AddAccount(path, bank, amount, time.Now); err != nil {
+		fmt.Fprintf(stderr, "fin balance: %v\n", err)
+		if errors.Is(err, financexlsx.ErrAccountExists) {
+			fmt.Fprintf(stderr, "  счёт уже есть — обновить его баланс можно тем же вызовом без --create\n")
+		}
+		return 1
+	}
+	// Заведение названо вслух отдельной строкой: «Долг → Отец: 3000.00»
+	// читается одинаково и когда счёт появился, и когда у него поменялась
+	// сумма, а различить их — ровно то, ради чего человек передал флаг.
+	fmt.Fprintf(stdout, "%s: %s — новый счёт на листе «Счета» (%s)\n",
+		bank, amount, time.Now().Format(time.DateOnly))
 	return 0
 }
 

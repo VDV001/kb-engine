@@ -26,7 +26,11 @@ describe('AccountsCard — где лежат деньги', () => {
 
     expect(screen.getByText('Сбербанк')).toBeDefined()
     expect(screen.getByText('Альфа-Банк')).toBeDefined()
-    expect(screen.getByText('Заморозка → Вклад')).toBeDefined()
+    // Счёт с родом в имени показан заголовком рода и коротким именем под ним:
+    // строка «Заморозка → Вклад» повторяла бы слово, которое уже написано
+    // заголовком, и тратила бы на это ширину, которой у карточки нет.
+    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
+    expect(screen.getByText('Вклад')).toBeDefined()
     // Итог — сумма счетов, а не одно из слагаемых.
     expect(spaced(screen.getByTestId('accounts-total'))).toContain('1 834')
   })
@@ -97,5 +101,44 @@ describe('AccountsCard — остаток на сейчас', () => {
     render(<AccountsCard accounts={negative} expenses="0" income="0" today="2026-08-04" />)
 
     expect(screen.getByTestId('stale-Т-Банк')).toBeDefined()
+  })
+})
+
+// Деньги на карте, деньги отложенные и деньги, которых сейчас нет, потому что
+// их занял человек, — это не одна сумма. Пока карточка складывала их в одно
+// число, оно отвечало не на тот вопрос, ради которого на него смотрят.
+describe('AccountsCard — рода счетов', () => {
+  const mixed: Account[] = [
+    { bank: 'Сбербанк', balance: '1000.00', updated: '2026-08-04', current: '1000.00' },
+    { bank: 'Заморозка → Хранение', balance: '150000.00', updated: '2026-07-25', current: '150000.00' },
+    { bank: 'Долг → Отец', balance: '3000.00', updated: '2026-08-04', current: '3000.00' },
+  ]
+
+  it('собирает счета одного рода под общим заголовком', () => {
+    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+
+    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
+    expect(spaced(screen.getByTestId('group-total-Долг'))).toContain('3 000')
+    // Внутри группы счёт назван коротким именем: слово «Долг» уже стоит
+    // заголовком, и повторять его в каждой строке значит тратить ширину.
+    expect(screen.getByText('Отец')).toBeDefined()
+  })
+
+  it('называет, сколько денег свободно, а не только общий итог', () => {
+    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+
+    // Общий итог остаётся общим: он про всё, чем владелец владеет.
+    expect(spaced(screen.getByTestId('accounts-total'))).toContain('154 000')
+    // А рядом — сколько из этого лежит на карте и доступно сейчас.
+    expect(spaced(screen.getByTestId('accounts-free'))).toContain('1 000')
+  })
+
+  // Когда особых счетов нет, второй строки быть не должно: «свободно 1 000»
+  // под итогом «1 000» — это шум, объясняющий то, чего не происходит.
+  it('молчит про свободные деньги, когда все счета обычные', () => {
+    const plain = accounts.filter((a) => !a.bank.includes('→'))
+    render(<AccountsCard accounts={plain} expenses="0" income="0" today="2026-08-03" />)
+
+    expect(screen.queryByTestId('accounts-free')).toBeNull()
   })
 })

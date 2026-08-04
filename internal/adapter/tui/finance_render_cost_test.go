@@ -39,6 +39,10 @@ func (c *countingAccounts) SetBalance(bank string, amount domain.Money) error {
 	return c.inner.SetBalance(bank, amount)
 }
 
+func (c *countingAccounts) AddAccount(bank string, amount domain.Money) error {
+	return c.inner.AddAccount(bank, amount)
+}
+
 func TestBalanceForm_doesNotReadTheBookWhileTyping(t *testing.T) {
 	acc := &countingAccounts{inner: accountsStub(t)}
 	fin := &stubFinances{sum: sampleSummary()}

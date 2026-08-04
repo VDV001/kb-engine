@@ -63,6 +63,17 @@ func TestNoCommandReportsSuccessWithoutChanging(t *testing.T) {
 				return []string{"fin", "sync", "--from", xlsx, "--ledger", ledger}
 			},
 		},
+		{
+			// Заведение счёта, который уже есть: успех здесь означал бы, что на
+			// листе стало две строки об одном счёте — а обе выглядели бы
+			// одинаково правдоподобно.
+			name: "fin balance --create: счёт уже на листе",
+			setup: func(t *testing.T) []string {
+				xlsx, _ := pairedLedger(t)
+				return []string{"fin", "balance", "--from", xlsx, "--bank", "Сбербанк",
+					"--amount", "500", "--create"}
+			},
+		},
 	}
 
 	for _, p := range probes {

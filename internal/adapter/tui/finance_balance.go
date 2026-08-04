@@ -21,6 +21,10 @@ type AccountsSource interface {
 	// иначе терминал и веб посчитали бы по-разному, и разошлись бы молча.
 	Balances() ([]finance.AccountBalance, error)
 	SetBalance(bank string, amount domain.Money) error
+	// AddAccount заводит счёт, которого на листе ещё нет. Отдельный метод, а не
+	// флаг у SetBalance: экран обязан различать «поправил число» и «пополнил
+	// словарь, решающий, что считается счётом во всей книге».
+	AddAccount(bank string, amount domain.Money) error
 }
 
 // WithAccounts attaches the balances. Without them the key is absent and the
@@ -37,6 +41,10 @@ type balanceForm struct {
 	fields []field
 	cursor int
 	err    string
+	// offerCreate — движок сказал «такого счёта на листе нет», и форма ждёт
+	// ctrl+n. Заводить молча нельзя: незнакомое имя чаще опечатка, чем новый
+	// счёт, и каждая промашка в раскладке пополняла бы словарь книги.
+	offerCreate bool
 }
 
 // OnBalanceForm reports whether the balance entry is open.
@@ -63,6 +71,8 @@ func (m Model) updateBalance(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.balance = balanceForm{}
 	case tea.KeyEnter:
 		return m.submitBalance(), nil
+	case tea.KeyCtrlN:
+		return m.createAccount(), nil
 	default:
 		m.balance.fields, m.balance.cursor = typeIntoFields(m.balance.fields, m.balance.cursor, msg)
 	}
@@ -85,6 +95,21 @@ func (m Model) submitBalance() Model {
 		m.balance.err = fmt.Sprintf("сумма: %v", err)
 		return m
 	}
+
+	// Имя, которого на листе нет, дальше не идёт: движок отверг бы его и сам,
+	// но экран знает счета — они прямо над формой — и может сказать это до
+	// записи, вместе с выходом. Сравнение написаний делает домен: буквенное
+	// поставило бы «сбербанк» рядом со «Сбербанком».
+	//
+	// Судить об этом экран вправе только когда список счетов у него есть.
+	// Непрочитанная книга — это «не знаю», а не «счёта нет»: на пустом снимке
+	// он предложил бы завести счёт, который на листе стоит, и завёл бы второй.
+	if m.knowsAccountList() && !m.knowsAccount(bank) {
+		m.balance.offerCreate = true
+		m.balance.err = fmt.Sprintf("счёта «%s» на листе нет — ctrl+n заведёт его с этой суммой", bank)
+		return m
+	}
+
 	if err := m.accounts.SetBalance(bank, amount); err != nil {
 		m.balance.err = fmt.Sprintf("не записано: %v", err)
 		return m
@@ -119,6 +144,50 @@ func (m Model) renderBalanceForm() string {
 		b.WriteString("\n" + styleTitle.Render(m.balance.err) + "\n")
 	}
 	return b.String() + "\n" + styleDim.Render(hintForm)
+}
+
+// createAccount заводит счёт, о котором движок только что сказал «такого нет».
+//
+// Работает только после этого предложения. Без него клавиша молчит: иначе она
+// стала бы вторым способом записать баланс — тем, который не сверяет написание.
+func (m Model) createAccount() Model {
+	if !m.balance.open || !m.balance.offerCreate {
+		return m
+	}
+	bank := strings.TrimSpace(m.balance.fields[0].value)
+	amount, err := domain.ParseMoney(strings.TrimSpace(m.balance.fields[1].value))
+	if err != nil {
+		m.balance.err = fmt.Sprintf("сумма: %v", err)
+		return m
+	}
+	if err := m.accounts.AddAccount(bank, amount); err != nil {
+		// Отказ обращается так же, как отказ записи: набранное остаётся,
+		// причина названа. Отдельный путь не значит отдельных правил.
+		m.balance.err = fmt.Sprintf("не заведён: %v", err)
+		return m
+	}
+
+	m.balance = balanceForm{}
+	m.finStatus = fmt.Sprintf("новый счёт: %s %s", bank, amount)
+	return m.refreshAccounts()
+}
+
+// knowsAccountList reports whether the screen actually has the sheet's contents
+// to judge by: a snapshot that failed to load knows nothing, and an empty one is
+// not the same fact as «no such account».
+func (m Model) knowsAccountList() bool {
+	return m.accountErr == nil && len(m.accountSnapshot) > 0
+}
+
+// knowsAccount reports whether the sheet already holds this account, under this
+// spelling or another one.
+func (m Model) knowsAccount(bank string) bool {
+	for _, a := range m.accountSnapshot {
+		if domain.SameAccountName(a.Bank, bank) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m Model) accountNames() string {
@@ -160,29 +229,64 @@ func (m Model) writeBalances(b *strings.Builder) {
 		total = total.Add(x.Current)
 	}
 	fmt.Fprintf(b, "%s %s\n", styleDim.Render("на счетах"), styleAccent.Render(human(total)))
-	for _, x := range balances {
-		fmt.Fprintf(b, "  %-22s %12s\n", trim(x.Bank, 22), human(x.Current))
-		when := "—"
-		if x.ConfirmedOn != "" {
-			when = x.ConfirmedOn[8:] + "." + x.ConfirmedOn[5:7]
+
+	// Итог общий, а под ним — сколько из него свободно. Деньги на карте, деньги
+	// отложенные и деньги, которых сейчас нет, потому что их занял человек, —
+	// это не одна сумма, и одно число о них отвечает не на тот вопрос, ради
+	// которого на него смотрят. Считает то же, что и веб: один usecase.
+	groups := finance.TotalsByGroup(balances)
+	if len(groups) > 1 {
+		var free domain.Money
+		for _, g := range groups {
+			if g.Group == "" {
+				free = g.Total
+			}
 		}
-		note := fmt.Sprintf("подтверждён %s · %s", human(x.Confirmed), when)
-		if !x.Spent.IsZero() {
-			note += fmt.Sprintf(" · после этого −%s", human(x.Spent))
+		fmt.Fprintf(b, "  %s\n", styleDim.Render("свободно "+human(free)))
+	}
+
+	for _, g := range groups {
+		if g.Group != "" {
+			fmt.Fprintf(b, "  %s %s\n", styleDim.Render(g.Group), styleDim.Render(human(g.Total)))
 		}
-		if x.NeedsConfirmation {
-			// Минус не значит долг: доходы счёта не имеют, поэтому на старом
-			// подтверждении траты неизбежно съедают остаток. Число оставлено,
-			// но названо тем, что оно есть, — просьбой сверить с банком.
-			note += " · ⚠ пора подтвердить"
+		for _, x := range balances {
+			gr, name := domain.SplitAccountName(x.Bank)
+			if gr != g.Group {
+				continue
+			}
+			writeBalanceLine(b, x, name)
 		}
-		fmt.Fprintf(b, "  %s\n", styleDim.Render("  "+note))
 	}
 	// Ограничение названо вслух: доходу домен не даёт счёта, поэтому поступления
 	// в расчёт не входят и остаток может быть занижен. Умолчать об этом значило
 	// бы выдать оценку за факт.
 	b.WriteString(styleDim.Render("  доходы в расчёт не входят — у них нет счёта") + "\n")
 	b.WriteString("\n")
+}
+
+// writeBalanceLine печатает один счёт: остаток на сейчас, а под ним —
+// подтверждённое число с датой и тем, сколько ушло после неё.
+//
+// Имя приходит параметром: внутри рода счёт зовётся коротко, потому что слово
+// рода уже стоит строкой выше, а колонка в терминале шириной в 22 знака.
+func writeBalanceLine(b *strings.Builder, x finance.AccountBalance, name string) {
+	fmt.Fprintf(b, "  %-22s %12s\n", trim(name, 22), human(x.Current))
+
+	when := "—"
+	if x.ConfirmedOn != "" {
+		when = x.ConfirmedOn[8:] + "." + x.ConfirmedOn[5:7]
+	}
+	note := fmt.Sprintf("подтверждён %s · %s", human(x.Confirmed), when)
+	if !x.Spent.IsZero() {
+		note += fmt.Sprintf(" · после этого −%s", human(x.Spent))
+	}
+	if x.NeedsConfirmation {
+		// Минус не значит долг: доходы счёта не имеют, поэтому на старом
+		// подтверждении траты неизбежно съедают остаток. Число оставлено, но
+		// названо тем, что оно есть, — просьбой сверить с банком.
+		note += " · ⚠ пора подтвердить"
+	}
+	fmt.Fprintf(b, "  %s\n", styleDim.Render("  "+note))
 }
 
 // refreshAccounts перечитывает счета и запоминает результат.
