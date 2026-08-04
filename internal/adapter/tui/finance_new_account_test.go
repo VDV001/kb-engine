@@ -4,8 +4,10 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // ctrlN — подтверждение «этого счёта ещё нет, заведи». Отдельная клавиша, а не
@@ -14,6 +16,22 @@ import (
 func ctrlN() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlN} }
 
 var errAccountRefused = errors.New("счёт уже есть на листе «Счета»")
+
+// namedAccount собирает один счёт с подтверждённым остатком.
+func namedAccount(t *testing.T, bank, sum string) domain.Account {
+	t.Helper()
+	at := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
+	clock := func() time.Time { return time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC) }
+	m, err := domain.ParseMoney(sum)
+	if err != nil {
+		t.Fatalf("ParseMoney(%q): %v", sum, err)
+	}
+	acc, err := domain.NewAccount(bank, m, at, clock)
+	if err != nil {
+		t.Fatalf("NewAccount(%q): %v", bank, err)
+	}
+	return acc
+}
 
 // Завести счёт можно было только из CLI, и это отправляло владельца из
 // терминала в терминал же — но другой командой и с путями, которые на экране
@@ -139,5 +157,30 @@ func TestNewAccount_namesTheRefusal(t *testing.T) {
 	}
 	if view := m.View(); !strings.Contains(view, errAccountRefused.Error()) {
 		t.Errorf("причина отказа не показана\n--- view ---\n%s", view)
+	}
+}
+
+// Экран финансов показывает рода счетов так же, как карточка в вебе: иначе одна
+// поверхность отвечает «у тебя 154 000», а вторая — «свободно 1 000», и обе
+// правы. Считает при этом один usecase, а не две реализации одной арифметики.
+func TestBalances_showTheKindsSeparately(t *testing.T) {
+	acc := accountsStub(t)
+	acc.list = append(acc.list, namedAccount(t, "Долг → Отец", "3000"))
+	m, _ := balanceModel(acc)
+
+	view := press(m, tab()).View()
+
+	for _, want := range []string{
+		"Долг",     // заголовок рода
+		"Отец",     // короткое имя внутри рода
+		"свободно", // сколько из итога лежит на карте
+	} {
+		if !strings.Contains(view, want) {
+			t.Errorf("на экране нет %q\n--- view ---\n%s", want, view)
+		}
+	}
+	// Полного имени в строке быть не должно: род уже назван заголовком.
+	if strings.Contains(view, "Долг → Отец") {
+		t.Errorf("строка повторяет род, уже написанный заголовком\n--- view ---\n%s", view)
 	}
 }

@@ -420,6 +420,13 @@ func (f ledgerFinances) SetBalance(bank string, amount domain.Money) error {
 	return financexlsx.SetBalance(f.workbookPath, bank, amount, time.Now)
 }
 
+// AddAccount заводит счёт тем же вызовом, что и `fin balance --create`: экран и
+// команда пополняют словарь книги одной функцией, иначе одна из них однажды
+// научилась бы заводить то, что вторая отвергает.
+func (f ledgerFinances) AddAccount(bank string, amount domain.Money) error {
+	return financexlsx.AddAccount(f.workbookPath, bank, amount, time.Now)
+}
+
 // Sync runs the very sync the fin sync command runs — the same function, handed
 // buffers instead of the terminal. A second implementation would eventually
 // resolve a conflict differently from the command, and the person would have no
