@@ -49,31 +49,13 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	p := finance.EditParams{
-		Category: *category, Subcategory: *sub, Place: *place,
-		Description: *note, Source: *source, Account: *account,
-		// Пустая строка в поле и «поле стёрли» — разные намерения, и
-		// различает их только факт передачи флага.
-		ClearSubcategory: isFlagSet(fs, "sub") && *sub == "",
-		ClearPlace:       isFlagSet(fs, "place") && *place == "",
-		ClearDescription: isFlagSet(fs, "note") && *note == "",
-		ClearAccount:     isFlagSet(fs, "account") && *account == "",
-	}
-	if *amount != "" {
-		money, err := domain.ParseMoney(*amount)
-		if err != nil {
-			fmt.Fprintf(stderr, "fin edit: %v\n", err)
-			return 1
-		}
-		p.Amount = money
-	}
-	if *date != "" {
-		when, err := time.Parse(time.DateOnly, *date)
-		if err != nil {
-			fmt.Fprintf(stderr, "fin edit: --date %q: expected YYYY-MM-DD\n", *date)
-			return 1
-		}
-		p.Date = when
+	p, err := editParams(fs, *amount, *date, editText{
+		category: *category, sub: *sub, place: *place,
+		note: *note, source: *source, account: *account,
+	})
+	if err != nil {
+		fmt.Fprintf(stderr, "fin edit: %v\n", err)
+		return 1
 	}
 
 	rec, err := editInLedger(*ledgerPath, *id, p)
@@ -113,4 +95,40 @@ func editInLedger(ledgerPath, id string, p finance.EditParams) (finance.Record, 
 		return edited, nil
 	}
 	return finance.Record{}, fmt.Errorf("%w: %s", ErrNoSuchEntry, id)
+}
+
+// editText — текстовые поля правки, собранные вместе, чтобы список аргументов
+// не превращался в шеренгу одинаковых строк, где легко переставить два соседних.
+type editText struct {
+	category, sub, place, note, source, account string
+}
+
+// editParams превращает флаги в параметры правки.
+//
+// Пустое значение и «поле стёрли» — разные намерения, и различает их только
+// факт передачи флага: `--account=` стирает, отсутствие `--account` не трогает.
+func editParams(fs *flag.FlagSet, amount, date string, t editText) (finance.EditParams, error) {
+	p := finance.EditParams{
+		Category: t.category, Subcategory: t.sub, Place: t.place,
+		Description: t.note, Source: t.source, Account: t.account,
+		ClearSubcategory: isFlagSet(fs, "sub") && t.sub == "",
+		ClearPlace:       isFlagSet(fs, "place") && t.place == "",
+		ClearDescription: isFlagSet(fs, "note") && t.note == "",
+		ClearAccount:     isFlagSet(fs, "account") && t.account == "",
+	}
+	if amount != "" {
+		money, err := domain.ParseMoney(amount)
+		if err != nil {
+			return finance.EditParams{}, err
+		}
+		p.Amount = money
+	}
+	if date != "" {
+		when, err := time.Parse(time.DateOnly, date)
+		if err != nil {
+			return finance.EditParams{}, fmt.Errorf("--date %q: expected YYYY-MM-DD", date)
+		}
+		p.Date = when
+	}
+	return p, nil
 }

@@ -76,45 +76,7 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 		Now:         now,
 	}
 
-	if !p.Date.IsZero() {
-		params.Date = p.Date
-	}
-	if !p.Amount.IsZero() {
-		params.Amount = p.Amount
-	}
-	if p.Category != "" {
-		params.Category = p.Category
-	}
-	if p.Subcategory != "" {
-		params.Subcategory = p.Subcategory
-	}
-	if p.Place != "" {
-		params.Place = p.Place
-	}
-	if p.Description != "" {
-		params.Description = p.Description
-	}
-	if p.Source != "" {
-		params.Source = p.Source
-	}
-	if p.Account != "" {
-		params.Account = p.Account
-	}
-
-	// Стирание идёт после присвоений: одновременно назвать и значение, и его
-	// стирание — противоречие в командной строке, и выигрывает более явное.
-	if p.ClearSubcategory {
-		params.Subcategory = ""
-	}
-	if p.ClearPlace {
-		params.Place = ""
-	}
-	if p.ClearDescription {
-		params.Description = ""
-	}
-	if p.ClearAccount {
-		params.Account = ""
-	}
+	params = p.applyTo(params)
 
 	edited, err := domain.NewTransaction(params)
 	if err != nil {
@@ -126,4 +88,46 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 		return Record{}, ErrNoChange
 	}
 	return NewRecord(edited, rec.Rev()+1, now())
+}
+
+// applyTo накладывает названные поля на параметры транзакции.
+//
+// Присвоения идут до стираний: назвать одновременно и значение, и его стирание —
+// противоречие в командной строке, и выигрывает более явное из двух.
+func (p EditParams) applyTo(params domain.TransactionParams) domain.TransactionParams {
+	if !p.Date.IsZero() {
+		params.Date = p.Date
+	}
+	if !p.Amount.IsZero() {
+		params.Amount = p.Amount
+	}
+	for _, f := range []struct {
+		value string
+		field *string
+	}{
+		{p.Category, &params.Category},
+		{p.Subcategory, &params.Subcategory},
+		{p.Place, &params.Place},
+		{p.Description, &params.Description},
+		{p.Source, &params.Source},
+		{p.Account, &params.Account},
+	} {
+		if f.value != "" {
+			*f.field = f.value
+		}
+	}
+	for _, c := range []struct {
+		clear bool
+		field *string
+	}{
+		{p.ClearSubcategory, &params.Subcategory},
+		{p.ClearPlace, &params.Place},
+		{p.ClearDescription, &params.Description},
+		{p.ClearAccount, &params.Account},
+	} {
+		if c.clear {
+			*c.field = ""
+		}
+	}
+	return params
 }
