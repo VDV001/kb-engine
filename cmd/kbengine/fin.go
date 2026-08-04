@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
+	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
@@ -170,7 +171,12 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Description: *note,
 		Source:      *source,
 		Account:     *account,
-	}, *force)
+	}, *force, func(c finance.Correction) {
+		// Подстановка называется вслух: человек набрал одно, записано другое,
+		// и узнать об этом из отчёта через месяц — то же самое молчание.
+		fmt.Fprintf(stdout, "fin add: %s — записано %q, набрано %q (так уже пишут в базе)\n",
+			c.Field, c.Used, c.Typed)
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
@@ -187,10 +193,6 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 // terminal's entry form both call it. A second copy of load → add → sort → save
 // is how the ledger ends up with rows that only one surface can read — the
 // spreadsheet already taught that lesson at the cost of fourteen rows.
-func appendToLedger(ledgerPath string, p finance.AddParams) (finance.Record, error) {
-	return appendChecked(ledgerPath, p, false)
-}
-
 // ErrRepeat is returned when the entry repeats one already in the ledger.
 //
 // A sentinel rather than a plain error so every surface can tell "this is a
@@ -205,10 +207,25 @@ var ErrRepeat = errors.New("такая запись уже есть")
 // the one-line entry and anything added later all go through this function, so
 // a guard placed here cannot be walked around by using a different screen.
 // Placed in any of them, it would be a rule the next surface forgets.
-func appendChecked(ledgerPath string, p finance.AddParams, force bool) (finance.Record, error) {
+func appendChecked(ledgerPath string, p finance.AddParams, force bool,
+	note func(finance.Correction),
+) (finance.Record, error) {
 	recs, err := financejsonl.Load(ledgerPath, time.Now)
 	if err != nil {
 		return finance.Record{}, err
+	}
+	// Написание приводится к тому, что в базе уже есть, до проверки на повтор:
+	// иначе «транспорт» и «Транспорт» считались бы разными тратами.
+	//
+	// Словарь читается рядом с леджером и решает раньше частоты: он хранит
+	// решения владельца, а частота — след старых записей. Нет словаря — не
+	// беда, тогда решает только частота.
+	voc, _ := financevocab.Load(financevocab.PathNextTo(ledgerPath))
+	p, fixed := finance.CanonicalWith(recs, voc, p)
+	for _, c := range fixed {
+		if note != nil {
+			note(c)
+		}
 	}
 	if !force {
 		if dup := finance.Duplicate(recs, p); dup != nil {

@@ -147,3 +147,26 @@ func TestFinances_editFormLooksLikeAnEdit(t *testing.T) {
 		t.Errorf("пример подставлен вместо пустого значения записи:\n%s", view)
 	}
 }
+
+// Движок приводит написание к тому, что в базе уже есть. Если экран об этом
+// молчит, человек видит набранное, а в файл уходит другое — и разницу он
+// находит в отчёте через месяц.
+func TestFinances_screenNamesWhatWasCorrected(t *testing.T) {
+	fin := &stubFinances{sum: sampleSummary()}
+	w := &stubWriter{fixed: []finance.Correction{
+		{Field: "категория", Typed: "транспорт", Used: "Транспорт"},
+	}}
+	m := tui.NewModel(nil).WithFinances(fin).WithFinanceWriter(w)
+
+	m = onForm(m, "a")
+	m = fill(m, "322")
+	m = fill(m, "транспорт")
+	view := press(m, enter()).View()
+
+	if !strings.Contains(view, "поправлено") {
+		t.Errorf("экран не сказал, что написание поправлено:\n%s", view)
+	}
+	if !strings.Contains(view, "Транспорт") {
+		t.Errorf("экран не назвал, что именно записано:\n%s", view)
+	}
+}
