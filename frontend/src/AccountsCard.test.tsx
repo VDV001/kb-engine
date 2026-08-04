@@ -26,7 +26,11 @@ describe('AccountsCard — где лежат деньги', () => {
 
     expect(screen.getByText('Сбербанк')).toBeDefined()
     expect(screen.getByText('Альфа-Банк')).toBeDefined()
-    expect(screen.getByText('Заморозка → Вклад')).toBeDefined()
+    // Счёт с родом в имени показан заголовком рода и коротким именем под ним:
+    // строка «Заморозка → Вклад» повторяла бы слово, которое уже написано
+    // заголовком, и тратила бы на это ширину, которой у карточки нет.
+    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
+    expect(screen.getByText('Вклад')).toBeDefined()
     // Итог — сумма счетов, а не одно из слагаемых.
     expect(spaced(screen.getByTestId('accounts-total'))).toContain('1 834')
   })
@@ -132,7 +136,8 @@ describe('AccountsCard — рода счетов', () => {
   // Когда особых счетов нет, второй строки быть не должно: «свободно 1 000»
   // под итогом «1 000» — это шум, объясняющий то, чего не происходит.
   it('молчит про свободные деньги, когда все счета обычные', () => {
-    render(<AccountsCard accounts={accounts} expenses="0" income="0" today="2026-08-03" />)
+    const plain = accounts.filter((a) => !a.bank.includes('→'))
+    render(<AccountsCard accounts={plain} expenses="0" income="0" today="2026-08-03" />)
 
     expect(screen.queryByTestId('accounts-free')).toBeNull()
   })

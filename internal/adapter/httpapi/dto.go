@@ -124,6 +124,14 @@ type accountDTO struct {
 	Current           string `json:"current"`
 	Spent             string `json:"spent"`
 	NeedsConfirmation bool   `json:"needs_confirmation"`
+	// Group — род счёта, прочитанный из имени («Заморозка → Хранение» →
+	// «Заморозка»), пустой у обычного счёта. Имя разбирает домен, а не
+	// страница: разбирая его сама, каждая витрина однажды разберёт иначе.
+	Group string `json:"group,omitempty"`
+	// NameInGroup — как счёт зовётся внутри своего рода. Отдаётся отдельно,
+	// потому что заголовок рода уже написан над строкой, и повторять его в
+	// строке значит тратить ширину на прочитанное.
+	NameInGroup string `json:"name_in_group,omitempty"`
 }
 
 func toTransactionDTO(t domain.Transaction) transactionDTO {
@@ -150,6 +158,8 @@ func toBalanceDTO(b finance.AccountBalance) accountDTO {
 		Current:           b.Current.String(),
 		Spent:             b.Spent.String(),
 		NeedsConfirmation: b.NeedsConfirmation,
+		Group:             b.Group,
+		NameInGroup:       b.NameWithinGroup,
 	}
 }
 
