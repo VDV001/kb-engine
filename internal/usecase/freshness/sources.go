@@ -38,6 +38,10 @@ type SourceState struct {
 	// возраст сам по себе приговором не является. Признак отдельный, потому
 	// что зелёная галочка здесь означала бы «проверено», а проверки не было.
 	NoAnchors bool
+	// StaleBuild — страница называет версию новее собранной: отстала не она, а
+	// движок. Признак отдельный от Behind, потому что лечится другим — не
+	// правкой файла, а обновлением сборки.
+	StaleBuild bool
 	// AgeDays — сколько дней прошло с правки. Факт, даже когда он не приговор:
 	// человеку полезно видеть, что страницу не трогали полгода, даже если
 	// сверить её не с чем.
@@ -55,7 +59,13 @@ func CheckSource(s Source) SourceState {
 	if !s.Now.IsZero() {
 		out.AgeDays = int(s.Now.Sub(s.EditedAt).Hours() / 24)
 	}
-	out.Behind = len(s.Facts) > 0
+	for _, f := range s.Facts {
+		if f.Kind == KindStaleBuild {
+			out.StaleBuild = true
+			continue
+		}
+		out.Behind = true
+	}
 	out.NoAnchors = !s.Anchored
 	return out
 }
@@ -103,6 +113,35 @@ func IsReleaseVersion(v string) bool {
 	return BaseRelease(v) != ""
 }
 
+// Виды находок о версии. Различать их обязан движок: «отстала страница» лечится
+// правкой файла, «отстала сборка» — обновлением движка, и жёлтый ярлык на обоих
+// послал бы человека править то, что верно.
+const (
+	KindVersionMention = "version-mention"
+	KindStaleBuild     = "stale-build"
+)
+
+// newer сообщает, что выпуск a вышел позже b. Оба уже приведены к чистому
+// семверу, поэтому хватает сравнения трёх чисел — тянуть ради этого
+// golang.org/x/mod в проект с четырьмя прямыми зависимостями незачем.
+func newer(a, b string) bool {
+	pa, pb := strings.Split(a, "."), strings.Split(b, ".")
+	if len(pa) != 3 || len(pb) != 3 {
+		return false
+	}
+	for i := range 3 {
+		x, errA := strconv.Atoi(pa[i])
+		y, errB := strconv.Atoi(pb[i])
+		if errA != nil || errB != nil {
+			return false
+		}
+		if x != y {
+			return x > y
+		}
+	}
+	return false
+}
+
 // VersionMention ищет строку, где страница называет версию продукта, и
 // сравнивает её с настоящей.
 //
@@ -131,8 +170,17 @@ func VersionMention(text, product, current string) *Fact {
 			if m[1] == current {
 				return nil
 			}
+			// Страница называет версию новее собранной — отстала не она.
+			// Случай живой: тег ставится через API, локальная копия о нём не
+			// знает, и сборка сразу после выпуска называет предыдущий тег.
+			if newer(m[1], current) {
+				return &Fact{
+					Kind: KindStaleBuild,
+					Text: fmt.Sprintf("страница называет %s v%s, сейчас %s — отстала сборка, а не страница", product, m[1], current),
+				}
+			}
 			return &Fact{
-				Kind: "version-mention",
+				Kind: KindVersionMention,
 				Text: fmt.Sprintf("страница называет %s v%s, сейчас %s", product, m[1], current),
 			}
 		}

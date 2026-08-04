@@ -42,6 +42,22 @@ describe('SourcesCard', () => {
     expect(screen.getByTestId('source-Team').textContent).toMatch(/3\s*дн/)
   })
 
+  // После выпуска локальная копия ещё не знает тега, и сборка называет
+  // предыдущую версию. Страница при этом права, а чинить надо движок — сказать
+  // ей «отстала» значит послать человека править то, что верно.
+  it('не винит страницу, когда отстала сборка', () => {
+    const stale: SourceState[] = [{
+      name: 'Projects', flag: '--projects', edited_at: '2026-08-04T10:00:00Z',
+      behind: false, unknown: false, no_anchors: false, stale_build: true, age_days: 0,
+      facts: [{ kind: 'stale-build', text: 'страница называет kb-engine v0.16.0, сейчас 0.15.0 — отстала сборка, а не страница' }],
+    }]
+    render(<SourcesCard sources={stale} />)
+
+    const text = screen.getByTestId('source-Projects').textContent ?? ''
+    expect(text).toContain('старая сборка')
+    expect(text).not.toContain('отстала стр')
+  })
+
   // Источники не настроены — блока нет вовсе, а не пустая рамка: пустота
   // читается как «всё в порядке», хотя проверять было нечего.
   it('молчит, когда источников нет', () => {

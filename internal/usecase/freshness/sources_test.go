@@ -193,3 +193,74 @@ func TestVersionMention_usesTheBaseReleaseOfAPseudoVersion(t *testing.T) {
 		t.Errorf("в тексте не базовый выпуск: %q", got.Text)
 	}
 }
+
+// Страница может называть версию НОВЕЕ собранной — и тогда отстала не она.
+//
+// Случай не выдуман: тег ставится через API, локально его нет, и `kbup` сразу
+// после выпуска собирает движок с псевдоверсией от ПРЕДЫДУЩЕГО тега. Карточка
+// при этом обновлена и права, а проверка обвиняла её в отставании — то есть
+// инструмент, заведённый против тихого вранья витрины, врал сам.
+func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
+	cases := []struct {
+		name     string
+		page     string
+		current  string
+		wantKind string
+	}{
+		{
+			name:     "страница старше сборки — отстала страница",
+			page:     "v0.5.0",
+			current:  "0.15.0",
+			wantKind: "version-mention",
+		},
+		{
+			name:     "страница новее сборки — отстала сборка",
+			page:     "v0.16.0",
+			current:  "0.15.0",
+			wantKind: "stale-build",
+		},
+		{
+			// Ровно состояние после релиза: тег v0.16.0 есть на сервере, но не
+			// в локальной копии, поэтому сборка называет себя 0.15.1-0.…
+			name:     "страница новее псевдоверсии — тоже отстала сборка",
+			page:     "v0.16.0",
+			current:  "0.15.1-0.20260804162011-80beb46563ec",
+			wantKind: "stale-build",
+		},
+		{
+			name:     "минорная разница в другую сторону — всё ещё страница",
+			page:     "v0.14.0",
+			current:  "0.15.0",
+			wantKind: "version-mention",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := freshness.VersionMention(`{"note":"`+tc.page+` · kb-engine"}`, "kb-engine", tc.current)
+			if got == nil {
+				t.Fatal("расхождение версий не найдено вовсе")
+			}
+			if got.Kind != tc.wantKind {
+				t.Errorf("Kind = %q, ожидалось %q (текст: %q)", got.Kind, tc.wantKind, got.Text)
+			}
+		})
+	}
+}
+
+// «Отстала страница» и «отстала сборка» — разные ответы, и лечатся они разным:
+// первое правкой файла, второе обновлением движка. Свести их в один жёлтый
+// ярлык значит послать человека править то, что верно.
+func TestSource_doesNotBlameThePageForAStaleBuild(t *testing.T) {
+	s := freshness.CheckSource(freshness.Source{
+		Name: "Projects", Flag: "--projects", Anchored: true,
+		EditedAt: time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+		Now:      time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC),
+		Facts:    []freshness.Fact{{Kind: "stale-build", Text: "страница называет kb-engine v0.16.0, сейчас 0.15.0"}},
+	})
+	if s.Behind {
+		t.Error("страница объявлена отставшей, хотя отстала сборка")
+	}
+	if !s.StaleBuild {
+		t.Error("устаревшая сборка не названа: человек не узнает, что обновлять надо движок")
+	}
+}
