@@ -229,10 +229,11 @@ func (m Model) renderForm() string {
 
 	for i, f := range m.form.fields {
 		value := f.value
-		if value == "" && f.label == fieldDate {
-			// The default is worth showing: an empty date is not a missing value,
-			// it is today.
-			value = styleDim.Render("сегодня")
+		if value == "" {
+			// Пустое поле показывает пример того, что в него кладут. Одно
+			// название поля этого не объясняет: «счёт» прочли как что угодно,
+			// кроме банка, и трата ушла в ledger ничьей.
+			value = styleDim.Render(m.hintFor(f.label))
 		}
 		line := fmt.Sprintf("%-14s %s", f.label, value)
 		if i == m.form.cursor {
@@ -246,6 +247,55 @@ func (m Model) renderForm() string {
 		b.WriteString("\n" + styleTitle.Render(m.form.err) + "\n")
 	}
 	return b.String() + "\n" + styleDim.Render(hintForm)
+}
+
+// hintFor возвращает пример для пустого поля.
+//
+// Счёт стоит особняком: его подсказка — не выдуманное имя, а те счета, что
+// действительно лежат на листе «Счета». Выдуманный пример был бы хуже пустоты,
+// потому что набранный дословно он получил бы отказ при записи. Когда книга не
+// подключена, поле говорит об этом флагом, а не молчит: молчание здесь читается
+// как «счёт не нужен».
+func (m Model) hintFor(label string) string {
+	switch label {
+	case fieldAmount:
+		return "418 или 418,50"
+	case fieldCategory:
+		return "Транспорт"
+	case fieldSubcategory:
+		return "Такси"
+	case fieldPlace:
+		return "Яндекс Такси"
+	case fieldNote:
+		return "до центра"
+	case fieldSource:
+		return "Зарплата"
+	case fieldDate:
+		// Пустая дата — не пропущенное значение, а сегодня.
+		return "сегодня"
+	case fieldAccount:
+		return m.accountHint()
+	}
+	return ""
+}
+
+// accountHint перечисляет счета книги — до трёх, чтобы строка не разъезжалась.
+func (m Model) accountHint() string {
+	if m.accounts == nil {
+		return "книга не подключена (--from)"
+	}
+	list, err := m.accounts.Accounts()
+	if err != nil || len(list) == 0 {
+		return "счетов в книге нет"
+	}
+	names := make([]string, 0, len(list))
+	for _, a := range list {
+		names = append(names, a.Bank())
+	}
+	if len(names) > 3 {
+		return strings.Join(names[:3], " · ") + " · …"
+	}
+	return strings.Join(names, " · ")
 }
 
 func kindName(kind string) string {

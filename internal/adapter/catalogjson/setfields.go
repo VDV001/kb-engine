@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -266,7 +267,17 @@ func editEntries(entries []json.RawMessage, ids []int, ch Changes) (int, error) 
 		}
 		entries[i] = edited
 		delete(wanted, id)
-		updated++
+		// Считается изменение, а не попытка. Записи, которой присвоили то, что у
+		// неё уже стояло, правка ничего не сделала — и «1 обновлена» на ней было
+		// бы «выполнено» без содержания: после такого ответа никто не приходит
+		// проверять.
+		//
+		// Сравнение по содержанию, а не по байтам: пересборка JSON меняет их и
+		// там, где значения остались прежними (это видно на добавлении тега,
+		// который уже стоит).
+		if changedInSubstance(e, edited) {
+			updated++
+		}
 	}
 
 	if len(wanted) > 0 {
@@ -514,4 +525,24 @@ func assembleObject(members []member) (json.RawMessage, error) {
 	}
 	buf.WriteByte('}')
 	return buf.Bytes(), nil
+}
+
+// changedInSubstance отвечает, различаются ли две записи по содержанию.
+//
+// Байты не годятся: пересборка JSON переставляет ключи и меняет отступы даже
+// там, где значения те же. Разобранное представление сравнивается целиком, со
+// всеми полями, включая те, о которых домен не знает, — иначе правка чужого
+// поля прошла бы как «ничего не изменилось».
+//
+// Не разобравшуюся запись считаем изменённой: соврать «изменений нет» здесь
+// хуже, чем лишний раз сказать «изменено».
+func changedInSubstance(before, after json.RawMessage) bool {
+	var a, b any
+	if err := json.Unmarshal(before, &a); err != nil {
+		return true
+	}
+	if err := json.Unmarshal(after, &b); err != nil {
+		return true
+	}
+	return !reflect.DeepEqual(a, b)
 }

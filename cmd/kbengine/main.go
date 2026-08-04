@@ -706,12 +706,26 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	}
 
 	n, err := catalogjson.SetFields(*catalogPath, parsed, ch)
-	if err != nil {
+	return reportSet(n, err, stdout, stderr)
+}
+
+// reportSet отвечает за то, чтобы правка не соврала о своём итоге.
+//
+// Ноль изменений — не успех: записи нашлись (иначе была бы ошибка), но значения
+// в них уже такие, какие просили поставить. Промолчать здесь значит отчитаться
+// о правке, которой не было, а после «выполнено» никто не приходит проверять.
+func reportSet(n int, err error, stdout, stderr io.Writer) int {
+	switch {
+	case err != nil:
 		fmt.Fprintf(stderr, "set: %v\n", err)
 		return 1
+	case n == 0:
+		fmt.Fprintln(stderr, "set: записи уже в этом состоянии — ничего не изменилось")
+		return 1
+	default:
+		fmt.Fprintf(stdout, "%d entry(ies) updated\n", n)
+		return 0
 	}
-	fmt.Fprintf(stdout, "%d entry(ies) updated\n", n)
-	return 0
 }
 
 func isFlagSet(fs *flag.FlagSet, name string) bool {

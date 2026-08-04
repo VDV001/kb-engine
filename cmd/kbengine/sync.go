@@ -243,6 +243,7 @@ func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dr
 	if dryRun {
 		fmt.Fprintf(stdout, "fin sync (dry run): %s\n", direction)
 		writeSummary(stdout, plan)
+		writeDiff(stdout, plan, describeRecords(recs), describeTransactions(led.Transactions))
 		return 0
 	}
 
@@ -340,6 +341,16 @@ func describeTx(tx domain.Transaction) string {
 	if s := tx.Source(); s != "" && !tx.IsExpense() {
 		parts = append(parts, s)
 	}
+	// Счёт расхода печатается наравне с остальным, а его отсутствие называется
+	// вслух. Раньше строка без счёта выглядела полной, и трата уехала в книгу
+	// ничьей — в разбивке по счетам её нет, а по отчёту не видно, почему.
+	if tx.IsExpense() {
+		if a := tx.Account(); a != "" {
+			parts = append(parts, a)
+		} else {
+			parts = append(parts, "без счёта")
+		}
+	}
 	return strings.Join(parts, "  ")
 }
 
@@ -373,6 +384,84 @@ func writeSide(b *strings.Builder, title string, s finance.Side, primary, fallba
 		}
 		b.WriteString("\n")
 	}
+}
+
+// writeDiff печатает, какие именно строки тронутся: `+` на появляющихся, `-` на
+// уходящих, и обе подряд там, где запись изменилась. Счётчики выше отвечают на
+// «сколько», это — на «что именно», и решение принимается по второму.
+//
+// Цвет добавляется только для терминала. В файле или пайпе ESC-последовательности
+// были бы мусором, а diff читают и глазами, и `grep`.
+func writeDiff(w io.Writer, plan finance.Plan, ledgerSide, workbookSide map[string]string) {
+	color := isTerminal(w)
+	for _, side := range []struct {
+		label string
+		s     finance.Side
+		// primary — как запись выглядит на этой стороне, fallback — на другой;
+		// удалённую строку описать можно только оттуда, где она ещё есть.
+		primary, fallback map[string]string
+	}{
+		{"ledger", plan.Ledger, ledgerSide, workbookSide},
+		{"workbook", plan.Workbook, workbookSide, ledgerSide},
+	} {
+		if !side.s.Moved() {
+			continue
+		}
+		fmt.Fprintf(w, "\n  %s:\n", side.label)
+		for _, id := range side.s.Added {
+			writeDiffLine(w, color, '+', describeOf(id, side.primary, side.fallback))
+		}
+		for _, id := range side.s.Modified {
+			// Две строки подряд: в книге записано одно, в леджере другое.
+			writeDiffLine(w, color, '-', describeOf(id, side.fallback, side.primary))
+			writeDiffLine(w, color, '+', describeOf(id, side.primary, side.fallback))
+		}
+		for _, id := range side.s.Removed {
+			writeDiffLine(w, color, '-', describeOf(id, side.fallback, side.primary))
+		}
+	}
+}
+
+func describeOf(id string, primary, fallback map[string]string) string {
+	if s := primary[id]; s != "" {
+		return s
+	}
+	if s := fallback[id]; s != "" {
+		return s
+	}
+	return id
+}
+
+func writeDiffLine(w io.Writer, color bool, sign byte, text string) {
+	line := fmt.Sprintf("  %c %s", sign, text)
+	if !color {
+		fmt.Fprintln(w, line)
+		return
+	}
+	const (
+		green = "\x1b[32m"
+		red   = "\x1b[31m"
+		reset = "\x1b[0m"
+	)
+	tint := green
+	if sign == '-' {
+		tint = red
+	}
+	fmt.Fprintln(w, tint+line+reset)
+}
+
+// isTerminal отвечает, смотрит ли человек в терминал прямо сейчас. Проверка идёт
+// по типу назначения, а не по имени команды: тот же вывод уходит и в файл.
+func isTerminal(w io.Writer) bool {
+	f, ok := w.(*os.File)
+	if !ok {
+		return false
+	}
+	if os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 func writeSummary(w io.Writer, plan finance.Plan) {

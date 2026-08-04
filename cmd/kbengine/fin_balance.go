@@ -42,11 +42,42 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	// Прежнее значение читается до записи, чтобы отчёт мог сказать, что именно
+	// произошло. Одно сообщение и на «сумма изменилась», и на «сумма уже была
+	// такой» — это «выполнено» без содержания: после него никто не приходит
+	// проверять, хотя изменилась только дата подтверждения.
+	before, known := balanceOf(*from, *bank)
+
 	if err := financexlsx.SetBalance(*from, *bank, money, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", err)
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "%s: %s (%s)\n", *bank, money, time.Now().Format(time.DateOnly))
+	today := time.Now().Format(time.DateOnly)
+	switch {
+	case known && before.String() == money.String():
+		fmt.Fprintf(stdout, "%s: %s — сумма не изменилась, обновлена дата подтверждения (%s)\n",
+			*bank, money, today)
+	case known:
+		fmt.Fprintf(stdout, "%s: %s → %s (%s)\n", *bank, before, money, today)
+	default:
+		fmt.Fprintf(stdout, "%s: %s (%s)\n", *bank, money, today)
+	}
 	return 0
+}
+
+// balanceOf возвращает остаток, записанный на счёте сейчас. Второе значение —
+// false, когда книгу прочитать не удалось: тогда отчёт молчит о прежнем
+// значении, а не выдумывает его.
+func balanceOf(path, bank string) (domain.Money, bool) {
+	led, err := financexlsx.Read(path, time.Now)
+	if err != nil {
+		return domain.Money{}, false
+	}
+	for _, a := range led.Accounts {
+		if a.Bank() == bank {
+			return a.Balance(), true
+		}
+	}
+	return domain.Money{}, false
 }

@@ -129,6 +129,21 @@ func (m Model) renderQuick() string {
 	var b strings.Builder
 	b.WriteString(styleQuery.Render("строкой: "+m.quick.line) + "\n\n")
 
+	// Пока не введено ни символа, экран разбирает пример вместо настоящей
+	// строки: приглашение само по себе не говорит, писать ли сумму первой,
+	// нужен ли счёт и как его называть. С первым символом разбор уступает
+	// место настоящему — два разбора сразу читались бы как один.
+	if m.quick.line == "" && m.quick.parsed == nil {
+		b.WriteString(styleDim.Render("пример:  418р такси сбер") + "\n\n")
+		for _, r := range [][2]string{
+			{"сумма", "418р"},
+			{"место", "такси"},
+			{"счёт", "сбер · известные: " + m.accountHint()},
+		} {
+			b.WriteString(styleDim.Render(fmt.Sprintf("%-14s%s", r[0], r[1])) + "\n")
+		}
+	}
+
 	if p := m.quick.parsed; p != nil {
 		rows := [][2]string{
 			{"сумма", p.Params.Amount.String()},
@@ -157,7 +172,9 @@ func (m Model) renderQuick() string {
 }
 
 const (
-	hintQuickRead  = "Enter — разобрать · Esc — отмена · пример: 418р такси сбер"
+	// Пример переехал наверх, в разбор по частям, и здесь не повторяется:
+	// два примера на одном экране заставляют искать между ними разницу.
+	hintQuickRead  = "Enter — разобрать · Esc — отмена"
 	hintQuickWrite = "Enter — записать · правьте строку, чтобы разобрать заново · Esc — отмена"
 	hintQuickKey   = "q — строкой"
 )
