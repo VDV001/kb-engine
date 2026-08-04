@@ -69,6 +69,15 @@ func (m Model) updateQuick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m.readQuickLine(), nil
 		}
 		return m.writeQuickLine(), nil
+	case tea.KeyTab:
+		// Незнакомое слово чаще всего оказывается заметкой. Без этой клавиши
+		// единственным выходом было переписать строку целиком.
+		if len(m.quick.unknown) > 0 && m.quick.parsed != nil {
+			m.quick.parsed.Params.Description = joinNote(
+				m.quick.parsed.Params.Description, m.quick.unknown)
+			m.quick.unknown = nil
+			m.quick.err = ""
+		}
 	case tea.KeyBackspace:
 		// Editing the line drops the previous reading: what is shown must belong
 		// to what is typed now.
@@ -154,6 +163,12 @@ func (m Model) renderQuick() string {
 			{"место", or(p.Params.Place, "—")},
 			{"счёт", or(p.Params.Account, "—")},
 		}
+		// Заметка показывается, только когда она есть: у короткой траты её нет,
+		// и пустая строка «заметка —» была бы шумом. Но появившись, она обязана
+		// быть видна — иначе слово, забранное клавишей, просто исчезает с экрана.
+		if p.Params.Description != "" {
+			rows = append(rows, [2]string{"заметка", p.Params.Description})
+		}
 		for _, r := range rows {
 			b.WriteString(styleDim.Render(fmt.Sprintf("%-14s", r[0])) + r[1] + "\n")
 		}
@@ -170,6 +185,9 @@ func (m Model) renderQuick() string {
 	if m.quick.parsed != nil {
 		hint = hintQuickWrite
 	}
+	if len(m.quick.unknown) > 0 {
+		hint = hintQuickNote
+	}
 	return b.String() + "\n" + styleDim.Render(hint)
 }
 
@@ -179,4 +197,15 @@ const (
 	hintQuickRead  = "Enter — разобрать · Esc — отмена"
 	hintQuickWrite = "Enter — записать · правьте строку, чтобы разобрать заново · Esc — отмена"
 	hintQuickKey   = "q — строкой"
+	hintQuickNote  = "Tab — незнакомые слова в заметку · Enter — записать · Esc — отмена"
 )
+
+// joinNote приклеивает незнакомые слова к заметке, если та уже есть: строка
+// «23р Юрент - поездка страховка» может нести и то, и другое.
+func joinNote(existing string, words []string) string {
+	add := strings.Join(words, " ")
+	if existing == "" {
+		return add
+	}
+	return existing + " " + add
+}

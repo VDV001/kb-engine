@@ -69,6 +69,15 @@ func ParseQuick(line string, v Vocabulary) (QuickEntry, error) {
 	var out QuickEntry
 	out.Params.Kind = domain.KindExpense
 
+	// Заметка отделяется тире или двоеточием с пробелами вокруг и дальше не
+	// разбирается: это свободный текст, и слова в нём не обязаны быть в словаре.
+	//
+	// Пробелы обязательны, и это не педантизм: «Альфа-Банк» и «Т-Банк» несут
+	// дефис внутри имени, а деление по голому дефису разрезало бы половину
+	// словаря счетов.
+	line, note := splitNote(line)
+	out.Params.Description = note
+
 	words := strings.Fields(line)
 	var seenAmount bool
 	for i := 0; i < len(words); {
@@ -115,4 +124,17 @@ func ParseQuick(line string, v Vocabulary) (QuickEntry, error) {
 		return QuickEntry{}, fmt.Errorf("%w: %q", ErrNoAmount, line)
 	}
 	return out, nil
+}
+
+// splitNote отрезает от строки хвост-заметку. Возвращает то, что осталось для
+// разбора, и саму заметку.
+func splitNote(line string) (rest, note string) {
+	// Порядок важен: длинное тире ищется раньше короткого, иначе строка с «—»
+	// осталась бы нетронутой.
+	for _, sep := range []string{" — ", " – ", " - ", " : "} {
+		if head, tail, found := strings.Cut(line, sep); found {
+			return head, strings.TrimSpace(tail)
+		}
+	}
+	return line, ""
 }
