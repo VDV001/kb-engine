@@ -99,3 +99,41 @@ describe('AccountsCard — остаток на сейчас', () => {
     expect(screen.getByTestId('stale-Т-Банк')).toBeDefined()
   })
 })
+
+// Деньги на карте, деньги отложенные и деньги, которых сейчас нет, потому что
+// их занял человек, — это не одна сумма. Пока карточка складывала их в одно
+// число, оно отвечало не на тот вопрос, ради которого на него смотрят.
+describe('AccountsCard — рода счетов', () => {
+  const mixed: Account[] = [
+    { bank: 'Сбербанк', balance: '1000.00', updated: '2026-08-04', current: '1000.00' },
+    { bank: 'Заморозка → Хранение', balance: '150000.00', updated: '2026-07-25', current: '150000.00' },
+    { bank: 'Долг → Отец', balance: '3000.00', updated: '2026-08-04', current: '3000.00' },
+  ]
+
+  it('собирает счета одного рода под общим заголовком', () => {
+    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+
+    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
+    expect(spaced(screen.getByTestId('group-total-Долг'))).toContain('3 000')
+    // Внутри группы счёт назван коротким именем: слово «Долг» уже стоит
+    // заголовком, и повторять его в каждой строке значит тратить ширину.
+    expect(screen.getByText('Отец')).toBeDefined()
+  })
+
+  it('называет, сколько денег свободно, а не только общий итог', () => {
+    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+
+    // Общий итог остаётся общим: он про всё, чем владелец владеет.
+    expect(spaced(screen.getByTestId('accounts-total'))).toContain('154 000')
+    // А рядом — сколько из этого лежит на карте и доступно сейчас.
+    expect(spaced(screen.getByTestId('accounts-free'))).toContain('1 000')
+  })
+
+  // Когда особых счетов нет, второй строки быть не должно: «свободно 1 000»
+  // под итогом «1 000» — это шум, объясняющий то, чего не происходит.
+  it('молчит про свободные деньги, когда все счета обычные', () => {
+    render(<AccountsCard accounts={accounts} expenses="0" income="0" today="2026-08-03" />)
+
+    expect(screen.queryByTestId('accounts-free')).toBeNull()
+  })
+})
