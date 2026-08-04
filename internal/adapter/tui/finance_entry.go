@@ -18,7 +18,10 @@ import (
 //
 // Declared here, in the consumer, like every other interface this screen needs.
 type FinanceWriter interface {
-	Add(finance.AddParams) error
+	// Add возвращает подстановки написания вместе с ошибкой: движок мог
+	// записать «Транспорт» там, где человек набрал «транспорт», и умолчать
+	// об этом значит показать на экране не то, что попало в файл.
+	Add(finance.AddParams) ([]finance.Correction, error)
 }
 
 // WithFinanceWriter lets the finances screen record an entry. Without it the
@@ -218,7 +221,8 @@ func (m Model) submitForm() Model {
 		m.form.err = err.Error()
 		return m
 	}
-	if err := m.ledger.Add(p); err != nil {
+	fixed, err := m.ledger.Add(p)
+	if err != nil {
 		m.form.err = fmt.Sprintf("не записано: %v", err)
 		return m
 	}
@@ -226,7 +230,8 @@ func (m Model) submitForm() Model {
 	// Re-read rather than add the row to the totals in memory: after a write the
 	// screen must show what the ledger says, not what the write hoped to do.
 	m.form = entryForm{}
-	m.finStatus = fmt.Sprintf("записано: %s %s %s", kindName(p.Kind), p.Amount, or(p.Category, p.Source))
+	m.finStatus = fmt.Sprintf("записано: %s %s %s", kindName(p.Kind), p.Amount, or(p.Category, p.Source)) +
+		correctionNote(fixed)
 	m.workbookBehind = true
 	m.summary, m.finErr = m.finances.Summary(nil)
 	return m
@@ -339,3 +344,19 @@ const (
 	hintForm     = "Tab/↑↓ — поле · Enter — записать · Esc — отмена"
 	hintEditForm = "Tab/↑↓ — поле · Enter — сохранить · Esc — назад к списку"
 )
+
+// correctionNote дописывает к статусу то, что движок поправил при записи.
+//
+// Без неё экран показывал бы набранное, а в файл уходило бы другое: движок
+// приводит написание к тому, что в базе уже есть, и человек имеет право видеть
+// разницу сразу, а не найти её в отчёте через месяц.
+func correctionNote(fixed []finance.Correction) string {
+	if len(fixed) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(fixed))
+	for _, c := range fixed {
+		parts = append(parts, fmt.Sprintf("%s → %s", c.Typed, c.Used))
+	}
+	return " · поправлено: " + strings.Join(parts, ", ")
+}

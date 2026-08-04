@@ -15,13 +15,14 @@ import (
 // test can check not only that something was written but exactly what — a form
 // that drops the place or the account writes a row the owner did not describe.
 type stubWriter struct {
-	got []finance.AddParams
-	err error
+	got   []finance.AddParams
+	fixed []finance.Correction
+	err   error
 }
 
-func (s *stubWriter) Add(p finance.AddParams) error {
+func (s *stubWriter) Add(p finance.AddParams) ([]finance.Correction, error) {
 	s.got = append(s.got, p)
-	return s.err
+	return s.fixed, s.err
 }
 
 func runes(s string) tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)} }

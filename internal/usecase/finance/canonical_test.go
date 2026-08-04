@@ -135,3 +135,29 @@ func TestCanonical_normalizesTheAccountToo(t *testing.T) {
 		t.Errorf("подстановка счёта не названа: %+v", fixed)
 	}
 }
+
+// Словарь — записанное решение владельца, и оно старше исторической частоты.
+// Живой случай: в леджере «Пятерочка» стоит семь раз против одной «Пятёрочки»,
+// но 02.08 владелец решил писать «Пятёрочка», и это решение лежит в словаре.
+// Большинство из старых записей не должно его перебивать.
+func TestCanonical_vocabularyBeatsFrequency(t *testing.T) {
+	existing := []finance.Record{
+		recWith(t, "01A", "Еда", "Пятерочка"),
+		recWith(t, "01B", "Еда", "Пятерочка"),
+		recWith(t, "01C", "Еда", "Пятёрочка"),
+	}
+	voc := finance.Vocabulary{
+		Places: map[string]finance.PlaceRule{
+			finance.NormalizeWord("Пятерочка"): {Place: "Пятёрочка"},
+		},
+	}
+
+	got, fixed := finance.CanonicalWith(existing, voc, finance.AddParams{Place: "пятерочка"})
+
+	if got.Place != "Пятёрочка" {
+		t.Errorf("место = %q, а словарь владельца говорит «Пятёрочка»", got.Place)
+	}
+	if len(fixed) != 1 {
+		t.Errorf("подстановка не названа: %+v", fixed)
+	}
+}

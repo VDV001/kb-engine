@@ -332,9 +332,12 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 // The workbook is deliberately left alone: writing it here would be a third
 // path into the spreadsheet, and the screen says out loud that the book is
 // behind rather than quietly touching it.
-func (f ledgerFinances) Add(p finance.AddParams) error {
-	_, err := appendToLedger(f.ledgerPath, p)
-	return err
+func (f ledgerFinances) Add(p finance.AddParams) ([]finance.Correction, error) {
+	var fixed []finance.Correction
+	_, err := appendChecked(f.ledgerPath, p, false, func(c finance.Correction) {
+		fixed = append(fixed, c)
+	})
+	return fixed, err
 }
 
 // Recent returns the last n entries, newest first: правят почти всегда только

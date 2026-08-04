@@ -113,13 +113,15 @@ func (m Model) writeQuickLine() Model {
 		return m
 	}
 	p := m.quick.parsed.Params
-	if err := m.ledger.Add(p); err != nil {
+	fixed, err := m.ledger.Add(p)
+	if err != nil {
 		m.quick.err = fmt.Sprintf("не записано: %v", err)
 		return m
 	}
 
 	m.quick = quickForm{}
-	m.finStatus = fmt.Sprintf("записано: %s %s %s", kindName(p.Kind), p.Amount, or(p.Category, p.Source))
+	m.finStatus = fmt.Sprintf("записано: %s %s %s", kindName(p.Kind), p.Amount, or(p.Category, p.Source)) +
+		correctionNote(fixed)
 	m.workbookBehind = true
 	m.summary, m.finErr = m.finances.Summary(nil)
 	return m
