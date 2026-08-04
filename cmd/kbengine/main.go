@@ -505,6 +505,23 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
 }
 
+// readNowDoc читает документ вместе со временем его последней правки.
+//
+// Обе величины берутся одним вызовом: страница сравнивает себя с тем, что
+// случилось после неё, и без даты сравнивать не с чем. Ошибка stat страницу не
+// роняет — документ показывается, а проверка честно говорит «не знаю».
+func readNowDoc(path string) (httpapi.NowDoc, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return httpapi.NowDoc{}, err
+	}
+	doc := httpapi.NowDoc{Markdown: string(raw)}
+	if st, err := os.Stat(path); err == nil {
+		doc.EditedAt = st.ModTime()
+	}
+	return doc, nil
+}
+
 // buildDocuments wires the owner's personal views. Each path is optional;
 // a configured one is read once at startup so a typo fails at serve time,
 // then re-read per request so edits show up on reload.
@@ -514,21 +531,7 @@ func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.
 		if _, err := os.ReadFile(nowPath); err != nil {
 			return httpapi.Documents{}, fmt.Errorf("now: %w", err)
 		}
-		docs.Now = func() (httpapi.NowDoc, error) {
-			raw, err := os.ReadFile(nowPath)
-			if err != nil {
-				return httpapi.NowDoc{}, err
-			}
-			// Время правки читается тем же вызовом, что и текст: страница
-			// сравнивает себя с тем, что случилось после неё, и без этой даты
-			// сравнивать не с чем. Ошибка stat не роняет страницу — документ
-			// показывается, а проверка честно говорит «не знаю».
-			doc := httpapi.NowDoc{Markdown: string(raw)}
-			if st, err := os.Stat(nowPath); err == nil {
-				doc.EditedAt = st.ModTime()
-			}
-			return doc, nil
-		}
+		docs.Now = func() (httpapi.NowDoc, error) { return readNowDoc(nowPath) }
 	}
 	fileJSON := func(name, path string) (func() ([]byte, error), error) {
 		if _, err := os.ReadFile(path); err != nil {
