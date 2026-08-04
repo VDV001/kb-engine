@@ -1,6 +1,7 @@
 package financexlsx
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -58,6 +59,106 @@ func SetBalance(path, bank string, balance domain.Money, now func() time.Time) e
 		return err
 	}
 	return saveAtomically(f, path)
+}
+
+// ErrAccountExists is returned when a new account is asked for under a name the
+// sheet already holds — including another spelling of it.
+var ErrAccountExists = errors.New("the workbook already knows this account")
+
+// AddAccount appends a new account to the Счета sheet.
+//
+// Creating a row and updating a balance are different intentions, so they are
+// different functions rather than one with a flag. SetBalance keeps refusing a
+// name it does not know, and that refusal is the point: a typo in --bank would
+// otherwise put a word into the vocabulary the rest of the book reads back.
+// This is the second door, the one a person walks through saying «I know it is
+// not there».
+//
+// Everything else about the row is deliberately ordinary. Once it exists, its
+// balance is confirmed by SetBalance like any other account's — a debt that
+// needed its own command to be updated would be a second way to write money
+// into the book, and the book has one writer.
+func AddAccount(path, bank string, balance domain.Money, now func() time.Time) error {
+	if err := CheckLock(path); err != nil {
+		return err
+	}
+
+	// The domain owns what a valid account is — a blank name, a date ahead of
+	// the clock. Checked before the file is touched: a refusal has to leave the
+	// book exactly as it was, and half-done work is worse than none because
+	// nobody goes looking for it.
+	if _, err := domain.NewAccount(bank, balance, now(), now); err != nil {
+		return err
+	}
+
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return fmt.Errorf("open workbook: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	last, err := lastAccountRow(f, bank)
+	if err != nil {
+		return err
+	}
+	row := last + 1
+
+	if err := backup(path, now); err != nil {
+		return err
+	}
+	name, err := excelize.CoordinatesToCellName(bankColumn, row)
+	if err != nil {
+		return fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
+	}
+	if err := f.SetCellValue(sheetAccounts, name, strings.TrimSpace(bank)); err != nil {
+		return fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
+	}
+	// The new row inherits the formatting of the one above it: on this sheet
+	// the format is the whole difference between 3000 and «3 000,00 ₽», and a
+	// row that carries none is visible as the one the engine added.
+	styles, err := rowStyles(f, sheetAccounts, last, []int{bankColumn, balanceColumn, updatedColumn})
+	if err != nil {
+		return err
+	}
+	if err := applyStyles(f, sheetAccounts, row, styles); err != nil {
+		return err
+	}
+	if err := writeBalance(f, row, balance, now()); err != nil {
+		return err
+	}
+	return saveAtomically(f, path)
+}
+
+// lastAccountRow returns the row of the last account on the sheet, refusing
+// when the sheet already holds the name under any spelling.
+//
+// Case, «ё» and hyphens do not distinguish accounts — the domain decides that,
+// and the quick-entry vocabulary asks the same question of the same rule. A
+// letter-by-letter comparison here would let «сбер банк» in beside «Сбербанк»,
+// and both rows would then look equally plausible.
+func lastAccountRow(f *excelize.File, bank string) (int, error) {
+	rows, err := f.GetRows(sheetAccounts, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return 0, fmt.Errorf("%w: the workbook has no %s sheet", ErrUnknownAccount, sheetAccounts)
+	}
+
+	last := firstDataRow - 1
+	for i, r := range rows {
+		rowNum := i + 1
+		if rowNum < firstDataRow {
+			continue
+		}
+		name := strings.TrimSpace(cell(r, bankColumn-1))
+		if name == "" {
+			continue
+		}
+		if domain.SameAccountName(name, bank) {
+			return 0, fmt.Errorf("%w: %q is already on the %s sheet as %q",
+				ErrAccountExists, strings.TrimSpace(bank), sheetAccounts, name)
+		}
+		last = rowNum
+	}
+	return last, nil
 }
 
 // accountRow finds the row for a bank on the Счета sheet, or refuses and names
