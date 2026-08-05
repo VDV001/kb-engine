@@ -3,6 +3,8 @@ package finance
 import (
 	"time"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -113,12 +115,34 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []Acco
 	return out
 }
 
-// spentAfter суммирует траты счёта, записанные не раньше дня подтверждения.
+// spentAfter суммирует траты счёта, не вошедшие в подтверждённое число.
+//
+// Критерий — момент, когда строка появилась в книге, а не дата траты. Защита
+// «в день подтверждения не вычитаем» бережёт от двойного учёта только то, что
+// уже было записано, когда человек смотрел в приложение банка. Трата,
+// датированная задним числом и записанная позже, в увиденное число не входила
+// — и на старом критерии не вычиталась НИКОГДА, а не «до завтра».
+//
+// Момент записи читается из id: движок выдаёт ULID, и время внутри него —
+// единственный след появления строки. Когда id не ULID (строка заведена не
+// движком), момент неизвестен, и судим по дате траты, как раньше: выдумать его
+// хуже, чем признать неизвестным.
 func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) domain.Money {
 	var total domain.Money
 	day := domain.Day(confirmed)
+	// Конец дня подтверждения: всё, записанное позже, человек в приложении
+	// видеть не мог, чем бы оно ни было датировано.
+	cutoff := day.AddDate(0, 0, 1)
 	for _, tx := range txs {
 		if !tx.IsExpense() || tx.Account() != bank {
+			continue
+		}
+		if at, ok := recordedAt(tx.ID()); ok {
+			// Время в ULID хранится в UTC, а день подтверждения живёт в зоне
+			// книги: без приведения ночные записи попадали бы не в свои сутки.
+			if !at.In(day.Location()).Before(cutoff) {
+				total = total.Add(tx.Amount())
+			}
 			continue
 		}
 		if !tx.Date().After(day) {
@@ -127,4 +151,13 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) doma
 		total = total.Add(tx.Amount())
 	}
 	return total
+}
+
+// recordedAt возвращает момент появления строки, если id это ULID.
+func recordedAt(id string) (time.Time, bool) {
+	u, err := ulid.ParseStrict(id)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return ulid.Time(u.Time()), true
 }
