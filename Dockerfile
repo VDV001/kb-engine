@@ -7,7 +7,7 @@
 #
 # package.json and the lockfile are copied first so `npm ci` reuses its layer
 # whenever only src/ changed.
-FROM --platform=$BUILDPLATFORM node:24-bookworm-slim@sha256:235600a8101ab264e117b1768e925532262668dc9b581ef1dd7d96ced463b8e7 AS web
+FROM --platform=$BUILDPLATFORM node:25-bookworm-slim@sha256:81db02c4b671288a03915da9534dbd54f96d0e7c24d80ccc54f5b36b2e684370 AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
