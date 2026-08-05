@@ -1,8 +1,11 @@
 package finance_test
 
 import (
+	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
@@ -146,5 +149,64 @@ func TestCurrentBalance_doesNotMarkAHealthyAccount(t *testing.T) {
 
 	if finance.CurrentBalances(accounts, recs)[0].NeedsConfirmation {
 		t.Error("здоровый счёт помечен как требующий подтверждения")
+	}
+}
+
+// expenseRecordedAt — трата, записанная в один момент, а датированная другим.
+// Момент записи берётся из id: движок выдаёт ULID, и время внутри него —
+// единственный след того, когда строка появилась в книге.
+func expenseRecordedAt(t *testing.T, recorded, date, account, amount string) domain.Transaction {
+	t.Helper()
+	at, err := time.Parse(time.RFC3339, recorded)
+	if err != nil {
+		t.Fatalf("recorded: %v", err)
+	}
+	id := ulid.MustNew(ulid.Timestamp(at), ulid.Monotonic(rand.New(rand.NewSource(1)), 0)).String()
+	return expenseOn(t, id, account, date, amount)
+}
+
+// Трата, датированная задним числом, но записанная ПОСЛЕ подтверждения, должна
+// вычитаться — иначе она не будет учтена никогда.
+//
+// Случай живой и стоил владельцу расхождения: покупка 514,94 ₽ прошла 04.08,
+// баланс подтверждён тем же днём, а строка появилась в книге только 05.08.
+// Критерий стоял на дате траты, поэтому расчёт молча её пропускал: «в день
+// подтверждения не вычитаем» защищает от двойного учёта только те траты,
+// которые уже были записаны, когда человек смотрел в банк.
+func TestCurrentBalance_countsAnExpenseRecordedAfterTheConfirmationDay(t *testing.T) {
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
+	recs := []domain.Transaction{
+		// задним числом, записана на следующий день — считается
+		expenseRecordedAt(t, "2026-08-05T16:23:00Z", "2026-08-04", "Сбербанк", "514.94"),
+		// записана в день подтверждения — уже в подтверждённом числе
+		expenseRecordedAt(t, "2026-08-04T12:20:00Z", "2026-08-04", "Сбербанк", "23.00"),
+		// обычная трата следующего дня — считается, как и раньше
+		expenseRecordedAt(t, "2026-08-05T09:00:00Z", "2026-08-05", "Сбербанк", "100.00"),
+	}
+
+	got := finance.CurrentBalances(accounts, recs)
+
+	if got[0].Spent.String() != "614.94" {
+		t.Errorf("списано = %s, ожидалось 614.94 (514.94 задним числом + 100.00)", got[0].Spent)
+	}
+	if got[0].Current.String() != "385.06" {
+		t.Errorf("остаток = %s, ожидалось 385.06", got[0].Current)
+	}
+}
+
+// id, из которого время не читается, оставляет старое поведение: судить по дате
+// траты. Так ведут себя записи, заведённые не движком, и фикстуры старых тестов
+// — выдумывать им момент записи хуже, чем признать, что он неизвестен.
+func TestCurrentBalance_fallsBackToTheDateWhenTheIDCarriesNoTime(t *testing.T) {
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
+	recs := []domain.Transaction{
+		expenseOn(t, "не-ulid", "Сбербанк", "2026-08-04", "500.00"),
+		expenseOn(t, "тоже-не-ulid", "Сбербанк", "2026-08-05", "23.00"),
+	}
+
+	got := finance.CurrentBalances(accounts, recs)
+
+	if got[0].Spent.String() != "23.00" {
+		t.Errorf("списано = %s, ожидалось 23.00 — при нечитаемом id судим по дате траты", got[0].Spent)
 	}
 }
