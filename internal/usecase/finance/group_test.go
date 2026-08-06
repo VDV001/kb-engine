@@ -29,13 +29,12 @@ func TestTotalsByGroup(t *testing.T) {
 	want := []struct {
 		group string
 		total string
-		count int
 	}{
 		// Счета без группы идут первыми и одной строкой: это деньги, которыми
 		// человек располагает сейчас, и ради них экран открывают.
-		{"", "3000.00", 2},
-		{"Заморозка", "150000.00", 2},
-		{"Долг", "3000.00", 1},
+		{"", "3000.00"},
+		{"Заморозка", "150000.00"},
+		{"Долг", "3000.00"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("групп = %d, ожидалось %d: %+v", len(got), len(want), got)
@@ -46,9 +45,6 @@ func TestTotalsByGroup(t *testing.T) {
 		}
 		if got[i].Total.String() != w.total {
 			t.Errorf("группа %q: сумма = %s, ожидалась %s", w.group, got[i].Total, w.total)
-		}
-		if got[i].Count != w.count {
-			t.Errorf("группа %q: счетов = %d, ожидалось %d", w.group, got[i].Count, w.count)
 		}
 	}
 }

@@ -9,7 +9,6 @@
 // The CLI prints its own label for the same bucket. Only the wording differs;
 // the arithmetic is identical, and the golden case in money.test.ts is what
 // keeps it that way.
-export const NO_CATEGORY = '(без категории)'
 
 // toKopecks parses the decimal string the API sends into integer kopecks.
 // Amounts never become floats: the ledger stores kopecks as int64 precisely so

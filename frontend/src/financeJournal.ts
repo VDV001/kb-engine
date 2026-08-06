@@ -43,21 +43,25 @@ export function filterJournal(rows: Transaction[], f: JournalFilter): Transactio
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/
 
 /**
- * Порядок по моменту ЗАПИСИ строки, вынутому из ULID (он начинается с метки
- * времени, поэтому сравнивается лексикографически).
+ * Ключ порядка внутри одного дня — момент ЗАПИСИ строки, вынутый из ULID (он
+ * начинается с метки времени, поэтому сравнивается лексикографически).
  *
  * Это не время траты — времени в книге нет вовсе, у строки есть только дата.
  * Но когда дата у двух строк одна, «что записали позже» — единственное
  * различие, которое вообще существует в данных.
  *
- * Нечитаемый id (строку вписали в книгу мимо движка) даёт 0: момент неизвестен,
- * и выдуманный порядок хуже сохранённого. То же решение, что в расчёте баланса.
+ * У строки, вписанной в книгу мимо движка, ULID нет, и момент неизвестен. Она
+ * получает пустой ключ, то есть считается самой ранней в своём дне. Это
+ * решение, названное вслух, а не догадка о времени.
+ *
+ * Ключ обязан быть свойством ОДНОЙ строки, а не ответом про пару. Прежняя
+ * версия отвечала «равны» на любую пару с нечитаемым id — тогда такая строка
+ * оказывалась равной каждой из тех, что между собой не равны, компаратор терял
+ * транзитивность, и сортировка выдавала произвольную перестановку.
  */
-function byRecordedAt(a: Transaction, b: Transaction): number {
-  const x = a.id ?? ''
-  const y = b.id ?? ''
-  if (!ULID.test(x) || !ULID.test(y)) return 0
-  return x < y ? -1 : x > y ? 1 : 0
+function recordedKey(t: Transaction): string {
+  const id = t.id ?? ''
+  return ULID.test(id) ? id : ''
 }
 
 /**
@@ -81,6 +85,9 @@ export function sortJournal(
   return rows.toSorted((a, b) => {
     if (field === 'amount') return sign * (toKopecks(a.amount) - toKopecks(b.amount))
     const byDate = a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-    return sign * (byDate || byRecordedAt(a, b))
+    if (byDate !== 0) return sign * byDate
+    const x = recordedKey(a)
+    const y = recordedKey(b)
+    return sign * (x < y ? -1 : x > y ? 1 : 0)
   })
 }

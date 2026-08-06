@@ -348,11 +348,12 @@ func (m Model) writeBalances(b *strings.Builder) {
 			fmt.Fprintf(b, "  %s %s\n", styleDim.Render(g.Group), styleDim.Render(human(g.Total)))
 		}
 		for _, x := range balances {
-			gr, name := domain.SplitAccountName(x.Bank)
-			if gr != g.Group {
+			// Род и короткое имя уже разобраны в usecase — витрина, разбирая
+			// имя сама, однажды разберёт иначе, чем веб.
+			if x.Group != g.Group {
 				continue
 			}
-			writeBalanceLine(b, x, name)
+			writeBalanceLine(b, x, x.NameWithinGroup)
 		}
 	}
 	// Ограничение названо вслух: доходу домен не даёт счёта, поэтому поступления

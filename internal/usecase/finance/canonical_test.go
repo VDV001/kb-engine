@@ -50,7 +50,7 @@ func existingSpellings(t *testing.T) []finance.Record {
 func TestCanonical_usesTheSpellingAlreadyInTheLedger(t *testing.T) {
 	p := finance.AddParams{Category: "транспорт", Place: "пятерочка"}
 
-	got, fixed := finance.Canonical(existingSpellings(t), p)
+	got, fixed := finance.CanonicalWith(existingSpellings(t), finance.Vocabulary{}, p)
 
 	if got.Category != "Транспорт" {
 		t.Errorf("категория = %q, ожидалось «Транспорт»", got.Category)
@@ -70,7 +70,7 @@ func TestCanonical_usesTheSpellingAlreadyInTheLedger(t *testing.T) {
 func TestCanonical_namesWhatItReplaced(t *testing.T) {
 	p := finance.AddParams{Category: "транспорт"}
 
-	_, fixed := finance.Canonical(existingSpellings(t), p)
+	_, fixed := finance.CanonicalWith(existingSpellings(t), finance.Vocabulary{}, p)
 
 	if len(fixed) != 1 {
 		t.Fatalf("подстановок %d, ожидалась 1", len(fixed))
@@ -88,7 +88,7 @@ func TestCanonical_namesWhatItReplaced(t *testing.T) {
 func TestCanonical_leavesAGenuinelyNewValueAlone(t *testing.T) {
 	p := finance.AddParams{Category: "Образование", Place: "Coursera"}
 
-	got, fixed := finance.Canonical(existingSpellings(t), p)
+	got, fixed := finance.CanonicalWith(existingSpellings(t), finance.Vocabulary{}, p)
 
 	if got.Category != "Образование" || got.Place != "Coursera" {
 		t.Errorf("новое значение изменено: %+v", got)
@@ -102,7 +102,7 @@ func TestCanonical_leavesAGenuinelyNewValueAlone(t *testing.T) {
 func TestCanonical_saysNothingWhenSpellingMatches(t *testing.T) {
 	p := finance.AddParams{Category: "Транспорт", Place: "Магнит"}
 
-	_, fixed := finance.Canonical(existingSpellings(t), p)
+	_, fixed := finance.CanonicalWith(existingSpellings(t), finance.Vocabulary{}, p)
 
 	if len(fixed) != 0 {
 		t.Errorf("подстановка на точном совпадении: %+v", fixed)
@@ -125,7 +125,7 @@ func TestCanonical_normalizesTheAccountToo(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	got, fixed := finance.Canonical([]finance.Record{rec},
+	got, fixed := finance.CanonicalWith([]finance.Record{rec}, finance.Vocabulary{},
 		finance.AddParams{Category: "Еда", Account: "сбербанк"})
 
 	if got.Account != "Сбербанк" {
