@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite'
+// defineConfig берётся из vitest/config, а не из vite: только он знает про
+// секцию test, и без него TypeScript отвергает её как лишний ключ.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 

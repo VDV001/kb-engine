@@ -522,6 +522,8 @@ export interface Dashboard {
 /** Одна строка журнала так, как её увозят в книгу. */
 export interface FinanceExportRow {
   date: string
+  /** «expense» или «income»: без вида доход и расход в файле неразличимы. */
+  kind: 'expense' | 'income'
   category: string
   subcategory: string
   place: string

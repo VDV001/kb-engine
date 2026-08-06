@@ -14,7 +14,11 @@ import (
 // parameters: repeating the filtering here would be a second implementation of
 // it, and two implementations of one rule drift apart.
 type exportRow struct {
-	Date        string `json:"date"`
+	Date string `json:"date"`
+	// Kind — «expense» или «income». Без него доход и расход в файле выглядят
+	// одинаково: сумма у обоих положительная, и колонка «Сумма», сложенная
+	// целиком, смешивает траты с поступлениями.
+	Kind        string `json:"kind"`
 	Category    string `json:"category"`
 	Subcategory string `json:"subcategory"`
 	Place       string `json:"place"`
@@ -28,17 +32,17 @@ type exportRequest struct {
 }
 
 var exportHeader = []string{
-	"Дата", "Категория", "Подкатегория", "Место", "Описание", "Сумма", "Счёт",
+	"Дата", "Вид", "Категория", "Подкатегория", "Место", "Описание", "Сумма", "Счёт",
 }
 
 // Ширины на глаз по самому длинному ожидаемому значению: файл открывают, чтобы
 // читать, а колонка в восемь символов с «Яндекс Такси» внутри читается как
 // решётка.
-var exportWidths = []float64{12, 16, 18, 22, 30, 12, 14}
+var exportWidths = []float64{12, 8, 16, 18, 22, 30, 12, 14}
 
 // amountColumn is the one column written as a number rather than text: without
 // it the total cannot be summed, and the total is what the file is opened for.
-const amountColumn = 5
+const amountColumn = 6
 
 // handleFinanceExport writes the rows it is given as an xlsx workbook.
 //
@@ -75,7 +79,7 @@ func writeWorkbook(dst io.Writer, rows []exportRow) error {
 	}
 	for n, row := range rows {
 		values := []string{
-			row.Date, row.Category, row.Subcategory,
+			row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
 			row.Place, row.Description, row.Amount, row.Account,
 		}
 		if err := writeRow(f, sheet, n+2, values, amountColumn); err != nil {
@@ -123,4 +127,20 @@ func asNumber(v string) any {
 		return n
 	}
 	return v
+}
+
+// kindLabel переводит вид записи на язык человека, открывающего файл.
+//
+// Пустой вид оставляется пустым, а не подставляется расходом: выгрузка со
+// старой витрины вида не несёт, и назвать такую строку расходом значило бы
+// соврать про доход.
+func kindLabel(kind string) string {
+	switch kind {
+	case "expense":
+		return "расход"
+	case "income":
+		return "доход"
+	default:
+		return ""
+	}
 }

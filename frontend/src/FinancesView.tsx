@@ -190,11 +190,12 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
     const blob = await api.financeExport(
       journal.map((t) => ({
         date: t.date,
+        kind: t.kind,
         category: t.category ?? '',
         subcategory: t.subcategory ?? '',
         place: t.place ?? '',
         description: t.description ?? '',
-        amount: String(t.amount ?? ''),
+        amount: t.amount,
         account: t.account ?? '',
       })),
     )
