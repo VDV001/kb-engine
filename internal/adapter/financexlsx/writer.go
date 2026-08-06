@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/filebackup"
+	"github.com/daniil/kb-engine/internal/adapter/xlsxdim"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/xuri/excelize/v2"
 )
@@ -197,6 +198,14 @@ func saveAtomically(f *excelize.File, path string) error {
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()
+	}
+
+	// Every writer in this package ends here, which is why the declared range is
+	// brought up to date here rather than at each call site: a rule installed in
+	// four writers out of five is a rule with a bypass, and the fifth is always
+	// the one added next.
+	if err := xlsxdim.Sync(f); err != nil {
+		return fmt.Errorf("declare written range: %w", err)
 	}
 
 	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+filepath.Base(path))

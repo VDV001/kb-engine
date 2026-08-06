@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/adapter/xlsxdim/xlsxdimtest"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -92,5 +93,31 @@ func TestExportCarriesTheKindOfEachRow(t *testing.T) {
 	}
 	if rows[2][1] != "доход" {
 		t.Errorf("вторая строка: вид = %q, ожидался «доход»", rows[2][1])
+	}
+}
+
+// Выгрузка существует ровно для того, чтобы книгу открыл кто-то другой -
+// Excel, LibreOffice, чужой скрипт. Поэтому объявленный диапазон листа
+// (<dimension ref="…">) обязан покрывать написанное: читатель, который
+// не сканирует ячейки, а верит объявлению, иначе не увидит ни одной строки.
+// excelize пишет туда "A1" независимо от содержимого, и через него эту
+// проверку сделать нельзя - он объявление игнорирует и согласился бы сам
+// с собой.
+func TestExportXLSX_declaresTheRangeItWrote(t *testing.T) {
+	srv := newTestServer()
+
+	body := strings.NewReader(`{"rows":[
+	  {"date":"2026-07-31","category":"Еда","subcategory":"Продукты","place":"Монетка","description":"","amount":"349.97","account":"Сбербанк"},
+	  {"date":"2026-07-30","category":"Транспорт","subcategory":"Такси","place":"Яндекс Такси","description":"До дома","amount":"482","account":"Сбербанк"}
+	]}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/finances/export", body)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+	if got := xlsxdimtest.Bytes(t, rec.Body.Bytes()); len(got) != 0 {
+		t.Errorf("потоковый читатель теряет строки:\n  %s", strings.Join(got, "\n  "))
 	}
 }
