@@ -271,3 +271,30 @@ func TestCurrentBalance_matchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 		t.Errorf("списано = %s, ожидалось 300.00 — «т банк» и «Т-Банк» это один счёт", got[0].Spent)
 	}
 }
+
+// Трата ТОГО ЖЕ дня, записанная ночью следующего, вычитается: человек уже
+// закрыл банковское приложение и лёг спать, в подтверждённое число она не
+// вошла. Граница дня берётся в зоне машины — зоны книги в данных нет.
+//
+// Зона в тесте прибита намеренно: без этого проверка молчала бы на CI (UTC) и
+// говорила бы только на машине владельца. Раньше здесь стояла полночь UTC,
+// то есть 05:00 по книге, и такая запись не вычиталась никогда.
+func TestCurrentBalance_countsASameDayExpenseRecordedAfterMidnightLocalTime(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("книга", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
+	recs := []domain.Transaction{
+		// 01:00 ночи 05.08 по книге — то есть уже после дня подтверждения
+		expenseRecordedAt(t, "2026-08-04T20:00:00Z", "2026-08-04", "Сбербанк", "400.00"),
+		// 23:00 того же дня по книге — человек это ещё видел в банке
+		expenseRecordedAt(t, "2026-08-04T18:00:00Z", "2026-08-04", "Сбербанк", "700.00"),
+	}
+
+	got := finance.CurrentBalances(accounts, recs)
+
+	if got[0].Spent.String() != "400.00" {
+		t.Errorf("списано = %s, ожидалось 400.00 — вычитается только запись после полуночи по книге", got[0].Spent)
+	}
+}
