@@ -21,12 +21,12 @@ import (
 func TestAddAccount_appendsARowTheReaderSees(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	err := financexlsx.AddAccount(path, "Долг → Отец", money(t, "3000"), fixedClock(2026, 8, 4))
+	err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4))
 	if err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
-	acc := accountOnSheet(t, path, "Долг → Отец")
+	acc := accountOnSheet(t, path, "Займ → Коллеге")
 	if acc.Balance().Kopecks() != 300000 {
 		t.Errorf("баланс = %d копеек, ожидалось 300000", acc.Balance().Kopecks())
 	}
@@ -35,7 +35,7 @@ func TestAddAccount_appendsARowTheReaderSees(t *testing.T) {
 	}
 	// Заведённый счёт обязан стать обычным счётом: со следующего раза его
 	// баланс правится штатной командой, а не второй особенной.
-	if err := financexlsx.SetBalance(path, "Долг → Отец", money(t, "2000"), fixedClock(2026, 8, 5)); err != nil {
+	if err := financexlsx.SetBalance(path, "Займ → Коллеге", money(t, "2000"), fixedClock(2026, 8, 5)); err != nil {
 		t.Fatalf("SetBalance по заведённому счёту: %v", err)
 	}
 }
@@ -45,7 +45,7 @@ func TestAddAccount_appendsARowTheReaderSees(t *testing.T) {
 func TestAddAccount_putsTheRowRightAfterTheLastAccount(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	if err := financexlsx.AddAccount(path, "Долг → Отец", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
+	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func TestAddAccount_putsTheRowRightAfterTheLastAccount(t *testing.T) {
 	if len(rows) < 6 {
 		t.Fatalf("на листе %d строк, новая не появилась", len(rows))
 	}
-	if got := strings.TrimSpace(rows[5][0]); got != "Долг → Отец" {
+	if got := strings.TrimSpace(rows[5][0]); got != "Займ → Коллеге" {
 		t.Errorf("строка 6 = %q, ожидался новый счёт", got)
 	}
 }
@@ -137,7 +137,7 @@ func TestAddAccount_inheritsTheFormattingOfTheRowAbove(t *testing.T) {
 		"B6": cellStyle(t, path, "Счета", "B5"),
 		"C6": cellStyle(t, path, "Счета", "C5"),
 	}
-	if err := financexlsx.AddAccount(path, "Долг → Отец", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
+	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
 

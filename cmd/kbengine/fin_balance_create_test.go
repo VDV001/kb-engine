@@ -14,15 +14,15 @@ func TestRun_finBalanceCreatesANewAccount(t *testing.T) {
 	book := workbook(t)
 
 	var out, errb bytes.Buffer
-	code := run([]string{"fin", "balance", "--from", book, "--bank", "Долг → Отец", "--amount", "3000", "--create"}, &out, &errb)
+	code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "3000", "--create"}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("fin balance --create exit = %d, stderr = %s", code, errb.String())
 	}
 
-	// The report says the row is new. «Долг → Отец: 3000.00» alone reads the
+	// The report says the row is new. «Займ → Коллеге: 3000.00» alone reads the
 	// same as an update, and the difference is exactly what the person asked to
 	// confirm by passing the flag.
-	for _, want := range []string{"Долг → Отец", "3000.00", "новый счёт"} {
+	for _, want := range []string{"Займ → Коллеге", "3000.00", "новый счёт"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("вывод не содержит %q:\n%s", want, out.String())
 		}
@@ -30,7 +30,7 @@ func TestRun_finBalanceCreatesANewAccount(t *testing.T) {
 	// Сравнение числом, а не строкой: сколько знаков после запятой покажет
 	// ячейка, решает её формат, и в фикстуре его нет. Наследование формата —
 	// вопрос отдельного теста в адаптере, здесь проверяется записанная сумма.
-	if got := accountBalanceValue(t, book, "Долг → Отец"); got != 3000 {
+	if got := accountBalanceValue(t, book, "Займ → Коллеге"); got != 3000 {
 		t.Errorf("баланс в книге = %v, ожидалось 3000", got)
 	}
 }
@@ -77,7 +77,7 @@ func TestRun_finBalanceWithoutCreateStillRefusesAnUnknownBank(t *testing.T) {
 	book := workbook(t)
 
 	var out, errb bytes.Buffer
-	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Долг → Отец", "--amount", "3000"}, &out, &errb); code == 0 {
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "3000"}, &out, &errb); code == 0 {
 		t.Fatal("неизвестный счёт записан без --create")
 	}
 	if !strings.Contains(errb.String(), "--create") {

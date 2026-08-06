@@ -135,7 +135,7 @@ func (m Model) updateBalance(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m.walkAccounts(step), nil
 	default:
 		// Набор поверх подставленного имени начинает новое, а не дописывает к
-		// нему: «СбербанкДолг → Отец» — не то, что имел в виду человек, и
+		// нему: «СбербанкЗайм → Коллеге» — не то, что имел в виду человек, и
 		// увидел бы он это только в отказе.
 		if m.balance.chosen && m.balance.cursor == 0 && msg.Type == tea.KeyRunes {
 			fields := slices.Clone(m.balance.fields)

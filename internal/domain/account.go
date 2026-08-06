@@ -47,10 +47,10 @@ func (a Account) Balance() Money { return a.balance }
 func (a Account) Updated() time.Time { return a.updated }
 
 // groupSeparator is the arrow the book already uses to say that an account is
-// one of several of a kind: «Заморозка → Хранение», «Долг → Отец».
+// one of several of a kind: «Резерв → Наличные», «Займ → Коллеге».
 //
 // The spaces around it are typography rather than meaning, so the split ignores
-// them — otherwise «Долг→Отец» would be a group of its own that only looks the
+// them — otherwise «Займ→Коллеге» would be a group of its own that only looks the
 // same on screen.
 const groupSeparator = "→"
 

@@ -18,10 +18,10 @@ import (
 func TestTotalsByGroup(t *testing.T) {
 	balances := []finance.AccountBalance{
 		{Bank: "Сбербанк", Current: money(t, "2000")},
-		{Bank: "Заморозка → Хранение", Current: money(t, "150000")},
+		{Bank: "Резерв → Наличные", Current: money(t, "150000")},
 		{Bank: "Альфа-Банк", Current: money(t, "1000")},
-		{Bank: "Долг → Отец", Current: money(t, "3000")},
-		{Bank: "Заморозка → Вклад", Current: money(t, "0")},
+		{Bank: "Займ → Коллеге", Current: money(t, "3000")},
+		{Bank: "Резерв → Депозит", Current: money(t, "0")},
 	}
 
 	got := finance.TotalsByGroup(balances)
@@ -33,8 +33,8 @@ func TestTotalsByGroup(t *testing.T) {
 		// Счета без группы идут первыми и одной строкой: это деньги, которыми
 		// человек располагает сейчас, и ради них экран открывают.
 		{"", "3000.00"},
-		{"Заморозка", "150000.00"},
-		{"Долг", "3000.00"},
+		{"Резерв", "150000.00"},
+		{"Займ", "3000.00"},
 	}
 	if len(got) != len(want) {
 		t.Fatalf("групп = %d, ожидалось %d: %+v", len(got), len(want), got)
@@ -54,13 +54,13 @@ func TestTotalsByGroup(t *testing.T) {
 // строки.
 func TestTotalsByGroup_keepsTheOrderOfTheBook(t *testing.T) {
 	balances := []finance.AccountBalance{
-		{Bank: "Долг → Отец", Current: money(t, "3000")},
-		{Bank: "Заморозка → Хранение", Current: money(t, "150000")},
+		{Bank: "Займ → Коллеге", Current: money(t, "3000")},
+		{Bank: "Резерв → Наличные", Current: money(t, "150000")},
 	}
 
 	got := finance.TotalsByGroup(balances)
-	if len(got) != 2 || got[0].Group != "Долг" || got[1].Group != "Заморозка" {
-		t.Fatalf("порядок групп = %+v, ожидались Долг, затем Заморозка", got)
+	if len(got) != 2 || got[0].Group != "Займ" || got[1].Group != "Резерв" {
+		t.Fatalf("порядок групп = %+v, ожидались Займ, затем Резерв", got)
 	}
 }
 
@@ -76,7 +76,7 @@ func TestTotalsByGroup_emptyStaysEmpty(t *testing.T) {
 // разбирать имя счёта сама, и одна из них однажды разберёт иначе.
 func TestCurrentBalances_carriesTheGroup(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC) }
-	acc, err := domain.NewAccount("Долг → Отец", domain.NewMoney(300000), now(), now)
+	acc, err := domain.NewAccount("Займ → Коллеге", domain.NewMoney(300000), now(), now)
 	if err != nil {
 		t.Fatalf("NewAccount: %v", err)
 	}
@@ -85,10 +85,10 @@ func TestCurrentBalances_carriesTheGroup(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("счетов = %d", len(got))
 	}
-	if got[0].Group != "Долг" {
+	if got[0].Group != "Займ" {
 		t.Errorf("Group = %q, ожидалось «Долг»", got[0].Group)
 	}
-	if got[0].NameWithinGroup != "Отец" {
+	if got[0].NameWithinGroup != "Коллеге" {
 		t.Errorf("NameWithinGroup = %q, ожидалось «Отец»", got[0].NameWithinGroup)
 	}
 }
