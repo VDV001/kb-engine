@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"github.com/daniil/kb-engine/internal/adapter/xlsxdim"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -94,6 +95,12 @@ func writeWorkbook(dst io.Writer, rows []exportRow) error {
 		if err := f.SetColWidth(sheet, col, col, width); err != nil {
 			return err
 		}
+	}
+	// Книгу открывает кто-то другой - в этом весь смысл выгрузки. Читатель,
+	// который верит объявленному диапазону, а не сканирует ячейки, без этой
+	// строки не увидит ни одной: excelize пишет туда "A1" при любом содержимом.
+	if err := xlsxdim.Sync(f); err != nil {
+		return err
 	}
 	return f.Write(dst)
 }
