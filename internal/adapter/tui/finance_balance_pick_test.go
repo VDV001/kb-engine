@@ -57,14 +57,14 @@ func TestBalanceForm_typingReplacesTheChoice(t *testing.T) {
 	m, _ := balanceModel(accountsStub(t))
 	m = press(press(m, tab()), runes("b"))
 
-	m = press(m, runes("Долг → Отец"))
+	m = press(m, runes("Займ → Коллеге"))
 	view := m.View()
 
-	if !strings.Contains(view, "Долг → Отец") {
+	if !strings.Contains(view, "Займ → Коллеге") {
 		t.Errorf("набранное имя не встало в поле\n--- view ---\n%s", view)
 	}
 	// И подставленное имя ушло целиком: проверка на вхождение подстроки
-	// проходила и на «СбербанкДолг → Отец» — то есть не проверяла ничего.
+	// проходила и на «СбербанкЗайм → Коллеге» — то есть не проверяла ничего.
 	if strings.Contains(view, "Сбербанк") {
 		t.Errorf("набор дописался к подставленному имени\n--- view ---\n%s", view)
 	}

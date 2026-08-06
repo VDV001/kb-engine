@@ -46,7 +46,7 @@ func TestNewAccount_offersToCreateWhenTheNameIsUnknown(t *testing.T) {
 	m, _ := balanceModel(acc)
 
 	m = press(press(m, tab()), runes("b"))
-	m = fill(m, "Долг → Отец")
+	m = fill(m, "Займ → Коллеге")
 	m = press(m, runes("3000"))
 	m = press(m, enter())
 
@@ -63,7 +63,7 @@ func TestNewAccount_offersToCreateWhenTheNameIsUnknown(t *testing.T) {
 		t.Error("форма закрылась, набранное потеряно")
 	}
 	view := m.View()
-	for _, want := range []string{"Долг → Отец", "ctrl+n"} {
+	for _, want := range []string{"Займ → Коллеге", "ctrl+n"} {
 		if !strings.Contains(strings.ToLower(view), strings.ToLower(want)) {
 			t.Errorf("экран не подсказал, как завести счёт (нет %q)\n--- view ---\n%s", want, view)
 		}
@@ -78,7 +78,7 @@ func TestNewAccount_createsOnConfirmation(t *testing.T) {
 	m, _ := balanceModel(acc)
 
 	m = press(press(m, tab()), runes("b"))
-	m = fill(m, "Долг → Отец")
+	m = fill(m, "Займ → Коллеге")
 	m = press(m, runes("3000"))
 	m = press(m, enter())
 	m = press(m, ctrlN())
@@ -86,8 +86,8 @@ func TestNewAccount_createsOnConfirmation(t *testing.T) {
 	if len(acc.created) != 1 {
 		t.Fatalf("счёт заведён %d раз, ожидался 1: %+v", len(acc.created), acc.created)
 	}
-	if acc.created[0].bank != "Долг → Отец" {
-		t.Errorf("имя = %q, ожидалось «Долг → Отец»", acc.created[0].bank)
+	if acc.created[0].bank != "Займ → Коллеге" {
+		t.Errorf("имя = %q, ожидалось «Займ → Коллеге»", acc.created[0].bank)
 	}
 	if acc.created[0].amount.Kopecks() != 300000 {
 		t.Errorf("сумма = %d копеек, ожидалось 300000", acc.created[0].amount.Kopecks())
@@ -147,7 +147,7 @@ func TestNewAccount_namesTheRefusal(t *testing.T) {
 	m, _ := balanceModel(acc)
 
 	m = press(press(m, tab()), runes("b"))
-	m = fill(m, "Долг → Отец")
+	m = fill(m, "Займ → Коллеге")
 	m = press(m, runes("3000"))
 	m = press(m, enter())
 	m = press(m, ctrlN())
@@ -165,14 +165,14 @@ func TestNewAccount_namesTheRefusal(t *testing.T) {
 // правы. Считает при этом один usecase, а не две реализации одной арифметики.
 func TestBalances_showTheKindsSeparately(t *testing.T) {
 	acc := accountsStub(t)
-	acc.list = append(acc.list, namedAccount(t, "Долг → Отец", "3000"))
+	acc.list = append(acc.list, namedAccount(t, "Займ → Коллеге", "3000"))
 	m, _ := balanceModel(acc)
 
 	view := press(m, tab()).View()
 
 	for _, want := range []string{
-		"Долг",     // заголовок рода
-		"Отец",     // короткое имя внутри рода
+		"Займ",     // заголовок рода
+		"Коллеге",  // короткое имя внутри рода
 		"свободно", // сколько из итога лежит на карте
 	} {
 		if !strings.Contains(view, want) {
@@ -180,7 +180,7 @@ func TestBalances_showTheKindsSeparately(t *testing.T) {
 		}
 	}
 	// Полного имени в строке быть не должно: род уже назван заголовком.
-	if strings.Contains(view, "Долг → Отец") {
+	if strings.Contains(view, "Займ → Коллеге") {
 		t.Errorf("строка повторяет род, уже написанный заголовком\n--- view ---\n%s", view)
 	}
 }
