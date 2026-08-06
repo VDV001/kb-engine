@@ -48,3 +48,16 @@ export function monthLabel(month: string): string {
 
 
 
+
+/**
+ * Сегодняшняя дата в формате YYYY-MM-DD по МЕСТНОМУ времени.
+ *
+ * `new Date().toISOString().slice(0, 10)` даёт дату по UTC: между полуночью и
+ * пятью утра по книге (UTC+5) это ещё вчерашний день. Витрина из-за этого
+ * показывала вчера — и в баре последней недели, и в возрасте подтверждения
+ * баланса, то есть ровно в те часы, когда владелец чаще всего и записывает.
+ */
+export function todayLocal(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}

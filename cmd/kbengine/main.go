@@ -347,8 +347,10 @@ func (f ledgerFinances) Recent(n int) ([]finance.Record, error) {
 	if err != nil {
 		return nil, err
 	}
-	finance.Sort(recs)
-	slices.Reverse(recs)
+	// Порядок тот же, что на витрине: внутри дня сверху та строка, что записана
+	// позже. Раньше здесь стоял Sort + Reverse, то есть сравнение сырого id, и
+	// строка без момента записи вставала наверх списка.
+	finance.SortByRecency(recs)
 	if len(recs) > n {
 		recs = recs[:n]
 	}

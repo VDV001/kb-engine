@@ -1,4 +1,6 @@
-import { defineConfig } from 'vite'
+// defineConfig берётся из vitest/config, а не из vite: только он знает про
+// секцию test, и без него TypeScript отвергает её как лишний ключ.
+import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 
@@ -15,5 +17,12 @@ export default defineConfig({
     proxy: {
       '/api': 'http://localhost:8080',
     },
+  },
+  test: {
+    // Зона прибита намеренно. Без неё тесты идут в зоне машины: у владельца
+    // UTC+5, на CI — UTC, и проверки, где местная дата расходится с UTC,
+    // молчали бы ровно там, где их и надо слушать. Зона выбрана та, в которой
+    // живёт книга.
+    env: { TZ: 'Asia/Yekaterinburg' },
   },
 })

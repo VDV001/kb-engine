@@ -421,6 +421,12 @@ export interface Transaction {
   description?: string
   account?: string
   source?: string
+  /**
+   * Момент появления строки в книге, RFC3339. Пусто означает «неизвестен», а не
+   * «давно»: строку могли вписать в книгу мимо движка. Считает сервер —
+   * витрина, разбирая id сама, однажды разберёт иначе.
+   */
+  recorded_at?: string
 }
 
 export interface Account {
@@ -516,6 +522,8 @@ export interface Dashboard {
 /** Одна строка журнала так, как её увозят в книгу. */
 export interface FinanceExportRow {
   date: string
+  /** «expense» или «income»: без вида доход и расход в файле неразличимы. */
+  kind: 'expense' | 'income'
   category: string
   subcategory: string
   place: string
