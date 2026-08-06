@@ -9,7 +9,7 @@ import { CollapsibleSection, SectionHead } from './components/SectionHead'
 import { ErrorBox, Spinner } from './components/ui'
 import { filterJournal, sortJournal } from './financeJournal'
 import { dayBars, monthBars } from './financeSeries'
-import { formatRub, monthLabel, monthOf, toKopecks } from './money'
+import { formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
 
 // Вид «Финансовый архив», перенесённый из Python-дашборда поблочно: те же
 // секции в том же порядке и с той же типографикой. Арифметику считает сервер
@@ -103,7 +103,7 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
   const summaryRes = useResource(() => api.financeSummary([...selected].sort()), { key: monthsKey })
   const summary = summaryRes.status === 'ready' ? summaryRes.data : null
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const today = useMemo(() => todayLocal(), [])
 
   const allMonths = useMemo(
     () => Array.from(new Set(finances.transactions.map((t) => monthOf(t.date)))).sort().reverse(),

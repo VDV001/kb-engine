@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatRub, monthLabel, monthOf, toKopecks } from './money'
+import { formatRub, monthLabel, monthOf, todayLocal, toKopecks } from './money'
 
 describe('toKopecks', () => {
   // Every one of these is a way a naive parse goes wrong on real ledger data.
@@ -55,3 +55,20 @@ describe('monthLabel', () => {
   })
 })
 
+
+describe('todayLocal', () => {
+  // Дата «сегодня» берётся по местному времени, а не по UTC. Владелец работает
+  // ночами: между полуночью и пятью утра по книге UTC-дата ещё вчерашняя, и
+  // витрина показывала вчерашний день — и в баре недели, и в возрасте
+  // подтверждения баланса.
+  it('в ночные часы называет местный день, а не вчерашний по UTC', () => {
+    // 06.08 01:00 по книге (UTC+5) = 05.08 20:00 UTC
+    const night = new Date('2026-08-05T20:00:00Z')
+    expect(night.toISOString().slice(0, 10)).toBe('2026-08-05') // как было
+    expect(todayLocal(night)).toBe('2026-08-06') // как надо
+  })
+
+  it('днём совпадает с UTC-датой', () => {
+    expect(todayLocal(new Date('2026-08-06T09:00:00Z'))).toBe('2026-08-06')
+  })
+})
