@@ -55,8 +55,15 @@ type Changes struct {
 	// one author, one note across a batch. Title, Description and SupersedesID
 	// belong to a single entry, and writing them to several at once is a mistake
 	// in the command line rather than an intention.
-	Notes        string
-	Author       string
+	Notes  string
+	Author string
+	// Source — откуда запись пришла: digest, bot-inbox, batch, ad-hoc. Групповое
+	// поле, как Notes и Author: одна партия имеет один источник. Правится, потому
+	// что раньше проставлялось руками и расходилось молча — семь записей от
+	// 04.08.2026 пришли из дайджеста и несли "bot-inbox", из-за чего счёт
+	// «сколько дал дайджест» занижался и не имел способа быть исправленным
+	// иначе, чем правкой JSON мимо движка.
+	Source       string
 	Title        string
 	Description  string
 	SupersedesID *int
@@ -66,7 +73,7 @@ func (c Changes) empty() bool {
 	// Listed rather than compared against a zero value: Changes holds slices,
 	// and a struct with slices is not comparable.
 	for _, text := range []string{c.Lifecycle, c.Version, c.Verdict, c.NotesFile, c.URL, c.Category,
-		c.Notes, c.Author, c.Title, c.Description} {
+		c.Notes, c.Author, c.Title, c.Description, c.Source} {
 		if text != "" {
 			return false
 		}
@@ -358,7 +365,7 @@ func applyChanges(raw json.RawMessage, ch Changes) (json.RawMessage, error) {
 // when not asked for: an empty string means the flag was absent, never "erase".
 func applyText(members []member, ch Changes) ([]member, error) {
 	for _, f := range []struct{ key, raw string }{
-		{"notes", ch.Notes}, {"author", ch.Author},
+		{"notes", ch.Notes}, {"author", ch.Author}, {"source", ch.Source},
 		{"title", ch.Title}, {"description", ch.Description},
 		{"category", ch.Category},
 	} {
