@@ -167,6 +167,15 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		mux.Handle("GET /media/", http.StripPrefix("/media/", mediaHandler(docs.Media)))
 	}
 	if frontend != nil {
+		// Фолбэк на index.html нужен клиентским маршрутам страницы (/archives,
+		// /now), но не путям API: опечатка в адресе должна быть 404, а не 200 с
+		// разметкой, которую потребитель попытается разобрать как JSON.
+		//
+		// Порядок разбирает сам ServeMux — он выбирает самый длинный
+		// подходящий шаблон. Конкретный "GET /api/stats" побеждает поддерево
+		// "/api/", а то, в свою очередь, побеждает "/". Своя проверка префикса
+		// внутри spaHandler дала бы то же самое руками.
+		mux.Handle("/api/", http.NotFoundHandler())
 		mux.Handle("/", spaHandler(frontend))
 	}
 	return mux
