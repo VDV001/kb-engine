@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
@@ -445,6 +446,54 @@ func TestServer_unknownRoute(t *testing.T) {
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", rec.Code)
 	}
+}
+
+// Тот же вопрос, но серверу, который действительно отгружается.
+//
+// TestServer_unknownRoute выше строит сервер БЕЗ фронтенда (последний аргумент
+// nil) — то есть без index.html-фолбэка, и потому получает честный 404. В
+// выпущенном бинаре фронтенд вшит, фолбэк ловит любой путь, и `/api/nope`
+// отвечает 200 с HTML. Зелёный тест утверждал поведение, которого у сборки нет.
+//
+// Поймано не чтением кода: при проверке выпуска 0.17.0 прогон эндпоинтов дал
+// 200 на `/api/finance` — маршрута с таким именем не существует, настоящий
+// `/api/finances`. Код ответа не различал их, потому что различать было нечем.
+//
+// Цена не в дашборде (он ходит по верным путям), а в потребителе API: опечатка
+// в пути даёт 200 и HTML вместо 404, то есть провал, который на его стороне
+// выглядит успехом.
+func TestServer_unknownAPIRouteWithFrontend(t *testing.T) {
+	frontend := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>")}}
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) {
+			return changelog.Document{CurrentVersion: "0.9.0"}, nil
+		}, httpapi.Documents{}, testEngine, frontend)
+
+	t.Run("несуществующий путь под /api/ — 404, а не страница", func(t *testing.T) {
+		rec := get(t, srv, "/api/nope")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (тело: %.40s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	// Контроль в обе стороны: починка не должна ни сломать настоящий маршрут,
+	// ни отобрать у SPA её собственный фолбэк для клиентских путей.
+	t.Run("настоящий маршрут по-прежнему отвечает", func(t *testing.T) {
+		if rec := get(t, srv, "/api/stats"); rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+	})
+
+	t.Run("клиентский путь вне /api/ по-прежнему отдаёт страницу", func(t *testing.T) {
+		rec := get(t, srv, "/archives")
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+		if got := rec.Body.String(); got != "<html>" {
+			t.Errorf("body = %q, want index.html", got)
+		}
+	})
 }
 
 func TestServer_healthz(t *testing.T) {
