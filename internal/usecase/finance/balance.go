@@ -3,8 +3,6 @@ package finance
 import (
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -150,7 +148,7 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) doma
 		case tx.Date().After(day):
 			total = total.Add(tx.Amount()) // в день подтверждения её ещё не было
 		default:
-			if at, ok := recordedAt(tx.ID()); ok && !at.Before(endOfDay(confirmed)) {
+			if at, ok := domain.RecordedAt(tx.ID()); ok && !at.Before(endOfDay(confirmed)) {
 				total = total.Add(tx.Amount())
 			}
 		}
@@ -167,13 +165,4 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) doma
 func endOfDay(confirmed time.Time) time.Time {
 	y, m, d := confirmed.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.Local).AddDate(0, 0, 1)
-}
-
-// recordedAt возвращает момент появления строки, если id это ULID.
-func recordedAt(id string) (time.Time, bool) {
-	u, err := ulid.ParseStrict(id)
-	if err != nil {
-		return time.Time{}, false
-	}
-	return ulid.Time(u.Time()), true
 }

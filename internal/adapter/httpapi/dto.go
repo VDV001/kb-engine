@@ -24,6 +24,9 @@ type transactionDTO struct {
 	Description string `json:"description,omitempty"`
 	Account     string `json:"account,omitempty"`
 	Source      string `json:"source,omitempty"`
+	// RecordedAt — момент появления строки в книге, RFC3339. Пусто означает
+	// «неизвестен», а не «давно»: строку могли вписать мимо движка.
+	RecordedAt string `json:"recorded_at,omitempty"`
 }
 
 // namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
@@ -147,7 +150,20 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Description: t.Description(),
 		Account:     t.Account(),
 		Source:      t.Source(),
+		RecordedAt:  recordedAtOrEmpty(t.ID()),
 	}
+}
+
+// recordedAtOrEmpty отдаёт момент записи строки, а пустую строку — когда он
+// неизвестен. Правило одно на движок и живёт в домене: витрина, разбирая id
+// сама, однажды разберёт иначе — так уже было, регулярка фронта и разбор в Go
+// расходились на строчных буквах и на переполнении метки.
+func recordedAtOrEmpty(id string) string {
+	at, ok := domain.RecordedAt(id)
+	if !ok {
+		return ""
+	}
+	return at.UTC().Format(time.RFC3339)
 }
 
 // toBalanceDTO собирает счёт вместе с расчётом остатка.

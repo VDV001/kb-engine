@@ -1,8 +1,11 @@
 package domain_test
 
 import (
+	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -16,7 +19,10 @@ import (
 // копии уже разошлись — регулярка фронта принимала то, что отвергал разбор в
 // Go, и наоборот.
 func TestRecordedAt(t *testing.T) {
-	// ULID, выданный движком: 2026-08-05T16:23:00Z
+	// Форма ULID, какую выдаёт движок. Какой именно момент в ней зашит, здесь не
+	// важно и НЕ проверяется: сверка момента с константой обманчива — строка,
+	// набранная руками, несёт не тот момент, что кажется по её виду. Момент
+	// проверяется round-trip'ом в тесте ниже.
 	const real = "01KZAQSJC00000000000000000"
 
 	cases := []struct {
@@ -52,9 +58,15 @@ func TestRecordedAt(t *testing.T) {
 	}
 }
 
+// Метка времени читается та самая, что в неё положили. Проверяется round-trip,
+// а не сверка с константой: ULID, набранный руками, несёт не тот момент,
+// который кажется по виду строки — на этом я и попался, когда писал тест.
 func TestRecordedAt_readsTheTimeItself(t *testing.T) {
 	want := time.Date(2026, 8, 5, 16, 23, 0, 0, time.UTC)
-	at, ok := domain.RecordedAt("01KZAQSJC00000000000000000")
+	id := ulid.MustNew(ulid.Timestamp(want), ulid.Monotonic(rand.New(rand.NewSource(1)), 0)).String()
+
+	at, ok := domain.RecordedAt(id)
+
 	if !ok {
 		t.Fatal("ULID движка обязан читаться")
 	}

@@ -141,3 +141,6 @@ func Sort(recs []Record) {
 		return cmp.Compare(a.tx.ID(), b.tx.ID())
 	})
 }
+
+// SortByRecency — ЗАГЛУШКА, тело пишется следующим коммитом.
+func SortByRecency(_ []Record) {}
