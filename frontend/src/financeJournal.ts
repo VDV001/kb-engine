@@ -39,12 +39,37 @@ export function filterJournal(rows: Transaction[], f: JournalFilter): Transactio
   })
 }
 
+/** ULID: 26 символов Crockford base32 (без I, L, O, U). */
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/
+
+/**
+ * Порядок по моменту ЗАПИСИ строки, вынутому из ULID (он начинается с метки
+ * времени, поэтому сравнивается лексикографически).
+ *
+ * Это не время траты — времени в книге нет вовсе, у строки есть только дата.
+ * Но когда дата у двух строк одна, «что записали позже» — единственное
+ * различие, которое вообще существует в данных.
+ *
+ * Нечитаемый id (строку вписали в книгу мимо движка) даёт 0: момент неизвестен,
+ * и выдуманный порядок хуже сохранённого. То же решение, что в расчёте баланса.
+ */
+function byRecordedAt(a: Transaction, b: Transaction): number {
+  const x = a.id ?? ''
+  const y = b.id ?? ''
+  if (!ULID.test(x) || !ULID.test(y)) return 0
+  return x < y ? -1 : x > y ? 1 : 0
+}
+
 /**
  * Новый массив в нужном порядке; вход не меняется.
  *
  * Суммы сравниваются в копейках. Строковое сравнение поставило бы «89.99»
  * выше «2500.50» — ровно та ошибка, ради которой деньги и держат целыми
  * числами.
+ *
+ * У сортировки по дате есть второй ключ — момент записи. Без него направление
+ * действовало только на дни: внутри дня строки шли в порядке файла, и трата за
+ * вчера, записанная сегодня, оказывалась в начале вчерашнего дня, а не в конце.
  */
 export function sortJournal(
   rows: Transaction[],
@@ -55,6 +80,7 @@ export function sortJournal(
   // toSorted оставляет вход нетронутым, в отличие от sort.
   return rows.toSorted((a, b) => {
     if (field === 'amount') return sign * (toKopecks(a.amount) - toKopecks(b.amount))
-    return sign * (a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+    const byDate = a.date < b.date ? -1 : a.date > b.date ? 1 : 0
+    return sign * (byDate || byRecordedAt(a, b))
   })
 }
