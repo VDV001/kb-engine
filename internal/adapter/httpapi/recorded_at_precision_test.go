@@ -27,7 +27,7 @@ func TestRecordedAt_KeepsMillisecondsOnTheWire(t *testing.T) {
 		t.Fatalf("две строки одной секунды получили одинаковый момент на проводе: %q\n"+
 			"витрина не сможет их упорядочить и вернётся к порядку файла", got1)
 	}
-	if !(got1 < got2) {
+	if got1 >= got2 {
 		t.Fatalf("строковое сравнение меток не сохраняет порядок: %q должно быть < %q", got1, got2)
 	}
 }
