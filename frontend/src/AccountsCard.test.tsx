@@ -14,7 +14,7 @@ const spaced = (el: HTMLElement) => (el.textContent ?? '').replace(/ /g, ' ')
 const accounts: Account[] = [
   { bank: 'Сбербанк', balance: '1234.50', updated: '2026-08-03' },
   { bank: 'Альфа-Банк', balance: '600.00', updated: '2026-07-31' },
-  { bank: 'Заморозка → Вклад', balance: '0', updated: '2026-05-20' },
+  { bank: 'Резерв → Депозит', balance: '0', updated: '2026-05-20' },
 ]
 
 // Разбивка по счетам жила в терминале и не жила в вебе: страница показывала
@@ -27,10 +27,10 @@ describe('AccountsCard — где лежат деньги', () => {
     expect(screen.getByText('Сбербанк')).toBeDefined()
     expect(screen.getByText('Альфа-Банк')).toBeDefined()
     // Счёт с родом в имени показан заголовком рода и коротким именем под ним:
-    // строка «Заморозка → Вклад» повторяла бы слово, которое уже написано
+    // строка «Резерв → Депозит» повторяла бы слово, которое уже написано
     // заголовком, и тратила бы на это ширину, которой у карточки нет.
-    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
-    expect(screen.getByText('Вклад')).toBeDefined()
+    expect(screen.getByTestId('group-Резерв')).toBeDefined()
+    expect(screen.getByText('Депозит')).toBeDefined()
     // Итог — сумма счетов, а не одно из слагаемых.
     expect(spaced(screen.getByTestId('accounts-total'))).toContain('1 834')
   })
@@ -56,7 +56,7 @@ describe('AccountsCard — где лежат деньги', () => {
     render(<AccountsCard accounts={accounts} expenses="0" income="0" today="2026-08-03" />)
 
     // 20.05 — два с половиной месяца назад, число давно могло уехать.
-    expect(screen.getByTestId('stale-Заморозка → Вклад')).toBeDefined()
+    expect(screen.getByTestId('stale-Резерв → Депозит')).toBeDefined()
     // Сегодняшнее и трёхдневное подтверждения меткой не помечаются: иначе
     // пометка стоит на всех строках сразу и перестаёт что-либо значить.
     expect(screen.queryByTestId('stale-Сбербанк')).toBeNull()
@@ -110,18 +110,18 @@ describe('AccountsCard — остаток на сейчас', () => {
 describe('AccountsCard — рода счетов', () => {
   const mixed: Account[] = [
     { bank: 'Сбербанк', balance: '1000.00', updated: '2026-08-04', current: '1000.00' },
-    { bank: 'Заморозка → Хранение', balance: '150000.00', updated: '2026-07-25', current: '150000.00' },
-    { bank: 'Долг → Отец', balance: '3000.00', updated: '2026-08-04', current: '3000.00' },
+    { bank: 'Резерв → Наличные', balance: '150000.00', updated: '2026-07-25', current: '150000.00' },
+    { bank: 'Займ → Коллеге', balance: '3000.00', updated: '2026-08-04', current: '3000.00' },
   ]
 
   it('собирает счета одного рода под общим заголовком', () => {
     render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
 
-    expect(screen.getByTestId('group-Заморозка')).toBeDefined()
-    expect(spaced(screen.getByTestId('group-total-Долг'))).toContain('3 000')
-    // Внутри группы счёт назван коротким именем: слово «Долг» уже стоит
+    expect(screen.getByTestId('group-Резерв')).toBeDefined()
+    expect(spaced(screen.getByTestId('group-total-Займ'))).toContain('3 000')
+    // Внутри группы счёт назван коротким именем: слово «Займ» уже стоит
     // заголовком, и повторять его в каждой строке значит тратить ширину.
-    expect(screen.getByText('Отец')).toBeDefined()
+    expect(screen.getByText('Коллеге')).toBeDefined()
   })
 
   it('называет, сколько денег свободно, а не только общий итог', () => {

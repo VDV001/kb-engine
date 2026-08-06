@@ -52,7 +52,7 @@ type QuickEntry struct {
 func NormalizeWord(w string) string { return domain.FoldName(w) }
 
 // maxNameWords is how many neighbouring words may form one name. Three covers
-// what the vocabulary holds («Италиан Пицца», «Заморозка → Вклад») without
+// what the vocabulary holds («Италиан Пицца», «Резерв → Депозит») without
 // turning the scan into a search over the whole line.
 const maxNameWords = 3
 
