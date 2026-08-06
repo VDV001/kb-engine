@@ -737,6 +737,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	sourceURL := fs.String("url", "", "http(s) address of the original material (--url= removes it)")
 	notes := fs.String("notes", "", "free-text note on the entry")
 	author := fs.String("author", "", "author of the material")
+	source := fs.String("source", "", "where the entry came from: digest|bot-inbox|batch|ad-hoc|internal")
 	title := fs.String("title", "", "entry title (one id at a time)")
 	description := fs.String("description", "", "one or two sentences on what this is (one id at a time)")
 	supersedes := fs.Int("supersedes", 0, "id of the entry this one replaces (one id at a time)")
@@ -769,6 +770,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 		URL:         *sourceURL,
 		Notes:       *notes,
 		Author:      *author,
+		Source:      *source,
 		Title:       *title,
 		Description: *description,
 	}
