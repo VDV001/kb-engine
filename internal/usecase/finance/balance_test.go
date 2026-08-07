@@ -174,6 +174,14 @@ func expenseRecordedAt(t *testing.T, recorded, date, account, amount string) dom
 // подтверждения не вычитаем» защищает от двойного учёта только те траты,
 // которые уже были записаны, когда человек смотрел в банк.
 func TestCurrentBalance_countsAnExpenseRecordedAfterTheConfirmationDay(t *testing.T) {
+	// Зона прибита, как в соседней проверке ниже: моменты записи заданы в UTC, а
+	// границу дня подтверждения код берёт в зоне машины. Без этого тест верен
+	// только там, где 12:20 UTC остаётся четвёртым числом, — в UTC+14 это уже
+	// пятое, и запись «того же дня» законно становится записью следующего.
+	saved := time.Local
+	time.Local = time.FixedZone("книга", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
 	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
 	recs := []domain.Transaction{
 		// задним числом, записана на следующий день — считается
