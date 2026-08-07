@@ -15,7 +15,7 @@
       (шаг может объявить "branch": true — тогда он начинает новую нить осознанно)
   H7  нет петель (from == to) и дублей (from, to, call)
   H8  id сценариев уникальны
-  H9  commit карты совпадает с HEAD репозитория
+  H9  commit карты совпадает с последним коммитом КОДА (правки самой карты не в счёт)
   H10 detail подтверждённого шага содержит путь из source дословно
   H11 узел не может висеть вне сценариев; gaps и runtime_checks — не заглушки
 
@@ -134,13 +134,18 @@ def validate(m, root, quiet=False):
     claimed = m.get("commit")
     if claimed:
         try:
-            head = subprocess.run(["git", "-C", root, "rev-parse", "--short", "HEAD"],
-                                  capture_output=True, text=True, timeout=10).stdout.strip()
+            # Сверяемся с последним коммитом, который менял КОД, а не с HEAD:
+            # карта описывает код, а коммиты самой карты его не трогают. Иначе
+            # правило невыполнимо — каждая правка карты сдвигает HEAD на шаг вперёд.
+            head = subprocess.run(
+                ["git", "-C", root, "log", "-1", "--format=%h", "--",
+                 ".", ":(exclude)docs/architecture-map"],
+                capture_output=True, text=True, timeout=10).stdout.strip()
             dirty = subprocess.run(["git", "-C", root, "status", "--porcelain"],
                                    capture_output=True, text=True, timeout=10).stdout.strip()
             if head and not head.startswith(claimed) and not claimed.startswith(head):
                 fail(errs, "commit-mismatch", "map",
-                     f"H9: карта заявляет {claimed}, HEAD репозитория {head}")
+                     f"H9: карта заявляет {claimed}, последний коммит кода {head}")
             if dirty:
                 # Предупреждение, а не нарушение: во время правки карты дерево грязное
                 # всегда, и блокировка сборки сделала бы правило невыполнимым.
