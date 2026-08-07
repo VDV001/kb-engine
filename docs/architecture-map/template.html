@@ -146,7 +146,16 @@
   .node.hot { box-shadow: 0 0 0 3px var(--accent); }
 
   /* ---------- сценарии ---------- */
+  .zones { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 16px; border-bottom: 1px solid var(--outline); }
+  .zone {
+    font: inherit; font-size: 12px; background: var(--surface-top); color: var(--text-2);
+    border: 1px solid var(--outline); border-radius: 999px; padding: 4px 11px; cursor: pointer;
+  }
+  .zone:hover { border-color: var(--accent); color: var(--accent); }
+  .zone[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .zone .n { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 5px; }
   .flows { max-height: 320px; overflow-y: auto; }
+  .flow[hidden] { display: none; }
   .flow {
     display: block; width: 100%; text-align: left; background: none; border: 0;
     border-bottom: 1px solid var(--outline); padding: 11px 16px; cursor: pointer;
@@ -223,6 +232,7 @@
     <div style="display:flex; flex-direction:column; gap:20px; min-width:0">
       <section class="panel">
         <h2>Сценарии <span id="flowCount" style="font-family:var(--mono);letter-spacing:0"></span></h2>
+        <div class="zones" id="zones"></div>
         <div class="flows" id="flows"></div>
       </section>
       <section class="panel">
@@ -317,6 +327,35 @@
     b.addEventListener('click', () => select(f.id));
     flowsEl.appendChild(b);
   });
+
+  // Зоны — способ принимать карту по частям: смотришь одну область целиком,
+  // а не прыгаешь между финансами и витриной в одном списке.
+  const zones = [...new Set(M.flows.map(f => f.zone).filter(Boolean))];
+  if (zones.length) {
+    const host = document.getElementById('zones');
+    const mk = (label, value, count) => {
+      const b = document.createElement('button');
+      b.className = 'zone'; b.type = 'button'; b.dataset.zone = value;
+      b.setAttribute('aria-pressed', String(value === ''));
+      b.innerHTML = esc(label) + '<span class="n">' + count + '</span>';
+      b.addEventListener('click', () => applyZone(value));
+      return b;
+    };
+    host.appendChild(mk('все', '', M.flows.length));
+    zones.forEach(z => host.appendChild(mk(z, z, M.flows.filter(f => f.zone === z).length)));
+  }
+
+  function applyZone(zone) {
+    document.querySelectorAll('.zone').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.zone === zone)));
+    document.querySelectorAll('.flow').forEach(b => {
+      const f = M.flows.find(x => x.id === b.dataset.id);
+      b.hidden = Boolean(zone) && f.zone !== zone;
+    });
+    // Выбранный сценарий из другой зоны — сбрасываем: иначе на схеме горит путь,
+    // которого в списке уже не видно.
+    if (current && zone && current.zone !== zone) reset();
+  }
 
   let current = null;
 
