@@ -1,0 +1,445 @@
+<meta charset="utf-8" />
+<title>kb-engine — карта архитектуры и сценариев</title>
+<style>
+  :root {
+    --bg: #fbf9f2;
+    --surface: #f6f4ec;
+    --surface-high: #eae8e1;
+    --surface-top: #ffffff;
+    --text: #1b1c18;
+    --text-2: #45474c;
+    --text-3: #76777d;
+    --outline: #c6c6cd;
+    --outline-strong: #76777d;
+    --accent: #99462a;
+    --accent-soft: #ffdbd0;
+    --ok: #2f6b46;
+    --warn: #8a6a12;
+    /* Цвет = СЛОЙ (колонка), а не тип узла. Тип красить было бесполезно: из 61
+       узла 43 это «код», и три разные колонки выходили одного цвета.
+       Восемь значений подобраны по ΔE: худшая пара 27.3, соседние колонки 33.4. */
+    --l-actors: #c0562a;
+    --l-surfaces: #2f4b7c;
+    --l-commands: #a03a6e;
+    --l-usecase: #4a7a2f;
+    --l-domain: #6b3f96;
+    --l-adapters: #8a6d1f;
+    --l-storage: #2f7a5f;
+    --l-external: #5c5f66;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+    --serif: "PT Serif", Georgia, "Times New Roman", serif;
+    --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --surface: #1f1f1f; --surface-high: #282a2f; --surface-top: #0d0d0d;
+      --text: #fbf9f2; --text-2: #afafaf; --text-3: #8a8a8a;
+      --outline: #4a4a4a; --outline-strong: #6a6a6a;
+      --accent: #e67e51; --accent-soft: #3a2418;
+      --ok: #7fbf95; --warn: #d6b25e;
+      --l-actors: #d99b7e; --l-surfaces: #4ec0c9; --l-commands: #e087b5; --l-usecase: #9ecb5f;
+      --l-domain: #b08ae0; --l-adapters: #e0a24a; --l-storage: #5fc48c; --l-external: #a8adb8;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1a1a; --surface: #1f1f1f; --surface-high: #282a2f; --surface-top: #0d0d0d;
+    --text: #fbf9f2; --text-2: #afafaf; --text-3: #8a8a8a;
+    --outline: #4a4a4a; --outline-strong: #6a6a6a;
+    --accent: #e67e51; --accent-soft: #3a2418;
+    --ok: #7fbf95; --warn: #d6b25e;
+    --l-actors: #d99b7e; --l-surfaces: #4ec0c9; --l-commands: #e087b5; --l-usecase: #9ecb5f;
+    --l-domain: #b08ae0; --l-adapters: #e0a24a; --l-storage: #5fc48c; --l-external: #a8adb8;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #fbf9f2; --surface: #f6f4ec; --surface-high: #eae8e1; --surface-top: #ffffff;
+    --text: #1b1c18; --text-2: #45474c; --text-3: #76777d;
+    --outline: #c6c6cd; --outline-strong: #76777d;
+    --accent: #99462a; --accent-soft: #ffdbd0;
+    --ok: #2f6b46; --warn: #8a6a12;
+    --l-actors: #c0562a; --l-surfaces: #2f4b7c; --l-commands: #a03a6e; --l-usecase: #4a7a2f;
+    --l-domain: #6b3f96; --l-adapters: #8a6d1f; --l-storage: #2f7a5f; --l-external: #5c5f66;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+  }
+
+  /* Без border-box padding прибавлялся к width:100% — контент уезжал за правый
+     край, а overflow-x:hidden это прятал. Скрывать переполнение = не видеть его. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  }
+  .wrap { width: 100%; margin: 0; padding: 26px clamp(16px, 2vw, 40px) 64px; }
+
+  header.page { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: baseline; margin-bottom: 6px; }
+  header.page h1 {
+    font-family: var(--serif); font-weight: 700; font-size: clamp(26px, 3vw, 38px);
+    margin: 0; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .repo { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); }
+  .lede { color: var(--text-2); max-width: 68ch; margin: 10px 0 20px; }
+
+  .counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .count {
+    background: var(--surface); border: 1px solid var(--outline); border-radius: 3px;
+    padding: 7px 11px; font-size: 12.5px; color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .count b { color: var(--text); font-weight: 600; }
+  .count.warn { border-color: var(--warn); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 24vw, 520px); gap: 20px; align-items: start; }
+  @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--outline); border-radius: 4px;
+  }
+  .panel > h2 {
+    font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--text-3);
+    margin: 0; padding: 13px 16px; border-bottom: 1px solid var(--outline);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+
+  /* ---------- поле схемы ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 16px; border-bottom: 1px solid var(--outline); }
+  .legend span { font-size: 12px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+  .legend b { font-size: 12px; font-weight: 400; }
+
+  .field-scroll { overflow-x: auto; overflow-y: hidden; padding: 18px 16px 22px; }
+  .field { position: relative; display: flex; gap: 26px; min-width: max-content; }
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  /* Цвет проводов берётся из токенов темы, а не зашивается при отрисовке:
+     иначе после переключения темы стрелки остаются в палитре предыдущей. */
+  .wires path { fill: none; stroke: var(--accent); stroke-width: 1.6; opacity: .85; }
+  .wires path.unver { opacity: .55; stroke-dasharray: 5 4; }
+  .wires path.hot { stroke-width: 3.4; }
+  .wires circle { fill: var(--accent); }
+  .wires circle.unver { fill: var(--bg); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .wires text { fill: var(--bg); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .wires text.unver { fill: var(--accent); }
+
+  .lane { display: flex; flex-direction: column; gap: 9px; width: clamp(178px, 12vw, 230px); }
+  .lane > h3 {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--lane); margin: 0 0 3px; padding-bottom: 7px; border-bottom: 2px solid var(--lane);
+  }
+  .node {
+    position: relative; z-index: 1;
+    background: var(--surface-top); border: 1px solid var(--outline);
+    border-left: 5px solid var(--lane, var(--outline-strong));
+    border-radius: 3px; padding: 8px 10px;
+    transition: opacity .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .node .k {
+    font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+    color: var(--kind); display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+  }
+  .node .k b { font-size: 11px; line-height: 1; font-weight: 400; }
+  .node .k { color: var(--text-3); }
+  .node .t { font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+  .node .s { font-size: 11px; color: var(--text-3); font-family: var(--mono); line-height: 1.35; margin-top: 3px; overflow-wrap: anywhere; }
+  .field.focused .node { opacity: .25; }
+  .field.focused .node.on { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .node.hot { box-shadow: 0 0 0 3px var(--accent); }
+
+  /* ---------- сценарии ---------- */
+  .flows { max-height: 320px; overflow-y: auto; }
+  .flow {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    border-bottom: 1px solid var(--outline); padding: 11px 16px; cursor: pointer;
+    color: inherit; font: inherit;
+  }
+  .flow:hover { background: var(--surface-high); }
+  .flow[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .flow .ft { font-size: 13.5px; font-weight: 600; }
+  .flow .fs { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+  .flow .fn { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 3px; }
+
+  .steps { padding: 4px 0 8px; max-height: 560px; overflow-y: auto; }
+  .empty { padding: 22px 16px; color: var(--text-3); font-size: 13px; }
+  .step {
+    display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px;
+    padding: 11px 16px; border-bottom: 1px solid var(--outline); cursor: default;
+  }
+  .step:hover, .step.hot { background: var(--surface-high); }
+  .step .num {
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: var(--bg); font-size: 11.5px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .step.unver .num { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
+  .step .route { font-size: 11.5px; color: var(--text-3); }
+  .step .call { font-family: var(--mono); font-size: 12px; margin: 3px 0 4px; overflow-wrap: anywhere; }
+  .step .det { font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+  .step .src { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 4px; overflow-wrap: anywhere; }
+  .flag {
+    display: inline-block; margin-top: 5px; font-size: 11px; color: var(--warn);
+    border: 1px dashed var(--warn); border-radius: 2px; padding: 1px 6px;
+  }
+
+  .btn {
+    font: inherit; font-size: 12px; background: var(--surface-top); color: var(--text);
+    border: 1px solid var(--outline); border-radius: 3px; padding: 4px 10px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- нижние блоки ---------- */
+  .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; margin-top: 20px; }
+  .bottom ul { margin: 0; padding: 8px 16px 16px 32px; }
+  .bottom li { font-size: 13px; color: var(--text-2); margin: 7px 0; overflow-wrap: anywhere; }
+  .bottom li::marker { color: var(--accent); }
+  footer { margin-top: 28px; font-size: 12px; color: var(--text-3); border-top: 1px solid var(--outline); padding-top: 14px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <h1>kb-engine — карта архитектуры и сценариев</h1>
+    <span class="repo" id="repo"></span>
+  </header>
+  <p class="lede">
+    Собрано из кода, а не из README. Каждый шаг несёт ссылку <span style="font-family:var(--mono)">file:line</span>,
+    и каждая такая ссылка проверена программой: она открывает файл на этой строке и ищет там заявленный вызов.
+    Связи, которые вывести из кода не удалось, помечены пунктиром — граница знания показана, а не замазана.
+  </p>
+
+  <div class="counts" id="counts"></div>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Поле схемы <button class="btn" id="reset" type="button">Сбросить выделение</button></h2>
+      <div class="legend" id="legend"></div>
+      <div class="field-scroll">
+        <div class="field" id="field">
+          <svg class="wires" id="wires" aria-hidden="true"></svg>
+        </div>
+      </div>
+    </section>
+
+    <div style="display:flex; flex-direction:column; gap:20px; min-width:0">
+      <section class="panel">
+        <h2>Сценарии <span id="flowCount" style="font-family:var(--mono);letter-spacing:0"></span></h2>
+        <div class="flows" id="flows"></div>
+      </section>
+      <section class="panel">
+        <h2>Шаги <span id="stepTitle" style="font-weight:400;letter-spacing:0;text-transform:none;font-size:12px"></span></h2>
+        <div class="steps" id="steps"><p class="empty">Выберите сценарий — на схеме останутся только его участники, а шаги появятся здесь.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <section class="panel">
+      <h2>Чего на этой карте нет</h2>
+      <ul id="gaps"></ul>
+    </section>
+    <section class="panel">
+      <h2>Что проверено на рантайме, а не чтением</h2>
+      <ul id="runtime"></ul>
+    </section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="data">{"project":"kb-engine","commit":"1b017c4","layers":[{"id":"actors","title":"Кто действует","order":1},{"id":"surfaces","title":"Поверхности","order":2},{"id":"commands","title":"Команды","order":3},{"id":"usecase","title":"Сценарии (usecase)","order":4},{"id":"domain","title":"Домен","order":5},{"id":"adapters","title":"Адаптеры","order":6},{"id":"storage","title":"Файлы владельца","order":7},{"id":"external","title":"Внешний мир","order":8}],"nodes":[{"id":"owner","title":"Владелец","subtitle":"человек за терминалом","layer":"actors","kind":"actor","sources":[]},{"id":"browser","title":"Браузер","subtitle":"127.0.0.1:8097","layer":"actors","kind":"actor","sources":[]},{"id":"tg-bot","title":"Telegram-бот","subtitle":"пишет inbox.json на VPS","layer":"actors","kind":"external","sources":[]},{"id":"cli","title":"CLI","subtitle":"cmd/kbengine — таблица 13 команд","layer":"surfaces","kind":"client","sources":["cmd/kbengine/main.go:49"]},{"id":"tui","title":"TUI","subtitle":"internal/adapter/tui — bubbletea","layer":"surfaces","kind":"client","sources":["internal/adapter/tui/run.go:38"]},{"id":"spa","title":"Web SPA","subtitle":"frontend/src — React+Vite через go:embed","layer":"surfaces","kind":"client","sources":["frontend/src/api.ts:536"]},{"id":"cmd-add","title":"add","subtitle":"cmd/kbengine/add.go — свой артефакт","layer":"commands","kind":"service","sources":["cmd/kbengine/add.go:23"]},{"id":"cmd-set","title":"set","subtitle":"cmd/kbengine/main.go — точечная правка","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:723"]},{"id":"cmd-audit","title":"audit","subtitle":"cmd/kbengine/main.go — 9 проверок","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:612"]},{"id":"cmd-audit-tasks","title":"audit-tasks","subtitle":"cmd/kbengine/audit_tasks.go","layer":"commands","kind":"service","sources":["cmd/kbengine/audit_tasks.go:17"]},{"id":"cmd-changelog","title":"changelog","subtitle":"cmd/kbengine/changelog.go — md → json","layer":"commands","kind":"service","sources":["cmd/kbengine/changelog.go:16"]},{"id":"cmd-dedup","title":"dedup","subtitle":"cmd/kbengine/main.go","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:587"]},{"id":"cmd-drift","title":"drift","subtitle":"cmd/kbengine/drift.go — живость ссылок","layer":"commands","kind":"service","sources":["cmd/kbengine/drift.go:14"]},{"id":"cmd-fin","title":"fin","subtitle":"cmd/kbengine/fin.go — 7 подкоманд","layer":"commands","kind":"service","sources":["cmd/kbengine/fin.go:20"]},{"id":"cmd-inbox","title":"inbox","subtitle":"cmd/kbengine/inbox.go — приём от бота","layer":"commands","kind":"service","sources":["cmd/kbengine/inbox.go:21"]},{"id":"cmd-migrate","title":"migrate","subtitle":"cmd/kbengine/migrate.go — versions|urls|writeups|habr-ids","layer":"commands","kind":"service","sources":["cmd/kbengine/migrate.go:13"]},{"id":"cmd-serve","title":"serve","subtitle":"cmd/kbengine/main.go — HTTP + SPA","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:220"]},{"id":"cmd-tui","title":"tui","subtitle":"cmd/kbengine/main.go","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:145"]},{"id":"cmd-version","title":"version","subtitle":"cmd/kbengine/main.go — build info","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:112"]},{"id":"append-checked","title":"appendChecked","subtitle":"cmd/kbengine/fin.go — единственный путь записи в ledger","layer":"commands","kind":"service","sources":["cmd/kbengine/fin.go:210"]},{"id":"build-serve","title":"buildServeHandler","subtitle":"cmd/kbengine/main.go — composition root","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:448"]},{"id":"uc-query","title":"query.Service","subtitle":"internal/usecase/query — чтение каталога","layer":"usecase","kind":"service","sources":["internal/usecase/query/query.go:30"]},{"id":"uc-audit","title":"audit.Service","subtitle":"internal/usecase/audit — проверки и здоровье","layer":"usecase","kind":"service","sources":["internal/usecase/audit/audit.go:53"]},{"id":"uc-analytics","title":"analytics.Service","subtitle":"internal/usecase/analytics — рост, категории, граф","layer":"usecase","kind":"service","sources":["internal/usecase/analytics/service.go:23"]},{"id":"uc-drift","title":"drift.Service","subtitle":"internal/usecase/drift — скан ссылок","layer":"usecase","kind":"service","sources":["internal/usecase/drift/drift.go:119"]},{"id":"uc-finance","title":"finance","subtitle":"internal/usecase/finance — пакет функций, не сервис","layer":"usecase","kind":"service","sources":["internal/usecase/finance/finance.go:108"]},{"id":"uc-freshness","title":"freshness","subtitle":"internal/usecase/freshness — отстала ли витрина","layer":"usecase","kind":"service","sources":["internal/usecase/freshness/sources.go:53"]},{"id":"uc-ingest","title":"ingest","subtitle":"internal/usecase/ingest — план добавления записей","layer":"usecase","kind":"service","sources":["internal/usecase/ingest/artefact.go:20"]},{"id":"uc-taskaudit","title":"taskaudit","subtitle":"internal/usecase/taskaudit — ADR-015","layer":"usecase","kind":"service","sources":["internal/usecase/taskaudit/taskaudit.go:43"]},{"id":"dom-transaction","title":"Transaction","subtitle":"internal/domain/transaction.go — конструктор с инвариантами","layer":"domain","kind":"data","sources":["internal/domain/transaction.go:93"]},{"id":"dom-money","title":"Money","subtitle":"internal/domain/money.go — ParseMoney отвергает лишнюю точность","layer":"domain","kind":"data","sources":["internal/domain/money.go:125"]},{"id":"dom-account","title":"Account / SameAccountName","subtitle":"internal/domain/account.go — одно ли это имя счёта","layer":"domain","kind":"data","sources":["internal/domain/account.go:100"]},{"id":"dom-recorded-at","title":"RecordedAt","subtitle":"internal/domain/recorded_at.go — момент записи из ULID","layer":"domain","kind":"data","sources":["internal/domain/recorded_at.go:27"]},{"id":"dom-transfer","title":"IsInternalTransfer","subtitle":"internal/domain/transfer.go — перевод себе не трата","layer":"domain","kind":"data","sources":["internal/domain/transfer.go:27"]},{"id":"dom-entry","title":"Entry / EntryParams","subtitle":"internal/domain/entry.go — запись каталога","layer":"domain","kind":"data","sources":["internal/domain/entry.go:92"]},{"id":"dom-catalog","title":"Catalog","subtitle":"internal/domain/catalog.go","layer":"domain","kind":"data","sources":["internal/domain/catalog.go:14"]},{"id":"ad-catalogjson","title":"catalogjson","subtitle":"internal/adapter/catalogjson — чтение и запись каталога","layer":"adapters","kind":"service","sources":["internal/adapter/catalogjson/catalog.go:353"]},{"id":"ad-financejsonl","title":"financejsonl","subtitle":"internal/adapter/financejsonl — ledger + состояние синка","layer":"adapters","kind":"service","sources":["internal/adapter/financejsonl/store.go:66"]},{"id":"ad-financexlsx","title":"financexlsx","subtitle":"internal/adapter/financexlsx — excelize, книга владельца","layer":"adapters","kind":"service","sources":["internal/adapter/financexlsx/reader.go:43"]},{"id":"ad-financevocab","title":"financevocab","subtitle":"internal/adapter/financevocab — словарь мест и счетов","layer":"adapters","kind":"service","sources":["internal/adapter/financevocab/store.go:43"]},{"id":"ad-analyticsconfig","title":"analyticsconfig","subtitle":"internal/adapter/analyticsconfig — семантический слой","layer":"adapters","kind":"service","sources":["internal/adapter/analyticsconfig/analyticsconfig.go:138"]},{"id":"ad-changelog","title":"changelog","subtitle":"internal/adapter/changelog — разбор CHANGELOG.md","layer":"adapters","kind":"service","sources":["internal/adapter/changelog/changelog.go:45"]},{"id":"ad-botinbox","title":"botinbox","subtitle":"internal/adapter/botinbox — статьи из inbox.json","layer":"adapters","kind":"service","sources":["internal/adapter/botinbox/habrid.go:1"]},{"id":"ad-artefactfs","title":"artefactfs","subtitle":"internal/adapter/artefactfs — front matter своих файлов","layer":"adapters","kind":"service","sources":["internal/adapter/artefactfs/artefactfs.go:1"]},{"id":"ad-filebackup","title":"filebackup","subtitle":"internal/adapter/filebackup — снимок перед записью","layer":"adapters","kind":"service","sources":["internal/adapter/filebackup/filebackup.go:37"]},{"id":"ad-linkcheck","title":"linkcheck","subtitle":"internal/adapter/linkcheck — HTTP-опрос ссылок","layer":"adapters","kind":"service","sources":["internal/adapter/linkcheck/linkcheck.go:25"]},{"id":"ad-tasklist","title":"tasklist","subtitle":"internal/adapter/tasklist — разбор списка задач","layer":"adapters","kind":"service","sources":["internal/adapter/tasklist/tasklist.go:1"]},{"id":"ad-xlsxdim","title":"xlsxdim","subtitle":"internal/adapter/xlsxdim — чинит объявленный диапазон книги","layer":"adapters","kind":"service","sources":["internal/adapter/xlsxdim/xlsxdim.go:1"]},{"id":"ad-httpapi","title":"httpapi","subtitle":"internal/adapter/httpapi — 19 маршрутов + SPA","layer":"adapters","kind":"service","sources":["internal/adapter/httpapi/server.go:144"]},{"id":"f-catalog","title":"catalog.json","subtitle":"knowledge-base/_data — записи базы владельца","layer":"storage","kind":"data","sources":[]},{"id":"f-ledger","title":"transactions.jsonl","subtitle":"finances — истина по транзакциям","layer":"storage","kind":"data","sources":[]},{"id":"f-syncstate","title":".sync-state","subtitle":"рядом с ledger — база сравнения для синка","layer":"storage","kind":"data","sources":["internal/adapter/financejsonl/state.go:24"]},{"id":"f-workbook","title":"Учёт_финансов.xlsx","subtitle":"finances — витрина + лист «Счета»","layer":"storage","kind":"data","sources":[]},{"id":"f-vocab","title":"finance-aliases.json","subtitle":"finances — места и написания счетов","layer":"storage","kind":"data","sources":["internal/adapter/financevocab/store.go:43"]},{"id":"f-analytics","title":"analytics_config.json","subtitle":"_data — курируемый семантический слой","layer":"storage","kind":"data","sources":[]},{"id":"f-team","title":"team.json","subtitle":"_data — операционная модель отдела","layer":"storage","kind":"data","sources":[]},{"id":"f-projects","title":"projects.json","subtitle":"_data — портфолио","layer":"storage","kind":"data","sources":[]},{"id":"f-now","title":"active-pipeline.md","subtitle":"memory — вкладка Now","layer":"storage","kind":"data","sources":[]},{"id":"f-changelog","title":"CHANGELOG.md","subtitle":"журнал базы, разбирается в Document","layer":"storage","kind":"data","sources":[]},{"id":"f-inbox","title":"inbox.json","subtitle":"data/kb-inbox — то, что собрал бот","layer":"storage","kind":"data","sources":[]},{"id":"ext-habr","title":"habr.com и прочие адреса","subtitle":"опрашиваются drift-сканом","layer":"external","kind":"external","sources":[]},{"id":"fe-app","title":"App (девять вкладок)","subtitle":"frontend/src/App.tsx — overview·archives·analytics·health·finances·projects·team·now·about","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:19"]},{"id":"fe-useresource","title":"useResource","subtitle":"frontend/src/hooks/useResource.ts — загрузка с отбрасыванием устаревших ответов","layer":"surfaces","kind":"client","sources":["frontend/src/hooks/useResource.ts:30"]},{"id":"fe-dashboard","title":"DashboardView","subtitle":"frontend/src/DashboardView.tsx — сводка","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:89"]},{"id":"fe-catalog","title":"CatalogView","subtitle":"frontend/src/CatalogView.tsx — архив записей","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:122"]},{"id":"fe-analytics","title":"AnalyticsView","subtitle":"frontend/src/AnalyticsView.tsx — рост, категории, граф","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:103"]},{"id":"fe-health","title":"HealthView","subtitle":"frontend/src/HealthView.tsx — аудиты, дубли, здоровье ссылок","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:106"]},{"id":"fe-finances","title":"FinancesView","subtitle":"frontend/src/FinancesView.tsx — журнал, счета, выгрузка","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:135"]},{"id":"fe-projects","title":"ProjectsView","subtitle":"frontend/src/ProjectsView.tsx — портфолио","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:136"]},{"id":"fe-docs","title":"DocViews (Team / Now)","subtitle":"frontend/src/DocViews.tsx — markdown-документы","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:137"]},{"id":"fe-about","title":"AboutView","subtitle":"frontend/src/AboutView.tsx — версия движка и история релизов","layer":"surfaces","kind":"client","sources":["frontend/src/App.tsx:140"]},{"id":"tui-update","title":"Model.Update","subtitle":"internal/adapter/tui/model.go — разбор клавиш по состоянию экрана","layer":"surfaces","kind":"client","sources":["internal/adapter/tui/model.go:115"]},{"id":"tui-card","title":"карточка записи","subtitle":"internal/adapter/tui/model.go — Enter открывает, l/v правят","layer":"surfaces","kind":"client","sources":["internal/adapter/tui/model.go:144"]},{"id":"tui-picker","title":"выбор значения","subtitle":"internal/adapter/tui/edit.go — список состояний и вердиктов","layer":"surfaces","kind":"client","sources":["internal/adapter/tui/edit.go:22"]},{"id":"catalog-writer","title":"catalogWriter.Save","subtitle":"cmd/kbengine/main.go — правка с карточки идёт тем же путём, что set","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:212"]},{"id":"ledger-writer","title":"ledgerFinances.Add","subtitle":"cmd/kbengine/main.go — запись из TUI через тот же appendChecked","layer":"commands","kind":"service","sources":["cmd/kbengine/main.go:335"]}],"flows":[{"id":"expense-cli","title":"Владелец записывает трату из терминала","summary":"kbengine fin add → приведение написания → проверка повтора → ledger","steps":[{"n":1,"from":"owner","to":"cmd-fin","call":"kbengine fin add --amount --cat --account","detail":"runFinAdd разбирает флаги в cmd/kbengine/fin.go:123; --account это счёт, --source это способ фиксации, и путать их нельзя","source":"cmd/kbengine/fin.go:123","unverified":false},{"n":2,"from":"cmd-fin","to":"dom-money","call":"domain.ParseMoney","detail":"cmd/kbengine/fin.go:151 зовёт ParseMoney, а не MoneyFromFloat: точность мельче копейки это опечатка человека, и она сообщается, а не округляется","source":"internal/domain/money.go:125","unverified":false},{"n":3,"from":"cmd-fin","to":"append-checked","call":"appendChecked(ledgerPath, params, force, note)","detail":"cmd/kbengine/fin.go:164 — единственный путь записи; через него же идут обе формы TUI и быстрый ввод, поэтому защиту нельзя обойти, выбрав другой экран","source":"cmd/kbengine/fin.go:210","unverified":false},{"n":4,"from":"append-checked","to":"ad-financejsonl","call":"financejsonl.Load(ledgerPath, time.Now)","detail":"cmd/kbengine/fin.go:213 читает весь ledger, чтобы знать, как в базе уже пишут","source":"internal/adapter/financejsonl/store.go:66","unverified":false},{"n":5,"from":"append-checked","to":"ad-financevocab","call":"financevocab.Load(financevocab.PathNextTo(ledgerPath))","detail":"cmd/kbengine/fin.go:223 — словарь лежит рядом с ledger и решает раньше исторической частоты: частота это след старых ошибок, словарь это решение владельца","source":"internal/adapter/financevocab/store.go:43","unverified":false},{"n":6,"from":"append-checked","to":"uc-finance","call":"finance.CanonicalWith(recs, voc, p)","detail":"cmd/kbengine/fin.go:224 приводит написание ДО проверки на повтор — иначе «транспорт» и «Транспорт» считались бы разными тратами; каждая подстановка называется вслух в stdout","source":"internal/usecase/finance/canonical.go:29","unverified":false},{"n":7,"from":"append-checked","to":"uc-finance","call":"finance.Duplicate(recs, p)","detail":"cmd/kbengine/fin.go:231 — при совпадении возвращается ErrRepeat с id существующей записи и требованием --force","source":"internal/usecase/finance/duplicate.go:23","unverified":false},{"n":8,"from":"append-checked","to":"uc-finance","call":"finance.Add(p, newULID, time.Now)","detail":"cmd/kbengine/fin.go:241 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:49), из него потом читается момент записи","source":"internal/usecase/finance/finance.go:108","unverified":false},{"n":9,"from":"uc-finance","to":"dom-transaction","call":"domain.NewTransaction(params)","detail":"инварианты проверяет домен: domain.NewTransaction (internal/domain/transaction.go:93) не принимает у дохода категорию, подкатегорию, место и счёт. Проверено рантаймом: fin add --kind income --cat Транспорт отвечает 'invalid transaction: an income does not carry this field: category'","source":"internal/domain/transaction.go:93","unverified":false},{"n":10,"from":"append-checked","to":"ad-financejsonl","call":"financejsonl.Save(ledgerPath, recs, time.Now)","detail":"cmd/kbengine/fin.go:247 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot","source":"internal/adapter/financejsonl/store.go:169","unverified":false},{"n":11,"from":"ad-financejsonl","to":"ad-filebackup","call":"filebackup.Snapshot(path, now, backupsKept)","detail":"internal/adapter/financejsonl/store.go:170 — копия кладётся в поддиректорию .backup рядом с файлом (filebackup.DirName), глубина ограничена backupsKept; отсутствие исходника не ошибка. Проверено рантаймом: после трёх записей в .backup лежат три снимка","source":"internal/adapter/filebackup/filebackup.go:37","unverified":false},{"n":12,"from":"ad-financejsonl","to":"f-ledger","call":"finance.Sort(recs) → запись transactions.jsonl","detail":"строки сортируются finance.Sort (internal/usecase/finance/finance.go:136) по сырому id — это порядок ФАЙЛА ради git-диффа, а не порядок показа; показ сортирует SortByRecency","source":"internal/usecase/finance/finance.go:136","unverified":false}]},{"id":"expense-tui-quick","title":"Владелец вводит трату строкой в терминале","summary":"клавиша q → разбор строки по словарю → тот же appendChecked","steps":[{"n":1,"from":"owner","to":"tui","call":"клавиша q на экране финансов","detail":"internal/adapter/tui/finance.go:71 открывает быстрый ввод","source":"internal/adapter/tui/finance.go:71","unverified":false},{"n":2,"from":"tui","to":"uc-finance","call":"finance.ParseQuick(line, vocabulary)","detail":"finance.ParseQuick (internal/usecase/finance/quick.go:66) разбирает «418р такси сбер»: сумма, место, счёт; заметка после ' - ', незнакомые слова Tab уводит в заметку","source":"internal/usecase/finance/quick.go:66","unverified":false},{"n":3,"from":"tui","to":"append-checked","call":"appendToLedger / appendChecked","detail":"форма зовёт ledgerFinances.Add (cmd/kbengine/main.go:335), а та — appendChecked (cmd/kbengine/main.go:337), ту же функцию, что и команда fin add: один источник id, один порядок сортировки, одна проверка повтора","source":"cmd/kbengine/main.go:337","unverified":false}]},{"id":"balance-confirm","title":"Владелец подтверждает остаток на счёте","summary":"fin balance → поиск счёта по имени → лист «Счета»","steps":[{"n":1,"from":"owner","to":"cmd-fin","call":"kbengine fin balance --from книга --bank … --amount …","detail":"подкоманда balance разбирается в cmd/kbengine/fin.go:32, реализация в cmd/kbengine/fin_balance.go","source":"cmd/kbengine/fin.go:32","unverified":false},{"n":2,"from":"cmd-fin","to":"dom-account","call":"domain.SameAccountName(a, b)","detail":"правило domain.SameAccountName (internal/domain/account.go:100): «долг→отец» и «Долг → Отец» — один счёт; живёт в домене, потому что лист «Счета» его не видел, пока оно было в usecase","source":"internal/domain/account.go:100","unverified":false},{"n":3,"from":"cmd-fin","to":"ad-financexlsx","call":"financexlsx.SetBalance(path, bank, balance, now)","detail":"saveAtomically (internal/adapter/financexlsx/writer.go:197) пишет через временный файл; здесь же чинится объявленный диапазон книги через internal/adapter/xlsxdim","source":"internal/adapter/financexlsx/balance.go:32","unverified":false},{"n":4,"from":"ad-financexlsx","to":"f-workbook","call":"saveAtomically(f, path)","detail":"internal/adapter/financexlsx/writer.go:197 — запись через временный файл; здесь же чинится объявленный диапазон книги","source":"internal/adapter/financexlsx/writer.go:197","unverified":false}]},{"id":"account-create","title":"Владелец заводит новый счёт (в том числе долг)","summary":"незнакомое имя отвергается, --create это отдельное намерение","steps":[{"n":1,"from":"owner","to":"cmd-fin","call":"kbengine fin balance --bank 'Долг → Отец' --amount 3000 --create","detail":"флаг объявлен в cmd/kbengine/fin_balance.go:26 и это ОТДЕЛЬНОЕ намерение, а не «запиши всё равно»: незнакомое имя чаще опечатка, чем новый счёт, поэтому команда сначала говорит «такого нет» и подсказывает --create (fin_balance.go:64)","source":"cmd/kbengine/fin_balance.go:26","unverified":false},{"n":2,"from":"cmd-fin","to":"ad-financexlsx","call":"financexlsx.AddAccount(path, bank, balance, now)","detail":"financexlsx.AddAccount (internal/adapter/financexlsx/balance.go:81): новая строка листа «Счета» наследует формат соседней — на этом листе формат и есть разница между 3000 и 3 000,00 ₽","source":"internal/adapter/financexlsx/balance.go:81","unverified":false},{"n":3,"from":"ad-financexlsx","to":"f-workbook","call":"запись листа «Счета»","detail":"стрелка в имени читается как род счёта — finance.TotalsByGroup (internal/usecase/finance/balance.go:53) показывает долги отдельным подытогом, не смешивая с деньгами на карте","source":"internal/usecase/finance/balance.go:53","unverified":false}]},{"id":"sync","title":"Книга и ledger приводятся в согласие","summary":"fin sync: план различий → направление → запись одной из сторон","steps":[{"n":1,"from":"owner","to":"cmd-fin","call":"kbengine fin sync --from книга --ledger ledger","detail":"runFinSync в cmd/kbengine/sync.go:22; --dry-run печатает построчный diff и ничего не меняет","source":"cmd/kbengine/sync.go:22","unverified":false},{"n":2,"from":"cmd-fin","to":"ad-financejsonl","call":"financejsonl.LoadState(statePath(ledgerPath))","detail":"cmd/kbengine/sync.go:201 читает базу сравнения — без неё нельзя отличить «добавили здесь» от «удалили там»","source":"internal/adapter/financejsonl/state.go:24","unverified":false},{"n":3,"from":"cmd-fin","to":"ad-financexlsx","call":"financexlsx.Read(from, time.Now)","detail":"cmd/kbengine/sync.go:209 читает книгу целиком, включая лист «Счета»","source":"internal/adapter/financexlsx/reader.go:43","unverified":false},{"n":4,"from":"cmd-fin","to":"uc-finance","call":"finance.Diff(recs, led.Transactions, st)","detail":"cmd/kbengine/sync.go:225 строит Plan и определяет направление; строка книги без id означает, что писали мимо движка","source":"internal/usecase/finance/sync.go:111","unverified":false},{"n":5,"from":"cmd-fin","to":"ad-financexlsx","call":"financexlsx.CheckLock(from)","detail":"cmd/kbengine/sync.go:237 — спрашивается и для dry-run тоже, иначе холостой прогон обещал бы запись в книгу, которую держит редактор","source":"internal/adapter/financexlsx/writer.go:164","unverified":false},{"n":6,"from":"cmd-fin","to":"f-workbook","call":"pushToWorkbook / financexlsx.ApplyRows","detail":"cmd/kbengine/sync.go:269 при направлении DirectionToWorkbook; конфликт (обе стороны изменились) НЕ сливается — cmd/kbengine/sync.go:253 пишет расхождение и выходит с ненулевым кодом","source":"internal/adapter/financexlsx/apply.go:178","unverified":false},{"n":7,"from":"cmd-fin","to":"f-syncstate","call":"financejsonl.SaveState(statePath, finance.BaselineOf(recs, now))","detail":"cmd/kbengine/sync.go:260 — новая база сравнения после успешного согласования","source":"internal/adapter/financejsonl/state.go:41","unverified":false}]},{"id":"web-finances","title":"Владелец открывает финансы в браузере","summary":"GET /api/finances → чтение обоих файлов на каждый запрос","steps":[{"n":1,"from":"browser","to":"spa","call":"api.finances()","detail":"frontend/src/api.ts:554 — getJSON('/api/finances')","source":"frontend/src/api.ts:554","unverified":false},{"n":2,"from":"spa","to":"ad-httpapi","call":"GET /api/finances","detail":"маршрут зарегистрирован в internal/adapter/httpapi/server.go:164 как handleFinances(fin)","source":"internal/adapter/httpapi/server.go:164","unverified":false},{"n":3,"from":"ad-httpapi","to":"ad-financejsonl","call":"ledgerFinances.Finances()","detail":"cmd/kbengine/main.go:297 читает ledger и книгу НА КАЖДЫЙ запрос: файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания","source":"cmd/kbengine/main.go:297","unverified":false},{"n":4,"from":"ad-httpapi","to":"uc-finance","call":"finance.CurrentBalances(accounts, txs)","detail":"finance.CurrentBalances (internal/usecase/finance/balance.go:90): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта","source":"internal/usecase/finance/balance.go:90","unverified":false},{"n":5,"from":"uc-finance","to":"dom-transfer","call":"Transaction.IsInternalTransfer()","detail":"Transaction.IsInternalTransfer (internal/domain/transfer.go:27) исключает расход «Прочее / Переводы» и доход «Перевод себе» из итогов; правило живёт в домене — раньше оно было только в скрипте дашборда, и две витрины месяцами расходились","source":"internal/domain/transfer.go:27","unverified":false}]},{"id":"web-export","title":"Владелец выгружает финансы файлом","summary":"POST /api/finances/export → xlsx потоком в ответ","steps":[{"n":1,"from":"browser","to":"spa","call":"fetch('/api/finances/export', {method:'POST'})","detail":"frontend/src/api.ts:576 отправляет строки, которые сейчас на экране","source":"frontend/src/api.ts:576","unverified":false},{"n":2,"from":"spa","to":"ad-httpapi","call":"POST /api/finances/export","detail":"internal/adapter/httpapi/server.go:159 — единственный не-GET маршрут во всём API","source":"internal/adapter/httpapi/server.go:159","unverified":false},{"n":3,"from":"ad-httpapi","to":"ad-xlsxdim","call":"writeWorkbook(w, req.Rows)","detail":"internal/adapter/httpapi/export.go:73; выгрузка несёт колонку «Вид» — без неё доходы были неотличимы от трат и сложенная колонка «Сумма» давала правдоподобное враньё","source":"internal/adapter/httpapi/export.go:73","unverified":false},{"n":4,"from":"ad-httpapi","to":"browser","call":"Content-Disposition: attachment; filename=finances.xlsx","detail":"internal/adapter/httpapi/export.go:63; если заголовки уже ушли, ошибка обрывает ответ, а не притворяется целым файлом","source":"internal/adapter/httpapi/export.go:64","unverified":false}]},{"id":"add-artefact","title":"Владелец заводит запись о собственном артефакте","summary":"kbengine add → личность записи это ФАЙЛ, а не url","steps":[{"n":1,"from":"owner","to":"cmd-add","call":"kbengine add --catalog … --file … --title …","detail":"cmd/kbengine/add.go:23; запись без файла отвергается — до этой команды движок умел добавлять только бот-инбокс, и три стандарта существовали файлами, отсутствуя в каталоге","source":"cmd/kbengine/add.go:23","unverified":false},{"n":2,"from":"cmd-add","to":"ad-catalogjson","call":"catalogjson.Load(catalogPath)","detail":"cmd/kbengine/add.go:56","source":"internal/adapter/catalogjson/catalog.go:353","unverified":false},{"n":3,"from":"cmd-add","to":"dom-entry","call":"domain.NewCategory / NewLifecycle / NewNotesPath","detail":"cmd/kbengine/add.go:84-94 — каждое поле проходит через конструктор домена; --file отвергается, если пути нет на диске","source":"cmd/kbengine/add.go:92","unverified":false},{"n":4,"from":"cmd-add","to":"uc-ingest","call":"ingest.PlanArtefacts(cat, params, time.Now())","detail":"cmd/kbengine/add.go:61 строит план и отчёт: дедуп по файлу происходит здесь, а не при записи","source":"internal/usecase/ingest/artefact.go:20","unverified":false},{"n":5,"from":"cmd-add","to":"ad-catalogjson","call":"catalogjson.AppendEntries(catalogPath, added)","detail":"cmd/kbengine/add.go:72; функция раньше не писала file и version — у бот-инбокса их нет, поэтому дефект жил незамеченным и сломал дедуп на первом же прогоне add","source":"internal/adapter/catalogjson/write.go:56","unverified":false}]},{"id":"inbox","title":"Статьи из Telegram-бота попадают в каталог","summary":"бот → inbox.json → kbengine inbox → catalog.json","steps":[{"n":1,"from":"tg-bot","to":"f-inbox","call":"git push data/kb-inbox/inbox.json","detail":"бот на VPS собирает ссылки кнопкой «📥 В базу знаний»; движок к боту не ходит, он читает файл","source":"","unverified":true},{"n":2,"from":"owner","to":"cmd-inbox","call":"kbengine inbox --catalog … ","detail":"cmd/kbengine/inbox.go:21","source":"cmd/kbengine/inbox.go:21","unverified":false},{"n":3,"from":"cmd-inbox","to":"ad-botinbox","call":"botinbox.DecodeArticles(f) → botinbox.MapArticle(a, now)","detail":"cmd/kbengine/inbox.go:122 и :88; habr_id берётся из адреса, включая форму specials/N","source":"cmd/kbengine/inbox.go:88","unverified":false},{"n":4,"from":"cmd-inbox","to":"uc-ingest","call":"ingest.Plan(cat, params, now)","detail":"cmd/kbengine/inbox.go:59 — план добавления с дедупом по habr_id и url","source":"internal/usecase/ingest/ingest.go:29","unverified":false},{"n":5,"from":"cmd-inbox","to":"f-catalog","call":"catalogjson.AppendEntries","detail":"cmd/kbengine/inbox.go:104; записи помечаются source bot-inbox","source":"internal/adapter/catalogjson/write.go:56","unverified":false}]},{"id":"set-fields","title":"Владелец правит поля существующих записей","summary":"kbengine set --ids … — либо все id, либо ни одного","steps":[{"n":1,"from":"owner","to":"cmd-set","call":"kbengine set --ids 1,2 --lifecycle … --related …","detail":"флаги объявлены в cmd/kbengine/main.go:726-741; пустая строка значит «флаг не передавали», стирание это отдельное намерение (--url= и --related=)","source":"cmd/kbengine/main.go:729","unverified":false},{"n":2,"from":"cmd-set","to":"ad-catalogjson","call":"catalogjson.SetFields(path, ids, changes)","detail":"cmd/kbengine/main.go:799; применяет либо ко всем id, либо ни к одному, правит по членам объекта в порядке файла","source":"internal/adapter/catalogjson/setfields.go:97","unverified":false},{"n":3,"from":"ad-catalogjson","to":"f-catalog","call":"catalogjson.SetFields → перезапись catalog.json","detail":"⚠️ --related ЗАМЕНЯЕТ список, а не дополняет (флаг объявлен в cmd/kbengine/main.go:731): шесть связей стандарта однажды стёрлись молча, и команда отчиталась успехом","source":"internal/adapter/catalogjson/setfields.go:97","unverified":false}]},{"id":"audit","title":"Владелец проверяет здоровье каталога","summary":"kbengine audit --check all — девять проверок, links НЕ входит намеренно","steps":[{"n":1,"from":"owner","to":"cmd-audit","call":"kbengine audit --catalog … --check all","detail":"cmd/kbengine/main.go:612; набор проверок перечислен в cmd/kbengine/main.go:690-698","source":"cmd/kbengine/main.go:612","unverified":false},{"n":2,"from":"cmd-audit","to":"uc-audit","call":"audit.NewService(catalogjson.FileLoader{Path: catalogPath})","detail":"cmd/kbengine/main.go:625 — сервис получает загрузчик, а не путь: каталог читается один раз на прогон","source":"internal/usecase/audit/audit.go:53","unverified":false},{"n":3,"from":"uc-audit","to":"ad-artefactfs","call":"svc.WithArtefactVersions / WithArtefactFiles","detail":"cmd/kbengine/main.go:629-630 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта","source":"internal/usecase/audit/audit.go:53","unverified":true},{"n":4,"from":"cmd-audit","to":"owner","call":"печать находок + строка о непроверенном","detail":"проверка links в all НЕ входит: непроверенные записи похоронили бы настоящие находки, поэтому вместо списка печатается одна строка-сводка","source":"cmd/kbengine/main.go:664","unverified":true}]},{"id":"drift","title":"Движок проверяет, живы ли ссылки","summary":"kbengine drift → HTTP-опрос → отметки в каталоге","steps":[{"n":1,"from":"owner","to":"cmd-drift","call":"kbengine drift --catalog … [--apply] [--update-urls]","detail":"cmd/kbengine/drift.go:14; отчёт начинается с непроверенного, а не с находок","source":"cmd/kbengine/drift.go:14","unverified":false},{"n":2,"from":"cmd-drift","to":"uc-drift","call":"drift.NewService(loader, linkcheck.New(timeout, delay))","detail":"cmd/kbengine/drift.go:31 — опрос с задержкой между запросами, чтобы не выглядеть ботом","source":"internal/usecase/drift/drift.go:119","unverified":false},{"n":3,"from":"uc-drift","to":"ext-habr","call":"HTTP-запрос по адресу записи","detail":"linkcheck.Checker (internal/adapter/linkcheck/linkcheck.go:25) опрашивает адрес с задержкой; 403 это отдельное состояние «не знаю», а не «жива» и не «мертва»: habr отвечает им и на снятую статью, и на бота","source":"internal/adapter/linkcheck/linkcheck.go:25","unverified":false},{"n":4,"from":"cmd-drift","to":"ad-catalogjson","call":"catalogjson.ApplyDrift / ApplyDriftWithURLs","detail":"cmd/kbengine/drift.go:58-60 — второй вариант заменяет адрес каноническим из редиректа и работает только вместе с --apply","source":"internal/adapter/catalogjson/drift.go:29","unverified":false}]},{"id":"serve","title":"Владелец поднимает веб-дашборд","summary":"kbengine serve → composition root → 19 маршрутов + SPA","steps":[{"n":1,"from":"owner","to":"cmd-serve","call":"kbengine serve --catalog … + 8 необязательных источников","detail":"cmd/kbengine/main.go:220; --from без --ledger отвергается на старте, потому что баланс некуда положить","source":"cmd/kbengine/main.go:250","unverified":false},{"n":2,"from":"cmd-serve","to":"build-serve","call":"buildServeHandler(...)","detail":"cmd/kbengine/main.go:448 собирает порты; analytics_config и книга читаются один раз на старте, чтобы опечатка в пути была отказом запуска, а не 500 на одной вкладке","source":"cmd/kbengine/main.go:448","unverified":false},{"n":3,"from":"build-serve","to":"ad-httpapi","call":"httpapi.NewServer(query, audit, analytics, fin, cfg, chlog, docs, engine, front)","detail":"cmd/kbengine/main.go:506 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка","source":"internal/adapter/httpapi/server.go:143","unverified":false},{"n":4,"from":"cmd-serve","to":"owner","call":"startupSources(serveSources(...))","detail":"cmd/kbengine/main.go:278 печатает все восемь необязательных флагов ДО ListenAndServe: после него терминал занят, а смотрят в него именно в этот момент","source":"cmd/kbengine/main.go:278","unverified":false},{"n":5,"from":"ad-httpapi","to":"spa","call":"mux.Handle('/', spaHandler(frontend))","detail":"internal/adapter/httpapi/server.go:179 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404","source":"internal/adapter/httpapi/server.go:178","unverified":false}]},{"id":"freshness","title":"Страница сама говорит, что отстала","summary":"GET /api/sources → сверка витрин с базой","steps":[{"n":1,"from":"browser","to":"ad-httpapi","call":"GET /api/sources","detail":"internal/adapter/httpapi/server.go:161 — handleSources(docs, q, chlog, fin, engine)","source":"internal/adapter/httpapi/server.go:161","unverified":false},{"n":2,"from":"ad-httpapi","to":"uc-freshness","call":"freshness.CheckSource(freshness.Source{...})","detail":"internal/adapter/httpapi/server.go:265 и :283 — три ответа вместо двух: «отстала», «свежая», «сверять не с чем»; зелёная галочка там, где опор нет, означала бы «проверено»","source":"internal/usecase/freshness/sources.go:53","unverified":false},{"n":3,"from":"ad-httpapi","to":"uc-freshness","call":"freshness.VersionMention(text, 'kb-engine', engine.Version)","detail":"internal/adapter/httpapi/server.go:277 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда","source":"internal/usecase/freshness/sources.go:156","unverified":false}]},{"id":"health","title":"Владелец смотрит здоровье базы в терминале","summary":"Tab → экран здоровья → одно чтение каталога вместо пяти","steps":[{"n":1,"from":"owner","to":"tui","call":"Tab (цикл экранов)","detail":"internal/adapter/tui/model.go:181 — Tab вызывает nextScreen (model.go:194): поиск → финансы → здоровье → поиск. Цикл, а не клавиша на экран, потому что на экране поиска любая буква уходит в запрос","source":"internal/adapter/tui/model.go:181","unverified":false},{"n":2,"from":"tui","to":"uc-audit","call":"audit.Service.Health()","detail":"audit.Service.Health (internal/usecase/audit/health.go:35): состав проверок решает usecase, а не экран, и каталог читается ОДИН раз вместо пяти","source":"internal/usecase/audit/health.go:35","unverified":false}]},{"id":"migrate-writeups","title":"Разбор перестаёт быть полем и становится записью","summary":"migrate writeups (ADR-0004): разборы получили собственные записи","steps":[{"n":1,"from":"owner","to":"cmd-migrate","call":"kbengine migrate writeups --catalog … [--apply]","detail":"cmd/kbengine/migrate.go:23 диспетчер, реализация в cmd/kbengine/migrate_writeups.go:19; по умолчанию печатается план, запись только по --apply","source":"cmd/kbengine/migrate_writeups.go:19","unverified":false},{"n":2,"from":"cmd-migrate","to":"ad-catalogjson","call":"чтение каталога и перенос поля file","detail":"поле file означало ТРИ вещи: идентичность своего артефакта, «здесь мои заметки о чужой статье» и спасённую копию статьи; третье значение нашлось только на живых данных","source":"internal/adapter/catalogjson/catalog.go:353","unverified":true},{"n":3,"from":"cmd-migrate","to":"f-catalog","call":"запись записей категории writeups + related_ids","detail":"статьи ссылаются на разбор через related_ids; заголовок берётся из первой строки файла — и в docs/ это оказался заголовок САМОЙ статьи, из-за чего шесть записей получили чужое имя (поймал дедуп на живой базе, а не тест)","source":"internal/adapter/catalogjson/write.go:56","unverified":true}]},{"id":"dedup","title":"Владелец ищет дубли в каталоге","summary":"kbengine dedup → группы похожих записей","steps":[{"n":1,"from":"owner","to":"cmd-dedup","call":"kbengine dedup --catalog …","detail":"cmd/kbengine/main.go:587","source":"cmd/kbengine/main.go:587","unverified":false},{"n":2,"from":"cmd-dedup","to":"uc-audit","call":"audit.Service.Duplicates()","detail":"cmd/kbengine/main.go:600; дедуп по habr_id заработал только после того, как поле заполнили массово — до этого дедуп смотрел на малую долю базы и молча отвечал «дубликатов нет»","source":"internal/usecase/audit/dedup.go:24","unverified":false}]},{"id":"audit-tasks","title":"Проверка, что задача с habr-id доведена до каталога","summary":"audit-tasks (ADR-015): задача не completed, пока записи нет","steps":[{"n":1,"from":"owner","to":"cmd-audit-tasks","call":"kbengine audit-tasks --catalog … (список задач со stdin)","detail":"cmd/kbengine/audit_tasks.go:17","source":"cmd/kbengine/audit_tasks.go:17","unverified":false},{"n":2,"from":"cmd-audit-tasks","to":"ad-tasklist","call":"tasklist.ParseJSON / tasklist.ParsePlain","detail":"cmd/kbengine/audit_tasks.go:62-64 — два формата входа","source":"cmd/kbengine/audit_tasks.go:62","unverified":false},{"n":3,"from":"cmd-audit-tasks","to":"uc-taskaudit","call":"taskaudit.Audit(cat, tasks)","detail":"cmd/kbengine/audit_tasks.go:52 сверяет habr-id задачи с записями каталога","source":"internal/usecase/taskaudit/taskaudit.go:43","unverified":false}]},{"id":"changelog","title":"Журнал базы превращается в данные для витрины","summary":"kbengine changelog: CHANGELOG.md → changelog.json","steps":[{"n":1,"from":"owner","to":"cmd-changelog","call":"kbengine changelog --in CHANGELOG.md --out changelog.json","detail":"cmd/kbengine/changelog.go:16","source":"cmd/kbengine/changelog.go:16","unverified":false},{"n":2,"from":"cmd-changelog","to":"ad-changelog","call":"changelog.Parse(string(md))","detail":"cmd/kbengine/changelog.go:35 — разбор markdown в Document с релизами","source":"internal/adapter/changelog/changelog.go:45","unverified":false},{"n":3,"from":"cmd-serve","to":"ad-changelog","call":"changelogWarning(path, len(changelog.Parse(raw).Releases))","detail":"cmd/kbengine/main.go:265 — предупреждение о непонятном журнале печатается при запуске serve, потому что поймать его посреди работы уже нельзя: смотрят в этот момент на страницу","source":"cmd/kbengine/main.go:265","unverified":false}]},{"id":"media","title":"Браузер запрашивает картинку владельца","summary":"GET /media/… — маршрут существует только при флаге --media, иначе запрос уходит в SPA-фолбэк","steps":[{"n":1,"from":"browser","to":"ad-httpapi","call":"GET /media/<файл>","detail":"маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:167 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе","source":"internal/adapter/httpapi/server.go:167","unverified":false},{"n":2,"from":"ad-httpapi","to":"browser","call":"http.StripPrefix('/media/', mediaHandler(docs.Media))","detail":"с флагом поведение правильное (проверено рантаймом): существующий файл — 200 и его содержимое, несуществующий — 404 text/plain. Обработчик в internal/adapter/httpapi/media.go","source":"internal/adapter/httpapi/server.go:167","unverified":false},{"n":3,"from":"ad-httpapi","to":"spa","call":"падение в spaHandler при отсутствии флага","detail":"⚠️ НАХОДКА рантайм-проверки: без --media запрос /media/nope.png отдаёт 200 и HTML страницы SPA — тело побайтово совпадает с ответом на /whatever-page (сверено sha). Это та же грабля, которую закрыли для /api/ в PR #149 строкой internal/adapter/httpapi/server.go:178, но для /media/ такой строки нет. Тег <img> получит HTML и молча не отрисуется","source":"internal/adapter/httpapi/server.go:179","unverified":false}]},{"id":"web-open","title":"Владелец открывает дашборд в браузере","summary":"App грузит восемь ресурсов разом; два из них не имеют права уронить остальные шесть","steps":[{"n":1,"from":"browser","to":"fe-app","call":"выбор вкладки (Tab)","detail":"frontend/src/App.tsx:19 — девять вкладок одним объединением типов; состояние вкладки хранится в useState (App.tsx:38)","source":"frontend/src/App.tsx:19","unverified":false},{"n":2,"from":"fe-app","to":"fe-useresource","call":"useResource(api.dashboard)","detail":"frontend/src/hooks/useResource.ts:30 — ответ с устаревшим номером запроса отбрасывается: период мог смениться, пока ответ шёл","source":"frontend/src/hooks/useResource.ts:30","unverified":false},{"n":3,"from":"fe-useresource","to":"spa","call":"api.dashboard()","detail":"frontend/src/api.ts:585 — восемь запросов через Promise.all: stats, entries, audits, duplicates, analytics, analytics-config, finances, sources","source":"frontend/src/api.ts:585","unverified":false},{"n":4,"from":"spa","to":"ad-httpapi","call":"восемь параллельных GET","detail":"frontend/src/api.ts:586-602; финансы и sources обёрнуты .catch() и подставляют пустоту — файлы финансов правят руками при открытом дашборде, и падение одного из них не должно ронять остальные шесть видов","source":"frontend/src/api.ts:598","unverified":false},{"n":5,"from":"fe-app","to":"fe-dashboard","call":"рендер вкладки overview","detail":"frontend/src/App.tsx:89 — сводка получает stats, entries и audits уже загруженными","source":"frontend/src/App.tsx:89","unverified":false}]},{"id":"tui-edit","title":"Владелец правит состояние записи с карточки в терминале","summary":"поиск → Enter → карточка → l/v → та же запись, что делает команда set","steps":[{"n":1,"from":"owner","to":"tui-update","call":"набор строки поиска","detail":"internal/adapter/tui/model.go:186 — на экране списка ЛЮБАЯ буква уходит в поиск, поэтому свободных клавиш под второй экран там нет","source":"internal/adapter/tui/model.go:186","unverified":false},{"n":2,"from":"owner","to":"tui-card","call":"Enter","detail":"internal/adapter/tui/model.go:179 открывает карточку выбранной записи","source":"internal/adapter/tui/model.go:173","unverified":false},{"n":3,"from":"tui-card","to":"tui-picker","call":"клавиша l или v","detail":"internal/adapter/tui/model.go:156-158 — буквы на карточке НЕ уходят в поиск: иначе выход из карточки молча менял бы то, что показывает список позади","source":"internal/adapter/tui/model.go:156","unverified":false},{"n":4,"from":"tui-picker","to":"catalog-writer","call":"saver.Save(edit)","detail":"internal/adapter/tui/edit.go:78 — экран без saver'а не открывает правку вовсе, а не показывает её неработающей","source":"internal/adapter/tui/edit.go:78","unverified":false},{"n":5,"from":"catalog-writer","to":"ad-catalogjson","call":"catalogjson.SetFields(path, []int{e.ID}, Changes{Lifecycle, Verdict})","detail":"cmd/kbengine/main.go:212 — правка с карточки превращается в тот же вызов, что делает команда set: два пути записи однажды применили бы разные правила к одному файлу","source":"cmd/kbengine/main.go:213","unverified":false}]},{"id":"tui-cycle","title":"Владелец переключает экраны терминала","summary":"Tab водит по кругу: поиск → финансы → здоровье → поиск","steps":[{"n":1,"from":"owner","to":"tui-update","call":"Tab","detail":"internal/adapter/tui/model.go:181 вызывает nextScreen","source":"internal/adapter/tui/model.go:181","unverified":false},{"n":2,"from":"tui-update","to":"uc-audit","call":"openHealth → health.Health()","detail":"internal/adapter/tui/health.go:36 — состав проверок решает usecase, каталог читается одним обращением; экран без источника из круга ВЫПАДАЕТ, а не показывается пустым","source":"internal/adapter/tui/health.go:36","unverified":false}]},{"id":"tui-write","title":"Владелец записывает трату из терминала","summary":"форма и быстрый ввод зовут ту же функцию, что и команда fin add","steps":[{"n":1,"from":"owner","to":"tui-update","call":"клавиша a или i на экране финансов","detail":"internal/adapter/tui/finance.go:65-67 — форма расхода и форма дохода; у дохода полей меньше, потому что домен отказывает ему в категории, подкатегории, месте и счёте","source":"internal/adapter/tui/finance.go:65","unverified":false},{"n":2,"from":"tui-update","to":"ledger-writer","call":"ledgerFinances.Add(params)","detail":"cmd/kbengine/main.go:335 — экран не пишет книгу xlsx намеренно: это был бы третий путь в таблицу; вместо этого экран вслух говорит, что книга отстала","source":"cmd/kbengine/main.go:335","unverified":false},{"n":3,"from":"ledger-writer","to":"append-checked","call":"appendChecked(ledgerPath, p, false, note)","detail":"cmd/kbengine/main.go:337 — та же функция, что у команды: один источник id, один порядок сортировки, одна проверка повтора","source":"cmd/kbengine/main.go:337","unverified":false}]},{"id":"migrate-versions","title":"Разовая правка версий по всему каталогу","summary":"migrate versions: план по умолчанию, запись по --apply, спорное не решается","steps":[{"n":1,"from":"owner","to":"cmd-migrate","call":"kbengine migrate versions --catalog … [--apply]","detail":"cmd/kbengine/migrate.go:33 — подкоманда разбирается диспетчером migrate.go:19","source":"cmd/kbengine/migrate.go:33","unverified":false},{"n":2,"from":"cmd-migrate","to":"ad-catalogjson","call":"catalogjson.MigrateVersions(path, apply)","detail":"cmd/kbengine/migrate.go:46 — без --apply возвращается план и ничего не пишется; спорные случаи миграция называет, но не решает за владельца","source":"cmd/kbengine/migrate.go:46","unverified":false}]},{"id":"migrate-habrids","title":"Догон номеров статей Хабра","summary":"migrate habr-ids: поле было заполнено у малой части записей, и дедуп смотрел мимо большинства","steps":[{"n":1,"from":"owner","to":"cmd-migrate","call":"kbengine migrate habr-ids --catalog … [--apply]","detail":"cmd/kbengine/migrate.go:80","source":"cmd/kbengine/migrate.go:80","unverified":false},{"n":2,"from":"cmd-migrate","to":"ad-catalogjson","call":"catalogjson.MigrateHabrIDs(path, apply)","detail":"cmd/kbengine/migrate.go:93 — расхождение поля с адресом миграция НАЗЫВАЕТ, но не решает; форму specials/N нашёл прогон, а не чтение кода","source":"cmd/kbengine/migrate.go:93","unverified":false}]},{"id":"migrate-urls","title":"Замена адресов на канонические","summary":"migrate urls: то же, что drift --update-urls, но разовым проходом","steps":[{"n":1,"from":"owner","to":"cmd-migrate","call":"kbengine migrate urls --catalog … [--apply]","detail":"cmd/kbengine/migrate.go:124","source":"cmd/kbengine/migrate.go:124","unverified":false},{"n":2,"from":"cmd-migrate","to":"ad-catalogjson","call":"catalogjson.MigrateURLs(path, apply)","detail":"cmd/kbengine/migrate.go:137 — на живой базе этим обновлялись устаревшие адреса","source":"cmd/kbengine/migrate.go:137","unverified":false}]},{"id":"release","title":"Страница называет версию движка, на котором работает","summary":"buildInfo → /api/engine → вкладка About; та же величина, что печатает kbengine version","steps":[{"n":1,"from":"cmd-version","to":"ad-httpapi","call":"buildInfo()","detail":"cmd/kbengine/main.go:90 — одно место на весь процесс: его печатает kbengine version и его же отдаёт /api/engine, расходиться этим двум ответам не с чего","source":"cmd/kbengine/main.go:90","unverified":false},{"n":2,"from":"ad-httpapi","to":"spa","call":"GET /api/engine","detail":"internal/adapter/httpapi/server.go:156 — вместе с версией отдаётся список подключённых и неподключённых источников","source":"internal/adapter/httpapi/server.go:156","unverified":false},{"n":3,"from":"spa","to":"fe-about","call":"api.engine()","detail":"frontend/src/api.ts:549; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:193-195)","source":"frontend/src/api.ts:549","unverified":false},{"n":4,"from":"fe-about","to":"browser","call":"версия · сборка · собран","detail":"frontend/src/AboutView.tsx:193 — псевдоверсия локальной сборки отличается от чистого тега, и проверка свежести сравнивает её с БАЗОВЫМ выпуском","source":"frontend/src/AboutView.tsx:193","unverified":false}]}],"gaps":["Гейты в scripts/gates (push.sh, arch.sh, web-data-layer.sh) в карту не вошли намеренно: это процесс разработки, а не работа продукта. Если нужны — это отдельный слой.","Тесты (~40% файлов пакета) не разбирались: карта про то, как работает продукт.","Узлы слоя «файлы владельца» и акторы не имеют file:line: у данных и у человека нет строки в репозитории. Это природа узла, а не пробел — выдуманная ссылка была бы ровно тем враньём, от которого защищает валидатор.","TUI на рантайме не прогонялся: bubbletea требует настоящий терминал, а через пайп экран не поднимается. Все шаги TUI держатся на чтении кода со ссылками file:line.","Внутреннее устройство View-компонентов фронта разобрано по точкам вызова API и месту монтирования, но не по их собственному состоянию и вёрстке: AnalyticsView (705 строк), FinancesView (753) и CatalogView (620) внутри сложнее, чем показывает карта.","Поток inbox начинается с файла: как именно Telegram-бот на VPS его пишет, из кода kb-engine не видно вовсе — шаг помечен unverified и без source.","fin add требует существующий файл ledger: на отсутствующем отвечает 'open ledger: no such file or directory'. Отдельным шагом в карте это не отражено.","Маршрут /media/ проверен на текстовом файле, не на настоящем изображении.","Рантайм покрыл 8 сценариев из 28. Остальные 20 держатся на чтении кода и ссылках file:line, проверенных валидатором.","Прогоны делались на macOS, одна машина, одна сборка (v0.17.1-0.20260806200658-1b017c4a32e0). Поведение на другой ОС не проверялось."],"runtime_checks":["fin add на временном ledger: запись создаётся с ULID; повтор отвергается с id существующей записи; --force пишет вторую строку (ledger 2 строки)","приведение написания вслух: 'транспорт' → 'Транспорт', 'тестбанк' → 'Тестбанк' — обе подстановки напечатаны","ParseMoney отвергает '10,123' сообщением 'has more precision than a kopeck', а не округляет","домен отвергает категорию у дохода: 'an income does not carry this field: category'","filebackup: после записей в поддиректории .backup лежат снимки ledger","serve: 18 GET-маршрутов из строк регистрации отвечают 200; POST /api/finances/export отдаёт настоящий xlsx (6209 байт, распознан как Microsoft Excel 2007+); GET на этот же путь даёт 404","контроль от ложного зелёного: выдуманные /api/finance и /api/vydumka дают 404 — то есть 200 у настоящих маршрутов что-то значит","/media/ с флагом: существующий файл 200, несуществующий 404; БЕЗ флага любой /media/* даёт 200 и HTML SPA (находка, см. поток media)","fin sync --dry-run на копии книги и ledger: направление none, обе стороны согласны; без файла .sync-state рядом с ledger база сравнения пуста, и обе стороны показываются как «новые» — при этом ничего не пишется","migrate versions / habr-ids / urls на копии каталога: все три отвечают «нечего делать» — и это ПРОВЕРЕНО отрицательным контролем: у трёх записей убран habr_id при живом habr-адресе, миграция нашла ровно три и заполнила их по --apply, повторный прогон снова сказал «нечего»","fin balance на копии книги: неизвестный банк отвергнут с перечислением известных; --create завёл счёт; повторное заведение написанием «долг→проверка» распознано как уже существующий «Долг → Проверка» — domain.SameAccountName работает на живых данных","audit --check files на живом каталоге: 0 находок, --check all: 2 находки. ⚠️ На КОПИИ каталога тот же аудит дал 147 находок «файла нет на диске» — пути считаются от расположения каталога, поэтому проверять копию бесполезно; это ловушка замера, а не находка"],"project_note":"Числа о содержимом личной базы владельца из этой копии убраны намеренно: репозиторий публичный. Числа о продукте (размер файлов, число маршрутов, версии) оставлены."}</script>
+<script>
+(function () {
+  const M = JSON.parse(document.getElementById('data').textContent);
+  const KIND_RU = { actor: 'человек', client: 'поверхность', service: 'код', data: 'данные', external: 'внешний' };
+  // Форма дублирует цвет: тип узла обязан читаться и при слабом различении оттенков.
+  const GLYPH = { actor: '▲', client: '■', service: '●', data: '◆', external: '◇' };
+  const byId = Object.fromEntries(M.nodes.map(n => [n.id, n]));
+
+  document.getElementById('repo').textContent = M.project + ' @ ' + M.commit;
+
+  // ---- счётчики
+  const steps = M.flows.flatMap(f => f.steps);
+  const unver = steps.filter(s => s.unverified).length;
+  const withSrc = steps.filter(s => s.source).length;
+  const nodesWithSrc = M.nodes.filter(n => (n.sources || []).length).length;
+  const counts = [
+    ['узлов', M.nodes.length + ''],
+    ['из них с file:line', nodesWithSrc + ' из ' + M.nodes.length],
+    ['сценариев', M.flows.length + ''],
+    ['шагов', steps.length + ''],
+    ['шагов с источником', withSrc + ' из ' + steps.length],
+    ['связь не подтверждена', unver + '', true],
+    ['проверок на рантайме', (M.runtime_checks || []).length + ''],
+    ['пунктов «чего нет»', M.gaps.length + '']
+  ];
+  document.getElementById('counts').innerHTML = counts
+    .map(([k, v, w]) => '<span class="count' + (w ? ' warn' : '') + '">' + k + ' <b>' + v + '</b></span>').join('');
+
+  // ---- легенда
+  document.getElementById('legend').innerHTML =
+    '<span style="color:var(--text-3)">цвет полосы — слой (колонка), значок — тип узла:</span>'
+    + Object.entries(KIND_RU).map(([k, ru]) =>
+        '<span><b>' + GLYPH[k] + '</b><span style="color:var(--text-2)">' + ru + '</span></span>').join('');
+
+  // ---- поле
+  const field = document.getElementById('field');
+  const wires = document.getElementById('wires');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  [...M.layers].sort((a, b) => a.order - b.order).forEach(layer => {
+    const lane = document.createElement('div');
+    lane.className = 'lane';
+    lane.style.setProperty('--lane', 'var(--l-' + layer.id + ')');
+    lane.innerHTML = '<h3>' + esc(layer.title) + '</h3>';
+    M.nodes.filter(n => n.layer === layer.id).forEach(n => {
+      const el = document.createElement('article');
+      el.className = 'node';
+      el.id = 'n-' + n.id;
+      el.innerHTML = '<div class="k"><b>' + GLYPH[n.kind] + '</b>' + KIND_RU[n.kind] + '</div>'
+        + '<div class="t">' + esc(n.title) + '</div><div class="s">' + esc(n.subtitle) + '</div>';
+      lane.appendChild(el);
+    });
+    field.appendChild(lane);
+  });
+
+  // ---- сценарии
+  const flowsEl = document.getElementById('flows');
+  document.getElementById('flowCount').textContent = M.flows.length;
+  M.flows.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'flow';
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.dataset.id = f.id;
+    const u = f.steps.filter(s => s.unverified).length;
+    b.innerHTML = '<div class="ft">' + esc(f.title) + '</div><div class="fs">' + esc(f.summary) + '</div>'
+      + '<div class="fn">' + f.steps.length + ' шагов' + (u ? ' · ' + u + ' без подтверждения' : '') + '</div>';
+    b.addEventListener('click', () => select(f.id));
+    flowsEl.appendChild(b);
+  });
+
+  let current = null;
+
+  function clearWires() { while (wires.firstChild) wires.removeChild(wires.firstChild); }
+
+  function drawWires(flow) {
+    clearWires();
+    const box = field.getBoundingClientRect();
+    const ns = 'http://www.w3.org/2000/svg';
+
+    flow.steps.forEach(st => {
+      const a = document.getElementById('n-' + st.from);
+      const b = document.getElementById('n-' + st.to);
+      if (!a || !b) return;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const forward = rb.left >= ra.left;
+      const x1 = (forward ? ra.right : ra.left) - box.left;
+      const y1 = ra.top + ra.height / 2 - box.top;
+      const x2 = (forward ? rb.left : rb.right) - box.left;
+      const y2 = rb.top + rb.height / 2 - box.top;
+      const dx = Math.max(28, Math.abs(x2 - x1) * 0.45) * (forward ? 1 : -1);
+      const d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2;
+
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      if (st.unverified) path.classList.add('unver');
+      path.dataset.step = st.n;
+      wires.appendChild(path);
+
+      const mid = midpoint(path);
+      const c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', mid.x); c.setAttribute('cy', mid.y); c.setAttribute('r', '9');
+      if (st.unverified) c.classList.add('unver');
+      c.dataset.step = st.n;
+      wires.appendChild(c);
+
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('x', mid.x); t.setAttribute('y', mid.y + 3.6);
+      t.setAttribute('text-anchor', 'middle');
+      if (st.unverified) t.classList.add('unver');
+      t.textContent = st.n;
+      t.dataset.step = st.n;
+      wires.appendChild(t);
+    });
+  }
+
+  function midpoint(path) {
+    try { const L = path.getTotalLength(); return path.getPointAtLength(L / 2); }
+    catch (e) { return { x: 0, y: 0 }; }
+  }
+
+  function renderSteps(flow) {
+    const host = document.getElementById('steps');
+    document.getElementById('stepTitle').textContent = flow.title;
+    host.innerHTML = flow.steps.map(st => {
+      const a = byId[st.from], b = byId[st.to];
+      return '<div class="step' + (st.unverified ? ' unver' : '') + '" data-step="' + st.n + '">'
+        + '<div class="num">' + st.n + '</div>'
+        + '<div>'
+        + '<div class="route">' + esc(a ? a.title : st.from) + ' → ' + esc(b ? b.title : st.to) + '</div>'
+        + '<div class="call">' + esc(st.call) + '</div>'
+        + '<div class="det">' + esc(st.detail) + '</div>'
+        + (st.source ? '<div class="src">' + esc(st.source) + '</div>' : '')
+        + (st.unverified ? '<div class="flag">связь не подтверждена кодом</div>' : '')
+        + '</div></div>';
+    }).join('');
+
+    host.querySelectorAll('.step').forEach(el => {
+      el.addEventListener('mouseenter', () => highlight(el.dataset.step, true));
+      el.addEventListener('mouseleave', () => highlight(el.dataset.step, false));
+    });
+  }
+
+  function highlight(n, on) {
+    wires.querySelectorAll('[data-step="' + n + '"]').forEach(el => {
+      if (el.tagName === 'path') el.classList.toggle('hot', on);
+      if (el.tagName === 'circle') el.setAttribute('r', on ? '11' : '9');
+    });
+    const st = current && current.steps.find(s => String(s.n) === String(n));
+    if (st) {
+      [st.from, st.to].forEach(id => {
+        const node = document.getElementById('n-' + id);
+        if (node) node.classList.toggle('hot', on);
+      });
+    }
+    const row = document.querySelector('.step[data-step="' + n + '"]');
+    if (row) row.classList.toggle('hot', on);
+  }
+
+  function select(id) {
+    const flow = M.flows.find(f => f.id === id);
+    if (!flow) return;
+    current = flow;
+    document.querySelectorAll('.flow').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+    field.classList.add('focused');
+    const on = new Set(flow.steps.flatMap(s => [s.from, s.to]));
+    M.nodes.forEach(n => {
+      const el = document.getElementById('n-' + n.id);
+      if (el) el.classList.toggle('on', on.has(n.id));
+    });
+    renderSteps(flow);
+    requestAnimationFrame(() => drawWires(flow));
+  }
+
+  function reset() {
+    current = null;
+    field.classList.remove('focused');
+    document.querySelectorAll('.node').forEach(n => n.classList.remove('on', 'hot'));
+    document.querySelectorAll('.flow').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    clearWires();
+    document.getElementById('stepTitle').textContent = '';
+    document.getElementById('steps').innerHTML =
+      '<p class="empty">Выберите сценарий — на схеме останутся только его участники, а шаги появятся здесь.</p>';
+  }
+  document.getElementById('reset').addEventListener('click', reset);
+  window.addEventListener('resize', () => { if (current) drawWires(current); });
+  document.querySelector('.field-scroll').addEventListener('scroll', () => { if (current) drawWires(current); });
+
+  document.getElementById('gaps').innerHTML = M.gaps.map(g => '<li>' + esc(g) + '</li>').join('');
+  document.getElementById('runtime').innerHTML = (M.runtime_checks || []).map(r => '<li>' + esc(r) + '</li>').join('');
+  document.getElementById('foot').textContent =
+    'Карта собрана статически (чтение кода) и проверена на рантайме (запуск бинаря на временных данных). '
+    + 'Валидатор открывает каждую ссылку file:line и ищет заявленный вызов; на первом прогоне он нашёл 16 нарушений в этой же карте. '
+    + 'Отрицательный контроль: шесть подсаженных ложных записей — поймана каждая.';
+})();
+</script>
