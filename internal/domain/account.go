@@ -31,7 +31,11 @@ func NewAccount(bank string, balance Money, updated time.Time, now func() time.T
 	if now == nil {
 		return Account{}, fmt.Errorf("%w: clock is required", ErrInvalidAccount)
 	}
-	if !updated.IsZero() && updated.After(now()) {
+	// День сравнивается с днём, как в NewTransaction. Голое updated.After(now())
+	// сравнивало бы ДЕНЬ из ячейки (excelize отдаёт его полуночью UTC) с
+	// МОМЕНТОМ часов: между полуночью и пятью утра по книге сегодняшнее число
+	// оказывалось «в будущем», и домен отвергал счёт, записанный самим движком.
+	if !updated.IsZero() && Day(updated).After(Day(now())) {
 		return Account{}, fmt.Errorf("%w: updated %s is in the future", ErrInvalidAccount, updated.Format(time.DateOnly))
 	}
 	return Account{bank: name, balance: balance, updated: updated}, nil

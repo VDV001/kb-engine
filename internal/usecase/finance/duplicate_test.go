@@ -66,7 +66,10 @@ func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 // запись реально ляжет. Иначе защита отключается ровно в самом частом случае —
 // когда дату не пишут.
 func TestDuplicate_resolvesAnEmptyDateToTheSameDayTheRecordWouldGet(t *testing.T) {
-	today := time.Now().UTC().Format(time.DateOnly)
+	// «Сегодня» здесь обязано совпасть с тем днём, который подставит движок, а он
+	// берёт МЕСТНЫЙ (domain.Day(now())). Взятый в UTC день расходится с ним между
+	// полуночью и пятью утра по книге — и тест краснел ровно в те часы.
+	today := time.Now().Format(time.DateOnly)
 	existing := expenseRecord(t, addParams(t, today, "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", ""))
 
 	p := addParams(t, "", "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", "")
