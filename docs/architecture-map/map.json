@@ -1,6 +1,6 @@
 {
   "project": "kb-engine",
-  "commit": "cd489cb",
+  "commit": "3a4b267",
   "layers": [
     {
       "id": "actors",
@@ -918,7 +918,7 @@
           "from": "tui",
           "to": "uc-finance",
           "call": "finance.ParseQuick(line, vocabulary)",
-          "detail": "finance.ParseQuick (internal/usecase/finance/quick.go:66) разбирает «418р такси сбер» и сам отделяет заметку после ' - ' — splitNote вызывается внутри него (quick.go:76, объявлена на :129). Экран делает только перенос незнакомых слов по Tab (internal/adapter/tui/finance_quick.go:72)",
+          "detail": "finance.ParseQuick (internal/usecase/finance/quick.go:66) разбирает «418р такси сбер» и сам отделяет заметку — splitNote (quick.go:129, вызов на :76) знает ЧЕТЫРЕ разделителя в заданном порядке: длинное тире, среднее, короткий дефис и двоеточие; длинное ищется раньше короткого, иначе строка с «—» осталась бы нетронутой. Экран делает только перенос незнакомых слов по Tab (internal/adapter/tui/finance_quick.go:72)",
           "source": "internal/usecase/finance/quick.go:66",
           "unverified": false
         },
@@ -1126,7 +1126,7 @@
           "from": "ad-httpapi",
           "to": "ad-financejsonl",
           "call": "ledgerFinances.Finances()",
-          "detail": "cmd/kbengine/main.go:298 — ledgerFinances.Finances читает ledger и книгу НА КАЖДЫЙ запрос: файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
+          "detail": "cmd/kbengine/main.go:298 — ledgerFinances.Finances читает журнал НА КАЖДЫЙ запрос, а книгу только при непустом пути (main.go:307): развёртывание со строками и без балансов законно. Файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
           "source": "cmd/kbengine/main.go:298",
           "unverified": false
         },
@@ -1316,7 +1316,7 @@
           "from": "owner",
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
-          "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (main.go:777), поэтому стирание — отдельное намерение: --url= и --related=",
+          "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
           "source": "cmd/kbengine/main.go:727",
           "unverified": false
         },
@@ -1379,10 +1379,10 @@
           "from": "cmd-audit",
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
-          "detail": "проверка links в all НЕ входит: непроверенные записи похоронили бы настоящие находки, поэтому вместо списка печатается одна строка-сводка",
-          "source": "cmd/kbengine/main.go:664",
-          "unverified": true,
-          "why": "формулировку строки о непроверенном взял из поведения команды, а не из места, где она печатается"
+          "detail": "проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:688) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine (main.go:666) — непроверенные записи иначе похоронили бы настоящие находки",
+          "source": "cmd/kbengine/main.go:666",
+          "unverified": false,
+          "symbol": "linkCoverageLine"
         }
       ],
       "zone": "Каталог"
@@ -1415,7 +1415,7 @@
           "from": "uc-drift",
           "to": "ext-habr",
           "call": "HTTP-запрос по адресу записи",
-          "detail": "linkcheck.Checker.Head (internal/adapter/linkcheck/linkcheck.go:42) опрашивает адрес с паузой между запросами. 403 — отдельное состояние «не знаю», и решается это не здесь, а в internal/usecase/drift/drift.go:71: habr отвечает им и на снятую статью, и на бота",
+          "detail": "linkcheck.Checker.Head (internal/adapter/linkcheck/linkcheck.go:42) опрашивает адрес с паузой между запросами. Решение «403 — это не знаю» принимает ДОМЕН: domain.ClassifyLinkStatus (internal/domain/linkstatus.go:45) отправляет неизвестный код в linkUndecidable, и объяснение про habr стоит там же в докблоке. usecase только считает уже классифицированное",
           "source": "internal/adapter/linkcheck/linkcheck.go:42",
           "unverified": false,
           "symbol": "Head"
@@ -2377,13 +2377,13 @@
         },
         {
           "n": 4,
-          "from": "ad-changelog",
+          "from": "ad-httpapi",
           "to": "f-changelog",
           "call": "os.ReadFile → changelog.Parse",
           "symbol": "Parse",
           "branch": true,
           "source": "internal/adapter/changelog/changelog.go:45",
-          "detail": "cmd/kbengine/main.go:493 читает CHANGELOG.md на каждый запрос и разбирает его changelog.Parse (internal/adapter/changelog/changelog.go:45); тот же разбор проверяется при старте serve",
+          "detail": "cmd/kbengine/main.go:494 читает CHANGELOG.md на каждый запрос — само чтение живёт в композиционном корне, адаптер только разбирает: changelog.Parse (internal/adapter/changelog/changelog.go:45). Тот же разбор проверяется при старте serve",
           "unverified": false
         }
       ],
@@ -2551,7 +2551,8 @@
     "адверсариальное ревью: три независимых прохода по карте (108 шагов + отдельно 39 новых) нашли 8 враний и 15 неточностей — все исправлены; проверявшие не смогли сломать 84 шага из 108 и 23 из 39",
     "атака на сам валидатор: 45 подсадок лжи, первая версия отбивала 10. Версия 2 ловит перенос ссылок в тестовые файлы (129 подделок), пути вне репозитория, петли, дубли шагов, повторные id, unverified без причины и несовпадение коммита",
     "13 случаев отрицательного контроля валидатора проходят, включая ту атаку, на которой падала первая версия",
-    "повторная вычитка исправлений: два независимых прохода по 74 изменённым шагам нашли 4 новых враньё в самих исправлениях (в том числе перепутанные местами направления синка и приписанный дедуп по habr_id, которого в движке нет вовсе) — все исправлены; проверявшие не смогли сломать 27 и 28 шагов из 37"
+    "повторная вычитка исправлений: два независимых прохода по 74 изменённым шагам нашли 4 новых враньё в самих исправлениях (в том числе перепутанные местами направления синка и приписанный дедуп по habr_id, которого в движке нет вовсе) — все исправлены; проверявшие не смогли сломать 27 и 28 шагов из 37",
+    "третья волна вычитки (22 шага, изменённых после второй): 1 враньё, 2 неточности, 3 придирки — все исправлены; сломать не смог 19 из 22. Динамика враний по волнам: 6 → 4 → 1"
   ],
   "project_note": "Числа о содержимом личной базы владельца убраны намеренно: репозиторий публичный."
 }
