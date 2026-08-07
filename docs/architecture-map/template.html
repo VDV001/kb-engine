@@ -1,0 +1,484 @@
+<meta charset="utf-8" />
+<title>kb-engine — карта архитектуры и сценариев</title>
+<style>
+  :root {
+    --bg: #fbf9f2;
+    --surface: #f6f4ec;
+    --surface-high: #eae8e1;
+    --surface-top: #ffffff;
+    --text: #1b1c18;
+    --text-2: #45474c;
+    --text-3: #76777d;
+    --outline: #c6c6cd;
+    --outline-strong: #76777d;
+    --accent: #99462a;
+    --accent-soft: #ffdbd0;
+    --ok: #2f6b46;
+    --warn: #8a6a12;
+    /* Цвет = СЛОЙ (колонка), а не тип узла. Тип красить было бесполезно: из 61
+       узла 43 это «код», и три разные колонки выходили одного цвета.
+       Восемь значений подобраны по ΔE: худшая пара 27.3, соседние колонки 33.4. */
+    --l-actors: #c0562a;
+    --l-surfaces: #2f4b7c;
+    --l-commands: #a03a6e;
+    --l-usecase: #4a7a2f;
+    --l-domain: #6b3f96;
+    --l-adapters: #8a6d1f;
+    --l-storage: #2f7a5f;
+    --l-external: #5c5f66;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+    --serif: "PT Serif", Georgia, "Times New Roman", serif;
+    --sans: Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a1a; --surface: #1f1f1f; --surface-high: #282a2f; --surface-top: #0d0d0d;
+      --text: #fbf9f2; --text-2: #afafaf; --text-3: #8a8a8a;
+      --outline: #4a4a4a; --outline-strong: #6a6a6a;
+      --accent: #e67e51; --accent-soft: #3a2418;
+      --ok: #7fbf95; --warn: #d6b25e;
+      --l-actors: #d99b7e; --l-surfaces: #4ec0c9; --l-commands: #e087b5; --l-usecase: #9ecb5f;
+      --l-domain: #b08ae0; --l-adapters: #e0a24a; --l-storage: #5fc48c; --l-external: #a8adb8;
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #1a1a1a; --surface: #1f1f1f; --surface-high: #282a2f; --surface-top: #0d0d0d;
+    --text: #fbf9f2; --text-2: #afafaf; --text-3: #8a8a8a;
+    --outline: #4a4a4a; --outline-strong: #6a6a6a;
+    --accent: #e67e51; --accent-soft: #3a2418;
+    --ok: #7fbf95; --warn: #d6b25e;
+    --l-actors: #d99b7e; --l-surfaces: #4ec0c9; --l-commands: #e087b5; --l-usecase: #9ecb5f;
+    --l-domain: #b08ae0; --l-adapters: #e0a24a; --l-storage: #5fc48c; --l-external: #a8adb8;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 8px 24px rgba(0,0,0,.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #fbf9f2; --surface: #f6f4ec; --surface-high: #eae8e1; --surface-top: #ffffff;
+    --text: #1b1c18; --text-2: #45474c; --text-3: #76777d;
+    --outline: #c6c6cd; --outline-strong: #76777d;
+    --accent: #99462a; --accent-soft: #ffdbd0;
+    --ok: #2f6b46; --warn: #8a6a12;
+    --l-actors: #c0562a; --l-surfaces: #2f4b7c; --l-commands: #a03a6e; --l-usecase: #4a7a2f;
+    --l-domain: #6b3f96; --l-adapters: #8a6d1f; --l-storage: #2f7a5f; --l-external: #5c5f66;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 8px 24px rgba(0,0,0,.05);
+  }
+
+  /* Без border-box padding прибавлялся к width:100% — контент уезжал за правый
+     край, а overflow-x:hidden это прятал. Скрывать переполнение = не видеть его. */
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); font-size: 15px; line-height: 1.5;
+  }
+  .wrap { width: 100%; margin: 0; padding: 26px clamp(16px, 2vw, 40px) 64px; }
+
+  header.page { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: baseline; margin-bottom: 6px; }
+  header.page h1 {
+    font-family: var(--serif); font-weight: 700; font-size: clamp(26px, 3vw, 38px);
+    margin: 0; letter-spacing: -.01em; text-wrap: balance;
+  }
+  .repo { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); }
+  .lede { color: var(--text-2); max-width: 68ch; margin: 10px 0 20px; }
+
+  .counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
+  .count {
+    background: var(--surface); border: 1px solid var(--outline); border-radius: 3px;
+    padding: 7px 11px; font-size: 12.5px; color: var(--text-2);
+    font-variant-numeric: tabular-nums;
+  }
+  .count b { color: var(--text); font-weight: 600; }
+  .count.warn { border-color: var(--warn); }
+
+  .layout { display: grid; grid-template-columns: minmax(0, 1fr) clamp(360px, 24vw, 520px); gap: 20px; align-items: start; }
+  @media (max-width: 1180px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--outline); border-radius: 4px;
+  }
+  .panel > h2 {
+    font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .13em;
+    text-transform: uppercase; color: var(--text-3);
+    margin: 0; padding: 13px 16px; border-bottom: 1px solid var(--outline);
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+  }
+
+  /* ---------- поле схемы ---------- */
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 12px 16px; border-bottom: 1px solid var(--outline); }
+  .legend span { font-size: 12px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+  .legend b { font-size: 12px; font-weight: 400; }
+
+  .field-scroll { overflow-x: auto; overflow-y: hidden; padding: 18px 16px 22px; }
+  .field { position: relative; display: flex; gap: 26px; min-width: max-content; }
+  svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  /* Цвет проводов берётся из токенов темы, а не зашивается при отрисовке:
+     иначе после переключения темы стрелки остаются в палитре предыдущей. */
+  .wires path { fill: none; stroke: var(--accent); stroke-width: 1.6; opacity: .85; }
+  .wires path.unver { opacity: .55; stroke-dasharray: 5 4; }
+  .wires path.hot { stroke-width: 3.4; }
+  .wires circle { fill: var(--accent); }
+  .wires circle.unver { fill: var(--bg); stroke: var(--accent); stroke-width: 1.2; stroke-dasharray: 3 3; }
+  .wires text { fill: var(--bg); font-family: var(--mono); font-size: 11px; font-weight: 700; }
+  .wires text.unver { fill: var(--accent); }
+
+  .lane { display: flex; flex-direction: column; gap: 9px; width: clamp(178px, 12vw, 230px); }
+  .lane > h3 {
+    font-size: 10.5px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--lane); margin: 0 0 3px; padding-bottom: 7px; border-bottom: 2px solid var(--lane);
+  }
+  .node {
+    position: relative; z-index: 1;
+    background: var(--surface-top); border: 1px solid var(--outline);
+    border-left: 5px solid var(--lane, var(--outline-strong));
+    border-radius: 3px; padding: 8px 10px;
+    transition: opacity .18s ease, box-shadow .18s ease, border-color .18s ease;
+  }
+  .node .k {
+    font-size: 9.5px; letter-spacing: .1em; text-transform: uppercase; font-weight: 600;
+    color: var(--kind); display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+  }
+  .node .k b { font-size: 11px; line-height: 1; font-weight: 400; }
+  .node .k { color: var(--text-3); }
+  .node .t { font-size: 13px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+  .node .s { font-size: 11px; color: var(--text-3); font-family: var(--mono); line-height: 1.35; margin-top: 3px; overflow-wrap: anywhere; }
+  .field.focused .node { opacity: .25; }
+  .field.focused .node.on { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
+  .node.hot { box-shadow: 0 0 0 3px var(--accent); }
+
+  /* ---------- сценарии ---------- */
+  .zones { display: flex; flex-wrap: wrap; gap: 6px; padding: 11px 16px; border-bottom: 1px solid var(--outline); }
+  .zone {
+    font: inherit; font-size: 12px; background: var(--surface-top); color: var(--text-2);
+    border: 1px solid var(--outline); border-radius: 999px; padding: 4px 11px; cursor: pointer;
+  }
+  .zone:hover { border-color: var(--accent); color: var(--accent); }
+  .zone[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+  .zone .n { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 5px; }
+  .flows { max-height: 320px; overflow-y: auto; }
+  .flow[hidden] { display: none; }
+  .flow {
+    display: block; width: 100%; text-align: left; background: none; border: 0;
+    border-bottom: 1px solid var(--outline); padding: 11px 16px; cursor: pointer;
+    color: inherit; font: inherit;
+  }
+  .flow:hover { background: var(--surface-high); }
+  .flow[aria-pressed="true"] { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+  .flow .ft { font-size: 13.5px; font-weight: 600; }
+  .flow .fs { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+  .flow .fn { font-size: 11px; color: var(--text-3); font-family: var(--mono); margin-top: 3px; }
+
+  .steps { padding: 4px 0 8px; max-height: 560px; overflow-y: auto; }
+  .empty { padding: 22px 16px; color: var(--text-3); font-size: 13px; }
+  .step {
+    display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px;
+    padding: 11px 16px; border-bottom: 1px solid var(--outline); cursor: default;
+  }
+  .step:hover, .step.hot { background: var(--surface-high); }
+  .step .num {
+    width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--accent); color: var(--bg); font-size: 11.5px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .step.unver .num { background: transparent; color: var(--accent); border: 1px dashed var(--accent); }
+  .step .route { font-size: 11.5px; color: var(--text-3); }
+  .step .call { font-family: var(--mono); font-size: 12px; margin: 3px 0 4px; overflow-wrap: anywhere; }
+  .step .det { font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+  .step .src { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-top: 4px; overflow-wrap: anywhere; }
+  .flag {
+    display: inline-block; margin-top: 5px; font-size: 11px; color: var(--warn);
+    border: 1px dashed var(--warn); border-radius: 2px; padding: 1px 6px;
+  }
+
+  .btn {
+    font: inherit; font-size: 12px; background: var(--surface-top); color: var(--text);
+    border: 1px solid var(--outline); border-radius: 3px; padding: 4px 10px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- нижние блоки ---------- */
+  .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; margin-top: 20px; }
+  .bottom ul { margin: 0; padding: 8px 16px 16px 32px; }
+  .bottom li { font-size: 13px; color: var(--text-2); margin: 7px 0; overflow-wrap: anywhere; }
+  .bottom li::marker { color: var(--accent); }
+  footer { margin-top: 28px; font-size: 12px; color: var(--text-3); border-top: 1px solid var(--outline); padding-top: 14px; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="page">
+    <h1>kb-engine — карта архитектуры и сценариев</h1>
+    <span class="repo" id="repo"></span>
+  </header>
+  <p class="lede">
+    Собрано из кода, а не из README. Каждый шаг несёт ссылку <span style="font-family:var(--mono)">file:line</span>,
+    и каждая такая ссылка проверена программой: она открывает файл на этой строке и ищет там заявленный вызов.
+    Связи, которые вывести из кода не удалось, помечены пунктиром — граница знания показана, а не замазана.
+  </p>
+
+  <div class="counts" id="counts"></div>
+
+  <div class="layout">
+    <section class="panel">
+      <h2>Поле схемы <button class="btn" id="reset" type="button">Сбросить выделение</button></h2>
+      <div class="legend" id="legend"></div>
+      <div class="field-scroll">
+        <div class="field" id="field">
+          <svg class="wires" id="wires" aria-hidden="true"></svg>
+        </div>
+      </div>
+    </section>
+
+    <div style="display:flex; flex-direction:column; gap:20px; min-width:0">
+      <section class="panel">
+        <h2>Сценарии <span id="flowCount" style="font-family:var(--mono);letter-spacing:0"></span></h2>
+        <div class="zones" id="zones"></div>
+        <div class="flows" id="flows"></div>
+      </section>
+      <section class="panel">
+        <h2>Шаги <span id="stepTitle" style="font-weight:400;letter-spacing:0;text-transform:none;font-size:12px"></span></h2>
+        <div class="steps" id="steps"><p class="empty">Выберите сценарий — на схеме останутся только его участники, а шаги появятся здесь.</p></div>
+      </section>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <section class="panel">
+      <h2>Чего на этой карте нет</h2>
+      <ul id="gaps"></ul>
+    </section>
+    <section class="panel">
+      <h2>Что проверено на рантайме, а не чтением</h2>
+      <ul id="runtime"></ul>
+    </section>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+(function () {
+  const M = JSON.parse(document.getElementById('data').textContent);
+  const KIND_RU = { actor: 'человек', client: 'поверхность', service: 'код', data: 'данные', external: 'внешний' };
+  // Форма дублирует цвет: тип узла обязан читаться и при слабом различении оттенков.
+  const GLYPH = { actor: '▲', client: '■', service: '●', data: '◆', external: '◇' };
+  const byId = Object.fromEntries(M.nodes.map(n => [n.id, n]));
+
+  document.getElementById('repo').textContent = M.project + ' @ ' + M.commit;
+
+  // ---- счётчики
+  const steps = M.flows.flatMap(f => f.steps);
+  const unver = steps.filter(s => s.unverified).length;
+  const withSrc = steps.filter(s => s.source).length;
+  const nodesWithSrc = M.nodes.filter(n => (n.sources || []).length).length;
+  const counts = [
+    ['узлов', M.nodes.length + ''],
+    ['из них с file:line', nodesWithSrc + ' из ' + M.nodes.length],
+    ['сценариев', M.flows.length + ''],
+    ['шагов', steps.length + ''],
+    ['шагов с источником', withSrc + ' из ' + steps.length],
+    ['связь не подтверждена', unver + '', true],
+    ['проверок на рантайме', (M.runtime_checks || []).length + ''],
+    ['пунктов «чего нет»', M.gaps.length + '']
+  ];
+  document.getElementById('counts').innerHTML = counts
+    .map(([k, v, w]) => '<span class="count' + (w ? ' warn' : '') + '">' + k + ' <b>' + v + '</b></span>').join('');
+
+  // ---- легенда
+  document.getElementById('legend').innerHTML =
+    '<span style="color:var(--text-3)">цвет полосы — слой (колонка), значок — тип узла:</span>'
+    + Object.entries(KIND_RU).map(([k, ru]) =>
+        '<span><b>' + GLYPH[k] + '</b><span style="color:var(--text-2)">' + ru + '</span></span>').join('');
+
+  // ---- поле
+  const field = document.getElementById('field');
+  const wires = document.getElementById('wires');
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  [...M.layers].sort((a, b) => a.order - b.order).forEach(layer => {
+    const lane = document.createElement('div');
+    lane.className = 'lane';
+    lane.style.setProperty('--lane', 'var(--l-' + layer.id + ')');
+    lane.innerHTML = '<h3>' + esc(layer.title) + '</h3>';
+    M.nodes.filter(n => n.layer === layer.id).forEach(n => {
+      const el = document.createElement('article');
+      el.className = 'node';
+      el.id = 'n-' + n.id;
+      el.innerHTML = '<div class="k"><b>' + GLYPH[n.kind] + '</b>' + KIND_RU[n.kind] + '</div>'
+        + '<div class="t">' + esc(n.title) + '</div><div class="s">' + esc(n.subtitle) + '</div>';
+      lane.appendChild(el);
+    });
+    field.appendChild(lane);
+  });
+
+  // ---- сценарии
+  const flowsEl = document.getElementById('flows');
+  document.getElementById('flowCount').textContent = M.flows.length;
+  M.flows.forEach(f => {
+    const b = document.createElement('button');
+    b.className = 'flow';
+    b.type = 'button';
+    b.setAttribute('aria-pressed', 'false');
+    b.dataset.id = f.id;
+    const u = f.steps.filter(s => s.unverified).length;
+    b.innerHTML = '<div class="ft">' + esc(f.title) + '</div><div class="fs">' + esc(f.summary) + '</div>'
+      + '<div class="fn">' + f.steps.length + ' шагов' + (u ? ' · ' + u + ' без подтверждения' : '') + '</div>';
+    b.addEventListener('click', () => select(f.id));
+    flowsEl.appendChild(b);
+  });
+
+  // Зоны — способ принимать карту по частям: смотришь одну область целиком,
+  // а не прыгаешь между финансами и витриной в одном списке.
+  const zones = [...new Set(M.flows.map(f => f.zone).filter(Boolean))];
+  if (zones.length) {
+    const host = document.getElementById('zones');
+    const mk = (label, value, count) => {
+      const b = document.createElement('button');
+      b.className = 'zone'; b.type = 'button'; b.dataset.zone = value;
+      b.setAttribute('aria-pressed', String(value === ''));
+      b.innerHTML = esc(label) + '<span class="n">' + count + '</span>';
+      b.addEventListener('click', () => applyZone(value));
+      return b;
+    };
+    host.appendChild(mk('все', '', M.flows.length));
+    zones.forEach(z => host.appendChild(mk(z, z, M.flows.filter(f => f.zone === z).length)));
+  }
+
+  function applyZone(zone) {
+    document.querySelectorAll('.zone').forEach(b =>
+      b.setAttribute('aria-pressed', String(b.dataset.zone === zone)));
+    document.querySelectorAll('.flow').forEach(b => {
+      const f = M.flows.find(x => x.id === b.dataset.id);
+      b.hidden = Boolean(zone) && f.zone !== zone;
+    });
+    // Выбранный сценарий из другой зоны — сбрасываем: иначе на схеме горит путь,
+    // которого в списке уже не видно.
+    if (current && zone && current.zone !== zone) reset();
+  }
+
+  let current = null;
+
+  function clearWires() { while (wires.firstChild) wires.removeChild(wires.firstChild); }
+
+  function drawWires(flow) {
+    clearWires();
+    const box = field.getBoundingClientRect();
+    const ns = 'http://www.w3.org/2000/svg';
+
+    flow.steps.forEach(st => {
+      const a = document.getElementById('n-' + st.from);
+      const b = document.getElementById('n-' + st.to);
+      if (!a || !b) return;
+      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+      const forward = rb.left >= ra.left;
+      const x1 = (forward ? ra.right : ra.left) - box.left;
+      const y1 = ra.top + ra.height / 2 - box.top;
+      const x2 = (forward ? rb.left : rb.right) - box.left;
+      const y2 = rb.top + rb.height / 2 - box.top;
+      const dx = Math.max(28, Math.abs(x2 - x1) * 0.45) * (forward ? 1 : -1);
+      const d = 'M ' + x1 + ' ' + y1 + ' C ' + (x1 + dx) + ' ' + y1 + ', ' + (x2 - dx) + ' ' + y2 + ', ' + x2 + ' ' + y2;
+
+      const path = document.createElementNS(ns, 'path');
+      path.setAttribute('d', d);
+      if (st.unverified) path.classList.add('unver');
+      path.dataset.step = st.n;
+      wires.appendChild(path);
+
+      const mid = midpoint(path);
+      const c = document.createElementNS(ns, 'circle');
+      c.setAttribute('cx', mid.x); c.setAttribute('cy', mid.y); c.setAttribute('r', '9');
+      if (st.unverified) c.classList.add('unver');
+      c.dataset.step = st.n;
+      wires.appendChild(c);
+
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('x', mid.x); t.setAttribute('y', mid.y + 3.6);
+      t.setAttribute('text-anchor', 'middle');
+      if (st.unverified) t.classList.add('unver');
+      t.textContent = st.n;
+      t.dataset.step = st.n;
+      wires.appendChild(t);
+    });
+  }
+
+  function midpoint(path) {
+    try { const L = path.getTotalLength(); return path.getPointAtLength(L / 2); }
+    catch (e) { return { x: 0, y: 0 }; }
+  }
+
+  function renderSteps(flow) {
+    const host = document.getElementById('steps');
+    document.getElementById('stepTitle').textContent = flow.title;
+    host.innerHTML = flow.steps.map(st => {
+      const a = byId[st.from], b = byId[st.to];
+      return '<div class="step' + (st.unverified ? ' unver' : '') + '" data-step="' + st.n + '">'
+        + '<div class="num">' + st.n + '</div>'
+        + '<div>'
+        + '<div class="route">' + esc(a ? a.title : st.from) + ' → ' + esc(b ? b.title : st.to) + '</div>'
+        + '<div class="call">' + esc(st.call) + '</div>'
+        + '<div class="det">' + esc(st.detail) + '</div>'
+        + (st.source ? '<div class="src">' + esc(st.source) + '</div>' : '')
+        + (st.unverified ? '<div class="flag">связь не подтверждена кодом</div>' : '')
+        + '</div></div>';
+    }).join('');
+
+    host.querySelectorAll('.step').forEach(el => {
+      el.addEventListener('mouseenter', () => highlight(el.dataset.step, true));
+      el.addEventListener('mouseleave', () => highlight(el.dataset.step, false));
+    });
+  }
+
+  function highlight(n, on) {
+    wires.querySelectorAll('[data-step="' + n + '"]').forEach(el => {
+      if (el.tagName === 'path') el.classList.toggle('hot', on);
+      if (el.tagName === 'circle') el.setAttribute('r', on ? '11' : '9');
+    });
+    const st = current && current.steps.find(s => String(s.n) === String(n));
+    if (st) {
+      [st.from, st.to].forEach(id => {
+        const node = document.getElementById('n-' + id);
+        if (node) node.classList.toggle('hot', on);
+      });
+    }
+    const row = document.querySelector('.step[data-step="' + n + '"]');
+    if (row) row.classList.toggle('hot', on);
+  }
+
+  function select(id) {
+    const flow = M.flows.find(f => f.id === id);
+    if (!flow) return;
+    current = flow;
+    document.querySelectorAll('.flow').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.id === id)));
+    field.classList.add('focused');
+    const on = new Set(flow.steps.flatMap(s => [s.from, s.to]));
+    M.nodes.forEach(n => {
+      const el = document.getElementById('n-' + n.id);
+      if (el) el.classList.toggle('on', on.has(n.id));
+    });
+    renderSteps(flow);
+    requestAnimationFrame(() => drawWires(flow));
+  }
+
+  function reset() {
+    current = null;
+    field.classList.remove('focused');
+    document.querySelectorAll('.node').forEach(n => n.classList.remove('on', 'hot'));
+    document.querySelectorAll('.flow').forEach(b => b.setAttribute('aria-pressed', 'false'));
+    clearWires();
+    document.getElementById('stepTitle').textContent = '';
+    document.getElementById('steps').innerHTML =
+      '<p class="empty">Выберите сценарий — на схеме останутся только его участники, а шаги появятся здесь.</p>';
+  }
+  document.getElementById('reset').addEventListener('click', reset);
+  window.addEventListener('resize', () => { if (current) drawWires(current); });
+  document.querySelector('.field-scroll').addEventListener('scroll', () => { if (current) drawWires(current); });
+
+  document.getElementById('gaps').innerHTML = M.gaps.map(g => '<li>' + esc(g) + '</li>').join('');
+  document.getElementById('runtime').innerHTML = (M.runtime_checks || []).map(r => '<li>' + esc(r) + '</li>').join('');
+  document.getElementById('foot').textContent =
+    'Карта собрана статически (чтение кода) и проверена на рантайме (запуск бинаря на временных данных). '
+    + 'Валидатор открывает каждую ссылку file:line и ищет заявленный вызов; на первом прогоне он нашёл 16 нарушений в этой же карте. '
+    + 'Отрицательный контроль: шесть подсаженных ложных записей — поймана каждая.';
+})();
+</script>
