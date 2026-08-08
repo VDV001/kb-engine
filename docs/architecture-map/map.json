@@ -1256,7 +1256,7 @@
           "to": "browser",
           "call": "Content-Disposition: attachment; filename=finances.xlsx",
           "detail": "internal/adapter/httpapi/export.go:63; если заголовки уже ушли, ошибка обрывает ответ, а не притворяется целым файлом",
-          "source": "internal/adapter/httpapi/export.go:64",
+          "source": "internal/adapter/httpapi/export.go:63",
           "unverified": false
         }
       ],
@@ -1508,8 +1508,8 @@
           "from": "owner",
           "to": "cmd-serve",
           "call": "kbengine serve --catalog … + 8 необязательных источников",
-          "detail": "cmd/kbengine/main.go:220; --from без --ledger отвергается на старте, потому что баланс некуда положить",
-          "source": "cmd/kbengine/main.go:250",
+          "detail": "cmd/kbengine/main.go:220 — вход команды; там же на :250 --from без --ledger отвергается на старте, потому что баланс некуда положить",
+          "source": "cmd/kbengine/main.go:220",
           "unverified": false
         },
         {
@@ -1545,7 +1545,7 @@
           "to": "spa",
           "call": "mux.Handle('/', spaHandler(frontend))",
           "detail": "internal/adapter/httpapi/server.go:179 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404",
-          "source": "internal/adapter/httpapi/server.go:178",
+          "source": "internal/adapter/httpapi/server.go:179",
           "unverified": false
         }
       ],
@@ -1847,7 +1847,7 @@
           "from": "owner",
           "to": "tui-update",
           "call": "набор строки поиска",
-          "detail": "internal/adapter/tui/model.go:186 — на экране списка ЛЮБАЯ буква уходит в поиск, поэтому свободных клавиш под второй экран там нет",
+          "detail": "internal/adapter/tui/model.go:184-185 — на экране списка ЛЮБАЯ буква уходит в поиск, поэтому свободных клавиш под второй экран там нет",
           "source": "internal/adapter/tui/model.go:184",
           "unverified": false,
           "symbol": "search"
@@ -1857,7 +1857,7 @@
           "from": "owner",
           "to": "tui-card",
           "call": "Enter",
-          "detail": "internal/adapter/tui/model.go:179 открывает карточку выбранной записи",
+          "detail": "internal/adapter/tui/model.go:173-175 открывает карточку выбранной записи",
           "source": "internal/adapter/tui/model.go:173",
           "unverified": false,
           "symbol": "KeyEnter"
