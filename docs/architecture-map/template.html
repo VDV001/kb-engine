@@ -225,8 +225,31 @@
   .btn:hover { border-color: var(--accent); color: var(--accent); }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+  /* ---------- сворачивание длинных блоков ---------- */
+  /* Заголовок панели становится кнопкой целиком: мелкая стрелка сбоку
+     промахивается и мимо пальца, и мимо взгляда. Поле схемы не сворачивается
+     намеренно — оно предмет страницы, а не приложение к нему. */
+  .panel > h2.fold { cursor: pointer; user-select: none; }
+  .panel > h2.fold:hover { color: var(--text-2); }
+  .panel > h2.fold .caret {
+    display: inline-block; width: 1em; font-size: 10px; color: var(--accent);
+    transition: transform .15s ease; transform: rotate(90deg); margin-right: 2px;
+  }
+  .panel.closed > h2.fold .caret { transform: rotate(0deg); }
+  .panel.closed > .foldable { display: none; }
+  .panel > h2.fold .hint {
+    font-weight: 400; letter-spacing: 0; text-transform: none;
+    font-size: 11px; color: var(--text-3);
+  }
+
   /* ---------- нижние блоки ---------- */
-  .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 20px; margin-top: 20px; }
+  /* align-items: start обязателен. По умолчанию элементы грида растягиваются на
+     высоту строки, и свёрнутая панель держала бы высоту развёрнутой соседки:
+     текст исчезает, а пустая коробка во весь экран остаётся. Найдено на карте
+     claude-cowork, куда эта же вёрстка перенесена, — там дефект дал три разных
+     симптома при одной причине. */
+  .bottom { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+            gap: 20px; margin-top: 20px; align-items: start; }
   .bottom ul { margin: 0; padding: 8px 16px 16px 32px; }
   .bottom li { font-size: 13px; color: var(--text-2); margin: 7px 0; overflow-wrap: anywhere; }
   .bottom li::marker { color: var(--accent); }
@@ -297,13 +320,15 @@
   </div>
 
   <div class="bottom">
-    <section class="panel">
-      <h2>Чего на этой карте нет</h2>
-      <ul id="gaps"></ul>
+    <section class="panel" id="p-gaps">
+      <h2 class="fold" data-fold="p-gaps"><span><span class="caret">▶</span>Чего на этой карте нет</span>
+        <span class="hint" id="gapsCount"></span></h2>
+      <ul class="foldable" id="gaps"></ul>
     </section>
-    <section class="panel">
-      <h2>Что проверено на рантайме, а не чтением</h2>
-      <ul id="runtime"></ul>
+    <section class="panel" id="p-runtime">
+      <h2 class="fold" data-fold="p-runtime"><span><span class="caret">▶</span>Что проверено на рантайме, а не чтением</span>
+        <span class="hint" id="runtimeCount"></span></h2>
+      <ul class="foldable" id="runtime"></ul>
     </section>
   </div>
 
@@ -578,6 +603,42 @@
 
   document.getElementById('gaps').innerHTML = M.gaps.map(g => '<li>' + esc(g) + '</li>').join('');
   document.getElementById('runtime').innerHTML = (M.runtime_checks || []).map(r => '<li>' + esc(r) + '</li>').join('');
+
+  // ---- сворачивание длинных блоков
+  //
+  // Состояние запоминается: страницу открывают много раз, и каждый раз заново
+  // сворачивать две простыни — та же работа, что и прокручивать их.
+  //
+  // Свёрнутый блок ОБЯЗАН показывать, сколько в нём пунктов. Иначе сворачивание
+  // прячет не длину, а сам факт существования признаний — а «чего на этой карте
+  // нет» ровно тот раздел, который нельзя делать незаметным.
+  (function folds() {
+    const KEY = 'map-folds';
+    // Голое число в скобках, без существительного. Склонение здесь потребовало бы
+    // правила, а оно на этой ветке ещё не существует — живёт в несмерженном PR
+    // про «4 шагов» → «4 шага». Заводить вторую копию правила ради подписи хуже,
+    // чем обойтись формой, которой согласование не нужно.
+    document.getElementById('gapsCount').textContent = '(' + M.gaps.length + ')';
+    document.getElementById('runtimeCount').textContent = '(' + (M.runtime_checks || []).length + ')';
+
+    let closed;
+    try { closed = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
+    catch (e) { closed = new Set(); }
+
+    document.querySelectorAll('h2.fold').forEach(h => {
+      const id = h.dataset.fold;
+      const panel = document.getElementById(id);
+      if (closed.has(id)) panel.classList.add('closed');
+      const sync = () => h.setAttribute('aria-expanded', String(!panel.classList.contains('closed')));
+      sync();
+      h.addEventListener('click', () => {
+        panel.classList.toggle('closed');
+        panel.classList.contains('closed') ? closed.add(id) : closed.delete(id);
+        try { localStorage.setItem(KEY, JSON.stringify([...closed])); } catch (e) { /* приватный режим */ }
+        sync();
+      });
+    });
+  })();
   // Число случаев отрицательного контроля подставляет сборка, считая их в самом
   // валидаторе. Копия этого числа в вёрстке однажды уже разошлась с правдой:
   // говорила «шесть», когда случаев стало тринадцать, и заметить это могла
