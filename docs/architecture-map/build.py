@@ -12,6 +12,7 @@
 """
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -19,8 +20,21 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 MAP = os.path.join(HERE, "map.json")
 TPL = os.path.join(HERE, "template.html")
+VALIDATOR = os.path.join(HERE, "validate.py")
 OUT = os.path.join(HERE, "index.html")
 PLACEHOLDER = "__DATA__"
+CASES = "__SELFTEST_CASES__"
+
+# Число случаев отрицательного контроля называется на странице. Держать его в
+# вёрстке отдельной копией уже пробовали: копия говорила «шесть», когда случаев
+# стало тринадцать, и никакая проверка этого не видела — валидатор смотрит на
+# данные, а не на прозу шаблона. Теперь число считается в самом валидаторе.
+def selftest_cases():
+    with open(VALIDATOR, encoding="utf-8") as f:
+        n = len(re.findall(r"^\s*with_step\(", f.read(), re.M))
+    if n == 0:
+        raise SystemExit("build: в валидаторе не нашлось ни одного случая отрицательного контроля")
+    return n
 
 
 def main():
@@ -38,12 +52,14 @@ def main():
 
     with open(TPL, encoding="utf-8") as f:
         tpl = f.read()
-    if PLACEHOLDER not in tpl:
-        print(f"build: в шаблоне нет {PLACEHOLDER}", file=sys.stderr)
-        return 1
+    for token in (PLACEHOLDER, CASES):
+        if token not in tpl:
+            print(f"build: в шаблоне нет {token}", file=sys.stderr)
+            return 1
 
+    page = tpl.replace(PLACEHOLDER, data).replace(CASES, str(selftest_cases()))
     with open(OUT, "w", encoding="utf-8") as f:
-        f.write(tpl.replace(PLACEHOLDER, data))
+        f.write(page)
     print(f"build: {os.path.relpath(OUT, REPO)} собран ({os.path.getsize(OUT)} байт)")
     return 0
 
