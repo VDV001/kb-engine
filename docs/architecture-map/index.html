@@ -319,6 +319,18 @@
   const GLYPH = { actor: '▲', client: '■', service: '●', data: '◆', external: '◇' };
   const byId = Object.fromEntries(M.nodes.map(n => [n.id, n]));
 
+  // Склонение по числу. Страница говорила «2 шагов» и «4 шагов» — та же грабля,
+  // что движок ловил живым прогоном на «51 операций»: правило существовало, но в
+  // нужном месте его не позвали. Здесь оно одно на всю страницу.
+  function plural(n, one, few, many) {
+    const a = Math.abs(n) % 100;
+    if (a > 10 && a < 20) return many;
+    const b = a % 10;
+    if (b === 1) return one;
+    if (b >= 2 && b <= 4) return few;
+    return many;
+  }
+
   // Голое «kb-engine @ 40f118b» читателю не говорит ничего. Это версия КОДА, под
   // которую карта проверена, и она здесь не для красоты: сборка страницы падает,
   // если код ушёл вперёд, а карта осталась. Подпись должна называть смысл.
@@ -412,7 +424,8 @@
     b.dataset.id = f.id;
     const u = f.steps.filter(s => s.unverified).length;
     b.innerHTML = '<div class="ft">' + esc(f.title) + '</div><div class="fs">' + esc(f.summary) + '</div>'
-      + '<div class="fn">' + f.steps.length + ' шагов' + (u ? ' · ' + u + ' без подтверждения' : '') + '</div>';
+      + '<div class="fn">' + f.steps.length + ' ' + plural(f.steps.length, 'шаг', 'шага', 'шагов')
+      + (u ? ' · ' + u + ' без подтверждения' : '') + '</div>';
     b.addEventListener('click', () => select(f.id));
     flowsEl.appendChild(b);
   });
