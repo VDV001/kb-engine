@@ -79,7 +79,36 @@
     margin: 0; letter-spacing: -.01em; text-wrap: balance;
   }
   .repo { font-family: var(--mono); font-size: 12.5px; color: var(--text-3); }
-  .lede { color: var(--text-2); max-width: 68ch; margin: 10px 0 20px; }
+  .theme-btn {
+    margin-left: auto; align-self: center;
+    background: var(--surface); color: var(--text-2);
+    border: 1px solid var(--outline); border-radius: 999px;
+    padding: 6px 14px 6px 11px; font: inherit; font-size: 12.5px;
+    cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .theme-btn:hover { border-color: var(--outline-strong); color: var(--text); }
+  .theme-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .theme-btn .glyph { font-size: 13px; line-height: 1; }
+
+  .lede { color: var(--text-2); max-width: 74ch; margin: 12px 0 0; font-size: 15.5px; }
+  .lede b { color: var(--text); font-weight: 600; }
+
+  /* Как читать: три шага вместо абзаца — глазу нужна опора, а не проза. */
+  .howto {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 10px; margin: 18px 0 22px; max-width: 1100px;
+  }
+  .howto div {
+    background: var(--surface); border: 1px solid var(--outline);
+    border-left: 3px solid var(--accent); border-radius: 3px;
+    padding: 11px 13px; font-size: 13.5px; color: var(--text-2); line-height: 1.45;
+  }
+  .howto b { display: block; color: var(--text); font-weight: 600; margin-bottom: 3px; font-size: 13px; }
+  .howto .n {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    letter-spacing: .08em; display: block; margin-bottom: 5px;
+  }
 
   .counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 22px; }
   .count {
@@ -209,12 +238,37 @@
   <header class="page">
     <h1>kb-engine — карта архитектуры и сценариев</h1>
     <span class="repo" id="repo"></span>
+    <button class="theme-btn" id="themeBtn" type="button" title="Переключить тему">
+      <span class="glyph" id="themeGlyph">◐</span><span id="themeLabel">как в системе</span>
+    </button>
   </header>
   <p class="lede">
-    Собрано из кода, а не из README. Каждый шаг несёт ссылку <span style="font-family:var(--mono)">file:line</span>,
-    и каждая такая ссылка проверена программой: она открывает файл на этой строке и ищет там заявленный вызов.
-    Связи, которые вывести из кода не удалось, помечены пунктиром — граница знания показана, а не замазана.
+    Это карта того, <b>как движок работает</b> — не список модулей, а действия целиком:
+    «владелец записывает трату», «страница сама говорит, что отстала». Каждый шаг несёт ссылку
+    <span style="font-family:var(--mono)">file:line</span> на живой код, и <b>каждая такая ссылка
+    проверена программой</b>: она открывает файл на этой строке и ищет там заявленный вызов.
+    Схема, нарисованная по памяти, выглядит так же убедительно, как собранная по коду, — отличить
+    их можно только механической проверкой.
   </p>
+
+  <div class="howto">
+    <div>
+      <span class="n">01</span>
+      <b>Выберите сценарий справа</b>
+      На схеме останутся только его участники, а шаги появятся списком под ним.
+    </div>
+    <div>
+      <span class="n">02</span>
+      <b>Идите по зонам, а не подряд</b>
+      Пять областей — Деньги, Каталог, Витрина, Терминал, Журнал. Так карту принимают частями.
+    </div>
+    <div>
+      <span class="n">03</span>
+      <b>Смотрите, чего здесь нет</b>
+      Внизу два блока: что осталось непроверенным и что подтверждено запуском, а не чтением.
+      Пунктирная связь — та, которую из кода вывести не удалось; граница знания показана, а не замазана.
+    </div>
+  </div>
 
   <div class="counts" id="counts"></div>
 
@@ -265,7 +319,42 @@
   const GLYPH = { actor: '▲', client: '■', service: '●', data: '◆', external: '◇' };
   const byId = Object.fromEntries(M.nodes.map(n => [n.id, n]));
 
-  document.getElementById('repo').textContent = M.project + ' @ ' + M.commit;
+  // Голое «kb-engine @ 40f118b» читателю не говорит ничего. Это версия КОДА, под
+  // которую карта проверена, и она здесь не для красоты: сборка страницы падает,
+  // если код ушёл вперёд, а карта осталась. Подпись должна называть смысл.
+  const repo = document.getElementById('repo');
+  repo.textContent = 'проверено против кода ' + M.commit;
+  repo.title = 'Карта описывает эту версию кода (' + M.project + ', коммит ' + M.commit + '). '
+    + 'Сборка страницы не проходит, если код изменился, а карту не поправили.';
+
+  // ---- тема: как в системе → светлая → тёмная
+  //
+  // Обе темы в стилях были с самого начала, а выбора не было: страница шла за
+  // системой молча. «Как в системе» осталось первым состоянием — это верный
+  // ответ по умолчанию, но теперь он назван вслух и его можно переопределить.
+  (function theme() {
+    const MODES = [
+      { id: 'auto',  glyph: '◐', label: 'как в системе' },
+      { id: 'light', glyph: '☀', label: 'светлая' },
+      { id: 'dark',  glyph: '☾', label: 'тёмная' },
+    ];
+    const btn = document.getElementById('themeBtn');
+    const glyph = document.getElementById('themeGlyph');
+    const label = document.getElementById('themeLabel');
+    let i = Math.max(0, MODES.findIndex(m => m.id === localStorage.getItem('map-theme')));
+
+    function apply() {
+      const m = MODES[i];
+      if (m.id === 'auto') document.documentElement.removeAttribute('data-theme');
+      else document.documentElement.setAttribute('data-theme', m.id);
+      glyph.textContent = m.glyph;
+      label.textContent = m.label;
+      btn.setAttribute('aria-label', 'Тема: ' + m.label + '. Нажмите, чтобы сменить.');
+      try { localStorage.setItem('map-theme', m.id); } catch (e) { /* приватный режим */ }
+    }
+    btn.addEventListener('click', () => { i = (i + 1) % MODES.length; apply(); });
+    apply();
+  })();
 
   // ---- счётчики
   const steps = M.flows.flatMap(f => f.steps);
@@ -476,9 +565,13 @@
 
   document.getElementById('gaps').innerHTML = M.gaps.map(g => '<li>' + esc(g) + '</li>').join('');
   document.getElementById('runtime').innerHTML = (M.runtime_checks || []).map(r => '<li>' + esc(r) + '</li>').join('');
+  // Число случаев отрицательного контроля подставляет сборка, считая их в самом
+  // валидаторе. Копия этого числа в вёрстке однажды уже разошлась с правдой:
+  // говорила «шесть», когда случаев стало тринадцать, и заметить это могла
+  // только пара глаз — проверки на прозу в вёрстке нет.
   document.getElementById('foot').textContent =
     'Карта собрана статически (чтение кода) и проверена на рантайме (запуск бинаря на временных данных). '
     + 'Валидатор открывает каждую ссылку file:line и ищет заявленный вызов; на первом прогоне он нашёл 16 нарушений в этой же карте. '
-    + 'Отрицательный контроль: шесть подсаженных ложных записей — поймана каждая.';
+    + 'Отрицательный контроль валидатора: 13 подсаженных ложных записей — поймана каждая.';
 })();
 </script>
