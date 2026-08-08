@@ -614,12 +614,16 @@
   // нет» ровно тот раздел, который нельзя делать незаметным.
   (function folds() {
     const KEY = 'map-folds';
-    // Голое число в скобках, без существительного. Склонение здесь потребовало бы
-    // правила, а оно на этой ветке ещё не существует — живёт в несмерженном PR
-    // про «4 шагов» → «4 шага». Заводить вторую копию правила ради подписи хуже,
-    // чем обойтись формой, которой согласование не нужно.
-    document.getElementById('gapsCount').textContent = '(' + M.gaps.length + ')';
-    document.getElementById('runtimeCount').textContent = '(' + (M.runtime_checks || []).length + ')';
+    // Подпись склоняется тем же plural, что и «шагов» у сценариев. Пока правило
+    // жило в несмерженной ветке, здесь стояло голое число в скобках — заводить
+    // вторую копию правила ради подписи было бы хуже. Теперь копия не нужна:
+    // правило одно на страницу, и склонение у всех подписей одинаковое.
+    const gc = M.gaps.length;
+    document.getElementById('gapsCount').textContent =
+      gc + ' ' + plural(gc, 'пункт', 'пункта', 'пунктов');
+    const rc = (M.runtime_checks || []).length;
+    document.getElementById('runtimeCount').textContent =
+      rc + ' ' + plural(rc, 'проверка', 'проверки', 'проверок');
 
     let closed;
     try { closed = new Set(JSON.parse(localStorage.getItem(KEY) || '[]')); }
