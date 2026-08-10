@@ -414,7 +414,7 @@ func (f ledgerFinances) Balances() ([]finance.AccountBalance, error) {
 	for _, r := range recs {
 		txs = append(txs, r.Transaction())
 	}
-	return finance.CurrentBalances(accounts, txs), nil
+	return finance.CurrentBalances(accounts, txs, nil), nil
 }
 
 // SetBalance records a new balance through the same writer fin balance uses, so

@@ -70,6 +70,31 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 	return out
 }
 
+// Confirmations — когда именно владелец подтвердил остаток каждого счёта.
+//
+// Лист «Счета» хранит ДЕНЬ, и одного дня не хватает: траты того же дня делятся
+// на записанные до того, как человек посмотрел в приложение банка, и после,
+// а вычитать нужно только вторые. Момент живёт рядом с книгой, а не в ней:
+// колонка «Обновлено» — то, что читает человек, и день там нужен днём.
+//
+// Пустая карта значит «не знаем ни про один счёт», и это законное состояние:
+// счёт, подтверждённый до появления файла состояния, момента не имеет.
+type Confirmations map[string]time.Time
+
+// At отвечает, когда подтверждали именно этот счёт.
+//
+// Сравнение имён — дело домена, а не карты: лист «Счета» и журнал расходятся
+// регистром и пробелами вокруг стрелки, и побайтовое равенство молча вернуло бы
+// правило к прежнему поведению на счетах вроде «Долг → Отец».
+func (c Confirmations) At(bank string) (time.Time, bool) {
+	for name, at := range c {
+		if domain.SameAccountName(name, bank) {
+			return at, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // CurrentBalances считает остаток каждого счёта на сейчас.
 //
 // Учитываются только расходы: домен не даёт доходу счёта, поэтому движок не
@@ -87,7 +112,7 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 // Цена решения названа честно: трата, записанная после подтверждения в тот же
 // день, попадёт в расчёт лишь завтра. Это ошибка в одну сторону и на один день,
 // тогда как двойной учёт занижал остаток каждый раз при подтверждении.
-func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []AccountBalance {
+func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs Confirmations) []AccountBalance {
 	out := make([]AccountBalance, 0, len(accounts))
 	for _, a := range accounts {
 		b := AccountBalance{

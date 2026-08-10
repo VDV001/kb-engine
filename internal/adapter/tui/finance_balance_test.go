@@ -34,7 +34,7 @@ func (s *stubAccounts) Balances() ([]finance.AccountBalance, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
-	return finance.CurrentBalances(s.list, nil), nil
+	return finance.CurrentBalances(s.list, nil, nil), nil
 }
 
 // AddAccount заводит счёт, которого на листе ещё нет. Отдельный метод, а не

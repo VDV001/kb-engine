@@ -125,6 +125,10 @@ type SourceStatus struct {
 type Finances struct {
 	Transactions []domain.Transaction
 	Accounts     []domain.Account
+	// Confirmations — моменты подтверждения остатков, если они известны. Пустая
+	// карта — законное состояние, а не сбой: у счёта, подтверждённого до
+	// появления файла состояния, момента нет.
+	Confirmations finance.Confirmations
 }
 
 // Financier is the finance port the API depends on. A nil Financier means no
@@ -533,7 +537,7 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			}
 			// Остаток считает тот же usecase, что и терминал: две реализации
 			// одной арифметики однажды разойдутся, и разойдутся молча.
-			for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions) {
+			for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations) {
 				accounts = append(accounts, toBalanceDTO(b))
 			}
 		}

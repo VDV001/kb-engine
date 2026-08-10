@@ -81,7 +81,7 @@ func TestCurrentBalances_carriesTheGroup(t *testing.T) {
 		t.Fatalf("NewAccount: %v", err)
 	}
 
-	got := finance.CurrentBalances([]domain.Account{acc}, nil)
+	got := finance.CurrentBalances([]domain.Account{acc}, nil, nil)
 	if len(got) != 1 {
 		t.Fatalf("счетов = %d", len(got))
 	}
