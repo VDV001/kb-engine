@@ -24,6 +24,14 @@ type Palette struct {
 	Kpi3Bg             string
 	Kpi3Sub            string
 	Kpi3Text           string
+	Lane1              string
+	Lane2              string
+	Lane3              string
+	Lane4              string
+	Lane5              string
+	Lane6              string
+	Lane7              string
+	Lane8              string
 	NavBg              string
 	NavBorder          string
 	OnErrorContainer   string
@@ -84,6 +92,14 @@ var Light = Palette{
 	Kpi3Bg:             "#000000",
 	Kpi3Sub:            "#ffdbd0",
 	Kpi3Text:           "#ffffff",
+	Lane1:              "#c0562a",
+	Lane2:              "#2f4b7c",
+	Lane3:              "#a03a6e",
+	Lane4:              "#4a7a2f",
+	Lane5:              "#6b3f96",
+	Lane6:              "#8a6d1f",
+	Lane7:              "#2f7a5f",
+	Lane8:              "#5c5f66",
 	NavBg:              "#fbf9f2",
 	NavBorder:          "#fbf9f2",
 	OnErrorContainer:   "#93000a",
@@ -144,6 +160,14 @@ var Dark = Palette{
 	Kpi3Bg:             "#fbf9f2",
 	Kpi3Sub:            "#99462a",
 	Kpi3Text:           "#1a1a1a",
+	Lane1:              "#d99b7e",
+	Lane2:              "#4ec0c9",
+	Lane3:              "#e087b5",
+	Lane4:              "#9ecb5f",
+	Lane5:              "#b08ae0",
+	Lane6:              "#e0a24a",
+	Lane7:              "#5fc48c",
+	Lane8:              "#a8adb8",
 	NavBg:              "#1a1a1a",
 	NavBorder:          "#1a1a1a",
 	OnErrorContainer:   "#ffdad6",
