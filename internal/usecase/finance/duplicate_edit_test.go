@@ -24,7 +24,7 @@ func TestRepeatOfRecord(t *testing.T) {
 	}
 	mk := func(id string, rub float64, note string) finance.Record {
 		tx, err := domain.NewTransaction(domain.TransactionParams{
-			ID: id, Kind: "expense", Date: day,
+			ID: id, Kind: "expense", Date: day, Now: func() time.Time { return day },
 			Amount:   money(t, rub),
 			Category: "Транспорт", Place: "Юрент", Account: "Сбербанк",
 			Description: note,
@@ -74,7 +74,7 @@ func TestRepeatOfRecord(t *testing.T) {
 
 	t.Run("регистр и пробелы различием не считаются", func(t *testing.T) {
 		tx, err := domain.NewTransaction(domain.TransactionParams{
-			ID: "01BBB", Kind: "expense", Date: day,
+			ID: "01BBB", Kind: "expense", Date: day, Now: func() time.Time { return day },
 			Amount:   money(t, 200),
 			Category: " транспорт", Place: "ЮРЕНТ ", Account: "сбербанк",
 		})

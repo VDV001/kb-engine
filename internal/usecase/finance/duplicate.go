@@ -28,19 +28,79 @@ func Duplicate(existing []Record, p AddParams) *Record {
 	if want.IsZero() {
 		want = domain.Day(time.Now())
 	}
+	return firstMatch(existing, entry{
+		kind: p.Kind, date: want, amount: p.Amount,
+		category: p.Category, sub: p.Subcategory, place: p.Place,
+		note: p.Description, source: p.Source, account: p.Account,
+	}, "")
+}
 
+// RepeatOf asks the same question about a record that already exists: after
+// this edit, does the entry repeat another one?
+//
+// It exists because editing went around the check entirely. Adding the same
+// expense twice was refused; editing one until it matched another was not — and
+// a duplicate that arrives this way is nearly unresolvable a week later, since
+// nobody can say which of the two was the real purchase.
+//
+// Everything is compared except the record itself. Without that exception every
+// edit would report the entry as a repeat of itself, and editing would stop
+// working altogether.
+func RepeatOf(existing []Record, edited Record) *Record {
+	tx := edited.Transaction()
+	return firstMatch(existing, entry{
+		kind: tx.Kind(), date: tx.Date(), amount: tx.Amount(),
+		category: tx.Category(), sub: tx.Subcategory(), place: tx.Place(),
+		note: tx.Description(), source: tx.Source(), account: tx.Account(),
+	}, tx.ID())
+}
+
+// entry — то, чем одна трата отличается от другой для человека. Одно описание
+// на оба пути: две копии этого правила разошлись бы, и обход нашёлся бы сменой
+// экрана — ровно так, как это уже было с записью мимо движка.
+type entry struct {
+	kind                                        string
+	date                                        time.Time
+	amount                                      domain.Money
+	category, sub, place, note, source, account string
+}
+
+// firstMatch ищет запись, совпадающую с образцом. skipID исключает саму
+// правимую запись; пустой id не совпадает ни с чем, поэтому путь добавления
+// исключений не делает.
+func firstMatch(existing []Record, want entry, skipID string) *Record {
 	for i := range existing {
 		tx := existing[i].Transaction()
-		if tx.Kind() != p.Kind || !tx.Date().Equal(want) || tx.Amount() != p.Amount {
+		if skipID != "" && tx.ID() == skipID {
 			continue
 		}
-		if same(tx.Category(), p.Category) && same(tx.Subcategory(), p.Subcategory) &&
-			same(tx.Place(), p.Place) && same(tx.Description(), p.Description) &&
-			same(tx.Source(), p.Source) && same(tx.Account(), p.Account) {
+		if want.matches(tx) {
 			return &existing[i]
 		}
 	}
 	return nil
+}
+
+// matches — совпадает ли запись с образцом. Сначала то, что различает траты
+// сразу (вид, день, сумма), потом написания: перебирать шесть строк ради
+// покупки другого дня незачем.
+func (e entry) matches(tx domain.Transaction) bool {
+	if tx.Kind() != e.kind || !tx.Date().Equal(e.date) || tx.Amount() != e.amount {
+		return false
+	}
+	for _, pair := range [][2]string{
+		{tx.Category(), e.category},
+		{tx.Subcategory(), e.sub},
+		{tx.Place(), e.place},
+		{tx.Description(), e.note},
+		{tx.Source(), e.source},
+		{tx.Account(), e.account},
+	} {
+		if !same(pair[0], pair[1]) {
+			return false
+		}
+	}
+	return true
 }
 
 // same compares two field values the way a person would: surrounding spaces and
