@@ -231,7 +231,7 @@ func TestLoad_absentSectionsMarshalAsEmptyArrays(t *testing.T) {
 	if err := json.Unmarshal(raw, &back); err != nil {
 		t.Fatalf("Unmarshal: %v", err)
 	}
-	for _, key := range []string{"findings", "roots", "gaps", "runtime_checks", "nodes", "flows", "zones", "layers"} {
+	for _, key := range []string{"findings", "roots", "gaps", "runtime_checks", "nodes", "flows", "zones", "layers", "examples"} {
 		got, ok := back[key]
 		if !ok {
 			t.Errorf("%s: отсутствует в JSON", key)

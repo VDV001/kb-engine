@@ -183,10 +183,11 @@ type Stats struct {
 // rawMap — файл как он лежит на диске, оба диалекта сразу. Поля, которых в
 // конкретной схеме нет, остаются нулевыми, и разбор об этом не спотыкается.
 type rawMap struct {
-	Project     string `json:"project"`
-	Commit      string `json:"commit"`
-	CheckedAt   string `json:"checked_at"`
-	ProjectNote string `json:"project_note"`
+	Project     string   `json:"project"`
+	Commit      string   `json:"commit"`
+	CheckedAt   string   `json:"checked_at"`
+	ProjectNote string   `json:"project_note"`
+	Examples    []string `json:"examples"`
 	Provenance  struct {
 		Note      string            `json:"note"`
 		Roots     map[string]string `json:"roots"`
@@ -235,6 +236,7 @@ func Load(path string) (Map, error) {
 		Commit:        raw.Commit,
 		CheckedAt:     raw.CheckedAt,
 		Note:          firstNonEmpty(raw.ProjectNote, raw.Provenance.Note),
+		Examples:      nonNil(raw.Examples),
 		RootsNote:     raw.Provenance.RootsNote,
 		Roots:         roots(raw.Provenance.Roots),
 		Layers:        nonNil(raw.Layers),
