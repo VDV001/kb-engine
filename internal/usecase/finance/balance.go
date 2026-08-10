@@ -124,7 +124,7 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 		}
 		if !a.Updated().IsZero() {
 			b.ConfirmedOn = a.Updated().Format("2006-01-02")
-			after := spentAfter(txs, a.Bank(), a.Updated())
+			after := spentAfter(txs, a.Bank(), a.Updated(), confs)
 			b.Spent = after
 			b.Current = a.Balance().Sub(after)
 			// Минус означает не долг, а слепоту расчёта: доходы счёта не имеют,
@@ -157,7 +157,13 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 // импорт выдаёт ULID всей истории разом, и для импортированных строк момент
 // записи — день импорта, а не появления траты. Счёт, подтверждённый раньше
 // импорта, получал вычет всей своей доимпортной истории.
-func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) domain.Money {
+//
+// Спор внутри дня решается точно, когда известен МОМЕНТ подтверждения, и
+// приблизительно, когда известен только день. Приблизительно — это «человек
+// видел всё, что записано в этот день»: догадка всегда в одну сторону, поэтому
+// расчёт завышал остаток на каждую трату, записанную после того, как владелец
+// снял остаток в приложении банка.
+func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time, confs Confirmations) domain.Money {
 	var total domain.Money
 	day := domain.Day(confirmed)
 	for _, tx := range txs {
@@ -173,7 +179,20 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) doma
 		case tx.Date().After(day):
 			total = total.Add(tx.Amount()) // в день подтверждения её ещё не было
 		default:
-			if at, ok := domain.RecordedAt(tx.ID()); ok && !at.Before(endOfDay(confirmed)) {
+			at, ok := domain.RecordedAt(tx.ID())
+			if !ok {
+				continue // момент записи неизвестен — считаем, что человек её видел
+			}
+			// Известный момент подтверждения отвечает на вопрос прямо; день
+			// подтверждения отвечать на него не умеет и потому оставлен запасным
+			// правилом, а не поводом выдумать момент.
+			if moment, known := confs.At(bank); known {
+				if at.After(moment) {
+					total = total.Add(tx.Amount())
+				}
+				continue
+			}
+			if !at.Before(endOfDay(confirmed)) {
 				total = total.Add(tx.Amount())
 			}
 		}
