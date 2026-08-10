@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xuri/excelize/v2"
+
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 )
 
 // The chat skill updates balances by writing into the workbook's cells with
@@ -71,6 +74,33 @@ func TestRun_finBalanceRefusesAnUnparsableAmount(t *testing.T) {
 	}
 	if after := accountBalance(t, book, "Сбербанк"); after != before {
 		t.Errorf("баланс изменился на %s при отказе, был %s", after, before)
+	}
+}
+
+// Подтверждение оставляет момент, а не только день.
+//
+// Проверка стоит на живом пути команды, а не на функции записи: экран терминала
+// и команда пишут баланс одним вызовом ровно затем, чтобы момент нельзя было
+// потерять, выбрав другую поверхность. День при этом остаётся в книге — колонку
+// «Обновлено» читает человек.
+func TestRun_finBalanceRecordsTheConfirmationMoment(t *testing.T) {
+	book := workbook(t)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Сбербанк", "--amount", "4321,55"}, &out, &errb); code != 0 {
+		t.Fatalf("fin balance exit = %d, stderr = %s", code, errb.String())
+	}
+
+	state, err := balancestate.Load(balancestate.PathNextTo(book))
+	if err != nil {
+		t.Fatalf("balancestate.Load: %v", err)
+	}
+	moment, known := state.At("Сбербанк")
+	if !known {
+		t.Fatal("момент подтверждения не записан — расчёт останется на приблизительном правиле")
+	}
+	if time.Since(moment) > time.Minute {
+		t.Errorf("момент = %s, ожидался момент этого запуска", moment)
 	}
 }
 
