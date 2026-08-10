@@ -46,6 +46,7 @@ function engineMap(): ArchMap {
     ],
     findings: [],
     gaps: [],
+    examples: ['владелец записывает трату', 'страница сама говорит, что отстала'],
     runtime_checks: ['fin add на временном журнале: повтор отвергнут'],
     stats: { ...emptyStats, nodes: 2, flows: 1, steps: 2, unverified: 1, runtime_checks: 1 },
   }
@@ -246,5 +247,27 @@ describe('ArchitectureView', () => {
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: /Проверено/ }))
     expect(await screen.findByText(/Ни одного прогона/)).toBeDefined()
+  })
+
+  // Фраза «не список модулей, а действия целиком» без примеров — утверждение ни
+  // о чём. На странице-предшественнице примеры стояли рядом с ней и при
+  // переносе пропали у обеих карт.
+  it('показывает примеры действий из карты', async () => {
+    setMaps(engineMap())
+    render(<ArchitectureView />)
+    expect(await screen.findByText(/владелец записывает трату/)).toBeDefined()
+    expect(screen.getByText(/страница сама говорит, что отстала/)).toBeDefined()
+  })
+
+  // Карта без примеров показывает лид без них, а не выдуманные: пример,
+  // сочинённый вкладкой, читался бы как факт о проекте.
+  it('без примеров не выдумывает их', async () => {
+    setMaps(workspaceMap())
+    render(<ArchitectureView />)
+    expect(await screen.findByText(/действия целиком/)).toBeDefined()
+    // Примеры соседней карты — то, что появится, если вкладка зашьёт их в
+    // вёрстку вместо чтения из данных. Проверка на «нет никаких примеров»
+    // такую подсадку пропускала: она проходила и до починки, и после неё.
+    expect(screen.queryByText(/владелец записывает трату/)).toBeNull()
   })
 })

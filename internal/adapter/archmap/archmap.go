@@ -38,9 +38,12 @@ type Map struct {
 	CheckedAt string `json:"checked_at,omitempty"`
 	// Note — что карта говорит о себе самой: project_note у одной схемы,
 	// provenance.note у другой. По смыслу это одно и то же.
-	Note      string `json:"note,omitempty"`
-	Roots     []Root `json:"roots"`
-	RootsNote string `json:"roots_note,omitempty"`
+	Note string `json:"note,omitempty"`
+	// Examples — чем карта иллюстрирует «не список модулей, а действия целиком».
+	// Живут в карте, а не в вёрстке: у каждой карты они свои, а вкладка одна.
+	Examples  []string `json:"examples"`
+	Roots     []Root   `json:"roots"`
+	RootsNote string   `json:"roots_note,omitempty"`
 
 	Layers        []Layer   `json:"layers"`
 	Zones         []Zone    `json:"zones"`
@@ -180,10 +183,11 @@ type Stats struct {
 // rawMap — файл как он лежит на диске, оба диалекта сразу. Поля, которых в
 // конкретной схеме нет, остаются нулевыми, и разбор об этом не спотыкается.
 type rawMap struct {
-	Project     string `json:"project"`
-	Commit      string `json:"commit"`
-	CheckedAt   string `json:"checked_at"`
-	ProjectNote string `json:"project_note"`
+	Project     string   `json:"project"`
+	Commit      string   `json:"commit"`
+	CheckedAt   string   `json:"checked_at"`
+	ProjectNote string   `json:"project_note"`
+	Examples    []string `json:"examples"`
 	Provenance  struct {
 		Note      string            `json:"note"`
 		Roots     map[string]string `json:"roots"`
@@ -232,6 +236,7 @@ func Load(path string) (Map, error) {
 		Commit:        raw.Commit,
 		CheckedAt:     raw.CheckedAt,
 		Note:          firstNonEmpty(raw.ProjectNote, raw.Provenance.Note),
+		Examples:      nonNil(raw.Examples),
 		RootsNote:     raw.Provenance.RootsNote,
 		Roots:         roots(raw.Provenance.Roots),
 		Layers:        nonNil(raw.Layers),
