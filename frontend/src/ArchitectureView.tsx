@@ -5,15 +5,19 @@ import { rootsOf } from './architecture'
 import { useResource } from './hooks/useResource'
 import { Card, Chip, ErrorBox, Section, Spinner } from './components/ui'
 import { ChecksPanel } from './architecture/ChecksPanel'
+import { HowToRead } from './architecture/HowToRead'
+import { MapCounts } from './architecture/MapCounts'
 import { FindingsPanel } from './architecture/FindingsPanel'
 import { FlowsPanel } from './architecture/FlowsPanel'
 import { MapHeader } from './architecture/MapHeader'
 import { NodesPanel } from './architecture/NodesPanel'
+import { SchemePanel } from './architecture/SchemePanel'
 import { ZonesPanel } from './architecture/ZonesPanel'
 
-type Part = 'zones' | 'flows' | 'nodes' | 'findings' | 'checks'
+type Part = 'scheme' | 'zones' | 'flows' | 'nodes' | 'findings' | 'checks'
 
 const PARTS: { id: Part; label: string }[] = [
+  { id: 'scheme', label: 'Схема' },
   { id: 'zones', label: 'Зоны' },
   { id: 'flows', label: 'Сценарии' },
   { id: 'nodes', label: 'Узлы' },
@@ -32,7 +36,10 @@ const PARTS: { id: Part; label: string }[] = [
 export function ArchitectureView() {
   const index = useResource(api.maps)
   const [pickedID, setPickedID] = useState('')
-  const [part, setPart] = useState<Part>('zones')
+  const [part, setPart] = useState<Part>('scheme')
+  // Выбранный сценарий живёт здесь: его показывает схема и ищет список, и
+  // разъезжаться этим двум нельзя — они об одном и том же.
+  const [pickedFlow, setPickedFlow] = useState('')
   const [zone, setZone] = useState('')
 
   const list: ArchMapIndexEntry[] = index.status === 'ready' ? index.data.maps : []
@@ -78,6 +85,7 @@ export function ArchitectureView() {
                 active={m.id === currentID}
                 onClick={() => {
                   setPickedID(m.id)
+                  setPickedFlow('')
                   // Зона принадлежит карте: оставить выбранную «Финансы» при
                   // переходе на карту, где такой зоны нет, значит показать
                   // пустой список и не сказать почему.
@@ -96,6 +104,7 @@ export function ArchitectureView() {
       {map.status === 'ready' && (
         <div className="space-y-6">
           <MapHeader map={map.data} />
+          <MapCounts map={map.data} />
 
           <div className="flex flex-wrap gap-2 border-b border-outline-variant pb-3">
             {PARTS.map((p) => (
@@ -108,12 +117,23 @@ export function ArchitectureView() {
             ))}
           </div>
 
+          {part === 'scheme' && <HowToRead map={map.data} />}
+          {part === 'scheme' && (
+            <SchemePanel
+              map={map.data}
+              roots={roots}
+              zone={zone}
+              onZone={setZone}
+              pickedID={pickedFlow}
+              onPick={setPickedFlow}
+            />
+          )}
           {part === 'zones' && (
             <ZonesPanel
               map={map.data}
               onPick={(z) => {
                 setZone(z)
-                setPart('flows')
+                setPart('scheme')
               }}
             />
           )}

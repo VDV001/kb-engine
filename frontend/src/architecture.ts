@@ -58,6 +58,133 @@ export function anchorLabel(a: Anchor): string {
   return a.line ? `${a.path}:${a.line}` : a.path
 }
 
+/** Прямоугольник карточки на поле — то, что отдаёт getBoundingClientRect. */
+export interface Box {
+  left: number
+  top: number
+  width: number
+  height: number
+}
+
+export interface Wire {
+  /** Путь кривой в координатах поля. */
+  d: string
+  /** Середина кривой — туда садится кружок с номером шага. */
+  mid: { x: number; y: number }
+}
+
+/**
+ * Провод от карточки к карточке: кубическая кривая, выходящая вбок.
+ *
+ * Сторона выхода зависит от направления: шаг назад (адаптер отвечает команде)
+ * выходит влево, и без этого две встречные стрелки ложились бы одна на другую,
+ * а на карте таких шагов много.
+ *
+ * Середина считается формулой, а не getPointAtLength: у кубической кривой
+ * точка при t=0.5 это (P0 + 3P1 + 3P2 + P3)/8, и тогда номер шага можно
+ * поставить, не спрашивая браузер и не имея вообще никакого DOM.
+ */
+export function wirePath(from: Box, to: Box, field: Box): Wire {
+  const forward = to.left >= from.left
+  const x1 = (forward ? from.left + from.width : from.left) - field.left
+  const y1 = from.top + from.height / 2 - field.top
+  const x2 = (forward ? to.left : to.left + to.width) - field.left
+  const y2 = to.top + to.height / 2 - field.top
+
+  const dx = Math.max(28, Math.abs(x2 - x1) * 0.45) * (forward ? 1 : -1)
+  const c1x = x1 + dx
+  const c2x = x2 - dx
+  return {
+    d: `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`,
+    mid: { x: (x1 + 3 * c1x + 3 * c2x + x2) / 8, y: (y1 + 3 * y1 + 3 * y2 + y2) / 8 },
+  }
+}
+
+// Типы узлов: значок и русское имя. Форма дублирует цвет намеренно — тип узла
+// обязан читаться и при слабом различении оттенков.
+//
+// Наборы у карт разные: у карты кода пять типов, у карты рабочего места
+// пятнадцать. Незнакомый тип получает точку и своё же имя, а не выпадает из
+// легенды: показать участника без подписи честнее, чем не показать вовсе.
+const KINDS: Record<string, { glyph: string; label: string }> = {
+  actor: { glyph: '▲', label: 'человек' },
+  client: { glyph: '▣', label: 'поверхность' },
+  surface: { glyph: '▣', label: 'поверхность' },
+  service: { glyph: '●', label: 'код' },
+  script: { glyph: '●', label: 'скрипт' },
+  engine: { glyph: '■', label: 'движок' },
+  job: { glyph: '◷', label: 'расписание' },
+  hook: { glyph: '◉', label: 'хук' },
+  skill: { glyph: '◎', label: 'скилл' },
+  agent: { glyph: '⬟', label: 'агенты' },
+  data: { glyph: '◆', label: 'данные' },
+  external: { glyph: '◇', label: 'внешний' },
+  // Пять состояний, а не сортов. Узел не «такого типа» — он в таком
+  // положении, и это находка, а не свойство: скрипт, которого никто не зовёт,
+  // выглядит на карте так же, как рабочий.
+  'job-missing': { glyph: '⊘', label: 'расписания нет' },
+  'script-orphan': { glyph: '⊘', label: 'никто не зовёт' },
+  'script-retired': { glyph: '⊗', label: 'выведен из работы' },
+  'data-stale': { glyph: '◇', label: 'канал иссяк' },
+  'data-missing': { glyph: '◇', label: 'файла нет' },
+}
+
+const BROKEN = new Set(['job-missing', 'script-orphan', 'script-retired', 'data-missing', 'data-stale'])
+
+export function kindGlyph(kind?: string): string {
+  return KINDS[kind ?? '']?.glyph ?? '•'
+}
+
+export function kindLabel(kind?: string): string {
+  return KINDS[kind ?? '']?.label ?? kind ?? 'без типа'
+}
+
+/** Узел в сломанном положении: задание обещано и не заведено, скрипт без
+ * вызывающего, канал, который иссяк. */
+export function isBrokenKind(kind?: string): boolean {
+  return BROKEN.has(kind ?? '')
+}
+
+/**
+ * Типы, встречающиеся в карте, для легенды: сначала обычные, потом сломанные —
+ * иначе состояние теряется среди сортов.
+ */
+export function legendKinds(nodes: ArchNode[]): string[] {
+  return kindsOf(nodes).sort((a, b) => Number(isBrokenKind(a)) - Number(isBrokenKind(b)))
+}
+
+/**
+ * Счётчики карты — те же, что печатала страница-предшественник.
+ *
+ * Половина из них про границу знания, а не про объём: сколько узлов стоит на
+ * якоре, сколько шагов несёт источник, сколько узлов в сломанном положении.
+ * Объём без них читается как «карта полная».
+ */
+export function mapCounts(map: Pick<ArchMap, 'nodes' | 'flows' | 'findings' | 'gaps' | 'runtime_checks' | 'stats'>) {
+  const steps = map.flows.flatMap((f) => f.steps)
+  return {
+    nodes: map.nodes.length,
+    nodesWithAnchor: map.nodes.filter((n) => (n.sources ?? []).length > 0).length,
+    broken: map.nodes.filter((n) => isBrokenKind(n.kind)).length,
+    flows: map.flows.length,
+    steps: steps.length,
+    stepsWithSource: steps.filter((s) => s.source).length,
+    unverified: steps.filter((s) => s.unverified).length,
+    findings: map.findings.length,
+    runtimeChecks: map.runtime_checks.length,
+    gaps: map.gaps.length,
+  }
+}
+
+/**
+ * Цвет слоя берётся по его месту в порядке, а не по имени: у двух карт слои
+ * называются по-разному («домен» и «хуки и скиллы»), и словарь по именам
+ * оставил бы чужую карту серой.
+ */
+export function laneColor(index: number): string {
+  return `var(--lane-${(index % 8) + 1})`
+}
+
 export interface NodeFilter {
   layer?: string
   kind?: string

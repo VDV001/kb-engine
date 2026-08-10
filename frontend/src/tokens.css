@@ -42,6 +42,18 @@
   --status-keep: #2a3550;
   --status-napodumat: #6b3d2e;
   --status-published: #99462a;
+  /* Полосы слоёв на поле схемы. Цвет назначается по МЕСТУ слоя в порядке, а
+     не по его имени: у карты движка слои называются «домен» и «адаптеры», у
+     карты рабочего места — «хуки и скиллы» и «расписание», и словарь по именам
+     оставил бы вторую карту серой. */
+  --lane-1: #c0562a;
+  --lane-2: #2f4b7c;
+  --lane-3: #a03a6e;
+  --lane-4: #4a7a2f;
+  --lane-5: #6b3f96;
+  --lane-6: #8a6d1f;
+  --lane-7: #2f7a5f;
+  --lane-8: #5c5f66;
   --status-review: #2e2e2e;
   --surface: #fbf9f2;
   --surface-container: #f0eee7;
@@ -105,6 +117,14 @@
   --status-napodumat: #b07a52;
   --status-published: #d4866a;
   --status-review: #8a8a8a;
+  --lane-1: #d99b7e;
+  --lane-2: #4ec0c9;
+  --lane-3: #e087b5;
+  --lane-4: #9ecb5f;
+  --lane-5: #b08ae0;
+  --lane-6: #e0a24a;
+  --lane-7: #5fc48c;
+  --lane-8: #a8adb8;
   --surface: #1A1A1A;
   --surface-container: #222222;
   --surface-high: #282A2F;
@@ -167,6 +187,14 @@
   --color-status-napodumat: var(--status-napodumat);
   --color-status-published: var(--status-published);
   --color-status-review: var(--status-review);
+  --color-lane-1: var(--lane-1);
+  --color-lane-2: var(--lane-2);
+  --color-lane-3: var(--lane-3);
+  --color-lane-4: var(--lane-4);
+  --color-lane-5: var(--lane-5);
+  --color-lane-6: var(--lane-6);
+  --color-lane-7: var(--lane-7);
+  --color-lane-8: var(--lane-8);
   --color-surface: var(--surface);
   --color-surface-container: var(--surface-container);
   --color-surface-high: var(--surface-high);

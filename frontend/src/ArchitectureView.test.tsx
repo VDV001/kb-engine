@@ -56,7 +56,7 @@ function workspaceMap(): ArchMap {
     id: 'claude-cowork',
     project: 'claude-cowork',
     checked_at: '2026-08-08',
-    note: 'проект не под git',
+    note: 'числа о личной базе владельца убраны намеренно',
     roots: [{ name: 'cowork', path: '~/claude-cowork' }],
     layers: [],
     zones: [{ name: 'Автоматизация', accepted: true, note: 'принята: 7 сценариев', flows: 0, steps: 0 }],
@@ -101,18 +101,17 @@ describe('ArchitectureView', () => {
   it('открывает первую карту без лишнего клика', async () => {
     setMaps(engineMap(), workspaceMap())
     render(<ArchitectureView />)
-    expect(await screen.findByText(/Деньги/)).toBeDefined()
-    expect(screen.getByText(/abc1234/)).toBeDefined()
+    expect(await screen.findByText(/abc1234/)).toBeDefined()
   })
 
   it('переключает карту', async () => {
     setMaps(engineMap(), workspaceMap())
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: 'claude-cowork' }))
-    expect(await screen.findByText(/Автоматизация/)).toBeDefined()
+    expect(await screen.findByText(/Коммита нет/)).toBeDefined()
     // У карты без коммита свежесть держится на пересчёте якорей, и говорить
     // об этом надо словами, а не отсутствием строки.
-    expect(screen.getByText(/Коммита нет/)).toBeDefined()
+    expect(screen.getByText(/убраны намеренно/)).toBeDefined()
   })
 
   // Третий ответ. Зона без записи о приёмке — это «сверять не с чем», и
@@ -120,11 +119,13 @@ describe('ArchitectureView', () => {
   it('различает принятую зону и зону без записи о приёмке', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
     expect(await screen.findByText('сверять не с чем')).toBeDefined()
 
     cleanup()
     setMaps(workspaceMap())
     render(<ArchitectureView />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
     expect(await screen.findByText('принята')).toBeDefined()
   })
 
@@ -136,6 +137,7 @@ describe('ArchitectureView', () => {
     m.zones = [{ name: 'Журнал версий', accepted: false, flows: 1, steps: 3 }]
     setMaps(m)
     render(<ArchitectureView />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
     expect(await screen.findByText('1 сценарий · 3 шага')).toBeDefined()
   })
 
@@ -148,6 +150,7 @@ describe('ArchitectureView', () => {
     render(<ArchitectureView />)
     // Шапка называет счёт принятых зон — короткую сводку, а не абзац.
     expect(await screen.findByText(/1 из 1/)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Зоны' }))
     expect(screen.getByText(/Совет.*не прогонялась/)).toBeDefined()
 
     // Уходим со вкладки зон: текст приёмки обязан уйти вместе с ними. Пока он
@@ -156,9 +159,52 @@ describe('ArchitectureView', () => {
     expect(screen.queryByText(/Совет.*не прогонялась/)).toBeNull()
   })
 
+  // Счётчики страницы-предшественницы наполовину про границу знания, а не про
+  // объём: без «из них с якорем» и «шагов с источником» карта читается полной.
+  it('показывает счётчики границы знания, а не только объём', async () => {
+    setMaps(engineMap())
+    render(<ArchitectureView />)
+    expect(await screen.findByText('из них с якорем')).toBeDefined()
+    expect(screen.getByText('шагов с источником')).toBeDefined()
+    expect(screen.getByText('связь не подтверждена')).toBeDefined()
+  })
+
+  // Тип узла на схеме называется по-русски, а состояние отличается от сорта:
+  // скрипт, которого никто не зовёт, выглядит как рабочий, и вся разница в
+  // слове под значком.
+  it('переводит типы узлов и называет сломанное состояние', async () => {
+    const m = engineMap()
+    m.nodes = [
+      { id: 'cmd-fin', title: 'fin', layer: 'commands', kind: 'service', sources: ['x.go:1'] },
+      { id: 'ledger', title: 'Сторож', layer: 'commands', kind: 'script-orphan', sources: [] },
+    ]
+    setMaps(m)
+    render(<ArchitectureView />)
+    expect((await screen.findAllByText('код')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('никто не зовёт').length).toBeGreaterThan(0)
+    expect(screen.getByText('узлов в сломанном состоянии')).toBeDefined()
+  })
+
+  it('объясняет, как читать карту, прямо над схемой', async () => {
+    setMaps(engineMap())
+    render(<ArchitectureView />)
+    expect(await screen.findByText(/Выберите сценарий справа/)).toBeDefined()
+    expect(screen.getByText(/нарисованная по памяти/)).toBeDefined()
+  })
+
+  // Правило 11 в чистом виде: число подсадок отрицательного контроля живёт в
+  // сборке карты, а не в данных, и врать им нельзя.
+  it('называет то, чего сама страница не знает', async () => {
+    setMaps(engineMap())
+    render(<ArchitectureView />)
+    fireEvent.click(await screen.findByRole('button', { name: /Проверено/ }))
+    expect(await screen.findByText(/Чего эта страница не знает/)).toBeDefined()
+  })
+
   it('клик по зоне ведёт в её сценарии', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
     fireEvent.click(await screen.findByTitle('Показать сценарии этой зоны'))
     expect(await screen.findByText('Владелец записывает трату')).toBeDefined()
   })

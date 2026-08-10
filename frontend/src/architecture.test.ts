@@ -3,6 +3,12 @@ import {
   acceptanceState,
   anchorLabel,
   filterFlows,
+  kindGlyph,
+  kindLabel,
+  isBrokenKind,
+  legendKinds,
+  laneColor,
+  mapCounts,
   filterNodes,
   groupByLayer,
   kindsOf,
@@ -10,6 +16,7 @@ import {
   rootsOf,
   sortFindings,
   unverifiedCount,
+  wirePath,
 } from './architecture'
 import type { ArchFlow, ArchNode } from './api'
 
@@ -71,6 +78,109 @@ describe('parseAnchor', () => {
     expect(rootsOf({ roots: [{ name: 'engine', path: '~/git/kb-engine' }] })).toEqual({
       engine: '~/git/kb-engine',
     })
+  })
+})
+
+describe('wirePath', () => {
+  const field = { left: 0, top: 0, width: 1000, height: 500 }
+  const a = { left: 100, top: 100, width: 200, height: 60 }
+  const b = { left: 500, top: 300, width: 200, height: 60 }
+
+  it('выходит из правого края вперёд и из левого назад', () => {
+    // Вперёд: из правого края A (300) в левый край B (500).
+    expect(wirePath(a, b, field).d).toMatch(/^M 300 130 C /)
+    expect(wirePath(a, b, field).d).toMatch(/500 330$/)
+    // Назад: из левого края B (500) в правый край A (300) — иначе две
+    // встречные стрелки легли бы одна на другую, а таких шагов на карте много.
+    expect(wirePath(b, a, field).d).toMatch(/^M 500 330 C /)
+    expect(wirePath(b, a, field).d).toMatch(/300 130$/)
+  })
+
+  it('середина лежит между концами — туда садится номер шага', () => {
+    const w = wirePath(a, b, field)
+    expect(w.mid.x).toBeGreaterThan(300)
+    expect(w.mid.x).toBeLessThan(500)
+    expect(w.mid.y).toBe(230)
+  })
+
+  it('считает от рамки поля, а не от окна', () => {
+    const shifted = wirePath(a, b, { left: 50, top: 20, width: 1000, height: 500 })
+    expect(shifted.d).toMatch(/^M 250 110 /)
+  })
+})
+
+describe('типы узлов', () => {
+  // Пять типов — это не сорта, а состояния: скрипт, которого никто не зовёт,
+  // выглядит на карте так же, как рабочий, и вся разница в этом слове.
+  it('различает состояние и сорт', () => {
+    expect(isBrokenKind('script-orphan')).toBe(true)
+    expect(isBrokenKind('data-stale')).toBe(true)
+    expect(isBrokenKind('script')).toBe(false)
+    expect(isBrokenKind(undefined)).toBe(false)
+  })
+
+  it('называет тип по-русски, а незнакомый — им же самим', () => {
+    expect(kindLabel('service')).toBe('код')
+    expect(kindLabel('script-retired')).toBe('выведен из работы')
+    expect(kindLabel('невиданный')).toBe('невиданный')
+    expect(kindLabel(undefined)).toBe('без типа')
+  })
+
+  it('в легенде сломанные состояния идут последними', () => {
+    const mixed: ArchNode[] = [
+      { id: '1', title: 'a', kind: 'data-stale', sources: [] },
+      { id: '2', title: 'b', kind: 'script', sources: [] },
+      { id: '3', title: 'c', kind: 'actor', sources: [] },
+    ]
+    expect(legendKinds(mixed)).toEqual(['script', 'actor', 'data-stale'])
+  })
+})
+
+describe('mapCounts', () => {
+  // Половина счётчиков — про границу знания, а не про объём: без них карта
+  // читается как полная.
+  it('считает якоря, источники и сломанные узлы', () => {
+    const c = mapCounts({
+      nodes: [
+        { id: 'a', title: 'A', kind: 'script', sources: ['x.sh:1'] },
+        { id: 'b', title: 'B', kind: 'script-orphan', sources: [] },
+      ],
+      flows,
+      findings: [{ id: 'f', title: 'находка' }],
+      gaps: ['одно'],
+      runtime_checks: ['прогон'],
+      stats: { nodes: 2, flows: 2, steps: 3, unverified: 1, findings: 1, runtime_checks: 1 },
+    })
+    expect(c).toMatchObject({
+      nodes: 2,
+      nodesWithAnchor: 1,
+      broken: 1,
+      flows: 2,
+      steps: 3,
+      stepsWithSource: 1,
+      unverified: 1,
+      findings: 1,
+      gaps: 1,
+      runtimeChecks: 1,
+    })
+  })
+})
+
+describe('kindGlyph и laneColor', () => {
+  // У одной карты пять типов узлов, у другой двенадцать. Незнакомый тип обязан
+  // получить значок, иначе участник выпадает из легенды целиком.
+  it('незнакомый тип получает точку, а не пустоту', () => {
+    expect(kindGlyph('actor')).toBe('▲')
+    expect(kindGlyph('невиданный')).toBe('•')
+    expect(kindGlyph(undefined)).toBe('•')
+  })
+
+  // Слои у двух карт называются по-разному, поэтому цвет берётся по месту в
+  // порядке: словарь по именам оставил бы чужую карту серой.
+  it('цвет слоя идёт по кругу и не кончается', () => {
+    expect(laneColor(0)).toBe('var(--lane-1)')
+    expect(laneColor(7)).toBe('var(--lane-8)')
+    expect(laneColor(8)).toBe('var(--lane-1)')
   })
 })
 
