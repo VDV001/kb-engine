@@ -265,6 +265,9 @@ describe('ArchitectureView', () => {
     setMaps(workspaceMap())
     render(<ArchitectureView />)
     expect(await screen.findByText(/действия целиком/)).toBeDefined()
-    expect(screen.queryByText(/например/i)).toBeNull()
+    // Примеры соседней карты — то, что появится, если вкладка зашьёт их в
+    // вёрстку вместо чтения из данных. Проверка на «нет никаких примеров»
+    // такую подсадку пропускала: она проходила и до починки, и после неё.
+    expect(screen.queryByText(/владелец записывает трату/)).toBeNull()
   })
 })
