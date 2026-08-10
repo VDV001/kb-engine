@@ -38,9 +38,12 @@ type Map struct {
 	CheckedAt string `json:"checked_at,omitempty"`
 	// Note — что карта говорит о себе самой: project_note у одной схемы,
 	// provenance.note у другой. По смыслу это одно и то же.
-	Note      string `json:"note,omitempty"`
-	Roots     []Root `json:"roots"`
-	RootsNote string `json:"roots_note,omitempty"`
+	Note string `json:"note,omitempty"`
+	// Examples — чем карта иллюстрирует «не список модулей, а действия целиком».
+	// Живут в карте, а не в вёрстке: у каждой карты они свои, а вкладка одна.
+	Examples  []string `json:"examples"`
+	Roots     []Root   `json:"roots"`
+	RootsNote string   `json:"roots_note,omitempty"`
 
 	Layers        []Layer   `json:"layers"`
 	Zones         []Zone    `json:"zones"`
