@@ -123,3 +123,63 @@ func TestRun_finEdit_clearsOnExplicitEmpty(t *testing.T) {
 		t.Errorf("счёт не стёрт: %v", got)
 	}
 }
+
+// Правка обходила единственную проверку на повтор: добавить одинаковую трату
+// движок отказывается, а сделать её одинаковой правкой давал. Проверяется живой
+// путь команды, а не функция: проверку внутри usecase обходит первый же новый
+// экран, просто не позвав её.
+func TestRun_finEdit_refusesToCreateARepeat(t *testing.T) {
+	_, ledger := pairedLedger(t)
+	add := func(amount string) {
+		t.Helper()
+		var out, errb bytes.Buffer
+		code := run([]string{
+			"fin", "add", "--ledger", ledger, "--amount", amount, "--cat", "Транспорт",
+			"--place", "Юрент", "--account", "Сбербанк", "--date", "2026-05-02",
+		}, &out, &errb)
+		if code != 0 {
+			t.Fatalf("fin add exit = %d, stderr = %s", code, errb.String())
+		}
+	}
+	add("96")
+	add("42")
+	id := lastID(t, ledger)
+	before := readLedgerFile(t, ledger)
+
+	// Делаем вторую запись копией первой — тем самым способом, которым дубль и
+	// появлялся.
+	code, _, stderr := finEdit(t, ledger, "--id", id, "--amount", "96")
+	if code == 0 {
+		t.Fatal("правка создала дубль и отчиталась успехом")
+	}
+	if !strings.Contains(stderr, "уже есть") {
+		t.Errorf("отказ не назван повтором: %q", stderr)
+	}
+	// Отказ обязан называть запись, с которой совпало, — иначе непонятно, что
+	// именно чинить.
+	if !strings.Contains(stderr, "Юрент") {
+		t.Errorf("отказ не называет найденную запись: %q", stderr)
+	}
+
+	// Отрицательный контроль: отказ ничего не записал. Команда, сообщающая об
+	// ошибке и всё же тронувшая файл, хуже обеих понятных исходов.
+	if after := readLedgerFile(t, ledger); len(after) != len(before) ||
+		strings.Join(after, "\n") != strings.Join(before, "\n") {
+		t.Error("файл изменился, хотя правка отвергнута")
+	}
+}
+
+// Обратная сторона той же проверки: запись всегда совпадает сама с собой, и без
+// исключения по id править стало бы нельзя вообще.
+func TestRun_finEdit_stillEditsWhenNoTwinExists(t *testing.T) {
+	_, ledger := pairedLedger(t)
+	addToLedgerWithAccount(t, ledger, "Сбербанк")
+	id := lastID(t, ledger)
+
+	if code, _, stderr := finEdit(t, ledger, "--id", id, "--amount", "400"); code != 0 {
+		t.Fatalf("обычная правка отвергнута: exit = %d, stderr = %s", code, stderr)
+	}
+	if got := rowOf(t, ledger, id)["amount"]; got != "400.00" {
+		t.Errorf("сумма = %v, ожидалась 400.00", got)
+	}
+}

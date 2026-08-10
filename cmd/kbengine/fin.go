@@ -200,6 +200,19 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 // a repeat is a decision, failing to write is not.
 var ErrRepeat = errors.New("такая запись уже есть")
 
+// repeatSubject — чем запись называется в отказе. У расхода это место, у
+// дохода места нет вовсе, и тогда говорит источник: строка «200 ₽ ·  · Сбербанк»
+// не отвечает на вопрос, о какой записи речь.
+//
+// Одно место на оба пути отказа: добавление и правка обязаны называть найденную
+// запись одинаково, иначе человек решит, что нашлись разные.
+func repeatSubject(tx domain.Transaction) string {
+	if p := tx.Place(); p != "" {
+		return p
+	}
+	return tx.Source()
+}
+
 // appendChecked is the single write path, and the single place the repeat check
 // lives.
 //
@@ -230,12 +243,9 @@ func appendChecked(ledgerPath string, p finance.AddParams, force bool,
 	if !force {
 		if dup := finance.Duplicate(recs, p); dup != nil {
 			tx := dup.Transaction()
-			what := tx.Place()
-			if what == "" {
-				what = tx.Source()
-			}
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
-				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(), what, tx.Account(), tx.ID())
+				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				repeatSubject(tx), tx.Account(), tx.ID())
 		}
 	}
 	rec, err := finance.Add(p, newULID, time.Now)

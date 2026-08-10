@@ -87,6 +87,17 @@ func editInLedger(ledgerPath, id string, p finance.EditParams) (finance.Record, 
 		if err != nil {
 			return finance.Record{}, err
 		}
+		// Та же проверка, что стоит на добавлении, и по той же причине: дубль,
+		// созданный правкой, через неделю неразрешим — никто не скажет, какая
+		// из двух строк была настоящей покупкой. Спрашивается ДО записи и
+		// отвечает тем же ErrRepeat, поэтому обе поверхности отличают «это
+		// повтор» от «файл не открылся» одинаково.
+		if twin := finance.RepeatOf(recs, edited); twin != nil {
+			tx := twin.Transaction()
+			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — правка сделала бы её копией",
+				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				repeatSubject(tx), tx.Account(), tx.ID())
+		}
 		recs[i] = edited
 		finance.Sort(recs)
 		if err := financejsonl.Save(ledgerPath, recs, time.Now); err != nil {
