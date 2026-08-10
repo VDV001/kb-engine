@@ -15,8 +15,19 @@ import { HealthView } from './HealthView'
 import { findingCount } from './hygiene'
 import { ProjectsView } from './ProjectsView'
 import { AboutView } from './AboutView'
+import { ArchitectureView } from './ArchitectureView'
 
-type Tab = 'overview' | 'archives' | 'analytics' | 'health' | 'finances' | 'projects' | 'team' | 'now' | 'about'
+type Tab =
+  | 'overview'
+  | 'archives'
+  | 'analytics'
+  | 'health'
+  | 'finances'
+  | 'projects'
+  | 'team'
+  | 'now'
+  | 'architecture'
+  | 'about'
 
 // Порядок вкладок — это четыре группы, а не список: база знаний, витрина и
 // оперативка, приватное, служебное. Audits и Duplicates стояли третьей и
@@ -31,6 +42,9 @@ const tabs: { id: Tab; label: string }[] = [
   { id: 'team', label: 'Team' },
   { id: 'finances', label: 'Finances' },
   { id: 'health', label: 'Health' },
+  // Карта стоит в служебном хвосте рядом с Health: обе про то, как устроено
+  // хозяйство, а не про то, что в базе лежит.
+  { id: 'architecture', label: 'Architecture' },
   { id: 'about', label: 'About' },
 ]
 
@@ -136,6 +150,7 @@ export default function App() {
             {tab === 'projects' && <ProjectsView />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" masked={masked} />}
             {tab === 'now' && <NowView />}
+            {tab === 'architecture' && <ArchitectureView />}
             {tab === 'about' && (
               <AboutView
                 stats={data.stats}

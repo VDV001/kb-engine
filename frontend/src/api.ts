@@ -499,6 +499,136 @@ export interface FinanceSummary {
   byDay: PeriodTotal[]
 }
 
+/**
+ * Карта архитектуры: документ о том, как проект работает на самом деле, где
+ * каждое утверждение привязано к строке живого кода.
+ *
+ * Форма одна на все карты — разные схемы файлов сводит движок, чтобы страница
+ * не держала второе правило соответствия у себя.
+ */
+export interface ArchMap {
+  id: string
+  project: string
+  /** Коммит кода, против которого карту сверяли. Пуст у проекта не под git. */
+  commit?: string
+  checked_at?: string
+  /** Что карта говорит о себе самой. */
+  note?: string
+  roots: ArchRoot[]
+  roots_note?: string
+  layers: ArchLayer[]
+  zones: ArchZone[]
+  nodes: ArchNode[]
+  flows: ArchFlow[]
+  findings: ArchFinding[]
+  gaps: string[]
+  runtime_checks: string[]
+  coverage?: ArchCoverage
+  acceptance?: ArchAcceptance
+  stats: ArchStats
+}
+
+export interface ArchRoot {
+  name: string
+  path: string
+}
+
+export interface ArchLayer {
+  id: string
+  title: string
+  order: number
+}
+
+export interface ArchZone {
+  name: string
+  /** Есть ли у зоны запись о приёмке. Ноль принятых зон — это «сверять не с
+   * чем», а не «не принято». */
+  accepted: boolean
+  note?: string
+  flows: number
+  steps: number
+}
+
+export interface ArchNode {
+  id: string
+  title: string
+  subtitle?: string
+  layer?: string
+  kind?: string
+  sources: string[]
+}
+
+export interface ArchFlow {
+  id: string
+  title: string
+  summary?: string
+  zone?: string
+  steps: ArchStep[]
+}
+
+export interface ArchStep {
+  n: number
+  from: string
+  to: string
+  call: string
+  detail?: string
+  source?: string
+  symbol?: string
+  /** Шаг, не подтверждённый ни прогоном, ни символом в коде. */
+  unverified: boolean
+  why?: string
+  /** Ветка, а не продолжение прямого пути. */
+  branch: boolean
+}
+
+export interface ArchFinding {
+  id: string
+  zone?: string
+  title: string
+  detail?: string
+  evidence?: string
+  severity?: string
+  status?: string
+  fix?: string
+}
+
+export interface ArchCoverage {
+  scope: {
+    root?: string
+    patterns: string[]
+    also: string[]
+    exclude_dirs: string[]
+  }
+  exclusions: { path: string; why?: string }[]
+  note?: string
+}
+
+export interface ArchAcceptance {
+  classes_run: string[]
+  not_done?: string
+  note?: string
+}
+
+export interface ArchStats {
+  nodes: number
+  flows: number
+  steps: number
+  unverified: number
+  findings: number
+  runtime_checks: number
+}
+
+/** Оглавление карт: без узлов и сценариев — они весят по сотне килобайт. */
+export interface ArchMapIndexEntry {
+  id: string
+  project: string
+  commit?: string
+  checked_at?: string
+  zones: string[]
+  stats: ArchStats
+  accepted_zones: number
+}
+
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(path)
   if (!res.ok) {
@@ -549,6 +679,8 @@ export const api = {
   engine: () => getJSON<Engine>('/api/engine'),
   now: () => getJSON<Now | null>('/api/now'),
   sources: () => getJSON<{ sources: SourceState[] }>('/api/sources'),
+  maps: () => getJSON<{ maps: ArchMapIndexEntry[] }>('/api/maps'),
+  map: (id: string) => getJSON<ArchMap>(`/api/maps/${encodeURIComponent(id)}`),
   team: () => getJSON<Document | null>('/api/team'),
   projects: () => getJSON<ProjectDoc | null>('/api/projects'),
   finances: () => getJSON<Finances>('/api/finances'),
