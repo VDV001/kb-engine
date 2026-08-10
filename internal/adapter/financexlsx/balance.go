@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/xuri/excelize/v2"
 )
@@ -58,7 +59,7 @@ func SetBalance(path, bank string, balance domain.Money, now func() time.Time) e
 	if err := writeBalance(f, row, balance, now()); err != nil {
 		return err
 	}
-	return saveAtomically(f, path)
+	return saveAndRemember(f, path, bank, now)
 }
 
 // ErrAccountExists is returned when a new account is asked for under a name the
@@ -126,7 +127,7 @@ func AddAccount(path, bank string, balance domain.Money, now func() time.Time) e
 	if err := writeBalance(f, row, balance, now()); err != nil {
 		return err
 	}
-	return saveAtomically(f, path)
+	return saveAndRemember(f, path, bank, now)
 }
 
 // lastAccountRow returns the row of the last account on the sheet, refusing
@@ -233,4 +234,24 @@ func writeBalance(f *excelize.File, row int, balance domain.Money, updated time.
 	// Styles last: writing a time.Time applies a format of its own, and the
 	// sheet's own formatting has to win over it.
 	return applyStyles(f, sheetAccounts, row, styles)
+}
+
+// saveAndRemember сохраняет книгу и запоминает, КОГДА остаток был подтверждён.
+//
+// Момент нужен расчёту и не нужен человеку: колонка «Обновлено» хранит день,
+// потому что её читают глазами, а спор «видел ли человек эту трату» внутри дня
+// днём не решается. Оба писателя баланса — команда и экран терминала — проходят
+// здесь, поэтому потерять момент, выбрав другую поверхность, нельзя.
+//
+// Неудача записи момента не отменяет записанный баланс — книга уже сохранена, —
+// но и молчать о ней нельзя: без момента расчёт вернётся к приблизительному
+// правилу и завысит остаток на траты, записанные после подтверждения.
+func saveAndRemember(f *excelize.File, path, bank string, now func() time.Time) error {
+	if err := saveAtomically(f, path); err != nil {
+		return err
+	}
+	if err := balancestate.Record(balancestate.PathNextTo(path), bank, now()); err != nil {
+		return fmt.Errorf("balance written, confirmation moment not: %w", err)
+	}
+	return nil
 }

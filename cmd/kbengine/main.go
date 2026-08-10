@@ -20,6 +20,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/archmap"
 	"github.com/daniil/kb-engine/internal/adapter/artefactfs"
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
@@ -315,6 +316,14 @@ func (f ledgerFinances) Finances() (httpapi.Finances, error) {
 			return httpapi.Finances{}, err
 		}
 		out.Accounts = led.Accounts
+		// Момент подтверждения решает спор внутри дня. Испорченное состояние —
+		// отказ, а не тихий возврат к приблизительному правилу: расчёт тогда
+		// завысит остаток, и снаружи это неотличимо от точного числа.
+		confs, err := balancestate.Load(balancestate.PathNextTo(f.workbookPath))
+		if err != nil {
+			return httpapi.Finances{}, err
+		}
+		out.Confirmations = confs
 	}
 	return out, nil
 }
@@ -414,7 +423,13 @@ func (f ledgerFinances) Balances() ([]finance.AccountBalance, error) {
 	for _, r := range recs {
 		txs = append(txs, r.Transaction())
 	}
-	return finance.CurrentBalances(accounts, txs, nil), nil
+	// Терминал и веб читают одно состояние по той же причине, по которой считают
+	// одним usecase: два ответа на «когда подтверждали» разошлись бы молча.
+	confs, err := balancestate.Load(balancestate.PathNextTo(f.workbookPath))
+	if err != nil {
+		return nil, err
+	}
+	return finance.CurrentBalances(accounts, txs, confs), nil
 }
 
 // SetBalance records a new balance through the same writer fin balance uses, so
