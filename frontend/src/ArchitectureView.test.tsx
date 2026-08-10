@@ -128,6 +128,34 @@ describe('ArchitectureView', () => {
     expect(await screen.findByText('принята')).toBeDefined()
   })
 
+  // «1 сценариев» — то, что видно на живой карте первым делом, и ровно та
+  // ошибка, которую однажды уже ловили на «51 операций»: склонение в проекте
+  // есть, но позвать его забыли.
+  it('склоняет счётчики', async () => {
+    const m = engineMap()
+    m.zones = [{ name: 'Журнал версий', accepted: false, flows: 1, steps: 3 }]
+    setMaps(m)
+    render(<ArchitectureView />)
+    expect(await screen.findByText('1 сценарий · 3 шага')).toBeDefined()
+  })
+
+  // На живой карте not_done — не строка, а абзац: в узкой карточке шапки он
+  // растягивает её вдвое против соседней. Место ему там, где читают приёмку.
+  it('держит длинный текст приёмки в зонах, а не в шапке', async () => {
+    const m = workspaceMap()
+    m.acceptance = { classes_run: [], not_done: 'зона «Совет» живьём не прогонялась', note: '' }
+    setMaps(m)
+    render(<ArchitectureView />)
+    // Шапка называет счёт принятых зон — короткую сводку, а не абзац.
+    expect(await screen.findByText(/1 из 1/)).toBeDefined()
+    expect(screen.getByText(/Совет.*не прогонялась/)).toBeDefined()
+
+    // Уходим со вкладки зон: текст приёмки обязан уйти вместе с ними. Пока он
+    // лежит в шапке, он виден на каждом разделе, включая те, где он не к месту.
+    fireEvent.click(screen.getByRole('button', { name: 'Сценарии' }))
+    expect(screen.queryByText(/Совет.*не прогонялась/)).toBeNull()
+  })
+
   it('клик по зоне ведёт в её сценарии', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
