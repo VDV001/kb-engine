@@ -69,7 +69,7 @@ func TestCurrentBalance_subtractsExpensesAfterConfirmation(t *testing.T) {
 		expenseOn(t, "01C", "Сбербанк", "2026-08-03", "100.00"), // до — нет
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if len(got) != 1 {
 		t.Fatalf("счетов %d, ожидался 1", len(got))
@@ -94,7 +94,7 @@ func TestCurrentBalance_countsOnlyItsOwnAccount(t *testing.T) {
 	}
 	recs := []domain.Transaction{expenseOn(t, "01A", "Альфа-Банк", "2026-08-05", "100.00")}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	byBank := map[string]finance.AccountBalance{}
 	for _, b := range got {
@@ -113,7 +113,7 @@ func TestCurrentBalance_ignoresExpensesWithoutAccount(t *testing.T) {
 	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
 	recs := []domain.Transaction{expenseOn(t, "01A", "", "2026-08-05", "70.00")}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Current.String() != "1000.00" {
 		t.Errorf("трата без счёта списалась со Сбербанка: %s", got[0].Current)
@@ -131,7 +131,7 @@ func TestCurrentBalance_marksTheResultAsStaleWhenItGoesNegative(t *testing.T) {
 	accounts := []domain.Account{accountAt(t, "Т-Банк", "40.00", "2026-05-20")}
 	recs := []domain.Transaction{expenseOn(t, "01A", "Т-Банк", "2026-06-01", "597.00")}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if !got[0].NeedsConfirmation {
 		t.Error("отрицательный расчёт не помечен как требующий подтверждения")
@@ -147,7 +147,7 @@ func TestCurrentBalance_doesNotMarkAHealthyAccount(t *testing.T) {
 	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-04")}
 	recs := []domain.Transaction{expenseOn(t, "01A", "Сбербанк", "2026-08-05", "23.00")}
 
-	if finance.CurrentBalances(accounts, recs)[0].NeedsConfirmation {
+	if finance.CurrentBalances(accounts, recs, nil)[0].NeedsConfirmation {
 		t.Error("здоровый счёт помечен как требующий подтверждения")
 	}
 }
@@ -192,7 +192,7 @@ func TestCurrentBalance_countsAnExpenseRecordedAfterTheConfirmationDay(t *testin
 		expenseRecordedAt(t, "2026-08-05T09:00:00Z", "2026-08-05", "Сбербанк", "100.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "614.94" {
 		t.Errorf("списано = %s, ожидалось 614.94 (514.94 задним числом + 100.00)", got[0].Spent)
@@ -212,7 +212,7 @@ func TestCurrentBalance_fallsBackToTheDateWhenTheIDCarriesNoTime(t *testing.T) {
 		expenseOn(t, "тоже-не-ulid", "Сбербанк", "2026-08-05", "23.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "23.00" {
 		t.Errorf("списано = %s, ожидалось 23.00 — при нечитаемом id судим по дате траты", got[0].Spent)
@@ -235,7 +235,7 @@ func TestCurrentBalance_ignoresExpensesDatedBeforeTheConfirmation(t *testing.T) 
 		expenseRecordedAt(t, "2026-07-29T10:00:01Z", "2026-02-10", "Сбербанк", "200.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "0.00" {
 		t.Errorf("списано = %s, ожидалось 0.00 — обе траты прошли до подтверждения и банк их уже посчитал", got[0].Spent)
@@ -257,7 +257,7 @@ func TestCurrentBalance_countsAnExpenseDatedAfterTheConfirmationEvenIfRecordedAt
 		expenseRecordedAt(t, "2026-08-04T20:00:00Z", "2026-08-05", "Сбербанк", "500.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "500.00" {
 		t.Errorf("списано = %s, ожидалось 500.00 — трата произошла после дня подтверждения", got[0].Spent)
@@ -273,7 +273,7 @@ func TestCurrentBalance_matchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 		expenseRecordedAt(t, "2026-08-05T09:00:00Z", "2026-08-05", "т банк", "300.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "300.00" {
 		t.Errorf("списано = %s, ожидалось 300.00 — «т банк» и «Т-Банк» это один счёт", got[0].Spent)
@@ -300,9 +300,92 @@ func TestCurrentBalance_countsASameDayExpenseRecordedAfterMidnightLocalTime(t *t
 		expenseRecordedAt(t, "2026-08-04T18:00:00Z", "2026-08-04", "Сбербанк", "700.00"),
 	}
 
-	got := finance.CurrentBalances(accounts, recs)
+	got := finance.CurrentBalances(accounts, recs, nil)
 
 	if got[0].Spent.String() != "400.00" {
 		t.Errorf("списано = %s, ожидалось 400.00 — вычитается только запись после полуночи по книге", got[0].Spent)
+	}
+}
+
+// Известный МОМЕНТ подтверждения решает спор внутри дня, и это единственное, чем
+// его можно решить.
+//
+// Замер 10.08.2026 на живых данных: баланс Сбера подтверждён днём, после него
+// записана трата 470 ₽, и расчётный остаток разошёлся с банком ровно на неё.
+// Три утренние траты того же дня в подтверждённое число вошли законно — их
+// человек видел в приложении, когда снимал остаток.
+//
+// Пока у подтверждения был только ДЕНЬ, движок обязан был гадать и гадал всегда
+// в одну сторону — «человек это видел». Ошибка при этом не рассасывалась к
+// следующему дню: критерий стоит на дате подтверждения, поэтому такая трата
+// оставалась невидимой до следующего подтверждения, то есть бессрочно.
+func TestCurrentBalance_subtractsASameDayExpenseRecordedAfterTheConfirmationMoment(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("книга", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-10")}
+	recs := []domain.Transaction{
+		// 11:52 по книге — записана до того, как владелец снял остаток
+		expenseRecordedAt(t, "2026-08-10T06:52:00Z", "2026-08-10", "Сбербанк", "42.00"),
+		// 15:13 по книге — записана после, в увиденное число не входила
+		expenseRecordedAt(t, "2026-08-10T10:13:00Z", "2026-08-10", "Сбербанк", "470.00"),
+	}
+	// 12:00 по книге — момент, когда остаток был подтверждён
+	confirmed := finance.Confirmations{"Сбербанк": time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)}
+
+	got := finance.CurrentBalances(accounts, recs, confirmed)
+
+	if got[0].Spent.String() != "470.00" {
+		t.Errorf("списано = %s, ожидалось 470.00 — вычитается только запись после момента подтверждения", got[0].Spent)
+	}
+	if got[0].Current.String() != "530.00" {
+		t.Errorf("остаток = %s, ожидалось 530.00", got[0].Current)
+	}
+}
+
+// Счёт, о моменте подтверждения которого ничего не известно, сохраняет прежнее
+// поведение целиком.
+//
+// Файл состояния появился позже книги, и у счетов, подтверждённых до него,
+// момента нет и не будет. Выдумать его — значит вычесть трату, которую человек
+// уже видел, то есть заменить завышение занижением; это не починка, а вторая
+// ошибка вместо первой.
+func TestCurrentBalance_keepsTheOldRuleWhenTheMomentIsUnknown(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("книга", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "1000.00", "2026-08-10")}
+	recs := []domain.Transaction{
+		expenseRecordedAt(t, "2026-08-10T10:13:00Z", "2026-08-10", "Сбербанк", "470.00"),
+	}
+
+	// Момент известен про ДРУГОЙ счёт: карта не пуста, но об этом сказать нечего.
+	confirmed := finance.Confirmations{"Альфа-Банк": time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)}
+
+	if got := finance.CurrentBalances(accounts, recs, confirmed); got[0].Spent.String() != "0.00" {
+		t.Errorf("списано = %s, ожидалось 0.00 — без момента подтверждения правило прежнее", got[0].Spent)
+	}
+}
+
+// Написание счёта в файле состояния решает домен, а не побайтовое равенство.
+//
+// Лист «Счета» и журнал расходятся регистром и пробелами вокруг стрелки, и это
+// уже стоило движку тихо потерянных трат в spentAfter. Момент, не нашедший свой
+// счёт, стоил бы того же: правило молча вернулось бы к прежнему.
+func TestCurrentBalance_matchesTheConfirmationTheWayTheDomainDoes(t *testing.T) {
+	saved := time.Local
+	time.Local = time.FixedZone("книга", 5*60*60)
+	t.Cleanup(func() { time.Local = saved })
+
+	accounts := []domain.Account{accountAt(t, "Долг → Отец", "1000.00", "2026-08-10")}
+	recs := []domain.Transaction{
+		expenseRecordedAt(t, "2026-08-10T10:13:00Z", "2026-08-10", "долг→отец", "470.00"),
+	}
+	confirmed := finance.Confirmations{"долг → отец": time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)}
+
+	if got := finance.CurrentBalances(accounts, recs, confirmed); got[0].Spent.String() != "470.00" {
+		t.Errorf("списано = %s, ожидалось 470.00 — счёт сопоставляется правилом домена", got[0].Spent)
 	}
 }

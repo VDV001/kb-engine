@@ -70,6 +70,31 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 	return out
 }
 
+// Confirmations — когда именно владелец подтвердил остаток каждого счёта.
+//
+// Лист «Счета» хранит ДЕНЬ, и одного дня не хватает: траты того же дня делятся
+// на записанные до того, как человек посмотрел в приложение банка, и после,
+// а вычитать нужно только вторые. Момент живёт рядом с книгой, а не в ней:
+// колонка «Обновлено» — то, что читает человек, и день там нужен днём.
+//
+// Пустая карта значит «не знаем ни про один счёт», и это законное состояние:
+// счёт, подтверждённый до появления файла состояния, момента не имеет.
+type Confirmations map[string]time.Time
+
+// At отвечает, когда подтверждали именно этот счёт.
+//
+// Сравнение имён — дело домена, а не карты: лист «Счета» и журнал расходятся
+// регистром и пробелами вокруг стрелки, и побайтовое равенство молча вернуло бы
+// правило к прежнему поведению на счетах вроде «Долг → Отец».
+func (c Confirmations) At(bank string) (time.Time, bool) {
+	for name, at := range c {
+		if domain.SameAccountName(name, bank) {
+			return at, true
+		}
+	}
+	return time.Time{}, false
+}
+
 // CurrentBalances считает остаток каждого счёта на сейчас.
 //
 // Учитываются только расходы: домен не даёт доходу счёта, поэтому движок не
@@ -87,7 +112,7 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 // Цена решения названа честно: трата, записанная после подтверждения в тот же
 // день, попадёт в расчёт лишь завтра. Это ошибка в одну сторону и на один день,
 // тогда как двойной учёт занижал остаток каждый раз при подтверждении.
-func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []AccountBalance {
+func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs Confirmations) []AccountBalance {
 	out := make([]AccountBalance, 0, len(accounts))
 	for _, a := range accounts {
 		b := AccountBalance{
@@ -99,7 +124,7 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []Acco
 		}
 		if !a.Updated().IsZero() {
 			b.ConfirmedOn = a.Updated().Format("2006-01-02")
-			after := spentAfter(txs, a.Bank(), a.Updated())
+			after := spentAfter(txs, a.Bank(), a.Updated(), confs)
 			b.Spent = after
 			b.Current = a.Balance().Sub(after)
 			// Минус означает не долг, а слепоту расчёта: доходы счёта не имеют,
@@ -132,7 +157,13 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction) []Acco
 // импорт выдаёт ULID всей истории разом, и для импортированных строк момент
 // записи — день импорта, а не появления траты. Счёт, подтверждённый раньше
 // импорта, получал вычет всей своей доимпортной истории.
-func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) domain.Money {
+//
+// Спор внутри дня решается точно, когда известен МОМЕНТ подтверждения, и
+// приблизительно, когда известен только день. Приблизительно — это «человек
+// видел всё, что записано в этот день»: догадка всегда в одну сторону, поэтому
+// расчёт завышал остаток на каждую трату, записанную после того, как владелец
+// снял остаток в приложении банка.
+func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time, confs Confirmations) domain.Money {
 	var total domain.Money
 	day := domain.Day(confirmed)
 	for _, tx := range txs {
@@ -148,7 +179,20 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time) doma
 		case tx.Date().After(day):
 			total = total.Add(tx.Amount()) // в день подтверждения её ещё не было
 		default:
-			if at, ok := domain.RecordedAt(tx.ID()); ok && !at.Before(endOfDay(confirmed)) {
+			at, ok := domain.RecordedAt(tx.ID())
+			if !ok {
+				continue // момент записи неизвестен — считаем, что человек её видел
+			}
+			// Известный момент подтверждения отвечает на вопрос прямо; день
+			// подтверждения отвечать на него не умеет и потому оставлен запасным
+			// правилом, а не поводом выдумать момент.
+			if moment, known := confs.At(bank); known {
+				if at.After(moment) {
+					total = total.Add(tx.Amount())
+				}
+				continue
+			}
+			if !at.Before(endOfDay(confirmed)) {
 				total = total.Add(tx.Amount())
 			}
 		}
