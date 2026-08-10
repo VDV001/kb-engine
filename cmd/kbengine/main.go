@@ -465,6 +465,23 @@ func (p *repeatedPath) Set(v string) error {
 	return nil
 }
 
+// mapsLoader разбирает карты сразу и отдаёт загрузчик, читающий их заново на
+// каждый запрос.
+//
+// Разбор при старте нужен затем же, зачем он есть у журнала и семантического
+// слоя: опечатка в пути и битый json должны остановить запуск, пока на
+// терминал ещё смотрят. Перечитывание на запрос — затем, что правку карты
+// видно по перезагрузке страницы, как правку каталога.
+func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if _, err := archmap.LoadAll(paths); err != nil {
+		return nil, err
+	}
+	return func() ([]archmap.Map, error) { return archmap.LoadAll(paths) }, nil
+}
+
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
@@ -504,15 +521,8 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	if err != nil {
 		return nil, err
 	}
-	// Карты разбираются здесь, а не при первом заходе на вкладку: опечатка в
-	// пути и битый json должны остановить запуск, пока на терминал ещё смотрят.
-	// Перечитываются они всё равно на каждый запрос — правку карты видно по
-	// перезагрузке страницы, как правку каталога.
-	if len(mapPaths) > 0 {
-		if _, err := archmap.LoadAll(mapPaths); err != nil {
-			return nil, err
-		}
-		docs.Maps = func() ([]archmap.Map, error) { return archmap.LoadAll(mapPaths) }
+	if docs.Maps, err = mapsLoader(mapPaths); err != nil {
+		return nil, err
 	}
 
 	var chlog httpapi.ChangelogLoader
