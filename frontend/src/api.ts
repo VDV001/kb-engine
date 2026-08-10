@@ -514,6 +514,8 @@ export interface ArchMap {
   checked_at?: string
   /** Что карта говорит о себе самой. */
   note?: string
+  /** Чем карта иллюстрирует «действия целиком». Пусто — лид без примеров. */
+  examples: string[]
   roots: ArchRoot[]
   roots_note?: string
   layers: ArchLayer[]
