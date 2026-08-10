@@ -94,7 +94,7 @@ func TestServe_handler(t *testing.T) {
 	path := writeCatalog(t, `{"entries":[
 		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
 	]}`)
-	h, err := buildServeHandler(path, "", "", "", "", "", "", "", "")
+	h, err := buildServeHandler(path, "", "", "", "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildServeHandler: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestServe_handler_finances(t *testing.T) {
 		t.Fatalf("fin sync --init: %s", errb.String())
 	}
 
-	h, err := buildServeHandler(catalog, "", ledger, xlsx, "", "", "", "", "")
+	h, err := buildServeHandler(catalog, "", ledger, xlsx, "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildServeHandler: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestServe_handler_withoutLedger(t *testing.T) {
 	catalog := writeCatalog(t, `{"entries":[
 		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
 	]}`)
-	h, err := buildServeHandler(catalog, "", "", "", "", "", "", "", "")
+	h, err := buildServeHandler(catalog, "", "", "", "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildServeHandler: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestServe_handler_unreadableWorkbookFailsAtStartup(t *testing.T) {
 	}
 	missing := filepath.Join(t.TempDir(), "no-such-workbook.xlsx")
 
-	_, err := buildServeHandler(catalog, "", ledger, missing, "", "", "", "", "")
+	_, err := buildServeHandler(catalog, "", ledger, missing, "", "", "", "", "", nil)
 	if err == nil {
 		t.Fatal("buildServeHandler accepted an unreadable workbook; it must refuse at startup")
 	}

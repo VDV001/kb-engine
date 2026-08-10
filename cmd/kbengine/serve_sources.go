@@ -31,7 +31,7 @@ type source struct {
 //
 // Порядок — как у флагов в объявлении команды: отчёт читают рядом со своей же
 // строкой запуска, и алфавит там мешал бы, а не помогал.
-func serveSources(configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string) []source {
+func serveSources(configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string) []source {
 	return []source{
 		{flag: "analytics-config", path: configPath},
 		{flag: "ledger", path: ledgerPath},
@@ -41,6 +41,10 @@ func serveSources(configPath, ledgerPath, workbookPath, changelogPath, nowPath, 
 		{flag: "team", path: teamPath},
 		{flag: "projects", path: projectsPath},
 		{flag: "media", path: mediaPath},
+		// Карт бывает несколько, а источник один: подключён он тогда, когда
+		// передали хоть одну. Пути отсюда наружу не уезжают — на страницу
+		// едет только имя флага.
+		{flag: "maps", path: strings.Join(mapPaths, ", ")},
 	}
 }
 

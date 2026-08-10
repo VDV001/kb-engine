@@ -114,7 +114,7 @@ func TestBuildServeHandler_reportsSourceStatuses(t *testing.T) {
 
 	statuses := func(t *testing.T, configPath string) map[string]bool {
 		t.Helper()
-		h, err := buildServeHandler(catalog, configPath, "", "", "", "", "", "", "")
+		h, err := buildServeHandler(catalog, configPath, "", "", "", "", "", "", "", nil)
 		if err != nil {
 			t.Fatalf("buildServeHandler: %v", err)
 		}

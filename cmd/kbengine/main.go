@@ -18,6 +18,7 @@ import (
 
 	root "github.com/daniil/kb-engine"
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/archmap"
 	"github.com/daniil/kb-engine/internal/adapter/artefactfs"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
@@ -229,6 +230,10 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	teamPath := fs.String("team", "", "optional path to team.json (the Team view)")
 	projectsPath := fs.String("projects", "", "optional path to projects.json (the Projects view)")
 	mediaPath := fs.String("media", "", "optional path to a directory of the owner's images, served at /media/")
+	// Повторяемый, а не список через запятую: карты живут в разных деревьях, и
+	// любой разделитель внутри одного аргумента однажды встретится в самом пути.
+	var mapPaths repeatedPath
+	fs.Var(&mapPaths, "maps", "optional path to an architecture map's map.json (repeat the flag for several maps)")
 	// Loopback by default. With --ledger this process serves four years of
 	// personal transactions with places, notes and balances; ":8080" would hand
 	// them to anyone on the network. Binding wider stays possible, but as a
@@ -252,7 +257,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -276,7 +281,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
 	// смотреть в него будут ровно в этот момент.
 	for _, line := range startupSources(serveSources(*configPath, *ledgerPath, *workbookPath,
-		*changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath)) {
+		*changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths)) {
 		fmt.Fprintln(stdout, line)
 	}
 	if err := srv.ListenAndServe(); err != nil {
@@ -445,7 +450,39 @@ func (f ledgerFinances) Sync() (string, error) {
 	return strings.TrimSpace(out.String()), nil
 }
 
-func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string) (http.Handler, error) {
+// repeatedPath — флаг, который можно указать несколько раз. Стандартный
+// flag.String хранит последнее значение и молча теряет предыдущие, а карт у
+// движка бывает больше одной.
+type repeatedPath []string
+
+func (p *repeatedPath) String() string { return strings.Join(*p, ", ") }
+
+func (p *repeatedPath) Set(v string) error {
+	if v == "" {
+		return errors.New("path is empty")
+	}
+	*p = append(*p, v)
+	return nil
+}
+
+// mapsLoader разбирает карты сразу и отдаёт загрузчик, читающий их заново на
+// каждый запрос.
+//
+// Разбор при старте нужен затем же, зачем он есть у журнала и семантического
+// слоя: опечатка в пути и битый json должны остановить запуск, пока на
+// терминал ещё смотрят. Перечитывание на запрос — затем, что правку карты
+// видно по перезагрузке страницы, как правку каталога.
+func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if _, err := archmap.LoadAll(paths); err != nil {
+		return nil, err
+	}
+	return func() ([]archmap.Map, error) { return archmap.LoadAll(paths) }, nil
+}
+
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -484,6 +521,9 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	if err != nil {
 		return nil, err
 	}
+	if docs.Maps, err = mapsLoader(mapPaths); err != nil {
+		return nil, err
+	}
 
 	var chlog httpapi.ChangelogLoader
 	if changelogPath != "" {
@@ -502,7 +542,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	// движку тот же вопрос, что и терминал, и ответ обязан совпадать.
 	engine := buildInfo()
 	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
-		changelogPath, nowPath, teamPath, projectsPath, mediaPath))
+		changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths))
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
 		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
 }
