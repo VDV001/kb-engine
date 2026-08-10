@@ -78,6 +78,12 @@ type Documents struct {
 	// отдельным вызовом: это одно знание об одном файле.
 	Team     func() (FileDoc, error)
 	Projects func() (FileDoc, error)
+	// Maps are the architecture maps the engine was pointed at: documents that
+	// say how a project actually works, with every claim anchored to a
+	// file:line in live code. nil means none were configured — the view then
+	// names the flag that would bring them, because an empty page reads as
+	// breakage while a named flag reads as a request nobody made yet.
+	Maps MapsLoader
 	// Media is the owner's image directory, served under /media/. Screenshots
 	// referenced from projects.json live there rather than in the bundle, for
 	// the same reason the JSON does: they are his content, not the engine's.
@@ -161,6 +167,8 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/sources", handleSources(docs, q, chlog, fin, engine))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
 	mux.HandleFunc("GET /api/projects", handleRawJSON(docs.Projects))
+	mux.HandleFunc("GET /api/maps", handleMaps(docs.Maps))
+	mux.HandleFunc("GET /api/maps/{id}", handleMap(docs.Maps))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
 	if docs.Media != nil {

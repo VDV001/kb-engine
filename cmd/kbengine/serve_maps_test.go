@@ -130,7 +130,7 @@ func TestServeSources_includesMaps(t *testing.T) {
 	var found bool
 	for _, s := range srcs {
 		if s.flag == "maps" {
-			found, _ = true, s
+			found = true
 			if s.path == "" {
 				t.Error("переданные карты числятся неподключённым источником")
 			}
