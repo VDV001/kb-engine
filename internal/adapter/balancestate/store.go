@@ -11,6 +11,7 @@ package balancestate
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"time"
@@ -57,9 +58,7 @@ func Load(path string) (finance.Confirmations, error) {
 		return finance.Confirmations{}, fmt.Errorf("%s: %w", path, err)
 	}
 	out := make(finance.Confirmations, len(f.Confirmed))
-	for bank, at := range f.Confirmed {
-		out[bank] = at
-	}
+	maps.Copy(out, f.Confirmed)
 	return out, nil
 }
 
