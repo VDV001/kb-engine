@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { ArchMap } from '../api'
-import { isFixed, sortFindings } from '../architecture'
+import { counts, isFixed, sortFindings } from '../architecture'
 import { Card, Label } from '../components/ui'
 import { Anchor } from './Anchor'
 
@@ -30,7 +30,7 @@ export function FindingsPanel({ map, roots }: { map: ArchMap; roots: Record<stri
   return (
     <div className="space-y-4">
       <p className="text-sm text-on-surface-variant tabular-nums">
-        {sorted.length} находок · {open} не закрыто
+        {counts.findings(sorted.length)} · {open} не закрыто
       </p>
       <div className="space-y-3">
         {sorted.map((f) => (

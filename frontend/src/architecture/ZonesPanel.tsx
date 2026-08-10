@@ -1,4 +1,5 @@
 import type { ArchMap } from '../api'
+import { counts } from '../architecture'
 import { Card, Label } from '../components/ui'
 
 /**
@@ -42,7 +43,9 @@ export function ZonesPanel({ map, onPick }: { map: ArchMap; onPick: (zone: strin
               </span>
             </div>
             <div className="mt-2 font-mono text-xs text-on-surface-variant tabular-nums">
-              {z.flows === 0 ? 'ни одного сценария' : `${z.flows} сценариев · ${z.steps} шагов`}
+              {z.flows === 0
+                ? 'ни одного сценария'
+                : `${counts.flows(z.flows)} · ${counts.steps(z.steps)}`}
             </div>
             {z.note && <p className="mt-3 text-sm text-on-surface-variant">{z.note}</p>}
           </Card>
@@ -53,6 +56,15 @@ export function ZonesPanel({ map, onPick }: { map: ArchMap; onPick: (zone: strin
         <Card tone="muted">
           <Label>Чем приёмка отличается от валидатора</Label>
           {map.acceptance.note && <p className="mt-2 text-sm">{map.acceptance.note}</p>}
+          {/* Текст «что не сделано» живёт здесь, а не в шапке: на живой карте
+              это абзац, и в узкой карточке он растягивал её вдвое против
+              соседней. Читают его там же, где приёмку. */}
+          {map.acceptance.not_done && (
+            <div className="mt-3 border-t border-outline-variant pt-3">
+              <Label>Не сделано</Label>
+              <p className="mt-1 text-sm">{map.acceptance.not_done}</p>
+            </div>
+          )}
           {map.acceptance.classes_run.length > 0 && (
             <ul className="mt-3 space-y-1 text-sm text-on-surface-variant">
               {map.acceptance.classes_run.map((c) => (

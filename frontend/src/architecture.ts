@@ -1,4 +1,14 @@
 import type { ArchFlow, ArchLayer, ArchMap, ArchNode, ArchStep } from './api'
+import { plural } from './hygiene'
+
+/** Счётчики карты одним правилом на все панели: «1 сценарий», «3 шага». */
+export const counts = {
+  flows: (n: number) => `${n} ${plural(n, ['сценарий', 'сценария', 'сценариев'])}`,
+  steps: (n: number) => `${n} ${plural(n, ['шаг', 'шага', 'шагов'])}`,
+  nodes: (n: number) => `${n} ${plural(n, ['узел', 'узла', 'узлов'])}`,
+  findings: (n: number) => `${n} ${plural(n, ['находка', 'находки', 'находок'])}`,
+  runs: (n: number) => `${n} ${plural(n, ['прогон', 'прогона', 'прогонов'])}`,
+}
 
 /**
  * Правила чтения карты архитектуры — отдельно от разметки, потому что каждое

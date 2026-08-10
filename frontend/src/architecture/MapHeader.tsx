@@ -1,5 +1,6 @@
 import type { ArchMap } from '../api'
-import { acceptanceState } from '../architecture'
+import { acceptanceState, counts } from '../architecture'
+import { plural } from '../hygiene'
 import { Card, Label, Stat } from '../components/ui'
 
 /**
@@ -17,7 +18,7 @@ export function MapHeader({ map }: { map: ArchMap }) {
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Узлов" value={map.stats.nodes} hint="участников на карте" />
-        <Stat label="Сценариев" value={map.stats.flows} hint={`${map.stats.steps} шагов`} />
+        <Stat label="Сценариев" value={map.stats.flows} hint={counts.steps(map.stats.steps)} />
         <Stat
           label="Прогонов живьём"
           value={map.stats.runtime_checks}
@@ -29,7 +30,7 @@ export function MapHeader({ map }: { map: ArchMap }) {
           value={map.stats.unverified}
           hint={
             map.stats.unverified > 0
-              ? 'шагов без прогона и без символа'
+              ? `${plural(map.stats.unverified, ['шаг', 'шага', 'шагов'])} без прогона и без символа`
               : 'каждый шаг стоит на якоре'
           }
           tone={map.stats.unverified > 0 ? 'spotlight' : 'plain'}
@@ -70,14 +71,11 @@ export function MapHeader({ map }: { map: ArchMap }) {
               галочка здесь обещала бы проверку, которой не было.
             </p>
           ) : (
+            /* Только счёт. Что именно не сделано — абзац, и место ему в
+               разделе зон, где приёмку читают целиком. */
             <p className="mt-2 text-sm">
               {acceptance.accepted} из {acceptance.total}{' '}
               {acceptance.state === 'accepted' ? 'зон приняты' : 'зон приняты, остальные нет'}
-              {map.acceptance?.not_done && (
-                <span className="mt-1 block text-on-surface-variant">
-                  Не сделано: {map.acceptance.not_done}
-                </span>
-              )}
             </p>
           )}
         </Card>

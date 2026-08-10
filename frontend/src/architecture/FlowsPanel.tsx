@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { ArchFlow, ArchMap, ArchStep } from '../api'
-import { filterFlows, unverifiedCount } from '../architecture'
+import { counts, filterFlows, unverifiedCount } from '../architecture'
 import { Card, Chip } from '../components/ui'
 import { Anchor } from './Anchor'
 
@@ -112,7 +112,7 @@ function FlowCard({
           </span>
         )}
         <span className="shrink-0 font-mono text-xs text-on-surface-variant tabular-nums">
-          {flow.steps.length} шагов
+          {counts.steps(flow.steps.length)}
         </span>
         {unverified > 0 && (
           <span className="shrink-0 rounded-full bg-tag-bg-4 px-2 py-0.5 text-xs text-tag-text-4 tabular-nums">
