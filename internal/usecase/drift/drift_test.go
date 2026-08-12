@@ -1,7 +1,9 @@
 package drift_test
 
 import (
+	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,7 +17,7 @@ type stubChecker struct {
 	errs      map[string]error
 }
 
-func (s stubChecker) Head(url string) (drift.Response, error) {
+func (s stubChecker) Head(_ context.Context, url string) (drift.Response, error) {
 	if err, ok := s.errs[url]; ok {
 		return drift.Response{}, err
 	}
@@ -85,7 +87,7 @@ func TestScan_reportsWhatItCouldNotEstablish(t *testing.T) {
 		},
 	}
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -132,7 +134,7 @@ func TestReport_undecidableIsCountedSeparately(t *testing.T) {
 		"https://example.com/ok": 200,
 	}}
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -151,7 +153,7 @@ func TestScan_stampsEveryResult(t *testing.T) {
 	c := catalogOf(t, entry(t, 1, "https://example.com/x"))
 	checker := stubChecker{codes: map[string]int{"https://example.com/x": 200}}
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(when)
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), when)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -178,7 +180,7 @@ func TestScan_limitStopsEarlyAndSaysSo(t *testing.T) {
 	svc := drift.NewService(fixedLoader{c}, checker)
 	svc.Limit = 2
 
-	rep, err := svc.Scan(time.Now())
+	rep, err := svc.Scan(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -204,7 +206,7 @@ func TestScan_carriesTheRedirectTarget(t *testing.T) {
 		locations: map[string]string{"https://habr.com/ru/companies/pgk/articles/1013700/": "https://habr.com/ru/companies/pgkdigital/articles/1013700/"},
 	}
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
@@ -223,11 +225,92 @@ func TestReport_movedSkipsRedirectsWithoutATarget(t *testing.T) {
 	c := catalogOf(t, entry(t, 1, "https://example.com/x"))
 	checker := stubChecker{codes: map[string]int{"https://example.com/x": 302}}
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(time.Now())
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), time.Now())
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
 	if got := rep.Moved(); len(got) != 0 {
 		t.Fatalf("Moved() = %+v, want none — there is no new address to write", got)
 	}
+}
+
+// Ответ, которого нет в HTTP, стоил всего прогона.
+//
+// Скан — десять минут по живой базе, и он терял всё из-за одного сервера,
+// вернувшего код вне 100-599 (так отвечает, например, LinkedIn своим 999).
+// Сетевой отказ при этом, наоборот, копился в отчёте и скан продолжался: два
+// похожих по природе отказа имели противоположную цену, и ни из имени команды,
+// ни из документации это не следовало.
+func TestScan_survivesAnAnswerOutsideHTTP(t *testing.T) {
+	c := catalogOf(t,
+		entry(t, 1, "https://example.com/weird"),
+		entry(t, 2, "https://example.com/alive"),
+	)
+	checker := stubChecker{codes: map[string]int{
+		"https://example.com/weird": 999,
+		"https://example.com/alive": 200,
+	}}
+
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("один непонятный ответ обрушил весь скан: %v", err)
+	}
+	if got := len(rep.Results); got != 1 {
+		t.Errorf("получено %d вердиктов, ожидался 1 (живая ссылка)", got)
+	}
+	// Непонятый ответ попадает туда же, где живут неответившие: движок не
+	// притворяется, что понял его, и не выдумывает вердикт.
+	if got := len(rep.Unreachable); got != 1 {
+		t.Fatalf("непонятный ответ не назван вовсе: %+v", rep.Unreachable)
+	}
+	if !strings.Contains(rep.Unreachable[0].Err.Error(), "999") {
+		t.Errorf("причина не называет код ответа: %v", rep.Unreachable[0].Err)
+	}
+}
+
+// Прерванный скан отдаёт то, что успел узнать.
+//
+// Десять минут работы, и Ctrl-C терял их целиком: каталог трогается один раз в
+// самом конце. Отмена — не отказ, а решение человека остановиться, поэтому
+// отчёт возвращается частичным и помеченным, а не ошибкой.
+func TestScan_returnsWhatItHasWhenStopped(t *testing.T) {
+	c := catalogOf(t,
+		entry(t, 1, "https://example.com/one"),
+		entry(t, 2, "https://example.com/two"),
+		entry(t, 3, "https://example.com/three"),
+	)
+	ctx, cancel := context.WithCancel(t.Context())
+	checker := cancelAfterFirst{
+		inner:  stubChecker{codes: map[string]int{"https://example.com/one": 200}},
+		cancel: cancel,
+	}
+
+	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("отмена пришла ошибкой, а не частичным отчётом: %v", err)
+	}
+	if !rep.Stopped {
+		t.Error("отчёт не помечен прерванным — читатель примет его за полный")
+	}
+	if got := len(rep.Results); got != 1 {
+		t.Errorf("получено %d вердиктов, ожидался 1 — успевший ответ должен остаться", got)
+	}
+	// Неспрошенное названо, а не растворилось: «не дошла очередь» и «проверено»
+	// — разные ответы.
+	if rep.NotAttempted != 2 {
+		t.Errorf("не спрошено %d адресов, ожидалось 2", rep.NotAttempted)
+	}
+}
+
+// cancelAfterFirst отменяет контекст сразу после первого ответа — так
+// воспроизводится Ctrl-C посреди прогона.
+type cancelAfterFirst struct {
+	inner  stubChecker
+	cancel context.CancelFunc
+}
+
+func (c cancelAfterFirst) Head(ctx context.Context, url string) (drift.Response, error) {
+	resp, err := c.inner.Head(ctx, url)
+	c.cancel()
+	return resp, err
 }

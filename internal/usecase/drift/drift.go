@@ -7,6 +7,7 @@
 package drift
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -27,8 +28,11 @@ type Response struct {
 }
 
 // LinkChecker asks one URL for its status. Implementations do network I/O.
+//
+// Контекст здесь потому, что скан живой базы идёт минутами: без него человек не
+// может остановить его иначе, чем потеряв весь прогон.
 type LinkChecker interface {
-	Head(url string) (Response, error)
+	Head(ctx context.Context, url string) (Response, error)
 }
 
 // Result is what the scan learned about one entry's URL.
@@ -66,6 +70,10 @@ type Report struct {
 	// TotalEntries is the catalog size, so a reader can see the coverage of
 	// this scan without computing it.
 	TotalEntries int
+	// Stopped — скан прерван человеком и оборван на середине. Отдельно от
+	// NotAttempted: «не дошла очередь из-за --limit» это выбранная выборка, а
+	// прерванный прогон — незаконченная работа, и читать их одинаково нельзя.
+	Stopped bool
 }
 
 // Undecidable counts answers that carry no verdict about the article — 403 from
@@ -121,7 +129,11 @@ func NewService(loader CatalogLoader, checker LinkChecker) *Service {
 }
 
 // Scan asks every entry's URL for its status, stamping each result with now.
-func (s *Service) Scan(now time.Time) (Report, error) {
+//
+// Отмена контекста прекращает опрос и возвращает то, что уже получено, с
+// пометкой Stopped: прогон по живой базе занимает минуты, и терять его целиком
+// из-за решения остановиться — цена, которой ничто не оправдывает.
+func (s *Service) Scan(ctx context.Context, now time.Time) (Report, error) {
 	c, err := s.loader.Load()
 	if err != nil {
 		return Report{}, err
@@ -139,8 +151,13 @@ func (s *Service) Scan(now time.Time) (Report, error) {
 			rep.NotAttempted++
 			continue
 		}
+		if ctx.Err() != nil {
+			rep.Stopped = true
+			rep.NotAttempted++
+			continue
+		}
 		asked++
-		resp, err := s.checker.Head(url)
+		resp, err := s.checker.Head(ctx, url)
 		if err != nil {
 			rep.Unreachable = append(rep.Unreachable, Unreachable{
 				EntryID: e.ID(), Title: e.Title(), URL: url, Err: err,
@@ -149,7 +166,15 @@ func (s *Service) Scan(now time.Time) (Report, error) {
 		}
 		status, err := domain.ClassifyLinkStatus(resp.Code)
 		if err != nil {
-			return Report{}, fmt.Errorf("entry %d: %w", e.ID(), err)
+			// Ответ, которого нет в HTTP (999 у LinkedIn и подобное), — это не
+			// повод выбросить весь прогон. Он идёт туда же, где живут
+			// неответившие: движок не понял ответа и говорит об этом, вместо
+			// того чтобы выдумать вердикт или обрушить скан.
+			rep.Unreachable = append(rep.Unreachable, Unreachable{
+				EntryID: e.ID(), Title: e.Title(), URL: url,
+				Err: fmt.Errorf("ответ вне HTTP: %w", err),
+			})
+			continue
 		}
 		rep.Results = append(rep.Results, Result{
 			EntryID: e.ID(), Title: e.Title(), URL: url,

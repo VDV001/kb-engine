@@ -1,9 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
@@ -36,12 +40,20 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	// Ctrl-C прекращает опрос, но не выбрасывает работу: прогон по живой базе
+	// идёт минутами, и полученные ответы записываются, если попросили --apply.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	svc := drift.NewService(catalogjson.FileLoader{Path: *catalogPath}, linkcheck.New(*timeout, *delay))
 	svc.Limit = *limit
-	rep, err := svc.Scan(time.Now())
+	rep, err := svc.Scan(ctx, time.Now())
 	if err != nil {
 		fmt.Fprintf(stderr, "drift: %v\n", err)
 		return 1
+	}
+	if rep.Stopped {
+		fmt.Fprintln(stdout, "drift: скан прерван — ниже только то, что успели спросить")
 	}
 	printDriftReport(stdout, rep)
 	printMoved(stdout, rep, *updateURLs, *apply)
@@ -99,8 +111,15 @@ func printMoved(stdout io.Writer, rep drift.Report, updating, applying bool) {
 func printDriftReport(stdout io.Writer, rep drift.Report) {
 	answered := len(rep.Results)
 	fmt.Fprintf(stdout, "drift: записей в каталоге %d\n", rep.TotalEntries)
-	fmt.Fprintf(stdout, "  НЕ проверено: %d без ссылки, %d не ответили по сети, %d не дошла очередь (--limit)\n",
-		rep.WithoutURL, len(rep.Unreachable), rep.NotAttempted)
+	// Причина, по которой до адреса не дошла очередь, у выборки и у прерванного
+	// прогона разная, и путать их нельзя: выборку человек выбрал сам, а
+	// остановленный скан — незаконченная работа.
+	queueReason := "--limit"
+	if rep.Stopped {
+		queueReason = "скан прерван"
+	}
+	fmt.Fprintf(stdout, "  НЕ проверено: %d без ссылки, %d не ответили по сети или ответили непонятным кодом, %d не дошла очередь (%s)\n",
+		rep.WithoutURL, len(rep.Unreachable), rep.NotAttempted, queueReason)
 	fmt.Fprintf(stdout, "  без вердикта: %d ответов (403/429/5xx — говорят о сервере, не о статье; нужен браузер)\n",
 		rep.Undecidable())
 	fmt.Fprintf(stdout, "  проверено с вердиктом: %d из %d\n",
