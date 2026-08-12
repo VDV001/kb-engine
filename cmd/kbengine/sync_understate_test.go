@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -74,11 +76,21 @@ func TestRun_finSyncSilentWhenNothingUnderstates(t *testing.T) {
 
 // confirmBalance записывает остаток счёта через ту же команду, что и человек —
 // вместе с моментом подтверждения, который эта команда кладёт рядом с книгой.
+//
+// Момент отодвигается на час назад намеренно. Команда ставит «сейчас», а тест
+// пишет трату следующей строкой, и обе укладываются в одну миллисекунду; момент
+// записи читается из ULID, у которого точность как раз миллисекунда, и трата
+// оказывается записанной «до» подтверждения на доли миллисекунды. У человека
+// между этими двумя действиями проходят минуты, и тест моделирует это, а не
+// скорость машины.
 func confirmBalance(t *testing.T, book, bank, amount string) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "balance", "--from", book, "--bank", bank, "--amount", amount}, &out, &errb); code != 0 {
 		t.Fatalf("fin balance exit = %d, stderr = %s", code, errb.String())
+	}
+	if err := balancestate.Record(balancestate.PathNextTo(book), bank, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatalf("Record: %v", err)
 	}
 }
 
