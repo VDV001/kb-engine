@@ -86,7 +86,57 @@ function Bars({
   )
 }
 
-export function FinancesView({ finances, masked }: { finances: Finances; masked: boolean }) {
+/**
+ * Пустой экран объясняет, ПОЧЕМУ он пуст, а причин четыре, не одна.
+ *
+ * `finances === null` означает «спросили и не смогли»: запрос упал, и до
+ * причины отсюда не дотянуться — в тексте отказа лежит путь к личному файлу,
+ * поэтому сервер отдаёт клиенту только факт, а причину пишет в свой терминал.
+ * Прежде этот случай подставлял пустоту и печатал совет добавить флаги,
+ * которые уже переданы: отказ был переодет в законное состояние.
+ *
+ * Подключён ли журнал, знает движок, а не страница: спрашиваем `/api/engine`.
+ * `null` — «ответа ещё нет либо сборка о своих источниках не сообщает», и на
+ * нём остаётся прежний текст: выдуманная причина хуже неназванной.
+ */
+export function FinancesView({ finances, masked }: { finances: Finances | null; masked: boolean }) {
+  const eng = useResource(api.engine)
+  const ledgerConnected: boolean | null =
+    eng.status === 'ready'
+      ? (eng.data.sources?.find((s) => s.flag === 'ledger')?.connected ?? null)
+      : null
+
+  if (finances === null) {
+    return (
+      <EmptyFinances
+        text="Журнал не прочитан — движок ответил отказом. Причина названа в терминале, где висит serve."
+      />
+    )
+  }
+  if (finances.transactions.length === 0 && finances.accounts.length === 0) {
+    return (
+      <EmptyFinances
+        text={
+          ledgerConnected === true
+            ? 'Журнал подключён и пока пуст — ни одной записи в нём нет.'
+            : 'Леджер не подключён — запустите serve с флагами --ledger и --from.'
+        }
+      />
+    )
+  }
+  return <FinancesBody finances={finances} masked={masked} />
+}
+
+function EmptyFinances({ text }: { text: string }) {
+  return (
+    <div className="p-12 text-center">
+      <Icon name="receipt_long" className="mb-4 text-5xl opacity-10" />
+      <p className="label opacity-60">{text}</p>
+    </div>
+  )
+}
+
+function FinancesBody({ finances, masked }: { finances: Finances; masked: boolean }) {
   // Несколько месяцев сразу — как в исходном дашборде. Пустой набор значит
   // «за всё время».
   const [selected, setSelected] = useState<string[]>([])
@@ -204,17 +254,6 @@ export function FinancesView({ finances, masked }: { finances: Finances; masked:
     a.download = 'finances.xlsx'
     a.click()
     URL.revokeObjectURL(a.href)
-  }
-
-  if (finances.transactions.length === 0 && finances.accounts.length === 0) {
-    return (
-      <div className="p-12 text-center">
-        <Icon name="receipt_long" className="mb-4 text-5xl opacity-10" />
-        <p className="label opacity-60">
-          Леджер не подключён — запустите serve с флагами --ledger и --from.
-        </p>
-      </div>
-    )
   }
 
   return (
