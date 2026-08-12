@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -104,6 +105,43 @@ func TestRunDrift_applyRecordsTheCheck(t *testing.T) {
 	}
 	if _, ok := parsed.Entries[0]["drift_check_date"]; !ok {
 		t.Error("the check was not dated")
+	}
+}
+
+// Тот же отказ, но заданный так, чтобы он что-то доказывал.
+//
+// TestRunDrift_updateURLsRequiresApply ниже кормит команду ПУСТЫМ каталогом,
+// поэтому сканировать там нечего и проверка проходит независимо от того, где
+// она стоит. На живом каталоге разница видна: 1342 записи с адресом — столько
+// HTTP-запросов уходило впустую, прежде чем человек узнавал, что перепутал
+// флаги.
+//
+// Отказ известен до первого запроса, поэтому счётчик обращений обязан остаться
+// на нуле. Считает сам сервер, к которому вела бы ссылка записи.
+func TestRunDrift_updateURLsRefusesBeforeScanning(t *testing.T) {
+	var hits atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	path := filepath.Join(t.TempDir(), "catalog.json")
+	doc := fmt.Sprintf(`{"entries":[{"id":1,"title":"T","url":%q,"category":"golang","status":"keep","lifecycle":"active"}]}`, srv.URL)
+	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+		t.Fatalf("write catalog: %v", err)
+	}
+
+	var out, errb bytes.Buffer
+	code := run([]string{"drift", "--catalog", path, "--delay", "0", "--update-urls"}, &out, &errb)
+	if code != 2 {
+		t.Errorf("exit = %d, want 2", code)
+	}
+	if got := hits.Load(); got != 0 {
+		t.Errorf("сеть опрошена %d раз(а) при заведомо недопустимых флагах, want 0", got)
+	}
+	if !strings.Contains(errb.String(), "--apply") {
+		t.Errorf("stderr %q does not say what is missing", errb.String())
 	}
 }
 
