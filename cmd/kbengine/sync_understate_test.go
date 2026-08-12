@@ -3,11 +3,12 @@ package main
 import (
 	"bytes"
 
-	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 )
 
 // Синхронизация называет траты, которые занизят расчётный остаток.
