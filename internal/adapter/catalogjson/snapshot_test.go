@@ -22,33 +22,41 @@ import (
 // стоит в таблице строкой. Новый писатель, добавленный мимо неё, тестом не
 // проверяется — на это отвечает второй тест ниже, считающий писателей в коде.
 func TestCatalogWriters_leaveASnapshot(t *testing.T) {
-	const doc = `{"entries":[{"id":1,"title":"T","url":"https://h/x","category":"golang","status":"keep","lifecycle":"active","habr_id":"1030928"}]}`
+	const plain = `{"entries":[{"id":1,"title":"T","url":"https://h/x","category":"golang","status":"keep","lifecycle":"active"}]}`
+
+	// У каждой миграции своё условие срабатывания: команда, которой нечего
+	// менять, не пишет и снимка не оставляет — и это верно. Документ подобран
+	// так, чтобы запись действительно произошла.
+	const withHabrURL = `{"entries":[{"id":1,"title":"T","url":"https://habr.com/ru/articles/1030928/","category":"golang","status":"keep","lifecycle":"active"}]}`
+	const withTracking = `{"entries":[{"id":1,"title":"T","url":"https://h/x?utm_source=habr","category":"golang","status":"keep","lifecycle":"active"}]}`
+	const withLegacyVersion = `{"entries":[{"id":1,"title":"T","url":"https://h/x","category":"golang","status":"keep","lifecycle":"active","version":"2"}]}`
 
 	cases := []struct {
 		name  string
+		doc   string
 		write func(t *testing.T, path string)
 	}{
-		{"SetFields", func(t *testing.T, path string) {
+		{"SetFields", plain, func(t *testing.T, path string) {
 			if _, err := catalogjson.SetFields(path, []int{1}, catalogjson.Changes{Lifecycle: "outdated"}); err != nil {
 				t.Fatalf("SetFields: %v", err)
 			}
 		}},
-		{"ApplyDrift", func(t *testing.T, path string) {
+		{"ApplyDrift", plain, func(t *testing.T, path string) {
 			if _, err := catalogjson.ApplyDrift(path, []catalogjson.DriftRecord{{EntryID: 1, Code: 404}}); err != nil {
 				t.Fatalf("ApplyDrift: %v", err)
 			}
 		}},
-		{"MigrateHabrIDs", func(t *testing.T, path string) {
+		{"MigrateHabrIDs", withHabrURL, func(t *testing.T, path string) {
 			if _, err := catalogjson.MigrateHabrIDs(path, true); err != nil {
 				t.Fatalf("MigrateHabrIDs: %v", err)
 			}
 		}},
-		{"MigrateURLs", func(t *testing.T, path string) {
+		{"MigrateURLs", withTracking, func(t *testing.T, path string) {
 			if _, err := catalogjson.MigrateURLs(path, true); err != nil {
 				t.Fatalf("MigrateURLs: %v", err)
 			}
 		}},
-		{"MigrateVersions", func(t *testing.T, path string) {
+		{"MigrateVersions", withLegacyVersion, func(t *testing.T, path string) {
 			if _, err := catalogjson.MigrateVersions(path, true); err != nil {
 				t.Fatalf("MigrateVersions: %v", err)
 			}
@@ -59,7 +67,7 @@ func TestCatalogWriters_leaveASnapshot(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
 			path := filepath.Join(dir, "catalog.json")
-			if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+			if err := os.WriteFile(path, []byte(tc.doc), 0o600); err != nil {
 				t.Fatalf("write catalog: %v", err)
 			}
 
@@ -75,7 +83,7 @@ func TestCatalogWriters_leaveASnapshot(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read snapshot: %v", err)
 			}
-			if strings.TrimSpace(string(before)) != doc {
+			if strings.TrimSpace(string(before)) != tc.doc {
 				t.Errorf("снимок снят после правки, а не до неё:\n%s", before)
 			}
 		})

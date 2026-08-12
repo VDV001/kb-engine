@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filebackup"
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -277,9 +278,26 @@ func formatDate(t *time.Time) string {
 	return t.Format("2006-01-02")
 }
 
+// backupsKept — та же глубина, что у журнала и книги: хватает откатить
+// неудачный день и мало настолько, чтобы папка снимков не росла молча.
+const backupsKept = 10
+
 // writeFileAtomic writes data to a temp file in the same directory and renames
 // it over path, so a crash never leaves a half-written catalog.
+//
+// Перед заменой снимается копия. Атомарность бережёт от обрывка файла, но не
+// от неверного содержимого, записанного целиком и успешно: `set --related`
+// заменяет список связей, а не дополняет, а ошибочная миграция проходит по
+// всей базе разом. Каталог намеренно не под git — рядом с ним лежат личные
+// файлы владельца, — поэтому снимок здесь единственный механизм отката.
+//
+// Снимок стоит в этой функции, а не в семи вызывающих: через неё проходят все
+// писатели каталога, и защита, размноженная по вызовам, однажды не доедет до
+// нового.
 func writeFileAtomic(path string, data []byte) error {
+	if err := filebackup.Snapshot(path, time.Now, backupsKept); err != nil {
+		return err
+	}
 	dir := filepath.Dir(path)
 	tmp, err := os.CreateTemp(dir, ".catalog-*.tmp")
 	if err != nil {
