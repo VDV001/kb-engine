@@ -98,7 +98,7 @@ func TestMayUnderstate_silentOnIncome(t *testing.T) {
 	day, _ := time.Parse(time.DateOnly, "2026-08-11")
 	rec, err := finance.Add(finance.AddParams{
 		Kind: domain.KindIncome, Date: day, Amount: m, Source: "Возврат долга",
-	}, func() string { return "01KZQSKZVT22MSCSZZ4PS7MD3P" }, func() time.Time { return day })
+	}, func() string { return "01A-выдуманный" }, func() time.Time { return day })
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
