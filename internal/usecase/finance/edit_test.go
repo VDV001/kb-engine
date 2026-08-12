@@ -61,6 +61,40 @@ func TestEditSetsTheFieldThatWasPassed(t *testing.T) {
 	}
 }
 
+// След осознанного повтора переживает правку. Это не поле записи в обычном
+// смысле, а решение человека о ней: правка суммы или счёта решения не
+// отменяет, и потерять его молча значило бы вернуть ту самую неразрешимость,
+// ради которой поле заведено.
+func TestEditKeepsTheRepeatTrace(t *testing.T) {
+	amount, err := domain.ParseMoney("418.00")
+	if err != nil {
+		t.Fatalf("ParseMoney: %v", err)
+	}
+	now := func() time.Time { return day(2026, time.August, 3) }
+	rec, err := finance.Add(finance.AddParams{
+		Kind:     domain.KindExpense,
+		Date:     day(2026, time.August, 3),
+		Amount:   amount,
+		Category: "Транспорт",
+		Place:    "Юрент",
+		RepeatOf: "01FIRSTID",
+	}, func() string { return "01SECONDID" }, now)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	got, err := finance.Edit(rec, finance.EditParams{Account: "Сбербанк"}, func() time.Time {
+		return day(2026, time.August, 4)
+	})
+	if err != nil {
+		t.Fatalf("Edit: %v", err)
+	}
+	if got.Transaction().RepeatOf() != "01FIRSTID" {
+		t.Errorf("RepeatOf = %q, правка потеряла след подтверждённого повтора",
+			got.Transaction().RepeatOf())
+	}
+}
+
 func TestEditLeavesUntouchedFieldsAlone(t *testing.T) {
 	rec := editable(t)
 	later := func() time.Time { return day(2026, time.August, 4) }

@@ -55,6 +55,11 @@ type Transaction struct {
 	description string
 	source      string
 	account     string
+	// repeatOf — id записи, поверх которой этот повтор подтверждён человеком.
+	// Пустое значение означает «не знаю», а не «не повтор»: у строк, записанных
+	// до появления поля, решения никто не сохранял, и выдумывать его за них
+	// нельзя.
+	repeatOf string
 }
 
 // TransactionParams carries the raw values for NewTransaction.
@@ -74,6 +79,7 @@ type TransactionParams struct {
 	Description string
 	Source      string
 	Account     string
+	RepeatOf    string
 	Now         func() time.Time
 }
 
@@ -135,6 +141,13 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		return Transaction{}, err
 	}
 
+	repeatOf := strings.TrimSpace(p.RepeatOf)
+	if repeatOf == id {
+		// Запись, объявленная повтором самой себя, читалась бы как подтверждённая
+		// человеком, хотя подтверждать было нечего.
+		return Transaction{}, fmt.Errorf("%w: repeat_of points at the record itself", ErrInvalidTransaction)
+	}
+
 	return Transaction{
 		id:          id,
 		kind:        p.Kind,
@@ -146,6 +159,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
 		account:     account,
+		repeatOf:    repeatOf,
 	}, nil
 }
 
@@ -240,3 +254,7 @@ func (t Transaction) Source() string { return t.source }
 // does not say. Open by design: the workbook lists five, and a closed set would
 // reject the sixth on the day one is opened.
 func (t Transaction) Account() string { return t.account }
+
+// RepeatOf returns the id of the record this one was knowingly repeated over,
+// or "" when nothing is known about that.
+func (t Transaction) RepeatOf() string { return t.repeatOf }

@@ -240,13 +240,18 @@ func appendChecked(ledgerPath string, p finance.AddParams, force bool,
 			note(c)
 		}
 	}
-	if !force {
-		if dup := finance.Duplicate(recs, p); dup != nil {
-			tx := dup.Transaction()
+	// Дубль ищется всегда, а не только без --force: при осознанном повторе
+	// найденная запись становится следом решения. Иначе подтверждённый повтор и
+	// проскочивший дубль в файле неразличимы, и разбор недельной давности
+	// упирается в гадание — ровно та неразрешимость, ради которой заведён гейт.
+	if dup := finance.Duplicate(recs, p); dup != nil {
+		tx := dup.Transaction()
+		if !force {
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
 				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
+		p.RepeatOf = tx.ID()
 	}
 	rec, err := finance.Add(p, newULID, time.Now)
 	if err != nil {
@@ -284,8 +289,14 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 	})
 	for _, r := range matched {
 		tx := r.Transaction()
-		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s\n",
-			tx.Date().Format(time.DateOnly), tx.ID(), tx.Amount(), tx.Category(), tx.Description())
+		// Подтверждённый повтор называется прямо в строке: иначе две одинаковые
+		// траты рядом снова читаются как вопрос без ответа.
+		var repeat string
+		if id := tx.RepeatOf(); id != "" {
+			repeat = fmt.Sprintf("  ↺ повтор подтверждён поверх %s", id)
+		}
+		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s%s\n",
+			tx.Date().Format(time.DateOnly), tx.ID(), tx.Amount(), tx.Category(), tx.Description(), repeat)
 	}
 	fmt.Fprintf(stdout, "fin list: %d of %d record(s)\n", len(matched), len(recs))
 	return 0

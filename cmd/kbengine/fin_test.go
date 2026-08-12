@@ -144,6 +144,95 @@ func TestRun_finAdd(t *testing.T) {
 	}
 }
 
+// Осознанный повтор оставляет след, иначе решение человека принято и тут же
+// забыто.
+//
+// Гейт повторов заведён потому, что дубль, найденный на витрине неделей позже,
+// почти неразрешим: никто не скажет, какая из двух строк была настоящей
+// покупкой. `--force` сохранял ровно эту неразрешимость — записывал строку,
+// ничем не отличимую от обычной. Разбор живого журнала 10.08 упёрся в это на
+// паре от 07.08: подтверждённый повтор или проскочивший дубль — данные не
+// различают.
+func TestRun_finAdd_forceLeavesATrace(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, workbook(t), ledger)
+
+	add := func(t *testing.T, extra ...string) (int, string) {
+		t.Helper()
+		var out, errb bytes.Buffer
+		args := append([]string{
+			"fin", "add", "--ledger", ledger,
+			"--amount", "418", "--cat", "Транспорт", "--place", "Юрент", "--date", "2026-04-06",
+		}, extra...)
+		code := run(args, &out, &errb)
+		return code, out.String() + errb.String()
+	}
+
+	if code, msg := add(t); code != 0 {
+		t.Fatalf("первая запись не прошла: exit=%d %s", code, msg)
+	}
+	first := lastLedgerLine(t, ledger)
+	firstID := jsonField(t, first, "id")
+
+	if code, msg := add(t); code == 0 {
+		t.Fatal("повтор принят без --force")
+	} else if !strings.Contains(msg, "--force") {
+		t.Errorf("отказ не называет, чем повторить осознанно: %s", msg)
+	}
+
+	if code, msg := add(t, "--force"); code != 0 {
+		t.Fatalf("осознанный повтор не прошёл: exit=%d %s", code, msg)
+	}
+	repeat := lastLedgerLine(t, ledger)
+	if got := jsonField(t, repeat, "repeat_of"); got != firstID {
+		t.Errorf("repeat_of = %q, ожидался id подтверждённой записи %q:\n%s", got, firstID, repeat)
+	}
+	// Обычная запись поля не несёт: пустое означает «не знаю», и приписывать
+	// его прошлым строкам значило бы выдумать за них решение.
+	if got := jsonField(t, first, "repeat_of"); got != "" {
+		t.Errorf("у обычной записи появился след повтора: %q", got)
+	}
+}
+
+// Настоящая покупка, похожая на прошлую, но не повтор: `--force` без найденного
+// дубля ссылку не выдумывает.
+func TestRun_finAdd_forceWithoutADuplicateWritesNoTrace(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, workbook(t), ledger)
+
+	var out, errb bytes.Buffer
+	code := run([]string{
+		"fin", "add", "--ledger", ledger, "--force",
+		"--amount", "77", "--cat", "Еда", "--place", "Лавка", "--date", "2026-04-06",
+	}, &out, &errb)
+	if code != 0 {
+		t.Fatalf("exit = %d, stderr = %s", code, errb.String())
+	}
+	if got := jsonField(t, lastLedgerLine(t, ledger), "repeat_of"); got != "" {
+		t.Errorf("след повтора выдуман там, где повтора не было: %q", got)
+	}
+}
+
+func lastLedgerLine(t *testing.T, ledger string) string {
+	t.Helper()
+	raw, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatalf("read ledger: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	return lines[len(lines)-1]
+}
+
+func jsonField(t *testing.T, line, field string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(line), &m); err != nil {
+		t.Fatalf("parse ledger line: %v", err)
+	}
+	s, _ := m[field].(string)
+	return s
+}
+
 // An amount finer than a kopeck is a typo, and the ledger is the wrong place to
 // round it away quietly.
 func TestRun_finAdd_rejectsSubKopeckAmount(t *testing.T) {
