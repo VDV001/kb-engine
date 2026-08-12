@@ -188,6 +188,12 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		// "/api/", а то, в свою очередь, побеждает "/". Своя проверка префикса
 		// внутри spaHandler дала бы то же самое руками.
 		mux.Handle("/api/", http.NotFoundHandler())
+		// То же самое для медиа. Без --media шаблона "GET /media/" выше нет
+		// вовсе, и запрос картинки доходил до фолбэка — 200 с разметкой там,
+		// где потребитель ждёт изображение. Когда флаг передан, побеждает
+		// конкретный "GET /media/": он матчит подмножество запросов, и
+		// ServeMux выбирает более специфичный шаблон.
+		mux.Handle("/media/", http.NotFoundHandler())
 		mux.Handle("/", spaHandler(frontend))
 	}
 	return mux

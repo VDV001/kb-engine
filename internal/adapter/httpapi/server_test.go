@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -489,6 +490,63 @@ func TestServer_unknownAPIRouteWithFrontend(t *testing.T) {
 		rec := get(t, srv, "/archives")
 		if rec.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rec.Code)
+		}
+		if got := rec.Body.String(); got != "<html>" {
+			t.Errorf("body = %q, want index.html", got)
+		}
+	})
+}
+
+// Та же грабля, что закрыта для /api/ в #149, но на втором поддереве.
+//
+// Маршрут /media/ регистрируется условно — только когда передан --media. Без
+// флага шаблона в mux нет вовсе, запрос доходит до фолбэка и получает 200 с
+// разметкой index.html. Потребитель картинки читает это как успех и пытается
+// разобрать HTML как изображение.
+//
+// Контроль в обе стороны обязателен: подсадка «отдавать 404 всегда» должна
+// валить подтест с флагом, иначе проверка утверждала бы, что /media/ сломан
+// целиком, и была бы зелёной на сломанной сборке.
+func TestServer_mediaRouteWithFrontend(t *testing.T) {
+	frontend := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>")}}
+	newSrv := func(media fs.FS) http.Handler {
+		return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
+			func() (analyticsconfig.Config, error) { return testConfig, nil },
+			func() (changelog.Document, error) {
+				return changelog.Document{CurrentVersion: "0.9.0"}, nil
+			}, httpapi.Documents{Media: media}, testEngine, frontend)
+	}
+
+	t.Run("без --media путь под /media/ — 404, а не страница", func(t *testing.T) {
+		rec := get(t, newSrv(nil), "/media/nope.png")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (тело: %.40s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("с --media настоящий файл по-прежнему отдаётся", func(t *testing.T) {
+		media := fstest.MapFS{"floq.png": &fstest.MapFile{Data: []byte("PNG")}}
+		rec := get(t, newSrv(media), "/media/floq.png")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
+		}
+		if got := rec.Body.String(); got != "PNG" {
+			t.Errorf("body = %q, want the file", got)
+		}
+	})
+
+	t.Run("с --media отсутствующий файл — 404, а не страница", func(t *testing.T) {
+		media := fstest.MapFS{"floq.png": &fstest.MapFile{Data: []byte("PNG")}}
+		rec := get(t, newSrv(media), "/media/nope.png")
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404 (тело: %.40s)", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("клиентский путь вне /media/ по-прежнему отдаёт страницу", func(t *testing.T) {
+		rec := get(t, newSrv(nil), "/projects")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200", rec.Code)
 		}
 		if got := rec.Body.String(); got != "<html>" {
 			t.Errorf("body = %q, want index.html", got)
