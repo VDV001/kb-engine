@@ -48,7 +48,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	// произошло. Одно сообщение и на «сумма изменилась», и на «сумма уже была
 	// такой» — это «выполнено» без содержания: после него никто не приходит
 	// проверять, хотя изменилась только дата подтверждения.
-	before, known := balanceOf(*from, *bank)
+	before, onSheet, known := balanceOf(*from, *bank)
 
 	if *create {
 		return createAccount(*from, *bank, money, stdout, stderr)
@@ -67,14 +67,20 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	}
 
 	today := time.Now().Format(time.DateOnly)
+	// Счёт называется так, как он записан на листе, а не так, как его набрали:
+	// «сбербанк» в отчёте о собственной книге читается как другой счёт.
+	name := *bank
+	if onSheet != "" {
+		name = onSheet
+	}
 	switch {
 	case known && before.String() == money.String():
 		fmt.Fprintf(stdout, "%s: %s — сумма не изменилась, обновлена дата подтверждения (%s)\n",
-			*bank, money, today)
+			name, money, today)
 	case known:
-		fmt.Fprintf(stdout, "%s: %s → %s (%s)\n", *bank, before, money, today)
+		fmt.Fprintf(stdout, "%s: %s → %s (%s)\n", name, before, money, today)
 	default:
-		fmt.Fprintf(stdout, "%s: %s (%s)\n", *bank, money, today)
+		fmt.Fprintf(stdout, "%s: %s (%s)\n", name, money, today)
 	}
 	return 0
 }
@@ -99,18 +105,23 @@ func createAccount(path, bank string, amount domain.Money, stdout, stderr io.Wri
 	return 0
 }
 
-// balanceOf возвращает остаток, записанный на счёте сейчас. Второе значение —
-// false, когда книгу прочитать не удалось: тогда отчёт молчит о прежнем
-// значении, а не выдумывает его.
-func balanceOf(path, bank string) (domain.Money, bool) {
+// balanceOf возвращает остаток, записанный на счёте сейчас, и его имя так, как
+// оно стоит на листе. Последнее значение — false, когда книгу прочитать не
+// удалось или счёта в ней нет: тогда отчёт молчит о прежнем значении, а не
+// выдумывает его.
+//
+// Написание сверяет домен — тем же правилом, которым его сверяет запись. Раньше
+// здесь стояло побайтовое равенство, и отчёт не узнавал счёт, который сам же
+// только что обновил.
+func balanceOf(path, bank string) (domain.Money, string, bool) {
 	led, err := financexlsx.Read(path, time.Now)
 	if err != nil {
-		return domain.Money{}, false
+		return domain.Money{}, "", false
 	}
 	for _, a := range led.Accounts {
-		if a.Bank() == bank {
-			return a.Balance(), true
+		if domain.SameAccountName(a.Bank(), bank) {
+			return a.Balance(), a.Bank(), true
 		}
 	}
-	return domain.Money{}, false
+	return domain.Money{}, "", false
 }
