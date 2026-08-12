@@ -125,3 +125,22 @@ func accountBalance(t *testing.T, path, bank string) string {
 	t.Fatalf("счёт %q не найден", bank)
 	return ""
 }
+
+// Отчёт о прежнем значении читает лист тем же правилом, что и запись.
+//
+// balanceOf сравнивал имя побайтово, поэтому при другом написании запись
+// проходила, а отчёт прежнего значения не находил и печатал строку вида
+// «Сбербанк: 4321.55», как для счёта, которого раньше не было. Человек видел
+// «завёл новый счёт» там, где обновил существующий.
+func TestRun_finBalanceReportsThePreviousValueAcrossSpellings(t *testing.T) {
+	book := workbook(t)
+
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "сбербанк", "--amount", "4321,55"}, &out, &errb); code != 0 {
+		t.Fatalf("fin balance exit = %d, stderr = %s", code, errb.String())
+	}
+
+	if !strings.Contains(out.String(), "→") {
+		t.Errorf("отчёт не показал прежнее значение:\n%s", out.String())
+	}
+}
