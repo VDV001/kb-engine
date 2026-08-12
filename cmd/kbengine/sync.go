@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -494,7 +495,55 @@ func pushToWorkbook(from, ledgerPath string, recs []finance.Record, workbook []d
 	}
 	fmt.Fprintf(stdout, "fin sync: %s — %d row(s) written, %d cleared\n",
 		finance.DirectionToWorkbook, len(upserts), len(removals))
+	warnUnderstated(from, recs, stdout)
 	return 0
+}
+
+// warnUnderstated называет траты, которые вычтутся из остатка, уже включавшего
+// их.
+//
+// Такая трата датирована днём подтверждения баланса и записана после его
+// момента: движок предполагает «человек её ещё не видел», и для записи задним
+// числом это предположение неверно. Арифметику при этом менять нельзя — расчёт
+// обещает занижать и никогда не завышать, — поэтому здесь говорится вслух то,
+// что иначе человек находит сам, сверяя экран с приложением банка.
+//
+// Молчит, когда сказать нечего: предупреждение, приходящее всегда, перестают
+// читать. Молчит и когда книгу или состояние прочитать не удалось — синхронизация
+// уже прошла, и ронять её отчёт из-за подсказки было бы хуже неё самой.
+func warnUnderstated(from string, recs []finance.Record, stdout io.Writer) {
+	led, err := financexlsx.Read(from, time.Now)
+	if err != nil {
+		return
+	}
+	confs, err := balancestate.Load(balancestate.PathNextTo(from))
+	if err != nil || len(confs) == 0 {
+		return
+	}
+
+	type hit struct {
+		tx   domain.Transaction
+		bank string
+	}
+	var hits []hit
+	for _, r := range recs {
+		tx := r.Transaction()
+		for _, acc := range led.Accounts {
+			if finance.MayUnderstate(tx, acc, confs) {
+				hits = append(hits, hit{tx, acc.Bank()})
+			}
+		}
+	}
+	if len(hits) == 0 {
+		return
+	}
+
+	fmt.Fprintf(stdout, "\n  записано после того, как баланс подтвердили, и датировано тем же днём:\n")
+	for _, h := range hits {
+		fmt.Fprintf(stdout, "    %s  %s  %s\n", h.tx.Amount(), h.bank, h.tx.Place())
+	}
+	fmt.Fprintf(stdout, "  если эти траты уже прошли по банку к моменту подтверждения — расчётный\n")
+	fmt.Fprintf(stdout, "  остаток занижен на них; подтвердите баланс заново\n")
 }
 
 // pullFromWorkbook makes the ledger match the workbook.
