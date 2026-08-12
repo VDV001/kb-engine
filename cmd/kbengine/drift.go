@@ -27,6 +27,14 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "drift: --catalog is required")
 		return 2
 	}
+	// Выполнимость намерения выясняется до работы, а не после неё. Скан —
+	// самое дорогое, что делает движок: на живом каталоге это 1342 запроса по
+	// сети, и все они уходили впустую, потому что об ошибке в командной строке
+	// сообщалось последней строкой.
+	if *updateURLs && !*apply {
+		fmt.Fprintln(stderr, "drift: --update-urls меняет адреса записей и требует --apply")
+		return 2
+	}
 
 	svc := drift.NewService(catalogjson.FileLoader{Path: *catalogPath}, linkcheck.New(*timeout, *delay))
 	svc.Limit = *limit
@@ -37,11 +45,6 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	}
 	printDriftReport(stdout, rep)
 	printMoved(stdout, rep, *updateURLs, *apply)
-
-	if *updateURLs && !*apply {
-		fmt.Fprintln(stderr, "drift: --update-urls меняет адреса записей и требует --apply")
-		return 2
-	}
 
 	if !*apply {
 		if len(rep.Results) > 0 {
