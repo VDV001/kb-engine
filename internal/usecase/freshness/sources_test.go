@@ -131,6 +131,69 @@ func TestSource_distinguishesNothingToCompareFromNothingFound(t *testing.T) {
 	}
 }
 
+// Проверка обязана держаться на данных, а не на том, как файл отформатирован.
+//
+// Разбор по тексту требовал, чтобы имя продукта и его версия оказались в одном
+// куске после разрезания строки по `","`. На живом projects.json это так, и
+// проверка работала. Но естественная правка — вынести версию в своё поле рядом
+// с именем — разводит их по разным кускам, и проверка молчит: «всё свежо» при
+// карточке, отставшей на десять выпусков. Молчание выглядит как порядок, ровно
+// то, от чего эта проверка и защищает.
+func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
+	cases := []struct {
+		name, text, want string
+	}{
+		{
+			name: "версия отдельным полем рядом с именем",
+			text: `{"projects":[{"name":"kb-engine","version":"v0.5.0"}]}`,
+			want: "v0.5.0",
+		},
+		{
+			// Тот же объект, записанный так, как лежит живой файл: имя и версия
+			// внутри одной строки. Эта форма обязана продолжать работать.
+			name: "версия внутри той же строки",
+			text: `{"projects":[{"short":"kb-engine","note":"v0.5.0 · AGPL-3.0"}]}`,
+			want: "v0.5.0",
+		},
+		{
+			// Изоляция соседей — то, ради чего разбор идёт по объектам, а не по
+			// файлу разом: версия чужого проекта не должна стать нашей.
+			name: "версия соседнего проекта — не наша",
+			text: `{"projects":[{"name":"floq","version":"v0.113.0"},{"name":"kb-engine"}]}`,
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := freshness.VersionMention(tc.text, "kb-engine", "0.15.0")
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("чужая версия приписана нашему продукту: %+v", got)
+				}
+				return
+			}
+			if got == nil {
+				t.Fatal("отставание не найдено — проверка молчит")
+			}
+			if !strings.Contains(got.Text, tc.want) {
+				t.Errorf("текст находки не называет версию страницы: %q", got.Text)
+			}
+		})
+	}
+}
+
+// Не-JSON остаётся на прежнем разборе по строкам: markdown иначе не прочитать,
+// и это сознательное решение, а не забытая ветка.
+func TestVersionMention_fallsBackToTextForMarkdown(t *testing.T) {
+	got := freshness.VersionMention("## Проекты\n\nkb-engine v0.5.0 — движок базы\n", "kb-engine", "0.15.0")
+	if got == nil {
+		t.Fatal("отставание не найдено в markdown")
+	}
+	if !strings.Contains(got.Text, "v0.5.0") {
+		t.Errorf("текст находки не называет версию страницы: %q", got.Text)
+	}
+}
+
 // Псевдоверсия целиком на экран не уезжает: «сейчас v0.15.1-0.2026…+dirty» не
 // отвечает на вопрос, какая версия сейчас.
 //
