@@ -186,7 +186,11 @@ func accountRow(f *excelize.File, bank string) (int, error) {
 		if name == "" {
 			continue
 		}
-		if name == want {
+		// Написание решает домен, как и при заведении счёта строкой ниже. Лист
+		// «Счета» и то, что человек набирает в терминале, расходятся регистром
+		// и пробелами вокруг стрелки, и побайтовое равенство давало про один
+		// счёт два ответа: «уже есть» на --create и «такого нет» здесь.
+		if domain.SameAccountName(name, want) {
 			return rowNum, nil
 		}
 		known = append(known, name)
