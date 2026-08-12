@@ -1,8 +1,11 @@
 package freshness
 
 import (
+	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -158,6 +161,19 @@ func VersionMention(text, product, current string) *Fact {
 	if product == "" || current == "" {
 		return nil
 	}
+	// JSON разбирается как JSON. Разрез по `","` — свойство форматирования, а
+	// не данных: вынести версию в своё поле рядом с именем естественно, и
+	// проверка от этого замолкала, продолжая выглядеть работающей.
+	var doc any
+	if err := json.Unmarshal([]byte(text), &doc); err == nil {
+		v := versionNearProduct(doc, product)
+		if v == "" {
+			return nil
+		}
+		return versionFact(product, v, current)
+	}
+	// Markdown иначе не прочитать — здесь разбор по строкам остаётся
+	// сознательным решением, а не забытой веткой.
 	for line := range strings.SplitSeq(text, "\n") {
 		for chunk := range strings.SplitSeq(line, `","`) {
 			if !strings.Contains(strings.ToLower(chunk), strings.ToLower(product)) {
@@ -167,23 +183,73 @@ func VersionMention(text, product, current string) *Fact {
 			if m == nil {
 				continue
 			}
-			if m[1] == current {
-				return nil
-			}
-			// Страница называет версию новее собранной — отстала не она.
-			// Случай живой: тег ставится через API, локальная копия о нём не
-			// знает, и сборка сразу после выпуска называет предыдущий тег.
-			if newer(m[1], current) {
-				return &Fact{
-					Kind: KindStaleBuild,
-					Text: fmt.Sprintf("страница называет %s v%s, сейчас %s — отстала сборка, а не страница", product, m[1], current),
-				}
-			}
-			return &Fact{
-				Kind: KindVersionMention,
-				Text: fmt.Sprintf("страница называет %s v%s, сейчас %s", product, m[1], current),
-			}
+			return versionFact(product, m[1], current)
 		}
 	}
 	return nil
+}
+
+// versionFact сравнивает версию, названную страницей, с настоящей. Одно место
+// на оба разбора: две копии сравнения однажды разошлись бы в вердикте.
+func versionFact(product, mentioned, current string) *Fact {
+	if mentioned == current {
+		return nil
+	}
+	// Страница называет версию новее собранной — отстала не она. Случай живой:
+	// тег ставится через API, локальная копия о нём не знает, и сборка сразу
+	// после выпуска называет предыдущий тег.
+	if newer(mentioned, current) {
+		return &Fact{
+			Kind: KindStaleBuild,
+			Text: fmt.Sprintf("страница называет %s v%s, сейчас %s — отстала сборка, а не страница", product, mentioned, current),
+		}
+	}
+	return &Fact{
+		Kind: KindVersionMention,
+		Text: fmt.Sprintf("страница называет %s v%s, сейчас %s", product, mentioned, current),
+	}
+}
+
+// versionNearProduct ищет версию продукта в разобранном документе.
+//
+// Единица поиска — ОБЪЕКТ: имя и версия должны стоять в соседних полях одного
+// объекта либо внутри одного значения. Иначе версия соседнего проекта в том же
+// массиве прочиталась бы как наша — это не гипотеза, прежний разбор по тексту
+// именно так и ошибался.
+//
+// ponytail: вложенные объекты своей версии продукту не отдают
+// (`{"name":"kb-engine","meta":{"version":"v0.5.0"}}` не находится). Живой файл
+// такой формы не имеет; если появится — поднимать версию вверх по дереву при
+// обходе, а не расширять понятие соседства.
+func versionNearProduct(node any, product string) string {
+	switch v := node.(type) {
+	case map[string]any:
+		var strs []string
+		for _, k := range slices.Sorted(maps.Keys(v)) {
+			if s, ok := v[k].(string); ok {
+				strs = append(strs, s)
+			}
+		}
+		if slices.ContainsFunc(strs, func(s string) bool {
+			return strings.Contains(strings.ToLower(s), strings.ToLower(product))
+		}) {
+			for _, s := range strs {
+				if m := versionPattern.FindStringSubmatch(s); m != nil {
+					return m[1]
+				}
+			}
+		}
+		for _, k := range slices.Sorted(maps.Keys(v)) {
+			if got := versionNearProduct(v[k], product); got != "" {
+				return got
+			}
+		}
+	case []any:
+		for _, item := range v {
+			if got := versionNearProduct(item, product); got != "" {
+				return got
+			}
+		}
+	}
+	return ""
 }
