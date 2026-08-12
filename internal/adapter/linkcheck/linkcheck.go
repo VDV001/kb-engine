@@ -3,6 +3,7 @@
 package linkcheck
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -39,15 +40,22 @@ func New(timeout, delay time.Duration) *Checker {
 // Head returns the status code for url, and for a redirect the address it
 // points at — the catalog stores addresses, so a moved one is a fact about the
 // entry, not only about the request.
-func (c *Checker) Head(url string) (drift.Response, error) {
+func (c *Checker) Head(ctx context.Context, url string) (drift.Response, error) {
 	if !c.lastHit.IsZero() {
 		if wait := c.Delay - time.Since(c.lastHit); wait > 0 {
-			time.Sleep(wait)
+			// Пауза ждёт и отмену тоже: полсекунды сна на каждый адрес — это
+			// половина времени скана, и Ctrl-C, упирающийся в sleep, читается
+			// как зависшая команда.
+			select {
+			case <-time.After(wait):
+			case <-ctx.Done():
+				return drift.Response{}, ctx.Err()
+			}
 		}
 	}
 	c.lastHit = time.Now()
 
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return drift.Response{}, fmt.Errorf("build request: %w", err)
 	}

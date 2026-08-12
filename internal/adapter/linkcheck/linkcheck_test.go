@@ -15,7 +15,7 @@ func TestHead_returnsStatusCode(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	resp, err := linkcheck.New(2*time.Second, 0).Head(srv.URL)
+	resp, err := linkcheck.New(2*time.Second, 0).Head(t.Context(), srv.URL)
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestHead_doesNotFollowRedirects(t *testing.T) {
 	}))
 	defer moved.Close()
 
-	resp, err := linkcheck.New(2*time.Second, 0).Head(moved.URL)
+	resp, err := linkcheck.New(2*time.Second, 0).Head(t.Context(), moved.URL)
 	if err != nil {
 		t.Fatalf("Head: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestHead_sendsAUserAgent(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	if _, err := linkcheck.New(2*time.Second, 0).Head(srv.URL); err != nil {
+	if _, err := linkcheck.New(2*time.Second, 0).Head(t.Context(), srv.URL); err != nil {
 		t.Fatalf("Head: %v", err)
 	}
 	if got == "" {
@@ -78,7 +78,7 @@ func TestHead_pausesBetweenRequests(t *testing.T) {
 	c := linkcheck.New(2*time.Second, 80*time.Millisecond)
 	start := time.Now()
 	for range 3 {
-		if _, err := c.Head(srv.URL); err != nil {
+		if _, err := c.Head(t.Context(), srv.URL); err != nil {
 			t.Fatalf("Head: %v", err)
 		}
 	}
