@@ -54,8 +54,12 @@ type line struct {
 	Description string `json:"description,omitempty"`
 	Source      string `json:"source,omitempty"`
 	Account     string `json:"account,omitempty"`
-	Rev         int    `json:"rev"`
-	UpdatedAt   string `json:"updated_at"`
+	// RepeatOf — id записи, поверх которой повтор подтверждён человеком. Поле
+	// опускается, когда его нет: пустое место в строке журнала честно значит
+	// «неизвестно», а нулевое значение выглядело бы решением.
+	RepeatOf  string `json:"repeat_of,omitempty"`
+	Rev       int    `json:"rev"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // Load reads every record from path, validating each against the given clock.
@@ -141,6 +145,7 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 		Description: l.Description,
 		Source:      l.Source,
 		Account:     l.Account,
+		RepeatOf:    l.RepeatOf,
 		Now:         now,
 	})
 	if err != nil {
@@ -239,6 +244,7 @@ func encodeLine(r finance.Record) line {
 		Description: tx.Description(),
 		Source:      tx.Source(),
 		Account:     tx.Account(),
+		RepeatOf:    tx.RepeatOf(),
 		Rev:         r.Rev(),
 		UpdatedAt:   r.UpdatedAt().UTC().Format(time.RFC3339),
 	}

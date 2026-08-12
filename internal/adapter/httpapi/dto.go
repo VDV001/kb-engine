@@ -27,6 +27,9 @@ type transactionDTO struct {
 	// RecordedAt — момент появления строки в книге, RFC3339. Пусто означает
 	// «неизвестен», а не «давно»: строку могли вписать мимо движка.
 	RecordedAt string `json:"recorded_at,omitempty"`
+	// RepeatOf — id записи, поверх которой повтор подтверждён человеком.
+	// Отсутствует, когда о повторе ничего не известно.
+	RepeatOf string `json:"repeat_of,omitempty"`
 }
 
 // namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
@@ -151,6 +154,7 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Account:     t.Account(),
 		Source:      t.Source(),
 		RecordedAt:  recordedAtOrEmpty(t.ID()),
+		RepeatOf:    t.RepeatOf(),
 	}
 }
 

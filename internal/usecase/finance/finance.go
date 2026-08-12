@@ -98,6 +98,10 @@ type AddParams struct {
 	Description string
 	Source      string
 	Account     string
+	// RepeatOf — id записи, поверх которой человек подтвердил повтор. Ставит
+	// его только тот путь, который сам же нашёл дубль: ссылку нельзя выдумать,
+	// не увидев, на что она указывает.
+	RepeatOf string
 }
 
 // Add builds a first-revision record for one new entry.
@@ -122,6 +126,7 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 		Description: p.Description,
 		Source:      p.Source,
 		Account:     p.Account,
+		RepeatOf:    p.RepeatOf,
 		Now:         now,
 	})
 	if err != nil {

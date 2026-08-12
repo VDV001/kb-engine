@@ -73,7 +73,11 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 		Description: tx.Description(),
 		Source:      tx.Source(),
 		Account:     tx.Account(),
-		Now:         now,
+		// След осознанного повтора — решение человека о записи, а не поле,
+		// которое правят: правка суммы или счёта его не отменяет. Флага для
+		// него у правки намеренно нет.
+		RepeatOf: tx.RepeatOf(),
+		Now:      now,
 	}
 
 	params = p.applyTo(params)
