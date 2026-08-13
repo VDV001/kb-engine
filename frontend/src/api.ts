@@ -489,6 +489,12 @@ export interface FinanceSummary {
   incomeCount: number
   income: string
   net: string
+  /**
+   * Что в суммы выше НЕ вошло: перекладывание денег между своими счетами.
+   * Ноль значит «исключать было нечего» — тогда об этом молчат.
+   */
+  excludedTransferCount: number
+  excludedTransfers: string
   byCategory: NamedTotal[]
   byAccount: NamedTotal[]
   byPlace: NamedTotal[]

@@ -103,6 +103,13 @@ type Summary struct {
 	IncomeCount  int
 	Income       domain.Money
 	Net          domain.Money
+	// ExcludedTransferCount и ExcludedTransfers — то, что в итоги НЕ вошло:
+	// перекладывание денег между своими счетами. Правило верное, но без этих
+	// двух чисел сходимость приходится проверять, повторяя правило движка в
+	// уме: сумма строк в журнале не совпадает с итогом, и почему — не сказано.
+	// Ноль здесь означает «исключать было нечего», и это отдельный ответ.
+	ExcludedTransferCount int
+	ExcludedTransfers     domain.Money
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
@@ -156,6 +163,8 @@ func Summarize(recs []Record) Summary {
 		// входит, иначе отчёт утверждает, что человек потратил больше, чем
 		// потратил.
 		if tx.IsInternalTransfer() {
+			s.ExcludedTransferCount++
+			s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
 			continue
 		}
 		s.Net = s.Net.Add(tx.SignedAmount())

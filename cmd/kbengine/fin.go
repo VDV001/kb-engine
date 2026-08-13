@@ -328,6 +328,14 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "expenses  %14s  (%d)\n", s.Expenses, s.ExpenseCount)
 	fmt.Fprintf(stdout, "income    %14s  (%d)\n", s.Income, s.IncomeCount)
 	fmt.Fprintf(stdout, "net       %14s\n", s.Net)
+	// Исключённое называется рядом с итогом, а не подразумевается: сумма строк
+	// в журнале не сходится с расходами ровно на эту величину, и без строки
+	// расхождение приходится объяснять себе самому. Молчит, когда исключать
+	// было нечего.
+	if s.ExcludedTransferCount > 0 {
+		fmt.Fprintf(stdout, "переводы себе — не в итогах: %s (%d)\n",
+			s.ExcludedTransfers, s.ExcludedTransferCount)
+	}
 	writeBreakdown(stdout, "по категориям", s.ByCategory)
 	writeBreakdown(stdout, "по счетам", s.ByAccount)
 	return 0

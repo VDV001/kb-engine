@@ -266,6 +266,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
         <aside className="shrink-0 xl:w-72">
           <div className="xl:sticky xl:top-24">
             <AccountsCard
+              transfersExcluded={summary?.excludedTransferCount ?? 0}
               accounts={finances.accounts}
               expenses={summary?.expenses ?? '0'}
               income={summary?.income ?? '0'}
@@ -362,6 +363,17 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                 <span className="privacy-mask text-3xl font-bold">{formatRub(spent)}</span>
                 <span className="label text-[10px] text-secondary">{periodText}</span>
               </div>
+              {/* Исключённое называется рядом с числом, которое оно объясняет:
+                  сумма строк в журнале не сходится с расходами ровно на эту
+                  величину, и без строки расхождение выглядит ошибкой. Молчит,
+                  когда исключать было нечего. */}
+              {summary.excludedTransferCount > 0 && (
+                <p className="label mt-2 text-[10px] opacity-60">
+                  переводы себе не в счёт:{' '}
+                  <span className="privacy-mask">{formatRub(toKopecks(summary.excludedTransfers))}</span>{' '}
+                  ({summary.excludedTransferCount})
+                </p>
+              )}
             </div>
 
             <div className="flex min-h-[200px] flex-col justify-between rounded-lg bg-surface-high p-8">
