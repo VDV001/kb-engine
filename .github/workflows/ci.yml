@@ -79,6 +79,33 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+  # Возраст зависимостей. Отдельная джоба, а не шаг во frontend: ей нужна
+  # полная история (база PR и коммит-фикстура для самопроверки), а остальным
+  # джобам — нет.
+  #
+  # Только на pull_request: гейт спрашивает «что ветка ДОБАВЛЯЕТ в лок», и на
+  # push в main этот вопрос бессмысленный — там уже всё добавлено.
+  dep-age:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24"
+
+      # Сначала проверка проверки: гейт обязан падать на PR #194 — настоящем
+      # обновлении, провёзшем две свежие версии, — и молчать на нём же неделей
+      # позже. Без этого шага зелёный гейт не отличим от неработающего.
+      - name: Gate self-test
+        run: ./scripts/gates/dep-age.sh --self-test
+
+      - name: Dependency age gate
+        run: ./scripts/gates/dep-age.sh "${{ github.event.pull_request.base.sha }}"
+
   govulncheck:
     runs-on: ubuntu-latest
     steps:
