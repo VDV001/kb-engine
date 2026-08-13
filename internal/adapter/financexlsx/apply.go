@@ -289,24 +289,23 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if !tx.IsExpense() {
 			sheet = sheetIncome
 		}
-		// A row whose kind was corrected changes sheet, and the row it came from has
-		// to be vacated in the same plan. Nothing else can ask for that: the ledger
-		// still holds the id, so it produces no removal, and the sheet the row is
-		// leaving is only knowable here. Left in place, the workbook holds the id
-		// twice and both amounts sum into any selection over the columns.
-		if other := otherSheet(sheet); index[other].idCol != 0 {
-			oidx := index[other]
-			if orow, moved := oidx.rowByID[tx.ID()]; moved {
-				plan = append(plan, rowWrite{sheet: other, row: orow, idCol: oidx.idCol, kind: kindOf(other)})
-				delete(oidx.rowByID, tx.ID())
-				index[other] = oidx
-			}
+		if vacate, ok := vacateOtherSheet(index, tx.ID(), sheet); ok {
+			plan = append(plan, vacate)
 		}
 		idx := index[sheet]
 		if idx.idCol == 0 {
 			return nil, fmt.Errorf("sheet %q has no id column — run `fin sync --init` first", sheet)
 		}
 		row, known := idx.rowByID[tx.ID()]
+		if !known {
+			// A row whose id cell is empty is not nameless: the reader hands it a
+			// positional id, and that id is exactly a sheet-and-row locator. Resolve it
+			// here, or reader and writer disagree on what the row is called — the lookup
+			// above misses, the record is taken for new, and the same transaction lands
+			// in the sheet a second time. writeRow stores the id in the cell, so the row
+			// leaves positional identity behind in this same pass.
+			row, known = positionalRow(tx.ID(), sheet, idx)
+		}
 		styleFrom := 0
 		if !known {
 			// Append below the last row, and take the formatting with it: a date
@@ -331,6 +330,51 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		return a.row - b.row
 	})
 	return plan, nil
+}
+
+// vacateOtherSheet returns the write that clears this id's row on the sheet it is
+// leaving, for a record whose kind was corrected.
+//
+// Nothing else can ask for that: the ledger still holds the id, so it produces no
+// removal, and the sheet the row is leaving is only knowable while planning.
+// Left in place, the workbook holds the id twice and both amounts sum into any
+// selection over the columns.
+//
+// The index is updated so the vacated row is not also treated as the row to
+// write into.
+func vacateOtherSheet(index map[string]sheetIndex, id, sheet string) (rowWrite, bool) {
+	other := otherSheet(sheet)
+	oidx := index[other]
+	if oidx.idCol == 0 {
+		return rowWrite{}, false
+	}
+	row, moved := oidx.rowByID[id]
+	if !moved {
+		row, moved = positionalRow(id, other, oidx)
+	}
+	if !moved {
+		return rowWrite{}, false
+	}
+	delete(oidx.rowByID, id)
+	index[other] = oidx
+	return rowWrite{sheet: other, row: row, idCol: oidx.idCol, kind: kindOf(other)}, true
+}
+
+// positionalRow resolves an id of the form "expense-r42" to the row it names, on
+// the sheet it names, when that row is inside what the sheet actually holds.
+//
+// Out of range is left unresolved rather than clamped: an id pointing past the
+// end names nothing, and writing there would leave a gap in the middle of the
+// data instead of updating a record.
+func positionalRow(id, sheet string, idx sheetIndex) (int, bool) {
+	named, row, err := parsePositionalID(id)
+	if err != nil || named != sheet {
+		return 0, false
+	}
+	if row < firstDataRow || row > idx.lastRow {
+		return 0, false
+	}
+	return row, true
 }
 
 func locate(index map[string]sheetIndex, id string) (sheet string, row int, ok bool) {
