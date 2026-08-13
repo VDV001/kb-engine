@@ -7,6 +7,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
@@ -75,6 +76,18 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 // → отсортировать → сохранить» разошлись бы ровно так же, как разошлись когда-то
 // книга и леджер.
 func editInLedger(ledgerPath, id string, p finance.EditParams) (finance.Record, error) {
+	// Замок на всё чтение-правку-запись, по той же причине, что и у добавления:
+	// проверка повтора судит по прочитанному, а перезаписывается файл целиком.
+	var rec finance.Record
+	err := filelock.With(ledgerPath, func() error {
+		var err error
+		rec, err = editUnderLock(ledgerPath, id, p)
+		return err
+	})
+	return rec, err
+}
+
+func editUnderLock(ledgerPath, id string, p finance.EditParams) (finance.Record, error) {
 	recs, err := financejsonl.Load(ledgerPath, time.Now)
 	if err != nil {
 		return finance.Record{}, err
