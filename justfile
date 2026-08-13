@@ -62,5 +62,10 @@ gates:
 gates-full:
     ./scripts/gates/push.sh
 
+# Возраст новых зависимостей ветки. В хуки не вешается намеренно: нужна сеть, а
+# запрос про каждый пакет стоит секунды — в pre-push это отключили бы за неделю.
+dep-age:
+    ./scripts/gates/dep-age.sh
+
 # Full gate, same as CI
 ci: tidy lint test-race cover-gate gates

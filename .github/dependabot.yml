@@ -1,9 +1,22 @@
+# Карантин на свежие версии: обновление не предлагается, пока версии не
+# исполнится семь дней. Свежий релиз — самое опасное окно supply chain, и
+# 13.08.2026 мимо правила проехали `@types/node` 26.2.0 (5 дней) и `vite` 8.2.1
+# (6 дней): бот резолвит версии на своей стороне, и локальный min-release-age
+# для него не существует.
+#
+# cooldown намеренно НЕ распространяется на security-обновления — GitHub шлёт
+# их мимо этого правила, и это верно: там ждать нечего.
+#
+# Второй слой — scripts/gates/dep-age.sh: он смотрит на лок в ветке и ловит то,
+# что приехало помимо бота.
 version: 2
 updates:
   - package-ecosystem: gomod
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       go-deps:
         patterns: ["*"]
@@ -12,6 +25,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       actions:
         patterns: ["*"]
@@ -20,6 +35,8 @@ updates:
     directory: "/frontend"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       frontend-deps:
         patterns: ["*"]
@@ -28,6 +45,8 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     groups:
       docker:
         patterns: ["*"]
