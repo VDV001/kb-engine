@@ -16,6 +16,21 @@ type Catalog struct {
 	byID           map[int]int // id -> index into entries
 	categoryLabels map[string]string
 	tagLabels      map[string]string
+	unreadable     []Unreadable
+}
+
+// Unreadable — запись, которая в источнике была, а в каталог не попала:
+// прочитать её не удалось.
+//
+// Это факт о каталоге, а не об ошибке разбора, поэтому он живёт здесь: витрина
+// обязана сказать, что показывает не всё, и назвать виновную запись. Причина
+// хранится строкой — домен не знает, кто и как его собирал.
+type Unreadable struct {
+	// Index — место записи в источнике. Нужен, когда id прочитать не удалось
+	// тоже: «третья запись сверху» это единственный адрес, который тогда есть.
+	Index  int
+	ID     int
+	Reason string
 }
 
 // CatalogOption configures a Catalog at construction time.
@@ -37,6 +52,22 @@ func WithTagLabels(labels map[string]string) CatalogOption {
 	return func(c *Catalog) {
 		c.tagLabels = maps.Clone(labels)
 	}
+}
+
+// WithUnreadable записывает, каких записей в каталоге нет и почему.
+//
+// Пустой список и отсутствие списка — одно и то же: «все записи прочитаны».
+// А вот непустой означает, что любая витрина показывает неполную базу, и
+// молчать об этом нельзя.
+func WithUnreadable(bad []Unreadable) CatalogOption {
+	return func(c *Catalog) {
+		c.unreadable = append([]Unreadable(nil), bad...)
+	}
+}
+
+// Unreadable returns the entries the source had and the catalog does not.
+func (c *Catalog) Unreadable() []Unreadable {
+	return append([]Unreadable(nil), c.unreadable...)
 }
 
 // NewCatalog builds a Catalog from entries, rejecting duplicate ids. A nil or
@@ -104,6 +135,15 @@ func (c *Catalog) NextID() int {
 	for _, e := range c.entries {
 		if e.id > highest {
 			highest = e.id
+		}
+	}
+	// Непрочитанные считаются наравне с прочитанными: их в файле никто не
+	// удалял, и выдать новой записи номер, который там уже стоит, значит
+	// завести двух хозяев одного id. Запись без разобранного id (0) на счёт не
+	// влияет — про неё неизвестно ничего, кроме места в файле.
+	for _, u := range c.unreadable {
+		if u.ID > highest {
+			highest = u.ID
 		}
 	}
 	return highest + 1

@@ -7,6 +7,7 @@ import { DocumentView, NowView } from './DocViews'
 import { Header } from './components/Header'
 import { ErrorBox, Spinner } from './components/ui'
 import { FinancesView } from './FinancesView'
+import { UnreadableBanner } from './UnreadableBanner'
 import { PrivacyToggle } from './components/PrivacyToggle'
 import { SearchBox } from './components/SearchBox'
 import { SourceOffer } from './components/SourceOffer'
@@ -99,6 +100,7 @@ export default function App() {
         {dashboard.status === 'loading' && <Spinner />}
         {data && (
           <>
+            <UnreadableBanner entries={data.stats.unreadable ?? []} total={data.stats.total} />
             {tab === 'overview' && (
               <DashboardView
                 stats={data.stats}
