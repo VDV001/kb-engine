@@ -142,3 +142,29 @@ describe('AccountsCard — рода счетов', () => {
     expect(screen.queryByTestId('accounts-free')).toBeNull()
   })
 })
+
+// Перевод себе уходит со счёта и приходит на другой, но домен не даёт доходу
+// счёта — значит движок видит только уходящую сторону, и расчётный остаток
+// занижен на неё. Сказать об этом надо там, где человек сверяется с банком.
+describe('AccountsCard — оговорка про переводы', () => {
+  it('называет занижение, когда переводы в периоде были', () => {
+    render(
+      <AccountsCard
+        accounts={accounts}
+        expenses="100.00"
+        income="50.00"
+        today="2026-08-13"
+        transfersExcluded={2}
+      />,
+    )
+    expect(screen.getByTestId('accounts-transfers-note').textContent).toMatch(/занижа/i)
+  })
+
+  // Оговорка, которая горит всегда, перестаёт читаться за неделю.
+  it('молчит, когда переводов не было', () => {
+    render(
+      <AccountsCard accounts={accounts} expenses="100.00" income="50.00" today="2026-08-13" />,
+    )
+    expect(screen.queryByTestId('accounts-transfers-note')).toBeNull()
+  })
+})

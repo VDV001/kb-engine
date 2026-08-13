@@ -66,19 +66,24 @@ type periodTotalDTO struct {
 // from "no data" in the client, and the chart would quietly disappear instead of
 // rendering an empty state.
 type financeSummaryDTO struct {
-	ExpenseCount   int                   `json:"expenseCount"`
-	Expenses       string                `json:"expenses"`
-	IncomeCount    int                   `json:"incomeCount"`
-	Income         string                `json:"income"`
-	Net            string                `json:"net"`
-	ByCategory     []namedTotalDTO       `json:"byCategory"`
-	ByAccount      []namedTotalDTO       `json:"byAccount"`
-	ByPlace        []namedTotalDTO       `json:"byPlace"`
-	BySource       []namedTotalDTO       `json:"bySource"`
-	IncomeBySource []namedTotalDTO       `json:"incomeBySource"`
-	BySubcategory  []subcategoryTotalDTO `json:"bySubcategory"`
-	ByMonth        []periodTotalDTO      `json:"byMonth"`
-	ByDay          []periodTotalDTO      `json:"byDay"`
+	ExpenseCount int    `json:"expenseCount"`
+	Expenses     string `json:"expenses"`
+	IncomeCount  int    `json:"incomeCount"`
+	Income       string `json:"income"`
+	Net          string `json:"net"`
+	// Исключённое из итогов: перекладывание денег между своими счетами. Едет
+	// вместе с суммами, потому что объясняет их: без него сумма строк в журнале
+	// не сходится с расходами, и причина остаётся домашним знанием.
+	ExcludedTransferCount int                   `json:"excludedTransferCount"`
+	ExcludedTransfers     string                `json:"excludedTransfers"`
+	ByCategory            []namedTotalDTO       `json:"byCategory"`
+	ByAccount             []namedTotalDTO       `json:"byAccount"`
+	ByPlace               []namedTotalDTO       `json:"byPlace"`
+	BySource              []namedTotalDTO       `json:"bySource"`
+	IncomeBySource        []namedTotalDTO       `json:"incomeBySource"`
+	BySubcategory         []subcategoryTotalDTO `json:"bySubcategory"`
+	ByMonth               []periodTotalDTO      `json:"byMonth"`
+	ByDay                 []periodTotalDTO      `json:"byDay"`
 }
 
 func toNamedTotals(in []finance.CategoryTotal) []namedTotalDTO {
@@ -91,19 +96,22 @@ func toNamedTotals(in []finance.CategoryTotal) []namedTotalDTO {
 
 func toFinanceSummaryDTO(s finance.Summary) financeSummaryDTO {
 	dto := financeSummaryDTO{
-		ExpenseCount:   s.ExpenseCount,
-		Expenses:       s.Expenses.String(),
-		IncomeCount:    s.IncomeCount,
-		Income:         s.Income.String(),
-		Net:            s.Net.String(),
-		ByCategory:     toNamedTotals(s.ByCategory),
-		ByAccount:      toNamedTotals(s.ByAccount),
-		ByPlace:        toNamedTotals(s.ByPlace),
-		BySource:       toNamedTotals(s.BySource),
-		IncomeBySource: toNamedTotals(s.IncomeBySource),
-		BySubcategory:  make([]subcategoryTotalDTO, 0, len(s.BySubcategory)),
-		ByMonth:        make([]periodTotalDTO, 0, len(s.ByMonth)),
-		ByDay:          make([]periodTotalDTO, 0, len(s.ByDay)),
+		ExpenseCount: s.ExpenseCount,
+		Expenses:     s.Expenses.String(),
+		IncomeCount:  s.IncomeCount,
+		Income:       s.Income.String(),
+		Net:          s.Net.String(),
+
+		ExcludedTransferCount: s.ExcludedTransferCount,
+		ExcludedTransfers:     s.ExcludedTransfers.String(),
+		ByCategory:            toNamedTotals(s.ByCategory),
+		ByAccount:             toNamedTotals(s.ByAccount),
+		ByPlace:               toNamedTotals(s.ByPlace),
+		BySource:              toNamedTotals(s.BySource),
+		IncomeBySource:        toNamedTotals(s.IncomeBySource),
+		BySubcategory:         make([]subcategoryTotalDTO, 0, len(s.BySubcategory)),
+		ByMonth:               make([]periodTotalDTO, 0, len(s.ByMonth)),
+		ByDay:                 make([]periodTotalDTO, 0, len(s.ByDay)),
 	}
 	for _, c := range s.BySubcategory {
 		dto.BySubcategory = append(dto.BySubcategory, subcategoryTotalDTO{
