@@ -76,10 +76,14 @@ if [ -z "$base" ]; then
   base="$(git merge-base origin/main HEAD)"
 fi
 
-threshold="$(npm config get min-release-age 2>/dev/null || true)"
+# Порог спрашивается у npm из папки фронта: там лежит .npmrc проекта, и на
+# машине без личного конфига (то есть в CI) только он и отвечает. Запуск из
+# корня давал бы «не задан» и молча подставлял умолчание — то же правило
+# двумя числами.
+threshold="$(cd frontend && npm config get min-release-age 2>/dev/null || true)"
 if [ -z "$threshold" ] || [ "$threshold" = "null" ] || [ "$threshold" = "undefined" ]; then
   threshold="${DEP_AGE_THRESHOLD:-7}"
-  echo "ℹ min-release-age в npm-конфиге не задан — беру ${threshold} дн. из умолчания гейта"
+  echo "ℹ min-release-age не задан ни в frontend/.npmrc, ни в конфиге npm — беру ${threshold} дн. из умолчания гейта"
 fi
 
 if ! git cat-file -e "$base:$lock" 2>/dev/null; then
