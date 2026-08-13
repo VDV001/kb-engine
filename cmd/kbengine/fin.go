@@ -8,6 +8,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
@@ -221,6 +222,24 @@ func repeatSubject(tx domain.Transaction) string {
 // a guard placed here cannot be walked around by using a different screen.
 // Placed in any of them, it would be a rule the next surface forgets.
 func appendChecked(ledgerPath string, p finance.AddParams, force bool,
+	note func(finance.Correction),
+) (finance.Record, error) {
+	// Замок держится на всём чтении-правке-записи, а не на самой записи.
+	// Проверка повтора судит по прочитанному состоянию, и если между чтением и
+	// записью успел вклиниться второй процесс, победит последний: замер восемью
+	// одновременными `fin add` давал одну строку при восьми успехах.
+	var rec finance.Record
+	err := filelock.With(ledgerPath, func() error {
+		var err error
+		rec, err = appendUnderLock(ledgerPath, p, force, note)
+		return err
+	})
+	return rec, err
+}
+
+// appendUnderLock — то же самое, но уже под замком. Отдельной функцией, чтобы
+// путь записи читался сверху вниз, а не через отступ замыкания.
+func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	note func(finance.Correction),
 ) (finance.Record, error) {
 	recs, err := financejsonl.Load(ledgerPath, time.Now)

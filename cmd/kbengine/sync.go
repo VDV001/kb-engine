@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/balancestate"
+	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -103,6 +104,22 @@ func forcedDirection(resolve string) (finance.Direction, bool) {
 // pairWorkbookWithLedger gives every row a stable id on both sides and writes
 // the ledger and the baseline from the same read.
 func pairWorkbookWithLedger(from, ledgerPath string, dryRun bool, stdout, stderr io.Writer) int {
+	// Замок держится на всей операции: синк читает обе стороны и перезаписывает
+	// журнал целиком, поэтому `fin add`, вклинившийся между чтением и записью,
+	// пропал бы без следа. Ждать здесь правильно — вторая команда допишется
+	// после, а не поверх.
+	code := 1
+	if err := filelock.With(ledgerPath, func() error {
+		code = pairUnderLock(from, ledgerPath, dryRun, stdout, stderr)
+		return nil
+	}); err != nil {
+		fmt.Fprintf(stderr, "fin sync --init: %v\n", err)
+		return 1
+	}
+	return code
+}
+
+func pairUnderLock(from, ledgerPath string, dryRun bool, stdout, stderr io.Writer) int {
 	// An existing ledger may hold entries made with fin add that the workbook has
 	// never seen. Re-pairing would drop them, so the decision stays with a person.
 	if _, err := os.Stat(ledgerPath); err == nil {
@@ -216,6 +233,18 @@ func loadSyncInputs(from, ledgerPath string) (syncInputs, error) {
 
 // syncWorkbookAndLedger moves data one way, or refuses to move any.
 func syncWorkbookAndLedger(from, ledgerPath string, forced finance.Direction, dryRun bool, stdout, stderr io.Writer) int {
+	code := 1
+	if err := filelock.With(ledgerPath, func() error {
+		code = syncUnderLock(from, ledgerPath, forced, dryRun, stdout, stderr)
+		return nil
+	}); err != nil {
+		fmt.Fprintf(stderr, "fin sync: %v\n", err)
+		return 1
+	}
+	return code
+}
+
+func syncUnderLock(from, ledgerPath string, forced finance.Direction, dryRun bool, stdout, stderr io.Writer) int {
 	in, err := loadSyncInputs(from, ledgerPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "fin sync: %v\n", err)
