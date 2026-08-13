@@ -19,6 +19,17 @@ type Stats struct {
 	ByKind         map[string]int    `json:"by_kind"`
 	CategoryLabels map[string]string `json:"category_labels,omitempty"`
 	TagLabels      map[string]string `json:"tag_labels,omitempty"`
+	// Unreadable — записи, которые в файле есть, а в этих числах нет. Едут
+	// вместе со статистикой намеренно: показать «1455 записей» и умолчать, что
+	// в источнике их 1456, значит выдать неполную базу за полную.
+	Unreadable []UnreadableEntry `json:"unreadable,omitempty"`
+}
+
+// UnreadableEntry — одна непрочитанная запись так, как её показывают человеку.
+type UnreadableEntry struct {
+	Index  int    `json:"index"`
+	ID     int    `json:"id"`
+	Reason string `json:"reason"`
 }
 
 // Service answers read queries over a loaded catalog.
@@ -53,6 +64,9 @@ func (s *Service) Stats() (Stats, error) {
 		ByKind:         make(map[string]int),
 		CategoryLabels: c.CategoryLabels(),
 		TagLabels:      c.TagLabels(),
+	}
+	for _, u := range c.Unreadable() {
+		st.Unreadable = append(st.Unreadable, UnreadableEntry{Index: u.Index, ID: u.ID, Reason: u.Reason})
 	}
 	for _, e := range c.Entries() {
 		st.Total++

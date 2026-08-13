@@ -328,24 +328,37 @@ func flexIntsToInts(fs []flexInt) []int {
 	return out
 }
 
-// Decode reads a catalog JSON document and builds a domain Catalog. Any entry
-// that violates an invariant aborts the load with a contextual error.
+// Decode reads a catalog JSON document and builds a domain Catalog.
+//
+// Запись, нарушившую инвариант, чтение пропускает и называет через
+// Catalog.Unreadable. Порванный JSON — по-прежнему отказ: там неизвестно даже,
+// сколько записей в файле, и показывать «всё, кроме одной» не из чего.
 func Decode(r io.Reader) (*domain.Catalog, error) {
 	var dto catalogDTO
 	if err := json.NewDecoder(r).Decode(&dto); err != nil {
 		return nil, fmt.Errorf("decode catalog json: %w", err)
 	}
 	entries := make([]domain.Entry, 0, len(dto.Entries))
+	var bad []domain.Unreadable
 	for i, ed := range dto.Entries {
 		e, err := toEntry(ed)
 		if err != nil {
-			return nil, fmt.Errorf("entry #%d (id=%d): %w", i, ed.ID, err)
+			// Негодная запись пропускается, а не обрывает чтение: одна строка
+			// прятала полторы тысячи прочитанных, и все витрины отвечали 500
+			// разом. Пропущенное не растворяется — оно названо и посчитано,
+			// иначе неполная база читалась бы как полная.
+			bad = append(bad, domain.Unreadable{
+				Index: i, ID: ed.ID,
+				Reason: fmt.Sprintf("entry #%d (id=%d): %v", i, ed.ID, err),
+			})
+			continue
 		}
 		entries = append(entries, e)
 	}
 	return domain.NewCatalog(entries,
 		domain.WithCategoryLabels(dto.Meta.Categories),
 		domain.WithTagLabels(dto.Meta.TagLabels),
+		domain.WithUnreadable(bad),
 	)
 }
 

@@ -62,15 +62,19 @@ func TestDecode_versionAndRevision(t *testing.T) {
 	}
 }
 
-// Both fields at once is rejected by the domain. The loader must surface that
-// as a load error naming the entry, not silently drop one of them — a catalog
-// that quietly loses a field is worse than one that refuses to load.
-func TestDecode_versionAndRevisionTogetherIsAnError(t *testing.T) {
-	_, err := catalogjson.Decode(strings.NewReader(versionedJSON(`,"version":"1.0.0","revision":2`)))
-	if err == nil {
-		t.Fatal("Decode accepted both version and revision, want error")
+// Both fields at once is rejected by the domain. Запись пропускается и
+// называется — молча потерять одно из полей хуже, чем не прочитать запись
+// целиком, и хуже же было ронять из-за неё весь каталог.
+func TestDecode_versionAndRevisionTogetherIsNamed(t *testing.T) {
+	c, err := catalogjson.Decode(strings.NewReader(versionedJSON(`,"version":"1.0.0","revision":2`)))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
 	}
-	if !strings.Contains(err.Error(), "id=1") {
-		t.Fatalf("error %v does not name the offending entry", err)
+	bad := c.Unreadable()
+	if len(bad) != 1 {
+		t.Fatalf("непрочитанных названо %d, ожидалась одна", len(bad))
+	}
+	if bad[0].ID != 1 || !strings.Contains(bad[0].Reason, "id=1") {
+		t.Fatalf("непрочитанная запись не названа: %+v", bad[0])
 	}
 }
