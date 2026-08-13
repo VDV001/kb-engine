@@ -23,16 +23,27 @@ jobs:
       # permitted to approve pull requests"), and main requires one approving
       # review, so with the built-in token this step could only ever fail.
       #
-      # Absent DEPENDABOT_PAT the step does not fail — it enables auto-merge and
-      # says what is missing. That keeps the run honest in both states: with the
-      # secret the bump lands on green CI, without it the PR waits for a human
-      # review and then merges itself. A red X on every dependency bump teaches
-      # people to ignore red, which costs more than the automation is worth.
+      # Состояний три, а не два, и третье стоило красных прогонов.
+      #
+      # Нет токена — шаг говорит об этом и включает auto-merge. Токен есть и
+      # права у него есть — ревью ставится, и на зелёном CI обновление уезжает
+      # само. А вот токен есть, но прав на `addPullRequestReview` у него нет:
+      # `gh pr review` падает, `set -e` обрывает шаг, и до `gh pr merge --auto`
+      # дело не доходит вовсе. Прогон красный, auto-merge не включён, PR висит.
+      # Именно так вышло с #194 и #195: «Resource not accessible by personal
+      # access token».
+      #
+      # Поэтому неудача ревью — предупреждение, а не приговор: auto-merge
+      # включается в любом случае, а причина называется вслух. Красный крест на
+      # каждом обновлении зависимостей приучает не смотреть на красное, и это
+      # дороже, чем сама автоматика.
       - name: Approve and enable auto-merge
         if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
         run: |
           if [ -n "$APPROVAL_TOKEN" ]; then
-            GH_TOKEN="$APPROVAL_TOKEN" gh pr review --approve "$PR_URL"
+            if ! GH_TOKEN="$APPROVAL_TOKEN" gh pr review --approve "$PR_URL"; then
+              echo "::warning title=Approval rejected::DEPENDABOT_PAT не смог поставить ревью — токену нужны права Pull requests: write на этот репозиторий. Auto-merge включён, но PR ждёт живого ревью."
+            fi
           else
             echo "::notice title=No approval token::DEPENDABOT_PAT is not set — enabling auto-merge only; this PR waits for a review before it lands."
           fi
