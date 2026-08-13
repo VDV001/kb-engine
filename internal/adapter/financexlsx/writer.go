@@ -31,6 +31,75 @@ const (
 	backupsKept = 10
 )
 
+// BackfillIDs stores, in the cell, the id of every row the workbook identifies
+// only by position, and reports how many it wrote.
+//
+// The id stored is the positional string itself rather than a fresh ULID, and
+// that is a decision about money, not about tidiness. `recorded_at` is read out
+// of the ULID inside the id, and the balance subtracts expenses recorded after
+// the last confirmation. Minting ULIDs now would date these records now, so every
+// one of them would be subtracted from a balance that already accounts for them —
+// trading a fragile identity for an understated remainder. An id that cannot be
+// parsed keeps the honest answer "not known", which is the answer these rows
+// already give.
+//
+// What it does buy: the row stops being found by where it sits. A row inserted
+// above no longer moves anyone's identity.
+//
+// Rows whose stored id merely looks positional are left alone — they are already
+// stable, and counting them would report work that did not happen.
+func BackfillIDs(path string, now func() time.Time) (int, error) {
+	led, err := Read(path, now)
+	if err != nil {
+		return 0, err
+	}
+
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return 0, fmt.Errorf("open workbook: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	assign := map[string]string{}
+	for _, tx := range led.Transactions {
+		sheet, row, err := parsePositionalID(tx.ID())
+		if err != nil {
+			continue
+		}
+		empty, err := idCellIsEmpty(f, sheet, row)
+		if err != nil {
+			return 0, err
+		}
+		if empty {
+			assign[tx.ID()] = tx.ID()
+		}
+	}
+	if len(assign) == 0 {
+		return 0, nil
+	}
+	if err := AssignIDs(path, assign, now); err != nil {
+		return 0, err
+	}
+	return len(assign), nil
+}
+
+// idCellIsEmpty reports whether the row carries no stored id. A sheet with no id
+// column at all has none of them stored, which is the same answer.
+func idCellIsEmpty(f *excelize.File, sheet string, row int) (bool, error) {
+	rows, err := f.GetRows(sheet, excelize.Options{RawCellValue: true})
+	if err != nil {
+		return false, fmt.Errorf("read sheet %q: %w", sheet, err)
+	}
+	idCol := findIDColumn(rows)
+	if idCol == 0 {
+		return true, nil
+	}
+	if row-1 >= len(rows) {
+		return true, nil
+	}
+	return cell(rows[row-1], idCol-1) == "", nil
+}
+
 // AssignIDs writes a stable identifier next to each row, adding the id column
 // when the workbook does not have one yet.
 //

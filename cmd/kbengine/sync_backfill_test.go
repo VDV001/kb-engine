@@ -49,7 +49,7 @@ func ledgerIDs(t *testing.T, ledger string) []string {
 		t.Fatalf("read ledger: %v", err)
 	}
 	var out []string
-	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(string(raw)), "\n") {
 		if line == "" {
 			continue
 		}
