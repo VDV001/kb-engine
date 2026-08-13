@@ -29,6 +29,8 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 	initialize := fs.Bool("init", false, "give every row a stable id on both sides")
 	migrateIDs := fs.Bool("migrate-ids", false,
 		"move ids off the column the account uses, on a book paired by an older version")
+	backfillIDs := fs.Bool("backfill-ids", false,
+		"store the id of every row the workbook identifies only by position")
 	resolve := fs.String("resolve", "", "on a conflict, take one side: jsonl or xlsx")
 	dryRun := fs.Bool("dry-run", false, "report what would happen and change nothing")
 	if err := fs.Parse(args); err != nil {
@@ -45,6 +47,11 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 	if *migrateIDs {
 		return migrateWorkbookIDs(*from, stdout, stderr)
 	}
+	// Alongside --migrate-ids, and for the same reason: this repairs the
+	// workbook's own identity column and keeps no pairing in step.
+	if *backfillIDs {
+		return backfillWorkbookIDs(*from, stdout, stderr)
+	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin sync: --ledger is required")
 		return 2
@@ -58,6 +65,26 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	return syncWorkbookAndLedger(*from, *ledgerPath, forced, *dryRun, stdout, stderr)
+}
+
+// backfillWorkbookIDs stores the id of every row the workbook identifies only by
+// position, so a row inserted above stops moving anyone's identity.
+//
+// A book where every row already carries an id is a normal outcome and is said
+// out loud: a command that prints nothing is indistinguishable from one that did
+// not run.
+func backfillWorkbookIDs(from string, stdout, stderr io.Writer) int {
+	stored, err := financexlsx.BackfillIDs(from, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin sync --backfill-ids: %v\n", err)
+		return 1
+	}
+	if stored == 0 {
+		fmt.Fprintln(stdout, "fin sync --backfill-ids: nothing to store — every row already carries an id")
+		return 0
+	}
+	fmt.Fprintf(stdout, "fin sync --backfill-ids: %d id(s) stored → %s\n", stored, from)
+	return 0
 }
 
 // migrateWorkbookIDs moves the ids off the column the account uses, on a book
