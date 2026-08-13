@@ -128,11 +128,22 @@ func TestDecode_metadataFields(t *testing.T) {
 	}
 }
 
+// Негодное поле больше не роняет чтение, но и не проходит молча: запись
+// пропускается и называется. Проверяется именно это — «пропущена» без
+// «названа» было бы тихой потерей, то есть тем же дефектом с другой стороны.
 func TestDecode_invalidDate(t *testing.T) {
 	src := `{"entries":[{"id":1,"habr_id":1,"title":"T","url":"https://h/",` +
 		`"category":"golang","status":"keep","date_added":"not-a-date"}]}`
-	if _, err := catalogjson.Decode(strings.NewReader(src)); err == nil {
-		t.Fatal("expected error for invalid date")
+	c, err := catalogjson.Decode(strings.NewReader(src))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if c.Len() != 0 {
+		t.Errorf("запись с негодной датой прочиталась: Len() = %d", c.Len())
+	}
+	bad := c.Unreadable()
+	if len(bad) != 1 || bad[0].ID != 1 {
+		t.Fatalf("негодная запись не названа: %+v", bad)
 	}
 }
 
@@ -173,12 +184,12 @@ func TestDecode_errors(t *testing.T) {
 		name string
 		src  string
 	}{
-		{"unknown status", articleJSON("bogus")},
+		// Порванный документ: неизвестно даже, сколько в нём записей, поэтому
+		// показывать «всё, кроме одной» не из чего.
 		{"invalid json", `{"entries":[`},
-		{"invalid category", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
-			`"url":"https://h/","category":"Bad Category","status":"read"}]}`},
-		{"invalid lifecycle", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
-			`"url":"https://h/","category":"golang","status":"read","lifecycle":"bogus"}]}`},
+		// Дубль id — неоднозначность всего каталога, а не одна негодная
+		// запись: непонятно, какая из двух настоящая, и пропуск выбрал бы за
+		// человека.
 		{"duplicate id", `{"entries":[` +
 			`{"id":1,"habr_id":1,"title":"A","url":"https://h/","category":"golang","status":"read"},` +
 			`{"id":1,"habr_id":2,"title":"B","url":"https://h/","category":"golang","status":"read"}]}`},
@@ -187,6 +198,35 @@ func TestDecode_errors(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			if _, err := catalogjson.Decode(strings.NewReader(tt.src)); err == nil {
 				t.Fatal("expected error, got nil")
+			}
+		})
+	}
+}
+
+// Запись, нарушившая инвариант, пропускается и называется — каталог при этом
+// читается. Перечислены обязанные: каждый инвариант, который проверяет toEntry.
+func TestDecode_invariantViolationsAreNamedNotFatal(t *testing.T) {
+	tests := []struct {
+		name, src, wantInReason string
+	}{
+		{"unknown status", articleJSON("bogus"), "unknown status"},
+		{"invalid category", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
+			`"url":"https://h/","category":"Bad Category","status":"read"}]}`, "category"},
+		{"invalid lifecycle", `{"entries":[{"id":1,"habr_id":1,"title":"T",` +
+			`"url":"https://h/","category":"golang","status":"read","lifecycle":"bogus"}]}`, "lifecycle"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, err := catalogjson.Decode(strings.NewReader(tt.src))
+			if err != nil {
+				t.Fatalf("чтение оборвалось на одной записи: %v", err)
+			}
+			bad := c.Unreadable()
+			if len(bad) != 1 {
+				t.Fatalf("непрочитанных названо %d, ожидалась одна", len(bad))
+			}
+			if !strings.Contains(bad[0].Reason, tt.wantInReason) {
+				t.Errorf("причина %q не называет, что негодно (%q)", bad[0].Reason, tt.wantInReason)
 			}
 		})
 	}
@@ -213,10 +253,17 @@ func TestLoad_openError(t *testing.T) {
 	}
 }
 
-func TestDecode_unknownStatusIsTyped(t *testing.T) {
-	_, err := catalogjson.Decode(strings.NewReader(articleJSON("bogus")))
-	if !errors.Is(err, catalogjson.ErrUnknownStatus) {
-		t.Fatalf("err = %v, want ErrUnknownStatus", err)
+// Причина хранится строкой: домен не знает, кто и как его собирал, а типом
+// ошибки после пропуска пользоваться некому — она уже не возвращается наружу.
+// Проверяется, что текст остался узнаваемым.
+func TestDecode_unknownStatusIsNamedInTheReason(t *testing.T) {
+	c, err := catalogjson.Decode(strings.NewReader(articleJSON("bogus")))
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	bad := c.Unreadable()
+	if len(bad) != 1 || !strings.Contains(bad[0].Reason, catalogjson.ErrUnknownStatus.Error()) {
+		t.Fatalf("причина не называет неизвестный статус: %+v", bad)
 	}
 }
 

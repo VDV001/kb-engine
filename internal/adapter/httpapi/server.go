@@ -213,11 +213,19 @@ func handleHealthz() http.HandlerFunc {
 // source is reachable.
 func handleReadyz(q Querier) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		if _, err := q.Stats(); err != nil {
+		st, err := q.Stats()
+		if err != nil {
 			http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		// Непрочитанные записи — не повод объявлять сервис негодным: витрины
+		// работают. Но и молчать нельзя, иначе «ready» будет означать «показано
+		// всё», чего никто не проверял.
+		if n := len(st.Unreadable); n > 0 {
+			fmt.Fprintf(w, "ready, but %d entr(ies) in the catalog could not be read\n", n)
+			return
+		}
 		_, _ = w.Write([]byte("ready\n"))
 	}
 }
