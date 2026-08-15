@@ -1,0 +1,127 @@
+# A minimal Prometheus: one config, one pod, no operator and no CRDs.
+#
+# Production usually runs kube-prometheus-stack, which brings Alertmanager,
+# node-exporter, kube-state-metrics and a pile of custom resources. That is the
+# right answer for a cluster; it is the wrong answer for showing that one
+# service exports usable numbers, which is what this directory is for.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      # Five seconds because this is a demo you watch live. A real setup uses
+      # 30s or a minute: every scrape is a sample stored forever.
+      scrape_interval: 5s
+      evaluation_interval: 5s
+
+    scrape_configs:
+      - job_name: kbengine
+        # Discovery by role: endpoints — the pods behind a Service, found by
+        # asking Kubernetes rather than by writing addresses down. A pod that
+        # restarts gets a new IP, and a hard-coded list would go stale silently.
+        kubernetes_sd_configs:
+          - role: endpoints
+        relabel_configs:
+          # Without this the job scrapes every endpoint in the namespace,
+          # including Prometheus itself and anything else that happens to run.
+          - source_labels: [__meta_kubernetes_service_label_app_kubernetes_io_name]
+            action: keep
+            regex: kbengine
+          - source_labels: [__meta_kubernetes_endpoint_port_name]
+            action: keep
+            regex: http
+          # Pod name into a label, so a graph can tell two replicas apart.
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+---
+# Prometheus asks the API server what exists. Without these rights the scrape
+# config above finds nothing and says so only in its own logs.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: prometheus
+rules:
+  - apiGroups: [""]
+    resources: [services, endpoints, pods, nodes]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: prometheus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: prometheus
+subjects:
+  - kind: ServiceAccount
+    name: prometheus
+    namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: prometheus
+    spec:
+      serviceAccountName: prometheus
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v3.13.2
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            # Two hours of retention: nothing here is meant to outlive the
+            # demonstration, and saying so beats letting the disk decide.
+            - --storage.tsdb.retention.time=2h
+          ports:
+            - name: http
+              containerPort: 9090
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app.kubernetes.io/name: prometheus
+spec:
+  selector:
+    app.kubernetes.io/name: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
