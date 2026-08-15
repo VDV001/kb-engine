@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kbengine
+  labels:
+    app.kubernetes.io/name: kbengine
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kbengine
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kbengine
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        # distroless/static:nonroot ships uid/gid 65532. Naming it here means the
+        # cluster rejects an image that was rebuilt as root instead of silently
+        # running one.
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kbengine
+          image: ghcr.io/vdv001/kb-engine:latest
+          args:
+            - serve
+            - --catalog=/data/catalog.json
+            # The binary binds 127.0.0.1 by default, which inside a container
+            # means the Service reaches nothing. Widening the bind is a choice
+            # someone makes, so it is written out here rather than defaulted.
+            - --addr=:8080
+          ports:
+            - name: http
+              containerPort: 8080
+          # Two probes because the process and the data fail separately, and
+          # Kubernetes must react differently to each.
+          #
+          # /healthz — the process answers. Restarting helps, so it drives liveness.
+          # /readyz  — the catalog parsed. Restarting does NOT help: a broken
+          #            catalog comes back broken. Kubernetes should pull the pod
+          #            out of the Service and leave it running, so an operator can
+          #            read the reason from the endpoint instead of chasing a
+          #            crash-looping container.
+          #
+          # Measured, not assumed: with a malformed catalog /healthz answers 200
+          # and /readyz answers 503 with the decode error in the body.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # Memory is limited, CPU deliberately is not: a CPU limit throttles
+              # request latency under bursts without protecting the node, while an
+              # unbounded memory leak takes the node down. The request still gives
+              # the scheduler and the HPA a number to work with.
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: catalog
+              mountPath: /data
+              readOnly: true
+      volumes:
+        - name: catalog
+          configMap:
+            name: kbengine-catalog

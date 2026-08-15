@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# CI must exercise the image built from the working tree. Applying the base
+# unchanged would pull `ghcr.io/vdv001/kb-engine:latest` — the last release —
+# so a pull request could break the container and still go green.
+resources:
+  - ../../base
+
+images:
+  - name: ghcr.io/vdv001/kb-engine
+    newName: kbengine
+    newTag: ci
+
+# One replica: a single-node runner schedules the second one on the same node,
+# which proves nothing and costs time.
+replicas:
+  - name: kbengine
+    count: 1

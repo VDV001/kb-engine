@@ -1,0 +1,28 @@
+# Not applied by the default kustomization, for the same reason as the Ingress:
+# an HPA without metrics-server is created, reports an unknown target and scales
+# nothing. CI has no metrics-server, so applying it there would turn a green run
+# into a claim nobody verified.
+#
+# To use it: install metrics-server, then add `- hpa.yaml` to the resources list.
+# The container sets a CPU *request* precisely so this can work — utilisation is
+# a percentage of the request, and an HPA over a container without one is inert.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kbengine
+  labels:
+    app.kubernetes.io/name: kbengine
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kbengine
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

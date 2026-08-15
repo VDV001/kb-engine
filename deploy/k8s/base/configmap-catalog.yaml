@@ -1,0 +1,38 @@
+# The catalog is runtime data, never baked into the image: the same image serves
+# a demo catalog here and a private one in a real deployment. This ConfigMap is
+# a deliberately minimal, invented catalog — enough for /readyz to answer and for
+# the API to return a body, and nothing that belongs to anyone.
+#
+# Replace it with your own source in a real deployment: mount a PersistentVolume,
+# or point --catalog at a path your own ConfigMap provides.
+#
+# `meta.categories` is an OBJECT (id -> label), not a list. A list parses as JSON
+# and then fails inside the engine, so /readyz answers 503 with the decode error
+# while /healthz still answers 200 — which is exactly the split the two probes
+# below rely on.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kbengine-catalog
+data:
+  catalog.json: |
+    {
+      "meta": {
+        "categories": {"demo": "Demo"},
+        "tag_labels": {"demo": "Demo"}
+      },
+      "entries": [
+        {
+          "id": 1,
+          "title": "Demo entry",
+          "type": "article",
+          "category": "demo",
+          "description": "Sample catalog shipped with the Kubernetes manifests.",
+          "url": "https://example.com/demo",
+          "tags": ["demo"],
+          "status": "active",
+          "lifecycle": "active",
+          "notes": ""
+        }
+      ]
+    }

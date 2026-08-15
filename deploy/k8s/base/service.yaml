@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kbengine
+  labels:
+    app.kubernetes.io/name: kbengine
+spec:
+  # ClusterIP, not LoadBalancer: with --ledger this process serves personal
+  # finances, so reaching it from outside the cluster is a decision made in the
+  # Ingress, where the hostname and TLS are stated, and not a side effect of the
+  # Service type.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kbengine
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
