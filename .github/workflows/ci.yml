@@ -163,6 +163,102 @@ jobs:
           severity: CRITICAL,HIGH
           vuln-type: os,library
 
+  # Infrastructure as code for the catalog bucket. Runs against LocalStack, so it
+  # costs nothing and needs no AWS account — which is also the honest limit: the
+  # API is emulated, the billing, quotas and IAM evaluation engine are not.
+  terraform:
+    runs-on: ubuntu-latest
+    services:
+      localstack:
+        # 4.14, not latest: the 2026.x line exits with code 55 unless a licence
+        # token is supplied. A `latest` that silently became paid is exactly why
+        # images are pinned here.
+        image: localstack/localstack:4.14
+        ports:
+          - 4566:4566
+        env:
+          SERVICES: s3,iam,sts
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TF_VAR_localstack_endpoint: http://localhost:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_DEFAULT_REGION: eu-central-1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
+
+      - name: Format, validate, apply (OpenTofu)
+        working-directory: deploy/terraform
+        run: |
+          tofu fmt -check -diff
+          tofu init -backend=false -input=false
+          tofu validate
+          tofu apply -input=false -auto-approve
+
+      # Asking the tool that wrote the resources whether they exist is a closed
+      # loop. The AWS CLI is a separate client and answers independently.
+      - name: Verify with the AWS CLI, not with OpenTofu
+        run: |
+          E="--endpoint-url=http://localhost:4566"
+
+          test "$(aws $E s3api get-bucket-versioning --bucket kbengine-catalog --query Status --output text)" = "Enabled"
+          test "$(aws $E s3api get-public-access-block --bucket kbengine-catalog --query PublicAccessBlockConfiguration.BlockPublicAcls --output text)" = "True"
+          test "$(aws $E iam list-attached-role-policies --role-name kbengine-engine --query 'AttachedPolicies[0].PolicyName' --output text)" = "kbengine-catalog-read"
+
+          # Control in the same run: a bucket nobody created must not answer.
+          if aws $E s3api head-bucket --bucket kbengine-not-created 2>/dev/null; then
+            echo "an invented bucket answered — this probe cannot tell resources apart"
+            exit 1
+          fi
+          echo "invented bucket correctly absent"
+
+      # The reason this module exists, checked rather than argued: the live
+      # catalog is 1 807 283 bytes and a ConfigMap tops out at 1 048 576. The
+      # object below is that size, with invented content — real catalogs stay out
+      # of CI.
+      - name: A catalog-sized object fits where a ConfigMap would not
+        run: |
+          python3 - <<'PY'
+          import json
+          entries, target = [], 1807283
+          while len(json.dumps({"entries": entries})) < target:
+              n = len(entries)
+              entries.append({"id": n, "title": f"Synthetic entry {n}", "notes": "x" * 40})
+          open("big-catalog.json", "w").write(json.dumps({"meta": {"categories": {"demo": "Demo"}}, "entries": entries}))
+          PY
+          size=$(stat -c%s big-catalog.json)
+          echo "object: $size bytes, ConfigMap ceiling: 1048576"
+          test "$size" -gt 1048576
+
+          aws --endpoint-url=http://localhost:4566 s3 cp big-catalog.json s3://kbengine-catalog/catalog.json
+          stored=$(aws --endpoint-url=http://localhost:4566 s3api head-object --bucket kbengine-catalog --key catalog.json --query ContentLength --output text)
+          test "$stored" = "$size"
+          echo "stored $stored bytes — a size the ConfigMap path cannot carry"
+
+      # "Works with both tools" is a claim, so it gets measured. Terraform is
+      # BUSL-licensed and only runs here, in a throwaway job; the repository's own
+      # path is OpenTofu.
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_wrapper: false
+
+      - name: Same HCL under Terraform
+        working-directory: deploy/terraform
+        run: |
+          # Its own lock: OpenTofu writes registry.opentofu.org addresses,
+          # Terraform expects registry.terraform.io, so the committed lock is not
+          # portable between them.
+          rm -f .terraform.lock.hcl
+          terraform fmt -check -diff
+          terraform init -backend=false -input=false
+          terraform validate
+
   # Deploys the image built from this branch into a throwaway cluster and reads a
   # real route out of it. Scope is stated in deploy/k8s/README.md: kind on one
   # node says nothing about production traffic, and the Ingress and HPA are out
