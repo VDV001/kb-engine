@@ -14,8 +14,35 @@ service:
 # The catalog is runtime data and never lives in the image: the same image serves
 # a demo catalog here and a private one in a real deployment.
 catalog:
-  # inline — the JSON below is rendered into a ConfigMap. Fine for a demo, and
-  # capped by the 1 MiB ConfigMap limit.
+  # configMap — the JSON below is rendered into a ConfigMap and mounted.
+  #             Simple, and capped at 1 MiB by Kubernetes.
+  # s3        — an init container downloads the object before the engine starts.
+  #             Required for anything real: the live catalog is 1.72 MiB, so the
+  #             ConfigMap path refuses it outright and the pod never starts.
+  source: configMap
+
+  # Only for source=s3. The engine has no S3 client and reads a file path, so
+  # the object is fetched once at pod start into an emptyDir the container reads.
+  s3:
+    # Leave empty for real AWS S3; set it for MinIO, LocalStack or any other
+    # S3-compatible endpoint.
+    endpoint: ""
+    bucket: kbengine-catalog
+    key: catalog.json
+    insecure: false
+    # Secret holding AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. On EKS prefer
+    # IRSA and leave this empty — a role beats a copied key.
+    credentialsSecret: ""
+    image:
+      # mc, not the AWS CLI: 82 MB against several hundred, and it speaks to
+      # AWS, MinIO and LocalStack with one command. This image is pulled on
+      # every pod start, so its size is not cosmetic.
+      repository: minio/mc
+      # ⚠️ The newest published tag, and it is from August 2025 — this image has
+      # not moved in about a year. Acceptable for what it does here (download one
+      # object and exit), but worth re-checking before it is trusted with more.
+      tag: RELEASE.2025-08-13T08-35-41Z
+
   # existingConfigMap — bring your own; the inline value is then ignored.
   existingConfigMap: ""
   # `meta.categories` is an OBJECT (id -> label), not a list. A list parses as

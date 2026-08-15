@@ -345,6 +345,66 @@ jobs:
           ./scripts/gates/deploy-parity.sh --self-test
           ./scripts/gates/deploy-parity.sh default/kbengine helm/kbengine
 
+      # The whole reason deploy/terraform exists, end to end: a catalog too big
+      # for a ConfigMap goes into object storage, an init container fetches it,
+      # and the engine serves it. MinIO stands in for S3 — same API, no account.
+      - name: Catalog delivered from object storage
+        run: |
+          kubectl apply -f deploy/k8s/test/minio.yaml
+          kubectl rollout status deployment/minio --timeout=180s
+
+          # 1.72 MiB of invented entries — the size of the real catalog, none of
+          # its content. ids start at 1: the engine rejects id=0, and a fixture
+          # that trips validation would hide whatever it was meant to prove.
+          python3 - <<'PY'
+          import json
+          entries = []
+          while len(json.dumps({"entries": entries})) < 1807283:
+              n = len(entries) + 1
+              entries.append({"id": n, "title": f"Synthetic entry {n}", "type": "article",
+                              "category": "demo", "description": "x" * 30,
+                              "url": f"https://example.com/{n}", "tags": ["demo"],
+                              "status": "active", "lifecycle": "active", "notes": ""})
+          json.dump({"meta": {"categories": {"demo": "Demo"}, "tag_labels": {"demo": "Demo"}},
+                     "entries": entries}, open("big-catalog.json", "w"))
+          print(f"entries: {len(entries)}")
+          PY
+          expected=$(python3 -c "import json; print(len(json.load(open('big-catalog.json'))['entries']))")
+          size=$(stat -c%s big-catalog.json)
+          echo "catalog: $size bytes, $expected entries (ConfigMap ceiling: 1048576)"
+          test "$size" -gt 1048576
+
+          kubectl port-forward svc/minio 9000:9000 &
+          for _ in $(seq 1 30); do curl -sf http://localhost:9000/minio/health/ready && break; sleep 1; done
+
+          curl -sSfL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc && chmod +x mc
+          ./mc alias set m http://localhost:9000 minioadmin minioadmin
+          ./mc mb m/kbengine-catalog
+          ./mc cp big-catalog.json m/kbengine-catalog/catalog.json
+
+          kubectl create namespace s3
+          kubectl get secret s3-credentials -o yaml | sed 's/namespace: default/namespace: s3/' | kubectl apply -n s3 -f -
+
+          helm install from-s3 deploy/helm/kbengine -n s3 \
+            --set image.repository=kbengine --set image.tag=ci --set image.pullPolicy=Never \
+            --set replicaCount=1 \
+            --set catalog.source=s3 \
+            --set catalog.s3.endpoint=http://minio.default.svc.cluster.local:9000 \
+            --set catalog.s3.credentialsSecret=s3-credentials \
+            --wait --timeout 240s
+
+          # The init container's own words, not just the pod being green.
+          kubectl logs -n s3 -l app.kubernetes.io/name=kbengine -c fetch-catalog --tail=3
+
+          kubectl port-forward -n s3 svc/from-s3 8098:80 &
+          for _ in $(seq 1 30); do curl -sf localhost:8098/healthz >/dev/null && break; sleep 1; done
+
+          # By count, not by "it answered": the engine must be serving the object
+          # that came out of the bucket, entry for entry.
+          got=$(curl -sf localhost:8098/api/stats | python3 -c "import json,sys; print(json.load(sys.stdin)['total'])")
+          echo "engine reports $got entries, object had $expected"
+          test "$got" = "$expected"
+
       # A green run that has never been shown to go red is not evidence. This
       # feeds the pod a catalog the engine cannot parse — the exact defect hit
       # while writing these manifests — and requires the rollout to fail.

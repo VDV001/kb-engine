@@ -60,10 +60,11 @@ Locking is therefore real only on the OpenTofu path.
 
 ## What this does NOT do
 
-- **It does not deliver the catalog to the pod.** The engine reads `--catalog`
-  from a file path and has no S3 client. Bridging the two needs an init container
-  that downloads the object, or a PersistentVolume — neither exists yet, and the
-  manifests still mount a ConfigMap.
+- **It does not run the engine.** Delivery from the bucket to the pod lives in
+  the Helm chart (`catalog.source=s3`): an init container downloads the object
+  into a shared volume before the engine starts, because the engine reads a file
+  path and has no S3 client. The plain manifests still mount a ConfigMap and
+  therefore still cannot carry a real catalog.
 - **It has never run against real AWS.** Every resource here was applied to
   LocalStack only. LocalStack emulates the API, not the billing, the quotas or
   the IAM evaluation engine.

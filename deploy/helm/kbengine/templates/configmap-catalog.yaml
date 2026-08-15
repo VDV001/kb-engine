@@ -1,4 +1,4 @@
-{{- if not .Values.catalog.existingConfigMap }}
+{{- if and (eq .Values.catalog.source "configMap") (not .Values.catalog.existingConfigMap) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
