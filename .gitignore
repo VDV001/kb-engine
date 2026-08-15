@@ -38,3 +38,6 @@ coverage.*
 *.tfstate.*
 tfplan
 *.tfplan
+
+# Побочный продукт запуска валидатора карт: python кэширует импорт validate.py.
+__pycache__/
