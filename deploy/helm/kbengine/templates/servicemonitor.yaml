@@ -1,0 +1,23 @@
+{{- if .Values.serviceMonitor.enabled }}
+# Tells Prometheus Operator to scrape this Service. Off by default, like the
+# Ingress and the HPA: ServiceMonitor is a CRD, so without the operator installed
+# `helm install` fails outright on an unknown kind — worse than the object simply
+# doing nothing.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "kbengine.fullname" . }}
+  labels:
+    {{- include "kbengine.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "kbengine.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}
