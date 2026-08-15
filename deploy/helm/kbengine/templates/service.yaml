@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kbengine.fullname" . }}
+  labels:
+    {{- include "kbengine.labels" . | nindent 4 }}
+spec:
+  # ClusterIP by default: with --ledger this process serves personal finances,
+  # so reaching it from outside is a decision made in the Ingress, where the
+  # hostname and TLS are stated, not a side effect of the Service type.
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "kbengine.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http

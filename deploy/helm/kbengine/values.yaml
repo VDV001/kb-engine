@@ -1,0 +1,93 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/vdv001/kb-engine
+  pullPolicy: IfNotPresent
+  # Empty means "use the chart's appVersion", so a chart shipped for a release
+  # cannot quietly point at a different one.
+  tag: ""
+
+service:
+  type: ClusterIP
+  port: 80
+
+# The catalog is runtime data and never lives in the image: the same image serves
+# a demo catalog here and a private one in a real deployment.
+catalog:
+  # inline — the JSON below is rendered into a ConfigMap. Fine for a demo, and
+  # capped by the 1 MiB ConfigMap limit.
+  # existingConfigMap — bring your own; the inline value is then ignored.
+  existingConfigMap: ""
+  # `meta.categories` is an OBJECT (id -> label), not a list. A list parses as
+  # JSON and then fails inside the engine: /healthz keeps answering 200 while
+  # /readyz answers 503 with the decode error. That split is what the two probes
+  # below are built on.
+  json: |
+    {
+      "meta": {
+        "categories": {"demo": "Demo"},
+        "tag_labels": {"demo": "Demo"}
+      },
+      "entries": [
+        {
+          "id": 1,
+          "title": "Demo entry",
+          "type": "article",
+          "category": "demo",
+          "description": "Sample catalog shipped with the chart.",
+          "url": "https://example.com/demo",
+          "tags": ["demo"],
+          "status": "active",
+          "lifecycle": "active",
+          "notes": ""
+        }
+      ]
+    }
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    # Memory only. A CPU limit throttles request latency under bursts without
+    # protecting the node, while an unbounded memory leak takes the node down.
+    # The CPU *request* stays, because the HPA measures utilisation against it.
+    memory: 256Mi
+
+# Off by default: an Ingress without a controller is an object the cluster stores
+# and nobody serves, so switching it on is a statement that you run one.
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  host: kb.example.com
+  tls:
+    enabled: true
+    secretName: kbengine-tls
+
+# Off by default for the same reason: without metrics-server an HPA reports an
+# unknown target and scales nothing.
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+# distroless/static:nonroot ships uid/gid 65532. Naming it means the cluster
+# rejects an image rebuilt as root instead of silently running one.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

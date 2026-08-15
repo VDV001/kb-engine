@@ -227,6 +227,28 @@ jobs:
             exit 1
           }
 
+      # The chart is a second description of the same deployment, and such pairs
+      # drift silently: someone edits a probe in one place and never learns about
+      # the other. Installing it here means drift surfaces while both are running.
+      - name: Install the Helm chart alongside
+        run: |
+          helm lint deploy/helm/kbengine
+          kubectl create namespace helm
+          helm install kbengine deploy/helm/kbengine -n helm \
+            --set image.repository=kbengine \
+            --set image.tag=ci \
+            --set image.pullPolicy=Never \
+            --set replicaCount=1 \
+            --wait --timeout 180s
+
+      # Compares the objects that reached the cluster, not the template text: the
+      # text differs by design, the pod spec must not. Self-test runs first — a
+      # gate that has never gone red is indistinguishable from one doing nothing.
+      - name: Deploy parity gate
+        run: |
+          ./scripts/gates/deploy-parity.sh --self-test
+          ./scripts/gates/deploy-parity.sh default/kbengine helm/kbengine
+
       # A green run that has never been shown to go red is not evidence. This
       # feeds the pod a catalog the engine cannot parse — the exact defect hit
       # while writing these manifests — and requires the rollout to fail.

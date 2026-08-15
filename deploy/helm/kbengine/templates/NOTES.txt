@@ -1,0 +1,23 @@
+kbengine {{ .Chart.AppVersion }} installed as release {{ .Release.Name }}.
+
+Reach it:
+
+{{- if .Values.ingress.enabled }}
+  https://{{ .Values.ingress.host }}
+  (needs an ingress controller for {{ .Values.ingress.className }} — without one
+  the Ingress object exists and nobody serves it)
+{{- else }}
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "kbengine.fullname" . }} 8080:{{ .Values.service.port }}
+  curl localhost:8080/readyz
+{{- end }}
+
+The catalog comes from
+{{- if .Values.catalog.existingConfigMap }} ConfigMap {{ .Values.catalog.existingConfigMap }} (yours).
+{{- else }} a demo ConfigMap rendered by this chart. Point catalog.existingConfigMap at your own before using this for anything real.
+{{- end }}
+
+{{- if not .Values.autoscaling.enabled }}
+
+Autoscaling is off. Turning it on needs metrics-server installed, otherwise the
+HPA reports an unknown target and scales nothing.
+{{- end }}

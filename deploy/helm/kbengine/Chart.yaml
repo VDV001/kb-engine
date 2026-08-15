@@ -1,0 +1,20 @@
+apiVersion: v2
+name: kbengine
+description: Knowledge-base engine — dashboard, catalog audits and finances behind one binary
+type: application
+
+# The chart's own version. It moves when the chart changes, which is not the
+# same event as the engine getting a release — hence two fields.
+version: 0.1.0
+
+# The engine release this chart defaults to. `image.tag` overrides it; leaving
+# the tag empty falls back here, so the two never drift into disagreeing.
+appVersion: "0.21.0"
+
+home: https://github.com/VDV001/kb-engine
+sources:
+  - https://github.com/VDV001/kb-engine
+keywords:
+  - knowledge-base
+  - dashboard
+  - go
