@@ -152,6 +152,8 @@ type Financier interface {
 // fallback for client-side routes).
 func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS) http.Handler {
 	mux := http.NewServeMux()
+	m := newMetrics()
+	mux.HandleFunc("GET /metrics", handleMetrics(m, q, engine))
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
 	mux.HandleFunc("GET /api/stats", handleStats(q))
@@ -196,7 +198,11 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		mux.Handle("/media/", http.NotFoundHandler())
 		mux.Handle("/", spaHandler(frontend))
 	}
-	return mux
+	// Обёртка снаружи mux, а не middleware на каждом обработчике: ServeMux
+	// заполняет Request.Pattern при сопоставлении, поэтому шаблон маршрута
+	// известен только после его работы. Регистрация нового эндпоинта попадает
+	// в метрики сама, без строчки в отдельном списке.
+	return instrument(mux, m)
 }
 
 // handleHealthz is a liveness probe: it returns 200 as long as the process can

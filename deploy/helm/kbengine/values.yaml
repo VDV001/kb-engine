@@ -92,6 +92,18 @@ ingress:
     enabled: true
     secretName: kbengine-tls
 
+# Prometheus scraping. Off by default because ServiceMonitor is a CRD: without
+# Prometheus Operator installed, `helm install` fails on an unknown kind rather
+# than quietly creating something inert.
+#
+# The endpoint itself (/metrics) is always served — it costs nothing when nobody
+# asks, and needing to enable it before it can be debugged is its own trap.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+  # Some operators only pick up ServiceMonitors carrying a specific label.
+  labels: {}
+
 # Off by default for the same reason: without metrics-server an HPA reports an
 # unknown target and scales nothing.
 autoscaling:
