@@ -88,10 +88,17 @@ variable and watching three rules fire at once.
 The HCL targets both. CI runs `fmt`, `validate` and `plan` under **each** tool,
 so "works with both" is measured rather than claimed.
 
-⚠️ **The lock file is not shared between them.** OpenTofu writes provider
-addresses as `registry.opentofu.org/…`, Terraform expects `registry.terraform.io/…`;
-the committed lock is OpenTofu's, and the Terraform job generates its own.
-Locking is therefore real only on the OpenTofu path.
+⚠️ **The working directory does not survive the crossing.** Two separate
+things, and the second one only surfaced on a real run:
+
+- the lock file names `registry.opentofu.org/…` where Terraform expects
+  `registry.terraform.io/…`, so the committed lock is OpenTofu's and pinning is
+  real only on that path;
+- `.terraform/` stores the backend configuration OpenTofu wrote, and Terraform
+  refuses to decode it — `unsupported attribute assume_role_duration_seconds`.
+
+So "the same HCL runs under both" is true, and "the same directory does" is not.
+CI wipes `.terraform` before handing the module to Terraform.
 
 ## What this does NOT do
 

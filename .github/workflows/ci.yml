@@ -309,10 +309,14 @@ jobs:
       - name: Same HCL under Terraform
         working-directory: deploy/terraform
         run: |
-          # Its own lock: OpenTofu writes registry.opentofu.org addresses,
-          # Terraform expects registry.terraform.io, so the committed lock is not
-          # portable between them.
-          rm -f .terraform.lock.hcl
+          # A clean slate, not just a fresh lock. Two things do not survive the
+          # crossing, and the second one only showed up on a real run:
+          #   - the lock names registry.opentofu.org, Terraform expects
+          #     registry.terraform.io;
+          #   - .terraform/ carries the backend config OpenTofu wrote, and
+          #     Terraform rejects it outright ("unsupported attribute
+          #     assume_role_duration_seconds").
+          rm -rf .terraform .terraform.lock.hcl
           terraform fmt -check -diff
           terraform init -backend=false -input=false
           terraform validate
