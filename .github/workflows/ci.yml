@@ -396,7 +396,12 @@ jobs:
           # The init container's own words, not just the pod being green.
           kubectl logs -n s3 -l app.kubernetes.io/name=kbengine -c fetch-catalog --tail=3
 
-          kubectl port-forward -n s3 svc/from-s3 8098:80 &
+          # Not svc/from-s3: the chart's fullname helper appends the chart name
+          # unless the release already carries it, so the object is
+          # "from-s3-kbengine". Asking the cluster beats spelling it out.
+          svc=$(kubectl get svc -n s3 -l app.kubernetes.io/instance=from-s3 -o name | head -1)
+          echo "service: $svc"
+          kubectl port-forward -n s3 "$svc" 8098:80 &
           for _ in $(seq 1 30); do curl -sf localhost:8098/healthz >/dev/null && break; sleep 1; done
 
           # By count, not by "it answered": the engine must be serving the object

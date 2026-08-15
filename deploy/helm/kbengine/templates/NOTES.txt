@@ -12,8 +12,9 @@ Reach it:
 {{- end }}
 
 The catalog comes from
-{{- if .Values.catalog.existingConfigMap }} ConfigMap {{ .Values.catalog.existingConfigMap }} (yours).
-{{- else }} a demo ConfigMap rendered by this chart. Point catalog.existingConfigMap at your own before using this for anything real.
+{{- if eq .Values.catalog.source "s3" }} s3://{{ .Values.catalog.s3.bucket }}/{{ .Values.catalog.s3.key }}{{ if .Values.catalog.s3.endpoint }} at {{ .Values.catalog.s3.endpoint }}{{ end }}, fetched by an init container at pod start. Updating it means rolling the pods.
+{{- else if .Values.catalog.existingConfigMap }} ConfigMap {{ .Values.catalog.existingConfigMap }} (yours).
+{{- else }} a demo ConfigMap rendered by this chart, and a ConfigMap tops out at 1 MiB. Set catalog.source=s3 for anything real.
 {{- end }}
 
 {{- if not .Values.autoscaling.enabled }}
