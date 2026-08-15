@@ -1,0 +1,11 @@
+{{- if not .Values.catalog.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kbengine.fullname" . }}-catalog
+  labels:
+    {{- include "kbengine.labels" . | nindent 4 }}
+data:
+  catalog.json: |
+    {{- .Values.catalog.json | nindent 4 }}
+{{- end }}

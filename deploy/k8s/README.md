@@ -48,6 +48,18 @@ reason readable at the endpoint instead of hidden in a crash loop.
 This table was measured against the binary, not assumed: a catalog whose
 `meta.categories` is a list instead of an object produces exactly row two.
 
+## Two descriptions, one deployment
+
+There is also a Helm chart in `deploy/helm/kbengine`, and it describes the same
+pod. Pairs like this drift silently — a probe gets fixed in one place and not the
+other — so CI installs both into the same cluster and compares the objects that
+actually reached it (`scripts/gates/deploy-parity.sh`). The template text differs
+by design; the pod spec must not.
+
+Which to use: the chart, if you want parameters, `helm rollback` and installation
+without cloning this repository. These manifests, if you want to read exactly
+what will be applied and need no tooling beyond `kubectl`.
+
 ## What CI checks, and what it does not
 
 The `k8s` job in `.github/workflows/ci.yml` builds the image from the working

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kbengine.fullname" . }}
+  labels:
+    {{- include "kbengine.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "kbengine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kbengine.selectorLabels" . | nindent 8 }}
+      {{- if not .Values.catalog.existingConfigMap }}
+      annotations:
+        # Editing the catalog changes the ConfigMap, and a ConfigMap change alone
+        # does not restart anything — the pod would keep serving the old data
+        # until something unrelated happened to roll it. Hashing the content into
+        # an annotation makes the edit itself the trigger.
+        checksum/catalog: {{ .Values.catalog.json | sha256sum }}
+      {{- end }}
+    spec:
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - serve
+            - --catalog=/data/catalog.json
+            # The binary binds 127.0.0.1 by default, which inside a container
+            # means the Service reaches nothing. Widening the bind is a choice
+            # someone makes, so it is written out rather than defaulted.
+            - --addr=:8080
+          ports:
+            - name: http
+              containerPort: 8080
+          # Two probes because the process and the data fail separately.
+          #
+          # /healthz — the process answers. Restarting helps, so it drives liveness.
+          # /readyz  — the catalog parsed. Restarting does NOT help: a broken
+          #            catalog comes back broken. The pod leaves the Service and
+          #            keeps running, so the reason stays readable at the endpoint
+          #            instead of hiding inside a crash loop.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 2
+            periodSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            failureThreshold: 2
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: catalog
+              mountPath: /data
+              readOnly: true
+      volumes:
+        - name: catalog
+          configMap:
+            name: {{ include "kbengine.catalogConfigMap" . }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
