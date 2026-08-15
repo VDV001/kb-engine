@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# The negative control. This overlay is meant to FAIL: it feeds the pod a catalog
+# whose `meta.categories` is a list where the engine expects an object, so
+# /readyz answers 503 and the rollout never completes.
+#
+# Without it, the green k8s job proves only that a job can be green. The defect
+# is not invented either — it is the one hit while writing these manifests, and
+# it is the reason liveness and readiness point at different endpoints.
+resources:
+  - ../ci
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: kbengine-catalog
+    patch: |
+      - op: replace
+        path: /data/catalog.json
+        value: |
+          {
+            "meta": {
+              "categories": ["demo"],
+              "tag_labels": {"demo": "Demo"}
+            },
+            "entries": []
+          }

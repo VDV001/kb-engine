@@ -1,0 +1,21 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Only what a cluster can actually serve on its own. ingress.yaml and hpa.yaml
+# are in this directory but out of this list on purpose: each needs a component
+# the cluster may not have (an ingress controller, metrics-server), and applying
+# an object nobody serves would make `kubectl apply` succeed while nothing works.
+# Both files say how to switch them on.
+resources:
+  - configmap-catalog.yaml
+  - deployment.yaml
+  - service.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: kb-engine
+
+images:
+  - name: ghcr.io/vdv001/kb-engine
+    newTag: latest

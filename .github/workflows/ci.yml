@@ -160,3 +160,87 @@ jobs:
           ignore-unfixed: true
           severity: CRITICAL,HIGH
           vuln-type: os,library
+
+  # Deploys the image built from this branch into a throwaway cluster and reads a
+  # real route out of it. Scope is stated in deploy/k8s/README.md: kind on one
+  # node says nothing about production traffic, and the Ingress and HPA are out
+  # of the applied set because this cluster has neither a controller nor
+  # metrics-server.
+  k8s:
+    runs-on: ubuntu-latest
+    env:
+      CLUSTER: kbengine-ci
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build image
+        run: docker build -t kbengine:ci .
+
+      - name: Create kind cluster
+        uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
+        with:
+          cluster_name: ${{ env.CLUSTER }}
+
+      # The cluster pulls by name, and `kbengine:ci` exists only in the runner's
+      # docker daemon. Without this the pod sits in ImagePullBackOff.
+      - name: Load image into the cluster
+        run: kind load docker-image kbengine:ci --name "$CLUSTER"
+
+      - name: Apply manifests
+        run: |
+          kubectl apply -k deploy/k8s/overlays/ci
+          kubectl rollout status deployment/kbengine --timeout=180s
+
+      # Readiness already passed by this point, so the catalog parsed. What is
+      # still unproven is that the Service actually reaches the container, which
+      # is why this reads a route rather than trusting the rollout.
+      - name: Read a real route through the Service
+        run: |
+          kubectl port-forward svc/kbengine 8080:80 &
+          for _ in $(seq 1 30); do
+            curl -sf localhost:8080/healthz >/dev/null && break
+            sleep 1
+          done
+
+          echo "--- /readyz ---"
+          curl -sf localhost:8080/readyz
+
+          # By body, not by status code. The server answers 200 on any unknown
+          # path outside /api/ because a SPA fallback serves index.html, so
+          # "200" on its own is not evidence that anything worked.
+          echo "--- /api/stats ---"
+          body=$(curl -sf localhost:8080/api/stats)
+          echo "$body"
+          echo "$body" | grep -q '"total":1' || {
+            echo "the API answered, but not with the catalog this deployment mounts"
+            exit 1
+          }
+
+          # Control in the same run: a path that does not exist must 404. If it
+          # does not, the check above was reading a fallback and means nothing.
+          code=$(curl -s -o /dev/null -w '%{http_code}' localhost:8080/api/nosuchroute)
+          echo "invented path: HTTP $code"
+          [ "$code" = "404" ] || {
+            echo "an invented API path answered $code — this probe cannot tell routes apart"
+            exit 1
+          }
+
+      # A green run that has never been shown to go red is not evidence. This
+      # feeds the pod a catalog the engine cannot parse — the exact defect hit
+      # while writing these manifests — and requires the rollout to fail.
+      - name: Negative control — readiness broken on purpose
+        run: |
+          kubectl create namespace negative
+          kubectl apply -k deploy/k8s/overlays/ci-negative -n negative
+
+          if kubectl rollout status deployment/kbengine -n negative --timeout=90s; then
+            echo "negative control did not fire: the rollout completed with an unparseable catalog"
+            exit 1
+          fi
+
+          echo "negative control fired: the rollout did not complete, as required"
+          kubectl get pods -n negative
+          # The reason must be readable at the endpoint rather than inferred from
+          # a crash loop — that is the whole point of splitting the two probes.
+          pod=$(kubectl get pod -n negative -l app.kubernetes.io/name=kbengine -o name | head -1)
+          kubectl describe "$pod" -n negative | grep -B1 -A3 "Readiness probe failed" || true

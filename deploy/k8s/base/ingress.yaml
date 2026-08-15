@@ -1,0 +1,34 @@
+# Not applied by the default kustomization — see kustomization.yaml. An Ingress
+# without a controller is an object the cluster stores and nobody serves, and CI
+# has no controller, so shipping it in the applied set would make the green run
+# claim more than it checked.
+#
+# To use it: add `- ingress.yaml` to the resources list, set the host, and point
+# the annotations at the controller you actually run.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kbengine
+  labels:
+    app.kubernetes.io/name: kbengine
+  annotations:
+    # cert-manager is one option among several; the manifest does not assume it
+    # is installed.
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - kb.example.com
+      secretName: kbengine-tls
+  rules:
+    - host: kb.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kbengine
+                port:
+                  name: http
