@@ -193,7 +193,7 @@ jobs:
 
       - uses: opentofu/setup-opentofu@a1320f892987e89d278cc92dc5adc984fb93aca4 # v2.0.2
 
-      - name: Format, validate, apply (OpenTofu)
+      - name: Format and validate (OpenTofu)
         working-directory: deploy/terraform
         run: |
           tofu fmt -check -diff
@@ -214,7 +214,6 @@ jobs:
           tflint --format=compact
           tflint --chdir=bootstrap --init
           tflint --chdir=bootstrap --format=compact
-          tofu apply -input=false -auto-approve
 
       # State in a bucket instead of on one laptop, checked the whole way: the
       # bootstrap module creates the bucket, the main module keeps its state
