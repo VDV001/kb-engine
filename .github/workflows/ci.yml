@@ -472,6 +472,41 @@ jobs:
           echo "engine reports $got entries, object had $expected"
           test "$got" = "$expected"
 
+      # Metrics are only useful if something collects them. This puts Prometheus
+      # in the cluster and checks it discovers the engine on its own — no
+      # addresses written down anywhere — and that a value actually arrives.
+      - name: Prometheus discovers the engine and collects
+        run: |
+          kubectl apply -f deploy/k8s/observability/prometheus.yaml
+          kubectl rollout status deployment/prometheus --timeout=240s
+
+          kubectl port-forward svc/prometheus 9090:9090 &
+          for _ in $(seq 1 40); do curl -sf localhost:9090/-/ready >/dev/null && break; sleep 2; done
+
+          # Discovery is not instant: the target appears, then gets scraped.
+          for _ in $(seq 1 20); do
+            state=$(curl -sf "localhost:9090/api/v1/targets?state=active" \
+              | python3 -c "import json,sys; t=json.load(sys.stdin)['data']['activeTargets']; print(t[0]['health'] if t else 'none')")
+            [ "$state" = "up" ] && break
+            sleep 3
+          done
+          echo "target health: $state"
+          test "$state" = "up"
+
+          # A live target proves the scrape happened; this proves the value made
+          # it into storage and can be read back out.
+          entries=$(curl -sf "localhost:9090/api/v1/query?query=kbengine_catalog_entries" \
+            | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if r else 'none')")
+          echo "kbengine_catalog_entries through Prometheus: $entries"
+          test "$entries" = "1"
+
+          # Control in the same run: a metric nobody exports must come back
+          # empty. Otherwise the query above proves only that the API answers.
+          absent=$(curl -sf "localhost:9090/api/v1/query?query=kbengine_invented_metric" \
+            | python3 -c "import json,sys; print(len(json.load(sys.stdin)['data']['result']))")
+          echo "invented metric series: $absent"
+          test "$absent" = "0"
+
       # A green run that has never been shown to go red is not evidence. This
       # feeds the pod a catalog the engine cannot parse — the exact defect hit
       # while writing these manifests — and requires the rollout to fail.
