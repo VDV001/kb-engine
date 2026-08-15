@@ -199,7 +199,66 @@ jobs:
           tofu fmt -check -diff
           tofu init -backend=false -input=false
           tofu validate
+
+      # The bundled ruleset knows HCL; the AWS plugin knows what a valid S3 or
+      # IAM block looks like. tflint exits 2 on findings, so a green step here
+      # means it actually had nothing to say.
+      - uses: terraform-linters/setup-tflint@6e1e0642c0289bd619021bf6b34e3c08ed1e005a # v6.3.0
+        with:
+          tflint_version: v0.64.0
+
+      - name: tflint
+        working-directory: deploy/terraform
+        run: |
+          tflint --init
+          tflint --format=compact
+          tflint --chdir=bootstrap --init
+          tflint --chdir=bootstrap --format=compact
           tofu apply -input=false -auto-approve
+
+      # State in a bucket instead of on one laptop, checked the whole way: the
+      # bootstrap module creates the bucket, the main module keeps its state
+      # there, and a planted lock must stop a second run.
+      - name: Remote state, end to end
+        run: |
+          cd deploy/terraform/bootstrap
+          tofu init -input=false
+          tofu apply -input=false -auto-approve
+          cd ..
+
+          # A separate state dir: the earlier local-state apply in this job still
+          # owns ./terraform.tfstate, and reinitialising over it would ask about
+          # migration.
+          rm -rf .terraform terraform.tfstate*
+          tofu init -input=false \
+            -backend-config=bucket=kbengine-tfstate \
+            -backend-config=key=catalog/terraform.tfstate \
+            -backend-config=region=eu-central-1 \
+            -backend-config=endpoints='{s3="http://localhost:4566"}' \
+            -backend-config=use_lockfile=true \
+            -backend-config=access_key=test \
+            -backend-config=secret_key=test \
+            -backend-config=skip_credentials_validation=true \
+            -backend-config=skip_requesting_account_id=true \
+            -backend-config=use_path_style=true
+          tofu apply -input=false -auto-approve
+
+          # The point of remote state: nothing local is left holding it.
+          test ! -f terraform.tfstate
+          aws --endpoint-url=http://localhost:4566 s3api head-object \
+            --bucket kbengine-tfstate --key catalog/terraform.tfstate \
+            --query ContentLength --output text
+
+          # Locking, proven by planting someone else's lock: the next run must
+          # refuse. A lock nobody has seen refuse is not a lock.
+          echo "held by another run" > lock.txt
+          aws --endpoint-url=http://localhost:4566 s3 cp lock.txt \
+            s3://kbengine-tfstate/catalog/terraform.tfstate.tflock
+          if tofu apply -input=false -auto-approve -lock-timeout=5s; then
+            echo "the run proceeded while the state was locked"
+            exit 1
+          fi
+          echo "locked state correctly refused a second run"
 
       # Asking the tool that wrote the resources whether they exist is a closed
       # loop. The AWS CLI is a separate client and answers independently.

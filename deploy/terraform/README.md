@@ -48,6 +48,41 @@ became paid is exactly the reason this repository pins images.
 Against real AWS: leave `localstack_endpoint` empty and let the provider find
 your credentials the usual way.
 
+## State lives in a bucket, not on a laptop
+
+Local state is fine for one person and wrong the moment there are two: whoever
+applies second overwrites what the first did, and nothing warns them.
+
+The chicken-and-egg — the bucket holding the state cannot itself live in that
+state — is solved by a separate `bootstrap/` module, applied once by hand:
+
+```sh
+cd bootstrap && tofu init && tofu apply    # creates kbengine-tfstate
+```
+
+Then the main module points at it. `backend.tf` is deliberately empty and every
+value arrives at init time, so one repository can describe several environments:
+
+```sh
+tofu init \
+  -backend-config=bucket=kbengine-tfstate \
+  -backend-config=key=catalog/terraform.tfstate \
+  -backend-config=region=eu-central-1 \
+  -backend-config=use_lockfile=true
+```
+
+`use_lockfile` keeps the lock in S3 beside the state. Older setups needed a
+DynamoDB table for locking alone — one more resource to create, pay for and
+forget. CI checks the lock the only way that means anything: it plants someone
+else's lock and requires the next run to refuse.
+
+## Linting
+
+`tflint` with the AWS plugin. The bundled rules know HCL, the plugin knows what
+a valid S3 or IAM block looks like. It exits 2 on findings, so a green step is
+evidence rather than decoration — verified by planting a badly-named unused
+variable and watching three rules fire at once.
+
 ## OpenTofu and Terraform
 
 The HCL targets both. CI runs `fmt`, `validate` and `plan` under **each** tool,
@@ -68,5 +103,6 @@ Locking is therefore real only on the OpenTofu path.
 - **It has never run against real AWS.** Every resource here was applied to
   LocalStack only. LocalStack emulates the API, not the billing, the quotas or
   the IAM evaluation engine.
-- **No remote state.** State stays local, which is fine for one operator and
-  wrong for a team; the backend is deliberately absent rather than half-configured.
+- **It has never held real state.** The remote backend works — CI creates the
+  bucket, keeps state in it and proves a planted lock stops a second run — but
+  every byte of that state described LocalStack resources.
