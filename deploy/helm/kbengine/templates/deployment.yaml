@@ -15,7 +15,7 @@ spec:
     metadata:
       labels:
         {{- include "kbengine.selectorLabels" . | nindent 8 }}
-      {{- if not .Values.catalog.existingConfigMap }}
+      {{- if and (eq .Values.catalog.source "configMap") (not .Values.catalog.existingConfigMap) }}
       annotations:
         # Editing the catalog changes the ConfigMap, and a ConfigMap change alone
         # does not restart anything — the pod would keep serving the old data
@@ -26,6 +26,52 @@ spec:
     spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if eq .Values.catalog.source "s3" }}
+      # The engine reads a file path and has no S3 client, so the object is
+      # fetched once, before the engine starts, into a volume both containers
+      # share. Failing here fails the pod: better than serving an empty catalog.
+      initContainers:
+        - name: fetch-catalog
+          image: "{{ .Values.catalog.s3.image.repository }}:{{ .Values.catalog.s3.image.tag }}"
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # --config-dir into a writable volume: the container runs with a
+              # read-only root filesystem, and mc's first act is to write its
+              # own config. Without this it dies on mkdir /.mc before touching S3.
+              mc --config-dir /tmp/mc alias set src \
+                "${S3_ENDPOINT:-https://s3.${AWS_REGION:-us-east-1}.amazonaws.com}" \
+                "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" {{ if .Values.catalog.s3.insecure }}--insecure{{ end }}
+              mc --config-dir /tmp/mc cp src/{{ .Values.catalog.s3.bucket }}/{{ .Values.catalog.s3.key }} /data/catalog.json
+              # An empty or truncated download would let the engine start and
+              # answer /readyz 503 forever with nobody knowing why.
+              test -s /data/catalog.json
+              echo "catalog fetched: $(wc -c < /data/catalog.json) bytes"
+          env:
+            - name: S3_ENDPOINT
+              value: {{ .Values.catalog.s3.endpoint | quote }}
+            {{- if .Values.catalog.s3.credentialsSecret }}
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.catalog.s3.credentialsSecret }}
+                  key: AWS_ACCESS_KEY_ID
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.catalog.s3.credentialsSecret }}
+                  key: AWS_SECRET_ACCESS_KEY
+            {{- end }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: catalog
+              mountPath: /data
+            - name: mc-config
+              mountPath: /tmp
+      {{- end }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
@@ -70,9 +116,22 @@ spec:
               mountPath: /data
               readOnly: true
       volumes:
+        {{- if eq .Values.catalog.source "s3" }}
+        # Scratch space for the fetcher's own config. Separate from the catalog
+        # volume so the engine's mount stays read-only.
+        - name: mc-config
+          emptyDir: {}
+        {{- end }}
         - name: catalog
+          {{- if eq .Values.catalog.source "s3" }}
+          # Written by the init container, read by the engine. Lives and dies
+          # with the pod, so a restart re-fetches — which is also how a catalog
+          # update reaches a running deployment: roll the pods.
+          emptyDir: {}
+          {{- else }}
           configMap:
             name: {{ include "kbengine.catalogConfigMap" . }}
+          {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

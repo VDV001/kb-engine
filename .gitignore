@@ -28,3 +28,13 @@ coverage.*
 
 # Local KB data (engine is data-agnostic; never commit a personal KB)
 /testdata/private/
+
+# Terraform / OpenTofu. State carries every value the module produced, including
+# what a real provider would return about the account; plan files carry the same.
+# Neither belongs in a public repository. The lock file DOES belong — it pins the
+# provider build the way package-lock.json pins npm.
+.terraform/
+*.tfstate
+*.tfstate.*
+tfplan
+*.tfplan
