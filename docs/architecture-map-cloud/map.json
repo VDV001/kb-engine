@@ -1,0 +1,1145 @@
+{
+  "project": "kb-engine cloud — облачный слой",
+  "commit": "3a732dd",
+  "checked_at": "2026-08-15",
+  "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
+  "examples": [
+    "Владелец ставит движок в кластер: kubectl apply -k → под с двумя разными пробами → Service отвечает телом, а не кодом",
+    "Каталог перерос ConfigMap: 1,72 МиБ против потолка 1 МиБ → бакет S3 → init-контейнер кладёт файл в /data до старта движка",
+    "Два описания одного развёртывания расходятся молча: гейт сравнивает объекты в кластере, а не текст шаблонов"
+  ],
+  "provenance": {
+    "note": "Коммит заявлен и сверяется валидатором с последним коммитом, который менял КОД. Правки самой карты в счёт не идут: иначе правило было бы невыполнимым — каждая правка сдвигала бы HEAD.",
+    "roots": {
+      "engine": "~/git/kb-engine"
+    },
+    "roots_note": "Корень один: весь облачный слой лежит в репозитории движка. Префиксы в якорях поэтому не нужны — путь читается от корня репозитория."
+  },
+  "layers": [
+    { "id": "authors", "title": "Кто действует", "order": 1 },
+    { "id": "descriptions", "title": "Описания развёртывания", "order": 2 },
+    { "id": "gates", "title": "Гейты", "order": 3 },
+    { "id": "cluster", "title": "Кластер", "order": 4 },
+    { "id": "engine", "title": "Движок", "order": 5 },
+    { "id": "observability", "title": "Наблюдаемость", "order": 6 },
+    { "id": "storage", "title": "Хранилище и облако", "order": 7 }
+  ],
+  "zones": ["Kubernetes", "Helm", "Terraform", "Наблюдаемость", "Гейты"],
+  "nodes": [
+    {
+      "id": "owner",
+      "title": "Владелец",
+      "subtitle": "человек за терминалом",
+      "layer": "authors",
+      "kind": "actor",
+      "sources": []
+    },
+    {
+      "id": "ci",
+      "title": "GitHub Actions",
+      "subtitle": "джоба k8s на каждый push и PR",
+      "layer": "authors",
+      "kind": "worker",
+      "sources": [".github/workflows/ci.yml:329"]
+    },
+    {
+      "id": "k8s-base",
+      "title": "Манифесты kustomize",
+      "subtitle": "deploy/k8s/base — только то, что кластер обслужит сам",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/kustomization.yaml:9"]
+    },
+    {
+      "id": "k8s-deployment",
+      "title": "Deployment движка",
+      "subtitle": "две реплики, две РАЗНЫЕ пробы",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/deployment.yaml:17"]
+    },
+    {
+      "id": "k8s-service",
+      "title": "Service",
+      "subtitle": "ClusterIP, наружу выходят через Ingress",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/service.yaml:12"]
+    },
+    {
+      "id": "k8s-configmap",
+      "title": "ConfigMap каталога",
+      "subtitle": "выдуманный демо-каталог, потолок 1 МиБ",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/configmap-catalog.yaml:14"]
+    },
+    {
+      "id": "k8s-ingress",
+      "title": "Ingress",
+      "subtitle": "лежит файлом, в resources НЕ входит",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/ingress.yaml:9"]
+    },
+    {
+      "id": "k8s-hpa",
+      "title": "HorizontalPodAutoscaler",
+      "subtitle": "лежит файлом, в resources НЕ входит",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/base/hpa.yaml:10"]
+    },
+    {
+      "id": "overlay-ci",
+      "title": "Наложение ci",
+      "subtitle": "образ из ветки вместо последнего выпуска",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/overlays/ci/kustomization.yaml:11"]
+    },
+    {
+      "id": "overlay-negative",
+      "title": "Наложение ci-negative",
+      "subtitle": "каталог, который движок не разберёт",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/k8s/overlays/ci-negative/kustomization.yaml:19"]
+    },
+    {
+      "id": "helm-chart",
+      "title": "Чарт kbengine",
+      "subtitle": "второе описание того же развёртывания",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/helm/kbengine/Chart.yaml:12"]
+    },
+    {
+      "id": "helm-values",
+      "title": "values.yaml",
+      "subtitle": "что решают при установке, а не при написании",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/helm/kbengine/values.yaml:16"]
+    },
+    {
+      "id": "helm-deployment",
+      "title": "Шаблон Deployment чарта",
+      "subtitle": "тот же под, другой текст",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/helm/kbengine/templates/deployment.yaml:77"]
+    },
+    {
+      "id": "helm-servicemonitor",
+      "title": "ServiceMonitor",
+      "subtitle": "выключен: без оператора установка упала бы",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/helm/kbengine/templates/servicemonitor.yaml:21"]
+    },
+    {
+      "id": "tf-main",
+      "title": "Модуль каталога",
+      "subtitle": "бакет, версии, шифрование, роль на чтение",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/terraform/main.tf:9"]
+    },
+    {
+      "id": "tf-versions",
+      "title": "Требования к версиям",
+      "subtitle": "~> 6.58.0 — три компонента осознанно",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/terraform/versions.tf:16"]
+    },
+    {
+      "id": "tf-backend",
+      "title": "Backend S3",
+      "subtitle": "пустой намеренно, значения приходят при init",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/terraform/backend.tf:23"]
+    },
+    {
+      "id": "tf-bootstrap",
+      "title": "Бакет состояния",
+      "subtitle": "курица и яйцо: состоянию негде лежать до первого apply",
+      "layer": "descriptions",
+      "kind": "data",
+      "sources": ["deploy/terraform/bootstrap/main.tf:1"]
+    },
+    {
+      "id": "gate-parity",
+      "title": "Гейт соответствия",
+      "subtitle": "сравнивает объекты в кластере, а не текст",
+      "layer": "gates",
+      "kind": "service",
+      "sources": ["scripts/gates/deploy-parity.sh:31"]
+    },
+    {
+      "id": "kind",
+      "title": "Кластер kind",
+      "subtitle": "одноузловой, поднимается джобой",
+      "layer": "cluster",
+      "kind": "external",
+      "sources": [".github/workflows/ci.yml:347"]
+    },
+    {
+      "id": "pod",
+      "title": "Под движка",
+      "subtitle": "distroless, uid 65532, ФС только на чтение",
+      "layer": "cluster",
+      "kind": "service",
+      "sources": ["deploy/k8s/base/deployment.yaml:28"]
+    },
+    {
+      "id": "init-fetch",
+      "title": "Init-контейнер fetch-catalog",
+      "subtitle": "кладёт каталог в /data ДО старта движка",
+      "layer": "cluster",
+      "kind": "service",
+      "sources": ["deploy/helm/kbengine/templates/deployment.yaml:33"]
+    },
+    {
+      "id": "kubelet",
+      "title": "Пробы kubelet",
+      "subtitle": "liveness и readiness ведут в РАЗНЫЕ места",
+      "layer": "cluster",
+      "kind": "external",
+      "sources": ["deploy/k8s/base/deployment.yaml:51"]
+    },
+    {
+      "id": "srv-healthz",
+      "title": "/healthz",
+      "subtitle": "процесс отвечает — рестарт помогает",
+      "layer": "engine",
+      "kind": "service",
+      "sources": ["internal/adapter/httpapi/server.go:157"]
+    },
+    {
+      "id": "srv-readyz",
+      "title": "/readyz",
+      "subtitle": "каталог разобран — рестарт НЕ помогает",
+      "layer": "engine",
+      "kind": "service",
+      "sources": ["internal/adapter/httpapi/server.go:158"]
+    },
+    {
+      "id": "srv-metrics",
+      "title": "/metrics",
+      "subtitle": "экспозиция без единой зависимости",
+      "layer": "engine",
+      "kind": "service",
+      "sources": ["internal/adapter/httpapi/server.go:156"]
+    },
+    {
+      "id": "srv-stats",
+      "title": "/api/stats",
+      "subtitle": "сколько записей движок реально отдаёт",
+      "layer": "engine",
+      "kind": "service",
+      "sources": ["internal/adapter/httpapi/server.go:159"]
+    },
+    {
+      "id": "instrument",
+      "title": "Обёртка instrument",
+      "subtitle": "считает по ШАБЛОНУ маршрута, не по пути",
+      "layer": "engine",
+      "kind": "service",
+      "sources": ["internal/adapter/httpapi/metrics.go:109"]
+    },
+    {
+      "id": "prometheus",
+      "title": "Prometheus",
+      "subtitle": "находит движок сам, адресов нигде не записано",
+      "layer": "observability",
+      "kind": "external",
+      "sources": ["deploy/k8s/observability/prometheus.yaml:29"]
+    },
+    {
+      "id": "grafana",
+      "title": "Grafana",
+      "subtitle": "дашборд как код, семь панелей",
+      "layer": "observability",
+      "kind": "external",
+      "sources": ["deploy/k8s/observability/grafana.yaml:41"]
+    },
+    {
+      "id": "ghcr",
+      "title": "GHCR",
+      "subtitle": "отгружаемый образ, публикуется выпуском",
+      "layer": "storage",
+      "kind": "external",
+      "sources": [".github/workflows/release.yml:61"]
+    },
+    {
+      "id": "minio",
+      "title": "MinIO",
+      "subtitle": "стоит вместо S3 в кластере — тот же API",
+      "layer": "storage",
+      "kind": "external",
+      "sources": ["deploy/k8s/test/minio.yaml:21"]
+    },
+    {
+      "id": "localstack",
+      "title": "LocalStack 4.14",
+      "subtitle": "последняя бесплатная линейка",
+      "layer": "storage",
+      "kind": "external",
+      "sources": [".github/workflows/ci.yml:176"]
+    },
+    {
+      "id": "s3-catalog",
+      "title": "Бакет каталога",
+      "subtitle": "версии, шифрование, срок жизни старых копий",
+      "layer": "storage",
+      "kind": "data",
+      "sources": ["deploy/terraform/main.tf:15"]
+    },
+    {
+      "id": "tfstate",
+      "title": "Состояние Terraform",
+      "subtitle": "замок лежит рядом с состоянием, без DynamoDB",
+      "layer": "storage",
+      "kind": "data",
+      "sources": ["deploy/terraform/backend.tf:23"]
+    }
+  ],
+  "flows": [
+    {
+      "id": "deploy-kustomize",
+      "title": "Владелец ставит движок в кластер манифестами",
+      "summary": "kubectl apply -k → ConfigMap, Deployment, Service → под с двумя разными пробами → маршрут читается телом",
+      "zone": "Kubernetes",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "k8s-base",
+          "call": "kubectl apply -k deploy/k8s/base",
+          "detail": "deploy/k8s/base/kustomization.yaml:9 перечисляет ровно три объекта. ingress.yaml и hpa.yaml лежат в этой же директории и в список НЕ входят: каждому нужен компонент, которого в кластере может не быть, а применить объект, который никто не обслуживает, значит дать apply отчитаться успехом впустую",
+          "source": "deploy/k8s/base/kustomization.yaml:9",
+          "symbol": "resources",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "k8s-base",
+          "to": "k8s-configmap",
+          "call": "ConfigMap kbengine-catalog",
+          "detail": "deploy/k8s/base/configmap-catalog.yaml:14 — каталог это данные рантайма, в образ он не запекается: один и тот же образ отдаёт демо-каталог здесь и личный в настоящем развёртывании",
+          "source": "deploy/k8s/base/configmap-catalog.yaml:14",
+          "symbol": "ConfigMap",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "k8s-base",
+          "to": "k8s-deployment",
+          "call": "Deployment kbengine, две реплики",
+          "detail": "deploy/k8s/base/deployment.yaml:17 объявляет uid и gid 65532 явно. distroless/static:nonroot их и так несёт, но названные здесь они означают, что кластер ОТКАЖЕТ образу, пересобранному под root, вместо того чтобы молча его запустить",
+          "source": "deploy/k8s/base/deployment.yaml:17",
+          "symbol": "securityContext",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "k8s-base",
+          "to": "k8s-service",
+          "call": "Service ClusterIP",
+          "detail": "deploy/k8s/base/service.yaml:12 — именно ClusterIP, а не LoadBalancer: с флагом --ledger этот процесс отдаёт личные финансы, поэтому выход наружу должен быть решением в Ingress, где названы имя и TLS, а не побочным следствием типа Service",
+          "source": "deploy/k8s/base/service.yaml:12",
+          "symbol": "ClusterIP",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "k8s-deployment",
+          "to": "pod",
+          "call": "образ ghcr.io/vdv001/kb-engine:latest, args serve --addr=:8080",
+          "detail": "deploy/k8s/base/deployment.yaml:28 — бинарь по умолчанию слушает 127.0.0.1, а внутри контейнера это значит, что Service не достаёт до него ничего. Расширение привязки — решение человека, поэтому оно написано аргументом, а не подставлено умолчанием",
+          "source": "deploy/k8s/base/deployment.yaml:28",
+          "symbol": "image",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "pod",
+          "to": "k8s-configmap",
+          "call": "volumeMounts /data readOnly",
+          "detail": "deploy/k8s/base/deployment.yaml:80 монтирует каталог только на чтение, и корневая ФС контейнера тоже только на чтение — писать движку в кластере некуда, а он в кластере и не пишет: каждая запись идёт через CLI на машине владельца",
+          "source": "deploy/k8s/base/deployment.yaml:80",
+          "symbol": "volumeMounts",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "kubelet",
+          "to": "srv-healthz",
+          "call": "livenessProbe httpGet /healthz",
+          "detail": "deploy/k8s/base/deployment.yaml:51 — процесс отвечает. Рестарт помогает, поэтому этот эндпоинт ведёт liveness",
+          "source": "deploy/k8s/base/deployment.yaml:51",
+          "symbol": "livenessProbe",
+          "unverified": false
+        },
+        {
+          "n": 8,
+          "from": "kubelet",
+          "to": "srv-readyz",
+          "call": "readinessProbe httpGet /readyz",
+          "detail": "deploy/k8s/base/deployment.yaml:58 — каталог разобран. Рестарт НЕ помогает: негодный каталог вернётся негодным, поэтому под выводится из Service и остаётся жить, чтобы причину можно было прочитать на эндпоинте, а не выковыривать из падающего по кругу контейнера. Замерено, а не предположено: на испорченном каталоге /healthz отвечает 200, /readyz — 503 с текстом ошибки разбора",
+          "source": "deploy/k8s/base/deployment.yaml:58",
+          "symbol": "readinessProbe",
+          "unverified": false
+        },
+        {
+          "n": 9,
+          "from": "k8s-service",
+          "to": "pod",
+          "call": "selector app.kubernetes.io/name: kbengine",
+          "detail": "deploy/k8s/base/service.yaml:13 — Service находит под по метке. Готовность уже прошла к этому моменту, то есть каталог разобран; недоказанным остаётся, что Service ДОСТАЁТ до контейнера, и именно поэтому проверка читает маршрут, а не верит выкатке",
+          "source": "deploy/k8s/base/service.yaml:13",
+          "symbol": "selector",
+          "unverified": false
+        },
+        {
+          "n": 10,
+          "from": "owner",
+          "to": "srv-stats",
+          "call": "curl /api/stats — сверка по ТЕЛУ, а не по коду",
+          "detail": "internal/adapter/httpapi/server.go:159 регистрирует маршрут. Код ответа сам по себе ничего не доказывает: на любой неизвестный путь вне /api/ сервер отдаёт 200, потому что SPA-фолбэк возвращает index.html",
+          "source": "internal/adapter/httpapi/server.go:159",
+          "symbol": "handleStats",
+          "unverified": false
+        },
+        {
+          "n": 11,
+          "from": "k8s-base",
+          "to": "k8s-ingress",
+          "call": "НЕ применяется: нужен ingress-контроллер",
+          "detail": "Файл deploy/k8s/base/ingress.yaml существует и в список resources не включён. Как включить — написано в самом файле",
+          "source": "deploy/k8s/base/ingress.yaml:9",
+          "unverified": true,
+          "why": "объект не применялся в кластер ни разу: без ingress-контроллера apply отчитался бы успехом, а маршрута бы не появилось — то есть проверка была бы зелёной и пустой"
+        },
+        {
+          "n": 12,
+          "from": "k8s-base",
+          "to": "k8s-hpa",
+          "call": "НЕ применяется: нужен metrics-server",
+          "detail": "Файл deploy/k8s/base/hpa.yaml существует и в список resources не включён — ровно по той же причине, что и Ingress",
+          "source": "deploy/k8s/base/hpa.yaml:10",
+          "unverified": true,
+          "why": "без metrics-server автомасштабирование не получает чисел и не срабатывает никогда; проверять нечего, и это честнее, чем зелёный apply"
+        }
+      ]
+    },
+    {
+      "id": "deploy-helm",
+      "title": "То же развёртывание, но чартом",
+      "summary": "helm install → values решают, чего манифесты решить не могут → тот же под другим текстом",
+      "zone": "Helm",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "helm-chart",
+          "call": "helm install kbengine deploy/helm/kbengine",
+          "detail": "deploy/helm/kbengine/Chart.yaml:12 — appVersion называет выпуск движка, version — версию самого чарта. Это два разных события, поэтому и полей два",
+          "source": "deploy/helm/kbengine/Chart.yaml:12",
+          "symbol": "appVersion",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "helm-chart",
+          "to": "helm-values",
+          "call": "values.yaml + --set",
+          "detail": "deploy/helm/kbengine/values.yaml:16 — раздел catalog решает, откуда каталог возьмётся: из ConfigMap, из чужого ConfigMap или из бакета. Манифестам такое решение недоступно вовсе",
+          "source": "deploy/helm/kbengine/values.yaml:16",
+          "symbol": "catalog",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "helm-values",
+          "to": "helm-deployment",
+          "call": "шаблонизация Deployment",
+          "detail": "deploy/helm/kbengine/templates/deployment.yaml:77 подставляет образ из values, а при пустом теге откатывается на appVersion чарта — так две версии не расходятся в разногласие",
+          "source": "deploy/helm/kbengine/templates/deployment.yaml:77",
+          "symbol": "image",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "helm-deployment",
+          "to": "pod",
+          "call": "тот же под, что и у манифестов",
+          "detail": "deploy/helm/kbengine/templates/deployment.yaml:96 повторяет пробы. Именно эта пара описаний и расходится молча — отсюда гейт соответствия",
+          "source": "deploy/helm/kbengine/templates/deployment.yaml:96",
+          "symbol": "livenessProbe",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "helm-chart",
+          "to": "helm-servicemonitor",
+          "call": "serviceMonitor.enabled — по умолчанию выключен",
+          "detail": "deploy/helm/kbengine/templates/servicemonitor.yaml:21 указывает Prometheus Operator на путь /metrics. Выключен по той же причине, что Ingress и HPA, но с более резким последствием: ServiceMonitor это CRD, и без оператора helm install падает на неизвестном виде объекта — хуже, чем объект, который просто ничего не делает",
+          "source": "deploy/helm/kbengine/templates/servicemonitor.yaml:21",
+          "symbol": "metrics",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "parity-gate",
+      "title": "Гейт ловит расхождение двух описаний",
+      "summary": "самопроверка → объекты из кластера, а не текст шаблонов → диффом называется, что именно разошлось",
+      "zone": "Гейты",
+      "steps": [
+        {
+          "n": 1,
+          "from": "ci",
+          "to": "gate-parity",
+          "call": "deploy-parity.sh --self-test",
+          "detail": "scripts/gates/deploy-parity.sh:59 подсаживает два расхождения — изменённую пробу и убранный securityContext — и требует, чтобы каждое было НАЗВАНО. Самопроверка стоит первой: гейт, который никогда не падал, снаружи неотличим от гейта, который ничего не делает",
+          "source": "scripts/gates/deploy-parity.sh:59",
+          "symbol": "self_test",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "gate-parity",
+          "to": "k8s-deployment",
+          "call": "kubectl get deployment default/kbengine -o json",
+          "detail": "scripts/gates/deploy-parity.sh:31 берёт существенную часть спецификации пода: образ, аргументы, порты, обе пробы, ресурсы, securityContext и точки монтирования. Ключи сортируются, иначе в дифф полез бы порядок полей, к делу не относящийся",
+          "source": "scripts/gates/deploy-parity.sh:31",
+          "symbol": "extract",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "gate-parity",
+          "to": "helm-deployment",
+          "call": "kubectl get deployment helm/kbengine -o json",
+          "detail": "Оба описания подняты в одном кластере, в разных пространствах имён: .github/workflows/ci.yml:408 сравнивает то, что ДОЕХАЛО, а не то, что написано. Текст у них разный по устройству, спецификация пода обязана совпадать",
+          "source": ".github/workflows/ci.yml:408",
+          "symbol": "deploy-parity",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "gate-parity",
+          "to": "pod",
+          "call": "diff -u — и если разошлось, названо оба файла",
+          "detail": "scripts/gates/deploy-parity.sh:45 печатает дифф с подписями сторон, которые ставит сам diff: подменять их потом через sed нельзя — на BSD кириллица в правой части подстановки роняет команду, и гейт сообщал бы о расхождении, не называя его. Осознанно НЕ сравниваются volumes, метки и число реплик: имя ConfigMap несёт имя релиза у чарта и не несёт у манифестов, метки у чарта свои, а реплики задаются на месте применения",
+          "source": "scripts/gates/deploy-parity.sh:45",
+          "symbol": "diff",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "negative-control",
+      "title": "Отрицательный контроль: выкатка обязана НЕ пройти",
+      "summary": "каталог, который движок не разберёт → /healthz 200, /readyz 503 → под выводится из Service и остаётся жить",
+      "zone": "Kubernetes",
+      "steps": [
+        {
+          "n": 1,
+          "from": "ci",
+          "to": "overlay-negative",
+          "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
+          "detail": ".github/workflows/ci.yml:516 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
+          "source": ".github/workflows/ci.yml:516",
+          "symbol": "negative",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "overlay-negative",
+          "to": "k8s-configmap",
+          "call": "патч: meta.categories списком вместо объекта",
+          "detail": "deploy/k8s/overlays/ci-negative/kustomization.yaml:19 подменяет каталог. Дефект не выдуман: это ровно тот, на который наткнулись, пока писали манифесты, и он же причина, по которой пробы указывают на разные эндпоинты",
+          "source": "deploy/k8s/overlays/ci-negative/kustomization.yaml:19",
+          "symbol": "replace",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "k8s-configmap",
+          "to": "pod",
+          "call": "негодный каталог доезжает до контейнера",
+          "detail": "Список разбирается как JSON и ломается уже ВНУТРИ движка — deploy/k8s/base/configmap-catalog.yaml:14 объясняет это прямо в файле. Поэтому процесс жив, а данные негодны",
+          "source": "deploy/k8s/base/configmap-catalog.yaml:14",
+          "symbol": "ConfigMap",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "pod",
+          "to": "srv-readyz",
+          "call": "503 с текстом ошибки разбора",
+          "detail": "internal/adapter/httpapi/server.go:158 — готовность отвечает за ДАННЫЕ. Причина читается на эндпоинте, а не выводится из того, что контейнер падает по кругу: в этом и весь смысл разведения двух проб",
+          "source": "internal/adapter/httpapi/server.go:158",
+          "symbol": "handleReadyz",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "srv-readyz",
+          "to": "k8s-service",
+          "call": "под выведен из Service, но НЕ перезапущен",
+          "detail": "deploy/k8s/base/service.yaml:13 отбирает поды по метке, готовность решает, попадёт ли под в список. Испорченные данные выводят под из обслуживания и оставляют его жить",
+          "source": "deploy/k8s/base/service.yaml:13",
+          "symbol": "selector",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "ci",
+          "to": "kind",
+          "call": "rollout status обязан вернуть ошибку",
+          "detail": ".github/workflows/ci.yml:518 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
+          "source": ".github/workflows/ci.yml:518",
+          "symbol": "rollout",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "catalog-from-s3",
+      "title": "Каталог, который не влезает в ConfigMap",
+      "summary": "1,72 МиБ против потолка 1 МиБ → бакет → init-контейнер кладёт файл в /data → движок отдаёт его запись в запись",
+      "zone": "Terraform",
+      "steps": [
+        {
+          "n": 1,
+          "from": "ci",
+          "to": "minio",
+          "call": "kubectl apply -f deploy/k8s/test/minio.yaml",
+          "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:415",
+          "source": ".github/workflows/ci.yml:415",
+          "symbol": "minio",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "ci",
+          "to": "s3-catalog",
+          "call": "mc cp big-catalog.json → бакет",
+          "detail": ".github/workflows/ci.yml:445 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
+          "source": ".github/workflows/ci.yml:445",
+          "symbol": "big-catalog",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "ci",
+          "to": "helm-values",
+          "call": "helm install --set catalog.source=s3",
+          "detail": "deploy/helm/kbengine/values.yaml:16 — переключатель источника каталога. Манифесты kustomize так не умеют, и это единственное, ради чего чарт существует отдельно",
+          "source": "deploy/helm/kbengine/values.yaml:16",
+          "symbol": "catalog",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "helm-values",
+          "to": "init-fetch",
+          "call": "initContainers: fetch-catalog",
+          "detail": "deploy/helm/kbengine/templates/deployment.yaml:33 — init-контейнер отрабатывает ДО движка, поэтому движок не знает ни про какой S3 и остаётся тем же бинарём, что и локально",
+          "source": "deploy/helm/kbengine/templates/deployment.yaml:33",
+          "symbol": "initContainers",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "init-fetch",
+          "to": "s3-catalog",
+          "call": "mc cp src/<бакет>/<ключ> /data/catalog.json",
+          "detail": "deploy/helm/kbengine/templates/deployment.yaml:47 забирает объект. Ключи приходят из секрета, а не из values: значение, попавшее в values, попадает и в helm get values",
+          "source": "deploy/helm/kbengine/templates/deployment.yaml:47",
+          "symbol": "config-dir",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "init-fetch",
+          "to": "pod",
+          "call": "/data/catalog.json готов к старту движка",
+          "detail": "Тот же путь, что и у ConfigMap в deploy/k8s/base/deployment.yaml:80 — движок читает /data и не различает, кто положил туда файл",
+          "source": "deploy/k8s/base/deployment.yaml:80",
+          "symbol": "volumeMounts",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "ci",
+          "to": "srv-stats",
+          "call": "число записей обязано совпасть с объектом",
+          "detail": ".github/workflows/ci.yml:471 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
+          "source": ".github/workflows/ci.yml:471",
+          "symbol": "curl",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "metrics-pipeline",
+      "title": "Метрики: от счётчика в процессе до панели",
+      "summary": "instrument считает по шаблону маршрута → /metrics → Prometheus находит движок сам → Grafana рисует из файла",
+      "zone": "Наблюдаемость",
+      "steps": [
+        {
+          "n": 1,
+          "from": "prometheus",
+          "to": "k8s-service",
+          "call": "kubernetes_sd_configs: находит Service по метке",
+          "detail": "deploy/k8s/observability/prometheus.yaml:29 отбирает цели по метке app.kubernetes.io/name. Адрес движка не записан НИГДЕ — иначе переезд пода потребовал бы правки конфигурации",
+          "source": "deploy/k8s/observability/prometheus.yaml:29",
+          "symbol": "source_labels",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "k8s-service",
+          "to": "srv-metrics",
+          "call": "GET /metrics раз в 5 секунд",
+          "detail": "internal/adapter/httpapi/server.go:156 — экспозиция собирается без единой зависимости, руками. Потолок назван в самом файле: нет exemplars, нет OpenMetrics, нет метрик рантайма",
+          "source": "internal/adapter/httpapi/server.go:156",
+          "symbol": "handleMetrics",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "srv-metrics",
+          "to": "instrument",
+          "call": "счётчики по шаблону маршрута",
+          "detail": "internal/adapter/httpapi/metrics.go:109 считает по ШАБЛОНУ, а не по запрошенному пути: путей вида /api/maps/<id> столько же, сколько карт, и каждый завёл бы свой временной ряд — это взрыв кардинальности, то, чем метрики убивают хранилище",
+          "source": "internal/adapter/httpapi/metrics.go:109",
+          "symbol": "instrument",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "instrument",
+          "to": "srv-stats",
+          "call": "запрос к /api/stats попадает в kbengine_http_requests_total",
+          "detail": "internal/adapter/httpapi/metrics.go:130 берёт шаблон из http.Request.Pattern, который ServeMux заполняет сам. Собственная таблица маршрутов разошлась бы с регистрацией на первом же новом эндпоинте",
+          "source": "internal/adapter/httpapi/metrics.go:130",
+          "symbol": "routeOf",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "srv-metrics",
+          "to": "prometheus",
+          "call": "kbengine_catalog_entries доезжает в хранилище",
+          "detail": "internal/adapter/httpapi/metrics.go:182 печатает число записей. Каталог читается на КАЖДЫЙ опрос, а не кэшируется: одно чтение стоит десятки миллисекунд, опрос идёт раз в несколько секунд — зато число всегда настоящее, а не то, каким было при старте",
+          "source": "internal/adapter/httpapi/metrics.go:182",
+          "symbol": "kbengine_catalog_entries",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "grafana",
+          "to": "prometheus",
+          "call": "источник данных из файла",
+          "detail": "deploy/k8s/observability/grafana.yaml:41 держит дашборд ConfigMap'ом — семь панелей описаны кодом, а не собраны мышью и запомнены на глаз",
+          "source": "deploy/k8s/observability/grafana.yaml:41",
+          "symbol": "grafana-dashboard-kbengine",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "grafana",
+          "to": "owner",
+          "call": "панели: записи, негодные, версия, запросы, ошибки, 95-й процентиль",
+          "detail": "deploy/k8s/observability/grafana.yaml:134 считает 95-й процентиль задержки по гистограмме. Отдельная метрика kbengine_catalog_readable существует потому, что пропущенный ряд на графике выглядит как «сервис не отвечает», а это другой диагноз",
+          "source": "deploy/k8s/observability/grafana.yaml:134",
+          "symbol": "histogram_quantile",
+          "unverified": false
+        },
+        {
+          "n": 8,
+          "from": "ci",
+          "to": "prometheus",
+          "call": "контроль: выдуманная метрика обязана вернуть пусто",
+          "detail": ".github/workflows/ci.yml:505 спрашивает kbengine_invented_metric и требует ноль рядов. Без этого запрос настоящей метрики доказывал бы только то, что API Prometheus отвечает",
+          "source": ".github/workflows/ci.yml:505",
+          "symbol": "kbengine_invented_metric",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "terraform-catalog",
+      "title": "Бакет каталога как код",
+      "summary": "bootstrap заводит место под состояние → backend получает значения при init → модуль поднимает бакет с версиями и ролью на чтение",
+      "zone": "Terraform",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "tf-bootstrap",
+          "call": "cd bootstrap && tofu init && tofu apply",
+          "detail": "deploy/terraform/bootstrap/main.tf:55 решает задачу курицы и яйца: состоянию негде лежать, пока бакет под состояние не создан. Этот модуль владеет ЛОКАЛЬНЫМ файлом состояния и запускается один раз руками — разведение на два модуля и есть то, из-за чего destroy не уносит с собой бакет состояния",
+          "source": "deploy/terraform/bootstrap/main.tf:55",
+          "symbol": "aws_s3_bucket",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "tf-bootstrap",
+          "to": "tfstate",
+          "call": "бакет kbengine-tfstate с версионированием",
+          "detail": "deploy/terraform/bootstrap/main.tf:62 включает версии у бакета СОСТОЯНИЯ. Здесь это не «вообще-то разумно», как у бакета каталога, а единственное, что даёт откатиться к вчерашнему состоянию вместо ручной сверки конфигурации с настоящими ресурсами",
+          "source": "deploy/terraform/bootstrap/main.tf:62",
+          "symbol": "aws_s3_bucket_versioning",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "owner",
+          "to": "tf-backend",
+          "call": "tofu init -backend-config=... use_lockfile=true",
+          "detail": "deploy/terraform/backend.tf:23 объявлен ПУСТЫМ намеренно: зашитый здесь бакет означал бы, что репозиторий описывает ровно одно окружение, и сделал бы невозможным tofu init -backend=false, которым CI проверяет HCL, не трогая состояние вовсе. Все значения, включая use_lockfile, приходят флагами при init — замок ложится в S3 рядом с состоянием, и таблица DynamoDB, нужная прежним схемам чисто ради блокировки, больше не требуется",
+          "source": "deploy/terraform/backend.tf:23",
+          "symbol": "backend",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "owner",
+          "to": "tf-main",
+          "call": "tofu apply",
+          "detail": "deploy/terraform/main.tf:9 заводит бакет. Причина модуля измерена, а не предположена: живой каталог весит 1 807 283 байта, а ConfigMap упирается в 1 МиБ — под с настоящим каталогом не стартует вовсе, потому что ConfigMap отвергается при создании",
+          "source": "deploy/terraform/main.tf:9",
+          "symbol": "aws_s3_bucket",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "tf-main",
+          "to": "s3-catalog",
+          "call": "версии, шифрование, четыре флага публичности, срок жизни копий",
+          "detail": "deploy/terraform/main.tf:15 включает версионирование — без него перезапись окончательна. Флагов публичности именно четыре, а не один: каждый закрывает свой способ, каким бакет становится публичным, и AWS считает их независимо",
+          "source": "deploy/terraform/main.tf:15",
+          "symbol": "aws_s3_bucket_versioning",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "tf-main",
+          "to": "pod",
+          "call": "роль, которой можно только читать",
+          "detail": "deploy/terraform/main.tf:105 заводит роль. Движок каталог только читает — каждая запись идёт через CLI на машине владельца, — поэтому роль без права записи это не ограничение, которое потом придётся обходить, а настоящая форма системы",
+          "source": "deploy/terraform/main.tf:105",
+          "symbol": "aws_iam_role",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "ci",
+          "to": "tf-versions",
+          "call": "tofu init читает ограничение версии",
+          "detail": "deploy/terraform/versions.tf:16 закрепляет 6.58.x ТРЕМЯ компонентами. «~> 6.58» разрешает любую 6.x и на первом же init честно приехал 6.60.0: правило жило комментарием, а ограничение говорило другое",
+          "source": "deploy/terraform/versions.tf:16",
+          "symbol": "version",
+          "unverified": false
+        },
+        {
+          "n": 8,
+          "from": "ci",
+          "to": "localstack",
+          "call": "прогон против LocalStack, а не против настоящего AWS",
+          "detail": ".github/workflows/ci.yml:176 поднимает localstack/localstack:4.14 — линейка 4.x последняя бесплатная, а тег latest уже платный. Настоящий AWS не трогался ни разу, и это записано в разделе «чего карта не знает»",
+          "source": ".github/workflows/ci.yml:176",
+          "symbol": "localstack",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "image-source",
+      "title": "Какой именно образ доезжает до кластера",
+      "summary": "выпуск публикует в GHCR → база ссылается на :latest → наложение ci подменяет его образом из ветки, иначе PR ломает контейнер и остаётся зелёным",
+      "zone": "Kubernetes",
+      "steps": [
+        {
+          "n": 1,
+          "from": "ci",
+          "to": "ghcr",
+          "call": "выпуск публикует образ",
+          "detail": ".github/workflows/release.yml:61 отдаёт образ в GHCR под именем репозитория. Это единственное место, откуда его берут посторонние",
+          "source": ".github/workflows/release.yml:61",
+          "symbol": "images",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "ci",
+          "to": "k8s-base",
+          "call": "база называет :latest",
+          "detail": "deploy/k8s/base/kustomization.yaml:19 закрепляет тег образа на уровне описания, чтобы он не был размазан по манифестам",
+          "source": "deploy/k8s/base/kustomization.yaml:19",
+          "symbol": "images",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "k8s-base",
+          "to": "ghcr",
+          "call": "ghcr.io/vdv001/kb-engine:latest",
+          "detail": "deploy/k8s/base/deployment.yaml:28 — в настоящем развёртывании берётся последний ВЫПУЩЕННЫЙ образ",
+          "source": "deploy/k8s/base/deployment.yaml:28",
+          "symbol": "image",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "ci",
+          "to": "overlay-ci",
+          "call": "в CI применяется наложение, а не база",
+          "detail": "deploy/k8s/overlays/ci/kustomization.yaml:11 подменяет образ на kbengine:ci. Примени CI базу как есть — он тянул бы последний выпуск, и pull request мог бы сломать контейнер и всё равно позеленеть",
+          "source": "deploy/k8s/overlays/ci/kustomization.yaml:11",
+          "symbol": "newName",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "overlay-ci",
+          "to": "kind",
+          "call": "одна реплика вместо двух",
+          "detail": "deploy/k8s/overlays/ci/kustomization.yaml:17 оставляет одну реплику: одноузловой раннер поставит вторую на тот же узел, что ничего не доказывает и стоит времени",
+          "source": "deploy/k8s/overlays/ci/kustomization.yaml:17",
+          "symbol": "replicas",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "ci",
+          "to": "kind",
+          "call": "kind load docker-image kbengine:ci",
+          "detail": ".github/workflows/ci.yml:347 загружает образ в кластер. Кластер тянет по имени, а kbengine:ci существует только в демоне docker самого раннера — без этой строки под висит в ImagePullBackOff",
+          "source": ".github/workflows/ci.yml:347",
+          "symbol": "docker-image",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "kind",
+          "to": "pod",
+          "call": "выкатка с образом из ветки",
+          "detail": ".github/workflows/ci.yml:351 применяет наложение и ждёт завершения выкатки. Это первый день, когда отгружаемый образ вообще ЗАПУСКАЕТСЯ в проверке, а не только собирается и сканируется",
+          "source": ".github/workflows/ci.yml:351",
+          "symbol": "kubectl",
+          "unverified": false
+        }
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "id": "f-setup-go",
+      "zone": "Гейты",
+      "title": "setup-go молча берёт версию, уже стоящую на раннере",
+      "detail": "При спеке \"1.26\" действие не идёт за свежайшей версией, а удовлетворяет спек тем, что предустановлено на образе раннера. Сборка шла на 1.26.5, где были две уязвимости высокой степени, достижимые кодом движка.",
+      "evidence": "Во всех четырёх местах, где ставится Go, добавлен check-latest: true — .github/workflows/ci.yml:24",
+      "severity": "high",
+      "status": "починено",
+      "fix": "check-latest: true + проверять строкой go version в логе, а не зелёной галочкой"
+    },
+    {
+      "id": "f-tilde-constraint",
+      "zone": "Terraform",
+      "title": "«~> 6.58» разрешает любую 6.x",
+      "detail": "Правило семидневного возраста зависимостей было записано комментарием, а ограничение рядом говорило другое: на первом же init приехал провайдер 6.60.0, которому было два дня.",
+      "evidence": "deploy/terraform/versions.tf:16 — три компонента вместо двух",
+      "severity": "medium",
+      "status": "починено",
+      "fix": "~> 6.58.0 и читать lock-файл после init, а не комментарий рядом"
+    },
+    {
+      "id": "f-image-not-run",
+      "zone": "Kubernetes",
+      "title": "Отгружаемый образ никто не запускал",
+      "detail": "Джоба docker образ только собирала и сканировала, а выпуски проверялись на скачанном бинаре. То есть контейнер как контейнер не поднимался в проверке ни разу.",
+      "evidence": "Джоба k8s поднимает kind и читает живой маршрут — .github/workflows/ci.yml:329",
+      "severity": "high",
+      "status": "закрыто",
+      "fix": "kind в CI + чтение маршрута по телу + отрицательный контроль"
+    },
+    {
+      "id": "f-probes-split",
+      "zone": "Kubernetes",
+      "title": "Одна проба на две разные поломки",
+      "detail": "Процесс и данные отказывают порознь, и Kubernetes обязан реагировать на них по-разному. Одна проба на оба случая либо перезапускает под с негодным каталогом по кругу, либо оставляет мёртвый процесс в обслуживании.",
+      "evidence": "Замерено: на испорченном каталоге /healthz отвечает 200 при /readyz 503 — deploy/k8s/base/deployment.yaml:51",
+      "severity": "medium",
+      "status": "закрыто",
+      "fix": "liveness на /healthz, readiness на /readyz"
+    },
+    {
+      "id": "f-silent-drift",
+      "zone": "Гейты",
+      "title": "Два описания одного развёртывания расходятся молча",
+      "detail": "Кто-то правит пробу в манифестах и не знает про чарт. Заметно это становится в проде.",
+      "evidence": "scripts/gates/deploy-parity.sh:31 сравнивает объекты в кластере, а не текст шаблонов; прогнан в обе стороны",
+      "severity": "medium",
+      "status": "закрыто",
+      "fix": "гейт в CI + самопроверка на двух подсадках"
+    },
+    {
+      "id": "f-absence-check",
+      "zone": "Гейты",
+      "title": "Проверка отсутствия зелёная, когда отсутствует ВСЁ",
+      "detail": "Тест вида «такого не должно быть» проходит и тогда, когда предмета нет вовсе — то есть в одиночку он не свидетель. Ловится только подсадкой того, что проверка обязана поймать.",
+      "evidence": "Контроль выдуманной метрики требует ноль рядов ПРИ живой настоящей — .github/workflows/ci.yml:505",
+      "severity": "medium",
+      "status": "правило",
+      "fix": "рядом с проверкой отсутствия держать проверку присутствия"
+    },
+    {
+      "id": "f-localstack-paid",
+      "zone": "Terraform",
+      "title": "localstack:latest уже платный",
+      "detail": "Тег latest ведёт на платную линейку. Бесплатной остаётся 4.x, и версию приходится закреплять явно.",
+      "evidence": ".github/workflows/ci.yml:176 — localstack/localstack:4.14",
+      "severity": "low",
+      "status": "обойдено",
+      "fix": "закрепить 4.14"
+    },
+    {
+      "id": "f-tofu-terraform",
+      "zone": "Terraform",
+      "title": "Между OpenTofu и Terraform не переносится не только lock",
+      "detail": "Каталог .terraform несёт конфигурацию backend, записанную OpenTofu, а lock называет registry.opentofu.org там, где Terraform ждёт registry.terraform.io. Перенос падает на обоих.",
+      "evidence": ".github/workflows/ci.yml:319 — перед прогоном Terraform убираются оба",
+      "severity": "low",
+      "status": "обойдено",
+      "fix": "rm -rf .terraform .terraform.lock.hcl между инструментами"
+    },
+    {
+      "id": "f-map-exclude",
+      "zone": "Гейты",
+      "title": "Соседняя карта сдвигает «последний коммит кода» для первой",
+      "detail": "Правило H9 валидатора исключало из счёта коммиты одной директории — docs/architecture-map. Директория этой карты называется иначе, поэтому каждая правка облачной карты выглядела бы для карты движка правкой КОДА и объявляла бы её отставшей.",
+      "evidence": "Исключение теперь собирается по всем директориям, где лежит map.json — docs/architecture-map/validate.py:135",
+      "severity": "medium",
+      "status": "починено",
+      "fix": "исключать все директории с map.json, а не одну по имени"
+    }
+  ],
+  "gaps": [
+    "Ни одна строчка не запускалась против настоящего AWS — только LocalStack и MinIO. Поведение настоящих S3 и IAM (задержки согласованности, отказ по правам, лимиты) не проверено ничем.",
+    "Нагрузка не проверялась вовсе: ни числа запросов в секунду, ни поведения под нагрузкой, ни того, при каком объёме упирается память в лимит 256 МиБ.",
+    "Многоузловое планирование не проверено: кластер kind одноузловой, поэтому две реплики в CI осознанно свёрнуты в одну, а antiAffinity и распределение по узлам не проверялись ни разу.",
+    "Настоящего хранилища у каталога в манифестах нет: ConfigMap с потолком 1 МиБ или объект в бакете. PersistentVolume не описан и не пробовался.",
+    "Ingress и HPA лежат файлами и не применялись ни разу: обоим нужен компонент, которого в кластере нет, и зелёный apply без него ничего бы не значил.",
+    "ServiceMonitor чарта не устанавливался: он CRD, и без Prometheus Operator установка падает на неизвестном виде объекта. Проверен только путь через статическую конфигурацию Prometheus.",
+    "Трассировки LLM-вызовов и адаптера Bedrock нет и не делалось осознанно: у kb-engine нет обращений к моделям вовсе. Это задача Deal Sense или Floq, и в резюме такое писать нельзя.",
+    "Восстановление из версии объекта в бакете не проверялось: версионирование включено, но откат к вчерашней копии каталога ни разу не выполнялся."
+  ],
+  "runtime_checks": [
+    "Джоба k8s поднимает kind, ставит образ ИЗ ВЕТКИ и читает /api/stats по телу, требуя '\"total\":1' — код ответа сам по себе не годится, потому что SPA-фолбэк отдаёт 200 на любой путь вне /api/.",
+    "Контроль в том же прогоне: выдуманный путь /api/nosuchroute обязан вернуть 404, иначе проверка выше читала фолбэк и не значит ничего.",
+    "Отрицательный контроль: наложение ci-negative кормит под каталогом с meta.categories списком, и джоба падает сама, если выкатка при этом ЗАВЕРШИЛАСЬ.",
+    "Гейт соответствия прогнан в обе стороны: сначала самопроверка на двух подсадках, потом сравнение живых объектов манифестов и чарта в одном кластере.",
+    "Каталог 1,72 МиБ доставлен через MinIO: джоба требует, чтобы размер превышал потолок ConfigMap, и сверяет число записей, которое отдаёт движок, со числом в объекте.",
+    "Prometheus поднят в кластере и нашёл движок сам, без записанных адресов; значение kbengine_catalog_entries прочитано обратно из хранилища запросом.",
+    "Оба описания Terraform прогнаны через tofu и через terraform: fmt, init -backend=false и validate каждым инструментом порознь.",
+    "Блокировка состояния проверена настоящим захватом: при существующем файле замка второй apply обязан отказать по таймауту."
+  ],
+  "coverage": {
+    "scope": {
+      "root": "engine",
+      "patterns": ["deploy/**"],
+      "also": [
+        "scripts/gates/deploy-parity.sh",
+        ".github/workflows/ci.yml",
+        ".github/workflows/release.yml",
+        "internal/adapter/httpapi/metrics.go"
+      ],
+      "exclude_dirs": [".terraform"]
+    },
+    "exclusions": [
+      {
+        "path": "deploy/terraform/.terraform/",
+        "why": "каталог провайдеров, 783 МБ, в git не идёт — .gitignore:36"
+      },
+      {
+        "path": "deploy/k8s/README.md",
+        "why": "проза для человека, кода не содержит"
+      },
+      {
+        "path": "deploy/terraform/README.md",
+        "why": "проза для человека, кода не содержит"
+      },
+      {
+        "path": "deploy/k8s/observability/README.md",
+        "why": "проза для человека, кода не содержит"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/_helpers.tpl",
+        "why": "вспомогательные шаблоны имён и меток; в сценариях участвуют через объекты, которые из них собираются"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/NOTES.txt",
+        "why": "текст, который helm печатает после установки"
+      },
+      {
+        "path": "deploy/helm/kbengine/.helmignore",
+        "why": "список того, что не попадает в пакет чарта"
+      },
+      {
+        "path": "deploy/terraform/.tflint.hcl",
+        "why": "настройка линтера; сам линтер назван в джобе terraform"
+      },
+      {
+        "path": "deploy/terraform/outputs.tf",
+        "why": "выходные значения модуля; описаны через ресурсы, на которые ссылаются"
+      },
+      {
+        "path": "deploy/terraform/variables.tf",
+        "why": "объявления переменных; значения приходят при apply"
+      },
+      {
+        "path": "deploy/terraform/providers.tf",
+        "why": "настройка провайдера и переадресация на LocalStack; узел localstack её и описывает"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/hpa.yaml",
+        "why": "шаблон выключенного объекта, зеркало deploy/k8s/base/hpa.yaml"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/ingress.yaml",
+        "why": "шаблон выключенного объекта, зеркало deploy/k8s/base/ingress.yaml"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/configmap-catalog.yaml",
+        "why": "шаблон того же ConfigMap, что описан узлом k8s-configmap"
+      },
+      {
+        "path": "deploy/helm/kbengine/templates/service.yaml",
+        "why": "шаблон того же Service, что описан узлом k8s-service"
+      }
+    ],
+    "note": "Область берётся с диска маской deploy/**, а не перечисляется прозой. Пока полнота была прозой, проза врала — у карты рабочего места она называла 16 скриптов из 67."
+  },
+  "acceptance": {
+    "classes_run": [
+      "покрытие: каждый файл под deploy/** либо в карте, либо в исключениях с причиной",
+      "якоря: все ссылки открыты валидатором, символ ищется по границе слова вне комментариев",
+      "дубли: id сценариев и узлов уникальны, повторно описанных путей нет",
+      "связность: цепочка шагов не рвётся, петель и дублей троек нет",
+      "unverified: у каждого непроверенного шага названа причина"
+    ],
+    "not_done": "Приёмка СМЫСЛА зонами не проводилась ни по одной из пяти. Механические классы прогнаны, а вопрос «описан ли здесь тот поток, который на самом деле идёт» человеком ещё не задавался. У карты движка ровно такая приёмка после шести чистых ревью дала пять находок.",
+    "note": "Карта написана в тот же день, что и описанный ею код. Это её сильная сторона сегодня и слабое место через месяц: устаревает она молча, а валидатор проверяет, что символ стоит рядом с указанной строкой, а не что этот вызов участвует именно в описанном потоке."
+  }
+}

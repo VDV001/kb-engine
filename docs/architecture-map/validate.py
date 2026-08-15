@@ -34,7 +34,6 @@ import sys
 WINDOW = 2  # было 4: коридор принимаемых строк оказался медианно 19, максимум 608
 
 IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]{3,}")
-PATH_LIKE = re.compile(r"[\w./-]+\.(go|ts|tsx|js|py|sh)")
 TESTFILE = re.compile(r"(^|/)[\w-]*_test\.(go|ts|tsx|js)$|(^|/)[\w-]*\.test\.(ts|tsx|js)$")
 # Слова, которые встречаются почти в каждом файле и потому ничего не доказывают.
 NOISE = {"kbengine", "http", "json", "true", "false", "null", "path", "time", "line",
@@ -125,6 +124,26 @@ def check_source(root, source, idents, where, errs, strict):
              f"{sorted(idents)}; строка: {lines[n-1].strip()[:80]!r}")
 
 
+def map_dir_excludes(root):
+    """Директории всех карт репозитория — их коммиты не считаются правкой кода.
+
+    Список собирается С ДИСКА, а не пишется именем. Одно имя здесь уже было и
+    оказалось ловушкой: pathspec ":(exclude)docs/architecture-map" совпадает по
+    компонентам пути и потому НЕ покрывает соседнюю "docs/architecture-map-cloud".
+    Замерено: `git ls-files --others -- . ':(exclude)docs/architecture-map'`
+    показывает файл второй карты. Следствие было бы не косметическим — правка
+    облачной карты сдвигала бы «последний коммит кода», и валидатор объявлял бы
+    отставшей карту движка, которая не менялась.
+    """
+    out = []
+    for dirpath, dirnames, filenames in os.walk(os.path.join(root, "docs")):
+        dirnames[:] = [d for d in dirnames if d not in {".git", "node_modules"}]
+        if "map.json" in filenames:
+            rel = os.path.relpath(dirpath, root).replace(os.sep, "/")
+            out.append(f":(exclude){rel}")
+    return sorted(out)
+
+
 def validate(m, root, quiet=False):
     errs = []
     stats = {"nodes": 0, "steps": 0, "flows": len(m.get("flows", [])), "unverified": 0,
@@ -138,8 +157,8 @@ def validate(m, root, quiet=False):
             # карта описывает код, а коммиты самой карты его не трогают. Иначе
             # правило невыполнимо — каждая правка карты сдвигает HEAD на шаг вперёд.
             head = subprocess.run(
-                ["git", "-C", root, "log", "-1", "--format=%h", "--",
-                 ".", ":(exclude)docs/architecture-map"],
+                ["git", "-C", root, "log", "-1", "--format=%h", "--", "."]
+                + map_dir_excludes(root),
                 capture_output=True, text=True, timeout=10).stdout.strip()
             dirty = subprocess.run(["git", "-C", root, "status", "--porcelain"],
                                    capture_output=True, text=True, timeout=10).stdout.strip()
