@@ -20,10 +20,16 @@
   H11 узел не может висеть вне сценариев; gaps и runtime_checks — не заглушки
 
 Запуск:
-    python3 validate_v2.py <map.json> <repo-root> [--self-test] [--soft]
+    python3 validate.py <map.json> <repo-root> [--self-test] [--commit-warn]
 
---soft печатает нарушения новых правил как предупреждения (для перехода на
-конвенцию), но код возврата всё равно ненулевой, если есть нарушения старых.
+--commit-warn печатает отставание штампа (H9) предупреждением и не роняет
+прогон. Нужен там, где правило невыполнимо по устройству, а не по лени: внутри
+pull request карта не может назвать коммит, которого ещё нет, поэтому в CI H9
+краснел бы на КАЖДОМ изменении кода. Остальные правила остаются жёсткими — и
+сдвиг кода они ловят сами, по съехавшим якорям.
+
+Флага --soft здесь никогда не было: он стоял в этой строке, main() его не читал,
+и «мягкий» прогон молча шёл жёстким.
 """
 import json
 import os
@@ -352,6 +358,11 @@ def main():
     print(f"=== {m.get('project')} @ {m.get('commit')} — валидатор v2 ===")
     print(f"узлов {stats['nodes']}, сценариев {stats['flows']}, шагов {stats['steps']}, "
           f"unverified {stats['unverified']}, с полем symbol {stats['with_symbol']}")
+    if "--commit-warn" in sys.argv:
+        stale = [e for e in errs if e["kind"] in {"commit-mismatch", "commit-uncheckable"}]
+        errs = [e for e in errs if e not in stale]
+        for e in stale:
+            print(f"предупреждение: {e['msg']}")
     if not errs:
         print("нарушений нет")
         return 0
