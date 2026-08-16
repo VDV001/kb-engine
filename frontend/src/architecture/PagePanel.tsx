@@ -35,17 +35,33 @@ export function PagePanel({ page }: { page: string }) {
         }
         const h = Math.max(
           doc.documentElement.scrollHeight,
+          doc.documentElement.offsetHeight,
           doc.body?.scrollHeight ?? 0,
+          doc.body?.offsetHeight ?? 0,
         )
-        if (h > 0) setHeight(h)
+        // Округление вверх плюс запас: дробная высота документа обрезается при
+        // приведении к целым пикселям, и не хватает как раз того волоска, из-за
+        // которого браузер рисует полосу прокрутки на всю высоту страницы.
+        if (h > 0) setHeight(Math.ceil(h) + 2)
       } catch {
         setFailed(true)
       }
     }
-    frame.addEventListener('load', measure)
-    // Шрифты и картинки доезжают после load и меняют высоту. Один повторный
-    // замер дешевле наблюдателя и закрывает ровно этот случай.
-    frame.addEventListener('load', () => window.setTimeout(measure, 400))
+    frame.addEventListener('load', () => {
+      measure()
+      // Шрифты и картинки доезжают после load и меняют высоту. Наблюдатель
+      // вместо одного отложенного замера: у страницы с тремя диаграммами и
+      // своими шрифтами высота меняется не один раз, и промахнуться на любом
+      // из этих раз значит вернуть ту самую полосу.
+      const doc = frame.contentDocument
+      if (!doc?.documentElement) return
+      const ro = new ResizeObserver(measure)
+      ro.observe(doc.documentElement)
+      if (doc.body) ro.observe(doc.body)
+      // Наблюдатель живёт столько же, сколько документ внутри рамки: при уходе
+      // с раздела React снимет саму рамку, и наблюдать станет нечего.
+      frame.addEventListener('unload', () => ro.disconnect())
+    })
   }, [])
 
   return (
@@ -71,8 +87,14 @@ export function PagePanel({ page }: { page: string }) {
           ref={fit}
           src={`/kb/${page}`}
           title="Разбор проекта"
-          className="w-full rounded-lg border border-outline-variant bg-surface"
-          style={{ height }}
+          className="block w-full rounded-lg border border-outline-variant bg-surface"
+          // scrolling="no" устарел по спецификации и остаётся единственным, что
+          // браузеры слушают: overflow:hidden на самой рамке полосу внутри
+          // документа не убирает — она принадлежит вложенному документу, а не
+          // элементу. Высота при этом всё равно подгоняется: рамка без полосы и
+          // без запаса по высоте просто обрезала бы хвост страницы.
+          scrolling="no"
+          style={{ height, overflow: 'hidden' }}
           loading="lazy"
         />
       )}

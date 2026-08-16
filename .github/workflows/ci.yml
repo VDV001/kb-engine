@@ -484,19 +484,30 @@ jobs:
           for _ in $(seq 1 40); do curl -sf localhost:9090/-/ready >/dev/null && break; sleep 2; done
 
           # Discovery is not instant: the target appears, then gets scraped.
+          # By this point the S3 step has put a SECOND engine in the cluster, so
+          # there is more than one target and "the first one" is whichever order
+          # the API happened to return. Every active target must be up — that is
+          # both stronger and deterministic.
           for _ in $(seq 1 20); do
             state=$(curl -sf "localhost:9090/api/v1/targets?state=active" \
-              | python3 -c "import json,sys; t=json.load(sys.stdin)['data']['activeTargets']; print(t[0]['health'] if t else 'none')")
+              | python3 -c "import json,sys; t=json.load(sys.stdin)['data']['activeTargets']; print('none' if not t else ('up' if all(x['health']=='up' for x in t) else 'down'))")
             [ "$state" = "up" ] && break
             sleep 3
           done
-          echo "target health: $state"
+          echo "target health (all active targets): $state"
           test "$state" = "up"
 
           # A live target proves the scrape happened; this proves the value made
           # it into storage and can be read back out.
-          entries=$(curl -sf "localhost:9090/api/v1/query?query=kbengine_catalog_entries" \
-            | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if r else 'none')")
+          #
+          # Named by pod on purpose. Two engines are running: this deployment,
+          # serving the demo catalog of one entry, and the S3 one, serving 7421
+          # synthetic entries. Asking for the bare metric returns whichever
+          # series came first — the check then passes or fails by luck, and it
+          # did both on earlier runs before anyone noticed.
+          entries=$(curl -sf --get "localhost:9090/api/v1/query" \
+            --data-urlencode 'query=kbengine_catalog_entries{pod=~"^kbengine-.*"}' \
+            | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if len(r)==1 else f'{len(r)} series')")
           echo "kbengine_catalog_entries through Prometheus: $entries"
           test "$entries" = "1"
 
