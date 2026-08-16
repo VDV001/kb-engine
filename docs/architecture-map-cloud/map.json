@@ -1,6 +1,6 @@
 {
   "project": "kb-engine cloud — облачный слой",
-  "commit": "06f0f16",
+  "commit": "0674c73",
   "checked_at": "2026-08-15",
   "page": "creations/projects/2026-08-15_kbengine-cloud-layer/kbengine-cloud-layer.html",
   "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
@@ -41,7 +41,7 @@
       "subtitle": "джоба k8s на каждый push и PR",
       "layer": "authors",
       "kind": "worker",
-      "sources": [".github/workflows/ci.yml:329"]
+      "sources": [".github/workflows/ci.yml:349"]
     },
     {
       "id": "k8s-base",
@@ -185,7 +185,7 @@
       "subtitle": "одноузловой, поднимается джобой",
       "layer": "cluster",
       "kind": "external",
-      "sources": [".github/workflows/ci.yml:347"]
+      "sources": [".github/workflows/ci.yml:367"]
     },
     {
       "id": "pod",
@@ -217,7 +217,7 @@
       "subtitle": "процесс отвечает — рестарт помогает",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:157"]
+      "sources": ["internal/adapter/httpapi/server.go:165"]
     },
     {
       "id": "srv-readyz",
@@ -225,7 +225,7 @@
       "subtitle": "каталог разобран — рестарт НЕ помогает",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:158"]
+      "sources": ["internal/adapter/httpapi/server.go:166"]
     },
     {
       "id": "srv-metrics",
@@ -233,7 +233,7 @@
       "subtitle": "экспозиция без единой зависимости",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:156"]
+      "sources": ["internal/adapter/httpapi/server.go:164"]
     },
     {
       "id": "srv-stats",
@@ -241,7 +241,7 @@
       "subtitle": "сколько записей движок реально отдаёт",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:159"]
+      "sources": ["internal/adapter/httpapi/server.go:167"]
     },
     {
       "id": "instrument",
@@ -289,7 +289,7 @@
       "subtitle": "последняя бесплатная линейка",
       "layer": "storage",
       "kind": "external",
-      "sources": [".github/workflows/ci.yml:176"]
+      "sources": [".github/workflows/ci.yml:216"]
     },
     {
       "id": "s3-catalog",
@@ -411,7 +411,7 @@
           "to": "srv-stats",
           "call": "curl /api/stats — сверка по ТЕЛУ, а не по коду",
           "detail": "internal/adapter/httpapi/server.go:159 регистрирует маршрут. Код ответа сам по себе ничего не доказывает: на любой неизвестный путь вне /api/ сервер отдаёт 200, потому что SPA-фолбэк возвращает index.html",
-          "source": "internal/adapter/httpapi/server.go:159",
+          "source": "internal/adapter/httpapi/server.go:167",
           "symbol": "handleStats",
           "unverified": false
         },
@@ -527,7 +527,7 @@
           "to": "helm-deployment",
           "call": "kubectl get deployment helm/kbengine -o json",
           "detail": "Оба описания подняты в одном кластере, в разных пространствах имён: .github/workflows/ci.yml:408 сравнивает то, что ДОЕХАЛО, а не то, что написано. Текст у них разный по устройству, спецификация пода обязана совпадать",
-          "source": ".github/workflows/ci.yml:408",
+          "source": ".github/workflows/ci.yml:428",
           "symbol": "deploy-parity",
           "unverified": false
         },
@@ -555,7 +555,7 @@
           "to": "overlay-negative",
           "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
           "detail": ".github/workflows/ci.yml:516 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
-          "source": ".github/workflows/ci.yml:516",
+          "source": ".github/workflows/ci.yml:551",
           "symbol": "negative",
           "unverified": false
         },
@@ -585,7 +585,7 @@
           "to": "srv-readyz",
           "call": "503 с текстом ошибки разбора",
           "detail": "internal/adapter/httpapi/server.go:158 — готовность отвечает за ДАННЫЕ. Причина читается на эндпоинте, а не выводится из того, что контейнер падает по кругу: в этом и весь смысл разведения двух проб",
-          "source": "internal/adapter/httpapi/server.go:158",
+          "source": "internal/adapter/httpapi/server.go:166",
           "symbol": "handleReadyz",
           "unverified": false
         },
@@ -605,7 +605,7 @@
           "to": "kind",
           "call": "rollout status обязан вернуть ошибку",
           "detail": ".github/workflows/ci.yml:518 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
-          "source": ".github/workflows/ci.yml:518",
+          "source": ".github/workflows/ci.yml:553",
           "symbol": "rollout",
           "unverified": false
         }
@@ -623,7 +623,7 @@
           "to": "minio",
           "call": "kubectl apply -f deploy/k8s/test/minio.yaml",
           "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:415",
-          "source": ".github/workflows/ci.yml:415",
+          "source": ".github/workflows/ci.yml:435",
           "symbol": "minio",
           "unverified": false
         },
@@ -633,7 +633,7 @@
           "to": "s3-catalog",
           "call": "mc cp big-catalog.json → бакет",
           "detail": ".github/workflows/ci.yml:445 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
-          "source": ".github/workflows/ci.yml:445",
+          "source": ".github/workflows/ci.yml:465",
           "symbol": "big-catalog",
           "unverified": false
         },
@@ -683,7 +683,7 @@
           "to": "srv-stats",
           "call": "число записей обязано совпасть с объектом",
           "detail": ".github/workflows/ci.yml:471 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
-          "source": ".github/workflows/ci.yml:471",
+          "source": ".github/workflows/ci.yml:491",
           "symbol": "curl",
           "unverified": false
         }
@@ -711,7 +711,7 @@
           "to": "srv-metrics",
           "call": "GET /metrics раз в 5 секунд",
           "detail": "internal/adapter/httpapi/server.go:156 — экспозиция собирается без единой зависимости, руками. Потолок назван в самом файле: нет exemplars, нет OpenMetrics, нет метрик рантайма",
-          "source": "internal/adapter/httpapi/server.go:156",
+          "source": "internal/adapter/httpapi/server.go:164",
           "symbol": "handleMetrics",
           "unverified": false
         },
@@ -771,7 +771,7 @@
           "to": "prometheus",
           "call": "контроль: выдуманная метрика обязана вернуть пусто",
           "detail": ".github/workflows/ci.yml:505 спрашивает kbengine_invented_metric и требует ноль рядов. Без этого запрос настоящей метрики доказывал бы только то, что API Prometheus отвечает",
-          "source": ".github/workflows/ci.yml:505",
+          "source": ".github/workflows/ci.yml:540",
           "symbol": "kbengine_invented_metric",
           "unverified": false
         }
@@ -858,8 +858,8 @@
           "from": "ci",
           "to": "localstack",
           "call": "прогон против LocalStack, а не против настоящего AWS",
-          "detail": ".github/workflows/ci.yml:176 поднимает localstack/localstack:4.14 — линейка 4.x последняя бесплатная, а тег latest уже платный. Настоящий AWS не трогался ни разу, и это записано в разделе «чего карта не знает»",
-          "source": ".github/workflows/ci.yml:176",
+          "detail": ".github/workflows/ci.yml:196 поднимает localstack/localstack:4.14 — линейка 4.x последняя бесплатная, а тег latest уже платный. Настоящий AWS не трогался ни разу, и это записано в разделе «чего карта не знает»",
+          "source": ".github/workflows/ci.yml:196",
           "symbol": "localstack",
           "unverified": false
         }
@@ -927,7 +927,7 @@
           "to": "kind",
           "call": "kind load docker-image kbengine:ci",
           "detail": ".github/workflows/ci.yml:347 загружает образ в кластер. Кластер тянет по имени, а kbengine:ci существует только в демоне docker самого раннера — без этой строки под висит в ImagePullBackOff",
-          "source": ".github/workflows/ci.yml:347",
+          "source": ".github/workflows/ci.yml:367",
           "symbol": "docker-image",
           "unverified": false
         },
@@ -937,7 +937,7 @@
           "to": "pod",
           "call": "выкатка с образом из ветки",
           "detail": ".github/workflows/ci.yml:351 применяет наложение и ждёт завершения выкатки. Это первый день, когда отгружаемый образ вообще ЗАПУСКАЕТСЯ в проверке, а не только собирается и сканируется",
-          "source": ".github/workflows/ci.yml:351",
+          "source": ".github/workflows/ci.yml:371",
           "symbol": "kubectl",
           "unverified": false
         }

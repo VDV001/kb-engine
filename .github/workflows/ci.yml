@@ -107,6 +107,26 @@ jobs:
       - name: Dependency age gate
         run: ./scripts/gates/dep-age.sh "${{ github.event.pull_request.base.sha }}"
 
+  arch-map:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # H9 спрашивает у git последний коммит КОДА — мелкая копия отвечает
+          # на этот вопрос неверно.
+          fetch-depth: 0
+
+      # Сначала проверка проверки: валидатор обязан ловить свои тринадцать
+      # подсадок лжи, а гейт — падать на карте с якорем в никуда и молчать на
+      # нетронутой. Без этого шага зелёный гейт не отличим от неработающего, а
+      # именно так этот валидатор и прожил: написан, одиннадцать правил,
+      # тринадцать подсадок — и ни одного вызывающего.
+      - name: Gate self-test
+        run: ./scripts/gates/arch-map.sh --self-test
+
+      - name: Validate every architecture map
+        run: ./scripts/gates/arch-map.sh
+
   govulncheck:
     runs-on: ubuntu-latest
     steps:

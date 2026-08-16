@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "40f118b",
+  "commit": "0674c73",
   "layers": [
     {
       "id": "actors",
@@ -79,7 +79,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "cmd/kbengine/main.go:49"
+        "cmd/kbengine/main.go:52"
       ]
     },
     {
@@ -99,7 +99,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/api.ts:535"
+        "frontend/src/api.ts:704"
       ]
     },
     {
@@ -119,7 +119,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:723"
+        "cmd/kbengine/main.go:795"
       ]
     },
     {
@@ -129,7 +129,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:612"
+        "cmd/kbengine/main.go:684"
       ]
     },
     {
@@ -159,7 +159,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:587"
+        "cmd/kbengine/main.go:659"
       ]
     },
     {
@@ -169,7 +169,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/drift.go:14"
+        "cmd/kbengine/drift.go:18"
       ]
     },
     {
@@ -179,7 +179,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/fin.go:20"
+        "cmd/kbengine/fin.go:21"
       ]
     },
     {
@@ -209,7 +209,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:220"
+        "cmd/kbengine/main.go:223"
       ]
     },
     {
@@ -219,7 +219,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:145"
+        "cmd/kbengine/main.go:148"
       ]
     },
     {
@@ -229,7 +229,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:112"
+        "cmd/kbengine/main.go:115"
       ]
     },
     {
@@ -239,7 +239,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/fin.go:210"
+        "cmd/kbengine/fin.go:224"
       ]
     },
     {
@@ -249,7 +249,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:448"
+        "cmd/kbengine/main.go:501"
       ]
     },
     {
@@ -259,7 +259,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/query/query.go:30"
+        "internal/usecase/query/query.go:41"
       ]
     },
     {
@@ -289,7 +289,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/drift/drift.go:119"
+        "internal/usecase/drift/drift.go:127"
       ]
     },
     {
@@ -299,7 +299,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/finance/finance.go:108"
+        "internal/usecase/finance/finance.go:112"
       ]
     },
     {
@@ -309,7 +309,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/freshness/sources.go:53"
+        "internal/usecase/freshness/sources.go:56"
       ]
     },
     {
@@ -339,7 +339,7 @@
       "layer": "domain",
       "kind": "data",
       "sources": [
-        "internal/domain/transaction.go:93"
+        "internal/domain/transaction.go:99"
       ]
     },
     {
@@ -409,7 +409,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/catalogjson/catalog.go:353"
+        "internal/adapter/catalogjson/catalog.go:366"
       ]
     },
     {
@@ -419,7 +419,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/financejsonl/store.go:66"
+        "internal/adapter/financejsonl/store.go:70"
       ]
     },
     {
@@ -499,7 +499,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/linkcheck/linkcheck.go:25"
+        "internal/adapter/linkcheck/linkcheck.go:26"
       ]
     },
     {
@@ -529,7 +529,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/httpapi/server.go:144"
+        "internal/adapter/httpapi/server.go:162"
       ]
     },
     {
@@ -634,12 +634,12 @@
     },
     {
       "id": "fe-app",
-      "title": "App (девять вкладок)",
+      "title": "App (десять вкладок)",
       "subtitle": "frontend/src/App.tsx — overview·archives·analytics·health·finances·projects·team·now·about",
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:19"
+        "frontend/src/App.tsx:38"
       ]
     },
     {
@@ -659,7 +659,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:89"
+        "frontend/src/App.tsx:105"
       ]
     },
     {
@@ -669,7 +669,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:122"
+        "frontend/src/App.tsx:138"
       ]
     },
     {
@@ -679,7 +679,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:103"
+        "frontend/src/App.tsx:119"
       ]
     },
     {
@@ -689,7 +689,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:106"
+        "frontend/src/App.tsx:122"
       ]
     },
     {
@@ -699,7 +699,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:135"
+        "frontend/src/App.tsx:151"
       ]
     },
     {
@@ -709,7 +709,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:136"
+        "frontend/src/App.tsx:152"
       ]
     },
     {
@@ -719,7 +719,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:137"
+        "frontend/src/App.tsx:153"
       ]
     },
     {
@@ -729,7 +729,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:140"
+        "frontend/src/App.tsx:157"
       ]
     },
     {
@@ -769,7 +769,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:212"
+        "cmd/kbengine/main.go:215"
       ]
     },
     {
@@ -779,8 +779,82 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:335"
+        "cmd/kbengine/main.go:350"
       ]
+    },
+    {
+      "id": "ad-archmap",
+      "title": "archmap",
+      "subtitle": "сводит схемы разных карт к одной",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/archmap/archmap.go:225"
+      ]
+    },
+    {
+      "id": "ad-filelock",
+      "title": "filelock",
+      "subtitle": "эксклюзивный замок на время записи",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/filelock/filelock.go:27"
+      ]
+    },
+    {
+      "id": "ad-metrics",
+      "title": "metrics + instrument",
+      "subtitle": "формат Prometheus без клиентской библиотеки",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/httpapi/metrics.go:109"
+      ]
+    },
+    {
+      "id": "fe-architecture",
+      "title": "ArchitectureView",
+      "subtitle": "вкладка Architecture, семь разделов",
+      "layer": "surfaces",
+      "kind": "client",
+      "sources": [
+        "frontend/src/ArchitectureView.tsx:40"
+      ]
+    },
+    {
+      "id": "f-maps",
+      "title": "map.json карт",
+      "subtitle": "передаются флагом --maps, повторяемым",
+      "layer": "storage",
+      "kind": "data",
+      "sources": []
+    },
+    {
+      "id": "f-artefacts",
+      "title": "артефакты базы",
+      "subtitle": "шпаргалки, курсы, стандарты, разборы",
+      "layer": "storage",
+      "kind": "data",
+      "sources": []
+    },
+    {
+      "id": "f-lock",
+      "title": "transactions.jsonl.lock",
+      "subtitle": "файл замка рядом с журналом",
+      "layer": "storage",
+      "kind": "data",
+      "sources": [
+        "internal/adapter/filelock/filelock.go:21"
+      ]
+    },
+    {
+      "id": "ext-scraper",
+      "title": "сборщик метрик",
+      "subtitle": "Prometheus в кластере; снаружи — кто угодно",
+      "layer": "external",
+      "kind": "external",
+      "sources": []
     }
   ],
   "flows": [
@@ -814,7 +888,7 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, params, force, note)",
           "detail": "cmd/kbengine/fin.go:164 — appendChecked единственный путь, через который ДОБАВЛЯЕТ строку человек: команда, обе формы TUI и быстрый ввод идут через него, поэтому проверку повтора нельзя обойти, выбрав другой экран. ⚠️ Но не единственный писатель журнала: financejsonl.Save зовут ещё fin import (fin.go:104), правка (cmd/kbengine/fin_edit.go:92 — проверки на повтор там нет), --init (sync.go:171) и обычный fin sync в сторону журнала (sync.go:532), который тоже заводит новые записи для строк книги",
-          "source": "cmd/kbengine/fin.go:210",
+          "source": "cmd/kbengine/fin.go:224",
           "unverified": false
         },
         {
@@ -823,7 +897,7 @@
           "to": "ad-financejsonl",
           "call": "financejsonl.Load(ledgerPath, time.Now)",
           "detail": "cmd/kbengine/fin.go:213 читает весь ledger, чтобы знать, как в базе уже пишут — internal/adapter/financejsonl/store.go:66",
-          "source": "internal/adapter/financejsonl/store.go:66",
+          "source": "internal/adapter/financejsonl/store.go:70",
           "unverified": false
         },
         {
@@ -859,7 +933,7 @@
           "to": "uc-finance",
           "call": "finance.Add(p, newULID, time.Now)",
           "detail": "cmd/kbengine/fin.go:241 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:49), из него потом читается момент записи — internal/usecase/finance/finance.go:108",
-          "source": "internal/usecase/finance/finance.go:108",
+          "source": "internal/usecase/finance/finance.go:112",
           "unverified": false,
           "symbol": "Add"
         },
@@ -869,7 +943,7 @@
           "to": "dom-transaction",
           "call": "domain.NewTransaction(params)",
           "detail": "инварианты проверяет домен: domain.NewTransaction (internal/domain/transaction.go:93) не принимает у дохода категорию, подкатегорию, место и счёт. Проверено рантаймом: fin add --kind income --cat Транспорт отвечает 'invalid transaction: an income does not carry this field: category'",
-          "source": "internal/domain/transaction.go:93",
+          "source": "internal/domain/transaction.go:99",
           "unverified": false
         },
         {
@@ -878,7 +952,7 @@
           "to": "ad-financejsonl",
           "call": "financejsonl.Save(ledgerPath, recs, time.Now)",
           "detail": "cmd/kbengine/fin.go:247 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot — internal/adapter/financejsonl/store.go:169",
-          "source": "internal/adapter/financejsonl/store.go:169",
+          "source": "internal/adapter/financejsonl/store.go:174",
           "unverified": false
         },
         {
@@ -896,7 +970,7 @@
           "to": "f-ledger",
           "call": "finance.Sort(recs) → запись transactions.jsonl",
           "detail": "finance.Sort (internal/usecase/finance/finance.go:136) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
-          "source": "internal/usecase/finance/finance.go:136",
+          "source": "internal/usecase/finance/finance.go:141",
           "unverified": false
         }
       ],
@@ -932,7 +1006,7 @@
           "to": "append-checked",
           "call": "appendToLedger / appendChecked",
           "detail": "форма зовёт ledgerFinances.Add (cmd/kbengine/main.go:335), а та — appendChecked (cmd/kbengine/main.go:337), ту же функцию, что и команда fin add: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:337",
+          "source": "cmd/kbengine/main.go:352",
           "unverified": false
         }
       ],
@@ -988,7 +1062,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.EditEntry(id, p)",
           "detail": "cmd/kbengine/main.go:363 — экран не заводит своей копии «загрузить → изменить → отсортировать → сохранить»",
-          "source": "cmd/kbengine/main.go:363",
+          "source": "cmd/kbengine/main.go:378",
           "unverified": false,
           "symbol": "EditEntry"
         },
@@ -1023,9 +1097,9 @@
           "n": 2,
           "from": "cmd-fin",
           "to": "ad-financexlsx",
-          "call": "accountRow: if name == want",
-          "detail": "⚠️ на этом пути имя счёта сравнивается ПОБАЙТОВО: internal/adapter/financexlsx/balance.go:188 — `if name == want` внутри accountRow (объявлена на :171). Правило домена domain.SameAccountName сюда не заходит, поэтому «сбербанк» строчными отвергается (проверено прогоном). Умное сравнение есть только в TUI, на пути --create и в расчёте остатка. Расхождение заведено как дефект #155",
-          "source": "internal/adapter/financexlsx/balance.go:188",
+          "call": "accountRow: domain.SameAccountName(name, want)",
+          "detail": "имя счёта сравнивает домен: internal/adapter/financexlsx/balance.go:193 — `domain.SameAccountName(name, want)` внутри accountRow (объявлена на :172), и та же функция стоит на пути --create (:156). ⚠️ Прежняя редакция карты описывала здесь побайтовое `if name == want` и открытый дефект #155 — он закрыт правкой #182, сведшей все три пути к одному правилу. «Сбербанк» строчными больше не отвергается",
+          "source": "internal/adapter/financexlsx/balance.go:193",
           "unverified": false
         },
         {
@@ -1043,7 +1117,7 @@
           "to": "f-workbook",
           "call": "saveAtomically(f, path)",
           "detail": "internal/adapter/financexlsx/writer.go:197 — запись через временный файл; здесь же чинится объявленный диапазон книги",
-          "source": "internal/adapter/financexlsx/writer.go:197",
+          "source": "internal/adapter/financexlsx/writer.go:266",
           "unverified": false
         }
       ],
@@ -1143,7 +1217,7 @@
           "to": "ad-financexlsx",
           "call": "financexlsx.CheckLock(from)",
           "detail": "financexlsx.CheckLock (internal/adapter/financexlsx/writer.go:164) — замок спрашивается и для dry-run, иначе холостой прогон обещал бы запись в книгу, которую держит редактор. Спрашивается только при направлении В КНИГУ (cmd/kbengine/sync.go:236): отказ читать при открытой книге сделал бы замок большей проблемой, чем он есть",
-          "source": "internal/adapter/financexlsx/writer.go:164",
+          "source": "internal/adapter/financexlsx/writer.go:233",
           "unverified": false
         },
         {
@@ -1161,7 +1235,7 @@
           "to": "f-syncstate",
           "call": "financejsonl.SaveState(statePath, finance.BaselineOf(recs, now))",
           "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:491 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
-          "source": "cmd/kbengine/sync.go:491",
+          "source": "cmd/kbengine/sync.go:548",
           "unverified": false,
           "symbol": "SaveState"
         }
@@ -1179,7 +1253,7 @@
           "to": "spa",
           "call": "api.finances()",
           "detail": "frontend/src/api.ts:554 — getJSON('/api/finances')",
-          "source": "frontend/src/api.ts:554",
+          "source": "frontend/src/api.ts:725",
           "unverified": false
         },
         {
@@ -1188,7 +1262,7 @@
           "to": "ad-httpapi",
           "call": "GET /api/finances",
           "detail": "маршрут зарегистрирован в internal/adapter/httpapi/server.go:164 как handleFinances(fin)",
-          "source": "internal/adapter/httpapi/server.go:164",
+          "source": "internal/adapter/httpapi/server.go:186",
           "unverified": false
         },
         {
@@ -1197,16 +1271,16 @@
           "to": "ad-financejsonl",
           "call": "ledgerFinances.Finances()",
           "detail": "cmd/kbengine/main.go:298 — ledgerFinances.Finances читает журнал НА КАЖДЫЙ запрос, а книгу только при непустом пути (main.go:307): развёртывание со строками и без балансов законно. Файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
-          "source": "cmd/kbengine/main.go:298",
+          "source": "cmd/kbengine/main.go:305",
           "unverified": false
         },
         {
           "n": 4,
           "from": "ad-httpapi",
           "to": "uc-finance",
-          "call": "finance.CurrentBalances(accounts, txs)",
-          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:90): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта",
-          "source": "internal/usecase/finance/balance.go:90",
+          "call": "finance.CurrentBalances(accounts, txs, confs)",
+          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:115): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта. Третий аргумент confs появился в #178: подтверждение получило МОМЕНТ (.balance-state.json рядом с книгой), и спор «видел ли человек эту трату» внутри дня подтверждения решается точно, а не всегда в одну сторону",
+          "source": "internal/usecase/finance/balance.go:115",
           "unverified": false
         },
         {
@@ -1214,8 +1288,8 @@
           "from": "uc-finance",
           "to": "fe-finances",
           "call": "spentAfter — переводы НЕ исключаются",
-          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:135) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Следствие названо в #159: приход на второй счёт не учитывается, поэтому расчёт занижает",
-          "source": "internal/usecase/finance/balance.go:135",
+          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:166) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Асимметрия остаётся, но дефект #159 закрыт замером: переводов себе в журнале за всю историю один, занижение от них сейчас равно нулю. Открытой осталась вторая половина — #208: доходу нельзя дать счёт, поэтому приход второй стороне не прибавляется",
+          "source": "internal/usecase/finance/balance.go:166",
           "unverified": false,
           "symbol": "spentAfter"
         }
@@ -1242,7 +1316,7 @@
           "to": "ad-httpapi",
           "call": "POST /api/finances/export",
           "detail": "internal/adapter/httpapi/server.go:159 — единственный не-GET маршрут во всём API",
-          "source": "internal/adapter/httpapi/server.go:159",
+          "source": "internal/adapter/httpapi/server.go:179",
           "unverified": false
         },
         {
@@ -1297,7 +1371,7 @@
           "to": "ad-catalogjson",
           "call": "catalogjson.Load(catalogPath)",
           "detail": "cmd/kbengine/add.go:56 — internal/adapter/catalogjson/catalog.go:353",
-          "source": "internal/adapter/catalogjson/catalog.go:353",
+          "source": "internal/adapter/catalogjson/catalog.go:366",
           "unverified": false
         },
         {
@@ -1387,7 +1461,7 @@
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
           "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:727",
+          "source": "cmd/kbengine/main.go:799",
           "unverified": false
         },
         {
@@ -1422,7 +1496,7 @@
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
           "detail": "cmd/kbengine/main.go:612; набор проверок перечислен в cmd/kbengine/main.go:690-698",
-          "source": "cmd/kbengine/main.go:612",
+          "source": "cmd/kbengine/main.go:684",
           "unverified": false
         },
         {
@@ -1450,7 +1524,7 @@
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
           "detail": "проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:688) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine (main.go:666) — непроверенные записи иначе похоронили бы настоящие находки",
-          "source": "cmd/kbengine/main.go:666",
+          "source": "cmd/kbengine/main.go:738",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -1513,7 +1587,7 @@
           "to": "cmd-serve",
           "call": "kbengine serve --catalog … + 8 необязательных источников",
           "detail": "cmd/kbengine/main.go:220 — вход команды; там же на :250 --from без --ledger отвергается на старте, потому что баланс некуда положить",
-          "source": "cmd/kbengine/main.go:220",
+          "source": "cmd/kbengine/main.go:223",
           "unverified": false
         },
         {
@@ -1521,8 +1595,8 @@
           "from": "cmd-serve",
           "to": "build-serve",
           "call": "buildServeHandler(...)",
-          "detail": "cmd/kbengine/main.go:448 собирает порты. Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config, и книга перечитываются на КАЖДЫЙ запрос (main.go:454-462, :468-472). Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
-          "source": "cmd/kbengine/main.go:448",
+          "detail": "cmd/kbengine/main.go:501 собирает порты; с #174 туда же приходит список карт (mapPaths → mapsLoader на :539). Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config (:510-516), и книга (:526-533) перечитываются на КАЖДЫЙ запрос. Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
+          "source": "cmd/kbengine/main.go:501",
           "unverified": false
         },
         {
@@ -1531,7 +1605,7 @@
           "to": "ad-httpapi",
           "call": "httpapi.NewServer(query, audit, analytics, fin, cfg, chlog, docs, engine, front)",
           "detail": "cmd/kbengine/main.go:506 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:143",
-          "source": "internal/adapter/httpapi/server.go:143",
+          "source": "internal/adapter/httpapi/server.go:161",
           "unverified": false
         },
         {
@@ -1540,7 +1614,7 @@
           "to": "owner",
           "call": "startupSources(serveSources(...))",
           "detail": "cmd/kbengine/main.go:278 печатает все восемь необязательных флагов ДО ListenAndServe: после него терминал занят, а смотрят в него именно в этот момент",
-          "source": "cmd/kbengine/main.go:278",
+          "source": "cmd/kbengine/main.go:285",
           "unverified": false
         },
         {
@@ -1549,7 +1623,7 @@
           "to": "spa",
           "call": "mux.Handle('/', spaHandler(frontend))",
           "detail": "internal/adapter/httpapi/server.go:179 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404",
-          "source": "internal/adapter/httpapi/server.go:179",
+          "source": "internal/adapter/httpapi/server.go:212",
           "unverified": false
         }
       ],
@@ -1566,7 +1640,7 @@
           "to": "ad-httpapi",
           "call": "GET /api/sources",
           "detail": "internal/adapter/httpapi/server.go:161 — handleSources(docs, q, chlog, fin, engine)",
-          "source": "internal/adapter/httpapi/server.go:161",
+          "source": "internal/adapter/httpapi/server.go:181",
           "unverified": false
         },
         {
@@ -1575,7 +1649,7 @@
           "to": "uc-freshness",
           "call": "freshness.CheckSource(freshness.Source{...})",
           "detail": "internal/usecase/freshness/sources.go:53 — у CheckSource ЧЕТЫРЕ состояния: Unknown, Behind, StaleBuild и NoAnchors. Зелёная галочка там, где опор нет, означала бы «проверено», поэтому «сверять не с чем» — отдельный ответ",
-          "source": "internal/usecase/freshness/sources.go:53",
+          "source": "internal/usecase/freshness/sources.go:56",
           "unverified": false
         },
         {
@@ -1584,7 +1658,7 @@
           "to": "uc-freshness",
           "call": "freshness.VersionMention(text, 'kb-engine', engine.Version)",
           "detail": "internal/adapter/httpapi/server.go:277 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда — internal/usecase/freshness/sources.go:156",
-          "source": "internal/usecase/freshness/sources.go:156",
+          "source": "internal/usecase/freshness/sources.go:159",
           "unverified": false
         }
       ],
@@ -1665,7 +1739,7 @@
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
           "detail": "cmd/kbengine/main.go:587",
-          "source": "cmd/kbengine/main.go:587",
+          "source": "cmd/kbengine/main.go:659",
           "unverified": false
         },
         {
@@ -1744,7 +1818,7 @@
           "to": "ad-changelog",
           "call": "changelogWarning(path, len(changelog.Parse(raw).Releases))",
           "detail": "cmd/kbengine/main.go:265 — предупреждение о непонятном журнале печатается при запуске serve, потому что поймать его посреди работы уже нельзя: смотрят в этот момент на страницу",
-          "source": "cmd/kbengine/main.go:265",
+          "source": "cmd/kbengine/main.go:272",
           "unverified": false,
           "branch": true
         }
@@ -1762,7 +1836,7 @@
           "to": "ad-httpapi",
           "call": "GET /media/<файл>",
           "detail": "маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:167 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе",
-          "source": "internal/adapter/httpapi/server.go:167",
+          "source": "internal/adapter/httpapi/server.go:189",
           "unverified": false
         },
         {
@@ -1771,7 +1845,7 @@
           "to": "browser",
           "call": "http.StripPrefix('/media/', mediaHandler(docs.Media))",
           "detail": "с флагом поведение правильное (проверено рантаймом): существующий файл — 200 и его содержимое, несуществующий — 404 text/plain. Обработчик в internal/adapter/httpapi/media.go — internal/adapter/httpapi/server.go:167",
-          "source": "internal/adapter/httpapi/server.go:167",
+          "source": "internal/adapter/httpapi/server.go:189",
           "unverified": false
         },
         {
@@ -1780,7 +1854,7 @@
           "to": "spa",
           "call": "падение в spaHandler при отсутствии флага",
           "detail": "⚠️ НАХОДКА рантайм-проверки: без --media запрос /media/nope.png отдаёт 200 и HTML страницы SPA — тело побайтово совпадает с ответом на /whatever-page (сверено sha). Это та же грабля, которую закрыли для /api/ в PR #149 строкой internal/adapter/httpapi/server.go:178, но для /media/ такой строки нет. Тег <img> получит HTML и молча не отрисуется",
-          "source": "internal/adapter/httpapi/server.go:179",
+          "source": "internal/adapter/httpapi/server.go:212",
           "unverified": false
         }
       ],
@@ -1816,7 +1890,7 @@
           "to": "spa",
           "call": "api.dashboard()",
           "detail": "frontend/src/api.ts:585 — восемь запросов через Promise.all: stats, entries, audits, duplicates, analytics, analytics-config, finances, sources",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false
         },
         {
@@ -1825,7 +1899,7 @@
           "to": "ad-httpapi",
           "call": "восемь параллельных GET",
           "detail": "frontend/src/api.ts:586-602; финансы и sources обёрнуты .catch() и подставляют пустоту — файлы финансов правят руками при открытом дашборде, и падение одного из них не должно ронять остальные шесть видов",
-          "source": "frontend/src/api.ts:587",
+          "source": "frontend/src/api.ts:758",
           "unverified": false,
           "symbol": "Promise"
         },
@@ -1835,7 +1909,7 @@
           "to": "fe-dashboard",
           "call": "рендер вкладки overview",
           "detail": "frontend/src/App.tsx:89 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
-          "source": "frontend/src/App.tsx:89",
+          "source": "frontend/src/App.tsx:105",
           "unverified": false
         }
       ],
@@ -1891,7 +1965,7 @@
           "to": "ad-catalogjson",
           "call": "catalogjson.SetFields(path, []int{e.ID}, Changes{Lifecycle, Verdict})",
           "detail": "cmd/kbengine/main.go:212 — правка с карточки превращается в тот же вызов, что делает команда set: два пути записи однажды применили бы разные правила к одному файлу",
-          "source": "cmd/kbengine/main.go:213",
+          "source": "cmd/kbengine/main.go:216",
           "unverified": false
         }
       ],
@@ -2061,7 +2135,7 @@
           "to": "ad-httpapi",
           "call": "buildInfo()",
           "detail": "cmd/kbengine/main.go:90 — одно место на весь процесс: его печатает kbengine version и его же отдаёт /api/engine, расходиться этим двум ответам не с чего",
-          "source": "cmd/kbengine/main.go:90",
+          "source": "cmd/kbengine/main.go:93",
           "unverified": false
         },
         {
@@ -2070,7 +2144,7 @@
           "to": "spa",
           "call": "GET /api/engine",
           "detail": "internal/adapter/httpapi/server.go:156 — вместе с версией отдаётся список подключённых и неподключённых источников",
-          "source": "internal/adapter/httpapi/server.go:156",
+          "source": "internal/adapter/httpapi/server.go:176",
           "unverified": false
         },
         {
@@ -2079,7 +2153,7 @@
           "to": "fe-about",
           "call": "api.engine()",
           "detail": "frontend/src/api.ts:549; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:193-195)",
-          "source": "frontend/src/api.ts:549",
+          "source": "frontend/src/api.ts:718",
           "unverified": false
         },
         {
@@ -2106,7 +2180,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/stats",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:90)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2152,7 +2226,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/entries",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:122)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2171,7 +2245,7 @@
           "to": "fe-catalog",
           "call": "<CatalogView entries={data.entries} />",
           "symbol": "CatalogView",
-          "source": "frontend/src/App.tsx:122",
+          "source": "frontend/src/App.tsx:138",
           "detail": "frontend/src/App.tsx:122 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
           "unverified": false
         }
@@ -2189,7 +2263,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:103)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2208,7 +2282,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics-config",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:103)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2265,7 +2339,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/audits",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:106)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2284,7 +2358,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/duplicates",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:106)",
-          "source": "frontend/src/api.ts:585",
+          "source": "frontend/src/api.ts:756",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2303,8 +2377,8 @@
           "from": "uc-drift",
           "to": "ad-linkcheck",
           "call": "drift.Service.Scan спрашивает адреса",
-          "detail": "вкладка сеть НЕ трогает: audit.LinkHealth читает отметки из каталога. Спрашивает адреса drift.Service.Scan (internal/usecase/drift/drift.go:143 — s.checker.Head), но САМА она ничего не записывает — отметки ставит catalogjson.ApplyDrift под --apply. Пакет audit о linkcheck не знает вовсе",
-          "source": "internal/usecase/drift/drift.go:124",
+          "detail": "вкладка сеть НЕ трогает: audit.LinkHealth читает отметки из каталога. Спрашивает адреса drift.Service.Scan (internal/usecase/drift/drift.go:160 — s.checker.Head), но САМА она ничего не записывает — отметки ставит catalogjson.ApplyDrift под --apply. Пакет audit о linkcheck не знает вовсе. Первым аргументом Scan с #192 идёт context.Context: скан останавливается по сигналу, а не досматривает очередь",
+          "source": "internal/usecase/drift/drift.go:136",
           "unverified": false,
           "symbol": "Scan",
           "branch": true
@@ -2323,7 +2397,7 @@
           "to": "ad-httpapi",
           "call": "GET /api/finances/summary?months=…",
           "detail": "internal/adapter/httpapi/server.go:165 — период приходит запросом, а не страница получает всю историю и суммирует сама",
-          "source": "internal/adapter/httpapi/server.go:165",
+          "source": "internal/adapter/httpapi/server.go:187",
           "unverified": false
         },
         {
@@ -2332,7 +2406,7 @@
           "to": "uc-finance",
           "call": "finance.Summarize(finance.Match(recs, Filter{Months}))",
           "detail": "cmd/kbengine/main.go:325 — арифметика остаётся в ОДНОМ месте; вторая реализация на клиенте обязана была бы совпадать с этой — internal/usecase/finance/report.go:140",
-          "source": "internal/usecase/finance/report.go:140",
+          "source": "internal/usecase/finance/report.go:147",
           "unverified": false
         },
         {
@@ -2369,7 +2443,7 @@
           "to": "f-now",
           "call": "readNowDoc(path)",
           "detail": "cmd/kbengine/main.go:515 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:515",
+          "source": "cmd/kbengine/main.go:572",
           "unverified": false
         },
         {
@@ -2378,7 +2452,7 @@
           "to": "ad-httpapi",
           "call": "GET /api/team",
           "detail": "internal/adapter/httpapi/server.go:162 — handleRawJSON отдаёт файл байт в байт (запись на server.go:375), но с двумя оговорками: битый JSON отвергается ошибкой (:369), а неподключённый источник даёт null (:360). У Team опор для проверки свежести нет вовсе",
-          "source": "internal/adapter/httpapi/server.go:162",
+          "source": "internal/adapter/httpapi/server.go:182",
           "unverified": false
         },
         {
@@ -2396,7 +2470,7 @@
           "to": "f-team",
           "call": "json.Valid — проверка на каждый запрос",
           "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:545) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:369) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
-          "source": "internal/adapter/httpapi/server.go:369",
+          "source": "internal/adapter/httpapi/server.go:414",
           "unverified": false,
           "symbol": "Valid"
         },
@@ -2470,7 +2544,7 @@
           "to": "ad-httpapi",
           "call": "GET /healthz",
           "detail": "internal/adapter/httpapi/server.go:145 — процесс поднялся; ответ не зависит ни от одного источника",
-          "source": "internal/adapter/httpapi/server.go:145",
+          "source": "internal/adapter/httpapi/server.go:165",
           "unverified": false
         },
         {
@@ -2479,7 +2553,7 @@
           "to": "ad-httpapi",
           "call": "GET /readyz",
           "detail": "internal/adapter/httpapi/server.go:146 — отвечает 503, если каталог не читается: «поднялся» и «готов работать» это разные вопросы",
-          "source": "internal/adapter/httpapi/server.go:146",
+          "source": "internal/adapter/httpapi/server.go:166",
           "unverified": false
         },
         {
@@ -2487,8 +2561,8 @@
           "from": "ad-httpapi",
           "to": "uc-query",
           "call": "q.Stats() как проба",
-          "detail": "internal/adapter/httpapi/server.go:198 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте",
-          "source": "internal/adapter/httpapi/server.go:198",
+          "detail": "internal/adapter/httpapi/server.go:235 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте. С #198 у ответа три состояния, а не два: каталог не прочитан — 503; прочитан, но часть записей негодна — 200 с их числом в теле (:244); всё прочитано — 200. Негодная запись гасит себя, а не витрину, и «ready» при этом не означает «показано всё»",
+          "source": "internal/adapter/httpapi/server.go:235",
           "unverified": false
         }
       ],
@@ -2505,7 +2579,7 @@
           "to": "cli",
           "call": "commands[\"tui\"] → runTUI",
           "detail": "cmd/kbengine/main.go:49 — таблица команд, а не switch: каждая новая команда усложняла сам диспетчер, хотя диспетчеризация не менялась",
-          "source": "cmd/kbengine/main.go:49",
+          "source": "cmd/kbengine/main.go:52",
           "unverified": false
         },
         {
@@ -2514,7 +2588,7 @@
           "to": "cmd-tui",
           "call": "runTUI(args, stdout, stderr)",
           "detail": "cmd/kbengine/main.go:145 — флаги --ledger и --from включают экран финансов и клавишу синка",
-          "source": "cmd/kbengine/main.go:145",
+          "source": "cmd/kbengine/main.go:148",
           "unverified": false
         },
         {
@@ -2559,7 +2633,7 @@
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
           "detail": "internal/usecase/finance/finance.go:158 — единственный вызывающий cmd/kbengine/main.go:353 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:173)",
-          "source": "internal/usecase/finance/finance.go:158",
+          "source": "internal/usecase/finance/finance.go:163",
           "unverified": false,
           "symbol": "SortByRecency"
         }
@@ -2591,6 +2665,442 @@
         }
       ],
       "zone": "Деньги"
+    },
+    {
+      "id": "maps-tab",
+      "title": "Карта архитектуры открывается на витрине",
+      "summary": "Движок читает map.json сам: флаг --maps повторяемый, оглавление по /api/maps, карта целиком по /api/maps/{id}. Разные схемы карт сводит адаптер, а не страница.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine serve --maps <map.json>",
+          "symbol": "runServe",
+          "source": "cmd/kbengine/main.go:223",
+          "detail": "cmd/kbengine/main.go:223 — флаг повторяемый (fs.Var на :238), карт может быть несколько; без флага раздела нет вовсе, а не пустой"
+        },
+        {
+          "n": 2,
+          "from": "cli",
+          "to": "build-serve",
+          "call": "mapsLoader(mapPaths)",
+          "symbol": "mapsLoader",
+          "source": "cmd/kbengine/main.go:491",
+          "detail": "cmd/kbengine/main.go:491 собирает загрузчик карт до старта сервера: нечитаемая карта — отказ запуска, а не пустая вкладка"
+        },
+        {
+          "n": 3,
+          "from": "build-serve",
+          "to": "ad-archmap",
+          "call": "archmap.LoadAll(paths)",
+          "symbol": "LoadAll",
+          "source": "internal/adapter/archmap/archmap.go:297",
+          "detail": "internal/adapter/archmap/archmap.go:297 читает все переданные карты разом; id карты выводится из её project-поля"
+        },
+        {
+          "n": 4,
+          "from": "ad-archmap",
+          "to": "f-maps",
+          "call": "Load: разбор map.json",
+          "symbol": "Load",
+          "source": "internal/adapter/archmap/archmap.go:225",
+          "detail": "internal/adapter/archmap/archmap.go:225 приводит схемы разных карт к одной форме — у карты движка и облачной карты поля названы по-разному, и разбирать это на странице значило бы завести второе место, где живёт формат"
+        },
+        {
+          "n": 5,
+          "from": "ad-archmap",
+          "to": "f-maps",
+          "call": "checkAnchors: якоря разрешаются",
+          "symbol": "checkAnchors",
+          "source": "internal/adapter/archmap/archmap.go:317",
+          "detail": "internal/adapter/archmap/archmap.go:317 — карта с якорем в никуда не грузится молча"
+        },
+        {
+          "n": 6,
+          "from": "browser",
+          "to": "fe-architecture",
+          "call": "вкладка Architecture",
+          "symbol": "ArchitectureView",
+          "source": "frontend/src/App.tsx:155",
+          "detail": "frontend/src/App.tsx:155 — десятая вкладка витрины; до неё карты жили отдельными HTML-страницами и собирались своим build.py"
+        },
+        {
+          "n": 7,
+          "from": "fe-architecture",
+          "to": "spa",
+          "call": "api.maps()",
+          "symbol": "maps",
+          "source": "frontend/src/api.ts:721",
+          "detail": "frontend/src/api.ts:721 — оглавление: id, заголовок, счётчики; сама карта не грузится, пока её не выбрали"
+        },
+        {
+          "n": 8,
+          "from": "spa",
+          "to": "ad-httpapi",
+          "call": "GET /api/maps",
+          "symbol": "handleMaps",
+          "source": "internal/adapter/httpapi/server.go:184",
+          "detail": "internal/adapter/httpapi/server.go:184 — маршрут оглавления"
+        },
+        {
+          "n": 9,
+          "from": "ad-httpapi",
+          "to": "fe-architecture",
+          "call": "оглавление карт",
+          "symbol": "handleMaps",
+          "source": "internal/adapter/httpapi/archmap.go:32",
+          "detail": "internal/adapter/httpapi/archmap.go:32 отдаёт список; пустой список — законный ответ, если флаг не передавали"
+        },
+        {
+          "n": 10,
+          "from": "fe-architecture",
+          "to": "spa",
+          "call": "api.map(id) по выбору",
+          "symbol": "useResource",
+          "source": "frontend/src/ArchitectureView.tsx:53",
+          "detail": "frontend/src/ArchitectureView.tsx:53 грузит выбранную карту отдельным запросом — карта движка это сотня килобайт, и тянуть её ради оглавления незачем"
+        },
+        {
+          "n": 11,
+          "from": "spa",
+          "to": "ad-httpapi",
+          "call": "GET /api/maps/{id}",
+          "symbol": "handleMap",
+          "source": "internal/adapter/httpapi/server.go:185",
+          "detail": "internal/adapter/httpapi/server.go:185 — карта целиком по её id"
+        },
+        {
+          "n": 12,
+          "from": "ad-httpapi",
+          "to": "fe-architecture",
+          "call": "карта целиком, включая поле схемы",
+          "symbol": "handleMap",
+          "source": "internal/adapter/httpapi/archmap.go:65",
+          "detail": "internal/adapter/httpapi/archmap.go:65 — семь разделов страницы растут из этого ответа; седьмой, «Разбор», появляется только когда карта объявила поле page"
+        }
+      ]
+    },
+    {
+      "id": "kb-files",
+      "title": "Собственный артефакт базы открывается из витрины",
+      "summary": "104 записи каталога несут file и не несут url — шпаргалки, курсы, стандарты, разборы. Маршрут /kb/ отдаёт их, но это СПИСОК РАЗРЕШЁННОГО, а не файловый сервер: рядом лежат личные заметки и финансы.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "browser",
+          "to": "ad-httpapi",
+          "call": "GET /kb/<путь из поля file>",
+          "symbol": "kbFilesHandler",
+          "source": "internal/adapter/httpapi/server.go:195",
+          "detail": "internal/adapter/httpapi/server.go:195 — маршрут появился в #218; до него собственный артефакт нельзя было открыть ничем, кроме file:// мимо базы"
+        },
+        {
+          "n": 2,
+          "from": "ad-httpapi",
+          "to": "uc-query",
+          "call": "catalogNamesFile(q, rel)",
+          "symbol": "catalogNamesFile",
+          "source": "internal/adapter/httpapi/kbfiles.go:82",
+          "detail": "internal/adapter/httpapi/kbfiles.go:82 — сравнение ТОЧНОЕ, с полем file записи, а не с префиксом директории: разрешать «всё под этой папкой» значило бы вернуться к файловому серверу"
+        },
+        {
+          "n": 3,
+          "from": "uc-query",
+          "to": "f-catalog",
+          "call": "q.Entries() на каждый запрос",
+          "symbol": "Entries",
+          "source": "internal/usecase/query/query.go:46",
+          "detail": "internal/usecase/query/query.go:46 — список читается на запрос, а не запоминается при старте: запись, добавленная минуту назад, должна открываться без перезапуска"
+        },
+        {
+          "n": 4,
+          "from": "ad-httpapi",
+          "to": "f-artefacts",
+          "call": "fsys.Open(rel)",
+          "symbol": "artefactsFS",
+          "source": "cmd/kbengine/main.go:651",
+          "detail": "cmd/kbengine/main.go:651 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
+        },
+        {
+          "n": 5,
+          "from": "ad-httpapi",
+          "to": "browser",
+          "call": "ServeContent, Cache-Control: no-cache",
+          "symbol": "ServeContent",
+          "source": "internal/adapter/httpapi/kbfiles.go:75",
+          "detail": "internal/adapter/httpapi/kbfiles.go:75 — не immutable: у артефакта нет хеша в имени, владелец правит его под тем же путём"
+        },
+        {
+          "n": 6,
+          "from": "ad-httpapi",
+          "to": "browser",
+          "call": "контроль: файл есть, каталог его не называет → 404",
+          "symbol": "NotFound",
+          "source": "internal/adapter/httpapi/kbfiles.go:47",
+          "detail": "internal/adapter/httpapi/kbfiles.go:47 — проверено на установленном бинаре: артефакт 200, CHANGELOG.md (лежит на диске, каталогом не назван) 404, выдуманный путь 404"
+        }
+      ]
+    },
+    {
+      "id": "metrics",
+      "title": "Метрики отдаются текстом, без клиентской библиотеки",
+      "summary": "Формат Prometheus — это текст, и client_golang удвоил бы четыре прямые зависимости движка. Потолок решения помечен в коде как ponytail.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "ext-scraper",
+          "to": "ad-httpapi",
+          "call": "GET /metrics",
+          "symbol": "handleMetrics",
+          "source": "internal/adapter/httpapi/server.go:164",
+          "detail": "internal/adapter/httpapi/server.go:164 — маршрут не считает сам себя, иначе каждый опрос сборщика раздувал бы собственные счётчики"
+        },
+        {
+          "n": 2,
+          "from": "ad-httpapi",
+          "to": "ad-metrics",
+          "call": "instrument(mux, m)",
+          "symbol": "instrument",
+          "source": "internal/adapter/httpapi/metrics.go:109",
+          "detail": "internal/adapter/httpapi/metrics.go:109 оборачивает весь mux целиком, поэтому новый эндпоинт попадает в метрики без правки списка"
+        },
+        {
+          "n": 3,
+          "from": "ad-metrics",
+          "to": "ext-scraper",
+          "call": "routeOf: метка — ШАБЛОН, а не путь",
+          "symbol": "routeOf",
+          "source": "internal/adapter/httpapi/metrics.go:130",
+          "detail": "internal/adapter/httpapi/metrics.go:130 берёт http.Request.Pattern, который ServeMux заполняет сам: иначе каждый /api/maps/<id> заводил бы свой временной ряд"
+        },
+        {
+          "n": 4,
+          "from": "ad-metrics",
+          "to": "uc-query",
+          "call": "writeCatalogMetrics(w, q)",
+          "symbol": "writeCatalogMetrics",
+          "source": "internal/adapter/httpapi/metrics.go:166",
+          "detail": "internal/adapter/httpapi/metrics.go:166 отдаёт размер каталога и число нечитаемых записей; catalog_readable — отдельная метрика, а не молчание"
+        },
+        {
+          "n": 5,
+          "from": "ad-metrics",
+          "to": "ext-scraper",
+          "call": "текст в формате Prometheus",
+          "symbol": "handleMetrics",
+          "source": "internal/adapter/httpapi/metrics.go:147",
+          "detail": "internal/adapter/httpapi/metrics.go:147 — версия сборки, счётчик по маршруту и коду, гистограмма длительности"
+        }
+      ]
+    },
+    {
+      "id": "ledger-lock",
+      "title": "Журнал заперт на время чтения-правки-записи",
+      "summary": "Между чтением журнала и его записью помещается чужая запись. Замок закрывает окно целиком, а не защищает саму запись файла.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine fin add …",
+          "symbol": "runFin",
+          "source": "cmd/kbengine/fin.go:21",
+          "detail": "cmd/kbengine/fin.go:21 — та же функция записи стоит под командой, обеими формами TUI и быстрым вводом"
+        },
+        {
+          "n": 2,
+          "from": "cli",
+          "to": "append-checked",
+          "call": "appendChecked(ledgerPath, p, force, note)",
+          "symbol": "appendChecked",
+          "source": "cmd/kbengine/fin.go:224",
+          "detail": "cmd/kbengine/fin.go:224 — единственная функция записи в журнал, через неё же идёт проверка повтора"
+        },
+        {
+          "n": 3,
+          "from": "append-checked",
+          "to": "ad-filelock",
+          "call": "filelock.With(ledgerPath, …)",
+          "symbol": "filelock",
+          "source": "cmd/kbengine/fin.go:232",
+          "detail": "cmd/kbengine/fin.go:232 — под замком идёт ВСЁ окно: прочитать журнал, проверить повтор, дописать строку"
+        },
+        {
+          "n": 4,
+          "from": "ad-filelock",
+          "to": "f-lock",
+          "call": "os.OpenFile(path+Suffix) + flock",
+          "symbol": "Suffix",
+          "source": "internal/adapter/filelock/filelock.go:21",
+          "detail": "internal/adapter/filelock/filelock.go:21 — замок это отдельный файл рядом с журналом; замок снимается в любом случае, включая панику, иначе один сбой запирал бы журнал до перезапуска машины"
+        },
+        {
+          "n": 5,
+          "from": "append-checked",
+          "to": "ad-financejsonl",
+          "call": "appendUnderLock",
+          "symbol": "appendUnderLock",
+          "source": "cmd/kbengine/fin.go:234",
+          "detail": "cmd/kbengine/fin.go:234 — проверено восемью настоящими процессами: 8 из 8 записей доехали"
+        },
+        {
+          "n": 6,
+          "from": "cli",
+          "to": "ad-filelock",
+          "call": "fin sync берёт тот же замок",
+          "symbol": "filelock",
+          "source": "cmd/kbengine/sync.go:139",
+          "detail": "cmd/kbengine/sync.go:139 — синхронизация читает и переписывает журнал, поэтому стоит под тем же замком, что и запись; правка идёт через cmd/kbengine/fin_edit.go:82"
+        }
+      ]
+    },
+    {
+      "id": "catalog-snapshot",
+      "title": "Снимок перед каждой перезаписью каталога",
+      "summary": "Каталог намеренно не под git — рядом с ним личные файлы владельца. Значит снимок здесь единственный механизм отката, и он стоит на пути записи, а не в отчёте.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine set --ids … --lifecycle …",
+          "symbol": "runSet",
+          "source": "cmd/kbengine/main.go:795",
+          "detail": "cmd/kbengine/main.go:795 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
+        },
+        {
+          "n": 2,
+          "from": "cli",
+          "to": "ad-catalogjson",
+          "call": "AppendEntries / SetFields",
+          "symbol": "AppendEntries",
+          "source": "internal/adapter/catalogjson/write.go:57",
+          "detail": "internal/adapter/catalogjson/write.go:57 — запись идёт по членам объекта в порядке файла, чтобы диff оставался читаемым"
+        },
+        {
+          "n": 3,
+          "from": "ad-catalogjson",
+          "to": "ad-filebackup",
+          "call": "filebackup.Snapshot(path, time.Now, backupsKept)",
+          "symbol": "Snapshot",
+          "source": "internal/adapter/catalogjson/write.go:298",
+          "detail": "internal/adapter/catalogjson/write.go:298 — снимок стоит в writeFileAtomic, а не в семи вызывающих: защита, размноженная по вызовам, однажды не доедет до нового писателя. Атомарность бережёт от обрывка файла, но не от неверного содержимого, записанного целиком и успешно — а set --related заменяет список связей, а не дополняет"
+        },
+        {
+          "n": 4,
+          "from": "ad-filebackup",
+          "to": "f-catalog",
+          "call": "копия рядом, глубина 10",
+          "symbol": "prune",
+          "source": "internal/adapter/filebackup/filebackup.go:120",
+          "detail": "internal/adapter/filebackup/filebackup.go:120 — та же глубина, что у журнала и книги; старые снимки чистятся тем же проходом"
+        }
+      ]
+    },
+    {
+      "id": "positional-id",
+      "title": "Строка книги, опознанная по позиции, правится на месте",
+      "summary": "Строку с пустой ячейкой id читатель зовёт позиционным именем (expense-r1247). Писатель этого имени не знал — и первая же правка такой записи дописывала дубль в конец, после чего fin sync отказывал целиком.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine fin edit --id expense-r1247 …",
+          "symbol": "editInLedger",
+          "source": "cmd/kbengine/fin_edit.go:78",
+          "detail": "cmd/kbengine/fin_edit.go:78 — правка идёт под тем же замком журнала, что и запись"
+        },
+        {
+          "n": 2,
+          "from": "cli",
+          "to": "ad-financexlsx",
+          "call": "ApplyRows(path, upserts, removals, now)",
+          "symbol": "ApplyRows",
+          "source": "internal/adapter/financexlsx/apply.go:178",
+          "detail": "internal/adapter/financexlsx/apply.go:178 — единственный писатель книги; лист «Счета» пишет отдельный путь fin balance"
+        },
+        {
+          "n": 3,
+          "from": "ad-financexlsx",
+          "to": "f-workbook",
+          "call": "planRowWrites: строка ищется по id",
+          "symbol": "planRowWrites",
+          "source": "internal/adapter/financexlsx/apply.go:276",
+          "detail": "internal/adapter/financexlsx/apply.go:276 строит индекс строк по непустым ячейкам id — именно поэтому строка с пустой ячейкой в индекс не попадала и считалась новой"
+        },
+        {
+          "n": 4,
+          "from": "ad-financexlsx",
+          "to": "f-workbook",
+          "call": "positionalRow(tx.ID(), sheet, idx)",
+          "symbol": "positionalRow",
+          "source": "internal/adapter/financexlsx/apply.go:307",
+          "detail": "internal/adapter/financexlsx/apply.go:307 — позиционный id это адрес листа и номера строки, а не безымянность. Проверено отрицательным контролем на двух ВЫПУЩЕННЫХ бинарях: на 0.20.0 книга росла на строку, на 0.21.0 правка ложится на место"
+        },
+        {
+          "n": 5,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine fin sync --backfill-ids",
+          "symbol": "backfillWorkbookIDs",
+          "source": "cmd/kbengine/sync.go:76",
+          "detail": "cmd/kbengine/sync.go:76 — разовый проход проставляет id каждой строке, опознанной по позиции"
+        },
+        {
+          "n": 6,
+          "from": "ad-financexlsx",
+          "to": "f-workbook",
+          "call": "BackfillIDs: assign[tx.ID()] = tx.ID()",
+          "symbol": "assign",
+          "source": "internal/adapter/financexlsx/writer.go:74",
+          "detail": "internal/adapter/financexlsx/writer.go:74 — проход сохраняет ПОЗИЦИОННЫЙ id, а не выдаёт свежий ULID, и это решение про деньги: recorded_at читается из ULID, а расчётный остаток вычитает траты, записанные после подтверждения баланса. ULID сегодняшней датой вычел бы каждую старую запись из остатка, который её уже учитывает"
+        }
+      ]
+    },
+    {
+      "id": "understate",
+      "title": "Синхронизация называет траты, которые занижают остаток",
+      "summary": "Трата, датированная днём подтверждения и записанная позже, вычитается вторым разом. Арифметику менять нельзя — движок объявил, что расчёт только занижает; поэтому чинится молчание.",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cli",
+          "call": "kbengine fin sync",
+          "symbol": "runFinSync",
+          "source": "cmd/kbengine/sync.go:24",
+          "detail": "cmd/kbengine/sync.go:24 — сверка журнала и книги; предупреждение печатается после успешной записи, а не вместо неё"
+        },
+        {
+          "n": 2,
+          "from": "cli",
+          "to": "uc-finance",
+          "call": "warnUnderstated(from, recs, stdout)",
+          "symbol": "warnUnderstated",
+          "source": "cmd/kbengine/sync.go:570",
+          "detail": "cmd/kbengine/sync.go:570 перечисляет спорные записи и просит подтвердить баланс заново"
+        },
+        {
+          "n": 3,
+          "from": "uc-finance",
+          "to": "dom-transaction",
+          "call": "finance.MayUnderstate(tx, acc, confs)",
+          "symbol": "MayUnderstate",
+          "source": "internal/usecase/finance/understate.go:24",
+          "detail": "internal/usecase/finance/understate.go:24 — правило живёт в usecase рядом с расчётом остатка, а не в команде: иначе терминал и веб отвечали бы на один вопрос по-разному"
+        },
+        {
+          "n": 4,
+          "from": "cli",
+          "to": "owner",
+          "call": "список спорных трат",
+          "symbol": "warnUnderstated",
+          "source": "cmd/kbengine/sync.go:554",
+          "detail": "cmd/kbengine/sync.go:554 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
+        }
+      ]
     }
   ],
   "gaps": [
@@ -2599,12 +3109,15 @@
     "Узлы слоя «файлы владельца» и акторы не имеют file:line: у данных и у человека нет строки в репозитории. Выдуманная ссылка была бы ровно тем враньём, от которого защищает валидатор.",
     "Внутреннее устройство View-компонентов разобрано по точкам вызова API и месту монтирования, но не по их состоянию и вёрстке: AnalyticsView, FinancesView и CatalogView внутри сложнее, чем показывает карта.",
     "Четыре шага помечены unverified — связь из кода не выводится; у каждого записана причина в поле why.",
-    "Покрытие «все команды» считает команды ВЕРХНЕГО уровня. У fin семь подкоманд, и сценарии есть у add, edit, balance и sync; import упомянут только внутри detail чужого шага, а list и report — читающие команды — не описаны вовсе. Ровно так же не разобраны подкоманды migrate за пределами versions, habr-ids и urls, если они появятся.",
+    "Покрытие «все команды» считает команды ВЕРХНЕГО уровня. У fin семь подкоманд: сценарии есть у add, edit, balance и sync, у import — только упоминание внутри detail, а у list и report нет ничего. Счёт по верхнему уровню однажды уже скрыл дыру: fin edit оставался без сценария, будучи единственным писателем журнала без проверки повтора.",
     "СКОЛЬКО сценариев подтверждено рантаймом — карта не считает, и это честнее числа: runtime_checks плоский список строк, ни одна проверка не связана со сценарием полем, поэтому любая цифра была бы посчитана на глаз. Что известно точно: подтверждения есть теперь во ВСЕХ ПЯТИ зонах — Деньги, Каталог, Витрина, Терминал и Журнал версий; зоны без единого прогона не осталось.",
     "Прогоны делались на macOS, одна машина, одна сборка. Поведение на другой ОС не проверялось.",
     "Карта устаревает МОЛЧА: валидатор ловит переехавшую строку и выдуманный файл, но не ловит новый сценарий, который в неё не попал. Правило: меняешь путь данных — правь map.json в том же PR.",
     "Проверка не гарантирует, что процитирован именно тот код, который выполняется в описанном сценарии: она подтверждает, что символ есть рядом с указанной строкой боевого файла, а не что этот вызов участвует в этом потоке.",
-    "TUI на рантайме ПРОГНАН 08.08, и раньше это не удавалось дважды. Рабочий способ: псевдотерминал, размер окна ставится на ведомую сторону ДО запуска процесса (bubbletea спрашивает его при старте и на нулевом размере не рисует вовсе), в окружении задан TERM. Сняты все четыре экрана после нажатий и пишущий путь на копии каталога. Непроверенным в зоне осталось то, чего нет в сценариях: формы финансов TUI (клавиши a, i, q, b, e) описаны в зоне «Деньги» и рантаймом не снимались."
+    "TUI на рантайме ПРОГНАН 08.08, и раньше это не удавалось дважды. Рабочий способ: псевдотерминал, размер окна ставится на ведомую сторону ДО запуска процесса (bubbletea спрашивает его при старте и на нулевом размере не рисует вовсе), в окружении задан TERM. Сняты все четыре экрана после нажатий и пишущий путь на копии каталога. Непроверенным в зоне осталось то, чего нет в сценариях: формы финансов TUI (клавиши a, i, q, b, e) описаны в зоне «Деньги» и рантаймом не снимались.",
+    "Облачный слой (deploy/**: Kubernetes, Helm, Terraform, Prometheus, Grafana) в эту карту не входит НАМЕРЕННО: у него своя карта в docs/architecture-map-cloud, она описывает путь образа и данных снаружи, и общих узлов у двух карт ровно два.",
+    "Вкладка Architecture описана со стороны данных — маршруты, адаптер, загрузка при старте. Семь разделов самой страницы (Схема, Зоны, Сценарии, Узлы, Находки, «Проверено и не проверено», «Разбор») по вёрстке не разбирались, как и прочие View-компоненты.",
+    "Живьём в правке 16.08 прогнаны только четыре новых маршрута (/api/maps, /api/maps/{id}, /kb/, /metrics). Сценарии ledger-lock, catalog-snapshot, positional-id и understate подтверждены чтением кода и прогонами прошлых выпусков, а не в этой сессии."
   ],
   "runtime_checks": [
     "fin add на временном ledger: запись создаётся с ULID; повтор отвергается с id существующей записи; --force пишет вторую строку (ledger 2 строки)",
@@ -2637,7 +3150,12 @@
     "проверка свежести нашла живое расхождение: карточка Projects называла kb-engine v0.16.0 при движке 0.18.0; после правки файла ответ стал behind=false — засчитал сам движок",
     "dedup с подсаженным дублем находит его по обоим ключам (точный адрес и похожий заголовок); audit-tasks находит ORPHAN и consistent в обе стороны и возвращает 1 при orphans",
     "set с несуществующим id среди существующих: «nothing was written», каталог на диске не изменился — правило «либо все id, либо ни одного» проверено отрицательным контролем",
-    "changelog на файле без единого релиза: команда честно печатает 0 release(s), а serve при старте предупреждает, что «Что нового» будет пустым"
+    "changelog на файле без единого релиза: команда честно печатает 0 release(s), а serve при старте предупреждает, что «Что нового» будет пустым",
+    "16.08: /api/maps и /api/maps/{id} прогнаны на собранном бинаре с двумя переданными картами — оглавление и карта целиком отвечают телом, выдуманный id даёт 404 и перечисляет подключённые карты.",
+    "16.08: /kb/ прогнан на фикстуре — артефакт, названный полем file, отдаётся (200); файл, лежащий в том же дереве и каталогом НЕ названный, даёт 404.",
+    "16.08: обход вверх по дереву проверен с --path-as-is (без него curl чистит путь у себя и меряет не то): /kb/../catalog.json файла не отдаёт, приходит 307 на очищенный путь, а тот попадает в SPA — каталога в теле нет.",
+    "16.08: /metrics отвечает текстом Prometheus без клиентской библиотеки; на фикстуре из двух записей kbengine_catalog_readable=1 и kbengine_catalog_entries=2, а выдуманная метрика в выводе отсутствует — отрицательный контроль в том же прогоне.",
+    "16.08: лог сервера прочитан ДО ответов, а процесс на порту сверен через lsof и ps: на занятом порту отвечал бы чужой процесс, и прошлый выпуск на этом уже ошибся."
   ],
   "project_note": "Числа о содержимом личной базы владельца убраны намеренно: репозиторий публичный."
 }
