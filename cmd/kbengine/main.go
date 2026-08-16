@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"maps"
 	"net/http"
 	"os"
@@ -558,6 +559,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	engine := buildInfo()
 	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
 		changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths))
+	docs.Artefacts = artefactsFS(catalogPath)
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
 		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
 }
@@ -637,6 +639,21 @@ func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.
 		docs.Media = os.DirFS(mediaPath)
 	}
 	return docs, nil
+}
+
+// artefactsFS — дерево базы знаний, из которого маршрут /kb/ отдаёт собственные
+// артефакты. Корень выводится из пути к каталогу тем же правилом, каким его уже
+// выводит `audit --check files`: поле file у записи задано относительно базы, и
+// второй способ узнать корень однажды разошёлся бы с первым.
+//
+// Отдельного флага намеренно нет. Флаг, который забыли, даёт пустую вкладку —
+// а здесь источник выводится из обязательного --catalog, и забыть его нельзя.
+func artefactsFS(catalogPath string) fs.FS {
+	root := artefactRoot(catalogPath)
+	if root == "" {
+		return nil
+	}
+	return os.DirFS(root)
 }
 
 func runDedup(args []string, stdout, stderr io.Writer) int {

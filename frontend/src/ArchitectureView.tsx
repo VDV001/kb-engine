@@ -11,10 +11,11 @@ import { FindingsPanel } from './architecture/FindingsPanel'
 import { FlowsPanel } from './architecture/FlowsPanel'
 import { MapHeader } from './architecture/MapHeader'
 import { NodesPanel } from './architecture/NodesPanel'
+import { PagePanel } from './architecture/PagePanel'
 import { SchemePanel } from './architecture/SchemePanel'
 import { ZonesPanel } from './architecture/ZonesPanel'
 
-type Part = 'scheme' | 'zones' | 'flows' | 'nodes' | 'findings' | 'checks'
+type Part = 'scheme' | 'zones' | 'flows' | 'nodes' | 'findings' | 'checks' | 'page'
 
 const PARTS: { id: Part; label: string }[] = [
   { id: 'scheme', label: 'Схема' },
@@ -23,6 +24,9 @@ const PARTS: { id: Part; label: string }[] = [
   { id: 'nodes', label: 'Узлы' },
   { id: 'findings', label: 'Находки' },
   { id: 'checks', label: 'Проверено и не проверено' },
+  // Раздел появляется только у карты, несущей page: кнопка, открывающая
+  // пустоту, читается как поломка, а её отсутствие — как «здесь этого нет».
+  { id: 'page', label: 'Разбор' },
 ]
 
 /**
@@ -107,7 +111,7 @@ export function ArchitectureView() {
           <MapCounts map={map.data} />
 
           <div className="flex flex-wrap gap-2 border-b border-outline-variant pb-3">
-            {PARTS.map((p) => (
+            {PARTS.filter((p) => p.id !== 'page' || Boolean(map.data.page)).map((p) => (
               <Chip key={p.id} active={part === p.id} onClick={() => setPart(p.id)}>
                 {p.label}
                 {p.id === 'findings' && map.data.findings.length > 0 && (
@@ -117,6 +121,7 @@ export function ArchitectureView() {
             ))}
           </div>
 
+          {part === 'page' && map.data.page && <PagePanel page={map.data.page} />}
           {part === 'scheme' && <HowToRead map={map.data} />}
           {part === 'scheme' && (
             <SchemePanel

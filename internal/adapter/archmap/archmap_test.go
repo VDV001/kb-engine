@@ -327,3 +327,27 @@ func TestLoad_leadExamplesAbsentStayEmpty(t *testing.T) {
 		t.Errorf("Examples = %+v, ожидался пустой список", m.Examples)
 	}
 }
+
+// Карта может нести собственный разбор — страницу, написанную человеком, с
+// рисованными диаграммами и рассказом о том, чего механическая карта сказать
+// не умеет: что делалось по неделям, зачем каждая технология, где ошиблись.
+// Путь ведёт в базу знаний, а витрина открывает его маршрутом /kb/.
+func TestLoad_ownWriteUpPage(t *testing.T) {
+	m := loadOne(t, strings.Replace(engineMap,
+		`"project": "test-engine",`,
+		`"project": "test-engine", "page": "creations/projects/2026-08-15_x/x.html",`,
+		1))
+
+	if m.Page != "creations/projects/2026-08-15_x/x.html" {
+		t.Fatalf("Page = %q, want the path to the write-up", m.Page)
+	}
+}
+
+// Карта без разбора не выдумывает его: пустая строка означает «раздела нет», и
+// витрина тогда не показывает кнопку вовсе. Пустая вкладка читается как
+// поломка, а отсутствующая — как «здесь этого просто нет».
+func TestLoad_withoutPageStaysEmpty(t *testing.T) {
+	if got := loadOne(t, engineMap).Page; got != "" {
+		t.Fatalf("Page = %q, want empty", got)
+	}
+}
