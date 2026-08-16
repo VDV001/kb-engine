@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "0674c73",
+  "commit": "fcee721",
   "layers": [
     {
       "id": "actors",
@@ -119,7 +119,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:795"
+        "cmd/kbengine/main.go:821"
       ]
     },
     {
@@ -1461,7 +1461,7 @@
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
           "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:799",
+          "source": "cmd/kbengine/main.go:825",
           "unverified": false
         },
         {
@@ -1488,14 +1488,14 @@
     {
       "id": "audit",
       "title": "Владелец проверяет здоровье каталога",
-      "summary": "kbengine audit --check all — девять проверок, links НЕ входит намеренно",
+      "summary": "kbengine audit --check all — десять проверок, links НЕ входит намеренно",
       "steps": [
         {
           "n": 1,
           "from": "owner",
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
-          "detail": "cmd/kbengine/main.go:612; набор проверок перечислен в cmd/kbengine/main.go:690-698",
+          "detail": "cmd/kbengine/main.go:684 — набор проверок перечислен в cmd/kbengine/main.go:786-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
           "source": "cmd/kbengine/main.go:684",
           "unverified": false
         },
@@ -1504,7 +1504,7 @@
           "from": "cmd-audit",
           "to": "uc-audit",
           "call": "audit.NewService(catalogjson.FileLoader{Path: catalogPath})",
-          "detail": "cmd/kbengine/main.go:625 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), кэша у FileLoader нет — значит --check all читает файл около десяти раз. Одно чтение на все проверки сделано только в audit.Health для экрана здоровья",
+          "detail": "cmd/kbengine/main.go:697 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), то есть один прогон --check all читает файл столько раз, сколько в нём проверок",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": false
         },
@@ -1513,7 +1513,7 @@
           "from": "uc-audit",
           "to": "ad-artefactfs",
           "call": "svc.WithArtefactVersions / WithArtefactFiles",
-          "detail": "cmd/kbengine/main.go:629-630 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта",
+          "detail": "cmd/kbengine/main.go:701-702 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта, files — конспект, которого нет на диске",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": true,
           "why": "подключение чтения front matter прослежено по вызову, но сама сверка версий по файлам не читалась"
@@ -1523,7 +1523,7 @@
           "from": "cmd-audit",
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
-          "detail": "проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:688) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine (main.go:666) — непроверенные записи иначе похоронили бы настоящие находки",
+          "detail": "cmd/kbengine/main.go:725 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:785) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
           "source": "cmd/kbengine/main.go:738",
           "unverified": false,
           "symbol": "linkCoverageLine"
@@ -2152,7 +2152,7 @@
           "from": "spa",
           "to": "fe-about",
           "call": "api.engine()",
-          "detail": "frontend/src/api.ts:549; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:193-195)",
+          "detail": "frontend/src/api.ts:718; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:168-170)",
           "source": "frontend/src/api.ts:718",
           "unverified": false
         },
@@ -2161,8 +2161,8 @@
           "from": "fe-about",
           "to": "browser",
           "call": "версия · сборка · собран",
-          "detail": "frontend/src/AboutView.tsx:193 — псевдоверсия локальной сборки отличается от чистого тега, и проверка свежести сравнивает её с БАЗОВЫМ выпуском",
-          "source": "frontend/src/AboutView.tsx:193",
+          "detail": "frontend/src/AboutView.tsx:168 — псевдоверсия локальной сборки отличается от чистого тега, и проверка свежести сравнивает её с БАЗОВЫМ выпуском",
+          "source": "frontend/src/AboutView.tsx:168",
           "unverified": false,
           "symbol": "engineVersionLabel"
         }
@@ -2496,7 +2496,7 @@
           "from": "fe-about",
           "to": "ad-httpapi",
           "call": "GET /api/changelog",
-          "detail": "frontend/src/AboutView.tsx:43 → internal/adapter/httpapi/server.go:155",
+          "detail": "frontend/src/AboutView.tsx:43 → internal/adapter/httpapi/server.go:175",
           "source": "frontend/src/AboutView.tsx:43",
           "unverified": false
         },
@@ -2966,7 +2966,7 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:795",
+          "source": "cmd/kbengine/main.go:821",
           "detail": "cmd/kbengine/main.go:795 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
