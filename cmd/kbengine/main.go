@@ -41,7 +41,7 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(runWithStdin(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run dispatches a subcommand and returns the process exit code. It takes its
@@ -49,20 +49,34 @@ func main() {
 // commands maps a verb to its handler. A table rather than a switch: every new
 // command was making the dispatcher itself more complex, though dispatching
 // never got harder.
-var commands = map[string]func(args []string, stdout, stderr io.Writer) int{
-	"add":         runAdd,
-	"set":         runSet,
-	"audit":       runAudit,
-	"audit-tasks": func(a []string, o, e io.Writer) int { return runAuditTasks(a, os.Stdin, o, e) },
-	"changelog":   runChangelog,
-	"dedup":       runDedup,
-	"drift":       runDrift,
+//
+// Обработчик получает stdin ПАРАМЕТРОМ, а не берёт os.Stdin сам. Раньше так
+// делал audit-tasks — и был единственной командой, которую нельзя прогнать
+// через run() в тесте: ответ на её вопрос приходилось бы подсовывать через
+// глобаль. Подтверждение удаления той же природы, и заводить вторую такую
+// команду значило бы закрепить исключение.
+var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
+	"add":         withoutStdin(runAdd),
+	"set":         withoutStdin(runSet),
+	"audit":       withoutStdin(runAudit),
+	"audit-tasks": runAuditTasks,
+	"changelog":   withoutStdin(runChangelog),
+	"dedup":       withoutStdin(runDedup),
+	"drift":       withoutStdin(runDrift),
 	"fin":         runFin,
-	"inbox":       runInbox,
-	"migrate":     runMigrate,
-	"serve":       runServe,
-	"tui":         runTUI,
-	"version":     func(_ []string, o, _ io.Writer) int { return runVersion(o) },
+	"inbox":       withoutStdin(runInbox),
+	"migrate":     withoutStdin(runMigrate),
+	"serve":       withoutStdin(runServe),
+	"tui":         withoutStdin(runTUI),
+	"version":     func(_ []string, _ io.Reader, o, _ io.Writer) int { return runVersion(o) },
+}
+
+// withoutStdin адаптирует команду, которая ни о чём не спрашивает. Отдельный
+// помощник вместо тринадцати одинаковых замыканий: у большинства команд вопроса
+// нет, и подчёркнуто пустой аргумент читается лучше, чем повторённая обвязка.
+func withoutStdin(f func(args []string, stdout, stderr io.Writer) int,
+) func([]string, io.Reader, io.Writer, io.Writer) int {
+	return func(a []string, _ io.Reader, o, e io.Writer) int { return f(a, o, e) }
 }
 
 // usageLine lists the verbs in a stable order, so the help text does not
@@ -75,6 +89,13 @@ func usageLine() string {
 // run dispatches a subcommand and returns the process exit code. It takes its
 // I/O as parameters so it is testable without touching os globals.
 func run(args []string, stdout, stderr io.Writer) int {
+	// Команда без вопросов читать stdin не должна вовсе: пустой источник честнее
+	// os.Stdin, потому что случайно прочитанный ввод — это тихая пропажа данных.
+	return runWithStdin(args, strings.NewReader(""), stdout, stderr)
+}
+
+// runWithStdin — то же самое, но с источником ответов на вопросы команды.
+func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usageLine())
 		return 2
@@ -84,7 +105,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])
 		return 2
 	}
-	return cmd(args[1:], stdout, stderr)
+	return cmd(args[1:], stdin, stdout, stderr)
 }
 
 // buildInfo — версия, коммит и время сборки текущего бинаря. Одно место на

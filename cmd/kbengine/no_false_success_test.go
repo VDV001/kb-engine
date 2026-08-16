@@ -74,6 +74,17 @@ func TestNoCommandReportsSuccessWithoutChanging(t *testing.T) {
 					"--amount", "500", "--create"}
 			},
 		},
+		{
+			// Удаление без подтверждения: команда обязана сказать, что ничего не
+			// сделала. Молчаливый успех здесь читался бы как «запись удалена», и
+			// человек узнал бы правду только из отчёта через месяц.
+			name: "fin delete: подтверждения не было",
+			setup: func(t *testing.T) []string {
+				_, ledger := pairedLedger(t)
+				addToLedgerWithAccount(t, ledger, "Сбербанк")
+				return []string{"fin", "delete", "--ledger", ledger, "--id", lastID(t, ledger)}
+			},
+		},
 	}
 
 	for _, p := range probes {
@@ -100,7 +111,7 @@ func TestNoCommandReportsSuccessWithoutChanging(t *testing.T) {
 func saysNothingChanged(s string) bool {
 	for _, mark := range []string{
 		"nothing to do", "нечего", "не изменил", "уже так", "уже в этом состоянии",
-		"already", "no change",
+		"already", "no change", "не удалено",
 	} {
 		if strings.Contains(strings.ToLower(s), strings.ToLower(mark)) {
 			return true
