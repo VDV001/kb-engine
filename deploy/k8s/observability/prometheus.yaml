@@ -35,6 +35,12 @@ data:
           # Pod name into a label, so a graph can tell two replicas apart.
           - source_labels: [__meta_kubernetes_pod_name]
             target_label: pod
+          # Namespace into a label. Without it the same engine deployed twice —
+          # by the manifests and by the chart, both named kbengine — produces two
+          # series a query cannot tell apart. The pod name does not separate them
+          # either: the chart's release carries the chart's own name.
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
 ---
 # Prometheus asks the API server what exists. Without these rights the scrape
 # config above finds nothing and says so only in its own logs.

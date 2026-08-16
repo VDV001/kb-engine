@@ -500,13 +500,17 @@ jobs:
           # A live target proves the scrape happened; this proves the value made
           # it into storage and can be read back out.
           #
-          # Named by pod on purpose. Two engines are running: this deployment,
-          # serving the demo catalog of one entry, and the S3 one, serving 7421
-          # synthetic entries. Asking for the bare metric returns whichever
-          # series came first — the check then passes or fails by luck, and it
-          # did both on earlier runs before anyone noticed.
+          # Named by namespace on purpose. THREE engines are running by now:
+          # this one in default with the demo catalog of a single entry, the
+          # chart's in helm, and the S3 one with 7421 synthetic entries. Asking
+          # for the bare metric returns whichever series came first — the check
+          # then passes or fails by luck, and it did both before anyone noticed.
+          # The pod name does not separate them either: the chart's release is
+          # also called kbengine, so its pods are kbengine-* as well. Namespace
+          # is the only label that tells the three apart, which is why the scrape
+          # config now exports it.
           entries=$(curl -sf --get "localhost:9090/api/v1/query" \
-            --data-urlencode 'query=kbengine_catalog_entries{pod=~"^kbengine-.*"}' \
+            --data-urlencode 'query=kbengine_catalog_entries{namespace="default"}' \
             | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(r[0]['value'][1] if len(r)==1 else f'{len(r)} series')")
           echo "kbengine_catalog_entries through Prometheus: $entries"
           test "$entries" = "1"
