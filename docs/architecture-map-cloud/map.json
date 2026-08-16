@@ -1,6 +1,6 @@
 {
   "project": "kb-engine cloud — облачный слой",
-  "commit": "06f0f16",
+  "commit": "0674c73",
   "checked_at": "2026-08-15",
   "page": "creations/projects/2026-08-15_kbengine-cloud-layer/kbengine-cloud-layer.html",
   "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
@@ -217,7 +217,7 @@
       "subtitle": "процесс отвечает — рестарт помогает",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:157"]
+      "sources": ["internal/adapter/httpapi/server.go:165"]
     },
     {
       "id": "srv-readyz",
@@ -225,7 +225,7 @@
       "subtitle": "каталог разобран — рестарт НЕ помогает",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:158"]
+      "sources": ["internal/adapter/httpapi/server.go:166"]
     },
     {
       "id": "srv-metrics",
@@ -233,7 +233,7 @@
       "subtitle": "экспозиция без единой зависимости",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:156"]
+      "sources": ["internal/adapter/httpapi/server.go:164"]
     },
     {
       "id": "srv-stats",
@@ -241,7 +241,7 @@
       "subtitle": "сколько записей движок реально отдаёт",
       "layer": "engine",
       "kind": "service",
-      "sources": ["internal/adapter/httpapi/server.go:159"]
+      "sources": ["internal/adapter/httpapi/server.go:167"]
     },
     {
       "id": "instrument",
@@ -411,7 +411,7 @@
           "to": "srv-stats",
           "call": "curl /api/stats — сверка по ТЕЛУ, а не по коду",
           "detail": "internal/adapter/httpapi/server.go:159 регистрирует маршрут. Код ответа сам по себе ничего не доказывает: на любой неизвестный путь вне /api/ сервер отдаёт 200, потому что SPA-фолбэк возвращает index.html",
-          "source": "internal/adapter/httpapi/server.go:159",
+          "source": "internal/adapter/httpapi/server.go:167",
           "symbol": "handleStats",
           "unverified": false
         },
@@ -555,7 +555,7 @@
           "to": "overlay-negative",
           "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
           "detail": ".github/workflows/ci.yml:516 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
-          "source": ".github/workflows/ci.yml:516",
+          "source": ".github/workflows/ci.yml:531",
           "symbol": "negative",
           "unverified": false
         },
@@ -585,7 +585,7 @@
           "to": "srv-readyz",
           "call": "503 с текстом ошибки разбора",
           "detail": "internal/adapter/httpapi/server.go:158 — готовность отвечает за ДАННЫЕ. Причина читается на эндпоинте, а не выводится из того, что контейнер падает по кругу: в этом и весь смысл разведения двух проб",
-          "source": "internal/adapter/httpapi/server.go:158",
+          "source": "internal/adapter/httpapi/server.go:166",
           "symbol": "handleReadyz",
           "unverified": false
         },
@@ -605,7 +605,7 @@
           "to": "kind",
           "call": "rollout status обязан вернуть ошибку",
           "detail": ".github/workflows/ci.yml:518 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
-          "source": ".github/workflows/ci.yml:518",
+          "source": ".github/workflows/ci.yml:533",
           "symbol": "rollout",
           "unverified": false
         }
@@ -711,7 +711,7 @@
           "to": "srv-metrics",
           "call": "GET /metrics раз в 5 секунд",
           "detail": "internal/adapter/httpapi/server.go:156 — экспозиция собирается без единой зависимости, руками. Потолок назван в самом файле: нет exemplars, нет OpenMetrics, нет метрик рантайма",
-          "source": "internal/adapter/httpapi/server.go:156",
+          "source": "internal/adapter/httpapi/server.go:164",
           "symbol": "handleMetrics",
           "unverified": false
         },
@@ -771,7 +771,7 @@
           "to": "prometheus",
           "call": "контроль: выдуманная метрика обязана вернуть пусто",
           "detail": ".github/workflows/ci.yml:505 спрашивает kbengine_invented_metric и требует ноль рядов. Без этого запрос настоящей метрики доказывал бы только то, что API Prometheus отвечает",
-          "source": ".github/workflows/ci.yml:505",
+          "source": ".github/workflows/ci.yml:520",
           "symbol": "kbengine_invented_metric",
           "unverified": false
         }
