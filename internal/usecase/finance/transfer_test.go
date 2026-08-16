@@ -68,7 +68,7 @@ func TestSummarize_incomeTransferIsNotIncome(t *testing.T) {
 
 func transferRecord(t *testing.T, date, amount string) finance.Record {
 	t.Helper()
-	return expenseRecordOn(t, date, amount, "Прочее", "Переводы")
+	return expenseRecordOn(t, date, amount, "Прочее", "Перевод себе")
 }
 
 func expenseRecordOn(t *testing.T, date, amount, cat, sub string) finance.Record {

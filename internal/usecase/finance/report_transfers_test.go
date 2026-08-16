@@ -41,8 +41,8 @@ func TestSummarize_countsWhatItExcluded(t *testing.T) {
 
 	s := finance.Summarize([]finance.Record{
 		mk("01A", "Еда", "Продукты", "500.00"),
-		mk("01B", "Прочее", "Переводы", "2000.00"),
-		mk("01C", "Прочее", "Переводы", "1000.00"),
+		mk("01B", "Прочее", "Перевод себе", "2000.00"),
+		mk("01C", "Прочее", "Перевод себе", "1000.00"),
 	})
 
 	if s.Expenses.String() != "500.00" {
