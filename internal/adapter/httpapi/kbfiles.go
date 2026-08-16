@@ -54,7 +54,10 @@ func kbFilesHandler(fsys fs.FS, q Querier) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		defer f.Close()
+		// Ошибка закрытия на чтении не значит ничего для клиента: ответ уже
+		// отправлен, а переоткрывать файл незачем. Названа явно, чтобы это было
+		// решением, а не забытой проверкой.
+		defer func() { _ = f.Close() }()
 		st, err := f.Stat()
 		if err != nil || st.IsDir() {
 			http.NotFound(w, r)
