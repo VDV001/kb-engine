@@ -9,7 +9,7 @@ version: 0.1.0
 
 # The engine release this chart defaults to. `image.tag` overrides it; leaving
 # the tag empty falls back here, so the two never drift into disagreeing.
-appVersion: "0.21.0"
+appVersion: "0.22.0"
 
 home: https://github.com/VDV001/kb-engine
 sources:
