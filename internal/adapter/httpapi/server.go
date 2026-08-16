@@ -88,6 +88,14 @@ type Documents struct {
 	// referenced from projects.json live there rather than in the bundle, for
 	// the same reason the JSON does: they are his content, not the engine's.
 	Media fs.FS
+	// Artefacts is the knowledge base tree itself, served under /kb/ — but only
+	// at the paths the catalog names in an entry's file field. Own artefacts —
+	// cheat sheets, courses, write-ups, project pages — used to exist as a row
+	// and open through nothing at all: 104 entries carry a file and no url.
+	// Deliberately an allow-list rather than a file server: personal notes and
+	// finances live in the same tree, and the catalog is what decides which of
+	// it the shop window may show.
+	Artefacts fs.FS
 }
 
 // EngineInfo — сборка, которая прямо сейчас отвечает на запросы. Приходит
@@ -180,6 +188,11 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	if docs.Media != nil {
 		mux.Handle("GET /media/", http.StripPrefix("/media/", mediaHandler(docs.Media)))
 	}
+	// Регистрируется всегда, а не под флагом: без источника обработчик отвечает
+	// 404, и это тот же ответ, что у не названного каталогом пути. Под условием
+	// шаблона не было бы вовсе, и запрос артефакта доходил бы до SPA-фолбэка —
+	// 200 с разметкой там, где браузер ждёт документ.
+	mux.Handle("GET /kb/", kbFilesHandler(docs.Artefacts, q))
 	if frontend != nil {
 		// Фолбэк на index.html нужен клиентским маршрутам страницы (/archives,
 		// /now), но не путям API: опечатка в адресе должна быть 404, а не 200 с
