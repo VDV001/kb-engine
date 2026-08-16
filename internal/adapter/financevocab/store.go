@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
@@ -40,6 +42,12 @@ type placeRule struct {
 // Load reads the vocabulary. A missing file is not a failure — it is a state
 // the caller has to name, so the error wraps fs.ErrNotExist and the vocabulary
 // comes back empty rather than nil.
+//
+// Keys are normalised on the way in, so «Пятерочка» and «Пятёрочка» become one
+// word. When both spell the same rule that is exactly the point of the file and
+// they collapse silently. When they spell DIFFERENT rules, the word is dropped
+// and named: picking one would keep the coin flip, merely tossed once at load
+// instead of on every run.
 func Load(path string) (finance.Vocabulary, error) {
 	v := finance.Vocabulary{
 		Accounts: map[string]string{},
@@ -53,17 +61,66 @@ func Load(path string) (finance.Vocabulary, error) {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return v, fmt.Errorf("%s: %w", path, err)
 	}
-	for word, account := range f.Accounts {
-		v.Accounts[finance.NormalizeWord(word)] = account
-	}
-	for word, rule := range f.Places {
-		v.Places[finance.NormalizeWord(word)] = finance.PlaceRule{
+
+	accounts, accountConflicts := collapse(f.Accounts, func(a string) string { return a })
+	places, placeConflicts := collapse(f.Places, func(r placeRule) string {
+		return fmt.Sprintf("%s / %s → %s", r.Category, r.Subcategory, r.Place)
+	})
+	v.Accounts = accounts
+	for word, rule := range places {
+		v.Places[word] = finance.PlaceRule{
 			Category:    rule.Category,
 			Subcategory: rule.Subcategory,
 			Place:       rule.Place,
 		}
 	}
+
+	if lines := append(accountConflicts, placeConflicts...); len(lines) > 0 {
+		return v, fmt.Errorf("%s: %w:\n  %s", path, finance.ErrVocabularyConflict, strings.Join(lines, "\n  "))
+	}
 	return v, nil
+}
+
+// collapse normalises keys and returns the surviving entries plus one line per
+// conflict, sorted so the message does not reshuffle between runs — the defect
+// being fixed here is precisely an answer that changes run to run.
+func collapse[T comparable](in map[string]T, describe func(T) string) (map[string]T, []string) {
+	type group struct {
+		keys  []string
+		rules []T
+	}
+	groups := map[string]*group{}
+	for key, rule := range in {
+		n := finance.NormalizeWord(key)
+		g, ok := groups[n]
+		if !ok {
+			g = &group{}
+			groups[n] = g
+		}
+		g.keys = append(g.keys, key)
+		if !slices.Contains(g.rules, rule) {
+			g.rules = append(g.rules, rule)
+		}
+	}
+
+	out := make(map[string]T, len(groups))
+	var conflicts []string
+	for n, g := range groups {
+		if len(g.rules) == 1 {
+			out[n] = g.rules[0]
+			continue
+		}
+		slices.Sort(g.keys)
+		described := make([]string, 0, len(g.rules))
+		for _, r := range g.rules {
+			described = append(described, describe(r))
+		}
+		slices.Sort(described)
+		conflicts = append(conflicts, fmt.Sprintf("%q: %s — правила разные: %s",
+			n, strings.Join(g.keys, ", "), strings.Join(described, " | ")))
+	}
+	slices.Sort(conflicts)
+	return out, conflicts
 }
 
 // RememberAccount adds one word for an account, keeping everything else.

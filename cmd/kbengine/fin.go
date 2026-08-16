@@ -18,9 +18,9 @@ import (
 )
 
 // runFin dispatches the ledger subcommands.
-func runFin(args []string, stdout, stderr io.Writer) int {
+func runFin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|edit|balance|list|report|sync> [flags]")
+		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|edit|delete|balance|list|report|sync> [flags]")
 		return 2
 	}
 	switch args[0] {
@@ -30,6 +30,8 @@ func runFin(args []string, stdout, stderr io.Writer) int {
 		return runFinAdd(args[1:], stdout, stderr)
 	case "edit":
 		return runFinEdit(args[1:], stdout, stderr)
+	case "delete":
+		return runFinDelete(args[1:], stdin, stdout, stderr)
 	case "balance":
 		return runFinBalance(args[1:], stdout, stderr)
 	case "list":
@@ -177,6 +179,10 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		// и узнать об этом из отчёта через месяц — то же самое молчание.
 		fmt.Fprintf(stdout, "fin add: %s — записано %q, набрано %q (так уже пишут в базе)\n",
 			c.Field, c.Used, c.Typed)
+	}, func(w string) {
+		// В stderr, а не в stdout: это состояние словаря, а не часть отчёта о
+		// записи, и конвейеру, читающему вывод команды, оно не нужно.
+		fmt.Fprintf(stderr, "fin add: %s\n", w)
 	})
 	if err != nil {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
@@ -222,7 +228,7 @@ func repeatSubject(tx domain.Transaction) string {
 // a guard placed here cannot be walked around by using a different screen.
 // Placed in any of them, it would be a rule the next surface forgets.
 func appendChecked(ledgerPath string, p finance.AddParams, force bool,
-	note func(finance.Correction),
+	note func(finance.Correction), warn func(string),
 ) (finance.Record, error) {
 	// Замок держится на всём чтении-правке-записи, а не на самой записи.
 	// Проверка повтора судит по прочитанному состоянию, и если между чтением и
@@ -231,7 +237,7 @@ func appendChecked(ledgerPath string, p finance.AddParams, force bool,
 	var rec finance.Record
 	err := filelock.With(ledgerPath, func() error {
 		var err error
-		rec, err = appendUnderLock(ledgerPath, p, force, note)
+		rec, err = appendUnderLock(ledgerPath, p, force, note, warn)
 		return err
 	})
 	return rec, err
@@ -240,7 +246,7 @@ func appendChecked(ledgerPath string, p finance.AddParams, force bool,
 // appendUnderLock — то же самое, но уже под замком. Отдельной функцией, чтобы
 // путь записи читался сверху вниз, а не через отступ замыкания.
 func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
-	note func(finance.Correction),
+	note func(finance.Correction), warn func(string),
 ) (finance.Record, error) {
 	recs, err := financejsonl.Load(ledgerPath, time.Now)
 	if err != nil {
@@ -252,7 +258,14 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	// Словарь читается рядом с леджером и решает раньше частоты: он хранит
 	// решения владельца, а частота — след старых записей. Нет словаря — не
 	// беда, тогда решает только частота.
-	voc, _ := financevocab.Load(financevocab.PathNextTo(ledgerPath))
+	// Ошибка чтения словаря отбрасывалась целиком, и это скрывало два разных
+	// случая: словаря нет (нормально — решает частота) и словарь спорит сам с
+	// собой (не нормально: подстановка становилась случайной). Первый молчит
+	// по-прежнему, второй называется.
+	voc, vocErr := financevocab.Load(financevocab.PathNextTo(ledgerPath))
+	if warn != nil && errors.Is(vocErr, finance.ErrVocabularyConflict) {
+		warn(vocErr.Error())
+	}
 	p, fixed := finance.CanonicalWith(recs, voc, p)
 	for _, c := range fixed {
 		if note != nil {
