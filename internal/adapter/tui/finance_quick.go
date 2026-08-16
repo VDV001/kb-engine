@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -95,7 +96,15 @@ func (m Model) updateQuick(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // readQuickLine parses the line and keeps the result on screen for approval.
 func (m Model) readQuickLine() Model {
 	voc, err := m.vocab.Vocabulary()
-	if err != nil {
+	// Конфликт в словаре — не отказ: спорное слово выброшено, остальной словарь
+	// цел. Запретить ввод расхода, пока человек не откроет файл, значило бы
+	// наказать за опечатку в словаре тем, что деньги некуда записать. Поэтому
+	// текст конфликта переживает разбор строки и остаётся на экране.
+	conflict := ""
+	switch {
+	case errors.Is(err, finance.ErrVocabularyConflict):
+		conflict = err.Error()
+	case err != nil:
 		// The vocabulary may simply not exist yet. Saying so beats reading the
 		// line with an empty one and reporting every word as unknown.
 		m.quick.err = fmt.Sprintf("словарь не прочитан: %v", err)
@@ -106,7 +115,7 @@ func (m Model) readQuickLine() Model {
 		m.quick.err = err.Error()
 		return m
 	}
-	m.quick.parsed, m.quick.unknown, m.quick.err = &parsed, parsed.Unknown, ""
+	m.quick.parsed, m.quick.unknown, m.quick.err = &parsed, parsed.Unknown, conflict
 	return m
 }
 

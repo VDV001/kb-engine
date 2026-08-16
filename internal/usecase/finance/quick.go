@@ -11,6 +11,18 @@ import (
 // ErrNoAmount is returned when a quick line carries no number to spend.
 var ErrNoAmount = errors.New("в строке нет суммы")
 
+// ErrVocabularyConflict means the vocabulary holds two spellings of one word
+// that disagree about the rule, so that word cannot be answered at all.
+//
+// Declared here rather than in the adapter that reads the file: the surfaces
+// have to tell this failure apart from «файла нет» and «файл битый», and a
+// terminal reaching into an adapter for that answer would invert the dependency
+// rule. The rule belongs to the vocabulary, not to its file format.
+//
+// Not fatal on purpose: words that do not conflict keep working, so a person
+// recording an expense is not blocked by an unrelated pair.
+var ErrVocabularyConflict = errors.New("в словаре два написания одного слова спорят о правиле")
+
 // PlaceRule is what a known word says about where the money went.
 type PlaceRule struct {
 	Category    string

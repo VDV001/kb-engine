@@ -116,7 +116,7 @@ func TestLoad_namesConflictingKeys(t *testing.T) {
 	}`)
 
 	v, err := financevocab.Load(path)
-	if !errors.Is(err, financevocab.ErrConflict) {
+	if !errors.Is(err, finance.ErrVocabularyConflict) {
 		t.Fatalf("err = %v, ожидалась ErrConflict", err)
 	}
 	// Названы обе исходные формы: без них человеку негде искать в файле.
@@ -170,7 +170,7 @@ func TestLoad_namesConflictingAccounts(t *testing.T) {
 	}`)
 
 	v, err := financevocab.Load(path)
-	if !errors.Is(err, financevocab.ErrConflict) {
+	if !errors.Is(err, finance.ErrVocabularyConflict) {
 		t.Fatalf("err = %v, ожидалась ErrConflict", err)
 	}
 	if _, ok := v.Accounts["сбер"]; ok {

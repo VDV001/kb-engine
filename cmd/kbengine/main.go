@@ -349,9 +349,13 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 // behind rather than quietly touching it.
 func (f ledgerFinances) Add(p finance.AddParams) ([]finance.Correction, error) {
 	var fixed []finance.Correction
+	// warn=nil осознанно: эта функция обслуживает формы TUI, а печатать в
+	// stdout под живым экраном значит испортить раскладку. Конфликт словаря
+	// терминал показывает на своём пути — при быстром вводе, где словарь и
+	// спрашивают.
 	_, err := appendChecked(f.ledgerPath, p, false, func(c finance.Correction) {
 		fixed = append(fixed, c)
-	})
+	}, nil)
 	return fixed, err
 }
 
