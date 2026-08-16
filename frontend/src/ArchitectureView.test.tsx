@@ -271,3 +271,33 @@ describe('ArchitectureView', () => {
     expect(screen.queryByText(/владелец записывает трату/)).toBeNull()
   })
 })
+
+// Раздел «Разбор» — страница, написанную человеком, прямо в карте. Появляется
+// он только у карты, которая эту страницу называет: кнопка, открывающая
+// пустоту, читается как поломка, а её отсутствие — как «здесь этого нет».
+describe('раздел «Разбор»', () => {
+  it('не показывается у карты без page', async () => {
+    state.index = [{ id: 'kb-engine', project: 'kb-engine', zones: [], stats: emptyStats, accepted_zones: 0 }]
+    state.maps = { 'kb-engine': engineMap() }
+    render(<ArchitectureView />)
+    expect(await screen.findByText('Схема')).toBeTruthy()
+    expect(screen.queryByText('Разбор')).toBeNull()
+  })
+
+  it('показывается у карты с page и грузит её маршрутом /kb/', async () => {
+    const m = engineMap()
+    m.page = 'creations/projects/2026-08-15_x/x.html'
+    state.index = [{ id: 'kb-engine', project: 'kb-engine', zones: [], stats: emptyStats, accepted_zones: 0 }]
+    state.maps = { 'kb-engine': m }
+    render(<ArchitectureView />)
+
+    const chip = await screen.findByText('Разбор')
+    fireEvent.click(chip)
+
+    const frame = document.querySelector('iframe')
+    expect(frame).toBeTruthy()
+    // Именно /kb/, а не file:// и не путь на диске: маршрут отдаёт только то,
+    // что каталог называет, и это единственный способ открыть артефакт базы.
+    expect(frame?.getAttribute('src')).toBe('/kb/creations/projects/2026-08-15_x/x.html')
+  })
+})

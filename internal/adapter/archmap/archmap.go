@@ -39,6 +39,14 @@ type Map struct {
 	// Note — что карта говорит о себе самой: project_note у одной схемы,
 	// provenance.note у другой. По смыслу это одно и то же.
 	Note string `json:"note,omitempty"`
+	// Page — собственный разбор проекта: страница, написанная человеком, с
+	// рисованными диаграммами и тем, чего механическая карта сказать не умеет —
+	// что делалось по неделям, зачем каждая технология, где ошиблись. Путь ведёт
+	// в базу знаний, витрина открывает его маршрутом /kb/.
+	//
+	// Пустая строка означает «разбора нет», и раздел тогда не показывается вовсе:
+	// пустая вкладка читается как поломка, отсутствующая — как «здесь этого нет».
+	Page string `json:"page,omitempty"`
 	// Examples — чем карта иллюстрирует «не список модулей, а действия целиком».
 	// Живут в карте, а не в вёрстке: у каждой карты они свои, а вкладка одна.
 	Examples  []string `json:"examples"`
@@ -187,6 +195,7 @@ type rawMap struct {
 	Commit      string   `json:"commit"`
 	CheckedAt   string   `json:"checked_at"`
 	ProjectNote string   `json:"project_note"`
+	Page        string   `json:"page"`
 	Examples    []string `json:"examples"`
 	Provenance  struct {
 		Note      string            `json:"note"`
@@ -236,6 +245,7 @@ func Load(path string) (Map, error) {
 		Commit:        raw.Commit,
 		CheckedAt:     raw.CheckedAt,
 		Note:          firstNonEmpty(raw.ProjectNote, raw.Provenance.Note),
+		Page:          raw.Page,
 		Examples:      nonNil(raw.Examples),
 		RootsNote:     raw.Provenance.RootsNote,
 		Roots:         roots(raw.Provenance.Roots),
