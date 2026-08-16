@@ -68,29 +68,46 @@ export function AboutView({
 
       <div className="flex flex-col gap-8 xl:flex-row">
         {/* Ящики: структура — прямые углы, стопка с волосяными разделителями.
+            Стопка ДВОЙНАЯ, и это не украшение, а лечение пустоты: одной колонкой
+            два с половиной десятка категорий вдвое выше соседних карточек, и
+            рядом с нижней половиной списка не остаётся ничего. Две стопки по
+            тринадцать сходятся с правым столбцом по высоте. Ниже sm — одна
+            колонка: там столбец всё равно один.
             xl:self-start — только в ряду: по умолчанию flex тянет колонку до
-            высоты соседней, и рамка со списком категорий уезжала на всю длину
-            истории релизов справа, оставляя больше пустого места, чем самих
-            ящиков. В колоночной раскладке self-start сузил бы блок по
+            высоты соседней. В колоночной раскладке self-start сузил бы блок по
             содержимому, поэтому правило и стоит за брейкпоинтом. */}
-        <div className="min-w-0 flex-1 divide-y divide-outline-variant border border-outline-variant bg-surface-low xl:self-start">
-          {boxes.map(([cat, n]) => (
-            <button
-              key={cat}
-              type="button"
-              onClick={() => onPickCategory(cat)}
-              // Ключ уходит в подсказку, наверх — тоже ключ: фильтруется архив
-              // по нему, а читает человек название. Раньше на экране стоял ключ,
-              // хотя читаемое имя каталог несёт с собой и Архив его показывает.
-              title={`${cat} — открыть в архиве`}
-              className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-high"
-            >
-              <span className="truncate text-sm">{categoryLabel(cat, labels)}</span>
-              <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 font-mono text-xs font-bold text-white tabular-nums">
-                {n}
-              </span>
-            </button>
-          ))}
+        <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2 xl:self-start">
+          {[boxes.slice(0, Math.ceil(boxes.length / 2)), boxes.slice(Math.ceil(boxes.length / 2))].map(
+            (column, i) => (
+              <div
+                key={i}
+                // min-w-0 обязателен: элемент сетки по умолчанию не сжимается
+                // уже содержимого, и truncate у длинных названий переставал
+                // работать — на узком экране страница уезжала вбок на 1186px
+                // при окне в 420. У прежней одиночной стопки этого не было:
+                // она была обычным блоком, а не элементом сетки.
+                className="min-w-0 divide-y divide-outline-variant border border-outline-variant bg-surface-low"
+              >
+                {column.map(([cat, n]) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => onPickCategory(cat)}
+                    // Ключ уходит в подсказку, наверх — тоже ключ: фильтруется архив
+                    // по нему, а читает человек название. Раньше на экране стоял ключ,
+                    // хотя читаемое имя каталог несёт с собой и Архив его показывает.
+                    title={`${cat} — открыть в архиве`}
+                    className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left transition-colors hover:bg-surface-high"
+                  >
+                    <span className="truncate text-sm">{categoryLabel(cat, labels)}</span>
+                    <span className="shrink-0 rounded-full bg-secondary px-2.5 py-0.5 font-mono text-xs font-bold text-white tabular-nums">
+                      {n}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ),
+          )}
         </div>
 
         <aside className="shrink-0 space-y-4 xl:w-96">
@@ -139,48 +156,6 @@ export function AboutView({
             />
           </div>
 
-          {latest.length > 0 && (
-            <Card>
-              <Label>Что нового в базе</Label>
-              <span className="ml-2 font-mono text-[10px] text-on-surface-variant">из CHANGELOG.md</span>
-              <div className="mt-3 space-y-4">
-                {latest.map((r, i) => (
-                  <div key={r.version} className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="font-headline text-base font-bold">v{r.version}</span>
-                      {i === 0 && (
-                        <span className="rounded bg-secondary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase text-white">
-                          latest
-                        </span>
-                      )}
-                      <span className="ml-auto label">{r.date ?? ''}</span>
-                    </div>
-                    {r.tagline && <p className="text-xs italic text-on-surface-variant">{r.tagline}</p>}
-                    {Object.entries(r.sections).map(([name, items]) => (
-                      <div key={name}>
-                        <span className="label text-secondary">{name}</span>
-                        <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-on-surface-variant">
-                          {items.slice(0, 3).map((it, j) => (
-                            <li key={j}>{it.length > 160 ? `${it.slice(0, 160)}…` : it}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
-                  </div>
-                ))}
-              </div>
-              {all.length > 3 && (
-                <button
-                  type="button"
-                  onClick={() => setFullHistory((v) => !v)}
-                  className="mt-4 w-full rounded border border-outline-variant bg-surface-high py-2 font-label text-xs uppercase tracking-wider text-on-surface-variant transition-colors hover:text-on-surface"
-                >
-                  {fullHistory ? 'Свернуть историю' : `Показать всю историю (${all.length})`}
-                </button>
-              )}
-            </Card>
-          )}
-
           {/* Движок — вторая версионность, и раньше её на странице не было
               вовсе: версию сборки можно было узнать только из `kbengine
               version` в терминале. Своя история релизов у движка уже есть на
@@ -223,6 +198,55 @@ export function AboutView({
           </Card>
         </aside>
       </div>
+
+      {/* История версий шла третьей карточкой в правой колонке — и была вдвое
+          длиннее всего остального на странице. Из-за неё левый столбец с
+          категориями кончался примерно на трети, а дальше рядом с текстом
+          тянулось широкое пустое поле, которое дважды подряд прочиталось как
+          поломка. Длинная часть переехала ВНИЗ во всю ширину: пустоты не
+          остаётся, потому что нечему обрываться. Релизы идут сеткой — во всю
+          ширину строка списка иначе растянулась бы на пол-экрана. */}
+      {latest.length > 0 && (
+        <Card>
+          <Label>Что нового в базе</Label>
+          <span className="ml-2 font-mono text-[10px] text-on-surface-variant">из CHANGELOG.md</span>
+          <div className="mt-3 grid gap-8 md:grid-cols-2 xl:grid-cols-3">
+            {latest.map((r, i) => (
+              <div key={r.version} className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-headline text-base font-bold">v{r.version}</span>
+                  {i === 0 && (
+                    <span className="rounded bg-secondary px-1.5 py-0.5 font-label text-[9px] font-bold uppercase text-white">
+                      latest
+                    </span>
+                  )}
+                  <span className="ml-auto label">{r.date ?? ''}</span>
+                </div>
+                {r.tagline && <p className="text-xs italic text-on-surface-variant">{r.tagline}</p>}
+                {Object.entries(r.sections).map(([name, items]) => (
+                  <div key={name}>
+                    <span className="label text-secondary">{name}</span>
+                    <ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-on-surface-variant">
+                      {items.slice(0, 3).map((it, j) => (
+                        <li key={j}>{it.length > 160 ? `${it.slice(0, 160)}…` : it}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+          {all.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setFullHistory((v) => !v)}
+              className="mt-4 w-full rounded border border-outline-variant bg-surface-high py-2 font-label text-xs uppercase tracking-wider text-on-surface-variant transition-colors hover:text-on-surface"
+            >
+              {fullHistory ? 'Свернуть историю' : `Показать всю историю (${all.length})`}
+            </button>
+          )}
+        </Card>
+      )}
 
       {/* Редакторская секция исходника. Текст переписан под движок: старая
           «Автоматизация» описывала build_dashboard.py, которого здесь нет. */}
