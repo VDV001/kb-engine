@@ -685,7 +685,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("audit", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|links|age|all")
+	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|categories|links|age|all")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -702,7 +702,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	svc.WithArtefactFiles(artefacts)
 	selected, ok := selectAudits(*check, svc, time.Now())
 	if !ok {
-		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|links|age|all)\n", *check)
+		fmt.Fprintf(stderr, "audit: unknown --check %q (want outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|categories|links|age|all)\n", *check)
 		return 2
 	}
 
@@ -710,6 +710,14 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	for _, a := range selected {
 		findings, err := a.run()
 		if err != nil {
+			// «Сверять не с чем» не должно убивать остальные восемь проверок:
+			// каталог без meta.categories — это меньшая база, а не поломка. Но
+			// молчать тоже нельзя, иначе `all` выглядел бы полным. Когда проверку
+			// спросили поимённо, отказ остаётся отказом: человек просил именно её.
+			if errors.Is(err, audit.ErrNoDeclaredCategories) && *check == "all" {
+				fmt.Fprintf(stdout, "[%s] пропущена: каталог не объявляет ни одной категории — сверять не с чем\n", a.name)
+				continue
+			}
 			fmt.Fprintf(stderr, "audit: %v\n", err)
 			return 1
 		}
@@ -728,8 +736,25 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 		if s := linkCoverageLine(svc, time.Now()); s != "" {
 			fmt.Fprintln(stdout, s)
 		}
+		// Обратная сторона проверки категорий и намеренно не находка: объявленная
+		// категория без записей законна. Строкой — потому что находка на каждый
+		// пустой раздел приучила бы пролистывать те, что важны.
+		if s := unusedCategoriesLine(svc); s != "" {
+			fmt.Fprintln(stdout, s)
+		}
 	}
 	return 0
+}
+
+// unusedCategoriesLine называет объявленные категории, которых нет ни у одной
+// записи. Пустая строка означает, что каждая объявленная категория заполнена,
+// либо что сверять не с чем — второе уже сказано строкой самой проверки.
+func unusedCategoriesLine(svc *audit.Service) string {
+	unused, err := svc.UnusedCategories()
+	if err != nil || len(unused) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("категории: объявлено, но не используется — %s", strings.Join(unused, ", "))
 }
 
 // linkCoverageLine summarises what the base does not know about its own links.
@@ -767,6 +792,7 @@ func selectAudits(check string, svc *audit.Service, now time.Time) ([]namedAudit
 		{"versions", svc.VersionDriftIssues},
 		{"files", svc.MissingFileIssues},
 		{"batch", svc.BatchConsistencyIssues},
+		{"categories", svc.UndeclaredCategoryIssues},
 		{"age", func() ([]audit.Finding, error) { return svc.AgeCandidates(now) }},
 	}
 	if check == "all" {

@@ -59,6 +59,48 @@ describe('AboutView', () => {
     fireEvent.click(screen.getByText('AI-агенты и MCP'))
     expect(picked).toEqual(['ai-agents-tools'])
   })
+
+  // Проверки ниже — про раскладку, но заданы структурой: jsdom высот не считает,
+  // а разошедшиеся по высоте колонки и были дефектом. Оба утверждения держат
+  // причину, а не следствие.
+  //
+  // История версий вдвое длиннее всего остального на странице. Пока она стояла
+  // третьей карточкой в боковой колонке, левый столбец кончался на трети, и
+  // пустое поле рядом дважды подряд прочиталось как поломка.
+  it('история версий стоит под колонками, а не в боковой', async () => {
+    changelog.value = {
+      current_version: '0.23.1',
+      current_date: '2026-07-27',
+      current_tagline: '',
+      releases: [{ version: '0.23.1', date: '2026-07-27', tagline: '', sections: { Добавлено: ['пункт'] } }],
+    }
+    const { container } = render(<AboutView stats={stats} onPickCategory={() => {}} />)
+    const heading = await screen.findByText('Что нового в базе')
+    const aside = container.querySelector('aside')
+    expect(aside).not.toBeNull()
+    expect(aside?.contains(heading)).toBe(false)
+  })
+
+  // Ящики идут двумя стопками: одной колонкой два с половиной десятка категорий
+  // снова оказались бы вдвое выше соседа. Заодно проверяется арифметика деления
+  // пополам — категория не должна ни потеряться, ни удвоиться.
+  it('делит категории на две стопки, ничего не теряя', () => {
+    const many = {
+      ...stats,
+      by_category: { a: 5, b: 4, c: 3, d: 2, e: 1 },
+      category_labels: { a: 'Первая', b: 'Вторая', c: 'Третья', d: 'Четвёртая', e: 'Пятая' },
+    }
+    const { container } = render(<AboutView stats={many} onPickCategory={() => {}} />)
+    const stacks = container.querySelectorAll('div.divide-y.border')
+    expect(stacks.length).toBe(2)
+    const names = Array.from(stacks).flatMap((s) =>
+      Array.from(s.querySelectorAll('button')).map((b) => b.textContent),
+    )
+    expect(names.length).toBe(5)
+    for (const label of ['Первая', 'Вторая', 'Третья', 'Четвёртая', 'Пятая']) {
+      expect(names.filter((n) => n?.includes(label)).length).toBe(1)
+    }
+  })
 })
 
 // Go подставляет собственную псевдоверсию, когда бинарь собран не из тега:
