@@ -74,5 +74,18 @@ dep-age:
 release-scope tag:
     ./scripts/gates/release-scope.sh {{tag}}
 
-# Full gate, same as CI
-ci: tidy lint test-race cover-gate gates
+# Состав CI: что воспроизводится здесь, а что нет (ничего не запускает)
+ci-parity:
+    ./scripts/gates/ci-parity.sh
+
+# Список джоб берётся из .github/workflows, а не переписан сюда: подпись
+# «same as CI» стояла над рецептом, покрывавшим три джобы из двенадцати.
+# ⚠️ Зелёный ответ НЕ равен зелёному CI: terraform, k8s и CodeQL здесь не
+# воспроизводятся — гейт называет их вслух.
+# Всё, что CI проверяет и что можно прогнать здесь
+ci:
+    ./scripts/gates/ci-parity.sh --self-test
+    ./scripts/gates/ci-parity.sh --run
+
+# Быстрая проверка перед коммитом. Это НЕ состав CI: смотри `just ci-parity`.
+quick: tidy lint test-race cover-gate gates

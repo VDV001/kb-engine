@@ -156,6 +156,19 @@ jobs:
       - name: Changelog scope gate self-test
         run: ./scripts/gates/changelog-scope.sh --self-test
 
+  ci-parity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Сначала проверка проверки: гейт обязан падать и на джобе, приехавшей в
+      # CI мимо таблицы, и на записи, чья джоба из CI исчезла.
+      - name: Gate self-test
+        run: ./scripts/gates/ci-parity.sh --self-test
+
+      - name: Local run covers CI
+        run: ./scripts/gates/ci-parity.sh
+
   arch-map:
     runs-on: ubuntu-latest
     steps:
