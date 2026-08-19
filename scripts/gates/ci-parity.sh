@@ -158,7 +158,30 @@ report() { # печатает состав; код 1, если таблица р
 	local go_local ci_spec
 	go_local=$(go version 2>/dev/null | awk '{print $3}')
 	ci_spec=$(awk -F'"' '/GO_VERSION:/ {print $2; exit}' "$WORKFLOWS/ci.yml" 2>/dev/null)
-	[[ -n $go_local ]] && echo "инструменты: локально $go_local · CI ставит последний патч ${ci_spec:-?} (check-latest)"
+	if [[ -n $go_local ]]; then
+		echo "инструменты: локально $go_local · CI ставит последний патч ${ci_spec:-?} (check-latest)"
+		# Разница в патче — не косметика: 19.08 локальный go1.26.5 давал шесть
+		# достижимых уязвимостей stdlib, а CI на свежем патче был зелёным. Пока
+		# отставание не названо, оно читается как «у меня что-то краснеет».
+		# Спрашиваем go.dev, а не держим список в скрипте: список устареет.
+		# Ответ забирается целиком, и только потом разбирается. Конвейер
+		# curl | awk с ранним exit валит curl по SIGPIPE, а pipefail делает из
+		# этого падение всего гейта — проверено, код 23 при нормальном на вид выводе.
+		local body latest
+		body=$(curl -sf -m 5 "https://go.dev/dl/?mode=json" 2>/dev/null || true)
+		latest=$(printf '%s' "$body" |
+			awk -v br="${ci_spec:-}" '
+				found { next }
+				/"version": "go/ {
+					v = $2; gsub(/[",]/, "", v)
+					if (br == "" || index(v, "go" br ".") == 1) { print v; found = 1 }
+				}' || true)
+		if [[ -z $latest ]]; then
+			echo "  (свежесть патча не проверена: go.dev не ответил)"
+		elif [[ $latest != "$go_local" ]]; then
+			echo "  ⚠️ вышел $latest — локальная цепочка отстаёт, govulncheck здесь краснее, чем в CI"
+		fi
+	fi
 	echo
 	echo "воспроизводится локально — ${#local_jobs[@]}"
 	local row
