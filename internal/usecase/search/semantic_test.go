@@ -82,6 +82,17 @@ func TestIndex_Nearest_dimensionMismatch(t *testing.T) {
 	}
 }
 
+// Объявленная размерность расходится с содержимым — и это НЕ то же самое, что
+// разная длина векторов: длины совпадают, поэтому косинус посчитается и выдаст
+// правдоподобное число. Ловится только сверкой с тем, что индекс о себе
+// заявил. Тот же класс, что «объявленный диапазон xlsx против настоящего».
+func TestIndex_Nearest_declaredDimsDisagreeWithContent(t *testing.T) {
+	ix := search.Index{Model: "тестовая", Dims: 3, Vectors: map[int]search.Vector{10: {1, 0}}}
+	if got := ix.Nearest(search.Vector{1, 0}, 5, 0.1); len(got) != 0 {
+		t.Errorf("индекс объявил 3 измерения, а хранит 2 — ответ обязан быть пустым, получено %+v", got)
+	}
+}
+
 // Semantic — три ответа, а не два: нашлось · не нашлось · слоя нет.
 func TestSemantic_threeAnswers(t *testing.T) {
 	ix := search.Index{Model: "тестовая", Dims: 2, Vectors: map[int]search.Vector{10: {1, 0}}}
