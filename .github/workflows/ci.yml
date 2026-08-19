@@ -107,6 +107,22 @@ jobs:
       - name: Dependency age gate
         run: ./scripts/gates/dep-age.sh "${{ github.event.pull_request.base.sha }}"
 
+  changelog-scope:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # Гейт живёт в pre-push, то есть на машине разработчика, и до сих пор
+      # никто не проверял, что его правило вообще работает. Самопроверка идёт
+      # по настоящим коммитам истории и требует ОБЕИХ сторон: падать на PR
+      # #223, где новая джоба CI прошла мимо журнала, и молчать на коммите,
+      # трогающем только тесты.
+      - name: Changelog scope gate self-test
+        run: ./scripts/gates/changelog-scope.sh --self-test
+
   arch-map:
     runs-on: ubuntu-latest
     steps:
