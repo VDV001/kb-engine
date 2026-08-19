@@ -985,6 +985,66 @@
       "sources": [
         "internal/domain/translit.go:19"
       ]
+    },
+    {
+      "id": "cmd-search",
+      "title": "search",
+      "subtitle": "поиск командой, со смысловым слоем",
+      "layer": "commands",
+      "kind": "service",
+      "sources": [
+        "cmd/kbengine/search.go:49"
+      ]
+    },
+    {
+      "id": "uc-semantic",
+      "title": "search.Semantic",
+      "subtitle": "близость по смыслу, три ответа",
+      "layer": "usecase",
+      "kind": "service",
+      "sources": [
+        "internal/usecase/search/semantic.go:113"
+      ]
+    },
+    {
+      "id": "adp-searchindex",
+      "title": "searchindex",
+      "subtitle": "векторный индекс рядом с каталогом",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/searchindex/store.go:43"
+      ]
+    },
+    {
+      "id": "adp-embedhttp",
+      "title": "embedhttp",
+      "subtitle": "вектор запроса у внешней службы",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/embedhttp/client.go:39"
+      ]
+    },
+    {
+      "id": "file-searchindex",
+      "title": "search-index.json",
+      "subtitle": "производный, несёт имя модели и размерность",
+      "layer": "storage",
+      "kind": "data",
+      "sources": [
+        "internal/adapter/searchindex/store.go:35"
+      ]
+    },
+    {
+      "id": "ext-embedder",
+      "title": "служба эмбеддингов",
+      "subtitle": "снаружи движка, необязательна",
+      "layer": "external",
+      "kind": "external",
+      "sources": [
+        "internal/adapter/embedhttp/client.go:39"
+      ]
     }
   ],
   "flows": [
@@ -3558,6 +3618,83 @@
           "source": "internal/usecase/search/match.go:108",
           "unverified": false,
           "symbol": "nearAnyWord"
+        }
+      ]
+    },
+    {
+      "id": "search-semantic",
+      "title": "Владелец ищет по смыслу, а не по словам",
+      "summary": "kbengine search → текстовые слои всегда · индекс и внешняя служба, если заданы · три ответа плюс отказ",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "cmd-search",
+          "call": "kbengine search --q",
+          "detail": "cmd/kbengine/search.go:49 отдельная команда, а не только экран терминала: слой, который зовут лишь интерактивно, нечем проверить в прогоне — «написано и никто не зовёт» этот движок ловил у себя трижды за август",
+          "source": "cmd/kbengine/search.go:49",
+          "unverified": false,
+          "symbol": "runSearch"
+        },
+        {
+          "n": 2,
+          "from": "cmd-search",
+          "to": "adp-searchindex",
+          "call": "searchindex.Load",
+          "detail": "internal/adapter/searchindex/store.go:43 индекс отдельным файлом: он производный, весит на два порядка больше записей и пересобирается целиком",
+          "source": "internal/adapter/searchindex/store.go:43",
+          "unverified": false,
+          "symbol": "Load"
+        },
+        {
+          "n": 3,
+          "from": "adp-searchindex",
+          "to": "file-searchindex",
+          "call": "чтение векторов",
+          "detail": "internal/adapter/searchindex/store.go:35 имя модели и размерность лежат РЯДОМ с векторами: снятый другой моделью индекс состоит из таких же чисел и молча даёт правдоподобный шум",
+          "source": "internal/adapter/searchindex/store.go:35",
+          "unverified": false,
+          "symbol": "file"
+        },
+        {
+          "n": 4,
+          "from": "cmd-search",
+          "to": "adp-embedhttp",
+          "call": "Embed(запрос)",
+          "detail": "internal/adapter/embedhttp/client.go:39 вектор запроса берётся у ВНЕШНЕЙ службы по HTTP: модель внутри бинаря увеличила бы четыре зависимости и 13,5 МБ на порядок ради одного запроса из двенадцати",
+          "source": "internal/adapter/embedhttp/client.go:39",
+          "unverified": false,
+          "symbol": "Embed"
+        },
+        {
+          "n": 5,
+          "from": "adp-embedhttp",
+          "to": "ext-embedder",
+          "call": "POST /api/embeddings",
+          "detail": "internal/adapter/embedhttp/client.go:39 протокол ollama; пустой вектор считается поломкой, а не ответом — молча вернув его, поиск ничего не найдёт, и человек прочитает это как «в базе такого нет»",
+          "source": "internal/adapter/embedhttp/client.go:39",
+          "unverified": false,
+          "symbol": "Embed"
+        },
+        {
+          "n": 6,
+          "from": "cmd-search",
+          "to": "uc-semantic",
+          "call": "Semantic.Search",
+          "detail": "internal/usecase/search/semantic.go:113 три ответа вместо двух — нашлось, не нашлось, слоя нет; отказ службы отдельным четвёртым",
+          "source": "internal/usecase/search/semantic.go:113",
+          "unverified": false,
+          "symbol": "Search"
+        },
+        {
+          "n": 7,
+          "from": "uc-semantic",
+          "to": "cmd-search",
+          "call": "Index.Nearest",
+          "detail": "internal/usecase/search/semantic.go:73 порог обязателен и передаётся вызывающим: без него ближайшие находятся всегда, и запрос про несуществующее вернёт правдоподобный список",
+          "source": "internal/usecase/search/semantic.go:73",
+          "unverified": false,
+          "symbol": "Nearest"
         }
       ]
     }
