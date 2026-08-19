@@ -151,6 +151,14 @@ report() { # печатает состав; код 1, если таблица р
 	local n_files
 	n_files=$(find "$WORKFLOWS" -maxdepth 1 -name '*.yml' | wc -l | tr -d ' ')
 	echo "состав CI взят с диска: $WORKFLOWS — файлов $n_files, джоб $(echo "$disk" | grep -c . || true)"
+
+	# Прогон отличается от CI не только составом джоб, но и тем, ЧЕМ он их гонит.
+	# CI ставит Go по GO_VERSION с check-latest, то есть свежайший патч; локальная
+	# цепочка живёт своей жизнью, и govulncheck здесь краснее не из-за кода.
+	local go_local ci_spec
+	go_local=$(go version 2>/dev/null | awk '{print $3}')
+	ci_spec=$(awk -F'"' '/GO_VERSION:/ {print $2; exit}' "$WORKFLOWS/ci.yml" 2>/dev/null)
+	[[ -n $go_local ]] && echo "инструменты: локально $go_local · CI ставит последний патч ${ci_spec:-?} (check-latest)"
 	echo
 	echo "воспроизводится локально — ${#local_jobs[@]}"
 	local row
@@ -238,16 +246,35 @@ case ${1:-} in
 	report
 	echo
 	echo "── выполняю воспроизводимое ──"
+	# Список забирается в массив ДО цикла, а stdin каждой джобы закрыт. Иначе
+	# первая же команда, читающая stdin, съедает остаток списка: прогон молча
+	# обрывался после govulncheck и возвращал ноль, не тронув gitleaks и docker.
+	planned=()
 	while read -r key; do
 		[[ -z $key ]] && continue
 		entry=$(lookup "$key")
-		[[ ${entry%%|*} == local ]] || continue
+		[[ ${entry%%|*} == local ]] && planned+=("$key")
+	done < <(jobs_on_disk)
+
+	ran=0
+	for key in "${planned[@]}"; do
 		echo
 		echo "▶ $key"
-		run_job "$key"
-	done < <(jobs_on_disk)
+		run_job "$key" </dev/null
+		# Не ((ran++)): постинкремент возвращает СТАРОЕ значение, на нуле это код 1,
+		# и set -e убивает прогон после первой же джобы.
+		ran=$((ran + 1))
+	done
+
+	# Отчёт об успехе обязан совпасть с планом. Прогон, оборвавшийся на середине,
+	# и прогон, прошедший целиком, снаружи выглядят одинаково — пока их не сверить.
+	if ((ran != ${#planned[@]})); then
+		echo
+		echo "❌ выполнено $ran из ${#planned[@]} — прогон оборвался, зелёным его считать нельзя"
+		exit 1
+	fi
 	echo
-	echo "✓ локальные джобы прошли; невоспроизводимые перечислены выше"
+	echo "✓ выполнено $ran из ${#planned[@]} локальных джоб; невоспроизводимые перечислены выше"
 	;;
 *) report ;;
 esac
