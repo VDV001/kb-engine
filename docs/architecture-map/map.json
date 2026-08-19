@@ -4,7 +4,7 @@
   "владелец записывает трату",
   "страница сама говорит, что отстала"
  ],
- "commit": "b6a64a4",
+ "commit": "PENDING",
  "layers": [
   {
    "id": "actors",
@@ -905,6 +905,26 @@
    "sources": [
     "cmd/kbengine/main.go:98"
    ]
+  },
+  {
+   "id": "cmd-fin-spelling",
+   "title": "fin spelling",
+   "subtitle": "расхождения в написании имён",
+   "layer": "commands",
+   "kind": "service",
+   "sources": [
+    "cmd/kbengine/fin_spelling.go:20"
+   ]
+  },
+  {
+   "id": "uc-spelling",
+   "title": "finance.SpellingIssues",
+   "subtitle": "три признака расхождения",
+   "layer": "usecase",
+   "kind": "service",
+   "sources": [
+    "internal/usecase/finance/spelling.go:40"
+   ]
   }
  ],
  "flows": [
@@ -919,7 +939,7 @@
      "to": "cmd-fin",
      "call": "kbengine fin add --amount --cat --account",
      "detail": "runFinAdd разбирает флаги в cmd/kbengine/fin.go:123; --account это счёт, --source это способ фиксации, и путать их нельзя",
-     "source": "cmd/kbengine/fin.go:125",
+     "source": "cmd/kbengine/fin.go:128",
      "unverified": false,
      "symbol": "runFinAdd"
     },
@@ -3277,6 +3297,63 @@
      "source": "cmd/kbengine/runlog.go:26",
      "unverified": false,
      "symbol": "recordRun"
+    }
+   ]
+  },
+  {
+   "id": "spelling-check",
+   "title": "Поиск мест и счетов, записанных двумя способами",
+   "summary": "fin spelling → журнал и словарь → группировка по транслитерации → обе формы с числами",
+   "steps": [
+    {
+     "n": 1,
+     "from": "owner",
+     "to": "cmd-fin-spelling",
+     "call": "kbengine fin spelling --ledger",
+     "detail": "cmd/kbengine/fin_spelling.go:20 живёт под fin, а не под audit: у аудита обязателен --catalog, а этой проверке каталог не нужен вовсе",
+     "source": "cmd/kbengine/fin_spelling.go:20",
+     "unverified": false,
+     "symbol": "runFinSpelling"
+    },
+    {
+     "n": 2,
+     "from": "cmd-fin-spelling",
+     "to": "ad-financevocab",
+     "call": "financevocab.Load",
+     "detail": "cmd/kbengine/fin_spelling.go:42 читает словарь рядом с журналом; непрочитанный словарь называется вслух — без него признак «канон против данных» не проверяется",
+     "source": "cmd/kbengine/fin_spelling.go:42",
+     "unverified": false,
+     "symbol": "Load"
+    },
+    {
+     "n": 3,
+     "from": "cmd-fin-spelling",
+     "to": "uc-spelling",
+     "call": "finance.SpellingIssues",
+     "detail": "internal/usecase/finance/spelling.go:40 собирает счётчики мест и счетов из записей журнала",
+     "source": "internal/usecase/finance/spelling.go:40",
+     "unverified": false,
+     "symbol": "SpellingIssues"
+    },
+    {
+     "n": 4,
+     "from": "uc-spelling",
+     "to": "cmd-fin-spelling",
+     "call": "translitKey поверх FoldName",
+     "detail": "internal/usecase/finance/spelling.go:148 переводит кириллицу в латиницу, поэтому «Бургер Кинг» и «Burger King» попадают в одну группу; «ц» становится «ts», и пары вроде Пицца/Pizza таблица не свяжет",
+     "source": "internal/usecase/finance/spelling.go:148",
+     "unverified": false,
+     "symbol": "translitKey"
+    },
+    {
+     "n": 5,
+     "from": "ad-financevocab",
+     "to": "cmd-fin-spelling",
+     "call": "vocabularyDrift",
+     "detail": "internal/usecase/finance/spelling.go:98 ловит канон словаря, которого в журнале нет ни разу: словарь ПИШЕТ, и правка одних исторических записей отменяется первой же покупкой",
+     "source": "internal/usecase/finance/spelling.go:98",
+     "unverified": false,
+     "symbol": "vocabularyDrift"
     }
    ]
   }
