@@ -78,7 +78,7 @@ func (m Matcher) Matches(haystack, query string) bool {
 }
 
 func (m Matcher) allWordsMatch(haystack, query string) bool {
-	for _, w := range strings.Fields(query) {
+	for w := range strings.FieldsSeq(query) {
 		if !m.wordMatches(haystack, w) {
 			return false
 		}
