@@ -993,7 +993,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/search.go:31"
+        "cmd/kbengine/search.go:49"
       ]
     },
     {
@@ -3631,8 +3631,8 @@
           "from": "owner",
           "to": "cmd-search",
           "call": "kbengine search --q",
-          "detail": "cmd/kbengine/search.go:31 отдельная команда, а не только экран терминала: слой, который зовут лишь интерактивно, нечем проверить в прогоне — «написано и никто не зовёт» этот движок ловил у себя трижды за август",
-          "source": "cmd/kbengine/search.go:31",
+          "detail": "cmd/kbengine/search.go:49 отдельная команда, а не только экран терминала: слой, который зовут лишь интерактивно, нечем проверить в прогоне — «написано и никто не зовёт» этот движок ловил у себя трижды за август",
+          "source": "cmd/kbengine/search.go:49",
           "unverified": false,
           "symbol": "runSearch"
         },
