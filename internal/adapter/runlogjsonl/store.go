@@ -85,7 +85,7 @@ func Append(path string, rec domain.RunRecord) error {
 		if err != nil {
 			return fmt.Errorf("runlog: не открыть журнал: %w", err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if _, err := f.Write(append(raw, '\n')); err != nil {
 			return fmt.Errorf("runlog: не записать прогон: %w", err)
 		}
@@ -108,7 +108,7 @@ func Load(path string, now func() time.Time) ([]domain.RunRecord, int, error) {
 	if err != nil {
 		return nil, 0, fmt.Errorf("runlog: не открыть журнал: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var (
 		recs       []domain.RunRecord

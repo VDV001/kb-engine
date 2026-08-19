@@ -170,7 +170,7 @@ func TestLoad_countsUnreadableLinesInsteadOfGivingUp(t *testing.T) {
 		`{"command":"drift","args":[],"started_at":"2026-08-19T11:00:00Z","took_ms":10,"exit_code":999}` + "\n"); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	f.Close()
+	_ = f.Close()
 
 	recs, unreadable, err := runlogjsonl.Load(path, clock)
 	if err != nil {
