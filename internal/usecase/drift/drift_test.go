@@ -150,15 +150,33 @@ func TestReport_undecidableIsCountedSeparately(t *testing.T) {
 // catalog cannot tell a fresh check from one made in May.
 func TestScan_stampsEveryResult(t *testing.T) {
 	when := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
-	c := catalogOf(t, entry(t, 1, "https://example.com/x"))
-	checker := stubChecker{codes: map[string]int{"https://example.com/x": 200}}
+	// Каталог из ТРЁХ записей, а не из одной: на одной записи «каждый» и
+	// «первый» — одно и то же, и штамп, проставленный только первому
+	// результату, прошёл бы проверку (issue #229). Три разных кода ответа
+	// заодно закрывают догадку, что штамп ставится лишь удачным.
+	urls := map[string]int{
+		"https://example.com/a": 200,
+		"https://example.com/b": 301,
+		"https://example.com/c": 404,
+	}
+	c := catalogOf(t,
+		entry(t, 1, "https://example.com/a"),
+		entry(t, 2, "https://example.com/b"),
+		entry(t, 3, "https://example.com/c"),
+	)
 
-	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(t.Context(), when)
+	rep, err := drift.NewService(fixedLoader{c}, stubChecker{codes: urls}).Scan(t.Context(), when)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
 	}
-	if !rep.Results[0].CheckedAt.Equal(when) {
-		t.Fatalf("CheckedAt = %v, want %v", rep.Results[0].CheckedAt, when)
+	if len(rep.Results) != len(urls) {
+		t.Fatalf("результатов %d, ждали %d — часть записей не проверена вовсе",
+			len(rep.Results), len(urls))
+	}
+	for _, r := range rep.Results {
+		if !r.CheckedAt.Equal(when) {
+			t.Errorf("%s: CheckedAt = %v, ждали %v", r.URL, r.CheckedAt, when)
+		}
 	}
 }
 
