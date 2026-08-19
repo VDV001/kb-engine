@@ -41,7 +41,7 @@ import (
 var version = "dev"
 
 func main() {
-	os.Exit(runWithStdin(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
+	os.Exit(runLogged(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
 // run dispatches a subcommand and returns the process exit code. It takes its
