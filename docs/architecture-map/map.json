@@ -3437,8 +3437,8 @@
           "from": "uc-runs",
           "to": "cmd-runs",
           "call": "slices.SortFunc по LastRun",
-          "detail": "internal/usecase/runs/report.go:111 давно не запускавшиеся сверху — так «давно» видно без порога; выдуманный порог красит зелёное в красное и за две недели учит не смотреть на предупреждения",
-          "source": "internal/usecase/runs/report.go:111",
+          "detail": "internal/usecase/runs/report.go:96 давно не запускавшиеся сверху — так «давно» видно без порога; выдуманный порог красит зелёное в красное и за две недели учит не смотреть на предупреждения",
+          "source": "internal/usecase/runs/report.go:96",
           "unverified": false,
           "symbol": "SortFunc"
         },

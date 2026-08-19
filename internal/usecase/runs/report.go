@@ -78,23 +78,8 @@ func Build(j Journal, known []string, now time.Time) (Report, error) {
 
 	r := Report{Exists: exists, Total: len(recs), Unreadable: unreadable}
 
-	byName := map[string]CommandStat{}
-	for _, rec := range recs {
-		if r.Since.IsZero() || rec.StartedAt().Before(r.Since) {
-			r.Since = rec.StartedAt()
-		}
-		s := byName[rec.Command()]
-		s.Name = rec.Command()
-		s.Runs++
-		if rec.ExitCode() != 0 {
-			s.Failures++
-		}
-		if s.LastRun.IsZero() || rec.StartedAt().After(s.LastRun) {
-			s.LastRun = rec.StartedAt()
-			s.LastCode = rec.ExitCode()
-		}
-		byName[rec.Command()] = s
-	}
+	byName, since := aggregate(recs)
+	r.Since = since
 	if !r.Since.IsZero() {
 		r.Span = now.Sub(r.Since)
 	}
@@ -123,4 +108,31 @@ func Build(j Journal, known []string, now time.Time) (Report, error) {
 	}
 	slices.Sort(r.NeverRan)
 	return r, nil
+}
+
+// aggregate сводит записи по командам и отдаёт момент самой ранней из них.
+//
+// Горизонт считается здесь же, одним проходом: отдельный проход по тем же
+// записям ради одного минимума разошёлся бы с этим, стоило кому-нибудь
+// отфильтровать записи в одном месте и забыть в другом.
+func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
+	byName := map[string]CommandStat{}
+	var since time.Time
+	for _, rec := range recs {
+		if since.IsZero() || rec.StartedAt().Before(since) {
+			since = rec.StartedAt()
+		}
+		s := byName[rec.Command()]
+		s.Name = rec.Command()
+		s.Runs++
+		if rec.ExitCode() != 0 {
+			s.Failures++
+		}
+		if s.LastRun.IsZero() || rec.StartedAt().After(s.LastRun) {
+			s.LastRun = rec.StartedAt()
+			s.LastCode = rec.ExitCode()
+		}
+		byName[rec.Command()] = s
+	}
+	return byName, since
 }

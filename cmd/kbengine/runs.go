@@ -91,10 +91,9 @@ func printReport(w io.Writer, path string, r runs.Report, now time.Time) {
 	}
 
 	fmt.Fprintf(w, "журнал прогонов: %s\n", path)
-	switch {
-	case r.Total == 0:
+	if r.Total == 0 {
 		fmt.Fprintln(w, "журнал заведён, но в нём ни одного прогона.")
-	default:
+	} else {
 		fmt.Fprintf(w, "ведётся с %s (%s) · записей %d\n",
 			r.Since.Format("02.01.2006"), ago(r.Since, now), r.Total)
 	}
