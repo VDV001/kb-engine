@@ -93,6 +93,24 @@ func Append(path string, rec domain.RunRecord) error {
 	})
 }
 
+// Exists reports whether the journal file is on disk.
+//
+// Вопрос отдельный от Load намеренно: Load отдаёт ноль записей и когда файла
+// нет, и когда он пуст, а это разные ответы. «Журнала нет» означает, что
+// движок его ни разу не писал — старая сборка или первый запуск; «журнал пуст»
+// означает, что писал и команд не было. Свести их в один ноль значит потерять
+// ровно то различие, ради которого журнал заведён.
+func Exists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("runlog: не проверить журнал: %w", err)
+	}
+	return true, nil
+}
+
 // Load reads the journal, returning the valid records and how many lines it
 // could not read.
 //
