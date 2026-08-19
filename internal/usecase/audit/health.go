@@ -13,6 +13,15 @@ package audit
 // two places until those are folded into one. Not done here because the API
 // contract is what the dashboard is built on, and changing it is a separate
 // piece of work from teaching the terminal to show health at all.
+// ⚠️ Health — ЭКРАННАЯ СВОДКА, а не весь аудит, и это разные множества.
+// `audit --check all` прогоняет десять проверок; сюда входят четыре из них
+// (outdated, canonical, supersession, links) плюс дубли, которых в `all` нет
+// вовсе — их считает отдельная команда `dedup`. Не входят: canonical-health,
+// integrity, versions, batch, files, categories, age.
+//
+// Сказано вслух намеренно (issue #229): человек, глядящий на чистый экран
+// здоровья, иначе решит, что видел весь аудит, — а «проверка ничего не нашла»
+// и «проверку сюда не позвали» с экрана выглядят одинаково.
 type Health struct {
 	Outdated     []Finding
 	Canonical    []Finding
