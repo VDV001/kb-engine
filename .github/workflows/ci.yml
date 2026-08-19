@@ -107,6 +107,39 @@ jobs:
       - name: Dependency age gate
         run: ./scripts/gates/dep-age.sh "${{ github.event.pull_request.base.sha }}"
 
+  timezones:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Крайние пояса, а не «пара разных»: вместе UTC+14 и UTC-11 покрывают
+        # сутки целиком, поэтому в любой час хотя бы один из них видит дату,
+        # отличную от UTC. Раннеры GitHub живут в UTC, и до этой джобы ни один
+        # прогон движка не случался в зоне, где местный день другой.
+        tz: ["Pacific/Kiritimati", "Pacific/Midway"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - uses: ./.github/actions/frontend-dist
+
+      # Сначала проверка проверки: подсаживается настоящий дефект класса
+      # v0.18.0 («сегодня» в UTC вместо местной зоны), и матрица обязана его
+      # поймать, оставшись зелёной в UTC. Без этого шага «тесты прошли в
+      # Pacific/Midway» не доказывает, что зона вообще влияла на результат.
+      - name: Timezone matrix self-test
+        run: ./scripts/gates/tz-matrix.sh --self-test
+
+      - name: Test in ${{ matrix.tz }}
+        env:
+          TZ: ${{ matrix.tz }}
+        run: go test ./... -count=1
+
   changelog-scope:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
