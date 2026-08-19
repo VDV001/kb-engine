@@ -1,0 +1,80 @@
+package search_test
+
+import (
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/search"
+)
+
+// Набор приёмки — запросы, на которых поиск подстрокой промахивается начисто.
+// Взяты не из головы: каждый прогнан по живому каталогу, и «нынешний поиск»
+// вернул по ним ноль записей при том, что тему база знает (kubernetes — 10
+// записей, docker — 18, промпт — 42, anthropic — 63).
+var dict = search.Dictionary{
+	"конкурентность":       {"concurrency"},
+	"наблюдаемость":        {"observability"},
+	"сборка мусора":        {"garbage collection"},
+	"очереди сообщений":    {"message queue", "kafka"},
+	"клод":                 {"claude"},
+	"безопасность агентов": {"agent security"},
+}
+
+func TestMatches(t *testing.T) {
+	tests := []struct {
+		name     string
+		haystack string
+		query    string
+		want     bool
+		why      string
+	}{
+		{"подстрока как была", "kubernetes и docker в проде", "docker", true,
+			"основной путь не должен меняться"},
+		{"несколько слов через И", "kubernetes и docker в проде", "docker прод", true, ""},
+		{"слово, которого нет", "kubernetes и docker в проде", "postgres", false, ""},
+
+		{"кириллицей латинский термин", "kubernetes для начинающих", "кубернетес", true,
+			"транслитерация: побуквенно совпадает"},
+		{"опечатка в латинице", "kubernetes для начинающих", "kubernets", true,
+			"расстояние редактирования 1"},
+		{"опечатка в кириллице", "промпт-инженерия на практике", "промт", true, ""},
+		{"кириллица плюс опечатка", "docker и compose", "докер", true,
+			"транслит даёт doker, до docker одна правка"},
+
+		{"перевод термина", "Go concurrency patterns", "конкурентность", true,
+			"словарь синонимов"},
+		{"перевод словосочетанием", "Deep dive into garbage collection", "сборка мусора", true,
+			"словарь работает и на фразе, а не только на слове"},
+		{"синоним ведёт на несколько форм", "Kafka и партиции", "очереди сообщений", true, ""},
+
+		// Отрицательный контроль: слои не должны находить что попало. Короткое
+		// слово правится в любое другое, поэтому расстояние на нём не работает.
+		{"короткое слово не правится", "kubernetes для начинающих", "kot", false,
+			"три буквы — до чего угодно две правки"},
+		{"далёкое слово не находится", "Go concurrency patterns", "постгрес", false, ""},
+		{"чужая тема не находится по словарю", "Kafka и партиции", "конкурентность", false, ""},
+	}
+
+	m := search.New(dict)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := m.Matches(tt.haystack, tt.query)
+			if got != tt.want {
+				t.Errorf("Matches(%q, %q) = %v, ожидалось %v — %s",
+					tt.haystack, tt.query, got, tt.want, tt.why)
+			}
+		})
+	}
+}
+
+// Без словаря поиск обязан работать: отсутствие файла не имеет права ломать
+// основной путь. Ломается только слой перевода, и молчать об этом нельзя —
+// но это забота вызывающего, а не сравнения.
+func TestMatches_withoutDictionary(t *testing.T) {
+	m := search.New(nil)
+	if !m.Matches("kubernetes для начинающих", "кубернетес") {
+		t.Error("без словаря транслитерация обязана работать")
+	}
+	if m.Matches("Go concurrency patterns", "конкурентность") {
+		t.Error("без словаря перевод работать не может — и не должен притворяться")
+	}
+}
