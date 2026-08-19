@@ -67,5 +67,12 @@ gates-full:
 dep-age:
     ./scripts/gates/dep-age.sh
 
+# Сверка состава выпуска с историей: какие поведенческие коммиты после тега не
+# оставили записи в CHANGELOG. Обязательный шаг перед релизом — pre-push стоит
+# на машине разработчика и ветку, ушедшую мимо него, уже не догонит.
+#   just release-scope v0.22.0
+release-scope tag:
+    ./scripts/gates/release-scope.sh {{tag}}
+
 # Full gate, same as CI
 ci: tidy lint test-race cover-gate gates

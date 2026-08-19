@@ -364,15 +364,24 @@ fi
 # is still fresh, rather than reconstructed at release time from commit
 # subjects.
 #
-# The escape hatch is deliberate and named: refactors, docs and CI work change
-# no behaviour and have nothing to write. CHANGELOG_SKIP=1 says that out loud
-# instead of quietly weakening the gate for everyone.
+# Признак с 19.08.2026 — состав диффа, а не префикс заголовка: множество
+# {feat, fix} расходилось с «стоит записать» в ОБЕ стороны (issue #228).
+# Решает scripts/gates/changelog-scope.sh, у него есть --self-test на
+# настоящих коммитах истории.
+#
+# Лазейка остаётся названной, но нужна теперь редко: молчаливые пути (тесты,
+# документация, зависимости) гейт пропускает сам. Настоящий оставшийся случай —
+# код, у которого ещё нет ни одного вызывающего: диффом он неотличим от
+# работающего, и CHANGELOG_SKIP=1 для него честнее, чем запись о том, чего
+# пользователь не увидит.
 if [ "${CHANGELOG_SKIP:-0}" != "1" ]; then
   base="origin/main"
   if git rev-parse --verify --quiet "$base" >/dev/null; then
-    # Only the subjects of commits actually being pushed, and only the two
-    # prefixes that mean "behaviour moved": feat and fix.
-    behaviour="$(git log "$base..HEAD" --format=%s | grep -cE '^(feat|fix)(\(.+\))?!?:' || true)"
+    # Признак — СОСТАВ ДИФФА, а не префикс заголовка (issue #228). Решение
+    # вынесено в отдельный скрипт, потому что у него есть --self-test на
+    # настоящих коммитах истории: правило внутри монолитного pre-push никто
+    # прогнать не может, а непрогоняемая проверка проверяет себя сама.
+    culprit="$("$(dirname "$0")/changelog-scope.sh" "$base..HEAD" || true)"
     # Counted as commits touching the file, not as a diff against the base, and
     # release commits do not count.
     #
@@ -381,8 +390,8 @@ if [ "${CHANGELOG_SKIP:-0}" != "1" ]; then
     # CHANGELOG.md as "touched" — the health screen branch passed this gate that
     # way while carrying no entry of its own.
     touched="$(git log "$base..HEAD" --format=%s -- CHANGELOG.md | grep -cvE '^docs\(changelog\): релиз' || true)"
-    if [ "$behaviour" -gt 0 ] && [ "$touched" -eq 0 ]; then
-      echo "✘ ветка меняет поведение (коммитов feat/fix: $behaviour), но CHANGELOG.md не тронут"
+    if [ -n "$culprit" ] && [ "$touched" -eq 0 ]; then
+      echo "✘ ветка меняет поведение (тронут $culprit), но CHANGELOG.md не тронут"
       echo "  Допишите абзац в раздел [Unreleased] здесь, на этой ветке,"
       echo "  пока помните, что именно изменилось."
       echo "  Если поведение не менялось: CHANGELOG_SKIP=1 git push"
