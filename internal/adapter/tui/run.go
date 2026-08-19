@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // EntryLoader is what the screen needs from the catalog: the entries. It lives
@@ -22,6 +23,10 @@ type EntryLoader interface {
 // Named fields rather than positional arguments: five dependencies read as five
 // nils at the call site, and the next source would make it six.
 type Sources struct {
+	// Synonyms — слой перевода терминов. Нулевое значение законно: без
+	// словаря поиск работает подстрокой, транслитерацией и опечатками.
+	Synonyms search.Matcher
+
 	Entries  EntryLoader
 	Saver    EntrySaver
 	Finances FinanceLoader
@@ -44,6 +49,9 @@ func Run(s Sources, in io.Reader, out io.Writer) error {
 	if s.Saver != nil {
 		model = NewEditableModel(entries, s.Saver, s.Entries)
 	}
+	// Ставится ПОСЛЕ выбора конструктора: редактируемая модель создаётся
+	// заново, и матчер, отданный конструктору, потерялся бы молча.
+	model = model.WithSynonyms(s.Synonyms)
 	if s.Finances != nil {
 		model = model.WithFinances(s.Finances)
 	}

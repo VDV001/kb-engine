@@ -945,6 +945,46 @@
       "sources": [
         "internal/usecase/runs/report.go:69"
       ]
+    },
+    {
+      "id": "uc-search",
+      "title": "search.Matcher",
+      "subtitle": "три слоя поиска",
+      "layer": "usecase",
+      "kind": "service",
+      "sources": [
+        "internal/usecase/search/match.go:66"
+      ]
+    },
+    {
+      "id": "adp-searchsyn",
+      "title": "searchsyn",
+      "subtitle": "словарь синонимов рядом с каталогом",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/searchsyn/store.go:38"
+      ]
+    },
+    {
+      "id": "file-searchsyn",
+      "title": "search-synonyms.json",
+      "subtitle": "правится человеком, необязателен",
+      "layer": "storage",
+      "kind": "data",
+      "sources": [
+        "internal/adapter/searchsyn/store.go:22"
+      ]
+    },
+    {
+      "id": "domain-translit",
+      "title": "domain.Translit",
+      "subtitle": "кириллица → латиница, одна таблица",
+      "layer": "domain",
+      "kind": "service",
+      "sources": [
+        "internal/domain/translit.go:19"
+      ]
     }
   ],
   "flows": [
@@ -1096,7 +1136,7 @@
           "to": "append-checked",
           "call": "appendToLedger / appendChecked",
           "detail": "форма зовёт ledgerFinances.Add (cmd/kbengine/main.go:335), а та — appendChecked (cmd/kbengine/main.go:337), ту же функцию, что и команда fin add: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:377",
+          "source": "cmd/kbengine/main.go:387",
           "unverified": false
         }
       ],
@@ -1152,7 +1192,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.EditEntry(id, p)",
           "detail": "cmd/kbengine/main.go:363 — экран не заводит своей копии «загрузить → изменить → отсортировать → сохранить»",
-          "source": "cmd/kbengine/main.go:403",
+          "source": "cmd/kbengine/main.go:413",
           "unverified": false,
           "symbol": "EditEntry"
         },
@@ -1361,7 +1401,7 @@
           "to": "ad-financejsonl",
           "call": "ledgerFinances.Finances()",
           "detail": "cmd/kbengine/main.go:298 — ledgerFinances.Finances читает журнал НА КАЖДЫЙ запрос, а книгу только при непустом пути (main.go:307): развёртывание со строками и без балансов законно. Файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
-          "source": "cmd/kbengine/main.go:326",
+          "source": "cmd/kbengine/main.go:336",
           "unverified": false
         },
         {
@@ -1551,7 +1591,7 @@
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
           "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:850",
+          "source": "cmd/kbengine/main.go:860",
           "unverified": false
         },
         {
@@ -1586,7 +1626,7 @@
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
           "detail": "cmd/kbengine/main.go:684 — набор проверок перечислен в cmd/kbengine/main.go:786-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
-          "source": "cmd/kbengine/main.go:709",
+          "source": "cmd/kbengine/main.go:719",
           "unverified": false
         },
         {
@@ -1614,7 +1654,7 @@
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
           "detail": "cmd/kbengine/main.go:725 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:785) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
-          "source": "cmd/kbengine/main.go:763",
+          "source": "cmd/kbengine/main.go:773",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -1677,7 +1717,7 @@
           "to": "cmd-serve",
           "call": "kbengine serve --catalog … + 8 необязательных источников",
           "detail": "cmd/kbengine/main.go:220 — вход команды; там же на :250 --from без --ledger отвергается на старте, потому что баланс некуда положить",
-          "source": "cmd/kbengine/main.go:244",
+          "source": "cmd/kbengine/main.go:254",
           "unverified": false
         },
         {
@@ -1686,7 +1726,7 @@
           "to": "build-serve",
           "call": "buildServeHandler(...)",
           "detail": "cmd/kbengine/main.go:501 собирает порты; с #174 туда же приходит список карт (mapPaths → mapsLoader на :539). Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config (:510-516), и книга (:526-533) перечитываются на КАЖДЫЙ запрос. Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
-          "source": "cmd/kbengine/main.go:526",
+          "source": "cmd/kbengine/main.go:536",
           "unverified": false
         },
         {
@@ -1704,7 +1744,7 @@
           "to": "owner",
           "call": "startupSources(serveSources(...))",
           "detail": "cmd/kbengine/main.go:278 печатает все восемь необязательных флагов ДО ListenAndServe: после него терминал занят, а смотрят в него именно в этот момент",
-          "source": "cmd/kbengine/main.go:306",
+          "source": "cmd/kbengine/main.go:316",
           "unverified": false
         },
         {
@@ -1764,8 +1804,8 @@
           "from": "owner",
           "to": "tui",
           "call": "Tab (цикл экранов)",
-          "detail": "internal/adapter/tui/model.go:177 — Tab вызывает nextScreen (объявлена на model.go:197): поиск → финансы → здоровье → поиск. Цикл, а не клавиша на экран, потому что на экране поиска любая буква уходит в запрос",
-          "source": "internal/adapter/tui/model.go:177",
+          "detail": "internal/adapter/tui/model.go:188 — Tab вызывает nextScreen (объявлена на model.go:197): поиск → финансы → здоровье → поиск. Цикл, а не клавиша на экран, потому что на экране поиска любая буква уходит в запрос",
+          "source": "internal/adapter/tui/model.go:188",
           "unverified": false,
           "symbol": "nextScreen"
         },
@@ -1829,7 +1869,7 @@
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
           "detail": "cmd/kbengine/main.go:587",
-          "source": "cmd/kbengine/main.go:684",
+          "source": "cmd/kbengine/main.go:694",
           "unverified": false
         },
         {
@@ -1908,7 +1948,7 @@
           "to": "ad-changelog",
           "call": "changelogWarning(path, len(changelog.Parse(raw).Releases))",
           "detail": "cmd/kbengine/main.go:265 — предупреждение о непонятном журнале печатается при запуске serve, потому что поймать его посреди работы уже нельзя: смотрят в этот момент на страницу",
-          "source": "cmd/kbengine/main.go:293",
+          "source": "cmd/kbengine/main.go:303",
           "unverified": false,
           "branch": true
         }
@@ -2015,8 +2055,8 @@
           "from": "owner",
           "to": "tui-update",
           "call": "набор строки поиска",
-          "detail": "internal/adapter/tui/model.go:184-185 — на экране списка ЛЮБАЯ буква уходит в поиск, поэтому свободных клавиш под второй экран там нет",
-          "source": "internal/adapter/tui/model.go:184",
+          "detail": "internal/adapter/tui/model.go:195-185 — на экране списка ЛЮБАЯ буква уходит в поиск, поэтому свободных клавиш под второй экран там нет",
+          "source": "internal/adapter/tui/model.go:195",
           "unverified": false,
           "symbol": "search"
         },
@@ -2025,8 +2065,8 @@
           "from": "owner",
           "to": "tui-card",
           "call": "Enter",
-          "detail": "internal/adapter/tui/model.go:173-175 открывает карточку выбранной записи",
-          "source": "internal/adapter/tui/model.go:173",
+          "detail": "internal/adapter/tui/model.go:184-175 открывает карточку выбранной записи",
+          "source": "internal/adapter/tui/model.go:184",
           "unverified": false,
           "symbol": "KeyEnter"
         },
@@ -2035,8 +2075,8 @@
           "from": "tui-card",
           "to": "tui-picker",
           "call": "клавиша l или v",
-          "detail": "internal/adapter/tui/model.go:156-158 — буквы на карточке НЕ уходят в поиск: иначе выход из карточки молча менял бы то, что показывает список позади",
-          "source": "internal/adapter/tui/model.go:156",
+          "detail": "internal/adapter/tui/model.go:167-158 — буквы на карточке НЕ уходят в поиск: иначе выход из карточки молча менял бы то, что показывает список позади",
+          "source": "internal/adapter/tui/model.go:167",
           "unverified": false,
           "symbol": "openPicker"
         },
@@ -2055,7 +2095,7 @@
           "to": "ad-catalogjson",
           "call": "catalogjson.SetFields(path, []int{e.ID}, Changes{Lifecycle, Verdict})",
           "detail": "cmd/kbengine/main.go:212 — правка с карточки превращается в тот же вызов, что делает команда set: два пути записи однажды применили бы разные правила к одному файлу",
-          "source": "cmd/kbengine/main.go:237",
+          "source": "cmd/kbengine/main.go:247",
           "unverified": false
         }
       ],
@@ -2071,8 +2111,8 @@
           "from": "owner",
           "to": "tui-update",
           "call": "Tab",
-          "detail": "internal/adapter/tui/model.go:177 вызывает nextScreen (model.go:197)",
-          "source": "internal/adapter/tui/model.go:177",
+          "detail": "internal/adapter/tui/model.go:188 вызывает nextScreen (model.go:197)",
+          "source": "internal/adapter/tui/model.go:188",
           "unverified": false,
           "symbol": "nextScreen"
         },
@@ -2109,7 +2149,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.Add(params)",
           "detail": "cmd/kbengine/main.go:335 — форма записи траты книгу НЕ трогает: это был бы третий путь в таблицу, и экран вместо этого вслух говорит, что книга отстала. Другими клавишами экран книгу пишет — баланс (main.go:421), заведение счёта (main.go:428) и синк (main.go:436)",
-          "source": "cmd/kbengine/main.go:356",
+          "source": "cmd/kbengine/main.go:366",
           "unverified": false
         },
         {
@@ -2118,7 +2158,7 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, p, false, note)",
           "detail": "cmd/kbengine/main.go:337 — та же функция, что у команды: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:358",
+          "source": "cmd/kbengine/main.go:368",
           "unverified": false
         }
       ],
@@ -2225,7 +2265,7 @@
           "to": "ad-httpapi",
           "call": "buildInfo()",
           "detail": "cmd/kbengine/main.go:90 — одно место на весь процесс: его печатает kbengine version и его же отдаёт /api/engine, расходиться этим двум ответам не с чего",
-          "source": "cmd/kbengine/main.go:114",
+          "source": "cmd/kbengine/main.go:116",
           "unverified": false
         },
         {
@@ -2533,7 +2573,7 @@
           "to": "f-now",
           "call": "readNowDoc(path)",
           "detail": "cmd/kbengine/main.go:515 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:597",
+          "source": "cmd/kbengine/main.go:607",
           "unverified": false
         },
         {
@@ -2668,8 +2708,8 @@
           "from": "owner",
           "to": "cli",
           "call": "commands[\"tui\"] → runTUI",
-          "detail": "cmd/kbengine/main.go:58 — таблица команд, а не switch: каждая новая команда усложняла сам диспетчер, хотя диспетчеризация не менялась",
-          "source": "cmd/kbengine/main.go:58",
+          "detail": "cmd/kbengine/main.go:60 — таблица команд, а не switch: каждая новая команда усложняла сам диспетчер, хотя диспетчеризация не менялась",
+          "source": "cmd/kbengine/main.go:60",
           "unverified": false
         },
         {
@@ -2678,7 +2718,7 @@
           "to": "cmd-tui",
           "call": "runTUI(args, stdout, stderr)",
           "detail": "cmd/kbengine/main.go:145 — флаги --ledger и --from включают экран финансов и клавишу синка",
-          "source": "cmd/kbengine/main.go:169",
+          "source": "cmd/kbengine/main.go:171",
           "unverified": false
         },
         {
@@ -2686,8 +2726,8 @@
           "from": "cmd-tui",
           "to": "tui-update",
           "call": "tui.Run(Sources, in, out)",
-          "detail": "internal/adapter/tui/run.go:38 — каждое НЕпереданное поле Sources означает, что клавиши, которым оно нужно, ОТСУТСТВУЮТ, а не присутствуют и не работают",
-          "source": "internal/adapter/tui/run.go:38",
+          "detail": "internal/adapter/tui/run.go:43 — каждое НЕпереданное поле Sources означает, что клавиши, которым оно нужно, ОТСУТСТВУЮТ, а не присутствуют и не работают",
+          "source": "internal/adapter/tui/run.go:43",
           "unverified": false
         },
         {
@@ -2695,8 +2735,8 @@
           "from": "tui-update",
           "to": "uc-query",
           "call": "чтение записей каталога",
-          "detail": "internal/adapter/tui/run.go:39 — записи каталога читаются на входе в экран, а не на каждое нажатие; после записи экран перечитывает их сам (internal/adapter/tui/edit.go:93). Замер 74 мс относится к КНИГЕ и списку счетов (internal/adapter/tui/finance.go:42), а не к каталогу — именно из-за него счета берутся снимком",
-          "source": "internal/adapter/tui/run.go:39",
+          "detail": "internal/adapter/tui/run.go:44 — записи каталога читаются на входе в экран, а не на каждое нажатие; после записи экран перечитывает их сам (internal/adapter/tui/edit.go:93). Замер 74 мс относится к КНИГЕ и списку счетов (internal/adapter/tui/finance.go:42), а не к каталогу — именно из-за него счета берутся снимком",
+          "source": "internal/adapter/tui/run.go:44",
           "unverified": false,
           "symbol": "Entries"
         }
@@ -2767,7 +2807,7 @@
           "to": "cli",
           "call": "kbengine serve --maps <map.json>",
           "symbol": "runServe",
-          "source": "cmd/kbengine/main.go:244",
+          "source": "cmd/kbengine/main.go:254",
           "detail": "cmd/kbengine/main.go:223 — флаг повторяемый (fs.Var на :238), карт может быть несколько; без флага раздела нет вовсе, а не пустой"
         },
         {
@@ -2776,7 +2816,7 @@
           "to": "build-serve",
           "call": "mapsLoader(mapPaths)",
           "symbol": "mapsLoader",
-          "source": "cmd/kbengine/main.go:516",
+          "source": "cmd/kbengine/main.go:526",
           "detail": "cmd/kbengine/main.go:491 собирает загрузчик карт до старта сервера: нечитаемая карта — отказ запуска, а не пустая вкладка"
         },
         {
@@ -2909,7 +2949,7 @@
           "to": "f-artefacts",
           "call": "fsys.Open(rel)",
           "symbol": "artefactsFS",
-          "source": "cmd/kbengine/main.go:676",
+          "source": "cmd/kbengine/main.go:686",
           "detail": "cmd/kbengine/main.go:651 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
         },
         {
@@ -3056,7 +3096,7 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:846",
+          "source": "cmd/kbengine/main.go:856",
           "detail": "cmd/kbengine/main.go:795 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
@@ -3263,8 +3303,8 @@
           "from": "owner",
           "to": "cmd-runlogged",
           "call": "kbengine <любая команда>",
-          "detail": "cmd/kbengine/main.go:44 зовёт runLogged, а не runWithStdin напрямую — иначе обёртку пришлось бы помнить в каждой команде",
-          "source": "cmd/kbengine/main.go:44",
+          "detail": "cmd/kbengine/main.go:46 зовёт runLogged, а не runWithStdin напрямую — иначе обёртку пришлось бы помнить в каждой команде",
+          "source": "cmd/kbengine/main.go:46",
           "unverified": false,
           "symbol": "runLogged"
         },
@@ -3397,8 +3437,8 @@
           "from": "cmd-runs",
           "to": "cmd-dispatch",
           "call": "maps.Keys(commands)",
-          "detail": "cmd/kbengine/main.go:58 набор известных команд читается из карты диспетчера, а не из списка в отчёте: список разошёлся бы с картой молча, и новая команда никогда не попала бы в «не запускалась ни разу». Из-за этой петли runs регистрируется в init (cmd/kbengine/runs.go:34)",
-          "source": "cmd/kbengine/main.go:58",
+          "detail": "cmd/kbengine/main.go:60 набор известных команд читается из карты диспетчера, а не из списка в отчёте: список разошёлся бы с картой молча, и новая команда никогда не попала бы в «не запускалась ни разу». Из-за этой петли runs регистрируется в init (cmd/kbengine/runs.go:34)",
+          "source": "cmd/kbengine/main.go:60",
           "unverified": false,
           "symbol": "commands"
         },
@@ -3451,6 +3491,73 @@
           "source": "cmd/kbengine/runs.go:85",
           "unverified": false,
           "symbol": "printReport"
+        }
+      ]
+    },
+    {
+      "id": "search-layers",
+      "title": "Владелец ищет запись словами, которых в ней нет",
+      "summary": "запрос → подстрока · транслитерация и опечатки · словарь синонимов; смысловой близости нет",
+      "steps": [
+        {
+          "n": 1,
+          "from": "cmd-tui",
+          "to": "adp-searchsyn",
+          "call": "searchsyn.Load",
+          "detail": "cmd/kbengine/main.go:214 словарь необязателен, его отсутствие называется вслух — молча оставшись без слоя перевода, поиск выглядел бы просто плохим",
+          "source": "cmd/kbengine/main.go:214",
+          "unverified": false,
+          "symbol": "searchsyn"
+        },
+        {
+          "n": 2,
+          "from": "adp-searchsyn",
+          "to": "file-searchsyn",
+          "call": "чтение JSON",
+          "detail": "internal/adapter/searchsyn/store.go:38 словарь — файл, а не таблица в коде: его правит человек после каждого промаха, и пересборка ради строки означала бы, что её никто не допишет",
+          "source": "internal/adapter/searchsyn/store.go:38",
+          "unverified": false,
+          "symbol": "Load"
+        },
+        {
+          "n": 3,
+          "from": "tui",
+          "to": "uc-search",
+          "call": "FilterWith",
+          "detail": "internal/adapter/tui/filter.go:26 экран отдаёт запрос целиком: словарь переводит фразами («сборка мусора»), а по словам такая пара не переводится вовсе",
+          "source": "internal/adapter/tui/filter.go:26",
+          "unverified": false,
+          "symbol": "FilterWith"
+        },
+        {
+          "n": 4,
+          "from": "uc-search",
+          "to": "file-searchsyn",
+          "call": "подстрока и словарь",
+          "detail": "internal/usecase/search/match.go:89 основной путь — подстрока, он не менялся; словарь пробуется на слове и на фразе целиком",
+          "source": "internal/usecase/search/match.go:89",
+          "unverified": false,
+          "symbol": "wordMatches"
+        },
+        {
+          "n": 5,
+          "from": "uc-search",
+          "to": "domain-translit",
+          "call": "domain.Translit",
+          "detail": "internal/domain/translit.go:19 таблица букв одна на движок: ею пользуются и сверка написаний в финансах, и поиск — вторая копия однажды разошлась бы с первой",
+          "source": "internal/domain/translit.go:19",
+          "unverified": false,
+          "symbol": "Translit"
+        },
+        {
+          "n": 6,
+          "from": "uc-search",
+          "to": "tui",
+          "call": "расстояние редактирования",
+          "detail": "internal/usecase/search/match.go:108 порог зависит от длины и до четырёх букв равен нулю: из трёх букв двумя правками получается половина словаря. Цена замерена — «промт» отдаёт 82 записи, из них около пяти шум",
+          "source": "internal/usecase/search/match.go:108",
+          "unverified": false,
+          "symbol": "nearAnyWord"
         }
       ]
     }

@@ -10,6 +10,7 @@ import (
 	"github.com/daniil/kb-engine/internal/theme"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // listWindow is how many rows the list shows at once. Fixed rather than read
@@ -43,6 +44,10 @@ type Model struct {
 
 	// saver is nil on a read-only screen; picker is open while a value is being
 	// chosen; status carries the last outcome to the person who caused it.
+	// matcher несёт слои поиска. Нулевое значение законно: без словаря
+	// работают подстрока, транслитерация и опечатки.
+	matcher search.Matcher
+
 	saver  EntrySaver
 	loader EntryLoader
 	picker picker
@@ -96,7 +101,13 @@ type Model struct {
 
 // NewModel returns the screen showing every entry.
 func NewModel(entries []domain.Entry) Model {
-	return Model{all: entries, visible: entries, height: listWindow}
+	return Model{all: entries, visible: entries, height: listWindow, matcher: search.New(nil)}
+}
+
+// WithSynonyms attaches the translation layer to an already built screen.
+func (m Model) WithSynonyms(s search.Matcher) Model {
+	m.matcher = s
+	return m
 }
 
 // Init satisfies tea.Model; the screen has nothing to start.
@@ -220,7 +231,7 @@ func (m Model) nextScreen() (tea.Model, tea.Cmd) {
 // cursor left beyond the end would point at an entry no longer on screen.
 func (m Model) search(query string) Model {
 	m.query = query
-	m.visible = Filter(m.all, query)
+	m.visible = FilterWith(m.all, query, m.matcher)
 	m.cursor = min(m.cursor, max(len(m.visible)-1, 0))
 	return m
 }
