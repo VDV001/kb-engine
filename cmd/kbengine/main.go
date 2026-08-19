@@ -28,12 +28,14 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
 	"github.com/daniil/kb-engine/internal/adapter/tui"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/analytics"
 	"github.com/daniil/kb-engine/internal/usecase/audit"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/daniil/kb-engine/internal/usecase/query"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // version is the build version. It defaults to "dev" and is overridden at
@@ -207,8 +209,16 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	}
 	loader := catalogjson.FileLoader{Path: *catalogPath}
 	svc := query.NewService(loader)
+	// Словарь синонимов необязателен, но его отсутствие называется вслух:
+	// молча оставшись без слоя перевода, поиск выглядел бы просто плохим.
+	synPath := searchsyn.PathNextTo(*catalogPath)
+	syn, synErr := searchsyn.Load(synPath)
+	if synErr != nil {
+		fmt.Fprintf(stderr, "tui: %v — поиск ищет подстрокой, транслитерацией и с опечатками, но не переводит термины\n", synErr)
+	}
 	screen := tui.Sources{
-		Entries: svc,
+		Synonyms: search.New(syn),
+		Entries:  svc,
 		// The audit reads the same catalog the screen lists, through the same
 		// service the dashboard uses — so the two cannot report different health
 		// for one file.

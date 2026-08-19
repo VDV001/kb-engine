@@ -146,15 +146,7 @@ func reasonFor(names []string) string {
 // заимствований, а не таблицы букв. Такие пары ловит проверка словаря, где
 // связь идёт по ключу, а не по звучанию.
 func translitKey(s string) string {
-	var b strings.Builder
-	for _, r := range domain.FoldName(s) {
-		if repl, ok := cyrillicToLatin[r]; ok {
-			b.WriteString(repl)
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
+	return domain.Translit(domain.FoldName(s))
 }
 
 func hasCyrillic(s string) bool {
@@ -173,12 +165,4 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	slices.Sort(keys)
 	return keys
-}
-
-var cyrillicToLatin = map[rune]string{
-	'а': "a", 'б': "b", 'в': "v", 'г': "g", 'д': "d", 'е': "e", 'ж': "zh",
-	'з': "z", 'и': "i", 'й': "i", 'к': "k", 'л': "l", 'м': "m", 'н': "n",
-	'о': "o", 'п': "p", 'р': "r", 'с': "s", 'т': "t", 'у': "u", 'ф': "f",
-	'х': "h", 'ц': "ts", 'ч': "ch", 'ш': "sh", 'щ': "sch", 'ъ': "",
-	'ы': "y", 'ь': "", 'э': "e", 'ю': "yu", 'я': "ya",
 }

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // Filter narrows entries to those matching every word of the query.
@@ -15,6 +16,14 @@ import (
 // search you stop trusting after the second word. A word starting with '#' is
 // an exact id — the only way to reach entry 3 without also getting 13 and 300.
 func Filter(entries []domain.Entry, query string) []domain.Entry {
+	return FilterWith(entries, query, search.New(nil))
+}
+
+// FilterWith is Filter with the synonym layer supplied.
+//
+// Разделено, потому что словарь необязателен: без него поиск обязан работать
+// подстрокой, транслитерацией и опечатками, а слой перевода честно отсутствует.
+func FilterWith(entries []domain.Entry, query string, m search.Matcher) []domain.Entry {
 	words := strings.Fields(strings.ToLower(query))
 	if len(words) == 0 {
 		return entries
@@ -22,15 +31,20 @@ func Filter(entries []domain.Entry, query string) []domain.Entry {
 
 	out := make([]domain.Entry, 0, len(entries))
 	for _, e := range entries {
-		if matchesAll(e, words) {
+		if matchesAll(e, words, m) {
 			out = append(out, e)
 		}
 	}
 	return out
 }
 
-func matchesAll(e domain.Entry, words []string) bool {
+func matchesAll(e domain.Entry, words []string, m search.Matcher) bool {
 	haystack := searchable(e)
+	// Запрос целиком отдаётся сравнению первым: словарь переводит фразами
+	// («сборка мусора»), а по словам такая пара не переводится вовсе.
+	if len(words) > 1 && !strings.HasPrefix(words[0], "#") && m.Matches(haystack, strings.Join(words, " ")) {
+		return true
+	}
 	for _, w := range words {
 		if id, ok := strings.CutPrefix(w, "#"); ok {
 			if strconv.Itoa(e.ID()) != id {
@@ -38,7 +52,7 @@ func matchesAll(e domain.Entry, words []string) bool {
 			}
 			continue
 		}
-		if !strings.Contains(haystack, w) {
+		if !m.Matches(haystack, w) {
 			return false
 		}
 	}
