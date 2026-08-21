@@ -155,10 +155,6 @@ type Financier interface {
 	Summary(months []string) (finance.Summary, error)
 }
 
-// NewServer builds the HTTP handler. cfg is the curated analytics config (empty
-// when none is configured). fin may be nil when no ledger is configured. If
-// frontend is non-nil its files are served at the root (with index.html
-// fallback for client-side routes).
 // Option — необязательная часть сервера.
 //
 // Функциональным параметром, а не десятым позиционным: у NewServer их и так
@@ -180,6 +176,10 @@ func WithSynonyms(m search.Matcher) Option {
 	return func(o *options) { o.syn = m }
 }
 
+// NewServer builds the HTTP handler. cfg is the curated analytics config (empty
+// when none is configured). fin may be nil when no ledger is configured. If
+// frontend is non-nil its files are served at the root (with index.html
+// fallback for client-side routes).
 func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS, opts ...Option) http.Handler {
 	var o options
 	for _, apply := range opts {
