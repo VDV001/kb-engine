@@ -57,14 +57,19 @@ func New(d Dictionary) Matcher {
 		syn[k] = append(syn[k], norm(to))
 	}
 	for k, t := range d {
-		vs := append(append([]string{}, t.Same...), t.Includes...)
-		for _, v := range vs {
-			add(k, v)
-			add(v, k)
-			for _, other := range vs {
-				if other != v {
-					add(v, other) // равнозначные формы связаны и между собой
+		// Формы одного понятия — ключ и его Same. Связаны между собой в обе
+		// стороны, включая пары значений: спросивший «горутины» обязан найти
+		// concurrency, хотя ключ у них третий.
+		forms := append([]string{k}, t.Same...)
+		for _, a := range forms {
+			for _, b := range forms {
+				if a != b {
+					add(a, b)
 				}
+			}
+			// Содержимое темы достаётся ЛЮБОЙ её формой, но обратно не ведёт.
+			for _, inc := range t.Includes {
+				add(a, inc)
 			}
 		}
 	}
