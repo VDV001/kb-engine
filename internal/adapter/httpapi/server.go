@@ -183,7 +183,12 @@ func WithSynonyms(m search.Matcher) Option {
 func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS, opts ...Option) http.Handler {
 	var o options
 	for _, apply := range opts {
-		apply(&o)
+		// nil — законное «этой части нет»: тот, кто читает необязательный файл,
+		// возвращает именно его, когда файла не оказалось. Падать на старте
+		// из-за отсутствующего словаря значило бы уронить весь дашборд.
+		if apply != nil {
+			apply(&o)
+		}
 	}
 	mux := http.NewServeMux()
 	m := newMetrics()
