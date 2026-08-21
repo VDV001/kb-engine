@@ -23,11 +23,22 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// Dictionary — равнозначные написания: как человек спросил → как записано в базе.
+// Dictionary — как человек спрашивает → как это записано в базе.
+type Dictionary map[string]Terms
+
+// Terms — две РАЗНЫЕ связи одного понятия.
 //
-// Ключи и значения сравниваются в обе стороны: спросивший «конкурентность»
-// должен найти concurrency, и наоборот.
-type Dictionary map[string][]string
+// Same — равнозначные написания, связь в обе стороны: спросивший
+// «конкурентность» должен найти concurrency, и наоборот.
+//
+// Includes — что входит в тему, связь только ОТ темы. Разделено замером:
+// пока redis лежал равнозначным кешированию, запрос «redis» отдавал 26 записей
+// при семи, где это слово есть. Спросив тему, честно получить продукт; спросив
+// продукт, получить всю тему — это ответ не на заданный вопрос.
+type Terms struct {
+	Same     []string
+	Includes []string
+}
 
 // Matcher сравнивает запрос с текстом записи по трём слоям.
 type Matcher struct {
@@ -45,14 +56,20 @@ func New(d Dictionary) Matcher {
 		}
 		syn[k] = append(syn[k], norm(to))
 	}
-	for k, vs := range d {
-		for _, v := range vs {
-			add(k, v)
-			add(v, k)
-			for _, other := range vs {
-				if other != v {
-					add(v, other) // равнозначные формы связаны и между собой
+	for k, t := range d {
+		// Формы одного понятия — ключ и его Same. Связаны между собой в обе
+		// стороны, включая пары значений: спросивший «горутины» обязан найти
+		// concurrency, хотя ключ у них третий.
+		forms := append([]string{k}, t.Same...)
+		for _, a := range forms {
+			for _, b := range forms {
+				if a != b {
+					add(a, b)
 				}
+			}
+			// Содержимое темы достаётся ЛЮБОЙ её формой, но обратно не ведёт.
+			for _, inc := range t.Includes {
+				add(a, inc)
 			}
 		}
 	}
@@ -87,20 +104,48 @@ func (m Matcher) allWordsMatch(haystack, query string) bool {
 }
 
 func (m Matcher) wordMatches(haystack, w string) bool {
-	if strings.Contains(haystack, w) {
+	if contains(haystack, w) {
 		return true
 	}
 	for _, s := range m.syn[w] {
-		if strings.Contains(haystack, s) {
+		if contains(haystack, s) {
 			return true
 		}
 	}
 	tw := domain.Translit(w)
 	th := domain.Translit(haystack)
-	if tw != w && strings.Contains(th, tw) {
+	if tw != w && contains(th, tw) {
 		return true
 	}
 	return nearAnyWord(th, tw)
+}
+
+// shortQuery — длина, начиная с которой подстрока внутри чужого слова врёт
+// чаще, чем помогает.
+//
+// Замер по живому каталогу: «sse» отдавал 34 записи, из них 33 — попадание
+// внутрь слов вроде «processes», причём верхняя запись выдачи была про
+// delivery в командах. Аббревиатуры и есть самые точные запросы, какие бывают
+// (SSE, gc, k8s, rag), и основной путь портил именно их.
+const shortQuery = 4
+
+// contains — «есть ли запрос в тексте» с поправкой на короткие запросы.
+//
+// Длинный ищется как прежде, любой подстрокой: «поточн» обязан находить
+// «многопоточность». Короткий обязан попадать в НАЧАЛО слова, иначе три буквы
+// находятся внутри половины словаря. Начало, а не полное равенство, потому что
+// «gc» должен доставать «gcp», а границу слова ставит не только пробел —
+// в живых заголовках это дефисы, скобки и двоеточия.
+func contains(haystack, query string) bool {
+	if utf8.RuneCountInString(query) >= shortQuery || strings.ContainsFunc(query, isSeparator) {
+		return strings.Contains(haystack, query)
+	}
+	for _, hw := range wordsOf(haystack) {
+		if strings.HasPrefix(hw, query) {
+			return true
+		}
+	}
+	return false
 }
 
 // nearAnyWord — есть ли в тексте слово, отличающееся от запрошенного на
@@ -124,9 +169,11 @@ func nearAnyWord(haystack, w string) bool {
 // словом, и опечатка «промт» до него не дотягивается никаким разумным порогом.
 // Настоящие заголовки полны дефисов, скобок и двоеточий.
 func wordsOf(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	return strings.FieldsFunc(s, isSeparator)
+}
+
+func isSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 // editLimit — сколько правок прощается слову такой длины.

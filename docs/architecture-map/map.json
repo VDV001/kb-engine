@@ -3594,8 +3594,8 @@
      "from": "uc-search",
      "to": "file-searchsyn",
      "call": "подстрока и словарь",
-     "detail": "internal/usecase/search/match.go:89 основной путь — подстрока, он не менялся; словарь пробуется на слове и на фразе целиком",
-     "source": "internal/usecase/search/match.go:89",
+     "detail": "internal/usecase/search/match.go:106 основной путь — подстрока, он не менялся; словарь пробуется на слове и на фразе целиком",
+     "source": "internal/usecase/search/match.go:106",
      "unverified": false,
      "symbol": "wordMatches"
     },
@@ -3614,8 +3614,8 @@
      "from": "uc-search",
      "to": "tui",
      "call": "расстояние редактирования",
-     "detail": "internal/usecase/search/match.go:108 порог зависит от длины и до четырёх букв равен нулю: из трёх букв двумя правками получается половина словаря. Цена замерена — «промт» отдаёт 82 записи, из них около пяти шум",
-     "source": "internal/usecase/search/match.go:108",
+     "detail": "internal/usecase/search/match.go:153 порог зависит от длины и до четырёх букв равен нулю: из трёх букв двумя правками получается половина словаря. Цена замерена — «промт» отдаёт 82 записи, из них около пяти шум",
+     "source": "internal/usecase/search/match.go:153",
      "unverified": false,
      "symbol": "nearAnyWord"
     }
