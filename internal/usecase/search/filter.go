@@ -12,6 +12,11 @@ import (
 // поэтому «кубернетес» давал 10 записей в терминале и ноль в браузере (#252).
 // Тот же класс, что «момент записи» до v0.17.0 — одно правило, два писателя.
 
+// Filter narrows entries to those matching every word of the query.
+//
+// Words are ANDed because a search that widens with each term you add is a
+// search you stop trusting after the second word. A word starting with '#' is
+// an exact id — the only way to reach entry 3 without also getting 13 and 300.
 func Filter(entries []domain.Entry, query string) []domain.Entry {
 	return FilterWith(entries, query, New(nil))
 }
