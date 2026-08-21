@@ -74,6 +74,11 @@ dep-age:
 release-scope tag:
     ./scripts/gates/release-scope.sh {{tag}}
 
+# Отрицательный контроль того же гейта на настоящих диапазонах истории.
+# Зелёная сверка состава ничего не значит, пока не показано, что гейт краснеет.
+release-scope-self-test:
+    ./scripts/gates/release-scope.sh --self-test
+
 # Состав CI: что воспроизводится здесь, а что нет (ничего не запускает)
 ci-parity:
     ./scripts/gates/ci-parity.sh

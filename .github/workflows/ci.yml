@@ -156,6 +156,16 @@ jobs:
       - name: Changelog scope gate self-test
         run: ./scripts/gates/changelog-scope.sh --self-test
 
+      # Тот же довод, что у соседа: release-scope зовут руками при сборке
+      # выпуска, поэтому его правило до сих пор никто не проверял. Самопроверка
+      # идёт по настоящим диапазонам между тегами и требует обеих сторон —
+      # покраснеть на v0.22.0..v0.23.0, где коммит b9bf3ab записи не оставил, и
+      # промолчать на v0.18.0..v0.19.0, где её оставили все. Молчание при этом
+      # обязано быть непустым: диапазон без поведенческих коммитов зелёный у
+      # любого гейта, включая выключенный.
+      - name: Release scope gate self-test
+        run: ./scripts/gates/release-scope.sh --self-test
+
   ci-parity:
     runs-on: ubuntu-latest
     steps:
