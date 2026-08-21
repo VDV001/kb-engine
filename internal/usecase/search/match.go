@@ -23,11 +23,22 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// Dictionary — равнозначные написания: как человек спросил → как записано в базе.
+// Dictionary — как человек спрашивает → как это записано в базе.
+type Dictionary map[string]Terms
+
+// Terms — две РАЗНЫЕ связи одного понятия.
 //
-// Ключи и значения сравниваются в обе стороны: спросивший «конкурентность»
-// должен найти concurrency, и наоборот.
-type Dictionary map[string][]string
+// Same — равнозначные написания, связь в обе стороны: спросивший
+// «конкурентность» должен найти concurrency, и наоборот.
+//
+// Includes — что входит в тему, связь только ОТ темы. Разделено замером:
+// пока redis лежал равнозначным кешированию, запрос «redis» отдавал 26 записей
+// при семи, где это слово есть. Спросив тему, честно получить продукт; спросив
+// продукт, получить всю тему — это ответ не на заданный вопрос.
+type Terms struct {
+	Same     []string
+	Includes []string
+}
 
 // Matcher сравнивает запрос с текстом записи по трём слоям.
 type Matcher struct {
@@ -45,7 +56,8 @@ func New(d Dictionary) Matcher {
 		}
 		syn[k] = append(syn[k], norm(to))
 	}
-	for k, vs := range d {
+	for k, t := range d {
+		vs := append(append([]string{}, t.Same...), t.Includes...)
 		for _, v := range vs {
 			add(k, v)
 			add(v, k)

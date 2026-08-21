@@ -41,9 +41,13 @@ func Load(path string) (search.Dictionary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("searchsyn: не прочитать словарь: %w", err)
 	}
-	var d search.Dictionary
-	if err := json.Unmarshal(raw, &d); err != nil {
+	var flat map[string][]string
+	if err := json.Unmarshal(raw, &flat); err != nil {
 		return nil, fmt.Errorf("searchsyn: %s не разобрать: %w", path, err)
+	}
+	d := make(search.Dictionary, len(flat))
+	for k, vs := range flat {
+		d[k] = search.Terms{Same: vs}
 	}
 	return d, nil
 }
