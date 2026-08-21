@@ -36,10 +36,30 @@ func entry(t *testing.T, id int, title string, tags ...string) domain.Entry {
 	return e
 }
 
+// withDescription пересобирает запись с описанием.
+//
+// Отдельно, потому что описание — единственное поле, где живёт смысл записи:
+// замер по живому каталогу дал 95 записей из 124 по запросу «контекст»,
+// которые находятся ТОЛЬКО описанием. Витрина искала по нему всегда, терминал
+// не искал никогда, и до #252 это расхождение было незаметно.
+func withDescription(t *testing.T, e domain.Entry, desc string) domain.Entry {
+	t.Helper()
+	read := e.ReadState()
+	out, err := domain.NewEntry(domain.EntryParams{
+		ID: e.ID(), Kind: e.Kind(), Title: e.Title(), Description: desc,
+		Category: e.Category(), Lifecycle: e.Lifecycle(), ReadState: read, Tags: e.Tags(),
+	})
+	if err != nil {
+		t.Fatalf("entry with description: %v", err)
+	}
+	return out
+}
+
 func TestFilter_atUsecaseLevel(t *testing.T) {
 	entries := []domain.Entry{
 		entry(t, 3, "Оркестрация контейнеров", "kubernetes"),
-		entry(t, 13, "Как читать чужой код"),
+		withDescription(t, entry(t, 13, "Как читать чужой код"),
+			"разбор постмортема: что мешало понять систему"),
 		entry(t, 300, "Дневник рефакторинга"),
 	}
 
@@ -53,6 +73,7 @@ func TestFilter_atUsecaseLevel(t *testing.T) {
 		{"слова соединяются через И", "оркестрация контейнеров", []int{3}},
 		{"решётка адресует ровно один id", "#3", []int{3}},
 		{"ничего не найдено — пустой список", "телепортация", nil},
+		{"описание тоже ищется", "постмортем", []int{13}},
 	}
 
 	for _, c := range cases {

@@ -134,12 +134,14 @@ var testEngine = httpapi.EngineInfo{
 	Built:   "2026-07-31T17:21:48Z",
 }
 
-func newTestServer() http.Handler {
+func newTestServer() http.Handler { return newTestServerWith() }
+
+func newTestServerWith(opts ...httpapi.Option) http.Handler {
 	return httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
 		func() (analyticsconfig.Config, error) { return testConfig, nil },
 		func() (changelog.Document, error) {
 			return changelog.Document{CurrentVersion: "0.9.0"}, nil
-		}, httpapi.Documents{}, testEngine, nil)
+		}, httpapi.Documents{}, testEngine, nil, opts...)
 }
 
 // Версия движка живёт в бинаре, и на странице её иначе не показать. Нужна она

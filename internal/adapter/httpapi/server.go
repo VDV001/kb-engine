@@ -155,11 +155,41 @@ type Financier interface {
 	Summary(months []string) (finance.Summary, error)
 }
 
+// Option — необязательная часть сервера.
+//
+// Функциональным параметром, а не десятым позиционным: у NewServer их и так
+// девять, и каждый новый источник заставлял бы править все вызовы, включая
+// десяток тестовых. Отсутствие опции — законное состояние, а не пропуск.
+type Option func(*options)
+
+type options struct {
+	syn search.Matcher
+}
+
+// WithSynonyms подключает слой перевода терминов.
+//
+// До неё словарь был подключён ТОЛЬКО к терминалу: main.go отдавал его в
+// tui.Sources, сервер о нём не знал, и «конкурентность» находила concurrency в
+// одной поверхности из двух. Тот же класс, что #252, этажом выше — правило
+// одно, а доступ к нему был выдан не всем.
+func WithSynonyms(m search.Matcher) Option {
+	return func(o *options) { o.syn = m }
+}
+
 // NewServer builds the HTTP handler. cfg is the curated analytics config (empty
 // when none is configured). fin may be nil when no ledger is configured. If
 // frontend is non-nil its files are served at the root (with index.html
 // fallback for client-side routes).
-func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS) http.Handler {
+func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoader, chlog ChangelogLoader, docs Documents, engine EngineInfo, frontend fs.FS, opts ...Option) http.Handler {
+	var o options
+	for _, apply := range opts {
+		// nil — законное «этой части нет»: тот, кто читает необязательный файл,
+		// возвращает именно его, когда файла не оказалось. Падать на старте
+		// из-за отсутствующего словаря значило бы уронить весь дашборд.
+		if apply != nil {
+			apply(&o)
+		}
+	}
 	mux := http.NewServeMux()
 	m := newMetrics()
 	mux.HandleFunc("GET /metrics", handleMetrics(m, q, engine))
@@ -167,7 +197,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
 	mux.HandleFunc("GET /api/stats", handleStats(q))
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
-	mux.HandleFunc("GET /api/search", handleSearch(q))
+	mux.HandleFunc("GET /api/search", handleSearch(q, o.syn))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/link-health", handleLinkHealth(a))
@@ -521,14 +551,16 @@ func handleEntries(q Querier) http.HandlerFunc {
 //
 // Пустой q возвращает весь каталог, а не ошибку: так ведёт себя терминал, и
 // расхождение здесь было бы тем же дефектом в миниатюре.
-func handleSearch(q Querier) http.HandlerFunc {
+func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entries, err := q.Entries()
 		if err != nil {
 			writeError(w, err)
 			return
 		}
-		found := search.Filter(entries, r.URL.Query().Get("q"))
+		// FilterWith, а не Filter: слой перевода приходит снаружи, и его
+		// нулевое значение — законное «словаря нет», а не поломка.
+		found := search.FilterWith(entries, r.URL.Query().Get("q"), syn)
 		dtos := make([]entryDTO, 0, len(found))
 		for _, e := range found {
 			dtos = append(dtos, toDTO(e))

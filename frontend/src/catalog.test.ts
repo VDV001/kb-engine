@@ -73,36 +73,35 @@ describe('filterEntries', () => {
     entry({ id: 2, title: 'Про промпты', category: 'meta', description: 'контекст важнее' }),
   ]
 
-  it('search covers title, description and tags', () => {
-    expect(filterEntries(data, { ...emptyFilter, search: 'контекст' })).toHaveLength(1)
-    expect(filterEntries(data, { ...emptyFilter, search: 'go' })).toHaveLength(1)
+  // Текстовый поиск здесь больше не считается: он живёт в usecase движка, и
+  // витрина получает готовое множество id. Своя копия правила на TypeScript
+  // расходилась с ним измеримо — «кубернетес» давал 10 записей в терминале и
+  // ноль в браузере (#252).
+  it('текст не ищется на клиенте — только фасеты и переданные id', () => {
+    expect(filterEntries(data, { ...emptyFilter, search: 'контекст' }, null)).toHaveLength(2)
+    expect(filterEntries(data, { ...emptyFilter, search: 'контекст' }, new Set([2]))).toEqual([
+      data[1],
+    ])
+  })
+
+  it('пустое множество id — это «ничего не нашлось», а не «фильтра нет»', () => {
+    expect(filterEntries(data, { ...emptyFilter, search: 'телепортация' }, new Set())).toHaveLength(
+      0,
+    )
+  })
+
+  it('фасеты применяются поверх найденного сервером', () => {
+    const found = new Set([1, 2])
+    expect(filterEntries(data, { ...emptyFilter, category: 'golang' }, found)).toHaveLength(1)
   })
 
   it('filters compose', () => {
     expect(
-      filterEntries(data, { ...emptyFilter, category: 'golang', source: 'bot-inbox' }),
+      filterEntries(data, { ...emptyFilter, category: 'golang', source: 'bot-inbox' }, null),
     ).toHaveLength(1)
-    expect(filterEntries(data, { ...emptyFilter, category: 'golang', source: 'x' })).toHaveLength(0)
-  })
-
-  // Гигиена показывает находку номером записи, и открыть её надо ровно одну.
-  // Поиск подстрокой на это не годится: «1» находит и 1, и 10, и 100 — а «#1»
-  // спрашивает про запись, а не про текст.
-  it('«#id» ищет запись по точному номеру, а не подстрокой', () => {
-    const many = [entry({ id: 1, title: 'первая' }), entry({ id: 10, title: 'десятая' })]
-    expect(filterEntries(many, { ...emptyFilter, search: '#1' }).map((e) => e.id)).toEqual([1])
-    expect(filterEntries(many, { ...emptyFilter, search: '#10' }).map((e) => e.id)).toEqual([10])
-  })
-
-  it('«#» без номера ничего не фильтрует', () => {
-    expect(filterEntries(data, { ...emptyFilter, search: '#' })).toHaveLength(2)
-  })
-
-  // Решётка внутри текста — обычный символ: «#вайбкодинг» остаётся поиском по
-  // тексту, потому что номером записи он не является.
-  it('решётка со словом остаётся текстовым поиском', () => {
-    const tagged = [entry({ id: 7, title: 'про #вайбкодинг' })]
-    expect(filterEntries(tagged, { ...emptyFilter, search: '#вайбкодинг' })).toHaveLength(1)
+    expect(
+      filterEntries(data, { ...emptyFilter, category: 'golang', source: 'x' }, null),
+    ).toHaveLength(0)
   })
 })
 
@@ -271,17 +270,17 @@ describe('translation filter', () => {
   ]
 
   it('keeps only translations when asked', () => {
-    const got = filterEntries(data, { ...emptyFilter, translation: 'yes' })
+    const got = filterEntries(data, { ...emptyFilter, translation: 'yes' }, null)
     expect(got.map((e) => e.id)).toEqual([2])
   })
 
   it('keeps only originals when asked', () => {
-    const got = filterEntries(data, { ...emptyFilter, translation: 'no' })
+    const got = filterEntries(data, { ...emptyFilter, translation: 'no' }, null)
     expect(got.map((e) => e.id)).toEqual([1])
   })
 
   it('an unset filter touches nothing', () => {
-    expect(filterEntries(data, emptyFilter)).toHaveLength(2)
+    expect(filterEntries(data, emptyFilter, null)).toHaveLength(2)
   })
 })
 
@@ -297,12 +296,13 @@ describe('tag filter', () => {
   ]
 
   it('matches the tag exactly, not the text', () => {
-    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' })
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' }, null)
     expect(got.map((e) => e.id)).toEqual([1, 2])
   })
 
+  // Тег и найденное сервером складываются: запись обязана пройти обе проверки.
   it('composes with the other filters', () => {
-    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp', search: 'заголовке' })
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' }, new Set([3]))
     expect(got).toHaveLength(0)
   })
 })

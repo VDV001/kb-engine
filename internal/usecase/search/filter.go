@@ -63,9 +63,17 @@ func matchesAll(e domain.Entry, words []string, m Matcher) bool {
 
 // searchable is everything a person would type looking for this entry: its
 // title, what it is about, and where it was filed.
+//
+// Описание входит сюда, потому что смысл записи живёт именно там. Замер по
+// живому каталогу: «контекст» — 124 записи с описанием против 29 без него,
+// «промпт» — 125 против 42. Витрина искала по описанию с первого дня, терминал
+// не искал никогда, и разрыв держался ровно до тех пор, пока обе поверхности
+// не стали спрашивать одного ответчика (#252).
 func searchable(e domain.Entry) string {
 	var b strings.Builder
 	b.WriteString(strings.ToLower(e.Title()))
+	b.WriteByte(' ')
+	b.WriteString(strings.ToLower(e.Description()))
 	b.WriteByte(' ')
 	b.WriteString(strings.ToLower(e.Category().String()))
 	for _, t := range e.Tags() {

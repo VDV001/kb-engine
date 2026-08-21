@@ -3,8 +3,12 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // Поиска в HTTP API не было вовсе: фронт забирал /api/entries и фильтровал у
@@ -72,4 +76,56 @@ func TestServer_search(t *testing.T) {
 			t.Fatalf("пустой запрос вернул %d записей, а /api/entries — %d", len(b), len(a))
 		}
 	})
+}
+
+// Словарь синонимов был подключён только к терминалу: `main.go` отдавал его в
+// tui.Sources, а сервер про него не знал вовсе и звал search.Filter без слоя
+// перевода. То есть после появления /api/search поверхности всё ещё отвечали
+// по-разному — «конкурентность» находила concurrency в терминале и не находила
+// в браузере. Тот же класс, что #252, только этажом выше: правило одно, а
+// доступ к нему выдан одной поверхности из двух.
+func TestServer_searchTranslatesTerms(t *testing.T) {
+	dict := search.Dictionary{"конкурентность": {Same: []string{"hello"}}}
+
+	t.Run("со словарём термин переводится", func(t *testing.T) {
+		srv := newTestServerWith(httpapi.WithSynonyms(search.New(dict)))
+		if n := len(searchIDs(t, srv, "конкурентность")); n == 0 {
+			t.Error("сервер со словарём обязан переводить термин, найдено 0")
+		}
+	})
+
+	t.Run("без словаря перевода нет и притворяться нечем", func(t *testing.T) {
+		if n := len(searchIDs(t, newTestServer(), "конкурентность")); n != 0 {
+			t.Errorf("без словаря перевод невозможен, найдено %d", n)
+		}
+	})
+}
+
+func searchIDs(t *testing.T, srv http.Handler, q string) []int {
+	t.Helper()
+	rec := get(t, srv, "/api/search?q="+url.QueryEscape(q))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var got []struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	ids := make([]int, 0, len(got))
+	for _, e := range got {
+		ids = append(ids, e.ID)
+	}
+	return ids
+}
+
+// nil среди опций — законное «этой части нет»: synonymsFor возвращает именно
+// nil, когда словаря рядом с каталогом не оказалось. Без проверки сервер падал
+// на старте, то есть отсутствие необязательного файла роняло весь дашборд.
+func TestServer_nilOptionIsLegal(t *testing.T) {
+	srv := newTestServerWith(nil)
+	if rec := get(t, srv, "/api/search?q=hello"); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
 }

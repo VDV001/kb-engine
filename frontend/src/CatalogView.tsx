@@ -16,6 +16,7 @@ import {
   type CatalogFilter,
 } from './catalog'
 import { Icon } from './components/Icon'
+import { useSearch } from './hooks/useSearch'
 import { Label } from './components/ui'
 import { HealthCard, SpotlightCard } from './HealthCards'
 
@@ -293,7 +294,14 @@ export function CatalogView({
     () => ({ ...filter, search, tag: pickedTag }),
     [filter, search, pickedTag],
   )
-  const filtered = useMemo(() => sortByDate(filterEntries(entries, active)), [entries, active])
+  // Текст ищет движок, фасеты остаются здесь: у поиска один ответчик, и он же
+  // отвечает терминалу (#252). До этого витрина фильтровала подстрокой у себя,
+  // и «кубернетес» давал 10 записей в терминале при нуле в браузере.
+  const { found, loading: searching, error: searchError } = useSearch(search)
+  const filtered = useMemo(
+    () => sortByDate(filterEntries(entries, active, found)),
+    [entries, active, found],
+  )
   const pages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const current = Math.min(page, pages)
   const slice = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
@@ -484,6 +492,23 @@ export function CatalogView({
             Сбросить
           </button>
         </div>
+
+        {/* Отказ поиска называется, а не прячется: без этой строки пустой
+            список читался бы как «в базе ничего нет», хотя движок просто не
+            ответил. «Ищу…» — третий ответ рядом с «нашлось» и «не нашлось».
+
+            Формулировка проверена на живом отказе: первая редакция обещала
+            «показаны только фильтры», а список при этом был пуст — сообщение
+            описывало не то, что человек видит на экране. */}
+        {searchError !== '' && (
+          <p className="border border-error/40 bg-error/5 px-3 py-2 text-sm text-error">
+            поиск не ответил: {searchError}. Список пуст не потому, что записей нет, — движок
+            недоступен.
+          </p>
+        )}
+        {searching && searchError === '' && (
+          <p className="font-label text-xs text-on-surface-variant">ищу…</p>
+        )}
 
         {grid ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
