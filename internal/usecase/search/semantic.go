@@ -130,3 +130,8 @@ func (s Semantic) embedQuery(query string) (Vector, error) {
 	}
 	return v, nil
 }
+
+// Uncovered — записи каталога, которых индекс не видел, в порядке каталога.
+//
+// Заглушка: поведение появится следующим коммитом.
+func (ix Index) Uncovered(_ []int) []int { return nil }

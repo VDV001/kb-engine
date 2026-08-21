@@ -3,6 +3,7 @@ package search_test
 import (
 	"errors"
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/usecase/search"
@@ -147,3 +148,42 @@ type stubEmbedder struct {
 }
 
 func (s stubEmbedder) Embed(text string) (search.Vector, error) { return s.v, s.err }
+
+// Индекс — производный файл: он снят в определённый момент и о записях,
+// добавленных позже, не знает. Пока он об этом молчит, «смысловой слой не
+// нашёл» и «смысловой слой этой записи не видел» выглядят одинаково, а
+// означают разное (#254).
+func TestIndex_uncovered(t *testing.T) {
+	ix := search.Index{Dims: 2, Vectors: map[int]search.Vector{
+		1: {1, 0},
+		2: {0, 1},
+	}}
+
+	t.Run("называет записи, которых в нём нет", func(t *testing.T) {
+		got := ix.Uncovered([]int{1, 2, 7, 9})
+		if !slices.Equal(got, []int{7, 9}) {
+			t.Errorf("Uncovered = %v, ожидалось [7 9]", got)
+		}
+	})
+
+	t.Run("полное покрытие — пустой ответ, а не список", func(t *testing.T) {
+		if got := ix.Uncovered([]int{1, 2}); len(got) != 0 {
+			t.Errorf("покрытый каталог не повод для находок: %v", got)
+		}
+	})
+
+	// Индекс шире каталога — не пробел, а хвост от удалённых записей. Считать
+	// его недостачей значило бы ругаться на то, что уже почищено.
+	t.Run("лишние векторы недостачей не считаются", func(t *testing.T) {
+		if got := ix.Uncovered([]int{1}); len(got) != 0 {
+			t.Errorf("лишний вектор не пробел каталога: %v", got)
+		}
+	})
+
+	t.Run("порядок каталога сохраняется", func(t *testing.T) {
+		got := ix.Uncovered([]int{9, 7, 1})
+		if !slices.Equal(got, []int{9, 7}) {
+			t.Errorf("Uncovered = %v, ожидалось [9 7] — порядок каталога", got)
+		}
+	})
+}
