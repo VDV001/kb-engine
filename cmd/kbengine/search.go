@@ -99,6 +99,19 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 	printSemantic(stdout, entries, ixPath, *embedURL, *embedModel, *q, *limit, *threshold)
 
+	// Пробелы индекса печатаются независимо от того, работал ли слой: индекс
+	// лежит на диске и без службы эмбеддингов, а знать, что он отстал, полезно
+	// раньше, чем понадобится искать по смыслу.
+	if ix, err := searchindex.Load(ixPath); err == nil {
+		ids := make([]int, 0, len(entries))
+		for _, e := range entries {
+			ids = append(ids, e.ID())
+		}
+		if line := indexGapLine(ix, ids); line != "" {
+			fmt.Fprintln(stdout, line)
+		}
+	}
+
 	if synErr != nil {
 		fmt.Fprintf(stdout, "\n⚠️ %v — термины не переводились\n", synErr)
 	}
@@ -226,5 +239,27 @@ func indexText(e domain.Entry) string {
 	return b.String()
 }
 
-// indexGapLine — заглушка, поведение появится следующим коммитом.
-func indexGapLine(_ search.Index, _ []int) string { return "" }
+// indexGapLine — чего смысловой слой не видел, словами.
+//
+// Индекс производный: он снят в один момент, а каталог живёт дальше. Пока
+// движок об этом молчит, «слой не нашёл» и «слой этой записи не видел»
+// выглядят одинаково, и человек заключит, что темы в базе нет (#254).
+//
+// Пустая строка — законный ответ в двух случаях: индекс покрывает каталог
+// целиком и индекса нет вовсе. Про второе скажет сам слой, а сообщение,
+// приходящее всегда, перестают читать.
+func indexGapLine(ix search.Index, ids []int) string {
+	if len(ix.Vectors) == 0 {
+		return ""
+	}
+	missing := ix.Uncovered(ids)
+	if len(missing) == 0 {
+		return ""
+	}
+	when := ""
+	if ix.Built != "" {
+		when = fmt.Sprintf(", снят %s", ix.Built)
+	}
+	return fmt.Sprintf("⚠️ смысловой слой не видел %d записей из %d%s — пересобрать: kbengine search --build-index",
+		len(missing), len(ids), when)
+}
