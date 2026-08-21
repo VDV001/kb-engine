@@ -28,6 +28,35 @@ Thanks for your interest in kb-engine.
   used to be committed, and every second branch touching the UI then conflicted
   on generated files that have no correct side in a merge.
 
+## Blocked and deferred work
+
+An issue nobody can start, and an issue nobody has started yet, look identical
+from the outside. Label the difference so the tracker keeps meaning what it says:
+
+- **`blocked`** — the work cannot begin. Say what blocks it and what would
+  unblock it.
+- **`deferred`** — the work was postponed on purpose. Say why, and name the date
+  or the condition that brings it back.
+
+Both labels require a comment in this shape, so that the reason survives the
+person who knew it:
+
+```
+⏸ DEFERRED — decided <date>
+Why: …
+What clears it: …
+Revisit no earlier than: YYYY-MM-DD
+```
+
+A pull request that stalls carries the same label and the same comment. A label
+without a stated reason and date rots into "someone will remember" — which is
+the failure this project keeps finding in its own automation.
+
+Work we decided **not** to do is neither of these: close it with reason
+`not planned`, keep the rationale in the closing comment, and say what would
+change the decision. Closed issues stay searchable; the open list stays a list
+of work.
+
 ## Local checks
 
 ```sh
