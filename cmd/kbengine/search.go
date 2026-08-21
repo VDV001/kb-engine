@@ -99,18 +99,7 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 	printSemantic(stdout, entries, ixPath, *embedURL, *embedModel, *q, *limit, *threshold)
 
-	// Пробелы индекса печатаются независимо от того, работал ли слой: индекс
-	// лежит на диске и без службы эмбеддингов, а знать, что он отстал, полезно
-	// раньше, чем понадобится искать по смыслу.
-	if ix, err := searchindex.Load(ixPath); err == nil {
-		ids := make([]int, 0, len(entries))
-		for _, e := range entries {
-			ids = append(ids, e.ID())
-		}
-		if line := indexGapLine(ix, ids); line != "" {
-			fmt.Fprintln(stdout, line)
-		}
-	}
+	printIndexGap(stdout, ixPath, entries)
 
 	if synErr != nil {
 		fmt.Fprintf(stdout, "\n⚠️ %v — термины не переводились\n", synErr)
@@ -237,6 +226,25 @@ func indexText(e domain.Entry) string {
 		b.WriteString(t)
 	}
 	return b.String()
+}
+
+// printIndexGap говорит, чего смысловой слой не видел.
+//
+// Печатается независимо от того, работал ли слой: индекс лежит на диске и без
+// службы эмбеддингов, а знать, что он отстал, полезно раньше, чем понадобится
+// искать по смыслу. Нечитаемый индекс молчит — про него уже сказал слой.
+func printIndexGap(stdout io.Writer, ixPath string, entries []domain.Entry) {
+	ix, err := searchindex.Load(ixPath)
+	if err != nil {
+		return
+	}
+	ids := make([]int, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.ID())
+	}
+	if line := indexGapLine(ix, ids); line != "" {
+		fmt.Fprintln(stdout, line)
+	}
 }
 
 // indexGapLine — чего смысловой слой не видел, словами.
