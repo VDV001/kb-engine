@@ -270,17 +270,17 @@ describe('translation filter', () => {
   ]
 
   it('keeps only translations when asked', () => {
-    const got = filterEntries(data, { ...emptyFilter, translation: 'yes' })
+    const got = filterEntries(data, { ...emptyFilter, translation: 'yes' }, null)
     expect(got.map((e) => e.id)).toEqual([2])
   })
 
   it('keeps only originals when asked', () => {
-    const got = filterEntries(data, { ...emptyFilter, translation: 'no' })
+    const got = filterEntries(data, { ...emptyFilter, translation: 'no' }, null)
     expect(got.map((e) => e.id)).toEqual([1])
   })
 
   it('an unset filter touches nothing', () => {
-    expect(filterEntries(data, emptyFilter)).toHaveLength(2)
+    expect(filterEntries(data, emptyFilter, null)).toHaveLength(2)
   })
 })
 
@@ -296,12 +296,13 @@ describe('tag filter', () => {
   ]
 
   it('matches the tag exactly, not the text', () => {
-    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' })
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' }, null)
     expect(got.map((e) => e.id)).toEqual([1, 2])
   })
 
+  // Тег и найденное сервером складываются: запись обязана пройти обе проверки.
   it('composes with the other filters', () => {
-    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp', search: 'заголовке' })
+    const got = filterEntries(data, { ...emptyFilter, tag: 'mcp' }, new Set([3]))
     expect(got).toHaveLength(0)
   })
 })

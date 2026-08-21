@@ -92,31 +92,33 @@ export function statusStyle(key: string): StatusView {
   return { key, label: key.trim() || '—', tone: 'var(--on-surface-variant)' }
 }
 
-/** «#481» — запрос про запись с этим номером, а не про текст. Гигиена и любой
- * другой вид ссылаются на находку номером, и открыть надо ровно её: подстрока
- * «481» нашла бы ещё и 1481, и заголовок с этим числом. */
-const BY_ID = /^#(\d+)$/
-
-export function filterEntries(entries: Entry[], f: CatalogFilter): Entry[] {
-  const raw = f.search.trim().toLowerCase()
-  const byID = raw.match(BY_ID)
-  // Одинокая решётка — это начало запроса про номер, а не сам запрос: пока
-  // цифру не набрали, список ещё не должен схлопываться в пустоту.
-  const q = raw === '#' ? '' : raw
+/**
+ * filterEntries применяет ФАСЕТЫ — то, что витрина знает про уже загруженные
+ * записи: категорию, статус, источник, стадию жизни, перевод, тег.
+ *
+ * Текстовый поиск сюда не входит намеренно. Он живёт в usecase движка, и
+ * витрина получает от него готовое множество id: до #252 здесь лежала вторая
+ * реализация того же правила на TypeScript, и она расходилась с первой
+ * измеримо — «кубернетес» давал 10 записей в терминале и ноль в браузере.
+ *
+ * found === null означает «текст не спрашивали» — тогда текстового условия нет
+ * вовсе. Пустое множество означает «спрашивали, не нашлось»: это разные
+ * ответы, и путать их нельзя, иначе неудачный поиск покажет весь каталог.
+ */
+export function filterEntries(
+  entries: Entry[],
+  f: CatalogFilter,
+  found: Set<number> | null,
+): Entry[] {
   return entries.filter(
     (e) =>
-      (byID === null || e.id === Number(byID[1])) &&
+      (found === null || found.has(e.id)) &&
       (f.category === '' || e.category === f.category) &&
       (f.status === '' || statusOf(e).key === f.status) &&
       (f.source === '' || (e.source ?? '') === f.source) &&
       (f.lifecycle === '' || e.lifecycle === f.lifecycle) &&
       (f.translation === '' || (f.translation === 'yes') === Boolean(e.is_translation)) &&
-      (f.tag === '' || (e.tags ?? []).includes(f.tag)) &&
-      (q === '' ||
-        byID !== null ||
-        e.title.toLowerCase().includes(q) ||
-        (e.description ?? '').toLowerCase().includes(q) ||
-        (e.tags ?? []).some((t) => t.toLowerCase().includes(q))),
+      (f.tag === '' || (e.tags ?? []).includes(f.tag)),
   )
 }
 

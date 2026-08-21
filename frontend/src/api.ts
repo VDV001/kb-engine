@@ -704,6 +704,17 @@ export interface FinanceExportRow {
 export const api = {
   stats: () => getJSON<Stats>('/api/stats'),
   entries: () => getJSON<Entry[]>('/api/entries'),
+
+  /**
+   * Записи, подходящие под текст. Спрашивается у движка, а не считается здесь:
+   * поиск — правило предметной области, и вторая его реализация на TypeScript
+   * расходилась с первой измеримо (#252).
+   *
+   * Пустой список приходит как null у старых сборок — нормализуем, витрина не
+   * должна белеть от того, чем ей ответили.
+   */
+  search: (q: string) =>
+    getJSON<Entry[] | null>(`/api/search?q=${encodeURIComponent(q)}`).then((r) => r ?? []),
   audits: () => getJSON<Audits>('/api/audits'),
   // Пустой список приходил как null: тип обещал массив, а сервер писал nil-слайс.
   // Сервер это чинит у себя, но нормализация остаётся и здесь — клиент не должен
