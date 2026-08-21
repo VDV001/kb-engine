@@ -258,8 +258,21 @@ func indexGapLine(ix search.Index, ids []int) string {
 	}
 	when := ""
 	if ix.Built != "" {
-		when = fmt.Sprintf(", снят %s", ix.Built)
+		when = fmt.Sprintf(", снят %s", day(ix.Built))
 	}
 	return fmt.Sprintf("⚠️ смысловой слой не видел %d записей из %d%s — пересобрать: kbengine search --build-index",
 		len(missing), len(ids), when)
+}
+
+// day — день из момента, записанного в индексе.
+//
+// Момент лежит полным RFC3339 со смещением зоны, и это правильно для файла, но
+// не для строки, которую читает человек. Нераспознанное значение возвращается
+// как есть: выдумывать день из того, чего не понял, хуже, чем показать сырое.
+func day(moment string) string {
+	t, err := time.Parse(time.RFC3339, moment)
+	if err != nil {
+		return moment
+	}
+	return t.Format(time.DateOnly)
 }
