@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Текст ищет движок (#252), поэтому витрине нужен ответ сервера, а не своя
+// подстрока. Мок отвечает тем же, чем ответил бы usecase: записями, у которых
+// запрос встречается в заголовке.
+const found = vi.fn()
+vi.mock('./api', () => ({ api: { search: (q: string) => found(q) } }))
 import type { Entry } from './api'
 import { CatalogView } from './CatalogView'
 
@@ -77,7 +83,8 @@ describe('CatalogView', () => {
 
   // Стоя на третьей странице и введя запрос, найдётся одна запись — то есть
   // страниц станет меньше, чем открытая. Без сброса экран покажет пустоту.
-  it('returns to the first page when the query changes', () => {
+  it('returns to the first page when the query changes', async () => {
+    found.mockResolvedValue([{ id: 1 }])
     const { rerender } = view('')
     fireEvent.click(screen.getByText('3'))
     expect(screen.getByText(/Показано 31–40/).textContent).toContain('31–40')
@@ -85,7 +92,15 @@ describe('CatalogView', () => {
     rerender(
       <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} pickedCategory="" onPickedCategoryChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
     )
-    expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
+    expect((await screen.findByText(/Показано 1–1 из 1/)).textContent).toContain('1–1 из 1')
+  })
+
+  // Отказ сервера обязан быть виден. Пустой список без объяснения читается как
+  // «в базе такого нет», хотя движок просто не ответил.
+  it('называет отказ поиска вместо молчаливого пустого списка', async () => {
+    found.mockRejectedValue(new Error('сеть недоступна'))
+    view('kubernetes')
+    expect(await screen.findByText(/поиск не ответил: сеть недоступна/)).toBeDefined()
   })
 
   // «Сбросить» стоит рядом с фильтрами вида, но запрос живёт в шапке. Кнопка
