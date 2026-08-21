@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.25.0] — 2026-08-21
+
 ### Added
 
 - **Поиск называет, чего смысловой слой не видел** (#254). Индекс производный:
