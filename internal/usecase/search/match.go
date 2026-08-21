@@ -87,20 +87,48 @@ func (m Matcher) allWordsMatch(haystack, query string) bool {
 }
 
 func (m Matcher) wordMatches(haystack, w string) bool {
-	if strings.Contains(haystack, w) {
+	if contains(haystack, w) {
 		return true
 	}
 	for _, s := range m.syn[w] {
-		if strings.Contains(haystack, s) {
+		if contains(haystack, s) {
 			return true
 		}
 	}
 	tw := domain.Translit(w)
 	th := domain.Translit(haystack)
-	if tw != w && strings.Contains(th, tw) {
+	if tw != w && contains(th, tw) {
 		return true
 	}
 	return nearAnyWord(th, tw)
+}
+
+// shortQuery — длина, начиная с которой подстрока внутри чужого слова врёт
+// чаще, чем помогает.
+//
+// Замер по живому каталогу: «sse» отдавал 34 записи, из них 33 — попадание
+// внутрь слов вроде «processes», причём верхняя запись выдачи была про
+// delivery в командах. Аббревиатуры и есть самые точные запросы, какие бывают
+// (SSE, gc, k8s, rag), и основной путь портил именно их.
+const shortQuery = 4
+
+// contains — «есть ли запрос в тексте» с поправкой на короткие запросы.
+//
+// Длинный ищется как прежде, любой подстрокой: «поточн» обязан находить
+// «многопоточность». Короткий обязан попадать в НАЧАЛО слова, иначе три буквы
+// находятся внутри половины словаря. Начало, а не полное равенство, потому что
+// «gc» должен доставать «gcp», а границу слова ставит не только пробел —
+// в живых заголовках это дефисы, скобки и двоеточия.
+func contains(haystack, query string) bool {
+	if utf8.RuneCountInString(query) >= shortQuery || strings.ContainsFunc(query, isSeparator) {
+		return strings.Contains(haystack, query)
+	}
+	for _, hw := range wordsOf(haystack) {
+		if strings.HasPrefix(hw, query) {
+			return true
+		}
+	}
+	return false
 }
 
 // nearAnyWord — есть ли в тексте слово, отличающееся от запрошенного на
@@ -124,9 +152,11 @@ func nearAnyWord(haystack, w string) bool {
 // словом, и опечатка «промт» до него не дотягивается никаким разумным порогом.
 // Настоящие заголовки полны дефисов, скобок и двоеточий.
 func wordsOf(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
-	})
+	return strings.FieldsFunc(s, isSeparator)
+}
+
+func isSeparator(r rune) bool {
+	return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 }
 
 // editLimit — сколько правок прощается слову такой длины.
