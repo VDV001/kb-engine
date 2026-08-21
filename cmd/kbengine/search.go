@@ -99,6 +99,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintln(stdout)
 	printSemantic(stdout, entries, ixPath, *embedURL, *embedModel, *q, *limit, *threshold)
 
+	printIndexGap(stdout, ixPath, entries)
+
 	if synErr != nil {
 		fmt.Fprintf(stdout, "\n⚠️ %v — термины не переводились\n", synErr)
 	}
@@ -224,4 +226,61 @@ func indexText(e domain.Entry) string {
 		b.WriteString(t)
 	}
 	return b.String()
+}
+
+// printIndexGap говорит, чего смысловой слой не видел.
+//
+// Печатается независимо от того, работал ли слой: индекс лежит на диске и без
+// службы эмбеддингов, а знать, что он отстал, полезно раньше, чем понадобится
+// искать по смыслу. Нечитаемый индекс молчит — про него уже сказал слой.
+func printIndexGap(stdout io.Writer, ixPath string, entries []domain.Entry) {
+	ix, err := searchindex.Load(ixPath)
+	if err != nil {
+		return
+	}
+	ids := make([]int, 0, len(entries))
+	for _, e := range entries {
+		ids = append(ids, e.ID())
+	}
+	if line := indexGapLine(ix, ids); line != "" {
+		fmt.Fprintln(stdout, line)
+	}
+}
+
+// indexGapLine — чего смысловой слой не видел, словами.
+//
+// Индекс производный: он снят в один момент, а каталог живёт дальше. Пока
+// движок об этом молчит, «слой не нашёл» и «слой этой записи не видел»
+// выглядят одинаково, и человек заключит, что темы в базе нет (#254).
+//
+// Пустая строка — законный ответ в двух случаях: индекс покрывает каталог
+// целиком и индекса нет вовсе. Про второе скажет сам слой, а сообщение,
+// приходящее всегда, перестают читать.
+func indexGapLine(ix search.Index, ids []int) string {
+	if len(ix.Vectors) == 0 {
+		return ""
+	}
+	missing := ix.Uncovered(ids)
+	if len(missing) == 0 {
+		return ""
+	}
+	when := ""
+	if ix.Built != "" {
+		when = fmt.Sprintf(", снят %s", day(ix.Built))
+	}
+	return fmt.Sprintf("⚠️ смысловой слой не видел %d записей из %d%s — пересобрать: kbengine search --build-index",
+		len(missing), len(ids), when)
+}
+
+// day — день из момента, записанного в индексе.
+//
+// Момент лежит полным RFC3339 со смещением зоны, и это правильно для файла, но
+// не для строки, которую читает человек. Нераспознанное значение возвращается
+// как есть: выдумывать день из того, чего не понял, хуже, чем показать сырое.
+func day(moment string) string {
+	t, err := time.Parse(time.RFC3339, moment)
+	if err != nil {
+		return moment
+	}
+	return t.Format(time.DateOnly)
 }

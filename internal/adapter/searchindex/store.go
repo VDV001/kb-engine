@@ -52,7 +52,7 @@ func Load(path string) (search.Index, error) {
 	if err := json.Unmarshal(raw, &f); err != nil {
 		return search.Index{}, fmt.Errorf("searchindex: %s не разобрать: %w", path, err)
 	}
-	ix := search.Index{Model: f.Model, Dims: f.Dims, Vectors: map[int]search.Vector{}}
+	ix := search.Index{Model: f.Model, Dims: f.Dims, Built: f.Built, Vectors: map[int]search.Vector{}}
 	for k, v := range f.Vectors {
 		id, err := parseID(k)
 		if err != nil {
