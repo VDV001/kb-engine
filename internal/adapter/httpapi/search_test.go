@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -27,8 +28,16 @@ func TestServer_search(t *testing.T) {
 		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if len(got) != 1 || got[0].ID != 1 {
-			t.Fatalf("получено %d записей (%+v), ожидалась одна с id=1", len(got), got)
+		// В фикстуре слово встречается у ДВУХ записей — «Hello» и «Разбор:
+		// Hello». Ожидать одну было ошибкой измерения: сначала смотрим, что
+		// отдаёт фикстура, потом пишем ожидание.
+		if len(got) != 2 {
+			t.Fatalf("получено %d записей (%+v), ожидалось 2", len(got), got)
+		}
+		for _, e := range got {
+			if !strings.Contains(strings.ToLower(e.Title), "hello") {
+				t.Errorf("в выдаче запись без искомого слова: %+v", e)
+			}
 		}
 	})
 
