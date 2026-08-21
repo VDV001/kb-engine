@@ -22,6 +22,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/usecase/freshness"
 	"github.com/daniil/kb-engine/internal/usecase/query"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // growthWeeks is how many weeks of growth history the analytics endpoint serves.
@@ -166,6 +167,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
 	mux.HandleFunc("GET /api/stats", handleStats(q))
 	mux.HandleFunc("GET /api/entries", handleEntries(q))
+	mux.HandleFunc("GET /api/search", handleSearch(q))
 	mux.HandleFunc("GET /api/audits", handleAudits(a))
 	mux.HandleFunc("GET /api/duplicates", handleDuplicates(a))
 	mux.HandleFunc("GET /api/link-health", handleLinkHealth(a))
@@ -505,6 +507,30 @@ func handleEntries(q Querier) http.HandlerFunc {
 		}
 		dtos := make([]entryDTO, 0, len(entries))
 		for _, e := range entries {
+			dtos = append(dtos, toDTO(e))
+		}
+		writeJSON(w, dtos)
+	}
+}
+
+// handleSearch отвечает тем же usecase, которым ищет терминал.
+//
+// Отдельный эндпоинт нужен именно ради этого: пока поиска в API не было, фронт
+// забирал весь каталог и фильтровал у себя подстрокой — вторая реализация
+// одного правила, разошедшаяся с первой на измеримую величину (#252).
+//
+// Пустой q возвращает весь каталог, а не ошибку: так ведёт себя терминал, и
+// расхождение здесь было бы тем же дефектом в миниатюре.
+func handleSearch(q Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entries, err := q.Entries()
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		found := search.Filter(entries, r.URL.Query().Get("q"))
+		dtos := make([]entryDTO, 0, len(found))
+		for _, e := range found {
 			dtos = append(dtos, toDTO(e))
 		}
 		writeJSON(w, dtos)
