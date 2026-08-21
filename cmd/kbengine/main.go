@@ -290,7 +290,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths)
+	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
+		synonymsFor(*catalogPath, stderr))
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -533,7 +534,7 @@ func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
 	return func() ([]archmap.Map, error) { return archmap.LoadAll(paths) }, nil
 }
 
-func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string) (http.Handler, error) {
+func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
 	loader := catalogjson.FileLoader{Path: catalogPath}
 	front, err := root.Frontend()
 	if err != nil {
@@ -596,7 +597,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 		changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths))
 	docs.Artefacts = artefactsFS(catalogPath)
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
-		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front), nil
+		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front, opts...), nil
 }
 
 // readNowDoc читает документ вместе со временем его последней правки.

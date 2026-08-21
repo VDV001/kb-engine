@@ -119,3 +119,13 @@ func searchIDs(t *testing.T, srv http.Handler, q string) []int {
 	}
 	return ids
 }
+
+// nil среди опций — законное «этой части нет»: synonymsFor возвращает именно
+// nil, когда словаря рядом с каталогом не оказалось. Без проверки сервер падал
+// на старте, то есть отсутствие необязательного файла роняло весь дашборд.
+func TestServer_nilOptionIsLegal(t *testing.T) {
+	srv := newTestServerWith(nil)
+	if rec := get(t, srv, "/api/search?q=hello"); rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
