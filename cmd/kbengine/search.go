@@ -225,3 +225,6 @@ func indexText(e domain.Entry) string {
 	}
 	return b.String()
 }
+
+// indexGapLine — заглушка, поведение появится следующим коммитом.
+func indexGapLine(_ search.Index, _ []int) string { return "" }
