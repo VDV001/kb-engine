@@ -45,19 +45,56 @@ describe('useSearch', () => {
     expect(result.current.found).toEqual(new Set())
   })
 
-  it('ответ на устаревший запрос не перетирает свежий', async () => {
-    const slow = Promise.resolve([{ id: 1 }])
-    const fast = Promise.resolve([{ id: 2 }])
-    search.mockReturnValueOnce(slow).mockReturnValueOnce(fast)
+  // Пока печатают, сервер спрашивается ОДИН раз: иначе каждая буква запроса
+  // из десяти символов — это десять прогонов по всему каталогу.
+  it('пока печатают, сервер спрашивают один раз', async () => {
+    vi.useFakeTimers()
+    try {
+      const { rerender } = renderHook(({ q }) => useSearch(q), { initialProps: { q: 'а' } })
+      rerender({ q: 'аб' })
+      rerender({ q: 'абв' })
+      await act(async () => {
+        vi.advanceTimersByTime(300)
+      })
+      expect(search).toHaveBeenCalledTimes(1)
+      expect(search).toHaveBeenCalledWith('абв')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 
-    const { result, rerender } = renderHook(({ q }) => useSearch(q), {
-      initialProps: { q: 'а' },
-    })
-    rerender({ q: 'аб' })
-    await act(async () => {
-      await slow
-      await fast
-    })
-    await waitFor(() => expect(result.current.found).toEqual(new Set([2])))
+  // Гонка ответов. Оба запроса УЖЕ ушли (между ними прошёл дебаунс), а сеть
+  // порядок возврата не гарантирует: ответ на «а» может прийти после ответа на
+  // «аб» и перетереть его. Тогда на экране оказалась бы выдача по запросу,
+  // которого в строке поиска уже нет.
+  it('ответ на устаревший запрос не перетирает свежий', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveSlow: (v: { id: number }[]) => void = () => {}
+      const slow = new Promise<{ id: number }[]>((res) => {
+        resolveSlow = res
+      })
+      search.mockReturnValueOnce(slow).mockReturnValueOnce(Promise.resolve([{ id: 2 }]))
+
+      const { result, rerender } = renderHook(({ q }) => useSearch(q), {
+        initialProps: { q: 'а' },
+      })
+      await act(async () => {
+        vi.advanceTimersByTime(300) // ушёл запрос про «а»
+      })
+      rerender({ q: 'аб' })
+      await act(async () => {
+        vi.advanceTimersByTime(300) // ушёл запрос про «аб» и сразу ответил
+      })
+      expect(result.current.found).toEqual(new Set([2]))
+
+      await act(async () => {
+        resolveSlow([{ id: 1 }]) // опоздавший ответ про «а»
+        await slow
+      })
+      expect(result.current.found).toEqual(new Set([2]))
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
