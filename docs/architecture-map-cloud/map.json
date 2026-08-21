@@ -513,7 +513,7 @@
           "to": "srv-stats",
           "call": "curl /api/stats — сверка по ТЕЛУ, а не по коду",
           "detail": "internal/adapter/httpapi/server.go:159 регистрирует маршрут. Код ответа сам по себе ничего не доказывает: на любой неизвестный путь вне /api/ сервер отдаёт 200, потому что SPA-фолбэк возвращает index.html",
-          "source": "internal/adapter/httpapi/server.go:167",
+          "source": "internal/adapter/httpapi/server.go:198",
           "symbol": "handleStats",
           "unverified": false
         },
@@ -687,7 +687,7 @@
           "to": "srv-readyz",
           "call": "503 с текстом ошибки разбора",
           "detail": "internal/adapter/httpapi/server.go:158 — готовность отвечает за ДАННЫЕ. Причина читается на эндпоинте, а не выводится из того, что контейнер падает по кругу: в этом и весь смысл разведения двух проб",
-          "source": "internal/adapter/httpapi/server.go:166",
+          "source": "internal/adapter/httpapi/server.go:197",
           "symbol": "handleReadyz",
           "unverified": false
         },
@@ -813,7 +813,7 @@
           "to": "srv-metrics",
           "call": "GET /metrics раз в 5 секунд",
           "detail": "internal/adapter/httpapi/server.go:156 — экспозиция собирается без единой зависимости, руками. Потолок назван в самом файле: нет exemplars, нет OpenMetrics, нет метрик рантайма",
-          "source": "internal/adapter/httpapi/server.go:164",
+          "source": "internal/adapter/httpapi/server.go:195",
           "symbol": "handleMetrics",
           "unverified": false
         },
