@@ -89,9 +89,13 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	text := tui.FilterWith(entries, *q, matcher)
 
 	fmt.Fprintf(stdout, "запрос: %q\n\n", *q)
+	shown := text[:min(*limit, len(text))]
 	fmt.Fprintf(stdout, "текстовый слой — %d\n", len(text))
-	for _, e := range text[:min(*limit, len(text))] {
+	for _, e := range shown {
 		fmt.Fprintf(stdout, "  #%-5d %s\n", e.ID(), e.Title())
+	}
+	if line := limitLine(len(shown), len(text)); line != "" {
+		fmt.Fprintln(stdout, line)
 	}
 
 	// Смысловой слой не обязателен, и его отсутствие называется вслух: пустота
@@ -107,9 +111,14 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// limitLine называет предел, когда список короче объявленного числа.
+// limitLine называет предел, когда список короче объявленного числа. Пустая
+// строка, когда показано всё: сообщение, приходящее при любом исходе, через
+// неделю перестают читать — как и строка о пробеле индекса рядом.
 func limitLine(shown, total int) string {
-	return ""
+	if shown >= total {
+		return ""
+	}
+	return fmt.Sprintf("  показаны %d из %d, остальные скрыты --limit", shown, total)
 }
 
 // printSemantic печатает смысловой слой или причину, по которой его не было.
