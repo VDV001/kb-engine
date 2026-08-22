@@ -276,6 +276,10 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// и профилировщик: заголовок рассказывает, из чего состоит обработка, а
 	// витрину можно отдать наружу.
 	timing := fs.Bool("server-timing", false, "add a Server-Timing header breaking each response into steps (catalog, search, ledger)")
+	// Профилировщик выключен, пока не назван адрес: он отдаёт дампы кучи и
+	// стеки всех горутин, и висеть по умолчанию рядом с личными финансами
+	// ему нечего. Слушатель отдельный — см. cmd/kbengine/pprof.go.
+	pprofAddr := fs.String("pprof", "", "optional address for the pprof profiler (e.g. 127.0.0.1:6060); empty means off")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -320,6 +324,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
+	startPprof(*pprofAddr, stdout, stderr)
 	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
 	// смотреть в него будут ровно в этот момент.
 	for _, line := range startupSources(serveSources(*configPath, *ledgerPath, *workbookPath,

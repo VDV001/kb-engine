@@ -45,6 +45,37 @@ jobs:
           echo "total coverage: ${total}%"
           awk -v t="$total" 'BEGIN { if (t+0 < 80.0) { print "coverage below 80% threshold"; exit 1 } }'
 
+  bench:
+    # Числа горячих путей печатаются на каждый PR, чтобы регрессия была видна
+    # как ИЗМЕНЕНИЕ, а не как ощущение. Гейта по величине здесь намеренно нет:
+    # ns/op на общих раннерах шумит сильнее, чем стоит подсаженное лишнее
+    # чтение файла (замерено — база 39,4/40,1/41,1 мкс против 47,3/40,8/41,7
+    # с подсадкой, диапазоны перекрываются). Устойчиво различает регрессию
+    # столбец allocs/op: 238 против 240 без единого перекрытия за три прогона.
+    # Поэтому смотреть здесь надо на аллокации, а не на время.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - uses: ./.github/actions/frontend-dist
+
+      # -benchtime фиксирован числом итераций, а не временем: на общих раннерах
+      # «одна секунда» означает разное число прогонов, и числа соседних сборок
+      # сравнивать было бы нельзя.
+      - name: Benchmarks (hot paths)
+        run: go test -run '^$' -bench . -benchmem -benchtime 200x ./... | tee bench.txt
+
+      - name: Fail if no benchmark ran
+        # Пустой прогон и зелёный прогон снаружи неотличимы: без этой строки
+        # переименованный бенчмарк оставил бы джобу зелёной и молчащей.
+        run: grep -q "^Benchmark" bench.txt
+
   frontend:
     runs-on: ubuntu-latest
     steps:

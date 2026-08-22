@@ -28,6 +28,7 @@ WORKFLOWS=${CI_PARITY_WORKFLOWS:-.github/workflows}
 TABLE=(
 	"ci.yml:build|local|форматирование, линтер, тесты с гонками, порог покрытия 80%"
 	"ci.yml:frontend|local|npm ci, oxlint, гейт слоёв данных, vitest, сборка бандла"
+	"ci.yml:bench|local|бенчмарки горячих путей с -benchmem и проверкой, что хоть один прогнан"
 	"ci.yml:dep-age|local|самопроверка гейта возраста и он сам против origin/main"
 	"ci.yml:timezones|local|самопроверка матрицы поясов и тесты в UTC+14 и UTC-11"
 	"ci.yml:changelog-scope|local|самопроверка гейта журнала и он сам"
@@ -70,6 +71,11 @@ lookup() { # печатает "вид|пояснение" или пусто
 
 run_job() {
 	case $1 in
+	ci.yml:bench)
+		[[ -d frontend/dist ]] || (cd frontend && npm ci && npm run build)
+		go test -run '^$' -bench . -benchmem -benchtime 200x ./... | tee /tmp/kbengine-bench.txt
+		grep -q "^Benchmark" /tmp/kbengine-bench.txt || { echo "ни один бенчмарк не прогнан"; return 1; }
+		;;
 	ci.yml:build)
 		[[ -d frontend/dist ]] || (cd frontend && npm ci && npm run build)
 		[[ -z $(gofmt -l .) ]] || { echo "gofmt: файлы не отформатированы"; return 1; }
