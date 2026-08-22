@@ -19,6 +19,10 @@ type Report struct {
 	Added            int
 	SkippedDuplicate int // URL already present (in catalog or earlier in the batch)
 	SkippedNoURL     int // entry carried no URL to dedup on
+	// CategoriesUnchecked is true when the catalog declares no categories at
+	// all, so the category of every added entry went unverified. Silence would
+	// be indistinguishable from a check that found nothing.
+	CategoriesUnchecked bool
 }
 
 // Plan filters params against the catalog and returns the entries to add. An
