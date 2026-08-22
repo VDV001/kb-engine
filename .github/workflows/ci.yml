@@ -290,6 +290,16 @@ jobs:
       - name: Build image
         run: docker build -t kbengine:ci .
 
+      # Число размера образа в README пересчитывается из САМОГО образа, не из
+      # go build: README называет именно образ. Джоба его уже собрала, поэтому
+      # проверка ничего не строит заново.
+      - name: Verify README claims
+        run: |
+          size="$(docker images kbengine:ci --format '{{.Size}}')"
+          mb="$(awk -v s="$size" 'BEGIN{n=s+0;u=s;gsub(/[0-9.]/,"",u);if(u=="GB")n*=1024;else if(u=="kB"||u=="KB")n/=1024;printf "%.1f",n}')"
+          scripts/gates/verify-claims.sh --self-test
+          VERIFY_IMAGE_MB="$mb" scripts/gates/verify-claims.sh
+
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
