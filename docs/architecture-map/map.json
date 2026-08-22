@@ -1580,8 +1580,8 @@
           "from": "cmd-add",
           "to": "dom-entry",
           "call": "artefactParams — конструкторы домена",
-          "detail": "cmd/kbengine/add.go:71 — artefactParams строит поля через конструкторы домена ДО того, как каталог прочитан: негодная категория, вердикт или lifecycle останавливают команду раньше чтения файла. Существование файла проверяется ещё раньше — checkArtefactExists (add.go:65), и только когда файл дан: у чужой статьи идентичность адрес",
-          "source": "cmd/kbengine/add.go:71",
+          "detail": "cmd/kbengine/add.go:55 — artefactParams строит поля через конструкторы домена ДО того, как каталог прочитан: негодная категория, вердикт или lifecycle останавливают команду раньше чтения файла. Существование файла проверяется ещё раньше — checkArtefactExists (add.go:203), и только когда файл дан: у чужой статьи идентичность адрес",
+          "source": "cmd/kbengine/add.go:55",
           "unverified": false,
           "symbol": "artefactParams"
         },
@@ -1599,7 +1599,7 @@
           "from": "cmd-add",
           "to": "uc-ingest",
           "call": "ingest.PlanArtefacts(cat, params, time.Now())",
-          "detail": "cmd/kbengine/add.go:95 строит план и отчёт: планировщик выбирается идентичностью записи (файл → PlanArtefacts, адрес → Plan), дедуп происходит здесь, а не при записи — internal/usecase/ingest/artefact.go:20",
+          "detail": "cmd/kbengine/add.go:79 строит план и отчёт: планировщик выбирается идентичностью записи (файл → PlanArtefacts, адрес → Plan), дедуп происходит здесь, а не при записи — internal/usecase/ingest/artefact.go:20",
           "source": "internal/usecase/ingest/artefact.go:20",
           "unverified": false
         },

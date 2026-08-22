@@ -48,24 +48,8 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
-	for name, value := range map[string]string{"--catalog": *catalogPath, "--title": *title, "--category": *category} {
-		if value == "" {
-			fmt.Fprintf(stderr, "add: %s is required\n", name)
-			return 2
-		}
-	}
-	// Идентичность записи — файл или адрес. Без обоих движок не знает, что он
-	// добавляет, и дедуп ему не на чем построить.
-	if strings.TrimSpace(*file) == "" && strings.TrimSpace(*url) == "" {
-		fmt.Fprintln(stderr, "add: нужен --file (свой артефакт) или --url (чужой материал) — идентичность записи одна из двух")
-		return 2
-	}
-
-	if *file != "" {
-		if err := checkArtefactExists(*catalogPath, *file); err != nil {
-			fmt.Fprintf(stderr, "add: --file: %v\n", err)
-			return 2
-		}
+	if code := checkAddFlags(*catalogPath, *title, *category, *file, *url, stderr); code != 0 {
+		return code
 	}
 
 	params, err := artefactParams(entryFlags{
@@ -183,26 +167,11 @@ func artefactParams(f entryFlags) (domain.EntryParams, error) {
 		p.HabrID = &id
 	}
 
-	// An own artefact is read by definition — it was written here. Someone
-	// else's material is read once it has a verdict, and undecided otherwise:
-	// inventing a verdict would record a decision the human never made.
-	readState := "read"
-	if f.file == "" && f.verdict == "" {
-		readState = "unread"
-	}
-	read, err := domain.NewReadState(readState)
+	read, verdict, err := triageOf(f.file, f.verdict)
 	if err != nil {
 		return domain.EntryParams{}, err
 	}
-	p.ReadState = &read
-
-	if f.verdict != "" {
-		v, err := domain.NewVerdict(f.verdict)
-		if err != nil {
-			return domain.EntryParams{}, fmt.Errorf("--verdict: %w", err)
-		}
-		p.Verdict = &v
-	}
+	p.ReadState, p.Verdict = read, verdict
 	if f.version != "" {
 		v, err := domain.NewVersion(f.version)
 		if err != nil {
@@ -211,4 +180,54 @@ func artefactParams(f entryFlags) (domain.EntryParams, error) {
 		p.Version = &v
 	}
 	return p, nil
+}
+
+// checkAddFlags reports the first thing missing from the command line, or 0 when
+// the command may proceed. It is separate from runAdd because the flags answer
+// three different questions: what to write into, what to write, and how the
+// entry is identified.
+func checkAddFlags(catalogPath, title, category, file, url string, stderr io.Writer) int {
+	for name, value := range map[string]string{"--catalog": catalogPath, "--title": title, "--category": category} {
+		if value == "" {
+			fmt.Fprintf(stderr, "add: %s is required\n", name)
+			return 2
+		}
+	}
+	// Идентичность записи — файл или адрес. Без обоих движок не знает, что он
+	// добавляет, и дедуп ему не на чем построить.
+	if strings.TrimSpace(file) == "" && strings.TrimSpace(url) == "" {
+		fmt.Fprintln(stderr, "add: нужен --file (свой артефакт) или --url (чужой материал) — идентичность записи одна из двух")
+		return 2
+	}
+	if file != "" {
+		if err := checkArtefactExists(catalogPath, file); err != nil {
+			fmt.Fprintf(stderr, "add: --file: %v\n", err)
+			return 2
+		}
+	}
+	return 0
+}
+
+// triageOf decides the reading state and the verdict.
+//
+// An own artefact is read by definition — it was written here. Someone else's
+// material is read once it has a verdict, and undecided otherwise: inventing a
+// verdict would record a decision the human never made.
+func triageOf(file, verdict string) (*domain.ReadState, *domain.Verdict, error) {
+	state := "read"
+	if file == "" && verdict == "" {
+		state = "unread"
+	}
+	read, err := domain.NewReadState(state)
+	if err != nil {
+		return nil, nil, err
+	}
+	if verdict == "" {
+		return &read, nil, nil
+	}
+	v, err := domain.NewVerdict(verdict)
+	if err != nil {
+		return nil, nil, fmt.Errorf("--verdict: %w", err)
+	}
+	return &read, &v, nil
 }
