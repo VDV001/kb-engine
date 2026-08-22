@@ -2,6 +2,7 @@ package runs
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 )
@@ -33,6 +34,12 @@ type Policy struct {
 	SlowFactor float64
 	// MinWindow — сколько прогонов нужно в каждом окне, чтобы медианы сравнивать.
 	MinWindow int
+	// FindingsExit — команды, у которых ненулевой код означает «нашлось», а не
+	// «сломалось». Список приходит снаружи: usecase не может знать, как автор
+	// команды договорился о кодах, а вписанный сюда он разошёлся бы с движком
+	// молча — так уже ломались «известные команды», пока их не начали брать из
+	// карты диспетчера.
+	FindingsExit []string
 }
 
 // DefaultPolicy — пороги по умолчанию, каждый с названной ценой.
@@ -108,7 +115,8 @@ func groups(rep Report, p Policy, now time.Time) (stale, failing, slow []Finding
 		}
 		// Доля считается только при достаточном числе прогонов: у команды с
 		// двумя запусками «100 % отказов» — это две опечатки, а не диагноз.
-		if c.Runs >= p.MinRuns && float64(c.Failures)/float64(c.Runs) > p.FailureRate {
+		if c.Runs >= p.MinRuns && !slices.Contains(p.FindingsExit, c.Name) &&
+			float64(c.Failures)/float64(c.Runs) > p.FailureRate {
 			failing = append(failing, Finding{
 				Subject: c.Name,
 				Reason: fmt.Sprintf("падает в %d прогонах из %d (%.0f%%), порог %.0f%%",

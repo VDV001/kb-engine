@@ -91,6 +91,11 @@ func runRuns(args []string, stdout, stderr io.Writer) int {
 // и превращается в способ выключить находку, не признав её.
 func printChecks(w io.Writer, path string, r runs.Report, now time.Time) int {
 	p := runs.DefaultPolicy()
+	// Знание живёт здесь, потому что здесь и принято: `runs --check` отвечает
+	// кодом 1, когда находки ЕСТЬ. Без этой строки инвариант «падает» считал бы
+	// каждый успешный прогон сторожа отказом — на живом журнале он так и
+	// заявил «runs падает в 65 % прогонов».
+	p.FindingsExit = []string{"runs"}
 	found := runs.Check(r, p, now)
 	fmt.Fprintf(w, "журнал прогонов: %s\n", path)
 	fmt.Fprintf(w, "пороги: молчание %s · отказы %.0f%% при %d+ прогонах · замедление %.1f× при окне %d+\n",
