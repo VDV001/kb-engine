@@ -196,3 +196,112 @@ func stat(r runs.Report, name string) (runs.CommandStat, bool) {
 	}
 	return runs.CommandStat{}, false
 }
+
+// took строит запись с заданной длительностью: у at она прибита к 5 мс, а
+// здесь предмет проверки — именно длительность.
+func took(t *testing.T, command string, when time.Time, d time.Duration, args ...string) domain.RunRecord {
+	t.Helper()
+	rec, err := domain.NewRunRecord(command, args, when, d, 0, when.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("NewRunRecord(%q): %v", command, err)
+	}
+	return rec
+}
+
+// Признак «в окнах разный состав подкоманд» считается ИЗ ЗАПИСЕЙ, и это надо
+// проверять на записях: тест инварианта подаёт MixedShape готовым и вычисление
+// не трогает. Дыру нашла подсадка — детектор, всегда отвечающий «состав
+// одинаков», не уронил ни одного теста.
+func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	mk := func(sub string, n int, d time.Duration, from int) []domain.RunRecord {
+		var out []domain.RunRecord
+		for i := range n {
+			out = append(out, took(t, "fin", base.Add(time.Duration(from+i)*time.Minute), d, sub))
+		}
+		return out
+	}
+	// ранние — лёгкий spelling, поздние — тяжёлый sync: ровно случай живого
+	// журнала, где медиана дала «медленнее в 5,2 раза» на пустом месте.
+	var mixed []domain.RunRecord
+	mixed = append(mixed, mk("spelling", 8, 5*time.Millisecond, 0)...)
+	mixed = append(mixed, mk("sync", 8, 26*time.Millisecond, 100)...)
+
+	// однородный контроль: та же разница в скорости, но состав один и тот же —
+	// значит замедление настоящее, и признак ставиться НЕ должен.
+	var same []domain.RunRecord
+	same = append(same, mk("sync", 8, 5*time.Millisecond, 0)...)
+	same = append(same, mk("sync", 8, 26*time.Millisecond, 100)...)
+
+	for _, tc := range []struct {
+		name      string
+		recs      []domain.RunRecord
+		wantMixed bool
+	}{
+		{"разный состав подкоманд", mixed, true},
+		{"один и тот же состав", same, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep, err := runs.Build(journalStub{recs: tc.recs, exists: true}, []string{"fin"}, base.Add(time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Commands) != 1 {
+				t.Fatalf("ожидалась одна команда, получено %d", len(rep.Commands))
+			}
+			if got := rep.Commands[0].MixedShape; got != tc.wantMixed {
+				t.Fatalf("MixedShape = %v, ждали %v (окно %d, %s → %s)",
+					got, tc.wantMixed, rep.Commands[0].WindowSize,
+					rep.Commands[0].EarlyMedian, rep.Commands[0].LateMedian)
+			}
+		})
+	}
+}
+
+// Вторая ловушка того же класса, тоже найденная живым журналом: у `audit`
+// первый аргумент — флаг `--catalog`, поэтому форма по первому аргументу у всех
+// прогонов одна. А работа разная: ранние звались с узким `--check files`
+// (18 мс), поздние девять раз без `--check` вовсе, то есть полным набором
+// (374 мс). Форму задаёт НАБОР ИМЁН флагов, а не первое слово.
+func TestBuild_shapeUsesFlagNames(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	var recs []domain.RunRecord
+	for i := range 8 { // ранние: с --check
+		recs = append(recs, took(t, "audit", base.Add(time.Duration(i)*time.Minute),
+			18*time.Millisecond, "--catalog", "c.json", "--check", "files"))
+	}
+	for i := range 8 { // поздние: без --check, работа шире
+		recs = append(recs, took(t, "audit", base.Add(time.Duration(100+i)*time.Minute),
+			374*time.Millisecond, "--catalog", "c.json"))
+	}
+	rep, err := runs.Build(journalStub{recs: recs, exists: true}, []string{"audit"}, base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Commands[0].MixedShape {
+		t.Fatalf("набор флагов различается (--check есть только в ранних) — форма обязана считаться разной")
+	}
+}
+
+// Обратная сторона: значения флагов в форму НЕ входят. Иначе каждая трата с
+// новым местом давала бы свою форму, и замедление не посчиталось бы никогда.
+func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	var recs []domain.RunRecord
+	places := []string{"Пятёрочка", "Магнит", "Монетка", "Верный"}
+	for i := range 8 {
+		recs = append(recs, took(t, "fin", base.Add(time.Duration(i)*time.Minute),
+			5*time.Millisecond, "add", "--place", places[i%len(places)]))
+	}
+	for i := range 8 {
+		recs = append(recs, took(t, "fin", base.Add(time.Duration(100+i)*time.Minute),
+			26*time.Millisecond, "add", "--place", places[(i+1)%len(places)]))
+	}
+	rep, err := runs.Build(journalStub{recs: recs, exists: true}, []string{"fin"}, base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Commands[0].MixedShape {
+		t.Fatalf("форма одна и та же (add --place), различаются только ЗНАЧЕНИЯ — замедление считать можно")
+	}
+}
