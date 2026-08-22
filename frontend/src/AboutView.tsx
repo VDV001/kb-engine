@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api } from './api'
-import type { Stats } from './api'
+import type { Stats, Capability } from './api'
 import { categoryLabel } from './catalog'
 import { useResource } from './hooks/useResource'
 import { Card, Label, Stat } from './components/ui'
@@ -44,6 +44,8 @@ export function AboutView({
   const log = res.status === 'ready' ? res.data : null
   const eng = useResource(api.engine)
   const engine = eng.status === 'ready' ? eng.data : null
+  const cap = useResource(api.capabilities)
+  const capabilities = cap.status === 'ready' ? cap.data : null
 
   const [fullHistory, setFullHistory] = useState(false)
   const labels = stats.category_labels ?? {}
@@ -275,6 +277,41 @@ export function AboutView({
           </p>
         </div>
       </section>
+
+      {/* Статусная таблица: честное деление возможностей на боевые, лес и план.
+          Данные приходят из /api/capabilities — того же среза, что сверяет
+          README-гейт, поэтому витрина и README не могут разойтись. */}
+      {capabilities && capabilities.length > 0 && (
+        <section>
+          <h2 className="font-headline text-2xl font-bold">Возможности и их зрелость</h2>
+          <p className="mt-2 text-sm text-on-surface-variant">
+            Статус по замеру, а не по желанию: «написано» — это ещё не «стабильно».
+          </p>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-outline-variant text-left">
+                  <th className="py-2 pr-4 font-medium">Возможность</th>
+                  <th className="py-2 pr-4 font-medium">Статус</th>
+                  <th className="py-2 font-medium">Замечание</th>
+                </tr>
+              </thead>
+              <tbody>
+                {capabilities.map((c: Capability) => (
+                  <tr key={c.name} className="border-b border-outline-variant/60 align-top">
+                    <td className="py-2 pr-4">{c.name}</td>
+                    <td className="whitespace-nowrap py-2 pr-4 font-mono text-xs">
+                      {c.status === 'stable' ? '✅ stable' : c.status === 'experimental' ? '⚠️ experimental' : '🚧 roadmap'}
+                    </td>
+                    <td className="py-2 text-on-surface-variant">{c.note}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
     </div>
   )
 }

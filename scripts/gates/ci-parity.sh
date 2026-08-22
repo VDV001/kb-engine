@@ -34,6 +34,7 @@ TABLE=(
 	"ci.yml:changelog-scope|local|самопроверка гейта журнала и он сам"
 	"ci.yml:ci-parity|local|самопроверка этого гейта и сверка состава"
 	"ci.yml:arch-map|local|самопроверка валидатора карт и он сам"
+	"ci.yml:capabilities|local|самопроверка гейта таблицы возможностей и сверка с README"
 	"ci.yml:govulncheck|local|govulncheck по всем пакетам"
 	"ci.yml:gitleaks|local|gitleaks по всей истории"
 	"ci.yml:docker|local|сборка образа; ⚠️ скан trivy не воспроизводится — trivy не установлен"
@@ -114,6 +115,10 @@ run_job() {
 	ci.yml:arch-map)
 		./scripts/gates/arch-map.sh --self-test
 		./scripts/gates/arch-map.sh --commit-warn
+		;;
+	ci.yml:capabilities)
+		./scripts/gates/capabilities.sh --self-test
+		./scripts/gates/capabilities.sh
 		;;
 	ci.yml:govulncheck)
 		command -v govulncheck >/dev/null || go install golang.org/x/vuln/cmd/govulncheck@v1.1.4

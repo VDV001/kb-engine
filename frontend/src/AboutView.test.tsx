@@ -18,6 +18,10 @@ vi.mock('./api', () => ({
   api: {
     changelog: async () => changelog.value,
     engine: async () => ({ version: '0.4.1', commit: '665868a195ab', built: '2026-07-31T17:21:48Z' }),
+    capabilities: async () => [
+      { name: 'Каталог знаний', status: 'stable', note: 'записи и аудит' },
+      { name: 'MCP-сервер над каталогом', status: 'roadmap', note: 'задача #273' },
+    ],
   },
 }))
 
@@ -100,6 +104,15 @@ describe('AboutView', () => {
     for (const label of ['Первая', 'Вторая', 'Третья', 'Четвёртая', 'Пятая']) {
       expect(names.filter((n) => n?.includes(label)).length).toBe(1)
     }
+  })
+
+  it('показывает статусную таблицу возможностей из /api/capabilities', async () => {
+    render(<AboutView stats={stats} onPickCategory={() => {}} />)
+    // Ждём асинхронную загрузку возможностей.
+    expect(await screen.findByText('Возможности и их зрелость')).toBeTruthy()
+    expect(screen.getByText('MCP-сервер над каталогом')).toBeTruthy()
+    // Статус показан, а не проглочен: без него таблица не отличается от списка.
+    expect(screen.getByText('🚧 roadmap')).toBeTruthy()
   })
 })
 

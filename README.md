@@ -45,6 +45,27 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.
 
+## Status
+
+Каждая возможность помечена честным статусом. Источник таблицы один — срез
+`Capabilities()` в движке; та же таблица на вкладке About (`/api/capabilities`),
+а гейт `scripts/gates/capabilities.sh` не даёт README разойтись с источником.
+
+| Возможность | Статус | Замечание |
+|---|---|---|
+| Каталог знаний | ✅ stable | Записи, категории, статусы жизненного цикла; аудит целостности. |
+| Поиск: подстрока, транслитерация, опечатки, словарь | ✅ stable | Четыре слоя в одном usecase; терминал и веб отвечают одинаково. |
+| Смысловой слой поиска | ⚠️ experimental | Векторы от внешней службы; закрывает единичные запросы, не все. |
+| Финансовый учёт | ✅ stable | Журнал + xlsx в шаге; балансы, отчёты, проверка написаний. |
+| Терминальный интерфейс (TUI) | ✅ stable | Второй равноправный интерфейс поверх того же usecase. |
+| Веб-витрина | ✅ stable | Дашборд, карты архитектуры, артефакты базы через /kb/. |
+| Метрики Prometheus | ✅ stable | Формат текста без клиентской библиотеки; /metrics. |
+| Профилировщик pprof | ✅ stable | Под флагом, на своём слушателе; выключен по умолчанию. |
+| Разбивка ответа (Server-Timing) | ✅ stable | Шаги запроса в заголовке; выключено по умолчанию. |
+| Развёртывание в Kubernetes и Helm | ⚠️ experimental | Манифесты и чарт написаны; нагрузка и многоузловость не проверены. |
+| Хранилище каталога в S3 (Terraform) | ⚠️ experimental | Проверено на LocalStack и MinIO; настоящий AWS не прогонялся. |
+| MCP-сервер над каталогом | 🚧 roadmap | Агенты ищут базу через MCP; задача #273, ещё не начата. |
+
 ## Quick start
 
 Released binaries and the container image are self-contained — the dashboard is

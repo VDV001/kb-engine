@@ -216,6 +216,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/analytics-config", handleAnalyticsConfig(cfg))
 	mux.HandleFunc("GET /api/graph", handleGraph(an, cfg))
 	mux.HandleFunc("GET /api/changelog", handleChangelog(chlog))
+	mux.HandleFunc("GET /api/capabilities", handleCapabilities())
 	mux.HandleFunc("GET /api/engine", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, engine)
 	})
