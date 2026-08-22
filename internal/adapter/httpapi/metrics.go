@@ -106,15 +106,24 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 // Шаблон берётся из http.Request.Pattern, который ServeMux заполняет сам после
 // сопоставления; собственная таблица маршрутов разошлась бы с регистрацией на
 // первом же новом эндпоинте.
-func instrument(mux *http.ServeMux, m *metrics) http.Handler {
+func instrument(mux *http.ServeMux, m *metrics, timing bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == metricsPath {
+			// Заголовок разбивки здесь не нужен: /metrics читает Prometheus,
+			// а не человек, и собственная длительность экспозиции ничего не
+			// говорит о запросах, ради которых её собирают.
 			mux.ServeHTTP(w, r)
 			return
 		}
 		rec := &statusRecorder{ResponseWriter: w}
 		start := time.Now()
-		mux.ServeHTTP(rec, r)
+		var out http.ResponseWriter = rec
+		if timing {
+			var tl *timeline
+			r, tl = withTimeline(r)
+			out = &timingWriter{ResponseWriter: rec, tl: tl, start: start}
+		}
+		mux.ServeHTTP(out, r)
 		if rec.code == 0 {
 			rec.code = http.StatusOK
 		}

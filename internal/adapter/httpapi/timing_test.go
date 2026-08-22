@@ -66,3 +66,17 @@ func TestServerTiming_notOnMetrics(t *testing.T) {
 		t.Fatalf("на /metrics пришёл заголовок: %q", h)
 	}
 }
+
+// Backfill: шаги поиска и денег покрываются отдельно, потому что именно они
+// дорогие — четыре слоя поиска и разбор книги стоят миллисекунды каждый.
+// Слитые в одну строку, они не отвечают на вопрос, ради которого заголовок и
+// заводился.
+func TestServerTiming_separatesReadingFromSearching(t *testing.T) {
+	rec := get(t, newTestServerWith(httpapi.WithServerTiming()), "/api/search?q=go")
+	h := rec.Header().Get("Server-Timing")
+	for _, want := range []string{"catalog;dur=", "search;dur="} {
+		if !strings.Contains(h, want) {
+			t.Fatalf("нет шага %q: %q", want, h)
+		}
+	}
+}

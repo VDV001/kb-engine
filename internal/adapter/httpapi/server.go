@@ -163,7 +163,8 @@ type Financier interface {
 type Option func(*options)
 
 type options struct {
-	syn search.Matcher
+	syn    search.Matcher
+	timing bool
 }
 
 // WithSynonyms подключает слой перевода терминов.
@@ -174,6 +175,15 @@ type options struct {
 // одно, а доступ к нему был выдан не всем.
 func WithSynonyms(m search.Matcher) Option {
 	return func(o *options) { o.syn = m }
+}
+
+// WithServerTiming включает разбивку ответа по шагам в заголовке Server-Timing.
+//
+// Выключено по умолчанию: заголовок рассказывает, из чего состоит обработка
+// запроса, а витрину можно отдать наружу. Это то же решение, что у --pprof и
+// у --addr: наружу уходит по выбору человека, а не по наследству.
+func WithServerTiming() Option {
+	return func(o *options) { o.timing = true }
 }
 
 // NewServer builds the HTTP handler. cfg is the curated analytics config (empty
@@ -247,7 +257,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	// заполняет Request.Pattern при сопоставлении, поэтому шаблон маршрута
 	// известен только после его работы. Регистрация нового эндпоинта попадает
 	// в метрики сама, без строчки в отдельном списке.
-	return instrument(mux, m)
+	return instrument(mux, m, o.timing)
 }
 
 // handleHealthz is a liveness probe: it returns 200 as long as the process can
@@ -508,15 +518,21 @@ func handleAnalytics(an Analyzer) http.HandlerFunc {
 }
 
 func handleStats(q Querier) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Шаг называется по тому, что он делает, а не по функции: и Stats, и
+		// Health читают ОДИН каталог с диска, и человеку, смотрящему на
+		// разбивку, важна эта строка, а не два одинаковых слагаемых.
+		done := track(r.Context(), "catalog")
 		st, err := q.Stats()
 		if err != nil {
+			done()
 			writeError(w, err)
 			return
 		}
 		// Здоровье едет вместе со статистикой, а не отдельным запросом: это
 		// такой же агрегат по тому же каталогу, и рисуются они на одном экране.
 		h, err := q.Health()
+		done()
 		if err != nil {
 			writeError(w, err)
 			return
@@ -529,8 +545,10 @@ func handleStats(q Querier) http.HandlerFunc {
 }
 
 func handleEntries(q Querier) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		done := track(r.Context(), "catalog")
 		entries, err := q.Entries()
+		done()
 		if err != nil {
 			writeError(w, err)
 			return
@@ -553,14 +571,21 @@ func handleEntries(q Querier) http.HandlerFunc {
 // расхождение здесь было бы тем же дефектом в миниатюре.
 func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		readDone := track(r.Context(), "catalog")
 		entries, err := q.Entries()
+		readDone()
 		if err != nil {
 			writeError(w, err)
 			return
 		}
+		// Поиск отделён от чтения намеренно: у него четыре слоя, и на живом
+		// каталоге он стоит миллисекунды — если разбивка сольёт его с чтением,
+		// вопрос «где медленно» останется без ответа ровно там, где он и возник.
+		searchDone := track(r.Context(), "search")
 		// FilterWith, а не Filter: слой перевода приходит снаружи, и его
 		// нулевое значение — законное «словаря нет», а не поломка.
 		found := search.FilterWith(entries, r.URL.Query().Get("q"), syn)
+		searchDone()
 		dtos := make([]entryDTO, 0, len(found))
 		for _, e := range found {
 			dtos = append(dtos, toDTO(e))
@@ -609,12 +634,14 @@ func handleLinkHealth(a Auditor) http.HandlerFunc {
 }
 
 func handleFinances(fin Financier) http.HandlerFunc {
-	return func(w http.ResponseWriter, _ *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		// Empty rather than 404: the view asks unconditionally, and "no ledger
 		// configured" is a shape it can render, not an error it has to handle.
 		txs, accounts := []transactionDTO{}, []accountDTO{}
 		if fin != nil {
+			done := track(r.Context(), "ledger")
 			f, err := fin.Finances()
+			done()
 			if err != nil {
 				// The message carries the path to a personal finance file, which is
 				// not something to hand to whoever asked. The operator gets it on
@@ -628,9 +655,11 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			}
 			// Остаток считает тот же usecase, что и терминал: две реализации
 			// одной арифметики однажды разойдутся, и разойдутся молча.
+			balDone := track(r.Context(), "balances")
 			for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations) {
 				accounts = append(accounts, toBalanceDTO(b))
 			}
+			balDone()
 		}
 		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts})
 	}
