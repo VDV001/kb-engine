@@ -15,7 +15,9 @@ package runs
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -48,6 +50,15 @@ type CommandStat struct {
 	EarlyMedian time.Duration
 	LateMedian  time.Duration
 	WindowSize  int
+	// MixedShape — в окнах разный состав подкоманд, и медианы сравнивать
+	// нельзя. У зонтичных команд (`fin` объединяет spelling и sync, отличаясь
+	// впятеро по стоимости) медиана меряет состав, а не скорость: на живом
+	// журнале это дало «медленнее в 5,2 раза» там, где ничего не замедлялось.
+	//
+	// Наружу выходит только этот признак. Сами подкоманды не показываются: они
+	// приходят из аргументов, а там лежат настоящие суммы и места владельца, и
+	// правило пакета — имена команд и числа, но не значения.
+	MixedShape bool
 }
 
 // Report — ответ журнала на вопрос «что движок делал и чего не делал».
@@ -149,7 +160,7 @@ func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
 	}
 	for name, recs := range byTime {
 		s := byName[name]
-		s.EarlyMedian, s.LateMedian, s.WindowSize = windows(recs)
+		s.EarlyMedian, s.LateMedian, s.WindowSize, s.MixedShape = windows(recs)
 		byName[name] = s
 	}
 	return byName, since
@@ -165,11 +176,11 @@ func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
 //
 // maxWindow ограничивает окно сверху: у команды с семьюстами прогонов медиана
 // по всей половине истории меняется так медленно, что замедление в ней тонет.
-func windows(recs []domain.RunRecord) (early, late time.Duration, size int) {
+func windows(recs []domain.RunRecord) (early, late time.Duration, size int, mixed bool) {
 	const maxWindow = 20
 	size = min(len(recs)/2, maxWindow)
 	if size == 0 {
-		return 0, 0, 0
+		return 0, 0, 0, false
 	}
 	took := func(rs []domain.RunRecord) time.Duration {
 		d := make([]time.Duration, 0, len(rs))
@@ -179,5 +190,32 @@ func windows(recs []domain.RunRecord) (early, late time.Duration, size int) {
 		slices.Sort(d)
 		return d[len(d)/2]
 	}
-	return took(recs[:size]), took(recs[len(recs)-size:]), size
+	head, tail := recs[:size], recs[len(recs)-size:]
+	return took(head), took(tail), size, shapeOf(head) != shapeOf(tail)
+}
+
+// shapeOf описывает, ИЗ ЧЕГО состоит окно: какие подкоманды в нём встречались и
+// сколько раз, свёрнутое в одну строку для сравнения.
+//
+// Подкомандой считается первый аргумент, если он не флаг: `fin sync` — да,
+// `set --ids` — нет. Строка нужна только для сравнения двух окон между собой и
+// наружу не отдаётся; ponytail: сравнение строк вместо разбора множеств —
+// потолок в том, что перестановка ключей карты дала бы ложное «разный состав»,
+// поэтому ключи сортируются.
+func shapeOf(recs []domain.RunRecord) string {
+	counts := map[string]int{}
+	for _, r := range recs {
+		args := r.Args()
+		if len(args) == 0 || strings.HasPrefix(args[0], "-") {
+			counts[""]++
+			continue
+		}
+		counts[args[0]]++
+	}
+	keys := slices.Sorted(maps.Keys(counts))
+	var b strings.Builder
+	for _, k := range keys {
+		fmt.Fprintf(&b, "%s:%d;", k, counts[k])
+	}
+	return b.String()
 }

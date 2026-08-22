@@ -47,6 +47,7 @@ func runRuns(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("runs", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	journalPath := fs.String("journal", "", "path to the run journal (default: $KBENGINE_RUNLOG or the XDG state dir)")
+	check := fs.Bool("check", false, "проверить инварианты и выйти с кодом 1, если есть находки")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -72,8 +73,46 @@ func runRuns(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "runs: %v\n", err)
 		return 1
 	}
+	if *check {
+		return printChecks(stdout, path, rep, time.Now())
+	}
 	printReport(stdout, path, rep, time.Now())
 	return 0
+}
+
+// printChecks печатает нарушенные инварианты и отвечает КОДОМ.
+//
+// Код важнее вывода: отчёт читает человек, а код читает расписание, и без него
+// сторож не отличит «нашлось» от «прогнали». Именно этим болел audit_watch —
+// написан и не вызывался никем, потому что позвать его было нечем.
+//
+// Порог живёт в DefaultPolicy и там же объяснён. Флага для его правки нет
+// намеренно: порог, который каждый передаёт свой, перестаёт быть общим правилом
+// и превращается в способ выключить находку, не признав её.
+func printChecks(w io.Writer, path string, r runs.Report, now time.Time) int {
+	p := runs.DefaultPolicy()
+	found := runs.Check(r, p, now)
+	fmt.Fprintf(w, "журнал прогонов: %s\n", path)
+	fmt.Fprintf(w, "пороги: молчание %s · отказы %.0f%% при %d+ прогонах · замедление %.1f× при окне %d+\n",
+		human(p.Stale), 100*p.FailureRate, p.MinRuns, p.SlowFactor, p.MinWindow)
+	if len(found) == 0 {
+		fmt.Fprintln(w, "инварианты не нарушены.")
+		return 0
+	}
+	for _, f := range found {
+		fmt.Fprintf(w, "  [%s] %s\n", f.Subject, f.Reason)
+	}
+	fmt.Fprintf(w, "находок: %d\n", len(found))
+	return 1
+}
+
+// human повторяет формат сроков из usecase, чтобы шапка и находки говорили об
+// одном и том же одинаково.
+func human(d time.Duration) string {
+	if days := int(d.Hours() / 24); days >= 2 {
+		return fmt.Sprintf("%d дн.", days)
+	}
+	return fmt.Sprintf("%d ч.", int(d.Hours()))
 }
 
 // printReport выводит отчёт человеку.

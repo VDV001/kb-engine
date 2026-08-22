@@ -115,6 +115,17 @@ func groups(rep Report, p Policy, now time.Time) (stale, failing, slow []Finding
 					c.Failures, c.Runs, 100*float64(c.Failures)/float64(c.Runs), 100*p.FailureRate),
 			})
 		}
+		// Отказ сравнивать НАЗЫВАЕТСЯ, а не молчит: молчаливый отказ снаружи
+		// выглядит как «проверено, чисто» — то самое, против чего заведён весь
+		// журнал. Условие стоит до порога замедления: иначе зонтичная команда,
+		// у которой состав разъехался, сперва получила бы ложную находку.
+		if c.MixedShape && c.WindowSize >= p.MinWindow {
+			slow = append(slow, Finding{
+				Subject: c.Name,
+				Reason:  "замедление сравнивать нельзя: в ранних и поздних прогонах разный состав подкоманд, и медиана меряла бы состав, а не скорость",
+			})
+			continue
+		}
 		if c.WindowSize >= p.MinWindow && c.EarlyMedian > 0 &&
 			float64(c.LateMedian) > p.SlowFactor*float64(c.EarlyMedian) {
 			slow = append(slow, Finding{

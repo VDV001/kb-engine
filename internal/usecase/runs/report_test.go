@@ -196,3 +196,64 @@ func stat(r runs.Report, name string) (runs.CommandStat, bool) {
 	}
 	return runs.CommandStat{}, false
 }
+
+// took строит запись с заданной длительностью: у at она прибита к 5 мс, а
+// здесь предмет проверки — именно длительность.
+func took(t *testing.T, command string, when time.Time, d time.Duration, args ...string) domain.RunRecord {
+	t.Helper()
+	rec, err := domain.NewRunRecord(command, args, when, d, 0, when.Add(time.Hour))
+	if err != nil {
+		t.Fatalf("NewRunRecord(%q): %v", command, err)
+	}
+	return rec
+}
+
+// Признак «в окнах разный состав подкоманд» считается ИЗ ЗАПИСЕЙ, и это надо
+// проверять на записях: тест инварианта подаёт MixedShape готовым и вычисление
+// не трогает. Дыру нашла подсадка — детектор, всегда отвечающий «состав
+// одинаков», не уронил ни одного теста.
+func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	mk := func(sub string, n int, d time.Duration, from int) []domain.RunRecord {
+		var out []domain.RunRecord
+		for i := 0; i < n; i++ {
+			out = append(out, took(t, "fin", base.Add(time.Duration(from+i)*time.Minute), d, sub))
+		}
+		return out
+	}
+	// ранние — лёгкий spelling, поздние — тяжёлый sync: ровно случай живого
+	// журнала, где медиана дала «медленнее в 5,2 раза» на пустом месте.
+	var mixed []domain.RunRecord
+	mixed = append(mixed, mk("spelling", 8, 5*time.Millisecond, 0)...)
+	mixed = append(mixed, mk("sync", 8, 26*time.Millisecond, 100)...)
+
+	// однородный контроль: та же разница в скорости, но состав один и тот же —
+	// значит замедление настоящее, и признак ставиться НЕ должен.
+	var same []domain.RunRecord
+	same = append(same, mk("sync", 8, 5*time.Millisecond, 0)...)
+	same = append(same, mk("sync", 8, 26*time.Millisecond, 100)...)
+
+	for _, tc := range []struct {
+		name      string
+		recs      []domain.RunRecord
+		wantMixed bool
+	}{
+		{"разный состав подкоманд", mixed, true},
+		{"один и тот же состав", same, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rep, err := runs.Build(journalStub{recs: tc.recs, exists: true}, []string{"fin"}, base.Add(time.Hour))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(rep.Commands) != 1 {
+				t.Fatalf("ожидалась одна команда, получено %d", len(rep.Commands))
+			}
+			if got := rep.Commands[0].MixedShape; got != tc.wantMixed {
+				t.Fatalf("MixedShape = %v, ждали %v (окно %d, %s → %s)",
+					got, tc.wantMixed, rep.Commands[0].WindowSize,
+					rep.Commands[0].EarlyMedian, rep.Commands[0].LateMedian)
+			}
+		})
+	}
+}
