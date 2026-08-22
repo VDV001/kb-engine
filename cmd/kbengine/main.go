@@ -272,6 +272,10 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// them to anyone on the network. Binding wider stays possible, but as a
 	// choice someone makes rather than one they inherit.
 	addr := fs.String("addr", "127.0.0.1:8080", "address to listen on")
+	// Разбивка ответа по шагам. Выключена по умолчанию по той же причине, что
+	// и профилировщик: заголовок рассказывает, из чего состоит обработка, а
+	// витрину можно отдать наружу.
+	timing := fs.Bool("server-timing", false, "add a Server-Timing header breaking each response into steps (catalog, search, ledger)")
 	// Профилировщик выключен, пока не назван адрес: он отдаёт дампы кучи и
 	// стеки всех горутин, и висеть по умолчанию рядом с личными финансами
 	// ему нечего. Слушатель отдельный — см. cmd/kbengine/pprof.go.
@@ -294,8 +298,12 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
+	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr)}
+	if *timing {
+		serveOpts = append(serveOpts, httpapi.WithServerTiming())
+	}
 	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
-		synonymsFor(*catalogPath, stderr))
+		serveOpts...)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
