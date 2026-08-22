@@ -69,3 +69,24 @@ func TestUnknownFlagIsStillAnError(t *testing.T) {
 		})
 	}
 }
+
+// Покрытие подкоманд fin — backfill, а не TDD: их починил тот же parseFlags,
+// что и команды верхнего уровня, и на момент написания этого теста они уже
+// зелёные. Держим его, потому что реестр finCommands растёт, а помощь у новой
+// подкоманды иначе никто не спросит.
+func TestHelpIsSuccessForEveryFinSubcommand(t *testing.T) {
+	for name := range finCommands {
+		t.Run(name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run([]string{"fin", name, "--help"}, &out, &errb)
+
+			said := out.String() + errb.String()
+			if code != 0 {
+				t.Errorf("fin %s --help вернул %d:\n%s", name, code, said)
+			}
+			if !strings.Contains(strings.ToLower(said), "usage") {
+				t.Errorf("fin %s --help не напечатал помощь:\n%s", name, said)
+			}
+		})
+	}
+}
