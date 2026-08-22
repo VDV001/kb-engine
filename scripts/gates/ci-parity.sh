@@ -36,7 +36,7 @@ TABLE=(
 	"ci.yml:arch-map|local|самопроверка валидатора карт и он сам"
 	"ci.yml:govulncheck|local|govulncheck по всем пакетам"
 	"ci.yml:gitleaks|local|gitleaks по всей истории"
-	"ci.yml:docker|local|сборка образа; ⚠️ скан trivy не воспроизводится — trivy не установлен"
+	"ci.yml:docker|local|сборка образа + verify-claims (размер из README); ⚠️ скан trivy не воспроизводится — trivy не установлен"
 	"ci.yml:terraform|absent|нет opentofu и tflint, а джоба поднимает LocalStack в докере"
 	"ci.yml:k8s|absent|нужен kind (только через nix-shell -p kind), джоба поднимает кластер"
 	"codeql.yml:analyze|absent|нужен CodeQL CLI, на машине его нет"
