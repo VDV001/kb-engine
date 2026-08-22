@@ -24,8 +24,8 @@ func runInbox(args []string, stdout, stderr io.Writer) int {
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	inboxDir := fs.String("inbox", "", "directory of bot inbox *.json files")
 	processedDir := fs.String("processed", "", "optional directory to move processed files into")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "inbox: --catalog is required")

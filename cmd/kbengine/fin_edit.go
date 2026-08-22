@@ -38,8 +38,8 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 	source := fs.String("source", "", "new source")
 	account := fs.String("account", "", "new account (--account= clears it)")
 	date := fs.String("date", "", "new date as YYYY-MM-DD")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin edit: --ledger is required")

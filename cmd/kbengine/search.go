@@ -57,8 +57,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	threshold := fs.Float64("threshold", defaultThreshold, "порог близости для смыслового слоя")
 	limit := fs.Int("limit", 10, "сколько записей показать")
 	build := fs.Bool("build-index", false, "снять векторы всех записей и записать индекс")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "search: --catalog is required")
@@ -89,9 +89,13 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	text := tui.FilterWith(entries, *q, matcher)
 
 	fmt.Fprintf(stdout, "запрос: %q\n\n", *q)
+	shown := text[:min(*limit, len(text))]
 	fmt.Fprintf(stdout, "текстовый слой — %d\n", len(text))
-	for _, e := range text[:min(*limit, len(text))] {
+	for _, e := range shown {
 		fmt.Fprintf(stdout, "  #%-5d %s\n", e.ID(), e.Title())
+	}
+	if line := limitLine(len(shown), len(text)); line != "" {
+		fmt.Fprintln(stdout, line)
 	}
 
 	// Смысловой слой не обязателен, и его отсутствие называется вслух: пустота
@@ -105,6 +109,16 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "\n⚠️ %v — термины не переводились\n", synErr)
 	}
 	return 0
+}
+
+// limitLine называет предел, когда список короче объявленного числа. Пустая
+// строка, когда показано всё: сообщение, приходящее при любом исходе, через
+// неделю перестают читать — как и строка о пробеле индекса рядом.
+func limitLine(shown, total int) string {
+	if shown >= total {
+		return ""
+	}
+	return fmt.Sprintf("  показаны %d из %d, остальные скрыты --limit", shown, total)
 }
 
 // printSemantic печатает смысловой слой или причину, по которой его не было.

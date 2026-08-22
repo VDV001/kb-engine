@@ -24,8 +24,8 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	bank := fs.String("bank", "", "account name as the Счета sheet spells it")
 	amount := fs.String("amount", "", "new balance, e.g. 4321,55")
 	create := fs.Bool("create", false, "add the account to the Счета sheet (it must not be there yet)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	for _, req := range []struct{ flag, value string }{
 		{"--from", *from}, {"--bank", *bank}, {"--amount", *amount},

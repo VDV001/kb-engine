@@ -30,8 +30,8 @@ func runFinDelete(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	ledgerPath := ledgerFlags(fs)
 	id := fs.String("id", "", "id of the entry to delete")
 	yes := fs.Bool("yes", false, "delete without asking (for non-interactive use)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin delete: --ledger is required")

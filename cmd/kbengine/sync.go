@@ -33,8 +33,8 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 		"store the id of every row the workbook identifies only by position")
 	resolve := fs.String("resolve", "", "on a conflict, take one side: jsonl or xlsx")
 	dryRun := fs.Bool("dry-run", false, "report what would happen and change nothing")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *from == "" {
 		fmt.Fprintln(stderr, "fin sync: --from is required")

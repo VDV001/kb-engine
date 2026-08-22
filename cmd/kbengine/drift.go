@@ -24,8 +24,8 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	limit := fs.Int("limit", 0, "check at most N urls (0 = all)")
 	apply := fs.Bool("apply", false, "record the results in the catalog (drift_check_date / drift_http_code)")
 	updateURLs := fs.Bool("update-urls", false, "also replace an entry's url with the address its redirect points at (needs --apply)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "drift: --catalog is required")

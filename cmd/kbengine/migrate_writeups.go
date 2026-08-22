@@ -21,8 +21,8 @@ func runMigrateWriteups(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "migrate writeups: --catalog is required")

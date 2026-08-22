@@ -21,8 +21,8 @@ func runFinSpelling(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin spelling", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin spelling: --ledger is required")
