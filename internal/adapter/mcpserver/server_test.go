@@ -88,8 +88,14 @@ func TestServer_unknownQueryIsEmptyNotError(t *testing.T) {
 	if res.IsError {
 		t.Fatalf("пустая выдача не должна быть ошибкой: %s", text(t, res))
 	}
-	if !strings.Contains(text(t, res), `"found":0`) {
-		t.Fatalf("ожидалось found:0, отдано: %s", text(t, res))
+	var out struct {
+		Found int `json:"found"`
+	}
+	if err := json.Unmarshal([]byte(text(t, res)), &out); err != nil {
+		t.Fatalf("ответ не разбирается: %v", err)
+	}
+	if out.Found != 0 {
+		t.Fatalf("ожидалось found:0, отдано %d", out.Found)
 	}
 }
 

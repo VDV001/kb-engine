@@ -6,6 +6,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
@@ -17,6 +18,10 @@ type stubQuerier struct {
 }
 
 func (s stubQuerier) Entries() ([]domain.Entry, error) { return s.entries, s.err }
+
+func (s stubQuerier) Stats() (query.Stats, error) {
+	return query.Stats{Total: len(s.entries)}, s.err
+}
 
 // entry строит запись через конструктор домена: прямое &domain.Entry{...} вне
 // пакета domain запрещено проектом, и здесь это не формальность — поля закрыты,

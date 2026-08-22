@@ -11,6 +11,7 @@ import (
 	"fmt"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
@@ -19,6 +20,7 @@ import (
 // один адаптер начал бы зависеть от другого.
 type Querier interface {
 	Entries() ([]domain.Entry, error)
+	Stats() (query.Stats, error)
 }
 
 // SearchCatalog отвечает на запрос агента тем же набором, что видит человек.
