@@ -132,3 +132,27 @@ func names(fs []runs.Finding) []string {
 	}
 	return out
 }
+
+// Замедление у зонтичной команды — ловушка, которую нашёл живой прогон, а не
+// рассуждение: `fin` объединяет spelling (7 мс) и sync (26 мс), и медиана
+// меряет СОСТАВ подкоманд, а не скорость. На живом журнале это дало
+// «медленнее в 5,2 раза» там, где ничего не замедлялось.
+//
+// Наружу состав не выходит: проверка знает лишь, что он различается.
+func TestCheck_mixedShapeBlocksSlowdown(t *testing.T) {
+	rep := runs.Report{
+		Exists: true, Total: 16, Since: day(1),
+		Commands: []runs.CommandStat{
+			{Name: "fin", Runs: 8, LastRun: day(21),
+				EarlyMedian: 5 * time.Millisecond, LateMedian: 26 * time.Millisecond,
+				WindowSize: 4, MixedShape: true},
+		},
+	}
+	got := runs.Check(rep, policy(), day(22))
+	if hasFinding(got, "fin", "медленнее") {
+		t.Fatalf("состав подкоманд в окнах разный — замедление считать нельзя: %v", names(got))
+	}
+	if !hasFinding(got, "fin", "сравнивать") {
+		t.Fatalf("отказ сравнивать обязан быть НАЗВАН, а не молчалив: %v", names(got))
+	}
+}
