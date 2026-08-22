@@ -135,7 +135,7 @@ just ci          # full gate (tidy + lint + race tests + coverage gate)
 
 ### Docker
 
-The image is a ~13.5 MB distroless/static binary with the dashboard embedded.
+The image is a ~16.3 MB distroless/static binary with the dashboard embedded.
 (Measured, not estimated: `just docker` then `docker images kbengine:dev`. It grew
 with the dashboard — the figure was ~9 MB while the SPA was a fraction of its
 current size.)
