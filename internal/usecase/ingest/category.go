@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // ErrUndeclaredCategory is returned when an entry being added carries a category
@@ -30,4 +32,29 @@ func (e *UndeclaredCategoryError) Unwrap() error { return ErrUndeclaredCategory 
 // dictionary.
 func declaredCategories(labels map[string]string) []string {
 	return slices.Sorted(maps.Keys(labels))
+}
+
+// checkCategory refuses an entry whose category the catalog does not declare.
+//
+// A category outside meta.categories is not untidy, it is broken: filters still
+// show the entry, the sidebar still draws a box, and the box gets a technical
+// label because nothing describes it. The audit says the same thing afterwards
+// — this says it before the write, which is the difference between a rule and
+// a report.
+//
+// An empty dictionary is not a violation but an inability to check: the caller
+// is told through Report.CategoriesUnchecked rather than being refused, because
+// a catalog may legitimately be built up before its dictionary is.
+func checkCategory(declared map[string]string, p domain.EntryParams) error {
+	if len(declared) == 0 {
+		return nil
+	}
+	if _, ok := declared[p.Category.String()]; ok {
+		return nil
+	}
+	return &UndeclaredCategoryError{
+		Title:    p.Title,
+		Category: p.Category.String(),
+		Declared: declaredCategories(declared),
+	}
 }
