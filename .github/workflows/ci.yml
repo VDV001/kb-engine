@@ -210,6 +210,20 @@ jobs:
       - name: Local run covers CI
         run: ./scripts/gates/ci-parity.sh
 
+  capabilities:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Статусная таблица README не должна расходиться с источником (срезом
+      # Capabilities() в движке). Самопроверка идёт первой: гейт, который не
+      # умеет падать, неотличим от выключенного.
+      - name: Capabilities table self-test
+        run: ./scripts/gates/capabilities.sh --self-test
+
+      - name: Capabilities table matches source
+        run: ./scripts/gates/capabilities.sh
+
   arch-map:
     runs-on: ubuntu-latest
     steps:

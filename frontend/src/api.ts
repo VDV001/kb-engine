@@ -397,6 +397,14 @@ export interface Changelog {
   releases: ChangelogRelease[] | null
 }
 
+/** Одна возможность движка и честный статус её зрелости. Источник — срез
+ * Capabilities() в движке, тот же, что сверяет README-таблицу. */
+export interface Capability {
+  name: string
+  status: 'stable' | 'experimental' | 'roadmap'
+  note: string
+}
+
 /** Сборка движка, которая прямо сейчас отвечает на запросы. Версия базы и
  * версия движка — разные вещи: первая про содержимое, вторая про программу. */
 export interface Engine {
@@ -727,6 +735,7 @@ export const api = {
   graph: () => getJSON<Graph>('/api/graph'),
   changelog: () => getJSON<Changelog>('/api/changelog'),
   engine: () => getJSON<Engine>('/api/engine'),
+  capabilities: () => getJSON<Capability[]>('/api/capabilities'),
   now: () => getJSON<Now | null>('/api/now'),
   sources: () => getJSON<{ sources: SourceState[] }>('/api/sources'),
   maps: () => getJSON<{ maps: ArchMapIndexEntry[] }>('/api/maps'),
