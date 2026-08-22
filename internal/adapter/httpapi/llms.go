@@ -54,7 +54,7 @@ func handleLlmsTxt(q Querier) http.HandlerFunc {
 			b.WriteString("- (каталог пуст)\n")
 		}
 		for _, c := range cats {
-			b.WriteString(fmt.Sprintf("- %s — %d записей\n", c.label, c.n))
+			fmt.Fprintf(&b, "- %s — %d записей\n", c.label, c.n)
 		}
 
 		b.WriteString("\n## Точки входа\n\n")
