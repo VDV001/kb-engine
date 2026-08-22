@@ -1,6 +1,6 @@
 {
   "project": "kb-engine cloud — облачный слой",
-  "commit": "ff56724",
+  "commit": "fc47e4f",
   "checked_at": "2026-08-15",
   "page": "creations/projects/2026-08-15_kbengine-cloud-layer/kbengine-cloud-layer.html",
   "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
@@ -513,7 +513,7 @@
           "to": "srv-stats",
           "call": "curl /api/stats — сверка по ТЕЛУ, а не по коду",
           "detail": "internal/adapter/httpapi/server.go:159 регистрирует маршрут. Код ответа сам по себе ничего не доказывает: на любой неизвестный путь вне /api/ сервер отдаёт 200, потому что SPA-фолбэк возвращает index.html",
-          "source": "internal/adapter/httpapi/server.go:198",
+          "source": "internal/adapter/httpapi/server.go:208",
           "symbol": "handleStats",
           "unverified": false
         },
@@ -687,7 +687,7 @@
           "to": "srv-readyz",
           "call": "503 с текстом ошибки разбора",
           "detail": "internal/adapter/httpapi/server.go:158 — готовность отвечает за ДАННЫЕ. Причина читается на эндпоинте, а не выводится из того, что контейнер падает по кругу: в этом и весь смысл разведения двух проб",
-          "source": "internal/adapter/httpapi/server.go:197",
+          "source": "internal/adapter/httpapi/server.go:207",
           "symbol": "handleReadyz",
           "unverified": false
         },
@@ -813,7 +813,7 @@
           "to": "srv-metrics",
           "call": "GET /metrics раз в 5 секунд",
           "detail": "internal/adapter/httpapi/server.go:156 — экспозиция собирается без единой зависимости, руками. Потолок назван в самом файле: нет exemplars, нет OpenMetrics, нет метрик рантайма",
-          "source": "internal/adapter/httpapi/server.go:195",
+          "source": "internal/adapter/httpapi/server.go:205",
           "symbol": "handleMetrics",
           "unverified": false
         },
@@ -843,7 +843,7 @@
           "to": "prometheus",
           "call": "kbengine_catalog_entries доезжает в хранилище",
           "detail": "internal/adapter/httpapi/metrics.go:182 печатает число записей. Каталог читается на КАЖДЫЙ опрос, а не кэшируется: одно чтение стоит десятки миллисекунд, опрос идёт раз в несколько секунд — зато число всегда настоящее, а не то, каким было при старте",
-          "source": "internal/adapter/httpapi/metrics.go:182",
+          "source": "internal/adapter/httpapi/metrics.go:191",
           "symbol": "kbengine_catalog_entries",
           "unverified": false
         },
