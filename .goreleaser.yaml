@@ -28,6 +28,22 @@ builds:
       - -s -w
       - -X main.version={{ .Version }}
 
+  # MCP-сервер отдельным бинарём, но в тех же архивах: число активов релиза не
+  # меняется, а агент получает сервер вместе с движком. Порознь они разъехались
+  # бы по версиям, и «поиск отвечает по-разному» стало бы вопросом без ответа.
+  - id: kbengine-mcp
+    main: ./cmd/kbengine-mcp
+    binary: kbengine-mcp
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+
 archives:
   - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"

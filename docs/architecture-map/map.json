@@ -1045,6 +1045,36 @@
       "sources": [
         "internal/adapter/embedhttp/client.go:39"
       ]
+    },
+    {
+      "id": "agent",
+      "title": "Кодовый агент",
+      "subtitle": "Claude Code / Codex — клиент MCP",
+      "layer": "actors",
+      "kind": "actor",
+      "sources": [
+        "README.md:137"
+      ]
+    },
+    {
+      "id": "cmd-mcp",
+      "title": "kbengine-mcp",
+      "subtitle": "cmd/kbengine-mcp — отдельный бинарь, stdio",
+      "layer": "surfaces",
+      "kind": "client",
+      "sources": [
+        "cmd/kbengine-mcp/main.go:34"
+      ]
+    },
+    {
+      "id": "adp-mcpserver",
+      "title": "mcpserver",
+      "subtitle": "internal/adapter/mcpserver — три инструмента",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/mcpserver/server.go:66"
+      ]
     }
   ],
   "flows": [
@@ -3695,6 +3725,63 @@
           "source": "internal/usecase/search/semantic.go:77",
           "unverified": false,
           "symbol": "Nearest"
+        }
+      ]
+    },
+    {
+      "id": "mcp-search",
+      "title": "Агент ищет по базе через MCP",
+      "summary": "kbengine-mcp по stdio → адаптер → тот же usecase, что у витрины и терминала",
+      "steps": [
+        {
+          "n": 1,
+          "from": "agent",
+          "to": "cmd-mcp",
+          "call": "tools/call search_catalog",
+          "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
+          "source": "cmd/kbengine-mcp/main.go:71",
+          "symbol": "StdioTransport",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "cmd-mcp",
+          "to": "adp-mcpserver",
+          "call": "mcpserver.New(svc, matcher, version)",
+          "detail": "Каталог читается на СТАРТЕ, а не при первом запросе (cmd/kbengine-mcp/main.go): агент подключается молча, и «сервер поднялся» с нечитаемым каталогом выглядело бы рабочим состоянием до первого пустого ответа",
+          "source": "cmd/kbengine-mcp/main.go:55",
+          "symbol": "svc.Stats",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "adp-mcpserver",
+          "to": "uc-search",
+          "call": "search.FilterWith(entries, query, m)",
+          "detail": "Собственной фильтрации в internal/adapter/mcpserver/tools.go нет ни строки — иначе завелась бы третья копия правила, как было у витрины до #252. Сверено на живом каталоге: семь запросов через MCP и через /api/search дали одинаковые наборы поимённо",
+          "source": "internal/adapter/mcpserver/tools.go:35",
+          "symbol": "search.FilterWith",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "adp-mcpserver",
+          "to": "uc-query",
+          "call": "q.Entries() / q.Stats()",
+          "detail": "Порт чтения объявлен в самом адаптере (internal/adapter/mcpserver/tools.go): интерфейс принадлежит потребителю, иначе один адаптер зависел бы от другого",
+          "source": "internal/adapter/mcpserver/tools.go:21",
+          "symbol": "Querier",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "adp-mcpserver",
+          "to": "agent",
+          "call": "{\"found\": N, \"entries\": [...]}",
+          "detail": "Наружу уходит проекция записи entryOut из internal/adapter/mcpserver/server.go — тот же список разрешённого, что у /kb/. Промах по id даёт ошибку, называющую номер, а не ближайшую запись: чужую карточку агент не отличит от правильной",
+          "source": "internal/adapter/mcpserver/server.go:20",
+          "symbol": "entryOut",
+          "unverified": false
         }
       ]
     }
