@@ -18,8 +18,8 @@ func runChangelog(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	in := fs.String("in", "", "path to CHANGELOG.md")
 	out := fs.String("out", "", "path to write changelog.json")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *in == "" || *out == "" {
 		fmt.Fprintln(stderr, "changelog: --in and --out are required")

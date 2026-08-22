@@ -4,30 +4,44 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
+	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 )
 
 // runMigrate dispatches the one-off catalog migrations. They live behind their
 // own verb rather than under `set`, which stays a targeted edit by id.
+// migrateTargets maps a migration target to its handler. Реестр, а не switch:
+// перечень целей в помощи собирается из его ключей и не может отстать от кода.
+var migrateTargets = map[string]func(args []string, stdout, stderr io.Writer) int{
+	"versions": runMigrateVersions,
+	"urls":     runMigrateURLs,
+	"writeups": runMigrateWriteups,
+	"habr-ids": runMigrateHabrIDs,
+}
+
+func migrateUsageLine() string {
+	return "usage: kbengine migrate <what> [flags]\nwhat: " +
+		strings.Join(slices.Sorted(maps.Keys(migrateTargets)), ", ")
+}
+
 func runMigrate(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine migrate <what> [flags]\nwhat: versions, urls, writeups, habr-ids")
+		fmt.Fprintln(stderr, migrateUsageLine())
 		return 2
 	}
-	switch args[0] {
-	case "versions":
-		return runMigrateVersions(args[1:], stdout, stderr)
-	case "urls":
-		return runMigrateURLs(args[1:], stdout, stderr)
-	case "writeups":
-		return runMigrateWriteups(args[1:], stdout, stderr)
-	case "habr-ids":
-		return runMigrateHabrIDs(args[1:], stdout, stderr)
-	default:
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(stdout, migrateUsageLine())
+		return 0
+	}
+	target, ok := migrateTargets[args[0]]
+	if !ok {
 		fmt.Fprintf(stderr, "migrate: unknown target %q\n", args[0])
 		return 2
 	}
+	return target(args[1:], stdout, stderr)
 }
 
 func runMigrateVersions(args []string, stdout, stderr io.Writer) int {
@@ -35,8 +49,8 @@ func runMigrateVersions(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "migrate versions: --catalog is required")
@@ -82,8 +96,8 @@ func runMigrateHabrIDs(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "migrate habr-ids: --catalog is required")
@@ -126,8 +140,8 @@ func runMigrateURLs(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	apply := fs.Bool("apply", false, "write the changes (without it the plan is printed and nothing is written)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "migrate urls: --catalog is required")

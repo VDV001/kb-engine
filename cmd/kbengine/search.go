@@ -57,8 +57,8 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	threshold := fs.Float64("threshold", defaultThreshold, "порог близости для смыслового слоя")
 	limit := fs.Int("limit", 10, "сколько записей показать")
 	build := fs.Bool("build-index", false, "снять векторы всех записей и записать индекс")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "search: --catalog is required")

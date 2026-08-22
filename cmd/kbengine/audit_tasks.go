@@ -19,8 +19,8 @@ func runAuditTasks(args []string, stdin io.Reader, stdout, stderr io.Writer) int
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	asJSON := fs.Bool("json", false, "parse stdin as a JSON task list instead of plaintext")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "audit-tasks: --catalog is required")

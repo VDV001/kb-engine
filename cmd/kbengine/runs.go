@@ -48,8 +48,8 @@ func runRuns(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	journalPath := fs.String("journal", "", "path to the run journal (default: $KBENGINE_RUNLOG or the XDG state dir)")
 	check := fs.Bool("check", false, "проверить инварианты и выйти с кодом 1, если есть находки")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 
 	path := *journalPath

@@ -52,3 +52,20 @@ func TestTopLevelHelpPrintsUsage(t *testing.T) {
 		})
 	}
 }
+
+// Отрицательный контроль к предыдущим двум: починка «помощь это успех» не имеет
+// права превратиться в «любой разбор флагов это успех». Без этого случая гейт
+// прошёл бы на parseFlags, возвращающем ноль всегда.
+func TestUnknownFlagIsStillAnError(t *testing.T) {
+	for name := range commands {
+		t.Run(name, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run([]string{name, "--этого-флага-нет"}, &out, &errb)
+
+			if code == 0 {
+				t.Errorf("%s принял выдуманный флаг и отчитался успехом:\n%s",
+					name, out.String()+errb.String())
+			}
+		})
+	}
+}

@@ -46,6 +46,29 @@ func main() {
 	os.Exit(runLogged(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
+// parseFlags разбирает флаги и превращает исход в код возврата.
+//
+// Ответа три, а не два: помощь — успех (человек получил ровно то, что просил,
+// и ошибки не совершал), ошибка разбора — код 2, удачный разбор — работаем
+// дальше. До этого помощь и ошибка были снаружи неотличимы: обе давали 2, и
+// журнал прогонов считал каждую просьбу о помощи отказом.
+//
+// Текст помощи остаётся в stderr, как и был. flag печатает его в fs.Output()
+// ДО того, как вернёт ErrHelp, поэтому увести помощь в stdout, не уведя туда
+// же сообщения об ошибках, можно только через буфер в каждой команде — цена
+// выше пользы, пока `--help | less` никому не понадобился.
+func parseFlags(fs *flag.FlagSet, args []string) (code int, stop bool) {
+	err := fs.Parse(args)
+	switch {
+	case err == nil:
+		return 0, false
+	case errors.Is(err, flag.ErrHelp):
+		return 0, true
+	default:
+		return 2, true
+	}
+}
+
 // run dispatches a subcommand and returns the process exit code. It takes its
 // I/O as parameters so it is testable without touching os globals.
 // commands maps a verb to its handler. A table rather than a switch: every new
@@ -70,7 +93,7 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 	"migrate":     withoutStdin(runMigrate),
 	"serve":       withoutStdin(runServe),
 	"tui":         withoutStdin(runTUI),
-	"version":     func(_ []string, _ io.Reader, o, _ io.Writer) int { return runVersion(o) },
+	"version":     withoutStdin(runVersion),
 }
 
 // withoutStdin адаптирует команду, которая ни о чём не спрашивает. Отдельный
@@ -101,6 +124,12 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, usageLine())
 		return 2
+	}
+	// Помощь узнаётся до реестра: `--help` не команда, и без этой проверки
+	// диспетчер честно отвечает «неизвестная команда» на просьбу о помощи.
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(stdout, usageLine())
+		return 0
 	}
 	cmd, ok := commands[args[0]]
 	if !ok {
@@ -135,7 +164,15 @@ func buildInfo() httpapi.EngineInfo {
 
 // runVersion prints the build version, plus VCS revision and build time when
 // the binary carries Go module build info (e.g. installed via `go install`).
-func runVersion(stdout io.Writer) int {
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	// FlagSet у команды без флагов заведён не для флагов, а ради `--help`:
+	// без него version молча проглатывала любые аргументы, и проверка «помощь
+	// работает у каждой команды» проходила бы у неё по неверной причине.
+	fs := flag.NewFlagSet("version", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	if code, stop := parseFlags(fs, args); stop {
+		return code
+	}
 	e := buildInfo()
 	fmt.Fprintf(stdout, "kbengine %s\n", e.Version)
 	if e.Commit != "" {
@@ -174,8 +211,8 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	ledgerPath := fs.String("ledger", "", "path to the finance ledger (enables the finances screen)")
 	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (enables the sync key)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "tui: --catalog is required")
@@ -280,8 +317,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// стеки всех горутин, и висеть по умолчанию рядом с личными финансами
 	// ему нечего. Слушатель отдельный — см. cmd/kbengine/pprof.go.
 	pprofAddr := fs.String("pprof", "", "optional address for the pprof profiler (e.g. 127.0.0.1:6060); empty means off")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "serve: --catalog is required")
@@ -709,8 +746,8 @@ func runDedup(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("dedup", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "dedup: --catalog is required")
@@ -735,8 +772,8 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	check := fs.String("check", "all", "which audit to run: outdated|canonical|canonical-health|supersession|integrity|versions|files|batch|categories|links|age|all")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "audit: --catalog is required")
@@ -888,8 +925,8 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	title := fs.String("title", "", "entry title (one id at a time)")
 	description := fs.String("description", "", "one or two sentences on what this is (one id at a time)")
 	supersedes := fs.Int("supersedes", 0, "id of the entry this one replaces (one id at a time)")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "set: --catalog is required")

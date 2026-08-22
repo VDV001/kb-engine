@@ -5,7 +5,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
@@ -18,34 +21,51 @@ import (
 )
 
 // runFin dispatches the ledger subcommands.
+// finCommands maps a fin verb to its handler. Реестр, а не switch: строка
+// помощи собирается из его ключей, поэтому новая подкоманда не может оказаться
+// работающей и неназванной — до этого список в usage поддерживался руками.
+var finCommands = map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
+	"import":   finWithoutStdin(runFinImport),
+	"add":      finWithoutStdin(runFinAdd),
+	"edit":     finWithoutStdin(runFinEdit),
+	"delete":   runFinDelete,
+	"balance":  finWithoutStdin(runFinBalance),
+	"list":     finWithoutStdin(runFinList),
+	"report":   finWithoutStdin(runFinReport),
+	"spelling": finWithoutStdin(runFinSpelling),
+	"sync":     finWithoutStdin(runFinSync),
+}
+
+// finWithoutStdin адаптирует подкоманду, которая ни о чём не спрашивает.
+func finWithoutStdin(f func(args []string, stdout, stderr io.Writer) int,
+) func([]string, io.Reader, io.Writer, io.Writer) int {
+	return func(a []string, _ io.Reader, o, e io.Writer) int { return f(a, o, e) }
+}
+
+// finUsageLine перечисляет подкоманды в устойчивом порядке, чтобы помощь не
+// перетасовывалась между прогонами так, как это делает обход карты.
+func finUsageLine() string {
+	verbs := slices.Sorted(maps.Keys(finCommands))
+	return "usage: kbengine fin <" + strings.Join(verbs, "|") + "> [flags]"
+}
+
 func runFin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: kbengine fin <import|add|edit|delete|balance|list|report|spelling|sync> [flags]")
+		fmt.Fprintln(stderr, finUsageLine())
 		return 2
 	}
-	switch args[0] {
-	case "import":
-		return runFinImport(args[1:], stdout, stderr)
-	case "add":
-		return runFinAdd(args[1:], stdout, stderr)
-	case "edit":
-		return runFinEdit(args[1:], stdout, stderr)
-	case "delete":
-		return runFinDelete(args[1:], stdin, stdout, stderr)
-	case "balance":
-		return runFinBalance(args[1:], stdout, stderr)
-	case "list":
-		return runFinList(args[1:], stdout, stderr)
-	case "report":
-		return runFinReport(args[1:], stdout, stderr)
-	case "spelling":
-		return runFinSpelling(args[1:], stdout, stderr)
-	case "sync":
-		return runFinSync(args[1:], stdout, stderr)
-	default:
+	// Как и на верхнем уровне: помощь узнаётся до реестра, иначе просьба о
+	// помощи получает ответ «неизвестная подкоманда».
+	if args[0] == "--help" || args[0] == "-h" {
+		fmt.Fprintln(stdout, finUsageLine())
+		return 0
+	}
+	sub, ok := finCommands[args[0]]
+	if !ok {
 		fmt.Fprintf(stderr, "unknown fin subcommand %q\n", args[0])
 		return 2
 	}
+	return sub(args[1:], stdin, stdout, stderr)
 }
 
 // newULID hands out sortable identifiers. ULID rather than UUIDv4 because the
@@ -75,8 +95,8 @@ func runFinImport(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin import: --ledger is required")
@@ -139,8 +159,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin add: --ledger is required")
@@ -305,8 +325,8 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
 	year, month, category, account, kind := filterFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin list: --ledger is required")
@@ -342,8 +362,8 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
 	year, month, category, account, kind := filterFlags(fs)
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	if *ledgerPath == "" {
 		fmt.Fprintln(stderr, "fin report: --ledger is required")

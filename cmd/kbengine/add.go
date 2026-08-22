@@ -32,8 +32,8 @@ func runAdd(args []string, stdout, stderr io.Writer) int {
 	version := fs.String("version", "", "semver of the artefact, e.g. 1.3.0")
 	lifecycle := fs.String("lifecycle", "active", "lifecycle: active|outdated|canonical|superseded|dead-end")
 	source := fs.String("source", "internal", "where the entry came from")
-	if err := fs.Parse(args); err != nil {
-		return 2
+	if code, stop := parseFlags(fs, args); stop {
+		return code
 	}
 	for name, value := range map[string]string{"--catalog": *catalogPath, "--title": *title, "--category": *category, "--file": *file} {
 		if value == "" {
