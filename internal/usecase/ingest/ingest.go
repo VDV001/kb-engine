@@ -19,6 +19,10 @@ type Report struct {
 	Added            int
 	SkippedDuplicate int // URL already present (in catalog or earlier in the batch)
 	SkippedNoURL     int // entry carried no URL to dedup on
+	// CategoriesUnchecked is true when the catalog declares no categories at
+	// all, so the category of every added entry went unverified. Silence would
+	// be indistinguishable from a check that found nothing.
+	CategoriesUnchecked bool
 }
 
 // Plan filters params against the catalog and returns the entries to add. An
@@ -28,12 +32,17 @@ type Report struct {
 // that violates an entry invariant aborts the whole plan with an error.
 func Plan(c *domain.Catalog, params []domain.EntryParams, now time.Time) ([]domain.Entry, Report, error) {
 	seen := existingURLs(c)
+	declared := c.CategoryLabels()
 	dateAdded := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
 	nextID := c.NextID()
 
 	var added []domain.Entry
 	var rep Report
+	rep.CategoriesUnchecked = len(declared) == 0
 	for _, p := range params {
+		if err := checkCategory(declared, p); err != nil {
+			return nil, Report{}, err
+		}
 		url := strings.TrimSpace(p.URL)
 		if url == "" {
 			rep.SkippedNoURL++

@@ -105,11 +105,11 @@
     {
       "id": "cmd-add",
       "title": "add",
-      "subtitle": "cmd/kbengine/add.go — свой артефакт",
+      "subtitle": "cmd/kbengine/add.go — свой артефакт или чужая статья",
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/add.go:23"
+        "cmd/kbengine/add.go:33"
       ]
     },
     {
@@ -1562,7 +1562,7 @@
     },
     {
       "id": "add-artefact",
-      "title": "Владелец заводит запись о собственном артефакте",
+      "title": "Владелец заводит запись: свой артефакт или чужая статья",
       "summary": "kbengine add → личность записи это ФАЙЛ, а не url",
       "steps": [
         {
@@ -1570,8 +1570,8 @@
           "from": "owner",
           "to": "cmd-add",
           "call": "kbengine add --catalog … --file … --title …",
-          "detail": "cmd/kbengine/add.go:23; запись без файла отвергается — до этой команды движок умел добавлять только бот-инбокс, и три стандарта существовали файлами, отсутствуя в каталоге",
-          "source": "cmd/kbengine/add.go:23",
+          "detail": "cmd/kbengine/add.go:33; запись без файла отвергается — до этой команды движок умел добавлять только бот-инбокс, и три стандарта существовали файлами, отсутствуя в каталоге",
+          "source": "cmd/kbengine/add.go:33",
           "unverified": false,
           "symbol": "runAdd"
         },
@@ -1580,8 +1580,8 @@
           "from": "cmd-add",
           "to": "dom-entry",
           "call": "artefactParams — конструкторы домена",
-          "detail": "cmd/kbengine/add.go:50 — artefactParams строит поля через конструкторы домена ДО того, как каталог прочитан: негодная категория или lifecycle останавливают команду раньше чтения файла. Существование файла проверяется ещё раньше — checkArtefactExists (add.go:45)",
-          "source": "cmd/kbengine/add.go:50",
+          "detail": "cmd/kbengine/add.go:55 — artefactParams строит поля через конструкторы домена ДО того, как каталог прочитан: негодная категория, вердикт или lifecycle останавливают команду раньше чтения файла. Существование файла проверяется ещё раньше — checkArtefactExists (add.go:203), и только когда файл дан: у чужой статьи идентичность адрес",
+          "source": "cmd/kbengine/add.go:55",
           "unverified": false,
           "symbol": "artefactParams"
         },
@@ -1590,7 +1590,7 @@
           "from": "cmd-add",
           "to": "ad-catalogjson",
           "call": "catalogjson.Load(catalogPath)",
-          "detail": "cmd/kbengine/add.go:56 — internal/adapter/catalogjson/catalog.go:353",
+          "detail": "cmd/kbengine/add.go:81 — internal/adapter/catalogjson/catalog.go:353",
           "source": "internal/adapter/catalogjson/catalog.go:366",
           "unverified": false
         },
@@ -1599,16 +1599,25 @@
           "from": "cmd-add",
           "to": "uc-ingest",
           "call": "ingest.PlanArtefacts(cat, params, time.Now())",
-          "detail": "cmd/kbengine/add.go:61 строит план и отчёт: дедуп по файлу происходит здесь, а не при записи — internal/usecase/ingest/artefact.go:20",
+          "detail": "cmd/kbengine/add.go:79 строит план и отчёт: планировщик выбирается идентичностью записи (файл → PlanArtefacts, адрес → Plan), дедуп происходит здесь, а не при записи — internal/usecase/ingest/artefact.go:20",
           "source": "internal/usecase/ingest/artefact.go:20",
           "unverified": false
         },
         {
           "n": 5,
+          "from": "uc-ingest",
+          "to": "dom-catalog",
+          "call": "checkCategory(c.CategoryLabels(), p)",
+          "detail": "internal/usecase/ingest/category.go:48 — категория вне meta.categories останавливает запись, отказ называет ближайшее объявленное имя. Пустой словарь не отказ, а невозможность проверить: об этом говорит Report.CategoriesUnchecked. Правило зовут оба планировщика — написанное дважды разошлось бы",
+          "source": "internal/usecase/ingest/category.go:48",
+          "unverified": false
+        },
+        {
+          "n": 6,
           "from": "cmd-add",
           "to": "ad-catalogjson",
           "call": "catalogjson.AppendEntries(catalogPath, added)",
-          "detail": "cmd/kbengine/add.go:72; функция раньше не писала file и version — у бот-инбокса их нет, поэтому дефект жил незамеченным и сломал дедуп на первом же прогоне add — internal/adapter/catalogjson/write.go:56",
+          "detail": "cmd/kbengine/add.go:115; функция раньше не писала file и version — у бот-инбокса их нет, поэтому дефект жил незамеченным и сломал дедуп на первом же прогоне add — internal/adapter/catalogjson/write.go:56",
           "source": "internal/adapter/catalogjson/write.go:56",
           "unverified": false
         }
@@ -1653,8 +1662,8 @@
           "from": "cmd-inbox",
           "to": "uc-ingest",
           "call": "ingest.Plan(cat, params, now)",
-          "detail": "internal/usecase/ingest/ingest.go:29 — единственный ключ дедупа здесь URL (ingest.go:63). ⚠️ Дедупа по habr_id в движке НЕТ вовсе: audit.Duplicates группирует по exact-url и similar-title (internal/usecase/audit/dedup.go:18), поле habr_id там не читается",
-          "source": "internal/usecase/ingest/ingest.go:29",
+          "detail": "internal/usecase/ingest/ingest.go:33 — единственный ключ дедупа здесь URL (ingest.go:63). ⚠️ Дедупа по habr_id в движке НЕТ вовсе: audit.Duplicates группирует по exact-url и similar-title (internal/usecase/audit/dedup.go:18), поле habr_id там не читается",
+          "source": "internal/usecase/ingest/ingest.go:33",
           "unverified": false,
           "symbol": "Plan"
         },
