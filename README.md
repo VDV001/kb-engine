@@ -64,7 +64,7 @@ Built with TDD + DDD + Clean Architecture. Design notes:
 | Разбивка ответа (Server-Timing) | ✅ stable | Шаги запроса в заголовке; выключено по умолчанию. |
 | Развёртывание в Kubernetes и Helm | ⚠️ experimental | Манифесты и чарт написаны; нагрузка и многоузловость не проверены. |
 | Хранилище каталога в S3 (Terraform) | ⚠️ experimental | Проверено на LocalStack и MinIO; настоящий AWS не прогонялся. |
-| MCP-сервер над каталогом | 🚧 roadmap | Агенты ищут базу через MCP; задача #273, ещё не начата. |
+| MCP-сервер над каталогом | ⚠️ experimental | Отдельный бинарь kbengine-mcp; проверен клиентом SDK, в живом агенте не подключался. |
 
 ## Quick start
 
@@ -133,6 +133,36 @@ prints a one-line summary and names the command instead.
 `--check integrity` reports links that point nowhere: a `related_ids` value with
 no such entry, or one pointing at itself. Neither shows up on any screen — a
 broken link simply does not draw.
+
+### MCP server (`kbengine-mcp`)
+
+A separate binary that serves the catalog to coding agents over MCP (stdio).
+Three tools — `search_catalog`, `get_entry`, `stats` — call the *same* usecase
+the dashboard and the TUI call, so an agent and a human cannot get different
+answers to one question.
+
+```jsonc
+// ~/.claude.json or another MCP client config
+{
+  "mcpServers": {
+    "kb": {
+      "command": "kbengine-mcp",
+      "args": ["--catalog", "/path/to/catalog.json"]
+    }
+  }
+}
+```
+
+It ships in the same release archives as `kbengine`: apart they would drift into
+different versions, and "search answers differently over here" would become a
+question with no answer.
+
+Two deliberate limits, both measured rather than assumed. The MCP SDK adds
+~4 MB, so this is a separate binary — `kbengine` itself is byte-for-byte
+unchanged by it, and a stdio server is pointless inside the dashboard image.
+What goes out is exactly what the catalog publishes: the same allow-list as the
+`/kb/` route, so personal notes and the finance workbook — which live in the
+same tree but are not named by any entry — cannot appear in a response.
 
 ## Stack
 
