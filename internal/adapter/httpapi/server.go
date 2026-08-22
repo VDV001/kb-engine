@@ -203,6 +203,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux := http.NewServeMux()
 	m := newMetrics()
 	mux.HandleFunc("GET /metrics", handleMetrics(m, q, engine))
+	mux.HandleFunc("GET /llms.txt", handleLlmsTxt(q))
 	mux.HandleFunc("GET /healthz", handleHealthz())
 	mux.HandleFunc("GET /readyz", handleReadyz(q))
 	mux.HandleFunc("GET /api/stats", handleStats(q))
