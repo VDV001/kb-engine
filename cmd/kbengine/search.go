@@ -107,6 +107,11 @@ func runSearch(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
+// limitLine называет предел, когда список короче объявленного числа.
+func limitLine(shown, total int) string {
+	return ""
+}
+
 // printSemantic печатает смысловой слой или причину, по которой его не было.
 func printSemantic(stdout io.Writer, entries []domain.Entry,
 	ixPath, embedURL, embedModel, q string, limit int, threshold float64,
