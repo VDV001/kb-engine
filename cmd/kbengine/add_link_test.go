@@ -142,7 +142,10 @@ func TestAdd_refusesACategoryOutsideTheDictionary(t *testing.T) {
 	if !strings.Contains(msg, "dev-practice") {
 		t.Errorf("не названа отвергнутая категория: %s", msg)
 	}
-	if !strings.Contains(msg, "dev-practices") {
+	// Проверять надо саму подсказку, а не наличие строки «dev-practices»: она
+	// встречается и в перечне объявленных, поэтому Contains по имени зеленел
+	// бы и без подсказки вовсе — это поймала подсадка, а не чтение теста.
+	if !strings.Contains(msg, `похоже на "dev-practices"`) {
 		t.Errorf("не названа похожая объявленная категория: %s", msg)
 	}
 }
