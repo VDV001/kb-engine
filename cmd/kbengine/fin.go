@@ -65,7 +65,14 @@ func runFin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown fin subcommand %q\n", args[0])
 		return 2
 	}
-	return sub(args[1:], stdin, stdout, stderr)
+	// Отказ разбора опознаётся здесь, а не в девяти подкомандах: диспетчер —
+	// единственное место, которое знает и о семье, и об исходе.
+	watched := &headWriter{w: stderr}
+	code := sub(args[1:], stdin, stdout, watched)
+	if code != 0 {
+		finHint(stderr, watched.head.String(), args[0])
+	}
+	return code
 }
 
 // newULID hands out sortable identifiers. ULID rather than UUIDv4 because the

@@ -30,7 +30,10 @@ func TestFinNamesTheSubcommandThatHasTheFlag(t *testing.T) {
 // Без этой половины подсказка стала бы шумом на каждой опечатке.
 func TestFinStaysSilentForAFlagNobodyHas(t *testing.T) {
 	var out, errb bytes.Buffer
-	run([]string{"fin", "sync", "--выдуманный", "x"}, &out, &errb)
+	// Имя латиницей и намеренно: кириллическое имя не проходит регулярку
+	// разбора сообщения, и проверка молчала бы независимо от починки — то есть
+	// проходила бы по неверной причине. Поймано подсадкой «подсказывать всегда».
+	run([]string{"fin", "sync", "--nosuchflag", "x"}, &out, &errb)
 
 	said := out.String() + errb.String()
 	if strings.Contains(said, "принимают") {
