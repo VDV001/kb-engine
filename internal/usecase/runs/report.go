@@ -37,6 +37,17 @@ type CommandStat struct {
 	Failures int // прогонов с ненулевым кодом возврата
 	LastRun  time.Time
 	LastCode int
+	// Медианы длительности в двух окнах — раннем и позднем, по WindowSize
+	// прогонов в каждом. Медиана, а не среднее: один прогон на холодном кэше
+	// сдвигает среднее и рисует замедление, которого нет.
+	//
+	// Окна равны и берутся с краёв: середина отбрасывается намеренно, иначе
+	// «позднее» окно у команды с сотнями прогонов растворило бы недавнюю
+	// правку в истории. WindowSize нулевой означает «сравнивать не с чем» —
+	// у проверки это отдельный ответ, а не повод молча промолчать.
+	EarlyMedian time.Duration
+	LateMedian  time.Duration
+	WindowSize  int
 }
 
 // Report — ответ журнала на вопрос «что движок делал и чего не делал».
@@ -117,6 +128,7 @@ func Build(j Journal, known []string, now time.Time) (Report, error) {
 // отфильтровать записи в одном месте и забыть в другом.
 func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
 	byName := map[string]CommandStat{}
+	byTime := map[string][]domain.RunRecord{}
 	var since time.Time
 	for _, rec := range recs {
 		if since.IsZero() || rec.StartedAt().Before(since) {
@@ -133,6 +145,39 @@ func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
 			s.LastCode = rec.ExitCode()
 		}
 		byName[rec.Command()] = s
+		byTime[rec.Command()] = append(byTime[rec.Command()], rec)
+	}
+	for name, recs := range byTime {
+		s := byName[name]
+		s.EarlyMedian, s.LateMedian, s.WindowSize = windows(recs)
+		byName[name] = s
 	}
 	return byName, since
+}
+
+// windows делит прогоны команды на раннее и позднее окно равного размера и
+// отдаёт медианы длительности в каждом.
+//
+// Записи приходят в порядке журнала — он дозаписывается, поэтому порядок строк
+// и есть порядок времени; сортировка по StartedAt дала бы то же самое ценой
+// прохода, но перестала бы работать, если часы машины разово ушли назад.
+// Порядок файла в этом смысле честнее: он говорит, что движок видел.
+//
+// maxWindow ограничивает окно сверху: у команды с семьюстами прогонов медиана
+// по всей половине истории меняется так медленно, что замедление в ней тонет.
+func windows(recs []domain.RunRecord) (early, late time.Duration, size int) {
+	const maxWindow = 20
+	size = min(len(recs)/2, maxWindow)
+	if size == 0 {
+		return 0, 0, 0
+	}
+	took := func(rs []domain.RunRecord) time.Duration {
+		d := make([]time.Duration, 0, len(rs))
+		for _, r := range rs {
+			d = append(d, r.Took())
+		}
+		slices.Sort(d)
+		return d[len(d)/2]
+	}
+	return took(recs[:size]), took(recs[len(recs)-size:]), size
 }

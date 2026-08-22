@@ -8,8 +8,8 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/runs"
 )
 
-func at(day int) time.Time {
-	return time.Date(2026, 8, day, 12, 0, 0, 0, time.UTC)
+func day(n int) time.Time {
+	return time.Date(2026, 8, n, 12, 0, 0, 0, time.UTC)
 }
 
 // policy с явными порогами: у проверки не должно быть умолчаний, вписанных в
@@ -29,13 +29,13 @@ func policy() runs.Policy {
 // «эту проверку прогоняли?».
 func TestCheck_staleCommandIsNamed(t *testing.T) {
 	rep := runs.Report{
-		Exists: true, Total: 10, Since: at(1), Span: 21 * 24 * time.Hour,
+		Exists: true, Total: 10, Since: day(1), Span: 21 * 24 * time.Hour,
 		Commands: []runs.CommandStat{
-			{Name: "drift", Runs: 3, LastRun: at(5)},
-			{Name: "audit", Runs: 7, LastRun: at(21)},
+			{Name: "drift", Runs: 3, LastRun: day(5)},
+			{Name: "audit", Runs: 7, LastRun: day(21)},
 		},
 	}
-	got := runs.Check(rep, policy(), at(22))
+	got := runs.Check(rep, policy(), day(22))
 	if !hasFinding(got, "drift", "давно") {
 		t.Fatalf("drift не запускали 17 дней при пороге 7 — находки нет: %v", names(got))
 	}
@@ -46,8 +46,8 @@ func TestCheck_staleCommandIsNamed(t *testing.T) {
 
 // Инвариант 1б: команда, которую движок знает, но не звали ни разу.
 func TestCheck_neverRanIsNamed(t *testing.T) {
-	rep := runs.Report{Exists: true, Total: 5, Since: at(1), NeverRan: []string{"dedup", "migrate"}}
-	got := runs.Check(rep, policy(), at(22))
+	rep := runs.Report{Exists: true, Total: 5, Since: day(1), NeverRan: []string{"dedup", "migrate"}}
+	got := runs.Check(rep, policy(), day(22))
 	for _, want := range []string{"dedup", "migrate"} {
 		if !hasFinding(got, want, "ни разу") {
 			t.Fatalf("%q не запускалась ни разу — находки нет: %v", want, names(got))
@@ -59,14 +59,14 @@ func TestCheck_neverRanIsNamed(t *testing.T) {
 // прогонов достаточно, чтобы доля что-то значила.
 func TestCheck_failingCommandIsNamed(t *testing.T) {
 	rep := runs.Report{
-		Exists: true, Total: 20, Since: at(1),
+		Exists: true, Total: 20, Since: day(1),
 		Commands: []runs.CommandStat{
-			{Name: "fin", Runs: 10, Failures: 4, LastRun: at(21)},
-			{Name: "set", Runs: 10, Failures: 1, LastRun: at(21)},
-			{Name: "runs", Runs: 2, Failures: 2, LastRun: at(21)}, // прогонов мало
+			{Name: "fin", Runs: 10, Failures: 4, LastRun: day(21)},
+			{Name: "set", Runs: 10, Failures: 1, LastRun: day(21)},
+			{Name: "runs", Runs: 2, Failures: 2, LastRun: day(21)}, // прогонов мало
 		},
 	}
-	got := runs.Check(rep, policy(), at(22))
+	got := runs.Check(rep, policy(), day(22))
 	if !hasFinding(got, "fin", "падает") {
 		t.Fatalf("fin падает в 40%% прогонов при пороге 30 — находки нет: %v", names(got))
 	}
@@ -82,17 +82,17 @@ func TestCheck_failingCommandIsNamed(t *testing.T) {
 // когда в обоих окнах хватает данных.
 func TestCheck_slowdownIsNamed(t *testing.T) {
 	rep := runs.Report{
-		Exists: true, Total: 16, Since: at(1),
+		Exists: true, Total: 16, Since: day(1),
 		Commands: []runs.CommandStat{
-			{Name: "search", Runs: 8, LastRun: at(21),
+			{Name: "search", Runs: 8, LastRun: day(21),
 				EarlyMedian: 40 * time.Millisecond, LateMedian: 120 * time.Millisecond, WindowSize: 4},
-			{Name: "audit", Runs: 8, LastRun: at(21),
+			{Name: "audit", Runs: 8, LastRun: day(21),
 				EarlyMedian: 20 * time.Millisecond, LateMedian: 22 * time.Millisecond, WindowSize: 4},
-			{Name: "set", Runs: 4, LastRun: at(21),
+			{Name: "set", Runs: 4, LastRun: day(21),
 				EarlyMedian: 10 * time.Millisecond, LateMedian: 90 * time.Millisecond, WindowSize: 2},
 		},
 	}
-	got := runs.Check(rep, policy(), at(22))
+	got := runs.Check(rep, policy(), day(22))
 	if !hasFinding(got, "search", "медленнее") {
 		t.Fatalf("search замедлился втрое при пороге 2× — находки нет: %v", names(got))
 	}
@@ -107,7 +107,7 @@ func TestCheck_slowdownIsNamed(t *testing.T) {
 // Проверка обязана говорить, чего она НЕ проверяла: пустой журнал и журнал без
 // нужных полей снаружи выглядят как «всё в порядке», а означают разное.
 func TestCheck_saysWhatItCouldNotCheck(t *testing.T) {
-	got := runs.Check(runs.Report{Exists: false}, policy(), at(22))
+	got := runs.Check(runs.Report{Exists: false}, policy(), day(22))
 	if len(got) == 0 {
 		t.Fatal("журнала нет вовсе — проверка обязана сказать это, а не молчать")
 	}
