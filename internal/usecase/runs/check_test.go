@@ -156,3 +156,30 @@ func TestCheck_mixedShapeBlocksSlowdown(t *testing.T) {
 		t.Fatalf("отказ сравнивать обязан быть НАЗВАН, а не молчалив: %v", names(got))
 	}
 }
+
+// Третья ложная находка живого прогона, и её причина — моё же решение: команда
+// `runs --check` отвечает кодом 1, когда находки ЕСТЬ. Инвариант «падает»
+// считает ненулевой код отказом и заявил «runs падает в 65 % прогонов», хотя
+// команда работала правильно каждый раз.
+//
+// Знание о таких командах приходит из CLI, а не вписано сюда: usecase не может
+// знать, как их автор договорился о кодах, а список внутри проверки разошёлся
+// бы с движком молча.
+func TestCheck_exitCodeMeaningFindingsIsNotFailure(t *testing.T) {
+	p := policy()
+	p.FindingsExit = []string{"runs"}
+	rep := runs.Report{
+		Exists: true, Total: 20, Since: day(1),
+		Commands: []runs.CommandStat{
+			{Name: "runs", Runs: 17, Failures: 11, LastRun: day(21)},
+			{Name: "fin", Runs: 93, Failures: 31, LastRun: day(21)},
+		},
+	}
+	got := runs.Check(rep, p, day(22))
+	if hasFinding(got, "runs", "падает") {
+		t.Fatalf("у runs ненулевой код означает «нашлось», а не «сломалось»: %v", names(got))
+	}
+	if !hasFinding(got, "fin", "падает") {
+		t.Fatalf("fin падает по-настоящему — находка должна остаться: %v", names(got))
+	}
+}
