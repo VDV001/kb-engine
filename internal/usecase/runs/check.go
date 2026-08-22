@@ -106,44 +106,69 @@ func groups(rep Report, p Policy, now time.Time) (stale, failing, slow []Finding
 	cmds := append([]CommandStat(nil), rep.Commands...)
 	sort.Slice(cmds, func(i, j int) bool { return cmds[i].Name < cmds[j].Name })
 	for _, c := range cmds {
-		if p.Stale > 0 && !c.LastRun.IsZero() && now.Sub(c.LastRun) > p.Stale {
-			stale = append(stale, Finding{
-				Subject: c.Name,
-				Reason: fmt.Sprintf("давно не запускалась: последний раз %s назад, порог %s",
-					human(now.Sub(c.LastRun)), human(p.Stale)),
-			})
+		if f, ok := staleFinding(c, p, now); ok {
+			stale = append(stale, f)
 		}
-		// Доля считается только при достаточном числе прогонов: у команды с
-		// двумя запусками «100 % отказов» — это две опечатки, а не диагноз.
-		if c.Runs >= p.MinRuns && !slices.Contains(p.FindingsExit, c.Name) &&
-			float64(c.Failures)/float64(c.Runs) > p.FailureRate {
-			failing = append(failing, Finding{
-				Subject: c.Name,
-				Reason: fmt.Sprintf("падает в %d прогонах из %d (%.0f%%), порог %.0f%%",
-					c.Failures, c.Runs, 100*float64(c.Failures)/float64(c.Runs), 100*p.FailureRate),
-			})
+		if f, ok := failingFinding(c, p); ok {
+			failing = append(failing, f)
 		}
-		// Отказ сравнивать НАЗЫВАЕТСЯ, а не молчит: молчаливый отказ снаружи
-		// выглядит как «проверено, чисто» — то самое, против чего заведён весь
-		// журнал. Условие стоит до порога замедления: иначе зонтичная команда,
-		// у которой состав разъехался, сперва получила бы ложную находку.
-		if c.MixedShape && c.WindowSize >= p.MinWindow {
-			slow = append(slow, Finding{
-				Subject: c.Name,
-				Reason:  "замедление сравнивать нельзя: в ранних и поздних прогонах разный состав подкоманд, и медиана меряла бы состав, а не скорость",
-			})
-			continue
-		}
-		if c.WindowSize >= p.MinWindow && c.EarlyMedian > 0 &&
-			float64(c.LateMedian) > p.SlowFactor*float64(c.EarlyMedian) {
-			slow = append(slow, Finding{
-				Subject: c.Name,
-				Reason: fmt.Sprintf("стала медленнее в %.1f раза: было %s, стало %s (медианы по %d прогонам с краёв)",
-					float64(c.LateMedian)/float64(c.EarlyMedian), c.EarlyMedian, c.LateMedian, c.WindowSize),
-			})
+		if f, ok := slowFinding(c, p); ok {
+			slow = append(slow, f)
 		}
 	}
 	return stale, failing, slow
+}
+
+func staleFinding(c CommandStat, p Policy, now time.Time) (Finding, bool) {
+	if p.Stale <= 0 || c.LastRun.IsZero() || now.Sub(c.LastRun) <= p.Stale {
+		return Finding{}, false
+	}
+	return Finding{
+		Subject: c.Name,
+		Reason: fmt.Sprintf("давно не запускалась: последний раз %s назад, порог %s",
+			human(now.Sub(c.LastRun)), human(p.Stale)),
+	}, true
+}
+
+// failingFinding молчит в двух случаях, и оба измерены на живом журнале: когда
+// прогонов слишком мало, чтобы доля что-то значила, и когда ненулевой код у
+// этой команды означает «нашлось», а не «сломалось».
+func failingFinding(c CommandStat, p Policy) (Finding, bool) {
+	if c.Runs < p.MinRuns || slices.Contains(p.FindingsExit, c.Name) {
+		return Finding{}, false
+	}
+	rate := float64(c.Failures) / float64(c.Runs)
+	if rate <= p.FailureRate {
+		return Finding{}, false
+	}
+	return Finding{
+		Subject: c.Name,
+		Reason: fmt.Sprintf("падает в %d прогонах из %d (%.0f%%), порог %.0f%%",
+			c.Failures, c.Runs, 100*rate, 100*p.FailureRate),
+	}, true
+}
+
+// slowFinding возвращает либо замедление, либо ОТКАЗ его считать. Отказ —
+// такая же находка: молчаливый снаружи выглядит как «проверено, чисто», против
+// чего весь журнал и заведён.
+func slowFinding(c CommandStat, p Policy) (Finding, bool) {
+	if c.WindowSize < p.MinWindow {
+		return Finding{}, false
+	}
+	if c.MixedShape {
+		return Finding{
+			Subject: c.Name,
+			Reason:  "замедление сравнивать нельзя: в ранних и поздних прогонах разный состав подкоманд, и медиана меряла бы состав, а не скорость",
+		}, true
+	}
+	if c.EarlyMedian <= 0 || float64(c.LateMedian) <= p.SlowFactor*float64(c.EarlyMedian) {
+		return Finding{}, false
+	}
+	return Finding{
+		Subject: c.Name,
+		Reason: fmt.Sprintf("стала медленнее в %.1f раза: было %s, стало %s (медианы по %d прогонам с краёв)",
+			float64(c.LateMedian)/float64(c.EarlyMedian), c.EarlyMedian, c.LateMedian, c.WindowSize),
+	}, true
 }
 
 // human печатает срок так, как о нём говорят вслух: дни, а не 408h0m0s.

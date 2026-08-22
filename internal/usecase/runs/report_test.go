@@ -216,7 +216,7 @@ func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
 	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
 	mk := func(sub string, n int, d time.Duration, from int) []domain.RunRecord {
 		var out []domain.RunRecord
-		for i := 0; i < n; i++ {
+		for i := range n {
 			out = append(out, took(t, "fin", base.Add(time.Duration(from+i)*time.Minute), d, sub))
 		}
 		return out
@@ -266,11 +266,11 @@ func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
 func TestBuild_shapeUsesFlagNames(t *testing.T) {
 	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
 	var recs []domain.RunRecord
-	for i := 0; i < 8; i++ { // ранние: с --check
+	for i := range 8 { // ранние: с --check
 		recs = append(recs, took(t, "audit", base.Add(time.Duration(i)*time.Minute),
 			18*time.Millisecond, "--catalog", "c.json", "--check", "files"))
 	}
-	for i := 0; i < 8; i++ { // поздние: без --check, работа шире
+	for i := range 8 { // поздние: без --check, работа шире
 		recs = append(recs, took(t, "audit", base.Add(time.Duration(100+i)*time.Minute),
 			374*time.Millisecond, "--catalog", "c.json"))
 	}
@@ -289,11 +289,11 @@ func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
 	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
 	var recs []domain.RunRecord
 	places := []string{"Пятёрочка", "Магнит", "Монетка", "Верный"}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		recs = append(recs, took(t, "fin", base.Add(time.Duration(i)*time.Minute),
 			5*time.Millisecond, "add", "--place", places[i%len(places)]))
 	}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		recs = append(recs, took(t, "fin", base.Add(time.Duration(100+i)*time.Minute),
 			26*time.Millisecond, "add", "--place", places[(i+1)%len(places)]))
 	}
