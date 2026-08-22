@@ -50,3 +50,36 @@ func TestFinSaysNothingExtraOnSuccess(t *testing.T) {
 		t.Errorf("подсказка вылезла на успешном пути:\n%s", said)
 	}
 }
+
+// Опечатка в имени флага — отдельный случай от «флаг живёт у соседа»: здесь
+// такого флага нет ни у кого, но он в ОДНОЙ правке от настоящего.
+func TestFinNamesTheNearMiss(t *testing.T) {
+	var out, errb bytes.Buffer
+	code := run([]string{"fin", "report", "--accounts", "Сбербанк"}, &out, &errb)
+
+	said := out.String() + errb.String()
+	if code == 0 {
+		t.Fatalf("report принял выдуманный флаг:\n%s", said)
+	}
+	if !strings.Contains(said, "--account") {
+		t.Errorf("подсказка не назвала соседнее имя:\n%s", said)
+	}
+}
+
+// ⚠️ Отрицательный контроль, ради которого порог и выбран одной правкой.
+// Замер: у `--book` ближайший настоящий флаг — `--bank` на расстоянии двух
+// правок. Это СЧЁТ, а книга здесь `--from`, то есть на пороге в две правки
+// движок уверенно предложил бы не то поле. В денежном инструменте это хуже
+// молчания, поэтому `--book` обязан остаться без подсказки.
+func TestFinStaysSilentWhenTheNearestIsADifferentThing(t *testing.T) {
+	var out, errb bytes.Buffer
+	run([]string{"fin", "sync", "--book", "книга.xlsx"}, &out, &errb)
+
+	said := out.String() + errb.String()
+	if strings.Contains(said, "--bank") {
+		t.Errorf("движок предложил счёт вместо книги:\n%s", said)
+	}
+	if strings.Contains(said, "похоже") {
+		t.Errorf("подсказка выдумана там, где ближайшее — другое понятие:\n%s", said)
+	}
+}
