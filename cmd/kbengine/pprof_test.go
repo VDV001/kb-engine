@@ -62,3 +62,22 @@ func TestServeHandler_neverServesPprof(t *testing.T) {
 		}
 	}
 }
+
+// Backfill: покрытие уже написанного startPprof, не TDD.
+//
+// Проверяется различие двух ответов, а не «не упало»: пустой адрес обязан
+// ничего не поднять и промолчать, заданный — сказать вслух, где профилировщик.
+// Молчаливо открытый порт — ровно то, чего здесь быть не должно.
+func TestStartPprof_saysWhereItListensAndStaysSilentWhenOff(t *testing.T) {
+	var out, errs strings.Builder
+	startPprof("", &out, &errs)
+	if out.Len() != 0 || errs.Len() != 0 {
+		t.Fatalf("пустой адрес: напечатано %q / %q, ждали молчание", out.String(), errs.String())
+	}
+
+	out.Reset()
+	startPprof("127.0.0.1:0", &out, &errs)
+	if !strings.Contains(out.String(), "pprof on http://127.0.0.1:0/debug/pprof/") {
+		t.Fatalf("адрес задан, а строки о нём нет: %q", out.String())
+	}
+}
