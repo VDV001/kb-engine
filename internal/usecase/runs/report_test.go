@@ -257,3 +257,51 @@ func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
 		})
 	}
 }
+
+// Вторая ловушка того же класса, тоже найденная живым журналом: у `audit`
+// первый аргумент — флаг `--catalog`, поэтому форма по первому аргументу у всех
+// прогонов одна. А работа разная: ранние звались с узким `--check files`
+// (18 мс), поздние девять раз без `--check` вовсе, то есть полным набором
+// (374 мс). Форму задаёт НАБОР ИМЁН флагов, а не первое слово.
+func TestBuild_shapeUsesFlagNames(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	var recs []domain.RunRecord
+	for i := 0; i < 8; i++ { // ранние: с --check
+		recs = append(recs, took(t, "audit", base.Add(time.Duration(i)*time.Minute),
+			18*time.Millisecond, "--catalog", "c.json", "--check", "files"))
+	}
+	for i := 0; i < 8; i++ { // поздние: без --check, работа шире
+		recs = append(recs, took(t, "audit", base.Add(time.Duration(100+i)*time.Minute),
+			374*time.Millisecond, "--catalog", "c.json"))
+	}
+	rep, err := runs.Build(journalStub{recs: recs, exists: true}, []string{"audit"}, base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !rep.Commands[0].MixedShape {
+		t.Fatalf("набор флагов различается (--check есть только в ранних) — форма обязана считаться разной")
+	}
+}
+
+// Обратная сторона: значения флагов в форму НЕ входят. Иначе каждая трата с
+// новым местом давала бы свою форму, и замедление не посчиталось бы никогда.
+func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
+	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
+	var recs []domain.RunRecord
+	places := []string{"Пятёрочка", "Магнит", "Монетка", "Верный"}
+	for i := 0; i < 8; i++ {
+		recs = append(recs, took(t, "fin", base.Add(time.Duration(i)*time.Minute),
+			5*time.Millisecond, "add", "--place", places[i%len(places)]))
+	}
+	for i := 0; i < 8; i++ {
+		recs = append(recs, took(t, "fin", base.Add(time.Duration(100+i)*time.Minute),
+			26*time.Millisecond, "add", "--place", places[(i+1)%len(places)]))
+	}
+	rep, err := runs.Build(journalStub{recs: recs, exists: true}, []string{"fin"}, base.Add(time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Commands[0].MixedShape {
+		t.Fatalf("форма одна и та же (add --place), различаются только ЗНАЧЕНИЯ — замедление считать можно")
+	}
+}
