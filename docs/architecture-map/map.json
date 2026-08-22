@@ -1196,7 +1196,7 @@
           "to": "append-checked",
           "call": "appendToLedger / appendChecked",
           "detail": "форма зовёт ledgerFinances.Add (cmd/kbengine/main.go:335), а та — appendChecked (cmd/kbengine/main.go:337), ту же функцию, что и команда fin add: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:387",
+          "source": "cmd/kbengine/main.go:393",
           "unverified": false
         }
       ],
@@ -1252,7 +1252,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.EditEntry(id, p)",
           "detail": "cmd/kbengine/main.go:363 — экран не заводит своей копии «загрузить → изменить → отсортировать → сохранить»",
-          "source": "cmd/kbengine/main.go:413",
+          "source": "cmd/kbengine/main.go:419",
           "unverified": false,
           "symbol": "EditEntry"
         },
@@ -1461,7 +1461,7 @@
           "to": "ad-financejsonl",
           "call": "ledgerFinances.Finances()",
           "detail": "cmd/kbengine/main.go:298 — ledgerFinances.Finances читает журнал НА КАЖДЫЙ запрос, а книгу только при непустом пути (main.go:307): развёртывание со строками и без балансов законно. Файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
-          "source": "cmd/kbengine/main.go:336",
+          "source": "cmd/kbengine/main.go:342",
           "unverified": false
         },
         {
@@ -1651,7 +1651,7 @@
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
           "detail": "флаги объявлены в cmd/kbengine/main.go:726-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:860",
+          "source": "cmd/kbengine/main.go:866",
           "unverified": false
         },
         {
@@ -1686,7 +1686,7 @@
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
           "detail": "cmd/kbengine/main.go:684 — набор проверок перечислен в cmd/kbengine/main.go:786-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
-          "source": "cmd/kbengine/main.go:719",
+          "source": "cmd/kbengine/main.go:725",
           "unverified": false
         },
         {
@@ -1714,7 +1714,7 @@
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
           "detail": "cmd/kbengine/main.go:725 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:785) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
-          "source": "cmd/kbengine/main.go:773",
+          "source": "cmd/kbengine/main.go:777",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -1786,7 +1786,7 @@
           "to": "build-serve",
           "call": "buildServeHandler(...)",
           "detail": "cmd/kbengine/main.go:501 собирает порты; с #174 туда же приходит список карт (mapPaths → mapsLoader на :539). Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config (:510-516), и книга (:526-533) перечитываются на КАЖДЫЙ запрос. Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
-          "source": "cmd/kbengine/main.go:536",
+          "source": "cmd/kbengine/main.go:542",
           "unverified": false
         },
         {
@@ -1804,7 +1804,7 @@
           "to": "owner",
           "call": "startupSources(serveSources(...))",
           "detail": "cmd/kbengine/main.go:278 печатает все восемь необязательных флагов ДО ListenAndServe: после него терминал занят, а смотрят в него именно в этот момент",
-          "source": "cmd/kbengine/main.go:316",
+          "source": "cmd/kbengine/main.go:322",
           "unverified": false
         },
         {
@@ -1929,7 +1929,7 @@
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
           "detail": "cmd/kbengine/main.go:587",
-          "source": "cmd/kbengine/main.go:694",
+          "source": "cmd/kbengine/main.go:700",
           "unverified": false
         },
         {
@@ -2008,7 +2008,7 @@
           "to": "ad-changelog",
           "call": "changelogWarning(path, len(changelog.Parse(raw).Releases))",
           "detail": "cmd/kbengine/main.go:265 — предупреждение о непонятном журнале печатается при запуске serve, потому что поймать его посреди работы уже нельзя: смотрят в этот момент на страницу",
-          "source": "cmd/kbengine/main.go:303",
+          "source": "cmd/kbengine/main.go:308",
           "unverified": false,
           "branch": true
         }
@@ -2209,7 +2209,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.Add(params)",
           "detail": "cmd/kbengine/main.go:335 — форма записи траты книгу НЕ трогает: это был бы третий путь в таблицу, и экран вместо этого вслух говорит, что книга отстала. Другими клавишами экран книгу пишет — баланс (main.go:421), заведение счёта (main.go:428) и синк (main.go:436)",
-          "source": "cmd/kbengine/main.go:366",
+          "source": "cmd/kbengine/main.go:372",
           "unverified": false
         },
         {
@@ -2218,7 +2218,7 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, p, false, note)",
           "detail": "cmd/kbengine/main.go:337 — та же функция, что у команды: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:368",
+          "source": "cmd/kbengine/main.go:393",
           "unverified": false
         }
       ],
@@ -2633,7 +2633,7 @@
           "to": "f-now",
           "call": "readNowDoc(path)",
           "detail": "cmd/kbengine/main.go:515 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:607",
+          "source": "cmd/kbengine/main.go:613",
           "unverified": false
         },
         {
@@ -2876,7 +2876,7 @@
           "to": "build-serve",
           "call": "mapsLoader(mapPaths)",
           "symbol": "mapsLoader",
-          "source": "cmd/kbengine/main.go:526",
+          "source": "cmd/kbengine/main.go:532",
           "detail": "cmd/kbengine/main.go:491 собирает загрузчик карт до старта сервера: нечитаемая карта — отказ запуска, а не пустая вкладка"
         },
         {
@@ -3009,7 +3009,7 @@
           "to": "f-artefacts",
           "call": "fsys.Open(rel)",
           "symbol": "artefactsFS",
-          "source": "cmd/kbengine/main.go:686",
+          "source": "cmd/kbengine/main.go:692",
           "detail": "cmd/kbengine/main.go:651 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
         },
         {
@@ -3156,7 +3156,7 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:856",
+          "source": "cmd/kbengine/main.go:862",
           "detail": "cmd/kbengine/main.go:795 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
