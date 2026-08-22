@@ -89,15 +89,86 @@ func finFlagsOf(name string) []string {
 	return flags
 }
 
-// finHint печатает подсказку, если отвергнутый флаг живёт у соседа.
+// finHint печатает подсказку об отвергнутом флаге: либо он живёт у соседней
+// подкоманды, либо он в одной правке от настоящего. Оба ответа берутся из
+// живых FlagSet'ов, третьего («не знаю, посмотри usage») здесь не нужно —
+// usage уже напечатан пакетом flag строкой выше.
 func finHint(stderr io.Writer, said, subcommand string) {
 	m := rejectedFlagRe.FindStringSubmatch(said)
 	if m == nil {
 		return
 	}
-	owners := finFlagOwners(m[1], subcommand)
-	if len(owners) == 0 {
+	rejected := m[1]
+
+	if owners := finFlagOwners(rejected, subcommand); len(owners) > 0 {
+		fmt.Fprintf(stderr, "флаг --%s принимают: %s\n", rejected, strings.Join(owners, ", "))
 		return
 	}
-	fmt.Fprintf(stderr, "флаг --%s принимают: %s\n", m[1], strings.Join(owners, ", "))
+	if near, owners := finNearMiss(rejected); near != "" {
+		fmt.Fprintf(stderr, "похоже на --%s (принимают: %s)\n", near, strings.Join(owners, ", "))
+	}
+}
+
+// finNearMiss ищет флаг, отличающийся ровно ОДНОЙ правкой.
+//
+// Все три условия выведены замером по настоящим флагам fin, а не выбраны на
+// глаз:
+//
+//   - ровно одна правка. На двух правках ближайшим к `--book` оказывается
+//     `--bank` — это СЧЁТ, тогда как книга здесь `--from`. Подсказать не то
+//     поле в денежном инструменте хуже, чем промолчать.
+//   - имя от четырёх букв. На коротком имени одна правка — уже другое слово:
+//     `--last` отстоит от `--cat` на две, `--list` от `--init` на три, и обе
+//     подсказки были бы шумом.
+//   - ровно один кандидат. Двусмысленная подсказка хуже молчания; среди самих
+//     флагов пар на расстоянии одной правки нет (ближайшие — `account` и
+//     `amount` на двух), так что условие стережёт будущее, а не настоящее.
+func finNearMiss(flagName string) (string, []string) {
+	if len([]rune(flagName)) < 4 {
+		return "", nil
+	}
+	var found string
+	for name := range finCommands {
+		for _, f := range finFlagsOf(name) {
+			if f == found || editDistance(flagName, f) != 1 {
+				continue
+			}
+			if found != "" {
+				return "", nil // кандидатов больше одного — молчим
+			}
+			found = f
+		}
+	}
+	if found == "" {
+		return "", nil
+	}
+	return found, finFlagOwners(found, "")
+}
+
+// editDistance — расстояние Левенштейна, две строки рун.
+//
+// ponytail: своя реализация вместо зависимости. Потолок — наивные O(n·m) и
+// отсутствие транспозиции (перестановка соседних букв стоит две правки, а не
+// одну), поэтому `--acocunt` подсказки не получит. Имена флагов короче
+// пятнадцати символов, вызывается только на пути отказа; путь наверх —
+// расстояние Дамерау-Левенштейна, если такие опечатки появятся в журнале.
+func editDistance(a, b string) int {
+	ar, br := []rune(a), []rune(b)
+	prev := make([]int, len(br)+1)
+	cur := make([]int, len(br)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(ar); i++ {
+		cur[0] = i
+		for j := 1; j <= len(br); j++ {
+			cost := 1
+			if ar[i-1] == br[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, min(cur[j-1]+1, prev[j-1]+cost))
+		}
+		prev, cur = cur, prev
+	}
+	return prev[len(br)]
 }
