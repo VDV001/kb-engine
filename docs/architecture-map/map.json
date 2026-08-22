@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "285539a",
+  "commit": "32d04b8",
   "layers": [
     {
       "id": "actors",
@@ -3558,7 +3558,7 @@
           "to": "uc-runs",
           "call": "runs.Build",
           "detail": "internal/usecase/runs/report.go:69 горизонт (момент первой записи) считается до любого «ни разу»: без него «drift не запускался» звучит утверждением о движке, тогда как это утверждение о журнале",
-          "source": "internal/usecase/runs/report.go:69",
+          "source": "internal/usecase/runs/report.go:91",
           "unverified": false,
           "symbol": "Build"
         },
@@ -3568,7 +3568,7 @@
           "to": "cmd-runs",
           "call": "slices.SortFunc по LastRun",
           "detail": "internal/usecase/runs/report.go:96 давно не запускавшиеся сверху — так «давно» видно без порога; выдуманный порог красит зелёное в красное и за две недели учит не смотреть на предупреждения",
-          "source": "internal/usecase/runs/report.go:96",
+          "source": "internal/usecase/runs/report.go:118",
           "unverified": false,
           "symbol": "SortFunc"
         },
@@ -3578,9 +3578,19 @@
           "to": "owner",
           "call": "printReport",
           "detail": "cmd/kbengine/runs.go:141 отчёт называет, чего он НЕ проверяет: замедление, «успех без изменений», всё до первой записи и текущий прогон. Значения аргументов наружу не идут вовсе — в них настоящие суммы и места владельца",
-          "source": "cmd/kbengine/runs.go:85",
+          "source": "cmd/kbengine/runs.go:129",
           "unverified": false,
           "symbol": "printReport"
+        },
+        {
+          "n": 8,
+          "from": "cmd-runs",
+          "to": "owner",
+          "call": "kbengine runs --check",
+          "detail": "Инварианты над журналом в cmd/kbengine/runs.go: команда давно или ни разу не запускалась, падает чаще порога, замедлилась. Отвечает КОДОМ возврата — код читает расписание, и без него сторож не отличит «нашлось» от «прогнали». Пороги живут в DefaultPolicy и объяснены там же; разнородные окна получают отказ сравнивать, потому что у зонтичной fin медиана мерила бы состав подкоманд, а не скорость",
+          "source": "cmd/kbengine/runs.go:92",
+          "symbol": "printChecks",
+          "unverified": false
         }
       ]
     },
