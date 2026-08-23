@@ -389,3 +389,43 @@ func TestCurrentBalance_matchesTheConfirmationTheWayTheDomainDoes(t *testing.T) 
 		t.Errorf("списано = %s, ожидалось 470.00 — счёт сопоставляется правилом домена", got[0].Spent)
 	}
 }
+
+// Счёт-обязательство: подтверждённый остаток отрицателен ЗАМЫСЛОМ — на нём
+// лежат чужие деньги, физически хранящиеся на карте владельца, и минус не даёт
+// итогу задвоиться.
+//
+// Флаг «подтверждение устарело» означает ровно одно: расчёт съел остаток,
+// потому что доходы счёта не имеют и на старом подтверждении траты неизбежно
+// уводят число в минус. Для счёта, у которого минус нормален, этот флаг
+// неснимаем: подтверди хоть сегодняшним числом — знак не изменится. Тревога,
+// которую нельзя снять, перестаёт читаться, а вместе с ней перестают читаться
+// настоящие.
+func TestCurrentBalance_negativeByDesignIsNotStaleConfirmation(t *testing.T) {
+	cases := []struct {
+		name    string
+		balance string
+		txs     []domain.Transaction
+	}{
+		{name: "без трат", balance: "-274378.38"},
+		{
+			name:    "с тратой после подтверждения",
+			balance: "-274378.38",
+			txs: []domain.Transaction{
+				expenseOn(t, "01D", "Обязательства → Мама", "2026-08-24", "100.00"),
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			accounts := []domain.Account{accountAt(t, "Обязательства → Мама", c.balance, "2026-08-23")}
+
+			got := finance.CurrentBalances(accounts, c.txs, nil)
+
+			if got[0].NeedsConfirmation {
+				t.Errorf("счёт с намеренно отрицательным остатком помечен «подтверждение устарело»: подтверждено %s, расчёт %s",
+					got[0].Confirmed, got[0].Current)
+			}
+		})
+	}
+}
