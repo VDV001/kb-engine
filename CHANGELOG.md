@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.26.0] — 2026-08-23
+
 ### Added
 
 - **Нагрузочный профиль HTTP: `just load`.** Третья тема серии, применённая к
