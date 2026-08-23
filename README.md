@@ -64,7 +64,7 @@ Built with TDD + DDD + Clean Architecture. Design notes:
 | Разбивка ответа (Server-Timing) | ✅ stable | Шаги запроса в заголовке; выключено по умолчанию. |
 | Развёртывание в Kubernetes и Helm | ⚠️ experimental | Манифесты и чарт написаны; нагрузка и многоузловость не проверены. |
 | Хранилище каталога в S3 (Terraform) | ⚠️ experimental | Проверено на LocalStack и MinIO; настоящий AWS не прогонялся. |
-| MCP-сервер над каталогом | ⚠️ experimental | Отдельный бинарь kbengine-mcp; подключён в Claude Code и здоровается, инструменты из агента ещё не звались. |
+| MCP-сервер над каталогом | ⚠️ experimental | Отдельный бинарь kbengine-mcp; подключён в Claude Code, все три инструмента вызваны из живого агента. |
 
 ## Quick start
 
