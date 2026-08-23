@@ -125,19 +125,32 @@ describe('AccountsCard — рода счетов', () => {
   })
 
   it('называет, сколько денег свободно, а не только общий итог', () => {
-    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+    render(
+      <AccountsCard accounts={mixed} free="1000" expenses="0" income="0" today="2026-08-04" />,
+    )
 
     // Общий итог остаётся общим: он про всё, чем владелец владеет.
     expect(spaced(screen.getByTestId('accounts-total'))).toContain('154 000')
-    // А рядом — сколько из этого лежит на карте и доступно сейчас.
+    // А рядом — сколько из этого доступно сейчас. Число приходит от движка:
+    // рода счетов ведут себя по-разному (отложенное и одолженное не свободно,
+    // обязательство вычитается), и это правило про деньги, а не про вёрстку.
     expect(spaced(screen.getByTestId('accounts-free'))).toContain('1 000')
+  })
+
+  // Старая сборка движка поля не отдаёт. Выдумать число здесь значило бы
+  // вернуть вторую реализацию правила — ту самую, которая выбрасывала
+  // обязательство целиком и завышала свободные деньги.
+  it('молчит про свободные деньги, когда движок их не назвал', () => {
+    render(<AccountsCard accounts={mixed} expenses="0" income="0" today="2026-08-04" />)
+
+    expect(screen.queryByTestId('accounts-free')).toBeNull()
   })
 
   // Когда особых счетов нет, второй строки быть не должно: «свободно 1 000»
   // под итогом «1 000» — это шум, объясняющий то, чего не происходит.
   it('молчит про свободные деньги, когда все счета обычные', () => {
     const plain = accounts.filter((a) => !a.bank.includes('→'))
-    render(<AccountsCard accounts={plain} expenses="0" income="0" today="2026-08-03" />)
+    render(<AccountsCard accounts={plain} free="1000" expenses="0" income="0" today="2026-08-03" />)
 
     expect(screen.queryByTestId('accounts-free')).toBeNull()
   })

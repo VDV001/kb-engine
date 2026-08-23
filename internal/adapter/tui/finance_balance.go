@@ -331,16 +331,14 @@ func (m Model) writeBalances(b *strings.Builder) {
 	// Итог общий, а под ним — сколько из него свободно. Деньги на карте, деньги
 	// отложенные и деньги, которых сейчас нет, потому что их занял человек, —
 	// это не одна сумма, и одно число о них отвечает не на тот вопрос, ради
-	// которого на него смотрят. Считает то же, что и веб: один usecase.
+	// которого на него смотрят.
+	//
+	// Считает usecase, а не этот файл. Прежняя редакция комментария обещала
+	// «то же, что и веб: один usecase», но арифметика стояла здесь, а вторая
+	// её копия — в вёрстке; обе одинаково выбрасывали обязательство.
 	groups := finance.TotalsByGroup(balances)
 	if len(groups) > 1 {
-		var free domain.Money
-		for _, g := range groups {
-			if g.Group == "" {
-				free = g.Total
-			}
-		}
-		fmt.Fprintf(b, "  %s\n", styleDim.Render("свободно "+human(free)))
+		fmt.Fprintf(b, "  %s\n", styleDim.Render("свободно "+human(finance.FreeMoney(balances))))
 	}
 
 	for _, g := range groups {

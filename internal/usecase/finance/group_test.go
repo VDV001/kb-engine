@@ -117,9 +117,9 @@ func TestFreeMoney_subtractsObligationsAndSkipsSetAside(t *testing.T) {
 	balances := []finance.AccountBalance{
 		{Bank: "Сбербанк", Current: money(t, "2000")},
 		{Bank: "Альфа-Банк", Current: money(t, "1000")},
-		{Bank: "Заморозка → Хранение", Current: money(t, "5000")},
-		{Bank: "Долг → Отец", Current: money(t, "700")},
-		{Bank: "Обязательства → Мама", Current: money(t, "-2500")},
+		{Bank: "Резерв → Копилка", Current: money(t, "5000")},
+		{Bank: "Займ → Коллеге", Current: money(t, "700")},
+		{Bank: "Чужое → Товарищу", Current: money(t, "-2500")},
 	}
 
 	// 2000 + 1000 − 2500; заморозка и долг не входят ни с каким знаком.
@@ -133,7 +133,7 @@ func TestFreeMoney_subtractsObligationsAndSkipsSetAside(t *testing.T) {
 func TestFreeMoney_withoutObligationsIsUnchanged(t *testing.T) {
 	balances := []finance.AccountBalance{
 		{Bank: "Сбербанк", Current: money(t, "2000")},
-		{Bank: "Заморозка → Хранение", Current: money(t, "5000")},
+		{Bank: "Резерв → Копилка", Current: money(t, "5000")},
 	}
 
 	if got := finance.FreeMoney(balances); got.String() != "2000.00" {

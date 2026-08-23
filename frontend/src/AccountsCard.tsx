@@ -64,12 +64,20 @@ function splitAccountName(a: Account): { group: string; name: string } {
 
 export function AccountsCard({
   accounts,
+  free,
   expenses,
   income,
   today,
   transfersExcluded = 0,
 }: {
   accounts: Account[]
+  /**
+   * Свободные деньги, посчитанные движком. Витрина их не выводит сама: рода
+   * счетов ведут себя по-разному (отложенное и одолженное не свободно,
+   * обязательство ВЫЧИТАЕТСЯ, потому что лежит на обычных счетах и уже
+   * посчитано), и это правило про деньги, а не про вёрстку.
+   */
+  free?: string
   expenses: string
   income: string
   today: string
@@ -97,7 +105,6 @@ export function AccountsCard({
   }
   const plain = groups.find((g) => g.group === '')?.accounts ?? []
   const kinds = groups.filter((g) => g.group !== '')
-  const free = plain.reduce((n, a) => n + now(a), 0)
 
   return (
     <div className="rounded-xl bg-primary-container p-5 text-on-primary">
@@ -110,9 +117,9 @@ export function AccountsCard({
           {/* Расшифровка появляется только когда есть что расшифровывать:
               «свободно 1 000» под итогом «1 000» объясняет то, чего не
               происходит, и учит не читать эту строку. */}
-          {kinds.length > 0 && (
+          {kinds.length > 0 && free !== undefined && (
             <span className="label text-[8px] opacity-60" data-testid="accounts-free">
-              свободно <span className="privacy-mask font-bold">{formatRub(free)}</span>
+              свободно <span className="privacy-mask font-bold">{formatRub(toKopecks(free))}</span>
             </span>
           )}
         </span>
