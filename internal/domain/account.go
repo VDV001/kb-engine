@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode"
 )
 
 // ErrInvalidAccount is returned when account parameters violate an invariant.
@@ -107,10 +108,23 @@ func SameAccountName(a, b string) bool {
 }
 
 // FoldName reduces a name to what its spellings have in common.
+//
+// Every kind of space goes, not just the ASCII one. A name copied out of a bank
+// app carries a non-breaking space, and «Т\u00a0Банк» has to be the same account
+// as «Т-Банк» — otherwise `fin balance --create` opens a second row for an
+// account the sheet already holds.
+//
+// Dropping spaces by category also makes the fold idempotent, which the earlier
+// version was not: removing a hyphen could expose a whitespace character that
+// TrimSpace had already walked past, so a name had no single canonical form.
+// A canonicaliser that is not idempotent does not define a canonical form.
 func FoldName(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.ToLower(s)
 	s = strings.ReplaceAll(s, "ё", "е")
-	s = strings.ReplaceAll(s, "-", "")
-	s = strings.ReplaceAll(s, " ", "")
-	return s
+	return strings.Map(func(r rune) rune {
+		if r == '-' || unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
