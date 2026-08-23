@@ -1473,7 +1473,7 @@
           "to": "spa",
           "call": "api.finances()",
           "detail": "frontend/src/api.ts:554 — getJSON('/api/finances')",
-          "source": "frontend/src/api.ts:745",
+          "source": "frontend/src/api.ts:752",
           "unverified": false
         },
         {
@@ -1499,8 +1499,8 @@
           "from": "ad-httpapi",
           "to": "uc-finance",
           "call": "finance.CurrentBalances(accounts, txs, confs)",
-          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:115): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта. Третий аргумент confs появился в #178: подтверждение получило МОМЕНТ (.balance-state.json рядом с книгой), и спор «видел ли человек эту трату» внутри дня подтверждения решается точно, а не всегда в одну сторону",
-          "source": "internal/usecase/finance/balance.go:115",
+          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:138): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта. Третий аргумент confs появился в #178: подтверждение получило МОМЕНТ (.balance-state.json рядом с книгой), и спор «видел ли человек эту трату» внутри дня подтверждения решается точно, а не всегда в одну сторону",
+          "source": "internal/usecase/finance/balance.go:138",
           "unverified": false
         },
         {
@@ -1508,8 +1508,8 @@
           "from": "uc-finance",
           "to": "fe-finances",
           "call": "spentAfter — переводы НЕ исключаются",
-          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:171) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Асимметрия остаётся, но дефект #159 закрыт замером: переводов себе в журнале за всю историю один, занижение от них сейчас равно нулю. Открытой осталась вторая половина — #208: доходу нельзя дать счёт, поэтому приход второй стороне не прибавляется",
-          "source": "internal/usecase/finance/balance.go:171",
+          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:194) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Асимметрия остаётся, но дефект #159 закрыт замером: переводов себе в журнале за всю историю один, занижение от них сейчас равно нулю. Открытой осталась вторая половина — #208: доходу нельзя дать счёт, поэтому приход второй стороне не прибавляется",
+          "source": "internal/usecase/finance/balance.go:194",
           "unverified": false,
           "symbol": "spentAfter"
         }
@@ -1526,8 +1526,8 @@
           "from": "browser",
           "to": "spa",
           "call": "fetch('/api/finances/export', {method:'POST'})",
-          "detail": "frontend/src/api.ts:576 отправляет строки, которые сейчас на экране",
-          "source": "frontend/src/api.ts:576",
+          "detail": "frontend/src/api.ts:774 отправляет строки, которые сейчас на экране",
+          "source": "frontend/src/api.ts:774",
           "unverified": false
         },
         {
@@ -2119,7 +2119,7 @@
           "to": "spa",
           "call": "api.dashboard()",
           "detail": "frontend/src/api.ts:585 — восемь запросов через Promise.all: stats, entries, audits, duplicates, analytics, analytics-config, finances, sources",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false
         },
         {
@@ -2128,7 +2128,7 @@
           "to": "ad-httpapi",
           "call": "восемь параллельных GET",
           "detail": "frontend/src/api.ts:586-602; финансы и sources обёрнуты .catch() и подставляют пустоту — файлы финансов правят руками при открытом дашборде, и падение одного из них не должно ронять остальные шесть видов",
-          "source": "frontend/src/api.ts:766",
+          "source": "frontend/src/api.ts:773",
           "unverified": false,
           "symbol": "Promise"
         },
@@ -2382,7 +2382,7 @@
           "to": "fe-about",
           "call": "api.engine()",
           "detail": "frontend/src/api.ts:718; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:168-170)",
-          "source": "frontend/src/api.ts:737",
+          "source": "frontend/src/api.ts:744",
           "unverified": false
         },
         {
@@ -2409,7 +2409,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/stats",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:90)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2455,7 +2455,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/entries",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:122)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2492,7 +2492,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:103)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2511,7 +2511,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics-config",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:103)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2568,7 +2568,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/audits",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:106)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2587,7 +2587,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/duplicates",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:106)",
-          "source": "frontend/src/api.ts:776",
+          "source": "frontend/src/api.ts:783",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2960,7 +2960,7 @@
           "to": "spa",
           "call": "api.maps()",
           "symbol": "maps",
-          "source": "frontend/src/api.ts:741",
+          "source": "frontend/src/api.ts:748",
           "detail": "frontend/src/api.ts:721 — оглавление: id, заголовок, счётчики; сама карта не грузится, пока её не выбрали"
         },
         {
