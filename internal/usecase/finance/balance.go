@@ -129,7 +129,12 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 			b.Current = a.Balance().Sub(after)
 			// Минус означает не долг, а слепоту расчёта: доходы счёта не имеют,
 			// и на старом подтверждении траты неизбежно съедают остаток.
-			b.NeedsConfirmation = b.Current.Kopecks() < 0
+			//
+			// Но только если подтверждённое число было неотрицательным. У счёта-
+			// обязательства минус нормален замыслом, и там этот флаг неснимаем:
+			// подтверди хоть сегодня — знак не изменится. Тревога, которую нельзя
+			// снять, перестаёт читаться, а с ней и настоящие.
+			b.NeedsConfirmation = b.Confirmed.Kopecks() >= 0 && b.Current.Kopecks() < 0
 		}
 		out = append(out, b)
 	}
