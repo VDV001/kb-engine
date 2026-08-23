@@ -268,6 +268,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
             <AccountsCard
               transfersExcluded={summary?.excludedTransferCount ?? 0}
               accounts={finances.accounts}
+              free={finances.free}
               expenses={summary?.expenses ?? '0'}
               income={summary?.income ?? '0'}
               today={today}

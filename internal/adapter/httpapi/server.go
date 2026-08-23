@@ -640,6 +640,10 @@ func handleFinances(fin Financier) http.HandlerFunc {
 		// Empty rather than 404: the view asks unconditionally, and "no ledger
 		// configured" is a shape it can render, not an error it has to handle.
 		txs, accounts := []transactionDTO{}, []accountDTO{}
+		// Свободные деньги считает usecase и отдаёт числом: посчитай их
+		// витрина сама — правило про деньги оказалось бы написано трижды
+		// (терминал, веб, и однажды кто-то третий), и разошлось бы молча.
+		free := domain.Money{}
 		if fin != nil {
 			done := track(r.Context(), "ledger")
 			f, err := fin.Finances()
@@ -658,12 +662,14 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			// Остаток считает тот же usecase, что и терминал: две реализации
 			// одной арифметики однажды разойдутся, и разойдутся молча.
 			balDone := track(r.Context(), "balances")
-			for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations) {
+			balances := finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations)
+			for _, b := range balances {
 				accounts = append(accounts, toBalanceDTO(b))
 			}
 			balDone()
+			free = finance.FreeMoney(balances)
 		}
-		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts})
+		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts, "free": free.String()})
 	}
 }
 
