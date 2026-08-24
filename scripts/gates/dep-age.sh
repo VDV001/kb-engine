@@ -60,8 +60,46 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "✘ self-test: те же версии через неделю всё ещё красные"
     fail=1
   fi
+  # Вторая ось: новая ВЕРСИЯ знакомого пакета и ИМЯ, которого в проекте не было,
+  # — разные события, и возраст говорит только про первое. Образцы настоящие:
+  #   172b6da — 22 новые версии, ноль новых имён (обычный bump);
+  #   c95790e — 27 новых имён, столько же версий.
+  # Замер, из-за которого случай заведён: у всех четырёх коммитов kb-engine с
+  # новыми именами лок в базе уже БЫЛ, а один из них (9b5e0c9) — обычный bump от
+  # dependabot, привёзший 20 платформенных бинарников TypeScript. То есть новое
+  # имя приезжает ровно тем путём, который гейт считает безопасным.
+  names_fixture=c95790e582055176cd99932f1f0f37bcb89541ae
+  names_out="$(DEP_AGE_NOW=2026-08-13 "$0" --ref "$names_fixture" "$names_fixture^" 2>&1)" || true
+  case "$names_out" in
+    *"которых в проекте не было"*) ;;
+    *) echo "✘ self-test: на ${names_fixture:0:7} новые имена не названы"; fail=1 ;;
+  esac
+  case "$names_out" in
+    *'@standard-schema/spec'*) ;;
+    *) echo "✘ self-test: новое имя не названо поимённо"; fail=1 ;;
+  esac
+  # Обычный bump обязан молчать про имена — детектор, срабатывающий всегда,
+  # ничего не различает.
+  case "$out" in
+    *"которых в проекте не было"*)
+      echo "✘ self-test: на bump без новых имён строка всё равно напечатана"; fail=1 ;;
+  esac
+  # Отрицательный контроль: гейт со сломанным сравнением имён обязан уронить
+  # самопроверку. Без него «строка не напечаталась» и «сравнивать разучились»
+  # выглядят одинаково.
+  broken="$(mktemp)"
+  sed 's/!had_names\.has(name)/false/' "$0" > "$broken"
+  chmod +x "$broken"
+  broken_out="$(DEP_AGE_NOW=2026-08-13 "$broken" --ref "$names_fixture" "$names_fixture^" 2>&1)" || true
+  rm -f "$broken"
+  case "$broken_out" in
+    *"которых в проекте не было"*)
+      echo "✘ self-test: подсадка «имена не сравниваются» прошла незамеченной"; fail=1 ;;
+  esac
+
   if [ "$fail" -ne 0 ]; then exit 1; fi
-  echo "✓ dep-age --self-test: на PR #194 падает и называет обе версии, неделей позже зелёный"
+  echo "✓ dep-age --self-test: на PR #194 падает и называет обе версии, неделей позже зелёный;"
+  echo "  новые имена названы на ${names_fixture:0:7}, на обычном bump молчит, подсадка ловится"
   exit 0
 fi
 
@@ -121,9 +159,18 @@ const versions = (doc) => {
   return out;
 };
 
+// Имя, которого в проекте не было никогда, — это не bump, и возраст про него
+// ничего не говорит: подсадной пакет через неделю выглядит как выдержанный.
+// Множество имён строится отдельно от множества пар, потому что у знакомого
+// пакета новая версия появляется постоянно, а новое имя — событие другого рода.
+const namesOf = (doc) => new Set(versions(doc).values());
+
 const had = versions(before);
+const had_names = namesOf(before);
 for (const [key, name] of versions(after)) {
-  if (!had.has(key)) console.log(`${name}\t${key.slice(name.length + 1)}`);
+  if (had.has(key)) continue;
+  const fresh_name = !had_names.has(name) ? "new-name" : "";
+  console.log(`${name}\t${key.slice(name.length + 1)}\t${fresh_name}`);
 }
 ' "$base" "$lock" "$ref" | sort -u)"
 
@@ -140,9 +187,15 @@ fi
 checked=0
 fresh=""
 unknown=""
-while IFS=$'\t' read -r name version; do
+new_names=""
+new_names_count=0
+while IFS=$'\t' read -r name version kind; do
   [ -z "$name" ] && continue
   checked=$((checked + 1))
+  if [ "$kind" = "new-name" ]; then
+    new_names="${new_names}${new_names:+, }${name}"
+    new_names_count=$((new_names_count + 1))
+  fi
   published=""
   if ! published="$(npm view "$name" "time[$version]" 2>/dev/null)"; then
     published=""
@@ -162,6 +215,10 @@ while IFS=$'\t' read -r name version; do
 done <<< "$added"
 
 echo "dep-age: проверено новых версий — ${checked}, порог ${threshold} дн."
+if [ "$new_names_count" -gt 0 ]; then
+  echo "  из них имён, которых в проекте не было: ${new_names_count} — ${new_names}"
+  echo "  возраст про новое имя ничего не говорит: посмотрите на них глазами"
+fi
 
 status=0
 if [ -n "$fresh" ]; then
@@ -178,7 +235,8 @@ fi
 # Правило 11: инструмент обязан называть, чего он НЕ проверил.
 echo "  не проверено: версии, уже лежавшие в локе до этой ветки; экосистемы"
 echo "  gomod, docker и github-actions (их держит cooldown в dependabot.yml);"
-echo "  security-обновления — их cooldown намеренно не тормозит."
+echo "  security-обновления — их cooldown намеренно не тормозит; существование"
+echo "  пакета до того, как его имя появилось в ответе модели."
 
 if [ "$status" -eq 0 ]; then
   echo "✓ dep-age: все новые версии старше ${threshold} дн."
