@@ -159,9 +159,18 @@ const versions = (doc) => {
   return out;
 };
 
+// Имя, которого в проекте не было никогда, — это не bump, и возраст про него
+// ничего не говорит: подсадной пакет через неделю выглядит как выдержанный.
+// Множество имён строится отдельно от множества пар, потому что у знакомого
+// пакета новая версия появляется постоянно, а новое имя — событие другого рода.
+const namesOf = (doc) => new Set(versions(doc).values());
+
 const had = versions(before);
+const had_names = namesOf(before);
 for (const [key, name] of versions(after)) {
-  if (!had.has(key)) console.log(`${name}\t${key.slice(name.length + 1)}`);
+  if (had.has(key)) continue;
+  const fresh_name = !had_names.has(name) ? "new-name" : "";
+  console.log(`${name}\t${key.slice(name.length + 1)}\t${fresh_name}`);
 }
 ' "$base" "$lock" "$ref" | sort -u)"
 
@@ -178,9 +187,15 @@ fi
 checked=0
 fresh=""
 unknown=""
-while IFS=$'\t' read -r name version; do
+new_names=""
+new_names_count=0
+while IFS=$'\t' read -r name version kind; do
   [ -z "$name" ] && continue
   checked=$((checked + 1))
+  if [ "$kind" = "new-name" ]; then
+    new_names="${new_names}${new_names:+, }${name}"
+    new_names_count=$((new_names_count + 1))
+  fi
   published=""
   if ! published="$(npm view "$name" "time[$version]" 2>/dev/null)"; then
     published=""
@@ -200,6 +215,10 @@ while IFS=$'\t' read -r name version; do
 done <<< "$added"
 
 echo "dep-age: проверено новых версий — ${checked}, порог ${threshold} дн."
+if [ "$new_names_count" -gt 0 ]; then
+  echo "  из них имён, которых в проекте не было: ${new_names_count} — ${new_names}"
+  echo "  возраст про новое имя ничего не говорит: посмотрите на них глазами"
+fi
 
 status=0
 if [ -n "$fresh" ]; then
@@ -216,7 +235,8 @@ fi
 # Правило 11: инструмент обязан называть, чего он НЕ проверил.
 echo "  не проверено: версии, уже лежавшие в локе до этой ветки; экосистемы"
 echo "  gomod, docker и github-actions (их держит cooldown в dependabot.yml);"
-echo "  security-обновления — их cooldown намеренно не тормозит."
+echo "  security-обновления — их cooldown намеренно не тормозит; существование"
+echo "  пакета до того, как его имя появилось в ответе модели."
 
 if [ "$status" -eq 0 ]; then
   echo "✓ dep-age: все новые версии старше ${threshold} дн."
