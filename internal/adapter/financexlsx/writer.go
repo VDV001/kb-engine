@@ -296,6 +296,12 @@ func saveAtomically(f *excelize.File, path string) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("create temp workbook: %w", err)
 	}
+	// O_CREATE leaves an existing file's mode alone, and a temp file left over
+	// from an earlier failed write is exactly the one carrying the wrong mode.
+	if err := os.Chmod(tmp, mode); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("set workbook permissions: %w", err)
+	}
 	if err := saveWorkbook(f, tmp); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("write workbook: %w", err)
