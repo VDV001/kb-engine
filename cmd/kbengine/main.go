@@ -131,6 +131,13 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stdout, usageLine())
 		return 0
 	}
+	// То же и с версией: её спрашивают первой на незнакомом бинаре, и до этой
+	// строки ответом было «неизвестная команда». Печатает её тот же runVersion,
+	// что и `kbengine version`, — двум ответам на один вопрос расходиться не с
+	// чего.
+	if args[0] == "--version" || args[0] == "-v" {
+		return runVersion(nil, stdout, stderr)
+	}
 	cmd, ok := commands[args[0]]
 	if !ok {
 		fmt.Fprintf(stderr, "unknown command %q\n", args[0])

@@ -90,3 +90,47 @@ func TestHelpIsSuccessForEveryFinSubcommand(t *testing.T) {
 		})
 	}
 }
+
+// Тот же класс, что и помощь: `--version` не команда, и до этой проверки
+// диспетчер отвечал на неё «unknown command» с кодом 2. Спрашивают её первой
+// на незнакомом бинаре и первой же в скриптах установки, где под `set -e`
+// ненулевой код роняет весь скрипт.
+//
+// Ответ обязан совпадать с `kbengine version` дословно: два способа спросить
+// одно и то же не имеют права разойтись — это ровно то, ради чего buildInfo
+// одна на процесс.
+func TestTopLevelVersionMatchesTheCommand(t *testing.T) {
+	var want, wantErr bytes.Buffer
+	if code := run([]string{"version"}, &want, &wantErr); code != 0 {
+		t.Fatalf("kbengine version вернул %d:\n%s", code, want.String()+wantErr.String())
+	}
+
+	for _, arg := range []string{"--version", "-v"} {
+		t.Run(arg, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			code := run([]string{arg}, &out, &errb)
+
+			said := out.String() + errb.String()
+			if code != 0 {
+				t.Errorf("kbengine %s вернул %d, а вопрос о версии не ошибка:\n%s", arg, code, said)
+			}
+			if out.String() != want.String() {
+				t.Errorf("kbengine %s напечатал %q, а `kbengine version` — %q",
+					arg, out.String(), want.String())
+			}
+		})
+	}
+}
+
+// Отрицательный контроль: узнавание `--version` не имеет права превратиться в
+// «любой флаг верхнего уровня это успех».
+func TestTopLevelUnknownFlagIsStillAnError(t *testing.T) {
+	for _, arg := range []string{"--этого-флага-нет", "-x", "версия"} {
+		t.Run(arg, func(t *testing.T) {
+			var out, errb bytes.Buffer
+			if code := run([]string{arg}, &out, &errb); code == 0 {
+				t.Errorf("kbengine %s отчитался успехом:\n%s", arg, out.String()+errb.String())
+			}
+		})
+	}
+}
