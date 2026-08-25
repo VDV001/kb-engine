@@ -257,6 +257,11 @@ func backup(path string, now func() time.Time) error {
 	return filebackup.Snapshot(path, now, backupsKept)
 }
 
+// saveWorkbook is the write step of saveAtomically, kept as a variable so a
+// test can observe the temp file at the one moment it exists — between its
+// creation and the rename — and can make the write fail without a full disk.
+var saveWorkbook = func(f *excelize.File, path string) error { return f.SaveAs(path) }
+
 // saveAtomically writes to a temp file in the same directory and renames over
 // the original, so an interrupted save cannot leave a truncated workbook.
 //
@@ -278,7 +283,7 @@ func saveAtomically(f *excelize.File, path string) error {
 	}
 
 	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+filepath.Base(path))
-	if err := f.SaveAs(tmp); err != nil {
+	if err := saveWorkbook(f, tmp); err != nil {
 		return fmt.Errorf("write workbook: %w", err)
 	}
 	if err := os.Chmod(tmp, mode); err != nil {
