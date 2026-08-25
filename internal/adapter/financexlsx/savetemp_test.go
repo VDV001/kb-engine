@@ -90,3 +90,35 @@ func TestSaveAtomically_removesTempFileWhenWriteFails(t *testing.T) {
 		t.Errorf("temp file %s still exists after a failed write", filepath.Base(tmp))
 	}
 }
+
+// A temp file left over from an earlier failed write is exactly the case this
+// guard exists for, and it is the one O_CREATE cannot fix: an existing file
+// keeps its own mode. Observed on a full volume — a .tmp- copy stayed behind
+// at rwxr-xr-x, and the next write would have reused it.
+func TestSaveAtomically_narrowsAStaleTempFile(t *testing.T) {
+	path := workbookAt(t, 0o600)
+	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+filepath.Base(path))
+	if err := os.WriteFile(tmp, []byte("left over from a failed write"), 0o755); err != nil {
+		t.Fatalf("prepare stale temp file: %v", err)
+	}
+
+	var seen os.FileMode
+	swapSaveWorkbook(t, func(f *excelize.File, tmp string) error {
+		st, err := os.Stat(tmp)
+		if err != nil {
+			return err
+		}
+		seen = st.Mode().Perm()
+		return f.SaveAs(tmp)
+	})
+
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	if err := saveAtomically(f, path); err != nil {
+		t.Fatalf("saveAtomically: %v", err)
+	}
+
+	if seen != 0o600 {
+		t.Errorf("stale temp file kept mode %04o during the write, want %04o", seen, 0o600)
+	}
+}
