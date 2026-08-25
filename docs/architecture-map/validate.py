@@ -74,6 +74,30 @@ def read_lines(root, path):
         return f.read().splitlines()
 
 
+_AT_COMMIT = {}
+
+
+def lines_at_commit(root, commit, path):
+    """Строки файла на момент коммита штампа. None — сверить нечем.
+
+    Нужно затем, что H12 проверяет только границы файла: номер остаётся в
+    пределах, пока файл растёт, поэтому ссылка врёт молча и всегда в одну
+    сторону. Замер 25.08.2026: из 58 ссылок в прозе на три файла, тронутых одним
+    PR, 18 указывали не на ту строку — при зелёном гейте.
+    """
+    key = (root, commit, path)
+    if key in _AT_COMMIT:
+        return _AT_COMMIT[key]
+    try:
+        out = subprocess.run(["git", "-C", root, "show", f"{commit}:{path}"],
+                             capture_output=True, text=True, timeout=10)
+        val = out.stdout.splitlines() if out.returncode == 0 else None
+    except Exception:
+        val = None
+    _AT_COMMIT[key] = val
+    return val
+
+
 def strip_noise(line):
     """Убирает комментарии — ident внутри прозы ничего не доказывает.
 
@@ -146,7 +170,7 @@ def index_repo(root):
     return idx
 
 
-def check_prose(root, detail, where, errs, stats):
+def check_prose(root, detail, where, errs, stats, commit=None):
     """H12: номера строк, названные в прозе detail.
 
     Проверяются ДВЕ вещи — файл существует и строка в его пределах. Символ рядом
@@ -176,6 +200,19 @@ def check_prose(root, detail, where, errs, stats):
                  f"H12: проза называет {path}:{n}, а в файле {len(lines)} строк")
             continue
         stats["prose_checked"] += 1
+
+        # Съехала ли ссылка с момента, когда карту в последний раз сверяли.
+        # Ответа три: строка та же · строка другая · сверить нечем — последнее
+        # НЕ выдаётся за первое, иначе карта без штампа выглядела бы проверенной.
+        if not commit:
+            stats["prose_nobase"] += 1
+            continue
+        base = lines_at_commit(root, commit, path)
+        if base is None or n > len(base):
+            stats["prose_nobase"] += 1
+            continue
+        if base[n - 1] != lines[n - 1]:
+            stats["prose_drifted"] += 1
 
 
 def check_source(root, source, idents, where, errs, strict):
@@ -240,6 +277,7 @@ def validate(m, root, quiet=False):
     errs = []
     stats = {"nodes": 0, "steps": 0, "flows": len(m.get("flows", [])), "unverified": 0,
              "prose_refs": 0, "prose_checked": 0, "prose_unresolved": 0,
+             "prose_drifted": 0, "prose_nobase": 0,
              "with_symbol": 0}
 
     # H9: карта заявляет коммит — сверяем с репозиторием
@@ -365,7 +403,7 @@ def validate(m, root, quiet=False):
 
             # H12: номера строк, названные в прозе. Проверяются у любого шага —
             # у unverified проза врёт ровно так же, как у подтверждённого.
-            check_prose(root, detail, where, errs, stats)
+            check_prose(root, detail, where, errs, stats, m.get("commit"))
 
         if seen_n != list(range(1, len(seen_n) + 1)):
             fail(errs, "flow-steps-order", fwhere, f"номера шагов не 1..N: {seen_n}")
@@ -465,6 +503,15 @@ def main():
             line += (f", НЕ проверено {stats['prose_unresolved']} "
                      f"(имя без пути носят несколько файлов)")
         print(line)
+        # Не отказ, а число: порог, при котором такую ссылку стоит блокировать,
+        # не замерен, а молчать о съехавших нельзя — их не видит никакая другая
+        # проверка.
+        if stats["prose_drifted"]:
+            print(f"⚠️ из них СЪЕХАЛО {stats['prose_drifted']}: строка изменилась "
+                  f"с коммита штампа — ссылка ведёт не туда, куда вела")
+        if stats["prose_nobase"]:
+            print(f"сверить не с чем: {stats['prose_nobase']} "
+                  f"(нет штампа, файла в том коммите или строки в нём)")
     if "--commit-warn" in sys.argv:
         stale = [e for e in errs if e["kind"] in {"commit-mismatch", "commit-uncheckable"}]
         errs = [e for e in errs if e not in stale]
