@@ -5,6 +5,7 @@
 package financexlsx
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -174,8 +175,15 @@ func rowID(row []string, idCol int, kind string, rowNum int) string {
 func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, error) {
 	rows, err := f.GetRows(sheetAccounts, excelize.Options{RawCellValue: true})
 	if err != nil {
-		// The sheet is optional: an older workbook may not have it yet.
-		return nil, nil //nolint:nilerr // absence of the sheet is not a failure
+		// The sheet is optional: an older workbook may not have it yet. That is
+		// the ONLY reason worth swallowing — a sheet that exists but cannot be
+		// read is a damaged workbook, and answering with an empty account list
+		// would hide it: balances live here.
+		var missing excelize.ErrSheetNotExist
+		if errors.As(err, &missing) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("%s: %w", sheetAccounts, err)
 	}
 
 	var out []domain.Account
