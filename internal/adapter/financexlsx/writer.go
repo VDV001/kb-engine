@@ -265,9 +265,10 @@ var saveWorkbook = func(f *excelize.File, path string) error { return f.SaveAs(p
 // saveAtomically writes to a temp file in the same directory and renames over
 // the original, so an interrupted save cannot leave a truncated workbook.
 //
-// The original's permissions are carried over. excelize creates its own file
-// with its own mode, and a personal ledger that quietly becomes world-readable
-// is a worse outcome than a write that fails.
+// The original's permissions are carried over onto the temp file before a
+// single byte is written: excelize creates its own file with its own mode, and
+// a personal ledger that quietly becomes world-readable is a worse outcome
+// than a write that fails. A failed write takes the temp file with it.
 func saveAtomically(f *excelize.File, path string) error {
 	mode := os.FileMode(0o600)
 	if info, err := os.Stat(path); err == nil {
@@ -283,12 +284,21 @@ func saveAtomically(f *excelize.File, path string) error {
 	}
 
 	tmp := filepath.Join(filepath.Dir(path), ".tmp-"+filepath.Base(path))
-	if err := saveWorkbook(f, tmp); err != nil {
-		return fmt.Errorf("write workbook: %w", err)
+	// Create the temp file ourselves, at the workbook's mode, before excelize
+	// gets to. It opens an existing file with O_TRUNC and leaves the mode
+	// alone, so this is the only moment the narrow mode can be set: afterwards
+	// a full copy of the ledger has already been on disk, readable by anyone.
+	tf, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return fmt.Errorf("create temp workbook: %w", err)
 	}
-	if err := os.Chmod(tmp, mode); err != nil {
+	if err := tf.Close(); err != nil {
 		_ = os.Remove(tmp)
-		return fmt.Errorf("set workbook permissions: %w", err)
+		return fmt.Errorf("create temp workbook: %w", err)
+	}
+	if err := saveWorkbook(f, tmp); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("write workbook: %w", err)
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
