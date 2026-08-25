@@ -45,7 +45,10 @@ func TestRunsReport_neverShowsArgumentValues(t *testing.T) {
 		t.Fatalf("код %d, stderr: %s", code, errOut.String())
 	}
 
-	got := out.String() + errOut.String()
+	// Путь к журналу отчёт называет намеренно, и он не является значением
+	// аргумента: ищем утечку во всём остальном, а сам путь заменяем меткой.
+	// Без этой замены проверка ловила бы имя каталога, которое выбрала не она.
+	got := strings.ReplaceAll(out.String()+errOut.String(), path, "<журнал>")
 	for _, secret := range []string{"418.50", "418", "Такси Юрент", "Сбербанк"} {
 		if strings.Contains(got, secret) {
 			t.Errorf("отчёт показал значение аргумента %q:\n%s", secret, got)
