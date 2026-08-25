@@ -9,9 +9,19 @@ import (
 )
 
 // journalWith кладёт готовый журнал во временный файл и отдаёт путь.
+//
+// ⚠️ Каталог назван так намеренно. Отчёт печатает путь к журналу, а `t.TempDir()`
+// оканчивается случайным десятизначным числом — примерно один прогон из ста
+// двадцати пяти содержал в нём «418» и красил проверку утечки ложно. Проверка,
+// краснеющая случайно, перестаёт читаться, поэтому ловушка сделана постоянной:
+// путь несёт и сумму, и счёт из фикстуры.
 func journalWith(t *testing.T, lines ...string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	dir := filepath.Join(t.TempDir(), "418.50-Сбербанк")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, "runs.jsonl")
 	var body strings.Builder
 	for _, l := range lines {
 		body.WriteString(l + "\n")
