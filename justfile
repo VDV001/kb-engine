@@ -130,3 +130,14 @@ load:
 # Мутационное тестирование пакета (подробности — в комментарии выше)
 mutate PKG="./internal/domain":
     gremlins unleash --timeout-coefficient 300 {{PKG}}
+
+# Прогон всего набора без сети. Устройство и причина — в самом скрипте; здесь
+# только вызов, чтобы локальный прогон и CI звали одну и ту же вещь.
+
+# Run the whole suite with no network at all
+offline:
+    ./scripts/gates/offline.sh
+
+# Self-test of the offline gate
+offline-self-test:
+    ./scripts/gates/offline.sh --self-test

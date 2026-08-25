@@ -282,6 +282,32 @@ jobs:
           tar -xzf gitleaks.tar.gz gitleaks
           ./gitleaks git --no-banner --redact --exit-code 1 .
 
+  # Ни тесты, ни бинарь не имеют права зависеть от сети: движок читает локальный
+  # каталог, а два сетевых пути (смысловой слой поиска, проверка ссылок) обязаны
+  # объявить отказ и продолжить. Проверить это можно только там, где сети нет.
+  offline:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      # go:embed требует бандла на диске — без него не собираются даже тесты.
+      - uses: ./.github/actions/frontend-dist
+
+      # Самопроверка первой: гейт, который не умеет падать, неотличим от
+      # выключенного. Она же прогоняет и настоящий случай, поэтому шаг ниже
+      # печатает результат человеку, а не добывает его заново.
+      - name: Offline gate self-test
+        run: ./scripts/gates/offline.sh --self-test
+
+      - name: Suite runs with no network
+        run: ./scripts/gates/offline.sh
+
   docker:
     runs-on: ubuntu-latest
     steps:

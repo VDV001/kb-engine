@@ -37,6 +37,7 @@ TABLE=(
 	"ci.yml:capabilities|local|самопроверка гейта таблицы возможностей и сверка с README"
 	"ci.yml:govulncheck|local|govulncheck по всем пакетам"
 	"ci.yml:gitleaks|local|gitleaks по всей истории"
+	"ci.yml:offline|local|самопроверка гейта прогона без сети и он сам (нужен докер)"
 	"ci.yml:docker|local|сборка образа + verify-claims (размер из README); ⚠️ скан trivy не воспроизводится — trivy не установлен"
 	"ci.yml:terraform|absent|нет opentofu и tflint, а джоба поднимает LocalStack в докере"
 	"ci.yml:k8s|absent|нужен kind (только через nix-shell -p kind), джоба поднимает кластер"
@@ -91,6 +92,10 @@ run_job() {
 	ci.yml:frontend)
 		(cd frontend && npm ci && npx oxlint src && npx vitest run && npm run build)
 		./scripts/gates/web-data-layer.sh
+		;;
+	ci.yml:offline)
+		./scripts/gates/offline.sh --self-test
+		./scripts/gates/offline.sh
 		;;
 	ci.yml:dep-age)
 		./scripts/gates/dep-age.sh --self-test
