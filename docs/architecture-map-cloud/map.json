@@ -1,6 +1,6 @@
 {
   "project": "kb-engine cloud — облачный слой",
-  "commit": "f681b77",
+  "commit": "5b8b943",
   "checked_at": "2026-08-15",
   "page": "creations/projects/2026-08-15_kbengine-cloud-layer/kbengine-cloud-layer.html",
   "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
@@ -256,7 +256,7 @@
       "layer": "cluster",
       "kind": "external",
       "sources": [
-        ".github/workflows/ci.yml:367"
+        ".github/workflows/ci.yml:393"
       ]
     },
     {
@@ -656,7 +656,7 @@
           "from": "ci",
           "to": "overlay-negative",
           "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
-          "detail": ".github/workflows/ci.yml:516 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
+          "detail": ".github/workflows/ci.yml:542 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
           "source": ".github/workflows/ci.yml:703",
           "symbol": "negative",
           "unverified": false
@@ -706,7 +706,7 @@
           "from": "ci",
           "to": "kind",
           "call": "rollout status обязан вернуть ошибку",
-          "detail": ".github/workflows/ci.yml:518 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
+          "detail": ".github/workflows/ci.yml:544 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
           "source": ".github/workflows/ci.yml:706",
           "symbol": "rollout",
           "unverified": false
@@ -724,7 +724,7 @@
           "from": "ci",
           "to": "minio",
           "call": "kubectl apply -f deploy/k8s/test/minio.yaml",
-          "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:415",
+          "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:441",
           "source": ".github/workflows/ci.yml:588",
           "symbol": "minio",
           "unverified": false
@@ -734,7 +734,7 @@
           "from": "ci",
           "to": "s3-catalog",
           "call": "mc cp big-catalog.json → бакет",
-          "detail": ".github/workflows/ci.yml:445 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
+          "detail": ".github/workflows/ci.yml:471 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
           "source": ".github/workflows/ci.yml:618",
           "symbol": "big-catalog",
           "unverified": false
@@ -784,7 +784,7 @@
           "from": "ci",
           "to": "srv-stats",
           "call": "число записей обязано совпасть с объектом",
-          "detail": ".github/workflows/ci.yml:471 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
+          "detail": ".github/workflows/ci.yml:497 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
           "source": ".github/workflows/ci.yml:644",
           "symbol": "curl",
           "unverified": false
@@ -1028,7 +1028,7 @@
           "from": "ci",
           "to": "kind",
           "call": "kind load docker-image kbengine:ci",
-          "detail": ".github/workflows/ci.yml:347 загружает образ в кластер. Кластер тянет по имени, а kbengine:ci существует только в демоне docker самого раннера — без этой строки под висит в ImagePullBackOff",
+          "detail": ".github/workflows/ci.yml:373 загружает образ в кластер. Кластер тянет по имени, а kbengine:ci существует только в демоне docker самого раннера — без этой строки под висит в ImagePullBackOff",
           "source": ".github/workflows/ci.yml:520",
           "symbol": "docker-image",
           "unverified": false
@@ -1038,7 +1038,7 @@
           "from": "kind",
           "to": "pod",
           "call": "выкатка с образом из ветки",
-          "detail": ".github/workflows/ci.yml:351 применяет наложение и ждёт завершения выкатки. Это первый день, когда отгружаемый образ вообще ЗАПУСКАЕТСЯ в проверке, а не только собирается и сканируется",
+          "detail": ".github/workflows/ci.yml:377 применяет наложение и ждёт завершения выкатки. Это первый день, когда отгружаемый образ вообще ЗАПУСКАЕТСЯ в проверке, а не только собирается и сканируется",
           "source": ".github/workflows/ci.yml:525",
           "symbol": "kubectl",
           "unverified": false
@@ -1072,7 +1072,7 @@
       "zone": "Kubernetes",
       "title": "Отгружаемый образ никто не запускал",
       "detail": "Джоба docker образ только собирала и сканировала, а выпуски проверялись на скачанном бинаре. То есть контейнер как контейнер не поднимался в проверке ни разу.",
-      "evidence": "Джоба k8s поднимает kind и читает живой маршрут — .github/workflows/ci.yml:329",
+      "evidence": "Джоба k8s поднимает kind и читает живой маршрут — .github/workflows/ci.yml:355",
       "severity": "high",
       "status": "закрыто",
       "fix": "kind в CI + чтение маршрута по телу + отрицательный контроль"
@@ -1122,7 +1122,7 @@
       "zone": "Terraform",
       "title": "Между OpenTofu и Terraform не переносится не только lock",
       "detail": "Каталог .terraform несёт конфигурацию backend, записанную OpenTofu, а lock называет registry.opentofu.org там, где Terraform ждёт registry.terraform.io. Перенос падает на обоих.",
-      "evidence": ".github/workflows/ci.yml:319 — перед прогоном Terraform убираются оба",
+      "evidence": ".github/workflows/ci.yml:345 — перед прогоном Terraform убираются оба",
       "severity": "low",
       "status": "обойдено",
       "fix": "rm -rf .terraform .terraform.lock.hcl между инструментами"
