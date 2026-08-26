@@ -9,19 +9,19 @@ function edge(from: string, to: string, extra: Partial<DocCard> = {}): DocCard {
 
 describe('layoutFlow', () => {
   it('узлы выводятся из рёбер, каждый по одному разу', () => {
-    const flow = layoutFlow([edge('Генеральный', 'Даниил'), edge('Даниил', 'Разработчики')])
+    const flow = layoutFlow([edge('Генеральный', 'Лид'), edge('Лид', 'Разработчики')])
 
-    expect(flow.nodes.map((n) => n.id)).toEqual(['Генеральный', 'Даниил', 'Разработчики'])
+    expect(flow.nodes.map((n) => n.id)).toEqual(['Генеральный', 'Лид', 'Разработчики'])
   })
 
   // Ярус — не порядок карточек в файле, а расстояние от входа. Иначе схема
   // просто повторяла бы список, ради чего рисовать её незачем.
   it('ярус считается по задачам, а не по порядку карточек', () => {
-    const flow = layoutFlow([edge('Даниил', 'Разработчики'), edge('Генеральный', 'Даниил')])
+    const flow = layoutFlow([edge('Лид', 'Разработчики'), edge('Генеральный', 'Лид')])
 
     const tier = (id: string) => flow.nodes.find((n) => n.id === id)!.tier
     expect(tier('Генеральный')).toBe(0)
-    expect(tier('Даниил')).toBe(1)
+    expect(tier('Лид')).toBe(1)
     expect(tier('Разработчики')).toBe(2)
   })
 
@@ -30,24 +30,24 @@ describe('layoutFlow', () => {
   // растянула бы двух участников на четыре яруса.
   it('статус не влияет на ярусы', () => {
     const flow = layoutFlow([
-      edge('Генеральный', 'Даниил'),
-      edge('Даниил', 'Генеральный', { kind: 'status' }),
+      edge('Генеральный', 'Лид'),
+      edge('Лид', 'Генеральный', { kind: 'status' }),
     ])
 
-    expect(flow.nodes.find((n) => n.id === 'Даниил')!.tier).toBe(1)
+    expect(flow.nodes.find((n) => n.id === 'Лид')!.tier).toBe(1)
     expect(flow.edges.filter((e) => e.kind === 'status')).toHaveLength(1)
   })
 
-  // «Заказчик → Данил → Даниил»: требования идут ЧЕРЕЗ владельца проектов.
+  // «Заказчик → Продакт → Лид»: требования идут ЧЕРЕЗ владельца проектов.
   // Ребро напрямую от заказчика к лиду сказало бы неправду о том, кто режет
   // их в бэклог.
   it('via даёт два ребра и промежуточный узел', () => {
-    const flow = layoutFlow([edge('Заказчик', 'Даниил', { via: 'Данил' })])
+    const flow = layoutFlow([edge('Заказчик', 'Лид', { via: 'Продакт' })])
 
-    expect(flow.nodes.map((n) => n.id)).toEqual(['Заказчик', 'Данил', 'Даниил'])
+    expect(flow.nodes.map((n) => n.id)).toEqual(['Заказчик', 'Продакт', 'Лид'])
     expect(flow.edges.map((e) => [e.from, e.to])).toEqual([
-      ['Заказчик', 'Данил'],
-      ['Данил', 'Даниил'],
+      ['Заказчик', 'Продакт'],
+      ['Продакт', 'Лид'],
     ])
   })
 
@@ -59,7 +59,7 @@ describe('layoutFlow', () => {
   })
 
   it('карточка ведёт к своему ребру, чтобы клик открывал описание', () => {
-    const card = edge('Генеральный', 'Даниил', { body: 'приоритеты одним потоком' })
+    const card = edge('Генеральный', 'Лид', { body: 'приоритеты одним потоком' })
     const flow = layoutFlow([card])
 
     expect(flow.edges[0].card).toBe(card)
@@ -75,7 +75,7 @@ describe('layoutFlow', () => {
   })
 
   it('у каждого узла есть координаты внутри холста', () => {
-    const flow = layoutFlow([edge('Генеральный', 'Даниил'), edge('Даниил', 'Разработчики')])
+    const flow = layoutFlow([edge('Генеральный', 'Лид'), edge('Лид', 'Разработчики')])
 
     expect(flow.width).toBeGreaterThan(0)
     expect(flow.height).toBeGreaterThan(0)
@@ -100,30 +100,30 @@ describe('layoutFlow', () => {
 describe('flowEnds', () => {
   it('вход — тот, кому никто не ставит задачу', () => {
     const flow = layoutFlow([
-      edge('Заказчик', 'Даниил'),
-      edge('Генеральный', 'Даниил'),
-      edge('Даниил', 'Разработчики'),
+      edge('Заказчик', 'Лид'),
+      edge('Генеральный', 'Лид'),
+      edge('Лид', 'Разработчики'),
     ])
 
     expect(flowEnds(flow).sources).toEqual(['Заказчик', 'Генеральный'])
   })
 
   it('исполнитель — тот, кто дальше задачу не передаёт', () => {
-    const flow = layoutFlow([edge('Генеральный', 'Даниил'), edge('Даниил', 'Разработчики')])
+    const flow = layoutFlow([edge('Генеральный', 'Лид'), edge('Лид', 'Разработчики')])
 
     expect(flowEnds(flow).sinks).toEqual(['Разработчики'])
   })
 
-  // Статус наверх не делает получателя исполнителем: «Разработчики → Даниил»
+  // Статус наверх не делает получателя исполнителем: «Разработчики → Лид»
   // это отчёт, а не работа, переданная дальше.
   it('статусы не путаются с передачей работы', () => {
     const flow = layoutFlow([
-      edge('Генеральный', 'Даниил'),
-      edge('Даниил', 'Генеральный', { kind: 'status' }),
+      edge('Генеральный', 'Лид'),
+      edge('Лид', 'Генеральный', { kind: 'status' }),
     ])
 
     const { sources, sinks } = flowEnds(flow)
     expect(sources).toEqual(['Генеральный'])
-    expect(sinks).toEqual(['Даниил'])
+    expect(sinks).toEqual(['Лид'])
   })
 })
