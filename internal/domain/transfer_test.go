@@ -30,7 +30,7 @@ func TestIsInternalTransfer(t *testing.T) {
 		{"обычный расход той же категории", expenseTx(t, "Прочее", "Подарки", ""), false},
 		{"обычный расход", expenseTx(t, "Еда", "Продукты", ""), false},
 		{"доход-перевод себе", incomeTx(t, "Перевод себе"), true},
-		{"доход от мамы — настоящий", incomeTx(t, "Перевод от мамы"), false},
+		{"доход от родственника — настоящий", incomeTx(t, "Перевод от родственника"), false},
 		{"зарплата", incomeTx(t, "Зарплата"), false},
 	} {
 		if got := c.tx.IsInternalTransfer(); got != c.want {

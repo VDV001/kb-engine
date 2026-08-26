@@ -34,7 +34,7 @@ func TestWriters_declareTheRangeTheyWrote(t *testing.T) {
 		{
 			name: "AddAccount appends to Счета",
 			write: func(_ *testing.T, path string) error {
-				return financexlsx.AddAccount(path, "Долг → Отец", domain.NewMoney(300000), writeClock)
+				return financexlsx.AddAccount(path, "Долг → Кузнецов", domain.NewMoney(300000), writeClock)
 			},
 		},
 		{

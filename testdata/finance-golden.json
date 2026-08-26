@@ -10,7 +10,7 @@
     {"id": "07", "kind": "expense", "date": "2026-05-04", "amount": "310.00", "category": "Еда", "source": "Чек"},
     {"id": "08", "kind": "expense", "date": "2026-07-01", "amount": "1279.00", "category": "Транспорт", "account": "Сбербанк"},
     {"id": "09", "kind": "income", "date": "2026-04-05", "amount": "90000.00", "source": "Зарплата"},
-    {"id": "10", "kind": "income", "date": "2026-05-05", "amount": "1300.55", "source": "Перевод от мамы"}
+    {"id": "10", "kind": "income", "date": "2026-05-05", "amount": "1300.55", "source": "Перевод от родственника"}
   ],
   "expected": {
     "expenseCount": 8,

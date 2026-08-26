@@ -64,7 +64,7 @@ func Load(path string) (finance.Confirmations, error) {
 
 // Record remembers when this account was confirmed, keeping the other accounts.
 //
-// Счёт ищется правилом домена: «долг→отец» из терминала и «Долг → Отец» с листа
+// Счёт ищется правилом домена: «долг→кузнецов» из терминала и «Долг → Кузнецов» с листа
 // «Счета» — один счёт, и две записи о нём означали бы, что расчёт возьмёт ту,
 // которая попалась первой в карте.
 func Record(path, bank string, at time.Time) error {
