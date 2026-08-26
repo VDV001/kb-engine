@@ -26,7 +26,7 @@ const sample = `{
     {"title": "Будущее профессии", "a": "Исчезнет", "b": "Трансформируется", "resolution": "Фильтрация по глубине"}
   ],
   "manifesto_quotes": [
-    {"quote": "AI — мультипликатор экспертизы", "source": "KB Даниила", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей", {"catalog_id": 897, "title": "NLA", "insight": "operational definition"}]}
+    {"quote": "AI — мультипликатор экспертизы", "source": "KB владельца", "date": "апрель 2026", "type": "synthesis", "weight": "primary", "supports": ["503+ статей", {"catalog_id": 897, "title": "NLA", "insight": "operational definition"}]}
   ],
   "graph": [{"unmodelled": true}]
 }`

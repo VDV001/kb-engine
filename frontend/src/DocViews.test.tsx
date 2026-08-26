@@ -14,8 +14,8 @@ const team: Document = {
       title: 'Состав',
       sensitive: true,
       cards: [
-        { title: 'Кирилл', meta: 'Тим-лид и тех-лид', badge: 'работает', body: 'Формальный лидер разработки' },
-        { title: 'Ваня', meta: 'DevOps', badge: 'уходит', body: 'Компетенция уходит из компании целиком' },
+        { title: 'Техлид', meta: 'Тим-лид и тех-лид', badge: 'работает', body: 'Формальный лидер разработки' },
+        { title: 'Инженер', meta: 'DevOps', badge: 'уходит', body: 'Компетенция уходит из компании целиком' },
       ],
     },
   ],
@@ -70,7 +70,7 @@ describe('DocumentView: карточка роли', () => {
         sensitive: true,
         cards: [
           {
-            title: 'Даниил',
+            title: 'Лид',
             eyebrow: 'Лид отдела',
             badge: 'ядро',
             body: 'Люди, процессы, приоритеты.',
@@ -94,7 +94,7 @@ describe('DocumentView: карточка роли', () => {
   it('под маской обязанности остаются, имя — нет', async () => {
     render(<DocumentView load={async () => roles} name="Team" masked />)
     expect(await screen.findByText('Единый вход проектов')).toBeDefined()
-    expect(screen.queryByText('Даниил')).toBeNull()
+    expect(screen.queryByText('Лид')).toBeNull()
   })
 })
 
@@ -108,13 +108,13 @@ describe('DocumentView: маска', () => {
     render(<DocumentView load={async () => team} name="Team" masked />)
     expect(await screen.findByText('Тим-лид и тех-лид')).toBeDefined()
     expect(screen.getByText('уходит')).toBeDefined()
-    expect(screen.queryByText('Кирилл')).toBeNull()
+    expect(screen.queryByText('Техлид')).toBeNull()
     expect(screen.queryByText(/Формальный лидер/)).toBeNull()
   })
 
   it('без маски показывает всё', async () => {
     render(<DocumentView load={async () => team} name="Team" />)
-    expect(await screen.findByText('Кирилл')).toBeDefined()
+    expect(await screen.findByText('Техлид')).toBeDefined()
     expect(screen.getByText(/Формальный лидер/)).toBeDefined()
   })
 
@@ -141,8 +141,8 @@ describe('DocumentView: маска', () => {
         {
           title: 'Поток',
           cards: [
-            { title: 'Генеральный → Даниил', from: 'Генеральный', to: 'Даниил' },
-            { title: 'Даниил → Генеральный', from: 'Даниил', to: 'Генеральный', kind: 'status' },
+            { title: 'Генеральный → Лид', from: 'Генеральный', to: 'Лид' },
+            { title: 'Лид → Генеральный', from: 'Лид', to: 'Генеральный', kind: 'status' },
           ],
         },
       ],
@@ -151,7 +151,7 @@ describe('DocumentView: маска', () => {
 
     expect(await screen.findByRole('img', { name: /Схема движения задач/ })).toBeDefined()
     const labels = Array.from(container.querySelectorAll('svg text'), (t) => t.textContent)
-    expect(labels).toEqual(['Генеральный', 'Даниил'])
+    expect(labels).toEqual(['Генеральный', 'Лид'])
     expect(container.querySelectorAll('svg path[marker-end]')).toHaveLength(2)
   })
 
@@ -159,11 +159,11 @@ describe('DocumentView: маска', () => {
   // мусором: рисовать нечего.
   it('без связей схему не рисует', async () => {
     const plain: Document = {
-      sections: [{ title: 'Роли', cards: [{ title: 'Кирилл', body: 'Тим-лид' }] }],
+      sections: [{ title: 'Роли', cards: [{ title: 'Техлид', body: 'Тим-лид' }] }],
     }
     const { container } = render(<DocumentView load={async () => plain} name="Team" />)
 
-    expect(await screen.findByText('Кирилл')).toBeDefined()
+    expect(await screen.findByText('Техлид')).toBeDefined()
     expect(container.querySelector('svg')).toBeNull()
   })
 })
