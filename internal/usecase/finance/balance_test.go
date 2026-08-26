@@ -379,11 +379,11 @@ func TestCurrentBalance_matchesTheConfirmationTheWayTheDomainDoes(t *testing.T) 
 	time.Local = time.FixedZone("книга", 5*60*60)
 	t.Cleanup(func() { time.Local = saved })
 
-	accounts := []domain.Account{accountAt(t, "Долг → Отец", "1000.00", "2026-08-10")}
+	accounts := []domain.Account{accountAt(t, "Долг → Кузнецов", "1000.00", "2026-08-10")}
 	recs := []domain.Transaction{
-		expenseRecordedAt(t, "2026-08-10T10:13:00Z", "2026-08-10", "долг→отец", "470.00"),
+		expenseRecordedAt(t, "2026-08-10T10:13:00Z", "2026-08-10", "долг→кузнецов", "470.00"),
 	}
-	confirmed := finance.Confirmations{"долг → отец": time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)}
+	confirmed := finance.Confirmations{"долг → кузнецов": time.Date(2026, 8, 10, 12, 0, 0, 0, time.Local)}
 
 	if got := finance.CurrentBalances(accounts, recs, confirmed); got[0].Spent.String() != "470.00" {
 		t.Errorf("списано = %s, ожидалось 470.00 — счёт сопоставляется правилом домена", got[0].Spent)
@@ -411,14 +411,14 @@ func TestCurrentBalance_negativeByDesignIsNotStaleConfirmation(t *testing.T) {
 			name:    "с тратой после подтверждения",
 			balance: "-274378.38",
 			txs: []domain.Transaction{
-				expenseOn(t, "01D", "Обязательства → Мама", "2026-08-24", "100.00"),
+				expenseOn(t, "01D", "Обязательства → Смирнов", "2026-08-24", "100.00"),
 			},
 		},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			accounts := []domain.Account{accountAt(t, "Обязательства → Мама", c.balance, "2026-08-23")}
+			accounts := []domain.Account{accountAt(t, "Обязательства → Смирнов", c.balance, "2026-08-23")}
 
 			got := finance.CurrentBalances(accounts, c.txs, nil)
 

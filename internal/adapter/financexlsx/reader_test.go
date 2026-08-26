@@ -56,7 +56,7 @@ func fixture(t *testing.T) string {
 	must(err)
 	must(f.SetCellValue("Доходы", "A2", "Дата"))
 	must(f.SetCellValue("Доходы", "A3", time.Date(2026, 3, 30, 0, 0, 0, 0, time.UTC)))
-	must(f.SetCellValue("Доходы", "B3", "Перевод от мамы"))
+	must(f.SetCellValue("Доходы", "B3", "Перевод от родственника"))
 	must(f.SetCellValue("Доходы", "D3", 1300))
 
 	// --- Счета: Банк | Остаток | Обновлено

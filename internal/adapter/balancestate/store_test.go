@@ -109,18 +109,18 @@ func TestRecordReplacesTheMomentOfTheSameAccount(t *testing.T) {
 	}
 }
 
-// Написание счёта решает домен и здесь: «долг→отец», записанный терминалом,
-// и «Долг → Отец» с листа «Счета» — один счёт, иначе у него окажется две
+// Написание счёта решает домен и здесь: «долг→кузнецов», записанный терминалом,
+// и «Долг → Кузнецов» с листа «Счета» — один счёт, иначе у него окажется две
 // записи и расчёт возьмёт ту, что попалась.
 func TestRecordMatchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
 	older := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
 	newer := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
 
-	if err := balancestate.Record(path, "Долг → Отец", older); err != nil {
+	if err := balancestate.Record(path, "Долг → Кузнецов", older); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
-	if err := balancestate.Record(path, "долг→отец", newer); err != nil {
+	if err := balancestate.Record(path, "долг→кузнецов", newer); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestRecordMatchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("записей %d, ожидалась 1 — это один и тот же счёт", len(got))
 	}
-	if moment, _ := got.At("Долг → Отец"); !moment.Equal(newer) {
+	if moment, _ := got.At("Долг → Кузнецов"); !moment.Equal(newer) {
 		t.Errorf("момент = %s, ожидался %s", moment, newer)
 	}
 }

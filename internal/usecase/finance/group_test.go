@@ -89,7 +89,7 @@ func TestCurrentBalances_carriesTheGroup(t *testing.T) {
 		t.Errorf("Group = %q, ожидалось «Долг»", got[0].Group)
 	}
 	if got[0].NameWithinGroup != "Коллеге" {
-		t.Errorf("NameWithinGroup = %q, ожидалось «Отец»", got[0].NameWithinGroup)
+		t.Errorf("NameWithinGroup = %q, ожидалось «Кузнецов»", got[0].NameWithinGroup)
 	}
 }
 

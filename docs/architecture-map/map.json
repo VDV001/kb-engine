@@ -1352,7 +1352,7 @@
           "n": 1,
           "from": "owner",
           "to": "cmd-fin",
-          "call": "kbengine fin balance --bank 'Долг → Отец' --amount 3000 --create",
+          "call": "kbengine fin balance --bank 'Долг → Кузнецов' --amount 3000 --create",
           "detail": "флаг объявлен в cmd/kbengine/fin_balance.go:26 и это ОТДЕЛЬНОЕ намерение, а не «запиши всё равно»: незнакомое имя чаще опечатка, чем новый счёт, поэтому команда сначала говорит «такого нет» и подсказывает --create (fin_balance.go:64)",
           "source": "cmd/kbengine/fin_balance.go:26",
           "unverified": false

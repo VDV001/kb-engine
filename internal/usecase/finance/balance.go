@@ -108,7 +108,7 @@ type Confirmations map[string]time.Time
 //
 // Сравнение имён — дело домена, а не карты: лист «Счета» и журнал расходятся
 // регистром и пробелами вокруг стрелки, и побайтовое равенство молча вернуло бы
-// правило к прежнему поведению на счетах вроде «Долг → Отец».
+// правило к прежнему поведению на счетах вроде «Долг → Кузнецов».
 func (c Confirmations) At(bank string) (time.Time, bool) {
 	for name, at := range c {
 		if domain.SameAccountName(name, bank) {
