@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.27.0] — 2026-08-26
+
 ### Added
 
 - **Валидатор карт называет число съехавших ссылок в прозе.** H12 проверял, что
