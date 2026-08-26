@@ -141,3 +141,7 @@ offline:
 # Self-test of the offline gate
 offline-self-test:
     ./scripts/gates/offline.sh --self-test
+
+# Проверить, что гейт на имена людей всё ещё ловит подсадку
+names-self-test:
+    ./scripts/gates/no-people-names.sh --self-test
