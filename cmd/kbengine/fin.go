@@ -29,6 +29,7 @@ var finCommands = map[string]func(args []string, stdin io.Reader, stdout, stderr
 	"add":      finWithoutStdin(runFinAdd),
 	"edit":     finWithoutStdin(runFinEdit),
 	"delete":   runFinDelete,
+	"accounts": finWithoutStdin(runFinAccounts),
 	"balance":  finWithoutStdin(runFinBalance),
 	"list":     finWithoutStdin(runFinList),
 	"report":   finWithoutStdin(runFinReport),

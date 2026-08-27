@@ -239,7 +239,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/fin.go:224"
+        "cmd/kbengine/fin.go:225"
       ]
     },
     {
@@ -1088,8 +1088,8 @@
           "from": "owner",
           "to": "cmd-fin",
           "call": "kbengine fin add --amount --cat --account",
-          "detail": "runFinAdd разбирает флаги в cmd/kbengine/fin.go:123; --account это счёт, --source это способ фиксации, и путать их нельзя",
-          "source": "cmd/kbengine/fin.go:155",
+          "detail": "runFinAdd разбирает флаги в cmd/kbengine/fin.go:124; --account это счёт, --source это способ фиксации, и путать их нельзя",
+          "source": "cmd/kbengine/fin.go:156",
           "unverified": false,
           "symbol": "runFinAdd"
         },
@@ -1098,7 +1098,7 @@
           "from": "cmd-fin",
           "to": "dom-money",
           "call": "domain.ParseMoney",
-          "detail": "cmd/kbengine/fin.go:151 зовёт ParseMoney, а не MoneyFromFloat: точность мельче копейки это опечатка человека, и она сообщается, а не округляется — internal/domain/money.go:125",
+          "detail": "cmd/kbengine/fin.go:152 зовёт ParseMoney, а не MoneyFromFloat: точность мельче копейки это опечатка человека, и она сообщается, а не округляется — internal/domain/money.go:125",
           "source": "internal/domain/money.go:125",
           "unverified": false
         },
@@ -1107,8 +1107,8 @@
           "from": "cmd-fin",
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, params, force, note)",
-          "detail": "cmd/kbengine/fin.go:191 — appendChecked единственный путь, через который ДОБАВЛЯЕТ строку человек: команда, обе формы TUI и быстрый ввод идут через него, поэтому проверку повтора нельзя обойти, выбрав другой экран. ⚠️ Но не единственный писатель журнала: financejsonl.Save зовут ещё fin import (fin.go:104), правка (cmd/kbengine/fin_edit.go:92 — проверки на повтор там нет), --init (sync.go:171) и обычный fin sync в сторону журнала (sync.go:532), который тоже заводит новые записи для строк книги",
-          "source": "cmd/kbengine/fin.go:257",
+          "detail": "cmd/kbengine/fin.go:192 — appendChecked единственный путь, через который ДОБАВЛЯЕТ строку человек: команда, обе формы TUI и быстрый ввод идут через него, поэтому проверку повтора нельзя обойти, выбрав другой экран. ⚠️ Но не единственный писатель журнала: financejsonl.Save зовут ещё fin import (fin.go:104), правка (cmd/kbengine/fin_edit.go:92 — проверки на повтор там нет), --init (sync.go:171) и обычный fin sync в сторону журнала (sync.go:532), который тоже заводит новые записи для строк книги",
+          "source": "cmd/kbengine/fin.go:259",
           "unverified": false
         },
         {
@@ -1116,7 +1116,7 @@
           "from": "append-checked",
           "to": "ad-financejsonl",
           "call": "financejsonl.Load(ledgerPath, time.Now)",
-          "detail": "cmd/kbengine/fin.go:240 читает весь ledger, чтобы знать, как в базе уже пишут — internal/adapter/financejsonl/store.go:66",
+          "detail": "cmd/kbengine/fin.go:241 читает весь ledger, чтобы знать, как в базе уже пишут — internal/adapter/financejsonl/store.go:66",
           "source": "internal/adapter/financejsonl/store.go:70",
           "unverified": false
         },
@@ -1125,7 +1125,7 @@
           "from": "append-checked",
           "to": "ad-financevocab",
           "call": "financevocab.Load(financevocab.PathNextTo(ledgerPath))",
-          "detail": "cmd/kbengine/fin.go:223 — словарь лежит рядом с ledger и решает раньше исторической частоты: частота это след старых ошибок, словарь это решение владельца — internal/adapter/financevocab/store.go:43",
+          "detail": "cmd/kbengine/fin.go:224 — словарь лежит рядом с ledger и решает раньше исторической частоты: частота это след старых ошибок, словарь это решение владельца — internal/adapter/financevocab/store.go:43",
           "source": "internal/adapter/financevocab/store.go:51",
           "unverified": false
         },
@@ -1134,7 +1134,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.CanonicalWith(recs, voc, p)",
-          "detail": "cmd/kbengine/fin.go:224 приводит написание ДО проверки на повтор — иначе «транспорт» и «Транспорт» считались бы разными тратами; каждая подстановка называется вслух в stdout — internal/usecase/finance/canonical.go:29",
+          "detail": "cmd/kbengine/fin.go:225 приводит написание ДО проверки на повтор — иначе «транспорт» и «Транспорт» считались бы разными тратами; каждая подстановка называется вслух в stdout — internal/usecase/finance/canonical.go:29",
           "source": "internal/usecase/finance/canonical.go:29",
           "unverified": false
         },
@@ -1143,7 +1143,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Duplicate(recs, p)",
-          "detail": "cmd/kbengine/fin.go:258 — при совпадении возвращается ErrRepeat с id существующей записи и требованием --force — internal/usecase/finance/duplicate.go:23",
+          "detail": "cmd/kbengine/fin.go:259 — при совпадении возвращается ErrRepeat с id существующей записи и требованием --force — internal/usecase/finance/duplicate.go:23",
           "source": "internal/usecase/finance/duplicate.go:23",
           "unverified": false
         },
@@ -1152,7 +1152,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Add(p, newULID, time.Now)",
-          "detail": "cmd/kbengine/fin.go:268 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:49), из него потом читается момент записи — internal/usecase/finance/finance.go:108",
+          "detail": "cmd/kbengine/fin.go:269 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:108",
           "source": "internal/usecase/finance/finance.go:112",
           "unverified": false,
           "symbol": "Add"
@@ -1171,7 +1171,7 @@
           "from": "append-checked",
           "to": "ad-financejsonl",
           "call": "financejsonl.Save(ledgerPath, recs, time.Now)",
-          "detail": "cmd/kbengine/fin.go:247 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot — internal/adapter/financejsonl/store.go:169",
+          "detail": "cmd/kbengine/fin.go:248 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot — internal/adapter/financejsonl/store.go:169",
           "source": "internal/adapter/financejsonl/store.go:174",
           "unverified": false
         },
@@ -1309,8 +1309,8 @@
           "from": "owner",
           "to": "cmd-fin",
           "call": "kbengine fin balance --from книга --bank … --amount …",
-          "detail": "подкоманда balance разбирается в cmd/kbengine/fin.go:32, реализация в cmd/kbengine/fin_balance.go",
-          "source": "cmd/kbengine/fin.go:32",
+          "detail": "подкоманда balance разбирается в cmd/kbengine/fin.go:33, реализация в cmd/kbengine/fin_balance.go",
+          "source": "cmd/kbengine/fin.go:33",
           "unverified": false
         },
         {
@@ -2879,7 +2879,7 @@
           "from": "append-checked",
           "to": "ad-financevocab",
           "call": "financevocab.Load(PathNextTo(ledger))",
-          "detail": "cmd/kbengine/fin.go:223 — словарь лежит РЯДОМ с ledger и решает раньше исторической частоты — internal/adapter/financevocab/store.go:43",
+          "detail": "cmd/kbengine/fin.go:224 — словарь лежит РЯДОМ с ledger и решает раньше исторической частоты — internal/adapter/financevocab/store.go:43",
           "source": "internal/adapter/financevocab/store.go:51",
           "unverified": false
         },
@@ -3134,8 +3134,8 @@
           "to": "cli",
           "call": "kbengine fin add …",
           "symbol": "runFin",
-          "source": "cmd/kbengine/fin.go:52",
-          "detail": "cmd/kbengine/fin.go:52 — та же функция записи стоит под командой, обеими формами TUI и быстрым вводом"
+          "source": "cmd/kbengine/fin.go:53",
+          "detail": "cmd/kbengine/fin.go:53 — та же функция записи стоит под командой, обеими формами TUI и быстрым вводом"
         },
         {
           "n": 2,
@@ -3143,8 +3143,8 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, p, force, note)",
           "symbol": "appendChecked",
-          "source": "cmd/kbengine/fin.go:257",
-          "detail": "cmd/kbengine/fin.go:224 — единственная функция записи в журнал, через неё же идёт проверка повтора"
+          "source": "cmd/kbengine/fin.go:259",
+          "detail": "cmd/kbengine/fin.go:225 — единственная функция записи в журнал, через неё же идёт проверка повтора"
         },
         {
           "n": 3,
@@ -3152,8 +3152,8 @@
           "to": "ad-filelock",
           "call": "filelock.With(ledgerPath, …)",
           "symbol": "filelock",
-          "source": "cmd/kbengine/fin.go:265",
-          "detail": "cmd/kbengine/fin.go:259 — под замком идёт ВСЁ окно: прочитать журнал, проверить повтор, дописать строку"
+          "source": "cmd/kbengine/fin.go:267",
+          "detail": "cmd/kbengine/fin.go:260 — под замком идёт ВСЁ окно: прочитать журнал, проверить повтор, дописать строку"
         },
         {
           "n": 4,
@@ -3170,8 +3170,8 @@
           "to": "ad-financejsonl",
           "call": "appendUnderLock",
           "symbol": "appendUnderLock",
-          "source": "cmd/kbengine/fin.go:267",
-          "detail": "cmd/kbengine/fin.go:267 — проверено восемью настоящими процессами: 8 из 8 записей доехали"
+          "source": "cmd/kbengine/fin.go:269",
+          "detail": "cmd/kbengine/fin.go:268 — проверено восемью настоящими процессами: 8 из 8 записей доехали"
         },
         {
           "n": 6,
