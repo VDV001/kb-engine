@@ -9,6 +9,7 @@ package drift
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -128,6 +129,38 @@ func NewService(loader CatalogLoader, checker LinkChecker) *Service {
 	return &Service{loader: loader, checker: checker}
 }
 
+// scanOrder decides which entries a capped run asks first: never-checked
+// entries, then the least recently checked.
+//
+// Порядок каталога для выборки не годится: новые записи дописываются в хвост,
+// поэтому именно они дольше всех остаются непроверенными, а `--limit`
+// раз за разом спрашивал начало списка. Замер 28.08.2026 на живой базе — 1414
+// записей с url, шесть без даты проверки, и все шесть последние по порядку:
+// `--limit 6` не доставал до них вовсе, помогал только полный прогон.
+//
+// Без предела порядок не трогаем: полный прогон всё равно обойдёт всех, а
+// стабильный порядок каталога делает вывод сопоставимым между запусками.
+func scanOrder(entries []domain.Entry, limit int) []domain.Entry {
+	if limit <= 0 {
+		return entries
+	}
+	out := slices.Clone(entries)
+	slices.SortStableFunc(out, func(a, b domain.Entry) int {
+		da, db := a.DriftCheckDate(), b.DriftCheckDate()
+		switch {
+		case da == nil && db == nil:
+			return 0
+		case da == nil:
+			return -1 // никогда не проверенная идёт раньше любой проверенной
+		case db == nil:
+			return 1
+		default:
+			return da.Compare(*db) // дальше — от самой давней к свежей
+		}
+	})
+	return out
+}
+
 // Scan asks every entry's URL for its status, stamping each result with now.
 //
 // Отмена контекста прекращает опрос и возвращает то, что уже получено, с
@@ -141,7 +174,7 @@ func (s *Service) Scan(ctx context.Context, now time.Time) (Report, error) {
 
 	rep := Report{TotalEntries: len(c.Entries())}
 	asked := 0
-	for _, e := range c.Entries() {
+	for _, e := range scanOrder(c.Entries(), s.Limit) {
 		url := e.URL()
 		if url == "" {
 			rep.WithoutURL++
