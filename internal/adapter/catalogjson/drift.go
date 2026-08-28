@@ -38,21 +38,14 @@ func ApplyDriftWithURLs(path string, records []DriftRecord) (int, error) {
 	return applyDrift(path, records, true)
 }
 
-func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) {
-	if len(records) == 0 {
-		return 0, nil
-	}
-
-	members, entries, err := readEntries(path)
-	if err != nil {
-		return 0, err
-	}
-
-	byID := make(map[int]DriftRecord, len(records))
-	for _, r := range records {
-		byID[r.EntryID] = r
-	}
-
+// editMatchingEntries rewrites in place every entry named by byID, removing it
+// from the map as it goes, and returns how many of them ACTUALLY changed.
+//
+// Счёт идёт по изменившимся, а не по совпавшим с записями прогона: повтор в тот
+// же день кладёт те же значения, файл не меняется ни на байт, и «записано N»
+// означало бы успех без содержания — ровно то, что запрещает гейт против
+// ложного успеха.
+func editMatchingEntries(entries []json.RawMessage, byID map[int]DriftRecord, withURLs bool) (int, error) {
 	updated := 0
 	for i, raw := range entries {
 		id, err := entryID(raw)
@@ -68,15 +61,32 @@ func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) 
 			return 0, fmt.Errorf("entry %d: %w", id, err)
 		}
 		entries[i] = edited
-		// Счёт идёт по ИЗМЕНИВШИМСЯ записям, а не по совпавшим с записями
-		// прогона. Повторный прогон в тот же день кладёт те же значения:
-		// файл не меняется ни на байт, и «записано N» тогда означало бы
-		// успех без содержания — ровно то, что запрещает гейт против
-		// ложного успеха.
 		if changed {
 			updated++
 		}
 		delete(byID, id)
+	}
+	return updated, nil
+}
+
+func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) {
+	if len(records) == 0 {
+		return 0, nil
+	}
+
+	members, entries, err := readEntries(path)
+	if err != nil {
+		return 0, err
+	}
+
+	byID := make(map[int]DriftRecord, len(records))
+	for _, r := range records {
+		byID[r.EntryID] = r
+	}
+
+	updated, err := editMatchingEntries(entries, byID, withURLs)
+	if err != nil {
+		return 0, err
 	}
 
 	if len(byID) > 0 {
