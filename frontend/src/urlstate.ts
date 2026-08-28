@@ -11,6 +11,7 @@
 export type Tab =
   | 'overview'
   | 'archives'
+  | 'cheatsheets'
   | 'analytics'
   | 'health'
   | 'finances'
@@ -27,6 +28,7 @@ export type Tab =
 export const TAB_IDS = [
   'overview',
   'archives',
+  'cheatsheets',
   'analytics',
   'projects',
   'now',

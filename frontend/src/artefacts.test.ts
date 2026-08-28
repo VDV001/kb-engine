@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { artefactHref, cheatsheetsOf } from './artefacts'
+import { artefactHref, cheatsheetsOf, opensInBrowser } from './artefacts'
 
 const entry = (over: Record<string, unknown> = {}) =>
   ({ id: 1, title: 'x', category: 'creations', tags: [], ...over }) as never
@@ -47,5 +47,16 @@ describe('артефакты базы', () => {
       entry({ id: 2, tags: ['cheatsheet'], file: 'b.html', date_added: '2026-08-02' }),
     ]
     expect(cheatsheetsOf(list).map((e) => e.id)).toEqual([2, 1])
+  })
+
+  // Движок отдаёт markdown как text/markdown, и браузер такой тип СКАЧИВАЕТ, а
+  // не показывает. Кнопка «открыть», после которой падает файл в загрузки,
+  // обещает больше, чем делает, поэтому её там нет.
+  it('открывается в браузере только то, что браузер покажет', () => {
+    expect(opensInBrowser('creations/cheatsheets/a/a.html')).toBe(true)
+    expect(opensInBrowser('creations/x/y.HTML')).toBe(true)
+    expect(opensInBrowser('notes/2026-03-26_future-plans_v1.md')).toBe(false)
+    expect(opensInBrowser('standards/memory-architecture/v1.md')).toBe(false)
+    expect(opensInBrowser(undefined)).toBe(false)
   })
 })

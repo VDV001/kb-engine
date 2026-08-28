@@ -42,6 +42,7 @@ describe('адресуемость витрины', () => {
     expect([...TAB_IDS]).toEqual([
       'overview',
       'archives',
+      'cheatsheets',
       'analytics',
       'projects',
       'now',

@@ -88,3 +88,29 @@ func TestKBFiles_withoutArtefactsSourceIsNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
+
+// Markdown отдаётся как text/plain, а не text/markdown, потому что браузер
+// второй тип СКАЧИВАЕТ вместо показа. Артефакт заводился, чтобы его читали из
+// витрины; ссылка, после которой файл падает в загрузки, обещает больше, чем
+// делает. Замер, из-за которого правило появилось: из 150 записей с file 142
+// ведут на .md, то есть кнопка «открыть» почти нигде не была бы кнопкой.
+func TestKBFiles_markdownIsServedAsPlainText(t *testing.T) {
+	rec := get(t, kbServer(kbFS()), "/kb/notes/2026-08-02_hello.md")
+	if got := rec.Header().Get("Content-Type"); got != "text/plain; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/plain; charset=utf-8", got)
+	}
+}
+
+// Отрицательный контроль к предыдущему: у html тип не подменяется, иначе
+// страница показалась бы исходным кодом. Правило узкое и должно таким остаться.
+func TestKBFiles_htmlKeepsItsOwnType(t *testing.T) {
+	fsys := kbFS()
+	fsys["creations/page.html"] = &fstest.MapFile{Data: []byte("<h1>Шпаргалка</h1>")}
+	rec := get(t, kbServer(fsys), "/kb/creations/page.html")
+	if rec.Code != http.StatusOK {
+		t.Skip("фальшивый каталог не называет этот путь — проверять нечего")
+	}
+	if got := rec.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want text/html; charset=utf-8", got)
+	}
+}
