@@ -659,7 +659,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:110"
+    "frontend/src/App.tsx:113"
    ]
   },
   {
@@ -709,7 +709,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:119"
+    "frontend/src/App.tsx:127"
    ]
   },
   {
@@ -729,7 +729,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:156"
+    "frontend/src/App.tsx:159"
    ]
   },
   {
@@ -739,7 +739,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:152"
+    "frontend/src/App.tsx:160"
    ]
   },
   {
@@ -749,7 +749,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:153"
+    "frontend/src/App.tsx:161"
    ]
   },
   {
@@ -759,7 +759,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:174"
+    "frontend/src/App.tsx:165"
    ]
   },
   {
@@ -1134,6 +1134,26 @@
    "kind": "service",
    "sources": [
     "internal/usecase/runs/tools.go:24"
+   ]
+  },
+  {
+   "id": "fe-selection",
+   "title": "selection.ts",
+   "subtitle": "условие показа полосы контекста — чистая функция",
+   "layer": "surfaces",
+   "kind": "client",
+   "sources": [
+    "frontend/src/selection.ts:37"
+   ]
+  },
+  {
+   "id": "fe-selection-bar",
+   "title": "SelectionBar",
+   "subtitle": "полоса «выборка по запросу X — N из M»",
+   "layer": "surfaces",
+   "kind": "client",
+   "sources": [
+    "frontend/src/components/SelectionBar.tsx:21"
    ]
   },
   {
@@ -1852,7 +1872,7 @@
      "from": "cmd-audit",
      "to": "owner",
      "call": "печать находок + строка о непроверенном",
-     "detail": "cmd/kbengine/main.go:726 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:812) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
+     "detail": "cmd/kbengine/main.go:726 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:822) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
      "source": "cmd/kbengine/main.go:830",
      "unverified": false,
      "symbol": "linkCoverageLine"
@@ -2237,8 +2257,8 @@
      "from": "fe-app",
      "to": "fe-dashboard",
      "call": "рендер вкладки overview",
-     "detail": "frontend/src/App.tsx:94 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
-     "source": "frontend/src/App.tsx:110",
+     "detail": "frontend/src/App.tsx:103 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
+     "source": "frontend/src/App.tsx:121",
      "unverified": false
     }
    ],
@@ -2508,7 +2528,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/stats",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:95)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:104)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2554,7 +2574,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/entries",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:127)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:136)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2574,8 +2594,8 @@
      "to": "fe-catalog",
      "call": "<CatalogView entries={data.entries} />",
      "symbol": "CatalogView",
-     "source": "frontend/src/App.tsx:146",
-     "detail": "frontend/src/App.tsx:127 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
+     "source": "frontend/src/App.tsx:155",
+     "detail": "frontend/src/App.tsx:136 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
      "unverified": false
     },
     {
@@ -2584,8 +2604,28 @@
      "to": "fe-urlstate",
      "call": "readUrlState / writeUrlState",
      "detail": "urlstate.ts держит вкладку и строку поиска в адресе: без этого любой адрес витрины означал «главная, пусто», и ссылку на выборку нельзя было дать ни человеку, ни инструменту MCP. Роутера нет намеренно — две величины покрывает нативный URLSearchParams. Там же лежит единственный список вкладок: разбор адреса обязан знать, какая вкладка существует, а какая пришла из опечатки",
-     "source": "frontend/src/urlstate.ts:51",
+     "source": "frontend/src/urlstate.ts:58",
      "symbol": "readUrlState",
+     "unverified": false
+    },
+    {
+     "n": 5,
+     "from": "fe-catalog",
+     "to": "fe-selection",
+     "call": "selectionOf({query, linkedQuery, shown, total, searching})",
+     "detail": "Условие показа полосы живёт в frontend/src/selection.ts, а не внутри вида: это правило, а не разметка, и проверяется оно без монтирования дерева. Пока ответ поиска летит, число не называется вовсе — в списке в этот момент лежит весь каталог",
+     "source": "frontend/src/selection.ts:37",
+     "symbol": "selectionOf",
+     "unverified": false
+    },
+    {
+     "n": 6,
+     "from": "fe-selection",
+     "to": "fe-selection-bar",
+     "call": "<SelectionBar selection={...} onReset={resetAll} />",
+     "detail": "Полоса из frontend/src/components/SelectionBar.tsx объясняет, что список — ответ на вопрос: до неё ссылка агента открывала обычный поиск. Отметка «ответ агента» ставится только при src=mcp — ссылка объявляет происхождение сама, а витрина пишет свой запрос в адрес и без неё",
+     "source": "frontend/src/components/SelectionBar.tsx:21",
+     "symbol": "SelectionBar",
      "unverified": false
     }
    ],
@@ -2601,7 +2641,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/analytics",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:108)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:117)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2620,7 +2660,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/analytics-config",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:108)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:117)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2677,7 +2717,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/audits",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:111)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:120)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2696,7 +2736,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/duplicates",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:111)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:120)",
      "source": "frontend/src/api.ts:796",
      "unverified": false,
      "symbol": "dashboard"
@@ -2808,7 +2848,7 @@
      "from": "ad-httpapi",
      "to": "f-team",
      "call": "json.Valid — проверка на каждый запрос",
-     "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:535) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:371) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
+     "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:545) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:371) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
      "source": "internal/adapter/httpapi/server.go:460",
      "unverified": false,
      "symbol": "Valid"
@@ -3061,8 +3101,8 @@
      "to": "fe-architecture",
      "call": "вкладка Architecture",
      "symbol": "ArchitectureView",
-     "source": "frontend/src/App.tsx:176",
-     "detail": "frontend/src/App.tsx:172 — десятая вкладка витрины; до неё карты жили отдельными HTML-страницами и собирались своим build.py"
+     "source": "frontend/src/App.tsx:186",
+     "detail": "frontend/src/App.tsx:182 — десятая вкладка витрины; до неё карты жили отдельными HTML-страницами и собирались своим build.py"
     },
     {
      "n": 7,
@@ -3203,7 +3243,7 @@
      "to": "fe-cheatsheets",
      "call": "<CheatsheetsView entries={data.entries} />",
      "detail": "App.tsx отдаёт виду уже загруженные записи: своих запросов CheatsheetsView не делает, и второй источник тех же данных разошёлся бы с первым. Вкладка — вход к артефактам, которые открывают посмотреть клавишу, а не ищут по названию",
-     "source": "frontend/src/App.tsx:159",
+     "source": "frontend/src/App.tsx:169",
      "symbol": "CheatsheetsView",
      "unverified": false
     },

@@ -17,8 +17,10 @@ import { findingCount } from './hygiene'
 import { ProjectsView } from './ProjectsView'
 import { AboutView } from './AboutView'
 import { ArchitectureView } from './ArchitectureView'
-import { readUrlState, TAB_IDS, type Tab } from './urlstate'
+import { TAB_IDS, type Tab } from './urlstate'
+import { linkedQueryOf } from './selection'
 import { useUrlSync } from './hooks/useUrlSync'
+import { useInitialUrlState } from './hooks/useInitialUrlState'
 import { CheatsheetsView } from './CheatsheetsView'
 import { AnswersView } from './AnswersView'
 
@@ -54,14 +56,21 @@ const tabs: { id: Tab; label: string }[] = TAB_IDS.map((id) => ({ id, label: TAB
 
 export default function App() {
   // Начальное состояние берётся из адреса: ссылка на выборку должна открывать
-  // именно её, иначе адрес обещает больше, чем делает.
-  const initial = readUrlState(window.location.search)
+  // именно её, иначе адрес обещает больше, чем делает. Читается ОДИН раз —
+  // useUrlSync через миг переписывает адрес на себя, и повторное чтение
+  // возвращало бы уже переписанный, без отметки происхождения.
+  const initial = useInitialUrlState()
   const [tab, setTab] = useState<Tab>(initial.tab ?? 'overview')
   // Маска сумм живёт здесь, потому что переключатель стоит в шапке, а
   // применяется она к виду финансов.
   const [masked, setMasked] = useState(true)
   // Поиск тоже поднят сюда: поле стоит в шапке, а фильтрует каталог.
   const [search, setSearch] = useState(initial.q ?? '')
+  // Запрос, с которым страницу открыли по ссылке из ответа агента. Читается
+  // ОДИН раз при старте и обратно в адрес не пишется: отметка живёт до первой
+  // своей правки, иначе перезагрузка через час выдавала бы собственный поиск за
+  // ответ агента.
+  const linkedQuery = linkedQueryOf(initial)
   // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
   // на одной вкладке, а применяется он на другой.
   const [pickedTag, setPickedTag] = useState('')
@@ -154,6 +163,7 @@ export default function App() {
                 health={data.stats.health}
                 search={search}
                 onSearchChange={setSearch}
+                linkedQuery={linkedQuery}
               />
             )}
             {tab === 'cheatsheets' && <CheatsheetsView entries={data.entries} />}

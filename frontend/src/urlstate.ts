@@ -48,7 +48,12 @@ export const TAB_IDS = [
 // одно и то же, а две формы одного состояния однажды разойдутся.
 const DEFAULT_TAB: Tab = 'overview'
 
-export type UrlState = { tab?: Tab; q?: string }
+/** Откуда пришла ссылка. Пока источник один — ответ инструмента MCP. */
+export type Source = 'mcp'
+
+const SOURCES = ['mcp'] as const satisfies readonly Source[]
+
+export type UrlState = { tab?: Tab; q?: string; src?: Source }
 
 export function readUrlState(search: string): UrlState {
   const p = new URLSearchParams(search)
@@ -59,9 +64,17 @@ export function readUrlState(search: string): UrlState {
   if (tab && (TAB_IDS as readonly string[]).includes(tab)) state.tab = tab as Tab
   const q = p.get('q')
   if (q) state.q = q
+  // Происхождение ссылка объявляет сама. Догадка «раз есть запрос, значит
+  // пришли по ссылке» назвала бы ответом агента любой набранный руками поиск;
+  // чужое значение не принимается по той же причине, что чужая вкладка.
+  const src = p.get('src')
+  if (src && (SOURCES as readonly string[]).includes(src)) state.src = src as Source
   return state
 }
 
+// Происхождение обратно в адрес не пишется: отметка живёт до первой своей
+// правки, иначе перезагрузка страницы через час выдавала бы собственный поиск
+// владельца за ответ агента.
 export function writeUrlState(tab: Tab, q: string): string {
   const p = new URLSearchParams()
   if (tab !== DEFAULT_TAB) p.set('tab', tab)
