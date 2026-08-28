@@ -65,8 +65,9 @@ export function CheatsheetsView({ entries }: { entries: readonly Entry[] }) {
       {rest.length > 0 && (
         <p className="text-sm text-on-surface-variant">
           Помимо шпаргалок база держит ещё {rest.length} собственных артефактов — конспекты, курсы,
-          разборы, стандарты. Из них {openable} открываются той же кнопкой в архиве, а {notOpenable}{' '}
-          лежат в markdown: браузер такой файл скачивает, а не показывает, поэтому кнопки у них нет.
+          разборы, стандарты. Открываются той же кнопкой в архиве {openable}.
+          {notOpenable > 0 &&
+            ` Ещё ${notOpenable} — в форматах, которые браузер скачал бы вместо показа, поэтому кнопки у них нет.`}
         </p>
       )}
     </div>

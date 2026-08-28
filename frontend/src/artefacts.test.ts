@@ -55,8 +55,13 @@ describe('артефакты базы', () => {
   it('открывается в браузере только то, что браузер покажет', () => {
     expect(opensInBrowser('creations/cheatsheets/a/a.html')).toBe(true)
     expect(opensInBrowser('creations/x/y.HTML')).toBe(true)
-    expect(opensInBrowser('notes/2026-03-26_future-plans_v1.md')).toBe(false)
-    expect(opensInBrowser('standards/memory-architecture/v1.md')).toBe(false)
+    // Markdown движок отдаёт как text/plain (см. kbfiles.go), поэтому браузер
+    // его показывает, а не скачивает — кнопка у таких записей законна.
+    expect(opensInBrowser('notes/2026-03-26_future-plans_v1.md')).toBe(true)
+    expect(opensInBrowser('standards/memory-architecture/v1.md')).toBe(true)
+    // А вот у чего браузер спросил бы «сохранить» — кнопки нет.
+    expect(opensInBrowser('creations/data/table.xlsx')).toBe(false)
+    expect(opensInBrowser('creations/archive.zip')).toBe(false)
     expect(opensInBrowser(undefined)).toBe(false)
   })
 })

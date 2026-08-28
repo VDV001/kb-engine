@@ -72,6 +72,18 @@ func kbFilesHandler(fsys fs.FS, q Querier) http.Handler {
 		// правит его под тем же путём, и immutable означал бы, что правку
 		// никогда не увидят.
 		w.Header().Set("Cache-Control", "no-cache")
+		// Markdown отдаётся как обычный текст: по расширению ServeContent выбрал
+		// бы text/markdown, а браузер такой тип СКАЧИВАЕТ вместо показа, и
+		// ссылка на артефакт роняла бы файл в загрузки. Артефакт заводился,
+		// чтобы его читали из витрины. Замер, из-за которого правило появилось:
+		// из 150 записей с file 142 ведут на .md.
+		//
+		// ponytail: потолок — markdown показывается исходным текстом, со
+		// звёздочками и решётками. Апгрейд, когда надоест: рендерить его
+		// витриной в html, но это отдельный слой, а не заголовок ответа.
+		if strings.EqualFold(path.Ext(rel), ".md") {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		}
 		http.ServeContent(w, r, path.Base(rel), st.ModTime(), rs)
 	})
 }
