@@ -160,28 +160,7 @@ func printReport(w io.Writer, path string, r runs.Report, now time.Time) {
 		}
 	}
 
-	// Вызовы MCP — отдельная секция, а не строка среди команд: у вызова нет
-	// порога молчания, и «search_catalog давно не запускался» означало бы, что
-	// агент о базе не спрашивал, а не что движок что-то забыл прогнать.
-	//
-	// ⚠️ Наружу идут ИМЕНА инструментов и числа. Текст запроса лежит в
-	// аргументах и сюда не попадает: «зарплата и переезд» раскрывает предмет
-	// интереса ровно так же, как сумма в `fin add`.
-	if len(r.Tools) > 0 {
-		total := 0
-		for _, c := range r.Tools {
-			total += c.Runs
-		}
-		fmt.Fprintf(w, "\nагент спрашивал базу через MCP — вызовов %d:\n", total)
-		for _, c := range r.Tools {
-			line := fmt.Sprintf("  %-16s вызовов %-4d последний %s (%s)",
-				c.Name, c.Runs, c.LastRun.Format("02.01.2006"), ago(c.LastRun, now))
-			if c.Failures > 0 {
-				line += fmt.Sprintf(" · без ответа %d", c.Failures)
-			}
-			fmt.Fprintln(w, line)
-		}
-	}
+	printTools(w, r.Tools, now)
 
 	if len(r.Unknown) > 0 {
 		fmt.Fprintf(w, "\nв журнале есть команды, которых движок больше не знает: %s\n",
@@ -202,8 +181,43 @@ func printReport(w io.Writer, path string, r runs.Report, now time.Time) {
 		}
 	}
 
-	// Правило 11: инструмент называет, чего он НЕ проверял. Без этого абзаца
-	// молчание про замедление читается как «замедления нет».
+	printBlindSpots(w)
+}
+
+// printTools печатает счётчик вызовов MCP.
+//
+// Отдельной функцией не ради длины: у вызова другой предмет, чем у команды —
+// «сколько раз агент спросил базу», а не «прогоняли ли проверку», и порога
+// молчания у него нет вовсе.
+//
+// ⚠️ Наружу идут ИМЕНА инструментов и числа. Текст запроса лежит в аргументах
+// и сюда не попадает: «зарплата и переезд» раскрывает предмет интереса ровно
+// так же, как сумма в `fin add`.
+func printTools(w io.Writer, tools []runs.CommandStat, now time.Time) {
+	if len(tools) == 0 {
+		return
+	}
+	total := 0
+	for _, c := range tools {
+		total += c.Runs
+	}
+	fmt.Fprintf(w, "\nагент спрашивал базу через MCP — вызовов %d:\n", total)
+	for _, c := range tools {
+		line := fmt.Sprintf("  %-16s вызовов %-4d последний %s (%s)",
+			c.Name, c.Runs, c.LastRun.Format("02.01.2006"), ago(c.LastRun, now))
+		if c.Failures > 0 {
+			line += fmt.Sprintf(" · без ответа %d", c.Failures)
+		}
+		fmt.Fprintln(w, line)
+	}
+}
+
+// printBlindSpots — правило 11 в отчёте: чего он НЕ проверял.
+//
+// Без этого абзаца молчание про замедление читается как «замедления нет», а
+// счётчик вызовов — как «столько раз ходили проверять ответ по первичным
+// данным», хотя переходы по ссылке движку не видны вовсе.
+func printBlindSpots(w io.Writer) {
 	fmt.Fprintln(w, "\nчего этот отчёт не проверяет:")
 	fmt.Fprintln(w, "  · замедление команд — порог пришлось бы выдумать, а выдуманный порог")
 	fmt.Fprintln(w, "    красит зелёное в красное и за две недели учит не смотреть на предупреждения;")
