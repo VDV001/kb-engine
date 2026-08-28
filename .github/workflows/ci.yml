@@ -195,6 +195,20 @@ jobs:
       - name: People-names gate self-test
         run: ./scripts/gates/no-people-names.sh --self-test
 
+      # Гейт закрытия issue ловит ОБЕ половины немой поломки: русское слово
+      # молча не закрывает (issue остаётся открытой при смерженном PR), а
+      # английское молча закрывает недоделанное — автозакрытие срабатывает на
+      # мерж, а не на готовность. Самопроверка идёт на подсадках и без сети;
+      # боевой прогон ниже смотрит на тело этого PR.
+      - name: Issue-close gate self-test
+        run: ./scripts/gates/issue-close.sh --self-test
+
+      - name: Issue-close gate
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/gates/issue-close.sh "${{ github.event.pull_request.number }}"
+
       # Тот же довод, что у соседа: release-scope зовут руками при сборке
       # выпуска, поэтому его правило до сих пор никто не проверял. Самопроверка
       # идёт по настоящим диапазонам между тегами и требует обеих сторон —
