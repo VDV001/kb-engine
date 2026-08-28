@@ -71,6 +71,13 @@ type Report struct {
 	// TotalEntries is the catalog size, so a reader can see the coverage of
 	// this scan without computing it.
 	TotalEntries int
+	// NeverChecked counts entries whose url was never asked at all — считается
+	// по состоянию ДО прогона. «Проверено 6 из 1525» читается как выборка из
+	// проверенного массива, хотя часть базы может не спрашиваться никогда:
+	// новые записи дописываются в хвост. Число обязано считаться до прогона,
+	// иначе оно зависело бы от того, что успел сделать сам прогон, и вопрос
+	// «сколько ещё не трогали» стал бы невычислимым.
+	NeverChecked int
 	// Stopped — скан прерван человеком и оборван на середине. Отдельно от
 	// NotAttempted: «не дошла очередь из-за --limit» это выбранная выборка, а
 	// прерванный прогон — незаконченная работа, и читать их одинаково нельзя.
@@ -173,6 +180,11 @@ func (s *Service) Scan(ctx context.Context, now time.Time) (Report, error) {
 	}
 
 	rep := Report{TotalEntries: len(c.Entries())}
+	for _, e := range c.Entries() {
+		if e.URL() != "" && e.DriftCheckDate() == nil {
+			rep.NeverChecked++
+		}
+	}
 	asked := 0
 	for _, e := range scanOrder(c.Entries(), s.Limit) {
 		url := e.URL()

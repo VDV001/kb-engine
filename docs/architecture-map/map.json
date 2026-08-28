@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "00f4370",
+  "commit": "956fbee",
   "layers": [
     {
       "id": "actors",
@@ -1780,7 +1780,7 @@
           "to": "uc-drift",
           "call": "drift.NewService(loader, linkcheck.New(timeout, delay))",
           "detail": "cmd/kbengine/drift.go:31 — опрос с задержкой между запросами, чтобы не выглядеть ботом",
-          "source": "internal/usecase/drift/drift.go:119",
+          "source": "internal/usecase/drift/drift.go:135",
           "unverified": false
         },
         {
@@ -2607,7 +2607,7 @@
           "to": "ad-linkcheck",
           "call": "drift.Service.Scan спрашивает адреса",
           "detail": "вкладка сеть НЕ трогает: audit.LinkHealth читает отметки из каталога. Спрашивает адреса drift.Service.Scan (internal/usecase/drift/drift.go:160 — s.checker.Head), но САМА она ничего не записывает — отметки ставит catalogjson.ApplyDrift под --apply. Пакет audit о linkcheck не знает вовсе. Первым аргументом Scan с #192 идёт context.Context: скан останавливается по сигналу, а не досматривает очередь",
-          "source": "internal/usecase/drift/drift.go:169",
+          "source": "internal/usecase/drift/drift.go:176",
           "unverified": false,
           "symbol": "Scan",
           "branch": true
