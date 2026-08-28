@@ -1,6 +1,7 @@
 package catalogjson
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -62,13 +63,20 @@ func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) 
 		if !ok {
 			continue
 		}
-		edited, err := applyDriftToEntry(raw, rec, withURLs)
+		edited, changed, err := applyDriftToEntry(raw, rec, withURLs)
 		if err != nil {
 			return 0, fmt.Errorf("entry %d: %w", id, err)
 		}
 		entries[i] = edited
+		// Счёт идёт по ИЗМЕНИВШИМСЯ записям, а не по совпавшим с записями
+		// прогона. Повторный прогон в тот же день кладёт те же значения:
+		// файл не меняется ни на байт, и «записано N» тогда означало бы
+		// успех без содержания — ровно то, что запрещает гейт против
+		// ложного успеха.
+		if changed {
+			updated++
+		}
 		delete(byID, id)
-		updated++
 	}
 
 	if len(byID) > 0 {
@@ -90,34 +98,48 @@ func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) 
 	return updated, nil
 }
 
-func applyDriftToEntry(raw json.RawMessage, rec DriftRecord, withURLs bool) (json.RawMessage, error) {
+// applyDriftToEntry returns the edited entry and whether it differs from the
+// original. Сравнение идёт КАНОНА С КАНОНОМ: сырой элемент несёт отступы из
+// файла, а сборка выдаёт единообразный вид, поэтому побайтовое сравнение
+// сырого с собранным объявляло бы изменившимся всё подряд.
+func applyDriftToEntry(raw json.RawMessage, rec DriftRecord, withURLs bool) (json.RawMessage, bool, error) {
 	members, err := readTopLevel(raw)
 	if err != nil {
-		return nil, err
+		return nil, false, err
+	}
+	before, err := assembleObject(members)
+	if err != nil {
+		return nil, false, err
 	}
 
 	if withURLs && rec.NewURL != "" {
 		url, err := marshalNoEscape(rec.NewURL)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		members = setMember(members, "url", url)
 	}
 
 	date, err := marshalNoEscape(rec.CheckedAt.Format("2006-01-02"))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	members = setMember(members, "drift_check_date", date)
 
 	// A 200 clears whatever code was stored: an entry that answered 403 in May
 	// and answers 200 now must stop asserting a problem this check disproved.
 	if rec.Code == 200 {
-		return assembleObject(dropMember(members, "drift_http_code"))
+		members = dropMember(members, "drift_http_code")
+	} else {
+		code, err := marshalNoEscape(rec.Code)
+		if err != nil {
+			return nil, false, err
+		}
+		members = setMember(members, "drift_http_code", code)
 	}
-	code, err := marshalNoEscape(rec.Code)
+	edited, err := assembleObject(members)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return assembleObject(setMember(members, "drift_http_code", code))
+	return edited, !bytes.Equal(before, edited), nil
 }
