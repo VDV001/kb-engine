@@ -148,7 +148,7 @@ func TestServer_searchCarriesTheViewURL(t *testing.T) {
 	if err := json.Unmarshal([]byte(text(t, res)), &got); err != nil {
 		t.Fatal(err)
 	}
-	const want = "http://127.0.0.1:8097/?tab=archives&q=%D0%BA%D1%83%D0%B1%D0%B5%D1%80%D0%BD%D0%B5%D1%82%D0%B5%D1%81"
+	const want = "http://127.0.0.1:8097/?tab=archives&q=%D0%BA%D1%83%D0%B1%D0%B5%D1%80%D0%BD%D0%B5%D1%82%D0%B5%D1%81&src=mcp"
 	if got.View != want {
 		t.Errorf("view = %q, want %q", got.View, want)
 	}
