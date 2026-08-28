@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { readUrlState, writeUrlState } from './urlstate'
+import { readUrlState, writeUrlState, TAB_IDS } from './urlstate'
 
 describe('адресуемость витрины', () => {
   it('читает вкладку и запрос из адресной строки', () => {
@@ -34,5 +34,22 @@ describe('адресуемость витрины', () => {
 
   it('переживает круг: что записали, то и прочли', () => {
     expect(readUrlState(writeUrlState('finances', 'юрент'))).toEqual({ tab: 'finances', q: 'юрент' })
+  })
+
+  // Список вкладок переехал сюда из App, и перенос мог молча переставить их
+  // порядок: ни типы, ни сборка этого не видят, а человек видит сразу.
+  it('порядок вкладок остался прежним', () => {
+    expect([...TAB_IDS]).toEqual([
+      'overview',
+      'archives',
+      'analytics',
+      'projects',
+      'now',
+      'team',
+      'finances',
+      'health',
+      'architecture',
+      'about',
+    ])
   })
 })

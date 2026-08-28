@@ -1,0 +1,64 @@
+// Адрес витрины как состояние: какая вкладка открыта и что ищем.
+//
+// Заведено потому, что ссылку на конкретную выборку до сих пор нельзя было дать
+// никому — ни человеку в переписке, ни инструменту, отвечающему агенту. Поиск и
+// вкладка жили в состоянии React, и адрес всегда означал «главная, пусто».
+//
+// Роутера здесь нет намеренно: две величины в строке запроса покрывает нативный
+// URLSearchParams, а библиотека маршрутизации принесла бы зависимость, историю
+// переходов и перерисовку ради того, что делают три строки.
+
+export type Tab =
+  | 'overview'
+  | 'archives'
+  | 'analytics'
+  | 'health'
+  | 'finances'
+  | 'projects'
+  | 'team'
+  | 'now'
+  | 'architecture'
+  | 'about'
+
+// Порядок показа вкладок — четыре группы: база знаний, витрина и оперативка,
+// приватное, служебное. Список живёт здесь, а не в App, потому что разбор
+// адреса обязан знать, какая вкладка существует, а какая пришла из опечатки;
+// два списка разошлись бы, и незнакомая вкладка стала бы открываться.
+export const TAB_IDS = [
+  'overview',
+  'archives',
+  'analytics',
+  'projects',
+  'now',
+  'team',
+  'finances',
+  'health',
+  'architecture',
+  'about',
+] as const satisfies readonly Tab[]
+
+// Вкладка по умолчанию в адрес не пишется: «пусто» и «tab=overview» означают
+// одно и то же, а две формы одного состояния однажды разойдутся.
+const DEFAULT_TAB: Tab = 'overview'
+
+export type UrlState = { tab?: Tab; q?: string }
+
+export function readUrlState(search: string): UrlState {
+  const p = new URLSearchParams(search)
+  const state: UrlState = {}
+  const tab = p.get('tab')
+  // Незнакомая вкладка приходит из чужой ссылки и из опечатки. Открывать её
+  // нельзя, падать незачем: адрес — подсказка, а не команда.
+  if (tab && (TAB_IDS as readonly string[]).includes(tab)) state.tab = tab as Tab
+  const q = p.get('q')
+  if (q) state.q = q
+  return state
+}
+
+export function writeUrlState(tab: Tab, q: string): string {
+  const p = new URLSearchParams()
+  if (tab !== DEFAULT_TAB) p.set('tab', tab)
+  if (q) p.set('q', q)
+  const s = p.toString()
+  return s ? `?${s}` : ''
+}

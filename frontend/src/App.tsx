@@ -17,51 +17,52 @@ import { findingCount } from './hygiene'
 import { ProjectsView } from './ProjectsView'
 import { AboutView } from './AboutView'
 import { ArchitectureView } from './ArchitectureView'
+import { readUrlState, TAB_IDS, type Tab } from './urlstate'
+import { useUrlSync } from './hooks/useUrlSync'
 
-type Tab =
-  | 'overview'
-  | 'archives'
-  | 'analytics'
-  | 'health'
-  | 'finances'
-  | 'projects'
-  | 'team'
-  | 'now'
-  | 'architecture'
-  | 'about'
 
 // Порядок вкладок — это четыре группы, а не список: база знаний, витрина и
 // оперативка, приватное, служебное. Audits и Duplicates стояли третьей и
 // четвёртой, разрывая читательский блок служебной работой; теперь это один
 // раздел «Health» в служебном хвосте.
-const tabs: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Dashboard' },
-  { id: 'archives', label: 'Archives' },
-  { id: 'analytics', label: 'Analytics' },
-  { id: 'projects', label: 'Projects' },
-  { id: 'now', label: 'Now' },
-  { id: 'team', label: 'Team' },
-  { id: 'finances', label: 'Finances' },
-  { id: 'health', label: 'Health' },
+// Подписи вкладок. Порядок задаёт TAB_IDS в urlstate — там же, где разбор
+// адреса решает, какая вкладка существует; Record обязывает не забыть подпись
+// при добавлении новой.
+const TAB_LABELS: Record<Tab, string> = {
+  overview: 'Dashboard',
+  archives: 'Archives',
+  analytics: 'Analytics',
+  projects: 'Projects',
+  now: 'Now',
+  team: 'Team',
+  finances: 'Finances',
   // Карта стоит в служебном хвосте рядом с Health: обе про то, как устроено
   // хозяйство, а не про то, что в базе лежит.
-  { id: 'architecture', label: 'Architecture' },
-  { id: 'about', label: 'About' },
-]
+  health: 'Health',
+  architecture: 'Architecture',
+  about: 'About',
+}
+
+const tabs: { id: Tab; label: string }[] = TAB_IDS.map((id) => ({ id, label: TAB_LABELS[id] }))
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>('overview')
+  // Начальное состояние берётся из адреса: ссылка на выборку должна открывать
+  // именно её, иначе адрес обещает больше, чем делает.
+  const initial = readUrlState(window.location.search)
+  const [tab, setTab] = useState<Tab>(initial.tab ?? 'overview')
   // Маска сумм живёт здесь, потому что переключатель стоит в шапке, а
   // применяется она к виду финансов.
   const [masked, setMasked] = useState(true)
   // Поиск тоже поднят сюда: поле стоит в шапке, а фильтрует каталог.
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState(initial.q ?? '')
   // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
   // на одной вкладке, а применяется он на другой.
   const [pickedTag, setPickedTag] = useState('')
   // Категория, выбранная ящиком на About — по той же причине, что и тег:
   // выбирают на одной вкладке, применяется на другой.
   const [pickedCategory, setPickedCategory] = useState('')
+  useUrlSync(tab, search)
+
   const dashboard = useResource(api.dashboard)
   const data = dashboard.status === 'ready' ? dashboard.data : null
 
