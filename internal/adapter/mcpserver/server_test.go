@@ -16,8 +16,15 @@ import (
 // и tools/call — ровно то, что сделает Claude Code, только без процесса.
 func connect(t *testing.T, q mcpserver.Querier) *mcp.ClientSession {
 	t.Helper()
+	return connectWithView(t, q, "")
+}
+
+// connectWithView — тот же сервер, но с объявленной витриной: поле view
+// проверяется отдельно, чтобы остальные тесты не зависели от её адреса.
+func connectWithView(t *testing.T, q mcpserver.Querier, viewBase string) *mcp.ClientSession {
+	t.Helper()
 	ctx := context.Background()
-	srv := mcpserver.New(q, search.Matcher{}, "тест")
+	srv := mcpserver.New(q, search.Matcher{}, "тест", viewBase)
 	ct, st := mcp.NewInMemoryTransports()
 	if _, err := srv.Connect(ctx, st, nil); err != nil {
 		t.Fatalf("сервер не поднялся: %v", err)
@@ -122,4 +129,48 @@ func text(t *testing.T, res *mcp.CallToolResult) string {
 		}
 	}
 	return b.String()
+}
+
+// Поле view проверяется НА ЖИВОМ ПУТИ протокола, а не на функции: адрес может
+// собираться верно и не доезжать до ответа — так уже было в deal-sense, где
+// разбивка часов считалась и выбрасывалась обработчиком.
+func TestServer_searchCarriesTheViewURL(t *testing.T) {
+	cs := connectWithView(t, stubQuerier{entries: fixture(t)}, "http://127.0.0.1:8097")
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "search_catalog", Arguments: map[string]any{"query": "кубернетес"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		View string `json:"view"`
+	}
+	if err := json.Unmarshal([]byte(text(t, res)), &got); err != nil {
+		t.Fatal(err)
+	}
+	const want = "http://127.0.0.1:8097/?tab=archives&q=%D0%BA%D1%83%D0%B1%D0%B5%D1%80%D0%BD%D0%B5%D1%82%D0%B5%D1%81"
+	if got.View != want {
+		t.Errorf("view = %q, want %q", got.View, want)
+	}
+}
+
+// Отрицательный контроль: без объявленной витрины адреса нет вовсе. Ссылка в
+// никуда хуже её отсутствия — по ней сходят один раз и перестают верить полю.
+func TestServer_withoutViewBaseTheFieldStaysEmpty(t *testing.T) {
+	cs := connect(t, stubQuerier{entries: fixture(t)})
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "search_catalog", Arguments: map[string]any{"query": "кубернетес"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		View string `json:"view"`
+	}
+	if err := json.Unmarshal([]byte(text(t, res)), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.View != "" {
+		t.Errorf("view = %q, ждали пустое: витрина не объявлена", got.View)
+	}
 }

@@ -36,6 +36,10 @@ func run(args []string, stderr io.Writer) error {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "путь к catalog.json (обязателен)")
 	showVersion := fs.Bool("version", false, "напечатать версию и выйти")
+	// Адрес витрины задаётся снаружи, потому что порт выбирается при запуске
+	// serve и на чужой машине он другой. Умолчания нет намеренно: без флага
+	// поле view приходит пустым, и это честнее ссылки в никуда.
+	viewBase := fs.String("view-base", "", "адрес витрины для поля view, например http://127.0.0.1:8097")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -64,7 +68,7 @@ func run(args []string, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "kbengine-mcp: %v — поиск ищет подстрокой, транслитерацией и с опечатками, но не переводит термины\n", err)
 	}
 
-	srv := mcpserver.New(svc, search.New(syn), version)
+	srv := mcpserver.New(svc, search.New(syn), version, *viewBase)
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая
 	// лишняя строка там ломает разбор JSON-RPC у клиента.
 	fmt.Fprintf(stderr, "kbengine-mcp %s: каталог %s, инструменты search_catalog · get_entry · stats\n", version, *catalogPath)

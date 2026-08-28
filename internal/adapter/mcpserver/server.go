@@ -70,14 +70,16 @@ type emptyArgs struct{}
 // который отвечает витрине и терминалу. Своей фильтрации здесь нет ни строки, и
 // это не стиль, а замер: пока правило жило в двух местах, «кубернетес» давал
 // десять записей в терминале и ноль в браузере.
-func New(q Querier, m search.Matcher, version string) *mcp.Server {
+func New(q Querier, m search.Matcher, version, viewBase string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "kb-engine", Version: version}, nil)
 
 	mcp.AddTool(s, &mcp.Tool{
 		Name: "search_catalog",
 		Description: "Поиск по каталогу базы знаний. Четыре слоя: подстрока, " +
 			"транслитерация, опечатки, словарь синонимов. Слова соединяются через И, " +
-			"«#123» адресует запись по номеру.",
+			"«#123» адресует запись по номеру. Поле view — адрес витрины с той " +
+			"же выборкой: его показывают человеку, чтобы он сверил ответ с " +
+			"первичными данными, а не с пересказом.",
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
 		found, err := SearchCatalog(q, m, in.Query)
 		if err != nil {
@@ -87,7 +89,14 @@ func New(q Querier, m search.Matcher, version string) *mcp.Server {
 		for _, e := range found {
 			out = append(out, project(e))
 		}
-		return jsonResult(map[string]any{"found": len(out), "entries": out})
+		return jsonResult(map[string]any{
+			"found":   len(out),
+			"entries": out,
+			// Адрес витрины с той же выборкой: человек проверяет ответ по
+			// первичным данным, а не по моему пересказу. Пустой, когда витрина
+			// не объявлена — выдуманная ссылка хуже отсутствующей.
+			"view": viewURL(viewBase, "archives", in.Query),
+		})
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -98,7 +107,10 @@ func New(q Querier, m search.Matcher, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return jsonResult(project(e))
+		return jsonResult(map[string]any{
+			"entry": project(e),
+			"view":  viewURL(viewBase, "archives", fmt.Sprintf("#%d", in.ID)),
+		})
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -110,7 +122,7 @@ func New(q Querier, m search.Matcher, version string) *mcp.Server {
 		if err != nil {
 			return nil, nil, err
 		}
-		return jsonResult(st)
+		return jsonResult(map[string]any{"stats": st, "view": viewURL(viewBase, "overview", "")})
 	})
 
 	return s
