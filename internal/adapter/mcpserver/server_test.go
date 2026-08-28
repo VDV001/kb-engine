@@ -24,7 +24,7 @@ func connect(t *testing.T, q mcpserver.Querier) *mcp.ClientSession {
 func connectWithView(t *testing.T, q mcpserver.Querier, viewBase string) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
-	srv := mcpserver.New(q, search.Matcher{}, "тест", viewBase)
+	srv := mcpserver.New(q, search.Matcher{}, mcpserver.Config{Version: "тест", ViewBase: viewBase})
 	ct, st := mcp.NewInMemoryTransports()
 	if _, err := srv.Connect(ctx, st, nil); err != nil {
 		t.Fatalf("сервер не поднялся: %v", err)

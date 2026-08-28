@@ -68,7 +68,7 @@ func run(args []string, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "kbengine-mcp: %v — поиск ищет подстрокой, транслитерацией и с опечатками, но не переводит термины\n", err)
 	}
 
-	srv := mcpserver.New(svc, search.New(syn), version, *viewBase)
+	srv := mcpserver.New(svc, search.New(syn), mcpserver.Config{Version: version, ViewBase: *viewBase})
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая
 	// лишняя строка там ломает разбор JSON-RPC у клиента.
 	fmt.Fprintf(stderr, "kbengine-mcp %s: каталог %s, инструменты search_catalog · get_entry · stats\n", version, *catalogPath)

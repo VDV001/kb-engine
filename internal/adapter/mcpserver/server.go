@@ -70,7 +70,8 @@ type emptyArgs struct{}
 // который отвечает витрине и терминалу. Своей фильтрации здесь нет ни строки, и
 // это не стиль, а замер: пока правило жило в двух местах, «кубернетес» давал
 // десять записей в терминале и ноль в браузере.
-func New(q Querier, m search.Matcher, version, viewBase string) *mcp.Server {
+func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
+	version, viewBase := cfg.Version, cfg.ViewBase
 	s := mcp.NewServer(&mcp.Implementation{Name: "kb-engine", Version: version}, nil)
 
 	mcp.AddTool(s, &mcp.Tool{

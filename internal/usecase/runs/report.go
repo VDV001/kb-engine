@@ -81,6 +81,8 @@ type Report struct {
 	NeverRan []string
 	// Unknown — команды из журнала, которых движок больше не знает.
 	Unknown []string
+	// Tools — вызовы инструментов MCP, посчитанные отдельно от команд.
+	Tools []CommandStat
 }
 
 // Build reads the journal and answers what ran and what did not.
