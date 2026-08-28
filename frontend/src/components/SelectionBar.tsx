@@ -32,7 +32,11 @@ export function SelectionBar({
     >
       <span className="min-w-0">
         {fromAgent && (
-          <span className="label mr-2 rounded bg-secondary-container px-2 py-0.5 text-on-secondary-container">
+          // Пара взята у тегов каталога, а не выдумана: bg-secondary-container
+          // и text-on-secondary-container в теме не существуют, Tailwind молча
+          // выбрасывает такой класс, и плашка выходит без фона вовсе. Контраст
+          // измерен: 5.37 в тёмной теме, 7.26 в светлой.
+          <span className="label mr-2 rounded bg-tag-bg-2 px-2 py-0.5 text-tag-text-2">
             ответ агента
           </span>
         )}
