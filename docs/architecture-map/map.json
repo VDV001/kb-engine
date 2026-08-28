@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "a7b0661",
+  "commit": "0d12105",
   "layers": [
     {
       "id": "actors",
@@ -2607,7 +2607,7 @@
           "to": "ad-linkcheck",
           "call": "drift.Service.Scan спрашивает адреса",
           "detail": "вкладка сеть НЕ трогает: audit.LinkHealth читает отметки из каталога. Спрашивает адреса drift.Service.Scan (internal/usecase/drift/drift.go:160 — s.checker.Head), но САМА она ничего не записывает — отметки ставит catalogjson.ApplyDrift под --apply. Пакет audit о linkcheck не знает вовсе. Первым аргументом Scan с #192 идёт context.Context: скан останавливается по сигналу, а не досматривает очередь",
-          "source": "internal/usecase/drift/drift.go:136",
+          "source": "internal/usecase/drift/drift.go:169",
           "unverified": false,
           "symbol": "Scan",
           "branch": true

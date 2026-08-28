@@ -64,6 +64,15 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		}
 		return 0
 	}
+	return recordDrift(rep, *catalogPath, *updateURLs, stdout, stderr)
+}
+
+// recordDrift writes the scan results into the catalog and says what happened.
+//
+// «Записано 0» и «проверка прошла» снаружи неотличимы, если не сказать вслух.
+// Ноль бывает по двум причинам, и обе обязаны признаваться: спрашивать было
+// нечего, либо те же значения уже стоят и повтор ничего не поменял.
+func recordDrift(rep drift.Report, catalogPath string, updateURLs bool, stdout, stderr io.Writer) int {
 	records := make([]catalogjson.DriftRecord, 0, len(rep.Results))
 	for _, r := range rep.Results {
 		records = append(records, catalogjson.DriftRecord{
@@ -71,13 +80,18 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		})
 	}
 	write := catalogjson.ApplyDrift
-	if *updateURLs {
+	if updateURLs {
 		write = catalogjson.ApplyDriftWithURLs
 	}
-	n, err := write(*catalogPath, records)
+	n, err := write(catalogPath, records)
 	if err != nil {
 		fmt.Fprintf(stderr, "drift: %v\n", err)
 		return 1
+	}
+	if n == 0 {
+		fmt.Fprintln(stdout, "\nв каталоге ничего не изменилось: нечего было записывать "+
+			"(либо те же значения уже стоят)")
+		return 0
 	}
 	fmt.Fprintf(stdout, "\nзаписано в каталог: %d запис(ей)\n", n)
 	return 0

@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,6 +74,28 @@ func TestNoCommandReportsSuccessWithoutChanging(t *testing.T) {
 				xlsx, _ := pairedLedger(t)
 				return []string{"fin", "balance", "--from", xlsx, "--bank", "Сбербанк",
 					"--amount", "500", "--create"}
+			},
+		},
+		{
+			// drift --apply, которому нечего записывать. Сети здесь не будет:
+			// у записей нет url, поэтому ни одного запроса не уходит, а
+			// результатов ноль. Успех без содержания тут особенно опасен —
+			// «записано в каталог: 0 записей» человек читает как «проверка
+			// прошла», хотя проверки не было вовсе.
+			//
+			// Прецедент 28.08.2026: `drift --limit 6 --apply` напечатал
+			// «записано в каталог: 6 записей», при этом cmp показал, что
+			// catalog.json не изменился ни на байт.
+			name: "drift --apply: записывать нечего",
+			setup: func(t *testing.T) []string {
+				path := filepath.Join(t.TempDir(), "catalog.json")
+				doc := `{"entries":[
+{"id":1,"title":"Без адреса","category":"golang","status":"consider","lifecycle":"active"}
+]}`
+				if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
+					t.Fatalf("write catalog: %v", err)
+				}
+				return []string{"drift", "--catalog", path, "--apply"}
 			},
 		},
 		{

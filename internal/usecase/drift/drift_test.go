@@ -3,6 +3,7 @@ package drift_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -34,6 +35,11 @@ func (l fixedLoader) Load() (*domain.Catalog, error) { return l.c, nil }
 
 func entry(t *testing.T, id int, url string) domain.Entry {
 	t.Helper()
+	return buildEntry(t, id, url, nil)
+}
+
+func buildEntry(t *testing.T, id int, url string, checked *time.Time) domain.Entry {
+	t.Helper()
 	cat, err := domain.NewCategory("ai-agents-tools")
 	if err != nil {
 		t.Fatalf("category: %v", err)
@@ -49,6 +55,7 @@ func entry(t *testing.T, id int, url string) domain.Entry {
 	e, err := domain.NewEntry(domain.EntryParams{
 		ID: id, Kind: domain.KindArticle, Title: "T", Category: cat,
 		Lifecycle: lc, ReadState: &rs, URL: url,
+		DriftCheckDate: checked,
 	})
 	if err != nil {
 		t.Fatalf("NewEntry: %v", err)
@@ -331,4 +338,93 @@ func (c cancelAfterFirst) Head(ctx context.Context, url string) (drift.Response,
 	resp, err := c.inner.Head(ctx, url)
 	c.cancel()
 	return resp, err
+}
+
+// entryChecked builds an entry that already carries a drift check date.
+func entryChecked(t *testing.T, id int, url string, checked time.Time) domain.Entry {
+	t.Helper()
+	return buildEntry(t, id, url, &checked)
+}
+
+// --limit exists so a first run can be a sample. But a sample taken in catalog
+// order asks the entries that were checked most recently and never reaches the
+// ones that were never checked at all — they sit at the tail, because new
+// entries are appended there.
+//
+// Замер на живой базе 28.08.2026: 1414 записей с url, ровно 6 без даты
+// проверки — и это id 1545–1550, последние в каталоге. `--limit 6` спрашивал
+// id 1–6, проверенные накануне. Дотянуться до нужных шести можно было только
+// полным прогоном в 1414 запросов.
+func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
+	old := time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		entry []domain.Entry
+		limit int
+		want  []int // ids expected to be asked, in any order
+	}{
+		{
+			name: "никогда не проверенная идёт первой, хотя лежит в хвосте",
+			entry: []domain.Entry{
+				entryChecked(t, 1, "https://example.com/a", recent),
+				entryChecked(t, 2, "https://example.com/b", recent),
+				entry(t, 3, "https://example.com/c"),
+			},
+			limit: 1,
+			want:  []int{3},
+		},
+		{
+			name: "при всех проверенных берётся самая давняя",
+			entry: []domain.Entry{
+				entryChecked(t, 1, "https://example.com/a", recent),
+				entryChecked(t, 2, "https://example.com/b", old),
+				entryChecked(t, 3, "https://example.com/c", recent),
+			},
+			limit: 1,
+			want:  []int{2},
+		},
+		{
+			name: "непроверенные исчерпаны — добирается давними",
+			entry: []domain.Entry{
+				entryChecked(t, 1, "https://example.com/a", recent),
+				entryChecked(t, 2, "https://example.com/b", old),
+				entry(t, 3, "https://example.com/c"),
+			},
+			limit: 2,
+			want:  []int{2, 3},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := catalogOf(t, tt.entry...)
+			checker := stubChecker{codes: map[string]int{
+				"https://example.com/a": 200,
+				"https://example.com/b": 200,
+				"https://example.com/c": 200,
+			}}
+			svc := drift.NewService(fixedLoader{c}, checker)
+			svc.Limit = tt.limit
+
+			rep, err := svc.Scan(t.Context(), time.Now())
+			if err != nil {
+				t.Fatalf("Scan: %v", err)
+			}
+			got := make([]int, 0, len(rep.Results))
+			for _, r := range rep.Results {
+				got = append(got, r.EntryID)
+			}
+			slices.Sort(got)
+			want := slices.Clone(tt.want)
+			slices.Sort(want)
+			if !slices.Equal(got, want) {
+				t.Fatalf("спрошены записи %v, ожидались %v — отбор идёт по порядку каталога, а не по давности проверки", got, want)
+			}
+			if sum := len(rep.Results) + len(rep.Unreachable) + rep.WithoutURL + rep.NotAttempted; sum != rep.TotalEntries {
+				t.Fatalf("buckets sum to %d, catalog has %d", sum, rep.TotalEntries)
+			}
+		})
+	}
 }
