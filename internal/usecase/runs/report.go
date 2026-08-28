@@ -81,6 +81,13 @@ type Report struct {
 	NeverRan []string
 	// Unknown — команды из журнала, которых движок больше не знает.
 	Unknown []string
+	// Tools — вызовы инструментов MCP, чаще спрашиваемые сверху.
+	//
+	// Отдельным списком, а не вместе с командами, по двум причинам сразу:
+	// у вызова нет порога молчания (инструмент зовут, когда о нём спросили,
+	// и «давно не звали» ничего не значит), а движок объявил бы его командой,
+	// которой больше не знает.
+	Tools []CommandStat
 }
 
 // Build reads the journal and answers what ran and what did not.
@@ -107,11 +114,30 @@ func Build(j Journal, known []string, now time.Time) (Report, error) {
 	}
 
 	for _, s := range byName {
+		// Вызов инструмента — не команда движка: разбор имени решает это в
+		// одном месте, чтобы «mcp:search_catalog» не попал ни в список команд,
+		// ни в список забытых.
+		if tool, isTool := ToolOf(s.Name); isTool {
+			// Наружу отчёт отдаёт ИМЯ ИНСТРУМЕНТА, а не строку журнала:
+			// приставка — способ хранения, и показывать её значило бы учить
+			// читателя формату файла ради ничего.
+			s.Name = tool
+			r.Tools = append(r.Tools, s)
+			continue
+		}
 		r.Commands = append(r.Commands, s)
 		if !slices.Contains(known, s.Name) {
 			r.Unknown = append(r.Unknown, s.Name)
 		}
 	}
+	// Вызовы сортируются по частоте: счётчик заводился ради вопроса «сколько
+	// раз агент вообще спрашивал базу», и первым должен стоять ответ на него.
+	slices.SortFunc(r.Tools, func(a, b CommandStat) int {
+		if c := cmp.Compare(b.Runs, a.Runs); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
 	// Давние сверху: так «давно не запускали» видно без порога. Выдуманный
 	// порог красит зелёное в красное и за две недели учит не смотреть на
 	// предупреждения — цена, названная правилом 12.

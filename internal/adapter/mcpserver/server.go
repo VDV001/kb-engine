@@ -1,7 +1,6 @@
 package mcpserver
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -70,59 +69,72 @@ type emptyArgs struct{}
 // который отвечает витрине и терминалу. Своей фильтрации здесь нет ни строки, и
 // это не стиль, а замер: пока правило жило в двух местах, «кубернетес» давал
 // десять записей в терминале и ноль в браузере.
-func New(q Querier, m search.Matcher, version, viewBase string) *mcp.Server {
-	s := mcp.NewServer(&mcp.Implementation{Name: "kb-engine", Version: version}, nil)
+func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
+	s := mcp.NewServer(&mcp.Implementation{Name: "kb-engine", Version: cfg.Version}, nil)
+	j := newJournal(cfg)
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, j, &mcp.Tool{
 		Name: "search_catalog",
 		Description: "Поиск по каталогу базы знаний. Четыре слоя: подстрока, " +
 			"транслитерация, опечатки, словарь синонимов. Слова соединяются через И, " +
 			"«#123» адресует запись по номеру. Поле view — адрес витрины с той " +
 			"же выборкой: его показывают человеку, чтобы он сверил ответ с " +
 			"первичными данными, а не с пересказом.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in searchArgs) (*mcp.CallToolResult, any, error) {
+	}, func(in searchArgs) []string {
+		// Пустой запрос аргументом не записывается: пустая строка в журнале и
+		// отсутствие запроса выглядели бы одинаково, а означают разное.
+		if in.Query == "" {
+			return nil
+		}
+		return []string{in.Query}
+	}, func(in searchArgs) (map[string]any, error) {
 		found, err := SearchCatalog(q, m, in.Query)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		out := make([]entryOut, 0, len(found))
 		for _, e := range found {
 			out = append(out, project(e))
 		}
-		return jsonResult(map[string]any{
+		return map[string]any{
 			"found":   len(out),
 			"entries": out,
 			// Адрес витрины с той же выборкой: человек проверяет ответ по
 			// первичным данным, а не по моему пересказу. Пустой, когда витрина
 			// не объявлена — выдуманная ссылка хуже отсутствующей.
-			"view": viewURL(viewBase, "archives", in.Query),
-		})
+			"view": viewURL(cfg.ViewBase, "archives", in.Query),
+		}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, j, &mcp.Tool{
 		Name:        "get_entry",
 		Description: "Карточка одной записи каталога по её номеру.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, in entryArgs) (*mcp.CallToolResult, any, error) {
+	}, func(in entryArgs) []string {
+		return []string{fmt.Sprintf("#%d", in.ID)}
+	}, func(in entryArgs) (map[string]any, error) {
 		e, err := GetEntry(q, in.ID)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		return jsonResult(map[string]any{
+		return map[string]any{
 			"entry": project(e),
-			"view":  viewURL(viewBase, "archives", fmt.Sprintf("#%d", in.ID)),
-		})
+			"view":  viewURL(cfg.ViewBase, "archives", fmt.Sprintf("#%d", in.ID)),
+		}, nil
 	})
 
-	mcp.AddTool(s, &mcp.Tool{
+	addTool(s, j, &mcp.Tool{
 		Name: "stats",
 		Description: "Сводка каталога: сколько записей, как они разложены по " +
 			"категориям, состояниям и вердиктам.",
-	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+	}, func(emptyArgs) []string {
+		// Спрашивать сводку не о чем: аргументов у инструмента нет вовсе.
+		return nil
+	}, func(emptyArgs) (map[string]any, error) {
 		st, err := q.Stats()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		return jsonResult(map[string]any{"stats": st, "view": viewURL(viewBase, "overview", "")})
+		return map[string]any{"stats": st, "view": viewURL(cfg.ViewBase, "overview", "")}, nil
 	})
 
 	return s

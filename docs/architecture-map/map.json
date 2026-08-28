@@ -659,7 +659,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:111"
+    "frontend/src/App.tsx:105"
    ]
   },
   {
@@ -669,7 +669,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:147"
+    "frontend/src/App.tsx:141"
    ]
   },
   {
@@ -719,7 +719,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:128"
+    "frontend/src/App.tsx:122"
    ]
   },
   {
@@ -729,7 +729,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:157"
+    "frontend/src/App.tsx:151"
    ]
   },
   {
@@ -759,7 +759,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:164"
+    "frontend/src/App.tsx:157"
    ]
   },
   {
@@ -1104,6 +1104,36 @@
    "kind": "service",
    "sources": [
     "internal/adapter/mcpserver/server.go:66"
+   ]
+  },
+  {
+   "id": "adp-mcp-journal",
+   "title": "mcpserver.addTool",
+   "subtitle": "журнал вызовов приделан к регистрации инструмента",
+   "layer": "adapters",
+   "kind": "service",
+   "sources": [
+    "internal/adapter/mcpserver/record.go:80"
+   ]
+  },
+  {
+   "id": "cmd-mcp-recorder",
+   "title": "journalRecorder",
+   "subtitle": "вызов MCP → та же runs.jsonl, что у команд",
+   "layer": "commands",
+   "kind": "service",
+   "sources": [
+    "cmd/kbengine-mcp/recorder.go:38"
+   ]
+  },
+  {
+   "id": "uc-runs-tools",
+   "title": "runs.ToolCommand",
+   "subtitle": "одна форма имени на писателя и читателя",
+   "layer": "usecase",
+   "kind": "service",
+   "sources": [
+    "internal/usecase/runs/tools.go:24"
    ]
   },
   {
@@ -2188,7 +2218,7 @@
      "to": "fe-dashboard",
      "call": "рендер вкладки overview",
      "detail": "frontend/src/App.tsx:95 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
-     "source": "frontend/src/App.tsx:113",
+     "source": "frontend/src/App.tsx:111",
      "unverified": false
     }
    ],
@@ -3705,7 +3735,7 @@
      "to": "uc-runs",
      "call": "runs.Build",
      "detail": "internal/usecase/runs/report.go:69 горизонт (момент первой записи) считается до любого «ни разу»: без него «drift не запускался» звучит утверждением о движке, тогда как это утверждение о журнале",
-     "source": "internal/usecase/runs/report.go:91",
+     "source": "internal/usecase/runs/report.go:98",
      "unverified": false,
      "symbol": "Build"
     },
@@ -3714,8 +3744,8 @@
      "from": "uc-runs",
      "to": "cmd-runs",
      "call": "slices.SortFunc по LastRun",
-     "detail": "internal/usecase/runs/report.go:96 давно не запускавшиеся сверху — так «давно» видно без порога; выдуманный порог красит зелёное в красное и за две недели учит не смотреть на предупреждения",
-     "source": "internal/usecase/runs/report.go:118",
+     "detail": "internal/usecase/runs/report.go:144 давно не запускавшиеся сверху — так «давно» видно без порога; выдуманный порог красит зелёное в красное и за две недели учит не смотреть на предупреждения",
+     "source": "internal/usecase/runs/report.go:144",
      "unverified": false,
      "symbol": "SortFunc"
     },
@@ -3896,7 +3926,7 @@
      "to": "cmd-mcp",
      "call": "tools/call search_catalog",
      "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-     "source": "cmd/kbengine-mcp/main.go:75",
+     "source": "cmd/kbengine-mcp/main.go:99",
      "symbol": "StdioTransport",
      "unverified": false
     },
@@ -3938,6 +3968,46 @@
      "detail": "Наружу уходит проекция записи entryOut из internal/adapter/mcpserver/server.go — тот же список разрешённого, что у /kb/. Промах по id даёт ошибку, называющую номер, а не ближайшую запись: чужую карточку агент не отличит от правильной",
      "source": "internal/adapter/mcpserver/server.go:20",
      "symbol": "entryOut",
+     "unverified": false
+    },
+    {
+     "n": 6,
+     "from": "adp-mcpserver",
+     "to": "adp-mcp-journal",
+     "call": "addTool(s, j, tool, argsOf, handler)",
+     "detail": "Журнал вызовов приделан к РЕГИСТРАЦИИ инструмента в internal/adapter/mcpserver/record.go, а не к телу обработчика: четвёртый инструмент попадёт в счётчик тем, что он объявлен, а не тем, что автор вспомнил про журнал. Тот же приём, что у runLogged вокруг единственного диспетчера команд",
+     "source": "internal/adapter/mcpserver/record.go:76",
+     "symbol": "addTool",
+     "unverified": false
+    },
+    {
+     "n": 7,
+     "from": "adp-mcp-journal",
+     "to": "cmd-mcp-recorder",
+     "call": "RecordCall(tool, args, startedAt, took, exitCode)",
+     "detail": "Запись делает cmd/kbengine-mcp/recorder.go — единственное место, знающее и про файл журнала, и про форму имени. Порт при этом не возвращает ошибку намеренно: журнал — наблюдатель, а не участник, и решать, что делать со сломанным журналом, обязана точка сборки, у которой есть stderr. Отказ вызова пишется кодом 1 — «спросили и не получили ответа» обязано отличаться от удачного вызова",
+     "source": "cmd/kbengine-mcp/recorder.go:35",
+     "symbol": "RecordCall",
+     "unverified": false
+    },
+    {
+     "n": 8,
+     "from": "cmd-mcp-recorder",
+     "to": "uc-runs-tools",
+     "call": "runs.ToolCommand(tool)",
+     "detail": "Приставку mcp: ставит одно место — internal/usecase/runs/tools.go, — и оно же её разбирает при чтении. Две копии формы имени разошлись бы молча, и тогда писатель клал бы в журнал то, чего читатель не узнаёт: счётчик показывал бы ноль при исправной записи",
+     "source": "internal/usecase/runs/tools.go:20",
+     "symbol": "ToolCommand",
+     "unverified": false
+    },
+    {
+     "n": 9,
+     "from": "cmd-mcp-recorder",
+     "to": "adp-runlog",
+     "call": "runlogjsonl.Append(path, rec)",
+     "detail": "Вызовы ложатся в ТОТ ЖЕ файл, что команды движка (cmd/kbengine-mcp/recorder.go берёт путь у того же DefaultPath). Второй журнал рядом означал бы вторую дозапись под замком и второй ответ на вопрос «а он вообще ведётся». Живой прогон 28.08: три вызова разом записаны все три, промах по id — кодом 1",
+     "source": "cmd/kbengine-mcp/recorder.go:38",
+     "symbol": "Append",
      "unverified": false
     }
    ]
