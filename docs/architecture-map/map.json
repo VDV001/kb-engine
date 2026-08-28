@@ -4,7 +4,7 @@
     "владелец записывает трату",
     "страница сама говорит, что отстала"
   ],
-  "commit": "47fe6df",
+  "commit": "6aaaa06",
   "layers": [
     {
       "id": "actors",
@@ -3758,7 +3758,7 @@
           "to": "cmd-mcp",
           "call": "tools/call search_catalog",
           "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-          "source": "cmd/kbengine-mcp/main.go:71",
+          "source": "cmd/kbengine-mcp/main.go:75",
           "symbol": "StdioTransport",
           "unverified": false
         },
@@ -3768,7 +3768,7 @@
           "to": "adp-mcpserver",
           "call": "mcpserver.New(svc, matcher, version)",
           "detail": "Каталог читается на СТАРТЕ, а не при первом запросе (cmd/kbengine-mcp/main.go): агент подключается молча, и «сервер поднялся» с нечитаемым каталогом выглядело бы рабочим состоянием до первого пустого ответа",
-          "source": "cmd/kbengine-mcp/main.go:55",
+          "source": "cmd/kbengine-mcp/main.go:59",
           "symbol": "svc.Stats",
           "unverified": false
         },
