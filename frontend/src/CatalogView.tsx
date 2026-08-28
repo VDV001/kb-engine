@@ -19,6 +19,7 @@ import { Icon } from './components/Icon'
 import { useSearch } from './hooks/useSearch'
 import { Label } from './components/ui'
 import { HealthCard, SpotlightCard } from './HealthCards'
+import { ArtefactLink } from './components/ArtefactLink'
 
 // Пятнадцать, как в исходном дашборде: столько строк помещается на экран
 // ноутбука без прокрутки до пагинации.
@@ -544,6 +545,7 @@ export function CatalogView({
                   {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
                     <Coverage n={coverage.get(e.id)!} />
                   )}
+                  <ArtefactLink file={e.file} />
                 </div>
               </div>
             ))}
@@ -606,6 +608,11 @@ export function CatalogView({
                         <Icon name="open_in_new" className="text-base" />
                       </a>
                     )}
+                    {/* У своих артефактов внешнего адреса нет вовсе, поэтому
+                        ml-auto достаётся тому, кто в строке первый: иначе
+                        запись без url прижимала бы значок к тексту. */}
+                    {!e.url && e.file && <span className="ml-auto" />}
+                    <ArtefactLink file={e.file} />
                   </div>
 
                   <Title e={e} />

@@ -634,12 +634,12 @@
     },
     {
       "id": "fe-app",
-      "title": "App (одиннадцать вкладок)",
-      "subtitle": "frontend/src/App.tsx — overview·archives·cheatsheets·analytics·projects·now·team·finances·health·architecture·about; список вкладок живёт в urlstate.ts",
+      "title": "App (десять вкладок)",
+      "subtitle": "frontend/src/App.tsx — overview·archives·analytics·health·finances·projects·team·now·about",
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/urlstate.ts:26"
+        "frontend/src/App.tsx:38"
       ]
     },
     {
@@ -669,37 +669,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "frontend/src/App.tsx:141"
-      ]
-    },
-    {
-      "id": "fe-urlstate",
-      "title": "urlstate",
-      "subtitle": "frontend/src/urlstate.ts — вкладка и поиск в адресе, список вкладок",
-      "layer": "surfaces",
-      "kind": "client",
-      "sources": [
-        "frontend/src/urlstate.ts:46"
-      ]
-    },
-    {
-      "id": "fe-artefacts",
-      "title": "artefacts",
-      "subtitle": "frontend/src/artefacts.ts — адрес артефакта и отбор шпаргалок",
-      "layer": "surfaces",
-      "kind": "client",
-      "sources": [
-        "frontend/src/artefacts.ts:14"
-      ]
-    },
-    {
-      "id": "fe-cheatsheets",
-      "title": "CheatsheetsView",
-      "subtitle": "frontend/src/CheatsheetsView.tsx — вкладка со шпаргалками",
-      "layer": "surfaces",
-      "kind": "client",
-      "sources": [
-        "frontend/src/CheatsheetsView.tsx:12"
+        "frontend/src/App.tsx:138"
       ]
     },
     {
@@ -2507,16 +2477,6 @@
           "source": "frontend/src/App.tsx:141",
           "detail": "frontend/src/App.tsx:122 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
           "unverified": false
-        },
-        {
-          "n": 4,
-          "from": "fe-app",
-          "to": "fe-urlstate",
-          "call": "readUrlState / writeUrlState",
-          "detail": "urlstate.ts держит вкладку и строку поиска в адресе: без этого любой адрес витрины означал «главная, пусто», и ссылку на выборку нельзя было дать ни человеку, ни инструменту MCP. Роутера нет намеренно — две величины покрывает нативный URLSearchParams. Там же лежит единственный список вкладок: разбор адреса обязан знать, какая вкладка существует, а какая пришла из опечатки",
-          "source": "frontend/src/urlstate.ts:46",
-          "symbol": "readUrlState",
-          "unverified": false
         }
       ],
       "zone": "Витрина"
@@ -3108,64 +3068,6 @@
           "symbol": "NotFound",
           "source": "internal/adapter/httpapi/kbfiles.go:47",
           "detail": "internal/adapter/httpapi/kbfiles.go:47 — проверено на установленном бинаре: артефакт 200, CHANGELOG.md (лежит на диске, каталогом не назван) 404, выдуманный путь 404"
-        },
-        {
-          "n": 7,
-          "from": "ad-httpapi",
-          "to": "browser",
-          "call": "markdown → text/plain",
-          "detail": "kbfiles.go выставляет тип сам: по расширению ServeContent выбрал бы text/markdown, а браузер такой тип СКАЧИВАЕТ вместо показа, и ссылка на артефакт роняла бы файл в загрузки. Замер, из-за которого правило появилось: из 150 записей с file 142 ведут на .md. У html тип не подменяется — иначе страница показалась бы исходным кодом, и это отдельный отрицательный контроль в тестах",
-          "source": "internal/adapter/httpapi/kbfiles.go:84",
-          "symbol": "EqualFold",
-          "unverified": false
-        }
-      ]
-    },
-    {
-      "id": "cheatsheets",
-      "title": "Шпаргалки открываются из витрины",
-      "summary": "вкладка Cheatsheets → отбор по тегу → /kb/<file> → страница шпаргалки",
-      "zone": "Витрина",
-      "steps": [
-        {
-          "n": 1,
-          "from": "fe-app",
-          "to": "fe-cheatsheets",
-          "call": "<CheatsheetsView entries={data.entries} />",
-          "detail": "App.tsx отдаёт виду уже загруженные записи: своих запросов CheatsheetsView не делает, и второй источник тех же данных разошёлся бы с первым. Вкладка — вход к артефактам, которые открывают посмотреть клавишу, а не ищут по названию",
-          "source": "frontend/src/App.tsx:153",
-          "symbol": "CheatsheetsView",
-          "unverified": false
-        },
-        {
-          "n": 2,
-          "from": "fe-cheatsheets",
-          "to": "fe-artefacts",
-          "call": "cheatsheetsOf(entries)",
-          "detail": "artefacts.ts узнаёт шпаргалку по ТЕГУ cheatsheet, а не по папке: признак живёт в данных, поэтому перенос файла не ломает вкладку, а новая шпаргалка попадает в неё сама. Запись с тегом, но без файла не показывается — плитка, которая никуда не ведёт, обещает больше, чем есть",
-          "source": "frontend/src/artefacts.ts:26",
-          "symbol": "CHEATSHEET_TAG",
-          "unverified": false
-        },
-        {
-          "n": 3,
-          "from": "fe-artefacts",
-          "to": "browser",
-          "call": "artefactHref(file) → /kb/<путь>",
-          "detail": "artefacts.ts кодирует каждый сегмент пути отдельно: encodeURIComponent целиком съел бы слэши и превратил путь в одно имя, а имена папок пишет человек — там встречаются пробелы и кириллица",
-          "source": "frontend/src/artefacts.ts:19",
-          "symbol": "encodeURIComponent",
-          "unverified": false
-        },
-        {
-          "n": 4,
-          "from": "fe-catalog",
-          "to": "browser",
-          "call": "<ArtefactLink file={e.file} />",
-          "detail": "ArtefactLink.tsx ставит ссылку в обоих видах каталога и только там, где браузер действительно откроет — html и md; таблицы и архивы он скачал бы, и кнопка обещала бы больше, чем делает. Сколько артефактов осталось без кнопки, вкладка называет вслух",
-          "source": "frontend/src/components/ArtefactLink.tsx:14",
-          "symbol": "opensInBrowser",
-          "unverified": false
         }
       ]
     },
