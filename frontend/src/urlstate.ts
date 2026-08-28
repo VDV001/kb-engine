@@ -12,6 +12,7 @@ export type Tab =
   | 'overview'
   | 'archives'
   | 'cheatsheets'
+  | 'answers'
   | 'analytics'
   | 'health'
   | 'finances'
@@ -34,6 +35,10 @@ export const TAB_IDS = [
   'now',
   'team',
   'finances',
+  // «Ответы» — служебная вкладка, а не содержание базы: она про то, КАК базой
+  // пользовались, ровно как Health про её состояние. Рядом со шпаргалками она
+  // читалась бы как ещё один раздел с материалами.
+  'answers',
   'health',
   'architecture',
   'about',

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/runs"
@@ -248,4 +249,30 @@ func ago(t, now time.Time) string {
 	default:
 		return fmt.Sprintf("%d дн. назад", days)
 	}
+}
+
+// journalCalls — журнал вызовов под портом витрины.
+//
+// Живёт рядом с journalFile намеренно: оба про один и тот же файл, и знание о
+// том, где он лежит, остаётся в одном месте. Витрина спрашивает «о чём
+// спрашивали», отчёт — «сколько раз»; читают они одну и ту же строку журнала.
+type journalCalls struct{ path string }
+
+func (j journalCalls) Calls(limit int) (runs.CallLog, error) {
+	return runs.Calls(journalFile{path: j.path, now: time.Now}, limit)
+}
+
+// toolCallsOption отдаёт витрине журнал вызовов — тем же приёмом, что
+// synonymsFor отдаёт словарь: отсутствие называется вслух и подняться не мешает.
+//
+// Возврат nil законен: NewServer пропускает пустую опцию, и вкладка «Ответы»
+// тогда честно говорит, что журнала нет. Молчать нельзя — пустая вкладка
+// читается как «агент базу не спрашивал», а верно «спрашивать было нечем».
+func toolCallsOption(stderr io.Writer) httpapi.Option {
+	path, err := runlogjsonl.DefaultPath(os.Getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v — вкладка «Ответы» будет пустой\n", err)
+		return nil
+	}
+	return httpapi.WithToolCalls(journalCalls{path: path})
 }

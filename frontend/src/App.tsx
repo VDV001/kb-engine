@@ -22,6 +22,7 @@ import { linkedQueryOf } from './selection'
 import { useUrlSync } from './hooks/useUrlSync'
 import { useInitialUrlState } from './hooks/useInitialUrlState'
 import { CheatsheetsView } from './CheatsheetsView'
+import { AnswersView } from './AnswersView'
 
 
 // Порядок вкладок — это четыре группы, а не список: база знаний, витрина и
@@ -35,6 +36,10 @@ const TAB_LABELS: Record<Tab, string> = {
   overview: 'Dashboard',
   archives: 'Archives',
   cheatsheets: 'Cheatsheets',
+  // Подпись английская, как у соседей: заголовок раздела внутри остаётся
+  // русским, но строка вкладок — один ряд, и одно русское слово в нём читается
+  // как чужое.
+  answers: 'Answers',
   analytics: 'Analytics',
   projects: 'Projects',
   now: 'Now',
@@ -162,6 +167,18 @@ export default function App() {
               />
             )}
             {tab === 'cheatsheets' && <CheatsheetsView entries={data.entries} />}
+            {tab === 'answers' && (
+              <AnswersView
+                // Переспросить то же самое самому — в архиве, по первичным
+                // данным: журнал показывает, о чём спрашивал агент, а проверяют
+                // ответ там же, где читают всё остальное.
+                onAskAgain={(q) => {
+                  setSearch(q)
+                  setPickedTag('')
+                  setTab('archives')
+                }}
+              />
+            )}
             {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
             {tab === 'projects' && <ProjectsView />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" masked={masked} />}

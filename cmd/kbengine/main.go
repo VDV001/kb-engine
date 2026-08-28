@@ -342,10 +342,11 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr)}
+	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr), toolCallsOption(stderr)}
 	if *timing {
 		serveOpts = append(serveOpts, httpapi.WithServerTiming())
 	}
+
 	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
 		serveOpts...)
 	if err != nil {

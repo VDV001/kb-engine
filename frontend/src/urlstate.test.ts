@@ -48,6 +48,7 @@ describe('адресуемость витрины', () => {
       'now',
       'team',
       'finances',
+      'answers',
       'health',
       'architecture',
       'about',
