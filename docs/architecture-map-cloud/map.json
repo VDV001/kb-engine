@@ -1,6 +1,6 @@
 {
   "project": "kb-engine cloud — облачный слой",
-  "commit": "a7b0661",
+  "commit": "47fe6df",
   "checked_at": "2026-08-27",
   "page": "creations/projects/2026-08-15_kbengine-cloud-layer/kbengine-cloud-layer.html",
   "project_note": "Карта описывает не движок, а то, как он доезжает до кластера и что там за ним смотрит: манифесты kustomize, чарт Helm, модуль Terraform, метрики и наблюдаемость. Каждое утверждение привязано к строке живого файла, и валидатор эту строку открывает. Отдельная карта, а не раздел в карте движка, по механической причине: у движка описан путь запроса внутри процесса, здесь — путь ОБРАЗА и ДАННЫХ снаружи, и общих узлов у них ровно два — сам бинарь и его эндпоинты.",
@@ -629,7 +629,7 @@
           "to": "helm-deployment",
           "call": "kubectl get deployment helm/kbengine -o json",
           "detail": "Оба описания подняты в одном кластере, в разных пространствах имён: .github/workflows/ci.yml:416 сравнивает то, что ДОЕХАЛО, а не то, что написано. Текст у них разный по устройству, спецификация пода обязана совпадать",
-          "source": ".github/workflows/ci.yml:589",
+          "source": ".github/workflows/ci.yml:602",
           "symbol": "deploy-parity",
           "unverified": false
         },
@@ -657,7 +657,7 @@
           "to": "overlay-negative",
           "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
           "detail": ".github/workflows/ci.yml:550 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
-          "source": ".github/workflows/ci.yml:711",
+          "source": ".github/workflows/ci.yml:725",
           "symbol": "negative",
           "unverified": false
         },
@@ -707,7 +707,7 @@
           "to": "kind",
           "call": "rollout status обязан вернуть ошибку",
           "detail": ".github/workflows/ci.yml:552 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
-          "source": ".github/workflows/ci.yml:714",
+          "source": ".github/workflows/ci.yml:728",
           "symbol": "rollout",
           "unverified": false
         }
@@ -725,7 +725,7 @@
           "to": "minio",
           "call": "kubectl apply -f deploy/k8s/test/minio.yaml",
           "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:449",
-          "source": ".github/workflows/ci.yml:596",
+          "source": ".github/workflows/ci.yml:610",
           "symbol": "minio",
           "unverified": false
         },
@@ -785,7 +785,7 @@
           "to": "srv-stats",
           "call": "число записей обязано совпасть с объектом",
           "detail": ".github/workflows/ci.yml:505 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
-          "source": ".github/workflows/ci.yml:652",
+          "source": ".github/workflows/ci.yml:662",
           "symbol": "curl",
           "unverified": false
         }
@@ -873,7 +873,7 @@
           "to": "prometheus",
           "call": "контроль: выдуманная метрика обязана вернуть пусто",
           "detail": ".github/workflows/ci.yml:513 спрашивает kbengine_invented_metric и требует ноль рядов. Без этого запрос настоящей метрики доказывал бы только то, что API Prometheus отвечает",
-          "source": ".github/workflows/ci.yml:701",
+          "source": ".github/workflows/ci.yml:715",
           "symbol": "kbengine_invented_metric",
           "unverified": false
         }
@@ -961,7 +961,7 @@
           "to": "localstack",
           "call": "прогон против LocalStack, а не против настоящего AWS",
           "detail": ".github/workflows/ci.yml:204 поднимает localstack/localstack:4.14 — линейка 4.x последняя бесплатная, а тег latest уже платный. Настоящий AWS не трогался ни разу, и это записано в разделе «чего карта не знает»",
-          "source": ".github/workflows/ci.yml:357",
+          "source": ".github/workflows/ci.yml:367",
           "symbol": "localstack",
           "unverified": false
         }
@@ -1029,7 +1029,7 @@
           "to": "kind",
           "call": "kind load docker-image kbengine:ci",
           "detail": ".github/workflows/ci.yml:381 загружает образ в кластер. Кластер тянет по имени, а kbengine:ci существует только в демоне docker самого раннера — без этой строки под висит в ImagePullBackOff",
-          "source": ".github/workflows/ci.yml:528",
+          "source": ".github/workflows/ci.yml:542",
           "symbol": "docker-image",
           "unverified": false
         },
@@ -1039,7 +1039,7 @@
           "to": "pod",
           "call": "выкатка с образом из ветки",
           "detail": ".github/workflows/ci.yml:385 применяет наложение и ждёт завершения выкатки. Это первый день, когда отгружаемый образ вообще ЗАПУСКАЕТСЯ в проверке, а не только собирается и сканируется",
-          "source": ".github/workflows/ci.yml:533",
+          "source": ".github/workflows/ci.yml:546",
           "symbol": "kubectl",
           "unverified": false
         }
