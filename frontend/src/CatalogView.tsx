@@ -20,6 +20,8 @@ import { useSearch } from './hooks/useSearch'
 import { Label } from './components/ui'
 import { HealthCard, SpotlightCard } from './HealthCards'
 import { ArtefactLink } from './components/ArtefactLink'
+import { SelectionBar } from './components/SelectionBar'
+import { selectionOf } from './selection'
 
 // Пятнадцать, как в исходном дашборде: столько строк помещается на экран
 // ноутбука без прокрутки до пагинации.
@@ -186,6 +188,7 @@ export function CatalogView({
   health,
   search,
   onSearchChange,
+  linkedQuery,
 }: {
   entries: Entry[]
   labels: Record<string, string>
@@ -202,6 +205,8 @@ export function CatalogView({
   /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
   search: string
   onSearchChange: (v: string) => void
+  /** Запрос, с которым страницу открыли по ссылке агента; '' — открыли иначе. */
+  linkedQuery: string
 }) {
   // Категория, пришедшая снаружи, попадает в фильтр СРАЗУ при создании вида, а
   // не только при последующей смене: переключение вкладки монтирует компонент
@@ -308,345 +313,365 @@ export function CatalogView({
   const slice = filtered.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE)
   const isFiltered = JSON.stringify(active) !== JSON.stringify(emptyFilter)
 
+  // Сброс — одна процедура на две кнопки: «Сбросить» под селекторами и
+  // «Показать все» в полосе контекста. Вторая копия однажды забыла бы про тег
+  // из облака ровно так же, как первая забывала про запрос из шапки.
+  const resetAll = () => {
+    setFilter(emptyFilter)
+    // И запрос из шапки тоже: кнопка обещает сбросить фильтры, а не выборочно
+    // те из них, что нарисованы рядом с ней.
+    onSearchChange('')
+    // И тег, пришедший из облака на дашборде: он не нарисован среди селекторов,
+    // но он такой же действующий фильтр.
+    onPickedTagChange('')
+    // Категория с About видна в своём селекторе и снимается вместе с ним, но
+    // забыть её наверху нельзя: иначе повторный клик по тому же ящику не сменит
+    // состояние и фильтр не вернётся.
+    onPickedCategoryChange('')
+    setPage(1)
+  }
+
+  // Полоса объясняет, ЧТО за список на экране. Решение о ней — правило, а не
+  // разметка, и живёт оно в selection.ts, где проверяется без монтирования.
+  const selection = selectionOf({
+    query: search,
+    linkedQuery,
+    shown: filtered.length,
+    total: entries.length,
+    searching,
+  })
+
   return (
-    <div className="flex flex-col gap-6 lg:flex-row">
-      {/* Sidebar: structure, so square corners and a hairline — not a card. */}
-      {/* Сайдбар сворачивается до ширины своей же кнопки: на 1024 он забирал
-          256px, и таблице оставалось 670 при нужных ~830. */}
-      {/* Свёрнутый — по размеру содержимого, а не во всю ширину: до lg строка
-          вертикальная, и полоса на весь экран с одинокой стрелкой читалась как
-          неизвестно что. Там же у кнопки появляется подпись. */}
-      <aside className={`shrink-0 ${sideOpen ? 'w-full lg:w-64' : 'w-fit lg:w-12'}`}>
-        <div className="border border-outline-variant bg-surface-low">
-          <div className="flex items-center justify-between border-b border-outline-variant">
-            {sideOpen && (
-              <button
-                type="button"
-                onClick={() => set({ category: '' })}
-                className={`flex flex-1 items-center justify-between px-4 py-2.5 text-left text-sm ${
-                  filter.category === '' ? 'bg-surface-high font-semibold text-secondary' : 'text-on-surface'
-                }`}
-              >
-                <span>Все записи</span>
-                <span className="font-mono text-xs tabular-nums">{entries.length}</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setSideOpen((v) => !v)}
-              aria-expanded={sideOpen}
-              aria-label={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
-              title={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
-              className="relative flex h-11 shrink-0 items-center justify-center gap-1.5 px-3 text-on-surface-variant hover:text-on-surface lg:w-12 lg:px-0"
-            >
-              <Icon name={sideOpen ? 'chevron_left' : 'chevron_right'} className="text-xl" />
-              {/* До lg рядом со стрелкой стоит слово: там кнопка лежит поперёк
-                  страницы, и одна стрелка не объясняет, что за ней. */}
-              {!sideOpen && <span className="text-sm lg:hidden">Категории</span>}
-              {/* Точка говорит, что фильтр по категории включён: в свёрнутом
-                  виде списка не видно, и выборка иначе выглядела бы поломкой. */}
-              {!sideOpen && filter.category !== '' && (
-                <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-secondary" />
-              )}
-            </button>
-          </div>
-          {sideOpen && (
-            <div className="max-h-[26rem] overflow-y-auto lg:max-h-none lg:overflow-visible">
-              {categories.map(([cat, n]) => (
+    <>
+      {/* Полоса стоит НАД сайдбаром и списком: она объясняет весь экран, а не
+          колонку. Пустой выборке она сама себя не рисует. */}
+      <SelectionBar selection={selection} onReset={resetAll} />
+      <div className="flex flex-col gap-6 lg:flex-row">
+        {/* Sidebar: structure, so square corners and a hairline — not a card. */}
+        {/* Сайдбар сворачивается до ширины своей же кнопки: на 1024 он забирал
+            256px, и таблице оставалось 670 при нужных ~830. */}
+        {/* Свёрнутый — по размеру содержимого, а не во всю ширину: до lg строка
+            вертикальная, и полоса на весь экран с одинокой стрелкой читалась как
+            неизвестно что. Там же у кнопки появляется подпись. */}
+        <aside className={`shrink-0 ${sideOpen ? 'w-full lg:w-64' : 'w-fit lg:w-12'}`}>
+          <div className="border border-outline-variant bg-surface-low">
+            <div className="flex items-center justify-between border-b border-outline-variant">
+              {sideOpen && (
                 <button
-                  key={cat}
                   type="button"
-                  onClick={() => set({ category: cat === filter.category ? '' : cat })}
-                  className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm ${
-                    filter.category === cat
-                      ? 'bg-surface-high font-semibold text-secondary'
-                      : 'text-on-surface-variant hover:text-on-surface'
+                  onClick={() => set({ category: '' })}
+                  className={`flex flex-1 items-center justify-between px-4 py-2.5 text-left text-sm ${
+                    filter.category === '' ? 'bg-surface-high font-semibold text-secondary' : 'text-on-surface'
                   }`}
                 >
-                  {/* Подсказкой — полная строка из каталога: после двоеточия
-                      лежит описание, которое в узкий сайдбар не влезает. */}
-                  <span className="truncate" title={labels[cat] || cat}>
-                    {categoryLabel(cat, labels)}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums">{n}</span>
+                  <span>Все записи</span>
+                  <span className="font-mono text-xs tabular-nums">{entries.length}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSideOpen((v) => !v)}
+                aria-expanded={sideOpen}
+                aria-label={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
+                title={sideOpen ? 'Свернуть категории' : 'Развернуть категории'}
+                className="relative flex h-11 shrink-0 items-center justify-center gap-1.5 px-3 text-on-surface-variant hover:text-on-surface lg:w-12 lg:px-0"
+              >
+                <Icon name={sideOpen ? 'chevron_left' : 'chevron_right'} className="text-xl" />
+                {/* До lg рядом со стрелкой стоит слово: там кнопка лежит поперёк
+                    страницы, и одна стрелка не объясняет, что за ней. */}
+                {!sideOpen && <span className="text-sm lg:hidden">Категории</span>}
+                {/* Точка говорит, что фильтр по категории включён: в свёрнутом
+                    виде списка не видно, и выборка иначе выглядела бы поломкой. */}
+                {!sideOpen && filter.category !== '' && (
+                  <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-secondary" />
+                )}
+              </button>
+            </div>
+            {sideOpen && (
+              <div className="max-h-[26rem] overflow-y-auto lg:max-h-none lg:overflow-visible">
+                {categories.map(([cat, n]) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => set({ category: cat === filter.category ? '' : cat })}
+                    className={`flex w-full items-center justify-between gap-2 px-4 py-2 text-left text-sm ${
+                      filter.category === cat
+                        ? 'bg-surface-high font-semibold text-secondary'
+                        : 'text-on-surface-variant hover:text-on-surface'
+                    }`}
+                  >
+                    {/* Подсказкой — полная строка из каталога: после двоеточия
+                        лежит описание, которое в узкий сайдбар не влезает. */}
+                    <span className="truncate" title={labels[cat] || cat}>
+                      {categoryLabel(cat, labels)}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums">{n}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className="min-w-0 flex-1 space-y-5">
+          <header className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <Label className="text-secondary">Архив документов</Label>
+              <h1 className="mt-1 text-4xl">Каталог записей.</h1>
+              <p className="mt-2 text-sm text-on-surface-variant">
+                Централизованный каталог статей, заметок и конспектов. {entries.length} записей в{' '}
+                {categories.length} категориях.
+              </p>
+            </div>
+            <div className="flex rounded-md border border-outline-variant">
+              {([false, true] as const).map((g) => (
+                <button
+                  key={String(g)}
+                  type="button"
+                  onClick={() => setGrid(g)}
+                  className={`px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider uppercase ${
+                    grid === g ? 'bg-surface-high text-on-surface' : 'text-on-surface-variant'
+                  }`}
+                >
+                  {g ? 'Grid view' : 'Table view'}
                 </button>
               ))}
             </div>
-          )}
-        </div>
-      </aside>
+          </header>
 
-      <div className="min-w-0 flex-1 space-y-5">
-        <header className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <Label className="text-secondary">Архив документов</Label>
-            <h1 className="mt-1 text-4xl">Каталог записей.</h1>
-            <p className="mt-2 text-sm text-on-surface-variant">
-              Централизованный каталог статей, заметок и конспектов. {entries.length} записей в{' '}
-              {categories.length} категориях.
+          <div className="flex flex-wrap items-center gap-3 rounded-lg border border-outline-variant bg-surface-low p-4">
+            {/* Поля поиска здесь больше нет: оно переехало в шапку, как в
+                исходном дашборде. Два поля на один запрос — это два места, где
+                видно разное, стоит забыть синхронизировать одно из них. */}
+            <select value={filter.status} onChange={(e) => set({ status: e.target.value })} className={selectClass}>
+              <option value="">Любой статус</option>
+              {statuses.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <select value={filter.source} onChange={(e) => set({ source: e.target.value })} className={selectClass}>
+              <option value="">Все источники</option>
+              {sources.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+            <select
+              value={filter.lifecycle}
+              onChange={(e) => set({ lifecycle: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Любой lifecycle</option>
+              {lifecycles.map((l) => (
+                <option key={l} value={l}>
+                  {l}
+                </option>
+              ))}
+            </select>
+            {/* Переводов в базе шестьдесят. Пока признак жил словом в заголовке,
+                отобрать их можно было только поиском по этому слову — и поиск
+                заодно приносил всё, где «перевод» упомянут в описании. */}
+            <select
+              value={filter.translation}
+              onChange={(e) => set({ translation: e.target.value })}
+              className={selectClass}
+            >
+              <option value="">Оригиналы и переводы</option>
+              <option value="yes">Только переводы</option>
+              <option value="no">Только оригиналы</option>
+            </select>
+            {/* Тумблер, а не галочка: в исходном дашборде это переключатель, и
+                такой же стоит в шапке у сумм — две разные механики для одного и
+                того же действия читаются как разные по смыслу. */}
+            <div className="flex items-center gap-2">
+              <span className="label text-[10px] text-on-surface-variant">Описания</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  checked={withDescriptions}
+                  onChange={(e) => setWithDescriptions(e.target.checked)}
+                  aria-label={withDescriptions ? 'Скрыть описания' : 'Показать описания'}
+                />
+                <span className="toggle-slider" />
+              </label>
+              {pickedTag && (
+                <button
+                  type="button"
+                  onClick={() => onPickedTagChange('')}
+                  className="flex items-center gap-1.5 rounded-full border border-secondary px-3 py-1 font-label text-[10px] uppercase tracking-wider text-secondary hover:bg-surface-high"
+                  title="Снять фильтр по тегу"
+                >
+                  {tagLabel(pickedTag, tagLabels)} ✕
+                </button>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={resetAll}
+              disabled={!isFiltered}
+              className="text-sm text-on-surface-variant disabled:opacity-40 hover:text-on-surface"
+            >
+              Сбросить
+            </button>
+          </div>
+
+          {/* Отказ поиска называется, а не прячется: без этой строки пустой
+              список читался бы как «в базе ничего нет», хотя движок просто не
+              ответил. «Ищу…» — третий ответ рядом с «нашлось» и «не нашлось».
+
+              Формулировка проверена на живом отказе: первая редакция обещала
+              «показаны только фильтры», а список при этом был пуст — сообщение
+              описывало не то, что человек видит на экране. */}
+          {searchError !== '' && (
+            <p className="border border-error/40 bg-error/5 px-3 py-2 text-sm text-error">
+              поиск не ответил: {searchError}. Список пуст не потому, что записей нет, — движок
+              недоступен.
             </p>
-          </div>
-          <div className="flex rounded-md border border-outline-variant">
-            {([false, true] as const).map((g) => (
-              <button
-                key={String(g)}
-                type="button"
-                onClick={() => setGrid(g)}
-                className={`px-3 py-1.5 font-label text-[11px] font-semibold tracking-wider uppercase ${
-                  grid === g ? 'bg-surface-high text-on-surface' : 'text-on-surface-variant'
-                }`}
-              >
-                {g ? 'Grid view' : 'Table view'}
-              </button>
-            ))}
-          </div>
-        </header>
+          )}
+          {searching && searchError === '' && (
+            <p className="font-label text-xs text-on-surface-variant">ищу…</p>
+          )}
 
-        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-outline-variant bg-surface-low p-4">
-          {/* Поля поиска здесь больше нет: оно переехало в шапку, как в
-              исходном дашборде. Два поля на один запрос — это два места, где
-              видно разное, стоит забыть синхронизировать одно из них. */}
-          <select value={filter.status} onChange={(e) => set({ status: e.target.value })} className={selectClass}>
-            <option value="">Любой статус</option>
-            {statuses.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.label}
-              </option>
-            ))}
-          </select>
-          <select value={filter.source} onChange={(e) => set({ source: e.target.value })} className={selectClass}>
-            <option value="">Все источники</option>
-            {sources.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-          <select
-            value={filter.lifecycle}
-            onChange={(e) => set({ lifecycle: e.target.value })}
-            className={selectClass}
-          >
-            <option value="">Любой lifecycle</option>
-            {lifecycles.map((l) => (
-              <option key={l} value={l}>
-                {l}
-              </option>
-            ))}
-          </select>
-          {/* Переводов в базе шестьдесят. Пока признак жил словом в заголовке,
-              отобрать их можно было только поиском по этому слову — и поиск
-              заодно приносил всё, где «перевод» упомянут в описании. */}
-          <select
-            value={filter.translation}
-            onChange={(e) => set({ translation: e.target.value })}
-            className={selectClass}
-          >
-            <option value="">Оригиналы и переводы</option>
-            <option value="yes">Только переводы</option>
-            <option value="no">Только оригиналы</option>
-          </select>
-          {/* Тумблер, а не галочка: в исходном дашборде это переключатель, и
-              такой же стоит в шапке у сумм — две разные механики для одного и
-              того же действия читаются как разные по смыслу. */}
-          <div className="flex items-center gap-2">
-            <span className="label text-[10px] text-on-surface-variant">Описания</span>
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
-                checked={withDescriptions}
-                onChange={(e) => setWithDescriptions(e.target.checked)}
-                aria-label={withDescriptions ? 'Скрыть описания' : 'Показать описания'}
-              />
-              <span className="toggle-slider" />
-            </label>
-            {pickedTag && (
-              <button
-                type="button"
-                onClick={() => onPickedTagChange('')}
-                className="flex items-center gap-1.5 rounded-full border border-secondary px-3 py-1 font-label text-[10px] uppercase tracking-wider text-secondary hover:bg-surface-high"
-                title="Снять фильтр по тегу"
-              >
-                {tagLabel(pickedTag, tagLabels)} ✕
-              </button>
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setFilter(emptyFilter)
-              // И запрос из шапки тоже: кнопка обещает сбросить фильтры, а не
-              // выборочно те из них, что нарисованы рядом с ней.
-              onSearchChange('')
-              // И тег, пришедший из облака на дашборде: он не нарисован среди
-              // селекторов, но он такой же действующий фильтр.
-              onPickedTagChange('')
-              // Категория с About видна в своём селекторе и снимается вместе с
-              // ним, но забыть её наверху нельзя: иначе повторный клик по тому
-              // же ящику не сменит состояние и фильтр не вернётся.
-              onPickedCategoryChange('')
-              setPage(1)
-            }}
-            disabled={!isFiltered}
-            className="text-sm text-on-surface-variant disabled:opacity-40 hover:text-on-surface"
-          >
-            Сбросить
-          </button>
-        </div>
-
-        {/* Отказ поиска называется, а не прячется: без этой строки пустой
-            список читался бы как «в базе ничего нет», хотя движок просто не
-            ответил. «Ищу…» — третий ответ рядом с «нашлось» и «не нашлось».
-
-            Формулировка проверена на живом отказе: первая редакция обещала
-            «показаны только фильтры», а список при этом был пуст — сообщение
-            описывало не то, что человек видит на экране. */}
-        {searchError !== '' && (
-          <p className="border border-error/40 bg-error/5 px-3 py-2 text-sm text-error">
-            поиск не ответил: {searchError}. Список пуст не потому, что записей нет, — движок
-            недоступен.
-          </p>
-        )}
-        {searching && searchError === '' && (
-          <p className="font-label text-xs text-on-surface-variant">ищу…</p>
-        )}
-
-        {grid ? (
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {slice.map((e) => (
-              <div key={e.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-lowest p-4">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-label text-xs text-on-surface-variant">
-                    {dateOf(e) || '—'}
-                  </span>
-                  <Status e={e} />
-                </div>
-                <Title e={e} />
-                {/* Метка, а не слово в заголовке: заголовок принадлежит
-                    автору оригинала, а «перевод» — это про запись. */}
-                {e.is_translation && (
-                  <span
-                    className="ml-2 align-middle rounded border border-outline-variant px-1.5 py-0.5 font-label text-[9px] uppercase tracking-wider text-on-surface-variant"
-                    title="Перевод чужого оригинала"
-                  >
-                    перевод
-                  </span>
-                )}
-                {withDescriptions && e.description && (
-                  <p className="text-sm text-on-surface-variant">
-                    {e.description.length > 150 ? `${e.description.slice(0, 150)}…` : e.description}
-                  </p>
-                )}
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  <Tags tags={e.tags} labels={tagLabels} />
-                  {writeupOf.has(e.id) && (
-                    <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
-                  )}
-                  {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
-                    <Coverage n={coverage.get(e.id)!} />
-                  )}
-                  <ArtefactLink file={e.file} />
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          /* Список, а не таблица. Колонки требовали, чтобы длинный заголовок
-             жил в узкой доле ширины, и он ломался по одному слову, пока
-             соседние колонки пустовали. Здесь метаданные идут одной строкой
-             сверху, а текст занимает всю ширину блока. */
-          <ul className="border border-outline-variant bg-surface-lowest">
-            {slice.map((e) => (
-              <li key={e.id} className="border-t border-outline-variant first:border-t-0">
-                <div className="px-5 py-4">
-                  {/* Одна строка метаданных: перенос разрешён, чтобы на узком
-                      экране они переехали, а не наехали друг на друга. */}
-                  <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                    <span className="font-label text-xs whitespace-nowrap text-on-surface-variant">
+          {grid ? (
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {slice.map((e) => (
+                <div key={e.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-lowest p-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-label text-xs text-on-surface-variant">
                       {dateOf(e) || '—'}
                     </span>
-                    {e.habr_date && (
-                      <MaterialDate
-                        label="вышла"
-                        date={e.habr_date}
-                        title="Дата публикации у автора — не дата попадания в базу"
-                      />
-                    )}
-                    {e.deep_read_date && (
-                      <MaterialDate
-                        label="разобрана"
-                        date={e.deep_read_date}
-                        title="Когда материал прочли целиком, а не пролистали"
-                      />
-                    )}
-                    <span
-                      className="max-w-[14rem] truncate rounded-full border border-outline-variant bg-surface-high px-2.5 py-0.5 text-xs text-on-surface-variant"
-                      title={labels[e.category] || e.category}
-                    >
-                      {categoryLabel(e.category, labels)}
-                    </span>
-                    <Tags tags={e.tags} labels={tagLabels} />
                     <Status e={e} />
-                    {/* Дорога к разбору стоит среди метаданных записи, а не
-                        под текстом: это свойство записи, как её статус или
-                        категория, и искать его глазами в другом месте не надо. */}
+                  </div>
+                  <Title e={e} />
+                  {/* Метка, а не слово в заголовке: заголовок принадлежит
+                      автору оригинала, а «перевод» — это про запись. */}
+                  {e.is_translation && (
+                    <span
+                      className="ml-2 align-middle rounded border border-outline-variant px-1.5 py-0.5 font-label text-[9px] uppercase tracking-wider text-on-surface-variant"
+                      title="Перевод чужого оригинала"
+                    >
+                      перевод
+                    </span>
+                  )}
+                  {withDescriptions && e.description && (
+                    <p className="text-sm text-on-surface-variant">
+                      {e.description.length > 150 ? `${e.description.slice(0, 150)}…` : e.description}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                    <Tags tags={e.tags} labels={tagLabels} />
                     {writeupOf.has(e.id) && (
                       <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
                     )}
                     {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
                       <Coverage n={coverage.get(e.id)!} />
                     )}
-                    {e.url && (
-                      <a
-                        href={e.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="ml-auto shrink-0 text-secondary hover:underline"
-                        aria-label="Открыть источник"
-                        title="Открыть источник"
-                      >
-                        <Icon name="open_in_new" className="text-base" />
-                      </a>
-                    )}
-                    {/* У своих артефактов внешнего адреса нет вовсе, поэтому
-                        ml-auto достаётся тому, кто в строке первый: иначе
-                        запись без url прижимала бы значок к тексту. */}
-                    {!e.url && e.file && <span className="ml-auto" />}
                     <ArtefactLink file={e.file} />
                   </div>
-
-                  <Title e={e} />
-                  {withDescriptions && e.description && (
-                    <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
-                      {e.description}
-                    </p>
-                  )}
                 </div>
-              </li>
-            ))}
-          </ul>
-        )}
+              ))}
+            </div>
+          ) : (
+            /* Список, а не таблица. Колонки требовали, чтобы длинный заголовок
+               жил в узкой доле ширины, и он ломался по одному слову, пока
+               соседние колонки пустовали. Здесь метаданные идут одной строкой
+               сверху, а текст занимает всю ширину блока. */
+            <ul className="border border-outline-variant bg-surface-lowest">
+              {slice.map((e) => (
+                <li key={e.id} className="border-t border-outline-variant first:border-t-0">
+                  <div className="px-5 py-4">
+                    {/* Одна строка метаданных: перенос разрешён, чтобы на узком
+                        экране они переехали, а не наехали друг на друга. */}
+                    <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                      <span className="font-label text-xs whitespace-nowrap text-on-surface-variant">
+                        {dateOf(e) || '—'}
+                      </span>
+                      {e.habr_date && (
+                        <MaterialDate
+                          label="вышла"
+                          date={e.habr_date}
+                          title="Дата публикации у автора — не дата попадания в базу"
+                        />
+                      )}
+                      {e.deep_read_date && (
+                        <MaterialDate
+                          label="разобрана"
+                          date={e.deep_read_date}
+                          title="Когда материал прочли целиком, а не пролистали"
+                        />
+                      )}
+                      <span
+                        className="max-w-[14rem] truncate rounded-full border border-outline-variant bg-surface-high px-2.5 py-0.5 text-xs text-on-surface-variant"
+                        title={labels[e.category] || e.category}
+                      >
+                        {categoryLabel(e.category, labels)}
+                      </span>
+                      <Tags tags={e.tags} labels={tagLabels} />
+                      <Status e={e} />
+                      {/* Дорога к разбору стоит среди метаданных записи, а не
+                          под текстом: это свойство записи, как её статус или
+                          категория, и искать его глазами в другом месте не надо. */}
+                      {writeupOf.has(e.id) && (
+                        <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
+                      )}
+                      {e.category === WRITEUP_CATEGORY && coverage.has(e.id) && (
+                        <Coverage n={coverage.get(e.id)!} />
+                      )}
+                      {e.url && (
+                        <a
+                          href={e.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="ml-auto shrink-0 text-secondary hover:underline"
+                          aria-label="Открыть источник"
+                          title="Открыть источник"
+                        >
+                          <Icon name="open_in_new" className="text-base" />
+                        </a>
+                      )}
+                      {/* У своих артефактов внешнего адреса нет вовсе, поэтому
+                          ml-auto достаётся тому, кто в строке первый: иначе
+                          запись без url прижимала бы значок к тексту. */}
+                      {!e.url && e.file && <span className="ml-auto" />}
+                      <ArtefactLink file={e.file} />
+                    </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="label">
-            {filtered.length > 0
-              ? `Показано ${(current - 1) * PAGE_SIZE + 1}–${Math.min(current * PAGE_SIZE, filtered.length)} из ${filtered.length}`
-              : 'Нет записей'}
-          </span>
-          <Pagination page={current} pages={pages} onPage={setPage} />
-        </div>
+                    <Title e={e} />
+                    {withDescriptions && e.description && (
+                      <p className="mt-1 line-clamp-2 text-sm text-on-surface-variant">
+                        {e.description}
+                      </p>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {/* items-start: у карточек резко разный объём содержимого, и растягивать
-            правую до высоты левой незачем — она берёт высоту по своему. */}
-        <section className="grid grid-cols-1 items-start gap-6 pt-8 md:grid-cols-3">
-          <SpotlightCard
-            entry={newest}
-            expanded={spotlightOpen}
-            onToggle={() => setSpotlightOpen((v) => !v)}
-          />
-          <HealthCard health={health} />
-        </section>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="label">
+              {filtered.length > 0
+                ? `Показано ${(current - 1) * PAGE_SIZE + 1}–${Math.min(current * PAGE_SIZE, filtered.length)} из ${filtered.length}`
+                : 'Нет записей'}
+            </span>
+            <Pagination page={current} pages={pages} onPage={setPage} />
+          </div>
+
+          {/* items-start: у карточек резко разный объём содержимого, и растягивать
+              правую до высоты левой незачем — она берёт высоту по своему. */}
+          <section className="grid grid-cols-1 items-start gap-6 pt-8 md:grid-cols-3">
+            <SpotlightCard
+              entry={newest}
+              expanded={spotlightOpen}
+              onToggle={() => setSpotlightOpen((v) => !v)}
+            />
+            <HealthCard health={health} />
+          </section>
       </div>
-    </div>
+      </div>
+    </>
   )
 }
