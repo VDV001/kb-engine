@@ -659,7 +659,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:105"
+    "frontend/src/App.tsx:108"
    ]
   },
   {
@@ -709,7 +709,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:119"
+    "frontend/src/App.tsx:122"
    ]
   },
   {
@@ -729,7 +729,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:151"
+    "frontend/src/App.tsx:154"
    ]
   },
   {
@@ -739,7 +739,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:152"
+    "frontend/src/App.tsx:155"
    ]
   },
   {
@@ -749,7 +749,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:153"
+    "frontend/src/App.tsx:156"
    ]
   },
   {
@@ -759,7 +759,7 @@
    "layer": "surfaces",
    "kind": "client",
    "sources": [
-    "frontend/src/App.tsx:157"
+    "frontend/src/App.tsx:160"
    ]
   },
   {
@@ -2217,8 +2217,8 @@
      "from": "fe-app",
      "to": "fe-dashboard",
      "call": "рендер вкладки overview",
-     "detail": "frontend/src/App.tsx:95 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
-     "source": "frontend/src/App.tsx:111",
+     "detail": "frontend/src/App.tsx:98 — сводка получает stats, entries и onPickTag; audits уходит в HealthView (App.tsx:107), а не сюда",
+     "source": "frontend/src/App.tsx:116",
      "unverified": false
     }
    ],
@@ -2488,7 +2488,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/stats",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:96)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:99)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -2534,7 +2534,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/entries",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:128)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:131)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -2554,8 +2554,8 @@
      "to": "fe-catalog",
      "call": "<CatalogView entries={data.entries} />",
      "symbol": "CatalogView",
-     "source": "frontend/src/App.tsx:147",
-     "detail": "frontend/src/App.tsx:128 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
+     "source": "frontend/src/App.tsx:150",
+     "detail": "frontend/src/App.tsx:131 — вью получает записи пропсом и фильтрует их у себя: сервер отдаёт весь список одним ответом, поиск и фильтры живут на странице",
      "unverified": false
     },
     {
@@ -2601,7 +2601,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/analytics",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:109)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:112)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -2620,7 +2620,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/analytics-config",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:109)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:112)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -2677,7 +2677,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/audits",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:112)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:115)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -2696,7 +2696,7 @@
      "from": "fe-app",
      "to": "ad-httpapi",
      "call": "api.dashboard() → /api/duplicates",
-     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:112)",
+     "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:115)",
      "source": "frontend/src/api.ts:783",
      "unverified": false,
      "symbol": "dashboard"
@@ -3061,8 +3061,8 @@
      "to": "fe-architecture",
      "call": "вкладка Architecture",
      "symbol": "ArchitectureView",
-     "source": "frontend/src/App.tsx:166",
-     "detail": "frontend/src/App.tsx:162 — десятая вкладка витрины; до неё карты жили отдельными HTML-страницами и собирались своим build.py"
+     "source": "frontend/src/App.tsx:169",
+     "detail": "frontend/src/App.tsx:165 — десятая вкладка витрины; до неё карты жили отдельными HTML-страницами и собирались своим build.py"
     },
     {
      "n": 7,
@@ -3203,7 +3203,7 @@
      "to": "fe-cheatsheets",
      "call": "<CheatsheetsView entries={data.entries} />",
      "detail": "App.tsx отдаёт виду уже загруженные записи: своих запросов CheatsheetsView не делает, и второй источник тех же данных разошёлся бы с первым. Вкладка — вход к артефактам, которые открывают посмотреть клавишу, а не ищут по названию",
-     "source": "frontend/src/App.tsx:161",
+     "source": "frontend/src/App.tsx:164",
      "symbol": "CheatsheetsView",
      "unverified": false
     },
