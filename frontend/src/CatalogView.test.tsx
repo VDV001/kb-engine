@@ -43,6 +43,7 @@ const view = (search: string, onSearchChange = () => {}) =>
       health={health}
       search={search}
       onSearchChange={onSearchChange}
+      linkedQuery=""
     />,
   )
 
@@ -69,6 +70,7 @@ describe('CatalogView', () => {
         health={health}
         search=""
         onSearchChange={() => {}}
+      linkedQuery=""
       />,
     )
     expect(screen.getByText(/Показано 1–1 из 1/).textContent).toContain('1–1 из 1')
@@ -90,7 +92,7 @@ describe('CatalogView', () => {
     expect(screen.getByText(/Показано 31–40/).textContent).toContain('31–40')
 
     rerender(
-      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} pickedCategory="" onPickedCategoryChange={() => {}} health={health} search="Go" onSearchChange={() => {}} />,
+      <CatalogView entries={many} labels={{}} tagLabels={{}} pickedTag="" onPickedTagChange={() => {}} pickedCategory="" onPickedCategoryChange={() => {}} health={health} search="Go" onSearchChange={() => {}} linkedQuery="" />,
     )
     expect((await screen.findByText(/Показано 1–1 из 1/)).textContent).toContain('1–1 из 1')
   })
@@ -198,6 +200,7 @@ describe('CatalogView: связь с разбором', () => {
         health={health}
         search=""
         onSearchChange={onSearchChange}
+      linkedQuery=""
       />,
     )
 
@@ -266,6 +269,7 @@ describe('CatalogView: сетка показывает то же, что спи�
         health={health}
         search=""
         onSearchChange={onSearchChange}
+      linkedQuery=""
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: 'Grid view' }))
@@ -330,6 +334,7 @@ describe('CatalogView — даты материала', () => {
         health={{ total: 2, processed: 2, with_notes: 0, notes_base: 2 }}
         search=""
         onSearchChange={() => {}}
+      linkedQuery=""
       />,
     )
 

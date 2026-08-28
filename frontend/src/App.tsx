@@ -57,6 +57,11 @@ export default function App() {
   const [masked, setMasked] = useState(true)
   // Поиск тоже поднят сюда: поле стоит в шапке, а фильтрует каталог.
   const [search, setSearch] = useState(initial.q ?? '')
+  // Запрос, с которым страницу открыли по ссылке из ответа агента. Читается
+  // ОДИН раз при старте и обратно в адрес не пишется: отметка живёт до первой
+  // своей правки, иначе перезагрузка через час выдавала бы собственный поиск за
+  // ответ агента.
+  const linkedQuery = initial.src === 'mcp' ? (initial.q ?? '') : ''
   // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
   // на одной вкладке, а применяется он на другой.
   const [pickedTag, setPickedTag] = useState('')
@@ -149,6 +154,7 @@ export default function App() {
                 health={data.stats.health}
                 search={search}
                 onSearchChange={setSearch}
+                linkedQuery={linkedQuery}
               />
             )}
             {tab === 'cheatsheets' && <CheatsheetsView entries={data.entries} />}
