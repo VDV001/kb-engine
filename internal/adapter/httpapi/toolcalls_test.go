@@ -12,11 +12,14 @@ import (
 
 // callsStub — журнал вызовов под портом, который спрашивает витрина.
 type callsStub struct {
-	calls []runs.Call
-	err   error
+	calls  []runs.Call
+	exists bool
+	err    error
 }
 
-func (c callsStub) Calls(int) ([]runs.Call, error) { return c.calls, c.err }
+func (c callsStub) Calls(int) (runs.CallLog, error) {
+	return runs.CallLog{Exists: c.exists, Calls: c.calls}, c.err
+}
 
 var sample = []runs.Call{
 	{Tool: "search_catalog", Query: "harness", At: time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC), OK: true},
@@ -27,7 +30,7 @@ var sample = []runs.Call{
 // журнал копится, а увидеть его можно только командой в терминале — то есть
 // половина смысла счётчика остаётся в консоли.
 func TestToolCalls_servesWhatTheAgentAsked(t *testing.T) {
-	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample}))
+	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample, exists: true}))
 	rec := get(t, h, "/api/tool-calls")
 	if rec.Code != 200 {
 		t.Fatalf("код %d, ждали 200", rec.Code)
@@ -84,11 +87,29 @@ func TestToolCalls_withoutJournalSaysSoInsteadOfFailing(t *testing.T) {
 func TestToolCalls_neverCarriesEngineCommandArguments(t *testing.T) {
 	// Порт отдаёт только вызовы по конструкции, поэтому проверяется то, что
 	// проверяемо здесь: страница не выдумывает поля и отдаёт ровно их.
-	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample}))
+	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample, exists: true}))
 	body := get(t, h, "/api/tool-calls").Body.String()
 	for _, secret := range []string{"418.50", "Сбербанк", "--amount", "--place"} {
 		if strings.Contains(body, secret) {
 			t.Fatalf("в ответе оказалось %q:\n%s", secret, body)
 		}
+	}
+}
+
+// ⚠️ Отсутствующий журнал приходит от ПОРТА, а не от отсутствия порта: сервер
+// поднят с журналом, которого нет на диске. Прежний тест проверял другое —
+// сервер вовсе без журнала, — и потому пропустил живой дефект: витрина
+// отвечала «журнал заведён, вызовов нет» там, где файла не существовало.
+func TestToolCalls_journalOnDiskMissingIsNotAnEmptyJournal(t *testing.T) {
+	h := newTestServerWith(httpapi.WithToolCalls(callsStub{}))
+	rec := get(t, h, "/api/tool-calls")
+	var out struct {
+		Exists bool `json:"exists"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Exists {
+		t.Error("файла журнала нет, а ответ говорит, что он заведён")
 	}
 }

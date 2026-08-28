@@ -20,12 +20,13 @@ func TestCalls_returnsWhatWasAskedNewestFirst(t *testing.T) {
 		at(t, runs.ToolCommand("stats"), now.Add(-30*time.Minute), 0),
 	}
 
-	got, err := runs.Calls(journalStub{recs: recs, exists: true}, 10)
+	log, err := runs.Calls(journalStub{recs: recs, exists: true}, 10)
 	if err != nil {
 		t.Fatalf("Calls: %v", err)
 	}
 
 	// Три вызова из четырёх записей: команда движка вызовом не является.
+	got := log.Calls
 	if len(got) != 3 {
 		t.Fatalf("вызовов %d, ждали 3: %+v", len(got), got)
 	}
@@ -62,23 +63,39 @@ func TestCalls_limitTakesTheNewest(t *testing.T) {
 		recs = append(recs, at(t, runs.ToolCommand("search_catalog"),
 			now.Add(-time.Duration(i)*time.Hour), 0, string(rune('а'+i))))
 	}
-	got, err := runs.Calls(journalStub{recs: recs, exists: true}, 2)
+	log, err := runs.Calls(journalStub{recs: recs, exists: true}, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := log.Calls
 	if len(got) != 2 || got[0].Query != "а" {
 		t.Fatalf("предел взял не новейшие: %+v", got)
 	}
 }
 
-// Журнала нет вовсе — законный ответ, а не ошибка: движок мог ни разу его не
-// писать. Пустой список и отказ здесь означают разное.
-func TestCalls_missingJournalIsEmptyNotError(t *testing.T) {
-	got, err := runs.Calls(journalStub{exists: false}, 10)
+// ⚠️ Журнала нет вовсе и журнал есть, но пуст — РАЗНЫЕ ответы, и различить их
+// снаружи можно только полем. Дефект найден живым прогоном: файла на диске не
+// было, а витрина отвечала «журнал заведён, вызовов нет» — то есть предлагала
+// человеку вывод «агент базу не спрашивал» там, где верно «спрашивать было
+// нечем». Прежние тесты этого не ловили: отсутствие проверялось на
+// отсутствующем ПОРТЕ, а не на отсутствующем ФАЙЛЕ.
+func TestCalls_missingJournalDiffersFromEmptyOne(t *testing.T) {
+	missing, err := runs.Calls(journalStub{exists: false}, 10)
 	if err != nil {
 		t.Fatalf("отсутствие журнала не ошибка: %v", err)
 	}
-	if len(got) != 0 {
-		t.Fatalf("вызовов %d, ждали 0", len(got))
+	if missing.Exists {
+		t.Error("журнала нет, а ответ утверждает, что он заведён")
+	}
+	if len(missing.Calls) != 0 {
+		t.Fatalf("вызовов %d, ждали 0", len(missing.Calls))
+	}
+
+	empty, err := runs.Calls(journalStub{exists: true}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !empty.Exists {
+		t.Error("журнал заведён и пуст, а ответ говорит, что его нет")
 	}
 }
