@@ -18,7 +18,7 @@ const toolCallLimit = 200
 // ToolCallReader — порт журнала вызовов. Объявлен здесь, в пакете-потребителе:
 // направление зависимости решает тот, кто спрашивает.
 type ToolCallReader interface {
-	Calls(limit int) ([]runs.Call, error)
+	Calls(limit int) (runs.CallLog, error)
 }
 
 // WithToolCalls подключает журнал вызовов к витрине.
@@ -53,17 +53,20 @@ func handleToolCalls(r ToolCallReader) http.HandlerFunc {
 			writeJSON(w, map[string]any{"exists": false, "total": 0, "calls": []toolCallDTO{}})
 			return
 		}
-		calls, err := r.Calls(toolCallLimit)
+		log, err := r.Calls(toolCallLimit)
 		if err != nil {
 			// Нечитаемый журнал — настоящая ошибка, и молчать о ней нельзя:
 			// пустая страница выглядела бы как «вызовов не было».
 			http.Error(w, "журнал вызовов не читается: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
-		out := make([]toolCallDTO, 0, len(calls))
-		for _, c := range calls {
+		out := make([]toolCallDTO, 0, len(log.Calls))
+		for _, c := range log.Calls {
 			out = append(out, toolCallDTO{Tool: c.Tool, Query: c.Query, At: c.At, OK: c.OK})
 		}
-		writeJSON(w, map[string]any{"exists": true, "total": len(out), "calls": out})
+		// exists приходит от журнала, а не выводится из наличия порта: сервер
+		// поднимают с журналом, которого ещё нет на диске, и это самый частый
+		// случай — старый бинарь MCP-сервера записей не ведёт.
+		writeJSON(w, map[string]any{"exists": log.Exists, "total": len(out), "calls": out})
 	}
 }

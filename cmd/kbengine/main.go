@@ -28,7 +28,6 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
-	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
 	"github.com/daniil/kb-engine/internal/adapter/tui"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -343,20 +342,11 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr)}
+	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr), toolCallsOption(stderr)}
 	if *timing {
 		serveOpts = append(serveOpts, httpapi.WithServerTiming())
 	}
-	// Журнал вызовов — тот же файл, что читает `kbengine runs`, и путь
-	// спрашивается у того же места. Ненайденный путь не мешает витрине
-	// подняться: вкладка «Ответы» тогда честно скажет, что журнала нет, — но
-	// молчать об этом на старте нельзя, иначе пустая вкладка читается как
-	// «агент базу не спрашивал».
-	if p, err := runlogjsonl.DefaultPath(os.Getenv); err != nil {
-		fmt.Fprintf(stderr, "serve: %v — вкладка «Ответы» будет пустой\n", err)
-	} else {
-		serveOpts = append(serveOpts, httpapi.WithToolCalls(journalCalls{path: p}))
-	}
+
 	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
 		serveOpts...)
 	if err != nil {

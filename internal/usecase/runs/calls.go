@@ -21,6 +21,18 @@ type Call struct {
 	OK    bool
 }
 
+// CallLog — ответ журнала на вопрос «о чём спрашивали».
+//
+// Exists отделяет «файла нет вовсе» от «журнал есть и пуст». Снаружи оба
+// выглядят пустым списком, а означают разное: первое — «спрашивать было нечем»
+// (движок не писал журнала этой сборкой), второе — «агент базу не спрашивал».
+// Различие стоило живого дефекта: витрина уверенно говорила второе там, где
+// верно было первое.
+type CallLog struct {
+	Exists bool
+	Calls  []Call
+}
+
 // Calls возвращает последние вызовы инструментов, новейшие сверху.
 //
 // Отдельно от Build: тот сводит журнал в статистику и отвечает «сколько раз», а
@@ -29,10 +41,14 @@ type Call struct {
 //
 // Отсутствие журнала — пустой список без ошибки: движок мог ни разу его не
 // писать, и это законное состояние. Ошибкой остаётся нечитаемый журнал.
-func Calls(j Journal, limit int) ([]Call, error) {
+func Calls(j Journal, limit int) (CallLog, error) {
+	exists, err := j.Exists()
+	if err != nil {
+		return CallLog{}, err
+	}
 	recs, _, err := j.Load()
 	if err != nil {
-		return nil, err
+		return CallLog{}, err
 	}
 	out := make([]Call, 0, len(recs))
 	for _, r := range recs {
@@ -55,5 +71,5 @@ func Calls(j Journal, limit int) ([]Call, error) {
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
 	}
-	return out, nil
+	return CallLog{Exists: exists, Calls: out}, nil
 }
