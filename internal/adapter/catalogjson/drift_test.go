@@ -1,6 +1,7 @@
 package catalogjson_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -183,4 +184,77 @@ func TestApplyDrift_writesTheNewURLOnlyWhenAsked(t *testing.T) {
 			t.Errorf("drift_check_date = %s (present %v)", date, ok)
 		}
 	})
+}
+
+// Повторный прогон в тот же день записывает те же значения — файл не меняется
+// ни на байт, а отчёт до 28.08.2026 всё равно говорил «записано N записей».
+// Это ровно класс «команда отчиталась успехом, ничего не изменив», против
+// которого в движке стоит отдельный гейт: счёт шёл по совпавшим записям,
+// а не по изменившимся.
+//
+// Прецедент: `drift --limit 6 --apply` напечатал «записано в каталог:
+// 6 записей», при этом `cmp` показал, что catalog.json не изменился вовсе.
+func TestApplyDrift_countsChangedEntriesNotMatchedOnes(t *testing.T) {
+	path := driftCatalog(t)
+	checked := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+	records := []catalogjson.DriftRecord{
+		{EntryID: 1, CheckedAt: checked, Code: 200},
+		{EntryID: 2, CheckedAt: checked, Code: 404},
+	}
+
+	n, err := catalogjson.ApplyDrift(path, records)
+	if err != nil {
+		t.Fatalf("ApplyDrift: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("первый прогон записал %d, ожидалось 2", n)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	n, err = catalogjson.ApplyDrift(path, records)
+	if err != nil {
+		t.Fatalf("ApplyDrift (повтор): %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+
+	if !bytes.Equal(before, after) {
+		t.Fatalf("повтор изменил файл, хотя значения те же")
+	}
+	if n != 0 {
+		t.Fatalf("повтор отчитался «записано %d», а файл не изменился — счёт идёт по совпавшим записям, а не по изменившимся", n)
+	}
+}
+
+// Отрицательный контроль к предыдущему: счёт не должен схлопнуться в ноль
+// вообще. Изменившаяся запись обязана считаться, даже когда рядом лежат
+// совпадающие.
+func TestApplyDrift_countsTheOneThatActuallyChanged(t *testing.T) {
+	path := driftCatalog(t)
+	checked := time.Date(2026, 8, 28, 0, 0, 0, 0, time.UTC)
+	first := []catalogjson.DriftRecord{
+		{EntryID: 1, CheckedAt: checked, Code: 200},
+		{EntryID: 2, CheckedAt: checked, Code: 200},
+	}
+	if _, err := catalogjson.ApplyDrift(path, first); err != nil {
+		t.Fatalf("ApplyDrift: %v", err)
+	}
+
+	// у записи 2 меняется код, у записи 1 — ничего
+	second := []catalogjson.DriftRecord{
+		{EntryID: 1, CheckedAt: checked, Code: 200},
+		{EntryID: 2, CheckedAt: checked, Code: 404},
+	}
+	n, err := catalogjson.ApplyDrift(path, second)
+	if err != nil {
+		t.Fatalf("ApplyDrift (второй): %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("записано %d, ожидалась 1 — изменилась ровно одна запись", n)
+	}
 }
