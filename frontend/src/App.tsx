@@ -18,6 +18,7 @@ import { ProjectsView } from './ProjectsView'
 import { AboutView } from './AboutView'
 import { ArchitectureView } from './ArchitectureView'
 import { readUrlState, TAB_IDS, type Tab } from './urlstate'
+import { linkedQueryOf } from './selection'
 import { useUrlSync } from './hooks/useUrlSync'
 import { CheatsheetsView } from './CheatsheetsView'
 
@@ -61,7 +62,7 @@ export default function App() {
   // ОДИН раз при старте и обратно в адрес не пишется: отметка живёт до первой
   // своей правки, иначе перезагрузка через час выдавала бы собственный поиск за
   // ответ агента.
-  const linkedQuery = initial.src === 'mcp' ? (initial.q ?? '') : ''
+  const linkedQuery = linkedQueryOf(initial)
   // Тег, выбранный в облаке на дашборде. Живёт здесь, потому что выбирают его
   // на одной вкладке, а применяется он на другой.
   const [pickedTag, setPickedTag] = useState('')

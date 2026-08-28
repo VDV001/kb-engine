@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 // Текст ищет движок (#252), поэтому витрине нужен ответ сервера, а не своя
@@ -358,5 +358,63 @@ describe('CatalogView — даты материала', () => {
     render2()
     expect(screen.getByText(/вышла 2026-05-11/i)).toBeDefined()
     expect(screen.getByText(/разобрана 2026-05-16/i)).toBeDefined()
+  })
+})
+
+// Полоса контекста ПРОВЕРЯЕТСЯ В СОБРАННОМ ВИДЕ, а не только в своей функции:
+// между «условие посчиталось» и «полоса оказалась на экране с настоящими
+// числами» уже был разрыв — в deal-sense разбивка часов считалась и
+// выбрасывалась обработчиком.
+describe('полоса контекста над архивом', () => {
+  it('открытая по ссылке агента выборка называет себя и оба числа', async () => {
+    found.mockResolvedValueOnce([{ id: 1 }])
+    render(
+      <CatalogView
+        entries={many}
+        labels={{}}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory=""
+        onPickedCategoryChange={() => {}}
+        health={health}
+        search="Go"
+        onSearchChange={() => {}}
+        linkedQuery="Go"
+      />,
+    )
+    // Ждём ОСЕВШЕГО состояния: пока ответ поиска летит, полоса честно пишет
+    // «считаем…» и чисел не называет — это отдельная проверка в SelectionBar.
+    await screen.findByText(/на экране/)
+    const bar = screen.getByTestId('selection-bar')
+    expect(bar.textContent).toMatch(/агент/i)
+    expect(bar.textContent).toContain('Go')
+    // 40 записей в фикстуре, найдена одна: оба числа обязаны быть настоящими,
+    // а не подставленными из длины списка на экране.
+    expect(bar.textContent).toContain('40')
+    expect(bar.textContent).toMatch(/на экране\s*1\s/)
+  })
+
+  it('кнопка полосы сбрасывает запрос — тем же путём, что «Сбросить»', async () => {
+    found.mockResolvedValueOnce([{ id: 1 }])
+    const onSearchChange = vi.fn()
+    render(
+      <CatalogView
+        entries={many}
+        labels={{}}
+        tagLabels={{}}
+        pickedTag=""
+        onPickedTagChange={() => {}}
+        pickedCategory=""
+        onPickedCategoryChange={() => {}}
+        health={health}
+        search="Go"
+        onSearchChange={onSearchChange}
+        linkedQuery="Go"
+      />,
+    )
+    const bar = await screen.findByTestId('selection-bar')
+    fireEvent.click(within(bar).getByRole('button', { name: /показать все/i }))
+    expect(onSearchChange).toHaveBeenCalledWith('')
   })
 })

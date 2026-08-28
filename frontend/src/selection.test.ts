@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { selectionOf } from './selection'
+import { linkedQueryOf, selectionOf } from './selection'
 
 describe('полоса контекста над архивом', () => {
   const base = { total: 1573, shown: 80, searching: false, linkedQuery: '' }
@@ -37,5 +37,19 @@ describe('полоса контекста над архивом', () => {
   it('пробелы по краям не делают запрос другим', () => {
     const s = selectionOf({ ...base, query: '  ddd  ', linkedQuery: 'ddd' })
     expect(s).toEqual({ query: 'ddd', shown: 80, total: 1573, fromAgent: true })
+  })
+})
+
+describe('запрос, пришедший ссылкой', () => {
+  it('берётся только при объявленном происхождении', () => {
+    expect(linkedQueryOf({ q: 'ddd', src: 'mcp' })).toBe('ddd')
+  })
+
+  // Отрицательный контроль: свой поиск владельца тоже лежит в адресе — его
+  // туда пишет сама витрина, чтобы ссылку можно было скопировать. Считать его
+  // ответом агента значило бы называть ответом агента любой сохранённый поиск.
+  it('запрос без отметки происхождения ссылкой не считается', () => {
+    expect(linkedQueryOf({ q: 'ddd' })).toBe('')
+    expect(linkedQueryOf({})).toBe('')
   })
 })
