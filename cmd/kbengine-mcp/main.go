@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
+	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
@@ -68,9 +70,31 @@ func run(args []string, stderr io.Writer) error {
 		fmt.Fprintf(stderr, "kbengine-mcp: %v — поиск ищет подстрокой, транслитерацией и с опечатками, но не переводит термины\n", err)
 	}
 
-	srv := mcpserver.New(svc, search.New(syn), mcpserver.Config{Version: version, ViewBase: *viewBase})
+	// Журнал вызовов — тот же файл, что у команд движка; путь спрашивается у
+	// того же места (KBENGINE_RUNLOG или XDG-каталог состояния), иначе счётчик
+	// писал бы в один файл, а `kbengine runs` читал другой.
+	//
+	// Ненайденный путь не отменяет работу сервера: отвечать агенту важнее, чем
+	// считать вызовы. Но и молчать нельзя — пустой журнал неотличим от
+	// «вызовов не было».
+	var recorder mcpserver.Recorder
+	journalPath, err := runlogjsonl.DefaultPath(os.Getenv)
+	if err != nil {
+		fmt.Fprintf(stderr, "kbengine-mcp: %v — вызовы не считаются\n", err)
+	} else {
+		recorder = newJournalRecorder(journalPath, time.Now, stderr)
+	}
+
+	srv := mcpserver.New(svc, search.New(syn), mcpserver.Config{
+		Version:  version,
+		ViewBase: *viewBase,
+		Recorder: recorder,
+	})
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая
 	// лишняя строка там ломает разбор JSON-RPC у клиента.
 	fmt.Fprintf(stderr, "kbengine-mcp %s: каталог %s, инструменты search_catalog · get_entry · stats\n", version, *catalogPath)
+	if recorder != nil {
+		fmt.Fprintf(stderr, "kbengine-mcp: вызовы пишутся в %s, счёт печатает `kbengine runs`\n", journalPath)
+	}
 	return srv.Run(context.Background(), &mcp.StdioTransport{})
 }
