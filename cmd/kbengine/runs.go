@@ -249,3 +249,14 @@ func ago(t, now time.Time) string {
 		return fmt.Sprintf("%d дн. назад", days)
 	}
 }
+
+// journalCalls — журнал вызовов под портом витрины.
+//
+// Живёт рядом с journalFile намеренно: оба про один и тот же файл, и знание о
+// том, где он лежит, остаётся в одном месте. Витрина спрашивает «о чём
+// спрашивали», отчёт — «сколько раз»; читают они одну и ту же строку журнала.
+type journalCalls struct{ path string }
+
+func (j journalCalls) Calls(limit int) ([]runs.Call, error) {
+	return runs.Calls(journalFile{path: j.path, now: time.Now}, limit)
+}

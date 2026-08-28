@@ -716,6 +716,18 @@ export interface FinanceExportRow {
   account: string
 }
 
+/**
+ * Вызов инструмента MCP: о чём агент спросил базу и когда.
+ *
+ * `query` — единственное значение аргумента, которое движок отдаёт наружу, и
+ * граница объявлена на его стороне: сюда попадают только вызовы инструментов,
+ * аргументы команд движка (`fin add --amount …`) в этот список не приходят.
+ */
+export type ToolCall = { tool: string; query?: string; at: string; ok: boolean }
+
+/** `exists: false` — журнала нет вовсе; это не то же самое, что пустой список. */
+export type ToolCalls = { exists: boolean; total: number; calls: ToolCall[] }
+
 export const api = {
   stats: () => getJSON<Stats>('/api/stats'),
   entries: () => getJSON<Entry[]>('/api/entries'),
@@ -743,6 +755,7 @@ export const api = {
   changelog: () => getJSON<Changelog>('/api/changelog'),
   engine: () => getJSON<Engine>('/api/engine'),
   capabilities: () => getJSON<Capability[]>('/api/capabilities'),
+  toolCalls: () => getJSON<ToolCalls>('/api/tool-calls'),
   now: () => getJSON<Now | null>('/api/now'),
   sources: () => getJSON<{ sources: SourceState[] }>('/api/sources'),
   maps: () => getJSON<{ maps: ArchMapIndexEntry[] }>('/api/maps'),
