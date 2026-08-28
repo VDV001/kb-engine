@@ -428,3 +428,61 @@ func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
 		})
 	}
 }
+
+// Отчёт обязан называть, сколько записей не проверялось НИ РАЗУ. «Проверено 6
+// из 1525» звучит как выборка из проверенного массива, а на деле часть базы
+// может не спрашиваться никогда: новые записи дописываются в хвост, и до
+// починки 28.08.2026 малый --limit до них не доходил вовсе.
+//
+// Это то же самое требование, что и к остальным полям отчёта: назвать не
+// только найденное, но и не установленное.
+func TestScan_reportsHowManyWereNeverChecked(t *testing.T) {
+	checked := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	c := catalogOf(t,
+		entryChecked(t, 1, "https://example.com/a", checked),
+		entry(t, 2, "https://example.com/b"),
+		entry(t, 3, "https://example.com/c"),
+	)
+	checker := stubChecker{codes: map[string]int{
+		"https://example.com/a": 200,
+		"https://example.com/b": 200,
+		"https://example.com/c": 200,
+	}}
+
+	svc := drift.NewService(fixedLoader{c}, checker)
+	svc.Limit = 1
+
+	rep, err := svc.Scan(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	// Считается состояние ДО прогона: сколько записей входило в него, ни разу
+	// не проверенными. Иначе число зависело бы от того, что успел сделать сам
+	// прогон, и «сколько ещё не трогали» стало бы невычислимым.
+	if rep.NeverChecked != 2 {
+		t.Fatalf("NeverChecked = %d, want 2 — отчёт не называет, сколько записей не спрашивали ни разу", rep.NeverChecked)
+	}
+}
+
+// Отрицательный контроль: у полностью проверенной базы число обязано быть
+// нулём, а не «сколько-то». Иначе детектор ругался бы на правду.
+func TestScan_neverCheckedIsZeroWhenAllHaveDates(t *testing.T) {
+	checked := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
+	c := catalogOf(t,
+		entryChecked(t, 1, "https://example.com/a", checked),
+		entryChecked(t, 2, "https://example.com/b", checked),
+	)
+	checker := stubChecker{codes: map[string]int{
+		"https://example.com/a": 200,
+		"https://example.com/b": 200,
+	}}
+	svc := drift.NewService(fixedLoader{c}, checker)
+
+	rep, err := svc.Scan(t.Context(), time.Now())
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if rep.NeverChecked != 0 {
+		t.Fatalf("NeverChecked = %d, want 0 — все записи проверены, ругаться не на что", rep.NeverChecked)
+	}
+}

@@ -138,6 +138,13 @@ func printDriftReport(stdout io.Writer, rep drift.Report) {
 		rep.Undecidable())
 	fmt.Fprintf(stdout, "  проверено с вердиктом: %d из %d\n",
 		answered-rep.Undecidable(), rep.TotalEntries)
+	// Число, которого раньше не было: сколько записей не спрашивали НИ РАЗУ.
+	// Без него «проверено N из M» читается как выборка из проверенного
+	// массива, а не как «часть базы не трогали никогда».
+	if rep.NeverChecked > 0 {
+		fmt.Fprintf(stdout, "  ни разу не проверялись: %d (их берёт --limit в первую очередь)\n",
+			rep.NeverChecked)
+	}
 
 	gone := rep.Actionable()
 	if len(gone) == 0 {
