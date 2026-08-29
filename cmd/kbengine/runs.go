@@ -152,7 +152,9 @@ func printReport(w io.Writer, path string, r runs.Report, now time.Time) {
 			line := fmt.Sprintf("  %-14s прогонов %-4d последний %s (%s)",
 				c.Name, c.Runs, c.LastRun.Format("02.01.2006"), ago(c.LastRun, now))
 			if c.Failures > 0 {
-				line += fmt.Sprintf(" · отказов %d", c.Failures)
+				// Класс рядом со счётом: «отказов 3» без него одинаково
+				// выглядит при сработавшей защите и при поломке команды.
+				line += fmt.Sprintf(" · отказов %d (%s)", c.Failures, c.LastFailure)
 			}
 			if c.LastCode != 0 {
 				line += fmt.Sprintf(" · последний код %d", c.LastCode)

@@ -39,6 +39,17 @@ type CommandStat struct {
 	Failures int // прогонов с ненулевым кодом возврата
 	LastRun  time.Time
 	LastCode int
+	// LastFailure — класс ПОСЛЕДНЕГО отказа этой команды, пустой у команды
+	// без отказов. Счёт «отказов N» без класса нечитаем: замер 29.08.2026 по
+	// живому журналу дал 287 отказов из 1917, и среди них `runs --check`
+	// возвращает 1 ровно потому, что нашёл расхождение, — то есть защита
+	// сработала, а не команда сломалась.
+	//
+	// ⚠️ Наружу идёт КЛАСС, а не текст причины: текст приходит из stderr и
+	// может назвать счёт владельца (`fin balance` на незнакомом счёте
+	// перечисляет весь лист «Счета»). Правило пакета не меняется — имена
+	// команд и числа, значения аргументов нет. Текст лежит в журнале.
+	LastFailure domain.RunFailure
 	// Медианы длительности в двух окнах — раннем и позднем, по WindowSize
 	// прогонов в каждом. Медиана, а не среднее: один прогон на холодном кэше
 	// сдвигает среднее и рисует замедление, которого нет.
@@ -50,6 +61,9 @@ type CommandStat struct {
 	EarlyMedian time.Duration
 	LateMedian  time.Duration
 	WindowSize  int
+	// lastFailAt — момент последнего отказа, нужен только чтобы выбрать
+	// LastFailure. Наружу не выходит: поле служебное.
+	lastFailAt time.Time
 	// MixedShape — в окнах разный состав подкоманд, и медианы сравнивать
 	// нельзя. У зонтичных команд (`fin` объединяет spelling и sync, отличаясь
 	// впятеро по стоимости) медиана меряет состав, а не скорость: на живом
@@ -176,6 +190,12 @@ func aggregate(recs []domain.RunRecord) (map[string]CommandStat, time.Time) {
 		s.Runs++
 		if rec.ExitCode() != 0 {
 			s.Failures++
+			// Последний по времени, а не последний в файле: журнал дозаписывают
+			// параллельные процессы, и порядок строк не равен порядку прогонов.
+			if s.lastFailAt.IsZero() || rec.StartedAt().After(s.lastFailAt) {
+				s.lastFailAt = rec.StartedAt()
+				s.LastFailure = rec.Failure()
+			}
 		}
 		if s.LastRun.IsZero() || rec.StartedAt().After(s.LastRun) {
 			s.LastRun = rec.StartedAt()
