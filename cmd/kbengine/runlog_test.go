@@ -101,3 +101,64 @@ func TestRunLogged_journalFailureDoesNotChangeExitCodeButIsSaidAloud(t *testing.
 		t.Errorf("о поломке журнала не сказано вслух: stderr = %q", errb.String())
 	}
 }
+
+// --- #328: причина отказа попадает в журнал ---------------------------------
+
+// Причина берётся из ПЕРВОЙ строки stderr, а не из последней: движок называет
+// причину сразу, а хвост занимают подсказки и перечисления. Тот же урок, что
+// «причина отказа стоит в начале, не в хвосте».
+func TestRunLogged_recordsWhyItFailed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	t.Setenv("KBENGINE_RUNLOG", path)
+
+	var out, errb bytes.Buffer
+	code := runLogged([]string{"такой-нет"}, strings.NewReader(""), &out, &errb)
+	if code == 0 {
+		t.Fatalf("неизвестная команда вернула 0 — проверять нечего")
+	}
+
+	recs, _, err := runlogjsonl.Load(path, time.Now)
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("Load: %v, записей %d", err, len(recs))
+	}
+	if recs[0].Reason() == "" {
+		t.Fatal("причина не записана — отчёт снова не отличит поломку от защиты")
+	}
+	if !strings.Contains(errb.String(), recs[0].Reason()) {
+		t.Errorf("причина %q не встречается в stderr — записано не то, что видел человек", recs[0].Reason())
+	}
+}
+
+// Успешный прогон причины не заводит: у успеха её нет по конструкции, и
+// пустая строка в журнале означала бы «причина была, но её потеряли».
+func TestRunLogged_successCarriesNoReason(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	t.Setenv("KBENGINE_RUNLOG", path)
+
+	var out, errb bytes.Buffer
+	if code := runLogged([]string{"version"}, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("version вернул %d", code)
+	}
+	recs, _, err := runlogjsonl.Load(path, time.Now)
+	if err != nil || len(recs) != 1 {
+		t.Fatalf("Load: %v, записей %d", err, len(recs))
+	}
+	if recs[0].Reason() != "" {
+		t.Errorf("у успешного прогона причина %q", recs[0].Reason())
+	}
+}
+
+// Вывод команды не должен пострадать от того, что его подслушивают: обёртка
+// над stderr обязана пропускать всё дальше байт в байт.
+func TestRunLogged_stderrPassesThroughUnchanged(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runs.jsonl")
+	t.Setenv("KBENGINE_RUNLOG", path)
+
+	var withTee, plain bytes.Buffer
+	runLogged([]string{"такой-нет"}, strings.NewReader(""), &bytes.Buffer{}, &withTee)
+	runWithStdin([]string{"такой-нет"}, strings.NewReader(""), &bytes.Buffer{}, &plain)
+	if withTee.String() != plain.String() {
+		t.Errorf("stderr изменился при записи причины:\n с журналом: %q\n без него:   %q",
+			withTee.String(), plain.String())
+	}
+}

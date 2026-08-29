@@ -2,8 +2,10 @@ package domain_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -165,5 +167,84 @@ func TestRunRecord_succeeded(t *testing.T) {
 	}
 	if bad.Succeeded() {
 		t.Error("Succeeded() = true при коде 2")
+	}
+}
+
+// --- #328: причина отказа ---------------------------------------------------
+
+// Причина живёт только у отказа. Пустая строка у успешного прогона и
+// «причины не записали» здесь один и тот же ответ намеренно: у успеха
+// причины НЕТ по конструкции, и различать нечего.
+func TestNewRunRecord_reasonOnlyOnFailure(t *testing.T) {
+	now := time.Now()
+	started := now.Add(-time.Second)
+
+	if _, err := domain.NewRunRecordWithReason("audit", nil, started, time.Second, 0, "что-то пошло не так", now); !errors.Is(err, domain.ErrInvalidRunRecord) {
+		t.Errorf("причина при нулевом коде: err = %v, ждали ErrInvalidRunRecord", err)
+	}
+
+	rec, err := domain.NewRunRecordWithReason("fin", nil, started, time.Second, 1, "fin balance: the workbook does not know this account", now)
+	if err != nil {
+		t.Fatalf("причина при ненулевом коде: %v", err)
+	}
+	if rec.Reason() != "fin balance: the workbook does not know this account" {
+		t.Errorf("Reason() = %q", rec.Reason())
+	}
+}
+
+// Причина обрезается по РУНАМ, а не по байтам: сообщения движка кириллические,
+// и разрез по байтам оставил бы половину символа — строка перестала бы быть
+// валидным UTF-8 ровно в журнале, который читают инвариантами.
+func TestNewRunRecord_reasonTrimmedByRunes(t *testing.T) {
+	now := time.Now()
+	long := strings.Repeat("я", domain.MaxRunReasonRunes+50)
+	rec, err := domain.NewRunRecordWithReason("fin", nil, now.Add(-time.Second), time.Second, 1, long, now)
+	if err != nil {
+		t.Fatalf("NewRunRecordWithReason: %v", err)
+	}
+	got := rec.Reason()
+	if n := utf8.RuneCountInString(got); n != domain.MaxRunReasonRunes {
+		t.Errorf("рун в причине = %d, ждали %d", n, domain.MaxRunReasonRunes)
+	}
+	if !utf8.ValidString(got) {
+		t.Error("причина перестала быть валидным UTF-8 — разрез прошёл по байтам")
+	}
+}
+
+// Старый конструктор остаётся и означает «причину не записывали»: журнал
+// содержит записи, сделанные до появления поля, и притворяться, что у них
+// причина пустая по смыслу, значило бы соврать в другую сторону.
+func TestNewRunRecord_keepsWorkingWithoutReason(t *testing.T) {
+	now := time.Now()
+	rec, err := domain.NewRunRecord("audit", nil, now.Add(-time.Second), time.Second, 2, now)
+	if err != nil {
+		t.Fatalf("NewRunRecord: %v", err)
+	}
+	if rec.Reason() != "" {
+		t.Errorf("Reason() = %q, ждали пустую", rec.Reason())
+	}
+}
+
+// Класс отказа выводится ИЗ КОДА ВОЗВРАТА, и это единственное, что можно
+// сказать об отказе, не читая текст. Текст несёт имена счетов владельца и
+// наружу не идёт — см. правило пакета runs.
+func TestRunRecord_failureKind(t *testing.T) {
+	now := time.Now()
+	for _, tt := range []struct {
+		code int
+		want domain.RunFailure
+	}{
+		{0, domain.RunFailureNone},
+		{1, domain.RunFailureRefused},
+		{2, domain.RunFailureUsage},
+		{7, domain.RunFailureOther},
+	} {
+		rec, err := domain.NewRunRecord("fin", nil, now.Add(-time.Second), time.Second, tt.code, now)
+		if err != nil {
+			t.Fatalf("код %d: %v", tt.code, err)
+		}
+		if got := rec.Failure(); got != tt.want {
+			t.Errorf("код %d: Failure() = %q, ждали %q", tt.code, got, tt.want)
+		}
 	}
 }
