@@ -98,7 +98,7 @@ func TestLoad_sidebarBlocks(t *testing.T) {
 	  "pull_quote": "тезис",
 	  "pull_quote_supports": [
 	    {"cluster": "vibe-coding", "claim": "вкус решает"},
-	    "«Агент — это новый посредник.» — Kikodoc (catalog#1011)"
+	    "«Пример строковой опоры без кластера.» — Автор статьи"
 	  ],
 	  "contradiction_resolution": "усиливает 16 против заменяет 2",
 	  "amplify_clusters": ["claude-ecosystem", "devops"],
@@ -123,7 +123,7 @@ func TestLoad_sidebarBlocks(t *testing.T) {
 	if cfg.PullQuoteSupports[0].Cluster != "vibe-coding" || cfg.PullQuoteSupports[0].Claim != "вкус решает" {
 		t.Errorf("объектная опора = %+v", cfg.PullQuoteSupports[0])
 	}
-	if cfg.PullQuoteSupports[1].Cluster != "" || !strings.Contains(cfg.PullQuoteSupports[1].Claim, "посредник") {
+	if cfg.PullQuoteSupports[1].Cluster != "" || !strings.Contains(cfg.PullQuoteSupports[1].Claim, "строковой опоры") {
 		t.Errorf("строковая опора = %+v", cfg.PullQuoteSupports[1])
 	}
 	if cfg.ContradictionResolution != "усиливает 16 против заменяет 2" {
