@@ -16,9 +16,11 @@ var ErrInvalidAccount = errors.New("invalid account")
 // A balance may legitimately be negative (an overdraft or a credit card), so
 // unlike a transaction amount its sign is not constrained.
 type Account struct {
-	bank    string
-	balance Money
-	updated time.Time
+	bank     string
+	balance  Money
+	updated  time.Time
+	currency Currency
+	rate     Rate
 }
 
 // NewAccount validates and returns an account snapshot. The clock is a
@@ -40,6 +42,72 @@ func NewAccount(bank string, balance Money, updated time.Time, now func() time.T
 		return Account{}, fmt.Errorf("%w: updated %s is in the future", ErrInvalidAccount, updated.Format(time.DateOnly))
 	}
 	return Account{bank: name, balance: balance, updated: updated}, nil
+}
+
+// NewForeignAccount validates and returns an account held in another currency.
+//
+// Отдельный конструктор, а не два новых аргумента у NewAccount, — решение по
+// #332. Лист «Счета» существует в единственном экземпляре и колонок валюты не
+// имеет; расширив прежнюю сигнатуру, мы бы заставили каждое существующее место
+// сказать «рубль», и обратная совместимость держалась бы на том, что никто из
+// них не забыл это сделать.
+//
+// Баланс здесь — сумма В СВОЕЙ валюте, а не пересчёт: сохранив только рублёвую
+// оценку, мы потеряли бы ровно то, ради чего валюта заводится. Курс хранится
+// рядом и может быть неизвестен.
+func NewForeignAccount(bank string, balance Money, currency Currency, rate Rate, updated time.Time, now func() time.Time) (Account, error) {
+	acc, err := NewAccount(bank, balance, updated, now)
+	if err != nil {
+		return Account{}, err
+	}
+	// Курс у базовой валюты — противоречие, а не безобидная избыточность: он
+	// означал бы, что рубль оценивают в рублях по какому-то отличному от
+	// единицы числу, и итог по счетам стал бы зависеть от того, кто его вписал.
+	if currency.IsBase() && rate.Known() {
+		return Account{}, fmt.Errorf("%w: %s is the base currency and cannot carry a rate", ErrInvalidAccount, currency)
+	}
+	acc.currency = currency
+	acc.rate = rate
+	return acc, nil
+}
+
+// Currency returns the unit the balance is held in; the zero value is the base
+// currency, so an account read from a book without the column stays as it was.
+func (a Account) Currency() Currency { return a.currency }
+
+// Rate returns the rate the balance was valued at, which may be unknown.
+func (a Account) Rate() Rate { return a.rate }
+
+// BaseValue returns the balance in the currency the book is kept in, and
+// whether it is known at all.
+//
+// Второе значение — не вежливость, а весь смысл: у наличной валюты курса может
+// не быть вовсе, и витрина обязана сказать «оценка неизвестна», а не показать
+// ноль. Ноль здесь читался бы как «денег нет».
+func (a Account) BaseValue() (Money, bool) {
+	if a.currency.IsBase() {
+		return a.balance, true
+	}
+	per, ok := a.rate.PerUnit()
+	if !ok {
+		return Money{}, false
+	}
+	// И баланс, и курс лежат в сотых долях, поэтому произведение выходит в
+	// десятитысячных и делится на сто. Переполнение проверяется, а не
+	// предполагается: молча завернувшееся int64 дало бы отрицательный остаток
+	// на счёте, который просто велик.
+	units, perUnit := a.balance.Kopecks(), per.Kopecks()
+	product := units * perUnit
+	if units != 0 && product/units != perUnit {
+		return Money{}, false
+	}
+	// Округление половин от нуля — как в MoneyFromFloat, чтобы одна и та же
+	// сумма не зависела от того, каким путём она пришла.
+	half := int64(50)
+	if product < 0 {
+		half = -50
+	}
+	return NewMoney((product + half) / 100), true
 }
 
 // Bank returns the account name.
