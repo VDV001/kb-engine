@@ -204,7 +204,11 @@ func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, err
 		if err != nil {
 			return nil, fmt.Errorf("%s row %d: updated: %w", sheetAccounts, rowNum, err)
 		}
-		acc, err := domain.NewAccount(bank, balance, updated, now)
+		// Колонки валюты и курса появились позже книги и остаются
+		// необязательными: у владельца их нет вовсе, и старая книга обязана
+		// читаться как прежде (#332). Пустые ячейки дают рублёвый счёт без
+		// курса — то самое поведение, что было до появления колонок.
+		acc, err := readAccountCurrency(bank, balance, updated, cell(row, 3), cell(row, 4), now)
 		if err != nil {
 			return nil, fmt.Errorf("%s row %d: %w", sheetAccounts, rowNum, err)
 		}
@@ -254,4 +258,41 @@ func parseDate(raw string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("unrecognized date %q", raw)
+}
+
+// readAccountCurrency builds an account from the optional currency and rate
+// cells beside its balance.
+//
+// Негодное значение здесь ОТКАЗЫВАЕТ, а не считается рублём. Молчаливое «не
+// разобрал — значит рубль» показало бы валютный счёт рублёвым, то есть ровно
+// тот дефект, ради которого #332 и заведена: имя говорит одно, число другое.
+func readAccountCurrency(bank string, balance domain.Money, updated time.Time, rawCurrency, rawRate string, now func() time.Time) (domain.Account, error) {
+	rawCurrency = strings.TrimSpace(rawCurrency)
+	rawRate = strings.TrimSpace(rawRate)
+
+	if rawCurrency == "" {
+		// Курс без валюты — противоречие: рубль оценивают в рублях только по
+		// единице. Почти всегда это съехавшая колонка, и промолчать здесь
+		// значит принять чужое число за курс.
+		if rawRate != "" {
+			return domain.Account{}, fmt.Errorf("rate %q without a currency", rawRate)
+		}
+		return domain.NewAccount(bank, balance, updated, now)
+	}
+
+	currency, err := domain.NewCurrency(rawCurrency)
+	if err != nil {
+		return domain.Account{}, fmt.Errorf("currency: %w", err)
+	}
+	rate := domain.UnknownRate()
+	if rawRate != "" {
+		perUnit, err := parseAmount(rawRate)
+		if err != nil {
+			return domain.Account{}, fmt.Errorf("rate: %w", err)
+		}
+		if rate, err = domain.NewRate(perUnit); err != nil {
+			return domain.Account{}, fmt.Errorf("rate: %w", err)
+		}
+	}
+	return domain.NewForeignAccount(bank, balance, currency, rate, updated, now)
 }
