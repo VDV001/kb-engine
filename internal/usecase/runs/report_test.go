@@ -305,3 +305,62 @@ func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
 		t.Fatalf("форма одна и та же (add --place), различаются только ЗНАЧЕНИЯ — замедление считать можно")
 	}
 }
+
+// --- #328: класс последнего отказа -----------------------------------------
+
+// Счётчик «отказов N» нечитаем, пока не сказано, ЧЕГО эти отказы. Замер
+// 29.08.2026 по живому журналу: 287 отказов из 1917, и среди них `runs --check`
+// возвращает 1 ровно потому, что нашёл расхождение, — то есть защита сработала.
+// Класс выводится из кода возврата и НЕ показывает текста: текст несёт имена
+// счетов владельца, а правило пакета — имена команд и числа.
+func TestBuild_lastFailureKind(t *testing.T) {
+	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
+	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }
+
+	rep, err := runs.Build(journalStub{exists: true, recs: []domain.RunRecord{
+		at(t, "fin", day(3), 2, "balance"), // ошибка вызова
+		at(t, "fin", day(1), 1, "add"),     // защита сработала — она последняя
+		at(t, "audit", day(2), 0),
+	}}, known, now)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	byName := map[string]runs.CommandStat{}
+	for _, c := range rep.Commands {
+		byName[c.Name] = c
+	}
+	if got := byName["fin"].LastFailure; got != domain.RunFailureRefused {
+		t.Errorf("fin: LastFailure = %q, ждали «команда отказала» — последний отказ с кодом 1", got)
+	}
+	if got := byName["audit"].LastFailure; got != domain.RunFailureNone {
+		t.Errorf("audit: LastFailure = %q, у команды без отказов класса быть не должно", got)
+	}
+}
+
+// Два отказа РАЗНЫХ классов не сливаются: если бы отчёт хранил только счёт,
+// «отказов 2» у команды с ошибкой вызова и сработавшей защитой выглядело бы
+// одинаково с двумя поломками подряд.
+func TestBuild_lastFailureKindDistinguishesClasses(t *testing.T) {
+	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
+	day := func(d int) time.Time { return now.AddDate(0, 0, -d) }
+
+	usage, err := runs.Build(journalStub{exists: true, recs: []domain.RunRecord{
+		at(t, "fin", day(1), 2, "spelling"),
+	}}, known, now)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	refused, err := runs.Build(journalStub{exists: true, recs: []domain.RunRecord{
+		at(t, "fin", day(1), 1, "spelling"),
+	}}, known, now)
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	a, b := usage.Commands[0].LastFailure, refused.Commands[0].LastFailure
+	if a == b {
+		t.Errorf("класс не различает коды 2 и 1: оба дали %q", a)
+	}
+	if a != domain.RunFailureUsage || b != domain.RunFailureRefused {
+		t.Errorf("классы = %q и %q", a, b)
+	}
+}

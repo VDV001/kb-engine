@@ -8,7 +8,8 @@
 // --catalog» — то есть главный инвариант перестал бы что-либо доказывать.
 //
 // ⚠️ В строках лежат аргументы команд, а в них — настоящие суммы и места
-// владельца (`fin add --amount ... --place ...`). Решение владельца от
+// владельца (`fin add --amount ... --place ...`), и с #328 туда же попадает
+// причина отказа — она приходит из stderr и тоже может назвать счёт. Решение владельца от
 // 19.08.2026: хранить целиком, потому что файл лежит вне любого репозитория и
 // движком никуда не отправляется. Отсюда правило для всего, что читает журнал:
 // НАРУЖУ (в issue, на страницу, в отчёт) значения аргументов не показывать —
@@ -46,6 +47,16 @@ type line struct {
 	StartedAt string   `json:"started_at"`
 	TookMS    int64    `json:"took_ms"`
 	ExitCode  int      `json:"exit_code"`
+	// Reason — первая строка того, что команда сказала при отказе. Поле
+	// `omitempty`: у успеха причины нет по конструкции, и пустая строка в
+	// файле означала бы, что её потеряли.
+	//
+	// ⚠️ Причина попадает под то же правило, что и Args: она приходит из
+	// stderr и может нести имена счетов владельца (`fin balance` на
+	// незнакомом счёте перечисляет весь лист «Счета»). Хранить целиком —
+	// файл лежит вне репозиториев; НАРУЖУ показывать класс отказа, а не
+	// текст.
+	Reason string `json:"reason,omitempty"`
 }
 
 // DefaultPath decides where the journal lives, asking the environment through
@@ -159,8 +170,8 @@ func decode(raw []byte, now time.Time) (domain.RunRecord, error) {
 	if err != nil {
 		return domain.RunRecord{}, err
 	}
-	return domain.NewRunRecord(l.Command, l.Args, startedAt,
-		time.Duration(l.TookMS)*time.Millisecond, l.ExitCode, now)
+	return domain.NewRunRecordWithReason(l.Command, l.Args, startedAt,
+		time.Duration(l.TookMS)*time.Millisecond, l.ExitCode, l.Reason, now)
 }
 
 func encodeLine(r domain.RunRecord) line {
@@ -170,5 +181,6 @@ func encodeLine(r domain.RunRecord) line {
 		StartedAt: r.StartedAt().Format(time.RFC3339Nano),
 		TookMS:    r.Took().Milliseconds(),
 		ExitCode:  r.ExitCode(),
+		Reason:    r.Reason(),
 	}
 }

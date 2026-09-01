@@ -183,3 +183,51 @@ func TestLoad_countsUnreadableLinesInsteadOfGivingUp(t *testing.T) {
 		t.Errorf("нечитаемых %d, ждали 2 — обрывок и нарушение инварианта", unreadable)
 	}
 }
+
+// --- #328: причина отказа переживает круг «записали → прочитали» ------------
+
+func TestAppendLoad_carriesFailureReason(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	now := time.Now().UTC().Truncate(time.Millisecond)
+
+	rec, err := domain.NewRunRecordWithReason("fin", []string{"balance"},
+		now.Add(-time.Second), time.Second, 1, "fin balance: --amount is required", now)
+	if err != nil {
+		t.Fatalf("NewRunRecordWithReason: %v", err)
+	}
+	if err := runlogjsonl.Append(path, rec); err != nil {
+		t.Fatalf("Append: %v", err)
+	}
+	got, bad, err := runlogjsonl.Load(path, func() time.Time { return now })
+	if err != nil || bad != 0 || len(got) != 1 {
+		t.Fatalf("Load: %v, нечитаемых %d, записей %d", err, bad, len(got))
+	}
+	if got[0].Reason() != "fin balance: --amount is required" {
+		t.Errorf("Reason() после круга = %q", got[0].Reason())
+	}
+}
+
+// Строка, записанная ДО появления поля, читается и даёт пустую причину.
+// ⚠️ Это «причину не записывали», а не «причины не было» — различить их по
+// такой строке нечем, и проверка существует, чтобы это было сказано вслух.
+func TestLoad_oldLineWithoutReason(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "runs.jsonl")
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	old := `{"command":"fin","args":["sync"],"started_at":"` +
+		now.Add(-time.Second).Format(time.RFC3339Nano) + `","took_ms":12,"exit_code":1}`
+	if err := os.WriteFile(path, []byte(old+"\n"), 0o600); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	got, bad, err := runlogjsonl.Load(path, func() time.Time { return now })
+	if err != nil || bad != 0 || len(got) != 1 {
+		t.Fatalf("Load: %v, нечитаемых %d, записей %d", err, bad, len(got))
+	}
+	if got[0].Reason() != "" {
+		t.Errorf("старая строка дала причину %q, ждали пустую", got[0].Reason())
+	}
+	if got[0].Failure() != domain.RunFailureRefused {
+		t.Errorf("класс у старой строки = %q, ждали вывод из кода возврата", got[0].Failure())
+	}
+}
