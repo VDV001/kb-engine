@@ -58,7 +58,7 @@ func TestForeignAccountKeepsOwnAmountAndRate(t *testing.T) {
 	usd := mustCurrency(t, "USD")
 	rate := mustRate(t, 8428) // 84,28 ₽ за доллар
 
-	acc, err := domain.NewForeignAccount("Наличные → Доллары", domain.NewMoney(50000), usd, rate, now(), now)
+	acc, err := domain.NewForeignAccount("Тумбочка → Доллары", domain.NewMoney(50000), usd, rate, now(), now)
 	if err != nil {
 		t.Fatalf("NewForeignAccount: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestForeignAccountWithoutRateRefusesToValue(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC) }
 	try := mustCurrency(t, "TRY")
 
-	acc, err := domain.NewForeignAccount("Наличные → Лиры", domain.NewMoney(300000), try, domain.UnknownRate(), now(), now)
+	acc, err := domain.NewForeignAccount("Тумбочка → Лиры", domain.NewMoney(300000), try, domain.UnknownRate(), now(), now)
 	if err != nil {
 		t.Fatalf("NewForeignAccount: %v", err)
 	}
