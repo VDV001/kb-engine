@@ -124,7 +124,7 @@ func TestTotalsByGroup_namesRatesUsed(t *testing.T) {
 func TestTotalsByGroup_rubleTotalsStayQuiet(t *testing.T) {
 	accounts := []domain.Account{
 		rubAccount(t, "Сбербанк", 100000, "2026-09-01"),
-		rubAccount(t, "Заморозка → Вклад", 200000, "2026-09-01"),
+		rubAccount(t, "Копилка → Вклад", 200000, "2026-09-01"),
 	}
 	for _, g := range finance.TotalsByGroup(finance.CurrentBalances(accounts, nil, nil)) {
 		if len(g.Rates) != 0 {
