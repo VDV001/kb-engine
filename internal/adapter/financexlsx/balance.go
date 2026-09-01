@@ -15,9 +15,11 @@ import (
 // sheet: Банк | Баланс | Обновлено. The reader takes them in the same order,
 // and the two would have to agree even if they were written apart.
 const (
-	bankColumn    = 1
-	balanceColumn = 2
-	updatedColumn = 3
+	bankColumn     = 1
+	balanceColumn  = 2
+	updatedColumn  = 3
+	currencyColumn = 4
+	rateColumn     = 5
 )
 
 // SetBalance records a new balance for one account on the Счета sheet.
@@ -79,7 +81,7 @@ var ErrAccountExists = errors.New("the workbook already knows this account")
 // balance is confirmed by SetBalance like any other account's — a debt that
 // needed its own command to be updated would be a second way to write money
 // into the book, and the book has one writer.
-func AddAccount(path, bank string, balance domain.Money, now func() time.Time) error {
+func AddAccount(path, bank string, balance domain.Money, currency domain.Currency, rate domain.Rate, now func() time.Time) error {
 	if err := CheckLock(path); err != nil {
 		return err
 	}
@@ -88,7 +90,7 @@ func AddAccount(path, bank string, balance domain.Money, now func() time.Time) e
 	// the clock. Checked before the file is touched: a refusal has to leave the
 	// book exactly as it was, and half-done work is worse than none because
 	// nobody goes looking for it.
-	if _, err := domain.NewAccount(bank, balance, now(), now); err != nil {
+	if _, err := domain.NewForeignAccount(bank, balance, currency, rate, now(), now); err != nil {
 		return err
 	}
 
@@ -125,6 +127,9 @@ func AddAccount(path, bank string, balance domain.Money, now func() time.Time) e
 		return err
 	}
 	if err := writeBalance(f, row, balance, now()); err != nil {
+		return err
+	}
+	if err := writeCurrency(f, row, currency, rate); err != nil {
 		return err
 	}
 	return saveAndRemember(f, path, bank, now)
@@ -258,4 +263,58 @@ func saveAndRemember(f *excelize.File, path, bank string, now func() time.Time) 
 		return fmt.Errorf("balance written, confirmation moment not: %w", err)
 	}
 	return nil
+}
+
+// writeCurrency записывает валюту и курс счёта в свои колонки.
+//
+// Рублёвый счёт колонок не получает вовсе: пустая ячейка и есть «валюта книги»
+// по конструкции чтения, а «RUB» с курсом «1» были бы двумя лишними значениями,
+// которые однажды разойдутся с этим правилом.
+func writeCurrency(f *excelize.File, row int, currency domain.Currency, rate domain.Rate) error {
+	if currency.IsBase() {
+		return nil
+	}
+	name, err := excelize.CoordinatesToCellName(currencyColumn, row)
+	if err != nil {
+		return fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
+	}
+	if err := f.SetCellValue(sheetAccounts, name, currency.Code()); err != nil {
+		return fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
+	}
+	per, ok := rate.PerUnit()
+	if !ok {
+		return nil // курс неизвестен — ячейка остаётся пустой, а не нулём
+	}
+	cell, err := excelize.CoordinatesToCellName(rateColumn, row)
+	if err != nil {
+		return fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
+	}
+	if err := f.SetCellValue(sheetAccounts, cell, float64(per.Kopecks())/100); err != nil {
+		return fmt.Errorf("%s!%s: %w", sheetAccounts, cell, err)
+	}
+	return nil
+}
+
+// SetCurrency меняет валюту и курс у счёта, который на листе уже есть.
+func SetCurrency(path, bank string, currency domain.Currency, rate domain.Rate, now func() time.Time) error {
+	if err := CheckLock(path); err != nil {
+		return err
+	}
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return fmt.Errorf("open workbook: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	row, err := accountRow(f, bank)
+	if err != nil {
+		return err
+	}
+	if err := backup(path, now); err != nil {
+		return err
+	}
+	if err := writeCurrency(f, row, currency, rate); err != nil {
+		return err
+	}
+	return saveAndRemember(f, path, bank, now)
 }

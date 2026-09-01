@@ -541,7 +541,11 @@ func (f ledgerFinances) SetBalance(bank string, amount domain.Money) error {
 // команда пополняют словарь книги одной функцией, иначе одна из них однажды
 // научилась бы заводить то, что вторая отвергает.
 func (f ledgerFinances) AddAccount(bank string, amount domain.Money) error {
-	return financexlsx.AddAccount(f.workbookPath, bank, amount, time.Now)
+	// Валюта здесь не передаётся намеренно: TUI её не спрашивает, а счёт в
+	// валюте книги — умолчание по конструкции. Заводить валютный счёт можно
+	// командой `fin balance --currency`; когда экран научится спрашивать, сюда
+	// приедут те же два значения.
+	return financexlsx.AddAccount(f.workbookPath, bank, amount, domain.Currency{}, domain.UnknownRate(), time.Now)
 }
 
 // Sync runs the very sync the fin sync command runs — the same function, handed
