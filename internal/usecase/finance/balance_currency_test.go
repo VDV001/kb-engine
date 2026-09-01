@@ -135,3 +135,39 @@ func TestTotalsByGroup_rubleTotalsStayQuiet(t *testing.T) {
 		}
 	}
 }
+
+// «Свободно» — то же место, что итог по родам, и та же ошибка: сложив валютный
+// остаток как рубли, оно отвечает не на тот вопрос. Проверяется отдельно,
+// потому что считает его другая функция, и зелёный TotalsByGroup о ней ничего
+// не говорит.
+func TestFreeMoney_valuesForeignAccounts(t *testing.T) {
+	accounts := []domain.Account{
+		rubAccount(t, "Сбербанк", 100000, "2026-09-01"),
+		foreignAccount(t, "Тумбочка → Доллары", 50000, "USD", 8428, "2026-09-01"),
+	}
+	// Валютный счёт лежит в роде «Тумбочка», то есть в свободные деньги не
+	// входит по прежнему правилу. Свободен только рублёвый.
+	if got := finance.FreeMoney(finance.CurrentBalances(accounts, nil, nil)); got.Kopecks() != 100000 {
+		t.Errorf("FreeMoney = %d, ожидалось 100000", got.Kopecks())
+	}
+
+	// А вот валютный счёт БЕЗ рода свободен, и войти он обязан оценкой.
+	plain := []domain.Account{
+		foreignAccount(t, "Кошелёк долларовый", 50000, "USD", 8428, "2026-09-01"),
+	}
+	if got := finance.FreeMoney(finance.CurrentBalances(plain, nil, nil)); got.Kopecks() != 4214000 {
+		t.Errorf("FreeMoney = %d, ожидалось 4214000 (оценка, а не сырое число)", got.Kopecks())
+	}
+}
+
+// Счёт, который нечем оценить, в «свободно» не попадает: показать его сырое
+// число значило бы выдать лиры за рубли, а показать ноль — сказать, что денег
+// нет. Не входит вовсе, а сколько таких счетов, говорит итог по родам.
+func TestFreeMoney_skipsUnvaluedAccounts(t *testing.T) {
+	accounts := []domain.Account{
+		foreignAccount(t, "Кошелёк лировый", 300000, "TRY", 0, "2026-09-01"),
+	}
+	if got := finance.FreeMoney(finance.CurrentBalances(accounts, nil, nil)); got.Kopecks() != 0 {
+		t.Errorf("FreeMoney = %d, ожидался 0 — неоценённый счёт не входит", got.Kopecks())
+	}
+}
