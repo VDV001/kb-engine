@@ -111,3 +111,33 @@ func (r Rate) PerUnit() (Money, bool) {
 	}
 	return r.perUnit, true
 }
+
+// Apply values an amount in this currency against the base currency.
+//
+// Второе значение говорит, известен ли курс вообще: у наличной валюты его
+// может не быть, и ноль здесь читался бы как «денег нет».
+//
+// Живёт в домене, а не у вызывающего: умножение с проверкой переполнения — то
+// самое место, которое каждая витрина, посчитав сама, однажды посчитает иначе.
+func (r Rate) Apply(amount Money) (Money, bool) {
+	per, ok := r.PerUnit()
+	if !ok {
+		return Money{}, false
+	}
+	// И сумма, и курс лежат в сотых долях, поэтому произведение выходит в
+	// десятитысячных и делится на сто. Переполнение проверяется, а не
+	// предполагается: молча завернувшееся int64 дало бы отрицательный остаток
+	// на счёте, который просто велик.
+	units, perUnit := amount.Kopecks(), per.Kopecks()
+	product := units * perUnit
+	if units != 0 && product/units != perUnit {
+		return Money{}, false
+	}
+	// Округление половин от нуля — как в MoneyFromFloat, чтобы одна и та же
+	// сумма не зависела от того, каким путём она пришла.
+	half := int64(50)
+	if product < 0 {
+		half = -50
+	}
+	return NewMoney((product + half) / 100), true
+}

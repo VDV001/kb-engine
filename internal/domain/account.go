@@ -88,26 +88,7 @@ func (a Account) BaseValue() (Money, bool) {
 	if a.currency.IsBase() {
 		return a.balance, true
 	}
-	per, ok := a.rate.PerUnit()
-	if !ok {
-		return Money{}, false
-	}
-	// И баланс, и курс лежат в сотых долях, поэтому произведение выходит в
-	// десятитысячных и делится на сто. Переполнение проверяется, а не
-	// предполагается: молча завернувшееся int64 дало бы отрицательный остаток
-	// на счёте, который просто велик.
-	units, perUnit := a.balance.Kopecks(), per.Kopecks()
-	product := units * perUnit
-	if units != 0 && product/units != perUnit {
-		return Money{}, false
-	}
-	// Округление половин от нуля — как в MoneyFromFloat, чтобы одна и та же
-	// сумма не зависела от того, каким путём она пришла.
-	half := int64(50)
-	if product < 0 {
-		half = -50
-	}
-	return NewMoney((product + half) / 100), true
+	return a.rate.Apply(a.balance)
 }
 
 // Bank returns the account name.
