@@ -30,6 +30,21 @@ type AccountBalance struct {
 	// витрина: разбирая его сама, каждая витрина однажды разберёт иначе.
 	Group           string
 	NameWithinGroup string
+	// Currency — код валюты счёта; у рублёвого счёта «RUB».
+	Currency string
+	// BaseValue — остаток, приведённый к валюте книги.
+	//
+	// Unvalued означает, что привести не удалось: курса нет. Поле названо
+	// ОТРИЦАНИЕМ намеренно — нулевое значение обязано означать «обычный
+	// рублёвый счёт, оценивать нечего». Первая редакция звала его Valued, и
+	// вызывающий, собравший AccountBalance сам, получал ноль: итог по всем
+	// родам обнулился при зелёном компиляторе. Тот же довод, что у поля Group
+	// строкой ниже.
+	BaseValue domain.Money
+	Unvalued  bool
+	// Rate — курс, по которому оценивали, в копейках базовой валюты за единицу;
+	// ноль у рублёвого счёта и у счёта без курса.
+	Rate domain.Money
 }
 
 // GroupTotal — сколько денег в одном роде счетов.
@@ -39,6 +54,24 @@ type AccountBalance struct {
 type GroupTotal struct {
 	Group string
 	Total domain.Money
+	// Unvalued — имена счетов рода, которые в Total НЕ вошли, потому что их
+	// нечем оценить. Итог, умолчавший о них, утверждает больше, чем знает:
+	// сумма выглядит полной, будучи частичной.
+	Unvalued []string
+	// Rates — по какому курсу и на какой момент сложен итог. Без этого он
+	// выглядит текущей оценкой, будучи ценой входа. Рублёвые рода курсов не
+	// называют вовсе: строка «RUB по курсу 1» — шум, который приучает
+	// пролистывать раздел вместе с настоящими курсами.
+	Rates []RateUsed
+}
+
+// RateUsed — один курс, участвовавший в итоге, и момент, на который он верен.
+type RateUsed struct {
+	Currency string
+	PerUnit  domain.Money
+	// On — день подтверждения счёта: курс верен на него, а не на сейчас.
+	// Движок за курсом никуда не ходит и переоценкой не занимается.
+	On string
 }
 
 // TotalsByGroup складывает остатки по родам счетов.
@@ -65,9 +98,39 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 			i = len(out) - 1
 			at[group] = i
 		}
-		out[i].Total = out[i].Total.Add(b.Current)
+		// Складываются ОЦЕНКИ, а не сырые числа из ячеек: до #332 итог
+		// суммировал разные единицы и называл результат рублями.
+		if b.Unvalued {
+			out[i].Unvalued = append(out[i].Unvalued, b.Bank)
+			continue
+		}
+		// Ручной сборщик AccountBalance про валюту не знает и BaseValue не
+		// заполняет; CurrentBalances заполняет Currency всегда, хотя бы «RUB».
+		// Пустая строка здесь и означает «собрано руками», а не «валюты нет».
+		value := b.BaseValue
+		if b.Currency == "" {
+			value = b.Current
+		}
+		out[i].Total = out[i].Total.Add(value)
+		if b.Rate.Kopecks() > 0 {
+			out[i].Rates = appendRate(out[i].Rates, RateUsed{Currency: b.Currency, PerUnit: b.Rate, On: b.ConfirmedOn})
+		}
 	}
 	return out
+}
+
+// appendRate добавляет курс, если такой пары «валюта + момент» ещё нет.
+//
+// Два счёта в одной валюте, подтверждённые в один день, — это один курс,
+// названный дважды. Повтор здесь не безобиден: он выглядит как два разных
+// замера.
+func appendRate(rates []RateUsed, r RateUsed) []RateUsed {
+	for _, have := range rates {
+		if have.Currency == r.Currency && have.On == r.On && have.PerUnit == r.PerUnit {
+			return rates
+		}
+	}
+	return append(rates, r)
 }
 
 // FreeMoney — сколько из итога человек может потратить прямо сейчас.
@@ -85,9 +148,25 @@ func TotalsByGroup(balances []AccountBalance) []GroupTotal {
 func FreeMoney(balances []AccountBalance) domain.Money {
 	var free domain.Money
 	for _, b := range balances {
+		// Счёт, который нечем оценить, не входит вовсе: показать его сырое
+		// число значило бы выдать чужую валюту за рубли. Сколько таких счетов,
+		// говорит итог по родам, который называет их поимённо.
+		//
+		// ⚠️ Сегодня эта строка ничего не меняет: у неоценённого счёта BaseValue
+		// и так ноль, и подсадка её снятия тест НЕ валит — проверено. Оставлена
+		// не «на будущее», а чтобы намерение не держалось на совпадении: без неё
+		// правило «не входит» существует лишь как следствие того, что домен
+		// вернул нулевую сумму, и исчезнет в тот день, когда он вернёт другую.
+		if b.Unvalued {
+			continue
+		}
+		value := b.BaseValue
+		if b.Currency == "" {
+			value = b.Current // собрано руками: валюты не знает, оценка и есть Current
+		}
 		group, _ := domain.SplitAccountName(b.Bank)
-		if group == "" || b.Current.Kopecks() < 0 {
-			free = free.Add(b.Current)
+		if group == "" || value.Kopecks() < 0 {
+			free = free.Add(value)
 		}
 	}
 	return free
@@ -144,6 +223,10 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 			Current:         a.Balance(),
 			Group:           a.Group(),
 			NameWithinGroup: a.NameWithinGroup(),
+			Currency:        a.Currency().Code(),
+		}
+		if per, ok := a.Rate().PerUnit(); ok {
+			b.Rate = per
 		}
 		if !a.Updated().IsZero() {
 			b.ConfirmedOn = a.Updated().Format("2006-01-02")
@@ -159,6 +242,15 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 			// снять, перестаёт читаться, а с ней и настоящие.
 			b.NeedsConfirmation = b.Confirmed.Kopecks() >= 0 && b.Current.Kopecks() < 0
 		}
+		// Оценка считается ПОСЛЕ вычета трат, а не до: иначе валютный счёт
+		// показывал бы остаток на день подтверждения.
+		//
+		// ponytail: траты с валютного счёта вычитаются как есть, то есть в
+		// рублях из валютного остатка. Потолок в том, что таких трат у книги
+		// пока нет вовсе (движок их не ждёт — сказано в #332); путь наверх —
+		// хранить валюту у транзакции и приводить её к валюте счёта здесь же.
+		base, ok := valued(a, b.Current)
+		b.BaseValue, b.Unvalued = base, !ok
 		out = append(out, b)
 	}
 	return out
@@ -237,4 +329,16 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time, conf
 func endOfDay(confirmed time.Time) time.Time {
 	y, m, d := confirmed.Date()
 	return time.Date(y, m, d, 0, 0, 0, 0, time.Local).AddDate(0, 0, 1)
+}
+
+// valued приводит остаток счёта к валюте книги и говорит, удалось ли это.
+//
+// Второе значение — не вежливость: счёт, который нечем оценить, обязан быть
+// отличим от счёта с нулём. Иначе витрина покажет ноль там, где деньги есть, а
+// неизвестен только курс.
+func valued(a domain.Account, current domain.Money) (domain.Money, bool) {
+	if a.Currency().IsBase() {
+		return current, true
+	}
+	return a.Rate().Apply(current)
 }
