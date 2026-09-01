@@ -148,9 +148,25 @@ func appendRate(rates []RateUsed, r RateUsed) []RateUsed {
 func FreeMoney(balances []AccountBalance) domain.Money {
 	var free domain.Money
 	for _, b := range balances {
+		// Счёт, который нечем оценить, не входит вовсе: показать его сырое
+		// число значило бы выдать чужую валюту за рубли. Сколько таких счетов,
+		// говорит итог по родам, который называет их поимённо.
+		//
+		// ⚠️ Сегодня эта строка ничего не меняет: у неоценённого счёта BaseValue
+		// и так ноль, и подсадка её снятия тест НЕ валит — проверено. Оставлена
+		// не «на будущее», а чтобы намерение не держалось на совпадении: без неё
+		// правило «не входит» существует лишь как следствие того, что домен
+		// вернул нулевую сумму, и исчезнет в тот день, когда он вернёт другую.
+		if b.Unvalued {
+			continue
+		}
+		value := b.BaseValue
+		if b.Currency == "" {
+			value = b.Current // собрано руками: валюты не знает, оценка и есть Current
+		}
 		group, _ := domain.SplitAccountName(b.Bank)
-		if group == "" || b.Current.Kopecks() < 0 {
-			free = free.Add(b.Current)
+		if group == "" || value.Kopecks() < 0 {
+			free = free.Add(value)
 		}
 	}
 	return free
