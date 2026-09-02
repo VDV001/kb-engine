@@ -165,8 +165,11 @@ func TestFinances_groupTotalsComeFromUsecase(t *testing.T) {
 	if kubyshka.Total != "42140.00" {
 		t.Errorf("итог рода = %q, ждали 42140.00 (евро не оценены и не входят)", kubyshka.Total)
 	}
-	if len(kubyshka.Unvalued) != 1 || kubyshka.Unvalued[0] != "Евро" {
-		t.Errorf("неоценённые = %v, ждали [Евро]", kubyshka.Unvalued)
+	// Имя ПОЛНОЕ, а не «Евро»: список неоценённых читается и вне контекста
+	// рода — в отчёте, в логе, в чужом ответе, — и «Евро» там ничего не
+	// значит. Решение принято usecase раньше и здесь не переоткрывается.
+	if len(kubyshka.Unvalued) != 1 || kubyshka.Unvalued[0] != "Кубышка → Евро" {
+		t.Errorf("неоценённые = %v, ждали [Кубышка → Евро]", kubyshka.Unvalued)
 	}
 	if len(kubyshka.Rates) != 1 {
 		t.Fatalf("курсов %d, ждали 1", len(kubyshka.Rates))

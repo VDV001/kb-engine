@@ -147,6 +147,62 @@ type accountDTO struct {
 	// потому что заголовок рода уже написан над строкой, и повторять его в
 	// строке значит тратить ширину на прочитанное.
 	NameInGroup string `json:"name_in_group,omitempty"`
+	// Currency — код валюты счёта, ПУСТОЙ у рублёвого. Пустота здесь и есть
+	// «валюта книги»: отдавая «RUB» каждому счёту, мы заставили бы каждую
+	// страницу научиться новому полю, чтобы показать прежнее.
+	//
+	// Balance при этом — сумма в СВОЕЙ валюте, а не пересчёт. Без кода рядом
+	// «500.00» у долларового счёта читается как рубли: ровно тот дефект, из-за
+	// которого #332 и заведена.
+	Currency string `json:"currency,omitempty"`
+	// Rate — курс, по которому счёт оценили, и BaseValue — сама оценка.
+	// Оба пусты у рублёвого счёта и у счёта, курса которому нет.
+	Rate      string `json:"rate,omitempty"`
+	BaseValue string `json:"base_value,omitempty"`
+	// Unvalued — «оценить нечем», отдельным ответом. Ноль в BaseValue читался
+	// бы как «денег нет», а это ложь противоположного знака: деньги есть,
+	// неизвестен курс.
+	Unvalued bool `json:"unvalued,omitempty"`
+}
+
+// groupDTO — итог по одному роду счетов, посчитанный usecase.
+//
+// Считает его движок, а не страница. До #332 веб-витрина складывала рода сама,
+// в TypeScript, — то есть правило про деньги было написано дважды, и вторая
+// копия о валюте не знала вовсе: она сложила бы доллары с рублями и назвала
+// результат рублями. Терминал при этом звал TotalsByGroup и считал верно, так
+// что расхождение двух витрин было бы молчаливым.
+type groupDTO struct {
+	Group string `json:"group"`
+	Total string `json:"total"`
+	// Unvalued — имена счетов рода, которые в Total НЕ вошли: оценить нечем.
+	// Итог, умолчавший о них, утверждает больше, чем знает.
+	Unvalued []string `json:"unvalued,omitempty"`
+	// Rates — по какому курсу и на какой момент сложен итог. Рублёвые рода
+	// курсов не называют вовсе: «RUB по курсу 1» — шум, который приучает
+	// пролистывать раздел вместе с настоящими курсами.
+	Rates []rateDTO `json:"rates,omitempty"`
+}
+
+// rateDTO — один курс, участвовавший в итоге, и день, на который он верен.
+// Движок за курсом никуда не ходит и переоценкой не занимается: On — день
+// подтверждения счёта, а не «сейчас».
+type rateDTO struct {
+	Currency string `json:"currency"`
+	PerUnit  string `json:"per_unit"`
+	On       string `json:"on"`
+}
+
+func toGroupDTO(g finance.GroupTotal) groupDTO {
+	out := groupDTO{Group: g.Group, Total: g.Total.String(), Unvalued: g.Unvalued}
+	for _, r := range g.Rates {
+		out.Rates = append(out.Rates, rateDTO{
+			Currency: r.Currency,
+			PerUnit:  r.PerUnit.String(),
+			On:       r.On,
+		})
+	}
+	return out
 }
 
 func toTransactionDTO(t domain.Transaction) transactionDTO {
@@ -192,7 +248,7 @@ func recordedAtOrEmpty(id string) string {
 
 // toBalanceDTO собирает счёт вместе с расчётом остатка.
 func toBalanceDTO(b finance.AccountBalance) accountDTO {
-	return accountDTO{
+	dto := accountDTO{
 		Bank:              b.Bank,
 		Balance:           b.Confirmed.String(),
 		Updated:           b.ConfirmedOn,
@@ -201,8 +257,34 @@ func toBalanceDTO(b finance.AccountBalance) accountDTO {
 		NeedsConfirmation: b.NeedsConfirmation,
 		Group:             b.Group,
 		NameInGroup:       b.NameWithinGroup,
+		Currency:          currencyCode(b.Currency),
+		Unvalued:          b.Unvalued,
 	}
+	// Курс и оценка отдаются только когда они есть. У рублёвого счёта их нет
+	// по конструкции, у валютного без курса — по обстоятельствам, и обе
+	// пустоты значат «не спрашивай», а не «ноль».
+	if !b.Unvalued && !b.Rate.IsZero() {
+		dto.Rate = b.Rate.String()
+		dto.BaseValue = b.BaseValue.String()
+	}
+	return dto
 }
+
+// currencyCode прячет базовую валюту: у рублёвого счёта поле пустое.
+//
+// Usecase зовёт её «RUB» — там это удобнее, потому что сравнивается с кодами
+// других счетов. Наружу же пустота честнее: она отличает «книга ведётся в
+// рублях, вопрос не стоит» от «счёт валютный, и валюта эта — рубль».
+func currencyCode(code string) string {
+	if code == baseCurrencyCode {
+		return ""
+	}
+	return code
+}
+
+// baseCurrencyCode — как валюту книги зовёт домен. Спрашивается у него, а не
+// пишется строкой «RUB» здесь: своя константа разошлась бы с доменом молча.
+var baseCurrencyCode = domain.Currency{}.Code()
 
 // entryDTO is the JSON shape of an entry exposed by the API. Optional aspects
 // are omitted when absent.
