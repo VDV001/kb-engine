@@ -1,5 +1,5 @@
-import type { Account } from './api'
-import { formatRub, toKopecks } from './money'
+import type { Account, AccountGroup } from './api'
+import { formatMoney, formatRub, toKopecks } from './money'
 
 // Карточка «где лежат деньги». Перенесена из Python-дашборда, но не целиком:
 // из старого сайдбара взята только она, потому что месяцы и категории в вебе
@@ -64,6 +64,7 @@ function splitAccountName(a: Account): { group: string; name: string } {
 
 export function AccountsCard({
   accounts,
+  groups: engineGroups,
   free,
   expenses,
   income,
@@ -71,6 +72,16 @@ export function AccountsCard({
   transfersExcluded = 0,
 }: {
   accounts: Account[]
+  /**
+   * Итоги родов от движка. Складывая их сама, витрина заводит вторую копию
+   * правила про деньги — и та копия не знает о валюте: сложит доллары с
+   * рублями и назовёт результат рублями (#332).
+   *
+   * Поля может не быть у старой сборки сервера. Тогда карточка считает сама,
+   * как считала раньше: на рублёвой книге это верно, а промолчать про рода
+   * вовсе — хуже.
+   */
+  groups?: AccountGroup[]
   /**
    * Свободные деньги, посчитанные движком. Витрина их не выводит сама: рода
    * счетов ведут себя по-разному (отложенное и одолженное не свободно,
@@ -92,7 +103,17 @@ export function AccountsCard({
   // записал трату — итог обязан уменьшиться, иначе экран показывает вчерашний
   // день и выглядит сломанным.
   const now = (a: Account) => toKopecks(a.current ?? a.balance)
-  const total = accounts.reduce((n, a) => n + now(a), 0)
+
+  // В общий итог идёт ОЦЕНКА в валюте книги, а не номинал: 500 долларов —
+  // это не 500 рублей. Счёт, оценить который нечем, не входит вовсе — иначе
+  // его номинал молча притворился бы рублями.
+  const valued = (a: Account) => {
+    if (a.unvalued) return null
+    if (a.base_value !== undefined) return toKopecks(a.base_value)
+    return now(a)
+  }
+  const total = accounts.reduce((n, a) => n + (valued(a) ?? 0), 0)
+  const engineGroup = (name: string) => engineGroups?.find((g) => g.group === name)
 
   // Порядок групп — тот, в котором счета стоят в книге: владелец сам решил, что
   // за чем идёт на листе, и витрине незачем это переставлять.
@@ -150,7 +171,12 @@ export function AccountsCard({
                   className="privacy-mask text-xs font-bold opacity-80"
                   data-testid={`group-total-${k.group}`}
                 >
-                  {formatRub(k.accounts.reduce((n, a) => n + now(a), 0))}
+                  {formatRub(
+                    toKopecks(
+                      engineGroup(k.group)?.total ??
+                        String(k.accounts.reduce((n, a) => n + (valued(a) ?? 0), 0) / 100),
+                    ),
+                  )}
                 </span>
               </div>
               <ul className="space-y-2.5">
@@ -163,6 +189,7 @@ export function AccountsCard({
                   />
                 ))}
               </ul>
+              <GroupNotes group={engineGroup(k.group)} />
             </div>
           ))}
         </>
@@ -197,6 +224,43 @@ export function AccountsCard({
 }
 
 /**
+ * Подписи под родом: по какому курсу сложен итог и кто в него НЕ вошёл.
+ *
+ * Курс без дня выглядит текущей оценкой, будучи ценой входа, — движок за
+ * курсом никуда не ходит. А итог, умолчавший о неоценённых счетах, утверждает
+ * больше, чем знает: сумма выглядит полной, будучи частичной.
+ */
+function GroupNotes({ group }: { group?: AccountGroup }) {
+  if (!group) return null
+  const rates = group.rates ?? []
+  const unvalued = group.unvalued ?? []
+  if (rates.length === 0 && unvalued.length === 0) return null
+
+  return (
+    <div className="mt-1.5 space-y-0.5">
+      {rates.length > 0 && (
+        <p className="label text-[8px] opacity-50" data-testid={`group-rates-${group.group}`}>
+          {rates
+            .map((r) => `${r.currency} по ${formatRub(toKopecks(r.per_unit))} на ${shortDate(r.on)}`)
+            .join(' · ')}
+        </p>
+      )}
+      {unvalued.length > 0 && (
+        <p className="label text-[8px] opacity-60" data-testid={`group-unvalued-${group.group}`}>
+          не в итоге: {unvalued.map((n) => splitName(n)).join(', ')} — курс неизвестен
+        </p>
+      )}
+    </div>
+  )
+}
+
+/** Имя счёта без рода: «Кубышка → Евро» → «Евро». */
+function splitName(bank: string): string {
+  const at = bank.indexOf(GROUP_SEPARATOR)
+  return at < 0 ? bank : bank.slice(at + GROUP_SEPARATOR.length).trim()
+}
+
+/**
  * Одна строка счёта: точка цвета, имя и остаток на сейчас с датой подтверждения.
  *
  * Имя приходит параметром, а не берётся из счёта: внутри группы слово «Долг»
@@ -228,7 +292,22 @@ function AccountRow({
       />
       <span className="label flex-1 text-[10px] opacity-80">{label}</span>
       <span className="flex flex-col items-end">
-        <span className="privacy-mask text-xs font-bold">{formatRub(now)}</span>
+        <span className="privacy-mask text-xs font-bold" data-testid={`amount-${a.bank}`}>
+          {formatMoney(now, a.currency ?? '')}
+        </span>
+        {/* Оценка идёт ВТОРОЙ строкой, мельче: главное число у валютного
+            счёта — сколько там валюты, а не во что её оценили по курсу
+            месячной давности. */}
+        {a.base_value !== undefined && !a.unvalued && (
+          <span className="label text-[8px] opacity-40" data-testid={`valued-${a.bank}`}>
+            ≈ <span className="privacy-mask">{formatRub(toKopecks(a.base_value))}</span>
+          </span>
+        )}
+        {a.unvalued && (
+          <span className="label text-[8px] opacity-60" data-testid={`unvalued-${a.bank}`}>
+            курс неизвестен
+          </span>
+        )}
         {a.updated !== '' && (
           <span
             className={`label text-[8px] ${stale || a.needs_confirmation ? 'opacity-90' : 'opacity-40'}`}
