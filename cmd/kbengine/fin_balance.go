@@ -69,33 +69,60 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	}
 
 	today := time.Now().Format(time.DateOnly)
+	reportUpdate(reportParams{
+		path: *from, bank: *bank, flagCurrency: *currency,
+		existing: existing, known: known, money: money,
+		currency: cur, rate: accRate, today: today,
+	}, stdout)
+	return 0
+}
+
+// reportParams — что нужно знать, чтобы напечатать одну строку отчёта.
+//
+// Структурой, а не восемью аргументами: у половины из них один тип, и порядок
+// в вызове перепутать легче, чем заметить это потом.
+type reportParams struct {
+	path, bank, flagCurrency string
+	existing                 domain.Account
+	known                    bool
+	money                    domain.Money
+	currency                 domain.Currency
+	rate                     domain.Rate
+	today                    string
+}
+
+// reportUpdate печатает, что стало со счётом.
+//
+// Отдельной функцией: сама команда уже разбирает флаги, читает книгу, пишет и
+// решает три вида отказа — отчёт был в ней четвёртой заботой, и линтер это
+// заметил раньше меня.
+func reportUpdate(p reportParams, stdout io.Writer) {
 	// Счёт называется так, как он записан на листе, а не так, как его набрали:
 	// «сбербанк» в отчёте о собственной книге читается как другой счёт.
-	name := *bank
-	if known && existing.Bank() != "" {
-		name = existing.Bank()
+	name := p.bank
+	if p.known && p.existing.Bank() != "" {
+		name = p.existing.Bank()
 	}
 	// Единица берётся у счёта, КАК ОН ЛЕЖИТ В КНИГЕ ПОСЛЕ ЗАПИСИ, а не у
-	// флагов: обновляя баланс валютного счёта, флаг --currency обычно не
-	// передают — он там уже записан, и молчание отчёта про валюту было бы
-	// молчанием про самое важное в строке.
-	unit := unitSuffix(cur, accRate)
-	if *currency == "" {
-		if after, ok := balanceOf(*from, *bank); ok {
+	// флагов: обновляя баланс валютного счёта, --currency обычно не передают —
+	// он там уже записан, и молчание отчёта про валюту было бы молчанием про
+	// самое важное в строке.
+	unit := unitSuffix(p.currency, p.rate)
+	if p.flagCurrency == "" {
+		if after, ok := balanceOf(p.path, p.bank); ok {
 			unit = unitSuffix(after.Currency(), after.Rate())
 		}
 	}
-	before := existing.Balance()
+	before := p.existing.Balance()
 	switch {
-	case known && before.String() == money.String():
+	case p.known && before.String() == p.money.String():
 		fmt.Fprintf(stdout, "%s: %s%s — сумма не изменилась, обновлена дата подтверждения (%s)\n",
-			name, money, unit, today)
-	case known:
-		fmt.Fprintf(stdout, "%s: %s → %s%s (%s)\n", name, before, money, unit, today)
+			name, p.money, unit, p.today)
+	case p.known:
+		fmt.Fprintf(stdout, "%s: %s → %s%s (%s)\n", name, before, p.money, unit, p.today)
 	default:
-		fmt.Fprintf(stdout, "%s: %s%s (%s)\n", name, money, unit, today)
+		fmt.Fprintf(stdout, "%s: %s%s (%s)\n", name, p.money, unit, p.today)
 	}
-	return 0
 }
 
 // createAccount заводит счёт, которого на листе «Счета» ещё нет.
