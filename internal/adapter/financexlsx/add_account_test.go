@@ -21,7 +21,7 @@ import (
 func TestAddAccount_appendsARowTheReaderSees(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4))
+	err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4))
 	if err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestAddAccount_appendsARowTheReaderSees(t *testing.T) {
 func TestAddAccount_putsTheRowRightAfterTheLastAccount(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
+	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4)); err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestAddAccount_refusesANameTheSheetAlreadyKnows(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := workbookWithExtraColumn(t)
 
-			err := financexlsx.AddAccount(path, name, money(t, "500"), fixedClock(2026, 8, 4))
+			err := financexlsx.AddAccount(path, name, money(t, "500"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4))
 			if !errors.Is(err, financexlsx.ErrAccountExists) {
 				t.Fatalf("AddAccount(%q) = %v, ожидался ErrAccountExists", name, err)
 			}
@@ -97,7 +97,7 @@ func TestAddAccount_leavesTheBookAloneWhenItRefuses(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	before := accountsOnSheet(t, path)
 
-	if err := financexlsx.AddAccount(path, "сбербанк", money(t, "500"), fixedClock(2026, 8, 4)); err == nil {
+	if err := financexlsx.AddAccount(path, "сбербанк", money(t, "500"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4)); err == nil {
 		t.Fatal("дубль записан, ожидался отказ")
 	}
 
@@ -118,7 +118,7 @@ func TestAddAccount_leavesTheBookAloneWhenItRefuses(t *testing.T) {
 func TestAddAccount_refusesABlankName(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 
-	err := financexlsx.AddAccount(path, "   ", money(t, "500"), fixedClock(2026, 8, 4))
+	err := financexlsx.AddAccount(path, "   ", money(t, "500"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4))
 	if !errors.Is(err, domain.ErrInvalidAccount) {
 		t.Fatalf("AddAccount(пустое имя) = %v, ожидался ErrInvalidAccount", err)
 	}
@@ -137,7 +137,7 @@ func TestAddAccount_inheritsTheFormattingOfTheRowAbove(t *testing.T) {
 		"B6": cellStyle(t, path, "Счета", "B5"),
 		"C6": cellStyle(t, path, "Счета", "C5"),
 	}
-	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), fixedClock(2026, 8, 4)); err != nil {
+	if err := financexlsx.AddAccount(path, "Займ → Коллеге", money(t, "3000"), domain.Currency{}, domain.UnknownRate(), fixedClock(2026, 8, 4)); err != nil {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
