@@ -1593,7 +1593,7 @@
           "to": "spa",
           "call": "api.finances()",
           "detail": "frontend/src/api.ts:554 — getJSON('/api/finances')",
-          "source": "frontend/src/api.ts:765",
+          "source": "frontend/src/api.ts:810",
           "unverified": false
         },
         {
@@ -1647,7 +1647,7 @@
           "to": "spa",
           "call": "fetch('/api/finances/export', {method:'POST'})",
           "detail": "frontend/src/api.ts:787 отправляет строки, которые сейчас на экране",
-          "source": "frontend/src/api.ts:787",
+          "source": "frontend/src/api.ts:832",
           "unverified": false
         },
         {
@@ -2239,7 +2239,7 @@
           "to": "spa",
           "call": "api.dashboard()",
           "detail": "frontend/src/api.ts:585 — восемь запросов через Promise.all: stats, entries, audits, duplicates, analytics, analytics-config, finances, sources",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false
         },
         {
@@ -2248,7 +2248,7 @@
           "to": "ad-httpapi",
           "call": "восемь параллельных GET",
           "detail": "frontend/src/api.ts:586-602; финансы и sources обёрнуты .catch() и подставляют пустоту — файлы финансов правят руками при открытом дашборде, и падение одного из них не должно ронять остальные шесть видов",
-          "source": "frontend/src/api.ts:786",
+          "source": "frontend/src/api.ts:831",
           "unverified": false,
           "symbol": "Promise"
         },
@@ -2502,7 +2502,7 @@
           "to": "fe-about",
           "call": "api.engine()",
           "detail": "frontend/src/api.ts:718; вкладка показывает версию, коммит и дату сборки (frontend/src/AboutView.tsx:168-170)",
-          "source": "frontend/src/api.ts:756",
+          "source": "frontend/src/api.ts:801",
           "unverified": false
         },
         {
@@ -2529,7 +2529,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/stats",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-dashboard принимает его пропсом (frontend/src/App.tsx:104)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2575,7 +2575,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/entries",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-catalog принимает его пропсом (frontend/src/App.tsx:136)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2642,7 +2642,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:117)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2661,7 +2661,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/analytics-config",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-analytics принимает его пропсом (frontend/src/App.tsx:117)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2718,7 +2718,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/audits",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:120)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -2737,7 +2737,7 @@
           "to": "ad-httpapi",
           "call": "api.dashboard() → /api/duplicates",
           "detail": "frontend/src/api.ts:585 — приезжает ОДНИМ бутстрапом api.dashboard() (Promise.all по восьми источникам); вью получает готовое пропсом, своего запроса не делает; fe-health принимает его пропсом (frontend/src/App.tsx:120)",
-          "source": "frontend/src/api.ts:796",
+          "source": "frontend/src/api.ts:841",
           "unverified": false,
           "symbol": "dashboard"
         },
@@ -3110,7 +3110,7 @@
           "to": "spa",
           "call": "api.maps()",
           "symbol": "maps",
-          "source": "frontend/src/api.ts:761",
+          "source": "frontend/src/api.ts:806",
           "detail": "frontend/src/api.ts:733 — оглавление: id, заголовок, счётчики; сама карта не грузится, пока её не выбрали"
         },
         {
