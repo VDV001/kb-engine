@@ -20,10 +20,23 @@ export function toKopecks(amount: string): number {
 }
 
 export function formatRub(kopecks: number): string {
-  const sign = kopecks < 0 ? '-' : ''
-  const abs = Math.abs(kopecks)
-  const rub = Math.floor(abs / 100).toLocaleString('ru-RU')
-  return `${sign}${rub},${String(abs % 100).padStart(2, '0')} ₽`
+  return formatMoney(kopecks)
+}
+
+// formatMoney печатает сумму в её собственной единице.
+//
+// Валюта приходит кодом («USD»), а не значком: значок пришлось бы держать
+// таблицей, и первая же незнакомая валюта показалась бы рублями — то есть
+// молча соврала бы. Код незнакомым не бывает.
+//
+// Пустая валюта означает рубль: у счёта в валюте книги поля нет вовсе, и это
+// решение движка, а не упущение (#332).
+export function formatMoney(minor: number, currency = ''): string {
+  const sign = minor < 0 ? '-' : ''
+  const abs = Math.abs(minor)
+  const whole = Math.floor(abs / 100).toLocaleString('ru-RU')
+  const unit = currency === '' ? '₽' : currency
+  return `${sign}${whole},${String(abs % 100).padStart(2, '0')} ${unit}`
 }
 
 // monthOf takes the "YYYY-MM" prefix of an ISO date without constructing a

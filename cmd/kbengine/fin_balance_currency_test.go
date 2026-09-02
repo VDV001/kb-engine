@@ -124,3 +124,64 @@ func TestFinBalance_brokenCurrencyIsRefused(t *testing.T) {
 		t.Fatal("негодная валюта принята")
 	}
 }
+
+// Отчёт об ОБНОВЛЕНИИ валютного счёта тоже обязан называть единицу.
+//
+// Найдено живым прогоном 02.09: заведение печатало «500.00 USD по курсу
+// 84.28», а обновление существующего счёта — голое «44425.00 → 500.00». Путь
+// обновления при этом главный: счёт заводят однажды, а подтверждают каждую
+// неделю. Класс тот же, из-за которого заведена #332, — число без единицы
+// читается как рубли, — и жил он в команде, которая эту же issue закрывала.
+func TestFinBalance_updateReportNamesCurrency(t *testing.T) {
+	book := workbook(t)
+	var out, errb bytes.Buffer
+
+	if code := run([]string{
+		"fin", "balance", "--from", book,
+		"--bank", "Кубышка → Доллары", "--amount", "500",
+		"--currency", "USD", "--rate", "84.28", "--create",
+	}, &out, &errb); code != 0 {
+		t.Fatalf("создание: exit = %d, stderr = %s", code, errb.String())
+	}
+
+	out.Reset()
+	errb.Reset()
+	if code := run([]string{
+		"fin", "balance", "--from", book,
+		"--bank", "Кубышка → Доллары", "--amount", "450",
+	}, &out, &errb); code != 0 {
+		t.Fatalf("обновление: exit = %d, stderr = %s", code, errb.String())
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "USD") {
+		t.Errorf("отчёт об обновлении = %q, ждали код валюты", got)
+	}
+	if !strings.Contains(got, "84.28") {
+		t.Errorf("отчёт об обновлении = %q, ждали курс", got)
+	}
+}
+
+// Рублёвый счёт остаётся тихим: приписка «RUB» к каждой строке — шум, который
+// приучает не читать конец строки, а читать его придётся именно у валютной.
+func TestFinBalance_updateReportStaysQuietForRubles(t *testing.T) {
+	book := workbook(t)
+	var out, errb bytes.Buffer
+
+	if code := run([]string{
+		"fin", "balance", "--from", book,
+		"--bank", "Первый банк", "--amount", "1000", "--create",
+	}, &out, &errb); code != 0 {
+		t.Fatalf("создание: exit = %d, stderr = %s", code, errb.String())
+	}
+
+	out.Reset()
+	if code := run([]string{
+		"fin", "balance", "--from", book, "--bank", "Первый банк", "--amount", "900",
+	}, &out, &errb); code != 0 {
+		t.Fatalf("обновление: exit = %d, stderr = %s", code, errb.String())
+	}
+	if got := out.String(); strings.Contains(got, "RUB") || strings.Contains(got, "курс") {
+		t.Errorf("отчёт рублёвого счёта = %q, ждали без валюты и курса", got)
+	}
+}

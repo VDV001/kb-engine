@@ -642,6 +642,12 @@ func handleFinances(fin Financier) http.HandlerFunc {
 		// Empty rather than 404: the view asks unconditionally, and "no ledger
 		// configured" is a shape it can render, not an error it has to handle.
 		txs, accounts := []transactionDTO{}, []accountDTO{}
+		// Итоги родов считает usecase и присылает готовыми. Складывая их сама,
+		// витрина завела бы вторую копию правила про деньги — и та копия не
+		// знала бы о валюте: сложила бы доллары с рублями и назвала результат
+		// рублями (#332). Терминал при этом считал бы верно, и расхождение
+		// двух витрин было бы молчаливым.
+		groups := []groupDTO{}
 		// Свободные деньги считает usecase и отдаёт числом: посчитай их
 		// витрина сама — правило про деньги оказалось бы написано трижды
 		// (терминал, веб, и однажды кто-то третий), и разошлось бы молча.
@@ -668,10 +674,16 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			for _, b := range balances {
 				accounts = append(accounts, toBalanceDTO(b))
 			}
+			for _, g := range finance.TotalsByGroup(balances) {
+				groups = append(groups, toGroupDTO(g))
+			}
 			balDone()
 			free = finance.FreeMoney(balances)
 		}
-		writeJSON(w, map[string]any{"transactions": txs, "accounts": accounts, "free": free.String()})
+		writeJSON(w, map[string]any{
+			"transactions": txs, "accounts": accounts,
+			"groups": groups, "free": free.String(),
+		})
 	}
 }
 
