@@ -97,9 +97,58 @@ if [ "${1:-}" = "--self-test" ]; then
       echo "✘ self-test: подсадка «имена не сравниваются» прошла незамеченной"; fail=1 ;;
   esac
 
+  # ---- Go-модули (#337). Идут БЕЗ СЕТИ: источник дат подменяется каталогом
+  # фикстур. Гейт, который нельзя прогнать локально, проверяют только в CI —
+  # то есть уже после отправки.
+  go_repo="$(mktemp -d)"
+  go_fx="$(mktemp -d)"
+  (
+    cd "$go_repo"
+    git init -q -b main
+    git config user.email t@t; git config user.name t
+    printf 'module example.test/app\n\ngo 1.26\n\nrequire (\n\texample.com/old v1.0.0\n)\n' > go.mod
+    printf '{}' > package-lock.json
+    mkdir -p frontend && cp package-lock.json frontend/
+    git add -A && git commit -qm base
+    printf 'module example.test/app\n\ngo 1.26\n\nrequire (\n\texample.com/old v1.2.0\n\texample.com/newcomer v0.1.0\n)\n' > go.mod
+    git add -A && git commit -qm bump
+  )
+  # Даты кладём так, чтобы одна версия была свежей, другая выдержанной, а у
+  # третьей даты не было вовсе — три разных ответа гейта.
+  printf '2026-08-30T00:00:00Z' > "$go_fx/example.com_old@v1.2.0"
+  # example.com_newcomer@v0.1.0 намеренно НЕ создаём: «возраст неизвестен»
+
+  go_out="$(cd "$go_repo" && DEP_AGE_NOW=2026-09-01 GOPROXY_FIXTURES="$go_fx" \
+    "$OLDPWD/scripts/gates/dep-age.sh" HEAD^ 2>&1)" && go_rc=0 || go_rc=1
+
+  if [ "$go_rc" -eq 0 ]; then
+    echo "✘ self-test: на молодом Go-модуле гейт промолчал"; fail=1
+  fi
+  case "$go_out" in
+    *"example.com/old@v1.2.0"*) : ;;
+    *) echo "✘ self-test: молодая Go-версия не названа"; fail=1 ;;
+  esac
+  case "$go_out" in
+    *"возраст неизвестен"*) : ;;
+    *) echo "✘ self-test: модуль без даты не отнесён к «возраст неизвестен»"; fail=1 ;;
+  esac
+  case "$go_out" in
+    *"go.mod — 2"*) : ;;
+    *) echo "✘ self-test: число новых Go-версий названо неверно"; fail=1 ;;
+  esac
+  # Обратная сторона: та же версия месяцем позже обязана пройти. Без этого
+  # случая «всегда красный» тоже сошёл бы за работающий гейт.
+  printf '2026-07-01T00:00:00Z' > "$go_fx/example.com_newcomer@v0.1.0"
+  if ! (cd "$go_repo" && DEP_AGE_NOW=2026-10-01 GOPROXY_FIXTURES="$go_fx" \
+      "$OLDPWD/scripts/gates/dep-age.sh" HEAD^ >/dev/null 2>&1); then
+    echo "✘ self-test: выдержанные Go-версии всё ещё красные"; fail=1
+  fi
+  rm -rf "$go_repo" "$go_fx"
+
   if [ "$fail" -ne 0 ]; then exit 1; fi
   echo "✓ dep-age --self-test: на PR #194 падает и называет обе версии, неделей позже зелёный;"
-  echo "  новые имена названы на ${names_fixture:0:7}, на обычном bump молчит, подсадка ловится"
+  echo "  новые имена названы на ${names_fixture:0:7}, на обычном bump молчит, подсадка ловится;"
+  echo "  Go-модули: молодой красит, без даты — «возраст неизвестен», выдержанный проходит"
   exit 0
 fi
 
@@ -175,7 +224,61 @@ for (const [key, name] of versions(after)) {
 ' "$base" "$lock" "$ref" | sort -u)"
 
 if [ -z "$added" ]; then
-  echo "✓ dep-age: новых версий в ${lock} ветка не добавляет — проверять нечего"
+  echo "ℹ dep-age: новых версий в ${lock} ветка не добавляет"
+fi
+
+# ---------------------------------------------------------------- go.mod
+#
+# Порог возраста заводился против supply chain, а не против npm: пакет,
+# опубликованный вчера, подозрителен в любой экосистеме. До #337 все три слоя
+# защиты (cooldown, min-release-age, этот гейт) покрывали только npm, то есть
+# МЕНЬШУЮ половину проекта — Go здесь основной язык. Возраст четырёх модулей
+# 01.09.2026 пришлось проверять руками.
+gomod="go.mod"
+go_added=""
+if git cat-file -e "$base:$gomod" 2>/dev/null; then
+  # Сравниваются РАЗОБРАННЫЕ списки, а не текст файла: `go mod tidy` двигает
+  # строки между блоками require и переносит // indirect, и текстовый diff
+  # объявил бы изменившимся то, что не менялось.
+  # Разбор на python, а не awk: первая редакция была на awk и молча вернула
+  # пусто на коммите, который go.mod ТОЧНО менял — то есть гейт ответил
+  # «проверять нечего» там, где проверять было что.
+  go_added="$(
+    {
+      git show "$base:$gomod"
+      echo "---SPLIT---"
+      if [ -n "$ref" ]; then git show "$ref:$gomod"; else cat "$gomod"; fi
+    } | python3 -c '
+import re, sys
+
+raw = sys.stdin.read().split("---SPLIT---")
+line_re = re.compile(r"^\s*(?:require\s+)?([^\s/]+\.[^\s]*)\s+(v[0-9][^\s]*)")
+
+def parse(text):
+    pairs, names = set(), set()
+    for line in text.splitlines():
+        line = line.split("//")[0]
+        m = line_re.match(line)
+        if not m:
+            continue
+        mod, ver = m.group(1), m.group(2)
+        pairs.add((mod, ver))
+        names.add(mod)
+    return pairs, names
+
+before, before_names = parse(raw[0])
+after, _ = parse(raw[1] if len(raw) > 1 else "")
+for mod, ver in sorted(after - before):
+    fresh = "" if mod in before_names else "new-name"
+    print("%s\t%s\t%s" % (mod, ver, fresh))
+'
+  )"
+fi
+
+if [ -z "$added" ] && [ -z "$go_added" ]; then
+  echo "✓ dep-age: ни ${lock}, ни ${gomod} ветка не меняет — проверять нечего"
+  echo "  не проверено: версии, уже лежавшие в локе и в go.mod до этой ветки;"
+  echo "  экосистемы docker и github-actions (их держит cooldown в dependabot.yml)."
   exit 0
 fi
 
@@ -214,7 +317,48 @@ while IFS=$'\t' read -r name version kind; do
   fi
 done <<< "$added"
 
-echo "dep-age: проверено новых версий — ${checked}, порог ${threshold} дн."
+# Возраст Go-модуля спрашивается у proxy.golang.org: он единственный источник,
+# который знает дату публикации версии, не выкачивая сам модуль.
+#
+# Источник подменяется переменной, чтобы самопроверка шла БЕЗ СЕТИ: гейт,
+# который нельзя прогнать локально, проверяют только в CI — то есть уже после
+# отправки. Тот же довод, что у ISSUE_FIXTURES в issue-close.sh.
+go_checked=0
+while IFS=$'\t' read -r name version kind; do
+  [ -z "$name" ] && continue
+  go_checked=$((go_checked + 1))
+  if [ "$kind" = "new-name" ]; then
+    new_names="${new_names}${new_names:+, }${name}"
+    new_names_count=$((new_names_count + 1))
+  fi
+  published=""
+  if [ -n "${GOPROXY_FIXTURES:-}" ]; then
+    fixture="${GOPROXY_FIXTURES}/$(printf '%s' "${name}@${version}" | tr '/' '_')"
+    [ -f "$fixture" ] && published="$(cat "$fixture")"
+  else
+    # Путь модуля в запросе экранируется: заглавная буква пишется как !буква,
+    # иначе прокси не найдёт модуль с заглавными в имени.
+    escaped="$(printf '%s' "$name" | sed -E 's/([A-Z])/!\l\1/g')"
+    published="$(curl -sS --max-time 20 "https://proxy.golang.org/${escaped}/@v/${version}.info" 2>/dev/null \
+      | node -e 'let d="";process.stdin.on("data",c=>d+=c).on("end",()=>{try{process.stdout.write(JSON.parse(d).Time||"")}catch{}})' || true)"
+  fi
+  published="$(printf '%s' "$published" | tr -d '[:space:]')"
+  if [ -z "$published" ]; then
+    unknown="${unknown}    ${name}@${version} — proxy.golang.org не назвал дату публикации"$'\n'
+    continue
+  fi
+  age_days="$(node -e '
+    const [published, now] = process.argv.slice(1);
+    process.stdout.write(String(Math.floor((Number(now) * 1000 - Date.parse(published)) / 86400000)));
+  ' "$published" "$now_epoch")"
+  if [ "$age_days" -lt "$threshold" ]; then
+    fresh="${fresh}    ${name}@${version} — ${age_days} дн. (опубликована ${published%T*})"$'\n'
+  fi
+done <<< "$go_added"
+
+# Две экосистемы называются ОТДЕЛЬНО, а не одним числом: молчание про одну из
+# них снаружи неотличимо от «там чисто», и до #337 так и было.
+echo "dep-age: npm — новых версий ${checked}; go.mod — ${go_checked}; порог ${threshold} дн."
 if [ "$new_names_count" -gt 0 ]; then
   echo "  из них имён, которых в проекте не было: ${new_names_count} — ${new_names}"
   echo "  возраст про новое имя ничего не говорит: посмотрите на них глазами"
@@ -233,10 +377,11 @@ if [ -n "$unknown" ]; then
 fi
 
 # Правило 11: инструмент обязан называть, чего он НЕ проверил.
-echo "  не проверено: версии, уже лежавшие в локе до этой ветки; экосистемы"
-echo "  gomod, docker и github-actions (их держит cooldown в dependabot.yml);"
-echo "  security-обновления — их cooldown намеренно не тормозит; существование"
-echo "  пакета до того, как его имя появилось в ответе модели."
+echo "  не проверено: версии, уже лежавшие в локе и в go.mod до этой ветки;"
+echo "  экосистемы docker и github-actions (их держит cooldown в dependabot.yml);"
+echo "  security-обновления — их cooldown намеренно не тормозит, и это осознанно:"
+echo "  01.09 CRITICAL закрывался версией, которую порог мог бы не пустить;"
+echo "  существование пакета до того, как его имя появилось в ответе модели."
 
 if [ "$status" -eq 0 ]; then
   echo "✓ dep-age: все новые версии старше ${threshold} дн."
