@@ -181,3 +181,102 @@ describe('AccountsCard — оговорка про переводы', () => {
     expect(screen.queryByTestId('accounts-transfers-note')).toBeNull()
   })
 })
+
+// #332: витрина о валюте не знала ничего. Долларовый счёт показывался числом
+// без единицы, то есть читался как рубли, а итог рода складывал разные
+// валюты и называл результат рублями.
+//
+// Имена счетов ВЫДУМАННЫЕ: настоящее имя из книги владельца в фикстуре —
+// утечка, а не удобство.
+describe('AccountsCard — валюта счёта', () => {
+  const withCurrency: Account[] = [
+    { bank: 'Первый банк', balance: '1000.00', updated: '2026-08-30' },
+    {
+      bank: 'Кубышка → Доллары',
+      balance: '500.00',
+      updated: '2026-08-30',
+      currency: 'USD',
+      rate: '84.28',
+      base_value: '42140.00',
+    },
+    {
+      bank: 'Кубышка → Евро',
+      balance: '200.00',
+      updated: '2026-08-30',
+      currency: 'EUR',
+      unvalued: true,
+    },
+  ]
+
+  const groups = [
+    {
+      group: 'Кубышка',
+      total: '42140.00',
+      unvalued: ['Кубышка → Евро'],
+      rates: [{ currency: 'USD', per_unit: '84.28', on: '2026-08-30' }],
+    },
+  ]
+
+  it('показывает сумму в своей валюте, а не молча в рублях', () => {
+    render(
+      <AccountsCard
+        accounts={withCurrency}
+        groups={groups}
+        expenses="0"
+        income="0"
+        today="2026-08-30"
+      />,
+    )
+    // Строка счёта несёт единицу: «500.00» без неё читается как рубли.
+    expect(spaced(screen.getByTestId('amount-Кубышка → Доллары'))).toContain('USD')
+    expect(spaced(screen.getByTestId('amount-Кубышка → Доллары'))).toContain('500')
+  })
+
+  it('называет курс и день, на который он верен', () => {
+    render(
+      <AccountsCard
+        accounts={withCurrency}
+        groups={groups}
+        expenses="0"
+        income="0"
+        today="2026-08-30"
+      />,
+    )
+    // Курс без дня выглядит текущей оценкой, будучи ценой входа.
+    const note = spaced(screen.getByTestId('group-rates-Кубышка'))
+    expect(note).toContain('84,28')
+    expect(note).toContain('30.08')
+  })
+
+  it('говорит «оценить нечем» вместо нуля', () => {
+    render(
+      <AccountsCard
+        accounts={withCurrency}
+        groups={groups}
+        expenses="0"
+        income="0"
+        today="2026-08-30"
+      />,
+    )
+    // Ноль рядом с евро читался бы как «денег нет» — ложь противоположного
+    // знака: деньги есть, неизвестен курс.
+    expect(spaced(screen.getByTestId('amount-Кубышка → Евро'))).toContain('EUR')
+    expect(screen.getByTestId('unvalued-Кубышка → Евро')).toBeDefined()
+  })
+
+  it('берёт итог рода у движка, а не складывает сам', () => {
+    render(
+      <AccountsCard
+        accounts={withCurrency}
+        groups={groups}
+        expenses="0"
+        income="0"
+        today="2026-08-30"
+      />,
+    )
+    // 42 140 — оценка долларов; евро в итог НЕ входят, и об этом сказано
+    // отдельной строкой. Сложи витрина сама — вышло бы 500 + 200 + 1000.
+    expect(spaced(screen.getByTestId('group-total-Кубышка'))).toContain('42 140')
+    expect(screen.getByTestId('group-unvalued-Кубышка').textContent).toContain('Евро')
+  })
+})
