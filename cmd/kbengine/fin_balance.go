@@ -46,7 +46,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	before, onSheet, known := balanceOf(*from, *bank)
+	existing, known := balanceOf(*from, *bank)
 
 	if *create {
 		return createAccount(*from, *bank, money, cur, accRate, stdout, stderr)
@@ -72,17 +72,28 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	// Счёт называется так, как он записан на листе, а не так, как его набрали:
 	// «сбербанк» в отчёте о собственной книге читается как другой счёт.
 	name := *bank
-	if onSheet != "" {
-		name = onSheet
+	if known && existing.Bank() != "" {
+		name = existing.Bank()
 	}
+	// Единица берётся у счёта, КАК ОН ЛЕЖИТ В КНИГЕ ПОСЛЕ ЗАПИСИ, а не у
+	// флагов: обновляя баланс валютного счёта, флаг --currency обычно не
+	// передают — он там уже записан, и молчание отчёта про валюту было бы
+	// молчанием про самое важное в строке.
+	unit := unitSuffix(cur, accRate)
+	if *currency == "" {
+		if after, ok := balanceOf(*from, *bank); ok {
+			unit = unitSuffix(after.Currency(), after.Rate())
+		}
+	}
+	before := existing.Balance()
 	switch {
 	case known && before.String() == money.String():
-		fmt.Fprintf(stdout, "%s: %s — сумма не изменилась, обновлена дата подтверждения (%s)\n",
-			name, money, today)
+		fmt.Fprintf(stdout, "%s: %s%s — сумма не изменилась, обновлена дата подтверждения (%s)\n",
+			name, money, unit, today)
 	case known:
-		fmt.Fprintf(stdout, "%s: %s → %s (%s)\n", name, before, money, today)
+		fmt.Fprintf(stdout, "%s: %s → %s%s (%s)\n", name, before, money, unit, today)
 	default:
-		fmt.Fprintf(stdout, "%s: %s (%s)\n", name, money, today)
+		fmt.Fprintf(stdout, "%s: %s%s (%s)\n", name, money, unit, today)
 	}
 	return 0
 }
@@ -105,18 +116,26 @@ func createAccount(path, bank string, amount domain.Money, currency domain.Curre
 	// Валюта называется вслух, если она не рублёвая: строка «500.00» у счёта в
 	// долларах читается как рубли, и это ровно тот дефект, из-за которого
 	// заведена #332.
-	unit := ""
-	if !currency.IsBase() {
-		unit = " " + currency.Code()
-		if per, ok := rate.PerUnit(); ok {
-			unit += fmt.Sprintf(" по курсу %s", per)
-		} else {
-			unit += " (курс неизвестен)"
-		}
-	}
 	fmt.Fprintf(stdout, "%s: %s%s — новый счёт на листе «Счета» (%s)\n",
-		bank, amount, unit, time.Now().Format(time.DateOnly))
+		bank, amount, unitSuffix(currency, rate), time.Now().Format(time.DateOnly))
 	return 0
+}
+
+// unitSuffix — чем строка отчёта заканчивается у валютного счёта и чем не
+// заканчивается у рублёвого.
+//
+// Рублёвый молчит намеренно: приписка «RUB» к каждой строке — шум, который
+// приучает не дочитывать строку до конца, а дочитать её придётся именно у
+// валютной. «Курс неизвестен» при этом произносится: пустота на месте курса
+// снаружи неотличима от курса, который забыли напечатать.
+func unitSuffix(currency domain.Currency, rate domain.Rate) string {
+	if currency.IsBase() {
+		return ""
+	}
+	if per, ok := rate.PerUnit(); ok {
+		return fmt.Sprintf(" %s по курсу %s", currency.Code(), per)
+	}
+	return " " + currency.Code() + " (курс неизвестен)"
 }
 
 // balanceOf возвращает остаток, записанный на счёте сейчас, и его имя так, как
@@ -127,17 +146,17 @@ func createAccount(path, bank string, amount domain.Money, currency domain.Curre
 // Написание сверяет домен — тем же правилом, которым его сверяет запись. Раньше
 // здесь стояло побайтовое равенство, и отчёт не узнавал счёт, который сам же
 // только что обновил.
-func balanceOf(path, bank string) (domain.Money, string, bool) {
+func balanceOf(path, bank string) (domain.Account, bool) {
 	led, err := financexlsx.Read(path, time.Now)
 	if err != nil {
-		return domain.Money{}, "", false
+		return domain.Account{}, false
 	}
 	for _, a := range led.Accounts {
 		if domain.SameAccountName(a.Bank(), bank) {
-			return a.Balance(), a.Bank(), true
+			return a, true
 		}
 	}
-	return domain.Money{}, "", false
+	return domain.Account{}, false
 }
 
 // parseCurrencyAndRate разбирает пару флагов и решает, законна ли она.
