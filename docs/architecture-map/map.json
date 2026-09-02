@@ -119,7 +119,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:866"
+        "cmd/kbengine/main.go:870"
       ]
     },
     {
@@ -129,7 +129,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:684"
+        "cmd/kbengine/main.go:688"
       ]
     },
     {
@@ -159,7 +159,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:704"
+        "cmd/kbengine/main.go:708"
       ]
     },
     {
@@ -1438,8 +1438,8 @@
           "from": "cmd-fin",
           "to": "ad-financexlsx",
           "call": "accountRow: domain.SameAccountName(name, want)",
-          "detail": "имя счёта сравнивает домен: internal/adapter/financexlsx/balance.go:193 — `domain.SameAccountName(name, want)` внутри accountRow (объявлена на :172), и та же функция стоит на пути --create (:156). ⚠️ Прежняя редакция карты описывала здесь побайтовое `if name == want` и открытый дефект #155 — он закрыт правкой #182, сведшей все три пути к одному правилу. «Сбербанк» строчными больше не отвергается",
-          "source": "internal/adapter/financexlsx/balance.go:193",
+          "detail": "имя счёта сравнивает домен: internal/adapter/financexlsx/balance.go:198 — `domain.SameAccountName(name, want)` внутри accountRow (объявлена на :172), и та же функция стоит на пути --create (:156). ⚠️ Прежняя редакция карты описывала здесь побайтовое `if name == want` и открытый дефект #155 — он закрыт правкой #182, сведшей все три пути к одному правилу. «Сбербанк» строчными больше не отвергается",
+          "source": "internal/adapter/financexlsx/balance.go:198",
           "unverified": false
         },
         {
@@ -1447,8 +1447,8 @@
           "from": "cmd-fin",
           "to": "ad-financexlsx",
           "call": "financexlsx.SetBalance(path, bank, balance, now)",
-          "detail": "saveAtomically (internal/adapter/financexlsx/writer.go:197) пишет через временный файл; здесь же чинится объявленный диапазон книги через internal/adapter/xlsxdim — internal/adapter/financexlsx/balance.go:32",
-          "source": "internal/adapter/financexlsx/balance.go:32",
+          "detail": "saveAtomically (internal/adapter/financexlsx/writer.go:197) пишет через временный файл; здесь же чинится объявленный диапазон книги через internal/adapter/xlsxdim — internal/adapter/financexlsx/balance.go:34",
+          "source": "internal/adapter/financexlsx/balance.go:34",
           "unverified": false
         },
         {
@@ -1482,8 +1482,8 @@
           "from": "cmd-fin",
           "to": "ad-financexlsx",
           "call": "financexlsx.AddAccount(path, bank, balance, now)",
-          "detail": "financexlsx.AddAccount (internal/adapter/financexlsx/balance.go:81): новая строка листа «Счета» наследует формат соседней — на этом листе формат и есть разница между 3000 и 3 000,00 ₽",
-          "source": "internal/adapter/financexlsx/balance.go:81",
+          "detail": "financexlsx.AddAccount (internal/adapter/financexlsx/balance.go:83): новая строка листа «Счета» наследует формат соседней — на этом листе формат и есть разница между 3000 и 3 000,00 ₽",
+          "source": "internal/adapter/financexlsx/balance.go:83",
           "unverified": false,
           "symbol": "AddAccount"
         },
@@ -1493,8 +1493,8 @@
           "to": "dom-account",
           "call": "domain.SameAccountName(name, bank)",
           "symbol": "SameAccountName",
-          "source": "internal/adapter/financexlsx/balance.go:155",
-          "detail": "на пути --create написание сверяет домен: internal/adapter/financexlsx/balance.go:155 зовёт domain.SameAccountName, поэтому «долг→проверка» узнаётся как «Долг → Проверка» (проверено прогоном). На обычном fin balance этой проверки нет — см. дефект #155",
+          "source": "internal/adapter/financexlsx/balance.go:161",
+          "detail": "на пути --create написание сверяет домен: internal/adapter/financexlsx/balance.go:161 зовёт domain.SameAccountName, поэтому «долг→проверка» узнаётся как «Долг → Проверка» (проверено прогоном). На обычном fin balance этой проверки нет — см. дефект #155",
           "unverified": false
         },
         {
@@ -1502,8 +1502,8 @@
           "from": "ad-financexlsx",
           "to": "f-workbook",
           "call": "SetCellValue — строка листа «Счета»",
-          "detail": "строка листа «Счета» пишется в internal/adapter/financexlsx/balance.go:113 (SetCellValue), формат наследуется от соседней на :119 — на этом листе формат и есть разница между 3000 и 3 000,00 ₽; файл фиксируется saveAtomically на :129",
-          "source": "internal/adapter/financexlsx/balance.go:113",
+          "detail": "строка листа «Счета» пишется в internal/adapter/financexlsx/balance.go:116 (SetCellValue), формат наследуется от соседней на :119 — на этом листе формат и есть разница между 3000 и 3 000,00 ₽; файл фиксируется saveAtomically на :129",
+          "source": "internal/adapter/financexlsx/balance.go:116",
           "unverified": false,
           "symbol": "SetCellValue"
         }
@@ -1809,8 +1809,8 @@
           "from": "owner",
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
-          "detail": "флаги объявлены в cmd/kbengine/main.go:808-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:919",
+          "detail": "флаги объявлены в cmd/kbengine/main.go:812-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:822, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
+          "source": "cmd/kbengine/main.go:923",
           "unverified": false
         },
         {
@@ -1818,7 +1818,7 @@
           "from": "cmd-set",
           "to": "ad-catalogjson",
           "call": "catalogjson.SetFields(path, ids, changes)",
-          "detail": "cmd/kbengine/main.go:881; применяет либо ко всем id, либо ни к одному, правит по членам объекта в порядке файла — internal/adapter/catalogjson/setfields.go:97",
+          "detail": "cmd/kbengine/main.go:885; применяет либо ко всем id, либо ни к одному, правит по членам объекта в порядке файла — internal/adapter/catalogjson/setfields.go:97",
           "source": "internal/adapter/catalogjson/setfields.go:97",
           "unverified": false
         },
@@ -1827,7 +1827,7 @@
           "from": "ad-catalogjson",
           "to": "f-catalog",
           "call": "catalogjson.SetFields → перезапись catalog.json",
-          "detail": "⚠️ --related ЗАМЕНЯЕТ список, а не дополняет (флаг объявлен в cmd/kbengine/main.go:731): шесть связей стандарта однажды стёрлись молча, и команда отчиталась успехом — internal/adapter/catalogjson/setfields.go:97",
+          "detail": "⚠️ --related ЗАМЕНЯЕТ список, а не дополняет (флаг объявлен в cmd/kbengine/main.go:735): шесть связей стандарта однажды стёрлись молча, и команда отчиталась успехом — internal/adapter/catalogjson/setfields.go:97",
           "source": "internal/adapter/catalogjson/setfields.go:97",
           "unverified": false
         }
@@ -1844,8 +1844,8 @@
           "from": "owner",
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
-          "detail": "cmd/kbengine/main.go:684 — набор проверок перечислен в cmd/kbengine/main.go:787-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
-          "source": "cmd/kbengine/main.go:787",
+          "detail": "cmd/kbengine/main.go:688 — набор проверок перечислен в cmd/kbengine/main.go:791-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
+          "source": "cmd/kbengine/main.go:791",
           "unverified": false
         },
         {
@@ -1853,7 +1853,7 @@
           "from": "cmd-audit",
           "to": "uc-audit",
           "call": "audit.NewService(catalogjson.FileLoader{Path: catalogPath})",
-          "detail": "cmd/kbengine/main.go:698 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), то есть один прогон --check all читает файл столько раз, сколько в нём проверок",
+          "detail": "cmd/kbengine/main.go:702 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), то есть один прогон --check all читает файл столько раз, сколько в нём проверок",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": false
         },
@@ -1862,7 +1862,7 @@
           "from": "uc-audit",
           "to": "ad-artefactfs",
           "call": "svc.WithArtefactVersions / WithArtefactFiles",
-          "detail": "cmd/kbengine/main.go:739-702 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта, files — конспект, которого нет на диске",
+          "detail": "cmd/kbengine/main.go:743-702 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта, files — конспект, которого нет на диске",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": true,
           "why": "подключение чтения front matter прослежено по вызову, но сама сверка версий по файлам не читалась"
@@ -1872,8 +1872,8 @@
           "from": "cmd-audit",
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
-          "detail": "cmd/kbengine/main.go:726 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:822) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
-          "source": "cmd/kbengine/main.go:830",
+          "detail": "cmd/kbengine/main.go:730 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:826) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
+          "source": "cmd/kbengine/main.go:834",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -1945,7 +1945,7 @@
           "to": "build-serve",
           "call": "buildServeHandler(...)",
           "detail": "cmd/kbengine/main.go:502 собирает порты; с #174 туда же приходит список карт (mapPaths → mapsLoader на :539). Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config (:510-516), и книга (:526-533) перечитываются на КАЖДЫЙ запрос. Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
-          "source": "cmd/kbengine/main.go:595",
+          "source": "cmd/kbengine/main.go:599",
           "unverified": false
         },
         {
@@ -1953,7 +1953,7 @@
           "from": "build-serve",
           "to": "ad-httpapi",
           "call": "httpapi.NewServer(query, audit, analytics, fin, cfg, chlog, docs, engine, front)",
-          "detail": "cmd/kbengine/main.go:544 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:143",
+          "detail": "cmd/kbengine/main.go:661 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:143",
           "source": "internal/adapter/httpapi/server.go:227",
           "unverified": false
         },
@@ -2087,8 +2087,8 @@
           "from": "owner",
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
-          "detail": "cmd/kbengine/main.go:587",
-          "source": "cmd/kbengine/main.go:753",
+          "detail": "cmd/kbengine/main.go:591",
+          "source": "cmd/kbengine/main.go:757",
           "unverified": false
         },
         {
@@ -2096,7 +2096,7 @@
           "from": "cmd-dedup",
           "to": "uc-audit",
           "call": "audit.Service.Duplicates()",
-          "detail": "cmd/kbengine/main.go:638 → audit.Service.Duplicates (internal/usecase/audit/dedup.go:24). Два ключа группировки: точное совпадение адреса и похожий заголовок после нормализации (dedup.go:18, normalizeTitle на :49). По habr_id дедуп НЕ работает — этого ключа в коде нет",
+          "detail": "cmd/kbengine/main.go:642 → audit.Service.Duplicates (internal/usecase/audit/dedup.go:24). Два ключа группировки: точное совпадение адреса и похожий заголовок после нормализации (dedup.go:18, normalizeTitle на :49). По habr_id дедуп НЕ работает — этого ключа в коде нет",
           "source": "internal/usecase/audit/dedup.go:24",
           "unverified": false
         }
@@ -2821,8 +2821,8 @@
           "from": "ad-httpapi",
           "to": "f-now",
           "call": "readNowDoc(path)",
-          "detail": "cmd/kbengine/main.go:597 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:666",
+          "detail": "cmd/kbengine/main.go:601 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
+          "source": "cmd/kbengine/main.go:670",
           "unverified": false
         },
         {
@@ -2848,7 +2848,7 @@
           "from": "ad-httpapi",
           "to": "f-team",
           "call": "json.Valid — проверка на каждый запрос",
-          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:545) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:371) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
+          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:549) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:371) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
           "source": "internal/adapter/httpapi/server.go:460",
           "unverified": false,
           "symbol": "Valid"
@@ -3065,7 +3065,7 @@
           "to": "build-serve",
           "call": "mapsLoader(mapPaths)",
           "symbol": "mapsLoader",
-          "source": "cmd/kbengine/main.go:585",
+          "source": "cmd/kbengine/main.go:589",
           "detail": "cmd/kbengine/main.go:528 собирает загрузчик карт до старта сервера: нечитаемая карта — отказ запуска, а не пустая вкладка"
         },
         {
@@ -3198,8 +3198,8 @@
           "to": "f-artefacts",
           "call": "fsys.Open(rel)",
           "symbol": "artefactsFS",
-          "source": "cmd/kbengine/main.go:745",
-          "detail": "cmd/kbengine/main.go:733 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
+          "source": "cmd/kbengine/main.go:749",
+          "detail": "cmd/kbengine/main.go:737 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
         },
         {
           "n": 5,
@@ -3403,8 +3403,8 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:915",
-          "detail": "cmd/kbengine/main.go:796 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
+          "source": "cmd/kbengine/main.go:919",
+          "detail": "cmd/kbengine/main.go:800 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
           "n": 2,
