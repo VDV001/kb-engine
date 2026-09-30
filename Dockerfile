@@ -7,7 +7,7 @@
 #
 # package.json and the lockfile are copied first so `npm ci` reuses its layer
 # whenever only src/ changed.
-FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:367679cf9792759492a486e4aa4b421764d71a9546a6dae8aab81a99eb797b3e AS web
+FROM --platform=$BUILDPLATFORM node:26-bookworm-slim@sha256:662933cf47f013bc8e4beb31a6116448427a82057ba7c42c97e4c5ba766504c2 AS web
 WORKDIR /web
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -18,7 +18,7 @@ RUN npm run build
 # Pinned by digest (Dependabot's docker ecosystem keeps tag+digest current).
 # Runs on the native BUILDPLATFORM and cross-compiles to TARGET* so multi-arch
 # builds need no QEMU emulation (CGO is disabled).
-FROM --platform=$BUILDPLATFORM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm@sha256:69a7b9788769bec032d238959b61854e9ae87f57be9029ec04e9885fabf99195 AS build
 WORKDIR /src
 
 # The module has no third-party dependencies (stdlib only), so there is no
