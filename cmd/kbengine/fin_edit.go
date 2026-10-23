@@ -38,6 +38,8 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 	source := fs.String("source", "", "new source")
 	account := fs.String("account", "", "new account (--account= clears it)")
 	date := fs.String("date", "", "new date as YYYY-MM-DD")
+	currency := fs.String("currency", "", "new currency code, e.g. USD")
+	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -58,6 +60,14 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin edit: %v\n", err)
 		return 1
 	}
+	if p.Currency, err = currencyFlag(*currency); err != nil {
+		fmt.Fprintf(stderr, "fin edit: %v\n", err)
+		return 1
+	}
+	if p.Accounts, err = bookAccounts(*from); err != nil {
+		fmt.Fprintf(stderr, "fin edit: %v\n", err)
+		return 1
+	}
 
 	rec, err := editInLedger(*ledgerPath, *id, p)
 	if err != nil {
@@ -66,7 +76,7 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 	}
 	tx := rec.Transaction()
 	fmt.Fprintf(stdout, "fin edit: %s  %s  %10s  %s %s %s\n",
-		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(),
+		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx),
 		tx.Category(), tx.Description(), tx.Account())
 	return 0
 }
@@ -108,7 +118,7 @@ func editUnderLock(ledgerPath, id string, p finance.EditParams) (finance.Record,
 		if twin := finance.RepeatOf(recs, edited); twin != nil {
 			tx := twin.Transaction()
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — правка сделала бы её копией",
-				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
 		recs[i] = edited

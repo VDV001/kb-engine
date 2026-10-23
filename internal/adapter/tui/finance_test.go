@@ -122,3 +122,33 @@ func TestFinancesAsksForWholeHistory(t *testing.T) {
 		t.Errorf("opened on period %v, want the whole history", fin.asked[0])
 	}
 }
+
+// Экран финансов называет записи в другой валюте рядом с итогом. Без строки
+// доллары просто пропали бы с экрана: в рублёвые суммы они не входят.
+func TestFinancesNamesOtherCurrencies(t *testing.T) {
+	sum := sampleSummary()
+	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", ExpenseCount: 2, Expenses: domain.NewMoney(1730)}}
+	m := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab())
+	view := m.View()
+	for _, want := range []string{"USD", "17,30"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("finances view is missing %q\n--- view ---\n%s", want, view)
+		}
+	}
+}
+
+// Валюта только с доходом не показывает строку «потрачено 0 (0)»: она читается
+// как трата нулевой суммы.
+func TestFinancesOmitsAnEmptySpendLineForACurrency(t *testing.T) {
+	sum := sampleSummary()
+	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", IncomeCount: 1, Income: domain.NewMoney(5000)}}
+	view := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab()).View()
+	for line := range strings.SplitSeq(view, "\n") {
+		if strings.Contains(line, "USD") && strings.Contains(line, "потрачено") {
+			t.Errorf("строка трат у валюты без трат: %q", line)
+		}
+	}
+	if !strings.Contains(view, "получено") || !strings.Contains(view, "50,00") {
+		t.Errorf("доход в USD не показан\n%s", view)
+	}
+}

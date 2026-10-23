@@ -24,6 +24,11 @@ const (
 	// idHeader marks the identity column. It sits in the header row so the
 	// column explains itself to whoever opens the file next.
 	idHeader = "id"
+	// currencyHeader marks the column with the unit a row's amount is in. Found
+	// by its header like the id, never by position: the eighth column of the
+	// live book holds bank names under no header, and a "next free number"
+	// decided once would sooner or later be someone else's cell.
+	currencyHeader = "Валюта"
 	// headerRow is where the workbook keeps its column names; row 1 is a title.
 	headerRow = 2
 	// backupsKept is enough to undo a bad afternoon and few enough that the
@@ -337,12 +342,15 @@ func parsePositionalID(id string) (sheet string, row int, err error) {
 // findIDColumn returns the 1-based column carrying the id header, or 0 when the
 // sheet has none. Reading never guesses: a sheet without the header simply has
 // no stored identity yet.
-func findIDColumn(rows [][]string) int {
+func findIDColumn(rows [][]string) int { return findHeaderColumn(rows, idHeader) }
+
+// findHeaderColumn returns the 1-based column whose header reads name, or 0.
+func findHeaderColumn(rows [][]string, name string) int {
 	if len(rows) < headerRow {
 		return 0
 	}
 	for i, v := range rows[headerRow-1] {
-		if strings.EqualFold(strings.TrimSpace(v), idHeader) {
+		if strings.EqualFold(strings.TrimSpace(v), name) {
 			return i + 1
 		}
 	}

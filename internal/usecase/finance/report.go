@@ -58,6 +58,19 @@ func (f Filter) accepts(r Record) bool {
 	return f.Category == "" || strings.EqualFold(tx.Category(), f.Category)
 }
 
+// CurrencyTotal is what one currency other than roubles came to. Kept apart
+// because without a rate dollars and roubles do not add up to anything.
+type CurrencyTotal struct {
+	Currency     string
+	ExpenseCount int
+	Expenses     domain.Money
+	IncomeCount  int
+	Income       domain.Money
+	// Переводы себе в этой валюте: в траты не входят, как и рублёвые.
+	TransferCount int
+	Transfers     domain.Money
+}
+
 // CategoryTotal is what one category cost over the records summarized.
 type CategoryTotal struct {
 	Category string
@@ -110,6 +123,10 @@ type Summary struct {
 	// Ноль здесь означает «исключать было нечего», и это отдельный ответ.
 	ExcludedTransferCount int
 	ExcludedTransfers     domain.Money
+	// OtherCurrencies — записи не в рублях, по валюте, в порядке кода. В
+	// рублёвые суммы и разбивки они не входят: без курса доллар и рубль не
+	// складываются, а с курсом это уже оценка. Пустой список — «таких нет».
+	OtherCurrencies []CurrencyTotal
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
@@ -138,6 +155,41 @@ type Summary struct {
 	ByDay   []DayTotal
 }
 
+// setAside takes out what the rouble totals must not see, and reports whether
+// it did.
+//
+// Перекладывание денег между своими счетами проходит мимо всех итогов: деньги
+// не пришли и не ушли. Строка остаётся в ledger и в списках — это событие,
+// которое было, — но в сумму расходов, в разбивки и в итог не входит, иначе
+// отчёт утверждает, что человек потратил больше, чем потратил. Записи в другой
+// валюте — по той же причине: без курса доллар и рубль не складываются.
+func (s *Summary) setAside(tx domain.Transaction, other map[string]CurrencyTotal) bool {
+	c := tx.Currency()
+	if c.IsBase() {
+		if !tx.IsInternalTransfer() {
+			return false
+		}
+		s.ExcludedTransferCount++
+		s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
+		return true
+	}
+	o := other[c.Code()]
+	o.Currency = c.Code()
+	switch {
+	case tx.IsInternalTransfer():
+		o.TransferCount++
+		o.Transfers = o.Transfers.Add(tx.Amount())
+	case tx.IsExpense():
+		o.ExpenseCount++
+		o.Expenses = o.Expenses.Add(tx.Amount())
+	default:
+		o.IncomeCount++
+		o.Income = o.Income.Add(tx.Amount())
+	}
+	other[c.Code()] = o
+	return true
+}
+
 // Summarize totals the records.
 //
 // Expenses are summed as recorded, which means a refund (a negative expense)
@@ -154,17 +206,11 @@ func Summarize(recs []Record) Summary {
 	bySubcategory := make(map[[2]string]SubcategoryTotal)
 	byMonth := make(map[string]MonthTotal)
 	byDay := make(map[string]DayTotal)
+	other := make(map[string]CurrencyTotal)
 
 	for _, r := range recs {
 		tx := r.Transaction()
-		// Перекладывание денег между своими счетами проходит мимо всех итогов:
-		// деньги не пришли и не ушли. Строка остаётся в ledger и в списках — это
-		// событие, которое было, — но в сумму расходов, в разбивки и в итог не
-		// входит, иначе отчёт утверждает, что человек потратил больше, чем
-		// потратил.
-		if tx.IsInternalTransfer() {
-			s.ExcludedTransferCount++
-			s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
+		if s.setAside(tx, other) {
 			continue
 		}
 		s.Net = s.Net.Add(tx.SignedAmount())
@@ -213,6 +259,9 @@ func Summarize(recs []Record) Summary {
 		byDay[day] = d
 	}
 
+	for _, k := range slices.Sorted(maps.Keys(other)) {
+		s.OtherCurrencies = append(s.OtherCurrencies, other[k])
+	}
 	s.ByCategory = ranked(byCategory)
 	s.ByAccount = ranked(byAccount)
 	s.ByPlace = ranked(byPlace)

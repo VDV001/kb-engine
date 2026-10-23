@@ -387,8 +387,17 @@ func describeTransactions(txs []domain.Transaction) map[string]string {
 	return out
 }
 
+// amountText is an amount the way a person reads it: with its currency, unless
+// it is roubles, which every line printed before currencies existed was.
+func amountText(tx domain.Transaction) string {
+	if c := tx.Currency(); !c.IsBase() {
+		return tx.Amount().String() + " " + c.Code()
+	}
+	return tx.Amount().String()
+}
+
 func describeTx(tx domain.Transaction) string {
-	parts := []string{tx.Date().Format(time.DateOnly), tx.Amount().String()}
+	parts := []string{tx.Date().Format(time.DateOnly), amountText(tx)}
 	if c := tx.Category(); c != "" {
 		parts = append(parts, c)
 	}

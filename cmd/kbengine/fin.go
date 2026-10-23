@@ -87,6 +87,29 @@ func ledgerFlags(fs *flag.FlagSet) *string {
 	return fs.String("ledger", "", "path to transactions.jsonl")
 }
 
+// currencyFlag reads --currency. Empty means "not named": the account's own
+// currency applies then, or roubles.
+func currencyFlag(raw string) (*domain.Currency, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	c, err := domain.NewCurrency(raw)
+	if err != nil {
+		return nil, fmt.Errorf("--currency %q: %w", raw, err)
+	}
+	return &c, nil
+}
+
+// bookAccounts reads the accounts a currency is taken from and checked against.
+// No book means nothing to take or check: nil, and the sync is where a
+// mismatch stops instead.
+func bookAccounts(path string) ([]domain.Account, error) {
+	if path == "" {
+		return nil, nil
+	}
+	return financexlsx.ReadAccounts(path, time.Now)
+}
+
 // filterFlags adds the flags that narrow a ledger.
 func filterFlags(fs *flag.FlagSet) (year, month *int, category, account, kind *string) {
 	year = fs.Int("year", 0, "restrict to a year")
@@ -167,6 +190,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
+	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's when --from is given, otherwise roubles)")
+	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -194,6 +219,17 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	named, err := currencyFlag(*currency)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+	accounts, err := bookAccounts(*from)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+
 	rec, err := appendChecked(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
 		Date:        when,
@@ -204,6 +240,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Description: *note,
 		Source:      *source,
 		Account:     *account,
+		Currency:    named,
+		Accounts:    accounts,
 	}, *force, func(c finance.Correction) {
 		// Подстановка называется вслух: человек набрал одно, записано другое,
 		// и узнать об этом из отчёта через месяц — то же самое молчание.
@@ -220,7 +258,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	}
 	tx := rec.Transaction()
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
-		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(), tx.Category(), tx.Description())
+		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx), tx.Category(), tx.Description())
 	return 0
 }
 
@@ -310,7 +348,7 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 		tx := dup.Transaction()
 		if !force {
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
-				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
 		p.RepeatOf = tx.ID()
@@ -358,7 +396,7 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 			repeat = fmt.Sprintf("  ↺ повтор подтверждён поверх %s", id)
 		}
 		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s%s\n",
-			tx.Date().Format(time.DateOnly), tx.ID(), tx.Amount(), tx.Category(), tx.Description(), repeat)
+			tx.Date().Format(time.DateOnly), tx.ID(), amountText(tx), tx.Category(), tx.Description(), repeat)
 	}
 	fmt.Fprintf(stdout, "fin list: %d of %d record(s)\n", len(matched), len(recs))
 	return 0
@@ -397,6 +435,12 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	if s.ExcludedTransferCount > 0 {
 		fmt.Fprintf(stdout, "переводы себе — не в итогах: %s (%d)\n",
 			s.ExcludedTransfers, s.ExcludedTransferCount)
+	}
+	// Записи в другой валюте — та же история: в итоги выше не входят, потому
+	// что без курса доллар и рубль не складываются, и называются здесь.
+	for _, c := range s.OtherCurrencies {
+		fmt.Fprintf(stdout, "%s — не в итогах: расходы %s (%d), доходы %s (%d)\n",
+			c.Currency, c.Expenses, c.ExpenseCount, c.Income, c.IncomeCount)
 	}
 	writeBreakdown(stdout, "по категориям", s.ByCategory)
 	writeBreakdown(stdout, "по счетам", s.ByAccount)

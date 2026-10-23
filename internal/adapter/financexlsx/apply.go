@@ -155,9 +155,16 @@ func holdsAnAccount(f *excelize.File, sheet string, col, row int, accounts map[s
 
 // sheetIndex is what one sheet looks like before anything is written.
 type sheetIndex struct {
-	idCol   int
-	rowByID map[string]int
-	lastRow int
+	idCol int
+	// curCol is the Валюта column, 0 while the sheet has none. freeCol is where
+	// one goes when the first row not in roubles arrives: past the documented
+	// width and everything the sheet holds, the id header included, so the two
+	// can never share a cell. newCurHeader asks for the header to be written.
+	curCol       int
+	freeCol      int
+	newCurHeader bool
+	rowByID      map[string]int
+	lastRow      int
 	// lastDataRow is the last row that actually holds a transaction. The live
 	// sheet reports 1156 rows for 507 records, because the rows past the data
 	// carry formatting; inheriting from those gives a new row a border and no
@@ -196,11 +203,15 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if idCol := index[sheetExpenses].idCol; idColumnCollides(idCol) {
 		return collisionError(idCol)
 	}
-	accounts, err := knownAccounts(f, now)
+	accs, err := readAccounts(f, now)
 	if err != nil {
 		return err
 	}
+	accounts := accountNames(accs)
 	if err := checkVocabulary(upserts, accounts); err != nil {
+		return err
+	}
+	if err := checkCurrencies(upserts, accs); err != nil {
 		return err
 	}
 	plan, err := planRowWrites(index, upserts, removals)
@@ -214,6 +225,9 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err := plan.apply(f, accounts); err != nil {
 		return err
 	}
+	if err := writeCurrencyHeaders(f, index); err != nil {
+		return err
+	}
 	return saveAtomically(f, path)
 }
 
@@ -224,6 +238,7 @@ type rowWrite struct {
 	styleFrom int // row to copy formatting from; 0 means leave formatting alone
 	tx        *domain.Transaction
 	idCol     int
+	curCol    int // 0 when the sheet has no Валюта column
 	kind      string
 }
 
@@ -245,7 +260,13 @@ func indexSheets(f *excelize.File) (map[string]sheetIndex, error) {
 		if err != nil {
 			return nil, fmt.Errorf("read sheet %q: %w", sheet, err)
 		}
-		idx := sheetIndex{idCol: findIDColumn(rows), rowByID: map[string]int{}, lastRow: len(rows)}
+		idx := sheetIndex{
+			idCol:   findIDColumn(rows),
+			curCol:  findHeaderColumn(rows, currencyHeader),
+			freeCol: firstFreeColumn(rows, reservedWidth(kindOf(sheet))),
+			rowByID: map[string]int{},
+			lastRow: len(rows),
+		}
 		if idx.idCol != 0 {
 			for i, row := range rows {
 				rowNum := i + 1
@@ -281,7 +302,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if !ok {
 			return nil, fmt.Errorf("cannot remove %q: the workbook has no row with that id", id)
 		}
-		plan = append(plan, rowWrite{sheet: sheet, row: row, idCol: index[sheet].idCol, kind: kindOf(sheet)})
+		plan = append(plan, rowWrite{sheet: sheet, row: row, idCol: index[sheet].idCol, curCol: index[sheet].curCol, kind: kindOf(sheet)})
 	}
 
 	for _, tx := range upserts {
@@ -296,6 +317,8 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if idx.idCol == 0 {
 			return nil, fmt.Errorf("sheet %q has no id column — run `fin sync --init` first", sheet)
 		}
+		idx = idx.withCurrencyColumnFor(tx)
+		index[sheet] = idx
 		row, known := idx.rowByID[tx.ID()]
 		if !known {
 			// A row whose id cell is empty is not nameless: the reader hands it a
@@ -316,7 +339,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 			idx.rowByID[tx.ID()] = row
 			index[sheet] = idx
 		}
-		plan = append(plan, rowWrite{sheet: sheet, row: row, styleFrom: styleFrom, tx: &tx, idCol: idx.idCol})
+		plan = append(plan, rowWrite{sheet: sheet, row: row, styleFrom: styleFrom, tx: &tx, idCol: idx.idCol, curCol: idx.curCol})
 	}
 
 	// Deterministic order, so the same change produces the same file.
@@ -357,7 +380,7 @@ func vacateOtherSheet(index map[string]sheetIndex, id, sheet string) (rowWrite, 
 	}
 	delete(oidx.rowByID, id)
 	index[other] = oidx
-	return rowWrite{sheet: other, row: row, idCol: oidx.idCol, kind: kindOf(other)}, true
+	return rowWrite{sheet: other, row: row, idCol: oidx.idCol, curCol: oidx.curCol, kind: kindOf(other)}, true
 }
 
 // positionalRow resolves an id of the form "expense-r42" to the row it names, on
@@ -393,11 +416,17 @@ func knownAccounts(f *excelize.File, now func() time.Time) (map[string]struct{},
 	if err != nil {
 		return nil, err
 	}
+	return accountNames(accs), nil
+}
+
+// accountNames is the set of account names, the vocabulary that tells an
+// account from a source.
+func accountNames(accs []domain.Account) map[string]struct{} {
 	out := make(map[string]struct{}, len(accs))
 	for _, a := range accs {
 		out[a.Bank()] = struct{}{}
 	}
-	return out, nil
+	return out
 }
 
 func (p rowPlan) apply(f *excelize.File, accounts map[string]struct{}) error {
@@ -422,6 +451,9 @@ func (p rowPlan) apply(f *excelize.File, accounts map[string]struct{}) error {
 // mistake the id column was placed to avoid.
 func clearRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error {
 	cols := append(slices.Clone(dataColumns(w.kind)), w.idCol)
+	if w.curCol != 0 {
+		cols = append(cols, w.curCol)
+	}
 	// The account may be in the column beside Источник. Clear it only when it is
 	// one — anything else there is the owner's note, not ours to remove.
 	if w.kind == domain.KindExpense {
@@ -476,6 +508,10 @@ func writeRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 		values[cols[3]] = float64(tx.Amount().Kopecks()) / 100
 	}
 
+	if w.curCol != 0 {
+		values[w.curCol] = currencyCell(tx.Currency())
+	}
+
 	for col, v := range values {
 		name, err := excelize.CoordinatesToCellName(col, w.row)
 		if err != nil {
@@ -528,4 +564,65 @@ func applyStyles(f *excelize.File, sheet string, row int, styles map[int]int) er
 		}
 	}
 	return nil
+}
+
+// currencyCell is what the Валюта column holds for a unit: empty for roubles, so
+// a book that never saw another currency looks exactly as it did.
+func currencyCell(c domain.Currency) string {
+	if c.IsBase() {
+		return ""
+	}
+	return c.Code()
+}
+
+// writeCurrencyHeaders names the Валюта column on every sheet that got one in
+// this pass. Written with the rows, before the save, so the book is never on
+// disk with currency codes under no header.
+func writeCurrencyHeaders(f *excelize.File, index map[string]sheetIndex) error {
+	for sheet, idx := range index {
+		if !idx.newCurHeader {
+			continue
+		}
+		name, err := excelize.CoordinatesToCellName(idx.curCol, headerRow)
+		if err != nil {
+			return fmt.Errorf("%s header: %w", sheet, err)
+		}
+		if err := f.SetCellStr(sheet, name, currencyHeader); err != nil {
+			return fmt.Errorf("%s!%s: %w", sheet, name, err)
+		}
+	}
+	return nil
+}
+
+// checkCurrencies refuses a row whose currency contradicts its account, before
+// anything is written.
+//
+// The add and edit paths check this when the book is at hand; a record written
+// without it was never checked. The book knows every account's currency, so this
+// is the last place a dollar spend can be stopped from landing on a rouble
+// account. The rule itself is the domain's.
+func checkCurrencies(upserts []domain.Transaction, accs []domain.Account) error {
+	byName := make(map[string]domain.Account, len(accs))
+	for _, a := range accs {
+		byName[a.Bank()] = a
+	}
+	for _, tx := range upserts {
+		acc, ok := byName[tx.Account()]
+		if !ok {
+			continue
+		}
+		if err := tx.CheckAccountCurrency(acc); err != nil {
+			return fmt.Errorf("%s: %w", tx.ID(), err)
+		}
+	}
+	return nil
+}
+
+// withCurrencyColumnFor gives the sheet a Валюта column when this row is the
+// first one not in roubles.
+func (idx sheetIndex) withCurrencyColumnFor(tx domain.Transaction) sheetIndex {
+	if !tx.Currency().IsBase() && idx.curCol == 0 {
+		idx.curCol, idx.newCurHeader = idx.freeCol, true
+	}
+	return idx
 }

@@ -97,7 +97,20 @@ func (m Model) renderFinances() string {
 		styleDim.Render(fmt.Sprintf("(%d)", s.ExpenseCount)),
 		styleDim.Render("получено"), styleAccent.Render(human(s.Income)),
 		styleDim.Render(fmt.Sprintf("(%d)", s.IncomeCount)))
-	fmt.Fprintf(&b, "%s %s\n\n", styleDim.Render("разница"), styleTitle.Render(human(s.Net)))
+	fmt.Fprintf(&b, "%s %s\n", styleDim.Render("разница"), styleTitle.Render(human(s.Net)))
+	// Записи в другой валюте в суммы выше не входят: без курса доллар и рубль
+	// не складываются. Названы здесь, иначе они пропали бы с экрана молча.
+	for _, c := range s.OtherCurrencies {
+		if c.ExpenseCount > 0 {
+			fmt.Fprintf(&b, "%s %s %s %s\n", styleDim.Render("не в рублях:"), c.Currency,
+				styleDim.Render("потрачено"), human(c.Expenses)+fmt.Sprintf(" (%d)", c.ExpenseCount))
+		}
+		if c.IncomeCount > 0 {
+			fmt.Fprintf(&b, "%s %s %s %s\n", styleDim.Render("не в рублях:"), c.Currency,
+				styleDim.Render("получено"), human(c.Income)+fmt.Sprintf(" (%d)", c.IncomeCount))
+		}
+	}
+	b.WriteString("\n")
 
 	// «Расходы по …», а не «по …»: рядом стоят балансы счетов, и подпись «по
 	// счетам» над суммами трат читается как остаток на карте. Владелец сравнил

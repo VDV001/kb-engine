@@ -24,6 +24,8 @@ type transactionDTO struct {
 	Description string `json:"description,omitempty"`
 	Account     string `json:"account,omitempty"`
 	Source      string `json:"source,omitempty"`
+	// Currency — код валюты; для рубля поле не пишется, как в журнале.
+	Currency string `json:"currency,omitempty"`
 	// RecordedAt — момент появления строки в книге, RFC3339. Пусто означает
 	// «неизвестен», а не «давно»: строку могли вписать мимо движка.
 	RecordedAt string `json:"recorded_at,omitempty"`
@@ -60,6 +62,18 @@ type periodTotalDTO struct {
 	Count  int    `json:"count"`
 }
 
+// currencyTotalDTO — записи одной валюты, кроме рубля.
+type currencyTotalDTO struct {
+	Currency     string `json:"currency"`
+	ExpenseCount int    `json:"expenseCount"`
+	Expenses     string `json:"expenses"`
+	IncomeCount  int    `json:"incomeCount"`
+	Income       string `json:"income"`
+	// Переводы себе в этой валюте.
+	TransferCount int    `json:"transferCount"`
+	Transfers     string `json:"transfers"`
+}
+
 // financeSummaryDTO is the finance view's arithmetic, done once, on the server.
 //
 // Every list is present even when empty: a missing field is indistinguishable
@@ -74,16 +88,19 @@ type financeSummaryDTO struct {
 	// Исключённое из итогов: перекладывание денег между своими счетами. Едет
 	// вместе с суммами, потому что объясняет их: без него сумма строк в журнале
 	// не сходится с расходами, и причина остаётся домашним знанием.
-	ExcludedTransferCount int                   `json:"excludedTransferCount"`
-	ExcludedTransfers     string                `json:"excludedTransfers"`
-	ByCategory            []namedTotalDTO       `json:"byCategory"`
-	ByAccount             []namedTotalDTO       `json:"byAccount"`
-	ByPlace               []namedTotalDTO       `json:"byPlace"`
-	BySource              []namedTotalDTO       `json:"bySource"`
-	IncomeBySource        []namedTotalDTO       `json:"incomeBySource"`
-	BySubcategory         []subcategoryTotalDTO `json:"bySubcategory"`
-	ByMonth               []periodTotalDTO      `json:"byMonth"`
-	ByDay                 []periodTotalDTO      `json:"byDay"`
+	ExcludedTransferCount int    `json:"excludedTransferCount"`
+	ExcludedTransfers     string `json:"excludedTransfers"`
+	// Записи не в рублях: в суммы выше не входят и объясняют их так же, как
+	// исключённые переводы.
+	OtherCurrencies []currencyTotalDTO    `json:"otherCurrencies"`
+	ByCategory      []namedTotalDTO       `json:"byCategory"`
+	ByAccount       []namedTotalDTO       `json:"byAccount"`
+	ByPlace         []namedTotalDTO       `json:"byPlace"`
+	BySource        []namedTotalDTO       `json:"bySource"`
+	IncomeBySource  []namedTotalDTO       `json:"incomeBySource"`
+	BySubcategory   []subcategoryTotalDTO `json:"bySubcategory"`
+	ByMonth         []periodTotalDTO      `json:"byMonth"`
+	ByDay           []periodTotalDTO      `json:"byDay"`
 }
 
 func toNamedTotals(in []finance.CategoryTotal) []namedTotalDTO {
@@ -104,6 +121,7 @@ func toFinanceSummaryDTO(s finance.Summary) financeSummaryDTO {
 
 		ExcludedTransferCount: s.ExcludedTransferCount,
 		ExcludedTransfers:     s.ExcludedTransfers.String(),
+		OtherCurrencies:       make([]currencyTotalDTO, 0, len(s.OtherCurrencies)),
 		ByCategory:            toNamedTotals(s.ByCategory),
 		ByAccount:             toNamedTotals(s.ByAccount),
 		ByPlace:               toNamedTotals(s.ByPlace),
@@ -124,6 +142,13 @@ func toFinanceSummaryDTO(s finance.Summary) financeSummaryDTO {
 	}
 	for _, d := range s.ByDay {
 		dto.ByDay = append(dto.ByDay, periodTotalDTO{Period: d.Date, Total: d.Total.String(), Count: d.Count})
+	}
+	for _, c := range s.OtherCurrencies {
+		dto.OtherCurrencies = append(dto.OtherCurrencies, currencyTotalDTO{
+			Currency: c.Currency, ExpenseCount: c.ExpenseCount, Expenses: c.Expenses.String(),
+			IncomeCount: c.IncomeCount, Income: c.Income.String(),
+			TransferCount: c.TransferCount, Transfers: c.Transfers.String(),
+		})
 	}
 	return dto
 }
@@ -217,6 +242,7 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Description: t.Description(),
 		Account:     t.Account(),
 		Source:      t.Source(),
+		Currency:    foreignCode(t.Currency()),
 		RecordedAt:  recordedAtOrEmpty(t.ID()),
 		RepeatOf:    t.RepeatOf(),
 	}
@@ -435,4 +461,12 @@ func toSourceDTO(s freshness.SourceState, draft string) sourceStateDTO {
 		out.Facts = append(out.Facts, freshnessFact{Kind: f.Kind, Text: f.Text, Count: f.Count, IDs: f.IDs})
 	}
 	return out
+}
+
+// foreignCode is "" for roubles, so the field is left out of the record.
+func foreignCode(c domain.Currency) string {
+	if c.IsBase() {
+		return ""
+	}
+	return c.Code()
 }

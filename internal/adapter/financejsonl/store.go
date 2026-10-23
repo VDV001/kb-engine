@@ -54,6 +54,9 @@ type line struct {
 	Description string `json:"description,omitempty"`
 	Source      string `json:"source,omitempty"`
 	Account     string `json:"account,omitempty"`
+	// Currency опускается для рубля: так строки, записанные до поля, и новые
+	// рублёвые выглядят одинаково.
+	Currency string `json:"currency,omitempty"`
 	// RepeatOf — id записи, поверх которой повтор подтверждён человеком. Поле
 	// опускается, когда его нет: пустое место в строке журнала честно значит
 	// «неизвестно», а нулевое значение выглядело бы решением.
@@ -128,6 +131,12 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 	if err != nil {
 		return finance.Record{}, err
 	}
+	var currency domain.Currency
+	if l.Currency != "" {
+		if currency, err = domain.NewCurrency(l.Currency); err != nil {
+			return finance.Record{}, err
+		}
+	}
 
 	// The clock belongs to the load, not to the record. Validating a row against
 	// its own updated_at looks reproducible and is wrong: an entry made at 02:43
@@ -145,6 +154,7 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 		Description: l.Description,
 		Source:      l.Source,
 		Account:     l.Account,
+		Currency:    currency,
 		RepeatOf:    l.RepeatOf,
 		Now:         now,
 	})
@@ -244,8 +254,17 @@ func encodeLine(r finance.Record) line {
 		Description: tx.Description(),
 		Source:      tx.Source(),
 		Account:     tx.Account(),
+		Currency:    currencyCode(tx.Currency()),
 		RepeatOf:    tx.RepeatOf(),
 		Rev:         r.Rev(),
 		UpdatedAt:   r.UpdatedAt().UTC().Format(time.RFC3339),
 	}
+}
+
+// currencyCode is "" for the base currency, so the field is left out of the line.
+func currencyCode(c domain.Currency) string {
+	if c.IsBase() {
+		return ""
+	}
+	return c.Code()
 }
