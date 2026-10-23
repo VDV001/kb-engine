@@ -152,6 +152,37 @@ type Summary struct {
 	ByDay   []DayTotal
 }
 
+// setAside takes out what the rouble totals must not see, and reports whether
+// it did.
+//
+// Перекладывание денег между своими счетами проходит мимо всех итогов: деньги
+// не пришли и не ушли. Строка остаётся в ledger и в списках — это событие,
+// которое было, — но в сумму расходов, в разбивки и в итог не входит, иначе
+// отчёт утверждает, что человек потратил больше, чем потратил. Записи в другой
+// валюте — по той же причине: без курса доллар и рубль не складываются.
+func (s *Summary) setAside(tx domain.Transaction, other map[string]CurrencyTotal) bool {
+	if tx.IsInternalTransfer() {
+		s.ExcludedTransferCount++
+		s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
+		return true
+	}
+	c := tx.Currency()
+	if c.IsBase() {
+		return false
+	}
+	o := other[c.Code()]
+	o.Currency = c.Code()
+	if tx.IsExpense() {
+		o.ExpenseCount++
+		o.Expenses = o.Expenses.Add(tx.Amount())
+	} else {
+		o.IncomeCount++
+		o.Income = o.Income.Add(tx.Amount())
+	}
+	other[c.Code()] = o
+	return true
+}
+
 // Summarize totals the records.
 //
 // Expenses are summed as recorded, which means a refund (a negative expense)
@@ -172,27 +203,7 @@ func Summarize(recs []Record) Summary {
 
 	for _, r := range recs {
 		tx := r.Transaction()
-		// Перекладывание денег между своими счетами проходит мимо всех итогов:
-		// деньги не пришли и не ушли. Строка остаётся в ledger и в списках — это
-		// событие, которое было, — но в сумму расходов, в разбивки и в итог не
-		// входит, иначе отчёт утверждает, что человек потратил больше, чем
-		// потратил.
-		if tx.IsInternalTransfer() {
-			s.ExcludedTransferCount++
-			s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
-			continue
-		}
-		if c := tx.Currency(); !c.IsBase() {
-			o := other[c.Code()]
-			o.Currency = c.Code()
-			if tx.IsExpense() {
-				o.ExpenseCount++
-				o.Expenses = o.Expenses.Add(tx.Amount())
-			} else {
-				o.IncomeCount++
-				o.Income = o.Income.Add(tx.Amount())
-			}
-			other[c.Code()] = o
+		if s.setAside(tx, other) {
 			continue
 		}
 		s.Net = s.Net.Add(tx.SignedAmount())

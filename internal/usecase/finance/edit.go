@@ -50,8 +50,12 @@ func (p EditParams) touches() bool {
 	return !p.Date.IsZero() || !p.Amount.IsZero() ||
 		p.Category != "" || p.Subcategory != "" || p.Place != "" ||
 		p.Description != "" || p.Source != "" || p.Account != "" ||
-		p.ClearSubcategory || p.ClearPlace || p.ClearDescription || p.ClearAccount ||
-		p.Currency != nil
+		p.clears() || p.Currency != nil
+}
+
+// clears отвечает, названо ли хоть одно стирание.
+func (p EditParams) clears() bool {
+	return p.ClearSubcategory || p.ClearPlace || p.ClearDescription || p.ClearAccount
 }
 
 // Edit возвращает запись со следующей ревизией и применёнными изменениями.

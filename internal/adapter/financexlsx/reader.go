@@ -124,14 +124,8 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 		}
 
 		p.ID = rowID(row, idCol, kind, rowNum)
-		// Пустая ячейка — рубль. Негодный код — отказ, а не рубль: молчаливое
-		// «не разобрал — значит рубль» показало бы долларовую трату рублёвой.
-		if curCol != 0 {
-			if raw := cell(row, curCol-1); raw != "" {
-				if p.Currency, err = domain.NewCurrency(raw); err != nil {
-					return nil, fmt.Errorf("%s row %d: currency: %w", sheet, rowNum, err)
-				}
-			}
+		if p.Currency, err = readCurrency(row, curCol); err != nil {
+			return nil, fmt.Errorf("%s row %d: currency: %w", sheet, rowNum, err)
 		}
 
 		tx, err := domain.NewTransaction(p)
@@ -305,4 +299,18 @@ func readAccountCurrency(bank string, balance domain.Money, updated time.Time, r
 		}
 	}
 	return domain.NewForeignAccount(bank, balance, currency, rate, updated, now)
+}
+
+// readCurrency reads a row's Валюта cell. Пустая ячейка или отсутствие колонки —
+// рубль. Негодный код — отказ, а не рубль: молчаливое «не разобрал — значит
+// рубль» показало бы долларовую трату рублёвой.
+func readCurrency(row []string, curCol int) (domain.Currency, error) {
+	if curCol == 0 {
+		return domain.Currency{}, nil
+	}
+	raw := cell(row, curCol-1)
+	if raw == "" {
+		return domain.Currency{}, nil
+	}
+	return domain.NewCurrency(raw)
 }

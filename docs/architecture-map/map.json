@@ -1372,8 +1372,8 @@
           "from": "cmd-fin",
           "to": "uc-finance",
           "call": "finance.Edit(rec, p, time.Now)",
-          "detail": "правку применяет usecase: internal/usecase/finance/edit.go:66. Домен проверяет инварианты заново, поэтому правка не может сделать запись такой, какой её нельзя было создать",
-          "source": "internal/usecase/finance/edit.go:66",
+          "detail": "правку применяет usecase: internal/usecase/finance/edit.go:70. Домен проверяет инварианты заново, поэтому правка не может сделать запись такой, какой её нельзя было создать",
+          "source": "internal/usecase/finance/edit.go:70",
           "unverified": false,
           "symbol": "Edit"
         },
@@ -2785,7 +2785,7 @@
           "to": "uc-finance",
           "call": "finance.Summarize(finance.Match(recs, Filter{Months}))",
           "detail": "cmd/kbengine/main.go:325 — арифметика остаётся в ОДНОМ месте; вторая реализация на клиенте обязана была бы совпадать с этой — internal/usecase/finance/report.go:154",
-          "source": "internal/usecase/finance/report.go:161",
+          "source": "internal/usecase/finance/report.go:192",
           "unverified": false
         },
         {
@@ -2795,7 +2795,7 @@
           "call": "Transaction.IsInternalTransfer()",
           "symbol": "IsInternalTransfer",
           "source": "internal/domain/transfer.go:31",
-          "detail": "internal/usecase/finance/report.go:158 — единственное место, где правило спрашивают: расход «Прочее / Перевод себе» и доход «Перевод себе» из ИТОГОВ исключаются (internal/domain/transfer.go:31). ⚠️ Прежде признаком расхода была подкатегория «Переводы», и она не отвечала на вопрос «кому»: единственная запись с ней на живых данных оказалась возвратом заказчику, то есть настоящей тратой, выброшенной из итогов. В расчёт остатка счёта переводы входят по-прежнему — асимметрия описана в #159 и закрыта там замером",
+          "detail": "internal/usecase/finance/report.go:189 — единственное место, где правило спрашивают: расход «Прочее / Перевод себе» и доход «Перевод себе» из ИТОГОВ исключаются (internal/domain/transfer.go:31). ⚠️ Прежде признаком расхода была подкатегория «Переводы», и она не отвечала на вопрос «кому»: единственная запись с ней на живых данных оказалась возвратом заказчику, то есть настоящей тратой, выброшенной из итогов. В расчёт остатка счёта переводы входят по-прежнему — асимметрия описана в #159 и закрыта там замером",
           "unverified": false
         }
       ],
@@ -3473,8 +3473,8 @@
           "to": "f-workbook",
           "call": "positionalRow(tx.ID(), sheet, idx)",
           "symbol": "positionalRow",
-          "source": "internal/adapter/financexlsx/apply.go:331",
-          "detail": "internal/adapter/financexlsx/apply.go:331 — позиционный id это адрес листа и номера строки, а не безымянность. Проверено отрицательным контролем на двух ВЫПУЩЕННЫХ бинарях: на 0.20.0 книга росла на строку, на 0.21.0 правка ложится на место"
+          "source": "internal/adapter/financexlsx/apply.go:329",
+          "detail": "internal/adapter/financexlsx/apply.go:329 — позиционный id это адрес листа и номера строки, а не безымянность. Проверено отрицательным контролем на двух ВЫПУЩЕННЫХ бинарях: на 0.20.0 книга росла на строку, на 0.21.0 правка ложится на место"
         },
         {
           "n": 5,

@@ -316,10 +316,8 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if idx.idCol == 0 {
 			return nil, fmt.Errorf("sheet %q has no id column — run `fin sync --init` first", sheet)
 		}
-		if !tx.Currency().IsBase() && idx.curCol == 0 {
-			idx.curCol, idx.newCurHeader = idx.freeCol, true
-			index[sheet] = idx
-		}
+		idx = idx.withCurrencyColumnFor(tx)
+		index[sheet] = idx
 		row, known := idx.rowByID[tx.ID()]
 		if !known {
 			// A row whose id cell is empty is not nameless: the reader hands it a
@@ -615,4 +613,13 @@ func checkCurrencies(f *excelize.File, upserts []domain.Transaction, now func() 
 		}
 	}
 	return nil
+}
+
+// withCurrencyColumnFor gives the sheet a Валюта column when this row is the
+// first one not in roubles.
+func (idx sheetIndex) withCurrencyColumnFor(tx domain.Transaction) sheetIndex {
+	if !tx.Currency().IsBase() && idx.curCol == 0 {
+		idx.curCol, idx.newCurHeader = idx.freeCol, true
+	}
+	return idx
 }
