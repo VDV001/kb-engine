@@ -21,9 +21,9 @@ RUN npm run build
 FROM --platform=$BUILDPLATFORM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
 WORKDIR /src
 
-# The module has no third-party dependencies (stdlib only), so there is no
-# go.sum; copying go.mod alone is enough to prime the module cache.
-COPY go.mod ./
+# go.sum goes in with go.mod so the download is checked against the pinned
+# hashes, not only against the checksum database over the network.
+COPY go.mod go.sum ./
 RUN go mod download
 
 # The bundle comes from the web stage, never from the build context: a stale

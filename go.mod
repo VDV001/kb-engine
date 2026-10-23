@@ -7,6 +7,8 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/oklog/ulid/v2 v2.1.2
+	// ponytail: коммит master, а не релиз — v2.11.0 несёт GO-2026-6684/6685/6688/6689, тега с исправлением нет (23.10).
+	// Потолок: 45 невыпущенных коммитов. Путь: заменить на v2.11.1 (или новее), когда тег выйдет.
 	github.com/xuri/excelize/v2 v2.11.1-0.20260930021559-01a9ff32fb3c
 )
 
