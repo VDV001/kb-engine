@@ -54,7 +54,8 @@ describe('FinancesView — записи не в рублях', () => {
 
   it('рядом с итогами названо, что не в рублях', async () => {
     render(<FinancesView finances={finances} masked={false} />)
-    expect(await screen.findByText(/не в рублях/i)).toBeTruthy()
+    // Две строки: под расходами и под доходами — у USD есть и то, и другое.
+    expect((await screen.findAllByText(/не в рублях/i)).length).toBe(2)
     expect(screen.getAllByText(/17,30 \$/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/50,00 \$/).length).toBeGreaterThan(0)
   })

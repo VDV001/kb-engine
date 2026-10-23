@@ -449,6 +449,8 @@ export interface Transaction {
    * витрина, разбирая id сама, однажды разберёт иначе.
    */
   recorded_at?: string
+  /** Код валюты суммы. Нет поля — рубль, как в журнале. */
+  currency?: string
 }
 
 export interface Account {
@@ -557,6 +559,17 @@ export interface PeriodTotal {
  * Периоды приходят только те, где расходы ЕСТЬ. Заполнять пропуски — дело
  * графика, потому что окно (плотность за 31 день) знает он.
  */
+/** Что набралось в одной валюте, кроме рубля. */
+export interface CurrencyTotal {
+  currency: string
+  expenseCount: number
+  expenses: string
+  incomeCount: number
+  income: string
+  transferCount: number
+  transfers: string
+}
+
 export interface FinanceSummary {
   expenseCount: number
   expenses: string
@@ -569,6 +582,11 @@ export interface FinanceSummary {
    */
   excludedTransferCount: number
   excludedTransfers: string
+  /**
+   * Записи не в рублях, по валюте. В суммы выше не входят: без курса доллар и
+   * рубль не складываются. Необязательное — старая сборка поля не присылает.
+   */
+  otherCurrencies?: CurrencyTotal[]
   byCategory: NamedTotal[]
   byAccount: NamedTotal[]
   byPlace: NamedTotal[]

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { AccountsCard } from './AccountsCard'
 import { api } from './api'
-import type { Finances, Transaction } from './api'
+import type { CurrencyTotal, Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
@@ -9,7 +9,7 @@ import { CollapsibleSection, SectionHead } from './components/SectionHead'
 import { ErrorBox, Spinner } from './components/ui'
 import { filterJournal, sortJournal } from './financeJournal'
 import { dayBars, monthBars } from './financeSeries'
-import { formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
+import { formatMoney, formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
 
 // Вид «Финансовый архив», перенесённый из Python-дашборда поблочно: те же
 // секции в том же порядке и с той же типографикой. Арифметику считает сервер
@@ -376,6 +376,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                   ({summary.excludedTransferCount})
                 </p>
               )}
+              <OtherCurrencies totals={summary.otherCurrencies} side="expenses" />
             </div>
 
             <div className="flex min-h-[200px] flex-col justify-between rounded-lg bg-surface-high p-8">
@@ -385,6 +386,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
               </div>
               <div>
                 <span className="privacy-mask text-3xl font-bold">{formatRub(earned)}</span>
+                <OtherCurrencies totals={summary.otherCurrencies} side="income" />
                 <div className="mt-3 space-y-1.5">
                   {summary.incomeBySource.slice(0, 3).map((s) => (
                     <div key={s.name} className="flex items-center justify-between text-xs">
@@ -751,7 +753,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                   <td className="hidden px-4 py-5 text-xs italic opacity-60 lg:table-cell">{t.description ?? ''}</td>
                   <td className="privacy-mask px-4 py-5 text-right text-sm font-bold">
                     {t.kind === 'income' ? '+' : ''}
-                    {formatRub(toKopecks(t.amount))}
+                    {formatMoney(toKopecks(t.amount), t.currency ?? '')}
                   </td>
                   <td className="label hidden px-4 py-5 text-right text-[10px] text-secondary md:table-cell">
                     {(t.source ?? '').toUpperCase()}
@@ -802,5 +804,27 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
         </div>
       </div>
     </div>
+  )
+}
+
+// OtherCurrencies называет записи не в рублях под рублёвым итогом. Они в итог
+// не входят (без курса доллар и рубль не складываются), и без строки сумма
+// журнала не сходилась бы с итогом без объяснения. Молчит, когда таких нет.
+function OtherCurrencies({ totals, side }: { totals?: CurrencyTotal[]; side: 'expenses' | 'income' }) {
+  const rows = (totals ?? []).filter((c) => (side === 'expenses' ? c.expenseCount : c.incomeCount) > 0)
+  if (rows.length === 0) return null
+  return (
+    <p className="label mt-2 text-[10px] opacity-60">
+      не в рублях:{' '}
+      {rows.map((c, i) => (
+        <span key={c.currency}>
+          {i > 0 && ' · '}
+          <span className="privacy-mask">
+            {formatMoney(toKopecks(side === 'expenses' ? c.expenses : c.income), c.currency)}
+          </span>{' '}
+          ({side === 'expenses' ? c.expenseCount : c.incomeCount})
+        </span>
+      ))}
+    </p>
   )
 }
