@@ -28,46 +28,52 @@ var ErrAccountInUse = errors.New("expense rows name this account")
 //
 // Все отказы проверяются до записи: отказ обязан оставить книгу такой, какой она
 // была.
-func RenameAccount(path, from, to string, now func() time.Time) error {
+func RenameAccount(path, from, to string, now func() time.Time) (string, error) {
 	if err := CheckLock(path); err != nil {
-		return err
+		return "", err
 	}
 	// Что считается допустимым именем, решает домен — тот же вход, что у заведения.
 	var zero domain.Money
 	if _, err := domain.NewAccount(to, zero, now(), now); err != nil {
-		return err
+		return "", err
+	}
+
+	// Состояние рядом с книгой читается до записи: испорченное, оно отказало бы
+	// уже после сохранения, и счёт остался бы переименованным без момента.
+	if _, err := balancestate.Load(balancestate.PathNextTo(path)); err != nil {
+		return "", err
 	}
 
 	f, err := excelize.OpenFile(path)
 	if err != nil {
-		return fmt.Errorf("open workbook: %w", err)
+		return "", fmt.Errorf("open workbook: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 
 	row, current, err := renameTarget(f, from, to)
 	if err != nil {
-		return err
+		return "", err
 	}
 	name, err := excelize.CoordinatesToCellName(bankColumn, row)
 	if err != nil {
-		return fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
+		return "", fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
 	}
 
 	if err := backup(path, now); err != nil {
-		return err
+		return "", err
 	}
 	// SetCellValue keeps the cell's style: the format of the name stays as the
 	// owner set it.
 	if err := f.SetCellValue(sheetAccounts, name, strings.TrimSpace(to)); err != nil {
-		return fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
+		return "", fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
 	}
 	if err := saveAtomically(f, path); err != nil {
-		return err
+		return "", err
 	}
 	if err := balancestate.Rename(balancestate.PathNextTo(path), current, strings.TrimSpace(to)); err != nil {
-		return fmt.Errorf("account renamed, confirmation moment not moved: %w", err)
+		return current, fmt.Errorf("account renamed, confirmation moment not moved: %w", err)
 	}
-	return nil
+	return current, nil
 }
 
 // renameTarget finds the row to rename and checks every refusal that depends on
@@ -103,6 +109,16 @@ func renameTarget(f *excelize.File, from, to string) (row int, current string, e
 	if n > 0 {
 		return 0, "", fmt.Errorf("%w: %q is named by %d row(s) of %s — a renamed account would leave them reading it as a source",
 			ErrAccountInUse, current, n, sheetExpenses)
+	}
+	// И обратная сторона: строки, где новое имя уже стоит источником, после
+	// переименования прочитались бы тратами этого счёта.
+	if !domain.SameAccountName(current, to) {
+		if n, err := expenseRowsNaming(f, to); err != nil {
+			return 0, "", err
+		} else if n > 0 {
+			return 0, "", fmt.Errorf("%w: %q already appears in %d row(s) of %s — they would start reading as this account",
+				ErrAccountInUse, strings.TrimSpace(to), n, sheetExpenses)
+		}
 	}
 	return row, current, nil
 }

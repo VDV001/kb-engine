@@ -87,19 +87,21 @@ func Rename(path, from, to string) error {
 	if err != nil {
 		return err
 	}
+	// Самый поздний из найденных: старый файл может держать два написания
+	// одного счёта, и порядок обхода карты выбирал бы между ними случайно.
 	var at time.Time
-	found := false
 	for name, t := range f.Confirmed {
-		if domain.SameAccountName(name, from) {
-			at, found = t, true
+		if domain.SameAccountName(name, from) && t.After(at) {
+			at = t
 		}
 	}
-	if !found {
-		return nil
-	}
 	forget(f, from)
+	// Момент, лежавший под новым именем, принадлежал другому счёту — его
+	// нельзя унаследовать, даже когда своего у переименованного нет.
 	forget(f, to)
-	f.Confirmed[to] = at
+	if !at.IsZero() {
+		f.Confirmed[to] = at
+	}
 	return write(path, f)
 }
 

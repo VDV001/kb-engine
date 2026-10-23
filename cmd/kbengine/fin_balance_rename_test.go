@@ -20,6 +20,9 @@ func TestRun_finBalanceRenamesAnAccount(t *testing.T) {
 	out.Reset()
 
 	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	if err := os.WriteFile(ledger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	aliases := filepath.Join(filepath.Dir(book), "finance-aliases.json")
 	if err := os.WriteFile(aliases, []byte(`{"accounts": {"займ": "Займ → Коллеге"}, "places": {}}`), 0o600); err != nil {
 		t.Fatal(err)
@@ -69,6 +72,9 @@ func TestRun_finBalanceRenameNeedsTheLedger(t *testing.T) {
 func TestRun_finBalanceRenameRefusesWhenTheLedgerNamesTheAccount(t *testing.T) {
 	book := workbook(t)
 	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	if err := os.WriteFile(ledger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "300", "--create"}, &out, &errb); code != 0 {
 		t.Fatalf("заведение: %s", errb.String())

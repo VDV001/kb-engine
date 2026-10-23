@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
@@ -127,6 +128,24 @@ func collapse[T comparable](in map[string]T, describe func(T) string) (map[strin
 func RememberAccount(path, word, account string) error {
 	return update(path, func(f *file) {
 		f.Accounts[word] = account
+	})
+}
+
+// RenameAccount points every word that named the account at its new name.
+//
+// Словарь — писатель: быстрый ввод подставляет его значение в новую запись, и
+// словарь со старым именем вернул бы старое написание первой же тратой. Нет
+// файла — править нечего, и создавать его ради этого не нужно.
+func RenameAccount(path, from, to string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	return update(path, func(f *file) {
+		for word, acc := range f.Accounts {
+			if domain.SameAccountName(acc, from) {
+				f.Accounts[word] = to
+			}
+		}
 	})
 }
 

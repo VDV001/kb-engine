@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { Account, AccountGroup } from './api'
-import { formatMoney, formatRub, toKopecks } from './money'
+import { formatMoney, formatRub, toKopecks, unitOf } from './money'
 
 // Карточка «где лежат деньги». Перенесена из Python-дашборда, но не целиком:
 // из старого сайдбара взята только она, потому что месяцы и категории в вебе
@@ -121,8 +121,10 @@ export function AccountsCard({
   // Счета по нулю прячутся за одной строкой: закрытые долги и пустые заначки
   // занимали больше места, чем деньги, и полосу приходилось читать поверх них.
   const [showZero, setShowZero] = useState(false)
-  const zeroCount = accounts.filter((a) => now(a) === 0).length
-  const visible = showZero ? accounts : accounts.filter((a) => now(a) !== 0)
+  // Ноль, который просит сверки, не прячется: его ⚠ и есть причина смотреть.
+  const folded = (a: Account) => now(a) === 0 && !a.needs_confirmation
+  const zeroCount = accounts.filter(folded).length
+  const visible = showZero ? accounts : accounts.filter((a) => !folded(a))
   const foreign = foreignTotals(accounts)
 
   const groups: { group: string; accounts: Account[] }[] = []
@@ -180,7 +182,7 @@ export function AccountsCard({
               same.length === 1 ? (
                 <AccountRow key={same[0].bank} account={same[0]} label={bank} today={today} />
               ) : (
-                <MultiCurrencyRow key={bank} bank={bank} accounts={same} />
+                <MultiCurrencyRow key={bank} bank={bank} accounts={same} today={today} />
               ),
             )}
           </ul>
@@ -282,7 +284,7 @@ function GroupNotes({ group, shown }: { group?: AccountGroup; shown: Account[] }
       {rates.length > 0 && (
         <p className="label text-[8px] opacity-50" data-testid={`group-rates-${group.group}`}>
           {rates
-            .map((r) => `${r.currency} по ${formatRub(toKopecks(r.per_unit))} на ${shortDate(r.on)}`)
+            .map((r) => `${unitOf(r.currency)} по ${formatRub(toKopecks(r.per_unit))} на ${shortDate(r.on)}`)
             .join(' · ')}
         </p>
       )}
@@ -414,22 +416,37 @@ function foreignTotals(accounts: Account[]): string[] {
   return [...sums].map(([code, minor]) => formatMoney(minor, code))
 }
 
-/** Один банк в нескольких валютах: имя один раз, суммы столбиком. */
-function MultiCurrencyRow({ bank, accounts }: { bank: string; accounts: Account[] }) {
+/**
+ * Один банк в нескольких валютах: имя один раз, суммы столбиком. Сигналы строки
+ * счёта не теряются при склейке: оценка в рублях у каждой суммы, «курс
+ * неизвестен» и ⚠, если хоть одна из сумм устарела или просит сверки.
+ */
+function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: Account[]; today: string }) {
   // Самая ранняя дата: строка не должна выглядеть свежее самого старого числа в ней.
   const dates = accounts.map((a) => a.updated).filter((d) => d !== '').sort()
+  const warn =
+    accounts.some((a) => a.needs_confirmation) || (dates.length > 0 && daysBetween(dates[0], today) > STALE_AFTER_DAYS)
   return (
     <li className="flex items-start gap-2" data-testid={`bank-${bank}`}>
       <span className="mt-1 size-2 shrink-0 rounded-full bg-current opacity-50" />
       <span className="label flex-1 text-[10px] opacity-80">{bank}</span>
       <span className="flex flex-col items-end">
         {accounts.map((a) => (
-          <span key={a.bank} className="privacy-mask text-xs font-bold" data-testid={`amount-${a.bank}`}>
-            {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
+          <span key={a.bank} className="flex flex-col items-end">
+            <span className="privacy-mask text-xs font-bold" data-testid={`amount-${a.bank}`}>
+              {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
+            </span>
+            {a.base_value !== undefined && !a.unvalued && (
+              <span className="label text-[8px] opacity-40">
+                ≈ <span className="privacy-mask">{formatRub(toKopecks(a.base_value))}</span>
+              </span>
+            )}
           </span>
         ))}
+        {accounts.some((a) => a.unvalued) && <span className="label text-[8px] opacity-60">курс неизвестен</span>}
         {dates.length > 0 && (
-          <span className="label text-[8px] opacity-40" data-testid={`confirmed-${bank}`}>
+          <span className={`label text-[8px] ${warn ? 'opacity-90' : 'opacity-40'}`} data-testid={`confirmed-${bank}`}>
+            {warn && <span data-testid={`stale-${bank}`}>⚠ </span>}
             {shortDate(dates[0])}
           </span>
         )}

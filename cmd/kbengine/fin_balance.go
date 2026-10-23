@@ -5,11 +5,15 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
+	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
 // runFinBalance records a new balance for one account on the workbook's Счета
@@ -27,12 +31,16 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	create := fs.Bool("create", false, "add the account to the Счета sheet (it must not be there yet)")
 	currency := fs.String("currency", "", "currency code of the account, e.g. USD (empty means the book's own currency)")
 	rate := fs.String("rate", "", "how much of the book's currency one unit is worth, e.g. 84,28")
+	ledger := fs.String("ledger", "", "path to transactions.jsonl (needed by --rename: the ledger and the vocabulary next to it name accounts too)")
 	rename := fs.String("rename", "", "new name for the account; moves it between kinds («Род → имя» or a plain bank)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
 	if *rename != "" {
-		return renameAccount(*from, *bank, *rename, *amount != "" || *create || *currency != "" || *rate != "", stdout, stderr)
+		return renameAccount(renameParams{
+			book: *from, ledger: *ledger, bank: *bank, to: *rename,
+			mixed: *amount != "" || *create || *currency != "" || *rate != "",
+		}, stdout, stderr)
 	}
 	money, code := requireBalanceArgs(*from, *bank, *amount, stderr)
 	if code != 0 {
@@ -264,29 +272,68 @@ func requireBalanceArgs(from, bank, amount string, stderr io.Writer) (domain.Mon
 	return money, 0
 }
 
-// renameAccount переименовывает счёт на листе «Счета».
+// renameParams — что знает команда о переименовании.
+type renameParams struct {
+	book, ledger, bank, to string
+	mixed                  bool
+}
+
+// renameAccount переименовывает счёт: лист «Счета», момент подтверждения и
+// словарь быстрого ввода.
 //
 // Отдельное намерение, как и заведение: сумма здесь не нужна, и переданная
 // вместе с --rename она делала бы два дела одной командой — отказ второго
 // оставил бы первое сделанным наполовину.
-func renameAccount(path, bank, to string, mixed bool, stdout, stderr io.Writer) int {
-	if path == "" || bank == "" {
-		fmt.Fprintln(stderr, "fin balance: --rename needs --from and --bank")
+//
+// Журнал обязателен: счёт по имени называют ещё записи, не перенесённые в книгу,
+// и словарь рядом с журналом (правило 26: словарь — писатель, и правка одного
+// читателя ничего не закрывает).
+func renameAccount(p renameParams, stdout, stderr io.Writer) int {
+	if p.book == "" || p.bank == "" || p.ledger == "" {
+		fmt.Fprintln(stderr, "fin balance: --rename needs --from, --ledger and --bank")
 		return 2
 	}
-	if mixed {
+	if p.mixed {
 		fmt.Fprintln(stderr, "fin balance: --rename only renames — run it without --amount, --create, --currency and --rate")
 		return 2
 	}
-	before, _ := balanceOf(path, bank)
-	if err := financexlsx.RenameAccount(path, bank, to, time.Now); err != nil {
+	recs, err := financejsonl.Load(p.ledger, time.Now)
+	if err != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", err)
 		return 1
 	}
-	name := bank
-	if before.Bank() != "" {
-		name = before.Bank()
+	if n := recordsNaming(recs, p.bank); n > 0 {
+		fmt.Fprintf(stderr, "fin balance: %d record(s) of %s name %q — renaming the account would leave them pointing at nothing\n",
+			n, p.ledger, p.bank)
+		return 1
 	}
-	fmt.Fprintf(stdout, "%s → %s: счёт переименован, сумма и дата подтверждения прежние\n", name, strings.TrimSpace(to))
+	vocab := financevocab.PathNextTo(p.ledger)
+	if _, err := financevocab.Load(vocab); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		fmt.Fprintf(stderr, "fin balance: %v\n", err)
+		return 1
+	}
+
+	old, err := financexlsx.RenameAccount(p.book, p.bank, p.to, time.Now)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin balance: %v\n", err)
+		return 1
+	}
+	to := strings.TrimSpace(p.to)
+	if err := financevocab.RenameAccount(vocab, old, to); err != nil {
+		fmt.Fprintf(stderr, "fin balance: account renamed, vocabulary not: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "%s → %s: счёт переименован, сумма и дата подтверждения прежние\n", old, to)
 	return 0
+}
+
+// recordsNaming counts ledger records whose account is this one.
+func recordsNaming(recs []finance.Record, bank string) int {
+	n := 0
+	for _, r := range recs {
+		if acc := r.Transaction().Account(); acc != "" && domain.SameAccountName(acc, bank) {
+			n++
+		}
+	}
+	return n
 }
