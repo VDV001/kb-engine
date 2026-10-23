@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import { useCssVarHeight } from '../hooks/useCssVarHeight'
 import { Icon } from './Icon'
 import { Logo } from './Logo'
@@ -39,7 +39,11 @@ export function Header<T extends string>({
   extra?: React.ReactNode
 }) {
   const ref = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
+  const fits = useFits(navRef, listRef)
+  const collapsed = !fits
   // Высота шапки уезжает в CSS-переменную: прилипающие полосы внутри страниц
   // встают под ней, не завися от захардкоженного числа.
   useCssVarHeight(ref, '--nav-h')
@@ -58,21 +62,20 @@ export function Header<T extends string>({
           <Logo />
         </a>
 
-        {/* До lg навигация уезжает в бургер, а не на второй ряд.
-            Раньше здесь стояло обратное решение — второй ряд, потому что
-            «спрятать навигацию значит оставить окно без неё». Бургер эту
-            причину снимает: навигация не исчезает, а сворачивается, зато
-            шапка остаётся одноэтажной, а второй этаж съедал полосу высотой
-            в 41 пиксель на каждом экране уже кого угодно ноутбука.
-
-            Порог xl, а не lg, посчитан: десять вкладок занимают 841px, логотип
-            и правые элементы — 137, промежутки 96, паддинги 64, итого ~1138.
-            На финансах в шапке ещё переключатель сумм, и нужно уже ~1250.
-            На lg (1024) навигация не влезала и начинала скроллиться вбок —
-            прокрутка внутри шапки хуже бургера. Горизонтальной прокрутки тут
-            больше нет: не влезает — значит в бургер. */}
-        <nav className="hidden min-w-0 flex-1 xl:block">
-          <ul className="flex items-center gap-5 whitespace-nowrap px-1 xl:gap-8">
+        {/* Навигация или бургер — решает замер, а не порог ширины экрана.
+            Порог xl когда-то посчитали под десять вкладок (~1138 px, на
+            финансах ~1250). Вкладок стало двенадцать, и при 1280–1440 px, а на
+            большом мониторе — при масштабе браузера, пункты ложились поверх
+            переключателя, темы и счётчика. Список меряется в месте, которое ему
+            оставлено: не помещается — строка прячется (место за ней остаётся,
+            чтобы мерить дальше), пункты уходят в бургер. Новая вкладка или
+            переключатель на одном виде больше ничего не ломают. */}
+        <nav
+          ref={navRef}
+          aria-hidden={collapsed ? true : undefined}
+          className={`min-w-0 flex-1 overflow-hidden ${collapsed ? 'invisible' : ''}`}
+        >
+          <ul ref={listRef} className="flex w-max items-center gap-8 whitespace-nowrap px-1">
             {tabs.map((t) => {
               const active = t.id === current
               return (
@@ -100,15 +103,17 @@ export function Header<T extends string>({
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setMenuOpen((v) => !v)}
-            aria-expanded={menuOpen}
-            aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-high hover:text-on-surface xl:hidden"
-          >
-            <Icon name={menuOpen ? 'close' : 'menu'} className="text-xl" />
-          </button>
+          {collapsed && (
+            <button
+              type="button"
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-expanded={menuOpen}
+              aria-label={menuOpen ? 'Закрыть меню' : 'Открыть меню'}
+              className="flex h-9 w-9 items-center justify-center rounded-md text-on-surface-variant hover:bg-surface-high hover:text-on-surface"
+            >
+              <Icon name={menuOpen ? 'close' : 'menu'} className="text-xl" />
+            </button>
+          )}
           {extra}
           <ThemeToggle />
           {count !== undefined && (
@@ -126,8 +131,8 @@ export function Header<T extends string>({
 
       {/* Панель бургера: под шапкой, на всю ширину. Закрывается выбором —
           оставлять её открытой после перехода незачем, страница уже сменилась. */}
-      {menuOpen && (
-        <div className="border-t border-outline-variant bg-nav-bg backdrop-blur-xl xl:hidden">
+      {menuOpen && collapsed && (
+        <div className="border-t border-outline-variant bg-nav-bg backdrop-blur-xl">
           <ul className="mx-auto max-w-screen-2xl px-4 py-2 sm:px-6">
             {tabs.map((t) => {
               const active = t.id === current
@@ -157,4 +162,24 @@ export function Header<T extends string>({
       )}
     </header>
   )
+}
+
+// useFits отвечает, помещается ли список во всю ширину своего контейнера.
+// Пересчитывается при любом изменении размеров обоих: окно, масштаб браузера,
+// шрифт, новая вкладка, переключатель на текущем виде.
+function useFits(container: React.RefObject<HTMLElement | null>, content: React.RefObject<HTMLElement | null>) {
+  const [fits, setFits] = useState(true)
+  useLayoutEffect(() => {
+    const box = container.current
+    const list = content.current
+    if (!box || !list) return
+    const check = () => setFits(list.scrollWidth <= box.clientWidth)
+    check()
+    if (typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(check)
+    ro.observe(box)
+    ro.observe(list)
+    return () => ro.disconnect()
+  }, [container, content])
+  return fits
 }
