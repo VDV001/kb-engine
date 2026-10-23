@@ -121,3 +121,29 @@ func TestExportXLSX_declaresTheRangeItWrote(t *testing.T) {
 		t.Errorf("потоковый читатель теряет строки:\n  %s", strings.Join(got, "\n  "))
 	}
 }
+
+// Выгрузка несёт валюту каждой строки. Без неё 17.30 USD рядом с 100.00 ₽ в
+// числовой колонке «Сумма» и СУММ по ней дают 117.30 «рублей». Рубль пишется
+// явно, RUB, а не пустой клеткой: файл открывают, чтобы фильтровать и считать.
+func TestExportCarriesTheCurrencyOfEachRow(t *testing.T) {
+	body := strings.NewReader(`{"rows":[
+	  {"date":"2026-07-31","kind":"expense","category":"Еда","amount":"100.00","account":"Банк"},
+	  {"date":"2026-07-30","kind":"expense","category":"Сервисы","amount":"17.30","account":"Банк USD","currency":"USD"}
+	]}`)
+	rec := httptest.NewRecorder()
+	newTestServer().ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/finances/export", body))
+	f, err := excelize.OpenReader(bytes.NewReader(rec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	rows, _ := f.GetRows(f.GetSheetName(0))
+	if len(rows[0]) < 9 || rows[0][8] != "Валюта" {
+		t.Fatalf("шапка = %v, want «Валюта» девятой колонкой", rows[0])
+	}
+	if rows[1][8] != "RUB" || rows[2][8] != "USD" {
+		t.Errorf("валюты строк = %q, %q, want RUB, USD", rows[1][8], rows[2][8])
+	}
+	if rows[0][7] != "Счёт" {
+		t.Errorf("раскладка сдвинулась: восьмая колонка = %q", rows[0][7])
+	}
+}

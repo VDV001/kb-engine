@@ -13,7 +13,7 @@ const summary = {
   excludedTransferCount: 0,
   excludedTransfers: '0.00',
   otherCurrencies: [
-    { currency: 'USD', expenseCount: 2, expenses: '17.30', incomeCount: 1, income: '50.00', transferCount: 0, transfers: '0.00' },
+    { currency: 'USD', expenseCount: 2, expenses: '17.30', incomeCount: 1, income: '50.00', transferCount: 1, transfers: '200.00' },
   ],
   byCategory: [{ name: 'Еда', total: '100.00', count: 1 }],
   byAccount: [],
@@ -58,5 +58,19 @@ describe('FinancesView — записи не в рублях', () => {
     expect((await screen.findAllByText(/не в рублях/i)).length).toBe(2)
     expect(screen.getAllByText(/17,30 \$/).length).toBeGreaterThan(0)
     expect(screen.getAllByText(/50,00 \$/).length).toBeGreaterThan(0)
+  })
+
+  // Переводы себе в долларах в траты не входят, и без строки доллары журнала
+  // не сходились бы с «не в рублях» так же, как рубли — без «переводы себе».
+  it('переводы себе в другой валюте названы', async () => {
+    render(<FinancesView finances={finances} masked={false} />)
+    expect(await screen.findByText(/переводы себе 200,00 \$ \(1\)/)).toBeTruthy()
+  })
+
+  // Счётчик доходов считает записи, а не только рублёвые: «0 шт» над строкой
+  // «не в рублях: 50,00 $ (1)» противоречит сам себе.
+  it('счётчик доходов включает записи не в рублях', async () => {
+    render(<FinancesView finances={finances} masked={false} />)
+    expect(await screen.findByText('1 шт')).toBeTruthy()
   })
 })

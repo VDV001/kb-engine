@@ -434,3 +434,17 @@ describe('AccountsCard — подтверждение валютного счё�
     expect(spaced(confirmed)).toContain('1,00 $')
   })
 })
+
+// Режим приватности прячет суммы, а всплывающая подсказка — обычный текст
+// атрибута, маска на него не действует. При маске в ней остаётся только дата.
+describe('AccountsCard — подсказка под маской', () => {
+  it('в режиме приватности подсказка без сумм', () => {
+    const acc: Account[] = [
+      { bank: 'Первый банк', balance: '1234.50', current: '1000.00', spent: '234.50', updated: '2026-10-20' },
+    ]
+    render(<AccountsCard accounts={acc} expenses="0.00" income="0.00" today="2026-10-23" masked />)
+    const title = screen.getByTestId('confirmed-Первый банк').getAttribute('title') ?? ''
+    expect(title).toContain('20.10')
+    expect(title).not.toMatch(/\d+,\d\d/)
+  })
+})
