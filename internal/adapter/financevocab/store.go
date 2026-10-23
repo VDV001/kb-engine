@@ -8,6 +8,7 @@
 package financevocab
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
@@ -125,27 +127,58 @@ func collapse[T comparable](in map[string]T, describe func(T) string) (map[strin
 
 // RememberAccount adds one word for an account, keeping everything else.
 func RememberAccount(path, word, account string) error {
-	return update(path, func(f *file) {
+	return update(path, func(f *file) bool {
 		f.Accounts[word] = account
+		return true
+	})
+}
+
+// RenameAccount points every word that named the account at its new name.
+//
+// Словарь — писатель: быстрый ввод подставляет его значение в новую запись, и
+// словарь со старым именем вернул бы старое написание первой же тратой. Нет
+// файла — править нечего, и создавать его ради этого не нужно.
+func RenameAccount(path, from, to string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	return update(path, func(f *file) bool {
+		changed := false
+		for word, acc := range f.Accounts {
+			if domain.SameAccountName(acc, from) {
+				f.Accounts[word] = to
+				changed = true
+			}
+		}
+		return changed
 	})
 }
 
 // RememberPlace adds one word for a place, keeping everything else.
 func RememberPlace(path, word string, rule finance.PlaceRule) error {
-	return update(path, func(f *file) {
+	return update(path, func(f *file) bool {
 		f.Places[word] = placeRule{Category: rule.Category, Subcategory: rule.Subcategory, Place: rule.Place}
+		return true
 	})
 }
 
 // update rewrites the file with one change applied. The whole file is read
 // first: a word learned in the terminal must not drop the words added by hand.
-func update(path string, apply func(*file)) error {
+func update(path string, apply func(*file) bool) error {
 	f := file{Accounts: map[string]string{}, Places: map[string]placeRule{}}
+	// Всё, что движок не знает («_comment» владельца), едет через запись как
+	// есть: разбор в структуру без этих полей молча срезал их при каждой записи.
+	extra := map[string]json.RawMessage{}
 	switch raw, err := os.ReadFile(path); {
 	case err == nil:
 		if err := json.Unmarshal(raw, &f); err != nil {
 			return fmt.Errorf("%s: %w", path, err)
 		}
+		if err := json.Unmarshal(raw, &extra); err != nil {
+			return fmt.Errorf("%s: %w", path, err)
+		}
+		delete(extra, "accounts")
+		delete(extra, "places")
 		if f.Accounts == nil {
 			f.Accounts = map[string]string{}
 		}
@@ -158,11 +191,32 @@ func update(path string, apply func(*file)) error {
 		return err
 	}
 
-	apply(&f)
+	if !apply(&f) {
+		return nil
+	}
 
-	body, err := json.MarshalIndent(f, "", "  ")
-	if err != nil {
+	out := map[string]any{"accounts": f.Accounts, "places": f.Places}
+	for k, v := range extra {
+		// RawMessage кодировщик переэкранировал бы; строка уже разобрана честно.
+		var plain any
+		if json.Unmarshal(v, &plain) == nil {
+			out[k] = plain
+		} else {
+			out[k] = v
+		}
+	}
+	// ponytail: порядок ключей после записи — алфавитный (так кодирует карты
+	// encoding/json), раскладка владельца не сохраняется (содержимое и
+	// написание — сохраняются); путь апгрейда —
+	// писать через упорядоченный кодировщик, если раскладка станет важна.
+	// Без HTML-экранирования: файл правят руками, и «К&Б» обязан остаться
+	// «К&Б», а не превратиться в «К\u0026Б».
+	var body bytes.Buffer
+	enc := json.NewEncoder(&body)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(body, '\n'), 0o600)
+	return os.WriteFile(path, body.Bytes(), 0o600)
 }

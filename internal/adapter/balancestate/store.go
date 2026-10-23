@@ -26,8 +26,8 @@ const FileName = ".balance-state.json"
 // PathNextTo returns where the state lives for a given workbook.
 //
 // Рядом с книгой, а не с журналом: подтверждают остаток счёта, счета живут в
-// книге, и команда `fin balance` знает только путь к ней — у неё есть --from и
-// нет --ledger.
+// книге, и запись баланса знает только путь к ней (--ledger у `fin balance`
+// нужен одному --rename).
 func PathNextTo(workbookPath string) string {
 	return filepath.Join(filepath.Dir(workbookPath), FileName)
 }
@@ -68,11 +68,55 @@ func Load(path string) (finance.Confirmations, error) {
 // «Счета» — один счёт, и две записи о нём означали бы, что расчёт возьмёт ту,
 // которая попалась первой в карте.
 func Record(path, bank string, at time.Time) error {
+	f, err := read(path)
+	if err != nil {
+		return err
+	}
+	forget(f, bank)
+	f.Confirmed[bank] = at
+	return write(path, f)
+}
+
+// Rename carries the moment over to the account's new name.
+//
+// Момент хранится по имени, и, оставшись под прежним, он перестал бы находиться:
+// расчёт молча вернулся бы к правилу «по дню» и завысил бы остаток на траты,
+// записанные после подтверждения. Счёт без момента так и остаётся без него.
+func Rename(path, from, to string) error {
+	f, err := read(path)
+	if err != nil {
+		return err
+	}
+	// Самый поздний из найденных: старый файл может держать два написания
+	// одного счёта, и порядок обхода карты выбирал бы между ними случайно.
+	var at time.Time
+	for name, t := range f.Confirmed {
+		if domain.SameAccountName(name, from) && t.After(at) {
+			at = t
+		}
+	}
+	// Момент, лежавший под новым именем, принадлежал другому счёту — его
+	// нельзя унаследовать, даже когда своего у переименованного нет.
+	changed := forget(f, from)
+	changed = forget(f, to) || changed
+	if !at.IsZero() {
+		f.Confirmed[to] = at
+		changed = true
+	}
+	// Нечего менять — файл не трогается и не появляется.
+	if !changed {
+		return nil
+	}
+	return write(path, f)
+}
+
+// read returns the state on disk; a missing file is an empty state.
+func read(path string) (file, error) {
 	f := file{Confirmed: map[string]time.Time{}}
 	switch raw, err := os.ReadFile(path); {
 	case err == nil:
 		if err := json.Unmarshal(raw, &f); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
+			return file{}, fmt.Errorf("%s: %w", path, err)
 		}
 		if f.Confirmed == nil {
 			f.Confirmed = map[string]time.Time{}
@@ -80,16 +124,24 @@ func Record(path, bank string, at time.Time) error {
 	case os.IsNotExist(err):
 		// Первое подтверждение через движок создаёт состояние.
 	default:
-		return err
+		return file{}, err
 	}
+	return f, nil
+}
 
+// forget drops every spelling of the account and says whether it dropped any.
+func forget(f file, bank string) bool {
+	dropped := false
 	for name := range f.Confirmed {
 		if domain.SameAccountName(name, bank) {
 			delete(f.Confirmed, name)
+			dropped = true
 		}
 	}
-	f.Confirmed[bank] = at
+	return dropped
+}
 
+func write(path string, f file) error {
 	body, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err

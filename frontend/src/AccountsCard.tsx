@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import type { Account, AccountGroup } from './api'
-import { formatMoney, formatRub, toKopecks } from './money'
+import { formatMoney, formatRub, toKopecks, unitOf } from './money'
 
 // Карточка «где лежат деньги». Перенесена из Python-дашборда, но не целиком:
 // из старого сайдбара взята только она, потому что месяцы и категории в вебе
@@ -117,8 +118,17 @@ export function AccountsCard({
 
   // Порядок групп — тот, в котором счета стоят в книге: владелец сам решил, что
   // за чем идёт на листе, и витрине незачем это переставлять.
+  // Счета по нулю прячутся за одной строкой: закрытые долги и пустые заначки
+  // занимали больше места, чем деньги, и полосу приходилось читать поверх них.
+  const [showZero, setShowZero] = useState(false)
+  // Ноль, который просит сверки, не прячется: его ⚠ и есть причина смотреть.
+  const folded = (a: Account) => now(a) === 0 && !a.needs_confirmation
+  const zeroCount = accounts.filter(folded).length
+  const visible = showZero ? accounts : accounts.filter((a) => !folded(a))
+  const foreign = foreignTotals(accounts)
+
   const groups: { group: string; accounts: Account[] }[] = []
-  for (const a of accounts) {
+  for (const a of visible) {
     const { group } = splitAccountName(a)
     const found = groups.find((g) => g.group === group)
     if (found) found.accounts.push(a)
@@ -138,6 +148,11 @@ export function AccountsCard({
           {/* Расшифровка появляется только когда есть что расшифровывать:
               «свободно 1 000» под итогом «1 000» объясняет то, чего не
               происходит, и учит не читать эту строку. */}
+          {foreign.length > 0 && (
+            <span className="label text-[8px] opacity-60" data-testid="accounts-foreign">
+              + <span className="privacy-mask font-bold">{foreign.join(' · ')}</span>
+            </span>
+          )}
           {kinds.length > 0 && free !== undefined && (
             <span className="label text-[8px] opacity-60" data-testid="accounts-free">
               свободно <span className="privacy-mask font-bold">{formatRub(toKopecks(free))}</span>
@@ -152,10 +167,24 @@ export function AccountsCard({
         </p>
       ) : (
         <>
+          {plain.length > 0 && (
+            <div className="mb-2 flex items-baseline justify-between gap-3">
+              <span className="label text-[8px] tracking-[0.2em] opacity-50" data-testid="group-Банки">
+                Банки
+              </span>
+              <span className="privacy-mask text-xs font-bold opacity-80" data-testid="group-total-Банки">
+                {formatRub(plain.reduce((n, a) => n + (valued(a) ?? 0), 0))}
+              </span>
+            </div>
+          )}
           <ul className="space-y-2.5">
-            {plain.map((a) => (
-              <AccountRow key={a.bank} account={a} label={a.bank} today={today} />
-            ))}
+            {byBank(plain).map(({ bank, accounts: same }) =>
+              same.length === 1 ? (
+                <AccountRow key={same[0].bank} account={same[0]} label={bank} today={today} />
+              ) : (
+                <MultiCurrencyRow key={bank} bank={bank} accounts={same} today={today} />
+              ),
+            )}
           </ul>
 
           {kinds.map((k) => (
@@ -189,9 +218,19 @@ export function AccountsCard({
                   />
                 ))}
               </ul>
-              <GroupNotes group={engineGroup(k.group)} />
+              <GroupNotes group={engineGroup(k.group)} shown={k.accounts} />
             </div>
           ))}
+          {zeroCount > 0 && (
+            <button
+              type="button"
+              className="label mt-3 text-[9px] opacity-60 hover:opacity-90"
+              data-testid="accounts-zero-toggle"
+              onClick={() => setShowZero((v) => !v)}
+            >
+              {showZero ? '‹ скрыть счета по нулю' : `› ещё ${zeroCount} ${accountsWord(zeroCount)} по нулю`}
+            </button>
+          )}
         </>
       )}
 
@@ -230,10 +269,14 @@ export function AccountsCard({
  * курсом никуда не ходит. А итог, умолчавший о неоценённых счетах, утверждает
  * больше, чем знает: сумма выглядит полной, будучи частичной.
  */
-function GroupNotes({ group }: { group?: AccountGroup }) {
+function GroupNotes({ group, shown }: { group?: AccountGroup; shown: Account[] }) {
   if (!group) return null
-  const rates = group.rates ?? []
-  const unvalued = group.unvalued ?? []
+  // Подписи только о том, что на экране: курс свёрнутого нулевого счёта
+  // читался бы как курс всего рода.
+  const codes = new Set(shown.map((a) => a.currency ?? ''))
+  const names = new Set(shown.map((a) => a.bank))
+  const rates = (group.rates ?? []).filter((r) => codes.has(r.currency))
+  const unvalued = (group.unvalued ?? []).filter((n) => names.has(n))
   if (rates.length === 0 && unvalued.length === 0) return null
 
   return (
@@ -241,7 +284,7 @@ function GroupNotes({ group }: { group?: AccountGroup }) {
       {rates.length > 0 && (
         <p className="label text-[8px] opacity-50" data-testid={`group-rates-${group.group}`}>
           {rates
-            .map((r) => `${r.currency} по ${formatRub(toKopecks(r.per_unit))} на ${shortDate(r.on)}`)
+            .map((r) => `${unitOf(r.currency)} по ${formatRub(toKopecks(r.per_unit))} на ${shortDate(r.on)}`)
             .join(' · ')}
         </p>
       )}
@@ -320,6 +363,105 @@ function AccountRow({
             {(stale || a.needs_confirmation) && <span data-testid={`stale-${a.bank}`}>⚠ </span>}
             {shortDate(a.updated)}
             {spent > 0 && <span className="privacy-mask"> −{formatRub(spent)}</span>}
+          </span>
+        )}
+      </span>
+    </li>
+  )
+}
+
+/** «1 счёт», «2 счёта», «5 счетов». */
+function accountsWord(n: number): string {
+  const d = n % 10
+  const dd = n % 100
+  if (d === 1 && dd !== 11) return 'счёт'
+  if (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) return 'счёта'
+  return 'счетов'
+}
+
+/**
+ * Обычные счета, собранные по банку: «Банк USD» и «Банк UZS» — один банк в двух
+ * валютах. Банк узнаётся по имени, в конце которого стоит код валюты самого
+ * счёта; совпадение с чужим кодом ничего не склеивает.
+ */
+function byBank(plain: Account[]): { bank: string; accounts: Account[] }[] {
+  const out: { bank: string; accounts: Account[] }[] = []
+  for (const a of plain) {
+    const code = a.currency ?? ''
+    const suffix = ` ${code}`
+    const bank =
+      code !== '' && a.bank.toUpperCase().endsWith(suffix.toUpperCase())
+        ? a.bank.slice(0, -suffix.length).trim()
+        : a.bank
+    const found = out.find((b) => b.bank === bank)
+    if (found) found.accounts.push(a)
+    else out.push({ bank, accounts: [a] })
+  }
+  return out
+}
+
+/**
+ * Валюта, которую нечем оценить, суммой по каждой единице: «24,50 $», «75,00 сум».
+ * В рублёвый итог она не входит, и без этой строки её на полосе не было бы вовсе.
+ */
+function foreignTotals(accounts: Account[]): string[] {
+  const sums = new Map<string, number>()
+  for (const a of accounts) {
+    if (!a.unvalued) continue
+    const minor = toKopecks(a.current ?? a.balance)
+    if (minor === 0) continue
+    const code = a.currency ?? ''
+    sums.set(code, (sums.get(code) ?? 0) + minor)
+  }
+  return [...sums].map(([code, minor]) => formatMoney(minor, code))
+}
+
+/**
+ * Один банк в нескольких валютах: имя один раз, суммы столбиком. Сигналы строки
+ * счёта не теряются при склейке: оценка в рублях у каждой суммы, «курс
+ * неизвестен» и ⚠, если хоть одна из сумм устарела или просит сверки.
+ */
+function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: Account[]; today: string }) {
+  // Самая ранняя дата: строка не должна выглядеть свежее самого старого числа в ней.
+  const dates = accounts.map((a) => a.updated).filter((d) => d !== '').sort()
+  const warn =
+    accounts.some((a) => a.needs_confirmation) || (dates.length > 0 && daysBetween(dates[0], today) > STALE_AFTER_DAYS)
+  return (
+    <li className="flex items-start gap-2" data-testid={`bank-${bank}`}>
+      <span className="mt-1 size-2 shrink-0 rounded-full bg-current opacity-50" />
+      <span className="label flex-1 text-[10px] opacity-80">{bank}</span>
+      <span className="flex flex-col items-end">
+        {accounts.map((a) => {
+          const spent = a.spent ? toKopecks(a.spent) : 0
+          return (
+            <span key={a.bank} className="flex flex-col items-end">
+              <span
+                className="privacy-mask text-xs font-bold"
+                data-testid={`amount-${a.bank}`}
+                title={
+                  `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency ?? '')} ${shortDate(a.updated)}` +
+                  (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency ?? '')}` : '')
+                }
+              >
+                {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
+              </span>
+              {a.base_value !== undefined && !a.unvalued && (
+                <span className="label text-[8px] opacity-40">
+                  ≈ <span className="privacy-mask">{formatRub(toKopecks(a.base_value))}</span>
+                </span>
+              )}
+              {a.unvalued && (
+                <span className="label text-[8px] opacity-60" data-testid={`unvalued-${a.bank}`}>
+                  курс неизвестен
+                </span>
+              )}
+            </span>
+          )
+        })}
+        {dates.length > 0 && (
+          <span className={`label text-[8px] ${warn ? 'opacity-90' : 'opacity-40'}`} data-testid={`confirmed-${bank}`}>
+            {warn && <span data-testid={`stale-${bank}`}>⚠ </span>}
+            {shortDate(dates[0])}
           </span>
         )}
       </span>

@@ -180,3 +180,97 @@ func TestLoad_namesConflictingAccounts(t *testing.T) {
 		t.Errorf("сообщение %q не называет оба правила", err.Error())
 	}
 }
+
+// Словарь — писатель, история — читатель (правило 26): переименованный счёт,
+// оставшийся в словаре под старым именем, вернул бы старое написание первой же
+// записью быстрого ввода.
+func TestRenameAccount_pointsEveryWordAtTheNewName(t *testing.T) {
+	path := write(t, `{"accounts": {"Сбер": "Сбербанк", "sber": "Сбербанк", "Альфа": "Альфа-Банк"}, "places": {"Магнит": {"category": "Еда", "place": "Магнит"}}}`)
+
+	if err := financevocab.RenameAccount(path, "сбербанк", "Сбер карта"); err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	v, err := financevocab.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"сбер", "sber"} {
+		if got := v.Accounts[word]; got != "Сбер карта" {
+			t.Errorf("accounts[%s] = %q, ожидалось новое имя", word, got)
+		}
+	}
+	if got := v.Accounts["альфа"]; got != "Альфа-Банк" {
+		t.Errorf("чужой счёт задет: %q", got)
+	}
+	if got := v.Places["магнит"].Place; got != "Магнит" {
+		t.Errorf("места потеряны: %q", got)
+	}
+}
+
+// Словаря нет — переименованию нечего править, и создавать файл ради этого
+// не нужно.
+func TestRenameAccount_withoutAFileDoesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "finance-aliases.json")
+	if err := financevocab.RenameAccount(path, "Сбербанк", "Сбер"); err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("файл словаря появился: %v", err)
+	}
+}
+
+// Словарь, в котором счёт не упомянут, переименование не трогает вовсе: файл
+// владельца — его раскладка, и перезапись ради ничего меняла бы её.
+func TestRenameAccount_leavesTheFileAloneWhenNothingNamesTheAccount(t *testing.T) {
+	path := write(t, `{"_comment": "заметка владельца", "accounts": {"Сбер": "Сбербанк"}, "places": {}}`)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := financevocab.RenameAccount(path, "Банк Юг", "Юг"); err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Errorf("файл переписан без причины:\n%s", after)
+	}
+}
+
+// Ключи, которых движок не знает («_comment» в живом словаре), переживают
+// любую запись. Прежде запись места или счёта молча срезала их.
+func TestWriters_keepKeysTheEngineDoesNotKnow(t *testing.T) {
+	path := write(t, `{"_comment": "заметка владельца", "accounts": {"Сбер": "Сбербанк"}, "places": {}}`)
+	if err := financevocab.RememberAccount(path, "Втб", "ВТБ"); err != nil {
+		t.Fatal(err)
+	}
+	if err := financevocab.RenameAccount(path, "Сбербанк", "Сбер карта"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "заметка владельца") {
+		t.Errorf("_comment срезан:\n%s", raw)
+	}
+}
+
+// Словарь правят руками: «К&Б» обязан остаться «К&Б», а не «К\u0026Б».
+func TestWriters_doNotEscapeWhatAPersonTyped(t *testing.T) {
+	path := write(t, `{"_comment": "К&Б и <ручные> правила", "accounts": {}, "places": {"КБ": {"category": "Еда", "place": "К&Б"}}}`)
+	if err := financevocab.RememberAccount(path, "Втб", "ВТБ"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"К&Б и <ручные> правила", `"place": "К&Б"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("в файле нет %q:\n%s", want, raw)
+		}
+	}
+}

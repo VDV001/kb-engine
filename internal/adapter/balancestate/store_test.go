@@ -146,3 +146,62 @@ func TestPathNextToTheWorkbook(t *testing.T) {
 		t.Errorf("путь = %s, ожидался %s", got, want)
 	}
 }
+
+// Переименованный счёт без своего момента не наследует чужой: момент,
+// оставшийся под новым именем от удалённого счёта, поменял бы, какие траты
+// вычитаются, и никто бы этого не заметил.
+func TestRename_withoutAMomentDropsAStaleOneUnderTheNewName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".balance-state.json")
+	if err := balancestate.Record(path, "Наличные", time.Date(2026, 5, 1, 9, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := balancestate.Rename(path, "Кошелёк", "Наличные"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	got, err := balancestate.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if at, ok := got.At("Наличные"); ok {
+		t.Errorf("переименованный счёт унаследовал чужой момент %v", at)
+	}
+}
+
+// Два написания одного счёта в старом файле: переезжает самый поздний момент,
+// а не тот, что первым попался в карте.
+func TestRename_takesTheLatestOfTwoSpellings(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".balance-state.json")
+	body := `{"confirmed": {"Т-Банк": "2026-08-01T10:00:00Z", "т банк": "2026-08-03T10:00:00Z"}}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for range 20 {
+		if err := balancestate.Rename(path, "Т-Банк", "Т-Банк карта"); err != nil {
+			t.Fatalf("Rename: %v", err)
+		}
+		got, err := balancestate.Load(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		at, _ := got.At("Т-Банк карта")
+		if want := time.Date(2026, 8, 3, 10, 0, 0, 0, time.UTC); !at.Equal(want) {
+			t.Fatalf("переехал момент %v, ожидался самый поздний %v", at, want)
+		}
+		// Вернуть исходное состояние для следующего круга.
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// Нечего переносить — файл не появляется и не переписывается.
+func TestRename_withNothingToMoveLeavesNoFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".balance-state.json")
+	if err := balancestate.Rename(path, "Кошелёк", "Наличные"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("файл состояния появился без причины: %v", err)
+	}
+}
