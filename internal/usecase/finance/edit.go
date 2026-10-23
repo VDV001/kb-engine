@@ -38,8 +38,10 @@ type EditParams struct {
 	ClearDescription bool
 	ClearAccount     bool
 
-	// Currency is the unit named for the record; nil leaves it alone, unless the
-	// account changes, and then the new account's currency follows it.
+	// Currency is the unit named for the record; nil leaves it alone. A new
+	// account in another currency does not relabel the amount: 50 dollars moved
+	// to a rouble account are not 50 roubles, so that edit is refused unless the
+	// currency is named.
 	Currency *domain.Currency
 	// Accounts are the workbook's accounts, nil when the book is not at hand.
 	Accounts []domain.Account
@@ -93,13 +95,10 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 	}
 
 	params = p.applyTo(params)
-	acc := findAccount(p.Accounts, params.Account)
-	switch {
-	case p.Currency != nil:
+	if p.Currency != nil {
 		params.Currency = *p.Currency
-	case p.Account != "" && acc != nil:
-		params.Currency = acc.Currency()
 	}
+	acc := findAccount(p.Accounts, params.Account)
 
 	edited, err := domain.NewTransaction(params)
 	if err != nil {

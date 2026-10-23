@@ -107,11 +107,7 @@ func bookAccounts(path string) ([]domain.Account, error) {
 	if path == "" {
 		return nil, nil
 	}
-	led, err := financexlsx.Read(path, time.Now)
-	if err != nil {
-		return nil, err
-	}
-	return led.Accounts, nil
+	return financexlsx.ReadAccounts(path, time.Now)
 }
 
 // filterFlags adds the flags that narrow a ledger.
@@ -194,7 +190,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
-	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's, or roubles)")
+	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's when --from is given, otherwise roubles)")
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
 	if code, stop := parseFlags(fs, args); stop {
 		return code

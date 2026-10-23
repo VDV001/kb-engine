@@ -176,6 +176,18 @@ func rowID(row []string, idCol int, kind string, rowNum int) string {
 	return fmt.Sprintf("%s-r%d", kind, rowNum)
 }
 
+// ReadAccounts reads only the Счета sheet. For callers that need the accounts
+// and nothing else — a currency to take or check — so that a damaged cell on
+// another sheet, or the cost of parsing every row, does not stand in their way.
+func ReadAccounts(path string, now func() time.Time) ([]domain.Account, error) {
+	f, err := excelize.OpenFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("open workbook: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	return readAccounts(f, now)
+}
+
 func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, error) {
 	rows, err := f.GetRows(sheetAccounts, excelize.Options{RawCellValue: true})
 	if err != nil {

@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -127,12 +126,8 @@ func resolveCurrency(named *domain.Currency, account string, accounts []domain.A
 }
 
 func findAccount(accounts []domain.Account, name string) *domain.Account {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil
-	}
 	for i := range accounts {
-		if accounts[i].Bank() == name {
+		if domain.SameAccountName(accounts[i].Bank(), name) {
 			return &accounts[i]
 		}
 	}

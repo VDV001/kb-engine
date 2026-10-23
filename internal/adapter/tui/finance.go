@@ -101,8 +101,10 @@ func (m Model) renderFinances() string {
 	// Записи в другой валюте в суммы выше не входят: без курса доллар и рубль
 	// не складываются. Названы здесь, иначе они пропали бы с экрана молча.
 	for _, c := range s.OtherCurrencies {
-		fmt.Fprintf(&b, "%s %s %s %s\n", styleDim.Render("не в рублях:"), c.Currency,
-			styleDim.Render("потрачено"), human(c.Expenses)+fmt.Sprintf(" (%d)", c.ExpenseCount))
+		if c.ExpenseCount > 0 {
+			fmt.Fprintf(&b, "%s %s %s %s\n", styleDim.Render("не в рублях:"), c.Currency,
+				styleDim.Render("потрачено"), human(c.Expenses)+fmt.Sprintf(" (%d)", c.ExpenseCount))
+		}
 		if c.IncomeCount > 0 {
 			fmt.Fprintf(&b, "%s %s %s %s\n", styleDim.Render("не в рублях:"), c.Currency,
 				styleDim.Render("получено"), human(c.Income)+fmt.Sprintf(" (%d)", c.IncomeCount))

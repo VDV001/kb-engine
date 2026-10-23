@@ -66,6 +66,9 @@ type CurrencyTotal struct {
 	Expenses     domain.Money
 	IncomeCount  int
 	Income       domain.Money
+	// Переводы себе в этой валюте: в траты не входят, как и рублёвые.
+	TransferCount int
+	Transfers     domain.Money
 }
 
 // CategoryTotal is what one category cost over the records summarized.
@@ -161,21 +164,25 @@ type Summary struct {
 // отчёт утверждает, что человек потратил больше, чем потратил. Записи в другой
 // валюте — по той же причине: без курса доллар и рубль не складываются.
 func (s *Summary) setAside(tx domain.Transaction, other map[string]CurrencyTotal) bool {
-	if tx.IsInternalTransfer() {
+	c := tx.Currency()
+	if c.IsBase() {
+		if !tx.IsInternalTransfer() {
+			return false
+		}
 		s.ExcludedTransferCount++
 		s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
 		return true
 	}
-	c := tx.Currency()
-	if c.IsBase() {
-		return false
-	}
 	o := other[c.Code()]
 	o.Currency = c.Code()
-	if tx.IsExpense() {
+	switch {
+	case tx.IsInternalTransfer():
+		o.TransferCount++
+		o.Transfers = o.Transfers.Add(tx.Amount())
+	case tx.IsExpense():
 		o.ExpenseCount++
 		o.Expenses = o.Expenses.Add(tx.Amount())
-	} else {
+	default:
 		o.IncomeCount++
 		o.Income = o.Income.Add(tx.Amount())
 	}

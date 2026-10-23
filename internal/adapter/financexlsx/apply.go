@@ -203,14 +203,15 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if idCol := index[sheetExpenses].idCol; idColumnCollides(idCol) {
 		return collisionError(idCol)
 	}
-	accounts, err := knownAccounts(f, now)
+	accs, err := readAccounts(f, now)
 	if err != nil {
 		return err
 	}
+	accounts := accountNames(accs)
 	if err := checkVocabulary(upserts, accounts); err != nil {
 		return err
 	}
-	if err := checkCurrencies(f, upserts, now); err != nil {
+	if err := checkCurrencies(upserts, accs); err != nil {
 		return err
 	}
 	plan, err := planRowWrites(index, upserts, removals)
@@ -415,11 +416,17 @@ func knownAccounts(f *excelize.File, now func() time.Time) (map[string]struct{},
 	if err != nil {
 		return nil, err
 	}
+	return accountNames(accs), nil
+}
+
+// accountNames is the set of account names, the vocabulary that tells an
+// account from a source.
+func accountNames(accs []domain.Account) map[string]struct{} {
 	out := make(map[string]struct{}, len(accs))
 	for _, a := range accs {
 		out[a.Bank()] = struct{}{}
 	}
-	return out, nil
+	return out
 }
 
 func (p rowPlan) apply(f *excelize.File, accounts map[string]struct{}) error {
@@ -594,11 +601,7 @@ func writeCurrencyHeaders(f *excelize.File, index map[string]sheetIndex) error {
 // without it was never checked. The book knows every account's currency, so this
 // is the last place a dollar spend can be stopped from landing on a rouble
 // account. The rule itself is the domain's.
-func checkCurrencies(f *excelize.File, upserts []domain.Transaction, now func() time.Time) error {
-	accs, err := readAccounts(f, now)
-	if err != nil {
-		return err
-	}
+func checkCurrencies(upserts []domain.Transaction, accs []domain.Account) error {
 	byName := make(map[string]domain.Account, len(accs))
 	for _, a := range accs {
 		byName[a.Bank()] = a

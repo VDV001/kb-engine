@@ -438,16 +438,13 @@ func (f ledgerFinances) Summary(months []string) (finance.Summary, error) {
 // path into the spreadsheet, and the screen says out loud that the book is
 // behind rather than quietly touching it.
 func (f ledgerFinances) Add(p finance.AddParams) ([]finance.Correction, error) {
-	var err error
-	if p.Accounts, err = bookAccounts(f.workbookPath); err != nil {
-		return nil, err
-	}
+	p.Accounts = f.accountsOrNone()
 	var fixed []finance.Correction
 	// warn=nil осознанно: эта функция обслуживает формы TUI, а печатать в
 	// stdout под живым экраном значит испортить раскладку. Конфликт словаря
 	// терминал показывает на своём пути — при быстром вводе, где словарь и
 	// спрашивают.
-	_, err = appendChecked(f.ledgerPath, p, false, func(c finance.Correction) {
+	_, err := appendChecked(f.ledgerPath, p, false, func(c finance.Correction) {
 		fixed = append(fixed, c)
 	}, nil)
 	return fixed, err
@@ -474,12 +471,22 @@ func (f ledgerFinances) Recent(n int) ([]finance.Record, error) {
 // A second copy of load → edit → sort → save is how the ledger ends up with
 // rows only one surface can read.
 func (f ledgerFinances) EditEntry(id string, p finance.EditParams) error {
-	var err error
-	if p.Accounts, err = bookAccounts(f.workbookPath); err != nil {
-		return err
-	}
-	_, err = editInLedger(f.ledgerPath, id, p)
+	p.Accounts = f.accountsOrNone()
+	_, err := editInLedger(f.ledgerPath, id, p)
 	return err
+}
+
+// accountsOrNone gives the terminal's entry forms the book's accounts, or none
+// when the book cannot be read right now. Writing the ledger has never depended
+// on the book, and a damaged Счета sheet must not stop a rouble spend from
+// being recorded; without accounts nothing is taken or checked here, and the
+// sync is where a currency that contradicts its account stops.
+func (f ledgerFinances) accountsOrNone() []domain.Account {
+	accs, err := bookAccounts(f.workbookPath)
+	if err != nil {
+		return nil
+	}
+	return accs
 }
 
 // Vocabulary reads the words the owner types for accounts and places. Re-read

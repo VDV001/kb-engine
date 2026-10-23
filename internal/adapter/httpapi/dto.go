@@ -24,6 +24,8 @@ type transactionDTO struct {
 	Description string `json:"description,omitempty"`
 	Account     string `json:"account,omitempty"`
 	Source      string `json:"source,omitempty"`
+	// Currency — код валюты; для рубля поле не пишется, как в журнале.
+	Currency string `json:"currency,omitempty"`
 	// RecordedAt — момент появления строки в книге, RFC3339. Пусто означает
 	// «неизвестен», а не «давно»: строку могли вписать мимо движка.
 	RecordedAt string `json:"recorded_at,omitempty"`
@@ -67,6 +69,9 @@ type currencyTotalDTO struct {
 	Expenses     string `json:"expenses"`
 	IncomeCount  int    `json:"incomeCount"`
 	Income       string `json:"income"`
+	// Переводы себе в этой валюте.
+	TransferCount int    `json:"transferCount"`
+	Transfers     string `json:"transfers"`
 }
 
 // financeSummaryDTO is the finance view's arithmetic, done once, on the server.
@@ -142,6 +147,7 @@ func toFinanceSummaryDTO(s finance.Summary) financeSummaryDTO {
 		dto.OtherCurrencies = append(dto.OtherCurrencies, currencyTotalDTO{
 			Currency: c.Currency, ExpenseCount: c.ExpenseCount, Expenses: c.Expenses.String(),
 			IncomeCount: c.IncomeCount, Income: c.Income.String(),
+			TransferCount: c.TransferCount, Transfers: c.Transfers.String(),
 		})
 	}
 	return dto
@@ -236,6 +242,7 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Description: t.Description(),
 		Account:     t.Account(),
 		Source:      t.Source(),
+		Currency:    foreignCode(t.Currency()),
 		RecordedAt:  recordedAtOrEmpty(t.ID()),
 		RepeatOf:    t.RepeatOf(),
 	}
@@ -454,4 +461,12 @@ func toSourceDTO(s freshness.SourceState, draft string) sourceStateDTO {
 		out.Facts = append(out.Facts, freshnessFact{Kind: f.Kind, Text: f.Text, Count: f.Count, IDs: f.IDs})
 	}
 	return out
+}
+
+// foreignCode is "" for roubles, so the field is left out of the record.
+func foreignCode(c domain.Currency) string {
+	if c.IsBase() {
+		return ""
+	}
+	return c.Code()
 }
