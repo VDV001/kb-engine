@@ -84,8 +84,13 @@ const fingerprintSep = "\x1f"
 //
 // The id is left out on purpose: it is the key the fingerprint is stored under,
 // so including it would make every comparison compare a thing with itself.
+//
+// The currency joins the fields only when it is not the base one. Every stored
+// fingerprint was taken before currencies existed; folding "RUB" into all of
+// them would make the first sync after the upgrade read all rows as changed on
+// both sides and refuse the whole book as a conflict.
 func Fingerprint(tx domain.Transaction) string {
-	sum := sha256.Sum256([]byte(strings.Join([]string{
+	fields := []string{
 		tx.Kind(),
 		tx.Date().Format(time.DateOnly),
 		tx.Amount().String(),
@@ -95,7 +100,11 @@ func Fingerprint(tx domain.Transaction) string {
 		tx.Description(),
 		tx.Source(),
 		tx.Account(),
-	}, fingerprintSep)))
+	}
+	if c := tx.Currency(); !c.IsBase() {
+		fields = append(fields, c.Code())
+	}
+	sum := sha256.Sum256([]byte(strings.Join(fields, fingerprintSep)))
 	// Half the digest. A ledger holds hundreds of rows, not billions, and the
 	// state file stays readable at this width.
 	return hex.EncodeToString(sum[:16])
