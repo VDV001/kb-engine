@@ -7,9 +7,9 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/oklog/ulid/v2 v2.1.2
-	// ponytail: коммит master, а не релиз — v2.11.0 несёт GO-2026-6684/6685/6688/6689, тега с исправлением нет (23.10).
+	// ponytail: коммит master, а не релиз — v2.11.0 несёт GO-2026-6684/6685/6688/6689 и CVE-2026-107211, тега с исправлением нет (23.10).
 	// Потолок: 45 невыпущенных коммитов. Путь: заменить на v2.11.1 (или новее), когда тег выйдет.
-	github.com/xuri/excelize/v2 v2.11.1-0.20260930021559-01a9ff32fb3c
+	github.com/xuri/excelize/v2 v2.11.1-0.20261003002531-6258dcebc4e2
 )
 
 require (
@@ -38,7 +38,7 @@ require (
 	github.com/xuri/nfp v0.0.2-0.20250530014748-2ddeb826f9a9 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/oauth2 v0.35.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/sys v0.48.0 // indirect
