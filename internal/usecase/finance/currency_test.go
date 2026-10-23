@@ -58,6 +58,9 @@ func TestAdd_currency(t *testing.T) {
 		{"доллары с рублёвого счёта — отказ", "Первый банк", cur(t, "USD"), accounts, "", domain.ErrCurrencyMismatch},
 		{"без книги названная валюта сохраняется", "Банк USD", cur(t, "USD"), nil, "USD", nil},
 		{"без книги и без валюты — рубль", "Банк USD", nil, nil, "RUB", nil},
+		// Счёт ищется так же, как его ищет весь движок: регистр и пробелы не
+		// делают другого счёта. Иначе другое написание теряло бы валюту.
+		{"другое написание счёта — та же валюта", "банк  usd", nil, accounts, "USD", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,7 +153,12 @@ func TestEdit_currency(t *testing.T) {
 		wantErr error
 	}{
 		{"валюта меняется явно", usdRecord(t), finance.EditParams{Currency: cur(t, "UZS")}, "UZS", nil},
-		{"смена счёта приносит его валюту", rub, finance.EditParams{Account: "Банк USD", Accounts: accounts}, "USD", nil},
+		// Сумма записана в одной валюте; новый счёт в другой не делает её суммой
+		// в другой валюте. Молча сменить код значило бы превратить 50 долларов в
+		// 50 рублей, поэтому без явной валюты (и новой суммы) — отказ.
+		{"рубли на долларовый счёт — отказ", rub, finance.EditParams{Account: "Банк USD", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
+		{"доллары на рублёвый счёт — отказ", usdRecord(t), finance.EditParams{Account: "Первый банк", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
+		{"смена счёта с названной валютой", rub, finance.EditParams{Account: "Банк USD", Currency: cur(t, "USD"), Accounts: accounts}, "USD", nil},
 		{"названная валюта против счёта — отказ", rub, finance.EditParams{Currency: cur(t, "USD"), Accounts: accounts}, "", domain.ErrCurrencyMismatch},
 	}
 	for _, tc := range cases {

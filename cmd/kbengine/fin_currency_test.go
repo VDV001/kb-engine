@@ -203,3 +203,36 @@ func TestRun_finAdd_printsTheCurrency(t *testing.T) {
 		t.Errorf("подтверждение без валюты: %s", out.String())
 	}
 }
+
+// Быстрый ввод не зависит от того, разбирается ли книга целиком: испорченная
+// ячейка «Валюта» на листе трат не мешает записать рублёвую трату, потому что
+// для валюты счёта нужен только лист «Счета».
+func TestLedgerFinances_addSurvivesABrokenCurrencyCell(t *testing.T) {
+	book := workbookWithDollarAccount(t)
+	f, err := excelize.OpenFile(book)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for cell, v := range map[string]string{"J2": "Валюта", "J3": "ДОЛ"} {
+		if err := f.SetCellValue("Расходы", cell, v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.Save(); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, workbook(t), ledger)
+	money, _ := domain.ParseMoney("120")
+	lf := ledgerFinances{ledgerPath: ledger, workbookPath: book}
+	if _, err := lf.Add(finance.AddParams{
+		Kind: domain.KindExpense, Date: time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
+		Amount: money, Category: "Еда", Account: "Банк USD",
+	}); err != nil {
+		t.Fatalf("Add отказал из-за чужой испорченной ячейки: %v", err)
+	}
+	if line := lastLedgerLine(t, ledger); !strings.Contains(line, `"currency":"USD"`) {
+		t.Errorf("валюта счёта не подставлена:\n%s", line)
+	}
+}

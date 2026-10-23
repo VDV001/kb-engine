@@ -136,3 +136,19 @@ func TestFinancesNamesOtherCurrencies(t *testing.T) {
 		}
 	}
 }
+
+// Валюта только с доходом не показывает строку «потрачено 0 (0)»: она читается
+// как трата нулевой суммы.
+func TestFinancesOmitsAnEmptySpendLineForACurrency(t *testing.T) {
+	sum := sampleSummary()
+	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", IncomeCount: 1, Income: domain.NewMoney(5000)}}
+	view := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab()).View()
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "USD") && strings.Contains(line, "потрачено") {
+			t.Errorf("строка трат у валюты без трат: %q", line)
+		}
+	}
+	if !strings.Contains(view, "получено") || !strings.Contains(view, "50,00") {
+		t.Errorf("доход в USD не показан\n%s", view)
+	}
+}
