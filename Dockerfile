@@ -18,7 +18,7 @@ RUN npm run build
 # Pinned by digest (Dependabot's docker ecosystem keeps tag+digest current).
 # Runs on the native BUILDPLATFORM and cross-compiles to TARGET* so multi-arch
 # builds need no QEMU emulation (CGO is disabled).
-FROM --platform=$BUILDPLATFORM golang:1.27-bookworm@sha256:648f440f42a0958804efb24df176f806f9d353b41f1c0627f666428e40310f6b AS build
+FROM --platform=$BUILDPLATFORM golang:1.27-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5 AS build
 WORKDIR /src
 
 # go.sum goes in with go.mod so the download is checked against the pinned
