@@ -471,9 +471,11 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                     const kop = toKopecks(s.total)
                     const max = toKopecks(summary.bySubcategory[0].total)
                     return (
-                      <div key={`${s.category}/${s.subcategory}`} className="flex items-center gap-4">
+                      // Подпись уже на телефоне: w-48 + сумма + процент с зазорами
+                      // давали 368 px без полосы, страница ехала вбок.
+                      <div key={`${s.category}/${s.subcategory}`} className="flex items-center gap-2 sm:gap-4">
                         <span
-                          className="label w-48 shrink-0 truncate text-right text-[10px] opacity-60"
+                          className="label w-24 shrink-0 truncate text-right text-[10px] opacity-60 sm:w-48"
                           title={`${s.category} → ${s.subcategory}`}
                         >
                           {s.category} → {s.subcategory}
@@ -487,7 +489,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                         <span className="privacy-mask label w-24 shrink-0 text-right text-[10px]">
                           {formatRub(kop)}
                         </span>
-                        <span className="label w-8 text-[9px] opacity-40">{pct(kop, spent)}%</span>
+                        <span className="label w-8 shrink-0 text-[9px] opacity-40">{pct(kop, spent)}%</span>
                       </div>
                     )
                   })}

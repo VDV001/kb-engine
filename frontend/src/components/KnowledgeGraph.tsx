@@ -289,7 +289,9 @@ export function GraphConclusions({
   const name = (key: string) => categoryLabel(key, labels)
 
   return (
-    <div className="grid gap-3 lg:grid-cols-3">
+    // grid-cols-1, а не неявная колонка: та сама шириной auto, и `truncate` в
+    // карточке связей (nowrap) распирал её на телефоне шире экрана.
+    <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
       <div className="flex flex-col border border-outline-variant bg-surface-lowest p-5">
         <p className="label mb-3">Ядро базы</p>
         <p className="font-headline text-xl font-bold leading-tight">{name(i.core.key)}</p>

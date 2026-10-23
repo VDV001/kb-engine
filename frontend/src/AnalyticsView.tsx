@@ -97,9 +97,11 @@ function QuoteCard({ q, index, first }: { q: ManifestoQuote; index: number; firs
     icon: 'menu_book',
   }
 
+  // break-words: текст вопросов приходит из данных, и слово без единой точки
+  // переноса («Notion+RAG+TG+автогенерируемый») на 320 px вылезало из карточки.
   return (
     <article
-      className="rounded-xl border border-outline-variant bg-surface-lowest p-8"
+      className="rounded-xl border border-outline-variant bg-surface-lowest p-8 break-words"
       style={{ borderLeft: `4px solid ${w.bar}` }}
     >
       <div className="mb-4 flex items-start justify-between gap-4">

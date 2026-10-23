@@ -8,8 +8,10 @@ import { Icon } from './Icon'
  */
 export function SectionHead({ title, right }: { title: string; right?: ReactNode }) {
   return (
-    <div className="mb-6 flex items-center justify-between gap-8">
-      <h3 className="label shrink-0 tracking-[0.3em] opacity-40">{title}</h3>
+    // Заголовок не shrink-0: длинная подпись вразрядку на телефоне не влезала в
+    // строку и вместе с `right` выдавливала страницу вбок. Теперь она переносится.
+    <div className="mb-6 flex items-center justify-between gap-4 sm:gap-8">
+      <h3 className="label min-w-0 tracking-[0.3em] opacity-40">{title}</h3>
       <div className="h-px flex-1 bg-outline-variant opacity-20" />
       {right && <span className="label shrink-0 text-[10px] opacity-40">{right}</span>}
     </div>
@@ -45,12 +47,12 @@ export function CollapsibleSection({
   const [open, setOpen] = useState(defaultOpen)
   return (
     <section>
-      <div className="mb-6 flex items-center justify-between gap-8">
+      <div className="mb-6 flex items-center justify-between gap-4 sm:gap-8">
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className="label flex shrink-0 items-center gap-2 tracking-[0.3em] opacity-40 transition-opacity hover:opacity-70"
+          className="label flex min-w-0 items-center gap-2 text-left tracking-[0.3em] opacity-40 transition-opacity hover:opacity-70"
         >
           <Icon name={open ? 'keyboard_arrow_up' : 'keyboard_arrow_down'} className="text-base" />
           {title}
