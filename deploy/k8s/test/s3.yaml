@@ -1,0 +1,83 @@
+# S3-compatible storage for checks only. Not part of any deployment: the real
+# thing is AWS S3 (or whatever endpoint you point the chart at), provisioned by
+# deploy/terraform.
+#
+# It exists so the S3 path can be exercised end to end — object in, init
+# container, engine reading it — inside a throwaway cluster with no account and
+# no network. Credentials are invented on purpose: this must never hold anything
+# real.
+#
+# versitygw, not MinIO: minio/minio and minio/mc were pulled from Docker Hub in
+# October 2026 (pull denied, quay.io has no tags either, dl.min.io answers 410),
+# and this job timed out on the rollout below for every PR.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: s3-credentials
+type: Opaque
+stringData:
+  AWS_ACCESS_KEY_ID: ci-access
+  AWS_SECRET_ACCESS_KEY: ci-secret-not-real
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: s3
+  labels:
+    app.kubernetes.io/name: s3
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: s3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: s3
+    spec:
+      containers:
+        - name: versitygw
+          image: versity/versitygw:v1.9.0
+          # --sidecar keeps object metadata in plain files: the default stores it
+          # in xattrs and refuses to start where the volume does not support them.
+          args: ["--port", ":9000", "--health", "/health",
+                 "posix", "--sidecar", "/meta", "/data"]
+          env:
+            - name: ROOT_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef: {name: s3-credentials, key: AWS_ACCESS_KEY_ID}
+            - name: ROOT_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: {name: s3-credentials, key: AWS_SECRET_ACCESS_KEY}
+          ports:
+            - name: api
+              containerPort: 9000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: api
+            initialDelaySeconds: 2
+            periodSeconds: 3
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: meta
+              mountPath: /meta
+      volumes:
+        # Nothing here outlives the cluster, and nothing here should.
+        - name: data
+          emptyDir: {}
+        - name: meta
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: s3
+spec:
+  selector:
+    app.kubernetes.io/name: s3
+  ports:
+    - name: api
+      port: 9000
+      targetPort: api

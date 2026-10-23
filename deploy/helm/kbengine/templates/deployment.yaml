@@ -38,13 +38,13 @@ spec:
             - -c
             - |
               set -e
-              # --config-dir into a writable volume: the container runs with a
-              # read-only root filesystem, and mc's first act is to write its
-              # own config. Without this it dies on mkdir /.mc before touching S3.
-              mc --config-dir /tmp/mc alias set src \
-                "${S3_ENDPOINT:-https://s3.${AWS_REGION:-us-east-1}.amazonaws.com}" \
-                "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" {{ if .Values.catalog.s3.insecure }}--insecure{{ end }}
-              mc --config-dir /tmp/mc cp src/{{ .Values.catalog.s3.bucket }}/{{ .Values.catalog.s3.key }} /data/catalog.json
+              # An on-the-fly remote: no config file to write, which matters
+              # because the root filesystem is read-only. env_auth takes keys
+              # from the environment below, or from the pod's role when the
+              # secret is left empty.
+              rclone copyto --config "" --cache-dir /tmp/rclone{{ if .Values.catalog.s3.insecure }} --no-check-certificate{{ end }} \
+                ":s3,provider=Other,env_auth=true,region='${AWS_REGION:-us-east-1}',endpoint='${S3_ENDPOINT:-https://s3.${AWS_REGION:-us-east-1}.amazonaws.com}':{{ .Values.catalog.s3.bucket }}/{{ .Values.catalog.s3.key }}" \
+                /data/catalog.json
               # An empty or truncated download would let the engine start and
               # answer /readyz 503 forever with nobody knowing why.
               test -s /data/catalog.json
@@ -69,7 +69,7 @@ spec:
           volumeMounts:
             - name: catalog
               mountPath: /data
-            - name: mc-config
+            - name: fetch-scratch
               mountPath: /tmp
       {{- end }}
       containers:
@@ -117,9 +117,9 @@ spec:
               readOnly: true
       volumes:
         {{- if eq .Values.catalog.source "s3" }}
-        # Scratch space for the fetcher's own config. Separate from the catalog
+        # Scratch space for the fetcher's cache. Separate from the catalog
         # volume so the engine's mount stays read-only.
-        - name: mc-config
+        - name: fetch-scratch
           emptyDir: {}
         {{- end }}
         - name: catalog
