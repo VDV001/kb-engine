@@ -58,6 +58,8 @@ describe('AccountsCard — где лежат деньги', () => {
     render(<AccountsCard accounts={accounts} expenses="0" income="0" today="2026-08-03" />)
 
     // 20.05 — два с половиной месяца назад, число давно могло уехать.
+    // Счёт по нулю свёрнут (23.10); пометка видна, когда его раскрыли.
+    fireEvent.click(screen.getByTestId('accounts-zero-toggle'))
     expect(screen.getByTestId('stale-Резерв → Депозит')).toBeDefined()
     // Сегодняшнее и трёхдневное подтверждения меткой не помечаются: иначе
     // пометка стоит на всех строках сразу и перестаёт что-либо значить.

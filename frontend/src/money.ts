@@ -23,11 +23,17 @@ export function formatRub(kopecks: number): string {
   return formatMoney(kopecks)
 }
 
+// Знаки валют, которые реально лежат на счетах владельца (23.10: доллары и сумы
+// Kapital, доллары сервисов). Всё, чего нет в таблице, печатается кодом: знак
+// по догадке показал бы чужую валюту рублями, а код незнакомым не бывает.
+const UNIT: Record<string, string> = { '': '₽', RUB: '₽', USD: '$', UZS: 'сум' }
+
+/** Как человек называет единицу: «$» вместо «USD», код — если знака нет. */
+export function unitOf(currency = ''): string {
+  return UNIT[currency] ?? currency
+}
+
 // formatMoney печатает сумму в её собственной единице.
-//
-// Валюта приходит кодом («USD»), а не значком: значок пришлось бы держать
-// таблицей, и первая же незнакомая валюта показалась бы рублями — то есть
-// молча соврала бы. Код незнакомым не бывает.
 //
 // Пустая валюта означает рубль: у счёта в валюте книги поля нет вовсе, и это
 // решение движка, а не упущение (#332).
@@ -35,7 +41,7 @@ export function formatMoney(minor: number, currency = ''): string {
   const sign = minor < 0 ? '-' : ''
   const abs = Math.abs(minor)
   const whole = Math.floor(abs / 100).toLocaleString('ru-RU')
-  const unit = currency === '' ? '₽' : currency
+  const unit = unitOf(currency)
   return `${sign}${whole},${String(abs % 100).padStart(2, '0')} ${unit}`
 }
 
