@@ -188,3 +188,27 @@ func TestRead_currencyColumn(t *testing.T) {
 		})
 	}
 }
+
+// Последний рубеж перед книгой. Запись могла попасть в журнал без книги под
+// рукой — тогда валюту счёта не подставили и не сверили. Книга знает валюты
+// счетов, и строку, которая противоречит своему счёту, она не примет: иначе
+// доллары легли бы в рублёвый счёт молча.
+func TestApplyRows_refusesACurrencyAgainstItsAccount(t *testing.T) {
+	path := paired(t) // «Сбербанк» на листе «Счета» рублёвый
+	p := domain.TransactionParams{
+		ID: "01D", Kind: domain.KindExpense, Date: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
+		Amount: domain.NewMoney(1230), Category: "Сервисы", Account: "Сбербанк",
+		Currency: currency(t, "USD"), Now: writeClock,
+	}
+	bad, err := domain.NewTransaction(p)
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	err = financexlsx.ApplyRows(path, []domain.Transaction{bad}, nil, writeClock)
+	if !errors.Is(err, domain.ErrCurrencyMismatch) {
+		t.Fatalf("ApplyRows = %v, want ErrCurrencyMismatch", err)
+	}
+	if _, ok := readBack(t, path)["01D"]; ok {
+		t.Error("строка записана в книгу несмотря на отказ")
+	}
+}
