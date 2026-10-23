@@ -356,13 +356,13 @@ function AccountRow({
             className={`label text-[8px] ${stale || a.needs_confirmation ? 'opacity-90' : 'opacity-40'}`}
             data-testid={`confirmed-${a.bank}`}
             title={
-              `Подтверждён ${formatRub(toKopecks(a.balance))} ${shortDate(a.updated)}` +
-              (spent > 0 ? `, после этого списано ${formatRub(spent)}` : '')
+              `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency ?? '')} ${shortDate(a.updated)}` +
+              (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency ?? '')}` : '')
             }
           >
             {(stale || a.needs_confirmation) && <span data-testid={`stale-${a.bank}`}>⚠ </span>}
             {shortDate(a.updated)}
-            {spent > 0 && <span className="privacy-mask"> −{formatRub(spent)}</span>}
+            {spent > 0 && <span className="privacy-mask"> −{formatMoney(spent, a.currency ?? '')}</span>}
           </span>
         )}
       </span>
