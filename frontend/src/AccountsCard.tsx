@@ -431,19 +431,33 @@ function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: A
       <span className="mt-1 size-2 shrink-0 rounded-full bg-current opacity-50" />
       <span className="label flex-1 text-[10px] opacity-80">{bank}</span>
       <span className="flex flex-col items-end">
-        {accounts.map((a) => (
-          <span key={a.bank} className="flex flex-col items-end">
-            <span className="privacy-mask text-xs font-bold" data-testid={`amount-${a.bank}`}>
-              {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
-            </span>
-            {a.base_value !== undefined && !a.unvalued && (
-              <span className="label text-[8px] opacity-40">
-                ≈ <span className="privacy-mask">{formatRub(toKopecks(a.base_value))}</span>
+        {accounts.map((a) => {
+          const spent = a.spent ? toKopecks(a.spent) : 0
+          return (
+            <span key={a.bank} className="flex flex-col items-end">
+              <span
+                className="privacy-mask text-xs font-bold"
+                data-testid={`amount-${a.bank}`}
+                title={
+                  `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency ?? '')} ${shortDate(a.updated)}` +
+                  (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency ?? '')}` : '')
+                }
+              >
+                {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
               </span>
-            )}
-          </span>
-        ))}
-        {accounts.some((a) => a.unvalued) && <span className="label text-[8px] opacity-60">курс неизвестен</span>}
+              {a.base_value !== undefined && !a.unvalued && (
+                <span className="label text-[8px] opacity-40">
+                  ≈ <span className="privacy-mask">{formatRub(toKopecks(a.base_value))}</span>
+                </span>
+              )}
+              {a.unvalued && (
+                <span className="label text-[8px] opacity-60" data-testid={`unvalued-${a.bank}`}>
+                  курс неизвестен
+                </span>
+              )}
+            </span>
+          )
+        })}
         {dates.length > 0 && (
           <span className={`label text-[8px] ${warn ? 'opacity-90' : 'opacity-40'}`} data-testid={`confirmed-${bank}`}>
             {warn && <span data-testid={`stale-${bank}`}>⚠ </span>}

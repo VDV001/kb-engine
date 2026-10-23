@@ -8,7 +8,7 @@ import (
 
 // Двадцать шесть отказов `fin` из девяноста четырёх прогонов — перенос пары
 // флагов с соседней подкоманды: `--from` есть у balance/sync/import и нет у
-// list/report, `--ledger` есть у восьми и нет у balance. Внутри это логично
+// list/report, `--ledger` есть у восьми (у balance — только ради --rename). Внутри это логично
 // (balance пишет на лист «Счета», report читает журнал), снаружи не сказано
 // нигде, и сообщение называет, чего нет, не называя, что есть вместо.
 func TestFinNamesTheSubcommandThatHasTheFlag(t *testing.T) {

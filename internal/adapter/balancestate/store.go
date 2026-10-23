@@ -26,8 +26,8 @@ const FileName = ".balance-state.json"
 // PathNextTo returns where the state lives for a given workbook.
 //
 // Рядом с книгой, а не с журналом: подтверждают остаток счёта, счета живут в
-// книге, и команда `fin balance` знает только путь к ней — у неё есть --from и
-// нет --ledger.
+// книге, и запись баланса знает только путь к ней (--ledger у `fin balance`
+// нужен одному --rename).
 func PathNextTo(workbookPath string) string {
 	return filepath.Join(filepath.Dir(workbookPath), FileName)
 }
@@ -95,12 +95,17 @@ func Rename(path, from, to string) error {
 			at = t
 		}
 	}
-	forget(f, from)
 	// Момент, лежавший под новым именем, принадлежал другому счёту — его
 	// нельзя унаследовать, даже когда своего у переименованного нет.
-	forget(f, to)
+	changed := forget(f, from)
+	changed = forget(f, to) || changed
 	if !at.IsZero() {
 		f.Confirmed[to] = at
+		changed = true
+	}
+	// Нечего менять — файл не трогается и не появляется.
+	if !changed {
+		return nil
 	}
 	return write(path, f)
 }
@@ -124,13 +129,16 @@ func read(path string) (file, error) {
 	return f, nil
 }
 
-// forget drops every spelling of the account.
-func forget(f file, bank string) {
+// forget drops every spelling of the account and says whether it dropped any.
+func forget(f file, bank string) bool {
+	dropped := false
 	for name := range f.Confirmed {
 		if domain.SameAccountName(name, bank) {
 			delete(f.Confirmed, name)
+			dropped = true
 		}
 	}
+	return dropped
 }
 
 func write(path string, f file) error {

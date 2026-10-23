@@ -8,6 +8,7 @@
 package financevocab
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -196,14 +197,26 @@ func update(path string, apply func(*file) bool) error {
 
 	out := map[string]any{"accounts": f.Accounts, "places": f.Places}
 	for k, v := range extra {
-		out[k] = v
+		// RawMessage кодировщик переэкранировал бы; строка уже разобрана честно.
+		var plain any
+		if json.Unmarshal(v, &plain) == nil {
+			out[k] = plain
+		} else {
+			out[k] = v
+		}
 	}
 	// ponytail: порядок ключей после записи — алфавитный (так кодирует карты
-	// encoding/json), раскладка владельца не сохраняется; путь апгрейда —
+	// encoding/json), раскладка владельца не сохраняется (содержимое и
+	// написание — сохраняются); путь апгрейда —
 	// писать через упорядоченный кодировщик, если раскладка станет важна.
-	body, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
+	// Без HTML-экранирования: файл правят руками, и «К&Б» обязан остаться
+	// «К&Б», а не превратиться в «К\u0026Б».
+	var body bytes.Buffer
+	enc := json.NewEncoder(&body)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(out); err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(body, '\n'), 0o600)
+	return os.WriteFile(path, body.Bytes(), 0o600)
 }
