@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { filterJournal, sortJournal } from './financeJournal'
+import { filterJournal, sortJournal, toExportRows } from './financeJournal'
 import type { Transaction } from './api'
 
 const tx = (over: Partial<Transaction> & { id: string; date: string; amount: string }): Transaction => ({
@@ -153,5 +153,35 @@ describe('sortJournal', () => {
       tx({ id: 'z', date: '2026-07-01', amount: '10.00' }),
     ]
     expect(sortJournal(same, 'date', 'desc').map((r) => r.id)).toEqual(['x', 'y', 'z'])
+  })
+})
+
+// Сумма сравнивается только с суммой в той же единице: 500 $ ниже 600 ₽ — это
+// не порядок по сумме, а порядок по числу. Рубли идут первым блоком, остальные
+// валюты — своими блоками в порядке кода, внутри блока по сумме.
+describe('sortJournal — суммы в разных валютах', () => {
+  const rows = [
+    { id: 'a', kind: 'expense' as const, date: '2026-07-01', amount: '600.00' },
+    { id: 'b', kind: 'expense' as const, date: '2026-07-01', amount: '500.00', currency: 'USD' },
+    { id: 'c', kind: 'expense' as const, date: '2026-07-01', amount: '100.00' },
+    { id: 'd', kind: 'expense' as const, date: '2026-07-01', amount: '9000.00', currency: 'UZS' },
+    { id: 'e', kind: 'expense' as const, date: '2026-07-01', amount: '10.00', currency: 'USD' },
+  ]
+  it('по убыванию: блок рублей, затем блоки валют, внутри по сумме', () => {
+    expect(sortJournal(rows, 'amount', 'desc').map((r) => r.id)).toEqual(['a', 'c', 'b', 'e', 'd'])
+  })
+  it('по возрастанию блоки стоят так же, меняется порядок внутри', () => {
+    expect(sortJournal(rows, 'amount', 'asc').map((r) => r.id)).toEqual(['c', 'a', 'e', 'b', 'd'])
+  })
+})
+
+describe('toExportRows — строка выгрузки несёт валюту', () => {
+  it('рубль уходит пустой строкой, остальное кодом', () => {
+    const out = toExportRows([
+      { id: 'r', kind: 'expense', date: '2026-07-01', amount: '100.00', category: 'Еда' },
+      { id: 'u', kind: 'expense', date: '2026-07-02', amount: '17.30', currency: 'USD' },
+    ])
+    expect(out.map((r) => r.currency)).toEqual(['', 'USD'])
+    expect(out[0]).toMatchObject({ category: 'Еда', amount: '100.00', subcategory: '' })
   })
 })

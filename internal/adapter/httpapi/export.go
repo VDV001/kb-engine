@@ -26,6 +26,9 @@ type exportRow struct {
 	Description string `json:"description"`
 	Amount      string `json:"amount"`
 	Account     string `json:"account"`
+	// Currency — код валюты суммы, пусто для рубля. Без неё доллары в числовой
+	// колонке «Сумма» складываются с рублями при первом же СУММ.
+	Currency string `json:"currency"`
 }
 
 type exportRequest struct {
@@ -33,13 +36,13 @@ type exportRequest struct {
 }
 
 var exportHeader = []string{
-	"Дата", "Вид", "Категория", "Подкатегория", "Место", "Описание", "Сумма", "Счёт",
+	"Дата", "Вид", "Категория", "Подкатегория", "Место", "Описание", "Сумма", "Счёт", "Валюта",
 }
 
 // Ширины на глаз по самому длинному ожидаемому значению: файл открывают, чтобы
 // читать, а колонка в восемь символов с «Яндекс Такси» внутри читается как
 // решётка.
-var exportWidths = []float64{12, 8, 16, 18, 22, 30, 12, 14}
+var exportWidths = []float64{12, 8, 16, 18, 22, 30, 12, 14, 8}
 
 // amountColumn is the one column written as a number rather than text: without
 // it the total cannot be summed, and the total is what the file is opened for.
@@ -81,7 +84,7 @@ func writeWorkbook(dst io.Writer, rows []exportRow) error {
 	for n, row := range rows {
 		values := []string{
 			row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
-			row.Place, row.Description, row.Amount, row.Account,
+			row.Place, row.Description, row.Amount, row.Account, currencyLabel(row.Currency),
 		}
 		if err := writeRow(f, sheet, n+2, values, amountColumn); err != nil {
 			return err
@@ -150,4 +153,13 @@ func kindLabel(kind string) string {
 	default:
 		return ""
 	}
+}
+
+// currencyLabel пишет валюту в файл явно, RUB для рубля: пустая клетка — плохой
+// фильтр в книге, которую открывают, чтобы считать по ней.
+func currencyLabel(code string) string {
+	if code == "" {
+		return "RUB"
+	}
+	return code
 }

@@ -1,15 +1,15 @@
 import { useMemo, useState } from 'react'
 import { AccountsCard } from './AccountsCard'
 import { api } from './api'
-import type { Finances, Transaction } from './api'
+import type { CurrencyTotal, Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
 import { CollapsibleSection, SectionHead } from './components/SectionHead'
 import { ErrorBox, Spinner } from './components/ui'
-import { filterJournal, sortJournal } from './financeJournal'
+import { filterJournal, sortJournal, toExportRows } from './financeJournal'
 import { dayBars, monthBars } from './financeSeries'
-import { formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
+import { formatMoney, formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
 
 // Вид «Финансовый архив», перенесённый из Python-дашборда поблочно: те же
 // секции в том же порядке и с той же типографикой. Арифметику считает сервер
@@ -237,18 +237,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
   // в браузере ради того же результата — лишняя библиотека. Строки уходят
   // ровно те, что на экране, поэтому фильтрация остаётся в одном месте.
   async function exportXLSX() {
-    const blob = await api.financeExport(
-      journal.map((t) => ({
-        date: t.date,
-        kind: t.kind,
-        category: t.category ?? '',
-        subcategory: t.subcategory ?? '',
-        place: t.place ?? '',
-        description: t.description ?? '',
-        amount: t.amount,
-        account: t.account ?? '',
-      })),
-    )
+    const blob = await api.financeExport(toExportRows(journal))
     const a = document.createElement('a')
     a.href = URL.createObjectURL(blob)
     a.download = 'finances.xlsx'
@@ -266,6 +255,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
         <aside className="shrink-0 xl:w-72">
           <div className="xl:sticky xl:top-24">
             <AccountsCard
+              masked={masked}
               transfersExcluded={summary?.excludedTransferCount ?? 0}
               accounts={finances.accounts}
               groups={finances.groups}
@@ -376,15 +366,21 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                   ({summary.excludedTransferCount})
                 </p>
               )}
+              <OtherCurrencies totals={summary.otherCurrencies} side="expenses" />
             </div>
 
             <div className="flex min-h-[200px] flex-col justify-between rounded-lg bg-surface-high p-8">
               <div className="flex items-center justify-between">
                 <span className="label text-on-surface-variant">Доходы</span>
-                <span className="label text-[9px] opacity-40">{summary.incomeCount} шт</span>
+                {/* Записи, а не только рублёвые: «0 шт» над строкой «не в рублях:
+                    … (1)» противоречил бы сам себе. */}
+                <span className="label text-[9px] opacity-40">
+                  {summary.incomeCount + (summary.otherCurrencies ?? []).reduce((n, c) => n + c.incomeCount, 0)} шт
+                </span>
               </div>
               <div>
                 <span className="privacy-mask text-3xl font-bold">{formatRub(earned)}</span>
+                <OtherCurrencies totals={summary.otherCurrencies} side="income" />
                 <div className="mt-3 space-y-1.5">
                   {summary.incomeBySource.slice(0, 3).map((s) => (
                     <div key={s.name} className="flex items-center justify-between text-xs">
@@ -751,7 +747,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                   <td className="hidden px-4 py-5 text-xs italic opacity-60 lg:table-cell">{t.description ?? ''}</td>
                   <td className="privacy-mask px-4 py-5 text-right text-sm font-bold">
                     {t.kind === 'income' ? '+' : ''}
-                    {formatRub(toKopecks(t.amount))}
+                    {formatMoney(toKopecks(t.amount), t.currency)}
                   </td>
                   <td className="label hidden px-4 py-5 text-right text-[10px] text-secondary md:table-cell">
                     {(t.source ?? '').toUpperCase()}
@@ -802,5 +798,38 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
         </div>
       </div>
     </div>
+  )
+}
+
+// OtherCurrencies называет записи не в рублях под рублёвым итогом. Они в итог
+// не входят (без курса доллар и рубль не складываются), и без строки сумма
+// журнала не сходилась бы с итогом без объяснения. Молчит, когда таких нет.
+//
+// Под расходами — ещё и переводы себе в этой валюте: они в траты не входят, и
+// без строки доллары журнала не сходились бы с итогом, как рубли без
+// «переводы себе не в счёт».
+function OtherCurrencies({ totals, side }: { totals?: CurrencyTotal[]; side: 'expenses' | 'income' }) {
+  const parts = (totals ?? []).flatMap((c) =>
+    side === 'income'
+      ? c.incomeCount > 0 ? [{ key: c.currency, text: '', amount: c.income, count: c.incomeCount, currency: c.currency }] : []
+      : [
+          ...(c.expenseCount > 0 ? [{ key: c.currency, text: '', amount: c.expenses, count: c.expenseCount, currency: c.currency }] : []),
+          ...(c.transferCount > 0
+            ? [{ key: `${c.currency}-t`, text: 'переводы себе ', amount: c.transfers, count: c.transferCount, currency: c.currency }]
+            : []),
+        ],
+  )
+  if (parts.length === 0) return null
+  return (
+    <p className="label mt-2 text-[10px] opacity-60">
+      не в рублях:{' '}
+      {parts.map((p, i) => (
+        <span key={p.key}>
+          {i > 0 && ' · '}
+          {p.text}
+          <span className="privacy-mask">{formatMoney(toKopecks(p.amount), p.currency)}</span> ({p.count})
+        </span>
+      ))}
+    </p>
   )
 }

@@ -417,3 +417,34 @@ describe('AccountsCard — строка банка в валютах, второ
     expect(title.replace(/ /g, ' ')).toContain('после этого списано 9,50 $')
   })
 })
+
+// Подтверждённое число и списанное после него — в единице счёта. Подсказка
+// писала «Подтверждён 12,30 ₽» у долларового счёта: число верное, знак чужой.
+describe('AccountsCard — подтверждение валютного счёта', () => {
+  it('подсказка и списание печатаются в валюте счёта', () => {
+    const usd: Account[] = [
+      { bank: 'Сервисы → Облако', balance: '12.30', current: '11.30', spent: '1.00', updated: '2026-10-23', currency: 'USD', unvalued: true },
+    ]
+    render(<AccountsCard accounts={usd} expenses="0.00" income="0.00" today="2026-10-23" />)
+    const confirmed = screen.getByTestId('confirmed-Сервисы → Облако')
+    const title = confirmed.getAttribute('title') ?? ''
+    expect(title).toContain('12,30 $')
+    expect(title).toContain('1,00 $')
+    expect(title).not.toContain('₽')
+    expect(spaced(confirmed)).toContain('1,00 $')
+  })
+})
+
+// Режим приватности прячет суммы, а всплывающая подсказка — обычный текст
+// атрибута, маска на него не действует. При маске в ней остаётся только дата.
+describe('AccountsCard — подсказка под маской', () => {
+  it('в режиме приватности подсказка без сумм', () => {
+    const acc: Account[] = [
+      { bank: 'Первый банк', balance: '1234.50', current: '1000.00', spent: '234.50', updated: '2026-10-20' },
+    ]
+    render(<AccountsCard accounts={acc} expenses="0.00" income="0.00" today="2026-10-23" masked />)
+    const title = screen.getByTestId('confirmed-Первый банк').getAttribute('title') ?? ''
+    expect(title).toContain('20.10')
+    expect(title).not.toMatch(/\d+,\d\d/)
+  })
+})
