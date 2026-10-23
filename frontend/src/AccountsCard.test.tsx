@@ -338,3 +338,31 @@ describe('AccountsCard — полоса счетов', () => {
     expect(extra).toContain('75,00 сум')
   })
 })
+
+describe('AccountsCard — полоса счетов, подписи', () => {
+  it('не подписывает курс счёта, который свёрнут как нулевой', () => {
+    const accs: Account[] = [
+      { bank: 'Кубышка → Рубли', balance: '9000.00', updated: '2026-10-20', current: '9000.00' },
+      { bank: 'Кубышка → Доллары', balance: '0', updated: '2026-10-14', current: '0', currency: 'USD', rate: '90.00', base_value: '0' },
+    ]
+    const groups = [{ group: 'Кубышка', total: '9000.00', rates: [{ currency: 'USD', per_unit: '90.00', on: '2026-10-14' }] }]
+    render(<AccountsCard accounts={accs} groups={groups} expenses="0" income="0" today="2026-10-20" />)
+    // Подпись о курсе без строки, к которой она относится, читается как курс
+    // всего рода — то есть как утверждение о деньгах, которых на экране нет.
+    expect(screen.queryByTestId('group-rates-Кубышка')).toBeNull()
+
+    fireEvent.click(screen.getByTestId('accounts-zero-toggle'))
+    expect(screen.getByTestId('group-rates-Кубышка')).toBeDefined()
+  })
+
+  it('называет дату подтверждения у банка в нескольких валютах', () => {
+    const accs: Account[] = [
+      { bank: 'Банк Юг USD', balance: '20.50', updated: '2026-10-19', current: '20.50', currency: 'USD', unvalued: true },
+      { bank: 'Банк Юг UZS', balance: '75.00', updated: '2026-10-20', current: '75.00', currency: 'UZS', unvalued: true },
+    ]
+    render(<AccountsCard accounts={accs} expenses="0" income="0" today="2026-10-20" />)
+    // Дата — самая ранняя из двух: строка не должна выглядеть свежее самого
+    // старого числа в ней.
+    expect(screen.getByTestId('confirmed-Банк Юг').textContent).toContain('19.10')
+  })
+})
