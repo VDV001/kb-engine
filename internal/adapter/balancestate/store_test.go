@@ -194,3 +194,14 @@ func TestRename_takesTheLatestOfTwoSpellings(t *testing.T) {
 		}
 	}
 }
+
+// Нечего переносить — файл не появляется и не переписывается.
+func TestRename_withNothingToMoveLeavesNoFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".balance-state.json")
+	if err := balancestate.Rename(path, "Кошелёк", "Наличные"); err != nil {
+		t.Fatalf("Rename: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("файл состояния появился без причины: %v", err)
+	}
+}

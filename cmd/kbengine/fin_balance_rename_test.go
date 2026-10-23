@@ -108,3 +108,68 @@ func TestRun_finBalanceRenameRefusesAnAmount(t *testing.T) {
 		t.Errorf("отказ не назвал флаг:\n%s", errb.String())
 	}
 }
+
+// Симметрично книге: запись журнала, где новое имя уже стоит счётом, после
+// переименования стала бы тратой переименованного счёта.
+func TestRun_finBalanceRenameRefusesANewNameTheLedgerAlreadyCarries(t *testing.T) {
+	book := workbook(t)
+	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	if err := os.WriteFile(ledger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "300", "--create"}, &out, &errb); code != 0 {
+		t.Fatalf("заведение: %s", errb.String())
+	}
+	// Счёта «Банк Север» на листе нет, а запись журнала его уже носит — так
+	// бывает, когда счёт закрыли и строку убрали.
+	if err := os.WriteFile(ledger, []byte(ledgerLineNaming(t, "Банк Север")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code := run([]string{"fin", "balance", "--from", book, "--ledger", ledger, "--bank", "Займ → Коллеге", "--rename", "Банк Север"}, &out, &errb)
+	if code == 0 {
+		t.Fatal("переименование на имя, которое журнал уже носит, прошло")
+	}
+}
+
+// Спор двух написаний магазина в словаре к счетам не относится и
+// переименование не блокирует: в остальных командах он предупреждение.
+func TestRun_finBalanceRenameIgnoresAPlaceConflictInTheVocabulary(t *testing.T) {
+	book := workbook(t)
+	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	if err := os.WriteFile(ledger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	aliases := filepath.Join(filepath.Dir(book), "finance-aliases.json")
+	body := `{"accounts": {}, "places": {"Пятерочка": {"category": "Еда"}, "Пятёрочка": {"category": "Прочее"}}}`
+	if err := os.WriteFile(aliases, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "300", "--create"}, &out, &errb); code != 0 {
+		t.Fatalf("заведение: %s", errb.String())
+	}
+	if code := run([]string{"fin", "balance", "--from", book, "--ledger", ledger, "--bank", "Займ → Коллеге", "--rename", "Коллега"}, &out, &errb); code != 0 {
+		t.Fatalf("конфликт мест заблокировал переименование: %s", errb.String())
+	}
+}
+
+// ledgerLineNaming — одна запись журнала с таким счётом, в формате, который
+// пишет fin add (собрана им же на временном журнале; книгу fin add не читает).
+func ledgerLineNaming(t *testing.T, account string) string {
+	t.Helper()
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	if err := os.WriteFile(ledger, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "add", "--ledger", ledger, "--kind", "expense", "--date", "2026-08-01",
+		"--cat", "Еда", "--amount", "100", "--account", account}, &out, &errb); code != 0 {
+		t.Fatalf("fin add: %s", errb.String())
+	}
+	raw, err := os.ReadFile(ledger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}

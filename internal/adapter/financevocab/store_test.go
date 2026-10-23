@@ -257,3 +257,20 @@ func TestWriters_keepKeysTheEngineDoesNotKnow(t *testing.T) {
 		t.Errorf("_comment срезан:\n%s", raw)
 	}
 }
+
+// Словарь правят руками: «К&Б» обязан остаться «К&Б», а не «К\u0026Б».
+func TestWriters_doNotEscapeWhatAPersonTyped(t *testing.T) {
+	path := write(t, `{"_comment": "К&Б и <ручные> правила", "accounts": {}, "places": {"КБ": {"category": "Еда", "place": "К&Б"}}}`)
+	if err := financevocab.RememberAccount(path, "Втб", "ВТБ"); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"К&Б и <ручные> правила", `"place": "К&Б"`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("в файле нет %q:\n%s", want, raw)
+		}
+	}
+}

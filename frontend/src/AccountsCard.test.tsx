@@ -398,3 +398,22 @@ describe('AccountsCard — полоса счетов, сигналы (ревью
     expect(spaced(screen.getByTestId('group-rates-Кубышка'))).toContain('$ по')
   })
 })
+
+describe('AccountsCard — строка банка в валютах, второй круг ревью', () => {
+  const accs: Account[] = [
+    { bank: 'Банк Юг USD', balance: '30.00', updated: '2026-10-01', current: '20.50', spent: '9.50', currency: 'USD', rate: '90.00', base_value: '1845.00' },
+    { bank: 'Банк Юг UZS', balance: '75.00', updated: '2026-10-20', current: '75.00', currency: 'UZS', unvalued: true },
+  ]
+
+  it('«курс неизвестен» стоит у своей суммы, а не одной подписью на всех', () => {
+    render(<AccountsCard accounts={accs} expenses="0" income="0" today="2026-10-20" />)
+    expect(screen.getByTestId('unvalued-Банк Юг UZS')).toBeDefined()
+    expect(screen.queryByTestId('unvalued-Банк Юг USD')).toBeNull()
+  })
+
+  it('у каждой суммы подсказка о подтверждении и списаниях', () => {
+    render(<AccountsCard accounts={accs} expenses="0" income="0" today="2026-10-20" />)
+    const title = screen.getByTestId('amount-Банк Юг USD').getAttribute('title') ?? ''
+    expect(title.replace(/ /g, ' ')).toContain('после этого списано 9,50 $')
+  })
+})
