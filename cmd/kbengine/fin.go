@@ -87,6 +87,33 @@ func ledgerFlags(fs *flag.FlagSet) *string {
 	return fs.String("ledger", "", "path to transactions.jsonl")
 }
 
+// currencyFlag reads --currency. Empty means "not named": the account's own
+// currency applies then, or roubles.
+func currencyFlag(raw string) (*domain.Currency, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	c, err := domain.NewCurrency(raw)
+	if err != nil {
+		return nil, fmt.Errorf("--currency %q: %w", raw, err)
+	}
+	return &c, nil
+}
+
+// bookAccounts reads the accounts a currency is taken from and checked against.
+// No book means nothing to take or check: nil, and the sync is where a
+// mismatch stops instead.
+func bookAccounts(path string) ([]domain.Account, error) {
+	if path == "" {
+		return nil, nil
+	}
+	led, err := financexlsx.Read(path, time.Now)
+	if err != nil {
+		return nil, err
+	}
+	return led.Accounts, nil
+}
+
 // filterFlags adds the flags that narrow a ledger.
 func filterFlags(fs *flag.FlagSet) (year, month *int, category, account, kind *string) {
 	year = fs.Int("year", 0, "restrict to a year")
@@ -167,6 +194,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	account := fs.String("account", "", "which account the money moved through")
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
+	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's, or roubles)")
+	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -194,6 +223,17 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
+	named, err := currencyFlag(*currency)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+	accounts, err := bookAccounts(*from)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: %v\n", err)
+		return 1
+	}
+
 	rec, err := appendChecked(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
 		Date:        when,
@@ -204,6 +244,8 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Description: *note,
 		Source:      *source,
 		Account:     *account,
+		Currency:    named,
+		Accounts:    accounts,
 	}, *force, func(c finance.Correction) {
 		// Подстановка называется вслух: человек набрал одно, записано другое,
 		// и узнать об этом из отчёта через месяц — то же самое молчание.
