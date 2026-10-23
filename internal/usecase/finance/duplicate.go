@@ -28,8 +28,9 @@ func Duplicate(existing []Record, p AddParams) *Record {
 	if want.IsZero() {
 		want = domain.Day(time.Now())
 	}
+	currency, _ := resolveCurrency(p.Currency, p.Account, p.Accounts)
 	return firstMatch(existing, entry{
-		kind: p.Kind, date: want, amount: p.Amount,
+		kind: p.Kind, date: want, amount: p.Amount, currency: currency,
 		category: p.Category, sub: p.Subcategory, place: p.Place,
 		note: p.Description, source: p.Source, account: p.Account,
 	}, "")
@@ -49,7 +50,7 @@ func Duplicate(existing []Record, p AddParams) *Record {
 func RepeatOf(existing []Record, edited Record) *Record {
 	tx := edited.Transaction()
 	return firstMatch(existing, entry{
-		kind: tx.Kind(), date: tx.Date(), amount: tx.Amount(),
+		kind: tx.Kind(), date: tx.Date(), amount: tx.Amount(), currency: tx.Currency(),
 		category: tx.Category(), sub: tx.Subcategory(), place: tx.Place(),
 		note: tx.Description(), source: tx.Source(), account: tx.Account(),
 	}, tx.ID())
@@ -62,6 +63,7 @@ type entry struct {
 	kind                                        string
 	date                                        time.Time
 	amount                                      domain.Money
+	currency                                    domain.Currency
 	category, sub, place, note, source, account string
 }
 
@@ -85,7 +87,7 @@ func firstMatch(existing []Record, want entry, skipID string) *Record {
 // сразу (вид, день, сумма), потом написания: перебирать шесть строк ради
 // покупки другого дня незачем.
 func (e entry) matches(tx domain.Transaction) bool {
-	if tx.Kind() != e.kind || !tx.Date().Equal(e.date) || tx.Amount() != e.amount {
+	if tx.Kind() != e.kind || !tx.Date().Equal(e.date) || tx.Amount() != e.amount || tx.Currency() != e.currency {
 		return false
 	}
 	for _, pair := range [][2]string{

@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -102,6 +103,48 @@ type AddParams struct {
 	// его только тот путь, который сам же нашёл дубль: ссылку нельзя выдумать,
 	// не увидев, на что она указывает.
 	RepeatOf string
+	// Currency is the unit the person named; nil means "not named", and then the
+	// account's own currency applies, or roubles.
+	Currency *domain.Currency
+	// Accounts are the workbook's accounts, nil when the book is not at hand.
+	// They are what a currency is taken from and checked against; without them
+	// there is nothing to check, and the later sync is where a mismatch stops.
+	Accounts []domain.Account
+}
+
+// resolveCurrency returns the unit an entry is recorded in and the account it
+// names, when that account is one of Accounts.
+func resolveCurrency(named *domain.Currency, account string, accounts []domain.Account) (domain.Currency, *domain.Account) {
+	acc := findAccount(accounts, account)
+	switch {
+	case named != nil:
+		return *named, acc
+	case acc != nil:
+		return acc.Currency(), acc
+	default:
+		return domain.Currency{}, nil
+	}
+}
+
+func findAccount(accounts []domain.Account, name string) *domain.Account {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil
+	}
+	for i := range accounts {
+		if accounts[i].Bank() == name {
+			return &accounts[i]
+		}
+	}
+	return nil
+}
+
+// checkCurrency applies the domain rule when the account is known.
+func checkCurrency(tx domain.Transaction, acc *domain.Account) error {
+	if acc == nil {
+		return nil
+	}
+	return tx.CheckAccountCurrency(*acc)
 }
 
 // Add builds a first-revision record for one new entry.
@@ -114,6 +157,7 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 	if date.IsZero() {
 		date = domain.Day(now())
 	}
+	currency, acc := resolveCurrency(p.Currency, p.Account, p.Accounts)
 
 	tx, err := domain.NewTransaction(domain.TransactionParams{
 		ID:          newID(),
@@ -126,10 +170,14 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 		Description: p.Description,
 		Source:      p.Source,
 		Account:     p.Account,
+		Currency:    currency,
 		RepeatOf:    p.RepeatOf,
 		Now:         now,
 	})
 	if err != nil {
+		return Record{}, err
+	}
+	if err := checkCurrency(tx, acc); err != nil {
 		return Record{}, err
 	}
 	return NewRecord(tx, 1, now())

@@ -37,6 +37,12 @@ type EditParams struct {
 	ClearPlace       bool
 	ClearDescription bool
 	ClearAccount     bool
+
+	// Currency is the unit named for the record; nil leaves it alone, unless the
+	// account changes, and then the new account's currency follows it.
+	Currency *domain.Currency
+	// Accounts are the workbook's accounts, nil when the book is not at hand.
+	Accounts []domain.Account
 }
 
 // touches отвечает, названо ли хоть одно поле.
@@ -44,7 +50,8 @@ func (p EditParams) touches() bool {
 	return !p.Date.IsZero() || !p.Amount.IsZero() ||
 		p.Category != "" || p.Subcategory != "" || p.Place != "" ||
 		p.Description != "" || p.Source != "" || p.Account != "" ||
-		p.ClearSubcategory || p.ClearPlace || p.ClearDescription || p.ClearAccount
+		p.ClearSubcategory || p.ClearPlace || p.ClearDescription || p.ClearAccount ||
+		p.Currency != nil
 }
 
 // Edit возвращает запись со следующей ревизией и применёнными изменениями.
@@ -73,6 +80,7 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 		Description: tx.Description(),
 		Source:      tx.Source(),
 		Account:     tx.Account(),
+		Currency:    tx.Currency(),
 		// След осознанного повтора — решение человека о записи, а не поле,
 		// которое правят: правка суммы или счёта его не отменяет. Флага для
 		// него у правки намеренно нет.
@@ -81,9 +89,19 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 	}
 
 	params = p.applyTo(params)
+	acc := findAccount(p.Accounts, params.Account)
+	switch {
+	case p.Currency != nil:
+		params.Currency = *p.Currency
+	case p.Account != "" && acc != nil:
+		params.Currency = acc.Currency()
+	}
 
 	edited, err := domain.NewTransaction(params)
 	if err != nil {
+		return Record{}, err
+	}
+	if err := checkCurrency(edited, acc); err != nil {
 		return Record{}, err
 	}
 	// «Одинаковость» берётся у синка, а не считается заново: два определения
