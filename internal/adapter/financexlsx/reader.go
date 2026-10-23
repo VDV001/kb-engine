@@ -87,6 +87,7 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 	// never been synced has no id column, and the positional fallback below
 	// stands in until AssignIDs retires it.
 	idCol := findIDColumn(rows)
+	curCol := findHeaderColumn(rows, currencyHeader)
 
 	var out []domain.Transaction
 	for i, row := range rows {
@@ -123,6 +124,15 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 		}
 
 		p.ID = rowID(row, idCol, kind, rowNum)
+		// Пустая ячейка — рубль. Негодный код — отказ, а не рубль: молчаливое
+		// «не разобрал — значит рубль» показало бы долларовую трату рублёвой.
+		if curCol != 0 {
+			if raw := cell(row, curCol-1); raw != "" {
+				if p.Currency, err = domain.NewCurrency(raw); err != nil {
+					return nil, fmt.Errorf("%s row %d: currency: %w", sheet, rowNum, err)
+				}
+			}
+		}
 
 		tx, err := domain.NewTransaction(p)
 		if err != nil {
