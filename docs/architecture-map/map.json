@@ -1574,8 +1574,8 @@
           "from": "cmd-fin",
           "to": "f-syncstate",
           "call": "financejsonl.SaveState(statePath, finance.BaselineOf(recs, now))",
-          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:491 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
-          "source": "cmd/kbengine/sync.go:548",
+          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:500 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
+          "source": "cmd/kbengine/sync.go:557",
           "unverified": false,
           "symbol": "SaveState"
         }
@@ -3516,8 +3516,8 @@
           "to": "uc-finance",
           "call": "warnUnderstated(from, recs, stdout)",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:570",
-          "detail": "cmd/kbengine/sync.go:570 перечисляет спорные записи и просит подтвердить баланс заново"
+          "source": "cmd/kbengine/sync.go:579",
+          "detail": "cmd/kbengine/sync.go:579 перечисляет спорные записи и просит подтвердить баланс заново"
         },
         {
           "n": 3,
@@ -3534,8 +3534,8 @@
           "to": "owner",
           "call": "список спорных трат",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:554",
-          "detail": "cmd/kbengine/sync.go:554 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
+          "source": "cmd/kbengine/sync.go:563",
+          "detail": "cmd/kbengine/sync.go:563 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
         }
       ]
     },
