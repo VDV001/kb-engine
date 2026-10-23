@@ -150,7 +150,7 @@ func TestLedgerFinances_addTakesTheAccountCurrency(t *testing.T) {
 	}
 }
 
-// fin summary называет доллары рядом с итогом, а не роняет их молча.
+// fin report называет доллары рядом с итогом, а не роняет их молча.
 func TestRun_finSummary_namesOtherCurrencies(t *testing.T) {
 	book := workbookWithDollarAccount(t)
 	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
@@ -160,10 +160,10 @@ func TestRun_finSummary_namesOtherCurrencies(t *testing.T) {
 		t.Fatalf("fin add: %s", errb.String())
 	}
 	out.Reset()
-	if code := run([]string{"fin", "summary", "--ledger", ledger}, &out, &errb); code != 0 {
-		t.Fatalf("fin summary: %s", errb.String())
+	if code := run([]string{"fin", "report", "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin report: %s", errb.String())
 	}
 	if !strings.Contains(out.String(), "USD") || !strings.Contains(out.String(), "12.30") {
-		t.Errorf("fin summary не назвал долларовую трату:\n%s", out.String())
+		t.Errorf("fin report не назвал долларовую трату:\n%s", out.String())
 	}
 }

@@ -440,6 +440,12 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "переводы себе — не в итогах: %s (%d)\n",
 			s.ExcludedTransfers, s.ExcludedTransferCount)
 	}
+	// Записи в другой валюте — та же история: в итоги выше не входят, потому
+	// что без курса доллар и рубль не складываются, и называются здесь.
+	for _, c := range s.OtherCurrencies {
+		fmt.Fprintf(stdout, "%s — не в итогах: расходы %s (%d), доходы %s (%d)\n",
+			c.Currency, c.Expenses, c.ExpenseCount, c.Income, c.IncomeCount)
+	}
 	writeBreakdown(stdout, "по категориям", s.ByCategory)
 	writeBreakdown(stdout, "по счетам", s.ByAccount)
 	return 0
