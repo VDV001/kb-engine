@@ -78,7 +78,7 @@ export function AboutView({
             xl:self-start — только в ряду: по умолчанию flex тянет колонку до
             высоты соседней. В колоночной раскладке self-start сузил бы блок по
             содержимому, поэтому правило и стоит за брейкпоинтом. */}
-        <div className="grid min-w-0 flex-1 gap-4 sm:grid-cols-2 xl:self-start">
+        <div className="grid grid-cols-1 min-w-0 flex-1 gap-4 sm:grid-cols-2 xl:self-start">
           {[boxes.slice(0, Math.ceil(boxes.length / 2)), boxes.slice(Math.ceil(boxes.length / 2))].map(
             (column, i) => (
               <div
@@ -212,7 +212,7 @@ export function AboutView({
         <Card>
           <Label>Что нового в базе</Label>
           <span className="ml-2 font-mono text-[10px] text-on-surface-variant">из CHANGELOG.md</span>
-          <div className="mt-3 grid gap-8 md:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-3 grid grid-cols-1 gap-8 md:grid-cols-2 xl:grid-cols-3">
             {latest.map((r, i) => (
               <div key={r.version} className="space-y-1.5">
                 <div className="flex items-center gap-2">
@@ -252,7 +252,7 @@ export function AboutView({
 
       {/* Редакторская секция исходника. Текст переписан под движок: старая
           «Автоматизация» описывала build_dashboard.py, которого здесь нет. */}
-      <section className="mt-24 grid gap-12 border-t border-outline-variant pt-12 md:grid-cols-3">
+      <section className="mt-24 grid grid-cols-1 gap-12 border-t border-outline-variant pt-12 md:grid-cols-3">
         <div>
           <h3 className="font-headline text-xl font-bold">Категории как ящики</h3>
           <p className="mt-4 text-sm leading-relaxed text-on-surface-variant">

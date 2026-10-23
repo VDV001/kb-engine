@@ -254,7 +254,7 @@ function name2(key: string, labels: Record<string, string>): string {
  * говорит само по себе, пока не сказано, что оно измеряет. */
 function GraphLegend() {
   return (
-    <dl className="grid gap-2 text-xs sm:grid-cols-3">
+    <dl className="grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
       {[
         ['В центре', 'ядро базы — тема, вокруг которой собрано остальное'],
         ['Ближе к центру', 'больше общих тегов с ядром: грани одной линии'],
@@ -426,7 +426,7 @@ function CuratedLinks({
         </h4>
         <p className="text-xs text-on-surface-variant">{note}</p>
       </div>
-      <ul className="grid gap-2 sm:grid-cols-2">
+      <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {rows.map((r) => (
           <li key={`${r.from}-${r.to}`} className="min-w-0 rounded-lg bg-surface-lowest p-3">
             <p className="truncate text-sm font-medium" title={`${r.fromLabel} ↔ ${r.toLabel}`}>

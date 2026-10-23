@@ -38,7 +38,7 @@ export function ChecksPanel({ map }: { map: ArchMap }) {
         <Card>
           <Label>Область карты</Label>
           {coverage.note && <p className="mt-2 text-sm">{coverage.note}</p>}
-          <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
+          <dl className="mt-3 grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
             {coverage.scope.root && (
               <Row term="Корень">
                 <span className="font-mono">{coverage.scope.root}</span>

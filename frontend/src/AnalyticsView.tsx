@@ -224,7 +224,7 @@ function ContradictionCard({ c, index }: { c: Contradiction; index: number }) {
 
       <h3 className="mb-4 font-headline text-xl font-bold">{c.title}</h3>
 
-      <div className="mb-3 grid gap-3 sm:grid-cols-2">
+      <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="rounded border border-primary/20 bg-primary/[0.07] p-3.5">
           <span className="label mb-1.5 block text-primary">Тезис A</span>
           <span className="text-sm leading-relaxed">{c.a}</span>
@@ -414,7 +414,7 @@ export function AnalyticsView({
             (patterns.length === 0 ? (
               <EmptyTabNote what="паттернов" connected={semanticLayer} />
             ) : (
-              <div className="grid gap-5 xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                 {patterns.map((p, i) => (
                   <PatternCard key={p.name} pattern={p} rank={i} />
                 ))}
@@ -436,7 +436,7 @@ export function AnalyticsView({
             (gaps.length === 0 ? (
               <EmptyTabNote what="пробелов" connected={semanticLayer} />
             ) : (
-              <div className="grid gap-5 xl:grid-cols-2">
+              <div className="grid grid-cols-1 gap-5 xl:grid-cols-2">
                 {[...gaps]
                   .sort((a, b) => (b.clusters?.length ?? 0) - (a.clusters?.length ?? 0))
                   .map((g) => (

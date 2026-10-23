@@ -289,7 +289,7 @@ function SectionView({ s, masked = false }: { s: DocSection; masked?: boolean })
       {s.note && <p className="max-w-2xl text-sm text-on-surface-variant">{s.note}</p>}
       <FlowGraph cards={s.cards ?? []} />
       {(s.cards ?? []).length > 0 && (
-        <div className={`grid gap-4 ${cols}`}>
+        <div className={`grid grid-cols-1 gap-4 ${cols}`}>
           {s.cards!.map((c) => (
             // Маска действует только там, где файл сам сказал «здесь люди».
             <DocCardView key={c.title} c={c} masked={masked && s.sensitive === true} />

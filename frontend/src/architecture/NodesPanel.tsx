@@ -64,7 +64,7 @@ export function NodesPanel({ map, roots }: { map: ArchMap; roots: Record<string,
       {groups.map((g) => (
         <section key={g.id || 'orphans'} className="space-y-2">
           <Label>{g.title}</Label>
-          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {g.nodes.map((n) => (
               <Card key={n.id} className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-baseline justify-between gap-2">

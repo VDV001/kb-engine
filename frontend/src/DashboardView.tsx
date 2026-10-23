@@ -56,7 +56,7 @@ export function DashboardView({
         </p>
       </header>
 
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <Kpi label="Всего записей" value={stats.total} bg="bg-kpi-1-bg">
           {categories.length} категорий · {stats.by_lifecycle['canonical'] ?? 0} canonical
         </Kpi>
@@ -77,7 +77,7 @@ export function DashboardView({
         </Kpi>
       </div>
 
-      <div className="grid min-w-0 gap-6 md:grid-cols-12">
+      <div className="grid grid-cols-1 min-w-0 gap-6 md:grid-cols-12">
         <Panel className="md:col-span-8" title="Записи по дням" subtitle={`Появление записей за последние ${BAR_DAYS} дней`}>
           <DayBars days={recent} />
         </Panel>

@@ -536,7 +536,7 @@ export function CatalogView({
           )}
 
           {grid ? (
-            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {slice.map((e) => (
                 <div key={e.id} className="flex flex-col gap-2 rounded-lg border border-outline-variant bg-surface-lowest p-4">
                   <div className="flex items-center justify-between gap-2">
