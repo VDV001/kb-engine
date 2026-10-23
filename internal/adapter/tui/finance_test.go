@@ -143,7 +143,7 @@ func TestFinancesOmitsAnEmptySpendLineForACurrency(t *testing.T) {
 	sum := sampleSummary()
 	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", IncomeCount: 1, Income: domain.NewMoney(5000)}}
 	view := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab()).View()
-	for _, line := range strings.Split(view, "\n") {
+	for line := range strings.SplitSeq(view, "\n") {
 		if strings.Contains(line, "USD") && strings.Contains(line, "потрачено") {
 			t.Errorf("строка трат у валюты без трат: %q", line)
 		}
