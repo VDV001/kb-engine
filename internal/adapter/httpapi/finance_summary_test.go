@@ -68,7 +68,7 @@ func TestFinanceSummaryServesEveryCut(t *testing.T) {
 	// я это замерил. Число правится руками и только осознанно: разрез, убранный
 	// из сводки, обязан быть замечен человеком, потому что во фронте он
 	// исчезает без следа.
-	const cuts = 15
+	const cuts = 16
 	if len(keys) != cuts {
 		t.Errorf("разрезов в сводке %d, ждали %d — если разрез убран намеренно, "+
 			"поправьте число здесь и проверьте, что фронт его больше не читает", len(keys), cuts)
@@ -86,7 +86,7 @@ func TestFinanceSummaryServesEveryCut(t *testing.T) {
 		}
 	}
 	// Списки — массивы, а не null: null во фронте пришлось бы обходить ??[].
-	for _, key := range []string{"byCategory", "bySubcategory", "byPlace", "bySource", "incomeBySource", "byMonth", "byDay"} {
+	for _, key := range []string{"byCategory", "bySubcategory", "byPlace", "bySource", "incomeBySource", "byMonth", "byDay", "otherCurrencies"} {
 		if _, ok := got[key].([]any); !ok {
 			t.Errorf("поле %q имеет тип %T, want массив", key, got[key])
 		}

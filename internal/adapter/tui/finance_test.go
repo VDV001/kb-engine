@@ -122,3 +122,17 @@ func TestFinancesAsksForWholeHistory(t *testing.T) {
 		t.Errorf("opened on period %v, want the whole history", fin.asked[0])
 	}
 }
+
+// Экран финансов называет записи в другой валюте рядом с итогом. Без строки
+// доллары просто пропали бы с экрана: в рублёвые суммы они не входят.
+func TestFinancesNamesOtherCurrencies(t *testing.T) {
+	sum := sampleSummary()
+	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", ExpenseCount: 2, Expenses: domain.NewMoney(1730)}}
+	m := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab())
+	view := m.View()
+	for _, want := range []string{"USD", "17,30"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("finances view is missing %q\n--- view ---\n%s", want, view)
+		}
+	}
+}

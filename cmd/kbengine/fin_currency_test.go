@@ -149,3 +149,21 @@ func TestLedgerFinances_addTakesTheAccountCurrency(t *testing.T) {
 		t.Errorf("трата из формы без валюты счёта:\n%s", line)
 	}
 }
+
+// fin summary называет доллары рядом с итогом, а не роняет их молча.
+func TestRun_finSummary_namesOtherCurrencies(t *testing.T) {
+	book := workbookWithDollarAccount(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, book, ledger)
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "add", "--ledger", ledger, "--amount", "12,30", "--cat", "Сервисы", "--date", "2026-04-06", "--currency", "USD"}, &out, &errb); code != 0 {
+		t.Fatalf("fin add: %s", errb.String())
+	}
+	out.Reset()
+	if code := run([]string{"fin", "summary", "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin summary: %s", errb.String())
+	}
+	if !strings.Contains(out.String(), "USD") || !strings.Contains(out.String(), "12.30") {
+		t.Errorf("fin summary не назвал долларовую трату:\n%s", out.String())
+	}
+}
