@@ -58,6 +58,16 @@ func (f Filter) accepts(r Record) bool {
 	return f.Category == "" || strings.EqualFold(tx.Category(), f.Category)
 }
 
+// CurrencyTotal is what one currency other than roubles came to. Kept apart
+// because without a rate dollars and roubles do not add up to anything.
+type CurrencyTotal struct {
+	Currency     string
+	ExpenseCount int
+	Expenses     domain.Money
+	IncomeCount  int
+	Income       domain.Money
+}
+
 // CategoryTotal is what one category cost over the records summarized.
 type CategoryTotal struct {
 	Category string
@@ -110,6 +120,10 @@ type Summary struct {
 	// Ноль здесь означает «исключать было нечего», и это отдельный ответ.
 	ExcludedTransferCount int
 	ExcludedTransfers     domain.Money
+	// OtherCurrencies — записи не в рублях, по валюте, в порядке кода. В
+	// рублёвые суммы и разбивки они не входят: без курса доллар и рубль не
+	// складываются, а с курсом это уже оценка. Пустой список — «таких нет».
+	OtherCurrencies []CurrencyTotal
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
@@ -154,6 +168,7 @@ func Summarize(recs []Record) Summary {
 	bySubcategory := make(map[[2]string]SubcategoryTotal)
 	byMonth := make(map[string]MonthTotal)
 	byDay := make(map[string]DayTotal)
+	other := make(map[string]CurrencyTotal)
 
 	for _, r := range recs {
 		tx := r.Transaction()
@@ -165,6 +180,19 @@ func Summarize(recs []Record) Summary {
 		if tx.IsInternalTransfer() {
 			s.ExcludedTransferCount++
 			s.ExcludedTransfers = s.ExcludedTransfers.Add(tx.Amount())
+			continue
+		}
+		if c := tx.Currency(); !c.IsBase() {
+			o := other[c.Code()]
+			o.Currency = c.Code()
+			if tx.IsExpense() {
+				o.ExpenseCount++
+				o.Expenses = o.Expenses.Add(tx.Amount())
+			} else {
+				o.IncomeCount++
+				o.Income = o.Income.Add(tx.Amount())
+			}
+			other[c.Code()] = o
 			continue
 		}
 		s.Net = s.Net.Add(tx.SignedAmount())
@@ -213,6 +241,9 @@ func Summarize(recs []Record) Summary {
 		byDay[day] = d
 	}
 
+	for _, k := range slices.Sorted(maps.Keys(other)) {
+		s.OtherCurrencies = append(s.OtherCurrencies, other[k])
+	}
 	s.ByCategory = ranked(byCategory)
 	s.ByAccount = ranked(byAccount)
 	s.ByPlace = ranked(byPlace)
