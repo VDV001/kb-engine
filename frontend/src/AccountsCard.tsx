@@ -216,7 +216,7 @@ export function AccountsCard({
                   />
                 ))}
               </ul>
-              <GroupNotes group={engineGroup(k.group)} />
+              <GroupNotes group={engineGroup(k.group)} shown={k.accounts} />
             </div>
           ))}
           {zeroCount > 0 && (
@@ -267,10 +267,14 @@ export function AccountsCard({
  * курсом никуда не ходит. А итог, умолчавший о неоценённых счетах, утверждает
  * больше, чем знает: сумма выглядит полной, будучи частичной.
  */
-function GroupNotes({ group }: { group?: AccountGroup }) {
+function GroupNotes({ group, shown }: { group?: AccountGroup; shown: Account[] }) {
   if (!group) return null
-  const rates = group.rates ?? []
-  const unvalued = group.unvalued ?? []
+  // Подписи только о том, что на экране: курс свёрнутого нулевого счёта
+  // читался бы как курс всего рода.
+  const codes = new Set(shown.map((a) => a.currency ?? ''))
+  const names = new Set(shown.map((a) => a.bank))
+  const rates = (group.rates ?? []).filter((r) => codes.has(r.currency))
+  const unvalued = (group.unvalued ?? []).filter((n) => names.has(n))
   if (rates.length === 0 && unvalued.length === 0) return null
 
   return (
@@ -412,6 +416,8 @@ function foreignTotals(accounts: Account[]): string[] {
 
 /** Один банк в нескольких валютах: имя один раз, суммы столбиком. */
 function MultiCurrencyRow({ bank, accounts }: { bank: string; accounts: Account[] }) {
+  // Самая ранняя дата: строка не должна выглядеть свежее самого старого числа в ней.
+  const dates = accounts.map((a) => a.updated).filter((d) => d !== '').sort()
   return (
     <li className="flex items-start gap-2" data-testid={`bank-${bank}`}>
       <span className="mt-1 size-2 shrink-0 rounded-full bg-current opacity-50" />
@@ -422,6 +428,11 @@ function MultiCurrencyRow({ bank, accounts }: { bank: string; accounts: Account[
             {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
           </span>
         ))}
+        {dates.length > 0 && (
+          <span className="label text-[8px] opacity-40" data-testid={`confirmed-${bank}`}>
+            {shortDate(dates[0])}
+          </span>
+        )}
       </span>
     </li>
   )
