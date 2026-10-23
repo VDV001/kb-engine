@@ -1,5 +1,6 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useCssVarHeight } from '../hooks/useCssVarHeight'
+import { useNavFits } from '../hooks/useNavFits'
 import { Icon } from './Icon'
 import { Logo } from './Logo'
 import { ThemeToggle } from './ThemeToggle'
@@ -41,9 +42,19 @@ export function Header<T extends string>({
   const ref = useRef<HTMLElement>(null)
   const navRef = useRef<HTMLElement>(null)
   const listRef = useRef<HTMLUListElement>(null)
+  const burgerRef = useRef<HTMLButtonElement>(null)
+  const logoRef = useRef<HTMLAnchorElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
-  const fits = useFits(navRef, listRef)
-  const collapsed = !fits
+  const collapsed = !useNavFits({ nav: navRef, list: listRef, burger: burgerRef, logo: logoRef })
+  // Бургер исчез — меню закрыто. Иначе, сузив окно снова, человек получал бы
+  // открытую панель, которую не открывал, а фокус терялся вместе с кнопкой.
+  // Поправка состояния во время отрисовки, а не useEffect: эффекты в
+  // компонентах запрещены гейтом web-data-layer, и лишний проход не нужен.
+  const [wasCollapsed, setWasCollapsed] = useState(collapsed)
+  if (wasCollapsed !== collapsed) {
+    setWasCollapsed(collapsed)
+    if (!collapsed) setMenuOpen(false)
+  }
   // Высота шапки уезжает в CSS-переменную: прилипающие полосы внутри страниц
   // встают под ней, не завися от захардкоженного числа.
   useCssVarHeight(ref, '--nav-h')
@@ -55,6 +66,7 @@ export function Header<T extends string>({
           которых на 360–390 px не хватало — шапка ломалась на два ряда. */}
       <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-y-3 px-4 py-3 sm:px-6 lg:px-8">
         <a
+          ref={logoRef}
           href="#"
           onClick={(e) => {
             e.preventDefault()
@@ -73,10 +85,14 @@ export function Header<T extends string>({
             оставлено: не помещается — строка прячется (место за ней остаётся,
             чтобы мерить дальше), пункты уходят в бургер. Новая вкладка или
             переключатель на одном виде больше ничего не ломают. */}
+        {/* overflow-x-clip, а не overflow-hidden: вертикаль остаётся открытой,
+            иначе кольцо фокуса у вкладок обрезалось сверху и снизу. Отступ —
+            тот же, что у логотипа: по нему хук считает место для разворота.
+            invisible сам убирает свёрнутую строку из дерева доступности и из
+            обхода по Tab, отдельный aria-hidden не нужен. */}
         <nav
           ref={navRef}
-          aria-hidden={collapsed ? true : undefined}
-          className={`min-w-0 flex-1 overflow-hidden ${collapsed ? 'invisible' : 'mr-6 lg:mr-12'}`}
+          className={`min-w-0 flex-1 overflow-x-clip ${collapsed ? 'invisible' : 'mr-3 sm:mr-6 lg:mr-12'}`}
         >
           <ul ref={listRef} className="flex w-max items-center gap-8 whitespace-nowrap px-1">
             {tabs.map((t) => {
@@ -108,6 +124,7 @@ export function Header<T extends string>({
         <div className="ml-auto flex shrink-0 items-center gap-3">
           {collapsed && (
             <button
+              ref={burgerRef}
               type="button"
               onClick={() => setMenuOpen((v) => !v)}
               aria-expanded={menuOpen}
@@ -165,24 +182,4 @@ export function Header<T extends string>({
       )}
     </header>
   )
-}
-
-// useFits отвечает, помещается ли список во всю ширину своего контейнера.
-// Пересчитывается при любом изменении размеров обоих: окно, масштаб браузера,
-// шрифт, новая вкладка, переключатель на текущем виде.
-function useFits(container: React.RefObject<HTMLElement | null>, content: React.RefObject<HTMLElement | null>) {
-  const [fits, setFits] = useState(true)
-  useLayoutEffect(() => {
-    const box = container.current
-    const list = content.current
-    if (!box || !list) return
-    const check = () => setFits(list.scrollWidth <= box.clientWidth)
-    check()
-    if (typeof ResizeObserver === 'undefined') return
-    const ro = new ResizeObserver(check)
-    ro.observe(box)
-    ro.observe(list)
-    return () => ro.disconnect()
-  }, [container, content])
-  return fits
 }
