@@ -356,8 +356,14 @@ jobs:
       # проверка ничего не строит заново.
       - name: Verify README claims
         run: |
-          size="$(docker images kbengine:ci --format '{{.Size}}')"
-          mb="$(awk -v s="$size" 'BEGIN{n=s+0;u=s;gsub(/[0-9.]/,"",u);if(u=="GB")n*=1024;else if(u=="kB"||u=="KB")n/=1024;printf "%.1f",n}')"
+          # Размер файловой системы контейнера (несжатый tar), а не `docker images
+          # {{.Size}}`: та мера зависит от хранилища образов на раннере и 23.10
+          # показала 28.7 MB при бинаре, выросшем на 4 КБ (PR #361).
+          cid="$(docker create kbengine:ci)"
+          bytes="$(docker export "$cid" | wc -c)"
+          docker rm "$cid" >/dev/null
+          mb="$(awk -v b="$bytes" 'BEGIN{printf "%.1f", b/1048576}')"
+          echo "image filesystem: $mb MB"
           scripts/gates/verify-claims.sh --self-test
           VERIFY_IMAGE_MB="$mb" scripts/gates/verify-claims.sh
 
