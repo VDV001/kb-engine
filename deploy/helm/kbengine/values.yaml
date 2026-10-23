@@ -24,14 +24,20 @@ catalog:
   # Only for source=s3. The engine has no S3 client and reads a file path, so
   # the object is fetched once at pod start into an emptyDir the container reads.
   s3:
-    # Leave empty for real AWS S3; set it for MinIO, LocalStack or any other
+    # Leave empty for real AWS S3; set it for LocalStack or any other
     # S3-compatible endpoint.
     endpoint: ""
+    # The bucket's region. Required when endpoint is empty: requests are signed
+    # with it and AWS refuses a wrong one. deploy/terraform creates the bucket
+    # in var.region, eu-central-1 by default.
+    region: ""
     bucket: kbengine-catalog
     key: catalog.json
     insecure: false
     # Secret holding AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. On EKS prefer
-    # IRSA and leave this empty — a role beats a copied key.
+    # IRSA and leave this empty — a role beats a copied key. Empty means the
+    # standard AWS credential chain: the pod's role under IRSA, and WITHOUT IRSA
+    # on EC2 the node's instance role. There is no anonymous mode.
     credentialsSecret: ""
     image:
       # rclone, not the AWS CLI: 35 MB against 141, and one command reaches AWS

@@ -39,12 +39,16 @@ spec:
             - |
               set -e
               # An on-the-fly remote: no config file to write, which matters
-              # because the root filesystem is read-only. env_auth takes keys
-              # from the environment below, or from the pod's role when the
-              # secret is left empty.
+              # because the root filesystem is read-only. Values arrive through
+              # the environment, never spliced into this script, so a key with
+              # quotes or "$" in it cannot turn into shell.
+              if [ -n "$S3_ENDPOINT" ]; then
+                remote=":s3,provider=Other,env_auth=true,region='$AWS_REGION',endpoint='$S3_ENDPOINT'"
+              else
+                remote=":s3,provider=AWS,env_auth=true,region='$AWS_REGION'"
+              fi
               rclone copyto --config "" --cache-dir /tmp/rclone{{ if .Values.catalog.s3.insecure }} --no-check-certificate{{ end }} \
-                ":s3,provider=Other,env_auth=true,region='${AWS_REGION:-us-east-1}',endpoint='${S3_ENDPOINT:-https://s3.${AWS_REGION:-us-east-1}.amazonaws.com}':{{ .Values.catalog.s3.bucket }}/{{ .Values.catalog.s3.key }}" \
-                /data/catalog.json
+                "$remote:$S3_BUCKET/$S3_KEY" /data/catalog.json
               # An empty or truncated download would let the engine start and
               # answer /readyz 503 forever with nobody knowing why.
               test -s /data/catalog.json
@@ -52,6 +56,19 @@ spec:
           env:
             - name: S3_ENDPOINT
               value: {{ .Values.catalog.s3.endpoint | quote }}
+            - name: S3_BUCKET
+              value: {{ .Values.catalog.s3.bucket | quote }}
+            - name: S3_KEY
+              value: {{ .Values.catalog.s3.key | quote }}
+            # Requests are signed with this region and AWS refuses a wrong one,
+            # so for real AWS it has to be stated: rclone does not look it up
+            # the way mc did. Other endpoints mostly ignore it.
+            - name: AWS_REGION
+              {{- if .Values.catalog.s3.endpoint }}
+              value: {{ .Values.catalog.s3.region | default "us-east-1" | quote }}
+              {{- else }}
+              value: {{ required "catalog.s3.region is required when catalog.s3.endpoint is empty: real AWS refuses a request signed for the wrong region" .Values.catalog.s3.region | quote }}
+              {{- end }}
             {{- if .Values.catalog.s3.credentialsSecret }}
             - name: AWS_ACCESS_KEY_ID
               valueFrom:
