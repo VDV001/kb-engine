@@ -5,7 +5,7 @@ go 1.26.3
 require (
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/oklog/ulid/v2 v2.1.2
 	// ponytail: коммит master, а не релиз — v2.11.0 несёт GO-2026-6684/6685/6688/6689 и CVE-2026-107211, тега с исправлением нет (23.10).
 	// Потолок: 45 невыпущенных коммитов. Путь: заменить на v2.11.1 (или новее), когда тег выйдет.
