@@ -167,3 +167,39 @@ func TestRun_finSummary_namesOtherCurrencies(t *testing.T) {
 		t.Errorf("fin report не назвал долларовую трату:\n%s", out.String())
 	}
 }
+
+// Сумма печатается вместе с валютой везде, где её читает человек. Без кода
+// дифф сверки показал бы «27196.00 → 312.40», и правильный перевод в доллары
+// выглядел бы как сумма, упавшая в десятки раз.
+func TestAmountText_namesTheCurrency(t *testing.T) {
+	usd, _ := domain.NewCurrency("USD")
+	mk := func(c domain.Currency) domain.Transaction {
+		tx, err := domain.NewTransaction(domain.TransactionParams{
+			ID: "01X", Kind: domain.KindExpense, Date: time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
+			Amount: domain.NewMoney(31240), Category: "Жильё", Currency: c,
+			Now: func() time.Time { return time.Date(2026, 4, 7, 0, 0, 0, 0, time.UTC) },
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tx
+	}
+	if got := describeTx(mk(usd)); !strings.Contains(got, "312.40 USD") {
+		t.Errorf("строка сверки без валюты: %q", got)
+	}
+	if got := describeTx(mk(domain.Currency{})); strings.Contains(got, "RUB") {
+		t.Errorf("рублёвая строка сверки изменила вид: %q", got)
+	}
+}
+
+func TestRun_finAdd_printsTheCurrency(t *testing.T) {
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, workbook(t), ledger)
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "add", "--ledger", ledger, "--amount", "12,30", "--cat", "Сервисы", "--date", "2026-04-06", "--currency", "USD"}, &out, &errb); code != 0 {
+		t.Fatalf("fin add: %s", errb.String())
+	}
+	if !strings.Contains(out.String(), "12.30 USD") {
+		t.Errorf("подтверждение без валюты: %s", out.String())
+	}
+}
