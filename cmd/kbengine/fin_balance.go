@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
@@ -26,8 +27,12 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	create := fs.Bool("create", false, "add the account to the Счета sheet (it must not be there yet)")
 	currency := fs.String("currency", "", "currency code of the account, e.g. USD (empty means the book's own currency)")
 	rate := fs.String("rate", "", "how much of the book's currency one unit is worth, e.g. 84,28")
+	rename := fs.String("rename", "", "new name for the account; moves it between kinds («Род → имя» or a plain bank)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
+	}
+	if *rename != "" {
+		return renameAccount(*from, *bank, *rename, *amount != "" || *create || *currency != "" || *rate != "", stdout, stderr)
 	}
 	money, code := requireBalanceArgs(*from, *bank, *amount, stderr)
 	if code != 0 {
@@ -257,4 +262,31 @@ func requireBalanceArgs(from, bank, amount string, stderr io.Writer) (domain.Mon
 		return domain.Money{}, 1
 	}
 	return money, 0
+}
+
+// renameAccount переименовывает счёт на листе «Счета».
+//
+// Отдельное намерение, как и заведение: сумма здесь не нужна, и переданная
+// вместе с --rename она делала бы два дела одной командой — отказ второго
+// оставил бы первое сделанным наполовину.
+func renameAccount(path, bank, to string, mixed bool, stdout, stderr io.Writer) int {
+	if path == "" || bank == "" {
+		fmt.Fprintln(stderr, "fin balance: --rename needs --from and --bank")
+		return 2
+	}
+	if mixed {
+		fmt.Fprintln(stderr, "fin balance: --rename only renames — run it without --amount, --create, --currency and --rate")
+		return 2
+	}
+	before, _ := balanceOf(path, bank)
+	if err := financexlsx.RenameAccount(path, bank, to, time.Now); err != nil {
+		fmt.Fprintf(stderr, "fin balance: %v\n", err)
+		return 1
+	}
+	name := bank
+	if before.Bank() != "" {
+		name = before.Bank()
+	}
+	fmt.Fprintf(stdout, "%s → %s: счёт переименован, сумма и дата подтверждения прежние\n", name, strings.TrimSpace(to))
+	return 0
 }

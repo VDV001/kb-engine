@@ -68,11 +68,48 @@ func Load(path string) (finance.Confirmations, error) {
 // «Счета» — один счёт, и две записи о нём означали бы, что расчёт возьмёт ту,
 // которая попалась первой в карте.
 func Record(path, bank string, at time.Time) error {
+	f, err := read(path)
+	if err != nil {
+		return err
+	}
+	forget(f, bank)
+	f.Confirmed[bank] = at
+	return write(path, f)
+}
+
+// Rename carries the moment over to the account's new name.
+//
+// Момент хранится по имени, и, оставшись под прежним, он перестал бы находиться:
+// расчёт молча вернулся бы к правилу «по дню» и завысил бы остаток на траты,
+// записанные после подтверждения. Счёт без момента так и остаётся без него.
+func Rename(path, from, to string) error {
+	f, err := read(path)
+	if err != nil {
+		return err
+	}
+	var at time.Time
+	found := false
+	for name, t := range f.Confirmed {
+		if domain.SameAccountName(name, from) {
+			at, found = t, true
+		}
+	}
+	if !found {
+		return nil
+	}
+	forget(f, from)
+	forget(f, to)
+	f.Confirmed[to] = at
+	return write(path, f)
+}
+
+// read returns the state on disk; a missing file is an empty state.
+func read(path string) (file, error) {
 	f := file{Confirmed: map[string]time.Time{}}
 	switch raw, err := os.ReadFile(path); {
 	case err == nil:
 		if err := json.Unmarshal(raw, &f); err != nil {
-			return fmt.Errorf("%s: %w", path, err)
+			return file{}, fmt.Errorf("%s: %w", path, err)
 		}
 		if f.Confirmed == nil {
 			f.Confirmed = map[string]time.Time{}
@@ -80,16 +117,21 @@ func Record(path, bank string, at time.Time) error {
 	case os.IsNotExist(err):
 		// Первое подтверждение через движок создаёт состояние.
 	default:
-		return err
+		return file{}, err
 	}
+	return f, nil
+}
 
+// forget drops every spelling of the account.
+func forget(f file, bank string) {
 	for name := range f.Confirmed {
 		if domain.SameAccountName(name, bank) {
 			delete(f.Confirmed, name)
 		}
 	}
-	f.Confirmed[bank] = at
+}
 
+func write(path string, f file) error {
 	body, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
