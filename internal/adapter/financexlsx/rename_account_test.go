@@ -20,7 +20,7 @@ func TestRenameAccount_keepsTheMoneyUnderTheNewName(t *testing.T) {
 		t.Fatalf("AddAccount: %v", err)
 	}
 
-	if err := financexlsx.RenameAccount(path, "Займ → Банк", "Банк USD", fixedClock(2026, 8, 5)); err != nil {
+	if _, err := financexlsx.RenameAccount(path, "Займ → Банк", "Банк USD", fixedClock(2026, 8, 5)); err != nil {
 		t.Fatalf("RenameAccount: %v", err)
 	}
 
@@ -54,7 +54,7 @@ func TestRenameAccount_movesTheConfirmationMoment(t *testing.T) {
 		t.Fatalf("SetBalance: %v", err)
 	}
 
-	if err := financexlsx.RenameAccount(path, "Т-Банк", "Т-Банк карта", fixedClock(2026, 8, 5)); err != nil {
+	if _, err := financexlsx.RenameAccount(path, "Т-Банк", "Т-Банк карта", fixedClock(2026, 8, 5)); err != nil {
 		t.Fatalf("RenameAccount: %v", err)
 	}
 
@@ -95,7 +95,7 @@ func TestRenameAccount_refuses(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			err = financexlsx.RenameAccount(path, c.from, c.to, fixedClock(2026, 8, 5))
+			_, err = financexlsx.RenameAccount(path, c.from, c.to, fixedClock(2026, 8, 5))
 			if !errors.Is(err, c.want) {
 				t.Fatalf("ошибка = %v, ожидалась %v", err, c.want)
 			}
@@ -117,4 +117,52 @@ func currency(t *testing.T, code string) domain.Currency {
 		t.Fatalf("NewCurrency(%q): %v", code, err)
 	}
 	return c
+}
+
+// Испорченное состояние рядом с книгой — отказ ДО записи книги, а не после:
+// иначе счёт переименован, а момент остался под старым именем.
+func TestRenameAccount_refusesBeforeWritingWhenTheStateIsBroken(t *testing.T) {
+	path := workbookWithExtraColumn(t)
+	if err := os.WriteFile(balancestate.PathNextTo(path), []byte("{не json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := financexlsx.RenameAccount(path, "Т-Банк", "Т-Банк карта", fixedClock(2026, 8, 5)); err == nil {
+		t.Fatal("переименование прошло при испорченном состоянии")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Error("отказ изменил книгу")
+	}
+}
+
+// Новое имя, которое уже стоит в строках «Расходов» источником, после
+// переименования прочиталось бы как счёт: история поменяла бы смысл.
+func TestRenameAccount_refusesANewNameThatExpenseRowsAlreadyCarry(t *testing.T) {
+	path := workbookWithExtraColumn(t)
+	// В фикстуре G4 = «Чек» — способ записи, а не счёт.
+	_, err := financexlsx.RenameAccount(path, "Т-Банк", "Чек", fixedClock(2026, 8, 5))
+	if !errors.Is(err, financexlsx.ErrAccountInUse) {
+		t.Fatalf("ошибка = %v, ожидалась ErrAccountInUse", err)
+	}
+}
+
+// Функция возвращает прежнее имя так, как оно записано на листе: вызывающему
+// незачем перечитывать всю книгу, чтобы назвать его в отчёте.
+func TestRenameAccount_returnsTheOldNameAsTheSheetSpellsIt(t *testing.T) {
+	path := workbookWithExtraColumn(t)
+	old, err := financexlsx.RenameAccount(path, "т банк", "Т-Банк карта", fixedClock(2026, 8, 5))
+	if err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	if old != "Т-Банк" {
+		t.Errorf("прежнее имя = %q, ожидалось написание листа «Т-Банк»", old)
+	}
 }

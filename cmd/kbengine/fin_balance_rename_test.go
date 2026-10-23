@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -17,7 +19,13 @@ func TestRun_finBalanceRenamesAnAccount(t *testing.T) {
 	}
 	out.Reset()
 
-	code := run([]string{"fin", "balance", "--from", book, "--bank", "займ→коллеге", "--rename", "Коллега"}, &out, &errb)
+	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	aliases := filepath.Join(filepath.Dir(book), "finance-aliases.json")
+	if err := os.WriteFile(aliases, []byte(`{"accounts": {"займ": "Займ → Коллеге"}, "places": {}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	code := run([]string{"fin", "balance", "--from", book, "--ledger", ledger, "--bank", "займ→коллеге", "--rename", "Коллега"}, &out, &errb)
 	if code != 0 {
 		t.Fatalf("fin balance --rename exit = %d, stderr = %s", code, errb.String())
 	}
@@ -30,6 +38,53 @@ func TestRun_finBalanceRenamesAnAccount(t *testing.T) {
 	}
 	if got := accountBalanceValue(t, book, "Коллега"); got != 300 {
 		t.Errorf("баланс после переименования = %v, ожидалось 300", got)
+	}
+	// Словарь быстрого ввода переписан вслед за книгой (правило 26).
+	raw, err := os.ReadFile(aliases)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"Коллега"`) || strings.Contains(string(raw), "Займ → Коллеге") {
+		t.Errorf("словарь не переписан:\n%s", raw)
+	}
+}
+
+// Без журнала нельзя проверить записи, ещё не перенесённые в книгу, и словарь,
+// который лежит рядом с журналом.
+func TestRun_finBalanceRenameNeedsTheLedger(t *testing.T) {
+	book := workbook(t)
+	var out, errb bytes.Buffer
+	code := run([]string{"fin", "balance", "--from", book, "--bank", "Сбербанк", "--rename", "Сбер"}, &out, &errb)
+	if code == 0 {
+		t.Fatal("--rename без --ledger принят")
+	}
+	if !strings.Contains(errb.String(), "--ledger") {
+		t.Errorf("отказ не назвал флаг:\n%s", errb.String())
+	}
+}
+
+// Запись журнала, ещё не синхронизированная с книгой, ссылается на счёт по
+// имени: переименование оставило бы её с несуществующим счётом, и следующая
+// синхронизация отказала бы.
+func TestRun_finBalanceRenameRefusesWhenTheLedgerNamesTheAccount(t *testing.T) {
+	book := workbook(t)
+	ledger := filepath.Join(filepath.Dir(book), "transactions.jsonl")
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "300", "--create"}, &out, &errb); code != 0 {
+		t.Fatalf("заведение: %s", errb.String())
+	}
+	if code := run([]string{"fin", "add", "--ledger", ledger, "--kind", "expense", "--date", "2026-08-01",
+		"--cat", "Еда", "--amount", "100", "--account", "Займ → Коллеге"}, &out, &errb); code != 0 {
+		t.Fatalf("fin add: %s", errb.String())
+	}
+	errb.Reset()
+
+	code := run([]string{"fin", "balance", "--from", book, "--ledger", ledger, "--bank", "Займ → Коллеге", "--rename", "Коллега"}, &out, &errb)
+	if code == 0 {
+		t.Fatal("переименован счёт, на который ссылается журнал")
+	}
+	if accountBalanceValue(t, book, "Займ → Коллеге") != 300 {
+		t.Error("отказ изменил книгу")
 	}
 }
 

@@ -180,3 +180,41 @@ func TestLoad_namesConflictingAccounts(t *testing.T) {
 		t.Errorf("сообщение %q не называет оба правила", err.Error())
 	}
 }
+
+// Словарь — писатель, история — читатель (правило 26): переименованный счёт,
+// оставшийся в словаре под старым именем, вернул бы старое написание первой же
+// записью быстрого ввода.
+func TestRenameAccount_pointsEveryWordAtTheNewName(t *testing.T) {
+	path := write(t, `{"accounts": {"Сбер": "Сбербанк", "sber": "Сбербанк", "Альфа": "Альфа-Банк"}, "places": {"Магнит": {"category": "Еда", "place": "Магнит"}}}`)
+
+	if err := financevocab.RenameAccount(path, "сбербанк", "Сбер карта"); err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	v, err := financevocab.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, word := range []string{"сбер", "sber"} {
+		if got := v.Accounts[word]; got != "Сбер карта" {
+			t.Errorf("accounts[%s] = %q, ожидалось новое имя", word, got)
+		}
+	}
+	if got := v.Accounts["альфа"]; got != "Альфа-Банк" {
+		t.Errorf("чужой счёт задет: %q", got)
+	}
+	if got := v.Places["магнит"].Place; got != "Магнит" {
+		t.Errorf("места потеряны: %q", got)
+	}
+}
+
+// Словаря нет — переименованию нечего править, и создавать файл ради этого
+// не нужно.
+func TestRenameAccount_withoutAFileDoesNothing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "finance-aliases.json")
+	if err := financevocab.RenameAccount(path, "Сбербанк", "Сбер"); err != nil {
+		t.Fatalf("RenameAccount: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Errorf("файл словаря появился: %v", err)
+	}
+}

@@ -366,3 +366,35 @@ describe('AccountsCard — полоса счетов, подписи', () => {
     expect(screen.getByTestId('confirmed-Банк Юг').textContent).toContain('19.10')
   })
 })
+
+describe('AccountsCard — полоса счетов, сигналы (ревью #360)', () => {
+  it('строка банка в валютах не теряет ни ⚠, ни «курс неизвестен», ни оценку', () => {
+    const accs: Account[] = [
+      { bank: 'Банк Юг USD', balance: '20.50', updated: '2026-08-01', current: '20.50', currency: 'USD', rate: '90.00', base_value: '1845.00' },
+      { bank: 'Банк Юг UZS', balance: '75.00', updated: '2026-10-20', current: '75.00', currency: 'UZS', unvalued: true },
+    ]
+    render(<AccountsCard accounts={accs} expenses="0" income="0" today="2026-10-20" />)
+    const row = spaced(screen.getByTestId('bank-Банк Юг'))
+    expect(row).toContain('⚠')
+    expect(row).toContain('курс неизвестен')
+    expect(row).toContain('≈ 1 845,00 ₽')
+  })
+
+  it('не сворачивает ноль, который просит сверки', () => {
+    const accs: Account[] = [
+      { bank: 'Первый банк', balance: '100.00', updated: '2026-10-20', current: '0', spent: '100.00', needs_confirmation: true },
+    ]
+    render(<AccountsCard accounts={accs} expenses="0" income="0" today="2026-10-20" />)
+    expect(screen.getByTestId('stale-Первый банк')).toBeDefined()
+    expect(screen.queryByTestId('accounts-zero-toggle')).toBeNull()
+  })
+
+  it('называет валюту в подписи курса тем же знаком, что в строке', () => {
+    const accs: Account[] = [
+      { bank: 'Кубышка → Доллары', balance: '500.00', updated: '2026-08-30', current: '500.00', currency: 'USD', rate: '84.28', base_value: '42140.00' },
+    ]
+    const groups = [{ group: 'Кубышка', total: '42140.00', rates: [{ currency: 'USD', per_unit: '84.28', on: '2026-08-30' }] }]
+    render(<AccountsCard accounts={accs} groups={groups} expenses="0" income="0" today="2026-08-30" />)
+    expect(spaced(screen.getByTestId('group-rates-Кубышка'))).toContain('$ по')
+  })
+})
