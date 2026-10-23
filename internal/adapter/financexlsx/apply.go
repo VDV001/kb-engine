@@ -210,6 +210,9 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err := checkVocabulary(upserts, accounts); err != nil {
 		return err
 	}
+	if err := checkCurrencies(f, upserts, now); err != nil {
+		return err
+	}
 	plan, err := planRowWrites(index, upserts, removals)
 	if err != nil {
 		return err
@@ -581,6 +584,34 @@ func writeCurrencyHeaders(f *excelize.File, index map[string]sheetIndex) error {
 		}
 		if err := f.SetCellStr(sheet, name, currencyHeader); err != nil {
 			return fmt.Errorf("%s!%s: %w", sheet, name, err)
+		}
+	}
+	return nil
+}
+
+// checkCurrencies refuses a row whose currency contradicts its account, before
+// anything is written.
+//
+// The add and edit paths check this when the book is at hand; a record written
+// without it was never checked. The book knows every account's currency, so this
+// is the last place a dollar spend can be stopped from landing on a rouble
+// account. The rule itself is the domain's.
+func checkCurrencies(f *excelize.File, upserts []domain.Transaction, now func() time.Time) error {
+	accs, err := readAccounts(f, now)
+	if err != nil {
+		return err
+	}
+	byName := make(map[string]domain.Account, len(accs))
+	for _, a := range accs {
+		byName[a.Bank()] = a
+	}
+	for _, tx := range upserts {
+		acc, ok := byName[tx.Account()]
+		if !ok {
+			continue
+		}
+		if err := tx.CheckAccountCurrency(acc); err != nil {
+			return fmt.Errorf("%s: %w", tx.ID(), err)
 		}
 	}
 	return nil
