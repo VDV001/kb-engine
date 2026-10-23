@@ -29,6 +29,14 @@ var ErrAccountNotApplicable = errors.New("an income does not carry an account")
 // so it is refused where it is offered rather than dropped in transit.
 var ErrIncomeFieldNotApplicable = errors.New("an income does not carry this field")
 
+// ErrCurrencyMismatch is returned when a transaction names an account held in a
+// different currency.
+//
+// Трата со счёта движется в его валюте. Доллары, списанные с рублёвого счёта,
+// вычли бы из рублёвого остатка как рубли, и итог по счёту сложил бы одно с
+// другим.
+var ErrCurrencyMismatch = errors.New("the transaction currency differs from its account")
+
 // Transaction kinds. The sheet stores expenses as positive amounts and flips
 // the sign only when summing (see SignedAmount); a negative expense is a
 // refund and therefore adds to the balance.
@@ -55,6 +63,9 @@ type Transaction struct {
 	description string
 	source      string
 	account     string
+	// currency — в чём записана сумма. Нулевое значение — рубль: журнал и книга,
+	// записанные до появления поля, о валюте не знают и все их суммы рублёвые.
+	currency Currency
 	// repeatOf — id записи, поверх которой этот повтор подтверждён человеком.
 	// Пустое значение означает «не знаю», а не «не повтор»: у строк, записанных
 	// до появления поля, решения никто не сохранял, и выдумывать его за них
@@ -79,6 +90,7 @@ type TransactionParams struct {
 	Description string
 	Source      string
 	Account     string
+	Currency    Currency
 	RepeatOf    string
 	Now         func() time.Time
 }
@@ -159,6 +171,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		description: strings.TrimSpace(p.Description),
 		source:      strings.TrimSpace(p.Source),
 		account:     account,
+		currency:    p.Currency,
 		repeatOf:    repeatOf,
 	}, nil
 }
@@ -258,3 +271,18 @@ func (t Transaction) Account() string { return t.account }
 // RepeatOf returns the id of the record this one was knowingly repeated over,
 // or "" when nothing is known about that.
 func (t Transaction) RepeatOf() string { return t.repeatOf }
+
+// Currency returns the unit the amount is recorded in; the zero value is the
+// base currency.
+func (t Transaction) Currency() Currency { return t.currency }
+
+// CheckAccountCurrency refuses an account held in a different currency from the
+// transaction. The caller passes the account the transaction names; matching
+// the name is its business, matching the unit is this rule.
+func (t Transaction) CheckAccountCurrency(acc Account) error {
+	if t.currency != acc.Currency() {
+		return fmt.Errorf("%w: %s on %q, which is held in %s",
+			ErrCurrencyMismatch, t.currency.Code(), acc.Bank(), acc.Currency().Code())
+	}
+	return nil
+}
