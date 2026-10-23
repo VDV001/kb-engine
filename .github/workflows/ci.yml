@@ -623,11 +623,11 @@ jobs:
 
       # The whole reason deploy/terraform exists, end to end: a catalog too big
       # for a ConfigMap goes into object storage, an init container fetches it,
-      # and the engine serves it. MinIO stands in for S3 — same API, no account.
+      # and the engine serves it. versitygw stands in for S3 — same API, no account.
       - name: Catalog delivered from object storage
         run: |
-          kubectl apply -f deploy/k8s/test/minio.yaml
-          kubectl rollout status deployment/minio --timeout=180s
+          kubectl apply -f deploy/k8s/test/s3.yaml
+          kubectl rollout status deployment/s3 --timeout=180s
 
           # 1.72 MiB of invented entries — the size of the real catalog, none of
           # its content. ids start at 1: the engine rejects id=0, and a fixture
@@ -650,13 +650,17 @@ jobs:
           echo "catalog: $size bytes, $expected entries (ConfigMap ceiling: 1048576)"
           test "$size" -gt 1048576
 
-          kubectl port-forward svc/minio 9000:9000 &
-          for _ in $(seq 1 30); do curl -sf http://localhost:9000/minio/health/ready && break; sleep 1; done
+          kubectl port-forward svc/s3 9000:9000 &
+          for _ in $(seq 1 30); do curl -sf http://localhost:9000/health && break; sleep 1; done
 
-          curl -sSfL https://dl.min.io/client/mc/release/linux-amd64/mc -o mc && chmod +x mc
-          ./mc alias set m http://localhost:9000 minioadmin minioadmin
-          ./mc mb m/kbengine-catalog
-          ./mc cp big-catalog.json m/kbengine-catalog/catalog.json
+          # The runner's own AWS CLI: nothing to download, and the same client
+          # people use against real S3. Keys come from the test Secret, so the
+          # manifest stays the one place they are written.
+          export AWS_ACCESS_KEY_ID=$(kubectl get secret s3-credentials -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' | base64 -d)
+          export AWS_SECRET_ACCESS_KEY=$(kubectl get secret s3-credentials -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' | base64 -d)
+          export AWS_DEFAULT_REGION=us-east-1
+          aws --endpoint-url http://localhost:9000 s3 mb s3://kbengine-catalog
+          aws --endpoint-url http://localhost:9000 s3 cp big-catalog.json s3://kbengine-catalog/catalog.json
 
           kubectl create namespace s3
           kubectl get secret s3-credentials -o yaml | sed 's/namespace: default/namespace: s3/' | kubectl apply -n s3 -f -
@@ -665,7 +669,7 @@ jobs:
             --set image.repository=kbengine --set image.tag=ci --set image.pullPolicy=Never \
             --set replicaCount=1 \
             --set catalog.source=s3 \
-            --set catalog.s3.endpoint=http://minio.default.svc.cluster.local:9000 \
+            --set catalog.s3.endpoint=http://s3.default.svc.cluster.local:9000 \
             --set catalog.s3.credentialsSecret=s3-credentials \
             --wait --timeout 240s
 

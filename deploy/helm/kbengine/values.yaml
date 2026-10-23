@@ -24,24 +24,28 @@ catalog:
   # Only for source=s3. The engine has no S3 client and reads a file path, so
   # the object is fetched once at pod start into an emptyDir the container reads.
   s3:
-    # Leave empty for real AWS S3; set it for MinIO, LocalStack or any other
+    # Leave empty for real AWS S3; set it for LocalStack or any other
     # S3-compatible endpoint.
     endpoint: ""
+    # The bucket's region. Required when endpoint is empty: requests are signed
+    # with it and AWS refuses a wrong one. deploy/terraform creates the bucket
+    # in var.region, eu-central-1 by default.
+    region: ""
     bucket: kbengine-catalog
     key: catalog.json
     insecure: false
     # Secret holding AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY. On EKS prefer
-    # IRSA and leave this empty — a role beats a copied key.
+    # IRSA and leave this empty — a role beats a copied key. Empty means the
+    # standard AWS credential chain: the pod's role under IRSA, and WITHOUT IRSA
+    # on EC2 the node's instance role. There is no anonymous mode.
     credentialsSecret: ""
     image:
-      # mc, not the AWS CLI: 82 MB against several hundred, and it speaks to
-      # AWS, MinIO and LocalStack with one command. This image is pulled on
-      # every pod start, so its size is not cosmetic.
-      repository: minio/mc
-      # ⚠️ The newest published tag, and it is from August 2025 — this image has
-      # not moved in about a year. Acceptable for what it does here (download one
-      # object and exit), but worth re-checking before it is trusted with more.
-      tag: RELEASE.2025-08-13T08-35-41Z
+      # rclone, not the AWS CLI: 35 MB against 141, and one command reaches AWS
+      # and any S3-compatible endpoint. This image is pulled on every pod start,
+      # so its size is not cosmetic. It replaced minio/mc, which was pulled from
+      # Docker Hub in October 2026 and broke every install with source=s3.
+      repository: rclone/rclone
+      tag: "1.75.2"
 
   # existingConfigMap — bring your own; the inline value is then ignored.
   existingConfigMap: ""

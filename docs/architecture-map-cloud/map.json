@@ -186,7 +186,7 @@
    "layer": "descriptions",
    "kind": "data",
    "sources": [
-    "deploy/helm/kbengine/templates/deployment.yaml:77"
+    "deploy/helm/kbengine/templates/deployment.yaml:94"
    ]
   },
   {
@@ -370,13 +370,13 @@
    ]
   },
   {
-   "id": "minio",
-   "title": "MinIO",
+   "id": "s3-test",
+   "title": "versitygw",
    "subtitle": "стоит вместо S3 в кластере — тот же API",
    "layer": "storage",
    "kind": "external",
    "sources": [
-    "deploy/k8s/test/minio.yaml:21"
+    "deploy/k8s/test/s3.yaml:40"
    ]
   },
   {
@@ -570,8 +570,8 @@
      "from": "helm-values",
      "to": "helm-deployment",
      "call": "шаблонизация Deployment",
-     "detail": "deploy/helm/kbengine/templates/deployment.yaml:77 подставляет образ из values, а при пустом теге откатывается на appVersion чарта — так две версии не расходятся в разногласие",
-     "source": "deploy/helm/kbengine/templates/deployment.yaml:77",
+     "detail": "deploy/helm/kbengine/templates/deployment.yaml:94 подставляет образ из values, а при пустом теге откатывается на appVersion чарта — так две версии не расходятся в разногласие",
+     "source": "deploy/helm/kbengine/templates/deployment.yaml:94",
      "symbol": "image",
      "unverified": false
     },
@@ -580,8 +580,8 @@
      "from": "helm-deployment",
      "to": "pod",
      "call": "тот же под, что и у манифестов",
-     "detail": "deploy/helm/kbengine/templates/deployment.yaml:96 повторяет пробы. Именно эта пара описаний и расходится молча — отсюда гейт соответствия",
-     "source": "deploy/helm/kbengine/templates/deployment.yaml:96",
+     "detail": "deploy/helm/kbengine/templates/deployment.yaml:113 повторяет пробы. Именно эта пара описаний и расходится молча — отсюда гейт соответствия",
+     "source": "deploy/helm/kbengine/templates/deployment.yaml:113",
      "symbol": "livenessProbe",
      "unverified": false
     },
@@ -657,7 +657,7 @@
      "to": "overlay-negative",
      "call": "kubectl apply -k deploy/k8s/overlays/ci-negative -n negative",
      "detail": ".github/workflows/ci.yml:569 применяет наложение, которое ОБЯЗАНО провалиться. Без него зелёная джоба доказывает только то, что джоба умеет быть зелёной",
-     "source": ".github/workflows/ci.yml:744",
+     "source": ".github/workflows/ci.yml:748",
      "symbol": "negative",
      "unverified": false
     },
@@ -707,7 +707,7 @@
      "to": "kind",
      "call": "rollout status обязан вернуть ошибку",
      "detail": ".github/workflows/ci.yml:571 переворачивает условие: если выкатка ЗАВЕРШИЛАСЬ с неразбираемым каталогом, джоба падает сама и говорит, что контроль не сработал",
-     "source": ".github/workflows/ci.yml:747",
+     "source": ".github/workflows/ci.yml:751",
      "symbol": "rollout",
      "unverified": false
     }
@@ -722,21 +722,21 @@
     {
      "n": 1,
      "from": "ci",
-     "to": "minio",
-     "call": "kubectl apply -f deploy/k8s/test/minio.yaml",
-     "detail": "MinIO стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере — .github/workflows/ci.yml:468",
+     "to": "s3-test",
+     "call": "kubectl apply -f deploy/k8s/test/s3.yaml",
+     "detail": "versitygw стоит вместо S3: тот же API, никакого счёта в облаке. Поднимается в том же кластере. MinIO стоял здесь до октября 2026, пока его образы не убрали с Docker Hub — .github/workflows/ci.yml:629",
      "source": ".github/workflows/ci.yml:629",
-     "symbol": "minio",
+     "symbol": "s3.yaml",
      "unverified": false
     },
     {
      "n": 2,
      "from": "ci",
      "to": "s3-catalog",
-     "call": "mc cp big-catalog.json → бакет",
-     "detail": ".github/workflows/ci.yml:498 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
-     "source": ".github/workflows/ci.yml:645",
-     "symbol": "big-catalog",
+     "call": "aws s3 cp big-catalog.json → бакет",
+     "detail": ".github/workflows/ci.yml:663 кладёт объект в бакет. Содержимое выдумано целиком, а РАЗМЕР настоящий — 1,72 МиБ, и джоба отдельной строкой требует, чтобы он превышал потолок ConfigMap в 1 048 576 байт, иначе проверка не про то",
+     "source": ".github/workflows/ci.yml:663",
+     "symbol": "aws",
      "unverified": false
     },
     {
@@ -763,10 +763,10 @@
      "n": 5,
      "from": "init-fetch",
      "to": "s3-catalog",
-     "call": "mc cp src/<бакет>/<ключ> /data/catalog.json",
-     "detail": "deploy/helm/kbengine/templates/deployment.yaml:47 забирает объект. Ключи приходят из секрета, а не из values: значение, попавшее в values, попадает и в helm get values",
-     "source": "deploy/helm/kbengine/templates/deployment.yaml:47",
-     "symbol": "config-dir",
+     "call": "rclone copyto :s3,…:<бакет>/<ключ> /data/catalog.json",
+     "detail": "deploy/helm/kbengine/templates/deployment.yaml:50 забирает объект. Ключи приходят из секрета, а не из values: значение, попавшее в values, попадает и в helm get values",
+     "source": "deploy/helm/kbengine/templates/deployment.yaml:50",
+     "symbol": "copyto",
      "unverified": false
     },
     {
@@ -785,7 +785,7 @@
      "to": "srv-stats",
      "call": "число записей обязано совпасть с объектом",
      "detail": ".github/workflows/ci.yml:524 сверяет по СЧЁТУ, а не по «оно ответило»: движок должен отдавать именно тот объект, который вышел из бакета, запись в запись",
-     "source": ".github/workflows/ci.yml:681",
+     "source": ".github/workflows/ci.yml:689",
      "symbol": "curl",
      "unverified": false
     }
@@ -873,7 +873,7 @@
      "to": "prometheus",
      "call": "контроль: выдуманная метрика обязана вернуть пусто",
      "detail": ".github/workflows/ci.yml:532 спрашивает kbengine_invented_metric и требует ноль рядов. Без этого запрос настоящей метрики доказывал бы только то, что API Prometheus отвечает",
-     "source": ".github/workflows/ci.yml:734",
+     "source": ".github/workflows/ci.yml:738",
      "symbol": "kbengine_invented_metric",
      "unverified": false
     }
@@ -1139,7 +1139,7 @@
   }
  ],
  "gaps": [
-  "Ни одна строчка не запускалась против настоящего AWS — только LocalStack и MinIO. Поведение настоящих S3 и IAM (задержки согласованности, отказ по правам, лимиты) не проверено ничем.",
+  "Ни одна строчка не запускалась против настоящего AWS — только LocalStack и S3-совместимые серверы (MinIO до октября 2026, теперь versitygw). Поведение настоящих S3 и IAM (задержки согласованности, отказ по правам, лимиты) не проверено ничем.",
   "Нагрузка не проверялась вовсе: ни числа запросов в секунду, ни поведения под нагрузкой, ни того, при каком объёме упирается память в лимит 256 МиБ.",
   "Многоузловое планирование не проверено: кластер kind одноузловой, поэтому две реплики в CI осознанно свёрнуты в одну, а antiAffinity и распределение по узлам не проверялись ни разу.",
   "Настоящего хранилища у каталога в манифестах нет: ConfigMap с потолком 1 МиБ или объект в бакете. PersistentVolume не описан и не пробовался.",
@@ -1153,7 +1153,7 @@
   "Контроль в том же прогоне: выдуманный путь /api/nosuchroute обязан вернуть 404, иначе проверка выше читала фолбэк и не значит ничего.",
   "Отрицательный контроль: наложение ci-negative кормит под каталогом с meta.categories списком, и джоба падает сама, если выкатка при этом ЗАВЕРШИЛАСЬ.",
   "Гейт соответствия прогнан в обе стороны: сначала самопроверка на двух подсадках, потом сравнение живых объектов манифестов и чарта в одном кластере.",
-  "Каталог 1,72 МиБ доставлен через MinIO: джоба требует, чтобы размер превышал потолок ConfigMap, и сверяет число записей, которое отдаёт движок, со числом в объекте.",
+  "Каталог 1,72 МиБ доставлен через versitygw: джоба требует, чтобы размер превышал потолок ConfigMap, и сверяет число записей, которое отдаёт движок, со числом в объекте.",
   "Prometheus поднят в кластере и нашёл движок сам, без записанных адресов; значение kbengine_catalog_entries прочитано обратно из хранилища запросом.",
   "Оба описания Terraform прогнаны через tofu и через terraform: fmt, init -backend=false и validate каждым инструментом порознь.",
   "Блокировка состояния проверена настоящим захватом: при существующем файле замка второй apply обязан отказать по таймауту."
