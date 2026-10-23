@@ -23,7 +23,7 @@ func TestSaveLoad_currency(t *testing.T) {
 	}
 	foreign := record(t, "01C", domain.TransactionParams{
 		Kind:     domain.KindExpense,
-		Date:     time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC),
+		Date:     time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
 		Amount:   domain.NewMoney(1230),
 		Category: "Сервисы",
 		Account:  "Банк USD",

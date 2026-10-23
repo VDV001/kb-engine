@@ -30,6 +30,7 @@ func TestLine_roundTripsEveryFieldOfTheWireShape(t *testing.T) {
 		Description: "поездка до центра",
 		Source:      "Чек",
 		Account:     "Сбербанк",
+		Currency:    "USD",
 		RepeatOf:    "01BX5ZZKBKACTAV9WEVGEMMVS0",
 		Rev:         2,
 		UpdatedAt:   "2026-04-07T10:00:00Z",
