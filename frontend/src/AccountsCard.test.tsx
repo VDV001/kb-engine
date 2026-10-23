@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AccountsCard } from './AccountsCard'
 import type { Account } from './api'
@@ -29,6 +29,8 @@ describe('AccountsCard — где лежат деньги', () => {
     // Счёт с родом в имени показан заголовком рода и коротким именем под ним:
     // строка «Резерв → Депозит» повторяла бы слово, которое уже написано
     // заголовком, и тратила бы на это ширину, которой у карточки нет.
+    // Счёт по нулю свёрнут (23.10) и появляется по нажатию на строку нулей.
+    fireEvent.click(screen.getByTestId('accounts-zero-toggle'))
     expect(screen.getByTestId('group-Резерв')).toBeDefined()
     expect(screen.getByText('Депозит')).toBeDefined()
     // Итог — сумма счетов, а не одно из слагаемых.
@@ -228,7 +230,8 @@ describe('AccountsCard — валюта счёта', () => {
       />,
     )
     // Строка счёта несёт единицу: «500.00» без неё читается как рубли.
-    expect(spaced(screen.getByTestId('amount-Кубышка → Доллары'))).toContain('USD')
+    // Знакомая валюта называется знаком (23.10), незнакомая — кодом.
+    expect(spaced(screen.getByTestId('amount-Кубышка → Доллары'))).toContain('$')
     expect(spaced(screen.getByTestId('amount-Кубышка → Доллары'))).toContain('500')
   })
 
@@ -278,5 +281,58 @@ describe('AccountsCard — валюта счёта', () => {
     // отдельной строкой. Сложи витрина сама — вышло бы 500 + 200 + 1000.
     expect(spaced(screen.getByTestId('group-total-Кубышка'))).toContain('42 140')
     expect(screen.getByTestId('group-unvalued-Кубышка').textContent).toContain('Евро')
+  })
+})
+
+// Полоса счетов 23.10: банки отдельным разделом, нули не занимают экран,
+// валюта называется знаком и не теряется из итога молча.
+describe('AccountsCard — полоса счетов', () => {
+  const strip: Account[] = [
+    { bank: 'Первый банк', balance: '1500.00', updated: '2026-10-20', current: '1500.00' },
+    { bank: 'Второй банк', balance: '500.00', updated: '2026-10-20', current: '500.00' },
+    { bank: 'Банк Юг USD', balance: '20.50', updated: '2026-10-20', current: '20.50', currency: 'USD', unvalued: true },
+    { bank: 'Банк Юг UZS', balance: '75.00', updated: '2026-10-20', current: '75.00', currency: 'UZS', unvalued: true },
+    { bank: 'Кубышка → Рубли', balance: '9000.00', updated: '2026-10-20', current: '9000.00' },
+    { bank: 'Кубышка → Доллары', balance: '0', updated: '2026-10-20', current: '0', currency: 'USD', unvalued: true },
+    { bank: 'Займ → Соседу', balance: '0', updated: '2026-09-01', current: '0' },
+    { bank: 'Сервисы → Облако', balance: '4.00', updated: '2026-10-20', current: '4.00', currency: 'USD', unvalued: true },
+  ]
+  const show = () => render(<AccountsCard accounts={strip} expenses="0" income="0" today="2026-10-20" />)
+
+  it('собирает обычные счета под заголовком «Банки» с их итогом', () => {
+    show()
+    expect(screen.getByTestId('group-Банки')).toBeDefined()
+    // Итог банков — только то, что оценено в рублях: доллары и сумы без курса
+    // в рубли не складываются.
+    expect(spaced(screen.getByTestId('group-total-Банки'))).toContain('2 000,00 ₽')
+  })
+
+  it('прячет счета по нулю за одной строкой и показывает их по нажатию', () => {
+    show()
+    // Род, в котором одни нули, не занимает места вовсе.
+    expect(screen.queryByTestId('group-Займ')).toBeNull()
+    expect(screen.queryByText('Соседу')).toBeNull()
+    const toggle = screen.getByTestId('accounts-zero-toggle')
+    expect(spaced(toggle)).toContain('ещё 2 счёта по нулю')
+
+    fireEvent.click(toggle)
+    expect(screen.getByText('Соседу')).toBeDefined()
+    expect(screen.getByTestId('group-Займ')).toBeDefined()
+  })
+
+  it('показывает счета одного банка в разных валютах одной строкой', () => {
+    show()
+    const row = screen.getByTestId('bank-Банк Юг')
+    expect(spaced(row)).toContain('20,50 $')
+    expect(spaced(row)).toContain('75,00 сум')
+    expect(screen.queryByText('Банк Юг USD')).toBeNull()
+  })
+
+  it('называет валюту без курса строкой под итогом, а не теряет её', () => {
+    show()
+    // 20,50 $ в банке + 4,00 $ в сервисах; нулевые доллары ничего не добавляют.
+    const extra = spaced(screen.getByTestId('accounts-foreign'))
+    expect(extra).toContain('24,50 $')
+    expect(extra).toContain('75,00 сум')
   })
 })
