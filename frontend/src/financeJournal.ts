@@ -1,4 +1,4 @@
-import type { Transaction } from './api'
+import type { FinanceExportRow, Transaction } from './api'
 import { monthOf, toKopecks } from './money'
 
 // Отбор и порядок строк журнала. Отдельно от компонента, потому что это
@@ -83,11 +83,36 @@ export function sortJournal(
   const sign = dir === 'asc' ? 1 : -1
   // toSorted оставляет вход нетронутым, в отличие от sort.
   return rows.toSorted((a, b) => {
-    if (field === 'amount') return sign * (toKopecks(a.amount) - toKopecks(b.amount))
+    if (field === 'amount') {
+      // Сумма сравнима только с суммой в той же единице. Блоки валют стоят
+      // одинаково в обе стороны (рубли первыми), направление — внутри блока.
+      const ua = a.currency ?? ''
+      const ub = b.currency ?? ''
+      if (ua !== ub) return ua < ub ? -1 : 1
+      return sign * (toKopecks(a.amount) - toKopecks(b.amount))
+    }
     const byDate = a.date < b.date ? -1 : a.date > b.date ? 1 : 0
     if (byDate !== 0) return sign * byDate
     const x = recordedKey(a)
     const y = recordedKey(b)
     return sign * (x < y ? -1 : x > y ? 1 : 0)
   })
+}
+
+/**
+ * Строки выгрузки — ровно те, что на экране, с валютой: без неё доллары в
+ * числовой колонке файла сложились бы с рублями.
+ */
+export function toExportRows(rows: Transaction[]): FinanceExportRow[] {
+  return rows.map((t) => ({
+    date: t.date,
+    kind: t.kind,
+    category: t.category ?? '',
+    subcategory: t.subcategory ?? '',
+    place: t.place ?? '',
+    description: t.description ?? '',
+    amount: t.amount,
+    account: t.account ?? '',
+    currency: t.currency ?? '',
+  }))
 }

@@ -64,7 +64,10 @@ describe('FinancesView — записи не в рублях', () => {
   // не сходились бы с «не в рублях» так же, как рубли — без «переводы себе».
   it('переводы себе в другой валюте названы', async () => {
     render(<FinancesView finances={finances} masked={false} />)
-    expect(await screen.findByText(/переводы себе 200,00 \$ \(1\)/)).toBeTruthy()
+    // Сумма в отдельном span под маску приватности, поэтому текст сверяется по
+    // абзацу целиком, а не по одному элементу.
+    const lines = await screen.findAllByText(/не в рублях/i)
+    expect(lines.some((p) => /переводы себе 200,00 \$ \(1\)/.test(p.textContent ?? ''))).toBe(true)
   })
 
   // Счётчик доходов считает записи, а не только рублёвые: «0 шт» над строкой

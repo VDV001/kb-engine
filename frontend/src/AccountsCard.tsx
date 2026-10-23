@@ -71,6 +71,7 @@ export function AccountsCard({
   income,
   today,
   transfersExcluded = 0,
+  masked = false,
 }: {
   accounts: Account[]
   /**
@@ -99,6 +100,8 @@ export function AccountsCard({
    * сторона, поэтому расчётный остаток на неё занижен. Ноль — молчим.
    */
   transfersExcluded?: number
+  /** Режим приватности: суммы на экране размыты, и подсказки их не называют. */
+  masked?: boolean
 }) {
   // Итог складывается из остатков на сейчас, а не из подтверждённых чисел:
   // записал трату — итог обязан уменьшиться, иначе экран показывает вчерашний
@@ -180,9 +183,9 @@ export function AccountsCard({
           <ul className="space-y-2.5">
             {byBank(plain).map(({ bank, accounts: same }) =>
               same.length === 1 ? (
-                <AccountRow key={same[0].bank} account={same[0]} label={bank} today={today} />
+                <AccountRow key={same[0].bank} account={same[0]} label={bank} today={today} masked={masked} />
               ) : (
-                <MultiCurrencyRow key={bank} bank={bank} accounts={same} today={today} />
+                <MultiCurrencyRow key={bank} bank={bank} accounts={same} today={today} masked={masked} />
               ),
             )}
           </ul>
@@ -215,6 +218,7 @@ export function AccountsCard({
                     account={a}
                     label={splitAccountName(a).name}
                     today={today}
+                    masked={masked}
                   />
                 ))}
               </ul>
@@ -314,10 +318,12 @@ function AccountRow({
   account: a,
   label,
   today,
+  masked,
 }: {
   account: Account
   label: string
   today: string
+  masked: boolean
 }) {
   const now = toKopecks(a.current ?? a.balance)
   const age = daysBetween(a.updated, today)
@@ -336,7 +342,7 @@ function AccountRow({
       <span className="label flex-1 text-[10px] opacity-80">{label}</span>
       <span className="flex flex-col items-end">
         <span className="privacy-mask text-xs font-bold" data-testid={`amount-${a.bank}`}>
-          {formatMoney(now, a.currency ?? '')}
+          {formatMoney(now, a.currency)}
         </span>
         {/* Оценка идёт ВТОРОЙ строкой, мельче: главное число у валютного
             счёта — сколько там валюты, а не во что её оценили по курсу
@@ -355,14 +361,11 @@ function AccountRow({
           <span
             className={`label text-[8px] ${stale || a.needs_confirmation ? 'opacity-90' : 'opacity-40'}`}
             data-testid={`confirmed-${a.bank}`}
-            title={
-              `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency ?? '')} ${shortDate(a.updated)}` +
-              (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency ?? '')}` : '')
-            }
+            title={confirmedTitle(a, spent, masked)}
           >
             {(stale || a.needs_confirmation) && <span data-testid={`stale-${a.bank}`}>⚠ </span>}
             {shortDate(a.updated)}
-            {spent > 0 && <span className="privacy-mask"> −{formatMoney(spent, a.currency ?? '')}</span>}
+            {spent > 0 && <span className="privacy-mask"> −{formatMoney(spent, a.currency)}</span>}
           </span>
         )}
       </span>
@@ -421,7 +424,17 @@ function foreignTotals(accounts: Account[]): string[] {
  * счёта не теряются при склейке: оценка в рублях у каждой суммы, «курс
  * неизвестен» и ⚠, если хоть одна из сумм устарела или просит сверки.
  */
-function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: Account[]; today: string }) {
+function MultiCurrencyRow({
+  bank,
+  accounts,
+  today,
+  masked,
+}: {
+  bank: string
+  accounts: Account[]
+  today: string
+  masked: boolean
+}) {
   // Самая ранняя дата: строка не должна выглядеть свежее самого старого числа в ней.
   const dates = accounts.map((a) => a.updated).filter((d) => d !== '').sort()
   const warn =
@@ -438,12 +451,9 @@ function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: A
               <span
                 className="privacy-mask text-xs font-bold"
                 data-testid={`amount-${a.bank}`}
-                title={
-                  `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency ?? '')} ${shortDate(a.updated)}` +
-                  (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency ?? '')}` : '')
-                }
+                title={confirmedTitle(a, spent, masked)}
               >
-                {formatMoney(toKopecks(a.current ?? a.balance), a.currency ?? '')}
+                {formatMoney(toKopecks(a.current ?? a.balance), a.currency)}
               </span>
               {a.base_value !== undefined && !a.unvalued && (
                 <span className="label text-[8px] opacity-40">
@@ -466,5 +476,15 @@ function MultiCurrencyRow({ bank, accounts, today }: { bank: string; accounts: A
         )}
       </span>
     </li>
+  )
+}
+
+// confirmedTitle — подсказка у даты подтверждения, в единице счёта. Атрибут
+// title маска приватности не размывает, поэтому под маской в нём только дата.
+function confirmedTitle(a: Account, spent: number, masked: boolean): string {
+  if (masked) return `Подтверждён ${shortDate(a.updated)}`
+  return (
+    `Подтверждён ${formatMoney(toKopecks(a.balance), a.currency)} ${shortDate(a.updated)}` +
+    (spent > 0 ? `, после этого списано ${formatMoney(spent, a.currency)}` : '')
   )
 }
