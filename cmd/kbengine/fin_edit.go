@@ -76,7 +76,7 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 	}
 	tx := rec.Transaction()
 	fmt.Fprintf(stdout, "fin edit: %s  %s  %10s  %s %s %s\n",
-		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(),
+		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx),
 		tx.Category(), tx.Description(), tx.Account())
 	return 0
 }
@@ -118,7 +118,7 @@ func editUnderLock(ledgerPath, id string, p finance.EditParams) (finance.Record,
 		if twin := finance.RepeatOf(recs, edited); twin != nil {
 			tx := twin.Transaction()
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — правка сделала бы её копией",
-				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
 		recs[i] = edited

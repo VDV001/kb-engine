@@ -262,7 +262,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	}
 	tx := rec.Transaction()
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
-		tx.ID(), tx.Date().Format(time.DateOnly), tx.Amount(), tx.Category(), tx.Description())
+		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx), tx.Category(), tx.Description())
 	return 0
 }
 
@@ -352,7 +352,7 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 		tx := dup.Transaction()
 		if !force {
 			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
-				ErrRepeat, tx.Date().Format(time.DateOnly), tx.Amount(),
+				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
 		p.RepeatOf = tx.ID()
@@ -400,7 +400,7 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 			repeat = fmt.Sprintf("  ↺ повтор подтверждён поверх %s", id)
 		}
 		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s%s\n",
-			tx.Date().Format(time.DateOnly), tx.ID(), tx.Amount(), tx.Category(), tx.Description(), repeat)
+			tx.Date().Format(time.DateOnly), tx.ID(), amountText(tx), tx.Category(), tx.Description(), repeat)
 	}
 	fmt.Fprintf(stdout, "fin list: %d of %d record(s)\n", len(matched), len(recs))
 	return 0
