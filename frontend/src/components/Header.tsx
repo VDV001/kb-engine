@@ -50,14 +50,17 @@ export function Header<T extends string>({
 
   return (
     <header ref={ref} className="no-print sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
-      <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-x-6 gap-y-3 px-4 py-3 sm:px-6 lg:gap-x-12 lg:px-8">
+      {/* Промежутки по горизонтали — отступами, а не gap: свёрнутая навигация
+          стоит в строке, чтобы её мерить, и gap добавлял бы вокруг неё 24 px,
+          которых на 360–390 px не хватало — шапка ломалась на два ряда. */}
+      <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-y-3 px-4 py-3 sm:px-6 lg:px-8">
         <a
           href="#"
           onClick={(e) => {
             e.preventDefault()
             onSelect(tabs[0].id)
           }}
-          className="shrink-0"
+          className="mr-3 shrink-0 sm:mr-6 lg:mr-12"
         >
           <Logo />
         </a>
@@ -73,7 +76,7 @@ export function Header<T extends string>({
         <nav
           ref={navRef}
           aria-hidden={collapsed ? true : undefined}
-          className={`min-w-0 flex-1 overflow-hidden ${collapsed ? 'invisible' : ''}`}
+          className={`min-w-0 flex-1 overflow-hidden ${collapsed ? 'invisible' : 'mr-6 lg:mr-12'}`}
         >
           <ul ref={listRef} className="flex w-max items-center gap-8 whitespace-nowrap px-1">
             {tabs.map((t) => {
