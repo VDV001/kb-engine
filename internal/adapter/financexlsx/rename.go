@@ -44,33 +44,13 @@ func RenameAccount(path, from, to string, now func() time.Time) error {
 	}
 	defer func() { _ = f.Close() }()
 
-	row, err := accountRow(f, from)
+	row, current, err := renameTarget(f, from, to)
 	if err != nil {
 		return err
 	}
 	name, err := excelize.CoordinatesToCellName(bankColumn, row)
 	if err != nil {
 		return fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
-	}
-	current, err := f.GetCellValue(sheetAccounts, name)
-	if err != nil {
-		return fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
-	}
-	current = strings.TrimSpace(current)
-
-	// Новое имя, которое лист уже знает, — это слияние двух счетов, а не
-	// переименование. Своё же имя в другом написании допустимо: так правят
-	// регистр и пробелы вокруг стрелки.
-	if !domain.SameAccountName(current, to) {
-		if taken, err := accountRow(f, to); err == nil && taken != row {
-			return fmt.Errorf("%w: %q", ErrAccountExists, to)
-		}
-	}
-	if n, err := expenseRowsNaming(f, current); err != nil {
-		return err
-	} else if n > 0 {
-		return fmt.Errorf("%w: %q is named by %d row(s) of %s — a renamed account would leave them reading it as a source",
-			ErrAccountInUse, current, n, sheetExpenses)
 	}
 
 	if err := backup(path, now); err != nil {
@@ -88,6 +68,43 @@ func RenameAccount(path, from, to string, now func() time.Time) error {
 		return fmt.Errorf("account renamed, confirmation moment not moved: %w", err)
 	}
 	return nil
+}
+
+// renameTarget finds the row to rename and checks every refusal that depends on
+// the book: the new name taken by another account, and expense rows naming the
+// old one. It returns the old name as the sheet spells it.
+func renameTarget(f *excelize.File, from, to string) (row int, current string, err error) {
+	row, err = accountRow(f, from)
+	if err != nil {
+		return 0, "", err
+	}
+	name, err := excelize.CoordinatesToCellName(bankColumn, row)
+	if err != nil {
+		return 0, "", fmt.Errorf("%s row %d: %w", sheetAccounts, row, err)
+	}
+	current, err = f.GetCellValue(sheetAccounts, name)
+	if err != nil {
+		return 0, "", fmt.Errorf("%s!%s: %w", sheetAccounts, name, err)
+	}
+	current = strings.TrimSpace(current)
+
+	// Новое имя, которое лист уже знает, — это слияние двух счетов, а не
+	// переименование. Своё же имя в другом написании допустимо: так правят
+	// регистр и пробелы вокруг стрелки.
+	if !domain.SameAccountName(current, to) {
+		if taken, err := accountRow(f, to); err == nil && taken != row {
+			return 0, "", fmt.Errorf("%w: %q", ErrAccountExists, to)
+		}
+	}
+	n, err := expenseRowsNaming(f, current)
+	if err != nil {
+		return 0, "", err
+	}
+	if n > 0 {
+		return 0, "", fmt.Errorf("%w: %q is named by %d row(s) of %s — a renamed account would leave them reading it as a source",
+			ErrAccountInUse, current, n, sheetExpenses)
+	}
+	return row, current, nil
 }
 
 // expenseRowsNaming counts Расходы rows that name the account, in either of
