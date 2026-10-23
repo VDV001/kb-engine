@@ -22,7 +22,7 @@ export function ZonesPanel({ map, onPick }: { map: ArchMap; onPick: (zone: strin
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         {map.zones.map((z) => (
           <Card key={z.name}>
             <div className="flex items-baseline justify-between gap-3">

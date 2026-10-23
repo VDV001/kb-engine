@@ -16,7 +16,7 @@ export function MapHeader({ map }: { map: ArchMap }) {
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <Stat label="Узлов" value={map.stats.nodes} hint="участников на карте" />
         <Stat label="Сценариев" value={map.stats.flows} hint={counts.steps(map.stats.steps)} />
         <Stat
@@ -37,7 +37,7 @@ export function MapHeader({ map }: { map: ArchMap }) {
         />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <Label>Против чего сверена</Label>
           <div className="mt-2 space-y-1.5 text-sm">

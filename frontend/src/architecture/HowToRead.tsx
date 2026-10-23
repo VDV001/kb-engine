@@ -52,7 +52,7 @@ export function HowToRead({ map }: { map: ArchMap }) {
           их можно только механической проверкой.
         </p>
       </Card>
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         {steps.map((s) => (
           <Card key={s.n}>
             <div className="flex items-baseline gap-2">

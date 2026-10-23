@@ -234,7 +234,7 @@ function DuplicateCard({
       {/* Две записи рядом, а не два номера через запятую: решение «дубль или
           нет» принимается сравнением заголовков, дат и статусов, и если их не
           показать, за ними всё равно придётся идти в архив — по одной. */}
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {members.map((e) => {
           const s = statusOf(e)
           return (
@@ -300,7 +300,7 @@ function LinkHealthSection() {
       subtitle={`${h.with_url} ${plural(h.with_url, ['запись с адресом', 'записи с адресом', 'записей с адресом'])} · по последней проверке`}
       aside={<CopyButton text={DRIFT_COMMAND} title="Перепроверить" />}
     >
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
         {cells.map((c) => (
           <Card key={c.label} className="min-w-0">
             <div className={`text-3xl ${c.tone}`}>{c.n}</div>

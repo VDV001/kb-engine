@@ -37,7 +37,7 @@ export function SchemePanel({
   const titles = useMemo(() => new Map(map.nodes.map((n) => [n.id, n.title])), [map.nodes])
 
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_clamp(340px,26vw,460px)]">
+    <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_clamp(340px,26vw,460px)]">
       <div className="min-w-0 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Label>Поле схемы</Label>

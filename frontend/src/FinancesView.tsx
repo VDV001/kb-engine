@@ -471,23 +471,29 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
                     const kop = toKopecks(s.total)
                     const max = toKopecks(summary.bySubcategory[0].total)
                     return (
-                      <div key={`${s.category}/${s.subcategory}`} className="flex items-center gap-4">
+                      // На телефоне две строки: подпись с суммой сверху, полоса под
+                      // ними. В одну строку w-48 + сумма + процент давали 368 px ещё
+                      // без полосы, а подпись, сжатая до 96 px, теряла подкатегорию.
+                      <div
+                        key={`${s.category}/${s.subcategory}`}
+                        className="flex flex-wrap items-center gap-x-2 gap-y-1 sm:flex-nowrap sm:gap-4"
+                      >
                         <span
-                          className="label w-48 shrink-0 truncate text-right text-[10px] opacity-60"
+                          className="label min-w-0 flex-1 truncate text-[10px] opacity-60 sm:w-48 sm:flex-none sm:shrink-0 sm:text-right"
                           title={`${s.category} → ${s.subcategory}`}
                         >
                           {s.category} → {s.subcategory}
                         </span>
-                        <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-surface-high">
+                        <div className="order-last h-2 w-full overflow-hidden rounded-full bg-surface-high sm:order-none sm:w-auto sm:min-w-0 sm:flex-1">
                           <div
                             className="h-full rounded-full bg-donut-primary"
                             style={{ width: `${Math.max(0, kop / Math.max(1, max)) * 100}%` }}
                           />
                         </div>
-                        <span className="privacy-mask label w-24 shrink-0 text-right text-[10px]">
+                        <span className="privacy-mask label shrink-0 text-right text-[10px] sm:w-24">
                           {formatRub(kop)}
                         </span>
-                        <span className="label w-8 text-[9px] opacity-40">{pct(kop, spent)}%</span>
+                        <span className="label w-8 shrink-0 text-[9px] opacity-40">{pct(kop, spent)}%</span>
                       </div>
                     )
                   })}
