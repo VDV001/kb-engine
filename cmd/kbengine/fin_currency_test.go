@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -122,5 +124,28 @@ func TestRun_finEdit_currency(t *testing.T) {
 	}
 	if line := lastLedgerLine(t, ledger); !strings.Contains(line, `"currency":"USD"`) {
 		t.Errorf("после правки строка без валюты:\n%s", line)
+	}
+}
+
+// Форма терминала пишет тем же путём, что fin add, и обязана так же брать валюту
+// у счёта: иначе трата с долларового счёта, введённая в TUI, ушла бы рублями и
+// встала бы на сверке отказом.
+func TestLedgerFinances_addTakesTheAccountCurrency(t *testing.T) {
+	book := workbookWithDollarAccount(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, book, ledger)
+	money, err := domain.ParseMoney("12,30")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := ledgerFinances{ledgerPath: ledger, workbookPath: book}
+	if _, err := f.Add(finance.AddParams{
+		Kind: domain.KindExpense, Date: time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
+		Amount: money, Category: "Сервисы", Account: "Банк USD",
+	}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if line := lastLedgerLine(t, ledger); !strings.Contains(line, `"currency":"USD"`) {
+		t.Errorf("трата из формы без валюты счёта:\n%s", line)
 	}
 }
