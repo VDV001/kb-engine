@@ -163,9 +163,9 @@ func (ix *Index) Search(query string, limit int) []Hit {
 }
 
 // Snippet returns the first line of text that contains a word of the query,
-// trimmed and cut to max runes. Без совпадения — первая непустая строка: она
+// trimmed and cut to width runes around the match. Без совпадения — первая непустая строка: она
 // обычно заголовок и говорит о файле больше, чем пустота.
-func Snippet(text, query string, max int) string {
+func Snippet(text, query string, width int) string {
 	want := map[string]bool{}
 	for _, q := range terms(query) {
 		want[q] = true
@@ -179,19 +179,60 @@ func Snippet(text, query string, max int) string {
 		if first == "" {
 			first = line
 		}
-		for _, t := range terms(line) {
-			if want[t] {
-				return cut(line, max)
-			}
+		if at := matchAt(line, want); at >= 0 {
+			return around(line, at, width)
 		}
 	}
-	return cut(first, max)
+	return cut(first, width)
 }
 
-func cut(s string, max int) string {
+// matchAt returns the rune offset of the first word of line whose stem is
+// wanted, or -1.
+func matchAt(line string, want map[string]bool) int {
+	r := []rune(line)
+	for i := 0; i < len(r); {
+		if !unicode.IsLetter(r[i]) && !unicode.IsDigit(r[i]) {
+			i++
+			continue
+		}
+		j := i
+		for j < len(r) && (unicode.IsLetter(r[j]) || unicode.IsDigit(r[j])) {
+			j++
+		}
+		for _, t := range terms(string(r[i:j])) {
+			if want[t] {
+				return i
+			}
+		}
+		i = j
+	}
+	return -1
+}
+
+// around cuts line to width runes so that the rune at offset at stays visible:
+// совпадение в середине длинной строки иначе обрезалось бы вместе с хвостом.
+func around(line string, at, width int) string {
+	r := []rune(line)
+	if len(r) <= width {
+		return line
+	}
+	start := max(0, at-width/3)
+	end := min(len(r), start+width)
+	start = max(0, end-width)
+	out := string(r[start:end])
+	if start > 0 {
+		out = "…" + out
+	}
+	if end < len(r) {
+		out += "…"
+	}
+	return out
+}
+
+func cut(s string, width int) string {
 	r := []rune(s)
-	if len(r) <= max {
+	if len(r) <= width {
 		return s
 	}
-	return string(r[:max]) + "…"
+	return string(r[:width]) + "…"
 }
