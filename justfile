@@ -40,6 +40,9 @@ build:
 desktop:
     cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
     cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
+    mkdir -p bin/kb.app/Contents/Resources
+    cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns
+    touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
 # Test the desktop module (config, in-process API, path checks)
 desktop-test:
