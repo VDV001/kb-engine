@@ -92,14 +92,13 @@ func isSecret(name string) bool {
 	return false
 }
 
-// binaryDocs — документы, чей текст простым чтением не достать.
+// indexable reports whether the walk takes a file by its name. Docx читается
+// разбором XML стандартной библиотекой (docs.go).
 //
-// ponytail: PDF и DOCX пропускаются целиком. Потолок: в Загрузках это главные
-// документы. Путь: извлечение текста (pdftotext / разбор docx) отдельным
-// шагом вместе с OCR картинок.
-var binaryDocs = map[string]bool{".pdf": true, ".docx": true, ".rtf": true}
-
-func isIndexable(name string) bool {
+// ponytail: PDF, RTF и текст на картинках не читаются. Потолок: сканы, PDF и
+// скриншоты документов. Путь: помощник на PDFKit и Vision macOS — без
+// сторонних программ (pdftotext отвергнут на ревью #378).
+func (s *Source) indexable(name string) bool {
 	if isSecret(name) || strings.Contains(strings.ToLower(name), ".bak") {
 		return false
 	}
@@ -107,7 +106,11 @@ func isIndexable(name string) bool {
 	if k != domain.FileKindDoc && k != domain.FileKindCode {
 		return false
 	}
-	return !binaryDocs[strings.ToLower(filepath.Ext(name))]
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".pdf", ".rtf":
+		return false
+	}
+	return true
 }
 
 // Source walks roots and reads their text files.
@@ -193,11 +196,11 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 
 // visitFile passes one walked entry to fn if it is an indexable regular file.
 func (s *Source) visitFile(shown string, d fs.DirEntry, fn func(domain.FileDoc) error) error {
-	if !d.Type().IsRegular() || !isIndexable(d.Name()) {
+	if !d.Type().IsRegular() || !s.indexable(d.Name()) {
 		return nil
 	}
 	info, err := d.Info()
-	if err != nil || info.Size() > MaxFileBytes {
+	if err != nil || info.Size() > maxBytes(d.Name()) {
 		return nil
 	}
 	doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
@@ -226,6 +229,9 @@ func (s *Source) ReadText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if isDocx(rel) {
+		return readDocx(dir, rel)
+	}
 	b, err := dir.ReadFile(rel)
 	if err != nil {
 		return "", err
@@ -240,7 +246,7 @@ func (s *Source) ReadText(path string) (string, error) {
 // relative to it.
 func (s *Source) checked(path string) (*os.Root, string, error) {
 	i, rel, ok := s.locate(path)
-	if !ok || s.throughSkipped(rel) || !isIndexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) {
+	if !ok || s.throughSkipped(rel) || !s.indexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) {
 		return nil, "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
 	}
 	return s.dirs[i], rel, nil
@@ -275,7 +281,7 @@ func plainFile(root *os.Root, rel string) bool {
 			return false
 		}
 		if i == len(parts)-1 {
-			return info.Mode().IsRegular() && info.Size() <= MaxFileBytes
+			return info.Mode().IsRegular() && info.Size() <= maxBytes(rel)
 		}
 	}
 	return false
