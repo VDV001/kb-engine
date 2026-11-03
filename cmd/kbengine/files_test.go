@@ -49,3 +49,22 @@ func TestFilesNeedsRootAndQuery(t *testing.T) {
 		t.Fatalf("без --q ждем 2, получили %d", code)
 	}
 }
+
+func TestFilesSearch_ReusesStoredIndex(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("договор"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(t.TempDir(), "index.gob")
+	args := []string{"files", "--root", root, "--index", index, "--q", "договор"}
+	var first, second, errb bytes.Buffer
+	if code := run(args, &first, &errb); code != 0 {
+		t.Fatalf("первый запуск %d: %s", code, errb.String())
+	}
+	if code := run(args, &second, &errb); code != 0 {
+		t.Fatalf("второй запуск %d: %s", code, errb.String())
+	}
+	if !strings.Contains(first.String(), "reused 0") || !strings.Contains(second.String(), "reused 1") {
+		t.Fatalf("первый:\n%s\nвторой:\n%s", first.String(), second.String())
+	}
+}
