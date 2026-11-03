@@ -166,6 +166,7 @@ type options struct {
 	syn    search.Matcher
 	timing bool
 	calls  ToolCallReader
+	files  FileSearcher
 }
 
 // WithSynonyms подключает слой перевода терминов.
@@ -231,6 +232,10 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/maps/{id}", handleMap(docs.Maps))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
+	if o.files != nil {
+		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))
+		mux.Handle("GET /api/files/read", localHostOnly(handleFilesRead(o.files)))
+	}
 	if docs.Media != nil {
 		mux.Handle("GET /media/", http.StripPrefix("/media/", mediaHandler(docs.Media)))
 	}

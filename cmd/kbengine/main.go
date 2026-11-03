@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -324,6 +325,10 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// стеки всех горутин, и висеть по умолчанию рядом с личными финансами
 	// ему нечего. Слушатель отдельный — см. cmd/kbengine/pprof.go.
 	pprofAddr := fs.String("pprof", "", "optional address for the pprof profiler (e.g. 127.0.0.1:6060); empty means off")
+	// Поиск по файлам на этой машине (kb-desktop). Повторяемые флаги, как у карт.
+	var filesRoots, filesExclude repeatedPath
+	fs.Var(&filesRoots, "files-root", "optional folder to index for /api/files/* (repeat for several)")
+	fs.Var(&filesExclude, "files-exclude", "folder name the file index never enters (repeat for several)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -342,9 +347,12 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	serveOpts := []httpapi.Option{synonymsFor(*catalogPath, stderr), toolCallsOption(stderr)}
-	if *timing {
-		serveOpts = append(serveOpts, httpapi.WithServerTiming())
+	// Сборка индекса файлов живет столько же, сколько процесс: у serve нет
+	// мягкой остановки, и выход процесса обрывает обход вместе со всем прочим.
+	serveOpts, err := serveOptions(context.Background(), *catalogPath, *timing, filesRoots, filesExclude, stdout, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
 	}
 
 	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
