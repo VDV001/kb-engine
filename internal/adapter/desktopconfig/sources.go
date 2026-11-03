@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -21,11 +22,8 @@ const (
 	KindServer Kind = "server"
 )
 
-func (k Kind) valid() bool { return k == KindFolder || k == KindCatalog || k == KindServer }
-
 // Ошибки списка источников: окно показывает текст, вызывающие проверяют errors.Is.
 var (
-	ErrSourceKind   = errors.New("неизвестный вид источника")
 	ErrSourceID     = errors.New("у источника нет id или он повторяется")
 	ErrSourceTarget = errors.New("у источника не задан или не подходит путь либо адрес")
 )
@@ -46,10 +44,10 @@ type Source struct {
 	Enabled bool `json:"enabled"`
 }
 
+// check validates the known kinds. Вид, которого эта сборка не знает (его
+// записала более новая), не ошибка: источник хранится со своим местом и не
+// читается — иначе прежний kbengine-mcp отказал бы во всех папках разом.
 func (s Source) check() error {
-	if !s.Kind.valid() {
-		return fmt.Errorf("%w: %q", ErrSourceKind, s.Kind)
-	}
 	switch s.Kind {
 	case KindFolder, KindCatalog:
 		if strings.TrimSpace(s.Path) == "" {
@@ -137,17 +135,29 @@ func (c Config) CatalogPath() string {
 // окна правит список до экрана источников. Новые папки встают на место первой
 // включенной, остальные источники и выключенные папки сохраняют место и id;
 // папка, что уже была в списке, сохраняет свой id и имя.
-func (c *Config) SetFolderRoots(roots []string) {
+//
+// Пути сравниваются раскрытыми (home — для «~»): окно присылает раскрытый и
+// очищенный путь, а в конфиге он мог быть записан как «~/notes» или «/data/».
+// Выключенная папка, которую добавили снова, включается, а не повторяется.
+// Прежние roots и catalog после правки обнуляются: список теперь единственный.
+func (c *Config) SetFolderRoots(roots []string, home string) {
 	c.migrate()
+	c.Roots, c.Catalog, c.Server = nil, "", ""
+	wanted := map[string]bool{}
+	for _, r := range roots {
+		wanted[expandHome(r, home)] = true
+	}
 	byPath := map[string]Source{}
 	at := -1
 	var rest []Source
 	for _, s := range c.Sources {
-		if s.Enabled && s.Kind == KindFolder {
-			if at < 0 {
+		key := expandHome(s.Path, home)
+		if s.Kind == KindFolder && (s.Enabled || wanted[key]) {
+			if s.Enabled && at < 0 {
 				at = len(rest)
 			}
-			byPath[s.Path] = s
+			s.Enabled = true
+			byPath[key] = s
 			continue
 		}
 		rest = append(rest, s)
@@ -157,7 +167,7 @@ func (c *Config) SetFolderRoots(roots []string) {
 	}
 	folders := make([]Source, 0, len(roots))
 	for _, r := range roots {
-		s, ok := byPath[r]
+		s, ok := byPath[expandHome(r, home)]
 		if !ok {
 			s = Source{ID: c.nextID(KindFolder, folders), Kind: KindFolder, Path: r, Enabled: true}
 		}
@@ -187,8 +197,15 @@ func (c *Config) migrate() {
 	if len(c.Sources) > 0 {
 		return
 	}
-	for i, r := range c.Roots {
-		c.Sources = append(c.Sources, Source{ID: "folder-" + strconv.Itoa(i+1), Kind: KindFolder, Path: r, Enabled: true})
+	n := 0
+	for _, r := range c.Roots {
+		// Пустую строку прежний NormalizeRoots пропускал; переезд не должен
+		// превратить ее в источник без пути, который откажет Validate.
+		if strings.TrimSpace(r) == "" {
+			continue
+		}
+		n++
+		c.Sources = append(c.Sources, Source{ID: "folder-" + strconv.Itoa(n), Kind: KindFolder, Path: r, Enabled: true})
 	}
 	if c.Catalog != "" {
 		c.Sources = append(c.Sources, Source{ID: "catalog-1", Kind: KindCatalog, Path: c.Catalog, Enabled: true})
@@ -198,4 +215,16 @@ func (c *Config) migrate() {
 	if c.Server != "" && checkServerURL(c.Server) == nil {
 		c.Sources = append(c.Sources, Source{ID: "server-1", Kind: KindServer, URL: c.Server})
 	}
+}
+
+// expandHome раскрывает «~» и очищает путь, чтобы одна папка в разных записях
+// сравнивалась как одна.
+func expandHome(p, home string) string {
+	if home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
+		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
+	}
+	if p == "" {
+		return ""
+	}
+	return filepath.Clean(p)
 }

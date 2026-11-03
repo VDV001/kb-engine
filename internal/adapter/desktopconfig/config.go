@@ -14,7 +14,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // Config — настройки приложения. Лежат в ~/Library/Application Support/
@@ -99,6 +98,12 @@ func Write(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
+	// Конфиг прежней формы сначала переезжает, как при чтении: иначе сервер из
+	// него пропал бы (sources: null), а roots и catalog выжили бы случайно.
+	cfg.migrate()
+	if err := cfg.Validate(); err != nil {
+		return err
+	}
 	cfg.Roots, cfg.Catalog, cfg.Server = cfg.FolderRoots(), cfg.CatalogPath(), ""
 	if cfg.Roots == nil {
 		cfg.Roots = []string{}
@@ -115,10 +120,7 @@ func Write(path string, cfg Config) error {
 // раньше любая такая строка доходила до log.Fatal (ревью #371).
 func NormalizeRoots(roots []string, home string) (ok, skipped []string) {
 	for _, r := range roots {
-		p := r
-		if home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
-			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
+		p := expandHome(r, home)
 		if !filepath.IsAbs(p) {
 			skipped = append(skipped, r+" (путь не абсолютный)")
 			continue
@@ -131,7 +133,7 @@ func NormalizeRoots(roots []string, home string) (ok, skipped []string) {
 			skipped = append(skipped, r+" (нет доступа: macOS не дает читать папку)")
 			continue
 		}
-		ok = append(ok, filepath.Clean(p))
+		ok = append(ok, p)
 	}
 	return ok, skipped
 }

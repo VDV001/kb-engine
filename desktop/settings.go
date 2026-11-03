@@ -73,8 +73,7 @@ func (f *folderSettings) Set(roots, exclude []string) error {
 		return fmt.Errorf("%w: %w", errBadFolder, err)
 	}
 	next := f.cfg
-	next.Sources = slices.Clone(f.cfg.Sources)
-	next.SetFolderRoots(clean)
+	next.SetFolderRoots(clean, f.home)
 	next.Exclude = ex
 	if err := desktopconfig.Write(f.path, next); err != nil {
 		// Индекс уже на новых папках, а конфиг нет: окно работает, но
