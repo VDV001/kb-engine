@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"slices"
 	"testing"
 )
@@ -27,7 +28,7 @@ func TestTray_Summon(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			w := &fakeWindow{}
-			tray{win: w}.summon(tt.frontmost)
+			tray{win: w, ctx: context.Background()}.summon(tt.frontmost)
 			if !slices.Equal(w.calls, tt.want) {
 				t.Fatalf("calls = %v, want %v", w.calls, tt.want)
 			}
@@ -37,8 +38,23 @@ func TestTray_Summon(t *testing.T) {
 
 func TestTray_Quit(t *testing.T) {
 	w := &fakeWindow{}
-	tray{win: w}.quit()
+	tray{win: w, ctx: context.Background()}.quit()
 	if !slices.Equal(w.calls, []string{"quit"}) {
 		t.Fatalf("calls = %v", w.calls)
+	}
+}
+
+// ⌥Space, нажатая во время выхода, окно не трогает: колбэк Cocoa приходит в
+// горутину, а контекст Wails уже закрыт (ревью #380).
+func TestTray_IgnoresCallsAfterShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w := &fakeWindow{}
+	tr := tray{win: w, ctx: ctx}
+	tr.summon(false)
+	tr.summon(true)
+	tr.quit()
+	if len(w.calls) != 0 {
+		t.Fatalf("calls = %v, ждали ни одного", w.calls)
 	}
 }
