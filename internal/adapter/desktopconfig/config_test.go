@@ -1,17 +1,21 @@
-package main
+package desktopconfig_test
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
 
 func TestLoadConfig_CreatesDefaultOnFirstRun(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "cfg", "config.json")
 
-	cfg, err := loadConfig(path, home)
+	cfg, err := desktopconfig.Load(path, home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +42,7 @@ func TestLoadConfig_ReadsExisting(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"roots":["/data"],"exclude":[],"catalog":"","server":"https://kb.example"}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := loadConfig(path, home)
+	cfg, err := desktopconfig.Load(path, home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +59,35 @@ func TestLoadConfig_BrokenFileIsAnError(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"roots":`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := loadConfig(path, home); err == nil {
+	if _, err := desktopconfig.Load(path, home); err == nil {
 		t.Fatal("ждали ошибку разбора")
+	}
+}
+
+func TestRead_MissingFileIsNotExist(t *testing.T) {
+	// Читатель без права на умолчания (MCP-сервер) должен отличать «окно ни
+	// разу не запускалось» от испорченного файла и не создавать конфиг сам.
+	path := filepath.Join(t.TempDir(), "config.json")
+	if _, err := desktopconfig.Read(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("err = %v, want fs.ErrNotExist", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("Read создал конфиг")
+	}
+}
+
+func TestNormalizeRoots(t *testing.T) {
+	// «~» в конфиге и удаленная папка роняли все окно через log.Fatal (ревью
+	// #371). Тильда раскрывается, несуществующее пропускается и называется.
+	home := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(home, "notes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	roots, skipped := desktopconfig.NormalizeRoots([]string{"~/notes", filepath.Join(home, "gone"), "relative"}, home)
+	if len(roots) != 1 || roots[0] != filepath.Join(home, "notes") {
+		t.Errorf("roots = %q", roots)
+	}
+	if len(skipped) != 2 {
+		t.Errorf("skipped = %q, want 2", skipped)
 	}
 }

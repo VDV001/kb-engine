@@ -3966,7 +3966,7 @@
           "to": "cmd-mcp",
           "call": "tools/call search_catalog",
           "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-          "source": "cmd/kbengine-mcp/main.go:99",
+          "source": "cmd/kbengine-mcp/main.go:115",
           "symbol": "StdioTransport",
           "unverified": false
         },
@@ -3976,7 +3976,7 @@
           "to": "adp-mcpserver",
           "call": "mcpserver.New(svc, matcher, version)",
           "detail": "Каталог читается на СТАРТЕ, а не при первом запросе (cmd/kbengine-mcp/main.go): агент подключается молча, и «сервер поднялся» с нечитаемым каталогом выглядело бы рабочим состоянием до первого пустого ответа",
-          "source": "cmd/kbengine-mcp/main.go:59",
+          "source": "cmd/kbengine-mcp/main.go:64",
           "symbol": "svc.Stats",
           "unverified": false
         },
@@ -4016,7 +4016,7 @@
           "to": "adp-mcp-journal",
           "call": "addTool(s, j, tool, argsOf, handler)",
           "detail": "Журнал вызовов приделан к РЕГИСТРАЦИИ инструмента в internal/adapter/mcpserver/record.go, а не к телу обработчика: четвёртый инструмент попадёт в счётчик тем, что он объявлен, а не тем, что автор вспомнил про журнал. Тот же приём, что у runLogged вокруг единственного диспетчера команд",
-          "source": "internal/adapter/mcpserver/record.go:76",
+          "source": "internal/adapter/mcpserver/record.go:79",
           "symbol": "addTool",
           "unverified": false
         },

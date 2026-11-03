@@ -1,17 +1,14 @@
 package main
 
 import (
-	"errors"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
-	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/fileindexgob"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
@@ -42,9 +39,9 @@ type catalogLoader interface {
 // живет в package main и недоступен). Потолок: две точки сборки разойдутся,
 // когда серверу добавят опцию. Путь: вынести сборку в internal/composition и
 // звать ее из обоих.
-func newAPI(cfg config, indexPath string) (http.Handler, *indexer, error) {
+func newAPI(cfg desktopconfig.Config, indexPath string) (http.Handler, *indexer, error) {
 	home, _ := os.UserHomeDir() // без домашней папки «~» просто не раскроется
-	roots, skipped := normalizeRoots(cfg.Roots, home)
+	roots, skipped := desktopconfig.NormalizeRoots(cfg.Roots, home)
 	for _, s := range skipped {
 		log.Printf("files: папка пропущена: %s", s)
 	}
@@ -66,43 +63,4 @@ func newAPI(cfg config, indexPath string) (http.Handler, *indexer, error) {
 		httpapi.Documents{}, httpapi.EngineInfo{Version: "desktop"}, nil,
 		httpapi.WithFiles(files))
 	return h, newIndexer(files, src), nil
-}
-
-// normalizeRoots раскрывает «~», оставляет только существующие абсолютные папки
-// и называет остальные. Удаленная папка или опечатка в конфиге не роняют окно:
-// раньше любая такая строка доходила до log.Fatal (ревью #371).
-func normalizeRoots(roots []string, home string) (ok, skipped []string) {
-	for _, r := range roots {
-		p := r
-		if home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
-			p = filepath.Join(home, strings.TrimPrefix(p, "~"))
-		}
-		if !filepath.IsAbs(p) {
-			skipped = append(skipped, r+" (путь не абсолютный)")
-			continue
-		}
-		if info, err := os.Stat(p); err != nil || !info.IsDir() {
-			skipped = append(skipped, r+" (папки нет)")
-			continue
-		}
-		if !readable(p) {
-			skipped = append(skipped, r+" (нет доступа: macOS не дает читать папку)")
-			continue
-		}
-		ok = append(ok, filepath.Clean(p))
-	}
-	return ok, skipped
-}
-
-// readable reports whether a folder's listing can be read. os.Stat проходит и
-// для ~/Documents без разрешения macOS, а обход потом получает EPERM; поэтому
-// проверяется само чтение, до записи в конфиг.
-func readable(dir string) bool {
-	f, err := os.Open(dir)
-	if err != nil {
-		return false
-	}
-	defer func() { _ = f.Close() }()
-	_, err = f.Readdirnames(1)
-	return err == nil || errors.Is(err, io.EOF)
 }

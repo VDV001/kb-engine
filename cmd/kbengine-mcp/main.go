@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
@@ -42,6 +43,9 @@ func run(args []string, stderr io.Writer) error {
 	// serve и на чужой машине он другой. Умолчания нет намеренно: без флага
 	// поле view приходит пустым, и это честнее ссылки в никуда.
 	viewBase := fs.String("view-base", "", "адрес витрины для поля view, например http://127.0.0.1:8097")
+	// Поиск по файлам включается явно: сервер над каталогом не должен сам
+	// решать, что агенту можно читать диск владельца.
+	filesConfig := fs.String("files-config", "", "config.json окна kb-desktop: включает search_files и read_file по выбранным в нем папкам")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -85,16 +89,28 @@ func run(args []string, stderr io.Writer) error {
 		recorder = newJournalRecorder(journalPath, time.Now, stderr)
 	}
 
-	srv := mcpserver.New(svc, search.New(syn), mcpserver.Config{
-		Version:  version,
-		ViewBase: *viewBase,
-		Recorder: recorder,
-	})
+	ctx, cancel := context.WithCancel(context.Background())
+	// Перед выходом сборка индекса отменяется и дожидается: иначе процесс
+	// умирал посреди записи снимка, оставляя временный файл в ~100 МБ (ревью #375).
+	var bg sync.WaitGroup
+	defer func() { cancel(); bg.Wait() }()
+	cfg := mcpserver.Config{Version: version, ViewBase: *viewBase, Recorder: recorder}
+	tools := "search_catalog · get_entry · stats"
+	if *filesConfig != "" {
+		files, err := newFileIndex(*filesConfig, userHome(), stderr)
+		if err != nil {
+			return err
+		}
+		bg.Go(func() { files.run(ctx) })
+		cfg.Files = files.svc
+		tools += " · search_files · read_file"
+	}
+	srv := mcpserver.New(svc, search.New(syn), cfg)
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая
 	// лишняя строка там ломает разбор JSON-RPC у клиента.
-	fmt.Fprintf(stderr, "kbengine-mcp %s: каталог %s, инструменты search_catalog · get_entry · stats\n", version, *catalogPath)
+	fmt.Fprintf(stderr, "kbengine-mcp %s: каталог %s, инструменты %s\n", version, *catalogPath, tools)
 	if recorder != nil {
 		fmt.Fprintf(stderr, "kbengine-mcp: вызовы пишутся в %s, счёт печатает `kbengine runs`\n", journalPath)
 	}
-	return srv.Run(context.Background(), &mcp.StdioTransport{})
+	return srv.Run(ctx, &mcp.StdioTransport{})
 }

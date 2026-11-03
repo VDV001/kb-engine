@@ -160,9 +160,35 @@ question with no answer.
 Two deliberate limits, both measured rather than assumed. The MCP SDK adds
 ~4 MB, so this is a separate binary — `kbengine` itself is byte-for-byte
 unchanged by it, and a stdio server is pointless inside the dashboard image.
-What goes out is exactly what the catalog publishes: the same allow-list as the
-`/kb/` route, so personal notes and the finance workbook — which live in the
-same tree but are not named by any entry — cannot appear in a response.
+Without `--files-config`, what goes out is exactly what the catalog publishes:
+the same allow-list as the `/kb/` route, so personal notes and the finance
+workbook — which live in the same tree but are not named by any entry — cannot
+appear in a response.
+
+#### Files on this machine (`--files-config`)
+
+```jsonc
+"args": ["--catalog", "/path/to/catalog.json",
+         "--files-config", "/Users/you/Library/Application Support/kb-desktop/config.json"]
+```
+
+The flag adds `search_files` and `read_file` over the folders chosen in the
+kb-desktop window — the same `config.json`, so a folder picked in the window is
+a folder the agent can search. **This widens what an agent can read**: every
+text file the index takes from those folders, not only catalog entries. Folders
+in `exclude` (the window's default is `finances`), secret-looking files (`.env`,
+`*credential*`, …) and tool folders (`.git`, `node_modules`, …) are refused by
+the same rule that keeps them out of the index; a path outside the folders is
+refused without saying whether it exists. `read_file` returns 20 000 runes per
+call with `next_offset`, under the client's MCP output limit.
+
+The index snapshot (`index.gob`, 0600) is shared with the window, so whichever
+starts second rebuilds only changed files (measured: 3 063 files, 3.2 s cold,
+0.19 s from the snapshot). It is built in the background at start and caught up
+every 10 minutes; a file saved a minute ago may not be found yet. The config is
+checked every 30 seconds: a folder removed or excluded in the window stops being
+readable once the rebuild over the new folders finishes, without restarting the
+server. `~/` in the `--files-config` path is expanded.
 
 ## Stack
 
