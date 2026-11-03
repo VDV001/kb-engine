@@ -1,7 +1,9 @@
 package localfiles_test
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -27,7 +29,7 @@ func write(t *testing.T, root, rel, body string) string {
 func walked(t *testing.T, s *localfiles.Source) []string {
 	t.Helper()
 	var out []string
-	err := s.Walk(func(d domain.FileDoc) error {
+	err := s.Walk(context.Background(), func(d domain.FileDoc) error {
 		out = append(out, d.Path())
 		return nil
 	})
@@ -135,5 +137,103 @@ func TestReadText_RefusesSymlinks(t *testing.T) {
 		if _, err := s.ReadText(p); !errors.Is(err, localfiles.ErrNotAllowed) {
 			t.Errorf("ReadText(%q) err = %v, want ErrNotAllowed", p, err)
 		}
+	}
+}
+
+func TestExclusions_IgnoreCase(t *testing.T) {
+	// APFS регистр не различает: FINANCES/ledger.md открывает finances/ledger.md.
+	// Сравнение с учетом регистра пропускало исключенную папку (ревью #371).
+	root := t.TempDir()
+	write(t, root, "finances/ledger.md", "деньги")
+	write(t, root, "notes.BAK.md", "старое")
+	write(t, root, ".ENV", "TOKEN=1")
+	keep := write(t, root, "plan.md", "план")
+	s, err := localfiles.New([]string{root}, []string{"finances"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{
+		filepath.Join(root, "FINANCES", "ledger.md"),
+		filepath.Join(root, "notes.BAK.md"),
+		filepath.Join(root, ".ENV"),
+	} {
+		if _, err := s.ReadText(p); !errors.Is(err, localfiles.ErrNotAllowed) {
+			t.Errorf("ReadText(%q) err = %v, want ErrNotAllowed", p, err)
+		}
+		if err := s.Check(p); !errors.Is(err, localfiles.ErrNotAllowed) {
+			t.Errorf("Check(%q) err = %v, want ErrNotAllowed", p, err)
+		}
+	}
+	if got := walked(t, s); !slices.Equal(got, []string{keep}) {
+		t.Fatalf("walked = %q", got)
+	}
+}
+
+func TestWalk_SymlinkedRoot(t *testing.T) {
+	// Корень-симлинк (iCloud, /tmp на macOS) давал ноль файлов без ошибки.
+	real := t.TempDir()
+	write(t, real, "plan.md", "план")
+	link := filepath.Join(t.TempDir(), "notes")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	s, err := localfiles.New([]string{link}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := walked(t, s); len(got) != 1 {
+		t.Fatalf("walked = %q, want 1 file", got)
+	}
+}
+
+func TestWalk_SkipsSecretFormats(t *testing.T) {
+	root := t.TempDir()
+	keep := []string{
+		write(t, root, "tokenizer.go", "package x"), // слово token в имени кода — не секрет
+		write(t, root, "notes/credits.md", "титры"),
+	}
+	for _, rel := range []string{
+		"credentials.json", "gcp/service-account.json", "service_account.json", "secrets.yaml",
+		"app/secret.toml", ".npmrc", ".netrc", ".pgpass", ".envrc", ".pypirc", "kubeconfig",
+		"infra/terraform.tfstate", "infra/terraform.tfstate.backup",
+	} {
+		write(t, root, rel, "secret")
+	}
+	s, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(keep)
+	if got := walked(t, s); !slices.Equal(got, keep) {
+		t.Fatalf("walked:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(keep, "\n"))
+	}
+}
+
+func TestCheck_AllowsWhatTheWalkWouldIndex(t *testing.T) {
+	root := t.TempDir()
+	ok := write(t, root, "plan.md", "план")
+	s, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Check(ok); err != nil {
+		t.Fatalf("Check(ok) = %v", err)
+	}
+}
+
+func TestWalk_StopsWhenContextIsCancelled(t *testing.T) {
+	root := t.TempDir()
+	for i := range 5 {
+		write(t, root, fmt.Sprintf("f%d.md", i), "x")
+	}
+	s, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = s.Walk(ctx, func(domain.FileDoc) error { return nil })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }

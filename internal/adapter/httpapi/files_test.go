@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -40,7 +42,7 @@ func (f *fakeFiles) Stats() filesearch.Stats { return filesearch.Stats{Indexed: 
 
 func TestFilesSearch_API(t *testing.T) {
 	ff := &fakeFiles{}
-	rec := get(t, newTestServerWith(httpapi.WithFiles(ff)), "/api/files/search?q=%D0%B4%D0%BE%D0%B3%D0%BE%D0%B2%D0%BE%D1%80&limit=5")
+	rec := getLocal(t, newTestServerWith(httpapi.WithFiles(ff)), "/api/files/search?q=%D0%B4%D0%BE%D0%B3%D0%BE%D0%B2%D0%BE%D1%80&limit=5")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d: %s", rec.Code, rec.Body)
 	}
@@ -79,12 +81,12 @@ func TestFilesSearch_DefaultsAndLimits(t *testing.T) {
 		{"?q=x&limit=100000", 200},
 	} {
 		ff := &fakeFiles{}
-		rec := get(t, newTestServerWith(httpapi.WithFiles(ff)), "/api/files/search"+tc.query)
+		rec := getLocal(t, newTestServerWith(httpapi.WithFiles(ff)), "/api/files/search"+tc.query)
 		if rec.Code != http.StatusOK || ff.gotLimit != tc.wantLimit {
 			t.Errorf("%s: status %d limit %d, want 200/%d", tc.query, rec.Code, ff.gotLimit, tc.wantLimit)
 		}
 	}
-	rec := get(t, newTestServerWith(httpapi.WithFiles(&fakeFiles{})), "/api/files/search")
+	rec := getLocal(t, newTestServerWith(httpapi.WithFiles(&fakeFiles{})), "/api/files/search")
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("без q ждем 400, получили %d", rec.Code)
 	}
@@ -101,12 +103,12 @@ func TestFilesRead_API(t *testing.T) {
 		{"/w/missing.md", http.StatusNotFound},
 		{"", http.StatusBadRequest},
 	} {
-		rec := get(t, srv, "/api/files/read?path="+tc.path)
+		rec := getLocal(t, srv, "/api/files/read?path="+tc.path)
 		if rec.Code != tc.want {
 			t.Errorf("read %q: status %d, want %d", tc.path, rec.Code, tc.want)
 		}
 	}
-	rec := get(t, srv, "/api/files/read?path=/w/plan.md")
+	rec := getLocal(t, srv, "/api/files/read?path=/w/plan.md")
 	var body struct{ Path, Text string }
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil || body.Text != "весь текст" {
 		t.Fatalf("body = %+v, err %v", body, err)
@@ -129,8 +131,59 @@ func (unbuiltFiles) Search(string, int) ([]filesearch.Hit, error) { return nil, 
 func TestFilesSearch_NotBuiltYet(t *testing.T) {
 	// Индекс собирается в фоне после старта: пока его нет, ответ 503 «еще
 	// собирается», а не 500 — окно по нему показывает экран индексации.
-	rec := get(t, newTestServerWith(httpapi.WithFiles(&unbuiltFiles{})), "/api/files/search?q=x")
+	rec := getLocal(t, newTestServerWith(httpapi.WithFiles(&unbuiltFiles{})), "/api/files/search?q=x")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
+
+// getLocal — запрос, каким его шлет браузер на этой машине: Host loopback.
+func getLocal(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.Host = "127.0.0.1:8080"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	return rec
+}
+
+func TestFiles_RefuseForeignHost(t *testing.T) {
+	// DNS rebinding: чужой домен перепривязан на 127.0.0.1, и страница читает
+	// личные файлы как same-origin (ревью #371). Host обязан быть локальным.
+	srv := newTestServerWith(httpapi.WithFiles(&fakeFiles{}))
+	for _, tc := range []struct {
+		host string
+		want int
+	}{
+		{"evil.example:8080", http.StatusForbidden},
+		{"127.0.0.1.evil.example", http.StatusForbidden},
+		{"127.0.0.1:8080", http.StatusOK},
+		{"localhost:18092", http.StatusOK},
+		{"[::1]:8080", http.StatusOK},
+		{"wails", http.StatusOK}, // окно Wails ходит в API по wails://wails
+		{"wails.localhost", http.StatusOK},
+	} {
+		for _, path := range []string{"/api/files/search?q=x", "/api/files/read?path=/w/plan.md"} {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Host = tc.host
+			rec := httptest.NewRecorder()
+			srv.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Errorf("Host %q %s: %d, want %d", tc.host, path, rec.Code, tc.want)
+			}
+		}
+	}
+}
+
+type failedFiles struct{ fakeFiles }
+
+func (failedFiles) Search(string, int) ([]filesearch.Hit, error) {
+	return nil, fmt.Errorf("%w: disk gone", filesearch.ErrBuildFailed)
+}
+
+func TestFilesSearch_BuildFailedIsAnError(t *testing.T) {
+	rec := getLocal(t, newTestServerWith(httpapi.WithFiles(&failedFiles{})), "/api/files/search?q=x")
+	if rec.Code != http.StatusInternalServerError || !strings.Contains(rec.Body.String(), "disk gone") {
+		t.Fatalf("status %d body %q, want 500 with the cause", rec.Code, rec.Body)
 	}
 }

@@ -1,6 +1,7 @@
 package filesearch_test
 
 import (
+	"context"
 	"errors"
 	"slices"
 	"strings"
@@ -143,11 +144,15 @@ func TestSnippet_CentersOnMatchInLongLine(t *testing.T) {
 }
 
 type fakeSource struct {
-	files map[string]string
-	fail  string
+	files   map[string]string
+	fail    string
+	walkErr error
 }
 
-func (f fakeSource) Walk(fn func(domain.FileDoc) error) error {
+func (f fakeSource) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
+	if f.walkErr != nil {
+		return f.walkErr
+	}
 	keys := make([]string, 0, len(f.files))
 	for k := range f.files {
 		keys = append(keys, k)
@@ -180,7 +185,7 @@ func TestService_BuildAndSearch(t *testing.T) {
 	}, fail: "/w/c.md"}
 	svc := filesearch.NewService(src)
 
-	st, err := svc.Build()
+	st, err := svc.Build(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,14 +213,14 @@ func TestService_SearchDuringRebuild(t *testing.T) {
 	// Окно и MCP ищут, пока индекс пересобирается: гонка тут ловится -race.
 	src := fakeSource{files: map[string]string{"/w/a.md": "договор"}}
 	svc := filesearch.NewService(src)
-	if _, err := svc.Build(); err != nil {
+	if _, err := svc.Build(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for range 20 {
-			if _, err := svc.Build(); err != nil {
+			if _, err := svc.Build(context.Background()); err != nil {
 				t.Error(err)
 			}
 		}
@@ -226,4 +231,37 @@ func TestService_SearchDuringRebuild(t *testing.T) {
 		}
 	}
 	<-done
+}
+
+func (f fakeSource) Check(path string) error {
+	if _, ok := f.files[path]; !ok {
+		return filesearch.ErrNotAllowed
+	}
+	return nil
+}
+
+func TestService_FailedBuildIsNotStillBuilding(t *testing.T) {
+	// Упавшая сборка отвечала «еще собирается» вечно, и окно висело на экране
+	// индексации (ревью #371). Причина обязана дойти до того, кто спрашивает.
+	svc := filesearch.NewService(fakeSource{walkErr: errors.New("disk gone")})
+	if _, err := svc.Build(context.Background()); err == nil {
+		t.Fatal("ждали ошибку сборки")
+	}
+	_, err := svc.Search("x", 5)
+	if !errors.Is(err, filesearch.ErrBuildFailed) || errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("Search err = %v, want ErrBuildFailed", err)
+	}
+	if !strings.Contains(err.Error(), "disk gone") {
+		t.Fatalf("причина потеряна: %v", err)
+	}
+}
+
+func TestService_CheckDelegatesToSource(t *testing.T) {
+	svc := filesearch.NewService(fakeSource{files: map[string]string{"/w/a.md": "x"}})
+	if err := svc.Check("/w/a.md"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Check("/w/.env"); !errors.Is(err, filesearch.ErrNotAllowed) {
+		t.Fatalf("Check(.env) = %v", err)
+	}
 }

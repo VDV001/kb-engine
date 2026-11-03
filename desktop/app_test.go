@@ -10,11 +10,11 @@ import (
 
 type fakeReader struct{}
 
-func (fakeReader) Read(path string) (string, error) {
+func (fakeReader) Check(path string) error {
 	if path == "/w/ok.md" {
-		return "text", nil
+		return nil
 	}
-	return "", filesearch.ErrNotAllowed
+	return filesearch.ErrNotAllowed
 }
 
 func TestApp_OpenAndRevealCheckThePathFirst(t *testing.T) {

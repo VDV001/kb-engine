@@ -30,8 +30,10 @@ func TestServeFiles_searchesConfiguredRoots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req := httptest.NewRequest(http.MethodGet, "/api/files/search?q=договор", nil)
+	req.Host = "127.0.0.1:8080"
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/files/search?q=договор", nil))
+	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "plan.md") {
 		t.Fatalf("status %d body %s", rec.Code, rec.Body)
 	}
