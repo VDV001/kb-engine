@@ -138,3 +138,16 @@ func TestClient_StatusMapping(t *testing.T) {
 		}
 	}
 }
+
+// Отказ от редиректа различим: сервер ответил, но перенаправил — человеку надо
+// поправить адрес, а не искать VPN.
+func TestClient_RedirectIsItsOwnError(t *testing.T) {
+	redir := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "https://elsewhere.example"+r.URL.Path, http.StatusMovedPermanently)
+	}))
+	t.Cleanup(redir.Close)
+	_, err := kbserver.Client{URL: redir.URL, Token: token, HTTP: redir.Client()}.Info(context.Background())
+	if !errors.Is(err, kbserver.ErrRedirect) || errors.Is(err, kbserver.ErrUnreachable) {
+		t.Fatalf("err = %v", err)
+	}
+}

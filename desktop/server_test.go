@@ -345,3 +345,27 @@ func TestSetSources_ApplyFailureRollsBackTokens(t *testing.T) {
 		t.Fatalf("токен не откатился: %q", tok.m["server-00000001"])
 	}
 }
+
+// Связка не ответила (заперта, отказ в доступе) — это не «токена нет»:
+// строка говорит о Связке, а не просит ввести токен заново.
+func TestServerStates_KeychainError(t *testing.T) {
+	s, tok, calls := newServerSettings(t)
+	if err := s.SetSources(serverList("server-00000001", "https://kb.example.ru", true), nil, map[string]string{"server-00000001": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	*calls = nil
+	tok.getErr = errors.New("keychain locked")
+	rows := s.ServerStates()
+	if len(rows) != 1 || rows[0].State != stateMissing || !strings.Contains(rows[0].Note, "Связка ключей") || !rows[0].HasToken {
+		t.Fatalf("row = %+v", rows)
+	}
+	if len(*calls) != 0 {
+		t.Fatal("сервер опрошен без токена при ошибке Связки")
+	}
+}
+
+func TestServerMessage_Redirect(t *testing.T) {
+	if got := serverMessage(kbserver.ErrRedirect); !strings.Contains(got, "перенаправ") {
+		t.Fatalf("message = %q", got)
+	}
+}
