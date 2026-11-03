@@ -105,9 +105,15 @@ func run() error {
 			Assets:  ui,
 			Handler: api, // все, чего нет среди файлов интерфейса, то есть /api/*
 		},
-		OnStartup:  app.startup,
-		OnShutdown: func(context.Context) { cancel() },
-		Bind:       []any{app},
+		OnStartup: func(ctx context.Context) {
+			app.startup(ctx)
+			installMenuBar(tray{win: wailsWindow{ctx: ctx}, ctx: ctx})
+		},
+		// Значка в Dock нет (LSUIElement в Info.plist): красная кнопка прячет
+		// окно, а выход — из меню значка в меню-баре.
+		HideWindowOnClose: true,
+		OnShutdown:        func(context.Context) { cancel() },
+		Bind:              []any{app},
 		Mac: &mac.Options{
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,
