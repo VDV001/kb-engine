@@ -2,8 +2,10 @@ package httpapi
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
@@ -102,4 +104,30 @@ func handleFilesRead(f FileSearcher) http.HandlerFunc {
 			Text string `json:"text"`
 		}{path, text})
 	}
+}
+
+// localHosts — имена, под которыми к API обращаются с этой машины: loopback и
+// схема окна Wails (wails://wails).
+var localHosts = map[string]bool{
+	"127.0.0.1": true, "localhost": true, "::1": true, "wails": true, "wails.localhost": true,
+}
+
+// localHostOnly отказывает запросу с чужим Host.
+//
+// Файлы с диска — самое личное, что отдает движок, а без этой проверки их
+// читает любая страница через DNS rebinding: ее домен перепривязывается на
+// 127.0.0.1, и запрос выглядит same-origin (ревью #371). Чужой Host значит,
+// что браузер считает собеседником не этот сервер.
+func localHostOnly(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host := r.Host
+		if h, _, err := net.SplitHostPort(host); err == nil {
+			host = h
+		}
+		if !localHosts[strings.Trim(host, "[]")] {
+			http.Error(w, "files are served to this machine only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

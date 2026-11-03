@@ -233,8 +233,8 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
 	if o.files != nil {
-		mux.HandleFunc("GET /api/files/search", handleFilesSearch(o.files))
-		mux.HandleFunc("GET /api/files/read", handleFilesRead(o.files))
+		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))
+		mux.Handle("GET /api/files/read", localHostOnly(handleFilesRead(o.files)))
 	}
 	if docs.Media != nil {
 		mux.Handle("GET /media/", http.StripPrefix("/media/", mediaHandler(docs.Media)))
