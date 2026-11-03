@@ -89,10 +89,11 @@ func isSecret(name string) bool {
 }
 
 // indexable reports whether the walk takes a file by its name. Docx читается
-// разбором XML, pdf — через pdftotext, если он нашелся (docs.go).
+// разбором XML стандартной библиотекой (docs.go).
 //
-// ponytail: RTF и текст на картинках не читаются. Потолок: сканы и скриншоты
-// документов. Путь: OCR через Vision macOS отдельным шагом.
+// ponytail: PDF, RTF и текст на картинках не читаются. Потолок: сканы, PDF и
+// скриншоты документов. Путь: помощник на PDFKit и Vision macOS — без
+// сторонних программ (pdftotext отвергнут на ревью #378).
 func (s *Source) indexable(name string) bool {
 	if isSecret(name) || strings.Contains(strings.ToLower(name), ".bak") {
 		return false
@@ -102,10 +103,8 @@ func (s *Source) indexable(name string) bool {
 		return false
 	}
 	switch strings.ToLower(filepath.Ext(name)) {
-	case ".rtf":
+	case ".pdf", ".rtf":
 		return false
-	case ".pdf":
-		return s.ReadsPDF()
 	}
 	return true
 }
@@ -116,16 +115,13 @@ type Source struct {
 	resolved []string   // с раскрытыми симлинками: по ним идет обход и чтение
 	dirs     []*os.Root // открыты один раз, а не на каждое чтение
 	exclude  map[string]bool
-	// pdftotext — путь к программе, найденный при открытии; пусто — pdf не
-	// индексируются и не читаются.
-	pdftotext string
 }
 
 // New returns a source over absolute roots. excludeDirs are folder names that
 // are never entered, in addition to the built-in junk folders. Close releases
 // the roots.
 func New(roots, excludeDirs []string) (*Source, error) {
-	s := &Source{exclude: map[string]bool{}, pdftotext: findPdftotext()}
+	s := &Source{exclude: map[string]bool{}}
 	for _, r := range roots {
 		if !filepath.IsAbs(r) {
 			_ = s.Close()
@@ -229,8 +225,8 @@ func (s *Source) ReadText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if ext := docExt(rel); ext != "" {
-		return s.readDoc(dir, rel, ext)
+	if isDocx(rel) {
+		return readDocx(dir, rel)
 	}
 	b, err := dir.ReadFile(rel)
 	if err != nil {

@@ -2,83 +2,57 @@ package localfiles
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 	"unicode/utf8"
 )
 
-// MaxDocBytes — порог для docx и pdf. Они весят картинками и шрифтами, а не
-// текстом, поэтому порог текстовых файлов отсек бы почти каждый скан ТЗ; текст
-// из них все равно режется по MaxFileBytes.
-const MaxDocBytes = 32 << 20
+// maxDocBytes — порог файла для docx: документ весит картинками и шрифтами, а
+// не текстом, и порог текстовых файлов отсек бы почти каждое ТЗ. В память из
+// него попадает не больше maxDocXMLBytes разметки и MaxFileBytes текста.
+const maxDocBytes = 32 << 20
 
-const (
-	// maxDocXMLBytes — сколько разметки docx читается: распаковка ограничена,
-	// чтобы сжатый «zip-бомбой» документ не раздул память.
-	maxDocXMLBytes = 64 << 20
-	// pdfTimeout — дольше pdftotext на одном файле не работает: битый или
-	// огромный PDF не останавливает сборку индекса.
-	pdfTimeout = 20 * time.Second
-)
+// maxDocXMLBytes — сколько разметки docx распаковывается: сжатый «zip-бомбой»
+// документ не раздувает память. Переменная, а не константа, только ради теста
+// обрыва разметки.
+var maxDocXMLBytes int64 = 64 << 20
 
 var errNoDocumentXML = errors.New("docx without word/document.xml")
 
-// pdftotextDirs — где искать pdftotext, если его нет в PATH: окно, открытое из
-// Finder, получает урезанный PATH без nix и Homebrew.
-var pdftotextDirs = []string{"/run/current-system/sw/bin", "/opt/homebrew/bin", "/usr/local/bin"}
-
-func findPdftotext() string {
-	if p, err := exec.LookPath("pdftotext"); err == nil {
-		return p
-	}
-	for _, d := range pdftotextDirs {
-		p := filepath.Join(d, "pdftotext")
-		if info, err := os.Stat(p); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
-			return p
-		}
-	}
-	return ""
+// wordNS — пространства имен WordprocessingML (обычное и Strict). Текст берется
+// только из них: a:t внутри w:drawing — подпись фигуры, а не абзац (ревью #378).
+var wordNS = map[string]bool{
+	"http://schemas.openxmlformats.org/wordprocessingml/2006/main": true,
+	"http://purl.oclc.org/ooxml/wordprocessingml/main":             true,
 }
 
-// ReadsPDF reports whether PDFs are indexed: pdftotext was found when the
-// source was opened.
-func (s *Source) ReadsPDF() bool { return s.pdftotext != "" }
-
-// docExt tells whether a file name is a document read by an extractor.
-func docExt(name string) string {
-	switch ext := strings.ToLower(filepath.Ext(name)); ext {
-	case ".docx", ".pdf":
-		return ext
-	}
-	return ""
-}
+// isDocx tells whether a file is read through docxText rather than as text.
+func isDocx(name string) bool { return strings.EqualFold(filepath.Ext(name), ".docx") }
 
 // maxBytes is the size limit for a file on disk.
 func maxBytes(name string) int64 {
-	if docExt(name) != "" {
-		return MaxDocBytes
+	if isDocx(name) {
+		return maxDocBytes
 	}
 	return MaxFileBytes
 }
 
-// readDoc extracts the text of a docx or pdf opened through the root.
-func (s *Source) readDoc(root *os.Root, rel, ext string) (string, error) {
+// readDocx extracts the text of a docx opened through the root.
+//
+// ponytail: сниппет каждого найденного docx читается заново — распаковка и
+// разбор, миллисекунды на обычном ТЗ. Потолок: десятки docx по 30 МБ в одной
+// выдаче. Путь: хранить строки сниппета в индексе.
+func readDocx(root *os.Root, rel string) (string, error) {
 	f, err := root.Open(rel)
 	if err != nil {
 		return "", err
 	}
 	defer func() { _ = f.Close() }() // только чтение
-	if ext == ".pdf" {
-		return pdfText(s.pdftotext, f)
-	}
 	info, err := f.Stat()
 	if err != nil {
 		return "", err
@@ -101,14 +75,21 @@ func docxText(r io.ReaderAt, size int64) (string, error) {
 			return "", fmt.Errorf("docx: %w", err)
 		}
 		defer func() { _ = rc.Close() }()
-		return wordText(io.LimitReader(rc, maxDocXMLBytes))
+		lr := &io.LimitedReader{R: rc, N: maxDocXMLBytes}
+		text, err := wordText(lr)
+		if err != nil && lr.N <= 0 {
+			// Предел распаковки оборвал разметку на полутеге: собранный текст
+			// остается, иначе пропал бы весь документ.
+			return text, nil
+		}
+		return text, err
 	}
 	return "", errNoDocumentXML
 }
 
 // wordText collects the text runs of WordprocessingML: w:t — текст, w:tab —
 // табуляция, w:br и конец w:p — перевод строки. Остальная разметка (стили,
-// поля, картинки) пропускается.
+// поля, картинки) пропускается. При ошибке разбора возвращает и собранное.
 func wordText(r io.Reader) (string, error) {
 	dec := xml.NewDecoder(r)
 	var w wordWriter
@@ -118,7 +99,7 @@ func wordText(r io.Reader) (string, error) {
 			break
 		}
 		if err != nil {
-			return "", fmt.Errorf("docx: %w", err)
+			return capText(w.b.String()), fmt.Errorf("docx: %w", err)
 		}
 		w.token(tok)
 	}
@@ -134,8 +115,13 @@ type wordWriter struct {
 func (w *wordWriter) token(tok xml.Token) {
 	switch t := tok.(type) {
 	case xml.StartElement:
-		w.start(t.Name.Local)
+		if wordNS[t.Name.Space] {
+			w.start(t.Name.Local)
+		}
 	case xml.EndElement:
+		if !wordNS[t.Name.Space] {
+			return
+		}
 		switch t.Name.Local {
 		case "t":
 			w.inText = false
@@ -158,35 +144,6 @@ func (w *wordWriter) start(name string) {
 	case "br", "cr":
 		w.b.WriteByte('\n')
 	}
-}
-
-// pdfText runs pdftotext over r. Вывод читается не больше MaxFileBytes: дальше
-// процесс останавливается, а не дописывает в никуда.
-func pdfText(bin string, r io.Reader) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), pdfTimeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, bin, "-q", "-enc", "UTF-8", "-", "-")
-	cmd.Stdin = r
-	out, err := cmd.StdoutPipe()
-	if err != nil {
-		return "", err
-	}
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("pdftotext: %w", err)
-	}
-	b, rerr := io.ReadAll(io.LimitReader(out, MaxFileBytes))
-	truncated := len(b) == MaxFileBytes
-	if truncated {
-		cancel() // остальной текст не нужен
-	}
-	werr := cmd.Wait()
-	if rerr != nil {
-		return "", fmt.Errorf("pdftotext: %w", rerr)
-	}
-	if werr != nil && !truncated {
-		return "", fmt.Errorf("pdftotext: %w", werr)
-	}
-	return capText(strings.ToValidUTF8(string(b), "")), nil
 }
 
 // capText cuts s to MaxFileBytes on a rune boundary.
