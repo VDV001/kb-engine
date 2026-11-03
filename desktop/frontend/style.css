@@ -234,3 +234,4 @@ mark { background: oklch(0.72 0.18 250 / 0.22); color: var(--text); border-radiu
 .btn:disabled { opacity: .45; cursor: default; transform: none; }
 .building { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-right: 6px; animation: pulse-accent 1.2s infinite; }
 @keyframes pulse-accent { 50% { opacity: .3; } }
+#indexing-settings { margin-top: 18px; }
