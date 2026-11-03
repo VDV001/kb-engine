@@ -12,6 +12,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
+	"github.com/daniil/kb-engine/internal/adapter/fileindexgob"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -41,7 +42,7 @@ type catalogLoader interface {
 // живет в package main и недоступен). Потолок: две точки сборки разойдутся,
 // когда серверу добавят опцию. Путь: вынести сборку в internal/composition и
 // звать ее из обоих.
-func newAPI(cfg config) (http.Handler, *indexer, error) {
+func newAPI(cfg config, indexPath string) (http.Handler, *indexer, error) {
 	home, _ := os.UserHomeDir() // без домашней папки «~» просто не раскроется
 	roots, skipped := normalizeRoots(cfg.Roots, home)
 	for _, s := range skipped {
@@ -51,7 +52,9 @@ func newAPI(cfg config) (http.Handler, *indexer, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	files := filesearch.NewService(src)
+	// Снимок индекса рядом с config.json: со второго запуска перечитываются только
+	// измененные файлы. Пустой путь — индекс только в памяти (тесты).
+	files := filesearch.NewService(src, fileindexgob.Option(indexPath))
 
 	var loader catalogLoader = emptyCatalog{}
 	if cfg.Catalog != "" {

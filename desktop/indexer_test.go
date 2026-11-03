@@ -29,7 +29,7 @@ func TestIndexer_ApplyReindexesNewFolders(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b, "new.md"), []byte("договор поставки"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, x, err := newAPI(config{Roots: []string{a}})
+	_, x, err := newAPI(config{Roots: []string{a}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,11 +51,41 @@ func TestIndexer_ApplyReindexesNewFolders(t *testing.T) {
 }
 
 func TestIndexer_ApplyRefusesBadRoot(t *testing.T) {
-	_, x, err := newAPI(config{Roots: []string{t.TempDir()}})
+	_, x, err := newAPI(config{Roots: []string{t.TempDir()}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := x.apply([]string{"relative"}, nil); err == nil {
 		t.Fatal("относительный корень обязан отказать")
+	}
+}
+
+func TestIndexer_KeepsIndexOnDisk(t *testing.T) {
+	// Окно хранит индекс рядом с config.json: второй запуск берет неизменные
+	// файлы из снимка и не перечитывает их (замер 03.11: 28,7 с -> 2,0 с).
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("договор"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Файл старше прошлой сборки: свежий перечитывался бы по правилу racy-clean.
+	hourAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(root, "a.md"), hourAgo, hourAgo); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(t.TempDir(), "index.gob")
+	_, x, err := newAPI(config{Roots: []string{root}}, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(context.Background())
+	waitIdle(t, x)
+
+	_, x2, err := newAPI(config{Roots: []string{root}}, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x2.start(context.Background())
+	if st := waitIdle(t, x2); st.Reused != 1 || st.Indexed != 1 {
+		t.Fatalf("второй запуск: %+v", st)
 	}
 }

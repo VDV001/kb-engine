@@ -329,6 +329,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	var filesRoots, filesExclude repeatedPath
 	fs.Var(&filesRoots, "files-root", "optional folder to index for /api/files/* (repeat for several)")
 	fs.Var(&filesExclude, "files-exclude", "folder name the file index never enters (repeat for several)")
+	filesIndex := fs.String("files-index", "", "optional file to keep the file index in between runs (rebuild then rereads only changed files)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -349,7 +350,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	// Сборка индекса файлов живет столько же, сколько процесс: у serve нет
 	// мягкой остановки, и выход процесса обрывает обход вместе со всем прочим.
-	serveOpts, err := serveOptions(context.Background(), *catalogPath, *timing, filesRoots, filesExclude, stdout, stderr)
+	serveOpts, err := serveOptions(context.Background(), *catalogPath, *timing, filesRoots, filesExclude, *filesIndex, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1

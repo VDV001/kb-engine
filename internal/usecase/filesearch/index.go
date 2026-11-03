@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -84,6 +85,54 @@ func terms(text string) []string {
 	return toks
 }
 
+// contentTerms — основы содержимого файла без идентификаторов. Отсев только
+// здесь: имя файла и запрос человек пишет сам, и «invoice20261103» в имени
+// обязан находиться (ревью #374).
+func contentTerms(text string) []string {
+	toks := Tokens(text)
+	out := toks[:0]
+	for _, t := range toks {
+		if !isIdentifier(t) {
+			out = append(out, Stem(t))
+		}
+	}
+	return out
+}
+
+// isIdentifier — хеш, UUID, base64, длинный id: «слово», которое уникально и в
+// поиске не участвует, а словарь индекса раздувает. Буквы вперемешку с
+// цифрами от 8 знаков или любой токен длиннее 32 знаков. Короткие смеси (v2,
+// 6ac2) и чистые числа (2026, 152) остаются.
+//
+// ponytail: эвристика по форме. Потолок: артикул «abc12345» тоже отсеется.
+// Путь: оставлять смеси, которые встретились в двух и более файлах.
+// Пороги отсева входят в отпечаток правил снимка: поменяешь их — снимок
+// соберется заново.
+const (
+	idMixedRunes = 8
+	idMaxRunes   = 32
+)
+
+func isIdentifier(t string) bool {
+	n := len([]rune(t))
+	if n > idMaxRunes {
+		return true
+	}
+	if n < idMixedRunes {
+		return false
+	}
+	var letters, digits bool
+	for _, r := range t {
+		switch {
+		case unicode.IsDigit(r):
+			digits = true
+		case unicode.IsLetter(r):
+			letters = true
+		}
+	}
+	return letters && digits
+}
+
 // Hit is one found file with its score and the line that matched.
 type Hit struct {
 	Doc     domain.FileDoc
@@ -94,31 +143,40 @@ type Hit struct {
 // Index is an inverted index over files held in memory.
 type Index struct {
 	docs     []domain.FileDoc
-	postings map[string]map[int]int // основа -> номер файла -> сколько раз
+	postings map[string][]Posting // основа -> файлы, где она встретилась
+	builtAt  time.Time            // когда собран: файлы моложе этого перечитываются
+}
+
+// Posting — файл и сколько раз в нем встретилась основа. 8 байт вместо записи
+// вложенной карты (десятки байт): на 40 тыс. файлов 1,52 ГБ стало 0,99 ГБ.
+type Posting struct {
+	Doc int32
+	TF  uint32
 }
 
 // NewIndex returns an empty index.
 func NewIndex() *Index {
-	return &Index{postings: map[string]map[int]int{}}
+	return &Index{postings: map[string][]Posting{}}
 }
 
 // Add indexes a file's text together with its name: имя файла тоже текст, и
 // по нему ищут не реже, чем по содержимому.
 func (ix *Index) Add(doc domain.FileDoc, text string) {
-	id := len(ix.docs)
-	ix.docs = append(ix.docs, doc)
-	for _, t := range append(terms(doc.Name()), terms(text)...) {
-		p := ix.postings[t]
-		if p == nil {
-			p = map[int]int{}
-			ix.postings[t] = p
-		}
-		p[id]++
+	id := ix.addDoc(doc)
+	counts := map[string]uint32{}
+	for _, t := range append(terms(doc.Name()), contentTerms(text)...) {
+		counts[t]++
+	}
+	for t, tf := range counts {
+		ix.postings[t] = append(ix.postings[t], Posting{Doc: id, TF: tf})
 	}
 }
 
 // Len returns how many files the index holds.
 func (ix *Index) Len() int { return len(ix.docs) }
+
+// Terms returns how many distinct stems the index holds.
+func (ix *Index) Terms() int { return len(ix.postings) }
 
 // Search returns files containing every word of the query, best first.
 //
@@ -139,12 +197,13 @@ func (ix *Index) Search(query string, limit int) []Hit {
 			return nil
 		}
 		idf := math.Log(1 + n/float64(len(p)))
-		next := map[int]float64{}
-		for id, tf := range p {
+		next := make(map[int]float64, len(p))
+		for _, ps := range p {
+			id := int(ps.Doc)
 			if _, ok := scores[id]; i > 0 && !ok {
 				continue
 			}
-			f := float64(tf)
+			f := float64(ps.TF)
 			next[id] = scores[id] + idf*f/(f+1.2)
 		}
 		scores = next
@@ -235,4 +294,37 @@ func cut(s string, width int) string {
 		return s
 	}
 	return string(r[:width]) + "…"
+}
+
+// addDoc registers a file without its words and returns its number.
+func (ix *Index) addDoc(doc domain.FileDoc) int32 {
+	ix.docs = append(ix.docs, doc)
+	return int32(len(ix.docs) - 1)
+}
+
+// byPath maps each file's path to its number. Nil-safe: no index, no files.
+func (ix *Index) byPath() map[string]int32 {
+	m := map[string]int32{}
+	if ix == nil {
+		return m
+	}
+	for i, d := range ix.docs {
+		m[d.Path()] = int32(i)
+	}
+	return m
+}
+
+// carryOver copies the words of unchanged files from prev, renumbered by
+// oldToNew — так файл попадает в новый индекс, не будучи прочитанным.
+func (ix *Index) carryOver(prev *Index, oldToNew map[int32]int32) {
+	if prev == nil {
+		return
+	}
+	for t, list := range prev.postings {
+		for _, p := range list {
+			if id, ok := oldToNew[p.Doc]; ok {
+				ix.postings[t] = append(ix.postings[t], Posting{Doc: id, TF: p.TF})
+			}
+		}
+	}
 }
