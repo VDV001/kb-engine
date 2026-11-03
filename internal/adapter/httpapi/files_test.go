@@ -121,3 +121,16 @@ func TestFiles_AbsentWithoutOption(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
+
+type unbuiltFiles struct{ fakeFiles }
+
+func (unbuiltFiles) Search(string, int) ([]filesearch.Hit, error) { return nil, filesearch.ErrNotBuilt }
+
+func TestFilesSearch_NotBuiltYet(t *testing.T) {
+	// Индекс собирается в фоне после старта: пока его нет, ответ 503 «еще
+	// собирается», а не 500 — окно по нему показывает экран индексации.
+	rec := get(t, newTestServerWith(httpapi.WithFiles(&unbuiltFiles{})), "/api/files/search?q=x")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
+	}
+}
