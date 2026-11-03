@@ -119,6 +119,12 @@ func TestRunServe_RefusesUnsafeExposure(t *testing.T) {
 		{"сеть без TLS", []string{"--addr", "0.0.0.0:0", "--token-file", tok}, "--tls-cert"},
 		{"сертификат без ключа", []string{"--token-file", tok, "--tls-cert", cert}, "--tls-key"},
 		{"негодный файл токена", []string{"--token-file", writeToken(t, goodToken, 0o644)}, "0600"},
+		// Профилировщик отдает дампы памяти (там и токен, и данные) — только
+		// на этом Mac, при любом --allow-open.
+		// Основной адрес — loopback: если отказа не будет, тест откроет порт
+		// только на этом Mac, а не во всю сеть.
+		{"pprof в сеть", []string{"--addr", "127.0.0.1:0", "--pprof", "0.0.0.0:6060"}, "--pprof"},
+		{"pprof в сеть при allow-open", []string{"--addr", "127.0.0.1:0", "--allow-open", "--pprof", "10.8.0.1:6060"}, "--pprof"},
 		// Битый сертификат — отказ при запуске, а не после строки «serving».
 		{"битый сертификат", []string{"--addr", "127.0.0.1:0", "--token-file", tok, "--tls-cert", cert, "--tls-key", cert}, "--tls-cert"},
 	}

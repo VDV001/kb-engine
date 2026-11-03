@@ -68,3 +68,26 @@ func TestRequireBearer_EmptyTokenLetsNobodyIn(t *testing.T) {
 		}
 	}
 }
+
+// Пробы здоровья (liveness/readiness Kubernetes) ходят без заголовка: за
+// токеном под перезапускался бы по кругу. Данных они не отдают.
+func TestRequireBearer_ProbesPassWithoutToken(t *testing.T) {
+	h := httpapi.RequireBearer("k3Jx9_secret-token-0123456789abcdefXYZ", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	for path, want := range map[string]int{"/healthz": http.StatusOK, "/readyz": http.StatusOK, "/healthz/x": http.StatusUnauthorized, "/healthzx": http.StatusUnauthorized} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != want {
+			t.Errorf("%s: code = %d, want %d", path, w.Code, want)
+		}
+	}
+}
+
+// Ответ 401 — на языке остальных ошибок API (английском), а не строкой окна.
+func TestRequireBearer_UnauthorizedBodyIsPlainAPIText(t *testing.T) {
+	h := httpapi.RequireBearer("k3Jx9_secret-token-0123456789abcdefXYZ", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/search", nil))
+	if got := strings.TrimSpace(w.Body.String()); got != "bearer token required" {
+		t.Fatalf("body = %q", got)
+	}
+}
