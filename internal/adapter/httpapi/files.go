@@ -58,7 +58,11 @@ func handleFilesSearch(f FileSearcher) http.HandlerFunc {
 			limit = defaultFilesLimit
 		}
 		hits, err := f.Search(q, min(limit, maxFilesLimit))
-		if err != nil {
+		switch {
+		case errors.Is(err, filesearch.ErrNotBuilt):
+			http.Error(w, "file index is still building", http.StatusServiceUnavailable)
+			return
+		case err != nil:
 			writeError(w, err)
 			return
 		}
