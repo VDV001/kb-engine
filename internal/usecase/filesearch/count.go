@@ -23,10 +23,14 @@ func (s *Service) CountByRoot(roots []string) map[string]int {
 		out[r] = 0
 	}
 	sep := string(filepath.Separator)
+	prefixes := make([]string, len(roots))
+	for i, r := range roots {
+		prefixes[i] = strings.TrimSuffix(r, sep) + sep
+	}
 	for _, d := range ix.docs {
 		p := d.Path()
-		for _, r := range roots {
-			if p == r || strings.HasPrefix(p, strings.TrimSuffix(r, sep)+sep) {
+		for i, r := range roots {
+			if p == r || strings.HasPrefix(p, prefixes[i]) {
 				out[r]++
 			}
 		}

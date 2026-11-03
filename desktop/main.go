@@ -77,9 +77,11 @@ func run() error {
 	// дошел бы до конца, держа диск, уже после выхода из интерфейса.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	idx.start(ctx)
-	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg,
+	opened, _ := desktopconfig.NormalizeRoots(cfg.FolderRoots(), home) // то же, что открыл newAPI
+	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, applied: opened,
 		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count}
+	idx.reconcile = settings.reconcile // до start: горутина таймера читает поле
+	idx.start(ctx)
 
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс
 	// правится без пересборки .app, и его можно проверить Playwright'ом.

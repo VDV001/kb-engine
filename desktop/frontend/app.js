@@ -314,11 +314,20 @@ function plural(n, one, few, many) {
   const m10 = n % 10, m100 = n % 100;
   return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
 }
-// Цвет держится за источник, а не за место: при перестановке не перекрашивается.
-function hue(s) {
-  let h = 0;
-  for (const c of s.id || s._key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  return HUES[h % HUES.length];
+// Цвет держится за путь или адрес, а не за место и не за id: не меняется ни
+// при перестановке, ни после первого сохранения нового источника (id выдает
+// Go). Совпадения разводятся по кругу, пока цветов хватает; порядок разведения —
+// по пути, а не по приоритету, чтобы перестановка их не перетасовывала.
+function hues() {
+  const hash = (t) => { let h = 0; for (const c of t) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+  const out = new Map(), used = new Set();
+  for (const s of [...draft.sources].sort((a, b) => (target(a) + a._key < target(b) + b._key ? -1 : 1))) {
+    let i = hash(s.kind + target(s)) % HUES.length;
+    for (let k = 0; k < HUES.length && used.has(i) && used.size < HUES.length; k++) i = (i + 1) % HUES.length;
+    used.add(i);
+    out.set(s._key, HUES[i]);
+  }
+  return out;
 }
 const payload = () => ({
   sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
@@ -382,6 +391,8 @@ function stateOf(s) {
       return s.kind === "folder"
         ? `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "файл", "файла", "файлов")}</span>`
         : `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
+    case "indexing":
+      return `<span class="state pending"${note}><span class="sdot"></span>индексируется</span>`;
     case "missing":
       return `<span class="state missing"${note}><span class="sdot"></span>нет связи</span>`;
     default:
@@ -409,12 +420,12 @@ function formOf(s, i) {
 }
 
 function renderSources() {
-  const n = draft.sources.length;
+  const n = draft.sources.length, hue = hues();
   $("#sources").innerHTML = n
     ? draft.sources.map((s, i) => {
         const open = [ui.editing, ui.replacing, ui.confirmDel].includes(s._key);
-        return `<li class="src-row${s.enabled ? "" : " off"}${open ? " editing" : ""}" style="--c:var(${hue(s)})" draggable="true" data-key="${s._key}">
-          <span class="handle" aria-hidden="true" title="Перетащите, чтобы сменить приоритет">⠿</span>
+        return `<li class="src-row${s.enabled ? "" : " off"}${open ? " editing" : ""}" style="--c:var(${hue.get(s._key)})" data-key="${s._key}">
+          <span class="handle" draggable="true" aria-hidden="true" title="Перетащите, чтобы сменить приоритет">⠿</span>
           <span class="prio">${i + 1}</span>
           <div class="who"><div class="name"><i class="swatch"></i><strong>${esc(label(s))}</strong><span class="kind">${esc(KIND[s.kind] || s.kind)}</span></div>
             <div class="addr" title="${esc(target(s))}">${esc(tilde(target(s)))}</div></div>
@@ -568,7 +579,8 @@ panel.addEventListener("keydown", (e) => {
 // Перетаскивание ⠿: линия над или под строкой показывает, куда встанет.
 const sourcesList = $("#sources");
 sourcesList.addEventListener("dragstart", (e) => {
-  const row = e.target.closest(".src-row[data-key]");
+  // Тянется только ⠿: иначе выделение текста в поле формы сдвигало строку.
+  const row = e.target.closest?.(".handle") && e.target.closest(".src-row[data-key]");
   if (!row) return;
   ui.drag = row.dataset.key;
   row.classList.add("dragging");
@@ -615,16 +627,21 @@ $("#add-exclude").onclick = () => {
   renderSources();
 };
 
+// Пока идут сохранение и переиндексация, панель заперта: правка посреди нее
+// пропала бы при перечитывании, а вторая кнопка запустила бы второе сохранение.
+const setBusy = (on) => { panel.classList.toggle("busy", on); panel.inert = on; };
 $("#save-settings").onclick = async () => {
   showError("");
   const btn = $("#save-settings");
   btn.disabled = true;
+  setBusy(true);
   const p = payload();
   try {
     // Проверку делает Go: новая папка обязана существовать, иначе отказ с ее
     // именем и без изменений — ни конфига, ни индекса.
     await native().SetSources(p.sources, p.exclude);
   } catch (e) {
+    setBusy(false);
     showError(String(e));
     btn.disabled = false;
     return;
@@ -649,6 +666,8 @@ $("#save-settings").onclick = async () => {
   } catch (e) {
     showError("Не удалось узнать статус индекса: " + e);
     renderSources();
+  } finally {
+    setBusy(false); // панель не остается запертой ни при каком исходе
   }
 };
 

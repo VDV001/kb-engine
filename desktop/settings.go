@@ -23,10 +23,11 @@ var (
 
 // Состояния источника на экране настроек.
 const (
-	stateOK      = "ok"      // читается: счет файлов или записей
-	stateMissing = "missing" // включен, но папки или файла сейчас нет (сеть, диск, доступ)
-	stateOff     = "off"     // выключен человеком
-	statePending = "pending" // сервер: клиента пока нет, источник хранится
+	stateOK       = "ok"       // читается: счет файлов или записей
+	stateMissing  = "missing"  // включен, но папки или файла сейчас нет (сеть, диск, доступ)
+	stateOff      = "off"      // выключен человеком
+	stateIndexing = "indexing" // доступен, но в индекс еще не вошел: первая сборка или папка вернулась
+	statePending  = "pending"  // сервер: клиента пока нет, источник хранится
 )
 
 // sourceRow is one line of the sources screen.
@@ -57,12 +58,15 @@ type folderSettings struct {
 	// записи текущего каталога.
 	countFiles   func(roots []string) map[string]int
 	countCatalog func() (int, error)
+	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
+	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
+	applied []string
 }
 
 // GetSources returns the sources with their state and counts.
 func (f *folderSettings) GetSources() sourcesView {
 	f.mu.Lock()
-	cfg := f.cfg
+	cfg, applied := f.cfg, slices.Clone(f.applied)
 	f.mu.Unlock()
 	list := cfg.Sources
 	if len(list) == 0 {
@@ -78,25 +82,11 @@ func (f *folderSettings) GetSources() sourcesView {
 		case !s.Enabled:
 			r.State = stateOff
 		case s.Kind == desktopconfig.KindFolder:
-			ok, skipped := desktopconfig.NormalizeRoots([]string{s.Path}, f.home)
-			if len(ok) == 0 {
-				r.State, r.Note = stateMissing, strings.Join(skipped, "; ")
-				continue
+			if keys[i] = f.folderRow(r, applied); keys[i] != "" {
+				ready = append(ready, keys[i])
 			}
-			r.State, keys[i] = stateOK, ok[0]
-			ready = append(ready, ok[0])
 		case s.Kind == desktopconfig.KindCatalog:
-			if s.Path != cfg.CatalogPath() {
-				// Читается первый включенный каталог; остальные ждут слияния выдачи.
-				r.State, r.Note = statePending, "читается только первый каталог списка"
-				continue
-			}
-			n, err := f.countCatalog()
-			if err != nil {
-				r.State, r.Note = stateMissing, err.Error()
-				continue
-			}
-			r.State, r.Count = stateOK, n
+			f.catalogRow(r, cfg.CatalogPath())
 		case s.Kind == desktopconfig.KindServer:
 			r.State, r.Note = statePending, "клиент сервера появится в следующей версии"
 		default:
@@ -105,11 +95,46 @@ func (f *folderSettings) GetSources() sourcesView {
 	}
 	counts := f.countFiles(ready)
 	for i := range rows {
-		if keys[i] != "" {
+		switch {
+		case keys[i] == "":
+		case counts == nil: // индекс еще не собран: счет неизвестен, а не ноль
+			rows[i].State = stateIndexing
+		default:
 			rows[i].Count = counts[keys[i]]
 		}
 	}
 	return sourcesView{Sources: rows, Exclude: slices.Clone(cfg.Exclude)}
+}
+
+// folderRow fills the state of a folder row and returns the expanded path to
+// count files under, or "" when the folder is not in the index right now.
+func (f *folderSettings) folderRow(r *sourceRow, applied []string) string {
+	ok, skipped := desktopconfig.NormalizeRoots([]string{r.Path}, f.home)
+	if len(ok) == 0 {
+		r.State, r.Note = stateMissing, strings.Join(skipped, "; ")
+		return ""
+	}
+	if !slices.Contains(applied, ok[0]) {
+		r.State, r.Note = stateIndexing, "папка снова доступна — войдет в индекс в ближайший проход"
+		return ""
+	}
+	r.State = stateOK
+	return ok[0]
+}
+
+// catalogRow fills the state of a catalog row: читается только первый
+// включенный каталог, остальные ждут слияния выдачи.
+func (f *folderSettings) catalogRow(r *sourceRow, current string) {
+	if r.Path != current {
+		r.State, r.Note = statePending, "читается только первый каталог списка"
+		return
+	}
+	n, err := f.countCatalog()
+	if err != nil {
+		r.State, r.Note = stateMissing, err.Error()
+		return
+	}
+	r.State, r.Count = stateOK, n
 }
 
 // SetSources validates the list, applies it and only then saves it.
@@ -137,7 +162,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err != nil {
 		return err
 	}
-	catalog, err := f.catalogFile(next.CatalogPath())
+	catalog, err := f.catalogFile(next.CatalogPath(), next.CatalogPath() == f.cfg.WithSources().CatalogPath())
 	if err != nil {
 		return err
 	}
@@ -154,8 +179,29 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if len(missing) > 0 {
 		log.Printf("files: папки без связи, не индексируются: %s", strings.Join(missing, "; "))
 	}
-	f.cfg = next
+	f.cfg, f.applied = next, roots
 	return nil
+}
+
+// reconcile reopens the folders when the set of enabled folders that can be
+// opened now differs from the one in the index: сохраненная папка вернулась
+// (VPN, диск). Зовется перед плановой пересборкой и при открытии экрана
+// источников. Пустой набор не применяется никогда: пропали все папки —
+// индекс остается прежним, а не затирается. Возвращает, применил ли.
+func (f *folderSettings) reconcile() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	roots, _ := desktopconfig.NormalizeRoots(f.cfg.WithSources().FolderRoots(), f.home)
+	if len(roots) == 0 || slices.Equal(roots, f.applied) {
+		return false
+	}
+	catalog := desktopconfig.ExpandHome(f.cfg.WithSources().CatalogPath(), f.home)
+	if err := f.apply(roots, f.cfg.Exclude, catalog); err != nil {
+		log.Printf("files: вернувшиеся папки не открылись: %v", err)
+		return false
+	}
+	f.applied = roots
+	return true
 }
 
 // openableFolders returns the enabled folders to open, and the ones already in
@@ -166,8 +212,19 @@ func (f *folderSettings) openableFolders(next desktopconfig.Config) (roots, miss
 		known[desktopconfig.ExpandHome(r, f.home)] = true
 	}
 	enabled := 0
+	seen := map[string]string{}
 	for _, s := range next.Sources {
-		if !s.Enabled || s.Kind != desktopconfig.KindFolder {
+		if s.Kind != desktopconfig.KindFolder {
+			continue
+		}
+		// Одна папка двумя записями (~/notes и /Users/x/notes) ушла бы в
+		// индекс и в MCP дважды — включенная или нет, это одна папка.
+		key := desktopconfig.ExpandHome(s.Path, f.home)
+		if prev, dup := seen[key]; dup {
+			return nil, nil, fmt.Errorf("%w: %s и %s — одна и та же папка", errBadFolder, prev, s.Path)
+		}
+		seen[key] = s.Path
+		if !s.Enabled {
 			continue
 		}
 		enabled++
@@ -184,17 +241,23 @@ func (f *folderSettings) openableFolders(next desktopconfig.Config) (roots, miss
 	if enabled == 0 {
 		return nil, nil, errNoFolders
 	}
-	roots = dedupeFold(roots, false)
+	if len(roots) == 0 {
+		// Включены только сохраненные, но сейчас недоступные папки: сохранение
+		// затерло бы индекс пустым.
+		return nil, nil, fmt.Errorf("%w: ни одна включенная папка сейчас недоступна", errNoFolders)
+	}
 	return roots, missing, checkNested(roots)
 }
 
-// catalogFile expands the catalog path and checks the file is there; "" — базы нет.
-func (f *folderSettings) catalogFile(path string) (string, error) {
+// catalogFile expands the catalog path and checks the file is there; "" — базы
+// нет. Сохраненный каталог (known), которого сейчас нет, не отказ — как и папка:
+// вкладка базы покажет ошибку чтения, пока файл не вернется.
+func (f *folderSettings) catalogFile(path string, known bool) (string, error) {
 	if path == "" {
 		return "", nil
 	}
 	path = desktopconfig.ExpandHome(path, f.home)
-	if info, err := os.Stat(path); err != nil || info.IsDir() {
+	if info, err := os.Stat(path); (err != nil && !known) || (err == nil && info.IsDir()) {
 		return "", fmt.Errorf("%w: %s", errBadCatalog, path)
 	}
 	return path, nil

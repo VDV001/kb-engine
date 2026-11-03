@@ -37,7 +37,12 @@ func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
 }
 
 // Sources returns the sources in priority order with their state and counts.
-func (a *App) Sources() sourcesView { return a.settings.GetSources() }
+// Открытие экрана заодно возвращает в индекс папки, что снова доступны, не
+// дожидаясь плановой пересборки.
+func (a *App) Sources() sourcesView {
+	a.settings.reconcile()
+	return a.settings.GetSources()
+}
 
 // SetSources validates and saves the sources, then reindexes in the background.
 func (a *App) SetSources(list []desktopconfig.Source, exclude []string) error {

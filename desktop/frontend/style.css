@@ -237,7 +237,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .folders .empty-row { color: var(--z-faint); font-style: italic; }
 .folders.chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px; }
 .folders.chips:empty { display: none; }
-.folders.chips li { border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 6px 3px 10px; }
+.folders.chips li { border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 6px 3px 10px; animation: none; } /* перерисовка черновика не мигает */
 .add-row { display: flex; gap: 8px; }
 .add-row input {
   flex: 1; min-width: 0; height: 32px; padding: 0 10px; font: 12px var(--z-font);
@@ -265,6 +265,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .src-row .handle, .src-row .prio, .src-row .who { grid-row: 1 / span 2; }
 .src-row .handle { color: var(--z-faint); cursor: grab; user-select: none; text-align: center; }
 .src-row .handle:active { cursor: grabbing; }
+.settings.busy .sources, .settings.busy .add, .settings.busy .chips { opacity: .55; transition: opacity var(--z-dur) var(--z-ease); }
 .src-row .prio { color: var(--z-faint); text-align: right; font-variant-numeric: tabular-nums; }
 .who { min-width: 0; display: grid; gap: 2px; }
 .who .name { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
