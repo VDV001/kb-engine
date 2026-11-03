@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -96,5 +97,44 @@ func TestClient_InfoRespectsContext(t *testing.T) {
 	_, err := kbserver.Client{URL: slow.URL, Token: token, HTTP: slow.Client()}.Info(ctx)
 	if !errors.Is(err, kbserver.ErrUnreachable) || time.Since(start) > 2*time.Second {
 		t.Fatalf("err = %v за %v", err, time.Since(start))
+	}
+}
+
+// Редирект не выполняется: Go пересылает Authorization на тот же хост и при
+// смене https на http — токен ушел бы открытым текстом мимо правила «http
+// только на этот Mac». Цель редиректа не получает ни одного запроса.
+func TestClient_RefusesRedirects(t *testing.T) {
+	var hits atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(target.Close)
+	redir := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusMovedPermanently)
+	}))
+	t.Cleanup(redir.Close)
+	if _, err := (kbserver.Client{URL: redir.URL, Token: token, HTTP: redir.Client()}).Info(context.Background()); err == nil {
+		t.Fatal("редирект принят")
+	}
+	if n := hits.Load(); n != 0 {
+		t.Fatalf("клиент пошел по редиректу: %d запросов к цели", n)
+	}
+}
+
+// Коды ответа различаются: настоящий kb-сервер с ошибкой (5xx, 429) — не «не
+// kb-сервер», а «сервер ответил ошибкой»; 403 — вопрос доступа, как 401.
+func TestClient_StatusMapping(t *testing.T) {
+	for code, want := range map[int]error{
+		http.StatusForbidden:           kbserver.ErrUnauthorized,
+		http.StatusTooManyRequests:     kbserver.ErrServerError,
+		http.StatusInternalServerError: kbserver.ErrServerError,
+		http.StatusBadGateway:          kbserver.ErrServerError,
+		http.StatusServiceUnavailable:  kbserver.ErrServerError,
+		http.StatusNotFound:            kbserver.ErrNotKB,
+	} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(code) }))
+		_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Info(context.Background())
+		srv.Close()
+		if !errors.Is(err, want) {
+			t.Errorf("%d: err = %v, want %v", code, err, want)
+		}
 	}
 }
