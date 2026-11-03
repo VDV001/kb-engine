@@ -15,9 +15,18 @@ dest="${KB_APPS_DIR:-$HOME/Applications}/kb.app"
 plist="$HOME/Library/LaunchAgents/$label.plist"
 domain="gui/$(id -u)"
 
+# xml escapes a value for the plist: путь с & или < иначе ломал XML, и
+# bootstrap падал уже после копирования (ревью #381).
+# sed, а не ${s//…}: в bash 5.2 «&» в замене означает найденный текст, и
+# «<» превращался в «<lt;».
+xml() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
 stop() {
   [[ -n "${KB_NO_LAUNCHD:-}" ]] && return
   launchctl bootout "$domain/$label" 2>/dev/null || true
+  # bootout возвращается раньше, чем launchd снимет сервис: bootstrap сразу
+  # после него падал с «Input/output error» (ревью #381). Ждем до 5 с.
+  for _ in $(seq 50); do launchctl print "$domain/$label" >/dev/null 2>&1 || break; sleep 0.1; done
   # Окно, запущенное руками, держит ⌥Space и индекс: останавливается и оно.
   pkill -f '/kb\.app/Contents/MacOS/kb$' 2>/dev/null || true
 }
@@ -53,15 +62,15 @@ cat > "$plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>Label</key><string>$label</string>
-  <key>ProgramArguments</key><array><string>$dest/Contents/MacOS/kb</string></array>
+  <key>ProgramArguments</key><array><string>$(xml "$dest/Contents/MacOS/kb")</string></array>
   <key>RunAtLoad</key><true/>
   <!-- Перезапуск только после падения: «Выйти из kb» завершает с кодом 0 и не перезапускается. -->
   <key>KeepAlive</key><dict><key>SuccessfulExit</key><false/></dict>
   <key>ProcessType</key><string>Interactive</string>
-  <key>StandardErrorPath</key><string>$HOME/Library/Logs/kb.log</string>
-  <key>StandardOutPath</key><string>$HOME/Library/Logs/kb.log</string>
+  <key>StandardErrorPath</key><string>$(xml "$HOME/Library/Logs/kb.log")</string>
+  <key>StandardOutPath</key><string>$(xml "$HOME/Library/Logs/kb.log")</string>
 </dict>
 </plist>
 PLIST
-launchctl bootstrap "$domain" "$plist"
+launchctl bootstrap "$domain" "$plist" || { sleep 1; launchctl bootstrap "$domain" "$plist"; }
 echo "kb: запускается при входе ($plist), лог — ~/Library/Logs/kb.log"

@@ -54,6 +54,11 @@ type indexer struct {
 	ext        extraction                        // распознавание PDF и картинок (extract.go)
 	extracting atomic.Bool                       // идет проход распознавания: второй не запускается
 	progress   atomic.Pointer[recognizeProgress] // nil — прохода нет
+	// retryTimeouts — пауза перед новой попыткой файла, на котором помощник
+	// не уложился в таймаут; timedOut — когда это случилось. Трогает только
+	// горутина прохода, а проходы не идут одновременно (extracting).
+	retryTimeouts time.Duration
+	timedOut      map[string]time.Time
 }
 
 // rebuildEvery — как часто окно догоняет диск, тот же срок, что у MCP: сборка
@@ -62,7 +67,8 @@ type indexer struct {
 const rebuildEvery = 10 * time.Minute
 
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
-	return &indexer{files: files, src: src, pending: src, ctx: context.Background(), every: rebuildEvery}
+	return &indexer{files: files, src: src, pending: src, ctx: context.Background(), every: rebuildEvery,
+		retryTimeouts: time.Hour, timedOut: map[string]time.Time{}}
 }
 
 // start runs the first build with the source the window started with.
@@ -74,6 +80,10 @@ func (x *indexer) start(ctx context.Context) {
 	x.run(src)
 	// Прежде индекс собирался только при старте и смене папок: файл,
 	// сохраненный после запуска окна, не находился до перезапуска.
+	//
+	// ponytail: свое расписание рядом с расписанием MCP (cmd/kbengine-mcp
+	// refresh), политики могут разойтись. Потолок: третья поверхность с
+	// пересборкой. Путь: общий планировщик в usecase/filesearch.
 	go func() {
 		t := time.NewTicker(every)
 		defer t.Stop()
@@ -157,6 +167,11 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 		log.Printf("files: %v", err)
 		if src != x.src {
 			_ = src.Close()
+			// Последним снова считается рабочий источник: иначе rerun по
+			// таймеру не запускался бы больше никогда (ревью #381).
+			if x.pending == src {
+				x.pending = x.src
+			}
 		}
 		if gen == x.gen {
 			x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
