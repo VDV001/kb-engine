@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.30.0] — 2026-11-04
+
 ### Added
 
 - **kb-сервер как источник окна: токен в Связке ключей, «Проверить» и живое состояние.** В форме
