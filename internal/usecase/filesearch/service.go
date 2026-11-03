@@ -71,6 +71,10 @@ func (s *Service) Build(ctx context.Context) (Stats, error) {
 // Replace builds a fresh index from src and, only if that succeeds, swaps both
 // the source and the index in. Так меняются папки в окне: до конца сборки
 // поиск отвечает по старому индексу, а при ошибке старый остается.
+//
+// ponytail: на время сборки в памяти два индекса — старый и новый. Потолок:
+// ~/git целиком (замер 03.11: 1,5 ГБ на один индекс). Путь: индекс на диске с
+// обновлением по mtime — тогда пересборка трогает только измененные файлы.
 func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 	ix := NewIndex()
 	var st Stats
@@ -87,7 +91,9 @@ func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 	if err != nil {
 		err = fmt.Errorf("walk files: %w", err)
 		s.mu.Lock()
-		s.buildErr = err // прежний индекс, если он был, продолжает отвечать
+		if s.ix == nil {
+			s.buildErr = err // отвечать нечем — причина дойдет до спрашивающего
+		} // иначе прежний индекс продолжает отвечать, и ошибка «индекса нет» была бы неправдой
 		s.mu.Unlock()
 		return st, err
 	}

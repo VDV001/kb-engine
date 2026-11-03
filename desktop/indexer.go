@@ -93,8 +93,12 @@ func (x *indexer) run(src *localfiles.Source) {
 			}
 		default:
 			log.Printf("files: indexed %d (skipped %d) in %s", st.Indexed, st.Skipped, time.Since(start).Round(time.Millisecond))
-			if x.src != nil && x.src != src {
-				_ = x.src.Close()
+			if old := x.src; old != nil && old != src {
+				// Не сразу: поиск и чтение, взявшие старый источник до подмены,
+				// должны успеть дочитать (ревью #372).
+				// ponytail: задержка вместо счетчика читателей. Потолок: чтение
+				// дольше минуты. Путь: счетчик ссылок на источник в Service.
+				time.AfterFunc(time.Minute, func() { _ = old.Close() })
 			}
 			x.src = src
 			if gen == x.gen {
