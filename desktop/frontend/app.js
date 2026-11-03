@@ -301,8 +301,13 @@ waitForIndex();
 const panel = $("#settings"), scrim = $("#scrim");
 const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер" };
 const HUES = ["--z-sp4", "--z-sp2", "--z-sp6", "--z-sp1", "--z-sp5", "--z-sp3"];
-const draft = { sources: [], exclude: [], saved: "" };
-const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null };
+// tokens — токены серверов, введенные в формах, до сохранения: id → {url,
+// token}. Токен привязан к адресу, для которого его ввели: на другой адрес он
+// не уходит ни при «Проверить», ни при сохранении.
+// Уходят в Go один раз при сохранении (в Связку ключей) и стираются; обратно
+// Go отдает только признак hasToken.
+const draft = { sources: [], exclude: [], tokens: {}, saved: "" };
+const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null, checkSeq: 0, adding: false, statesSeq: 0 };
 let keySeq = 0;
 
 const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
@@ -333,12 +338,25 @@ const payload = () => ({
   sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
   exclude: draft.exclude,
 });
-const dirty = () => JSON.stringify(payload()) !== draft.saved;
+// Токены только для серверов, которые еще в списке: убранный или отмененный
+// «Вернуть» сервер не должен нести токен в сохранение (Go отклонил бы весь список).
+const liveTokens = () => {
+  const out = {};
+  for (const s of draft.sources) {
+    const t = s.kind === "server" && draft.tokens[s.id];
+    if (t && t.url === s.url) out[s.id] = t.token;
+  }
+  return out;
+};
+// tokenFor — введенный в черновике токен сервера, но только для этого адреса.
+const tokenFor = (s, url) => { const t = s && draft.tokens[s.id]; return t && t.url === url ? t.token : ""; };
+const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(liveTokens()).length > 0;
 const byKey = (k) => draft.sources.find((s) => s._key === k);
 
 function load(v) {
   draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
+  draft.tokens = {};
   draft.saved = JSON.stringify(payload());
 }
 
@@ -370,7 +388,27 @@ async function openSettings() {
   renderSources();
   setTimeout(() => list.classList.remove("enter"), 500);
   $("#close-settings").focus();
+  loadServerStates();
 }
+// Состояние серверов приходит после списка: панель не ждет сеть. Сливается в
+// черновик по id — поля состояния в сохранение не входят и dirty не трогают.
+async function loadServerStates() {
+  if (!native() || !native().ServerStates) return;
+  const seq = ++ui.statesSeq;
+  let rows, failed = false;
+  try { rows = await native().ServerStates(); } catch { failed = true; }
+  if (seq !== ui.statesSeq) return; // поздний ответ прежнего открытия или сохранения
+  for (const s of draft.sources) {
+    if (s.kind !== "server") continue;
+    const r = (rows || []).find((x) => x.id === s.id);
+    // Состояние относится к сохраненному адресу: строке с уже другим адресом
+    // в черновике оно не подходит.
+    if (r && r.url === s.url) Object.assign(s, { state: r.state, count: r.count, note: r.note, hasToken: r.hasToken });
+    else if (s.state === "checking") Object.assign(s, { state: "missing", note: failed ? "состояние серверов не получено" : "" });
+  }
+  if (settingsOpen()) patchStates();
+}
+
 function closeSettings() {
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
@@ -388,11 +426,15 @@ function stateOf(s) {
   const note = s.note ? ` title="${esc(s.note)}"` : "";
   switch (s.state) {
     case "ok":
+      if (s.kind === "server")
+        return `<span class="state ok"${note}><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
       return s.kind === "folder"
         ? `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "файл", "файла", "файлов")}</span>`
         : `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
     case "indexing":
       return `<span class="state pending"${note}><span class="sdot"></span>индексируется</span>`;
+    case "checking":
+      return `<span class="state pending"><span class="sdot"></span>проверяется</span>`;
     case "missing":
       return `<span class="state missing"${note}><span class="sdot"></span>нет связи</span>`;
     default:
@@ -407,6 +449,7 @@ function formOf(s, i) {
     return `<div class="form">
       <div class="field"><label for="en-${s._key}">имя</label><input id="en-${s._key}" value="${esc(s.name || "")}" placeholder="${esc(label(s))}"></div>
       <div class="field"><label for="ea-${s._key}">${what}</label><input id="ea-${s._key}" value="${esc(target(s))}" spellcheck="false">${pick}</div>
+      ${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
       <div class="formbar"><button class="btn primary" data-save="${s._key}">Готово</button><button class="btn" data-cancel>Отмена</button></div></div>`;
   if (ui.replacing === s._key)
     return `<div class="form">
@@ -418,6 +461,16 @@ function formOf(s, i) {
       <button class="btn danger" data-dodel="${s._key}">Убрать</button><button class="btn" data-cancel>Оставить</button></div></div>`;
   return "";
 }
+
+// Поле токена: сам токен сюда не возвращается никогда — только «сохранен».
+const tokenField = (id, saved) =>
+  `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
+    placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}"></div>`;
+const checkBar = (key) => {
+  const v = ui.verdict && ui.verdict.key === key ? ui.verdict : null;
+  return `<div class="formbar"><button class="btn" data-check="${key}">Проверить</button>
+    <span class="check-verdict ${v ? v.state : ""}" role="status">${v ? esc(v.text) : "адрес и токен проверяются до сохранения"}</span></div>`;
+};
 
 function renderSources() {
   const n = draft.sources.length, hue = hues();
@@ -450,19 +503,35 @@ function renderSources() {
     form = `<div class="row"><input id="na" placeholder="~/…/knowledge-base/_data/catalog.json" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
       <span class="hint">читается первый включенный каталог списка</span>`;
   else if (ui.addKind === "server")
-    form = `<div class="row"><input id="na" placeholder="https://kb.example.ru" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
-      <span class="hint">http — только для этого Mac. Токен и проверка связи появятся с клиентом сервера, до тех пор источник хранится и не читается</span>`;
+    form = `<div class="field"><label for="na">адрес</label><input id="na" placeholder="https://kb.example.ru" spellcheck="false"></div>
+      ${tokenField("nt", false)}${checkBar("new")}
+      <div class="row"><button class="btn primary" data-addok>Подключить</button>
+      <span class="hint">http — только для этого Mac; токен уйдет в Связку ключей macOS, не в config.json</span></div>`;
   $("#add").innerHTML = `<div class="row"><span class="muted">+ источник</span><span class="seg" role="group" aria-label="Вид источника">${kinds}</span></div>${form}`;
 
   $("#excludes").innerHTML = draft.exclude.map((r, i) =>
     `<li><span class="path">${esc(r)}</span><button data-unex="${i}" aria-label="Убрать ${esc(r)}">✕</button></li>`).join("");
 
+  renderFooter();
+}
+
+function renderFooter() {
   const on = draft.sources.filter((s) => s.enabled);
   const lost = on.filter((s) => s.state === "missing" && s._orig === target(s)).length;
   $("#settings-note").innerHTML = dirty()
     ? `<span class="dirty">есть несохраненные изменения</span>`
-    : esc(`включено ${on.length} из ${n}` + (lost ? ` · без связи: ${lost}` : ""));
+    : esc(`включено ${on.length} из ${draft.sources.length}` + (lost ? ` · без связи: ${lost}` : ""));
   $("#save-settings").disabled = !native() || !dirty();
+}
+
+// patchStates обновляет только плашки состояния и подвал: полная перерисовка
+// стерла бы то, что человек набирает в формах, пока серверы отвечали.
+function patchStates() {
+  for (const s of draft.sources) {
+    const el = $(`.src-row[data-key="${s._key}"] .right .state`);
+    if (el) el.outerHTML = stateOf(s);
+  }
+  renderFooter();
 }
 
 function showError(msg) {
@@ -493,13 +562,14 @@ $("#toast").addEventListener("click", (e) => {
   renderSources();
 });
 
-// change снимает черновик до правки и отдает отмену для подсказки.
+// change снимает черновик до правки и отдает отмену для подсказки: и список,
+// и введенные токены — «Отменить» не оставляет токен от отмененной правки.
 function change(fn) {
-  const before = draft.sources.map((s) => ({ ...s }));
+  const before = draft.sources.map((s) => ({ ...s })), tokensBefore = { ...draft.tokens };
   fn();
   ui.editing = ui.replacing = ui.confirmDel = null;
   renderSources();
-  return () => { draft.sources = before; };
+  return () => { draft.sources = before; draft.tokens = tokensBefore; };
 }
 function move(key, d) {
   const i = draft.sources.findIndex((s) => s._key === key), j = i + d;
@@ -527,11 +597,35 @@ panel.addEventListener("click", async (e) => {
   if (d.edit) { ui.editing = d.edit; ui.replacing = ui.confirmDel = null; renderSources(); return focusSoon(`#en-${d.edit}`); }
   if (d.replace) { ui.replacing = d.replace; ui.editing = ui.confirmDel = null; renderSources(); return focusSoon(`#ra-${d.replace}`); }
   if (d.del) { ui.confirmDel = d.del; ui.editing = ui.replacing = null; renderSources(); return focusSoon(`[data-dodel="${d.del}"]`); }
-  if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = null; return renderSources(); }
+  if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = ui.verdict = null; return renderSources(); }
+  if (d.check) {
+    const isNew = d.check === "new", s = isNew ? null : byKey(d.check);
+    const url = (isNew ? $("#na") : $(`#ea-${s._key}`)).value.trim();
+    const tok = (isNew ? $("#nt") : $(`#et-${s._key}`)).value.trim() || tokenFor(s, url);
+    const typed = { url, tok, na: isNew ? $("#na").value : null, nt: isNew ? $("#nt").value : null,
+      name: isNew ? null : $(`#en-${s._key}`).value };
+    const seq = ++ui.checkSeq;
+    ui.verdict = { key: d.check, state: "wait", text: "проверяю…" };
+    renderAndKeep(d.check, typed);
+    let verdict;
+    try {
+      const info = await native().CheckServer(s ? s.id : "", url, tok);
+      verdict = { key: d.check, state: "ok", text: `● kbengine ${info.version} · ${fmt(info.entries)} ${plural(info.entries, "запись", "записи", "записей")}` };
+    } catch (err) {
+      verdict = { key: d.check, state: "bad", text: String(err).replace(/^Error: /, "") };
+    }
+    // Поздний ответ не пишет в закрытую или уже другую форму.
+    const open = isNew ? ui.addKind === "server" : ui.editing === d.check;
+    if (seq !== ui.checkSeq || !open) return;
+    ui.verdict = verdict;
+    return renderAndKeep(d.check, typed);
+  }
   if (d.save) {
     const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
     if (!v) return focusSoon(`#ea-${s._key}`);
-    const undo = change(() => { s.name = name; setTarget(s, v); });
+    const tok = s.kind === "server" ? $(`#et-${s._key}`).value.trim() : "";
+    ui.verdict = null;
+    const undo = change(() => { s.name = name; setTarget(s, v); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     return toast("Изменено", ` · «${label(s)}»`, undo);
   }
   if (d.doreplace) {
@@ -559,14 +653,53 @@ panel.addEventListener("click", async (e) => {
   if ("addok" in d) {
     const v = $("#na").value.trim();
     if (!v) return focusSoon("#na");
-    const s = { id: "", kind: ui.addKind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
+    if (ui.adding) return; // двойной клик через await добавил бы сервер дважды
+    const kind = ui.addKind;
+    // Поля читаются до ожидания: за время await форма может перерисоваться.
+    const tok = kind === "server" ? $("#nt").value.trim() : "";
+    const s = { id: "", kind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
     setTarget(s, v);
-    const undo = change(() => draft.sources.push(s));
+    if (kind === "server") {
+      ui.adding = true;
+      // id выдает Go сразу: к нему привязан токен в Связке ключей.
+      try { s.id = await native().NewSourceID("server"); }
+      catch (err) { ui.adding = false; return showError("Не удалось добавить сервер: " + err); }
+      ui.adding = false;
+      if (ui.addKind !== "server") return; // форму сменили, пока ждали
+      ui.verdict = null;
+    }
+    const undo = change(() => { draft.sources.push(s); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     ui.addKind = null;
     renderSources();
     return toast("Добавлен", ` · «${label(s)}», ${draft.sources.length}-й по приоритету`, undo);
   }
   if (d.unex !== undefined) { draft.exclude.splice(+d.unex, 1); return renderSources(); }
+});
+
+// Перерисовка во время проверки сохраняет то, что человек уже набрал в форме.
+function renderAndKeep(key, typed) {
+  renderSources();
+  if (key === "new") {
+    if ($("#na")) $("#na").value = typed.na;
+    if ($("#nt")) $("#nt").value = typed.nt;
+  } else {
+    const s = byKey(key);
+    if (s && $(`#en-${key}`) && typed.name != null) $(`#en-${key}`).value = typed.name;
+    if (s && $(`#ea-${key}`)) $(`#ea-${key}`).value = typed.url;
+    if (s && $(`#et-${key}`) && typed.tok !== tokenFor(s, typed.url)) $(`#et-${key}`).value = typed.tok;
+  }
+}
+
+// Адрес в форме правки сервера изменили — сохраненный токен ему не достанется
+// (при сохранении он удалится), подсказка поля токена говорит это сразу.
+panel.addEventListener("input", (e) => {
+  const m = e.target.id && e.target.id.match(/^ea-(.+)$/);
+  const s = m && byKey(m[1]);
+  const et = s && s.kind === "server" && $(`#et-${s._key}`);
+  if (!et) return;
+  et.placeholder = e.target.value.trim() !== s._orig
+    ? "новый адрес — введите токен для него (сохраненный удалится)"
+    : s.hasToken ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file";
 });
 
 // Enter в поле формы — главная кнопка этой формы.
@@ -639,7 +772,7 @@ $("#save-settings").onclick = async () => {
   try {
     // Проверку делает Go: новая папка обязана существовать, иначе отказ с ее
     // именем и без изменений — ни конфига, ни индекса.
-    await native().SetSources(p.sources, p.exclude);
+    await native().SetSources(p.sources, p.exclude, liveTokens());
   } catch (e) {
     setBusy(false);
     showError(String(e));
@@ -662,6 +795,7 @@ $("#save-settings").onclick = async () => {
     }
     load(await native().Sources()); // id новых источников и свежий счет
     renderSources();
+    loadServerStates();
     toast("Сохранено", " · " + $("#settings-note").textContent);
   } catch (e) {
     showError("Не удалось узнать статус индекса: " + e);

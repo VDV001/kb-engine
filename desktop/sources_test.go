@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 )
 
 type appliedSources struct {
@@ -49,6 +51,10 @@ func newSourcesSettings(t *testing.T) (*folderSettings, *appliedSources, string)
 			return m
 		},
 		countCatalog: func() (int, error) { return 42, nil },
+		tokens:       &fakeTokens{m: map[string]string{}},
+		probe: func(context.Context, string, string) (kbserver.Info, error) {
+			return kbserver.Info{}, kbserver.ErrUnreachable
+		},
 	}
 	return s, got, home
 }
@@ -74,7 +80,7 @@ func TestSetSources_SavesOrderAndApplies(t *testing.T) {
 		src("", desktopconfig.KindServer, "https://kb.example", true),
 	}
 	list[0].Name = "работа"
-	if err := s.SetSources(list, []string{" Finances "}); err != nil {
+	if err := s.SetSources(list, []string{" Finances "}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.roots, []string{filepath.Join(home, "work"), filepath.Join(home, "notes")}) ||
@@ -128,7 +134,7 @@ func TestSetSources_Rejects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, got, home := newSourcesSettings(t)
 			before, _ := os.ReadFile(s.path)
-			if err := s.SetSources(tt.list(home), nil); !errors.Is(err, tt.want) {
+			if err := s.SetSources(tt.list(home), nil, nil); !errors.Is(err, tt.want) {
 				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 			// Отказ ничего не меняет: ни индекс, ни конфиг.
@@ -147,7 +153,7 @@ func TestGetSources_States(t *testing.T) {
 		src("folder-2", desktopconfig.KindFolder, filepath.Join(home, "work"), false),
 		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
 		src("server-1", desktopconfig.KindServer, "https://kb.example", true),
-	}, []string{"finances"}); err != nil {
+	}, []string{"finances"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Папку удалили после сохранения: экран называет это, а не показывает «ок».
@@ -164,12 +170,13 @@ func TestGetSources_States(t *testing.T) {
 	for _, r := range v.Sources {
 		rows = append(rows, row{r.ID, r.State, r.Count})
 	}
-	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", statePending, 0}}
+	// Сервер GetSources не опрашивает (это делает ServerStates): «проверяется».
+	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", stateChecking, 0}}
 	if !slices.Equal(rows, want) || !slices.Equal(v.Exclude, []string{"finances"}) {
 		t.Fatalf("rows = %+v exclude = %q", rows, v.Exclude)
 	}
-	if v.Sources[1].Note == "" || v.Sources[3].Note == "" {
-		t.Fatalf("у пропавшей папки и сервера нет пояснения: %+v", v.Sources)
+	if v.Sources[1].Note == "" { // у сервера «проверяется» пояснения нет: ответа еще нет
+		t.Fatalf("у пропавшей папки нет пояснения: %+v", v.Sources)
 	}
 	s.cfg.Sources[0].Enabled = false
 	if r := s.GetSources().Sources[0]; r.State != stateOff {
@@ -205,7 +212,7 @@ func TestCatalogSwitch_FollowsPath(t *testing.T) {
 func TestSetSources_AllEnabledMissingIsRejected(t *testing.T) {
 	s, got, _ := newSourcesSettings(t)
 	gone := s.cfg.FolderRoots()[0] // ~/claude-cowork во временном доме отсутствует
-	err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, gone, true)}, nil)
+	err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, gone, true)}, nil, nil)
 	if !errors.Is(err, errNoFolders) || got.calls != 0 {
 		t.Fatalf("err = %v, apply calls = %d", err, got.calls)
 	}
@@ -219,7 +226,7 @@ func TestSetSources_KnownMissingCatalogIsKept(t *testing.T) {
 	err := s.SetSources([]desktopconfig.Source{
 		src("", desktopconfig.KindFolder, "~/notes", true),
 		src("catalog-1", desktopconfig.KindCatalog, cat, true),
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +239,7 @@ func TestSetSources_KnownMissingCatalogIsKept(t *testing.T) {
 // не «0 файлов».
 func TestGetSources_BeforeFirstBuild(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
-	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.countFiles = func([]string) map[string]int { return nil }
@@ -252,7 +259,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 	if err := s.SetSources([]desktopconfig.Source{
 		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
 		src("folder-2", desktopconfig.KindFolder, team, true),
-	}, nil); err != nil {
+	}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Диск отвалился, сохранили перестановку — папка вне индекса.
@@ -262,7 +269,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 	if err := s.SetSources([]desktopconfig.Source{
 		src("folder-2", desktopconfig.KindFolder, team, true),
 		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
-	}, nil); err != nil {
+	}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.roots, []string{filepath.Join(home, "notes")}) {
@@ -294,7 +301,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 // остается прежним, а не затирается.
 func TestReconcile_NeverAppliesEmpty(t *testing.T) {
 	s, got, home := newSourcesSettings(t)
-	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(filepath.Join(home, "notes"), filepath.Join(home, "notes.off")); err != nil {

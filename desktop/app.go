@@ -5,6 +5,7 @@ import (
 	"os/exec"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -45,8 +46,21 @@ func (a *App) Sources() sourcesView {
 }
 
 // SetSources validates and saves the sources, then reindexes in the background.
-func (a *App) SetSources(list []desktopconfig.Source, exclude []string) error {
-	return a.settings.SetSources(list, exclude)
+func (a *App) SetSources(list []desktopconfig.Source, exclude []string, tokens map[string]string) error {
+	return a.settings.SetSources(list, exclude, tokens)
+}
+
+// NewSourceID returns an id for a source the person is adding: к id сервера
+// привязан токен, и он нужен странице до сохранения списка.
+func (a *App) NewSourceID(kind string) string { return desktopconfig.NewID(desktopconfig.Kind(kind)) }
+
+// ServerStates returns the live state of the server sources; панель зовет его
+// после того, как нарисовала список.
+func (a *App) ServerStates() []sourceRow { return a.settings.ServerStates() }
+
+// CheckServer is the «Проверить» button of the server form.
+func (a *App) CheckServer(id, url, token string) (kbserver.Info, error) {
+	return a.settings.CheckServer(id, url, token)
 }
 
 // IndexStatus reports whether a build is running and how the last one went.

@@ -28,7 +28,7 @@ func TestSetSources_RejectsBadFolderWithoutSaving(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			s, got, _ := newSourcesSettings(t)
 			before, _ := os.ReadFile(s.path)
-			err := s.SetSources(withFolder(tc.path), nil)
+			err := s.SetSources(withFolder(tc.path), nil, nil)
 			if !errors.Is(err, errBadFolder) || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("err = %v, want errBadFolder with %q", err, tc.want)
 			}
@@ -53,7 +53,7 @@ func TestSetSources_UnreadableFolderIsRejectedBeforeSaving(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chmod(locked, 0o755) })
 	before, _ := os.ReadFile(s.path)
-	if err := s.SetSources(withFolder("~/locked"), nil); !errors.Is(err, errBadFolder) || !strings.Contains(err.Error(), "locked") {
+	if err := s.SetSources(withFolder("~/locked"), nil, nil); !errors.Is(err, errBadFolder) || !strings.Contains(err.Error(), "locked") {
 		t.Fatalf("err = %v", err)
 	}
 	if after, _ := os.ReadFile(s.path); string(before) != string(after) || got.calls != 0 {
@@ -65,7 +65,7 @@ func TestSetSources_ApplyFailureDoesNotSave(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
 	s.apply = func([]string, []string, string) error { return errors.New("open root: permission denied") }
 	before, _ := os.ReadFile(s.path)
-	if err := s.SetSources(withFolder("~/notes"), nil); err == nil {
+	if err := s.SetSources(withFolder("~/notes"), nil, nil); err == nil {
 		t.Fatal("ждали ошибку применения")
 	}
 	if after, _ := os.ReadFile(s.path); string(before) != string(after) {
@@ -78,7 +78,7 @@ func TestSetSources_NestedFolderIsNamed(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(home, "notes", "inner"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	err := s.SetSources(append(withFolder("~/notes"), src("", desktopconfig.KindFolder, "~/notes/inner", true)), nil)
+	err := s.SetSources(append(withFolder("~/notes"), src("", desktopconfig.KindFolder, "~/notes/inner", true)), nil, nil)
 	if !errors.Is(err, errBadFolder) || !strings.Contains(err.Error(), "inner") {
 		t.Fatalf("вложенная папка: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestSetSources_NestedFolderIsNamed(t *testing.T) {
 
 func TestSetSources_ExcludesDedupeIgnoringCase(t *testing.T) {
 	s, got, _ := newSourcesSettings(t)
-	if err := s.SetSources(withFolder("~/notes"), []string{"finances", "Finances", " FINANCES ", ""}); err != nil {
+	if err := s.SetSources(withFolder("~/notes"), []string{"finances", "Finances", " FINANCES ", ""}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.exclude, []string{"finances"}) {
@@ -104,7 +104,7 @@ func TestSetSources_KnownMissingFolderIsKept(t *testing.T) {
 		src("folder-1", desktopconfig.KindFolder, gone, true),
 		src("", desktopconfig.KindFolder, "~/notes", true),
 	}
-	if err := s.SetSources(list, nil); err != nil {
+	if err := s.SetSources(list, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.roots, []string{filepath.Join(home, "notes")}) {

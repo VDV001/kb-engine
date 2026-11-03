@@ -35,7 +35,10 @@ type sourceRow struct {
 	desktopconfig.Source
 	State string `json:"state"`
 	Count int    `json:"count"`
-	Note  string `json:"note,omitempty"`
+	// HasToken — для сервера: токен лежит в Связке ключей. Сам токен на
+	// страницу не уходит никогда.
+	HasToken bool   `json:"hasToken,omitempty"`
+	Note     string `json:"note,omitempty"`
 }
 
 // sourcesView is what the sources screen shows and sends back.
@@ -58,6 +61,9 @@ type folderSettings struct {
 	// записи текущего каталога.
 	countFiles   func(roots []string) map[string]int
 	countCatalog func() (int, error)
+	// tokens и probe — Связка ключей и опрос kb-сервера (servers.go).
+	tokens tokenStore
+	probe  probeFunc
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string
@@ -88,7 +94,7 @@ func (f *folderSettings) GetSources() sourcesView {
 		case s.Kind == desktopconfig.KindCatalog:
 			f.catalogRow(r, cfg.CatalogPath())
 		case s.Kind == desktopconfig.KindServer:
-			r.State, r.Note = statePending, "клиент сервера появится в следующей версии"
+			r.State = stateChecking // состояние догружает ServerStates
 		default:
 			r.State, r.Note = statePending, "вид источника из более новой версии kb"
 		}
@@ -148,7 +154,7 @@ func (f *folderSettings) catalogRow(r *sourceRow, current string) {
 // Новая или измененная папка обязана существовать — так ловится опечатка.
 // Папка, что уже была в конфиге, может временно пропасть (сетевой диск без
 // VPN): она остается в списке «нет связи» и не мешает переставить соседей.
-func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []string) error {
+func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []string, tokens map[string]string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	next := f.cfg
@@ -168,10 +174,18 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	}
 	next.Exclude = dedupeFold(exclude, true)
 
+	// Токены — до apply: отказ Связки ключей не должен оставить индекс на новых
+	// источниках при старом конфиге. Откат токенов — при любом отказе дальше.
+	undoTokens, err := f.storeTokens(next, tokens)
+	if err != nil {
+		return err
+	}
 	if err := f.apply(roots, next.Exclude, catalog); err != nil {
+		undoTokens()
 		return fmt.Errorf("%w: %w", errBadFolder, err)
 	}
 	if err := desktopconfig.Write(f.path, next); err != nil {
+		undoTokens()
 		// Индекс уже на новых источниках, а конфиг нет: окно работает, но
 		// следующий запуск вернется к прежним. Говорим об этом прямо.
 		return fmt.Errorf("источники применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
@@ -179,6 +193,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if len(missing) > 0 {
 		log.Printf("files: папки без связи, не индексируются: %s", strings.Join(missing, "; "))
 	}
+	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
 	return nil
 }
