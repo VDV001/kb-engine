@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFilesSearch(t *testing.T) {
@@ -53,6 +54,11 @@ func TestFilesNeedsRootAndQuery(t *testing.T) {
 func TestFilesSearch_ReusesStoredIndex(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("договор"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Файл старше прошлой сборки: свежий перечитывался бы по правилу racy-clean.
+	hourAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(root, "plan.md"), hourAgo, hourAgo); err != nil {
 		t.Fatal(err)
 	}
 	index := filepath.Join(t.TempDir(), "index.gob")

@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
@@ -49,6 +50,7 @@ func (s Store) Save(snap filesearch.Snapshot) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
+	removeStaleTemps(dir)
 	tmp, err := os.CreateTemp(dir, ".index-*.gob") // CreateTemp создает с 0600
 	if err != nil {
 		return err
@@ -63,8 +65,38 @@ func (s Store) Save(snap filesearch.Snapshot) error {
 		_ = tmp.Close()
 		return err
 	}
+	// Sync до rename: без него после сбоя питания на месте index.gob может
+	// оказаться пустой файл, и обещание «прерванная запись не портит прежний»
+	// не держится (ревью #374).
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	return os.Rename(tmp.Name(), s.Path)
+}
+
+// staleTempAge — временные файлы старше часа оставил убитый процесс: живая
+// запись столько не длится. Каждый такой файл весит как весь индекс.
+const staleTempAge = time.Hour
+
+func removeStaleTemps(dir string) {
+	matches, _ := filepath.Glob(filepath.Join(dir, ".index-*.gob"))
+	for _, m := range matches {
+		if info, err := os.Stat(m); err == nil && time.Since(info.ModTime()) > staleTempAge {
+			_ = os.Remove(m) // не удалось — уберет следующая запись
+		}
+	}
+}
+
+// Option returns the service option that keeps the index at path; an empty
+// path keeps it in memory only. Одна точка подключения для команд и окна:
+// правила хранения не разойдутся (ревью #374).
+func Option(path string) filesearch.Option {
+	if path == "" {
+		return filesearch.WithStore(nil)
+	}
+	return filesearch.WithStore(Store{Path: path})
 }

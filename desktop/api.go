@@ -54,11 +54,7 @@ func newAPI(cfg config, indexPath string) (http.Handler, *indexer, error) {
 	}
 	// Снимок индекса рядом с config.json: со второго запуска перечитываются только
 	// измененные файлы. Пустой путь — индекс только в памяти (тесты).
-	var opts []filesearch.Option
-	if indexPath != "" {
-		opts = append(opts, filesearch.WithStore(fileindexgob.Store{Path: indexPath}))
-	}
-	files := filesearch.NewService(src, opts...)
+	files := filesearch.NewService(src, fileindexgob.Option(indexPath))
 
 	var loader catalogLoader = emptyCatalog{}
 	if cfg.Catalog != "" {

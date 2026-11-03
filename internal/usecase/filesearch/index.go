@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -78,12 +79,22 @@ func isCyrillic(word string) bool {
 // is matched on.
 func terms(text string) []string {
 	toks := Tokens(text)
+	for i, t := range toks {
+		toks[i] = Stem(t)
+	}
+	return toks
+}
+
+// contentTerms — основы содержимого файла без идентификаторов. Отсев только
+// здесь: имя файла и запрос человек пишет сам, и «invoice20261103» в имени
+// обязан находиться (ревью #374).
+func contentTerms(text string) []string {
+	toks := Tokens(text)
 	out := toks[:0]
 	for _, t := range toks {
-		if isIdentifier(t) {
-			continue
+		if !isIdentifier(t) {
+			out = append(out, Stem(t))
 		}
-		out = append(out, Stem(t))
 	}
 	return out
 }
@@ -95,12 +106,19 @@ func terms(text string) []string {
 //
 // ponytail: эвристика по форме. Потолок: артикул «abc12345» тоже отсеется.
 // Путь: оставлять смеси, которые встретились в двух и более файлах.
+// Пороги отсева входят в отпечаток правил снимка: поменяешь их — снимок
+// соберется заново.
+const (
+	idMixedRunes = 8
+	idMaxRunes   = 32
+)
+
 func isIdentifier(t string) bool {
 	n := len([]rune(t))
-	if n > 32 {
+	if n > idMaxRunes {
 		return true
 	}
-	if n < 8 {
+	if n < idMixedRunes {
 		return false
 	}
 	var letters, digits bool
@@ -126,6 +144,7 @@ type Hit struct {
 type Index struct {
 	docs     []domain.FileDoc
 	postings map[string][]Posting // основа -> файлы, где она встретилась
+	builtAt  time.Time            // когда собран: файлы моложе этого перечитываются
 }
 
 // Posting — файл и сколько раз в нем встретилась основа. 8 байт вместо записи
@@ -145,7 +164,7 @@ func NewIndex() *Index {
 func (ix *Index) Add(doc domain.FileDoc, text string) {
 	id := ix.addDoc(doc)
 	counts := map[string]uint32{}
-	for _, t := range append(terms(doc.Name()), terms(text)...) {
+	for _, t := range append(terms(doc.Name()), contentTerms(text)...) {
 		counts[t]++
 	}
 	for t, tf := range counts {

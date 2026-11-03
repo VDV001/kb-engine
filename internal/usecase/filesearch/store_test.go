@@ -65,7 +65,8 @@ func (m *memStore) Save(s filesearch.Snapshot) error {
 	return nil
 }
 
-var t0 = time.Date(2026, 11, 3, 10, 0, 0, 0, time.UTC)
+// t0 заведомо в прошлом: файлы моложе прошлой сборки перечитываются (racy-clean).
+var t0 = time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
 
 func TestService_RebuildReadsOnlyChangedFiles(t *testing.T) {
 	store := &memStore{}

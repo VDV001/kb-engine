@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -39,8 +40,9 @@ type Source interface {
 // Stats reports what a build did.
 type Stats struct {
 	Indexed int
-	Skipped int // файлы, текст которых прочитать не удалось
-	Reused  int // файлы, взятые из прошлого индекса без чтения: не менялись
+	Skipped int    // файлы, текст которых прочитать не удалось
+	Reused  int    // файлы, взятые из прошлого индекса без чтения: не менялись
+	Warning string // почему снимок не пригодился (не прочитан, отклонен); пусто — все штатно
 }
 
 // ErrSaveFailed is returned when the index was built and swapped in but could
@@ -68,7 +70,8 @@ func WithStore(st Store) Option { return func(s *Service) { s.store = st } }
 // целиком под замком, поиск никогда не видит наполовину собранный.
 type Service struct {
 	src   Source
-	store Store // nil — индекс живет только в памяти
+	store Store            // nil — индекс живет только в памяти
+	now   func() time.Time // часы снаружи: тесты и сборка решают, что «свежий файл»
 
 	mu       sync.RWMutex
 	ix       *Index
@@ -78,7 +81,7 @@ type Service struct {
 
 // NewService returns a service reading through src.
 func NewService(src Source, opts ...Option) *Service {
-	s := &Service{src: src}
+	s := &Service{src: src, now: time.Now}
 	for _, o := range opts {
 		o(s)
 	}
@@ -105,27 +108,13 @@ func (s *Service) Build(ctx context.Context) (Stats, error) {
 // ~/git целиком (замер 03.11: ~1 ГБ на 40 тыс. файлов). Путь: сегменты на диске
 // с mmap вместо индекса целиком в памяти.
 func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
-	prev := s.previous()
-	byPath := prev.byPath()
-	ix := NewIndex()
-	oldToNew := map[int32]int32{}
-	var st Stats
-	err := src.Walk(ctx, func(d domain.FileDoc) error {
-		if old, ok := byPath[d.Path()]; ok && sameFile(prev.docs[old], d) {
-			oldToNew[old] = ix.addDoc(d)
-			st.Reused++
-			st.Indexed++
-			return nil
-		}
-		text, err := src.ReadText(d.Path())
-		if err != nil {
-			st.Skipped++
-			return nil
-		}
-		ix.Add(d, text)
-		st.Indexed++
-		return nil
-	})
+	prev, warning := s.previous()
+	b := builder{prev: prev, byPath: prev.byPath(), ix: NewIndex(), oldToNew: map[int32]int32{}, seen: map[string]bool{}}
+	b.ix.builtAt = s.now()
+	b.st.Warning = warning
+	err := src.Walk(ctx, func(d domain.FileDoc) error { return b.visit(src, d) })
+	st := b.st
+	ix := b.ix
 	if err != nil {
 		err = fmt.Errorf("walk files: %w", err)
 		s.mu.Lock()
@@ -135,11 +124,13 @@ func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 		s.mu.Unlock()
 		return st, err
 	}
-	ix.carryOver(prev, oldToNew)
+	ix.carryOver(prev, b.oldToNew)
 	s.mu.Lock()
 	s.src, s.ix, s.stats, s.buildErr = src, ix, st, nil
 	s.mu.Unlock()
-	if s.store != nil {
+	// Без изменений снимок не переписывается: это ~100 МБ на каждый запуск.
+	unchanged := prev != nil && st.Reused == st.Indexed && len(prev.docs) == st.Indexed
+	if s.store != nil && !unchanged {
 		if err := s.store.Save(ix.Snapshot()); err != nil {
 			return st, fmt.Errorf("%w: %w", ErrSaveFailed, err)
 		}
@@ -147,31 +138,73 @@ func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 	return st, nil
 }
 
+// racyWindow — файлы, измененные позже, чем за столько до прошлой сборки,
+// перечитываются: на ФС с грубым mtime (HFS+, FAT, SMB — до 2 с) файл мог быть
+// сохранен второй раз с тем же размером и тем же временем (как racy-clean в git).
+const racyWindow = 2 * time.Second
+
+// builder holds one build's state: what is reused from prev and what is read.
+type builder struct {
+	prev     *Index
+	byPath   map[string]int32
+	ix       *Index
+	oldToNew map[int32]int32
+	seen     map[string]bool // пересекающиеся корни дают тот же путь дважды
+	st       Stats
+}
+
+func (b *builder) visit(src Source, d domain.FileDoc) error {
+	if b.seen[d.Path()] {
+		return nil
+	}
+	b.seen[d.Path()] = true
+	if old, ok := b.byPath[d.Path()]; ok && b.reusable(b.prev.docs[old], d) {
+		b.oldToNew[old] = b.ix.addDoc(d)
+		b.st.Reused++
+		b.st.Indexed++
+		return nil
+	}
+	text, err := src.ReadText(d.Path())
+	if err != nil {
+		b.st.Skipped++
+		return nil
+	}
+	b.ix.Add(d, text)
+	b.st.Indexed++
+	return nil
+}
+
+// reusable reports whether a walked file is the one recorded before: same size
+// and modification time, and old enough not to be racy. Содержимое не
+// сравнивается — для этого его пришлось бы прочитать, а экономия в том, чтобы
+// не читать.
+func (b *builder) reusable(old, now domain.FileDoc) bool {
+	return old.Size() == now.Size() && old.ModTime().Equal(now.ModTime()) &&
+		now.ModTime().Before(b.prev.builtAt.Add(-racyWindow))
+}
+
 // previous returns the index to reuse files from: the one in memory, or the
-// stored one on the first build. Битый или чужой снимок — просто полная сборка.
-func (s *Service) previous() *Index {
+// stored one on the first build. Битый или чужой снимок — полная сборка, но
+// не молча: причина уходит в Stats.Warning (ревью #374).
+func (s *Service) previous() (*Index, string) {
 	s.mu.RLock()
 	ix := s.ix
 	s.mu.RUnlock()
 	if ix != nil || s.store == nil {
-		return ix
+		return ix, ""
 	}
 	snap, ok, err := s.store.Load()
-	if err != nil || !ok {
-		return nil
+	if err != nil {
+		return nil, "снимок индекса не прочитан, полная сборка: " + err.Error()
+	}
+	if !ok {
+		return nil, ""
 	}
 	ix, err = IndexFromSnapshot(snap)
 	if err != nil {
-		return nil
+		return nil, "снимок индекса отклонен, полная сборка: " + err.Error()
 	}
-	return ix
-}
-
-// sameFile reports whether a walked file is the one recorded before: same
-// size and modification time. Содержимое не сравнивается — для этого его
-// пришлось бы прочитать, а экономия именно в том, чтобы не читать.
-func sameFile(old, now domain.FileDoc) bool {
-	return old.Size() == now.Size() && old.ModTime().Equal(now.ModTime())
+	return ix, ""
 }
 
 // Stats returns what the last successful build did.

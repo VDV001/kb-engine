@@ -46,6 +46,9 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 	}
 	start := time.Now()
 	st, err := svc.Build(context.Background())
+	if st.Warning != "" {
+		fmt.Fprintf(stderr, "files: %s\n", st.Warning)
+	}
 	if errors.Is(err, filesearch.ErrSaveFailed) {
 		fmt.Fprintf(stderr, "files: %v\n", err) // поиск работает, снимок не записан
 	} else if err != nil {
@@ -87,9 +90,5 @@ func newFileService(roots, exclude []string, indexPath string) (*filesearch.Serv
 	if err != nil {
 		return nil, err
 	}
-	var opts []filesearch.Option
-	if indexPath != "" {
-		opts = append(opts, filesearch.WithStore(fileindexgob.Store{Path: indexPath}))
-	}
-	return filesearch.NewService(src, opts...), nil
+	return filesearch.NewService(src, fileindexgob.Option(indexPath)), nil
 }

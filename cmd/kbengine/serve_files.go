@@ -42,6 +42,9 @@ func filesOption(ctx context.Context, roots, exclude []string, indexPath string,
 	go func() {
 		start := time.Now()
 		st, err := svc.Build(ctx)
+		if st.Warning != "" {
+			fmt.Fprintf(log, "files: %s\n", st.Warning)
+		}
 		if errors.Is(err, filesearch.ErrSaveFailed) {
 			fmt.Fprintf(log, "files: %v\n", err) // поиск работает, снимок не записан
 			err = nil

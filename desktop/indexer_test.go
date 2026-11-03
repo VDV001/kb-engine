@@ -67,6 +67,11 @@ func TestIndexer_KeepsIndexOnDisk(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("договор"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Файл старше прошлой сборки: свежий перечитывался бы по правилу racy-clean.
+	hourAgo := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(filepath.Join(root, "a.md"), hourAgo, hourAgo); err != nil {
+		t.Fatal(err)
+	}
 	index := filepath.Join(t.TempDir(), "index.gob")
 	_, x, err := newAPI(config{Roots: []string{root}}, index)
 	if err != nil {

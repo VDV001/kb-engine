@@ -82,6 +82,9 @@ func (x *indexer) run(src *localfiles.Source) {
 		}
 		start := time.Now()
 		st, err := x.files.Replace(ctx, src)
+		if st.Warning != "" {
+			log.Printf("files: %s", st.Warning)
+		}
 		if errors.Is(err, filesearch.ErrSaveFailed) {
 			log.Printf("files: %v", err) // индекс подменен и работает, не записан только снимок
 			err = nil
