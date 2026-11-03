@@ -196,4 +196,34 @@ func TestService_BuildAndSearch(t *testing.T) {
 	if len(hits) != 1 || hits[0].Doc.Path() != "/w/a.md" || hits[0].Snippet != "Подписали договора" {
 		t.Fatalf("hits = %+v", hits)
 	}
+	if got := svc.Stats(); got != st {
+		t.Fatalf("Stats() = %+v, want %+v", got, st)
+	}
+	if text, err := svc.Read("/w/b.md"); err != nil || text != "другое" {
+		t.Fatalf("Read = %q, %v", text, err)
+	}
+}
+
+func TestService_SearchDuringRebuild(t *testing.T) {
+	// Окно и MCP ищут, пока индекс пересобирается: гонка тут ловится -race.
+	src := fakeSource{files: map[string]string{"/w/a.md": "договор"}}
+	svc := filesearch.NewService(src)
+	if _, err := svc.Build(); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for range 20 {
+			if _, err := svc.Build(); err != nil {
+				t.Error(err)
+			}
+		}
+	}()
+	for range 20 {
+		if _, err := svc.Search("договор", 5); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-done
 }
