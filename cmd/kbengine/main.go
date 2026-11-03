@@ -353,7 +353,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "serve: --from needs --ledger (the workbook holds account balances; the rows come from the ledger)")
 		return 2
 	}
-	token, tlsCfg, err := serveAccess(*addr, *tokenFile, *tlsCert, *tlsKey, *allowOpen)
+	token, tlsCfg, err := serveAccess(*addr, *pprofAddr, *tokenFile, *tlsCert, *tlsKey, *allowOpen)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2

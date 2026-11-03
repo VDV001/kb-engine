@@ -141,7 +141,12 @@ broken link simply does not draw.
 token **and** TLS, or the server refuses to start: without the token anyone on the
 network reads the catalog (and, with `--ledger`, the finances); without TLS the token
 crosses the network in clear text. With `--token-file` every request, pages and
-`/metrics` included, needs `Authorization: Bearer <token>` and gets 401 otherwise.
+`/metrics` included, needs `Authorization: Bearer <token>` and gets 401 otherwise;
+`/healthz` and `/readyz` stay open for probes and return no data. The token is for API
+clients — the kb-desktop window and the MCP server. A browser cannot send it, so with a
+token the web dashboard is reached through an SSH tunnel to the loopback address
+(`ssh -L 8080:127.0.0.1:8080 host`) rather than over the network. `--pprof` is refused
+on anything but loopback: heap dumps carry the token and the data.
 
 The token is read from a file, never a flag (a flag's value shows in `ps`). The file
 must be readable by its owner only, and the token at least 32 characters:
@@ -164,7 +169,9 @@ plist in `~/Library/LaunchAgents` with these arguments and `KeepAlive`.
 
 **On a VPS or in Yandex Cloud, behind a reverse proxy.** The proxy holds the
 certificate (Caddy gets one from Let's Encrypt by itself); `serve` stays on loopback
-and still checks the token:
+and still checks the token. **The token is the only guard here**: the server cannot see
+the proxy, so `serve` without `--token-file` behind a public proxy serves the catalog (and,
+with `--ledger`, the finances) to anyone — the startup line says `token off`:
 
 ```sh
 kbengine serve --catalog /srv/kb/catalog.json --addr 127.0.0.1:8080 \
@@ -275,12 +282,12 @@ The catalog is runtime data, so mount it and pass `--catalog`:
 
 ```sh
 # Pull a released multi-arch image from GHCR...
-docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
+docker run --rm -p 127.0.0.1:8080:8080 -v "$PWD/data:/data:ro" \
   ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json --addr :8080 --allow-open
 
 # ...or build it locally:
 just docker
-docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
+docker run --rm -p 127.0.0.1:8080:8080 -v "$PWD/data:/data:ro" \
   kbengine:dev serve --catalog /data/catalog.json --addr :8080 --allow-open
 ```
 

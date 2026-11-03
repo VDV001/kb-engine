@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -11,12 +12,14 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
 
 // Отказы при запуске serve: печатаются и останавливают процесс до того, как
 // открыт порт.
 var (
 	errTokenPerms     = errors.New("файл токена читают не только владелец: нужны права 0600")
+	errTokenOwner     = errors.New("файл токена принадлежит другому пользователю")
 	errTokenWeak      = errors.New("токен короче 32 символов или с пробелами")
 	errExposedNoToken = errors.New("адрес открыт в сеть без токена: нужен --token-file")
 	errExposedNoTLS   = errors.New("адрес открыт в сеть без TLS: токен ушел бы открытым текстом, нужны --tls-cert и --tls-key (или слушать 127.0.0.1 за прокси с TLS)")
@@ -30,14 +33,21 @@ const minTokenLen = 32
 // readTokenFile reads the bearer token. Токен в файле, а не во флаге: значение
 // флага видно любому в ps. Файл, который читают группа или все, — отказ.
 func readTokenFile(path string) (string, error) {
-	info, err := os.Stat(path)
+	// Права проверяются у открытого файла, а не по пути: между проверкой пути
+	// и чтением его можно подменить (TOCTOU).
+	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return "", fmt.Errorf("%w (%s: %v)", errTokenPerms, path, info.Mode().Perm())
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return "", err
 	}
-	raw, err := os.ReadFile(path)
+	if err := tokenFileMode(info); err != nil {
+		return "", fmt.Errorf("%w (%s)", err, path)
+	}
+	raw, err := io.ReadAll(io.LimitReader(f, 4096))
 	if err != nil {
 		return "", err
 	}
@@ -58,10 +68,7 @@ func checkExposure(addr string, token, tls, open bool) error {
 	if err != nil {
 		return fmt.Errorf("%w: %q", errBadAddr, addr)
 	}
-	if open || host == "localhost" {
-		return nil
-	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	if open || loopback.Host(host) {
 		return nil
 	}
 	if !token {
@@ -76,7 +83,14 @@ func checkExposure(addr string, token, tls, open bool) error {
 // serveAccess reads the token and the TLS pair and checks the address against
 // them — все отказы до того, как открыт порт. Пара грузится здесь, а не в
 // ListenAndServeTLS: иначе битый сертификат всплывал бы после строки «serving».
-func serveAccess(addr, tokenFile, certFile, keyFile string, allowOpen bool) (string, *tls.Config, error) {
+func serveAccess(addr, pprofAddr, tokenFile, certFile, keyFile string, allowOpen bool) (string, *tls.Config, error) {
+	// Профилировщик отдает дампы памяти — в них и токен, и данные базы. Он
+	// идет мимо токена и TLS, поэтому только на этом Mac, при любом --allow-open.
+	if pprofAddr != "" {
+		if host, _, err := net.SplitHostPort(pprofAddr); err != nil || !loopback.Host(host) {
+			return "", nil, fmt.Errorf("--pprof %s: профилировщик только на этом Mac (127.0.0.1:порт)", pprofAddr)
+		}
+	}
 	if (certFile == "") != (keyFile == "") {
 		return "", nil, errors.New("--tls-cert and --tls-key go together")
 	}
