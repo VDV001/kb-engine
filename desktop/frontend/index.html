@@ -17,7 +17,7 @@
       <div class="big" id="indexing-count">0</div>
       <div class="indexing-bar"><span></span></div>
       <div class="muted" id="indexing-note">Только при запуске. Потом поиск мгновенный.</div>
-      <button class="btn primary" id="indexing-settings" hidden>Выбрать папки</button>
+      <button class="btn primary" id="indexing-settings" hidden>Источники</button>
     </div>
   </section>
 
@@ -34,9 +34,9 @@
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
       <div class="cell">
-        <button class="gear" id="open-settings" title="Папки для поиска (⌘,)" aria-label="Папки для поиска">
+        <button class="gear" id="open-settings" title="Источники (⌘,)" aria-label="Источники">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>
-          <span>папки</span>
+          <span>источники</span>
         </button>
       </div>
     </header>
@@ -64,39 +64,37 @@
     </div>
   </main>
 
-  <!-- Папки для поиска. Меняются только в окне: в браузере (dev-режим) панель
-       только объясняет это — менять папки через HTTP нельзя намеренно. -->
+  <!-- Источники: папки, каталог базы, kb-серверы. Меняются только в окне: в
+       браузере (dev-режим) панель только объясняет это — менять источники
+       через HTTP нельзя намеренно. -->
   <div class="scrim" id="scrim" hidden></div>
-  <aside class="settings" id="settings" aria-hidden="true">
+  <aside class="settings" id="settings" aria-hidden="true" aria-labelledby="settings-title">
     <div class="settings-head">
       <div>
-        <div class="prompt"><span class="dollar">$</span> kb config folders</div>
-        <h2>Папки для поиска</h2>
+        <div class="prompt"><span class="dollar">$</span> kb config sources</div>
+        <h2 id="settings-title">Источники</h2>
       </div>
       <button class="close" id="close-settings" aria-label="Закрыть">✕</button>
     </div>
-    <p class="muted">Что индексировать на этом компьютере. Секреты (.env, ключи) и служебные папки пропускаются всегда.</p>
+    <p class="muted">Откуда искать. Порядок — приоритет: при равной релевантности выше в выдаче тот, кто выше в списке. Перетащите <b>⠿</b> или нажмите ↑↓. Секреты (.env, ключи) и служебные папки пропускаются всегда.</p>
 
-    <ul class="folders" id="roots"></ul>
-    <div class="add-row">
-      <button class="btn primary" id="pick">Выбрать папку…</button>
-      <input id="root-input" placeholder="или путь: ~/Documents" spellcheck="false" autocomplete="off">
-      <button class="btn" id="add-root">Добавить</button>
-    </div>
+    <ol class="sources" id="sources"></ol>
+    <div class="add" id="add"></div>
 
-    <h3>Не заходить в папки</h3>
+    <h3>Не заходить в папки — во всех источниках</h3>
     <ul class="folders chips" id="excludes"></ul>
     <div class="add-row">
       <input id="exclude-input" placeholder="имя папки, например finances" spellcheck="false" autocomplete="off">
       <button class="btn" id="add-exclude">Добавить</button>
     </div>
 
-    <p class="settings-error" id="settings-error" hidden></p>
+    <p class="settings-error" id="settings-error" role="alert" hidden></p>
     <div class="settings-foot">
       <span class="muted" id="settings-note"></span>
-      <button class="btn primary" id="save-settings">Сохранить и переиндексировать</button>
+      <button class="btn primary" id="save-settings" disabled>Сохранить и переиндексировать</button>
     </div>
   </aside>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script src="app.js"></script>
 </body>

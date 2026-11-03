@@ -78,7 +78,8 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	idx.start(ctx)
-	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, apply: idx.apply}
+	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg,
+		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count}
 
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс
 	// правится без пересборки .app, и его можно проверить Playwright'ом.

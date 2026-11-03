@@ -265,7 +265,7 @@ function showEmpty() {
 
 // --- Клавиатура ----------------------------------------------------------------
 document.addEventListener("keydown", (e) => {
-  if (settingsOpen()) return; // клавиши поиска не трогают панель папок
+  if (settingsOpen()) return; // клавиши поиска не трогают панель источников
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
@@ -294,11 +294,44 @@ document.fonts.ready.then(moveInk);
 showEmpty(); // одна копия пустого экрана — в showEmpty, в разметке его нет
 waitForIndex();
 
-// --- Папки для поиска ----------------------------------------------------------
-// Меняются только в окне, через привязки Wails: у HTTP API такой ручки нет
-// намеренно. В браузере (dev-режим) панель объясняет это и ничего не меняет.
+// --- Источники -----------------------------------------------------------------
+// Один список: папки, каталог базы, kb-серверы. Порядок — приоритет. Правки идут
+// в черновик, «Сохранить» отдает его Go: проверка там, а не здесь (папка обязана
+// существовать, вложенность, файл каталога, адрес сервера).
 const panel = $("#settings"), scrim = $("#scrim");
-const draft = { roots: [], exclude: [] };
+const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер" };
+const HUES = ["--z-sp4", "--z-sp2", "--z-sp6", "--z-sp1", "--z-sp5", "--z-sp3"];
+const draft = { sources: [], exclude: [], saved: "" };
+const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null };
+let keySeq = 0;
+
+const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
+const tilde = (p) => p.replace(/^\/Users\/[^/]+/, "~");
+const label = (s) => s.name || (s.kind === "server" ? hostOf(s.url) : target(s).split("/").filter(Boolean).pop()) || target(s);
+const hostOf = (u) => { try { return new URL(u).host; } catch { return u; } };
+const fmt = (n) => n.toLocaleString("ru-RU");
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  return m10 === 1 && m100 !== 11 ? one : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? few : many;
+}
+// Цвет держится за источник, а не за место: при перестановке не перекрашивается.
+function hue(s) {
+  let h = 0;
+  for (const c of s.id || s._key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return HUES[h % HUES.length];
+}
+const payload = () => ({
+  sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
+  exclude: draft.exclude,
+});
+const dirty = () => JSON.stringify(payload()) !== draft.saved;
+const byKey = (k) => draft.sources.find((s) => s._key === k);
+
+function load(v) {
+  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
+  draft.exclude = [...(v.exclude || [])];
+  draft.saved = JSON.stringify(payload());
+}
 
 async function openSettings() {
   scrim.hidden = false;
@@ -306,82 +339,291 @@ async function openSettings() {
   panel.setAttribute("aria-hidden", "false");
   showError("");
   const editable = !!native();
-  for (const id of ["#pick", "#add-root", "#add-exclude", "#save-settings", "#root-input", "#exclude-input"]) $(id).disabled = !editable;
+  for (const id of ["#add-exclude", "#exclude-input"]) $(id).disabled = !editable;
   if (!editable) {
-    draft.roots = []; draft.exclude = [];
-    renderFolders();
-    $("#settings-note").textContent = "Папки меняются в окне приложения, не в браузере.";
+    load({});
+    renderSources();
+    $("#settings-note").textContent = "Источники меняются в окне приложения, не в браузере.";
     return;
   }
-  let v;
-  try {
-    v = await native().Folders();
-  } catch (e) {
-    showError("Не удалось прочитать настройки: " + e);
-    return;
+  // Несохраненный черновик переживает закрытие панели: случайный Esc не стирает
+  // полчаса перестановок.
+  if (!dirty() || !draft.sources.length) {
+    try {
+      load(await native().Sources());
+    } catch (e) {
+      showError("Не удалось прочитать настройки: " + e);
+      return;
+    }
   }
-  draft.roots = [...(v.roots || [])];
-  draft.exclude = [...(v.exclude || [])];
-  draft.missing = [...(v.missing || [])];
-  $("#settings-note").textContent = "";
-  renderFolders();
+  const list = $("#sources");
+  list.classList.add("enter");
+  renderSources();
+  setTimeout(() => list.classList.remove("enter"), 500);
+  $("#close-settings").focus();
 }
 function closeSettings() {
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
   scrim.hidden = true;
+  ui.editing = ui.replacing = ui.confirmDel = null;
+  if (dirty()) toast("Не сохранено", " · черновик ждет в панели, ⌘,", null, "off");
   $("#q").focus();
 }
 const settingsOpen = () => panel.classList.contains("open");
 
-function renderFolders() {
-  const row = (text, i, list) =>
-    `<li><span class="path" title="${esc(text)}">${esc(text.replace(/^\/Users\/[^/]+/, "~"))}</span><button data-list="${list}" data-i="${i}" aria-label="Убрать">✕</button></li>`;
-  // Папки из конфига, которых нет или к которым нет доступа: не индексируются
-  // и при сохранении уйдут из списка — говорим об этом заранее.
-  const missing = (draft.missing || []).map((m) =>
-    `<li class="empty-row" title="Не индексируется и уйдет из списка при сохранении">${esc(m.replace(/^\/Users\/[^/]+/, "~"))}</li>`).join("");
-  $("#roots").innerHTML = (draft.roots.length
-    ? draft.roots.map((r, i) => row(r, i, "roots")).join("")
-    : `<li class="empty-row">Ни одной папки — добавьте хотя бы одну</li>`) + missing;
-  $("#excludes").innerHTML = draft.exclude.map((r, i) => row(r, i, "exclude")).join("");
+function stateOf(s) {
+  if (!s.enabled) return `<span class="state off">выключен</span>`;
+  // Новый, перенацеленный или только что включенный: состояние узнается после сохранения.
+  if (!s._orig || s._orig !== target(s) || !s._was) return `<span class="state new">после сохранения</span>`;
+  const note = s.note ? ` title="${esc(s.note)}"` : "";
+  switch (s.state) {
+    case "ok":
+      return s.kind === "folder"
+        ? `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "файл", "файла", "файлов")}</span>`
+        : `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
+    case "missing":
+      return `<span class="state missing"${note}><span class="sdot"></span>нет связи</span>`;
+    default:
+      return `<span class="state pending"${note}><span class="sdot"></span>ждет</span>`;
+  }
 }
+
+function formOf(s, i) {
+  const what = s.kind === "server" ? "адрес" : "путь";
+  const pick = s.kind === "folder" && native() ? `<button class="btn" data-pick="${s._key}">Выбрать…</button>` : "";
+  if (ui.editing === s._key)
+    return `<div class="form">
+      <div class="field"><label for="en-${s._key}">имя</label><input id="en-${s._key}" value="${esc(s.name || "")}" placeholder="${esc(label(s))}"></div>
+      <div class="field"><label for="ea-${s._key}">${what}</label><input id="ea-${s._key}" value="${esc(target(s))}" spellcheck="false">${pick}</div>
+      <div class="formbar"><button class="btn primary" data-save="${s._key}">Готово</button><button class="btn" data-cancel>Отмена</button></div></div>`;
+  if (ui.replacing === s._key)
+    return `<div class="form">
+      <div class="field"><label for="ra-${s._key}">новый ${what}</label><input id="ra-${s._key}" placeholder="${s.kind === "server" ? "https://…" : "/Volumes/…"}" spellcheck="false">${pick}</div>
+      <div class="formbar"><button class="btn primary" data-doreplace="${s._key}">Заменить</button><button class="btn" data-cancel>Отмена</button>
+      <span class="muted">место ${i + 1}, имя и включенность сохранятся · было <s>${esc(tilde(target(s)))}</s></span></div></div>`;
+  if (ui.confirmDel === s._key)
+    return `<div class="form"><div class="formbar"><span>Убрать «${esc(label(s))}» из источников? Файлы на диске не трогаются.</span>
+      <button class="btn danger" data-dodel="${s._key}">Убрать</button><button class="btn" data-cancel>Оставить</button></div></div>`;
+  return "";
+}
+
+function renderSources() {
+  const n = draft.sources.length;
+  $("#sources").innerHTML = n
+    ? draft.sources.map((s, i) => {
+        const open = [ui.editing, ui.replacing, ui.confirmDel].includes(s._key);
+        return `<li class="src-row${s.enabled ? "" : " off"}${open ? " editing" : ""}" style="--c:var(${hue(s)})" draggable="true" data-key="${s._key}">
+          <span class="handle" aria-hidden="true" title="Перетащите, чтобы сменить приоритет">⠿</span>
+          <span class="prio">${i + 1}</span>
+          <div class="who"><div class="name"><i class="swatch"></i><strong>${esc(label(s))}</strong><span class="kind">${esc(KIND[s.kind] || s.kind)}</span></div>
+            <div class="addr" title="${esc(target(s))}">${esc(tilde(target(s)))}</div></div>
+          <div class="right">${stateOf(s)}
+            <button class="sw" role="switch" aria-checked="${s.enabled}" aria-label="${s.enabled ? "Выключить" : "Включить"} ${esc(label(s))}" data-toggle="${s._key}"></button></div>
+          <div class="acts">
+            <button data-up="${s._key}" aria-label="Выше по приоритету" ${i ? "" : "disabled"}>↑</button>
+            <button data-down="${s._key}" aria-label="Ниже по приоритету" ${i < n - 1 ? "" : "disabled"}>↓</button>
+            <button data-edit="${s._key}">изменить</button><button data-replace="${s._key}">заменить</button>
+            <button class="danger" data-del="${s._key}">убрать</button></div>
+          ${formOf(s, i)}</li>`;
+      }).join("")
+    : `<li class="src-row"><span></span><span></span><span class="muted">Ни одного источника — добавьте папку ниже</span></li>`;
+
+  const kinds = Object.entries(KIND).map(([k, v]) => `<button data-kind="${k}" aria-pressed="${ui.addKind === k}">${v}</button>`).join("");
+  let form = "";
+  if (ui.addKind === "folder")
+    form = `<div class="row">${native() ? `<button class="btn primary" data-pick="new">Выбрать папку…</button>` : ""}
+      <input id="na" placeholder="или путь: ~/Documents, /Volumes/team" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
+      <span class="hint">сетевая папка через VPN — это тоже путь в /Volumes</span>`;
+  else if (ui.addKind === "catalog")
+    form = `<div class="row"><input id="na" placeholder="~/…/knowledge-base/_data/catalog.json" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
+      <span class="hint">читается первый включенный каталог списка</span>`;
+  else if (ui.addKind === "server")
+    form = `<div class="row"><input id="na" placeholder="https://kb.example.ru" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
+      <span class="hint">http — только для этого Mac. Токен и проверка связи появятся с клиентом сервера, до тех пор источник хранится и не читается</span>`;
+  $("#add").innerHTML = `<div class="row"><span class="muted">+ источник</span><span class="seg" role="group" aria-label="Вид источника">${kinds}</span></div>${form}`;
+
+  $("#excludes").innerHTML = draft.exclude.map((r, i) =>
+    `<li><span class="path">${esc(r)}</span><button data-unex="${i}" aria-label="Убрать ${esc(r)}">✕</button></li>`).join("");
+
+  const on = draft.sources.filter((s) => s.enabled);
+  const lost = on.filter((s) => s.state === "missing" && s._orig === target(s)).length;
+  $("#settings-note").innerHTML = dirty()
+    ? `<span class="dirty">есть несохраненные изменения</span>`
+    : esc(`включено ${on.length} из ${n}` + (lost ? ` · без связи: ${lost}` : ""));
+  $("#save-settings").disabled = !native() || !dirty();
+}
+
 function showError(msg) {
   const el = $("#settings-error");
   el.textContent = msg;
   el.hidden = !msg;
 }
-function addTo(list, value) {
-  value = (value || "").trim();
-  if (value && !draft[list].includes(value)) draft[list].push(value);
-  renderFolders();
+
+// --- Подсказка с «Вернуть» -------------------------------------------------------
+let toastT, undoFn = null;
+function toast(head, rest, undo, tone = "info") {
+  const t = $("#toast");
+  undoFn = undo;
+  t.dataset.tone = tone;
+  t.classList.remove("show"); void t.offsetWidth; // перезапуск полоски
+  t.innerHTML = `<span class="glow"></span><span><b>${esc(head)}</b>${esc(rest)}</span>` +
+    (undo ? `<button id="undo">Вернуть</button>` : "") + `<span class="life"></span>`;
+  t.classList.add("show");
+  clearTimeout(toastT);
+  toastT = setTimeout(() => t.classList.remove("show"), 4000);
+  t.onmouseenter = () => clearTimeout(toastT);
+  t.onmouseleave = () => { toastT = setTimeout(() => t.classList.remove("show"), 1200); };
 }
+$("#toast").addEventListener("click", (e) => {
+  if (e.target.id !== "undo" || !undoFn) return;
+  undoFn(); undoFn = null;
+  $("#toast").classList.remove("show");
+  renderSources();
+});
+
+// change снимает черновик до правки и отдает отмену для подсказки.
+function change(fn) {
+  const before = draft.sources.map((s) => ({ ...s }));
+  fn();
+  ui.editing = ui.replacing = ui.confirmDel = null;
+  renderSources();
+  return () => { draft.sources = before; };
+}
+function move(key, d) {
+  const i = draft.sources.findIndex((s) => s._key === key), j = i + d;
+  if (i < 0 || j < 0 || j >= draft.sources.length) return;
+  const undo = change(() => { [draft.sources[i], draft.sources[j]] = [draft.sources[j], draft.sources[i]]; });
+  toast(`${j + 1}-й по приоритету`, ` · «${label(draft.sources[j])}»`, undo);
+  $(`[data-${d < 0 ? "up" : "down"}="${key}"]`)?.focus();
+}
+function setTarget(s, v) {
+  if (s.kind === "server") s.url = v; else s.path = v;
+}
+const focusSoon = (sel) => requestAnimationFrame(() => $(sel)?.focus());
+
+panel.addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b || !panel.contains(b)) return;
+  const d = b.dataset;
+  if (d.toggle) {
+    const s = byKey(d.toggle);
+    const undo = change(() => { s.enabled = !s.enabled; });
+    return toast(label(s), s.enabled ? " включен · ищется после сохранения" : " выключен · место и настройки сохранены", undo, s.enabled ? "info" : "off");
+  }
+  if (d.up) return move(d.up, -1);
+  if (d.down) return move(d.down, 1);
+  if (d.edit) { ui.editing = d.edit; ui.replacing = ui.confirmDel = null; renderSources(); return focusSoon(`#en-${d.edit}`); }
+  if (d.replace) { ui.replacing = d.replace; ui.editing = ui.confirmDel = null; renderSources(); return focusSoon(`#ra-${d.replace}`); }
+  if (d.del) { ui.confirmDel = d.del; ui.editing = ui.replacing = null; renderSources(); return focusSoon(`[data-dodel="${d.del}"]`); }
+  if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = null; return renderSources(); }
+  if (d.save) {
+    const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
+    if (!v) return focusSoon(`#ea-${s._key}`);
+    const undo = change(() => { s.name = name; setTarget(s, v); });
+    return toast("Изменено", ` · «${label(s)}»`, undo);
+  }
+  if (d.doreplace) {
+    const s = byKey(d.doreplace), v = $(`#ra-${s._key}`).value.trim();
+    if (!v) return focusSoon(`#ra-${s._key}`);
+    const old = target(s);
+    const undo = change(() => setTarget(s, v));
+    return toast("Заменено", ` · ${tilde(old)} → ${tilde(v)}`, undo);
+  }
+  if (d.dodel) {
+    const i = draft.sources.findIndex((s) => s._key === d.dodel), s = draft.sources[i];
+    const undo = change(() => draft.sources.splice(i, 1));
+    return toast("Убран", ` · «${label(s)}», файлы на диске не тронуты`, undo, "del");
+  }
+  if (d.pick) {
+    let p = "";
+    try { p = await native().PickFolder(); } catch (err) { return showError(String(err)); }
+    if (!p) return;
+    const input = d.pick === "new" ? $("#na") : $(`#ea-${d.pick}`) || $(`#ra-${d.pick}`);
+    if (input) input.value = p;
+    if (d.pick === "new") $("[data-addok]").click();
+    return;
+  }
+  if (d.kind) { ui.addKind = ui.addKind === d.kind ? null : d.kind; renderSources(); return focusSoon("#na"); }
+  if ("addok" in d) {
+    const v = $("#na").value.trim();
+    if (!v) return focusSoon("#na");
+    const s = { id: "", kind: ui.addKind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
+    setTarget(s, v);
+    const undo = change(() => draft.sources.push(s));
+    ui.addKind = null;
+    renderSources();
+    return toast("Добавлен", ` · «${label(s)}», ${draft.sources.length}-й по приоритету`, undo);
+  }
+  if (d.unex !== undefined) { draft.exclude.splice(+d.unex, 1); return renderSources(); }
+});
+
+// Enter в поле формы — главная кнопка этой формы.
+panel.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.target.tagName !== "INPUT") return;
+  const btn = e.target.closest(".form, .add, .add-row")?.querySelector(".btn.primary:not([data-pick]), [data-addok], #add-exclude");
+  if (btn) { e.preventDefault(); btn.click(); }
+});
+
+// Перетаскивание ⠿: линия над или под строкой показывает, куда встанет.
+const sourcesList = $("#sources");
+sourcesList.addEventListener("dragstart", (e) => {
+  const row = e.target.closest(".src-row[data-key]");
+  if (!row) return;
+  ui.drag = row.dataset.key;
+  row.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", ui.drag);
+});
+sourcesList.addEventListener("dragover", (e) => {
+  const row = e.target.closest(".src-row[data-key]");
+  if (!ui.drag || !row) return;
+  e.preventDefault();
+  const below = e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  for (const r of sourcesList.children) r.classList.remove("drop-above", "drop-below");
+  row.classList.add(below ? "drop-below" : "drop-above");
+  row.dataset.below = below;
+});
+sourcesList.addEventListener("dragend", () => {
+  ui.drag = null;
+  for (const r of sourcesList.children) r.classList.remove("dragging", "drop-above", "drop-below");
+});
+sourcesList.addEventListener("drop", (e) => {
+  const row = e.target.closest(".src-row[data-key]");
+  if (!ui.drag || !row) return;
+  e.preventDefault();
+  const key = ui.drag, below = row.dataset.below === "true";
+  if (key === row.dataset.key) return;
+  const undo = change(() => {
+    const from = draft.sources.findIndex((s) => s._key === key);
+    const [moved] = draft.sources.splice(from, 1);
+    let to = draft.sources.findIndex((s) => s._key === row.dataset.key);
+    if (below) to++;
+    draft.sources.splice(to, 0, moved);
+  });
+  const at = draft.sources.findIndex((s) => s._key === key);
+  toast(`${at + 1}-й по приоритету`, ` · «${label(draft.sources[at])}»`, undo);
+});
 
 $("#open-settings").onclick = openSettings;
 $("#close-settings").onclick = closeSettings;
 scrim.onclick = closeSettings;
-$("#pick").onclick = async () => {
-  try { addTo("roots", await native().PickFolder()); } catch (e) { showError(String(e)); }
+$("#add-exclude").onclick = () => {
+  const v = $("#exclude-input").value.trim();
+  if (v && !draft.exclude.includes(v)) draft.exclude.push(v);
+  $("#exclude-input").value = "";
+  renderSources();
 };
-$("#add-root").onclick = () => { addTo("roots", $("#root-input").value); $("#root-input").value = ""; };
-$("#add-exclude").onclick = () => { addTo("exclude", $("#exclude-input").value); $("#exclude-input").value = ""; };
-$("#root-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-root").click());
-$("#exclude-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-exclude").click());
-panel.addEventListener("click", (e) => {
-  const b = e.target.closest("button[data-list]");
-  if (!b) return;
-  draft[b.dataset.list].splice(+b.dataset.i, 1);
-  renderFolders();
-});
 
 $("#save-settings").onclick = async () => {
   showError("");
   const btn = $("#save-settings");
   btn.disabled = true;
+  const p = payload();
   try {
-    // Проверку делает Go: папка обязана существовать, иначе отказ с ее именем
-    // и без изменений — ни конфига, ни индекса.
-    await native().SetFolders(draft.roots, draft.exclude);
+    // Проверку делает Go: новая папка обязана существовать, иначе отказ с ее
+    // именем и без изменений — ни конфига, ни индекса.
+    await native().SetSources(p.sources, p.exclude);
   } catch (e) {
     showError(String(e));
     btn.disabled = false;
@@ -394,22 +636,19 @@ $("#save-settings").onclick = async () => {
       const st = await native().IndexStatus();
       if (!st.building) {
         if (st.error) showError("Индекс не собрался: " + st.error);
-        else {
-          $("#settings-note").textContent = `Готово: ${st.indexed.toLocaleString("ru-RU")} файлов`;
-          draft.missing = [];
-          renderFolders();
-          hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
-        }
+        else hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
         setIndexed(st.indexed, st.skipped);
         if (state.q) search(state.q);
         break;
       }
       await sleep(400);
     }
+    load(await native().Sources()); // id новых источников и свежий счет
+    renderSources();
+    toast("Сохранено", " · " + $("#settings-note").textContent);
   } catch (e) {
     showError("Не удалось узнать статус индекса: " + e);
-  } finally {
-    btn.disabled = false; // кнопка не остается выключенной ни при каком исходе
+    renderSources();
   }
 };
 

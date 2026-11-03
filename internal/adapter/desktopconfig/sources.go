@@ -100,6 +100,13 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// WithSources returns the config with sources filled in from the fields of the
+// shape before sources, if it has none — то же, что видят методы доступа.
+func (c Config) WithSources() Config {
+	c.migrate()
+	return c
+}
+
 // list returns the sources, reading a config of the shape before sources
 // (roots, catalog) as migrated — так его видят все, кто собрал Config руками,
 // а не только Read и Write.
@@ -145,13 +152,13 @@ func (c *Config) SetFolderRoots(roots []string, home string) {
 	c.Roots, c.Catalog, c.Server = nil, "", ""
 	wanted := map[string]bool{}
 	for _, r := range roots {
-		wanted[expandHome(r, home)] = true
+		wanted[ExpandHome(r, home)] = true
 	}
 	byPath := map[string]Source{}
 	at := -1
 	var rest []Source
 	for _, s := range c.Sources {
-		key := expandHome(s.Path, home)
+		key := ExpandHome(s.Path, home)
 		if s.Kind == KindFolder && (s.Enabled || wanted[key]) {
 			if s.Enabled && at < 0 {
 				at = len(rest)
@@ -167,13 +174,23 @@ func (c *Config) SetFolderRoots(roots []string, home string) {
 	}
 	folders := make([]Source, 0, len(roots))
 	for _, r := range roots {
-		s, ok := byPath[expandHome(r, home)]
+		s, ok := byPath[ExpandHome(r, home)]
 		if !ok {
 			s = Source{ID: c.nextID(KindFolder, folders), Kind: KindFolder, Path: r, Enabled: true}
 		}
 		folders = append(folders, s)
 	}
 	c.Sources = append(rest[:at:at], append(folders, rest[at:]...)...)
+}
+
+// AssignIDs gives every source without an id the first free "<kind>-N":
+// окно присылает новый источник без id, выдает их только конфиг.
+func (c *Config) AssignIDs() {
+	for i := range c.Sources {
+		if c.Sources[i].ID == "" {
+			c.Sources[i].ID = c.nextID(c.Sources[i].Kind, nil)
+		}
+	}
 }
 
 // nextID returns the first free "<kind>-N" among the current sources and the
@@ -217,9 +234,9 @@ func (c *Config) migrate() {
 	}
 }
 
-// expandHome раскрывает «~» и очищает путь, чтобы одна папка в разных записях
+// ExpandHome раскрывает «~» и очищает путь, чтобы одна папка в разных записях
 // сравнивалась как одна.
-func expandHome(p, home string) string {
+func ExpandHome(p, home string) string {
 	if home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
 		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
 	}

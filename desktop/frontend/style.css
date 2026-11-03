@@ -18,6 +18,9 @@
   --type-col: 64px; --type-gap: 12px;
   --z-font: "JetBrains Mono", ui-monospace, Menlo, monospace;
   --z-radius: 3px; --z-dur: .22s; --z-ease: cubic-bezier(.16, 1, .3, 1);
+  /* Спектр daniilvdovin.com: у каждого источника свой цвет, только на значке —
+     текстом янтарь на белом не читается. */
+  --z-sp1: #e8b84a; --z-sp2: #e8925a; --z-sp3: #e07070; --z-sp4: #5e8fd0; --z-sp5: #5fb0d8; --z-sp6: #8fc79a;
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -207,10 +210,10 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 @keyframes sweep { from { transform: translateX(-100%); } to { transform: translateX(290%); } }
 #indexing-settings { margin-top: 20px; }
 
-/* --- Панель папок ----------------------------------------------------------- */
+/* --- Панель источников ------------------------------------------------------ */
 .scrim { position: fixed; inset: 0; z-index: 7; background: var(--z-scrim); animation: fade .25s var(--z-ease); }
 .settings {
-  position: fixed; z-index: 8; top: 40px; right: 24px; bottom: 20px; width: min(540px, calc(100% - 48px));
+  position: fixed; z-index: 8; top: 40px; right: 24px; bottom: 20px; width: min(640px, calc(100% - 48px));
   display: flex; flex-direction: column; gap: 14px; padding: 20px 22px; overflow: auto;
   background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius);
   transform: translateX(calc(100% + 30px)); transition: transform .45s var(--z-ease);
@@ -243,6 +246,97 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .add-row input:focus { border-color: var(--z-accent); }
 .settings-error { color: var(--z-bad); background: var(--z-bad-wash); padding: 8px 12px; border-left: 2px solid var(--z-bad); }
 .settings-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; border-top: 1px solid var(--z-rule); }
+/* Строка источника: ⠿, номер, кто, состояние и переключатель; действия второй
+   строкой, видны при наведении и при фокусе с клавиатуры. Строки через 1px. */
+.sources { list-style: none; margin: 0; padding: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
+.src-row {
+  display: grid; grid-template-columns: 14px 18px minmax(0, 1fr) auto; gap: 2px 10px; align-items: center;
+  padding: 10px 12px; border-bottom: 1px solid var(--z-rule); background: var(--z-bg-2); font-size: 12px;
+  transition: background var(--z-dur) var(--z-ease);
+}
+/* Появление — только при открытии панели, а не на каждой правке черновика. */
+.sources.enter .src-row { animation: hit-in .3s var(--z-ease) both; }
+.src-row:last-child { border-bottom: 0; }
+.src-row:hover, .src-row:focus-within { background: var(--z-bg-3); }
+.src-row.dragging { opacity: .4; }
+.src-row.drop-above { box-shadow: inset 0 2px 0 var(--z-accent); }
+.src-row.drop-below { box-shadow: inset 0 -2px 0 var(--z-accent); }
+.src-row.off .who, .src-row.off .prio { opacity: .45; }
+.src-row .handle, .src-row .prio, .src-row .who { grid-row: 1 / span 2; }
+.src-row .handle { color: var(--z-faint); cursor: grab; user-select: none; text-align: center; }
+.src-row .handle:active { cursor: grabbing; }
+.src-row .prio { color: var(--z-faint); text-align: right; font-variant-numeric: tabular-nums; }
+.who { min-width: 0; display: grid; gap: 2px; }
+.who .name { display: flex; gap: 8px; align-items: baseline; min-width: 0; }
+.who .name .swatch { width: 7px; height: 7px; border-radius: 2px; background: var(--c); flex: none; align-self: center; }
+.who .name strong { font-weight: 500; color: var(--z-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.who .name .kind { color: var(--z-faint); font-size: 11px; white-space: nowrap; }
+.who .addr { color: var(--z-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.src-row .right { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.state { white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; font-variant-numeric: tabular-nums; }
+.state .sdot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.state.ok { color: var(--z-ok); }
+.state.missing { color: var(--z-bad); } .state.missing .sdot { background: transparent; border: 1px solid currentColor; }
+.state.off, .state.pending, .state.new { color: var(--z-faint); }
+.state.pending .sdot { background: transparent; border: 1px dashed currentColor; }
+.sw { width: 28px; height: 16px; border-radius: 999px; border: 1px solid var(--z-rule-2); background: none; position: relative; cursor: pointer; flex: none; padding: 0;
+  transition: background var(--z-dur) var(--z-ease), border-color var(--z-dur) var(--z-ease); }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px; border-radius: 50%; background: var(--z-muted);
+  transition: transform var(--z-dur) var(--z-ease), background var(--z-dur) var(--z-ease); }
+.sw[aria-checked="true"] { background: var(--z-accent-wash); border-color: var(--z-accent); }
+.sw[aria-checked="true"]::after { transform: translateX(12px); background: var(--z-accent); }
+.sw:focus-visible, .acts button:focus-visible, .seg button:focus-visible { outline: 1px solid var(--z-accent); outline-offset: 1px; }
+.acts { grid-column: 4; grid-row: 2; display: flex; justify-content: flex-end; gap: 2px; margin-right: -6px; opacity: 0; transition: opacity var(--z-dur) var(--z-ease); }
+.src-row:hover .acts, .src-row:focus-within .acts, .src-row.editing .acts { opacity: 1; }
+.acts button { background: none; border: 0; color: var(--z-muted); font: 11px var(--z-font); padding: 2px 6px; border-radius: var(--z-radius); cursor: pointer; }
+.acts button:hover { color: var(--z-ink); background: var(--z-bg); }
+.acts button.danger:hover { color: var(--z-bad); background: var(--z-bad-wash); }
+.acts button[disabled] { opacity: .3; cursor: default; background: none; }
+.form { grid-column: 3 / -1; display: grid; gap: 8px; padding: 8px 0 2px; }
+.field { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.field label { color: var(--z-faint); }
+.field input, .add input {
+  height: 30px; min-width: 0; width: 100%; padding: 0 9px; font: 12px var(--z-font);
+  background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0;
+}
+.field input:focus, .add input:focus { border-color: var(--z-accent); }
+.formbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.formbar .muted s { color: var(--z-faint); }
+.btn.danger { border-color: var(--z-bad); color: var(--z-bad); }
+.add { display: grid; gap: 10px; }
+.add .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); overflow: hidden; }
+.seg button { background: none; border: 0; border-right: 1px solid var(--z-rule-2); color: var(--z-muted); font: 12px var(--z-font); padding: 5px 12px; cursor: pointer; }
+.seg button:last-child { border-right: 0; }
+.seg button:hover { color: var(--z-ink); }
+.seg button[aria-pressed="true"] { background: var(--z-accent-wash); color: var(--z-ink); }
+.add .hint { color: var(--z-faint); font-size: 11px; }
+.dirty { color: var(--z-head-ink); }
+
+/* Подсказка о действии с «Вернуть»: рамка-градиент из спектра сайта, полоска
+   тает до исчезновения. Тон — по действию. */
+.toast {
+  --g1: var(--z-sp4); --g2: var(--z-sp5); --g3: var(--z-sp6);
+  /* Слева внизу, вне панели: не закрывает ее подвал с кнопкой и счетом. */
+  position: fixed; z-index: 9; left: 24px; bottom: 24px; transform: translateY(14px);
+  display: flex; align-items: center; gap: 10px; padding: 8px 12px 10px; font-size: 12px;
+  border: 1px solid transparent; border-radius: var(--z-radius);
+  background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, linear-gradient(100deg, var(--g1), var(--g2), var(--g3)) border-box;
+  opacity: 0; pointer-events: none; white-space: nowrap; overflow: hidden;
+  transition: opacity .28s var(--z-ease), transform .42s var(--z-ease);
+}
+.toast.show { opacity: 1; transform: none; pointer-events: auto; }
+.toast[data-tone="del"] { --g1: var(--z-sp1); --g2: var(--z-sp2); --g3: var(--z-sp3); }
+.toast[data-tone="off"] { --g1: var(--z-rule-2); --g2: var(--z-faint); --g3: var(--z-muted); }
+.toast .glow { width: 7px; height: 7px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--g1), var(--g3)); }
+.toast b { color: var(--z-ink); font-weight: 500; }
+.toast span { color: var(--z-muted); }
+.toast button { background: none; border: 0; color: var(--z-accent-hi); font: 12px var(--z-font); cursor: pointer; padding: 0 2px; }
+.toast .life { position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: linear-gradient(90deg, var(--g1), var(--g3)); transform-origin: left; }
+.toast.show .life { animation: life 4s linear forwards; }
+.toast:hover .life { animation-play-state: paused; }
+@keyframes life { to { transform: scaleX(0); } }
+
 .building { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--z-head); margin-right: 6px; animation: blink 1s infinite; }
 
 @media (prefers-reduced-motion: reduce) {

@@ -52,6 +52,7 @@ type indexer struct {
 
 	every      time.Duration                     // как часто индекс догоняет диск (rebuildEvery)
 	ext        extraction                        // распознавание PDF и картинок (extract.go)
+	catalog    *catalogSwitch                    // база знаний, которую читает окно сейчас
 	extracting atomic.Bool                       // идет проход распознавания: второй не запускается
 	progress   atomic.Pointer[recognizeProgress] // nil — прохода нет
 	// retryTimeouts — пауза перед новой попыткой файла, на котором помощник
@@ -107,6 +108,17 @@ func (x *indexer) apply(roots, exclude []string) error {
 		return err
 	}
 	x.run(src)
+	return nil
+}
+
+// applySources opens the new folders, then switches the catalog: каталог
+// меняется, только если папки открылись, — иначе окно читало бы новую базу при
+// прежних папках и прежнем конфиге.
+func (x *indexer) applySources(roots, exclude []string, catalog string) error {
+	if err := x.apply(roots, exclude); err != nil {
+		return err
+	}
+	x.catalog.set(catalog)
 	return nil
 }
 

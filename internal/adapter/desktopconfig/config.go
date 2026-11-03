@@ -120,7 +120,7 @@ func Write(path string, cfg Config) error {
 // раньше любая такая строка доходила до log.Fatal (ревью #371).
 func NormalizeRoots(roots []string, home string) (ok, skipped []string) {
 	for _, r := range roots {
-		p := expandHome(r, home)
+		p := ExpandHome(r, home)
 		if !filepath.IsAbs(p) {
 			skipped = append(skipped, r+" (путь не абсолютный)")
 			continue
