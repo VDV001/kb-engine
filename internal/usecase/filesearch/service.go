@@ -207,6 +207,15 @@ func (s *Service) previous() (*Index, string) {
 	return ix, ""
 }
 
+// Unload drops the index from memory and keeps the source: Read and Check
+// answer as before, Search reports ErrNotBuilt until the next Build, which
+// loads the index back from the store without rereading unchanged files.
+func (s *Service) Unload() {
+	s.mu.Lock()
+	s.ix, s.stats, s.buildErr = nil, Stats{}, nil
+	s.mu.Unlock()
+}
+
 // Stats returns what the last successful build did.
 func (s *Service) Stats() Stats {
 	s.mu.RLock()
