@@ -40,21 +40,43 @@ type indexer struct {
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
 
-	ext        extraction  // распознавание PDF и картинок (extract.go)
-	extracting atomic.Bool // идет проход распознавания: второй не запускается
+	every      time.Duration // как часто индекс догоняет диск (rebuildEvery)
+	ext        extraction    // распознавание PDF и картинок (extract.go)
+	extracting atomic.Bool   // идет проход распознавания: второй не запускается
 }
 
+// rebuildEvery — как часто окно догоняет диск, тот же срок, что у MCP: сборка
+// инкрементальная (~0,5 с на 3 тыс. файлов из снимка), а после нее проход
+// распознает новые PDF и картинки.
+const rebuildEvery = 10 * time.Minute
+
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
-	return &indexer{files: files, src: src, pending: src, ctx: context.Background()}
+	return &indexer{files: files, src: src, pending: src, ctx: context.Background(), every: rebuildEvery}
 }
 
 // start runs the first build with the source the window started with.
 func (x *indexer) start(ctx context.Context) {
 	x.mu.Lock()
 	x.ctx = ctx
-	src := x.pending
+	src, every := x.pending, x.every
 	x.mu.Unlock()
 	x.run(src)
+	// Прежде индекс собирался только при старте и смене папок: файл,
+	// сохраненный после запуска окна, не находился до перезапуска.
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if src := x.currentSource(); src != nil {
+					x.rerun(src) // только если папки с тех пор не сменились
+				}
+			}
+		}
+	}()
 }
 
 // apply opens the new folders and reindexes in the background.

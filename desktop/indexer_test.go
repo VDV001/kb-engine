@@ -105,9 +105,7 @@ func TestIndexer_RebuildsOnSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	x.every = 50 * time.Millisecond
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	x.start(ctx)
+	x.start(t.Context())
 	waitIdle(t, x)
 	if err := os.WriteFile(filepath.Join(root, "new.md"), []byte("свежая мысль"), 0o644); err != nil {
 		t.Fatal(err)
