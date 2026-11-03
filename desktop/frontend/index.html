@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>kb</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="drag" style="--wails-draggable:drag"></div>
+
+  <!-- Экран первой индексации: одно большое число, как у kensaku. -->
+  <section id="indexing" class="indexing" hidden>
+    <div class="indexing-mark">kb<span class="dot">.</span></div>
+    <div class="indexing-main">
+      <div class="eyebrow">Индексирую файлы</div>
+      <div class="big" id="indexing-count">0</div>
+      <div class="indexing-bar"><span></span></div>
+      <div class="muted">Только при запуске. Потом поиск мгновенный.</div>
+    </div>
+  </section>
+
+  <main id="app" class="app">
+    <header class="search">
+      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Искать в базе и файлах" autocomplete="off" spellcheck="false" autofocus>
+      <span class="kbd" id="count"></span>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button data-tab="all" class="active">Все <i></i></button>
+      <button data-tab="kb">База знаний <i></i></button>
+      <button data-tab="doc">Документы <i></i></button>
+      <button data-tab="code">Код <i></i></button>
+      <span class="tab-ink"></span>
+    </nav>
+
+    <div class="body">
+      <ol class="results" id="results"></ol>
+      <article class="preview" id="preview">
+        <div class="empty">
+          <div class="empty-mark">kb<span class="dot">.</span></div>
+          <p>Начните печатать: поиск по базе знаний и файлам рабочей папки.</p>
+          <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
+        </div>
+      </article>
+    </div>
+
+    <footer class="status">
+      <span id="status-left"><span class="pulse"></span> <span id="indexed">—</span></span>
+      <span class="keys"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>esc</b> очистить</span>
+    </footer>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

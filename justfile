@@ -34,6 +34,17 @@ web:
 build:
     go build -o bin/kbengine ./cmd/kbengine
 
+# Build the macOS window (kb-desktop) as bin/kb.app. Wails without its CLI:
+# plain go build with the desktop tags; UTType is linked by hand, the CLI does
+# that itself. Separate module, so the engine's CI and gates are untouched.
+desktop:
+    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
+
+# Test the desktop module (config, in-process API, path checks)
+desktop-test:
+    cd desktop && go test ./...
+
 # Run the dashboard server against a catalog
 serve catalog:
     go run ./cmd/kbengine serve --catalog {{catalog}}
