@@ -314,3 +314,24 @@ func TestService_FailedReplaceLeavesNoStaleError(t *testing.T) {
 		t.Fatalf("Search после неудачной пересборки: %v", err)
 	}
 }
+
+func TestIndex_SkipsHashLikeTokens(t *testing.T) {
+	// Хеши, UUID и base64 в выгрузках раздували словарь индекса: каждое такое
+	// «слово» уникально и в поиске не участвует. Обычные числа и версии
+	// (2026, v2, 152-фз) остаются.
+	ix := filesearch.NewIndex()
+	ix.Add(doc(t, "/w/a.json"), `"id":"5e85d219-6ac2-4358-9a77-6591ab11ebb7" sha 3f9a8c1d2e4b5a6978c0d1e2f3a4b5c6 token eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9 версия v2 год 2026 закон 152`)
+	for _, q := range []string{"6591ab11ebb7", "3f9a8c1d2e4b5a6978c0d1e2f3a4b5c6", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"} {
+		if hits := ix.Search(q, 5); len(hits) != 0 {
+			t.Errorf("%q проиндексирован", q)
+		}
+	}
+	for _, q := range []string{"v2", "2026", "152", "версия"} {
+		if hits := ix.Search(q, 5); len(hits) != 1 {
+			t.Errorf("%q потерян", q)
+		}
+	}
+	if n := ix.Terms(); n > 12 {
+		t.Errorf("словарь %d основ, ждали не больше 12", n)
+	}
+}
