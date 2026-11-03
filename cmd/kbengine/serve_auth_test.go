@@ -66,24 +66,29 @@ func TestCheckExposure(t *testing.T) {
 	tests := []struct {
 		addr       string
 		token, tls bool
+		open       bool
 		want       error
 	}{
-		{"127.0.0.1:8080", false, false, nil},
-		{"localhost:8080", false, false, nil},
-		{"[::1]:8080", false, false, nil},
-		{"127.0.0.1:8080", true, false, nil},
-		{":8080", false, false, errExposedNoToken},
-		{"0.0.0.0:8443", false, true, errExposedNoToken},
-		{"0.0.0.0:8443", true, false, errExposedNoTLS},
-		{"10.8.0.1:8443", true, false, errExposedNoTLS},
-		{"kb.example.ru:443", true, false, errExposedNoTLS},
-		{"0.0.0.0:8443", true, true, nil},
-		{"10.8.0.1:8443", true, true, nil},
-		{"no-port", true, true, errBadAddr},
+		{"127.0.0.1:8080", false, false, false, nil},
+		{"localhost:8080", false, false, false, nil},
+		{"[::1]:8080", false, false, false, nil},
+		{"127.0.0.1:8080", true, false, false, nil},
+		{":8080", false, false, false, errExposedNoToken},
+		{"0.0.0.0:8443", false, true, false, errExposedNoToken},
+		{"0.0.0.0:8443", true, false, false, errExposedNoTLS},
+		{"10.8.0.1:8443", true, false, false, errExposedNoTLS},
+		{"kb.example.ru:443", true, false, false, errExposedNoTLS},
+		{"0.0.0.0:8443", true, true, false, nil},
+		{"10.8.0.1:8443", true, true, false, nil},
+		{"no-port", true, true, false, errBadAddr},
+		// Контейнер слушает все адреса, а наружу его выпускает платформа
+		// (ingress с TLS, docker -p 127.0.0.1): это явный выбор --allow-open.
+		{":8080", false, false, true, nil},
+		{"no-port", false, false, true, errBadAddr},
 	}
 	for _, tt := range tests {
 		t.Run(tt.addr, func(t *testing.T) {
-			err := checkExposure(tt.addr, tt.token, tt.tls)
+			err := checkExposure(tt.addr, tt.token, tt.tls, tt.open)
 			if tt.want == nil && err != nil || tt.want != nil && !errors.Is(err, tt.want) {
 				t.Fatalf("checkExposure(%q, token=%v, tls=%v) = %v, want %v", tt.addr, tt.token, tt.tls, err, tt.want)
 			}
