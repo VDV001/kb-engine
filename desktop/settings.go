@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -14,74 +16,251 @@ import (
 // Ошибки выбора папок: окно показывает текст, а тесты и вызывающие проверяют
 // errors.Is, а не подстроку.
 var (
-	errNoFolders = errors.New("нужна хотя бы одна папка")
-	errBadFolder = errors.New("не подходит")
+	errNoFolders  = errors.New("нужна хотя бы одна включенная папка")
+	errBadFolder  = errors.New("не подходит")
+	errBadCatalog = errors.New("файла каталога нет")
 )
 
-// foldersView is what the settings panel shows and sends back.
-type foldersView struct {
-	Roots   []string `json:"roots"`
-	Exclude []string `json:"exclude"`
-	// Missing — папки из конфига, которых сейчас нет или к которым нет
-	// доступа. Показываются отдельно: в список рабочих они не входят, и
-	// сохранение не отказывает из-за папки, которую человек не добавлял.
-	Missing []string `json:"missing"`
+// Состояния источника на экране настроек.
+const (
+	stateOK       = "ok"       // читается: счет файлов или записей
+	stateMissing  = "missing"  // включен, но папки или файла сейчас нет (сеть, диск, доступ)
+	stateOff      = "off"      // выключен человеком
+	stateIndexing = "indexing" // доступен, но в индекс еще не вошел: первая сборка или папка вернулась
+	statePending  = "pending"  // сервер: клиента пока нет, источник хранится
+)
+
+// sourceRow is one line of the sources screen.
+type sourceRow struct {
+	desktopconfig.Source
+	State string `json:"state"`
+	Count int    `json:"count"`
+	Note  string `json:"note,omitempty"`
 }
 
-// folderSettings — какие папки индексируются. Меняется только из окна
+// sourcesView is what the sources screen shows and sends back.
+type sourcesView struct {
+	Sources []sourceRow `json:"sources"`
+	Exclude []string    `json:"exclude"`
+}
+
+// folderSettings — откуда окно берет файлы и записи. Меняется только из окна
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
-	mu    sync.Mutex
-	path  string // config.json
-	home  string
-	cfg   desktopconfig.Config
-	apply func(roots, exclude []string) error // открывает папки и запускает переиндексацию
+	mu   sync.Mutex
+	path string // config.json
+	home string
+	cfg  desktopconfig.Config
+	// apply открывает папки, переключает каталог и запускает переиндексацию.
+	apply func(roots, exclude []string, catalog string) error
+	// countFiles и countCatalog — счет для экрана: файлы по папкам из индекса,
+	// записи текущего каталога.
+	countFiles   func(roots []string) map[string]int
+	countCatalog func() (int, error)
+	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
+	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
+	applied []string
 }
 
-// Get returns the folders being indexed, with unusable ones split out.
-func (f *folderSettings) Get() foldersView {
+// GetSources returns the sources with their state and counts.
+func (f *folderSettings) GetSources() sourcesView {
+	f.mu.Lock()
+	cfg, applied := f.cfg, slices.Clone(f.applied)
+	f.mu.Unlock()
+	list := cfg.Sources
+	if len(list) == 0 {
+		list = cfg.WithSources().Sources
+	}
+	rows := make([]sourceRow, len(list))
+	keys := make([]string, len(list)) // раскрытый путь папки — ключ счета
+	var ready []string
+	for i, s := range list {
+		rows[i] = sourceRow{Source: s}
+		r := &rows[i]
+		switch {
+		case !s.Enabled:
+			r.State = stateOff
+		case s.Kind == desktopconfig.KindFolder:
+			if keys[i] = f.folderRow(r, applied); keys[i] != "" {
+				ready = append(ready, keys[i])
+			}
+		case s.Kind == desktopconfig.KindCatalog:
+			f.catalogRow(r, cfg.CatalogPath())
+		case s.Kind == desktopconfig.KindServer:
+			r.State, r.Note = statePending, "клиент сервера появится в следующей версии"
+		default:
+			r.State, r.Note = statePending, "вид источника из более новой версии kb"
+		}
+	}
+	counts := f.countFiles(ready)
+	for i := range rows {
+		switch {
+		case keys[i] == "":
+		case counts == nil: // индекс еще не собран: счет неизвестен, а не ноль
+			rows[i].State = stateIndexing
+		default:
+			rows[i].Count = counts[keys[i]]
+		}
+	}
+	return sourcesView{Sources: rows, Exclude: slices.Clone(cfg.Exclude)}
+}
+
+// folderRow fills the state of a folder row and returns the expanded path to
+// count files under, or "" when the folder is not in the index right now.
+func (f *folderSettings) folderRow(r *sourceRow, applied []string) string {
+	ok, skipped := desktopconfig.NormalizeRoots([]string{r.Path}, f.home)
+	if len(ok) == 0 {
+		r.State, r.Note = stateMissing, strings.Join(skipped, "; ")
+		return ""
+	}
+	if !slices.Contains(applied, ok[0]) {
+		r.State, r.Note = stateIndexing, "папка снова доступна — войдет в индекс в ближайший проход"
+		return ""
+	}
+	r.State = stateOK
+	return ok[0]
+}
+
+// catalogRow fills the state of a catalog row: читается только первый
+// включенный каталог, остальные ждут слияния выдачи.
+func (f *folderSettings) catalogRow(r *sourceRow, current string) {
+	if r.Path != current {
+		r.State, r.Note = statePending, "читается только первый каталог списка"
+		return
+	}
+	n, err := f.countCatalog()
+	if err != nil {
+		r.State, r.Note = stateMissing, err.Error()
+		return
+	}
+	r.State, r.Count = stateOK, n
+}
+
+// SetSources validates the list, applies it and only then saves it.
+//
+// Порядок важен. Сначала проверяется все: одна плохая строка отклоняет список
+// с ее названием, ничего не меняя. Потом папки открываются и каталог
+// переключается (apply), и только если это удалось, пишется конфиг: иначе
+// папка, которую macOS не дает открыть, сохранялась бы, и следующий запуск
+// окна падал.
+//
+// Новая или измененная папка обязана существовать — так ловится опечатка.
+// Папка, что уже была в конфиге, может временно пропасть (сетевой диск без
+// VPN): она остается в списке «нет связи» и не мешает переставить соседей.
+func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	roots, missing := desktopconfig.NormalizeRoots(f.cfg.FolderRoots(), f.home)
-	return foldersView{Roots: roots, Exclude: slices.Clone(f.cfg.Exclude), Missing: missing}
-}
-
-// Set validates the folders, opens them and only then saves them.
-//
-// Порядок важен. Все папки проверяются до всего остального: одна плохая
-// отклоняет список с ее названием, ничего не меняя. Потом папки открываются
-// (apply), и только если это удалось, пишется конфиг: иначе папка, которую
-// macOS не дает открыть, сохранялась бы, и следующий запуск окна падал.
-func (f *folderSettings) Set(roots, exclude []string) error {
-	clean, skipped := desktopconfig.NormalizeRoots(roots, f.home)
-	if len(skipped) > 0 {
-		return fmt.Errorf("%w: %s", errBadFolder, strings.Join(skipped, "; "))
-	}
-	clean = dedupeFold(clean, false)
-	if len(clean) == 0 {
-		return errNoFolders
-	}
-	if err := checkNested(clean); err != nil {
+	next := f.cfg
+	next.Sources = slices.Clone(list)
+	next.Roots, next.Catalog, next.Server = nil, "", ""
+	next.AssignIDs()
+	if err := next.Validate(); err != nil {
 		return err
 	}
-	ex := dedupeFold(exclude, true)
+	roots, missing, err := f.openableFolders(next)
+	if err != nil {
+		return err
+	}
+	catalog, err := f.catalogFile(next.CatalogPath(), next.CatalogPath() == f.cfg.WithSources().CatalogPath())
+	if err != nil {
+		return err
+	}
+	next.Exclude = dedupeFold(exclude, true)
 
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if err := f.apply(clean, ex); err != nil {
+	if err := f.apply(roots, next.Exclude, catalog); err != nil {
 		return fmt.Errorf("%w: %w", errBadFolder, err)
 	}
-	next := f.cfg
-	next.SetFolderRoots(clean, f.home)
-	next.Exclude = ex
 	if err := desktopconfig.Write(f.path, next); err != nil {
-		// Индекс уже на новых папках, а конфиг нет: окно работает, но
-		// следующий запуск вернется к прежним папкам. Говорим об этом прямо.
-		return fmt.Errorf("папки применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
+		// Индекс уже на новых источниках, а конфиг нет: окно работает, но
+		// следующий запуск вернется к прежним. Говорим об этом прямо.
+		return fmt.Errorf("источники применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
 	}
-	f.cfg = next
+	if len(missing) > 0 {
+		log.Printf("files: папки без связи, не индексируются: %s", strings.Join(missing, "; "))
+	}
+	f.cfg, f.applied = next, roots
 	return nil
+}
+
+// reconcile reopens the folders when the set of enabled folders that can be
+// opened now differs from the one in the index: сохраненная папка вернулась
+// (VPN, диск). Зовется перед плановой пересборкой и при открытии экрана
+// источников. Пустой набор не применяется никогда: пропали все папки —
+// индекс остается прежним, а не затирается. Возвращает, применил ли.
+func (f *folderSettings) reconcile() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	roots, _ := desktopconfig.NormalizeRoots(f.cfg.WithSources().FolderRoots(), f.home)
+	if len(roots) == 0 || slices.Equal(roots, f.applied) {
+		return false
+	}
+	catalog := desktopconfig.ExpandHome(f.cfg.WithSources().CatalogPath(), f.home)
+	if err := f.apply(roots, f.cfg.Exclude, catalog); err != nil {
+		log.Printf("files: вернувшиеся папки не открылись: %v", err)
+		return false
+	}
+	f.applied = roots
+	return true
+}
+
+// openableFolders returns the enabled folders to open, and the ones already in
+// the config that are gone right now (их не открывают, но и не отклоняют).
+func (f *folderSettings) openableFolders(next desktopconfig.Config) (roots, missing []string, err error) {
+	known := map[string]bool{}
+	for _, r := range f.cfg.WithSources().FolderRoots() {
+		known[desktopconfig.ExpandHome(r, f.home)] = true
+	}
+	enabled := 0
+	seen := map[string]string{}
+	for _, s := range next.Sources {
+		if s.Kind != desktopconfig.KindFolder {
+			continue
+		}
+		// Одна папка двумя записями (~/notes и /Users/x/notes) ушла бы в
+		// индекс и в MCP дважды — включенная или нет, это одна папка.
+		key := desktopconfig.ExpandHome(s.Path, f.home)
+		if prev, dup := seen[key]; dup {
+			return nil, nil, fmt.Errorf("%w: %s и %s — одна и та же папка", errBadFolder, prev, s.Path)
+		}
+		seen[key] = s.Path
+		if !s.Enabled {
+			continue
+		}
+		enabled++
+		ok, skipped := desktopconfig.NormalizeRoots([]string{s.Path}, f.home)
+		switch {
+		case len(ok) == 1:
+			roots = append(roots, ok[0])
+		case known[desktopconfig.ExpandHome(s.Path, f.home)]:
+			missing = append(missing, s.Path)
+		default:
+			return nil, nil, fmt.Errorf("%w: %s", errBadFolder, strings.Join(skipped, "; "))
+		}
+	}
+	if enabled == 0 {
+		return nil, nil, errNoFolders
+	}
+	if len(roots) == 0 {
+		// Включены только сохраненные, но сейчас недоступные папки: сохранение
+		// затерло бы индекс пустым.
+		return nil, nil, fmt.Errorf("%w: ни одна включенная папка сейчас недоступна", errNoFolders)
+	}
+	return roots, missing, checkNested(roots)
+}
+
+// catalogFile expands the catalog path and checks the file is there; "" — базы
+// нет. Сохраненный каталог (known), которого сейчас нет, не отказ — как и папка:
+// вкладка базы покажет ошибку чтения, пока файл не вернется.
+func (f *folderSettings) catalogFile(path string, known bool) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+	path = desktopconfig.ExpandHome(path, f.home)
+	if info, err := os.Stat(path); (err != nil && !known) || (err == nil && info.IsDir()) {
+		return "", fmt.Errorf("%w: %s", errBadCatalog, path)
+	}
+	return path, nil
 }
 
 // checkNested refuses a folder that lies inside another one: its files would be

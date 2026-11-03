@@ -4,6 +4,8 @@ import (
 	"context"
 	"os/exec"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -34,11 +36,18 @@ func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
 	}}
 }
 
-// Folders returns the folders being indexed and the excluded folder names.
-func (a *App) Folders() foldersView { return a.settings.Get() }
+// Sources returns the sources in priority order with their state and counts.
+// Открытие экрана заодно возвращает в индекс папки, что снова доступны, не
+// дожидаясь плановой пересборки.
+func (a *App) Sources() sourcesView {
+	a.settings.reconcile()
+	return a.settings.GetSources()
+}
 
-// SetFolders validates and saves the folders, then reindexes in the background.
-func (a *App) SetFolders(roots, exclude []string) error { return a.settings.Set(roots, exclude) }
+// SetSources validates and saves the sources, then reindexes in the background.
+func (a *App) SetSources(list []desktopconfig.Source, exclude []string) error {
+	return a.settings.SetSources(list, exclude)
+}
 
 // IndexStatus reports whether a build is running and how the last one went.
 func (a *App) IndexStatus() indexStatus { return a.index.Status() }

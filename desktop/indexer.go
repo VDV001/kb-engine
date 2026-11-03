@@ -50,8 +50,12 @@ type indexer struct {
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
 
-	every      time.Duration                     // как часто индекс догоняет диск (rebuildEvery)
-	ext        extraction                        // распознавание PDF и картинок (extract.go)
+	every   time.Duration  // как часто индекс догоняет диск (rebuildEvery)
+	ext     extraction     // распознавание PDF и картинок (extract.go)
+	catalog *catalogSwitch // база знаний, которую читает окно сейчас
+	// reconcile — перед плановой пересборкой вернуть в индекс папки, что
+	// снова доступны (folderSettings.reconcile); true — уже пересобирается.
+	reconcile  func() bool
 	extracting atomic.Bool                       // идет проход распознавания: второй не запускается
 	progress   atomic.Pointer[recognizeProgress] // nil — прохода нет
 	// retryTimeouts — пауза перед новой попыткой файла, на котором помощник
@@ -92,6 +96,9 @@ func (x *indexer) start(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-t.C:
+				if x.reconcile != nil && x.reconcile() {
+					continue // папки сменились, сборка уже запущена
+				}
 				if src := x.currentSource(); src != nil {
 					x.rerun(src) // только если папки с тех пор не сменились
 				}
@@ -107,6 +114,17 @@ func (x *indexer) apply(roots, exclude []string) error {
 		return err
 	}
 	x.run(src)
+	return nil
+}
+
+// applySources opens the new folders, then switches the catalog: каталог
+// меняется, только если папки открылись, — иначе окно читало бы новую базу при
+// прежних папках и прежнем конфиге.
+func (x *indexer) applySources(roots, exclude []string, catalog string) error {
+	if err := x.apply(roots, exclude); err != nil {
+		return err
+	}
+	x.catalog.set(catalog)
 	return nil
 }
 

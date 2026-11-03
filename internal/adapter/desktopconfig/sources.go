@@ -1,6 +1,8 @@
 package desktopconfig
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -100,6 +102,13 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// WithSources returns the config with sources filled in from the fields of the
+// shape before sources, if it has none — то же, что видят методы доступа.
+func (c Config) WithSources() Config {
+	c.migrate()
+	return c
+}
+
 // list returns the sources, reading a config of the shape before sources
 // (roots, catalog) as migrated — так его видят все, кто собрал Config руками,
 // а не только Read и Write.
@@ -131,63 +140,17 @@ func (c Config) CatalogPath() string {
 	return ""
 }
 
-// SetFolderRoots replaces the enabled folders with roots — так панель папок
-// окна правит список до экрана источников. Новые папки встают на место первой
-// включенной, остальные источники и выключенные папки сохраняют место и id;
-// папка, что уже была в списке, сохраняет свой id и имя.
-//
-// Пути сравниваются раскрытыми (home — для «~»): окно присылает раскрытый и
-// очищенный путь, а в конфиге он мог быть записан как «~/notes» или «/data/».
-// Выключенная папка, которую добавили снова, включается, а не повторяется.
-// Прежние roots и catalog после правки обнуляются: список теперь единственный.
-func (c *Config) SetFolderRoots(roots []string, home string) {
-	c.migrate()
-	c.Roots, c.Catalog, c.Server = nil, "", ""
-	wanted := map[string]bool{}
-	for _, r := range roots {
-		wanted[expandHome(r, home)] = true
-	}
-	byPath := map[string]Source{}
-	at := -1
-	var rest []Source
-	for _, s := range c.Sources {
-		key := expandHome(s.Path, home)
-		if s.Kind == KindFolder && (s.Enabled || wanted[key]) {
-			if s.Enabled && at < 0 {
-				at = len(rest)
-			}
-			s.Enabled = true
-			byPath[key] = s
-			continue
-		}
-		rest = append(rest, s)
-	}
-	if at < 0 {
-		at = len(rest)
-	}
-	folders := make([]Source, 0, len(roots))
-	for _, r := range roots {
-		s, ok := byPath[expandHome(r, home)]
-		if !ok {
-			s = Source{ID: c.nextID(KindFolder, folders), Kind: KindFolder, Path: r, Enabled: true}
-		}
-		folders = append(folders, s)
-	}
-	c.Sources = append(rest[:at:at], append(folders, rest[at:]...)...)
-}
-
-// nextID returns the first free "<kind>-N" among the current sources and the
-// ones being added.
-func (c Config) nextID(k Kind, pending []Source) string {
-	n := 0
-	for _, s := range append(c.Sources, pending...) {
-		if num, ok := strings.CutPrefix(s.ID, string(k)+"-"); ok {
-			if v, err := strconv.Atoi(num); err == nil && v > n {
-				n = v
-			}
+// AssignIDs gives every source without an id "<kind>-<8 hex>" from crypto/rand.
+// Счетчик «первый свободный номер» выдал бы id удаленного источника новому, а к
+// id привяжется токен сервера в Связке ключей: новый хост получил бы чужой.
+func (c *Config) AssignIDs() {
+	for i := range c.Sources {
+		if c.Sources[i].ID == "" {
+			var b [4]byte
+			_, _ = rand.Read(b[:]) // crypto/rand.Read не возвращает ошибку (Go 1.24+)
+			c.Sources[i].ID = string(c.Sources[i].Kind) + "-" + hex.EncodeToString(b[:])
 		}
 	}
-	return string(k) + "-" + strconv.Itoa(n+1)
 }
 
 // migrate builds sources from the fields of the config before sources:
@@ -217,9 +180,9 @@ func (c *Config) migrate() {
 	}
 }
 
-// expandHome раскрывает «~» и очищает путь, чтобы одна папка в разных записях
+// ExpandHome раскрывает «~» и очищает путь, чтобы одна папка в разных записях
 // сравнивалась как одна.
-func expandHome(p, home string) string {
+func ExpandHome(p, home string) string {
 	if home != "" && (p == "~" || strings.HasPrefix(p, "~/")) {
 		p = filepath.Join(home, strings.TrimPrefix(p, "~"))
 	}

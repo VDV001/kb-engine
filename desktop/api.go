@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sync"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
@@ -25,9 +26,38 @@ type emptyCatalog struct{}
 
 func (emptyCatalog) Load() (*domain.Catalog, error) { return domain.NewCatalog(nil) }
 
-// catalogLoader is what the query, audit and analytics services read through.
-type catalogLoader interface {
-	Load() (*domain.Catalog, error)
+// catalogSwitch is the knowledge base the window reads now. Экран источников
+// меняет каталог без перезапуска окна: сервисы базы читают через Load, а Load
+// берет тот путь, что стоит сейчас. Пустой путь — базы нет.
+type catalogSwitch struct {
+	mu   sync.RWMutex
+	path string
+}
+
+func (c *catalogSwitch) set(path string) {
+	c.mu.Lock()
+	c.path = path
+	c.mu.Unlock()
+}
+
+// Load reads the current catalog.
+func (c *catalogSwitch) Load() (*domain.Catalog, error) {
+	c.mu.RLock()
+	p := c.path
+	c.mu.RUnlock()
+	if p == "" {
+		return emptyCatalog{}.Load()
+	}
+	return catalogjson.FileLoader{Path: p}.Load()
+}
+
+// count returns how many entries the current catalog has.
+func (c *catalogSwitch) count() (int, error) {
+	cat, err := c.Load()
+	if err != nil {
+		return 0, err
+	}
+	return cat.Len(), nil
 }
 
 // newAPI composes the engine's HTTP API for the window: the same handler
@@ -53,16 +83,14 @@ func newAPI(cfg desktopconfig.Config, indexPath string, ext extraction) (http.Ha
 	// измененные файлы. Пустой путь — индекс только в памяти (тесты).
 	files := filesearch.NewService(src, fileindexgob.Option(indexPath))
 
-	var loader catalogLoader = emptyCatalog{}
-	if cat := cfg.CatalogPath(); cat != "" {
-		loader = catalogjson.FileLoader{Path: cat}
-	}
+	loader := &catalogSwitch{}
+	loader.set(desktopconfig.ExpandHome(cfg.CatalogPath(), home))
 	h := httpapi.NewServer(query.NewService(loader), audit.NewService(loader), analytics.NewService(loader), nil,
 		func() (analyticsconfig.Config, error) { return analyticsconfig.Config{}, nil },
 		func() (changelog.Document, error) { return changelog.Document{}, nil },
 		httpapi.Documents{}, httpapi.EngineInfo{Version: "desktop"}, nil,
 		httpapi.WithFiles(files))
 	x := newIndexer(files, src)
-	x.ext = ext
+	x.ext, x.catalog = ext, loader
 	return h, x, nil
 }

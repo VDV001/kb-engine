@@ -4,7 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -106,44 +108,6 @@ func TestRead_InvalidSourcesIsAnError(t *testing.T) {
 	path := writeRaw(t, `{"sources":[{"id":"folder-1","kind":"folder","path":"/a","enabled":true},{"id":"folder-1","kind":"folder","path":"/b","enabled":true}]}`)
 	if _, err := desktopconfig.Read(path); !errors.Is(err, desktopconfig.ErrSourceID) {
 		t.Fatalf("err = %v, want ErrSourceID", err)
-	}
-}
-
-// Панель папок (до экрана источников) меняет только включенные папки: на
-// место первой из них встают новые, остальные источники и выключенные папки
-// сохраняют место и id. Папка, что уже была, сохраняет свой id и имя.
-func TestConfig_SetFolderRoots(t *testing.T) {
-	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
-		{ID: "server-1", Kind: desktopconfig.KindServer, URL: "https://kb.example", Enabled: true},
-		{ID: "folder-1", Kind: desktopconfig.KindFolder, Name: "работа", Path: "/a", Enabled: true},
-		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: false},
-		{ID: "folder-3", Kind: desktopconfig.KindFolder, Path: "/b", Enabled: true},
-		{ID: "catalog-1", Kind: desktopconfig.KindCatalog, Path: "/kb.json", Enabled: true},
-	}}
-	cfg.SetFolderRoots([]string{"/new", "/a"}, "")
-	want := []desktopconfig.Source{
-		{ID: "server-1", Kind: desktopconfig.KindServer, URL: "https://kb.example", Enabled: true},
-		{ID: "folder-4", Kind: desktopconfig.KindFolder, Path: "/new", Enabled: true},
-		{ID: "folder-1", Kind: desktopconfig.KindFolder, Name: "работа", Path: "/a", Enabled: true},
-		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: false},
-		{ID: "catalog-1", Kind: desktopconfig.KindCatalog, Path: "/kb.json", Enabled: true},
-	}
-	if !slices.Equal(cfg.Sources, want) {
-		t.Fatalf("sources =\n%+v\nwant\n%+v", cfg.Sources, want)
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// Без включенных папок новые встают в конец списка.
-func TestConfig_SetFolderRoots_NoFoldersAppends(t *testing.T) {
-	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
-		{ID: "catalog-1", Kind: desktopconfig.KindCatalog, Path: "/kb.json", Enabled: true},
-	}}
-	cfg.SetFolderRoots([]string{"/a"}, "")
-	if got := cfg.FolderRoots(); !slices.Equal(got, []string{"/a"}) || cfg.Sources[0].ID != "catalog-1" {
-		t.Fatalf("sources = %+v", cfg.Sources)
 	}
 }
 
@@ -269,46 +233,39 @@ func TestWrite_RejectsInvalidSources(t *testing.T) {
 	}
 }
 
-// Папка, записанная с «~» или со слешем на конце, узнается при сохранении той
-// же папки из окна (окно присылает раскрытый путь) и сохраняет id и имя.
-func TestConfig_SetFolderRoots_MatchesNormalizedPath(t *testing.T) {
-	home := "/Users/x"
+// Окно присылает новый источник без id: AssignIDs выдает id, который нельзя
+// спутать ни с одним прежним, — даже с id удаленного источника. К id потом
+// привяжется токен сервера: повтор отдал бы токен старого хоста новому.
+func TestConfig_AssignIDs(t *testing.T) {
 	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
-		{ID: "folder-1", Kind: desktopconfig.KindFolder, Name: "заметки", Path: "~/notes", Enabled: true},
-		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/data/", Enabled: true},
+		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
+		{Kind: desktopconfig.KindFolder, Path: "/b", Enabled: true},
+		{Kind: desktopconfig.KindServer, URL: "https://kb.example"},
+		{Kind: desktopconfig.KindFolder, Path: "/c"},
 	}}
-	cfg.SetFolderRoots([]string{"/Users/x/notes", "/data"}, home)
-	if len(cfg.Sources) != 2 || cfg.Sources[0].ID != "folder-1" || cfg.Sources[0].Name != "заметки" || cfg.Sources[1].ID != "folder-2" {
-		t.Fatalf("sources = %+v", cfg.Sources)
+	cfg.AssignIDs()
+	re := regexp.MustCompile(`^(folder|server)-[0-9a-f]{8}$`)
+	seen := map[string]bool{}
+	for i, s := range cfg.Sources {
+		if seen[s.ID] {
+			t.Fatalf("повтор id %q", s.ID)
+		}
+		seen[s.ID] = true
+		if i == 0 {
+			if s.ID != "folder-2" {
+				t.Fatalf("выданный id изменен: %q", s.ID)
+			}
+			continue
+		}
+		if !re.MatchString(s.ID) || !strings.HasPrefix(s.ID, string(s.Kind)+"-") {
+			t.Fatalf("id = %q", s.ID)
+		}
 	}
-}
-
-// Выключенная папка, которую снова добавили, включается на своем месте, а не
-// повторяется вторым источником с тем же путем.
-func TestConfig_SetFolderRoots_ReenablesDisabled(t *testing.T) {
-	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
-		{ID: "folder-1", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
-		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: false},
-	}}
-	cfg.SetFolderRoots([]string{"/a", "/off"}, "")
-	want := []desktopconfig.Source{
-		{ID: "folder-1", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
-		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: true},
-	}
-	if !slices.Equal(cfg.Sources, want) {
-		t.Fatalf("sources = %+v", cfg.Sources)
-	}
-}
-
-// После правки списка в памяти не остается прежних roots и catalog: иначе
-// переезд однажды восстановил бы из них удаленные папки.
-func TestConfig_SetFolderRoots_ClearsLegacyFields(t *testing.T) {
-	cfg := desktopconfig.Config{Roots: []string{"/old"}, Catalog: "/kb.json"}
-	cfg.SetFolderRoots([]string{"/new"}, "")
-	if cfg.Roots != nil || cfg.Catalog != "" {
-		t.Fatalf("roots = %q catalog = %q", cfg.Roots, cfg.Catalog)
-	}
-	if cfg.CatalogPath() != "/kb.json" || !slices.Equal(cfg.FolderRoots(), []string{"/new"}) {
-		t.Fatalf("sources = %+v", cfg.Sources)
+	// Удалили источник и добавили новый того же вида: id другой.
+	gone := cfg.Sources[1].ID
+	next := desktopconfig.Config{Sources: []desktopconfig.Source{cfg.Sources[0], {Kind: desktopconfig.KindFolder, Path: "/d", Enabled: true}}}
+	next.AssignIDs()
+	if next.Sources[1].ID == gone {
+		t.Fatalf("id удаленного источника выдан снова: %q", gone)
 	}
 }
