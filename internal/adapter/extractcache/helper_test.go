@@ -29,24 +29,29 @@ func TestHelper_Extract(t *testing.T) {
 		name    string
 		script  string
 		want    string
-		wantErr error // nil — без ошибки; errAny — любая
+		wantErr error // ждать эту ошибку
+		anyErr  bool  // ждать любую ошибку
 	}{
-		{"текст в stdout", `printf 'СЧЕТ %s' "$(basename "$1")"`, "СЧЕТ scan.png", nil},
-		{"пустая картинка", `exit 0`, "", nil},
-		{"файл не открылся", `exit 2`, "", extractcache.ErrUnreadable},
-		{"сбой помощника", `echo boom >&2; exit 1`, "", errAny},
+		{"текст в stdout", `printf 'СЧЕТ %s' "$(basename "$1")"`, "СЧЕТ scan.png", nil, false},
+		{"пустая картинка", `exit 0`, "", nil, false},
+		{"файл не открылся", `exit 2`, "", extractcache.ErrUnreadable, false},
+		{"сбой помощника", `echo boom >&2; exit 1`, "", nil, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := extractcache.Helper{Bin: fakeHelper(t, tt.script)}
 			got, err := h.Extract(context.Background(), "/w/scan.png")
 			switch {
-			case tt.wantErr == nil && err != nil:
+			case tt.anyErr:
+				if err == nil {
+					t.Fatal("сбой не назван")
+				}
+			case tt.wantErr != nil:
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("err = %v, want %v", err, tt.wantErr)
+				}
+			case err != nil:
 				t.Fatalf("err = %v", err)
-			case tt.wantErr == errAny && err == nil:
-				t.Fatal("сбой не назван")
-			case tt.wantErr != nil && tt.wantErr != errAny && !errors.Is(err, tt.wantErr):
-				t.Fatalf("err = %v, want %v", err, tt.wantErr)
 			}
 			if got != tt.want {
 				t.Fatalf("text = %q, want %q", got, tt.want)
@@ -54,8 +59,6 @@ func TestHelper_Extract(t *testing.T) {
 		})
 	}
 }
-
-var errAny = errors.New("любая ошибка")
 
 // Зависший помощник не держит проход окна: после Timeout процесс убит.
 func TestHelper_Timeout(t *testing.T) {

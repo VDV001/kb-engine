@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
@@ -38,6 +39,9 @@ type indexer struct {
 	pending *localfiles.Source // источник, с которым идет сборка
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
+
+	ext        extraction  // распознавание PDF и картинок (extract.go)
+	extracting atomic.Bool // идет проход распознавания: второй не запускается
 }
 
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
@@ -55,7 +59,7 @@ func (x *indexer) start(ctx context.Context) {
 
 // apply opens the new folders and reindexes in the background.
 func (x *indexer) apply(roots, exclude []string) error {
-	src, err := localfiles.New(roots, exclude)
+	src, err := localfiles.New(roots, exclude, x.ext.option())
 	if err != nil {
 		return err
 	}
@@ -113,6 +117,7 @@ func (x *indexer) run(src *localfiles.Source) {
 			if gen == x.gen {
 				x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, Reused: st.Reused}
 			}
+			x.extractPending(ctx, src) // в своей горутине: замок не держит
 		}
 	}()
 }

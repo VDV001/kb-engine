@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/extractcache"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -55,7 +56,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	api, idx, err := newAPI(cfg, desktopconfig.IndexPath(cfgPath))
+	// Текст PDF и картинок распознает kb-extract рядом с окном (kb.app/Contents/
+	// MacOS); без него окно читает только то, что уже распознано.
+	ext := extraction{cache: extractcache.Cache{Dir: desktopconfig.ExtractDir(cfgPath)}}
+	if exe, err := os.Executable(); err == nil {
+		if h, ok := extractcache.HelperNextTo(exe); ok {
+			ext.helper = h
+		}
+	}
+	api, idx, err := newAPI(cfg, desktopconfig.IndexPath(cfgPath), ext)
 	if err != nil {
 		return err
 	}
