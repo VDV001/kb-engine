@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -175,6 +176,9 @@ func TestServer_searchFilesErrors(t *testing.T) {
 	}{
 		{"пустой запрос", &stubFiles{}, "", "запрос"},
 		{"индекс собирается", &stubFiles{searchErr: filesearch.ErrNotBuilt}, "mcp", "собирается"},
+		// Упавшая сборка называется по-русски и с тем, что делать, а сырой
+		// путь из ошибки обхода к агенту не уходит (ревью #375).
+		{"сборка упала", &stubFiles{searchErr: fmt.Errorf("%w: walk files: open /Users/someone/Documents: operation not permitted", filesearch.ErrBuildFailed)}, "mcp", "не собрался"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -182,7 +186,21 @@ func TestServer_searchFilesErrors(t *testing.T) {
 			if !res.IsError || !strings.Contains(text(t, res), tt.want) {
 				t.Fatalf("ждали ошибку со словом %q, отдано: error=%v %s", tt.want, res.IsError, text(t, res))
 			}
+			if strings.Contains(text(t, res), "/Users/someone") {
+				t.Fatalf("ответ раскрывает путь: %s", text(t, res))
+			}
 		})
+	}
+}
+
+func TestServer_readFileKeepsMarkupLiteral(t *testing.T) {
+	// HTML-экранирование encoding/json превращает каждый «<» в шесть символов
+	// \u003c: кусок кода или разметки раздувался вдвое и выходил за порог
+	// вывода MCP, рассчитанный по рунам (ревью #375).
+	f := &stubFiles{texts: map[string]string{"/a.tsx": "<a href=\"x\">a & b</a>"}}
+	got := text(t, callTool(t, connectFiles(t, f), "read_file", map[string]any{"path": "/a.tsx"}))
+	if strings.Contains(got, `\u003c`) || !strings.Contains(got, "a & b</a>") {
+		t.Fatalf("разметка экранирована: %s", got)
 	}
 }
 
@@ -252,10 +270,10 @@ func TestServer_readFileErrors(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, err := connectFiles(t, tt.files).CallTool(context.Background(), &mcp.CallToolParams{Name: "read_file", Arguments: tt.args})
-			if err != nil {
-				return // отказ на уровне протокола (схема) — тоже законный ответ
-			}
+			// Ошибка протокола здесь — провал, а не законный ответ: иначе случай,
+			// отвергнутый схемой, проходил бы пустым и ветка отказа оставалась
+			// непроверенной (ревью #375).
+			res := callTool(t, connectFiles(t, tt.files), "read_file", tt.args)
 			got := text(t, res)
 			if !res.IsError || !strings.Contains(got, tt.want) {
 				t.Fatalf("ждали ошибку со словом %q, отдано: error=%v %s", tt.want, res.IsError, got)
