@@ -331,7 +331,8 @@ func TestIndex_SkipsHashLikeTokens(t *testing.T) {
 			t.Errorf("%q потерян", q)
 		}
 	}
-	if n := ix.Terms(); n > 12 {
-		t.Errorf("словарь %d основ, ждали не больше 12", n)
+	// 12 слов текста (короткие смеси вроде 6ac2 остаются) плюс json из имени файла.
+	if n := ix.Terms(); n > 13 {
+		t.Errorf("словарь %d основ, ждали не больше 13", n)
 	}
 }

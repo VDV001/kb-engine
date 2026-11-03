@@ -78,10 +78,41 @@ func isCyrillic(word string) bool {
 // is matched on.
 func terms(text string) []string {
 	toks := Tokens(text)
-	for i, t := range toks {
-		toks[i] = Stem(t)
+	out := toks[:0]
+	for _, t := range toks {
+		if isIdentifier(t) {
+			continue
+		}
+		out = append(out, Stem(t))
 	}
-	return toks
+	return out
+}
+
+// isIdentifier — хеш, UUID, base64, длинный id: «слово», которое уникально и в
+// поиске не участвует, а словарь индекса раздувает. Буквы вперемешку с
+// цифрами от 8 знаков или любой токен длиннее 32 знаков. Короткие смеси (v2,
+// 6ac2) и чистые числа (2026, 152) остаются.
+//
+// ponytail: эвристика по форме. Потолок: артикул «abc12345» тоже отсеется.
+// Путь: оставлять смеси, которые встретились в двух и более файлах.
+func isIdentifier(t string) bool {
+	n := len([]rune(t))
+	if n > 32 {
+		return true
+	}
+	if n < 8 {
+		return false
+	}
+	var letters, digits bool
+	for _, r := range t {
+		switch {
+		case unicode.IsDigit(r):
+			digits = true
+		case unicode.IsLetter(r):
+			letters = true
+		}
+	}
+	return letters && digits
 }
 
 // Hit is one found file with its score and the line that matched.
@@ -94,31 +125,41 @@ type Hit struct {
 // Index is an inverted index over files held in memory.
 type Index struct {
 	docs     []domain.FileDoc
-	postings map[string]map[int]int // основа -> номер файла -> сколько раз
+	postings map[string][]posting // основа -> файлы по возрастанию номера
+}
+
+// posting — файл и сколько раз в нем встретилась основа. 8 байт вместо записи
+// вложенной карты (десятки байт): на ~/git это разница между гигабайтами и
+// сотнями мегабайт.
+type posting struct {
+	doc int32
+	tf  uint32
 }
 
 // NewIndex returns an empty index.
 func NewIndex() *Index {
-	return &Index{postings: map[string]map[int]int{}}
+	return &Index{postings: map[string][]posting{}}
 }
 
 // Add indexes a file's text together with its name: имя файла тоже текст, и
 // по нему ищут не реже, чем по содержимому.
 func (ix *Index) Add(doc domain.FileDoc, text string) {
-	id := len(ix.docs)
+	id := int32(len(ix.docs))
 	ix.docs = append(ix.docs, doc)
+	counts := map[string]uint32{}
 	for _, t := range append(terms(doc.Name()), terms(text)...) {
-		p := ix.postings[t]
-		if p == nil {
-			p = map[int]int{}
-			ix.postings[t] = p
-		}
-		p[id]++
+		counts[t]++
+	}
+	for t, tf := range counts {
+		ix.postings[t] = append(ix.postings[t], posting{doc: id, tf: tf})
 	}
 }
 
 // Len returns how many files the index holds.
 func (ix *Index) Len() int { return len(ix.docs) }
+
+// Terms returns how many distinct stems the index holds.
+func (ix *Index) Terms() int { return len(ix.postings) }
 
 // Search returns files containing every word of the query, best first.
 //
@@ -139,12 +180,13 @@ func (ix *Index) Search(query string, limit int) []Hit {
 			return nil
 		}
 		idf := math.Log(1 + n/float64(len(p)))
-		next := map[int]float64{}
-		for id, tf := range p {
+		next := make(map[int]float64, len(p))
+		for _, ps := range p {
+			id := int(ps.doc)
 			if _, ok := scores[id]; i > 0 && !ok {
 				continue
 			}
-			f := float64(tf)
+			f := float64(ps.tf)
 			next[id] = scores[id] + idf*f/(f+1.2)
 		}
 		scores = next
