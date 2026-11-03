@@ -2,6 +2,7 @@ package localfiles
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +20,8 @@ const MaxImagesPerDir = 100
 // помощник kb-extract в окне, источник только читает готовое.
 type Extracted interface {
 	Text(path string, size int64, mod time.Time) (string, bool)
+	// Has answers without reading the text: обход спрашивает о каждом файле.
+	Has(path string, size int64, mod time.Time) bool
 }
 
 // Option configures a Source.
@@ -36,26 +39,44 @@ func extractable(name string) bool {
 }
 
 // Pending calls fn for every PDF and image the walk would index once its text
-// is extracted, and which Extracted does not have yet. open is the path to hand
-// to the extractor: с раскрытыми симлинками корня, найденный самим обходом.
-func (s *Source) Pending(ctx context.Context, fn func(doc domain.FileDoc, open string) error) error {
+// is extracted, and which Extracted does not have yet. Файл для помощника
+// открывает OpenExtract.
+func (s *Source) Pending(ctx context.Context, fn func(doc domain.FileDoc) error) error {
 	if s.extracted == nil {
 		return nil
 	}
-	return s.walk(ctx, func(shown, open string, info os.FileInfo, imgs int) error {
+	return s.walk(ctx, func(shown string, info os.FileInfo, imgs int) error {
 		name := info.Name()
-		if !extractable(name) || !s.allowedExtract(name, imgs) {
-			return nil
-		}
-		if _, ok := s.extracted.Text(shown, info.Size(), info.ModTime()); ok {
+		if !extractable(name) || !s.allowedExtract(name, imgs) || s.extracted.Has(shown, info.Size(), info.ModTime()) {
 			return nil
 		}
 		doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
 		if err != nil {
 			return err
 		}
-		return fn(doc, open)
+		return fn(doc)
 	})
+}
+
+// OpenExtract opens a PDF or image for the extractor through the root, under
+// the rules of the walk: корни, исключения, секреты, без симлинков. Info — от
+// открытого файла: ключ кеша описывает ту версию, которую прочтет помощник
+// (ревью #379: ключ брался из обхода, а файл читался позже).
+func (s *Source) OpenExtract(path string) (*os.File, os.FileInfo, error) {
+	i, rel, ok := s.locate(path)
+	if !ok || s.extracted == nil || !extractable(rel) || s.throughSkipped(rel) || !s.indexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) {
+		return nil, nil, fmt.Errorf("%w: %q", ErrNotAllowed, path)
+	}
+	f, err := s.dirs[i].Open(rel)
+	if err != nil {
+		return nil, nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, err
+	}
+	return f, info, nil
 }
 
 // allowedExtract applies the folder cap: картинки из папки кадров не берутся.
@@ -63,13 +84,9 @@ func (s *Source) allowedExtract(name string, imgs int) bool {
 	return !isImage(name) || imgs <= MaxImagesPerDir
 }
 
-// extractedText returns the stored text of a file the walk would index, and
-// false if there is none yet.
-func (s *Source) extractedText(shown string, info os.FileInfo) (string, bool) {
-	if s.extracted == nil {
-		return "", false
-	}
-	return s.extracted.Text(shown, info.Size(), info.ModTime())
+// hasExtracted reports whether the text of this version of the file is ready.
+func (s *Source) hasExtracted(shown string, info os.FileInfo) bool {
+	return s.extracted != nil && s.extracted.Has(shown, info.Size(), info.ModTime())
 }
 
 // countImages returns how many images lie directly in dir.

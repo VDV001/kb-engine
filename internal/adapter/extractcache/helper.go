@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 )
 
 // MaxText — сколько текста берется от помощника: тот же предел, что у текста
@@ -25,6 +24,10 @@ const helperTimeout = 2 * time.Minute
 // ErrUnreadable is returned when the helper could not open the file (код 2):
 // битый, зашифрованный или не тот формат.
 var ErrUnreadable = errors.New("file not readable by kb-extract")
+
+// ErrTimeout is returned when the helper ran past its Timeout: это не «файл
+// битый», распознавание стоит повторить на следующем проходе.
+var ErrTimeout = errors.New("kb-extract timed out")
 
 // Helper runs kb-extract, the macOS helper on PDFKit and Vision, for one file.
 type Helper struct {
@@ -42,16 +45,20 @@ func HelperNextTo(exe string) (Helper, bool) {
 	return Helper{Bin: bin}, true
 }
 
-// Extract returns the text of the file at path, cut to MaxText on a rune
-// boundary. Вывод сверх предела не читается: процесс останавливается.
-func (h Helper) Extract(ctx context.Context, path string) (string, error) {
+// Extract returns the text of the file read from r — ext is its kind, "pdf"
+// or an image extension — cut to MaxText on a rune boundary. Файл приходит
+// содержимым в stdin, а не путем: помощник ничего не открывает сам, и граница
+// os.Root, через которую файл открыл вызывающий, не обходится (ревью #379).
+// Вывод сверх предела не читается: процесс останавливается.
+func (h Helper) Extract(ctx context.Context, r io.Reader, ext string) (string, error) {
 	timeout := h.Timeout
 	if timeout == 0 {
 		timeout = helperTimeout
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	run, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, h.Bin, path)
+	cmd := exec.CommandContext(run, h.Bin, "-", ext)
+	cmd.Stdin = r
 	// После отмены трубы закрываются через секунду, даже если их держит
 	// потомок процесса: иначе Wait ждал бы копирования stderr вечно.
 	cmd.WaitDelay = time.Second
@@ -75,18 +82,14 @@ func (h Helper) Extract(ctx context.Context, path string) (string, error) {
 	case rerr != nil:
 		return "", fmt.Errorf("kb-extract: %w", rerr)
 	case full:
+	case errors.Is(run.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
+		return "", fmt.Errorf("%w after %s", ErrTimeout, timeout)
 	case errors.As(werr, &exit) && exit.ExitCode() == 2:
-		return "", fmt.Errorf("%w: %s", ErrUnreadable, filepath.Base(path))
+		return "", ErrUnreadable
 	case werr != nil:
-		return "", fmt.Errorf("kb-extract %s: %w: %s", filepath.Base(path), werr, strings.TrimSpace(stderr.String()))
+		return "", fmt.Errorf("kb-extract: %w: %s", werr, strings.TrimSpace(stderr.String()))
 	}
-	return capRunes(strings.ToValidUTF8(string(b), "")), nil
-}
-
-// capRunes drops a rune cut in half at the end of s.
-func capRunes(s string) string {
-	for len(s) > 0 && !utf8.ValidString(s[max(0, len(s)-utf8.UTFMax):]) {
-		s = s[:len(s)-1]
-	}
-	return s
+	// ToValidUTF8 убирает и руну, разрезанную пределом: отдельная обрезка
+	// хвоста срезала целые символы («Итого: 5» → «Итого: », ревью #379).
+	return strings.ToValidUTF8(string(b), ""), nil
 }

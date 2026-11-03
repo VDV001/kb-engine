@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"log"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/extractcache"
@@ -16,9 +19,9 @@ import (
 // появляться в поиске по ходу, а не в конце.
 const extractBatch = 50
 
-// extractor is kb-extract: text of one PDF or image.
+// extractor is kb-extract: text of one PDF or image read from r, ext — its kind.
 type extractor interface {
-	Extract(ctx context.Context, path string) (string, error)
+	Extract(ctx context.Context, r io.Reader, ext string) (string, error)
 }
 
 // extraction — распознавание PDF и картинок окном: кеш, куда кладется текст,
@@ -42,29 +45,36 @@ var errSuperseded = errors.New("folders changed")
 // extractPending recognizes, one by one in the background, the PDFs and images
 // of src that have no text yet, and rebuilds the index every extractBatch files
 // and at the end. Второй проход, пока идет первый, не начинается: пересборка
-// по ходу его же и запустила бы.
+// по ходу его же и запустила бы. Если за время прохода выбраны другие папки,
+// проход останавливается, ничего не пересобирая на старых, и следующий
+// начинается по новым (ревью #379: выбор папок откатывался, а новые оставались
+// нераспознанными).
 //
 // ponytail: упавшее распознавание кладет пустой текст, и файл не
-// распознается снова, пока не изменится. Потолок: сбой на время (помощник
-// убит, диск занят) оставляет файл без текста. Путь: класть ошибку с
-// отметкой времени и повторять раз в сутки.
+// распознается снова, пока не изменится; таймаут не кладет ничего и
+// повторяется. Потолок: файл, на котором помощник падает раз за разом от
+// временной причины. Путь: класть ошибку с отметкой времени и повторять раз в сутки.
 func (x *indexer) extractPending(ctx context.Context, src *localfiles.Source) {
 	if x.ext.helper == nil || !x.extracting.CompareAndSwap(false, true) {
 		return
 	}
 	go func() {
-		defer x.extracting.Store(false)
 		start := time.Now()
 		n, err := x.extractPass(ctx, src)
 		if err != nil && !errors.Is(err, errSuperseded) && ctx.Err() == nil {
 			log.Printf("files: распознавание: %v", err)
 		}
-		if n == 0 {
-			return
+		if n > 0 {
+			log.Printf("files: распознано %d за %s", n, time.Since(start).Round(time.Second))
+			if n%extractBatch != 0 {
+				x.rerun(src)
+			}
 		}
-		log.Printf("files: распознано %d за %s", n, time.Since(start).Round(time.Second))
-		if n%extractBatch != 0 && x.currentSource() == src {
-			x.run(src)
+		x.extracting.Store(false)
+		// Папки сменились, пока шел проход: сборка новых уже могла закончиться
+		// и не запустить свой проход (этот держал флаг).
+		if cur := x.currentSource(); cur != src && ctx.Err() == nil {
+			x.extractPending(ctx, cur)
 		}
 	}()
 }
@@ -72,15 +82,16 @@ func (x *indexer) extractPending(ctx context.Context, src *localfiles.Source) {
 // extractPass recognizes the pending files of src and returns how many it did.
 func (x *indexer) extractPass(ctx context.Context, src *localfiles.Source) (int, error) {
 	n := 0
-	err := src.Pending(ctx, func(d domain.FileDoc, open string) error {
-		if x.currentSource() != src {
-			return errSuperseded // владелец выбрал другие папки: распознает следующий проход
+	err := src.Pending(ctx, func(d domain.FileDoc) error {
+		if !x.latest(src) {
+			return errSuperseded
 		}
-		if err := x.extractOne(ctx, d, open); err != nil {
+		done, err := x.extractOne(ctx, src, d)
+		if err != nil || !done {
 			return err
 		}
 		if n++; n%extractBatch == 0 {
-			x.run(src)
+			x.rerun(src)
 		}
 		return nil
 	})
@@ -88,14 +99,25 @@ func (x *indexer) extractPass(ctx context.Context, src *localfiles.Source) (int,
 }
 
 // extractOne recognizes one file and stores its text, empty when it failed.
-func (x *indexer) extractOne(ctx context.Context, d domain.FileDoc, open string) error {
-	text, err := x.ext.helper.Extract(ctx, open)
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
+// done is false when nothing was stored: таймаут повторится на следующем проходе.
+func (x *indexer) extractOne(ctx context.Context, src *localfiles.Source, d domain.FileDoc) (bool, error) {
+	f, info, err := src.OpenExtract(d.Path())
 	if err != nil {
+		return false, nil // файл пропал или стал симлинком после обхода
+	}
+	defer func() { _ = f.Close() }() // только чтение
+	ext := strings.TrimPrefix(strings.ToLower(filepath.Ext(d.Path())), ".")
+	text, err := x.ext.helper.Extract(ctx, f, ext)
+	switch {
+	case ctx.Err() != nil:
+		return false, ctx.Err()
+	case errors.Is(err, extractcache.ErrTimeout):
+		log.Printf("files: не успел распознать %s: %v", d.Name(), err)
+		return false, nil
+	case err != nil:
 		log.Printf("files: не распознан %s: %v", d.Name(), err)
 		text = ""
 	}
-	return x.ext.cache.Put(d.Path(), d.Size(), d.ModTime(), text)
+	// Ключ — от открытого файла: это та версия, которую прочел помощник.
+	return true, x.ext.cache.Put(d.Path(), info.Size(), info.ModTime(), text)
 }

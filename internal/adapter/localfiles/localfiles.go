@@ -168,14 +168,9 @@ func (s *Source) skipDir(name string) bool {
 // inside the roots are not followed: ссылка может увести за пределы корня.
 // Сам корень обходится раскрытым: корень-симлинк иначе давал ноль файлов.
 func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
-	return s.walk(ctx, func(shown, _ string, info os.FileInfo, imgs int) error {
-		if name := info.Name(); extractable(name) {
-			if !s.allowedExtract(name, imgs) {
-				return nil
-			}
-			if _, ok := s.extractedText(shown, info); !ok {
-				return nil // еще не распознан: ждет в Pending
-			}
+	return s.walk(ctx, func(shown string, info os.FileInfo, imgs int) error {
+		if name := info.Name(); extractable(name) && (!s.allowedExtract(name, imgs) || !s.hasExtracted(shown, info)) {
+			return nil // папка кадров или еще не распознан: ждет в Pending
 		}
 		doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
 		if err != nil {
@@ -186,9 +181,9 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 }
 
 // walk calls fn for every regular file the rules let through by name and size,
-// with the path as shown (в написании корня, как его задал человек), the path
-// to open and the number of images in its folder.
-func (s *Source) walk(ctx context.Context, fn func(shown, open string, info os.FileInfo, imgs int) error) error {
+// with the path as shown (в написании корня, как его задал человек) and, for an
+// image, the number of images in its folder (иначе ноль).
+func (s *Source) walk(ctx context.Context, fn func(shown string, info os.FileInfo, imgs int) error) error {
 	for i, root := range s.resolved {
 		imgs := map[string]int{}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -199,13 +194,16 @@ func (s *Source) walk(ctx context.Context, fn func(shown, open string, info os.F
 				return nil // нечитаемая папка не роняет обход остальных
 			}
 			if d.IsDir() {
-				return s.enterDir(path, root, d, imgs)
+				if path != root && s.skipDir(d.Name()) {
+					return filepath.SkipDir
+				}
+				return nil
 			}
 			info, ok := s.fileInfo(d)
 			if !ok {
 				return nil
 			}
-			return fn(s.roots[i]+strings.TrimPrefix(path, root), path, info, imgs[filepath.Dir(path)])
+			return fn(s.roots[i]+strings.TrimPrefix(path, root), info, s.imagesIn(filepath.Dir(path), d.Name(), imgs))
 		})
 		if err != nil {
 			return fmt.Errorf("walk %s: %w", root, err)
@@ -214,18 +212,21 @@ func (s *Source) walk(ctx context.Context, fn func(shown, open string, info os.F
 	return nil
 }
 
-// enterDir skips junk and excluded folders and counts the images of the rest,
-// for the folder cap of extracted files.
-func (s *Source) enterDir(path, root string, d fs.DirEntry, imgs map[string]int) error {
-	if path != root && s.skipDir(d.Name()) {
-		return filepath.SkipDir
+// imagesIn returns how many images lie in dir, counted once per folder and only
+// when the walk meets an image there: папка без картинок второй раз не читается
+// (ревью #379).
+func (s *Source) imagesIn(dir, name string, imgs map[string]int) int {
+	if s.extracted == nil || !isImage(name) {
+		return 0
 	}
-	if s.extracted != nil {
-		if entries, err := os.ReadDir(path); err == nil {
-			imgs[path] = countImages(entries)
+	n, ok := imgs[dir]
+	if !ok {
+		if entries, err := os.ReadDir(dir); err == nil {
+			n = countImages(entries)
 		}
+		imgs[dir] = n
 	}
-	return nil
+	return n
 }
 
 // fileInfo returns the info of a walked entry the rules let through by type,
@@ -286,26 +287,29 @@ func (s *Source) checked(path string) (int, string, error) {
 	return i, rel, nil
 }
 
-// extractReady applies to a PDF or image the two rules the walk adds: картинка
-// не из папки кадров, и текст уже распознан.
+// extractReady applies to a PDF or image the two rules the walk adds: текст
+// распознан, и картинка не из папки кадров. Порог проверяется и здесь:
+// читается только то, что проиндексировал бы обход, даже если в кеше осталась
+// запись с тех пор, как картинок в папке было меньше.
+//
+// ponytail: порог картинки пересчитывается чтением папки на каждый Check и
+// read_file. Потолок: картинки в папке с десятками тысяч файлов, которые
+// агент читает подряд. Путь: запоминать счет папки из последнего обхода.
 func (s *Source) extractReady(i int, rel string) bool {
 	info, err := s.dirs[i].Stat(rel)
+	if err != nil || !s.hasExtracted(filepath.Join(s.roots[i], rel), info) {
+		return false
+	}
+	if !isImage(rel) {
+		return true
+	}
+	f, err := s.dirs[i].Open(filepath.Dir(rel))
 	if err != nil {
 		return false
 	}
-	if isImage(rel) {
-		f, err := s.dirs[i].Open(filepath.Dir(rel))
-		if err != nil {
-			return false
-		}
-		entries, err := f.ReadDir(-1)
-		_ = f.Close() // только чтение
-		if err != nil || !s.allowedExtract(rel, countImages(entries)) {
-			return false
-		}
-	}
-	_, ok := s.extractedText(filepath.Join(s.roots[i], rel), info)
-	return ok
+	entries, err := f.ReadDir(-1)
+	_ = f.Close() // только чтение
+	return err == nil && s.allowedExtract(rel, countImages(entries))
 }
 
 // readExtracted returns the recognized text of a PDF or image.
@@ -314,7 +318,7 @@ func (s *Source) readExtracted(i int, rel, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, ok := s.extractedText(filepath.Join(s.roots[i], rel), info)
+	text, ok := s.extracted.Text(filepath.Join(s.roots[i], rel), info.Size(), info.ModTime())
 	if !ok {
 		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path) // распознанный текст пропал между проверкой и чтением
 	}

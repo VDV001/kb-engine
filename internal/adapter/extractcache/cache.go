@@ -42,6 +42,16 @@ func (c Cache) Text(path string, size int64, mod time.Time) (string, bool) {
 	return string(b), true
 }
 
+// Has reports whether there is an entry for this version of the file, without
+// reading it: обход спрашивает это о каждом PDF и картинке (ревью #379).
+func (c Cache) Has(path string, size int64, mod time.Time) bool {
+	if c.Dir == "" {
+		return false
+	}
+	_, err := os.Stat(filepath.Join(c.Dir, key(path, size, mod)))
+	return err == nil
+}
+
 // Put stores the text of this version of the file.
 func (c Cache) Put(path string, size int64, mod time.Time, text string) error {
 	if c.Dir == "" {

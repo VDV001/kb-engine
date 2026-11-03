@@ -1,10 +1,13 @@
-// kb-extract <файл> — текст PDF или картинки в stdout, для поиска по файлам
+// kb-extract - <pdf|png|jpg|…> — текст PDF или картинки из stdin в stdout, для поиска по файлам
 // окна kb-desktop. Только фреймворки macOS (PDFKit, Vision, ImageIO): ставить
 // ничего не нужно, сторонних программ нет (решение владельца 03.11.2026).
 //
 // PDF с текстовым слоем отдает его как есть; PDF без текста (скан) и картинки
 // распознаются Vision на русском и английском. Коды выхода: 0 — текст в stdout
 // (возможно пустой: на картинке нет надписей), 2 — файл не открылся.
+//
+// Файл приходит содержимым в stdin, а не путем: его открыло окно через
+// os.Root, и помощник не может уйти по симлинку за пределы папок поиска.
 import Foundation
 import PDFKit
 import Vision
@@ -42,8 +45,8 @@ func render(_ page: PDFPage) -> CGImage? {
     return ctx.makeImage()
 }
 
-func pdfText(_ url: URL) throws -> String? {
-    guard let doc = PDFDocument(url: url), !doc.isLocked else { return nil }
+func pdfText(_ data: Data) throws -> String? {
+    guard let doc = PDFDocument(data: data), !doc.isLocked else { return nil }
     let text = doc.string ?? ""
     if text.trimmingCharacters(in: .whitespacesAndNewlines).count >= minTextPerPage * max(doc.pageCount, 1) {
         return text
@@ -57,19 +60,19 @@ func pdfText(_ url: URL) throws -> String? {
     return pages.joined(separator: "\n\u{0C}")
 }
 
-func imageText(_ url: URL) throws -> String? {
-    guard let src = CGImageSourceCreateWithURL(url as CFURL, nil),
+func imageText(_ data: Data) throws -> String? {
+    guard let src = CGImageSourceCreateWithData(data as CFData, nil),
           let image = CGImageSourceCreateImageAtIndex(src, 0, nil) else { return nil }
     return try ocr(image)
 }
 
-guard CommandLine.arguments.count == 2 else {
-    FileHandle.standardError.write("usage: kb-extract <file>\n".data(using: .utf8)!)
+guard CommandLine.arguments.count == 3, CommandLine.arguments[1] == "-" else {
+    FileHandle.standardError.write("usage: kb-extract - <pdf|png|jpg|...> < file\n".data(using: .utf8)!)
     exit(64)
 }
-let url = URL(fileURLWithPath: CommandLine.arguments[1])
+let data = FileHandle.standardInput.readDataToEndOfFile()
 do {
-    let text = url.pathExtension.lowercased() == "pdf" ? try pdfText(url) : try imageText(url)
+    let text = CommandLine.arguments[2].lowercased() == "pdf" ? try pdfText(data) : try imageText(data)
     guard let text else { exit(2) }
     FileHandle.standardOutput.write(text.data(using: .utf8)!)
 } catch {
