@@ -3,6 +3,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -346,7 +347,9 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 
-	serveOpts, err := serveOptions(*catalogPath, *timing, filesRoots, filesExclude, stdout, stderr)
+	// Сборка индекса файлов живет столько же, сколько процесс: у serve нет
+	// мягкой остановки, и выход процесса обрывает обход вместе со всем прочим.
+	serveOpts, err := serveOptions(context.Background(), *catalogPath, *timing, filesRoots, filesExclude, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1

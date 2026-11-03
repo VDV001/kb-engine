@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,7 +18,7 @@ func TestServeFiles_searchesConfiguredRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	var log bytes.Buffer
-	opt, built := filesOption([]string{root}, nil, &log)
+	opt, built := filesOption(context.Background(), []string{root}, nil, &log)
 	select {
 	case err := <-built:
 		if err != nil {

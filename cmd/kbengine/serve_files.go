@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -12,13 +13,13 @@ import (
 )
 
 // serveOptions собирает необязательные части сервера из флагов serve.
-func serveOptions(catalogPath string, timing bool, filesRoots, filesExclude []string, stdout, stderr io.Writer) ([]httpapi.Option, error) {
+func serveOptions(ctx context.Context, catalogPath string, timing bool, filesRoots, filesExclude []string, stdout, stderr io.Writer) ([]httpapi.Option, error) {
 	opts := []httpapi.Option{synonymsFor(catalogPath, stderr), toolCallsOption(stderr)}
 	if timing {
 		opts = append(opts, httpapi.WithServerTiming())
 	}
 	if len(filesRoots) > 0 {
-		opt, built := filesOption(filesRoots, filesExclude, stdout)
+		opt, built := filesOption(ctx, filesRoots, filesExclude, stdout)
 		if opt == nil {
 			return nil, fmt.Errorf("files: %w", <-built)
 		}
@@ -32,7 +33,7 @@ func serveOptions(catalogPath string, timing bool, filesRoots, filesExclude []st
 //
 // Фоном, а не до старта: витрина каталога не должна ждать обхода диска, а
 // поиск по файлам до конца сборки честно отвечает 503.
-func filesOption(roots, exclude []string, log io.Writer) (httpapi.Option, <-chan error) {
+func filesOption(ctx context.Context, roots, exclude []string, log io.Writer) (httpapi.Option, <-chan error) {
 	built := make(chan error, 1)
 	abs := make([]string, 0, len(roots))
 	for _, r := range roots {
@@ -51,7 +52,7 @@ func filesOption(roots, exclude []string, log io.Writer) (httpapi.Option, <-chan
 	svc := filesearch.NewService(src)
 	go func() {
 		start := time.Now()
-		st, err := svc.Build()
+		st, err := svc.Build(ctx)
 		if err != nil {
 			fmt.Fprintf(log, "files: %v\n", err)
 		} else {

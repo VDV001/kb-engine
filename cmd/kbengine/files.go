@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -51,7 +52,7 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 	}
 	svc := filesearch.NewService(src)
 	start := time.Now()
-	st, err := svc.Build()
+	st, err := svc.Build(context.Background())
 	if err != nil {
 		fmt.Fprintf(stderr, "files: %v\n", err)
 		return 1
