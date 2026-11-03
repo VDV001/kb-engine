@@ -38,10 +38,21 @@ func TestReadTokenFile(t *testing.T) {
 		{"годный, перевод строки в конце", goodToken + "\n", 0o600, nil},
 		{"только чтение владельцу", goodToken, 0o400, nil},
 		{"читают все", goodToken, 0o644, errTokenPerms},
-		{"читает группа", goodToken, 0o640, errTokenPerms},
+		{"пишут все", goodToken, 0o602, errTokenPerms},
+		{"пишет группа", goodToken, 0o620, errTokenPerms},
+		// Secret Kubernetes с fsGroup монтируется 0440 группе пода: читать
+		// группе можно, писать — нет.
+		{"читает группа (Secret с fsGroup)", goodToken + "\n", 0o440, nil},
 		{"короче 32", "short-token-123", 0o600, errTokenWeak},
 		{"пустой", "\n", 0o600, errTokenWeak},
 		{"пробел внутри", "abcdefghijklmnop qrstuvwxyz0123456789", 0o600, errTokenWeak},
+		// Кириллица: 16 букв — 32 байта, вдвое меньше заявленной стойкости, и
+		// в заголовок HTTP ее не положить.
+		{"не ASCII", "абвгдежзийклмноп", 0o600, errTokenWeak},
+		{"управляющий символ", "abcdefghijklmnop\x00qrstuvwxyz0123456789", 0o600, errTokenWeak},
+		// Длиннее предела — отказ, а не тихая обрезка, после которой полный
+		// токен у клиента всегда получал бы 401.
+		{"слишком длинный", strings.Repeat("a", 5000), 0o600, errTokenWeak},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -168,5 +179,14 @@ func TestNewServeServer_AppliesToken(t *testing.T) {
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if srv := newServeServer("127.0.0.1:0", inner, goodToken, tlsCfg); srv.TLSConfig != tlsCfg || srv.ReadHeaderTimeout == 0 {
 		t.Fatalf("TLSConfig/ReadHeaderTimeout не переданы: %+v", srv)
+	}
+}
+
+// Открытый в сеть сервер закрывает медленные и простаивающие соединения:
+// иначе любой без токена держал бы тысячи соединений до исчерпания файлов.
+func TestNewServeServer_Timeouts(t *testing.T) {
+	srv := newServeServer("127.0.0.1:0", http.NotFoundHandler(), "", nil)
+	if srv.ReadTimeout == 0 || srv.IdleTimeout == 0 || srv.ReadHeaderTimeout == 0 {
+		t.Fatalf("таймауты: read=%v idle=%v header=%v", srv.ReadTimeout, srv.IdleTimeout, srv.ReadHeaderTimeout)
 	}
 }
