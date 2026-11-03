@@ -185,7 +185,10 @@ call with `next_offset`, under the client's MCP output limit.
 The index snapshot (`index.gob`, 0600) is shared with the window, so whichever
 starts second rebuilds only changed files (measured: 3 063 files, 3.2 s cold,
 0.19 s from the snapshot). It is built in the background at start and caught up
-every 10 minutes; a file saved a minute ago may not be found yet.
+every 10 minutes; a file saved a minute ago may not be found yet. The config is
+checked every 30 seconds: a folder removed or excluded in the window stops being
+readable once the rebuild over the new folders finishes, without restarting the
+server. `~/` in the `--files-config` path is expanded.
 
 ## Stack
 

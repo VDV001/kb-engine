@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
@@ -89,16 +90,19 @@ func run(args []string, stderr io.Writer) error {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// Перед выходом сборка индекса отменяется и дожидается: иначе процесс
+	// умирал посреди записи снимка, оставляя временный файл в ~100 МБ (ревью #375).
+	var bg sync.WaitGroup
+	defer func() { cancel(); bg.Wait() }()
 	cfg := mcpserver.Config{Version: version, ViewBase: *viewBase, Recorder: recorder}
 	tools := "search_catalog · get_entry · stats"
 	if *filesConfig != "" {
-		files, err := newFileSearch(*filesConfig, userHome(), stderr)
+		files, err := newFileIndex(*filesConfig, userHome(), stderr)
 		if err != nil {
 			return err
 		}
-		go keepIndexed(ctx, files, stderr)
-		cfg.Files = files
+		bg.Go(func() { files.run(ctx) })
+		cfg.Files = files.svc
 		tools += " · search_files · read_file"
 	}
 	srv := mcpserver.New(svc, search.New(syn), cfg)
