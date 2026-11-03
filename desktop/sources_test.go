@@ -74,7 +74,7 @@ func TestSetSources_SavesOrderAndApplies(t *testing.T) {
 		src("", desktopconfig.KindServer, "https://kb.example", true),
 	}
 	list[0].Name = "работа"
-	if err := s.SetSources(list, []string{" Finances "}); err != nil {
+	if err := s.SetSources(list, []string{" Finances "}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.roots, []string{filepath.Join(home, "work"), filepath.Join(home, "notes")}) ||
@@ -128,7 +128,7 @@ func TestSetSources_Rejects(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, got, home := newSourcesSettings(t)
 			before, _ := os.ReadFile(s.path)
-			if err := s.SetSources(tt.list(home), nil); !errors.Is(err, tt.want) {
+			if err := s.SetSources(tt.list(home), nil, nil); !errors.Is(err, tt.want) {
 				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 			// Отказ ничего не меняет: ни индекс, ни конфиг.
@@ -147,7 +147,7 @@ func TestGetSources_States(t *testing.T) {
 		src("folder-2", desktopconfig.KindFolder, filepath.Join(home, "work"), false),
 		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
 		src("server-1", desktopconfig.KindServer, "https://kb.example", true),
-	}, []string{"finances"}); err != nil {
+	}, []string{"finances"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Папку удалили после сохранения: экран называет это, а не показывает «ок».
@@ -205,7 +205,7 @@ func TestCatalogSwitch_FollowsPath(t *testing.T) {
 func TestSetSources_AllEnabledMissingIsRejected(t *testing.T) {
 	s, got, _ := newSourcesSettings(t)
 	gone := s.cfg.FolderRoots()[0] // ~/claude-cowork во временном доме отсутствует
-	err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, gone, true)}, nil)
+	err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, gone, true)}, nil, nil)
 	if !errors.Is(err, errNoFolders) || got.calls != 0 {
 		t.Fatalf("err = %v, apply calls = %d", err, got.calls)
 	}
@@ -219,7 +219,7 @@ func TestSetSources_KnownMissingCatalogIsKept(t *testing.T) {
 	err := s.SetSources([]desktopconfig.Source{
 		src("", desktopconfig.KindFolder, "~/notes", true),
 		src("catalog-1", desktopconfig.KindCatalog, cat, true),
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func TestSetSources_KnownMissingCatalogIsKept(t *testing.T) {
 // не «0 файлов».
 func TestGetSources_BeforeFirstBuild(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
-	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	s.countFiles = func([]string) map[string]int { return nil }
@@ -252,7 +252,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 	if err := s.SetSources([]desktopconfig.Source{
 		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
 		src("folder-2", desktopconfig.KindFolder, team, true),
-	}, nil); err != nil {
+	}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Диск отвалился, сохранили перестановку — папка вне индекса.
@@ -262,7 +262,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 	if err := s.SetSources([]desktopconfig.Source{
 		src("folder-2", desktopconfig.KindFolder, team, true),
 		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
-	}, nil); err != nil {
+	}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(got.roots, []string{filepath.Join(home, "notes")}) {
@@ -294,7 +294,7 @@ func TestReconcile_ReopensReturnedFolder(t *testing.T) {
 // остается прежним, а не затирается.
 func TestReconcile_NeverAppliesEmpty(t *testing.T) {
 	s, got, home := newSourcesSettings(t)
-	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Rename(filepath.Join(home, "notes"), filepath.Join(home, "notes.off")); err != nil {
