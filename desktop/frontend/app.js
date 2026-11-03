@@ -234,6 +234,7 @@ function showEmpty() {
 
 // --- Клавиатура ----------------------------------------------------------------
 document.addEventListener("keydown", (e) => {
+  if (settingsOpen()) return; // клавиши поиска не трогают панель папок
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
@@ -251,3 +252,107 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("resize", moveInk);
 moveInk();
 waitForIndex();
+
+// --- Папки для поиска ----------------------------------------------------------
+// Меняются только в окне, через привязки Wails: у HTTP API такой ручки нет
+// намеренно. В браузере (dev-режим) панель объясняет это и ничего не меняет.
+const panel = $("#settings"), scrim = $("#scrim");
+const draft = { roots: [], exclude: [] };
+
+async function openSettings() {
+  scrim.hidden = false;
+  panel.classList.add("open");
+  panel.setAttribute("aria-hidden", "false");
+  showError("");
+  const editable = !!native();
+  for (const id of ["#pick", "#add-root", "#add-exclude", "#save-settings", "#root-input", "#exclude-input"]) $(id).disabled = !editable;
+  if (!editable) {
+    draft.roots = []; draft.exclude = [];
+    renderFolders();
+    $("#settings-note").textContent = "Папки меняются в окне приложения, не в браузере.";
+    return;
+  }
+  const v = await native().Folders();
+  draft.roots = [...(v.roots || [])];
+  draft.exclude = [...(v.exclude || [])];
+  $("#settings-note").textContent = "";
+  renderFolders();
+}
+function closeSettings() {
+  panel.classList.remove("open");
+  panel.setAttribute("aria-hidden", "true");
+  scrim.hidden = true;
+  $("#q").focus();
+}
+const settingsOpen = () => panel.classList.contains("open");
+
+function renderFolders() {
+  const row = (text, i, list) =>
+    `<li><span class="path" title="${esc(text)}">${esc(text.replace(/^\/Users\/[^/]+/, "~"))}</span><button data-list="${list}" data-i="${i}" aria-label="Убрать">✕</button></li>`;
+  $("#roots").innerHTML = draft.roots.length
+    ? draft.roots.map((r, i) => row(r, i, "roots")).join("")
+    : `<li class="empty-row">Ни одной папки — добавьте хотя бы одну</li>`;
+  $("#excludes").innerHTML = draft.exclude.map((r, i) => row(r, i, "exclude")).join("");
+}
+function showError(msg) {
+  const el = $("#settings-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+function addTo(list, value) {
+  value = (value || "").trim();
+  if (value && !draft[list].includes(value)) draft[list].push(value);
+  renderFolders();
+}
+
+$("#open-settings").onclick = openSettings;
+$("#close-settings").onclick = closeSettings;
+scrim.onclick = closeSettings;
+$("#pick").onclick = async () => {
+  try { addTo("roots", await native().PickFolder()); } catch (e) { showError(String(e)); }
+};
+$("#add-root").onclick = () => { addTo("roots", $("#root-input").value); $("#root-input").value = ""; };
+$("#add-exclude").onclick = () => { addTo("exclude", $("#exclude-input").value); $("#exclude-input").value = ""; };
+$("#root-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-root").click());
+$("#exclude-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-exclude").click());
+panel.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-list]");
+  if (!b) return;
+  draft[b.dataset.list].splice(+b.dataset.i, 1);
+  renderFolders();
+});
+
+$("#save-settings").onclick = async () => {
+  showError("");
+  const btn = $("#save-settings");
+  btn.disabled = true;
+  try {
+    // Проверку делает Go: папка обязана существовать, иначе отказ с ее именем
+    // и без изменений — ни конфига, ни индекса.
+    await native().SetFolders(draft.roots, draft.exclude);
+  } catch (e) {
+    showError(String(e));
+    btn.disabled = false;
+    return;
+  }
+  $("#settings-note").innerHTML = `<span class="building"></span>Переиндексация…`;
+  $("#indexed").innerHTML = `<span class="building"></span>переиндексация`;
+  for (;;) {
+    const st = await native().IndexStatus();
+    if (!st.building) {
+      if (st.error) showError("Индекс не собрался: " + st.error);
+      else $("#settings-note").textContent = `Готово: ${st.indexed.toLocaleString("ru-RU")} файлов`;
+      setIndexed(st.indexed, st.skipped);
+      if (state.q) search(state.q);
+      break;
+    }
+    await sleep(400);
+  }
+  btn.disabled = false;
+};
+
+// Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
+document.addEventListener("keydown", (e) => {
+  if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
+  else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings(); }
+}, true);
