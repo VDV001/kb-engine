@@ -207,12 +207,16 @@ func (s *Service) previous() (*Index, string) {
 	return ix, ""
 }
 
-// Unload drops the index from memory and keeps the source: Read and Check
-// answer as before, Search reports ErrNotBuilt until the next Build, which
-// loads the index back from the store without rereading unchanged files.
-func (s *Service) Unload() {
+// Reset drops the index from memory and reads through src from now on,
+// without building: Read and Check answer under src at once, Search reports
+// ErrNotBuilt until the next Build, which loads the index back from the store
+// without rereading unchanged files.
+//
+// Stats остаются от последней сборки: search_files отдает их рядом с выдачей,
+// и сброс между поиском и Stats давал бы «indexed: 0» при найденных файлах.
+func (s *Service) Reset(src Source) {
 	s.mu.Lock()
-	s.ix, s.stats, s.buildErr = nil, Stats{}, nil
+	s.src, s.ix, s.buildErr = src, nil, nil
 	s.mu.Unlock()
 }
 
