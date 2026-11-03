@@ -113,3 +113,27 @@ func TestNew_RejectsRelativeRoot(t *testing.T) {
 		t.Fatal("относительный корень обязан отказать")
 	}
 }
+
+func TestReadText_RefusesSymlinks(t *testing.T) {
+	// Обход симлинки не индексирует, значит и читать по ним нечего. Ссылка с
+	// безобидным именем на .env или на исключенную папку — обход проверки
+	// имени, а не путь, который человек нашел в выдаче.
+	root := t.TempDir()
+	write(t, root, ".env", "TOKEN=1")
+	write(t, root, "finances/ledger.md", "деньги")
+	if err := os.Symlink(filepath.Join(root, ".env"), filepath.Join(root, "notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "finances"), filepath.Join(root, "money")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := localfiles.New([]string{root}, []string{"finances"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{filepath.Join(root, "notes.md"), filepath.Join(root, "money", "ledger.md")} {
+		if _, err := s.ReadText(p); !errors.Is(err, localfiles.ErrNotAllowed) {
+			t.Errorf("ReadText(%q) err = %v, want ErrNotAllowed", p, err)
+		}
+	}
+}
