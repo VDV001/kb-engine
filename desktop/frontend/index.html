@@ -9,10 +9,10 @@
 <body>
   <div class="drag" style="--wails-draggable:drag"></div>
 
-  <!-- Экран первой индексации: одно большое число, как у kensaku. -->
+  <!-- Первая индексация: журнал команды и одно большое число. -->
   <section id="indexing" class="indexing" hidden>
-    <div class="indexing-mark">kb<span class="dot">.</span></div>
     <div class="indexing-main">
+      <div class="prompt"><span class="dollar">$</span> kb index <span class="muted">--watch</span></div>
       <div class="eyebrow">Индексирую файлы</div>
       <div class="big" id="indexing-count">0</div>
       <div class="indexing-bar"><span></span></div>
@@ -22,47 +22,62 @@
   </section>
 
   <main id="app" class="app">
-    <header class="search">
-      <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="Искать в базе и файлах" autocomplete="off" spellcheck="false" autofocus>
-      <span class="kbd" id="count"></span>
-      <button class="gear" id="open-settings" title="Папки для поиска (⌘,)" aria-label="Настройки">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 13v4M10 15h4"/></svg>
-      </button>
+    <!-- Верхняя полоса — как навигация daniilvdovin.com: ячейки через 1px. -->
+    <header class="bar">
+      <div class="cell brand">kb<span class="dot">.</span></div>
+      <nav class="cell tabs" id="tabs">
+        <button data-tab="all" class="active">Все <i></i></button>
+        <button data-tab="kb">База знаний <i></i></button>
+        <button data-tab="doc">Документы <i></i></button>
+        <button data-tab="code">Код <i></i></button>
+        <span class="tab-ink"></span>
+      </nav>
+      <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
+      <div class="cell">
+        <button class="gear" id="open-settings" title="Папки для поиска (⌘,)" aria-label="Папки для поиска">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>
+          <span>папки</span>
+        </button>
+      </div>
     </header>
 
-    <nav class="tabs" id="tabs">
-      <button data-tab="all" class="active">Все <i></i></button>
-      <button data-tab="kb">База знаний <i></i></button>
-      <button data-tab="doc">Документы <i></i></button>
-      <button data-tab="code">Код <i></i></button>
-      <span class="tab-ink"></span>
-    </nav>
+    <!-- Ветка как на сайте: HEAD — текущий запрос. -->
+    <div class="branch" aria-hidden="true">
+      <span class="node done"></span><span class="line solid"></span>
+      <span class="node head"><b>HEAD</b><em id="branch-label">поиск</em></span>
+      <span class="line dotted"></span><span class="node todo"></span>
+    </div>
+
+    <label class="search">
+      <span class="dollar">$</span>
+      <span class="cmd">kb find</span>
+      <input id="q" type="search" placeholder="что ищем" autocomplete="off" spellcheck="false" autofocus>
+      <span class="kbd" id="count"></span>
+    </label>
 
     <div class="body">
-      <ol class="results" id="results"></ol>
-      <article class="preview" id="preview">
+      <section class="panel">
+        <div class="panel-head"><span>Выдача</span><span class="muted" id="results-hint">тип · имя · когда</span></div>
+        <ol class="results" id="results"></ol>
+      </section>
+      <article class="panel preview" id="preview">
         <div class="empty">
-          <div class="empty-mark">kb<span class="dot">.</span></div>
-          <p>Начните печатать: поиск по базе знаний и файлам рабочей папки.</p>
+          <div class="prompt"><span class="dollar">$</span> cat README</div>
+          <p>Поиск по базе знаний и файлам на этом компьютере.</p>
           <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
+          <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить</p>
         </div>
       </article>
     </div>
-
-    <footer class="status">
-      <span id="status-left"><span class="pulse"></span> <span id="indexed">—</span></span>
-      <span class="keys"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>esc</b> очистить</span>
-    </footer>
   </main>
 
   <!-- Папки для поиска. Меняются только в окне: в браузере (dev-режим) панель
-       только показывает список — менять папки через HTTP нельзя намеренно. -->
+       только объясняет это — менять папки через HTTP нельзя намеренно. -->
   <div class="scrim" id="scrim" hidden></div>
   <aside class="settings" id="settings" aria-hidden="true">
     <div class="settings-head">
       <div>
-        <div class="eyebrow">Настройки</div>
+        <div class="prompt"><span class="dollar">$</span> kb config folders</div>
         <h2>Папки для поиска</h2>
       </div>
       <button class="close" id="close-settings" aria-label="Закрыть">✕</button>
@@ -72,7 +87,7 @@
     <ul class="folders" id="roots"></ul>
     <div class="add-row">
       <button class="btn primary" id="pick">Выбрать папку…</button>
-      <input id="root-input" placeholder="или впишите путь: ~/Documents" spellcheck="false" autocomplete="off">
+      <input id="root-input" placeholder="или путь: ~/Documents" spellcheck="false" autocomplete="off">
       <button class="btn" id="add-root">Добавить</button>
     </div>
 
