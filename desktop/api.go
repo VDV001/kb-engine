@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -80,7 +82,24 @@ func normalizeRoots(roots []string, home string) (ok, skipped []string) {
 			skipped = append(skipped, r+" (папки нет)")
 			continue
 		}
+		if !readable(p) {
+			skipped = append(skipped, r+" (нет доступа: macOS не дает читать папку)")
+			continue
+		}
 		ok = append(ok, filepath.Clean(p))
 	}
 	return ok, skipped
+}
+
+// readable reports whether a folder's listing can be read. os.Stat проходит и
+// для ~/Documents без разрешения macOS, а обход потом получает EPERM; поэтому
+// проверяется само чтение, до записи в конфиг.
+func readable(dir string) bool {
+	f, err := os.Open(dir)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	_, err = f.Readdirnames(1)
+	return err == nil || errors.Is(err, io.EOF)
 }

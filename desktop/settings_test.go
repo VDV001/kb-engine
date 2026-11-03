@@ -43,7 +43,7 @@ func TestFolderSettings_SetSavesAndApplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantRoots := []string{filepath.Join(home, "notes"), filepath.Join(home, "work")}
-	if !slices.Equal(got.roots, wantRoots) || !slices.Equal(got.exclude, []string{"finances", "Archive"}) {
+	if !slices.Equal(got.roots, wantRoots) || !slices.Equal(got.exclude, []string{"finances", "archive"}) {
 		t.Fatalf("apply(%q, %q)", got.roots, got.exclude)
 	}
 	// Записано на диск: следующий запуск окна увидит те же папки.
@@ -51,7 +51,7 @@ func TestFolderSettings_SetSavesAndApplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(saved.Roots, wantRoots) || !slices.Equal(saved.Exclude, []string{"finances", "Archive"}) {
+	if !slices.Equal(saved.Roots, wantRoots) || !slices.Equal(saved.Exclude, []string{"finances", "archive"}) {
 		t.Fatalf("saved = %+v", saved)
 	}
 	if v := s.Get(); !slices.Equal(v.Roots, wantRoots) {
