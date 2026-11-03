@@ -51,7 +51,7 @@ async function waitForIndex() {
       $(".indexing-main .eyebrow").textContent = "Индекс не собрался";
       $("#indexing-count").textContent = "—";
       $(".indexing-bar").hidden = true;
-      $(".indexing-main .muted").textContent = why.trim() || "Причина неизвестна";
+      $("#indexing-note").textContent = why.trim() || "Причина неизвестна";
       // Экран закрывает кнопку настроек — даем выход прямо с него.
       $("#indexing-settings").hidden = false;
       return;
@@ -88,13 +88,17 @@ $("#q").addEventListener("input", (e) => {
 async function search(q) {
   state.q = q;
   const seq = ++state.seq;
-  if (!q) { state.kb = []; state.files = []; render(); showEmpty(); return; }
+  // HEAD на ветке — текущий запрос, как текущий шаг на сайте.
+  $("#branch-label").textContent = q ? `find «${q.length > 40 ? q.slice(0, 40) + "…" : q}»` : "поиск";
+  if (!q) { $("#app").classList.remove("busy"); state.kb = []; state.files = []; render(); showEmpty(); return; }
   const enc = encodeURIComponent(q);
+  $("#app").classList.add("busy");
   const [kb, files] = await Promise.all([
     api(`/api/search?q=${enc}`).catch(() => ({ body: null })),
     api(`/api/files/search?q=${enc}&limit=60`).catch(() => ({ body: null })),
   ]);
   if (seq !== state.seq) return; // пришел ответ на устаревший запрос
+  $("#app").classList.remove("busy");
   state.kb = (kb.body || []).slice(0, 40);
   state.files = (files.body && files.body.hits) || [];
   state.sel = 0;
@@ -146,16 +150,22 @@ function render() {
   if (state.items.length) select(state.sel);
 }
 
+// Строка журнала, как таблица на сайте: тип своим цветом (как роли «Я» и
+// «Агент») · имя · когда, ниже строка совпадения.
+// Подпись по настоящему типу: картинка не выдается за документ — вкладка
+// «Документы» ее и не покажет.
+const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
 function kbRow(e, i, hl) {
-  const verdict = e.verdict ? `<span class="badge ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
+  const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
-    <div class="hit-head"><span class="badge kb">база</span><span class="hit-name">${hl(e.title)}</span>${verdict}</div>
+    <div class="hit-head"><span class="type kb">${TYPE_LABEL.kb}</span><span class="hit-name">${hl(e.title)}</span>${verdict}</div>
     ${e.description ? `<div class="hit-snip">${hl(e.description)}</div>` : ""}
   </li>`;
 }
 function fileRow(f, i, hl) {
+  const t = TYPE_LABEL[f.kind] ? f.kind : "other";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
-    <div class="hit-head"><span class="hit-name">${hl(f.name)}</span><span class="hit-meta">${ago(f.modified)}</span></div>
+    <div class="hit-head"><span class="type ${t}">${TYPE_LABEL[t]}</span><span class="hit-name">${hl(f.name)}</span><span class="hit-meta">${ago(f.modified)}</span></div>
     <div class="hit-path">${esc(shortPath(f.path))}</div>
     ${f.snippet ? `<div class="hit-snip">${hl(f.snippet)}</div>` : ""}
   </li>`;
@@ -198,7 +208,7 @@ async function preview(it) {
   if (it.type === "kb") {
     const e = it.e;
     box.innerHTML = `<div class="doc">
-      <div class="doc-head"><div class="doc-title">${hl(e.title)}</div>
+      <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${e.id}</div><div class="doc-title">${hl(e.title)}</div>
         <div class="doc-path">${esc([e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
         <div class="doc-actions">${e.url ? `<button class="btn primary" data-act="url">Открыть источник</button>` : ""}</div></div>
       <div class="doc-desc">${hl(e.description || "Описания нет.")}</div></div>`;
@@ -211,7 +221,7 @@ async function preview(it) {
   if (seq !== previewSeq) return;
   const text = r.body ? r.body.text : "Не удалось прочитать файл.";
   box.innerHTML = `<div class="doc">
-    <div class="doc-head"><div class="doc-title">${esc(f.name)}</div>
+    <div class="doc-head"><div class="prompt"><span class="dollar">$</span> cat ${esc(f.name)}</div><div class="doc-title">${esc(f.name)}</div>
       <div class="doc-path">${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</div>
       <div class="doc-actions"><button class="btn primary" data-act="open">Открыть</button><button class="btn" data-act="reveal">Показать в Finder</button></div></div>
     <pre class="doc-text">${hl(text.slice(0, 200000))}</pre></div>`;
@@ -229,9 +239,10 @@ function activate(it, reveal) {
 }
 
 function showEmpty() {
-  $("#preview").innerHTML = `<div class="empty"><div class="empty-mark">kb<span class="dot">.</span></div>
-    <p>Начните печатать: поиск по базе знаний и файлам рабочей папки.</p>
-    <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p></div>`;
+  $("#preview").innerHTML = `<div class="empty"><div class="prompt"><span class="dollar">$</span> cat README</div>
+    <p>Поиск по базе знаний и файлам на этом компьютере.</p>
+    <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
+    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить</p></div>`;
 }
 
 // --- Клавиатура ----------------------------------------------------------------
@@ -253,6 +264,9 @@ document.addEventListener("keydown", (e) => {
 
 window.addEventListener("resize", moveInk);
 moveInk();
+// Шрифт вшит и грузится после первого замера: подчеркивание мерить заново.
+document.fonts.ready.then(moveInk);
+showEmpty(); // одна копия пустого экрана — в showEmpty, в разметке его нет
 waitForIndex();
 
 // --- Папки для поиска ----------------------------------------------------------
