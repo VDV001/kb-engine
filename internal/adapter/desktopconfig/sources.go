@@ -57,19 +57,23 @@ func (s Source) check() error {
 			return fmt.Errorf("%w: %s без пути", ErrSourceTarget, s.ID)
 		}
 	case KindServer:
-		if err := checkServerURL(s.URL); err != nil {
+		if err := CheckServerURL(s.URL); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrSourceTarget, s.ID, err)
 		}
 	}
 	return nil
 }
 
-// checkServerURL пускает https куда угодно, а http — только на этот Mac:
-// по открытому http в сеть токен прочтет любой на пути.
-func checkServerURL(raw string) error {
+// CheckServerURL пускает https куда угодно, а http — только на этот Mac:
+// по открытому http в сеть токен прочтет любой на пути. Запрос и фрагмент
+// (адрес скопирован из браузера) — отказ: путь к API к ним не приклеить.
+func CheckServerURL(raw string) error {
 	u, err := url.Parse(strings.TrimSpace(raw))
 	if err != nil || u.Host == "" {
 		return errors.New("нужен адрес вида https://host")
+	}
+	if u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return errors.New("адрес без ?… и #…: только https://host или https://host/путь")
 	}
 	switch u.Scheme {
 	case "https":
@@ -178,7 +182,7 @@ func (c *Config) migrate() {
 	}
 	// Негодный адрес прежде никого не ронял (его не читали) и не должен
 	// уронить окно теперь: такой сервер просто не переезжает.
-	if c.Server != "" && checkServerURL(c.Server) == nil {
+	if c.Server != "" && CheckServerURL(c.Server) == nil {
 		c.Sources = append(c.Sources, Source{ID: "server-1", Kind: KindServer, URL: c.Server})
 	}
 }

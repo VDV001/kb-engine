@@ -152,8 +152,6 @@ func (f *folderSettings) ServerStates() []sourceRow {
 			rows = append(rows, sourceRow{Source: s, State: stateOff})
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
-	defer cancel()
 	var wg sync.WaitGroup
 	for i := range rows {
 		r := &rows[i]
@@ -174,6 +172,10 @@ func (f *folderSettings) ServerStates() []sourceRow {
 			if !r.Enabled {
 				return
 			}
+			// Срок опроса — с момента, когда токен уже прочитан: диалог
+			// разблокировки Связки не должен съесть бюджет сети.
+			ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+			defer cancel()
 			info, err := f.probe(ctx, r.URL, tok)
 			if err != nil {
 				r.State, r.Note = stateMissing, serverMessage(err)
@@ -191,9 +193,8 @@ func (f *folderSettings) ServerStates() []sourceRow {
 // if empty, the stored one — но только для сохраненного адреса этого id:
 // набранный другой адрес токена не получит.
 func (f *folderSettings) CheckServer(id, url, token string) (kbserver.Info, error) {
-	probe := desktopconfig.Config{Sources: []desktopconfig.Source{{ID: "check", Kind: desktopconfig.KindServer, URL: url, Enabled: true}}}
-	if err := probe.Validate(); err != nil {
-		return kbserver.Info{}, err
+	if err := desktopconfig.CheckServerURL(url); err != nil {
+		return kbserver.Info{}, humanErr{err.Error(), fmt.Errorf("%w: %w", desktopconfig.ErrSourceTarget, err)}
 	}
 	if token == "" && f.savedURL(id) == url {
 		token = f.token(id)

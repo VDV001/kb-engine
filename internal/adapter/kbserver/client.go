@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
+	"net/url"
 )
 
 // Ошибки различимы, чтобы вызывающий подобрал слова: текст для человека живет
@@ -64,7 +64,11 @@ func (c Client) Info(ctx context.Context) (Info, error) {
 }
 
 func (c Client) get(ctx context.Context, path string, into any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimSuffix(c.URL, "/")+path, nil)
+	target, err := url.JoinPath(c.URL, path)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
@@ -87,8 +91,20 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	switch code := resp.StatusCode; {
+	if err := statusErr(path, resp.StatusCode); err != nil {
+		return err
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(into); err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
+	}
+	return nil
+}
+
+// statusErr maps a response status to the client's errors; nil for 200.
+func statusErr(path string, code int) error {
+	switch {
 	case code == http.StatusOK:
+		return nil
 	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return ErrUnauthorized
 	case code == http.StatusTooManyRequests || code >= http.StatusInternalServerError:
@@ -97,8 +113,4 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 	default:
 		return fmt.Errorf("%w: %s answered %d", ErrNotKB, path, code)
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(into); err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
-	}
-	return nil
 }

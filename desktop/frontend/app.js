@@ -406,7 +406,7 @@ async function loadServerStates() {
     if (r && r.url === s.url) Object.assign(s, { state: r.state, count: r.count, note: r.note, hasToken: r.hasToken });
     else if (s.state === "checking") Object.assign(s, { state: "missing", note: failed ? "состояние серверов не получено" : "" });
   }
-  if (settingsOpen()) renderSources();
+  if (settingsOpen()) patchStates();
 }
 
 function closeSettings() {
@@ -512,12 +512,26 @@ function renderSources() {
   $("#excludes").innerHTML = draft.exclude.map((r, i) =>
     `<li><span class="path">${esc(r)}</span><button data-unex="${i}" aria-label="Убрать ${esc(r)}">✕</button></li>`).join("");
 
+  renderFooter();
+}
+
+function renderFooter() {
   const on = draft.sources.filter((s) => s.enabled);
   const lost = on.filter((s) => s.state === "missing" && s._orig === target(s)).length;
   $("#settings-note").innerHTML = dirty()
     ? `<span class="dirty">есть несохраненные изменения</span>`
-    : esc(`включено ${on.length} из ${n}` + (lost ? ` · без связи: ${lost}` : ""));
+    : esc(`включено ${on.length} из ${draft.sources.length}` + (lost ? ` · без связи: ${lost}` : ""));
   $("#save-settings").disabled = !native() || !dirty();
+}
+
+// patchStates обновляет только плашки состояния и подвал: полная перерисовка
+// стерла бы то, что человек набирает в формах, пока серверы отвечали.
+function patchStates() {
+  for (const s of draft.sources) {
+    const el = $(`.src-row[data-key="${s._key}"] .right .state`);
+    if (el) el.outerHTML = stateOf(s);
+  }
+  renderFooter();
 }
 
 function showError(msg) {
@@ -640,16 +654,20 @@ panel.addEventListener("click", async (e) => {
     const v = $("#na").value.trim();
     if (!v) return focusSoon("#na");
     if (ui.adding) return; // двойной клик через await добавил бы сервер дважды
-    ui.adding = true;
-    const s = { id: "", kind: ui.addKind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
+    const kind = ui.addKind;
+    // Поля читаются до ожидания: за время await форма может перерисоваться.
+    const tok = kind === "server" ? $("#nt").value.trim() : "";
+    const s = { id: "", kind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
     setTarget(s, v);
-    if (s.kind === "server") {
+    if (kind === "server") {
+      ui.adding = true;
       // id выдает Go сразу: к нему привязан токен в Связке ключей.
-      try { s.id = await native().NewSourceID("server"); } finally { ui.adding = false; }
+      try { s.id = await native().NewSourceID("server"); }
+      catch (err) { ui.adding = false; return showError("Не удалось добавить сервер: " + err); }
+      ui.adding = false;
+      if (ui.addKind !== "server") return; // форму сменили, пока ждали
       ui.verdict = null;
     }
-    ui.adding = false;
-    const tok = s.kind === "server" ? $("#nt").value.trim() : "";
     const undo = change(() => { draft.sources.push(s); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     ui.addKind = null;
     renderSources();
@@ -671,6 +689,18 @@ function renderAndKeep(key, typed) {
     if (s && $(`#et-${key}`) && typed.tok !== tokenFor(s, typed.url)) $(`#et-${key}`).value = typed.tok;
   }
 }
+
+// Адрес в форме правки сервера изменили — сохраненный токен ему не достанется
+// (при сохранении он удалится), подсказка поля токена говорит это сразу.
+panel.addEventListener("input", (e) => {
+  const m = e.target.id && e.target.id.match(/^ea-(.+)$/);
+  const s = m && byKey(m[1]);
+  const et = s && s.kind === "server" && $(`#et-${s._key}`);
+  if (!et) return;
+  et.placeholder = e.target.value.trim() !== s._orig
+    ? "новый адрес — введите токен для него (сохраненный удалится)"
+    : s.hasToken ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file";
+});
 
 // Enter в поле формы — главная кнопка этой формы.
 panel.addEventListener("keydown", (e) => {

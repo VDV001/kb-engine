@@ -111,6 +111,16 @@ func (s Store) args(cmd, account string, extra ...string) []string {
 	return a
 }
 
+// safe: печатный ASCII без кавычки и обратной косой — %q для security -i
+// записал бы не-ASCII как \uXXXX, а security такие escape не раскрывает.
 func safe(v string) bool {
-	return v != "" && !strings.ContainsAny(v, "\"\\ \t\r\n")
+	if v == "" {
+		return false
+	}
+	for i := range len(v) {
+		if c := v[i]; c < 0x21 || c > 0x7e || c == '"' || c == '\\' {
+			return false
+		}
+	}
+	return true
 }
