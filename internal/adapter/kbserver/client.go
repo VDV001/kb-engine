@@ -18,7 +18,12 @@ var (
 	ErrUnauthorized = errors.New("сервер ответил 401: нужен верный токен")
 	ErrUnreachable  = errors.New("нет связи с сервером")
 	ErrNotKB        = errors.New("по адресу отвечает не kb-сервер")
+	ErrServerError  = errors.New("kb-сервер ответил ошибкой")
 )
+
+// errRedirect — клиент не идет по редиректам: Go пересылает Authorization на
+// тот же хост и при смене https на http, и токен ушел бы открытым текстом.
+var errRedirect = errors.New("сервер перенаправил запрос — kb не идет по редиректам с токеном")
 
 // maxBody — сколько читать из ответа: /api/engine и /api/stats весят килобайты,
 // а чужой сервер по ошибочному адресу может прислать что угодно.
@@ -66,10 +71,12 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 	if c.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	hc := c.HTTP
-	if hc == nil {
-		hc = http.DefaultClient
+	hc := &http.Client{}
+	if c.HTTP != nil {
+		copied := *c.HTTP // транспорт и таймаут вызывающего, но свое правило редиректов
+		hc = &copied
 	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return errRedirect }
 	resp, err := hc.Do(req)
 	if err != nil {
 		// Сеть, таймаут, DNS и недоверенный сертификат — для человека одно:
@@ -77,11 +84,15 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	switch {
-	case resp.StatusCode == http.StatusUnauthorized:
+	switch code := resp.StatusCode; {
+	case code == http.StatusOK:
+	case code == http.StatusUnauthorized || code == http.StatusForbidden:
 		return ErrUnauthorized
-	case resp.StatusCode != http.StatusOK:
-		return fmt.Errorf("%w: %s ответил %d", ErrNotKB, path, resp.StatusCode)
+	case code == http.StatusTooManyRequests || code >= http.StatusInternalServerError:
+		// Настоящий kb-сервер с ошибкой или прокси при перезапуске: адрес верный.
+		return fmt.Errorf("%w: %s ответил %d", ErrServerError, path, code)
+	default:
+		return fmt.Errorf("%w: %s ответил %d", ErrNotKB, path, code)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(into); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
