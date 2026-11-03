@@ -80,22 +80,34 @@ func (x *indexer) extractPending(ctx context.Context, src *localfiles.Source) {
 }
 
 // extractPass recognizes the pending files of src and returns how many it did.
+// Ждущие собираются заранее: окно показывает «распознано N из M».
 func (x *indexer) extractPass(ctx context.Context, src *localfiles.Source) (int, error) {
+	var docs []domain.FileDoc
+	if err := src.Pending(ctx, func(d domain.FileDoc) error { docs = append(docs, d); return nil }); err != nil {
+		return 0, err
+	}
+	if len(docs) == 0 {
+		return 0, nil
+	}
+	defer x.progress.Store(nil)
 	n := 0
-	err := src.Pending(ctx, func(d domain.FileDoc) error {
+	for i, d := range docs {
+		x.progress.Store(&recognizeProgress{Done: i, Total: len(docs)})
 		if !x.latest(src) {
-			return errSuperseded
+			return n, errSuperseded
 		}
 		done, err := x.extractOne(ctx, src, d)
-		if err != nil || !done {
-			return err
+		if err != nil {
+			return n, err
+		}
+		if !done {
+			continue
 		}
 		if n++; n%extractBatch == 0 {
 			x.rerun(src)
 		}
-		return nil
-	})
-	return n, err
+	}
+	return n, nil
 }
 
 // extractOne recognizes one file and stores its text, empty when it failed.

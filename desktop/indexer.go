@@ -19,6 +19,16 @@ type indexStatus struct {
 	Skipped  int    `json:"skipped"`
 	Reused   int    `json:"reused"` // взяты из снимка без чтения
 	Error    string `json:"error,omitempty"`
+	// Recognizing — идет проход распознавания PDF и картинок: сколько из
+	// скольких. Первый проход длится десятки минут, и без счета он неотличим
+	// от зависания.
+	Recognizing *recognizeProgress `json:"recognizing,omitempty"`
+}
+
+// recognizeProgress is how far the recognition pass has got.
+type recognizeProgress struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
 }
 
 // indexer собирает индекс файлов в фоне и пересобирает его при смене папок.
@@ -40,9 +50,10 @@ type indexer struct {
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
 
-	every      time.Duration // как часто индекс догоняет диск (rebuildEvery)
-	ext        extraction    // распознавание PDF и картинок (extract.go)
-	extracting atomic.Bool   // идет проход распознавания: второй не запускается
+	every      time.Duration                     // как часто индекс догоняет диск (rebuildEvery)
+	ext        extraction                        // распознавание PDF и картинок (extract.go)
+	extracting atomic.Bool                       // идет проход распознавания: второй не запускается
+	progress   atomic.Pointer[recognizeProgress] // nil — прохода нет
 }
 
 // rebuildEvery — как часто окно догоняет диск, тот же срок, что у MCP: сборка
@@ -167,11 +178,13 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 	}
 }
 
-// Status returns the state of the latest build.
+// Status returns the state of the latest build and of the recognition pass.
 func (x *indexer) Status() indexStatus {
 	x.mu.Lock()
-	defer x.mu.Unlock()
-	return x.status
+	st := x.status
+	x.mu.Unlock()
+	st.Recognizing = x.progress.Load()
+	return st
 }
 
 func (x *indexer) superseded(gen int) bool {

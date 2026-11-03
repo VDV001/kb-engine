@@ -74,9 +74,18 @@ function countUp(el, to) {
     requestAnimationFrame(tick);
   });
 }
-function setIndexed(n, skipped) {
-  $("#indexed").textContent = `${n.toLocaleString("ru-RU")} файлов` + (skipped ? ` · ${skipped} не прочитано` : "");
+function setIndexed(n, skipped, rec) {
+  $("#indexed").textContent = `${n.toLocaleString("ru-RU")} файлов` + (skipped ? ` · ${skipped} не прочитано` : "") +
+    (rec ? ` · распознано ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
 }
+
+// Счет растет и после первой сборки: окно пересобирается по таймеру и
+// распознает PDF и картинки в фоне. Опрос раз в 3 с, только в окне.
+if (native()) setInterval(async () => {
+  if (settingsOpen()) return;
+  const st = await native().IndexStatus().catch(() => null);
+  if (st && !st.building && !st.error) setIndexed(st.indexed, st.skipped, st.recognizing);
+}, 3000);
 
 // --- Поиск ---------------------------------------------------------------------
 let timer;
