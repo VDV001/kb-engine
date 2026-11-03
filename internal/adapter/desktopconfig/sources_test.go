@@ -4,7 +4,9 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -313,8 +315,9 @@ func TestConfig_SetFolderRoots_ClearsLegacyFields(t *testing.T) {
 	}
 }
 
-// Окно присылает новый источник без id: AssignIDs выдает первый свободный
-// «<вид>-N», не трогая уже выданные.
+// Окно присылает новый источник без id: AssignIDs выдает id, который нельзя
+// спутать ни с одним прежним, — даже с id удаленного источника. К id потом
+// привяжется токен сервера: повтор отдал бы токен старого хоста новому.
 func TestConfig_AssignIDs(t *testing.T) {
 	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
 		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
@@ -323,11 +326,28 @@ func TestConfig_AssignIDs(t *testing.T) {
 		{Kind: desktopconfig.KindFolder, Path: "/c"},
 	}}
 	cfg.AssignIDs()
-	var ids []string
-	for _, s := range cfg.Sources {
-		ids = append(ids, s.ID)
+	re := regexp.MustCompile(`^(folder|server)-[0-9a-f]{8}$`)
+	seen := map[string]bool{}
+	for i, s := range cfg.Sources {
+		if seen[s.ID] {
+			t.Fatalf("повтор id %q", s.ID)
+		}
+		seen[s.ID] = true
+		if i == 0 {
+			if s.ID != "folder-2" {
+				t.Fatalf("выданный id изменен: %q", s.ID)
+			}
+			continue
+		}
+		if !re.MatchString(s.ID) || !strings.HasPrefix(s.ID, string(s.Kind)+"-") {
+			t.Fatalf("id = %q", s.ID)
+		}
 	}
-	if !slices.Equal(ids, []string{"folder-2", "folder-3", "server-1", "folder-4"}) {
-		t.Fatalf("ids = %q", ids)
+	// Удалили источник и добавили новый того же вида: id другой.
+	gone := cfg.Sources[1].ID
+	next := desktopconfig.Config{Sources: []desktopconfig.Source{cfg.Sources[0], {Kind: desktopconfig.KindFolder, Path: "/d", Enabled: true}}}
+	next.AssignIDs()
+	if next.Sources[1].ID == gone {
+		t.Fatalf("id удаленного источника выдан снова: %q", gone)
 	}
 }

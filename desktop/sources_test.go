@@ -85,11 +85,15 @@ func TestSetSources_SavesOrderAndApplies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var ids []string
+	var kinds []desktopconfig.Kind
 	for _, x := range saved.Sources {
-		ids = append(ids, x.ID)
+		if x.ID == "" {
+			t.Fatalf("id не выдан: %+v", x)
+		}
+		kinds = append(kinds, x.Kind)
 	}
-	if !slices.Equal(ids, []string{"folder-2", "catalog-1", "folder-1", "folder-3", "server-1"}) || saved.Sources[0].Name != "работа" {
+	want := []desktopconfig.Kind{desktopconfig.KindFolder, desktopconfig.KindCatalog, desktopconfig.KindFolder, desktopconfig.KindFolder, desktopconfig.KindServer}
+	if !slices.Equal(kinds, want) || saved.Sources[0].Name != "работа" || saved.Sources[1].ID != "catalog-1" || saved.Sources[2].ID != "folder-1" {
 		t.Fatalf("saved = %+v", saved.Sources)
 	}
 }
@@ -112,6 +116,10 @@ func TestSetSources_Rejects(t *testing.T) {
 		{"файла каталога нет", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), true), src("catalog-1", desktopconfig.KindCatalog, filepath.Join(h, "nope.json"), true)}
 		}, errBadCatalog},
+		// Одна папка двумя записями попала бы в индекс и в MCP дважды.
+		{"одна папка дважды", func(h string) []desktopconfig.Source {
+			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true), src("folder-2", desktopconfig.KindFolder, filepath.Join(h, "notes"), false)}
+		}, errBadFolder},
 		{"сервер по http в сеть", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), true), src("server-1", desktopconfig.KindServer, "http://10.0.0.5", true)}
 		}, desktopconfig.ErrSourceTarget},
@@ -189,5 +197,111 @@ func TestCatalogSwitch_FollowsPath(t *testing.T) {
 	}
 	if n, err := sw.count(); err != nil || n != 1 {
 		t.Fatalf("count = %d, %v", n, err)
+	}
+}
+
+// Все включенные папки — сохраненные, но сейчас недоступные: сохранение
+// отказывает, а не затирает индекс пустым (старый Set так и делал).
+func TestSetSources_AllEnabledMissingIsRejected(t *testing.T) {
+	s, got, _ := newSourcesSettings(t)
+	gone := s.cfg.FolderRoots()[0] // ~/claude-cowork во временном доме отсутствует
+	err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, gone, true)}, nil)
+	if !errors.Is(err, errNoFolders) || got.calls != 0 {
+		t.Fatalf("err = %v, apply calls = %d", err, got.calls)
+	}
+}
+
+// Сохраненный каталог, которого сейчас нет (сетевой диск), не мешает
+// сохранению — как и папка. Новый отсутствующий каталог по-прежнему отказ.
+func TestSetSources_KnownMissingCatalogIsKept(t *testing.T) {
+	s, got, _ := newSourcesSettings(t)
+	cat := s.cfg.CatalogPath() // умолчание: каталога во временном доме нет
+	err := s.SetSources([]desktopconfig.Source{
+		src("", desktopconfig.KindFolder, "~/notes", true),
+		src("catalog-1", desktopconfig.KindCatalog, cat, true),
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.catalog != cat {
+		t.Fatalf("apply catalog = %q, want %q", got.catalog, cat)
+	}
+}
+
+// Пока индекс не собран, счет неизвестен: экран говорит «индексируется», а
+// не «0 файлов».
+func TestGetSources_BeforeFirstBuild(t *testing.T) {
+	s, _, _ := newSourcesSettings(t)
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	s.countFiles = func([]string) map[string]int { return nil }
+	if r := s.GetSources().Sources[0]; r.State != stateIndexing {
+		t.Fatalf("row = %+v", r)
+	}
+}
+
+// Сохраненная папка вернулась (VPN подключили): reconcile открывает ее
+// заново, не дожидаясь сохранения. Пока не открыл — экран не зовет ее «ок».
+func TestReconcile_ReopensReturnedFolder(t *testing.T) {
+	s, got, home := newSourcesSettings(t)
+	team := filepath.Join(home, "team")
+	if err := os.MkdirAll(team, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSources([]desktopconfig.Source{
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+		src("folder-2", desktopconfig.KindFolder, team, true),
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	// Диск отвалился, сохранили перестановку — папка вне индекса.
+	if err := os.Rename(team, team+".off"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSources([]desktopconfig.Source{
+		src("folder-2", desktopconfig.KindFolder, team, true),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.roots, []string{filepath.Join(home, "notes")}) {
+		t.Fatalf("roots = %q", got.roots)
+	}
+	if s.reconcile() {
+		t.Fatal("reconcile без изменений на диске что-то применил")
+	}
+	// Диск вернулся.
+	if err := os.Rename(team+".off", team); err != nil {
+		t.Fatal(err)
+	}
+	if r := s.GetSources().Sources[0]; r.State != stateIndexing {
+		t.Fatalf("вернувшаяся, но не открытая папка = %+v", r)
+	}
+	calls := got.calls
+	if !s.reconcile() || got.calls != calls+1 || !slices.Equal(got.roots, []string{team, filepath.Join(home, "notes")}) {
+		t.Fatalf("reconcile: calls %d→%d roots %q", calls, got.calls, got.roots)
+	}
+	if r := s.GetSources().Sources[0]; r.State != stateOK {
+		t.Fatalf("после reconcile = %+v", r)
+	}
+	if s.reconcile() {
+		t.Fatal("повторный reconcile применил снова")
+	}
+}
+
+// reconcile никогда не открывает пустой набор: пропали все папки — индекс
+// остается прежним, а не затирается.
+func TestReconcile_NeverAppliesEmpty(t *testing.T) {
+	s, got, home := newSourcesSettings(t)
+	if err := s.SetSources([]desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(home, "notes"), filepath.Join(home, "notes.off")); err != nil {
+		t.Fatal(err)
+	}
+	calls := got.calls
+	if s.reconcile() || got.calls != calls {
+		t.Fatal("reconcile применил пустой набор")
 	}
 }
