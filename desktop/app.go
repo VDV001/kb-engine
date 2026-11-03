@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"os/exec"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // fileChecker is the part of the file index the app needs: the same trust
@@ -19,15 +21,35 @@ type fileChecker interface {
 // App is bound into the window: its exported methods are callable from the
 // page as window.go.main.App.<Method>.
 type App struct {
-	ctx   context.Context
-	files fileChecker
-	run   func(name string, args ...string) error
+	ctx      context.Context
+	files    fileChecker
+	settings *folderSettings
+	index    *indexer
+	run      func(name string, args ...string) error
 }
 
-func newApp(files fileChecker) *App {
-	return &App{files: files, run: func(name string, args ...string) error {
+func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
+	return &App{files: files, settings: settings, index: index, run: func(name string, args ...string) error {
 		return exec.Command(name, args...).Run()
 	}}
+}
+
+// Folders returns the folders being indexed and the excluded folder names.
+func (a *App) Folders() foldersView { return a.settings.Get() }
+
+// SetFolders validates and saves the folders, then reindexes in the background.
+func (a *App) SetFolders(roots, exclude []string) error { return a.settings.Set(roots, exclude) }
+
+// IndexStatus reports whether a build is running and how the last one went.
+func (a *App) IndexStatus() indexStatus { return a.index.Status() }
+
+// PickFolder opens the system folder chooser — the same one as when attaching
+// files — and returns the chosen path, or "" if the person cancelled.
+func (a *App) PickFolder() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:                "Папка для поиска",
+		CanCreateDirectories: false,
+	})
 }
 
 func (a *App) startup(ctx context.Context) { a.ctx = ctx }

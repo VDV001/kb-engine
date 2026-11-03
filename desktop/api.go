@@ -32,14 +32,14 @@ type catalogLoader interface {
 
 // newAPI composes the engine's HTTP API for the window: the same handler
 // `kbengine serve` builds, so the window, a browser and a remote server speak
-// one protocol. The file index is returned unbuilt — the caller builds it in
-// the background and the API answers 503 until then.
+// one protocol. The file index is returned unbuilt: the caller starts the
+// indexer, and the API answers 503 until the first build is done.
 //
 // ponytail: сборка повторяет часть buildServeHandler из cmd/kbengine (тот
 // живет в package main и недоступен). Потолок: две точки сборки разойдутся,
 // когда серверу добавят опцию. Путь: вынести сборку в internal/composition и
 // звать ее из обоих.
-func newAPI(cfg config) (http.Handler, *filesearch.Service, error) {
+func newAPI(cfg config) (http.Handler, *indexer, error) {
 	home, _ := os.UserHomeDir() // без домашней папки «~» просто не раскроется
 	roots, skipped := normalizeRoots(cfg.Roots, home)
 	for _, s := range skipped {
@@ -60,7 +60,7 @@ func newAPI(cfg config) (http.Handler, *filesearch.Service, error) {
 		func() (changelog.Document, error) { return changelog.Document{}, nil },
 		httpapi.Documents{}, httpapi.EngineInfo{Version: "desktop"}, nil,
 		httpapi.WithFiles(files))
-	return h, files, nil
+	return h, newIndexer(files, src), nil
 }
 
 // normalizeRoots раскрывает «~», оставляет только существующие абсолютные папки

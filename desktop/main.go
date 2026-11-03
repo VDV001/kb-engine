@@ -53,7 +53,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	api, files, err := newAPI(cfg)
+	api, idx, err := newAPI(cfg)
 	if err != nil {
 		return err
 	}
@@ -66,15 +66,8 @@ func run() error {
 	// дошел бы до конца, держа диск, уже после выхода из интерфейса.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go func() {
-		start := time.Now()
-		st, err := files.Build(ctx)
-		if err != nil {
-			log.Printf("files: %v", err)
-			return
-		}
-		log.Printf("files: indexed %d (skipped %d) in %s", st.Indexed, st.Skipped, time.Since(start).Round(time.Millisecond))
-	}()
+	idx.start(ctx)
+	settings := &folderSettings{path: configPath(home), home: home, cfg: cfg, apply: idx.apply}
 
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс
 	// правится без пересборки .app, и его можно проверить Playwright'ом.
@@ -87,7 +80,7 @@ func run() error {
 		return srv.ListenAndServe()
 	}
 
-	app := newApp(files)
+	app := newApp(idx.files, settings, idx)
 	return wails.Run(&options.App{
 		Title:     "kb",
 		Width:     1180,
