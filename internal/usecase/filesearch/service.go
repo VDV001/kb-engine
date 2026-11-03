@@ -1,6 +1,7 @@
 package filesearch
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -10,6 +11,11 @@ import (
 
 // ErrNotBuilt is returned when Search is called before Build.
 var ErrNotBuilt = errors.New("file index is not built")
+
+// ErrBuildFailed is returned by Search when the last build failed and there is
+// no earlier index to answer from. Отличается от ErrNotBuilt намеренно: «еще
+// собирается» при упавшей сборке держало окно на экране индексации вечно.
+var ErrBuildFailed = errors.New("file index build failed")
 
 // ErrNotAllowed is what a Source returns for a path it refuses to read:
 // outside its roots, a secret, a junk folder. It belongs to the port, not to
@@ -24,8 +30,10 @@ const snippetRunes = 160
 // index and a way to get one file's text. The adapter decides which folders,
 // which files are skipped and how text is extracted.
 type Source interface {
-	Walk(fn func(domain.FileDoc) error) error
+	Walk(ctx context.Context, fn func(domain.FileDoc) error) error
 	ReadText(path string) (string, error)
+	// Check reports whether a path is one the walk would index, without reading it.
+	Check(path string) error
 }
 
 // Stats reports what a build did.
@@ -42,9 +50,10 @@ type Stats struct {
 type Service struct {
 	src Source
 
-	mu    sync.RWMutex
-	ix    *Index
-	stats Stats
+	mu       sync.RWMutex
+	ix       *Index
+	stats    Stats
+	buildErr error // ошибка последней сборки, пока индекса нет
 }
 
 // NewService returns a service reading through src.
@@ -55,10 +64,10 @@ func NewService(src Source) *Service { return &Service{src: src} }
 // Нечитаемый файл не роняет сборку: из тысяч файлов один битый — норма. Но и
 // не пропадает молча — он посчитан в Skipped, чтобы «нашлось меньше, чем
 // лежит» было видно числом.
-func (s *Service) Build() (Stats, error) {
+func (s *Service) Build(ctx context.Context) (Stats, error) {
 	ix := NewIndex()
 	var st Stats
-	err := s.src.Walk(func(d domain.FileDoc) error {
+	err := s.src.Walk(ctx, func(d domain.FileDoc) error {
 		text, err := s.src.ReadText(d.Path())
 		if err != nil {
 			st.Skipped++
@@ -69,10 +78,14 @@ func (s *Service) Build() (Stats, error) {
 		return nil
 	})
 	if err != nil {
-		return st, fmt.Errorf("walk files: %w", err)
+		err = fmt.Errorf("walk files: %w", err)
+		s.mu.Lock()
+		s.buildErr = err // прежний индекс, если он был, продолжает отвечать
+		s.mu.Unlock()
+		return st, err
 	}
 	s.mu.Lock()
-	s.ix, s.stats = ix, st
+	s.ix, s.stats, s.buildErr = ix, st, nil
 	s.mu.Unlock()
 	return st, nil
 }
@@ -87,9 +100,12 @@ func (s *Service) Stats() Stats {
 // Search finds files by query and attaches the matching line of each.
 func (s *Service) Search(query string, limit int) ([]Hit, error) {
 	s.mu.RLock()
-	ix := s.ix
+	ix, berr := s.ix, s.buildErr
 	s.mu.RUnlock()
 	if ix == nil {
+		if berr != nil {
+			return nil, fmt.Errorf("%w: %w", ErrBuildFailed, berr)
+		}
 		return nil, ErrNotBuilt
 	}
 	hits := ix.Search(query, limit)
@@ -106,3 +122,7 @@ func (s *Service) Search(query string, limit int) ([]Hit, error) {
 // Read returns one file's text through the same source, and so under the same
 // rules: a path the walk would not index is refused with ErrNotAllowed.
 func (s *Service) Read(path string) (string, error) { return s.src.ReadText(path) }
+
+// Check reports whether a path may be opened, under the same rules as Read but
+// without reading the file.
+func (s *Service) Check(path string) error { return s.src.Check(path) }
