@@ -47,7 +47,7 @@ ENTRYPOINT ["/kbengine"]
 # published port reaches nothing. In a container the interface is the container's
 # boundary, so pass --addr :8080 explicitly:
 #
-#   docker run -p 8080:8080 -v $PWD/data:/data kbengine \
-#     serve --catalog /data/catalog.json --addr :8080
+#   docker run -p 127.0.0.1:8080:8080 -v $PWD/data:/data kbengine \
+#     serve --catalog /data/catalog.json --addr :8080 --allow-open
 #
 # (the catalog is runtime data, not baked into the image).
