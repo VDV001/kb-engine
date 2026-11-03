@@ -197,8 +197,12 @@ func TestGetSources_ServerStates(t *testing.T) {
 // «Проверить» до сохранения: новый токен из формы, а без него — сохраненный
 // в Связке (правка адреса без повторного ввода токена).
 func TestCheckServer(t *testing.T) {
-	s, tok, _ := newServerSettings(t)
-	tok.m["server-ab12cd34"] = srvToken
+	s, _, _ := newServerSettings(t)
+	// Сохраненный токен берется только для сохраненного адреса — сервер
+	// сначала сохраняется.
+	if err := s.SetSources(serverList("server-ab12cd34", "https://kb.example.ru", true), nil, map[string]string{"server-ab12cd34": srvToken}); err != nil {
+		t.Fatal(err)
+	}
 	if info, err := s.CheckServer("server-new00000", "https://kb.example.ru", srvToken); err != nil || info.Entries != 2431 {
 		t.Fatalf("новый токен: %+v %v", info, err)
 	}
@@ -325,5 +329,19 @@ func TestCheckServer_MessageMatchesRow(t *testing.T) {
 	_, err := s.CheckServer("server-new00000", "https://down.example.ru", srvToken)
 	if err == nil || err.Error() != serverMessage(kbserver.ErrUnreachable) || !errors.Is(err, kbserver.ErrUnreachable) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Папки не открылись (apply отказал) после записи токенов: токены
+// возвращаются как было — конфиг не пишется, Связка с ним не расходится.
+func TestSetSources_ApplyFailureRollsBackTokens(t *testing.T) {
+	s, tok, _ := newServerSettings(t)
+	tok.m["server-00000001"] = "old-token-0123456789abcdefghijklmn"
+	s.apply = func([]string, []string, string) error { return errors.New("open root: permission denied") }
+	if err := s.SetSources(serverList("server-00000001", "https://a.example.ru", true), nil, map[string]string{"server-00000001": srvToken}); err == nil {
+		t.Fatal("ждали отказ apply")
+	}
+	if tok.m["server-00000001"] != "old-token-0123456789abcdefghijklmn" {
+		t.Fatalf("токен не откатился: %q", tok.m["server-00000001"])
 	}
 }

@@ -305,7 +305,7 @@ const HUES = ["--z-sp4", "--z-sp2", "--z-sp6", "--z-sp1", "--z-sp5", "--z-sp3"];
 // Уходят в Go один раз при сохранении (в Связку ключей) и стираются; обратно
 // Go отдает только признак hasToken.
 const draft = { sources: [], exclude: [], tokens: {}, saved: "" };
-const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null };
+const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null, checkSeq: 0, adding: false };
 let keySeq = 0;
 
 const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
@@ -336,7 +336,13 @@ const payload = () => ({
   sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
   exclude: draft.exclude,
 });
-const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(draft.tokens).length > 0;
+// Токены только для серверов, которые еще в списке: убранный или отмененный
+// «Вернуть» сервер не должен нести токен в сохранение (Go отклонил бы весь список).
+const liveTokens = () => {
+  const ids = new Set(draft.sources.filter((s) => s.kind === "server").map((s) => s.id));
+  return Object.fromEntries(Object.entries(draft.tokens).filter(([id]) => ids.has(id)));
+};
+const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(liveTokens()).length > 0;
 const byKey = (k) => draft.sources.find((s) => s._key === k);
 
 function load(v) {
@@ -374,7 +380,21 @@ async function openSettings() {
   renderSources();
   setTimeout(() => list.classList.remove("enter"), 500);
   $("#close-settings").focus();
+  loadServerStates();
 }
+// Состояние серверов приходит после списка: панель не ждет сеть. Сливается в
+// черновик по id — поля состояния в сохранение не входят и dirty не трогают.
+async function loadServerStates() {
+  if (!native() || !native().ServerStates) return;
+  let rows;
+  try { rows = await native().ServerStates(); } catch { return; }
+  for (const r of rows || []) {
+    const s = draft.sources.find((x) => x.id === r.id);
+    if (s) Object.assign(s, { state: r.state, count: r.count, note: r.note, hasToken: r.hasToken });
+  }
+  if (settingsOpen()) renderSources();
+}
+
 function closeSettings() {
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
@@ -399,6 +419,8 @@ function stateOf(s) {
         : `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
     case "indexing":
       return `<span class="state pending"${note}><span class="sdot"></span>индексируется</span>`;
+    case "checking":
+      return `<span class="state pending"><span class="sdot"></span>проверяется</span>`;
     case "missing":
       return `<span class="state missing"${note}><span class="sdot"></span>нет связи</span>`;
     default:
@@ -551,15 +573,22 @@ panel.addEventListener("click", async (e) => {
     const isNew = d.check === "new", s = isNew ? null : byKey(d.check);
     const url = (isNew ? $("#na") : $(`#ea-${s._key}`)).value.trim();
     const tok = (isNew ? $("#nt") : $(`#et-${s._key}`)).value.trim() || (s && draft.tokens[s.id]) || "";
-    const typed = { url, tok, na: isNew ? $("#na").value : null, nt: isNew ? $("#nt").value : null };
+    const typed = { url, tok, na: isNew ? $("#na").value : null, nt: isNew ? $("#nt").value : null,
+      name: isNew ? null : $(`#en-${s._key}`).value };
+    const seq = ++ui.checkSeq;
     ui.verdict = { key: d.check, state: "wait", text: "проверяю…" };
     renderAndKeep(d.check, typed);
+    let verdict;
     try {
       const info = await native().CheckServer(s ? s.id : "", url, tok);
-      ui.verdict = { key: d.check, state: "ok", text: `● kbengine ${info.version} · ${fmt(info.entries)} ${plural(info.entries, "запись", "записи", "записей")}` };
+      verdict = { key: d.check, state: "ok", text: `● kbengine ${info.version} · ${fmt(info.entries)} ${plural(info.entries, "запись", "записи", "записей")}` };
     } catch (err) {
-      ui.verdict = { key: d.check, state: "bad", text: String(err).replace(/^Error: /, "") };
+      verdict = { key: d.check, state: "bad", text: String(err).replace(/^Error: /, "") };
     }
+    // Поздний ответ не пишет в закрытую или уже другую форму.
+    const open = isNew ? ui.addKind === "server" : ui.editing === d.check;
+    if (seq !== ui.checkSeq || !open) return;
+    ui.verdict = verdict;
     return renderAndKeep(d.check, typed);
   }
   if (d.save) {
@@ -596,15 +625,18 @@ panel.addEventListener("click", async (e) => {
   if ("addok" in d) {
     const v = $("#na").value.trim();
     if (!v) return focusSoon("#na");
+    if (ui.adding) return; // двойной клик через await добавил бы сервер дважды
+    ui.adding = true;
     const s = { id: "", kind: ui.addKind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
     setTarget(s, v);
     if (s.kind === "server") {
       // id выдает Go сразу: к нему привязан токен в Связке ключей.
-      s.id = await native().NewSourceID("server");
+      try { s.id = await native().NewSourceID("server"); } finally { ui.adding = false; }
       const tok = $("#nt").value.trim();
       if (tok) draft.tokens[s.id] = tok;
       ui.verdict = null;
     }
+    ui.adding = false;
     const undo = change(() => draft.sources.push(s));
     ui.addKind = null;
     renderSources();
@@ -621,6 +653,7 @@ function renderAndKeep(key, typed) {
     if ($("#nt")) $("#nt").value = typed.nt;
   } else {
     const s = byKey(key);
+    if (s && $(`#en-${key}`) && typed.name != null) $(`#en-${key}`).value = typed.name;
     if (s && $(`#ea-${key}`)) $(`#ea-${key}`).value = typed.url;
     if (s && $(`#et-${key}`) && typed.tok !== draft.tokens[s.id]) $(`#et-${key}`).value = typed.tok;
   }
@@ -696,7 +729,7 @@ $("#save-settings").onclick = async () => {
   try {
     // Проверку делает Go: новая папка обязана существовать, иначе отказ с ее
     // именем и без изменений — ни конфига, ни индекса.
-    await native().SetSources(p.sources, p.exclude, draft.tokens);
+    await native().SetSources(p.sources, p.exclude, liveTokens());
   } catch (e) {
     setBusy(false);
     showError(String(e));
@@ -719,6 +752,7 @@ $("#save-settings").onclick = async () => {
     }
     load(await native().Sources()); // id новых источников и свежий счет
     renderSources();
+    loadServerStates();
     toast("Сохранено", " · " + $("#settings-note").textContent);
   } catch (e) {
     showError("Не удалось узнать статус индекса: " + e);

@@ -54,6 +54,10 @@ func (a *App) SetSources(list []desktopconfig.Source, exclude []string, tokens m
 // привязан токен, и он нужен странице до сохранения списка.
 func (a *App) NewSourceID(kind string) string { return desktopconfig.NewID(desktopconfig.Kind(kind)) }
 
+// ServerStates returns the live state of the server sources; панель зовет его
+// после того, как нарисовала список.
+func (a *App) ServerStates() []sourceRow { return a.settings.ServerStates() }
+
 // CheckServer is the «Проверить» button of the server form.
 func (a *App) CheckServer(id, url, token string) (kbserver.Info, error) {
 	return a.settings.CheckServer(id, url, token)

@@ -30,10 +30,16 @@ type probeFunc func(ctx context.Context, url, token string) (kbserver.Info, erro
 // из-за одного недоступного хоста, опросы идут параллельно.
 const probeTimeout = 3 * time.Second
 
-// storeTokens puts the tokens of next's servers into the store. Если Связка
-// отказала посередине, уже записанное возвращается как было: конфиг тогда не
-// пишется, и токены не должны разойтись с ним.
-func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[string]string) error {
+// stateChecking — сервер в списке, его состояние догружает ServerStates:
+// панель открывается сразу, не дожидаясь сети и Связки ключей.
+const stateChecking = "checking"
+
+// storeTokens checks that every token belongs to a server of next and writes
+// them, returning the undo: SetSources зовет его, если после токенов отказали
+// apply или запись конфига, — Связка не расходится с конфигом. Сбой чтения
+// Связки (заперта, отказ в доступе) — отказ сразу: принять его за «токена нет»
+// значило бы при откате стереть рабочий токен.
+func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[string]string) (func(), error) {
 	servers := map[string]bool{}
 	for _, s := range next.Sources {
 		if s.Kind == desktopconfig.KindServer {
@@ -42,7 +48,7 @@ func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[strin
 	}
 	for id := range tokens {
 		if !servers[id] {
-			return fmt.Errorf("%w: %s", errBadToken, id)
+			return nil, fmt.Errorf("%w: %s", errBadToken, id)
 		}
 	}
 	type prev struct {
@@ -50,31 +56,49 @@ func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[strin
 		had bool
 	}
 	done := map[string]prev{}
-	for id, tok := range tokens {
-		old, err := f.tokens.Get(id)
-		done[id] = prev{old, err == nil}
-		if err := f.tokens.Set(id, tok); err != nil {
-			for rid, p := range done {
-				if p.had {
-					_ = f.tokens.Set(rid, p.val)
-				} else {
-					_ = f.tokens.Delete(rid)
-				}
+	undo := func() {
+		for id, p := range done {
+			if p.had {
+				_ = f.tokens.Set(id, p.val)
+			} else {
+				_ = f.tokens.Delete(id)
 			}
-			return fmt.Errorf("токен не сохранен в Связке ключей: %w", err)
 		}
 	}
-	return nil
+	for id, tok := range tokens {
+		old, err := f.tokens.Get(id)
+		switch {
+		case err == nil:
+			done[id] = prev{old, true}
+		case errors.Is(err, keychain.ErrNotFound):
+			done[id] = prev{}
+		default:
+			undo()
+			return nil, fmt.Errorf("связка ключей не прочиталась: %w", err)
+		}
+		if err := f.tokens.Set(id, tok); err != nil {
+			undo()
+			return nil, fmt.Errorf("токен не сохранен в Связке ключей: %w", err)
+		}
+	}
+	return undo, nil
 }
 
-// dropTokens removes the tokens of servers that left the list.
-func (f *folderSettings) dropTokens(prev, next desktopconfig.Config) {
-	kept := map[string]bool{}
+// dropTokens removes the token of a server that left the list, and of one
+// whose address changed without a new token: старый токен не должен уйти
+// новому хосту.
+func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[string]string) {
+	urls := map[string]string{}
 	for _, s := range next.Sources {
-		kept[s.ID] = true
+		urls[s.ID] = s.URL
 	}
 	for _, s := range prev.WithSources().Sources {
-		if s.Kind == desktopconfig.KindServer && !kept[s.ID] {
+		if s.Kind != desktopconfig.KindServer {
+			continue
+		}
+		url, kept := urls[s.ID]
+		_, fresh := tokens[s.ID]
+		if !kept || (url != s.URL && !fresh) {
 			_ = f.tokens.Delete(s.ID) // не удалось — останется лишняя запись, не утечка
 		}
 	}
@@ -89,52 +113,97 @@ func (f *folderSettings) token(id string) string {
 	return t
 }
 
-// fillServers asks the enabled servers in parallel and fills their rows.
-func (f *folderSettings) fillServers(rows []sourceRow) {
+// serverMessage is the one place where a server error becomes words for the
+// screen: строка списка и «Проверить» говорят об одной беде одинаково.
+func serverMessage(err error) string {
+	switch {
+	case errors.Is(err, kbserver.ErrUnauthorized):
+		return "сервер ответил 401: нужен верный токен"
+	case errors.Is(err, kbserver.ErrNotKB):
+		return "по адресу отвечает не kb-сервер"
+	case errors.Is(err, kbserver.ErrServerError):
+		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке"
+	default:
+		return "нет связи: проверьте адрес и VPN"
+	}
+}
+
+// humanErr carries the screen text and keeps the cause for errors.Is.
+type humanErr struct {
+	msg string
+	err error
+}
+
+func (e humanErr) Error() string { return e.msg }
+func (e humanErr) Unwrap() error { return e.err }
+
+// ServerStates asks every server of the list in parallel (≤ probeTimeout) and
+// returns their rows. Отдельно от GetSources: панель рисует папки сразу, а
+// серверы — когда ответят.
+func (f *folderSettings) ServerStates() []sourceRow {
+	f.mu.Lock()
+	cfg := f.cfg
+	f.mu.Unlock()
+	var rows []sourceRow
+	for _, s := range cfg.WithSources().Sources {
+		if s.Kind == desktopconfig.KindServer {
+			rows = append(rows, sourceRow{Source: s, State: stateOff})
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
 	var wg sync.WaitGroup
 	for i := range rows {
 		r := &rows[i]
-		if r.Kind != desktopconfig.KindServer {
-			continue
-		}
-		tok := f.token(r.ID)
-		r.HasToken = tok != ""
-		if !r.Enabled {
-			continue
-		}
 		wg.Go(func() {
-			info, err := f.probe(ctx, r.URL, tok)
-			switch {
-			case err == nil:
-				r.State, r.Count, r.Note = stateOK, info.Entries, "kbengine "+info.Version
-			case errors.Is(err, kbserver.ErrUnauthorized):
-				r.State, r.Note = stateMissing, "сервер ответил 401: нужен верный токен"
-			case errors.Is(err, kbserver.ErrNotKB):
-				r.State, r.Note = stateMissing, "по адресу отвечает не kb-сервер"
-			default:
-				r.State, r.Note = stateMissing, "нет связи: проверьте адрес и VPN"
+			tok := f.token(r.ID)
+			r.HasToken = tok != ""
+			if !r.Enabled {
+				return
 			}
+			info, err := f.probe(ctx, r.URL, tok)
+			if err != nil {
+				r.State, r.Note = stateMissing, serverMessage(err)
+				return
+			}
+			r.State, r.Count, r.Note = stateOK, info.Entries, "kbengine "+info.Version
 		})
 	}
 	wg.Wait()
+	return rows
 }
 
 // CheckServer is the «Проверить» button: the address passes the same rule as
-// on save (http only to this Mac), the token is the one typed in the form or,
-// if empty, the one stored for this id.
+// on save (http only to this Mac); the token is the one typed in the form or,
+// if empty, the stored one — но только для сохраненного адреса этого id:
+// набранный другой адрес токена не получит.
 func (f *folderSettings) CheckServer(id, url, token string) (kbserver.Info, error) {
 	probe := desktopconfig.Config{Sources: []desktopconfig.Source{{ID: "check", Kind: desktopconfig.KindServer, URL: url, Enabled: true}}}
 	if err := probe.Validate(); err != nil {
 		return kbserver.Info{}, err
 	}
-	if token == "" {
+	if token == "" && f.savedURL(id) == url {
 		token = f.token(id)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
 	defer cancel()
-	return f.probe(ctx, url, token)
+	info, err := f.probe(ctx, url, token)
+	if err != nil {
+		return kbserver.Info{}, humanErr{serverMessage(err), err}
+	}
+	return info, nil
+}
+
+// savedURL returns the saved address of server id, "" if there is none.
+func (f *folderSettings) savedURL(id string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, s := range f.cfg.WithSources().Sources {
+		if s.ID == id && s.Kind == desktopconfig.KindServer {
+			return s.URL
+		}
+	}
+	return ""
 }
 
 // keychainTokens is the production token store.

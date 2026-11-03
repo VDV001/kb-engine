@@ -170,13 +170,13 @@ func TestGetSources_States(t *testing.T) {
 	for _, r := range v.Sources {
 		rows = append(rows, row{r.ID, r.State, r.Count})
 	}
-	// Сервер теперь опрашивается: подставной опрос отвечает «нет связи».
-	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", stateMissing, 0}}
+	// Сервер GetSources не опрашивает (это делает ServerStates): «проверяется».
+	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", stateChecking, 0}}
 	if !slices.Equal(rows, want) || !slices.Equal(v.Exclude, []string{"finances"}) {
 		t.Fatalf("rows = %+v exclude = %q", rows, v.Exclude)
 	}
-	if v.Sources[1].Note == "" || v.Sources[3].Note == "" {
-		t.Fatalf("у пропавшей папки и сервера нет пояснения: %+v", v.Sources)
+	if v.Sources[1].Note == "" { // у сервера «проверяется» пояснения нет: ответа еще нет
+		t.Fatalf("у пропавшей папки нет пояснения: %+v", v.Sources)
 	}
 	s.cfg.Sources[0].Enabled = false
 	if r := s.GetSources().Sources[0]; r.State != stateOff {

@@ -94,7 +94,7 @@ func (f *folderSettings) GetSources() sourcesView {
 		case s.Kind == desktopconfig.KindCatalog:
 			f.catalogRow(r, cfg.CatalogPath())
 		case s.Kind == desktopconfig.KindServer:
-			// заполняет fillServers: опрос по сети, параллельно
+			r.State = stateChecking // состояние догружает ServerStates
 		default:
 			r.State, r.Note = statePending, "вид источника из более новой версии kb"
 		}
@@ -109,7 +109,6 @@ func (f *folderSettings) GetSources() sourcesView {
 			rows[i].Count = counts[keys[i]]
 		}
 	}
-	f.fillServers(rows)
 	return sourcesView{Sources: rows, Exclude: slices.Clone(cfg.Exclude)}
 }
 
@@ -175,15 +174,18 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	}
 	next.Exclude = dedupeFold(exclude, true)
 
-	if err := f.apply(roots, next.Exclude, catalog); err != nil {
-		return fmt.Errorf("%w: %w", errBadFolder, err)
-	}
-	// Токены — после того как папки открылись, но до записи конфига: отказ
-	// Связки ключей возвращает их как было и не пишет конфиг.
-	if err := f.storeTokens(next, tokens); err != nil {
+	// Токены — до apply: отказ Связки ключей не должен оставить индекс на новых
+	// источниках при старом конфиге. Откат токенов — при любом отказе дальше.
+	undoTokens, err := f.storeTokens(next, tokens)
+	if err != nil {
 		return err
 	}
+	if err := f.apply(roots, next.Exclude, catalog); err != nil {
+		undoTokens()
+		return fmt.Errorf("%w: %w", errBadFolder, err)
+	}
 	if err := desktopconfig.Write(f.path, next); err != nil {
+		undoTokens()
 		// Индекс уже на новых источниках, а конфиг нет: окно работает, но
 		// следующий запуск вернется к прежним. Говорим об этом прямо.
 		return fmt.Errorf("источники применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
@@ -191,7 +193,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if len(missing) > 0 {
 		log.Printf("files: папки без связи, не индексируются: %s", strings.Join(missing, "; "))
 	}
-	f.dropTokens(f.cfg, next)
+	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
 	return nil
 }
