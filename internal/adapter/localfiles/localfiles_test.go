@@ -46,6 +46,8 @@ func TestWalk_SkipsSecretsJunkAndBinaries(t *testing.T) {
 		write(t, root, "notes/plan.md", "план"),
 		write(t, root, ".claude/handoffs/h.md", "handoff"),
 		write(t, root, "src/main.go", "package main"),
+		// Слово в имени файла не отсекается: заметка о бэкапах — не бэкап.
+		write(t, root, "notes/backup-strategy.md", "стратегия"),
 	}
 	for _, rel := range []string{
 		".git/config",
@@ -58,6 +60,11 @@ func TestWalk_SkipsSecretsJunkAndBinaries(t *testing.T) {
 		"keys/id_ed25519",
 		"memory/x.md.bak-2026-10-13",
 		"img/shot.png",
+		// Копии, а не оригиналы: десять бэкапов каталога по 2 МБ забивали
+		// выдачу search_files раньше живых файлов (живой прогон #375).
+		"knowledge-base/_data/.backup/catalog.2026-10-17.json",
+		"backups/2026-08-21_cleanup/settings.json.stale-backup-2026-06-01",
+		"Backup/old.md",
 	} {
 		write(t, root, rel, "secret")
 	}
