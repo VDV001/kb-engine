@@ -89,6 +89,7 @@ just build            # or: go build -o bin/kbengine ./cmd/kbengine
 ```
 kbengine serve        --catalog X [--analytics-config Y] [--ledger L --from W] [--changelog C]
                       [--now N] [--team T] [--projects P] [--media DIR] [--addr HOST:PORT]
+                      [--token-file F] [--tls-cert C --tls-key K] [--allow-open]
 kbengine add          --catalog X --title T --category C --file PATH [--description D] [--tags T]
                       [--version SEMVER] [--lifecycle L] [--source S]
 kbengine tui          --catalog X [--ledger L] [--from WORKBOOK]
@@ -133,6 +134,64 @@ prints a one-line summary and names the command instead.
 `--check integrity` reports links that point nowhere: a `related_ids` value with
 no such entry, or one pointing at itself. Neither shows up on any screen — a
 broken link simply does not draw.
+
+### Access from the network (`serve --token-file`)
+
+`serve` binds `127.0.0.1` by default. An address the network can reach needs a bearer
+token **and** TLS, or the server refuses to start: without the token anyone on the
+network reads the catalog (and, with `--ledger`, the finances); without TLS the token
+crosses the network in clear text. With `--token-file` every request, pages and
+`/metrics` included, needs `Authorization: Bearer <token>` and gets 401 otherwise;
+`/healthz` and `/readyz` stay open for probes (`/readyz` without a token answers with the
+status code only). The token is for API clients — the kb-desktop window and the MCP server.
+A browser cannot send it, and the check applies to every request wherever it comes from, so
+the web dashboard needs a second `serve` **without** a token bound to loopback on the same
+host, reached through an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 host`). `--pprof` is refused
+on anything but loopback: heap dumps carry the token and the data.
+
+The token file must belong to this user or root, must not be writable by the group or
+readable by others, and holds 32–4096 printable ASCII characters. In Kubernetes mount it
+from a Secret with `defaultMode: 0440` and the pod's `fsGroup`, which these rules allow.
+
+The token is read from a file, never a flag (a flag's value shows in `ps`). The file
+must be readable by its owner only, and the token at least 32 characters:
+
+```sh
+mkdir -p ~/.config/kbengine
+(umask 077; openssl rand -base64 33 | tr -d '\n' > ~/.config/kbengine/token)
+```
+
+**On this Mac, for another machine on the VPN.** Serve TLS directly; the client
+must trust the certificate:
+
+```sh
+kbengine serve --catalog ~/kb/catalog.json --addr 10.8.0.1:8443 \
+  --token-file ~/.config/kbengine/token --tls-cert cert.pem --tls-key key.pem
+```
+
+Kept running by launchd the same way `just desktop-install` keeps the window: a
+plist in `~/Library/LaunchAgents` with these arguments and `KeepAlive`.
+
+**On a VPS or in Yandex Cloud, behind a reverse proxy.** The proxy holds the
+certificate (Caddy gets one from Let's Encrypt by itself); `serve` stays on loopback
+and still checks the token. **The token is the only guard here**: the server cannot see
+the proxy, so `serve` without `--token-file` behind a public proxy serves the catalog (and,
+with `--ledger`, the finances) to anyone — the startup line says `token off`:
+
+```sh
+kbengine serve --catalog /srv/kb/catalog.json --addr 127.0.0.1:8080 \
+  --token-file /etc/kbengine/token
+```
+
+```caddy
+kb.example.ru {
+	reverse_proxy 127.0.0.1:8080
+}
+```
+
+**In a container** the bind has to be open (`--addr :8080`) and the platform, an
+ingress or `docker run -p 127.0.0.1:8080:8080`, decides who reaches it. That is said
+out loud with `--allow-open`; the Kubernetes and Helm manifests carry it.
 
 ### MCP server (`kbengine-mcp`)
 
@@ -228,13 +287,13 @@ The catalog is runtime data, so mount it and pass `--catalog`:
 
 ```sh
 # Pull a released multi-arch image from GHCR...
-docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
-  ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json --addr :8080
+docker run --rm -p 127.0.0.1:8080:8080 -v "$PWD/data:/data:ro" \
+  ghcr.io/vdv001/kb-engine:latest serve --catalog /data/catalog.json --addr :8080 --allow-open
 
 # ...or build it locally:
 just docker
-docker run --rm -p 8080:8080 -v "$PWD/data:/data:ro" \
-  kbengine:dev serve --catalog /data/catalog.json --addr :8080
+docker run --rm -p 127.0.0.1:8080:8080 -v "$PWD/data:/data:ro" \
+  kbengine:dev serve --catalog /data/catalog.json --addr :8080 --allow-open
 ```
 
 Released tags (`v*`) publish `linux/amd64` + `linux/arm64` images to

@@ -330,6 +330,12 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&filesRoots, "files-root", "optional folder to index for /api/files/* (repeat for several)")
 	fs.Var(&filesExclude, "files-exclude", "folder name the file index never enters (repeat for several)")
 	filesIndex := fs.String("files-index", "", "optional file to keep the file index in between runs (rebuild then rereads only changed files)")
+	// Доступ из сети (kb-desktop на другом Mac, VPS, Yandex Cloud): токен из
+	// файла 0600 и TLS. Адрес не на loopback без них — отказ при запуске.
+	tokenFile := fs.String("token-file", "", "optional file with a bearer token (mode 0600, ≥32 chars); every request then needs Authorization: Bearer <token>")
+	tlsCert := fs.String("tls-cert", "", "optional TLS certificate (PEM); with --tls-key serves HTTPS")
+	tlsKey := fs.String("tls-key", "", "optional TLS private key (PEM), paired with --tls-cert")
+	allowOpen := fs.Bool("allow-open", false, "allow a network address without --token-file or TLS: access and TLS are handled by the platform (ingress, docker -p 127.0.0.1:...)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -345,6 +351,11 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// where someone wonders why the balances are missing.
 	if *workbookPath != "" && *ledgerPath == "" {
 		fmt.Fprintln(stderr, "serve: --from needs --ledger (the workbook holds account balances; the rows come from the ledger)")
+		return 2
+	}
+	token, tlsCfg, err := serveAccess(*addr, *pprofAddr, *tokenFile, *tlsCert, *tlsKey, *allowOpen)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2
 	}
 
@@ -365,19 +376,9 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// Разбор changelog проверяется на старте, а не при первом запросе: увидеть
 	// предупреждение в момент запуска можно, а поймать его посреди работы —
 	// уже нет, потому что смотрят в этот момент на страницу, а не в терминал.
-	if *changelogPath != "" {
-		if raw, err := os.ReadFile(*changelogPath); err == nil {
-			if w := changelogWarning(*changelogPath, len(changelog.Parse(string(raw)).Releases)); w != "" {
-				fmt.Fprintln(stderr, w)
-			}
-		}
-	}
-	srv := &http.Server{
-		Addr:              *addr,
-		Handler:           handler,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s)\n", *addr, *catalogPath)
+	warnChangelog(*changelogPath, stderr)
+	srv := newServeServer(*addr, handler, token, tlsCfg)
+	fmt.Fprintf(stdout, "kbengine: serving dashboard on %s (catalog %s; token %s, TLS %s)\n", *addr, *catalogPath, onOff(token != ""), onOff(tlsCfg != nil))
 	startPprof(*pprofAddr, stdout, stderr)
 	// Печатается до ListenAndServe, потому что после него терминал уже занят, а
 	// смотреть в него будут ровно в этот момент.
@@ -385,11 +386,30 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		*changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths)) {
 		fmt.Fprintln(stdout, line)
 	}
-	if err := srv.ListenAndServe(); err != nil {
+	if err := listenAndServe(srv); err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
 	return 0
+}
+
+// warnChangelog prints the changelog parse warning at startup, if any.
+func warnChangelog(path string, stderr io.Writer) {
+	if path == "" {
+		return
+	}
+	if raw, err := os.ReadFile(path); err == nil {
+		if w := changelogWarning(path, len(changelog.Parse(string(raw)).Releases)); w != "" {
+			fmt.Fprintln(stderr, w)
+		}
+	}
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 // ledgerFinances reads the two sources the Finances view needs. The rows live

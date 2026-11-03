@@ -5,11 +5,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"net"
 	"net/url"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
 
 // Kind — вид источника: откуда окно и MCP берут записи и файлы.
@@ -74,11 +75,7 @@ func checkServerURL(raw string) error {
 	case "https":
 		return nil
 	case "http":
-		host := u.Hostname()
-		if host == "localhost" {
-			return nil
-		}
-		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		if loopback.Host(u.Hostname()) {
 			return nil
 		}
 		return errors.New("http — только для этого Mac, в сеть нужен https")

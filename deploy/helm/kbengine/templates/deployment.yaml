@@ -100,6 +100,8 @@ spec:
             # means the Service reaches nothing. Widening the bind is a choice
             # someone makes, so it is written out rather than defaulted.
             - --addr=:8080
+            # Access control and TLS are the ingress's job, so the open bind is opted into.
+            - --allow-open
           ports:
             - name: http
               containerPort: 8080
