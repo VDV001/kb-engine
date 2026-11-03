@@ -46,6 +46,14 @@ desktop:
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns
     touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
+# Install kb.app into ~/Applications and start it at login (launchd agent)
+desktop-install: desktop
+    ./scripts/desktop-install.sh
+
+# Remove the login item and stop the window (kb.app itself stays)
+desktop-uninstall:
+    ./scripts/desktop-install.sh --uninstall
+
 # Rebuild desktop/build/icon/icon.icns from icon-1024.png with macOS's own sips
 # and iconutil. icon-1024.png is icon.svg rendered at 1024 (any browser; there
 # is no SVG renderer in the base system) — rerun this after changing either,
