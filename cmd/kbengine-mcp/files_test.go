@@ -40,7 +40,9 @@ func TestFileSearch_usesTheWindowConfig(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.refresh(context.Background(), time.Now())
+	now := time.Now()
+	x.touch(now)
+	x.refresh(context.Background(), now)
 	hits, err := x.svc.Search("единорог", 10)
 	if err != nil {
 		t.Fatal(err)
@@ -156,6 +158,7 @@ func TestFileIndex_followsTheWindowConfig(t *testing.T) {
 				t.Fatal(err)
 			}
 			ctx := context.Background()
+			x.touch(start) // сессия ищет: индекс держится и после смены папок
 			x.refresh(ctx, start)
 			if _, err := x.svc.Read(tt.refused); err != nil {
 				t.Fatalf("до смены конфига файл должен читаться: %v", err)
@@ -196,6 +199,7 @@ func TestFileIndex_rebuildsOnSchedule(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx, now := context.Background(), time.Now()
+	x.touch(now)
 	x.refresh(ctx, now)
 	mustWrite(t, filepath.Join(root, "new.md"), "свежая мысль")
 
@@ -219,5 +223,112 @@ func TestFileIndex_expandsTildeInConfigPath(t *testing.T) {
 	var stderr bytes.Buffer
 	if _, err := newFileIndex("~/kb/config.json", home, &stderr); err != nil {
 		t.Fatalf("тильда не раскрыта: %v", err)
+	}
+}
+
+// newIndexOver поднимает индекс над одной папкой с файлом «единорог».
+func newIndexOver(t *testing.T) (*fileIndex, string) {
+	t.Helper()
+	dir := t.TempDir()
+	root := filepath.Join(dir, "notes")
+	file := filepath.Join(root, "a.md")
+	mustWrite(t, file, "единорог")
+	// Файл старше сборки: только что записанный перечитывается всегда (racy-clean).
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(file, old, old); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(dir, "config.json")
+	saveConfig(t, cfgPath, desktopconfig.Config{Roots: []string{root}}, time.Now().Add(-time.Hour))
+	var stderr bytes.Buffer
+	x, err := newFileIndex(cfgPath, dir, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return x, file
+}
+
+// Сессия, которая не ищет по файлам, индекс не собирает и не держит: из
+// шести открытых сессий ищет обычно одна, а каждая держала ~100 МБ (замер
+// 03.11). Чтение файла индекса не требует и работает сразу.
+func TestFileIndex_noBuildUntilSearched(t *testing.T) {
+	x, file := newIndexOver(t)
+	ctx, now := context.Background(), time.Now()
+	x.refresh(ctx, now)
+	x.refresh(ctx, now.Add(filesRebuildEvery))
+	if st := x.svc.Stats(); st.Indexed != 0 {
+		t.Fatalf("индекс собран без поиска: %+v", st)
+	}
+	if _, err := os.Stat(desktopconfig.IndexPath(x.cfgPath)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("снимок записан без поиска: %v", err)
+	}
+	if _, err := x.Read(file); err != nil {
+		t.Fatalf("read_file без индекса: %v", err)
+	}
+}
+
+// Первый search_files дожидается сборки, а не отвечает «еще собирается»:
+// со снимка она идет меньше секунды.
+func TestFileIndex_firstSearchWaitsForTheBuild(t *testing.T) {
+	x, file := newIndexOver(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { x.run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	hits, err := x.Search("единорог", 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Doc.Path() != file {
+		t.Fatalf("hits = %v", hits)
+	}
+}
+
+// Долго не искавшая сессия отпускает индекс; следующий поиск поднимает его
+// заново из снимка. Чтение при этом не закрывается.
+func TestFileIndex_unloadsWhenIdle(t *testing.T) {
+	x, file := newIndexOver(t)
+	ctx, now := context.Background(), time.Now()
+	x.touch(now)
+	x.refresh(ctx, now)
+	if st := x.svc.Stats(); st.Indexed != 1 {
+		t.Fatalf("после поиска индекс не собран: %+v", st)
+	}
+
+	x.refresh(ctx, now.Add(filesIdleAfter-configPollEvery))
+	if st := x.svc.Stats(); st.Indexed != 1 {
+		t.Fatalf("выгружен раньше срока: %+v", st)
+	}
+	x.refresh(ctx, now.Add(filesIdleAfter))
+	if _, err := x.svc.Search("единорог", 5); !errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("после простоя: err = %v, ждали выгруженный индекс", err)
+	}
+	if _, err := x.Read(file); err != nil {
+		t.Fatalf("read_file после выгрузки: %v", err)
+	}
+
+	later := now.Add(filesIdleAfter + time.Minute)
+	x.touch(later)
+	x.refresh(ctx, later)
+	if st := x.svc.Stats(); st.Indexed != 1 || st.Reused != 1 {
+		t.Fatalf("повторный поиск: %+v, ждали индекс из снимка", st)
+	}
+}
+
+// Папка, закрытая в окне, пока сессия не ищет, закрывается для read_file
+// так же, а индекс после смены папок в памяти не остается.
+func TestFileIndex_configChangeWhileIdleStillCloses(t *testing.T) {
+	x, file := newIndexOver(t)
+	other := filepath.Join(filepath.Dir(x.cfgPath), "other")
+	mustWrite(t, filepath.Join(other, "b.md"), "другое")
+	ctx, now := context.Background(), time.Now()
+	saveConfig(t, x.cfgPath, desktopconfig.Config{Roots: []string{other}}, now)
+	x.refresh(ctx, now)
+	if _, err := x.Read(file); !errors.Is(err, filesearch.ErrNotAllowed) {
+		t.Fatalf("закрытая папка: err = %v, ждали ErrNotAllowed", err)
+	}
+	if st := x.svc.Stats(); st.Indexed != 0 {
+		t.Fatalf("индекс остался в памяти сессии без поиска: %+v", st)
 	}
 }
