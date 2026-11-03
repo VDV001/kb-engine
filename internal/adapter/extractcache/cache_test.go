@@ -86,3 +86,21 @@ func TestCache_ZeroValueIsOff(t *testing.T) {
 		t.Fatal("выключенный кеш ответил")
 	}
 }
+
+// Has отвечает, есть ли запись, не читая ее: обход спрашивает это о каждом
+// PDF и картинке, а запись бывает до 2 МБ (ревью #379).
+func TestCache_Has(t *testing.T) {
+	c := extractcache.Cache{Dir: t.TempDir()}
+	if c.Has("/w/a.pdf", 1, t0) {
+		t.Fatal("записи нет, а Has ответил да")
+	}
+	if err := c.Put("/w/a.pdf", 1, t0, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !c.Has("/w/a.pdf", 1, t0) || c.Has("/w/a.pdf", 2, t0) {
+		t.Fatal("Has не по ключу")
+	}
+	if (extractcache.Cache{}).Has("/w/a.pdf", 1, t0) {
+		t.Fatal("выключенный кеш ответил да")
+	}
+}

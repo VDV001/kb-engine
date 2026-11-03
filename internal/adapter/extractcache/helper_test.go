@@ -14,7 +14,8 @@ import (
 )
 
 // fakeHelper кладет sh-скрипт на место kb-extract: настоящий помощник на Swift
-// собирается только на macOS, а договор с ним — аргумент, stdout и код выхода.
+// собирается только на macOS, а договор с ним — содержимое в stdin, вид файла
+// вторым аргументом, текст в stdout и код выхода.
 func fakeHelper(t *testing.T, body string) string {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "kb-extract")
@@ -32,7 +33,12 @@ func TestHelper_Extract(t *testing.T) {
 		wantErr error // ждать эту ошибку
 		anyErr  bool  // ждать любую ошибку
 	}{
-		{"текст в stdout", `printf 'СЧЕТ %s' "$(basename "$1")"`, "СЧЕТ scan.png", nil, false},
+		// Файл приходит в stdin, а не путем: помощник не открывает ничего сам,
+		// и подмена папки симлинком его не уводит (ревью #379).
+		{"содержимое из stdin и вид файла", `[ "$1" = "-" ] || exit 9; printf '%s:' "$2"; cat`, "png:СЧЕТ", nil, false},
+		// Хвост после кириллицы не срезается: «Итого: 5» терял «5» (ревью #379).
+		{"хвост после кириллицы", `printf 'Итого: 5'`, "Итого: 5", nil, false},
+		{"три байта на руну", `printf '———'`, "———", nil, false},
 		{"пустая картинка", `exit 0`, "", nil, false},
 		{"файл не открылся", `exit 2`, "", extractcache.ErrUnreadable, false},
 		{"сбой помощника", `echo boom >&2; exit 1`, "", nil, true},
@@ -40,7 +46,7 @@ func TestHelper_Extract(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h := extractcache.Helper{Bin: fakeHelper(t, tt.script)}
-			got, err := h.Extract(context.Background(), "/w/scan.png")
+			got, err := h.Extract(context.Background(), strings.NewReader("СЧЕТ"), "png")
 			switch {
 			case tt.anyErr:
 				if err == nil {
@@ -60,12 +66,14 @@ func TestHelper_Extract(t *testing.T) {
 	}
 }
 
-// Зависший помощник не держит проход окна: после Timeout процесс убит.
+// Зависший помощник не держит проход окна: после Timeout процесс убит, а
+// ошибка называется таймаутом — это не «файл битый», и его стоит повторить.
 func TestHelper_Timeout(t *testing.T) {
 	h := extractcache.Helper{Bin: fakeHelper(t, `sleep 5`), Timeout: 100 * time.Millisecond}
 	start := time.Now()
-	if _, err := h.Extract(context.Background(), "/w/a.pdf"); err == nil {
-		t.Fatal("зависание не названо")
+	_, err := h.Extract(context.Background(), strings.NewReader(""), "pdf")
+	if !errors.Is(err, extractcache.ErrTimeout) {
+		t.Fatalf("err = %v, want ErrTimeout", err)
 	}
 	if d := time.Since(start); d > 2*time.Second {
 		t.Fatalf("ждали %s", d)
@@ -76,11 +84,11 @@ func TestHelper_Timeout(t *testing.T) {
 // страниц не раздувает ни память, ни кеш.
 func TestHelper_CapsOutput(t *testing.T) {
 	h := extractcache.Helper{Bin: fakeHelper(t, `yes ёёёёёёёё | head -c 4000000`)}
-	got, err := h.Extract(context.Background(), "/w/a.pdf")
+	got, err := h.Extract(context.Background(), strings.NewReader(""), "pdf")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) > extractcache.MaxText || !utf8.ValidString(got) || !strings.HasPrefix(got, "ё") {
+	if len(got) > extractcache.MaxText || len(got) < extractcache.MaxText-utf8.UTFMax || !utf8.ValidString(got) {
 		t.Fatalf("%d байт, valid=%v", len(got), utf8.ValidString(got))
 	}
 }

@@ -26,6 +26,11 @@ func (f fakeExtracted) Text(path string, size int64, mod time.Time) (string, boo
 	return t, ok
 }
 
+func (f fakeExtracted) Has(path string, size int64, mod time.Time) bool {
+	_, ok := f[extKey(path, size, mod)]
+	return ok
+}
+
 // cache кладет в f текст для файла на диске.
 func (f fakeExtracted) cache(t *testing.T, path, text string) {
 	t.Helper()
@@ -39,9 +44,14 @@ func (f fakeExtracted) cache(t *testing.T, path, text string) {
 func pending(t *testing.T, s *localfiles.Source) []string {
 	t.Helper()
 	var out []string
-	err := s.Pending(context.Background(), func(d domain.FileDoc, open string) error {
-		if _, err := os.Stat(open); err != nil {
-			t.Fatalf("путь для помощника не открывается: %v", err)
+	err := s.Pending(context.Background(), func(d domain.FileDoc) error {
+		f, info, err := s.OpenExtract(d.Path())
+		if err != nil {
+			t.Fatalf("ждущий файл не открывается: %v", err)
+		}
+		_ = f.Close()
+		if info.Size() != d.Size() {
+			t.Fatalf("размер открытого %d, в обходе %d", info.Size(), d.Size())
 		}
 		out = append(out, d.Path())
 		return nil
@@ -152,5 +162,33 @@ func TestExtracted_ImageFolderCap(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// OpenExtract открывает файл для помощника через os.Root и по тем же правилам,
+// что обход: путь снаружи корня, секрет или путь через симлинк не открываются
+// (ревью #379: помощник получал путь и открывал его сам, мимо os.Root).
+func TestOpenExtract_Refusals(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	write(t, outside, "secret.png", "чужое")
+	if err := os.Symlink(outside, filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	note := write(t, root, "note.md", "текст")
+	s, err := localfiles.New([]string{root}, nil, localfiles.WithExtracted(fakeExtracted{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range []string{
+		filepath.Join(root, "link", "secret.png"),
+		filepath.Join(outside, "secret.png"),
+		note, // не pdf и не картинка
+		filepath.Join(root, "gone.png"),
+	} {
+		if f, _, err := s.OpenExtract(p); err == nil {
+			_ = f.Close()
+			t.Errorf("OpenExtract(%q) открыл файл", p)
+		}
 	}
 }
