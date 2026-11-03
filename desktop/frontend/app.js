@@ -242,7 +242,7 @@ function showEmpty() {
   $("#preview").innerHTML = `<div class="empty"><div class="prompt"><span class="dollar">$</span> cat README</div>
     <p>Поиск по базе знаний и файлам на этом компьютере.</p>
     <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
-    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить</p></div>`;
+    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить, еще раз — спрятать <b>⌥space</b> открыть</p></div>`;
 }
 
 // --- Клавиатура ----------------------------------------------------------------
@@ -251,7 +251,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
-  else if (e.key === "Escape") { $("#q").value = ""; search(""); }
+  else if (e.key === "Escape") {
+    // Первый Esc очищает запрос, второй прячет окно: kb живет в меню-баре.
+    if ($("#q").value) { $("#q").value = ""; search(""); }
+    else if (window.runtime) window.runtime.WindowHide();
+  }
   else if (e.key === "Tab") {
     e.preventDefault();
     const order = Object.keys(TABS), k = order.indexOf(state.tab);
@@ -263,6 +267,9 @@ document.addEventListener("keydown", (e) => {
 });
 
 window.addEventListener("resize", moveInk);
+
+// ⌥Space и «Открыть поиск» в меню-баре: окно появляется с курсором в поиске.
+if (window.runtime) window.runtime.EventsOn("kb:show", () => { $("#q").focus(); $("#q").select(); });
 moveInk();
 // Шрифт вшит и грузится после первого замера: подчеркивание мерить заново.
 document.fonts.ready.then(moveInk);
