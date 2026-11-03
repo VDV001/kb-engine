@@ -142,11 +142,16 @@ token **and** TLS, or the server refuses to start: without the token anyone on t
 network reads the catalog (and, with `--ledger`, the finances); without TLS the token
 crosses the network in clear text. With `--token-file` every request, pages and
 `/metrics` included, needs `Authorization: Bearer <token>` and gets 401 otherwise;
-`/healthz` and `/readyz` stay open for probes and return no data. The token is for API
-clients — the kb-desktop window and the MCP server. A browser cannot send it, so with a
-token the web dashboard is reached through an SSH tunnel to the loopback address
-(`ssh -L 8080:127.0.0.1:8080 host`) rather than over the network. `--pprof` is refused
+`/healthz` and `/readyz` stay open for probes (`/readyz` without a token answers with the
+status code only). The token is for API clients — the kb-desktop window and the MCP server.
+A browser cannot send it, and the check applies to every request wherever it comes from, so
+the web dashboard needs a second `serve` **without** a token bound to loopback on the same
+host, reached through an SSH tunnel (`ssh -L 8080:127.0.0.1:8080 host`). `--pprof` is refused
 on anything but loopback: heap dumps carry the token and the data.
+
+The token file must belong to this user or root, must not be writable by the group or
+readable by others, and holds 32–4096 printable ASCII characters. In Kubernetes mount it
+from a Secret with `defaultMode: 0440` and the pod's `fsGroup`, which these rules allow.
 
 The token is read from a file, never a flag (a flag's value shows in `ps`). The file
 must be readable by its owner only, and the token at least 32 characters:

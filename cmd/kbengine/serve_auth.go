@@ -18,17 +18,20 @@ import (
 // Отказы при запуске serve: печатаются и останавливают процесс до того, как
 // открыт порт.
 var (
-	errTokenPerms     = errors.New("файл токена читают не только владелец: нужны права 0600")
+	errTokenPerms     = errors.New("файл токена читают или пишут посторонние: нужны права 0600 (или 0440 для Secret)")
 	errTokenOwner     = errors.New("файл токена принадлежит другому пользователю")
-	errTokenWeak      = errors.New("токен короче 32 символов или с пробелами")
+	errTokenWeak      = errors.New("токен короче 32 или длиннее 4096 символов, или не из печатных ASCII")
 	errExposedNoToken = errors.New("адрес открыт в сеть без токена: нужен --token-file")
 	errExposedNoTLS   = errors.New("адрес открыт в сеть без TLS: токен ушел бы открытым текстом, нужны --tls-cert и --tls-key (или слушать 127.0.0.1 за прокси с TLS)")
 	errBadAddr        = errors.New("адрес вида host:port")
 )
 
-// minTokenLen — нижняя граница длины токена: 32 символа из openssl rand
-// -base64 24 — это 192 бита, перебором не взять.
-const minTokenLen = 32
+// Границы токена: 32 символа из openssl rand -base64 24 — это 192 бита,
+// перебором не взять; длиннее 4096 — уже не токен, а ошибочный файл.
+const (
+	minTokenLen = 32
+	maxTokenLen = 4096
+)
 
 // readTokenFile reads the bearer token. Токен в файле, а не во флаге: значение
 // флага видно любому в ps. Файл, который читают группа или все, — отказ.
@@ -47,15 +50,28 @@ func readTokenFile(path string) (string, error) {
 	if err := tokenFileMode(info); err != nil {
 		return "", fmt.Errorf("%w (%s)", err, path)
 	}
-	raw, err := io.ReadAll(io.LimitReader(f, 4096))
+	// На байт больше предела: длинный файл — отказ, а не тихая обрезка, после
+	// которой полный токен у клиента всегда получал бы 401.
+	raw, err := io.ReadAll(io.LimitReader(f, maxTokenLen+2))
 	if err != nil {
 		return "", err
 	}
-	token := strings.TrimSpace(string(raw))
-	if len(token) < minTokenLen || strings.ContainsAny(token, " \t\r\n") {
+	token := strings.TrimSuffix(strings.TrimSuffix(string(raw), "\n"), "\r")
+	if len(token) < minTokenLen || len(token) > maxTokenLen || !printableASCII(token) {
 		return "", fmt.Errorf("%w (%s)", errTokenWeak, path)
 	}
 	return token, nil
+}
+
+// printableASCII: токен едет в заголовке HTTP, и длина в байтах должна быть
+// длиной в символах — кириллица дала бы вдвое меньше заявленной стойкости.
+func printableASCII(s string) bool {
+	for i := range len(s) {
+		if s[i] < 0x21 || s[i] > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 // checkExposure refuses an address reachable from the network unless both a
@@ -63,7 +79,7 @@ func readTokenFile(path string) (string, error) {
 // так serve работает по умолчанию и за обратным прокси, который сам держит TLS.
 // open — явный выбор --allow-open: контейнер слушает все адреса, а наружу его
 // выпускает платформа (ingress с TLS и доступом, docker -p 127.0.0.1:…).
-func checkExposure(addr string, token, tls, open bool) error {
+func checkExposure(addr string, token, hasTLS, open bool) error {
 	host, _, err := net.SplitHostPort(addr)
 	if err != nil {
 		return fmt.Errorf("%w: %q", errBadAddr, addr)
@@ -74,7 +90,7 @@ func checkExposure(addr string, token, tls, open bool) error {
 	if !token {
 		return errExposedNoToken
 	}
-	if !tls {
+	if !hasTLS {
 		return errExposedNoTLS
 	}
 	return nil
@@ -126,7 +142,12 @@ func newServeServer(addr string, handler http.Handler, token string, tlsCfg *tls
 		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		TLSConfig:         tlsCfg,
+		// Сервер смотрит в сеть: медленные и простаивающие соединения
+		// закрываются, иначе любой без токена держал бы их до исчерпания
+		// файлов. WriteTimeout не ставится: выгрузка финансов может быть долгой.
+		ReadTimeout: 60 * time.Second,
+		IdleTimeout: 2 * time.Minute,
+		TLSConfig:   tlsCfg,
 	}
 }
 

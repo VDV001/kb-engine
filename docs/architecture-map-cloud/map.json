@@ -461,7 +461,7 @@
      "n": 5,
      "from": "k8s-deployment",
      "to": "pod",
-     "call": "образ ghcr.io/vdv001/kb-engine:latest, args serve --addr=:8080",
+     "call": "образ ghcr.io/vdv001/kb-engine:latest, args serve --addr=:8080 --allow-open",
      "detail": "deploy/k8s/base/deployment.yaml:28 — бинарь по умолчанию слушает 127.0.0.1, а внутри контейнера это значит, что Service не достаёт до него ничего. Расширение привязки — решение человека, поэтому оно написано аргументом, а не подставлено умолчанием",
      "source": "deploy/k8s/base/deployment.yaml:28",
      "symbol": "image",
