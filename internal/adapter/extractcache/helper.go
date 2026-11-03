@@ -79,11 +79,14 @@ func (h Helper) Extract(ctx context.Context, r io.Reader, ext string) (string, e
 	werr := cmd.Wait()
 	var exit *exec.ExitError
 	switch {
+	// Таймаут — первым: после него WaitDelay закрывает трубу, и чтение
+	// заканчивается ошибкой «file already closed», а не EOF (так на Linux в CI,
+	// на macOS успевал EOF).
+	case errors.Is(run.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
+		return "", fmt.Errorf("%w after %s", ErrTimeout, timeout)
 	case rerr != nil:
 		return "", fmt.Errorf("kb-extract: %w", rerr)
 	case full:
-	case errors.Is(run.Err(), context.DeadlineExceeded) && ctx.Err() == nil:
-		return "", fmt.Errorf("%w after %s", ErrTimeout, timeout)
 	case errors.As(werr, &exit) && exit.ExitCode() == 2:
 		return "", ErrUnreadable
 	case werr != nil:

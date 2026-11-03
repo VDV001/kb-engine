@@ -69,7 +69,7 @@ func TestHelper_Extract(t *testing.T) {
 // Зависший помощник не держит проход окна: после Timeout процесс убит, а
 // ошибка называется таймаутом — это не «файл битый», и его стоит повторить.
 func TestHelper_Timeout(t *testing.T) {
-	h := extractcache.Helper{Bin: fakeHelper(t, `sleep 5`), Timeout: 100 * time.Millisecond}
+	h := extractcache.Helper{Bin: fakeHelper(t, `sleep 5; :`), Timeout: 100 * time.Millisecond}
 	start := time.Now()
 	_, err := h.Extract(context.Background(), strings.NewReader(""), "pdf")
 	if !errors.Is(err, extractcache.ErrTimeout) {
