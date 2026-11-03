@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ type indexStatus struct {
 	Building bool   `json:"building"`
 	Indexed  int    `json:"indexed"`
 	Skipped  int    `json:"skipped"`
+	Reused   int    `json:"reused"` // взяты из снимка без чтения
 	Error    string `json:"error,omitempty"`
 }
 
@@ -80,6 +82,10 @@ func (x *indexer) run(src *localfiles.Source) {
 		}
 		start := time.Now()
 		st, err := x.files.Replace(ctx, src)
+		if errors.Is(err, filesearch.ErrSaveFailed) {
+			log.Printf("files: %v", err) // индекс подменен и работает, не записан только снимок
+			err = nil
+		}
 		x.mu.Lock()
 		defer x.mu.Unlock()
 		switch {
@@ -92,7 +98,7 @@ func (x *indexer) run(src *localfiles.Source) {
 				x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
 			}
 		default:
-			log.Printf("files: indexed %d (skipped %d) in %s", st.Indexed, st.Skipped, time.Since(start).Round(time.Millisecond))
+			log.Printf("files: indexed %d (skipped %d, reused %d) in %s", st.Indexed, st.Skipped, st.Reused, time.Since(start).Round(time.Millisecond))
 			if old := x.src; old != nil && old != src {
 				// Не сразу: поиск и чтение, взявшие старый источник до подмены,
 				// должны успеть дочитать (ревью #372).
@@ -102,7 +108,7 @@ func (x *indexer) run(src *localfiles.Source) {
 			}
 			x.src = src
 			if gen == x.gen {
-				x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped}
+				x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, Reused: st.Reused}
 			}
 		}
 	}()

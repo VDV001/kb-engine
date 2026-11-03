@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -53,7 +54,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	api, idx, err := newAPI(cfg)
+	api, idx, err := newAPI(cfg, filepath.Join(filepath.Dir(configPath(home)), "index.gob"))
 	if err != nil {
 		return err
 	}
