@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"errors"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,6 +35,7 @@ const ReadChunkRunes = 20000
 var (
 	errEmptyQuery   = errors.New("нужен запрос: пустой поиск по файлам отдал бы все подряд")
 	errIndexPending = errors.New("индекс файлов еще собирается, повторите через несколько секунд")
+	errIndexFailed  = errors.New("индекс файлов не собрался: причина в stderr kbengine-mcp, сервер повторит сборку сам; search_catalog работает")
 	errEmptyPath    = errors.New("нужен путь к файлу, например из выдачи search_files")
 	errNotAllowed   = errors.New("путь не разрешен: читаются только файлы из папок поиска, без секретов и служебных папок")
 	errNotFound     = errors.New("файл не найден")
@@ -93,8 +95,13 @@ func searchFiles(f FileSearcher, in fileSearchArgs) (map[string]any, error) {
 		limit = defaultFilesLimit
 	}
 	hits, err := f.Search(in.Query, min(limit, maxFilesLimit))
-	if errors.Is(err, filesearch.ErrNotBuilt) {
+	switch {
+	case errors.Is(err, filesearch.ErrNotBuilt):
 		return nil, errIndexPending
+	case errors.Is(err, filesearch.ErrBuildFailed):
+		// Сырая ошибка обхода несет абсолютный путь и ничего не говорит о том,
+		// что делать дальше; причина уже напечатана сборкой в stderr.
+		return nil, errIndexFailed
 	}
 	if err != nil {
 		return nil, err
@@ -127,16 +134,31 @@ func readFile(f FileSearcher, in fileReadArgs) (map[string]any, error) {
 		// были бы способом простучать диск — то же правило, что в HTTP API.
 		return nil, errNotFound
 	}
-	runes := []rune(text)
-	if in.Offset < 0 || in.Offset > len(runes) {
+	total := utf8.RuneCountInString(text)
+	if in.Offset < 0 || in.Offset > total {
 		return nil, errBadOffset
 	}
-	end := min(in.Offset+ReadChunkRunes, len(runes))
-	out := map[string]any{"path": in.Path, "text": string(runes[in.Offset:end]), "total_runes": len(runes)}
+	// Смещения считаются проходом по UTF-8, без []rune всего файла: файл до
+	// 2 МБ дал бы 8 МБ на каждый кусок (ревью #375).
+	from := byteOffset(text, in.Offset)
+	end := min(in.Offset+ReadChunkRunes, total)
+	to := from + byteOffset(text[from:], end-in.Offset)
+	out := map[string]any{"path": in.Path, "text": text[from:to], "total_runes": total}
 	// Последний кусок продолжения не обещает: next_offset появляется,
 	// только когда за ним есть текст.
-	if end < len(runes) {
+	if end < total {
 		out["next_offset"] = end
 	}
 	return out, nil
+}
+
+// byteOffset returns the byte index of the n-th rune of s (len(s) past the end).
+func byteOffset(s string, n int) int {
+	for i := range s {
+		if n == 0 {
+			return i
+		}
+		n--
+	}
+	return len(s)
 }

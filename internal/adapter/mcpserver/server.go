@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -144,9 +145,14 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 }
 
 func jsonResult(v any) (*mcp.CallToolResult, any, error) {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
+	// Без HTML-экранирования: ответ читает агент, а не браузер, и каждый «<»
+	// в виде \u003c раздувал код и разметку из read_file вдвое (ревью #375).
+	var b strings.Builder
+	enc := json.NewEncoder(&b)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
 		return nil, nil, fmt.Errorf("ответ не сериализуется: %w", err)
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}, nil, nil
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.TrimSuffix(b.String(), "\n")}}}, nil, nil
 }
