@@ -36,6 +36,10 @@ var junkDirs = map[string]bool{
 	".git": true, "node_modules": true, ".venv": true, "venv": true,
 	"__pycache__": true, ".next": true, ".turbo": true, "dist": true,
 	"target": true, ".cache": true, ".idea": true,
+	// Папки копий: десять бэкапов каталога по 2 МБ забивали выдачу раньше
+	// живых файлов (живой прогон #375). Имя файла со словом backup не
+	// отсекается — заметка о бэкапах не бэкап.
+	".backup": true, "backup": true, "backups": true,
 }
 
 // secretNames — файлы с доступами, известные по имени целиком.
