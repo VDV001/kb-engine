@@ -14,32 +14,44 @@ type window interface {
 }
 
 // tray is the menu-bar icon and the ⌥Space hotkey: окно живет без значка в
-// Dock (LSUIElement), красная кнопка и Esc его только прячут, а индекс и
-// распознавание продолжают работать в фоне.
-type tray struct{ win window }
+// Dock, красная кнопка и Esc его только прячут, а индекс и распознавание
+// продолжают работать в фоне. ctx — контекст Wails: после выхода колбэки
+// Cocoa окно не трогают (ревью #380).
+type tray struct {
+	win window
+	ctx context.Context
+}
 
 // summon toggles the window: на переднем плане — прячет, иначе показывает.
 func (t tray) summon(frontmost bool) {
-	if frontmost {
+	switch {
+	case t.ctx.Err() != nil:
+	case frontmost:
 		t.win.Hide()
-		return
+	default:
+		t.win.Show()
 	}
-	t.win.Show()
 }
 
-func (t tray) quit() { t.win.Quit() }
+func (t tray) quit() {
+	if t.ctx.Err() == nil {
+		t.win.Quit()
+	}
+}
 
-// wailsWindow drives the Wails window. ctx — контекст из OnStartup: до него
-// рантайма Wails еще нет.
-type wailsWindow struct{ ctx func() context.Context }
+// wailsWindow drives the Wails window. Прячется и показывается приложение
+// целиком, как у красной кнопки ([NSApp hide:]): фокус возвращается в
+// приложение, из которого звали, а оба пути прятать ведут себя одинаково
+// (ревью #380: WindowHide оставлял kb активным без окна).
+type wailsWindow struct{ ctx context.Context }
 
-// Show brings the window forward and puts the cursor in the search field.
+// Show unhides the app, brings the window forward and puts the cursor in the
+// search field.
 func (w wailsWindow) Show() {
-	ctx := w.ctx()
-	runtime.WindowShow(ctx)
-	activateApp() // приложению без Dock фокус сам не приходит
-	runtime.EventsEmit(ctx, "kb:show")
+	runtime.Show(w.ctx)
+	runtime.WindowShow(w.ctx)
+	runtime.EventsEmit(w.ctx, "kb:show")
 }
 
-func (w wailsWindow) Hide() { runtime.WindowHide(w.ctx()) }
-func (w wailsWindow) Quit() { runtime.Quit(w.ctx()) }
+func (w wailsWindow) Hide() { runtime.Hide(w.ctx) }
+func (w wailsWindow) Quit() { runtime.Quit(w.ctx) }

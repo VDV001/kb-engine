@@ -9,11 +9,14 @@ extern void kbToggle(int frontmost);
 extern void kbQuit(void);
 extern void kbHotkeyFailed(int status);
 
-// kbFrontmost — окно kb видно и приложение активно: тогда ⌥Space прячет.
+// kbFrontmost — окно поиска видно и приложение активно: тогда ⌥Space прячет.
+// Смотрится именно окно Wails: панель «О программе» и выбор папок окном поиска
+// не считаются (ревью #380).
 static BOOL kbFrontmost(void) {
-    if (![NSApp isActive]) return NO;
+    if (![NSApp isActive] || [NSApp isHidden]) return NO;
+    Class main = NSClassFromString(@"WailsWindow");
     for (NSWindow *w in [NSApp windows]) {
-        if ([w isVisible] && [w canBecomeKeyWindow]) return YES;
+        if ([w isKindOfClass:main] && [w isVisible]) return YES;
     }
     return NO;
 }
@@ -36,6 +39,10 @@ static OSStatus kbOnHotKey(EventHandlerCallRef next, EventRef event, void *data)
 
 void kbInstallMenuBar(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
+        // Без Dock и ⌘Tab: Wails в applicationWillFinishLaunching сам ставит
+        // Regular и перекрывает LSUIElement (ревью #380), а этот блок идет
+        // после запуска. LSUIElement остается: без него значок мелькает.
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
         tray = [KBTray new];
         item = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
         // Системный символ, а не своя картинка: шаблон сам темнеет и светлеет
@@ -63,8 +70,4 @@ void kbInstallMenuBar(void) {
         OSStatus st = RegisterEventHotKey(kVK_Space, optionKey, hid, GetApplicationEventTarget(), 0, &ref);
         if (st != noErr) kbHotkeyFailed((int)st);
     });
-}
-
-void kbActivate(void) {
-    dispatch_async(dispatch_get_main_queue(), ^{ [NSApp activateIgnoringOtherApps:YES]; });
 }

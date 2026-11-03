@@ -107,7 +107,7 @@ func run() error {
 		},
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
-			installMenuBar(tray{win: wailsWindow{ctx: func() context.Context { return ctx }}})
+			installMenuBar(tray{win: wailsWindow{ctx: ctx}, ctx: ctx})
 		},
 		// Значка в Dock нет (LSUIElement в Info.plist): красная кнопка прячет
 		// окно, а выход — из меню значка в меню-баре.

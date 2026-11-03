@@ -6,5 +6,3 @@ package main
 // не тянут Cocoa, а логику переключения проверяет tray_test.go.
 
 func installMenuBar(tray) {}
-
-func activateApp() {}

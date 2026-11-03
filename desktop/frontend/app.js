@@ -254,7 +254,7 @@ document.addEventListener("keydown", (e) => {
   else if (e.key === "Escape") {
     // Первый Esc очищает запрос, второй прячет окно: kb живет в меню-баре.
     if ($("#q").value) { $("#q").value = ""; search(""); }
-    else if (window.runtime) window.runtime.WindowHide();
+    else if (window.runtime) window.runtime.Hide(); // как красная кнопка: фокус уходит туда, откуда звали
   }
   else if (e.key === "Tab") {
     e.preventDefault();
