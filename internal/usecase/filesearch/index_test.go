@@ -129,6 +129,19 @@ func TestSnippet(t *testing.T) {
 	}
 }
 
+func TestSnippet_CentersOnMatchInLongLine(t *testing.T) {
+	// Длинная строка (записи хроники бывают по 500 символов) обрезалась с
+	// начала, и найденное слово в выдачу не попадало — замер на живой папке.
+	line := strings.Repeat("слово ", 60) + "трансграничка подана " + strings.Repeat("хвост ", 60)
+	got := filesearch.Snippet(line, "трансграничка", 80)
+	if !strings.Contains(got, "трансграничка") {
+		t.Fatalf("совпадение не попало в сниппет: %q", got)
+	}
+	if n := len([]rune(got)); n > 82 {
+		t.Fatalf("сниппет длиннее предела: %d", n)
+	}
+}
+
 type fakeSource struct {
 	files map[string]string
 	fail  string
