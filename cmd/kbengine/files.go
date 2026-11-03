@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"path/filepath"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/fileindexgob"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
@@ -29,6 +31,7 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 	fs.Var(&exclude, "exclude", "имя папки, в которую не заходить (можно несколько раз)")
 	q := fs.String("q", "", "поисковый запрос")
 	limit := fs.Int("limit", 10, "сколько файлов показать")
+	indexPath := fs.String("index", "", "файл снимка индекса: со второго запуска перечитываются только измененные файлы")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -50,10 +53,16 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "files: %v\n", err)
 		return 1
 	}
-	svc := filesearch.NewService(src)
+	var opts []filesearch.Option
+	if *indexPath != "" {
+		opts = append(opts, filesearch.WithStore(fileindexgob.Store{Path: *indexPath}))
+	}
+	svc := filesearch.NewService(src, opts...)
 	start := time.Now()
 	st, err := svc.Build(context.Background())
-	if err != nil {
+	if errors.Is(err, filesearch.ErrSaveFailed) {
+		fmt.Fprintf(stderr, "files: %v\n", err) // поиск работает, снимок не записан
+	} else if err != nil {
 		fmt.Fprintf(stderr, "files: %v\n", err)
 		return 1
 	}
@@ -65,7 +74,7 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 
 	// Сколько проиндексировано и сколько не прочиталось — до выдачи: «не
 	// нашлось» без размера индекса не отличить от «не искали».
-	fmt.Fprintf(stdout, "indexed %d files (skipped %d) in %s\n", st.Indexed, st.Skipped, time.Since(start).Round(time.Millisecond))
+	fmt.Fprintf(stdout, "indexed %d files (skipped %d, reused %d) in %s\n", st.Indexed, st.Skipped, st.Reused, time.Since(start).Round(time.Millisecond))
 	if len(hits) == 0 {
 		fmt.Fprintln(stdout, "ничего не найдено")
 		return 0
