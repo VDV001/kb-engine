@@ -43,7 +43,7 @@ type folderSettings struct {
 func (f *folderSettings) Get() foldersView {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	roots, missing := desktopconfig.NormalizeRoots(f.cfg.Roots, f.home)
+	roots, missing := desktopconfig.NormalizeRoots(f.cfg.FolderRoots(), f.home)
 	return foldersView{Roots: roots, Exclude: slices.Clone(f.cfg.Exclude), Missing: missing}
 }
 
@@ -73,7 +73,8 @@ func (f *folderSettings) Set(roots, exclude []string) error {
 		return fmt.Errorf("%w: %w", errBadFolder, err)
 	}
 	next := f.cfg
-	next.Roots, next.Exclude = clean, ex
+	next.SetFolderRoots(clean, f.home)
+	next.Exclude = ex
 	if err := desktopconfig.Write(f.path, next); err != nil {
 		// Индекс уже на новых папках, а конфиг нет: окно работает, но
 		// следующий запуск вернется к прежним папкам. Говорим об этом прямо.
