@@ -65,10 +65,17 @@ func NewService(src Source) *Service { return &Service{src: src} }
 // не пропадает молча — он посчитан в Skipped, чтобы «нашлось меньше, чем
 // лежит» было видно числом.
 func (s *Service) Build(ctx context.Context) (Stats, error) {
+	return s.Replace(ctx, s.source())
+}
+
+// Replace builds a fresh index from src and, only if that succeeds, swaps both
+// the source and the index in. Так меняются папки в окне: до конца сборки
+// поиск отвечает по старому индексу, а при ошибке старый остается.
+func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 	ix := NewIndex()
 	var st Stats
-	err := s.src.Walk(ctx, func(d domain.FileDoc) error {
-		text, err := s.src.ReadText(d.Path())
+	err := src.Walk(ctx, func(d domain.FileDoc) error {
+		text, err := src.ReadText(d.Path())
 		if err != nil {
 			st.Skipped++
 			return nil
@@ -85,7 +92,7 @@ func (s *Service) Build(ctx context.Context) (Stats, error) {
 		return st, err
 	}
 	s.mu.Lock()
-	s.ix, s.stats, s.buildErr = ix, st, nil
+	s.src, s.ix, s.stats, s.buildErr = src, ix, st, nil
 	s.mu.Unlock()
 	return st, nil
 }
@@ -100,7 +107,7 @@ func (s *Service) Stats() Stats {
 // Search finds files by query and attaches the matching line of each.
 func (s *Service) Search(query string, limit int) ([]Hit, error) {
 	s.mu.RLock()
-	ix, berr := s.ix, s.buildErr
+	ix, berr, src := s.ix, s.buildErr, s.src
 	s.mu.RUnlock()
 	if ix == nil {
 		if berr != nil {
@@ -112,7 +119,7 @@ func (s *Service) Search(query string, limit int) ([]Hit, error) {
 	for i := range hits {
 		// Сниппет читается заново, а не хранится в индексе: текст всех файлов
 		// в памяти весил бы как сами файлы, а читать нужно лишь показанные.
-		if text, err := s.src.ReadText(hits[i].Doc.Path()); err == nil {
+		if text, err := src.ReadText(hits[i].Doc.Path()); err == nil {
 			hits[i].Snippet = Snippet(text, query, snippetRunes)
 		}
 	}
@@ -121,8 +128,14 @@ func (s *Service) Search(query string, limit int) ([]Hit, error) {
 
 // Read returns one file's text through the same source, and so under the same
 // rules: a path the walk would not index is refused with ErrNotAllowed.
-func (s *Service) Read(path string) (string, error) { return s.src.ReadText(path) }
+func (s *Service) Read(path string) (string, error) { return s.source().ReadText(path) }
 
 // Check reports whether a path may be opened, under the same rules as Read but
 // without reading the file.
-func (s *Service) Check(path string) error { return s.src.Check(path) }
+func (s *Service) Check(path string) error { return s.source().Check(path) }
+
+func (s *Service) source() Source {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.src
+}
