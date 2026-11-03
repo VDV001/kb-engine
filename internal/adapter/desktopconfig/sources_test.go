@@ -76,7 +76,8 @@ func TestConfig_Validate(t *testing.T) {
 		{"https-сервер", []desktopconfig.Source{server("https://kb.example")}, nil},
 		{"http только на этом Mac", []desktopconfig.Source{server("http://127.0.0.1:8097")}, nil},
 		{"http localhost", []desktopconfig.Source{server("http://localhost:8097")}, nil},
-		{"неизвестный вид", []desktopconfig.Source{{ID: "x-1", Kind: "ftp", Path: "/a", Enabled: true}}, desktopconfig.ErrSourceKind},
+		// Вид от более новой сборки не роняет прежнюю: источник хранится, но не читается.
+		{"неизвестный вид терпится", []desktopconfig.Source{{ID: "s3-1", Kind: "s3", URL: "s3://b", Enabled: true}}, nil},
 		{"нет id", []desktopconfig.Source{folder("", "/a")}, desktopconfig.ErrSourceID},
 		{"повтор id", []desktopconfig.Source{folder("folder-1", "/a"), folder("folder-1", "/b")}, desktopconfig.ErrSourceID},
 		{"папка без пути", []desktopconfig.Source{folder("folder-1", "")}, desktopconfig.ErrSourceTarget},
@@ -119,7 +120,7 @@ func TestConfig_SetFolderRoots(t *testing.T) {
 		{ID: "folder-3", Kind: desktopconfig.KindFolder, Path: "/b", Enabled: true},
 		{ID: "catalog-1", Kind: desktopconfig.KindCatalog, Path: "/kb.json", Enabled: true},
 	}}
-	cfg.SetFolderRoots([]string{"/new", "/a"})
+	cfg.SetFolderRoots([]string{"/new", "/a"}, "")
 	want := []desktopconfig.Source{
 		{ID: "server-1", Kind: desktopconfig.KindServer, URL: "https://kb.example", Enabled: true},
 		{ID: "folder-4", Kind: desktopconfig.KindFolder, Path: "/new", Enabled: true},
@@ -140,7 +141,7 @@ func TestConfig_SetFolderRoots_NoFoldersAppends(t *testing.T) {
 	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
 		{ID: "catalog-1", Kind: desktopconfig.KindCatalog, Path: "/kb.json", Enabled: true},
 	}}
-	cfg.SetFolderRoots([]string{"/a"})
+	cfg.SetFolderRoots([]string{"/a"}, "")
 	if got := cfg.FolderRoots(); !slices.Equal(got, []string{"/a"}) || cfg.Sources[0].ID != "catalog-1" {
 		t.Fatalf("sources = %+v", cfg.Sources)
 	}
@@ -199,5 +200,115 @@ func TestWrite_LegacyShapeMigrates(t *testing.T) {
 	}
 	if !slices.Equal(got.FolderRoots(), []string{"/a"}) || got.CatalogPath() != "/kb.json" || !slices.Equal(got.Roots, []string{"/a"}) {
 		t.Fatalf("cfg = %+v", got)
+	}
+}
+
+// Пустая строка в roots прежней формы не роняет окно: раньше NormalizeRoots
+// ее пропускал, и переезд не должен вернуть аварию из ревью #371.
+func TestRead_LegacyBlankRootIsSkipped(t *testing.T) {
+	path := writeRaw(t, `{"roots":["/a",""," "],"exclude":[]}`)
+	cfg, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.FolderRoots(); !slices.Equal(got, []string{"/a"}) {
+		t.Fatalf("FolderRoots = %q", got)
+	}
+}
+
+// Сервер из конфига прежней формы переживает запись: Write переводит такой
+// конфиг в источники, а не пишет sources: null.
+func TestWrite_LegacyServerSurvives(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := desktopconfig.Write(path, desktopconfig.Config{Roots: []string{"/a"}, Server: "https://kb.example"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := desktopconfig.Source{ID: "server-1", Kind: desktopconfig.KindServer, URL: "https://kb.example"}
+	if !slices.Contains(got.Sources, want) {
+		t.Fatalf("sources = %+v, want %+v", got.Sources, want)
+	}
+}
+
+// Источник неизвестного вида переживает круг записи и чтения и не читается.
+func TestWrite_UnknownKindRoundTrips(t *testing.T) {
+	path := writeRaw(t, `{"sources":[{"id":"s3-1","kind":"s3","url":"s3://b","enabled":true},{"id":"folder-1","kind":"folder","path":"/a","enabled":true}]}`)
+	cfg, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.FolderRoots(); !slices.Equal(got, []string{"/a"}) {
+		t.Fatalf("FolderRoots = %q", got)
+	}
+	if err := desktopconfig.Write(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	again, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(again.Sources) != 2 || again.Sources[0].Kind != "s3" {
+		t.Fatalf("sources = %+v", again.Sources)
+	}
+}
+
+// Write не сохраняет того, что следующий запуск откажется читать.
+func TestWrite_RejectsInvalidSources(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "server-1", Kind: desktopconfig.KindServer, URL: "http://192.168.1.5", Enabled: true},
+	}}
+	if err := desktopconfig.Write(path, cfg); !errors.Is(err, desktopconfig.ErrSourceTarget) {
+		t.Fatalf("err = %v, want ErrSourceTarget", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Fatal("негодный конфиг записан")
+	}
+}
+
+// Папка, записанная с «~» или со слешем на конце, узнается при сохранении той
+// же папки из окна (окно присылает раскрытый путь) и сохраняет id и имя.
+func TestConfig_SetFolderRoots_MatchesNormalizedPath(t *testing.T) {
+	home := "/Users/x"
+	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "folder-1", Kind: desktopconfig.KindFolder, Name: "заметки", Path: "~/notes", Enabled: true},
+		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/data/", Enabled: true},
+	}}
+	cfg.SetFolderRoots([]string{"/Users/x/notes", "/data"}, home)
+	if len(cfg.Sources) != 2 || cfg.Sources[0].ID != "folder-1" || cfg.Sources[0].Name != "заметки" || cfg.Sources[1].ID != "folder-2" {
+		t.Fatalf("sources = %+v", cfg.Sources)
+	}
+}
+
+// Выключенная папка, которую снова добавили, включается на своем месте, а не
+// повторяется вторым источником с тем же путем.
+func TestConfig_SetFolderRoots_ReenablesDisabled(t *testing.T) {
+	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "folder-1", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
+		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: false},
+	}}
+	cfg.SetFolderRoots([]string{"/a", "/off"}, "")
+	want := []desktopconfig.Source{
+		{ID: "folder-1", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
+		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/off", Enabled: true},
+	}
+	if !slices.Equal(cfg.Sources, want) {
+		t.Fatalf("sources = %+v", cfg.Sources)
+	}
+}
+
+// После правки списка в памяти не остается прежних roots и catalog: иначе
+// переезд однажды восстановил бы из них удаленные папки.
+func TestConfig_SetFolderRoots_ClearsLegacyFields(t *testing.T) {
+	cfg := desktopconfig.Config{Roots: []string{"/old"}, Catalog: "/kb.json"}
+	cfg.SetFolderRoots([]string{"/new"}, "")
+	if cfg.Roots != nil || cfg.Catalog != "" {
+		t.Fatalf("roots = %q catalog = %q", cfg.Roots, cfg.Catalog)
+	}
+	if cfg.CatalogPath() != "/kb.json" || !slices.Equal(cfg.FolderRoots(), []string{"/new"}) {
+		t.Fatalf("sources = %+v", cfg.Sources)
 	}
 }
