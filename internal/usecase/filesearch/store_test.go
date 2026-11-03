@@ -2,6 +2,7 @@ package filesearch_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -287,4 +288,86 @@ func TestSnapshot_KeepsOldAndFarDates(t *testing.T) {
 			t.Errorf("дата %v вернулась как %v", mod, got)
 		}
 	}
+}
+
+// Сброс освобождает память, но не доступ: чтение идет через источник, а
+// следующая сборка берет индекс из снимка, не перечитывая файлы. Так MCP
+// отпускает индекс сессии, которая давно не искала.
+func TestService_ResetKeepsSourceAndReloadsFromStore(t *testing.T) {
+	store := &memStore{}
+	reads := 0
+	src := countingSource{files: map[string]file{"/w/a.md": {"договор", t0}}, reads: &reads}
+	svc := filesearch.NewService(src, filesearch.WithStore(store))
+	built, err := svc.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc.Reset(src)
+	if _, err := svc.Search("договор", 5); !errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("после сброса: err = %v, ждали ErrNotBuilt", err)
+	}
+	// Размер последнего индекса остается: search_files отдает его рядом с
+	// выдачей, и сброс между поиском и Stats не должен давать «indexed: 0»
+	// при найденных файлах (ревью #377).
+	if st := svc.Stats(); st != built {
+		t.Fatalf("после сброса stats = %+v, ждали прежние %+v", st, built)
+	}
+	if text, err := svc.Read("/w/a.md"); err != nil || text != "договор" {
+		t.Fatalf("чтение после сброса: %q, %v", text, err)
+	}
+
+	reads = 0
+	st, err := svc.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 0 || st.Reused != 1 || store.saves != 1 {
+		t.Fatalf("сборка после сброса: reads=%d stats=%+v saves=%d, ждали снимок без чтения", reads, st, store.saves)
+	}
+	if hits, _ := svc.Search("договор", 5); len(hits) != 1 {
+		t.Fatalf("hits = %v", hits)
+	}
+}
+
+// Сброс на другой источник меняет границу чтения сразу и без сборки: сессия,
+// которая не ищет, не должна обходить диск ради смены папок в окне (ревью #377).
+func TestService_ResetToOtherSourceSwapsWithoutBuilding(t *testing.T) {
+	store := &memStore{}
+	reads := 0
+	a := countingSource{files: map[string]file{"/a/x.md": {"договор", t0}}, reads: &reads}
+	svc := filesearch.NewService(a, filesearch.WithStore(store))
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reads = 0
+	b := walkCounting{countingSource{files: map[string]file{"/b/y.md": {"заявка", t0}}, reads: &reads}, new(int)}
+
+	svc.Reset(b)
+	if *b.walks != 0 || reads != 0 || store.saves != 1 {
+		t.Fatalf("сброс собирал индекс: walks=%d reads=%d saves=%d", *b.walks, reads, store.saves)
+	}
+	if text, err := svc.Read("/b/y.md"); err != nil || text != "заявка" {
+		t.Fatalf("чтение через новый источник: %q, %v", text, err)
+	}
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if hits, _ := svc.Search("договор", 5); len(hits) != 0 {
+		t.Fatalf("файл старого источника в выдаче: %v", hits)
+	}
+	if hits, _ := svc.Search("заявка", 5); len(hits) != 1 {
+		t.Fatalf("hits = %v, ждали файл нового источника", hits)
+	}
+}
+
+// walkCounting считает обходы: сброс источника обходить диск не должен.
+type walkCounting struct {
+	countingSource
+	walks *int
+}
+
+func (s walkCounting) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
+	*s.walks++
+	return s.countingSource.Walk(ctx, fn)
 }
