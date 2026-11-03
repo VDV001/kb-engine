@@ -137,6 +137,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 		return map[string]any{"stats": st, "view": viewURL(cfg.ViewBase, "overview", "")}, nil
 	})
 
+	if cfg.Files != nil {
+		addFileTools(s, j, cfg.Files)
+	}
 	return s
 }
 

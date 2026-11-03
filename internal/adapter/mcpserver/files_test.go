@@ -201,7 +201,7 @@ func TestServer_readFile(t *testing.T) {
 	if err := json.Unmarshal([]byte(text(t, res)), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Path != "/notes/mcp.md" || out.Text != "# MCP\nпротокол" || out.TotalRunes != 13 || out.NextOffset != 0 {
+	if out.Path != "/notes/mcp.md" || out.Text != "# MCP\nпротокол" || out.TotalRunes != 14 || out.NextOffset != 0 {
 		t.Fatalf("out = %+v", out)
 	}
 }
