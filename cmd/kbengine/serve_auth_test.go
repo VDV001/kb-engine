@@ -99,6 +99,9 @@ func TestRunServe_RefusesUnsafeExposure(t *testing.T) {
 	}
 	tok := writeToken(t, goodToken, 0o600)
 	cert := filepath.Join(t.TempDir(), "cert.pem")
+	if err := os.WriteFile(cert, []byte("-----BEGIN CERTIFICATE-----\nnot a cert\n-----END CERTIFICATE-----\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	tests := []struct {
 		name string
 		args []string
@@ -108,6 +111,8 @@ func TestRunServe_RefusesUnsafeExposure(t *testing.T) {
 		{"сеть без TLS", []string{"--addr", "0.0.0.0:0", "--token-file", tok}, "--tls-cert"},
 		{"сертификат без ключа", []string{"--token-file", tok, "--tls-cert", cert}, "--tls-key"},
 		{"негодный файл токена", []string{"--token-file", writeToken(t, goodToken, 0o644)}, "0600"},
+		// Битый сертификат — отказ при запуске, а не после строки «serving».
+		{"битый сертификат", []string{"--addr", "127.0.0.1:0", "--token-file", tok, "--tls-cert", cert, "--tls-key", cert}, "--tls-cert"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
