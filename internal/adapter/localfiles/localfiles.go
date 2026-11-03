@@ -4,6 +4,7 @@
 package localfiles
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -25,6 +26,10 @@ const MaxFileBytes = 2 << 20
 // so HTTP and MCP map it without knowing this adapter.
 var ErrNotAllowed = filesearch.ErrNotAllowed
 
+// Все сравнения имен — в нижнем регистре: APFS регистр не различает, и
+// FINANCES/ledger.md открывает finances/ledger.md. Сравнение с учетом регистра
+// пропускало исключенную папку (ревью #371, проверено живым замером).
+
 // junkDirs — служебные папки инструментов: в них нет того, что ищет человек,
 // а по объему они больше всего остального.
 var junkDirs = map[string]bool{
@@ -33,17 +38,50 @@ var junkDirs = map[string]bool{
 	"target": true, ".cache": true, ".idea": true,
 }
 
-// isSecret — файлы с ключами и переменными окружения. Их нет в индексе и их
-// нельзя прочитать через ReadText: индекс отдается агенту по MCP, и секрет в
-// нем был бы секретом, отданным наружу.
+// secretNames — файлы с доступами, известные по имени целиком.
+var secretNames = map[string]bool{
+	".env": true, ".envrc": true, ".npmrc": true, ".netrc": true, ".pgpass": true,
+	".pypirc": true, "kubeconfig": true, ".git-credentials": true,
+}
+
+// secretWords — слова в имени, которые выдают файл с доступами: так их называют
+// GCP (service-account.json), AWS (credentials) и сами люди (secrets.yaml).
+var secretWords = []string{"secret", "credential", "service-account", "service_account"}
+
+// configExts — форматы, в которых лежат доступы; пустое расширение — файлы
+// вроде credentials без расширения.
+var configExts = map[string]bool{
+	"": true, ".json": true, ".yaml": true, ".yml": true, ".toml": true, ".ini": true, ".conf": true, ".cfg": true, ".txt": true,
+}
+
+// isSecret — файлы с ключами и доступами. Их нет в индексе и их нельзя прочитать
+// через ReadText: индекс отдается агенту по MCP, и секрет в нем был бы
+// секретом, отданным наружу.
+//
+// ponytail: распознавание по имени. Потолок: токен внутри config.toml с
+// безобидным именем пройдет. Путь: сканер содержимого (правила gitleaks) при
+// индексации, если такие файлы начнут попадаться.
 func isSecret(name string) bool {
+	n := strings.ToLower(name)
 	switch {
-	case name == ".env", strings.HasPrefix(name, ".env."):
+	case secretNames[n], strings.HasPrefix(n, ".env."):
 		return true
-	case strings.HasPrefix(name, "id_rsa"), strings.HasPrefix(name, "id_ed25519"), strings.HasPrefix(name, "id_ecdsa"):
+	case strings.HasPrefix(n, "id_rsa"), strings.HasPrefix(n, "id_ed25519"), strings.HasPrefix(n, "id_ecdsa"):
+		return true
+	case strings.Contains(n, ".tfstate"):
 		return true
 	}
-	switch strings.ToLower(filepath.Ext(name)) {
+	// Слова в имени проверяются только у конфигов: заметка «чистка секретов»
+	// в .md — не секрет, и на живой папке правило без этой оговорки срезало
+	// именно такой handoff.
+	if configExts[filepath.Ext(n)] {
+		for _, w := range secretWords {
+			if strings.Contains(n, w) {
+				return true
+			}
+		}
+	}
+	switch filepath.Ext(n) {
 	case ".pem", ".key", ".p12", ".pfx", ".keystore":
 		return true
 	}
@@ -58,7 +96,7 @@ func isSecret(name string) bool {
 var binaryDocs = map[string]bool{".pdf": true, ".docx": true, ".rtf": true}
 
 func isIndexable(name string) bool {
-	if isSecret(name) || strings.Contains(name, ".bak") {
+	if isSecret(name) || strings.Contains(strings.ToLower(name), ".bak") {
 		return false
 	}
 	k := domain.FileKindOf(name)
@@ -70,40 +108,66 @@ func isIndexable(name string) bool {
 
 // Source walks roots and reads their text files.
 type Source struct {
-	roots    []string // как заданы, для обхода
-	resolved []string // с раскрытыми симлинками, для проверки чтения
+	roots    []string   // как заданы: путь снаружи может прийти в этом написании
+	resolved []string   // с раскрытыми симлинками: по ним идет обход и чтение
+	dirs     []*os.Root // открыты один раз, а не на каждое чтение
 	exclude  map[string]bool
 }
 
 // New returns a source over absolute roots. excludeDirs are folder names that
-// are never entered, in addition to the built-in junk folders.
+// are never entered, in addition to the built-in junk folders. Close releases
+// the roots.
 func New(roots, excludeDirs []string) (*Source, error) {
 	s := &Source{exclude: map[string]bool{}}
 	for _, r := range roots {
 		if !filepath.IsAbs(r) {
+			_ = s.Close()
 			return nil, fmt.Errorf("root must be absolute: %q", r)
 		}
 		r = filepath.Clean(r)
 		res, err := filepath.EvalSymlinks(r)
 		if err != nil {
+			_ = s.Close()
 			return nil, fmt.Errorf("resolve root %q: %w", r, err)
+		}
+		dir, err := os.OpenRoot(res)
+		if err != nil {
+			_ = s.Close()
+			return nil, fmt.Errorf("open root %q: %w", r, err)
 		}
 		s.roots = append(s.roots, r)
 		s.resolved = append(s.resolved, res)
+		s.dirs = append(s.dirs, dir)
 	}
 	for _, d := range excludeDirs {
-		s.exclude[d] = true
+		s.exclude[strings.ToLower(d)] = true
 	}
 	return s, nil
 }
 
-func (s *Source) skipDir(name string) bool { return junkDirs[name] || s.exclude[name] }
+// Close releases the opened roots.
+func (s *Source) Close() error {
+	for _, d := range s.dirs {
+		_ = d.Close() // только чтение: ошибка закрытия ничего не теряет
+	}
+	s.dirs = nil
+	return nil
+}
 
-// Walk calls fn for every indexable regular file under the roots. Symlinks are
-// not followed: ссылка может увести за пределы корня.
-func (s *Source) Walk(fn func(domain.FileDoc) error) error {
-	for _, root := range s.roots {
+func (s *Source) skipDir(name string) bool {
+	n := strings.ToLower(name)
+	return junkDirs[n] || s.exclude[n]
+}
+
+// Walk calls fn for every indexable regular file under the roots. Symlinks
+// inside the roots are not followed: ссылка может увести за пределы корня.
+// Сам корень обходится раскрытым: корень-симлинк иначе давал ноль файлов.
+func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
+	for i, root := range s.resolved {
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+			if cerr := ctx.Err(); cerr != nil {
+				return cerr
+			}
 			if err != nil {
 				return nil // нечитаемая папка не роняет обход остальных
 			}
@@ -113,18 +177,8 @@ func (s *Source) Walk(fn func(domain.FileDoc) error) error {
 				}
 				return nil
 			}
-			if !d.Type().IsRegular() || !isIndexable(d.Name()) {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil || info.Size() > MaxFileBytes {
-				return nil
-			}
-			doc, err := domain.NewFileDoc(path, info.Size(), info.ModTime())
-			if err != nil {
-				return err
-			}
-			return fn(doc)
+			// В выдаче путь в том написании, в каком человек задал корень.
+			return s.visitFile(s.roots[i]+strings.TrimPrefix(path, root), d, fn)
 		})
 		if err != nil {
 			return fmt.Errorf("walk %s: %w", root, err)
@@ -133,27 +187,42 @@ func (s *Source) Walk(fn func(domain.FileDoc) error) error {
 	return nil
 }
 
+// visitFile passes one walked entry to fn if it is an indexable regular file.
+func (s *Source) visitFile(shown string, d fs.DirEntry, fn func(domain.FileDoc) error) error {
+	if !d.Type().IsRegular() || !isIndexable(d.Name()) {
+		return nil
+	}
+	info, err := d.Info()
+	if err != nil || info.Size() > MaxFileBytes {
+		return nil
+	}
+	doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
+	if err != nil {
+		return err
+	}
+	return fn(doc)
+}
+
+// Check reports whether a path is one the walk would index, without reading
+// it. Окно зовет ее перед open: читать файл целиком ради разрешения незачем.
+func (s *Source) Check(path string) error {
+	if _, _, err := s.checked(path); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ReadText returns a file's text if the walk would have indexed it.
 //
 // Путь приходит снаружи (HTTP, MCP), поэтому файловая система трогается
 // только через os.Root корня: даже если проверка пропустит что-то, открыть
-// файл за пределами корня Root не даст. Прежняя версия проверяла путь с
-// раскрытыми симлинками, а читала исходный — между проверкой и чтением ссылку
-// можно было подменить (замечание CodeQL go/path-injection на PR #371).
+// файл за пределами корня Root не даст (замечание CodeQL go/path-injection).
 func (s *Source) ReadText(path string) (string, error) {
-	dir, rel, ok := s.locate(path)
-	if !ok || s.throughSkipped(rel) || !isIndexable(filepath.Base(rel)) {
-		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
-	}
-	root, err := os.OpenRoot(dir)
+	dir, rel, err := s.checked(path)
 	if err != nil {
 		return "", err
 	}
-	defer func() { _ = root.Close() }() // только чтение: ошибка закрытия ничего не теряет
-	if !plainFile(root, rel) {
-		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
-	}
-	b, err := root.ReadFile(rel)
+	b, err := dir.ReadFile(rel)
 	if err != nil {
 		return "", err
 	}
@@ -163,22 +232,32 @@ func (s *Source) ReadText(path string) (string, error) {
 	return string(b), nil
 }
 
-// locate finds the root a path lies under, lexically, and returns that root
-// and the path relative to it. Both spellings of a root count: as configured
-// and with symlinks resolved (on macOS /var is /private/var).
-func (s *Source) locate(path string) (dir, rel string, ok bool) {
+// checked runs every rule the walk applies and returns the root and the path
+// relative to it.
+func (s *Source) checked(path string) (*os.Root, string, error) {
+	i, rel, ok := s.locate(path)
+	if !ok || s.throughSkipped(rel) || !isIndexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) {
+		return nil, "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
+	}
+	return s.dirs[i], rel, nil
+}
+
+// locate finds the root a path lies under, lexically, and returns its index and
+// the path relative to it. Both spellings of a root count: as configured and
+// with symlinks resolved (on macOS /var is /private/var).
+func (s *Source) locate(path string) (int, string, bool) {
 	if !filepath.IsAbs(path) {
-		return "", "", false
+		return 0, "", false
 	}
 	clean := filepath.Clean(path)
 	for i := range s.roots {
 		for _, root := range []string{s.roots[i], s.resolved[i]} {
 			if rel, ok := inside(root, clean); ok && rel != "." {
-				return s.resolved[i], rel, true
+				return i, rel, true
 			}
 		}
 	}
-	return "", "", false
+	return 0, "", false
 }
 
 // plainFile reports whether rel is a regular file of indexable size reached
