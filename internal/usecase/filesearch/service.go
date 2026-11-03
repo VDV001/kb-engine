@@ -40,7 +40,26 @@ type Source interface {
 type Stats struct {
 	Indexed int
 	Skipped int // файлы, текст которых прочитать не удалось
+	Reused  int // файлы, взятые из прошлого индекса без чтения: не менялись
 }
+
+// ErrSaveFailed is returned when the index was built and swapped in but could
+// not be written to the store: поиск работает, следующий запуск соберет заново.
+var ErrSaveFailed = errors.New("file index built but not saved")
+
+// Store keeps the index between runs. Load reports false when there is nothing
+// usable to load (no file, other version): that is a full build, not an error.
+type Store interface {
+	Load() (Snapshot, bool, error)
+	Save(Snapshot) error
+}
+
+// Option configures a Service.
+type Option func(*Service)
+
+// WithStore keeps the index in st: the first build loads it and rereads only
+// the files that changed, every build saves it.
+func WithStore(st Store) Option { return func(s *Service) { s.store = st } }
 
 // Service builds the file index and answers queries with snippets.
 //
@@ -48,7 +67,8 @@ type Stats struct {
 // пока фоновая пересборка готовит новый индекс. Новый индекс подменяет старый
 // целиком под замком, поиск никогда не видит наполовину собранный.
 type Service struct {
-	src Source
+	src   Source
+	store Store // nil — индекс живет только в памяти
 
 	mu       sync.RWMutex
 	ix       *Index
@@ -57,7 +77,13 @@ type Service struct {
 }
 
 // NewService returns a service reading through src.
-func NewService(src Source) *Service { return &Service{src: src} }
+func NewService(src Source, opts ...Option) *Service {
+	s := &Service{src: src}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
+}
 
 // Build walks the source and indexes every file whose text can be read.
 //
@@ -72,13 +98,25 @@ func (s *Service) Build(ctx context.Context) (Stats, error) {
 // the source and the index in. Так меняются папки в окне: до конца сборки
 // поиск отвечает по старому индексу, а при ошибке старый остается.
 //
+// Сборка инкрементальная: файл с тем же путем, размером и временем изменения
+// берется из прежнего индекса (в памяти или из Store) без чтения.
+//
 // ponytail: на время сборки в памяти два индекса — старый и новый. Потолок:
-// ~/git целиком (замер 03.11: 1,5 ГБ на один индекс). Путь: индекс на диске с
-// обновлением по mtime — тогда пересборка трогает только измененные файлы.
+// ~/git целиком (замер 03.11: ~1 ГБ на 40 тыс. файлов). Путь: сегменты на диске
+// с mmap вместо индекса целиком в памяти.
 func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
+	prev := s.previous()
+	byPath := prev.byPath()
 	ix := NewIndex()
+	oldToNew := map[int32]int32{}
 	var st Stats
 	err := src.Walk(ctx, func(d domain.FileDoc) error {
+		if old, ok := byPath[d.Path()]; ok && sameFile(prev.docs[old], d) {
+			oldToNew[old] = ix.addDoc(d)
+			st.Reused++
+			st.Indexed++
+			return nil
+		}
 		text, err := src.ReadText(d.Path())
 		if err != nil {
 			st.Skipped++
@@ -97,10 +135,43 @@ func (s *Service) Replace(ctx context.Context, src Source) (Stats, error) {
 		s.mu.Unlock()
 		return st, err
 	}
+	ix.carryOver(prev, oldToNew)
 	s.mu.Lock()
 	s.src, s.ix, s.stats, s.buildErr = src, ix, st, nil
 	s.mu.Unlock()
+	if s.store != nil {
+		if err := s.store.Save(ix.Snapshot()); err != nil {
+			return st, fmt.Errorf("%w: %w", ErrSaveFailed, err)
+		}
+	}
 	return st, nil
+}
+
+// previous returns the index to reuse files from: the one in memory, or the
+// stored one on the first build. Битый или чужой снимок — просто полная сборка.
+func (s *Service) previous() *Index {
+	s.mu.RLock()
+	ix := s.ix
+	s.mu.RUnlock()
+	if ix != nil || s.store == nil {
+		return ix
+	}
+	snap, ok, err := s.store.Load()
+	if err != nil || !ok {
+		return nil
+	}
+	ix, err = IndexFromSnapshot(snap)
+	if err != nil {
+		return nil
+	}
+	return ix
+}
+
+// sameFile reports whether a walked file is the one recorded before: same
+// size and modification time. Содержимое не сравнивается — для этого его
+// пришлось бы прочитать, а экономия именно в том, чтобы не читать.
+func sameFile(old, now domain.FileDoc) bool {
+	return old.Size() == now.Size() && old.ModTime().Equal(now.ModTime())
 }
 
 // Stats returns what the last successful build did.
