@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/extractcache"
 	"github.com/daniil/kb-engine/internal/adapter/fileindexgob"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
@@ -82,7 +83,9 @@ func (x *fileIndex) open() (*localfiles.Source, time.Time, error) {
 	if len(roots) == 0 {
 		return nil, time.Time{}, fmt.Errorf("в %s нет ни одной доступной папки для поиска", x.cfgPath)
 	}
-	src, err := localfiles.New(roots, cfg.Exclude)
+	// Текст PDF и картинок распознает окно; MCP только читает его кеш.
+	src, err := localfiles.New(roots, cfg.Exclude,
+		localfiles.WithExtracted(extractcache.Cache{Dir: desktopconfig.ExtractDir(x.cfgPath)}))
 	return src, info.ModTime(), err
 }
 
