@@ -102,7 +102,7 @@ func run(args []string, stderr io.Writer) error {
 			return err
 		}
 		bg.Go(func() { files.run(ctx) })
-		cfg.Files = files.svc
+		cfg.Files = files
 		tools += " · search_files · read_file"
 	}
 	srv := mcpserver.New(svc, search.New(syn), cfg)
