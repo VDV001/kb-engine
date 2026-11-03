@@ -191,6 +191,8 @@ func TestWalk_SkipsSecretFormats(t *testing.T) {
 	keep := []string{
 		write(t, root, "tokenizer.go", "package x"), // слово token в имени кода — не секрет
 		write(t, root, "notes/credits.md", "титры"),
+		// заметка О секретах — не секрет: слова в имени проверяются только у конфигов
+		write(t, root, "handoffs/2026-10-17_close-dotfiles-secrets-cleanup.md", "чистка"),
 	}
 	for _, rel := range []string{
 		"credentials.json", "gcp/service-account.json", "service_account.json", "secrets.yaml",
