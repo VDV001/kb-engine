@@ -301,11 +301,13 @@ waitForIndex();
 const panel = $("#settings"), scrim = $("#scrim");
 const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер" };
 const HUES = ["--z-sp4", "--z-sp2", "--z-sp6", "--z-sp1", "--z-sp5", "--z-sp3"];
-// tokens — токены серверов, введенные в формах, до сохранения: id → токен.
+// tokens — токены серверов, введенные в формах, до сохранения: id → {url,
+// token}. Токен привязан к адресу, для которого его ввели: на другой адрес он
+// не уходит ни при «Проверить», ни при сохранении.
 // Уходят в Go один раз при сохранении (в Связку ключей) и стираются; обратно
 // Go отдает только признак hasToken.
 const draft = { sources: [], exclude: [], tokens: {}, saved: "" };
-const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null, checkSeq: 0, adding: false };
+const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null, checkSeq: 0, adding: false, statesSeq: 0 };
 let keySeq = 0;
 
 const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
@@ -339,9 +341,15 @@ const payload = () => ({
 // Токены только для серверов, которые еще в списке: убранный или отмененный
 // «Вернуть» сервер не должен нести токен в сохранение (Go отклонил бы весь список).
 const liveTokens = () => {
-  const ids = new Set(draft.sources.filter((s) => s.kind === "server").map((s) => s.id));
-  return Object.fromEntries(Object.entries(draft.tokens).filter(([id]) => ids.has(id)));
+  const out = {};
+  for (const s of draft.sources) {
+    const t = s.kind === "server" && draft.tokens[s.id];
+    if (t && t.url === s.url) out[s.id] = t.token;
+  }
+  return out;
 };
+// tokenFor — введенный в черновике токен сервера, но только для этого адреса.
+const tokenFor = (s, url) => { const t = s && draft.tokens[s.id]; return t && t.url === url ? t.token : ""; };
 const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(liveTokens()).length > 0;
 const byKey = (k) => draft.sources.find((s) => s._key === k);
 
@@ -386,11 +394,17 @@ async function openSettings() {
 // черновик по id — поля состояния в сохранение не входят и dirty не трогают.
 async function loadServerStates() {
   if (!native() || !native().ServerStates) return;
-  let rows;
-  try { rows = await native().ServerStates(); } catch { return; }
-  for (const r of rows || []) {
-    const s = draft.sources.find((x) => x.id === r.id);
-    if (s) Object.assign(s, { state: r.state, count: r.count, note: r.note, hasToken: r.hasToken });
+  const seq = ++ui.statesSeq;
+  let rows, failed = false;
+  try { rows = await native().ServerStates(); } catch { failed = true; }
+  if (seq !== ui.statesSeq) return; // поздний ответ прежнего открытия или сохранения
+  for (const s of draft.sources) {
+    if (s.kind !== "server") continue;
+    const r = (rows || []).find((x) => x.id === s.id);
+    // Состояние относится к сохраненному адресу: строке с уже другим адресом
+    // в черновике оно не подходит.
+    if (r && r.url === s.url) Object.assign(s, { state: r.state, count: r.count, note: r.note, hasToken: r.hasToken });
+    else if (s.state === "checking") Object.assign(s, { state: "missing", note: failed ? "состояние серверов не получено" : "" });
   }
   if (settingsOpen()) renderSources();
 }
@@ -534,13 +548,14 @@ $("#toast").addEventListener("click", (e) => {
   renderSources();
 });
 
-// change снимает черновик до правки и отдает отмену для подсказки.
+// change снимает черновик до правки и отдает отмену для подсказки: и список,
+// и введенные токены — «Отменить» не оставляет токен от отмененной правки.
 function change(fn) {
-  const before = draft.sources.map((s) => ({ ...s }));
+  const before = draft.sources.map((s) => ({ ...s })), tokensBefore = { ...draft.tokens };
   fn();
   ui.editing = ui.replacing = ui.confirmDel = null;
   renderSources();
-  return () => { draft.sources = before; };
+  return () => { draft.sources = before; draft.tokens = tokensBefore; };
 }
 function move(key, d) {
   const i = draft.sources.findIndex((s) => s._key === key), j = i + d;
@@ -572,7 +587,7 @@ panel.addEventListener("click", async (e) => {
   if (d.check) {
     const isNew = d.check === "new", s = isNew ? null : byKey(d.check);
     const url = (isNew ? $("#na") : $(`#ea-${s._key}`)).value.trim();
-    const tok = (isNew ? $("#nt") : $(`#et-${s._key}`)).value.trim() || (s && draft.tokens[s.id]) || "";
+    const tok = (isNew ? $("#nt") : $(`#et-${s._key}`)).value.trim() || tokenFor(s, url);
     const typed = { url, tok, na: isNew ? $("#na").value : null, nt: isNew ? $("#nt").value : null,
       name: isNew ? null : $(`#en-${s._key}`).value };
     const seq = ++ui.checkSeq;
@@ -595,9 +610,8 @@ panel.addEventListener("click", async (e) => {
     const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
     if (!v) return focusSoon(`#ea-${s._key}`);
     const tok = s.kind === "server" ? $(`#et-${s._key}`).value.trim() : "";
-    if (tok) draft.tokens[s.id] = tok;
     ui.verdict = null;
-    const undo = change(() => { s.name = name; setTarget(s, v); });
+    const undo = change(() => { s.name = name; setTarget(s, v); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     return toast("Изменено", ` · «${label(s)}»`, undo);
   }
   if (d.doreplace) {
@@ -632,12 +646,11 @@ panel.addEventListener("click", async (e) => {
     if (s.kind === "server") {
       // id выдает Go сразу: к нему привязан токен в Связке ключей.
       try { s.id = await native().NewSourceID("server"); } finally { ui.adding = false; }
-      const tok = $("#nt").value.trim();
-      if (tok) draft.tokens[s.id] = tok;
       ui.verdict = null;
     }
     ui.adding = false;
-    const undo = change(() => draft.sources.push(s));
+    const tok = s.kind === "server" ? $("#nt").value.trim() : "";
+    const undo = change(() => { draft.sources.push(s); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     ui.addKind = null;
     renderSources();
     return toast("Добавлен", ` · «${label(s)}», ${draft.sources.length}-й по приоритету`, undo);
@@ -655,7 +668,7 @@ function renderAndKeep(key, typed) {
     const s = byKey(key);
     if (s && $(`#en-${key}`) && typed.name != null) $(`#en-${key}`).value = typed.name;
     if (s && $(`#ea-${key}`)) $(`#ea-${key}`).value = typed.url;
-    if (s && $(`#et-${key}`) && typed.tok !== draft.tokens[s.id]) $(`#et-${key}`).value = typed.tok;
+    if (s && $(`#et-${key}`) && typed.tok !== tokenFor(s, typed.url)) $(`#et-${key}`).value = typed.tok;
   }
 }
 

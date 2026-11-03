@@ -13,17 +13,17 @@ import (
 	"strings"
 )
 
-// Ошибки различимы, чтобы экран источников говорил словами человека.
+// Ошибки различимы, чтобы вызывающий подобрал слова: текст для человека живет
+// у него (окно — serverMessage), здесь — нейтральные сигналы.
 var (
-	ErrUnauthorized = errors.New("сервер ответил 401: нужен верный токен")
-	ErrUnreachable  = errors.New("нет связи с сервером")
-	ErrNotKB        = errors.New("по адресу отвечает не kb-сервер")
-	ErrServerError  = errors.New("kb-сервер ответил ошибкой")
+	ErrUnauthorized = errors.New("kbserver: unauthorized")
+	ErrUnreachable  = errors.New("kbserver: unreachable")
+	ErrNotKB        = errors.New("kbserver: not a kb server")
+	ErrServerError  = errors.New("kbserver: server error")
+	// ErrRedirect — сервер перенаправил запрос. Клиент по редиректам не идет:
+	// Go пересылает Authorization на тот же хост и при смене https на http.
+	ErrRedirect = errors.New("kbserver: redirect refused")
 )
-
-// errRedirect — клиент не идет по редиректам: Go пересылает Authorization на
-// тот же хост и при смене https на http, и токен ушел бы открытым текстом.
-var errRedirect = errors.New("сервер перенаправил запрос — kb не идет по редиректам с токеном")
 
 // maxBody — сколько читать из ответа: /api/engine и /api/stats весят килобайты,
 // а чужой сервер по ошибочному адресу может прислать что угодно.
@@ -76,8 +76,11 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 		copied := *c.HTTP // транспорт и таймаут вызывающего, но свое правило редиректов
 		hc = &copied
 	}
-	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return errRedirect }
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect }
 	resp, err := hc.Do(req)
+	if errors.Is(err, ErrRedirect) {
+		return fmt.Errorf("%w: %s", ErrRedirect, path)
+	}
 	if err != nil {
 		// Сеть, таймаут, DNS и недоверенный сертификат — для человека одно:
 		// связи нет. Подробность остается в цепочке ошибки.
@@ -90,9 +93,9 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 		return ErrUnauthorized
 	case code == http.StatusTooManyRequests || code >= http.StatusInternalServerError:
 		// Настоящий kb-сервер с ошибкой или прокси при перезапуске: адрес верный.
-		return fmt.Errorf("%w: %s ответил %d", ErrServerError, path, code)
+		return fmt.Errorf("%w: %s answered %d", ErrServerError, path, code)
 	default:
-		return fmt.Errorf("%w: %s ответил %d", ErrNotKB, path, code)
+		return fmt.Errorf("%w: %s answered %d", ErrNotKB, path, code)
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(into); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)

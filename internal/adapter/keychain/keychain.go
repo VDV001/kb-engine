@@ -7,10 +7,12 @@ package keychain
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 var (
@@ -23,6 +25,15 @@ var (
 
 // notFoundExit — код выхода security, когда записи нет.
 const notFoundExit = 44
+
+// timeout — сколько ждать security: запертая связка ждет диалог разблокировки,
+// и без предела вызов повесил бы экран источников и сохранение.
+const timeout = 10 * time.Second
+
+func command(args ...string) (*exec.Cmd, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	return exec.CommandContext(ctx, "security", args...), cancel
+}
 
 // Store is one service in a keychain: Service — имя приложения в Связке
 // ключей, Keychain — путь к связке, пусто — login-связка пользователя.
@@ -41,7 +52,8 @@ func (s Store) Set(account, secret string) error {
 	if s.Keychain != "" {
 		line += fmt.Sprintf(" %q", s.Keychain)
 	}
-	cmd := exec.Command("security", "-i")
+	cmd, cancel := command("-i")
+	defer cancel()
 	cmd.Stdin = strings.NewReader(line + "\n")
 	var errOut bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &errOut, &errOut
@@ -61,7 +73,9 @@ func (s Store) Get(account string) (string, error) {
 	if !safe(account) {
 		return "", ErrBadValue
 	}
-	out, err := exec.Command("security", s.args("find-generic-password", account, "-w")...).Output()
+	cmd, cancel := command(s.args("find-generic-password", account, "-w")...)
+	defer cancel()
+	out, err := cmd.Output()
 	if err != nil {
 		if ee, ok := errors.AsType[*exec.ExitError](err); ok && ee.ExitCode() == notFoundExit {
 			return "", ErrNotFound
@@ -77,7 +91,9 @@ func (s Store) Delete(account string) error {
 	if !safe(account) {
 		return ErrBadValue
 	}
-	err := exec.Command("security", s.args("delete-generic-password", account)...).Run()
+	cmd, cancel := command(s.args("delete-generic-password", account)...)
+	defer cancel()
+	err := cmd.Run()
 	if ee, ok := errors.AsType[*exec.ExitError](err); ok && ee.ExitCode() == notFoundExit {
 		return nil
 	}

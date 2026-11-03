@@ -121,6 +121,8 @@ func serverMessage(err error) string {
 		return "сервер ответил 401: нужен верный токен"
 	case errors.Is(err, kbserver.ErrNotKB):
 		return "по адресу отвечает не kb-сервер"
+	case errors.Is(err, kbserver.ErrRedirect):
+		return "сервер перенаправил запрос: укажите конечный адрес (https://…), kb не идет по редиректам с токеном"
 	case errors.Is(err, kbserver.ErrServerError):
 		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке"
 	default:
@@ -156,8 +158,19 @@ func (f *folderSettings) ServerStates() []sourceRow {
 	for i := range rows {
 		r := &rows[i]
 		wg.Go(func() {
-			tok := f.token(r.ID)
-			r.HasToken = tok != ""
+			tok, err := f.tokens.Get(r.ID)
+			switch {
+			case err == nil:
+				r.HasToken = true
+			case !errors.Is(err, keychain.ErrNotFound):
+				// Связка не ответила — это не «токена нет»: без токена сервер
+				// не опрашивается, человеку не предлагается ввести его заново.
+				r.HasToken = true
+				if r.Enabled {
+					r.State, r.Note = stateMissing, "Связка ключей не ответила: разблокируйте ее и откройте панель снова"
+				}
+				return
+			}
 			if !r.Enabled {
 				return
 			}
