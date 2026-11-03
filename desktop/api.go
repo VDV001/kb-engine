@@ -41,7 +41,7 @@ type catalogLoader interface {
 // звать ее из обоих.
 func newAPI(cfg desktopconfig.Config, indexPath string, ext extraction) (http.Handler, *indexer, error) {
 	home, _ := os.UserHomeDir() // без домашней папки «~» просто не раскроется
-	roots, skipped := desktopconfig.NormalizeRoots(cfg.Roots, home)
+	roots, skipped := desktopconfig.NormalizeRoots(cfg.FolderRoots(), home)
 	for _, s := range skipped {
 		log.Printf("files: папка пропущена: %s", s)
 	}
@@ -54,8 +54,8 @@ func newAPI(cfg desktopconfig.Config, indexPath string, ext extraction) (http.Ha
 	files := filesearch.NewService(src, fileindexgob.Option(indexPath))
 
 	var loader catalogLoader = emptyCatalog{}
-	if cfg.Catalog != "" {
-		loader = catalogjson.FileLoader{Path: cfg.Catalog}
+	if cat := cfg.CatalogPath(); cat != "" {
+		loader = catalogjson.FileLoader{Path: cat}
 	}
 	h := httpapi.NewServer(query.NewService(loader), audit.NewService(loader), analytics.NewService(loader), nil,
 		func() (analyticsconfig.Config, error) { return analyticsconfig.Config{}, nil },

@@ -157,7 +157,7 @@ func TestFolderSettings_GetSplitsMissingFolders(t *testing.T) {
 	// Удаленная папка из конфига не показывается рабочей: она отдельно, чтобы
 	// сохранение не отказывало из-за папки, которую человек не добавлял.
 	s, _, home := newTestSettings(t)
-	s.cfg.Roots = []string{filepath.Join(home, "gone"), filepath.Join(home, "notes")}
+	s.cfg.SetFolderRoots([]string{filepath.Join(home, "gone"), filepath.Join(home, "notes")})
 	v := s.Get()
 	if !slices.Equal(v.Roots, []string{filepath.Join(home, "notes")}) || len(v.Missing) != 1 {
 		t.Fatalf("Get = %+v", v)

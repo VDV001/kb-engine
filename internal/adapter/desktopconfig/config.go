@@ -20,16 +20,20 @@ import (
 // Config — настройки приложения. Лежат в ~/Library/Application Support/
 // kb-desktop/config.json, а не в репозитории: там пути к личным папкам.
 type Config struct {
-	// Roots — папки, которые индексируются для поиска по файлам.
+	// Sources — откуда окно и MCP берут записи и файлы; порядок — приоритет.
+	Sources []Source `json:"sources"`
+	// Roots — включенные папки из Sources. Пишется производным при каждой
+	// записи для kbengine-mcp прежней сборки, читается только при переезде
+	// конфига без sources.
 	Roots []string `json:"roots"`
 	// Exclude — имена папок, в которые обход не заходит (вдобавок к .git,
 	// node_modules и т.п., которые адаптер пропускает всегда).
 	Exclude []string `json:"exclude"`
-	// Catalog — catalog.json базы знаний; пусто — вкладки базы нет.
+	// Catalog — первый включенный каталог из Sources, производный, как Roots.
 	Catalog string `json:"catalog"`
-	// Server — адрес удаленного kbengine serve. Пока не используется: окно
-	// работает с локальным движком, удаленный источник — этап 5 плана.
-	Server string `json:"server"`
+	// Server — адрес сервера из конфига до источников; читается только при
+	// переезде, дальше сервер живет источником вида server.
+	Server string `json:"server,omitempty"`
 }
 
 // Path is where the window keeps its config.
@@ -52,11 +56,13 @@ func ExtractDir(configPath string) string {
 // Default is the config written on the window's first run.
 func Default(home string) Config {
 	cowork := filepath.Join(home, "claude-cowork")
-	return Config{
+	cfg := Config{
 		Roots:   []string{cowork},
 		Exclude: []string{"finances"},
 		Catalog: filepath.Join(cowork, "knowledge-base", "_data", "catalog.json"),
 	}
+	cfg.migrate()
+	return cfg
 }
 
 // Read reads an existing config. A missing file is fs.ErrNotExist: читателю
@@ -68,6 +74,10 @@ func Read(path string) (Config, error) {
 	}
 	var cfg Config
 	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return Config{}, fmt.Errorf("config %s: %w", path, err)
+	}
+	cfg.migrate()
+	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	return cfg, nil
@@ -88,6 +98,10 @@ func Load(path, home string) (Config, error) {
 func Write(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
+	}
+	cfg.Roots, cfg.Catalog, cfg.Server = cfg.FolderRoots(), cfg.CatalogPath(), ""
+	if cfg.Roots == nil {
+		cfg.Roots = []string{}
 	}
 	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

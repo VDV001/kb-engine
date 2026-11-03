@@ -97,7 +97,7 @@ func (x *fileIndex) open() (*localfiles.Source, time.Time, error) {
 	if err != nil {
 		return nil, time.Time{}, err
 	}
-	roots, skipped := desktopconfig.NormalizeRoots(cfg.Roots, x.home)
+	roots, skipped := desktopconfig.NormalizeRoots(cfg.FolderRoots(), x.home)
 	for _, s := range skipped {
 		fmt.Fprintf(x.stderr, "kbengine-mcp: папка пропущена: %s\n", s)
 	}

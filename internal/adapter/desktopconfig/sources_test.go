@@ -185,3 +185,19 @@ func TestDefault_HasSources(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Писатель прежней формы (roots без sources) не теряет папки: Write сначала
+// переводит такой конфиг в источники, как Read. Ловили тесты kbengine-mcp.
+func TestWrite_LegacyShapeMigrates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := desktopconfig.Write(path, desktopconfig.Config{Roots: []string{"/a"}, Catalog: "/kb.json"}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(got.FolderRoots(), []string{"/a"}) || got.CatalogPath() != "/kb.json" || !slices.Equal(got.Roots, []string{"/a"}) {
+		t.Fatalf("cfg = %+v", got)
+	}
+}
