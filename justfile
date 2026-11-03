@@ -50,6 +50,10 @@ desktop:
 desktop-install: desktop
     ./scripts/desktop-install.sh
 
+# Check desktop-install.sh in a temp dir with stubbed launchctl (nothing installed)
+desktop-install-test:
+    ./scripts/desktop-install-test.sh
+
 # Remove the login item and stop the window (kb.app itself stays)
 desktop-uninstall:
     ./scripts/desktop-install.sh --uninstall

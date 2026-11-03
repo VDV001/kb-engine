@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/localfiles"
+	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
 
 func waitIdle(t *testing.T, x *indexer) indexStatus {
@@ -35,7 +38,7 @@ func TestIndexer_ApplyReindexesNewFolders(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	if st := waitIdle(t, x); st.Indexed != 1 || st.Error != "" {
 		t.Fatalf("первая сборка: %+v", st)
 	}
@@ -79,14 +82,14 @@ func TestIndexer_KeepsIndexOnDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	waitIdle(t, x)
 
 	_, x2, err := newAPI(desktopconfig.Config{Roots: []string{root}}, index, extraction{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	x2.start(context.Background())
+	x2.start(t.Context())
 	if st := waitIdle(t, x2); st.Reused != 1 || st.Indexed != 1 {
 		t.Fatalf("второй запуск: %+v", st)
 	}
@@ -118,4 +121,34 @@ func TestIndexer_RebuildsOnSchedule(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("новый файл не нашелся: окно не пересобирает индекс")
+}
+
+// Неудачная смена папок не останавливает пересборку по таймеру: прежде
+// pending оставался на отклоненном источнике, и rerun старого источника
+// молча не запускался больше никогда (ревью #381).
+func TestIndexer_FailedApplyKeepsSchedule(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.md"), []byte("старое"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "", extraction{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(t.Context())
+	waitIdle(t, x)
+	good := x.currentSource()
+	bad, err := localfiles.New([]string{t.TempDir()}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.mu.Lock()
+	x.gen++
+	gen := x.gen
+	x.pending = bad
+	x.mu.Unlock()
+	x.finish(t.Context(), gen, bad, filesearch.Stats{}, errors.New("сборка упала"), time.Now())
+	if !x.latest(good) {
+		t.Fatal("после неудачной сборки последним считается отклоненный источник: таймер встанет")
+	}
 }
