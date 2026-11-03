@@ -44,6 +44,16 @@ async function waitForIndex() {
       setIndexed(r.body.indexed, r.body.skipped);
       return;
     }
+    if (r.status === 500) {
+      // Сборка упала: «еще собирается» тут было бы враньем, показываем причину.
+      const why = await fetch("/api/files/search?q=kb&limit=1").then((x) => x.text()).catch(() => "");
+      screen.hidden = false;
+      $(".indexing-main .eyebrow").textContent = "Индекс не собрался";
+      $("#indexing-count").textContent = "—";
+      $(".indexing-bar").hidden = true;
+      $(".indexing-main .muted").textContent = why.trim() || "Причина неизвестна";
+      return;
+    }
     if (!shown && r.status === 503) { screen.hidden = false; shown = true; }
     await sleep(350);
   }
@@ -115,7 +125,8 @@ function moveInk() {
 
 // --- Отрисовка -----------------------------------------------------------------
 function render() {
-  const counts = { all: state.kb.length + state.files.length, kb: state.kb.length, doc: 0, code: 0 };
+  // «Все» показывает только пять записей базы — счетчик обязан совпадать со списком.
+  const counts = { all: Math.min(state.kb.length, 5) + state.files.length, kb: state.kb.length, doc: 0, code: 0 };
   for (const f of state.files) if (counts[f.kind] !== undefined) counts[f.kind]++;
   document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q ? counts[b.dataset.tab] : ""));
   moveInk();

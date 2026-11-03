@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
@@ -61,10 +62,13 @@ func run() error {
 		return err
 	}
 	// Индекс собирается в фоне: окно открывается сразу и показывает экран
-	// индексации, пока API отвечает 503.
+	// индексации, пока API отвечает 503. Закрытие окна отменяет обход: иначе он
+	// дошел бы до конца, держа диск, уже после выхода из интерфейса.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	go func() {
 		start := time.Now()
-		st, err := files.Build()
+		st, err := files.Build(ctx)
 		if err != nil {
 			log.Printf("files: %v", err)
 			return
@@ -97,8 +101,9 @@ func run() error {
 			Assets:  ui,
 			Handler: api, // все, чего нет среди файлов интерфейса, то есть /api/*
 		},
-		OnStartup: app.startup,
-		Bind:      []any{app},
+		OnStartup:  app.startup,
+		OnShutdown: func(context.Context) { cancel() },
+		Bind:       []any{app},
 		Mac: &mac.Options{
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,
