@@ -22,7 +22,7 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, x, err := newAPI(config{Roots: []string{root}, Catalog: catalog})
+	h, x, err := newAPI(config{Roots: []string{root}, Catalog: catalog}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 }
 
 func TestNewAPI_WithoutCatalogStillSearchesFiles(t *testing.T) {
-	h, x, err := newAPI(config{Roots: []string{t.TempDir()}})
+	h, x, err := newAPI(config{Roots: []string{t.TempDir()}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestNormalizeRoots(t *testing.T) {
 }
 
 func TestNewAPI_MissingRootDoesNotFail(t *testing.T) {
-	if _, _, err := newAPI(config{Roots: []string{filepath.Join(t.TempDir(), "gone")}}); err != nil {
+	if _, _, err := newAPI(config{Roots: []string{filepath.Join(t.TempDir(), "gone")}}, ""); err != nil {
 		t.Fatalf("newAPI с удаленной папкой: %v", err)
 	}
 }
