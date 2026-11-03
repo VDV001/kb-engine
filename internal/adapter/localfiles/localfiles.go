@@ -134,11 +134,26 @@ func (s *Source) Walk(fn func(domain.FileDoc) error) error {
 }
 
 // ReadText returns a file's text if the walk would have indexed it.
+//
+// Путь приходит снаружи (HTTP, MCP), поэтому файловая система трогается
+// только через os.Root корня: даже если проверка пропустит что-то, открыть
+// файл за пределами корня Root не даст. Прежняя версия проверяла путь с
+// раскрытыми симлинками, а читала исходный — между проверкой и чтением ссылку
+// можно было подменить (замечание CodeQL go/path-injection на PR #371).
 func (s *Source) ReadText(path string) (string, error) {
-	if !s.allowed(path) {
+	dir, rel, ok := s.locate(path)
+	if !ok || s.throughSkipped(rel) || !isIndexable(filepath.Base(rel)) {
 		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
 	}
-	b, err := os.ReadFile(path)
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = root.Close() }() // только чтение: ошибка закрытия ничего не теряет
+	if !plainFile(root, rel) {
+		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
+	}
+	b, err := root.ReadFile(rel)
 	if err != nil {
 		return "", err
 	}
@@ -148,24 +163,36 @@ func (s *Source) ReadText(path string) (string, error) {
 	return string(b), nil
 }
 
-// allowed — та же проверка, что делает обход, но для пути, пришедшего снаружи:
-// путь очищается, симлинки раскрываются, файл обязан лежать внутри корня, не
-// проходить через исключенные папки и сам быть индексируемым.
-func (s *Source) allowed(path string) bool {
+// locate finds the root a path lies under, lexically, and returns that root
+// and the path relative to it. Both spellings of a root count: as configured
+// and with symlinks resolved (on macOS /var is /private/var).
+func (s *Source) locate(path string) (dir, rel string, ok bool) {
 	if !filepath.IsAbs(path) {
-		return false
+		return "", "", false
 	}
-	real, err := filepath.EvalSymlinks(filepath.Clean(path))
-	if err != nil {
-		return false
+	clean := filepath.Clean(path)
+	for i := range s.roots {
+		for _, root := range []string{s.roots[i], s.resolved[i]} {
+			if rel, ok := inside(root, clean); ok && rel != "." {
+				return s.resolved[i], rel, true
+			}
+		}
 	}
-	info, err := os.Stat(real)
-	if err != nil || !info.Mode().IsRegular() || info.Size() > MaxFileBytes || !isIndexable(filepath.Base(real)) {
-		return false
-	}
-	for _, root := range s.resolved {
-		if rel, ok := inside(root, real); ok {
-			return !s.throughSkipped(rel)
+	return "", "", false
+}
+
+// plainFile reports whether rel is a regular file of indexable size reached
+// without a single symlink. Обход ссылки не индексирует, поэтому и чтение по
+// ним — это обход проверки имени, а не найденный в выдаче файл.
+func plainFile(root *os.Root, rel string) bool {
+	parts := strings.Split(rel, string(filepath.Separator))
+	for i := range parts {
+		info, err := root.Lstat(filepath.Join(parts[:i+1]...))
+		if err != nil || info.Mode()&os.ModeSymlink != 0 {
+			return false
+		}
+		if i == len(parts)-1 {
+			return info.Mode().IsRegular() && info.Size() <= MaxFileBytes
 		}
 	}
 	return false
