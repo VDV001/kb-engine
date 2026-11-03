@@ -53,3 +53,18 @@ func TestRequireBearer(t *testing.T) {
 		})
 	}
 }
+
+// Пустой токен никого не пускает: даже «Bearer » с пустым значением, которое
+// совпало бы по хешу с пустой строкой.
+func TestRequireBearer_EmptyTokenLetsNobodyIn(t *testing.T) {
+	h := httpapi.RequireBearer("", http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
+	for _, header := range []string{"", "Bearer ", "Bearer"} {
+		r := httptest.NewRequest(http.MethodGet, "/", nil)
+		r.Header.Set("Authorization", header)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		if w.Code != http.StatusUnauthorized {
+			t.Fatalf("%q: code = %d", header, w.Code)
+		}
+	}
+}

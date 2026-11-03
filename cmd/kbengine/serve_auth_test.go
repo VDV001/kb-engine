@@ -2,7 +2,10 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -127,5 +130,36 @@ func TestRunServe_RefusesUnsafeExposure(t *testing.T) {
 				t.Fatalf("code = %d, stderr = %q, want mention of %q", code, errb.String(), tt.want)
 			}
 		})
+	}
+}
+
+// Сервер, собранный с токеном, сам отвечает 401 без него: токен не может быть
+// прочитан и забыт по дороге к обработчику (ловил выживший мутант).
+func TestNewServeServer_AppliesToken(t *testing.T) {
+	inner := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("catalog")) })
+	for _, tc := range []struct {
+		name, token, header string
+		want                int
+	}{
+		{"с токеном, без заголовка", goodToken, "", http.StatusUnauthorized},
+		{"с токеном, верный заголовок", goodToken, "Bearer " + goodToken, http.StatusOK},
+		{"без токена — как прежде", "", "", http.StatusOK},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := newServeServer("127.0.0.1:0", inner, tc.token, nil)
+			r := httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil)
+			if tc.header != "" {
+				r.Header.Set("Authorization", tc.header)
+			}
+			w := httptest.NewRecorder()
+			srv.Handler.ServeHTTP(w, r)
+			if w.Code != tc.want {
+				t.Fatalf("code = %d, want %d", w.Code, tc.want)
+			}
+		})
+	}
+	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
+	if srv := newServeServer("127.0.0.1:0", inner, goodToken, tlsCfg); srv.TLSConfig != tlsCfg || srv.ReadHeaderTimeout == 0 {
+		t.Fatalf("TLSConfig/ReadHeaderTimeout не переданы: %+v", srv)
 	}
 }
