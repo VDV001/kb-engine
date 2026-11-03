@@ -207,6 +207,19 @@ func (s *Service) previous() (*Index, string) {
 	return ix, ""
 }
 
+// Reset drops the index from memory and reads through src from now on,
+// without building: Read and Check answer under src at once, Search reports
+// ErrNotBuilt until the next Build, which loads the index back from the store
+// without rereading unchanged files.
+//
+// Stats остаются от последней сборки: search_files отдает их рядом с выдачей,
+// и сброс между поиском и Stats давал бы «indexed: 0» при найденных файлах.
+func (s *Service) Reset(src Source) {
+	s.mu.Lock()
+	s.src, s.ix, s.buildErr = src, nil, nil
+	s.mu.Unlock()
+}
+
 // Stats returns what the last successful build did.
 func (s *Service) Stats() Stats {
 	s.mu.RLock()
