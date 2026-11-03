@@ -302,3 +302,15 @@ func TestService_FailedReplaceKeepsOldIndex(t *testing.T) {
 		t.Fatalf("старый индекс потерян: %+v, %v", hits, err)
 	}
 }
+
+func TestService_FailedReplaceLeavesNoStaleError(t *testing.T) {
+	// Пока старый индекс отвечает, ошибки «индекса нет» быть не должно.
+	svc := filesearch.NewService(fakeSource{files: map[string]string{"/old/a.md": "договор"}})
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.Replace(context.Background(), fakeSource{walkErr: errors.New("disk gone")})
+	if _, err := svc.Search("договор", 5); err != nil {
+		t.Fatalf("Search после неудачной пересборки: %v", err)
+	}
+}
