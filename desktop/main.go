@@ -15,10 +15,10 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -50,11 +50,12 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	cfg, err := loadConfig(configPath(home), home)
+	cfgPath := desktopconfig.Path(home)
+	cfg, err := desktopconfig.Load(cfgPath, home)
 	if err != nil {
 		return err
 	}
-	api, idx, err := newAPI(cfg, filepath.Join(filepath.Dir(configPath(home)), "index.gob"))
+	api, idx, err := newAPI(cfg, desktopconfig.IndexPath(cfgPath))
 	if err != nil {
 		return err
 	}
@@ -68,7 +69,7 @@ func run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	idx.start(ctx)
-	settings := &folderSettings{path: configPath(home), home: home, cfg: cfg, apply: idx.apply}
+	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, apply: idx.apply}
 
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс
 	// правится без пересборки .app, и его можно проверить Playwright'ом.
@@ -103,7 +104,7 @@ func run() error {
 			Appearance: mac.NSAppearanceNameDarkAqua,
 			About: &mac.AboutInfo{
 				Title:   "kb",
-				Message: fmt.Sprintf("Поиск по базе знаний и файлам.\nКонфиг: %s", configPath(home)),
+				Message: fmt.Sprintf("Поиск по базе знаний и файлам.\nКонфиг: %s", cfgPath),
 			},
 		},
 	})

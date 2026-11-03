@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
 
 type applied struct {
@@ -23,7 +25,7 @@ func newTestSettings(t *testing.T) (*folderSettings, *applied, string) {
 		}
 	}
 	path := filepath.Join(home, "cfg", "config.json")
-	cfg, err := loadConfig(path, home)
+	cfg, err := desktopconfig.Load(path, home)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +49,7 @@ func TestFolderSettings_SetSavesAndApplies(t *testing.T) {
 		t.Fatalf("apply(%q, %q)", got.roots, got.exclude)
 	}
 	// Записано на диск: следующий запуск окна увидит те же папки.
-	saved, err := loadConfig(s.path, home)
+	saved, err := desktopconfig.Load(s.path, home)
 	if err != nil {
 		t.Fatal(err)
 	}

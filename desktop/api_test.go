@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
 
 func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
@@ -22,7 +24,7 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, x, err := newAPI(config{Roots: []string{root}, Catalog: catalog}, "")
+	h, x, err := newAPI(desktopconfig.Config{Roots: []string{root}, Catalog: catalog}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +47,7 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 }
 
 func TestNewAPI_WithoutCatalogStillSearchesFiles(t *testing.T) {
-	h, x, err := newAPI(config{Roots: []string{t.TempDir()}}, "")
+	h, x, err := newAPI(desktopconfig.Config{Roots: []string{t.TempDir()}}, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,24 +63,8 @@ func TestNewAPI_WithoutCatalogStillSearchesFiles(t *testing.T) {
 	}
 }
 
-func TestNormalizeRoots(t *testing.T) {
-	// «~» в конфиге и удаленная папка роняли все окно через log.Fatal (ревью
-	// #371). Тильда раскрывается, несуществующее пропускается и называется.
-	home := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(home, "notes"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	roots, skipped := normalizeRoots([]string{"~/notes", filepath.Join(home, "gone"), "relative"}, home)
-	if len(roots) != 1 || roots[0] != filepath.Join(home, "notes") {
-		t.Errorf("roots = %q", roots)
-	}
-	if len(skipped) != 2 {
-		t.Errorf("skipped = %q, want 2", skipped)
-	}
-}
-
 func TestNewAPI_MissingRootDoesNotFail(t *testing.T) {
-	if _, _, err := newAPI(config{Roots: []string{filepath.Join(t.TempDir(), "gone")}}, ""); err != nil {
+	if _, _, err := newAPI(desktopconfig.Config{Roots: []string{filepath.Join(t.TempDir(), "gone")}}, ""); err != nil {
 		t.Fatalf("newAPI с удаленной папкой: %v", err)
 	}
 }

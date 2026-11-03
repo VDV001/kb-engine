@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
 
 // Ошибки выбора папок: окно показывает текст, а тесты и вызывающие проверяют
@@ -33,7 +35,7 @@ type folderSettings struct {
 	mu    sync.Mutex
 	path  string // config.json
 	home  string
-	cfg   config
+	cfg   desktopconfig.Config
 	apply func(roots, exclude []string) error // открывает папки и запускает переиндексацию
 }
 
@@ -41,7 +43,7 @@ type folderSettings struct {
 func (f *folderSettings) Get() foldersView {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	roots, missing := normalizeRoots(f.cfg.Roots, f.home)
+	roots, missing := desktopconfig.NormalizeRoots(f.cfg.Roots, f.home)
 	return foldersView{Roots: roots, Exclude: slices.Clone(f.cfg.Exclude), Missing: missing}
 }
 
@@ -52,7 +54,7 @@ func (f *folderSettings) Get() foldersView {
 // (apply), и только если это удалось, пишется конфиг: иначе папка, которую
 // macOS не дает открыть, сохранялась бы, и следующий запуск окна падал.
 func (f *folderSettings) Set(roots, exclude []string) error {
-	clean, skipped := normalizeRoots(roots, f.home)
+	clean, skipped := desktopconfig.NormalizeRoots(roots, f.home)
 	if len(skipped) > 0 {
 		return fmt.Errorf("%w: %s", errBadFolder, strings.Join(skipped, "; "))
 	}
@@ -72,7 +74,7 @@ func (f *folderSettings) Set(roots, exclude []string) error {
 	}
 	next := f.cfg
 	next.Roots, next.Exclude = clean, ex
-	if err := writeConfig(f.path, next); err != nil {
+	if err := desktopconfig.Write(f.path, next); err != nil {
 		// Индекс уже на новых папках, а конфиг нет: окно работает, но
 		// следующий запуск вернется к прежним папкам. Говорим об этом прямо.
 		return fmt.Errorf("папки применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
