@@ -44,6 +44,20 @@ desktop:
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns
     touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
+# Rebuild desktop/build/icon/icon.icns from icon-1024.png with macOS's own sips
+# and iconutil. icon-1024.png is icon.svg rendered at 1024 (any browser; there
+# is no SVG renderer in the base system) — rerun this after changing either,
+# or `just desktop` keeps shipping the old .icns.
+desktop-icon:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set_dir="$(mktemp -d)/kb.iconset"; mkdir -p "$set_dir"
+    for s in 16 32 128 256 512; do
+      sips -z $s $s desktop/build/icon/icon-1024.png --out "$set_dir/icon_${s}x${s}.png" >/dev/null
+      sips -z $((s*2)) $((s*2)) desktop/build/icon/icon-1024.png --out "$set_dir/icon_${s}x${s}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$set_dir" -o desktop/build/icon/icon.icns
+
 # Test the desktop module (config, in-process API, path checks)
 desktop-test:
     cd desktop && go test ./...

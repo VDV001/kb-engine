@@ -16,7 +16,7 @@
       <div class="eyebrow">Индексирую файлы</div>
       <div class="big" id="indexing-count">0</div>
       <div class="indexing-bar"><span></span></div>
-      <div class="muted">Только при запуске. Потом поиск мгновенный.</div>
+      <div class="muted" id="indexing-note">Только при запуске. Потом поиск мгновенный.</div>
       <button class="btn primary" id="indexing-settings" hidden>Выбрать папки</button>
     </div>
   </section>
@@ -60,14 +60,7 @@
         <div class="panel-head"><span>Выдача</span><span class="muted" id="results-hint">тип · имя · когда</span></div>
         <ol class="results" id="results"></ol>
       </section>
-      <article class="panel preview" id="preview">
-        <div class="empty">
-          <div class="prompt"><span class="dollar">$</span> cat README</div>
-          <p>Поиск по базе знаний и файлам на этом компьютере.</p>
-          <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
-          <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить</p>
-        </div>
-      </article>
+      <article class="panel preview" id="preview"></article>
     </div>
   </main>
 

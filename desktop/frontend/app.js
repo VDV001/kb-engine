@@ -51,7 +51,7 @@ async function waitForIndex() {
       $(".indexing-main .eyebrow").textContent = "Индекс не собрался";
       $("#indexing-count").textContent = "—";
       $(".indexing-bar").hidden = true;
-      $(".indexing-main .muted").textContent = why.trim() || "Причина неизвестна";
+      $("#indexing-note").textContent = why.trim() || "Причина неизвестна";
       // Экран закрывает кнопку настроек — даем выход прямо с него.
       $("#indexing-settings").hidden = false;
       return;
@@ -90,7 +90,7 @@ async function search(q) {
   const seq = ++state.seq;
   // HEAD на ветке — текущий запрос, как текущий шаг на сайте.
   $("#branch-label").textContent = q ? `find «${q.length > 40 ? q.slice(0, 40) + "…" : q}»` : "поиск";
-  if (!q) { state.kb = []; state.files = []; render(); showEmpty(); return; }
+  if (!q) { $("#app").classList.remove("busy"); state.kb = []; state.files = []; render(); showEmpty(); return; }
   const enc = encodeURIComponent(q);
   $("#app").classList.add("busy");
   const [kb, files] = await Promise.all([
@@ -152,7 +152,9 @@ function render() {
 
 // Строка журнала, как таблица на сайте: тип своим цветом (как роли «Я» и
 // «Агент») · имя · когда, ниже строка совпадения.
-const TYPE_LABEL = { kb: "база", doc: "док", code: "код" };
+// Подпись по настоящему типу: картинка не выдается за документ — вкладка
+// «Документы» ее и не покажет.
+const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
 function kbRow(e, i, hl) {
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
@@ -161,7 +163,7 @@ function kbRow(e, i, hl) {
   </li>`;
 }
 function fileRow(f, i, hl) {
-  const t = TYPE_LABEL[f.kind] ? f.kind : "doc";
+  const t = TYPE_LABEL[f.kind] ? f.kind : "other";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
     <div class="hit-head"><span class="type ${t}">${TYPE_LABEL[t]}</span><span class="hit-name">${hl(f.name)}</span><span class="hit-meta">${ago(f.modified)}</span></div>
     <div class="hit-path">${esc(shortPath(f.path))}</div>
@@ -262,6 +264,9 @@ document.addEventListener("keydown", (e) => {
 
 window.addEventListener("resize", moveInk);
 moveInk();
+// Шрифт вшит и грузится после первого замера: подчеркивание мерить заново.
+document.fonts.ready.then(moveInk);
+showEmpty(); // одна копия пустого экрана — в showEmpty, в разметке его нет
 waitForIndex();
 
 // --- Папки для поиска ----------------------------------------------------------
