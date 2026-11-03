@@ -328,7 +328,74 @@ func TestFileIndex_configChangeWhileIdleStillCloses(t *testing.T) {
 	if _, err := x.Read(file); !errors.Is(err, filesearch.ErrNotAllowed) {
 		t.Fatalf("закрытая папка: err = %v, ждали ErrNotAllowed", err)
 	}
-	if st := x.svc.Stats(); st.Indexed != 0 {
-		t.Fatalf("индекс остался в памяти сессии без поиска: %+v", st)
+	// Сессия без поиска ради смены папок диск не обходит: прежде каждая из
+	// простаивающих собирала индекс целиком и только потом отпускала (ревью #377).
+	if _, err := os.Stat(desktopconfig.IndexPath(x.cfgPath)); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("смена конфига без поиска собрала индекс: %v", err)
+	}
+	if _, err := x.svc.Search("другое", 5); !errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("индекс в памяти сессии без поиска: err = %v", err)
+	}
+	if _, err := x.Read(filepath.Join(other, "b.md")); err != nil {
+		t.Fatalf("новая папка не читается: %v", err)
+	}
+}
+
+// Поиск, пришедший между проверкой простоя и выгрузкой, видит loaded, а
+// индекса уже нет. Он не отвечает «еще собирается», а будит сборку (ревью #377).
+func TestFileIndex_searchAfterUnloadRaceStillAnswers(t *testing.T) {
+	x, file := newIndexOver(t)
+	x.loaded.Store(true) // состояние гонки: флаг еще стоит, индекса нет
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { x.run(ctx); close(done) }()
+	defer func() { cancel(); <-done }()
+
+	hits, err := x.Search("единорог", 5)
+	if err != nil || len(hits) != 1 || hits[0].Doc.Path() != file {
+		t.Fatalf("hits = %v, err = %v", hits, err)
+	}
+}
+
+// После остановки run поиск не ждет searchWaitMax впустую: будить некого.
+func TestFileIndex_searchAfterStopDoesNotHang(t *testing.T) {
+	x, _ := newIndexOver(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { x.run(ctx); close(done) }()
+	cancel()
+	<-done
+
+	start := time.Now()
+	if _, err := x.Search("единорог", 5); !errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("err = %v, ждали ErrNotBuilt", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Fatalf("поиск после остановки ждал %s", d)
+	}
+}
+
+// Упавшая сборка повторяется не чаще опроса конфига: иначе каждый
+// search_files запускал бы новый полный обход (ревью #377).
+func TestFileIndex_failedBuildRetriesAtPollPace(t *testing.T) {
+	x, _ := newIndexOver(t)
+	now := time.Now()
+	x.touch(now)
+	dead, cancel := context.WithCancel(context.Background())
+	cancel()
+	x.refresh(dead, now) // сборка падает: обход отменен
+	if x.loaded.Load() {
+		t.Fatal("упавшая сборка отмечена как удачная")
+	}
+
+	ctx := context.Background()
+	x.touch(now.Add(time.Second))
+	x.refresh(ctx, now.Add(time.Second))
+	if x.loaded.Load() {
+		t.Fatal("повтор сборки раньше опроса конфига")
+	}
+	x.refresh(ctx, now.Add(configPollEvery))
+	if !x.loaded.Load() {
+		t.Fatal("после паузы сборка не повторена")
 	}
 }
