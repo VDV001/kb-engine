@@ -8,7 +8,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -26,18 +28,29 @@ const (
 	// инкрементальная: неизмененные файлы берутся из прошлого индекса без
 	// чтения (замер #374: 1,3 с на 40 тыс. файлов).
 	filesRebuildEvery = 10 * time.Minute
+	// filesIdleAfter — сколько индекс живет после последнего search_files.
+	// Дольше простоявшая сессия его отпускает: следующий поиск поднимет
+	// индекс из снимка меньше чем за секунду (замер 03.11: 0,74 с на 3 тыс. файлов).
+	filesIdleAfter = 15 * time.Minute
+	// searchWaitMax — сколько первый search_files ждет сборки. Дальше агент
+	// получает «еще собирается», а сборка идет своим чередом.
+	searchWaitMax = 10 * time.Second
 )
 
 // fileIndex keeps the file search in step with the kb-desktop window: the
 // folders come from its config.json, re-read whenever the window saves it.
 //
-// Поля, кроме svc, трогает только одна горутина (run); svc сам безопасен для
-// поиска во время пересборки.
+// Индекс держится только пока сессия ищет: собирается по первому
+// search_files и выгружается после filesIdleAfter без поиска. Из шести
+// открытых сессий ищет обычно одна, а держала индекс каждая (~100 МБ, замер
+// 03.11). read_file индекса не требует: он читает через источник.
 //
-// ponytail: каждая сессия Claude Code поднимает свой kbengine-mcp со своим
-// индексом в памяти и своим обходом. Потолок: несколько сессий на ~/git
-// (~1 ГБ индекса каждая). Путь: индекс держит один процесс (окно или serve),
-// а MCP ходит к нему по /api/files/*.
+// Поля без atomic и svc трогает только одна горутина (run); svc сам безопасен
+// для поиска во время пересборки.
+//
+// ponytail: сессии, которые ищут одновременно, держат каждая свой индекс.
+// Потолок: несколько активных сессий на ~/git (~1 ГБ индекса каждая). Путь:
+// индекс держит один процесс (окно или serve), а MCP ходит к нему по /api/files/*.
 type fileIndex struct {
 	svc     *filesearch.Service
 	cfgPath string
@@ -45,14 +58,17 @@ type fileIndex struct {
 	stderr  io.Writer
 	stamp   time.Time          // mtime конфига, по которому открыт src
 	src     *localfiles.Source // открытые корни текущего индекса
-	builtAt time.Time          // нулевой — удачной сборки еще не было
+	builtAt time.Time          // нулевой — индекса в памяти нет
+
+	lastUse atomic.Int64       // UnixNano последнего search_files, 0 — не искали
+	loaded  atomic.Bool        // индекс в памяти: поиску не нужно будить run
+	wake    chan chan struct{} // поиск просит собрать индекс и ждет закрытия канала
 }
 
 // newFileIndex opens the folders named in the window's config. Индекс здесь не
-// собирается: сервер отвечает агенту сразу, а search_files до конца сборки
-// говорит «еще собирается».
+// собирается: его соберет первый search_files.
 func newFileIndex(cfgPath, home string, stderr io.Writer) (*fileIndex, error) {
-	x := &fileIndex{cfgPath: expandHome(cfgPath, home), home: home, stderr: stderr}
+	x := &fileIndex{cfgPath: expandHome(cfgPath, home), home: home, stderr: stderr, wake: make(chan chan struct{})}
 	src, stamp, err := x.open()
 	if err != nil {
 		return nil, err
@@ -86,10 +102,9 @@ func (x *fileIndex) open() (*localfiles.Source, time.Time, error) {
 	return src, info.ModTime(), err
 }
 
-// run builds the index now, then polls the config and rebuilds on schedule
-// until ctx ends.
+// run polls the config, builds the index when a search asks for it, rebuilds
+// on schedule while searches go on and drops it when they stop, until ctx ends.
 func (x *fileIndex) run(ctx context.Context) {
-	x.refresh(ctx, time.Now())
 	t := time.NewTicker(configPollEvery)
 	defer t.Stop()
 	for {
@@ -98,15 +113,30 @@ func (x *fileIndex) run(ctx context.Context) {
 			return
 		case now := <-t.C:
 			x.refresh(ctx, now)
+		case done := <-x.wake:
+			x.refresh(ctx, time.Now())
+			close(done)
 		}
 	}
 }
 
 // refresh switches to the folders of a config the window has saved since,
-// otherwise rebuilds when the index is due or the last build failed.
+// otherwise rebuilds when the index is due or the last build failed. Сессия,
+// которая давно не искала, индекс отпускает.
 func (x *fileIndex) refresh(ctx context.Context, now time.Time) {
 	if info, err := os.Stat(x.cfgPath); err == nil && !info.ModTime().Equal(x.stamp) {
+		// Источник меняется и без поиска: это граница read_file. Сборка при
+		// этом идет целиком, но конфиг меняется редко, а снимок она обновит.
 		x.reopen(ctx, now)
+		if !x.inUse(now) {
+			x.unload()
+		}
+		return
+	}
+	if !x.inUse(now) {
+		if !x.builtAt.IsZero() {
+			x.unload()
+		}
 		return
 	}
 	if !x.builtAt.IsZero() && now.Sub(x.builtAt) < filesRebuildEvery {
@@ -116,8 +146,53 @@ func (x *fileIndex) refresh(ctx context.Context, now time.Time) {
 	st, err := x.svc.Build(ctx)
 	if x.report(st, err, start) {
 		x.builtAt = now
+		x.loaded.Store(true)
 	}
 }
+
+// touch marks a search at now: the index stays for filesIdleAfter after it.
+func (x *fileIndex) touch(now time.Time) { x.lastUse.Store(now.UnixNano()) }
+
+func (x *fileIndex) inUse(now time.Time) bool {
+	last := x.lastUse.Load()
+	return last != 0 && now.Sub(time.Unix(0, last)) < filesIdleAfter
+}
+
+// unload drops the index and hands its memory back to the system: без
+// FreeOSMemory Go вернет ее не сразу, и процесс по-прежнему весил бы как с индексом.
+func (x *fileIndex) unload() {
+	x.svc.Unload()
+	x.builtAt = time.Time{}
+	x.loaded.Store(false)
+	debug.FreeOSMemory()
+	fmt.Fprintf(x.stderr, "kbengine-mcp: индекс файлов выгружен: поиска не было %s\n", filesIdleAfter)
+}
+
+// Search answers search_files. Первый поиск сессии будит run и ждет сборки
+// не дольше searchWaitMax; дальше отвечает уже собранный индекс.
+func (x *fileIndex) Search(query string, limit int) ([]filesearch.Hit, error) {
+	x.touch(time.Now())
+	if !x.loaded.Load() {
+		done := make(chan struct{})
+		timer := time.NewTimer(searchWaitMax)
+		defer timer.Stop()
+		select {
+		case x.wake <- done:
+			select {
+			case <-done:
+			case <-timer.C:
+			}
+		case <-timer.C:
+		}
+	}
+	return x.svc.Search(query, limit)
+}
+
+// Read answers read_file through the current source; индекс для этого не нужен.
+func (x *fileIndex) Read(path string) (string, error) { return x.svc.Read(path) }
+
+// Stats reports the index size that search_files returns with its hits.
+func (x *fileIndex) Stats() filesearch.Stats { return x.svc.Stats() }
 
 // reopen rebuilds over the folders of the changed config. Пока сборка идет,
 // отвечает прежний индекс; при ошибке он и остается, а stamp не двигается —
@@ -141,6 +216,7 @@ func (x *fileIndex) reopen(ctx context.Context, now time.Time) {
 	}
 	old := x.src
 	x.src, x.stamp, x.builtAt = src, stamp, now
+	x.loaded.Store(true)
 	// Не сразу: поиск и чтение, взявшие старый источник до подмены, должны
 	// успеть дочитать — тот же прием, что у окна (desktop/indexer.go).
 	time.AfterFunc(time.Minute, func() { _ = old.Close() })
