@@ -91,3 +91,24 @@ func TestRequireBearer_UnauthorizedBodyIsPlainAPIText(t *testing.T) {
 		t.Fatalf("body = %q", got)
 	}
 }
+
+// /readyz без токена отдает только код: текст ошибки готовности несет путь к
+// каталогу. С токеном — полный текст, как прежде.
+func TestRequireBearer_ReadyzWithoutTokenHidesDetails(t *testing.T) {
+	const token = "k3Jx9_secret-token-0123456789abcdefXYZ"
+	h := httpapi.RequireBearer(token, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "not ready: open /srv/kb/catalog.json: no such file", http.StatusServiceUnavailable)
+	}))
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if w.Code != http.StatusServiceUnavailable || strings.Contains(w.Body.String(), "/srv/kb") {
+		t.Fatalf("без токена: %d %q", w.Code, w.Body.String())
+	}
+	r := httptest.NewRequest(http.MethodGet, "/readyz", nil)
+	r.Header.Set("Authorization", "Bearer "+token)
+	w = httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+	if !strings.Contains(w.Body.String(), "/srv/kb") {
+		t.Fatalf("с токеном подробности пропали: %q", w.Body.String())
+	}
+}
