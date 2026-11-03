@@ -93,24 +93,21 @@ func isSecret(name string) bool {
 }
 
 // indexable reports whether the walk takes a file by its name. Docx читается
-// разбором XML стандартной библиотекой (docs.go).
-//
-// ponytail: PDF, RTF и текст на картинках не читаются. Потолок: сканы, PDF и
-// скриншоты документов. Путь: помощник на PDFKit и Vision macOS — без
-// сторонних программ (pdftotext отвергнут на ревью #378).
+// разбором XML стандартной библиотекой (docs.go), PDF и картинки — из
+// распознанного окном текста, если источник открыт WithExtracted (extracted.go).
+// RTF не читается.
 func (s *Source) indexable(name string) bool {
 	if isSecret(name) || strings.Contains(strings.ToLower(name), ".bak") {
 		return false
+	}
+	if extractable(name) {
+		return s.extracted != nil
 	}
 	k := domain.FileKindOf(name)
 	if k != domain.FileKindDoc && k != domain.FileKindCode {
 		return false
 	}
-	switch strings.ToLower(filepath.Ext(name)) {
-	case ".pdf", ".rtf":
-		return false
-	}
-	return true
+	return !strings.EqualFold(filepath.Ext(name), ".rtf")
 }
 
 // Source walks roots and reads their text files.
@@ -119,13 +116,18 @@ type Source struct {
 	resolved []string   // с раскрытыми симлинками: по ним идет обход и чтение
 	dirs     []*os.Root // открыты один раз, а не на каждое чтение
 	exclude  map[string]bool
+	// extracted — текст PDF и картинок, распознанный окном; nil — их нет.
+	extracted Extracted
 }
 
 // New returns a source over absolute roots. excludeDirs are folder names that
 // are never entered, in addition to the built-in junk folders. Close releases
 // the roots.
-func New(roots, excludeDirs []string) (*Source, error) {
+func New(roots, excludeDirs []string, opts ...Option) (*Source, error) {
 	s := &Source{exclude: map[string]bool{}}
+	for _, o := range opts {
+		o(s)
+	}
 	for _, r := range roots {
 		if !filepath.IsAbs(r) {
 			_ = s.Close()
@@ -170,7 +172,24 @@ func (s *Source) skipDir(name string) bool {
 // inside the roots are not followed: ссылка может увести за пределы корня.
 // Сам корень обходится раскрытым: корень-симлинк иначе давал ноль файлов.
 func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
+	return s.walk(ctx, func(shown string, info os.FileInfo, imgs int) error {
+		if name := info.Name(); extractable(name) && (!s.allowedExtract(name, imgs) || !s.hasExtracted(shown, info)) {
+			return nil // папка кадров или еще не распознан: ждет в Pending
+		}
+		doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
+		if err != nil {
+			return err
+		}
+		return fn(doc)
+	})
+}
+
+// walk calls fn for every regular file the rules let through by name and size,
+// with the path as shown (в написании корня, как его задал человек) and, for an
+// image, the number of images in its folder (иначе ноль).
+func (s *Source) walk(ctx context.Context, fn func(shown string, info os.FileInfo, imgs int) error) error {
 	for i, root := range s.resolved {
+		imgs := map[string]int{}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 			if cerr := ctx.Err(); cerr != nil {
 				return cerr
@@ -184,8 +203,11 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 				}
 				return nil
 			}
-			// В выдаче путь в том написании, в каком человек задал корень.
-			return s.visitFile(s.roots[i]+strings.TrimPrefix(path, root), d, fn)
+			info, ok := s.fileInfo(d)
+			if !ok {
+				return nil
+			}
+			return fn(s.roots[i]+strings.TrimPrefix(path, root), info, s.imagesIn(filepath.Dir(path), d.Name(), imgs))
 		})
 		if err != nil {
 			return fmt.Errorf("walk %s: %w", root, err)
@@ -194,29 +216,41 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 	return nil
 }
 
-// visitFile passes one walked entry to fn if it is an indexable regular file.
-func (s *Source) visitFile(shown string, d fs.DirEntry, fn func(domain.FileDoc) error) error {
+// imagesIn returns how many images lie in dir, counted once per folder and only
+// when the walk meets an image there: папка без картинок второй раз не читается
+// (ревью #379).
+func (s *Source) imagesIn(dir, name string, imgs map[string]int) int {
+	if s.extracted == nil || !isImage(name) {
+		return 0
+	}
+	n, ok := imgs[dir]
+	if !ok {
+		if entries, err := os.ReadDir(dir); err == nil {
+			n = countImages(entries)
+		}
+		imgs[dir] = n
+	}
+	return n
+}
+
+// fileInfo returns the info of a walked entry the rules let through by type,
+// name and size.
+func (s *Source) fileInfo(d fs.DirEntry) (os.FileInfo, bool) {
 	if !d.Type().IsRegular() || !s.indexable(d.Name()) {
-		return nil
+		return nil, false
 	}
 	info, err := d.Info()
 	if err != nil || info.Size() > maxBytes(d.Name()) {
-		return nil
+		return nil, false
 	}
-	doc, err := domain.NewFileDoc(shown, info.Size(), info.ModTime())
-	if err != nil {
-		return err
-	}
-	return fn(doc)
+	return info, true
 }
 
 // Check reports whether a path is one the walk would index, without reading
 // it. Окно зовет ее перед open: читать файл целиком ради разрешения незачем.
 func (s *Source) Check(path string) error {
-	if _, _, err := s.checked(path); err != nil {
-		return err
-	}
-	return nil
+	_, _, err := s.checked(path)
+	return err
 }
 
 // ReadText returns a file's text if the walk would have indexed it.
@@ -225,9 +259,13 @@ func (s *Source) Check(path string) error {
 // только через os.Root корня: даже если проверка пропустит что-то, открыть
 // файл за пределами корня Root не даст (замечание CodeQL go/path-injection).
 func (s *Source) ReadText(path string) (string, error) {
-	dir, rel, err := s.checked(path)
+	i, rel, err := s.checked(path)
 	if err != nil {
 		return "", err
+	}
+	dir := s.dirs[i]
+	if extractable(rel) {
+		return s.readExtracted(i, rel, path)
 	}
 	if isDocx(rel) {
 		return readDocx(dir, rel)
@@ -242,14 +280,53 @@ func (s *Source) ReadText(path string) (string, error) {
 	return string(b), nil
 }
 
-// checked runs every rule the walk applies and returns the root and the path
-// relative to it.
-func (s *Source) checked(path string) (*os.Root, string, error) {
+// checked runs every rule the walk applies and returns the index of the root
+// and the path relative to it.
+func (s *Source) checked(path string) (int, string, error) {
 	i, rel, ok := s.locate(path)
-	if !ok || s.throughSkipped(rel) || !s.indexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) {
-		return nil, "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
+	if !ok || s.throughSkipped(rel) || !s.indexable(filepath.Base(rel)) || !plainFile(s.dirs[i], rel) ||
+		(extractable(rel) && !s.extractReady(i, rel)) {
+		return 0, "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
 	}
-	return s.dirs[i], rel, nil
+	return i, rel, nil
+}
+
+// extractReady applies to a PDF or image the two rules the walk adds: текст
+// распознан, и картинка не из папки кадров. Порог проверяется и здесь:
+// читается только то, что проиндексировал бы обход, даже если в кеше осталась
+// запись с тех пор, как картинок в папке было меньше.
+//
+// ponytail: порог картинки пересчитывается чтением папки на каждый Check и
+// read_file. Потолок: картинки в папке с десятками тысяч файлов, которые
+// агент читает подряд. Путь: запоминать счет папки из последнего обхода.
+func (s *Source) extractReady(i int, rel string) bool {
+	info, err := s.dirs[i].Stat(rel)
+	if err != nil || !s.hasExtracted(filepath.Join(s.roots[i], rel), info) {
+		return false
+	}
+	if !isImage(rel) {
+		return true
+	}
+	f, err := s.dirs[i].Open(filepath.Dir(rel))
+	if err != nil {
+		return false
+	}
+	entries, err := f.ReadDir(-1)
+	_ = f.Close() // только чтение
+	return err == nil && s.allowedExtract(rel, countImages(entries))
+}
+
+// readExtracted returns the recognized text of a PDF or image.
+func (s *Source) readExtracted(i int, rel, path string) (string, error) {
+	info, err := s.dirs[i].Stat(rel)
+	if err != nil {
+		return "", err
+	}
+	text, ok := s.extracted.Text(filepath.Join(s.roots[i], rel), info.Size(), info.ModTime())
+	if !ok {
+		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path) // распознанный текст пропал между проверкой и чтением
+	}
+	return capText(text), nil
 }
 
 // locate finds the root a path lies under, lexically, and returns its index and

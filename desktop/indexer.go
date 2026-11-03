@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
@@ -38,6 +39,9 @@ type indexer struct {
 	pending *localfiles.Source // источник, с которым идет сборка
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
+
+	ext        extraction  // распознавание PDF и картинок (extract.go)
+	extracting atomic.Bool // идет проход распознавания: второй не запускается
 }
 
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
@@ -55,7 +59,7 @@ func (x *indexer) start(ctx context.Context) {
 
 // apply opens the new folders and reindexes in the background.
 func (x *indexer) apply(roots, exclude []string) error {
-	src, err := localfiles.New(roots, exclude)
+	src, err := localfiles.New(roots, exclude, x.ext.option())
 	if err != nil {
 		return err
 	}
@@ -63,8 +67,25 @@ func (x *indexer) apply(roots, exclude []string) error {
 	return nil
 }
 
-func (x *indexer) run(src *localfiles.Source) {
+func (x *indexer) run(src *localfiles.Source) { x.launch(src, false) }
+
+// rerun rebuilds over src only if no other folders were chosen since: проход
+// распознавания не должен пересобирать индекс на старых папках (ревью #379).
+func (x *indexer) rerun(src *localfiles.Source) { x.launch(src, true) }
+
+// latest reports whether src is the source of the latest requested build.
+func (x *indexer) latest(src *localfiles.Source) bool {
 	x.mu.Lock()
+	defer x.mu.Unlock()
+	return x.pending == src
+}
+
+func (x *indexer) launch(src *localfiles.Source, onlyLatest bool) {
+	x.mu.Lock()
+	if onlyLatest && x.pending != src {
+		x.mu.Unlock()
+		return
+	}
 	x.gen++
 	gen, ctx := x.gen, x.ctx
 	x.pending = src
@@ -89,32 +110,39 @@ func (x *indexer) run(src *localfiles.Source) {
 			log.Printf("files: %v", err) // индекс подменен и работает, не записан только снимок
 			err = nil
 		}
-		x.mu.Lock()
-		defer x.mu.Unlock()
-		switch {
-		case err != nil:
-			log.Printf("files: %v", err)
-			if src != x.src {
-				_ = src.Close()
-			}
-			if gen == x.gen {
-				x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
-			}
-		default:
-			log.Printf("files: indexed %d (skipped %d, reused %d) in %s", st.Indexed, st.Skipped, st.Reused, time.Since(start).Round(time.Millisecond))
-			if old := x.src; old != nil && old != src {
-				// Не сразу: поиск и чтение, взявшие старый источник до подмены,
-				// должны успеть дочитать (ревью #372).
-				// ponytail: задержка вместо счетчика читателей. Потолок: чтение
-				// дольше минуты. Путь: счетчик ссылок на источник в Service.
-				time.AfterFunc(time.Minute, func() { _ = old.Close() })
-			}
-			x.src = src
-			if gen == x.gen {
-				x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, Reused: st.Reused}
-			}
-		}
+		x.finish(ctx, gen, src, st, err, start)
 	}()
+}
+
+// finish records a build that ended: подменяет источник при удаче, закрывает
+// лишний при неудаче и запускает распознавание по новому индексу.
+func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, st filesearch.Stats, err error, start time.Time) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	switch {
+	case err != nil:
+		log.Printf("files: %v", err)
+		if src != x.src {
+			_ = src.Close()
+		}
+		if gen == x.gen {
+			x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
+		}
+	default:
+		log.Printf("files: indexed %d (skipped %d, reused %d) in %s", st.Indexed, st.Skipped, st.Reused, time.Since(start).Round(time.Millisecond))
+		if old := x.src; old != nil && old != src {
+			// Не сразу: поиск и чтение, взявшие старый источник до подмены,
+			// должны успеть дочитать (ревью #372).
+			// ponytail: задержка вместо счетчика читателей. Потолок: чтение
+			// дольше минуты. Путь: счетчик ссылок на источник в Service.
+			time.AfterFunc(time.Minute, func() { _ = old.Close() })
+		}
+		x.src = src
+		if gen == x.gen {
+			x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, Reused: st.Reused}
+		}
+		x.extractPending(ctx, src) // в своей горутине: замок не держит
+	}
 }
 
 // Status returns the state of the latest build.

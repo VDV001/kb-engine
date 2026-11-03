@@ -43,6 +43,12 @@ func IndexPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), "index.gob")
 }
 
+// ExtractDir is where the window keeps text recognized from PDFs and images,
+// next to the config: окно пишет, MCP читает тот же каталог.
+func ExtractDir(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "extract")
+}
+
 // Default is the config written on the window's first run.
 func Default(home string) Config {
 	cowork := filepath.Join(home, "claude-cowork")

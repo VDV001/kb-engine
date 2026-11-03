@@ -39,13 +39,13 @@ type catalogLoader interface {
 // живет в package main и недоступен). Потолок: две точки сборки разойдутся,
 // когда серверу добавят опцию. Путь: вынести сборку в internal/composition и
 // звать ее из обоих.
-func newAPI(cfg desktopconfig.Config, indexPath string) (http.Handler, *indexer, error) {
+func newAPI(cfg desktopconfig.Config, indexPath string, ext extraction) (http.Handler, *indexer, error) {
 	home, _ := os.UserHomeDir() // без домашней папки «~» просто не раскроется
 	roots, skipped := desktopconfig.NormalizeRoots(cfg.Roots, home)
 	for _, s := range skipped {
 		log.Printf("files: папка пропущена: %s", s)
 	}
-	src, err := localfiles.New(roots, cfg.Exclude)
+	src, err := localfiles.New(roots, cfg.Exclude, ext.option())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -62,5 +62,7 @@ func newAPI(cfg desktopconfig.Config, indexPath string) (http.Handler, *indexer,
 		func() (changelog.Document, error) { return changelog.Document{}, nil },
 		httpapi.Documents{}, httpapi.EngineInfo{Version: "desktop"}, nil,
 		httpapi.WithFiles(files))
-	return h, newIndexer(files, src), nil
+	x := newIndexer(files, src)
+	x.ext = ext
+	return h, x, nil
 }

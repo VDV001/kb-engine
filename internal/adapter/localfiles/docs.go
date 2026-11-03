@@ -12,7 +12,7 @@ import (
 	"unicode/utf8"
 )
 
-// maxDocBytes — порог файла для docx: документ весит картинками и шрифтами, а
+// maxDocBytes — порог файла для docx, pdf и картинок: документ весит картинками и шрифтами, а
 // не текстом, и порог текстовых файлов отсек бы почти каждое ТЗ. В память из
 // него попадает не больше maxDocXMLBytes разметки и MaxFileBytes текста.
 const maxDocBytes = 32 << 20
@@ -36,7 +36,7 @@ func isDocx(name string) bool { return strings.EqualFold(filepath.Ext(name), ".d
 
 // maxBytes is the size limit for a file on disk.
 func maxBytes(name string) int64 {
-	if isDocx(name) {
+	if isDocx(name) || extractable(name) {
 		return maxDocBytes
 	}
 	return MaxFileBytes

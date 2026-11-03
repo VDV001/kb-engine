@@ -31,7 +31,7 @@ func TestIndexer_ApplyReindexesNewFolders(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b, "new.md"), []byte("договор поставки"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, x, err := newAPI(desktopconfig.Config{Roots: []string{a}}, "")
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{a}}, "", extraction{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,7 +53,7 @@ func TestIndexer_ApplyReindexesNewFolders(t *testing.T) {
 }
 
 func TestIndexer_ApplyRefusesBadRoot(t *testing.T) {
-	_, x, err := newAPI(desktopconfig.Config{Roots: []string{t.TempDir()}}, "")
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{t.TempDir()}}, "", extraction{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,14 +75,14 @@ func TestIndexer_KeepsIndexOnDisk(t *testing.T) {
 		t.Fatal(err)
 	}
 	index := filepath.Join(t.TempDir(), "index.gob")
-	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, index)
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, index, extraction{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	x.start(context.Background())
 	waitIdle(t, x)
 
-	_, x2, err := newAPI(desktopconfig.Config{Roots: []string{root}}, index)
+	_, x2, err := newAPI(desktopconfig.Config{Roots: []string{root}}, index, extraction{})
 	if err != nil {
 		t.Fatal(err)
 	}

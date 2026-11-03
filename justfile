@@ -39,6 +39,8 @@ build:
 # that itself. Separate module, so the engine's CI and gates are untouched.
 desktop:
     cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    # Помощник распознавания: только PDFKit и Vision macOS, ставить ничего не нужно.
+    swiftc -O -o bin/kb.app/Contents/MacOS/kb-extract desktop/extract/main.swift
     cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
     mkdir -p bin/kb.app/Contents/Resources
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns

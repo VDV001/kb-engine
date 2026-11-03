@@ -176,7 +176,9 @@ The flag adds `search_files` and `read_file` over the folders chosen in the
 kb-desktop window — the same `config.json`, so a folder picked in the window is
 a folder the agent can search. **This widens what an agent can read**: every
 text file the index takes from those folders, not only catalog entries —
-including the text of DOCX files (PDFs and images are not read). Folders
+including the text of DOCX files and of PDFs and images once the kb-desktop
+window has recognized them (`kb-extract`, PDFKit and Vision; the server reads
+that cache and recognizes nothing itself). Folders
 in `exclude` (the window's default is `finances`), secret-looking files (`.env`,
 `*credential*`, …) and tool folders (`.git`, `node_modules`, …) are refused by
 the same rule that keeps them out of the index; a path outside the folders is

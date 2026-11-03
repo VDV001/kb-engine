@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/extractcache"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
 
@@ -397,5 +398,41 @@ func TestFileIndex_failedBuildRetriesAtPollPace(t *testing.T) {
 	x.refresh(ctx, now.Add(configPollEvery))
 	if !x.loaded.Load() {
 		t.Fatal("после паузы сборка не повторена")
+	}
+}
+
+// Текст картинок и PDF, распознанный окном, MCP читает из того же каталога:
+// сам он ничего не распознает (помощник живет в kb.app).
+func TestFileSearch_readsTextRecognizedByTheWindow(t *testing.T) {
+	dir := t.TempDir()
+	root := filepath.Join(dir, "notes")
+	scan := filepath.Join(root, "scan.png")
+	mustWrite(t, scan, "png")
+	cfgPath := filepath.Join(dir, "kb-desktop", "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Roots: []string{root}}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(scan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := extractcache.Cache{Dir: desktopconfig.ExtractDir(cfgPath)}
+	if err := cache.Put(scan, info.Size(), info.ModTime(), "счет на оплату"); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	x, err := newFileIndex(cfgPath, dir, &stderr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	x.touch(now) // индекс по требованию (#377): собирается, когда сессия ищет
+	x.refresh(context.Background(), now)
+	hits, err := x.svc.Search("оплату", 5)
+	if err != nil || len(hits) != 1 || hits[0].Doc.Path() != scan {
+		t.Fatalf("hits = %v, %v", hits, err)
+	}
+	if text, err := x.svc.Read(scan); err != nil || text != "счет на оплату" {
+		t.Fatalf("read_file = %q, %v", text, err)
 	}
 }

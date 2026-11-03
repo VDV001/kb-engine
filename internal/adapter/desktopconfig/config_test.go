@@ -91,3 +91,11 @@ func TestNormalizeRoots(t *testing.T) {
 		t.Errorf("skipped = %q, want 2", skipped)
 	}
 }
+
+// Распознанный текст лежит рядом с конфигом и снимком индекса: окно пишет,
+// MCP читает тот же каталог.
+func TestExtractDir_NextToConfig(t *testing.T) {
+	if got, want := desktopconfig.ExtractDir("/a/kb-desktop/config.json"), "/a/kb-desktop/extract"; got != want {
+		t.Fatalf("ExtractDir = %q, want %q", got, want)
+	}
+}
