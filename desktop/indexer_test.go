@@ -91,3 +91,33 @@ func TestIndexer_KeepsIndexOnDisk(t *testing.T) {
 		t.Fatalf("второй запуск: %+v", st)
 	}
 }
+
+// Окно догоняет диск по таймеру, как MCP: файл, сохраненный после запуска,
+// находится без перезапуска окна (прежде индекс собирался только при старте
+// и смене папок).
+func TestIndexer_RebuildsOnSchedule(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "old.md"), []byte("старое"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "", extraction{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.every = 50 * time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	x.start(ctx)
+	waitIdle(t, x)
+	if err := os.WriteFile(filepath.Join(root, "new.md"), []byte("свежая мысль"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if hits, _ := x.files.Search("свежая", 5); len(hits) == 1 {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatal("новый файл не нашелся: окно не пересобирает индекс")
+}
