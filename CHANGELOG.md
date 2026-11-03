@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.29.0] — 2026-11-03
+
 ### Added
 
 - **Источники в настройках окна: один список вместо папок и каталога.** В `config.json` окна —
@@ -392,6 +394,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Changed
 
+- **Дозаписано при сборке выпуска — четыре коммита зависимостей прошли без записи.** Гейт
+  `release-scope.sh v0.28.0` назвал их поимённо: образ сборки в `Dockerfile` переехал с Go 1.26 на
+  1.27, обновлен `node:26-bookworm-slim` (#344); `github/codeql-action` поднят до v4.37.9 (#346), затем
+  до v4.39.0; `helm/kind-action` — до v1.15.0 (#348), затем до v1.15.1; `anchore/sbom-action` — до
+  v0.24.2 (#348), затем до v0.24.3; `goreleaser/goreleaser-action` — до v7.3.0 (`4f4c192`). Гейт
+  продолжит называть эти коммиты до следующего тега: запись задним числом не отменяет того, что
+  коммит ушел без нее.
 - **Гейт данных владельца вынесен из `push.sh` в `scripts/gates/owner-data.sh`
   и получил `--self-test`.** Внутри `push.sh` его нельзя было прогнать отдельно:
   тот тянет за собой тесты, гонку, покрытие и линтер. Поэтому самый
