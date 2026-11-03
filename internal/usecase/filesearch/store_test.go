@@ -170,3 +170,120 @@ func TestIndexFromSnapshot_RejectsBrokenSnapshot(t *testing.T) {
 		}
 	}
 }
+
+func TestIndex_IdentifiersStaySearchableInNamesAndQueries(t *testing.T) {
+	// Отсев идентификаторов — только для содержимого: имя файла и запрос
+	// человек пишет сам, и «invoice20261103» в имени обязан находиться.
+	ix := filesearch.NewIndex()
+	d, err := domain.NewFileDoc("/w/invoice20261103.md", 1, t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ix.Add(d, "счет на оплату")
+	if hits := ix.Search("invoice20261103", 5); len(hits) != 1 {
+		t.Fatalf("имя с идентификатором не ищется: %d", len(hits))
+	}
+	if hits := ix.Search("оплату invoice20261103", 5); len(hits) != 1 {
+		t.Fatalf("запрос с идентификатором потерял слово: %d", len(hits))
+	}
+}
+
+func TestService_RacyCleanFileIsReread(t *testing.T) {
+	// Файл, измененный в ту же секунду, что и прошлая сборка, мог быть
+	// сохранен еще раз с тем же размером: доверять ему нельзя (как в git).
+	store := &memStore{}
+	reads := 0
+	now := time.Now()
+	files := map[string]file{"/w/a.md": {"старое", now}, "/w/b.md": {"давнее", now.Add(-time.Hour)}}
+	src := countingSource{files: files, reads: &reads}
+	if _, err := filesearch.NewService(src, filesearch.WithStore(store)).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	reads = 0
+	st, err := filesearch.NewService(src, filesearch.WithStore(store)).Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 1 || st.Reused != 1 {
+		t.Fatalf("свежий файл не перечитан: reads=%d stats=%+v", reads, st)
+	}
+}
+
+func TestService_SnapshotFromOtherRulesIsIgnored(t *testing.T) {
+	// Снимок, собранный другими правилами разбора слов, нельзя переиспользовать:
+	// основы в нем не совпадут с основами запроса.
+	store := &memStore{}
+	reads := 0
+	src := countingSource{files: map[string]file{"/w/a.md": {"договор", t0}}, reads: &reads}
+	if _, err := filesearch.NewService(src, filesearch.WithStore(store)).Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	store.snap.Rules = "other"
+	reads = 0
+	st, err := filesearch.NewService(src, filesearch.WithStore(store)).Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Reused != 0 || reads != 1 || st.Warning == "" {
+		t.Fatalf("чужие правила: reads=%d stats=%+v", reads, st)
+	}
+}
+
+func TestService_NoChangesNoSave(t *testing.T) {
+	store := &memStore{}
+	reads := 0
+	src := countingSource{files: map[string]file{"/w/a.md": {"договор", t0}}, reads: &reads}
+	for range 2 {
+		if _, err := filesearch.NewService(src, filesearch.WithStore(store)).Build(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if store.saves != 1 {
+		t.Fatalf("снимок без изменений переписан: saves=%d", store.saves)
+	}
+}
+
+func TestService_SamePathTwiceIsIndexedOnce(t *testing.T) {
+	// Пересекающиеся корни (~/git и ~/git/kb-engine) дают тот же путь дважды.
+	reads := 0
+	src := dupSource{countingSource{files: map[string]file{"/w/a.md": {"договор", t0}}, reads: &reads}}
+	svc := filesearch.NewService(src)
+	for range 2 {
+		st, err := svc.Build(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if st.Indexed != 1 {
+			t.Fatalf("stats = %+v", st)
+		}
+	}
+}
+
+type dupSource struct{ countingSource }
+
+func (s dupSource) Walk(ctx context.Context, fn func(domain.FileDoc) error) error {
+	for range 2 {
+		if err := s.countingSource.Walk(ctx, fn); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func TestSnapshot_KeepsOldAndFarDates(t *testing.T) {
+	for _, mod := range []time.Time{time.Date(1601, 1, 1, 0, 0, 0, 0, time.UTC), time.Date(2400, 1, 1, 0, 0, 0, 5, time.UTC)} {
+		ix := filesearch.NewIndex()
+		d, err := domain.NewFileDoc("/w/a.md", 1, mod)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ix.Add(d, "x слово")
+		back, err := filesearch.IndexFromSnapshot(ix.Snapshot())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := back.Search("слово", 1)[0].Doc.ModTime(); !got.Equal(mod) {
+			t.Errorf("дата %v вернулась как %v", mod, got)
+		}
+	}
+}
