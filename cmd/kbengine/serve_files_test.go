@@ -18,7 +18,7 @@ func TestServeFiles_searchesConfiguredRoots(t *testing.T) {
 		t.Fatal(err)
 	}
 	var log bytes.Buffer
-	opt, built := filesOption(context.Background(), []string{root}, nil, &log)
+	opt, built := filesOption(context.Background(), []string{root}, nil, "", &log)
 	select {
 	case err := <-built:
 		if err != nil {
@@ -40,5 +40,21 @@ func TestServeFiles_searchesConfiguredRoots(t *testing.T) {
 	}
 	if !strings.Contains(log.String(), "1 files") {
 		t.Errorf("сборка индекса не названа в логе: %q", log.String())
+	}
+}
+
+func TestServeFiles_WritesIndexSnapshot(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "plan.md"), []byte("договор"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	index := filepath.Join(t.TempDir(), "index.gob")
+	var log bytes.Buffer
+	_, built := filesOption(context.Background(), []string{root}, nil, index, &log)
+	if err := <-built; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(index); err != nil {
+		t.Fatalf("снимок не записан: %v (лог %q)", err, log.String())
 	}
 }
