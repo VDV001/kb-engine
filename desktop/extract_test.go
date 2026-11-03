@@ -89,7 +89,7 @@ func TestIndexer_ExtractsPendingAndReindexes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	waitSettled(t, x)
 	hits, err := x.files.Search("счет оплату", 5)
 	if err != nil || len(hits) != 1 || hits[0].Doc.Name() != "scan.png" {
@@ -112,7 +112,7 @@ func TestIndexer_FailedExtractionIsNotRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	waitSettled(t, x)
 	if err := x.apply([]string{root}, nil); err != nil {
 		t.Fatal(err)
@@ -143,15 +143,15 @@ func TestIndexer_WithoutHelperReadsCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	waitSettled(t, x)
 	if hits, _ := x.files.Search("сверки", 5); len(hits) != 1 {
 		t.Fatalf("hits = %+v", hits)
 	}
 }
 
-// Таймаут — не «файл битый»: пустой текст в кеш не кладется, и следующий
-// проход распознает файл снова (ревью #379).
+// Таймаут — не «файл битый»: пустой текст в кеш не кладется, и проход после
+// паузы распознает файл снова (ревью #379).
 func TestIndexer_TimeoutIsRetried(t *testing.T) {
 	root := t.TempDir()
 	writeFile(t, filepath.Join(root, "slow.pdf"), "slow")
@@ -161,7 +161,8 @@ func TestIndexer_TimeoutIsRetried(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.retryTimeouts = 0 // пауза прошла
+	x.start(t.Context())
 	waitSettled(t, x)
 	if err := x.apply([]string{root}, nil); err != nil {
 		t.Fatal(err)
@@ -169,6 +170,28 @@ func TestIndexer_TimeoutIsRetried(t *testing.T) {
 	waitSettled(t, x)
 	if n := ext.count("slow"); n != 2 {
 		t.Fatalf("распознаваний %d, ждали 2: таймаут закешировался", n)
+	}
+}
+
+// Но не на каждой пересборке: по таймеру раз в 10 минут пять зависающих
+// сканов держали бы Vision занятым без перерыва (ревью #381).
+func TestIndexer_TimeoutWaitsBeforeRetry(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "slow.pdf"), "slow")
+	ext := &fakeExtractor{err: fmt.Errorf("kb-extract: %w", extractcache.ErrTimeout)}
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "",
+		extraction{cache: extractcache.Cache{Dir: t.TempDir()}, helper: ext})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(t.Context())
+	waitSettled(t, x)
+	if err := x.apply([]string{root}, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitSettled(t, x)
+	if n := ext.count("slow"); n != 1 {
+		t.Fatalf("распознаваний %d, ждали 1: таймаут повторен без паузы", n)
 	}
 }
 
@@ -187,7 +210,7 @@ func TestIndexer_FolderChangeDuringPass(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	x.start(context.Background())
+	x.start(t.Context())
 	if got := <-ext.began; got != "A" {
 		t.Fatalf("первым распознается %q", got)
 	}
@@ -209,5 +232,32 @@ func TestIndexer_FolderChangeDuringPass(t *testing.T) {
 	}
 	if hits, _ := x.files.Search("текст", 5); len(hits) != 1 || hits[0].Doc.Name() != "b.png" {
 		t.Fatalf("hits = %+v", hits)
+	}
+}
+
+// Окно показывает, сколько распознано из скольких: первый проход идет
+// десятки минут, и без счета он неотличим от зависания.
+func TestIndexer_ReportsRecognitionProgress(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.png"), "A")
+	writeFile(t, filepath.Join(root, "b.png"), "B")
+	release := make(chan struct{})
+	ext := &fakeExtractor{text: "текст", hold: map[string]chan struct{}{"B": release}, began: make(chan string, 4)}
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "",
+		extraction{cache: extractcache.Cache{Dir: t.TempDir()}, helper: ext})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(t.Context())
+	<-ext.began // a.png
+	<-ext.began // b.png держится
+	st := x.Status()
+	if st.Recognizing == nil || st.Recognizing.Total != 2 || st.Recognizing.Done != 1 {
+		t.Fatalf("посреди прохода: %+v", st.Recognizing)
+	}
+	close(release)
+	waitSettled(t, x)
+	if st := x.Status(); st.Recognizing != nil {
+		t.Fatalf("после прохода: %+v", st.Recognizing)
 	}
 }

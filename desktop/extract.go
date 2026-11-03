@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -80,22 +81,45 @@ func (x *indexer) extractPending(ctx context.Context, src *localfiles.Source) {
 }
 
 // extractPass recognizes the pending files of src and returns how many it did.
+// Ждущие собираются заранее: окно показывает «распознавание N из M».
+// Файл, недавно не уложившийся в таймаут, пропускается до конца паузы.
+//
+// ponytail: список ждущих снимается в начале прохода. Потолок: файлы,
+// добавленные за многочасовой первый проход, ждут следующего (через 10 минут
+// после конца). Путь: дочитывать Pending после каждой партии.
 func (x *indexer) extractPass(ctx context.Context, src *localfiles.Source) (int, error) {
+	var docs []domain.FileDoc
+	now := time.Now()
+	if err := src.Pending(ctx, func(d domain.FileDoc) error {
+		if at, ok := x.timedOut[timeoutKey(d)]; !ok || now.Sub(at) >= x.retryTimeouts {
+			docs = append(docs, d)
+		}
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	if len(docs) == 0 {
+		return 0, nil
+	}
+	defer x.progress.Store(nil)
 	n := 0
-	err := src.Pending(ctx, func(d domain.FileDoc) error {
+	for i, d := range docs {
+		x.progress.Store(&recognizeProgress{Done: i, Total: len(docs)})
 		if !x.latest(src) {
-			return errSuperseded
+			return n, errSuperseded
 		}
 		done, err := x.extractOne(ctx, src, d)
-		if err != nil || !done {
-			return err
+		if err != nil {
+			return n, err
+		}
+		if !done {
+			continue
 		}
 		if n++; n%extractBatch == 0 {
 			x.rerun(src)
 		}
-		return nil
-	})
-	return n, err
+	}
+	return n, nil
 }
 
 // extractOne recognizes one file and stores its text, empty when it failed.
@@ -112,7 +136,8 @@ func (x *indexer) extractOne(ctx context.Context, src *localfiles.Source, d doma
 	case ctx.Err() != nil:
 		return false, ctx.Err()
 	case errors.Is(err, extractcache.ErrTimeout):
-		log.Printf("files: не успел распознать %s: %v", d.Name(), err)
+		log.Printf("files: не успел распознать %s: %v; повтор не раньше чем через %s", d.Name(), err, x.retryTimeouts)
+		x.timedOut[timeoutKey(d)] = time.Now()
 		return false, nil
 	case err != nil:
 		log.Printf("files: не распознан %s: %v", d.Name(), err)
@@ -120,4 +145,9 @@ func (x *indexer) extractOne(ctx context.Context, src *localfiles.Source, d doma
 	}
 	// Ключ — от открытого файла: это та версия, которую прочел помощник.
 	return true, x.ext.cache.Put(d.Path(), info.Size(), info.ModTime(), text)
+}
+
+// timeoutKey names one version of a file: измененный файл пробуется сразу.
+func timeoutKey(d domain.FileDoc) string {
+	return d.Path() + "\x00" + strconv.FormatInt(d.Size(), 10) + "\x00" + strconv.FormatInt(d.ModTime().UnixNano(), 10)
 }

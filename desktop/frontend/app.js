@@ -74,9 +74,27 @@ function countUp(el, to) {
     requestAnimationFrame(tick);
   });
 }
-function setIndexed(n, skipped) {
-  $("#indexed").textContent = `${n.toLocaleString("ru-RU")} файлов` + (skipped ? ` · ${skipped} не прочитано` : "");
+function setIndexed(n, skipped, rec) {
+  $("#indexed").textContent = `${n.toLocaleString("ru-RU")} файлов` + (skipped ? ` · ${skipped} не прочитано` : "") +
+    (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
 }
+
+// Счет растет и после первой сборки: окно пересобирается по таймеру и
+// распознает PDF и картинки в фоне. Опрос часто, пока что-то идет, и раз в
+// 30 с в покое; спрятанное окно не опрашивается (ревью #381: 28 тыс. вызовов
+// в сутки у приложения, которое весь день в меню-баре). Ошибка пересборки
+// показывается, а не замораживает строку.
+async function pollIndex() {
+  let next = 30000;
+  if (native() && !document.hidden && !settingsOpen()) {
+    const st = await native().IndexStatus().catch(() => null);
+    if (st && st.error) $("#indexed").textContent = `пересборка не удалась: ${st.error}`;
+    else if (st && !st.building) setIndexed(st.indexed, st.skipped, st.recognizing);
+    if (st && (st.building || st.recognizing)) next = 3000;
+  }
+  setTimeout(pollIndex, next);
+}
+if (native()) setTimeout(pollIndex, 3000);
 
 // --- Поиск ---------------------------------------------------------------------
 let timer;

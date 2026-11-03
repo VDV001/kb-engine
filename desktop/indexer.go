@@ -19,6 +19,16 @@ type indexStatus struct {
 	Skipped  int    `json:"skipped"`
 	Reused   int    `json:"reused"` // взяты из снимка без чтения
 	Error    string `json:"error,omitempty"`
+	// Recognizing — идет проход распознавания PDF и картинок: сколько из
+	// скольких. Первый проход длится десятки минут, и без счета он неотличим
+	// от зависания.
+	Recognizing *recognizeProgress `json:"recognizing,omitempty"`
+}
+
+// recognizeProgress is how far the recognition pass has got.
+type recognizeProgress struct {
+	Done  int `json:"done"`
+	Total int `json:"total"`
 }
 
 // indexer собирает индекс файлов в фоне и пересобирает его при смене папок.
@@ -40,21 +50,54 @@ type indexer struct {
 	gen     int                // номер последней запущенной сборки
 	status  indexStatus
 
-	ext        extraction  // распознавание PDF и картинок (extract.go)
-	extracting atomic.Bool // идет проход распознавания: второй не запускается
+	every      time.Duration                     // как часто индекс догоняет диск (rebuildEvery)
+	ext        extraction                        // распознавание PDF и картинок (extract.go)
+	extracting atomic.Bool                       // идет проход распознавания: второй не запускается
+	progress   atomic.Pointer[recognizeProgress] // nil — прохода нет
+	// retryTimeouts — пауза перед новой попыткой файла, на котором помощник
+	// не уложился в таймаут; timedOut — когда это случилось. Трогает только
+	// горутина прохода, а проходы не идут одновременно (extracting).
+	retryTimeouts time.Duration
+	timedOut      map[string]time.Time
 }
 
+// rebuildEvery — как часто окно догоняет диск, тот же срок, что у MCP: сборка
+// инкрементальная (~0,5 с на 3 тыс. файлов из снимка), а после нее проход
+// распознает новые PDF и картинки.
+const rebuildEvery = 10 * time.Minute
+
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
-	return &indexer{files: files, src: src, pending: src, ctx: context.Background()}
+	return &indexer{files: files, src: src, pending: src, ctx: context.Background(), every: rebuildEvery,
+		retryTimeouts: time.Hour, timedOut: map[string]time.Time{}}
 }
 
 // start runs the first build with the source the window started with.
 func (x *indexer) start(ctx context.Context) {
 	x.mu.Lock()
 	x.ctx = ctx
-	src := x.pending
+	src, every := x.pending, x.every
 	x.mu.Unlock()
 	x.run(src)
+	// Прежде индекс собирался только при старте и смене папок: файл,
+	// сохраненный после запуска окна, не находился до перезапуска.
+	//
+	// ponytail: свое расписание рядом с расписанием MCP (cmd/kbengine-mcp
+	// refresh), политики могут разойтись. Потолок: третья поверхность с
+	// пересборкой. Путь: общий планировщик в usecase/filesearch.
+	go func() {
+		t := time.NewTicker(every)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if src := x.currentSource(); src != nil {
+					x.rerun(src) // только если папки с тех пор не сменились
+				}
+			}
+		}
+	}()
 }
 
 // apply opens the new folders and reindexes in the background.
@@ -124,6 +167,11 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 		log.Printf("files: %v", err)
 		if src != x.src {
 			_ = src.Close()
+			// Последним снова считается рабочий источник: иначе rerun по
+			// таймеру не запускался бы больше никогда (ревью #381).
+			if x.pending == src {
+				x.pending = x.src
+			}
 		}
 		if gen == x.gen {
 			x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
@@ -145,11 +193,13 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 	}
 }
 
-// Status returns the state of the latest build.
+// Status returns the state of the latest build and of the recognition pass.
 func (x *indexer) Status() indexStatus {
 	x.mu.Lock()
-	defer x.mu.Unlock()
-	return x.status
+	st := x.status
+	x.mu.Unlock()
+	st.Recognizing = x.progress.Load()
+	return st
 }
 
 func (x *indexer) superseded(gen int) bool {
