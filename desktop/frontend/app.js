@@ -301,8 +301,11 @@ waitForIndex();
 const panel = $("#settings"), scrim = $("#scrim");
 const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер" };
 const HUES = ["--z-sp4", "--z-sp2", "--z-sp6", "--z-sp1", "--z-sp5", "--z-sp3"];
-const draft = { sources: [], exclude: [], saved: "" };
-const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null };
+// tokens — токены серверов, введенные в формах, до сохранения: id → токен.
+// Уходят в Go один раз при сохранении (в Связку ключей) и стираются; обратно
+// Go отдает только признак hasToken.
+const draft = { sources: [], exclude: [], tokens: {}, saved: "" };
+const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null };
 let keySeq = 0;
 
 const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
@@ -333,12 +336,13 @@ const payload = () => ({
   sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
   exclude: draft.exclude,
 });
-const dirty = () => JSON.stringify(payload()) !== draft.saved;
+const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(draft.tokens).length > 0;
 const byKey = (k) => draft.sources.find((s) => s._key === k);
 
 function load(v) {
   draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
+  draft.tokens = {};
   draft.saved = JSON.stringify(payload());
 }
 
@@ -388,6 +392,8 @@ function stateOf(s) {
   const note = s.note ? ` title="${esc(s.note)}"` : "";
   switch (s.state) {
     case "ok":
+      if (s.kind === "server")
+        return `<span class="state ok"${note}><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
       return s.kind === "folder"
         ? `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "файл", "файла", "файлов")}</span>`
         : `<span class="state ok"><span class="sdot"></span>${fmt(s.count)} ${plural(s.count, "запись", "записи", "записей")}</span>`;
@@ -407,6 +413,7 @@ function formOf(s, i) {
     return `<div class="form">
       <div class="field"><label for="en-${s._key}">имя</label><input id="en-${s._key}" value="${esc(s.name || "")}" placeholder="${esc(label(s))}"></div>
       <div class="field"><label for="ea-${s._key}">${what}</label><input id="ea-${s._key}" value="${esc(target(s))}" spellcheck="false">${pick}</div>
+      ${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
       <div class="formbar"><button class="btn primary" data-save="${s._key}">Готово</button><button class="btn" data-cancel>Отмена</button></div></div>`;
   if (ui.replacing === s._key)
     return `<div class="form">
@@ -418,6 +425,16 @@ function formOf(s, i) {
       <button class="btn danger" data-dodel="${s._key}">Убрать</button><button class="btn" data-cancel>Оставить</button></div></div>`;
   return "";
 }
+
+// Поле токена: сам токен сюда не возвращается никогда — только «сохранен».
+const tokenField = (id, saved) =>
+  `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
+    placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}"></div>`;
+const checkBar = (key) => {
+  const v = ui.verdict && ui.verdict.key === key ? ui.verdict : null;
+  return `<div class="formbar"><button class="btn" data-check="${key}">Проверить</button>
+    <span class="check-verdict ${v ? v.state : ""}" role="status">${v ? esc(v.text) : "адрес и токен проверяются до сохранения"}</span></div>`;
+};
 
 function renderSources() {
   const n = draft.sources.length, hue = hues();
@@ -450,8 +467,10 @@ function renderSources() {
     form = `<div class="row"><input id="na" placeholder="~/…/knowledge-base/_data/catalog.json" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
       <span class="hint">читается первый включенный каталог списка</span>`;
   else if (ui.addKind === "server")
-    form = `<div class="row"><input id="na" placeholder="https://kb.example.ru" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
-      <span class="hint">http — только для этого Mac. Токен и проверка связи появятся с клиентом сервера, до тех пор источник хранится и не читается</span>`;
+    form = `<div class="field"><label for="na">адрес</label><input id="na" placeholder="https://kb.example.ru" spellcheck="false"></div>
+      ${tokenField("nt", false)}${checkBar("new")}
+      <div class="row"><button class="btn primary" data-addok>Подключить</button>
+      <span class="hint">http — только для этого Mac; токен уйдет в Связку ключей macOS, не в config.json</span></div>`;
   $("#add").innerHTML = `<div class="row"><span class="muted">+ источник</span><span class="seg" role="group" aria-label="Вид источника">${kinds}</span></div>${form}`;
 
   $("#excludes").innerHTML = draft.exclude.map((r, i) =>
@@ -527,10 +546,28 @@ panel.addEventListener("click", async (e) => {
   if (d.edit) { ui.editing = d.edit; ui.replacing = ui.confirmDel = null; renderSources(); return focusSoon(`#en-${d.edit}`); }
   if (d.replace) { ui.replacing = d.replace; ui.editing = ui.confirmDel = null; renderSources(); return focusSoon(`#ra-${d.replace}`); }
   if (d.del) { ui.confirmDel = d.del; ui.editing = ui.replacing = null; renderSources(); return focusSoon(`[data-dodel="${d.del}"]`); }
-  if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = null; return renderSources(); }
+  if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = ui.verdict = null; return renderSources(); }
+  if (d.check) {
+    const isNew = d.check === "new", s = isNew ? null : byKey(d.check);
+    const url = (isNew ? $("#na") : $(`#ea-${s._key}`)).value.trim();
+    const tok = (isNew ? $("#nt") : $(`#et-${s._key}`)).value.trim() || (s && draft.tokens[s.id]) || "";
+    const typed = { url, tok, na: isNew ? $("#na").value : null, nt: isNew ? $("#nt").value : null };
+    ui.verdict = { key: d.check, state: "wait", text: "проверяю…" };
+    renderAndKeep(d.check, typed);
+    try {
+      const info = await native().CheckServer(s ? s.id : "", url, tok);
+      ui.verdict = { key: d.check, state: "ok", text: `● kbengine ${info.version} · ${fmt(info.entries)} ${plural(info.entries, "запись", "записи", "записей")}` };
+    } catch (err) {
+      ui.verdict = { key: d.check, state: "bad", text: String(err).replace(/^Error: /, "") };
+    }
+    return renderAndKeep(d.check, typed);
+  }
   if (d.save) {
     const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
     if (!v) return focusSoon(`#ea-${s._key}`);
+    const tok = s.kind === "server" ? $(`#et-${s._key}`).value.trim() : "";
+    if (tok) draft.tokens[s.id] = tok;
+    ui.verdict = null;
     const undo = change(() => { s.name = name; setTarget(s, v); });
     return toast("Изменено", ` · «${label(s)}»`, undo);
   }
@@ -561,6 +598,13 @@ panel.addEventListener("click", async (e) => {
     if (!v) return focusSoon("#na");
     const s = { id: "", kind: ui.addKind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
     setTarget(s, v);
+    if (s.kind === "server") {
+      // id выдает Go сразу: к нему привязан токен в Связке ключей.
+      s.id = await native().NewSourceID("server");
+      const tok = $("#nt").value.trim();
+      if (tok) draft.tokens[s.id] = tok;
+      ui.verdict = null;
+    }
     const undo = change(() => draft.sources.push(s));
     ui.addKind = null;
     renderSources();
@@ -568,6 +612,19 @@ panel.addEventListener("click", async (e) => {
   }
   if (d.unex !== undefined) { draft.exclude.splice(+d.unex, 1); return renderSources(); }
 });
+
+// Перерисовка во время проверки сохраняет то, что человек уже набрал в форме.
+function renderAndKeep(key, typed) {
+  renderSources();
+  if (key === "new") {
+    if ($("#na")) $("#na").value = typed.na;
+    if ($("#nt")) $("#nt").value = typed.nt;
+  } else {
+    const s = byKey(key);
+    if (s && $(`#ea-${key}`)) $(`#ea-${key}`).value = typed.url;
+    if (s && $(`#et-${key}`) && typed.tok !== draft.tokens[s.id]) $(`#et-${key}`).value = typed.tok;
+  }
+}
 
 // Enter в поле формы — главная кнопка этой формы.
 panel.addEventListener("keydown", (e) => {
@@ -639,7 +696,7 @@ $("#save-settings").onclick = async () => {
   try {
     // Проверку делает Go: новая папка обязана существовать, иначе отказ с ее
     // именем и без изменений — ни конфига, ни индекса.
-    await native().SetSources(p.sources, p.exclude);
+    await native().SetSources(p.sources, p.exclude, draft.tokens);
   } catch (e) {
     setBusy(false);
     showError(String(e));

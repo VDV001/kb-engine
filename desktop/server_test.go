@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -17,13 +18,14 @@ const srvToken = "k3Jx9_secret-token-0123456789abcdefXYZ"
 // fakeTokens — Связка ключей в памяти: тесты проверяют, что окно кладет и
 // убирает, а не саму Связку (у нее свои тесты на временной связке).
 type fakeTokens struct {
-	m    map[string]string
-	fail error
+	m      map[string]string
+	fail   error
+	failOn string // отказ только для этой учетки
 }
 
 func (f *fakeTokens) Set(acct, secret string) error {
-	if f.fail != nil {
-		return f.fail
+	if f.fail != nil || acct == f.failOn {
+		return errors.Join(f.fail, errors.New("keychain refused "+acct))
 	}
 	f.m[acct] = secret
 	return nil
@@ -46,9 +48,12 @@ func newServerSettings(t *testing.T) (*folderSettings, *fakeTokens, *[]probeCall
 	s, _, _ := newSourcesSettings(t)
 	tok := &fakeTokens{m: map[string]string{}}
 	var calls []probeCall
+	var mu sync.Mutex // опросы серверов идут параллельно
 	s.tokens = tok
 	s.probe = func(_ context.Context, url, token string) (kbserver.Info, error) {
+		mu.Lock()
 		calls = append(calls, probeCall{url, token})
+		mu.Unlock()
 		switch {
 		case strings.Contains(url, "down"):
 			return kbserver.Info{}, kbserver.ErrUnreachable
@@ -182,5 +187,30 @@ func TestCheckServer(t *testing.T) {
 	// отказ до запроса, токен не уходит открытым текстом.
 	if _, err := s.CheckServer("server-new00000", "http://kb.example.ru", srvToken); !errors.Is(err, desktopconfig.ErrSourceTarget) {
 		t.Fatalf("http в сеть: %v", err)
+	}
+}
+
+// Связка отказала на втором токене: первый, уже записанный, возвращается к
+// прежнему значению — конфиг не пишется, и токены не должны разойтись с ним.
+func TestSetSources_TokenFailureRollsBack(t *testing.T) {
+	s, tok, _ := newServerSettings(t)
+	list := append(withFolder("~/notes"),
+		desktopconfig.Source{ID: "server-00000001", Kind: desktopconfig.KindServer, URL: "https://a.example.ru", Enabled: true},
+		desktopconfig.Source{ID: "server-00000002", Kind: desktopconfig.KindServer, URL: "https://b.example.ru", Enabled: true},
+	)
+	tok.m["server-00000001"] = "old-token"
+	tok.failOn = "server-00000002"
+	// Порядок обхода map случаен: прогон повторяется, чтобы первым хоть раз
+	// записался server-00000001.
+	for range 20 {
+		if err := s.SetSources(list, nil, map[string]string{"server-00000001": srvToken, "server-00000002": srvToken}); err == nil {
+			t.Fatal("ждали отказ")
+		}
+		if tok.m["server-00000001"] != "old-token" {
+			t.Fatalf("первый токен не откатился: %q", tok.m["server-00000001"])
+		}
+		if _, ok := tok.m["server-00000002"]; ok {
+			t.Fatal("второй токен остался")
+		}
 	}
 }

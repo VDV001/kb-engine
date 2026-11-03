@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 )
 
 type appliedSources struct {
@@ -49,6 +51,10 @@ func newSourcesSettings(t *testing.T) (*folderSettings, *appliedSources, string)
 			return m
 		},
 		countCatalog: func() (int, error) { return 42, nil },
+		tokens:       &fakeTokens{m: map[string]string{}},
+		probe: func(context.Context, string, string) (kbserver.Info, error) {
+			return kbserver.Info{}, kbserver.ErrUnreachable
+		},
 	}
 	return s, got, home
 }
@@ -164,7 +170,8 @@ func TestGetSources_States(t *testing.T) {
 	for _, r := range v.Sources {
 		rows = append(rows, row{r.ID, r.State, r.Count})
 	}
-	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", statePending, 0}}
+	// Сервер теперь опрашивается: подставной опрос отвечает «нет связи».
+	want := []row{{"folder-1", stateOK, 7}, {"folder-2", stateMissing, 0}, {"catalog-1", stateOK, 42}, {"server-1", stateMissing, 0}}
 	if !slices.Equal(rows, want) || !slices.Equal(v.Exclude, []string{"finances"}) {
 		t.Fatalf("rows = %+v exclude = %q", rows, v.Exclude)
 	}

@@ -146,11 +146,17 @@ func (c Config) CatalogPath() string {
 func (c *Config) AssignIDs() {
 	for i := range c.Sources {
 		if c.Sources[i].ID == "" {
-			var b [4]byte
-			_, _ = rand.Read(b[:]) // crypto/rand.Read не возвращает ошибку (Go 1.24+)
-			c.Sources[i].ID = string(c.Sources[i].Kind) + "-" + hex.EncodeToString(b[:])
+			c.Sources[i].ID = NewID(c.Sources[i].Kind)
 		}
 	}
+}
+
+// NewID returns a fresh "<kind>-<8 hex>". Окно берет его, добавляя сервер: к id
+// привязан токен в Связке ключей, и он нужен до сохранения списка.
+func NewID(k Kind) string {
+	var b [4]byte
+	_, _ = rand.Read(b[:]) // crypto/rand.Read не возвращает ошибку (Go 1.24+)
+	return string(k) + "-" + hex.EncodeToString(b[:])
 }
 
 // migrate builds sources from the fields of the config before sources:

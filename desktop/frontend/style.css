@@ -312,6 +312,11 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .seg button:hover { color: var(--z-ink); }
 .seg button[aria-pressed="true"] { background: var(--z-accent-wash); color: var(--z-ink); }
 .add .hint { color: var(--z-faint); font-size: 11px; }
+/* Итог «Проверить» в форме сервера: зеленый — версия и счет, красный — что не так. */
+.check-verdict { font-size: 12px; color: var(--z-faint); }
+.check-verdict.ok { color: var(--z-ok); }
+.check-verdict.bad { color: var(--z-bad); }
+.check-verdict.wait { color: var(--z-muted); }
 .dirty { color: var(--z-head-ink); }
 
 /* Подсказка о действии с «Вернуть»: рамка-градиент из спектра сайта, полоска

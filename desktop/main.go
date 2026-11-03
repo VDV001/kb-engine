@@ -79,7 +79,8 @@ func run() error {
 	defer cancel()
 	opened, _ := desktopconfig.NormalizeRoots(cfg.FolderRoots(), home) // то же, что открыл newAPI
 	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, applied: opened,
-		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count}
+		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count,
+		tokens: keychainTokens(), probe: probeServer}
 	idx.reconcile = settings.reconcile // до start: горутина таймера читает поле
 	idx.start(ctx)
 
