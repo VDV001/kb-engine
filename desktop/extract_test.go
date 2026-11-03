@@ -177,6 +177,7 @@ func TestIndexer_TimeoutIsRetried(t *testing.T) {
 func TestIndexer_FolderChangeDuringPass(t *testing.T) {
 	a, b := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(a, "a.png"), "A")
+	writeFile(t, filepath.Join(a, "z.png"), "A2") // после a.png в порядке обхода
 	writeFile(t, filepath.Join(a, "only-a.md"), "старая папка")
 	writeFile(t, filepath.Join(b, "b.png"), "B")
 	release := make(chan struct{})
@@ -198,6 +199,10 @@ func TestIndexer_FolderChangeDuringPass(t *testing.T) {
 	waitSettled(t, x)
 	if n := ext.count("B"); n != 1 {
 		t.Fatalf("новые папки распознаны %d раз, ждали 1", n)
+	}
+	// Остаток старых папок после смены не распознается: проход остановился.
+	if n := ext.count("A2"); n != 0 {
+		t.Fatalf("старая папка распознавалась дальше: %d", n)
 	}
 	if hits, _ := x.files.Search("старая папка", 5); len(hits) != 0 {
 		t.Fatalf("индекс откатился на старые папки: %+v", hits)
