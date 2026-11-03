@@ -39,25 +39,11 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "files: нужны --root и --q")
 		return 2
 	}
-	for i, r := range roots {
-		abs, err := filepath.Abs(r)
-		if err != nil {
-			fmt.Fprintf(stderr, "files: %v\n", err)
-			return 1
-		}
-		roots[i] = abs
-	}
-
-	src, err := localfiles.New(roots, exclude)
+	svc, err := newFileService(roots, exclude, *indexPath)
 	if err != nil {
 		fmt.Fprintf(stderr, "files: %v\n", err)
 		return 1
 	}
-	var opts []filesearch.Option
-	if *indexPath != "" {
-		opts = append(opts, filesearch.WithStore(fileindexgob.Store{Path: *indexPath}))
-	}
-	svc := filesearch.NewService(src, opts...)
 	start := time.Now()
 	st, err := svc.Build(context.Background())
 	if errors.Is(err, filesearch.ErrSaveFailed) {
@@ -83,4 +69,27 @@ func runFiles(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "\n%s\n  %s\n", h.Doc.Path(), h.Snippet)
 	}
 	return 0
+}
+
+// newFileService builds the file search over roots, keeping the index in
+// indexPath when one is given. Один сборщик на files и serve: правила обхода
+// и хранения индекса не должны разойтись между командами.
+func newFileService(roots, exclude []string, indexPath string) (*filesearch.Service, error) {
+	abs := make([]string, 0, len(roots))
+	for _, r := range roots {
+		a, err := filepath.Abs(r)
+		if err != nil {
+			return nil, err
+		}
+		abs = append(abs, a)
+	}
+	src, err := localfiles.New(abs, exclude)
+	if err != nil {
+		return nil, err
+	}
+	var opts []filesearch.Option
+	if indexPath != "" {
+		opts = append(opts, filesearch.WithStore(fileindexgob.Store{Path: indexPath}))
+	}
+	return filesearch.NewService(src, opts...), nil
 }
