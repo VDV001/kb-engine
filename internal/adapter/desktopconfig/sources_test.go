@@ -312,3 +312,22 @@ func TestConfig_SetFolderRoots_ClearsLegacyFields(t *testing.T) {
 		t.Fatalf("sources = %+v", cfg.Sources)
 	}
 }
+
+// Окно присылает новый источник без id: AssignIDs выдает первый свободный
+// «<вид>-N», не трогая уже выданные.
+func TestConfig_AssignIDs(t *testing.T) {
+	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "folder-2", Kind: desktopconfig.KindFolder, Path: "/a", Enabled: true},
+		{Kind: desktopconfig.KindFolder, Path: "/b", Enabled: true},
+		{Kind: desktopconfig.KindServer, URL: "https://kb.example"},
+		{Kind: desktopconfig.KindFolder, Path: "/c"},
+	}}
+	cfg.AssignIDs()
+	var ids []string
+	for _, s := range cfg.Sources {
+		ids = append(ids, s.ID)
+	}
+	if !slices.Equal(ids, []string{"folder-2", "folder-3", "server-1", "folder-4"}) {
+		t.Fatalf("ids = %q", ids)
+	}
+}
