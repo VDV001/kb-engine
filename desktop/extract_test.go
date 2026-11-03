@@ -211,3 +211,30 @@ func TestIndexer_FolderChangeDuringPass(t *testing.T) {
 		t.Fatalf("hits = %+v", hits)
 	}
 }
+
+// Окно показывает, сколько распознано из скольких: первый проход идет
+// десятки минут, и без счета он неотличим от зависания.
+func TestIndexer_ReportsRecognitionProgress(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "a.png"), "A")
+	writeFile(t, filepath.Join(root, "b.png"), "B")
+	release := make(chan struct{})
+	ext := &fakeExtractor{text: "текст", hold: map[string]chan struct{}{"B": release}, began: make(chan string, 4)}
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "",
+		extraction{cache: extractcache.Cache{Dir: t.TempDir()}, helper: ext})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(context.Background())
+	<-ext.began // a.png
+	<-ext.began // b.png держится
+	st := x.Status()
+	if st.Recognizing == nil || st.Recognizing.Total != 2 || st.Recognizing.Done != 1 {
+		t.Fatalf("посреди прохода: %+v", st.Recognizing)
+	}
+	close(release)
+	waitSettled(t, x)
+	if st := x.Status(); st.Recognizing != nil {
+		t.Fatalf("после прохода: %+v", st.Recognizing)
+	}
+}
