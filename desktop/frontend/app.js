@@ -52,6 +52,8 @@ async function waitForIndex() {
       $("#indexing-count").textContent = "—";
       $(".indexing-bar").hidden = true;
       $(".indexing-main .muted").textContent = why.trim() || "Причина неизвестна";
+      // Экран закрывает кнопку настроек — даем выход прямо с него.
+      $("#indexing-settings").hidden = false;
       return;
     }
     if (!shown && r.status === 503) { screen.hidden = false; shown = true; }
@@ -234,6 +236,7 @@ function showEmpty() {
 
 // --- Клавиатура ----------------------------------------------------------------
 document.addEventListener("keydown", (e) => {
+  if (settingsOpen()) return; // клавиши поиска не трогают панель папок
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
@@ -251,3 +254,136 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("resize", moveInk);
 moveInk();
 waitForIndex();
+
+// --- Папки для поиска ----------------------------------------------------------
+// Меняются только в окне, через привязки Wails: у HTTP API такой ручки нет
+// намеренно. В браузере (dev-режим) панель объясняет это и ничего не меняет.
+const panel = $("#settings"), scrim = $("#scrim");
+const draft = { roots: [], exclude: [] };
+
+async function openSettings() {
+  scrim.hidden = false;
+  panel.classList.add("open");
+  panel.setAttribute("aria-hidden", "false");
+  showError("");
+  const editable = !!native();
+  for (const id of ["#pick", "#add-root", "#add-exclude", "#save-settings", "#root-input", "#exclude-input"]) $(id).disabled = !editable;
+  if (!editable) {
+    draft.roots = []; draft.exclude = [];
+    renderFolders();
+    $("#settings-note").textContent = "Папки меняются в окне приложения, не в браузере.";
+    return;
+  }
+  let v;
+  try {
+    v = await native().Folders();
+  } catch (e) {
+    showError("Не удалось прочитать настройки: " + e);
+    return;
+  }
+  draft.roots = [...(v.roots || [])];
+  draft.exclude = [...(v.exclude || [])];
+  draft.missing = [...(v.missing || [])];
+  $("#settings-note").textContent = "";
+  renderFolders();
+}
+function closeSettings() {
+  panel.classList.remove("open");
+  panel.setAttribute("aria-hidden", "true");
+  scrim.hidden = true;
+  $("#q").focus();
+}
+const settingsOpen = () => panel.classList.contains("open");
+
+function renderFolders() {
+  const row = (text, i, list) =>
+    `<li><span class="path" title="${esc(text)}">${esc(text.replace(/^\/Users\/[^/]+/, "~"))}</span><button data-list="${list}" data-i="${i}" aria-label="Убрать">✕</button></li>`;
+  // Папки из конфига, которых нет или к которым нет доступа: не индексируются
+  // и при сохранении уйдут из списка — говорим об этом заранее.
+  const missing = (draft.missing || []).map((m) =>
+    `<li class="empty-row" title="Не индексируется и уйдет из списка при сохранении">${esc(m.replace(/^\/Users\/[^/]+/, "~"))}</li>`).join("");
+  $("#roots").innerHTML = (draft.roots.length
+    ? draft.roots.map((r, i) => row(r, i, "roots")).join("")
+    : `<li class="empty-row">Ни одной папки — добавьте хотя бы одну</li>`) + missing;
+  $("#excludes").innerHTML = draft.exclude.map((r, i) => row(r, i, "exclude")).join("");
+}
+function showError(msg) {
+  const el = $("#settings-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+function addTo(list, value) {
+  value = (value || "").trim();
+  if (value && !draft[list].includes(value)) draft[list].push(value);
+  renderFolders();
+}
+
+$("#open-settings").onclick = openSettings;
+$("#close-settings").onclick = closeSettings;
+scrim.onclick = closeSettings;
+$("#pick").onclick = async () => {
+  try { addTo("roots", await native().PickFolder()); } catch (e) { showError(String(e)); }
+};
+$("#add-root").onclick = () => { addTo("roots", $("#root-input").value); $("#root-input").value = ""; };
+$("#add-exclude").onclick = () => { addTo("exclude", $("#exclude-input").value); $("#exclude-input").value = ""; };
+$("#root-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-root").click());
+$("#exclude-input").addEventListener("keydown", (e) => e.key === "Enter" && $("#add-exclude").click());
+panel.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-list]");
+  if (!b) return;
+  draft[b.dataset.list].splice(+b.dataset.i, 1);
+  renderFolders();
+});
+
+$("#save-settings").onclick = async () => {
+  showError("");
+  const btn = $("#save-settings");
+  btn.disabled = true;
+  try {
+    // Проверку делает Go: папка обязана существовать, иначе отказ с ее именем
+    // и без изменений — ни конфига, ни индекса.
+    await native().SetFolders(draft.roots, draft.exclude);
+  } catch (e) {
+    showError(String(e));
+    btn.disabled = false;
+    return;
+  }
+  $("#settings-note").innerHTML = `<span class="building"></span>Переиндексация…`;
+  $("#indexed").innerHTML = `<span class="building"></span>переиндексация`;
+  try {
+    for (;;) {
+      const st = await native().IndexStatus();
+      if (!st.building) {
+        if (st.error) showError("Индекс не собрался: " + st.error);
+        else {
+          $("#settings-note").textContent = `Готово: ${st.indexed.toLocaleString("ru-RU")} файлов`;
+          draft.missing = [];
+          renderFolders();
+          hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
+        }
+        setIndexed(st.indexed, st.skipped);
+        if (state.q) search(state.q);
+        break;
+      }
+      await sleep(400);
+    }
+  } catch (e) {
+    showError("Не удалось узнать статус индекса: " + e);
+  } finally {
+    btn.disabled = false; // кнопка не остается выключенной ни при каком исходе
+  }
+};
+
+// Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
+document.addEventListener("keydown", (e) => {
+  if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
+  else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings(); }
+}, true);
+
+function hideIndexingScreen() {
+  const screen = $("#indexing");
+  if (screen.hidden) return;
+  screen.classList.add("leave");
+  setTimeout(() => { screen.hidden = true; screen.classList.remove("leave"); }, 500);
+}
+$("#indexing-settings").onclick = openSettings;

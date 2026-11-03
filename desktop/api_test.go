@@ -22,11 +22,11 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	h, svc, err := newAPI(config{Roots: []string{root}, Catalog: catalog})
+	h, x, err := newAPI(config{Roots: []string{root}, Catalog: catalog})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Build(context.Background()); err != nil {
+	if _, err := x.files.Build(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -45,11 +45,11 @@ func TestNewAPI_ServesFilesAndCatalog(t *testing.T) {
 }
 
 func TestNewAPI_WithoutCatalogStillSearchesFiles(t *testing.T) {
-	h, svc, err := newAPI(config{Roots: []string{t.TempDir()}})
+	h, x, err := newAPI(config{Roots: []string{t.TempDir()}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.Build(context.Background()); err != nil {
+	if _, err := x.files.Build(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	req := httptest.NewRequest(http.MethodGet, "/api/files/search?q=x", nil)

@@ -265,3 +265,52 @@ func TestService_CheckDelegatesToSource(t *testing.T) {
 		t.Fatalf("Check(.env) = %v", err)
 	}
 }
+
+func TestService_ReplaceSwapsSourceAndIndex(t *testing.T) {
+	// Владелец меняет папки в окне: новый индекс собирается с новым источником,
+	// а до конца сборки поиск отвечает по старому — окно не пустеет.
+	svc := filesearch.NewService(fakeSource{files: map[string]string{"/old/a.md": "договор"}})
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	st, err := svc.Replace(context.Background(), fakeSource{files: map[string]string{"/new/b.md": "договор поставки"}})
+	if err != nil || st.Indexed != 1 {
+		t.Fatalf("Replace = %+v, %v", st, err)
+	}
+	hits, err := svc.Search("договор", 5)
+	if err != nil || len(hits) != 1 || hits[0].Doc.Path() != "/new/b.md" {
+		t.Fatalf("после Replace hits = %+v, %v", hits, err)
+	}
+	// Чтение и проверка идут через новый источник: старой папки больше нет.
+	if err := svc.Check("/old/a.md"); !errors.Is(err, filesearch.ErrNotAllowed) {
+		t.Fatalf("Check(old) = %v", err)
+	}
+	if _, err := svc.Read("/new/b.md"); err != nil {
+		t.Fatalf("Read(new) = %v", err)
+	}
+}
+
+func TestService_FailedReplaceKeepsOldIndex(t *testing.T) {
+	svc := filesearch.NewService(fakeSource{files: map[string]string{"/old/a.md": "договор"}})
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Replace(context.Background(), fakeSource{walkErr: errors.New("disk gone")}); err == nil {
+		t.Fatal("ждали ошибку")
+	}
+	if hits, err := svc.Search("договор", 5); err != nil || len(hits) != 1 {
+		t.Fatalf("старый индекс потерян: %+v, %v", hits, err)
+	}
+}
+
+func TestService_FailedReplaceLeavesNoStaleError(t *testing.T) {
+	// Пока старый индекс отвечает, ошибки «индекса нет» быть не должно.
+	svc := filesearch.NewService(fakeSource{files: map[string]string{"/old/a.md": "договор"}})
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = svc.Replace(context.Background(), fakeSource{walkErr: errors.New("disk gone")})
+	if _, err := svc.Search("договор", 5); err != nil {
+		t.Fatalf("Search после неудачной пересборки: %v", err)
+	}
+}

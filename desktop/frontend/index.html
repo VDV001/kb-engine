@@ -17,6 +17,7 @@
       <div class="big" id="indexing-count">0</div>
       <div class="indexing-bar"><span></span></div>
       <div class="muted">Только при запуске. Потом поиск мгновенный.</div>
+      <button class="btn primary" id="indexing-settings" hidden>Выбрать папки</button>
     </div>
   </section>
 
@@ -25,6 +26,9 @@
       <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="q" type="search" placeholder="Искать в базе и файлах" autocomplete="off" spellcheck="false" autofocus>
       <span class="kbd" id="count"></span>
+      <button class="gear" id="open-settings" title="Папки для поиска (⌘,)" aria-label="Настройки">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/><path d="M12 13v4M10 15h4"/></svg>
+      </button>
     </header>
 
     <nav class="tabs" id="tabs">
@@ -51,6 +55,40 @@
       <span class="keys"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>esc</b> очистить</span>
     </footer>
   </main>
+
+  <!-- Папки для поиска. Меняются только в окне: в браузере (dev-режим) панель
+       только показывает список — менять папки через HTTP нельзя намеренно. -->
+  <div class="scrim" id="scrim" hidden></div>
+  <aside class="settings" id="settings" aria-hidden="true">
+    <div class="settings-head">
+      <div>
+        <div class="eyebrow">Настройки</div>
+        <h2>Папки для поиска</h2>
+      </div>
+      <button class="close" id="close-settings" aria-label="Закрыть">✕</button>
+    </div>
+    <p class="muted">Что индексировать на этом компьютере. Секреты (.env, ключи) и служебные папки пропускаются всегда.</p>
+
+    <ul class="folders" id="roots"></ul>
+    <div class="add-row">
+      <button class="btn primary" id="pick">Выбрать папку…</button>
+      <input id="root-input" placeholder="или впишите путь: ~/Documents" spellcheck="false" autocomplete="off">
+      <button class="btn" id="add-root">Добавить</button>
+    </div>
+
+    <h3>Не заходить в папки</h3>
+    <ul class="folders chips" id="excludes"></ul>
+    <div class="add-row">
+      <input id="exclude-input" placeholder="имя папки, например finances" spellcheck="false" autocomplete="off">
+      <button class="btn" id="add-exclude">Добавить</button>
+    </div>
+
+    <p class="settings-error" id="settings-error" hidden></p>
+    <div class="settings-foot">
+      <span class="muted" id="settings-note"></span>
+      <button class="btn primary" id="save-settings">Сохранить и переиндексировать</button>
+    </div>
+  </aside>
 
   <script src="app.js"></script>
 </body>
