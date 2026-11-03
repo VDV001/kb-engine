@@ -151,3 +151,23 @@ func TestClient_RedirectIsItsOwnError(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// Адрес с путем (kb за прокси на /kb/) — запросы идут под этот путь.
+func TestClient_URLWithPath(t *testing.T) {
+	var paths []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		if strings.HasSuffix(r.URL.Path, "/api/engine") {
+			_, _ = w.Write([]byte(`{"version":"0.29.0"}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"total":3}`))
+	}))
+	t.Cleanup(srv.Close)
+	if _, err := (kbserver.Client{URL: srv.URL + "/kb/", Token: token, HTTP: srv.Client()}).Info(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) != 2 || paths[0] != "/kb/api/engine" || paths[1] != "/kb/api/stats" {
+		t.Fatalf("paths = %q", paths)
+	}
+}

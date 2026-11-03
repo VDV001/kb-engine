@@ -269,3 +269,17 @@ func TestConfig_AssignIDs(t *testing.T) {
 		t.Fatalf("id удаленного источника выдан снова: %q", gone)
 	}
 }
+
+// Адрес с запросом или фрагментом (скопирован из браузера) ломал путь к API
+// и выглядел как «не kb-сервер» — отказ сразу, с понятной причиной.
+func TestValidate_ServerURLWithoutQueryOrFragment(t *testing.T) {
+	for _, u := range []string{"https://kb.example.ru/?ref=x", "https://kb.example.ru/#/now"} {
+		cfg := desktopconfig.Config{Sources: []desktopconfig.Source{{ID: "server-1", Kind: desktopconfig.KindServer, URL: u, Enabled: true}}}
+		if err := cfg.Validate(); !errors.Is(err, desktopconfig.ErrSourceTarget) {
+			t.Fatalf("%s: err = %v", u, err)
+		}
+	}
+	if err := desktopconfig.CheckServerURL("https://kb.example.ru/kb/"); err != nil {
+		t.Fatalf("путь в адресе допустим: %v", err)
+	}
+}

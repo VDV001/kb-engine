@@ -59,7 +59,9 @@ func TestStore_SetGetDelete(t *testing.T) {
 // поэтому такой секрет — отказ, а не тихая порча.
 func TestStore_RejectsUnsafeSecretAndAccount(t *testing.T) {
 	s := keychain.Store{Service: "kb-desktop-test", Keychain: filepath.Join(t.TempDir(), "never.keychain")}
-	for _, bad := range []string{"", `ab"cd`, `ab\cd`, "ab cd", "ab\ncd", "ab\tcd"} {
+	// Не-ASCII (кириллица, неразрывный пробел из мессенджера) %q записал бы
+	// как \uXXXX, а security -i не раскрывает такие escape.
+	for _, bad := range []string{"", `ab"cd`, `ab\cd`, "ab cd", "ab\ncd", "ab\tcd", "токен", "ab\u00a0cd"} {
 		if err := s.Set("server-ab12cd34", bad); !errors.Is(err, keychain.ErrBadValue) {
 			t.Fatalf("секрет %q: err = %v, want ErrBadValue", bad, err)
 		}

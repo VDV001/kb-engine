@@ -369,3 +369,12 @@ func TestServerMessage_Redirect(t *testing.T) {
 		t.Fatalf("message = %q", got)
 	}
 }
+
+// Отказ адреса в «Проверить» — словами человека, без внутреннего id.
+func TestCheckServer_AddressMessageIsHuman(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	_, err := s.CheckServer("server-new00000", "http://192.168.1.10:8080", srvToken)
+	if !errors.Is(err, desktopconfig.ErrSourceTarget) || strings.Contains(err.Error(), "check") || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("err = %v", err)
+	}
+}
