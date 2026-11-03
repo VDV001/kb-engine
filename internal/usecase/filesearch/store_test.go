@@ -2,6 +2,7 @@ package filesearch_test
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"testing"
 	"time"
@@ -286,5 +287,41 @@ func TestSnapshot_KeepsOldAndFarDates(t *testing.T) {
 		if got := back.Search("слово", 1)[0].Doc.ModTime(); !got.Equal(mod) {
 			t.Errorf("дата %v вернулась как %v", mod, got)
 		}
+	}
+}
+
+// Выгруженный индекс освобождает память, но не доступ: чтение идет через тот
+// же источник, а следующая сборка берет индекс из снимка, не перечитывая файлы.
+// Так MCP отпускает индекс сессии, которая давно не искала.
+func TestService_UnloadKeepsSourceAndReloadsFromStore(t *testing.T) {
+	store := &memStore{}
+	reads := 0
+	src := countingSource{files: map[string]file{"/w/a.md": {"договор", t0}}, reads: &reads}
+	svc := filesearch.NewService(src, filesearch.WithStore(store))
+	if _, err := svc.Build(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	svc.Unload()
+	if _, err := svc.Search("договор", 5); !errors.Is(err, filesearch.ErrNotBuilt) {
+		t.Fatalf("после выгрузки: err = %v, ждали ErrNotBuilt", err)
+	}
+	if st := svc.Stats(); st != (filesearch.Stats{}) {
+		t.Fatalf("после выгрузки stats = %+v, ждали нулевые", st)
+	}
+	if text, err := svc.Read("/w/a.md"); err != nil || text != "договор" {
+		t.Fatalf("чтение после выгрузки: %q, %v", text, err)
+	}
+
+	reads = 0
+	st, err := svc.Build(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reads != 0 || st.Reused != 1 || store.saves != 1 {
+		t.Fatalf("сборка после выгрузки: reads=%d stats=%+v saves=%d, ждали снимок без чтения", reads, st, store.saves)
+	}
+	if hits, _ := svc.Search("договор", 5); len(hits) != 1 {
+		t.Fatalf("hits = %v", hits)
 	}
 }
