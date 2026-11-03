@@ -3,12 +3,18 @@ package filesearch
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // ErrNotBuilt is returned when Search is called before Build.
 var ErrNotBuilt = errors.New("file index is not built")
+
+// ErrNotAllowed is what a Source returns for a path it refuses to read:
+// outside its roots, a secret, a junk folder. It belongs to the port, not to
+// one adapter, so every surface (HTTP, MCP) maps it the same way.
+var ErrNotAllowed = errors.New("path is not allowed")
 
 // snippetRunes — длина строки совпадения в выдаче: хватает на мысль, не
 // хватает на абзац.
@@ -29,9 +35,16 @@ type Stats struct {
 }
 
 // Service builds the file index and answers queries with snippets.
+//
+// Безопасен для одновременного поиска и пересборки: окно, MCP и HTTP ищут,
+// пока фоновая пересборка готовит новый индекс. Новый индекс подменяет старый
+// целиком под замком, поиск никогда не видит наполовину собранный.
 type Service struct {
 	src Source
-	ix  *Index
+
+	mu    sync.RWMutex
+	ix    *Index
+	stats Stats
 }
 
 // NewService returns a service reading through src.
@@ -58,16 +71,28 @@ func (s *Service) Build() (Stats, error) {
 	if err != nil {
 		return st, fmt.Errorf("walk files: %w", err)
 	}
-	s.ix = ix
+	s.mu.Lock()
+	s.ix, s.stats = ix, st
+	s.mu.Unlock()
 	return st, nil
+}
+
+// Stats returns what the last successful build did.
+func (s *Service) Stats() Stats {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.stats
 }
 
 // Search finds files by query and attaches the matching line of each.
 func (s *Service) Search(query string, limit int) ([]Hit, error) {
-	if s.ix == nil {
+	s.mu.RLock()
+	ix := s.ix
+	s.mu.RUnlock()
+	if ix == nil {
 		return nil, ErrNotBuilt
 	}
-	hits := s.ix.Search(query, limit)
+	hits := ix.Search(query, limit)
 	for i := range hits {
 		// Сниппет читается заново, а не хранится в индексе: текст всех файлов
 		// в памяти весил бы как сами файлы, а читать нужно лишь показанные.
@@ -77,3 +102,7 @@ func (s *Service) Search(query string, limit int) ([]Hit, error) {
 	}
 	return hits, nil
 }
+
+// Read returns one file's text through the same source, and so under the same
+// rules: a path the walk would not index is refused with ErrNotAllowed.
+func (s *Service) Read(path string) (string, error) { return s.src.ReadText(path) }

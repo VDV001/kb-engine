@@ -4,7 +4,6 @@
 package localfiles
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
 
 // MaxFileBytes — файлы больше 2 МБ не индексируются: текст такого размера —
@@ -21,8 +21,9 @@ import (
 const MaxFileBytes = 2 << 20
 
 // ErrNotAllowed is returned when a path is outside the roots or is a file the
-// walk never indexes (secrets, junk folders, binaries).
-var ErrNotAllowed = errors.New("path is not allowed")
+// walk never indexes (secrets, junk folders, binaries). It is the port's error,
+// so HTTP and MCP map it without knowing this adapter.
+var ErrNotAllowed = filesearch.ErrNotAllowed
 
 // junkDirs — служебные папки инструментов: в них нет того, что ищет человек,
 // а по объему они больше всего остального.
