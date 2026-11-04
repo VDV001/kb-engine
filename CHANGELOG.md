@@ -39,6 +39,10 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 - **Метки в адресе статьи убираются в любом регистре.** `UTM_Source=…` и `FbClid=…` — те же
   метки, что `utm_source` и `fbclid`: правило домена `StripTrackingParams` сравнивает имена без
   учета регистра. Обычные параметры по-прежнему различаются регистром (`?ID=5` и `?id=5`).
+- **Шаг `tflint` в CI больше не падает на лимите GitHub API.** `tflint --init` качает плагин aws
+  через GitHub API, и без токена это анонимный лимит на IP раннера, общий с чужими задачами:
+  шаг падал 403 «API rate limit exceeded» без единой правки в terraform (#388). Шагу передан
+  `GITHUB_TOKEN` задачи; права workflow прежние (`contents: read`).
 
 ## [0.30.0] — 2026-11-04
 
