@@ -9,12 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
-	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
@@ -151,18 +150,12 @@ func (f *folderSettings) countFolders(rows []sourceFound, q string) {
 	}
 }
 
-// sourceRows lists the enabled sources of a known kind, in list order.
-// Источник неизвестного вида (из более новой сборки) в строку не идет: искать в
-// нем нечем, а живой чип «0 из 0» соврал бы.
+// sourceRows lists the enabled sources of a known kind, in list order — те же,
+// что видит MCP (sourcelist.Enabled).
 func sourceRows(cfg desktopconfig.Config) []sourceFound {
 	var rows []sourceFound
-	for _, s := range cfg.WithSources().Sources {
-		switch s.Kind {
-		case desktopconfig.KindCatalog, desktopconfig.KindServer, desktopconfig.KindFolder:
-			if s.Enabled {
-				rows = append(rows, sourceFound{Source: s})
-			}
-		}
+	for _, s := range sourcelist.Enabled(cfg) {
+		rows = append(rows, sourceFound{Source: s})
 	}
 	return rows
 }
@@ -211,11 +204,10 @@ func (f *folderSettings) markOpen(rows []sourceFound) []string {
 
 // searchCatalog searches one catalog file the way /api/search does.
 func searchCatalog(path, q string) ([]candidate, string) {
-	cat, err := catalogjson.FileLoader{Path: path}.Load()
+	found, err := sourcelist.SearchCatalog(path, q, search.Matcher{})
 	if err != nil {
 		return nil, "каталог не прочитался: " + err.Error()
 	}
-	found := search.FilterWith(cat.Entries(), q, search.Matcher{})
 	out := make([]candidate, len(found))
 	for i, e := range found {
 		out[i] = candidate{
@@ -273,7 +265,7 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	// У Связки и у сети — по своему сроку, как в ServerStates: человек,
 	// разблокировавший Связку под конец срока, не получает «нет связи».
 	tokCtx, cancelTok := context.WithTimeout(ctx, searchTimeout)
-	tok, err := f.tokenWithin(tokCtx, s.ID)
+	tok, err := sourcelist.TokenWithin(tokCtx, f.tokens.Get, s.ID)
 	cancelTok()
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		// Связка не ответила — сервер без токена не спрашивается: ответ 401 на
@@ -307,127 +299,13 @@ var errKeyOnly = errors.New("запись известна только ключ
 
 func keyOnly() (json.RawMessage, error) { return nil, errKeyOnly }
 
-// tokenWithin reads a token, giving up when ctx ends: Связка, ждущая
-// разблокировки, не держит выдачу. Брошенное чтение доживает само (security
-// ограничен 10 с), его результат кладет в кэш cachedTokens.
-func (f *folderSettings) tokenWithin(ctx context.Context, id string) (string, error) {
-	type res struct {
-		tok string
-		err error
-	}
-	ch := make(chan res, 1)
-	go func() {
-		t, err := f.tokens.Get(id)
-		ch <- res{t, err}
-	}()
-	select {
-	case r := <-ch:
-		return r.tok, r.err
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
-}
-
-// serverEntry is what the window shows of a server's entry. Запись чужого
-// сервера разбирается строго: поле не того типа — запись отброшена (номер-
-// строка с разметкой не доедет до страницы), наружу уходят только эти поля.
-type serverEntry struct {
-	ID          int           `json:"id"`
-	Title       string        `json:"title"`
-	URL         string        `json:"url,omitempty"`
-	Category    string        `json:"category,omitempty"`
-	Verdict     string        `json:"verdict,omitempty"`
-	Author      string        `json:"author,omitempty"`
-	DateAdded   string        `json:"date_added,omitempty"`
-	Description string        `json:"description,omitempty"`
-	Match       []serverMatch `json:"match,omitempty"`
-}
-
-// Пределы признака находки чужого сервера: из слов признака окно строит
-// подсветку на каждую строку выдачи, и сломанный сервер не должен подвесить ее
-// тысячей признаков или словом-простыней. Наш сервер дает по признаку на слово
-// запроса — единицы.
-const (
-	maxMatches  = 16
-	maxMatchLen = 200
-)
-
-// withoutMatch returns the entry with its match field removed: запись
-// разбирается строго, признак — отдельно.
-func withoutMatch(r json.RawMessage) json.RawMessage {
-	var m map[string]json.RawMessage
-	if json.Unmarshal(r, &m) != nil {
-		return r
-	}
-	delete(m, "match")
-	b, err := json.Marshal(m)
-	if err != nil {
-		return r
-	}
-	return b
-}
-
-// serverMatch is one «где и как совпало» of a server's entry; поле и способ
-// — из тех, что называет search.Explain, иначе признак отброшен.
-type serverMatch struct {
-	Word  string `json:"word"`
-	Field string `json:"field"`
-	Hit   string `json:"hit"`
-	How   string `json:"how"`
-}
-
-// knownMatches keeps the matches with a field and way search can name: список
-// живет в пакете search, а не здесь третьей копией.
-func knownMatches(in []serverMatch) []serverMatch {
-	var out []serverMatch
-	for _, m := range in {
-		if len(out) == maxMatches {
-			break
-		}
-		if search.ValidField(m.Field) && search.ValidHow(m.How) && len(m.Word) <= maxMatchLen && len(m.Hit) <= maxMatchLen {
-			out = append(out, m)
-		}
-	}
-	return out
-}
-
-// typedEntries keeps the server entries that decode as serverEntry; адрес, не
-// прошедший правило домена (http(s) с хостом), убирается — javascript: не
-// откроется кнопкой «Открыть источник». Кодируется запись только при показе.
+// typedEntries is the server's entries decoded strictly (sourcelist), as
+// candidates: кодируется запись только при показе.
 func typedEntries(raw []json.RawMessage) []candidate {
-	out := make([]candidate, 0, len(raw))
-	for _, r := range raw {
-		// Признак — необязательное поле и разбирается отдельно: не того вида,
-		// он отбрасывается сам, а запись с ключом склейки остается.
-		var e serverEntry
-		var rawMatch struct {
-			Match json.RawMessage `json:"match"`
-		}
-		if json.Unmarshal(r, &rawMatch) != nil {
-			continue
-		}
-		if len(rawMatch.Match) > 0 {
-			r = withoutMatch(r)
-		}
-		if json.Unmarshal(r, &e) != nil || e.Title == "" {
-			continue
-		}
-		var ms []serverMatch
-		_ = json.Unmarshal(rawMatch.Match, &ms) // не тот вид — признака нет
-		// Ключ — по исходному адресу, как ключи остальных записей, что сервер
-		// считает сам (sourcesearch.Split): склейка не зависит от того, попала
-		// запись в присланные или нет. Показ — по проверенному адресу.
-		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
-		e.Match = knownMatches(ms)
-		if u, err := domain.NewExternalURL(e.URL); err != nil {
-			e.URL = ""
-		} else {
-			e.URL = u.String() // обрезанный: и для кнопки, и для ключа склейки
-		}
-		out = append(out, candidate{
-			key:    key,
-			encode: func() (json.RawMessage, error) { return json.Marshal(e) },
-		})
+	dec := sourcelist.DecodeEntries(raw)
+	out := make([]candidate, len(dec))
+	for i, d := range dec {
+		out[i] = candidate{key: d.Key, encode: func() (json.RawMessage, error) { return json.Marshal(d.Entry) }}
 	}
 	return out
 }

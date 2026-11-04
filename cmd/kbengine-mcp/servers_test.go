@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // memTokens — Связка ключей в памяти.
@@ -72,8 +74,60 @@ func TestRemoteServers_SearchRemote(t *testing.T) {
 func TestRemoteServers_ConfigUnreadable(t *testing.T) {
 	r := remoteServers{cfgPath: filepath.Join(t.TempDir(), "нет.json"), tokens: memTokens{}}
 	got := r.SearchRemote(context.Background(), "q")
-	if len(got) != 1 || got[0].Err == "" {
+	// Списка окна не знаем — свой каталог отвечает, как до списка источников.
+	if len(got) != 2 || !got[0].Own || got[1].Source.ID != "config" || got[1].Err == "" {
 		t.Fatalf("got = %+v", got)
+	}
+}
+
+// Каталоги идут из списка окна, как серверы: свой (--catalog, по раскрытому
+// пути) — строкой Own на своем месте, второй — найденными записями, выключенный
+// не спрашивается.
+func TestRemoteServers_CatalogsFollowWindowList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	home := t.TempDir()
+	write := func(name, body string) string {
+		t.Helper()
+		p := filepath.Join(home, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	ownPath := write("own.json", `{"entries":[]}`)
+	write("work.json", `{"entries":[
+		{"id":1,"title":"Агент в работе","category":"ai","status":"KEEP","date_added":"2026-01-01"},
+		{"id":2,"title":"Кулинария","category":"misc","status":"KEEP","date_added":"2026-01-01"}]}`)
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "server-a", Kind: desktopconfig.KindServer, URL: srv.URL, Enabled: true},
+		{ID: "catalog-own", Kind: desktopconfig.KindCatalog, Name: "моя база", Path: "~/own.json", Enabled: true},
+		{ID: "catalog-off", Kind: desktopconfig.KindCatalog, Path: "~/off.json", Enabled: false},
+		{ID: "catalog-work", Kind: desktopconfig.KindCatalog, Path: "~/work.json", Enabled: true},
+		{ID: "catalog-gone", Kind: desktopconfig.KindCatalog, Path: "~/gone.json", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, ownCatalog: ownPath, tokens: memTokens{}}
+	got := r.SearchRemote(context.Background(), "агент")
+	ids := []string{}
+	for _, f := range got {
+		ids = append(ids, f.Source.ID)
+	}
+	if strings.Join(ids, ",") != "server-a,catalog-own,catalog-work,catalog-gone" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if !got[1].Own || got[1].Source.Name != "моя база" || got[0].Own || got[2].Own {
+		t.Fatalf("own = %+v", got)
+	}
+	if len(got[2].Catalog) != 1 || got[2].Catalog[0].ID() != 1 || got[2].Err != "" {
+		t.Fatalf("work = %+v", got[2])
+	}
+	if got[3].Err == "" {
+		t.Fatalf("недоступный каталог без беды: %+v", got[3])
 	}
 }
 
@@ -173,7 +227,8 @@ func TestRemoteServers_ConfigLockBusy(t *testing.T) {
 		got = r.SearchRemote(ctx, "q")
 		return nil
 	})
-	if len(got) != 1 || got[0].Source.ID != "config" || !strings.Contains(got[0].Err, "сохраняет") {
+	// Свой каталог отвечает, серверы — нет, и сказано почему.
+	if len(got) != 2 || !got[0].Own || got[1].Source.ID != "config" || !strings.Contains(got[1].Err, "сохраняет") {
 		t.Fatalf("got = %+v", got)
 	}
 }
@@ -211,5 +266,62 @@ func TestRemoteServers_LockWaitKeepsTokenBudget(t *testing.T) {
 	got := r.SearchRemote(context.Background(), "q")
 	if len(got) != 1 || got[0].Err != "" || gotAuth != "Bearer "+tok {
 		t.Fatalf("got = %+v, Authorization = %q", got, gotAuth)
+	}
+}
+
+// Ревью #402. Свой каталог узнается и через символическую ссылку: окно
+// хранит путь, каким его выбрал человек, MCP запущен с другим.
+func TestRemoteServers_OwnCatalogThroughSymlink(t *testing.T) {
+	home := t.TempDir()
+	real := filepath.Join(home, "real.json")
+	if err := os.WriteFile(real, []byte(`{"entries":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, "link.json")); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "catalog-own", Kind: desktopconfig.KindCatalog, Path: "~/link.json", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, ownCatalog: real, tokens: memTokens{}}
+	if got := r.SearchRemote(context.Background(), "агент"); len(got) != 1 || !got[0].Own {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+// Ревью #402. Второй каталог ищется так же, как его ищет окно (без словаря
+// синонимов своего каталога): агент видит то, что человек. Пустой запрос
+// серверы не спрашивает — им нечего искать.
+func TestRemoteServers_SecondCatalogLikeWindow(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "work.json"), []byte(`{"entries":[
+		{"id":1,"title":"Kubernetes","category":"ai","status":"KEEP","date_added":"2026-01-01"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "catalog-work", Kind: desktopconfig.KindCatalog, Path: "~/work.json", Enabled: true},
+		{ID: "server-a", Kind: desktopconfig.KindServer, URL: "https://192.0.2.1", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// Синоним «докер» → kubernetes лежит в словаре своего каталога; окно его
+	// не знает, и вторые каталоги агент ищет без него (windowMatch).
+	if windowMatch.Matches("Kubernetes", "докер") {
+		t.Fatal("windowMatch знает синонимы своего каталога")
+	}
+	if !search.New(search.Dictionary{"докер": {Same: []string{"kubernetes"}}}).Matches("Kubernetes", "докер") {
+		t.Fatal("контроль: словарь сам должен находить")
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, tokens: memTokens{}}
+	if got := r.SearchRemote(context.Background(), "докер"); len(got) < 1 || len(got[0].Catalog) != 0 {
+		t.Fatalf("второй каталог нашел по синониму своего: %+v", got)
+	}
+	got := r.SearchRemote(context.Background(), "")
+	if len(got) != 1 || got[0].Source.ID != "catalog-work" || len(got[0].Catalog) != 1 {
+		t.Fatalf("пустой запрос: %+v", got)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
@@ -921,11 +922,11 @@ func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
 		Match []struct{ Hit string } `json:"match"`
 	}
 	_ = json.Unmarshal(r.Hits[1].Entry, &e)
-	if len(e.Match) > maxMatches {
-		t.Fatalf("признаков %d, предел %d", len(e.Match), maxMatches)
+	if len(e.Match) > sourcelist.MaxMatches {
+		t.Fatalf("признаков %d, предел %d", len(e.Match), sourcelist.MaxMatches)
 	}
 	for _, m := range e.Match {
-		if len(m.Hit) > maxMatchLen {
+		if len(m.Hit) > sourcelist.MaxMatchLen {
 			t.Fatalf("слово признака длиной %d", len(m.Hit))
 		}
 	}
