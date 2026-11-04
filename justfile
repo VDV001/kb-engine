@@ -44,6 +44,7 @@ desktop:
     cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
     mkdir -p bin/kb.app/Contents/Resources
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns
+    cp desktop/build/icon/menubar.png bin/kb.app/Contents/Resources/menubar.png
     touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
 # Install kb.app into ~/Applications and start it at login (launchd agent)
