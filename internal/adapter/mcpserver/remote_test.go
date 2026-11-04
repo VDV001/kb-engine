@@ -291,3 +291,42 @@ func TestServer_searchOwnCatalogTwiceAnswersOnce(t *testing.T) {
 		t.Fatalf("sources = %s", got)
 	}
 }
+
+// Запись сервера приходит агенту с признаком находки, как в окне («совпало:
+// автор · жо → zhogov1985 · транслит»), а поле, которого сервер не прислал,
+// в ответе отсутствует, а не пусто: «неизвестно» и «пустая категория» у
+// агента не должны выглядеть одинаково.
+func TestServer_searchRemoteEntryCarriesMatch(t *testing.T) {
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own,
+		{Source: mcpserver.RemoteSource{ID: "server-a"}, Entries: []json.RawMessage{
+			json.RawMessage(`{"id":50,"title":"Kubernetes на сервере","category":"ai","kind":"article","lifecycle":"active",` +
+				`"match":[{"word":"кубернетес","field":"title","hit":"Kubernetes","how":"translit"}]}`),
+			json.RawMessage(`{"id":51,"title":"Kubernetes без полей"}`),
+		}},
+	}})
+	raw := text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))
+	var out struct {
+		Entries []map[string]json.RawMessage `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("%v\n%s", err, raw)
+	}
+	byID := map[string]map[string]json.RawMessage{}
+	for _, e := range out.Entries {
+		byID[string(e["source"])+":"+string(e["id"])] = e
+	}
+	full, bare := byID[`"server-a":50`], byID[`"server-a":51`]
+	if full == nil || bare == nil {
+		t.Fatalf("нет записей сервера в ответе: %s", raw)
+	}
+	var ms []struct{ Word, Field, Hit, How string }
+	if err := json.Unmarshal(full["match"], &ms); err != nil || len(ms) != 1 ||
+		ms[0].Word != "кубернетес" || ms[0].Field != "title" || ms[0].Hit != "Kubernetes" || ms[0].How != "translit" {
+		t.Fatalf("match = %s, want признак сервера как есть", full["match"])
+	}
+	for _, k := range []string{"category", "kind", "lifecycle", "match"} {
+		if v, ok := bare[k]; ok {
+			t.Errorf("запись без %s отдала %s=%s: поля нет — его нет и в ответе", k, k, v)
+		}
+	}
+}
