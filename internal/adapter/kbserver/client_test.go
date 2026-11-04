@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -194,7 +195,8 @@ func TestClient_Search(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	c := kbserver.Client{URL: srv.URL + "/kb/", Token: token, HTTP: srv.Client()}
-	entries, err := c.Search(context.Background(), q)
+	res, err := c.Search(context.Background(), q, 0)
+	entries := res.Entries
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +208,7 @@ func TestClient_Search(t *testing.T) {
 	if len(entries) != 2 || string(entries[0]) != `{"id":7,"title":"первый"}` || string(entries[1]) != `{"id":3,"title":"второй"}` {
 		t.Fatalf("entries = %s", entries)
 	}
-	if _, err := (kbserver.Client{URL: srv.URL + "/kb/", HTTP: srv.Client()}).Search(context.Background(), q); !errors.Is(err, kbserver.ErrUnauthorized) {
+	if _, err := (kbserver.Client{URL: srv.URL + "/kb/", HTTP: srv.Client()}).Search(context.Background(), q, 0); !errors.Is(err, kbserver.ErrUnauthorized) {
 		t.Fatalf("без токена: err = %v", err)
 	}
 }
@@ -231,7 +233,8 @@ func TestClient_SearchBodies(t *testing.T) {
 				_, _ = w.Write([]byte(tt.body))
 			}))
 			defer srv.Close()
-			entries, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q")
+			res, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 0)
+			entries := res.Entries
 			if !errors.Is(err, tt.want) || (tt.want == nil && len(entries) != tt.n) {
 				t.Fatalf("err = %v, записей %d, want %v и %d", err, len(entries), tt.want, tt.n)
 			}
@@ -248,8 +251,67 @@ func TestClient_SearchTooLarge(t *testing.T) {
 		_, _ = w.Write([]byte(body))
 	}))
 	t.Cleanup(srv.Close)
-	_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q")
+	_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 0)
 	if !errors.Is(err, kbserver.ErrTooLarge) || errors.Is(err, kbserver.ErrNotKB) {
 		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}
+
+// limit уходит серверу; сервер текущей версии отвечает объектом (первые N,
+// счет, ключи остальных), сервер 0.30.0 limit не знает и отвечает массивом —
+// клиент понимает оба: массив значит «все найденное здесь, ключей отдельно нет».
+func TestClient_SearchLimit(t *testing.T) {
+	for _, tt := range []struct {
+		name, body string
+		entries    int
+		total      int
+		keys       []string
+	}{
+		{"сервер с limit", `{"entries":[{"id":1,"title":"a"}],"total":3,"keys":["url x","id 3 c"]}`, 1, 3, []string{"url x", "id 3 c"}},
+		{"сервер 0.30.0: массив", `[{"id":1,"title":"a"},{"id":2,"title":"b"}]`, 2, 2, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotLimit string
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				gotLimit = r.URL.Query().Get("limit")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+			res, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotLimit != "40" || len(res.Entries) != tt.entries || res.Total != tt.total || !slices.Equal(res.Keys, tt.keys) {
+				t.Fatalf("limit=%q, res = %d записей, total %d, keys %q", gotLimit, len(res.Entries), res.Total, res.Keys)
+			}
+		})
+	}
+	// Объект, где счет не сходится с записями и ключами, без entries или с
+	// ключом-простыней — не kb-сервер.
+	long := `"` + strings.Repeat("k", 5000) + `"`
+	for _, bad := range []string{
+		`{"total":1,"entries":[{"id":1},{"id":2}]}`,
+		`{"total":3}`,
+		`{"total":3,"entries":[{"id":1}],"keys":["a"]}`,
+		`{"total":5,"entries":[{"id":1}],"keys":["a","b"]}`,
+		`{"total":2,"entries":[{"id":1}],"keys":[` + long + `]}`,
+	} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(bad)) }))
+		_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
+		srv.Close()
+		if !errors.Is(err, kbserver.ErrNotKB) {
+			t.Errorf("%s: err = %v, want ErrNotKB", bad, err)
+		}
+	}
+}
+
+// null вместо списка (прокси, сборка, что пустое кодирует null) — пустая
+// выдача, а не «не kb-сервер».
+func TestClient_SearchNull(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("null")) }))
+	defer srv.Close()
+	res, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
+	if err != nil || len(res.Entries) != 0 || res.Total != 0 {
+		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 }

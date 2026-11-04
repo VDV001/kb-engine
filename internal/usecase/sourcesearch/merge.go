@@ -85,3 +85,15 @@ func canonicalURL(raw string) string {
 	}
 	return key
 }
+
+// Split returns the first n items and the merge keys of the rest — то, что
+// сервер отдает окну по limit: склейке нужны ключи всех найденных, а сами
+// записи — только показанные. Ключи — всегда список, не nil.
+func Split[T any](items []T, n int, key func(T) string) ([]T, []string) {
+	n = max(0, min(n, len(items)))
+	keys := make([]string, 0, len(items)-n)
+	for _, it := range items[n:] {
+		keys = append(keys, key(it))
+	}
+	return items[:n], keys
+}

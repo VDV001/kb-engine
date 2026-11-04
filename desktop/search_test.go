@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
+	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
 // searchCall — что окно спросило у сервера при поиске.
@@ -47,22 +48,27 @@ func newSearchSettings(t *testing.T) (*folderSettings, *fakeTokens, *[]searchCal
 	s.tokens = tok
 	var calls []searchCall
 	var mu sync.Mutex // источники опрашиваются параллельно
-	s.find = func(_ context.Context, u, token, q string) ([]json.RawMessage, error) {
+	s.find = func(_ context.Context, u, token, q string) (kbserver.Result, error) {
 		mu.Lock()
 		calls = append(calls, searchCall{u, token, q})
 		mu.Unlock()
 		switch {
 		case strings.Contains(u, "down"):
-			return nil, kbserver.ErrUnreachable
+			return kbserver.Result{}, kbserver.ErrUnreachable
 		case token != srvToken:
-			return nil, kbserver.ErrUnauthorized
+			return kbserver.Result{}, kbserver.ErrUnauthorized
 		}
-		return []json.RawMessage{
+		return result(
 			json.RawMessage(`{"id":1,"title":"Агент общий","url":"https://example.com/a"}`),
 			json.RawMessage(`{"id":9,"title":"Агент сервера"}`),
-		}, nil
+		), nil
 	}
 	return s, tok, &calls
+}
+
+// result is what a kb server of 0.30.0 answers: everything found, no keys.
+func result(entries ...json.RawMessage) kbserver.Result {
+	return kbserver.Result{Entries: entries, Total: len(entries)}
 }
 
 // hitIDs renders hits as "source:id" for a compact comparison.
@@ -254,12 +260,12 @@ func (c *countingTokens) Get(acct string) (string, error) {
 // Склеенные дубли считает Go: «найдено» после среза их уже не покажет.
 func TestSearchSources_LimitPerSource(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
-	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
 		out := []json.RawMessage{json.RawMessage(`{"id":1,"title":"Агент общий","url":"https://example.com/a"}`)}
 		for i := range searchLimit + 20 {
 			out = append(out, json.RawMessage(`{"id":`+strconv.Itoa(100+i)+`,"title":"с`+strconv.Itoa(i)+`"}`))
 		}
-		return out, nil
+		return result(out...), nil
 	}
 	r := s.SearchSources(context.Background(), "агент")
 	per := map[string]int{}
@@ -281,13 +287,13 @@ func TestSearchSources_LimitPerSource(t *testing.T) {
 func TestSearchSources_ServerEntriesAreTyped(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
 	s.cfg.Sources = s.cfg.Sources[:1] // только сервер
-	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
-		return []json.RawMessage{
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(
 			json.RawMessage(`{"id":"<img src=x onerror=alert(1)>","title":"a"}`),
 			json.RawMessage(`{"id":5,"title":{"x":1}}`),
 			json.RawMessage(`{"id":6,"title":"ok","url":"javascript:alert(1)","extra":"<script>"}`),
 			json.RawMessage(`{"id":7,"title":"норм","url":"https://example.com/7","verdict":"keep","description":"d"}`),
-		}, nil
+		), nil
 	}
 	r := s.SearchSources(context.Background(), "агент")
 	if len(r.Hits) != 2 || r.Sources[0].Found != 2 {
@@ -466,8 +472,8 @@ func TestSearchSources_DedupBeyondLimit(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.cfg.Sources[0], s.cfg.Sources[1] = s.cfg.Sources[1], s.cfg.Sources[0] // каталог выше сервера
-	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
-		return []json.RawMessage{json.RawMessage(`{"id":900,"title":"та же статья","url":"https://example.com/k49"}`)}, nil
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(json.RawMessage(`{"id":900,"title":"та же статья","url":"https://example.com/k49"}`)), nil
 	}
 	r := s.SearchSources(context.Background(), "агент")
 	for _, h := range r.Hits {
@@ -545,6 +551,27 @@ func TestCachedTokens_GetAfterDeleteDoesNotJoinOldRead(t *testing.T) {
 	close(inner.release)
 }
 
+// Сервер с limit присылает первые записи и ключи остальных: запись нижнего
+// источника, что у сервера стоит за пределом присланного, склеивается по
+// ключу, а «найдено» у сервера — полный счет.
+func TestSearchSources_ServerKeysMerge(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return kbserver.Result{
+			Entries: []json.RawMessage{json.RawMessage(`{"id":9,"title":"Агент сервера"}`)},
+			Total:   3,
+			Keys:    []string{sourcesearch.EntryKey(0, "", "https://example.com/b"), "url другое"},
+		}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if got := hitIDs(t, r); !slices.Equal(got, []string{"server-a:9", "catalog-1:1"}) {
+		t.Fatalf("hits = %q: запись каталога 2 есть у сервера ключом и должна склеиться", got)
+	}
+	if f := found(r); f["server-a"].Found != 3 || r.Dupes != 1 {
+		t.Fatalf("sources = %+v, dupes = %d", r.Sources, r.Dupes)
+	}
+}
+
 // Ожидание Связки не съедает срок сети: человек разблокировал Связку под
 // конец срока — сервер все равно получает свой полный срок, а не остаток.
 func TestSearchSources_KeychainWaitDoesNotEatNetworkBudget(t *testing.T) {
@@ -554,11 +581,11 @@ func TestSearchSources_KeychainWaitDoesNotEatNetworkBudget(t *testing.T) {
 	t.Cleanup(func() { searchTimeout = old })
 	s.tokens = slowTokens{fakeTokens: tok, delay: 150 * time.Millisecond}
 	var left time.Duration
-	s.find = func(ctx context.Context, _, _, _ string) ([]json.RawMessage, error) {
+	s.find = func(ctx context.Context, _, _, _ string) (kbserver.Result, error) {
 		if d, ok := ctx.Deadline(); ok {
 			left = time.Until(d)
 		}
-		return nil, nil
+		return kbserver.Result{}, nil
 	}
 	s.SearchSources(context.Background(), "агент")
 	if left < 150*time.Millisecond {
@@ -596,8 +623,8 @@ func TestSearchSources_RejectedSaveDoesNotCancelSearch(t *testing.T) {
 // склейки — запись каталога с тем же адресом не показывается дважды.
 func TestSearchSources_ServerURLTrimmed(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
-	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
-		return []json.RawMessage{json.RawMessage(`{"id":1,"title":"Агент общий","url":"  https://example.com/a  "}`)}, nil
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(json.RawMessage(`{"id":1,"title":"Агент общий","url":"  https://example.com/a  "}`)), nil
 	}
 	r := s.SearchSources(context.Background(), "агент")
 	if got := hitIDs(t, r); !slices.Equal(got, []string{"server-a:1", "catalog-1:2"}) {
@@ -711,5 +738,33 @@ func TestSearchSources_SkipsServersWhileSaving(t *testing.T) {
 	f := found(r)
 	if f["server-a"].Error != errSourceChanged || f["catalog-1"].Found != 2 || len(*calls) != 0 {
 		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
+	}
+}
+
+// Окно просит у сервера вдвое больше, чем покажет: первые записи сервера
+// часто дублируют источник выше и склеиваются, и без запаса от сервера
+// осталась бы горстка строк при сотнях найденных.
+func TestFindServer_AsksWithMargin(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("limit")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	if _, err := findServer(context.Background(), srv.URL, "", "q"); err != nil {
+		t.Fatal(err)
+	}
+	if got != strconv.Itoa(2*searchLimit) {
+		t.Fatalf("limit = %q, want %d", got, 2*searchLimit)
+	}
+}
+
+// Ключ показанной записи сервера — по исходному адресу, как ключи остальных
+// записей, что сервер считает сам: иначе склейка зависела бы от того, попала
+// запись в первые N или нет.
+func TestTypedEntries_KeyFromRawURL(t *testing.T) {
+	items := typedEntries([]json.RawMessage{json.RawMessage(`{"id":5,"title":"Канал","url":"t.me/chan/5"}`)})
+	if len(items) != 1 || items[0].key != sourcesearch.EntryKey(5, "Канал", "t.me/chan/5") {
+		t.Fatalf("items = %+v", items)
 	}
 }

@@ -132,3 +132,29 @@ func TestEntryKey(t *testing.T) {
 }
 
 func atoi(s string) int { n, _ := strconv.Atoi(s); return n }
+
+// Split — то, что сервер отдает окну при limit: первые n в своем порядке и
+// ключи остальных. Одно правило для HTTP и (дальше) MCP.
+func TestSplit(t *testing.T) {
+	items := []rec{{"a", "ka"}, {"b", "kb"}, {"c", "kc"}}
+	for _, tt := range []struct {
+		n     int
+		shown []string
+		keys  []string
+	}{
+		{2, []string{"a", "b"}, []string{"kc"}},
+		{3, []string{"a", "b", "c"}, []string{}},
+		{10, []string{"a", "b", "c"}, []string{}},
+		{0, []string{}, []string{"ka", "kb", "kc"}},
+		{-1, []string{}, []string{"ka", "kb", "kc"}}, // негодный n — как ноль, а не паника
+	} {
+		shown, keys := sourcesearch.Split(items, tt.n, key)
+		ids := make([]string, len(shown))
+		for i, r := range shown {
+			ids[i] = r.id
+		}
+		if !slices.Equal(ids, tt.shown) || !slices.Equal(keys, tt.keys) || keys == nil {
+			t.Errorf("n=%d: shown %q, keys %q", tt.n, ids, keys)
+		}
+	}
+}

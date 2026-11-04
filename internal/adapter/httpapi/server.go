@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/freshness"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
+	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
 // growthWeeks is how many weeks of growth history the analytics endpoint serves.
@@ -595,11 +597,26 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 		// нулевое значение — законное «словаря нет», а не поломка.
 		found := search.FilterWith(entries, r.URL.Query().Get("q"), syn)
 		searchDone()
-		dtos := make([]entryDTO, 0, len(found))
-		for _, e := range found {
-			dtos = append(dtos, toDTO(e))
+		// limit — для окна, сливающего источники: первые N записей, полный
+		// счет и ключи остальных (склейке дублей нужны все, сами записи — нет).
+		// Без limit ответ прежний, массив: витрина и окна прошлых версий ждут его.
+		limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
+		if err != nil || limit <= 0 {
+			dtos := make([]entryDTO, 0, len(found))
+			for _, e := range found {
+				dtos = append(dtos, toDTO(e))
+			}
+			writeJSON(w, dtos)
+			return
 		}
-		writeJSON(w, dtos)
+		shown, keys := sourcesearch.Split(found, limit, func(e domain.Entry) string {
+			return sourcesearch.EntryKey(e.ID(), e.Title(), e.URL())
+		})
+		out := limitedSearchDTO{Entries: make([]entryDTO, len(shown)), Total: len(found), Keys: keys}
+		for i, e := range shown {
+			out.Entries[i] = toDTO(e)
+		}
+		writeJSON(w, out)
 	}
 }
 
