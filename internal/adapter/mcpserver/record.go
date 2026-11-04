@@ -86,9 +86,21 @@ func addTool[In any](
 	argsOf func(In) []string,
 	h func(In) (map[string]any, error),
 ) {
-	mcp.AddTool(s, t, func(_ context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+	addToolCtx(s, j, t, argsOf, func(_ context.Context, in In) (map[string]any, error) { return h(in) })
+}
+
+// addToolCtx is addTool for a tool that goes to the network: контекст вызова
+// (отмена клиентом, остановка сервера) доходит до запросов.
+func addToolCtx[In any](
+	s *mcp.Server,
+	j journal,
+	t *mcp.Tool,
+	argsOf func(In) []string,
+	h func(context.Context, In) (map[string]any, error),
+) {
+	mcp.AddTool(s, t, func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 		startedAt := j.now()
-		out, err := h(in)
+		out, err := h(ctx, in)
 		j.call(t.Name, argsOf(in), startedAt, err)
 		if err != nil {
 			return nil, nil, err

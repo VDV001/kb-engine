@@ -12,10 +12,6 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 )
 
-// remoteLimit — сколько записей просить у сервера; остальные приходят ключами
-// склейки (как в окне).
-const remoteLimit = 40
-
 // remoteTimeout — сколько ждать сервер и, отдельно, Связку ключей: агент не
 // должен висеть на хосте без VPN.
 const remoteTimeout = 3 * time.Second
@@ -28,6 +24,18 @@ type tokenGetter interface {
 // remoteServers is mcpserver.RemoteSearcher over the kb servers of the
 // window's config (--files-config): те же серверы, тот же токен в Связке, что
 // у окна, — агент видит то, что видит человек.
+//
+// ponytail: четыре среза угла, все — в следующую работу.
+//   - Гонка токена: окно пишет новый токен в Связку до записи конфига, и
+//     поиск агента ровно в этот момент прочтет старый адрес и новый токен —
+//     токен уйдет старому хосту. Окно от этого защищено снимком настроек, MCP —
+//     другой процесс. Путь: межпроцессная блокировка config.json (filelock) на
+//     время сохранения в окне и чтения здесь.
+//   - Свой каталог (--catalog) всегда первым: позиция и выключение каталога в
+//     списке окна, вторые каталоги здесь не учитываются.
+//   - Токен читается из Связки на каждый вызов, без кэша окна (cachedTokens).
+//   - Разбор записи сервера и чтение токена в сроке повторяют окно (desktop
+//     typedEntries, tokenWithin). Путь: общий пакет источников.
 type remoteServers struct {
 	cfgPath string
 	tokens  tokenGetter
@@ -65,12 +73,12 @@ func (r remoteServers) ask(ctx context.Context, s desktopconfig.Source, q string
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteTimeout)
 	defer cancel()
-	res, err := kbserver.Client{URL: s.URL, Token: tok}.Search(ctx, q, remoteLimit)
+	res, err := kbserver.Client{URL: s.URL, Token: tok}.Search(ctx, q, mcpserver.RemoteLimit)
 	if err != nil {
 		found.Err = kbserver.Describe(err)
 		return found
 	}
-	found.Entries, found.Keys, found.Total = res.Entries, res.Keys, res.Total
+	found.Entries, found.Keys = res.Entries, res.Keys
 	return found
 }
 

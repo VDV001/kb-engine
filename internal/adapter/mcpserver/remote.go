@@ -22,14 +22,18 @@ type RemoteSource struct {
 }
 
 // RemoteFound is what one server answered: записи, как сервер их закодировал,
-// ключи склейки остальных найденных и счет; Err — беда словами.
+// и ключи склейки остальных найденных; Err — беда словами.
 type RemoteFound struct {
 	Source  RemoteSource
 	Entries []json.RawMessage
 	Keys    []string
-	Total   int
 	Err     string
 }
+
+// RemoteLimit — сколько записей одного сервера идет агенту; остальные —
+// ключами склейки и в «найдено». Сервер 0.30.0 limit не знает и отдает все
+// найденное — предел держит ответ, а не сервер.
+const RemoteLimit = 40
 
 // sourcedEntry is an entry of the merged answer with the source it came from.
 type sourcedEntry struct {
@@ -70,11 +74,14 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 		lists = append(lists, sourcesearch.Found[candidate]{Source: r.Source.ID, Items: items})
 		sources = append(sources, sourceOut{RemoteSource: r.Source, Found: len(items), Error: r.Err})
 	}
-	var out []sourcedEntry
+	out := []sourcedEntry{}
+	shown := map[string]int{}
 	for _, h := range sourcesearch.Merge(lists, func(c candidate) string { return c.key }) {
-		if h.Item.entry != nil {
-			out = append(out, sourcedEntry{entryOut: *h.Item.entry, Source: h.Source})
+		if h.Item.entry == nil || (h.Source != catalogSource && shown[h.Source] == RemoteLimit) {
+			continue
 		}
+		shown[h.Source]++
+		out = append(out, sourcedEntry{entryOut: *h.Item.entry, Source: h.Source})
 	}
 	return out, sources
 }
@@ -90,6 +97,9 @@ func typedRemote(raw []json.RawMessage) []candidate {
 			continue
 		}
 		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
+		// Путь к тексту и связи — чужого каталога: get_entry и read_file
+		// открыли бы по ним свое. Номер остается — его источник назван в source.
+		e.File, e.RelatedIDs = "", nil
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {
