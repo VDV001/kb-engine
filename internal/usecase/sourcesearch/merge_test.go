@@ -146,6 +146,7 @@ func TestSplit(t *testing.T) {
 		{3, []string{"a", "b", "c"}, []string{}},
 		{10, []string{"a", "b", "c"}, []string{}},
 		{0, []string{}, []string{"ka", "kb", "kc"}},
+		{-1, []string{}, []string{"ka", "kb", "kc"}}, // негодный n — как ноль, а не паника
 	} {
 		shown, keys := sourcesearch.Split(items, tt.n, key)
 		ids := make([]string, len(shown))
