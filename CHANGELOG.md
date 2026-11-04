@@ -23,6 +23,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   не запоминается. Каталог ищет фильтром без оценки, поэтому «по релевантности» пока значит
   «по порядку источников»; папки в строку источников еще не входят, MCP — следующим шагом.
 
+### Fixed
+
+- **Шаг `tflint` в CI больше не падает на лимите GitHub API.** `tflint --init` качает плагин aws
+  через GitHub API, и без токена это анонимный лимит на IP раннера, общий с чужими задачами:
+  шаг падал 403 «API rate limit exceeded» без единой правки в terraform (#388). Шагу передан
+  `GITHUB_TOKEN` задачи; права workflow прежние (`contents: read`).
+
 ## [0.30.0] — 2026-11-04
 
 ### Added
