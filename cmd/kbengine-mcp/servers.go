@@ -102,6 +102,7 @@ func (r remoteServers) catalog(s desktopconfig.Source, q string) mcpserver.Remot
 		return found
 	}
 	found.Catalog = append([]domain.Entry{}, entries...) // не nil: каталог, а не сервер
+	found.CatalogMatch = windowMatch
 	return found
 }
 

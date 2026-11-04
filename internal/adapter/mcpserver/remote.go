@@ -6,6 +6,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
@@ -28,14 +29,17 @@ type RemoteSource struct {
 // каталог MCP (--catalog): его записи ищет сам сервер, тем же поиском, что
 // get_entry и stats. Catalog — найденное в другом каталоге списка. Entries и
 // Keys — ответ kb-сервера: записи, как он их закодировал, и ключи склейки
-// остальных найденных. Err — беда словами.
+// остальных найденных. CatalogMatch — чем найдены записи Catalog: признак
+// находки считается тем же поиском, иначе разошелся бы с ним. Err — беда
+// словами.
 type RemoteFound struct {
-	Source  RemoteSource
-	Own     bool
-	Catalog []domain.Entry
-	Entries []json.RawMessage
-	Keys    []string
-	Err     string
+	Source       RemoteSource
+	Own          bool
+	Catalog      []domain.Entry
+	CatalogMatch search.Matcher
+	Entries      []json.RawMessage
+	Keys         []string
+	Err          string
 }
 
 // legacyAnswer reports whether the list is just the own catalog: тогда форма
@@ -68,13 +72,16 @@ const catalogSource = "catalog"
 type candidate struct {
 	key   string
 	entry *entryOut // nil — запись известна серверу только ключом
+	// why — признак находки записи каталога; считается только для показанных,
+	// как в окне: срез идет после склейки.
+	why func() []sourcelist.Match
 }
 
 // mergeRemote joins the sources of the list by the rule of the window
 // (sourcesearch.Merge): порядок — списка окна, дубль — у источника выше,
 // запись, известная только ключом, в ответ не идет. Свой каталог отвечает под
 // id catalog без предела: get_entry и read_file — только по нему.
-func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []sourceOut) {
+func mergeRemote(own []domain.Entry, remote []RemoteFound, q string, m search.Matcher) ([]sourcedEntry, []sourceOut) {
 	var lists []sourcesearch.Found[candidate]
 	sources := []sourceOut{}
 	ownSeen := false
@@ -86,9 +93,9 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 		case r.Own:
 			ownSeen = true
 			src.ID = catalogSource
-			items = projected(own, false)
+			items = projected(own, false, q, m)
 		case r.Catalog != nil:
-			items = projected(r.Catalog, true)
+			items = projected(r.Catalog, true, q, r.CatalogMatch)
 		default:
 			items = typedRemote(r.Entries)
 			for _, k := range r.Keys {
@@ -105,7 +112,11 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 			continue
 		}
 		shown[h.Source]++
-		out = append(out, sourcedEntry{entryOut: *h.Item.entry, Source: h.Source})
+		e := *h.Item.entry
+		if h.Item.why != nil {
+			e.Match = h.Item.why()
+		}
+		out = append(out, sourcedEntry{entryOut: e, Source: h.Source})
 	}
 	return out, sources
 }
@@ -113,14 +124,15 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 // projected is a catalog's entries as candidates. У записи чужого каталога
 // (foreign) путь к тексту и связи не берутся, как у записи сервера: get_entry и
 // read_file открыли бы по ним свое.
-func projected(entries []domain.Entry, foreign bool) []candidate {
+func projected(entries []domain.Entry, foreign bool, q string, m search.Matcher) []candidate {
 	out := make([]candidate, len(entries))
 	for i, e := range entries {
+		why := func() []sourcelist.Match { return sourcelist.MatchOf(search.Explain(e, q, m)) }
 		p := project(e)
 		if foreign {
 			p.File, p.RelatedIDs = "", nil
 		}
-		out[i] = candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &p}
+		out[i] = candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &p, why: why}
 	}
 	return out
 }

@@ -34,7 +34,8 @@ type entryOut struct {
 	DateAdded   string   `json:"date_added,omitempty"`
 	File        string   `json:"file,omitempty"`
 	RelatedIDs  []int    `json:"related_ids,omitempty"`
-	// Match — признак находки (где и как совпало), как в окне. У записи
+	// Match — признак находки (где и как совпало), как в окне: у записи
+	// каталога его считает search.Explain тем же поиском, что нашел, у записи
 	// kb-сервера — тот, что прислал сервер.
 	Match []sourcelist.Match `json:"match,omitempty"`
 }
@@ -85,7 +86,8 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 		Name: "search_catalog",
 		Description: "Поиск по каталогу базы знаний. Четыре слоя: подстрока, " +
 			"транслитерация, опечатки, словарь синонимов. Слова соединяются через И, " +
-			"«#123» адресует запись по номеру. Поле view — адрес витрины с той " +
+			"«#123» адресует запись по номеру. У записи match — где и как совпало каждое " +
+			"слово (поле, найденное, слой). Поле view — адрес витрины с той " +
 			"же выборкой: его показывают человеку, чтобы он сверил ответ с " +
 			"первичными данными, а не с пересказом. Когда подключен список источников " +
 			"окна (kb-серверы, вторые каталоги), выдача общая и идет в его порядке: у " +
@@ -116,7 +118,7 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			// Список источников окна: одна выдача по правилу окна, у записи —
 			// источник, у источника — найдено или беда. Список из одного своего
 			// каталога — форма ответа прежняя.
-			entries, sources := mergeRemote(found, remote)
+			entries, sources := mergeRemote(found, remote, in.Query, m)
 			return map[string]any{
 				"found":   len(entries),
 				"entries": entries,
@@ -126,7 +128,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 		}
 		out := make([]entryOut, 0, len(found))
 		for _, e := range found {
-			out = append(out, project(e))
+			p := project(e)
+			p.Match = sourcelist.MatchOf(search.Explain(e, in.Query, m))
+			out = append(out, p)
 		}
 		return map[string]any{
 			"found":   len(out),
