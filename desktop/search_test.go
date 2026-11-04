@@ -768,3 +768,37 @@ func TestTypedEntries_KeyFromRawURL(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 }
+
+// Запись своего каталога приходит с признаком находки: «агент» совпал в
+// заголовке буквально.
+func TestSearchSources_CatalogHitCarriesMatch(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[1:] // только каталог
+	r := s.SearchSources(context.Background(), "агент")
+	var e struct {
+		Match []struct{ Field, How, Hit string } `json:"match"`
+	}
+	if err := json.Unmarshal(r.Hits[0].Entry, &e); err != nil || len(e.Match) != 1 || e.Match[0].Field != "title" || e.Match[0].How != "exact" || e.Match[0].Hit != "Агент" {
+		t.Fatalf("entry = %s", r.Hits[0].Entry)
+	}
+}
+
+// Признак находки чужого сервера разбирается строго, как и запись: известные
+// поле и способ проходят, неизвестные — отброшены, запись остается.
+func TestSearchSources_ServerMatchIsTyped(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[:1]
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(json.RawMessage(`{"id":9,"title":"Агент","match":[
+			{"word":"жо","field":"author","text":"zhogov1985","hit":"zhogov1985","how":"translit"},
+			{"word":"x","field":"<img>","text":"t","hit":"t","how":"exact"},
+			{"word":"y","field":"title","text":"t","hit":"t","how":"<script>"}]}`)), nil
+	}
+	r := s.SearchSources(context.Background(), "жо")
+	var e struct {
+		Match []struct{ Word, Field, How string } `json:"match"`
+	}
+	if err := json.Unmarshal(r.Hits[0].Entry, &e); err != nil || len(e.Match) != 1 || e.Match[0].Field != "author" || e.Match[0].How != "translit" {
+		t.Fatalf("entry = %s", r.Hits[0].Entry)
+	}
+}
