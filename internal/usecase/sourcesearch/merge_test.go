@@ -64,6 +64,17 @@ func TestMerge(t *testing.T) {
 			},
 			want: []string{"b:b1"},
 		},
+		{
+			// Склеиваются дубли МЕЖДУ источниками; две записи одного каталога с
+			// одним адресом — его дело (для них есть аудит дублей), выдача их не
+			// прячет, как не прятал /api/search.
+			name: "внутри одного источника не склеивается",
+			found: []sourcesearch.Found[rec]{
+				{Source: "catalog", Items: []rec{{"c1", "same"}, {"c2", "same"}}},
+				{Source: "server", Items: []rec{{"s1", "same"}}},
+			},
+			want: []string{"catalog:c1", "catalog:c2"},
+		},
 		{name: "ничего", want: []string{}},
 	}
 	for _, tt := range tests {
@@ -87,6 +98,15 @@ func TestEntryKey(t *testing.T) {
 		{"разные адреса", [3]string{"1", "Статья", "https://habr.com/p/1"}, [3]string{"1", "Статья", "https://habr.com/p/2"}, false},
 		{"без адреса: номер и заголовок", [3]string{"5", "Заметка", ""}, [3]string{"5", "Заметка", ""}, true},
 		{"без адреса: тот же номер, другой заголовок", [3]string{"5", "Заметка", ""}, [3]string{"5", "Другая", ""}, false},
+		// Одна статья, записанная по-разному: схема, регистр хоста, косая черта
+		// в конце, якорь и метки рассылки статью не меняют.
+		{"http и https", [3]string{"1", "a", "http://habr.com/ru/articles/123/"}, [3]string{"2", "b", "https://habr.com/ru/articles/123/"}, true},
+		{"косая черта в конце", [3]string{"1", "a", "https://habr.com/ru/articles/123/"}, [3]string{"2", "b", "https://habr.com/ru/articles/123"}, true},
+		{"регистр хоста", [3]string{"1", "a", "https://Habr.COM/ru/articles/123"}, [3]string{"2", "b", "https://habr.com/ru/articles/123"}, true},
+		{"якорь и utm", [3]string{"1", "a", "https://habr.com/ru/articles/123/?utm_source=tg#comments"}, [3]string{"2", "b", "https://habr.com/ru/articles/123"}, true},
+		// Параметр, который выбирает страницу, — другая статья.
+		{"другой параметр — другая статья", [3]string{"1", "a", "https://example.com/view?id=1"}, [3]string{"1", "a", "https://example.com/view?id=2"}, false},
+		{"регистр пути различается", [3]string{"1", "a", "https://example.com/A"}, [3]string{"1", "a", "https://example.com/a"}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

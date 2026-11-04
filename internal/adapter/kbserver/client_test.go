@@ -238,3 +238,18 @@ func TestClient_SearchBodies(t *testing.T) {
 		})
 	}
 }
+
+// Выдача больше предела чтения — не «не kb-сервер»: адрес верный, сервер
+// здоров, просто ответ слишком велик. Человеку говорится об этом.
+func TestClient_SearchTooLarge(t *testing.T) {
+	item := `{"id":1,"title":"` + strings.Repeat("x", 1000) + `"},`
+	body := "[" + strings.Repeat(item, 34*1024) + `{"id":2}]` // ~34 МБ > 32 МБ
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q")
+	if !errors.Is(err, kbserver.ErrTooLarge) || errors.Is(err, kbserver.ErrNotKB) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}

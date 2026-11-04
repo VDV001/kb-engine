@@ -243,3 +243,143 @@ func (c *countingTokens) Get(acct string) (string, error) {
 	c.gets++
 	return c.fakeTokens.Get(acct)
 }
+
+// У каждого источника в выдачу идет не больше searchLimit записей, а счет
+// «найдено» — полный: широкий запрос не тянет в окно весь удаленный каталог,
+// а источник ниже по приоритету не вытесняется верхним целиком.
+// Склеенные дубли считает Go: «найдено» после среза их уже не покажет.
+func TestSearchSources_LimitPerSource(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		out := []json.RawMessage{json.RawMessage(`{"id":1,"title":"Агент общий","url":"https://example.com/a"}`)}
+		for i := range searchLimit + 20 {
+			out = append(out, json.RawMessage(`{"id":`+strconv.Itoa(100+i)+`,"title":"с`+strconv.Itoa(i)+`"}`))
+		}
+		return out, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	per := map[string]int{}
+	for _, h := range r.Hits {
+		per[h.Source]++
+	}
+	if f := found(r); f["server-a"].Found != searchLimit+21 || per["server-a"] != searchLimit || per["catalog-1"] != 1 {
+		t.Fatalf("found %+v, в выдаче %v", r.Sources, per)
+	}
+	if r.Dupes != 1 {
+		t.Fatalf("dupes = %d, want 1", r.Dupes)
+	}
+}
+
+// Запись чужого сервера проходит строгий разбор: поле не того типа — запись
+// отброшена (номер-строка с разметкой не доедет до innerHTML), адрес не
+// http(s) — убран (javascript: не откроется кнопкой «Открыть источник»).
+// Наружу уходят только поля, которые показывает окно.
+func TestSearchSources_ServerEntriesAreTyped(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[:1] // только сервер
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		return []json.RawMessage{
+			json.RawMessage(`{"id":"<img src=x onerror=alert(1)>","title":"a"}`),
+			json.RawMessage(`{"id":5,"title":{"x":1}}`),
+			json.RawMessage(`{"id":6,"title":"ok","url":"javascript:alert(1)","extra":"<script>"}`),
+			json.RawMessage(`{"id":7,"title":"норм","url":"https://example.com/7","verdict":"keep","description":"d"}`),
+		}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if len(r.Hits) != 2 || r.Sources[0].Found != 2 {
+		t.Fatalf("hits = %d, sources = %+v", len(r.Hits), r.Sources)
+	}
+	var first, second map[string]any
+	_ = json.Unmarshal(r.Hits[0].Entry, &first)
+	_ = json.Unmarshal(r.Hits[1].Entry, &second)
+	if first["id"] != float64(6) || first["url"] != nil || first["extra"] != nil {
+		t.Fatalf("первая запись = %v", first)
+	}
+	if second["url"] != "https://example.com/7" || second["verdict"] != "keep" || second["description"] != "d" {
+		t.Fatalf("вторая запись = %v", second)
+	}
+}
+
+// Пока окно ждет Связку, адрес сервера сменили с новым токеном: поиск по
+// снимку старого конфига не отправляет новый токен на старый адрес.
+func TestSearchSources_NewTokenNeverGoesToOldURL(t *testing.T) {
+	s, tok, calls := newSearchSettings(t)
+	s.tokens = &hookTokens{fakeTokens: tok, onFirstGet: func() {
+		list := slices.Clone(s.cfg.Sources)
+		list[0].URL = "https://new.example.ru"
+		if err := s.SetSources(list, nil, map[string]string{"server-a": "new-token-0123456789abcdefghij"}); err != nil {
+			t.Errorf("SetSources: %v", err)
+		}
+	}}
+	s.SearchSources(context.Background(), "агент")
+	for _, c := range *calls {
+		if c.url == "https://kb.example.ru" && c.token == "new-token-0123456789abcdefghij" {
+			t.Fatalf("новый токен ушел на старый адрес: %+v", *calls)
+		}
+	}
+}
+
+// hookTokens runs onFirstGet once, in the middle of the first read — «пока
+// окно ждало Связку».
+type hookTokens struct {
+	*fakeTokens
+	onFirstGet func()
+	done       bool
+}
+
+func (h *hookTokens) Get(acct string) (string, error) {
+	if !h.done {
+		h.done = true
+		h.onFirstGet()
+	}
+	return h.fakeTokens.Get(acct)
+}
+
+// Чтение из Связки, начатое до удаления, не возвращает удаленный токен в
+// кэш: иначе он ушел бы новому хосту до перезапуска окна.
+func TestCachedTokens_ReadRacingDelete(t *testing.T) {
+	inner := &blockingTokens{fakeTokens: fakeTokens{m: map[string]string{"a": "old"}}, release: make(chan struct{}), started: make(chan struct{})}
+	c := newCachedTokens(inner)
+	done := make(chan struct{})
+	go func() { _, _ = c.Get("a"); close(done) }()
+	<-inner.started
+	if err := c.Delete("a"); err != nil { // пока первое чтение еще идет
+		t.Fatal(err)
+	}
+	close(inner.release)
+	<-done
+	if v, err := c.Get("a"); !errors.Is(err, keychain.ErrNotFound) {
+		t.Fatalf("после удаления в кэше %q, %v", v, err)
+	}
+}
+
+func (b *blockingTokens) Delete(acct string) error {
+	b.mu.Lock()
+	delete(b.m, acct)
+	b.mu.Unlock()
+	return nil
+}
+
+// blockingTokens holds the first Get until release.
+type blockingTokens struct {
+	fakeTokens
+	mu      sync.Mutex
+	release chan struct{}
+	started chan struct{}
+	once    sync.Once
+}
+
+func (b *blockingTokens) Get(acct string) (string, error) {
+	b.mu.Lock()
+	v, ok := b.m[acct]
+	b.mu.Unlock()
+	first := false
+	b.once.Do(func() { first = true; close(b.started) })
+	if first {
+		<-b.release
+	}
+	if !ok {
+		return "", keychain.ErrNotFound
+	}
+	return v, nil
+}
