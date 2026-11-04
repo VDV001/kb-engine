@@ -13,9 +13,10 @@ func full(t *testing.T, id int, title, desc, author string, tags ...string) doma
 	t.Helper()
 	cat, _ := domain.NewCategory("articles")
 	life, _ := domain.NewLifecycle("active")
+	read, _ := domain.NewReadState("read")
 	e, err := domain.NewEntry(domain.EntryParams{
 		ID: id, Kind: domain.KindArticle, Title: title, Description: desc, Author: author,
-		Category: cat, Lifecycle: life, Tags: tags,
+		Category: cat, Lifecycle: life, ReadState: &read, Tags: tags,
 	})
 	if err != nil {
 		t.Fatalf("entry %d: %v", id, err)
@@ -43,6 +44,9 @@ func TestExplain(t *testing.T) {
 			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Text: "zhogov1985", Hit: "zhogov1985", How: search.HowTranslit}}},
 		{"автор с начала слова", full(t, 3, "Copilot видит", "", "Александр Жогов"), "жо",
 			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Text: "Александр Жогов", Hit: "Жогов", How: search.HowExact}}},
+		// Латинский запрос к кириллице — транслит, а не опечатка: правок ноль.
+		{"латиница против кириллицы", full(t, 11, "Copilot видит", "", "Александр Жогов"), "zhogov",
+			[]search.Why{{Word: "zhogov", Field: search.FieldAuthor, Text: "Александр Жогов", Hit: "Жогов", How: search.HowTranslit}}},
 		{"опечатка", full(t, 4, "Kubernetes в проде", "", ""), "kuberntes",
 			[]search.Why{{Word: "kuberntes", Field: search.FieldTitle, Text: "Kubernetes в проде", Hit: "Kubernetes", How: search.HowTypo}}},
 		{"тег", full(t, 5, "Сборка образов", "", "", "docker"), "docker",
@@ -99,6 +103,30 @@ func TestExplain_CoversEverythingFilterFinds(t *testing.T) {
 			words := strings.Fields(q)
 			if len(why) == 0 || (len(why) < len(words) && why[0].How != search.HowSynonym) {
 				t.Errorf("%q нашел #%d, Explain = %+v", q, e.ID(), why)
+			}
+		}
+	}
+}
+
+// Обратное обязательство: Explain не выдумывает совпадений, которых поиск не
+// признает. Запись, что FilterWith не нашел, не получает объяснения на все
+// слова: иначе на экране было бы «совпало» там, где совпадения нет, — короткое
+// слово внутри чужого слова («go» в «ego»), слово дальше лимита опечаток.
+func TestExplain_InventsNothing(t *testing.T) {
+	dict := search.New(nil)
+	entries := []domain.Entry{
+		full(t, 1, "Алгоритмы и ego", "", ""),
+		full(t, 2, "Kubxrnxtxs", "", ""),
+		full(t, 3, "Пишем на Go", "", "zhogov1985"),
+	}
+	for _, q := range []string{"go", "kubernetes", "жо", "ego", "kubxrnxtxs"} {
+		found := map[int]bool{}
+		for _, e := range search.FilterWith(entries, q, dict) {
+			found[e.ID()] = true
+		}
+		for _, e := range entries {
+			if why := search.Explain(e, q, dict); !found[e.ID()] && len(why) == len(strings.Fields(q)) {
+				t.Errorf("%q: #%d не найден, а Explain = %+v", q, e.ID(), why)
 			}
 		}
 	}
