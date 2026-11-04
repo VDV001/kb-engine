@@ -29,14 +29,26 @@ function stem(w) {
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // hits — слова записи, что совпали не буквально (опечатка, транслит, синоним):
-// их называет движок (match), и подсвечиваются они целиком.
+// их называет движок (match), и подсвечиваются они целиком. Сопоставление идет
+// по сырому тексту, экранируются куски: по уже экранированному тексту короткое
+// слово находилось бы внутри «&lt;» и ломало его.
 function highlighter(q, hits = []) {
   const stems = q.toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter((w) => [...w].length >= 2).map(stem);
-  const words = hits.filter((h) => [...h].length >= 1).map((h) => esc(h));
-  if (!stems.length && !words.length) return esc;
-  const alts = [...stems.map((w) => `${reEsc(w)}[\\p{L}\\p{N}]*`), ...words.map((w) => `(?<![\\p{L}\\p{N}])${reEsc(w)}(?![\\p{L}\\p{N}])`)];
+  const alts = [
+    ...stems.map((w) => `${reEsc(w)}[\\p{L}\\p{N}]*`),
+    ...hits.filter(Boolean).map((h) => `(?<![\\p{L}\\p{N}])${reEsc(h)}(?![\\p{L}\\p{N}])`),
+  ];
+  if (!alts.length) return esc;
   const re = new RegExp(`(?:${alts.join("|")})`, "giu");
-  return (text) => esc(text).replace(re, (m) => `<mark>${m}</mark>`);
+  return (text) => {
+    let out = "", last = 0;
+    for (const m of text.matchAll(re)) {
+      if (!m[0]) continue;
+      out += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`;
+      last = m.index + m[0].length;
+    }
+    return out + esc(text.slice(last));
+  };
 }
 
 // --- Признак находки -----------------------------------------------------------
@@ -46,10 +58,16 @@ function highlighter(q, hits = []) {
 const FIELD = { title: "заголовок", description: "описание", category: "категория", tag: "тег", author: "автор", id: "номер" };
 const FIELD_WITH = { title: "с заголовком", description: "с описанием", category: "с категорией", tag: "с тегом", author: "с автором", id: "с номером" };
 const HOW = { exact: "", synonym: "синоним", translit: "транслит", typo: "опечатка" };
-const HOW_LONG = { exact: "", synonym: "по синониму", translit: "через транслитерацию", typo: "с опечаткой" };
+const HOW_LONG = { exact: "", synonym: "по синониму", translit: "через транслитерацию", typo: "несмотря на опечатку" };
 const VISIBLE = new Set(["title", "description"]);
 const worth = (m) => FIELD[m.field] && HOW[m.how] !== undefined && !(VISIBLE.has(m.field) && m.how === "exact");
-const matchHits = (e) => (e.match || []).filter((m) => FIELD[m.field] && HOW[m.how] !== undefined).map((m) => m.hit).filter(Boolean);
+// Подсветка по признаку — только там, где совпало: в заголовке и описании —
+// небуквальные совпадения этих же полей (буквальные и так ловит подсветка
+// запроса), в мета-строке превью — автор и категория. Номер и тег не
+// подсвечиваются нигде: их называет строка «совпало».
+const hitsWhere = (e, fields, how) => (e.match || []).filter((m) => fields.has(m.field) && how(m.how)).map((m) => m.hit).filter(Boolean);
+const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => h !== "exact" && HOW[h] !== undefined);
+const metaHits = (e) => hitsWhere(e, new Set(["author", "category"]), (h) => HOW[h] !== undefined);
 function whyLine(e) {
   const items = (e.match || []).filter(worth);
   if (!items.length) return "";
@@ -250,8 +268,8 @@ function render() {
 // «Документы» ее и не покажет.
 const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
 function kbRow(e, i, hl, hue) {
-  const hits = matchHits(e);
-  if (hits.length) hl = highlighter(state.q, hits);
+  const hits = rowHits(e);
+  if (hits.length) hl = highlighter(state.q, hits); // отдельный разбор — только для таких строк
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
@@ -308,10 +326,11 @@ async function preview(it) {
   const seq = ++previewSeq, hlq = highlighter(state.q), box = $("#preview");
   if (it.type === "kb") {
     const e = it.e;
-    const hits = matchHits(e), hl = hits.length ? highlighter(state.q, hits) : hlq;
+    const hits = rowHits(e), hl = hits.length ? highlighter(state.q, hits) : hlq;
+    const hlMeta = highlighter(state.q, metaHits(e));
     box.innerHTML = `<div class="doc">
       <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${esc(String(e.id))}</div><div class="doc-title">${hl(e.title)}</div>
-        <div class="doc-path">${hl([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
+        <div class="doc-path">${hlMeta([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
         ${whySentence(e)}
         <div class="doc-actions">${e.url ? `<button class="btn primary" data-act="url">Открыть источник</button>` : ""}</div></div>
       <div class="doc-desc">${hl(e.description || "Описания нет.")}</div></div>`;
