@@ -3011,7 +3011,7 @@
           "from": "uc-finance",
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
-          "detail": "internal/usecase/finance/finance.go:201 — единственный вызывающий cmd/kbengine/main.go:463 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:198)",
+          "detail": "internal/usecase/finance/finance.go:201 — единственный вызывающий cmd/kbengine/main.go:463 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:199)",
           "source": "internal/usecase/finance/finance.go:206",
           "unverified": false,
           "symbol": "SortByRecency"
@@ -3871,8 +3871,8 @@
           "from": "uc-search",
           "to": "tui",
           "call": "расстояние редактирования",
-          "detail": "internal/usecase/search/match.go:153 порог зависит от длины и до четырёх букв равен нулю: из трёх букв двумя правками получается половина словаря. Цена замерена — «промт» отдаёт 82 записи, из них около пяти шум",
-          "source": "internal/usecase/search/match.go:153",
+          "detail": "internal/usecase/search/match.go:166 порог зависит от длины и до четырёх букв равен нулю: из трёх букв двумя правками получается половина словаря. Цена замерена — «промт» отдаёт 82 записи, из них около пяти шум",
+          "source": "internal/usecase/search/match.go:166",
           "unverified": false,
           "symbol": "nearAnyWord"
         }

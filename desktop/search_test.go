@@ -768,3 +768,73 @@ func TestTypedEntries_KeyFromRawURL(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 }
+
+// Запись своего каталога приходит с признаком находки: «агент» совпал в
+// заголовке буквально.
+func TestSearchSources_CatalogHitCarriesMatch(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[1:] // только каталог
+	r := s.SearchSources(context.Background(), "агент")
+	var e struct {
+		Match []struct{ Field, How, Hit string } `json:"match"`
+	}
+	if err := json.Unmarshal(r.Hits[0].Entry, &e); err != nil || len(e.Match) != 1 || e.Match[0].Field != "title" || e.Match[0].How != "exact" || e.Match[0].Hit != "Агент" {
+		t.Fatalf("entry = %s", r.Hits[0].Entry)
+	}
+}
+
+// Признак находки чужого сервера разбирается строго, как и запись: известные
+// поле и способ проходят, неизвестные — отброшены, запись остается.
+func TestSearchSources_ServerMatchIsTyped(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[:1]
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(json.RawMessage(`{"id":9,"title":"Агент","match":[
+			{"word":"жо","field":"author","text":"zhogov1985","hit":"zhogov1985","how":"translit"},
+			{"word":"x","field":"<img>","text":"t","hit":"t","how":"exact"},
+			{"word":"y","field":"title","text":"t","hit":"t","how":"<script>"}]}`)), nil
+	}
+	r := s.SearchSources(context.Background(), "жо")
+	var e struct {
+		Match []struct{ Word, Field, How string } `json:"match"`
+	}
+	if err := json.Unmarshal(r.Hits[0].Entry, &e); err != nil || len(e.Match) != 1 || e.Match[0].Field != "author" || e.Match[0].How != "translit" {
+		t.Fatalf("entry = %s", r.Hits[0].Entry)
+	}
+}
+
+// Признак находки — необязательное поле: не того вида, он отбрасывается сам,
+// а запись с ключом склейки остается. Признаков у записи не больше предела, и
+// слово признака не простыня: из них окно строит подсветку на каждую строку.
+func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[:1]
+	many := make([]string, 0, 100)
+	for range 100 {
+		many = append(many, `{"word":"a","field":"title","hit":"a","how":"exact"}`)
+	}
+	long := `{"word":"b","field":"title","hit":"` + strings.Repeat("я", 500) + `","how":"exact"}`
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(
+			json.RawMessage(`{"id":1,"title":"Агент один","match":{"word":"x"}}`),
+			// Длинный — первым: иначе его отсек бы предел числа, а не длины.
+			json.RawMessage(`{"id":2,"title":"Агент два","match":[`+long+`,`+strings.Join(many, ",")+`]}`),
+		), nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if len(r.Hits) != 2 {
+		t.Fatalf("hits = %d: запись с признаком не того вида пропала", len(r.Hits))
+	}
+	var e struct {
+		Match []struct{ Hit string } `json:"match"`
+	}
+	_ = json.Unmarshal(r.Hits[1].Entry, &e)
+	if len(e.Match) > maxMatches {
+		t.Fatalf("признаков %d, предел %d", len(e.Match), maxMatches)
+	}
+	for _, m := range e.Match {
+		if len(m.Hit) > maxMatchLen {
+			t.Fatalf("слово признака длиной %d", len(m.Hit))
+		}
+	}
+}

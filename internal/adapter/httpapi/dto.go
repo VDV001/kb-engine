@@ -7,6 +7,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/daniil/kb-engine/internal/usecase/freshness"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // transactionDTO is one ledger row on the wire.
@@ -344,6 +345,27 @@ type entryDTO struct {
 	DeepReadDate string `json:"deep_read_date,omitempty"`
 	File         string `json:"file,omitempty"`
 	RelatedIDs   []int  `json:"related_ids,omitempty"`
+	// Match — где и как совпало каждое слово запроса (search.Explain). Есть
+	// только в ответах, что объясняют находку: /api/search с limit и выдача
+	// окна; в остальных опускается.
+	Match []matchDTO `json:"match,omitempty"`
+}
+
+// matchDTO is one search.Why on the wire. Текста поля здесь нет: он уже есть
+// в записи, а три совпадения в описании повторили бы его трижды.
+type matchDTO struct {
+	Word  string `json:"word"`
+	Field string `json:"field"`
+	Hit   string `json:"hit"`
+	How   string `json:"how"`
+}
+
+func toMatch(why []search.Why) []matchDTO {
+	out := make([]matchDTO, len(why))
+	for i, w := range why {
+		out[i] = matchDTO{Word: w.Word, Field: string(w.Field), Hit: w.Hit, How: string(w.How)}
+	}
+	return out
 }
 
 // limitedSearchDTO is /api/search with ?limit=N: the first N entries, how many
@@ -354,9 +376,14 @@ type limitedSearchDTO struct {
 	Keys    []string   `json:"keys"`
 }
 
-// EntryJSON encodes an entry exactly as /api/search does: окно сливает записи
-// своих каталогов с записями kb-сервера, и обе стороны обязаны быть одного вида.
-func EntryJSON(e domain.Entry) (json.RawMessage, error) { return json.Marshal(toDTO(e)) }
+// EntryJSON encodes an entry exactly as /api/search with limit does, with how
+// it was found: окно сливает записи своих каталогов с записями kb-сервера, и
+// обе стороны обязаны быть одного вида.
+func EntryJSON(e domain.Entry, why []search.Why) (json.RawMessage, error) {
+	d := toDTO(e)
+	d.Match = toMatch(why)
+	return json.Marshal(d)
+}
 
 func toDTO(e domain.Entry) entryDTO {
 	d := entryDTO{
