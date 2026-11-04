@@ -117,7 +117,7 @@ func run(args []string, stderr io.Writer) error {
 		}
 		cfg.Remote = remoteServers{
 			cfgPath: expandHome(*filesConfig, userHome()), home: userHome(), ownCatalog: own,
-			match: search.New(syn), tokens: keychain.Store{Service: "kb-desktop"},
+			tokens: keychain.Store{Service: "kb-desktop"},
 		}
 	}
 	srv := mcpserver.New(svc, search.New(syn), cfg)

@@ -77,14 +77,18 @@ type candidate struct {
 func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []sourceOut) {
 	var lists []sourcesearch.Found[candidate]
 	sources := []sourceOut{}
+	ownSeen := false
 	for _, r := range remote {
 		src, items := r.Source, []candidate(nil)
 		switch {
+		case r.Own && ownSeen:
+			continue // свой каталог дважды в списке окна отвечает раз
 		case r.Own:
+			ownSeen = true
 			src.ID = catalogSource
-			items = projected(own)
+			items = projected(own, false)
 		case r.Catalog != nil:
-			items = projected(r.Catalog)
+			items = projected(r.Catalog, true)
 		default:
 			items = typedRemote(r.Entries)
 			for _, k := range r.Keys {
@@ -106,11 +110,16 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 	return out, sources
 }
 
-// projected is a catalog's entries as candidates.
-func projected(entries []domain.Entry) []candidate {
+// projected is a catalog's entries as candidates. У записи чужого каталога
+// (foreign) путь к тексту и связи не берутся, как у записи сервера: get_entry и
+// read_file открыли бы по ним свое.
+func projected(entries []domain.Entry, foreign bool) []candidate {
 	out := make([]candidate, len(entries))
 	for i, e := range entries {
 		p := project(e)
+		if foreign {
+			p.File, p.RelatedIDs = "", nil
+		}
 		out[i] = candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &p}
 	}
 	return out

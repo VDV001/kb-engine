@@ -65,18 +65,21 @@ func SearchCatalog(path, q string, m search.Matcher) ([]domain.Entry, error) {
 // разбирается строго: поле не того типа — запись отброшена (номер-строка с
 // разметкой не доедет до страницы или агента), наружу уходят только эти поля.
 type Entry struct {
-	ID          int      `json:"id"`
-	Title       string   `json:"title"`
-	URL         string   `json:"url,omitempty"`
-	Category    string   `json:"category,omitempty"`
-	Kind        string   `json:"kind,omitempty"`
-	Lifecycle   string   `json:"lifecycle,omitempty"`
-	Verdict     string   `json:"verdict,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
-	Author      string   `json:"author,omitempty"`
-	DateAdded   string   `json:"date_added,omitempty"`
-	Description string   `json:"description,omitempty"`
-	Match       []Match  `json:"match,omitempty"`
+	ID          int     `json:"id"`
+	Title       string  `json:"title"`
+	URL         string  `json:"url,omitempty"`
+	Category    string  `json:"category,omitempty"`
+	Verdict     string  `json:"verdict,omitempty"`
+	Author      string  `json:"author,omitempty"`
+	DateAdded   string  `json:"date_added,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Match       []Match `json:"match,omitempty"`
+	// Kind, Lifecycle и Tags окно не показывает, их читает MCP. Разбираются
+	// мягко (extras): не того типа — пусты, а запись остается, как до общего
+	// пакета.
+	Kind      string   `json:"-"`
+	Lifecycle string   `json:"-"`
+	Tags      []string `json:"-"`
 }
 
 // Match is one «где и как совпало» of a server's entry; поле и способ — из
@@ -131,6 +134,7 @@ func DecodeEntries(raw []json.RawMessage) []Decoded {
 		// запись в присланные или нет. Показ — по проверенному адресу.
 		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
 		e.Match = knownMatches(ms)
+		extras(r, &e)
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {
@@ -139,6 +143,20 @@ func DecodeEntries(raw []json.RawMessage) []Decoded {
 		out = append(out, Decoded{Key: key, Entry: e})
 	}
 	return out
+}
+
+// extras fills the fields only MCP reads, each on its own: поле не того типа
+// остается пустым и не роняет соседей.
+func extras(r json.RawMessage, e *Entry) {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(r, &m) != nil {
+		return
+	}
+	_ = json.Unmarshal(m["kind"], &e.Kind)
+	_ = json.Unmarshal(m["lifecycle"], &e.Lifecycle)
+	if json.Unmarshal(m["tags"], &e.Tags) != nil {
+		e.Tags = nil
+	}
 }
 
 // withoutMatch returns the entry with its match field removed: запись

@@ -85,7 +85,7 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			"окна (kb-серверы, вторые каталоги), выдача общая и идет в его порядке: у " +
 			"записи поле source, у ответа список sources — сколько нашел каждый " +
 			"источник или почему не ответил; выключенный в окне источник не " +
-			"спрашивается. found тогда — сколько записей в ответе (не больше 40 от " +
+			"спрашивается, а свой каталог, которого в списке нет, не ищется. found тогда — сколько записей в ответе (не больше 40 от " +
 			"источника, кроме своего каталога). Номер записи другого источника — " +
 			"номер в ЕГО каталоге: get_entry и read_file отвечают только за source=catalog.",
 	}, func(in searchArgs) []string {
@@ -101,7 +101,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			return nil, err
 		}
 		var remote []RemoteFound
-		if cfg.Remote != nil && in.Query != "" {
+		// Пустой запрос (весь каталог) тоже идет по списку окна: выключенный
+		// там свой каталог не отдается целиком.
+		if cfg.Remote != nil {
 			remote = cfg.Remote.SearchRemote(ctx, in.Query)
 		}
 		if !legacyAnswer(remote) {

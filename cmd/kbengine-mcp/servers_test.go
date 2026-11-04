@@ -308,9 +308,15 @@ func TestRemoteServers_SecondCatalogLikeWindow(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
-	// Синоним «докер» → kubernetes: окно его не знает, и агент не должен.
-	syn := search.New(search.Dictionary{"докер": {Same: []string{"kubernetes"}}})
-	r := remoteServers{cfgPath: cfgPath, home: home, match: syn, tokens: memTokens{}}
+	// Синоним «докер» → kubernetes лежит в словаре своего каталога; окно его
+	// не знает, и вторые каталоги агент ищет без него (windowMatch).
+	if windowMatch.Matches("Kubernetes", "докер") {
+		t.Fatal("windowMatch знает синонимы своего каталога")
+	}
+	if !search.New(search.Dictionary{"докер": {Same: []string{"kubernetes"}}}).Matches("Kubernetes", "докер") {
+		t.Fatal("контроль: словарь сам должен находить")
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, tokens: memTokens{}}
 	if got := r.SearchRemote(context.Background(), "докер"); len(got) < 1 || len(got[0].Catalog) != 0 {
 		t.Fatalf("второй каталог нашел по синониму своего: %+v", got)
 	}

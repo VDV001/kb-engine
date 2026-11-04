@@ -130,8 +130,9 @@ func (c Config) FolderRoots() []string {
 }
 
 // CatalogPath returns the first enabled catalog, or "" if there is none.
-// ponytail: общая выдача окна читает все каталоги (desktop/search.go), а MCP
-// и превью записи — только этот, первый. Путь: MCP на sourcesearch.Merge.
+// ponytail: общая выдача окна и search_catalog MCP читают все каталоги
+// списка (sourcelist), а превью записи и счет в окне — только этот, первый.
+// Путь: превью по источнику записи.
 func (c Config) CatalogPath() string {
 	for _, s := range c.list() {
 		if s.Enabled && s.Kind == KindCatalog {

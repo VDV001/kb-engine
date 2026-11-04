@@ -45,16 +45,19 @@ type remoteServers struct {
 	// ownCatalog — раскрытый путь --catalog: этот каталог списка ищет сам
 	// mcpserver (Own), тем же поиском, что get_entry и stats.
 	ownCatalog string
-	match      search.Matcher
 	tokens     tokenGetter
 }
+
+// windowMatch — чем окно ищет в каталогах списка (desktop searchCatalog): без
+// словаря синонимов своего каталога. Вторые каталоги агент видит так же.
+var windowMatch = search.Matcher{}
 
 // SearchRemote asks every enabled source of the list in order, in parallel.
 // Конфиг читается на каждый вызов: окно меняет список без перезапуска MCP.
 // Список не прочитан — свой каталог отвечает, как до списка источников, и беда
 // названа строкой config.
 func (r remoteServers) SearchRemote(ctx context.Context, q string) []mcpserver.RemoteFound {
-	rows, err := r.snapshot(ctx)
+	rows, err := r.snapshot(ctx, q)
 	ownOnly := func(msg string) []mcpserver.RemoteFound {
 		return []mcpserver.RemoteFound{{Own: true}, {Source: mcpserver.RemoteSource{ID: "config"}, Err: msg}}
 	}
@@ -86,17 +89,31 @@ func (r remoteServers) SearchRemote(ctx context.Context, q string) []mcpserver.R
 func (r remoteServers) catalog(s desktopconfig.Source, q string) mcpserver.RemoteFound {
 	found := mcpserver.RemoteFound{Source: mcpserver.RemoteSource{ID: s.ID, Name: s.Name}}
 	path := filepath.Clean(desktopconfig.ExpandHome(s.Path, r.home))
-	if path == filepath.Clean(r.ownCatalog) {
+	if samePath(path, r.ownCatalog) {
 		found.Own = true
 		return found
 	}
-	entries, err := sourcelist.SearchCatalog(path, q, r.match)
+	// ponytail: файл второго каталога читается на каждый вызов, как и в окне
+	// (desktop searchCatalog). Потолок — разбор всего файла на каждый поиск
+	// агента; путь — кэш по (путь, mtime, размер), общий с окном.
+	entries, err := sourcelist.SearchCatalog(path, q, windowMatch)
 	if err != nil {
 		found.Err = "каталог не прочитался: " + err.Error()
 		return found
 	}
 	found.Catalog = append([]domain.Entry{}, entries...) // не nil: каталог, а не сервер
 	return found
+}
+
+// samePath reports whether two paths name one file, following symlinks: окно
+// хранит путь, каким его выбрал человек, MCP запущен с другим.
+func samePath(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
 }
 
 // withToken is an enabled source of the list; у сервера — что Связка дала
@@ -111,7 +128,7 @@ type withToken struct {
 // under the config lock, waiting for it no longer than remoteTimeout. У
 // ожидания замка свой срок, у Связки свой (token): окно, державшее замок почти
 // весь срок, не превращает разблокированную Связку в «не ответила».
-func (r remoteServers) snapshot(ctx context.Context) ([]withToken, error) {
+func (r remoteServers) snapshot(ctx context.Context, q string) ([]withToken, error) {
 	waitCtx, cancel := context.WithTimeout(ctx, remoteTimeout)
 	defer cancel()
 	var out []withToken
@@ -121,7 +138,9 @@ func (r remoteServers) snapshot(ctx context.Context) ([]withToken, error) {
 			return err
 		}
 		for _, s := range sourcelist.Enabled(cfg) {
-			if s.Kind == desktopconfig.KindServer || s.Kind == desktopconfig.KindCatalog {
+			// Пустой запрос серверы не спрашивает: им нечего искать, а весь
+			// каталог агент просит у каталогов.
+			if (s.Kind == desktopconfig.KindServer && q != "") || s.Kind == desktopconfig.KindCatalog {
 				out = append(out, withToken{src: s})
 			}
 		}
