@@ -4,6 +4,7 @@
 // сторонних библиотек: в Wails v2 этого нет (решение владельца 03.11.2026).
 #import <Cocoa/Cocoa.h>
 #import <Carbon/Carbon.h>
+#import <objc/runtime.h>
 
 extern void kbToggle(int frontmost);
 extern void kbQuit(void);
@@ -37,20 +38,31 @@ static OSStatus kbOnHotKey(EventHandlerCallRef next, EventRef event, void *data)
     return noErr;
 }
 
+// kbReopen — щелчок по значку в Dock: окно спрятано, значит открыть поиск.
+static BOOL kbReopen(id self, SEL cmd, NSApplication *app, BOOL visible) {
+    if (!visible) kbToggle(0);
+    return YES;
+}
+
 void kbInstallMenuBar(void) {
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Без Dock и ⌘Tab: Wails в applicationWillFinishLaunching сам ставит
-        // Regular и перекрывает LSUIElement (ревью #380), а этот блок идет
-        // после запуска. LSUIElement остается: без него значок мелькает.
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        // kb в Dock и ⌘Tab (решение владельца 05.11.2026): Wails ставит Regular
+        // сам. Щелчок по значку в Dock, когда окно спрятано красной кнопкой,
+        // открывает поиск: своего обработчика reopen у Wails v2 нет, поэтому
+        // метод добавляется делегату Wails. Если он появится у Wails, наш не
+        // встанет (class_addMethod не заменяет), и останется его поведение.
+        class_addMethod([[NSApp delegate] class], @selector(applicationShouldHandleReopen:hasVisibleWindows:),
+                        (IMP)kbReopen, "B@:@B");
         tray = [KBTray new];
         item = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
-        // Системный символ, а не своя картинка: шаблон сам темнеет и светлеет
-        // вместе с меню-баром, и ассетов в пакете не прибавляется.
-        NSImage *img = [NSImage imageWithSystemSymbolName:@"magnifyingglass" accessibilityDescription:@"kb"];
+        // Знак kb шаблоном (Resources/menubar.png, мозг с DVK одним цветом):
+        // шаблон сам темнеет и светлеет вместе с меню-баром. Нет файла — лупа.
+        NSImage *img = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForImageResource:@"menubar"]];
+        if (img) img.size = NSMakeSize(18, 18);
+        else img = [NSImage imageWithSystemSymbolName:@"magnifyingglass" accessibilityDescription:@"DVK"];
         [img setTemplate:YES];
         item.button.image = img;
-        item.button.toolTip = @"kb — поиск по базе и файлам (⌥Space)";
+        item.button.toolTip = @"DVK — поиск по базе и файлам (⌥Space)";
 
         NSMenu *menu = [NSMenu new];
         NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"Открыть поиск" action:@selector(open:) keyEquivalent:@" "];
@@ -58,7 +70,7 @@ void kbInstallMenuBar(void) {
         open.target = tray;
         [menu addItem:open];
         [menu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Выйти из kb" action:@selector(quit:) keyEquivalent:@"q"];
+        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Выйти из DVK" action:@selector(quit:) keyEquivalent:@"q"];
         quit.target = tray;
         [menu addItem:quit];
         item.menu = menu;

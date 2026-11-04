@@ -109,7 +109,7 @@ func run() error {
 
 	app := newApp(idx.files, settings, idx)
 	return wails.Run(&options.App{
-		Title:     "kb",
+		Title:     "DVK",
 		Width:     1180,
 		Height:    760,
 		MinWidth:  760,
@@ -125,8 +125,8 @@ func run() error {
 			app.startup(ctx)
 			installMenuBar(tray{win: wailsWindow{ctx: ctx}, ctx: ctx})
 		},
-		// Значка в Dock нет (LSUIElement в Info.plist): красная кнопка прячет
-		// окно, а выход — из меню значка в меню-баре.
+		// Красная кнопка прячет окно: вернуть его — ⌥Space, значок в Dock или в
+		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка.
 		HideWindowOnClose: true,
 		OnShutdown:        func(context.Context) { cancel() },
 		Bind:              []any{app},
@@ -134,7 +134,7 @@ func run() error {
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,
 			About: &mac.AboutInfo{
-				Title:   "kb",
+				Title:   "DVK",
 				Message: fmt.Sprintf("Поиск по базе знаний и файлам.\nКонфиг: %s", cfgPath),
 			},
 		},
