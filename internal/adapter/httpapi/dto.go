@@ -351,11 +351,11 @@ type entryDTO struct {
 	Match []matchDTO `json:"match,omitempty"`
 }
 
-// matchDTO is one search.Why on the wire.
+// matchDTO is one search.Why on the wire. Текста поля здесь нет: он уже есть
+// в записи, а три совпадения в описании повторили бы его трижды.
 type matchDTO struct {
 	Word  string `json:"word"`
 	Field string `json:"field"`
-	Text  string `json:"text"`
 	Hit   string `json:"hit"`
 	How   string `json:"how"`
 }
@@ -363,7 +363,7 @@ type matchDTO struct {
 func toMatch(why []search.Why) []matchDTO {
 	out := make([]matchDTO, len(why))
 	for i, w := range why {
-		out[i] = matchDTO{Word: w.Word, Field: string(w.Field), Text: w.Text, Hit: w.Hit, How: string(w.How)}
+		out[i] = matchDTO{Word: w.Word, Field: string(w.Field), Hit: w.Hit, How: string(w.How)}
 	}
 	return out
 }

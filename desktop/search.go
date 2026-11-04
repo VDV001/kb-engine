@@ -255,25 +255,20 @@ type serverEntry struct {
 }
 
 // serverMatch is one «где и как совпало» of a server's entry; поле и способ
-// — из известных, иначе признак отброшен (на страницу идут как классы и слова).
+// — из тех, что называет search.Explain, иначе признак отброшен.
 type serverMatch struct {
 	Word  string `json:"word"`
 	Field string `json:"field"`
-	Text  string `json:"text"`
 	Hit   string `json:"hit"`
 	How   string `json:"how"`
 }
 
-var (
-	knownFields = map[string]bool{"title": true, "description": true, "category": true, "tag": true, "author": true, "id": true}
-	knownHows   = map[string]bool{"exact": true, "synonym": true, "translit": true, "typo": true}
-)
-
-// knownMatches keeps the matches with a known field and way.
+// knownMatches keeps the matches with a field and way search can name: список
+// живет в пакете search, а не здесь третьей копией.
 func knownMatches(in []serverMatch) []serverMatch {
 	var out []serverMatch
 	for _, m := range in {
-		if knownFields[m.Field] && knownHows[m.How] {
+		if search.ValidField(m.Field) && search.ValidHow(m.How) {
 			out = append(out, m)
 		}
 	}
