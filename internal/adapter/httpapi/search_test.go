@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/usecase/search"
+	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
 // Поиска в HTTP API не было вовсе: фронт забирал /api/entries и фильтровал у
@@ -127,5 +128,52 @@ func TestServer_nilOptionIsLegal(t *testing.T) {
 	srv := newTestServerWith(nil)
 	if rec := get(t, srv, "/api/search?q=hello"); rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+// limit — для окна, сливающего источники: первые N записей, полный счет и
+// ключи остальных (склейке дублей нужны все, а сами записи — нет). Без limit
+// ответ прежний, массив: витрина и окна прошлых версий его и ждут.
+func TestServer_searchLimit(t *testing.T) {
+	srv := newTestServer()
+	type limited struct {
+		Entries []struct {
+			ID int `json:"id"`
+		} `json:"entries"`
+		Total int      `json:"total"`
+		Keys  []string `json:"keys"`
+	}
+	var full []struct {
+		ID    int    `json:"id"`
+		Title string `json:"title"`
+		URL   string `json:"url"`
+	}
+	if err := json.Unmarshal(get(t, srv, "/api/search?q=hello").Body.Bytes(), &full); err != nil || len(full) != 2 {
+		t.Fatalf("без limit: %v, %d записей", err, len(full))
+	}
+
+	var got limited
+	if err := json.Unmarshal(get(t, srv, "/api/search?q=hello&limit=1").Body.Bytes(), &got); err != nil {
+		t.Fatalf("limit=1: %v", err)
+	}
+	wantKey := sourcesearch.EntryKey(full[1].ID, full[1].Title, full[1].URL)
+	if len(got.Entries) != 1 || got.Entries[0].ID != full[0].ID || got.Total != 2 || len(got.Keys) != 1 || got.Keys[0] != wantKey {
+		t.Fatalf("limit=1: %+v, want первую запись, total 2 и ключ %q", got, wantKey)
+	}
+
+	got = limited{}
+	if err := json.Unmarshal(get(t, srv, "/api/search?q=hello&limit=10").Body.Bytes(), &got); err != nil || len(got.Entries) != 2 || got.Total != 2 || len(got.Keys) != 0 {
+		t.Fatalf("limit больше найденного: %+v, %v", got, err)
+	}
+	if got.Keys == nil {
+		t.Fatal("keys = null, want []")
+	}
+
+	// Негодный limit — как его отсутствие: массив, а не отказ.
+	for _, bad := range []string{"0", "-1", "abc"} {
+		var arr []json.RawMessage
+		if err := json.Unmarshal(get(t, srv, "/api/search?q=hello&limit="+bad).Body.Bytes(), &arr); err != nil || len(arr) != 2 {
+			t.Fatalf("limit=%s: %v, %d", bad, err, len(arr))
+		}
 	}
 }
