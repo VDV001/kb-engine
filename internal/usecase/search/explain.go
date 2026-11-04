@@ -140,9 +140,6 @@ func (m Matcher) explainAll(fs joined, cand string) ([]Why, bool) {
 	return out, len(out) > 0
 }
 
-// rank orders the layers as matchHow tries them.
-var rank = map[How]int{HowExact: 0, HowSynonym: 1, HowTranslit: 2, HowTypo: 3}
-
 // joined is the text the search reads — the fields lowered and joined by a
 // space — with where each field starts in it and in its transliteration.
 // Translit идет посимвольно, поэтому Translit(a + " " + b) = Translit(a) + " " +
@@ -222,8 +219,17 @@ func (m Matcher) explainWord(fs joined, w string) (Why, bool) {
 // nearAnyWord find it: подстрокой, с начала слова или словом в пределах правок.
 func locate(hay string, how How, form string) int {
 	if how == HowTypo {
+		// Слово без правок раньше любой опечатки: nearAnyWord отвечает «да» на
+		// первом близком слове, а объяснить надо лучшее — «zhogov» это автор
+		// «Жогов», а не опечатка «Zhogof» в заголовке.
+		spans := wordSpans(hay)
+		for _, sp := range spans {
+			if sp.w == form {
+				return sp.at
+			}
+		}
 		limit := editLimit(form)
-		for _, sp := range wordSpans(hay) {
+		for _, sp := range spans {
 			if within(sp.w, form, limit) {
 				return sp.at
 			}
@@ -285,20 +291,44 @@ func hitIn(text string, how How, form string) (string, How) {
 			}
 		}
 	case HowTypo:
-		limit := editLimit(form)
-		for _, ow := range wordsOf(text) {
-			nw := norm(ow)
-			th := domain.Translit(nw)
-			if !within(th, form, limit) {
-				continue
-			}
-			if th == form && nw != form {
-				return ow, HowTranslit
-			}
-			return ow, how
+		if hit, label, ok := typoHit(text, form); ok {
+			return hit, label
 		}
 	}
-	return form, how
+	return inTextSpelling(text, form), how
+}
+
+// typoHit finds the word of a typo match: слово без правок раньше любого
+// близкого, и без правок через транслит — это транслит, а не опечатка.
+func typoHit(text, form string) (string, How, bool) {
+	limit := editLimit(form)
+	var near string
+	for _, ow := range wordsOf(text) {
+		nw := norm(ow)
+		th := domain.Translit(nw)
+		if th == form {
+			if nw != form {
+				return ow, HowTranslit, true
+			}
+			return ow, HowTypo, true
+		}
+		if near == "" && within(th, form, limit) {
+			near = ow
+		}
+	}
+	return near, HowTypo, near != ""
+}
+
+// inTextSpelling returns form as it is spelled in text — с заглавными и «ё»
+// оригинала, — if lowering text kept its length; otherwise form itself.
+func inTextSpelling(text, form string) string {
+	low := strings.ReplaceAll(strings.ToLower(text), "ё", "е")
+	if len(low) == len(text) {
+		if i := strings.Index(low, form); i >= 0 {
+			return text[i : i+len(form)]
+		}
+	}
+	return form
 }
 
 // exactIn reports the word of text that contains w the way contains does:
@@ -306,7 +336,7 @@ func hitIn(text string, how How, form string) (string, How) {
 // («ci/cd») ищется во всем тексте и подсвечивается само.
 func exactIn(text, w string) (string, bool) {
 	if strings.ContainsFunc(w, isSeparator) {
-		return w, strings.Contains(norm(text), w)
+		return inTextSpelling(text, w), strings.Contains(norm(text), w)
 	}
 	long := utf8.RuneCountInString(w) >= shortQuery
 	for _, ow := range wordsOf(text) {
@@ -330,6 +360,9 @@ func ValidField(f string) bool {
 
 // ValidHow reports whether h is a way Explain can name.
 func ValidHow(h string) bool {
-	_, ok := rank[How(h)]
-	return ok
+	switch How(h) {
+	case HowExact, HowSynonym, HowTranslit, HowTypo:
+		return true
+	}
+	return false
 }

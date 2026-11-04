@@ -894,3 +894,39 @@ func TestSearchSources_OpenFoldersFollowSaveAndReconcile(t *testing.T) {
 		t.Fatalf("после возврата: %+v", f)
 	}
 }
+
+// Признак находки — необязательное поле: не того вида, он отбрасывается сам,
+// а запись с ключом склейки остается. Признаков у записи не больше предела, и
+// слово признака не простыня: из них окно строит подсветку на каждую строку.
+func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.cfg.Sources = s.cfg.Sources[:1]
+	many := make([]string, 0, 100)
+	for range 100 {
+		many = append(many, `{"word":"a","field":"title","hit":"a","how":"exact"}`)
+	}
+	long := `{"word":"b","field":"title","hit":"` + strings.Repeat("я", 500) + `","how":"exact"}`
+	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
+		return result(
+			json.RawMessage(`{"id":1,"title":"Агент один","match":{"word":"x"}}`),
+			// Длинный — первым: иначе его отсек бы предел числа, а не длины.
+			json.RawMessage(`{"id":2,"title":"Агент два","match":[`+long+`,`+strings.Join(many, ",")+`]}`),
+		), nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if len(r.Hits) != 2 {
+		t.Fatalf("hits = %d: запись с признаком не того вида пропала", len(r.Hits))
+	}
+	var e struct {
+		Match []struct{ Hit string } `json:"match"`
+	}
+	_ = json.Unmarshal(r.Hits[1].Entry, &e)
+	if len(e.Match) > maxMatches {
+		t.Fatalf("признаков %d, предел %d", len(e.Match), maxMatches)
+	}
+	for _, m := range e.Match {
+		if len(m.Hit) > maxMatchLen {
+			t.Fatalf("слово признака длиной %d", len(m.Hit))
+		}
+	}
+}
