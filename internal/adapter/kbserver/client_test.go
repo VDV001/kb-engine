@@ -286,13 +286,32 @@ func TestClient_SearchLimit(t *testing.T) {
 			}
 		})
 	}
-	// Объект, где total меньше числа записей, или без entries — не kb-сервер.
-	for _, bad := range []string{`{"total":1,"entries":[{"id":1},{"id":2}]}`, `{"total":3}`} {
+	// Объект, где счет не сходится с записями и ключами, без entries или с
+	// ключом-простыней — не kb-сервер.
+	long := `"` + strings.Repeat("k", 5000) + `"`
+	for _, bad := range []string{
+		`{"total":1,"entries":[{"id":1},{"id":2}]}`,
+		`{"total":3}`,
+		`{"total":3,"entries":[{"id":1}],"keys":["a"]}`,
+		`{"total":5,"entries":[{"id":1}],"keys":["a","b"]}`,
+		`{"total":2,"entries":[{"id":1}],"keys":[` + long + `]}`,
+	} {
 		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(bad)) }))
 		_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
 		srv.Close()
 		if !errors.Is(err, kbserver.ErrNotKB) {
 			t.Errorf("%s: err = %v, want ErrNotKB", bad, err)
 		}
+	}
+}
+
+// null вместо списка (прокси, сборка, что пустое кодирует null) — пустая
+// выдача, а не «не kb-сервер».
+func TestClient_SearchNull(t *testing.T) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("null")) }))
+	defer srv.Close()
+	res, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
+	if err != nil || len(res.Entries) != 0 || res.Total != 0 {
+		t.Fatalf("res = %+v, err = %v", res, err)
 	}
 }

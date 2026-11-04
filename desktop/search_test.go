@@ -740,3 +740,31 @@ func TestSearchSources_SkipsServersWhileSaving(t *testing.T) {
 		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
 	}
 }
+
+// Окно просит у сервера вдвое больше, чем покажет: первые записи сервера
+// часто дублируют источник выше и склеиваются, и без запаса от сервера
+// осталась бы горстка строк при сотнях найденных.
+func TestFindServer_AsksWithMargin(t *testing.T) {
+	var got string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.URL.Query().Get("limit")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer srv.Close()
+	if _, err := findServer(context.Background(), srv.URL, "", "q"); err != nil {
+		t.Fatal(err)
+	}
+	if got != strconv.Itoa(2*searchLimit) {
+		t.Fatalf("limit = %q, want %d", got, 2*searchLimit)
+	}
+}
+
+// Ключ показанной записи сервера — по исходному адресу, как ключи остальных
+// записей, что сервер считает сам: иначе склейка зависела бы от того, попала
+// запись в первые N или нет.
+func TestTypedEntries_KeyFromRawURL(t *testing.T) {
+	items := typedEntries([]json.RawMessage{json.RawMessage(`{"id":5,"title":"Канал","url":"t.me/chan/5"}`)})
+	if len(items) != 1 || items[0].key != sourcesearch.EntryKey(5, "Канал", "t.me/chan/5") {
+		t.Fatalf("items = %+v", items)
+	}
+}
