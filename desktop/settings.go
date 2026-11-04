@@ -162,7 +162,6 @@ func (f *folderSettings) catalogRow(r *sourceRow, current string) {
 func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []string, tokens map[string]string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.ver++ // и при отказе: токены могли успеть поменяться и откатиться
 	next := f.cfg
 	next.Sources = slices.Clone(list)
 	next.Roots, next.Catalog, next.Server = nil, "", ""
@@ -182,6 +181,10 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 
 	// Токены — до apply: отказ Связки ключей не должен оставить индекс на новых
 	// источниках при старом конфиге. Откат токенов — при любом отказе дальше.
+	// Версия растет перед записью токенов, и при отказе дальше: токены могли
+	// успеть поменяться и откатиться. Отказ раньше ничего не трогал и поиск не
+	// отменяет.
+	f.ver++
 	undoTokens, err := f.storeTokens(next, tokens)
 	if err != nil {
 		return err
@@ -210,20 +213,25 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 // сохранении. Уже сохраненный каталог, что сейчас недоступен (сетевой диск),
 // не мешает.
 func (f *folderSettings) checkCatalogs(next desktopconfig.Config) (string, error) {
-	saved := map[string]bool{}
+	saved := map[string]bool{} // по раскрытому пути: «~/…» и полный путь — один каталог
 	for _, s := range f.cfg.WithSources().Sources {
 		if s.Kind == desktopconfig.KindCatalog {
-			saved[s.Path] = true
+			saved[desktopconfig.ExpandHome(s.Path, f.home)] = true
 		}
 	}
+	first := ""
 	for _, s := range next.Sources {
 		if s.Enabled && s.Kind == desktopconfig.KindCatalog {
-			if _, err := f.catalogFile(s.Path, saved[s.Path]); err != nil {
+			p, err := f.catalogFile(s.Path, saved[desktopconfig.ExpandHome(s.Path, f.home)])
+			if err != nil {
 				return "", err
+			}
+			if first == "" {
+				first = p
 			}
 		}
 	}
-	return f.catalogFile(next.CatalogPath(), saved[next.CatalogPath()])
+	return first, nil
 }
 
 // reconcile reopens the folders when the set of enabled folders that can be

@@ -129,8 +129,9 @@ async function search(q) {
   ]);
   if (seq !== state.seq) return; // пришел ответ на устаревший запрос
   $("#app").classList.remove("busy");
-  // Записей от источника не больше 40 — срез делает Go до слияния, поэтому
-  // фильтр по нижнему источнику показывает его записи, а не пустоту.
+  // Записей от источника не больше 40: Go склеивает дубли по всему найденному
+  // и только потом режет, поэтому фильтр по нижнему источнику показывает его
+  // записи, а не пустоту.
   state.kb = kb.hits.map((h) => ({ ...h.entry, _src: h.source }));
   state.sources = kb.sources;
   state.dupes = kb.dupes || 0;
@@ -866,15 +867,13 @@ $("#save-settings").onclick = async () => {
         if (st.error) showError("Индекс не собрался: " + st.error);
         else hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
         setIndexed(st.indexed, st.skipped);
-        if (state.q) search(state.q);
         break;
       }
       await sleep(400);
     }
     load(await native().Sources()); // id новых источников и свежий счет
-    // Выдача перерисовалась до того, как список обновился: у нового источника
-    // не было цвета. Теперь список свежий — перерисовать строку и метки.
-    if (state.q) render();
+    // Поиск — после обновления списка: у нового источника уже есть цвет.
+    if (state.q) search(state.q);
     renderSources();
     loadServerStates();
     toast("Сохранено", " · " + $("#settings-note").textContent);
