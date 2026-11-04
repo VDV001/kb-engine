@@ -168,3 +168,59 @@ func TestExplain_CoversSynonymAndSeparatorPaths(t *testing.T) {
 		}
 	}
 }
+
+// Заглавная «Ё» — та же «е»: поиск понижает регистр до замены, объяснение
+// обязано так же (ревью #392: «Ёжик» находился без объяснения, «Ёлкин»
+// объяснялся опечаткой).
+func TestExplain_CapitalYo(t *testing.T) {
+	dict := search.New(nil)
+	e1 := full(t, 1, "Ёжик в тумане", "", "")
+	e2 := full(t, 2, "Заметка", "", "Пётр Ёлкин")
+	if why := search.Explain(e1, "еж", dict); len(why) != 1 || why[0].Hit != "Ёжик" || why[0].How != search.HowExact {
+		t.Fatalf("«еж» — Ёжик: %+v", why)
+	}
+	if why := search.Explain(e2, "елкин", dict); len(why) != 1 || why[0].How != search.HowExact || why[0].Field != search.FieldAuthor {
+		t.Fatalf("«елкин» — Ёлкин: %+v", why)
+	}
+}
+
+// Синоним из нескольких слов поиск находит и на стыке полей — он ищет по
+// склеенному тексту записи. Объяснение идет по тому же тексту и называет поле,
+// где совпадение начинается.
+func TestExplain_SynonymAcrossFields(t *testing.T) {
+	dict := search.New(search.Dictionary{"cicd": {Same: []string{"ci cd"}}})
+	e := full(t, 1, "gucci", "cdn notes", "")
+	if len(search.FilterWith([]domain.Entry{e}, "cicd", dict)) != 1 {
+		t.Fatal("фикстура не про то: поиск не нашел")
+	}
+	why := search.Explain(e, "cicd", dict)
+	if len(why) == 0 || why[0].How != search.HowSynonym || why[0].Field != search.FieldTitle {
+		t.Fatalf("Explain = %+v", why)
+	}
+}
+
+// Обратное обязательство и для фраз со словарем: запись, которую поиск не
+// нашел, не получает полного объяснения ни словами, ни синонимом.
+func TestExplain_InventsNothingWithDictionary(t *testing.T) {
+	dict := search.New(search.Dictionary{
+		"сборка мусора": {Same: []string{"garbage collection"}},
+		"k8s":           {Same: []string{"kubernetes"}},
+	})
+	entries := []domain.Entry{
+		full(t, 1, "garbage", "", ""),
+		full(t, 2, "сборка проекта", "", ""),
+		full(t, 3, "Kubernetic", "", ""),
+	}
+	for _, q := range []string{"сборка мусора", "k8s", "garbage collection", "сборка"} {
+		found := map[int]bool{}
+		for _, e := range search.FilterWith(entries, q, dict) {
+			found[e.ID()] = true
+		}
+		for _, e := range entries {
+			why := search.Explain(e, q, dict)
+			if !found[e.ID()] && len(why) > 0 && (why[0].How == search.HowSynonym || len(why) == len(strings.Fields(q))) {
+				t.Errorf("%q: #%d не найден, а Explain = %+v", q, e.ID(), why)
+			}
+		}
+	}
+}
