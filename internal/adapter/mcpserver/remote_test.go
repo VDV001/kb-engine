@@ -97,3 +97,27 @@ func TestServer_searchWithoutRemoteIsUnchanged(t *testing.T) {
 }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
+
+// Ключи остальных записей сервера участвуют в склейке: запись источника ниже,
+// что у сервера выше пришла только ключом, не показывается второй раз; в
+// «найдено» сервера входят и записи, известные ключом.
+func TestServer_searchRemoteKeysMerge(t *testing.T) {
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{
+		{Source: mcpserver.RemoteSource{ID: "server-a"}, Total: 1, Keys: []string{"url example.com/z"}},
+		{Source: mcpserver.RemoteSource{ID: "server-b"}, Total: 1, Entries: []json.RawMessage{
+			json.RawMessage(`{"id":9,"title":"Та же статья","url":"https://example.com/z","category":"ai","kind":"article","lifecycle":"active"}`),
+		}},
+	}})
+	var out sourcedOut
+	if err := json.Unmarshal([]byte(text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))), &out); err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range out.Entries {
+		if e.Source == "server-b" {
+			t.Fatalf("дубль ключа server-a показан у server-b: %+v", out.Entries)
+		}
+	}
+	if out.Sources[1].Found != 1 {
+		t.Fatalf("server-a = %+v: ключ входит в найдено", out.Sources[1])
+	}
+}
