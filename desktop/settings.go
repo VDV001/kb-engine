@@ -78,6 +78,9 @@ type folderSettings struct {
 	open atomic.Pointer[[]string]
 	// countMatches — сколько файлов каждой папки нашел запрос (filesearch).
 	countMatches func(q string, roots []string) (map[string]int, error)
+	// indexing — индекс файлов сейчас пересобирается: счет папок старый, и
+	// только что добавленная папка в нем еще пуста.
+	indexing func() bool
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string

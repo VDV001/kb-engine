@@ -217,6 +217,9 @@ async function search(q) {
 }
 
 // folderOf returns the id of the folder source that holds path, "" if none.
+// ponytail: граница папки повторяет countUnder из Go (с «/» вместо
+// filepath.Separator). Потолок: правка одной стороны разведет «показано» и
+// «найдено». Путь: id источника у каждого файла в ответе окна.
 function folderOf(path, roots) {
   const r = roots.find((x) => path === x.root || path.startsWith(x.root.replace(/\/$/, "") + "/"));
   return r ? r.id : "";
@@ -312,7 +315,7 @@ function kbRow(e, i, hl, hue) {
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
-  const s = state.sources.length > 1 && state.sources.find((x) => x.id === e._src);
+  const s = kbSourceCount() > 1 && state.sources.find((x) => x.id === e._src);
   const from = s ? `<span class="hit-src" style="--c:var(${hue.get(s.id)})">${esc(label(s))}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
     <div class="hit-head"><span class="type kb">${TYPE_LABEL.kb}</span><span class="hit-name">${hl(e.title)}</span><span class="hit-tail">${from}${verdict}</span></div>
@@ -486,7 +489,9 @@ function hues(list = draft.sources, keyOf = (s) => s._key) {
 // Цвета строки источников — по всему списку настроек, если он известен (окно);
 // в браузере списка нет, и цвет считается по тем, кто ответил.
 const stripHues = () => hues(state.known.length ? state.known : state.sources, (s) => s.id);
-const sourceName = (id) => { const s = state.sources.find((x) => x.id === id); return s && state.sources.length > 1 ? label(s) : ""; };
+// Метка источника у записи — когда баз знаний больше одной; папки не в счет.
+const kbSourceCount = () => state.sources.filter((x) => x.kind !== "folder").length;
+const sourceName = (id) => { const s = state.sources.find((x) => x.id === id); return s && kbSourceCount() > 1 ? label(s) : ""; };
 
 // Строка источников над выдачей: «имя N из M» — показано из найденного; клик
 // оставляет в выдаче только этот источник, повторный — снимает фильтр.

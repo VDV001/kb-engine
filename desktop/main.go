@@ -92,7 +92,7 @@ func run() error {
 	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, applied: opened,
 		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count,
 		tokens: newCachedTokens(keychainTokens()), probe: probeServer, find: findServer,
-		countMatches: idx.files.CountMatches}
+		countMatches: idx.files.CountMatches, indexing: func() bool { return idx.Status().Building }}
 	idx.reconcile = settings.reconcile // до start: горутина таймера читает поле
 	settings.publish()                 // снимок для поиска: дальше он читается без f.mu
 	settings.setOpen(opened)

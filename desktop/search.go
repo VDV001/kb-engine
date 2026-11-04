@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 
@@ -40,7 +41,7 @@ type sourceHit struct {
 	Entry  json.RawMessage `json:"entry"`
 }
 
-// sourceFound is one knowledge-base source in the strip above the results:
+// sourceFound is one source in the strip above the results:
 // сколько он нашел или почему не ответил. «Показано» считает интерфейс — он
 // и решает, сколько строк показать.
 type sourceFound struct {
@@ -67,20 +68,13 @@ type candidate struct {
 	encode func() (json.RawMessage, error)
 }
 
-// SearchSources asks every enabled knowledge-base source (catalogs and kb
-// servers) in parallel and merges the answers by the list order. Склейка видит
+// SearchSources asks every enabled source in parallel — catalogs and kb servers
+// for entries, folders for counts — and merges the entries by the list order. Склейка видит
 // все найденное, срез до searchLimit — после нее: иначе дубль за пределом
 // среза у источника выше показался бы у нижнего.
-// ponytail: папки в строку источников не входят — их выдача идет своим
-// /api/files/search, счет «N из M» по папкам — следующий шаг этапа 5.
 func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSearch {
 	snap := f.snapshot()
-	var rows []sourceFound
-	for _, s := range snap.cfg.WithSources().Sources {
-		if s.Enabled {
-			rows = append(rows, sourceFound{Source: s})
-		}
-	}
+	rows := sourceRows(snap.cfg)
 	lists := make([]sourcesearch.Found[candidate], len(rows))
 	var wg sync.WaitGroup
 	for i := range rows {
@@ -137,6 +131,10 @@ func (f *folderSettings) countFolders(rows []sourceFound, q string) {
 	if len(roots) == 0 || f.countMatches == nil {
 		return
 	}
+	if f.indexing != nil && f.indexing() {
+		markRebuilding(rows)
+		return
+	}
 	counts, err := f.countMatches(q, roots)
 	for i := range rows {
 		if rows[i].Kind != desktopconfig.KindFolder || rows[i].Error != "" {
@@ -151,6 +149,38 @@ func (f *folderSettings) countFolders(rows []sourceFound, q string) {
 			rows[i].Found = counts[rows[i].Root]
 		}
 	}
+}
+
+// sourceRows lists the enabled sources of a known kind, in list order.
+// Источник неизвестного вида (из более новой сборки) в строку не идет: искать в
+// нем нечем, а живой чип «0 из 0» соврал бы.
+func sourceRows(cfg desktopconfig.Config) []sourceFound {
+	var rows []sourceFound
+	for _, s := range cfg.WithSources().Sources {
+		switch s.Kind {
+		case desktopconfig.KindCatalog, desktopconfig.KindServer, desktopconfig.KindFolder:
+			if s.Enabled {
+				rows = append(rows, sourceFound{Source: s})
+			}
+		}
+	}
+	return rows
+}
+
+// markRebuilding names the open folders while the index is rebuilding: их счет
+// старый, и только что добавленная папка в нем еще пуста.
+func markRebuilding(rows []sourceFound) {
+	for i := range rows {
+		if rows[i].Kind == desktopconfig.KindFolder && rows[i].Error == "" {
+			rows[i].Error = "индекс файлов пересобирается"
+		}
+	}
+}
+
+// isDir reports whether path is a directory right now.
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 // markOpen sets the root of every folder row, names the folders that are not
@@ -168,7 +198,9 @@ func (f *folderSettings) markOpen(rows []sourceFound) []string {
 			continue
 		}
 		rows[i].Root = desktopconfig.ExpandHome(rows[i].Path, f.home)
-		if open[rows[i].Root] {
+		// Открыта в индексе и есть на диске сейчас: пропавшая разом единственная
+		// сетевая папка остается в open (reconcile пустой набор не применяет).
+		if open[rows[i].Root] && isDir(rows[i].Root) {
 			roots = append(roots, rows[i].Root)
 		} else {
 			rows[i].Error = "нет связи: папка недоступна (диск, VPN)"
