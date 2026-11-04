@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.34.0] — 2026-11-05
+
 ### Added
 
 - **MCP объясняет находку, как окно: у записи `search_catalog` есть `match`.** Каждое слово
@@ -29,6 +31,9 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Changed
 
+- **CI: CodeQL 4.39.1 и docker/login 4.7.0 (Dependabot, #393).** Действия обновлены по
+  закрепленным SHA, поведение движка не меняется. Запись добавлена при сборке 0.34.0: коммит
+  тронул `.github/workflows/codeql.yml` без своей записи.
 - **Пустые `category`, `kind` и `lifecycle` в ответе MCP опускаются.** Запись kb-сервера без этих
   полей приходила агенту с пустыми строками, и «сервер не прислал» выглядело как «пустая
   категория». У записей своего каталога поля по-прежнему на месте: загрузчик их заполняет.
