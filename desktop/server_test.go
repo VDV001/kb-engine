@@ -23,11 +23,15 @@ type fakeTokens struct {
 	fail   error
 	failOn string // отказ только для этой учетки
 	getErr error  // сбой чтения, отличный от «записи нет» (связка заперта)
+	touch  func() // зовется при каждой записи и удалении
 }
 
 func (f *fakeTokens) Set(acct, secret string) error {
 	if f.fail != nil || acct == f.failOn {
 		return errors.Join(f.fail, errors.New("keychain refused "+acct))
+	}
+	if f.touch != nil {
+		f.touch()
 	}
 	f.m[acct] = secret
 	return nil
@@ -43,7 +47,13 @@ func (f *fakeTokens) Get(acct string) (string, error) {
 	return "", keychain.ErrNotFound
 }
 
-func (f *fakeTokens) Delete(acct string) error { delete(f.m, acct); return nil }
+func (f *fakeTokens) Delete(acct string) error {
+	if f.touch != nil {
+		f.touch()
+	}
+	delete(f.m, acct)
+	return nil
+}
 
 // probeCall — что окно спросило у сервера.
 type probeCall struct{ url, token string }
