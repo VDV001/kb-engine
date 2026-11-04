@@ -20,6 +20,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/extractcache"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -44,6 +45,16 @@ func browserAddr(args []string) string {
 		}
 	}
 	return ""
+}
+
+// browserHandler serves the UI and the API for -browser — только этой машине,
+// весь режим целиком: страница, перепривязавшая свой домен на 127.0.0.1 (DNS
+// rebinding), не прочтет ни выдачу, ни записи, ни финансы.
+func browserHandler(api http.Handler, ui fs.FS) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/api/", api)
+	mux.Handle("/", http.FileServerFS(ui))
+	return httpapi.LocalHostOnly(mux)
 }
 
 func run() error {
@@ -88,11 +99,8 @@ func run() error {
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс
 	// правится без пересборки .app, и его можно проверить Playwright'ом.
 	if addr := browserAddr(os.Args[1:]); addr != "" {
-		mux := http.NewServeMux()
-		mux.Handle("/api/", api)
-		mux.Handle("/", http.FileServerFS(ui))
 		log.Printf("kb: dev UI on http://%s", addr)
-		srv := &http.Server{Addr: addr, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+		srv := &http.Server{Addr: addr, Handler: browserHandler(api, ui), ReadHeaderTimeout: 10 * time.Second}
 		return srv.ListenAndServe()
 	}
 

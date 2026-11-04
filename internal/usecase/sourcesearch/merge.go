@@ -60,7 +60,7 @@ func Merge[T any](found []Found[T], key func(T) string) []Hit[T] {
 // address, or, without one, its number with its title — номера двух разных
 // каталогов совпадают, и по номеру одному склеились бы чужие записи.
 func EntryKey(id int, title, address string) string {
-	if address != "" {
+	if address = strings.TrimSpace(address); address != "" {
 		return "url " + canonicalURL(address)
 	}
 	return "id " + strconv.Itoa(id) + " " + title
@@ -72,8 +72,14 @@ func EntryKey(id int, title, address string) string {
 // параметры и якорь маршрутизации (#/…, #!/…) остаются: ?id=1 и ?id=2, #/a и
 // #/b — разные статьи.
 func canonicalURL(raw string) string {
-	u, err := url.Parse(domain.StripTrackingParams(raw))
+	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
+		return raw
+	}
+	// Имена параметров — в нижний регистр до правила домена: оно сравнивает
+	// их как есть, а UTM_Source — та же метка, что utm_source.
+	u.RawQuery = lowerParamNames(u.RawQuery)
+	if u, err = url.Parse(domain.StripTrackingParams(u.String())); err != nil {
 		return raw
 	}
 	key := strings.ToLower(u.Host) + strings.TrimRight(u.EscapedPath(), "/")
@@ -84,4 +90,20 @@ func canonicalURL(raw string) string {
 		key += "#" + u.Fragment
 	}
 	return key
+}
+
+// lowerParamNames lowercases the names of a raw query, leaving values as is.
+func lowerParamNames(q string) string {
+	if q == "" {
+		return q
+	}
+	parts := strings.Split(q, "&")
+	for i, p := range parts {
+		name, val, ok := strings.Cut(p, "=")
+		parts[i] = strings.ToLower(name)
+		if ok {
+			parts[i] += "=" + val
+		}
+	}
+	return strings.Join(parts, "&")
 }

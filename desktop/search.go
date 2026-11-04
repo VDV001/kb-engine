@@ -142,9 +142,11 @@ const errSourceChanged = "настройки источников изменил
 // searchServer asks one kb server with its stored token. ver — версия
 // настроек снимка, по которому идет поиск.
 func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, ver uint64, q string) ([]candidate, string) {
-	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
-	defer cancel()
-	tok, err := f.tokenWithin(ctx, s.ID)
+	// У Связки и у сети — по своему сроку, как в ServerStates: человек,
+	// разблокировавший Связку под конец срока, не получает «нет связи».
+	tokCtx, cancelTok := context.WithTimeout(ctx, searchTimeout)
+	tok, err := f.tokenWithin(tokCtx, s.ID)
+	cancelTok()
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		// Связка не ответила — сервер без токена не спрашивается: ответ 401 на
 		// каждую букву ничего бы не сказал, а беда названа своими словами.
@@ -161,6 +163,8 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	if !same {
 		return nil, errSourceChanged
 	}
+	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
+	defer cancel()
 	raw, err := f.find(ctx, s.URL, tok, q)
 	if err != nil {
 		return nil, serverMessage(err)
@@ -213,8 +217,10 @@ func typedEntries(raw []json.RawMessage) []candidate {
 		if json.Unmarshal(r, &e) != nil || e.Title == "" {
 			continue
 		}
-		if _, err := domain.NewExternalURL(e.URL); err != nil {
+		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
+		} else {
+			e.URL = u.String() // обрезанный: и для кнопки, и для ключа склейки
 		}
 		out = append(out, candidate{
 			key:    sourcesearch.EntryKey(e.ID, e.Title, e.URL),
