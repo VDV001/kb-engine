@@ -131,3 +131,37 @@ func TestExplain_InventsNothing(t *testing.T) {
 		}
 	}
 }
+
+// Случаи, на которых отдельная копия слоев в Explain разошлась с Matches
+// (ревью #392): синоним однословного запроса, найденный транслитом; синоним
+// из двух слов в разных полях; слово с дефисом, найденное транслитом во всем
+// тексте поля. Поиск находит — объяснение обязано быть.
+func TestExplain_CoversSynonymAndSeparatorPaths(t *testing.T) {
+	dict := search.New(search.Dictionary{
+		"k8s": {Same: []string{"kubernetes"}},
+		"gc":  {Same: []string{"garbage collection"}},
+	})
+	entries := []domain.Entry{
+		full(t, 1, "Кубернетес в проде", "", ""),
+		full(t, 2, "garbage", "collection", ""),
+		full(t, 3, "front-end заметки", "", ""),
+	}
+	for _, tt := range []struct {
+		q  string
+		id int
+	}{{"k8s", 1}, {"gc", 2}, {"фронт-энд", 3}} {
+		found := false
+		for _, e := range search.FilterWith(entries, tt.q, dict) {
+			if e.ID() != tt.id {
+				continue
+			}
+			found = true
+			if why := search.Explain(e, tt.q, dict); len(why) == 0 {
+				t.Errorf("%q нашел #%d, а Explain пуст", tt.q, tt.id)
+			}
+		}
+		if !found {
+			t.Fatalf("%q не нашел #%d: фикстура не про то", tt.q, tt.id)
+		}
+	}
+}
