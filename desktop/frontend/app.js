@@ -66,7 +66,10 @@ const worth = (m) => FIELD[m.field] && HOW[m.how] !== undefined && !(VISIBLE.has
 // запроса), в мета-строке превью — автор и категория. Номер и тег не
 // подсвечиваются нигде: их называет строка «совпало».
 const hitsWhere = (e, fields, how) => (e.match || []).filter((m) => fields.has(m.field) && how(m.how)).map((m) => m.hit).filter(Boolean);
-const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => h !== "exact" && HOW[h] !== undefined);
+// В заголовке и описании подсвечиваются все совпадения этих полей, и
+// буквальные тоже: разбор запроса в окне не повторяет нормы движка (ё и е,
+// запрос из одной буквы), и «Ёжик» по «еж» иначе остался бы без подсветки.
+const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => HOW[h] !== undefined);
 const metaHits = (e) => hitsWhere(e, new Set(["author", "category"]), (h) => HOW[h] !== undefined);
 function whyLine(e) {
   const items = (e.match || []).filter(worth);
@@ -269,7 +272,9 @@ function render() {
 const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
 function kbRow(e, i, hl, hue) {
   const hits = rowHits(e);
-  if (hits.length) hl = highlighter(state.q, hits); // отдельный разбор — только для таких строк
+  // Свой разбор у строки с признаком: цена — микросекунды на строку выдачи,
+  // зато подсвечено то, что нашел движок, а не догадка окна.
+  if (hits.length) hl = highlighter(state.q, hits);
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
@@ -327,7 +332,9 @@ async function preview(it) {
   if (it.type === "kb") {
     const e = it.e;
     const hits = rowHits(e), hl = hits.length ? highlighter(state.q, hits) : hlq;
-    const hlMeta = highlighter(state.q, metaHits(e));
+    // Мета-строка — только по признаку: источник, вердикт и дату поиск не
+    // смотрит, и подсветка слов запроса в них показала бы ложную находку.
+    const hlMeta = highlighter("", metaHits(e));
     box.innerHTML = `<div class="doc">
       <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${esc(String(e.id))}</div><div class="doc-title">${hl(e.title)}</div>
         <div class="doc-path">${hlMeta([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
