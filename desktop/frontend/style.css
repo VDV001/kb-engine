@@ -82,6 +82,12 @@ button { font-family: inherit; }
 .mark-lobe { fill: url(#mark-spec); }
 .mark-cut { fill: none; stroke: var(--z-bg-2); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .mark-pad { fill: var(--z-bg-2); }
+/* Мини-интерактив: при наведении на знак полушария плавно расходятся (4 из 64
+   единиц, на 24 px это 1.5 px) и возвращаются той же кривой. */
+.mark-l, .mark-r { transition: transform .45s var(--z-ease); }
+.brand:hover .mark-l { transform: translateX(-4px); }
+.brand:hover .mark-r { transform: translateX(4px); }
+@media (prefers-reduced-motion: reduce) { .mark-l, .mark-r { transition: none; } }
 .tabs { position: relative; gap: 22px; flex: 1; }
 .tabs button {
   position: relative; background: none; border: 0; padding: 0; height: 100%; cursor: pointer;

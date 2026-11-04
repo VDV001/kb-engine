@@ -31,10 +31,9 @@
       <div class="cell brand">
         <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
           <defs><linearGradient id="mark-spec" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="60" y2="0"><stop offset="0" class="sp1"/><stop offset=".22" class="sp2"/><stop offset=".42" class="sp3"/><stop offset=".6" class="sp4"/><stop offset=".8" class="sp5"/><stop offset="1" class="sp6"/></linearGradient></defs>
-          <path class="mark-lobe" d="M31 10C27 6.5 21 6.5 18 10C12.5 9 8.5 13.5 9.5 18.5C5.5 21 4.5 26.5 7.5 30.5C4.5 34.5 5.5 40.5 10 42.5C10.5 47.5 15.5 51.5 20.5 50C23.5 54 29 54 31 51Z"/>
-          <path class="mark-lobe" d="M33 10H40L46 12.5H50L54.5 18V23.5L58 28.5V35.5L55 40V44.5L50 49.5H44L38.5 52.5H33Z"/>
-          <path class="mark-cut" d="M24 14C20 15.5 19.5 20 23 22.5M13.5 22C18 22 20.5 26.5 17 29.5M11.5 35.5C16 33 21 35 21 39.5M27 26.5C22.5 28.5 23 33.5 27.5 34.5M17.5 45.5C20.5 42 26 42.5 27.5 46M33 18H42L46 22M33 29H50M33 40H40L44 44M38 29V34H46"/>
-          <g class="mark-pad"><circle cx="47.6" cy="23.6" r="2"/><circle cx="52" cy="29" r="2"/><circle cx="45.6" cy="45.6" r="2"/><circle cx="48" cy="34" r="2"/></g>
+          <!-- полушария отдельными группами: при наведении на знак они расходятся -->
+          <g class="mark-l"><path class="mark-lobe" d="M31 10C27 6.5 21 6.5 18 10C12.5 9 8.5 13.5 9.5 18.5C5.5 21 4.5 26.5 7.5 30.5C4.5 34.5 5.5 40.5 10 42.5C10.5 47.5 15.5 51.5 20.5 50C23.5 54 29 54 31 51Z"/><path class="mark-cut" d="M24 14C20 15.5 19.5 20 23 22.5M13.5 22C18 22 20.5 26.5 17 29.5M11.5 35.5C16 33 21 35 21 39.5M27 26.5C22.5 28.5 23 33.5 27.5 34.5M17.5 45.5C20.5 42 26 42.5 27.5 46"/></g>
+          <g class="mark-r"><path class="mark-lobe" d="M33 10H40L46 12.5H50L54.5 18V23.5L58 28.5V35.5L55 40V44.5L50 49.5H44L38.5 52.5H33Z"/><path class="mark-cut" d="M33 18H42L46 22M33 29H50M33 40H40L44 44M38 29V34H46"/><g class="mark-pad"><circle cx="47.6" cy="23.6" r="2"/><circle cx="52" cy="29" r="2"/><circle cx="45.6" cy="45.6" r="2"/><circle cx="48" cy="34" r="2"/></g></g>
         </svg>
         <span>kb</span>
       </div>
