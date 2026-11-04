@@ -47,6 +47,8 @@ type remoteServers struct {
 func (r remoteServers) SearchRemote(ctx context.Context, q string) []mcpserver.RemoteFound {
 	servers, err := r.snapshot(ctx)
 	switch {
+	case errors.Is(err, context.Canceled):
+		return nil // агент отменил запрос: ответ уже никто не читает
 	case errors.Is(err, filelock.ErrBusy):
 		return []mcpserver.RemoteFound{{Source: mcpserver.RemoteSource{ID: "config"}, Err: "окно сохраняет источники, серверы не спрошены: повторите поиск"}}
 	case err != nil:
@@ -69,12 +71,14 @@ type withToken struct {
 }
 
 // snapshot reads the enabled servers and their tokens under the config lock,
-// waiting for it no longer than remoteTimeout.
+// waiting for it no longer than remoteTimeout. У ожидания замка свой срок, у
+// Связки свой (token): окно, державшее замок почти весь срок, не превращает
+// разблокированную Связку в «не ответила».
 func (r remoteServers) snapshot(ctx context.Context) ([]withToken, error) {
-	ctx, cancel := context.WithTimeout(ctx, remoteTimeout)
+	waitCtx, cancel := context.WithTimeout(ctx, remoteTimeout)
 	defer cancel()
 	var out []withToken
-	err := filelock.WithContext(ctx, r.cfgPath, func() error {
+	err := filelock.WithContext(waitCtx, r.cfgPath, func() error {
 		cfg, err := desktopconfig.Read(r.cfgPath)
 		if err != nil {
 			return err

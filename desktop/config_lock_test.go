@@ -67,6 +67,7 @@ func TestSetSources_DeleteRefusedKeepsOldAddress(t *testing.T) {
 // «сохраняется» публикуется, только когда замок взят.
 func TestSetSources_WaitingForLockKeepsSearch(t *testing.T) {
 	s, _, _ := newServerSettings(t)
+	s.publish() // как main: снимок есть до первого поиска, snapshot не берет f.mu
 	release := make(chan struct{})
 	held := make(chan struct{})
 	go func() {

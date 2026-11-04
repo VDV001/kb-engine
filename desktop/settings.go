@@ -197,22 +197,28 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err := checkTokenIDs(next, tokens); err != nil {
 		return err
 	}
-	// С этого места токены в Связке могут не совпадать с адресами снимка:
-	// поиск пропускает серверы, пока сохранение не опубликует итог. Отказ
-	// раньше ничего не трогал и поиск не задевает.
-	f.publishLocked(true)
-	defer f.publishLocked(false) // итог — новый конфиг или прежний при отказе; до Unlock
 	// Связка и конфиг меняются под замком config.json: MCP-сервер, другой
 	// процесс, читает адрес и токен под тем же замком (cmd/kbengine-mcp
 	// servers.go) и не видит новый токен при старом адресе, а старый — при
-	// новом. Снимок выше защищает только поиск самого окна.
+	// новом. Снимок ниже защищает только поиск самого окна.
 	return filelock.With(f.path, func() error {
+		// С этого места токены в Связке могут не совпадать с адресами снимка:
+		// поиск пропускает серверы, пока сохранение не опубликует итог. Пока
+		// окно ждет замок, поиск идет как обычно: Связка еще не тронута.
+		f.publishLocked(true)
+		defer f.publishLocked(false) // итог — новый конфиг или прежний при отказе; до Unlock
 		return f.commit(next, roots, missing, catalog, tokens)
 	})
 }
 
-// commit stores the tokens, applies the sources and writes the config, undoing
-// the tokens on any refusal; config lock and f.mu held.
+// commit stores the tokens, applies the sources, removes stale tokens and
+// writes the config, undoing the Связка on any refusal; config lock and f.mu
+// held.
+//
+// ponytail: под замком идет и apply (открытие папок): пока сетевая папка
+// открывается, агент слышит «окно сохраняет источники». Вынести apply из-под
+// замка нельзя без отката индекса при отказе Связки после него. Потолок —
+// время os.OpenRoot по каждой папке, их уже открывали в openableFolders.
 func (f *folderSettings) commit(next desktopconfig.Config, roots, missing []string, catalog string, tokens map[string]string) error {
 	undoTokens, err := f.storeTokens(next, tokens)
 	if err != nil {
@@ -222,7 +228,15 @@ func (f *folderSettings) commit(next desktopconfig.Config, roots, missing []stri
 		undoTokens()
 		return fmt.Errorf("%w: %w", errBadFolder, err)
 	}
+	// Старый токен удаляется до записи конфига: иначе отказ удаления оставил
+	// бы новый адрес со старым токеном, и MCP отправил бы его новому хосту.
+	undoDrop, err := f.dropTokens(f.cfg, next, tokens)
+	if err != nil {
+		undoTokens()
+		return fmt.Errorf("источники применены, но не сохранены (вернутся прежние после перезапуска): %w", err)
+	}
 	if err := desktopconfig.Write(f.path, next); err != nil {
+		undoDrop()
 		undoTokens()
 		// Индекс уже на новых источниках, а конфиг нет: окно работает, но
 		// следующий запуск вернется к прежним. Говорим об этом прямо.
@@ -231,7 +245,6 @@ func (f *folderSettings) commit(next desktopconfig.Config, roots, missing []stri
 	if len(missing) > 0 {
 		log.Printf("files: папки без связи, не индексируются: %s", strings.Join(missing, "; "))
 	}
-	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
 	f.setOpen(roots)
 	return nil
