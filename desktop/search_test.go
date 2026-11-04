@@ -48,6 +48,7 @@ func newSearchSettings(t *testing.T) (*folderSettings, *fakeTokens, *[]searchCal
 	tok := &fakeTokens{m: map[string]string{"server-a": srvToken}}
 	s.tokens = tok
 	s.applied = []string{filepath.Join(home, "notes")}
+	s.setOpen(s.applied)
 	s.countMatches = func(string, []string) (map[string]int, error) { return map[string]int{}, nil }
 	var calls []searchCall
 	var mu sync.Mutex // источники опрашиваются параллельно
@@ -813,6 +814,7 @@ func TestSearchSources_FolderRows(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
 	notes := filepath.Join(s.home, "notes")
 	s.applied = []string{notes}
+	s.setOpen(s.applied)
 	var asked []string
 	s.countMatches = func(q string, roots []string) (map[string]int, error) {
 		asked = append(asked, q)
@@ -837,7 +839,7 @@ func TestSearchSources_FolderStates(t *testing.T) {
 		wantErr string
 		listed  bool
 	}{
-		{"не открыта", func(s *folderSettings) { s.applied = nil }, "нет связи", true},
+		{"не открыта", func(s *folderSettings) { s.applied = nil; s.setOpen(nil) }, "нет связи", true},
 		{"индекс собирается", func(s *folderSettings) {
 			s.countMatches = func(string, []string) (map[string]int, error) { return nil, filesearch.ErrNotBuilt }
 		}, "собирается", true},
@@ -847,6 +849,7 @@ func TestSearchSources_FolderStates(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _, _ := newSearchSettings(t)
 			s.applied = []string{filepath.Join(s.home, "notes")}
+			s.setOpen(s.applied)
 			s.countMatches = func(string, []string) (map[string]int, error) { return map[string]int{}, nil }
 			tt.setup(s)
 			f, listed := found(s.SearchSources(context.Background(), "агент"))["folder-1"]

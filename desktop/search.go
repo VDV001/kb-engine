@@ -14,6 +14,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
@@ -46,6 +47,9 @@ type sourceFound struct {
 	desktopconfig.Source
 	Found int    `json:"found"`
 	Error string `json:"error,omitempty"`
+	// Root — раскрытый путь папки: по нему окно считает, сколько ее файлов
+	// показано в выдаче.
+	Root string `json:"root,omitempty"`
 }
 
 type sourcesSearch struct {
@@ -73,7 +77,7 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 	snap := f.snapshot()
 	var rows []sourceFound
 	for _, s := range snap.cfg.WithSources().Sources {
-		if s.Enabled && (s.Kind == desktopconfig.KindCatalog || s.Kind == desktopconfig.KindServer) {
+		if s.Enabled {
 			rows = append(rows, sourceFound{Source: s})
 		}
 	}
@@ -84,15 +88,19 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 		wg.Go(func() {
 			var items []candidate
 			var msg string
-			if r.Kind == desktopconfig.KindCatalog {
+			switch r.Kind {
+			case desktopconfig.KindCatalog:
 				items, msg = searchCatalog(desktopconfig.ExpandHome(r.Path, f.home), q)
-			} else {
+			case desktopconfig.KindServer:
 				items, msg = f.searchServer(ctx, r.Source, snap, q)
+			default:
+				return // папки считает countFolders: их выдача — /api/files/search
 			}
 			r.Found, r.Error = len(items), msg
 			lists[i] = sourcesearch.Found[candidate]{Source: r.ID, Items: items}
 		})
 	}
+	f.countFolders(rows, q)
 	wg.Wait()
 	merged := sourcesearch.Merge(lists, func(c candidate) string { return c.key })
 	total := 0
@@ -118,6 +126,55 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 		out.Sources = []sourceFound{}
 	}
 	return out
+}
+
+// countFolders fills the folder rows: сколько файлов каждой открытой папки
+// нашел запрос (без среза выдачи); папка, что сейчас не открыта в индексе
+// (сетевой диск без VPN), названа, а не пропущена. Файлы выдачи окно берет из
+// /api/files/search — здесь только счет.
+func (f *folderSettings) countFolders(rows []sourceFound, q string) {
+	roots := f.markOpen(rows)
+	if len(roots) == 0 || f.countMatches == nil {
+		return
+	}
+	counts, err := f.countMatches(q, roots)
+	for i := range rows {
+		if rows[i].Kind != desktopconfig.KindFolder || rows[i].Error != "" {
+			continue
+		}
+		switch {
+		case errors.Is(err, filesearch.ErrNotBuilt):
+			rows[i].Error = "индекс файлов собирается"
+		case err != nil:
+			rows[i].Error = "индекс файлов не собрался"
+		default:
+			rows[i].Found = counts[rows[i].Root]
+		}
+	}
+}
+
+// markOpen sets the root of every folder row, names the folders that are not
+// open in the index, and returns the open roots.
+func (f *folderSettings) markOpen(rows []sourceFound) []string {
+	open := map[string]bool{}
+	if p := f.open.Load(); p != nil {
+		for _, r := range *p {
+			open[r] = true
+		}
+	}
+	var roots []string
+	for i := range rows {
+		if rows[i].Kind != desktopconfig.KindFolder {
+			continue
+		}
+		rows[i].Root = desktopconfig.ExpandHome(rows[i].Path, f.home)
+		if open[rows[i].Root] {
+			roots = append(roots, rows[i].Root)
+		} else {
+			rows[i].Error = "нет связи: папка недоступна (диск, VPN)"
+		}
+	}
+	return roots
 }
 
 // searchCatalog searches one catalog file the way /api/search does.
