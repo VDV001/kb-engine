@@ -207,9 +207,19 @@ async function search(q) {
   state.sources = kb.sources;
   state.dupes = kb.dupes || 0;
   if (state.filter && !kb.sources.some((s) => s.id === state.filter && !s.error)) state.filter = null;
-  state.files = (files.body && files.body.hits) || [];
+  // Файл выдачи помечен своей папкой-источником — по ней строка источников
+  // считает «показано» и фильтрует. Вложенных папок нет (checkNested), поэтому
+  // папка у файла одна.
+  const roots = kb.sources.filter((x) => x.kind === "folder" && x.root);
+  state.files = ((files.body && files.body.hits) || []).map((f) => ({ ...f, _src: folderOf(f.path, roots) }));
   state.sel = 0;
   render();
+}
+
+// folderOf returns the id of the folder source that holds path, "" if none.
+function folderOf(path, roots) {
+  const r = roots.find((x) => path === x.root || path.startsWith(x.root.replace(/\/$/, "") + "/"));
+  return r ? r.id : "";
 }
 
 // Общая выдача источников живет в окне (/api/sources/search). Простой kbengine
@@ -253,10 +263,11 @@ function moveInk() {
 
 // --- Отрисовка -----------------------------------------------------------------
 function render() {
-  // Фильтр источника оставляет только его записи; файлы в строку источников
-  // пока не входят и под фильтром скрыты.
-  const kb = state.filter ? state.kb.filter((e) => e._src === state.filter) : state.kb;
-  const files = state.filter ? [] : state.files;
+  // Фильтр источника оставляет только его записи: у базы знаний — записи,
+  // у папки — ее файлы.
+  const only = state.filter;
+  const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
+  const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // «Все» показывает только пять записей базы — счетчик обязан совпадать со списком.
   const counts = { all: Math.min(kb.length, 5) + files.length, kb: kb.length, doc: 0, code: 0 };
   for (const f of files) if (counts[f.kind] !== undefined) counts[f.kind]++;
@@ -268,7 +279,10 @@ function render() {
   state.items = TABS[state.tab](kb, files);
   const shown = {};
   const unfiltered = state.filter ? TABS[state.tab](state.kb, state.files) : state.items;
-  for (const it of unfiltered) if (it.type === "kb") shown[it.e._src] = (shown[it.e._src] || 0) + 1;
+  for (const it of unfiltered) {
+    const src = it.type === "kb" ? it.e._src : it.f._src;
+    if (src) shown[src] = (shown[src] || 0) + 1;
+  }
   // Под фильтром у выбранного источника показано столько, сколько в списке.
   if (state.filter) shown[state.filter] = state.items.length;
   const hue = stripHues(); // один раз на отрисовку, а не на каждую строку
