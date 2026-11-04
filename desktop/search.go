@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/url"
 	"sync"
 	"time"
 
@@ -24,6 +25,12 @@ type findFunc func(ctx context.Context, url, token, q string) ([]json.RawMessage
 // не держит выдачу каталога, он приходит в строку источников с «нет связи».
 const searchTimeout = 3 * time.Second
 
+// searchLimit — сколько записей одного источника идет в выдачу; «найдено»
+// считается полностью. Широкий запрос не тянет в окно весь каталог, а
+// источник ниже по приоритету не вытесняется верхним целиком: фильтр по нему
+// покажет его записи.
+const searchLimit = 40
+
 // sourceHit is one entry of the merged results with the source it came from.
 type sourceHit struct {
 	Source string          `json:"source"`
@@ -42,6 +49,9 @@ type sourceFound struct {
 type sourcesSearch struct {
 	Hits    []sourceHit   `json:"hits"`
 	Sources []sourceFound `json:"sources"`
+	// Dupes — сколько записей склеено с источником выше: интерфейс по
+	// «найдено» его не вычислит, выдача уже срезана.
+	Dupes int `json:"dupes"`
 }
 
 // SearchSources asks every enabled knowledge-base source (catalogs and kb
@@ -71,12 +81,16 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 				items, msg = f.searchServer(ctx, r.Source, q)
 			}
 			r.Found, r.Error = len(items), msg
-			lists[i] = sourcesearch.Found[json.RawMessage]{Source: r.ID, Items: items}
+			lists[i] = sourcesearch.Found[json.RawMessage]{Source: r.ID, Items: items[:min(len(items), searchLimit)]}
 		})
 	}
 	wg.Wait()
 	merged := sourcesearch.Merge(lists, entryKey)
-	out := sourcesSearch{Hits: make([]sourceHit, len(merged)), Sources: rows}
+	in := 0
+	for _, l := range lists {
+		in += len(l.Items)
+	}
+	out := sourcesSearch{Hits: make([]sourceHit, len(merged)), Sources: rows, Dupes: in - len(merged)}
 	for i, h := range merged {
 		out.Hits[i] = sourceHit{Source: h.Source, Entry: h.Item}
 	}
@@ -103,6 +117,9 @@ func searchCatalog(path, q string) ([]json.RawMessage, string) {
 	return out, ""
 }
 
+// errSourceChanged — пока окно читало Связку, источник сменил адрес или токен.
+const errSourceChanged = "настройки источника изменились: повторите поиск"
+
 // searchServer asks one kb server with its stored token.
 func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, q string) ([]json.RawMessage, string) {
 	tok, err := f.tokens.Get(s.ID)
@@ -111,13 +128,72 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 		// каждую букву ничего бы не сказал, а беда названа своими словами.
 		return nil, "Связка ключей не ответила: разблокируйте ее"
 	}
+	if !f.stillSame(s, tok) {
+		return nil, errSourceChanged
+	}
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
 	defer cancel()
-	items, err := f.find(ctx, s.URL, tok, q)
+	raw, err := f.find(ctx, s.URL, tok, q)
 	if err != nil {
 		return nil, serverMessage(err)
 	}
-	return items, ""
+	return typedEntries(raw), ""
+}
+
+// stillSame reports whether server s still has this address and this token.
+// Поиск идет по снимку конфига, а Связка читается позже: SetSources мог за это
+// время сменить адрес и положить новый токен — и новый токен ушел бы на старый
+// адрес. SetSources держит f.mu всю работу, поэтому сверка под f.mu видит либо
+// старое целиком, либо новое целиком.
+func (f *folderSettings) stillSame(s desktopconfig.Source, tok string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cur := range f.cfg.WithSources().Sources {
+		if cur.ID == s.ID {
+			now, err := f.tokens.Get(s.ID)
+			if errors.Is(err, keychain.ErrNotFound) {
+				now, err = "", nil
+			}
+			return cur.Kind == desktopconfig.KindServer && cur.URL == s.URL && err == nil && now == tok
+		}
+	}
+	return false
+}
+
+// serverEntry is what the window shows of a server's entry. Запись чужого
+// сервера разбирается строго: поле не того типа — запись отброшена (номер-
+// строка с разметкой не доедет до страницы), наружу уходят только эти поля.
+type serverEntry struct {
+	ID          int    `json:"id"`
+	Title       string `json:"title"`
+	URL         string `json:"url,omitempty"`
+	Category    string `json:"category,omitempty"`
+	Verdict     string `json:"verdict,omitempty"`
+	Author      string `json:"author,omitempty"`
+	DateAdded   string `json:"date_added,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+// typedEntries keeps the server entries that decode as serverEntry and
+// re-encodes them; an address that is not http(s) is dropped — javascript:
+// не откроется кнопкой «Открыть источник».
+func typedEntries(raw []json.RawMessage) []json.RawMessage {
+	out := make([]json.RawMessage, 0, len(raw))
+	for _, r := range raw {
+		var e serverEntry
+		if json.Unmarshal(r, &e) != nil || e.Title == "" {
+			continue
+		}
+		if u, err := url.Parse(e.URL); err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+			e.URL = ""
+		}
+		b, err := json.Marshal(e)
+		if err != nil {
+			continue
+		}
+		out = append(out, b)
+	}
+	return out
 }
 
 // entryKey reads the identity fields of an entry for the merge.
@@ -165,6 +241,9 @@ type cachedTokens struct {
 	inner tokenStore
 	mu    sync.Mutex
 	m     map[string]cachedToken
+	// gen растет при каждой записи и удалении: чтение Связки, начатое до них,
+	// свой результат в кэш не кладет — иначе удаленный токен вернулся бы.
+	gen uint64
 }
 
 type cachedToken struct {
@@ -179,6 +258,7 @@ func newCachedTokens(inner tokenStore) *cachedTokens {
 func (c *cachedTokens) Get(account string) (string, error) {
 	c.mu.Lock()
 	v, ok := c.m[account]
+	gen := c.gen
 	c.mu.Unlock()
 	if ok {
 		if v.missing {
@@ -189,9 +269,9 @@ func (c *cachedTokens) Get(account string) (string, error) {
 	val, err := c.inner.Get(account)
 	switch {
 	case err == nil:
-		c.put(account, cachedToken{val: val})
+		c.putIf(gen, account, cachedToken{val: val})
 	case errors.Is(err, keychain.ErrNotFound):
-		c.put(account, cachedToken{missing: true})
+		c.putIf(gen, account, cachedToken{missing: true})
 	}
 	return val, err
 }
@@ -201,7 +281,10 @@ func (c *cachedTokens) Set(account, secret string) error {
 		c.forget(account) // что лежит в Связке после отказа, неизвестно
 		return err
 	}
-	c.put(account, cachedToken{val: secret})
+	c.mu.Lock()
+	c.gen++
+	c.m[account] = cachedToken{val: secret}
+	c.mu.Unlock()
 	return nil
 }
 
@@ -211,14 +294,18 @@ func (c *cachedTokens) Delete(account string) error {
 	return err
 }
 
-func (c *cachedTokens) put(account string, v cachedToken) {
+// putIf stores v unless a write or delete happened since gen was read.
+func (c *cachedTokens) putIf(gen uint64, account string, v cachedToken) {
 	c.mu.Lock()
-	c.m[account] = v
+	if c.gen == gen {
+		c.m[account] = v
+	}
 	c.mu.Unlock()
 }
 
 func (c *cachedTokens) forget(account string) {
 	c.mu.Lock()
+	c.gen++
 	delete(c.m, account)
 	c.mu.Unlock()
 }

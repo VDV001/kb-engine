@@ -23,6 +23,9 @@ var (
 	// ErrRedirect — сервер перенаправил запрос. Клиент по редиректам не идет:
 	// Go пересылает Authorization на тот же хост и при смене https на http.
 	ErrRedirect = errors.New("kbserver: redirect refused")
+	// ErrTooLarge — ответ больше предела чтения: адрес верный и сервер здоров,
+	// просто выдача велика (короткий запрос по большому каталогу).
+	ErrTooLarge = errors.New("kbserver: response too large")
 )
 
 // maxBody — сколько читать из ответа: /api/engine и /api/stats весят килобайты,
@@ -114,7 +117,16 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 	if err := statusErr(path, resp.StatusCode); err != nil {
 		return err
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, limit)).Decode(into); err != nil {
+	// Байт сверх предела читается, чтобы отличить «слишком велик» от «не JSON»:
+	// обрезанный ответ иначе выглядел бы чужим сервером.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrUnreachable, path, err)
+	}
+	if int64(len(body)) > limit {
+		return fmt.Errorf("%w: %s больше %d байт", ErrTooLarge, path, limit)
+	}
+	if err := json.Unmarshal(body, into); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
 	}
 	return nil
