@@ -47,6 +47,9 @@ func TestExplain(t *testing.T) {
 		// Латинский запрос к кириллице — транслит, а не опечатка: правок ноль.
 		{"латиница против кириллицы", full(t, 11, "Copilot видит", "", "Александр Жогов"), "zhogov",
 			[]search.Why{{Word: "zhogov", Field: search.FieldAuthor, Text: "Александр Жогов", Hit: "Жогов", How: search.HowTranslit}}},
+		// Одинаковый слой в двух полях — побеждает поле раньше (заголовок).
+		{"ничья — поле раньше", full(t, 12, "Жогов о бэкапах", "", "Жогов"), "жогов",
+			[]search.Why{{Word: "жогов", Field: search.FieldTitle, Text: "Жогов о бэкапах", Hit: "Жогов", How: search.HowExact}}},
 		{"опечатка", full(t, 4, "Kubernetes в проде", "", ""), "kuberntes",
 			[]search.Why{{Word: "kuberntes", Field: search.FieldTitle, Text: "Kubernetes в проде", Hit: "Kubernetes", How: search.HowTypo}}},
 		{"тег", full(t, 5, "Сборка образов", "", "", "docker"), "docker",
