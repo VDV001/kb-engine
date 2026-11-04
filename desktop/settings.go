@@ -174,23 +174,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err != nil {
 		return err
 	}
-	// Каждый включенный каталог: поиск читает их все, и опечатка во втором
-	// иначе всплыла бы бедой на каждой букве, а не отказом при сохранении.
-	// Уже сохраненный каталог, что сейчас недоступен (сетевой диск), не мешает.
-	saved := map[string]bool{}
-	for _, s := range f.cfg.WithSources().Sources {
-		if s.Kind == desktopconfig.KindCatalog {
-			saved[s.Path] = true
-		}
-	}
-	for _, s := range next.Sources {
-		if s.Enabled && s.Kind == desktopconfig.KindCatalog {
-			if _, err := f.catalogFile(s.Path, saved[s.Path]); err != nil {
-				return err
-			}
-		}
-	}
-	catalog, err := f.catalogFile(next.CatalogPath(), saved[next.CatalogPath()])
+	catalog, err := f.checkCatalogs(next)
 	if err != nil {
 		return err
 	}
@@ -218,6 +202,28 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
 	return nil
+}
+
+// checkCatalogs checks every enabled catalog of next and returns the path of
+// the first, the one the window's other views read. Поиск читает их все, и
+// опечатка во втором иначе всплыла бы бедой на каждой букве, а не отказом при
+// сохранении. Уже сохраненный каталог, что сейчас недоступен (сетевой диск),
+// не мешает.
+func (f *folderSettings) checkCatalogs(next desktopconfig.Config) (string, error) {
+	saved := map[string]bool{}
+	for _, s := range f.cfg.WithSources().Sources {
+		if s.Kind == desktopconfig.KindCatalog {
+			saved[s.Path] = true
+		}
+	}
+	for _, s := range next.Sources {
+		if s.Enabled && s.Kind == desktopconfig.KindCatalog {
+			if _, err := f.catalogFile(s.Path, saved[s.Path]); err != nil {
+				return "", err
+			}
+		}
+	}
+	return f.catalogFile(next.CatalogPath(), saved[next.CatalogPath()])
 }
 
 // reconcile reopens the folders when the set of enabled folders that can be
