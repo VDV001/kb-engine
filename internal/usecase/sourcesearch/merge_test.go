@@ -106,6 +106,12 @@ func TestEntryKey(t *testing.T) {
 		{"якорь и utm", [3]string{"1", "a", "https://habr.com/ru/articles/123/?utm_source=tg#comments"}, [3]string{"2", "b", "https://habr.com/ru/articles/123"}, true},
 		// Параметр, который выбирает страницу, — другая статья.
 		{"другой параметр — другая статья", [3]string{"1", "a", "https://example.com/view?id=1"}, [3]string{"1", "a", "https://example.com/view?id=2"}, false},
+		// Метки рекламных систем — по правилу домена (StripTrackingParams), а не
+		// по второму списку здесь.
+		{"yclid и fbclid", [3]string{"1", "a", "https://habr.com/ru/articles/1/?yclid=123&fbclid=x"}, [3]string{"2", "b", "https://habr.com/ru/articles/1/"}, true},
+		// Якорь маршрутизации (#/…, #!/…) выбирает страницу; простой якорь — нет.
+		{"маршрут в якоре", [3]string{"1", "a", "https://site.example/#/a"}, [3]string{"1", "a", "https://site.example/#/b"}, false},
+		{"маршрут #! в якоре", [3]string{"1", "a", "https://site.example/#!/a"}, [3]string{"1", "a", "https://site.example/#!/b"}, false},
 		{"регистр пути различается", [3]string{"1", "a", "https://example.com/A"}, [3]string{"1", "a", "https://example.com/a"}, false},
 	}
 	for _, tt := range tests {

@@ -13,7 +13,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
@@ -382,4 +384,162 @@ func (b *blockingTokens) Get(acct string) (string, error) {
 		return "", keychain.ErrNotFound
 	}
 	return v, nil
+}
+
+// Маршрут отдает записи закрытых токеном серверов и пути каталогов — только
+// этой машине, как /api/files/*: чужая страница, перепривязавшая свой домен на
+// 127.0.0.1 (DNS rebinding), получает 403.
+func TestSearchRoute_LocalHostOnly(t *testing.T) {
+	s, _, calls := newSearchSettings(t)
+	h := s.searchRoute(http.NotFoundHandler())
+	for host, want := range map[string]int{
+		"evil.example:18090": http.StatusForbidden,
+		"127.0.0.1:18090":    http.StatusOK,
+		"wails.localhost":    http.StatusOK,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/api/sources/search?q=x", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Host %s: code %d, want %d", host, rec.Code, want)
+		}
+	}
+	if len(*calls) != 2 {
+		t.Fatalf("сервер спрошен %d раз: чужой Host не должен доходить до поиска", len(*calls))
+	}
+}
+
+// Связка, которая не отвечает (ждет разблокировки), не держит выдачу: каталог
+// приходит в срок, сервер назван «Связка ключей не ответила».
+func TestSearchSources_HungKeychainDoesNotHoldResults(t *testing.T) {
+	s, _, calls := newSearchSettings(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.tokens = hangingTokens{release}
+	old := searchTimeout
+	searchTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { searchTimeout = old })
+	start := time.Now()
+	r := s.SearchSources(context.Background(), "агент")
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("выдача ждала Связку %v", d)
+	}
+	f := found(r)
+	if !strings.Contains(f["server-a"].Error, "Связка ключей") || f["catalog-1"].Found != 2 || len(*calls) != 0 {
+		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
+	}
+}
+
+// hangingTokens never answers Get until release.
+type hangingTokens struct{ release chan struct{} }
+
+func (h hangingTokens) Get(string) (string, error) { <-h.release; return "", keychain.ErrNotFound }
+func (hangingTokens) Set(string, string) error     { return nil }
+func (hangingTokens) Delete(string) error          { return nil }
+
+// Пока Связка думает, буквы запроса не запускают новые security: одно чтение
+// учетки на всех, кто ждет.
+func TestCachedTokens_OneReadForConcurrentGets(t *testing.T) {
+	inner := &blockingTokens{fakeTokens: fakeTokens{m: map[string]string{"a": "t"}}, release: make(chan struct{}), started: make(chan struct{})}
+	counted := &countingBlocking{blockingTokens: inner}
+	c := newCachedTokens(counted)
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Go(func() {
+			if v, err := c.Get("a"); v != "t" || err != nil {
+				t.Errorf("Get = %q, %v", v, err)
+			}
+		})
+	}
+	<-inner.started
+	time.Sleep(20 * time.Millisecond) // остальные двое успевают встать в ожидание
+	close(inner.release)
+	wg.Wait()
+	if n := counted.gets.Load(); n != 1 {
+		t.Fatalf("Связка прочитана %d раз, want 1", n)
+	}
+}
+
+type countingBlocking struct {
+	*blockingTokens
+	gets atomic.Int32
+}
+
+func (c *countingBlocking) Get(acct string) (string, error) {
+	c.gets.Add(1)
+	return c.blockingTokens.Get(acct)
+}
+
+// Склейка видит все записи источника выше, а не первые searchLimit: статья,
+// что у каталога 50-я, у сервера не показывается заново.
+func TestSearchSources_DedupBeyondLimit(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	var b strings.Builder
+	b.WriteString(`{"entries":[`)
+	for i := range 50 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"id":` + strconv.Itoa(i+1) + `,"title":"Агент ` + strconv.Itoa(i) + `","url":"https://example.com/k` + strconv.Itoa(i) + `","category":"ai","status":"keep","lifecycle":"active"}`)
+	}
+	b.WriteString(`]}`)
+	if err := os.WriteFile(filepath.Join(s.home, "catalog.json"), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.cfg.Sources[0], s.cfg.Sources[1] = s.cfg.Sources[1], s.cfg.Sources[0] // каталог выше сервера
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		return []json.RawMessage{json.RawMessage(`{"id":900,"title":"та же статья","url":"https://example.com/k49"}`)}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	for _, h := range r.Hits {
+		if h.Source == "server-a" {
+			t.Fatalf("дубль 50-й записи каталога показан у сервера: %s", h.Entry)
+		}
+	}
+	if r.Dupes != 1 {
+		t.Fatalf("dupes = %d, want 1", r.Dupes)
+	}
+}
+
+// Связка не читается под замком настроек: запертая Связка не должна вешать
+// вместе с поиском и панель источников, и сохранение.
+func TestSearchSources_KeychainNotReadUnderSettingsLock(t *testing.T) {
+	s, tok, _ := newSearchSettings(t)
+	s.tokens = lockProbe{fakeTokens: tok, s: s, t: t}
+	s.SearchSources(context.Background(), "агент")
+}
+
+type lockProbe struct {
+	*fakeTokens
+	s *folderSettings
+	t *testing.T
+}
+
+func (l lockProbe) Get(acct string) (string, error) {
+	if !l.s.mu.TryLock() {
+		l.t.Errorf("Связка читается под f.mu")
+	} else {
+		l.s.mu.Unlock()
+	}
+	return l.fakeTokens.Get(acct)
+}
+
+// Каждый включенный каталог проверяется при сохранении, а не только первый:
+// поиск читает их все, и опечатка во втором иначе всплыла бы бедой на каждой
+// букве.
+func TestSetSources_ChecksEveryCatalog(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	list := []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
+		src("catalog-2", desktopconfig.KindCatalog, filepath.Join(home, "catalgo.json"), true),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("err = %v, want errBadCatalog", err)
+	}
+	list[1].Path = filepath.Join(home, "notes") // папка вместо файла
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("папка: err = %v, want errBadCatalog", err)
+	}
 }
