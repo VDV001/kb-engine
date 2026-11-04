@@ -119,3 +119,23 @@ func TestSearchCatalog(t *testing.T) {
 		t.Fatal("нет ошибки для отсутствующего файла")
 	}
 }
+
+// Ревью #402. Поля, которые окно не показывает (kind, lifecycle, tags), не того
+// типа не отбрасывают запись: окно показывало ее до общего пакета. Правильные —
+// доходят до MCP; в JSON окна их нет.
+func TestDecodeEntries_ExtraFieldsAreLenient(t *testing.T) {
+	got := DecodeEntries([]json.RawMessage{
+		json.RawMessage(`{"id":1,"title":"Теги строкой","tags":"ai","kind":1}`),
+		json.RawMessage(`{"id":2,"title":"Все верно","tags":["ai"],"kind":"article","lifecycle":"active"}`),
+	})
+	if len(got) != 2 {
+		t.Fatalf("записей %d, want 2", len(got))
+	}
+	if e := got[1].Entry; e.Kind != "article" || e.Lifecycle != "active" || len(e.Tags) != 1 {
+		t.Fatalf("поля для MCP = %+v", e)
+	}
+	raw, _ := json.Marshal(got[1].Entry)
+	if strings.Contains(string(raw), "kind") || strings.Contains(string(raw), "tags") {
+		t.Fatalf("в JSON окна лишние поля: %s", raw)
+	}
+}

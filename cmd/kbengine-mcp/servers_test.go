@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // memTokens — Связка ключей в памяти.
@@ -265,5 +266,56 @@ func TestRemoteServers_LockWaitKeepsTokenBudget(t *testing.T) {
 	got := r.SearchRemote(context.Background(), "q")
 	if len(got) != 1 || got[0].Err != "" || gotAuth != "Bearer "+tok {
 		t.Fatalf("got = %+v, Authorization = %q", got, gotAuth)
+	}
+}
+
+// Ревью #402. Свой каталог узнается и через символическую ссылку: окно
+// хранит путь, каким его выбрал человек, MCP запущен с другим.
+func TestRemoteServers_OwnCatalogThroughSymlink(t *testing.T) {
+	home := t.TempDir()
+	real := filepath.Join(home, "real.json")
+	if err := os.WriteFile(real, []byte(`{"entries":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, "link.json")); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "catalog-own", Kind: desktopconfig.KindCatalog, Path: "~/link.json", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, ownCatalog: real, tokens: memTokens{}}
+	if got := r.SearchRemote(context.Background(), "агент"); len(got) != 1 || !got[0].Own {
+		t.Fatalf("got = %+v", got)
+	}
+}
+
+// Ревью #402. Второй каталог ищется так же, как его ищет окно (без словаря
+// синонимов своего каталога): агент видит то, что человек. Пустой запрос
+// серверы не спрашивает — им нечего искать.
+func TestRemoteServers_SecondCatalogLikeWindow(t *testing.T) {
+	home := t.TempDir()
+	if err := os.WriteFile(filepath.Join(home, "work.json"), []byte(`{"entries":[
+		{"id":1,"title":"Kubernetes","category":"ai","status":"KEEP","date_added":"2026-01-01"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "catalog-work", Kind: desktopconfig.KindCatalog, Path: "~/work.json", Enabled: true},
+		{ID: "server-a", Kind: desktopconfig.KindServer, URL: "https://192.0.2.1", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	// Синоним «докер» → kubernetes: окно его не знает, и агент не должен.
+	syn := search.New(search.Dictionary{"докер": {Same: []string{"kubernetes"}}})
+	r := remoteServers{cfgPath: cfgPath, home: home, match: syn, tokens: memTokens{}}
+	if got := r.SearchRemote(context.Background(), "докер"); len(got) < 1 || len(got[0].Catalog) != 0 {
+		t.Fatalf("второй каталог нашел по синониму своего: %+v", got)
+	}
+	got := r.SearchRemote(context.Background(), "")
+	if len(got) != 1 || got[0].Source.ID != "catalog-work" || len(got[0].Catalog) != 1 {
+		t.Fatalf("пустой запрос: %+v", got)
 	}
 }

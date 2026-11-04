@@ -247,3 +247,47 @@ func TestServer_searchFollowsWindowList(t *testing.T) {
 		})
 	}
 }
+
+// Ревью #402. Запись второго каталога — как запись сервера: без file и
+// related_ids, это пути и номера чужого каталога, get_entry и read_file
+// открыли бы по ним свое.
+func TestServer_searchSecondCatalogHasNoForeignPaths(t *testing.T) {
+	cat, _ := domain.NewCategory("articles")
+	life, _ := domain.NewLifecycle("active")
+	read, _ := domain.NewReadState("read")
+	e, err := domain.NewEntry(domain.EntryParams{ID: 70, Kind: domain.KindArticle, Title: "Кубернетес в работе",
+		Category: cat, Lifecycle: life, ReadState: &read, NotesFile: "notes/x.md", RelatedIDs: []int{1}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own, {Source: mcpserver.RemoteSource{ID: "catalog-2"}, Catalog: []domain.Entry{e}}}})
+	var out struct {
+		Entries []map[string]any `json:"entries"`
+	}
+	_ = json.Unmarshal([]byte(text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))), &out)
+	for _, x := range out.Entries {
+		if x["source"] == "catalog-2" && (x["file"] != nil || x["related_ids"] != nil) {
+			t.Fatalf("у записи второго каталога чужие file/related_ids: %v", x)
+		}
+	}
+}
+
+// Ревью #402. Пустой запрос (весь каталог) тоже идет по списку окна:
+// выключенный в окне свой каталог не отдается целиком.
+func TestServer_searchEmptyQueryFollowsWindowList(t *testing.T) {
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{{Source: mcpserver.RemoteSource{ID: "server-a"}}}})
+	var out sourcedOut
+	_ = json.Unmarshal([]byte(text(t, callTool(t, cs, "search_catalog", map[string]any{"query": ""}))), &out)
+	if len(out.Entries) != 0 || strings.Join(sourceIDs(out), ",") != "server-a" {
+		t.Fatalf("entries = %v, sources = %v", entrySources(out), sourceIDs(out))
+	}
+}
+
+// Ревью #402. Свой каталог, добавленный в окно дважды, отвечает раз: иначе
+// агент сложил бы два одинаковых «найдено».
+func TestServer_searchOwnCatalogTwiceAnswersOnce(t *testing.T) {
+	out := searchOut(t, []mcpserver.RemoteFound{own, {Source: mcpserver.RemoteSource{ID: "server-a"}}, own})
+	if got := strings.Join(sourceIDs(out), ","); got != "catalog,server-a" {
+		t.Fatalf("sources = %s", got)
+	}
+}
