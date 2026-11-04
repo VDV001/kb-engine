@@ -4,7 +4,7 @@
 "use strict";
 
 const $ = (s) => document.querySelector(s);
-const api = (path) => fetch(path).then(async (r) => ({ status: r.status, body: r.ok ? await r.json() : null }));
+const api = (path, signal) => fetch(path, { signal }).then(async (r) => ({ status: r.status, body: r.ok ? await r.json() : null }));
 
 // kb — записи общей выдачи источников (у каждой _src — id источника), sources —
 // строка «N из M» над выдачей, filter — источник, выбранный в ней кликом, known —
@@ -108,8 +108,15 @@ $("#q").addEventListener("input", (e) => {
   timer = setTimeout(() => search(e.target.value.trim()), 110);
 });
 
+let inflight; // запросы прошлой буквы: отменяются, и Go перестает ждать серверы
 async function search(q) {
+  // Новый запрос снимает фильтр источника: иначе выбранный источник, не
+  // нашедший ничего по новому слову, прятал бы и файлы, и остальные источники.
+  if (q !== state.q) state.filter = null;
   state.q = q;
+  if (inflight) inflight.abort();
+  inflight = new AbortController();
+  const signal = inflight.signal;
   const seq = ++state.seq;
   // HEAD на ветке — текущий запрос, как текущий шаг на сайте.
   $("#branch-label").textContent = q ? `find «${q.length > 40 ? q.slice(0, 40) + "…" : q}»` : "поиск";
@@ -117,15 +124,16 @@ async function search(q) {
   const enc = encodeURIComponent(q);
   $("#app").classList.add("busy");
   const [kb, files] = await Promise.all([
-    searchSources(enc),
-    api(`/api/files/search?q=${enc}&limit=60`).catch(() => ({ body: null })),
+    searchSources(enc, signal),
+    api(`/api/files/search?q=${enc}&limit=60`, signal).catch(() => ({ body: null })),
   ]);
   if (seq !== state.seq) return; // пришел ответ на устаревший запрос
   $("#app").classList.remove("busy");
-  state.kb = kb.hits.slice(0, 40).map((h) => ({ ...h.entry, _src: h.source }));
+  // Записей от источника не больше 40 — срез делает Go до слияния, поэтому
+  // фильтр по нижнему источнику показывает его записи, а не пустоту.
+  state.kb = kb.hits.map((h) => ({ ...h.entry, _src: h.source }));
   state.sources = kb.sources;
-  // Склеенные дубли: источники нашли больше, чем осталось в общей выдаче.
-  state.dupes = kb.sources.reduce((n, s) => n + s.found, 0) - kb.hits.length;
+  state.dupes = kb.dupes || 0;
   if (state.filter && !kb.sources.some((s) => s.id === state.filter && !s.error)) state.filter = null;
   state.files = (files.body && files.body.hits) || [];
   state.sel = 0;
@@ -134,11 +142,11 @@ async function search(q) {
 
 // Общая выдача источников живет в окне (/api/sources/search). Простой kbengine
 // serve в браузере ее не знает — тогда поиск по его каталогу, без строки источников.
-async function searchSources(enc) {
-  const r = await api(`/api/sources/search?q=${enc}`).catch(() => ({ status: 0, body: null }));
+async function searchSources(enc, signal) {
+  const r = await api(`/api/sources/search?q=${enc}`, signal).catch(() => ({ status: 0, body: null }));
   if (r.body) return r.body;
   if (r.status === 404) {
-    const old = await api(`/api/search?q=${enc}`).catch(() => ({ body: null }));
+    const old = await api(`/api/search?q=${enc}`, signal).catch(() => ({ body: null }));
     return { hits: (old.body || []).map((entry) => ({ source: "", entry })), sources: [] };
   }
   return { hits: [], sources: [] };
@@ -185,12 +193,14 @@ function render() {
 
   // «Показано» у источника — сколько его записей в текущей вкладке до фильтра:
   // клик по одному источнику не обнуляет счет остальных.
-  const shown = {};
-  for (const it of TABS[state.tab](state.kb, state.files)) if (it.type === "kb") shown[it.e._src] = (shown[it.e._src] || 0) + 1;
-  // Под фильтром у выбранного источника показано столько, сколько в списке.
-  if (state.filter) shown[state.filter] = TABS[state.tab](kb, files).length;
-  renderStrip(shown);
   state.items = TABS[state.tab](kb, files);
+  const shown = {};
+  const unfiltered = state.filter ? TABS[state.tab](state.kb, state.files) : state.items;
+  for (const it of unfiltered) if (it.type === "kb") shown[it.e._src] = (shown[it.e._src] || 0) + 1;
+  // Под фильтром у выбранного источника показано столько, сколько в списке.
+  if (state.filter) shown[state.filter] = state.items.length;
+  const hue = stripHues(); // один раз на отрисовку, а не на каждую строку
+  renderStrip(shown, hue);
   $("#count").textContent = state.q ? `${state.items.length}` : "";
   const hl = highlighter(state.q);
   const list = $("#results");
@@ -199,7 +209,7 @@ function render() {
     showEmpty();
     return;
   }
-  list.innerHTML = state.items.map((it, i) => (it.type === "kb" ? kbRow(it.e, i, hl) : fileRow(it.f, i, hl))).join("");
+  list.innerHTML = state.items.map((it, i) => (it.type === "kb" ? kbRow(it.e, i, hl, hue) : fileRow(it.f, i, hl))).join("");
   if (state.items.length) select(state.sel);
 }
 
@@ -208,12 +218,12 @@ function render() {
 // Подпись по настоящему типу: картинка не выдается за документ — вкладка
 // «Документы» ее и не покажет.
 const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
-function kbRow(e, i, hl) {
+function kbRow(e, i, hl, hue) {
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
   const s = state.sources.length > 1 && state.sources.find((x) => x.id === e._src);
-  const from = s ? `<span class="hit-src" style="--c:var(${stripHues().get(s.id)})">${esc(label(s))}</span>` : "";
+  const from = s ? `<span class="hit-src" style="--c:var(${hue.get(s.id)})">${esc(label(s))}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
     <div class="hit-head"><span class="type kb">${TYPE_LABEL.kb}</span><span class="hit-name">${hl(e.title)}</span><span class="hit-tail">${from}${verdict}</span></div>
     ${e.description ? `<div class="hit-snip">${hl(e.description)}</div>` : ""}
@@ -265,7 +275,7 @@ async function preview(it) {
   if (it.type === "kb") {
     const e = it.e;
     box.innerHTML = `<div class="doc">
-      <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${e.id}</div><div class="doc-title">${hl(e.title)}</div>
+      <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${esc(String(e.id))}</div><div class="doc-title">${hl(e.title)}</div>
         <div class="doc-path">${esc([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
         <div class="doc-actions">${e.url ? `<button class="btn primary" data-act="url">Открыть источник</button>` : ""}</div></div>
       <div class="doc-desc">${hl(e.description || "Описания нет.")}</div></div>`;
@@ -384,11 +394,10 @@ const sourceName = (id) => { const s = state.sources.find((x) => x.id === id); r
 // оставляет в выдаче только этот источник, повторный — снимает фильтр.
 // Источник с бедой назван, а не пропущен: короткое слово в строке, причина целиком
 // в подсказке.
-function renderStrip(shown) {
+function renderStrip(shown, hue) {
   const strip = $("#strip");
   strip.hidden = !state.q || !state.sources.length;
   if (strip.hidden) return;
-  const hue = stripHues();
   strip.innerHTML = `<span class="strip-lbl">источники</span>` + state.sources.map((s) => {
     const name = esc(label(s)), c = `style="--c:var(${hue.get(s.id)})"`;
     if (s.error) return `<span class="chip off" ${c} title="${esc(s.error)}"><span class="chip-dot"></span>${name}<span class="cnt">${esc(s.error.split(":")[0])}</span></span>`;
