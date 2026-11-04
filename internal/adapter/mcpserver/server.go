@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -74,13 +75,18 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{Name: "kb-engine", Version: cfg.Version}, nil)
 	j := newJournal(cfg)
 
-	addTool(s, j, &mcp.Tool{
+	addToolCtx(s, j, &mcp.Tool{
 		Name: "search_catalog",
 		Description: "Поиск по каталогу базы знаний. Четыре слоя: подстрока, " +
 			"транслитерация, опечатки, словарь синонимов. Слова соединяются через И, " +
 			"«#123» адресует запись по номеру. Поле view — адрес витрины с той " +
 			"же выборкой: его показывают человеку, чтобы он сверил ответ с " +
-			"первичными данными, а не с пересказом.",
+			"первичными данными, а не с пересказом. Когда подключены kb-серверы " +
+			"из списка источников окна, выдача общая: у записи поле source, у " +
+			"ответа список sources — сколько нашел каждый источник или почему не ответил; " +
+			"found тогда — сколько записей в ответе (не больше 40 от сервера). Номер " +
+			"записи сервера — номер в ЕГО каталоге: get_entry и read_file отвечают " +
+			"только за source=catalog.",
 	}, func(in searchArgs) []string {
 		// Пустой запрос аргументом не записывается: пустая строка в журнале и
 		// отсутствие запроса выглядели бы одинаково, а означают разное.
@@ -88,10 +94,26 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			return nil
 		}
 		return []string{in.Query}
-	}, func(in searchArgs) (map[string]any, error) {
+	}, func(ctx context.Context, in searchArgs) (map[string]any, error) {
 		found, err := SearchCatalog(q, m, in.Query)
 		if err != nil {
 			return nil, err
+		}
+		var remote []RemoteFound
+		if cfg.Remote != nil && in.Query != "" {
+			remote = cfg.Remote.SearchRemote(ctx, in.Query)
+		}
+		if len(remote) > 0 {
+			// Серверы из списка источников окна: одна выдача по правилу окна,
+			// у записи — источник, у источника — найдено или беда. Без серверов
+			// в списке форма ответа прежняя.
+			entries, sources := mergeRemote(found, remote)
+			return map[string]any{
+				"found":   len(entries),
+				"entries": entries,
+				"sources": sources,
+				"view":    viewURL(cfg.ViewBase, "archives", in.Query),
+			}, nil
 		}
 		out := make([]entryOut, 0, len(found))
 		for _, e := range found {

@@ -211,3 +211,22 @@ func statusErr(path string, code int) error {
 		return fmt.Errorf("%w: %s answered %d", ErrNotKB, path, code)
 	}
 }
+
+// Describe turns a client error into words for a person: окно (строка
+// источников, «Проверить») и MCP говорят об одной беде одинаково.
+func Describe(err error) string {
+	switch {
+	case errors.Is(err, ErrUnauthorized):
+		return "сервер ответил 401: нужен верный токен"
+	case errors.Is(err, ErrNotKB):
+		return "по адресу отвечает не kb-сервер"
+	case errors.Is(err, ErrRedirect):
+		return "сервер перенаправил запрос: укажите конечный адрес (https://…), kb не идет по редиректам с токеном"
+	case errors.Is(err, ErrTooLarge):
+		return "выдача сервера больше 32 МБ: уточните запрос"
+	case errors.Is(err, ErrServerError):
+		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке"
+	default:
+		return "нет связи: проверьте адрес и VPN"
+	}
+}

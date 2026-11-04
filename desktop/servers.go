@@ -123,22 +123,7 @@ func (f *folderSettings) token(id string) string {
 
 // serverMessage is the one place where a server error becomes words for the
 // screen: строка списка и «Проверить» говорят об одной беде одинаково.
-func serverMessage(err error) string {
-	switch {
-	case errors.Is(err, kbserver.ErrUnauthorized):
-		return "сервер ответил 401: нужен верный токен"
-	case errors.Is(err, kbserver.ErrNotKB):
-		return "по адресу отвечает не kb-сервер"
-	case errors.Is(err, kbserver.ErrRedirect):
-		return "сервер перенаправил запрос: укажите конечный адрес (https://…), kb не идет по редиректам с токеном"
-	case errors.Is(err, kbserver.ErrTooLarge):
-		return "выдача сервера больше 32 МБ: уточните запрос"
-	case errors.Is(err, kbserver.ErrServerError):
-		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке"
-	default:
-		return "нет связи: проверьте адрес и VPN"
-	}
-}
+func serverMessage(err error) string { return kbserver.Describe(err) }
 
 // humanErr carries the screen text and keeps the cause for errors.Is.
 type humanErr struct {
