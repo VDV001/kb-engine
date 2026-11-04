@@ -19,7 +19,7 @@ import (
 )
 
 // findFunc asks a kb server to search; таймаут задает контекст вызывающего.
-type findFunc func(ctx context.Context, url, token, q string) ([]json.RawMessage, error)
+type findFunc func(ctx context.Context, url, token, q string) (kbserver.Result, error)
 
 // searchTimeout — сколько ждать сервер на одну букву запроса, вместе с чтением
 // его токена: медленный хост или запертая Связка не держат выдачу каталога.
@@ -161,12 +161,23 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	if !same {
 		return nil, errSourceChanged
 	}
-	raw, err := f.find(ctx, s.URL, tok, q)
+	res, err := f.find(ctx, s.URL, tok, q)
 	if err != nil {
 		return nil, serverMessage(err)
 	}
-	return typedEntries(raw), ""
+	// Записи сверх присланных известны только ключами: они склеиваются с
+	// нижними источниками и входят в «найдено», но не показываются.
+	items := typedEntries(res.Entries)
+	for _, k := range res.Keys {
+		items = append(items, candidate{key: k, encode: keyOnly})
+	}
+	return items, ""
 }
+
+// errKeyOnly — у записи есть только ключ: сервер прислал ее для склейки.
+var errKeyOnly = errors.New("запись известна только ключом")
+
+func keyOnly() (json.RawMessage, error) { return nil, errKeyOnly }
 
 // tokenWithin reads a token, giving up when ctx ends: Связка, ждущая
 // разблокировки, не держит выдачу. Брошенное чтение доживает само (security
@@ -241,9 +252,9 @@ func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 	return mux
 }
 
-// findServer asks a real kb server.
-func findServer(ctx context.Context, url, token, q string) ([]json.RawMessage, error) {
-	return kbserver.Client{URL: url, Token: token}.Search(ctx, q)
+// findServer asks a real kb server for the first searchLimit entries.
+func findServer(ctx context.Context, url, token, q string) (kbserver.Result, error) {
+	return kbserver.Client{URL: url, Token: token}.Search(ctx, q, searchLimit)
 }
 
 // cachedTokens keeps what the Keychain answered in memory: поиск идет на каждую

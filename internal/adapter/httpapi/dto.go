@@ -346,6 +346,14 @@ type entryDTO struct {
 	RelatedIDs   []int  `json:"related_ids,omitempty"`
 }
 
+// limitedSearchDTO is /api/search with ?limit=N: the first N entries, how many
+// were found and the merge keys of the rest. Keys всегда список, не null.
+type limitedSearchDTO struct {
+	Entries []entryDTO `json:"entries"`
+	Total   int        `json:"total"`
+	Keys    []string   `json:"keys"`
+}
+
 // EntryJSON encodes an entry exactly as /api/search does: окно сливает записи
 // своих каталогов с записями kb-сервера, и обе стороны обязаны быть одного вида.
 func EntryJSON(e domain.Entry) (json.RawMessage, error) { return json.Marshal(toDTO(e)) }

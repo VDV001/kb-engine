@@ -4,6 +4,7 @@
 package kbserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 )
 
 // Ошибки различимы, чтобы вызывающий подобрал слова: текст для человека живет
@@ -70,20 +72,48 @@ func (c Client) Info(ctx context.Context) (Info, error) {
 	return Info{Version: engine.Version, Entries: *stats.Total}, nil
 }
 
-// Search returns the server's entries for q, as the server encoded them and in
-// its order: окно показывает их той же разметкой, что и записи своего каталога,
-// и второй копии разбора записи здесь нет.
-//
-// ponytail: выдача приходит целиком (до 32 МБ на букву), хотя окну нужно 40
-// записей и счет: склейке дублей нужны ключи всех записей, а /api/search
-// предела не знает. Потолок — короткий запрос по большому удаленному каталогу.
-// Путь: параметр limit и счет total в /api/search плюс ключи записей отдельно.
-func (c Client) Search(ctx context.Context, q string) ([]json.RawMessage, error) {
-	var entries []json.RawMessage
-	if err := c.get(ctx, "/api/search", url.Values{"q": {q}}, maxSearchBody, &entries); err != nil {
-		return nil, err
+// Result is what a server found for a query: the entries as the server
+// encoded them, in its order; how many it found; and the merge keys of the
+// entries it did not send (сервер с limit). Сервер без limit (0.30.0) присылает
+// все найденное, и Keys пуст.
+type Result struct {
+	Entries []json.RawMessage
+	Total   int
+	Keys    []string
+}
+
+// Search asks the server for q. limit > 0 asks for only the first limit
+// entries plus the count and the merge keys of the rest: склейке дублей нужны
+// ключи всех записей, а сами записи — только показанные. Сервер, что limit не
+// знает, отвечает массивом всего найденного, и клиент понимает оба ответа.
+func (c Client) Search(ctx context.Context, q string, limit int) (Result, error) {
+	params := url.Values{"q": {q}}
+	if limit > 0 {
+		params.Set("limit", strconv.Itoa(limit))
 	}
-	return entries, nil
+	var raw json.RawMessage
+	if err := c.get(ctx, "/api/search", params, maxSearchBody, &raw); err != nil {
+		return Result{}, err
+	}
+	if t := bytes.TrimLeft(raw, " \t\r\n"); len(t) > 0 && t[0] == '[' {
+		var entries []json.RawMessage
+		if err := json.Unmarshal(raw, &entries); err != nil {
+			return Result{}, fmt.Errorf("%w: /api/search: %w", ErrNotKB, err)
+		}
+		return Result{Entries: entries, Total: len(entries)}, nil
+	}
+	var obj struct {
+		Entries *[]json.RawMessage `json:"entries"`
+		Total   int                `json:"total"`
+		Keys    []string           `json:"keys"`
+	}
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return Result{}, fmt.Errorf("%w: /api/search: %w", ErrNotKB, err)
+	}
+	if obj.Entries == nil || obj.Total < len(*obj.Entries) {
+		return Result{}, fmt.Errorf("%w: /api/search: неполный ответ", ErrNotKB)
+	}
+	return Result{Entries: *obj.Entries, Total: obj.Total, Keys: obj.Keys}, nil
 }
 
 // get asks path with the query params. Параметры идут отдельно от пути:
