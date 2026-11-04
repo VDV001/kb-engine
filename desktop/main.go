@@ -109,7 +109,7 @@ func run() error {
 
 	app := newApp(idx.files, settings, idx)
 	return wails.Run(&options.App{
-		Title:     "kb",
+		Title:     "DVK",
 		Width:     1180,
 		Height:    760,
 		MinWidth:  760,
@@ -134,7 +134,7 @@ func run() error {
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,
 			About: &mac.AboutInfo{
-				Title:   "kb",
+				Title:   "DVK",
 				Message: fmt.Sprintf("Поиск по базе знаний и файлам.\nКонфиг: %s", cfgPath),
 			},
 		},

@@ -59,10 +59,10 @@ void kbInstallMenuBar(void) {
         // шаблон сам темнеет и светлеет вместе с меню-баром. Нет файла — лупа.
         NSImage *img = [[NSImage alloc] initWithContentsOfFile:[[NSBundle mainBundle] pathForImageResource:@"menubar"]];
         if (img) img.size = NSMakeSize(18, 18);
-        else img = [NSImage imageWithSystemSymbolName:@"magnifyingglass" accessibilityDescription:@"kb"];
+        else img = [NSImage imageWithSystemSymbolName:@"magnifyingglass" accessibilityDescription:@"DVK"];
         [img setTemplate:YES];
         item.button.image = img;
-        item.button.toolTip = @"kb — поиск по базе и файлам (⌥Space)";
+        item.button.toolTip = @"DVK — поиск по базе и файлам (⌥Space)";
 
         NSMenu *menu = [NSMenu new];
         NSMenuItem *open = [[NSMenuItem alloc] initWithTitle:@"Открыть поиск" action:@selector(open:) keyEquivalent:@" "];
@@ -70,7 +70,7 @@ void kbInstallMenuBar(void) {
         open.target = tray;
         [menu addItem:open];
         [menu addItem:[NSMenuItem separatorItem]];
-        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Выйти из kb" action:@selector(quit:) keyEquivalent:@"q"];
+        NSMenuItem *quit = [[NSMenuItem alloc] initWithTitle:@"Выйти из DVK" action:@selector(quit:) keyEquivalent:@"q"];
         quit.target = tray;
         [menu addItem:quit];
         item.menu = menu;

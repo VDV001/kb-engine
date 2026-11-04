@@ -76,7 +76,7 @@ button { font-family: inherit; }
 .cell { display: flex; align-items: center; padding: 0 16px; border-right: 1px solid var(--z-rule); }
 .cell:last-child { border-right: 0; }
 .brand { gap: 8px; font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
-.mark { width: 24px; height: 24px; flex: none; }
+.mark { width: 28px; height: 28px; flex: none; }
 .mark .sp1 { stop-color: var(--z-sp1); } .mark .sp2 { stop-color: var(--z-sp2); } .mark .sp3 { stop-color: var(--z-sp3); }
 .mark .sp4 { stop-color: var(--z-sp4); } .mark .sp5 { stop-color: var(--z-sp5); } .mark .sp6 { stop-color: var(--z-sp6); }
 .mark-lobe { fill: url(#mark-spec); }
