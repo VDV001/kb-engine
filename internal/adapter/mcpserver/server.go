@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -92,6 +93,17 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 		found, err := SearchCatalog(q, m, in.Query)
 		if err != nil {
 			return nil, err
+		}
+		if cfg.Remote != nil && in.Query != "" {
+			// Серверы из списка источников окна: одна выдача по правилу окна,
+			// у записи — источник, у источника — найдено или беда.
+			entries, sources := mergeRemote(found, cfg.Remote.SearchRemote(context.Background(), in.Query))
+			return map[string]any{
+				"found":   len(entries),
+				"entries": entries,
+				"sources": sources,
+				"view":    viewURL(cfg.ViewBase, "archives", in.Query),
+			}, nil
 		}
 		out := make([]entryOut, 0, len(found))
 		for _, e := range found {

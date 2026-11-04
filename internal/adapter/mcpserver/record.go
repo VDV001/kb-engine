@@ -34,6 +34,9 @@ type Config struct {
 	// Files нулевой означает «поиска по файлам нет»: инструменты search_files
 	// и read_file тогда не объявляются вовсе, как маршруты /api/files/* у HTTP.
 	Files FileSearcher
+	// Remote нулевой означает «kb-серверов нет»: search_catalog отвечает своим
+	// каталогом, как прежде.
+	Remote RemoteSearcher
 }
 
 // journal — счётчик вызовов, приделанный к регистрации инструментов.

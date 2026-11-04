@@ -1,0 +1,101 @@
+package mcpserver
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
+)
+
+// RemoteSearcher asks the kb servers of the window's source list. Нулевой в
+// Config — серверов нет, и search_catalog отвечает, как прежде.
+type RemoteSearcher interface {
+	SearchRemote(ctx context.Context, q string) []RemoteFound
+}
+
+// RemoteSource names a kb server in the answer.
+type RemoteSource struct {
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+	URL  string `json:"url,omitempty"`
+}
+
+// RemoteFound is what one server answered: записи, как сервер их закодировал,
+// ключи склейки остальных найденных и счет; Err — беда словами.
+type RemoteFound struct {
+	Source  RemoteSource
+	Entries []json.RawMessage
+	Keys    []string
+	Total   int
+	Err     string
+}
+
+// sourcedEntry is an entry of the merged answer with the source it came from.
+type sourcedEntry struct {
+	entryOut
+	Source string `json:"source"`
+}
+
+// sourceOut is one source in the answer: сколько нашел или почему не ответил.
+type sourceOut struct {
+	RemoteSource
+	Found int    `json:"found"`
+	Error string `json:"error,omitempty"`
+}
+
+// catalogSource — id своего каталога MCP в ответе.
+const catalogSource = "catalog"
+
+type candidate struct {
+	key   string
+	entry *entryOut // nil — запись известна серверу только ключом
+}
+
+// mergeRemote joins the catalog's own entries with the servers' by the rule of
+// the window (sourcesearch.Merge): свой каталог первым, дубль — у источника
+// выше, запись, известная только ключом, в ответ не идет.
+func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []sourceOut) {
+	lists := []sourcesearch.Found[candidate]{{Source: catalogSource}}
+	for _, e := range own {
+		out := project(e)
+		lists[0].Items = append(lists[0].Items, candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &out})
+	}
+	sources := []sourceOut{{RemoteSource: RemoteSource{ID: catalogSource}, Found: len(own)}}
+	for _, r := range remote {
+		items := typedRemote(r.Entries)
+		for _, k := range r.Keys {
+			items = append(items, candidate{key: k})
+		}
+		lists = append(lists, sourcesearch.Found[candidate]{Source: r.Source.ID, Items: items})
+		sources = append(sources, sourceOut{RemoteSource: r.Source, Found: len(items), Error: r.Err})
+	}
+	var out []sourcedEntry
+	for _, h := range sourcesearch.Merge(lists, func(c candidate) string { return c.key }) {
+		if h.Item.entry != nil {
+			out = append(out, sourcedEntry{entryOut: *h.Item.entry, Source: h.Source})
+		}
+	}
+	return out, sources
+}
+
+// typedRemote decodes a server's entries strictly into entryOut: поле не того
+// типа — запись отброшена; адрес не http(s) — убран. Ключ — по исходному
+// адресу, как ключи остальных записей, что сервер считает сам.
+func typedRemote(raw []json.RawMessage) []candidate {
+	out := make([]candidate, 0, len(raw))
+	for _, r := range raw {
+		var e entryOut
+		if json.Unmarshal(r, &e) != nil || e.Title == "" {
+			continue
+		}
+		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
+		if u, err := domain.NewExternalURL(e.URL); err != nil {
+			e.URL = ""
+		} else {
+			e.URL = u.String()
+		}
+		out = append(out, candidate{key: key, entry: &e})
+	}
+	return out
+}
