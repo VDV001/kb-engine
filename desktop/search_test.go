@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -566,4 +567,108 @@ func TestCachedTokens_GetAfterDeleteDoesNotJoinOldRead(t *testing.T) {
 		t.Fatal("Get после удаления ждет старое чтение")
 	}
 	close(inner.release)
+}
+
+// Ожидание Связки не съедает срок сети: человек разблокировал Связку под
+// конец срока — сервер все равно получает свой полный срок, а не остаток.
+func TestSearchSources_KeychainWaitDoesNotEatNetworkBudget(t *testing.T) {
+	s, tok, _ := newSearchSettings(t)
+	old := searchTimeout
+	searchTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { searchTimeout = old })
+	s.tokens = slowTokens{fakeTokens: tok, delay: 150 * time.Millisecond}
+	var left time.Duration
+	s.find = func(ctx context.Context, _, _, _ string) ([]json.RawMessage, error) {
+		if d, ok := ctx.Deadline(); ok {
+			left = time.Until(d)
+		}
+		return nil, nil
+	}
+	s.SearchSources(context.Background(), "агент")
+	if left < 150*time.Millisecond {
+		t.Fatalf("серверу осталось %v из %v: срок съела Связка", left, searchTimeout)
+	}
+}
+
+type slowTokens struct {
+	*fakeTokens
+	delay time.Duration
+}
+
+func (s slowTokens) Get(acct string) (string, error) {
+	time.Sleep(s.delay)
+	return s.fakeTokens.Get(acct)
+}
+
+// Отказ сохранения до записи токенов (опечатка в папке) ничего не меняет — и
+// поиск, что шел в это время, не получает ложного «настройки изменились».
+func TestSearchSources_RejectedSaveDoesNotCancelSearch(t *testing.T) {
+	s, tok, calls := newSearchSettings(t)
+	s.tokens = &hookTokens{fakeTokens: tok, onFirstGet: func() {
+		bad := append(slices.Clone(s.cfg.Sources), src("folder-x", desktopconfig.KindFolder, "~/нет-такой-папки", true))
+		if err := s.SetSources(bad, nil, nil); err == nil {
+			t.Error("SetSources принял несуществующую папку")
+		}
+	}}
+	r := s.SearchSources(context.Background(), "агент")
+	if f := found(r); f["server-a"].Error != "" || len(*calls) != 1 {
+		t.Fatalf("server-a = %+v, calls = %d", f["server-a"], len(*calls))
+	}
+}
+
+// Адрес записи сервера с пробелами вокруг обрезается: и в показе, и в ключе
+// склейки — запись каталога с тем же адресом не показывается дважды.
+func TestSearchSources_ServerURLTrimmed(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		return []json.RawMessage{json.RawMessage(`{"id":1,"title":"Агент общий","url":"  https://example.com/a  "}`)}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if got := hitIDs(t, r); !slices.Equal(got, []string{"server-a:1", "catalog-1:2"}) {
+		t.Fatalf("hits = %q", got)
+	}
+	var e map[string]any
+	_ = json.Unmarshal(r.Hits[0].Entry, &e)
+	if e["url"] != "https://example.com/a" {
+		t.Fatalf("url = %q", e["url"])
+	}
+}
+
+// Сохраненный каталог узнается по раскрытому пути: «~/catalog.json» и тот же
+// путь целиком — один каталог, и сетевой диск без связи не мешает сохранению.
+func TestSetSources_SavedCatalogByExpandedPath(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	s.cfg.Sources = []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, "~/offline/catalog.json", true),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	list := slices.Clone(s.cfg.Sources)
+	list[0].Path = filepath.Join(home, "offline", "catalog.json")
+	if err := s.SetSources(list, nil, nil); err != nil {
+		t.Fatalf("тот же каталог полным путем: %v", err)
+	}
+}
+
+// Режим -browser отдает весь API и интерфейс только этой машине, а не один
+// маршрут: перепривязанная страница не читает и /api/entries.
+func TestBrowserHandler_LocalHostOnly(t *testing.T) {
+	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("api")) })
+	h := browserHandler(api, fstest.MapFS{"index.html": {Data: []byte("ui")}})
+	for _, tt := range []struct {
+		host, path string
+		want       int
+	}{
+		{"evil.example:18090", "/api/entries", http.StatusForbidden},
+		{"evil.example:18090", "/", http.StatusForbidden},
+		{"127.0.0.1:18090", "/api/entries", http.StatusOK},
+		{"127.0.0.1:18090", "/", http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+		req.Host = tt.host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != tt.want {
+			t.Errorf("%s %s: code %d, want %d", tt.host, tt.path, rec.Code, tt.want)
+		}
+	}
 }
