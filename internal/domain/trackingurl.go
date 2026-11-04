@@ -44,6 +44,8 @@ func StripTrackingParams(raw string) string {
 			continue
 		}
 		name, _, _ := strings.Cut(pair, "=")
+		// Регистр имени метку не меняет: UTM_Source и FbClid — те же метки.
+		name = strings.ToLower(name)
 		if strings.HasPrefix(name, utmPrefix) {
 			continue
 		}

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
@@ -66,6 +67,11 @@ type folderSettings struct {
 	probe  probeFunc
 	// find — поиск на kb-сервере для общей выдачи (search.go).
 	find findFunc
+	// snap — снимок настроек для поиска: читается без f.mu, поэтому
+	// сохранение, ждущее Связку под f.mu, не держит выдачу. SetSources
+	// публикует его дважды: «сохраняется» перед записью токенов и итог в
+	// конце, — поиск сверяет указатель (search.go).
+	snap atomic.Pointer[cfgSnapshot]
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string
@@ -170,7 +176,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err != nil {
 		return err
 	}
-	catalog, err := f.catalogFile(next.CatalogPath(), next.CatalogPath() == f.cfg.WithSources().CatalogPath())
+	catalog, err := f.checkCatalogs(next)
 	if err != nil {
 		return err
 	}
@@ -178,6 +184,14 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 
 	// Токены — до apply: отказ Связки ключей не должен оставить индекс на новых
 	// источниках при старом конфиге. Откат токенов — при любом отказе дальше.
+	if err := checkTokenIDs(next, tokens); err != nil {
+		return err
+	}
+	// С этого места токены в Связке могут не совпадать с адресами снимка:
+	// поиск пропускает серверы, пока сохранение не опубликует итог. Отказ
+	// раньше ничего не трогал и поиск не задевает.
+	f.publishLocked(true)
+	defer f.publishLocked(false) // итог — новый конфиг или прежний при отказе; до Unlock
 	undoTokens, err := f.storeTokens(next, tokens)
 	if err != nil {
 		return err
@@ -198,6 +212,36 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
 	return nil
+}
+
+// checkCatalogs checks every enabled catalog of next and returns the path of
+// the first, the one the window's other views read. Поиск читает их все, и
+// опечатка во втором иначе всплыла бы бедой на каждой букве, а не отказом при
+// сохранении. Уже сохраненный каталог, что сейчас недоступен (сетевой диск),
+// не мешает.
+func (f *folderSettings) checkCatalogs(next desktopconfig.Config) (string, error) {
+	// Снисхождение «сохранен, сейчас недоступен» — только включенному: его
+	// читали и видели. Выключенный мог быть сохранен без проверки (0.30.0
+	// проверял только первый), и при включении проверяется как новый.
+	saved := map[string]bool{} // по раскрытому пути: «~/…» и полный путь — один каталог
+	for _, s := range f.cfg.WithSources().Sources {
+		if s.Kind == desktopconfig.KindCatalog && s.Enabled {
+			saved[desktopconfig.ExpandHome(s.Path, f.home)] = true
+		}
+	}
+	first := ""
+	for _, s := range next.Sources {
+		if s.Enabled && s.Kind == desktopconfig.KindCatalog {
+			p, err := f.catalogFile(s.Path, saved[desktopconfig.ExpandHome(s.Path, f.home)])
+			if err != nil {
+				return "", err
+			}
+			if first == "" {
+				first = p
+			}
+		}
+	}
+	return first, nil
 }
 
 // reconcile reopens the folders when the set of enabled folders that can be

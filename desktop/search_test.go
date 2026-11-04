@@ -13,7 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/fstest"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
@@ -169,9 +172,10 @@ func TestSearchRoute(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("engine " + r.URL.Path)) })
 	h := s.searchRoute(inner)
+	local := func(r *http.Request) *http.Request { r.Host = "127.0.0.1:18090"; return r }
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/sources/search?q="+url.QueryEscape("агент"), nil))
+	h.ServeHTTP(rec, local(httptest.NewRequest(http.MethodGet, "/api/sources/search?q="+url.QueryEscape("агент"), nil)))
 	var got sourcesSearch
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("code %d, err %v, body %s", rec.Code, err, rec.Body)
@@ -181,7 +185,7 @@ func TestSearchRoute(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/sources/search?q=", nil))
+	h.ServeHTTP(rec, local(httptest.NewRequest(http.MethodGet, "/api/sources/search?q=", nil)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("пустой запрос: code %d", rec.Code)
 	}
@@ -382,4 +386,330 @@ func (b *blockingTokens) Get(acct string) (string, error) {
 		return "", keychain.ErrNotFound
 	}
 	return v, nil
+}
+
+// Связка, которая не отвечает (ждет разблокировки), не держит выдачу: каталог
+// приходит в срок, сервер назван «Связка ключей не ответила».
+func TestSearchSources_HungKeychainDoesNotHoldResults(t *testing.T) {
+	s, _, calls := newSearchSettings(t)
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.tokens = hangingTokens{release}
+	old := searchTimeout
+	searchTimeout = 50 * time.Millisecond
+	t.Cleanup(func() { searchTimeout = old })
+	start := time.Now()
+	r := s.SearchSources(context.Background(), "агент")
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("выдача ждала Связку %v", d)
+	}
+	f := found(r)
+	if !strings.Contains(f["server-a"].Error, "Связка ключей") || f["catalog-1"].Found != 2 || len(*calls) != 0 {
+		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
+	}
+}
+
+// hangingTokens never answers Get until release.
+type hangingTokens struct{ release chan struct{} }
+
+func (h hangingTokens) Get(string) (string, error) { <-h.release; return "", keychain.ErrNotFound }
+func (hangingTokens) Set(string, string) error     { return nil }
+func (hangingTokens) Delete(string) error          { return nil }
+
+// Пока Связка думает, буквы запроса не запускают новые security: одно чтение
+// учетки на всех, кто ждет.
+func TestCachedTokens_OneReadForConcurrentGets(t *testing.T) {
+	inner := &blockingTokens{fakeTokens: fakeTokens{m: map[string]string{"a": "t"}}, release: make(chan struct{}), started: make(chan struct{})}
+	counted := &countingBlocking{blockingTokens: inner}
+	c := newCachedTokens(counted)
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Go(func() {
+			if v, err := c.Get("a"); v != "t" || err != nil {
+				t.Errorf("Get = %q, %v", v, err)
+			}
+		})
+	}
+	<-inner.started
+	time.Sleep(20 * time.Millisecond) // остальные двое успевают встать в ожидание
+	close(inner.release)
+	wg.Wait()
+	if n := counted.gets.Load(); n != 1 {
+		t.Fatalf("Связка прочитана %d раз, want 1", n)
+	}
+}
+
+type countingBlocking struct {
+	*blockingTokens
+	gets atomic.Int32
+}
+
+func (c *countingBlocking) Get(acct string) (string, error) {
+	c.gets.Add(1)
+	return c.blockingTokens.Get(acct)
+}
+
+// Склейка видит все записи источника выше, а не первые searchLimit: статья,
+// что у каталога 50-я, у сервера не показывается заново.
+func TestSearchSources_DedupBeyondLimit(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	var b strings.Builder
+	b.WriteString(`{"entries":[`)
+	for i := range 50 {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(`{"id":` + strconv.Itoa(i+1) + `,"title":"Агент ` + strconv.Itoa(i) + `","url":"https://example.com/k` + strconv.Itoa(i) + `","category":"ai","status":"keep","lifecycle":"active"}`)
+	}
+	b.WriteString(`]}`)
+	if err := os.WriteFile(filepath.Join(s.home, "catalog.json"), []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s.cfg.Sources[0], s.cfg.Sources[1] = s.cfg.Sources[1], s.cfg.Sources[0] // каталог выше сервера
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		return []json.RawMessage{json.RawMessage(`{"id":900,"title":"та же статья","url":"https://example.com/k49"}`)}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	for _, h := range r.Hits {
+		if h.Source == "server-a" {
+			t.Fatalf("дубль 50-й записи каталога показан у сервера: %s", h.Entry)
+		}
+	}
+	if r.Dupes != 1 {
+		t.Fatalf("dupes = %d, want 1", r.Dupes)
+	}
+}
+
+// Связка не читается под замком настроек: запертая Связка не должна вешать
+// вместе с поиском и панель источников, и сохранение.
+func TestSearchSources_KeychainNotReadUnderSettingsLock(t *testing.T) {
+	s, tok, _ := newSearchSettings(t)
+	s.tokens = lockProbe{fakeTokens: tok, s: s, t: t}
+	s.SearchSources(context.Background(), "агент")
+}
+
+type lockProbe struct {
+	*fakeTokens
+	s *folderSettings
+	t *testing.T
+}
+
+func (l lockProbe) Get(acct string) (string, error) {
+	if !l.s.mu.TryLock() {
+		l.t.Errorf("Связка читается под f.mu")
+	} else {
+		l.s.mu.Unlock()
+	}
+	return l.fakeTokens.Get(acct)
+}
+
+// Каждый включенный каталог проверяется при сохранении, а не только первый:
+// поиск читает их все, и опечатка во втором иначе всплыла бы бедой на каждой
+// букве.
+func TestSetSources_ChecksEveryCatalog(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	list := []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
+		src("catalog-2", desktopconfig.KindCatalog, filepath.Join(home, "catalgo.json"), true),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("err = %v, want errBadCatalog", err)
+	}
+	list[1].Path = filepath.Join(home, "notes") // папка вместо файла
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("папка: err = %v, want errBadCatalog", err)
+	}
+}
+
+// Get, начатый ПОСЛЕ удаления, не встает в ожидание чтения, начатого до него:
+// иначе он получил бы удаленный токен из того старого чтения.
+func TestCachedTokens_GetAfterDeleteDoesNotJoinOldRead(t *testing.T) {
+	inner := &blockingTokens{fakeTokens: fakeTokens{m: map[string]string{"a": "old"}}, release: make(chan struct{}), started: make(chan struct{})}
+	c := newCachedTokens(inner)
+	go func() { _, _ = c.Get("a") }()
+	<-inner.started
+	if err := c.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 1)
+	go func() { v, _ := c.Get("a"); got <- v }()
+	select {
+	case v := <-got:
+		if v != "" {
+			t.Fatalf("после удаления Get вернул %q", v)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Get после удаления ждет старое чтение")
+	}
+	close(inner.release)
+}
+
+// Ожидание Связки не съедает срок сети: человек разблокировал Связку под
+// конец срока — сервер все равно получает свой полный срок, а не остаток.
+func TestSearchSources_KeychainWaitDoesNotEatNetworkBudget(t *testing.T) {
+	s, tok, _ := newSearchSettings(t)
+	old := searchTimeout
+	searchTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { searchTimeout = old })
+	s.tokens = slowTokens{fakeTokens: tok, delay: 150 * time.Millisecond}
+	var left time.Duration
+	s.find = func(ctx context.Context, _, _, _ string) ([]json.RawMessage, error) {
+		if d, ok := ctx.Deadline(); ok {
+			left = time.Until(d)
+		}
+		return nil, nil
+	}
+	s.SearchSources(context.Background(), "агент")
+	if left < 150*time.Millisecond {
+		t.Fatalf("серверу осталось %v из %v: срок съела Связка", left, searchTimeout)
+	}
+}
+
+type slowTokens struct {
+	*fakeTokens
+	delay time.Duration
+}
+
+func (s slowTokens) Get(acct string) (string, error) {
+	time.Sleep(s.delay)
+	return s.fakeTokens.Get(acct)
+}
+
+// Отказ сохранения до записи токенов (опечатка в папке) ничего не меняет — и
+// поиск, что шел в это время, не получает ложного «настройки изменились».
+func TestSearchSources_RejectedSaveDoesNotCancelSearch(t *testing.T) {
+	s, tok, calls := newSearchSettings(t)
+	s.tokens = &hookTokens{fakeTokens: tok, onFirstGet: func() {
+		bad := append(slices.Clone(s.cfg.Sources), src("folder-x", desktopconfig.KindFolder, "~/нет-такой-папки", true))
+		if err := s.SetSources(bad, nil, nil); err == nil {
+			t.Error("SetSources принял несуществующую папку")
+		}
+	}}
+	r := s.SearchSources(context.Background(), "агент")
+	if f := found(r); f["server-a"].Error != "" || len(*calls) != 1 {
+		t.Fatalf("server-a = %+v, calls = %d", f["server-a"], len(*calls))
+	}
+}
+
+// Адрес записи сервера с пробелами вокруг обрезается: и в показе, и в ключе
+// склейки — запись каталога с тем же адресом не показывается дважды.
+func TestSearchSources_ServerURLTrimmed(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.find = func(context.Context, string, string, string) ([]json.RawMessage, error) {
+		return []json.RawMessage{json.RawMessage(`{"id":1,"title":"Агент общий","url":"  https://example.com/a  "}`)}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if got := hitIDs(t, r); !slices.Equal(got, []string{"server-a:1", "catalog-1:2"}) {
+		t.Fatalf("hits = %q", got)
+	}
+	var e map[string]any
+	_ = json.Unmarshal(r.Hits[0].Entry, &e)
+	if e["url"] != "https://example.com/a" {
+		t.Fatalf("url = %q", e["url"])
+	}
+}
+
+// Сохраненный каталог узнается по раскрытому пути: «~/catalog.json» и тот же
+// путь целиком — один каталог, и сетевой диск без связи не мешает сохранению.
+func TestSetSources_SavedCatalogByExpandedPath(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	s.cfg.Sources = []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, "~/offline/catalog.json", true),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	list := slices.Clone(s.cfg.Sources)
+	list[0].Path = filepath.Join(home, "offline", "catalog.json")
+	if err := s.SetSources(list, nil, nil); err != nil {
+		t.Fatalf("тот же каталог полным путем: %v", err)
+	}
+}
+
+// Режим -browser отдает весь API и интерфейс только этой машине, а не один
+// маршрут: перепривязанная страница не читает и /api/entries.
+func TestBrowserHandler_LocalHostOnly(t *testing.T) {
+	api := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("api")) })
+	h := browserHandler(api, fstest.MapFS{"index.html": {Data: []byte("ui")}})
+	for _, tt := range []struct {
+		host, path string
+		want       int
+	}{
+		{"evil.example:18090", "/api/entries", http.StatusForbidden},
+		{"evil.example:18090", "/", http.StatusForbidden},
+		{"127.0.0.1:18090", "/api/entries", http.StatusOK},
+		{"127.0.0.1:18090", "/", http.StatusOK},
+	} {
+		req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+		req.Host = tt.host
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != tt.want {
+			t.Errorf("%s %s: code %d, want %d", tt.host, tt.path, rec.Code, tt.want)
+		}
+	}
+}
+
+// Сохранение, что держит f.mu (Связка ждет разблокировки при записи токена),
+// не держит поиск: снимок настроек читается без f.mu.
+func TestSearchSources_DoesNotWaitForSave(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.publish()
+	s.mu.Lock() // SetSources в работе
+	defer s.mu.Unlock()
+	done := make(chan sourcesSearch, 1)
+	go func() { done <- s.SearchSources(context.Background(), "агент") }()
+	select {
+	case r := <-done:
+		if found(r)["catalog-1"].Found != 2 {
+			t.Fatalf("sources = %+v", r.Sources)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("поиск ждет сохранения настроек")
+	}
+}
+
+// Отказ из-за токена чужого id — до записи в Связку, ничего не меняет и
+// поиск не отменяет.
+func TestSearchSources_BadTokenSaveDoesNotCancelSearch(t *testing.T) {
+	s, tok, calls := newSearchSettings(t)
+	s.tokens = &hookTokens{fakeTokens: tok, onFirstGet: func() {
+		if err := s.SetSources(slices.Clone(s.cfg.Sources), nil, map[string]string{"server-нет": "x"}); !errors.Is(err, errBadToken) {
+			t.Errorf("err = %v, want errBadToken", err)
+		}
+	}}
+	r := s.SearchSources(context.Background(), "агент")
+	if f := found(r); f["server-a"].Error != "" || len(*calls) != 1 {
+		t.Fatalf("server-a = %+v, calls = %d", f["server-a"], len(*calls))
+	}
+}
+
+// Выключенный каталог, сохраненный когда-то без проверки, при включении
+// проверяется: снисхождение «сетевой диск без связи» — только включенным.
+func TestSetSources_DisabledSavedCatalogIsChecked(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	s.cfg.Sources = []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
+		src("catalog-2", desktopconfig.KindCatalog, "~/catalgo.json", false),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	list := slices.Clone(s.cfg.Sources)
+	list[1].Enabled = true
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("err = %v, want errBadCatalog", err)
+	}
+}
+
+// Пока сохранение пишет токены (снимок «сохраняется»), серверы в поиске
+// пропускаются: Связка может уже нести новый токен при старом адресе снимка.
+// Каталоги отвечают как обычно.
+func TestSearchSources_SkipsServersWhileSaving(t *testing.T) {
+	s, _, calls := newSearchSettings(t)
+	s.mu.Lock()
+	s.publishLocked(true)
+	s.mu.Unlock()
+	r := s.SearchSources(context.Background(), "агент")
+	f := found(r)
+	if f["server-a"].Error != errSourceChanged || f["catalog-1"].Found != 2 || len(*calls) != 0 {
+		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
+	}
 }

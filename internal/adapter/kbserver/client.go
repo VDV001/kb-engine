@@ -73,6 +73,11 @@ func (c Client) Info(ctx context.Context) (Info, error) {
 // Search returns the server's entries for q, as the server encoded them and in
 // its order: окно показывает их той же разметкой, что и записи своего каталога,
 // и второй копии разбора записи здесь нет.
+//
+// ponytail: выдача приходит целиком (до 32 МБ на букву), хотя окну нужно 40
+// записей и счет: склейке дублей нужны ключи всех записей, а /api/search
+// предела не знает. Потолок — короткий запрос по большому удаленному каталогу.
+// Путь: параметр limit и счет total в /api/search плюс ключи записей отдельно.
 func (c Client) Search(ctx context.Context, q string) ([]json.RawMessage, error) {
 	var entries []json.RawMessage
 	if err := c.get(ctx, "/api/search", url.Values{"q": {q}}, maxSearchBody, &entries); err != nil {

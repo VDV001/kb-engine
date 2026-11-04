@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"net/url"
 	"sync"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
@@ -21,9 +21,11 @@ import (
 // findFunc asks a kb server to search; таймаут задает контекст вызывающего.
 type findFunc func(ctx context.Context, url, token, q string) ([]json.RawMessage, error)
 
-// searchTimeout — сколько ждать сервер на одну букву запроса: медленный хост
-// не держит выдачу каталога, он приходит в строку источников с «нет связи».
-const searchTimeout = 3 * time.Second
+// searchTimeout — сколько ждать на одну букву запроса чтение токена и, отдельно,
+// ответ сервера (до двух сроков подряд): медленный хост или запертая Связка не
+// держат выдачу каталога.
+// Переменная, а не константа, — тесты ждут миллисекунды, а не секунды.
+var searchTimeout = 3 * time.Second
 
 // searchLimit — сколько записей одного источника идет в выдачу; «найдено»
 // считается полностью. Широкий запрос не тянет в окно весь каталог, а
@@ -54,45 +56,63 @@ type sourcesSearch struct {
 	Dupes int `json:"dupes"`
 }
 
+// candidate is one found entry before the merge: ключ для склейки и
+// кодирование, отложенное до среза, — кодируются только показанные записи.
+type candidate struct {
+	key    string
+	encode func() (json.RawMessage, error)
+}
+
 // SearchSources asks every enabled knowledge-base source (catalogs and kb
-// servers) in parallel and merges the answers by the list order.
+// servers) in parallel and merges the answers by the list order. Склейка видит
+// все найденное, срез до searchLimit — после нее: иначе дубль за пределом
+// среза у источника выше показался бы у нижнего.
 // ponytail: папки в строку источников не входят — их выдача идет своим
 // /api/files/search, счет «N из M» по папкам — следующий шаг этапа 5.
 func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSearch {
-	f.mu.Lock()
-	cfg := f.cfg
-	f.mu.Unlock()
+	snap := f.snapshot()
 	var rows []sourceFound
-	for _, s := range cfg.WithSources().Sources {
+	for _, s := range snap.cfg.WithSources().Sources {
 		if s.Enabled && (s.Kind == desktopconfig.KindCatalog || s.Kind == desktopconfig.KindServer) {
 			rows = append(rows, sourceFound{Source: s})
 		}
 	}
-	lists := make([]sourcesearch.Found[json.RawMessage], len(rows))
+	lists := make([]sourcesearch.Found[candidate], len(rows))
 	var wg sync.WaitGroup
 	for i := range rows {
 		r := &rows[i]
 		wg.Go(func() {
-			var items []json.RawMessage
+			var items []candidate
 			var msg string
 			if r.Kind == desktopconfig.KindCatalog {
 				items, msg = searchCatalog(desktopconfig.ExpandHome(r.Path, f.home), q)
 			} else {
-				items, msg = f.searchServer(ctx, r.Source, q)
+				items, msg = f.searchServer(ctx, r.Source, snap, q)
 			}
 			r.Found, r.Error = len(items), msg
-			lists[i] = sourcesearch.Found[json.RawMessage]{Source: r.ID, Items: items[:min(len(items), searchLimit)]}
+			lists[i] = sourcesearch.Found[candidate]{Source: r.ID, Items: items}
 		})
 	}
 	wg.Wait()
-	merged := sourcesearch.Merge(lists, entryKey)
-	in := 0
+	merged := sourcesearch.Merge(lists, func(c candidate) string { return c.key })
+	total := 0
 	for _, l := range lists {
-		in += len(l.Items)
+		total += len(l.Items)
 	}
-	out := sourcesSearch{Hits: make([]sourceHit, len(merged)), Sources: rows, Dupes: in - len(merged)}
-	for i, h := range merged {
-		out.Hits[i] = sourceHit{Source: h.Source, Entry: h.Item}
+	out := sourcesSearch{Hits: []sourceHit{}, Sources: rows, Dupes: total - len(merged)}
+	shown := map[string]int{}
+	for _, h := range merged {
+		if shown[h.Source] == searchLimit {
+			continue
+		}
+		// Кодирование простой структуры (строки, числа) не падает; запись, что
+		// известна только ключом, в выдачу не идет намеренно.
+		raw, err := h.Item.encode()
+		if err != nil {
+			continue
+		}
+		shown[h.Source]++
+		out.Hits = append(out.Hits, sourceHit{Source: h.Source, Entry: raw})
 	}
 	if out.Sources == nil {
 		out.Sources = []sourceFound{}
@@ -101,34 +121,80 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 }
 
 // searchCatalog searches one catalog file the way /api/search does.
-func searchCatalog(path, q string) ([]json.RawMessage, string) {
+func searchCatalog(path, q string) ([]candidate, string) {
 	cat, err := catalogjson.FileLoader{Path: path}.Load()
 	if err != nil {
 		return nil, "каталог не прочитался: " + err.Error()
 	}
-	var out []json.RawMessage
-	for _, e := range search.FilterWith(cat.Entries(), q, search.Matcher{}) {
-		raw, err := httpapi.EntryJSON(e)
-		if err != nil {
-			return nil, "каталог не прочитался: " + err.Error()
+	found := search.FilterWith(cat.Entries(), q, search.Matcher{})
+	out := make([]candidate, len(found))
+	for i, e := range found {
+		out[i] = candidate{
+			key:    sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()),
+			encode: func() (json.RawMessage, error) { return httpapi.EntryJSON(e) },
 		}
-		out = append(out, raw)
 	}
 	return out, ""
 }
 
-// errSourceChanged — пока окно читало Связку, источник сменил адрес или токен.
-const errSourceChanged = "настройки источника изменились: повторите поиск"
+// errSourceChanged — пока окно читало Связку, источники сохранили заново или
+// сохраняют сейчас.
+const errSourceChanged = "настройки источников изменились: повторите поиск"
 
-// searchServer asks one kb server with its stored token.
-func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, q string) ([]json.RawMessage, string) {
-	tok, err := f.tokens.Get(s.ID)
+// cfgSnapshot is the settings the search reads; saving — SetSources пишет
+// токены, и Связка может не совпадать с адресами снимка.
+type cfgSnapshot struct {
+	cfg    desktopconfig.Config
+	saving bool
+}
+
+// publishLocked stores the current settings as the search snapshot; f.mu held.
+func (f *folderSettings) publishLocked(saving bool) {
+	f.snap.Store(&cfgSnapshot{cfg: f.cfg, saving: saving})
+}
+
+// snapshot returns the published settings, publishing them on first use.
+// В окне main публикует их сразу, так что f.mu здесь не берется.
+func (f *folderSettings) snapshot() *cfgSnapshot {
+	if p := f.snap.Load(); p != nil {
+		return p
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.snap.Load() == nil {
+		f.publishLocked(false)
+	}
+	return f.snap.Load()
+}
+
+// publish stores the current settings as the search snapshot.
+func (f *folderSettings) publish() {
+	f.mu.Lock()
+	f.publishLocked(false)
+	f.mu.Unlock()
+}
+
+// searchServer asks one kb server with its stored token. snap — снимок
+// настроек, по которому идет поиск.
+func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, snap *cfgSnapshot, q string) ([]candidate, string) {
+	if snap.saving {
+		return nil, errSourceChanged
+	}
+	// У Связки и у сети — по своему сроку, как в ServerStates: человек,
+	// разблокировавший Связку под конец срока, не получает «нет связи».
+	tokCtx, cancelTok := context.WithTimeout(ctx, searchTimeout)
+	tok, err := f.tokenWithin(tokCtx, s.ID)
+	cancelTok()
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		// Связка не ответила — сервер без токена не спрашивается: ответ 401 на
 		// каждую букву ничего бы не сказал, а беда названа своими словами.
 		return nil, "Связка ключей не ответила: разблокируйте ее"
 	}
-	if !f.stillSame(s, tok) {
+	// Поиск идет по снимку конфига, а Связка читается позже: SetSources мог за
+	// это время сменить адрес и положить новый токен — и новый токен ушел бы на
+	// старый адрес. Перед записью токенов SetSources публикует новый снимок,
+	// поэтому тот же указатель значит: с момента снимка токены не менялись.
+	if f.snap.Load() != snap {
 		return nil, errSourceChanged
 	}
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
@@ -140,24 +206,25 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	return typedEntries(raw), ""
 }
 
-// stillSame reports whether server s still has this address and this token.
-// Поиск идет по снимку конфига, а Связка читается позже: SetSources мог за это
-// время сменить адрес и положить новый токен — и новый токен ушел бы на старый
-// адрес. SetSources держит f.mu всю работу, поэтому сверка под f.mu видит либо
-// старое целиком, либо новое целиком.
-func (f *folderSettings) stillSame(s desktopconfig.Source, tok string) bool {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	for _, cur := range f.cfg.WithSources().Sources {
-		if cur.ID == s.ID {
-			now, err := f.tokens.Get(s.ID)
-			if errors.Is(err, keychain.ErrNotFound) {
-				now, err = "", nil
-			}
-			return cur.Kind == desktopconfig.KindServer && cur.URL == s.URL && err == nil && now == tok
-		}
+// tokenWithin reads a token, giving up when ctx ends: Связка, ждущая
+// разблокировки, не держит выдачу. Брошенное чтение доживает само (security
+// ограничен 10 с), его результат кладет в кэш cachedTokens.
+func (f *folderSettings) tokenWithin(ctx context.Context, id string) (string, error) {
+	type res struct {
+		tok string
+		err error
 	}
-	return false
+	ch := make(chan res, 1)
+	go func() {
+		t, err := f.tokens.Get(id)
+		ch <- res{t, err}
+	}()
+	select {
+	case r := <-ch:
+		return r.tok, r.err
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
 }
 
 // serverEntry is what the window shows of a server's entry. Запись чужого
@@ -174,46 +241,36 @@ type serverEntry struct {
 	Description string `json:"description,omitempty"`
 }
 
-// typedEntries keeps the server entries that decode as serverEntry and
-// re-encodes them; an address that is not http(s) is dropped — javascript:
-// не откроется кнопкой «Открыть источник».
-func typedEntries(raw []json.RawMessage) []json.RawMessage {
-	out := make([]json.RawMessage, 0, len(raw))
+// typedEntries keeps the server entries that decode as serverEntry; адрес, не
+// прошедший правило домена (http(s) с хостом), убирается — javascript: не
+// откроется кнопкой «Открыть источник». Кодируется запись только при показе.
+func typedEntries(raw []json.RawMessage) []candidate {
+	out := make([]candidate, 0, len(raw))
 	for _, r := range raw {
 		var e serverEntry
 		if json.Unmarshal(r, &e) != nil || e.Title == "" {
 			continue
 		}
-		if u, err := url.Parse(e.URL); err != nil || (u.Scheme != "https" && u.Scheme != "http") {
+		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
+		} else {
+			e.URL = u.String() // обрезанный: и для кнопки, и для ключа склейки
 		}
-		b, err := json.Marshal(e)
-		if err != nil {
-			continue
-		}
-		out = append(out, b)
+		out = append(out, candidate{
+			key:    sourcesearch.EntryKey(e.ID, e.Title, e.URL),
+			encode: func() (json.RawMessage, error) { return json.Marshal(e) },
+		})
 	}
 	return out
-}
-
-// entryKey reads the identity fields of an entry for the merge.
-func entryKey(raw json.RawMessage) string {
-	var e struct {
-		ID    int    `json:"id"`
-		Title string `json:"title"`
-		URL   string `json:"url"`
-	}
-	if json.Unmarshal(raw, &e) != nil {
-		return "" // не опознать — не склеивать
-	}
-	return sourcesearch.EntryKey(e.ID, e.Title, e.URL)
 }
 
 // searchRoute serves /api/sources/search and passes the rest to the engine's
 // API. Маршрут HTTP, а не привязка Wails: интерфейс тот же в браузере (-browser).
 func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/sources/search", func(w http.ResponseWriter, r *http.Request) {
+	// Чужой Host отсекает browserHandler на весь -browser; окно Wails из сети
+	// недостижимо. Второй замок здесь был бы второй копией одного правила.
+	mux.Handle("GET /api/sources/search", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		if q == "" {
 			http.Error(w, "q is required", http.StatusBadRequest)
@@ -221,7 +278,7 @@ func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(f.SearchSources(r.Context(), q))
-	})
+	}))
 	mux.Handle("/", next)
 	return mux
 }
@@ -244,6 +301,15 @@ type cachedTokens struct {
 	// gen растет при каждой записи и удалении: чтение Связки, начатое до них,
 	// свой результат в кэш не кладет — иначе удаленный токен вернулся бы.
 	gen uint64
+	// flights — чтения Связки, что идут сейчас: пока Связка думает, буквы
+	// запроса ждут одно чтение учетки, а не запускают по security на каждую.
+	flights map[string]*flight
+}
+
+type flight struct {
+	done chan struct{}
+	val  string
+	err  error
 }
 
 type cachedToken struct {
@@ -252,28 +318,44 @@ type cachedToken struct {
 }
 
 func newCachedTokens(inner tokenStore) *cachedTokens {
-	return &cachedTokens{inner: inner, m: map[string]cachedToken{}}
+	return &cachedTokens{inner: inner, m: map[string]cachedToken{}, flights: map[string]*flight{}}
 }
 
 func (c *cachedTokens) Get(account string) (string, error) {
 	c.mu.Lock()
-	v, ok := c.m[account]
-	gen := c.gen
-	c.mu.Unlock()
-	if ok {
+	if v, ok := c.m[account]; ok {
+		c.mu.Unlock()
 		if v.missing {
 			return "", keychain.ErrNotFound
 		}
 		return v.val, nil
 	}
-	val, err := c.inner.Get(account)
-	switch {
-	case err == nil:
-		c.putIf(gen, account, cachedToken{val: val})
-	case errors.Is(err, keychain.ErrNotFound):
-		c.putIf(gen, account, cachedToken{missing: true})
+	if fl, ok := c.flights[account]; ok {
+		c.mu.Unlock()
+		<-fl.done
+		return fl.val, fl.err
 	}
-	return val, err
+	fl := &flight{done: make(chan struct{})}
+	c.flights[account] = fl
+	gen := c.gen
+	c.mu.Unlock()
+
+	fl.val, fl.err = c.inner.Get(account)
+	c.mu.Lock()
+	if c.flights[account] == fl {
+		delete(c.flights, account)
+	}
+	if c.gen == gen {
+		switch {
+		case fl.err == nil:
+			c.m[account] = cachedToken{val: fl.val}
+		case errors.Is(fl.err, keychain.ErrNotFound):
+			c.m[account] = cachedToken{missing: true}
+		}
+	}
+	c.mu.Unlock()
+	close(fl.done)
+	return fl.val, fl.err
 }
 
 func (c *cachedTokens) Set(account, secret string) error {
@@ -284,6 +366,7 @@ func (c *cachedTokens) Set(account, secret string) error {
 	c.mu.Lock()
 	c.gen++
 	c.m[account] = cachedToken{val: secret}
+	delete(c.flights, account) // следующий Get не встанет в ожидание старого чтения
 	c.mu.Unlock()
 	return nil
 }
@@ -294,18 +377,10 @@ func (c *cachedTokens) Delete(account string) error {
 	return err
 }
 
-// putIf stores v unless a write or delete happened since gen was read.
-func (c *cachedTokens) putIf(gen uint64, account string, v cachedToken) {
-	c.mu.Lock()
-	if c.gen == gen {
-		c.m[account] = v
-	}
-	c.mu.Unlock()
-}
-
 func (c *cachedTokens) forget(account string) {
 	c.mu.Lock()
 	c.gen++
 	delete(c.m, account)
+	delete(c.flights, account)
 	c.mu.Unlock()
 }

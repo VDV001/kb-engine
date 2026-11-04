@@ -106,6 +106,18 @@ func TestEntryKey(t *testing.T) {
 		{"якорь и utm", [3]string{"1", "a", "https://habr.com/ru/articles/123/?utm_source=tg#comments"}, [3]string{"2", "b", "https://habr.com/ru/articles/123"}, true},
 		// Параметр, который выбирает страницу, — другая статья.
 		{"другой параметр — другая статья", [3]string{"1", "a", "https://example.com/view?id=1"}, [3]string{"1", "a", "https://example.com/view?id=2"}, false},
+		// Метки рекламных систем — по правилу домена (StripTrackingParams), а не
+		// по второму списку здесь.
+		{"yclid и fbclid", [3]string{"1", "a", "https://habr.com/ru/articles/1/?yclid=123&fbclid=x"}, [3]string{"2", "b", "https://habr.com/ru/articles/1/"}, true},
+		// Якорь маршрутизации (#/…, #!/…) выбирает страницу; простой якорь — нет.
+		{"маршрут в якоре", [3]string{"1", "a", "https://site.example/#/a"}, [3]string{"1", "a", "https://site.example/#/b"}, false},
+		{"маршрут #! в якоре", [3]string{"1", "a", "https://site.example/#!/a"}, [3]string{"1", "a", "https://site.example/#!/b"}, false},
+		// Регистр имени метки не меняет статью: UTM_Source — та же метка.
+		{"UTM в верхнем регистре", [3]string{"1", "a", "https://habr.com/ru/articles/1/?UTM_Source=tg"}, [3]string{"2", "b", "https://habr.com/ru/articles/1/"}, true},
+		// Пробел вокруг адреса — не другая статья.
+		{"пробел вокруг адреса", [3]string{"1", "a", " https://habr.com/ru/articles/1/ "}, [3]string{"2", "b", "https://habr.com/ru/articles/1"}, true},
+		// Регистр обычного параметра различает страницы: $_GET в PHP чувствителен.
+		{"регистр обычного параметра", [3]string{"1", "a", "https://example.com/view.php?ID=5"}, [3]string{"1", "a", "https://example.com/view.php?id=5"}, false},
 		{"регистр пути различается", [3]string{"1", "a", "https://example.com/A"}, [3]string{"1", "a", "https://example.com/a"}, false},
 	}
 	for _, tt := range tests {
