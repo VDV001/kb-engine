@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Иконка kb в языке daniilvdovin.com: черный лист с сеткой точек, сеть
-       знаний как git-граф (узлы на сетке, связи-линии, пунктир — будущее),
-       один узел HEAD янтарным. Токены сайта: z-bg #0b0b0c, z-rule-2
-       #54545a, z-ink-2 #c4c4c6, z-accent #5e8fd0, z-tone-base #e8b84a.
+  <!-- Иконка kb в языке daniilvdovin.com: черный лист с сеткой точек и мозг
+       контуром спектра сайта (#e8b84a … #8fc79a): слева человеческое полушарие
+       с извилинами, справа машинное с дорожками платы. Знак в шапке окна —
+       тот же мозг заливкой (desktop/frontend/index.html).
        Форма плитки — сетка иконок macOS (824 со скруглением 185, отступ 100). -->
   <defs>
     <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
@@ -13,6 +13,7 @@
       <stop offset="0" stop-color="#141416"/>
       <stop offset="1" stop-color="#0b0b0c"/>
     </linearGradient>
+    <linearGradient id="spec" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="60" y2="0"><stop offset="0" stop-color="#e8b84a"/><stop offset=".22" stop-color="#e8925a"/><stop offset=".42" stop-color="#e07070"/><stop offset=".6" stop-color="#5e8fd0"/><stop offset=".8" stop-color="#5fb0d8"/><stop offset="1" stop-color="#8fc79a"/></linearGradient>
   </defs>
 
   <g clip-path="url(#tile)">
@@ -21,49 +22,12 @@
   </g>
   <rect x="102" y="102" width="820" height="820" rx="183" fill="none" stroke="#232326" stroke-width="4"/>
 
-  <!-- узлы на сетке (шаг 64, точки в 32+64k):
-       A(288,352) B(544,288) C(352,608) H(608,544) E(736,416) F(480,736) G(736,736) -->
-  <g fill="none" stroke-linecap="round">
-    <!-- прочие связи -->
-    <g stroke="#54545a" stroke-width="10">
-      <line x1="288" y1="352" x2="544" y2="288"/>
-      <line x1="288" y1="352" x2="352" y2="608"/>
-      <line x1="544" y1="288" x2="736" y2="416"/>
-      <line x1="352" y1="608" x2="480" y2="736"/>
+  <!-- мозг 64×64, вписан в плитку: ширина 4.5…58 → 594 px, центр 512 -->
+  <g transform="translate(168 182) scale(11)">
+    <g fill="none" stroke="url(#spec)" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M31 10C27 6.5 21 6.5 18 10C12.5 9 8.5 13.5 9.5 18.5C5.5 21 4.5 26.5 7.5 30.5C4.5 34.5 5.5 40.5 10 42.5C10.5 47.5 15.5 51.5 20.5 50C23.5 54 29 54 31 51Z" stroke-width="3"/><path d="M33 10H40L46 12.5H50L54.5 18V23.5L58 28.5V35.5L55 40V44.5L50 49.5H44L38.5 52.5H33Z" stroke-width="3"/>
+      <path d="M24 14C20 15.5 19.5 20 23 22.5M13.5 22C18 22 20.5 26.5 17 29.5M11.5 35.5C16 33 21 35 21 39.5M27 26.5C22.5 28.5 23 33.5 27.5 34.5M17.5 45.5C20.5 42 26 42.5 27.5 46" stroke-width="2.4"/><path d="M33 18H42L46 22M33 29H50M33 40H40L44 44M38 29V34H46" stroke-width="2.4"/>
     </g>
-    <!-- путь, по которому пришли к HEAD: акцент сайта -->
-    <g stroke="#5e8fd0" stroke-width="12">
-      <line x1="544" y1="288" x2="608" y2="544"/>
-      <line x1="352" y1="608" x2="608" y2="544"/>
-      <line x1="608" y1="544" x2="736" y2="416"/>
-    </g>
-    <!-- еще не найденное: пунктир, как будущие шаги на ветке сайта -->
-    <g stroke="#808084" stroke-width="8" stroke-dasharray="2 22">
-      <line x1="608" y1="544" x2="480" y2="736"/>
-      <line x1="608" y1="544" x2="736" y2="736"/>
-    </g>
+    <g fill="url(#spec)"><circle cx="47.6" cy="23.6" r="2"/><circle cx="52" cy="29" r="2"/><circle cx="45.6" cy="45.6" r="2"/><circle cx="48" cy="34" r="2"/></g>
   </g>
-
-  <!-- узлы: полые кольца в цвет текста, как кружки ветки на сайте -->
-  <g fill="#0b0b0c" stroke="#c4c4c6" stroke-width="10">
-    <circle cx="288" cy="352" r="30"/>
-    <circle cx="544" cy="288" r="30"/>
-    <circle cx="352" cy="608" r="30"/>
-    <circle cx="736" cy="416" r="30"/>
-  </g>
-  <g fill="#0b0b0c" stroke="#808084" stroke-width="8" stroke-dasharray="6 10">
-    <circle cx="480" cy="736" r="24"/>
-    <circle cx="736" cy="736" r="24"/>
-  </g>
-  <!-- найденные узлы отмечены точкой акцента -->
-  <g fill="#5e8fd0">
-    <circle cx="544" cy="288" r="11"/>
-    <circle cx="352" cy="608" r="11"/>
-    <circle cx="736" cy="416" r="11"/>
-  </g>
-
-  <!-- HEAD: янтарный, с кольцом-ореолом, как текущий шаг на сайте -->
-  <circle cx="608" cy="544" r="66" fill="#e8b84a" fill-opacity="0.16"/>
-  <circle cx="608" cy="544" r="44" fill="#0b0b0c" stroke="#e8b84a" stroke-width="12"/>
-  <circle cx="608" cy="544" r="20" fill="#e8b84a"/>
 </svg>
