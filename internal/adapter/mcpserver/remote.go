@@ -137,7 +137,7 @@ func typedRemote(raw []json.RawMessage) []candidate {
 		out[i] = candidate{key: d.Key, entry: &entryOut{
 			ID: e.ID, Title: e.Title, URL: e.URL, Category: e.Category, Kind: e.Kind,
 			Lifecycle: e.Lifecycle, Tags: e.Tags, Description: e.Description,
-			Author: e.Author, DateAdded: e.DateAdded,
+			Author: e.Author, DateAdded: e.DateAdded, Match: e.Match,
 		}}
 	}
 	return out

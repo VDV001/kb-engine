@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -19,18 +20,23 @@ import (
 // финансов лежат в том же дереве и в каталоге не значатся, поэтому их путей в
 // ответе появиться неоткуда.
 type entryOut struct {
-	ID          int      `json:"id"`
-	Title       string   `json:"title"`
-	URL         string   `json:"url,omitempty"`
-	Category    string   `json:"category"`
-	Kind        string   `json:"kind"`
-	Lifecycle   string   `json:"lifecycle"`
+	ID    int    `json:"id"`
+	Title string `json:"title"`
+	URL   string `json:"url,omitempty"`
+	// Пустое поле опускается: у записи сервера, что поля не прислал, «неизвестно»
+	// не должно выглядеть пустой категорией.
+	Category    string   `json:"category,omitempty"`
+	Kind        string   `json:"kind,omitempty"`
+	Lifecycle   string   `json:"lifecycle,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
 	Description string   `json:"description,omitempty"`
 	Author      string   `json:"author,omitempty"`
 	DateAdded   string   `json:"date_added,omitempty"`
 	File        string   `json:"file,omitempty"`
 	RelatedIDs  []int    `json:"related_ids,omitempty"`
+	// Match — признак находки (где и как совпало), как в окне. У записи
+	// kb-сервера — тот, что прислал сервер.
+	Match []sourcelist.Match `json:"match,omitempty"`
 }
 
 func project(e domain.Entry) entryOut {
