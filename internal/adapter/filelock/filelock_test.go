@@ -64,3 +64,17 @@ func TestWithContext_ReturnsFnErrorAndUnlocks(t *testing.T) {
 		t.Fatalf("замок не снят: %v", err)
 	}
 }
+
+// Отмена вызывающим — не «занято»: агент, отменивший запрос, не должен
+// слышать «повторите поиск».
+func TestWithContext_CancelIsNotBusy(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	err := With(path, func() error {
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(30*time.Millisecond, cancel)
+		return WithContext(ctx, path, func() error { return nil })
+	})
+	if errors.Is(err, ErrBusy) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled без ErrBusy", err)
+	}
+}

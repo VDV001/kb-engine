@@ -177,3 +177,39 @@ func TestRemoteServers_ConfigLockBusy(t *testing.T) {
 		t.Fatalf("got = %+v", got)
 	}
 }
+
+// slowTokens отвечает с задержкой — Связка, которую разблокируют.
+type slowTokens struct {
+	delay time.Duration
+	tok   string
+}
+
+func (s slowTokens) Get(string) (string, error) { time.Sleep(s.delay); return s.tok, nil }
+
+// Ожидание замка не съедает срок Связки: окно держало замок почти весь срок,
+// а Связка отвечает не сразу — токен все равно прочитан, а не «разблокируйте».
+func TestRemoteServers_LockWaitKeepsTokenBudget(t *testing.T) {
+	const tok = "t0ken-0123456789abcdef"
+	var gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	cfgPath := filepath.Join(t.TempDir(), "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "server-a", Kind: desktopconfig.KindServer, URL: srv.URL, Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	held := make(chan struct{})
+	go func() {
+		_ = filelock.With(cfgPath, func() error { close(held); time.Sleep(remoteTimeout - 400*time.Millisecond); return nil })
+	}()
+	<-held
+	r := remoteServers{cfgPath: cfgPath, tokens: slowTokens{delay: 800 * time.Millisecond, tok: tok}}
+	got := r.SearchRemote(context.Background(), "q")
+	if len(got) != 1 || got[0].Err != "" || gotAuth != "Bearer "+tok {
+		t.Fatalf("got = %+v, Authorization = %q", got, gotAuth)
+	}
+}

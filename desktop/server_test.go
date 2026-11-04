@@ -24,6 +24,7 @@ type fakeTokens struct {
 	failOn string // отказ только для этой учетки
 	getErr error  // сбой чтения, отличный от «записи нет» (связка заперта)
 	touch  func() // зовется при каждой записи и удалении
+	delErr error  // отказ удаления
 }
 
 func (f *fakeTokens) Set(acct, secret string) error {
@@ -48,6 +49,9 @@ func (f *fakeTokens) Get(acct string) (string, error) {
 }
 
 func (f *fakeTokens) Delete(acct string) error {
+	if f.delErr != nil {
+		return f.delErr
+	}
 	if f.touch != nil {
 		f.touch()
 	}

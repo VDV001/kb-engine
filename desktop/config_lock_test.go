@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -37,5 +39,51 @@ func TestSetSources_TokensChangeUnderConfigLock(t *testing.T) {
 	}
 	if touched != 2 {
 		t.Fatalf("Связка тронута %d раз, want 2 (запись и удаление)", touched)
+	}
+}
+
+// Адрес сменили без нового токена, а Связка не дала удалить старый: конфиг
+// с новым адресом не пишется, иначе MCP прочел бы под замком новый адрес и
+// старый токен одной парой и отправил токен новому хосту.
+func TestSetSources_DeleteRefusedKeepsOldAddress(t *testing.T) {
+	s, tok, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("server-ab12cd34", "https://kb.example.ru", true), nil, map[string]string{"server-ab12cd34": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	tok.delErr = errors.New("keychain locked")
+	if err := s.SetSources(serverList("server-ab12cd34", "https://evil.example.ru", true), nil, nil); err == nil {
+		t.Fatal("сохранено при отказе удаления старого токена")
+	}
+	raw, _ := os.ReadFile(s.path)
+	if strings.Contains(string(raw), "evil.example.ru") || !strings.Contains(string(raw), "kb.example.ru") {
+		t.Fatalf("config.json = %s", raw)
+	}
+	if tok.m["server-ab12cd34"] != srvToken {
+		t.Fatalf("Связка = %v", tok.m)
+	}
+}
+
+// Пока окно ждет замок, который держит MCP, поиск окна не теряет серверы:
+// «сохраняется» публикуется, только когда замок взят.
+func TestSetSources_WaitingForLockKeepsSearch(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	release := make(chan struct{})
+	held := make(chan struct{})
+	go func() {
+		_ = filelock.With(s.path, func() error { close(held); <-release; return nil })
+	}()
+	<-held
+	done := make(chan error, 1)
+	go func() {
+		done <- s.SetSources(serverList("server-ab12cd34", "https://kb.example.ru", true), nil, map[string]string{"server-ab12cd34": srvToken})
+	}()
+	time.Sleep(100 * time.Millisecond)
+	saving := s.snapshot().saving
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	if saving {
+		t.Fatal("поиск окна пропускал серверы, пока сохранение ждало замок")
 	}
 }
