@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -107,7 +108,17 @@ func run(args []string, stderr io.Writer) error {
 		tools += " · search_files · read_file"
 		// kb-серверы из того же списка источников: search_catalog отвечает и
 		// их записями, как общая выдача окна. Токены — в той же Связке ключей.
-		cfg.Remote = remoteServers{cfgPath: expandHome(*filesConfig, userHome()), tokens: keychain.Store{Service: "kb-desktop"}}
+		// Свой каталог узнается в списке окна по полному пути: относительный
+		// --catalog иначе не совпал бы с «~/…» окна, и каталог ответил бы
+		// дважды — своим поиском и чужим.
+		own, err := filepath.Abs(expandHome(*catalogPath, userHome()))
+		if err != nil {
+			return fmt.Errorf("путь каталога: %w", err)
+		}
+		cfg.Remote = remoteServers{
+			cfgPath: expandHome(*filesConfig, userHome()), home: userHome(), ownCatalog: own,
+			match: search.New(syn), tokens: keychain.Store{Service: "kb-desktop"},
+		}
 	}
 	srv := mcpserver.New(svc, search.New(syn), cfg)
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая

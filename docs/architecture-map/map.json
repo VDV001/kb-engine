@@ -3966,7 +3966,7 @@
           "to": "cmd-mcp",
           "call": "tools/call search_catalog",
           "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-          "source": "cmd/kbengine-mcp/main.go:119",
+          "source": "cmd/kbengine-mcp/main.go:130",
           "symbol": "StdioTransport",
           "unverified": false
         },

@@ -9,8 +9,10 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
-// RemoteSearcher asks the kb servers of the window's source list. Нулевой в
-// Config — серверов нет, и search_catalog отвечает, как прежде.
+// RemoteSearcher asks the window's source list: каталоги и kb-серверы в его
+// порядке, выключенные не идут. Нулевой в Config — списка нет, и
+// search_catalog отвечает своим каталогом, как прежде. Список из одного своего
+// каталога — тоже прежняя форма ответа.
 type RemoteSearcher interface {
 	SearchRemote(ctx context.Context, q string) []RemoteFound
 }
@@ -22,13 +24,24 @@ type RemoteSource struct {
 	URL  string `json:"url,omitempty"`
 }
 
-// RemoteFound is what one server answered: записи, как сервер их закодировал,
-// и ключи склейки остальных найденных; Err — беда словами.
+// RemoteFound is what one source of the list answered. Own — это свой
+// каталог MCP (--catalog): его записи ищет сам сервер, тем же поиском, что
+// get_entry и stats. Catalog — найденное в другом каталоге списка. Entries и
+// Keys — ответ kb-сервера: записи, как он их закодировал, и ключи склейки
+// остальных найденных. Err — беда словами.
 type RemoteFound struct {
 	Source  RemoteSource
+	Own     bool
+	Catalog []domain.Entry
 	Entries []json.RawMessage
 	Keys    []string
 	Err     string
+}
+
+// legacyAnswer reports whether the list is just the own catalog: тогда форма
+// ответа прежняя, без source и sources.
+func legacyAnswer(remote []RemoteFound) bool {
+	return remote == nil || (len(remote) == 1 && remote[0].Own && remote[0].Err == "")
 }
 
 // RemoteLimit — сколько записей одного сервера идет агенту; остальные —
@@ -57,23 +70,29 @@ type candidate struct {
 	entry *entryOut // nil — запись известна серверу только ключом
 }
 
-// mergeRemote joins the catalog's own entries with the servers' by the rule of
-// the window (sourcesearch.Merge): свой каталог первым, дубль — у источника
-// выше, запись, известная только ключом, в ответ не идет.
+// mergeRemote joins the sources of the list by the rule of the window
+// (sourcesearch.Merge): порядок — списка окна, дубль — у источника выше,
+// запись, известная только ключом, в ответ не идет. Свой каталог отвечает под
+// id catalog без предела: get_entry и read_file — только по нему.
 func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []sourceOut) {
-	lists := []sourcesearch.Found[candidate]{{Source: catalogSource}}
-	for _, e := range own {
-		out := project(e)
-		lists[0].Items = append(lists[0].Items, candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &out})
-	}
-	sources := []sourceOut{{RemoteSource: RemoteSource{ID: catalogSource}, Found: len(own)}}
+	var lists []sourcesearch.Found[candidate]
+	sources := []sourceOut{}
 	for _, r := range remote {
-		items := typedRemote(r.Entries)
-		for _, k := range r.Keys {
-			items = append(items, candidate{key: k})
+		src, items := r.Source, []candidate(nil)
+		switch {
+		case r.Own:
+			src.ID = catalogSource
+			items = projected(own)
+		case r.Catalog != nil:
+			items = projected(r.Catalog)
+		default:
+			items = typedRemote(r.Entries)
+			for _, k := range r.Keys {
+				items = append(items, candidate{key: k})
+			}
 		}
-		lists = append(lists, sourcesearch.Found[candidate]{Source: r.Source.ID, Items: items})
-		sources = append(sources, sourceOut{RemoteSource: r.Source, Found: len(items), Error: r.Err})
+		lists = append(lists, sourcesearch.Found[candidate]{Source: src.ID, Items: items})
+		sources = append(sources, sourceOut{RemoteSource: src, Found: len(items), Error: r.Err})
 	}
 	out := []sourcedEntry{}
 	shown := map[string]int{}
@@ -85,6 +104,16 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 		out = append(out, sourcedEntry{entryOut: *h.Item.entry, Source: h.Source})
 	}
 	return out, sources
+}
+
+// projected is a catalog's entries as candidates.
+func projected(entries []domain.Entry) []candidate {
+	out := make([]candidate, len(entries))
+	for i, e := range entries {
+		p := project(e)
+		out[i] = candidate{key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()), entry: &p}
+	}
+	return out
 }
 
 // typedRemote decodes a server's entries strictly (sourcelist, как окно) into

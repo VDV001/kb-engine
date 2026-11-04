@@ -226,7 +226,8 @@ func TestRemoteServers_ConfigLockBusy(t *testing.T) {
 		got = r.SearchRemote(ctx, "q")
 		return nil
 	})
-	if len(got) != 1 || got[0].Source.ID != "config" || !strings.Contains(got[0].Err, "сохраняет") {
+	// Свой каталог отвечает, серверы — нет, и сказано почему.
+	if len(got) != 2 || !got[0].Own || got[1].Source.ID != "config" || !strings.Contains(got[1].Err, "сохраняет") {
 		t.Fatalf("got = %+v", got)
 	}
 }
