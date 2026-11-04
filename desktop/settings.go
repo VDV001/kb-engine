@@ -72,6 +72,15 @@ type folderSettings struct {
 	// публикует его дважды: «сохраняется» перед записью токенов и итог в
 	// конце, — поиск сверяет указатель (search.go).
 	snap atomic.Pointer[cfgSnapshot]
+	// open — папки, открытые в индексе (то же, что applied), для строки
+	// источников без f.mu. Отдельно от snap: возврат сетевой папки (reconcile)
+	// не трогает токены и не должен отменять идущий поиск по серверам.
+	open atomic.Pointer[[]string]
+	// countMatches — сколько файлов каждой папки нашел запрос (filesearch).
+	countMatches func(q string, roots []string) (map[string]int, error)
+	// indexing — индекс файлов сейчас пересобирается: счет папок старый, и
+	// только что добавленная папка в нем еще пуста.
+	indexing func() bool
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string
@@ -211,6 +220,7 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	}
 	f.dropTokens(f.cfg, next, tokens)
 	f.cfg, f.applied = next, roots
+	f.setOpen(roots)
 	return nil
 }
 
@@ -262,7 +272,14 @@ func (f *folderSettings) reconcile() bool {
 		return false
 	}
 	f.applied = roots
+	f.setOpen(roots)
 	return true
+}
+
+// setOpen publishes the folders open in the index for the search; f.mu held.
+func (f *folderSettings) setOpen(roots []string) {
+	c := slices.Clone(roots)
+	f.open.Store(&c)
 }
 
 // openableFolders returns the enabled folders to open, and the ones already in

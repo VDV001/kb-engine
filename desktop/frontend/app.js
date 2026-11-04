@@ -207,9 +207,22 @@ async function search(q) {
   state.sources = kb.sources;
   state.dupes = kb.dupes || 0;
   if (state.filter && !kb.sources.some((s) => s.id === state.filter && !s.error)) state.filter = null;
-  state.files = (files.body && files.body.hits) || [];
+  // Файл выдачи помечен своей папкой-источником — по ней строка источников
+  // считает «показано» и фильтрует. Вложенных папок нет (checkNested), поэтому
+  // папка у файла одна.
+  const roots = kb.sources.filter((x) => x.kind === "folder" && x.root);
+  state.files = ((files.body && files.body.hits) || []).map((f) => ({ ...f, _src: folderOf(f.path, roots) }));
   state.sel = 0;
   render();
+}
+
+// folderOf returns the id of the folder source that holds path, "" if none.
+// ponytail: граница папки повторяет countUnder из Go (с «/» вместо
+// filepath.Separator). Потолок: правка одной стороны разведет «показано» и
+// «найдено». Путь: id источника у каждого файла в ответе окна.
+function folderOf(path, roots) {
+  const r = roots.find((x) => path === x.root || path.startsWith(x.root.replace(/\/$/, "") + "/"));
+  return r ? r.id : "";
 }
 
 // Общая выдача источников живет в окне (/api/sources/search). Простой kbengine
@@ -253,10 +266,11 @@ function moveInk() {
 
 // --- Отрисовка -----------------------------------------------------------------
 function render() {
-  // Фильтр источника оставляет только его записи; файлы в строку источников
-  // пока не входят и под фильтром скрыты.
-  const kb = state.filter ? state.kb.filter((e) => e._src === state.filter) : state.kb;
-  const files = state.filter ? [] : state.files;
+  // Фильтр источника оставляет только его записи: у базы знаний — записи,
+  // у папки — ее файлы.
+  const only = state.filter;
+  const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
+  const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // «Все» показывает только пять записей базы — счетчик обязан совпадать со списком.
   const counts = { all: Math.min(kb.length, 5) + files.length, kb: kb.length, doc: 0, code: 0 };
   for (const f of files) if (counts[f.kind] !== undefined) counts[f.kind]++;
@@ -268,7 +282,10 @@ function render() {
   state.items = TABS[state.tab](kb, files);
   const shown = {};
   const unfiltered = state.filter ? TABS[state.tab](state.kb, state.files) : state.items;
-  for (const it of unfiltered) if (it.type === "kb") shown[it.e._src] = (shown[it.e._src] || 0) + 1;
+  for (const it of unfiltered) {
+    const src = it.type === "kb" ? it.e._src : it.f._src;
+    if (src) shown[src] = (shown[src] || 0) + 1;
+  }
   // Под фильтром у выбранного источника показано столько, сколько в списке.
   if (state.filter) shown[state.filter] = state.items.length;
   const hue = stripHues(); // один раз на отрисовку, а не на каждую строку
@@ -298,7 +315,7 @@ function kbRow(e, i, hl, hue) {
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
-  const s = state.sources.length > 1 && state.sources.find((x) => x.id === e._src);
+  const s = kbSourceCount() > 1 && state.sources.find((x) => x.id === e._src);
   const from = s ? `<span class="hit-src" style="--c:var(${hue.get(s.id)})">${esc(label(s))}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
     <div class="hit-head"><span class="type kb">${TYPE_LABEL.kb}</span><span class="hit-name">${hl(e.title)}</span><span class="hit-tail">${from}${verdict}</span></div>
@@ -472,7 +489,9 @@ function hues(list = draft.sources, keyOf = (s) => s._key) {
 // Цвета строки источников — по всему списку настроек, если он известен (окно);
 // в браузере списка нет, и цвет считается по тем, кто ответил.
 const stripHues = () => hues(state.known.length ? state.known : state.sources, (s) => s.id);
-const sourceName = (id) => { const s = state.sources.find((x) => x.id === id); return s && state.sources.length > 1 ? label(s) : ""; };
+// Метка источника у записи — когда баз знаний больше одной; папки не в счет.
+const kbSourceCount = () => state.sources.filter((x) => x.kind !== "folder").length;
+const sourceName = (id) => { const s = state.sources.find((x) => x.id === id); return s && kbSourceCount() > 1 ? label(s) : ""; };
 
 // Строка источников над выдачей: «имя N из M» — показано из найденного; клик
 // оставляет в выдаче только этот источник, повторный — снимает фильтр.
