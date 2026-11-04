@@ -930,3 +930,34 @@ func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
 		}
 	}
 }
+
+// Ревью #395. Папка, что числится открытой, но пропала с диска (единственная
+// сетевая папка без VPN: reconcile пустой набор не применяет), — «нет связи»,
+// а не старый счет. Источник неизвестного вида (из более новой сборки) в
+// строку не попадает. Пока индекс пересобирается, счет папок не выдается за
+// «ничего не найдено».
+func TestSearchSources_FolderEdgeStates(t *testing.T) {
+	t.Run("пропала с диска", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		gone := filepath.Join(s.home, "gone")
+		s.cfg.Sources[2].Path = gone
+		s.setOpen([]string{gone}) // числится открытой, на диске ее нет
+		if f := found(s.SearchSources(context.Background(), "агент"))["folder-1"]; !strings.Contains(f.Error, "нет связи") {
+			t.Fatalf("folder-1 = %+v", f)
+		}
+	})
+	t.Run("неизвестный вид", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		s.cfg.Sources = append(s.cfg.Sources, desktopconfig.Source{ID: "s3-1", Kind: "s3", Enabled: true})
+		if _, listed := found(s.SearchSources(context.Background(), "агент"))["s3-1"]; listed {
+			t.Fatal("источник неизвестного вида попал в строку")
+		}
+	})
+	t.Run("индекс пересобирается", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		s.indexing = func() bool { return true }
+		if f := found(s.SearchSources(context.Background(), "агент"))["folder-1"]; !strings.Contains(f.Error, "пересобирается") {
+			t.Fatalf("folder-1 = %+v", f)
+		}
+	})
+}
