@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -72,8 +73,60 @@ func TestRemoteServers_SearchRemote(t *testing.T) {
 func TestRemoteServers_ConfigUnreadable(t *testing.T) {
 	r := remoteServers{cfgPath: filepath.Join(t.TempDir(), "нет.json"), tokens: memTokens{}}
 	got := r.SearchRemote(context.Background(), "q")
-	if len(got) != 1 || got[0].Err == "" {
+	// Списка окна не знаем — свой каталог отвечает, как до списка источников.
+	if len(got) != 2 || !got[0].Own || got[1].Source.ID != "config" || got[1].Err == "" {
 		t.Fatalf("got = %+v", got)
+	}
+}
+
+// Каталоги идут из списка окна, как серверы: свой (--catalog, по раскрытому
+// пути) — строкой Own на своем месте, второй — найденными записями, выключенный
+// не спрашивается.
+func TestRemoteServers_CatalogsFollowWindowList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
+	}))
+	t.Cleanup(srv.Close)
+	home := t.TempDir()
+	write := func(name, body string) string {
+		t.Helper()
+		p := filepath.Join(home, name)
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	ownPath := write("own.json", `{"entries":[]}`)
+	write("work.json", `{"entries":[
+		{"id":1,"title":"Агент в работе","category":"ai","status":"KEEP","date_added":"2026-01-01"},
+		{"id":2,"title":"Кулинария","category":"misc","status":"KEEP","date_added":"2026-01-01"}]}`)
+	cfgPath := filepath.Join(home, "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Sources: []desktopconfig.Source{
+		{ID: "server-a", Kind: desktopconfig.KindServer, URL: srv.URL, Enabled: true},
+		{ID: "catalog-own", Kind: desktopconfig.KindCatalog, Name: "моя база", Path: "~/own.json", Enabled: true},
+		{ID: "catalog-off", Kind: desktopconfig.KindCatalog, Path: "~/off.json", Enabled: false},
+		{ID: "catalog-work", Kind: desktopconfig.KindCatalog, Path: "~/work.json", Enabled: true},
+		{ID: "catalog-gone", Kind: desktopconfig.KindCatalog, Path: "~/gone.json", Enabled: true},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	r := remoteServers{cfgPath: cfgPath, home: home, ownCatalog: ownPath, tokens: memTokens{}}
+	got := r.SearchRemote(context.Background(), "агент")
+	ids := []string{}
+	for _, f := range got {
+		ids = append(ids, f.Source.ID)
+	}
+	if strings.Join(ids, ",") != "server-a,catalog-own,catalog-work,catalog-gone" {
+		t.Fatalf("ids = %v", ids)
+	}
+	if !got[1].Own || got[1].Source.Name != "моя база" || got[0].Own || got[2].Own {
+		t.Fatalf("own = %+v", got)
+	}
+	if len(got[2].Catalog) != 1 || got[2].Catalog[0].ID() != 1 || got[2].Err != "" {
+		t.Fatalf("work = %+v", got[2])
+	}
+	if got[3].Err == "" {
+		t.Fatalf("недоступный каталог без беды: %+v", got[3])
 	}
 }
 
