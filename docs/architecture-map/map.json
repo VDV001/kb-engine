@@ -529,7 +529,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/httpapi/server.go:162"
+        "internal/adapter/httpapi/server.go:164"
       ]
     },
     {
@@ -1601,8 +1601,8 @@
           "from": "spa",
           "to": "ad-httpapi",
           "call": "GET /api/finances",
-          "detail": "маршрут зарегистрирован в internal/adapter/httpapi/server.go:164 как handleFinances(fin)",
-          "source": "internal/adapter/httpapi/server.go:231",
+          "detail": "маршрут зарегистрирован в internal/adapter/httpapi/server.go:166 как handleFinances(fin)",
+          "source": "internal/adapter/httpapi/server.go:233",
           "unverified": false
         },
         {
@@ -1655,8 +1655,8 @@
           "from": "spa",
           "to": "ad-httpapi",
           "call": "POST /api/finances/export",
-          "detail": "internal/adapter/httpapi/server.go:159 — единственный не-GET маршрут во всём API",
-          "source": "internal/adapter/httpapi/server.go:224",
+          "detail": "internal/adapter/httpapi/server.go:161 — единственный не-GET маршрут во всём API",
+          "source": "internal/adapter/httpapi/server.go:226",
           "unverified": false
         },
         {
@@ -1953,8 +1953,8 @@
           "from": "build-serve",
           "to": "ad-httpapi",
           "call": "httpapi.NewServer(query, audit, analytics, fin, cfg, chlog, docs, engine, front)",
-          "detail": "cmd/kbengine/main.go:704 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:143",
-          "source": "internal/adapter/httpapi/server.go:228",
+          "detail": "cmd/kbengine/main.go:704 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:145",
+          "source": "internal/adapter/httpapi/server.go:230",
           "unverified": false
         },
         {
@@ -1971,8 +1971,8 @@
           "from": "ad-httpapi",
           "to": "spa",
           "call": "mux.Handle('/', spaHandler(frontend))",
-          "detail": "internal/adapter/httpapi/server.go:180 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404",
-          "source": "internal/adapter/httpapi/server.go:261",
+          "detail": "internal/adapter/httpapi/server.go:182 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404",
+          "source": "internal/adapter/httpapi/server.go:263",
           "unverified": false
         }
       ],
@@ -1988,8 +1988,8 @@
           "from": "browser",
           "to": "ad-httpapi",
           "call": "GET /api/sources",
-          "detail": "internal/adapter/httpapi/server.go:161 — handleSources(docs, q, chlog, fin, engine)",
-          "source": "internal/adapter/httpapi/server.go:226",
+          "detail": "internal/adapter/httpapi/server.go:163 — handleSources(docs, q, chlog, fin, engine)",
+          "source": "internal/adapter/httpapi/server.go:228",
           "unverified": false
         },
         {
@@ -2006,7 +2006,7 @@
           "from": "ad-httpapi",
           "to": "uc-freshness",
           "call": "freshness.VersionMention(text, 'kb-engine', engine.Version)",
-          "detail": "internal/adapter/httpapi/server.go:284 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда — internal/usecase/freshness/sources.go:156",
+          "detail": "internal/adapter/httpapi/server.go:286 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда — internal/usecase/freshness/sources.go:156",
           "source": "internal/usecase/freshness/sources.go:159",
           "unverified": false
         }
@@ -2184,8 +2184,8 @@
           "from": "browser",
           "to": "ad-httpapi",
           "call": "GET /media/<файл>",
-          "detail": "маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:167 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе",
-          "source": "internal/adapter/httpapi/server.go:240",
+          "detail": "маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:169 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе",
+          "source": "internal/adapter/httpapi/server.go:242",
           "unverified": false
         },
         {
@@ -2193,8 +2193,8 @@
           "from": "ad-httpapi",
           "to": "browser",
           "call": "http.StripPrefix('/media/', mediaHandler(docs.Media))",
-          "detail": "с флагом поведение правильное (проверено рантаймом): существующий файл — 200 и его содержимое, несуществующий — 404 text/plain. Обработчик в internal/adapter/httpapi/media.go — internal/adapter/httpapi/server.go:167",
-          "source": "internal/adapter/httpapi/server.go:228",
+          "detail": "с флагом поведение правильное (проверено рантаймом): существующий файл — 200 и его содержимое, несуществующий — 404 text/plain. Обработчик в internal/adapter/httpapi/media.go — internal/adapter/httpapi/server.go:169",
+          "source": "internal/adapter/httpapi/server.go:230",
           "unverified": false
         },
         {
@@ -2202,8 +2202,8 @@
           "from": "ad-httpapi",
           "to": "spa",
           "call": "падение в spaHandler при отсутствии флага",
-          "detail": "⚠️ НАХОДКА рантайм-проверки: без --media запрос /media/nope.png отдаёт 200 и HTML страницы SPA — тело побайтово совпадает с ответом на /whatever-page (сверено sha). Это та же грабля, которую закрыли для /api/ в PR #149 строкой internal/adapter/httpapi/server.go:179, но для /media/ такой строки нет. Тег <img> получит HTML и молча не отрисуется",
-          "source": "internal/adapter/httpapi/server.go:263",
+          "detail": "⚠️ НАХОДКА рантайм-проверки: без --media запрос /media/nope.png отдаёт 200 и HTML страницы SPA — тело побайтово совпадает с ответом на /whatever-page (сверено sha). Это та же грабля, которую закрыли для /api/ в PR #149 строкой internal/adapter/httpapi/server.go:181, но для /media/ такой строки нет. Тег <img> получит HTML и молча не отрисуется",
+          "source": "internal/adapter/httpapi/server.go:265",
           "unverified": false
         }
       ],
@@ -2492,8 +2492,8 @@
           "from": "ad-httpapi",
           "to": "spa",
           "call": "GET /api/engine",
-          "detail": "internal/adapter/httpapi/server.go:156 — вместе с версией отдаётся список подключённых и неподключённых источников",
-          "source": "internal/adapter/httpapi/server.go:223",
+          "detail": "internal/adapter/httpapi/server.go:158 — вместе с версией отдаётся список подключённых и неподключённых источников",
+          "source": "internal/adapter/httpapi/server.go:225",
           "unverified": false
         },
         {
@@ -2538,7 +2538,7 @@
           "from": "ad-httpapi",
           "to": "uc-query",
           "call": "query.Service.Stats()",
-          "detail": "internal/adapter/httpapi/server.go:442 — сервис получает загрузчик каталога, а не путь; каталог перечитывается на каждый запрос — internal/usecase/query/query.go:44",
+          "detail": "internal/adapter/httpapi/server.go:444 — сервис получает загрузчик каталога, а не путь; каталог перечитывается на каждый запрос — internal/usecase/query/query.go:44",
           "source": "internal/usecase/query/query.go:44",
           "unverified": false
         },
@@ -2689,7 +2689,7 @@
           "from": "fe-analytics",
           "to": "ad-httpapi",
           "call": "GET /api/graph",
-          "detail": "frontend/src/AnalyticsView.tsx:319 — топологию строит analytics.Service.Graph (internal/usecase/analytics/service.go:54), а подписи рёбер накладывает курируемый конфиг: handleGraph зовёт analytics.LabelEdges (internal/adapter/httpapi/server.go:413)",
+          "detail": "frontend/src/AnalyticsView.tsx:319 — топологию строит analytics.Service.Graph (internal/usecase/analytics/service.go:54), а подписи рёбер накладывает курируемый конфиг: handleGraph зовёт analytics.LabelEdges (internal/adapter/httpapi/server.go:415)",
           "source": "frontend/src/AnalyticsView.tsx:319",
           "unverified": false
         },
@@ -2746,7 +2746,7 @@
           "from": "fe-health",
           "to": "ad-httpapi",
           "call": "GET /api/link-health",
-          "detail": "frontend/src/HealthView.tsx:284 → internal/adapter/httpapi/server.go:151 → audit.Service.LinkHealth (internal/usecase/audit/linkhealth.go:35)",
+          "detail": "frontend/src/HealthView.tsx:284 → internal/adapter/httpapi/server.go:153 → audit.Service.LinkHealth (internal/usecase/audit/linkhealth.go:35)",
           "source": "frontend/src/HealthView.tsx:284",
           "unverified": false,
           "symbol": "linkHealth"
@@ -2775,8 +2775,8 @@
           "from": "fe-finances",
           "to": "ad-httpapi",
           "call": "GET /api/finances/summary?months=…",
-          "detail": "internal/adapter/httpapi/server.go:165 — период приходит запросом, а не страница получает всю историю и суммирует сама",
-          "source": "internal/adapter/httpapi/server.go:232",
+          "detail": "internal/adapter/httpapi/server.go:167 — период приходит запросом, а не страница получает всю историю и суммирует сама",
+          "source": "internal/adapter/httpapi/server.go:234",
           "unverified": false
         },
         {
@@ -2811,7 +2811,7 @@
           "from": "fe-docs",
           "to": "ad-httpapi",
           "call": "GET /api/now",
-          "detail": "frontend/src/DocViews.tsx:377 → internal/adapter/httpapi/server.go:160; вместе с текстом отдаётся дата последней правки и разбор «что случилось после неё»",
+          "detail": "frontend/src/DocViews.tsx:377 → internal/adapter/httpapi/server.go:162; вместе с текстом отдаётся дата последней правки и разбор «что случилось после неё»",
           "source": "frontend/src/DocViews.tsx:377",
           "unverified": false,
           "symbol": "NowView"
@@ -2830,8 +2830,8 @@
           "from": "fe-docs",
           "to": "ad-httpapi",
           "call": "GET /api/team",
-          "detail": "internal/adapter/httpapi/server.go:162 — handleRawJSON отдаёт файл байт в байт (запись на server.go:375), но с двумя оговорками: битый JSON отвергается ошибкой (:369), а неподключённый источник даёт null (:360). У Team опор для проверки свежести нет вовсе",
-          "source": "internal/adapter/httpapi/server.go:227",
+          "detail": "internal/adapter/httpapi/server.go:164 — handleRawJSON отдаёт файл байт в байт (запись на server.go:375), но с двумя оговорками: битый JSON отвергается ошибкой (:369), а неподключённый источник даёт null (:360). У Team опор для проверки свежести нет вовсе",
+          "source": "internal/adapter/httpapi/server.go:229",
           "unverified": false
         },
         {
@@ -2839,7 +2839,7 @@
           "from": "fe-projects",
           "to": "ad-httpapi",
           "call": "GET /api/projects",
-          "detail": "frontend/src/ProjectsView.tsx:301 → internal/adapter/httpapi/server.go:163 → f-projects",
+          "detail": "frontend/src/ProjectsView.tsx:301 → internal/adapter/httpapi/server.go:165 → f-projects",
           "source": "frontend/src/ProjectsView.tsx:301",
           "unverified": false
         },
@@ -2848,8 +2848,8 @@
           "from": "ad-httpapi",
           "to": "f-team",
           "call": "json.Valid — проверка на каждый запрос",
-          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:592) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:376) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
-          "source": "internal/adapter/httpapi/server.go:465",
+          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:592) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:378) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
+          "source": "internal/adapter/httpapi/server.go:467",
           "unverified": false,
           "symbol": "Valid"
         },
@@ -2858,8 +2858,8 @@
           "from": "ad-httpapi",
           "to": "f-projects",
           "call": "handleRawJSON(docs.Projects)",
-          "detail": "internal/adapter/httpapi/server.go:163 отдаёт projects.json как есть; проверка свежести сверяет версию, которую страница называет о самом движке, и однажды нашла на ней устаревшую карточку",
-          "source": "internal/adapter/httpapi/server.go:228",
+          "detail": "internal/adapter/httpapi/server.go:165 отдаёт projects.json как есть; проверка свежести сверяет версию, которую страница называет о самом движке, и однажды нашла на ней устаревшую карточку",
+          "source": "internal/adapter/httpapi/server.go:230",
           "unverified": false
         }
       ],
@@ -2875,7 +2875,7 @@
           "from": "fe-about",
           "to": "ad-httpapi",
           "call": "GET /api/changelog",
-          "detail": "frontend/src/AboutView.tsx:43 → internal/adapter/httpapi/server.go:177",
+          "detail": "frontend/src/AboutView.tsx:43 → internal/adapter/httpapi/server.go:179",
           "source": "frontend/src/AboutView.tsx:43",
           "unverified": false
         },
@@ -2922,8 +2922,8 @@
           "from": "browser",
           "to": "ad-httpapi",
           "call": "GET /healthz",
-          "detail": "internal/adapter/httpapi/server.go:145 — процесс поднялся; ответ не зависит ни от одного источника",
-          "source": "internal/adapter/httpapi/server.go:208",
+          "detail": "internal/adapter/httpapi/server.go:147 — процесс поднялся; ответ не зависит ни от одного источника",
+          "source": "internal/adapter/httpapi/server.go:210",
           "unverified": false
         },
         {
@@ -2931,8 +2931,8 @@
           "from": "browser",
           "to": "ad-httpapi",
           "call": "GET /readyz",
-          "detail": "internal/adapter/httpapi/server.go:146 — отвечает 503, если каталог не читается: «поднялся» и «готов работать» это разные вопросы",
-          "source": "internal/adapter/httpapi/server.go:209",
+          "detail": "internal/adapter/httpapi/server.go:148 — отвечает 503, если каталог не читается: «поднялся» и «готов работать» это разные вопросы",
+          "source": "internal/adapter/httpapi/server.go:211",
           "unverified": false
         },
         {
@@ -2940,8 +2940,8 @@
           "from": "ad-httpapi",
           "to": "uc-query",
           "call": "q.Stats() как проба",
-          "detail": "internal/adapter/httpapi/server.go:242 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте. С #198 у ответа три состояния, а не два: каталог не прочитан — 503; прочитан, но часть записей негодна — 200 с их числом в теле (:244); всё прочитано — 200. Негодная запись гасит себя, а не витрину, и «ready» при этом не означает «показано всё»",
-          "source": "internal/adapter/httpapi/server.go:284",
+          "detail": "internal/adapter/httpapi/server.go:244 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте. С #198 у ответа три состояния, а не два: каталог не прочитан — 503; прочитан, но часть записей негодна — 200 с их числом в теле (:244); всё прочитано — 200. Негодная запись гасит себя, а не витрину, и «ready» при этом не означает «показано всё»",
+          "source": "internal/adapter/httpapi/server.go:286",
           "unverified": false
         }
       ],
@@ -3119,8 +3119,8 @@
           "to": "ad-httpapi",
           "call": "GET /api/maps",
           "symbol": "handleMaps",
-          "source": "internal/adapter/httpapi/server.go:229",
-          "detail": "internal/adapter/httpapi/server.go:186 — маршрут оглавления"
+          "source": "internal/adapter/httpapi/server.go:231",
+          "detail": "internal/adapter/httpapi/server.go:188 — маршрут оглавления"
         },
         {
           "n": 9,
@@ -3146,8 +3146,8 @@
           "to": "ad-httpapi",
           "call": "GET /api/maps/{id}",
           "symbol": "handleMap",
-          "source": "internal/adapter/httpapi/server.go:230",
-          "detail": "internal/adapter/httpapi/server.go:187 — карта целиком по её id"
+          "source": "internal/adapter/httpapi/server.go:232",
+          "detail": "internal/adapter/httpapi/server.go:189 — карта целиком по её id"
         },
         {
           "n": 12,
@@ -3171,8 +3171,8 @@
           "to": "ad-httpapi",
           "call": "GET /kb/<путь из поля file>",
           "symbol": "kbFilesHandler",
-          "source": "internal/adapter/httpapi/server.go:244",
-          "detail": "internal/adapter/httpapi/server.go:197 — маршрут появился в #218; до него собственный артефакт нельзя было открыть ничем, кроме file:// мимо базы"
+          "source": "internal/adapter/httpapi/server.go:246",
+          "detail": "internal/adapter/httpapi/server.go:199 — маршрут появился в #218; до него собственный артефакт нельзя было открыть ничем, кроме file:// мимо базы"
         },
         {
           "n": 2,
@@ -3290,8 +3290,8 @@
           "to": "ad-httpapi",
           "call": "GET /metrics",
           "symbol": "handleMetrics",
-          "source": "internal/adapter/httpapi/server.go:207",
-          "detail": "internal/adapter/httpapi/server.go:164 — маршрут не считает сам себя, иначе каждый опрос сборщика раздувал бы собственные счётчики"
+          "source": "internal/adapter/httpapi/server.go:209",
+          "detail": "internal/adapter/httpapi/server.go:166 — маршрут не считает сам себя, иначе каждый опрос сборщика раздувал бы собственные счётчики"
         },
         {
           "n": 2,
