@@ -116,6 +116,8 @@ func TestEntryKey(t *testing.T) {
 		{"UTM в верхнем регистре", [3]string{"1", "a", "https://habr.com/ru/articles/1/?UTM_Source=tg"}, [3]string{"2", "b", "https://habr.com/ru/articles/1/"}, true},
 		// Пробел вокруг адреса — не другая статья.
 		{"пробел вокруг адреса", [3]string{"1", "a", " https://habr.com/ru/articles/1/ "}, [3]string{"2", "b", "https://habr.com/ru/articles/1"}, true},
+		// Регистр обычного параметра различает страницы: $_GET в PHP чувствителен.
+		{"регистр обычного параметра", [3]string{"1", "a", "https://example.com/view.php?ID=5"}, [3]string{"1", "a", "https://example.com/view.php?id=5"}, false},
 		{"регистр пути различается", [3]string{"1", "a", "https://example.com/A"}, [3]string{"1", "a", "https://example.com/a"}, false},
 	}
 	for _, tt := range tests {

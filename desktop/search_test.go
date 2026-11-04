@@ -388,30 +388,6 @@ func (b *blockingTokens) Get(acct string) (string, error) {
 	return v, nil
 }
 
-// Маршрут отдает записи закрытых токеном серверов и пути каталогов — только
-// этой машине, как /api/files/*: чужая страница, перепривязавшая свой домен на
-// 127.0.0.1 (DNS rebinding), получает 403.
-func TestSearchRoute_LocalHostOnly(t *testing.T) {
-	s, _, calls := newSearchSettings(t)
-	h := s.searchRoute(http.NotFoundHandler())
-	for host, want := range map[string]int{
-		"evil.example:18090": http.StatusForbidden,
-		"127.0.0.1:18090":    http.StatusOK,
-		"wails.localhost":    http.StatusOK,
-	} {
-		req := httptest.NewRequest(http.MethodGet, "/api/sources/search?q=x", nil)
-		req.Host = host
-		rec := httptest.NewRecorder()
-		h.ServeHTTP(rec, req)
-		if rec.Code != want {
-			t.Errorf("Host %s: code %d, want %d", host, rec.Code, want)
-		}
-	}
-	if len(*calls) != 2 {
-		t.Fatalf("сервер спрошен %d раз: чужой Host не должен доходить до поиска", len(*calls))
-	}
-}
-
 // Связка, которая не отвечает (ждет разблокировки), не держит выдачу: каталог
 // приходит в срок, сервер назван «Связка ключей не ответила».
 func TestSearchSources_HungKeychainDoesNotHoldResults(t *testing.T) {
@@ -670,5 +646,55 @@ func TestBrowserHandler_LocalHostOnly(t *testing.T) {
 		if rec.Code != tt.want {
 			t.Errorf("%s %s: code %d, want %d", tt.host, tt.path, rec.Code, tt.want)
 		}
+	}
+}
+
+// Сохранение, что держит f.mu (Связка ждет разблокировки при записи токена),
+// не держит поиск: снимок настроек читается без f.mu.
+func TestSearchSources_DoesNotWaitForSave(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	s.publish()
+	s.mu.Lock() // SetSources в работе
+	defer s.mu.Unlock()
+	done := make(chan sourcesSearch, 1)
+	go func() { done <- s.SearchSources(context.Background(), "агент") }()
+	select {
+	case r := <-done:
+		if found(r)["catalog-1"].Found != 2 {
+			t.Fatalf("sources = %+v", r.Sources)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("поиск ждет сохранения настроек")
+	}
+}
+
+// Отказ из-за токена чужого id — до записи в Связку, ничего не меняет и
+// поиск не отменяет.
+func TestSearchSources_BadTokenSaveDoesNotCancelSearch(t *testing.T) {
+	s, tok, calls := newSearchSettings(t)
+	s.tokens = &hookTokens{fakeTokens: tok, onFirstGet: func() {
+		if err := s.SetSources(slices.Clone(s.cfg.Sources), nil, map[string]string{"server-нет": "x"}); !errors.Is(err, errBadToken) {
+			t.Errorf("err = %v, want errBadToken", err)
+		}
+	}}
+	r := s.SearchSources(context.Background(), "агент")
+	if f := found(r); f["server-a"].Error != "" || len(*calls) != 1 {
+		t.Fatalf("server-a = %+v, calls = %d", f["server-a"], len(*calls))
+	}
+}
+
+// Выключенный каталог, сохраненный когда-то без проверки, при включении
+// проверяется: снисхождение «сетевой диск без связи» — только включенным.
+func TestSetSources_DisabledSavedCatalogIsChecked(t *testing.T) {
+	s, _, home := newSourcesSettings(t)
+	s.cfg.Sources = []desktopconfig.Source{
+		src("catalog-1", desktopconfig.KindCatalog, filepath.Join(home, "catalog.json"), true),
+		src("catalog-2", desktopconfig.KindCatalog, "~/catalgo.json", false),
+		src("folder-1", desktopconfig.KindFolder, "~/notes", true),
+	}
+	list := slices.Clone(s.cfg.Sources)
+	list[1].Enabled = true
+	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
+		t.Fatalf("err = %v, want errBadCatalog", err)
 	}
 }

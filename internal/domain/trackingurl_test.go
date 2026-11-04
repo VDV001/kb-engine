@@ -37,6 +37,8 @@ func TestStripTrackingParams(t *testing.T) {
 		},
 		{name: "no query at all", in: "https://example.com/a", want: "https://example.com/a"},
 		{name: "fragment survives", in: "https://example.com/a?utm_source=x#section", want: "https://example.com/a#section"},
+		// Регистр имени метки ее не меняет: UTM_Source и FbClid — те же метки.
+		{name: "tracking names in any case", in: "https://example.com/a?UTM_Source=x&FbClid=y&ID=5", want: "https://example.com/a?ID=5"},
 		{name: "empty", in: "", want: ""},
 		{name: "not a url is returned unchanged", in: "not a url", want: "not a url"},
 	}
