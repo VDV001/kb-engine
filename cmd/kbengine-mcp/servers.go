@@ -11,6 +11,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 )
 
 // remoteTimeout — сколько ждать сервер и, отдельно, Связку ключей: агент не
@@ -31,12 +32,10 @@ type tokenGetter interface {
 // момент сохранения прочел бы старый адрес и новый токен, и токен ушел бы
 // старому хосту. Сеть — уже без замка: сохранение в окне не ждет серверы.
 //
-// ponytail: три среза угла, все — в следующую работу.
+// ponytail: два среза угла, оба — в следующую работу.
 //   - Свой каталог (--catalog) всегда первым: позиция и выключение каталога в
 //     списке окна, вторые каталоги здесь не учитываются.
 //   - Токен читается из Связки на каждый вызов, без кэша окна (cachedTokens).
-//   - Разбор записи сервера и чтение токена в сроке повторяют окно (desktop
-//     typedEntries, tokenWithin). Путь: общий пакет источников.
 type remoteServers struct {
 	cfgPath string
 	tokens  tokenGetter
@@ -83,8 +82,8 @@ func (r remoteServers) snapshot(ctx context.Context) ([]withToken, error) {
 		if err != nil {
 			return err
 		}
-		for _, s := range cfg.WithSources().Sources {
-			if s.Enabled && s.Kind == desktopconfig.KindServer {
+		for _, s := range sourcelist.Enabled(cfg) {
+			if s.Kind == desktopconfig.KindServer {
 				out = append(out, withToken{src: s})
 			}
 		}
@@ -120,21 +119,7 @@ func (r remoteServers) ask(ctx context.Context, w withToken, q string) mcpserver
 // token reads the token within remoteTimeout: Связка, ждущая разблокировки,
 // не держит ответ агенту.
 func (r remoteServers) token(ctx context.Context, id string) (string, error) {
-	type res struct {
-		tok string
-		err error
-	}
-	ch := make(chan res, 1)
-	go func() {
-		t, err := r.tokens.Get(id)
-		ch <- res{t, err}
-	}()
 	ctx, cancel := context.WithTimeout(ctx, remoteTimeout)
 	defer cancel()
-	select {
-	case v := <-ch:
-		return v.tok, v.err
-	case <-ctx.Done():
-		return "", ctx.Err()
-	}
+	return sourcelist.TokenWithin(ctx, r.tokens.Get, id)
 }

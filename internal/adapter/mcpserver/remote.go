@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
@@ -86,26 +87,20 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound) ([]sourcedEntry, []so
 	return out, sources
 }
 
-// typedRemote decodes a server's entries strictly into entryOut: поле не того
-// типа — запись отброшена; адрес не http(s) — убран. Ключ — по исходному
-// адресу, как ключи остальных записей, что сервер считает сам.
+// typedRemote decodes a server's entries strictly (sourcelist, как окно) into
+// entryOut. Путь к тексту и связи у записи сервера не берутся: get_entry и
+// read_file открыли бы по ним свое. Номер остается — его источник назван в
+// source.
 func typedRemote(raw []json.RawMessage) []candidate {
-	out := make([]candidate, 0, len(raw))
-	for _, r := range raw {
-		var e entryOut
-		if json.Unmarshal(r, &e) != nil || e.Title == "" {
-			continue
-		}
-		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
-		// Путь к тексту и связи — чужого каталога: get_entry и read_file
-		// открыли бы по ним свое. Номер остается — его источник назван в source.
-		e.File, e.RelatedIDs = "", nil
-		if u, err := domain.NewExternalURL(e.URL); err != nil {
-			e.URL = ""
-		} else {
-			e.URL = u.String()
-		}
-		out = append(out, candidate{key: key, entry: &e})
+	dec := sourcelist.DecodeEntries(raw)
+	out := make([]candidate, len(dec))
+	for i, d := range dec {
+		e := d.Entry
+		out[i] = candidate{key: d.Key, entry: &entryOut{
+			ID: e.ID, Title: e.Title, URL: e.URL, Category: e.Category, Kind: e.Kind,
+			Lifecycle: e.Lifecycle, Tags: e.Tags, Description: e.Description,
+			Author: e.Author, DateAdded: e.DateAdded,
+		}}
 	}
 	return out
 }
