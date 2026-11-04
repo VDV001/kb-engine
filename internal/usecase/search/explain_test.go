@@ -224,3 +224,15 @@ func TestExplain_InventsNothingWithDictionary(t *testing.T) {
 		}
 	}
 }
+
+// Склейка поиска и склейка объяснения — одна и та же строка: иначе поле,
+// названное по позиции совпадения, было бы чужим. Пустое описание между
+// заголовком и автором — место, где разделитель легко потерять.
+func TestExplain_EmptyDescriptionKeepsFieldOffsets(t *testing.T) {
+	dict := search.New(nil)
+	e := full(t, 1, "Kubernetes в проде", "", "Иван")
+	why := search.Explain(e, "kubernetes иван", dict)
+	if len(why) != 2 || why[0].Field != search.FieldTitle || why[1].Field != search.FieldAuthor || why[1].Hit != "Иван" {
+		t.Fatalf("Explain = %+v", why)
+	}
+}
