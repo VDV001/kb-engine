@@ -130,8 +130,9 @@ func searchCatalog(path, q string) ([]candidate, string) {
 	out := make([]candidate, len(found))
 	for i, e := range found {
 		out[i] = candidate{
-			key:    sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()),
-			encode: func() (json.RawMessage, error) { return httpapi.EntryJSON(e) },
+			key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()),
+			// Объяснение — только для показанных: encode зовется после среза.
+			encode: func() (json.RawMessage, error) { return httpapi.EntryJSON(e, search.Explain(e, q, search.Matcher{})) },
 		}
 	}
 	return out, ""
@@ -242,14 +243,41 @@ func (f *folderSettings) tokenWithin(ctx context.Context, id string) (string, er
 // сервера разбирается строго: поле не того типа — запись отброшена (номер-
 // строка с разметкой не доедет до страницы), наружу уходят только эти поля.
 type serverEntry struct {
-	ID          int    `json:"id"`
-	Title       string `json:"title"`
-	URL         string `json:"url,omitempty"`
-	Category    string `json:"category,omitempty"`
-	Verdict     string `json:"verdict,omitempty"`
-	Author      string `json:"author,omitempty"`
-	DateAdded   string `json:"date_added,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID          int           `json:"id"`
+	Title       string        `json:"title"`
+	URL         string        `json:"url,omitempty"`
+	Category    string        `json:"category,omitempty"`
+	Verdict     string        `json:"verdict,omitempty"`
+	Author      string        `json:"author,omitempty"`
+	DateAdded   string        `json:"date_added,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Match       []serverMatch `json:"match,omitempty"`
+}
+
+// serverMatch is one «где и как совпало» of a server's entry; поле и способ
+// — из известных, иначе признак отброшен (на страницу идут как классы и слова).
+type serverMatch struct {
+	Word  string `json:"word"`
+	Field string `json:"field"`
+	Text  string `json:"text"`
+	Hit   string `json:"hit"`
+	How   string `json:"how"`
+}
+
+var (
+	knownFields = map[string]bool{"title": true, "description": true, "category": true, "tag": true, "author": true, "id": true}
+	knownHows   = map[string]bool{"exact": true, "synonym": true, "translit": true, "typo": true}
+)
+
+// knownMatches keeps the matches with a known field and way.
+func knownMatches(in []serverMatch) []serverMatch {
+	var out []serverMatch
+	for _, m := range in {
+		if knownFields[m.Field] && knownHows[m.How] {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // typedEntries keeps the server entries that decode as serverEntry; адрес, не
@@ -266,6 +294,7 @@ func typedEntries(raw []json.RawMessage) []candidate {
 		// считает сам (sourcesearch.Split): склейка не зависит от того, попала
 		// запись в присланные или нет. Показ — по проверенному адресу.
 		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
+		e.Match = knownMatches(e.Match)
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {

@@ -615,6 +615,7 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 		out := limitedSearchDTO{Entries: make([]entryDTO, len(shown)), Total: len(found), Keys: keys}
 		for i, e := range shown {
 			out.Entries[i] = toDTO(e)
+			out.Entries[i].Match = toMatch(search.Explain(e, r.URL.Query().Get("q"), syn))
 		}
 		writeJSON(w, out)
 	}
