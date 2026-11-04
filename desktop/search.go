@@ -262,13 +262,17 @@ func typedEntries(raw []json.RawMessage) []candidate {
 		if json.Unmarshal(r, &e) != nil || e.Title == "" {
 			continue
 		}
+		// Ключ — по исходному адресу, как ключи остальных записей, что сервер
+		// считает сам (sourcesearch.Split): склейка не зависит от того, попала
+		// запись в присланные или нет. Показ — по проверенному адресу.
+		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {
 			e.URL = u.String() // обрезанный: и для кнопки, и для ключа склейки
 		}
 		out = append(out, candidate{
-			key:    sourcesearch.EntryKey(e.ID, e.Title, e.URL),
+			key:    key,
 			encode: func() (json.RawMessage, error) { return json.Marshal(e) },
 		})
 	}
@@ -294,9 +298,15 @@ func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 	return mux
 }
 
-// findServer asks a real kb server for the first searchLimit entries.
+// findServer asks a real kb server for twice the entries the window shows:
+// первые записи сервера часто дублируют источник выше и склеиваются, и без
+// запаса от сервера осталась бы горстка строк при сотнях найденных.
+// ponytail: запас — эвристика. Потолок: если перекрытие с источниками выше
+// глубже 2·searchLimit записей, сервер покажет меньше searchLimit при большем
+// числе своих. Путь: дозапрос, когда показано меньше предела, а ключей
+// остальных много, — или ключи источников выше в запросе.
 func findServer(ctx context.Context, url, token, q string) (kbserver.Result, error) {
-	return kbserver.Client{URL: url, Token: token}.Search(ctx, q, searchLimit)
+	return kbserver.Client{URL: url, Token: token}.Search(ctx, q, 2*searchLimit)
 }
 
 // cachedTokens keeps what the Keychain answered in memory: поиск идет на каждую

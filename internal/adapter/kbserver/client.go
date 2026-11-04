@@ -91,29 +91,59 @@ func (c Client) Search(ctx context.Context, q string, limit int) (Result, error)
 	if limit > 0 {
 		params.Set("limit", strconv.Itoa(limit))
 	}
-	var raw json.RawMessage
-	if err := c.get(ctx, "/api/search", params, maxSearchBody, &raw); err != nil {
+	var body searchBody
+	if err := c.get(ctx, "/api/search", params, maxSearchBody, &body); err != nil {
 		return Result{}, err
 	}
-	if t := bytes.TrimLeft(raw, " \t\r\n"); len(t) > 0 && t[0] == '[' {
-		var entries []json.RawMessage
-		if err := json.Unmarshal(raw, &entries); err != nil {
-			return Result{}, fmt.Errorf("%w: /api/search: %w", ErrNotKB, err)
+	r := body.Result
+	// Счет сходится с присланным: иначе «найдено» в окне врало бы. Ключ — не
+	// простыня: это адрес статьи или номер с заголовком.
+	if r.Total != len(r.Entries)+len(r.Keys) {
+		return Result{}, fmt.Errorf("%w: /api/search: total %d при %d записях и %d ключах", ErrNotKB, r.Total, len(r.Entries), len(r.Keys))
+	}
+	for _, k := range r.Keys {
+		if len(k) > maxKeyLen {
+			return Result{}, fmt.Errorf("%w: /api/search: ключ длиннее %d байт", ErrNotKB, maxKeyLen)
 		}
-		return Result{Entries: entries, Total: len(entries)}, nil
+	}
+	return r, nil
+}
+
+// maxKeyLen — предел длины ключа склейки: адрес статьи или номер с заголовком.
+const maxKeyLen = 2048
+
+// searchBody decodes either answer of /api/search in one pass: массив сервера
+// без limit (0.30.0), объект сервера с limit или null — пустая выдача.
+type searchBody struct{ Result }
+
+// UnmarshalJSON switches on the first byte of the answer.
+func (b *searchBody) UnmarshalJSON(raw []byte) error {
+	t := bytes.TrimLeft(raw, " \t\r\n")
+	switch {
+	case bytes.HasPrefix(t, []byte("null")):
+		b.Result = Result{}
+		return nil
+	case len(t) > 0 && t[0] == '[':
+		var entries []json.RawMessage
+		if err := json.Unmarshal(t, &entries); err != nil {
+			return err
+		}
+		b.Result = Result{Entries: entries, Total: len(entries)}
+		return nil
 	}
 	var obj struct {
 		Entries *[]json.RawMessage `json:"entries"`
 		Total   int                `json:"total"`
 		Keys    []string           `json:"keys"`
 	}
-	if err := json.Unmarshal(raw, &obj); err != nil {
-		return Result{}, fmt.Errorf("%w: /api/search: %w", ErrNotKB, err)
+	if err := json.Unmarshal(t, &obj); err != nil {
+		return err
 	}
-	if obj.Entries == nil || obj.Total < len(*obj.Entries) {
-		return Result{}, fmt.Errorf("%w: /api/search: неполный ответ", ErrNotKB)
+	if obj.Entries == nil {
+		return errors.New("нет entries")
 	}
-	return Result{Entries: *obj.Entries, Total: obj.Total, Keys: obj.Keys}, nil
+	b.Result = Result{Entries: *obj.Entries, Total: obj.Total, Keys: obj.Keys}
+	return nil
 }
 
 // get asks path with the query params. Параметры идут отдельно от пути:
