@@ -859,3 +859,38 @@ func TestSearchSources_FolderStates(t *testing.T) {
 		})
 	}
 }
+
+// Строка источников видит папки, открытые сохранением и возвратом сетевой
+// папки (reconcile), а не только те, что были при запуске.
+func TestSearchSources_OpenFoldersFollowSaveAndReconcile(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	work := filepath.Join(s.home, "work")
+	s.countMatches = func(_ string, roots []string) (map[string]int, error) {
+		m := map[string]int{}
+		for _, r := range roots {
+			m[r] = 3
+		}
+		return m, nil
+	}
+	list := append(slices.Clone(s.cfg.Sources), src("folder-2", desktopconfig.KindFolder, work, true))
+	if err := s.SetSources(list, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error != "" || f.Found != 3 {
+		t.Fatalf("после сохранения: %+v", f)
+	}
+
+	s.mu.Lock()
+	s.applied = []string{filepath.Join(s.home, "notes")} // work «пропала»
+	s.setOpen(s.applied)
+	s.mu.Unlock()
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error == "" {
+		t.Fatalf("пропавшая папка без беды: %+v", f)
+	}
+	if !s.reconcile() {
+		t.Fatal("reconcile не открыл вернувшуюся папку")
+	}
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error != "" || f.Found != 3 {
+		t.Fatalf("после возврата: %+v", f)
+	}
+}
