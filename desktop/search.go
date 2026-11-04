@@ -254,6 +254,30 @@ type serverEntry struct {
 	Match       []serverMatch `json:"match,omitempty"`
 }
 
+// Пределы признака находки чужого сервера: из слов признака окно строит
+// подсветку на каждую строку выдачи, и сломанный сервер не должен подвесить ее
+// тысячей признаков или словом-простыней. Наш сервер дает по признаку на слово
+// запроса — единицы.
+const (
+	maxMatches  = 16
+	maxMatchLen = 200
+)
+
+// withoutMatch returns the entry with its match field removed: запись
+// разбирается строго, признак — отдельно.
+func withoutMatch(r json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(r, &m) != nil {
+		return r
+	}
+	delete(m, "match")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return r
+	}
+	return b
+}
+
 // serverMatch is one «где и как совпало» of a server's entry; поле и способ
 // — из тех, что называет search.Explain, иначе признак отброшен.
 type serverMatch struct {
@@ -268,7 +292,10 @@ type serverMatch struct {
 func knownMatches(in []serverMatch) []serverMatch {
 	var out []serverMatch
 	for _, m := range in {
-		if search.ValidField(m.Field) && search.ValidHow(m.How) {
+		if len(out) == maxMatches {
+			break
+		}
+		if search.ValidField(m.Field) && search.ValidHow(m.How) && len(m.Word) <= maxMatchLen && len(m.Hit) <= maxMatchLen {
 			out = append(out, m)
 		}
 	}
@@ -281,15 +308,28 @@ func knownMatches(in []serverMatch) []serverMatch {
 func typedEntries(raw []json.RawMessage) []candidate {
 	out := make([]candidate, 0, len(raw))
 	for _, r := range raw {
+		// Признак — необязательное поле и разбирается отдельно: не того вида,
+		// он отбрасывается сам, а запись с ключом склейки остается.
 		var e serverEntry
+		var rawMatch struct {
+			Match json.RawMessage `json:"match"`
+		}
+		if json.Unmarshal(r, &rawMatch) != nil {
+			continue
+		}
+		if len(rawMatch.Match) > 0 {
+			r = withoutMatch(r)
+		}
 		if json.Unmarshal(r, &e) != nil || e.Title == "" {
 			continue
 		}
+		var ms []serverMatch
+		_ = json.Unmarshal(rawMatch.Match, &ms) // не тот вид — признака нет
 		// Ключ — по исходному адресу, как ключи остальных записей, что сервер
 		// считает сам (sourcesearch.Split): склейка не зависит от того, попала
 		// запись в присланные или нет. Показ — по проверенному адресу.
 		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
-		e.Match = knownMatches(e.Match)
+		e.Match = knownMatches(ms)
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {

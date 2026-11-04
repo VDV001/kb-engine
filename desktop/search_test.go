@@ -817,7 +817,8 @@ func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
 	s.find = func(context.Context, string, string, string) (kbserver.Result, error) {
 		return result(
 			json.RawMessage(`{"id":1,"title":"Агент один","match":{"word":"x"}}`),
-			json.RawMessage(`{"id":2,"title":"Агент два","match":[`+strings.Join(many, ",")+`,`+long+`]}`),
+			// Длинный — первым: иначе его отсек бы предел числа, а не длины.
+			json.RawMessage(`{"id":2,"title":"Агент два","match":[`+long+`,`+strings.Join(many, ",")+`]}`),
 		), nil
 	}
 	r := s.SearchSources(context.Background(), "агент")
