@@ -21,8 +21,9 @@ import (
 // findFunc asks a kb server to search; таймаут задает контекст вызывающего.
 type findFunc func(ctx context.Context, url, token, q string) ([]json.RawMessage, error)
 
-// searchTimeout — сколько ждать сервер на одну букву запроса, вместе с чтением
-// его токена: медленный хост или запертая Связка не держат выдачу каталога.
+// searchTimeout — сколько ждать на одну букву запроса чтение токена и, отдельно,
+// ответ сервера (до двух сроков подряд): медленный хост или запертая Связка не
+// держат выдачу каталога.
 // Переменная, а не константа, — тесты ждут миллисекунды, а не секунды.
 var searchTimeout = 3 * time.Second
 
@@ -69,11 +70,9 @@ type candidate struct {
 // ponytail: папки в строку источников не входят — их выдача идет своим
 // /api/files/search, счет «N из M» по папкам — следующий шаг этапа 5.
 func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSearch {
-	f.mu.Lock()
-	cfg, ver := f.cfg, f.ver
-	f.mu.Unlock()
+	snap := f.snapshot()
 	var rows []sourceFound
-	for _, s := range cfg.WithSources().Sources {
+	for _, s := range snap.cfg.WithSources().Sources {
 		if s.Enabled && (s.Kind == desktopconfig.KindCatalog || s.Kind == desktopconfig.KindServer) {
 			rows = append(rows, sourceFound{Source: s})
 		}
@@ -88,7 +87,7 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 			if r.Kind == desktopconfig.KindCatalog {
 				items, msg = searchCatalog(desktopconfig.ExpandHome(r.Path, f.home), q)
 			} else {
-				items, msg = f.searchServer(ctx, r.Source, ver, q)
+				items, msg = f.searchServer(ctx, r.Source, snap, q)
 			}
 			r.Found, r.Error = len(items), msg
 			lists[i] = sourcesearch.Found[candidate]{Source: r.ID, Items: items}
@@ -106,6 +105,8 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 		if shown[h.Source] == searchLimit {
 			continue
 		}
+		// Кодирование простой структуры (строки, числа) не падает; запись, что
+		// известна только ключом, в выдачу не идет намеренно.
 		raw, err := h.Item.encode()
 		if err != nil {
 			continue
@@ -136,12 +137,49 @@ func searchCatalog(path, q string) ([]candidate, string) {
 	return out, ""
 }
 
-// errSourceChanged — пока окно читало Связку, источники сохранили заново.
+// errSourceChanged — пока окно читало Связку, источники сохранили заново или
+// сохраняют сейчас.
 const errSourceChanged = "настройки источников изменились: повторите поиск"
 
-// searchServer asks one kb server with its stored token. ver — версия
-// настроек снимка, по которому идет поиск.
-func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, ver uint64, q string) ([]candidate, string) {
+// cfgSnapshot is the settings the search reads; saving — SetSources пишет
+// токены, и Связка может не совпадать с адресами снимка.
+type cfgSnapshot struct {
+	cfg    desktopconfig.Config
+	saving bool
+}
+
+// publishLocked stores the current settings as the search snapshot; f.mu held.
+func (f *folderSettings) publishLocked(saving bool) {
+	f.snap.Store(&cfgSnapshot{cfg: f.cfg, saving: saving})
+}
+
+// snapshot returns the published settings, publishing them on first use.
+// В окне main публикует их сразу, так что f.mu здесь не берется.
+func (f *folderSettings) snapshot() *cfgSnapshot {
+	if p := f.snap.Load(); p != nil {
+		return p
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.snap.Load() == nil {
+		f.publishLocked(false)
+	}
+	return f.snap.Load()
+}
+
+// publish stores the current settings as the search snapshot.
+func (f *folderSettings) publish() {
+	f.mu.Lock()
+	f.publishLocked(false)
+	f.mu.Unlock()
+}
+
+// searchServer asks one kb server with its stored token. snap — снимок
+// настроек, по которому идет поиск.
+func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Source, snap *cfgSnapshot, q string) ([]candidate, string) {
+	if snap.saving {
+		return nil, errSourceChanged
+	}
 	// У Связки и у сети — по своему сроку, как в ServerStates: человек,
 	// разблокировавший Связку под конец срока, не получает «нет связи».
 	tokCtx, cancelTok := context.WithTimeout(ctx, searchTimeout)
@@ -154,13 +192,9 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	}
 	// Поиск идет по снимку конфига, а Связка читается позже: SetSources мог за
 	// это время сменить адрес и положить новый токен — и новый токен ушел бы на
-	// старый адрес. SetSources поднимает версию под f.mu в начале работы, поэтому
-	// неизменная версия значит: ни одного сохранения с момента снимка. Связка под
-	// f.mu не читается.
-	f.mu.Lock()
-	same := f.ver == ver
-	f.mu.Unlock()
-	if !same {
+	// старый адрес. Перед записью токенов SetSources публикует новый снимок,
+	// поэтому тот же указатель значит: с момента снимка токены не менялись.
+	if f.snap.Load() != snap {
 		return nil, errSourceChanged
 	}
 	ctx, cancel := context.WithTimeout(ctx, searchTimeout)
@@ -234,7 +268,9 @@ func typedEntries(raw []json.RawMessage) []candidate {
 // API. Маршрут HTTP, а не привязка Wails: интерфейс тот же в браузере (-browser).
 func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("GET /api/sources/search", httpapi.LocalHostOnly(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Чужой Host отсекает browserHandler на весь -browser; окно Wails из сети
+	// недостижимо. Второй замок здесь был бы второй копией одного правила.
+	mux.Handle("GET /api/sources/search", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		if q == "" {
 			http.Error(w, "q is required", http.StatusBadRequest)
@@ -242,7 +278,7 @@ func (f *folderSettings) searchRoute(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(f.SearchSources(r.Context(), q))
-	})))
+	}))
 	mux.Handle("/", next)
 	return mux
 }

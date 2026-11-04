@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
@@ -66,9 +67,11 @@ type folderSettings struct {
 	probe  probeFunc
 	// find — поиск на kb-сервере для общей выдачи (search.go).
 	find findFunc
-	// ver растет в начале каждого SetSources: поиск, начатый по прежнему
-	// снимку, не отправит токен, прочитанный после сохранения (search.go).
-	ver uint64
+	// snap — снимок настроек для поиска: читается без f.mu, поэтому
+	// сохранение, ждущее Связку под f.mu, не держит выдачу. SetSources
+	// публикует его дважды: «сохраняется» перед записью токенов и итог в
+	// конце, — поиск сверяет указатель (search.go).
+	snap atomic.Pointer[cfgSnapshot]
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string
@@ -181,10 +184,14 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 
 	// Токены — до apply: отказ Связки ключей не должен оставить индекс на новых
 	// источниках при старом конфиге. Откат токенов — при любом отказе дальше.
-	// Версия растет перед записью токенов, и при отказе дальше: токены могли
-	// успеть поменяться и откатиться. Отказ раньше ничего не трогал и поиск не
-	// отменяет.
-	f.ver++
+	if err := checkTokenIDs(next, tokens); err != nil {
+		return err
+	}
+	// С этого места токены в Связке могут не совпадать с адресами снимка:
+	// поиск пропускает серверы, пока сохранение не опубликует итог. Отказ
+	// раньше ничего не трогал и поиск не задевает.
+	f.publishLocked(true)
+	defer f.publishLocked(false) // итог — новый конфиг или прежний при отказе; до Unlock
 	undoTokens, err := f.storeTokens(next, tokens)
 	if err != nil {
 		return err
@@ -213,9 +220,12 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 // сохранении. Уже сохраненный каталог, что сейчас недоступен (сетевой диск),
 // не мешает.
 func (f *folderSettings) checkCatalogs(next desktopconfig.Config) (string, error) {
+	// Снисхождение «сохранен, сейчас недоступен» — только включенному: его
+	// читали и видели. Выключенный мог быть сохранен без проверки (0.30.0
+	// проверял только первый), и при включении проверяется как новый.
 	saved := map[string]bool{} // по раскрытому пути: «~/…» и полный путь — один каталог
 	for _, s := range f.cfg.WithSources().Sources {
-		if s.Kind == desktopconfig.KindCatalog {
+		if s.Kind == desktopconfig.KindCatalog && s.Enabled {
 			saved[desktopconfig.ExpandHome(s.Path, f.home)] = true
 		}
 	}

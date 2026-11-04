@@ -698,3 +698,18 @@ func TestSetSources_DisabledSavedCatalogIsChecked(t *testing.T) {
 		t.Fatalf("err = %v, want errBadCatalog", err)
 	}
 }
+
+// Пока сохранение пишет токены (снимок «сохраняется»), серверы в поиске
+// пропускаются: Связка может уже нести новый токен при старом адресе снимка.
+// Каталоги отвечают как обычно.
+func TestSearchSources_SkipsServersWhileSaving(t *testing.T) {
+	s, _, calls := newSearchSettings(t)
+	s.mu.Lock()
+	s.publishLocked(true)
+	s.mu.Unlock()
+	r := s.SearchSources(context.Background(), "агент")
+	f := found(r)
+	if f["server-a"].Error != errSourceChanged || f["catalog-1"].Found != 2 || len(*calls) != 0 {
+		t.Fatalf("sources = %+v, calls = %d", r.Sources, len(*calls))
+	}
+}

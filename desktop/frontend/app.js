@@ -879,6 +879,7 @@ $("#save-settings").onclick = async () => {
     toast("Сохранено", " · " + $("#settings-note").textContent);
   } catch (e) {
     showError("Не удалось узнать статус индекса: " + e);
+    if (state.q) search(state.q); // сохранение прошло — выдача по новым источникам
     renderSources();
   } finally {
     setBusy(false); // панель не остается запертой ни при каком исходе
