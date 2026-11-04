@@ -19,7 +19,7 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   значку в Dock открывает спрятанное окно, ⌥Space работает как раньше. Раньше окно жило только в
   меню-баре (`LSUIElement`).
 - **Окно называется DVK (Daniil Vdovin Knowledge): так оно подписано в Dock, ⌘Tab, меню и «О
-  программе».** В шапке остался только знак, слово рядом не пишется. Внутренние имена прежние:
+  программе».** В шапке остался только знак, слово рядом не пишется. Строка поиска — `$ dvk find`. Внутренние имена прежние:
   `kb.app`, `com.daniilvdovin.kb`, движок kb-engine.
 
 ### Changed
