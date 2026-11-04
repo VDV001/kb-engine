@@ -609,13 +609,12 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 			writeJSON(w, dtos)
 			return
 		}
-		shown := found[:min(limit, len(found))]
-		out := limitedSearchDTO{Entries: make([]entryDTO, len(shown)), Total: len(found), Keys: make([]string, 0, len(found)-len(shown))}
+		shown, keys := sourcesearch.Split(found, limit, func(e domain.Entry) string {
+			return sourcesearch.EntryKey(e.ID(), e.Title(), e.URL())
+		})
+		out := limitedSearchDTO{Entries: make([]entryDTO, len(shown)), Total: len(found), Keys: keys}
 		for i, e := range shown {
 			out.Entries[i] = toDTO(e)
-		}
-		for _, e := range found[len(shown):] {
-			out.Keys = append(out.Keys, sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()))
 		}
 		writeJSON(w, out)
 	}
