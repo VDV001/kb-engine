@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
@@ -104,6 +105,9 @@ func run(args []string, stderr io.Writer) error {
 		bg.Go(func() { files.run(ctx) })
 		cfg.Files = files
 		tools += " · search_files · read_file"
+		// kb-серверы из того же списка источников: search_catalog отвечает и
+		// их записями, как общая выдача окна. Токены — в той же Связке ключей.
+		cfg.Remote = remoteServers{cfgPath: expandHome(*filesConfig, userHome()), tokens: keychain.Store{Service: "kb-desktop"}}
 	}
 	srv := mcpserver.New(svc, search.New(syn), cfg)
 	// Диагностика уходит в stderr намеренно: stdout занят протоколом, и любая

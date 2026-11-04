@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -71,5 +70,4 @@ func TestRemoteServers_ConfigUnreadable(t *testing.T) {
 	if len(got) != 1 || got[0].Err == "" {
 		t.Fatalf("got = %+v", got)
 	}
-	_ = errors.New
 }
