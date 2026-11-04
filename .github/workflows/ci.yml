@@ -421,8 +421,14 @@ jobs:
         with:
           tflint_version: v0.64.0
 
+      # tflint --init качает плагин aws через GitHub API. Без токена это
+      # анонимный лимит на IP раннера (60 запросов в час, общий с чужими
+      # задачами), и шаг падал 403 «API rate limit exceeded» без единой правки
+      # в terraform (#388). С токеном задачи — лимит токена.
       - name: tflint
         working-directory: deploy/terraform
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init
           tflint --format=compact
