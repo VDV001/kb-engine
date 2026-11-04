@@ -39,39 +39,39 @@ func TestExplain(t *testing.T) {
 		want  []search.Why
 	}{
 		{"заголовок буквально", full(t, 1, "Kubernetes в проде", "", ""), "kubernetes",
-			[]search.Why{{Word: "kubernetes", Field: search.FieldTitle, Text: "Kubernetes в проде", Hit: "Kubernetes", How: search.HowExact}}},
+			[]search.Why{{Word: "kubernetes", Field: search.FieldTitle, Hit: "Kubernetes", How: search.HowExact}}},
 		{"автор транслитом", full(t, 2, "У облака есть корзина", "", "zhogov1985"), "жо",
-			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Text: "zhogov1985", Hit: "zhogov1985", How: search.HowTranslit}}},
+			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Hit: "zhogov1985", How: search.HowTranslit}}},
 		{"автор с начала слова", full(t, 3, "Copilot видит", "", "Александр Жогов"), "жо",
-			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Text: "Александр Жогов", Hit: "Жогов", How: search.HowExact}}},
+			[]search.Why{{Word: "жо", Field: search.FieldAuthor, Hit: "Жогов", How: search.HowExact}}},
 		// Латинский запрос к кириллице — транслит, а не опечатка: правок ноль.
 		{"латиница против кириллицы", full(t, 11, "Copilot видит", "", "Александр Жогов"), "zhogov",
-			[]search.Why{{Word: "zhogov", Field: search.FieldAuthor, Text: "Александр Жогов", Hit: "Жогов", How: search.HowTranslit}}},
+			[]search.Why{{Word: "zhogov", Field: search.FieldAuthor, Hit: "Жогов", How: search.HowTranslit}}},
 		// Одинаковый слой в двух полях — побеждает поле раньше (заголовок).
 		{"ничья — поле раньше", full(t, 12, "Жогов о бэкапах", "", "Жогов"), "жогов",
-			[]search.Why{{Word: "жогов", Field: search.FieldTitle, Text: "Жогов о бэкапах", Hit: "Жогов", How: search.HowExact}}},
+			[]search.Why{{Word: "жогов", Field: search.FieldTitle, Hit: "Жогов", How: search.HowExact}}},
 		{"опечатка", full(t, 4, "Kubernetes в проде", "", ""), "kuberntes",
-			[]search.Why{{Word: "kuberntes", Field: search.FieldTitle, Text: "Kubernetes в проде", Hit: "Kubernetes", How: search.HowTypo}}},
+			[]search.Why{{Word: "kuberntes", Field: search.FieldTitle, Hit: "Kubernetes", How: search.HowTypo}}},
 		{"тег", full(t, 5, "Сборка образов", "", "", "docker"), "docker",
-			[]search.Why{{Word: "docker", Field: search.FieldTag, Text: "docker", Hit: "docker", How: search.HowExact}}},
+			[]search.Why{{Word: "docker", Field: search.FieldTag, Hit: "docker", How: search.HowExact}}},
 		{"синоним", full(t, 6, "Concurrency in Go", "", ""), "конкурентность",
-			[]search.Why{{Word: "конкурентность", Field: search.FieldTitle, Text: "Concurrency in Go", Hit: "Concurrency", How: search.HowSynonym}}},
+			[]search.Why{{Word: "конкурентность", Field: search.FieldTitle, Hit: "Concurrency", How: search.HowSynonym}}},
 		// Фраза переводится целиком: по словам «сборка» и «мусора» не находятся.
 		{"фраза синонимом", full(t, 7, "Паузы", "garbage collection в Go", ""), "сборка мусора",
 			[]search.Why{
-				{Word: "сборка мусора", Field: search.FieldDescription, Text: "garbage collection в Go", Hit: "garbage", How: search.HowSynonym},
-				{Word: "сборка мусора", Field: search.FieldDescription, Text: "garbage collection в Go", Hit: "collection", How: search.HowSynonym},
+				{Word: "сборка мусора", Field: search.FieldDescription, Hit: "garbage", How: search.HowSynonym},
+				{Word: "сборка мусора", Field: search.FieldDescription, Hit: "collection", How: search.HowSynonym},
 			}},
 		{"номер", full(t, 8, "Что угодно", "", ""), "#8",
-			[]search.Why{{Word: "#8", Field: search.FieldID, Text: "8", Hit: "8", How: search.HowExact}}},
+			[]search.Why{{Word: "#8", Field: search.FieldID, Hit: "8", How: search.HowExact}}},
 		// Буквальное совпадение в любом поле важнее нечеткого в заголовке: так
 		// же решает поиск — слой за слоем по всему тексту записи.
 		{"буквально в описании раньше опечатки в заголовке", full(t, 9, "Kubernetes", "про kuberntes", ""), "kuberntes",
-			[]search.Why{{Word: "kuberntes", Field: search.FieldDescription, Text: "про kuberntes", Hit: "kuberntes", How: search.HowExact}}},
+			[]search.Why{{Word: "kuberntes", Field: search.FieldDescription, Hit: "kuberntes", How: search.HowExact}}},
 		{"два слова — два ответа", full(t, 10, "Агенты и память", "", "zhogov1985"), "агент жо",
 			[]search.Why{
-				{Word: "агент", Field: search.FieldTitle, Text: "Агенты и память", Hit: "Агенты", How: search.HowExact},
-				{Word: "жо", Field: search.FieldAuthor, Text: "zhogov1985", Hit: "zhogov1985", How: search.HowTranslit},
+				{Word: "агент", Field: search.FieldTitle, Hit: "Агенты", How: search.HowExact},
+				{Word: "жо", Field: search.FieldAuthor, Hit: "zhogov1985", How: search.HowTranslit},
 			}},
 	}
 	for _, tt := range tests {

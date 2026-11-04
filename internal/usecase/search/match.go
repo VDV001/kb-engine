@@ -246,5 +246,7 @@ func abs(n int) int {
 // снимаются, но пробелы остаются — в отличие от domain.FoldName, который
 // склеивает имя счёта в одно слово.
 func norm(s string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), "ё", "е"))
+	// Сначала регистр, потом «ё»: иначе заглавная «Ё» оставалась «ё», и
+	// «Ёжик» не находился по «еж» там, где текст не понижен заранее.
+	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(s)), "ё", "е")
 }
