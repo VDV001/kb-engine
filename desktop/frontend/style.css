@@ -81,13 +81,20 @@ button { font-family: inherit; }
 .mark .sp4 { stop-color: var(--z-sp4); } .mark .sp5 { stop-color: var(--z-sp5); } .mark .sp6 { stop-color: var(--z-sp6); }
 .mark-lobe { fill: url(#mark-spec); }
 .mark-cut { fill: none; stroke: var(--z-bg-2); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
-.mark-pad { fill: var(--z-bg-2); }
 /* Мини-интерактив: при наведении на знак полушария плавно расходятся (4 из 64
    единиц, на 24 px это 1.5 px) и возвращаются той же кривой. */
 .mark-l, .mark-r { transition: transform .45s var(--z-ease); }
-.brand:hover .mark-l { transform: translateX(-4px); }
-.brand:hover .mark-r { transform: translateX(4px); }
-@media (prefers-reduced-motion: reduce) { .mark-l, .mark-r { transition: none; } }
+.brand:hover .mark-l, .brand.wake .mark-l { transform: translateX(-4px); }
+.brand:hover .mark-r, .brand.wake .mark-r { transform: translateX(4px); }
+/* Буквы DVK в машинной половине прорисовываются заново по порядку D, V, K:
+   один путь с pathLength 1, штрих открывается от начала к концу. */
+.mark-dvk { stroke-dasharray: 1; stroke-dashoffset: 0; }
+.brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: mark-type .9s var(--z-ease) .12s both; }
+@keyframes mark-type { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .mark-l, .mark-r { transition: none; }
+  .brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: none; }
+}
 .tabs { position: relative; gap: 22px; flex: 1; }
 .tabs button {
   position: relative; background: none; border: 0; padding: 0; height: 100%; cursor: pointer;
