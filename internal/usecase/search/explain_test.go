@@ -236,3 +236,24 @@ func TestExplain_EmptyDescriptionKeepsFieldOffsets(t *testing.T) {
 		t.Fatalf("Explain = %+v", why)
 	}
 }
+
+// Слово без единой правки побеждает опечатку, даже если опечатка раньше по
+// тексту: «zhogov» — это автор «Жогов» транслитом, а не заголовок «Zhogof».
+func TestExplain_ExactWordBeatsEarlierTypo(t *testing.T) {
+	e := full(t, 1, "Zhogof о бэкапах", "", "Жогов")
+	why := search.Explain(e, "zhogov", search.New(nil))
+	if len(why) != 1 || why[0].Field != search.FieldAuthor || why[0].How != search.HowTranslit || why[0].Hit != "Жогов" {
+		t.Fatalf("Explain = %+v", why)
+	}
+}
+
+// Совпавшее слово — в написании текста, а не в нормализованной форме: окно
+// показывает его человеку и ищет в тексте для подсветки.
+func TestExplain_HitInTextSpelling(t *testing.T) {
+	dict := search.New(search.Dictionary{"gc": {Same: []string{"сборка мусора"}}})
+	e := full(t, 1, "Сборка мусора в Го", "", "")
+	why := search.Explain(e, "gc", dict)
+	if len(why) != 1 || why[0].Hit != "Сборка мусора" || why[0].How != search.HowSynonym {
+		t.Fatalf("Explain = %+v", why)
+	}
+}
