@@ -188,3 +188,16 @@ func knownMatches(in []Match) []Match {
 	}
 	return out
 }
+
+// MatchOf is search.Explain as the answer carries it: окно и MCP объясняют
+// запись каталога одной формой, той же, в какой признак присылает сервер.
+func MatchOf(why []search.Why) []Match {
+	if len(why) == 0 {
+		return nil
+	}
+	out := make([]Match, len(why))
+	for i, w := range why {
+		out[i] = Match{Word: w.Word, Field: string(w.Field), Hit: w.Hit, How: string(w.How)}
+	}
+	return out
+}

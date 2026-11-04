@@ -291,3 +291,96 @@ func TestServer_searchOwnCatalogTwiceAnswersOnce(t *testing.T) {
 		t.Fatalf("sources = %s", got)
 	}
 }
+
+// Запись сервера приходит агенту с признаком находки, как в окне («совпало:
+// автор · жо → zhogov1985 · транслит»), а поле, которого сервер не прислал,
+// в ответе отсутствует, а не пусто: «неизвестно» и «пустая категория» у
+// агента не должны выглядеть одинаково.
+func TestServer_searchRemoteEntryCarriesMatch(t *testing.T) {
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own,
+		{Source: mcpserver.RemoteSource{ID: "server-a"}, Entries: []json.RawMessage{
+			json.RawMessage(`{"id":50,"title":"Kubernetes на сервере","category":"ai","kind":"article","lifecycle":"active",` +
+				`"match":[{"word":"кубернетес","field":"title","hit":"Kubernetes","how":"translit"}]}`),
+			json.RawMessage(`{"id":51,"title":"Kubernetes без полей"}`),
+		}},
+	}})
+	raw := text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))
+	var out struct {
+		Entries []map[string]json.RawMessage `json:"entries"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatalf("%v\n%s", err, raw)
+	}
+	byID := map[string]map[string]json.RawMessage{}
+	for _, e := range out.Entries {
+		byID[string(e["source"])+":"+string(e["id"])] = e
+	}
+	full, bare := byID[`"server-a":50`], byID[`"server-a":51`]
+	if full == nil || bare == nil {
+		t.Fatalf("нет записей сервера в ответе: %s", raw)
+	}
+	var ms []struct{ Word, Field, Hit, How string }
+	if err := json.Unmarshal(full["match"], &ms); err != nil || len(ms) != 1 ||
+		ms[0].Word != "кубернетес" || ms[0].Field != "title" || ms[0].Hit != "Kubernetes" || ms[0].How != "translit" {
+		t.Fatalf("match = %s, want признак сервера как есть", full["match"])
+	}
+	for _, k := range []string{"category", "kind", "lifecycle", "match"} {
+		if v, ok := bare[k]; ok {
+			t.Errorf("запись без %s отдала %s=%s: поля нет — его нет и в ответе", k, k, v)
+		}
+	}
+}
+
+// Признак находки есть у записи любого каталога, как в окне (desktop
+// searchCatalog объясняет каждую показанную): у своего без списка окна, у
+// своего в списке и у второго каталога. Агент видит, почему запись нашлась,
+// не открывая витрину.
+func TestServer_searchCatalogEntryCarriesMatch(t *testing.T) {
+	cat, _ := domain.NewCategory("articles")
+	life, _ := domain.NewLifecycle("active")
+	read, _ := domain.NewReadState("read")
+	second, err := domain.NewEntry(domain.EntryParams{ID: 70, Kind: domain.KindArticle, Title: "Кубернетес в работе",
+		Category: cat, Lifecycle: life, ReadState: &read})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, source string
+		id           int
+		cs           func(*testing.T) *mcp.ClientSession
+	}{
+		{"свой без списка окна", "", 1, func(t *testing.T) *mcp.ClientSession { return connect(t, stubQuerier{entries: fixture(t)}) }},
+		{"свой в списке окна", "catalog", 1, func(t *testing.T) *mcp.ClientSession {
+			return connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own, {Source: mcpserver.RemoteSource{ID: "server-a"}}}})
+		}},
+		{"второй каталог", "catalog-2", 70, func(t *testing.T) *mcp.ClientSession {
+			return connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own,
+				{Source: mcpserver.RemoteSource{ID: "catalog-2"}, Catalog: []domain.Entry{second}}}})
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			raw := text(t, callTool(t, tc.cs(t), "search_catalog", map[string]any{"query": "кубернетес"}))
+			var out struct {
+				Entries []struct {
+					ID     int    `json:"id"`
+					Source string `json:"source"`
+					Match  []struct {
+						Word string `json:"word"`
+					} `json:"match"`
+				} `json:"entries"`
+			}
+			if err := json.Unmarshal([]byte(raw), &out); err != nil {
+				t.Fatalf("%v\n%s", err, raw)
+			}
+			for _, e := range out.Entries {
+				if e.ID == tc.id && e.Source == tc.source {
+					if len(e.Match) == 0 || e.Match[0].Word != "кубернетес" {
+						t.Fatalf("match = %+v, want признак слова «кубернетес»\n%s", e.Match, raw)
+					}
+					return
+				}
+			}
+			t.Fatalf("нет записи %s:%d в ответе\n%s", tc.source, tc.id, raw)
+		})
+	}
+}
