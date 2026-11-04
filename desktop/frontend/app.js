@@ -28,27 +28,47 @@ function stem(w) {
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-// hits — слова записи, что совпали не буквально (опечатка, транслит, синоним):
-// их называет движок (match), и подсвечиваются они целиком. Сопоставление идет
-// по сырому тексту, экранируются куски: по уже экранированному тексту короткое
-// слово находилось бы внутри «&lt;» и ломало его.
+// hits — слова записи, что нашел движок (match): подсвечиваются целиком, по
+// границе слова. Граница проверяется кодом, а не lookbehind в регулярке: его
+// WebKit понимает только с Safari 16.4, а окно ставится на macOS 12.
+// Сопоставление идет по сырому тексту, экранируются куски: по уже
+// экранированному тексту короткое слово находилось бы внутри «&lt;».
+const isWordChar = (c) => !!c && /[\p{L}\p{N}]/u.test(c);
 function highlighter(q, hits = []) {
   const stems = q.toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter((w) => [...w].length >= 2).map(stem);
-  const alts = [
-    ...stems.map((w) => `${reEsc(w)}[\\p{L}\\p{N}]*`),
-    ...hits.filter(Boolean).map((h) => `(?<![\\p{L}\\p{N}])${reEsc(h)}(?![\\p{L}\\p{N}])`),
-  ];
-  if (!alts.length) return esc;
-  const re = new RegExp(`(?:${alts.join("|")})`, "giu");
+  const stemRe = stems.length ? new RegExp(`(?:${stems.map((w) => `${reEsc(w)}[\\p{L}\\p{N}]*`).join("|")})`, "giu") : null;
+  const words = [...new Set(hits.filter(Boolean).map((h) => h.toLowerCase()))];
+  if (!stemRe && !words.length) return esc;
   return (text) => {
+    const spans = [];
+    if (stemRe) for (const m of text.matchAll(stemRe)) if (m[0]) spans.push([m.index, m.index + m[0].length]);
+    const low = text.toLowerCase();
+    if (low.length === text.length) {
+      for (const w of words) {
+        for (let at = low.indexOf(w); at >= 0; at = low.indexOf(w, at + 1)) {
+          const end = at + w.length;
+          if (!isWordChar(text[at - 1]) && !isWordChar(text[end])) spans.push([at, end]);
+        }
+      }
+    }
+    spans.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
     let out = "", last = 0;
-    for (const m of text.matchAll(re)) {
-      if (!m[0]) continue;
-      out += esc(text.slice(last, m.index)) + `<mark>${esc(m[0])}</mark>`;
-      last = m.index + m[0].length;
+    for (const [from, to] of spans) {
+      if (to <= last) continue; // вложено в уже подсвеченное
+      const start = Math.max(from, last);
+      out += esc(text.slice(last, start)) + `<mark>${esc(text.slice(start, to))}</mark>`;
+      last = to;
     }
     return out + esc(text.slice(last));
   };
+}
+// Подсветка по набору слов движка — одна на запрос: у строк выдачи наборы
+// повторяются, и разбор не собирается заново на каждую строку.
+const hlCache = new Map();
+function hlFor(hits) {
+  const key = state.q + "\u0000" + hits.join("\u0000");
+  if (!hlCache.has(key)) hlCache.set(key, highlighter(state.q, hits));
+  return hlCache.get(key);
 }
 
 // --- Признак находки -----------------------------------------------------------
@@ -163,7 +183,7 @@ let inflight; // запросы прошлой буквы: отменяются,
 async function search(q) {
   // Новый запрос снимает фильтр источника: иначе выбранный источник, не
   // нашедший ничего по новому слову, прятал бы и файлы, и остальные источники.
-  if (q !== state.q) state.filter = null;
+  if (q !== state.q) { state.filter = null; hlCache.clear(); }
   state.q = q;
   if (inflight) inflight.abort();
   inflight = new AbortController();
@@ -274,7 +294,7 @@ function kbRow(e, i, hl, hue) {
   const hits = rowHits(e);
   // Свой разбор у строки с признаком: цена — микросекунды на строку выдачи,
   // зато подсвечено то, что нашел движок, а не догадка окна.
-  if (hits.length) hl = highlighter(state.q, hits);
+  if (hits.length) hl = hlFor(hits);
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
@@ -331,13 +351,15 @@ async function preview(it) {
   const seq = ++previewSeq, hlq = highlighter(state.q), box = $("#preview");
   if (it.type === "kb") {
     const e = it.e;
-    const hits = rowHits(e), hl = hits.length ? highlighter(state.q, hits) : hlq;
-    // Мета-строка — только по признаку: источник, вердикт и дату поиск не
-    // смотрит, и подсветка слов запроса в них показала бы ложную находку.
+    const hits = rowHits(e), hl = hits.length ? hlFor(hits) : hlq;
+    // Мета-строка: подсвечиваются только автор и категория и только по
+    // признаку — источник, вердикт и дату поиск не смотрит.
     const hlMeta = highlighter("", metaHits(e));
+    const meta = [[sourceName(e._src), false], [e.category, true], [e.verdict, false], [e.author, true], [e.date_added, false]]
+      .filter(([t]) => t).map(([t, searched]) => (searched ? hlMeta(t) : esc(t))).join(" · ");
     box.innerHTML = `<div class="doc">
       <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${esc(String(e.id))}</div><div class="doc-title">${hl(e.title)}</div>
-        <div class="doc-path">${hlMeta([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
+        <div class="doc-path">${meta}</div>
         ${whySentence(e)}
         <div class="doc-actions">${e.url ? `<button class="btn primary" data-act="url">Открыть источник</button>` : ""}</div></div>
       <div class="doc-desc">${hl(e.description || "Описания нет.")}</div></div>`;
