@@ -80,8 +80,9 @@ func run() error {
 	opened, _ := desktopconfig.NormalizeRoots(cfg.FolderRoots(), home) // то же, что открыл newAPI
 	settings := &folderSettings{path: cfgPath, home: home, cfg: cfg, applied: opened,
 		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count,
-		tokens: keychainTokens(), probe: probeServer}
+		tokens: newCachedTokens(keychainTokens()), probe: probeServer, find: findServer}
 	idx.reconcile = settings.reconcile // до start: горутина таймера читает поле
+	api = settings.searchRoute(api)    // общая выдача источников — и в окне, и в -browser
 	idx.start(ctx)
 
 	// Режим разработки: тот же интерфейс и API в браузере, без окна. Интерфейс

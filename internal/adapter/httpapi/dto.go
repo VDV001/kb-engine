@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -344,6 +345,10 @@ type entryDTO struct {
 	File         string `json:"file,omitempty"`
 	RelatedIDs   []int  `json:"related_ids,omitempty"`
 }
+
+// EntryJSON encodes an entry exactly as /api/search does: окно сливает записи
+// своих каталогов с записями kb-сервера, и обе стороны обязаны быть одного вида.
+func EntryJSON(e domain.Entry) (json.RawMessage, error) { return json.Marshal(toDTO(e)) }
 
 func toDTO(e domain.Entry) entryDTO {
 	d := entryDTO{
