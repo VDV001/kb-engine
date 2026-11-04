@@ -171,9 +171,10 @@ func TestSearchRoute(t *testing.T) {
 	s, _, _ := newSearchSettings(t)
 	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("engine " + r.URL.Path)) })
 	h := s.searchRoute(inner)
+	local := func(r *http.Request) *http.Request { r.Host = "127.0.0.1:18090"; return r }
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/sources/search?q="+url.QueryEscape("агент"), nil))
+	h.ServeHTTP(rec, local(httptest.NewRequest(http.MethodGet, "/api/sources/search?q="+url.QueryEscape("агент"), nil)))
 	var got sourcesSearch
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("code %d, err %v, body %s", rec.Code, err, rec.Body)
@@ -183,7 +184,7 @@ func TestSearchRoute(t *testing.T) {
 	}
 
 	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/sources/search?q=", nil))
+	h.ServeHTTP(rec, local(httptest.NewRequest(http.MethodGet, "/api/sources/search?q=", nil)))
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("пустой запрос: code %d", rec.Code)
 	}
@@ -542,4 +543,27 @@ func TestSetSources_ChecksEveryCatalog(t *testing.T) {
 	if err := s.SetSources(list, nil, nil); !errors.Is(err, errBadCatalog) {
 		t.Fatalf("папка: err = %v, want errBadCatalog", err)
 	}
+}
+
+// Get, начатый ПОСЛЕ удаления, не встает в ожидание чтения, начатого до него:
+// иначе он получил бы удаленный токен из того старого чтения.
+func TestCachedTokens_GetAfterDeleteDoesNotJoinOldRead(t *testing.T) {
+	inner := &blockingTokens{fakeTokens: fakeTokens{m: map[string]string{"a": "old"}}, release: make(chan struct{}), started: make(chan struct{})}
+	c := newCachedTokens(inner)
+	go func() { _, _ = c.Get("a") }()
+	<-inner.started
+	if err := c.Delete("a"); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 1)
+	go func() { v, _ := c.Get("a"); got <- v }()
+	select {
+	case v := <-got:
+		if v != "" {
+			t.Fatalf("после удаления Get вернул %q", v)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Get после удаления ждет старое чтение")
+	}
+	close(inner.release)
 }

@@ -872,6 +872,9 @@ $("#save-settings").onclick = async () => {
       await sleep(400);
     }
     load(await native().Sources()); // id новых источников и свежий счет
+    // Выдача перерисовалась до того, как список обновился: у нового источника
+    // не было цвета. Теперь список свежий — перерисовать строку и метки.
+    if (state.q) render();
     renderSources();
     loadServerStates();
     toast("Сохранено", " · " + $("#settings-note").textContent);

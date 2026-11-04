@@ -112,6 +112,10 @@ var localHosts = map[string]bool{
 	"127.0.0.1": true, "localhost": true, "::1": true, "wails": true, "wails.localhost": true,
 }
 
+// LocalHostOnly is localHostOnly for routes composed outside this package:
+// общая выдача окна отдает то же, что и /api/files/*, — только этой машине.
+func LocalHostOnly(next http.Handler) http.Handler { return localHostOnly(next) }
+
 // localHostOnly отказывает запросу с чужим Host.
 //
 // Файлы с диска — самое личное, что отдает движок, а без этой проверки их
@@ -125,7 +129,7 @@ func localHostOnly(next http.Handler) http.Handler {
 			host = h
 		}
 		if !localHosts[strings.Trim(host, "[]")] {
-			http.Error(w, "files are served to this machine only", http.StatusForbidden)
+			http.Error(w, "served to this machine only", http.StatusForbidden)
 			return
 		}
 		next.ServeHTTP(w, r)

@@ -66,6 +66,9 @@ type folderSettings struct {
 	probe  probeFunc
 	// find — поиск на kb-сервере для общей выдачи (search.go).
 	find findFunc
+	// ver растет в начале каждого SetSources: поиск, начатый по прежнему
+	// снимку, не отправит токен, прочитанный после сохранения (search.go).
+	ver uint64
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string
@@ -159,6 +162,7 @@ func (f *folderSettings) catalogRow(r *sourceRow, current string) {
 func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []string, tokens map[string]string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.ver++ // и при отказе: токены могли успеть поменяться и откатиться
 	next := f.cfg
 	next.Sources = slices.Clone(list)
 	next.Roots, next.Catalog, next.Server = nil, "", ""
@@ -170,7 +174,23 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err != nil {
 		return err
 	}
-	catalog, err := f.catalogFile(next.CatalogPath(), next.CatalogPath() == f.cfg.WithSources().CatalogPath())
+	// Каждый включенный каталог: поиск читает их все, и опечатка во втором
+	// иначе всплыла бы бедой на каждой букве, а не отказом при сохранении.
+	// Уже сохраненный каталог, что сейчас недоступен (сетевой диск), не мешает.
+	saved := map[string]bool{}
+	for _, s := range f.cfg.WithSources().Sources {
+		if s.Kind == desktopconfig.KindCatalog {
+			saved[s.Path] = true
+		}
+	}
+	for _, s := range next.Sources {
+		if s.Enabled && s.Kind == desktopconfig.KindCatalog {
+			if _, err := f.catalogFile(s.Path, saved[s.Path]); err != nil {
+				return err
+			}
+		}
+	}
+	catalog, err := f.catalogFile(next.CatalogPath(), saved[next.CatalogPath()])
 	if err != nil {
 		return err
 	}

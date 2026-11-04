@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // Found is what one source returned, in that source's order.
@@ -65,22 +67,21 @@ func EntryKey(id int, title, address string) string {
 }
 
 // canonicalURL drops what does not change the article: схема http/https,
-// регистр хоста, косая черта в конце пути, якорь и метки рассылки utm_*.
-// Путь и остальные параметры остаются как есть: ?id=1 и ?id=2 — разные статьи.
+// регистр хоста, косая черта в конце пути, простой якорь и метки — по правилу
+// домена StripTrackingParams, второго списка меток здесь нет. Путь, остальные
+// параметры и якорь маршрутизации (#/…, #!/…) остаются: ?id=1 и ?id=2, #/a и
+// #/b — разные статьи.
 func canonicalURL(raw string) string {
-	u, err := url.Parse(raw)
+	u, err := url.Parse(domain.StripTrackingParams(raw))
 	if err != nil || u.Host == "" {
 		return raw
 	}
-	q := u.Query()
-	for k := range q {
-		if strings.HasPrefix(strings.ToLower(k), "utm_") {
-			q.Del(k)
-		}
-	}
 	key := strings.ToLower(u.Host) + strings.TrimRight(u.EscapedPath(), "/")
-	if len(q) > 0 {
-		key += "?" + q.Encode() // Encode сортирует ключи
+	if u.RawQuery != "" {
+		key += "?" + u.Query().Encode() // Encode сортирует ключи
+	}
+	if strings.HasPrefix(u.Fragment, "/") || strings.HasPrefix(u.Fragment, "!") {
+		key += "#" + u.Fragment
 	}
 	return key
 }
