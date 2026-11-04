@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
+	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/sourcesearch"
 )
 
@@ -46,6 +47,9 @@ func newSearchSettings(t *testing.T) (*folderSettings, *fakeTokens, *[]searchCal
 	}
 	tok := &fakeTokens{m: map[string]string{"server-a": srvToken}}
 	s.tokens = tok
+	s.applied = []string{filepath.Join(home, "notes")}
+	s.setOpen(s.applied)
+	s.countMatches = func(string, []string) (map[string]int, error) { return map[string]int{}, nil }
 	var calls []searchCall
 	var mu sync.Mutex // источники опрашиваются параллельно
 	s.find = func(_ context.Context, u, token, q string) (kbserver.Result, error) {
@@ -102,8 +106,8 @@ func TestSearchSources_MergesByPriority(t *testing.T) {
 	if got, want := hitIDs(t, r), []string{"server-a:1", "server-a:9", "catalog-1:2"}; !slices.Equal(got, want) {
 		t.Fatalf("hits = %q, want %q", got, want)
 	}
-	if ids := []string{r.Sources[0].ID, r.Sources[1].ID}; len(r.Sources) != 2 || !slices.Equal(ids, []string{"server-a", "catalog-1"}) {
-		t.Fatalf("sources = %+v: нужны только базы знаний в порядке списка", r.Sources)
+	if len(r.Sources) != 3 || !slices.Equal([]string{r.Sources[0].ID, r.Sources[1].ID, r.Sources[2].ID}, []string{"server-a", "catalog-1", "folder-1"}) {
+		t.Fatalf("sources = %+v: нужны все включенные источники в порядке списка", r.Sources)
 	}
 	if f := found(r); f["server-a"].Found != 2 || f["catalog-1"].Found != 2 || f["server-a"].Error != "" || f["catalog-1"].Error != "" {
 		t.Fatalf("sources = %+v", r.Sources)
@@ -164,7 +168,7 @@ func TestSearchSources_DisabledIsSilent(t *testing.T) {
 	s, _, calls := newSearchSettings(t)
 	s.cfg.Sources[0].Enabled = false
 	r := s.SearchSources(context.Background(), "агент")
-	if len(*calls) != 0 || len(r.Sources) != 1 || r.Sources[0].ID != "catalog-1" {
+	if len(*calls) != 0 || len(r.Sources) != 2 || r.Sources[0].ID != "catalog-1" {
 		t.Fatalf("calls = %d, sources = %+v", len(*calls), r.Sources)
 	}
 	if got := hitIDs(t, r); !slices.Equal(got, []string{"catalog-1:1", "catalog-1:2"}) {
@@ -186,7 +190,7 @@ func TestSearchRoute(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); rec.Code != http.StatusOK || err != nil {
 		t.Fatalf("code %d, err %v, body %s", rec.Code, err, rec.Body)
 	}
-	if len(got.Hits) != 3 || len(got.Sources) != 2 {
+	if len(got.Hits) != 3 || len(got.Sources) != 3 {
 		t.Fatalf("body = %s", rec.Body)
 	}
 
@@ -803,6 +807,94 @@ func TestSearchSources_ServerMatchIsTyped(t *testing.T) {
 	}
 }
 
+// Папки входят в строку источников в порядке списка: «найдено» — сколько ее
+// файлов нашел запрос (без среза выдачи), root — раскрытый путь, по которому
+// окно считает «показано» среди файлов выдачи.
+func TestSearchSources_FolderRows(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	notes := filepath.Join(s.home, "notes")
+	s.applied = []string{notes}
+	s.setOpen(s.applied)
+	var asked []string
+	s.countMatches = func(q string, roots []string) (map[string]int, error) {
+		asked = append(asked, q)
+		return map[string]int{notes: 12}, nil
+	}
+	r := s.SearchSources(context.Background(), "агент")
+	if len(r.Sources) != 3 || r.Sources[2].ID != "folder-1" {
+		t.Fatalf("sources = %+v", r.Sources)
+	}
+	if f := r.Sources[2]; f.Found != 12 || f.Root != notes || f.Error != "" || !slices.Equal(asked, []string{"агент"}) {
+		t.Fatalf("folder = %+v, asked = %q", f, asked)
+	}
+}
+
+// Папка, что сейчас не открыта в индексе (сетевой диск без VPN), названа, а
+// не пропущена; индекс, что еще собирается, назван словами; выключенная папка
+// в строке не стоит.
+func TestSearchSources_FolderStates(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(s *folderSettings)
+		wantErr string
+		listed  bool
+	}{
+		{"не открыта", func(s *folderSettings) { s.applied = nil; s.setOpen(nil) }, "нет связи", true},
+		{"индекс собирается", func(s *folderSettings) {
+			s.countMatches = func(string, []string) (map[string]int, error) { return nil, filesearch.ErrNotBuilt }
+		}, "собирается", true},
+		{"выключена", func(s *folderSettings) { s.cfg.Sources[2].Enabled = false }, "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s, _, _ := newSearchSettings(t)
+			s.applied = []string{filepath.Join(s.home, "notes")}
+			s.setOpen(s.applied)
+			s.countMatches = func(string, []string) (map[string]int, error) { return map[string]int{}, nil }
+			tt.setup(s)
+			f, listed := found(s.SearchSources(context.Background(), "агент"))["folder-1"]
+			if listed != tt.listed || (listed && !strings.Contains(f.Error, tt.wantErr)) || (listed && tt.wantErr != "" && f.Found != 0) {
+				t.Fatalf("folder-1 = %+v (listed %v)", f, listed)
+			}
+		})
+	}
+}
+
+// Строка источников видит папки, открытые сохранением и возвратом сетевой
+// папки (reconcile), а не только те, что были при запуске.
+func TestSearchSources_OpenFoldersFollowSaveAndReconcile(t *testing.T) {
+	s, _, _ := newSearchSettings(t)
+	work := filepath.Join(s.home, "work")
+	s.countMatches = func(_ string, roots []string) (map[string]int, error) {
+		m := map[string]int{}
+		for _, r := range roots {
+			m[r] = 3
+		}
+		return m, nil
+	}
+	list := append(slices.Clone(s.cfg.Sources), src("folder-2", desktopconfig.KindFolder, work, true))
+	if err := s.SetSources(list, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error != "" || f.Found != 3 {
+		t.Fatalf("после сохранения: %+v", f)
+	}
+
+	s.mu.Lock()
+	s.applied = []string{filepath.Join(s.home, "notes")} // work «пропала»
+	s.setOpen(s.applied)
+	s.mu.Unlock()
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error == "" {
+		t.Fatalf("пропавшая папка без беды: %+v", f)
+	}
+	if !s.reconcile() {
+		t.Fatal("reconcile не открыл вернувшуюся папку")
+	}
+	if f := found(s.SearchSources(context.Background(), "агент"))["folder-2"]; f.Error != "" || f.Found != 3 {
+		t.Fatalf("после возврата: %+v", f)
+	}
+}
+
 // Признак находки — необязательное поле: не того вида, он отбрасывается сам,
 // а запись с ключом склейки остается. Признаков у записи не больше предела, и
 // слово признака не простыня: из них окно строит подсветку на каждую строку.
@@ -837,4 +929,35 @@ func TestSearchSources_ServerMatchIsBounded(t *testing.T) {
 			t.Fatalf("слово признака длиной %d", len(m.Hit))
 		}
 	}
+}
+
+// Ревью #395. Папка, что числится открытой, но пропала с диска (единственная
+// сетевая папка без VPN: reconcile пустой набор не применяет), — «нет связи»,
+// а не старый счет. Источник неизвестного вида (из более новой сборки) в
+// строку не попадает. Пока индекс пересобирается, счет папок не выдается за
+// «ничего не найдено».
+func TestSearchSources_FolderEdgeStates(t *testing.T) {
+	t.Run("пропала с диска", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		gone := filepath.Join(s.home, "gone")
+		s.cfg.Sources[2].Path = gone
+		s.setOpen([]string{gone}) // числится открытой, на диске ее нет
+		if f := found(s.SearchSources(context.Background(), "агент"))["folder-1"]; !strings.Contains(f.Error, "нет связи") {
+			t.Fatalf("folder-1 = %+v", f)
+		}
+	})
+	t.Run("неизвестный вид", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		s.cfg.Sources = append(s.cfg.Sources, desktopconfig.Source{ID: "s3-1", Kind: "s3", Enabled: true})
+		if _, listed := found(s.SearchSources(context.Background(), "агент"))["s3-1"]; listed {
+			t.Fatal("источник неизвестного вида попал в строку")
+		}
+	})
+	t.Run("индекс пересобирается", func(t *testing.T) {
+		s, _, _ := newSearchSettings(t)
+		s.indexing = func() bool { return true }
+		if f := found(s.SearchSources(context.Background(), "агент"))["folder-1"]; !strings.Contains(f.Error, "пересобирается") {
+			t.Fatalf("folder-1 = %+v", f)
+		}
+	})
 }
