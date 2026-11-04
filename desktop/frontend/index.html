@@ -24,7 +24,27 @@
   <main id="app" class="app">
     <!-- Верхняя полоса — как навигация daniilvdovin.com: ячейки через 1px. -->
     <header class="bar">
-      <div class="cell brand">kb<span class="dot">.</span></div>
+      <!-- Знак — иконка приложения в малом виде (build/icon/icon.svg): граф
+           знаний, путь к HEAD акцентом, HEAD янтарным. Цвета — токены, поэтому
+           светлая тема перекрашивает знак сама. -->
+      <div class="cell brand">
+        <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
+          <!-- узлы иконки, пересчитанные из 256…768 в 2…22 -->
+          <g fill="none" stroke-linecap="round">
+            <path class="mark-rule" d="M3.3 5.8 13.3 3.3M3.3 5.8l2.5 10M13.3 3.3l7.5 5"/>
+            <path class="mark-path" d="M13.3 3.3l2.5 10M5.8 15.8l10-2.5 5-5"/>
+            <path class="mark-next" d="M15.8 13.3l-5 7.5m5-7.5 5 7.5M5.8 15.8l5 5"/>
+          </g>
+          <g class="mark-node">
+            <circle cx="3.3" cy="5.8" r="1.6"/><circle cx="13.3" cy="3.3" r="1.6"/>
+            <circle cx="5.8" cy="15.8" r="1.6"/><circle cx="20.8" cy="8.3" r="1.6"/>
+          </g>
+          <circle class="mark-halo" cx="15.8" cy="13.3" r="3.4"/>
+          <circle class="mark-head" cx="15.8" cy="13.3" r="2.2"/>
+          <circle class="mark-core" cx="15.8" cy="13.3" r="1"/>
+        </svg>
+        <span>kb</span>
+      </div>
       <nav class="cell tabs" id="tabs">
         <button data-tab="all" class="active">Все <i></i></button>
         <button data-tab="kb">База знаний <i></i></button>
