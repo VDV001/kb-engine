@@ -171,3 +171,85 @@ func TestClient_URLWithPath(t *testing.T) {
 		t.Fatalf("paths = %q", paths)
 	}
 }
+
+// Поиск идет на /api/search того же сервера, за тем же Bearer. Запрос с
+// кириллицей, «&» и «#» доходит целиком: склеенный в путь, он оборвался бы на
+// «&» или ушел бы в fragment.
+func TestClient_Search(t *testing.T) {
+	const q = "договор & ключ #5"
+	want := sha256.Sum256([]byte(token))
+	var got string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		bearer := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		if subtle.ConstantTimeCompare(bearer[:], want[:]) != 1 {
+			http.Error(w, "bearer token required", http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path != "/kb/api/search" {
+			http.NotFound(w, r)
+			return
+		}
+		got = r.URL.Query().Get("q")
+		_, _ = w.Write([]byte(`[{"id":7,"title":"первый"},{"id":3,"title":"второй"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	c := kbserver.Client{URL: srv.URL + "/kb/", Token: token, HTTP: srv.Client()}
+	entries, err := c.Search(context.Background(), q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != q {
+		t.Fatalf("сервер получил q = %q, want %q", got, q)
+	}
+	// Записи приходят как есть и в порядке сервера: окно показывает их той же
+	// разметкой, что и записи своего каталога.
+	if len(entries) != 2 || string(entries[0]) != `{"id":7,"title":"первый"}` || string(entries[1]) != `{"id":3,"title":"второй"}` {
+		t.Fatalf("entries = %s", entries)
+	}
+	if _, err := (kbserver.Client{URL: srv.URL + "/kb/", HTTP: srv.Client()}).Search(context.Background(), q); !errors.Is(err, kbserver.ErrUnauthorized) {
+		t.Fatalf("без токена: err = %v", err)
+	}
+}
+
+// Выдача поиска весит больше, чем ответы /api/engine и /api/stats: широкий
+// запрос по каталогу в тысячи записей — мегабайты. Предел чтения у поиска
+// свой, а ответ не того вида (объект вместо списка) — «не kb-сервер».
+func TestClient_SearchBodies(t *testing.T) {
+	big := `[` + strings.Repeat(`{"id":1,"title":"`+strings.Repeat("я", 500)+`"},`, 3000) + `{"id":2}]`
+	for _, tt := range []struct {
+		name, body string
+		n          int
+		want       error
+	}{
+		{"выдача в несколько мегабайт", big, 3001, nil},
+		{"пустая выдача", `[]`, 0, nil},
+		{"объект вместо списка", `{"total":3}`, 0, kbserver.ErrNotKB},
+		{"страница вместо JSON", `<html>сайт</html>`, 0, kbserver.ErrNotKB},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			defer srv.Close()
+			entries, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q")
+			if !errors.Is(err, tt.want) || (tt.want == nil && len(entries) != tt.n) {
+				t.Fatalf("err = %v, записей %d, want %v и %d", err, len(entries), tt.want, tt.n)
+			}
+		})
+	}
+}
+
+// Выдача больше предела чтения — не «не kb-сервер»: адрес верный, сервер
+// здоров, просто ответ слишком велик. Человеку говорится об этом.
+func TestClient_SearchTooLarge(t *testing.T) {
+	item := `{"id":1,"title":"` + strings.Repeat("x", 1000) + `"},`
+	body := "[" + strings.Repeat(item, 34*1024) + `{"id":2}]` // ~34 МБ > 32 МБ
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(srv.Close)
+	_, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q")
+	if !errors.Is(err, kbserver.ErrTooLarge) || errors.Is(err, kbserver.ErrNotKB) {
+		t.Fatalf("err = %v, want ErrTooLarge", err)
+	}
+}

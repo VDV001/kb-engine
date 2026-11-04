@@ -64,6 +64,8 @@ type folderSettings struct {
 	// tokens и probe — Связка ключей и опрос kb-сервера (servers.go).
 	tokens tokenStore
 	probe  probeFunc
+	// find — поиск на kb-сервере для общей выдачи (search.go).
+	find findFunc
 	// applied — папки, открытые в индексе сейчас. Сохраненная папка, что была
 	// недоступна при сохранении, сюда не входит, пока reconcile ее не откроет.
 	applied []string

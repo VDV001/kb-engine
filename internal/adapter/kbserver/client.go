@@ -23,11 +23,18 @@ var (
 	// ErrRedirect — сервер перенаправил запрос. Клиент по редиректам не идет:
 	// Go пересылает Authorization на тот же хост и при смене https на http.
 	ErrRedirect = errors.New("kbserver: redirect refused")
+	// ErrTooLarge — ответ больше предела чтения: адрес верный и сервер здоров,
+	// просто выдача велика (короткий запрос по большому каталогу).
+	ErrTooLarge = errors.New("kbserver: response too large")
 )
 
 // maxBody — сколько читать из ответа: /api/engine и /api/stats весят килобайты,
-// а чужой сервер по ошибочному адресу может прислать что угодно.
-const maxBody = 1 << 20
+// а чужой сервер по ошибочному адресу может прислать что угодно. Выдача поиска
+// по каталогу в тысячи записей — мегабайты, у нее предел свой.
+const (
+	maxBody       = 1 << 20
+	maxSearchBody = 32 << 20
+)
 
 // Client talks to one kb server. HTTP — nil значит http.DefaultClient; тесты
 // и окно подставляют свой (доверие к сертификату, таймауты).
@@ -48,13 +55,13 @@ func (c Client) Info(ctx context.Context) (Info, error) {
 	var engine struct {
 		Version string `json:"version"`
 	}
-	if err := c.get(ctx, "/api/engine", &engine); err != nil {
+	if err := c.get(ctx, "/api/engine", nil, maxBody, &engine); err != nil {
 		return Info{}, err
 	}
 	var stats struct {
 		Total *int `json:"total"`
 	}
-	if err := c.get(ctx, "/api/stats", &stats); err != nil {
+	if err := c.get(ctx, "/api/stats", nil, maxBody, &stats); err != nil {
 		return Info{}, err
 	}
 	if engine.Version == "" || stats.Total == nil {
@@ -63,10 +70,26 @@ func (c Client) Info(ctx context.Context) (Info, error) {
 	return Info{Version: engine.Version, Entries: *stats.Total}, nil
 }
 
-func (c Client) get(ctx context.Context, path string, into any) error {
+// Search returns the server's entries for q, as the server encoded them and in
+// its order: окно показывает их той же разметкой, что и записи своего каталога,
+// и второй копии разбора записи здесь нет.
+func (c Client) Search(ctx context.Context, q string) ([]json.RawMessage, error) {
+	var entries []json.RawMessage
+	if err := c.get(ctx, "/api/search", url.Values{"q": {q}}, maxSearchBody, &entries); err != nil {
+		return nil, err
+	}
+	return entries, nil
+}
+
+// get asks path with the query params. Параметры идут отдельно от пути:
+// JoinPath экранировал бы «?», а склейка строкой оборвала бы запрос на «&».
+func (c Client) get(ctx context.Context, path string, params url.Values, limit int64, into any) error {
 	target, err := url.JoinPath(c.URL, path)
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	if len(params) > 0 {
+		target += "?" + params.Encode()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
@@ -94,7 +117,16 @@ func (c Client) get(ctx context.Context, path string, into any) error {
 	if err := statusErr(path, resp.StatusCode); err != nil {
 		return err
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(into); err != nil {
+	// Байт сверх предела читается, чтобы отличить «слишком велик» от «не JSON»:
+	// обрезанный ответ иначе выглядел бы чужим сервером.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrUnreachable, path, err)
+	}
+	if int64(len(body)) > limit {
+		return fmt.Errorf("%w: %s больше %d байт", ErrTooLarge, path, limit)
+	}
+	if err := json.Unmarshal(body, into); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
 	}
 	return nil

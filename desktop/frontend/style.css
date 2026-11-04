@@ -161,6 +161,30 @@ button { font-family: inherit; }
 .type.code { color: var(--z-ok); }
 .type.image, .type.other { color: var(--z-faint); }
 .verdict { font-size: 11px; color: var(--z-faint); }
+.hit-tail { display: inline-flex; gap: 10px; align-items: baseline; white-space: nowrap; }
+.hit-src { font-size: 11px; color: var(--c, var(--z-faint)); }
+
+/* Строка источников над выдачей: «имя N из M», она же фильтр */
+/* Перенос, а не прокрутка: источник за краем строки — тот же «пропущен молча». */
+.strip { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--z-rule); }
+.strip[hidden] { display: none; }
+.strip-lbl { color: var(--z-faint); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin-right: 4px; white-space: nowrap; }
+.chip {
+  display: inline-flex; align-items: baseline; gap: 8px; padding: 3px 10px; white-space: nowrap;
+  font: inherit; font-size: 12px; color: var(--z-ink-2); background: none; cursor: pointer;
+  border: 1px solid var(--z-rule); border-radius: 999px;
+  transition: border-color var(--z-dur) var(--z-ease), background var(--z-dur) var(--z-ease), color var(--z-dur) var(--z-ease);
+}
+.chip:hover { border-color: var(--z-rule-2); color: var(--z-ink); }
+.chip:focus-visible { outline: 1px solid var(--z-accent); outline-offset: 2px; }
+.chip[aria-pressed="true"] { border-color: var(--c, var(--z-accent)); background: var(--z-accent-wash); color: var(--z-ink); }
+.chip .cnt { color: var(--z-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chip .cnt b { color: var(--z-ink); font-weight: 500; }
+.chip-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--c, var(--z-ok)); align-self: center; }
+.chip.off { color: var(--z-bad); border-style: dashed; cursor: help; }
+.chip.off .cnt { color: var(--z-bad); }
+.chip.off .chip-dot { background: transparent; border: 1px solid var(--z-bad); }
+.strip-sum { margin-left: auto; padding-left: 12px; color: var(--z-faint); font-size: 11px; white-space: nowrap; }
 .verdict.keep { color: var(--z-ok); }
 mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 0 -1px 0 var(--z-accent); }
 .nothing { padding: 40px 16px; text-align: center; color: var(--z-muted); }

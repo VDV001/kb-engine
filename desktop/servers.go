@@ -123,6 +123,8 @@ func serverMessage(err error) string {
 		return "по адресу отвечает не kb-сервер"
 	case errors.Is(err, kbserver.ErrRedirect):
 		return "сервер перенаправил запрос: укажите конечный адрес (https://…), kb не идет по редиректам с токеном"
+	case errors.Is(err, kbserver.ErrTooLarge):
+		return "выдача сервера больше 32 МБ: уточните запрос"
 	case errors.Is(err, kbserver.ErrServerError):
 		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке"
 	default:
