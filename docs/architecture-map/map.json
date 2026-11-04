@@ -829,7 +829,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/filelock/filelock.go:27"
+        "internal/adapter/filelock/filelock.go:30"
       ]
     },
     {
@@ -875,7 +875,7 @@
       "layer": "storage",
       "kind": "data",
       "sources": [
-        "internal/adapter/filelock/filelock.go:21"
+        "internal/adapter/filelock/filelock.go:24"
       ]
     },
     {
@@ -3369,8 +3369,8 @@
           "to": "f-lock",
           "call": "os.OpenFile(path+Suffix) + flock",
           "symbol": "Suffix",
-          "source": "internal/adapter/filelock/filelock.go:21",
-          "detail": "internal/adapter/filelock/filelock.go:21 — замок это отдельный файл рядом с журналом; замок снимается в любом случае, включая панику, иначе один сбой запирал бы журнал до перезапуска машины"
+          "source": "internal/adapter/filelock/filelock.go:24",
+          "detail": "internal/adapter/filelock/filelock.go:24 — замок это отдельный файл рядом с журналом; замок снимается в любом случае, включая панику, иначе один сбой запирал бы журнал до перезапуска машины"
         },
         {
           "n": 5,

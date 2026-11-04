@@ -109,11 +109,11 @@ func TestRemoteServers_TokenNeverReachesOldHost(t *testing.T) {
 		mu.Lock()
 		oldAuth = append(oldAuth, r.Header.Get("Authorization"))
 		mu.Unlock()
-		_, _ = w.Write([]byte(`{"entries":[],"keys":[]}`))
+		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
 	}))
 	t.Cleanup(oldSrv.Close)
 	newSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`{"entries":[{"id":1,"title":"Новый"}],"keys":["k"]}`))
+		_, _ = w.Write([]byte(`{"entries":[{"id":1,"title":"Новый"}],"total":2,"keys":["k"]}`))
 	}))
 	t.Cleanup(newSrv.Close)
 

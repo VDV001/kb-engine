@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/filelock"
 )
 
 // Ошибки выбора папок: окно показывает текст, а тесты и вызывающие проверяют
@@ -201,6 +202,18 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	// раньше ничего не трогал и поиск не задевает.
 	f.publishLocked(true)
 	defer f.publishLocked(false) // итог — новый конфиг или прежний при отказе; до Unlock
+	// Связка и конфиг меняются под замком config.json: MCP-сервер, другой
+	// процесс, читает адрес и токен под тем же замком (cmd/kbengine-mcp
+	// servers.go) и не видит новый токен при старом адресе, а старый — при
+	// новом. Снимок выше защищает только поиск самого окна.
+	return filelock.With(f.path, func() error {
+		return f.commit(next, roots, missing, catalog, tokens)
+	})
+}
+
+// commit stores the tokens, applies the sources and writes the config, undoing
+// the tokens on any refusal; config lock and f.mu held.
+func (f *folderSettings) commit(next desktopconfig.Config, roots, missing []string, catalog string, tokens map[string]string) error {
 	undoTokens, err := f.storeTokens(next, tokens)
 	if err != nil {
 		return err
