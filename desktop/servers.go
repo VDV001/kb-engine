@@ -34,12 +34,8 @@ const probeTimeout = 3 * time.Second
 // панель открывается сразу, не дожидаясь сети и Связки ключей.
 const stateChecking = "checking"
 
-// storeTokens checks that every token belongs to a server of next and writes
-// them, returning the undo: SetSources зовет его, если после токенов отказали
-// apply или запись конфига, — Связка не расходится с конфигом. Сбой чтения
-// Связки (заперта, отказ в доступе) — отказ сразу: принять его за «токена нет»
-// значило бы при откате стереть рабочий токен.
-func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[string]string) (func(), error) {
+// checkTokenIDs refuses a token for an id that is not a server of next.
+func checkTokenIDs(next desktopconfig.Config, tokens map[string]string) error {
 	servers := map[string]bool{}
 	for _, s := range next.Sources {
 		if s.Kind == desktopconfig.KindServer {
@@ -48,8 +44,20 @@ func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[strin
 	}
 	for id := range tokens {
 		if !servers[id] {
-			return nil, fmt.Errorf("%w: %s", errBadToken, id)
+			return fmt.Errorf("%w: %s", errBadToken, id)
 		}
+	}
+	return nil
+}
+
+// storeTokens checks that every token belongs to a server of next and writes
+// them, returning the undo: SetSources зовет его, если после токенов отказали
+// apply или запись конфига, — Связка не расходится с конфигом. Сбой чтения
+// Связки (заперта, отказ в доступе) — отказ сразу: принять его за «токена нет»
+// значило бы при откате стереть рабочий токен.
+func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[string]string) (func(), error) {
+	if err := checkTokenIDs(next, tokens); err != nil {
+		return nil, err
 	}
 	type prev struct {
 		val string

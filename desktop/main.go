@@ -93,6 +93,7 @@ func run() error {
 		apply: idx.applySources, countFiles: idx.files.CountByRoot, countCatalog: idx.catalog.count,
 		tokens: newCachedTokens(keychainTokens()), probe: probeServer, find: findServer}
 	idx.reconcile = settings.reconcile // до start: горутина таймера читает поле
+	settings.publish()                 // снимок для поиска: дальше он читается без f.mu
 	api = settings.searchRoute(api)    // общая выдача источников — и в окне, и в -browser
 	idx.start(ctx)
 
