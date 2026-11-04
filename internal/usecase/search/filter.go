@@ -69,20 +69,18 @@ func matchesAll(e domain.Entry, words []string, m Matcher) bool {
 // «промпт» — 125 против 42. Витрина искала по описанию с первого дня, терминал
 // не искал никогда, и разрыв держался ровно до тех пор, пока обе поверхности
 // не стали спрашивать одного ответчика (#252).
+//
+// Поля перечислены один раз, в fieldsOf (explain.go): Explain разбирает ту же
+// склейку, и новое поле здесь не может остаться необъясненным.
 func searchable(e domain.Entry) string {
 	var b strings.Builder
-	b.WriteString(strings.ToLower(e.Title()))
-	b.WriteByte(' ')
-	b.WriteString(strings.ToLower(e.Description()))
-	b.WriteByte(' ')
-	b.WriteString(strings.ToLower(e.Category().String()))
-	for _, t := range e.Tags() {
-		b.WriteByte(' ')
+	first := true
+	eachField(e, func(_ Field, t string) {
+		if !first {
+			b.WriteByte(' ') // и между пустыми полями: склейка Explain та же
+		}
+		first = false
 		b.WriteString(strings.ToLower(t))
-	}
-	if a := e.Author(); a != "" {
-		b.WriteByte(' ')
-		b.WriteString(strings.ToLower(a))
-	}
+	})
 	return b.String()
 }

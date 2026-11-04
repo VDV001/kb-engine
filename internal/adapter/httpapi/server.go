@@ -595,7 +595,8 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 		searchDone := track(r.Context(), "search")
 		// FilterWith, а не Filter: слой перевода приходит снаружи, и его
 		// нулевое значение — законное «словаря нет», а не поломка.
-		found := search.FilterWith(entries, r.URL.Query().Get("q"), syn)
+		q := r.URL.Query().Get("q") // один раз: и для поиска, и для объяснения
+		found := search.FilterWith(entries, q, syn)
 		searchDone()
 		// limit — для окна, сливающего источники: первые N записей, полный
 		// счет и ключи остальных (склейке дублей нужны все, сами записи — нет).
@@ -615,6 +616,7 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 		out := limitedSearchDTO{Entries: make([]entryDTO, len(shown)), Total: len(found), Keys: keys}
 		for i, e := range shown {
 			out.Entries[i] = toDTO(e)
+			out.Entries[i].Match = toMatch(search.Explain(e, q, syn))
 		}
 		writeJSON(w, out)
 	}

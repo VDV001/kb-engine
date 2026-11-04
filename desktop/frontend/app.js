@@ -28,11 +28,82 @@ function stem(w) {
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-function highlighter(q) {
+// hits — слова записи, что нашел движок (match): подсвечиваются целиком, по
+// границе слова. Граница проверяется кодом, а не lookbehind в регулярке: его
+// WebKit понимает только с Safari 16.4, а окно ставится на macOS 12.
+// Сопоставление идет по сырому тексту, экранируются куски: по уже
+// экранированному тексту короткое слово находилось бы внутри «&lt;».
+const isWordChar = (c) => !!c && /[\p{L}\p{N}]/u.test(c);
+function highlighter(q, hits = []) {
   const stems = q.toLowerCase().replace(/ё/g, "е").split(/[^\p{L}\p{N}]+/u).filter((w) => [...w].length >= 2).map(stem);
-  if (!stems.length) return esc;
-  const re = new RegExp(`(${stems.map(reEsc).join("|")})[\\p{L}\\p{N}]*`, "giu");
-  return (text) => esc(text).replace(re, (m) => `<mark>${m}</mark>`);
+  const stemRe = stems.length ? new RegExp(`(?:${stems.map((w) => `${reEsc(w)}[\\p{L}\\p{N}]*`).join("|")})`, "giu") : null;
+  const words = [...new Set(hits.filter(Boolean).map((h) => h.toLowerCase()))];
+  if (!stemRe && !words.length) return esc;
+  return (text) => {
+    const spans = [];
+    if (stemRe) for (const m of text.matchAll(stemRe)) if (m[0]) spans.push([m.index, m.index + m[0].length]);
+    const low = text.toLowerCase();
+    if (low.length === text.length) {
+      for (const w of words) {
+        for (let at = low.indexOf(w); at >= 0; at = low.indexOf(w, at + 1)) {
+          const end = at + w.length;
+          if (!isWordChar(text[at - 1]) && !isWordChar(text[end])) spans.push([at, end]);
+        }
+      }
+    }
+    spans.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+    let out = "", last = 0;
+    for (const [from, to] of spans) {
+      if (to <= last) continue; // вложено в уже подсвеченное
+      const start = Math.max(from, last);
+      out += esc(text.slice(last, start)) + `<mark>${esc(text.slice(start, to))}</mark>`;
+      last = to;
+    }
+    return out + esc(text.slice(last));
+  };
+}
+// Подсветка по набору слов движка — одна на запрос: у строк выдачи наборы
+// повторяются, и разбор не собирается заново на каждую строку.
+const hlCache = new Map();
+function hlFor(hits) {
+  const key = state.q + "\u0000" + hits.join("\u0000");
+  if (!hlCache.has(key)) hlCache.set(key, highlighter(state.q, hits));
+  return hlCache.get(key);
+}
+
+// --- Признак находки -----------------------------------------------------------
+// Движок говорит, где и как совпало каждое слово (match). Буквальное совпадение
+// в заголовке или описании видно подсветкой; все остальное — поле не на виду
+// (автор, тег, категория, номер) или способ не буквальный — называется словами.
+const FIELD = { title: "заголовок", description: "описание", category: "категория", tag: "тег", author: "автор", id: "номер" };
+const FIELD_WITH = { title: "с заголовком", description: "с описанием", category: "с категорией", tag: "с тегом", author: "с автором", id: "с номером" };
+const HOW = { exact: "", synonym: "синоним", translit: "транслит", typo: "опечатка" };
+const HOW_LONG = { exact: "", synonym: "по синониму", translit: "через транслитерацию", typo: "несмотря на опечатку" };
+const VISIBLE = new Set(["title", "description"]);
+const worth = (m) => FIELD[m.field] && HOW[m.how] !== undefined && !(VISIBLE.has(m.field) && m.how === "exact");
+// Подсветка по признаку — только там, где совпало: в заголовке и описании —
+// небуквальные совпадения этих же полей (буквальные и так ловит подсветка
+// запроса), в мета-строке превью — автор и категория. Номер и тег не
+// подсвечиваются нигде: их называет строка «совпало».
+const hitsWhere = (e, fields, how) => (e.match || []).filter((m) => fields.has(m.field) && how(m.how)).map((m) => m.hit).filter(Boolean);
+// В заголовке и описании подсвечиваются все совпадения этих полей, и
+// буквальные тоже: разбор запроса в окне не повторяет нормы движка (ё и е,
+// запрос из одной буквы), и «Ёжик» по «еж» иначе остался бы без подсветки.
+const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => HOW[h] !== undefined);
+const metaHits = (e) => hitsWhere(e, new Set(["author", "category"]), (h) => HOW[h] !== undefined);
+function whyLine(e) {
+  const items = (e.match || []).filter(worth);
+  if (!items.length) return "";
+  const mk = (t) => `<mark>${esc(t)}</mark>`;
+  return `<div class="hit-why"><span class="why-lbl">совпало:</span> ${items.map((m) => [
+    FIELD[m.field],
+    m.how === "exact" ? mk(m.hit) : `${esc(m.word)} → ${mk(m.hit)}`,
+    HOW[m.how],
+  ].filter(Boolean).join(" · ")).join("; ")}</div>`;
+}
+function whySentence(e) {
+  const items = (e.match || []).filter(worth);
+  return items.map((m) => `<div class="doc-why">«${esc(m.word)}» совпало ${FIELD_WITH[m.field]}${HOW_LONG[m.how] ? " " + HOW_LONG[m.how] : ""}: <mark>${esc(m.hit)}</mark></div>`).join("");
 }
 
 // --- Индексация при запуске ----------------------------------------------------
@@ -112,7 +183,7 @@ let inflight; // запросы прошлой буквы: отменяются,
 async function search(q) {
   // Новый запрос снимает фильтр источника: иначе выбранный источник, не
   // нашедший ничего по новому слову, прятал бы и файлы, и остальные источники.
-  if (q !== state.q) state.filter = null;
+  if (q !== state.q) { state.filter = null; hlCache.clear(); }
   state.q = q;
   if (inflight) inflight.abort();
   inflight = new AbortController();
@@ -220,6 +291,10 @@ function render() {
 // «Документы» ее и не покажет.
 const TYPE_LABEL = { kb: "база", doc: "док", code: "код", image: "img", other: "файл" };
 function kbRow(e, i, hl, hue) {
+  const hits = rowHits(e);
+  // Свой разбор у строки с признаком: цена — микросекунды на строку выдачи,
+  // зато подсвечено то, что нашел движок, а не догадка окна.
+  if (hits.length) hl = hlFor(hits);
   const verdict = e.verdict ? `<span class="verdict ${e.verdict === "keep" ? "keep" : ""}">${esc(e.verdict)}</span>` : "";
   // Метка источника — только когда их больше одного: одна и та же подпись у
   // каждой строки ничего не говорит.
@@ -227,6 +302,7 @@ function kbRow(e, i, hl, hue) {
   const from = s ? `<span class="hit-src" style="--c:var(${hue.get(s.id)})">${esc(label(s))}</span>` : "";
   return `<li class="hit" data-i="${i}" style="--i:${Math.min(i, 14)}">
     <div class="hit-head"><span class="type kb">${TYPE_LABEL.kb}</span><span class="hit-name">${hl(e.title)}</span><span class="hit-tail">${from}${verdict}</span></div>
+    ${whyLine(e)}
     ${e.description ? `<div class="hit-snip">${hl(e.description)}</div>` : ""}
   </li>`;
 }
@@ -272,12 +348,19 @@ function select(i) {
 
 async function preview(it) {
   if (!it) return;
-  const seq = ++previewSeq, hl = highlighter(state.q), box = $("#preview");
+  const seq = ++previewSeq, hlq = highlighter(state.q), box = $("#preview");
   if (it.type === "kb") {
     const e = it.e;
+    const hits = rowHits(e), hl = hits.length ? hlFor(hits) : hlq;
+    // Мета-строка: подсвечиваются только автор и категория и только по
+    // признаку — источник, вердикт и дату поиск не смотрит.
+    const hlMeta = highlighter("", metaHits(e));
+    const meta = [[sourceName(e._src), false], [e.category, true], [e.verdict, false], [e.author, true], [e.date_added, false]]
+      .filter(([t]) => t).map(([t, searched]) => (searched ? hlMeta(t) : esc(t))).join(" · ");
     box.innerHTML = `<div class="doc">
       <div class="doc-head"><div class="prompt"><span class="dollar">$</span> kb show ${esc(String(e.id))}</div><div class="doc-title">${hl(e.title)}</div>
-        <div class="doc-path">${esc([sourceName(e._src), e.category, e.verdict, e.author, e.date_added].filter(Boolean).join(" · "))}</div>
+        <div class="doc-path">${meta}</div>
+        ${whySentence(e)}
         <div class="doc-actions">${e.url ? `<button class="btn primary" data-act="url">Открыть источник</button>` : ""}</div></div>
       <div class="doc-desc">${hl(e.description || "Описания нет.")}</div></div>`;
     const b = box.querySelector('[data-act="url"]');
@@ -292,7 +375,7 @@ async function preview(it) {
     <div class="doc-head"><div class="prompt"><span class="dollar">$</span> cat ${esc(f.name)}</div><div class="doc-title">${esc(f.name)}</div>
       <div class="doc-path">${esc(f.path.replace(/^\/Users\/[^/]+/, "~"))}</div>
       <div class="doc-actions"><button class="btn primary" data-act="open">Открыть</button><button class="btn" data-act="reveal">Показать в Finder</button></div></div>
-    <pre class="doc-text">${hl(text.slice(0, 200000))}</pre></div>`;
+    <pre class="doc-text">${hlq(text.slice(0, 200000))}</pre></div>`;
   box.querySelector('[data-act="open"]').onclick = () => openFile(f.path);
   box.querySelector('[data-act="reveal"]').onclick = () => revealFile(f.path);
   box.scrollTop = 0;

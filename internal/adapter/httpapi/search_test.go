@@ -177,3 +177,29 @@ func TestServer_searchLimit(t *testing.T) {
 		}
 	}
 }
+
+// С limit каждая присланная запись несет признак находки — где и как совпало
+// слово запроса: окно показывает его, когда совпало не на виду (автор, тег)
+// или не буквально.
+func TestServer_searchLimitCarriesMatch(t *testing.T) {
+	srv := newTestServer()
+	var got struct {
+		Entries []struct {
+			Match []struct {
+				Word, Field, Hit, How string
+			} `json:"match"`
+		} `json:"entries"`
+	}
+	if err := json.Unmarshal(get(t, srv, "/api/search?q=hello&limit=1").Body.Bytes(), &got); err != nil || len(got.Entries) != 1 {
+		t.Fatalf("decode: %v, %+v", err, got)
+	}
+	// Текст поля в признак не кладется: он уже есть в записи, а окно его не
+	// читает — каждое совпадение в описании повторяло бы описание целиком.
+	if body := get(t, srv, "/api/search?q=hello&limit=1").Body.String(); strings.Contains(body, `"text":`) {
+		t.Fatalf("в признаке есть text: %s", body)
+	}
+	m := got.Entries[0].Match
+	if len(m) != 1 || m[0].Word != "hello" || m[0].Field != "title" || m[0].How != "exact" || !strings.EqualFold(m[0].Hit, "hello") {
+		t.Fatalf("match = %+v", m)
+	}
+}

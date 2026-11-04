@@ -153,6 +153,10 @@ button { font-family: inherit; }
 .hit-name { color: var(--z-ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hit-meta { color: var(--z-faint); font-size: 11px; }
 .hit-path { margin-left: calc(var(--type-col) + var(--type-gap)); color: var(--z-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Признак находки: где и как совпало, когда это не видно подсветкой */
+.hit-why { margin: 3px 0 0 calc(var(--type-col) + var(--type-gap)); color: var(--z-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit-why .why-lbl { color: var(--z-muted); }
+.doc-why { margin-top: 6px; color: var(--z-muted); font-size: 12px; }
 .hit-snip { margin: 4px 0 0 calc(var(--type-col) + var(--type-gap)); color: var(--z-muted); font-size: 12px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* Тип — как роли в таблице сайта: свой цвет, без плашки */
 .type { font-size: 12px; }

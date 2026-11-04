@@ -130,8 +130,9 @@ func searchCatalog(path, q string) ([]candidate, string) {
 	out := make([]candidate, len(found))
 	for i, e := range found {
 		out[i] = candidate{
-			key:    sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()),
-			encode: func() (json.RawMessage, error) { return httpapi.EntryJSON(e) },
+			key: sourcesearch.EntryKey(e.ID(), e.Title(), e.URL()),
+			// Объяснение — только для показанных: encode зовется после среза.
+			encode: func() (json.RawMessage, error) { return httpapi.EntryJSON(e, search.Explain(e, q, search.Matcher{})) },
 		}
 	}
 	return out, ""
@@ -242,14 +243,63 @@ func (f *folderSettings) tokenWithin(ctx context.Context, id string) (string, er
 // сервера разбирается строго: поле не того типа — запись отброшена (номер-
 // строка с разметкой не доедет до страницы), наружу уходят только эти поля.
 type serverEntry struct {
-	ID          int    `json:"id"`
-	Title       string `json:"title"`
-	URL         string `json:"url,omitempty"`
-	Category    string `json:"category,omitempty"`
-	Verdict     string `json:"verdict,omitempty"`
-	Author      string `json:"author,omitempty"`
-	DateAdded   string `json:"date_added,omitempty"`
-	Description string `json:"description,omitempty"`
+	ID          int           `json:"id"`
+	Title       string        `json:"title"`
+	URL         string        `json:"url,omitempty"`
+	Category    string        `json:"category,omitempty"`
+	Verdict     string        `json:"verdict,omitempty"`
+	Author      string        `json:"author,omitempty"`
+	DateAdded   string        `json:"date_added,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Match       []serverMatch `json:"match,omitempty"`
+}
+
+// Пределы признака находки чужого сервера: из слов признака окно строит
+// подсветку на каждую строку выдачи, и сломанный сервер не должен подвесить ее
+// тысячей признаков или словом-простыней. Наш сервер дает по признаку на слово
+// запроса — единицы.
+const (
+	maxMatches  = 16
+	maxMatchLen = 200
+)
+
+// withoutMatch returns the entry with its match field removed: запись
+// разбирается строго, признак — отдельно.
+func withoutMatch(r json.RawMessage) json.RawMessage {
+	var m map[string]json.RawMessage
+	if json.Unmarshal(r, &m) != nil {
+		return r
+	}
+	delete(m, "match")
+	b, err := json.Marshal(m)
+	if err != nil {
+		return r
+	}
+	return b
+}
+
+// serverMatch is one «где и как совпало» of a server's entry; поле и способ
+// — из тех, что называет search.Explain, иначе признак отброшен.
+type serverMatch struct {
+	Word  string `json:"word"`
+	Field string `json:"field"`
+	Hit   string `json:"hit"`
+	How   string `json:"how"`
+}
+
+// knownMatches keeps the matches with a field and way search can name: список
+// живет в пакете search, а не здесь третьей копией.
+func knownMatches(in []serverMatch) []serverMatch {
+	var out []serverMatch
+	for _, m := range in {
+		if len(out) == maxMatches {
+			break
+		}
+		if search.ValidField(m.Field) && search.ValidHow(m.How) && len(m.Word) <= maxMatchLen && len(m.Hit) <= maxMatchLen {
+			out = append(out, m)
+		}
+	}
+	return out
 }
 
 // typedEntries keeps the server entries that decode as serverEntry; адрес, не
@@ -258,14 +308,28 @@ type serverEntry struct {
 func typedEntries(raw []json.RawMessage) []candidate {
 	out := make([]candidate, 0, len(raw))
 	for _, r := range raw {
+		// Признак — необязательное поле и разбирается отдельно: не того вида,
+		// он отбрасывается сам, а запись с ключом склейки остается.
 		var e serverEntry
+		var rawMatch struct {
+			Match json.RawMessage `json:"match"`
+		}
+		if json.Unmarshal(r, &rawMatch) != nil {
+			continue
+		}
+		if len(rawMatch.Match) > 0 {
+			r = withoutMatch(r)
+		}
 		if json.Unmarshal(r, &e) != nil || e.Title == "" {
 			continue
 		}
+		var ms []serverMatch
+		_ = json.Unmarshal(rawMatch.Match, &ms) // не тот вид — признака нет
 		// Ключ — по исходному адресу, как ключи остальных записей, что сервер
 		// считает сам (sourcesearch.Split): склейка не зависит от того, попала
 		// запись в присланные или нет. Показ — по проверенному адресу.
 		key := sourcesearch.EntryKey(e.ID, e.Title, e.URL)
+		e.Match = knownMatches(ms)
 		if u, err := domain.NewExternalURL(e.URL); err != nil {
 			e.URL = ""
 		} else {
