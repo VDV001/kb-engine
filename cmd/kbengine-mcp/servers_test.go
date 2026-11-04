@@ -51,7 +51,7 @@ func TestRemoteServers_SearchRemote(t *testing.T) {
 	if len(got) != 2 || got[0].Source.ID != "server-a" || got[1].Source.ID != "server-down" {
 		t.Fatalf("got = %+v", got)
 	}
-	if a := got[0]; a.Err != "" || len(a.Entries) != 1 || a.Total != 3 || len(a.Keys) != 2 || a.Source.Name != "vps" {
+	if a := got[0]; a.Err != "" || len(a.Entries) != 1 || len(a.Keys) != 2 || a.Source.Name != "vps" {
 		t.Fatalf("server-a = %+v", a)
 	}
 	if gotAuth != "Bearer t0ken-0123456789abcdef" {

@@ -52,7 +52,7 @@ type sourcedOut struct {
 // или почему не ответил. Запись сервера не того вида отброшена.
 func TestServer_searchMergesRemoteServers(t *testing.T) {
 	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{
-		{Source: mcpserver.RemoteSource{ID: "server-a", Name: "vps"}, Total: 3, Entries: []json.RawMessage{
+		{Source: mcpserver.RemoteSource{ID: "server-a", Name: "vps"}, Entries: []json.RawMessage{
 			json.RawMessage(`{"id":1,"title":"Оркестрация контейнеров","category":"ai","kind":"article","lifecycle":"active"}`),
 			json.RawMessage(`{"id":50,"title":"Kubernetes на сервере","category":"ai","kind":"article","lifecycle":"active"}`),
 			json.RawMessage(`{"id":"<x>","title":"не того вида"}`),
@@ -103,8 +103,8 @@ func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 // «найдено» сервера входят и записи, известные ключом.
 func TestServer_searchRemoteKeysMerge(t *testing.T) {
 	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{
-		{Source: mcpserver.RemoteSource{ID: "server-a"}, Total: 1, Keys: []string{"url example.com/z"}},
-		{Source: mcpserver.RemoteSource{ID: "server-b"}, Total: 1, Entries: []json.RawMessage{
+		{Source: mcpserver.RemoteSource{ID: "server-a"}, Keys: []string{"url example.com/z"}},
+		{Source: mcpserver.RemoteSource{ID: "server-b"}, Entries: []json.RawMessage{
 			json.RawMessage(`{"id":9,"title":"Та же статья","url":"https://example.com/z","category":"ai","kind":"article","lifecycle":"active"}`),
 		}},
 	}})
@@ -119,5 +119,58 @@ func TestServer_searchRemoteKeysMerge(t *testing.T) {
 	}
 	if out.Sources[1].Found != 1 {
 		t.Fatalf("server-a = %+v: ключ входит в найдено", out.Sources[1])
+	}
+}
+
+// Ревью #396. Сервер 0.30.0 limit не знает и отдает все найденное: записей от
+// сервера в ответе не больше предела, остальные — как ключи, в «найдено».
+// Пустая выдача — [], а не null. У записи сервера нет file и related_ids: это
+// пути и номера чужого каталога, get_entry и read_file открыли бы свое.
+func TestServer_searchRemoteBounded(t *testing.T) {
+	var many []json.RawMessage
+	for i := range 100 {
+		many = append(many, json.RawMessage(`{"id":`+itoa(1000+i)+`,"title":"с`+itoa(i)+`","file":"notes/x.md","related_ids":[1],"category":"ai","kind":"article","lifecycle":"active"}`))
+	}
+	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{{Source: mcpserver.RemoteSource{ID: "server-a"}, Entries: many}}})
+	raw := text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))
+	var out struct {
+		Entries []map[string]any `json:"entries"`
+		Sources []struct {
+			ID    string `json:"id"`
+			Found int    `json:"found"`
+		} `json:"sources"`
+	}
+	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+		t.Fatal(err)
+	}
+	server := 0
+	for _, e := range out.Entries {
+		if e["source"] == "server-a" {
+			server++
+			if e["file"] != nil || e["related_ids"] != nil {
+				t.Fatalf("у записи сервера чужие file/related_ids: %v", e)
+			}
+		}
+	}
+	if server != mcpserver.RemoteLimit || out.Sources[1].Found != 100 {
+		t.Fatalf("записей сервера %d (предел %d), найдено %d", server, mcpserver.RemoteLimit, out.Sources[1].Found)
+	}
+
+	empty := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{{Source: mcpserver.RemoteSource{ID: "server-a"}}}})
+	var e map[string]json.RawMessage
+	_ = json.Unmarshal([]byte(text(t, callTool(t, empty, "search_catalog", map[string]any{"query": "телепортация"}))), &e)
+	if string(e["entries"]) != "[]" {
+		t.Fatalf("пустая выдача: entries = %s", e["entries"])
+	}
+}
+
+// Новая форма ответа — только когда серверы есть: с --files-config без
+// kb-серверов в списке ответ прежний.
+func TestServer_searchRemoteWithoutServersIsUnchanged(t *testing.T) {
+	cs := connectRemote(t, fakeRemote{})
+	var m map[string]json.RawMessage
+	_ = json.Unmarshal([]byte(text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))), &m)
+	if _, ok := m["sources"]; ok {
+		t.Fatal("серверов нет, а sources есть")
 	}
 }
