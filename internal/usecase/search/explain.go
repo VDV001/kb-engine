@@ -61,16 +61,21 @@ func fieldsOf(e domain.Entry) []field {
 }
 
 // Explain tells where and how each word of query was found in e — тем же
-// кодом, что ищет: слой за слоем (буквально → синоним → транслит → опечатка)
-// по всем полям, и первый сработавший слой дает ответ. Слово, которое не
-// нашлось, в ответе отсутствует; фраза, найденная только переводом целиком
-// («сборка мусора» → garbage collection), объясняется словами перевода.
+// кодом, что ищет: слои живут в одном matchHow, а Explain повторяет порядок
+// FilterWith и Matches (фраза целиком, затем по словам; запрос, затем его
+// синонимы; каждое слово кандидата — по всем полям, лучший слой побеждает).
+// Слово, которое не нашлось, в ответе отсутствует.
 func Explain(e domain.Entry, query string, m Matcher) []Why {
-	words := strings.Fields(norm(query))
+	words := strings.Fields(strings.ToLower(query))
 	if len(words) == 0 {
 		return nil
 	}
 	fs := fieldsOf(e)
+	if len(words) > 1 && !strings.HasPrefix(words[0], "#") {
+		if why, ok := m.explainQuery(fs, strings.Join(words, " ")); ok {
+			return why
+		}
+	}
 	var out []Why
 	for _, w := range words {
 		if id, ok := strings.CutPrefix(w, "#"); ok {
@@ -79,102 +84,96 @@ func Explain(e domain.Entry, query string, m Matcher) []Why {
 			}
 			continue
 		}
-		if why, ok := m.explainWord(fs, w); ok {
-			out = append(out, why)
+		if why, ok := m.explainQuery(fs, w); ok {
+			out = append(out, why...)
 		}
-	}
-	if len(out) == len(words) || len(words) < 2 || strings.HasPrefix(words[0], "#") {
-		return out
-	}
-	if why, ok := m.explainPhrase(fs, strings.Join(words, " ")); ok {
-		return why
 	}
 	return out
 }
 
-// explainPhrase explains a phrase found only through its translation as a
-// whole: каждое слово перевода — свое объяснение.
-func (m Matcher) explainPhrase(fs []field, phrase string) ([]Why, bool) {
-	for _, cand := range m.syn[phrase] {
-		cw := strings.Fields(cand)
-		var why []Why
-		for _, w := range cw {
-			if x, ok := m.explainWord(fs, w); ok {
-				x.Word, x.How = phrase, HowSynonym
-				why = append(why, x)
+// explainQuery mirrors Matches: сам запрос, затем его синонимы, и каждый
+// кандидат должен найтись весь. Найденное синонимом помечено синонимом.
+func (m Matcher) explainQuery(fs []field, query string) ([]Why, bool) {
+	q := norm(query)
+	for i, cand := range append([]string{q}, m.syn[q]...) {
+		why, ok := m.explainAll(fs, cand)
+		if !ok {
+			continue
+		}
+		if i > 0 {
+			for j := range why {
+				why[j].Word, why[j].How = q, HowSynonym
 			}
 		}
-		if len(why) == len(cw) {
-			return why, true
-		}
+		return why, true
 	}
 	return nil, false
 }
 
-// explainWord runs the layers of wordMatches over the fields, in its order.
+// explainAll mirrors allWordsMatch: every word of cand, each in its own field.
+func (m Matcher) explainAll(fs []field, cand string) ([]Why, bool) {
+	var out []Why
+	for w := range strings.FieldsSeq(cand) {
+		why, ok := m.explainWord(fs, w)
+		if !ok {
+			return nil, false
+		}
+		out = append(out, why)
+	}
+	return out, len(out) > 0
+}
+
+// rank orders the layers as matchHow tries them.
+var rank = map[How]int{HowExact: 0, HowSynonym: 1, HowTranslit: 2, HowTypo: 3}
+
+// explainWord asks matchHow over every field and keeps the best layer: так же
+// решает поиск, проверяя слои по всему тексту записи; при равенстве — поле,
+// что идет раньше.
 func (m Matcher) explainWord(fs []field, w string) (Why, bool) {
-	if why, ok := exactLayer(fs, w, w, HowExact); ok {
-		return why, true
-	}
-	for _, s := range m.syn[w] {
-		if why, ok := exactLayer(fs, w, s, HowSynonym); ok {
-			return why, true
+	var best Why
+	found := false
+	for _, f := range fs {
+		how, form, ok := m.matchHow(norm(f.text), w)
+		if !ok || (found && rank[how] >= rank[best.How]) {
+			continue
 		}
+		hit, label := hitIn(f.text, how, form)
+		best, found = Why{Word: w, Field: f.name, Text: f.text, Hit: hit, How: label}, true
 	}
-	tw := domain.Translit(w)
-	if tw != w {
-		if why, ok := translitLayer(fs, w, tw); ok {
-			return why, true
-		}
-	}
-	return typoLayer(fs, w, tw)
+	return best, found
 }
 
-// exactLayer finds form in a field the way contains does.
-func exactLayer(fs []field, w, form string, how How) (Why, bool) {
-	for _, f := range fs {
-		if hit, ok := exactIn(f.text, form); ok {
-			return Why{Word: w, Field: f.name, Text: f.text, Hit: hit, How: how}, true
+// hitIn finds the word of text to highlight for a match of form found by how;
+// не найдя отдельного слова (форма с дефисом, «ci/cd»), подсвечивает саму форму.
+// Опечатка без единой правки через транслит названа транслитом: латинский
+// запрос против кириллицы («zhogov» — «Жогов»).
+func hitIn(text string, how How, form string) (string, How) {
+	switch how {
+	case HowExact, HowSynonym:
+		if hit, ok := exactIn(text, form); ok {
+			return hit, how
 		}
-	}
-	return Why{}, false
-}
-
-// translitLayer finds the transliterated word in the transliterated fields.
-func translitLayer(fs []field, w, tw string) (Why, bool) {
-	for _, f := range fs {
-		for _, ow := range wordsOf(f.text) {
-			if contains(domain.Translit(norm(ow)), tw) {
-				return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: HowTranslit}, true
+	case HowTranslit:
+		for _, ow := range wordsOf(text) {
+			if contains(domain.Translit(norm(ow)), form) {
+				return ow, how
 			}
 		}
-	}
-	return Why{}, false
-}
-
-// typoLayer finds a word within editLimit edits, as nearAnyWord does.
-func typoLayer(fs []field, w, tw string) (Why, bool) {
-	limit := editLimit(tw)
-	if limit == 0 {
-		return Why{}, false
-	}
-	for _, f := range fs {
-		for _, ow := range wordsOf(f.text) {
+	case HowTypo:
+		limit := editLimit(form)
+		for _, ow := range wordsOf(text) {
 			nw := norm(ow)
 			th := domain.Translit(nw)
-			if !within(th, tw, limit) {
+			if !within(th, form, limit) {
 				continue
 			}
-			// Совпало без единой правки, но через транслит: латинский запрос
-			// против кириллицы («zhogov» — «Жогов»).
-			how := HowTypo
-			if th == tw && nw != tw {
-				how = HowTranslit
+			if th == form && nw != form {
+				return ow, HowTranslit
 			}
-			return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: how}, true
+			return ow, how
 		}
 	}
-	return Why{}, false
+	return form, how
 }
 
 // exactIn reports the word of text that contains w the way contains does:
@@ -192,4 +191,20 @@ func exactIn(text, w string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ValidField reports whether f is a field Explain can name — для тех, кто
+// принимает признак находки снаружи (окно от чужого сервера).
+func ValidField(f string) bool {
+	switch Field(f) {
+	case FieldTitle, FieldDescription, FieldCategory, FieldTag, FieldAuthor, FieldID:
+		return true
+	}
+	return false
+}
+
+// ValidHow reports whether h is a way Explain can name.
+func ValidHow(h string) bool {
+	_, ok := rank[How(h)]
+	return ok
 }

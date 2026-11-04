@@ -104,20 +104,33 @@ func (m Matcher) allWordsMatch(haystack, query string) bool {
 }
 
 func (m Matcher) wordMatches(haystack, w string) bool {
+	_, _, ok := m.matchHow(haystack, w)
+	return ok
+}
+
+// matchHow is the one place the layers live: найдено ли слово в тексте, каким
+// слоем и в какой форме (само слово, его синоним, его транслит). Поиск берет
+// только «да или нет», Explain — еще и «как»; второй копии слоев нет, и
+// объяснение не может разойтись с поиском (ревью #392: копия разошлась на
+// синонимах и словах с дефисом).
+func (m Matcher) matchHow(haystack, w string) (How, string, bool) {
 	if contains(haystack, w) {
-		return true
+		return HowExact, w, true
 	}
 	for _, s := range m.syn[w] {
 		if contains(haystack, s) {
-			return true
+			return HowSynonym, s, true
 		}
 	}
 	tw := domain.Translit(w)
 	th := domain.Translit(haystack)
 	if tw != w && contains(th, tw) {
-		return true
+		return HowTranslit, tw, true
 	}
-	return nearAnyWord(th, tw)
+	if nearAnyWord(th, tw) {
+		return HowTypo, tw, true
+	}
+	return "", "", false
 }
 
 // shortQuery — длина, начиная с которой подстрока внутри чужого слова врёт
