@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.33.0] — 2026-11-04
+
 ### Changed
 
 - **MCP ищет по списку источников окна целиком, а не «свой каталог всегда первым».** С
