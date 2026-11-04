@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.31.0] — 2026-11-04
+
 ### Added
 
 - **Общая выдача источников в окне: kb-серверы и каталоги одним списком, «N из M» у каждого.**
