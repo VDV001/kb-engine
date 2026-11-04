@@ -94,11 +94,18 @@ func (f *folderSettings) storeTokens(next desktopconfig.Config, tokens map[strin
 
 // dropTokens removes the token of a server that left the list, and of one
 // whose address changed without a new token: старый токен не должен уйти
-// новому хосту.
-func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[string]string) {
+// новому хосту. Отказ удаления — отказ сохранения, а не лишняя запись: конфиг
+// с новым адресом при старом токене и есть утечка. Возвращает откат.
+func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[string]string) (func(), error) {
 	urls := map[string]string{}
 	for _, s := range next.Sources {
 		urls[s.ID] = s.URL
+	}
+	dropped := map[string]string{}
+	undo := func() {
+		for id, tok := range dropped {
+			_ = f.tokens.Set(id, tok)
+		}
 	}
 	for _, s := range prev.WithSources().Sources {
 		if s.Kind != desktopconfig.KindServer {
@@ -106,10 +113,24 @@ func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[
 		}
 		url, kept := urls[s.ID]
 		_, fresh := tokens[s.ID]
-		if !kept || (url != s.URL && !fresh) {
-			_ = f.tokens.Delete(s.ID) // не удалось — останется лишняя запись, не утечка
+		if kept && (url == s.URL || fresh) {
+			continue
 		}
+		old, err := f.tokens.Get(s.ID)
+		switch {
+		case errors.Is(err, keychain.ErrNotFound):
+			continue
+		case err != nil:
+			undo()
+			return nil, fmt.Errorf("связка ключей не прочиталась: %w", err)
+		}
+		if err := f.tokens.Delete(s.ID); err != nil {
+			undo()
+			return nil, fmt.Errorf("старый токен не удален из Связки ключей: %w", err)
+		}
+		dropped[s.ID] = old
 	}
+	return undo, nil
 }
 
 // token returns the stored token of a server, "" if there is none.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -97,5 +98,51 @@ func TestNormalizeRoots(t *testing.T) {
 func TestExtractDir_NextToConfig(t *testing.T) {
 	if got, want := desktopconfig.ExtractDir("/a/kb-desktop/config.json"), "/a/kb-desktop/extract"; got != want {
 		t.Fatalf("ExtractDir = %q, want %q", got, want)
+	}
+}
+
+// Запись заменяет файл целиком: читатель в другом процессе (MCP) не видит
+// конфиг, обрезанный на середине записи.
+func TestWrite_ReaderNeverSeesHalfFile(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "config.json")
+	cfg := desktopconfig.Default(home)
+	if err := desktopconfig.Write(path, cfg); err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Go(func() {
+		defer close(stop)
+		for range 2000 {
+			if err := desktopconfig.Write(path, cfg); err != nil {
+				t.Error(err)
+				return
+			}
+		}
+	})
+	bad := 0
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := desktopconfig.Read(path); err != nil {
+				bad++
+			}
+		}
+	})
+	wg.Wait()
+	if bad > 0 {
+		t.Fatalf("читатель %d раз увидел недописанный конфиг", bad)
+	}
+	if fi, err := os.Stat(path); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("права = %v, %v", fi.Mode().Perm(), err)
+	}
+	left, _ := filepath.Glob(filepath.Join(home, "*.tmp*"))
+	if len(left) > 0 {
+		t.Fatalf("остались временные файлы: %v", left)
 	}
 }

@@ -112,7 +112,25 @@ func Write(path string, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(raw, '\n'), 0o600)
+	// Через временный файл и rename: MCP-сервер, другой процесс, читает конфиг
+	// и без замка (search_files) и не должен видеть его обрезанным.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp") // CreateTemp создает с 0600
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }() // после rename файла уже нет
+	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 // NormalizeRoots раскрывает «~», оставляет только существующие абсолютные папки
