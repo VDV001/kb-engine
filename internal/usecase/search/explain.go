@@ -86,7 +86,15 @@ func Explain(e domain.Entry, query string, m Matcher) []Why {
 	if len(out) == len(words) || len(words) < 2 || strings.HasPrefix(words[0], "#") {
 		return out
 	}
-	phrase := strings.Join(words, " ")
+	if why, ok := m.explainPhrase(fs, strings.Join(words, " ")); ok {
+		return why
+	}
+	return out
+}
+
+// explainPhrase explains a phrase found only through its translation as a
+// whole: каждое слово перевода — свое объяснение.
+func (m Matcher) explainPhrase(fs []field, phrase string) ([]Why, bool) {
 	for _, cand := range m.syn[phrase] {
 		cw := strings.Fields(cand)
 		var why []Why
@@ -97,51 +105,73 @@ func Explain(e domain.Entry, query string, m Matcher) []Why {
 			}
 		}
 		if len(why) == len(cw) {
-			return why
+			return why, true
 		}
 	}
-	return out
+	return nil, false
 }
 
-// explainWord runs the layers of wordMatches over the fields.
+// explainWord runs the layers of wordMatches over the fields, in its order.
 func (m Matcher) explainWord(fs []field, w string) (Why, bool) {
-	for _, f := range fs {
-		if hit, ok := exactIn(f.text, w); ok {
-			return Why{Word: w, Field: f.name, Text: f.text, Hit: hit, How: HowExact}, true
-		}
+	if why, ok := exactLayer(fs, w, w, HowExact); ok {
+		return why, true
 	}
 	for _, s := range m.syn[w] {
-		for _, f := range fs {
-			if hit, ok := exactIn(f.text, s); ok {
-				return Why{Word: w, Field: f.name, Text: f.text, Hit: hit, How: HowSynonym}, true
-			}
+		if why, ok := exactLayer(fs, w, s, HowSynonym); ok {
+			return why, true
 		}
 	}
 	tw := domain.Translit(w)
 	if tw != w {
-		for _, f := range fs {
-			for _, ow := range wordsOf(f.text) {
-				if contains(domain.Translit(norm(ow)), tw) {
-					return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: HowTranslit}, true
-				}
+		if why, ok := translitLayer(fs, w, tw); ok {
+			return why, true
+		}
+	}
+	return typoLayer(fs, w, tw)
+}
+
+// exactLayer finds form in a field the way contains does.
+func exactLayer(fs []field, w, form string, how How) (Why, bool) {
+	for _, f := range fs {
+		if hit, ok := exactIn(f.text, form); ok {
+			return Why{Word: w, Field: f.name, Text: f.text, Hit: hit, How: how}, true
+		}
+	}
+	return Why{}, false
+}
+
+// translitLayer finds the transliterated word in the transliterated fields.
+func translitLayer(fs []field, w, tw string) (Why, bool) {
+	for _, f := range fs {
+		for _, ow := range wordsOf(f.text) {
+			if contains(domain.Translit(norm(ow)), tw) {
+				return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: HowTranslit}, true
 			}
 		}
 	}
-	if limit := editLimit(tw); limit > 0 {
-		for _, f := range fs {
-			for _, ow := range wordsOf(f.text) {
-				nw := norm(ow)
-				th := domain.Translit(nw)
-				if within(th, tw, limit) {
-					// Совпало без единой правки, но через транслит: латинский
-					// запрос против кириллицы («zhogov» — «Жогов»).
-					how := HowTypo
-					if th == tw && nw != tw {
-						how = HowTranslit
-					}
-					return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: how}, true
-				}
+	return Why{}, false
+}
+
+// typoLayer finds a word within editLimit edits, as nearAnyWord does.
+func typoLayer(fs []field, w, tw string) (Why, bool) {
+	limit := editLimit(tw)
+	if limit == 0 {
+		return Why{}, false
+	}
+	for _, f := range fs {
+		for _, ow := range wordsOf(f.text) {
+			nw := norm(ow)
+			th := domain.Translit(nw)
+			if !within(th, tw, limit) {
+				continue
 			}
+			// Совпало без единой правки, но через транслит: латинский запрос
+			// против кириллицы («zhogov» — «Жогов»).
+			how := HowTypo
+			if th == tw && nw != tw {
+				how = HowTranslit
+			}
+			return Why{Word: w, Field: f.name, Text: f.text, Hit: ow, How: how}, true
 		}
 	}
 	return Why{}, false
