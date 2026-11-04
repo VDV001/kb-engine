@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.32.0] — 2026-11-04
+
 ### Added
 
 - **Знак kb в шапке окна.** Вместо «kb.» слева стоит малая копия иконки приложения: граф знаний,
