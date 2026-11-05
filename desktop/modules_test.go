@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"path/filepath"
 	"slices"
 	"testing"
 
@@ -36,9 +37,10 @@ func TestSetModules_SavesWithoutReindex(t *testing.T) {
 // Модуль от более новой сборки, которого это окно не показывает, переживает
 // сохранение; источники сохранение модулей не трогает, и наоборот.
 func TestSetModules_KeepsUnknownAndSources(t *testing.T) {
-	s, _, _ := newSourcesSettings(t)
+	s, _, home := newSourcesSettings(t)
 	s.cfg.Modules = []desktopconfig.Module{{ID: "chat", Enabled: true}}
 	sources := slices.Clone(s.cfg.Sources)
+	next := []desktopconfig.Source{{ID: "folder-9", Kind: desktopconfig.KindFolder, Path: filepath.Join(home, "notes"), Enabled: true}}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +54,7 @@ func TestSetModules_KeepsUnknownAndSources(t *testing.T) {
 	if !slices.Equal(cfg.Sources, sources) {
 		t.Errorf("источники изменились: %+v", cfg.Sources)
 	}
-	if err := s.SetSources(sources, nil, nil); err != nil {
+	if err := s.SetSources(next, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if cfg, _ = desktopconfig.Read(s.path); !cfg.ModuleOn(desktopconfig.ModuleFinances) {
