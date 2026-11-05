@@ -24,7 +24,8 @@ var (
 	// ErrInvalidKey — ключ не прошел ValidKey.
 	ErrInvalidKey = errors.New("blob: invalid key")
 	// ErrTooLarge — объект больше MaxObjectSize.
-	ErrTooLarge    = errors.New("blob: object too large")
+	ErrTooLarge = errors.New("blob: object too large")
+	// ErrNotModified — GetIfChanged: хранимая версия та же, что у вызывающего.
 	ErrNotModified = errors.New("blob: not modified")
 )
 
@@ -47,6 +48,8 @@ type Object struct {
 type Store interface {
 	// Get returns the object, or ErrNotFound.
 	Get(ctx context.Context, key string) (Object, error)
+	// GetIfChanged is Get that returns ErrNotModified while the stored version
+	// is still etag: кэш не перекачивает неизменный объект. Пустой etag — Get.
 	GetIfChanged(ctx context.Context, key, etag string) (Object, error)
 	// Put writes data and returns the new ETag. С пустым ifMatch ключа еще не
 	// должно быть, иначе ifMatch — ETag версии, которую писатель прочитал. Если

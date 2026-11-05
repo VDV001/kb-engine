@@ -176,16 +176,27 @@ func (s *Store) objectURL(key string) string {
 
 // Get reads the object at key.
 func (s *Store) Get(ctx context.Context, key string) (blob.Object, error) {
+	return s.GetIfChanged(ctx, key, "")
+}
+
+// GetIfChanged sends If-None-Match: etag; 304 — ErrNotModified без тела.
+func (s *Store) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
 	if err := s.checkKey(key); err != nil {
 		return blob.Object{}, err
 	}
-	resp, err := s.do(ctx, http.MethodGet, key, nil, nil)
+	var cond http.Header
+	if etag != "" {
+		cond = http.Header{"If-None-Match": {etag}}
+	}
+	resp, err := s.do(ctx, http.MethodGet, key, nil, cond)
 	if err != nil {
 		return blob.Object{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
+	case http.StatusNotModified:
+		return blob.Object{}, fmt.Errorf("%w: %s (304)", blob.ErrNotModified, key)
 	case http.StatusNotFound:
 		return blob.Object{}, fmt.Errorf("%w: %s (404)", blob.ErrNotFound, key)
 	default:
@@ -198,11 +209,11 @@ func (s *Store) Get(ctx context.Context, key string) (blob.Object, error) {
 	if len(data) > blob.MaxObjectSize {
 		return blob.Object{}, fmt.Errorf("%w: %s", blob.ErrTooLarge, key)
 	}
-	etag := resp.Header.Get("ETag")
-	if etag == "" {
+	got := resp.Header.Get("ETag")
+	if got == "" {
 		return blob.Object{}, fmt.Errorf("blobs3: get %s: no ETag in the answer", key)
 	}
-	return blob.Object{Data: data, ETag: etag}, nil
+	return blob.Object{Data: data, ETag: got}, nil
 }
 
 // Put writes data at key under the ifMatch condition (see blob.Store).
@@ -377,8 +388,4 @@ func (m *MetadataToken) fetch(ctx context.Context) (string, time.Duration, error
 		return "", 0, errors.New("metadata token: empty token or lifetime too short")
 	}
 	return body.AccessToken, ttl, nil
-}
-
-func (s *Store) GetIfChanged(context.Context, string, string) (blob.Object, error) {
-	return blob.Object{}, errors.New("not implemented")
 }

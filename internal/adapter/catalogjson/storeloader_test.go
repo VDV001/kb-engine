@@ -3,6 +3,8 @@ package catalogjson_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -15,15 +17,11 @@ import (
 const catalogKey = "users/u1/kb/_data/catalog.json"
 
 func catalogOf(titles ...string) string {
-	out := `{"entries":[`
+	entries := make([]string, len(titles))
 	for i, title := range titles {
-		if i > 0 {
-			out += ","
-		}
-		out += `{"id":` + string(rune('1'+i)) + `,"habr_id":` + string(rune('1'+i)) +
-			`,"title":"` + title + `","url":"https://h/","category":"golang","status":"read"}`
+		entries[i] = fmt.Sprintf(`{"id":%d,"habr_id":%d,"title":%q,"url":"https://h/","category":"golang","status":"read"}`, i+1, i+1, title)
 	}
-	return out + `]}`
+	return `{"entries":[` + strings.Join(entries, ",") + `]}`
 }
 
 // countingStore counts full reads: условный ответ «не изменился» полным

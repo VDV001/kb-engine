@@ -221,6 +221,15 @@ func writeAtomic(path string, data []byte) error {
 	return d.Sync()
 }
 
-func (s *Store) GetIfChanged(context.Context, string, string) (blob.Object, error) {
-	return blob.Object{}, errors.New("not implemented")
+// GetIfChanged reads the object unless its version is still etag. На диске
+// файл читается в любом случае — экономится только разбор у вызывающего.
+func (s *Store) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	o, err := s.Get(ctx, key)
+	if err != nil {
+		return blob.Object{}, err
+	}
+	if etag != "" && o.ETag == etag {
+		return blob.Object{}, fmt.Errorf("%w: %s", blob.ErrNotModified, key)
+	}
+	return o, nil
 }
