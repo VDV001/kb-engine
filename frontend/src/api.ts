@@ -528,6 +528,29 @@ export interface Finances {
    * складывает сама, как делала раньше, и на рублёвой книге это верно.
    */
   groups?: AccountGroup[]
+  /**
+   * Деньги по каждой валюте — главная строка карточки (решение владельца
+   * 05.11): рубли и доллары не складываются и не пересчитываются по курсу.
+   * Старая сборка поля не отдает — тогда карточка показывает, как раньше.
+   */
+  currencies?: CurrencyBalance[]
+  /** Итоги родов по валютам, от движка. */
+  totals?: BalanceTotal[]
+}
+
+/** Деньги в одной валюте; currency пусто для валюты книги. */
+export interface CurrencyBalance {
+  currency: string
+  current: string
+  free: string
+}
+
+/** Один род счетов в одной валюте; group пусто для обычных счетов. */
+export interface BalanceTotal {
+  group: string
+  currency: string
+  confirmed: string
+  current: string
 }
 
 /** Одна строка разреза с одним ключом: категория, место, источник. */
