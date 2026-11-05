@@ -163,3 +163,11 @@ func currencyLabel(code string) string {
 	}
 	return code
 }
+
+func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { http.Error(w, "not yet", http.StatusNotImplemented) }
+}
+
+func handleEntriesWorkbook(q Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { http.Error(w, "not yet", http.StatusNotImplemented) }
+}
