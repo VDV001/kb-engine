@@ -165,11 +165,12 @@ type Financier interface {
 type Option func(*options)
 
 type options struct {
-	syn    search.Matcher
-	timing bool
-	calls  ToolCallReader
-	files  FileSearcher
-	writer CatalogWriter
+	syn       search.Matcher
+	timing    bool
+	calls     ToolCallReader
+	files     FileSearcher
+	writer    CatalogWriter
+	finWriter FinanceWriter
 }
 
 // WithSynonyms подключает слой перевода терминов.
@@ -238,6 +239,9 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	if o.writer != nil {
 		mux.Handle("POST /api/entries", sameSiteJSON(handleAddEntry(o.writer)))
 		mux.Handle("PATCH /api/entries/{id}", sameSiteJSON(handleEditEntry(o.writer)))
+	}
+	if o.finWriter != nil {
+		mux.Handle("POST /api/finances/transactions", sameSiteJSON(handleAddTransaction(o.finWriter)))
 	}
 	if o.files != nil {
 		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))

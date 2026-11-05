@@ -26,7 +26,7 @@ import (
 // нет нигде, потому что чужого в обработчике нет.
 func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) http.Handler {
 	return &tenants{
-		ctx: ctx, store: store, stderr: stderr,
+		ctx: ctx, store: store, stderr: &lockedWriter{w: stderr},
 		reg:      userauth.NewRegistry(ctx, store),
 		handlers: map[domain.UserID]http.Handler{},
 	}
@@ -160,4 +160,18 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		return 1
 	}
 	return 0
+}
+
+// lockedWriter serializes writes: обработчики людей собираются параллельно и
+// пишут предупреждения в один журнал сервера, а io.Writer вызывающего
+// (bytes.Buffer в тестах) одновременных записей не выдерживает.
+type lockedWriter struct {
+	mu gosync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }

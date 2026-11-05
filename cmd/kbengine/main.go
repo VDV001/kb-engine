@@ -676,7 +676,6 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 // отключала бы перевод терминов.
 func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
 	loader := src.loader
-	opts = append(src.options(), opts...)
 	front, err := root.Frontend()
 	if err != nil {
 		return nil, err
@@ -693,7 +692,8 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 	}
 	// Nil, not an empty struct: the handler distinguishes "no ledger configured"
 	// from "ledger configured and unreadable", and only the second is an error.
-	var fin httpapi.Financier
+	// Финансы источника (журнал в хранилище) или, как раньше, из --ledger.
+	fin := src.fin
 	if ledgerPath != "" {
 		// Read once here for the same reason the analytics config is: the file is
 		// re-read per request, so this proves nothing about later reads, but it
@@ -709,7 +709,11 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 			}
 		}
 		fin = ledgerFinances{ledgerPath: ledgerPath, workbookPath: workbookPath}
+		// И запись тоже: иначе POST писал бы в журнал хранилища, а чтение и
+		// проверка повтора шли бы по файлу — два журнала у одного человека.
+		src.finWriter = nil
 	}
+	opts = append(src.options(), opts...)
 	docs, err := buildDocuments(nowPath, teamPath, projectsPath, mediaPath)
 	if err != nil {
 		return nil, err

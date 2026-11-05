@@ -146,6 +146,7 @@ type Registry struct {
 	checked    time.Time // последняя попытка чтения
 	lastOK     time.Time // последнее чтение, давшее известное состояние
 	refreshing bool
+	refreshed  chan struct{} // закрывается, когда идущее чтение закончено
 	etag       string
 	users      []knownUser
 }
@@ -200,12 +201,23 @@ func (r *Registry) current() []knownUser {
 	r.mu.Lock()
 	now := r.now()
 	due := r.lastOK.IsZero() || now.Sub(r.checked) >= RefreshEvery
+	if r.refreshing && r.lastOK.IsZero() {
+		// Реестр еще ни разу не прочитан: ответить по пустому списку значило
+		// бы отказать всем запросам холодного старта. Ждем идущее чтение.
+		done := r.refreshed
+		r.mu.Unlock()
+		<-done
+		r.mu.Lock()
+		users := r.fresh(r.now())
+		r.mu.Unlock()
+		return users
+	}
 	if !due || r.refreshing {
 		users := r.fresh(now)
 		r.mu.Unlock()
 		return users
 	}
-	r.refreshing = true
+	r.refreshing, r.refreshed = true, make(chan struct{})
 	etag := r.etag
 	r.mu.Unlock()
 
@@ -215,6 +227,7 @@ func (r *Registry) current() []knownUser {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer close(r.refreshed)
 	r.refreshing, r.checked = false, now
 	switch {
 	case errors.Is(err, blob.ErrNotModified):

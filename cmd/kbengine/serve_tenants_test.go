@@ -67,6 +67,15 @@ func newTenants(t *testing.T) tenantFixture {
 	tokA, tokB := add("alpha", secretA), add("beta", secretB)
 	var stderr bytes.Buffer
 	h := tenantsHandler(ctx, s, &stderr)
+	// У каждого еще и операция в журнале с той же меткой: тест изоляции по
+	// всем GET-маршрутам проверяет и финансы.
+	for tok, marker := range map[string]string{tokA: secretA, tokB: secretB} {
+		rec := do(h, http.MethodPost, "/api/finances/transactions",
+			`{"kind":"expense","amount":"418","category":"Транспорт","place":"`+marker+`","description":"`+marker+`","date":"2026-04-06"}`, tok)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("fixture transaction: %d %s", rec.Code, rec.Body.String())
+		}
+	}
 	return tenantFixture{h: h, tokA: tokA, tokB: tokB}
 }
 

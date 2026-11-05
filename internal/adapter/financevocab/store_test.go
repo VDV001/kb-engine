@@ -274,3 +274,26 @@ func TestWriters_doNotEscapeWhatAPersonTyped(t *testing.T) {
 		}
 	}
 }
+
+// Словарь в хранилище приходит байтами: Parse — тот же разбор, что Load.
+func TestParseMatchesLoad(t *testing.T) {
+	raw := []byte(`{"accounts":{"сбер":"Сбербанк"},"places":{"пятерочка":{"place":"Пятёрочка","category":"Еда"}}}`)
+	path := filepath.Join(t.TempDir(), financevocab.FileName)
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fromFile, err := financevocab.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := financevocab.Parse("users/u1/fin/aliases.json", raw)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(got.Accounts) != len(fromFile.Accounts) || len(got.Places) != len(fromFile.Places) {
+		t.Fatalf("Parse = %+v, Load = %+v", got, fromFile)
+	}
+	if _, err := financevocab.Parse("users/u1/fin/aliases.json", []byte(`{`)); err == nil || !strings.Contains(err.Error(), "users/u1/fin/aliases.json") {
+		t.Fatalf("broken vocabulary: err = %v, want the key named", err)
+	}
+}
