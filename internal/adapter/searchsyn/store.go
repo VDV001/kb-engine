@@ -42,15 +42,21 @@ func Load(path string) (search.Dictionary, error) {
 	if err != nil {
 		return nil, fmt.Errorf("searchsyn: не прочитать словарь: %w", err)
 	}
+	return Parse(path, raw)
+}
+
+// Parse decodes a dictionary read from name: файл на диске или ключ в
+// хранилище. name нужен только ошибке — сказать, какой словарь не разобран.
+func Parse(name string, raw []byte) (search.Dictionary, error) {
 	var byKey map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &byKey); err != nil {
-		return nil, fmt.Errorf("searchsyn: %s не разобрать: %w", path, err)
+		return nil, fmt.Errorf("searchsyn: %s не разобрать: %w", name, err)
 	}
 	d := make(search.Dictionary, len(byKey))
 	for k, raw := range byKey {
 		t, err := terms(raw)
 		if err != nil {
-			return nil, fmt.Errorf("searchsyn: %s, ключ %q: %w", path, k, err)
+			return nil, fmt.Errorf("searchsyn: %s, ключ %q: %w", name, k, err)
 		}
 		d[k] = t
 	}

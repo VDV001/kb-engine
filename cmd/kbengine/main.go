@@ -299,7 +299,10 @@ func (w catalogWriter) Save(e tui.Edit) error {
 func runServe(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	catalogPath := fs.String("catalog", "", "path to catalog.json")
+	catalogPath := fs.String("catalog", "", "path to catalog.json, or s3://bucket/key in Yandex Object Storage")
+	// IAM-токен к бакету с Мака (`yc iam create-token` в файл 0600). В Serverless
+	// Container не нужен: токен сервисного аккаунта дает сервис метаданных.
+	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for --catalog s3://… (mode 0600); without it the token comes from the cloud metadata service")
 	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
 	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
 	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
@@ -361,13 +364,19 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 
 	// Сборка индекса файлов живет столько же, сколько процесс: у serve нет
 	// мягкой остановки, и выход процесса обрывает обход вместе со всем прочим.
-	serveOpts, err := serveOptions(context.Background(), *catalogPath, *timing, filesRoots, filesExclude, *filesIndex, stdout, stderr)
+	ctx := context.Background()
+	src, err := openCatalogSource(ctx, *catalogPath, *s3TokenFile, stderr)
+	if err != nil {
+		fmt.Fprintf(stderr, "serve: %v\n", err)
+		return 1
+	}
+	serveOpts, err := serveOptions(ctx, *timing, filesRoots, filesExclude, *filesIndex, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
 
-	handler, err := buildServeHandler(*catalogPath, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
+	handler, err := buildServeHandlerFrom(src, *configPath, *ledgerPath, *workbookPath, *changelogPath, *nowPath, *teamPath, *projectsPath, *mediaPath, mapPaths,
 		serveOpts...)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
@@ -641,7 +650,16 @@ func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
 }
 
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
-	loader := catalogjson.FileLoader{Path: catalogPath}
+	return buildServeHandlerFrom(diskCatalogSource(catalogPath, io.Discard), configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths, opts...)
+}
+
+// buildServeHandlerFrom is buildServeHandler for a catalog from any source:
+// файл на диске или ключ в хранилище (serve_store.go). Словарь синонимов
+// источника применяется здесь, а не вызывающим: иначе забытая опция молча
+// отключала бы перевод терминов.
+func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
+	loader := src.loader
+	opts = append([]httpapi.Option{src.synonyms}, opts...)
 	front, err := root.Frontend()
 	if err != nil {
 		return nil, err
@@ -701,7 +719,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 	engine := buildInfo()
 	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
 		changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths))
-	docs.Artefacts = artefactsFS(catalogPath)
+	docs.Artefacts = src.artefacts
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
 		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front, opts...), nil
 }

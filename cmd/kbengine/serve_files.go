@@ -12,8 +12,8 @@ import (
 )
 
 // serveOptions собирает необязательные части сервера из флагов serve.
-func serveOptions(ctx context.Context, catalogPath string, timing bool, filesRoots, filesExclude []string, filesIndex string, stdout, stderr io.Writer) ([]httpapi.Option, error) {
-	opts := []httpapi.Option{synonymsFor(catalogPath, stderr), toolCallsOption(stderr)}
+func serveOptions(ctx context.Context, timing bool, filesRoots, filesExclude []string, filesIndex string, stdout, stderr io.Writer) ([]httpapi.Option, error) {
+	opts := []httpapi.Option{toolCallsOption(stderr)}
 	if timing {
 		opts = append(opts, httpapi.WithServerTiming())
 	}
