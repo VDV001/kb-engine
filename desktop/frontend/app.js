@@ -624,7 +624,10 @@ function renderStrip(shown, hue) {
   const strip = $("#strip");
   strip.hidden = !state.q || !state.sources.length;
   if (strip.hidden) return;
-  strip.innerHTML = `<span class="strip-lbl">источники</span>` + state.sources.map((s) => {
+  // «все» первым: сброс фильтра виден и нажимается, а не прячется в повторном
+  // клике по выбранному источнику (просьба владельца 05.11).
+  const all = `<button class="chip all" data-src="" aria-pressed="${!state.filter}" data-tip="Все источники" data-tip-b="Выдача сразу по всем источникам">все</button>`;
+  strip.innerHTML = `<span class="strip-lbl">источники</span>` + all + state.sources.map((s) => {
     const name = esc(label(s)), c = `style="--c:var(${hue.get(s.id)})"`;
     if (s.error) return `<span class="chip off" ${c} data-tip="${name}" data-tip-b="${esc(s.error)}" data-tip-bad><span class="chip-dot"></span>${name}<span class="cnt">${esc(s.error.split(":")[0])}</span></span>`;
     return `<button class="chip" ${c} data-src="${esc(s.id)}" aria-pressed="${state.filter === s.id}" data-tip="${name}" data-tip-b="${esc(tilde(target(s)))} · показано ${fmt(shown[s.id] || 0)} из ${fmt(s.found)}"><span class="chip-dot"></span>${name}<span class="cnt"><b>${fmt(shown[s.id] || 0)}</b> из ${fmt(s.found)}</span></button>`;
@@ -634,7 +637,8 @@ function renderStrip(shown, hue) {
 $("#strip").addEventListener("click", (e) => {
   const b = e.target.closest("button.chip");
   if (!b) return;
-  state.filter = state.filter === b.dataset.src ? null : b.dataset.src;
+  // «все» (data-src="") снимает фильтр; повторный клик по источнику — тоже.
+  state.filter = !b.dataset.src || state.filter === b.dataset.src ? null : b.dataset.src;
   state.sel = 0;
   render();
 });
