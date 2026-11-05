@@ -25,24 +25,29 @@ func (f *folderSettings) Modules() []desktopconfig.Module {
 
 // SetModules saves which modules are on. Индекс не трогается: модуль —
 // вкладка, а не источник. Окно присылает только известные ему модули;
-// модули более новой сборки из конфига сохраняются как были.
+// присланные меняются на своих местах, новые встают в конец, остальные
+// (непереданные и модули более новой сборки) остаются как были.
 func (f *folderSettings) SetModules(list []desktopconfig.Module) error {
+	seen := make(map[desktopconfig.ModuleID]bool, len(list))
 	for _, m := range list {
 		if !slices.Contains(knownModules, m.ID) {
-			return fmt.Errorf("%w: %q неизвестен окну", desktopconfig.ErrModuleID, m.ID)
+			return fmt.Errorf("%w: %q", desktopconfig.ErrUnknownModule, m.ID)
 		}
+		if seen[m.ID] {
+			return fmt.Errorf("%w: %q", desktopconfig.ErrModuleID, m.ID)
+		}
+		seen[m.ID] = true
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	next := f.cfg
-	next.Modules = slices.Clone(list)
-	for _, m := range f.cfg.Modules {
-		if !slices.Contains(knownModules, m.ID) {
+	next.Modules = slices.Clone(f.cfg.Modules)
+	for _, m := range list {
+		if i := slices.IndexFunc(next.Modules, func(x desktopconfig.Module) bool { return x.ID == m.ID }); i >= 0 {
+			next.Modules[i] = m
+		} else {
 			next.Modules = append(next.Modules, m)
 		}
-	}
-	if err := next.Validate(); err != nil {
-		return err
 	}
 	// Под замком config.json, как SetSources: MCP-сервер читает файл под ним.
 	return filelock.With(f.path, func() error {
@@ -50,6 +55,7 @@ func (f *folderSettings) SetModules(list []desktopconfig.Module) error {
 			return err
 		}
 		f.cfg = next
+		f.publishLocked(false) // снимок читают без f.mu
 		return nil
 	})
 }

@@ -2,7 +2,7 @@ package desktopconfig
 
 import (
 	"errors"
-	"fmt"
+	"slices"
 )
 
 // ModuleID — модуль окна: раздел, который человек включает в настройках и
@@ -12,8 +12,11 @@ type ModuleID string
 // ModuleFinances — финансы: витрина движка во вкладке окна.
 const ModuleFinances ModuleID = "finances"
 
-// ErrModuleID — у модуля нет id или он повторяется.
-var ErrModuleID = errors.New("у модуля нет id или он повторяется")
+// Ошибки списка модулей от окна; вызывающие проверяют errors.Is.
+var (
+	ErrModuleID      = errors.New("у модуля нет id или он повторяется")
+	ErrUnknownModule = errors.New("модуль неизвестен этой сборке окна")
+)
 
 // Module — включен ли модуль. Порядок в Config.Modules — порядок вкладок.
 //
@@ -25,17 +28,17 @@ type Module struct {
 	Enabled bool     `json:"enabled"`
 }
 
-// validateModules checks ids are present and unique. Неизвестный id — не
-// ошибка: его записала более новая сборка, он хранится, вкладки у него нет.
-func (c Config) validateModules() error {
+// dropBadModules отбрасывает записи без id и повторы (остается первая). Не
+// ошибка чтения: модули — только вкладки, а конфиг читают и окно, и
+// kbengine-mcp; испорченная запись модуля не должна гасить источники.
+// Неизвестный id (его записала более новая сборка) хранится, вкладки у него нет.
+func (c *Config) dropBadModules() {
 	seen := make(map[ModuleID]bool, len(c.Modules))
-	for _, m := range c.Modules {
-		if m.ID == "" || seen[m.ID] {
-			return fmt.Errorf("%w: %q", ErrModuleID, m.ID)
-		}
+	c.Modules = slices.DeleteFunc(c.Modules, func(m Module) bool {
+		bad := m.ID == "" || seen[m.ID]
 		seen[m.ID] = true
-	}
-	return nil
+		return bad
+	})
 }
 
 // ModuleOn reports whether the module is enabled; модуль без записи выключен.

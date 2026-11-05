@@ -53,7 +53,7 @@ func (a *App) SetSources(list []desktopconfig.Source, exclude []string, tokens m
 // Modules returns the window modules with whether each is on.
 func (a *App) Modules() []desktopconfig.Module { return a.settings.Modules() }
 
-// SetModules saves which modules are on; их вкладки окно показывает сразу.
+// SetModules saves which modules are on.
 func (a *App) SetModules(list []desktopconfig.Module) error { return a.settings.SetModules(list) }
 
 // NewSourceID returns an id for a source the person is adding: к id сервера

@@ -33,8 +33,9 @@ type Config struct {
 	// Server — адрес сервера из конфига до источников; читается только при
 	// переезде, дальше сервер живет источником вида server.
 	Server string `json:"server,omitempty"`
-	// Modules — разделы окна, которые человек включил (финансы и дальше);
-	// порядок — порядок вкладок.
+	// Modules — разделы окна (финансы и дальше) с признаком, включен ли
+	// каждый; в списке и выключенные, и неизвестные этой сборке. Включен ли —
+	// только через ModuleOn. Порядок — порядок вкладок.
 	Modules []Module `json:"modules,omitempty"`
 }
 
@@ -79,6 +80,7 @@ func Read(path string) (Config, error) {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
 	cfg.migrate()
+	cfg.dropBadModules()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -104,6 +106,7 @@ func Write(path string, cfg Config) error {
 	// Конфиг прежней формы сначала переезжает, как при чтении: иначе сервер из
 	// него пропал бы (sources: null), а roots и catalog выжили бы случайно.
 	cfg.migrate()
+	cfg.dropBadModules()
 	if err := cfg.Validate(); err != nil {
 		return err
 	}

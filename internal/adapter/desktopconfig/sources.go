@@ -88,11 +88,8 @@ func CheckServerURL(raw string) error {
 	}
 }
 
-// Validate checks every source and module and that ids are present and unique.
+// Validate checks every source and that ids are present and unique.
 func (c Config) Validate() error {
-	if err := c.validateModules(); err != nil {
-		return err
-	}
 	seen := make(map[string]bool, len(c.Sources))
 	for _, s := range c.Sources {
 		if s.ID == "" || seen[s.ID] {
