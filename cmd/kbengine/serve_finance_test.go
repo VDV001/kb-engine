@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -309,5 +311,73 @@ func TestFinancesOnlyBesideAPersonsBase(t *testing.T) {
 				t.Fatalf("journal %q (fin %v), want %q", got, src.fin != nil, c.journal)
 			}
 		})
+	}
+}
+
+// Счета человека в хранилище: заведение и подтверждение остатка через API,
+// расчетный остаток тем же правилом, что у книги на Маке (подтвержденное минус
+// траты после момента), и валюта операции по счету, как у fin add.
+func TestAccountsThroughTheAPI(t *testing.T) {
+	h, tok, s := financeTenant(t)
+	put := func(name, body string) *httptest.ResponseRecorder {
+		return do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape(name)+"/balance", body, tok)
+	}
+	if rec := put("Сбербанк", `{"amount":"1000","create":true,"tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Wise", `{"amount":"10","create":true,"currency":"USD","rate":"84,28","tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create foreign: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("сбербанк", `{"amount":"1000","create":true}`); rec.Code != http.StatusConflict {
+		t.Fatalf("create twice: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Тинькофф", `{"amount":"1"}`); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Сбербанк") {
+		t.Fatalf("unknown account: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Сбербанк", `{"amount":"abc"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad amount: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Сбербанк", `{"amount":"1","tz":"Mars/Olympus"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad zone: %d %s", rec.Code, rec.Body.String())
+	}
+	// Трата после подтверждения уменьшает расчетный остаток.
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"418","category":"Транспорт","account":"Сбербанк","tz":"Asia/Yekaterinburg"}`, tok); rec.Code != http.StatusCreated {
+		t.Fatalf("expense: %d %s", rec.Code, rec.Body.String())
+	}
+	// Без валюты в запросе операция с валютного счета — в его валюте.
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"2","category":"Сервисы","account":"Wise","tz":"Asia/Yekaterinburg"}`, tok); rec.Code != http.StatusCreated {
+		t.Fatalf("foreign expense: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := do(h, http.MethodGet, "/api/finances", "", tok)
+	var out struct {
+		Transactions []struct {
+			Account, Currency string
+		} `json:"transactions"`
+		Accounts []struct {
+			Bank, Balance, Current, Currency string
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (%.300s)", err, rec.Body.String())
+	}
+	got := map[string][2]string{}
+	for _, a := range out.Accounts {
+		got[a.Bank] = [2]string{a.Balance, a.Current}
+	}
+	if got["Сбербанк"] != [2]string{"1000.00", "582.00"} {
+		t.Errorf("Сбербанк %v, want confirmed 1000.00 and current 582.00 (%s)", got["Сбербанк"], rec.Body.String())
+	}
+	if len(out.Accounts) != 2 {
+		t.Errorf("%d accounts, want 2", len(out.Accounts))
+	}
+	for _, tx := range out.Transactions {
+		if tx.Account == "Wise" && tx.Currency != "USD" {
+			t.Errorf("an expense from Wise recorded in %q, want USD", tx.Currency)
+		}
+	}
+	if _, err := s.Get(context.Background(), "users/anna/fin/accounts.json"); err != nil {
+		t.Errorf("accounts are not in the store: %v", err)
 	}
 }

@@ -11,6 +11,14 @@ import (
 // ErrInvalidAccount is returned when account parameters violate an invariant.
 var ErrInvalidAccount = errors.New("invalid account")
 
+// ErrUnknownAccount — счета с таким именем нет. Отказ, а не заведение нового:
+// опечатка в имени и новый счет снаружи неотличимы, решает человек (create).
+var ErrUnknownAccount = errors.New("unknown account")
+
+// ErrAccountExists — счет с таким именем уже есть (имена сравниваются как
+// SameAccountName): второй «Сбербанк» разделил бы остаток на две строки.
+var ErrAccountExists = errors.New("account already exists")
+
 // Account is a bank balance snapshot as recorded in the ledger.
 //
 // A balance may legitimately be negative (an overdraft or a credit card), so

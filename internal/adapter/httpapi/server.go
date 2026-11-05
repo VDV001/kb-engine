@@ -242,6 +242,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	}
 	if o.finWriter != nil {
 		mux.Handle("POST /api/finances/transactions", sameSiteJSON(handleAddTransaction(o.finWriter)))
+		mux.Handle("PUT /api/finances/accounts/{name}/balance", sameSiteJSON(handleConfirmBalance(o.finWriter)))
 	}
 	if o.files != nil {
 		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))

@@ -33,11 +33,28 @@ type TransactionAdded struct {
 	Warnings         []string
 }
 
-// FinanceWriter records operations in the journal the server reads. Правила
-// записи — у реализации (cmd: те же, что у fin add), обработчик только
-// разбирает запрос и переводит ответ.
+// BalanceConfirm is one confirmation of an account's balance: то же, что
+// kbengine fin balance. Bank — из пути, остальное — из тела; сумма и курс —
+// строки, как их набрал человек. TZ — как у TransactionAdd: день
+// подтверждения — день человека.
+type BalanceConfirm struct {
+	Bank, Amount, Currency, Rate, TZ string
+	Create                           bool
+}
+
+// BalanceConfirmed is the account as confirmed.
+type BalanceConfirmed struct {
+	Bank, Balance, Updated string
+	Created                bool
+}
+
+// FinanceWriter records operations in the journal the server reads and
+// confirms account balances. Правила записи — у реализации (cmd: те же, что у
+// fin add и fin balance), обработчик только разбирает запрос и переводит
+// ответ.
 type FinanceWriter interface {
 	AddTransaction(ctx context.Context, a TransactionAdd) (TransactionAdded, error)
+	ConfirmBalance(ctx context.Context, c BalanceConfirm) (BalanceConfirmed, error)
 }
 
 // WithFinanceWriter подключает запись операций. Без нее маршрута нет.
@@ -97,5 +114,11 @@ func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(out)
+	}
+}
+
+func handleConfirmBalance(fw FinanceWriter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "not yet", http.StatusNotImplemented)
 	}
 }

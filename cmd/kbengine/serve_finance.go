@@ -202,3 +202,8 @@ func transactionParams(a httpapi.TransactionAdd) (finance.AddParams, error) {
 		Place: a.Place, Description: a.Description, Source: a.Source, Account: a.Account, Currency: named,
 	}, nil
 }
+
+// ConfirmBalance implements httpapi.FinanceWriter.
+func (f storeFinances) ConfirmBalance(ctx context.Context, c httpapi.BalanceConfirm) (httpapi.BalanceConfirmed, error) {
+	return httpapi.BalanceConfirmed{}, errors.New("not yet")
+}
