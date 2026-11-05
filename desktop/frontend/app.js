@@ -442,15 +442,18 @@ window.addEventListener("resize", moveInk);
 // дорисована K, а не по таймеру: таймер расходился с CSS и обрывал цикл при
 // повторном ⌥Space.
 const brand = $(".brand");
+// Идущий цикл не перезапускается ни наведением, ни повторным ⌥Space: рывок
+// букв назад и есть моргание.
 const wakeMark = () => {
-  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  brand.classList.remove("wake");
-  void brand.offsetWidth; // перезапуск анимации, если окно открыли повторно до ее конца
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches || brand.classList.contains("wake")) return;
   brand.classList.add("wake");
 };
-$(".mark-k").addEventListener("animationend", () => brand.classList.remove("wake"));
-// Наведение на идущий цикл его не перезапускает: рывок назад и есть моргание.
-brand.addEventListener("mouseenter", () => { if (!brand.classList.contains("wake")) wakeMark(); });
+// У K две анимации: конец стирания (0.35 с) — не конец цикла. Отмена (снятый
+// класс, скрытое окно) тоже снимает wake, иначе знак застрял бы раскрытым.
+const markDone = (e) => { if (e.animationName === "mark-draw") brand.classList.remove("wake"); };
+$(".mark-k").addEventListener("animationend", markDone);
+$(".mark-k").addEventListener("animationcancel", markDone);
+brand.addEventListener("mouseenter", wakeMark);
 if (window.runtime) window.runtime.EventsOn("kb:show", () => { $("#q").focus(); $("#q").select(); wakeMark(); });
 moveInk();
 // Шрифт вшит и грузится после первого замера: подчеркивание мерить заново.
