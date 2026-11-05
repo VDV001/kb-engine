@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Account, AccountGroup } from './api'
+import type { Account, AccountGroup, BalanceTotal, CurrencyBalance } from './api'
 import { formatMoney, formatRub, toKopecks, unitOf } from './money'
 
 // Карточка «где лежат деньги». Перенесена из Python-дашборда, но не целиком:
@@ -67,6 +67,8 @@ export function AccountsCard({
   accounts,
   groups: engineGroups,
   free,
+  currencies,
+  totals,
   expenses,
   income,
   today,
@@ -91,6 +93,14 @@ export function AccountsCard({
    * посчитано), и это правило про деньги, а не про вёрстку.
    */
   free?: string
+  /**
+   * Деньги по каждой валюте от движка — главная строка (решение владельца
+   * 05.11): рубли и доллары не складываются и не пересчитываются по курсу,
+   * курс меняется. Без поля (старая сборка) карточка показывает как раньше.
+   */
+  currencies?: CurrencyBalance[]
+  /** Итоги родов по валютам, от движка. */
+  totals?: BalanceTotal[]
   expenses: string
   income: string
   today: string
@@ -139,6 +149,13 @@ export function AccountsCard({
   }
   const plain = groups.find((g) => g.group === '')?.accounts ?? []
   const kinds = groups.filter((g) => g.group !== '')
+  // Рублевая оценка по курсу счетов — справка рядом, когда есть что оценивать.
+  const estimated = currencies !== undefined && currencies.some((c) => c.currency !== '')
+  const unvaluedUnits = [
+    ...new Set(accounts.filter((a) => a.unvalued && now(a) !== 0).map((a) => unitOf(a.currency ?? ''))),
+  ]
+  const kindTotal = (group: string) =>
+    totals === undefined ? null : perCurrency(totals.filter((t) => t.group === group).map((t) => [t.currency, t.current]))
 
   return (
     <div className="rounded-xl bg-primary-container p-5 text-on-primary">
@@ -146,19 +163,32 @@ export function AccountsCard({
         <span className="label text-[9px] tracking-[0.2em] opacity-60">На счетах</span>
         <span className="flex flex-col items-end">
           <span className="privacy-mask text-xl font-bold" data-testid="accounts-total">
-            {formatRub(total)}
+            {currencies !== undefined ? perCurrency(currencies.map((c) => [c.currency, c.current])) : formatRub(total)}
           </span>
+          {estimated && (
+            <span className="label text-[8px] opacity-50" data-testid="accounts-estimate">
+              ≈ <span className="privacy-mask">{formatRub(total)}</span> по курсу счетов
+              {/* Оценка молча без валюты, у которой нет курса, выдала бы себя
+                  за полную — названо, чего в ней нет. */}
+              {unvaluedUnits.length > 0 && ` · без ${unvaluedUnits.join(', ')}`}
+            </span>
+          )}
           {/* Расшифровка появляется только когда есть что расшифровывать:
               «свободно 1 000» под итогом «1 000» объясняет то, чего не
               происходит, и учит не читать эту строку. */}
-          {foreign.length > 0 && (
+          {currencies === undefined && foreign.length > 0 && (
             <span className="label text-[8px] opacity-60" data-testid="accounts-foreign">
               + <span className="privacy-mask font-bold">{foreign.join(' · ')}</span>
             </span>
           )}
-          {kinds.length > 0 && free !== undefined && (
+          {kinds.length > 0 && (currencies !== undefined || free !== undefined) && (
             <span className="label text-[8px] opacity-60" data-testid="accounts-free">
-              свободно <span className="privacy-mask font-bold">{formatRub(toKopecks(free))}</span>
+              свободно{' '}
+              <span className="privacy-mask font-bold">
+                {currencies !== undefined
+                  ? perCurrency(currencies.map((c) => [c.currency, c.free]))
+                  : formatRub(toKopecks(free ?? '0'))}
+              </span>
             </span>
           )}
         </span>
@@ -176,7 +206,7 @@ export function AccountsCard({
                 Банки
               </span>
               <span className="privacy-mask text-xs font-bold opacity-80" data-testid="group-total-Банки">
-                {formatRub(plain.reduce((n, a) => n + (valued(a) ?? 0), 0))}
+                {kindTotal('') ?? formatRub(plain.reduce((n, a) => n + (valued(a) ?? 0), 0))}
               </span>
             </div>
           )}
@@ -203,12 +233,13 @@ export function AccountsCard({
                   className="privacy-mask text-xs font-bold opacity-80"
                   data-testid={`group-total-${k.group}`}
                 >
-                  {formatRub(
-                    toKopecks(
-                      engineGroup(k.group)?.total ??
-                        String(k.accounts.reduce((n, a) => n + (valued(a) ?? 0), 0) / 100),
-                    ),
-                  )}
+                  {kindTotal(k.group) ??
+                    formatRub(
+                      toKopecks(
+                        engineGroup(k.group)?.total ??
+                          String(k.accounts.reduce((n, a) => n + (valued(a) ?? 0), 0) / 100),
+                      ),
+                    )}
                 </span>
               </div>
               <ul className="space-y-2.5">
@@ -401,6 +432,14 @@ function byBank(plain: Account[]): { bank: string; accounts: Account[] }[] {
     else out.push({ bank, accounts: [a] })
   }
   return out
+}
+
+/**
+ * Суммы по валютам одной строкой: «6 000,00 ₽ · 100,00 $». Каждая в своей
+ * единице, без пересчета — числа считает движок, витрина только печатает.
+ */
+function perCurrency(list: [currency: string, amount: string][]): string {
+  return list.map(([currency, amount]) => formatMoney(toKopecks(amount), currency)).join(' · ')
 }
 
 /**

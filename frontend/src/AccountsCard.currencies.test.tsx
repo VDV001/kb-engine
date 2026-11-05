@@ -73,6 +73,24 @@ describe('AccountsCard — деньги по валютам', () => {
     expect(spaced(screen.getByTestId('group-total-Резерв'))).toContain('5 000')
   })
 
+  it('оценка называет валюту, которую оценить нечем, а не прячет ее', () => {
+    const withSum: Account[] = [
+      ...accounts,
+      { bank: 'Kapital UZS', balance: '1333000.00', updated: '2026-11-05', currency: 'UZS', unvalued: true },
+    ]
+    render(
+      <AccountsCard
+        accounts={withSum}
+        currencies={[...currencies, { currency: 'UZS', current: '1333000.00', free: '1333000.00' }]}
+        totals={totals}
+        expenses="0" income="0" today="2026-11-05"
+      />,
+    )
+    const est = spaced(screen.getByTestId('accounts-estimate'))
+    expect(est).toContain('15 000')
+    expect(est).toContain('без сум')
+  })
+
   it('у книги в одной валюте оценки рядом нет: объяснять нечего', () => {
     render(
       <AccountsCard
