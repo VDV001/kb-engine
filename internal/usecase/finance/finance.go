@@ -109,6 +109,16 @@ type AddParams struct {
 	// They are what a currency is taken from and checked against; without them
 	// there is nothing to check, and the later sync is where a mismatch stops.
 	Accounts []domain.Account
+	// Received — вторая сторона перевода себе (обмен валюты): nil — ее нет.
+	Received *ReceivedAdd
+}
+
+// ReceivedAdd is the second side of a transfer as a person names it.
+// Currency nil — валюта счета получения, а без счетов — валюта книги.
+type ReceivedAdd struct {
+	Amount   domain.Money
+	Currency *domain.Currency
+	Account  string
 }
 
 // resolveCurrency returns the unit an entry is recorded in and the account it
@@ -157,6 +167,16 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 		date = domain.Day(now())
 	}
 	currency, acc := resolveCurrency(p.Currency, p.Account, p.Accounts)
+	received, to, err := resolveReceived(p.Received, p.Accounts)
+	if err != nil {
+		return Record{}, err
+	}
+	// У обмена известны оба счета: со счета, которого нет, ничего не спишется,
+	// а получение прибавится — обмен создал бы деньги из воздуха. Обычная трата
+	// с незнакомого счета по-прежнему пишется: этого правила у нее не было.
+	if p.Received != nil && p.Accounts != nil && acc == nil {
+		return Record{}, fmt.Errorf("%w: %q to send from", domain.ErrUnknownAccount, p.Account)
+	}
 
 	tx, err := domain.NewTransaction(domain.TransactionParams{
 		ID:          newID(),
@@ -171,6 +191,7 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 		Account:     p.Account,
 		Currency:    currency,
 		RepeatOf:    p.RepeatOf,
+		Received:    received,
 		Now:         now,
 	})
 	if err != nil {
@@ -179,7 +200,40 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 	if err := checkCurrency(tx, acc); err != nil {
 		return Record{}, err
 	}
+	if to != nil {
+		if err := tx.CheckReceivedAccountCurrency(*to); err != nil {
+			return Record{}, err
+		}
+	}
 	return NewRecord(tx, 1, now())
+}
+
+// resolveReceived names the second side's currency the way resolveCurrency
+// names the first: названная человеком, иначе валюта счета получения, иначе
+// валюта книги. Когда счета известны, незнакомый счет получения — отказ:
+// деньги «пришли бы» на счет, которого нет, и молча пропали бы из остатков.
+func resolveReceived(r *ReceivedAdd, accounts []domain.Account) (domain.ReceivedParams, *domain.Account, error) {
+	if r == nil {
+		return domain.ReceivedParams{}, nil, nil
+	}
+	to := findAccount(accounts, r.Account)
+	if accounts != nil && to == nil {
+		return domain.ReceivedParams{}, nil, fmt.Errorf("%w: %q to receive on", domain.ErrUnknownAccount, r.Account)
+	}
+	var currency domain.Currency
+	switch {
+	case r.Currency != nil:
+		currency = *r.Currency
+	case to != nil:
+		currency = to.Currency()
+	}
+	// Имя — как оно записано у счета: набранное «wise» иначе жило бы в журнале
+	// рядом со счетом «Wise».
+	account := r.Account
+	if to != nil {
+		account = to.Bank()
+	}
+	return domain.ReceivedParams{Amount: r.Amount, Currency: currency, Account: account}, to, nil
 }
 
 // Sort orders records chronologically, with the id breaking ties, in place.

@@ -442,3 +442,57 @@ func TestAccountsThroughTheAPI(t *testing.T) {
 		t.Errorf("accounts are not in the store: %v", err)
 	}
 }
+
+// Обмен валюты через сервер людей целиком: рубли уходят со Сбербанка,
+// доллары приходят на Wise, остатки обоих меняются, курс — из двух сумм.
+// Счет получения обязан существовать: иначе деньги молча пропали бы из
+// остатков — в том числе у человека, у которого счетов еще нет вовсе.
+func TestExchangeThroughTheAPI(t *testing.T) {
+	h, tok, _ := financeTenant(t)
+	post := func(body string) *httptest.ResponseRecorder {
+		return do(h, http.MethodPost, "/api/finances/transactions", body, tok)
+	}
+	const exchange = `{"kind":"expense","amount":"9000","category":"Прочее","subcategory":"Перевод себе","account":"Сбербанк","tz":"Asia/Yekaterinburg","received":{"amount":"100","account":"%s"}}`
+	if rec := post(fmt.Sprintf(exchange, "Wise")); rec.Code != http.StatusBadRequest {
+		t.Fatalf("an exchange before any account exists: %d %s, want 400", rec.Code, rec.Body.String())
+	}
+	put := func(name, body string) {
+		t.Helper()
+		if rec := do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape(name)+"/balance", body, tok); rec.Code != http.StatusCreated {
+			t.Fatalf("create %s: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+	put("Сбербанк", `{"amount":"10000","create":true,"tz":"Asia/Yekaterinburg"}`)
+	put("Wise", `{"amount":"10","create":true,"currency":"USD","rate":"80","tz":"Asia/Yekaterinburg"}`)
+	if rec := post(fmt.Sprintf(exchange, "Тинькофф")); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "Тинькофф") {
+		t.Fatalf("an unknown account to receive on: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := post(fmt.Sprintf(exchange, "wise")); rec.Code != http.StatusCreated {
+		t.Fatalf("exchange: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := do(h, http.MethodGet, "/api/finances", "", tok)
+	var out struct {
+		Transactions []struct {
+			Received *struct{ Amount, Currency, Account, Rate string } `json:"received"`
+		} `json:"transactions"`
+		Accounts []struct{ Bank, Current string } `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (%.300s)", err, rec.Body.String())
+	}
+	got := map[string]string{}
+	for _, a := range out.Accounts {
+		got[a.Bank] = a.Current
+	}
+	// Wise подтвержден сегодня, обмен тоже сегодня: внутри дня подтверждения
+	// получение не прибавляется (расчет только занижает), до следующего
+	// подтверждения Wise остается 10 $. Прибавление на следующий день проверяет
+	// usecase (TestExchangeMovesMoneyBetweenAccounts).
+	if got["Сбербанк"] != "1000.00" || got["Wise"] != "10.00" {
+		t.Errorf("balances %v, want Сбербанк 1000.00 and Wise 10.00 on its confirmation day", got)
+	}
+	if len(out.Transactions) != 1 || out.Transactions[0].Received == nil ||
+		out.Transactions[0].Received.Currency != "USD" || out.Transactions[0].Received.Rate != "90.00" {
+		t.Errorf("the exchange as shown: %s", rec.Body.String())
+	}
+}

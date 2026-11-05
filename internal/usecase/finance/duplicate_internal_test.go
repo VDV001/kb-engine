@@ -65,6 +65,9 @@ func TestEntryMatches_comparesEveryFieldOfEntry(t *testing.T) {
 		"source":   func(e *entry) { e.source = "Скрин банка" },
 		"account":  func(e *entry) { e.account = "Сбербанк" },
 		"currency": func(e *entry) { e.currency, _ = domain.NewCurrency("USD") },
+		// У образца второй стороны нет; у кандидата она появляется — это
+		// другая операция (обмен), а не та же трата.
+		"received": func(e *entry) { e.received = domain.ReceivedParams{Amount: other, Account: "Wise"} },
 	}
 
 	typ := reflect.TypeFor[entry]()

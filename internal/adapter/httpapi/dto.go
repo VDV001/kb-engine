@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"encoding/json"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -34,6 +36,46 @@ type transactionDTO struct {
 	// RepeatOf — id записи, поверх которой повтор подтверждён человеком.
 	// Отсутствует, когда о повторе ничего не известно.
 	RepeatOf string `json:"repeat_of,omitempty"`
+	// Received — вторая сторона перевода себе (обмен валюты) с курсом из двух
+	// сумм; нет — поле опущено.
+	Received *receivedDTO `json:"received,omitempty"`
+}
+
+// receivedDTO is the second side as the screen shows it. Currency — код, пусто
+// для валюты книги, как у операции; Rate — копейки книги за единицу, пусто,
+// когда курса нет (перевод между рублевыми счетами).
+type receivedDTO struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency,omitempty"`
+	Account  string `json:"account"`
+	Rate     string `json:"rate,omitempty"`
+}
+
+func toReceivedDTO(t domain.Transaction) *receivedDTO {
+	r, ok := t.Received()
+	if !ok {
+		return nil
+	}
+	d := &receivedDTO{Amount: r.Amount().String(), Currency: foreignCode(r.Currency()), Account: r.Account()}
+	if rate, ok := t.ExchangeRate(); ok {
+		d.Rate = rateText(rate)
+	}
+	return d
+}
+
+// rateText shows a rate with two decimals, as money is read, and a cheaper
+// unit with four significant digits: курс сума — «0.007502», а не «0.01».
+func rateText(r *big.Rat) string {
+	if r.Cmp(big.NewRat(1, 1)) >= 0 {
+		return r.FloatString(2)
+	}
+	for decimals := 2; decimals < 20; decimals++ {
+		s := r.FloatString(decimals)
+		if len(strings.TrimLeft(strings.ReplaceAll(s, ".", ""), "0")) >= 4 {
+			return s
+		}
+	}
+	return r.FloatString(20)
 }
 
 // namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
@@ -247,6 +289,7 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Currency:    foreignCode(t.Currency()),
 		RecordedAt:  recordedAtOrEmpty(t.ID()),
 		RepeatOf:    t.RepeatOf(),
+		Received:    toReceivedDTO(t),
 	}
 }
 

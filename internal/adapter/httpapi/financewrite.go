@@ -22,6 +22,13 @@ var ErrRepeat = errors.New("repeat")
 type TransactionAdd struct {
 	Kind, Date, Amount, Category, Subcategory, Place, Description, Source, Account, Currency, TZ string
 	Force                                                                                        bool
+	// Received — вторая сторона перевода себе (обмен валюты); nil — ее нет.
+	Received *ReceivedAdd
+}
+
+// ReceivedAdd is the second side as typed: суммы и валюта строками.
+type ReceivedAdd struct {
+	Amount, Currency, Account string
 }
 
 // Correction is a spelling the journal changed to the one already in use.
@@ -77,6 +84,14 @@ type transactionAddDTO struct {
 	Currency    string `json:"currency"`
 	TZ          string `json:"tz"`
 	Force       bool   `json:"force"`
+	// Received — вторая сторона перевода себе, тем же объектом, что в журнале.
+	Received *receivedAddDTO `json:"received"`
+}
+
+type receivedAddDTO struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+	Account  string `json:"account"`
 }
 
 type correctionDTO struct {
@@ -100,7 +115,11 @@ func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
 			writeBodyError(w, err)
 			return
 		}
-		got, err := fw.AddTransaction(r.Context(), TransactionAdd(in))
+		got, err := fw.AddTransaction(r.Context(), TransactionAdd{
+			Kind: in.Kind, Date: in.Date, Amount: in.Amount, Category: in.Category, Subcategory: in.Subcategory,
+			Place: in.Place, Description: in.Description, Source: in.Source, Account: in.Account,
+			Currency: in.Currency, TZ: in.TZ, Force: in.Force, Received: (*ReceivedAdd)(in.Received),
+		})
 		if err != nil {
 			if errors.Is(err, ErrRepeat) {
 				http.Error(w, err.Error(), http.StatusConflict)
