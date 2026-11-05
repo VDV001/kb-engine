@@ -14,7 +14,7 @@ export function artefactHref(file?: string): string {
   // Кодируется каждый сегмент по отдельности: encodeURIComponent съел бы слэши
   // и превратил путь в одно имя, а имена папок пишет человек — там встречаются
   // и пробелы, и кириллица.
-  return '/kb/' + file.split('/').map(encodeURIComponent).join('/')
+  return 'kb/' + file.split('/').map(encodeURIComponent).join('/')
 }
 
 // Шпаргалка узнаётся по тегу, а не по папке. Признак живёт в данных, поэтому

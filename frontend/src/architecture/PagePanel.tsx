@@ -85,7 +85,7 @@ export function PagePanel({ page }: { page: string }) {
       ) : (
         <iframe
           ref={fit}
-          src={`/kb/${page}`}
+          src={`kb/${page}`}
           title="Разбор проекта"
           className="block w-full rounded-lg border border-outline-variant bg-surface"
           // scrolling="no" устарел по спецификации и остаётся единственным, что
