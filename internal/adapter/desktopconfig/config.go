@@ -33,6 +33,9 @@ type Config struct {
 	// Server — адрес сервера из конфига до источников; читается только при
 	// переезде, дальше сервер живет источником вида server.
 	Server string `json:"server,omitempty"`
+	// Modules — разделы окна, которые человек включил (финансы и дальше);
+	// порядок — порядок вкладок.
+	Modules []Module `json:"modules,omitempty"`
 }
 
 // Path is where the window keeps its config.
