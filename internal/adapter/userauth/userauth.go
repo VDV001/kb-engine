@@ -2,7 +2,8 @@
 //
 // Реестр — объект auth/users.json в том же хранилище, что и базы: имя
 // человека и SHA-256 его токена. Самих токенов на сервере нет нигде: add
-// печатает токен один раз, и украденный реестр войти не дает. Запись реестра
+// отдает токен вызывающему один раз (users add пишет его в файл 0600, не в
+// терминал), и украденный реестр войти не дает. Запись реестра
 // условная (blob.Store.Put с ETag), поэтому два одновременных add или revoke не
 // теряют друг друга.
 package userauth
@@ -59,31 +60,62 @@ type userDTO struct {
 	TokenSHA256 string `json:"token_sha256"`
 }
 
-// Add registers id and returns its token. Токен печатается вызывающим один раз
-// и больше нигде не хранится. Человеку сразу заводится пустая база, если ее
+// Add registers id and returns its token. Вызывающий сохраняет токен один раз
+// в надежное место (файл 0600, Связка ключей) и не выводит в терминал, логи
+// и ответы; в хранилище только хэш. Человеку сразу заводится пустая база, если ее
 // еще нет: сервер не падает на первом входе, а повторный add после revoke
 // возвращает доступ к прежней базе.
 func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
-	raw := make([]byte, 32)
-	if _, err := rand.Read(raw); err != nil {
-		return "", fmt.Errorf("userauth: token: %w", err)
+	token, err := NewToken()
+	if err != nil {
+		return "", err
 	}
-	token := base64.RawURLEncoding.EncodeToString(raw) // 43 печатных символа
+	if err := AddToken(ctx, s, id, token); err != nil {
+		return "", err
+	}
+	return token, nil
+}
+
+// AddToken registers id with token, выпущенным NewToken. Токен у вызывающего
+// на руках и при ошибке: ответ хранилища мог потеряться после записи, и откат
+// RevokeToken снимает ровно эту запись.
+func AddToken(ctx context.Context, s blob.Store, id domain.UserID, token string) error {
 	if _, err := s.Put(ctx, CatalogKey(id), []byte("{\"entries\":[]}\n"), ""); err != nil && !errors.Is(err, blob.ErrConflict) {
-		return "", fmt.Errorf("userauth: empty catalog for %s: %w", id, err)
+		return fmt.Errorf("userauth: empty catalog for %s: %w", id, err)
 	}
 	sum := sha256.Sum256([]byte(token))
-	err := update(ctx, s, func(r *registryDTO) error {
+	return update(ctx, s, func(r *registryDTO) error {
 		if slices.ContainsFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() }) {
 			return fmt.Errorf("%w: %s", domain.ErrUserExists, id)
 		}
 		r.Users = append(r.Users, userDTO{ID: id.String(), TokenSHA256: hex.EncodeToString(sum[:])})
 		return nil
 	})
-	if err != nil {
-		return "", err
+}
+
+// NewToken returns a fresh token: 32 случайных байта, 43 печатных символа.
+func NewToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("userauth: token: %w", err)
 	}
-	return token, nil
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// RevokeToken removes id only while its entry holds token's hash — откат
+// неудачного выпуска. Вход того же человека, выданный раньше или параллельно
+// другим оператором, другого хэша и остается; тогда ErrNoSuchUser.
+func RevokeToken(ctx context.Context, s blob.Store, id domain.UserID, token string) error {
+	sum := sha256.Sum256([]byte(token))
+	mine := hex.EncodeToString(sum[:])
+	return update(ctx, s, func(r *registryDTO) error {
+		n := len(r.Users)
+		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() && u.TokenSHA256 == mine })
+		if len(r.Users) == n {
+			return fmt.Errorf("%w: %s with this token", domain.ErrNoSuchUser, id)
+		}
+		return nil
+	})
 }
 
 // Revoke removes id from the registry. База человека остается в хранилище:
