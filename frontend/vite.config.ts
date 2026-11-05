@@ -16,6 +16,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': 'http://localhost:8080',
+      // Артефакты базы и картинки проектов отдает тот же движок: без них в dev
+      // рамка разбора и обложки получали index.html самой витрины.
+      '/kb': 'http://localhost:8080',
+      '/media': 'http://localhost:8080',
     },
   },
   test: {
