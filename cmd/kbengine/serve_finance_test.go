@@ -259,7 +259,7 @@ func TestTransactionDayIsThePersonsDay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl",
+			sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl", accountsKey: "users/anna/fin/accounts.json",
 				vocabKey: "users/anna/fin/finance-aliases.json", now: serverNow}
 			h := httpapi.NewServer(nil, nil, nil, nil, nil, nil, httpapi.Documents{}, httpapi.EngineInfo{}, nil, httpapi.WithFinanceWriter(sf))
 			body := fmt.Sprintf(`{"kind":"expense","amount":"418","category":"Еда","date":%q,"tz":%q}`, c.date, c.tz)

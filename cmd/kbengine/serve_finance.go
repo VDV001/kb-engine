@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
+	"github.com/daniil/kb-engine/internal/adapter/financeaccounts"
 	"github.com/daniil/kb-engine/internal/adapter/financejsonl"
 	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
@@ -19,22 +20,22 @@ import (
 // financeReadTimeout bounds one read of the journal: у порта Financier нет ctx.
 const financeReadTimeout = 30 * time.Second
 
-// storeFinances is a person's finances kept in a blob store: журнал операций и
-// словарь мест под users/<id>/fin/. Читает и пишет тем же разбором и теми же
-// правилами, что команды fin, — financejsonl и planAdd.
-//
-// Счетов и подтвержденных остатков здесь пока нет (этап E2): /api/finances
-// отдает операции и итоги, без балансов.
+// storeFinances is a person's finances kept in a blob store: журнал операций,
+// счета с подтвержденными остатками и словарь мест под users/<id>/fin/. Читает
+// и пишет тем же разбором и теми же правилами, что команды fin, — financejsonl,
+// planAdd и finance.ConfirmBalance; расчетный остаток считает тот же
+// finance.CurrentBalances, что у книги на Маке.
 //
 // ponytail: журнал читается целиком на каждый запрос. Потолок — тысячи строк,
 // сотни КБ на человека. Путь апгрейда — кэш по ETag, как у каталога
 // (catalogjson.StoreLoader), и журнал по годам.
 type storeFinances struct {
-	ctx        context.Context
-	store      blob.Store
-	journalKey string
-	vocabKey   string
-	now        func() time.Time
+	ctx         context.Context
+	store       blob.Store
+	journalKey  string
+	accountsKey string
+	vocabKey    string
+	now         func() time.Time
 }
 
 func (f storeFinances) records() ([]finance.Record, error) {
@@ -50,13 +51,33 @@ func (f storeFinances) records() ([]finance.Record, error) {
 	return financejsonl.Parse(f.journalKey, bytes.NewReader(o.Data), f.now)
 }
 
+// accounts reads the accounts. Документа нет — счетов нет; битый — отказ:
+// без счетов расчет остатков молча показал бы ноль вместо денег.
+func (f storeFinances) accounts(ctx context.Context) (financeaccounts.Book, error) {
+	o, err := f.store.Get(ctx, f.accountsKey)
+	if errors.Is(err, blob.ErrNotFound) {
+		return financeaccounts.Parse(f.accountsKey, nil, f.now)
+	}
+	if err != nil {
+		return financeaccounts.Book{}, fmt.Errorf("accounts: %w", err)
+	}
+	return financeaccounts.Parse(f.accountsKey, o.Data, f.now)
+}
+
 // Finances implements httpapi.Financier.
 func (f storeFinances) Finances() (httpapi.Finances, error) {
 	recs, err := f.records()
 	if err != nil {
 		return httpapi.Finances{}, err
 	}
-	out := httpapi.Finances{Transactions: make([]domain.Transaction, 0, len(recs))}
+	ctx, cancel := context.WithTimeout(f.ctx, financeReadTimeout)
+	defer cancel()
+	book, err := f.accounts(ctx)
+	if err != nil {
+		return httpapi.Finances{}, err
+	}
+	out := httpapi.Finances{Transactions: make([]domain.Transaction, 0, len(recs)),
+		Accounts: book.Accounts, Confirmations: book.Confirmations}
 	for _, r := range recs {
 		out.Transactions = append(out.Transactions, r.Transaction())
 	}
@@ -107,13 +128,20 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 	if vocErr != nil && !errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		return httpapi.TransactionAdded{}, vocErr
 	}
+	// Счета — как у fin add с --from: валюта операции берется по счету и
+	// сверяется с ним.
+	book, err := f.accounts(ctx)
+	if err != nil {
+		return httpapi.TransactionAdded{}, err
+	}
+	p.Accounts = book.Accounts
 	var warnings []string
 	if errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		warnings = append(warnings, vocErr.Error())
 	}
 	var rec finance.Record
 	var fixed []httpapi.Correction
-	err = f.update(ctx, func(raw []byte) ([]byte, error) {
+	err = f.update(ctx, f.journalKey, func(raw []byte) ([]byte, error) {
 		fixed = fixed[:0] // каждая попытка решает заново по свежему журналу
 		recs, err := financejsonl.Parse(f.journalKey, bytes.NewReader(raw), f.now)
 		if err != nil {
@@ -157,18 +185,18 @@ func (f storeFinances) clockIn(tz string) (func() time.Time, error) {
 	return func() time.Time { return f.now().In(loc) }, nil
 }
 
-// update is blob.Update over the journal, creating it empty when it is missing:
-// человек, заведенный до журналов, получает его первой операцией.
-func (f storeFinances) update(ctx context.Context, change func(raw []byte) ([]byte, error)) error {
-	err := blob.Update(ctx, f.store, f.journalKey, change)
+// update is blob.Update over key, creating the document empty when it is
+// missing: журнал и счета появляются у человека первой записью.
+func (f storeFinances) update(ctx context.Context, key string, change func(raw []byte) ([]byte, error)) error {
+	err := blob.Update(ctx, f.store, key, change)
 	if !errors.Is(err, blob.ErrNotFound) {
 		return err
 	}
-	// Одновременный первый POST уже завел журнал — это не ошибка.
-	if _, err := f.store.Put(ctx, f.journalKey, nil, ""); err != nil && !errors.Is(err, blob.ErrConflict) {
-		return fmt.Errorf("create journal: %w", err)
+	// Одновременная первая запись уже завела документ — это не ошибка.
+	if _, err := f.store.Put(ctx, key, nil, ""); err != nil && !errors.Is(err, blob.ErrConflict) {
+		return fmt.Errorf("create %s: %w", key, err)
 	}
-	return blob.Update(ctx, f.store, f.journalKey, change)
+	return blob.Update(ctx, f.store, key, change)
 }
 
 // transactionParams parses the request the way fin add parses its flags.
@@ -203,7 +231,66 @@ func transactionParams(a httpapi.TransactionAdd) (finance.AddParams, error) {
 	}, nil
 }
 
-// ConfirmBalance implements httpapi.FinanceWriter.
+// ConfirmBalance implements httpapi.FinanceWriter: разбор как у fin balance,
+// решение finance.ConfirmBalance, условная запись счетов с повтором по свежему.
+// День и момент подтверждения — в поясе человека (tz), как у операций.
 func (f storeFinances) ConfirmBalance(ctx context.Context, c httpapi.BalanceConfirm) (httpapi.BalanceConfirmed, error) {
-	return httpapi.BalanceConfirmed{}, errors.New("not yet")
+	bad := func(err error) (httpapi.BalanceConfirmed, error) {
+		return httpapi.BalanceConfirmed{}, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
+	}
+	if strings.TrimSpace(c.Amount) == "" {
+		return bad(errors.New("amount is required"))
+	}
+	money, err := domain.ParseMoney(c.Amount)
+	if err != nil {
+		return bad(err)
+	}
+	change := finance.BalanceChange{Bank: c.Bank, Balance: money, Create: c.Create}
+	if c.Currency != "" {
+		cur, err := domain.NewCurrency(c.Currency)
+		if err != nil {
+			return bad(err)
+		}
+		change.Currency = &cur
+	}
+	if c.Rate != "" {
+		per, err := domain.ParseMoney(c.Rate)
+		if err != nil {
+			return bad(fmt.Errorf("rate: %w", err))
+		}
+		if change.Rate, err = domain.NewRate(per); err != nil {
+			return bad(err)
+		}
+	}
+	now, err := f.clockIn(c.TZ)
+	if err != nil {
+		return httpapi.BalanceConfirmed{}, err
+	}
+	var confirmed domain.Account
+	var created bool
+	err = f.update(ctx, f.accountsKey, func(raw []byte) ([]byte, error) {
+		book, err := financeaccounts.Parse(f.accountsKey, raw, f.now)
+		if err != nil {
+			return nil, err
+		}
+		accs, confs, err := finance.ConfirmBalance(book.Accounts, book.Confirmations, change, now)
+		switch {
+		case errors.Is(err, domain.ErrInvalidAccount):
+			return nil, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
+		case err != nil:
+			return nil, err // ErrUnknownAccount, ErrAccountExists — обработчик знает их коды
+		}
+		created = len(accs) > len(book.Accounts)
+		for _, a := range accs {
+			if domain.SameAccountName(a.Bank(), c.Bank) {
+				confirmed = a
+			}
+		}
+		return financeaccounts.Encode(financeaccounts.Book{Accounts: accs, Confirmations: confs})
+	})
+	if err != nil {
+		return httpapi.BalanceConfirmed{}, err
+	}
+	return httpapi.BalanceConfirmed{Bank: confirmed.Bank(), Balance: confirmed.Balance().String(),
+		Updated: confirmed.Updated().Format(time.DateOnly), Created: created}, nil
 }

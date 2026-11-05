@@ -111,3 +111,27 @@ func TestConfirmBalance(t *testing.T) {
 		})
 	}
 }
+
+// Момент, записанный под другим написанием имени, заменяется, а не остается
+// рядом: два момента одного счета — и расчет взял бы случайный из них.
+func TestConfirmBalanceReplacesTheMomentOfAnotherSpelling(t *testing.T) {
+	now := func() time.Time { return time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC) }
+	sber, err := domain.NewAccount("Сбербанк", mustMoney(t, "1000"), time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := finance.Confirmations{"сбербанк ": time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)}
+	_, confs, err := finance.ConfirmBalance([]domain.Account{sber}, old, finance.BalanceChange{Bank: "Сбербанк", Balance: mustMoney(t, "5")}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(confs) != 1 {
+		t.Fatalf("%d moments for one account: %v", len(confs), confs)
+	}
+	if m, _ := confs.At("Сбербанк"); !m.Equal(now()) {
+		t.Fatalf("moment %v, want %v", m, now())
+	}
+	if len(old) != 1 {
+		t.Errorf("the input confirmations were changed in place")
+	}
+}
