@@ -378,3 +378,7 @@ func (m *MetadataToken) fetch(ctx context.Context) (string, time.Duration, error
 	}
 	return body.AccessToken, ttl, nil
 }
+
+func (s *Store) GetIfChanged(context.Context, string, string) (blob.Object, error) {
+	return blob.Object{}, errors.New("not implemented")
+}

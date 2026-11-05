@@ -220,3 +220,7 @@ func writeAtomic(path string, data []byte) error {
 	defer func() { _ = d.Close() }()
 	return d.Sync()
 }
+
+func (s *Store) GetIfChanged(context.Context, string, string) (blob.Object, error) {
+	return blob.Object{}, errors.New("not implemented")
+}

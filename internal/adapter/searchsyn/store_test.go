@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
@@ -65,5 +66,24 @@ func write(t *testing.T, path, body string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Parse — тот же разбор, что у Load, но из байтов: словарь в бакете приходит
+// не файлом.
+func TestParseMatchesLoad(t *testing.T) {
+	raw := []byte(`{"redis":{"same":["редис"],"includes":["кеш"]},"k8s":["kubernetes"]}`)
+	d, err := searchsyn.Parse("users/u1/kb/_data/search-synonyms.json", raw)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if got := d["redis"]; len(got.Same) != 1 || got.Same[0] != "редис" || len(got.Includes) != 1 {
+		t.Fatalf("redis = %+v", got)
+	}
+	if got := d["k8s"]; len(got.Same) != 1 || got.Same[0] != "kubernetes" {
+		t.Fatalf("k8s = %+v", got)
+	}
+	if _, err := searchsyn.Parse("bad.json", []byte(`{"x":{"sme":[]}}`)); err == nil || !strings.Contains(err.Error(), "bad.json") {
+		t.Fatalf("Parse of a typo'd field: err = %v, want an error naming bad.json", err)
 	}
 }

@@ -72,6 +72,11 @@ func (f *fakeS3) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "NoSuchKey", http.StatusNotFound)
 			return
 		}
+		if inm := r.Header.Get("If-None-Match"); inm != "" && inm == etagOf(cur) {
+			w.Header().Set("ETag", inm)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
 		w.Header().Set("ETag", etagOf(cur))
 		_, _ = w.Write(cur)
 	case http.MethodPut:
@@ -149,6 +154,7 @@ func TestStatusMapping(t *testing.T) {
 		{"get 404", false, http.StatusNotFound, blob.ErrNotFound},
 		{"get 403", false, http.StatusForbidden, nil},
 		{"get 500", false, http.StatusInternalServerError, nil},
+		{"get-if-changed 304", false, http.StatusNotModified, blob.ErrNotModified},
 		{"put 412", true, http.StatusPreconditionFailed, blob.ErrConflict},
 		{"put 409 concurrent write", true, http.StatusConflict, blob.ErrConflict},
 		{"put 404 key gone under If-Match", true, http.StatusNotFound, blob.ErrConflict},
@@ -163,9 +169,12 @@ func TestStatusMapping(t *testing.T) {
 			defer srv.Close()
 			s := newStore(t, srv.URL, blobs3.StaticToken(token))
 			var err error
-			if c.put {
+			switch {
+			case c.put:
 				_, err = s.Put(context.Background(), "k", []byte("v"), `"e"`)
-			} else {
+			case c.status == http.StatusNotModified:
+				_, err = s.GetIfChanged(context.Background(), "k", `"e"`)
+			default:
 				_, err = s.Get(context.Background(), "k")
 			}
 			if err == nil {

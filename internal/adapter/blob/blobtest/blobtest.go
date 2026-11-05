@@ -36,6 +36,11 @@ var cases = []struct {
 	{"of concurrent writers from one version exactly one wins", oneConcurrentWinner},
 	{"invalid keys are refused before any I/O", invalidKeysRefused},
 	{"object over the size limit is refused", tooLargeRefused},
+	{"get-if-changed on the same version is ErrNotModified", ifChangedSameVersion},
+	{"get-if-changed after an update returns the new version", ifChangedNewVersion},
+	{"get-if-changed on a missing key is ErrNotFound", ifChangedMissing},
+	{"get-if-changed with an empty etag reads like Get", ifChangedEmptyETag},
+	{"get-if-changed refuses invalid keys", ifChangedInvalidKeys},
 }
 
 func missingIsNotFound(t *testing.T, s blob.Store) {
@@ -162,6 +167,49 @@ func tooLargeRefused(t *testing.T, s blob.Store) {
 	big := make([]byte, blob.MaxObjectSize+1)
 	if _, err := s.Put(ctx, "k", big, ""); !errors.Is(err, blob.ErrTooLarge) {
 		t.Fatalf("Put of %d bytes: err = %v, want ErrTooLarge", len(big), err)
+	}
+}
+
+// Условное чтение — то, на чем держится кэш каталога: неизмененный объект
+// не перекачивается.
+func ifChangedSameVersion(t *testing.T, s blob.Store) {
+	etag := mustPut(t, s, "k", "v1", "")
+	if _, err := s.GetIfChanged(context.Background(), "k", etag); !errors.Is(err, blob.ErrNotModified) {
+		t.Fatalf("GetIfChanged with the current etag: err = %v, want ErrNotModified", err)
+	}
+}
+
+func ifChangedNewVersion(t *testing.T, s blob.Store) {
+	old := mustPut(t, s, "k", "v1", "")
+	next := mustPut(t, s, "k", "v2", old)
+	got, err := s.GetIfChanged(context.Background(), "k", old)
+	if err != nil {
+		t.Fatalf("GetIfChanged with an old etag: %v", err)
+	}
+	if string(got.Data) != "v2" || got.ETag != next {
+		t.Fatalf("GetIfChanged = %q etag %q, want v2 etag %q", got.Data, got.ETag, next)
+	}
+}
+
+func ifChangedMissing(t *testing.T, s blob.Store) {
+	if _, err := s.GetIfChanged(context.Background(), "k", `"0123"`); !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("GetIfChanged on a missing key: err = %v, want ErrNotFound", err)
+	}
+}
+
+func ifChangedEmptyETag(t *testing.T, s blob.Store) {
+	etag := mustPut(t, s, "k", "v1", "")
+	got, err := s.GetIfChanged(context.Background(), "k", "")
+	if err != nil || string(got.Data) != "v1" || got.ETag != etag {
+		t.Fatalf("GetIfChanged(\"\") = %q etag %q, %v; want v1 etag %q", got.Data, got.ETag, err, etag)
+	}
+}
+
+func ifChangedInvalidKeys(t *testing.T, s blob.Store) {
+	for _, key := range InvalidKeys {
+		if _, err := s.GetIfChanged(context.Background(), key, ""); !errors.Is(err, blob.ErrInvalidKey) {
+			t.Errorf("GetIfChanged(%q): err = %v, want ErrInvalidKey", key, err)
+		}
 	}
 }
 

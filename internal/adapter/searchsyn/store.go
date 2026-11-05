@@ -84,3 +84,5 @@ func terms(raw json.RawMessage) (search.Terms, error) {
 	}
 	return search.Terms{Same: full.Same, Includes: full.Includes}, nil
 }
+
+func Parse(string, []byte) (search.Dictionary, error) { return nil, errors.New("not implemented") }
