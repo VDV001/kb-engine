@@ -15,6 +15,9 @@ FOLDER="${FOLDER:-kb-engine}"
 BUCKET="${BUCKET:?BUCKET: имя бакета с базами людей}"
 TZ_NAME="${TZ_NAME:-Asia/Yekaterinburg}"
 registry=kb-engine sa=kb-server key=kb-bucket container=kb-server
+# docker берет вход в реестр у docker-credential-yc, а он лежит рядом с yc,
+# который часто не в PATH (~/yandex-cloud/bin).
+PATH="$(dirname "$(command -v "$YC")"):$PATH"
 cd "$(git rev-parse --show-toplevel)"
 
 y() { "$YC" --folder-name "$FOLDER" "$@"; }
