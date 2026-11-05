@@ -93,6 +93,7 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 	"inbox":       withoutStdin(runInbox),
 	"migrate":     withoutStdin(runMigrate),
 	"serve":       withoutStdin(runServe),
+	"users":       withoutStdin(runUsers),
 	"tui":         withoutStdin(runTUI),
 	"version":     withoutStdin(runVersion),
 }
@@ -339,8 +340,24 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	tlsCert := fs.String("tls-cert", "", "optional TLS certificate (PEM); with --tls-key serves HTTPS")
 	tlsKey := fs.String("tls-key", "", "optional TLS private key (PEM), paired with --tls-cert")
 	allowOpen := fs.Bool("allow-open", false, "allow a network address without --token-file or TLS: access and TLS are handled by the platform (ingress, docker -p 127.0.0.1:...)")
+	// Несколько людей из одного хранилища: у каждого своя база под users/<id>/,
+	// вход по личному токену из auth/users.json (kbengine users add).
+	tenantsLoc := fs.String("tenants", "", "optional s3://bucket or directory holding several people's bases (users/<id>/kb/…) and their token hashes (auth/users.json); replaces --catalog and --token-file")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
+	}
+	if *tenantsLoc != "" {
+		// Источники ниже — личные файлы одного человека с этого Мака. Сервер
+		// на нескольких людей отдал бы их всем, поэтому вместе они не берутся.
+		set := map[string]bool{
+			"--catalog": *catalogPath != "", "--token-file": *tokenFile != "",
+			"--ledger": *ledgerPath != "", "--from": *workbookPath != "", "--analytics-config": *configPath != "",
+			"--changelog": *changelogPath != "", "--now": *nowPath != "", "--team": *teamPath != "",
+			"--projects": *projectsPath != "", "--media": *mediaPath != "", "--maps": len(mapPaths) > 0,
+			"--files-root": len(filesRoots) > 0, "--files-exclude": len(filesExclude) > 0,
+			"--files-index": *filesIndex != "", "--server-timing": *timing,
+		}
+		return runServeTenants(*tenantsLoc, *s3TokenFile, *addr, *pprofAddr, *tlsCert, *tlsKey, *allowOpen, set, stdout, stderr)
 	}
 	if *catalogPath == "" {
 		fmt.Fprintln(stderr, "serve: --catalog is required")
@@ -356,7 +373,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "serve: --from needs --ledger (the workbook holds account balances; the rows come from the ledger)")
 		return 2
 	}
-	token, tlsCfg, err := serveAccess(*addr, *pprofAddr, *tokenFile, *tlsCert, *tlsKey, *allowOpen)
+	token, tlsCfg, err := serveAccess(*addr, *pprofAddr, *tokenFile, *tlsCert, *tlsKey, *allowOpen, false)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 2

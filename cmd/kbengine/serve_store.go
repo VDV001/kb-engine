@@ -49,20 +49,27 @@ func openCatalogSource(ctx context.Context, location, s3TokenFile string, stderr
 		}
 		return diskCatalogSource(location, stderr), nil
 	}
-	var tok blobs3.TokenSource = &blobs3.MetadataToken{}
-	if s3TokenFile != "" {
-		// Те же требования, что к токену serve: файл 0600, печатный ASCII.
-		ft, err := newFileToken(s3TokenFile)
-		if err != nil {
-			return catalogSource{}, fmt.Errorf("--s3-token-file: %w", err)
-		}
-		tok = ft
-	}
-	store, err := blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: bucket, Token: tok})
+	store, err := openS3Store(bucket, s3TokenFile)
 	if err != nil {
 		return catalogSource{}, err
 	}
 	return storeCatalogSource(ctx, store, key, stderr)
+}
+
+// openS3Store opens a bucket in Yandex Object Storage — одно место для serve
+// --catalog, serve --tenants и users. Токен из сервиса метаданных (Serverless
+// Container) или из --s3-token-file: файл 0600, печатный ASCII, как у токена
+// serve, и перечитывается при смене.
+func openS3Store(bucket, s3TokenFile string) (blob.Store, error) {
+	var tok blobs3.TokenSource = &blobs3.MetadataToken{}
+	if s3TokenFile != "" {
+		ft, err := newFileToken(s3TokenFile)
+		if err != nil {
+			return nil, fmt.Errorf("--s3-token-file: %w", err)
+		}
+		tok = ft
+	}
+	return blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: bucket, Token: tok})
 }
 
 // diskCatalogSource is the source for a catalog file on disk — единственное
