@@ -39,10 +39,7 @@
         </svg>
       </div>
       <nav class="cell tabs" id="tabs">
-        <button data-tab="all" class="active" data-tip="Все" data-tip-b="Первые 5 записей базы и найденные файлы папок">Все <i></i></button>
-        <button data-tab="kb" data-tip="База знаний" data-tip-b="Записи каталога и kb-серверов">База знаний <i></i></button>
-        <button data-tab="doc" data-tip="Документы" data-tip-b="Найденные файлы папок с текстом: заметки, PDF, Word, HTML, таблицы">Документы <i></i></button>
-        <button data-tab="code" data-tip="Код" data-tip-b="Найденные файлы папок с исходным кодом и настройками">Код <i></i></button>
+        <!-- Кнопки вкладок строит app.js (renderTabs) из настроек окна. -->
         <span class="tab-ink"></span>
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
@@ -100,6 +97,15 @@
     <div class="add-row">
       <input id="exclude-input" placeholder="имя папки, например finances" spellcheck="false" autocomplete="off">
       <button class="btn" id="add-exclude">Добавить</button>
+    </div>
+
+    <h3>Вкладки поиска</h3>
+    <p class="muted">«Все» всегда первая. Вкладка отбирает выдачу по типу или по источнику; меняется сразу, без переиндексации.</p>
+    <ol class="tab-list" id="tab-list"></ol>
+    <div class="add-row" id="tab-add">
+      <span class="muted">+ вкладка</span>
+      <select id="tab-add-type" aria-label="Вкладка по типу"><option value="">по типу…</option></select>
+      <select id="tab-add-source" aria-label="Вкладка по источнику"><option value="">по источнику…</option></select>
     </div>
 
     <p class="settings-error" id="settings-error" role="alert" hidden></p>
