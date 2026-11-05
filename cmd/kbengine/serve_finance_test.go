@@ -58,7 +58,7 @@ func transactions(t *testing.T, h http.Handler, tok string) []map[string]any {
 // написание и говорит об этом, повтор без force — отказ, с force — запись.
 func TestTransactionThroughTheAPI(t *testing.T) {
 	h, tok, _ := financeTenant(t)
-	body := `{"kind":"expense","amount":"418","category":"Еда","place":"пятерочка","date":"2026-11-05"}`
+	body := `{"kind":"expense","amount":"418","category":"Еда","place":"пятерочка","date":"2026-04-06"}`
 	rec := do(h, http.MethodPost, "/api/finances/transactions", body, tok)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST: %d %s", rec.Code, rec.Body.String())
@@ -99,7 +99,7 @@ func TestConcurrentTransactionsAllLand(t *testing.T) {
 	for i := range n {
 		wg.Go(func() {
 			rec := do(h, http.MethodPost, "/api/finances/transactions",
-				fmt.Sprintf(`{"kind":"expense","amount":"%d","category":"Еда","date":"2026-11-05"}`, 100+i), tok)
+				fmt.Sprintf(`{"kind":"expense","amount":"%d","category":"Еда","date":"2026-04-06"}`, 100+i), tok)
 			if rec.Code != http.StatusCreated {
 				t.Errorf("POST %d: %d %s", i, rec.Code, rec.Body.String())
 			}
