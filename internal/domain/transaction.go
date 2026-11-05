@@ -71,6 +71,8 @@ type Transaction struct {
 	// до появления поля, решения никто не сохранял, и выдумывать его за них
 	// нельзя.
 	repeatOf string
+	// received — вторая сторона перевода себе; nil — ее нет.
+	received *Received
 }
 
 // TransactionParams carries the raw values for NewTransaction.
@@ -163,7 +165,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		return Transaction{}, fmt.Errorf("%w: repeat_of points at the record itself", ErrInvalidTransaction)
 	}
 
-	return Transaction{
+	tx := Transaction{
 		id:          id,
 		kind:        p.Kind,
 		date:        p.Date,
@@ -176,7 +178,8 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 		account:     account,
 		currency:    p.Currency,
 		repeatOf:    repeatOf,
-	}, nil
+	}
+	return tx.withReceived(p.Received)
 }
 
 // checkIncomeCarriesNothingElse refuses the four fields Доходы has no column

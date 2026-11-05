@@ -20,18 +20,21 @@ import (
 // decode/encodeLine — обеих половинах круга сразу.
 func TestLine_roundTripsEveryFieldOfTheWireShape(t *testing.T) {
 	want := line{
-		ID:          "01BX5ZZKBKACTAV9WEVGEMMVRZ",
-		Kind:        "expense",
-		Date:        "2026-04-06",
-		Amount:      "418.00",
-		Category:    "Транспорт",
-		Subcategory: "Самокат",
+		ID:     "01BX5ZZKBKACTAV9WEVGEMMVRZ",
+		Kind:   "expense",
+		Date:   "2026-04-06",
+		Amount: "418.00",
+		// Перевод себе — единственная запись, у которой может быть вторая
+		// сторона, а фикстура обязана заполнить каждое поле.
+		Category:    "Прочее",
+		Subcategory: "Перевод себе",
 		Place:       "Юрент",
 		Description: "поездка до центра",
 		Source:      "Чек",
 		Account:     "Сбербанк",
 		Currency:    "USD",
 		RepeatOf:    "01BX5ZZKBKACTAV9WEVGEMMVS0",
+		Received:    &receivedLine{Amount: "385.00", Currency: "EUR", Account: "Wise"},
 		Rev:         2,
 		UpdatedAt:   "2026-04-07T10:00:00Z",
 	}
@@ -55,7 +58,8 @@ func TestLine_roundTripsEveryFieldOfTheWireShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got := encodeLine(rec); got != want {
+	// DeepEqual, а не !=: у Received указатель, и != сравнил бы адреса.
+	if got := encodeLine(rec); !reflect.DeepEqual(got, want) {
 		t.Errorf("строка не пережила круг:\n got %+v\nwant %+v", got, want)
 	}
 }

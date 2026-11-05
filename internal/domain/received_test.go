@@ -48,8 +48,9 @@ func TestReceived(t *testing.T) {
 			return exchangeParams(t, "9000", domain.ReceivedParams{Amount: money(t, "100"), Currency: usd, Account: " Wise "})
 		}, false, "90.00"},
 		{"a rate with the bank's commission is not rounded to a nice number", func(t *testing.T) domain.TransactionParams {
-			return exchangeParams(t, "9137.45", domain.ReceivedParams{Amount: money(t, "100"), Currency: usd, Account: "Wise"})
-		}, false, "91.37"},
+			// 91,3765 — округление до копейки, а не отбрасывание: 91,38.
+			return exchangeParams(t, "9137.65", domain.ReceivedParams{Amount: money(t, "100"), Currency: usd, Account: "Wise"})
+		}, false, "91.38"},
 		{"dollars back to rubles: still rubles per dollar", func(t *testing.T) domain.TransactionParams {
 			p := exchangeParams(t, "100", domain.ReceivedParams{Amount: money(t, "8850"), Account: "Сбербанк"})
 			p.Account, p.Currency = "Wise", usd

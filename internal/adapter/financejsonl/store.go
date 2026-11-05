@@ -60,9 +60,20 @@ type line struct {
 	// RepeatOf — id записи, поверх которой повтор подтверждён человеком. Поле
 	// опускается, когда его нет: пустое место в строке журнала честно значит
 	// «неизвестно», а нулевое значение выглядело бы решением.
-	RepeatOf  string `json:"repeat_of,omitempty"`
-	Rev       int    `json:"rev"`
-	UpdatedAt string `json:"updated_at"`
+	RepeatOf string `json:"repeat_of,omitempty"`
+	// Received — вторая сторона перевода себе (обмен валюты). Курса в строке
+	// нет: он вычисляется из двух сумм, а хранимая копия однажды разошлась бы
+	// с ними.
+	Received  *receivedLine `json:"received,omitempty"`
+	Rev       int           `json:"rev"`
+	UpdatedAt string        `json:"updated_at"`
+}
+
+// receivedLine is the second side of a transfer to self.
+type receivedLine struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency,omitempty"`
+	Account  string `json:"account"`
 }
 
 // Load reads every record from path, validating each against the given clock.
@@ -143,6 +154,12 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 			return finance.Record{}, err
 		}
 	}
+	var received domain.ReceivedParams
+	if l.Received != nil {
+		if received, err = l.Received.params(); err != nil {
+			return finance.Record{}, err
+		}
+	}
 
 	// The clock belongs to the load, not to the record. Validating a row against
 	// its own updated_at looks reproducible and is wrong: an entry made at 02:43
@@ -162,12 +179,27 @@ func decode(raw []byte, now func() time.Time) (finance.Record, error) {
 		Account:     l.Account,
 		Currency:    currency,
 		RepeatOf:    l.RepeatOf,
+		Received:    received,
 		Now:         now,
 	})
 	if err != nil {
 		return finance.Record{}, err
 	}
 	return finance.NewRecord(tx, l.Rev, updatedAt)
+}
+
+func (r receivedLine) params() (domain.ReceivedParams, error) {
+	amount, err := domain.ParseMoney(r.Amount)
+	if err != nil {
+		return domain.ReceivedParams{}, fmt.Errorf("received: %w", err)
+	}
+	var currency domain.Currency
+	if r.Currency != "" {
+		if currency, err = domain.NewCurrency(r.Currency); err != nil {
+			return domain.ReceivedParams{}, fmt.Errorf("received: %w", err)
+		}
+	}
+	return domain.ReceivedParams{Amount: amount, Currency: currency, Account: r.Account}, nil
 }
 
 // Save writes every record to path, replacing what was there.
@@ -265,9 +297,18 @@ func encodeLine(r finance.Record) line {
 		Account:     tx.Account(),
 		Currency:    currencyCode(tx.Currency()),
 		RepeatOf:    tx.RepeatOf(),
+		Received:    encodeReceived(tx),
 		Rev:         r.Rev(),
 		UpdatedAt:   r.UpdatedAt().UTC().Format(time.RFC3339),
 	}
+}
+
+func encodeReceived(tx domain.Transaction) *receivedLine {
+	r, ok := tx.Received()
+	if !ok {
+		return nil
+	}
+	return &receivedLine{Amount: r.Amount().String(), Currency: currencyCode(r.Currency()), Account: r.Account()}
 }
 
 // currencyCode is "" for the base currency, so the field is left out of the line.

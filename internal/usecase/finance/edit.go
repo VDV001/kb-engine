@@ -91,6 +91,9 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 		// которое правят: правка суммы или счёта его не отменяет. Флага для
 		// него у правки намеренно нет.
 		RepeatOf: tx.RepeatOf(),
+		// Вторая сторона обмена переносится целиком: запись пересобирается из
+		// полей, и забытое здесь поле правка стерла бы молча.
+		Received: receivedParams(tx),
 		Now:      now,
 	}
 
@@ -155,4 +158,13 @@ func (p EditParams) applyTo(params domain.TransactionParams) domain.TransactionP
 		}
 	}
 	return params
+}
+
+// receivedParams is the second side of tx as parameters, zero when it has none.
+func receivedParams(tx domain.Transaction) domain.ReceivedParams {
+	r, ok := tx.Received()
+	if !ok {
+		return domain.ReceivedParams{}
+	}
+	return domain.ReceivedParams{Amount: r.Amount(), Currency: r.Currency(), Account: r.Account()}
 }
