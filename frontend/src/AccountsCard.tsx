@@ -200,8 +200,10 @@ export function AccountsCard({
               свободно{' '}
               <span className="privacy-mask font-bold">
                 {currencies !== undefined
-                  ? // Ничего свободного — ноль, а не рублевая оценка free по курсу.
-                    (perCurrency(currencies.map((c) => [c.currency, c.free])) ?? formatRub(0))
+                  ? // Из полного списка движка: у валюты с итогом 0 свободных может
+                    // быть минус (обязательство при отложенном). Нули отбросит
+                    // perCurrency; ничего свободного — ноль, а не оценка по курсу.
+                    (perCurrency((engineCurrencies ?? []).map((c) => [c.currency, c.free])) ?? formatRub(0))
                   : formatRub(toKopecks(free ?? '0'))}
               </span>
             </span>
