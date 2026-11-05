@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // TabKind — по чему вкладка поиска отбирает выдачу (решение владельца
@@ -22,8 +24,8 @@ const (
 var ErrTab = errors.New("вкладка задана не полностью")
 
 // tabTypes — типы, которые окно умеет отобрать: kb — записи базы, остальные —
-// виды файлов domain.FileKind.
-var tabTypes = []string{"kb", "doc", "code", "image"}
+// виды файлов из домена («прочее» вкладкой не бывает).
+var tabTypes = []string{"kb", domain.FileKindDoc.String(), domain.FileKindCode.String(), domain.FileKindImage.String()}
 
 // Tab — вкладка поиска окна. «Все» в списке не хранится: она всегда первая.
 type Tab struct {
@@ -72,11 +74,17 @@ func (c Config) TabList() []Tab {
 	return c.Tabs
 }
 
-// dropBadTabs отбрасывает негодные вкладки, как dropBadModules: вкладка —
-// только вид выдачи, и испорченная запись не должна гасить источники MCP.
+// Key — чем окно различает вкладки: вид и значение. Номер в списке не годится —
+// после удаления или перестановки активной стала бы соседняя.
+func (t Tab) Key() string { return string(t.Kind) + ":" + t.Value }
+
+// dropBadTabs отбрасывает испорченные вкладки (без имени или значения), как
+// dropBadModules: вкладка — только вид выдачи и не должна гасить источники
+// MCP. Неизвестный вид или тип — не порча: его записала более новая сборка,
+// он хранится, окно его не показывает.
 func (c *Config) dropBadTabs() {
 	if c.Tabs == nil {
 		return
 	}
-	c.Tabs = slices.DeleteFunc(c.Tabs, func(t Tab) bool { return t.Check() != nil })
+	c.Tabs = slices.DeleteFunc(c.Tabs, func(t Tab) bool { return strings.TrimSpace(t.Name) == "" || t.Value == "" })
 }

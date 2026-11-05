@@ -109,3 +109,18 @@ func TestSetTabs_RejectsDuplicate(t *testing.T) {
 		t.Fatalf("err = %v, want ErrTab", err)
 	}
 }
+
+// Вкладка неизвестного вида от новой сборки возвращается окном при любой
+// правке и сохраняется как была, а новая такая — отказ.
+func TestSetTabs_KeepsUnknownKindFromNewerBuild(t *testing.T) {
+	s, _, _ := newSourcesSettings(t)
+	future := desktopconfig.Tab{Name: "Теги", Kind: "tag", Value: "go"}
+	code := desktopconfig.Tab{Name: "Код", Kind: desktopconfig.TabByType, Value: "code"}
+	s.cfg.Tabs = []desktopconfig.Tab{future, code}
+	if err := s.SetTabs([]desktopconfig.Tab{code, future}); err != nil {
+		t.Fatalf("сохраненная вкладка новой сборки: %v", err)
+	}
+	if err := s.SetTabs([]desktopconfig.Tab{code, future, {Name: "Видео", Kind: desktopconfig.TabByType, Value: "video"}}); !errors.Is(err, desktopconfig.ErrTab) {
+		t.Fatalf("новая неизвестная: err = %v", err)
+	}
+}

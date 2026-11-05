@@ -16,17 +16,30 @@ func (f *folderSettings) Tabs() []desktopconfig.Tab {
 }
 
 // SetTabs saves the search tabs. Индекс не трогается: вкладка — вид выдачи.
-// Вкладка по источнику обязана указывать на источник из списка: иначе она
-// была бы пустой всегда. Источник, убранный позже, вкладку не роняет —
-// окно показывает ее пустой.
+// Новая вкладка по источнику обязана указывать на источник из списка: иначе
+// она была бы пустой всегда. Уже сохраненная вкладка убранного источника
+// проходит — иначе она блокировала бы любую правку остальных (ревью #431);
+// окно показывает ее пустой с пометкой. Повтор вида и значения — отказ.
 func (f *folderSettings) SetTabs(list []desktopconfig.Tab) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	saved := f.cfg.TabList()
+	seen := make(map[string]bool, len(list))
 	for _, t := range list {
-		if err := t.Check(); err != nil {
+		// Сохраненная раньше вкладка проходит как есть (полное совпадение):
+		// неизвестный вид от новой сборки окно возвращает при каждой правке.
+		// Вкладке убранного источника хватает того же вида и значения — ее можно
+		// переименовать.
+		kept := slices.ContainsFunc(saved, func(x desktopconfig.Tab) bool { return x.Key() == t.Key() })
+		if err := t.Check(); err != nil && !slices.Contains(saved, t) {
 			return err
 		}
-		if t.Kind == desktopconfig.TabBySource && !slices.ContainsFunc(f.cfg.Sources, func(s desktopconfig.Source) bool { return s.ID == t.Value }) {
+		if seen[t.Key()] {
+			return fmt.Errorf("%w: вкладка %s повторяется", desktopconfig.ErrTab, t.Key())
+		}
+		seen[t.Key()] = true
+		known := slices.ContainsFunc(f.cfg.Sources, func(s desktopconfig.Source) bool { return s.ID == t.Value })
+		if t.Kind == desktopconfig.TabBySource && !known && !kept {
 			return fmt.Errorf("%w: источника %q нет в списке", desktopconfig.ErrTab, t.Value)
 		}
 	}
