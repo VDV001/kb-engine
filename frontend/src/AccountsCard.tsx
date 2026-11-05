@@ -162,8 +162,16 @@ export function AccountsCard({
       <div className="mb-4 flex items-baseline justify-between gap-3">
         <span className="label text-[9px] tracking-[0.2em] opacity-60">На счетах</span>
         <span className="flex flex-col items-end">
-          <span className="privacy-mask text-xl font-bold" data-testid="accounts-total">
-            {currencies !== undefined ? perCurrency(currencies.map((c) => [c.currency, c.current])) : formatRub(total)}
+          <span className="privacy-mask flex flex-col items-end text-xl font-bold" data-testid="accounts-total">
+            {/* Каждая валюта своей строкой: через «·» в узкой карточке три суммы
+                переносились посреди ряда (замечание владельца 05.11). */}
+            {currencies !== undefined
+              ? currencies.map((c) => (
+                  <span key={c.currency} className="whitespace-nowrap">
+                    {formatMoney(toKopecks(c.current), c.currency)}
+                  </span>
+                ))
+              : formatRub(total)}
           </span>
           {estimated && (
             <span className="label text-[8px] opacity-50" data-testid="accounts-estimate">
