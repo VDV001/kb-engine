@@ -3,13 +3,17 @@ package main
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -136,9 +140,16 @@ func TestTenantsRefuseWithoutAValidToken(t *testing.T) {
 			t.Errorf("token %q: 401 body leaks data", tok)
 		}
 	}
-	// Проба здоровья ходит без токена и ничего не рассказывает.
-	if rec := get(f.h, "/healthz", ""); rec.Code != http.StatusOK {
-		t.Errorf("/healthz without a token: %d, want 200", rec.Code)
+	// Пробы здоровья и готовности ходят без токена и ничего не рассказывают:
+	// за токеном под в Kubernetes перезапускался бы по кругу.
+	for _, p := range []string{"/healthz", "/readyz"} {
+		rec := get(f.h, p, "")
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s without a token: %d, want 200", p, rec.Code)
+		}
+		if strings.Contains(rec.Body.String(), secretA) || strings.Contains(rec.Body.String(), "users/") {
+			t.Errorf("%s leaks: %q", p, rec.Body.String())
+		}
 	}
 }
 
@@ -147,13 +158,77 @@ func TestTenantsFlagsConflict(t *testing.T) {
 	for _, args := range [][]string{
 		{"--tenants", t.TempDir(), "--catalog", "x.json"},
 		{"--tenants", t.TempDir(), "--token-file", "tok"},
+		{"--tenants", t.TempDir(), "--files-index", "idx.gob"},
+		{"--tenants", t.TempDir(), "--files-exclude", "node_modules"},
+		{"--tenants", t.TempDir(), "--s3-token-file", "tok"},
 	} {
 		errb.Reset()
-		if code := runServe(args, &out, &errb); code == 0 {
-			t.Errorf("serve %v: exit 0, want a refusal", args)
+		// Адрес, на котором прослушивание падает сразу: без отказа на флагах
+		// serve завершится кодом 1, а не повиснет на настоящем порту.
+		args = append(args, "--addr", "127.0.0.1:-1")
+		if code := runServe(args, &out, &errb); code != 2 {
+			t.Errorf("serve %v: exit %d, want 2 (a mistake in the command)", args, code)
 		}
 		if !strings.Contains(errb.String(), "--tenants") {
 			t.Errorf("serve %v: stderr %q does not name --tenants", args, errb.String())
 		}
 	}
+}
+
+// Сломанная база одного человека не задерживает остальных: обработчик
+// собирается вне общего замка, готовые отдаются без ожидания.
+func TestOneBrokenBaseDoesNotStallOthers(t *testing.T) {
+	ctx := context.Background()
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	mk := func(name string) string {
+		uid, err := domain.NewUserID(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tok, err := userauth.Add(ctx, s, uid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return tok
+	}
+	tokGood, tokSlow := mk("good"), mk("slow")
+	gs := &gateCatalog{Store: s, key: "users/slow/kb/_data/catalog.json", gate: make(chan struct{})}
+	h := tenantsHandler(ctx, gs, io.Discard)
+	if rec := get(h, "/api/stats", tokGood); rec.Code != http.StatusOK {
+		t.Fatalf("good: %d", rec.Code)
+	}
+	go get(h, "/api/stats", tokSlow) // blocks building slow's handler
+	for gs.waiting.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	done := make(chan int, 1)
+	go func() { done <- get(h, "/api/stats", tokGood).Code }()
+	select {
+	case code := <-done:
+		if code != http.StatusOK {
+			t.Fatalf("good while slow builds: %d", code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("a request of another person waited for slow's handler to build")
+	}
+	close(gs.gate)
+}
+
+// gateCatalog holds reads of one key until gate is closed.
+type gateCatalog struct {
+	blob.Store
+	key     string
+	gate    chan struct{}
+	waiting atomic.Int64
+}
+
+func (g *gateCatalog) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	if key == g.key {
+		g.waiting.Add(1)
+		<-g.gate
+	}
+	return g.Store.GetIfChanged(ctx, key, etag)
 }

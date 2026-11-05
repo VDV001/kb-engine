@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -94,7 +95,7 @@ func TestAddTwiceIsRefused(t *testing.T) {
 	if _, err := userauth.Add(ctx, s, id(t, "owner")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := userauth.Add(ctx, s, id(t, "owner")); !errors.Is(err, userauth.ErrUserExists) {
+	if _, err := userauth.Add(ctx, s, id(t, "owner")); !errors.Is(err, domain.ErrUserExists) {
 		t.Fatalf("second Add: err = %v, want ErrUserExists", err)
 	}
 }
@@ -148,7 +149,7 @@ func TestRevokeTakesEffectAfterRefresh(t *testing.T) {
 
 func TestRevokeUnknownUser(t *testing.T) {
 	s := newStore(t)
-	if err := userauth.Revoke(context.Background(), s, id(t, "ghost")); !errors.Is(err, userauth.ErrNoSuchUser) {
+	if err := userauth.Revoke(context.Background(), s, id(t, "ghost")); !errors.Is(err, domain.ErrNoSuchUser) {
 		t.Fatalf("err = %v, want ErrNoSuchUser", err)
 	}
 }
@@ -192,4 +193,116 @@ func TestBrokenRegistryAdmitsNobody(t *testing.T) {
 	if _, ok := r.Lookup(tok); ok {
 		t.Fatal("a broken registry still admitted the old token")
 	}
+}
+
+// failingStore fails every read while down is set.
+type failingStore struct {
+	blob.Store
+	down atomic.Bool
+}
+
+func (f *failingStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	if f.down.Load() {
+		return blob.Object{}, errors.New("blobs3: get: status 503")
+	}
+	return f.Store.GetIfChanged(ctx, key, etag)
+}
+
+// Отзыв не должен открываться сбоем хранилища: недолгий сбой держит прежний
+// список, но дольше MaxStale — вход закрыт всем, и отозванный токен тоже.
+func TestOutageLongerThanMaxStaleClosesTheDoor(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	tok, err := userauth.Add(ctx, base, id(t, "anna"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &failingStore{Store: base}
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	r := userauth.NewRegistry(ctx, s, userauth.WithClock(func() time.Time { return now }))
+	if _, ok := r.Lookup(tok); !ok {
+		t.Fatal("fresh token refused")
+	}
+	s.down.Store(true)
+	now = now.Add(userauth.RefreshEvery + time.Second)
+	if _, ok := r.Lookup(tok); !ok {
+		t.Fatal("a short outage refused a valid token")
+	}
+	now = now.Add(userauth.MaxStale)
+	if _, ok := r.Lookup(tok); ok {
+		t.Fatal("after MaxStale without a successful read the old list still admits")
+	}
+}
+
+// Первое чтение не удалось — следующий запрос пробует снова, а не ждет минуту.
+func TestFirstReadFailureRetriesOnTheNextLookup(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	tok, err := userauth.Add(ctx, base, id(t, "anna"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &failingStore{Store: base}
+	s.down.Store(true)
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	r := userauth.NewRegistry(ctx, s, userauth.WithClock(func() time.Time { return now }))
+	if _, ok := r.Lookup(tok); ok {
+		t.Fatal("admitted without ever reading the registry")
+	}
+	s.down.Store(false)
+	now = now.Add(time.Second)
+	if _, ok := r.Lookup(tok); !ok {
+		t.Fatal("a second Lookup after recovery still refused: the first failure blocked for RefreshEvery")
+	}
+}
+
+// Пока реестр перечитывается, остальные запросы не ждут: отвечают по прежнему
+// списку.
+func TestLookupDoesNotWaitForARefresh(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	tok, err := userauth.Add(ctx, base, id(t, "anna"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &slowStore{Store: base, gate: make(chan struct{})}
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	r := userauth.NewRegistry(ctx, g, userauth.WithClock(clock))
+	close(g.gate) // first read goes through
+	if _, ok := r.Lookup(tok); !ok {
+		t.Fatal("fresh token refused")
+	}
+	g.gate = make(chan struct{})
+	mu.Lock()
+	now = now.Add(userauth.RefreshEvery + time.Second)
+	mu.Unlock()
+	go r.Lookup(tok) // starts the refresh and blocks in the store
+	for g.waiting.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	done := make(chan bool, 1)
+	go func() { _, ok := r.Lookup(tok); done <- ok }()
+	select {
+	case ok := <-done:
+		if !ok {
+			t.Fatal("Lookup during a refresh refused a valid token")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Lookup waited for the refresh in flight")
+	}
+	close(g.gate)
+}
+
+type slowStore struct {
+	blob.Store
+	gate    chan struct{}
+	waiting atomic.Int64
+}
+
+func (s *slowStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	s.waiting.Add(1)
+	<-s.gate
+	return s.Store.GetIfChanged(ctx, key, etag)
 }

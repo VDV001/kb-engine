@@ -9,6 +9,11 @@ import (
 // server.
 var ErrInvalidUserID = errors.New("invalid user id")
 
+var (
+	ErrUserExists = errors.New("user already exists")
+	ErrNoSuchUser = errors.New("no such user")
+)
+
 // maxUserIDLen bounds the name: оно стоит в каждом ключе хранилища человека.
 const maxUserIDLen = 32
 

@@ -36,6 +36,8 @@ const RegistryKey = "auth/users.json"
 // событию записи (уведомления Object Storage), а не по таймеру.
 const RefreshEvery = time.Minute
 
+const MaxStale = time.Duration(1 << 62)
+
 // writeAttempts bounds retries of a registry write after ErrConflict.
 const writeAttempts = 5
 

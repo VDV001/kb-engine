@@ -46,3 +46,11 @@ func TestNewUserID(t *testing.T) {
 		})
 	}
 }
+
+// Ошибки реестра людей — доменные: вызывающий различает их через errors.Is,
+// не зная адаптера.
+func TestUserRegistryErrorsAreDomainErrors(t *testing.T) {
+	if domain.ErrUserExists == nil || domain.ErrNoSuchUser == nil || errors.Is(domain.ErrUserExists, domain.ErrNoSuchUser) {
+		t.Fatal("ErrUserExists and ErrNoSuchUser must be distinct domain errors")
+	}
+}
