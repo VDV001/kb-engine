@@ -126,8 +126,7 @@ func TestBadBodiesAreRefused(t *testing.T) {
 		`{"title":"A","nope":1}`,
 		`[1,2]`,
 		`{"title":"A"}{"title":"B"}`,
-		`{"title":"` + strings.Repeat("x", 70<<10) + `"}`,
-	} {
+	} { // тело больше предела — 413, TestOversizeBodyIs413
 		if rec := send(h, http.MethodPost, "/api/entries", body); rec.Code != http.StatusBadRequest {
 			t.Errorf("POST %.40q: %d, want 400", body, rec.Code)
 		}

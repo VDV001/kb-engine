@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -17,6 +19,7 @@ import (
 // показать человеку как есть.
 var ErrBadWrite = errors.New("bad write")
 
+// ErrNoEntry — правка записи, которой в каталоге нет: ответ 404.
 var ErrNoEntry = errors.New("no such entry")
 
 // maxWriteBody bounds a write request: запись каталога — это несколько строк,
@@ -52,7 +55,7 @@ type AddedEntry struct {
 	ID                int
 	Title             string
 	Already           bool
-	CategoryUnchecked bool
+	CategoryUnchecked bool // в каталоге нет meta.categories: категорию не с чем сверить
 }
 
 // CatalogWriter writes the catalog the server reads. Реализует его тот, кто
@@ -95,16 +98,17 @@ type entryPatchDTO struct {
 }
 
 type addedDTO struct {
-	ID      int    `json:"id"`
-	Title   string `json:"title"`
-	Already bool   `json:"already,omitempty"`
+	ID                int    `json:"id"`
+	Title             string `json:"title"`
+	Already           bool   `json:"already,omitempty"`
+	CategoryUnchecked bool   `json:"category_unchecked,omitempty"`
 }
 
 func handleAddEntry(wr CatalogWriter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var in entryAddDTO
 		if err := decodeStrict(w, r, &in); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeBodyError(w, err)
 			return
 		}
 		got, err := wr.AddEntry(r.Context(), EntryAdd(in))
@@ -112,13 +116,14 @@ func handleAddEntry(wr CatalogWriter) http.HandlerFunc {
 			writeWriteError(w, err)
 			return
 		}
+		out := addedDTO(got)
 		if !got.Already {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
-			_ = json.NewEncoder(w).Encode(addedDTO{ID: got.ID, Title: got.Title})
+			_ = json.NewEncoder(w).Encode(out)
 			return
 		}
-		writeJSON(w, addedDTO{ID: got.ID, Title: got.Title, Already: true})
+		writeJSON(w, out)
 	}
 }
 
@@ -131,7 +136,7 @@ func handleEditEntry(wr CatalogWriter) http.HandlerFunc {
 		}
 		var in entryPatchDTO
 		if err := decodeStrict(w, r, &in); err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			writeBodyError(w, err)
 			return
 		}
 		p := EntryPatch(in)
@@ -139,11 +144,14 @@ func handleEditEntry(wr CatalogWriter) http.HandlerFunc {
 			http.Error(w, "nothing to change", http.StatusBadRequest)
 			return
 		}
-		if _, err := wr.EditEntry(r.Context(), id, p); err != nil {
+		n, err := wr.EditEntry(r.Context(), id, p)
+		if err != nil {
 			writeWriteError(w, err)
 			return
 		}
-		writeJSON(w, map[string]int{"updated": 1})
+		// Настоящее число: «готово» без правки — та же тишина, от которой
+		// починен kbengine set (reportSet).
+		writeJSON(w, map[string]int{"updated": n})
 	}
 }
 
@@ -161,12 +169,54 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, v any) error {
 	return nil
 }
 
+// writeBodyError answers a body that could not be read: слишком большое —
+// 413, чтобы клиент понял, что дело в размере, а не в содержании.
+func writeBodyError(w http.ResponseWriter, err error) {
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		http.Error(w, fmt.Sprintf("body over %d bytes", maxWriteBody), http.StatusRequestEntityTooLarge)
+		return
+	}
+	http.Error(w, err.Error(), http.StatusBadRequest)
+}
+
+// sameSiteJSON guards the write routes against requests from other sites.
+//
+// Браузер шлет «простой» запрос (text/plain, form) на чужой адрес без
+// предварительной проверки, и без этой защиты любая открытая страница
+// писала бы в каталог сервера на 127.0.0.1 без токена. JSON такой страницы
+// без разрешения CORS не отправить, а сервер его не дает. Сверху — отказ
+// запросу, который браузер сам пометил как межсайтовый, и запросу с чужим
+// Origin. CLI и окно Origin не шлют и проходят.
+func sameSiteJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+			http.Error(w, "write requests take Content-Type: application/json", http.StatusUnsupportedMediaType)
+			return
+		}
+		if r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+			http.Error(w, "cross-site write refused", http.StatusForbidden)
+			return
+		}
+		if origin := r.Header.Get("Origin"); origin != "" {
+			u, err := url.Parse(origin)
+			if err != nil || u.Host != r.Host {
+				http.Error(w, "cross-site write refused", http.StatusForbidden)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // writeWriteError maps a write failure to a status. Причина 500 остается в
 // журнале сервера: в ней ключ хранилища.
 func writeWriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrBadWrite):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoEntry):
+		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, blob.ErrConflict):
 		http.Error(w, "the catalog kept changing under the write; retry", http.StatusConflict)
 	default:

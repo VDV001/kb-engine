@@ -25,14 +25,22 @@ type storeCatalogWriter struct {
 	now func() time.Time
 }
 
-// errAlreadyThere stops an Update that has nothing to write.
-var errAlreadyThere = errors.New("already in the catalog")
+// errNothingToWrite stops an Update that has nothing to write: запись уже
+// есть, или правка ничего не меняет.
+var errNothingToWrite = errors.New("nothing to write")
 
 // addParams builds the domain params the way kbengine add does, с теми же
 // значениями по умолчанию; источник записи — api.
 func addParams(a httpapi.EntryAdd) (domain.EntryParams, error) {
 	if strings.TrimSpace(a.Title) == "" || strings.TrimSpace(a.Category) == "" || strings.TrimSpace(a.URL) == "" {
 		return domain.EntryParams{}, fmt.Errorf("%w: нужны title, category и url", httpapi.ErrBadWrite)
+	}
+	// Теги идут дальше строкой через запятую (как --tags у add): тег с запятой
+	// молча стал бы двумя.
+	for _, tag := range a.Tags {
+		if strings.Contains(tag, ",") {
+			return domain.EntryParams{}, fmt.Errorf("%w: тег %q: запятая внутри тега", httpapi.ErrBadWrite, tag)
+		}
 	}
 	lifecycle, source := cmp.Or(a.Lifecycle, "active"), cmp.Or(a.Source, "api")
 	params, err := artefactParams(entryFlags{
@@ -58,58 +66,115 @@ func (s storeCatalogWriter) AddEntry(ctx context.Context, a httpapi.EntryAdd) (h
 		}
 		added, rep, err := ingest.Plan(cat, []domain.EntryParams{params}, s.now())
 		if err != nil {
-			var undeclared *ingest.UndeclaredCategoryError
-			if errors.As(err, &undeclared) {
-				return nil, fmt.Errorf("%w: %s", httpapi.ErrBadWrite, categoryRefusal(undeclared))
-			}
-			return nil, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
+			return nil, refusal(err)
 		}
 		if rep.Added == 0 {
 			out = alreadyThere(cat, a)
-			return nil, errAlreadyThere
+			return nil, errNothingToWrite
 		}
-		out = httpapi.AddedEntry{ID: added[0].ID(), Title: added[0].Title()}
+		out = httpapi.AddedEntry{ID: added[0].ID(), Title: added[0].Title(), CategoryUnchecked: rep.CategoriesUnchecked}
 		return catalogjson.AppendEntriesDoc(raw, added)
 	})
-	if errors.Is(err, errAlreadyThere) {
+	if errors.Is(err, errNothingToWrite) {
 		return out, nil
 	}
 	return out, err
 }
 
-// alreadyThere names the entry the add found. Номер — у записи с тем же
-// адресом; если дедуп совпал по нормализованному адресу, номер 0.
+// refusal turns a rule's refusal into ErrBadWrite, с тем же текстом о
+// категории, что у kbengine add.
+func refusal(err error) error {
+	var undeclared *ingest.UndeclaredCategoryError
+	if errors.As(err, &undeclared) {
+		return fmt.Errorf("%w: %s", httpapi.ErrBadWrite, categoryRefusal(undeclared))
+	}
+	return fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
+}
+
+// alreadyThere names the entry the add found: дедуп ingest сравнивает адреса
+// после обрезки пробелов, и здесь сравнение то же.
 func alreadyThere(cat *domain.Catalog, a httpapi.EntryAdd) httpapi.AddedEntry {
 	out := httpapi.AddedEntry{Title: a.Title, Already: true}
+	want := strings.TrimSpace(a.URL)
 	for _, e := range cat.Entries() {
-		if e.URL() == a.URL {
+		if strings.TrimSpace(e.URL()) == want {
 			out.ID, out.Title = e.ID(), e.Title()
 		}
 	}
 	return out
 }
 
+// EditEntry applies the patch to one entry and returns how many changed (0
+// или 1). Правка без изменений ничего не пишет: новая версия каталога ради
+// ничего — тот же «готово без правки», от которого починен set.
+//
+// ponytail: каталог на каждую попытку разбирается дважды (Decode для проверок
+// и SetFieldsDoc для правки). Потолок — два разбора 2 МБ на запись. Путь
+// апгрейда — правка поверх уже разобранных записей.
 func (s storeCatalogWriter) EditEntry(ctx context.Context, id int, p httpapi.EntryPatch) (int, error) {
-	ch := catalogjson.Changes{
-		Lifecycle: deref(p.Lifecycle), Verdict: deref(p.Verdict), Category: deref(p.Category),
-		Title: deref(p.Title), Description: deref(p.Description), Notes: deref(p.Notes),
-		Author: deref(p.Author), URL: deref(p.URL), AddTags: p.AddTags, RemoveTags: p.RemoveTags,
+	ch, err := patchChanges(p)
+	if err != nil {
+		return 0, err
 	}
-	return 1, s.w.Update(ctx, func(raw []byte) ([]byte, error) {
-		// Отказы SetFieldsDoc — правила правки (неизвестный id, недопустимое
-		// значение): 400 с причиной. Разбор самого каталога здесь уже прошел
-		// при чтении сервером, иначе до правки дело не дошло бы.
-		doc, _, err := catalogjson.SetFieldsDoc(raw, []int{id}, ch)
+	updated := 0
+	err = s.w.Update(ctx, func(raw []byte) ([]byte, error) {
+		// Ошибка разбора самого каталога — не вина клиента: 500, а не 400.
+		cat, err := catalogjson.Decode(bytes.NewReader(raw))
 		if err != nil {
-			return nil, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
+			return nil, err
+		}
+		e, ok := cat.Find(id)
+		if !ok {
+			return nil, fmt.Errorf("%w: %d", httpapi.ErrNoEntry, id)
+		}
+		if ch.Category != "" {
+			if err := ingest.CheckDeclared(cat, e.Title(), ch.Category); err != nil {
+				return nil, refusal(err)
+			}
+		}
+		doc, n, err := catalogjson.SetFieldsDoc(raw, []int{id}, ch)
+		if err != nil {
+			return nil, refusal(err)
+		}
+		if updated = n; n == 0 {
+			return nil, errNothingToWrite
 		}
 		return doc, nil
 	})
+	if errors.Is(err, errNothingToWrite) {
+		return 0, nil
+	}
+	return updated, err
 }
 
-func deref(s *string) string {
-	if s == nil {
-		return ""
+// patchChanges maps the patch onto catalogjson.Changes. Пустая строка в
+// url — «очистить адрес» (ClearURL); в остальных полях пустое значение не
+// очищает поле молча, а отказывается: так же, как set не берет пустой флаг.
+func patchChanges(p httpapi.EntryPatch) (catalogjson.Changes, error) {
+	ch := catalogjson.Changes{AddTags: p.AddTags, RemoveTags: p.RemoveTags}
+	if p.URL != nil {
+		if *p.URL == "" {
+			ch.ClearURL = true
+		} else {
+			ch.URL = *p.URL
+		}
 	}
-	return *s
+	for name, f := range map[string]struct {
+		v   *string
+		dst *string
+	}{
+		"lifecycle": {p.Lifecycle, &ch.Lifecycle}, "verdict": {p.Verdict, &ch.Verdict},
+		"category": {p.Category, &ch.Category}, "title": {p.Title, &ch.Title},
+		"description": {p.Description, &ch.Description}, "notes": {p.Notes, &ch.Notes},
+		"author": {p.Author, &ch.Author},
+	} {
+		if f.v == nil {
+			continue
+		}
+		if strings.TrimSpace(*f.v) == "" {
+			return catalogjson.Changes{}, fmt.Errorf("%w: %s: пустое значение — это поле очистить нельзя", httpapi.ErrBadWrite, name)
+		}
+		*f.dst = *f.v
+	}
+	return ch, nil
 }
