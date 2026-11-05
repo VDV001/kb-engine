@@ -2,14 +2,9 @@ package catalogjson
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 )
-
-// storeWriteAttempts bounds the read-change-write cycle under conflicts.
-const storeWriteAttempts = 5
 
 // StoreWriter changes the catalog kept in a blob.Store. Правка применяется к
 // той версии, что прочитана, и пишется условно: если каталог успел изменить
@@ -30,25 +25,8 @@ func NewStoreWriter(store blob.Store, key string) StoreWriter {
 }
 
 // Update reads the catalog, applies change and writes the result under the
-// version it read. Ошибка change возвращается как есть, и ничего не пишется.
+// version it read (blob.Update). Ошибка change возвращается как есть, и ничего
+// не пишется.
 func (w StoreWriter) Update(ctx context.Context, change func(raw []byte) ([]byte, error)) error {
-	for range storeWriteAttempts {
-		o, err := w.store.Get(ctx, w.key)
-		if err != nil {
-			return fmt.Errorf("read catalog %s: %w", w.key, err)
-		}
-		doc, err := change(o.Data)
-		if err != nil {
-			return err
-		}
-		_, err = w.store.Put(ctx, w.key, doc, o.ETag)
-		if errors.Is(err, blob.ErrConflict) {
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("write catalog %s: %w", w.key, err)
-		}
-		return nil
-	}
-	return fmt.Errorf("catalog %s kept changing under %d attempts: %w", w.key, storeWriteAttempts, blob.ErrConflict)
+	return blob.Update(ctx, w.store, w.key, change)
 }

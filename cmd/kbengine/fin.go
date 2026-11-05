@@ -320,6 +320,24 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	if err != nil {
 		return finance.Record{}, err
 	}
+	voc, vocErr := financevocab.Load(financevocab.PathNextTo(ledgerPath))
+	rec, recs, err := planAdd(recs, voc, vocErr, p, force, note, warn)
+	if err != nil {
+		return finance.Record{}, err
+	}
+	if err := financejsonl.Save(ledgerPath, recs, time.Now); err != nil {
+		return finance.Record{}, err
+	}
+	return rec, nil
+}
+
+// planAdd decides what fin add writes: написание по словарю и частоте,
+// проверка повтора, новая запись, порядок журнала. Чистая функция над уже
+// прочитанным журналом — одно правило для файла (appendUnderLock) и для
+// хранилища (storeFinances), куда бы журнал ни лег.
+func planAdd(recs []finance.Record, voc finance.Vocabulary, vocErr error, p finance.AddParams, force bool,
+	note func(finance.Correction), warn func(string),
+) (finance.Record, []finance.Record, error) {
 	// Написание приводится к тому, что в базе уже есть, до проверки на повтор:
 	// иначе «транспорт» и «Транспорт» считались бы разными тратами.
 	//
@@ -330,7 +348,6 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	// случая: словаря нет (нормально — решает частота) и словарь спорит сам с
 	// собой (не нормально: подстановка становилась случайной). Первый молчит
 	// по-прежнему, второй называется.
-	voc, vocErr := financevocab.Load(financevocab.PathNextTo(ledgerPath))
 	if warn != nil && errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		warn(vocErr.Error())
 	}
@@ -347,7 +364,7 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	if dup := finance.Duplicate(recs, p); dup != nil {
 		tx := dup.Transaction()
 		if !force {
-			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
+			return finance.Record{}, nil, fmt.Errorf("%w: %s · %s · %s · %s (%s) — повторить осознанно: --force",
 				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
@@ -355,14 +372,11 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 	}
 	rec, err := finance.Add(p, newULID, time.Now)
 	if err != nil {
-		return finance.Record{}, err
+		return finance.Record{}, nil, err
 	}
 	recs = append(recs, rec)
 	finance.Sort(recs)
-	if err := financejsonl.Save(ledgerPath, recs, time.Now); err != nil {
-		return finance.Record{}, err
-	}
-	return rec, nil
+	return rec, recs, nil
 }
 
 // runFinList prints the matching rows.

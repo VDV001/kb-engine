@@ -693,7 +693,8 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 	}
 	// Nil, not an empty struct: the handler distinguishes "no ledger configured"
 	// from "ledger configured and unreadable", and only the second is an error.
-	var fin httpapi.Financier
+	// Финансы источника (журнал в хранилище) или, как раньше, из --ledger.
+	fin := src.fin
 	if ledgerPath != "" {
 		// Read once here for the same reason the analytics config is: the file is
 		// re-read per request, so this proves nothing about later reads, but it

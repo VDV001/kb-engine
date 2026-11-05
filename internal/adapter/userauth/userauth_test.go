@@ -324,3 +324,34 @@ func TestAddCreatesAnEmptyJournal(t *testing.T) {
 		t.Fatalf("journal of the new user: %q, %v", o.Data, err)
 	}
 }
+
+// Холодный старт: первое чтение реестра идет, а страница шлет сразу несколько
+// запросов. Они ждут это чтение, а не получают 401 по пустому списку.
+func TestConcurrentFirstLookupsWaitForTheFirstRead(t *testing.T) {
+	ctx := context.Background()
+	base := newStore(t)
+	tok, err := userauth.Add(ctx, base, id(t, "anna"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := &slowStore{Store: base, gate: make(chan struct{})}
+	r := userauth.NewRegistry(ctx, g)
+	const n = 8
+	results := make(chan bool, n)
+	for range n {
+		go func() { _, ok := r.Lookup(tok); results <- ok }()
+	}
+	for g.waiting.Load() == 0 {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond) // остальные успели прийти
+	close(g.gate)
+	for range n {
+		if ok := <-results; !ok {
+			t.Fatal("a lookup during the first registry read was refused")
+		}
+	}
+	if c := g.waiting.Load(); c != 1 {
+		t.Fatalf("%d registry reads for %d concurrent first lookups, want 1", c, n)
+	}
+}

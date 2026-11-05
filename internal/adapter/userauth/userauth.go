@@ -44,7 +44,11 @@ const MaxStale = 5 * time.Minute
 // writeAttempts bounds retries of a registry write after ErrConflict.
 const writeAttempts = 5
 
-func JournalKey(domain.UserID) string { return "" }
+// JournalKey is where a person's finance journal lives: рядом с базой, под
+// тем же users/<id>/.
+func JournalKey(id domain.UserID) string {
+	return "users/" + id.String() + "/fin/journal.jsonl"
+}
 
 // CatalogKey is where a person's catalog lives: база каждого — под своим
 // users/<id>/, с той же раскладкой, что knowledge-base на диске.
@@ -73,6 +77,11 @@ func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
 	token := base64.RawURLEncoding.EncodeToString(raw) // 43 печатных символа
 	if _, err := s.Put(ctx, CatalogKey(id), []byte("{\"entries\":[]}\n"), ""); err != nil && !errors.Is(err, blob.ErrConflict) {
 		return "", fmt.Errorf("userauth: empty catalog for %s: %w", id, err)
+	}
+	// Журнал финансов — тоже сразу: первая операция пишется условной записью
+	// поверх существующего объекта.
+	if _, err := s.Put(ctx, JournalKey(id), nil, ""); err != nil && !errors.Is(err, blob.ErrConflict) {
+		return "", fmt.Errorf("userauth: empty journal for %s: %w", id, err)
 	}
 	sum := sha256.Sum256([]byte(token))
 	err := update(ctx, s, func(r *registryDTO) error {
@@ -148,6 +157,7 @@ type Registry struct {
 	checked    time.Time // последняя попытка чтения
 	lastOK     time.Time // последнее чтение, давшее известное состояние
 	refreshing bool
+	refreshed  chan struct{} // закрывается, когда идущее чтение закончено
 	etag       string
 	users      []knownUser
 }
@@ -202,12 +212,23 @@ func (r *Registry) current() []knownUser {
 	r.mu.Lock()
 	now := r.now()
 	due := r.lastOK.IsZero() || now.Sub(r.checked) >= RefreshEvery
+	if r.refreshing && r.lastOK.IsZero() {
+		// Реестр еще ни разу не прочитан: ответить по пустому списку значило
+		// бы отказать всем запросам холодного старта. Ждем идущее чтение.
+		done := r.refreshed
+		r.mu.Unlock()
+		<-done
+		r.mu.Lock()
+		users := r.fresh(r.now())
+		r.mu.Unlock()
+		return users
+	}
 	if !due || r.refreshing {
 		users := r.fresh(now)
 		r.mu.Unlock()
 		return users
 	}
-	r.refreshing = true
+	r.refreshing, r.refreshed = true, make(chan struct{})
 	etag := r.etag
 	r.mu.Unlock()
 
@@ -217,6 +238,7 @@ func (r *Registry) current() []knownUser {
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	defer close(r.refreshed)
 	r.refreshing, r.checked = false, now
 	switch {
 	case errors.Is(err, blob.ErrNotModified):

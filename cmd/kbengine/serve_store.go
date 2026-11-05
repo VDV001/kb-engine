@@ -35,6 +35,10 @@ type catalogSource struct {
 	synonyms  httpapi.Option // nil — словаря нет, поиск без перевода терминов
 	// writer — запись через API; nil у каталога на диске: туда пишет CLI.
 	writer httpapi.CatalogWriter
+	// fin — финансы из хранилища (журнал рядом с базой); nil — источник
+	// финансов задают флаги --ledger/--from, как раньше.
+	fin       httpapi.Financier
+	finWriter httpapi.FinanceWriter
 }
 
 // options are the server options the source brings: словарь синонимов и, у
@@ -43,6 +47,9 @@ func (s catalogSource) options() []httpapi.Option {
 	opts := []httpapi.Option{s.synonyms}
 	if s.writer != nil {
 		opts = append(opts, httpapi.WithCatalogWriter(s.writer))
+	}
+	if s.finWriter != nil {
+		opts = append(opts, httpapi.WithFinanceWriter(s.finWriter))
 	}
 	return opts
 }
@@ -131,12 +138,24 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 	if err != nil {
 		return catalogSource{}, err
 	}
-	return catalogSource{
+	src := catalogSource{
 		loader:    loader,
 		artefacts: artefacts,
 		synonyms:  storeSynonyms(ctx, store, path.Join(dataDir, searchsyn.FileName), stderr),
 		writer:    storeCatalogWriter{w: catalogjson.NewStoreWriter(store, key), now: time.Now},
-	}, nil
+	}
+	// Финансы — рядом с базой: <человек>/kb/_data/catalog.json → <человек>/fin/.
+	// Журнала нет — финансового вида нет, как у serve без --ledger.
+	finDir := path.Join(path.Dir(path.Dir(dataDir)), "fin")
+	sf := storeFinances{ctx: ctx, store: store, journalKey: path.Join(finDir, "journal.jsonl"),
+		vocabKey: path.Join(finDir, "aliases.json"), now: time.Now}
+	switch _, err := store.Get(ctx, sf.journalKey); {
+	case err == nil:
+		src.fin, src.finWriter = sf, sf
+	case !errors.Is(err, blob.ErrNotFound):
+		return catalogSource{}, fmt.Errorf("journal %s: %w", sf.journalKey, err)
+	}
+	return src, nil
 }
 
 // storeSynonyms loads the dictionary from the store. Как synonymsFor с диска:

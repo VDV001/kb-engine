@@ -76,8 +76,14 @@ func Load(path string, now func() time.Time) ([]finance.Record, error) {
 		return nil, fmt.Errorf("open ledger: %w", err)
 	}
 	defer func() { _ = f.Close() }()
+	return Parse(filepath.Base(path), f, now)
+}
 
-	sc := bufio.NewScanner(f)
+// Parse reads every record from r, the way Load reads a file: журнал в
+// хранилище приходит байтами. name — что назвать в ошибке (имя файла или ключ).
+// Пустой поток — пустой журнал: отсутствие объекта вызывающий различает сам.
+func Parse(name string, r io.Reader, now func() time.Time) ([]finance.Record, error) {
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
 
 	var out []finance.Record
@@ -89,11 +95,11 @@ func Load(path string, now func() time.Time) ([]finance.Record, error) {
 		}
 		rec, err := decode(raw, now)
 		if err != nil {
-			return nil, fmt.Errorf("%s line %d: %w", filepath.Base(path), n, err)
+			return nil, fmt.Errorf("%s line %d: %w", name, n, err)
 		}
 		id := rec.Transaction().ID()
 		if _, dup := seen[id]; dup {
-			return nil, fmt.Errorf("%s line %d: %w: %q", filepath.Base(path), n, finance.ErrDuplicateID, id)
+			return nil, fmt.Errorf("%s line %d: %w: %q", name, n, finance.ErrDuplicateID, id)
 		}
 		seen[id] = struct{}{}
 		out = append(out, rec)
@@ -185,19 +191,22 @@ func Save(path string, recs []finance.Record, now func() time.Time) error {
 	if err := filebackup.Snapshot(path, now, backupsKept); err != nil {
 		return err
 	}
-	return writeAtomically(path, func(w io.Writer) error {
-		enc := json.NewEncoder(w)
-		// The ledger holds descriptions with ampersands and angle brackets in them.
-		// Go's default HTML escaping rewrites those as numeric escapes: correct
-		// JSON, unreadable text. This file is read by eye.
-		enc.SetEscapeHTML(false)
-		for _, r := range recs {
-			if err := enc.Encode(encodeLine(r)); err != nil {
-				return fmt.Errorf("encode record %s: %w", r.Transaction().ID(), err)
-			}
+	return writeAtomically(path, func(w io.Writer) error { return Encode(w, recs) })
+}
+
+// Encode writes recs as ledger lines, the way Save writes the file.
+func Encode(w io.Writer, recs []finance.Record) error {
+	enc := json.NewEncoder(w)
+	// The ledger holds descriptions with ampersands and angle brackets in them.
+	// Go's default HTML escaping rewrites those as numeric escapes: correct
+	// JSON, unreadable text. This file is read by eye.
+	enc.SetEscapeHTML(false)
+	for _, r := range recs {
+		if err := enc.Encode(encodeLine(r)); err != nil {
+			return fmt.Errorf("encode record %s: %w", r.Transaction().ID(), err)
 		}
-		return nil
-	})
+	}
+	return nil
 }
 
 // writeAtomically replaces path with whatever write produces, via a temp file
@@ -268,9 +277,3 @@ func currencyCode(c domain.Currency) string {
 	}
 	return c.Code()
 }
-
-func Parse(string, io.Reader, func() time.Time) ([]finance.Record, error) {
-	return nil, errors.New("not implemented")
-}
-
-func Encode(io.Writer, []finance.Record) error { return errors.New("not implemented") }

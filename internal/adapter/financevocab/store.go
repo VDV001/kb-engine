@@ -10,7 +10,6 @@ package financevocab
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -52,17 +51,22 @@ type placeRule struct {
 // and named: picking one would keep the coin flip, merely tossed once at load
 // instead of on every run.
 func Load(path string) (finance.Vocabulary, error) {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return finance.Vocabulary{Accounts: map[string]string{}, Places: map[string]finance.PlaceRule{}}, err
+	}
+	return Parse(path, raw)
+}
+
+// Parse decodes a vocabulary read from name: файл или ключ хранилища.
+func Parse(name string, raw []byte) (finance.Vocabulary, error) {
 	v := finance.Vocabulary{
 		Accounts: map[string]string{},
 		Places:   map[string]finance.PlaceRule{},
 	}
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		return v, err
-	}
 	var f file
 	if err := json.Unmarshal(raw, &f); err != nil {
-		return v, fmt.Errorf("%s: %w", path, err)
+		return v, fmt.Errorf("%s: %w", name, err)
 	}
 
 	accounts, accountConflicts := collapse(f.Accounts, func(a string) string { return a })
@@ -79,7 +83,7 @@ func Load(path string) (finance.Vocabulary, error) {
 	}
 
 	if lines := append(accountConflicts, placeConflicts...); len(lines) > 0 {
-		return v, fmt.Errorf("%s: %w:\n  %s", path, finance.ErrVocabularyConflict, strings.Join(lines, "\n  "))
+		return v, fmt.Errorf("%s: %w:\n  %s", name, finance.ErrVocabularyConflict, strings.Join(lines, "\n  "))
 	}
 	return v, nil
 }
@@ -220,8 +224,4 @@ func update(path string, apply func(*file) bool) error {
 		return err
 	}
 	return os.WriteFile(path, body.Bytes(), 0o600)
-}
-
-func Parse(string, []byte) (finance.Vocabulary, error) {
-	return finance.Vocabulary{}, errors.New("not implemented")
 }
