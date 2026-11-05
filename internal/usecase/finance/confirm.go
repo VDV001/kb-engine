@@ -30,7 +30,7 @@ type BalanceChange struct {
 // меняются: вызывающий пишет результат условной записью и при конфликте зовет
 // снова по свежему.
 func ConfirmBalance(accounts []domain.Account, confs Confirmations, c BalanceChange, now func() time.Time) ([]domain.Account, Confirmations, error) {
-	i := slices.IndexFunc(accounts, func(a domain.Account) bool { return domain.SameAccountName(a.Bank(), c.Bank) })
+	i := accountIndex(accounts, c.Bank)
 	switch {
 	case c.Create && i >= 0:
 		return nil, nil, fmt.Errorf("%w: %q", domain.ErrAccountExists, accounts[i].Bank())

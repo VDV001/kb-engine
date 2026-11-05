@@ -38,6 +38,19 @@ type storeFinances struct {
 	now         func() time.Time
 }
 
+// latestZoneOffset is the offset of the zone whose day comes first on Earth (UTC+14, Kiritimati).
+const latestZoneOffset = 14 * 60 * 60
+
+// readNow is the clock for reading what was already written. Запись проверяет
+// «дату из будущего» часами человека (clockIn), а чтение идет часами сервера,
+// который живет по UTC: у человека в +05 после полуночи принятая запись была
+// бы «из будущего» до полуночи UTC, и журнал со счетами не читались бы часами.
+// Поэтому при чтении «будущее» — это позже, чем сегодня где угодно на Земле:
+// принятое в любом настоящем поясе читается, опечатка в годе — по-прежнему нет.
+func (f storeFinances) readNow() time.Time {
+	return f.now().In(time.FixedZone("UTC+14", latestZoneOffset))
+}
+
 func (f storeFinances) records() ([]finance.Record, error) {
 	ctx, cancel := context.WithTimeout(f.ctx, financeReadTimeout)
 	defer cancel()
@@ -48,7 +61,7 @@ func (f storeFinances) records() ([]finance.Record, error) {
 	if err != nil {
 		return nil, fmt.Errorf("journal: %w", err)
 	}
-	return financejsonl.Parse(f.journalKey, bytes.NewReader(o.Data), f.now)
+	return financejsonl.Parse(f.journalKey, bytes.NewReader(o.Data), f.readNow)
 }
 
 // accounts reads the accounts. Документа нет — счетов нет; битый — отказ:
@@ -56,12 +69,21 @@ func (f storeFinances) records() ([]finance.Record, error) {
 func (f storeFinances) accounts(ctx context.Context) (financeaccounts.Book, error) {
 	o, err := f.store.Get(ctx, f.accountsKey)
 	if errors.Is(err, blob.ErrNotFound) {
-		return financeaccounts.Parse(f.accountsKey, nil, f.now)
+		return financeaccounts.Parse(f.accountsKey, nil, f.readNow)
 	}
 	if err != nil {
 		return financeaccounts.Book{}, fmt.Errorf("accounts: %w", err)
 	}
-	return financeaccounts.Parse(f.accountsKey, o.Data, f.now)
+	return financeaccounts.Parse(f.accountsKey, o.Data, f.readNow)
+}
+
+// accountsFor reads the accounts when an operation names one, nil otherwise.
+func (f storeFinances) accountsFor(ctx context.Context, account string) ([]domain.Account, error) {
+	if strings.TrimSpace(account) == "" {
+		return nil, nil
+	}
+	book, err := f.accounts(ctx)
+	return book.Accounts, err
 }
 
 // Finances implements httpapi.Financier.
@@ -129,12 +151,17 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 		return httpapi.TransactionAdded{}, vocErr
 	}
 	// Счета — как у fin add с --from: валюта операции берется по счету и
-	// сверяется с ним.
-	book, err := f.accounts(ctx)
-	if err != nil {
+	// сверяется с ним. Только когда счет назван: трате наличными документ
+	// счетов не нужен, и его сбой не должен ее останавливать.
+	//
+	// ponytail: счета читаются один раз, до цикла условной записи журнала, а
+	// не внутри него: журнал и счета — два документа без общей транзакции, и
+	// смена валюты счета ровно в момент траты с него запишет трату в прежней
+	// валюте. Потолок — окно в доли секунды при одном человеке на счет. Путь
+	// апгрейда — номер версии счетов в записи и перепроверка после записи.
+	if p.Accounts, err = f.accountsFor(ctx, a.Account); err != nil {
 		return httpapi.TransactionAdded{}, err
 	}
-	p.Accounts = book.Accounts
 	var warnings []string
 	if errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		warnings = append(warnings, vocErr.Error())
@@ -143,7 +170,7 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 	var fixed []httpapi.Correction
 	err = f.update(ctx, f.journalKey, func(raw []byte) ([]byte, error) {
 		fixed = fixed[:0] // каждая попытка решает заново по свежему журналу
-		recs, err := financejsonl.Parse(f.journalKey, bytes.NewReader(raw), f.now)
+		recs, err := financejsonl.Parse(f.journalKey, bytes.NewReader(raw), f.readNow)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +273,7 @@ func (f storeFinances) ConfirmBalance(ctx context.Context, c httpapi.BalanceConf
 	var confirmed domain.Account
 	var created bool
 	err = f.update(ctx, f.accountsKey, func(raw []byte) ([]byte, error) {
-		book, err := financeaccounts.Parse(f.accountsKey, raw, f.now)
+		book, err := financeaccounts.Parse(f.accountsKey, raw, f.readNow)
 		if err != nil {
 			return nil, err
 		}

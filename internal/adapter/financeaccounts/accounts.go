@@ -43,7 +43,13 @@ type accountDTO struct {
 }
 
 // Parse decodes the document read from name. Пустой документ — пустая книга:
-// так выглядят счета человека, у которого их еще нет.
+// так выглядят счета человека, у которого их еще нет. Любой отказ — ErrMalformed:
+// битый документ — сбой хранилища, а не ответ на запрос, поэтому и два
+// написания одного счета здесь не domain.ErrAccountExists (у API это 409).
+//
+// now — часы чтения. Дни в документе записаны в поясе человека, поэтому читать
+// их надо часами самого позднего пояса (см. storeFinances.readNow), иначе
+// принятое при записи восточнее UTC окажется «из будущего».
 func Parse(name string, raw []byte, now func() time.Time) (Book, error) {
 	b := Book{Confirmations: finance.Confirmations{}}
 	if len(bytes.TrimSpace(raw)) == 0 {
@@ -54,21 +60,21 @@ func Parse(name string, raw []byte, now func() time.Time) (Book, error) {
 	// Опечатка в имени поля — отказ, а не молча пропавший курс.
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&doc); err != nil {
-		return Book{}, fmt.Errorf("%s: %w", name, err)
+		return Book{}, fmt.Errorf("%w: %s: %w", ErrMalformed, name, err)
 	}
 	for _, d := range doc.Accounts {
 		acc, err := d.account(now)
 		if err != nil {
-			return Book{}, fmt.Errorf("%s: account %q: %w", name, d.Bank, err)
+			return Book{}, fmt.Errorf("%w: %s: account %q: %w", ErrMalformed, name, d.Bank, err)
 		}
 		if slices.ContainsFunc(b.Accounts, func(a domain.Account) bool { return domain.SameAccountName(a.Bank(), acc.Bank()) }) {
-			return Book{}, fmt.Errorf("%s: %w: %q", name, domain.ErrAccountExists, d.Bank)
+			return Book{}, fmt.Errorf("%w: %s: two spellings of one account: %q", ErrMalformed, name, d.Bank)
 		}
 		b.Accounts = append(b.Accounts, acc)
 		if d.ConfirmedAt != "" {
 			at, err := time.Parse(time.RFC3339Nano, d.ConfirmedAt)
 			if err != nil {
-				return Book{}, fmt.Errorf("%s: account %q: confirmed_at: %w", name, d.Bank, err)
+				return Book{}, fmt.Errorf("%w: %s: account %q: confirmed_at: %w", ErrMalformed, name, d.Bank, err)
 			}
 			b.Confirmations[acc.Bank()] = at
 		}
