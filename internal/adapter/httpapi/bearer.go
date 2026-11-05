@@ -39,8 +39,8 @@ func RequireBearer(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := RequestToken(r)
 		sum := sha256.Sum256([]byte(got))
-		// Пустой токен не пускает никого: иначе «Bearer » с пустым значением
-		// совпал бы с ним по хешу. С непустым пустое значение не совпадет.
+		// Пустой токен не пускает никого: иначе пустое значение заголовка
+		// совпало бы с ним по хешу. С непустым пустое значение не совпадет.
 		if token != "" && ok && subtle.ConstantTimeCompare(sum[:], want[:]) == 1 {
 			next.ServeHTTP(w, r)
 			return
