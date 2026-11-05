@@ -86,11 +86,23 @@ button { font-family: inherit; }
 .mark-l, .mark-r { transition: transform .45s var(--z-ease); }
 .brand:hover .mark-l, .brand.wake .mark-l { transform: translateX(-4px); }
 .brand:hover .mark-r, .brand.wake .mark-r { transform: translateX(4px); }
-/* Буквы DVK в машинной половине прорисовываются заново по порядку D, V, K:
-   один путь с pathLength 1, штрих открывается от начала к концу. */
+/* Буквы DVK в машинной половине перерисовываются по очереди D, V, K: у каждой
+   свой путь с pathLength 1, перо стирает штрих от начала к концу и ведет его
+   заново. Цикл идет от покоя к покою, а оба скрытых положения посередине (-1
+   и 1) равны, поэтому скачка нет. Прежде все три буквы были одним путем и
+   при наведении разом пропадали — знак моргал. Пока буква перерисовывается,
+   на ее месте бледный след (mark-ghost); в покое его закрывает сама буква. */
+.mark-ghost { opacity: .35; }
 .mark-dvk { stroke-dasharray: 1; stroke-dashoffset: 0; }
-.brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: mark-type .9s var(--z-ease) .12s both; }
-@keyframes mark-type { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+.brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: mark-redraw .6s var(--z-ease); }
+.brand:hover .mark-v, .brand.wake .mark-v { animation-delay: .2s; }
+.brand:hover .mark-k, .brand.wake .mark-k { animation-delay: .4s; }
+@keyframes mark-redraw {
+  0% { stroke-dashoffset: 0; }
+  45% { stroke-dashoffset: -1; }
+  45.01% { stroke-dashoffset: 1; }
+  100% { stroke-dashoffset: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .mark-l, .mark-r { transition: none; }
   .brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: none; }
