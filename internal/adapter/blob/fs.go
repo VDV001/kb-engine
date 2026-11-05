@@ -70,6 +70,10 @@ func (*memFile) Close() error                 { return nil }
 
 // fileInfo. Времени правки у объекта здесь нет: нулевое время ServeContent
 // понимает как «не ставить Last-Modified».
+//
+// ponytail: без времени правки и ETag заметка из хранилища не получает 304, и
+// каждое открытие качает ее заново (с диска 304 был по Last-Modified). Потолок —
+// заметки в килобайтах. Путь апгрейда — ETag объекта в заголовок ответа /kb/.
 type fileInfo struct {
 	name string
 	size int64

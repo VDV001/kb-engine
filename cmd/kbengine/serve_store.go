@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobs3"
@@ -44,26 +47,32 @@ func openCatalogSource(ctx context.Context, location, s3TokenFile string, stderr
 		if s3TokenFile != "" {
 			return catalogSource{}, errors.New("--s3-token-file needs --catalog s3://bucket/key")
 		}
-		return catalogSource{
-			loader:    catalogjson.FileLoader{Path: location},
-			artefacts: artefactsFS(location),
-			synonyms:  synonymsFor(location, stderr),
-		}, nil
+		return diskCatalogSource(location, stderr), nil
 	}
 	var tok blobs3.TokenSource = &blobs3.MetadataToken{}
 	if s3TokenFile != "" {
 		// Те же требования, что к токену serve: файл 0600, печатный ASCII.
-		t, err := readTokenFile(s3TokenFile)
+		ft, err := newFileToken(s3TokenFile)
 		if err != nil {
 			return catalogSource{}, fmt.Errorf("--s3-token-file: %w", err)
 		}
-		tok = blobs3.StaticToken(t)
+		tok = ft
 	}
 	store, err := blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: bucket, Token: tok})
 	if err != nil {
 		return catalogSource{}, err
 	}
 	return storeCatalogSource(ctx, store, key, stderr)
+}
+
+// diskCatalogSource is the source for a catalog file on disk — единственное
+// место, где из пути выводятся артефакты и словарь.
+func diskCatalogSource(path string, stderr io.Writer) catalogSource {
+	return catalogSource{
+		loader:    catalogjson.FileLoader{Path: path},
+		artefacts: artefactsFS(path),
+		synonyms:  synonymsFor(path, stderr),
+	}
 }
 
 // parseS3Location splits s3://bucket/key. Не s3:// — путь на диске (isS3 false).
@@ -129,7 +138,46 @@ func storeSynonyms(ctx context.Context, store blob.Store, key string, stderr io.
 	return httpapi.WithSynonyms(search.New(syn))
 }
 
-func newFileToken(path string) (blobs3.TokenSource, error) {
-	t, err := readTokenFile(path)
-	return blobs3.StaticToken(t), err
+// fileToken is an IAM token kept in a file and re-read when the file changes:
+// токен `yc iam create-token` живет до 12 часов, и свежий в том же файле
+// подхватывается без перезапуска serve. Права файла проверяются при каждом
+// запросе токена, содержимое — при каждой смене времени правки.
+type fileToken struct {
+	path   string
+	cached atomic.Pointer[readToken]
+}
+
+// readToken is the token as read at the file's modification time mod.
+type readToken struct {
+	mod time.Time
+	tok string
+}
+
+func newFileToken(path string) (*fileToken, error) {
+	f := &fileToken{path: path}
+	if _, err := f.Token(context.Background()); err != nil {
+		return nil, err
+	}
+	return f, nil
+}
+
+// Token returns the token, re-reading the file if it changed.
+func (f *fileToken) Token(context.Context) (string, error) {
+	info, err := os.Stat(f.path)
+	if err != nil {
+		return "", err
+	}
+	if err := tokenFileMode(info); err != nil {
+		return "", fmt.Errorf("%w (%s)", err, f.path)
+	}
+	// Без замка: два одновременных перечитывания читают один и тот же файл.
+	if c := f.cached.Load(); c != nil && info.ModTime().Equal(c.mod) {
+		return c.tok, nil
+	}
+	tok, err := readTokenFile(f.path)
+	if err != nil {
+		return "", err
+	}
+	f.cached.Store(&readToken{mod: info.ModTime(), tok: tok})
+	return tok, nil
 }

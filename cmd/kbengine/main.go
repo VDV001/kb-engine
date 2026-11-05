@@ -370,7 +370,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
 	}
-	serveOpts, err := serveOptions(ctx, src.synonyms, *timing, filesRoots, filesExclude, *filesIndex, stdout, stderr)
+	serveOpts, err := serveOptions(ctx, *timing, filesRoots, filesExclude, *filesIndex, stdout, stderr)
 	if err != nil {
 		fmt.Fprintf(stderr, "serve: %v\n", err)
 		return 1
@@ -650,14 +650,16 @@ func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
 }
 
 func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
-	src := catalogSource{loader: catalogjson.FileLoader{Path: catalogPath}, artefacts: artefactsFS(catalogPath)}
-	return buildServeHandlerFrom(src, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths, opts...)
+	return buildServeHandlerFrom(diskCatalogSource(catalogPath, io.Discard), configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths, opts...)
 }
 
 // buildServeHandlerFrom is buildServeHandler for a catalog from any source:
-// файл на диске или ключ в хранилище (serve_store.go).
+// файл на диске или ключ в хранилище (serve_store.go). Словарь синонимов
+// источника применяется здесь, а не вызывающим: иначе забытая опция молча
+// отключала бы перевод терминов.
 func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
 	loader := src.loader
+	opts = append([]httpapi.Option{src.synonyms}, opts...)
 	front, err := root.Frontend()
 	if err != nil {
 		return nil, err
