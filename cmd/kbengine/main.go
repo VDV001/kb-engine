@@ -676,7 +676,7 @@ func buildServeHandler(catalogPath, configPath, ledgerPath, workbookPath, change
 // отключала бы перевод терминов.
 func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPath, changelogPath, nowPath, teamPath, projectsPath, mediaPath string, mapPaths []string, opts ...httpapi.Option) (http.Handler, error) {
 	loader := src.loader
-	opts = append([]httpapi.Option{src.synonyms}, opts...)
+	opts = append(src.options(), opts...)
 	front, err := root.Frontend()
 	if err != nil {
 		return nil, err

@@ -58,3 +58,18 @@ func checkCategory(declared map[string]string, p domain.EntryParams) error {
 		Declared: declaredCategories(declared),
 	}
 }
+
+// CheckDeclared applies the dictionary rule of the planners to an edit:
+// правка категории подчиняется тому же meta.categories, что добавление, иначе
+// PATCH протащил бы категорию, от которой закрыт add. Каталог без словаря —
+// не отказ, а «не проверено», как у планировщиков (Report.CategoriesUnchecked).
+func CheckDeclared(c *domain.Catalog, title, category string) error {
+	declared := c.CategoryLabels()
+	if len(declared) == 0 {
+		return nil
+	}
+	if _, ok := declared[category]; ok {
+		return nil
+	}
+	return &UndeclaredCategoryError{Title: title, Category: category, Declared: declaredCategories(declared)}
+}
