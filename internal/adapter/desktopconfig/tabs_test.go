@@ -81,3 +81,19 @@ func TestRead_TabsRoundTripAndBadDropped(t *testing.T) {
 		t.Fatalf("tabs = %+v, want %+v", got.Tabs, want)
 	}
 }
+
+// «Только Все» (пустой список) переживает запись: иначе следующее чтение
+// вернуло бы набор по умолчанию вопреки выбору человека.
+func TestWrite_EmptyTabsStayEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{}}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Tabs == nil || len(got.TabList()) != 0 {
+		t.Fatalf("tabs = %#v: пустой выбор стал набором по умолчанию", got.Tabs)
+	}
+}
