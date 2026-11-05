@@ -8,6 +8,7 @@ import (
 	"io"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -41,6 +42,15 @@ type usersTargetOf struct {
 	store blob.Store
 	id    domain.UserID
 }
+
+// secretSetter is where users add --keychain puts the token: Связка ключей
+// этого Мака, в тестах — память.
+type secretSetter interface {
+	Set(account, secret string) error
+}
+
+// usersKeychain — та же служба, что читают окно и kbengine-mcp.
+var usersKeychain = func() secretSetter { return keychain.Store{Service: "kb-desktop"} }
 
 const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name>"
 
