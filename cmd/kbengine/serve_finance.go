@@ -78,12 +78,21 @@ func (f storeFinances) accounts(ctx context.Context) (financeaccounts.Book, erro
 }
 
 // accountsFor reads the accounts when an operation names one, nil otherwise.
+// Прочитанные счета не бывают nil, даже когда их нет: nil значит «книга не под
+// рукой» (fin add без --from), и незнакомый счет получения тогда не проверялся
+// бы — а в хранилище счета человека известны всегда, пусть и пустым списком.
 func (f storeFinances) accountsFor(ctx context.Context, account string) ([]domain.Account, error) {
 	if strings.TrimSpace(account) == "" {
 		return nil, nil
 	}
 	book, err := f.accounts(ctx)
-	return book.Accounts, err
+	if err != nil {
+		return nil, err
+	}
+	if book.Accounts == nil {
+		return []domain.Account{}, nil
+	}
+	return book.Accounts, nil
 }
 
 // Finances implements httpapi.Financier.
@@ -252,10 +261,34 @@ func transactionParams(a httpapi.TransactionAdd) (finance.AddParams, error) {
 	if kind == "" {
 		kind = domain.KindExpense
 	}
+	received, err := receivedAdd(a.Received)
+	if err != nil {
+		return bad(err)
+	}
 	return finance.AddParams{
 		Kind: kind, Date: when, Amount: money, Category: a.Category, Subcategory: a.Subcategory,
 		Place: a.Place, Description: a.Description, Source: a.Source, Account: a.Account, Currency: named,
+		Received: received,
 	}, nil
+}
+
+// receivedAdd parses the second side of a transfer to self, nil when there is none.
+func receivedAdd(r *httpapi.ReceivedAdd) (*finance.ReceivedAdd, error) {
+	if r == nil {
+		return nil, nil
+	}
+	if strings.TrimSpace(r.Amount) == "" {
+		return nil, errors.New("received: amount is required")
+	}
+	money, err := domain.ParseMoney(r.Amount)
+	if err != nil {
+		return nil, fmt.Errorf("received: %w", err)
+	}
+	named, err := currencyFlag(r.Currency)
+	if err != nil {
+		return nil, fmt.Errorf("received: %w", err)
+	}
+	return &finance.ReceivedAdd{Amount: money, Currency: named, Account: r.Account}, nil
 }
 
 // ConfirmBalance implements httpapi.FinanceWriter: разбор как у fin balance,

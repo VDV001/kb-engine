@@ -137,9 +137,13 @@ func currencyLabel(code string) string {
 // operationsHeader — колонки выгрузки с экрана плюс пометка перевода между
 // своими счетами: движок не считает его ни тратой, ни доходом (правило 19), и
 // без пометки СУММ в Excel не сошлась бы с итогами на экране.
-var operationsHeader = append(slices.Clone(exportHeader), "Перевод себе")
+//
+// Обмен валюты — перевод себе со второй стороной: сколько, в какой валюте и
+// на какой счет пришло, и курс из двух сумм. Курс у каждой записи свой, без
+// усреднения (решение владельца 05.11).
+var operationsHeader = append(slices.Clone(exportHeader), "Перевод себе", "Получено", "Валюта получения", "На счёт", "Курс")
 
-var operationsWidths = append(slices.Clone(exportWidths), 12)
+var operationsWidths = append(slices.Clone(exportWidths), 12, 12, 10, 14, 10)
 
 // accountsHeader: суммы — в валюте счета. Пересчета «в рубли» нет намеренно
 // (решение владельца 05.11): курс меняется, и сумма по нему — оценка, а не
@@ -152,6 +156,9 @@ var accountsWidths = []float64{24, 14, 12, 14, 8, 10}
 var totalsHeader = []string{"Род", "Валюта", "Подтверждено", "Сейчас"}
 
 var totalsWidths = []float64{20, 8, 14, 14}
+
+// receivedColumn is where the second side of an exchange starts on Операции.
+const receivedColumn = 10
 
 // plainAccounts names the kind of the ordinary accounts, whose name carries
 // no «Род →».
@@ -192,10 +199,14 @@ func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
 			if t.IsInternalTransfer() {
 				transfer = "да"
 			}
-			ops = append(ops, []string{
+			row := []string{
 				d.Date, kindLabel(d.Kind), d.Category, d.Subcategory,
 				d.Place, d.Description, d.Amount, d.Account, currencyLabel(d.Currency), transfer,
-			})
+			}
+			if r := d.Received; r != nil {
+				row = append(row, r.Amount, currencyLabel(r.Currency), r.Account, r.Rate)
+			}
+			ops = append(ops, row)
 		}
 		balances := finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations)
 		var accs [][]string
@@ -212,7 +223,7 @@ func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
 			totals = append(totals, []string{group, tot.Currency, tot.Confirmed.String(), tot.Current.String()})
 		}
 		sendBook(w, "finances.xlsx", []sheet{
-			{"Операции", operationsHeader, operationsWidths, ops, []int{amountColumn}},
+			{"Операции", operationsHeader, operationsWidths, ops, []int{amountColumn, receivedColumn, receivedColumn + 3}},
 			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5}},
 			{"Итого", totalsHeader, totalsWidths, totals, []int{2, 3}},
 		})

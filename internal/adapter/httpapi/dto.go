@@ -34,6 +34,33 @@ type transactionDTO struct {
 	// RepeatOf — id записи, поверх которой повтор подтверждён человеком.
 	// Отсутствует, когда о повторе ничего не известно.
 	RepeatOf string `json:"repeat_of,omitempty"`
+	// Received — вторая сторона перевода себе (обмен валюты) с курсом из двух
+	// сумм; нет — поле опущено.
+	Received *receivedDTO `json:"received,omitempty"`
+}
+
+// receivedDTO is the second side as the screen shows it. Currency — код, пусто
+// для валюты книги, как у операции; Rate — копейки книги за единицу, пусто,
+// когда курса нет (перевод между рублевыми счетами).
+type receivedDTO struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency,omitempty"`
+	Account  string `json:"account"`
+	Rate     string `json:"rate,omitempty"`
+}
+
+func toReceivedDTO(t domain.Transaction) *receivedDTO {
+	r, ok := t.Received()
+	if !ok {
+		return nil
+	}
+	d := &receivedDTO{Amount: r.Amount().String(), Currency: foreignCode(r.Currency()), Account: r.Account()}
+	if rate, ok := t.ExchangeRate(); ok {
+		if per, known := rate.PerUnit(); known {
+			d.Rate = per.String()
+		}
+	}
+	return d
 }
 
 // namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
@@ -247,6 +274,7 @@ func toTransactionDTO(t domain.Transaction) transactionDTO {
 		Currency:    foreignCode(t.Currency()),
 		RecordedAt:  recordedAtOrEmpty(t.ID()),
 		RepeatOf:    t.RepeatOf(),
+		Received:    toReceivedDTO(t),
 	}
 }
 

@@ -118,7 +118,7 @@ func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
 		got, err := fw.AddTransaction(r.Context(), TransactionAdd{
 			Kind: in.Kind, Date: in.Date, Amount: in.Amount, Category: in.Category, Subcategory: in.Subcategory,
 			Place: in.Place, Description: in.Description, Source: in.Source, Account: in.Account,
-			Currency: in.Currency, TZ: in.TZ, Force: in.Force,
+			Currency: in.Currency, TZ: in.TZ, Force: in.Force, Received: (*ReceivedAdd)(in.Received),
 		})
 		if err != nil {
 			if errors.Is(err, ErrRepeat) {
