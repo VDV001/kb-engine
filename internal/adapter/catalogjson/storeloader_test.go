@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
@@ -144,4 +146,87 @@ func TestStoreLoaderConcurrentLoads(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+// flakyStore fails GetIfChanged with err while it is set.
+type flakyStore struct {
+	blob.Store
+	err atomic.Pointer[error]
+}
+
+func (f *flakyStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	if e := f.err.Load(); e != nil {
+		return blob.Object{}, *e
+	}
+	return f.Store.GetIfChanged(ctx, key, etag)
+}
+
+// Сбой бакета (сеть, 5xx) не роняет витрину, пока есть разобранный каталог;
+// пропавший каталог — ошибка: это не сбой связи, а факт о данных.
+func TestStoreLoaderServesTheCachedCatalogOnATransientError(t *testing.T) {
+	base := newCountingStore(t)
+	if _, err := base.Put(context.Background(), catalogKey, []byte(catalogOf("A")), ""); err != nil {
+		t.Fatal(err)
+	}
+	s := &flakyStore{Store: base}
+	l := catalogjson.NewStoreLoader(context.Background(), s, catalogKey)
+	first, err := l.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	transient := errors.New("blobs3: get: status 503 ServiceUnavailable")
+	s.err.Store(&transient)
+	got, err := l.Load()
+	if err != nil || got != first {
+		t.Fatalf("Load during a 503 = %v, %v; want the cached catalog", got, err)
+	}
+	gone := fmt.Errorf("%w: %s (404)", blob.ErrNotFound, catalogKey)
+	s.err.Store(&gone)
+	if _, err := l.Load(); !errors.Is(err, blob.ErrNotFound) {
+		t.Fatalf("Load after the catalog is gone: err = %v, want ErrNotFound", err)
+	}
+}
+
+// Пока условный GET идет, остальные запросы ждут его результат, а не
+// становятся в очередь со своими: шесть вызовов страницы — один GET.
+func TestStoreLoaderSharesOneInFlightRead(t *testing.T) {
+	base := newCountingStore(t)
+	if _, err := base.Put(context.Background(), catalogKey, []byte(catalogOf("A")), ""); err != nil {
+		t.Fatal(err)
+	}
+	g := &gatedStore{Store: base, gate: make(chan struct{})}
+	l := catalogjson.NewStoreLoader(context.Background(), g, catalogKey)
+	const n = 16
+	var entered atomic.Int64
+	var wg sync.WaitGroup
+	for range n {
+		wg.Go(func() {
+			entered.Add(1)
+			if c, err := l.Load(); err != nil || c.Len() != 1 {
+				t.Errorf("Load: %v", err)
+			}
+		})
+	}
+	for entered.Load() < n {
+		runtime.Gosched()
+	}
+	time.Sleep(50 * time.Millisecond) // все вошли в Load и ждут
+	close(g.gate)
+	wg.Wait()
+	if c := g.calls.Load(); c != 1 {
+		t.Fatalf("%d reads for %d concurrent loads, want 1", c, n)
+	}
+}
+
+// gatedStore holds every GetIfChanged until gate is closed and counts calls.
+type gatedStore struct {
+	blob.Store
+	gate  chan struct{}
+	calls atomic.Int64
+}
+
+func (g *gatedStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	g.calls.Add(1)
+	<-g.gate
+	return g.Store.GetIfChanged(ctx, key, etag)
 }

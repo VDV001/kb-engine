@@ -128,3 +128,8 @@ func storeSynonyms(ctx context.Context, store blob.Store, key string, stderr io.
 	}
 	return httpapi.WithSynonyms(search.New(syn))
 }
+
+func newFileToken(path string) (blobs3.TokenSource, error) {
+	t, err := readTokenFile(path)
+	return blobs3.StaticToken(t), err
+}

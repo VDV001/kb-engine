@@ -5,10 +5,12 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
 )
 
@@ -77,7 +79,9 @@ func TestServeFromStore(t *testing.T) {
 	if src.synonyms == nil {
 		t.Fatalf("synonyms not loaded from the store; stderr: %s", stderr.String())
 	}
-	h, err := buildServeHandlerFrom(src, "", "", "", "", "", "", "", "", nil, src.synonyms)
+	// Синонимы источника применяются сборкой сами: передавать их вторым
+	// путем вызывающему не нужно.
+	h, err := buildServeHandlerFrom(src, "", "", "", "", "", "", "", "", nil)
 	if err != nil {
 		t.Fatalf("buildServeHandlerFrom: %v", err)
 	}
@@ -139,4 +143,41 @@ func TestServeFromStoreRefusesAMissingCatalog(t *testing.T) {
 	}
 }
 
-var _ blob.Store = (*blobfs.Store)(nil)
+// IAM-токен с Мака живет до 12 часов: свежий токен в том же файле подхватывается
+// без перезапуска serve.
+func TestFileTokenRereadsAChangedFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "iam.token")
+	write := func(tok string, at time.Time) {
+		t.Helper()
+		if err := os.WriteFile(path, []byte(tok+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(path, at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t0 := time.Date(2026, 11, 5, 9, 0, 0, 0, time.UTC)
+	first := strings.Repeat("a", 40)
+	write(first, t0)
+	src, err := newFileToken(path)
+	if err != nil {
+		t.Fatalf("newFileToken: %v", err)
+	}
+	if got, err := src.Token(context.Background()); err != nil || got != first {
+		t.Fatalf("Token = %q, %v; want the first token", got, err)
+	}
+	second := strings.Repeat("b", 40)
+	write(second, t0.Add(12*time.Hour))
+	if got, err := src.Token(context.Background()); err != nil || got != second {
+		t.Fatalf("after rewrite Token = %q, %v; want the second token", got, err)
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, t0.Add(13*time.Hour), t0.Add(13*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := src.Token(context.Background()); err == nil {
+		t.Fatal("a token file readable by others was accepted")
+	}
+}
