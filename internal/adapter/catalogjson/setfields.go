@@ -98,22 +98,11 @@ func SetFields(path string, ids []int, ch Changes) (int, error) {
 	if err := ch.validate(ids); err != nil {
 		return 0, err
 	}
-
-	members, entries, err := readEntries(path)
+	raw, err := os.ReadFile(path)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("read catalog: %w", err)
 	}
-
-	if err := checkSupersedes(entries, ids, ch); err != nil {
-		return 0, err
-	}
-
-	updated, err := editEntries(entries, ids, ch)
-	if err != nil {
-		return 0, err
-	}
-
-	doc, err := assemble(members, entries)
+	doc, updated, err := SetFieldsDoc(raw, ids, ch)
 	if err != nil {
 		return 0, err
 	}
@@ -121,6 +110,31 @@ func SetFields(path string, ids []int, ch Changes) (int, error) {
 		return 0, err
 	}
 	return updated, nil
+}
+
+// SetFieldsDoc is SetFields on the catalog document itself: те же проверки и
+// та же пересборка, без файла. Через нее пишет и диск, и хранилище, поэтому
+// правило правки одно.
+func SetFieldsDoc(raw []byte, ids []int, ch Changes) ([]byte, int, error) {
+	if err := ch.validate(ids); err != nil {
+		return nil, 0, err
+	}
+	members, entries, err := parseEntries(raw)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := checkSupersedes(entries, ids, ch); err != nil {
+		return nil, 0, err
+	}
+	updated, err := editEntries(entries, ids, ch)
+	if err != nil {
+		return nil, 0, err
+	}
+	doc, err := assemble(members, entries)
+	if err != nil {
+		return nil, 0, err
+	}
+	return doc, updated, nil
 }
 
 func (c Changes) validate(ids []int) error {
@@ -212,6 +226,12 @@ func readEntries(path string) ([]member, []json.RawMessage, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("read catalog: %w", err)
 	}
+	return parseEntries(raw)
+}
+
+// parseEntries splits a catalog document into its top-level members and the
+// raw entries.
+func parseEntries(raw []byte) ([]member, []json.RawMessage, error) {
 	members, err := readTopLevel(raw)
 	if err != nil {
 		return nil, nil, err

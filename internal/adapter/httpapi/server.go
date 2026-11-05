@@ -169,6 +169,7 @@ type options struct {
 	timing bool
 	calls  ToolCallReader
 	files  FileSearcher
+	writer CatalogWriter
 }
 
 // WithSynonyms подключает слой перевода терминов.
@@ -234,6 +235,10 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	mux.HandleFunc("GET /api/maps/{id}", handleMap(docs.Maps))
 	mux.HandleFunc("GET /api/finances", handleFinances(fin))
 	mux.HandleFunc("GET /api/finances/summary", handleFinanceSummary(fin))
+	if o.writer != nil {
+		mux.HandleFunc("POST /api/entries", handleAddEntry(o.writer))
+		mux.HandleFunc("PATCH /api/entries/{id}", handleEditEntry(o.writer))
+	}
 	if o.files != nil {
 		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))
 		mux.Handle("GET /api/files/read", localHostOnly(handleFilesRead(o.files)))

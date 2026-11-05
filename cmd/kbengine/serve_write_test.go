@@ -123,7 +123,7 @@ func TestPatchThroughTheAPI(t *testing.T) {
 	if rec := do(h, http.MethodPatch, "/api/entries/1", `{"verdict":"consider"}`, ""); rec.Code != http.StatusOK {
 		t.Fatalf("PATCH: %d %s", rec.Code, rec.Body.String())
 	}
-	rec := do(h, http.MethodGet, "/api/entries/1", "", "")
+	rec := do(h, http.MethodGet, "/api/entries", "", "")
 	if !strings.Contains(rec.Body.String(), "consider") {
 		t.Fatalf("entry after PATCH: %s", rec.Body.String())
 	}

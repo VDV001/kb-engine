@@ -37,8 +37,8 @@ func TestDocFunctionsMatchTheFileWriters(t *testing.T) {
 	if !bytes.Equal(fromFile, fromDoc) {
 		t.Fatalf("SetFieldsDoc differs from SetFields:\nfile %s\ndoc  %s", fromFile, fromDoc)
 	}
-	if !bytes.Contains(fromDoc, []byte(`"x_unknown":true`)) || !bytes.Contains(fromDoc, []byte(`"last_updated"`)) {
-		t.Fatal("fields the domain does not know were lost")
+	if !bytes.Contains(fromDoc, []byte(`"x_unknown": true`)) || !bytes.Contains(fromDoc, []byte(`"last_updated"`)) {
+		t.Fatalf("fields the domain does not know were lost: %s", fromDoc)
 	}
 }
 

@@ -59,10 +59,19 @@ func AppendEntries(path string, entries []domain.Entry) error {
 	if err != nil {
 		return fmt.Errorf("read catalog: %w", err)
 	}
-
-	members, err := readTopLevel(raw)
+	doc, err := AppendEntriesDoc(raw, entries)
 	if err != nil {
 		return err
+	}
+	return writeFileAtomic(path, doc)
+}
+
+// AppendEntriesDoc is AppendEntries on the catalog document itself, без файла:
+// через нее дописывают и диск, и хранилище.
+func AppendEntriesDoc(raw []byte, entries []domain.Entry) ([]byte, error) {
+	members, err := readTopLevel(raw)
+	if err != nil {
+		return nil, err
 	}
 
 	var existing []json.RawMessage
@@ -71,23 +80,18 @@ func AppendEntries(path string, entries []domain.Entry) error {
 			continue
 		}
 		if err := json.Unmarshal(m.val, &existing); err != nil {
-			return fmt.Errorf("parse entries: %w", err)
+			return nil, fmt.Errorf("parse entries: %w", err)
 		}
 	}
 
 	for _, e := range entries {
 		encoded, err := marshalNoEscape(toLegacy(e))
 		if err != nil {
-			return fmt.Errorf("encode entry %d: %w", e.ID(), err)
+			return nil, fmt.Errorf("encode entry %d: %w", e.ID(), err)
 		}
 		existing = append(existing, encoded)
 	}
-
-	doc, err := assemble(members, existing)
-	if err != nil {
-		return err
-	}
-	return writeFileAtomic(path, doc)
+	return assemble(members, existing)
 }
 
 // readTopLevel returns the object's members in file order. Order is what keeps a

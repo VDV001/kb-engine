@@ -33,6 +33,18 @@ type catalogSource struct {
 	loader    catalogLoader
 	artefacts fs.FS
 	synonyms  httpapi.Option // nil — словаря нет, поиск без перевода терминов
+	// writer — запись через API; nil у каталога на диске: туда пишет CLI.
+	writer httpapi.CatalogWriter
+}
+
+// options are the server options the source brings: словарь синонимов и, у
+// хранилища, запись.
+func (s catalogSource) options() []httpapi.Option {
+	opts := []httpapi.Option{s.synonyms}
+	if s.writer != nil {
+		opts = append(opts, httpapi.WithCatalogWriter(s.writer))
+	}
+	return opts
 }
 
 // openCatalogSource opens --catalog: путь на диске или s3://бакет/ключ в Yandex
@@ -123,6 +135,7 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 		loader:    loader,
 		artefacts: artefacts,
 		synonyms:  storeSynonyms(ctx, store, path.Join(dataDir, searchsyn.FileName), stderr),
+		writer:    storeCatalogWriter{w: catalogjson.NewStoreWriter(store, key), now: time.Now},
 	}, nil
 }
 
