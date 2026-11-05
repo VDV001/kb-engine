@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime"
 	"net/http"
 	"net/url"
@@ -113,7 +114,7 @@ func handleAddEntry(wr CatalogWriter) http.HandlerFunc {
 		}
 		got, err := wr.AddEntry(r.Context(), EntryAdd(in))
 		if err != nil {
-			writeWriteError(w, err)
+			writeWriteError(w, "catalog", err)
 			return
 		}
 		out := addedDTO(got)
@@ -146,7 +147,7 @@ func handleEditEntry(wr CatalogWriter) http.HandlerFunc {
 		}
 		n, err := wr.EditEntry(r.Context(), id, p)
 		if err != nil {
-			writeWriteError(w, err)
+			writeWriteError(w, "catalog", err)
 			return
 		}
 		// Настоящее число: «готово» без правки — та же тишина, от которой
@@ -209,17 +210,18 @@ func sameSiteJSON(next http.Handler) http.Handler {
 	})
 }
 
-// writeWriteError maps a write failure to a status. Причина 500 остается в
-// журнале сервера: в ней ключ хранилища.
-func writeWriteError(w http.ResponseWriter, err error) {
+// writeWriteError maps a write failure of subject (catalog, journal) to a
+// status. Причина 500 остается в журнале сервера: в ней ключ хранилища.
+func writeWriteError(w http.ResponseWriter, subject string, err error) {
 	switch {
 	case errors.Is(err, ErrBadWrite):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoEntry):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, blob.ErrConflict):
-		http.Error(w, "the catalog kept changing under the write; retry", http.StatusConflict)
+		http.Error(w, "the "+subject+" kept changing under the write; retry", http.StatusConflict)
 	default:
+		log.Printf("%s write: %v", subject, err)
 		http.Error(w, "write failed", http.StatusInternalServerError)
 	}
 }

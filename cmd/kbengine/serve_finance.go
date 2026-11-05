@@ -41,6 +41,9 @@ func (f storeFinances) records() ([]finance.Record, error) {
 	ctx, cancel := context.WithTimeout(f.ctx, financeReadTimeout)
 	defer cancel()
 	o, err := f.store.Get(ctx, f.journalKey)
+	if errors.Is(err, blob.ErrNotFound) {
+		return nil, nil // журнала еще нет — операций нет
+	}
 	if err != nil {
 		return nil, fmt.Errorf("journal: %w", err)
 	}
@@ -85,7 +88,11 @@ func (f storeFinances) vocabulary(ctx context.Context) (finance.Vocabulary, erro
 }
 
 // AddTransaction implements httpapi.FinanceWriter: разбор как у fin add,
-// решение planAdd, условная запись журнала с повтором по свежему.
+// решение planAdd, условная запись журнала с повтором по свежему. Журнала нет
+// — он заводится пустым и пишется той же условной записью.
+//
+// Снимка перед записью, как у файлового financejsonl.Save, здесь нет: эту роль
+// играют версии бакета, они включены (outputs/2026-11-05_kb-server-plan.md).
 func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.TransactionAdd) (httpapi.TransactionAdded, error) {
 	p, err := transactionParams(a)
 	if err != nil {
@@ -95,9 +102,13 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 	if vocErr != nil && !errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		return httpapi.TransactionAdded{}, vocErr
 	}
+	var warnings []string
+	if errors.Is(vocErr, finance.ErrVocabularyConflict) {
+		warnings = append(warnings, vocErr.Error())
+	}
 	var rec finance.Record
 	var fixed []httpapi.Correction
-	err = blob.Update(ctx, f.store, f.journalKey, func(raw []byte) ([]byte, error) {
+	err = f.update(ctx, func(raw []byte) ([]byte, error) {
 		fixed = fixed[:0] // каждая попытка решает заново по свежему журналу
 		recs, err := financejsonl.Parse(f.journalKey, bytes.NewReader(raw), f.now)
 		if err != nil {
@@ -106,7 +117,7 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 		var next []finance.Record
 		rec, next, err = planAdd(recs, voc, vocErr, p, a.Force, func(c finance.Correction) {
 			fixed = append(fixed, httpapi.Correction{Field: c.Field, Typed: c.Typed, Used: c.Used})
-		}, nil)
+		}, nil) // спор словаря назван в ответе (warnings), а не в журнале сервера
 		switch {
 		case errors.Is(err, ErrRepeat):
 			return nil, fmt.Errorf("%w: %w", httpapi.ErrRepeat, err)
@@ -123,7 +134,22 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 		return httpapi.TransactionAdded{}, err
 	}
 	tx := rec.Transaction()
-	return httpapi.TransactionAdded{ID: tx.ID(), Date: tx.Date().Format(time.DateOnly), Amount: amountText(tx), Corrections: fixed}, nil
+	return httpapi.TransactionAdded{ID: tx.ID(), Date: tx.Date().Format(time.DateOnly), Amount: amountText(tx),
+		Corrections: fixed, Warnings: warnings}, nil
+}
+
+// update is blob.Update over the journal, creating it empty when it is missing:
+// человек, заведенный до журналов, получает его первой операцией.
+func (f storeFinances) update(ctx context.Context, change func(raw []byte) ([]byte, error)) error {
+	err := blob.Update(ctx, f.store, f.journalKey, change)
+	if !errors.Is(err, blob.ErrNotFound) {
+		return err
+	}
+	// Одновременный первый POST уже завел журнал — это не ошибка.
+	if _, err := f.store.Put(ctx, f.journalKey, nil, ""); err != nil && !errors.Is(err, blob.ErrConflict) {
+		return fmt.Errorf("create journal: %w", err)
+	}
+	return blob.Update(ctx, f.store, f.journalKey, change)
 }
 
 // transactionParams parses the request the way fin add parses its flags.

@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobs3"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -145,16 +146,13 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 		writer:    storeCatalogWriter{w: catalogjson.NewStoreWriter(store, key), now: time.Now},
 	}
 	// Финансы — рядом с базой: <человек>/kb/_data/catalog.json → <человек>/fin/.
-	// Журнала нет — финансового вида нет, как у serve без --ledger.
+	// Они есть у каждого: журнала нет — операций нет, первая запись его
+	// заводит. Журнал здесь не читается: его сбой — отказ финансового вида, а
+	// не всей базы человека.
 	finDir := path.Join(path.Dir(path.Dir(dataDir)), "fin")
 	sf := storeFinances{ctx: ctx, store: store, journalKey: path.Join(finDir, "journal.jsonl"),
-		vocabKey: path.Join(finDir, "aliases.json"), now: time.Now}
-	switch _, err := store.Get(ctx, sf.journalKey); {
-	case err == nil:
-		src.fin, src.finWriter = sf, sf
-	case !errors.Is(err, blob.ErrNotFound):
-		return catalogSource{}, fmt.Errorf("journal %s: %w", sf.journalKey, err)
-	}
+		vocabKey: path.Join(finDir, financevocab.FileName), now: time.Now}
+	src.fin, src.finWriter = sf, sf
 	return src, nil
 }
 

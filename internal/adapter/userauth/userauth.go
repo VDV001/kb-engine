@@ -44,12 +44,6 @@ const MaxStale = 5 * time.Minute
 // writeAttempts bounds retries of a registry write after ErrConflict.
 const writeAttempts = 5
 
-// JournalKey is where a person's finance journal lives: рядом с базой, под
-// тем же users/<id>/.
-func JournalKey(id domain.UserID) string {
-	return "users/" + id.String() + "/fin/journal.jsonl"
-}
-
 // CatalogKey is where a person's catalog lives: база каждого — под своим
 // users/<id>/, с той же раскладкой, что knowledge-base на диске.
 func CatalogKey(id domain.UserID) string {
@@ -77,11 +71,6 @@ func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
 	token := base64.RawURLEncoding.EncodeToString(raw) // 43 печатных символа
 	if _, err := s.Put(ctx, CatalogKey(id), []byte("{\"entries\":[]}\n"), ""); err != nil && !errors.Is(err, blob.ErrConflict) {
 		return "", fmt.Errorf("userauth: empty catalog for %s: %w", id, err)
-	}
-	// Журнал финансов — тоже сразу: первая операция пишется условной записью
-	// поверх существующего объекта.
-	if _, err := s.Put(ctx, JournalKey(id), nil, ""); err != nil && !errors.Is(err, blob.ErrConflict) {
-		return "", fmt.Errorf("userauth: empty journal for %s: %w", id, err)
 	}
 	sum := sha256.Sum256([]byte(token))
 	err := update(ctx, s, func(r *registryDTO) error {

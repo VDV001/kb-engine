@@ -308,23 +308,6 @@ func (s *slowStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Ob
 	return s.Store.GetIfChanged(ctx, key, etag)
 }
 
-// Пустой журнал финансов заводится вместе с базой: первая операция пишется
-// условной записью, а писать нечего, пока объекта нет.
-func TestAddCreatesAnEmptyJournal(t *testing.T) {
-	ctx := context.Background()
-	s := newStore(t)
-	if _, err := userauth.Add(ctx, s, id(t, "anna")); err != nil {
-		t.Fatal(err)
-	}
-	if got := userauth.JournalKey(id(t, "anna")); got != "users/anna/fin/journal.jsonl" {
-		t.Fatalf("JournalKey = %q", got)
-	}
-	o, err := s.Get(ctx, userauth.JournalKey(id(t, "anna")))
-	if err != nil || len(o.Data) != 0 {
-		t.Fatalf("journal of the new user: %q, %v", o.Data, err)
-	}
-}
-
 // Холодный старт: первое чтение реестра идет, а страница шлет сразу несколько
 // запросов. Они ждут это чтение, а не получают 401 по пустому списку.
 func TestConcurrentFirstLookupsWaitForTheFirstRead(t *testing.T) {

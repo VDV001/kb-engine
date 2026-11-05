@@ -23,10 +23,12 @@ type TransactionAdd struct {
 // Correction is a spelling the journal changed to the one already in use.
 type Correction struct{ Field, Typed, Used string }
 
-// TransactionAdded is the recorded operation.
+// TransactionAdded is the recorded operation. Warnings — то, о чем fin add
+// предупреждает в stderr: запись состоялась, но человеку есть что поправить.
 type TransactionAdded struct {
 	ID, Date, Amount string
 	Corrections      []Correction
+	Warnings         []string
 }
 
 // FinanceWriter records operations in the journal the server reads. Правила
@@ -66,6 +68,7 @@ type transactionAddedDTO struct {
 	Date        string          `json:"date"`
 	Amount      string          `json:"amount"`
 	Corrections []correctionDTO `json:"corrections,omitempty"`
+	Warnings    []string        `json:"warnings,omitempty"`
 }
 
 func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
@@ -81,10 +84,10 @@ func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
 				http.Error(w, err.Error(), http.StatusConflict)
 				return
 			}
-			writeWriteError(w, err)
+			writeWriteError(w, "journal", err)
 			return
 		}
-		out := transactionAddedDTO{ID: got.ID, Date: got.Date, Amount: got.Amount}
+		out := transactionAddedDTO{ID: got.ID, Date: got.Date, Amount: got.Amount, Warnings: got.Warnings}
 		for _, c := range got.Corrections {
 			out.Corrections = append(out.Corrections, correctionDTO(c))
 		}
