@@ -1673,8 +1673,8 @@
           "from": "ad-httpapi",
           "to": "browser",
           "call": "Content-Disposition: attachment; filename=finances.xlsx",
-          "detail": "internal/adapter/httpapi/export.go:255; sendBook собирает книгу в памяти до ответа: сбой сборки — 500, а не оборванный файл с кодом 200",
-          "source": "internal/adapter/httpapi/export.go:255",
+          "detail": "internal/adapter/httpapi/export.go:269; sendBook собирает книгу в памяти до ответа: сбой сборки — 500, а не оборванный файл с кодом 200",
+          "source": "internal/adapter/httpapi/export.go:269",
           "unverified": false
         }
       ],
