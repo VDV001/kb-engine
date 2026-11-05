@@ -268,3 +268,9 @@ func currencyCode(c domain.Currency) string {
 	}
 	return c.Code()
 }
+
+func Parse(string, io.Reader, func() time.Time) ([]finance.Record, error) {
+	return nil, errors.New("not implemented")
+}
+
+func Encode(io.Writer, []finance.Record) error { return errors.New("not implemented") }

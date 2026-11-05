@@ -10,6 +10,7 @@ package financevocab
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -219,4 +220,8 @@ func update(path string, apply func(*file) bool) error {
 		return err
 	}
 	return os.WriteFile(path, body.Bytes(), 0o600)
+}
+
+func Parse(string, []byte) (finance.Vocabulary, error) {
+	return finance.Vocabulary{}, errors.New("not implemented")
 }

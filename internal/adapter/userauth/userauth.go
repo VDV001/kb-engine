@@ -44,6 +44,8 @@ const MaxStale = 5 * time.Minute
 // writeAttempts bounds retries of a registry write after ErrConflict.
 const writeAttempts = 5
 
+func JournalKey(domain.UserID) string { return "" }
+
 // CatalogKey is where a person's catalog lives: база каждого — под своим
 // users/<id>/, с той же раскладкой, что knowledge-base на диске.
 func CatalogKey(id domain.UserID) string {
