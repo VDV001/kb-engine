@@ -127,3 +127,73 @@ func TestUpdateOutlastsARunOfConflicts(t *testing.T) {
 		})
 	}
 }
+
+// flaky fails the first n reads or writes the way a store fails on its side.
+type flaky struct {
+	blob.Store
+	mu         sync.Mutex
+	gets, puts int
+}
+
+func (f *flaky) Get(ctx context.Context, key string) (blob.Object, error) {
+	f.mu.Lock()
+	fail := f.gets > 0
+	if fail {
+		f.gets--
+	}
+	f.mu.Unlock()
+	if fail {
+		return blob.Object{}, fmt.Errorf("blobs3: get %s: status 503: %w", key, blob.ErrTransient)
+	}
+	return f.Store.Get(ctx, key)
+}
+
+func (f *flaky) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	f.mu.Lock()
+	fail := f.puts > 0
+	if fail {
+		f.puts--
+	}
+	f.mu.Unlock()
+	if fail {
+		return "", fmt.Errorf("blobs3: put %s: status 500 InternalError: %w", key, blob.ErrTransient)
+	}
+	return f.Store.Put(ctx, key, data, ifMatch)
+}
+
+// Сбой хранилища на его стороне — повод перечитать и попробовать снова, как
+// конфликт; долгий сбой остается сбоем (ErrTransient), а не «документ все
+// время менялся».
+func TestUpdateRetriesAStoreFailure(t *testing.T) {
+	cases := []struct {
+		name       string
+		gets, puts int
+		want       error
+	}{
+		{"a write fails twice", 0, 2, nil},
+		{"a read fails twice", 2, 0, nil},
+		{"the store stays down", 0, 1 << 30, blob.ErrTransient},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx := context.Background()
+			fs, err := blobfs.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fs.Put(ctx, "k", []byte("v1"), ""); err != nil {
+				t.Fatal(err)
+			}
+			s := &flaky{Store: fs, gets: c.gets, puts: c.puts}
+			err = blob.Update(ctx, s, "k", func(raw []byte) ([]byte, error) { return append(raw, '+'), nil })
+			if c.want == nil && err != nil || c.want != nil && (!errors.Is(err, c.want) || errors.Is(err, blob.ErrConflict)) {
+				t.Fatalf("Update: %v, want %v", err, c.want)
+			}
+			if c.want == nil {
+				if o, _ := fs.Get(ctx, "k"); string(o.Data) != "v1+" {
+					t.Fatalf("stored %q, want one change applied", o.Data)
+				}
+			}
+		})
+	}
+}

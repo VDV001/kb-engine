@@ -153,13 +153,17 @@ func TestStatusMapping(t *testing.T) {
 	}{
 		{"get 404", false, http.StatusNotFound, blob.ErrNotFound},
 		{"get 403", false, http.StatusForbidden, nil},
-		{"get 500", false, http.StatusInternalServerError, nil},
+		{"get 500", false, http.StatusInternalServerError, blob.ErrTransient},
+		{"get 503", false, http.StatusServiceUnavailable, blob.ErrTransient},
 		{"get-if-changed 304", false, http.StatusNotModified, blob.ErrNotModified},
 		{"put 412", true, http.StatusPreconditionFailed, blob.ErrConflict},
 		{"put 409 concurrent write", true, http.StatusConflict, blob.ErrConflict},
 		{"put 404 key gone under If-Match", true, http.StatusNotFound, blob.ErrConflict},
 		{"put 403", true, http.StatusForbidden, nil},
-		{"put 500", true, http.StatusInternalServerError, nil},
+		// Yandex на одновременной условной записи в один ключ изредка отвечает
+		// 500 InternalError (замер 05.11: раз на ~7 прогонов из четырех писателей).
+		{"put 500", true, http.StatusInternalServerError, blob.ErrTransient},
+		{"put 503", true, http.StatusServiceUnavailable, blob.ErrTransient},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -183,7 +187,7 @@ func TestStatusMapping(t *testing.T) {
 			if c.want != nil && !errors.Is(err, c.want) {
 				t.Fatalf("err = %v, want %v", err, c.want)
 			}
-			if c.want == nil && (errors.Is(err, blob.ErrNotFound) || errors.Is(err, blob.ErrConflict)) {
+			if c.want == nil && (errors.Is(err, blob.ErrNotFound) || errors.Is(err, blob.ErrConflict) || errors.Is(err, blob.ErrTransient)) {
 				t.Fatalf("err = %v: a %d must not look like a missing key or a conflict", err, c.status)
 			}
 			if !strings.Contains(err.Error(), fmt.Sprint(c.status)) {

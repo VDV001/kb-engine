@@ -83,6 +83,7 @@ func TestTransactionErrors(t *testing.T) {
 		{"rule refused", fmt.Errorf("%w: сумма", httpapi.ErrBadWrite), http.StatusBadRequest, "сумма", ""},
 		{"journal kept changing", fmt.Errorf("users/u1/fin/journal.jsonl: %w", blob.ErrConflict), http.StatusConflict, "journal", ""},
 		{"store down", errors.New("blobs3: 503"), http.StatusInternalServerError, "write failed", "blobs3: 503"},
+		{"store kept failing", fmt.Errorf("users/u1/fin/journal.jsonl: %w", blob.ErrTransient), http.StatusServiceUnavailable, "retry", "journal"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

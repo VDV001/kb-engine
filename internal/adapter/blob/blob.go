@@ -21,6 +21,10 @@ var (
 	// ErrConflict — хранимая версия не та, от которой писал писатель: ее
 	// изменил кто-то другой, ключ уже создан или удален.
 	ErrConflict = errors.New("blob: stored version changed")
+	// ErrTransient — хранилище ответило сбоем на своей стороне (500, 503).
+	// Легла ли запись, неизвестно: писатель перечитывает и решает заново, как
+	// при конфликте, а не сдается и не считает запись состоявшейся.
+	ErrTransient = errors.New("blob: store failed, retry")
 	// ErrInvalidKey — ключ не прошел ValidKey.
 	ErrInvalidKey = errors.New("blob: invalid key")
 	// ErrTooLarge — объект больше MaxObjectSize.
