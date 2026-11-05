@@ -99,7 +99,9 @@ func checkExposure(addr string, token, hasTLS, open bool) error {
 // serveAccess reads the token and the TLS pair and checks the address against
 // them — все отказы до того, как открыт порт. Пара грузится здесь, а не в
 // ListenAndServeTLS: иначе битый сертификат всплывал бы после строки «serving».
-func serveAccess(addr, pprofAddr, tokenFile, certFile, keyFile string, allowOpen bool) (string, *tls.Config, error) {
+//
+// tenants: токены людей проверяет реестр (serve --tenants), а не --token-file.
+func serveAccess(addr, pprofAddr, tokenFile, certFile, keyFile string, allowOpen, tenants bool) (string, *tls.Config, error) {
 	// Профилировщик отдает дампы памяти — в них и токен, и данные базы. Он
 	// идет мимо токена и TLS, поэтому только на этом Mac, при любом --allow-open.
 	if pprofAddr != "" {
@@ -118,7 +120,7 @@ func serveAccess(addr, pprofAddr, tokenFile, certFile, keyFile string, allowOpen
 		}
 		token = t
 	}
-	if err := checkExposure(addr, token != "", certFile != "", allowOpen); err != nil {
+	if err := checkExposure(addr, token != "" || tenants, certFile != "", allowOpen); err != nil {
 		return "", nil, fmt.Errorf("--addr %s: %w", addr, err)
 	}
 	if certFile == "" {

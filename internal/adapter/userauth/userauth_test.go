@@ -166,3 +166,30 @@ func TestCatalogKeyIsUnderTheUser(t *testing.T) {
 		t.Fatalf("CatalogKey = %q", got)
 	}
 }
+
+// Битый реестр (ручная правка, обрезанная запись) не пускает никого: закрыто,
+// а не «как было до правки».
+func TestBrokenRegistryAdmitsNobody(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	tok, err := userauth.Add(ctx, s, id(t, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	r := userauth.NewRegistry(ctx, s, userauth.WithClock(func() time.Time { return now }))
+	if _, ok := r.Lookup(tok); !ok {
+		t.Fatal("fresh token refused")
+	}
+	cur, err := s.Get(ctx, userauth.RegistryKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Put(ctx, userauth.RegistryKey, cur.Data[:len(cur.Data)/2], cur.ETag); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(userauth.RefreshEvery + time.Second)
+	if _, ok := r.Lookup(tok); ok {
+		t.Fatal("a broken registry still admitted the old token")
+	}
+}
