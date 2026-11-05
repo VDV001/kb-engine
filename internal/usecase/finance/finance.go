@@ -109,6 +109,16 @@ type AddParams struct {
 	// They are what a currency is taken from and checked against; without them
 	// there is nothing to check, and the later sync is where a mismatch stops.
 	Accounts []domain.Account
+	// Received — вторая сторона перевода себе (обмен валюты): nil — ее нет.
+	Received *ReceivedAdd
+}
+
+// ReceivedAdd is the second side of a transfer as a person names it.
+// Currency nil — валюта счета получения, а без счетов — валюта книги.
+type ReceivedAdd struct {
+	Amount   domain.Money
+	Currency *domain.Currency
+	Account  string
 }
 
 // resolveCurrency returns the unit an entry is recorded in and the account it

@@ -92,7 +92,10 @@ type TransactionParams struct {
 	Account     string
 	Currency    Currency
 	RepeatOf    string
-	Now         func() time.Time
+	// Received — вторая сторона перевода себе (обмен валюты, перевод между
+	// своими счетами); нулевое значение — ее нет.
+	Received ReceivedParams
+	Now      func() time.Time
 }
 
 // Day reduces an instant to the calendar day it falls on, in its own location,
