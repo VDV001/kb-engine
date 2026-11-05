@@ -4,58 +4,25 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
-	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 )
 
-// fakeKeychain stands in for the Связка ключей: тесты не пишут в настоящую.
-// setErr — отказ записи (видит секрет: настоящий security мог бы повторить
-// его в своем выводе); getErr — отказ чтения (нет security, Linux).
-type fakeKeychain struct {
-	got    map[string]string
-	last   string // последний записанный секрет: Delete его не стирает
-	setErr func(secret string) error
-	getErr error
-}
+// lyingStore writes the registry and then answers an error, как S3, у которого
+// запись прошла, а ответ потерялся по таймауту.
+type lyingStore struct{ blob.Store }
 
-func (f *fakeKeychain) Get(account string) (string, error) {
-	if f.getErr != nil {
-		return "", f.getErr
+func (l lyingStore) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	if _, err := l.Store.Put(ctx, key, data, ifMatch); err != nil || key != userauth.RegistryKey {
+		return "", err
 	}
-	v, ok := f.got[account]
-	if !ok {
-		return "", keychain.ErrNotFound
-	}
-	return v, nil
-}
-
-func (f *fakeKeychain) Set(account, secret string) error {
-	f.got[account], f.last = secret, secret // записалось, а потом отказало (чтение-проверка по таймауту)
-	if f.setErr != nil {
-		return f.setErr(secret)
-	}
-	return nil
-}
-
-func (f *fakeKeychain) Delete(account string) error {
-	delete(f.got, account)
-	return nil
-}
-
-func withFakeKeychain(t *testing.T, setErr func(string) error) *fakeKeychain {
-	t.Helper()
-	f := &fakeKeychain{got: map[string]string{}, setErr: setErr}
-	prev := usersKeychain
-	usersKeychain = func() tokenKeychain { return f }
-	t.Cleanup(func() { usersKeychain = prev })
-	return f
+	return "", errors.New("put auth/users.json: context deadline exceeded")
 }
 
 func lookup(t *testing.T, dir, tok string) (string, bool) {
@@ -116,77 +83,26 @@ func TestUsersAddNeverPrintsTheToken(t *testing.T) {
 	}
 }
 
-func TestUsersAddPutsTheTokenIntoTheKeychain(t *testing.T) {
-	kc := withFakeKeychain(t, nil)
+// Хранилище записало хэш и ответило ошибкой: вход отзывается, иначе хэш
+// остался бы без токена, а повторный add ответил бы «уже есть».
+func TestUsersAddRevokesWhenTheStoreAnswersAfterWriting(t *testing.T) {
 	dir := t.TempDir()
+	prev := usersOpenStore
+	usersOpenStore = func(loc, tokenFile string) (blob.Store, error) {
+		s, err := prev(loc, tokenFile)
+		return lyingStore{s}, err
+	}
+	path := filepath.Join(t.TempDir(), "anna.token")
 	var out, errb bytes.Buffer
-	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 0 {
-		t.Fatalf("users add: exit %d, stderr %s", code, errb.String())
-	}
-	tok := kc.got["server-0a1b2c3d"]
-	if got, ok := lookup(t, dir, tok); !ok || got != "anna" {
-		t.Fatalf("Lookup(token from keychain) = %q, %v", got, ok)
-	}
-	if out.Len() != 0 || strings.Contains(errb.String(), tok) {
-		t.Errorf("the token reached the terminal: stdout %q, stderr %q", out.String(), errb.String())
-	}
-}
-
-// Связка отказала — токен не сохранен нигде, кроме хэша. Такой вход закрыт
-// сразу: иначе человек остался бы с хэшем, к которому нет токена, и
-// повторный add отказал бы «уже есть».
-// Отказ Связки после записи: в ней не остается мертвого токена, а текст
-// отказа, даже повторивший секрет, в терминал его не доносит.
-func TestUsersAddRevokesWhenTheKeychainRefuses(t *testing.T) {
-	kc := withFakeKeychain(t, func(secret string) error {
-		return fmt.Errorf("security: add-generic-password -w %q: user canceled", secret)
-	})
-	dir := t.TempDir()
-	var out, errb bytes.Buffer
-	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 1 {
+	code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--token-out", path}, &out, &errb)
+	usersOpenStore = prev
+	if code != 1 {
 		t.Fatalf("exit %d, want 1; stderr %s", code, errb.String())
 	}
-	if out.Len() != 0 {
-		t.Errorf("stdout %q on a refusal", out.String())
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("token file left behind: %v", err)
 	}
-	if kc.last == "" || strings.Contains(errb.String(), kc.last) {
-		t.Errorf("stderr carries the token (or nothing was written): %q", errb.String())
-	}
-	if v, ok := kc.got["server-0a1b2c3d"]; ok {
-		t.Errorf("a dead token %q stayed in the keychain", v)
-	}
-	addToFile(t, dir, "anna") // вход закрыт, имя свободно для нового токена
-}
-
-// Занятая учетка Связки — отказ до выпуска, как и занятый файл: -U молча
-// заменил бы токен источника, уже настроенного в окне.
-func TestUsersAddRefusesAnOccupiedKeychainAccount(t *testing.T) {
-	kc := withFakeKeychain(t, nil)
-	kc.got["server-0a1b2c3d"] = "the window's own token"
-	dir := t.TempDir()
-	var out, errb bytes.Buffer
-	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 2 {
-		t.Fatalf("exit %d, want 2; stderr %s", code, errb.String())
-	}
-	if kc.got["server-0a1b2c3d"] != "the window's own token" {
-		t.Errorf("the window's token replaced: %q", kc.got["server-0a1b2c3d"])
-	}
-	addToFile(t, dir, "anna") // отказ до выпуска: anna не заведена
-}
-
-// Связка недоступна (нет security, Linux, имя учетки с пробелом) — тоже
-// отказ до выпуска, а не выпуск и закрытие.
-func TestUsersAddRefusesAnUnreadableKeychainBeforeIssuing(t *testing.T) {
-	kc := withFakeKeychain(t, nil)
-	kc.getErr = errors.New(`exec: "security": executable file not found in $PATH`)
-	dir := t.TempDir()
-	var out, errb bytes.Buffer
-	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 2 {
-		t.Fatalf("exit %d, want 2; stderr %s", code, errb.String())
-	}
-	if _, err := os.Stat(filepath.Join(dir, "auth", "users.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Errorf("the registry was written before the keychain was known to work: %v", err)
-	}
+	addToFile(t, dir, "anna") // хэш отозван, имя свободно
 }
 
 func TestUsersCommandRefusals(t *testing.T) {
@@ -205,8 +121,10 @@ func TestUsersCommandRefusals(t *testing.T) {
 		{[]string{"users", "add", "--tenants", dir, "--id", "anna", "--token-out", fresh()}, 1, "already exists"},
 		{[]string{"users", "add", "--tenants", dir, "--id", "Анна", "--token-out", fresh()}, 2, "invalid user id"},
 		{[]string{"users", "add", "--id", "bob", "--token-out", fresh()}, 2, "--tenants"},
-		{[]string{"users", "add", "--tenants", dir, "--id", "bob"}, 2, "--keychain"},
-		{[]string{"users", "add", "--tenants", dir, "--id", "bob", "--token-out", fresh(), "--keychain", "server-0a1b2c3d"}, 2, "--keychain"},
+		{[]string{"users", "add", "--tenants", dir, "--id", "bob"}, 2, "--token-out"},
+		// Флага нет: Связку ведет окно. Имя с пробелом — чтобы и код до этой
+		// правки не дошел до записи в настоящую Связку.
+		{[]string{"users", "add", "--tenants", dir, "--id", "bob", "--keychain", "not a source"}, 2, "keychain"},
 		{[]string{"users", "add", "--tenants", dir, "--id", "bob", "--token-out", taken}, 2, "exists"},
 		{[]string{"users", "revoke", "--tenants", dir, "--id", "ghost"}, 1, "no such user"},
 		{[]string{"users", "rename", "--tenants", dir, "--id", "anna"}, 2, "add"},

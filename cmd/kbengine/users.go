@@ -64,6 +64,10 @@ type tokenKeychain interface {
 // usersKeychain — та же служба, что читают окно и kbengine-mcp.
 var usersKeychain = func() tokenKeychain { return keychain.Store{Service: "kb-desktop"} }
 
+// usersOpenStore opens the people's store; тесты подменяют хранилище, которое
+// записывает и отвечает ошибкой.
+var usersOpenStore = openTenantStore
+
 const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name> [add: --keychain <source id> | --token-out <new file>]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
@@ -101,7 +105,7 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 		}
 		tg.keychain, tg.tokenOut = *kc, *out
 	}
-	store, err := openTenantStore(*loc, *s3TokenFile)
+	store, err := usersOpenStore(*loc, *s3TokenFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
 		return nil, 2
