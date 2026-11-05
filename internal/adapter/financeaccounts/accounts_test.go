@@ -29,7 +29,10 @@ func TestRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	day := time.Date(2026, 11, 6, 1, 30, 0, 0, yekat) // в UTC еще 5-е
+	// В UTC еще 5-е. Доли секунды важны: трату сравнивают с моментом по
+	// миллисекундам ULID, и момент, урезанный до секунды, вычел бы трату,
+	// записанную в ту же секунду до подтверждения.
+	day := time.Date(2026, 11, 6, 1, 30, 0, 123456789, yekat)
 	sber, err := domain.NewAccount("Сбербанк", money(t, "1234.56"), day, clock)
 	if err != nil {
 		t.Fatal(err)
