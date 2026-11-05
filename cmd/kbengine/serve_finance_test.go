@@ -13,9 +13,11 @@ import (
 	"strings"
 	gosync "sync" // имя sync в пакете main занято помощником теста `fin sync`
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -228,5 +230,84 @@ func TestLedgerFlagOwnsFinanceWrites(t *testing.T) {
 	}
 	if o, err := s.Get(ctx, "users/anna/fin/journal.jsonl"); err == nil && len(o.Data) != 0 {
 		t.Errorf("the store journal changed under --ledger: %q", o.Data)
+	}
+}
+
+// День операции — день человека, а не сервера: контейнер живет по UTC, а
+// человек в +05 после полуночи уже в следующем дне. Пояс присылает страница
+// (tz), без него — пояс сервера.
+func TestTransactionDayIsThePersonsDay(t *testing.T) {
+	// 20:30 UTC 5 ноября: в Екатеринбурге уже 01:30 6 ноября, на Мидуэе 09:30 5-го.
+	serverNow := func() time.Time { return time.Date(2026, 11, 5, 20, 30, 0, 0, time.UTC) }
+	cases := []struct {
+		name, tz, date string
+		code           int
+		want           string // почему именно такой ответ: записанная дата или причина отказа
+	}{
+		{"today in the person's zone", "Asia/Yekaterinburg", "2026-11-06", http.StatusCreated, `"date":"2026-11-06"`},
+		{"no date takes the person's today", "Asia/Yekaterinburg", "", http.StatusCreated, `"date":"2026-11-06"`},
+		{"west of UTC it is still the 5th", "Pacific/Midway", "2026-11-05", http.StatusCreated, `"date":"2026-11-05"`},
+		{"west of UTC the 6th is the future", "Pacific/Midway", "2026-11-06", http.StatusBadRequest, "in the future"},
+		{"no zone falls back to the server's", "", "2026-11-06", http.StatusBadRequest, "in the future"},
+		{"unknown zone is refused", "Mars/Olympus", "2026-11-05", http.StatusBadRequest, "Mars/Olympus"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, err := blobfs.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl",
+				vocabKey: "users/anna/fin/finance-aliases.json", now: serverNow}
+			h := httpapi.NewServer(nil, nil, nil, nil, nil, nil, httpapi.Documents{}, httpapi.EngineInfo{}, nil, httpapi.WithFinanceWriter(sf))
+			body := fmt.Sprintf(`{"kind":"expense","amount":"418","category":"Еда","date":%q,"tz":%q}`, c.date, c.tz)
+			rec := do(h, http.MethodPost, "/api/finances/transactions", body, "")
+			if rec.Code != c.code {
+				t.Fatalf("%d %s, want %d", rec.Code, rec.Body.String(), c.code)
+			}
+			if !strings.Contains(rec.Body.String(), c.want) {
+				t.Fatalf("body %s lacks %s", rec.Body.String(), c.want)
+			}
+		})
+	}
+}
+
+// Финансы ищутся только там, где их место однозначно: рядом с базой человека
+// <человек>/kb/_data/catalog.json → <человек>/fin/. При другой раскладке папка
+// угадывалась бы по глубине ключа, и две базы a/_data и b/_data делили бы один
+// журнал fin/ в корне бакета — финансов у такой базы нет.
+func TestFinancesOnlyBesideAPersonsBase(t *testing.T) {
+	cases := []struct {
+		key     string
+		journal string // "" — финансов нет
+	}{
+		{"users/anna/kb/_data/catalog.json", "users/anna/fin/journal.jsonl"},
+		{"kb/_data/catalog.json", "fin/journal.jsonl"},
+		{"a/_data/catalog.json", ""},
+		{"_data/catalog.json", ""},
+		{"catalog.json", ""},
+	}
+	for _, c := range cases {
+		t.Run(c.key, func(t *testing.T) {
+			ctx := context.Background()
+			s, err := blobfs.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Put(ctx, c.key, []byte(`{"entries":[]}`), ""); err != nil {
+				t.Fatal(err)
+			}
+			src, err := storeCatalogSource(ctx, s, c.key, io.Discard)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if sf, ok := src.finWriter.(storeFinances); ok {
+				got = sf.journalKey
+			}
+			if got != c.journal || (src.fin == nil) != (c.journal == "") {
+				t.Fatalf("journal %q (fin %v), want %q", got, src.fin != nil, c.journal)
+			}
+		})
 	}
 }

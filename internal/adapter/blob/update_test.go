@@ -68,3 +68,62 @@ func TestUpdateRefusals(t *testing.T) {
 		t.Fatalf("a refused change wrote: %q", o.Data)
 	}
 }
+
+// conflicting answers ErrConflict to the first n writes: столько раз кто-то
+// успел записать раньше.
+type conflicting struct {
+	blob.Store
+	mu sync.Mutex
+	n  int
+}
+
+func (c *conflicting) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	c.mu.Lock()
+	lose := c.n > 0
+	if lose {
+		c.n--
+	}
+	c.mu.Unlock()
+	if lose {
+		return "", blob.ErrConflict
+	}
+	return c.Store.Put(ctx, key, data, ifMatch)
+}
+
+// Писатель, проигравший гонку несколько раз подряд, все равно записывает:
+// шесть одновременных операций дают одному до пяти проигрышей, и запас
+// попыток должен это покрывать с избытком. Бесконечно он не ждет: вечный
+// конфликт — ErrConflict, отмена запроса — сразу ее ошибка.
+func TestUpdateOutlastsARunOfConflicts(t *testing.T) {
+	cases := []struct {
+		name   string
+		losses int
+		cancel bool
+		want   error
+	}{
+		{"seven losses in a row", 7, false, nil},
+		{"conflict forever", 1 << 30, false, blob.ErrConflict},
+		{"cancelled while losing", 1 << 30, true, context.Canceled},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			fs, err := blobfs.New(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := fs.Put(ctx, "k", []byte("v1"), ""); err != nil {
+				t.Fatal(err)
+			}
+			s := &conflicting{Store: fs, n: c.losses}
+			if c.cancel {
+				cancel()
+			}
+			err = blob.Update(ctx, s, "k", func(raw []byte) ([]byte, error) { return append(raw, '+'), nil })
+			if c.want == nil && err != nil || c.want != nil && !errors.Is(err, c.want) {
+				t.Fatalf("Update: %v, want %v", err, c.want)
+			}
+		})
+	}
+}
