@@ -9,8 +9,12 @@ import (
 // server.
 var ErrInvalidUserID = errors.New("invalid user id")
 
+// Ошибки реестра людей сервера: правило «имя у человека одно» — доменное, а
+// хранит реестр адаптер.
 var (
+	// ErrUserExists — человек с таким именем уже есть.
 	ErrUserExists = errors.New("user already exists")
+	// ErrNoSuchUser — человека с таким именем нет.
 	ErrNoSuchUser = errors.New("no such user")
 )
 

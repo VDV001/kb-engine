@@ -354,7 +354,8 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 			"--ledger": *ledgerPath != "", "--from": *workbookPath != "", "--analytics-config": *configPath != "",
 			"--changelog": *changelogPath != "", "--now": *nowPath != "", "--team": *teamPath != "",
 			"--projects": *projectsPath != "", "--media": *mediaPath != "", "--maps": len(mapPaths) > 0,
-			"--files-root": len(filesRoots) > 0, "--server-timing": *timing,
+			"--files-root": len(filesRoots) > 0, "--files-exclude": len(filesExclude) > 0,
+			"--files-index": *filesIndex != "", "--server-timing": *timing,
 		}
 		return runServeTenants(*tenantsLoc, *s3TokenFile, *addr, *pprofAddr, *tlsCert, *tlsKey, *allowOpen, set, stdout, stderr)
 	}

@@ -275,6 +275,7 @@ func TestLookupDoesNotWaitForARefresh(t *testing.T) {
 		t.Fatal("fresh token refused")
 	}
 	g.gate = make(chan struct{})
+	g.waiting.Store(0) // первое чтение уже посчитано
 	mu.Lock()
 	now = now.Add(userauth.RefreshEvery + time.Second)
 	mu.Unlock()

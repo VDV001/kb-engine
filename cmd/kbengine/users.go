@@ -26,44 +26,50 @@ func runUsers(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	sub := args[0]
-	store, id, code := usersTarget(sub, args[1:], stderr)
-	if code >= 0 {
+	tg, code := usersTarget(sub, args[1:], stderr)
+	if tg == nil {
 		return code
 	}
 	if sub == "revoke" {
-		return usersRevoke(store, id, stderr)
+		return usersRevoke(tg.store, tg.id, stderr)
 	}
-	return usersAdd(store, id, stdout, stderr)
+	return usersAdd(tg.store, tg.id, stdout, stderr)
+}
+
+// usersTargetOf is the store and the person a users command acts on.
+type usersTargetOf struct {
+	store blob.Store
+	id    domain.UserID
 }
 
 const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name>"
 
-// usersTarget parses the flags into the store and the person. code ≥ 0 — выйти
-// с этим кодом.
-func usersTarget(sub string, args []string, stderr io.Writer) (blob.Store, domain.UserID, int) {
+// usersTarget parses the flags into the store and the person; nil — выйти с
+// кодом code.
+func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, int) {
 	fs := flag.NewFlagSet("users "+sub, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	loc := fs.String("tenants", "", "s3://bucket or directory, the same as serve --tenants")
 	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for s3:// (mode 0600)")
 	name := fs.String("id", "", "person's name: a-z, 0-9 and inner hyphens, up to 32")
 	if code, stop := parseFlags(fs, args); stop {
-		return nil, domain.UserID{}, code
+		return nil, code
 	}
 	if *loc == "" {
 		fmt.Fprintf(stderr, "users %s: --tenants is required\n%s\n", sub, usersUsage)
-		return nil, domain.UserID{}, 2
+		return nil, 2
 	}
 	id, err := domain.NewUserID(*name)
 	if err != nil {
 		fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
-		return nil, domain.UserID{}, 2
+		return nil, 2
 	}
 	store, err := openTenantStore(*loc, *s3TokenFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
-		return nil, domain.UserID{}, 2
+		return nil, 2
 	}
-	return store, id, -1
+	return &usersTargetOf{store: store, id: id}, 0
 }
 
 func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
@@ -77,7 +83,7 @@ func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
 
 func usersAdd(store blob.Store, id domain.UserID, stdout, stderr io.Writer) int {
 	tok, err := userauth.Add(context.Background(), store, id)
-	if errors.Is(err, userauth.ErrUserExists) {
+	if errors.Is(err, domain.ErrUserExists) {
 		fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
 		return 1
 	}

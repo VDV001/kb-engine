@@ -36,17 +36,13 @@ const RegistryKey = "auth/users.json"
 // событию записи (уведомления Object Storage), а не по таймеру.
 const RefreshEvery = time.Minute
 
-const MaxStale = time.Duration(1 << 62)
+// MaxStale is how long a failing store may keep the last read list: дольше —
+// вход закрыт всем. Иначе отзыв токена открывался бы сбоем хранилища: прежний
+// список, где отозванный еще есть, жил бы весь сбой.
+const MaxStale = 5 * time.Minute
 
 // writeAttempts bounds retries of a registry write after ErrConflict.
 const writeAttempts = 5
-
-var (
-	// ErrUserExists — add для имени, которое уже есть.
-	ErrUserExists = errors.New("userauth: user already exists")
-	// ErrNoSuchUser — revoke для имени, которого нет.
-	ErrNoSuchUser = errors.New("userauth: no such user")
-)
 
 // CatalogKey is where a person's catalog lives: база каждого — под своим
 // users/<id>/, с той же раскладкой, что knowledge-base на диске.
@@ -79,7 +75,7 @@ func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
 	sum := sha256.Sum256([]byte(token))
 	err := update(ctx, s, func(r *registryDTO) error {
 		if slices.ContainsFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() }) {
-			return fmt.Errorf("%w: %s", ErrUserExists, id)
+			return fmt.Errorf("%w: %s", domain.ErrUserExists, id)
 		}
 		r.Users = append(r.Users, userDTO{ID: id.String(), TokenSHA256: hex.EncodeToString(sum[:])})
 		return nil
@@ -97,7 +93,7 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 		n := len(r.Users)
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		if len(r.Users) == n {
-			return fmt.Errorf("%w: %s", ErrNoSuchUser, id)
+			return fmt.Errorf("%w: %s", domain.ErrNoSuchUser, id)
 		}
 		return nil
 	})
@@ -146,10 +142,12 @@ type Registry struct {
 	store blob.Store
 	now   func() time.Time
 
-	mu      sync.Mutex
-	checked time.Time
-	etag    string
-	users   []knownUser
+	mu         sync.Mutex
+	checked    time.Time // последняя попытка чтения
+	lastOK     time.Time // последнее чтение, давшее известное состояние
+	refreshing bool
+	etag       string
+	users      []knownUser
 }
 
 type knownUser struct {
@@ -176,12 +174,12 @@ func NewRegistry(ctx context.Context, s blob.Store, opts ...Option) *Registry {
 // всеми записями за постоянное время и без раннего выхода: время ответа не
 // выдает, на какой записи остановились.
 func (r *Registry) Lookup(token string) (domain.UserID, bool) {
+	var found domain.UserID
 	if token == "" {
-		return domain.UserID{}, false
+		return found, false
 	}
 	users := r.current()
 	sum := sha256.Sum256([]byte(token))
-	var found domain.UserID
 	ok := false
 	for _, u := range users {
 		if subtle.ConstantTimeCompare(sum[:], u.sum) == 1 {
@@ -192,38 +190,56 @@ func (r *Registry) Lookup(token string) (domain.UserID, bool) {
 }
 
 // current returns the known users, re-reading the registry once RefreshEvery
-// has passed. Битый реестр не пускает никого (закрыто, а не открыто); сбой
-// связи с хранилищем оставляет последний прочитанный список.
+// has passed.
 //
-// ponytail: замок держится на время перечитывания. Потолок — раз в минуту
-// запросы ждут один условный GET. Путь апгрейда — перечитывать в фоне.
+// Перечитывает один вызов, остальные в это время отвечают по прежнему списку и
+// не ждут. Битый реестр не пускает никого (закрыто, а не открыто). Сбой связи
+// оставляет прежний список не дольше MaxStale, потом вход закрыт всем. Пока
+// реестр ни разу не прочитан, каждый запрос пробует снова.
 func (r *Registry) current() []knownUser {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	now := r.now()
-	if !r.checked.IsZero() && now.Sub(r.checked) < RefreshEvery {
-		return r.users
+	due := r.lastOK.IsZero() || now.Sub(r.checked) >= RefreshEvery
+	if !due || r.refreshing {
+		users := r.fresh(now)
+		r.mu.Unlock()
+		return users
 	}
-	r.checked = now
+	r.refreshing = true
+	etag := r.etag
+	r.mu.Unlock()
+
 	ctx, cancel := context.WithTimeout(r.ctx, refreshTimeout)
-	defer cancel()
-	o, err := r.store.GetIfChanged(ctx, RegistryKey, r.etag)
+	o, err := r.store.GetIfChanged(ctx, RegistryKey, etag)
+	cancel()
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.refreshing, r.checked = false, now
 	switch {
 	case errors.Is(err, blob.ErrNotModified):
-		return r.users
+		r.lastOK = now
 	case errors.Is(err, blob.ErrNotFound):
-		r.etag, r.users = "", nil
-		return nil
+		r.etag, r.users, r.lastOK = "", nil, now
 	case err != nil:
-		return r.users
+		// lastOK не двигается: сбой длиннее MaxStale закроет вход.
+	default:
+		users, derr := decodeUsers(o.Data)
+		if derr != nil {
+			users = nil
+			o.ETag = ""
+		}
+		r.etag, r.users, r.lastOK = o.ETag, users, now
 	}
-	users, err := decodeUsers(o.Data)
-	if err != nil {
-		r.etag, r.users = "", nil
+	return r.fresh(now)
+}
+
+// fresh returns the list while it is younger than MaxStale.
+func (r *Registry) fresh(now time.Time) []knownUser {
+	if r.lastOK.IsZero() || now.Sub(r.lastOK) > MaxStale {
 		return nil
 	}
-	r.etag, r.users = o.ETag, users
-	return users
+	return r.users
 }
 
 func decodeUsers(data []byte) ([]knownUser, error) {

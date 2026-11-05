@@ -12,7 +12,6 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
-	"github.com/daniil/kb-engine/internal/adapter/blob/blobs3"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -57,37 +56,55 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	// Проба здоровья без токена: отвечает, что процесс жив, и ничего о базах.
-	if r.URL.Path == "/healthz" {
+	// Пробы без токена: процесс жив и готов, ничего о базах. За токеном под
+	// в Kubernetes перезапускался бы по кругу (как в httpapi.RequireBearer).
+	switch r.URL.Path {
+	case "/healthz":
 		_, _ = io.WriteString(w, "ok\n")
+		return
+	case "/readyz":
+		_, _ = io.WriteString(w, "ready\n")
 		return
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="kbengine"`)
 	http.Error(w, "bearer token required", http.StatusUnauthorized)
 }
 
-// handlerFor returns the person's handler, building it on first use. Ошибка
-// не запоминается: следующий запрос попробует снова.
+// handlerFor returns the person's handler, building it on first use. Сборка
+// (чтение каталога из хранилища) идет вне замка: медленная или сломанная база
+// одного человека не держит запросы остальных. Ошибка не запоминается —
+// следующий запрос попробует снова.
 //
-// ponytail: обработчик собирается под общим замком. Потолок — первый вход
-// одного человека задерживает первый вход другого на одно чтение каталога.
-// Путь апгрейда — замок на человека.
+// ponytail: два одновременных первых входа одного человека собирают обработчик
+// дважды, и в карте остается первый. Потолок — лишнее чтение каталога. Путь
+// апгрейда — ожидание сборки в полете, как в catalogjson.StoreLoader.
+//
+// ponytail: обработчики не выгружаются, и обработчик отозванного человека живет
+// до перезапуска. Войти по отозванному токену нельзя (его не пускает реестр).
+// Потолок — память на каталог каждого, кто входил. Путь апгрейда — выгрузка по
+// давности использования.
 func (t *tenants) handlerFor(id domain.UserID) (http.Handler, error) {
 	t.mu.Lock()
-	defer t.mu.Unlock()
-	if h, ok := t.handlers[id]; ok {
+	h, ok := t.handlers[id]
+	t.mu.Unlock()
+	if ok {
 		return h, nil
 	}
 	src, err := storeCatalogSource(t.ctx, t.store, userauth.CatalogKey(id), t.stderr)
 	if err != nil {
 		return nil, err
 	}
-	h, err := buildServeHandlerFrom(src, "", "", "", "", "", "", "", "", nil)
+	built, err := buildServeHandlerFrom(src, "", "", "", "", "", "", "", "", nil)
 	if err != nil {
 		return nil, err
 	}
-	t.handlers[id] = h
-	return h, nil
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if h, ok := t.handlers[id]; ok {
+		return h, nil
+	}
+	t.handlers[id] = built
+	return built, nil
 }
 
 // openTenantStore opens --tenants: s3://бакет или каталог на диске (локальная
@@ -104,15 +121,7 @@ func openTenantStore(location, s3TokenFile string) (blob.Store, error) {
 	if bucket == "" || strings.ContainsAny(bucket, "/?#") {
 		return nil, fmt.Errorf("--tenants %s: нужен s3://бакет без ключа", location)
 	}
-	var tok blobs3.TokenSource = &blobs3.MetadataToken{}
-	if s3TokenFile != "" {
-		ft, err := newFileToken(s3TokenFile)
-		if err != nil {
-			return nil, fmt.Errorf("--s3-token-file: %w", err)
-		}
-		tok = ft
-	}
-	return blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: bucket, Token: tok})
+	return openS3Store(bucket, s3TokenFile)
 }
 
 // runServeTenants is serve --tenants.
@@ -122,6 +131,9 @@ func runServeTenants(location, s3TokenFile, addr, pprofAddr, tlsCert, tlsKey str
 		if on {
 			clash = append(clash, name)
 		}
+	}
+	if len(clash) == 0 && s3TokenFile != "" && !strings.HasPrefix(location, "s3://") {
+		clash = append(clash, "--s3-token-file (нужен --tenants s3://bucket)")
 	}
 	if len(clash) > 0 {
 		slices.Sort(clash)
