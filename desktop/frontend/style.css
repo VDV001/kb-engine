@@ -394,6 +394,13 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0;
 }
 .field input:focus, .add input:focus { border-color: var(--z-accent); }
+.reveal { width: 30px; height: 30px; display: grid; place-items: center; background: none; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); color: var(--z-muted); cursor: pointer; }
+.reveal:hover { color: var(--z-ink); }
+.reveal:focus-visible { outline: 1px solid var(--z-accent); outline-offset: 1px; }
+.reveal svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+.reveal .eye-slash { display: none; }
+.reveal[aria-pressed="true"] { color: var(--z-accent); border-color: var(--z-accent); }
+.reveal[aria-pressed="true"] .eye-slash { display: inline; }
 .formbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .formbar .muted s { color: var(--z-faint); }
 .btn.danger { border-color: var(--z-bad); color: var(--z-bad); }
