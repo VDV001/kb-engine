@@ -9,7 +9,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 
@@ -68,27 +67,15 @@ func handleFinanceExport() http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		w.Header().Set("Content-Type",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		w.Header().Set("Content-Disposition", `attachment; filename="finances.xlsx"`)
-		if err := writeWorkbook(w, req.Rows); err != nil {
-			// Заголовки могли уже уйти — статус тут писать поздно, остаётся
-			// оборвать ответ и не делать вид, что файл целый.
-			return
+		values := make([][]string, 0, len(req.Rows))
+		for _, row := range req.Rows {
+			values = append(values, []string{
+				row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
+				row.Place, row.Description, row.Amount, row.Account, currencyLabel(row.Currency),
+			})
 		}
+		sendBook(w, "finances.xlsx", []sheet{{"Sheet1", exportHeader, exportWidths, values, []int{amountColumn}}})
 	}
-}
-
-// writeWorkbook renders rows into dst as an xlsx workbook.
-func writeWorkbook(dst io.Writer, rows []exportRow) error {
-	values := make([][]string, 0, len(rows))
-	for _, row := range rows {
-		values = append(values, []string{
-			row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
-			row.Place, row.Description, row.Amount, row.Account, currencyLabel(row.Currency),
-		})
-	}
-	return writeBook(dst, []sheet{{"Sheet1", exportHeader, exportWidths, values, []int{amountColumn}}})
 }
 
 // writeRow writes one row, treating the values at numeric as numbers when they
@@ -147,15 +134,26 @@ func currencyLabel(code string) string {
 	return code
 }
 
-var accountsHeader = []string{"Счёт", "Подтверждено", "Обновлено", "Сейчас", "Валюта", "Курс"}
+// operationsHeader — колонки выгрузки с экрана плюс пометка перевода между
+// своими счетами: движок не считает его ни тратой, ни доходом (правило 19), и
+// без пометки СУММ в Excel не сошлась бы с итогами на экране.
+var operationsHeader = append(slices.Clone(exportHeader), "Перевод себе")
 
-var accountsWidths = []float64{24, 14, 12, 14, 8, 10}
+var operationsWidths = append(slices.Clone(exportWidths), 12)
 
+// accountsHeader: «Сейчас» — в валюте счета, «В рублях» — его оценка тем же
+// расчетом, что у экрана; складывать в Excel можно только последнюю (#332).
+var accountsHeader = []string{"Счёт", "Подтверждено", "Обновлено", "Сейчас", "Валюта", "Курс", "В рублях"}
+
+var accountsWidths = []float64{24, 14, 12, 14, 8, 10, 14}
+
+// entriesHeader: у своих артефактов (заметки, творения) обычно есть только дата
+// создания, у чужих материалов — дата добавления, поэтому колонок две.
 var entriesHeader = []string{
-	"ID", "Заголовок", "Категория", "Тип", "Статус", "Вердикт", "Теги", "Добавлено", "Автор", "Ссылка", "Описание",
+	"ID", "Заголовок", "Категория", "Тип", "Статус", "Вердикт", "Теги", "Добавлено", "Создано", "Автор", "Ссылка", "Описание",
 }
 
-var entriesWidths = []float64{6, 50, 16, 10, 10, 10, 24, 12, 18, 40, 60}
+var entriesWidths = []float64{6, 50, 16, 10, 10, 10, 24, 12, 12, 18, 40, 60}
 
 // handleFinanceWorkbook is GET /api/finances/export.xlsx: вся книга человека с
 // сервера, без страницы — лист «Операции» (колонки той же выгрузки, что
@@ -175,26 +173,34 @@ func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
 			http.Error(w, "finances unavailable", http.StatusInternalServerError)
 			return
 		}
+		// Поля — теми же toTransactionDTO и toBalanceDTO, что у /api/finances:
+		// своя сборка рядом однажды разошлась бы с экраном молча.
 		ops := make([][]string, 0, len(f.Transactions))
 		for _, t := range f.Transactions {
+			d := toTransactionDTO(t)
+			transfer := ""
+			if t.IsInternalTransfer() {
+				transfer = "да"
+			}
 			ops = append(ops, []string{
-				t.Date().Format(time.DateOnly), kindLabel(t.Kind()), t.Category(), t.Subcategory(),
-				t.Place(), t.Description(), t.Amount().String(), t.Account(), currencyLabel(foreignCode(t.Currency())),
+				d.Date, kindLabel(d.Kind), d.Category, d.Subcategory,
+				d.Place, d.Description, d.Amount, d.Account, currencyLabel(d.Currency), transfer,
 			})
 		}
 		var accs [][]string
 		for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations) {
-			rate := ""
-			if !b.Unvalued && !b.Rate.IsZero() {
-				rate = b.Rate.String()
+			d := toBalanceDTO(b)
+			inRubles := d.BaseValue // валютный счет: оценка; без курса — пусто, а не ноль
+			if d.Currency == "" {
+				inRubles = d.Current
 			}
 			accs = append(accs, []string{
-				b.Bank, b.Confirmed.String(), b.ConfirmedOn, b.Current.String(), currencyLabel(currencyCode(b.Currency)), rate,
+				d.Bank, d.Balance, d.Updated, d.Current, currencyLabel(d.Currency), d.Rate, inRubles,
 			})
 		}
 		sendBook(w, "finances.xlsx", []sheet{
-			{"Операции", exportHeader, exportWidths, ops, []int{amountColumn}},
-			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5}},
+			{"Операции", operationsHeader, operationsWidths, ops, []int{amountColumn}},
+			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5, 6}},
 		})
 	}
 }
@@ -219,7 +225,7 @@ func handleEntriesWorkbook(q Querier) http.HandlerFunc {
 			}
 			rows = append(rows, []string{
 				strconv.Itoa(d.ID), d.Title, d.Category, d.Kind, d.Lifecycle, verdict,
-				strings.Join(d.Tags, ", "), d.DateAdded, d.Author, d.URL, d.Description,
+				strings.Join(d.Tags, ", "), d.DateAdded, d.DateCreated, d.Author, d.URL, d.Description,
 			})
 		}
 		sendBook(w, "entries.xlsx", []sheet{{"Записи", entriesHeader, entriesWidths, rows, []int{0}}})

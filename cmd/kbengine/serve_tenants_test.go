@@ -124,8 +124,8 @@ func TestTenantsAreIsolatedOnEveryRoute(t *testing.T) {
 	f := newTenants(t)
 	seenA := 0
 	for _, p := range registeredGETs(t) {
-		if body := readable(t, get(f.h, p, f.tokB)); strings.Contains(body, secretA) {
-			t.Errorf("%s with B's token shows A's data", p)
+		if rec := get(f.h, p, f.tokB); strings.Contains(readable(t, rec), secretA) {
+			t.Errorf("%s with B's token shows A's data (status %d)", p, rec.Code)
 		}
 		bodyA := readable(t, get(f.h, p, f.tokA))
 		if strings.Contains(bodyA, secretA) {
