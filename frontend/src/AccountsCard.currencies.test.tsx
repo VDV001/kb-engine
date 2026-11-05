@@ -104,3 +104,53 @@ describe('AccountsCard — деньги по валютам', () => {
     expect(screen.queryByTestId('accounts-estimate')).toBeNull()
   })
 })
+
+describe('AccountsCard — по валютам, края', () => {
+  it('сервер без счетов (currencies: []) — итог «0,00 ₽», а не пустота', () => {
+    render(<AccountsCard accounts={[]} currencies={[]} totals={[]} expenses="0" income="0" today="2026-11-05" />)
+    expect(spaced(screen.getByTestId('accounts-total'))).toContain('0,00')
+  })
+
+  it('валюта по нулю не печатается и не включает оценку', () => {
+    render(
+      <AccountsCard
+        accounts={[accounts[0], { bank: 'Wise', balance: '0.00', updated: '2026-11-05', currency: 'USD', rate: '90.00', base_value: '0.00' }]}
+        currencies={[{ currency: '', current: '1000.00', free: '1000.00' }, { currency: 'USD', current: '0.00', free: '0.00' }]}
+        totals={[totals[0], { group: '', currency: 'USD', confirmed: '0.00', current: '0.00' }]}
+        expenses="0" income="0" today="2026-11-05"
+      />,
+    )
+    expect(spaced(screen.getByTestId('accounts-total'))).not.toContain('$')
+    expect(screen.queryByTestId('accounts-estimate')).toBeNull()
+    expect(spaced(screen.getByTestId('group-total-Банки'))).not.toContain('$')
+  })
+
+  it('свободно — без валют, где свободного ноль', () => {
+    render(
+      <AccountsCard
+        accounts={[accounts[0], { bank: 'Резерв → Наличные', balance: '50.00', updated: '2026-11-05', currency: 'USD', rate: '90.00', base_value: '4500.00' }]}
+        currencies={[{ currency: '', current: '1000.00', free: '1000.00' }, { currency: 'USD', current: '50.00', free: '0.00' }]}
+        totals={[totals[0], { group: 'Резерв', currency: 'USD', confirmed: '50.00', current: '50.00' }]}
+        expenses="0" income="0" today="2026-11-05"
+      />,
+    )
+    expect(spaced(screen.getByTestId('accounts-free'))).not.toContain('$')
+  })
+
+  it('свободно и итог рода — тоже столбиком, без «·»: в узкой карточке «·» переносится посреди суммы', () => {
+    render(
+      <AccountsCard accounts={accounts} currencies={currencies} totals={totals}
+        expenses="0" income="0" today="2026-11-05" />,
+    )
+    expect(spaced(screen.getByTestId('accounts-free'))).not.toContain('·')
+    expect(spaced(screen.getByTestId('group-total-Банки'))).not.toContain('·')
+  })
+
+  it('род, которого нет в totals движка, показывает прежний итог, а не пустоту', () => {
+    render(
+      <AccountsCard accounts={accounts} currencies={currencies} totals={[totals[0], totals[1]]}
+        expenses="0" income="0" today="2026-11-05" />,
+    )
+    expect(spaced(screen.getByTestId('group-total-Резерв'))).toContain('5 000')
+  })
+})
