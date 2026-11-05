@@ -218,6 +218,9 @@ func writeWriteError(w http.ResponseWriter, subject string, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoEntry):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, blob.ErrTransient):
+		log.Printf("%s write: %v", subject, err)
+		http.Error(w, "the store is failing; retry", http.StatusServiceUnavailable)
 	case errors.Is(err, blob.ErrConflict):
 		http.Error(w, "the "+subject+" kept changing under the write; retry", http.StatusConflict)
 	default:

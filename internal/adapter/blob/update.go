@@ -22,9 +22,13 @@ const conflictPause = 10 * time.Millisecond
 // перечитывается и change применяется заново к свежему — поэтому change
 // получает документ при каждой попытке и решает по нему (номер записи,
 // проверка повтора). Ошибка change возвращается как есть, и ничего не пишется.
-// После updateAttempts конфликтов подряд — ErrConflict; отмена ctx между
-// попытками — ее ошибка.
+// Сбой хранилища на его стороне (ErrTransient) повторяется так же: легла ли
+// запись, неизвестно, и свежее чтение это покажет — повтор операции тогда
+// узнает проверка повтора в change, а не допишет второй раз.
+// После updateAttempts неудач подряд — последняя (ErrConflict или
+// ErrTransient); отмена ctx между попытками — ее ошибка.
 func Update(ctx context.Context, s Store, key string, change func(raw []byte) ([]byte, error)) error {
+	last := ErrConflict
 	for attempt := range updateAttempts {
 		if attempt > 0 {
 			select {
@@ -34,6 +38,10 @@ func Update(ctx context.Context, s Store, key string, change func(raw []byte) ([
 			}
 		}
 		o, err := s.Get(ctx, key)
+		if errors.Is(err, ErrTransient) {
+			last = err
+			continue
+		}
 		if err != nil {
 			return fmt.Errorf("read %s: %w", key, err)
 		}
@@ -42,13 +50,17 @@ func Update(ctx context.Context, s Store, key string, change func(raw []byte) ([
 			return err
 		}
 		_, err = s.Put(ctx, key, doc, o.ETag)
-		if errors.Is(err, ErrConflict) {
+		if errors.Is(err, ErrConflict) || errors.Is(err, ErrTransient) {
+			last = err
 			continue
 		}
 		if err != nil {
 			return fmt.Errorf("write %s: %w", key, err)
 		}
 		return nil
+	}
+	if errors.Is(last, ErrTransient) {
+		return fmt.Errorf("%s: the store kept failing under %d attempts: %w", key, updateAttempts, last)
 	}
 	return fmt.Errorf("%s kept changing under %d attempts: %w", key, updateAttempts, ErrConflict)
 }
