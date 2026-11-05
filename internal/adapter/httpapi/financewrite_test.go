@@ -1,15 +1,19 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
+	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 )
@@ -61,16 +65,28 @@ func TestTransactionErrors(t *testing.T) {
 		name string
 		err  error
 		code int
+		body string // часть ответа, которую человек обязан увидеть
+		log  string // часть причины, которая обязана остаться в журнале сервера
 	}{
-		{"repeat without force", fmt.Errorf("%w: 2026-11-05 · 418 ₽", httpapi.ErrRepeat), http.StatusConflict},
-		{"rule refused", fmt.Errorf("%w: сумма", httpapi.ErrBadWrite), http.StatusBadRequest},
-		{"store down", errors.New("blobs3: 503"), http.StatusInternalServerError},
+		{"repeat without force", fmt.Errorf("%w: 2026-11-05 · 418 ₽", httpapi.ErrRepeat), http.StatusConflict, "418", ""},
+		{"rule refused", fmt.Errorf("%w: сумма", httpapi.ErrBadWrite), http.StatusBadRequest, "сумма", ""},
+		{"journal kept changing", fmt.Errorf("users/u1/fin/journal.jsonl: %w", blob.ErrConflict), http.StatusConflict, "journal", ""},
+		{"store down", errors.New("blobs3: 503"), http.StatusInternalServerError, "write failed", "blobs3: 503"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
+			var logged bytes.Buffer
+			log.SetOutput(&logged)
+			t.Cleanup(func() { log.SetOutput(os.Stderr) })
 			rec := send(finServer(&fakeFinWriter{err: c.err}), http.MethodPost, "/api/finances/transactions", `{"amount":"1"}`)
 			if rec.Code != c.code {
 				t.Fatalf("%d, want %d", rec.Code, c.code)
+			}
+			if !strings.Contains(rec.Body.String(), c.body) {
+				t.Errorf("body %q lacks %q", rec.Body.String(), c.body)
+			}
+			if !strings.Contains(logged.String(), c.log) {
+				t.Errorf("server log %q lacks %q", logged.String(), c.log)
 			}
 		})
 	}
