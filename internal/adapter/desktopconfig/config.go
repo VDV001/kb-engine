@@ -37,6 +37,10 @@ type Config struct {
 	// каждый; в списке и выключенные, и неизвестные этой сборке. Включен ли —
 	// только через ModuleOn. Порядок — порядок вкладок.
 	Modules []Module `json:"modules,omitempty"`
+	// Tabs — вкладки поиска после «Все», по порядку. nil — не настраивались
+	// (TabList отдает DefaultTabs), пустой список — только «Все». Без
+	// omitempty: пустой список иначе не записался бы и вернулся бы набором.
+	Tabs []Tab `json:"tabs"`
 }
 
 // Path is where the window keeps its config.
@@ -81,6 +85,7 @@ func Read(path string) (Config, error) {
 	}
 	cfg.migrate()
 	cfg.dropBadModules()
+	cfg.dropBadTabs()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -107,6 +112,7 @@ func Write(path string, cfg Config) error {
 	// него пропал бы (sources: null), а roots и catalog выжили бы случайно.
 	cfg.migrate()
 	cfg.dropBadModules()
+	cfg.dropBadTabs()
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
