@@ -93,10 +93,10 @@ func (t Transaction) Received() (Received, bool) {
 // комиссией. Только когда ровно одна сторона в валюте книги: у перевода между
 // рублевыми счетами курса нет, у обмена долларов на евро нет курса к рублю.
 // Округление до копейки — для показа; суммы в записи остаются точными.
-func (t Transaction) ExchangeRate() (Rate, bool) {
+func (t Transaction) ExchangeRate() (*big.Rat, bool) {
 	r, ok := t.Received()
 	if !ok || t.currency.IsBase() == r.currency.IsBase() {
-		return Rate{}, false
+		return nil, false
 	}
 	base, foreign := t.amount, r.amount
 	if !t.currency.IsBase() {
@@ -108,12 +108,5 @@ func (t Transaction) ExchangeRate() (Rate, bool) {
 	den := big.NewInt(foreign.Kopecks())
 	num.Add(num, new(big.Int).Quo(den, big.NewInt(2)))
 	per := new(big.Int).Quo(num, den)
-	if !per.IsInt64() {
-		return Rate{}, false
-	}
-	rate, err := NewRate(NewMoney(per.Int64()))
-	if err != nil {
-		return Rate{}, false
-	}
-	return rate, true
+	return new(big.Rat).SetFrac(per, big.NewInt(100)), true
 }

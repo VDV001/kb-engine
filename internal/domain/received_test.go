@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"math/big"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +57,12 @@ func TestReceived(t *testing.T) {
 			p.Account, p.Currency = "Wise", usd
 			return p
 		}, false, "88.50"},
+		// Валюта дешевле рубля: курс в копейках за единицу округлился бы до
+		// 0,01 (ошибка 33%) или до нуля. Дробь точная.
+		{"rubles to sums: a rate below a kopeck stays exact", func(t *testing.T) domain.TransactionParams {
+			uzs, _ := domain.NewCurrency("UZS")
+			return exchangeParams(t, "10000", domain.ReceivedParams{Amount: money(t, "1333000"), Currency: uzs, Account: "Kapitalbank"})
+		}, false, "0.007502"},
 		{"between two ruble accounts: no rate", func(t *testing.T) domain.TransactionParams {
 			return exchangeParams(t, "5000", domain.ReceivedParams{Amount: money(t, "5000"), Account: "Т-Банк"})
 		}, false, ""},
@@ -108,8 +115,11 @@ func TestReceived(t *testing.T) {
 			}
 			rate, ok := tx.ExchangeRate()
 			got := ""
-			if per, known := rate.PerUnit(); ok && known {
-				got = per.String()
+			if ok {
+				got = rate.FloatString(2)
+				if rate.Cmp(big.NewRat(1, 1)) < 0 {
+					got = rate.FloatString(6)
+				}
 			}
 			if got != c.wantRate {
 				t.Errorf("rate %q, want %q", got, c.wantRate)

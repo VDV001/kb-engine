@@ -83,3 +83,27 @@ func TestFinancesShowTheExchange(t *testing.T) {
 		}
 	}
 }
+
+// Курс валюты дешевле рубля показывается значащими цифрами, а не «0.01».
+func TestRateOfACheapCurrencyKeepsItsDigits(t *testing.T) {
+	now := func() time.Time { return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC) }
+	uzs, _ := domain.NewCurrency("UZS")
+	m := func(s string) domain.Money { v, _ := domain.ParseMoney(s); return v }
+	tx, err := domain.NewTransaction(domain.TransactionParams{
+		ID: "01EXCH", Kind: "expense", Date: time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC), Amount: m("10000"),
+		Category: "Прочее", Subcategory: "Перевод себе", Account: "Сбербанк", Now: now,
+		Received: domain.ReceivedParams{Amount: m("1333000"), Currency: uzs, Account: "Kapitalbank"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, bookFinance{httpapi.Finances{Transactions: []domain.Transaction{tx}}},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) { return changelog.Document{}, nil },
+		httpapi.Documents{}, testEngine, nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/finances", nil))
+	if !strings.Contains(rec.Body.String(), `"rate":"0.007502"`) {
+		t.Fatalf("the rate of a sum: %s", rec.Body.String())
+	}
+}

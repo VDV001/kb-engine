@@ -56,9 +56,7 @@ func toReceivedDTO(t domain.Transaction) *receivedDTO {
 	}
 	d := &receivedDTO{Amount: r.Amount().String(), Currency: foreignCode(r.Currency()), Account: r.Account()}
 	if rate, ok := t.ExchangeRate(); ok {
-		if per, known := rate.PerUnit(); known {
-			d.Rate = per.String()
-		}
+		d.Rate = rate.FloatString(2)
 	}
 	return d
 }
