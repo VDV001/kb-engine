@@ -148,8 +148,13 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 	// Финансы — рядом с базой: <человек>/kb/_data/catalog.json → <человек>/fin/.
 	// Они есть у каждого: журнала нет — операций нет, первая запись его
 	// заводит. Журнал здесь не читается: его сбой — отказ финансового вида, а
-	// не всей базы человека.
-	finDir := path.Join(path.Dir(path.Dir(dataDir)), "fin")
+	// не всей базы человека. При другой раскладке места финансов нет: угадывая
+	// его по глубине ключа, базы a/_data и b/_data делили бы один журнал.
+	kbRoot := path.Dir(dataDir)
+	if path.Base(dataDir) != "_data" || path.Base(kbRoot) != "kb" {
+		return src, nil
+	}
+	finDir := path.Join(path.Dir(kbRoot), "fin")
 	sf := storeFinances{ctx: ctx, store: store, journalKey: path.Join(finDir, "journal.jsonl"),
 		vocabKey: path.Join(finDir, financevocab.FileName), now: time.Now}
 	src.fin, src.finWriter = sf, sf

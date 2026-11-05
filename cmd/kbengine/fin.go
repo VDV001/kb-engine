@@ -321,7 +321,7 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 		return finance.Record{}, err
 	}
 	voc, vocErr := financevocab.Load(financevocab.PathNextTo(ledgerPath))
-	rec, recs, err := planAdd(recs, voc, vocErr, p, force, note, warn)
+	rec, recs, err := planAdd(recs, voc, vocErr, p, force, time.Now, note, warn)
 	if err != nil {
 		return finance.Record{}, err
 	}
@@ -334,9 +334,10 @@ func appendUnderLock(ledgerPath string, p finance.AddParams, force bool,
 // planAdd decides what fin add writes: написание по словарю и частоте,
 // проверка повтора, новая запись, порядок журнала. Чистая функция над уже
 // прочитанным журналом — одно правило для файла (appendUnderLock) и для
-// хранилища (storeFinances), куда бы журнал ни лег.
+// хранилища (storeFinances), куда бы журнал ни лег. Часы now решают, какой
+// сегодня день: у команды — часы Мака, у API — в поясе человека.
 func planAdd(recs []finance.Record, voc finance.Vocabulary, vocErr error, p finance.AddParams, force bool,
-	note func(finance.Correction), warn func(string),
+	now func() time.Time, note func(finance.Correction), warn func(string),
 ) (finance.Record, []finance.Record, error) {
 	// Написание приводится к тому, что в базе уже есть, до проверки на повтор:
 	// иначе «транспорт» и «Транспорт» считались бы разными тратами.
@@ -370,7 +371,7 @@ func planAdd(recs []finance.Record, voc finance.Vocabulary, vocErr error, p fina
 		}
 		p.RepeatOf = tx.ID()
 	}
-	rec, err := finance.Add(p, newULID, time.Now)
+	rec, err := finance.Add(p, newULID, now)
 	if err != nil {
 		return finance.Record{}, nil, err
 	}

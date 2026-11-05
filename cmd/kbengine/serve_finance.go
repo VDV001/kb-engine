@@ -73,8 +73,9 @@ func (f storeFinances) Summary(months []string) (finance.Summary, error) {
 }
 
 // vocabulary reads the place dictionary. Нет словаря — не беда, решает
-// частота; битый словарь — отказ записи с причиной, а не молча случайная
-// подстановка.
+// частота; битый словарь — отказ записи (500, причина с ключом — в журнале
+// сервера: чинит его владелец хранилища, а не автор операции), а не молча
+// случайная подстановка.
 func (f storeFinances) vocabulary(ctx context.Context) (finance.Vocabulary, error) {
 	empty := finance.Vocabulary{Accounts: map[string]string{}, Places: map[string]finance.PlaceRule{}}
 	o, err := f.store.Get(ctx, f.vocabKey)
@@ -98,6 +99,10 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 	if err != nil {
 		return httpapi.TransactionAdded{}, err
 	}
+	now, err := f.clockIn(a.TZ)
+	if err != nil {
+		return httpapi.TransactionAdded{}, err
+	}
 	voc, vocErr := f.vocabulary(ctx)
 	if vocErr != nil && !errors.Is(vocErr, finance.ErrVocabularyConflict) {
 		return httpapi.TransactionAdded{}, vocErr
@@ -115,7 +120,7 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 			return nil, err
 		}
 		var next []finance.Record
-		rec, next, err = planAdd(recs, voc, vocErr, p, a.Force, func(c finance.Correction) {
+		rec, next, err = planAdd(recs, voc, vocErr, p, a.Force, now, func(c finance.Correction) {
 			fixed = append(fixed, httpapi.Correction{Field: c.Field, Typed: c.Typed, Used: c.Used})
 		}, nil) // спор словаря назван в ответе (warnings), а не в журнале сервера
 		switch {
@@ -136,6 +141,20 @@ func (f storeFinances) AddTransaction(ctx context.Context, a httpapi.Transaction
 	tx := rec.Transaction()
 	return httpapi.TransactionAdded{ID: tx.ID(), Date: tx.Date().Format(time.DateOnly), Amount: amountText(tx),
 		Corrections: fixed, Warnings: warnings}, nil
+}
+
+// clockIn is the server clock read in the person's zone: день операции —
+// день человека. Контейнер живет по UTC, и у человека в +05 после полуночи без
+// этого сегодняшняя дата была бы «из будущего». Пусто — пояс сервера (TZ).
+func (f storeFinances) clockIn(tz string) (func() time.Time, error) {
+	if tz == "" {
+		return f.now, nil
+	}
+	loc, err := time.LoadLocation(tz)
+	if err != nil || tz == "Local" {
+		return nil, fmt.Errorf("%w: tz %q: expected an IANA zone such as Asia/Yekaterinburg", httpapi.ErrBadWrite, tz)
+	}
+	return func() time.Time { return f.now().In(loc) }, nil
 }
 
 // update is blob.Update over the journal, creating it empty when it is missing:

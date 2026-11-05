@@ -14,10 +14,12 @@ var ErrRepeat = errors.New("repeat")
 
 // TransactionAdd is one operation to record: то же, что флаги kbengine fin
 // add. Сумма и дата — строки, как их набрал человек: разбирает их тот же код,
-// что у команды.
+// что у команды. TZ — пояс человека (IANA, из браузера): в нем считается
+// «сегодня» для даты по умолчанию и проверки даты из будущего; пусто — пояс
+// сервера.
 type TransactionAdd struct {
-	Kind, Date, Amount, Category, Subcategory, Place, Description, Source, Account, Currency string
-	Force                                                                                    bool
+	Kind, Date, Amount, Category, Subcategory, Place, Description, Source, Account, Currency, TZ string
+	Force                                                                                        bool
 }
 
 // Correction is a spelling the journal changed to the one already in use.
@@ -54,6 +56,7 @@ type transactionAddDTO struct {
 	Source      string `json:"source"`
 	Account     string `json:"account"`
 	Currency    string `json:"currency"`
+	TZ          string `json:"tz"`
 	Force       bool   `json:"force"`
 }
 
