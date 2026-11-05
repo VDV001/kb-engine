@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobs3"
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/financeaccounts"
 	"github.com/daniil/kb-engine/internal/adapter/financevocab"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
@@ -156,7 +157,7 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 	}
 	finDir := path.Join(path.Dir(kbRoot), "fin")
 	sf := storeFinances{ctx: ctx, store: store, journalKey: path.Join(finDir, "journal.jsonl"),
-		vocabKey: path.Join(finDir, financevocab.FileName), now: time.Now}
+		accountsKey: path.Join(finDir, financeaccounts.FileName), vocabKey: path.Join(finDir, financevocab.FileName), now: time.Now}
 	src.fin, src.finWriter = sf, sf
 	return src, nil
 }

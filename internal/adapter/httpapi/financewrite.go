@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // ErrRepeat — такая операция в журнале уже есть, а повтор не подтвержден
@@ -33,11 +35,28 @@ type TransactionAdded struct {
 	Warnings         []string
 }
 
-// FinanceWriter records operations in the journal the server reads. Правила
-// записи — у реализации (cmd: те же, что у fin add), обработчик только
-// разбирает запрос и переводит ответ.
+// BalanceConfirm is one confirmation of an account's balance: то же, что
+// kbengine fin balance. Bank — из пути, остальное — из тела; сумма и курс —
+// строки, как их набрал человек. TZ — как у TransactionAdd: день
+// подтверждения — день человека.
+type BalanceConfirm struct {
+	Bank, Amount, Currency, Rate, TZ string
+	Create                           bool
+}
+
+// BalanceConfirmed is the account as confirmed.
+type BalanceConfirmed struct {
+	Bank, Balance, Updated string
+	Created                bool
+}
+
+// FinanceWriter records operations in the journal the server reads and
+// confirms account balances. Правила записи — у реализации (cmd: те же, что у
+// fin add и fin balance), обработчик только разбирает запрос и переводит
+// ответ.
 type FinanceWriter interface {
 	AddTransaction(ctx context.Context, a TransactionAdd) (TransactionAdded, error)
+	ConfirmBalance(ctx context.Context, c BalanceConfirm) (BalanceConfirmed, error)
 }
 
 // WithFinanceWriter подключает запись операций. Без нее маршрута нет.
@@ -97,5 +116,52 @@ func handleAddTransaction(fw FinanceWriter) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(out)
+	}
+}
+
+type balanceConfirmDTO struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+	Rate     string `json:"rate"`
+	TZ       string `json:"tz"`
+	Create   bool   `json:"create"`
+}
+
+type balanceConfirmedDTO struct {
+	Bank    string `json:"bank"`
+	Balance string `json:"balance"`
+	Updated string `json:"updated"`
+}
+
+// handleConfirmBalance is PUT /api/finances/accounts/{name}/balance. Имя — из
+// пути (PathValue уже раскодировал «Долг%20→%20Отец»). Новый счет — 201,
+// подтверждение существующего — 200; незнакомое имя — 404 со списком
+// известных, второй такой же — 409.
+func handleConfirmBalance(fw FinanceWriter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var in balanceConfirmDTO
+		if err := decodeStrict(w, r, &in); err != nil {
+			writeBodyError(w, err)
+			return
+		}
+		got, err := fw.ConfirmBalance(r.Context(), BalanceConfirm{
+			Bank: r.PathValue("name"), Amount: in.Amount, Currency: in.Currency, Rate: in.Rate, TZ: in.TZ, Create: in.Create,
+		})
+		switch {
+		case errors.Is(err, domain.ErrUnknownAccount):
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		case errors.Is(err, domain.ErrAccountExists):
+			http.Error(w, err.Error(), http.StatusConflict)
+			return
+		case err != nil:
+			writeWriteError(w, "accounts", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if got.Created {
+			w.WriteHeader(http.StatusCreated)
+		}
+		_ = json.NewEncoder(w).Encode(balanceConfirmedDTO{Bank: got.Bank, Balance: got.Balance, Updated: got.Updated})
 	}
 }

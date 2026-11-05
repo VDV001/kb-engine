@@ -289,6 +289,11 @@ func statusError(op, key string, resp *http.Response) error {
 			code = " " + string(c)
 		}
 	}
+	// Сбой на стороне хранилища — ErrTransient: писатель перечитает и решит
+	// заново (blob.Update). Прочие коды — ответ про запрос, повтор не поможет.
+	if resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable {
+		return fmt.Errorf("blobs3: %s %s: status %d%s: %w", op, key, resp.StatusCode, code, blob.ErrTransient)
+	}
 	return fmt.Errorf("blobs3: %s %s: status %d%s", op, key, resp.StatusCode, code)
 }
 

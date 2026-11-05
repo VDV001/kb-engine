@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,7 +259,7 @@ func TestTransactionDayIsThePersonsDay(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl",
+			sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl", accountsKey: "users/anna/fin/accounts.json",
 				vocabKey: "users/anna/fin/finance-aliases.json", now: serverNow}
 			h := httpapi.NewServer(nil, nil, nil, nil, nil, nil, httpapi.Documents{}, httpapi.EngineInfo{}, nil, httpapi.WithFinanceWriter(sf))
 			body := fmt.Sprintf(`{"kind":"expense","amount":"418","category":"Еда","date":%q,"tz":%q}`, c.date, c.tz)
@@ -268,7 +270,68 @@ func TestTransactionDayIsThePersonsDay(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), c.want) {
 				t.Fatalf("body %s lacks %s", rec.Body.String(), c.want)
 			}
+			if c.code != http.StatusCreated {
+				return
+			}
+			// Принятое на запись обязано читаться теми же часами сервера: иначе
+			// у человека восточнее UTC журнал перестает читаться до полуночи UTC.
+			if _, err := sf.Finances(); err != nil {
+				t.Fatalf("the journal cannot be read back: %v", err)
+			}
+			forced := strings.Replace(body, `{`, `{"force":true,`, 1)
+			if rec := do(h, http.MethodPost, "/api/finances/transactions", forced, ""); rec.Code != http.StatusCreated {
+				t.Fatalf("a second add after the first: %d %s", rec.Code, rec.Body.String())
+			}
 		})
+	}
+}
+
+// Счета после полуночи у человека, пока на сервере еще вчера: подтвержденный
+// день человека читается обратно, и следующее подтверждение и трата проходят.
+func TestAccountsAfterThePersonsMidnight(t *testing.T) {
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverNow := func() time.Time { return time.Date(2026, 11, 5, 20, 30, 0, 0, time.UTC) }
+	sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl", accountsKey: "users/anna/fin/accounts.json",
+		vocabKey: "users/anna/fin/finance-aliases.json", now: serverNow}
+	h := httpapi.NewServer(nil, nil, nil, nil, nil, nil, httpapi.Documents{}, httpapi.EngineInfo{}, nil, httpapi.WithFinanceWriter(sf))
+	put := func(body string) *httptest.ResponseRecorder {
+		return do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape("Сбербанк")+"/balance", body, "")
+	}
+	if rec := put(`{"amount":"1000","create":true,"tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"updated":"2026-11-06"`) {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := sf.Finances(); err != nil {
+		t.Fatalf("the accounts cannot be read back: %v", err)
+	}
+	if rec := put(`{"amount":"900","tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusOK {
+		t.Fatalf("a second confirmation: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"18","category":"Еда","account":"Сбербанк","tz":"Asia/Yekaterinburg"}`, ""); rec.Code != http.StatusCreated {
+		t.Fatalf("an expense from the account: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Битый документ счетов — сбой хранилища, а не ответ человеку: 500 без ключа
+// бакета в ответе, а не 409 «счет уже есть». И он не мешает трате без счета.
+func TestBrokenAccountsDocument(t *testing.T) {
+	h, tok, s := financeTenant(t)
+	if _, err := s.Put(context.Background(), "users/anna/fin/accounts.json",
+		[]byte(`{"accounts":[{"bank":"Сбербанк","balance":"1"},{"bank":"сбербанк ","balance":"2"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape("Т-Банк")+"/balance", `{"amount":"1"}`, tok)
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "users/") {
+		t.Errorf("confirm over a broken document: %d %q, want 500 without the key", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions", `{"kind":"expense","amount":"18","category":"Еда","date":"2026-04-06"}`, tok); rec.Code != http.StatusCreated {
+		t.Errorf("a cash expense over a broken accounts document: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions", `{"kind":"expense","amount":"19","category":"Еда","account":"Сбербанк","date":"2026-04-06"}`, tok); rec.Code != http.StatusInternalServerError {
+		t.Errorf("an expense from an account over a broken document: %d %s, want 500", rec.Code, rec.Body.String())
 	}
 }
 
@@ -309,5 +372,73 @@ func TestFinancesOnlyBesideAPersonsBase(t *testing.T) {
 				t.Fatalf("journal %q (fin %v), want %q", got, src.fin != nil, c.journal)
 			}
 		})
+	}
+}
+
+// Счета человека в хранилище: заведение и подтверждение остатка через API,
+// расчетный остаток тем же правилом, что у книги на Маке (подтвержденное минус
+// траты после момента), и валюта операции по счету, как у fin add.
+func TestAccountsThroughTheAPI(t *testing.T) {
+	h, tok, s := financeTenant(t)
+	put := func(name, body string) *httptest.ResponseRecorder {
+		return do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape(name)+"/balance", body, tok)
+	}
+	if rec := put("Сбербанк", `{"amount":"1000","create":true,"tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Wise", `{"amount":"10","create":true,"currency":"USD","rate":"84,28","tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated {
+		t.Fatalf("create foreign: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("сбербанк", `{"amount":"1000","create":true}`); rec.Code != http.StatusConflict {
+		t.Fatalf("create twice: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Тинькофф", `{"amount":"1"}`); rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "Сбербанк") {
+		t.Fatalf("unknown account: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Сбербанк", `{"amount":"abc"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad amount: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := put("Сбербанк", `{"amount":"1","tz":"Mars/Olympus"}`); rec.Code != http.StatusBadRequest {
+		t.Fatalf("bad zone: %d %s", rec.Code, rec.Body.String())
+	}
+	// Трата после подтверждения уменьшает расчетный остаток.
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"418","category":"Транспорт","account":"Сбербанк","tz":"Asia/Yekaterinburg"}`, tok); rec.Code != http.StatusCreated {
+		t.Fatalf("expense: %d %s", rec.Code, rec.Body.String())
+	}
+	// Без валюты в запросе операция с валютного счета — в его валюте.
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"2","category":"Сервисы","account":"Wise","tz":"Asia/Yekaterinburg"}`, tok); rec.Code != http.StatusCreated {
+		t.Fatalf("foreign expense: %d %s", rec.Code, rec.Body.String())
+	}
+	rec := do(h, http.MethodGet, "/api/finances", "", tok)
+	var out struct {
+		Transactions []struct {
+			Account, Currency string
+		} `json:"transactions"`
+		Accounts []struct {
+			Bank, Balance, Current, Currency string
+		} `json:"accounts"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v (%.300s)", err, rec.Body.String())
+	}
+	got := map[string][2]string{}
+	for _, a := range out.Accounts {
+		got[a.Bank] = [2]string{a.Balance, a.Current}
+	}
+	if got["Сбербанк"] != [2]string{"1000.00", "582.00"} {
+		t.Errorf("Сбербанк %v, want confirmed 1000.00 and current 582.00 (%s)", got["Сбербанк"], rec.Body.String())
+	}
+	if len(out.Accounts) != 2 {
+		t.Errorf("%d accounts, want 2", len(out.Accounts))
+	}
+	for _, tx := range out.Transactions {
+		if tx.Account == "Wise" && tx.Currency != "USD" {
+			t.Errorf("an expense from Wise recorded in %q, want USD", tx.Currency)
+		}
+	}
+	if _, err := s.Get(context.Background(), "users/anna/fin/accounts.json"); err != nil {
+		t.Errorf("accounts are not in the store: %v", err)
 	}
 }

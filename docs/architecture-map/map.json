@@ -299,7 +299,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/finance/finance.go:150"
+        "internal/usecase/finance/finance.go:154"
       ]
     },
     {
@@ -359,7 +359,7 @@
       "layer": "domain",
       "kind": "data",
       "sources": [
-        "internal/domain/account.go:100"
+        "internal/domain/account.go:108"
       ]
     },
     {
@@ -1272,8 +1272,8 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Add(p, newULID, time.Now)",
-          "detail": "cmd/kbengine/fin.go:307 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:146",
-          "source": "internal/usecase/finance/finance.go:150",
+          "detail": "cmd/kbengine/fin.go:307 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:150",
+          "source": "internal/usecase/finance/finance.go:154",
           "unverified": false,
           "symbol": "Add"
         },
@@ -1309,8 +1309,8 @@
           "from": "ad-financejsonl",
           "to": "f-ledger",
           "call": "finance.Sort(recs) → запись transactions.jsonl",
-          "detail": "finance.Sort (internal/usecase/finance/finance.go:179) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
-          "source": "internal/usecase/finance/finance.go:184",
+          "detail": "finance.Sort (internal/usecase/finance/finance.go:183) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
+          "source": "internal/usecase/finance/finance.go:188",
           "unverified": false
         }
       ],
@@ -1972,7 +1972,7 @@
           "to": "spa",
           "call": "mux.Handle('/', spaHandler(frontend))",
           "detail": "internal/adapter/httpapi/server.go:184 отдаёт SPA; ПЕРЕД ним на строке 178 стоит mux.Handle('/api/', http.NotFoundHandler()) — без него фолбэк давал 200 на любой /api/*, и строка «N эндпоинтов 200» три выпуска подряд ничего не значила. Проверено рантаймом: 18 настоящих маршрутов дают 200, а /api/finance и /api/vydumka — 404",
-          "source": "internal/adapter/httpapi/server.go:272",
+          "source": "internal/adapter/httpapi/server.go:273",
           "unverified": false
         }
       ],
@@ -2006,7 +2006,7 @@
           "from": "ad-httpapi",
           "to": "uc-freshness",
           "call": "freshness.VersionMention(text, 'kb-engine', engine.Version)",
-          "detail": "internal/adapter/httpapi/server.go:295 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда — internal/usecase/freshness/sources.go:156",
+          "detail": "internal/adapter/httpapi/server.go:296 сверяет версию, которую страница называет о самом движке; псевдоверсия сборки сравнивается с БАЗОВЫМ выпуском (freshness.BaseRelease), иначе у того, кто собирает через kbup, проверка ломается всегда — internal/usecase/freshness/sources.go:156",
           "source": "internal/usecase/freshness/sources.go:159",
           "unverified": false
         }
@@ -2184,8 +2184,8 @@
           "from": "browser",
           "to": "ad-httpapi",
           "call": "GET /media/<файл>",
-          "detail": "маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:251 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе",
-          "source": "internal/adapter/httpapi/server.go:251",
+          "detail": "маршрут регистрируется УСЛОВНО: internal/adapter/httpapi/server.go:252 стоит внутри проверки на непустой mediaPath, поэтому без флага --media его в mux нет вовсе",
+          "source": "internal/adapter/httpapi/server.go:252",
           "unverified": false
         },
         {
@@ -2203,7 +2203,7 @@
           "to": "spa",
           "call": "падение в spaHandler при отсутствии флага",
           "detail": "⚠️ НАХОДКА рантайм-проверки: без --media запрос /media/nope.png отдаёт 200 и HTML страницы SPA — тело побайтово совпадает с ответом на /whatever-page (сверено sha). Это та же грабля, которую закрыли для /api/ в PR #149 строкой internal/adapter/httpapi/server.go:183, но для /media/ такой строки нет. Тег <img> получит HTML и молча не отрисуется",
-          "source": "internal/adapter/httpapi/server.go:274",
+          "source": "internal/adapter/httpapi/server.go:275",
           "unverified": false
         }
       ],
@@ -2538,7 +2538,7 @@
           "from": "ad-httpapi",
           "to": "uc-query",
           "call": "query.Service.Stats()",
-          "detail": "internal/adapter/httpapi/server.go:453 — сервис получает загрузчик каталога, а не путь; каталог перечитывается на каждый запрос — internal/usecase/query/query.go:44",
+          "detail": "internal/adapter/httpapi/server.go:454 — сервис получает загрузчик каталога, а не путь; каталог перечитывается на каждый запрос — internal/usecase/query/query.go:44",
           "source": "internal/usecase/query/query.go:44",
           "unverified": false
         },
@@ -2689,7 +2689,7 @@
           "from": "fe-analytics",
           "to": "ad-httpapi",
           "call": "GET /api/graph",
-          "detail": "frontend/src/AnalyticsView.tsx:319 — топологию строит analytics.Service.Graph (internal/usecase/analytics/service.go:54), а подписи рёбер накладывает курируемый конфиг: handleGraph зовёт analytics.LabelEdges (internal/adapter/httpapi/server.go:424)",
+          "detail": "frontend/src/AnalyticsView.tsx:319 — топологию строит analytics.Service.Graph (internal/usecase/analytics/service.go:54), а подписи рёбер накладывает курируемый конфиг: handleGraph зовёт analytics.LabelEdges (internal/adapter/httpapi/server.go:425)",
           "source": "frontend/src/AnalyticsView.tsx:319",
           "unverified": false
         },
@@ -2848,8 +2848,8 @@
           "from": "ad-httpapi",
           "to": "f-team",
           "call": "json.Valid — проверка на каждый запрос",
-          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:618) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:387) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
-          "source": "internal/adapter/httpapi/server.go:476",
+          "detail": "⚠️ формат team.json и projects.json при старте НЕ проверяется: buildDocuments (cmd/kbengine/main.go:618) делает только os.ReadFile. Битый JSON ловится на КАЖДЫЙ запрос в handleRawJSON (internal/adapter/httpapi/server.go:388) и отдаётся HTTP-ошибкой. При старте называется формат единственного флага — --changelog (main.go:265)",
+          "source": "internal/adapter/httpapi/server.go:477",
           "unverified": false,
           "symbol": "Valid"
         },
@@ -2940,8 +2940,8 @@
           "from": "ad-httpapi",
           "to": "uc-query",
           "call": "q.Stats() как проба",
-          "detail": "internal/adapter/httpapi/server.go:253 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте. С #198 у ответа три состояния, а не два: каталог не прочитан — 503; прочитан, но часть записей негодна — 200 с их числом в теле (:244); всё прочитано — 200. Негодная запись гасит себя, а не витрину, и «ready» при этом не означает «показано всё»",
-          "source": "internal/adapter/httpapi/server.go:295",
+          "detail": "internal/adapter/httpapi/server.go:254 — пробой служит настоящее чтение каталога, а не флаг «всё хорошо», выставленный при старте. С #198 у ответа три состояния, а не два: каталог не прочитан — 503; прочитан, но часть записей негодна — 200 с их числом в теле (:244); всё прочитано — 200. Негодная запись гасит себя, а не витрину, и «ready» при этом не означает «показано всё»",
+          "source": "internal/adapter/httpapi/server.go:296",
           "unverified": false
         }
       ],
@@ -3011,8 +3011,8 @@
           "from": "uc-finance",
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
-          "detail": "internal/usecase/finance/finance.go:201 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:199)",
-          "source": "internal/usecase/finance/finance.go:206",
+          "detail": "internal/usecase/finance/finance.go:205 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:199)",
+          "source": "internal/usecase/finance/finance.go:210",
           "unverified": false,
           "symbol": "SortByRecency"
         }
@@ -3171,7 +3171,7 @@
           "to": "ad-httpapi",
           "call": "GET /kb/<путь из поля file>",
           "symbol": "kbFilesHandler",
-          "source": "internal/adapter/httpapi/server.go:255",
+          "source": "internal/adapter/httpapi/server.go:256",
           "detail": "internal/adapter/httpapi/server.go:201 — маршрут появился в #218; до него собственный артефакт нельзя было открыть ничем, кроме file:// мимо базы"
         },
         {

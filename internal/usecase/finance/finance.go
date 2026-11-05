@@ -126,12 +126,16 @@ func resolveCurrency(named *domain.Currency, account string, accounts []domain.A
 }
 
 func findAccount(accounts []domain.Account, name string) *domain.Account {
-	for i := range accounts {
-		if domain.SameAccountName(accounts[i].Bank(), name) {
-			return &accounts[i]
-		}
+	if i := accountIndex(accounts, name); i >= 0 {
+		return &accounts[i]
 	}
 	return nil
+}
+
+// accountIndex is where the account named name is, -1 when there is none:
+// одно правило поиска счета на весь пакет — имя сравнивает домен.
+func accountIndex(accounts []domain.Account, name string) int {
+	return slices.IndexFunc(accounts, func(a domain.Account) bool { return domain.SameAccountName(a.Bank(), name) })
 }
 
 // checkCurrency applies the domain rule when the account is known.
