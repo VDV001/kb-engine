@@ -1,7 +1,6 @@
 package desktopconfig_test
 
 import (
-	"errors"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -9,29 +8,22 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
 
-func TestConfig_ValidateModules(t *testing.T) {
-	tests := []struct {
-		name    string
-		modules []desktopconfig.Module
-		want    error
-	}{
-		{"нет модулей", nil, nil},
-		{"финансы", []desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}, nil},
-		// Модуль от более новой сборки не роняет прежнюю: хранится, вкладки нет.
-		{"неизвестный терпится", []desktopconfig.Module{{ID: "chat", Enabled: true}}, nil},
-		{"пустой id", []desktopconfig.Module{{ID: "", Enabled: true}}, desktopconfig.ErrModuleID},
-		{"повтор", []desktopconfig.Module{{ID: desktopconfig.ModuleFinances}, {ID: desktopconfig.ModuleFinances, Enabled: true}}, desktopconfig.ErrModuleID},
+// Плохая запись модулей не роняет чтение: модули — только вкладки, а конфиг
+// читают и окно, и kbengine-mcp. Пустой id и повтор отбрасываются, первая
+// запись остается; неизвестный id (более новая сборка) хранится.
+func TestRead_BadModulesAreDropped(t *testing.T) {
+	path := writeRaw(t, `{"sources":[{"id":"folder-1","kind":"folder","path":"/a","enabled":true}],
+		"modules":[{"id":"chat","enabled":true},{"id":"","enabled":true},{"id":"finances","enabled":true},{"id":"finances","enabled":false}]}`)
+	cfg, err := desktopconfig.Read(path)
+	if err != nil {
+		t.Fatalf("err = %v, want nil: модули не должны ронять чтение источников", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := desktopconfig.Config{Modules: tt.modules}.Validate()
-			if tt.want == nil && err != nil {
-				t.Fatalf("err = %v, want nil", err)
-			}
-			if tt.want != nil && !errors.Is(err, tt.want) {
-				t.Fatalf("err = %v, want %v", err, tt.want)
-			}
-		})
+	want := []desktopconfig.Module{{ID: "chat", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: true}}
+	if !slices.Equal(cfg.Modules, want) {
+		t.Fatalf("modules = %+v, want %+v", cfg.Modules, want)
+	}
+	if len(cfg.Sources) != 1 {
+		t.Fatalf("sources = %+v", cfg.Sources)
 	}
 }
 
@@ -68,13 +60,5 @@ func TestWrite_ModulesRoundTrip(t *testing.T) {
 	}
 	if !slices.Equal(got.Modules, cfg.Modules) {
 		t.Fatalf("modules = %+v, want %+v", got.Modules, cfg.Modules)
-	}
-}
-
-// Испорченный список модулей — отказ при чтении, как у источников.
-func TestRead_DuplicateModuleIsAnError(t *testing.T) {
-	path := writeRaw(t, `{"sources":[],"modules":[{"id":"finances","enabled":true},{"id":"finances","enabled":false}]}`)
-	if _, err := desktopconfig.Read(path); !errors.Is(err, desktopconfig.ErrModuleID) {
-		t.Fatalf("err = %v, want ErrModuleID", err)
 	}
 }

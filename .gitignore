@@ -1,5 +1,7 @@
 # Binaries
 /bin/
+# go build внутри desktop/ кладет бинарь рядом (18 МБ), в репозиторий он не идет
+/desktop/desktop
 /kbengine
 *.exe
 

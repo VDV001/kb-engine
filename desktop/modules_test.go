@@ -62,25 +62,50 @@ func TestSetModules_KeepsUnknownAndSources(t *testing.T) {
 	}
 }
 
-// Окно присылает только известные модули; чужой id или повтор — отказ, файл
-// прежний.
+// Окно присылает только известные модули; чужой id — ErrUnknownModule, повтор —
+// ErrModuleID; файл прежний.
 func TestSetModules_Rejects(t *testing.T) {
 	tests := []struct {
 		name string
 		list []desktopconfig.Module
+		want error
 	}{
-		{"неизвестный", []desktopconfig.Module{{ID: "chat", Enabled: true}}},
-		{"повтор", []desktopconfig.Module{{ID: desktopconfig.ModuleFinances}, {ID: desktopconfig.ModuleFinances, Enabled: true}}},
+		{"неизвестный", []desktopconfig.Module{{ID: "chat", Enabled: true}}, desktopconfig.ErrUnknownModule},
+		{"повтор", []desktopconfig.Module{{ID: desktopconfig.ModuleFinances}, {ID: desktopconfig.ModuleFinances, Enabled: true}}, desktopconfig.ErrModuleID},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s, _, _ := newSourcesSettings(t)
-			if err := s.SetModules(tt.list); !errors.Is(err, desktopconfig.ErrModuleID) {
-				t.Fatalf("err = %v, want ErrModuleID", err)
+			if err := s.SetModules(tt.list); !errors.Is(err, tt.want) {
+				t.Fatalf("err = %v, want %v", err, tt.want)
 			}
 			if cfg, _ := desktopconfig.Read(s.path); len(cfg.Modules) != 0 {
 				t.Errorf("записано %+v", cfg.Modules)
 			}
 		})
+	}
+}
+
+// Порядок в конфиге — порядок вкладок: включение финансов не двигает модуль
+// новой сборки, а модуль, которого окно не прислало, остается как был.
+func TestSetModules_KeepsOrderAndOmitted(t *testing.T) {
+	s, _, _ := newSourcesSettings(t)
+	s.cfg.Modules = []desktopconfig.Module{{ID: "chat", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: false}}
+	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	want := []desktopconfig.Module{{ID: "chat", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: true}}
+	if cfg, _ := desktopconfig.Read(s.path); !slices.Equal(cfg.Modules, want) {
+		t.Fatalf("modules = %+v, want %+v", cfg.Modules, want)
+	}
+	if err := s.SetModules(nil); err != nil {
+		t.Fatal(err)
+	}
+	if cfg, _ := desktopconfig.Read(s.path); !slices.Equal(cfg.Modules, want) {
+		t.Fatalf("пустой список стер модули: %+v", cfg.Modules)
+	}
+	// Снимок для чтения без f.mu видит новое значение.
+	if !s.snap.Load().cfg.ModuleOn(desktopconfig.ModuleFinances) {
+		t.Error("снимок настроек не обновлен")
 	}
 }
