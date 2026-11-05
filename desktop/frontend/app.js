@@ -437,14 +437,20 @@ document.addEventListener("keydown", (e) => {
 window.addEventListener("resize", moveInk);
 
 // ⌥Space и «Открыть поиск» в меню-баре: окно появляется с курсором в поиске.
-// Знак «просыпается» вместе с окном: полушария расходятся, DVK прорисовывается.
+// Знак «просыпается» вместе с окном и при наведении: полушария расходятся,
+// D, V, K перерисовываются по очереди (style.css). wake снимается, когда
+// дорисована K, а не по таймеру: таймер расходился с CSS и обрывал цикл при
+// повторном ⌥Space.
+const brand = $(".brand");
 const wakeMark = () => {
-  const b = $(".brand");
-  b.classList.remove("wake");
-  void b.offsetWidth; // перезапуск анимации, если окно открыли повторно до ее конца
-  b.classList.add("wake");
-  setTimeout(() => b.classList.remove("wake"), 1200);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  brand.classList.remove("wake");
+  void brand.offsetWidth; // перезапуск анимации, если окно открыли повторно до ее конца
+  brand.classList.add("wake");
 };
+$(".mark-k").addEventListener("animationend", () => brand.classList.remove("wake"));
+// Наведение на идущий цикл его не перезапускает: рывок назад и есть моргание.
+brand.addEventListener("mouseenter", () => { if (!brand.classList.contains("wake")) wakeMark(); });
 if (window.runtime) window.runtime.EventsOn("kb:show", () => { $("#q").focus(); $("#q").select(); wakeMark(); });
 moveInk();
 // Шрифт вшит и грузится после первого замера: подчеркивание мерить заново.
