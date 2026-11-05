@@ -110,6 +110,13 @@ func Edit(rec Record, p EditParams, now func() time.Time) (Record, error) {
 	if err := checkCurrency(edited, acc); err != nil {
 		return Record{}, err
 	}
+	if r, ok := edited.Received(); ok {
+		if to := findAccount(p.Accounts, r.Account()); to != nil {
+			if err := edited.CheckReceivedAccountCurrency(*to); err != nil {
+				return Record{}, err
+			}
+		}
+	}
 	// «Одинаковость» берётся у синка, а не считается заново: два определения
 	// того, что запись не менялась, однажды разойдутся, и разойдутся молча.
 	if Fingerprint(edited) == Fingerprint(tx) {

@@ -92,7 +92,10 @@ func (t Transaction) Received() (Received, bool) {
 // this exchange — из двух сумм записи, то есть фактический курс банка вместе с
 // комиссией. Только когда ровно одна сторона в валюте книги: у перевода между
 // рублевыми счетами курса нет, у обмена долларов на евро нет курса к рублю.
-// Округление до копейки — для показа; суммы в записи остаются точными.
+//
+// Дробь точная, без округления: у валюты дешевле рубля (сум, тенге) курс в
+// копейках за единицу округлился бы до 0,01 с ошибкой в треть или до нуля.
+// Сколько знаков показать — дело витрины.
 func (t Transaction) ExchangeRate() (*big.Rat, bool) {
 	r, ok := t.Received()
 	if !ok || t.currency.IsBase() == r.currency.IsBase() {
@@ -102,11 +105,6 @@ func (t Transaction) ExchangeRate() (*big.Rat, bool) {
 	if !t.currency.IsBase() {
 		base, foreign = r.amount, t.amount
 	}
-	// Копейки базовой валюты за единицу: base·100 / foreign, половина вверх.
-	// big.Int — потому что base·100 у очень большой суммы вышел бы за int64.
-	num := new(big.Int).Mul(big.NewInt(base.Kopecks()), big.NewInt(100))
-	den := big.NewInt(foreign.Kopecks())
-	num.Add(num, new(big.Int).Quo(den, big.NewInt(2)))
-	per := new(big.Int).Quo(num, den)
-	return new(big.Rat).SetFrac(per, big.NewInt(100)), true
+	// Копейки к копейкам (центам, тийинам): сотые сокращаются.
+	return big.NewRat(base.Kopecks(), foreign.Kopecks()), true
 }

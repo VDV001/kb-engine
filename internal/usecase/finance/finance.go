@@ -171,6 +171,12 @@ func Add(p AddParams, newID func() string, now func() time.Time) (Record, error)
 	if err != nil {
 		return Record{}, err
 	}
+	// У обмена известны оба счета: со счета, которого нет, ничего не спишется,
+	// а получение прибавится — обмен создал бы деньги из воздуха. Обычная трата
+	// с незнакомого счета по-прежнему пишется: этого правила у нее не было.
+	if p.Received != nil && p.Accounts != nil && acc == nil {
+		return Record{}, fmt.Errorf("%w: %q to send from", domain.ErrUnknownAccount, p.Account)
+	}
 
 	tx, err := domain.NewTransaction(domain.TransactionParams{
 		ID:          newID(),
@@ -221,7 +227,13 @@ func resolveReceived(r *ReceivedAdd, accounts []domain.Account) (domain.Received
 	case to != nil:
 		currency = to.Currency()
 	}
-	return domain.ReceivedParams{Amount: r.Amount, Currency: currency, Account: r.Account}, to, nil
+	// Имя — как оно записано у счета: набранное «wise» иначе жило бы в журнале
+	// рядом со счетом «Wise».
+	account := r.Account
+	if to != nil {
+		account = to.Bank()
+	}
+	return domain.ReceivedParams{Amount: r.Amount, Currency: currency, Account: account}, to, nil
 }
 
 // Sort orders records chronologically, with the id breaking ties, in place.

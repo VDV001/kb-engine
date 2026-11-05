@@ -29,10 +29,13 @@ func Duplicate(existing []Record, p AddParams) *Record {
 		want = domain.Day(time.Now())
 	}
 	currency, _ := resolveCurrency(p.Currency, p.Account, p.Accounts)
+	// Вторая сторона различает обмены: 9 000 ₽ в доллары и 9 000 ₽ в евро в один
+	// день — две операции. Незнакомый счет здесь не важен — откажет Add.
+	received, _, _ := resolveReceived(p.Received, p.Accounts)
 	return firstMatch(existing, entry{
 		kind: p.Kind, date: want, amount: p.Amount, currency: currency,
 		category: p.Category, sub: p.Subcategory, place: p.Place,
-		note: p.Description, source: p.Source, account: p.Account,
+		note: p.Description, source: p.Source, account: p.Account, received: received,
 	}, "")
 }
 
@@ -52,7 +55,7 @@ func RepeatOf(existing []Record, edited Record) *Record {
 	return firstMatch(existing, entry{
 		kind: tx.Kind(), date: tx.Date(), amount: tx.Amount(), currency: tx.Currency(),
 		category: tx.Category(), sub: tx.Subcategory(), place: tx.Place(),
-		note: tx.Description(), source: tx.Source(), account: tx.Account(),
+		note: tx.Description(), source: tx.Source(), account: tx.Account(), received: receivedParams(tx),
 	}, tx.ID())
 }
 
@@ -65,6 +68,7 @@ type entry struct {
 	amount                                      domain.Money
 	currency                                    domain.Currency
 	category, sub, place, note, source, account string
+	received                                    domain.ReceivedParams
 }
 
 // firstMatch ищет запись, совпадающую с образцом. skipID исключает саму
@@ -88,6 +92,10 @@ func firstMatch(existing []Record, want entry, skipID string) *Record {
 // покупки другого дня незачем.
 func (e entry) matches(tx domain.Transaction) bool {
 	if tx.Kind() != e.kind || !tx.Date().Equal(e.date) || tx.Amount() != e.amount || tx.Currency() != e.currency {
+		return false
+	}
+	got := receivedParams(tx)
+	if got.Amount != e.received.Amount || got.Currency != e.received.Currency || !same(got.Account, e.received.Account) {
 		return false
 	}
 	for _, pair := range [][2]string{

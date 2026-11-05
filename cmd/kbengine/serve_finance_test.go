@@ -484,8 +484,12 @@ func TestExchangeThroughTheAPI(t *testing.T) {
 	for _, a := range out.Accounts {
 		got[a.Bank] = a.Current
 	}
-	if got["Сбербанк"] != "1000.00" || got["Wise"] != "110.00" {
-		t.Errorf("balances %v, want Сбербанк 1000.00 and Wise 110.00", got)
+	// Wise подтвержден сегодня, обмен тоже сегодня: внутри дня подтверждения
+	// получение не прибавляется (расчет только занижает), до следующего
+	// подтверждения Wise остается 10 $. Прибавление на следующий день проверяет
+	// usecase (TestExchangeMovesMoneyBetweenAccounts).
+	if got["Сбербанк"] != "1000.00" || got["Wise"] != "10.00" {
+		t.Errorf("balances %v, want Сбербанк 1000.00 and Wise 10.00 on its confirmation day", got)
 	}
 	if len(out.Transactions) != 1 || out.Transactions[0].Received == nil ||
 		out.Transactions[0].Received.Currency != "USD" || out.Transactions[0].Received.Rate != "90.00" {

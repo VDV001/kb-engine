@@ -203,9 +203,12 @@ func (c Confirmations) At(bank string) (time.Time, bool) {
 
 // CurrentBalances считает остаток каждого счёта на сейчас.
 //
-// Учитываются только расходы: домен не даёт доходу счёта, поэтому движок не
-// знает, на какую карту пришли деньги. Значит расчёт может **занижать** остаток
-// и никогда не завышает — и это ограничение названо на экране, а не спрятано.
+// Учитываются расходы и вторые стороны переводов себе (обмен валюты): домен не
+// даёт обычному доходу счёта, поэтому движок не знает, на какую карту пришла
+// зарплата. Значит расчёт может **занижать** остаток и никогда не завышает — и
+// это ограничение названо на экране, а не спрятано. Получение держит это
+// обещание строже трат: в день подтверждения оно не прибавляется вовсе
+// (receivedAfter).
 //
 // Траты в день подтверждения НЕ считаются, и это исправление, а не выбор из
 // двух равных.
@@ -236,9 +239,9 @@ func CurrentBalances(accounts []domain.Account, txs []domain.Transaction, confs 
 			b.ConfirmedOn = a.Updated().Format("2006-01-02")
 			after := spentAfter(txs, a.Bank(), a.Updated(), confs)
 			b.Spent = after
-			b.Received = receivedAfter(txs, a.Bank(), a.Updated(), confs)
+			b.Received = receivedAfter(txs, a.Bank(), a.Updated())
 			b.Current = a.Balance().Sub(after).Add(b.Received)
-			// Минус означает не долг, а слепоту расчёта: доходы счёта не имеют,
+			// Минус означает не долг, а слепоту расчёта: обычные доходы счёта не имеют,
 			// и на старом подтверждении траты неизбежно съедают остаток.
 			//
 			// Но только если подтверждённое число было неотрицательным. У счёта-
@@ -301,14 +304,20 @@ func spentAfter(txs []domain.Transaction, bank string, confirmed time.Time, conf
 	return total
 }
 
-// receivedAfter is what arrived on bank after its balance was confirmed: вторые
-// стороны переводов себе (обмен валюты). Тем же правилом момента, что и траты:
-// получение, которое банк уже показал в подтвержденном числе, второй раз не
-// прибавляется.
-func receivedAfter(txs []domain.Transaction, bank string, confirmed time.Time, confs Confirmations) domain.Money {
+// receivedAfter is what arrived on bank after the day its balance was
+// confirmed: вторые стороны переводов себе (обмен валюты).
+//
+// Правило дня здесь строже, чем у трат, и знак тому причина. Сомнение внутри
+// дня подтверждения трата разрешает в сторону «вычесть» — это занижает. Для
+// прибавляемой суммы то же решение завысило бы остаток: подтвержденное число
+// могло уже включать обмен, записанный позже. Поэтому получение в день
+// подтверждения не прибавляется никогда — расчет по-прежнему только занижает
+// (правило 24 с обратным знаком), и следующее подтверждение снимает разницу.
+func receivedAfter(txs []domain.Transaction, bank string, confirmed time.Time) domain.Money {
 	var total domain.Money
+	day := domain.Day(confirmed)
 	for _, tx := range txs {
-		if r, ok := tx.Received(); ok && domain.SameAccountName(r.Account(), bank) && unseenBy(tx, bank, confirmed, confs) {
+		if r, ok := tx.Received(); ok && domain.SameAccountName(r.Account(), bank) && tx.Date().After(day) {
 			total = total.Add(r.Amount())
 		}
 	}

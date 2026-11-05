@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"encoding/json"
+	"math/big"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -56,9 +58,24 @@ func toReceivedDTO(t domain.Transaction) *receivedDTO {
 	}
 	d := &receivedDTO{Amount: r.Amount().String(), Currency: foreignCode(r.Currency()), Account: r.Account()}
 	if rate, ok := t.ExchangeRate(); ok {
-		d.Rate = rate.FloatString(2)
+		d.Rate = rateText(rate)
 	}
 	return d
+}
+
+// rateText shows a rate with two decimals, as money is read, and a cheaper
+// unit with four significant digits: курс сума — «0.007502», а не «0.01».
+func rateText(r *big.Rat) string {
+	if r.Cmp(big.NewRat(1, 1)) >= 0 {
+		return r.FloatString(2)
+	}
+	for decimals := 2; decimals < 20; decimals++ {
+		s := r.FloatString(decimals)
+		if len(strings.TrimLeft(strings.ReplaceAll(s, ".", ""), "0")) >= 4 {
+			return s
+		}
+	}
+	return r.FloatString(20)
 }
 
 // namedTotalDTO is one row of a breakdown: a name, what it adds up to, and how
