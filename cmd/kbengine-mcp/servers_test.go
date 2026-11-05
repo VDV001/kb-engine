@@ -161,7 +161,8 @@ func TestRemoteServers_TokenNeverReachesOldHost(t *testing.T) {
 	var oldAuth []string
 	oldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		oldAuth = append(oldAuth, r.Header.Get("X-KB-Token"))
+		// Оба заголовка: токен не должен уйти старому хосту ни в одном.
+		oldAuth = append(oldAuth, r.Header.Get("X-KB-Token"), r.Header.Get("Authorization"))
 		mu.Unlock()
 		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
 	}))

@@ -38,6 +38,10 @@ const (
 	maxSearchBody = 32 << 20
 )
 
+// TokenHeader is the header the app token travels in; тот же, что читает
+// сервер (httpapi.TokenHeader, тест сверяет).
+const TokenHeader = "X-KB-Token"
+
 // Client talks to one kb server. HTTP — nil значит http.DefaultClient; тесты
 // и окно подставляют свой (доверие к сертификату, таймауты).
 type Client struct {

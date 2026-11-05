@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 )
 
@@ -318,5 +319,33 @@ func TestClient_SearchNull(t *testing.T) {
 	res, err := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}.Search(context.Background(), "q", 40)
 	if err != nil || len(res.Entries) != 0 || res.Total != 0 {
 		t.Fatalf("res = %+v, err = %v", res, err)
+	}
+}
+
+// Клиент и сервер называют заголовок токена одной константой: переименуй
+// одну сторону — окно перестанет входить, а тесты каждой стороны остались бы
+// зелеными.
+func TestClient_TokenHeaderIsTheServers(t *testing.T) {
+	if kbserver.TokenHeader != httpapi.TokenHeader {
+		t.Fatalf("client sends %q, server reads %q", kbserver.TokenHeader, httpapi.TokenHeader)
+	}
+}
+
+// 403 — отказ до приложения (облако, прокси), 401 — отказ приложения или
+// сервер старой версии без X-KB-Token: человек должен видеть разницу.
+func TestClient_DescribeTells403From401(t *testing.T) {
+	for code, says := range map[int]string{http.StatusForbidden: "403", http.StatusUnauthorized: "старой версии"} {
+		srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(code)
+		}))
+		c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+		_, err := c.Info(context.Background())
+		srv.Close()
+		if !errors.Is(err, kbserver.ErrUnauthorized) {
+			t.Fatalf("%d: err = %v, want ErrUnauthorized", code, err)
+		}
+		if d := kbserver.Describe(err); !strings.Contains(d, says) {
+			t.Errorf("%d: Describe = %q, want it to name %q", code, d, says)
+		}
 	}
 }

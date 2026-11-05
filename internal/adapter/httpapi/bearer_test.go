@@ -62,19 +62,23 @@ func TestRequireBearer_TokenHeader(t *testing.T) {
 	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("catalog")) })
 	h := httpapi.RequireBearer(token, next)
 	tests := []struct {
-		name, xkb, auth string
-		want            int
+		name      string
+		setXKB    bool // заголовок есть, даже пустой
+		xkb, auth string
+		want      int
 	}{
-		{"верный X-KB-Token", token, "", http.StatusOK},
-		{"чужой X-KB-Token", strings.Repeat("x", len(token)), "", http.StatusUnauthorized},
-		{"пустой X-KB-Token", "", "", http.StatusUnauthorized},
-		{"чужой X-KB-Token при верном Bearer", "nope", "Bearer " + token, http.StatusUnauthorized},
-		{"верный X-KB-Token при чужом Bearer", token, "Bearer nope", http.StatusOK},
+		{"верный X-KB-Token", true, token, "", http.StatusOK},
+		{"чужой X-KB-Token", true, strings.Repeat("x", len(token)), "", http.StatusUnauthorized},
+		{"пустой X-KB-Token", true, "", "", http.StatusUnauthorized},
+		{"пустой X-KB-Token при верном Bearer", true, "", "Bearer " + token, http.StatusUnauthorized},
+		{"чужой X-KB-Token при верном Bearer", true, "nope", "Bearer " + token, http.StatusUnauthorized},
+		{"верный X-KB-Token при чужом Bearer", true, token, "Bearer nope", http.StatusOK},
+		{"только верный Bearer", false, "", "Bearer " + token, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			r := httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil)
-			if tt.xkb != "" {
+			if tt.setXKB {
 				r.Header.Set(httpapi.TokenHeader, tt.xkb)
 			}
 			if tt.auth != "" {

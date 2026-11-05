@@ -158,6 +158,15 @@ func TestTenantsAdmitTheTokenHeader(t *testing.T) {
 			t.Errorf("X-KB-Token %q: status %d, want %d", tok, rec.Code, want)
 		}
 	}
+	// Есть X-KB-Token — решает он: верный Bearer рядом с чужим не пускает.
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set(httpapi.TokenHeader, "nope")
+	req.Header.Set("Authorization", "Bearer "+f.tokA)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("foreign X-KB-Token beside A's Bearer: status %d, want 401", rec.Code)
+	}
 }
 
 func TestTenantsRefuseWithoutAValidToken(t *testing.T) {
