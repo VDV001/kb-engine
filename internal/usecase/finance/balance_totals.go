@@ -49,6 +49,28 @@ type CurrencyBalance struct {
 }
 
 // BalancesPerCurrency sums every account per currency, without a rate.
+//
+// Свободные — правилом FreeMoney (род и знак: отложенное и одолженное не
+// свободно, обязательство вычитается), только без пересчета по курсу: курс
+// меняется, а сумма в каждой валюте — факт. Порядок — как валюты встретились.
 func BalancesPerCurrency(balances []AccountBalance) []CurrencyBalance {
-	return nil
+	var out []CurrencyBalance
+	at := map[string]int{}
+	for _, b := range balances {
+		currency := b.Currency
+		if currency == "" {
+			currency = domain.Currency{}.Code() // собранный руками баланс — валюта книги
+		}
+		i, seen := at[currency]
+		if !seen {
+			out = append(out, CurrencyBalance{Currency: currency})
+			i = len(out) - 1
+			at[currency] = i
+		}
+		out[i].Current = out[i].Current.Add(b.Current)
+		if group, _ := domain.SplitAccountName(b.Bank); group == "" || b.Current.Kopecks() < 0 {
+			out[i].Free = out[i].Free.Add(b.Current)
+		}
+	}
+	return out
 }

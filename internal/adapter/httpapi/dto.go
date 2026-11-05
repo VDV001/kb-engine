@@ -553,3 +553,19 @@ func foreignCode(c domain.Currency) string {
 	}
 	return c.Code()
 }
+
+// currencyBalanceDTO is the money in one currency; Currency пусто для валюты
+// книги, как у счета.
+type currencyBalanceDTO struct {
+	Currency string `json:"currency"`
+	Current  string `json:"current"`
+	Free     string `json:"free"`
+}
+
+// balanceTotalDTO is one kind of account in one currency.
+type balanceTotalDTO struct {
+	Group     string `json:"group"`
+	Currency  string `json:"currency"`
+	Confirmed string `json:"confirmed"`
+	Current   string `json:"current"`
+}
