@@ -22,7 +22,12 @@ set -euo pipefail
 EAST="Pacific/Kiritimati" # UTC+14
 WEST="Pacific/Midway"     # UTC-11
 TARGET="internal/usecase/finance/duplicate.go"
-PKGS=(./internal/usecase/finance/ ./cmd/kbengine/)
+# Только тесты, что доходят до подсадки: посторонний нестабильный тест иначе
+# засчитывался бы в крайнем поясе как «поймал подсадку», а в UTC ронял гейт
+# без имени (05.11 CI main на d0dc1ce). Подсадку ловит
+# TestDuplicate_resolvesAnEmptyDateToTheSameDayTheRecordWouldGet.
+PKGS=(./internal/usecase/finance/)
+RUN='^TestDuplicate_'
 
 if [ "${1:-}" != "--self-test" ]; then
   echo "usage: tz-matrix.sh --self-test" >&2
@@ -43,34 +48,30 @@ if git diff --quiet -- "$TARGET"; then
   exit 1
 fi
 
+# caught — красный прогон, в котором упал именно тест дубля; любой другой отказ
+# (сборка, паника) печатается целиком и роняет гейт: засчитать его как «поймал»
+# значило бы самопроверку, зеленую без доказательства.
+caught() { grep -q -- '--- FAIL: TestDuplicate_' <<<"$1"; }
 reds=0
 for tz in "$EAST" "$WEST"; do
-  if TZ="$tz" go test "${PKGS[@]}" -count=1 >/dev/null 2>&1; then
+  if out="$(TZ="$tz" go test "${PKGS[@]}" -run "$RUN" -count=1 2>&1)"; then
     echo "  · $tz ($(TZ="$tz" date +%F)): зелено"
-  else
+  elif caught "$out"; then
     echo "  ✓ $tz ($(TZ="$tz" date +%F)): поймал подсадку"
     reds=$((reds + 1))
+  else
+    echo "✘ self-test: $tz красный не по тесту дубля:" >&2
+    echo "$out" >&2
+    exit 1
   fi
 done
 
-# failed печатает упавшие тесты и пакеты из вывода go test: без имен красный
-# UTC не отличить от постороннего нестабильного теста (05.11 CI main на d0dc1ce
-# упал здесь, а локально подсадка в UTC была зелена 3 из 3).
-failed() { grep -E '^(--- FAIL|FAIL|panic:)' <<<"$1" | sed 's/^/    /' >&2 || true; }
-
-# Подсадка детерминирована в пределах часа: если UTC покраснел из-за нее, повтор
-# покраснеет так же. Зеленый повтор значит, что упал посторонний тест, — его
-# имя печатается, а самопроверка продолжается.
-if ! out="$(TZ=UTC go test "${PKGS[@]}" -count=1 2>&1)"; then
-  echo "  ! UTC: красно, упало:" >&2
-  failed "$out"
-  if ! out="$(TZ=UTC go test "${PKGS[@]}" -count=1 2>&1)"; then
-    failed "$out"
-    echo "✘ self-test: подсадка красная и в UTC (дважды) — значит она ловится обычным прогоном," >&2
-    echo "  и матрица не доказывает своей полезности. Нужен другой образец дефекта." >&2
-    exit 1
-  fi
-  echo "  ! UTC: повтор зелен — выше посторонний нестабильный тест, а не подсадка" >&2
+# В UTC подсадка ничего не меняет (domain.Day берет дату в зоне самого
+# времени), поэтому красный UTC — всегда отказ чего-то другого: он печатается.
+if ! out="$(TZ=UTC go test "${PKGS[@]}" -run "$RUN" -count=1 2>&1)"; then
+  echo "✘ self-test: красно в UTC, где подсадка ничего не меняет, — сломано другое:" >&2
+  echo "$out" >&2
+  exit 1
 fi
 echo "  ✓ UTC: зелено — обычный прогон этот дефект не видит"
 
