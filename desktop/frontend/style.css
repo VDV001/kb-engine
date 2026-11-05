@@ -320,6 +320,23 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0;
 }
 .add-row input:focus { border-color: var(--z-accent); }
+/* Вкладки поиска: строки через 1px, как источники; имя правится на месте. */
+.tab-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
+.tab-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--z-rule); font-size: 12px; }
+.tab-list li:last-child { border-bottom: 0; }
+.tab-list li.fixed { color: var(--z-muted); }
+.tab-list input { min-width: 0; height: 26px; padding: 0 6px; font: 12px var(--z-font); background: transparent; color: var(--z-ink); border: 1px solid transparent; border-radius: var(--z-radius); outline: 0; }
+.tab-list input:hover { border-color: var(--z-rule-2); }
+.tab-list input:focus { border-color: var(--z-accent); background: var(--z-bg); }
+.tab-list .what { color: var(--z-faint); white-space: nowrap; }
+.tab-list .what.gone { color: var(--z-bad); }
+.tab-list .tab-acts { display: flex; gap: 2px; }
+.tab-list .tab-acts button { background: none; border: 0; color: var(--z-faint); cursor: pointer; font: 12px var(--z-font); padding: 2px 5px; }
+.tab-list .tab-acts button:hover:not(:disabled) { color: var(--z-ink); }
+.tab-list .tab-acts button.del:hover { color: var(--z-bad); }
+.tab-list .tab-acts button:disabled { opacity: .3; cursor: default; }
+#tab-add { align-items: center; }
+#tab-add select { height: 30px; font: 12px var(--z-font); background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; }
 .settings-error { color: var(--z-bad); background: var(--z-bad-wash); padding: 8px 12px; border-left: 2px solid var(--z-bad); }
 .settings-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; border-top: 1px solid var(--z-rule); }
 /* Строка источника: ⠿, номер, кто, состояние и переключатель; действия второй

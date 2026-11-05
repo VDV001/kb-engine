@@ -56,6 +56,12 @@ func (a *App) Modules() []desktopconfig.Module { return a.settings.Modules() }
 // SetModules saves which modules are on.
 func (a *App) SetModules(list []desktopconfig.Module) error { return a.settings.SetModules(list) }
 
+// Tabs returns the search tabs after «Все».
+func (a *App) Tabs() []desktopconfig.Tab { return a.settings.Tabs() }
+
+// SetTabs saves the search tabs.
+func (a *App) SetTabs(list []desktopconfig.Tab) error { return a.settings.SetTabs(list) }
+
 // NewSourceID returns an id for a source the person is adding: к id сервера
 // привязан токен, и он нужен странице до сохранения списка.
 func (a *App) NewSourceID(kind string) string { return desktopconfig.NewID(desktopconfig.Kind(kind)) }
