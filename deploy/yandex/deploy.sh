@@ -19,7 +19,17 @@ cd "$(git rev-parse --show-toplevel)"
 
 y() { "$YC" --folder-name "$FOLDER" "$@"; }
 # idof prints the id of an existing resource, nothing when there is none.
-idof() { y "$@" --format json 2>/dev/null | jq -r '.id // empty'; }
+# Пустым считается только «not found»: любой другой отказ (вход в yc истек,
+# нет прав) остановил бы скрипт, а не повел его создавать ресурс заново.
+idof() {
+  local out
+  if out="$(y "$@" --format json 2>&1)"; then
+    jq -r '.id // empty' <<<"$out"
+  elif ! grep -q 'not found' <<<"$out"; then
+    printf '%s\n' "$out" >&2
+    return 1
+  fi
+}
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
 
