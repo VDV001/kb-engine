@@ -298,6 +298,6 @@ describe('раздел «Разбор»', () => {
     expect(frame).toBeTruthy()
     // Именно /kb/, а не file:// и не путь на диске: маршрут отдаёт только то,
     // что каталог называет, и это единственный способ открыть артефакт базы.
-    expect(frame?.getAttribute('src')).toBe('/kb/creations/projects/2026-08-15_x/x.html')
+    expect(frame?.getAttribute('src')).toBe('kb/creations/projects/2026-08-15_x/x.html')
   })
 })
