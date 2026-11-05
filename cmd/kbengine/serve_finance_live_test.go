@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	gosync "sync" // имя sync в пакете main занято помощником теста `fin sync`
+	"sync/atomic"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -39,7 +41,33 @@ func TestLiveFinancesInYandex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	financesScenario(t, s)
+	// Сбои Yandex на его стороне (500 на одновременной условной записи)
+	// считаются: зеленый прогон без единого сбоя ничего не говорит о повторах.
+	counted := &countingFailures{Store: s}
+	financesScenario(t, counted)
+	t.Logf("store failures retried: %d", counted.n.Load())
+}
+
+// countingFailures counts the ErrTransient answers the store gave.
+type countingFailures struct {
+	blob.Store
+	n atomic.Int64
+}
+
+func (c *countingFailures) Get(ctx context.Context, key string) (blob.Object, error) {
+	o, err := c.Store.Get(ctx, key)
+	if errors.Is(err, blob.ErrTransient) {
+		c.n.Add(1)
+	}
+	return o, err
+}
+
+func (c *countingFailures) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
+	etag, err := c.Store.Put(ctx, key, data, ifMatch)
+	if errors.Is(err, blob.ErrTransient) {
+		c.n.Add(1)
+	}
+	return etag, err
 }
 
 // Счета, подтверждение, траты и расчетный остаток при одновременных записях,
