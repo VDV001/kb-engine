@@ -1,4 +1,5 @@
 import type { Entry } from './api'
+import { appURL } from './appurl'
 
 // Собственные артефакты базы — шпаргалки, конспекты, курсы, разборы. У них нет
 // внешнего адреса: материал лежит файлом рядом с каталогом, и до сих пор
@@ -14,7 +15,7 @@ export function artefactHref(file?: string): string {
   // Кодируется каждый сегмент по отдельности: encodeURIComponent съел бы слэши
   // и превратил путь в одно имя, а имена папок пишет человек — там встречаются
   // и пробелы, и кириллица.
-  return '/kb/' + file.split('/').map(encodeURIComponent).join('/')
+  return appURL('kb/' + file.split('/').map(encodeURIComponent).join('/'))
 }
 
 // Шпаргалка узнаётся по тегу, а не по папке. Признак живёт в данных, поэтому

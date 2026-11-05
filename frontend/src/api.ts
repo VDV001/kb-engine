@@ -1,3 +1,5 @@
+import { appURL } from './appurl'
+
 // Typed client for the kbengine HTTP API.
 
 export interface Stats {
@@ -768,8 +770,10 @@ export interface ArchMapIndexEntry {
   accepted_zones: number
 }
 
+// Путь — от корня приложения (appURL): в окне DVK витрина под /app/, и запрос
+// обязан пройти через его прокси с токеном.
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path)
+  const res = await fetch(appURL(path))
   if (!res.ok) {
     throw new Error(`${path}: ${res.status} ${res.statusText}`)
   }
@@ -817,8 +821,8 @@ export type ToolCall = { tool: string; query?: string; at: string; ok: boolean }
 export type ToolCalls = { exists: boolean; total: number; calls: ToolCall[] }
 
 export const api = {
-  stats: () => getJSON<Stats>('/api/stats'),
-  entries: () => getJSON<Entry[]>('/api/entries'),
+  stats: () => getJSON<Stats>('api/stats'),
+  entries: () => getJSON<Entry[]>('api/entries'),
 
   /**
    * Записи, подходящие под текст. Спрашивается у движка, а не считается здесь:
@@ -829,28 +833,28 @@ export const api = {
    * должна белеть от того, чем ей ответили.
    */
   search: (q: string) =>
-    getJSON<Entry[] | null>(`/api/search?q=${encodeURIComponent(q)}`).then((r) => r ?? []),
-  audits: () => getJSON<Audits>('/api/audits'),
+    getJSON<Entry[] | null>(`api/search?q=${encodeURIComponent(q)}`).then((r) => r ?? []),
+  audits: () => getJSON<Audits>('api/audits'),
   // Пустой список приходил как null: тип обещал массив, а сервер писал nil-слайс.
   // Сервер это чинит у себя, но нормализация остаётся и здесь — клиент не должен
   // белеть от того, чем ему ответили, а сервером может оказаться и старая сборка.
   duplicates: () =>
-    getJSON<DuplicateGroup[] | null>('/api/duplicates').then((groups) => groups ?? []),
-  linkHealth: () => getJSON<LinkHealth>('/api/link-health'),
-  analytics: () => getJSON<Analytics>('/api/analytics'),
-  analyticsConfig: () => getJSON<AnalyticsConfig>('/api/analytics-config'),
-  graph: () => getJSON<Graph>('/api/graph'),
-  changelog: () => getJSON<Changelog>('/api/changelog'),
-  engine: () => getJSON<Engine>('/api/engine'),
-  capabilities: () => getJSON<Capability[]>('/api/capabilities'),
-  toolCalls: () => getJSON<ToolCalls>('/api/tool-calls'),
-  now: () => getJSON<Now | null>('/api/now'),
-  sources: () => getJSON<{ sources: SourceState[] }>('/api/sources'),
-  maps: () => getJSON<{ maps: ArchMapIndexEntry[] }>('/api/maps'),
-  map: (id: string) => getJSON<ArchMap>(`/api/maps/${encodeURIComponent(id)}`),
-  team: () => getJSON<Document | null>('/api/team'),
-  projects: () => getJSON<ProjectDoc | null>('/api/projects'),
-  finances: () => getJSON<Finances>('/api/finances'),
+    getJSON<DuplicateGroup[] | null>('api/duplicates').then((groups) => groups ?? []),
+  linkHealth: () => getJSON<LinkHealth>('api/link-health'),
+  analytics: () => getJSON<Analytics>('api/analytics'),
+  analyticsConfig: () => getJSON<AnalyticsConfig>('api/analytics-config'),
+  graph: () => getJSON<Graph>('api/graph'),
+  changelog: () => getJSON<Changelog>('api/changelog'),
+  engine: () => getJSON<Engine>('api/engine'),
+  capabilities: () => getJSON<Capability[]>('api/capabilities'),
+  toolCalls: () => getJSON<ToolCalls>('api/tool-calls'),
+  now: () => getJSON<Now | null>('api/now'),
+  sources: () => getJSON<{ sources: SourceState[] }>('api/sources'),
+  maps: () => getJSON<{ maps: ArchMapIndexEntry[] }>('api/maps'),
+  map: (id: string) => getJSON<ArchMap>(`api/maps/${encodeURIComponent(id)}`),
+  team: () => getJSON<Document | null>('api/team'),
+  projects: () => getJSON<ProjectDoc | null>('api/projects'),
+  finances: () => getJSON<Finances>('api/finances'),
 
   /**
    * Сводка за выбранные месяцы (YYYY-MM). Пустой список — за всё время.
@@ -862,8 +866,8 @@ export const api = {
   financeSummary: (months: string[] = []) =>
     getJSON<FinanceSummary>(
       months.length > 0
-        ? `/api/finances/summary?months=${encodeURIComponent(months.join(','))}`
-        : '/api/finances/summary',
+        ? `api/finances/summary?months=${encodeURIComponent(months.join(','))}`
+        : 'api/finances/summary',
     ),
 
   /**
@@ -872,7 +876,7 @@ export const api = {
    * держать две реализации одного, обязанные совпадать.
    */
   async financeExport(rows: FinanceExportRow[]): Promise<Blob> {
-    const res = await fetch('/api/finances/export', {
+    const res = await fetch(appURL('api/finances/export'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows }),

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ArchitectureView } from './ArchitectureView'
 import type { ArchMap, ArchMapIndexEntry } from './api'
+import { appURL } from './appurl'
 
 const state = vi.hoisted(() => ({
   index: [] as ArchMapIndexEntry[],
@@ -298,6 +299,6 @@ describe('раздел «Разбор»', () => {
     expect(frame).toBeTruthy()
     // Именно /kb/, а не file:// и не путь на диске: маршрут отдаёт только то,
     // что каталог называет, и это единственный способ открыть артефакт базы.
-    expect(frame?.getAttribute('src')).toBe('/kb/creations/projects/2026-08-15_x/x.html')
+    expect(frame?.getAttribute('src')).toBe(appURL('kb/creations/projects/2026-08-15_x/x.html'))
   })
 })
