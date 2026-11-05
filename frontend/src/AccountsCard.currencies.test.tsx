@@ -140,6 +140,19 @@ describe('AccountsCard — по валютам, края', () => {
     expect(free).not.toContain('4 500')
   })
 
+  it('свободное в валюте, где итог ноль, не теряется', () => {
+    // Обычный счет 0, отложено +100, обязательство −100: итог 0, свободно −100.
+    render(
+      <AccountsCard
+        accounts={accounts}
+        currencies={[{ currency: '', current: '1000.00', free: '1000.00' }, { currency: 'USD', current: '0.00', free: '-100.00' }]}
+        totals={totals}
+        expenses="0" income="0" today="2026-11-05"
+      />,
+    )
+    expect(spaced(screen.getByTestId('accounts-free'))).toContain('-100,00 $')
+  })
+
   it('свободно — без валют, где свободного ноль', () => {
     render(
       <AccountsCard
