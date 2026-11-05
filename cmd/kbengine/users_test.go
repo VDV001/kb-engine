@@ -4,34 +4,56 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 )
 
 // fakeKeychain stands in for the Связка ключей: тесты не пишут в настоящую.
+// setErr — отказ записи (видит секрет: настоящий security мог бы повторить
+// его в своем выводе); getErr — отказ чтения (нет security, Linux).
 type fakeKeychain struct {
-	got map[string]string
-	err error
+	got    map[string]string
+	last   string // последний записанный секрет: Delete его не стирает
+	setErr func(secret string) error
+	getErr error
+}
+
+func (f *fakeKeychain) Get(account string) (string, error) {
+	if f.getErr != nil {
+		return "", f.getErr
+	}
+	v, ok := f.got[account]
+	if !ok {
+		return "", keychain.ErrNotFound
+	}
+	return v, nil
 }
 
 func (f *fakeKeychain) Set(account, secret string) error {
-	if f.err != nil {
-		return f.err
+	f.got[account], f.last = secret, secret // записалось, а потом отказало (чтение-проверка по таймауту)
+	if f.setErr != nil {
+		return f.setErr(secret)
 	}
-	f.got[account] = secret
 	return nil
 }
 
-func withFakeKeychain(t *testing.T, err error) *fakeKeychain {
+func (f *fakeKeychain) Delete(account string) error {
+	delete(f.got, account)
+	return nil
+}
+
+func withFakeKeychain(t *testing.T, setErr func(string) error) *fakeKeychain {
 	t.Helper()
-	f := &fakeKeychain{got: map[string]string{}, err: err}
+	f := &fakeKeychain{got: map[string]string{}, setErr: setErr}
 	prev := usersKeychain
-	usersKeychain = func() secretSetter { return f }
+	usersKeychain = func() tokenKeychain { return f }
 	t.Cleanup(func() { usersKeychain = prev })
 	return f
 }
@@ -113,8 +135,12 @@ func TestUsersAddPutsTheTokenIntoTheKeychain(t *testing.T) {
 // Связка отказала — токен не сохранен нигде, кроме хэша. Такой вход закрыт
 // сразу: иначе человек остался бы с хэшем, к которому нет токена, и
 // повторный add отказал бы «уже есть».
+// Отказ Связки после записи: в ней не остается мертвого токена, а текст
+// отказа, даже повторивший секрет, в терминал его не доносит.
 func TestUsersAddRevokesWhenTheKeychainRefuses(t *testing.T) {
-	withFakeKeychain(t, errors.New("user canceled"))
+	kc := withFakeKeychain(t, func(secret string) error {
+		return fmt.Errorf("security: add-generic-password -w %q: user canceled", secret)
+	})
 	dir := t.TempDir()
 	var out, errb bytes.Buffer
 	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 1 {
@@ -123,7 +149,44 @@ func TestUsersAddRevokesWhenTheKeychainRefuses(t *testing.T) {
 	if out.Len() != 0 {
 		t.Errorf("stdout %q on a refusal", out.String())
 	}
+	if kc.last == "" || strings.Contains(errb.String(), kc.last) {
+		t.Errorf("stderr carries the token (or nothing was written): %q", errb.String())
+	}
+	if v, ok := kc.got["server-0a1b2c3d"]; ok {
+		t.Errorf("a dead token %q stayed in the keychain", v)
+	}
 	addToFile(t, dir, "anna") // вход закрыт, имя свободно для нового токена
+}
+
+// Занятая учетка Связки — отказ до выпуска, как и занятый файл: -U молча
+// заменил бы токен источника, уже настроенного в окне.
+func TestUsersAddRefusesAnOccupiedKeychainAccount(t *testing.T) {
+	kc := withFakeKeychain(t, nil)
+	kc.got["server-0a1b2c3d"] = "the window's own token"
+	dir := t.TempDir()
+	var out, errb bytes.Buffer
+	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 2 {
+		t.Fatalf("exit %d, want 2; stderr %s", code, errb.String())
+	}
+	if kc.got["server-0a1b2c3d"] != "the window's own token" {
+		t.Errorf("the window's token replaced: %q", kc.got["server-0a1b2c3d"])
+	}
+	addToFile(t, dir, "anna") // отказ до выпуска: anna не заведена
+}
+
+// Связка недоступна (нет security, Linux, имя учетки с пробелом) — тоже
+// отказ до выпуска, а не выпуск и закрытие.
+func TestUsersAddRefusesAnUnreadableKeychainBeforeIssuing(t *testing.T) {
+	kc := withFakeKeychain(t, nil)
+	kc.getErr = errors.New(`exec: "security": executable file not found in $PATH`)
+	dir := t.TempDir()
+	var out, errb bytes.Buffer
+	if code := run([]string{"users", "add", "--tenants", dir, "--id", "anna", "--keychain", "server-0a1b2c3d"}, &out, &errb); code != 2 {
+		t.Fatalf("exit %d, want 2; stderr %s", code, errb.String())
+	}
+	if _, err := os.Stat(filepath.Join(dir, "auth", "users.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("the registry was written before the keychain was known to work: %v", err)
+	}
 }
 
 func TestUsersCommandRefusals(t *testing.T) {

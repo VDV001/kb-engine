@@ -49,14 +49,16 @@ type usersTargetOf struct {
 	tokenOut string
 }
 
-// secretSetter is where users add --keychain puts the token: Связка ключей
+// tokenKeychain is where users add --keychain puts the token: Связка ключей
 // этого Мака, в тестах — память.
-type secretSetter interface {
+type tokenKeychain interface {
+	Get(account string) (string, error)
 	Set(account, secret string) error
+	Delete(account string) error
 }
 
 // usersKeychain — та же служба, что читают окно и kbengine-mcp.
-var usersKeychain = func() secretSetter { return keychain.Store{Service: "kb-desktop"} }
+var usersKeychain = func() tokenKeychain { return keychain.Store{Service: "kb-desktop"} }
 
 const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name> [add: --keychain <source id> | --token-out <new file>]"
 
