@@ -95,19 +95,27 @@ button { font-family: inherit; }
    круглый конец линии не оставляет точки), поэтому скачка нет. Цикл запускает
    класс wake (app.js: ⌥Space и наведение) и всегда доигрывает: уведенный с
    28 px знака курсор не обрывает его рывком. Пока идет цикл, под буквами
-   бледный след (mark-ghost); в покое его нет, края букв не двоятся. */
-.mark-ghost { opacity: 0; }
-.brand.wake .mark-ghost { opacity: .35; }
+   бледный след (mark-ghost); в покое его нет, края букв не двоятся.
+   Темп (решение владельца 05.11: прежние 0.6 с с --z-ease читались как
+   моргание): все три буквы стираются вместе за 0.35 с (mark-erase), затем
+   ведутся внахлест — D с 0.35 с, V с 0.7 с, K с 1.05 с, по 0.7 с каждая
+   (mark-draw, ease-in-out без рывка в начале); цикл кончается на 1.75 с.
+   Две анимации на букву, а не своя раскладка процентов: темп задает --d.
+   mark-draw стоит в списке первой: пока идет mark-erase, она главнее, а после
+   нее до своего старта mark-draw держит букву скрытой (backwards, 1.1).
+   Конец цикла — animationend mark-draw у K (app.js). След проявляется
+   сразу (под еще целыми буквами его не видно) и гаснет за 0.3 с. */
+.mark-ghost { opacity: 0; transition: opacity .3s ease; }
+.brand.wake .mark-ghost { opacity: .35; transition: none; }
 .mark-dvk { stroke-dasharray: 1 1.2; stroke-dashoffset: 0; }
-.brand.wake .mark-dvk { animation: mark-redraw .6s var(--z-ease); }
-.brand.wake .mark-v { animation-delay: .2s; }
-.brand.wake .mark-k { animation-delay: .4s; }
-@keyframes mark-redraw {
-  0% { stroke-dashoffset: 0; }
-  45% { stroke-dashoffset: -1.1; }
-  45.01% { stroke-dashoffset: 1.1; }
-  100% { stroke-dashoffset: 0; }
+.mark-d { --d: .35s; } .mark-v { --d: .7s; } .mark-k { --d: 1.05s; }
+.brand.wake .mark-dvk {
+  animation: mark-draw .7s cubic-bezier(.45, 0, .25, 1) var(--d) backwards, mark-erase .35s cubic-bezier(.4, 0, .9, .6);
 }
+/* from обязателен: без него стирание начиналось бы с того, что под ним, —
+   скрытой буквы mark-draw (backwards), и буквы пропадали бы разом. */
+@keyframes mark-erase { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -1.1; } }
+@keyframes mark-draw { from { stroke-dashoffset: 1.1; } }
 @media (prefers-reduced-motion: reduce) {
   .mark-l, .mark-r { transition: none; }
   .brand.wake .mark-dvk { animation: none; }
