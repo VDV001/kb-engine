@@ -68,7 +68,7 @@ func BalancesPerCurrency(balances []AccountBalance) []CurrencyBalance {
 			at[currency] = i
 		}
 		out[i].Current = out[i].Current.Add(b.Current)
-		if group, _ := domain.SplitAccountName(b.Bank); group == "" || b.Current.Kopecks() < 0 {
+		if isFree(b.Bank, b.Current) {
 			out[i].Free = out[i].Free.Add(b.Current)
 		}
 	}

@@ -125,6 +125,21 @@ describe('AccountsCard — по валютам, края', () => {
     expect(spaced(screen.getByTestId('group-total-Банки'))).not.toContain('$')
   })
 
+  it('ничего свободного — ноль, а не рублевая оценка по курсу', () => {
+    render(
+      <AccountsCard
+        accounts={[{ bank: 'Резерв → Наличные', balance: '50.00', updated: '2026-11-05', currency: 'USD', rate: '90.00', base_value: '4500.00' }, accounts[2]]}
+        currencies={[{ currency: 'USD', current: '50.00', free: '0.00' }, { currency: '', current: '5000.00', free: '0.00' }]}
+        totals={[{ group: 'Резерв', currency: 'USD', confirmed: '50.00', current: '50.00' }, totals[2]]}
+        free="4500.00"
+        expenses="0" income="0" today="2026-11-05"
+      />,
+    )
+    const free = spaced(screen.getByTestId('accounts-free'))
+    expect(free).toContain('0,00')
+    expect(free).not.toContain('4 500')
+  })
+
   it('свободно — без валют, где свободного ноль', () => {
     render(
       <AccountsCard

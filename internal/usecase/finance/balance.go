@@ -168,12 +168,19 @@ func FreeMoney(balances []AccountBalance) domain.Money {
 		if b.Currency == "" {
 			value = b.Current // собрано руками: валюты не знает, оценка и есть Current
 		}
-		group, _ := domain.SplitAccountName(b.Bank)
-		if group == "" || value.Kopecks() < 0 {
+		if isFree(b.Bank, value) {
 			free = free.Add(value)
 		}
 	}
 	return free
+}
+
+// isFree is the one rule of what counts as free money, for FreeMoney and
+// BalancesPerCurrency alike: обычный счет свободен, обязательство (минус)
+// вычитается, отложенное и одолженное — нет. Две копии правила разошлись бы.
+func isFree(bank string, amount domain.Money) bool {
+	group, _ := domain.SplitAccountName(bank)
+	return group == "" || amount.Kopecks() < 0
 }
 
 // Confirmations — когда именно владелец подтвердил остаток каждого счёта.

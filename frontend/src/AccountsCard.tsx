@@ -67,7 +67,7 @@ export function AccountsCard({
   accounts,
   groups: engineGroups,
   free,
-  currencies,
+  currencies: engineCurrencies,
   totals,
   expenses,
   income,
@@ -149,11 +149,17 @@ export function AccountsCard({
   }
   const plain = groups.find((g) => g.group === '')?.accounts ?? []
   const kinds = groups.filter((g) => g.group !== '')
+  // Валюта по нулю не печатается: закрытый счет показал бы «0,00 $» в итоге.
+  // Пустой список (сервер без счетов) — как старый сервер: «0,00 ₽», не пустота.
+  const nonZero = engineCurrencies?.filter((c) => toKopecks(c.current) !== 0)
+  const currencies = nonZero !== undefined && nonZero.length > 0 ? nonZero : undefined
   // Рублевая оценка по курсу счетов — справка рядом, когда есть что оценивать.
   const estimated = currencies !== undefined && currencies.some((c) => c.currency !== '')
   const unvaluedUnits = [
     ...new Set(accounts.filter((a) => a.unvalued && now(a) !== 0).map((a) => unitOf(a.currency ?? ''))),
   ]
+  // Род, которого нет в totals движка, — null, и карточка показывает прежний
+  // итог: пустая строка выключила бы этот запасной вариант молча.
   const kindTotal = (group: string) =>
     totals === undefined ? null : perCurrency(totals.filter((t) => t.group === group).map((t) => [t.currency, t.current]))
 
@@ -194,7 +200,8 @@ export function AccountsCard({
               свободно{' '}
               <span className="privacy-mask font-bold">
                 {currencies !== undefined
-                  ? perCurrency(currencies.map((c) => [c.currency, c.free]))
+                  ? // Ничего свободного — ноль, а не рублевая оценка free по курсу.
+                    (perCurrency(currencies.map((c) => [c.currency, c.free])) ?? formatRub(0))
                   : formatRub(toKopecks(free ?? '0'))}
               </span>
             </span>
@@ -443,11 +450,23 @@ function byBank(plain: Account[]): { bank: string; accounts: Account[] }[] {
 }
 
 /**
- * Суммы по валютам одной строкой: «6 000,00 ₽ · 100,00 $». Каждая в своей
- * единице, без пересчета — числа считает движок, витрина только печатает.
+ * Суммы по валютам столбиком, каждая в своей единице и без пересчета — числа
+ * считает движок, витрина только печатает. Через «·» в узкой карточке суммы
+ * переносились посреди ряда (замечание владельца 05.11). Нули не печатаются;
+ * если не осталось ничего — null, и вызывающий показывает свой запасной итог.
  */
-function perCurrency(list: [currency: string, amount: string][]): string {
-  return list.map(([currency, amount]) => formatMoney(toKopecks(amount), currency)).join(' · ')
+function perCurrency(list: [currency: string, amount: string][]) {
+  const shown = list.filter(([, amount]) => toKopecks(amount) !== 0)
+  if (shown.length === 0) return null
+  return (
+    <span className="inline-flex flex-col items-end">
+      {shown.map(([currency, amount]) => (
+        <span key={currency} className="whitespace-nowrap">
+          {formatMoney(toKopecks(amount), currency)}
+        </span>
+      ))}
+    </span>
+  )
 }
 
 /**
