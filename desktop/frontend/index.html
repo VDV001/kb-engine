@@ -39,15 +39,15 @@
         </svg>
       </div>
       <nav class="cell tabs" id="tabs">
-        <button data-tab="all" class="active">Все <i></i></button>
-        <button data-tab="kb">База знаний <i></i></button>
-        <button data-tab="doc">Документы <i></i></button>
-        <button data-tab="code">Код <i></i></button>
+        <button data-tab="all" class="active" data-tip="Все" data-tip-b="Первые 5 записей базы и все файлы папок">Все <i></i></button>
+        <button data-tab="kb" data-tip="База знаний" data-tip-b="Записи каталога и kb-серверов">База знаний <i></i></button>
+        <button data-tab="doc" data-tip="Документы" data-tip-b="Файлы папок: .md .txt .pdf .docx .html .csv">Документы <i></i></button>
+        <button data-tab="code" data-tip="Код" data-tip-b="Файлы папок: .go .py .ts .js .json .yaml .sql и другие">Код <i></i></button>
         <span class="tab-ink"></span>
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
       <div class="cell">
-        <button class="gear" id="open-settings" title="Источники (⌘,)" aria-label="Источники">
+        <button class="gear" id="open-settings" data-tip="Источники" data-tip-k="⌘ ," data-tip-b="Папки, базы и kb-серверы, по которым идет поиск" aria-label="Источники">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>
           <span>источники</span>
         </button>
