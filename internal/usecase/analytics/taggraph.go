@@ -60,7 +60,9 @@ func TagGraph(c *domain.Catalog) Graph {
 		}
 	}
 
-	var g Graph
+	// Пустые списки, а не nil: экран перебирает nodes и edges, и null от
+	// пустой базы (или базы без общих тегов) ронял его целиком.
+	g := Graph{Nodes: []GraphNode{}, Edges: []GraphEdge{}}
 	for cat, n := range counts {
 		g.Nodes = append(g.Nodes, GraphNode{Category: cat, Count: n})
 	}
