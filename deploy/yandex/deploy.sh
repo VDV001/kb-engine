@@ -65,6 +65,11 @@ bind() { # <yc group…> <resource id> <role> <sa id>
 
 # verify checks the live state. Каждое чтение здесь может упасть (нет сети,
 # нет ресурса) — тогда проверка печатает ✘, а не обрывает скрипт молча.
+# Проверки идут через check "<что>" '<выражение>': выражение в одинарных
+# кавычках вычисляется в check через eval, когда переменные уже заданы, —
+# поэтому SC2016 (нет подстановки в кавычках) и SC2034 (keyj, body будто не
+# используются) здесь ложные.
+# shellcheck disable=SC2016,SC2034
 verify() {
   local ok=1 sid kid bucket keyj url code body cloud broad objs unenc n
   sid="$(idof iam service-account get --name "$sa" || true)"
