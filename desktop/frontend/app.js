@@ -225,8 +225,8 @@ async function pollIndex() {
 }
 if (native()) setTimeout(pollIndex, 3000);
 // Список источников — ради цветов строки источников; панель его обновляет сама.
-if (native()) native().Sources().then((v) => { state.known = v.sources || []; renderTabs(); render(); }).catch(() => {});
-if (native()) native().Tabs().then((t) => { state.tabs = t || []; renderTabs(); render(); }).catch(() => {});
+if (native()) native().Sources().then((v) => { state.known = v.sources || []; refreshTabs(); }).catch(() => {});
+if (native()) native().Tabs().then((t) => { state.tabs = t || []; refreshTabs(); }).catch(() => {});
 
 // --- Поиск ---------------------------------------------------------------------
 let timer;
@@ -313,25 +313,32 @@ const TYPE_TIP = {
 };
 const TYPE_NAME = { kb: "база", doc: "док", code: "код", image: "картинки" };
 state.tabs = DEFAULT_TABS;
+// Ключ вкладки — вид и значение (desktopconfig.Tab.Key), а не номер: после
+// удаления или перестановки активной иначе стала бы соседняя. Вкладку
+// неизвестного вида (ее записала новая сборка) окно хранит, но не показывает.
+const tabKey = (t) => t.kind + ":" + t.value;
+const visibleTab = (t) => (t.kind === "type" && TYPE_NAME[t.value] !== undefined) || t.kind === "source";
 const kbItem = (e) => ({ type: "kb", e });
 const fileItem = (f) => ({ type: "file", f });
 const tabItems = (t, kb, files) =>
   t.kind === "type"
     ? t.value === "kb" ? kb.map(kbItem) : files.filter((f) => f.kind === t.value).map(fileItem)
     : [...kb.filter((e) => e._src === t.value).map(kbItem), ...files.filter((f) => f._src === t.value).map(fileItem)];
-// Ключ вкладки — номер в списке: имя может повторяться, источник — тоже.
-const tabKeys = () => ["all", ...state.tabs.map((_, i) => "t" + i)];
+const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey)];
 function itemsOf(key, kb, files) {
   if (key === "all") return [...kb.slice(0, 5).map(kbItem), ...files.map(fileItem)];
-  const t = state.tabs[Number(key.slice(1))];
+  const t = state.tabs.find((x) => tabKey(x) === key);
   return t ? tabItems(t, kb, files) : [];
 }
+const sourceOf = (t) => state.known.find((x) => x.id === t.value);
 function tabTip(t) {
   if (t.kind === "type") return TYPE_TIP[t.value] || "";
-  const s = state.known.find((x) => x.id === t.value);
+  const s = sourceOf(t);
   return s ? `Записи и файлы источника ${label(s)}` : "Источника больше нет в списке — вкладка пуста";
 }
 // Полоса вкладок строится заново при смене набора; подчеркивание остается.
+// Полоса и выдача заново: набор вкладок или список источников сменился.
+function refreshTabs() { renderTabs(); render(); }
 function renderTabs() {
   const nav = $("#tabs"), ink = nav.querySelector(".tab-ink");
   nav.querySelectorAll("button").forEach((b) => b.remove());
@@ -344,7 +351,7 @@ function renderTabs() {
     nav.insertBefore(b, ink);
   };
   btn("all", "Все", "Первые 5 записей базы и найденные файлы папок");
-  state.tabs.forEach((t, i) => btn("t" + i, t.name, tabTip(t)));
+  state.tabs.filter(visibleTab).forEach((t) => btn(tabKey(t), t.name, tabTip(t)));
   if (!tabKeys().includes(state.tab)) state.tab = "all";
 }
 
@@ -652,6 +659,7 @@ const byKey = (k) => draft.sources.find((s) => s._key === k);
 
 function load(v) {
   state.known = v.sources || [];
+  refreshTabs(); // подписи вкладок по источникам зависят от списка
   draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
   draft.tokens = {};
@@ -1119,15 +1127,18 @@ document.addEventListener("keydown", (e) => {
 // Правка сохраняется сразу (SetTabs, без переиндексации) и сразу видна в
 // полосе. В браузере (dev-режим) раздел только показывает набор.
 function renderTabSettings() {
+  // Имя печатается в поле — не перерисовывать список под рукой: ввод пропал бы.
+  if ($("#tab-list").contains(document.activeElement) && document.activeElement.matches("input")) return;
   const editable = !!native(), n = state.tabs.length;
-  const what = (t) => t.kind === "type"
-    ? `<span class="what">тип · ${esc(TYPE_NAME[t.value] || t.value)}</span>`
-    : state.known.some((x) => x.id === t.value)
-      ? `<span class="what">источник · ${esc(label(state.known.find((x) => x.id === t.value)))}</span>`
-      : `<span class="what gone">источник убран</span>`;
+  const what = (t) => {
+    if (!visibleTab(t)) return `<span class="what gone">из новой версии окна</span>`;
+    if (t.kind === "type") return `<span class="what">тип · ${esc(TYPE_NAME[t.value])}</span>`;
+    const src = sourceOf(t);
+    return src ? `<span class="what">источник · ${esc(label(src))}</span>` : `<span class="what gone">источник убран</span>`;
+  };
   $("#tab-list").innerHTML = `<li class="fixed"><span>Все</span><span class="what">всегда первая</span><span></span></li>` +
     state.tabs.map((t, i) => `<li>
-      <input value="${esc(t.name)}" data-tab-name="${i}" aria-label="Имя вкладки" ${editable ? "" : "disabled"}>
+      <input value="${esc(t.name)}" data-tab-name="${i}" aria-label="Имя вкладки" ${editable && visibleTab(t) ? "" : "disabled"}>
       ${what(t)}
       <span class="tab-acts">
         <button data-tab-up="${i}" aria-label="Выше" ${editable && i ? "" : "disabled"}>↑</button>
@@ -1140,24 +1151,25 @@ function renderTabSettings() {
   $("#tab-add-source").innerHTML = `<option value="">по источнику…</option>` + srcs.map((x) => `<option value="${esc(x.id)}">${esc(label(x))}</option>`).join("");
   $("#tab-add-type").disabled = !editable || !types.length;
   $("#tab-add-source").disabled = !editable || !srcs.length;
-  renderTabs(); // подписи и подсказки полосы зависят от списка источников
-  render(); // счетчики и подчеркивание у новых кнопок
   dropStaleTip();
 }
-async function saveTabs(next) {
-  const prev = state.tabs;
+// Сохранения идут строго по очереди: Wails зовет привязки параллельно, и
+// быстрые ↓↓ могли бы прийти в Go в обратном порядке. При отказе набор
+// перечитывается из окна — откат к «прежнему» стер бы уже сохраненную правку.
+let tabSaves = Promise.resolve();
+function saveTabs(next) {
   state.tabs = next;
+  refreshTabs();
   renderTabSettings();
-  try {
-    await native().SetTabs(next);
-    showError("");
-  } catch (e) {
-    state.tabs = prev; // отказ движка — вернуть, что было, и сказать почему
-    renderTabSettings();
+  tabSaves = tabSaves.then(() => native().SetTabs(next)).then(() => showError("")).catch(async (e) => {
     showError("Вкладки не сохранены: " + e);
-  }
+    try { state.tabs = (await native().Tabs()) || []; } catch { /* остается то, что на экране */ }
+    refreshTabs();
+    renderTabSettings();
+  });
 }
-const TYPE_TITLE = { kb: "База знаний", doc: "Документы", code: "Код", image: "Картинки" };
+// Имена «+ по типу» — из набора по умолчанию: одна копия, а не вторая.
+const TYPE_TITLE = Object.fromEntries(DEFAULT_TABS.map((t) => [t.value, t.name]));
 $("#tab-list").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
