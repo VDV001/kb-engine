@@ -299,7 +299,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/finance/finance.go:150"
+        "internal/usecase/finance/finance.go:154"
       ]
     },
     {
@@ -1272,8 +1272,8 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Add(p, newULID, time.Now)",
-          "detail": "cmd/kbengine/fin.go:307 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:146",
-          "source": "internal/usecase/finance/finance.go:150",
+          "detail": "cmd/kbengine/fin.go:307 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:150",
+          "source": "internal/usecase/finance/finance.go:154",
           "unverified": false,
           "symbol": "Add"
         },
@@ -1309,8 +1309,8 @@
           "from": "ad-financejsonl",
           "to": "f-ledger",
           "call": "finance.Sort(recs) → запись transactions.jsonl",
-          "detail": "finance.Sort (internal/usecase/finance/finance.go:179) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
-          "source": "internal/usecase/finance/finance.go:184",
+          "detail": "finance.Sort (internal/usecase/finance/finance.go:183) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
+          "source": "internal/usecase/finance/finance.go:188",
           "unverified": false
         }
       ],
@@ -3011,8 +3011,8 @@
           "from": "uc-finance",
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
-          "detail": "internal/usecase/finance/finance.go:201 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:199)",
-          "source": "internal/usecase/finance/finance.go:206",
+          "detail": "internal/usecase/finance/finance.go:205 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:199)",
+          "source": "internal/usecase/finance/finance.go:210",
           "unverified": false,
           "symbol": "SortByRecency"
         }
