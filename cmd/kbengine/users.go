@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
@@ -14,9 +15,11 @@ import (
 )
 
 // runUsers is `kbengine users add|revoke --tenants <хранилище> --id <имя>`:
-// люди сервера serve --tenants. add печатает токен в stdout один раз — больше
-// его не покажет никто, в хранилище только хэш. revoke закрывает вход, база
-// человека остается.
+// люди сервера serve --tenants. add кладет токен в Связку ключей этого Мака
+// (--keychain) или в новый файл 0600 (--token-out) и никогда в терминал: вывод
+// терминала уходит в историю оболочки, журнал агента и переписку с моделью, а
+// токен открывает базу и финансы человека. В хранилище только хэш. revoke
+// закрывает вход, база человека остается.
 func runUsers(args []string, stdout, stderr io.Writer) int {
 	if len(args) > 0 && (args[0] == "-h" || args[0] == "--help" || args[0] == "help") {
 		fmt.Fprintln(stdout, usersUsage) // просьба о помощи — успех (help_test.go)
@@ -34,13 +37,16 @@ func runUsers(args []string, stdout, stderr io.Writer) int {
 	if sub == "revoke" {
 		return usersRevoke(tg.store, tg.id, stderr)
 	}
-	return usersAdd(tg.store, tg.id, stdout, stderr)
+	return usersAdd(tg, stderr)
 }
 
-// usersTargetOf is the store and the person a users command acts on.
+// usersTargetOf is the store and the person a users command acts on, and for
+// add — where the token goes: ровно одно из keychain и tokenOut.
 type usersTargetOf struct {
-	store blob.Store
-	id    domain.UserID
+	store    blob.Store
+	id       domain.UserID
+	keychain string
+	tokenOut string
 }
 
 // secretSetter is where users add --keychain puts the token: Связка ключей
@@ -52,7 +58,7 @@ type secretSetter interface {
 // usersKeychain — та же служба, что читают окно и kbengine-mcp.
 var usersKeychain = func() secretSetter { return keychain.Store{Service: "kb-desktop"} }
 
-const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name>"
+const usersUsage = "usage: kbengine users add|revoke --tenants <s3://bucket | dir> --id <name> [add: --keychain <source id> | --token-out <new file>]"
 
 // usersTarget parses the flags into the store and the person; nil — выйти с
 // кодом code.
@@ -62,6 +68,11 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 	loc := fs.String("tenants", "", "s3://bucket or directory, the same as serve --tenants")
 	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for s3:// (mode 0600)")
 	name := fs.String("id", "", "person's name: a-z, 0-9 and inner hyphens, up to 32")
+	var kc, out *string
+	if sub == "add" {
+		kc = fs.String("keychain", "", "put the token into this Mac's Keychain under this account (the window's source id)")
+		out = fs.String("token-out", "", "write the token into this new file (mode 0600; an existing file is refused)")
+	}
 	if code, stop := parseFlags(fs, args); stop {
 		return nil, code
 	}
@@ -74,12 +85,21 @@ func usersTarget(sub string, args []string, stderr io.Writer) (*usersTargetOf, i
 		fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
 		return nil, 2
 	}
+	tg := &usersTargetOf{id: id}
+	if sub == "add" {
+		if (*kc == "") == (*out == "") {
+			fmt.Fprintf(stderr, "users add: назови ровно одно место для токена: --keychain <id источника> или --token-out <новый файл>; в терминал токен не выводится\n")
+			return nil, 2
+		}
+		tg.keychain, tg.tokenOut = *kc, *out
+	}
 	store, err := openTenantStore(*loc, *s3TokenFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "users %s: %v\n", sub, err)
 		return nil, 2
 	}
-	return &usersTargetOf{store: store, id: id}, 0
+	tg.store = store
+	return tg, 0
 }
 
 func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
@@ -91,17 +111,63 @@ func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
 	return 0
 }
 
-func usersAdd(store blob.Store, id domain.UserID, stdout, stderr io.Writer) int {
-	tok, err := userauth.Add(context.Background(), store, id)
-	if errors.Is(err, domain.ErrUserExists) {
-		fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
-		return 1
+func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
+	ctx := context.Background()
+	// Файл открывается до выпуска: занятое место — отказ, пока токена еще нет,
+	// а O_EXCL не дает затереть чужой файл.
+	var f *os.File
+	if tg.tokenOut != "" {
+		var err error
+		if f, err = os.OpenFile(tg.tokenOut, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); err != nil {
+			fmt.Fprintf(stderr, "users add: %v\n", err)
+			return 2
+		}
 	}
+	dropFile := func() {
+		if f != nil {
+			_ = f.Close()
+			_ = os.Remove(tg.tokenOut)
+		}
+	}
+	tok, err := userauth.Add(ctx, tg.store, tg.id)
 	if err != nil {
-		fmt.Fprintf(stderr, "users add: %v\n", err)
+		dropFile()
+		if errors.Is(err, domain.ErrUserExists) {
+			fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
+		} else {
+			fmt.Fprintf(stderr, "users add: %v\n", err)
+		}
 		return 1
 	}
-	fmt.Fprintf(stderr, "users add: токен %s показан один раз — сохрани его в Связке ключей, в хранилище только хэш\n", id)
-	fmt.Fprintln(stdout, tok)
+	where, err := keepToken(tg, f, tok)
+	if err != nil {
+		// Токен нигде не сохранился, а хэш уже в хранилище: вход закрывается
+		// сразу, иначе к нему нет ключа, а повторный add ответил бы «уже есть».
+		dropFile()
+		if rerr := userauth.Revoke(ctx, tg.store, tg.id); rerr != nil {
+			fmt.Fprintf(stderr, "users add: токен не сохранен (%v), и вход не закрылся (%v): users revoke --id %s\n", err, rerr, tg.id)
+			return 1
+		}
+		fmt.Fprintf(stderr, "users add: токен не сохранен (%v) — вход %s закрыт, повтори add\n", err, tg.id)
+		return 1
+	}
+	fmt.Fprintf(stderr, "users add: токен %s %s; в хранилище только хэш\n", tg.id, where)
 	return 0
+}
+
+// keepToken puts tok where the flags said and names the place for the person.
+func keepToken(tg *usersTargetOf, f *os.File, tok string) (string, error) {
+	if f != nil {
+		if _, err := f.WriteString(tok + "\n"); err != nil {
+			return "", err
+		}
+		if err := f.Close(); err != nil {
+			return "", err
+		}
+		return "в файле " + tg.tokenOut + " (0600): передай его человеку и удали", nil
+	}
+	if err := usersKeychain().Set(tg.keychain, tok); err != nil {
+		return "", err
+	}
+	return "в Связке ключей (kb-desktop, " + tg.keychain + ")", nil
 }
