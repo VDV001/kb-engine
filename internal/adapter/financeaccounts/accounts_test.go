@@ -84,7 +84,7 @@ func TestParse(t *testing.T) {
 		{"bad day", `{"accounts":[{"bank":"Сбербанк","balance":"1","updated":"06.11.2026"}]}`, 0, "Сбербанк"},
 		{"rate without currency", `{"accounts":[{"bank":"Сбербанк","balance":"1","rate":"84.28"}]}`, 0, "Сбербанк"},
 		{"two spellings of one account", `{"accounts":[{"bank":"Сбербанк","balance":"1"},{"bank":"сбербанк ","balance":"2"}]}`, 0, "сбербанк"},
-		{"unknown field", `{"accounts":[{"bank":"Сбербанк","balance":"1","balanse":"2"}]}`, 0, "balanse"},
+		{"unknown field", `{"accounts":[{"bank":"Сбербанк","balance":"1","amount":"2"}]}`, 0, "amount"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

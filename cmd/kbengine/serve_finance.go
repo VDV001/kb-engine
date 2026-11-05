@@ -235,32 +235,9 @@ func transactionParams(a httpapi.TransactionAdd) (finance.AddParams, error) {
 // решение finance.ConfirmBalance, условная запись счетов с повтором по свежему.
 // День и момент подтверждения — в поясе человека (tz), как у операций.
 func (f storeFinances) ConfirmBalance(ctx context.Context, c httpapi.BalanceConfirm) (httpapi.BalanceConfirmed, error) {
-	bad := func(err error) (httpapi.BalanceConfirmed, error) {
-		return httpapi.BalanceConfirmed{}, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
-	}
-	if strings.TrimSpace(c.Amount) == "" {
-		return bad(errors.New("amount is required"))
-	}
-	money, err := domain.ParseMoney(c.Amount)
+	change, err := balanceChange(c)
 	if err != nil {
-		return bad(err)
-	}
-	change := finance.BalanceChange{Bank: c.Bank, Balance: money, Create: c.Create}
-	if c.Currency != "" {
-		cur, err := domain.NewCurrency(c.Currency)
-		if err != nil {
-			return bad(err)
-		}
-		change.Currency = &cur
-	}
-	if c.Rate != "" {
-		per, err := domain.ParseMoney(c.Rate)
-		if err != nil {
-			return bad(fmt.Errorf("rate: %w", err))
-		}
-		if change.Rate, err = domain.NewRate(per); err != nil {
-			return bad(err)
-		}
+		return httpapi.BalanceConfirmed{}, fmt.Errorf("%w: %w", httpapi.ErrBadWrite, err)
 	}
 	now, err := f.clockIn(c.TZ)
 	if err != nil {
@@ -293,4 +270,33 @@ func (f storeFinances) ConfirmBalance(ctx context.Context, c httpapi.BalanceConf
 	}
 	return httpapi.BalanceConfirmed{Bank: confirmed.Bank(), Balance: confirmed.Balance().String(),
 		Updated: confirmed.Updated().Format(time.DateOnly), Created: created}, nil
+}
+
+// balanceChange parses the request the way fin balance parses its flags.
+func balanceChange(c httpapi.BalanceConfirm) (finance.BalanceChange, error) {
+	if strings.TrimSpace(c.Amount) == "" {
+		return finance.BalanceChange{}, errors.New("amount is required")
+	}
+	money, err := domain.ParseMoney(c.Amount)
+	if err != nil {
+		return finance.BalanceChange{}, err
+	}
+	change := finance.BalanceChange{Bank: c.Bank, Balance: money, Create: c.Create}
+	if c.Currency != "" {
+		cur, err := domain.NewCurrency(c.Currency)
+		if err != nil {
+			return finance.BalanceChange{}, err
+		}
+		change.Currency = &cur
+	}
+	if c.Rate != "" {
+		per, err := domain.ParseMoney(c.Rate)
+		if err != nil {
+			return finance.BalanceChange{}, fmt.Errorf("rate: %w", err)
+		}
+		if change.Rate, err = domain.NewRate(per); err != nil {
+			return finance.BalanceChange{}, err
+		}
+	}
+	return change, nil
 }
