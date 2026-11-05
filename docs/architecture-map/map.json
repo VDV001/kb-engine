@@ -1309,8 +1309,8 @@
           "from": "ad-financejsonl",
           "to": "f-ledger",
           "call": "finance.Sort(recs) → запись transactions.jsonl",
-          "detail": "finance.Sort (internal/usecase/finance/finance.go:203) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
-          "source": "internal/usecase/finance/finance.go:230",
+          "detail": "finance.Sort (internal/usecase/finance/finance.go:209) сортирует сначала по ДАТЕ, id — только tie-break внутри дня. Это порядок ФАЙЛА ради читаемого git-диффа; порядок показа задаёт SortByRecency",
+          "source": "internal/usecase/finance/finance.go:242",
           "unverified": false
         }
       ],
@@ -1565,7 +1565,7 @@
           "from": "cmd-fin",
           "to": "f-workbook",
           "call": "pushToWorkbook / financexlsx.ApplyRows",
-          "detail": "cmd/kbengine/sync.go:269 при направлении DirectionToWorkbook; конфликт (обе стороны изменились) НЕ сливается — cmd/kbengine/sync.go:253 пишет расхождение и выходит с ненулевым кодом — internal/adapter/financexlsx/apply.go:185",
+          "detail": "cmd/kbengine/sync.go:276 при направлении DirectionToWorkbook; конфликт (обе стороны изменились) НЕ сливается — cmd/kbengine/sync.go:253 пишет расхождение и выходит с ненулевым кодом — internal/adapter/financexlsx/apply.go:185",
           "source": "internal/adapter/financexlsx/apply.go:185",
           "unverified": false
         },
@@ -1574,8 +1574,8 @@
           "from": "cmd-fin",
           "to": "f-syncstate",
           "call": "financejsonl.SaveState(statePath, finance.BaselineOf(recs, now))",
-          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:500 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
-          "source": "cmd/kbengine/sync.go:557",
+          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:507 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
+          "source": "cmd/kbengine/sync.go:564",
           "unverified": false,
           "symbol": "SaveState"
         }
@@ -1619,8 +1619,8 @@
           "from": "ad-httpapi",
           "to": "uc-finance",
           "call": "finance.CurrentBalances(accounts, txs, confs)",
-          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:221): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта. Третий аргумент confs появился в #178: подтверждение получило МОМЕНТ (.balance-state.json рядом с книгой), и спор «видел ли человек эту трату» внутри дня подтверждения решается точно, а не всегда в одну сторону",
-          "source": "internal/usecase/finance/balance.go:221",
+          "detail": "finance.CurrentBalances (internal/usecase/finance/balance.go:224): остаток на сейчас = подтверждённое число минус траты, записанные после подтверждения; расчёт может только занижать, потому что доходу домен не даёт счёта. Третий аргумент confs появился в #178: подтверждение получило МОМЕНТ (.balance-state.json рядом с книгой), и спор «видел ли человек эту трату» внутри дня подтверждения решается точно, а не всегда в одну сторону",
+          "source": "internal/usecase/finance/balance.go:224",
           "unverified": false
         },
         {
@@ -1628,8 +1628,8 @@
           "from": "uc-finance",
           "to": "fe-finances",
           "call": "spentAfter — переводы НЕ исключаются",
-          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:291) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Асимметрия остаётся, но дефект #159 закрыт замером: переводов себе в журнале за всю историю один, занижение от них сейчас равно нулю. Открытой осталась вторая половина — #208: доходу нельзя дать счёт, поэтому приход второй стороне не прибавляется",
-          "source": "internal/usecase/finance/balance.go:291",
+          "detail": "на этом эндпоинте итогов нет вовсе: spentAfter (internal/usecase/finance/balance.go:294) фильтрует по IsExpense и SameAccountName, и внутренний перевод в вычет ВХОДИТ — деньги со счёта действительно ушли. Правило IsInternalTransfer живёт в finance.Summarize, то есть на другом эндпоинте (см. сценарий «итоги за период»). Асимметрия остаётся, но дефект #159 закрыт замером: переводов себе в журнале за всю историю один, занижение от них сейчас равно нулю. Вторая половина (#208) закрыта обменом (#418): у перевода себе есть вторая сторона received, и счёт получения прибавляет её после дня своего подтверждения (receivedAfter, internal/usecase/finance/balance.go); обычному доходу счёт по-прежнему не дают",
+          "source": "internal/usecase/finance/balance.go:294",
           "unverified": false,
           "symbol": "spentAfter"
         }
@@ -3011,8 +3011,8 @@
           "from": "uc-finance",
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
-          "detail": "internal/usecase/finance/finance.go:247 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:226)",
-          "source": "internal/usecase/finance/finance.go:252",
+          "detail": "internal/usecase/finance/finance.go:259 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:241)",
+          "source": "internal/usecase/finance/finance.go:264",
           "unverified": false,
           "symbol": "SortByRecency"
         }
@@ -3516,8 +3516,8 @@
           "to": "uc-finance",
           "call": "warnUnderstated(from, recs, stdout)",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:579",
-          "detail": "cmd/kbengine/sync.go:579 перечисляет спорные записи и просит подтвердить баланс заново"
+          "source": "cmd/kbengine/sync.go:586",
+          "detail": "cmd/kbengine/sync.go:586 перечисляет спорные записи и просит подтвердить баланс заново"
         },
         {
           "n": 3,
@@ -3534,8 +3534,8 @@
           "to": "owner",
           "call": "список спорных трат",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:563",
-          "detail": "cmd/kbengine/sync.go:563 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
+          "source": "cmd/kbengine/sync.go:570",
+          "detail": "cmd/kbengine/sync.go:570 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
         }
       ]
     },
