@@ -141,11 +141,21 @@ var operationsHeader = append(slices.Clone(exportHeader), "Перевод себ
 
 var operationsWidths = append(slices.Clone(exportWidths), 12)
 
-// accountsHeader: «Сейчас» — в валюте счета, «В рублях» — его оценка тем же
-// расчетом, что у экрана; складывать в Excel можно только последнюю (#332).
-var accountsHeader = []string{"Счёт", "Подтверждено", "Обновлено", "Сейчас", "Валюта", "Курс", "В рублях"}
+// accountsHeader: суммы — в валюте счета. Пересчета «в рубли» нет намеренно
+// (решение владельца 05.11): курс меняется, и сумма по нему — оценка, а не
+// факт. Курс счета показан как есть, справочно.
+var accountsHeader = []string{"Счёт", "Подтверждено", "Обновлено", "Сейчас", "Валюта", "Курс"}
 
-var accountsWidths = []float64{24, 14, 12, 14, 8, 10, 14}
+var accountsWidths = []float64{24, 14, 12, 14, 8, 10}
+
+// totalsHeader: итоги по роду счета и валюте — валюты не складываются.
+var totalsHeader = []string{"Род", "Валюта", "Подтверждено", "Сейчас"}
+
+var totalsWidths = []float64{20, 8, 14, 14}
+
+// plainAccounts names the kind of the ordinary accounts, whose name carries
+// no «Род →».
+const plainAccounts = "Обычные счета"
 
 // entriesHeader: у своих артефактов (заметки, творения) обычно есть только дата
 // создания, у чужих материалов — дата добавления, поэтому колонок две.
@@ -187,20 +197,24 @@ func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
 				d.Place, d.Description, d.Amount, d.Account, currencyLabel(d.Currency), transfer,
 			})
 		}
+		balances := finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations)
 		var accs [][]string
-		for _, b := range finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations) {
+		for _, b := range balances {
 			d := toBalanceDTO(b)
-			inRubles := d.BaseValue // валютный счет: оценка; без курса — пусто, а не ноль
-			if d.Currency == "" {
-				inRubles = d.Current
+			accs = append(accs, []string{d.Bank, d.Balance, d.Updated, d.Current, currencyLabel(d.Currency), d.Rate})
+		}
+		var totals [][]string
+		for _, tot := range finance.BalancesByCurrency(balances) {
+			group := tot.Group
+			if group == "" {
+				group = plainAccounts
 			}
-			accs = append(accs, []string{
-				d.Bank, d.Balance, d.Updated, d.Current, currencyLabel(d.Currency), d.Rate, inRubles,
-			})
+			totals = append(totals, []string{group, tot.Currency, tot.Confirmed.String(), tot.Current.String()})
 		}
 		sendBook(w, "finances.xlsx", []sheet{
 			{"Операции", operationsHeader, operationsWidths, ops, []int{amountColumn}},
-			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5, 6}},
+			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5}},
+			{"Итого", totalsHeader, totalsWidths, totals, []int{2, 3}},
 		})
 	}
 }
