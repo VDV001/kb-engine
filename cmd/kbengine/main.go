@@ -336,7 +336,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	filesIndex := fs.String("files-index", "", "optional file to keep the file index in between runs (rebuild then rereads only changed files)")
 	// Доступ из сети (kb-desktop на другом Mac, VPS, Yandex Cloud): токен из
 	// файла 0600 и TLS. Адрес не на loopback без них — отказ при запуске.
-	tokenFile := fs.String("token-file", "", "optional file with a bearer token (mode 0600, ≥32 chars); every request then needs Authorization: Bearer <token>")
+	tokenFile := fs.String("token-file", "", "optional file with a bearer token (mode 0600, ≥32 chars); every request then needs it in X-KB-Token or Authorization: Bearer")
 	tlsCert := fs.String("tls-cert", "", "optional TLS certificate (PEM); with --tls-key serves HTTPS")
 	tlsKey := fs.String("tls-key", "", "optional TLS private key (PEM), paired with --tls-cert")
 	allowOpen := fs.Bool("allow-open", false, "allow a network address without --token-file or TLS: access and TLS are handled by the platform (ingress, docker -p 127.0.0.1:...)")

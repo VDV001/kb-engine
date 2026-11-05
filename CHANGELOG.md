@@ -111,6 +111,15 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   `/healthz` и `/readyz` отвечают без сведений о базах. Битый реестр не пускает никого. С `--tenants` не
   берутся личные файлы этого Мака (`--ledger`, `--media`, `--files-root` и другие).
 
+### Changed
+
+- **Токен приложения едет в заголовке `X-KB-Token`.** Serverless Container в Yandex Cloud
+  вырезает `Authorization` из запроса, а `Bearer` в нем проверяет как свой IAM-токен: первый
+  живой сервер отвечал 403 раньше приложения. Окно и `kbengine-mcp` шлют токен только в
+  `X-KB-Token`; сервер (`--token-file` и `--tenants`) понимает оба заголовка, и если
+  `X-KB-Token` есть, решает он. Серверы до этой версии `X-KB-Token` не знают — окно новой
+  версии к ним не войдет.
+
 ### Fixed
 
 - **Пустая база больше не роняет веб-экран.** `/api/graph` отдавал `"nodes": null` и `"edges": null`

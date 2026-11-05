@@ -141,7 +141,9 @@ broken link simply does not draw.
 token **and** TLS, or the server refuses to start: without the token anyone on the
 network reads the catalog (and, with `--ledger`, the finances); without TLS the token
 crosses the network in clear text. With `--token-file` every request, pages and
-`/metrics` included, needs `Authorization: Bearer <token>` and gets 401 otherwise;
+`/metrics` included, needs the token in `X-KB-Token` or `Authorization: Bearer <token>` and
+gets 401 otherwise (the window and the MCP server send `X-KB-Token`: Yandex Serverless
+Containers strip `Authorization` and check a Bearer in it as their own IAM token);
 `/healthz` and `/readyz` stay open for probes (`/readyz` without a token answers with the
 status code only). The token is for API clients — the kb-desktop window and the MCP server.
 A browser cannot send it, and the check applies to every request wherever it comes from, so

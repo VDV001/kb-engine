@@ -16,6 +16,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -141,6 +142,30 @@ func TestTenantsAreIsolatedOnEveryRoute(t *testing.T) {
 	}
 	if seenA < 3 {
 		t.Fatalf("A's marker visible on %d routes for A — the isolation check would pass vacuously", seenA)
+	}
+}
+
+// Токен в X-KB-Token: так его везут окно и kbengine-mcp, потому что
+// Serverless Container вырезает Authorization.
+func TestTenantsAdmitTheTokenHeader(t *testing.T) {
+	f := newTenants(t)
+	for tok, want := range map[string]int{f.tokA: http.StatusOK, f.tokA + "x": http.StatusUnauthorized} {
+		req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+		req.Header.Set(httpapi.TokenHeader, tok)
+		rec := httptest.NewRecorder()
+		f.h.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("X-KB-Token %q: status %d, want %d", tok, rec.Code, want)
+		}
+	}
+	// Есть X-KB-Token — решает он: верный Bearer рядом с чужим не пускает.
+	req := httptest.NewRequest(http.MethodGet, "/api/stats", nil)
+	req.Header.Set(httpapi.TokenHeader, "nope")
+	req.Header.Set("Authorization", "Bearer "+f.tokA)
+	rec := httptest.NewRecorder()
+	f.h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("foreign X-KB-Token beside A's Bearer: status %d, want 401", rec.Code)
 	}
 }
 

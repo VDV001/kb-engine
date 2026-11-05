@@ -1,6 +1,6 @@
 // Package kbserver is the client of a remote `kbengine serve`: окно и MCP
 // спрашивают сервер-источник (VPS, Yandex Cloud, другой Mac) по HTTPS с
-// токеном Bearer — тем же протоколом, каким говорят витрина и окно.
+// токеном в заголовке X-KB-Token.
 package kbserver
 
 import (
@@ -19,11 +19,14 @@ import (
 // у него (окно — serverMessage), здесь — нейтральные сигналы.
 var (
 	ErrUnauthorized = errors.New("kbserver: unauthorized")
-	ErrUnreachable  = errors.New("kbserver: unreachable")
-	ErrNotKB        = errors.New("kbserver: not a kb server")
-	ErrServerError  = errors.New("kbserver: server error")
+	// ErrForbidden — 403: отказ до приложения (облако, прокси), а не токен.
+	// Обертка ErrUnauthorized: кто различает только «не пустили», различает.
+	ErrForbidden   = fmt.Errorf("%w: forbidden before the app", ErrUnauthorized)
+	ErrUnreachable = errors.New("kbserver: unreachable")
+	ErrNotKB       = errors.New("kbserver: not a kb server")
+	ErrServerError = errors.New("kbserver: server error")
 	// ErrRedirect — сервер перенаправил запрос. Клиент по редиректам не идет:
-	// Go пересылает Authorization на тот же хост и при смене https на http.
+	// Go пересылает свой заголовок X-KB-Token на любой хост, даже чужой.
 	ErrRedirect = errors.New("kbserver: redirect refused")
 	// ErrTooLarge — ответ больше предела чтения: адрес верный и сервер здоров,
 	// просто выдача велика (короткий запрос по большому каталогу).
@@ -37,6 +40,10 @@ const (
 	maxBody       = 1 << 20
 	maxSearchBody = 32 << 20
 )
+
+// TokenHeader is the header the app token travels in; тот же, что читает
+// сервер (httpapi.TokenHeader, тест сверяет).
+const TokenHeader = "X-KB-Token"
 
 // Client talks to one kb server. HTTP — nil значит http.DefaultClient; тесты
 // и окно подставляют свой (доверие к сертификату, таймауты).
@@ -160,8 +167,11 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
+	// Токен в X-KB-Token, а не в Authorization: Serverless Container
+	// вырезает Authorization и проверяет Bearer как свой IAM-токен. Сервер
+	// понимает оба заголовка.
 	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+		req.Header.Set(TokenHeader, c.Token)
 	}
 	hc := &http.Client{}
 	if c.HTTP != nil {
@@ -202,8 +212,10 @@ func statusErr(path string, code int) error {
 	switch {
 	case code == http.StatusOK:
 		return nil
-	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+	case code == http.StatusUnauthorized:
 		return ErrUnauthorized
+	case code == http.StatusForbidden:
+		return ErrForbidden
 	case code == http.StatusTooManyRequests || code >= http.StatusInternalServerError:
 		// Настоящий kb-сервер с ошибкой или прокси при перезапуске: адрес верный.
 		return fmt.Errorf("%w: %s answered %d", ErrServerError, path, code)
@@ -216,8 +228,10 @@ func statusErr(path string, code int) error {
 // источников, «Проверить») и MCP говорят об одной беде одинаково.
 func Describe(err error) string {
 	switch {
+	case errors.Is(err, ErrForbidden):
+		return "адрес ответил 403: вход закрыт до kb-сервера (облако или прокси) — проверьте адрес"
 	case errors.Is(err, ErrUnauthorized):
-		return "сервер ответил 401: нужен верный токен"
+		return "сервер ответил 401: нужен верный токен, или сервер старой версии и не знает X-KB-Token"
 	case errors.Is(err, ErrNotKB):
 		return "по адресу отвечает не kb-сервер"
 	case errors.Is(err, ErrRedirect):

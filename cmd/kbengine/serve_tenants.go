@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -43,7 +44,7 @@ type tenants struct {
 }
 
 func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if scheme, tok, ok := strings.Cut(r.Header.Get("Authorization"), " "); ok && strings.EqualFold(scheme, "Bearer") {
+	if tok, ok := httpapi.RequestToken(r); ok {
 		if id, ok := t.reg.Lookup(tok); ok {
 			h, err := t.handlerFor(id)
 			if err != nil {

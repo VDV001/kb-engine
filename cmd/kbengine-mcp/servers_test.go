@@ -34,7 +34,7 @@ func (m memTokens) Get(acct string) (string, error) {
 func TestRemoteServers_SearchRemote(t *testing.T) {
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
+		gotAuth = r.Header.Get("X-KB-Token")
 		_, _ = w.Write([]byte(`{"entries":[{"id":7,"title":"Агент"}],"total":3,"keys":["url a","url b"]}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -61,8 +61,8 @@ func TestRemoteServers_SearchRemote(t *testing.T) {
 	if a := got[0]; a.Err != "" || len(a.Entries) != 1 || len(a.Keys) != 2 || a.Source.Name != "vps" {
 		t.Fatalf("server-a = %+v", a)
 	}
-	if gotAuth != "Bearer t0ken-0123456789abcdef" {
-		t.Fatalf("Authorization = %q", gotAuth)
+	if gotAuth != "t0ken-0123456789abcdef" {
+		t.Fatalf("X-KB-Token = %q", gotAuth)
 	}
 	if got[1].Err == "" || len(got[1].Entries) != 0 {
 		t.Fatalf("server-down = %+v", got[1])
@@ -161,7 +161,8 @@ func TestRemoteServers_TokenNeverReachesOldHost(t *testing.T) {
 	var oldAuth []string
 	oldSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		oldAuth = append(oldAuth, r.Header.Get("Authorization"))
+		// Оба заголовка: токен не должен уйти старому хосту ни в одном.
+		oldAuth = append(oldAuth, r.Header.Get("X-KB-Token"), r.Header.Get("Authorization"))
 		mu.Unlock()
 		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
 	}))
@@ -247,7 +248,7 @@ func TestRemoteServers_LockWaitKeepsTokenBudget(t *testing.T) {
 	const tok = "t0ken-0123456789abcdef"
 	var gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotAuth = r.Header.Get("Authorization")
+		gotAuth = r.Header.Get("X-KB-Token")
 		_, _ = w.Write([]byte(`{"entries":[],"total":0,"keys":[]}`))
 	}))
 	t.Cleanup(srv.Close)
@@ -264,8 +265,8 @@ func TestRemoteServers_LockWaitKeepsTokenBudget(t *testing.T) {
 	<-held
 	r := remoteServers{cfgPath: cfgPath, tokens: slowTokens{delay: 800 * time.Millisecond, tok: tok}}
 	got := r.SearchRemote(context.Background(), "q")
-	if len(got) != 1 || got[0].Err != "" || gotAuth != "Bearer "+tok {
-		t.Fatalf("got = %+v, Authorization = %q", got, gotAuth)
+	if len(got) != 1 || got[0].Err != "" || gotAuth != tok {
+		t.Fatalf("got = %+v, X-KB-Token = %q", got, gotAuth)
 	}
 }
 
