@@ -87,6 +87,20 @@ func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
 	return token, nil
 }
 
+// NewToken returns a fresh token: 32 случайных байта, 43 печатных символа.
+func NewToken() (string, error) {
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		return "", fmt.Errorf("userauth: token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
+}
+
+// RevokeToken — шов теста отката; пока удаляет по имени, как Revoke.
+func RevokeToken(ctx context.Context, s blob.Store, id domain.UserID, _ string) error {
+	return Revoke(ctx, s, id)
+}
+
 // Revoke removes id from the registry. База человека остается в хранилище:
 // отзыв закрывает вход, а не удаляет данные.
 func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {

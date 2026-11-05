@@ -338,3 +338,31 @@ func TestConcurrentFirstLookupsWaitForTheFirstRead(t *testing.T) {
 		t.Fatalf("%d registry reads for %d concurrent first lookups, want 1", c, n)
 	}
 }
+
+// Откат выпуска удаляет только запись своего токена: вход того же человека,
+// выданный раньше или параллельно другим оператором, остается.
+func TestRevokeTokenRemovesOnlyThatToken(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	tok, err := userauth.Add(ctx, s, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := userauth.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.RevokeToken(ctx, s, owner, other); !errors.Is(err, domain.ErrNoSuchUser) {
+		t.Fatalf("RevokeToken(someone else's token) = %v, want ErrNoSuchUser", err)
+	}
+	if _, ok := userauth.NewRegistry(ctx, s).Lookup(tok); !ok {
+		t.Fatal("a stranger token's rollback closed the live login")
+	}
+	if err := userauth.RevokeToken(ctx, s, owner, tok); err != nil {
+		t.Fatalf("RevokeToken(own token) = %v", err)
+	}
+	if _, ok := userauth.NewRegistry(ctx, s).Lookup(tok); ok {
+		t.Fatal("own token still admitted after RevokeToken")
+	}
+}
