@@ -86,14 +86,31 @@ button { font-family: inherit; }
 .mark-l, .mark-r { transition: transform .45s var(--z-ease); }
 .brand:hover .mark-l, .brand.wake .mark-l { transform: translateX(-4px); }
 .brand:hover .mark-r, .brand.wake .mark-r { transform: translateX(4px); }
-/* Буквы DVK в машинной половине прорисовываются заново по порядку D, V, K:
-   один путь с pathLength 1, штрих открывается от начала к концу. */
-.mark-dvk { stroke-dasharray: 1; stroke-dashoffset: 0; }
-.brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: mark-type .9s var(--z-ease) .12s both; }
-@keyframes mark-type { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+/* Буквы DVK в машинной половине перерисовываются по очереди D, V, K: у каждой
+   свой путь с pathLength 1, перо стирает штрих от начала к концу и ведет его
+   заново. Каждая буква — один подпуть: WebKit начинает пунктир заново на
+   каждом подпути, и три штриха K иначе пропадали бы разом; K ведется пером
+   ствол вниз, по нему вверх, рука, по ней назад, нога. Цикл идет от покоя к
+   покою через два равных скрытых положения (±1.1, чуть за концами штриха, —
+   круглый конец линии не оставляет точки), поэтому скачка нет. Цикл запускает
+   класс wake (app.js: ⌥Space и наведение) и всегда доигрывает: уведенный с
+   28 px знака курсор не обрывает его рывком. Пока идет цикл, под буквами
+   бледный след (mark-ghost); в покое его нет, края букв не двоятся. */
+.mark-ghost { opacity: 0; }
+.brand.wake .mark-ghost { opacity: .35; }
+.mark-dvk { stroke-dasharray: 1 1.2; stroke-dashoffset: 0; }
+.brand.wake .mark-dvk { animation: mark-redraw .6s var(--z-ease); }
+.brand.wake .mark-v { animation-delay: .2s; }
+.brand.wake .mark-k { animation-delay: .4s; }
+@keyframes mark-redraw {
+  0% { stroke-dashoffset: 0; }
+  45% { stroke-dashoffset: -1.1; }
+  45.01% { stroke-dashoffset: 1.1; }
+  100% { stroke-dashoffset: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .mark-l, .mark-r { transition: none; }
-  .brand:hover .mark-dvk, .brand.wake .mark-dvk { animation: none; }
+  .brand.wake .mark-dvk { animation: none; }
 }
 .tabs { position: relative; gap: 22px; flex: 1; }
 .tabs button {
