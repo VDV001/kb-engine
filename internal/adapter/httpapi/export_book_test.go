@@ -7,10 +7,13 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/analyticsconfig"
 	"github.com/daniil/kb-engine/internal/adapter/changelog"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 	"github.com/xuri/excelize/v2"
 )
 
@@ -63,7 +66,7 @@ func TestFinanceWorkbook(t *testing.T) {
 		t.Fatalf("Счета %v", accs)
 	}
 	head := strings.Join(accs[0], "|")
-	for _, want := range []string{"Подтверждено", "Обновлено", "Сейчас", "Валюта"} {
+	for _, want := range []string{"Подтверждено", "Обновлено", "Сейчас", "Валюта", "В рублях"} {
 		if !strings.Contains(head, want) {
 			t.Errorf("the Счета header lacks %s: %v", want, accs[0])
 		}
@@ -118,10 +121,103 @@ func TestEntriesWorkbook(t *testing.T) {
 	}
 	for name, want := range map[string]string{
 		"ID": "1", "Заголовок": "Hello", "Категория": "golang", "Вердикт": "keep",
-		"Теги": "go", "Добавлено": "2026-07-11", "Ссылка": "https://h/x",
+		"Теги": "go", "Добавлено": "2026-07-11", "Создано": "2026-04-15", "Ссылка": "https://h/x",
 	} {
 		if got := rows[1][col[name]]; got != want {
 			t.Errorf("%s = %q, want %q (%v)", name, got, want, rows[1])
 		}
+	}
+}
+
+// bookFinance is a Financier over a fixed book.
+type bookFinance struct{ f httpapi.Finances }
+
+func (b bookFinance) Finances() (httpapi.Finances, error)       { return b.f, nil }
+func (b bookFinance) Summary([]string) (finance.Summary, error) { return finance.Summary{}, nil }
+
+// Числа, которые человек сложит в Excel, обязаны сходиться с движком: остаток
+// валютного счета рядом с его оценкой в рублях (иначе СУММ сложит доллары с
+// рублями, #332), а перевод между своими счетами помечен (движок не считает
+// его ни тратой, ни доходом — правило 19).
+func TestFinanceWorkbookSumsLikeTheEngine(t *testing.T) {
+	now := func() time.Time { return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC) }
+	money := func(s string) domain.Money {
+		m, err := domain.ParseMoney(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	usd, _ := domain.NewCurrency("USD")
+	rate, _ := domain.NewRate(money("90"))
+	wise, err := domain.NewForeignAccount("Wise", money("10"), usd, rate, time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sber, _ := domain.NewAccount("Сбербанк", money("5000"), time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC), now)
+	move, err := domain.NewTransaction(domain.TransactionParams{
+		ID: "01MOVE", Kind: "expense", Date: time.Date(2026, 7, 2, 0, 0, 0, 0, time.UTC),
+		Amount: money("1500"), Category: "Прочее", Subcategory: "Перевод себе", Account: "Сбербанк", Now: now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	food, _ := domain.NewTransaction(domain.TransactionParams{
+		ID: "01FOOD", Kind: "expense", Date: time.Date(2026, 7, 3, 0, 0, 0, 0, time.UTC),
+		Amount: money("300"), Category: "Еда", Account: "Сбербанк", Now: now,
+	})
+	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{},
+		bookFinance{httpapi.Finances{Transactions: []domain.Transaction{move, food}, Accounts: []domain.Account{sber, wise}}},
+		func() (analyticsconfig.Config, error) { return testConfig, nil },
+		func() (changelog.Document, error) { return changelog.Document{}, nil },
+		httpapi.Documents{}, testEngine, nil)
+	_, f := getBook(t, srv, "/api/finances/export.xlsx")
+	if f == nil {
+		t.Fatal("no workbook")
+	}
+	byHeader := func(rows [][]string, name string) map[string]string {
+		col := -1
+		for i, h := range rows[0] {
+			if h == name {
+				col = i
+			}
+		}
+		if col < 0 {
+			t.Fatalf("no column %q in %v", name, rows[0])
+		}
+		out := map[string]string{}
+		for _, r := range rows[1:] {
+			if col < len(r) {
+				out[r[0]] = r[col]
+			} else {
+				out[r[0]] = ""
+			}
+		}
+		return out
+	}
+	rub := byHeader(sheetRows(t, f, "Счета"), "В рублях")
+	if rub["Wise"] != "900" || rub["Сбербанк"] != "5000" {
+		t.Errorf("В рублях %v, want Wise 900 and Сбербанк 5000", rub)
+	}
+	ops := sheetRows(t, f, "Операции")
+	marks := map[string]string{}
+	col := -1
+	for i, h := range ops[0] {
+		if h == "Перевод себе" {
+			col = i
+		}
+	}
+	if col < 0 {
+		t.Fatalf("no Перевод себе column in %v", ops[0])
+	}
+	for _, r := range ops[1:] {
+		v := ""
+		if col < len(r) {
+			v = r[col]
+		}
+		marks[r[2]] = v // по категории
+	}
+	if marks["Прочее"] != "да" || marks["Еда"] != "" {
+		t.Errorf("transfer marks %v, want Прочее да and Еда empty", marks)
 	}
 }
