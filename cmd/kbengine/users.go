@@ -121,28 +121,9 @@ func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
 
 func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 	ctx := context.Background()
-	// Место для токена проверяется до выпуска: занятое или недоступное — отказ,
-	// пока токена еще нет. O_EXCL не дает затереть чужой файл, а занятая учетка
-	// Связки — токен источника, уже настроенного в окне (security -U заменил
-	// бы его молча).
-	var f *os.File
-	switch {
-	case tg.tokenOut != "":
-		var err error
-		if f, err = os.OpenFile(tg.tokenOut, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600); err != nil {
-			fmt.Fprintf(stderr, "users add: %v\n", err)
-			return 2
-		}
-	default:
-		_, err := usersKeychain().Get(tg.keychain)
-		if err == nil {
-			fmt.Fprintf(stderr, "users add: в Связке ключей уже есть токен под %s — назови новый id источника\n", tg.keychain)
-			return 2
-		}
-		if !errors.Is(err, keychain.ErrNotFound) {
-			fmt.Fprintf(stderr, "users add: Связка ключей недоступна (%v) — токен не выпущен\n", err)
-			return 2
-		}
+	f, ok := claimPlace(tg, stderr)
+	if !ok {
+		return 2
 	}
 	dropFile := func() {
 		if f == nil {
@@ -186,6 +167,31 @@ func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 	}
 	fmt.Fprintf(stderr, "users add: токен %s %s; в хранилище только хэш\n", tg.id, where)
 	return 0
+}
+
+// claimPlace checks the place for the token before it is issued: занятое или
+// недоступное — отказ, пока токена еще нет. O_EXCL не дает затереть чужой
+// файл, а занятая учетка Связки — токен источника, уже настроенного в окне
+// (security -U заменил бы его молча). Для --token-out отдает открытый файл.
+func claimPlace(tg *usersTargetOf, stderr io.Writer) (*os.File, bool) {
+	if tg.tokenOut != "" {
+		f, err := os.OpenFile(tg.tokenOut, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			fmt.Fprintf(stderr, "users add: %v\n", err)
+			return nil, false
+		}
+		return f, true
+	}
+	_, err := usersKeychain().Get(tg.keychain)
+	if err == nil {
+		fmt.Fprintf(stderr, "users add: в Связке ключей уже есть токен под %s — назови новый id источника\n", tg.keychain)
+		return nil, false
+	}
+	if !errors.Is(err, keychain.ErrNotFound) {
+		fmt.Fprintf(stderr, "users add: Связка ключей недоступна (%v) — токен не выпущен\n", err)
+		return nil, false
+	}
+	return nil, true
 }
 
 // keepToken puts tok where the flags said and names the place for the person.
