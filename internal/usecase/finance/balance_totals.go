@@ -38,3 +38,17 @@ func BalancesByCurrency(balances []AccountBalance) []BalanceTotal {
 	}
 	return out
 }
+
+// CurrencyBalance is the money in one currency across every account.
+type CurrencyBalance struct {
+	Currency string
+	// Current — все деньги в этой валюте на счетах, любого рода.
+	Current domain.Money
+	// Free — сколько из них можно потратить сейчас, правилом FreeMoney.
+	Free domain.Money
+}
+
+// BalancesPerCurrency sums every account per currency, without a rate.
+func BalancesPerCurrency(balances []AccountBalance) []CurrencyBalance {
+	return nil
+}

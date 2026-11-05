@@ -45,3 +45,28 @@ func TestBalancesByCurrency(t *testing.T) {
 		})
 	}
 }
+
+// Главная строка экрана — деньги по каждой валюте, без пересчета: все на
+// счетах и свободные, тем же правилом рода и знака, что FreeMoney (отложенное
+// и одолженное не свободно, обязательство вычитается).
+func TestBalancesPerCurrency(t *testing.T) {
+	bal := func(bank, currency, current string) finance.AccountBalance {
+		return finance.AccountBalance{Bank: bank, Currency: currency, Current: mustMoney(t, current), BaseValue: mustMoney(t, "999999")}
+	}
+	got := finance.BalancesPerCurrency([]finance.AccountBalance{
+		bal("Сбербанк", "RUB", "1000"),
+		bal("Wise", "USD", "100"),
+		bal("Резерв → Вклад", "RUB", "5000"), // отложено: в итог входит, в свободные нет
+		bal("Долг → Сосед", "RUB", "-300"),   // обязательство: вычитается и из свободных
+		bal("Резерв → Наличные", "USD", "50"),
+		bal("Т-Банк", "", "200"), // собрано руками — валюта книги
+	})
+	var lines []string
+	for _, c := range got {
+		lines = append(lines, c.Currency+" · "+c.Current.String()+" · "+c.Free.String())
+	}
+	want := []string{"RUB · 5900.00 · 900.00", "USD · 150.00 · 100.00"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got %q\nwant %q", lines, want)
+	}
+}
