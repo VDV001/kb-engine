@@ -7,6 +7,11 @@ import (
 	"strings"
 )
 
+// TokenHeader carries the app token where Authorization cannot: Serverless
+// Container в Yandex Cloud вырезает Authorization из запроса, а Bearer в нем
+// проверяет как свой IAM-токен (403 до приложения).
+const TokenHeader = "X-KB-Token"
+
 // RequireBearer answers 401 to every request without "Authorization: Bearer
 // <token>" — страницы, API и /metrics одинаково: сервер, открытый в сеть,
 // отдает базу только тому, у кого токен.

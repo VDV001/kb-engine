@@ -54,6 +54,41 @@ func TestRequireBearer(t *testing.T) {
 	}
 }
 
+// Serverless Container в Yandex Cloud вырезает Authorization и проверяет Bearer
+// как свой IAM-токен, поэтому токен приложения едет и в X-KB-Token. Если он
+// есть, решает он: верный Bearer рядом с чужим X-KB-Token не пускает.
+func TestRequireBearer_TokenHeader(t *testing.T) {
+	const token = "k3Jx9_secret-token-0123456789abcdefXYZ"
+	next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("catalog")) })
+	h := httpapi.RequireBearer(token, next)
+	tests := []struct {
+		name, xkb, auth string
+		want            int
+	}{
+		{"верный X-KB-Token", token, "", http.StatusOK},
+		{"чужой X-KB-Token", strings.Repeat("x", len(token)), "", http.StatusUnauthorized},
+		{"пустой X-KB-Token", "", "", http.StatusUnauthorized},
+		{"чужой X-KB-Token при верном Bearer", "nope", "Bearer " + token, http.StatusUnauthorized},
+		{"верный X-KB-Token при чужом Bearer", token, "Bearer nope", http.StatusOK},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := httptest.NewRequest(http.MethodGet, "/api/search?q=x", nil)
+			if tt.xkb != "" {
+				r.Header.Set(httpapi.TokenHeader, tt.xkb)
+			}
+			if tt.auth != "" {
+				r.Header.Set("Authorization", tt.auth)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			if w.Code != tt.want {
+				t.Fatalf("code = %d, want %d", w.Code, tt.want)
+			}
+		})
+	}
+}
+
 // Пустой токен никого не пускает: даже «Bearer » с пустым значением, которое
 // совпало бы по хешу с пустой строкой.
 func TestRequireBearer_EmptyTokenLetsNobodyIn(t *testing.T) {

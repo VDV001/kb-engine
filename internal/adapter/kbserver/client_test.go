@@ -18,8 +18,9 @@ import (
 
 const token = "k3Jx9_secret-token-0123456789abcdefXYZ"
 
-// fakeKB — kbengine serve в миниатюре: /api/engine и /api/stats за Bearer,
-// по HTTPS, как его поднимает serve --token-file --tls-cert.
+// fakeKB — kbengine serve в миниатюре за Serverless Container: /api/engine и
+// /api/stats по HTTPS за токеном в X-KB-Token. Как платформа Yandex Cloud,
+// запрос с Authorization он отбивает 403: Bearer там проверяется как IAM.
 func fakeKB(t *testing.T) *httptest.Server {
 	t.Helper()
 	want := sha256.Sum256([]byte(token))
@@ -31,7 +32,11 @@ func fakeKB(t *testing.T) *httptest.Server {
 		_, _ = w.Write([]byte(`{"total":2431,"by_kind":{"article":2000}}`))
 	})
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		if r.Header.Get("Authorization") != "" {
+			http.Error(w, `{"errorCode":403,"errorMessage":"Forbidden: Not authorized"}`, http.StatusForbidden)
+			return
+		}
+		got := sha256.Sum256([]byte(r.Header.Get("X-KB-Token")))
 		if subtle.ConstantTimeCompare(got[:], want[:]) != 1 {
 			http.Error(w, "bearer token required", http.StatusUnauthorized)
 			return
@@ -181,7 +186,7 @@ func TestClient_Search(t *testing.T) {
 	want := sha256.Sum256([]byte(token))
 	var got string
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		bearer := sha256.Sum256([]byte(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")))
+		bearer := sha256.Sum256([]byte(r.Header.Get("X-KB-Token")))
 		if subtle.ConstantTimeCompare(bearer[:], want[:]) != 1 {
 			http.Error(w, "bearer token required", http.StatusUnauthorized)
 			return
