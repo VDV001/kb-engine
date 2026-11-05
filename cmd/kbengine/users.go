@@ -110,6 +110,12 @@ func usersRevoke(store blob.Store, id domain.UserID, stderr io.Writer) int {
 }
 
 func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
+	// Ctrl-C, закрытое окно терминала и kill отменяют выпуск, а не обрывают
+	// его посередине: отмененный выпуск откатывается ниже. Ловятся с самого
+	// начала — прерывание до выпуска не оставит пустого файла. Не покрыт
+	// только kill -9.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer stop()
 	// Файл открывается до выпуска: занятое место — отказ, пока токена еще нет,
 	// а O_EXCL не дает затереть чужой файл.
 	f, err := os.OpenFile(tg.tokenOut, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
@@ -131,12 +137,13 @@ func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 			_ = os.Remove(tg.tokenOut)
 		}
 	}
-	// Ctrl-C, закрытое окно терминала и kill отменяют выпуск, а не обрывают
-	// его посередине: отмененный выпуск закрывает вход ниже. Не покрыт только
-	// kill -9.
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
-	defer stop()
-	tok, err := userauth.Add(ctx, tg.store, tg.id)
+	tok, err := userauth.NewToken()
+	if err != nil {
+		dropFile()
+		fmt.Fprintf(stderr, "users add: %v\n", err)
+		return 1
+	}
+	err = userauth.AddToken(ctx, tg.store, tg.id, tok)
 	if errors.Is(err, domain.ErrUserExists) {
 		dropFile()
 		fmt.Fprintf(stderr, "users add: %v — новый токен: сначала users revoke\n", err)
@@ -147,23 +154,29 @@ func usersAdd(tg *usersTargetOf, stderr io.Writer) int {
 	}
 	if err != nil {
 		dropFile()
-		return undoAdd(tg, err, stderr)
+		stop() // откат не глушит Ctrl-C: второе прерывание — воля человека
+		return undoAdd(tg, tok, err, stderr)
 	}
-	fmt.Fprintf(stderr, "users add: токен %s в файле %s (0600): pbcopy < файл и вставить в окно или передать человеку, потом удалить; в хранилище только хэш\n", tg.id, tg.tokenOut)
+	fmt.Fprintf(stderr, "users add: токен %s в файле %s (0600): pbcopy < %s, вставить в окно или передать человеку, потом удалить файл; в хранилище только хэш\n", tg.id, tg.tokenOut, shellQuote(tg.tokenOut))
 	return 0
 }
 
-// undoAdd closes the login whose token was not kept: хэш без токена только
+// undoAdd takes back tok when it was not kept: хэш без токена только
 // заставил бы следующий add ответить «уже есть». Ответ хранилища мог
-// потеряться после записи, поэтому отзыв пробуется и при ошибке самого Add;
-// ErrNoSuchUser значит, что хэш так и не записался.
-func undoAdd(tg *usersTargetOf, cause error, stderr io.Writer) int {
+// потеряться после записи, поэтому откат пробуется и при ошибке самой
+// записи. Снимается только запись этого токена: рабочий вход того же
+// человека остается. ErrNoSuchUser — хэш этого токена так и не записался.
+func undoAdd(tg *usersTargetOf, tok string, cause error, stderr io.Writer) int {
 	// Свой срок: контекст выпуска мог отменить сигнал.
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	rerr := userauth.Revoke(ctx, tg.store, tg.id)
-	if rerr == nil || errors.Is(rerr, domain.ErrNoSuchUser) {
-		fmt.Fprintf(stderr, "users add: %v — токен не выпущен, вход %s закрыт; повтори add\n", cause, tg.id)
+	rerr := userauth.RevokeToken(ctx, tg.store, tg.id, tok)
+	switch {
+	case errors.Is(rerr, domain.ErrNoSuchUser):
+		fmt.Fprintf(stderr, "users add: %v — токен не выпущен; повтори add\n", cause)
+		return 1
+	case rerr == nil:
+		fmt.Fprintf(stderr, "users add: %v — вход %s закрыт: выпущенный токен отозван; повтори add\n", cause, tg.id)
 		return 1
 	}
 	fmt.Fprintf(stderr, "users add: %v, и вход не закрылся (%v): kbengine users revoke --tenants %s --id %s\n", cause, rerr, shellQuote(tg.loc), tg.id)
