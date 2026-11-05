@@ -62,7 +62,9 @@ verify() {
   if [[ "$url" == https://* ]]; then
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url%/}/api/engine")"
     check "без токена — 401 (было $code)" '[[ "$code" == 401 ]]'
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -H "Authorization: Bearer $(openssl rand -hex 24)" "${url%/}/api/engine")"
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -H "X-KB-Token: $(openssl rand -hex 24)" "${url%/}/api/engine")"
+    # X-KB-Token, как его шлют окно и kbengine-mcp: Authorization платформа
+    # вырезает и проверяет как IAM.
     check "с чужим токеном — 401 (было $code)" '[[ "$code" == 401 ]]'
   fi
   [[ "$ok" == 1 ]] || die "проверка не прошла"
