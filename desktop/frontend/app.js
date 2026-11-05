@@ -27,6 +27,61 @@ function stem(w) {
   return w;
 }
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// --- Подсказки -----------------------------------------------------------------
+// Вместо title: системная подсказка WebKit не берет шрифт и цвета окна и ждет
+// около секунды. Одна подсказка на окно и делегирование на document: строку
+// источников и список в панели перерисовывает каждый ввод, подписка на каждый
+// элемент терялась бы. Текст — из data-tip (имя), data-tip-b (пояснение),
+// data-tip-k (клавиша), data-tip-bad (беда, красным). Только по наведению: Tab
+// в окне переключает вкладки выдачи и до кнопок не доходит. Блок стоит до
+// отрисовки, которая зовет dropStaleTip.
+const tip = Object.assign(document.createElement("div"), { id: "tip", className: "tip", hidden: true });
+tip.setAttribute("role", "tooltip");
+document.body.append(tip);
+let tipFor = null, tipTimer = 0;
+function showTip(el) {
+  const d = el.dataset;
+  // --c у чипа и строки источника — его цвет; computed отдает уже готовый цвет.
+  const c = "tipBad" in d ? "var(--z-bad)" : getComputedStyle(el).getPropertyValue("--c").trim() || "var(--z-accent)";
+  tip.style.setProperty("--c", c);
+  tip.innerHTML = `<span class="tip-t">${esc(d.tip)}${d.tipK ? `<kbd>${esc(d.tipK)}</kbd>` : ""}</span>${d.tipB ? `<span class="tip-b">${esc(d.tipB)}</span>` : ""}`;
+  // Мерить в левом верхнем углу: с прежним left у правого края ширина
+  // сжалась бы, и высота вышла бы больше настоящей.
+  tip.style.left = tip.style.top = "0px";
+  tip.hidden = false;
+  // Под элементом, а у нижнего края окна — над ним; по ширине не за край.
+  const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
+  tip.style.left = Math.max(8, Math.min(r.left, innerWidth - t.width - 8)) + "px";
+  tip.style.top = (r.bottom + 8 + t.height <= innerHeight - 8 ? r.bottom + 8 : Math.max(8, r.top - 8 - t.height)) + "px";
+  // Скрытый от VoiceOver элемент (ручка перетаскивания) описанием не снабжаем.
+  if (!el.closest('[aria-hidden="true"]')) el.setAttribute("aria-describedby", "tip");
+  tip.classList.remove("enter");
+  void tip.offsetWidth; // перезапуск появления при переходе с одной подсказки на другую
+  tip.classList.add("enter");
+}
+function hideTip() {
+  clearTimeout(tipTimer);
+  tipFor?.removeAttribute("aria-describedby");
+  tipFor = null;
+  tip.hidden = true;
+}
+// Перерисовка строки источников или панели заменила элемент под подсказкой:
+// числа в ней устарели, а якоря больше нет.
+const dropStaleTip = () => { if (tipFor && !tipFor.isConnected) hideTip(); };
+document.addEventListener("mouseover", (e) => {
+  const el = e.target.closest("[data-tip]");
+  if (el === tipFor) return; // движение по детям того же элемента не сбрасывает задержку
+  hideTip();
+  if (!el) return;
+  tipFor = el;
+  tipTimer = setTimeout(() => el.isConnected && showTip(el), 400);
+});
+document.documentElement.addEventListener("mouseleave", hideTip);
+// Клик, клавиша, прокрутка и смена размера прячут: после них строка могла
+// перерисоваться или уехать, а место подсказки считается один раз.
+for (const ev of ["mousedown", "keydown", "wheel", "scroll"]) document.addEventListener(ev, hideTip, true);
+addEventListener("resize", hideTip);
+
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // hits — слова записи, что нашел движок (match): подсвечиваются целиком, по
 // границе слова. Граница проверяется кодом, а не lookbehind в регулярке: его
@@ -519,9 +574,10 @@ function renderStrip(shown, hue) {
   if (strip.hidden) return;
   strip.innerHTML = `<span class="strip-lbl">источники</span>` + state.sources.map((s) => {
     const name = esc(label(s)), c = `style="--c:var(${hue.get(s.id)})"`;
-    if (s.error) return `<span class="chip off" ${c} tabindex="0" data-tip="${name}" data-tip-b="${esc(s.error)}" data-tip-bad><span class="chip-dot"></span>${name}<span class="cnt">${esc(s.error.split(":")[0])}</span></span>`;
+    if (s.error) return `<span class="chip off" ${c} data-tip="${name}" data-tip-b="${esc(s.error)}" data-tip-bad><span class="chip-dot"></span>${name}<span class="cnt">${esc(s.error.split(":")[0])}</span></span>`;
     return `<button class="chip" ${c} data-src="${esc(s.id)}" aria-pressed="${state.filter === s.id}" data-tip="${name}" data-tip-b="${esc(tilde(target(s)))} · показано ${fmt(shown[s.id] || 0)} из ${fmt(s.found)}"><span class="chip-dot"></span>${name}<span class="cnt"><b>${fmt(shown[s.id] || 0)}</b> из ${fmt(s.found)}</span></button>`;
   }).join("") + (state.dupes > 0 ? `<span class="strip-sum">склеено дублей: ${fmt(state.dupes)}</span>` : "");
+  dropStaleTip();
 }
 $("#strip").addEventListener("click", (e) => {
   const b = e.target.closest("button.chip");
@@ -558,6 +614,7 @@ function load(v) {
 }
 
 async function openSettings() {
+  hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
   scrim.hidden = false;
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
@@ -607,6 +664,7 @@ async function loadServerStates() {
 }
 
 function closeSettings() {
+  hideTip();
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
   scrim.hidden = true;
@@ -704,6 +762,7 @@ function renderSources() {
       ${tokenField("nt", false)}${checkBar("new")}
       <div class="row"><button class="btn primary" data-addok>Подключить</button>
       <span class="hint">http — только для этого Mac; токен уйдет в Связку ключей macOS, не в config.json</span></div>`;
+  dropStaleTip();
   $("#add").innerHTML = `<div class="row"><span class="muted">+ источник</span><span class="seg" role="group" aria-label="Вид источника">${kinds}</span></div>${form}`;
 
   $("#excludes").innerHTML = draft.exclude.map((r, i) =>
@@ -1009,59 +1068,6 @@ document.addEventListener("keydown", (e) => {
   if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
   else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings(); }
 }, true);
-
-// --- Подсказки -----------------------------------------------------------------
-// Вместо title: системная подсказка WebKit не берет шрифт и цвета окна и ждет
-// около секунды. Одна подсказка на окно и делегирование на document: строку
-// источников и список в панели перерисовывает каждый ввод, подписка на каждый
-// элемент терялась бы. Текст — из data-tip (имя), data-tip-b (пояснение),
-// data-tip-k (клавиша), data-tip-bad (беда, красным).
-const tip = Object.assign(document.createElement("div"), { id: "tip", className: "tip", hidden: true });
-tip.setAttribute("role", "tooltip");
-document.body.append(tip);
-let tipFor = null, tipTimer = 0;
-function showTip(el) {
-  const d = el.dataset;
-  // --c у чипа и строки источника — его цвет; computed отдает уже готовый цвет.
-  const c = "tipBad" in d ? "var(--z-bad)" : getComputedStyle(el).getPropertyValue("--c").trim() || "var(--z-accent)";
-  tip.style.setProperty("--c", c);
-  tip.innerHTML = `<span class="tip-t">${esc(d.tip)}${d.tipK ? `<kbd>${esc(d.tipK)}</kbd>` : ""}</span>${d.tipB ? `<span class="tip-b">${esc(d.tipB)}</span>` : ""}`;
-  tip.hidden = false;
-  // Под элементом, а у нижнего края окна — над ним; по ширине не за край.
-  const r = el.getBoundingClientRect(), t = tip.getBoundingClientRect();
-  tip.style.left = Math.max(8, Math.min(r.left, innerWidth - t.width - 8)) + "px";
-  tip.style.top = (r.bottom + 8 + t.height <= innerHeight - 8 ? r.bottom + 8 : Math.max(8, r.top - 8 - t.height)) + "px";
-  el.setAttribute("aria-describedby", "tip");
-  tip.classList.remove("enter");
-  void tip.offsetWidth; // перезапуск появления при переходе с одной подсказки на другую
-  tip.classList.add("enter");
-}
-function hideTip() {
-  clearTimeout(tipTimer);
-  tipFor?.removeAttribute("aria-describedby");
-  tipFor = null;
-  tip.hidden = true;
-}
-document.addEventListener("mouseover", (e) => {
-  const el = e.target.closest("[data-tip]");
-  if (el === tipFor) return; // движение по детям того же элемента не сбрасывает задержку
-  hideTip();
-  if (!el) return;
-  tipFor = el;
-  tipTimer = setTimeout(() => el.isConnected && showTip(el), 400);
-});
-document.documentElement.addEventListener("mouseleave", hideTip);
-// С клавиатуры — сразу, по фокусу; клик, клавиша и прокрутка прячут: после них
-// строка могла перерисоваться, и подсказка висела бы над пустым местом.
-document.addEventListener("focusin", (e) => {
-  const el = e.target.closest("[data-tip]");
-  if (!el || !el.matches(":focus-visible")) return;
-  hideTip();
-  tipFor = el;
-  showTip(el);
-});
-document.addEventListener("focusout", hideTip);
-for (const ev of ["mousedown", "keydown", "wheel"]) document.addEventListener(ev, hideTip, true);
 
 function hideIndexingScreen() {
   const screen = $("#indexing");
