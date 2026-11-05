@@ -116,3 +116,27 @@ func TestPlanners_rejectACategoryOutsideTheDictionary(t *testing.T) {
 		})
 	}
 }
+
+// Правка категории подчиняется тому же словарю, что добавление: иначе PATCH
+// протащил бы необъявленную категорию, от которой закрыт add.
+func TestCheckDeclared(t *testing.T) {
+	declared, err := domain.NewCatalog(nil, domain.WithCategoryLabels(map[string]string{"golang": "Go"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.CheckDeclared(declared, "T", "golang"); err != nil {
+		t.Fatalf("declared category: %v", err)
+	}
+	err = ingest.CheckDeclared(declared, "T", "golnag")
+	var undeclared *ingest.UndeclaredCategoryError
+	if !errors.As(err, &undeclared) || undeclared.Category != "golnag" || len(undeclared.Declared) != 1 {
+		t.Fatalf("undeclared category: %v", err)
+	}
+	none, err := domain.NewCatalog(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.CheckDeclared(none, "T", "anything"); err != nil {
+		t.Fatalf("catalog without a dictionary: %v, want nil (unchecked, not refused)", err)
+	}
+}

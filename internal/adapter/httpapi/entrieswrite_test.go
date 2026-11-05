@@ -20,6 +20,7 @@ type fakeWriter struct {
 	added           httpapi.EntryAdd
 	editedID        int
 	edited          httpapi.EntryPatch
+	updated         int
 }
 
 func (f *fakeWriter) AddEntry(_ context.Context, a httpapi.EntryAdd) (httpapi.AddedEntry, error) {
@@ -30,9 +31,12 @@ func (f *fakeWriter) AddEntry(_ context.Context, a httpapi.EntryAdd) (httpapi.Ad
 	return httpapi.AddedEntry{ID: 42, Title: a.Title}, nil
 }
 
-func (f *fakeWriter) EditEntry(_ context.Context, id int, p httpapi.EntryPatch) error {
+func (f *fakeWriter) EditEntry(_ context.Context, id int, p httpapi.EntryPatch) (int, error) {
 	f.editedID, f.edited = id, p
-	return f.editErr
+	if f.editErr != nil {
+		return 0, f.editErr
+	}
+	return f.updated, nil
 }
 
 func writeServer(w httpapi.CatalogWriter) http.Handler {
@@ -92,6 +96,7 @@ func TestWriteErrorsMapToStatuses(t *testing.T) {
 	}{
 		{"bad request from the rules", fmt.Errorf("%w: категория не объявлена", httpapi.ErrBadWrite), http.StatusBadRequest},
 		{"conflict after retries", fmt.Errorf("catalog: %w", blob.ErrConflict), http.StatusConflict},
+		{"no such entry", fmt.Errorf("%w: 3", httpapi.ErrNoEntry), http.StatusNotFound},
 		{"store down", errors.New("blobs3: put: status 503"), http.StatusInternalServerError},
 	}
 	for _, c := range cases {
@@ -161,4 +166,91 @@ func TestNoWriterNoWriteRoutes(t *testing.T) {
 	if rec := send(h, http.MethodPatch, "/api/entries/1", `{"verdict":"keep"}`); rec.Code != http.StatusMethodNotAllowed && rec.Code != http.StatusNotFound {
 		t.Fatalf("PATCH without a writer: %d", rec.Code)
 	}
+}
+
+// Запись только JSON-запросом: «простой» запрос с чужой страницы (text/plain,
+// form) браузер шлет без предварительной проверки, и без этого отказа любая
+// открытая страница писала бы в каталог сервера на 127.0.0.1 без токена.
+func TestWriteNeedsJSONContentType(t *testing.T) {
+	h := writeServer(&fakeWriter{updated: 1})
+	for _, ct := range []string{"", "text/plain", "application/x-www-form-urlencoded", "multipart/form-data; boundary=x"} {
+		for _, m := range []struct{ method, path, body string }{
+			{http.MethodPost, "/api/entries", `{"title":"A","category":"golang","url":"https://h/1"}`},
+			{http.MethodPatch, "/api/entries/3", `{"verdict":"keep"}`},
+		} {
+			req := httptest.NewRequest(m.method, m.path, strings.NewReader(m.body))
+			if ct != "" {
+				req.Header.Set("Content-Type", ct)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusUnsupportedMediaType {
+				t.Errorf("%s %s with Content-Type %q: %d, want 415", m.method, m.path, ct, rec.Code)
+			}
+		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/entries", strings.NewReader(`{"title":"A","category":"golang","url":"https://h/1"}`))
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Errorf("application/json; charset=utf-8: %d, want 201", rec.Code)
+	}
+}
+
+func TestCrossSiteWriteIsRefused(t *testing.T) {
+	h := writeServer(&fakeWriter{updated: 1})
+	cases := []struct {
+		name    string
+		headers map[string]string
+		code    int
+	}{
+		{"foreign origin", map[string]string{"Origin": "https://evil.example"}, http.StatusForbidden},
+		{"cross-site fetch", map[string]string{"Sec-Fetch-Site": "cross-site"}, http.StatusForbidden},
+		{"same origin", map[string]string{"Origin": "http://example.com"}, http.StatusCreated},
+		{"no origin (CLI, window)", nil, http.StatusCreated},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "http://example.com/api/entries", strings.NewReader(`{"title":"A","category":"golang","url":"https://h/1"}`))
+			req.Header.Set("Content-Type", "application/json")
+			for k, v := range c.headers {
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != c.code {
+				t.Errorf("%d, want %d (%s)", rec.Code, c.code, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestOversizeBodyIs413(t *testing.T) {
+	rec := send(writeServer(&fakeWriter{}), http.MethodPost, "/api/entries", `{"title":"`+strings.Repeat("x", 70<<10)+`"}`)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("70 KB body: %d, want 413", rec.Code)
+	}
+}
+
+// PATCH называет настоящее число измененных записей: «готово» без правки —
+// та же тишина, от которой починен set (reportSet).
+func TestPatchReportsTheRealCount(t *testing.T) {
+	rec := send(writeServer(&fakeWriter{updated: 0}), http.MethodPatch, "/api/entries/3", `{"verdict":"keep"}`)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"updated":0`) {
+		t.Fatalf("no-op PATCH: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestPostSaysTheCategoryWasUnchecked(t *testing.T) {
+	rec := send(writeServer(&uncheckedWriter{}), http.MethodPost, "/api/entries", `{"title":"A","category":"golang","url":"https://h/1"}`)
+	if rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"category_unchecked":true`) {
+		t.Fatalf("%d %s", rec.Code, rec.Body.String())
+	}
+}
+
+type uncheckedWriter struct{ fakeWriter }
+
+func (u *uncheckedWriter) AddEntry(context.Context, httpapi.EntryAdd) (httpapi.AddedEntry, error) {
+	return httpapi.AddedEntry{ID: 5, Title: "A", CategoryUnchecked: true}, nil
 }

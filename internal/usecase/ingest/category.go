@@ -58,3 +58,5 @@ func checkCategory(declared map[string]string, p domain.EntryParams) error {
 		Declared: declaredCategories(declared),
 	}
 }
+
+func CheckDeclared(*domain.Catalog, string, string) error { return nil }

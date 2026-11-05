@@ -89,13 +89,13 @@ func alreadyThere(cat *domain.Catalog, a httpapi.EntryAdd) httpapi.AddedEntry {
 	return out
 }
 
-func (s storeCatalogWriter) EditEntry(ctx context.Context, id int, p httpapi.EntryPatch) error {
+func (s storeCatalogWriter) EditEntry(ctx context.Context, id int, p httpapi.EntryPatch) (int, error) {
 	ch := catalogjson.Changes{
 		Lifecycle: deref(p.Lifecycle), Verdict: deref(p.Verdict), Category: deref(p.Category),
 		Title: deref(p.Title), Description: deref(p.Description), Notes: deref(p.Notes),
 		Author: deref(p.Author), URL: deref(p.URL), AddTags: p.AddTags, RemoveTags: p.RemoveTags,
 	}
-	return s.w.Update(ctx, func(raw []byte) ([]byte, error) {
+	return 1, s.w.Update(ctx, func(raw []byte) ([]byte, error) {
 		// Отказы SetFieldsDoc — правила правки (неизвестный id, недопустимое
 		// значение): 400 с причиной. Разбор самого каталога здесь уже прошел
 		// при чтении сервером, иначе до правки дело не дошло бы.

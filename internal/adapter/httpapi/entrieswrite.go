@@ -17,6 +17,8 @@ import (
 // показать человеку как есть.
 var ErrBadWrite = errors.New("bad write")
 
+var ErrNoEntry = errors.New("no such entry")
+
 // maxWriteBody bounds a write request: запись каталога — это несколько строк,
 // а не загрузка файла.
 const maxWriteBody = 64 << 10
@@ -47,9 +49,10 @@ func (p EntryPatch) empty() bool {
 
 // AddedEntry is the entry a POST produced, or found already in the catalog.
 type AddedEntry struct {
-	ID      int
-	Title   string
-	Already bool
+	ID                int
+	Title             string
+	Already           bool
+	CategoryUnchecked bool
 }
 
 // CatalogWriter writes the catalog the server reads. Реализует его тот, кто
@@ -57,7 +60,7 @@ type AddedEntry struct {
 // и set), обработчик только разбирает запрос и переводит ответ.
 type CatalogWriter interface {
 	AddEntry(ctx context.Context, a EntryAdd) (AddedEntry, error)
-	EditEntry(ctx context.Context, id int, p EntryPatch) error
+	EditEntry(ctx context.Context, id int, p EntryPatch) (int, error)
 }
 
 // WithCatalogWriter подключает запись. Без нее маршрутов записи нет: сервер
@@ -136,7 +139,7 @@ func handleEditEntry(wr CatalogWriter) http.HandlerFunc {
 			http.Error(w, "nothing to change", http.StatusBadRequest)
 			return
 		}
-		if err := wr.EditEntry(r.Context(), id, p); err != nil {
+		if _, err := wr.EditEntry(r.Context(), id, p); err != nil {
 			writeWriteError(w, err)
 			return
 		}
