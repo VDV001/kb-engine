@@ -119,7 +119,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:949"
+        "cmd/kbengine/main.go:952"
       ]
     },
     {
@@ -129,7 +129,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:767"
+        "cmd/kbengine/main.go:770"
       ]
     },
     {
@@ -159,7 +159,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:787"
+        "cmd/kbengine/main.go:790"
       ]
     },
     {
@@ -1809,8 +1809,8 @@
           "from": "owner",
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
-          "detail": "флаги объявлены в cmd/kbengine/main.go:891-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:842, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:1002",
+          "detail": "флаги объявлены в cmd/kbengine/main.go:894-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:842, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
+          "source": "cmd/kbengine/main.go:1005",
           "unverified": false
         },
         {
@@ -1818,7 +1818,7 @@
           "from": "cmd-set",
           "to": "ad-catalogjson",
           "call": "catalogjson.SetFields(path, ids, changes)",
-          "detail": "cmd/kbengine/main.go:964; применяет либо ко всем id, либо ни к одному, правит по членам объекта в порядке файла — internal/adapter/catalogjson/setfields.go:97",
+          "detail": "cmd/kbengine/main.go:967; применяет либо ко всем id, либо ни к одному, правит по членам объекта в порядке файла — internal/adapter/catalogjson/setfields.go:97",
           "source": "internal/adapter/catalogjson/setfields.go:97",
           "unverified": false
         },
@@ -1827,7 +1827,7 @@
           "from": "ad-catalogjson",
           "to": "f-catalog",
           "call": "catalogjson.SetFields → перезапись catalog.json",
-          "detail": "⚠️ --related ЗАМЕНЯЕТ список, а не дополняет (флаг объявлен в cmd/kbengine/main.go:814): шесть связей стандарта однажды стёрлись молча, и команда отчиталась успехом — internal/adapter/catalogjson/setfields.go:97",
+          "detail": "⚠️ --related ЗАМЕНЯЕТ список, а не дополняет (флаг объявлен в cmd/kbengine/main.go:817): шесть связей стандарта однажды стёрлись молча, и команда отчиталась успехом — internal/adapter/catalogjson/setfields.go:97",
           "source": "internal/adapter/catalogjson/setfields.go:97",
           "unverified": false
         }
@@ -1844,8 +1844,8 @@
           "from": "owner",
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
-          "detail": "cmd/kbengine/main.go:767 — набор проверок перечислен в cmd/kbengine/main.go:870-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
-          "source": "cmd/kbengine/main.go:870",
+          "detail": "cmd/kbengine/main.go:770 — набор проверок перечислен в cmd/kbengine/main.go:873-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
+          "source": "cmd/kbengine/main.go:873",
           "unverified": false
         },
         {
@@ -1853,7 +1853,7 @@
           "from": "cmd-audit",
           "to": "uc-audit",
           "call": "audit.NewService(catalogjson.FileLoader{Path: catalogPath})",
-          "detail": "cmd/kbengine/main.go:781 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), то есть один прогон --check all читает файл столько раз, сколько в нём проверок",
+          "detail": "cmd/kbengine/main.go:784 — сервис получает загрузчик каталога. ⚠️ Каждая проверка зовёт loader.Load() САМА (internal/usecase/audit/audit.go:82, :114 и далее), то есть один прогон --check all читает файл столько раз, сколько в нём проверок",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": false
         },
@@ -1862,7 +1862,7 @@
           "from": "uc-audit",
           "to": "ad-artefactfs",
           "call": "svc.WithArtefactVersions / WithArtefactFiles",
-          "detail": "cmd/kbengine/main.go:822-702 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта, files — конспект, которого нет на диске",
+          "detail": "cmd/kbengine/main.go:825-702 подключает чтение front matter: проверка versions ловит отставание копии версии в каталоге от файла артефакта, files — конспект, которого нет на диске",
           "source": "internal/usecase/audit/audit.go:53",
           "unverified": true,
           "why": "подключение чтения front matter прослежено по вызову, но сама сверка версий по файлам не читалась"
@@ -1872,8 +1872,8 @@
           "from": "cmd-audit",
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
-          "detail": "cmd/kbengine/main.go:809 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:905) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
-          "source": "cmd/kbengine/main.go:913",
+          "detail": "cmd/kbengine/main.go:812 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:908) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
+          "source": "cmd/kbengine/main.go:916",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -1953,7 +1953,7 @@
           "from": "build-serve",
           "to": "ad-httpapi",
           "call": "httpapi.NewServer(query, audit, analytics, fin, cfg, chlog, docs, engine, front)",
-          "detail": "cmd/kbengine/main.go:697 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:145",
+          "detail": "cmd/kbengine/main.go:696 — nil Financier означает «ledger не подключён», и это законная конфигурация, а не ошибка — internal/adapter/httpapi/server.go:145",
           "source": "internal/adapter/httpapi/server.go:232",
           "unverified": false
         },
@@ -2088,7 +2088,7 @@
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
           "detail": "cmd/kbengine/main.go:660",
-          "source": "cmd/kbengine/main.go:836",
+          "source": "cmd/kbengine/main.go:839",
           "unverified": false
         },
         {
@@ -2096,7 +2096,7 @@
           "from": "cmd-dedup",
           "to": "uc-audit",
           "call": "audit.Service.Duplicates()",
-          "detail": "cmd/kbengine/main.go:721 → audit.Service.Duplicates (internal/usecase/audit/dedup.go:24). Два ключа группировки: точное совпадение адреса и похожий заголовок после нормализации (dedup.go:18, normalizeTitle на :49). По habr_id дедуп НЕ работает — этого ключа в коде нет",
+          "detail": "cmd/kbengine/main.go:724 → audit.Service.Duplicates (internal/usecase/audit/dedup.go:24). Два ключа группировки: точное совпадение адреса и похожий заголовок после нормализации (dedup.go:18, normalizeTitle на :49). По habr_id дедуп НЕ работает — этого ключа в коде нет",
           "source": "internal/usecase/audit/dedup.go:24",
           "unverified": false
         }
@@ -2821,8 +2821,8 @@
           "from": "ad-httpapi",
           "to": "f-now",
           "call": "readNowDoc(path)",
-          "detail": "cmd/kbengine/main.go:750 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:749",
+          "detail": "cmd/kbengine/main.go:753 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
+          "source": "cmd/kbengine/main.go:752",
           "unverified": false
         },
         {
@@ -3198,8 +3198,8 @@
           "to": "f-artefacts",
           "call": "fsys.Open(rel)",
           "symbol": "artefactsFS",
-          "source": "cmd/kbengine/main.go:828",
-          "detail": "cmd/kbengine/main.go:816 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
+          "source": "cmd/kbengine/main.go:831",
+          "detail": "cmd/kbengine/main.go:819 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
         },
         {
           "n": 5,
@@ -3403,8 +3403,8 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:998",
-          "detail": "cmd/kbengine/main.go:879 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
+          "source": "cmd/kbengine/main.go:1001",
+          "detail": "cmd/kbengine/main.go:882 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
           "n": 2,
