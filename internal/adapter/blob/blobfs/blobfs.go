@@ -18,6 +18,9 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 )
 
+// LockName is the store's lock file inside the root.
+const LockName = ".blobfs.lock"
+
 // Store is a blob.Store on the local disk.
 type Store struct {
 	root string

@@ -353,3 +353,59 @@ func TestLiveYandex(t *testing.T) {
 		return s
 	})
 }
+
+// Предел S3 на ключ — 1024 байта вместе с префиксом: отказ до запроса.
+func TestKeyWithPrefixOverS3LimitIsRefused(t *testing.T) {
+	f, srv := newFakeS3(t)
+	s, err := blobs3.New(blobs3.Config{Endpoint: srv.URL, Bucket: bucket, Token: blobs3.StaticToken(token), Prefix: "test/run1/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := strings.Repeat("k", 1020) // valid alone, 1030 bytes with the prefix
+	if _, err := s.Put(context.Background(), key, []byte("v"), ""); !errors.Is(err, blob.ErrInvalidKey) {
+		t.Fatalf("Put: err = %v, want ErrInvalidKey", err)
+	}
+	if _, err := s.Get(context.Background(), key); !errors.Is(err, blob.ErrInvalidKey) {
+		t.Fatalf("Get: err = %v, want ErrInvalidKey", err)
+	}
+	if n := f.hits.Load(); n != 0 {
+		t.Fatalf("%d requests reached the bucket", n)
+	}
+}
+
+func TestBucketNameEdges(t *testing.T) {
+	for _, b := range []string{"-ab", "ab-", ".ab", "ab.", "a..b", "AB-c"} {
+		if _, err := blobs3.New(blobs3.Config{Endpoint: blobs3.YandexEndpoint, Bucket: b, Token: blobs3.StaticToken(token)}); err == nil {
+			t.Errorf("bucket %q accepted", b)
+		}
+	}
+}
+
+// Сбой сервиса метаданных при обновлении не роняет запросы, пока прежний
+// токен еще не истек.
+func TestMetadataTokenServesCachedWhileValid(t *testing.T) {
+	var down atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if down.Load() {
+			http.Error(w, "down", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = io.WriteString(w, `{"access_token":"tok1","expires_in":3600}`)
+	}))
+	defer srv.Close()
+	now := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	m := &blobs3.MetadataToken{BaseURL: srv.URL, Now: func() time.Time { return now }}
+	ctx := context.Background()
+	if _, err := m.Token(ctx); err != nil {
+		t.Fatal(err)
+	}
+	down.Store(true)
+	now = now.Add(57 * time.Minute) // inside the refresh margin, not expired
+	if got, err := m.Token(ctx); err != nil || got != "tok1" {
+		t.Fatalf("Token = %q, %v; want the still-valid tok1", got, err)
+	}
+	now = now.Add(4 * time.Minute) // expired
+	if got, err := m.Token(ctx); err == nil {
+		t.Fatalf("Token = %q after expiry with the service down, want an error", got)
+	}
+}

@@ -287,6 +287,8 @@ const (
 	refreshMargin = 5 * time.Minute
 )
 
+var metadataClient = &http.Client{Timeout: 5 * time.Second}
+
 // Token returns a cached token or fetches a new one.
 func (m *MetadataToken) Token(ctx context.Context) (string, error) {
 	now := time.Now
@@ -313,7 +315,7 @@ func (m *MetadataToken) fetch(ctx context.Context) (string, time.Duration, error
 	}
 	client := m.Client
 	if client == nil {
-		client = &http.Client{Timeout: 5 * time.Second}
+		client = metadataClient
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+metadataPath, nil)
 	if err != nil {
