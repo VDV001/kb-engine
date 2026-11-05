@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"io"
@@ -123,13 +124,18 @@ func TestTenantsAreIsolatedOnEveryRoute(t *testing.T) {
 	f := newTenants(t)
 	seenA := 0
 	for _, p := range registeredGETs(t) {
-		if rec := get(f.h, p, f.tokB); strings.Contains(rec.Body.String(), secretA) {
+		if rec := get(f.h, p, f.tokB); strings.Contains(readable(t, rec), secretA) {
 			t.Errorf("%s with B's token shows A's data (status %d)", p, rec.Code)
 		}
-		if rec := get(f.h, p, f.tokA); strings.Contains(rec.Body.String(), secretA) {
+		bodyA := readable(t, get(f.h, p, f.tokA))
+		if strings.Contains(bodyA, secretA) {
 			seenA++
+		} else if strings.HasSuffix(p, ".xlsx") {
+			// Выгрузка сжата: без распаковки проверка утечки через нее прошла бы
+			// впустую. Своя метка в своей книге доказывает, что текст читается.
+			t.Errorf("%s with A's token does not show A's own data: the leak check would pass vacuously", p)
 		}
-		if rec := get(f.h, p, f.tokA); strings.Contains(rec.Body.String(), secretB) {
+		if strings.Contains(bodyA, secretB) {
 			t.Errorf("%s with A's token shows B's data", p)
 		}
 	}
@@ -240,4 +246,32 @@ func (g *gateCatalog) GetIfChanged(ctx context.Context, key, etag string) (blob.
 		<-g.gate
 	}
 	return g.Store.GetIfChanged(ctx, key, etag)
+}
+
+// readable is the body as text to search: книга xlsx — zip, и метка внутри нее
+// сжата, поэтому архив распаковывается и тексты его частей склеиваются.
+func readable(t *testing.T, rec *httptest.ResponseRecorder) string {
+	t.Helper()
+	raw := rec.Body.Bytes()
+	if !bytes.HasPrefix(raw, []byte("PK\x03\x04")) {
+		return string(raw)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
+	if err != nil {
+		t.Fatalf("a zip body that does not open: %v", err)
+	}
+	var out strings.Builder
+	for _, zf := range zr.File {
+		rc, err := zf.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		part, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		out.Write(part)
+	}
+	return out.String()
 }

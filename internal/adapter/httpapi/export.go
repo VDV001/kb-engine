@@ -1,10 +1,16 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
+
+	"github.com/daniil/kb-engine/internal/usecase/finance"
 
 	"github.com/daniil/kb-engine/internal/adapter/xlsxdim"
 	"github.com/xuri/excelize/v2"
@@ -61,62 +67,26 @@ func handleFinanceExport() http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		w.Header().Set("Content-Type",
-			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-		w.Header().Set("Content-Disposition", `attachment; filename="finances.xlsx"`)
-		if err := writeWorkbook(w, req.Rows); err != nil {
-			// Заголовки могли уже уйти — статус тут писать поздно, остаётся
-			// оборвать ответ и не делать вид, что файл целый.
-			return
+		values := make([][]string, 0, len(req.Rows))
+		for _, row := range req.Rows {
+			values = append(values, []string{
+				row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
+				row.Place, row.Description, row.Amount, row.Account, currencyLabel(row.Currency),
+			})
 		}
+		sendBook(w, "finances.xlsx", []sheet{{"Sheet1", exportHeader, exportWidths, values, []int{amountColumn}}})
 	}
 }
 
-// writeWorkbook renders rows into dst as an xlsx workbook.
-func writeWorkbook(dst io.Writer, rows []exportRow) error {
-	f := excelize.NewFile()
-	defer func() { _ = f.Close() }()
-	sheet := f.GetSheetName(0)
-
-	if err := writeRow(f, sheet, 1, exportHeader, -1); err != nil {
-		return err
-	}
-	for n, row := range rows {
-		values := []string{
-			row.Date, kindLabel(row.Kind), row.Category, row.Subcategory,
-			row.Place, row.Description, row.Amount, row.Account, currencyLabel(row.Currency),
-		}
-		if err := writeRow(f, sheet, n+2, values, amountColumn); err != nil {
-			return err
-		}
-	}
-	for i, width := range exportWidths {
-		col, err := excelize.ColumnNumberToName(i + 1)
-		if err != nil {
-			return err
-		}
-		if err := f.SetColWidth(sheet, col, col, width); err != nil {
-			return err
-		}
-	}
-	// Книгу открывает кто-то другой - в этом весь смысл выгрузки. Читатель,
-	// который верит объявленному диапазону, а не сканирует ячейки, без этой
-	// строки не увидит ни одной: excelize пишет туда "A1" при любом содержимом.
-	if err := xlsxdim.Sync(f); err != nil {
-		return err
-	}
-	return f.Write(dst)
-}
-
-// writeRow writes one row, treating the value at numeric as a number when it
-// parses as one. numeric of -1 means every cell is text.
-func writeRow(f *excelize.File, sheet string, rowNum int, values []string, numeric int) error {
+// writeRow writes one row, treating the values at numeric as numbers when they
+// parse as ones. Без numeric — весь ряд текстом.
+func writeRow(f *excelize.File, sheet string, rowNum int, values []string, numeric ...int) error {
 	for i, v := range values {
 		cell, err := excelize.CoordinatesToCellName(i+1, rowNum)
 		if err != nil {
 			return err
 		}
-		if i == numeric {
+		if slices.Contains(numeric, i) {
 			if err := f.SetCellValue(sheet, cell, asNumber(v)); err != nil {
 				return err
 			}
@@ -162,4 +132,186 @@ func currencyLabel(code string) string {
 		return "RUB"
 	}
 	return code
+}
+
+// operationsHeader — колонки выгрузки с экрана плюс пометка перевода между
+// своими счетами: движок не считает его ни тратой, ни доходом (правило 19), и
+// без пометки СУММ в Excel не сошлась бы с итогами на экране.
+var operationsHeader = append(slices.Clone(exportHeader), "Перевод себе")
+
+var operationsWidths = append(slices.Clone(exportWidths), 12)
+
+// accountsHeader: суммы — в валюте счета. Пересчета «в рубли» нет намеренно
+// (решение владельца 05.11): курс меняется, и сумма по нему — оценка, а не
+// факт. Курс счета показан как есть, справочно.
+var accountsHeader = []string{"Счёт", "Подтверждено", "Обновлено", "Сейчас", "Валюта", "Курс"}
+
+var accountsWidths = []float64{24, 14, 12, 14, 8, 10}
+
+// totalsHeader: итоги по роду счета и валюте — валюты не складываются.
+var totalsHeader = []string{"Род", "Валюта", "Подтверждено", "Сейчас"}
+
+var totalsWidths = []float64{20, 8, 14, 14}
+
+// plainAccounts names the kind of the ordinary accounts, whose name carries
+// no «Род →».
+const plainAccounts = "Обычные счета"
+
+// entriesHeader: у своих артефактов (заметки, творения) обычно есть только дата
+// создания, у чужих материалов — дата добавления, поэтому колонок две.
+var entriesHeader = []string{
+	"ID", "Заголовок", "Категория", "Тип", "Статус", "Вердикт", "Теги", "Добавлено", "Создано", "Автор", "Ссылка", "Описание",
+}
+
+var entriesWidths = []float64{6, 50, 16, 10, 10, 10, 24, 12, 12, 18, 40, 60}
+
+// handleFinanceWorkbook is GET /api/finances/export.xlsx: вся книга человека с
+// сервера, без страницы — лист «Операции» (колонки той же выгрузки, что
+// POST /api/finances/export) и лист «Счета» с расчетным остатком тем же
+// finance.CurrentBalances, что у /api/finances. Человек скачивает свое и
+// смотрит без движка.
+func handleFinanceWorkbook(fin Financier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if fin == nil {
+			http.Error(w, "no finances on this server", http.StatusNotFound)
+			return
+		}
+		f, err := fin.Finances()
+		if err != nil {
+			// Как у /api/finances: в причине путь к личному файлу или ключ.
+			log.Printf("finances export: %v", err)
+			http.Error(w, "finances unavailable", http.StatusInternalServerError)
+			return
+		}
+		// Поля — теми же toTransactionDTO и toBalanceDTO, что у /api/finances:
+		// своя сборка рядом однажды разошлась бы с экраном молча.
+		ops := make([][]string, 0, len(f.Transactions))
+		for _, t := range f.Transactions {
+			d := toTransactionDTO(t)
+			transfer := ""
+			if t.IsInternalTransfer() {
+				transfer = "да"
+			}
+			ops = append(ops, []string{
+				d.Date, kindLabel(d.Kind), d.Category, d.Subcategory,
+				d.Place, d.Description, d.Amount, d.Account, currencyLabel(d.Currency), transfer,
+			})
+		}
+		balances := finance.CurrentBalances(f.Accounts, f.Transactions, f.Confirmations)
+		var accs [][]string
+		for _, b := range balances {
+			d := toBalanceDTO(b)
+			accs = append(accs, []string{d.Bank, d.Balance, d.Updated, d.Current, currencyLabel(d.Currency), d.Rate})
+		}
+		var totals [][]string
+		for _, tot := range finance.BalancesByCurrency(balances) {
+			group := tot.Group
+			if group == "" {
+				group = plainAccounts
+			}
+			totals = append(totals, []string{group, tot.Currency, tot.Confirmed.String(), tot.Current.String()})
+		}
+		sendBook(w, "finances.xlsx", []sheet{
+			{"Операции", operationsHeader, operationsWidths, ops, []int{amountColumn}},
+			{"Счета", accountsHeader, accountsWidths, accs, []int{1, 3, 5}},
+			{"Итого", totalsHeader, totalsWidths, totals, []int{2, 3}},
+		})
+	}
+}
+
+// handleEntriesWorkbook is GET /api/entries/export.xlsx: каталог базы, запись
+// строкой. Поля берутся тем же toDTO, что у /api/entries: две сборки одной
+// записи однажды разошлись бы.
+func handleEntriesWorkbook(q Querier) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entries, err := q.Entries()
+		if err != nil {
+			log.Printf("entries export: %v", err)
+			http.Error(w, "entries unavailable", http.StatusInternalServerError)
+			return
+		}
+		rows := make([][]string, 0, len(entries))
+		for _, e := range entries {
+			d := toDTO(e)
+			verdict := ""
+			if d.Verdict != nil {
+				verdict = *d.Verdict
+			}
+			rows = append(rows, []string{
+				strconv.Itoa(d.ID), d.Title, d.Category, d.Kind, d.Lifecycle, verdict,
+				strings.Join(d.Tags, ", "), d.DateAdded, d.DateCreated, d.Author, d.URL, d.Description,
+			})
+		}
+		sendBook(w, "entries.xlsx", []sheet{{"Записи", entriesHeader, entriesWidths, rows, []int{0}}})
+	}
+}
+
+// sheet is one sheet of a workbook: шапка, ширины, строки и номера колонок,
+// которые пишутся числами.
+type sheet struct {
+	name    string
+	header  []string
+	widths  []float64
+	rows    [][]string
+	numeric []int
+}
+
+// sendBook builds the workbook in memory and only then answers: сбой сборки —
+// честный 500, а не оборванный на середине файл с кодом 200.
+func sendBook(w http.ResponseWriter, filename string, sheets []sheet) {
+	var buf bytes.Buffer
+	if err := writeBook(&buf, sheets); err != nil {
+		log.Printf("export %s: %v", filename, err)
+		http.Error(w, "export failed", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	_, _ = w.Write(buf.Bytes())
+}
+
+// writeBook renders sheets into dst, the first one in place of the default.
+func writeBook(dst io.Writer, sheets []sheet) error {
+	f := excelize.NewFile()
+	defer func() { _ = f.Close() }()
+	for i, sh := range sheets {
+		if i == 0 {
+			if err := f.SetSheetName(f.GetSheetName(0), sh.name); err != nil {
+				return err
+			}
+		} else if _, err := f.NewSheet(sh.name); err != nil {
+			return err
+		}
+		if err := writeSheet(f, sh); err != nil {
+			return err
+		}
+	}
+	// Книгу открывает кто-то другой — в этом весь смысл выгрузки. Читатель,
+	// который верит объявленному диапазону, без этого не увидит ни одной
+	// ячейки: excelize пишет туда "A1" при любом содержимом.
+	if err := xlsxdim.Sync(f); err != nil {
+		return err
+	}
+	return f.Write(dst)
+}
+
+func writeSheet(f *excelize.File, sh sheet) error {
+	if err := writeRow(f, sh.name, 1, sh.header); err != nil {
+		return err
+	}
+	for n, row := range sh.rows {
+		if err := writeRow(f, sh.name, n+2, row, sh.numeric...); err != nil {
+			return err
+		}
+	}
+	for i, width := range sh.widths {
+		col, err := excelize.ColumnNumberToName(i + 1)
+		if err != nil {
+			return err
+		}
+		if err := f.SetColWidth(sh.name, col, col, width); err != nil {
+			return err
+		}
+	}
+	return nil
 }

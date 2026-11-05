@@ -228,6 +228,8 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		writeJSON(w, engine)
 	})
 	mux.HandleFunc("POST /api/finances/export", handleFinanceExport())
+	mux.HandleFunc("GET /api/finances/export.xlsx", handleFinanceWorkbook(fin))
+	mux.HandleFunc("GET /api/entries/export.xlsx", handleEntriesWorkbook(q))
 	mux.HandleFunc("GET /api/now", handleNow(docs.Now, q, chlog, fin))
 	mux.HandleFunc("GET /api/sources", handleSources(docs, q, chlog, fin, engine))
 	mux.HandleFunc("GET /api/team", handleRawJSON(docs.Team))
