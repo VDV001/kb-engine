@@ -95,18 +95,36 @@ button { font-family: inherit; }
    круглый конец линии не оставляет точки), поэтому скачка нет. Цикл запускает
    класс wake (app.js: ⌥Space и наведение) и всегда доигрывает: уведенный с
    28 px знака курсор не обрывает его рывком. Пока идет цикл, под буквами
-   бледный след (mark-ghost); в покое его нет, края букв не двоятся. */
-.mark-ghost { opacity: 0; }
+   бледный след (mark-ghost); в покое его нет, края букв не двоятся.
+   Темп (решение владельца 05.11: прежние 0.6 с с --z-ease читались как
+   моргание): 1.8 с на цикл — 0.35 с все три буквы стираются вместе, затем
+   D, V, K ведутся по 0.7 с каждая со сдвигом 0.35 с, ease-in-out без рывка в
+   начале. Длина цикла у букв одна, поэтому animationend у K — конец цикла. */
+.mark-ghost { opacity: 0; transition: opacity .3s ease; }
 .brand.wake .mark-ghost { opacity: .35; }
 .mark-dvk { stroke-dasharray: 1 1.2; stroke-dashoffset: 0; }
-.brand.wake .mark-dvk { animation: mark-redraw .6s var(--z-ease); }
-.brand.wake .mark-v { animation-delay: .2s; }
-.brand.wake .mark-k { animation-delay: .4s; }
-@keyframes mark-redraw {
-  0% { stroke-dashoffset: 0; }
-  45% { stroke-dashoffset: -1.1; }
-  45.01% { stroke-dashoffset: 1.1; }
-  100% { stroke-dashoffset: 0; }
+.brand.wake .mark-d { animation: mark-redraw-d 1.8s linear; }
+.brand.wake .mark-v { animation: mark-redraw-v 1.8s linear; }
+.brand.wake .mark-k { animation: mark-redraw-k 1.8s linear; }
+/* 19.44% = 0.35 с стирания; 38.89% и 58.33% — старт V и K; концы 58.33,
+   77.78 и 97.22% — через 0.7 с после старта. */
+@keyframes mark-redraw-d {
+  0% { stroke-dashoffset: 0; animation-timing-function: cubic-bezier(.4, 0, .9, .6); }
+  19.44% { stroke-dashoffset: -1.1; }
+  19.45% { stroke-dashoffset: 1.1; animation-timing-function: cubic-bezier(.45, 0, .25, 1); }
+  58.33%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes mark-redraw-v {
+  0% { stroke-dashoffset: 0; animation-timing-function: cubic-bezier(.4, 0, .9, .6); }
+  19.44% { stroke-dashoffset: -1.1; }
+  19.45%, 38.89% { stroke-dashoffset: 1.1; animation-timing-function: cubic-bezier(.45, 0, .25, 1); }
+  77.78%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes mark-redraw-k {
+  0% { stroke-dashoffset: 0; animation-timing-function: cubic-bezier(.4, 0, .9, .6); }
+  19.44% { stroke-dashoffset: -1.1; }
+  19.45%, 58.33% { stroke-dashoffset: 1.1; animation-timing-function: cubic-bezier(.45, 0, .25, 1); }
+  97.22%, 100% { stroke-dashoffset: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
   .mark-l, .mark-r { transition: none; }
