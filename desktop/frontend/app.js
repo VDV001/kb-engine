@@ -721,9 +721,14 @@ function formOf(s, i) {
 }
 
 // Поле токена: сам токен сюда не возвращается никогда — только «сохранен».
+// Глаз показывает только то, что набрано в поле, — чтобы человек убедился,
+// что вставил тот токен. Сохраненный токен окно из Связки на страницу не
+// достает: токен и данные подключений не текут из приложения.
+const EYE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M4 4l16 16"/></svg>`;
 const tokenField = (id, saved) =>
   `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
-    placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}"></div>`;
+    placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}">
+    <button type="button" class="reveal" data-reveal="${id}" aria-pressed="false" aria-label="Показать набранный токен" data-tip="Показать токен" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке">${EYE}</button></div>`;
 const checkBar = (key) => {
   const v = ui.verdict && ui.verdict.key === key ? ui.verdict : null;
   return `<div class="formbar"><button class="btn" data-check="${key}">Проверить</button>
@@ -843,6 +848,14 @@ function setTarget(s, v) {
 const focusSoon = (sel) => requestAnimationFrame(() => $(sel)?.focus());
 
 panel.addEventListener("click", async (e) => {
+  const eye = e.target.closest("[data-reveal]");
+  if (eye) {
+    const inp = $("#" + eye.dataset.reveal), show = inp.type === "password";
+    inp.type = show ? "text" : "password";
+    eye.setAttribute("aria-pressed", String(show));
+    eye.setAttribute("aria-label", show ? "Скрыть токен" : "Показать набранный токен");
+    return;
+  }
   const b = e.target.closest("button");
   if (!b || !panel.contains(b)) return;
   const d = b.dataset;
