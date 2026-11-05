@@ -13,12 +13,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 )
 
-// LockName is the store's lock file inside the root.
+// LockName is the store's lock file inside the root; ключом он быть не может.
 const LockName = ".blobfs.lock"
 
 // Store is a blob.Store on the local disk.
@@ -45,7 +47,7 @@ func New(root string) (*Store, error) {
 
 // Get reads the object at key.
 func (s *Store) Get(_ context.Context, key string) (blob.Object, error) {
-	if err := blob.ValidKey(key); err != nil {
+	if err := validKey(key); err != nil {
 		return blob.Object{}, err
 	}
 	data, err := readLimited(s.path(key))
@@ -61,11 +63,19 @@ func (s *Store) Get(_ context.Context, key string) (blob.Object, error) {
 // Put writes data at key if the stored version is still ifMatch (or, with an
 // empty ifMatch, if the key does not exist yet).
 //
-// ponytail: один замок на все хранилище, а не на ключ. Потолок — записи разных
-// ключей ждут друг друга; на двух пользователях это миллисекунды. Путь
-// апгрейда — замок на ключ в отдельном каталоге замков вне дерева данных.
+// ponytail: один замок на все хранилище, а не на ключ, и версия считается
+// перечитыванием и SHA-256 текущего файла. Потолок — записи разных ключей ждут
+// друг друга, а запись 23 МБ индекса держит замок на чтение и хэш 23 МБ; на
+// двух пользователях это доли секунды. Путь апгрейда — замок на ключ и ETag в
+// файле рядом с данными. В облаке этого кода нет: там blobs3.
+//
+// ponytail: на APFS ключи, различающиеся только регистром или нормализацией
+// Unicode (й в NFC и NFD), — один файл, а в бакете два объекта. Потолок —
+// такие ключи здесь конфликтуют или делят данные; ключи базы приходят из имен
+// файлов той же APFS и уже уникальны в ней. Путь апгрейда — приводить ключ к
+// NFC (golang.org/x/text) и отказывать в ключах, равных без учета регистра.
 func (s *Store) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
-	if err := blob.ValidKey(key); err != nil {
+	if err := validKey(key); err != nil {
 		return "", err
 	}
 	if len(data) > blob.MaxObjectSize {
@@ -73,9 +83,12 @@ func (s *Store) Put(ctx context.Context, key string, data []byte, ifMatch string
 	}
 	path := s.path(key)
 	etag := etagOf(data)
-	// Замок — файл рядом с корнем, а не внутри: внутри любое имя может
-	// оказаться чьим-то ключом.
-	err := filelock.WithContext(ctx, s.root, func() error {
+	// Замок внутри корня: хранилищу нужен только свой каталог (смонтированный
+	// том, родитель только для чтения). Его имя отказано как ключ.
+	err := filelock.WithContext(ctx, filepath.Join(s.root, strings.TrimSuffix(LockName, filelock.Suffix)), func() error {
+		if err := s.collides(path); err != nil {
+			return fmt.Errorf("%w: %s: %w", blob.ErrInvalidKey, key, err)
+		}
 		cur, err := readLimited(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
@@ -97,6 +110,41 @@ func (s *Store) Put(ctx context.Context, key string, data []byte, ifMatch string
 	return etag, nil
 }
 
+// validKey is blob.ValidKey plus the store's own lock name.
+func validKey(key string) error {
+	if err := blob.ValidKey(key); err != nil {
+		return err
+	}
+	if key == LockName {
+		return fmt.Errorf("%w: %q is the store's lock", blob.ErrInvalidKey, key)
+	}
+	return nil
+}
+
+// errCollides: в бакете «a» и «a/b» — независимые ключи, а на диске один из
+// них был бы каталогом другого.
+var errCollides = errors.New("на диске ключ пересекается с каталогом или файлом другого ключа")
+
+// collides reports whether path is a directory or sits under a regular file.
+func (s *Store) collides(path string) error {
+	if info, err := os.Lstat(path); err == nil && info.IsDir() {
+		return errCollides
+	}
+	for dir := filepath.Dir(path); dir != s.root && len(dir) > len(s.root); dir = filepath.Dir(dir) {
+		info, err := os.Lstat(dir)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return errCollides
+		}
+	}
+	return nil
+}
+
 // path maps a valid key under the root. ValidKey уже отказал `..`, абсолютным
 // путям и обратной косой черте, поэтому Join не выходит из корня.
 func (s *Store) path(key string) string {
@@ -108,13 +156,22 @@ func etagOf(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// readLimited reads a file of at most blob.MaxObjectSize bytes.
+// readLimited reads a file of at most blob.MaxObjectSize bytes. Каталог на
+// месте ключа и путь под обычным файлом — «объекта нет», как в бакете.
 func readLimited(path string) ([]byte, error) {
 	f, err := os.Open(path)
+	if errors.Is(err, syscall.ENOTDIR) {
+		return nil, fmt.Errorf("%w: %w", fs.ErrNotExist, err)
+	}
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	if info, err := f.Stat(); err != nil {
+		return nil, err
+	} else if info.IsDir() {
+		return nil, fmt.Errorf("%w: %s is a directory", fs.ErrNotExist, path)
+	}
 	data, err := io.ReadAll(io.LimitReader(f, blob.MaxObjectSize+1))
 	if err != nil {
 		return nil, err
@@ -151,5 +208,15 @@ func writeAtomic(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// Sync каталога: без него после сбоя питания rename мог не дойти до
+	// диска, и подтвержденная запись вернулась бы к старой версии.
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = d.Close() }()
+	return d.Sync()
 }

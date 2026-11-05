@@ -133,17 +133,35 @@ func validPrefix(prefix string) error {
 	return nil
 }
 
-// validBucket checks the S3 bucket naming rule (без проверки на вид IP-адреса).
+// validBucket checks the S3 bucket naming rule (без проверки на вид IP-адреса):
+// 3–63 символа из a-z, 0-9, точки и дефиса, по краям буква или цифра, без «..».
 func validBucket(b string) bool {
-	if len(b) < 3 || len(b) > 63 {
+	if len(b) < 3 || len(b) > 63 || strings.Contains(b, "..") ||
+		!alnum(rune(b[0])) || !alnum(rune(b[len(b)-1])) {
 		return false
 	}
 	for _, r := range b {
-		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '.' && r != '-' {
+		if !alnum(r) && r != '.' && r != '-' {
 			return false
 		}
 	}
 	return true
+}
+
+func alnum(r rune) bool { return (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') }
+
+// s3KeyLimit is the S3 limit on a full key, prefix included, in bytes.
+const s3KeyLimit = 1024
+
+// checkKey is blob.ValidKey plus the S3 limit on the key with the prefix.
+func (s *Store) checkKey(key string) error {
+	if err := blob.ValidKey(key); err != nil {
+		return err
+	}
+	if n := len(s.prefix) + len(key); n > s3KeyLimit {
+		return fmt.Errorf("%w: %d bytes with the prefix, S3 allows %d", blob.ErrInvalidKey, n, s3KeyLimit)
+	}
+	return nil
 }
 
 // objectURL escapes each segment of the key: кириллица и пробелы в именах
@@ -158,7 +176,7 @@ func (s *Store) objectURL(key string) string {
 
 // Get reads the object at key.
 func (s *Store) Get(ctx context.Context, key string) (blob.Object, error) {
-	if err := blob.ValidKey(key); err != nil {
+	if err := s.checkKey(key); err != nil {
 		return blob.Object{}, err
 	}
 	resp, err := s.do(ctx, http.MethodGet, key, nil, nil)
@@ -189,7 +207,7 @@ func (s *Store) Get(ctx context.Context, key string) (blob.Object, error) {
 
 // Put writes data at key under the ifMatch condition (see blob.Store).
 func (s *Store) Put(ctx context.Context, key string, data []byte, ifMatch string) (string, error) {
-	if err := blob.ValidKey(key); err != nil {
+	if err := s.checkKey(key); err != nil {
 		return "", err
 	}
 	if len(data) > blob.MaxObjectSize {
@@ -277,6 +295,7 @@ type MetadataToken struct {
 	mu      sync.Mutex
 	tok     string
 	refresh time.Time
+	expiry  time.Time
 }
 
 const (
@@ -287,9 +306,21 @@ const (
 	refreshMargin = 5 * time.Minute
 )
 
-var metadataClient = &http.Client{Timeout: 5 * time.Second}
+// metadataClient never uses a proxy: ответ несет токен сервисного аккаунта
+// открытым текстом, а http.DefaultTransport слушается HTTP_PROXY.
+var metadataClient = &http.Client{
+	Timeout:   5 * time.Second,
+	Transport: &http.Transport{Proxy: nil},
+}
 
-// Token returns a cached token or fetches a new one.
+// Token returns a cached token or fetches a new one. Если обновление не
+// удалось, а прежний токен еще не истек, отдается он: сбой сервиса метаданных
+// не роняет запросы раньше, чем это сделал бы сам срок токена.
+//
+// ponytail: замок держится на время запроса к метаданным, и ждущие вызовы не
+// отменяются своим ctx. Потолок — при недоступных метаданных и истекшем токене
+// N параллельных запросов ждут друг за другом до 5 с каждый; в окне обновления
+// их выручает кэш выше. Путь апгрейда — singleflight с ожиданием по ctx.
 func (m *MetadataToken) Token(ctx context.Context) (string, error) {
 	now := time.Now
 	if m.Now != nil {
@@ -302,9 +333,13 @@ func (m *MetadataToken) Token(ctx context.Context) (string, error) {
 	}
 	tok, ttl, err := m.fetch(ctx)
 	if err != nil {
+		if m.tok != "" && now().Before(m.expiry) {
+			return m.tok, nil
+		}
 		return "", err
 	}
-	m.tok, m.refresh = tok, now().Add(ttl-refreshMargin)
+	at := now()
+	m.tok, m.refresh, m.expiry = tok, at.Add(ttl-refreshMargin), at.Add(ttl)
 	return tok, nil
 }
 
