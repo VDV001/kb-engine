@@ -12,8 +12,20 @@ import (
 // проверяет как свой IAM-токен (403 до приложения).
 const TokenHeader = "X-KB-Token"
 
-// RequireBearer answers 401 to every request without "Authorization: Bearer
-// <token>" — страницы, API и /metrics одинаково: сервер, открытый в сеть,
+// RequestToken returns the app token of r and whether a header named one:
+// X-KB-Token, если он есть, иначе Bearer из Authorization. Есть X-KB-Token —
+// решает он, даже пустой: два заголовка с разными токенами не дают выбрать
+// удобный.
+func RequestToken(r *http.Request) (string, bool) {
+	if v := r.Header.Values(TokenHeader); len(v) > 0 {
+		return v[0], v[0] != ""
+	}
+	scheme, tok, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+	return tok, ok && strings.EqualFold(scheme, "Bearer")
+}
+
+// RequireBearer answers 401 to every request without the token in X-KB-Token
+// or "Authorization: Bearer <token>" — страницы, API и /metrics одинаково: сервер, открытый в сеть,
 // отдает базу только тому, у кого токен.
 //
 // Пробы здоровья ходят без заголовка (liveness/readiness Kubernetes: за токеном
@@ -25,11 +37,11 @@ const TokenHeader = "X-KB-Token"
 func RequireBearer(token string, next http.Handler) http.Handler {
 	want := sha256.Sum256([]byte(token))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		scheme, got, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		got, ok := RequestToken(r)
 		sum := sha256.Sum256([]byte(got))
 		// Пустой токен не пускает никого: иначе «Bearer » с пустым значением
 		// совпал бы с ним по хешу. С непустым пустое значение не совпадет.
-		if token != "" && ok && strings.EqualFold(scheme, "Bearer") && subtle.ConstantTimeCompare(sum[:], want[:]) == 1 {
+		if token != "" && ok && subtle.ConstantTimeCompare(sum[:], want[:]) == 1 {
 			next.ServeHTTP(w, r)
 			return
 		}

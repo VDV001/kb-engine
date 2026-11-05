@@ -160,8 +160,11 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 	if err != nil {
 		return fmt.Errorf("%w: %w", ErrUnreachable, err)
 	}
+	// Токен в X-KB-Token (httpapi.TokenHeader), а не в Authorization:
+	// Serverless Container вырезает Authorization и проверяет Bearer как свой
+	// IAM-токен. Сервер понимает оба заголовка.
 	if c.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+		req.Header.Set("X-KB-Token", c.Token)
 	}
 	hc := &http.Client{}
 	if c.HTTP != nil {
