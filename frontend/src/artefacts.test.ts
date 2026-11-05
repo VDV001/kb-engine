@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { artefactHref, cheatsheetsOf, opensInBrowser } from './artefacts'
+import { appURL } from './appurl'
 
 const entry = (over: Record<string, unknown> = {}) =>
   ({ id: 1, title: 'x', category: 'creations', tags: [], ...over }) as never
@@ -8,7 +9,7 @@ describe('артефакты базы', () => {
   // Файл отдаёт маршрут /kb/, и список разрешённого — сам каталог: путь, не
   // названный ни одной записью, наружу не уходит.
   it('строит адрес артефакта от корня витрины', () => {
-    expect(artefactHref('creations/cheatsheets/x/y.html')).toBe('kb/creations/cheatsheets/x/y.html')
+    expect(artefactHref('creations/cheatsheets/x/y.html')).toBe(appURL('kb/creations/cheatsheets/x/y.html'))
   })
 
   // У большинства записей файла нет вовсе — они ссылаются на чужую статью.
@@ -20,7 +21,7 @@ describe('артефакты базы', () => {
   // Пробелы и кириллица в пути законны: имена папок писал человек.
   it('кодирует путь, но не съедает разделители', () => {
     expect(artefactHref('creations/мои файлы/шпора.html')).toBe(
-      'kb/creations/%D0%BC%D0%BE%D0%B8%20%D1%84%D0%B0%D0%B9%D0%BB%D1%8B/%D1%88%D0%BF%D0%BE%D1%80%D0%B0.html',
+      appURL('kb/creations/%D0%BC%D0%BE%D0%B8%20%D1%84%D0%B0%D0%B9%D0%BB%D1%8B/%D1%88%D0%BF%D0%BE%D1%80%D0%B0.html'),
     )
   })
 
