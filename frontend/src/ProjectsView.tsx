@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { api } from './api'
+import { localURL } from './appurl'
 import type { Contact, Metric, ProjectCard, ProjectDoc, ProjectSection, TechGroup } from './api'
 import { useResource } from './hooks/useResource'
 import { badgeTone, countCards, cover, filterSections, projectFilters, tagLabel } from './projects'
@@ -82,7 +83,7 @@ function Cover({ card, tall }: { card: ProjectCard; tall: boolean }) {
           бокам ничего не режется. */}
       {card.image && (
         <img
-          src={card.image}
+          src={localURL(card.image)}
           alt=""
           className="absolute inset-0 h-full w-full object-cover object-top"
         />

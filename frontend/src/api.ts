@@ -1,3 +1,5 @@
+import { appURL } from './appurl'
+
 // Typed client for the kbengine HTTP API.
 
 export interface Stats {
@@ -768,13 +770,10 @@ export interface ArchMapIndexEntry {
   accepted_zones: number
 }
 
-// Пути относительные (api/..., без ведущего «/»): под kbengine serve страница в
-// корне, и запрос уходит на /api/...; окно DVK отдает витрину под /app/ и
-// проксирует /app/api/* на kb-сервер с токеном — абсолютный путь ушел бы мимо.
-// Витрина не меняет путь страницы (useUrlSync пишет только ?query), поэтому
-// относительный адрес всегда считается от каталога страницы.
+// Путь — от корня приложения (appURL): в окне DVK витрина под /app/, и запрос
+// обязан пройти через его прокси с токеном.
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path)
+  const res = await fetch(appURL(path))
   if (!res.ok) {
     throw new Error(`${path}: ${res.status} ${res.statusText}`)
   }
@@ -877,7 +876,7 @@ export const api = {
    * держать две реализации одного, обязанные совпадать.
    */
   async financeExport(rows: FinanceExportRow[]): Promise<Blob> {
-    const res = await fetch('api/finances/export', {
+    const res = await fetch(appURL('api/finances/export'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows }),

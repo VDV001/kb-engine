@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Card } from '../components/ui'
+import { artefactHref } from '../artefacts'
 
 /**
  * Собственный разбор проекта — страница, написанная человеком, прямо в карте.
@@ -85,7 +86,7 @@ export function PagePanel({ page }: { page: string }) {
       ) : (
         <iframe
           ref={fit}
-          src={`kb/${page}`}
+          src={artefactHref(page)}
           title="Разбор проекта"
           className="block w-full rounded-lg border border-outline-variant bg-surface"
           // scrolling="no" устарел по спецификации и остаётся единственным, что
