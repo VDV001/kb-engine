@@ -59,8 +59,9 @@ type userDTO struct {
 	TokenSHA256 string `json:"token_sha256"`
 }
 
-// Add registers id and returns its token. Токен печатается вызывающим один раз
-// и больше нигде не хранится. Человеку сразу заводится пустая база, если ее
+// Add registers id and returns its token. Вызывающий сохраняет токен один раз
+// в надежное место (файл 0600, Связка ключей) и не выводит в терминал, логи
+// и ответы; в хранилище только хэш. Человеку сразу заводится пустая база, если ее
 // еще нет: сервер не падает на первом входе, а повторный add после revoke
 // возвращает доступ к прежней базе.
 func Add(ctx context.Context, s blob.Store, id domain.UserID) (string, error) {
