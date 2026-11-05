@@ -93,6 +93,7 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 	"inbox":       withoutStdin(runInbox),
 	"migrate":     withoutStdin(runMigrate),
 	"serve":       withoutStdin(runServe),
+	"users":       withoutStdin(runUsers),
 	"tui":         withoutStdin(runTUI),
 	"version":     withoutStdin(runVersion),
 }
