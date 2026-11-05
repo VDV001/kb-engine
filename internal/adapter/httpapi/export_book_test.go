@@ -111,10 +111,17 @@ func TestEntriesWorkbook(t *testing.T) {
 			t.Errorf("the header lacks %s: %v", want, rows[0])
 		}
 	}
-	line := strings.Join(rows[1], "|")
-	for _, want := range []string{"Hello", "golang", "keep", "go", "2026-07-11", "https://h/x"} {
-		if !strings.Contains(line, want) {
-			t.Errorf("the first entry lacks %s: %v", want, rows[1])
+	// По колонкам, а не подстрокой: «go» нашлось бы и в «golang».
+	col := map[string]int{}
+	for i, h := range rows[0] {
+		col[h] = i
+	}
+	for name, want := range map[string]string{
+		"ID": "1", "Заголовок": "Hello", "Категория": "golang", "Вердикт": "keep",
+		"Теги": "go", "Добавлено": "2026-07-11", "Ссылка": "https://h/x",
+	} {
+		if got := rows[1][col[name]]; got != want {
+			t.Errorf("%s = %q, want %q (%v)", name, got, want, rows[1])
 		}
 	}
 }
