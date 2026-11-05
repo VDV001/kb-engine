@@ -260,6 +260,8 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
               accounts={finances.accounts}
               groups={finances.groups}
               free={finances.free}
+              currencies={finances.currencies}
+              totals={finances.totals}
               expenses={summary?.expenses ?? '0'}
               income={summary?.income ?? '0'}
               today={today}

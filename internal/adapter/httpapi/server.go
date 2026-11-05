@@ -684,6 +684,8 @@ func handleFinances(fin Financier) http.HandlerFunc {
 		// рублями (#332). Терминал при этом считал бы верно, и расхождение
 		// двух витрин было бы молчаливым.
 		groups := []groupDTO{}
+		currencies := []currencyBalanceDTO{}
+		totals := []balanceTotalDTO{}
 		// Свободные деньги считает usecase и отдаёт числом: посчитай их
 		// витрина сама — правило про деньги оказалось бы написано трижды
 		// (терминал, веб, и однажды кто-то третий), и разошлось бы молча.
@@ -715,10 +717,21 @@ func handleFinances(fin Financier) http.HandlerFunc {
 			}
 			balDone()
 			free = finance.FreeMoney(balances)
+			for _, c := range finance.BalancesPerCurrency(balances) {
+				currencies = append(currencies, currencyBalanceDTO{Currency: currencyCode(c.Currency), Current: c.Current.String(), Free: c.Free.String()})
+			}
+			for _, tot := range finance.BalancesByCurrency(balances) {
+				totals = append(totals, balanceTotalDTO{Group: tot.Group, Currency: currencyCode(tot.Currency),
+					Confirmed: tot.Confirmed.String(), Current: tot.Current.String()})
+			}
 		}
+		// currencies и totals — главное: деньги по валютам, без пересчета (решение
+		// владельца 05.11). groups и free — рублевая оценка по курсу счетов,
+		// справка рядом.
 		writeJSON(w, map[string]any{
 			"transactions": txs, "accounts": accounts,
 			"groups": groups, "free": free.String(),
+			"currencies": currencies, "totals": totals,
 		})
 	}
 }

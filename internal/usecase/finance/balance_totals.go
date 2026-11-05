@@ -38,3 +38,39 @@ func BalancesByCurrency(balances []AccountBalance) []BalanceTotal {
 	}
 	return out
 }
+
+// CurrencyBalance is the money in one currency across every account.
+type CurrencyBalance struct {
+	Currency string
+	// Current — все деньги в этой валюте на счетах, любого рода.
+	Current domain.Money
+	// Free — сколько из них можно потратить сейчас, правилом FreeMoney.
+	Free domain.Money
+}
+
+// BalancesPerCurrency sums every account per currency, without a rate.
+//
+// Свободные — правилом FreeMoney (род и знак: отложенное и одолженное не
+// свободно, обязательство вычитается), только без пересчета по курсу: курс
+// меняется, а сумма в каждой валюте — факт. Порядок — как валюты встретились.
+func BalancesPerCurrency(balances []AccountBalance) []CurrencyBalance {
+	var out []CurrencyBalance
+	at := map[string]int{}
+	for _, b := range balances {
+		currency := b.Currency
+		if currency == "" {
+			currency = domain.Currency{}.Code() // собранный руками баланс — валюта книги
+		}
+		i, seen := at[currency]
+		if !seen {
+			out = append(out, CurrencyBalance{Currency: currency})
+			i = len(out) - 1
+			at[currency] = i
+		}
+		out[i].Current = out[i].Current.Add(b.Current)
+		if isFree(b.Bank, b.Current) {
+			out[i].Free = out[i].Free.Add(b.Current)
+		}
+	}
+	return out
+}
