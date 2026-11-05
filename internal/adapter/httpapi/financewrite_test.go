@@ -150,6 +150,15 @@ func TestConfirmBalance(t *testing.T) {
 	}
 }
 
+// Имя счета с «/» — один сегмент пути, если его закодировать.
+func TestConfirmBalanceNameWithASlash(t *testing.T) {
+	fw := &fakeFinWriter{}
+	rec := send(finServer(fw), http.MethodPut, "/api/finances/accounts/"+url.PathEscape("Резерв → USD/EUR")+"/balance", `{"amount":"1"}`)
+	if rec.Code != http.StatusOK || fw.gotConf.Bank != "Резерв → USD/EUR" {
+		t.Fatalf("%d %s, writer got %q", rec.Code, rec.Body.String(), fw.gotConf.Bank)
+	}
+}
+
 func TestConfirmBalanceErrors(t *testing.T) {
 	path := "/api/finances/accounts/" + url.PathEscape("Сбербанк") + "/balance"
 	cases := []struct {

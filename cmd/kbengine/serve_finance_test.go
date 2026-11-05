@@ -270,7 +270,68 @@ func TestTransactionDayIsThePersonsDay(t *testing.T) {
 			if !strings.Contains(rec.Body.String(), c.want) {
 				t.Fatalf("body %s lacks %s", rec.Body.String(), c.want)
 			}
+			if c.code != http.StatusCreated {
+				return
+			}
+			// Принятое на запись обязано читаться теми же часами сервера: иначе
+			// у человека восточнее UTC журнал перестает читаться до полуночи UTC.
+			if _, err := sf.Finances(); err != nil {
+				t.Fatalf("the journal cannot be read back: %v", err)
+			}
+			forced := strings.Replace(body, `{`, `{"force":true,`, 1)
+			if rec := do(h, http.MethodPost, "/api/finances/transactions", forced, ""); rec.Code != http.StatusCreated {
+				t.Fatalf("a second add after the first: %d %s", rec.Code, rec.Body.String())
+			}
 		})
+	}
+}
+
+// Счета после полуночи у человека, пока на сервере еще вчера: подтвержденный
+// день человека читается обратно, и следующее подтверждение и трата проходят.
+func TestAccountsAfterThePersonsMidnight(t *testing.T) {
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverNow := func() time.Time { return time.Date(2026, 11, 5, 20, 30, 0, 0, time.UTC) }
+	sf := storeFinances{ctx: context.Background(), store: s, journalKey: "users/anna/fin/journal.jsonl", accountsKey: "users/anna/fin/accounts.json",
+		vocabKey: "users/anna/fin/finance-aliases.json", now: serverNow}
+	h := httpapi.NewServer(nil, nil, nil, nil, nil, nil, httpapi.Documents{}, httpapi.EngineInfo{}, nil, httpapi.WithFinanceWriter(sf))
+	put := func(body string) *httptest.ResponseRecorder {
+		return do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape("Сбербанк")+"/balance", body, "")
+	}
+	if rec := put(`{"amount":"1000","create":true,"tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusCreated || !strings.Contains(rec.Body.String(), `"updated":"2026-11-06"`) {
+		t.Fatalf("create: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, err := sf.Finances(); err != nil {
+		t.Fatalf("the accounts cannot be read back: %v", err)
+	}
+	if rec := put(`{"amount":"900","tz":"Asia/Yekaterinburg"}`); rec.Code != http.StatusOK {
+		t.Fatalf("a second confirmation: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions",
+		`{"kind":"expense","amount":"18","category":"Еда","account":"Сбербанк","tz":"Asia/Yekaterinburg"}`, ""); rec.Code != http.StatusCreated {
+		t.Fatalf("an expense from the account: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// Битый документ счетов — сбой хранилища, а не ответ человеку: 500 без ключа
+// бакета в ответе, а не 409 «счет уже есть». И он не мешает трате без счета.
+func TestBrokenAccountsDocument(t *testing.T) {
+	h, tok, s := financeTenant(t)
+	if _, err := s.Put(context.Background(), "users/anna/fin/accounts.json",
+		[]byte(`{"accounts":[{"bank":"Сбербанк","balance":"1"},{"bank":"сбербанк ","balance":"2"}]}`), ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := do(h, http.MethodPut, "/api/finances/accounts/"+url.PathEscape("Т-Банк")+"/balance", `{"amount":"1"}`, tok)
+	if rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "users/") {
+		t.Errorf("confirm over a broken document: %d %q, want 500 without the key", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions", `{"kind":"expense","amount":"18","category":"Еда","date":"2026-04-06"}`, tok); rec.Code != http.StatusCreated {
+		t.Errorf("a cash expense over a broken accounts document: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := do(h, http.MethodPost, "/api/finances/transactions", `{"kind":"expense","amount":"19","category":"Еда","account":"Сбербанк","date":"2026-04-06"}`, tok); rec.Code != http.StatusInternalServerError {
+		t.Errorf("an expense from an account over a broken document: %d %s, want 500", rec.Code, rec.Body.String())
 	}
 }
 

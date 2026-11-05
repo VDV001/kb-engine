@@ -98,8 +98,10 @@ func TestParse(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), c.wantErr) {
 				t.Fatalf("err %v, want it to name %q", err, c.wantErr)
 			}
-			if c.name == "two spellings of one account" && !errors.Is(err, domain.ErrAccountExists) {
-				t.Errorf("a duplicate is not ErrAccountExists: %v", err)
+			// Битый документ — не ответ на запрос: доменная ошибка «счет уже есть»
+			// превратилась бы у API в 409 вместо сбоя хранилища.
+			if !errors.Is(err, financeaccounts.ErrMalformed) || errors.Is(err, domain.ErrAccountExists) {
+				t.Errorf("a broken document is not ErrMalformed alone: %v", err)
 			}
 		})
 	}

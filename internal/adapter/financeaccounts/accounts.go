@@ -8,6 +8,7 @@ package financeaccounts
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -137,3 +138,7 @@ func Encode(b Book) ([]byte, error) {
 	}
 	return buf.Bytes(), nil
 }
+
+// ErrMalformed — документ счетов не читается: сбой хранилища, а не ответ на
+// запрос человека.
+var ErrMalformed = errors.New("malformed accounts document")
