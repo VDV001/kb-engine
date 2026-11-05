@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -66,7 +67,7 @@ func TestFinanceWorkbook(t *testing.T) {
 		t.Fatalf("Счета %v", accs)
 	}
 	head := strings.Join(accs[0], "|")
-	for _, want := range []string{"Подтверждено", "Обновлено", "Сейчас", "Валюта", "В рублях"} {
+	for _, want := range []string{"Подтверждено", "Обновлено", "Сейчас", "Валюта"} {
 		if !strings.Contains(head, want) {
 			t.Errorf("the Счета header lacks %s: %v", want, accs[0])
 		}
@@ -135,10 +136,11 @@ type bookFinance struct{ f httpapi.Finances }
 func (b bookFinance) Finances() (httpapi.Finances, error)       { return b.f, nil }
 func (b bookFinance) Summary([]string) (finance.Summary, error) { return finance.Summary{}, nil }
 
-// Числа, которые человек сложит в Excel, обязаны сходиться с движком: остаток
-// валютного счета рядом с его оценкой в рублях (иначе СУММ сложит доллары с
-// рублями, #332), а перевод между своими счетами помечен (движок не считает
-// его ни тратой, ни доходом — правило 19).
+// Числа, которые человек сложит в Excel, обязаны сходиться с движком. Валюты
+// не складываются и не пересчитываются по курсу (решение владельца 05.11):
+// лист «Итого» — по роду счета и валюте отдельно, колонки «в рублях» нет. А
+// перевод между своими счетами помечен: движок не считает его ни тратой, ни
+// доходом (правило 19).
 func TestFinanceWorkbookSumsLikeTheEngine(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 7, 29, 0, 0, 0, 0, time.UTC) }
 	money := func(s string) domain.Money {
@@ -175,29 +177,17 @@ func TestFinanceWorkbookSumsLikeTheEngine(t *testing.T) {
 	if f == nil {
 		t.Fatal("no workbook")
 	}
-	byHeader := func(rows [][]string, name string) map[string]string {
-		col := -1
-		for i, h := range rows[0] {
-			if h == name {
-				col = i
-			}
-		}
-		if col < 0 {
-			t.Fatalf("no column %q in %v", name, rows[0])
-		}
-		out := map[string]string{}
-		for _, r := range rows[1:] {
-			if col < len(r) {
-				out[r[0]] = r[col]
-			} else {
-				out[r[0]] = ""
-			}
-		}
-		return out
+	if head := strings.Join(sheetRows(t, f, "Счета")[0], "|"); strings.Contains(head, "рубл") {
+		t.Errorf("Счета converts by a rate: %s", head)
 	}
-	rub := byHeader(sheetRows(t, f, "Счета"), "В рублях")
-	if rub["Wise"] != "900" || rub["Сбербанк"] != "5000" {
-		t.Errorf("В рублях %v, want Wise 900 and Сбербанк 5000", rub)
+	totals := sheetRows(t, f, "Итого")
+	want := [][]string{
+		{"Род", "Валюта", "Подтверждено", "Сейчас"},
+		{"Обычные счета", "RUB", "5000", "5000"},
+		{"Обычные счета", "USD", "10", "10"},
+	}
+	if !reflect.DeepEqual(totals, want) {
+		t.Errorf("Итого %v, want %v", totals, want)
 	}
 	ops := sheetRows(t, f, "Операции")
 	marks := map[string]string{}
