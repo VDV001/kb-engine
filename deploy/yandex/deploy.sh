@@ -117,13 +117,15 @@ say "· контейнер $container"
 # Потолок экземпляров и запросов — потолок счета за чужие запросы.
 # Метаданные: только GCE-точка, из нее код берет IAM-токен; AWS v1 закрыта.
 # Секретов в окружении нет: доступ к бакету — через сервисный аккаунт.
+# --command обязателен: --args платформа не дописывает к ENTRYPOINT образа,
+# а запускает как команду («"serve": executable file not found»).
 y serverless container revision deploy --container-name "$container" \
   --image "cr.yandex/$rid/kbengine@$digest" --service-account-id "$sid" \
   --memory 512MB --cores 1 --concurrency 8 --execution-timeout 30s \
   --zone-instances-limit 2 --zone-requests-limit 16 \
   --metadata-options aws-v1-http-endpoint=disabled,gce-http-endpoint=enabled \
   --environment TZ="$TZ_NAME" \
-  --args serve,--tenants,"s3://$BUCKET",--addr,0.0.0.0:8080,--allow-open >/dev/null
+  --command /kbengine --args serve,--tenants,"s3://$BUCKET",--addr,0.0.0.0:8080,--allow-open >/dev/null
 # Вызов открыт: окно и kbengine-mcp ходят по HTTPS, а вход — личный токен
 # приложения (сервер хранит только SHA-256). Без токена — 401.
 y serverless container allow-unauthenticated-invoke --name "$container" >/dev/null
