@@ -1663,9 +1663,9 @@
           "n": 3,
           "from": "ad-httpapi",
           "to": "ad-xlsxdim",
-          "call": "writeWorkbook(w, req.Rows)",
-          "detail": "internal/adapter/httpapi/export.go:83; выгрузка несёт колонку «Вид» — без неё доходы были неотличимы от трат и сложенная колонка «Сумма» давала правдоподобное враньё",
-          "source": "internal/adapter/httpapi/export.go:83",
+          "call": "req.Rows → sheet → writeBook",
+          "detail": "internal/adapter/httpapi/export.go:73; выгрузка несёт колонку «Вид» — без неё доходы были неотличимы от трат и сложенная колонка «Сумма» давала правдоподобное враньё",
+          "source": "internal/adapter/httpapi/export.go:73",
           "unverified": false
         },
         {
@@ -1673,8 +1673,8 @@
           "from": "ad-httpapi",
           "to": "browser",
           "call": "Content-Disposition: attachment; filename=finances.xlsx",
-          "detail": "internal/adapter/httpapi/export.go:73; если заголовки уже ушли, ошибка обрывает ответ, а не притворяется целым файлом",
-          "source": "internal/adapter/httpapi/export.go:73",
+          "detail": "internal/adapter/httpapi/export.go:255; sendBook собирает книгу в памяти до ответа: сбой сборки — 500, а не оборванный файл с кодом 200",
+          "source": "internal/adapter/httpapi/export.go:255",
           "unverified": false
         }
       ],
