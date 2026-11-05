@@ -72,12 +72,19 @@ func TestRead_TabsRoundTripAndBadDropped(t *testing.T) {
 	if !slices.Equal(got.Tabs, tabs) {
 		t.Fatalf("tabs = %+v, want %+v", got.Tabs, tabs)
 	}
-	path = writeRaw(t, `{"sources":[],"tabs":[{"name":"Код","kind":"type","value":"code"},{"name":"","kind":"type","value":"doc"},{"name":"X","kind":"tag","value":"go"}]}`)
+	// Без имени или значения — отбрасывается; неизвестный вид или тип (его
+	// записала более новая сборка) хранится, как неизвестный модуль (ревью #431).
+	path = writeRaw(t, `{"sources":[],"tabs":[{"name":"Код","kind":"type","value":"code"},{"name":"","kind":"type","value":"doc"},{"name":"X","kind":"tag","value":"go"},{"name":"Видео","kind":"type","value":"video"},{"name":"Y","kind":"source","value":""}]}`)
 	got, err = desktopconfig.Read(path)
 	if err != nil {
 		t.Fatalf("err = %v: вкладки не должны ронять чтение", err)
 	}
-	if want := []desktopconfig.Tab{{Name: "Код", Kind: desktopconfig.TabByType, Value: "code"}}; !slices.Equal(got.Tabs, want) {
+	want := []desktopconfig.Tab{
+		{Name: "Код", Kind: desktopconfig.TabByType, Value: "code"},
+		{Name: "X", Kind: "tag", Value: "go"},
+		{Name: "Видео", Kind: desktopconfig.TabByType, Value: "video"},
+	}
+	if !slices.Equal(got.Tabs, want) {
 		t.Fatalf("tabs = %+v, want %+v", got.Tabs, want)
 	}
 }
