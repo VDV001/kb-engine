@@ -40,3 +40,21 @@ func TestChatCheck_Listen(t *testing.T) {
 		t.Fatalf("принято: %v", err)
 	}
 }
+
+// Режим микрофона (#478): пусто — нажал-нажал, hold — удерживать, auto —
+// слушает сам; другое не сохраняется.
+func TestChatCheck_Mic(t *testing.T) {
+	base := desktopconfig.Chat{URL: desktopconfig.DefaultChatURL, Model: "m"}
+	for _, m := range []string{desktopconfig.MicToggle, desktopconfig.MicHold, desktopconfig.MicAuto} {
+		c := base
+		c.Mic = m
+		if err := c.Check(); err != nil {
+			t.Errorf("режим %q отвергнут: %v", m, err)
+		}
+	}
+	c := base
+	c.Mic = "push"
+	if err := c.Check(); !errors.Is(err, desktopconfig.ErrChatSettings) {
+		t.Fatalf("режим push принят: %v", err)
+	}
+}

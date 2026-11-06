@@ -249,25 +249,56 @@
     </div>
 
     <p class="muted" data-view="chat">Модель, которая отвечает в чате. Ключ хранится в Связке ключей этого Мака и в файлы не попадает.</p>
+    <!-- Разделы чата аккордеоном, как в english-hub (#478): в заголовке —
+         выбранное, чтобы видеть все, не раскрывая. details/summary — родной
+         элемент: клавиатура и чтение экраном без своего кода. -->
     <form class="chat-model" id="chat-model" data-view="chat">
-      <label>Адрес<input id="chat-url" placeholder="https://ai-gateway.vercel.sh/v1" autocomplete="off" spellcheck="false"></label>
-      <label>Модель<input id="chat-name" placeholder="anthropic/claude-sonnet-5.5" autocomplete="off" spellcheck="false"></label>
-      <label>Кто ищет документы
-        <select id="chat-mode">
-          <option value="">по модели</option>
-          <option value="context">окно ищет (маленькие модели)</option>
-          <option value="tools">модель ищет (сильные модели)</option>
-        </select>
-      </label>
-      <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
-      <h3>Голос</h3>
-      <p class="muted" id="chat-listen-note"></p>
-      <label>Слушает диктовку
-        <select id="chat-listen"><option value="">Apple Speech на этом Маке</option></select>
-      </label>
-      <label>Читает ответ в разговоре голосом
-        <select id="chat-voice-name"><option value="">голос системы</option></select>
-      </label>
+      <details class="acc" open>
+        <summary><span class="n">01</span><span class="t">Модель</span><span class="v" id="acc-v-model"></span></summary>
+        <div class="acc-b">
+          <label>Адрес<input id="chat-url" placeholder="https://ai-gateway.vercel.sh/v1" autocomplete="off" spellcheck="false"></label>
+          <label>Модель<input id="chat-name" placeholder="anthropic/claude-sonnet-5.5" autocomplete="off" spellcheck="false"></label>
+          <label>Кто ищет документы
+            <select id="chat-mode">
+              <option value="">по модели</option>
+              <option value="context">окно ищет (маленькие модели)</option>
+              <option value="tools">модель ищет (сильные модели)</option>
+            </select>
+          </label>
+          <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+        </div>
+      </details>
+      <details class="acc">
+        <summary><span class="n">02</span><span class="t">Голос</span><span class="v" id="acc-v-voice"></span></summary>
+        <div class="acc-b">
+          <p class="muted">Каким голосом окно читает ответ в разговоре голосом. Нажмите голос — он скажет пробную фразу.</p>
+          <input type="hidden" id="chat-voice-name">
+          <div class="choices" id="chat-voices" role="group" aria-label="Голос ответа"></div>
+          <p class="muted">Голоса Premium и Enhanced звучат живее обычных, их скачивают в Настройках macOS. <button type="button" class="lnk" id="voice-add">Добавить голоса в macOS…</button></p>
+        </div>
+      </details>
+      <details class="acc">
+        <summary><span class="n">03</span><span class="t">Микрофон</span><span class="v" id="acc-v-mic"></span></summary>
+        <div class="acc-b">
+          <p class="muted">Как говорить: держать кнопку, нажать дважды или микрофон слушает сам.</p>
+          <input type="hidden" id="chat-mic-mode">
+          <div class="choices" id="chat-mics" role="group" aria-label="Режим микрофона">
+            <button type="button" class="btn" data-mic="hold">Удерживать</button>
+            <button type="button" class="btn" data-mic="">Нажал - нажал</button>
+            <button type="button" class="btn" data-mic="auto">Слушает сам</button>
+          </div>
+          <p class="muted" id="chat-mic-note"></p>
+        </div>
+      </details>
+      <details class="acc">
+        <summary><span class="n">04</span><span class="t">Распознавание</span><span class="v" id="acc-v-listen"></span></summary>
+        <div class="acc-b">
+          <p class="muted" id="chat-listen-note"></p>
+          <label>Кто переводит голос в текст
+            <select id="chat-listen"><option value="">Apple Speech на этом Маке</option></select>
+          </label>
+        </div>
+      </details>
       <button class="btn primary" type="submit">Сохранить</button>
       <p class="muted" id="chat-model-note"></p>
     </form>

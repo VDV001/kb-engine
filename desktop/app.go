@@ -165,6 +165,18 @@ func (a *App) Speak(text string) error {
 // Voices lists the Russian voices of this Mac for the settings.
 func (a *App) Voices() []string { return russianVoices() }
 
+// PreviewVoice says a sample phrase with voice for the settings (#478).
+func (a *App) PreviewVoice(voice string) error {
+	if a.voice == nil {
+		return errors.New("голос работает только в окне приложения")
+	}
+	return previewVoice(a.voice, russianVoices, voice)
+}
+
+// OpenVoiceSettings opens the macOS pane where Premium and Enhanced voices
+// are downloaded.
+func (a *App) OpenVoiceSettings() error { return voiceSettingsCommand().Run() }
+
 // ListenStatus says whether dictation works here and without the network.
 func (a *App) ListenStatus() listenStatus {
 	if a.listen == nil {

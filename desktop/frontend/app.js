@@ -838,11 +838,16 @@ $("#conn-list").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-go-sec]");
   if (b) return openSettings(b.dataset.goSec);
   const t = e.target.closest("[data-conn-toggle]");
+  const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
   try {
-    if (t) await native().SetConnectionEnabled(t.dataset.connToggle, t.dataset.on === "true");
+    if (t) {
+      const on = t.dataset.on === "true";
+      await native().SetConnectionEnabled(t.dataset.connToggle, on);
+      toast(name, on ? " · включено" : " · выключено", null, on ? "info" : "off");
+    }
     else if (e.target.closest("[data-conn-del]")) connConfirm = e.target.closest("[data-conn-del]").dataset.connDel;
     else if (e.target.closest("[data-conn-del-no]")) connConfirm = null;
-    else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; }
+    else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; toast("Удалено", ` · «${name}» и его ключ`, null, "del"); }
     else return;
   } catch (err) { showError(errText(err)); }
   renderConnections();
@@ -858,7 +863,8 @@ $("#conn-speech").addEventListener("submit", async (e) => {
   if (!native() || !native().AddSpeechConnection) return void ($("#conn-s-note").textContent = "Подключения меняются в окне приложения.");
   try {
     const r = await native().AddSpeechConnection($("#conn-s-name").value, $("#conn-s-url").value, $("#conn-s-model").value, $("#conn-s-key").value);
-    $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Слушает диктовку».";
+    $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Распознавание».";
+    toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
   } catch (err) { $("#conn-s-note").textContent = errText(err); }
   renderConnections();
@@ -878,6 +884,7 @@ $("#conn-google").addEventListener("submit", async (e) => {
   try {
     const r = await native().ConnectGoogle($("#conn-g-id").value, $("#conn-g-secret").value);
     $("#conn-g-note").textContent = "Подключено: " + r.name;
+    toast("Подключено", ` · «${r.name}»`);
     $("#conn-g-secret").value = "";
     $("#conn-google").hidden = true;
     $("#conn-add-google").setAttribute("aria-expanded", "false");
@@ -1224,7 +1231,11 @@ panel.addEventListener("click", async (e) => {
     renderSources();
     return toast("Добавлен", ` · «${label(s)}», ${draft.sources.length}-й по приоритету`, undo);
   }
-  if (d.unex !== undefined) { draft.exclude.splice(+d.unex, 1); return renderSources(); }
+  if (d.unex !== undefined) {
+    const before = draft.exclude.slice(), [gone] = draft.exclude.splice(+d.unex, 1);
+    toast("Снова заходит", ` · в папки «${gone}» после сохранения`, () => { draft.exclude = before; }, "off");
+    return renderSources();
+  }
 });
 
 // Перерисовка во время проверки сохраняет то, что человек уже набрал в форме.
@@ -1307,7 +1318,11 @@ $("#close-settings").onclick = closeSettings;
 scrim.onclick = closeSettings;
 $("#add-exclude").onclick = () => {
   const v = $("#exclude-input").value.trim();
-  if (v && !draft.exclude.includes(v)) draft.exclude.push(v);
+  if (v && !draft.exclude.includes(v)) {
+    const before = draft.exclude.slice();
+    draft.exclude.push(v);
+    toast("Не заходить", ` · в папки «${v}» после сохранения`, () => { draft.exclude = before; });
+  }
   $("#exclude-input").value = "";
   renderSources();
 };
@@ -1418,12 +1433,14 @@ const TYPE_TITLE = Object.fromEntries(DEFAULT_TABS.map((t) => [t.value, t.name])
 $("#tab-list").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
-  const next = state.tabs.slice();
-  if (b.dataset.tabDel !== undefined) next.splice(Number(b.dataset.tabDel), 1);
-  else if (b.dataset.tabUp !== undefined) { const i = Number(b.dataset.tabUp); [next[i - 1], next[i]] = [next[i], next[i - 1]]; }
-  else if (b.dataset.tabDown !== undefined) { const i = Number(b.dataset.tabDown); [next[i], next[i + 1]] = [next[i + 1], next[i]]; }
+  const next = state.tabs.slice(), before = state.tabs.slice();
+  let head, rest, tone;
+  if (b.dataset.tabDel !== undefined) { const [gone] = next.splice(Number(b.dataset.tabDel), 1); head = "Вкладка убрана"; rest = ` · «${gone.name}»`; tone = "del"; }
+  else if (b.dataset.tabUp !== undefined) { const i = Number(b.dataset.tabUp); [next[i - 1], next[i]] = [next[i], next[i - 1]]; head = `${i + 1}-я вкладка`; rest = ` · «${next[i - 1].name}»`; }
+  else if (b.dataset.tabDown !== undefined) { const i = Number(b.dataset.tabDown); [next[i], next[i + 1]] = [next[i + 1], next[i]]; head = `${i + 3}-я вкладка`; rest = ` · «${next[i + 1].name}»`; }
   else return;
   saveTabs(next);
+  toast(head, rest, () => saveTabs(before), tone);
 });
 // Имя — по уходу из поля или Enter; пустое имя не сохраняется, поле
 // возвращает прежнее.
@@ -1433,7 +1450,9 @@ $("#tab-list").addEventListener("change", (e) => {
   const i = Number(inp.dataset.tabName), name = inp.value.trim();
   if (!name) { inp.value = state.tabs[i].name; return; }
   if (name === state.tabs[i].name) return;
+  const before = state.tabs.slice(), old = state.tabs[i].name;
   saveTabs(state.tabs.map((t, k) => (k === i ? { ...t, name } : t)));
+  toast("Переименовано", ` · «${old}» → «${name}»`, () => saveTabs(before));
 });
 $("#tab-list").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-tab-name]")) e.target.blur(); });
 // «По умолчанию» — набор DEFAULT_TABS; прежний возвращается из подсказки.
@@ -1483,11 +1502,17 @@ tabList.addEventListener("drop", (e) => {
 });
 $("#tab-add-type").addEventListener("change", (e) => {
   const v = e.target.value;
-  if (v) saveTabs([...state.tabs, { name: TYPE_TITLE[v], kind: "type", value: v }]);
+  if (!v) return;
+  const before = state.tabs.slice();
+  saveTabs([...state.tabs, { name: TYPE_TITLE[v], kind: "type", value: v }]);
+  toast("Вкладка добавлена", ` · «${TYPE_TITLE[v]}»`, () => saveTabs(before));
 });
 $("#tab-add-source").addEventListener("change", (e) => {
   const s = state.known.find((x) => x.id === e.target.value);
-  if (s) saveTabs([...state.tabs, { name: label(s), kind: "source", value: s.id }]);
+  if (!s) return;
+  const before = state.tabs.slice();
+  saveTabs([...state.tabs, { name: label(s), kind: "source", value: s.id }]);
+  toast("Вкладка добавлена", ` · «${label(s)}»`, () => saveTabs(before));
 });
 
 function hideIndexingScreen() {
@@ -1583,8 +1608,10 @@ $("#accent-presets").addEventListener("click", (e) => {
 $("#accent-list").addEventListener("click", (e) => {
   const b = e.target.closest("[data-accent]");
   if (!b || !native()) return;
-  const id = b.dataset.accent, off = offNow(state.accents);
-  saveAccents({ mode: "", off: off.includes(id) ? off.filter((x) => x !== id) : [...off, id] });
+  const id = b.dataset.accent, off = offNow(state.accents), before = { ...state.accents };
+  const on = off.includes(id), what = (ACCENTS.find(([x]) => x === id) || [, id])[1];
+  saveAccents({ mode: "", off: on ? off.filter((x) => x !== id) : [...off, id] });
+  toast(on ? "Включено" : "Выключено", ` · ${what}`, () => saveAccents(before), on ? "info" : "off");
 });
 if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});
 
@@ -1622,6 +1649,7 @@ $("#module-list").addEventListener("click", (e) => {
   if (!on && moduleOf(state.tab) === id) state.tab = "all"; // выключенный модуль не остается открытым
   renderModules();
   refreshTabs();
+  toast(MODULES[id].name, on ? " · вкладка рядом с поиском" : " · выключен, данные на сервере не тронуты", null, on ? "info" : "off");
   moduleSaves = moduleSaves.then(() => native().SetModules([{ id, enabled: on }])).then(() => showError("")).catch(async (err) => {
     showError("Модуль не сохранен: " + errText(err));
     try { state.modules = (await native().Modules()) || []; } catch { /* остается то, что на экране */ }
@@ -1706,7 +1734,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [] };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1785,10 +1813,14 @@ async function loadChatSettings() {
   $("#chat-url").value = s.url || "";
   $("#chat-name").value = s.model || "";
   $("#chat-mode").value = s.mode || "";
+  $("#chat-mic-mode").value = s.mic || "";
+  renderMicChoices();
+  setMic(dict.on);
   $("#chat-key").value = "";
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
+  renderAccValues();
 }
 // renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
 // читать ответ.
@@ -1804,11 +1836,45 @@ async function renderVoiceSettings() {
   const curListen = (chatState.settings && chatState.settings.listen) || "";
   listen.innerHTML = `<option value="">Apple Speech на этом Маке</option>` + speech.map((c) => `<option value="${esc(c.id)}"${c.id === curListen ? " selected" : ""}${c.enabled ? "" : " disabled"}>${esc(c.name)}${c.enabled ? "" : " (выключено)"}</option>`).join("");
   if (curListen && speech.some((c) => c.id === curListen)) note.textContent = "Слушает: " + speech.find((c) => c.id === curListen).name + " — запись диктовки уходит этому серверу.";
-  const sel = $("#chat-voice-name");
-  const voices = (await native().Voices().catch(() => [])) || [];
-  const cur = (chatState.settings && chatState.settings.voice) || "";
-  sel.innerHTML = `<option value="">голос системы</option>` + voices.map((v) => `<option${v === cur ? " selected" : ""}>${esc(v)}</option>`).join("");
-  if (cur && !voices.includes(cur)) sel.insertAdjacentHTML("beforeend", `<option selected>${esc(cur)}</option>`);
+  chatState.voices = (await native().Voices().catch(() => [])) || [];
+  $("#chat-voice-name").value = (chatState.settings && chatState.settings.voice) || "";
+  renderVoiceChoices();
+  renderAccValues();
+}
+// voiceTag names the quality from the macOS voice name: Premium и Enhanced
+// (и их русские подписи) звучат живее обычных.
+const voiceTag = (v) => (/premium|преми/i.test(v) ? "премиум" : /enhanced|улучш/i.test(v) ? "улучшенный" : "");
+// renderVoiceChoices: голоса плашками, как в english-hub (#478); выбранный
+// хранится в скрытом поле формы и сохраняется общей кнопкой.
+function renderVoiceChoices() {
+  const cur = $("#chat-voice-name").value;
+  const list = chatState.voices || [];
+  const all = [["", "голос системы"], ...list.map((v) => [v, v])];
+  if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке"]);
+  $("#chat-voices").innerHTML = all.map(([v, name]) => {
+    const tag = voiceTag(v);
+    return `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name.replace(/\s*\(.*\)$/, ""))}${tag ? `<small>${tag}</small>` : ""}</button>`;
+  }).join("");
+}
+const MIC_MODES = {
+  hold: ["Удерживать", "Держите кнопку микрофона (или пробел на ней) и говорите, отпустили — фраза ушла."],
+  "": ["Нажал - нажал", "Нажали — слушает, нажали еще раз — фраза ушла. Удобно для длинных мыслей."],
+  auto: ["Слушает сам", "Нажали один раз — микрофон слушает весь разговор, пауза отправляет фразу. Еще раз или Esc — стоп."],
+};
+// renderMicChoices: режим микрофона плашками; хранится в скрытом поле формы.
+function renderMicChoices() {
+  const cur = $("#chat-mic-mode").value;
+  $("#chat-mics").querySelectorAll("[data-mic]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mic === cur)));
+  $("#chat-mic-note").textContent = (MIC_MODES[cur] || MIC_MODES[""])[1];
+}
+// renderAccValues: в заголовке раздела — выбранное, чтобы видеть все, не раскрывая.
+function renderAccValues() {
+  $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
+  const v = $("#chat-voice-name").value;
+  $("#acc-v-voice").textContent = v ? v.replace(/\s*\(.*\)$/, "") : "голос системы";
+  $("#acc-v-mic").textContent = (MIC_MODES[$("#chat-mic-mode").value] || MIC_MODES[""])[0];
+  const l = $("#chat-listen");
+  $("#acc-v-listen").textContent = l.selectedOptions[0] ? l.selectedOptions[0].textContent.replace(" на этом Маке", "") : "";
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -1926,6 +1992,7 @@ async function askChat() {
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
+    micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
   } finally {
@@ -1933,6 +2000,8 @@ async function askChat() {
     fitChatQ();
     renderChat();
   }
+  // «Слушает сам»: ответ пришел — снова слушать (с голосом это делает разговор голосом).
+  if (micLoop.on && !voice.on) startMic(VOICE_PAUSE, true);
 }
 function newChat() {
   if (chatState.busy) return;
@@ -1961,22 +2030,66 @@ $("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
 // --- Диктовка (#436) ----------------------------------------------------------------
 // Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
 // на сейчас; он встает после того, что было в поле до начала диктовки.
-const dict = { on: false, base: "" };
+const dict = { on: false, base: "", send: false };
+// Режим микрофона из настроек (#478, как в english-hub): "" — нажал-нажал,
+// второе нажатие отправляет; hold — держите кнопку, отпустили — ушло; auto —
+// слушает сам: пауза отправляет, после ответа слушает снова.
+const micMode = () => (chatState.settings && chatState.settings.mic) || "";
+const micLoop = { on: false };
+const MIC_TIP = { "": "нажмите и говорите, еще раз — фраза уйдет · Esc — стоп", hold: "держите и говорите, отпустили — фраза ушла", auto: "слушает сам: пауза отправляет фразу · еще раз или Esc — стоп" };
 function setMic(on) {
   dict.on = on;
-  $("#chat-mic").setAttribute("aria-pressed", String(on));
-  $("#chat-mic").dataset.tipB = on ? "слушаю · еще раз или Esc — стоп" : "голос в текст на этом Маке · еще раз или Esc — стоп";
+  $("#chat-mic").setAttribute("aria-pressed", String(on || micLoop.on));
+  $("#chat-mic").dataset.tipB = on ? "слушаю · " + MIC_TIP[micMode()] : MIC_TIP[micMode()];
 }
-async function toggleMic() {
+// startMic listens; send — договоренное уходит вопросом само.
+async function startMic(pause, send) {
   if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
-  if (dict.on) { native().StopDictation(); return; }
+  if (dict.on || chatState.busy) return;
   dict.base = $("#chat-q").value.replace(/\s+$/, "");
-  // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
-  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + errText(e)); }
+  dict.send = send;
+  // pause 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
+  try { await native().StartDictation(pause); setMic(true); } catch (e) { micLoop.on = false; setMic(false); showChatNote("Диктовка: " + errText(e)); }
 }
-$("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
+function stopMic(send) {
+  if (!dict.on) return;
+  dict.send = send;
+  native().StopDictation();
+}
+$("#chat-mic").addEventListener("click", () => {
+  hideTip();
+  if (voice.on) stopVoice();
+  const m = micMode();
+  if (m === "hold") return; // держат — нажатие и отпускание ниже
+  if (m === "auto") {
+    if (micLoop.on || dict.on) { micLoop.on = false; stopMic(false); setMic(dict.on); return; }
+    micLoop.on = true;
+    startMic(VOICE_PAUSE, true);
+    return;
+  }
+  dict.on ? stopMic(true) : startMic(0, false);
+});
+// Удерживать: мышью или пробелом/Enter на кнопке; отпустили — фраза ушла.
+// holding: отпустили раньше, чем диктовка успела начаться, — остановить сразу.
+let holding = false;
+async function holdStart() {
+  if (micMode() !== "hold" || holding) return;
+  holding = true;
+  if (voice.on) stopVoice();
+  await startMic(0, false);
+  if (!holding) stopMic(true);
+}
+function holdEnd() {
+  if (micMode() !== "hold" || !holding) return;
+  holding = false;
+  stopMic(true);
+}
+$("#chat-mic").addEventListener("pointerdown", (e) => { if (e.button === 0) holdStart(); });
+["pointerup", "pointerleave", "pointercancel"].forEach((t) => $("#chat-mic").addEventListener(t, holdEnd));
+$("#chat-mic").addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && micMode() === "hold") { e.preventDefault(); if (!e.repeat) holdStart(); } });
+$("#chat-mic").addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") holdEnd(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
-  if (ev.error) { if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
+  if (ev.error) { micLoop.on = false; if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
   if (ev.busy) showChatNote("Диктовка: распознаю запись…");
   if (ev.text !== undefined && ev.text !== "") {
     $("#chat-q").value = (dict.base ? dict.base + " " : "") + ev.text;
@@ -1984,10 +2097,14 @@ if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
     renderAttached();
   }
   if (ev.final) {
+    const send = dict.send && !ev.error;
+    dict.send = false;
     setMic(false);
     $("#chat-q").focus();
     // Разговор без рук: вопрос договорен — уходит сам; тишина без слов — слушать снова.
     if (voice.on && !ev.error) $("#chat-q").value.trim() ? askChat() : listenVoice();
+    else if (send && $("#chat-q").value.trim()) askChat();
+    else if (micLoop.on && !ev.error) startMic(VOICE_PAUSE, true);
   }
 });
 
@@ -2022,6 +2139,7 @@ $("#chat-voice").addEventListener("click", () => {
   hideTip();
   if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
   if (voice.on) return stopVoice();
+  micLoop.on = false;
   setVoice(true);
   listenVoice(true);
 });
@@ -2137,7 +2255,7 @@ document.addEventListener("click", (e) => {
 });
 $("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
 $("#chat-q").addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && dict.on) { e.preventDefault(); native().StopDictation(); return; }
+  if (e.key === "Escape" && (dict.on || micLoop.on)) { e.preventDefault(); micLoop.on = false; stopMic(false); setMic(dict.on); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
 });
 $("#chat-new").addEventListener("click", newChat);
@@ -2168,7 +2286,9 @@ $("#chat-list").addEventListener("click", async (e) => {
   if (yes && !chatState.busy) {
     const id = yes.dataset.delYes;
     chatState.confirmDel = null;
+    const title = (chatState.list.find((c) => c.id === id) || {}).title || "чат";
     try { await native().DeleteChat(id); } catch (err) { paintChatList(); showChatNote("Чат не удален: " + errText(err)); return; }
+    toast("Чат удален", ` · «${title}»`, null, "del");
     if (id === chatState.id) { chatState.id = ""; chatState.chat = null; }
     await renderChatList();
     renderChat();
@@ -2200,12 +2320,52 @@ $(".settings-nav").addEventListener("click", (e) => {
   const b = e.target.closest("[data-go]");
   if (b && b.dataset.go !== panel.dataset.view) openSettings(b.dataset.go);
 });
+// saveChatPart saves one choice right away (голос, микрофон, распознавание) —
+// как в english-hub, без кнопки; правки модели и ключа в полях не трогает.
+async function saveChatPart(patch, head, rest) {
+  const s = chatState.settings;
+  if (!s || !native() || !native().SetChatSettings) return;
+  const { hasKey, local, effectiveMode, ...cfg } = s; // в сохранение — только настройки, без признаков
+  const before = { ...cfg }, next = { ...cfg, ...patch };
+  try {
+    await native().SetChatSettings(next, "");
+    chatState.settings = { ...s, ...patch };
+    toast(head, rest, () => saveChatPart(before, "Вернул", " · как было"));
+  } catch (err) {
+    $("#chat-model-note").textContent = errText(err);
+  }
+  $("#chat-voice-name").value = chatState.settings.voice || "";
+  $("#chat-mic-mode").value = chatState.settings.mic || "";
+  $("#chat-listen").value = chatState.settings.listen || "";
+  renderVoiceChoices();
+  renderMicChoices();
+  renderAccValues();
+  setMic(dict.on);
+}
+$("#chat-voices").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-voice]");
+  if (!b) return;
+  const v = b.dataset.voice;
+  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => { $("#chat-model-note").textContent = errText(err); });
+  saveChatPart({ voice: v }, "Голос", " · " + (v || "голос системы"));
+});
+$("#chat-mics").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mic]");
+  if (!b) return;
+  saveChatPart({ mic: b.dataset.mic }, "Микрофон", " · " + MIC_MODES[b.dataset.mic][0]);
+});
+$("#voice-add").addEventListener("click", () => {
+  if (native() && native().OpenVoiceSettings) native().OpenVoiceSettings().catch((err) => { $("#chat-model-note").textContent = errText(err); });
+});
+$("#chat-name").addEventListener("input", renderAccValues);
+$("#chat-listen").addEventListener("change", (e) => saveChatPart({ listen: e.target.value }, "Распознавание", " · " + e.target.selectedOptions[0].textContent));
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value };
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
-    $("#chat-model-note").textContent = "Сохранено";
+    $("#chat-model-note").textContent = "";
+    toast("Сохранено", " · модель " + (c.model || $("#chat-name").placeholder).replace(/^[^/]+\//, ""));
     await loadChatSettings();
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
