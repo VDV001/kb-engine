@@ -113,6 +113,20 @@ type chatDesk struct {
 	driveRead func(ctx context.Context, conn, ref string) (chat.Doc, error)
 }
 
+// everyAtMost passes text to show at most once per gap: кусков ответа сотни,
+// а страница перерисовывает весь текст на каждом. Пустой (показанное — не
+// ответ) проходит всегда; пропущенный хвост приходит целым ответом из Ask.
+// Вопрос один за раз, поэтому без замка.
+func everyAtMost(gap time.Duration, now func() time.Time, show func(string)) func(string) {
+	var last time.Time
+	return func(text string) {
+		if t := now(); text == "" || t.Sub(last) >= gap {
+			last = t
+			show(text)
+		}
+	}
+}
+
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
 	return &chatDesk{settings: s, dir: dir, now: time.Now,
 		model: func(c desktopconfig.Chat, key string) chat.Model {
