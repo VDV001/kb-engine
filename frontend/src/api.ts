@@ -878,7 +878,9 @@ export const api = {
   async financeExport(rows: FinanceExportRow[]): Promise<Blob> {
     const res = await fetch(appURL('api/finances/export'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // X-DVK-App — запись от самой витрины: окно DVK пропускает через свой
+      // прокси только такую (защита от CSRF, #435 G3); серверу заголовок не мешает.
+      headers: { 'Content-Type': 'application/json', 'X-DVK-App': '1' },
       body: JSON.stringify({ rows }),
     })
     if (!res.ok) throw new Error(`export failed: ${res.status}`)
