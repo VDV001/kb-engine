@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -23,6 +24,9 @@ const (
 	KindCatalog Kind = "catalog"
 	// KindServer — kbengine serve на другой машине (VPS, Yandex Cloud) или на этой.
 	KindServer Kind = "server"
+	// KindGDrive — папка Google Диска: ищется самим Диском через подключение
+	// Google, файлы на Мак не скачиваются.
+	KindGDrive Kind = "gdrive"
 )
 
 // Ошибки списка источников: окно показывает текст, вызывающие проверяют errors.Is.
@@ -40,8 +44,10 @@ type Source struct {
 	Name string `json:"name,omitempty"`
 	// Path — для папки и каталога.
 	Path string `json:"path,omitempty"`
-	// URL — для сервера. Токен в конфиг не пишется: он будет в Связке ключей.
+	// URL — для сервера и папки Диска. Токен в конфиг не пишется: он в Связке ключей.
 	URL string `json:"url,omitempty"`
+	// Conn — подключение, через которое источник читается (папка Диска → Google).
+	Conn string `json:"conn,omitempty"`
 	// Enabled — выключенный источник остается в списке со своим местом и
 	// настройками, но не читается.
 	Enabled bool `json:"enabled"`
@@ -60,8 +66,25 @@ func (s Source) check() error {
 		if err := CheckServerURL(s.URL); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrSourceTarget, s.ID, err)
 		}
+	case KindGDrive:
+		switch {
+		case DriveFolderID(s.URL) == "":
+			return fmt.Errorf("%w: %s: нужна ссылка на папку Google Диска (https://drive.google.com/drive/folders/…)", ErrSourceTarget, s.ID)
+		case s.Conn == "":
+			return fmt.Errorf("%w: %s: папке Диска нужно подключение Google", ErrSourceTarget, s.ID)
+		}
 	}
 	return nil
+}
+
+var driveFolder = regexp.MustCompile(`^https://drive\.google\.com/drive/(?:u/\d+/)?folders/([\w-]+)(?:[?#].*)?$`)
+
+// DriveFolderID returns the folder id of a Google Drive folder link; "" — не папка Диска.
+func DriveFolderID(link string) string {
+	if m := driveFolder.FindStringSubmatch(strings.TrimSpace(link)); m != nil {
+		return m[1]
+	}
+	return ""
 }
 
 // CheckServerURL пускает https куда угодно, а http — только на этот Mac:
