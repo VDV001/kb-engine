@@ -57,7 +57,11 @@ func readDocx(root *os.Root, rel string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return docxText(f, info.Size())
+	text, err := docxText(f, info.Size())
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", sniffNotDocx(f, info.Size()), err)
+	}
+	return text, nil
 }
 
 // docxText returns the paragraphs of word/document.xml, one per line.
