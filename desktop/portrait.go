@@ -127,20 +127,17 @@ func (d *chatDesk) portrait(c desktopconfig.Chat, model chat.Model) (*portrait.S
 	if model != nil {
 		m = portraitAsker{model}
 	}
-	return portrait.NewService(store, m, d.now, newChatID), nil
+	// Замок — только на чтение-правку-запись (portrait.WithLock): разбор фоном
+	// и правка человека не затирают друг друга, а модель думает вне замка.
+	return portrait.NewService(store, m, d.now, newChatID, portrait.WithLock(&d.portraitMu)), nil
 }
 
-// withPortrait runs fn under the portrait lock: разбор фоном и правка
-// человека не затирают друг друга.
-// ponytail: замок на весь разбор, вместе с запросом к модели. Потолок: правка
-// ждет до extractTimeout, пока модель думает. Путь: модель вне замка, слияние при записи.
+// withPortrait runs fn with the portrait service of the current settings.
 func (d *chatDesk) withPortrait(model chat.Model, fn func(s *portrait.Service) error) error {
 	s, err := d.portrait(d.config(), model)
 	if err != nil {
 		return err
 	}
-	d.portraitMu.Lock()
-	defer d.portraitMu.Unlock()
 	return fn(s)
 }
 

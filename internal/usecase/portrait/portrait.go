@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -51,12 +52,30 @@ type Service struct {
 	model Model
 	now   func() time.Time
 	newID func() string
+	lock  sync.Locker // держит только чтение-правку-запись, не запрос к модели
 }
 
+// Option configures a Service.
+type Option func(*Service)
+
+// WithLock serializes the changes of one process: файл в папке версий не
+// знает, и две правки из одного окна иначе затерли бы друг друга. Запрос к
+// модели (разбор, сжатие) идет вне замка.
+func WithLock(l sync.Locker) Option { return func(s *Service) { s.lock = l } }
+
 // NewService wires the store, the model, the clock and the id source.
-func NewService(store Store, model Model, now func() time.Time, newID func() string) *Service {
-	return &Service{store: store, model: model, now: now, newID: newID}
+func NewService(store Store, model Model, now func() time.Time, newID func() string, opts ...Option) *Service {
+	s := &Service{store: store, model: model, now: now, newID: newID, lock: noLock{}}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
+
+type noLock struct{}
+
+func (noLock) Lock()   {}
+func (noLock) Unlock() {}
 
 // Portrait returns the saved portrait.
 func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { return s.store.Load(ctx) }
@@ -64,6 +83,8 @@ func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { retur
 // change applies fn to the stored portrait and saves it; проиграл гонку
 // (ErrConflict) — fn применяется заново к свежему портрету.
 func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	var err error
 	for range conflictAttempts {
 		var p domain.Portrait
