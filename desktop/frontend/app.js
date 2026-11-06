@@ -1975,10 +1975,19 @@ function paintThemeBtn() {
 $("#theme-btn").addEventListener("click", () => {
   const order = ["system", "light", "dark"];
   const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
-  if (next === "system") delete document.documentElement.dataset.theme;
-  else document.documentElement.dataset.theme = next;
-  try { next === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch { /* только на сеанс */ }
-  paintThemeBtn();
+  setTheme(next);
   hideTip();
+});
+function setTheme(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+  rememberTheme(t);
+  paintThemeBtn();
+}
+// Тему переключили кнопкой витрины в рамке «Финансов»: окно берет ее себе,
+// чтобы в одном окне не жили две темы.
+window.addEventListener("storage", (e) => {
+  // Только свои значения: чужая запись в ключ (не light/dark) не стирает выбор окна.
+  if (e.key === FRAME_THEME_KEY && (e.newValue === "light" || e.newValue === "dark") && e.newValue !== currentTheme()) setTheme(e.newValue);
 });
 paintThemeBtn();
