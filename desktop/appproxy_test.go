@@ -1,0 +1,160 @@
+package main
+
+import (
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"testing/fstest"
+)
+
+// Прокси модуля «Финансы» (#435, G2): витрина под /app/ в окне, запросы
+// /app/api|kb|media на kb-сервер с токеном из Связки. Только из обработчика
+// Wails: loopback-порт отдал бы данные с токеном любому процессу Мака.
+
+var appUI = fstest.MapFS{
+	"index.html":    {Data: []byte("<!doctype html><title>финансы</title>")},
+	"assets/app.js": {Data: []byte("console.log(1)")},
+}
+
+func proxyTo(t *testing.T, up *httptest.Server, token string) http.Handler {
+	t.Helper()
+	return newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: up.URL, Token: token}, true }, appUI, up.Client().Transport)
+}
+
+func TestAppProxy_addsTokenAndDropsBrowserCredentials(t *testing.T) {
+	var got *http.Request
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Clone(r.Context())
+		http.SetCookie(w, &http.Cookie{Name: "s", Value: "1"})
+		_, _ = io.WriteString(w, `{"ok":true}`)
+	}))
+	defer up.Close()
+
+	req := httptest.NewRequest(http.MethodGet, "/app/api/finances?year=2026", nil)
+	req.Header.Set("Cookie", "webview=1")
+	req.Header.Set("Authorization", "Bearer from-page")
+	req.Header.Set("X-KB-Token", "forged")
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	proxyTo(t, up, "tok-1").ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK || rec.Body.String() != `{"ok":true}` {
+		t.Fatalf("ответ %d %q", rec.Code, rec.Body.String())
+	}
+	if got.URL.Path != "/api/finances" || got.URL.RawQuery != "year=2026" {
+		t.Errorf("на сервер ушло %s?%s, want /api/finances?year=2026", got.URL.Path, got.URL.RawQuery)
+	}
+	if v := got.Header.Get("X-KB-Token"); v != "tok-1" {
+		t.Errorf("X-KB-Token = %q, want токен из Связки, а не из страницы", v)
+	}
+	for _, h := range []string{"Cookie", "Authorization"} {
+		if v := got.Header.Get(h); v != "" {
+			t.Errorf("%s от webview ушел на сервер: %q", h, v)
+		}
+	}
+	if got.Header.Get("Accept") != "application/json" {
+		t.Error("Accept не дошел до сервера")
+	}
+	if v := rec.Header().Get("Set-Cookie"); v != "" {
+		t.Errorf("Set-Cookie сервера отдан webview: %q", v)
+	}
+}
+
+// Перенаправление сервера не исполняется: токен не уходит туда, куда указал
+// чужой Location.
+func TestAppProxy_doesNotFollowRedirects(t *testing.T) {
+	var elsewhere atomic.Int32
+	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { elsewhere.Add(1) }))
+	defer other.Close()
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusFound)
+	}))
+	defer up.Close()
+
+	rec := httptest.NewRecorder()
+	proxyTo(t, up, "tok-1").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/api/finances", nil))
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("код %d, want 502 на перенаправление", rec.Code)
+	}
+	if elsewhere.Load() != 0 {
+		t.Error("прокси пошел по перенаправлению")
+	}
+}
+
+// Токен — только на https или http этого Мака, как у источников (CheckServerURL).
+func TestAppProxy_refusesPlainHTTPToTheNetwork(t *testing.T) {
+	var calls atomic.Int32
+	rt := roundTripFunc(func(*http.Request) (*http.Response, error) { calls.Add(1); return nil, io.EOF })
+	p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: "http://kb.example.ru", Token: "tok-1"}, true }, appUI, rt)
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/api/finances", nil))
+	if rec.Code != http.StatusBadGateway || calls.Load() != 0 {
+		t.Fatalf("код %d, запросов в сеть %d: http в сеть с токеном пропущен", rec.Code, calls.Load())
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Без сервера — понятный экран и понятная ошибка API, а не пустая витрина.
+func TestAppProxy_withoutAServer(t *testing.T) {
+	p := newAppProxy(func() (appUpstream, bool) { return appUpstream{}, false }, appUI, nil)
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "kb-сервер") {
+		t.Errorf("страница без сервера: %d %q", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/api/finances", nil))
+	if rec.Code != http.StatusServiceUnavailable || !strings.Contains(rec.Body.String(), "kb-сервер") {
+		t.Errorf("API без сервера: %d %q", rec.Code, rec.Body.String())
+	}
+}
+
+// Витрина: /app → /app/ (код грузится по ./assets/ от страницы), файлы — из
+// сборки, незнакомый путь — index.html (маршруты витрины).
+func TestAppProxy_servesTheUI(t *testing.T) {
+	up := httptest.NewServer(http.NotFoundHandler())
+	defer up.Close()
+	p := proxyTo(t, up, "tok-1")
+	cases := []struct {
+		path, wantLoc, wantBody string
+		code                    int
+	}{
+		{"/app", "/app/", "", http.StatusMovedPermanently},
+		{"/app/", "", "<title>финансы", http.StatusOK},
+		{"/app/assets/app.js", "", "console.log", http.StatusOK},
+		{"/app/accounts", "", "<title>финансы", http.StatusOK},
+	}
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if rec.Code != tc.code || rec.Header().Get("Location") != tc.wantLoc || !strings.Contains(rec.Body.String(), tc.wantBody) {
+			t.Errorf("%s: %d Location=%q body=%q", tc.path, rec.Code, rec.Header().Get("Location"), rec.Body.String())
+		}
+	}
+}
+
+// G2 — только чтение: запись через прокси откроет G3 вместе с решением по
+// защите от CSRF.
+func TestAppProxy_readOnlyUntilG3(t *testing.T) {
+	var calls atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
+	defer up.Close()
+	rec := httptest.NewRecorder()
+	proxyTo(t, up, "tok-1").ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/app/api/finances/transactions", strings.NewReader("{}")))
+	if rec.Code != http.StatusMethodNotAllowed || calls.Load() != 0 {
+		t.Errorf("POST: код %d, запросов к серверу %d", rec.Code, calls.Load())
+	}
+}
+
+// Путь вне /app — не дело прокси: окно отдает его своему API.
+func TestAppProxy_passesOtherPathsOn(t *testing.T) {
+	if isAppPath("/api/search") || isAppPath("/application") || !isAppPath("/app") || !isAppPath("/app/x") {
+		t.Fatal("isAppPath путает /app с соседними путями")
+	}
+}
