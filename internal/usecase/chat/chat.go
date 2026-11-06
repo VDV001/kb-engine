@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 )
@@ -113,7 +114,25 @@ type Turn struct {
 const (
 	MaxDocs     = 8
 	MaxDocRunes = 1500
+	// MaxAttachedRunes — потолок приложенного документа: его человек приложил,
+	// чтобы модель прочла, поэтому больше, чем у найденного.
+	//
+	// ponytail: один потолок на любую модель. Потолок: маленькая локальная
+	// модель с контекстом 4 тыс. токенов и два приложенных документа. Путь:
+	// потолок от размера контекста модели в настройках чата.
+	MaxAttachedRunes = 12000
 )
+
+// Request is one question: разговор до него, режим, приложенные человеком
+// документы (файл, найденное, ссылка) и показ ответа по мере генерации
+// (Show; nil — без показа).
+type Request struct {
+	History  []Message
+	Question string
+	Mode     Mode
+	Attached []Doc
+	Show     func(text string)
+}
 
 // Service answers questions.
 type Service struct {
@@ -142,50 +161,63 @@ const systemPrompt = `Ты отвечаешь на вопросы человек
 Если в документах ответа нет — так и скажи и не выдумывай. Отвечай на языке вопроса.`
 
 // Answer answers question after history.
+func (s *Service) Answer(ctx context.Context, history []Message, question string, mode Mode) (Turn, error) {
+	return s.Respond(ctx, Request{History: history, Question: question, Mode: mode})
+}
+
+// AnswerStream is Answer that shows the answer while the model writes it.
+func (s *Service) AnswerStream(ctx context.Context, history []Message, question string, mode Mode, show func(text string)) (Turn, error) {
+	return s.Respond(ctx, Request{History: history, Question: question, Mode: mode, Show: show})
+}
+
+// Respond answers r. Show получает растущий текст, а пустую строку — когда
+// показанное оказалось не ответом (шаг кончился вызовом инструмента). Модель
+// без потока отвечает целиком, и Show не зовется. Приложенное идет модели
+// первым и остается в документах хода.
 //
 // ponytail: поиск идет по одному последнему вопросу. Потолок: уточнение
 // «а сколько он стоит?» без существительного находит не то. Путь: режим
 // «модель ищет» (сама формулирует запрос) или переписывание запроса моделью.
-func (s *Service) Answer(ctx context.Context, history []Message, question string, mode Mode) (Turn, error) {
-	return s.AnswerStream(ctx, history, question, mode, nil)
-}
-
-// AnswerStream is Answer that shows the answer while the model writes it:
-// show получает растущий текст, а пустую строку — когда показанное оказалось
-// не ответом (шаг кончился вызовом инструмента). Модель без потока отвечает
-// целиком, и show не зовется.
-func (s *Service) AnswerStream(ctx context.Context, history []Message, question string, mode Mode, show func(text string)) (Turn, error) {
+func (s *Service) Respond(ctx context.Context, r Request) (Turn, error) {
 	if _, ok := s.model.(Streamer); !ok {
-		show = nil
+		r.Show = nil
 	}
-	question = strings.TrimSpace(question)
-	if question == "" {
+	r.Question = strings.TrimSpace(r.Question)
+	if r.Question == "" {
 		return Turn{}, ErrEmptyQuestion
 	}
-	switch mode {
+	switch r.Mode {
 	case ModeContext:
 	case ModeTools:
-		return s.answerWithTools(ctx, history, question, show)
+		return s.answerWithTools(ctx, r)
 	default:
-		return Turn{}, fmt.Errorf("%w: unknown mode %q", ErrModel, mode)
+		return Turn{}, fmt.Errorf("%w: unknown mode %q", ErrModel, r.Mode)
 	}
-	docs, err := s.search.Search(ctx, question, MaxDocs)
-	if err != nil {
-		return Turn{}, fmt.Errorf("%w: %w", ErrSearch, err)
+	docs := r.Attached
+	if limit := MaxDocs - len(r.Attached); limit > 0 {
+		found, err := s.search.Search(ctx, r.Question, limit)
+		if err != nil {
+			return Turn{}, fmt.Errorf("%w: %w", ErrSearch, err)
+		}
+		docs = appendNew(slices.Clone(r.Attached), found...)
 	}
 	msgs := []ModelMessage{{Role: RoleSystem, Content: systemPrompt}}
-	for _, m := range history {
+	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
 	}
-	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: documentsBlock(docs) + "\n\nВопрос: " + question})
-	reply, err := s.complete(ctx, msgs, nil, show)
+	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: documentsBlock(docs, len(r.Attached)) + "\n\nВопрос: " + r.Question})
+	reply, err := s.complete(ctx, msgs, nil, r.Show)
 	if err != nil {
 		return Turn{}, fmt.Errorf("%w: %w", ErrModel, err)
 	}
 	if strings.TrimSpace(reply.Content) == "" {
 		return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 	}
-	return Turn{Answer: reply.Content, Docs: cited(reply.Content, docs)}, nil
+	used := cited(reply.Content, docs)
+	if len(r.Attached) > 0 && len(used) < len(docs) {
+		used = appendNew(slices.Clone(r.Attached), used...)
+	}
+	return Turn{Answer: reply.Content, Docs: used}, nil
 }
 
 // complete asks the model, by stream when show is set (тогда модель — Streamer).
@@ -196,19 +228,24 @@ func (s *Service) complete(ctx context.Context, msgs []ModelMessage, tools []Too
 	return s.model.Complete(ctx, msgs, tools)
 }
 
-// documentsBlock numbers the documents for the model.
-func documentsBlock(docs []Doc) string {
+// documentsBlock numbers the documents for the model; первые attached —
+// приложенные, у них свой потолок текста.
+func documentsBlock(docs []Doc, attached int) string {
 	if len(docs) == 0 {
 		return "Документов по вопросу не нашлось."
 	}
 	var b strings.Builder
 	b.WriteString("Документы:")
 	for i, d := range docs {
+		limit := MaxDocRunes
+		if i < attached {
+			limit = MaxAttachedRunes
+		}
 		fmt.Fprintf(&b, "\n\n[%d] %s", i+1, d.Title)
 		if d.Source != "" {
 			fmt.Fprintf(&b, " (%s)", d.Source)
 		}
-		b.WriteString("\n" + trimRunes(d.Text, MaxDocRunes))
+		b.WriteString("\n" + trimRunes(d.Text, limit))
 	}
 	return b.String()
 }
