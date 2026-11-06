@@ -46,13 +46,13 @@ func (m *portraitModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ 
 	return chat.ModelReply{Content: "ответ"}, nil
 }
 
-func newPortraitDesk(t *testing.T) (*chatDesk, *portraitModel, chan []factView) {
+func newPortraitDesk(t *testing.T) (*chatDesk, *portraitModel, chan portraitNews) {
 	t.Helper()
 	d, _, _, _ := newTestChatDesk(t)
 	m := &portraitModel{}
 	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
-	news := make(chan []factView, 4)
-	d.memoryNew = func(f []factView) { news <- f }
+	news := make(chan portraitNews, 4)
+	d.memoryNew = func(n portraitNews) { news <- n }
 	return d, m, news
 }
 
@@ -84,9 +84,10 @@ func TestChat_Portrait(t *testing.T) {
 		t.Fatalf("портрет в чате: %q, %+v", m.at(0)[0].Content, rec.Portrait)
 	}
 	select {
-	case got := <-news:
-		if len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending || got[0].Title != "Предпочтения" {
-			t.Fatalf("новое = %+v", got)
+	case n := <-news:
+		got := n.Facts
+		if n.Chat != rec.ID || len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending || got[0].Title != "Предпочтения" {
+			t.Fatalf("новое = %+v (чат %q, ждали %q)", got, n.Chat, rec.ID)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("разбор после ответа не пришел")
@@ -244,16 +245,19 @@ func TestChat_PortraitRememberTool(t *testing.T) {
 	if err := d.SetSettings(c, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Ask(askReq{Question: "отвечай коротко, всегда"}); err != nil {
+	rec, err := d.Ask(askReq{Question: "отвечай коротко, всегда"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !m.called {
 		t.Fatal("remember модели не предложен")
 	}
 	select {
-	case got := <-news:
-		if len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending {
-			t.Fatalf("событие: %+v", got)
+	case n := <-news:
+		// Чат новый: id у него появился уже во время ответа, и событие его знает —
+		// карточка «Запомнить?» встает в этот чат, а не в открытый сейчас.
+		if n.Chat != rec.ID || len(n.Facts) != 1 || n.Facts[0].Text != "Отвечать коротко" || !n.Facts[0].Pending {
+			t.Fatalf("событие: %+v, чат ответа %q", n, rec.ID)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("события о предложенном нет")
@@ -261,6 +265,18 @@ func TestChat_PortraitRememberTool(t *testing.T) {
 	v, err := d.Portrait()
 	if err != nil || len(v.Facts) != 1 || !v.Facts[0].Pending {
 		t.Fatalf("портрет: %+v %v", v, err)
+	}
+	// «Разбирать каждый ответ» выключено — и модель о человеке не собирает.
+	c.MemoryOff = true
+	if err := d.SetSettings(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	m.called = false
+	if _, err := d.Ask(askReq{Question: "и еще: пиши по-русски"}); err != nil {
+		t.Fatal(err)
+	}
+	if m.called {
+		t.Fatal("remember предложен при выключенном разборе")
 	}
 }
 
