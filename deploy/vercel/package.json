@@ -1,0 +1,8 @@
+{
+  "name": "kb-digest",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test lib/digest.test.js"
+  }
+}
