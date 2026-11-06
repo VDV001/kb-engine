@@ -425,16 +425,7 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 	d.search = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
 		res := d.settings.SearchSources(ctx, q)
 		snap := d.settings.snapshot().cfg.WithSources()
-		names := map[string]string{}
-		for _, r := range res.Sources {
-			names[r.ID] = sourceLabel(r.Source)
-		}
-		var entries []chat.Doc
-		for _, h := range res.Hits {
-			if doc, ok := entryDoc(h, names[h.Source]); ok {
-				entries = append(entries, doc)
-			}
-		}
+		entries := entryDocs(res)
 		mu.Lock()
 		if len(seen) > maxSeenEntries {
 			clear(seen)
@@ -447,14 +438,12 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		if err != nil && !errors.Is(err, filesearch.ErrNotBuilt) {
 			return nil, err
 		}
-		fileDocs := make([]chat.Doc, 0, len(hits))
-		for _, h := range hits {
-			fileDocs = append(fileDocs, chat.Doc{Ref: "file:" + h.Doc.Path(), Title: h.Doc.Name(), Source: filepath.Dir(h.Doc.Path()), Text: h.Snippet,
-				SourceID: folderSourceOf(h.Doc.Path(), snap.Sources, d.settings.home)})
-		}
-		return interleave(entries, fileDocs, limit), nil
+		return interleave(entries, fileDocs(hits, snap.Sources, d.settings.home), limit), nil
 	}
-	d.read = func(_ context.Context, ref string) (chat.Doc, error) {
+	d.read = func(ctx context.Context, ref string) (chat.Doc, error) {
+		if _, ok := strings.CutPrefix(ref, "url:"); ok && d.attach != nil {
+			return d.attach(ctx, ref) // находка Диска — через подключение Google
+		}
 		if p, ok := strings.CutPrefix(ref, "file:"); ok {
 			text, err := files.Read(p)
 			if err != nil {
@@ -470,6 +459,31 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		}
 		return doc, nil
 	}
+}
+
+// entryDocs turns the records of the merged search into chat documents.
+func entryDocs(res sourcesSearch) []chat.Doc {
+	names := map[string]string{}
+	for _, r := range res.Sources {
+		names[r.ID] = sourceLabel(r.Source)
+	}
+	var out []chat.Doc
+	for _, h := range res.Hits {
+		if doc, ok := entryDoc(h, names[h.Source]); ok {
+			out = append(out, doc)
+		}
+	}
+	return out
+}
+
+// fileDocs turns file hits into chat documents with their folder source.
+func fileDocs(hits []filesearch.Hit, sources []desktopconfig.Source, home string) []chat.Doc {
+	out := make([]chat.Doc, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, chat.Doc{Ref: "file:" + h.Doc.Path(), Title: h.Doc.Name(), Source: filepath.Dir(h.Doc.Path()), Text: h.Snippet,
+			SourceID: folderSourceOf(h.Doc.Path(), sources, home)})
+	}
+	return out
 }
 
 // entryDoc turns one record of the merged search into a chat document.
@@ -500,7 +514,11 @@ func entryDoc(h sourceHit, source string) (chat.Doc, bool) {
 	if e.URL != "" {
 		b.WriteString("\nАдрес: " + e.URL)
 	}
-	return chat.Doc{Ref: fmt.Sprintf("kb:%s:%d", h.Source, e.ID), Title: e.Title, Source: source, Text: strings.TrimSpace(b.String()), SourceID: h.Source}, true
+	ref := fmt.Sprintf("kb:%s:%d", h.Source, e.ID)
+	if e.ID == 0 && e.URL != "" {
+		ref = "url:" + e.URL // находка Диска: читается по ссылке через подключение
+	}
+	return chat.Doc{Ref: ref, Title: e.Title, Source: source, Text: strings.TrimSpace(b.String()), SourceID: h.Source}, true
 }
 
 // interleave alternates entries and files up to limit.
