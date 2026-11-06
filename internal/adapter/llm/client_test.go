@@ -123,3 +123,78 @@ func TestComplete_KeyOnlyOverHTTPSOrLoopback(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInsecureURL", err)
 	}
 }
+
+// Поток (stream: true): куски текста приходят строками SSE, show видит
+// растущий текст; вызов инструмента собирается из кусков по index.
+func TestStream_TextAndToolCalls(t *testing.T) {
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range []string{
+			`data: {"choices":[{"delta":{"role":"assistant","content":"Сейчас"}}]}`,
+			`: keep-alive`,
+			`data: {"choices":[{"delta":{"content":" поищу"}}]}`,
+			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"search","arguments":"{\"q\":"}}]}}]}`,
+			`data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"срок\"}"}}]}}]}`,
+			`data: {"choices":[{"delta":{},"finish_reason":"tool_calls"}]}`,
+			`data: [DONE]`,
+		} {
+			_, _ = io.WriteString(w, line+"\n\n")
+		}
+	}))
+	defer srv.Close()
+	var seen []string
+	got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}},
+			[]chat.Tool{{Name: "search", Parameters: json.RawMessage(`{"type":"object"}`)}}, func(s string) { seen = append(seen, s) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["stream"] != true {
+		t.Errorf("stream = %v", body["stream"])
+	}
+	if strings.Join(seen, "|") != "Сейчас|Сейчас поищу" || got.Content != "Сейчас поищу" {
+		t.Fatalf("seen %q, content %q", seen, got.Content)
+	}
+	if len(got.ToolCalls) != 1 || got.ToolCalls[0].ID != "call_1" || got.ToolCalls[0].Name != "search" || got.ToolCalls[0].Arguments != `{"q":"срок"}` {
+		t.Fatalf("tool calls = %+v", got.ToolCalls)
+	}
+}
+
+// Отказы потока — те же ошибки, что у Complete, и без ключа в тексте;
+// поток без единого куска и ошибка внутри потока — тоже отказ.
+func TestStream_Errors(t *testing.T) {
+	tests := []struct {
+		code int
+		body string
+		want error
+	}{
+		{http.StatusUnauthorized, `{"error":{"message":"bad key ` + key + `"}}`, llm.ErrUnauthorized},
+		{http.StatusPaymentRequired, `{}`, llm.ErrNoCredit},
+		{http.StatusOK, "data: [DONE]\n\n", llm.ErrBadReply},
+		{http.StatusOK, "", llm.ErrBadReply},
+		{http.StatusOK, `data: {"error":{"message":"overloaded ` + key + `"}}` + "\n\n", llm.ErrServer},
+	}
+	for _, tc := range tests {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.code)
+			_, _ = io.WriteString(w, tc.body)
+		}))
+		_, err := llm.Client{BaseURL: srv.URL, Key: key, Model: "m", HTTP: srv.Client()}.
+			Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+		srv.Close()
+		if !errors.Is(err, tc.want) {
+			t.Errorf("%d %q: err = %v, want %v", tc.code, tc.body, err, tc.want)
+		}
+		if err != nil && strings.Contains(err.Error(), key) {
+			t.Errorf("%d: ключ в тексте ошибки: %v", tc.code, err)
+		}
+	}
+	_, err := llm.Client{BaseURL: "http://192.0.2.10:11434/v1", Key: key, Model: "m"}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if !errors.Is(err, llm.ErrInsecureURL) {
+		t.Fatalf("err = %v, want ErrInsecureURL", err)
+	}
+}
