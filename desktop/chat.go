@@ -46,8 +46,19 @@ type chatRecord struct {
 	Messages []chatMessage `json:"messages"`
 	// Docs — документы, с которыми работали в чате, без повторов.
 	Docs []chatDoc `json:"docs"`
+	// Sources — источники, в которых ищет этот чат (ряд над полем); пусто — все.
+	Sources []string `json:"sources,omitempty"`
 	// Notes — что окно не смогло прочитать из ссылок вопроса; только в ответе.
 	Notes []string `json:"notes,omitempty"`
+}
+
+// askReq is one question from the page: чат ("" — новый), вопрос, приложенное
+// (file:…, url:…, найденное) и источники этого чата (пусто — все).
+type askReq struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Refs     []string `json:"refs"`
+	Sources  []string `json:"sources"`
 }
 
 type chatMessage struct {
@@ -60,6 +71,7 @@ type chatDoc struct {
 	Ref    string `json:"ref"`
 	Title  string `json:"title"`
 	Source string `json:"source,omitempty"`
+	Src    string `json:"src,omitempty"` // id источника окна — цвет значка
 }
 
 // chatSummary is one line of the history list.
@@ -171,9 +183,11 @@ func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 	})
 }
 
-// Ask answers question in chat id ("" — новый чат) with the attached refs
-// and the links of the question, and saves the chat.
-func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
+// Ask answers r.Question in chat r.ID ("" — новый чат) with the attached refs
+// and the links of the question, searching only r.Sources when given, and
+// saves the chat.
+func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
+	id, question, refs := r.ID, r.Question, r.Refs
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec := chatRecord{Created: d.now()}
@@ -201,7 +215,7 @@ func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
 	}
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
-	svc := chat.NewService(searcherFunc(d.search), d.model(c, key), chat.WithReader(readerFunc(d.read)))
+	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.model(c, key), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
@@ -213,13 +227,13 @@ func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
 	for _, doc := range turn.Docs {
 		used = append(used, doc.Ref)
 		if !slices.ContainsFunc(rec.Docs, func(x chatDoc) bool { return x.Ref == doc.Ref }) {
-			rec.Docs = append(rec.Docs, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source})
+			rec.Docs = append(rec.Docs, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source, Src: doc.SourceID})
 		}
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
-	rec.Model, rec.Updated = c.Model, d.now()
+	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
@@ -246,6 +260,37 @@ func (d *chatDesk) Find(q string) ([]chatDoc, error) {
 		out = append(out, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source})
 	}
 	return out, nil
+}
+
+// scoped narrows search to the chat's sources; пусто — все.
+//
+// ponytail: отбор после поиска — отмеченных документов может прийти меньше
+// limit. Потолок: чат на один маленький источник среди больших. Путь: искать
+// с запасом (limit×3) или передавать список в сам поиск источников.
+func scoped(search func(context.Context, string, int) ([]chat.Doc, error), only []string) func(context.Context, string, int) ([]chat.Doc, error) {
+	if len(only) == 0 {
+		return search
+	}
+	return func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
+		docs, err := search(ctx, q, limit)
+		return slices.DeleteFunc(docs, func(d chat.Doc) bool { return !slices.Contains(only, d.SourceID) }), err
+	}
+}
+
+// folderSourceOf returns the folder source a file lives in: самая глубокая из
+// содержащих его папок; "" — файл вне папок окна.
+func folderSourceOf(path string, sources []desktopconfig.Source, home string) string {
+	best, bestLen := "", -1
+	for _, s := range sources {
+		if s.Kind != desktopconfig.KindFolder {
+			continue
+		}
+		root := filepath.Clean(desktopconfig.ExpandHome(s.Path, home))
+		if (path == root || strings.HasPrefix(path, root+string(filepath.Separator))) && len(root) > bestLen {
+			best, bestLen = s.ID, len(root)
+		}
+	}
+	return best
 }
 
 // maxFound caps what «+ Из найденного» remembers for attaching.
@@ -430,6 +475,7 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 	seen := map[string]chat.Doc{}
 	d.search = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
 		res := d.settings.SearchSources(ctx, q)
+		snap := d.settings.snapshot().cfg.WithSources()
 		names := map[string]string{}
 		for _, r := range res.Sources {
 			names[r.ID] = sourceLabel(r.Source)
@@ -454,7 +500,8 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		}
 		fileDocs := make([]chat.Doc, 0, len(hits))
 		for _, h := range hits {
-			fileDocs = append(fileDocs, chat.Doc{Ref: "file:" + h.Doc.Path(), Title: h.Doc.Name(), Source: filepath.Dir(h.Doc.Path()), Text: h.Snippet})
+			fileDocs = append(fileDocs, chat.Doc{Ref: "file:" + h.Doc.Path(), Title: h.Doc.Name(), Source: filepath.Dir(h.Doc.Path()), Text: h.Snippet,
+				SourceID: folderSourceOf(h.Doc.Path(), snap.Sources, d.settings.home)})
 		}
 		return interleave(entries, fileDocs, limit), nil
 	}
@@ -504,7 +551,7 @@ func entryDoc(h sourceHit, source string) (chat.Doc, bool) {
 	if e.URL != "" {
 		b.WriteString("\nАдрес: " + e.URL)
 	}
-	return chat.Doc{Ref: fmt.Sprintf("kb:%s:%d", h.Source, e.ID), Title: e.Title, Source: source, Text: strings.TrimSpace(b.String())}, true
+	return chat.Doc{Ref: fmt.Sprintf("kb:%s:%d", h.Source, e.ID), Title: e.Title, Source: source, Text: strings.TrimSpace(b.String()), SourceID: h.Source}, true
 }
 
 // interleave alternates entries and files up to limit.

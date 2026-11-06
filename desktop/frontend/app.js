@@ -218,6 +218,10 @@ function setIndexed(n, skipped, rec, err) {
   // Уровень — цвет точки статуса при наведении (CSS): красная — ошибка,
   // оранжевая — предупреждение, синяя — уведомление.
   el.parentElement.dataset.level = state.problems ? state.problems.level || "" : skipped ? "error" : "";
+  const dot = $("#settings-dot"); // точка у раздела «Проблемы» в настройках
+  dot.hidden = !total;
+  dot.dataset.level = el.parentElement.dataset.level;
+  if (!$("#chat-view").hidden) renderChatSources(); // точка ошибки у плашки источника
   if (total) {
     const b = document.createElement("button");
     b.className = "problems-link";
@@ -250,7 +254,7 @@ async function pollIndex() {
 }
 if (native()) setTimeout(pollIndex, 3000);
 // Список источников — ради цветов строки источников; панель его обновляет сама.
-if (native()) native().Sources().then((v) => { state.known = v.sources || []; refreshTabs(); }).catch(() => {});
+if (native()) native().Sources().then((v) => { state.known = v.sources || []; refreshTabs(); renderChatSources(); }).catch(() => {});
 if (native()) native().Tabs().then((t) => { state.tabs = t || []; refreshTabs(); }).catch(() => {});
 
 // --- Поиск ---------------------------------------------------------------------
@@ -728,8 +732,11 @@ function load(v) {
 // переживает переход в настройки и обратно.
 const VIEWS = {
   sources: { title: "Источники", cmd: "config sources" },
-  prefs: { title: "Настройки окна", cmd: "config window" },
+  prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
+  chat: { title: "Чат и модель", cmd: "config chat" },
+  look: { title: "Оформление", cmd: "config look" },
+  conn: { title: "Подключения", cmd: "config connections" },
 };
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
@@ -739,7 +746,15 @@ async function openSettings(view = "sources") {
   scrim.hidden = false;
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
+  panel.querySelectorAll("[data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === view)));
   showError("");
+  if (view === "chat") {
+    if (native() && native().ChatSettings) await loadChatSettings();
+    await renderVoiceSettings();
+    $("#chat-model-note").textContent = native() && native().ChatSettings ? "" : "Модель чата настраивается в окне приложения.";
+    $("#chat-name").focus();
+    return;
+  }
   if (view === "problems") {
     renderProblems(); // сразу прежний список, следом свежий: серверы отвечают до 3 с
     $("#close-settings").focus();
@@ -750,10 +765,19 @@ async function openSettings(view = "sources") {
     });
     return;
   }
+  if (view === "conn") {
+    await renderConnections();
+    $("#close-settings").focus();
+    return;
+  }
+  if (view === "look") {
+    renderAccents();
+    $("#close-settings").focus();
+    return;
+  }
   if (view === "prefs") {
     renderTabSettings();
     renderModules();
-    renderAccents();
     $("#close-settings").focus();
     return;
   }
@@ -782,6 +806,24 @@ async function openSettings(view = "sources") {
   $("#close-settings").focus();
   loadServerStates();
 }
+// renderConnections lists the window's accesses; «Изменить» ведет в раздел,
+// где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер" };
+async function renderConnections() {
+  const list = $("#conn-list");
+  if (!native() || !native().Connections) { list.innerHTML = `<li class="muted">Подключения видны в окне приложения.</li>`; return; }
+  let rows = [];
+  try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(String(e))}</li>`; return; }
+  list.innerHTML = rows.map((r) => `<li>
+    <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
+    <span class="st${r.ok ? " ok" : ""}">${esc(r.status)}</span>
+    <span class="d">${esc(r.detail)} · использует: ${esc((r.usedBy || []).join(", "))}</span>
+    <span class="conn-acts"><button class="btn" data-go-sec="${esc(r.section)}">Изменить</button></span></li>`).join("");
+}
+$("#conn-list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go-sec]");
+  if (b) openSettings(b.dataset.goSec);
+});
 // Состояние серверов приходит после списка: панель не ждет сеть. Сливается в
 // черновик по id — поля состояния в сохранение не входят и dirty не трогают.
 async function loadServerStates() {
@@ -1565,7 +1607,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1577,8 +1619,67 @@ async function openChatView() {
   }
   await renderChatList();
   renderChat();
+  renderChatSources();
   $("#chat-q").focus();
 }
+
+// --- Ряд источников над полем (решение владельца 06.11) ---------------------------
+// В чем ищет этот чат: включенные источники окна плашками их цвета. Щелчок
+// убирает источник из этого чата или возвращает; общие настройки не меняются.
+// Плашка пунктиром с красной точкой — у источника ошибка (сервер не отвечает,
+// нет токена, папка пропала): видно, что подключено, а что нет.
+// chatOnly null — все; список хранится в чате и уходит с вопросом.
+// Функции, а не const: строка статуса зовет renderChatSources раньше, чем
+// исполнится этот кусок файла.
+function chatHues() { return hues(state.known, (s) => s.id); }
+function chatSources() { return state.known.filter((s) => s.enabled); }
+function chatSrcOn(id) { return !chatState.only || chatState.only.includes(id); }
+function chatSrcBad(id) {
+  const p = state.problems && (state.problems.problems || []).find((x) => x.source === id && !x.path && x.level === "error");
+  return p ? p.what + (p.todo ? " · " + p.todo : "") : "";
+}
+function renderChatSources() {
+  const row = $("#chat-srcs");
+  const list = chatSources();
+  row.hidden = !list.length;
+  if (!list.length) return;
+  const hue = chatHues();
+  const chip = (s) => {
+    const bad = chatSrcBad(s.id), on = chatSrcOn(s.id);
+    return `<button type="button" class="chat-src${bad ? " bad" : ""}" style="--c:var(${hue.get(s.id)})" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
+      data-tip="${esc(label(s))}" data-tip-b="${esc(bad || (on ? "этот чат ищет здесь · щелчок — убрать" : "этот чат здесь не ищет · щелчок — вернуть"))}"${bad ? " data-tip-bad" : ""}><i></i><span class="t">${esc(label(s))}</span></button>`;
+  };
+  const max = 6; // больше — в «ещё N»: ряд не переносится
+  const shown = list.slice(0, max), rest = list.slice(max);
+  const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
+  row.innerHTML = `<span class="lbl">ищет в</span>` + shown.map(chip).join("") +
+    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">ещё ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
+    (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
+    (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
+  dropStaleTip();
+}
+function toggleChatSrc(id) {
+  const all = chatSources().map((s) => s.id);
+  let only = chatState.only ? [...chatState.only] : [...all];
+  only = only.includes(id) ? only.filter((x) => x !== id) : [...only, id];
+  if (!only.length) return showChatNote("Хотя бы один источник: иначе чату негде искать.");
+  chatState.only = all.every((x) => only.includes(x)) ? null : only;
+  renderChatSources();
+}
+$("#chat-srcs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-chat-src]");
+  if (b) return toggleChatSrc(b.dataset.chatSrc);
+  if (e.target.closest("[data-chat-src-all]")) { chatState.only = null; return renderChatSources(); }
+  if (e.target.closest("[data-chat-more]")) { chatState.moreOpen = !chatState.moreOpen; renderChatSources(); }
+});
+$("#chat-srcs").addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-chat-src-cb]");
+  if (cb) { chatState.moreOpen = true; toggleChatSrc(cb.dataset.chatSrcCb); }
+});
+document.addEventListener("click", (e) => {
+  // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
+  if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
+});
 async function loadChatSettings() {
   try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + e); return; }
   const s = chatState.settings;
@@ -1589,6 +1690,21 @@ async function loadChatSettings() {
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
+}
+// renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
+// читать ответ.
+async function renderVoiceSettings() {
+  const note = $("#chat-listen-note");
+  if (!native() || !native().ListenStatus) { note.textContent = "Голос настраивается в окне приложения."; return; }
+  const st = await native().ListenStatus().catch(() => ({}));
+  const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
+  note.textContent = !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
+    : `Слушает: Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
+  const sel = $("#chat-voice-name");
+  const voices = (await native().Voices().catch(() => [])) || [];
+  const cur = (chatState.settings && chatState.settings.voice) || "";
+  sel.innerHTML = `<option value="">голос системы</option>` + voices.map((v) => `<option${v === cur ? " selected" : ""}>${esc(v)}</option>`).join("");
+  if (cur && !voices.includes(cur)) sel.insertAdjacentHTML("beforeend", `<option selected>${esc(cur)}</option>`);
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -1649,7 +1765,8 @@ function renderChat() {
   $("#chat-docs").innerHTML = docs.map((d) => {
     const file = d.ref.startsWith("file:") ? d.ref.slice(5) : "";
     const link = d.ref.startsWith("url:") ? d.ref.slice(4) : "";
-    return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${esc(d.title)}</span>
+    const hue = d.src && chatHues().get(d.src);
+    return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${hue ? `<span class="chat-doc-dot" style="--c:var(${hue})"></span>` : ""}${esc(d.title)}</span>
       <span class="muted chat-doc-src">${esc(file ? tilde(d.source || "") : d.source || "")}</span>
       ${file ? `<span class="chat-doc-acts"><button class="btn" data-open="${esc(file)}">Открыть</button><button class="btn" data-reveal-file="${esc(file)}">В Finder</button></span>` : ""}
       ${link ? `<span class="chat-doc-acts"><button class="btn" data-open-url="${esc(link)}">Открыть</button></span>` : ""}</li>`;
@@ -1687,10 +1804,12 @@ async function askChat() {
   renderChat();
   try {
     const sent = chatState.attached.map((a) => a.ref);
-    const c = await native().Ask(chatState.id, q, sent);
+    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [] });
     // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
     chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
+    const last = c.messages[c.messages.length - 1];
+    if (voice.on && last) speakAnswer(last.text);
     if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
@@ -1699,6 +1818,7 @@ async function askChat() {
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
+    stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + e);
   } finally {
     chatState.busy = false;
@@ -1711,7 +1831,9 @@ function newChat() {
   chatState.id = "";
   chatState.chat = null;
   chatState.attached = [];
+  chatState.only = null;
   renderAttached();
+  renderChatSources();
   paintChatList();
   renderChat();
   renderChatNote();
@@ -1727,6 +1849,81 @@ function fitChatQ() {
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
 }
 $("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
+
+// --- Диктовка (#436) ----------------------------------------------------------------
+// Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
+// на сейчас; он встает после того, что было в поле до начала диктовки.
+const dict = { on: false, base: "" };
+function setMic(on) {
+  dict.on = on;
+  $("#chat-mic").setAttribute("aria-pressed", String(on));
+  $("#chat-mic").dataset.tipB = on ? "слушаю · еще раз или Esc — стоп" : "голос в текст на этом Маке · еще раз или Esc — стоп";
+}
+async function toggleMic() {
+  if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
+  if (dict.on) { native().StopDictation(); return; }
+  dict.base = $("#chat-q").value.replace(/\s+$/, "");
+  // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
+  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
+}
+$("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
+if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
+  if (ev.error) { if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
+  if (ev.text !== undefined && ev.text !== "") {
+    $("#chat-q").value = (dict.base ? dict.base + " " : "") + ev.text;
+    fitChatQ();
+    renderAttached();
+  }
+  if (ev.final) {
+    setMic(false);
+    $("#chat-q").focus();
+    // Разговор без рук: вопрос договорен — уходит сам; тишина без слов — слушать снова.
+    if (voice.on && !ev.error) $("#chat-q").value.trim() ? askChat() : listenVoice();
+  }
+});
+
+// --- Разговор голосом без рук (#436) ---------------------------------------------
+// Слушает с паузой: тишина 1,2 с после речи — вопрос договорен и уходит сам;
+// ответ читается вслух голосом из настроек; дочитал — снова слушает. Кнопка
+// или Esc останавливают все сразу.
+const voice = { on: false };
+const VOICE_PAUSE = 1.2;
+function setVoice(on) {
+  voice.on = on;
+  $("#chat-voice").setAttribute("aria-pressed", String(on));
+  $("#chat-voice").closest(".chat-box").classList.toggle("voice-on", on);
+}
+async function listenVoice(keepDraft) {
+  if (!voice.on || chatState.busy) return;
+  // Первый запуск сохраняет набранное — голос его дописывает; дальше поле чистое.
+  dict.base = keepDraft ? $("#chat-q").value.replace(/\s+$/, "") : "";
+  if (!keepDraft) $("#chat-q").value = "";
+  fitChatQ();
+  try { await native().StartDictation(VOICE_PAUSE); setMic(true); showChatNote("Разговор голосом: говорите — после паузы вопрос уйдет сам · Esc — стоп"); }
+  catch (e) { showChatNote("Разговор голосом: " + e); stopVoice(); }
+}
+function stopVoice() {
+  if (!voice.on) return;
+  setVoice(false);
+  if (dict.on) native().StopDictation();
+  native().StopSpeaking();
+  renderChatNote();
+}
+$("#chat-voice").addEventListener("click", () => {
+  hideTip();
+  if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
+  if (voice.on) return stopVoice();
+  setVoice(true);
+  listenVoice(true);
+});
+// Ответ готов — прочитать; дочитал — слушать снова.
+function speakAnswer(text) {
+  if (!voice.on) return;
+  showChatNote("Разговор голосом: читаю ответ · Esc — стоп");
+  native().Speak(text).catch((e) => { showChatNote("Голос: " + e); stopVoice(); });
+}
+if (window.runtime) window.runtime.EventsOn("speech", () => { if (voice.on) listenVoice(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && voice.on) { e.preventDefault(); stopVoice(); } }, true);
 
 // --- Приложенное к вопросу (#436) -------------------------------------------------
 // «+»: файл с диска, найденное, ссылка. Ссылки из текста вопроса окно читает
@@ -1829,13 +2026,9 @@ document.addEventListener("click", (e) => {
   const u = e.target.closest("[data-open-url]");
   if (u) openURL(u.dataset.openUrl);
 });
-$("#chat-model-chip").addEventListener("click", () => {
-  if (chatPanes.l && chatPanes.l.hidden) toggleChatPane("l"); // настройки модели — в колонке чатов
-  $("#chat-model").hidden = false;
-  $("#chat-model-btn").setAttribute("aria-expanded", "true");
-  $("#chat-name").focus();
-});
+$("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
 $("#chat-q").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && dict.on) { e.preventDefault(); native().StopDictation(); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
 });
 $("#chat-new").addEventListener("click", newChat);
@@ -1864,6 +2057,11 @@ $("#chat-list").addEventListener("click", async (e) => {
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
+    // Источники чата — только те, что есть сейчас: удаленный или выключенный
+    // оставил бы чат искать нигде (ревью #465).
+    const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
+    chatState.only = alive.length ? alive : null;
+    renderChatSources();
   } catch (err) { showChatNote("Чат не открылся: " + err); return; }
   paintChatList();
   renderChat();
@@ -1875,14 +2073,14 @@ $("#chat-docs").addEventListener("click", (e) => {
   const r = e.target.closest("[data-reveal-file]");
   if (r) revealFile(r.dataset.revealFile);
 });
-$("#chat-model-btn").addEventListener("click", () => {
-  const f = $("#chat-model");
-  f.hidden = !f.hidden;
-  $("#chat-model-btn").setAttribute("aria-expanded", String(!f.hidden));
+$("#chat-model-btn").addEventListener("click", () => openSettings("chat"));
+$(".settings-nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go]");
+  if (b && b.dataset.go !== panel.dataset.view) openSettings(b.dataset.go);
 });
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value };
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "Сохранено";

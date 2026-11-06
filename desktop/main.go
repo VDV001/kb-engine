@@ -123,6 +123,11 @@ func run() error {
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
 	app.chat.useSources(idx.files)
 	app.chat.useAttachments(idx.files, ext, weblink.Client{HTTP: &http.Client{Timeout: 30 * time.Second}})
+	app.listen = &dictation{emit: func(listenEvent) {}}
+	app.voice = &speaker{}
+	if exe, err := os.Executable(); err == nil {
+		app.listen.bin = listenNextTo(exe)
+	}
 	return wails.Run(&options.App{
 		Title:     "DVK",
 		Width:     1180,

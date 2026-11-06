@@ -57,14 +57,14 @@ func TestChat_AskCreatesAndContinues(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := d.Ask("", "какой срок поставки?", nil)
+	c, err := d.Ask(askReq{ID: "", Question: "какой срок поставки?"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.ID == "" || c.Title != "какой срок поставки?" || len(c.Messages) != 2 || c.Messages[1].Text != "ответ [1]" {
 		t.Fatalf("chat = %+v", c)
 	}
-	c2, err := d.Ask(c.ID, "а штраф?", nil)
+	c2, err := d.Ask(askReq{ID: c.ID, Question: "а штраф?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestChat_Refusals(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "https://ai-gateway.vercel.sh/v1", Model: "x"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Ask("", "q", nil); err == nil || !strings.Contains(err.Error(), "ключ") || m.n != 0 {
+	if _, err := d.Ask(askReq{ID: "", Question: "q"}); err == nil || !strings.Contains(err.Error(), "ключ") || m.n != 0 {
 		t.Fatalf("без ключа: err = %v, model calls %d", err, m.n)
 	}
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://192.0.2.10:11434/v1", Model: "x"}, "k"); err == nil {
@@ -173,7 +173,7 @@ func TestChat_ModelErrorsInWords(t *testing.T) {
 		d, m, _, _ := newTestChatDesk(t)
 		_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
 		m.err = tc.err
-		_, err := d.Ask("", "q", nil)
+		_, err := d.Ask(askReq{ID: "", Question: "q"})
 		if err == nil || !strings.Contains(err.Error(), tc.says) || !strings.Contains(err.Error(), " — ") {
 			t.Errorf("%v: err = %v, want «%s» и действие", tc.err, err, tc.says)
 		}
@@ -184,7 +184,7 @@ func TestChat_ModelErrorsInWords(t *testing.T) {
 func TestChat_Delete(t *testing.T) {
 	d, _, _, _ := newTestChatDesk(t)
 	_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
-	c, err := d.Ask("", "q", nil)
+	c, err := d.Ask(askReq{ID: "", Question: "q"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,7 +289,7 @@ func TestChat_AskShowsAnswerAsItComes(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := d.Ask("", "срок?", nil)
+	c, err := d.Ask(askReq{ID: "", Question: "срок?"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestChat_AskWithAttachments(t *testing.T) {
 		asked = append(asked, ref)
 		return chat.Doc{Ref: ref, Title: "по " + ref, Source: "example.com", Text: "приложенный текст " + ref}, nil
 	}
-	c, err := d.Ask("", "что тут? https://example.com/tz.", []string{"file:/w/смета.docx"})
+	c, err := d.Ask(askReq{Question: "что тут? https://example.com/tz.", Refs: []string{"file:/w/смета.docx"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,12 +338,12 @@ func TestChat_AskAttachmentRefused(t *testing.T) {
 	}
 	d.attach = func(context.Context, string) (chat.Doc, error) { return chat.Doc{}, weblink.ErrClosed }
 	// Приложенное «+» не прочлось — вопрос не уходит, причина словами.
-	_, err := d.Ask("", "глянь", []string{"url:https://docs.google.com/document/d/1A/edit"})
+	_, err := d.Ask(askReq{Question: "глянь", Refs: []string{"url:https://docs.google.com/document/d/1A/edit"}})
 	if err == nil || !strings.Contains(err.Error(), "закрыт") || !strings.Contains(err.Error(), "docs.google.com") || m.n != 0 {
 		t.Fatalf("err = %v, модель звали %d раз", err, m.n)
 	}
 	// Та же ссылка в тексте вопроса — вопрос уходит, ссылка названа в notes.
-	c, err := d.Ask("", "глянь https://docs.google.com/document/d/1A/edit", nil)
+	c, err := d.Ask(askReq{Question: "глянь https://docs.google.com/document/d/1A/edit"})
 	if err != nil || m.n != 1 || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "закрыт") {
 		t.Fatalf("err = %v, notes %q, модель %d", err, c.Notes, m.n)
 	}
@@ -369,6 +369,56 @@ func TestReadDiskFile(t *testing.T) {
 	}
 }
 
+// Ряд источников над полем (решение владельца 06.11): чат ищет только в
+// отмеченных для него источниках, список хранится в чате; у документа — id
+// источника, по нему окно красит значок.
+func TestChat_AskInChosenSources(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.search = func(context.Context, string, int) ([]chat.Doc, error) {
+		return []chat.Doc{
+			{Ref: "kb:base:1", Title: "Договор", SourceID: "base", Text: "срок 30 дней"},
+			{Ref: "file:/w/tz.md", Title: "tz.md", SourceID: "work", Text: "срок 45 дней"},
+		}, nil
+	}
+	c, err := d.Ask(askReq{Question: "срок?", Sources: []string{"work"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := m.asked[0][len(m.asked[0])-1].Content
+	if strings.Contains(q, "Договор") || !strings.Contains(q, "tz.md") {
+		t.Fatalf("модель получила не те документы:\n%s", q)
+	}
+	if strings.Join(c.Sources, ",") != "work" || len(c.Docs) != 1 || c.Docs[0].Src != "work" {
+		t.Fatalf("chat = %+v", c)
+	}
+	// Без списка — все источники, как раньше.
+	if _, err := d.Ask(askReq{ID: c.ID, Question: "а штраф?", Sources: nil}); err != nil {
+		t.Fatal(err)
+	}
+	if q := m.asked[1][len(m.asked[1])-1].Content; !strings.Contains(q, "Договор") {
+		t.Fatalf("без списка искал не везде:\n%s", q)
+	}
+}
+
+// Файл принадлежит папке-источнику, в которой лежит; вложенные папки — самой
+// глубокой, соседняя с похожим именем — не своя.
+func TestFolderSourceOf(t *testing.T) {
+	srcs := []desktopconfig.Source{
+		{ID: "work", Kind: desktopconfig.KindFolder, Path: "/w"},
+		{ID: "deep", Kind: desktopconfig.KindFolder, Path: "/w/tenders"},
+		{ID: "kb", Kind: desktopconfig.KindCatalog, Path: "/w/kb/catalog.json"},
+	}
+	tests := map[string]string{"/w/a.md": "work", "/w/tenders/t.docx": "deep", "/work/x.md": "", "/elsewhere/a.md": ""}
+	for p, want := range tests {
+		if got := folderSourceOf(p, srcs, "/home"); got != want {
+			t.Errorf("folderSourceOf(%q) = %q, want %q", p, got, want)
+		}
+	}
+}
+
 // Ссылка, просто упомянутая в вопросе, не останавливает его, если не
 // прочлась: вопрос уходит, человек видит, какую ссылку окно не прочло.
 // Приложенное «+» по-прежнему останавливает (ревью #464).
@@ -383,14 +433,14 @@ func TestChat_AutoLinkFailureDoesNotBlock(t *testing.T) {
 		}
 		return chat.Doc{Ref: ref, Title: "ок", Text: "текст"}, nil
 	}
-	c, err := d.Ask("", "почему https://localhost:8080/api не отвечает?", nil)
+	c, err := d.Ask(askReq{Question: "почему https://localhost:8080/api не отвечает?"})
 	if err != nil || m.n != 1 {
 		t.Fatalf("вопрос остановлен: %v, модель звали %d", err, m.n)
 	}
 	if len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "localhost:8080") {
 		t.Fatalf("notes = %q", c.Notes)
 	}
-	if _, err := d.Ask("", "что тут?", []string{"url:https://localhost:8080/x"}); err == nil {
+	if _, err := d.Ask(askReq{Question: "что тут?", Refs: []string{"url:https://localhost:8080/x"}}); err == nil {
 		t.Fatal("приложенное «+» не прочлось, а вопрос ушел")
 	}
 }
