@@ -1,6 +1,7 @@
 package search
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -37,7 +38,51 @@ func FilterWith(entries []domain.Entry, query string, m Matcher) []domain.Entry 
 			out = append(out, e)
 		}
 	}
-	return out
+	return rank(out, query, m)
+}
+
+// fieldWeight is how much a word found in a field says about the entry:
+// название — то, о чем запись, метки и автор — то, чем ее пометили, описание —
+// где слово лишь упомянуто.
+var fieldWeight = map[Field]int{FieldTitle: 8, FieldTag: 4, FieldAuthor: 4, FieldCategory: 2, FieldDescription: 1, FieldID: 8}
+
+// rank orders found entries by where their words were found (протыкивание
+// 06.11: по «SLA» статья с SLA в названии стояла восьмой — выдача шла по
+// номеру записи). Целое слово весит вдвое против его начала или перевода:
+// «SLA» выше «Slack». Равные остаются в порядке каталога.
+//
+// Объяснение строится только для найденного: FilterWith на каждую букву по
+// всему каталогу его не несет (см. ponytail у Explain).
+//
+// ponytail: каждое найденное объясняется заново — второй проход по полям.
+// Потолок: широкий запрос по синтетическим 1 500 записям — 9,5 мс вместо 5,6
+// (опечатка 14 вместо 7, BenchmarkFilter); на живом каталоге 1 619 записей
+// «агент» (652 находки) команда целиком та же ~0,28 с. Путь: общий обход
+// matchesAll+Explain, возвращающий ([]Why, bool) (тот же, что у Explain).
+func rank(found []domain.Entry, query string, m Matcher) []domain.Entry {
+	if len(found) < 2 {
+		return found
+	}
+	type scored struct {
+		e domain.Entry
+		s int
+	}
+	all := make([]scored, len(found))
+	for i, e := range found {
+		all[i].e = e
+		for _, w := range Explain(e, query, m) {
+			v := fieldWeight[w.Field]
+			if w.How == HowExact && strings.EqualFold(w.Hit, w.Word) {
+				v *= 2
+			}
+			all[i].s += v
+		}
+	}
+	slices.SortStableFunc(all, func(a, b scored) int { return b.s - a.s })
+	for i := range all {
+		found[i] = all[i].e
+	}
+	return found
 }
 
 func matchesAll(e domain.Entry, words []string, m Matcher) bool {
