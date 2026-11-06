@@ -75,3 +75,22 @@ func TestChatCheck_Accent(t *testing.T) {
 		t.Fatalf("fr-FR принят: %v", err)
 	}
 }
+
+// Папка портрета (#479) — абсолютный путь без управляющих символов или пусто.
+func TestChatCheck_MemoryDir(t *testing.T) {
+	base := desktopconfig.Chat{URL: desktopconfig.DefaultChatURL, Model: "m"}
+	for _, d := range []string{"", "/Users/me/Documents/DVK"} {
+		c := base
+		c.MemoryDir = d
+		if err := c.Check(); err != nil {
+			t.Errorf("%q отвергнута: %v", d, err)
+		}
+	}
+	for _, d := range []string{"Documents/DVK", "/tmp/a\nb"} {
+		c := base
+		c.MemoryDir = d
+		if err := c.Check(); !errors.Is(err, desktopconfig.ErrChatSettings) {
+			t.Errorf("%q принята: %v", d, err)
+		}
+	}
+}
