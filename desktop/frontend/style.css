@@ -550,6 +550,12 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .accent-list .sw { grid-column: 2; grid-row: 1 / span 2; }
 .accent-list.off-mode li { opacity: .55; }
 
+/* Модуль окна (#435): витрина во фрейме на месте ветки, поиска и выдачи. */
+.app.module-open { grid-template-rows: auto 1fr; }
+.app.module-open .branch, .app.module-open .search, .app.module-open .body { display: none; }
+.module-view { min-height: 0; margin-top: 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); overflow: hidden; background: var(--z-bg-2); }
+.module-view iframe { display: block; width: 100%; height: 100%; border: 0; }
+
 /* «N не прочитано» — кнопка в строке статуса; панель «Не прочитано». */
 .skipped-link { background: none; border: 0; padding: 0; font: inherit; color: var(--z-person); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
 .skipped-link:hover { color: var(--z-ink); }

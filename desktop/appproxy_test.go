@@ -139,16 +139,58 @@ func TestAppProxy_servesTheUI(t *testing.T) {
 	}
 }
 
-// G2 — только чтение: запись через прокси откроет G3 вместе с решением по
-// защите от CSRF.
-func TestAppProxy_readOnlyUntilG3(t *testing.T) {
-	var calls atomic.Int32
-	up := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { calls.Add(1) }))
-	defer up.Close()
-	rec := httptest.NewRecorder()
-	proxyTo(t, up, "tok-1").ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/app/api/finances/transactions", strings.NewReader("{}")))
-	if rec.Code != http.StatusMethodNotAllowed || calls.Load() != 0 {
-		t.Errorf("POST: код %d, запросов к серверу %d", rec.Code, calls.Load())
+// G3 — запись через прокси (#435). Сервер защищается от CSRF по Origin, а
+// прокси Origin не пересылает, поэтому защиту держит окно: запись — только
+// JSON с заголовком витрины X-DVK-App (чужая страница без CORS его не
+// поставит, форма — тем более) и не межсайтовая.
+func TestAppProxy_write(t *testing.T) {
+	cases := []struct {
+		name        string
+		contentType string
+		appHeader   bool
+		fetchSite   string
+		wantCode    int
+		wantUp      bool
+	}{
+		{"запись витрины доходит до сервера", "application/json", true, "same-origin", http.StatusCreated, true},
+		{"без заголовка витрины — отказ", "application/json", false, "", http.StatusForbidden, false},
+		{"форма вместо JSON — отказ", "text/plain", true, "", http.StatusUnsupportedMediaType, false},
+		{"межсайтовая — отказ", "application/json", true, "cross-site", http.StatusForbidden, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got *http.Request
+			var body string
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				got = r.Clone(r.Context())
+				b, _ := io.ReadAll(r.Body)
+				body = string(b)
+				w.WriteHeader(http.StatusCreated)
+			}))
+			defer up.Close()
+			req := httptest.NewRequest(http.MethodPost, "/app/api/finances/transactions", strings.NewReader(`{"amount":"350"}`))
+			req.Header.Set("Content-Type", tc.contentType)
+			if tc.appHeader {
+				req.Header.Set("X-DVK-App", "1")
+			}
+			if tc.fetchSite != "" {
+				req.Header.Set("Sec-Fetch-Site", tc.fetchSite)
+			}
+			rec := httptest.NewRecorder()
+			proxyTo(t, up, "tok-1").ServeHTTP(rec, req)
+			if rec.Code != tc.wantCode || (got != nil) != tc.wantUp {
+				t.Fatalf("код %d (want %d), дошло до сервера: %v", rec.Code, tc.wantCode, got != nil)
+			}
+			if !tc.wantUp {
+				return
+			}
+			if got.Method != http.MethodPost || body != `{"amount":"350"}` || got.Header.Get("X-KB-Token") != "tok-1" {
+				t.Errorf("на сервер ушло %s %q, токен %q", got.Method, body, got.Header.Get("X-KB-Token"))
+			}
+			if got.Header.Get("Content-Type") != "application/json" {
+				t.Error("Content-Type не дошел: сервер отказал бы 415")
+			}
+		})
 	}
 }
 
@@ -156,5 +198,16 @@ func TestAppProxy_readOnlyUntilG3(t *testing.T) {
 func TestAppProxy_passesOtherPathsOn(t *testing.T) {
 	if isAppPath("/api/search") || isAppPath("/application") || !isAppPath("/app") || !isAppPath("/app/x") {
 		t.Fatal("isAppPath путает /app с соседними путями")
+	}
+}
+
+// Витрина встраивается в окно из desktop/app-ui (G4). В git там только .keep:
+// без сборки (go test, CI без npm) /app/ говорит «не собрана», а не отдает 404.
+func TestBuiltAppUI(t *testing.T) {
+	if builtAppUI(fstest.MapFS{".keep": {}}) != nil {
+		t.Error("папка без index.html принята за собранную витрину")
+	}
+	if builtAppUI(appUI) == nil {
+		t.Error("собранная витрина не принята")
 	}
 }
