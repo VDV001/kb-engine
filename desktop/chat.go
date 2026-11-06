@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -163,19 +162,8 @@ func (d *chatDesk) Settings() chatSettingsView {
 }
 
 // gatewayKey returns the chat key when the chat goes through Vercel AI
-// Gateway — облачные голоса берут его же (#478); ключ другого провайдера на
-// шлюз не уходит.
-func (d *chatDesk) gatewayKey() (string, error) {
-	u, err := url.Parse(d.config().URL)
-	if err != nil || u.Hostname() != "ai-gateway.vercel.sh" {
-		return "", errors.New("облачный голос работает через Vercel AI Gateway: в «Модель» нужен адрес шлюза и его ключ")
-	}
-	key, err := d.settings.tokens.Get(chatKeyAccount)
-	if err != nil {
-		return "", errors.New("облачный голос: нет ключа шлюза — введите его в «Модель»")
-	}
-	return key, nil
-}
+// Gateway — облачные голоса и распознавание берут его же (#478).
+func (d *chatDesk) gatewayKey() (string, error) { return d.settings.gatewayKey() }
 
 // SetSettings saves the model settings; key — новый ключ, пусто — прежний.
 func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {

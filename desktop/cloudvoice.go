@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -121,6 +122,51 @@ func (c cloudSpeech) request(voice, text, lang, key string) (*http.Request, erro
 	req.Header.Set("ai-gateway-protocol-version", "0.0.1")
 	req.Header.Set("ai-model-id", ttsModel[kind])
 	return req, nil
+}
+
+// cloudListen — облачное распознавание (#478): значение «Слушает» → модель
+// шлюза. mini — быстрее и вдвое дешевле, best — точнее на шуме.
+var cloudListen = map[string]string{
+	"cloud:mini": "openai/gpt-4o-mini-transcribe",
+	"cloud:best": "openai/gpt-4o-transcribe",
+}
+
+// transcribe returns the Russian text of wav via /transcription-model шлюза.
+func (c cloudSpeech) transcribe(ctx context.Context, wav []byte, model string) (string, error) {
+	key, err := c.key()
+	if err != nil {
+		return "", err
+	}
+	raw, err := json.Marshal(map[string]any{
+		"audio": base64.StdEncoding.EncodeToString(wav), "mediaType": "audio/wav",
+		"providerOptions": map[string]any{"openai": map[string]string{"language": "ru"}},
+	})
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+"/transcription-model", bytes.NewReader(raw))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("ai-gateway-protocol-version", "0.0.1")
+	req.Header.Set("ai-model-id", model)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("облачное распознавание: шлюз не ответил (%T)", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("облачное распознавание: шлюз ответил %d", resp.StatusCode)
+	}
+	var out struct {
+		Text string `json:"text"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", fmt.Errorf("облачное распознавание: ответ не прочитан: %w", err)
+	}
+	return strings.TrimSpace(out.Text), nil
 }
 
 // speechLang returns accent for English text, пусто для русского и смешанного:
