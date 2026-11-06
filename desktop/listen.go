@@ -52,8 +52,9 @@ type helperEvent struct {
 
 // dictation runs one kb-listen at a time.
 type dictation struct {
-	bin  string
-	emit func(listenEvent)
+	bin    string
+	emit   func(listenEvent)
+	tmpDir string // куда помощник пишет запись; "" — системная временная папка
 
 	mu    sync.Mutex
 	cmd   *exec.Cmd
@@ -90,7 +91,7 @@ func (d *dictation) StartWith(pause float64, tr transcriber) error {
 		args = append(args, "--pause", strconv.FormatFloat(pause, 'f', 1, 64))
 	}
 	if tr != nil {
-		f, err := os.CreateTemp("", "kb-listen-*.wav")
+		f, err := os.CreateTemp(d.tmpDir, "kb-listen-*.wav")
 		if err != nil {
 			return err
 		}
