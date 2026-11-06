@@ -159,11 +159,24 @@ func (a *App) Speak(text string) error {
 	if a.voice == nil {
 		return errors.New("голос работает только в окне приложения")
 	}
-	return a.voice.Speak(a.chat.config().Voice, text)
+	c := a.chat.config()
+	voice := c.Voice
+	// Акцент на Маке: английский ответ читает английский голос нужного произношения.
+	if !isCloudVoice(voice) {
+		if lang := speechLang(speakable(text), c.Accent); lang != "" {
+			if v := englishVoice(lang); v != "" {
+				voice = v
+			}
+		}
+	}
+	return a.voice.Speak(voice, text)
 }
 
 // Voices lists the Russian voices of this Mac for the settings.
 func (a *App) Voices() []string { return russianVoices() }
+
+// CloudVoices lists the cloud voices for the settings (#478).
+func (a *App) CloudVoices() []cloudVoice { return cloudVoices }
 
 // PreviewVoice says a sample phrase with voice for the settings (#478).
 func (a *App) PreviewVoice(voice string) error {

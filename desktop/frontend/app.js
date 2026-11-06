@@ -1837,6 +1837,8 @@ async function renderVoiceSettings() {
   listen.innerHTML = `<option value="">Apple Speech на этом Маке</option>` + speech.map((c) => `<option value="${esc(c.id)}"${c.id === curListen ? " selected" : ""}${c.enabled ? "" : " disabled"}>${esc(c.name)}${c.enabled ? "" : " (выключено)"}</option>`).join("");
   if (curListen && speech.some((c) => c.id === curListen)) note.textContent = "Слушает: " + speech.find((c) => c.id === curListen).name + " — запись диктовки уходит этому серверу.";
   chatState.voices = (await native().Voices().catch(() => [])) || [];
+  chatState.cloudVoices = (native().CloudVoices && (await native().CloudVoices().catch(() => []))) || [];
+  $("#chat-accent").value = (chatState.settings && chatState.settings.accent) || "";
   $("#chat-voice-name").value = (chatState.settings && chatState.settings.voice) || "";
   renderVoiceChoices();
   renderAccValues();
@@ -1844,17 +1846,33 @@ async function renderVoiceSettings() {
 // voiceTag names the quality from the macOS voice name: Premium и Enhanced
 // (и их русские подписи) звучат живее обычных.
 const voiceTag = (v) => (/premium|преми/i.test(v) ? "премиум" : /enhanced|улучш/i.test(v) ? "улучшенный" : "");
-// renderVoiceChoices: голоса плашками, как в english-hub (#478); выбранный
-// хранится в скрытом поле формы и сохраняется общей кнопкой.
+// renderVoiceChoices: кто читает (Mac или облако) и голос плашками, как в
+// english-hub (#478); выбранное — в скрытом поле формы, сохраняется сразу.
+const ENGINE_NOTE = {
+  mac: "Голоса macOS, без сети и без денег.",
+  cloud: "Gemini через Vercel AI Gateway — около 0,2 цента за реплику, «дороже» — OpenAI, около 0,8 цента. Ключ — ключ шлюза из «Модель».",
+};
+const isCloud = (v) => /^(gemini|openai):/.test(v || "");
 function renderVoiceChoices() {
-  const cur = $("#chat-voice-name").value;
-  const list = chatState.voices || [];
-  const all = [["", "голос системы"], ...list.map((v) => [v, v])];
-  if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке"]);
-  $("#chat-voices").innerHTML = all.map(([v, name]) => {
-    const tag = voiceTag(v);
-    return `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name.replace(/\s*\(.*\)$/, ""))}${tag ? `<small>${tag}</small>` : ""}</button>`;
-  }).join("");
+  const cur = $("#chat-voice-name").value, cloud = isCloud(cur);
+  $("#chat-engines").querySelectorAll("[data-engine]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.engine === "cloud") === cloud)));
+  let all;
+  if (cloud) {
+    all = (chatState.cloudVoices || []).map((v) => [v.id, v.label, v.pricey ? "дороже" : v.tag]);
+  } else {
+    const list = chatState.voices || [];
+    all = [["", "голос системы", ""], ...list.map((v) => [v, v.replace(/\s*\(.*\)$/, ""), voiceTag(v)])];
+    if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке", ""]);
+  }
+  $("#chat-voices").innerHTML = all.map(([v, name, tag]) =>
+    `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name)}${tag ? `<small>${esc(tag)}</small>` : ""}</button>`).join("");
+  $("#chat-voice-note").textContent = ENGINE_NOTE[cloud ? "cloud" : "mac"];
+  $("#voice-add-row").hidden = cloud;
+  const acc = $("#chat-accent").value;
+  $("#chat-accents").querySelectorAll("[data-accent-v]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.accentV === acc)));
+  $("#chat-accent-note").textContent = acc
+    ? `Английский ответ читается с ${acc === "en-GB" ? "британским" : "американским"} произношением${cloud ? "" : " — английским голосом Mac"}; русский — как обычно.`
+    : "Русский ответ читает выбранный голос, английский — тоже, без подсказки произношения.";
 }
 const MIC_MODES = {
   hold: ["Удерживать", "Держите кнопку микрофона (или пробел на ней) и говорите, отпустили — фраза ушла."],
@@ -1871,7 +1889,7 @@ function renderMicChoices() {
 function renderAccValues() {
   $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
   const v = $("#chat-voice-name").value;
-  $("#acc-v-voice").textContent = v ? v.replace(/\s*\(.*\)$/, "") : "голос системы";
+  $("#acc-v-voice").textContent = isCloud(v) ? v.split(":")[1].replace(/^./, (c) => c.toUpperCase()) + " · облако" : (v ? v.replace(/\s*\(.*\)$/, "") : "голос системы") + " · Mac";
   $("#acc-v-mic").textContent = (MIC_MODES[$("#chat-mic-mode").value] || MIC_MODES[""])[0];
   const l = $("#chat-listen");
   $("#acc-v-listen").textContent = l.selectedOptions[0] ? l.selectedOptions[0].textContent.replace(" на этом Маке", "") : "";
@@ -2335,6 +2353,7 @@ async function saveChatPart(patch, head, rest) {
     $("#chat-model-note").textContent = errText(err);
   }
   $("#chat-voice-name").value = chatState.settings.voice || "";
+  $("#chat-accent").value = chatState.settings.accent || "";
   $("#chat-mic-mode").value = chatState.settings.mic || "";
   $("#chat-listen").value = chatState.settings.listen || "";
   renderVoiceChoices();
@@ -2346,8 +2365,20 @@ $("#chat-voices").addEventListener("click", (e) => {
   const b = e.target.closest("[data-voice]");
   if (!b) return;
   const v = b.dataset.voice;
-  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => { $("#chat-model-note").textContent = errText(err); });
-  saveChatPart({ voice: v }, "Голос", " · " + (v || "голос системы"));
+  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => toast("Голос не прозвучал", " · " + errText(err), null, "del"));
+  saveChatPart({ voice: v }, "Голос", " · " + (isCloud(v) ? v.split(":")[1] + ", облако" : v || "голос системы"));
+});
+$("#chat-engines").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-engine]");
+  if (!b || (b.dataset.engine === "cloud") === isCloud($("#chat-voice-name").value)) return;
+  const v = b.dataset.engine === "cloud" ? ((chatState.cloudVoices || [])[0] || {}).id || "" : "";
+  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => toast("Голос не прозвучал", " · " + errText(err), null, "del"));
+  saveChatPart({ voice: v }, "Кто читает", b.dataset.engine === "cloud" ? " · облако, голос " + v.split(":")[1] : " · Mac, голос системы");
+});
+$("#chat-accents").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-accent-v]");
+  if (!b) return;
+  saveChatPart({ accent: b.dataset.accentV }, "Акцент", " · " + b.textContent);
 });
 $("#chat-mics").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mic]");

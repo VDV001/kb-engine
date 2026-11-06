@@ -50,6 +50,9 @@ type Chat struct {
 	Listen string `json:"listen,omitempty"`
 	// Mic — как говорить в микрофон: MicToggle, MicHold или MicAuto.
 	Mic string `json:"mic,omitempty"`
+	// Accent — произношение английского текста голосом: пусто — по языку
+	// ответа, en-US или en-GB.
+	Accent string `json:"accent,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -78,6 +81,11 @@ func (c Chat) Check() error {
 	if utf8.RuneCountInString(c.Voice) > 64 || strings.HasPrefix(c.Voice, "-") ||
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
+	}
+	switch c.Accent {
+	case "", "en-US", "en-GB":
+	default:
+		return fmt.Errorf("%w: акцент %q", ErrChatSettings, c.Accent)
 	}
 	switch c.Mic {
 	case MicToggle, MicHold, MicAuto:

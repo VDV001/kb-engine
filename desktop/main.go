@@ -127,7 +127,10 @@ func run() error {
 	settings.drive = app.google.Search
 	app.chat.useAttachments(idx.files, ext, weblink.Client{HTTP: &http.Client{Timeout: 30 * time.Second}}, app.google)
 	app.listen = &dictation{emit: func(listenEvent) {}}
-	app.voice = &speaker{}
+	cloud := cloudSpeech{base: gatewayAudio, client: &http.Client{Timeout: 60 * time.Second}, key: app.chat.gatewayKey}
+	app.voice = &speaker{synth: func(voice, text string) ([]byte, error) {
+		return cloud.synth(voice, text, speechLang(text, app.chat.config().Accent))
+	}}
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)
 	}
