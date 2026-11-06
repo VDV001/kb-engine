@@ -678,4 +678,14 @@ body:not(.no-chat-send) .chat-send { background: linear-gradient(135deg, var(--z
 body:not(.no-chat-field) .chat-box:focus-within { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)) border-box; }
 body:not(.no-chat-active) .chat-item.on { background: linear-gradient(90deg, var(--z-accent-wash), transparent); }
 body:not(.no-chat-grip) .chat-grip:hover::after, body:not(.no-chat-grip) .chat-view.dragging .chat-grip.on::after { background: linear-gradient(var(--z-sp4), var(--z-sp5), var(--z-sp6)); }
-@media (prefers-reduced-motion: reduce) { .chat-side, .chat-docs { transition: none; } }
+body:not(.no-chat-user) .msg.user { border: 1px solid transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(120deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)) border-box; }
+body:not(.no-chat-pane) .pane-btn[aria-pressed="true"] { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(135deg, var(--z-sp4), var(--z-sp6)) border-box; }
+body:not(.no-chat-new) .chat-nav.new .ic { color: var(--z-sp5); }
+body:not(.no-chat-docs) #chat-docs-n { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; font-weight: 700; }
+body:not(.no-chat-title) .chat-title { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Ожидание ответа: бегущая полоса спектра под сообщением «думаю». */
+.msg.thinking { position: relative; padding-bottom: 6px; }
+body:not(.no-chat-thinking) .msg.thinking::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; border-radius: 1px;
+  background: linear-gradient(90deg, transparent, var(--z-sp4), var(--z-sp5), var(--z-sp6), transparent); background-size: 200% 100%; animation: chat-run 1.6s linear infinite; }
+@keyframes chat-run { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+@media (prefers-reduced-motion: reduce) { .chat-side, .chat-docs { transition: none; } .msg.thinking::after { animation: none; } }
