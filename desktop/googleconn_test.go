@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/google"
+	"github.com/daniil/kb-engine/internal/adapter/weblink"
 )
 
 // fakeGoogle answers the token endpoint and Drive like Google.
@@ -148,3 +149,37 @@ func TestGoogle_ConnectRefusals(t *testing.T) {
 	}
 	_ = desktopconfig.ConnGoogle
 }
+
+// Ссылка Google в чате читается через подключение; без подключения — как
+// открытая страница (экспорт), чтобы открытые документы работали и так.
+func TestReadLink_GoogleThroughConnection(t *testing.T) {
+	g, _, _ := newTestGoogle(t)
+	g.open = func(consent string) {
+		u, _ := url.Parse(consent)
+		cb := u.Query().Get("redirect_uri") + "?" + url.Values{"code": {"c1"}, "state": {u.Query().Get("state")}}.Encode()
+		go func() {
+			if res, err := http.Get(cb); err == nil {
+				_ = res.Body.Close()
+			}
+		}()
+	}
+	link := "https://docs.google.com/document/d/doc1/edit"
+	public := weblink.Client{HTTP: &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
+	})}}
+	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	if err != nil || d.Text != "открытый текст" {
+		t.Fatalf("без подключения: %+v, %v", d, err)
+	}
+	if _, err := g.Connect("cid.apps.googleusercontent.com", "sec-1"); err != nil {
+		t.Fatal(err)
+	}
+	d, err = readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	if err != nil || d.Text != "Срок 15 декабря" || d.Title != "ТЗ закрытое" || d.Source != "Google · person@example.com" {
+		t.Fatalf("через подключение: %+v, %v", d, err)
+	}
+}
+
+type roundTrip func(*http.Request) (*http.Response, error)
+
+func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
