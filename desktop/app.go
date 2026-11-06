@@ -81,6 +81,22 @@ func (a *App) CheckServer(id, url, token string) (kbserver.Info, error) {
 	return a.settings.CheckServer(id, url, token)
 }
 
+// Problems returns what the sources cannot do now, with the reason and what
+// to do: серверы опрашиваются, как в ServerStates (≤ probeTimeout).
+func (a *App) Problems() problemsView {
+	rows := a.settings.GetSources().Sources
+	live := map[string]sourceRow{}
+	for _, r := range a.settings.ServerStates() {
+		live[r.ID] = r
+	}
+	for i, r := range rows {
+		if s, ok := live[r.ID]; ok {
+			rows[i] = s
+		}
+	}
+	return collectProblems(rows, a.index.Status(), a.settings.home)
+}
+
 // IndexStatus reports whether a build is running and how the last one went.
 func (a *App) IndexStatus() indexStatus { return a.index.Status() }
 
