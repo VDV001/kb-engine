@@ -244,3 +244,43 @@ func TestChat_PortraitRememberTool(t *testing.T) {
 		t.Fatalf("портрет: %+v %v", v, err)
 	}
 }
+
+// slowExtractModel: разбор после ответа висит, пока тест его не отпустит.
+type slowExtractModel struct{ release chan struct{} }
+
+func (m *slowExtractModel) Complete(ctx context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
+	if strings.Contains(msgs[0].Content, "Ты ведешь портрет человека") {
+		select {
+		case <-m.release:
+		case <-ctx.Done():
+		}
+		return chat.ModelReply{Content: "[]"}, nil
+	}
+	return chat.ModelReply{Content: "ответ"}, nil
+}
+
+// Разбор после ответа идет фоном и не держит портрет, пока думает модель
+// (ревью #482): правка и следующий вопрос не ждут до 90 с.
+func TestChat_ExtractDoesNotHoldPortrait(t *testing.T) {
+	d, _, _ := newPortraitDesk(t)
+	m := &slowExtractModel{release: make(chan struct{})}
+	defer close(m.release)
+	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryDir: t.TempDir()}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Ask(askReq{Question: "первый"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // разбор уже ждет модель
+	done := make(chan error, 1)
+	go func() { done <- d.PortraitAdd("about", "Разработчик") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("правка ждет разбора предыдущего ответа")
+	}
+}
