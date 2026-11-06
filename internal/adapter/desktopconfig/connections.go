@@ -14,8 +14,13 @@ import (
 // ConnKind is what an access is to.
 type ConnKind string
 
-// ConnGoogle — Google Диск: вход OAuth, только чтение.
-const ConnGoogle ConnKind = "google"
+const (
+	// ConnGoogle — Google Диск: вход OAuth, только чтение.
+	ConnGoogle ConnKind = "google"
+	// ConnSpeech — сервер распознавания речи, OpenAI-совместимый
+	// /audio/transcriptions (whisper.cpp, faster-whisper, OpenAI).
+	ConnSpeech ConnKind = "speech"
+)
 
 // ErrConnections — список подключений не подходит.
 var ErrConnections = errors.New("подключения не подходят")
@@ -26,6 +31,8 @@ type Connection struct {
 	Kind    ConnKind `json:"kind"`
 	Name    string   `json:"name,omitempty"`
 	Account string   `json:"account,omitempty"` // чей вход: e-mail
+	URL     string   `json:"url,omitempty"`     // адрес сервера (распознавание речи)
+	Model   string   `json:"model,omitempty"`   // имя модели на сервере
 	Enabled bool     `json:"enabled"`
 }
 
@@ -41,6 +48,11 @@ func CheckConnections(list []Connection) error {
 			return fmt.Errorf("%w: id %q дважды", ErrConnections, c.ID)
 		case utf8.RuneCountInString(c.Name) > 80:
 			return fmt.Errorf("%w: подпись длиннее 80 знаков", ErrConnections)
+		}
+		if c.Kind == ConnSpeech {
+			if err := CheckServerURL(c.URL); err != nil {
+				return fmt.Errorf("%w: %s: %w", ErrConnections, c.ID, err)
+			}
 		}
 		seen[c.ID] = true
 	}

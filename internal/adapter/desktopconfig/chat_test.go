@@ -27,3 +27,16 @@ func TestChatCheck_Voice(t *testing.T) {
 		}
 	}
 }
+
+// «Слушает» — id подключения распознавания или пусто (Apple Speech);
+// подключение должно существовать — проверяет окно, здесь только форма.
+func TestChatCheck_Listen(t *testing.T) {
+	c := desktopconfig.Chat{URL: desktopconfig.DefaultChatURL, Model: "m", Listen: "s1"}
+	if err := c.Check(); err != nil {
+		t.Fatalf("отвергнуто: %v", err)
+	}
+	c.Listen = "s1\n"
+	if err := c.Check(); !errors.Is(err, desktopconfig.ErrChatSettings) {
+		t.Fatalf("принято: %v", err)
+	}
+}

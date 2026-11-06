@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -24,6 +25,9 @@ const maxDictation = 5 * time.Minute
 // stopGrace — сколько ждать итога после стопа, прежде чем остановить помощника.
 const stopGrace = 5 * time.Second
 
+// transcribeTimeout — сколько ждать сервер распознавания.
+const transcribeTimeout = 2 * time.Minute
+
 // listenEvent is one line of kb-listen; Final — диктовка кончилась.
 type listenEvent struct {
 	Ready    bool   `json:"ready,omitempty"`
@@ -31,16 +35,33 @@ type listenEvent struct {
 	Text     string `json:"text,omitempty"`
 	Final    bool   `json:"final,omitempty"`
 	Error    string `json:"error,omitempty"`
+	// Busy — запись отдана серверу распознавания, ждем текст.
+	Busy bool `json:"busy,omitempty"`
+	// Recorded — путь записи от помощника; странице не уходит.
+	Recorded string `json:"-"`
+}
+
+// transcriber turns a WAV recording into text (сервер распознавания речи).
+type transcriber func(ctx context.Context, wav []byte) (string, error)
+
+// helperEvent is one line of kb-listen as it comes: путь записи — тоже.
+type helperEvent struct {
+	listenEvent
+	Recorded string `json:"recorded,omitempty"`
+	// Silent — в записи не было речи: серверу она не отдается (ревью #468).
+	Silent bool `json:"silent,omitempty"`
 }
 
 // dictation runs one kb-listen at a time.
 type dictation struct {
-	bin  string
-	emit func(listenEvent)
+	bin    string
+	emit   func(listenEvent)
+	tmpDir string // куда помощник пишет запись; "" — системная временная папка
 
-	mu    sync.Mutex
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
+	mu     sync.Mutex
+	cancel context.CancelFunc // отмена идущего распознавания: второй стоп
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
 }
 
 // listenNextTo finds kb-listen next to the window's binary.
@@ -52,9 +73,14 @@ func listenNextTo(exe string) string {
 	return ""
 }
 
-// Start begins listening; pause > 0 — разговор без рук: тишина pause секунд
-// после речи кончает вопрос. Вторая диктовка поверх идущей — отказ.
-func (d *dictation) Start(pause float64) error {
+// Start begins listening with Apple Speech; pause > 0 — разговор без рук:
+// тишина pause секунд после речи кончает вопрос. Вторая диктовка поверх
+// идущей — отказ.
+func (d *dictation) Start(pause float64) error { return d.StartWith(pause, nil) }
+
+// StartWith listens with tr when given: помощник пишет речь в WAV, окно
+// отдает ее серверу распознавания; nil — Apple Speech.
+func (d *dictation) StartWith(pause float64, tr transcriber) error {
 	if d.bin == "" {
 		return errors.New("диктовка работает только в собранном окне: нет помощника kb-listen")
 	}
@@ -67,32 +93,63 @@ func (d *dictation) Start(pause float64) error {
 	if pause > 0 {
 		args = append(args, "--pause", strconv.FormatFloat(pause, 'f', 1, 64))
 	}
+	wavPath := ""
+	if tr != nil {
+		f, err := os.CreateTemp(d.tmpDir, "kb-listen-*.wav")
+		if err != nil {
+			return err
+		}
+		_ = f.Close()
+		wavPath = f.Name()
+		args = append(args, "--record", wavPath)
+	}
 	cmd := exec.Command(d.bin, args...)
+	dropWav := func() {
+		if wavPath != "" {
+			_ = os.Remove(wavPath)
+		}
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		dropWav()
 		return err
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
+		dropWav()
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		dropWav()
 		return err
 	}
 	d.cmd, d.stdin = cmd, stdin
 	limit := time.AfterFunc(maxDictation, d.Stop)
-	go d.read(cmd, out, limit)
+	go d.read(cmd, out, limit, tr, wavPath)
 	return nil
 }
 
 // read forwards the helper's lines and reports the end once, with the last text.
-func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer) {
+func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr transcriber, wav string) {
+	// Запись стирается при любом исходе: отказ микрофона, сбой помощника — тоже
+	// (ревью #468: в ней может быть речь).
+	if wav != "" {
+		defer func() { _ = os.Remove(wav) }()
+	}
 	sc := bufio.NewScanner(out)
 	var last *listenEvent // итог придерживается до освобождения помощника
 	for sc.Scan() {
-		var ev listenEvent
-		if json.Unmarshal(sc.Bytes(), &ev) != nil {
+		var he helperEvent
+		if json.Unmarshal(sc.Bytes(), &he) != nil {
 			continue // строка не по протоколу — не текст
+		}
+		ev := he.listenEvent
+		switch {
+		case he.Recorded != "" && he.Silent:
+			_ = os.Remove(he.Recorded)
+			ev = listenEvent{Final: true}
+		case he.Recorded != "":
+			ev = d.transcribe(he.Recorded, tr)
 		}
 		if ev.Final {
 			last = &ev
@@ -115,12 +172,48 @@ func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer) {
 	d.emit(*last)
 }
 
+// transcribe sends the recording to the speech server and deletes it.
+func (d *dictation) transcribe(path string, tr transcriber) listenEvent {
+	defer func() { _ = os.Remove(path) }()
+	if tr == nil {
+		return listenEvent{Final: true, Error: "запись без сервера распознавания"}
+	}
+	d.emit(listenEvent{Busy: true})
+	wav, err := os.ReadFile(path)
+	if err != nil {
+		return listenEvent{Final: true, Error: "запись не прочитана: " + err.Error()}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), transcribeTimeout)
+	d.mu.Lock()
+	d.cancel = cancel
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.cancel = nil
+		d.mu.Unlock()
+		cancel()
+	}()
+	text, err := tr(ctx, wav)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return listenEvent{Final: true} // стоп во время распознавания — отмена, не ошибка
+	}
+	if err != nil {
+		return listenEvent{Final: true, Error: err.Error()}
+	}
+	return listenEvent{Text: text, Final: true}
+}
+
 // Stop ends the dictation: помощник дослушивает и отдает итог; не успел за
-// stopGrace — останавливается.
+// stopGrace — останавливается. Стоп во время распознавания отменяет запрос к
+// серверу (ревью #468).
 func (d *dictation) Stop() {
 	d.mu.Lock()
-	cmd, stdin := d.cmd, d.stdin
+	cmd, stdin, cancel := d.cmd, d.stdin, d.cancel
 	d.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return
+	}
 	if cmd == nil {
 		return
 	}

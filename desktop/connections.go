@@ -22,7 +22,7 @@ import (
 // только признак, что они есть.
 type connRow struct {
 	ID      string   `json:"id"`
-	Kind    string   `json:"kind"` // model | kbserver | google
+	Kind    string   `json:"kind"` // model | kbserver | google | speech
 	Name    string   `json:"name"`
 	Detail  string   `json:"detail"`
 	Status  string   `json:"status"`
@@ -48,8 +48,11 @@ func (f *folderSettings) Connections() []connRow {
 		}
 	}
 	for _, c := range cfg.Connections {
-		if c.Kind == desktopconfig.ConnGoogle {
+		switch c.Kind {
+		case desktopconfig.ConnGoogle:
 			rows = append(rows, f.googleConn(c))
+		case desktopconfig.ConnSpeech:
+			rows = append(rows, f.speechConn(c))
 		}
 	}
 	return rows

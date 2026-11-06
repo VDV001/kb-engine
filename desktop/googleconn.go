@@ -208,13 +208,16 @@ func (g *googleDesk) SetEnabled(id string, on bool) error {
 func (g *googleDesk) Remove(id string) error {
 	if err := g.settings.updateConfig(func(cfg *desktopconfig.Config) {
 		cfg.Connections = slices.DeleteFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.ID == id })
+		if cfg.Chat.Listen == id {
+			cfg.Chat.Listen = "" // удаленный сервер распознавания — назад к Apple Speech (ревью #468)
+		}
 	}); err != nil {
 		return err
 	}
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
-	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id))); err != nil {
+	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id)), g.settings.tokens.Delete(speechKeyAccount(id))); err != nil {
 		return fmt.Errorf("подключение убрано, но вход не удален из Связки ключей — удалите записи «conn:%s» в «Связке ключей»: %w", id, err)
 	}
 	return nil
