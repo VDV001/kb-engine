@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -299,4 +300,30 @@ func readable(t *testing.T, rec *httptest.ResponseRecorder) string {
 		out.Write(part)
 	}
 	return out.String()
+}
+
+// У человека на сервере журнал в хранилище: /api/engine говорит «журнал
+// подключен», иначе витрина советовала бы человеку «запустите serve с
+// --ledger», хотя операции на сервер пишутся (протыкивание 06.11).
+func TestTenantsReportTheJournalAsConnected(t *testing.T) {
+	f := newTenants(t)
+	rec := get(f.h, "/api/engine", f.tokA)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("/api/engine: %d %s", rec.Code, rec.Body.String())
+	}
+	var eng struct {
+		Sources []httpapi.SourceStatus `json:"sources"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &eng); err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range eng.Sources {
+		if s.Flag == "ledger" {
+			if !s.Connected {
+				t.Fatalf("ledger: connected=false при журнале в хранилище: %+v", eng.Sources)
+			}
+			return
+		}
+	}
+	t.Fatalf("нет источника ledger: %+v", eng.Sources)
 }
