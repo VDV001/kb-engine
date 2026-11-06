@@ -26,7 +26,7 @@ func TestSearch(t *testing.T) {
 	if err != nil || len(files) != 1 || files[0].Name != "ТЗ" || files[0].Link != "https://docs.google.com/document/d/d1/edit" || files[0].Modified.IsZero() {
 		t.Fatalf("files = %+v, %v", files, err)
 	}
-	want := `'F1' in parents and trashed = false and fullText contains 'срок \'поставки\' \\ x'`
+	want := `'F1' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder' and mimeType != 'application/vnd.google-apps.shortcut' and fullText contains 'срок \'поставки\' \\ x'`
 	if gotQ != want {
 		t.Fatalf("q = %s\nwant %s", gotQ, want)
 	}

@@ -723,7 +723,7 @@ const byKey = (k) => draft.sources.find((s) => s._key === k);
 function load(v) {
   state.known = v.sources || [];
   refreshTabs(); // подписи вкладок по источникам зависят от списка
-  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
+  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: target(s), _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
   draft.tokens = {};
   draft.saved = JSON.stringify(payload());

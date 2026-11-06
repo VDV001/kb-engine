@@ -107,6 +107,8 @@ type chatDesk struct {
 
 	foundMu sync.Mutex
 	found   map[string]chat.Doc // предложенное «+ Из найденного»
+	seenMu  sync.Mutex
+	seen    map[string]chat.Doc // записи из поисков чата: модель читает только их
 }
 
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
@@ -457,20 +459,11 @@ const maxSeenEntries = 500
 // (каталоги и kb-серверы), файлы — индекс папок; файл читается через индекс,
 // то есть с той же проверкой, что «Открыть».
 func (d *chatDesk) useSources(files *filesearch.Service) {
-	var mu sync.Mutex
-	seen := map[string]chat.Doc{}
 	d.search = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
 		res := d.settings.SearchSources(ctx, q)
 		snap := d.settings.snapshot().cfg.WithSources()
 		entries := entryDocs(res)
-		mu.Lock()
-		if len(seen) > maxSeenEntries {
-			clear(seen)
-		}
-		for _, doc := range entries {
-			seen[doc.Ref] = doc
-		}
-		mu.Unlock()
+		d.remember(entries)
 		hits, err := files.Search(q, limit)
 		if err != nil && !errors.Is(err, filesearch.ErrNotBuilt) {
 			return nil, err
@@ -478,9 +471,6 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		return interleave(entries, fileDocs(hits, snap.Sources, d.settings.home), limit), nil
 	}
 	d.read = func(ctx context.Context, ref string) (chat.Doc, error) {
-		if _, ok := strings.CutPrefix(ref, "url:"); ok && d.attach != nil {
-			return d.attach(ctx, ref) // находка Диска — через подключение Google
-		}
 		if p, ok := strings.CutPrefix(ref, "file:"); ok {
 			text, err := files.Read(p)
 			if err != nil {
@@ -488,13 +478,31 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 			}
 			return chat.Doc{Ref: ref, Title: filepath.Base(p), Source: filepath.Dir(p), Text: text}, nil
 		}
-		mu.Lock()
-		doc, ok := seen[ref]
-		mu.Unlock()
+		d.seenMu.Lock()
+		doc, ok := d.seen[ref]
+		d.seenMu.Unlock()
 		if !ok {
 			return chat.Doc{}, fmt.Errorf("документа %q нет в выдаче поиска — найдите его сначала", ref)
 		}
+		// Ссылка — только пришедшая из поиска (находка Диска): ее текст читается
+		// через подключение. Ссылку, которую модель придумала сама (подсказка
+		// из чужого документа), окно не открывает (ревью #467, безопасность).
+		if strings.HasPrefix(ref, "url:") && d.attach != nil {
+			return d.attach(ctx, ref)
+		}
 		return doc, nil
+	}
+}
+
+// remember keeps the records of a search: модель читает только то, что видела.
+func (d *chatDesk) remember(docs []chat.Doc) {
+	d.seenMu.Lock()
+	defer d.seenMu.Unlock()
+	if d.seen == nil || len(d.seen) > maxSeenEntries {
+		d.seen = map[string]chat.Doc{}
+	}
+	for _, doc := range docs {
+		d.seen[doc.Ref] = doc
 	}
 }
 
