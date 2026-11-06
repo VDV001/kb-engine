@@ -118,8 +118,11 @@ func run() error {
 		// белый прямоугольник до первой отрисовки.
 		BackgroundColour: &options.RGBA{R: 17, G: 19, B: 24, A: 255},
 		AssetServer: &assetserver.Options{
-			Assets:  ui,
-			Handler: api, // все, чего нет среди файлов интерфейса, то есть /api/*
+			Assets: ui,
+			// Все, чего нет среди файлов интерфейса: /api/* окна и /app/* модуля
+			// «Финансы» (прокси на kb-сервер с токеном — только здесь, не в -browser).
+			// Витрина в окно встраивается в G4 (#435); до того /app/ так и говорит.
+			Handler: withAppProxy(api, newAppProxy(settings.appUpstream, nil, nil)),
 		},
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
