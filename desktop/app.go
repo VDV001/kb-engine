@@ -209,10 +209,11 @@ func (a *App) MountShare(addr string) (string, error) {
 	if err := mountShareCmd(addr); err != nil {
 		return "", fmt.Errorf("сетевая папка не подключилась: %w", err)
 	}
-	if !isDir(vol) {
-		return "", fmt.Errorf("шара подключена, но папки %s нет — проверьте имя папки в адресе", vol)
+	p, ok := mountedVolume(addr, vol, systemMounts())
+	if !ok {
+		return "", fmt.Errorf("шара подключена, но не найдена в /Volumes (имя %s занято другим диском или папки нет) — проверьте адрес", vol)
 	}
-	return vol, nil
+	return p, nil
 }
 
 // PickChatFile asks for a file to attach to the question; "" — передумали.

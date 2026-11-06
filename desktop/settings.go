@@ -59,6 +59,7 @@ type folderSettings struct {
 	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.
 	mountShare func(addr string) error
 	shareUp    func(addr string) bool // отвечает ли сервер шары; nil — проверка TCP
+	dirExists  func(path string) bool // есть ли папка шары; nil — isDir
 	shares     shareTries
 	// drive ищет в папке Google Диска (gdrive.go); nil — Диск не ищется.
 	drive driveFunc
