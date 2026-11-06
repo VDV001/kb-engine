@@ -64,3 +64,21 @@ func TestExplain(t *testing.T) {
 		})
 	}
 }
+
+// У веб-страницы под видом .docx в подробностях — ее заголовок: видно, что
+// скачалось (у владельца — страница входа площадки вместо ТЗ).
+func TestExplain_webPageTitleInDetail(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "tz.docx")
+	if err := os.WriteFile(p, []byte("<!DOCTYPE html><html><head><title>\n  Вход   на площадку </title></head>"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	src, err := localfiles.New([]string{dir}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = src.ReadText(p)
+	if err == nil || !strings.Contains(err.Error(), "«Вход на площадку»") {
+		t.Fatalf("ошибка %v: нет заголовка страницы", err)
+	}
+}
