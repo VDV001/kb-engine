@@ -4,8 +4,11 @@
 # kb-server и при сбое пишет ботом владельца. Повторный запуск приводит все к
 # описанию и выкатывает новую версию функции.
 #
-#   TG_CHAT=<id чата> deploy/yandex/healthcheck.sh            выкатить
+#   TG_CHAT=<id чата> MAIL_TO=<почта> deploy/yandex/healthcheck.sh            выкатить
 #   TG_CHAT=<id чата> deploy/yandex/healthcheck.sh --verify   вызвать один раз
+#
+# Письмо уходит через Postbox с MAIL_FROM (адрес на домене, подтвержденном в
+# Postbox; по умолчанию alerts@daniilvdovin.com). Без MAIL_TO — только Telegram.
 #
 # Токен бота — в Lockbox (секрет kb-alert-bot, ключ token): его кладет
 # владелец, скрипт его не видит и не печатает. FOLDER, YC — как в deploy.sh.
@@ -18,6 +21,7 @@ set -euo pipefail
 YC="${YC:-yc}"
 FOLDER="${FOLDER:-kb-engine}"
 TG_CHAT="${TG_CHAT:?TG_CHAT: id чата, куда слать алерты}"
+MAIL_TO="${MAIL_TO:-}" MAIL_FROM="${MAIL_FROM:-alerts@daniilvdovin.com}"
 secret=kb-alert-bot sa=kb-healthcheck fn=kb-healthcheck trigger=kb-healthcheck-5m container=kb-server
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
@@ -77,6 +81,10 @@ sid="$(idof iam service-account get --name "$sa")"
 [[ -n "$sid" ]] || sid="$(y iam service-account create --name "$sa" \
   --description "kb-healthcheck: only secret $secret" --format json | jq -r .id)"
 bind lockbox secret "$sec" lockbox.payloadViewer "$sid"
+# ponytail: postbox.sender — на каталог: прав на отдельный адрес Postbox в yc
+# 1.43 нет (команды postbox нет вовсе). Потолок: аккаунт может слать с любого
+# адреса каталога, сейчас он один. Путь: binding на адрес, когда появится.
+[[ -z "$MAIL_TO" ]] || bind resource-manager folder "$(y resource-manager folder get --name "$FOLDER" --format json | jq -r .id)" postbox.sender "$sid"
 
 say "· функция $fn"
 fid="$(idof serverless function get --name "$fn")"
@@ -86,9 +94,9 @@ pkg="$(mktemp -d)"
 trap 'rm -rf "$pkg"' EXIT
 cp deploy/yandex/healthcheck/index.py "$pkg/"
 y serverless function version create --function-name "$fn" --runtime python312 \
-  --entrypoint index.handler --memory 128MB --execution-timeout 60s \
+  --entrypoint index.handler --memory 128MB --execution-timeout 90s \
   --source-path "$pkg" --service-account-id "$sid" \
-  --environment "HEALTH_URL=${url%/}/healthz,TG_CHAT=$TG_CHAT" \
+  --environment "HEALTH_URL=${url%/}/healthz,TG_CHAT=$TG_CHAT${MAIL_TO:+,MAIL_TO=$MAIL_TO,MAIL_FROM=$MAIL_FROM}" \
   --secret environment-variable=TG_TOKEN,id="$sec",key=token >/dev/null
 bind serverless function "$fid" functions.functionInvoker "$sid"
 

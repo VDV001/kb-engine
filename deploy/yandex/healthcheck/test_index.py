@@ -25,7 +25,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         n = int(self.headers.get("Content-Length", 0))
         type(self).sent.append((self.path, self.rfile.read(n).decode()))
-        type(self).headers_seen.append(dict(self.headers))
+        type(self).headers_seen.append(self.headers)  # без учета регистра, как в HTTP
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b'{"ok":true}')
