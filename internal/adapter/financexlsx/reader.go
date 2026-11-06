@@ -125,10 +125,7 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 		}
 
 		p.ID = rowID(row, idCol, kind, rowNum)
-		if p.Currency, err = readCurrency(row, curCol); err != nil {
-			return nil, fmt.Errorf("%s row %d: currency: %w", sheet, rowNum, err)
-		}
-		if p.Received, err = readReceived(row, recCols); err != nil {
+		if p.Currency, p.Received, err = readCurrencies(row, curCol, recCols); err != nil {
 			return nil, fmt.Errorf("%s row %d: %w", sheet, rowNum, err)
 		}
 
@@ -320,6 +317,16 @@ func readAccountCurrency(bank string, balance domain.Money, updated time.Time, r
 // readCurrency reads a row's Валюта cell. Пустая ячейка или отсутствие колонки —
 // рубль. Негодный код — отказ, а не рубль: молчаливое «не разобрал — значит
 // рубль» показало бы долларовую трату рублёвой.
+// readCurrencies reads the row's currency and an exchange's second side.
+func readCurrencies(row []string, curCol int, recCols [3]int) (domain.Currency, domain.ReceivedParams, error) {
+	cur, err := readCurrency(row, curCol)
+	if err != nil {
+		return domain.Currency{}, domain.ReceivedParams{}, fmt.Errorf("currency: %w", err)
+	}
+	recv, err := readReceived(row, recCols)
+	return cur, recv, err
+}
+
 // readReceived reads an exchange's second side; an empty Получено means the row
 // is not an exchange.
 func readReceived(row []string, cols [3]int) (domain.ReceivedParams, error) {

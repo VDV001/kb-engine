@@ -208,10 +208,6 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "fin add: --amount is required")
 		return 2
 	}
-	if (*received == "") != (*receivedAccount == "") {
-		fmt.Fprintln(stderr, "fin add: an exchange needs both --received and --received-account")
-		return 2
-	}
 
 	// ParseMoney, not MoneyFromFloat: this is text a person typed, so more
 	// precision than a kopeck is a typo and gets reported rather than rounded.
@@ -238,24 +234,9 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
-	var exchange *finance.ReceivedAdd
-	if *received != "" {
-		got, err := domain.ParseMoney(*received)
-		if err != nil {
-			fmt.Fprintf(stderr, "fin add: --received: %v\n", err)
-			return 1
-		}
-		cur, err := currencyFlag(*receivedCurrency)
-		if err != nil {
-			fmt.Fprintf(stderr, "fin add: --received-currency: %v\n", err)
-			return 1
-		}
-		exchange = &finance.ReceivedAdd{Amount: got, Currency: cur, Account: *receivedAccount}
-		// Обмен — перевод себе, а не трата: без названной категории он ею и
-		// записывается. Названная другая категория уйдет в домен и получит отказ.
-		if *category == "" && *sub == "" {
-			*category, *sub = "Прочее", "Перевод себе"
-		}
+	exchange, code := exchangeFlags(*received, *receivedCurrency, *receivedAccount, category, sub, stderr)
+	if code != 0 {
+		return code
 	}
 
 	rec, err := appendChecked(*ledgerPath, finance.AddParams{
@@ -285,13 +266,47 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
-	tx := rec.Transaction()
+	printAdded(stdout, rec.Transaction())
+	return 0
+}
+
+// printAdded reports the written entry, and the exchange's second side with its
+// rate when the entry is an exchange.
+func printAdded(stdout io.Writer, tx domain.Transaction) {
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
 		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx), tx.Category(), tx.Description())
 	if line := exchangeText(tx); line != "" {
 		fmt.Fprintf(stdout, "fin add: %s\n", line)
 	}
-	return 0
+}
+
+// exchangeFlags reads the second side of an exchange from fin add's flags: nil
+// when there is none, and an exit code (2 — флаги не в паре, 1 — негодное
+// значение) when the flags cannot make one. Обмен — перевод себе, а не трата:
+// без названной категории он ею и записывается (category и sub); названная
+// другая категория уйдет в домен и получит отказ.
+func exchangeFlags(received, currency, account string, category, sub *string, stderr io.Writer) (*finance.ReceivedAdd, int) {
+	if received == "" && account == "" {
+		return nil, 0
+	}
+	if received == "" || account == "" {
+		fmt.Fprintln(stderr, "fin add: an exchange needs both --received and --received-account")
+		return nil, 2
+	}
+	got, err := domain.ParseMoney(received)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: --received: %v\n", err)
+		return nil, 1
+	}
+	cur, err := currencyFlag(currency)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: --received-currency: %v\n", err)
+		return nil, 1
+	}
+	if *category == "" && *sub == "" {
+		*category, *sub = "Прочее", "Перевод себе"
+	}
+	return &finance.ReceivedAdd{Amount: got, Currency: cur, Account: account}, 0
 }
 
 // appendToLedger records one new entry in the ledger and returns it.

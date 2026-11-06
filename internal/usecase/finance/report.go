@@ -168,6 +168,9 @@ type Summary struct {
 // отчёт утверждает, что человек потратил больше, чем потратил. Записи в другой
 // валюте — по той же причине: без курса доллар и рубль не складываются.
 func (s *Summary) setAside(tx domain.Transaction, other map[string]CurrencyTotal) bool {
+	if _, ok := tx.Received(); ok {
+		s.Exchanges = append(s.Exchanges, tx)
+	}
 	c := tx.Currency()
 	if c.IsBase() {
 		if !tx.IsInternalTransfer() {
@@ -214,9 +217,6 @@ func Summarize(recs []Record) Summary {
 
 	for _, r := range recs {
 		tx := r.Transaction()
-		if _, ok := tx.Received(); ok {
-			s.Exchanges = append(s.Exchanges, tx)
-		}
 		if s.setAside(tx, other) {
 			continue
 		}
@@ -284,15 +284,19 @@ func Summarize(recs []Record) Summary {
 	for _, k := range slices.Sorted(maps.Keys(byDay)) {
 		s.ByDay = append(s.ByDay, byDay[k])
 	}
-	// Журнал хранится по порядку, но отбор и чужой порядок записей возможны:
-	// обмены — по дате, при равной — по id, чтобы отчет читался одинаково.
-	slices.SortStableFunc(s.Exchanges, func(a, b domain.Transaction) int {
+	sortByDate(s.Exchanges)
+	return s
+}
+
+// sortByDate orders records by date, then id: журнал хранится по порядку, но
+// отбор и чужой порядок записей возможны, а отчет должен читаться одинаково.
+func sortByDate(txs []domain.Transaction) {
+	slices.SortStableFunc(txs, func(a, b domain.Transaction) int {
 		if c := a.Date().Compare(b.Date()); c != 0 {
 			return c
 		}
 		return strings.Compare(a.ID(), b.ID())
 	})
-	return s
 }
 
 // rankedSubcategories orders like ranked, with the category and then the

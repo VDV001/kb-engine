@@ -215,9 +215,6 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err := checkVocabulary(upserts, accounts); err != nil {
 		return err
 	}
-	if err := checkReceived(upserts, accs); err != nil {
-		return err
-	}
 	if err := checkCurrencies(upserts, accs); err != nil {
 		return err
 	}
@@ -525,16 +522,7 @@ func writeRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 	if w.curCol != 0 {
 		values[w.curCol] = currencyCell(tx.Currency())
 	}
-	// Вторая сторона — или пустые клетки: обмен, исправленный в обычную трату,
-	// не оставляет в строке прежнее «Получено».
-	if w.recCols[0] != 0 {
-		values[w.recCols[0]], values[w.recCols[1]], values[w.recCols[2]] = "", "", ""
-		if r, ok := tx.Received(); ok {
-			values[w.recCols[0]] = float64(r.Amount().Kopecks()) / 100
-			values[w.recCols[1]] = currencyCell(r.Currency())
-			values[w.recCols[2]] = r.Account()
-		}
-	}
+	putExchange(values, w.recCols, tx)
 
 	for col, v := range values {
 		name, err := excelize.CoordinatesToCellName(col, w.row)
@@ -626,6 +614,21 @@ func writeCurrencyHeaders(f *excelize.File, index map[string]sheetIndex) error {
 	return nil
 }
 
+// putExchange fills the exchange columns of a row: вторая сторона — или пустые
+// клетки, чтобы обмен, исправленный в обычную трату, не оставил в строке
+// прежнее «Получено». Ничего, пока у листа колонок обмена нет.
+func putExchange(values map[int]any, cols [3]int, tx domain.Transaction) {
+	if cols[0] == 0 {
+		return
+	}
+	values[cols[0]], values[cols[1]], values[cols[2]] = "", "", ""
+	if r, ok := tx.Received(); ok {
+		values[cols[0]] = float64(r.Amount().Kopecks()) / 100
+		values[cols[1]] = currencyCell(r.Currency())
+		values[cols[2]] = r.Account()
+	}
+}
+
 // exchangeHeaders are the three columns of an exchange's second side, in the
 // order sheetIndex.recCols keeps them.
 var exchangeHeaders = [3]string{receivedHeader, receivedCurHeader, receivedAccHeader}
@@ -685,7 +688,7 @@ func checkCurrencies(upserts []domain.Transaction, accs []domain.Account) error 
 			return fmt.Errorf("%s: %w", tx.ID(), err)
 		}
 	}
-	return nil
+	return checkReceived(upserts, accs)
 }
 
 // withCurrencyColumnFor gives the sheet a Валюта column when this row is the
