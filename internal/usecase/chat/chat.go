@@ -135,6 +135,8 @@ type Request struct {
 	Mode     Mode
 	Attached []Doc
 	Show     func(text string)
+	// About — портрет человека, одобренный им (#479); пусто — без портрета.
+	About string
 }
 
 // Service answers questions.
@@ -204,7 +206,7 @@ func (s *Service) Respond(ctx context.Context, r Request) (Turn, error) {
 		}
 		docs = appendNew(slices.Clone(r.Attached), found...)
 	}
-	msgs := []ModelMessage{{Role: RoleSystem, Content: systemPrompt}}
+	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(systemPrompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
 	}
@@ -221,6 +223,14 @@ func (s *Service) Respond(ctx context.Context, r Request) (Turn, error) {
 		used = appendNew(slices.Clone(r.Attached), used...)
 	}
 	return Turn{Answer: reply.Content, Docs: used}, nil
+}
+
+// withAbout adds the person's portrait to the system prompt.
+func withAbout(prompt, about string) string {
+	if strings.TrimSpace(about) == "" {
+		return prompt
+	}
+	return prompt + "\n\nО человеке (портрет, подтвержденный им; учитывай в ответе, но не пересказывай):\n" + about
 }
 
 // complete asks the model, by stream when show is set (тогда модель — Streamer).

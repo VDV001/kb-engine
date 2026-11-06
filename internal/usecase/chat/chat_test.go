@@ -148,3 +148,29 @@ func TestContextMode_TrimsLongDocs(t *testing.T) {
 		t.Fatalf("в запросе %d символов при пределе документа %d", total, chat.MaxDocRunes)
 	}
 }
+
+// Портрет человека (#479) идет в системное сообщение в обоих режимах;
+// пустой — системное как было.
+func TestRespond_About(t *testing.T) {
+	const about = "Обо мне: Разработчик.\nПредпочтения: Отвечать коротко."
+	m := &fakeModel{reply: chat.ModelReply{Content: "Ответ."}}
+	if _, err := chat.NewService(&fakeSearch{}, m).Respond(context.Background(), chat.Request{Question: "q", Mode: chat.ModeContext, About: about}); err != nil {
+		t.Fatal(err)
+	}
+	if sys := m.got[0].Content; m.got[0].Role != chat.RoleSystem || !strings.Contains(sys, about) || !strings.Contains(sys, "О человеке") {
+		t.Fatalf("context: %q", sys)
+	}
+	sm := &scriptModel{}
+	if _, err := chat.NewService(&fakeSearch{}, sm, chat.WithReader(&fakeReader{})).Respond(context.Background(), chat.Request{Question: "q", Mode: chat.ModeTools, About: about}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sm.asked[0][0].Content, about) {
+		t.Fatalf("tools: %q", sm.asked[0][0].Content)
+	}
+	if _, err := chat.NewService(&fakeSearch{}, m).Respond(context.Background(), chat.Request{Question: "q", Mode: chat.ModeContext}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(m.got[0].Content, "О человеке") {
+		t.Fatalf("пустой портрет попал: %q", m.got[0].Content)
+	}
+}

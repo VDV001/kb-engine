@@ -43,7 +43,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 	if s.reader == nil {
 		return Turn{}, ErrNoReader
 	}
-	msgs := []ModelMessage{{Role: RoleSystem, Content: toolsPrompt}}
+	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(toolsPrompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
 	}

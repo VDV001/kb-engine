@@ -346,7 +346,8 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .settings:not([data-view="problems"]) [data-view="problems"],
 .settings:not([data-view="chat"]) [data-view="chat"],
 .settings:not([data-view="look"]) [data-view="look"],
-.settings:not([data-view="conn"]) [data-view="conn"] { display: none; }
+.settings:not([data-view="conn"]) [data-view="conn"],
+.settings:not([data-view="memory"]) [data-view="memory"] { display: none; }
 .conn-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--z-rule); }
 .conn-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--z-rule); }
 .conn-list .n { color: var(--z-ink); font-weight: 500; }
@@ -816,3 +817,42 @@ body:not(.no-chat-thinking) .msg.thinking::after { content: ""; position: absolu
 
 /* Кнопка темы: показан один значок из трех. */
 .gear svg[hidden] { display: none; }
+
+/* Портрет «Что DVK помнит обо мне» (#479, прототип 06.11, везде A): карточка
+   в разделе 05 как в english-hub, экран портрета списком, «запомнить?» и
+   «не помещается» карточкой в ленте чата. Кнопки и плашки по ширине текста. */
+.mem-path { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.mem-path code { font: 12px var(--z-font); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 5px 9px; overflow-wrap: anywhere; min-width: 0; }
+.chat-model .mem-switch { display: flex; gap: 8px; align-items: center; color: var(--z-ink-2); font-size: 12px; cursor: pointer; }
+.chat-model .mem-switch input { padding: 0; width: auto; accent-color: var(--z-accent); margin: 0; }
+.mem-card { border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 14px; display: grid; gap: 10px; background: var(--z-bg-3); justify-items: start; }
+.mem-card .lbl { margin: 0; color: var(--z-faint); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.mem-card .lbl b { color: var(--z-accent-hi); font-weight: 400; }
+.mem-card .last { margin: 0; font-size: 15px; font-weight: 700; color: var(--z-ink); overflow-wrap: anywhere; }
+.mem-card .new { margin: 0; font-size: 12px; color: var(--z-muted); }
+.mem-card .new b, .mem-q-head { color: var(--z-head); font-weight: 400; }
+.mem-soft { border: 0; background: var(--z-accent-wash); color: var(--z-ink-2); border-radius: var(--z-radius); padding: 3px 9px; font: 11px var(--z-font); cursor: pointer; }
+.mem-go { border: 0; border-radius: var(--z-radius); padding: 7px 14px; font: 700 12px var(--z-font); color: #0b0b0c; background: linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); cursor: pointer; }
+.memory { display: grid; gap: 16px; align-content: start; }
+.memory > .lnk { justify-self: start; font-size: 12px; }
+.mem-queue { display: grid; gap: 8px; }
+.mem-q { border: 1px dashed var(--z-rule-2); border-radius: var(--z-radius); padding: 10px 12px; display: grid; gap: 8px; }
+.mem-q .t { color: var(--z-ink); font-weight: 700; outline: none; border-radius: var(--z-radius); overflow-wrap: anywhere; }
+.mem-q .t[contenteditable="true"] { background: var(--z-bg); padding: 2px 4px; }
+.mem-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.mem-meta { display: block; color: var(--z-faint); font-size: 11px; margin-top: 2px; }
+.mem-facts { display: grid; gap: 16px; }
+.mem-sec h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--z-person); }
+.mem-fact { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: start; padding: 6px 0; border-bottom: 1px solid var(--z-rule); }
+.mem-fact .t { outline: none; border-radius: var(--z-radius); padding: 2px 4px; margin: -2px -4px; min-width: 0; overflow-wrap: anywhere; font-size: 13px; }
+.mem-fact .t:focus { background: var(--z-bg); }
+.mem-x { border: 0; background: none; color: var(--z-faint); cursor: pointer; font: inherit; padding: 2px 6px; }
+.mem-x:hover { color: var(--z-bad); }
+.mem-add { display: flex; gap: 8px; margin-top: 6px; }
+.mem-add input { flex: 1; min-width: 0; }
+.mem-sugg { align-self: flex-start; max-width: 72ch; border: 1px dashed var(--z-head); border-radius: var(--z-radius); padding: 10px 12px; display: grid; gap: 8px; background: var(--z-bg-3); font-size: 13px; }
+.mem-sugg .t { color: var(--z-ink); font-weight: 700; outline: none; overflow-wrap: anywhere; border-radius: var(--z-radius); }
+.mem-sugg .t[contenteditable="true"] { background: var(--z-bg); padding: 2px 4px; }
+.mem-over { align-self: stretch; border: 1px solid var(--z-head); border-radius: var(--z-radius); padding: 12px; display: grid; gap: 10px; font-size: 13px; }
+.mem-over > b { color: var(--z-head); font-weight: 700; }
+.mem-over textarea { width: 100%; padding: 8px; background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); min-height: 110px; resize: vertical; font: 12px/1.6 var(--z-font); }
