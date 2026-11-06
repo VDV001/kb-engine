@@ -123,17 +123,17 @@ func TestIndexer_RecordsUnrecognized(t *testing.T) {
 	}
 	x.start(t.Context())
 	waitSettled(t, x)
-	u := x.Status().Unrecognized
+	u, _ := x.unrecognizedRows()
 	if len(u) != 1 || filepath.Base(u[0].Path) != "broken.pdf" || u[0].Detail != "boom" || u[0].Reason != recognizeFailed {
 		t.Fatalf("Unrecognized = %+v", u)
 	}
 
 	x.noteRecognized(u[0].Path, nil)
-	if u := x.Status().Unrecognized; len(u) != 0 {
+	if u, _ := x.unrecognizedRows(); len(u) != 0 {
 		t.Fatalf("распознанный файл остался в списке: %+v", u)
 	}
 	x.noteRecognized("/w/slow.pdf", fmt.Errorf("kb-extract: %w", extractcache.ErrTimeout))
-	if u := x.Status().Unrecognized; len(u) != 1 || u[0].Reason != recognizeTimedOut {
+	if u, _ := x.unrecognizedRows(); len(u) != 1 || u[0].Reason != recognizeTimedOut {
 		t.Fatalf("таймаут без своей причины: %+v", u)
 	}
 }

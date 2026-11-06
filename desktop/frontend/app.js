@@ -205,10 +205,12 @@ function countUp(el, to) {
 }
 // skipped — сколько файлов не прочитано: в браузере (без окна) это весь счет
 // проблем, в окне счет берется из Problems — там и серверы, и каталог.
-function setIndexed(n, skipped, rec) {
-  state.indexed = { n, skipped, rec };
+// err — пересборка не удалась: строка называет причину, а кнопка проблем
+// остается (ревью #457: прежде ошибка стирала ее вместе с красной точкой).
+function setIndexed(n, skipped, rec, err) {
+  state.indexed = { n, skipped, rec, err };
   const el = $("#indexed");
-  el.textContent = `${n.toLocaleString("ru-RU")} файлов` +
+  el.textContent = err ? `пересборка не удалась: ${err}` : `${n.toLocaleString("ru-RU")} файлов` +
     (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
   // «N проблем» — кнопка «подробнее»: что не так у источников, почему и что
   // сделать (панель справа, #456).
@@ -238,10 +240,9 @@ async function pollIndex() {
   let next = 30000;
   if (native() && !document.hidden && !settingsOpen()) {
     const st = await native().IndexStatus().catch(() => null);
-    if (st && st.error) $("#indexed").textContent = `пересборка не удалась: ${st.error}`;
-    else if (st && !st.building) {
+    if (st && (st.error || !st.building)) {
       await refreshProblems();
-      setIndexed(st.indexed, st.skipped, st.recognizing);
+      setIndexed(st.indexed, st.skipped, st.recognizing, st.error);
     }
     if (st && (st.building || st.recognizing)) next = 3000;
   }
@@ -741,7 +742,11 @@ async function openSettings(view = "sources") {
   if (view === "problems") {
     renderProblems(); // сразу прежний список, следом свежий: серверы отвечают до 3 с
     $("#close-settings").focus();
-    refreshProblems(true).then(() => panel.dataset.view === "problems" && renderProblems());
+    refreshProblems(true).then(() => {
+      if (panel.dataset.view === "problems") renderProblems();
+      const i = state.indexed;
+      if (i) setIndexed(i.n, i.skipped, i.rec, i.err);
+    });
     return;
   }
   if (view === "prefs") {
@@ -1474,15 +1479,19 @@ if (native()) native().Modules().then((m) => { state.modules = m || []; refreshT
 
 // --- Проблемы (кнопка «подробнее» в строке статуса, #456) --------------------
 state.problems = null; // null — окно еще не ответило (или это браузер без окна)
-let problemsAt = 0;
-// refreshProblems asks the window at most every 30 s: Problems опрашивает
-// серверы по сети, а строку статуса опрос индекса обновляет каждые 3 с, пока
-// идет распознавание. force — открытие панели и сохранение источников.
+let problemsAt = 0, problemsSeq = 0;
+// refreshProblems updates state.problems; строку рисует вызывающий. Без force
+// — не чаще раза в 30 с и без опроса серверов: окно берет их последний ответ,
+// в сеть и Связку ключей не ходит. force (открытие панели, сохранение)
+// опрашивает серверы. Поздний ответ прежнего вызова не затирает новый.
 async function refreshProblems(force) {
   if (!native() || !native().Problems || (!force && Date.now() - problemsAt < 30000)) return;
   problemsAt = Date.now();
-  try { state.problems = await native().Problems(); } catch { /* прежний список остается */ }
-  if (state.indexed) setIndexed(state.indexed.n, state.indexed.skipped, state.indexed.rec);
+  const seq = ++problemsSeq;
+  try {
+    const v = await native().Problems(!!force);
+    if (seq === problemsSeq) state.problems = v;
+  } catch { /* прежний список остается */ }
 }
 // midTrim обрезает длинное имя посередине: видны начало и расширение, полное
 // имя — в подсказке.
@@ -1498,6 +1507,10 @@ function renderProblems() {
   const { total, problems } = state.problems;
   if (!total) {
     view.innerHTML = `<p class="muted">Проблем нет: все включенные источники читаются.</p>`;
+    return;
+  }
+  if (!problems.length) {
+    view.innerHTML = `<p class="muted">${fmt(total)} ${plural(total, "файл не прочитан", "файла не прочитаны", "файлов не прочитаны")}. Их имена появятся после следующей сборки индекса.</p>`;
     return;
   }
   const bySource = new Map();

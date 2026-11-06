@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
 )
 
 // problem is one thing a source cannot do, as the «Проблемы» panel shows it
@@ -38,10 +39,22 @@ const (
 	levelInfo  = "info"  // окно повторит само
 )
 
-// worse orders the levels; "" — ниже всех.
+// levelRank orders the levels; "" — ниже всех.
+func levelRank(l string) int {
+	switch l {
+	case levelError:
+		return 3
+	case levelWarn:
+		return 2
+	case levelInfo:
+		return 1
+	}
+	return 0
+}
+
+// worse returns the more serious of two levels.
 func worse(a, b string) string {
-	rank := map[string]int{levelInfo: 1, levelWarn: 2, levelError: 3}
-	if rank[b] > rank[a] {
+	if levelRank(b) > levelRank(a) {
 		return b
 	}
 	return a
@@ -49,7 +62,7 @@ func worse(a, b string) string {
 
 // Причины окна в той же форме «что не так — что сделать», что Explain и Describe.
 const (
-	keychainNote      = "Связка ключей не ответила — разблокируйте ее и откройте панель снова"
+	keychainNote      = keychain.Locked + " и откройте панель снова"
 	recognizeFailed   = "PDF или картинка не распознались, файл ищется только по имени — откройте его: если он цел, распознавание повторится, когда файл изменится"
 	recognizeTimedOut = "распознавание не уложилось во время — окно попробует снова не раньше чем через час"
 	foldersName       = "Папки"
@@ -89,7 +102,7 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 		out.Problems = append(out.Problems, problem{Level: levelError, Name: foldersName, What: "индекс файлов не собрался",
 			Todo: "проверьте папки в «Источниках» и сохраните их снова", Detail: st.Error})
 	}
-	out.Total = len(out.Problems) + st.Skipped + len(st.Unrecognized)
+	out.Total = len(out.Problems) + st.Skipped + max(len(st.Unrecognized), st.UnrecognizedCount)
 	for i, f := range slices.Concat(st.SkippedFiles, st.Unrecognized) {
 		p := problem{Level: levelError, Name: foldersName, Path: f.Path, Detail: f.Detail}
 		switch {
@@ -110,6 +123,9 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 	}
 	if st.Skipped > 0 { // файлы сверх названных
 		out.Level = worse(out.Level, levelError)
+	}
+	if st.UnrecognizedCount > len(st.Unrecognized) {
+		out.Level = worse(out.Level, levelInfo) // уровень названных уже учтен
 	}
 	return out
 }
