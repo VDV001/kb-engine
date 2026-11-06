@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
@@ -158,8 +159,14 @@ func TestToolsMode_Remember(t *testing.T) {
 	if res := m.asked[1][len(m.asked[1])-1].Content; !strings.Contains(res, "одобр") {
 		t.Fatalf("модели о предложении: %q", res)
 	}
-	if !slices.ContainsFunc(m.tools[0], func(x chat.Tool) bool { return x.Name == "remember" }) {
+	i := slices.IndexFunc(m.tools[0], func(x chat.Tool) bool { return x.Name == "remember" })
+	if i < 0 {
 		t.Fatal("remember не предложен модели")
+	}
+	for _, sec := range domain.FactSections() { // разделы — те, что знает домен
+		if !strings.Contains(string(m.tools[0][i].Parameters), `"`+string(sec)+`"`) {
+			t.Fatalf("раздела %q нет в remember: %s", sec, m.tools[0][i].Parameters)
+		}
 	}
 	m2 := &scriptModel{replies: []chat.ModelReply{{Content: "ок"}}}
 	req.Remember = nil

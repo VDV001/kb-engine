@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // Пределы режима «модель ищет»: сколько раз модель может позвать инструменты
@@ -26,8 +28,16 @@ const rememberPrompt = `
 Если в разговоре видно устойчивое о самом человеке (кто он, работа, планы, как с ним говорить) и этого нет в портрете — предложи запомнить инструментом remember. Содержание документов и разовые просьбы не запоминай.`
 
 // rememberTool offers a fact for the portrait (#479): человек одобрит или нет.
-var rememberTool = Tool{Name: "remember", Description: "Предложить запомнить устойчивый факт о человеке. Факт ждет одобрения человека и в портрет без него не попадет.",
-	Parameters: []byte(`{"type":"object","properties":{"section":{"type":"string","enum":["about","work","plans","prefs","misc"]},"text":{"type":"string","description":"факт одной фразой от третьего лица"}},"required":["section","text"]}`)}
+// Разделы — из домена: новый раздел модель видит без правки здесь.
+var rememberTool = func() Tool {
+	sections := []string{}
+	for _, s := range domain.FactSections() {
+		sections = append(sections, string(s))
+	}
+	enum, _ := json.Marshal(sections) // срез строк Marshal не отвергает
+	return Tool{Name: "remember", Description: "Предложить запомнить устойчивый факт о человеке. Факт ждет одобрения человека и в портрет без него не попадет.",
+		Parameters: []byte(`{"type":"object","properties":{"section":{"type":"string","enum":` + string(enum) + `},"text":{"type":"string","description":"факт одной фразой от третьего лица"}},"required":["section","text"]}`)}
+}()
 
 var tools = []Tool{
 	{Name: "search", Description: "Поиск по базе знаний, kb-серверам и файлам человека. Возвращает документы с ref, заголовком и началом текста.",

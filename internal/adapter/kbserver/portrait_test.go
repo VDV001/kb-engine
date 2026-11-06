@@ -101,3 +101,28 @@ func TestPortraitStore(t *testing.T) {
 		t.Fatalf("чужой токен = %v", err)
 	}
 }
+
+// Сервер отклонил портрет (400 — не прошел проверку фактов, 428 — прокси
+// срезал If-Match): это не «по адресу не kb-сервер» (ревью #483), а отказ со
+// словами сервера.
+func TestPortraitStore_Rejected(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusPreconditionRequired} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				_, _ = w.Write([]byte(`{"facts":[]}`))
+				return
+			}
+			http.Error(w, "portrait data is corrupt: fact text too long", code)
+		}))
+		s := kbserver.NewPortraitStore(kbserver.Client{URL: srv.URL, Token: token})
+		p, err := s.Load(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = s.Save(t.Context(), p)
+		if !errors.Is(err, kbserver.ErrRejected) || errors.Is(err, kbserver.ErrNotKB) || !strings.Contains(err.Error(), "too long") {
+			t.Errorf("%d: %v", code, err)
+		}
+		srv.Close()
+	}
+}

@@ -190,6 +190,11 @@ func (p Portrait) Edit(id, text, source string) (Portrait, error) {
 	if err != nil {
 		return p, err
 	}
+	for j, g := range p.facts {
+		if j != i && g.section == p.facts[i].section && sameText(g.text, t) {
+			return p, fmt.Errorf("%w: %q", ErrFactExists, t)
+		}
+	}
 	facts := slices.Clone(p.facts)
 	facts[i].text, facts[i].source = t, strings.TrimSpace(source)
 	return Portrait{facts: facts}, nil

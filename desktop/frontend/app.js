@@ -2031,7 +2031,6 @@ async function askChat() {
     if (!chatState.id) delete chatState.portraitMode[""]; // выбор до вопроса — только для этого чата
     const pn = c.portrait;
     chatState.over = pn && pn.over && !pn.used ? { chat: c.id, size: pn.size, budget: pn.budget, props: null } : null;
-    memAfterAnswer(c.id);
     // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
     chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
@@ -2042,7 +2041,6 @@ async function askChat() {
     chatState.chat = c;
     await renderChatList();
   } catch (e) {
-    chatState.memWaiting = null; // предложенное осталось в портрете, «Ждут одобрения»
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
@@ -2387,6 +2385,8 @@ async function saveChatPart(patch, head, rest) {
     await native().SetChatSettings(next, "");
     chatState.settings = { ...s, ...patch };
     toast(head, rest, () => saveChatPart(before, "Вернул", " · как было"));
+    // Где лежит портрет поменялось (и при «Вернуть» тоже) — портрет с нового места.
+    if ("memoryDir" in patch || "memoryServer" in patch) await loadPortrait();
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
@@ -2556,11 +2556,10 @@ async function memDo(fn, head, rest, undo, tone) {
   if (head) toast(head, rest, undo, tone);
   return true;
 }
-const memAdd = (sec, text) => memDo(() => native().PortraitAdd(sec, text), "Вернул", " · «" + text + "»");
 function memForget(id) {
   const f = factById(id);
   if (!f) return;
-  return memDo(() => native().PortraitRemove(id), "Забыто", ` · «${f.text}»`, f.pending ? null : () => memAdd(f.section, f.text), "del");
+  return memDo(() => native().PortraitRemove(id), "Забыто", ` · «${f.text}»`, () => memDo(() => native().PortraitRestore(f), "Вернул", " · «" + f.text + "»"), "del");
 }
 function memApprove(id, text) {
   const f = factById(id) || { title: "портрет" };
@@ -2628,24 +2627,16 @@ $("#memory").addEventListener("keydown", (e) => {
 });
 // Новое из разбора ответа (portrait:new): в портрет уже легло «ждет
 // одобрения»; если человек не выключил — спросить прямо в ленте этого чата.
-// Модель может предложить факт, пока ответ еще печатается (инструмент
-// «запомнить»): у нового чата тогда нет id — предложенное копится и
-// показывается после ответа (memAfterAnswer).
+// Новое на одобрение приходит со своим чатом (portrait:new {chat, facts}):
+// карточка «Запомнить?» встает в тот чат, где факт найден, даже если человек
+// уже открыл другой или чат был новым и id получил во время ответа.
 function memOffer(chat, facts) {
   const n = chatState.memNew && chatState.memNew.chat === chat ? chatState.memNew : { chat, facts: [], edit: "" };
   n.facts = [...n.facts, ...facts.filter((f) => !n.facts.some((x) => x.id === f.id))];
   chatState.memNew = n;
 }
-function memAfterAnswer(chat) {
-  const waiting = chatState.memWaiting || [];
-  chatState.memWaiting = null;
-  if (waiting.length) memOffer(chat, waiting);
-}
-if (window.runtime) window.runtime.EventsOn("portrait:new", (facts) => {
-  if (!(chatState.settings || {}).memoryQuiet && facts && facts.length) {
-    if (chatState.busy) chatState.memWaiting = [...(chatState.memWaiting || []), ...facts];
-    else memOffer(chatState.id, facts);
-  }
+if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
+  if (!(chatState.settings || {}).memoryQuiet && ev && ev.facts && ev.facts.length) memOffer(ev.chat, ev.facts);
   loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
 });
 // memInChat — карточки после ответа: «запомнить?» и «портрет не поместился».
@@ -2662,11 +2653,12 @@ function memInChat() {
   if (o && o.chat === chatState.id) {
     h += `<div class="mem-over"><b>Портрет ${o.size.toLocaleString("ru-RU")} знаков, а в начало чата у этой модели влезает ${o.budget.toLocaleString("ru-RU")}. ${o.start ? "Решите до вопроса — иначе ответ пойдет без портрета." : "В этот ответ он не пошел."}</b>`;
     if (o.props) {
-      const text = o.props.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.reduce((a, x) => a + x.text.length, 0);
-      h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ~${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
+      // Размер считает окно — тем же текстом, что уйдет в чат, с разделами и знаками.
+      const text = o.props.proposals.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.size;
+      h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
         <textarea readonly aria-label="Сжатый портрет">${esc(text)}</textarea>
         <div class="mem-acts"><button type="button" class="btn primary" data-over="apply">Принять сжатие</button><button type="button" class="btn" data-over="close">Не сейчас</button></div>
-        <p class="muted">Каждый раздел станет короче. Одобренные факты заменятся сжатыми, ждущие одобрения останутся.</p>`;
+        <p class="muted">Каждый раздел станет короче. Сжатые факты заменятся предложением; одобренное после «Сжать» и ждущее одобрения останутся.</p>`;
     } else {
       h += `<div class="mem-acts"><button type="button" class="btn primary" data-over="compress"${o.busy ? " disabled" : ""}>${o.busy ? "Сжимаю…" : "Сжать портрет"}</button><button type="button" class="btn" data-over="relevant">Только нужное в этот чат</button><button type="button" class="btn" data-over="full">Целиком все равно</button></div>
         <p class="muted">«Только нужное» — кто Вы, предпочтения и факты по словам вопроса. «Целиком» — модель раньше забудет начало разговора.</p>`;
@@ -2706,13 +2698,14 @@ $("#chat-log").addEventListener("click", async (e) => {
   if (act === "close") { o.props = null; return void renderChat(); }
   if (act === "compress") {
     o.busy = true; renderChat();
-    try { o.props = (await native().PortraitCompress()) || []; } catch (err) { toast("Не сжато", " · " + errText(err), null, "del"); }
+    try { o.props = await native().PortraitCompress(); } catch (err) { toast("Не сжато", " · " + errText(err), null, "del"); }
     o.busy = false; renderChat();
     return;
   }
   if (act === "apply" && o.props) {
     const props = o.props;
-    if (await memDo(() => native().PortraitApplyCompressed(props), "Портрет сжат", ` · ${props.length} ${plural(props.length, "факт", "факта", "фактов")} вместо ${approvedFacts().length}`, null)) {
+    const n = props.proposals.length;
+    if (await memDo(() => native().PortraitApplyCompressed(props), "Портрет сжат", ` · ${n} ${plural(n, "факт", "факта", "фактов")} вместо ${props.basis.length}`, null)) {
       chatState.over = null;
       renderChat();
     }

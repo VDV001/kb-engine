@@ -127,6 +127,9 @@ func (a *App) Portrait() (portraitView, error) { return a.chat.Portrait() }
 // PortraitAdd adds a fact typed by the person.
 func (a *App) PortraitAdd(section, text string) error { return a.chat.PortraitAdd(section, text) }
 
+// PortraitRestore puts a forgotten fact back as it was.
+func (a *App) PortraitRestore(f factView) error { return a.chat.PortraitRestore(f) }
+
 // PortraitEdit changes a fact text.
 func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(id, text) }
 
@@ -137,11 +140,11 @@ func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id)
 func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
 
 // PortraitCompress asks the model for a shorter portrait.
-func (a *App) PortraitCompress() ([]proposalView, error) { return a.chat.PortraitCompress() }
+func (a *App) PortraitCompress() (compressionView, error) { return a.chat.PortraitCompress() }
 
 // PortraitApplyCompressed replaces the approved facts with the accepted proposal.
-func (a *App) PortraitApplyCompressed(props []proposalView) error {
-	return a.chat.PortraitApplyCompressed(props)
+func (a *App) PortraitApplyCompressed(c compressionView) error {
+	return a.chat.PortraitApplyCompressed(c)
 }
 
 // PickPortraitDir opens the folder chooser for the portrait; "" — отмена.
@@ -304,7 +307,7 @@ func (a *App) startup(ctx context.Context) {
 	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
 	if a.chat != nil {
 		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
-		a.chat.memoryNew = func(facts []factView) { runtime.EventsEmit(ctx, "portrait:new", facts) }
+		a.chat.memoryNew = func(n portraitNews) { runtime.EventsEmit(ctx, "portrait:new", n) }
 	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }

@@ -17,23 +17,42 @@ import (
 )
 
 // portraitModel отвечает на чат, а на разбор портрета — JSON с фактами.
-type portraitModel struct{ asked [][]chat.ModelMessage }
+// Разбор после ответа зовет ее фоном, одновременно с проверками теста.
+type portraitModel struct {
+	mu    sync.Mutex
+	asked [][]chat.ModelMessage
+}
+
+// at returns request i the model got; n — how many.
+func (m *portraitModel) at(i int) []chat.ModelMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.asked[i]
+}
+
+func (m *portraitModel) n() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.asked)
+}
 
 func (m *portraitModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
+	m.mu.Lock()
 	m.asked = append(m.asked, msgs)
+	m.mu.Unlock()
 	if strings.Contains(msgs[0].Content, "Ты ведешь портрет человека") {
 		return chat.ModelReply{Content: `[{"section":"prefs","text":"Отвечать коротко"}]`}, nil
 	}
 	return chat.ModelReply{Content: "ответ"}, nil
 }
 
-func newPortraitDesk(t *testing.T) (*chatDesk, *portraitModel, chan []factView) {
+func newPortraitDesk(t *testing.T) (*chatDesk, *portraitModel, chan portraitNews) {
 	t.Helper()
 	d, _, _, _ := newTestChatDesk(t)
 	m := &portraitModel{}
 	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
-	news := make(chan []factView, 4)
-	d.memoryNew = func(f []factView) { news <- f }
+	news := make(chan portraitNews, 4)
+	d.memoryNew = func(n portraitNews) { news <- n }
 	return d, m, news
 }
 
@@ -61,13 +80,14 @@ func TestChat_Portrait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[0][0].Content, "Разработчик") || rec.Portrait == nil || rec.Portrait.Over {
-		t.Fatalf("портрет в чате: %q, %+v", m.asked[0][0].Content, rec.Portrait)
+	if !strings.Contains(m.at(0)[0].Content, "Разработчик") || rec.Portrait == nil || rec.Portrait.Over {
+		t.Fatalf("портрет в чате: %q, %+v", m.at(0)[0].Content, rec.Portrait)
 	}
 	select {
-	case got := <-news:
-		if len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending || got[0].Title != "Предпочтения" {
-			t.Fatalf("новое = %+v", got)
+	case n := <-news:
+		got := n.Facts
+		if n.Chat != rec.ID || len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending || got[0].Title != "Предпочтения" {
+			t.Fatalf("новое = %+v (чат %q, ждали %q)", got, n.Chat, rec.ID)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("разбор после ответа не пришел")
@@ -106,17 +126,17 @@ func TestChat_PortraitOverBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec.Portrait == nil || !rec.Portrait.Over || rec.Portrait.Size <= rec.Portrait.Budget || strings.Contains(m.asked[0][0].Content, "О человеке") {
+	if rec.Portrait == nil || !rec.Portrait.Over || rec.Portrait.Size <= rec.Portrait.Budget || strings.Contains(m.at(0)[0].Content, "О человеке") {
 		t.Fatalf("переполнение: %+v", rec.Portrait)
 	}
 	if _, err := d.Ask(askReq{Question: "q", Portrait: "full"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[1][0].Content, "О человеке") {
+	if !strings.Contains(m.at(1)[0].Content, "О человеке") {
 		t.Fatal("«целиком» не дошло")
 	}
-	if len(m.asked) != 2 {
-		t.Fatalf("разбор при MemoryOff: %d запросов", len(m.asked))
+	if m.n() != 2 {
+		t.Fatalf("разбор при MemoryOff: %d запросов", m.n())
 	}
 }
 
@@ -186,8 +206,8 @@ func TestChat_PortraitOnServer(t *testing.T) {
 	if _, err := d.Ask(askReq{Question: "Как настроить голос?"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[0][0].Content, "Разработчик") {
-		t.Fatalf("в чате нет портрета с сервера: %q", m.asked[0][0].Content)
+	if !strings.Contains(m.at(0)[0].Content, "Разработчик") {
+		t.Fatalf("в чате нет портрета с сервера: %q", m.at(0)[0].Content)
 	}
 	c.MemoryServer = "server-gone0000"
 	if err := d.SetSettings(c, ""); err != nil {
@@ -225,16 +245,19 @@ func TestChat_PortraitRememberTool(t *testing.T) {
 	if err := d.SetSettings(c, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Ask(askReq{Question: "отвечай коротко, всегда"}); err != nil {
+	rec, err := d.Ask(askReq{Question: "отвечай коротко, всегда"})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if !m.called {
 		t.Fatal("remember модели не предложен")
 	}
 	select {
-	case got := <-news:
-		if len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending {
-			t.Fatalf("событие: %+v", got)
+	case n := <-news:
+		// Чат новый: id у него появился уже во время ответа, и событие его знает —
+		// карточка «Запомнить?» встает в этот чат, а не в открытый сейчас.
+		if n.Chat != rec.ID || len(n.Facts) != 1 || n.Facts[0].Text != "Отвечать коротко" || !n.Facts[0].Pending {
+			t.Fatalf("событие: %+v, чат ответа %q", n, rec.ID)
 		}
 	case <-time.After(5 * time.Second):
 		t.Fatal("события о предложенном нет")
@@ -242,5 +265,78 @@ func TestChat_PortraitRememberTool(t *testing.T) {
 	v, err := d.Portrait()
 	if err != nil || len(v.Facts) != 1 || !v.Facts[0].Pending {
 		t.Fatalf("портрет: %+v %v", v, err)
+	}
+	// «Разбирать каждый ответ» выключено — и модель о человеке не собирает.
+	c.MemoryOff = true
+	if err := d.SetSettings(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	m.called = false
+	if _, err := d.Ask(askReq{Question: "и еще: пиши по-русски"}); err != nil {
+		t.Fatal(err)
+	}
+	if m.called {
+		t.Fatal("remember предложен при выключенном разборе")
+	}
+}
+
+// slowExtractModel: разбор после ответа висит, пока тест его не отпустит.
+type slowExtractModel struct{ release chan struct{} }
+
+func (m *slowExtractModel) Complete(ctx context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
+	if strings.Contains(msgs[0].Content, "Ты ведешь портрет человека") {
+		select {
+		case <-m.release:
+		case <-ctx.Done():
+		}
+		return chat.ModelReply{Content: "[]"}, nil
+	}
+	return chat.ModelReply{Content: "ответ"}, nil
+}
+
+// Разбор после ответа идет фоном и не держит портрет, пока думает модель
+// (ревью #482): правка и следующий вопрос не ждут до 90 с.
+func TestChat_ExtractDoesNotHoldPortrait(t *testing.T) {
+	d, _, _ := newPortraitDesk(t)
+	m := &slowExtractModel{release: make(chan struct{})}
+	defer close(m.release)
+	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryDir: t.TempDir()}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Ask(askReq{Question: "первый"}); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond) // разбор уже ждет модель
+	done := make(chan error, 1)
+	go func() { done <- d.PortraitAdd("about", "Разработчик") }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("правка ждет разбора предыдущего ответа")
+	}
+}
+
+// Портрет на kb-сервере, который эта версия окна не читает, — беда сервера,
+// а не «файла в папке» (ревью #483): человек не ищет несуществующий файл.
+func TestChat_PortraitServerUnreadable(t *testing.T) {
+	d, _, _ := newPortraitDesk(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"facts":[{"id":"x","section":"новый-раздел","text":"t","status":"approved"}]}`))
+	}))
+	defer srv.Close()
+	const id = "server-ab12cd34"
+	if err := d.settings.SetSources(serverList(id, srv.URL, true), nil, map[string]string{id: srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryServer: id}, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.Portrait()
+	if err == nil || !strings.Contains(err.Error(), "kb-сервер") || strings.Contains(err.Error(), "папке") {
+		t.Fatalf("непрочитанный портрет сервера: %v", err)
 	}
 }

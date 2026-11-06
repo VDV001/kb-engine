@@ -47,12 +47,13 @@ const extractTimeout = 90 * time.Second
 
 // factView is a fact for the page.
 type factView struct {
-	ID      string `json:"id"`
-	Section string `json:"section"`
-	Title   string `json:"title"` // раздел для человека
-	Text    string `json:"text"`
-	Source  string `json:"source"`
-	Pending bool   `json:"pending"` // ждет одобрения
+	ID      string    `json:"id"`
+	Section string    `json:"section"`
+	Title   string    `json:"title"` // раздел для человека
+	Text    string    `json:"text"`
+	Source  string    `json:"source"`
+	Pending bool      `json:"pending"` // ждет одобрения
+	At      time.Time `json:"at"`      // когда появился: «Вернуть» возвращает его же
 }
 
 type sectionView struct {
@@ -70,6 +71,16 @@ type portraitView struct {
 	Budget   int           `json:"budget"` // сколько влезает в начало чата
 }
 
+// portraitNews is the portrait:new event: новое на одобрение и чат, где оно найдено.
+type portraitNews struct {
+	Chat  string     `json:"chat"`
+	Facts []factView `json:"facts"`
+}
+
+// portraitLoadTimeout bounds reading the portrait before a question: kb-сервер
+// портрета не отвечает — чат отвечает без портрета, а не ждет.
+const portraitLoadTimeout = 5 * time.Second
+
 // portraitNote says to the page whether the portrait went to the chat.
 type portraitNote struct {
 	Size   int    `json:"size"`
@@ -85,10 +96,18 @@ type proposalView struct {
 	Text    string `json:"text"`
 }
 
+// compressionView is a compressed portrait for the page: предложение, размер
+// его текста в чате и id фактов, из которых оно сжато.
+type compressionView struct {
+	Proposals []proposalView `json:"proposals"`
+	Basis     []string       `json:"basis"`
+	Size      int            `json:"size"`
+}
+
 func viewFacts(facts []domain.Fact) []factView {
 	out := make([]factView, 0, len(facts))
 	for _, f := range facts {
-		out = append(out, factView{f.ID(), string(f.Section()), f.Section().Title(), f.Text(), f.Source(), !f.Approved()})
+		out = append(out, factView{f.ID(), string(f.Section()), f.Section().Title(), f.Text(), f.Source(), !f.Approved(), f.At()})
 	}
 	return out
 }
@@ -127,20 +146,17 @@ func (d *chatDesk) portrait(c desktopconfig.Chat, model chat.Model) (*portrait.S
 	if model != nil {
 		m = portraitAsker{model}
 	}
-	return portrait.NewService(store, m, d.now, newChatID), nil
+	// Замок — только на чтение-правку-запись (portrait.WithLock): разбор фоном
+	// и правка человека не затирают друг друга, а модель думает вне замка.
+	return portrait.NewService(store, m, d.now, newChatID, portrait.WithLock(&d.portraitMu)), nil
 }
 
-// withPortrait runs fn under the portrait lock: разбор фоном и правка
-// человека не затирают друг друга.
-// ponytail: замок на весь разбор, вместе с запросом к модели. Потолок: правка
-// ждет до extractTimeout, пока модель думает. Путь: модель вне замка, слияние при записи.
+// withPortrait runs fn with the portrait service of the current settings.
 func (d *chatDesk) withPortrait(model chat.Model, fn func(s *portrait.Service) error) error {
 	s, err := d.portrait(d.config(), model)
 	if err != nil {
 		return err
 	}
-	d.portraitMu.Lock()
-	defer d.portraitMu.Unlock()
 	return fn(s)
 }
 
@@ -178,6 +194,23 @@ func (d *chatDesk) PortraitAdd(section, text string) error {
 	}))
 }
 
+// PortraitRestore puts a forgotten fact back as it was («Вернуть»).
+func (d *chatDesk) PortraitRestore(v factView) error {
+	sec, err := domain.NewFactSection(v.Section)
+	if err != nil {
+		return portraitErr(err)
+	}
+	status := domain.FactApproved
+	if v.Pending {
+		status = domain.FactPending
+	}
+	f, err := domain.NewFact(v.ID, sec, v.Text, v.Source, status, v.At)
+	if err != nil {
+		return portraitErr(err)
+	}
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Restore(context.Background(), f) }))
+}
+
 // PortraitEdit changes a fact text.
 func (d *chatDesk) PortraitEdit(id, text string) error {
 	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Edit(context.Background(), id, text) }))
@@ -194,47 +227,50 @@ func (d *chatDesk) PortraitApprove(id, text string) error {
 }
 
 // PortraitCompress asks the chat model for a shorter portrait; применяется по согласию.
-func (d *chatDesk) PortraitCompress() ([]proposalView, error) {
+func (d *chatDesk) PortraitCompress() (compressionView, error) {
 	c := d.config()
 	key, err := d.modelKey(c)
 	if err != nil {
-		return nil, err
+		return compressionView{}, err
 	}
-	var out []proposalView
+	out := compressionView{Proposals: []proposalView{}}
 	err = d.withPortrait(d.model(c, key), func(s *portrait.Service) error {
 		ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 		defer cancel()
-		props, err := s.Compress(ctx)
-		for _, p := range props {
-			out = append(out, proposalView{string(p.Section), p.Section.Title(), p.Text})
+		cmp, err := s.Compress(ctx)
+		for _, p := range cmp.Proposals {
+			out.Proposals = append(out.Proposals, proposalView{string(p.Section), p.Section.Title(), p.Text})
 		}
+		out.Basis, out.Size = cmp.Basis, cmp.Size
 		return err
 	})
 	return out, portraitErr(err)
 }
 
-// PortraitApplyCompressed replaces the approved facts with the accepted proposal.
-func (d *chatDesk) PortraitApplyCompressed(props []proposalView) error {
-	var in []portrait.Proposal
-	for _, p := range props {
+// PortraitApplyCompressed replaces the facts the proposal was made from.
+func (d *chatDesk) PortraitApplyCompressed(v compressionView) error {
+	cmp := portrait.Compression{Basis: v.Basis}
+	for _, p := range v.Proposals {
 		sec, err := domain.NewFactSection(p.Section)
 		if err != nil {
 			return portraitErr(err)
 		}
-		in = append(in, portrait.Proposal{Section: sec, Text: p.Text})
+		cmp.Proposals = append(cmp.Proposals, portrait.Proposal{Section: sec, Text: p.Text})
 	}
-	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.ApplyCompressed(context.Background(), in) }))
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.ApplyCompressed(context.Background(), cmp) }))
 }
 
 // portraitFor returns the portrait text for a question and what to tell the page.
-func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (string, *portraitNote) {
+func (d *chatDesk) portraitFor(ctx context.Context, c desktopconfig.Chat, question, mode string) (string, *portraitNote) {
 	if !memoryOn(c) {
 		return "", nil
 	}
 	var about string
 	var note *portraitNote
+	ctx, cancel := context.WithTimeout(ctx, portraitLoadTimeout)
+	defer cancel()
 	err := d.withPortrait(nil, func(s *portrait.Service) error {
-		p, err := s.Portrait(context.Background())
+		p, err := s.Portrait(ctx)
 		if err != nil {
 			return err
 		}
@@ -252,8 +288,8 @@ func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (str
 
 // rememberFor returns the «запомнить» tool of the chat: факт ложится в
 // «ждут одобрения» и уходит странице событием; портрет не ведется — nil.
-func (d *chatDesk) rememberFor(c desktopconfig.Chat) func(ctx context.Context, section, text string) error {
-	if !memoryOn(c) {
+func (d *chatDesk) rememberFor(c desktopconfig.Chat, chatID string) func(ctx context.Context, section, text string) error {
+	if !memoryOn(c) || c.MemoryOff { // «Разбирать каждый ответ» выключено — модель о человеке не собирает
 		return nil
 	}
 	return func(ctx context.Context, section, text string) error {
@@ -271,14 +307,14 @@ func (d *chatDesk) rememberFor(c desktopconfig.Chat) func(ctx context.Context, s
 			return portraitErr(err)
 		}
 		if d.memoryNew != nil {
-			d.memoryNew(viewFacts([]domain.Fact{f}))
+			d.memoryNew(portraitNews{chatID, viewFacts([]domain.Fact{f})})
 		}
 		return nil
 	}
 }
 
 // extractAfter finds new facts in the exchange in the background and tells the page.
-func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question, answer string) {
+func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, chatID, question, answer string) {
 	if !memoryOn(c) || c.MemoryOff {
 		return
 	}
@@ -296,7 +332,7 @@ func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question
 			return
 		}
 		if len(found) > 0 && d.memoryNew != nil {
-			d.memoryNew(viewFacts(found))
+			d.memoryNew(portraitNews{chatID, viewFacts(found)})
 		}
 	}()
 }
@@ -311,7 +347,7 @@ func portraitErr(err error) error {
 	case errors.Is(err, portrait.ErrConflict):
 		return errors.New("портрет меняли на другом устройстве одновременно с Вами — повторите")
 	case errors.Is(err, kbserver.ErrUnreachable), errors.Is(err, kbserver.ErrUnauthorized), errors.Is(err, kbserver.ErrNotKB),
-		errors.Is(err, kbserver.ErrServerError), errors.Is(err, kbserver.ErrRedirect), errors.Is(err, kbserver.ErrTooLarge):
+		errors.Is(err, kbserver.ErrServerError), errors.Is(err, kbserver.ErrRedirect), errors.Is(err, kbserver.ErrTooLarge), errors.Is(err, kbserver.ErrRejected):
 		return humanErr{"kb-сервер портрета: " + serverMessage(err), err}
 	case errors.Is(err, portraitfile.ErrCorrupt):
 		return errors.New("файл портрета испорчен — окно его не перезапишет; поправьте или уберите portrait.json в папке портрета")

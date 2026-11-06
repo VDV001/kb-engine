@@ -129,3 +129,29 @@ func TestPortrait_Text(t *testing.T) {
 		t.Fatal("пустой портрет не пуст")
 	}
 }
+
+// Правка не может повторить другой факт раздела: такой портрет NewPortrait
+// потом не прочтет, и весь портрет станет «испорченным» (ревью #482).
+func TestPortrait_EditKeepsTextsUnique(t *testing.T) {
+	at := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
+	a, _ := domain.NewFact("a", domain.SectionWork, "Пишет на Go", "", domain.FactApproved, at)
+	b, _ := domain.NewFact("b", domain.SectionWork, "Пишет на Python", "", domain.FactApproved, at)
+	c, _ := domain.NewFact("c", domain.SectionPrefs, "Пишет на Python", "", domain.FactApproved, at)
+	p, err := domain.NewPortrait([]domain.Fact{a, b, c})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Edit("b", " пишет на go ", ""); !errors.Is(err, domain.ErrFactExists) {
+		t.Fatalf("повтор в разделе = %v", err)
+	}
+	if _, err := p.Edit("a", "Пишет на Go", "исправлено"); err != nil {
+		t.Fatalf("тот же текст у самого факта: %v", err)
+	}
+	next, err := p.Edit("c", "Пишет на Go", "")
+	if err != nil {
+		t.Fatalf("тот же текст в другом разделе: %v", err)
+	}
+	if _, err := domain.NewPortrait(next.Facts()); err != nil {
+		t.Fatalf("после правки портрет не читается: %v", err)
+	}
+}

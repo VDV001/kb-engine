@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 )
 
 // Ошибки различимы, чтобы вызывающий подобрал слова: текст для человека живет
@@ -32,6 +33,9 @@ var (
 	// ErrTooLarge — ответ больше предела чтения: адрес верный и сервер здоров,
 	// просто выдача велика (короткий запрос по большому каталогу).
 	ErrTooLarge = errors.New("kbserver: response too large")
+	// ErrRejected — сервер понял запрос и отказал по делу (400, 428): адрес
+	// верный, в ошибке — слова сервера.
+	ErrRejected = errors.New("kbserver: request rejected")
 )
 
 // maxBody — сколько читать из ответа: /api/engine и /api/stats весят килобайты,
@@ -172,14 +176,9 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 	if err := statusErr(path, resp.StatusCode); err != nil {
 		return err
 	}
-	// Байт сверх предела читается, чтобы отличить «слишком велик» от «не JSON»:
-	// обрезанный ответ иначе выглядел бы чужим сервером.
-	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	body, err := readLimited(resp, path, limit)
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrUnreachable, path, err)
-	}
-	if int64(len(body)) > limit {
-		return fmt.Errorf("%w: %s больше %d байт", ErrTooLarge, path, limit)
+		return err
 	}
 	if err := json.Unmarshal(body, into); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
@@ -223,6 +222,20 @@ func (c Client) send(ctx context.Context, method, target, path string, body []by
 	return resp, nil
 }
 
+// readLimited reads the body up to limit. Байт сверх предела читается, чтобы
+// отличить «слишком велик» от «не JSON»: обрезанный ответ иначе выглядел бы
+// чужим сервером.
+func readLimited(resp *http.Response, path string, limit int64) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %w", ErrUnreachable, path, err)
+	}
+	if int64(len(body)) > limit {
+		return nil, fmt.Errorf("%w: %s больше %d байт", ErrTooLarge, path, limit)
+	}
+	return body, nil
+}
+
 // statusErr maps a response status to the client's errors; nil for 200.
 func statusErr(path string, code int) error {
 	switch {
@@ -255,6 +268,8 @@ func Describe(err error) string {
 		return "сервер перенаправил запрос, а kb не идет по редиректам с токеном — укажите конечный адрес (https://…)"
 	case errors.Is(err, ErrTooLarge):
 		return "выдача сервера больше 32 МБ — уточните запрос"
+	case errors.Is(err, ErrRejected):
+		return "kb-сервер отказал: " + strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrRejected.Error()+":")) + " — обновите окно или сервер до одной версии"
 	case errors.Is(err, ErrServerError):
 		return "kb-сервер ответил ошибкой: адрес верный, сервер не в порядке — попробуйте позже или посмотрите журнал сервера"
 	default:

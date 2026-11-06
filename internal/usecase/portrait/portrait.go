@@ -8,11 +8,37 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
+
+// MaxExtractRunes bounds one extraction request: маленькая модель на Маке
+// держит 4–8 тыс. токенов на все, а разбор идет рядом с чатом.
+// ponytail: пределы в знаках, а не токенах модели. Потолок: на латинице
+// токенов меньше, и модель недозагружена. Путь: предел от контекста модели.
+const (
+	MaxExtractRunes  = maxKnownRunes + maxQuestionRunes + maxAnswerRunes + 100
+	maxKnownRunes    = 1500
+	maxQuestionRunes = 500
+	maxAnswerRunes   = 2000
+)
+
+func firstRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+func lastRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[len(r)-n:])
+	}
+	return s
+}
 
 // ErrModelReply — модель ответила не тем JSON, который просили.
 var ErrModelReply = errors.New("model reply is not the requested JSON")
@@ -51,12 +77,30 @@ type Service struct {
 	model Model
 	now   func() time.Time
 	newID func() string
+	lock  sync.Locker // держит только чтение-правку-запись, не запрос к модели
 }
 
+// Option configures a Service.
+type Option func(*Service)
+
+// WithLock serializes the changes of one process: файл в папке версий не
+// знает, и две правки из одного окна иначе затерли бы друг друга. Запрос к
+// модели (разбор, сжатие) идет вне замка.
+func WithLock(l sync.Locker) Option { return func(s *Service) { s.lock = l } }
+
 // NewService wires the store, the model, the clock and the id source.
-func NewService(store Store, model Model, now func() time.Time, newID func() string) *Service {
-	return &Service{store: store, model: model, now: now, newID: newID}
+func NewService(store Store, model Model, now func() time.Time, newID func() string, opts ...Option) *Service {
+	s := &Service{store: store, model: model, now: now, newID: newID, lock: noLock{}}
+	for _, o := range opts {
+		o(s)
+	}
+	return s
 }
+
+type noLock struct{}
+
+func (noLock) Lock()   {}
+func (noLock) Unlock() {}
 
 // Portrait returns the saved portrait.
 func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { return s.store.Load(ctx) }
@@ -64,6 +108,8 @@ func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { retur
 // change applies fn to the stored portrait and saves it; проиграл гонку
 // (ErrConflict) — fn применяется заново к свежему портрету.
 func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	var err error
 	for range conflictAttempts {
 		var p domain.Portrait
@@ -96,6 +142,11 @@ func (s *Service) Propose(ctx context.Context, section domain.FactSection, text 
 		return domain.Fact{}, err
 	}
 	return f, s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
+}
+
+// Restore puts a forgotten fact back as it was: id, источник, дата, одобрение.
+func (s *Service) Restore(ctx context.Context, f domain.Fact) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
 }
 
 // Edit changes the fact text.
@@ -152,7 +203,9 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 	if known == "" {
 		known = "ничего"
 	}
-	user := "Уже известно:\n" + known + "\n\nВопрос человека:\n" + question + "\n\nОтвет:\n" + answer
+	// Известное — с конца (свежее важнее), вопрос и ответ — с начала.
+	user := "Уже известно:\n" + lastRunes(known, maxKnownRunes) + "\n\nВопрос человека:\n" + firstRunes(question, maxQuestionRunes) +
+		"\n\nОтвет:\n" + firstRunes(answer, maxAnswerRunes)
 	reply, err := s.model.Complete(ctx, extractPrompt, user)
 	if err != nil {
 		return nil, err
@@ -198,39 +251,62 @@ const compressPrompt = `Сожми портрет человека: объеди
 Каждый раздел — не больше двух коротких фактов. Ответь только JSON-массивом: [{"section":"about|work|plans|prefs|misc","text":"..."}].`
 
 // Compress asks the model for a shorter portrait; применяет ApplyCompressed — по согласию человека.
-func (s *Service) Compress(ctx context.Context) ([]Proposal, error) {
+func (s *Service) Compress(ctx context.Context) (Compression, error) {
 	p, err := s.store.Load(ctx)
 	if err != nil {
-		return nil, err
+		return Compression{}, err
 	}
 	reply, err := s.model.Complete(ctx, compressPrompt, domain.PortraitText(p.Approved()))
 	if err != nil {
-		return nil, err
+		return Compression{}, err
 	}
 	offered, err := parseProposals(reply)
 	if err != nil {
-		return nil, err
+		return Compression{}, err
 	}
-	var out []Proposal
+	var c Compression
+	var facts []domain.Fact
 	for _, o := range offered {
-		if sec, err := domain.NewFactSection(o.Section); err == nil && strings.TrimSpace(o.Text) != "" {
-			out = append(out, Proposal{Section: sec, Text: strings.TrimSpace(o.Text)})
+		sec, err := domain.NewFactSection(o.Section)
+		if err != nil {
+			continue
 		}
+		f, err := domain.NewFact("size", sec, o.Text, sourceCompressed, domain.FactApproved, s.now())
+		if err != nil {
+			continue
+		}
+		c.Proposals, facts = append(c.Proposals, Proposal{Section: sec, Text: f.Text()}), append(facts, f)
 	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("%w: empty compression", ErrModelReply)
+	if len(c.Proposals) == 0 {
+		return Compression{}, fmt.Errorf("%w: empty compression", ErrModelReply)
 	}
-	return out, nil
+	for _, f := range p.Approved() {
+		c.Basis = append(c.Basis, f.ID())
+	}
+	c.Size = len([]rune(domain.PortraitText(facts)))
+	return c, nil
 }
 
-// ApplyCompressed replaces the approved facts with the accepted proposal; ждущее одобрения остается.
-func (s *Service) ApplyCompressed(ctx context.Context, props []Proposal) error {
+// Compression is a shorter portrait the person may accept: предложение,
+// размер его текста в чате и id одобренных фактов, из которых оно сжато.
+type Compression struct {
+	Proposals []Proposal
+	Basis     []string
+	Size      int
+}
+
+// ApplyCompressed replaces the facts the proposal was made from; одобренное
+// после «Сжать» и ждущее одобрения остается.
+func (s *Service) ApplyCompressed(ctx context.Context, c Compression) error {
 	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
-		next, err := domain.NewPortrait(p.Pending())
-		if err != nil {
-			return p, err
+		next := p
+		for _, id := range c.Basis {
+			var err error
+			if next, err = next.Remove(id); err != nil && !errors.Is(err, domain.ErrFactNotFound) {
+				return p, err
+			}
 		}
-		for _, pr := range props {
+		for _, pr := range c.Proposals {
 			f, err := domain.NewFact(s.newID(), pr.Section, pr.Text, sourceCompressed, domain.FactApproved, s.now())
 			if err != nil {
 				return p, err
@@ -281,7 +357,12 @@ func Context(p domain.Portrait, question string, budget int, mode ContextMode) C
 	case c.Fits || mode == ContextFull:
 		c.Text = full
 	case mode == ContextRelevant:
-		c.Text = domain.PortraitText(relevant(p.Approved(), question))
+		facts := relevant(p.Approved(), question)
+		// «Только нужное» тоже в пределах порога: лишнее — с конца.
+		for len(facts) > 0 && len([]rune(domain.PortraitText(facts))) > budget {
+			facts = facts[:len(facts)-1]
+		}
+		c.Text = domain.PortraitText(facts)
 	}
 	return c
 }

@@ -3,6 +3,7 @@ package portrait_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -128,17 +129,26 @@ func TestService_Compress(t *testing.T) {
 	_, _ = s.Add(ctx, sect(t, "work"), "Пишет на TypeScript")
 	pend, _ := domain.NewFact("p1", sect(t, "plans"), "Выпуск до НГ", "из чата", domain.FactPending, now)
 	st.p, _ = st.p.Add(pend)
-	prop, err := s.Compress(ctx)
-	if err != nil || len(prop) != 1 || prop[0].Text != "Go, TypeScript; база знаний kb-engine" {
-		t.Fatalf("предложение: %+v %v", prop, err)
+	cmp, err := s.Compress(ctx)
+	prop := cmp.Proposals
+	if err != nil || len(prop) != 1 || prop[0].Text != "Go, TypeScript; база знаний kb-engine" || len(cmp.Basis) != 2 {
+		t.Fatalf("предложение: %+v %v", cmp, err)
+	}
+	if cmp.Size != len([]rune("Работа: Go, TypeScript; база знаний kb-engine.")) {
+		t.Fatalf("размер сжатого = %d — считать надо так, как текст уйдет в чат", cmp.Size)
 	}
 	if len(st.p.Approved()) != 2 {
 		t.Fatal("сжатие применилось без согласия")
 	}
-	if err := s.ApplyCompressed(ctx, prop); err != nil {
+	// Пока человек читал предложение, он одобрил еще факт: сжатие его не стирает (ревью #482).
+	if _, err := s.Add(ctx, sect(t, "prefs"), "Отвечать коротко"); err != nil {
 		t.Fatal(err)
 	}
-	if a, p := st.p.Approved(), st.p.Pending(); len(a) != 1 || a[0].Source() != "сжато" || len(p) != 1 {
+	if err := s.ApplyCompressed(ctx, cmp); err != nil {
+		t.Fatal(err)
+	}
+	a, p := st.p.Approved(), st.p.Pending()
+	if len(a) != 2 || len(p) != 1 || !strings.Contains(domain.PortraitText(a), "Отвечать коротко") || !strings.Contains(domain.PortraitText(a), "база знаний") {
 		t.Fatalf("после: %+v / %+v", a, p)
 	}
 }
@@ -165,9 +175,16 @@ func TestContext(t *testing.T) {
 	if c := portrait.Context(p, "вопрос", 20, portrait.ContextFull); c.Text != full {
 		t.Fatalf("целиком: %+v", c)
 	}
-	c := portrait.Context(p, "Как настроить голос?", 20, portrait.ContextRelevant)
+	over := len([]rune(full)) - 1 // целиком не влезает
+	c := portrait.Context(p, "Как настроить голос?", over, portrait.ContextRelevant)
 	if !strings.Contains(c.Text, "Разработчик") || !strings.Contains(c.Text, "Отвечать коротко") || !strings.Contains(c.Text, "голос окна") || strings.Contains(c.Text, "Переезд") {
 		t.Fatalf("только нужное: %q", c.Text)
+	}
+	// «Только нужное» тоже обязано уложиться в порог (ревью #482): лишнее —
+	// с конца, «кто я» остается первым.
+	c = portrait.Context(p, "Как настроить голос?", 25, portrait.ContextRelevant)
+	if n := len([]rune(c.Text)); n > 25 || !strings.Contains(c.Text, "Разработчик") {
+		t.Fatalf("только нужное в 25 знаков: %d %q", n, c.Text)
 	}
 }
 
@@ -236,5 +253,47 @@ func TestService_Propose(t *testing.T) {
 	}
 	if _, err := s.Propose(ctx, sect(t, "prefs"), "Отвечать коротко"); !errors.Is(err, domain.ErrFactExists) {
 		t.Fatalf("повтор = %v", err)
+	}
+}
+
+// «Вернуть» после «Забыть» возвращает тот же факт: id, источник, дату и
+// одобрение (ревью #482), а не новый «добавлено вручную».
+func TestService_Restore(t *testing.T) {
+	ctx := t.Context()
+	s, st := newSvc(t, &fakeModel{})
+	at := now.Add(-48 * time.Hour)
+	f, _ := domain.NewFact("x7", sect(t, "prefs"), "Отвечать коротко", "из чата 05.11", domain.FactApproved, at)
+	st.p, _ = st.p.Add(f)
+	if err := s.Remove(ctx, "x7"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Restore(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got := st.p.Facts()
+	if len(got) != 1 || got[0].ID() != "x7" || got[0].Source() != "из чата 05.11" || !got[0].At().Equal(at) || !got[0].Approved() {
+		t.Fatalf("вернулось: %+v", got)
+	}
+	if err := s.Restore(ctx, f); !errors.Is(err, domain.ErrFactExists) {
+		t.Fatalf("второй возврат = %v", err)
+	}
+}
+
+// Разбор после ответа не шлет модели больше предела (ревью #482): большой
+// портрет и длинный ответ иначе переполняют маленькую модель на Маке.
+func TestService_ExtractBounded(t *testing.T) {
+	ctx := t.Context()
+	m := &fakeModel{reply: "[]"}
+	s, _ := newSvc(t, m)
+	for i := range 60 {
+		if _, err := s.Add(ctx, sect(t, "misc"), fmt.Sprintf("Длинный факт номер %d: %s", i, strings.Repeat("слово ", 40))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Extract(ctx, "вопрос", strings.Repeat("ответ ", 3000)); err != nil {
+		t.Fatal(err)
+	}
+	if n := len([]rune(m.user)); n > portrait.MaxExtractRunes {
+		t.Fatalf("в разбор ушло %d знаков, предел %d", n, portrait.MaxExtractRunes)
 	}
 }
