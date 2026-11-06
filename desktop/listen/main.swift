@@ -10,7 +10,9 @@
 // Стоп — закрытый stdin: помощник дослушивает и отдает итог. Звук никуда не пишется.
 // --pause N — разговор без рук: тишина N секунд после речи тоже стоп.
 // --record PATH — не распознавать, а записать речь в WAV 16 кГц моно (для
-//   сервера распознавания: whisper и т. п.); итог — {"recorded":PATH,"final":true}.
+//   сервера распознавания: whisper и т. п.); итог — {"recorded":PATH,"final":true},
+//   без речи — с "silent":true (серверу не отдается). В разговоре без рук
+//   запись без речи кончается сама через noSpeechLimit секунд.
 // --check печатает {"auth":"…","onDevice":…,"available":…} без запроса разрешений.
 import AVFoundation
 import Foundation
@@ -111,6 +113,10 @@ func start() {
 // Файл записи — глобально: перед выходом обнуляется, и AVAudioFile дописывает
 // заголовок WAV (exit сам объекты не освобождает).
 var recFile: AVAudioFile?
+// recSpoke — была ли речь в записи; пишется из потока микрофона, читается при стопе.
+var recSpoke = false
+// noSpeechLimit — сколько ждать первых слов в разговоре без рук.
+let noSpeechLimit: TimeInterval = 10
 
 let recordPath = args.firstIndex(of: "--record").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
 
@@ -126,6 +132,7 @@ func record(to path: String) {
     } catch { fail("файл записи не создался: \(error.localizedDescription)", 4) }
     var spoke = false
     var quietSince = Date()
+    let began = Date()
     // Тише этого уровня — тишина (RMS отсчетов float32 микрофона).
     let silenceLevel: Float = 0.012
     input.installTap(onBus: 0, bufferSize: 4096, format: inFormat) { buf, _ in
@@ -137,6 +144,10 @@ func record(to path: String) {
             if pause > 0 && spoke && Date().timeIntervalSince(quietSince) > pause {
                 DispatchQueue.main.async { finishRecording(path) }
             }
+            if pause > 0 && !spoke && Date().timeIntervalSince(began) > noSpeechLimit {
+                DispatchQueue.main.async { finishRecording(path) }
+            }
+            recSpoke = spoke
         }
         let cap = AVAudioFrameCount(Double(buf.frameLength) * 16000 / inFormat.sampleRate) + 16
         guard let out = AVAudioPCMBuffer(pcmFormat: outFormat, frameCapacity: cap) else { return }
@@ -165,7 +176,9 @@ func finishRecording(_ path: String) {
     engine.stop()
     engine.inputNode.removeTap(onBus: 0)
     recFile = nil // закрыть файл: заголовок WAV дописывается здесь
-    emit(["recorded": path, "final": true])
+    var done: [String: Any] = ["recorded": path, "final": true]
+    if !recSpoke { done["silent"] = true }
+    emit(done)
     exit(0)
 }
 

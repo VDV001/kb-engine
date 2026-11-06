@@ -29,6 +29,8 @@ var (
 	ErrNotFound  = errors.New("document not found")
 	ErrServer    = errors.New("google did not answer")
 	ErrTooBig    = errors.New("document is bigger than 20 MB")
+	ErrAPIOff    = errors.New("google drive api is not enabled for the oauth client")
+	ErrBusy      = errors.New("google rate limit, try later")
 )
 
 // maxBody caps one document: как у ссылок — 20 МБ.
@@ -40,6 +42,7 @@ type Client struct {
 	AuthBase               string // https://accounts.google.com/o/oauth2/v2/auth
 	TokenURL               string // https://oauth2.googleapis.com/token
 	APIURL                 string // https://www.googleapis.com/drive/v3
+	DocsURL                string // https://docs.google.com — лист таблицы по gid
 	HTTP                   *http.Client
 }
 
@@ -128,6 +131,7 @@ var (
 	filePath   = regexp.MustCompile(`^/file/d/([\w-]+)`)
 	folderPath = regexp.MustCompile(`^/drive/(?:u/\d+/)?folders/([\w-]+)`)
 	idParam    = regexp.MustCompile(`^[\w-]+$`)
+	sheetGid   = regexp.MustCompile(`[#?&]gid=(\d+)`)
 )
 
 // FileID returns the Drive id of a Google link (документ, таблица,
@@ -201,6 +205,29 @@ func (c Client) Read(ctx context.Context, at, id string) (Doc, error) {
 	return d, err
 }
 
+// ReadLink reads the document of a Google link. Таблица со ссылкой на лист
+// (#gid=) — этот лист: экспорт Диска отдает только первый, а адрес из
+// exportLinks Документов берет лист по gid тем же токеном.
+func (c Client) ReadLink(ctx context.Context, at, link string) (Doc, error) {
+	id := FileID(link)
+	if id == "" {
+		return Doc{}, fmt.Errorf("%w: не ссылка Google", ErrNotFound)
+	}
+	g := sheetGid.FindStringSubmatch(link)
+	if g == nil || !strings.HasPrefix(link, "https://docs.google.com/spreadsheets/") {
+		return c.Read(ctx, at, id)
+	}
+	var meta struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}
+	if err := c.getJSON(ctx, at, "/files/"+url.PathEscape(id), url.Values{"fields": {"id,name"}, "supportsAllDrives": {"true"}}, &meta); err != nil {
+		return Doc{}, err
+	}
+	raw, err := c.fetch(ctx, at, or(c.DocsURL, "https://docs.google.com")+"/spreadsheets/export?"+url.Values{"id": {id}, "exportFormat": {"csv"}, "gid": {g[1]}}.Encode())
+	return Doc{ID: meta.ID, Name: meta.Name, MimeType: "application/vnd.google-apps.spreadsheet", Text: string(raw)}, err
+}
+
 // Account returns the e-mail of who signed in.
 func (c Client) Account(ctx context.Context, at string) (string, error) {
 	var a struct {
@@ -224,7 +251,11 @@ func (c Client) getJSON(ctx context.Context, at, path string, q url.Values, out 
 }
 
 func (c Client) get(ctx context.Context, at, path string, q url.Values) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, or(c.APIURL, "https://www.googleapis.com/drive/v3")+path+"?"+q.Encode(), nil)
+	return c.fetch(ctx, at, or(c.APIURL, "https://www.googleapis.com/drive/v3")+path+"?"+q.Encode())
+}
+
+func (c Client) fetch(ctx context.Context, at, u string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +270,9 @@ func (c Client) get(ctx context.Context, at, path string, q url.Values) ([]byte,
 	case http.StatusUnauthorized:
 		return nil, ErrReconnect
 	case http.StatusForbidden:
-		return nil, ErrNoAccess
+		return nil, forbidden(res.Body)
+	case http.StatusTooManyRequests:
+		return nil, ErrBusy
 	case http.StatusNotFound:
 		return nil, ErrNotFound
 	default:
@@ -253,4 +286,38 @@ func (c Client) get(ctx context.Context, at, path string, q url.Values) ([]byte,
 		return nil, ErrTooBig
 	}
 	return raw, nil
+}
+
+// forbidden reads why Google said 403: это и «нет доступа к файлу», и
+// выключенный Drive API у клиента, и лимит запросов, и нехватка права входа.
+// Причина — из error.errors[].reason или error.details[].reason; непонятный
+// ответ — «нет доступа», как раньше.
+func forbidden(body io.Reader) error {
+	var e struct {
+		Error struct {
+			Errors  []struct{ Reason string } `json:"errors"`
+			Details []struct{ Reason string } `json:"details"`
+		} `json:"error"`
+	}
+	_ = json.NewDecoder(io.LimitReader(body, 64<<10)).Decode(&e)
+	var reasons []string
+	for _, r := range e.Error.Errors {
+		reasons = append(reasons, r.Reason)
+	}
+	for _, r := range e.Error.Details {
+		reasons = append(reasons, r.Reason)
+	}
+	for _, r := range reasons {
+		switch r {
+		case "accessNotConfigured", "SERVICE_DISABLED":
+			return ErrAPIOff
+		case "rateLimitExceeded", "userRateLimitExceeded", "RATE_LIMIT_EXCEEDED":
+			return ErrBusy
+		case "exportSizeLimitExceeded":
+			return ErrTooBig
+		case "insufficientPermissions", "ACCESS_TOKEN_SCOPE_INSUFFICIENT":
+			return ErrReconnect
+		}
+	}
+	return ErrNoAccess
 }

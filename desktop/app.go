@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
@@ -241,11 +242,12 @@ func (a *App) PickFolder() (string, error) {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	// ponytail: каждый кусок ответа уходит странице весь, без прореживания:
-	// ответ — килобайты, кусков сотни. Потолок: длинный ответ на медленной
-	// странице; путь — слать не чаще раза в 50 мс.
+	// Кусок уходит странице весь (она перерисовывает текст целиком), поэтому
+	// не чаще раза в 50 мс. Устаревший кусок после ответа прийти не может:
+	// событие и ответ Ask идут в одну очередь главного потока (ExecJS →
+	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
 	if a.chat != nil {
-		a.chat.show = func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) }
+		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
 	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }

@@ -167,14 +167,14 @@ func TestReadLink_GoogleThroughConnection(t *testing.T) {
 	public := weblink.Client{HTTP: &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
 	})}}
-	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err := readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "открытый текст" {
 		t.Fatalf("без подключения: %+v, %v", d, err)
 	}
 	if _, err := g.Connect("cid.apps.googleusercontent.com", "sec-1"); err != nil {
 		t.Fatal(err)
 	}
-	d, err = readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err = readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "Срок 15 декабря" || d.Title != "ТЗ закрытое" || d.Source != "Google · person@example.com" {
 		t.Fatalf("через подключение: %+v, %v", d, err)
 	}
@@ -213,8 +213,43 @@ func TestGoogle_ReviewFixes(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
 	})}}
 	link := "https://docs.google.com/document/d/nope/edit" // Drive отвечает 404
-	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err := readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "открытый текст" {
 		t.Fatalf("откат на открытый экспорт: %+v, %v", d, err)
+	}
+}
+
+// Удаление подключения не молчит, если Связка не убрала секреты: человек
+// должен знать, что вход остался на Маке (ревью #466).
+func TestGoogle_RemoveReportsKeychain(t *testing.T) {
+	g, tok, s := newTestGoogle(t)
+	g.open = func(consent string) {
+		u, _ := url.Parse(consent)
+		go func() {
+			if res, err := http.Get(u.Query().Get("redirect_uri") + "?" + url.Values{"code": {"c1"}, "state": {u.Query().Get("state")}}.Encode()); err == nil {
+				_ = res.Body.Close()
+			}
+		}()
+	}
+	row, err := g.Connect("cid.apps.googleusercontent.com", "sec-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok.delErr = errors.New("keychain locked")
+	err = g.Remove(row.ID)
+	if err == nil || !strings.Contains(err.Error(), "Связк") {
+		t.Fatalf("Remove = %v, want отказ Связки словами", err)
+	}
+	if len(s.snapshot().cfg.Connections) != 0 {
+		t.Fatalf("подключение осталось в настройках: %+v", s.snapshot().cfg.Connections)
+	}
+}
+
+// Отказы Google с новыми причинами — словами человека.
+func TestGoogleErr_Words(t *testing.T) {
+	for err, want := range map[error]string{google.ErrAPIOff: "Drive API", google.ErrBusy: "позже"} {
+		if got := googleErr(err).Error(); !strings.Contains(got, want) {
+			t.Errorf("%v → %q, want %q", err, got, want)
+		}
 	}
 }
