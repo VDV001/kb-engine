@@ -367,6 +367,8 @@ function moveInk() {
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
   ink.style.left = b.offsetLeft + "px";
   ink.style.width = b.offsetWidth + "px";
+  // Узкое окно прокручивает полосу вбок: активная вкладка (Tab/⇧Tab) не уходит за край.
+  b.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
 
 // --- Отрисовка -----------------------------------------------------------------
