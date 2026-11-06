@@ -3,9 +3,9 @@ package kbserver
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 
 	"github.com/daniil/kb-engine/internal/adapter/portraitjson"
@@ -42,12 +42,9 @@ func (s *PortraitStore) Load(ctx context.Context) (domain.Portrait, error) {
 	if err := statusErr(portraitPath, resp.StatusCode); err != nil {
 		return domain.Portrait{}, err
 	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	raw, err := readLimited(resp, portraitPath, maxBody)
 	if err != nil {
-		return domain.Portrait{}, fmt.Errorf("%w: %s: %w", ErrUnreachable, portraitPath, err)
-	}
-	if len(raw) > maxBody {
-		return domain.Portrait{}, fmt.Errorf("%w: %s больше %d байт", ErrTooLarge, portraitPath, maxBody)
+		return domain.Portrait{}, err
 	}
 	p, err := portraitjson.Decode(raw)
 	if err != nil {
@@ -91,6 +88,9 @@ func (s *PortraitStore) Save(ctx context.Context, p domain.Portrait) error {
 		return nil
 	case http.StatusPreconditionFailed:
 		return portrait.ErrConflict
+	case http.StatusBadRequest, http.StatusPreconditionRequired:
+		msg, _ := readLimited(resp, portraitPath, 1024)
+		return fmt.Errorf("%w: %s", ErrRejected, strings.TrimSpace(string(msg)))
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return fmt.Errorf("%w: %s answered %d — сервер старой версии, без портрета", ErrNotKB, portraitPath, resp.StatusCode)
 	}
