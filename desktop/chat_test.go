@@ -337,9 +337,15 @@ func TestChat_AskAttachmentRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.attach = func(context.Context, string) (chat.Doc, error) { return chat.Doc{}, weblink.ErrClosed }
-	_, err := d.Ask("", "глянь https://docs.google.com/document/d/1A/edit", nil)
+	// Приложенное «+» не прочлось — вопрос не уходит, причина словами.
+	_, err := d.Ask("", "глянь", []string{"url:https://docs.google.com/document/d/1A/edit"})
 	if err == nil || !strings.Contains(err.Error(), "закрыт") || !strings.Contains(err.Error(), "docs.google.com") || m.n != 0 {
 		t.Fatalf("err = %v, модель звали %d раз", err, m.n)
+	}
+	// Та же ссылка в тексте вопроса — вопрос уходит, ссылка названа в notes.
+	c, err := d.Ask("", "глянь https://docs.google.com/document/d/1A/edit", nil)
+	if err != nil || m.n != 1 || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "закрыт") {
+		t.Fatalf("err = %v, notes %q, модель %d", err, c.Notes, m.n)
 	}
 }
 
@@ -377,14 +383,14 @@ func TestChat_AutoLinkFailureDoesNotBlock(t *testing.T) {
 		}
 		return chat.Doc{Ref: ref, Title: "ок", Text: "текст"}, nil
 	}
-	c, err := d.Ask(askReq{Question: "почему https://localhost:8080/api не отвечает?"})
+	c, err := d.Ask("", "почему https://localhost:8080/api не отвечает?", nil)
 	if err != nil || m.n != 1 {
 		t.Fatalf("вопрос остановлен: %v, модель звали %d", err, m.n)
 	}
 	if len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "localhost:8080") {
 		t.Fatalf("notes = %q", c.Notes)
 	}
-	if _, err := d.Ask(askReq{Question: "что тут?", Refs: []string{"url:https://localhost:8080/x"}}); err == nil {
+	if _, err := d.Ask("", "что тут?", []string{"url:https://localhost:8080/x"}); err == nil {
 		t.Fatal("приложенное «+» не прочлось, а вопрос ушел")
 	}
 }

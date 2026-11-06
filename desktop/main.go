@@ -122,7 +122,7 @@ func run() error {
 	app := newApp(idx.files, settings, idx)
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
 	app.chat.useSources(idx.files)
-	app.chat.useAttachments(idx.files, ext, weblink.Client{})
+	app.chat.useAttachments(idx.files, ext, weblink.Client{HTTP: &http.Client{Timeout: 30 * time.Second}})
 	return wails.Run(&options.App{
 		Title:     "DVK",
 		Width:     1180,

@@ -46,6 +46,8 @@ type chatRecord struct {
 	Messages []chatMessage `json:"messages"`
 	// Docs — документы, с которыми работали в чате, без повторов.
 	Docs []chatDoc `json:"docs"`
+	// Notes — что окно не смогло прочитать из ссылок вопроса; только в ответе.
+	Notes []string `json:"notes,omitempty"`
 }
 
 type chatMessage struct {
@@ -90,6 +92,9 @@ type chatDesk struct {
 	// attach reads one attached document by ref (attach.go); nil — только в окне.
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
 	mu     sync.Mutex // один вопрос за раз: файл чата пишется целиком
+
+	foundMu sync.Mutex
+	found   map[string]chat.Doc // предложенное «+ Из найденного»
 }
 
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
@@ -175,10 +180,13 @@ func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
-	attached, err := d.readAttached(ctx, attachRefs(refs, question))
+	explicit, auto := attachRefs(refs, question)
+	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
 		return chatRecord{}, err
 	}
+	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
+	attached = append(attached, linked...)
 	svc := chat.NewService(searcherFunc(d.search), d.model(c, key), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show})
 	if err != nil {
@@ -198,7 +206,11 @@ func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
 	rec.Model, rec.Updated = c.Model, d.now()
-	return rec, d.save(rec)
+	if err := d.save(rec); err != nil {
+		return chatRecord{}, err
+	}
+	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
+	return rec, nil
 }
 
 // Find searches for documents to attach («+ Из найденного»): то же, что ищет
@@ -214,11 +226,36 @@ func (d *chatDesk) Find(q string) ([]chatDoc, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.rememberFound(docs)
 	out := make([]chatDoc, 0, len(docs))
 	for _, doc := range docs {
 		out = append(out, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source})
 	}
 	return out, nil
+}
+
+// maxFound caps what «+ Из найденного» remembers for attaching.
+const maxFound = 200
+
+// rememberFound keeps the documents offered by «+ Из найденного»: приложенное
+// из них читается при отправке, даже если поиски чата успели переполнить
+// свою выдачу (ревью #464).
+func (d *chatDesk) rememberFound(docs []chat.Doc) {
+	d.foundMu.Lock()
+	defer d.foundMu.Unlock()
+	if d.found == nil || len(d.found) > maxFound {
+		d.found = map[string]chat.Doc{}
+	}
+	for _, doc := range docs {
+		d.found[doc.Ref] = doc
+	}
+}
+
+func (d *chatDesk) foundDoc(ref string) (chat.Doc, bool) {
+	d.foundMu.Lock()
+	defer d.foundMu.Unlock()
+	doc, ok := d.found[ref]
+	return doc, ok
 }
 
 // List returns the chats, newest first.

@@ -1686,9 +1686,12 @@ async function askChat() {
   fitChatQ();
   renderChat();
   try {
-    const c = await native().Ask(chatState.id, q, chatState.attached.map((a) => a.ref));
-    chatState.attached = [];
+    const sent = chatState.attached.map((a) => a.ref);
+    const c = await native().Ask(chatState.id, q, sent);
+    // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
+    chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
+    if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
     await renderChatList();
