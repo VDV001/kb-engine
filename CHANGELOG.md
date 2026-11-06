@@ -10,6 +10,11 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Added
 
+- **Алерт kb-сервера письмом (06.11).** Функция `kb-healthcheck` при сбое шлет письмо через Postbox
+  (адрес отправителя на подтвержденном домене, вход IAM-токеном функции, ключей нет) и только потом
+  пробует Telegram: из Cloud Functions он недоступен. `MAIL_TO=… deploy/yandex/healthcheck.sh` выдает
+  аккаунту функции `postbox.sender` и выкатывает; без `MAIL_TO` — как раньше, только Telegram.
+
 - **Суточная сводка kb-сервера в Telegram (решение владельца 06.11).** Раз в сутки в 09:00 МСК бот
   @dvkbasebot присылает: ответ `/healthz`, аптайм за 24 ч и 7 дней, средний отклик и сбои за сутки по
   UptimeRobot. Отдельный проект Vercel в `deploy/vercel/`: из Yandex Cloud Functions Telegram
