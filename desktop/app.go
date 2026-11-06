@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -197,6 +198,22 @@ func (a *App) SetConnectionEnabled(id string, on bool) error { return a.google.S
 
 // RemoveConnection deletes a connection and its secrets.
 func (a *App) RemoveConnection(id string) error { return a.google.Remove(id) }
+
+// MountShare connects a network folder now (smb://… или afp://…) and returns
+// its path in /Volumes: macOS спросит пароль и запомнит его в Связке ключей.
+func (a *App) MountShare(addr string) (string, error) {
+	vol := desktopconfig.ShareVolume(addr)
+	if vol == "" {
+		return "", errors.New("адрес сетевой папки — smb://сервер/папка или afp://…, без пароля в адресе")
+	}
+	if err := mountShareCmd(addr); err != nil {
+		return "", fmt.Errorf("сетевая папка не подключилась: %w", err)
+	}
+	if !isDir(vol) {
+		return "", fmt.Errorf("шара подключена, но папки %s нет — проверьте имя папки в адресе", vol)
+	}
+	return vol, nil
+}
 
 // PickChatFile asks for a file to attach to the question; "" — передумали.
 func (a *App) PickChatFile() (string, error) {

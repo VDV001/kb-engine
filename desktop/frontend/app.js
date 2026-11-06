@@ -1001,7 +1001,8 @@ function renderSources() {
   if (ui.addKind === "folder")
     form = `<div class="row">${native() ? `<button class="btn primary" data-pick="new">Выбрать папку…</button>` : ""}
       <input id="na" placeholder="или путь: ~/Documents, /Volumes/team" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
-      <span class="hint">сетевая папка через VPN — это тоже путь в /Volumes</span>`;
+      <div class="row"><input id="ns" placeholder="или сетевая: smb://сервер/папка" spellcheck="false"><button class="btn" data-addshare>Подключить</button></div>
+      <span class="hint">сетевая папка подключается сама после сна и перезагрузки; пароль спросит macOS и запомнит в Связке ключей</span>`;
   else if (ui.addKind === "catalog")
     form = `<div class="row"><input id="na" placeholder="~/…/knowledge-base/_data/catalog.json" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
       <span class="hint">читается первый включенный каталог списка</span>`;
@@ -1170,6 +1171,23 @@ panel.addEventListener("click", async (e) => {
     return;
   }
   if (d.goSec) return openSettings(d.goSec);
+  if ("addshare" in d) {
+    const addr = $("#ns").value.trim();
+    if (!addr) return focusSoon("#ns");
+    if (!native() || !native().MountShare) return showError("Сетевые папки подключаются в окне приложения.");
+    if (ui.adding) return;
+    ui.adding = true;
+    toast("Подключаю", " · " + addr + " — macOS может спросить пароль", null, "off");
+    let vol;
+    try { vol = await native().MountShare(addr); }
+    catch (err) { ui.adding = false; return showError(String(err)); }
+    ui.adding = false;
+    const s = { id: "", kind: "folder", name: "", path: vol, url: addr, enabled: true, _key: "k" + ++keySeq };
+    const undo = change(() => draft.sources.push(s));
+    ui.addKind = null;
+    renderSources();
+    return toast("Добавлена сетевая папка", ` · «${label(s)}», ${draft.sources.length}-я по приоритету`, undo);
+  }
   if (d.kind) { ui.addKind = ui.addKind === d.kind ? null : d.kind; renderSources(); return focusSoon("#na"); }
   if ("addok" in d) {
     const v = $("#na").value.trim();
