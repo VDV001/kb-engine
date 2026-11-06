@@ -93,12 +93,12 @@ func (c Client) form(wav []byte, lang string) (*bytes.Buffer, string, error) {
 
 // statusErr names a refusal; текст ответа не берется — в нем бывает эхо ключа.
 func statusErr(code int) error {
-	switch {
-	case code == http.StatusOK:
+	switch code {
+	case http.StatusOK:
 		return nil
-	case code == http.StatusUnauthorized || code == http.StatusForbidden:
+	case http.StatusUnauthorized, http.StatusForbidden:
 		return ErrUnauthorized
-	case code == http.StatusNotFound:
+	case http.StatusNotFound:
 		return ErrNotFound
 	}
 	return fmt.Errorf("%w: status %d", ErrServer, code)
