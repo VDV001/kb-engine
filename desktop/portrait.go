@@ -5,9 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/portraitfile"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
@@ -31,6 +33,15 @@ const (
 // errNoPortraitDir — папка портрета не выбрана.
 var errNoPortraitDir = errors.New("выберите папку портрета в «Чат и модель → Что DVK помнит обо мне»")
 
+// errNoPortraitServer — kb-сервер портрета убран из источников.
+var errNoPortraitServer = errors.New("kb-сервера портрета больше нет в «Источниках» — выберите другой в «Чат и модель → Что DVK помнит обо мне»")
+
+// portraitServerTimeout bounds one portrait request to a kb server.
+const portraitServerTimeout = 15 * time.Second
+
+// memoryOn: портрет ведется — выбрана папка или kb-сервер.
+func memoryOn(c desktopconfig.Chat) bool { return c.MemoryDir != "" || c.MemoryServer != "" }
+
 // extractTimeout — потолок разбора одного ответа: он идет фоном и не держит чат.
 const extractTimeout = 90 * time.Second
 
@@ -52,6 +63,7 @@ type sectionView struct {
 // portraitView is the portrait for the page: папка, факты, размер и порог.
 type portraitView struct {
 	Dir      string        `json:"dir"`
+	Server   string        `json:"server"` // id источника-kb-сервера; пусто — папка
 	Facts    []factView    `json:"facts"`
 	Sections []sectionView `json:"sections"`
 	Size     int           `json:"size"`   // знаков одобренного
@@ -99,14 +111,23 @@ func (p portraitAsker) Complete(ctx context.Context, system, user string) (strin
 // portrait returns the portrait service over the chosen folder; model nil —
 // для правок вручную модель не нужна.
 func (d *chatDesk) portrait(c desktopconfig.Chat, model chat.Model) (*portrait.Service, error) {
-	if c.MemoryDir == "" {
+	var store portrait.Store = portraitfile.Store{Dir: c.MemoryDir}
+	switch {
+	case c.MemoryServer != "":
+		url := d.settings.savedURL(c.MemoryServer)
+		if url == "" {
+			return nil, errNoPortraitServer
+		}
+		store = kbserver.NewPortraitStore(kbserver.Client{URL: url, Token: d.settings.token(c.MemoryServer),
+			HTTP: &http.Client{Timeout: portraitServerTimeout}})
+	case c.MemoryDir == "":
 		return nil, errNoPortraitDir
 	}
 	var m portrait.Model
 	if model != nil {
 		m = portraitAsker{model}
 	}
-	return portrait.NewService(portraitfile.Store{Dir: c.MemoryDir}, m, d.now, newChatID), nil
+	return portrait.NewService(store, m, d.now, newChatID), nil
 }
 
 // withPortrait runs fn under the portrait lock: разбор фоном и правка
@@ -126,11 +147,11 @@ func (d *chatDesk) withPortrait(model chat.Model, fn func(s *portrait.Service) e
 // Portrait returns the portrait for the page; папки нет — пустой вид без ошибки.
 func (d *chatDesk) Portrait() (portraitView, error) {
 	c := d.config()
-	v := portraitView{Dir: c.MemoryDir, Facts: []factView{}, Budget: portraitBudget(c)}
+	v := portraitView{Dir: c.MemoryDir, Server: c.MemoryServer, Facts: []factView{}, Budget: portraitBudget(c)}
 	for _, s := range domain.FactSections() {
 		v.Sections = append(v.Sections, sectionView{string(s), s.Title()})
 	}
-	if c.MemoryDir == "" {
+	if !memoryOn(c) {
 		return v, nil
 	}
 	err := d.withPortrait(nil, func(s *portrait.Service) error {
@@ -207,7 +228,7 @@ func (d *chatDesk) PortraitApplyCompressed(props []proposalView) error {
 
 // portraitFor returns the portrait text for a question and what to tell the page.
 func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (string, *portraitNote) {
-	if c.MemoryDir == "" {
+	if !memoryOn(c) {
 		return "", nil
 	}
 	var about string
@@ -231,7 +252,7 @@ func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (str
 
 // extractAfter finds new facts in the exchange in the background and tells the page.
 func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question, answer string) {
-	if c.MemoryDir == "" || c.MemoryOff {
+	if !memoryOn(c) || c.MemoryOff {
 		return
 	}
 	go func() {
@@ -258,8 +279,13 @@ func portraitErr(err error) error {
 	switch {
 	case err == nil:
 		return nil
-	case errors.Is(err, errNoPortraitDir):
+	case errors.Is(err, errNoPortraitDir), errors.Is(err, errNoPortraitServer):
 		return err
+	case errors.Is(err, portrait.ErrConflict):
+		return errors.New("портрет меняли на другом устройстве одновременно с Вами — повторите")
+	case errors.Is(err, kbserver.ErrUnreachable), errors.Is(err, kbserver.ErrUnauthorized), errors.Is(err, kbserver.ErrNotKB),
+		errors.Is(err, kbserver.ErrServerError), errors.Is(err, kbserver.ErrRedirect), errors.Is(err, kbserver.ErrTooLarge):
+		return humanErr{"kb-сервер портрета: " + serverMessage(err), err}
 	case errors.Is(err, portraitfile.ErrCorrupt):
 		return errors.New("файл портрета испорчен — окно его не перезапишет; поправьте или уберите portrait.json в папке портрета")
 	case errors.Is(err, domain.ErrFactExists):

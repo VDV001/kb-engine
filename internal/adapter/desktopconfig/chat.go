@@ -57,6 +57,9 @@ type Chat struct {
 	// MemoryDir — папка портрета «Что DVK помнит обо мне» (#479); пусто —
 	// портрет не ведется.
 	MemoryDir string `json:"memoryDir,omitempty"`
+	// MemoryServer — id источника-kb-сервера, где лежит портрет; пусто — в
+	// MemoryDir. Сервер главнее папки: выбран — портрет на нем.
+	MemoryServer string `json:"memoryServer,omitempty"`
 	// MemoryOff — не разбирать ответы на новое о человеке.
 	MemoryOff bool `json:"memoryOff,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
@@ -74,10 +77,17 @@ func (c Chat) WithDefaults() Chat {
 	return c
 }
 
-// memoryDirOK: пусто — портрет не ведется, иначе абсолютный путь без управляющих символов.
-func memoryDirOK(dir string) bool {
-	return dir == "" || filepath.IsAbs(dir) && utf8.RuneCountInString(dir) <= 1024 &&
-		strings.IndexFunc(dir, unicode.IsControl) < 0
+// checkMemory: папка — пусто или абсолютный путь, сервер — пусто или id
+// источника; оба без управляющих символов.
+func (c Chat) checkMemory() error {
+	if c.MemoryDir != "" && (!filepath.IsAbs(c.MemoryDir) || utf8.RuneCountInString(c.MemoryDir) > 1024 ||
+		strings.IndexFunc(c.MemoryDir, unicode.IsControl) >= 0) {
+		return fmt.Errorf("%w: папка портрета %q", ErrChatSettings, c.MemoryDir)
+	}
+	if utf8.RuneCountInString(c.MemoryServer) > 64 || strings.IndexFunc(c.MemoryServer, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: kb-сервер портрета %q", ErrChatSettings, c.MemoryServer)
+	}
+	return nil
 }
 
 // Check validates the settings: адрес — то же правило, что у kb-сервера
@@ -96,8 +106,8 @@ func (c Chat) Check() error {
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
-	if !memoryDirOK(c.MemoryDir) {
-		return fmt.Errorf("%w: папка портрета %q", ErrChatSettings, c.MemoryDir)
+	if err := c.checkMemory(); err != nil {
+		return err
 	}
 	switch c.Accent {
 	case "", "en-US", "en-GB":
