@@ -1922,9 +1922,11 @@ function renderChatNote() {
   const s = chatState.settings;
   if (!s) return;
   const who = s.effectiveMode === "tools" ? "модель сама ищет и читает документы" : "окно находит документы и отдает их модели";
+  // Портрет идет в каждый чат — человек видит, что он уходит туда же, куда документы.
+  const what = memOn(memState.p) ? "документы и портрет" : "документы";
   showChatNote(s.local
-    ? `${s.model} на этом Маке: документы никуда не уходят · ${who}`
-    : `${s.model}: найденные документы уходят провайдеру модели · ${who}`);
+    ? `${s.model} на этом Маке: ${what} никуда не уходят · ${who}`
+    : `${s.model}: найденные ${what} уходят провайдеру модели · ${who}`);
 }
 const showChatNote = (t) => ($("#chat-note").textContent = t);
 // chatWhen is a short date for the tooltip: сегодня — время, иначе день.
@@ -2458,6 +2460,9 @@ const memServers = () => state.known.filter((s) => s.kind === "server");
 const approvedFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => !f.pending);
 const pendingFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => f.pending);
 async function loadPortrait() {
+  try { return await loadPortraitOnly(); } finally { renderChatNote(); } // подпись под чатом знает, ведется ли портрет
+}
+async function loadPortraitOnly() {
   if (!native() || !native().Portrait) return;
   if (native().Sources) state.known = ((await native().Sources().catch(() => null)) || { sources: state.known }).sources || [];
   memState.err = "";
@@ -2486,6 +2491,9 @@ function renderMemSettings() {
       : "Выберите kb-сервер — портрет переедет туда не сам: факты из папки останутся в ней."
     : dir ? "Файл с правами 0600: читать его может только Ваш пользователь macOS. Папка в iCloud Drive — и портрет будет на всех Ваших Маках."
       : "Выберите папку — и DVK начнет помнить о Вас. Пока папки нет, портрет не ведется.");
+  $("#mem-privacy").textContent = s.local
+    ? "Модель на этом Маке: портрет никуда не уходит."
+    : "С облачной моделью одобренный портрет уходит ее провайдеру в каждом чате, вместе с вопросом. Разбор ответов отправляет туда же вопрос, ответ и портрет.";
   $("#mem-suggest").checked = !s.memoryQuiet;
   $("#mem-extract").checked = !s.memoryOff;
   for (const id of ["#mem-suggest", "#mem-extract"]) $(id).disabled = !(dir || srv);
