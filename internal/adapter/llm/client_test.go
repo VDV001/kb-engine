@@ -198,3 +198,65 @@ func TestStream_Errors(t *testing.T) {
 		t.Fatalf("err = %v, want ErrInsecureURL", err)
 	}
 }
+
+// Поток, оборвавшийся до [DONE] и без finish_reason, — отказ: урезанный ответ
+// не сохраняется как целый (ревью #463).
+func TestStream_TruncatedIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Срок —\"}}]}\n\n")
+	}))
+	defer srv.Close()
+	_, err := llm.Client{BaseURL: srv.URL, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if !errors.Is(err, llm.ErrServer) {
+		t.Fatalf("err = %v, want ErrServer", err)
+	}
+	// finish_reason без [DONE] — поток кончился честно.
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"Срок 30\"},\"finish_reason\":\"stop\"}]}\n\n")
+	}))
+	defer srv2.Close()
+	got, err := llm.Client{BaseURL: srv2.URL, Model: "m", HTTP: srv2.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if err != nil || got.Content != "Срок 30" {
+		t.Fatalf("finish_reason: %+v, %v", got, err)
+	}
+}
+
+// Сервер, что на stream: true ответил обычным JSON, — ответ целиком, а не отказ.
+func TestStream_JSONAnswerFallsBack(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"Ответ целиком"}}]}`)
+	}))
+	defer srv.Close()
+	var seen []string
+	got, err := llm.Client{BaseURL: srv.URL, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(s string) { seen = append(seen, s) })
+	if err != nil || got.Content != "Ответ целиком" || len(seen) != 1 {
+		t.Fatalf("got %+v, %v, seen %q", got, err, seen)
+	}
+}
+
+// Параллельные вызовы без index (он читается как 0), но с разными id — два
+// вызова, а не склейка аргументов.
+func TestStream_ParallelCallsWithoutIndex(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range []string{
+			`data: {"choices":[{"delta":{"tool_calls":[{"id":"a","function":{"name":"search","arguments":"{\"q\":\"x\"}"}}]}}]}`,
+			`data: {"choices":[{"delta":{"tool_calls":[{"id":"b","function":{"name":"search","arguments":"{\"q\":\"y\"}"}}]}}]}`,
+			`data: [DONE]`,
+		} {
+			_, _ = io.WriteString(w, line+"\n\n")
+		}
+	}))
+	defer srv.Close()
+	got, err := llm.Client{BaseURL: srv.URL, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if err != nil || len(got.ToolCalls) != 2 || got.ToolCalls[0].Arguments != `{"q":"x"}` || got.ToolCalls[1].ID != "b" {
+		t.Fatalf("got %+v, %v", got.ToolCalls, err)
+	}
+}
