@@ -319,3 +319,24 @@ func TestChat_ExtractDoesNotHoldPortrait(t *testing.T) {
 		t.Fatal("правка ждет разбора предыдущего ответа")
 	}
 }
+
+// Портрет на kb-сервере, который эта версия окна не читает, — беда сервера,
+// а не «файла в папке» (ревью #483): человек не ищет несуществующий файл.
+func TestChat_PortraitServerUnreadable(t *testing.T) {
+	d, _, _ := newPortraitDesk(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"facts":[{"id":"x","section":"новый-раздел","text":"t","status":"approved"}]}`))
+	}))
+	defer srv.Close()
+	const id = "server-ab12cd34"
+	if err := d.settings.SetSources(serverList(id, srv.URL, true), nil, map[string]string{id: srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryServer: id}, ""); err != nil {
+		t.Fatal(err)
+	}
+	_, err := d.Portrait()
+	if err == nil || !strings.Contains(err.Error(), "kb-сервер") || strings.Contains(err.Error(), "папке") {
+		t.Fatalf("непрочитанный портрет сервера: %v", err)
+	}
+}
