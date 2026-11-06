@@ -251,13 +251,6 @@ func loadSyncInputs(from, ledgerPath string) (syncInputs, error) {
 	if err != nil {
 		return syncInputs{}, err
 	}
-	// В листе «Расходы» нет колонок для второй стороны обмена: синк записал бы
-	// строку без нее, а правка этой строки в Excel стерла бы ее из журнала.
-	for _, r := range recs {
-		if _, ok := r.Transaction().Received(); ok {
-			return syncInputs{}, fmt.Errorf("журнал с обменом валюты (%s) с книгой не синхронизируется: в листе «Расходы» нет второй стороны, и она потерялась бы", r.Transaction().ID())
-		}
-	}
 	led, err := financexlsx.Read(from, time.Now)
 	if err != nil {
 		return syncInputs{}, err
@@ -401,6 +394,25 @@ func amountText(tx domain.Transaction) string {
 		return tx.Amount().String() + " " + c.Code()
 	}
 	return tx.Amount().String()
+}
+
+// exchangeText is the second side of an exchange as a person reads it —
+// «получено 100.00 USD на «Wise» · курс 90.00», — and "" for any other record.
+// Курс только когда ровно одна сторона в валюте книги (domain.ExchangeRate).
+func exchangeText(tx domain.Transaction) string {
+	r, ok := tx.Received()
+	if !ok {
+		return ""
+	}
+	got := r.Amount().String()
+	if c := r.Currency(); !c.IsBase() {
+		got += " " + c.Code()
+	}
+	out := fmt.Sprintf("получено %s на «%s»", got, r.Account())
+	if rate, ok := tx.ExchangeRate(); ok {
+		out += " · курс " + finance.RateText(rate)
+	}
+	return out
 }
 
 func describeTx(tx domain.Transaction) string {

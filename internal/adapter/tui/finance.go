@@ -110,6 +110,10 @@ func (m Model) renderFinances() string {
 				styleDim.Render("получено"), human(c.Income)+fmt.Sprintf(" (%d)", c.IncomeCount))
 		}
 	}
+	// Обмен валюты — отдельной строкой с курсом записи, не в тратах (#432).
+	for _, tx := range s.Exchanges {
+		b.WriteString(exchangeLine(tx) + "\n")
+	}
 	b.WriteString("\n")
 
 	// «Расходы по …», а не «по …»: рядом стоят балансы счетов, и подпись «по
@@ -215,3 +219,22 @@ const (
 	hintWorkbook      = "книга Учёт_финансов.xlsx не тронута — kbengine fin sync"
 	hintWorkbookKey   = "книга Учёт_финансов.xlsx отстала — s синхронизирует"
 )
+
+// exchangeLine is one currency exchange on the finances screen: когда, сколько
+// и откуда ушло, сколько и куда пришло, курс записи (если одна сторона в
+// валюте книги).
+func exchangeLine(tx domain.Transaction) string {
+	r, _ := tx.Received()
+	side := func(m domain.Money, c domain.Currency) string {
+		if c.IsBase() {
+			return human(m)
+		}
+		return human(m) + " " + c.Code()
+	}
+	line := fmt.Sprintf("%s %s %s %s → %s %s", styleDim.Render("обмен"), tx.Date().Format("02.01"),
+		side(tx.Amount(), tx.Currency()), tx.Account(), side(r.Amount(), r.Currency()), r.Account())
+	if rate, ok := tx.ExchangeRate(); ok {
+		line += styleDim.Render(" · курс " + finance.RateText(rate))
+	}
+	return line
+}

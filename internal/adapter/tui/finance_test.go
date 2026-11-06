@@ -4,6 +4,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/daniil/kb-engine/internal/adapter/tui"
@@ -150,5 +151,30 @@ func TestFinancesOmitsAnEmptySpendLineForACurrency(t *testing.T) {
 	}
 	if !strings.Contains(view, "получено") || !strings.Contains(view, "50,00") {
 		t.Errorf("доход в USD не показан\n%s", view)
+	}
+}
+
+// Обмен валюты на экране финансов — отдельной строкой с курсом записи (#432).
+func TestFinancesListsExchanges(t *testing.T) {
+	usd, err := domain.NewCurrency("USD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tx, err := domain.NewTransaction(domain.TransactionParams{
+		ID: "01X", Kind: domain.KindExpense, Date: time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
+		Amount: domain.NewMoney(900000), Category: "Прочее", Subcategory: "Перевод себе", Account: "Сбербанк",
+		Received: domain.ReceivedParams{Amount: domain.NewMoney(10000), Currency: usd, Account: "Wise"},
+		Now:      func() time.Time { return time.Date(2026, 4, 7, 0, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sampleSummary()
+	sum.Exchanges = []domain.Transaction{tx}
+	view := press(tui.NewModel(nil).WithFinances(&stubFinances{sum: sum}), tab()).View()
+	for _, want := range []string{"обмен", "Сбербанк", "USD", "Wise", "курс 90.00"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("finances view is missing %q\n--- view ---\n%s", want, view)
+		}
 	}
 }
