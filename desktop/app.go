@@ -29,8 +29,9 @@ type App struct {
 	ctx      context.Context
 	files    fileChecker
 	settings *folderSettings
-	listen   *dictation // диктовка в поле чата (listen.go)
-	voice    *speaker   // голос ответа в разговоре без рук (speak.go)
+	listen   *dictation  // диктовка в поле чата (listen.go)
+	voice    *speaker    // голос ответа в разговоре без рук (speak.go)
+	google   *googleDesk // подключения Google (googleconn.go)
 	index    *indexer
 	chat     *chatDesk // nil — чата нет (тесты без него)
 	run      func(name string, args ...string) error
@@ -174,6 +175,21 @@ func (a *App) StopSpeaking() {
 	}
 }
 
+// ConnectGoogle signs in to Google with the person's OAuth client: окно
+// открывает страницу согласия в браузере и ждет ответа до 5 минут.
+func (a *App) ConnectGoogle(clientID, secret string) (connRow, error) {
+	if a.google == nil || a.google.open == nil {
+		return connRow{}, errors.New("подключение Google — в окне приложения")
+	}
+	return a.google.Connect(clientID, secret)
+}
+
+// SetConnectionEnabled turns a connection of the window on or off.
+func (a *App) SetConnectionEnabled(id string, on bool) error { return a.google.SetEnabled(id, on) }
+
+// RemoveConnection deletes a connection and its secrets.
+func (a *App) RemoveConnection(id string) error { return a.google.Remove(id) }
+
 // PickChatFile asks for a file to attach to the question; "" — передумали.
 func (a *App) PickChatFile() (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Приложить к вопросу"})
@@ -211,6 +227,9 @@ func (a *App) startup(ctx context.Context) {
 	}
 	if a.voice != nil {
 		a.voice.done = func() { runtime.EventsEmit(ctx, "speech") }
+	}
+	if a.google != nil {
+		a.google.open = func(u string) { runtime.BrowserOpenURL(ctx, u) }
 	}
 }
 

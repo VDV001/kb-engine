@@ -12,6 +12,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/google"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 	"github.com/daniil/kb-engine/internal/adapter/weblink"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -117,10 +119,10 @@ func attachErr(ref string, err error) error {
 // useAttachments wires reading of attached documents: файл из папок окна —
 // через индекс, файл вне их — с диска, ссылка — weblink, найденное — тем же
 // чтением, что у модели.
-func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web weblink.Client) {
+func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web weblink.Client, gd *googleDesk) {
 	d.attach = func(ctx context.Context, ref string) (chat.Doc, error) {
 		if link, ok := strings.CutPrefix(ref, "url:"); ok {
-			return readLink(ctx, ext, web, ref, link)
+			return readLink(ctx, ext, web, gd, ref, link)
 		}
 		if p, ok := strings.CutPrefix(ref, "file:"); ok {
 			if text, err := files.Read(p); err == nil {
@@ -135,11 +137,41 @@ func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web
 	}
 }
 
-func readLink(ctx context.Context, ext extraction, web weblink.Client, ref, link string) (chat.Doc, error) {
+func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googleDesk, ref, link string) (chat.Doc, error) {
+	// Документ Google — через подключение (закрытые тоже); подключения нет —
+	// как открытая страница.
+	if gd != nil && google.FileID(link) != "" {
+		d, err := gd.Read(ctx, link)
+		if err == nil {
+			text := d.Text
+			if d.Raw != nil {
+				if text, err = extractBytes(ctx, ext, d.Raw, d.Ext); err != nil {
+					return chat.Doc{}, err
+				}
+			}
+			return chat.Doc{Ref: ref, Title: d.Name, Source: googleSource(gd), Text: text}, nil
+		}
+		if !errors.Is(err, errNoGoogle) {
+			// Подключенному аккаунту документ не отдан (нет доступа, API не
+			// включен, не документ) — пробуем как открытую ссылку, как до
+			// подключения; не вышло и так — причина от Google (ревью #466).
+			p, perr := web.Fetch(ctx, link)
+			if perr != nil {
+				return chat.Doc{}, err
+			}
+			return pageDoc(ctx, ext, ref, link, p)
+		}
+	}
 	p, err := web.Fetch(ctx, link)
 	if err != nil {
 		return chat.Doc{}, err
 	}
+	return pageDoc(ctx, ext, ref, link, p)
+}
+
+// pageDoc turns a page read by its link into a chat document.
+func pageDoc(ctx context.Context, ext extraction, ref, link string, p weblink.Page) (chat.Doc, error) {
+	var err error
 	text := p.Text
 	if p.Raw != nil {
 		if text, err = extractBytes(ctx, ext, p.Raw, p.Ext); err != nil {
@@ -151,6 +183,16 @@ func readLink(ctx context.Context, ext extraction, web weblink.Client, ref, link
 		host = u.Host
 	}
 	return chat.Doc{Ref: ref, Title: p.Title, Source: host, Text: text}, nil
+}
+
+// googleSource names the connection a Google document came through.
+func googleSource(gd *googleDesk) string {
+	for _, c := range gd.settings.snapshot().cfg.Connections {
+		if c.Kind == desktopconfig.ConnGoogle && c.Enabled {
+			return c.Name
+		}
+	}
+	return "Google"
 }
 
 // readDiskFile reads a file the person picked outside the window's folders:
