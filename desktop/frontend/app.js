@@ -1660,10 +1660,12 @@ function paintPartial() {
   const el = $("#chat-partial");
   if (!el) return;
   const t = chatState.partial;
+  // Внизу ли человек — до обновления: длинный кусок иначе сам «уводит» вверх.
+  const log = $("#chat-log");
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   el.classList.toggle("streaming", !!t);
   el.innerHTML = t ? answerHTML(t) : `<span class="building"></span>ищу в документах и думаю…`;
-  const log = $("#chat-log");
-  if (log.scrollHeight - log.scrollTop - log.clientHeight < 80) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
+  if (atBottom) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
 }
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
