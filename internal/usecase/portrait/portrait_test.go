@@ -254,3 +254,26 @@ func TestService_Propose(t *testing.T) {
 		t.Fatalf("повтор = %v", err)
 	}
 }
+
+// «Вернуть» после «Забыть» возвращает тот же факт: id, источник, дату и
+// одобрение (ревью #482), а не новый «добавлено вручную».
+func TestService_Restore(t *testing.T) {
+	ctx := t.Context()
+	s, st := newSvc(t, &fakeModel{})
+	at := now.Add(-48 * time.Hour)
+	f, _ := domain.NewFact("x7", sect(t, "prefs"), "Отвечать коротко", "из чата 05.11", domain.FactApproved, at)
+	st.p, _ = st.p.Add(f)
+	if err := s.Remove(ctx, "x7"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Restore(ctx, f); err != nil {
+		t.Fatal(err)
+	}
+	got := st.p.Facts()
+	if len(got) != 1 || got[0].ID() != "x7" || got[0].Source() != "из чата 05.11" || !got[0].At().Equal(at) || !got[0].Approved() {
+		t.Fatalf("вернулось: %+v", got)
+	}
+	if err := s.Restore(ctx, f); !errors.Is(err, domain.ErrFactExists) {
+		t.Fatalf("второй возврат = %v", err)
+	}
+}
