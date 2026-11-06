@@ -482,3 +482,37 @@ func TestEveryAtMost(t *testing.T) {
 		t.Fatalf("seen %q", got)
 	}
 }
+
+// Облачный голос берет ключ модели чата, только когда чат идет через
+// Vercel AI Gateway: ключ другого провайдера на шлюз не уходит.
+func TestChat_GatewayKey(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	const secret = "gw-not-a-real-key"
+	if err := d.SetSettings(desktopconfig.Chat{URL: "https://api.openai.com/v1", Model: "gpt-5"}, secret); err != nil {
+		t.Fatal(err)
+	}
+	if k, err := d.gatewayKey(); err == nil || k != "" {
+		t.Fatalf("ключ OpenAI отдан шлюзу: %q", k)
+	}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "https://ai-gateway.vercel.sh/v1", Model: "m/m"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if k, err := d.gatewayKey(); err != nil || k != secret {
+		t.Fatalf("ключ шлюза = %q, %v", k, err)
+	}
+}
+
+// Акцент на Маке — английский голос нужного произношения из списка say;
+// звуковые эффекты (Bells, Bad News) голосом не считаются.
+func TestEnglishVoice(t *testing.T) {
+	out := "Bad News            en_US    # Hello\nBells               en_US    # Hello\nSamantha            en_US    # Hello\nDaniel              en_GB    # Hello\n"
+	if v := englishVoiceIn(out, "en-US"); v != "Samantha" {
+		t.Fatalf("en-US = %q", v)
+	}
+	if v := englishVoiceIn(out, "en-GB"); v != "Daniel" {
+		t.Fatalf("en-GB = %q", v)
+	}
+	if v := englishVoiceIn("Bells               en_US    # Hello\n", "en-US"); v != "" {
+		t.Fatalf("эффект выбран голосом: %q", v)
+	}
+}
