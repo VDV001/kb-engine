@@ -297,8 +297,7 @@ async function searchSources(enc, signal) {
 // «Все» всегда первая; остальные — из настроек окна (config.json, tabs):
 // вкладка по типу (kb — записи базы, doc/code/image — файлы) или по источнику
 // (его записи и файлы). Без настройки — DEFAULT_TABS, тот же набор, что
-// desktopconfig.DefaultTabs. Фильтр источника в строке применяется ДО среза
-// «Все» до пяти записей, иначе источник ниже пятой строки показал бы пустоту.
+// desktopconfig.DefaultTabs.
 const DEFAULT_TABS = [
   { name: "База знаний", kind: "type", value: "kb" },
   { name: "Документы", kind: "type", value: "doc" },
@@ -326,7 +325,10 @@ const tabItems = (t, kb, files) =>
     : [...kb.filter((e) => e._src === t.value).map(kbItem), ...files.filter((f) => f._src === t.value).map(fileItem)];
 const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey)];
 function itemsOf(key, kb, files) {
-  if (key === "all") return [...kb.slice(0, 5).map(kbItem), ...files.map(fileItem)];
+  // «Все» — объединение вкладок: все записи базы и все файлы, число равно сумме
+  // (решение владельца 06.11; до того база резалась до 5 и «Все» показывало
+  // меньше «Базы знаний»).
+  if (key === "all") return [...kb.map(kbItem), ...files.map(fileItem)];
   const t = state.tabs.find((x) => tabKey(x) === key);
   return t ? tabItems(t, kb, files) : [];
 }
@@ -350,7 +352,7 @@ function renderTabs() {
     b.append(name + " ", document.createElement("i"));
     nav.insertBefore(b, ink);
   };
-  btn("all", "Все", "Первые 5 записей базы и найденные файлы папок");
+  btn("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
   state.tabs.filter(visibleTab).forEach((t) => btn(tabKey(t), t.name, tabTip(t)));
   if (!tabKeys().includes(state.tab)) state.tab = "all";
 }
@@ -378,7 +380,7 @@ function render() {
   const only = state.filter;
   const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
   const files = only ? state.files.filter((f) => f._src === only) : state.files;
-  // Счетчик — длина того же списка, что покажет вкладка («Все» режет базу до 5).
+  // Счетчик — длина того же списка, что покажет вкладка.
   document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
 
