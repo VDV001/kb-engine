@@ -14,11 +14,14 @@ import (
 
 // indexStatus — что окно показывает о сборке индекса.
 type indexStatus struct {
-	Building bool   `json:"building"`
-	Indexed  int    `json:"indexed"`
-	Skipped  int    `json:"skipped"`
-	Reused   int    `json:"reused"` // взяты из снимка без чтения
-	Error    string `json:"error,omitempty"`
+	Building bool `json:"building"`
+	Indexed  int  `json:"indexed"`
+	Skipped  int  `json:"skipped"`
+	// SkippedFiles — какие файлы не прочитаны и почему: панель «Не прочитано»
+	// по кнопке «подробнее» (первые 100, Skipped считает все).
+	SkippedFiles []skippedRow `json:"skippedFiles,omitempty"`
+	Reused       int          `json:"reused"` // взяты из снимка без чтения
+	Error        string       `json:"error,omitempty"`
 	// Recognizing — идет проход распознавания PDF и картинок: сколько из
 	// скольких. Первый проход длится десятки минут, и без счета он неотличим
 	// от зависания.
@@ -192,7 +195,7 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 			}
 		}
 		if gen == x.gen {
-			x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, Error: err.Error()}
+			x.status = indexStatus{Indexed: x.status.Indexed, Skipped: x.status.Skipped, SkippedFiles: x.status.SkippedFiles, Error: err.Error()}
 		}
 	default:
 		log.Printf("files: indexed %d (skipped %d, reused %d) in %s", st.Indexed, st.Skipped, st.Reused, time.Since(start).Round(time.Millisecond))
@@ -205,7 +208,7 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 		}
 		x.src = src
 		if gen == x.gen {
-			x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, Reused: st.Reused}
+			x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, SkippedFiles: skippedRows(st.SkippedFiles), Reused: st.Reused}
 		}
 		x.extractPending(ctx, src) // в своей горутине: замок не держит
 	}
@@ -230,4 +233,20 @@ func (x *indexer) currentSource() *localfiles.Source {
 	x.mu.Lock()
 	defer x.mu.Unlock()
 	return x.src
+}
+
+// skippedRow is one unreadable file as the window shows it: причина словами
+// человека (localfiles.Explain) и исходная ошибка — по ней видно, что именно.
+type skippedRow struct {
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
+	Detail string `json:"detail"`
+}
+
+func skippedRows(files []filesearch.SkippedFile) []skippedRow {
+	out := make([]skippedRow, 0, len(files))
+	for _, f := range files {
+		out = append(out, skippedRow{Path: f.Path, Reason: localfiles.Explain(f.Err), Detail: f.Err.Error()})
+	}
+	return out
 }

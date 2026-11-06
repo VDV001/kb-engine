@@ -275,7 +275,7 @@ func (s *Source) ReadText(path string) (string, error) {
 		return "", err
 	}
 	if !utf8.Valid(b) {
-		return "", fmt.Errorf("not UTF-8 text: %q", path)
+		return "", fmt.Errorf("%w: %q", errNotUTF8, path)
 	}
 	return string(b), nil
 }

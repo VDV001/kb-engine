@@ -3,6 +3,7 @@ package filesearch_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -193,6 +194,10 @@ func TestService_BuildAndSearch(t *testing.T) {
 	if st.Indexed != 2 || st.Skipped != 1 {
 		t.Fatalf("stats = %+v", st)
 	}
+	// И назван: окно показывает, какой файл и почему (кнопка «подробнее»).
+	if len(st.SkippedFiles) != 1 || st.SkippedFiles[0].Path != "/w/c.md" || st.SkippedFiles[0].Err == nil {
+		t.Fatalf("SkippedFiles = %+v", st.SkippedFiles)
+	}
 
 	hits, err := svc.Search("договор", 5)
 	if err != nil {
@@ -201,7 +206,7 @@ func TestService_BuildAndSearch(t *testing.T) {
 	if len(hits) != 1 || hits[0].Doc.Path() != "/w/a.md" || hits[0].Snippet != "Подписали договора" {
 		t.Fatalf("hits = %+v", hits)
 	}
-	if got := svc.Stats(); got != st {
+	if got := svc.Stats(); !reflect.DeepEqual(got, st) {
 		t.Fatalf("Stats() = %+v, want %+v", got, st)
 	}
 	if text, err := svc.Read("/w/b.md"); err != nil || text != "другое" {
