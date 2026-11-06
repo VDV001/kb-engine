@@ -222,6 +222,21 @@
 
     <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
     <ul class="conn-list" id="conn-list" data-view="conn"></ul>
+    <div class="conn-add" data-view="conn">
+      <button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
+      <form class="conn-google" id="conn-google" hidden>
+        <p class="muted">Окно попросит у Google только чтение Диска. Нужен свой клиент OAuth — один раз, около трех минут:</p>
+        <ol class="muted conn-steps">
+          <li>Откройте <button type="button" class="lnk" data-open-url="https://console.cloud.google.com/apis/library/drive.googleapis.com">Google Drive API</button> и включите его в своем проекте.</li>
+          <li>На <button type="button" class="lnk" data-open-url="https://console.cloud.google.com/apis/credentials/consent">экране согласия</button> оставьте режим «Testing» и добавьте свой адрес в тестовые пользователи.</li>
+          <li>В <button type="button" class="lnk" data-open-url="https://console.cloud.google.com/apis/credentials">Credentials</button> создайте OAuth client ID вида «Desktop app» и вставьте сюда его Client ID и Client secret.</li>
+        </ol>
+        <label>Client ID<input id="conn-g-id" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+        <label>Client secret<input id="conn-g-secret" type="password" autocomplete="off" spellcheck="false"></label>
+        <button class="btn primary" type="submit" id="conn-g-go">Подключить — откроется браузер</button>
+        <p class="muted" id="conn-g-note" role="status"></p>
+      </form>
+    </div>
 
     <p class="muted" data-view="chat">Модель, которая отвечает в чате. Ключ хранится в Связке ключей этого Мака и в файлы не попадает.</p>
     <form class="chat-model" id="chat-model" data-view="chat">

@@ -808,21 +808,63 @@ async function openSettings(view = "sources") {
 }
 // renderConnections lists the window's accesses; «Изменить» ведет в раздел,
 // где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
-const CONN_KIND = { model: "модель", kbserver: "kb-сервер" };
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск" };
+let connConfirm = null;
 async function renderConnections() {
   const list = $("#conn-list");
   if (!native() || !native().Connections) { list.innerHTML = `<li class="muted">Подключения видны в окне приложения.</li>`; return; }
   let rows = [];
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(String(e))}</li>`; return; }
-  list.innerHTML = rows.map((r) => `<li>
+  list.innerHTML = rows.map((r) => {
+    const acts = r.own
+      ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
+      : `<button class="btn" data-go-sec="${esc(r.section)}">Изменить</button>`;
+    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.
+      <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
+    return `<li class="${r.own && !r.enabled ? "off" : ""}">
     <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
     <span class="st${r.ok ? " ok" : ""}">${esc(r.status)}</span>
     <span class="d">${esc(r.detail)} · использует: ${esc((r.usedBy || []).join(", "))}</span>
-    <span class="conn-acts"><button class="btn" data-go-sec="${esc(r.section)}">Изменить</button></span></li>`).join("");
+    <span class="conn-acts">${acts}</span>${confirm}</li>`;
+  }).join("");
 }
-$("#conn-list").addEventListener("click", (e) => {
+$("#conn-list").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-go-sec]");
-  if (b) openSettings(b.dataset.goSec);
+  if (b) return openSettings(b.dataset.goSec);
+  const t = e.target.closest("[data-conn-toggle]");
+  try {
+    if (t) await native().SetConnectionEnabled(t.dataset.connToggle, t.dataset.on === "true");
+    else if (e.target.closest("[data-conn-del]")) connConfirm = e.target.closest("[data-conn-del]").dataset.connDel;
+    else if (e.target.closest("[data-conn-del-no]")) connConfirm = null;
+    else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; }
+    else return;
+  } catch (err) { showError(String(err)); }
+  renderConnections();
+});
+$("#conn-add-google").addEventListener("click", () => {
+  const f = $("#conn-google");
+  f.hidden = !f.hidden;
+  $("#conn-add-google").setAttribute("aria-expanded", String(!f.hidden));
+  if (!f.hidden) $("#conn-g-id").focus();
+});
+$("#conn-google").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!native() || !native().ConnectGoogle) return void ($("#conn-g-note").textContent = "Подключение Google — в окне приложения.");
+  const go = $("#conn-g-go");
+  go.disabled = true;
+  $("#conn-g-note").textContent = "Жду согласия в браузере (до 5 минут)…";
+  try {
+    const r = await native().ConnectGoogle($("#conn-g-id").value, $("#conn-g-secret").value);
+    $("#conn-g-note").textContent = "Подключено: " + r.name;
+    $("#conn-g-secret").value = "";
+    $("#conn-google").hidden = true;
+    $("#conn-add-google").setAttribute("aria-expanded", "false");
+  } catch (err) {
+    $("#conn-g-note").textContent = String(err);
+  } finally {
+    go.disabled = false;
+    renderConnections();
+  }
 });
 // Состояние серверов приходит после списка: панель не ждет сеть. Сливается в
 // черновик по id — поля состояния в сохранение не входят и dirty не трогают.

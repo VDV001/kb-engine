@@ -14,22 +14,25 @@ import (
 // модель чата и kb-серверы, — и раздел показывает их в одном месте, ведя
 // править туда, где они живут.
 //
-// ponytail: своего хранилища у подключений нет. Потолок: доступ без
-// источника (вход Google, сервер распознавания речи) показать негде. Путь:
-// список подключений в config.json, секреты — в Связке по id подключения;
-// источники и чат ссылаются на id.
+// Свое хранилище (config.json + Связка по id) есть у подключений, которым
+// больше негде жить: Google. Модель чата и kb-серверы показываются из своих
+// мест.
 
 // connRow is one access the window holds. Ключ и токен сюда не попадают —
 // только признак, что они есть.
 type connRow struct {
 	ID      string   `json:"id"`
-	Kind    string   `json:"kind"` // model | kbserver
+	Kind    string   `json:"kind"` // model | kbserver | google
 	Name    string   `json:"name"`
 	Detail  string   `json:"detail"`
 	Status  string   `json:"status"`
 	OK      bool     `json:"ok"`
 	UsedBy  []string `json:"usedBy"`
 	Section string   `json:"section"` // раздел настроек, где подключение правится
+	// Own — подключение живет здесь (Google): включить, выключить, удалить —
+	// в этом разделе. Остальные правятся там, где ими пользуются.
+	Own     bool `json:"own,omitempty"`
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // Connections lists the window's accesses: модель чата, затем kb-серверы в
@@ -44,7 +47,29 @@ func (f *folderSettings) Connections() []connRow {
 			rows = append(rows, f.serverConn(s))
 		}
 	}
+	for _, c := range cfg.Connections {
+		if c.Kind == desktopconfig.ConnGoogle {
+			rows = append(rows, f.googleConn(c))
+		}
+	}
 	return rows
+}
+
+func (f *folderSettings) googleConn(c desktopconfig.Connection) connRow {
+	r := connRow{ID: c.ID, Kind: "google", Name: c.Name, Detail: "только чтение Диска · " + c.Account,
+		UsedBy: []string{"ссылки Google в чате"}, Section: "conn", Own: true, Enabled: c.Enabled}
+	_, err := f.tokens.Get(refreshAccount(c.ID))
+	switch {
+	case !c.Enabled:
+		r.Status = "выключено"
+	case err == nil:
+		r.Status, r.OK = "подключено", true
+	case !errors.Is(err, keychain.ErrNotFound):
+		r.Status = keychainNote
+	default:
+		r.Status = "нет входа — подключите заново"
+	}
+	return r
 }
 
 func (f *folderSettings) modelConn(c desktopconfig.Chat) connRow {
