@@ -489,6 +489,11 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stdout, "%s — не в итогах: расходы %s (%d), доходы %s (%d)\n",
 			c.Currency, c.Expenses, c.ExpenseCount, c.Income, c.IncomeCount)
 	}
+	// Обмен валюты — отдельной строкой с курсом записи, а не в тратах (#432).
+	for _, tx := range s.Exchanges {
+		fmt.Fprintf(stdout, "обмен %s: %s с «%s», %s\n",
+			tx.Date().Format(time.DateOnly), amountText(tx), tx.Account(), exchangeText(tx))
+	}
 	writeBreakdown(stdout, "по категориям", s.ByCategory)
 	writeBreakdown(stdout, "по счетам", s.ByAccount)
 	return 0

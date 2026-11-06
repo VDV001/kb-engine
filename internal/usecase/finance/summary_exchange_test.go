@@ -42,14 +42,14 @@ func TestSummarize_exchangesListedApart(t *testing.T) {
 	}
 	s := finance.Summarize(recs)
 	if len(s.Exchanges) != 2 || s.Exchanges[0].ID() != "01B" || s.Exchanges[1].ID() != "01C" {
-		t.Fatalf("Exchanges = %v, want 01B, 01C по датам", ids(s.Exchanges))
+		t.Fatalf("Exchanges = %v, want 01B, 01C по датам", exchangeIDs(s.Exchanges))
 	}
 	if s.Expenses != domain.NewMoney(35000) || s.ExpenseCount != 1 {
 		t.Fatalf("траты = %v (%d): обмен попал в траты", s.Expenses, s.ExpenseCount)
 	}
 }
 
-func ids(txs []domain.Transaction) []string {
+func exchangeIDs(txs []domain.Transaction) []string {
 	out := make([]string, len(txs))
 	for i, tx := range txs {
 		out[i] = tx.ID()

@@ -127,6 +127,10 @@ type Summary struct {
 	// рублёвые суммы и разбивки они не входят: без курса доллар и рубль не
 	// складываются, а с курсом это уже оценка. Пустой список — «таких нет».
 	OtherCurrencies []CurrencyTotal
+	// Exchanges — обмены валюты (переводы себе со второй стороной), в порядке
+	// дат: витрина показывает каждый отдельной строкой с курсом записи (#432).
+	// В траты и разбивки они не входят, как любой перевод себе.
+	Exchanges []domain.Transaction
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
@@ -210,6 +214,9 @@ func Summarize(recs []Record) Summary {
 
 	for _, r := range recs {
 		tx := r.Transaction()
+		if _, ok := tx.Received(); ok {
+			s.Exchanges = append(s.Exchanges, tx)
+		}
 		if s.setAside(tx, other) {
 			continue
 		}
@@ -277,6 +284,14 @@ func Summarize(recs []Record) Summary {
 	for _, k := range slices.Sorted(maps.Keys(byDay)) {
 		s.ByDay = append(s.ByDay, byDay[k])
 	}
+	// Журнал хранится по порядку, но отбор и чужой порядок записей возможны:
+	// обмены — по дате, при равной — по id, чтобы отчет читался одинаково.
+	slices.SortStableFunc(s.Exchanges, func(a, b domain.Transaction) int {
+		if c := a.Date().Compare(b.Date()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID(), b.ID())
+	})
 	return s
 }
 
