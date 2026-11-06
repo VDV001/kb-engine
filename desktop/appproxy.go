@@ -124,11 +124,20 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 	rp.ServeHTTP(w, r)
 }
 
+// builtAppUI returns the embedded витрина, nil when the window was built without
+// it (go test, CI без npm): /app/ тогда говорит «не собрана», а не 404.
+func builtAppUI(fsys fs.FS) fs.FS {
+	if _, err := fs.Stat(fsys, "index.html"); err != nil {
+		return nil
+	}
+	return fsys
+}
+
 // serveAppUI serves the built витрина; незнакомый путь — index.html, маршруты
 // витрины живут в ней самой.
 func serveAppUI(w http.ResponseWriter, r *http.Request, ui fs.FS) {
 	if ui == nil {
-		http.Error(w, "Витрина финансов еще не собрана в окно.", http.StatusServiceUnavailable)
+		http.Error(w, "Витрина финансов не собрана в окно: соберите его через `just desktop`.", http.StatusServiceUnavailable)
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/app/")
