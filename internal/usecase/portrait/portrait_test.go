@@ -221,3 +221,20 @@ func TestService_ConflictRereads(t *testing.T) {
 		})
 	}
 }
+
+// Предложение модели в чате (инструмент «запомнить») ждет одобрения, помнит,
+// откуда взялось, и не повторяет известное.
+func TestService_Propose(t *testing.T) {
+	ctx := t.Context()
+	s, st := newSvc(t, &fakeModel{})
+	f, err := s.Propose(ctx, sect(t, "prefs"), "Отвечать коротко")
+	if err != nil || f.Approved() || f.Source() != "из чата 06.11" {
+		t.Fatalf("предложено: %+v %v", f, err)
+	}
+	if len(st.p.Pending()) != 1 {
+		t.Fatalf("ждут одобрения: %v", st.p.Pending())
+	}
+	if _, err := s.Propose(ctx, sect(t, "prefs"), "Отвечать коротко"); !errors.Is(err, domain.ErrFactExists) {
+		t.Fatalf("повтор = %v", err)
+	}
+}
