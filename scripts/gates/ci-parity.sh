@@ -112,7 +112,17 @@ run_job() {
 	ci.yml:changelog-scope)
 		./scripts/gates/changelog-scope.sh --self-test
 		# Гейт хочет диапазон: в CI это база PR, здесь — точка расхождения с main.
-		./scripts/gates/changelog-scope.sh "$(git merge-base origin/main HEAD)..HEAD"
+		# Он отвечает «какой путь требует записи» (код 1 — «никакой»), а не
+		# «пройдено»: решение то же, что в push.sh — путь назван, а CHANGELOG.md
+		# в ветке не тронут. Прямой вызов краснел на ветке без кода (выпуск 0.35.0).
+		local base culprit touched
+		base="$(git merge-base origin/main HEAD)"
+		culprit="$(./scripts/gates/changelog-scope.sh "$base..HEAD" || true)"
+		touched="$(git log "$base..HEAD" --format=%s -- CHANGELOG.md | grep -cvE '^docs\(changelog\): релиз' || true)"
+		if [ -n "$culprit" ] && [ "$touched" -eq 0 ]; then
+			echo "  ✘ ветка меняет поведение (тронут $culprit), но CHANGELOG.md не тронут"
+			return 1
+		fi
 		;;
 	ci.yml:ci-parity)
 		./scripts/gates/ci-parity.sh --self-test
