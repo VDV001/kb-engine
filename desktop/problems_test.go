@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -132,5 +133,39 @@ func TestIndexer_RecordsUnrecognized(t *testing.T) {
 	x.noteRecognized("/w/slow.pdf", fmt.Errorf("kb-extract: %w", extractcache.ErrTimeout))
 	if u := x.Status().Unrecognized; len(u) != 1 || u[0].Reason != recognizeTimedOut {
 		t.Fatalf("таймаут без своей причины: %+v", u)
+	}
+}
+
+// Уровень проблемы — цвет точки при наведении на «N проблем»: ошибка (нет в
+// поиске, источник не читается), предупреждение (файл ищется только по
+// имени), уведомление (окно повторит само). Уровень всего списка — худший.
+func TestCollectProblems_Levels(t *testing.T) {
+	srv := desktopconfig.Source{ID: "s1", Kind: desktopconfig.KindServer, URL: "https://kb.example", Enabled: true}
+	for _, tc := range []struct {
+		name  string
+		rows  []sourceRow
+		st    indexStatus
+		want  []string
+		worst string
+	}{
+		{"нет проблем", nil, indexStatus{}, nil, ""},
+		{"таймаут — уведомление", nil, indexStatus{Unrecognized: []skippedRow{{Path: "/w/a.pdf", Reason: recognizeTimedOut}}}, []string{levelInfo}, levelInfo},
+		{"сбой распознавания — предупреждение", nil, indexStatus{Unrecognized: []skippedRow{
+			{Path: "/w/a.pdf", Reason: recognizeTimedOut}, {Path: "/w/b.pdf", Reason: recognizeFailed}}}, []string{levelInfo, levelWarn}, levelWarn},
+		{"сервер и файл — ошибка", []sourceRow{{Source: srv, State: stateMissing, Note: kbserver.Describe(kbserver.ErrNotKB)}},
+			indexStatus{Skipped: 1, SkippedFiles: []skippedRow{{Path: "/w/c.md", Reason: "boom"}},
+				Unrecognized: []skippedRow{{Path: "/w/b.pdf", Reason: recognizeFailed}}},
+			[]string{levelError, levelError, levelWarn}, levelError},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := collectProblems(tc.rows, tc.st, "/Users/me")
+			var levels []string
+			for _, p := range got.Problems {
+				levels = append(levels, p.Level)
+			}
+			if !slices.Equal(levels, tc.want) || got.Level != tc.worst {
+				t.Errorf("levels = %v, worst %q; want %v, %q", levels, got.Level, tc.want, tc.worst)
+			}
+		})
 	}
 }
