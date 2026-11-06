@@ -29,21 +29,44 @@ const maxAttached = 5
 // maxDiskFile caps a file attached from disk.
 const maxDiskFile = 20 << 20
 
-// attachRefs joins the attached refs and the links of the question, without
-// repeats, in the order the person gave them.
-func attachRefs(refs []string, question string) []string {
-	out := make([]string, 0, len(refs))
+// attachRefs splits what a question carries: приложенное «+» (refs) и ссылки
+// из текста вопроса (auto) — без повторов, в порядке человека.
+func attachRefs(refs []string, question string) (explicit, auto []string) {
 	for _, r := range refs {
-		if r = strings.TrimSpace(r); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
+		if r = strings.TrimSpace(r); r != "" && !slices.Contains(explicit, r) {
+			explicit = append(explicit, r)
 		}
 	}
 	for _, l := range weblink.Links(question) {
-		if r := "url:" + l; !slices.Contains(out, r) {
-			out = append(out, r)
+		if r := "url:" + l; !slices.Contains(explicit, r) && !slices.Contains(auto, r) {
+			auto = append(auto, r)
 		}
 	}
-	return out
+	return explicit, auto
+}
+
+// readQuestionLinks reads the links mentioned in the question. Ссылка лишь
+// упомянута («почему https://localhost не отвечает?»), поэтому не прочлась —
+// не повод останавливать вопрос: она называется в notes, вопрос идет дальше.
+func (d *chatDesk) readQuestionLinks(ctx context.Context, refs []string, room int) ([]chat.Doc, []string) {
+	var docs []chat.Doc
+	var notes []string
+	for _, ref := range refs {
+		if len(docs) >= room {
+			notes = append(notes, "ссылок в вопросе больше, чем читается за раз: "+strings.TrimPrefix(ref, "url:")+" не прочитана")
+			continue
+		}
+		if d.attach == nil {
+			break
+		}
+		doc, err := d.attach(ctx, ref)
+		if err != nil {
+			notes = append(notes, attachErr(ref, err).Error())
+			continue
+		}
+		docs = append(docs, doc)
+	}
+	return docs, notes
 }
 
 // readAttached reads every ref; первый отказ останавливает вопрос: человек
@@ -104,6 +127,9 @@ func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web
 				return chat.Doc{Ref: ref, Title: filepath.Base(p), Source: filepath.Dir(p), Text: text}, nil
 			}
 			return readDiskFile(ctx, ext, p)
+		}
+		if doc, ok := d.foundDoc(ref); ok {
+			return doc, nil
 		}
 		return d.read(ctx, ref)
 	}
