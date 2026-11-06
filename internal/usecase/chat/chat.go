@@ -18,6 +18,7 @@ var (
 	ErrEmptyQuestion = errors.New("empty question")
 	ErrSearch        = errors.New("search failed")
 	ErrModel         = errors.New("model failed")
+	ErrNoReader      = errors.New("tools mode needs a document reader")
 )
 
 // Role is who said a message.
@@ -39,7 +40,7 @@ const (
 	// маленьких локальных моделей, которые плохо зовут инструменты.
 	ModeContext Mode = "context"
 	// ModeTools — модель сама зовет поиск и чтение, сколько нужно: для
-	// сильных моделей (следующий PR).
+	// сильных моделей.
 	ModeTools Mode = "tools"
 )
 
@@ -85,6 +86,11 @@ type Searcher interface {
 	Search(ctx context.Context, q string, limit int) ([]Doc, error)
 }
 
+// Reader opens one document by its Ref for the read tool.
+type Reader interface {
+	Read(ctx context.Context, ref string) (Doc, error)
+}
+
 // Model completes a conversation.
 type Model interface {
 	Complete(ctx context.Context, msgs []ModelMessage, tools []Tool) (ModelReply, error)
@@ -107,10 +113,23 @@ const (
 type Service struct {
 	search Searcher
 	model  Model
+	reader Reader // nil — режим «модель ищет» недоступен
 }
 
+// Option configures a Service.
+type Option func(*Service)
+
+// WithReader lets the model read documents by Ref (режим «модель ищет»).
+func WithReader(r Reader) Option { return func(s *Service) { s.reader = r } }
+
 // NewService wires the search and the model.
-func NewService(s Searcher, m Model) *Service { return &Service{search: s, model: m} }
+func NewService(s Searcher, m Model, opts ...Option) *Service {
+	svc := &Service{search: s, model: m}
+	for _, o := range opts {
+		o(svc)
+	}
+	return svc
+}
 
 const systemPrompt = `Ты отвечаешь на вопросы человека по его документам: записям базы знаний и файлам.
 Отвечай только по документам ниже. Ссылайся на них номерами в квадратных скобках, например [1].
@@ -126,8 +145,12 @@ func (s *Service) Answer(ctx context.Context, history []Message, question string
 	if question == "" {
 		return Turn{}, ErrEmptyQuestion
 	}
-	if mode != ModeContext {
-		return Turn{}, fmt.Errorf("%w: mode %q is not supported yet", ErrModel, mode)
+	switch mode {
+	case ModeContext:
+	case ModeTools:
+		return s.answerWithTools(ctx, history, question)
+	default:
+		return Turn{}, fmt.Errorf("%w: unknown mode %q", ErrModel, mode)
 	}
 	docs, err := s.search.Search(ctx, question, MaxDocs)
 	if err != nil {
