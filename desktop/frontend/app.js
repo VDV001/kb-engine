@@ -1785,6 +1785,9 @@ async function loadChatSettings() {
   $("#chat-url").value = s.url || "";
   $("#chat-name").value = s.model || "";
   $("#chat-mode").value = s.mode || "";
+  $("#chat-mic-mode").value = s.mic || "";
+  renderMicChoices();
+  setMic(dict.on);
   $("#chat-key").value = "";
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
@@ -1825,11 +1828,23 @@ function renderVoiceChoices() {
     return `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name.replace(/\s*\(.*\)$/, ""))}${tag ? `<small>${tag}</small>` : ""}</button>`;
   }).join("");
 }
+const MIC_MODES = {
+  hold: ["Удерживать", "Держите кнопку микрофона (или пробел на ней) и говорите, отпустили — фраза ушла."],
+  "": ["Нажал - нажал", "Нажали — слушает, нажали еще раз — фраза ушла. Удобно для длинных мыслей."],
+  auto: ["Слушает сам", "Нажали один раз — микрофон слушает весь разговор, пауза отправляет фразу. Еще раз или Esc — стоп."],
+};
+// renderMicChoices: режим микрофона плашками; хранится в скрытом поле формы.
+function renderMicChoices() {
+  const cur = $("#chat-mic-mode").value;
+  $("#chat-mics").querySelectorAll("[data-mic]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.mic === cur)));
+  $("#chat-mic-note").textContent = (MIC_MODES[cur] || MIC_MODES[""])[1];
+}
 // renderAccValues: в заголовке раздела — выбранное, чтобы видеть все, не раскрывая.
 function renderAccValues() {
   $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
   const v = $("#chat-voice-name").value;
   $("#acc-v-voice").textContent = v ? v.replace(/\s*\(.*\)$/, "") : "голос системы";
+  $("#acc-v-mic").textContent = (MIC_MODES[$("#chat-mic-mode").value] || MIC_MODES[""])[0];
   const l = $("#chat-listen");
   $("#acc-v-listen").textContent = l.selectedOptions[0] ? l.selectedOptions[0].textContent.replace(" на этом Маке", "") : "";
 }
@@ -1949,6 +1964,7 @@ async function askChat() {
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
+    micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + errText(e));
   } finally {
@@ -1956,6 +1972,8 @@ async function askChat() {
     fitChatQ();
     renderChat();
   }
+  // «Слушает сам»: ответ пришел — снова слушать (с голосом это делает разговор голосом).
+  if (micLoop.on && !voice.on) startMic(VOICE_PAUSE, true);
 }
 function newChat() {
   if (chatState.busy) return;
@@ -1984,22 +2002,66 @@ $("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
 // --- Диктовка (#436) ----------------------------------------------------------------
 // Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
 // на сейчас; он встает после того, что было в поле до начала диктовки.
-const dict = { on: false, base: "" };
+const dict = { on: false, base: "", send: false };
+// Режим микрофона из настроек (#478, как в english-hub): "" — нажал-нажал,
+// второе нажатие отправляет; hold — держите кнопку, отпустили — ушло; auto —
+// слушает сам: пауза отправляет, после ответа слушает снова.
+const micMode = () => (chatState.settings && chatState.settings.mic) || "";
+const micLoop = { on: false };
+const MIC_TIP = { "": "нажмите и говорите, еще раз — фраза уйдет · Esc — стоп", hold: "держите и говорите, отпустили — фраза ушла", auto: "слушает сам: пауза отправляет фразу · еще раз или Esc — стоп" };
 function setMic(on) {
   dict.on = on;
-  $("#chat-mic").setAttribute("aria-pressed", String(on));
-  $("#chat-mic").dataset.tipB = on ? "слушаю · еще раз или Esc — стоп" : "голос в текст на этом Маке · еще раз или Esc — стоп";
+  $("#chat-mic").setAttribute("aria-pressed", String(on || micLoop.on));
+  $("#chat-mic").dataset.tipB = on ? "слушаю · " + MIC_TIP[micMode()] : MIC_TIP[micMode()];
 }
-async function toggleMic() {
+// startMic listens; send — договоренное уходит вопросом само.
+async function startMic(pause, send) {
   if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
-  if (dict.on) { native().StopDictation(); return; }
+  if (dict.on || chatState.busy) return;
   dict.base = $("#chat-q").value.replace(/\s+$/, "");
-  // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
-  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + errText(e)); }
+  dict.send = send;
+  // pause 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
+  try { await native().StartDictation(pause); setMic(true); } catch (e) { micLoop.on = false; setMic(false); showChatNote("Диктовка: " + errText(e)); }
 }
-$("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
+function stopMic(send) {
+  if (!dict.on) return;
+  dict.send = send;
+  native().StopDictation();
+}
+$("#chat-mic").addEventListener("click", () => {
+  hideTip();
+  if (voice.on) stopVoice();
+  const m = micMode();
+  if (m === "hold") return; // держат — нажатие и отпускание ниже
+  if (m === "auto") {
+    if (micLoop.on || dict.on) { micLoop.on = false; stopMic(false); setMic(dict.on); return; }
+    micLoop.on = true;
+    startMic(VOICE_PAUSE, true);
+    return;
+  }
+  dict.on ? stopMic(true) : startMic(0, false);
+});
+// Удерживать: мышью или пробелом/Enter на кнопке; отпустили — фраза ушла.
+// holding: отпустили раньше, чем диктовка успела начаться, — остановить сразу.
+let holding = false;
+async function holdStart() {
+  if (micMode() !== "hold" || holding) return;
+  holding = true;
+  if (voice.on) stopVoice();
+  await startMic(0, false);
+  if (!holding) stopMic(true);
+}
+function holdEnd() {
+  if (micMode() !== "hold" || !holding) return;
+  holding = false;
+  stopMic(true);
+}
+$("#chat-mic").addEventListener("pointerdown", (e) => { if (e.button === 0) holdStart(); });
+["pointerup", "pointerleave", "pointercancel"].forEach((t) => $("#chat-mic").addEventListener(t, holdEnd));
+$("#chat-mic").addEventListener("keydown", (e) => { if ((e.key === " " || e.key === "Enter") && micMode() === "hold") { e.preventDefault(); if (!e.repeat) holdStart(); } });
+$("#chat-mic").addEventListener("keyup", (e) => { if (e.key === " " || e.key === "Enter") holdEnd(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
-  if (ev.error) { if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
+  if (ev.error) { micLoop.on = false; if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
   if (ev.busy) showChatNote("Диктовка: распознаю запись…");
   if (ev.text !== undefined && ev.text !== "") {
     $("#chat-q").value = (dict.base ? dict.base + " " : "") + ev.text;
@@ -2007,10 +2069,14 @@ if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
     renderAttached();
   }
   if (ev.final) {
+    const send = dict.send && !ev.error;
+    dict.send = false;
     setMic(false);
     $("#chat-q").focus();
     // Разговор без рук: вопрос договорен — уходит сам; тишина без слов — слушать снова.
     if (voice.on && !ev.error) $("#chat-q").value.trim() ? askChat() : listenVoice();
+    else if (send && $("#chat-q").value.trim()) askChat();
+    else if (micLoop.on && !ev.error) startMic(VOICE_PAUSE, true);
   }
 });
 
@@ -2045,6 +2111,7 @@ $("#chat-voice").addEventListener("click", () => {
   hideTip();
   if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
   if (voice.on) return stopVoice();
+  micLoop.on = false;
   setVoice(true);
   listenVoice(true);
 });
@@ -2160,7 +2227,7 @@ document.addEventListener("click", (e) => {
 });
 $("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
 $("#chat-q").addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && dict.on) { e.preventDefault(); native().StopDictation(); return; }
+  if (e.key === "Escape" && (dict.on || micLoop.on)) { e.preventDefault(); micLoop.on = false; stopMic(false); setMic(dict.on); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
 });
 $("#chat-new").addEventListener("click", newChat);
@@ -2231,6 +2298,13 @@ $("#chat-voices").addEventListener("click", (e) => {
   renderAccValues();
   if (native() && native().PreviewVoice) native().PreviewVoice(b.dataset.voice).catch((err) => { $("#chat-model-note").textContent = errText(err); });
 });
+$("#chat-mics").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mic]");
+  if (!b) return;
+  $("#chat-mic-mode").value = b.dataset.mic;
+  renderMicChoices();
+  renderAccValues();
+});
 $("#voice-add").addEventListener("click", () => {
   if (native() && native().OpenVoiceSettings) native().OpenVoiceSettings().catch((err) => { $("#chat-model-note").textContent = errText(err); });
 });
@@ -2238,7 +2312,7 @@ $("#chat-name").addEventListener("input", renderAccValues);
 $("#chat-listen").addEventListener("change", renderAccValues);
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value };
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "Сохранено";

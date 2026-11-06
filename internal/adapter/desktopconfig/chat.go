@@ -26,6 +26,15 @@ const (
 	ChatModeTools   = "tools"
 )
 
+// Режимы микрофона (#478, как в english-hub): пусто — нажал-нажал (второе
+// нажатие отправляет), hold — удерживать кнопку, auto — слушает сам, пауза
+// отправляет фразу.
+const (
+	MicToggle = ""
+	MicHold   = "hold"
+	MicAuto   = "auto"
+)
+
 // ErrChatSettings — настройки чата не подходят.
 var ErrChatSettings = errors.New("настройки чата не подходят")
 
@@ -39,6 +48,8 @@ type Chat struct {
 	// Listen — кто слушает диктовку: id подключения распознавания речи; пусто
 	// — Apple Speech на этом Маке.
 	Listen string `json:"listen,omitempty"`
+	// Mic — как говорить в микрофон: MicToggle, MicHold или MicAuto.
+	Mic string `json:"mic,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -67,6 +78,11 @@ func (c Chat) Check() error {
 	if utf8.RuneCountInString(c.Voice) > 64 || strings.HasPrefix(c.Voice, "-") ||
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
+	}
+	switch c.Mic {
+	case MicToggle, MicHold, MicAuto:
+	default:
+		return fmt.Errorf("%w: микрофон %q", ErrChatSettings, c.Mic)
 	}
 	if utf8.RuneCountInString(c.Listen) > 64 || strings.IndexFunc(c.Listen, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: «Слушает» %q", ErrChatSettings, c.Listen)
