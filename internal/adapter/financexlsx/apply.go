@@ -163,8 +163,12 @@ type sheetIndex struct {
 	curCol       int
 	freeCol      int
 	newCurHeader bool
-	rowByID      map[string]int
-	lastRow      int
+	// recCols are the Получено, Валюта получения and Счёт получения columns, 0
+	// while the sheet has none; newRecHeaders asks for their headers.
+	recCols       [3]int
+	newRecHeaders bool
+	rowByID       map[string]int
+	lastRow       int
 	// lastDataRow is the last row that actually holds a transaction. The live
 	// sheet reports 1156 rows for 507 records, because the rows past the data
 	// carry formatting; inheriting from those gives a new row a border and no
@@ -211,6 +215,9 @@ func ApplyRows(path string, upserts []domain.Transaction, removals []string, now
 	if err := checkVocabulary(upserts, accounts); err != nil {
 		return err
 	}
+	if err := checkReceived(upserts, accs); err != nil {
+		return err
+	}
 	if err := checkCurrencies(upserts, accs); err != nil {
 		return err
 	}
@@ -239,6 +246,7 @@ type rowWrite struct {
 	tx        *domain.Transaction
 	idCol     int
 	curCol    int // 0 when the sheet has no Валюта column
+	recCols   [3]int
 	kind      string
 }
 
@@ -263,6 +271,7 @@ func indexSheets(f *excelize.File) (map[string]sheetIndex, error) {
 		idx := sheetIndex{
 			idCol:   findIDColumn(rows),
 			curCol:  findHeaderColumn(rows, currencyHeader),
+			recCols: findExchangeColumns(rows),
 			freeCol: firstFreeColumn(rows, reservedWidth(kindOf(sheet))),
 			rowByID: map[string]int{},
 			lastRow: len(rows),
@@ -302,7 +311,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if !ok {
 			return nil, fmt.Errorf("cannot remove %q: the workbook has no row with that id", id)
 		}
-		plan = append(plan, rowWrite{sheet: sheet, row: row, idCol: index[sheet].idCol, curCol: index[sheet].curCol, kind: kindOf(sheet)})
+		plan = append(plan, rowWrite{sheet: sheet, row: row, idCol: index[sheet].idCol, curCol: index[sheet].curCol, recCols: index[sheet].recCols, kind: kindOf(sheet)})
 	}
 
 	for _, tx := range upserts {
@@ -317,7 +326,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 		if idx.idCol == 0 {
 			return nil, fmt.Errorf("sheet %q has no id column — run `fin sync --init` first", sheet)
 		}
-		idx = idx.withCurrencyColumnFor(tx)
+		idx = idx.withCurrencyColumnFor(tx).withExchangeColumnsFor(tx)
 		index[sheet] = idx
 		row, known := idx.rowByID[tx.ID()]
 		if !known {
@@ -339,7 +348,7 @@ func planRowWrites(index map[string]sheetIndex, upserts []domain.Transaction, re
 			idx.rowByID[tx.ID()] = row
 			index[sheet] = idx
 		}
-		plan = append(plan, rowWrite{sheet: sheet, row: row, styleFrom: styleFrom, tx: &tx, idCol: idx.idCol, curCol: idx.curCol})
+		plan = append(plan, rowWrite{sheet: sheet, row: row, styleFrom: styleFrom, tx: &tx, idCol: idx.idCol, curCol: idx.curCol, recCols: idx.recCols})
 	}
 
 	// Deterministic order, so the same change produces the same file.
@@ -380,7 +389,7 @@ func vacateOtherSheet(index map[string]sheetIndex, id, sheet string) (rowWrite, 
 	}
 	delete(oidx.rowByID, id)
 	index[other] = oidx
-	return rowWrite{sheet: other, row: row, idCol: oidx.idCol, curCol: oidx.curCol, kind: kindOf(other)}, true
+	return rowWrite{sheet: other, row: row, idCol: oidx.idCol, curCol: oidx.curCol, recCols: oidx.recCols, kind: kindOf(other)}, true
 }
 
 // positionalRow resolves an id of the form "expense-r42" to the row it names, on
@@ -454,6 +463,11 @@ func clearRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 	if w.curCol != 0 {
 		cols = append(cols, w.curCol)
 	}
+	for _, c := range w.recCols {
+		if c != 0 {
+			cols = append(cols, c)
+		}
+	}
 	// The account may be in the column beside Источник. Clear it only when it is
 	// one — anything else there is the owner's note, not ours to remove.
 	if w.kind == domain.KindExpense {
@@ -510,6 +524,16 @@ func writeRow(f *excelize.File, w rowWrite, accounts map[string]struct{}) error 
 
 	if w.curCol != 0 {
 		values[w.curCol] = currencyCell(tx.Currency())
+	}
+	// Вторая сторона — или пустые клетки: обмен, исправленный в обычную трату,
+	// не оставляет в строке прежнее «Получено».
+	if w.recCols[0] != 0 {
+		values[w.recCols[0]], values[w.recCols[1]], values[w.recCols[2]] = "", "", ""
+		if r, ok := tx.Received(); ok {
+			values[w.recCols[0]] = float64(r.Amount().Kopecks()) / 100
+			values[w.recCols[1]] = currencyCell(r.Currency())
+			values[w.recCols[2]] = r.Account()
+		}
 	}
 
 	for col, v := range values {
@@ -580,15 +604,61 @@ func currencyCell(c domain.Currency) string {
 // disk with currency codes under no header.
 func writeCurrencyHeaders(f *excelize.File, index map[string]sheetIndex) error {
 	for sheet, idx := range index {
-		if !idx.newCurHeader {
+		heads := map[int]string{}
+		if idx.newCurHeader {
+			heads[idx.curCol] = currencyHeader
+		}
+		if idx.newRecHeaders {
+			for i, h := range exchangeHeaders {
+				heads[idx.recCols[i]] = h
+			}
+		}
+		for col, h := range heads {
+			name, err := excelize.CoordinatesToCellName(col, headerRow)
+			if err != nil {
+				return fmt.Errorf("%s header: %w", sheet, err)
+			}
+			if err := f.SetCellStr(sheet, name, h); err != nil {
+				return fmt.Errorf("%s!%s: %w", sheet, name, err)
+			}
+		}
+	}
+	return nil
+}
+
+// exchangeHeaders are the three columns of an exchange's second side, in the
+// order sheetIndex.recCols keeps them.
+var exchangeHeaders = [3]string{receivedHeader, receivedCurHeader, receivedAccHeader}
+
+// findExchangeColumns finds the exchange columns by their headers.
+func findExchangeColumns(rows [][]string) [3]int {
+	var out [3]int
+	for i, h := range exchangeHeaders {
+		out[i] = findHeaderColumn(rows, h)
+	}
+	return out
+}
+
+// checkReceived refuses an exchange whose second side lands on an account the
+// Счета sheet does not hold, or one held in another currency, before anything
+// is written: доллары на рублевом счете — опечатка в валюте или в счете.
+func checkReceived(upserts []domain.Transaction, accs []domain.Account) error {
+	byName := make(map[string]domain.Account, len(accs))
+	for _, a := range accs {
+		byName[a.Bank()] = a
+	}
+	for _, tx := range upserts {
+		r, ok := tx.Received()
+		if !ok {
 			continue
 		}
-		name, err := excelize.CoordinatesToCellName(idx.curCol, headerRow)
-		if err != nil {
-			return fmt.Errorf("%s header: %w", sheet, err)
+		acc, known := byName[r.Account()]
+		if !known {
+			return fmt.Errorf("%w: %q — add it to the Счета sheet, then run this again (row %s)",
+				ErrUnknownAccount, r.Account(), tx.ID())
 		}
-		if err := f.SetCellStr(sheet, name, currencyHeader); err != nil {
-			return fmt.Errorf("%s!%s: %w", sheet, name, err)
+		if err := tx.CheckReceivedAccountCurrency(acc); err != nil {
+			return fmt.Errorf("%s: %w", tx.ID(), err)
 		}
 	}
 	return nil
@@ -623,6 +693,21 @@ func checkCurrencies(upserts []domain.Transaction, accs []domain.Account) error 
 func (idx sheetIndex) withCurrencyColumnFor(tx domain.Transaction) sheetIndex {
 	if !tx.Currency().IsBase() && idx.curCol == 0 {
 		idx.curCol, idx.newCurHeader = idx.freeCol, true
+		idx.freeCol++ // следующая новая колонка (обмена) не займет эту же клетку
 	}
+	return idx
+}
+
+// withExchangeColumnsFor gives the sheet the exchange columns when this row is
+// the first exchange. Колонки встают подряд правее всего, что лист держит.
+func (idx sheetIndex) withExchangeColumnsFor(tx domain.Transaction) sheetIndex {
+	if _, ok := tx.Received(); !ok || idx.recCols[0] != 0 {
+		return idx
+	}
+	for i := range idx.recCols {
+		idx.recCols[i] = idx.freeCol
+		idx.freeCol++
+	}
+	idx.newRecHeaders = true
 	return idx
 }

@@ -88,6 +88,7 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 	// stands in until AssignIDs retires it.
 	idCol := findIDColumn(rows)
 	curCol := findHeaderColumn(rows, currencyHeader)
+	recCols := findExchangeColumns(rows)
 
 	var out []domain.Transaction
 	for i, row := range rows {
@@ -126,6 +127,9 @@ func readTransactions(f *excelize.File, sheet, kind string, accounts map[string]
 		p.ID = rowID(row, idCol, kind, rowNum)
 		if p.Currency, err = readCurrency(row, curCol); err != nil {
 			return nil, fmt.Errorf("%s row %d: currency: %w", sheet, rowNum, err)
+		}
+		if p.Received, err = readReceived(row, recCols); err != nil {
+			return nil, fmt.Errorf("%s row %d: %w", sheet, rowNum, err)
 		}
 
 		tx, err := domain.NewTransaction(p)
@@ -316,6 +320,27 @@ func readAccountCurrency(bank string, balance domain.Money, updated time.Time, r
 // readCurrency reads a row's Валюта cell. Пустая ячейка или отсутствие колонки —
 // рубль. Негодный код — отказ, а не рубль: молчаливое «не разобрал — значит
 // рубль» показало бы долларовую трату рублёвой.
+// readReceived reads an exchange's second side; an empty Получено means the row
+// is not an exchange.
+func readReceived(row []string, cols [3]int) (domain.ReceivedParams, error) {
+	if cols[0] == 0 || cell(row, cols[0]-1) == "" {
+		return domain.ReceivedParams{}, nil
+	}
+	amount, err := parseAmount(cell(row, cols[0]-1))
+	if err != nil {
+		return domain.ReceivedParams{}, fmt.Errorf("%s: %w", receivedHeader, err)
+	}
+	cur, err := readCurrency(row, cols[1])
+	if err != nil {
+		return domain.ReceivedParams{}, fmt.Errorf("%s: %w", receivedCurHeader, err)
+	}
+	account := ""
+	if cols[2] != 0 {
+		account = cell(row, cols[2]-1)
+	}
+	return domain.ReceivedParams{Amount: amount, Currency: cur, Account: account}, nil
+}
+
 func readCurrency(row []string, curCol int) (domain.Currency, error) {
 	if curCol == 0 {
 		return domain.Currency{}, nil
