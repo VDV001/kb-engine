@@ -17,6 +17,14 @@ import (
 // ErrModelReply — модель ответила не тем JSON, который просили.
 var ErrModelReply = errors.New("model reply is not the requested JSON")
 
+// ErrConflict — портрет изменили, пока сервис его правил (другое устройство
+// на том же kb-сервере): Store.Save отвечает им, сервис перечитывает.
+var ErrConflict = errors.New("portrait changed meanwhile")
+
+// conflictAttempts bounds re-reads after ErrConflict: правят двое-трое
+// устройств одного человека, и проиграть больше пары раз подряд нельзя.
+const conflictAttempts = 5
+
 // Store keeps the portrait: файл в папке человека или kb-сервер.
 type Store interface {
 	Load(ctx context.Context) (domain.Portrait, error)
@@ -53,15 +61,23 @@ func NewService(store Store, model Model, now func() time.Time, newID func() str
 // Portrait returns the saved portrait.
 func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { return s.store.Load(ctx) }
 
+// change applies fn to the stored portrait and saves it; проиграл гонку
+// (ErrConflict) — fn применяется заново к свежему портрету.
 func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.Portrait, error)) error {
-	p, err := s.store.Load(ctx)
-	if err != nil {
-		return err
+	var err error
+	for range conflictAttempts {
+		var p domain.Portrait
+		if p, err = s.store.Load(ctx); err != nil {
+			return err
+		}
+		if p, err = fn(p); err != nil {
+			return err
+		}
+		if err = s.store.Save(ctx, p); !errors.Is(err, ErrConflict) {
+			return err
+		}
 	}
-	if p, err = fn(p); err != nil {
-		return err
-	}
-	return s.store.Save(ctx, p)
+	return err
 }
 
 // Add adds a fact typed by the person: одобрен сразу.
@@ -136,28 +152,38 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 	if err != nil {
 		return nil, err
 	}
-	var added []domain.Fact
+	var candidates []domain.Fact
 	src := sourceChat + s.now().Format("02.01")
 	for _, o := range offered {
 		sec, err := domain.NewFactSection(o.Section)
 		if err != nil {
 			continue // чужой раздел — модель ошиблась, факт мимо
 		}
-		f, err := domain.NewFact(s.newID(), sec, o.Text, src, domain.FactPending, s.now())
-		if err != nil {
-			continue
+		if f, err := domain.NewFact(s.newID(), sec, o.Text, src, domain.FactPending, s.now()); err == nil {
+			candidates = append(candidates, f)
 		}
-		next, err := p.Add(f)
-		if err != nil {
-			continue // уже известно
-		}
-		p, added = next, append(added, f)
 	}
-	if len(added) == 0 {
+	var added []domain.Fact
+	err = s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+		added = nil
+		for _, f := range candidates {
+			if next, err := p.Add(f); err == nil { // ошибка — уже известно
+				p, added = next, append(added, f)
+			}
+		}
+		if len(added) == 0 {
+			return p, errNothingNew
+		}
+		return p, nil
+	})
+	if errors.Is(err, errNothingNew) {
 		return nil, nil
 	}
-	return added, s.store.Save(ctx, p)
+	return added, err
 }
+
+// errNothingNew stops change without a save: в обмене нового нет.
+var errNothingNew = errors.New("nothing new")
 
 const compressPrompt = `Сожми портрет человека: объедини похожие факты, убери повторы и мелочи, сохрани суть.
 Каждый раздел — не больше двух коротких фактов. Ответь только JSON-массивом: [{"section":"about|work|plans|prefs|misc","text":"..."}].`
