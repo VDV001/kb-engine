@@ -557,7 +557,7 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .module-view iframe { display: block; width: 100%; height: 100%; border: 0; }
 
 /* «N не прочитано» — кнопка в строке статуса; панель «Не прочитано». */
-.skipped-link { background: none; border: 0; padding: 0; font: inherit; color: var(--z-person); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.skipped-link { background: none; border: 0; padding: 0; font: inherit; color: var(--z-person); cursor: pointer; }
 .skipped-link:hover { color: var(--z-ink); }
 .skipped-view { display: grid; gap: 16px; }
 .skip-group { display: grid; gap: 6px; }
