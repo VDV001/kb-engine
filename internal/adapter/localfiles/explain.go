@@ -4,9 +4,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net/http"
+	"regexp"
 	"strings"
 )
 
@@ -25,12 +27,15 @@ var (
 	errNotDocx   = errors.New("not a Word document")
 )
 
+// htmlTitle finds the page title: по нему видно, что скачалось вместо файла.
+var htmlTitle = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
+
 // sniffNotDocx looks at the start of a file that did not open as .docx.
 func sniffNotDocx(r io.ReaderAt, size int64) error {
 	if size == 0 {
 		return errEmptyFile
 	}
-	head := make([]byte, 512)
+	head := make([]byte, 8192) // заголовок страницы обычно в первых килобайтах
 	n, _ := r.ReadAt(head, 0)
 	head = head[:n]
 	switch {
@@ -39,6 +44,11 @@ func sniffNotDocx(r io.ReaderAt, size int64) error {
 	case bytes.HasPrefix(head, []byte("%PDF-")):
 		return errPDFInside
 	case strings.HasPrefix(http.DetectContentType(head), "text/html"):
+		if m := htmlTitle.FindSubmatch(head); m != nil {
+			if t := strings.Join(strings.Fields(string(m[1])), " "); t != "" {
+				return fmt.Errorf("%w: страница «%s»", errWebPage, t)
+			}
+		}
 		return errWebPage
 	default:
 		return errNotDocx
