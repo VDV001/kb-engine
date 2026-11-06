@@ -36,6 +36,9 @@ type Chat struct {
 	Mode  string `json:"mode,omitempty"`
 	// Voice — голос Mac, которым читается ответ в разговоре голосом; пусто — голос системы.
 	Voice string `json:"voice,omitempty"`
+	// Listen — кто слушает диктовку: id подключения распознавания речи; пусто
+	// — Apple Speech на этом Маке.
+	Listen string `json:"listen,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -64,6 +67,9 @@ func (c Chat) Check() error {
 	if utf8.RuneCountInString(c.Voice) > 64 || strings.HasPrefix(c.Voice, "-") ||
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
+	}
+	if utf8.RuneCountInString(c.Listen) > 64 || strings.IndexFunc(c.Listen, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: «Слушает» %q", ErrChatSettings, c.Listen)
 	}
 	return nil
 }
