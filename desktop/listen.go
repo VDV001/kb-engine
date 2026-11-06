@@ -48,6 +48,8 @@ type transcriber func(ctx context.Context, wav []byte) (string, error)
 type helperEvent struct {
 	listenEvent
 	Recorded string `json:"recorded,omitempty"`
+	// Silent — в записи не было речи: серверу она не отдается (ревью #468).
+	Silent bool `json:"silent,omitempty"`
 }
 
 // dictation runs one kb-listen at a time.
@@ -56,9 +58,10 @@ type dictation struct {
 	emit   func(listenEvent)
 	tmpDir string // куда помощник пишет запись; "" — системная временная папка
 
-	mu    sync.Mutex
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
+	mu     sync.Mutex
+	cancel context.CancelFunc // отмена идущего распознавания: второй стоп
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
 }
 
 // listenNextTo finds kb-listen next to the window's binary.
@@ -141,7 +144,11 @@ func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr tra
 			continue // строка не по протоколу — не текст
 		}
 		ev := he.listenEvent
-		if he.Recorded != "" {
+		switch {
+		case he.Recorded != "" && he.Silent:
+			_ = os.Remove(he.Recorded)
+			ev = listenEvent{Final: true}
+		case he.Recorded != "":
 			ev = d.transcribe(he.Recorded, tr)
 		}
 		if ev.Final {
@@ -177,8 +184,19 @@ func (d *dictation) transcribe(path string, tr transcriber) listenEvent {
 		return listenEvent{Final: true, Error: "запись не прочитана: " + err.Error()}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), transcribeTimeout)
-	defer cancel()
+	d.mu.Lock()
+	d.cancel = cancel
+	d.mu.Unlock()
+	defer func() {
+		d.mu.Lock()
+		d.cancel = nil
+		d.mu.Unlock()
+		cancel()
+	}()
 	text, err := tr(ctx, wav)
+	if errors.Is(ctx.Err(), context.Canceled) {
+		return listenEvent{Final: true} // стоп во время распознавания — отмена, не ошибка
+	}
 	if err != nil {
 		return listenEvent{Final: true, Error: err.Error()}
 	}
@@ -186,11 +204,16 @@ func (d *dictation) transcribe(path string, tr transcriber) listenEvent {
 }
 
 // Stop ends the dictation: помощник дослушивает и отдает итог; не успел за
-// stopGrace — останавливается.
+// stopGrace — останавливается. Стоп во время распознавания отменяет запрос к
+// серверу (ревью #468).
 func (d *dictation) Stop() {
 	d.mu.Lock()
-	cmd, stdin := d.cmd, d.stdin
+	cmd, stdin, cancel := d.cmd, d.stdin, d.cancel
 	d.mu.Unlock()
+	if cancel != nil {
+		cancel()
+		return
+	}
 	if cmd == nil {
 		return
 	}
