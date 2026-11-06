@@ -218,3 +218,38 @@ func TestGoogle_ReviewFixes(t *testing.T) {
 		t.Fatalf("откат на открытый экспорт: %+v, %v", d, err)
 	}
 }
+
+// Удаление подключения не молчит, если Связка не убрала секреты: человек
+// должен знать, что вход остался на Маке (ревью #466).
+func TestGoogle_RemoveReportsKeychain(t *testing.T) {
+	g, tok, s := newTestGoogle(t)
+	g.open = func(consent string) {
+		u, _ := url.Parse(consent)
+		go func() {
+			if res, err := http.Get(u.Query().Get("redirect_uri") + "?" + url.Values{"code": {"c1"}, "state": {u.Query().Get("state")}}.Encode()); err == nil {
+				_ = res.Body.Close()
+			}
+		}()
+	}
+	row, err := g.Connect("cid.apps.googleusercontent.com", "sec-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok.delErr = errors.New("keychain locked")
+	err = g.Remove(row.ID)
+	if err == nil || !strings.Contains(err.Error(), "Связк") {
+		t.Fatalf("Remove = %v, want отказ Связки словами", err)
+	}
+	if len(s.snapshot().cfg.Connections) != 0 {
+		t.Fatalf("подключение осталось в настройках: %+v", s.snapshot().cfg.Connections)
+	}
+}
+
+// Отказы Google с новыми причинами — словами человека.
+func TestGoogleErr_Words(t *testing.T) {
+	for err, want := range map[error]string{google.ErrAPIOff: "Drive API", google.ErrBusy: "позже"} {
+		if got := googleErr(err).Error(); !strings.Contains(got, want) {
+			t.Errorf("%v → %q, want %q", err, got, want)
+		}
+	}
+}
