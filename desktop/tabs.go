@@ -55,3 +55,34 @@ func (f *folderSettings) SetTabs(list []desktopconfig.Tab) error {
 		return nil
 	})
 }
+
+// Accents returns the window's look: режим и свой набор человека.
+func (f *folderSettings) Accents() desktopconfig.Accents {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	a := f.cfg.Accents
+	a.Off = slices.Clone(a.Off)
+	return a
+}
+
+// SetAccents saves the window's look. Индекс не трогается: оформление —
+// только вид окна.
+func (f *folderSettings) SetAccents(a desktopconfig.Accents) error {
+	if err := a.Check(); err != nil {
+		return err
+	}
+	a.Off = slices.Clone(a.Off)
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	next := f.cfg
+	next.Accents = a
+	// Под замком config.json, как SetTabs.
+	return filelock.With(f.path, func() error {
+		if err := desktopconfig.Write(f.path, next); err != nil {
+			return err
+		}
+		f.cfg = next
+		f.publishLocked(false)
+		return nil
+	})
+}

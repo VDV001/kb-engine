@@ -41,6 +41,9 @@ type Config struct {
 	// (TabList отдает DefaultTabs), пустой список — только «Все». Без
 	// omitempty: пустой список иначе не записался бы и вернулся бы набором.
 	Tabs []Tab `json:"tabs"`
+	// Accents — оформление окна: какие акценты спектра включены. Нулевое —
+	// свой набор без выключенных, то есть все.
+	Accents Accents `json:"accents"`
 }
 
 // Path is where the window keeps its config.
@@ -86,6 +89,7 @@ func Read(path string) (Config, error) {
 	cfg.migrate()
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
+	cfg.dropBadAccents()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -113,6 +117,7 @@ func Write(path string, cfg Config) error {
 	cfg.migrate()
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
+	cfg.dropBadAccents()
 	if err := cfg.Validate(); err != nil {
 		return err
 	}

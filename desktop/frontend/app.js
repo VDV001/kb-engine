@@ -698,6 +698,7 @@ async function openSettings(view = "sources") {
   showError("");
   if (view === "prefs") {
     renderTabSettings();
+    renderAccents();
     $("#close-settings").focus();
     return;
   }
@@ -1257,3 +1258,81 @@ function hideIndexingScreen() {
   setTimeout(() => { screen.hidden = true; screen.classList.remove("leave"); }, 500);
 }
 $("#indexing-settings").onclick = () => openSettings("sources");
+
+// --- Оформление: акценты спектра ----------------------------------------------
+// Порядок и id — те же, что в прототипе (outputs/2026-11-06_dvk-gradients.html)
+// и в блоке «Спектр акцентами» style.css: выключенный акцент — класс no-<id> на
+// body. Go хранит режим и свой набор (desktopconfig.Accents), списка не знает.
+const ACCENTS = [
+  ["tab-ink", "Черта вкладки", "линия под активной вкладкой"],
+  ["search", "Поле поиска в фокусе", "рамка строки dvk find и курсор"],
+  ["row", "Выбранная строка", "рамка по контуру вместо полосы слева"],
+  ["head", "Слово HEAD", "метка над поиском"],
+  ["buttons", "Главные кнопки", "Открыть источник, Подключить, Сохранить"],
+  ["chip", "Нажатый чип источника", "рамка от цвета источника"],
+  ["indexing", "Индексация", "бегущая полоса и большое число"],
+  ["panel-title", "Заголовок панели", "слово и верхний край панели"],
+  ["marks", "Найденные слова", "подчеркивание совпадений"],
+  ["tab-name", "Имя активной вкладки", "текст вкладки"],
+  ["dollar", "Знак $", "в строке поиска и командах"],
+  ["bar-edge", "Нижний край шапки", "тонкая линия под шапкой"],
+  ["branch", "Линия ветки", "от готового узла к HEAD"],
+  ["pulse", "Точка статуса", "вращается у счета файлов"],
+  ["count", "Счет в поиске", "число найденного в поле"],
+  ["preview-line", "Черта шапки превью", "под заголовком документа"],
+  ["icons", "Иконки в шапке", "папка и шестеренка"],
+  ["scrollbar", "Ползунок прокрутки", "в выдаче и превью"],
+  ["switch", "Переключатель", "включенный тумблер"],
+  ["tip", "Подсказка", "рамка всплывающей подсказки"],
+  ["hover", "Наведение на строку", "мягкий перелив слева"],
+];
+const ACCENT_IDS = ACCENTS.map((a) => a[0]);
+state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
+// offNow — какие акценты выключены сейчас, с учетом режима.
+const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : (a.off || []));
+function applyAccents() {
+  const off = offNow(state.accents);
+  for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
+}
+function renderAccents() {
+  const a = state.accents, off = offNow(a), editable = !!native();
+  $("#accent-mine-n").textContent = ACCENT_IDS.filter((id) => !(a.off || []).includes(id)).length;
+  $("#accent-all-n").textContent = ACCENT_IDS.length;
+  for (const b of document.querySelectorAll("#accent-presets [data-preset]")) {
+    b.setAttribute("aria-pressed", (b.dataset.preset === "mine" ? "" : b.dataset.preset) === (a.mode || ""));
+    b.disabled = !editable;
+  }
+  $("#accent-list").innerHTML = ACCENTS.map(([id, t, w]) => {
+    const on = !off.includes(id);
+    return `<li><span class="t">${esc(t)}</span><span class="w">${esc(w)}</span>
+      <button class="sw" role="switch" aria-checked="${on}" aria-label="${on ? "Выключить" : "Включить"}: ${esc(t)}" data-accent="${id}" ${editable ? "" : "disabled"}></button></li>`;
+  }).join("");
+}
+// Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
+let accentSaves = Promise.resolve();
+function saveAccents(next) {
+  state.accents = next;
+  applyAccents();
+  renderAccents();
+  accentSaves = accentSaves.then(() => native().SetAccents(next)).then(() => showError("")).catch(async (e) => {
+    showError("Оформление не сохранено: " + e);
+    try { state.accents = await native().Accents(); } catch { /* остается то, что на экране */ }
+    applyAccents();
+    renderAccents();
+  });
+}
+$("#accent-presets").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-preset]");
+  if (!b || !native()) return;
+  const mode = b.dataset.preset === "mine" ? "" : b.dataset.preset;
+  saveAccents({ mode, off: state.accents.off || [] });
+});
+// Щелчок по переключателю правит твой выбор от того, что видно сейчас, и
+// включает его: человек меняет то, что видит.
+$("#accent-list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-accent]");
+  if (!b || !native()) return;
+  const id = b.dataset.accent, off = offNow(state.accents);
+  saveAccents({ mode: "", off: off.includes(id) ? off.filter((x) => x !== id) : [...off, id] });
+});
+if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});

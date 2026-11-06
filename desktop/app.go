@@ -62,6 +62,12 @@ func (a *App) Tabs() []desktopconfig.Tab { return a.settings.Tabs() }
 // SetTabs saves the search tabs.
 func (a *App) SetTabs(list []desktopconfig.Tab) error { return a.settings.SetTabs(list) }
 
+// Accents returns the window's look: режим и свой набор человека.
+func (a *App) Accents() desktopconfig.Accents { return a.settings.Accents() }
+
+// SetAccents saves the window's look.
+func (a *App) SetAccents(look desktopconfig.Accents) error { return a.settings.SetAccents(look) }
+
 // NewSourceID returns an id for a source the person is adding: к id сервера
 // привязан токен, и он нужен странице до сохранения списка.
 func (a *App) NewSourceID(kind string) string { return desktopconfig.NewID(desktopconfig.Kind(kind)) }

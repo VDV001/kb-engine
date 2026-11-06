@@ -202,9 +202,8 @@ button { font-family: inherit; }
   transition: background var(--z-dur) var(--z-ease);
 }
 @keyframes hit-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-.hit:hover:not(.sel) { background: linear-gradient(90deg, var(--z-accent-wash), transparent 70%); }
-/* Выбранная строка — рамка спектром по всему контуру, а не полоса слева. */
-.hit.sel { border: 1px solid transparent; border-radius: var(--z-radius); background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; }
+.hit:hover { background: var(--z-bg-3); }
+.hit.sel { background: var(--z-accent-wash); box-shadow: inset 2px 0 0 var(--z-accent); }
 .hit-head { display: grid; grid-template-columns: var(--type-col) 1fr auto; gap: var(--type-gap); align-items: baseline; }
 .hit-name { color: var(--z-ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hit-meta { color: var(--z-faint); font-size: 11px; }
@@ -476,52 +475,70 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   .hit { opacity: 1; }
 }
 
-/* --- Спектр акцентами (решение владельца 06.11, все 21 место прототипа) -------
+/* --- Спектр акцентами (решение владельца 06.11, 21 место прототипа) ---------
    Темный и синий остаются основой; спектр — на линиях, рамках, одном слове.
-   Рамка спектром — прием сайта: заливка padding-box поверх градиента border-box. */
-.tab-ink { background: var(--sp-cool); }                                       /* 1 */
-.search:focus-within { border-color: transparent; background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, var(--sp-cool) border-box; }
-.search input { caret-color: var(--z-sp5); }                                   /* 2 */
-.hit.sel { padding: 9px 15px 10px; }                                           /* 3: рамка 1px не сдвигает текст */
-.branch .node.head b, .settings h2, .big, #count {                             /* 4, 8, 7, 15 */
-  background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent;
-}
-#count { background-image: var(--sp-cool); font-weight: 700; font-size: 13px; }
-.settings h2 { width: fit-content; } /* спектр по слову, а не по ширине панели, как в прототипе */
-#icon-spec .sp4 { stop-color: var(--z-sp4); } #icon-spec .sp5 { stop-color: var(--z-sp5); } #icon-spec .sp6 { stop-color: var(--z-sp6); }
-.btn.primary {                                                                 /* 5 */
+   Каждый акцент выключается в настройках окна: класс no-<id> на body (app.js,
+   ACCENTS). Рамка спектром — прием сайта: заливка padding-box поверх
+   градиента border-box. */
+body:not(.no-tab-ink) .tab-ink { background: var(--sp-cool); }
+body:not(.no-search) .search:focus-within { border-color: transparent; background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, var(--sp-cool) border-box; }
+body:not(.no-search) .search input { caret-color: var(--z-sp5); }
+/* Выбранная строка — рамка по всему контуру, а не полоса слева; отступ на 1px
+   меньше, чтобы рамка не сдвигала текст. */
+body:not(.no-row) .hit.sel { padding: 9px 15px 10px; box-shadow: none; border: 1px solid transparent; border-radius: var(--z-radius); background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; }
+body:not(.no-head) .branch .node.head b,
+body:not(.no-panel-title) .settings h2,
+body:not(.no-indexing) .big,
+body:not(.no-count) #count { background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body:not(.no-count) #count { background-image: var(--sp-cool); font-weight: 700; font-size: 13px; }
+.settings h2 { width: fit-content; } /* спектр по слову, а не по ширине панели */
+body:not(.no-buttons) .btn.primary,
+body:not(.no-buttons) .btn.primary:hover:not(:disabled) {
   border-color: transparent; color: var(--z-accent-ink);
   background: linear-gradient(100deg, var(--z-sp4), var(--z-sp5)) border-box; background-size: 160% 100%;
   transition: background-position .5s var(--z-ease), border-color var(--z-dur) var(--z-ease);
 }
-.btn.primary:hover:not(:disabled) { background: linear-gradient(100deg, var(--z-sp4), var(--z-sp5)) border-box; background-size: 160% 100%; background-position: 100% 0; border-color: transparent; }
-.chip[aria-pressed="true"] {                                                   /* 6 */
+body:not(.no-buttons) .btn.primary:hover:not(:disabled) { background-position: 100% 0; }
+body:not(.no-chip) .chip[aria-pressed="true"] {
   border-color: transparent;
   background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(100deg, var(--c, var(--z-sp4)), var(--z-sp5), var(--z-sp6)) border-box;
 }
-.indexing-bar span { background: var(--sp-all); width: 45%; }                 /* 7 */
-.settings::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--sp-all); } /* 8 */
-mark {                                                                         /* 9 */
+body:not(.no-indexing) .indexing-bar span { background: var(--sp-all); width: 45%; }
+body:not(.no-panel-title) .settings::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--sp-all); }
+body:not(.no-marks) mark {
   box-shadow: none; background-color: var(--z-accent-wash); background-image: var(--sp-cool);
   background-size: 100% 1.5px; background-position: 0 100%; background-repeat: no-repeat;
 }
-.tabs button.active { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; } /* 10 */
-.tabs button.active i { -webkit-text-fill-color: var(--z-faint); }
-.dollar { background: linear-gradient(135deg, var(--z-sp4), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; } /* 11 */
-.bar { border-bottom-color: transparent; }                                     /* 12 */
-.bar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--sp-all); }
-.branch .line.solid { border-top: 0; height: 2px; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp1)); } /* 13 */
-.branch .node.done { background: var(--z-sp4); }
-.pulse {                                                                       /* 14 */
+body:not(.no-tab-name) .tabs button.active { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body:not(.no-tab-name) .tabs button.active i { -webkit-text-fill-color: var(--z-faint); }
+body:not(.no-dollar) .dollar { background: linear-gradient(135deg, var(--z-sp4), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+body:not(.no-bar-edge) .bar { border-bottom-color: transparent; }
+body:not(.no-bar-edge) .bar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--sp-all); }
+body:not(.no-branch) .branch .line.solid { border-top: 0; height: 2px; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp1)); }
+body:not(.no-branch) .branch .node.done { background: var(--z-sp4); }
+body:not(.no-pulse) .pulse {
   width: 8px; height: 8px; animation: spin 3s linear infinite;
   background: conic-gradient(var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1));
 }
 @keyframes spin { to { transform: rotate(1turn); } }
-.doc-head { border-bottom-color: transparent; background-image: var(--sp-all); background-size: 100% 1px; background-position: 0 100%; background-repeat: no-repeat; } /* 16 */
-.gear svg { stroke: url(#icon-spec); }                                         /* 17 */
-.results::-webkit-scrollbar-thumb, .preview::-webkit-scrollbar-thumb { background: linear-gradient(var(--z-sp4), var(--z-sp6)); border-radius: 4px; } /* 18 */
-.sw[aria-checked="true"] { border-color: transparent; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5)) border-box; } /* 19 */
-.sw[aria-checked="true"]::after { background: var(--z-accent-ink); }
-.tip { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; } /* 20 */
-/* 21 — наведение на строку выдачи: правило .hit:hover:not(.sel) выше. */
+body:not(.no-preview-line) .doc-head { border-bottom-color: transparent; background-image: var(--sp-all); background-size: 100% 1px; background-position: 0 100%; background-repeat: no-repeat; }
+body:not(.no-icons) .gear svg { stroke: url(#icon-spec); }
+#icon-spec .sp4 { stop-color: var(--z-sp4); } #icon-spec .sp5 { stop-color: var(--z-sp5); } #icon-spec .sp6 { stop-color: var(--z-sp6); }
+body:not(.no-scrollbar) .results::-webkit-scrollbar-thumb, body:not(.no-scrollbar) .preview::-webkit-scrollbar-thumb { background: linear-gradient(var(--z-sp4), var(--z-sp6)); border-radius: 4px; }
+body:not(.no-switch) .sw[aria-checked="true"] { border-color: transparent; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5)) border-box; }
+body:not(.no-switch) .sw[aria-checked="true"]::after { background: var(--z-accent-ink); }
+body:not(.no-tip) .tip { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; }
+body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, var(--z-accent-wash), transparent 70%); }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+
+/* Раздел «Оформление» в настройках окна: наборы и строки с переключателем. */
+.accent-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+.accent-presets .btn[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
+.accent-list { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
+.accent-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px 10px; align-items: center; padding: 7px 12px; border-bottom: 1px solid var(--z-rule); font-size: 12px; }
+.accent-list li:nth-child(odd) { border-right: 1px solid var(--z-rule); }
+.accent-list li:nth-last-child(-n+2):nth-child(odd), .accent-list li:last-child { border-bottom: 0; }
+.accent-list .t { color: var(--z-ink); }
+.accent-list .w { grid-column: 1; color: var(--z-faint); font-size: 11px; }
+.accent-list .sw { grid-column: 2; grid-row: 1 / span 2; }
+.accent-list.off-mode li { opacity: .55; }
