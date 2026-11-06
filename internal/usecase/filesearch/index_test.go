@@ -3,6 +3,7 @@ package filesearch_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -205,7 +206,7 @@ func TestService_BuildAndSearch(t *testing.T) {
 	if len(hits) != 1 || hits[0].Doc.Path() != "/w/a.md" || hits[0].Snippet != "Подписали договора" {
 		t.Fatalf("hits = %+v", hits)
 	}
-	if got := svc.Stats(); got != st {
+	if got := svc.Stats(); !reflect.DeepEqual(got, st) {
 		t.Fatalf("Stats() = %+v, want %+v", got, st)
 	}
 	if text, err := svc.Read("/w/b.md"); err != nil || text != "другое" {

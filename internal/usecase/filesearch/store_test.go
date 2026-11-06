@@ -3,6 +3,7 @@ package filesearch_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -310,7 +311,7 @@ func TestService_ResetKeepsSourceAndReloadsFromStore(t *testing.T) {
 	// Размер последнего индекса остается: search_files отдает его рядом с
 	// выдачей, и сброс между поиском и Stats не должен давать «indexed: 0»
 	// при найденных файлах (ревью #377).
-	if st := svc.Stats(); st != built {
+	if st := svc.Stats(); !reflect.DeepEqual(st, built) {
 		t.Fatalf("после сброса stats = %+v, ждали прежние %+v", st, built)
 	}
 	if text, err := svc.Read("/w/a.md"); err != nil || text != "договор" {

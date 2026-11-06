@@ -40,10 +40,23 @@ type Source interface {
 // Stats reports what a build did.
 type Stats struct {
 	Indexed int
-	Skipped int    // файлы, текст которых прочитать не удалось
-	Reused  int    // файлы, взятые из прошлого индекса без чтения: не менялись
-	Warning string // почему снимок не пригодился (не прочитан, отклонен); пусто — все штатно
+	Skipped int // файлы, текст которых прочитать не удалось
+	// SkippedFiles — какие это файлы и ошибка чтения, первые maxSkippedFiles:
+	// окно показывает их по кнопке «подробнее», иначе число ничего не дает.
+	SkippedFiles []SkippedFile
+	Reused       int    // файлы, взятые из прошлого индекса без чтения: не менялись
+	Warning      string // почему снимок не пригодился (не прочитан, отклонен); пусто — все штатно
 }
+
+// SkippedFile is a file the index could not read, with the reason.
+type SkippedFile struct {
+	Path string
+	Err  error
+}
+
+// maxSkippedFiles caps the named files: Skipped считает все, список — сколько
+// человек прочтет; тысячи нечитаемых — это беда папки, а не список.
+const maxSkippedFiles = 100
 
 // ErrSaveFailed is returned when the index was built and swapped in but could
 // not be written to the store: поиск работает, следующий запуск соберет заново.
@@ -167,6 +180,9 @@ func (b *builder) visit(src Source, d domain.FileDoc) error {
 	text, err := src.ReadText(d.Path())
 	if err != nil {
 		b.st.Skipped++
+		if len(b.st.SkippedFiles) < maxSkippedFiles {
+			b.st.SkippedFiles = append(b.st.SkippedFiles, SkippedFile{Path: d.Path(), Err: err})
+		}
 		return nil
 	}
 	b.ix.Add(d, text)
