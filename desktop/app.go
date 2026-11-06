@@ -121,6 +121,37 @@ func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 	return a.chat.SetSettings(c, key)
 }
 
+// Portrait returns «Что DVK помнит обо мне» (#479).
+func (a *App) Portrait() (portraitView, error) { return a.chat.Portrait() }
+
+// PortraitAdd adds a fact typed by the person.
+func (a *App) PortraitAdd(section, text string) error { return a.chat.PortraitAdd(section, text) }
+
+// PortraitEdit changes a fact text.
+func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(id, text) }
+
+// PortraitRemove forgets a fact.
+func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id) }
+
+// PortraitApprove lets a fact into the chat; text — правка перед одобрением.
+func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
+
+// PortraitCompress asks the model for a shorter portrait.
+func (a *App) PortraitCompress() ([]proposalView, error) { return a.chat.PortraitCompress() }
+
+// PortraitApplyCompressed replaces the approved facts with the accepted proposal.
+func (a *App) PortraitApplyCompressed(props []proposalView) error {
+	return a.chat.PortraitApplyCompressed(props)
+}
+
+// PickPortraitDir opens the folder chooser for the portrait; "" — отмена.
+func (a *App) PickPortraitDir() (string, error) {
+	return runtime.OpenDirectoryDialog(a.ctx, runtime.OpenDialogOptions{
+		Title:                "Папка портрета «Что DVK помнит обо мне»",
+		CanCreateDirectories: true,
+	})
+}
+
 // Chats lists the chats, newest first.
 func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
 
@@ -273,6 +304,7 @@ func (a *App) startup(ctx context.Context) {
 	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
 	if a.chat != nil {
 		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
+		a.chat.memoryNew = func(facts []factView) { runtime.EventsEmit(ctx, "portrait:new", facts) }
 	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }

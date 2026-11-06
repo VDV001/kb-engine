@@ -742,6 +742,7 @@ const VIEWS = {
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
   conn: { title: "Подключения", cmd: "config connections" },
+  memory: { title: "Что DVK помнит обо мне", cmd: "memory" },
 };
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
@@ -756,8 +757,15 @@ async function openSettings(view = "sources") {
   if (view === "chat") {
     if (native() && native().ChatSettings) await loadChatSettings();
     await renderVoiceSettings();
+    await loadPortrait();
     $("#chat-model-note").textContent = native() && native().ChatSettings ? "" : "Модель чата настраивается в окне приложения.";
     $("#chat-name").focus();
+    return;
+  }
+  if (view === "memory") {
+    await loadPortrait();
+    renderPortrait();
+    $("#mem-back").focus();
     return;
   }
   if (view === "problems") {
@@ -1734,7 +1742,9 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null };
+// memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
+const memState = { p: null, qedit: "" };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1820,6 +1830,7 @@ async function loadChatSettings() {
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
+  renderMemSettings();
   renderAccValues();
 }
 // renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
@@ -1902,6 +1913,8 @@ function renderAccValues() {
   $("#acc-v-mic").textContent = (MIC_MODES[$("#chat-mic-mode").value] || MIC_MODES[""])[0];
   const lb = $("#chat-listens").querySelector('[aria-pressed="true"]');
   $("#acc-v-listen").textContent = lb ? lb.firstChild.textContent : "Mac (бесплатно)";
+  const p = memState.p;
+  $("#acc-v-mem").textContent = !p || !p.dir ? "папка не выбрана" : `${approvedFacts().length}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -1956,6 +1969,7 @@ function renderChat() {
       ? `<div class="msg user">${esc(m.text)}</div>`
       : `<div class="msg bot">${answerHTML(m.text)}</div>`).join("");
   }
+  if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat());
   if (chatState.busy) {
     log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking" id="chat-partial"></div>`);
     paintPartial();
@@ -2005,7 +2019,11 @@ async function askChat() {
   renderChat();
   try {
     const sent = chatState.attached.map((a) => a.ref);
-    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [] });
+    const mode = chatState.portraitMode[chatState.id] || "";
+    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode });
+    if (mode) chatState.portraitMode[c.id] = mode; // новый чат получил id
+    const pn = c.portrait;
+    chatState.over = pn && pn.over && !pn.used ? { chat: c.id, size: pn.size, budget: pn.budget, props: null } : null;
     // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
     chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
@@ -2368,6 +2386,7 @@ async function saveChatPart(patch, head, rest) {
   renderListenChoices();
   renderVoiceChoices();
   renderMicChoices();
+  renderMemSettings();
   renderAccValues();
   setMic(dict.on);
 }
@@ -2418,6 +2437,228 @@ $("#chat-model").addEventListener("submit", async (e) => {
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
+});
+
+// --- Портрет «Что DVK помнит обо мне» (#479, прототип 06.11, везде A) -------------
+// Окно хранит портрет в папке человека; новое из чатов ждет одобрения; каждое
+// изменение — подсказкой, где можно — с «Вернуть».
+const approvedFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => !f.pending);
+const pendingFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => f.pending);
+async function loadPortrait() {
+  if (!native() || !native().Portrait) return;
+  try { memState.p = await native().Portrait(); } catch (e) { memState.p = null; $("#mem-dir-note").textContent = errText(e); }
+  renderMemSettings();
+  renderAccValues();
+}
+function renderMemSettings() {
+  const s = chatState.settings || {}, p = memState.p;
+  const dir = (p && p.dir) || s.memoryDir || "";
+  $("#mem-dir").textContent = dir ? tilde(dir) + "/portrait.json" : "папка не выбрана";
+  if (!$("#mem-dir-note").textContent || dir) $("#mem-dir-note").textContent = dir
+    ? "Файл с правами 0600: читать его может только Ваш пользователь macOS. Папка в iCloud Drive — и портрет будет на всех Ваших Маках."
+    : "Выберите папку — и DVK начнет помнить о Вас. Пока папки нет, портрет не ведется.";
+  $("#mem-pick").textContent = dir ? "Другая папка…" : "Выбрать папку…";
+  $("#mem-suggest").checked = !s.memoryQuiet;
+  $("#mem-extract").checked = !s.memoryOff;
+  for (const id of ["#mem-suggest", "#mem-extract"]) $(id).disabled = !dir;
+  renderMemCard();
+}
+// renderMemCard — карточка как в english-hub: последний факт, разделы, новое.
+function renderMemCard() {
+  const el = $("#mem-card"), p = memState.p;
+  el.hidden = !p || !p.dir;
+  if (el.hidden) return;
+  const facts = approvedFacts(), queue = pendingFacts(), last = facts[facts.length - 1];
+  const bySec = p.sections.map((sec) => ({ ...sec, n: facts.filter((f) => f.section === sec.id).length })).filter((x) => x.n);
+  el.innerHTML = `<p class="lbl">Что DVK помнит обо мне <b>${facts.length}</b></p>
+    <p class="last">${last ? esc(last.text) : "Пока ничего"}</p>
+    ${bySec.length ? `<div class="mem-acts">${bySec.map((x) => `<button type="button" class="mem-soft" data-mem-open>${esc(x.title)} ${x.n}</button>`).join("")}</div>` : ""}
+    ${queue.length ? `<p class="new"><b>новое:</b> ${esc(queue[0].text)}${queue.length > 1 ? ` и еще ${queue.length - 1}` : ""}</p>` : ""}
+    <button type="button" class="mem-go" data-mem-open>◎ Погрузиться →</button>`;
+}
+// renderPortrait — экран портрета: «Ждут одобрения», ниже разделы с правкой в строке.
+function renderPortrait() {
+  const p = memState.p;
+  if (!p || !p.dir) {
+    $("#mem-queue").innerHTML = `<p class="muted">Папка портрета не выбрана: «Чат и модель → 05 Что DVK помнит обо мне».</p>`;
+    $("#mem-facts").innerHTML = "";
+    return;
+  }
+  const queue = pendingFacts(), facts = approvedFacts();
+  $("#mem-queue").innerHTML = queue.length
+    ? `<p class="label-sm mem-q-head">Ждут одобрения · ${queue.length}</p>` + queue.map((f) => `<div class="mem-q">
+        <div><span class="t" data-mem-qtext="${esc(f.id)}"${memState.qedit === f.id ? ' contenteditable="true"' : ""} spellcheck="false">${esc(f.text)}</span><span class="mem-meta">${esc(f.title)} · ${esc(f.source)}</span></div>
+        <div class="mem-acts"><button type="button" class="btn primary" data-mem-ok="${esc(f.id)}">Запомнить</button><button type="button" class="btn" data-mem-qedit="${esc(f.id)}">Изменить</button><button type="button" class="btn" data-mem-no="${esc(f.id)}">Не запоминать</button></div></div>`).join("")
+    : `<p class="muted">Новых фактов нет. Все, что DVK узнает из чатов, сначала появится здесь.</p>`;
+  $("#mem-facts").innerHTML = p.sections.map((sec) => `<div class="mem-sec"><h4>${esc(sec.title)}</h4>
+    ${facts.filter((f) => f.section === sec.id).map((f) => `<div class="mem-fact"><div><span class="t" contenteditable="true" spellcheck="false" data-mem-edit="${esc(f.id)}">${esc(f.text)}</span><span class="mem-meta">${esc(f.source)}</span></div>
+      <button type="button" class="mem-x" data-mem-del="${esc(f.id)}" aria-label="Забыть: ${esc(f.text)}" data-tip="Забыть">✕</button></div>`).join("") || '<p class="muted">Пусто</p>'}
+    <form class="mem-add add" data-mem-add="${esc(sec.id)}"><input aria-label="Добавить в «${esc(sec.title)}»" placeholder="Добавить факт…" maxlength="300" autocomplete="off"><button class="btn">+</button></form></div>`).join("");
+  if (memState.qedit) {
+    const t = document.querySelector(`[data-mem-qtext="${CSS.escape(memState.qedit)}"]`);
+    if (t) { t.focus(); getSelection().selectAllChildren(t); getSelection().collapseToEnd(); }
+  }
+  dropStaleTip();
+}
+// factById ищет и в предложенном в чате: портрет страницы мог еще не перечитаться.
+const factById = (id) => [...((memState.p && memState.p.facts) || []), ...((chatState.memNew && chatState.memNew.facts) || [])].find((f) => f.id === id);
+// memDo runs one portrait change, then reloads the portrait everywhere it is shown.
+async function memDo(fn, head, rest, undo, tone) {
+  try { await fn(); } catch (e) { toast("Портрет не изменен", " · " + errText(e), null, "del"); await loadPortrait(); renderPortrait(); renderChat(); return false; }
+  await loadPortrait();
+  if (panel.dataset.view === "memory") renderPortrait();
+  renderChat();
+  if (head) toast(head, rest, undo, tone);
+  return true;
+}
+const memAdd = (sec, text) => memDo(() => native().PortraitAdd(sec, text), "Вернул", " · «" + text + "»");
+function memForget(id) {
+  const f = factById(id);
+  if (!f) return;
+  return memDo(() => native().PortraitRemove(id), "Забыто", ` · «${f.text}»`, f.pending ? null : () => memAdd(f.section, f.text), "del");
+}
+function memApprove(id, text) {
+  const f = factById(id) || { title: "портрет" };
+  memState.qedit = "";
+  if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
+  return memDo(() => native().PortraitApprove(id, text || ""), "Запомнено", ` · в «${f.title}»`, () => memDo(() => native().PortraitRemove(id), "Вернул", " · не запоминаю"));
+}
+function memReject(id) {
+  if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
+  memState.qedit = "";
+  return memDo(() => native().PortraitRemove(id), "Не запоминаю", " · и в портрет не кладу", null, "off");
+}
+$("#mem-pick").addEventListener("click", async () => {
+  if (!native() || !native().PickPortraitDir) return;
+  let dir;
+  try { dir = await native().PickPortraitDir(); } catch (e) { $("#mem-dir-note").textContent = errText(e); return; }
+  if (!dir) return;
+  await saveChatPart({ memoryDir: dir }, "Папка портрета", " · " + tilde(dir));
+  await loadPortrait();
+});
+$("#mem-suggest").addEventListener("change", (e) => saveChatPart({ memoryQuiet: !e.target.checked }, "Память", e.target.checked ? " · предлагаю запомнить в чате" : " · новое ждет только в портрете"));
+$("#mem-extract").addEventListener("change", (e) => saveChatPart({ memoryOff: !e.target.checked }, "Память", e.target.checked ? " · разбираю ответы на новое о Вас" : " · ответы не разбираю"));
+$("#mem-card").addEventListener("click", (e) => { if (e.target.closest("[data-mem-open]")) openSettings("memory"); });
+$("#mem-back").addEventListener("click", () => openSettings("chat"));
+$("#memory").addEventListener("click", (e) => {
+  const d = e.target.closest("[data-mem-del]");
+  if (d) return void memForget(d.dataset.memDel);
+  const ok = e.target.closest("[data-mem-ok]");
+  if (ok) {
+    const t = document.querySelector(`[data-mem-qtext="${CSS.escape(ok.dataset.memOk)}"]`);
+    return void memApprove(ok.dataset.memOk, t ? t.textContent.trim() : "");
+  }
+  const no = e.target.closest("[data-mem-no]");
+  if (no) return void memReject(no.dataset.memNo);
+  const qe = e.target.closest("[data-mem-qedit]");
+  if (qe) { memState.qedit = qe.dataset.memQedit; renderPortrait(); }
+});
+$("#memory").addEventListener("submit", (e) => {
+  const f = e.target.closest("[data-mem-add]");
+  if (!f) return;
+  e.preventDefault();
+  const inp = f.querySelector("input"), text = inp.value.trim(), sec = f.dataset.memAdd;
+  if (!text) return;
+  memDo(() => native().PortraitAdd(sec, text), "Добавлено", ` · «${text}»`).then((ok) => {
+    if (!ok) return;
+    const again = document.querySelector(`[data-mem-add="${CSS.escape(sec)}"] input`);
+    if (again) again.focus();
+  });
+});
+// Правка в строке сохраняется, когда строка теряет фокус; пусто — забыть.
+$("#memory").addEventListener("focusout", (e) => {
+  const t = e.target.closest("[data-mem-edit]");
+  if (!t) return;
+  const f = factById(t.dataset.memEdit), text = t.textContent.trim();
+  if (!f || text === f.text) return;
+  if (!text) return void memForget(f.id);
+  const old = f.text;
+  memDo(() => native().PortraitEdit(f.id, text), "Исправлено", ` · «${text}»`, () => memDo(() => native().PortraitEdit(f.id, old), "Вернул", " · как было"));
+});
+$("#memory").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.closest("[data-mem-edit]")) { e.preventDefault(); e.target.blur(); }
+  const q = e.key === "Enter" && e.target.closest("[data-mem-qtext]");
+  if (q) { e.preventDefault(); const b = document.querySelector(`[data-mem-ok="${CSS.escape(q.dataset.memQtext)}"]`); if (b) b.click(); }
+  if (e.key === "Escape" && e.target.closest("[data-mem-edit]")) { const f = factById(e.target.dataset.memEdit); if (f) e.target.textContent = f.text; e.target.blur(); e.stopPropagation(); }
+});
+// Новое из разбора ответа (portrait:new): в портрет уже легло «ждет
+// одобрения»; если человек не выключил — спросить прямо в ленте этого чата.
+if (window.runtime) window.runtime.EventsOn("portrait:new", (facts) => {
+  if (!(chatState.settings || {}).memoryQuiet && facts && facts.length) chatState.memNew = { chat: chatState.id, facts, edit: "" };
+  loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
+});
+// memInChat — карточки после ответа: «запомнить?» и «портрет не поместился».
+function memInChat() {
+  let h = "";
+  const n = chatState.memNew;
+  if (n && n.chat === chatState.id) h += n.facts.map((f) => `<div class="mem-sugg">
+    <span class="muted">Запомнить о Вас? Раздел «${esc(f.title)}»</span>
+    <span class="t" data-sugg-text="${esc(f.id)}"${n.edit === f.id ? ' contenteditable="true"' : ""} spellcheck="false">${esc(f.text)}</span>
+    <div class="mem-acts">${n.edit === f.id
+      ? `<button type="button" class="btn primary" data-sugg-yes="${esc(f.id)}">Сохранить и запомнить</button><button type="button" class="btn" data-sugg-cancel>Отмена</button>`
+      : `<button type="button" class="btn primary" data-sugg-yes="${esc(f.id)}">Да</button><button type="button" class="btn" data-sugg-no="${esc(f.id)}">Нет</button><button type="button" class="btn" data-sugg-edit="${esc(f.id)}">Изменить</button>`}</div></div>`).join("");
+  const o = chatState.over;
+  if (o && o.chat === chatState.id) {
+    h += `<div class="mem-over"><b>Портрет ${o.size.toLocaleString("ru-RU")} знаков, а в начало чата у этой модели влезает ${o.budget.toLocaleString("ru-RU")}. В этот ответ он не пошел.</b>`;
+    if (o.props) {
+      const text = o.props.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.reduce((a, x) => a + x.text.length, 0);
+      h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ~${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
+        <textarea readonly aria-label="Сжатый портрет">${esc(text)}</textarea>
+        <div class="mem-acts"><button type="button" class="btn primary" data-over="apply">Принять сжатие</button><button type="button" class="btn" data-over="close">Не сейчас</button></div>
+        <p class="muted">Каждый раздел станет короче. Одобренные факты заменятся сжатыми, ждущие одобрения останутся.</p>`;
+    } else {
+      h += `<div class="mem-acts"><button type="button" class="btn primary" data-over="compress"${o.busy ? " disabled" : ""}>${o.busy ? "Сжимаю…" : "Сжать портрет"}</button><button type="button" class="btn" data-over="relevant">Только нужное в этот чат</button><button type="button" class="btn" data-over="full">Целиком все равно</button></div>
+        <p class="muted">«Только нужное» — кто Вы, предпочтения и факты по словам вопроса. «Целиком» — модель раньше забудет начало разговора.</p>`;
+    }
+    h += `</div>`;
+  }
+  return h;
+}
+$("#chat-log").addEventListener("click", async (e) => {
+  const n = chatState.memNew;
+  const yes = e.target.closest("[data-sugg-yes]");
+  if (yes && n) {
+    const t = document.querySelector(`[data-sugg-text="${CSS.escape(yes.dataset.suggYes)}"]`);
+    n.edit = "";
+    return void memApprove(yes.dataset.suggYes, t ? t.textContent.trim() : "");
+  }
+  const no = e.target.closest("[data-sugg-no]");
+  if (no) return void memReject(no.dataset.suggNo);
+  const ed = e.target.closest("[data-sugg-edit]");
+  if (ed && n) {
+    n.edit = ed.dataset.suggEdit;
+    renderChat();
+    const t = document.querySelector(`[data-sugg-text="${CSS.escape(n.edit)}"]`);
+    if (t) { t.focus(); getSelection().selectAllChildren(t); getSelection().collapseToEnd(); }
+    return;
+  }
+  if (e.target.closest("[data-sugg-cancel]") && n) { n.edit = ""; return void renderChat(); }
+  const ov = e.target.closest("[data-over]"), o = chatState.over;
+  if (!ov || !o) return;
+  const act = ov.dataset.over;
+  if (act === "relevant" || act === "full") {
+    chatState.portraitMode[o.chat] = act;
+    chatState.over = null;
+    renderChat();
+    return void toast("Портрет", act === "full" ? " · целиком в этот чат, со следующего вопроса" : " · только нужное в этот чат, со следующего вопроса", () => { delete chatState.portraitMode[o.chat]; }, "info");
+  }
+  if (act === "close") { o.props = null; return void renderChat(); }
+  if (act === "compress") {
+    o.busy = true; renderChat();
+    try { o.props = (await native().PortraitCompress()) || []; } catch (err) { toast("Не сжато", " · " + errText(err), null, "del"); }
+    o.busy = false; renderChat();
+    return;
+  }
+  if (act === "apply" && o.props) {
+    const props = o.props;
+    if (await memDo(() => native().PortraitApplyCompressed(props), "Портрет сжат", ` · ${props.length} ${plural(props.length, "факт", "факта", "фактов")} вместо ${approvedFacts().length}`, null)) {
+      chatState.over = null;
+      renderChat();
+    }
+  }
+});
+$("#chat-log").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && e.target.closest("[data-sugg-text]")) { e.preventDefault(); const b = document.querySelector(`[data-sugg-yes="${CSS.escape(e.target.dataset.suggText)}"]`); if (b) b.click(); }
 });
 
 // Колонки чата: видимость (значок в шапке) и ширина (край тянется) —

@@ -312,9 +312,30 @@
           <p class="muted" id="chat-listen-note"></p>
         </div>
       </details>
+      <details class="acc" id="acc-mem">
+        <summary><span class="n">05</span><span class="t">Что DVK помнит обо мне</span><span class="v" id="acc-v-mem"></span></summary>
+        <div class="acc-b">
+          <p class="muted">Портрет: что DVK знает о Вас и кладет в начало каждого чата. Новое из чатов сначала ждет Вашего одобрения.</p>
+          <p class="label-sm">Где лежит</p>
+          <div class="mem-path"><code id="mem-dir"></code><button type="button" class="btn" id="mem-pick">Выбрать папку…</button></div>
+          <p class="muted" id="mem-dir-note"></p>
+          <label class="mem-switch"><input type="checkbox" id="mem-suggest"> Предлагать запомнить прямо в чате</label>
+          <label class="mem-switch"><input type="checkbox" id="mem-extract"> Разбирать каждый ответ: есть ли новое обо мне</label>
+          <div class="mem-card" id="mem-card" hidden></div>
+        </div>
+      </details>
       <button class="btn primary" type="submit">Сохранить</button>
       <p class="muted" id="chat-model-note"></p>
     </form>
+
+    <!-- Портрет «Что DVK помнит обо мне» (#479, вариант A): ждущее одобрения
+         сверху, ниже разделы списком; текст факта правится в строке. -->
+    <div class="memory" id="memory" data-view="memory">
+      <button type="button" class="lnk" id="mem-back">← Чат и модель</button>
+      <div class="mem-queue" id="mem-queue"></div>
+      <div class="mem-facts" id="mem-facts"></div>
+      <p class="muted">Текст факта правится прямо в строке, Enter — сохранить, ✕ — забыть. Каждый факт помнит, откуда взялся.</p>
+    </div>
 
 
     <p class="settings-error" id="settings-error" role="alert" hidden></p>
