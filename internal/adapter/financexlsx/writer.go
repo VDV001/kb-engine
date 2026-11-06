@@ -29,6 +29,12 @@ const (
 	// live book holds bank names under no header, and a "next free number"
 	// decided once would sooner or later be someone else's cell.
 	currencyHeader = "Валюта"
+	// receivedHeader, receivedCurHeader и receivedAccHeader — вторая сторона
+	// обмена валюты в той же строке «Расходов» (решение владельца 06.11.2026,
+	// #432): правка строки в Excel ее не теряет. По заголовку, как «Валюта».
+	receivedHeader    = "Получено"
+	receivedCurHeader = "Валюта получения"
+	receivedAccHeader = "Счёт получения"
 	// headerRow is where the workbook keeps its column names; row 1 is a title.
 	headerRow = 2
 	// backupsKept is enough to undo a bad afternoon and few enough that the

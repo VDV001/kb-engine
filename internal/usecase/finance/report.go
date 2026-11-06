@@ -127,6 +127,10 @@ type Summary struct {
 	// рублёвые суммы и разбивки они не входят: без курса доллар и рубль не
 	// складываются, а с курсом это уже оценка. Пустой список — «таких нет».
 	OtherCurrencies []CurrencyTotal
+	// Exchanges — обмены валюты (переводы себе со второй стороной), в порядке
+	// дат: витрина показывает каждый отдельной строкой с курсом записи (#432).
+	// В траты и разбивки они не входят, как любой перевод себе.
+	Exchanges []domain.Transaction
 	// ByCategory covers expenses only, biggest first — the point of the
 	// breakdown is what to look at.
 	ByCategory []CategoryTotal
@@ -164,6 +168,9 @@ type Summary struct {
 // отчёт утверждает, что человек потратил больше, чем потратил. Записи в другой
 // валюте — по той же причине: без курса доллар и рубль не складываются.
 func (s *Summary) setAside(tx domain.Transaction, other map[string]CurrencyTotal) bool {
+	if _, ok := tx.Received(); ok {
+		s.Exchanges = append(s.Exchanges, tx)
+	}
 	c := tx.Currency()
 	if c.IsBase() {
 		if !tx.IsInternalTransfer() {
@@ -277,7 +284,19 @@ func Summarize(recs []Record) Summary {
 	for _, k := range slices.Sorted(maps.Keys(byDay)) {
 		s.ByDay = append(s.ByDay, byDay[k])
 	}
+	sortByDate(s.Exchanges)
 	return s
+}
+
+// sortByDate orders records by date, then id: журнал хранится по порядку, но
+// отбор и чужой порядок записей возможны, а отчет должен читаться одинаково.
+func sortByDate(txs []domain.Transaction) {
+	slices.SortStableFunc(txs, func(a, b domain.Transaction) int {
+		if c := a.Date().Compare(b.Date()); c != 0 {
+			return c
+		}
+		return strings.Compare(a.ID(), b.ID())
+	})
 }
 
 // rankedSubcategories orders like ranked, with the category and then the

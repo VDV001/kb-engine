@@ -1184,8 +1184,9 @@ function renderTabSettings() {
     const src = sourceOf(t);
     return src ? `<span class="what">источник · ${esc(label(src))}</span>` : `<span class="what gone">источник убран</span>`;
   };
-  $("#tab-list").innerHTML = `<li class="fixed"><span>Все</span><span class="what">всегда первая</span><span></span></li>` +
-    state.tabs.map((t, i) => `<li>
+  $("#tab-list").innerHTML = `<li class="fixed"><span></span><span>Все</span><span class="what">всегда первая</span><span></span></li>` +
+    state.tabs.map((t, i) => `<li data-tab-i="${i}">
+      <span class="handle" draggable="${editable}" aria-hidden="true" data-tip="Перетащите" data-tip-b="чтобы сменить порядок вкладок">⠿</span>
       <input value="${esc(t.name)}" data-tab-name="${i}" aria-label="Имя вкладки" ${editable && visibleTab(t) ? "" : "disabled"}>
       ${what(t)}
       <span class="tab-acts">
@@ -1245,6 +1246,45 @@ $("#tab-reset").addEventListener("click", () => {
   const before = state.tabs;
   saveTabs(DEFAULT_TABS.map((t) => ({ ...t })));
   toast("Вкладки по умолчанию", " · прежний набор можно вернуть", () => saveTabs(before));
+});
+// Перетаскивание ⠿, как у источников: линия над или под строкой показывает,
+// куда встанет вкладка; «Вернуть» в подсказке — прежний порядок.
+const tabList = $("#tab-list");
+let tabDrag = null;
+tabList.addEventListener("dragstart", (e) => {
+  const row = e.target.closest?.(".handle") && e.target.closest("li[data-tab-i]");
+  if (!row || !native()) return;
+  tabDrag = Number(row.dataset.tabI);
+  row.classList.add("dragging");
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", String(tabDrag));
+});
+tabList.addEventListener("dragover", (e) => {
+  const row = e.target.closest("li[data-tab-i]");
+  if (tabDrag === null || !row) return;
+  e.preventDefault();
+  const below = e.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2;
+  for (const r of tabList.children) r.classList.remove("drop-above", "drop-below");
+  row.classList.add(below ? "drop-below" : "drop-above");
+  row.dataset.below = below;
+});
+tabList.addEventListener("dragend", () => {
+  tabDrag = null;
+  for (const r of tabList.children) r.classList.remove("dragging", "drop-above", "drop-below");
+});
+tabList.addEventListener("drop", (e) => {
+  const row = e.target.closest("li[data-tab-i]");
+  if (tabDrag === null || !row) return;
+  e.preventDefault();
+  const from = tabDrag, over = Number(row.dataset.tabI), below = row.dataset.below === "true";
+  if (from === over) return;
+  const before = state.tabs, next = before.slice();
+  const [moved] = next.splice(from, 1);
+  let to = next.indexOf(before[over]);
+  if (below) to++;
+  next.splice(to, 0, moved);
+  saveTabs(next);
+  toast(`${to + 2}-я вкладка`, ` · «${moved.name}»`, () => saveTabs(before));
 });
 $("#tab-add-type").addEventListener("change", (e) => {
   const v = e.target.value;

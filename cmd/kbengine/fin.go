@@ -192,6 +192,11 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
 	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's when --from is given, otherwise roubles)")
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
+	// Обмен валюты (#432): вторая сторона перевода себе. Курс не вводится —
+	// он считается из двух сумм записи.
+	received := fs.String("received", "", "currency exchange: how much arrived, e.g. 100")
+	receivedCurrency := fs.String("received-currency", "", "currency of --received (default: the receiving account's when --from is given)")
+	receivedAccount := fs.String("received-account", "", "currency exchange: which account the money arrived on")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -229,6 +234,10 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
+	exchange, code := exchangeFlags(*received, *receivedCurrency, *receivedAccount, category, sub, stderr)
+	if code != 0 {
+		return code
+	}
 
 	rec, err := appendChecked(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
@@ -242,6 +251,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Account:     *account,
 		Currency:    named,
 		Accounts:    accounts,
+		Received:    exchange,
 	}, *force, func(c finance.Correction) {
 		// Подстановка называется вслух: человек набрал одно, записано другое,
 		// и узнать об этом из отчёта через месяц — то же самое молчание.
@@ -256,10 +266,47 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
-	tx := rec.Transaction()
+	printAdded(stdout, rec.Transaction())
+	return 0
+}
+
+// printAdded reports the written entry, and the exchange's second side with its
+// rate when the entry is an exchange.
+func printAdded(stdout io.Writer, tx domain.Transaction) {
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
 		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx), tx.Category(), tx.Description())
-	return 0
+	if line := exchangeText(tx); line != "" {
+		fmt.Fprintf(stdout, "fin add: %s\n", line)
+	}
+}
+
+// exchangeFlags reads the second side of an exchange from fin add's flags: nil
+// when there is none, and an exit code (2 — флаги не в паре, 1 — негодное
+// значение) when the flags cannot make one. Обмен — перевод себе, а не трата:
+// без названной категории он ею и записывается (category и sub); названная
+// другая категория уйдет в домен и получит отказ.
+func exchangeFlags(received, currency, account string, category, sub *string, stderr io.Writer) (*finance.ReceivedAdd, int) {
+	if received == "" && account == "" {
+		return nil, 0
+	}
+	if received == "" || account == "" {
+		fmt.Fprintln(stderr, "fin add: an exchange needs both --received and --received-account")
+		return nil, 2
+	}
+	got, err := domain.ParseMoney(received)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: --received: %v\n", err)
+		return nil, 1
+	}
+	cur, err := currencyFlag(currency)
+	if err != nil {
+		fmt.Fprintf(stderr, "fin add: --received-currency: %v\n", err)
+		return nil, 1
+	}
+	if *category == "" && *sub == "" {
+		*category, *sub = "Прочее", "Перевод себе"
+	}
+	return &finance.ReceivedAdd{Amount: got, Currency: cur, Account: account}, 0
 }
 
 // appendToLedger records one new entry in the ledger and returns it.
@@ -456,6 +503,11 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	for _, c := range s.OtherCurrencies {
 		fmt.Fprintf(stdout, "%s — не в итогах: расходы %s (%d), доходы %s (%d)\n",
 			c.Currency, c.Expenses, c.ExpenseCount, c.Income, c.IncomeCount)
+	}
+	// Обмен валюты — отдельной строкой с курсом записи, а не в тратах (#432).
+	for _, tx := range s.Exchanges {
+		fmt.Fprintf(stdout, "обмен %s: %s с «%s», %s\n",
+			tx.Date().Format(time.DateOnly), amountText(tx), tx.Account(), exchangeText(tx))
 	}
 	writeBreakdown(stdout, "по категориям", s.ByCategory)
 	writeBreakdown(stdout, "по счетам", s.ByAccount)

@@ -104,6 +104,11 @@ func Fingerprint(tx domain.Transaction) string {
 	if c := tx.Currency(); !c.IsBase() {
 		fields = append(fields, c.Code())
 	}
+	// Вторая сторона обмена — тоже только когда она есть, по той же причине:
+	// у записей без обмена отпечаток прежний (#432).
+	if r, ok := tx.Received(); ok {
+		fields = append(fields, "received", r.Amount().String(), r.Currency().Code(), r.Account())
+	}
 	sum := sha256.Sum256([]byte(strings.Join(fields, fingerprintSep)))
 	// Half the digest. A ledger holds hundreds of rows, not billions, and the
 	// state file stays readable at this width.
