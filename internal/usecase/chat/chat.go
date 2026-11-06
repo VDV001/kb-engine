@@ -137,6 +137,9 @@ type Request struct {
 	Show     func(text string)
 	// About — портрет человека, одобренный им (#479); пусто — без портрета.
 	About string
+	// Remember offers a fact about the person for approval (инструмент
+	// «запомнить» режима «модель ищет»); nil — портрет не ведется, инструмента нет.
+	Remember func(ctx context.Context, section, text string) error
 }
 
 // Service answers questions.

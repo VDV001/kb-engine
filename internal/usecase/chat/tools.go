@@ -21,6 +21,14 @@ const toolsPrompt = `Ты отвечаешь на вопросы человек�
 Отвечай только по найденному и называй документы, на которые опираешься. Если ответа нет — так и скажи.
 Отвечай на языке вопроса.`
 
+// rememberPrompt is added when the person keeps a portrait.
+const rememberPrompt = `
+Если в разговоре видно устойчивое о самом человеке (кто он, работа, планы, как с ним говорить) и этого нет в портрете — предложи запомнить инструментом remember. Содержание документов и разовые просьбы не запоминай.`
+
+// rememberTool offers a fact for the portrait (#479): человек одобрит или нет.
+var rememberTool = Tool{Name: "remember", Description: "Предложить запомнить устойчивый факт о человеке. Факт ждет одобрения человека и в портрет без него не попадет.",
+	Parameters: []byte(`{"type":"object","properties":{"section":{"type":"string","enum":["about","work","plans","prefs","misc"]},"text":{"type":"string","description":"факт одной фразой от третьего лица"}},"required":["section","text"]}`)}
+
 var tools = []Tool{
 	{Name: "search", Description: "Поиск по базе знаний, kb-серверам и файлам человека. Возвращает документы с ref, заголовком и началом текста.",
 		Parameters: []byte(`{"type":"object","properties":{"q":{"type":"string","description":"запрос"}},"required":["q"]}`)},
@@ -34,6 +42,7 @@ type toolRun struct {
 	attached []Doc // приложенное человеком: в документах хода всегда, первым
 	found    []Doc
 	read     []Doc
+	remember func(ctx context.Context, section, text string) error
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -43,18 +52,11 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 	if s.reader == nil {
 		return Turn{}, ErrNoReader
 	}
-	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(toolsPrompt, r.About)}}
-	for _, m := range r.History {
-		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
-	}
-	question := r.Question
-	if len(r.Attached) > 0 {
-		question = "Приложенные человеком документы:" + strings.TrimPrefix(documentsBlock(r.Attached, len(r.Attached)), "Документы:") + "\n\nВопрос: " + question
-	}
-	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: question})
-	run := &toolRun{s: s, attached: r.Attached}
+	msgs := toolsMessages(r)
+	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember}
+	offered := offeredTools(r)
 	for step := 0; ; step++ {
-		offer := tools
+		offer := offered
 		if step == MaxSteps {
 			offer = nil
 		}
@@ -78,9 +80,35 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 	}
 }
 
+// toolsMessages is the start of a tools-mode turn: правила (с «запомнить»,
+// если портрет ведется), прежний разговор и вопрос с приложенным.
+func toolsMessages(r Request) []ModelMessage {
+	prompt := toolsPrompt
+	if r.Remember != nil {
+		prompt += rememberPrompt
+	}
+	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(prompt, r.About)}}
+	for _, m := range r.History {
+		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
+	}
+	question := r.Question
+	if len(r.Attached) > 0 {
+		question = "Приложенные человеком документы:" + strings.TrimPrefix(documentsBlock(r.Attached, len(r.Attached)), "Документы:") + "\n\nВопрос: " + question
+	}
+	return append(msgs, ModelMessage{Role: RoleUser, Content: question})
+}
+
+// offeredTools: поиск и чтение всегда, «запомнить» — когда портрет ведется.
+func offeredTools(r Request) []Tool {
+	if r.Remember == nil {
+		return tools
+	}
+	return append(slices.Clone(tools), rememberTool)
+}
+
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
-	var args struct{ Q, Ref string }
+	var args struct{ Q, Ref, Section, Text string }
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
 	}
@@ -99,6 +127,14 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		}
 		r.read = appendNew(r.read, d)
 		return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes)
+	case "remember":
+		if r.remember == nil {
+			return "ошибка: портрет не ведется"
+		}
+		if err := r.remember(ctx, args.Section, args.Text); err != nil {
+			return "не предложено: " + err.Error()
+		}
+		return "предложено: ждет одобрения человека, в портрет без него не попадет"
 	default:
 		return "ошибка: неизвестный инструмент " + c.Name
 	}
