@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -103,5 +104,88 @@ func TestChatRead_URLOnlyFromSearch(t *testing.T) {
 	}
 	if len(opened) != 1 {
 		t.Fatalf("открыто: %v", opened)
+	}
+}
+
+// Находка Диска читается подключением своего источника, а не первым
+// включенным Google: у второго аккаунта документ, которого нет у первого
+// (ревью #467).
+func TestChatRead_DriveHitThroughItsConnection(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.settings.updateConfig(func(c *desktopconfig.Config) {
+		c.Sources = append(c.WithSources().Sources, desktopconfig.Source{ID: "gd1", Kind: desktopconfig.KindGDrive, URL: driveLink, Conn: "google-2", Enabled: true})
+		c.Connections = []desktopconfig.Connection{
+			{ID: "google-1", Kind: desktopconfig.ConnGoogle, Name: "Google · a@example.com", Enabled: true},
+			{ID: "google-2", Kind: desktopconfig.ConnGoogle, Name: "Google · b@example.com", Enabled: true},
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var via []string
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		via = append(via, "first")
+		return chat.Doc{Ref: ref}, nil
+	}
+	d.driveRead = func(_ context.Context, conn, ref string) (chat.Doc, error) {
+		via = append(via, conn)
+		return chat.Doc{Ref: ref, Text: "текст"}, nil
+	}
+	d.useSources(nil)
+	ref := "url:https://docs.google.com/document/d/d1/edit"
+	d.remember([]chat.Doc{{Ref: ref, Title: "ТЗ", SourceID: "gd1"}})
+	if _, err := d.read(context.Background(), ref); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(via, ",") != "google-2" {
+		t.Fatalf("прочитано через %v, want google-2", via)
+	}
+}
+
+// Запертая Связка (ждет пароля) не держит поиск Диска дольше срока поиска:
+// как у kb-серверов, чтение секрета — с тем же сроком (ревью #467).
+func TestGoogle_SearchDoesNotWaitForLockedKeychain(t *testing.T) {
+	g, _, s := newTestGoogle(t)
+	if err := s.updateConfig(func(c *desktopconfig.Config) {
+		c.Connections = []desktopconfig.Connection{{ID: "google-1", Kind: desktopconfig.ConnGoogle, Name: "Google · a@example.com", Enabled: true}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) })
+	s.tokens = hangingTokens{release}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := g.Search(ctx, "google-1", "F1", "поставки")
+	if d := time.Since(start); err == nil || d > 2*time.Second {
+		t.Fatalf("Search = %v за %v", err, d)
+	}
+}
+
+// Новая или измененная папка Диска сохраняется только с существующим
+// подключением Google; папка, чье подключение удалили позже, не мешает
+// сохранить соседей (ревью #467).
+func TestSetSources_DriveNeedsExistingGoogle(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	if err := s.updateConfig(func(c *desktopconfig.Config) {
+		c.Connections = []desktopconfig.Connection{{ID: "google-1", Kind: desktopconfig.ConnGoogle, Name: "Google · a@example.com", Enabled: true}}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	base := s.snapshot().cfg.WithSources().Sources
+	with := func(conn string) []desktopconfig.Source {
+		return append(slices.Clone(base), desktopconfig.Source{ID: "gd1", Kind: desktopconfig.KindGDrive, URL: driveLink, Conn: conn, Enabled: true})
+	}
+	if err := s.SetSources(with("google-nope"), nil, nil); err == nil {
+		t.Fatal("сохранена папка Диска с несуществующим подключением")
+	}
+	if err := s.SetSources(with("google-1"), nil, nil); err != nil {
+		t.Fatalf("папка Диска с подключением: %v", err)
+	}
+	if err := s.updateConfig(func(c *desktopconfig.Config) { c.Connections = nil }); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSources(s.snapshot().cfg.Sources, nil, nil); err != nil {
+		t.Fatalf("старая папка без подключения не дает сохранить: %v", err)
 	}
 }
