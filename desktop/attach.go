@@ -31,21 +31,44 @@ const maxAttached = 5
 // maxDiskFile caps a file attached from disk.
 const maxDiskFile = 20 << 20
 
-// attachRefs joins the attached refs and the links of the question, without
-// repeats, in the order the person gave them.
-func attachRefs(refs []string, question string) []string {
-	out := make([]string, 0, len(refs))
+// attachRefs splits what a question carries: приложенное «+» (refs) и ссылки
+// из текста вопроса (auto) — без повторов, в порядке человека.
+func attachRefs(refs []string, question string) (explicit, auto []string) {
 	for _, r := range refs {
-		if r = strings.TrimSpace(r); r != "" && !slices.Contains(out, r) {
-			out = append(out, r)
+		if r = strings.TrimSpace(r); r != "" && !slices.Contains(explicit, r) {
+			explicit = append(explicit, r)
 		}
 	}
 	for _, l := range weblink.Links(question) {
-		if r := "url:" + l; !slices.Contains(out, r) {
-			out = append(out, r)
+		if r := "url:" + l; !slices.Contains(explicit, r) && !slices.Contains(auto, r) {
+			auto = append(auto, r)
 		}
 	}
-	return out
+	return explicit, auto
+}
+
+// readQuestionLinks reads the links mentioned in the question. Ссылка лишь
+// упомянута («почему https://localhost не отвечает?»), поэтому не прочлась —
+// не повод останавливать вопрос: она называется в notes, вопрос идет дальше.
+func (d *chatDesk) readQuestionLinks(ctx context.Context, refs []string, room int) ([]chat.Doc, []string) {
+	var docs []chat.Doc
+	var notes []string
+	for _, ref := range refs {
+		if len(docs) >= room {
+			notes = append(notes, "ссылок в вопросе больше, чем читается за раз: "+strings.TrimPrefix(ref, "url:")+" не прочитана")
+			continue
+		}
+		if d.attach == nil {
+			break
+		}
+		doc, err := d.attach(ctx, ref)
+		if err != nil {
+			notes = append(notes, attachErr(ref, err).Error())
+			continue
+		}
+		docs = append(docs, doc)
+	}
+	return docs, notes
 }
 
 // readAttached reads every ref; первый отказ останавливает вопрос: человек
@@ -107,6 +130,9 @@ func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web
 			}
 			return readDiskFile(ctx, ext, p)
 		}
+		if doc, ok := d.foundDoc(ref); ok {
+			return doc, nil
+		}
 		return d.read(ctx, ref)
 	}
 }
@@ -116,8 +142,7 @@ func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googl
 	// как открытая страница.
 	if gd != nil && google.FileID(link) != "" {
 		d, err := gd.Read(ctx, link)
-		switch {
-		case err == nil:
+		if err == nil {
 			text := d.Text
 			if d.Raw != nil {
 				if text, err = extractBytes(ctx, ext, d.Raw, d.Ext); err != nil {
@@ -125,14 +150,28 @@ func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googl
 				}
 			}
 			return chat.Doc{Ref: ref, Title: d.Name, Source: googleSource(gd), Text: text}, nil
-		case !errors.Is(err, errNoGoogle):
-			return chat.Doc{}, err
+		}
+		if !errors.Is(err, errNoGoogle) {
+			// Подключенному аккаунту документ не отдан (нет доступа, API не
+			// включен, не документ) — пробуем как открытую ссылку, как до
+			// подключения; не вышло и так — причина от Google (ревью #466).
+			p, perr := web.Fetch(ctx, link)
+			if perr != nil {
+				return chat.Doc{}, err
+			}
+			return pageDoc(ctx, ext, ref, link, p)
 		}
 	}
 	p, err := web.Fetch(ctx, link)
 	if err != nil {
 		return chat.Doc{}, err
 	}
+	return pageDoc(ctx, ext, ref, link, p)
+}
+
+// pageDoc turns a page read by its link into a chat document.
+func pageDoc(ctx context.Context, ext extraction, ref, link string, p weblink.Page) (chat.Doc, error) {
+	var err error
 	text := p.Text
 	if p.Raw != nil {
 		if text, err = extractBytes(ctx, ext, p.Raw, p.Ext); err != nil {

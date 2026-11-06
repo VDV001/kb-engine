@@ -138,3 +138,37 @@ func TestLinks(t *testing.T) {
 		t.Fatalf("Links = %q, want %q", got, want)
 	}
 }
+
+// Страница в windows-1251 доходит текстом, а не «кракозябрами» (ревью #464);
+// PDF, отданный как octet-stream, узнается по имени файла; <title> внутри
+// <svg> не попадает в заголовок страницы.
+func TestFetch_CharsetOctetAndSvgTitle(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/cp1251":
+			w.Header().Set("Content-Type", "text/html; charset=windows-1251")
+			// «Срок поставки» в windows-1251
+			_, _ = w.Write([]byte("<title>\xd1\xf0\xee\xea</title><p>\xd1\xf0\xee\xea \xef\xee\xf1\xf2\xe0\xe2\xea\xe8</p>"))
+		case "/tz.pdf":
+			w.Header().Set("Content-Type", "application/octet-stream")
+			_, _ = io.WriteString(w, "%PDF-1.7")
+		case "/svg":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = io.WriteString(w, `<title>Договор</title><svg><title>Закрыть</title></svg><p>текст</p>`)
+		}
+	}))
+	defer srv.Close()
+	c := weblink.Client{HTTP: srv.Client()}
+	p, err := c.Fetch(context.Background(), srv.URL+"/cp1251")
+	if err != nil || p.Title != "Срок" || !strings.Contains(p.Text, "Срок поставки") {
+		t.Fatalf("cp1251: %+v, %v", p, err)
+	}
+	p, err = c.Fetch(context.Background(), srv.URL+"/tz.pdf")
+	if err != nil || p.Ext != "pdf" || string(p.Raw) != "%PDF-1.7" {
+		t.Fatalf("octet pdf: %+v, %v", p, err)
+	}
+	p, err = c.Fetch(context.Background(), srv.URL+"/svg")
+	if err != nil || p.Title != "Договор" {
+		t.Fatalf("svg title: %+v, %v", p, err)
+	}
+}

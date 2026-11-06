@@ -337,9 +337,15 @@ func TestChat_AskAttachmentRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	d.attach = func(context.Context, string) (chat.Doc, error) { return chat.Doc{}, weblink.ErrClosed }
-	_, err := d.Ask(askReq{ID: "", Question: "глянь https://docs.google.com/document/d/1A/edit"})
+	// Приложенное «+» не прочлось — вопрос не уходит, причина словами.
+	_, err := d.Ask(askReq{Question: "глянь", Refs: []string{"url:https://docs.google.com/document/d/1A/edit"}})
 	if err == nil || !strings.Contains(err.Error(), "закрыт") || !strings.Contains(err.Error(), "docs.google.com") || m.n != 0 {
 		t.Fatalf("err = %v, модель звали %d раз", err, m.n)
+	}
+	// Та же ссылка в тексте вопроса — вопрос уходит, ссылка названа в notes.
+	c, err := d.Ask(askReq{Question: "глянь https://docs.google.com/document/d/1A/edit"})
+	if err != nil || m.n != 1 || len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "закрыт") {
+		t.Fatalf("err = %v, notes %q, модель %d", err, c.Notes, m.n)
 	}
 }
 
@@ -410,5 +416,42 @@ func TestFolderSourceOf(t *testing.T) {
 		if got := folderSourceOf(p, srcs, "/home"); got != want {
 			t.Errorf("folderSourceOf(%q) = %q, want %q", p, got, want)
 		}
+	}
+}
+
+// Ссылка, просто упомянутая в вопросе, не останавливает его, если не
+// прочлась: вопрос уходит, человек видит, какую ссылку окно не прочло.
+// Приложенное «+» по-прежнему останавливает (ревью #464).
+func TestChat_AutoLinkFailureDoesNotBlock(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		if strings.Contains(ref, "localhost") {
+			return chat.Doc{}, weblink.ErrServer
+		}
+		return chat.Doc{Ref: ref, Title: "ок", Text: "текст"}, nil
+	}
+	c, err := d.Ask(askReq{Question: "почему https://localhost:8080/api не отвечает?"})
+	if err != nil || m.n != 1 {
+		t.Fatalf("вопрос остановлен: %v, модель звали %d", err, m.n)
+	}
+	if len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "localhost:8080") {
+		t.Fatalf("notes = %q", c.Notes)
+	}
+	if _, err := d.Ask(askReq{Question: "что тут?", Refs: []string{"url:https://localhost:8080/x"}}); err == nil {
+		t.Fatal("приложенное «+» не прочлось, а вопрос ушел")
+	}
+}
+
+// Найденное через «+ Из найденного» читается при отправке, даже если
+// следующие поиски переполнили выдачу чата (ревью #464).
+func TestChat_FoundAttachmentSurvivesSearches(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	d.rememberFound([]chat.Doc{{Ref: "kb:base:7", Title: "Договор", Text: "срок 30 дней"}})
+	doc, ok := d.foundDoc("kb:base:7")
+	if !ok || doc.Text != "срок 30 дней" {
+		t.Fatalf("doc = %+v, %v", doc, ok)
 	}
 }

@@ -30,9 +30,10 @@ var tools = []Tool{
 
 // toolRun is one question in tools mode: что найдено и что прочитано.
 type toolRun struct {
-	s     *Service
-	found []Doc
-	read  []Doc
+	s        *Service
+	attached []Doc // приложенное человеком: в документах хода всегда, первым
+	found    []Doc
+	read     []Doc
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -51,7 +52,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		question = "Приложенные человеком документы:" + strings.TrimPrefix(documentsBlock(r.Attached, len(r.Attached)), "Документы:") + "\n\nВопрос: " + question
 	}
 	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: question})
-	run := &toolRun{s: s, read: slices.Clone(r.Attached)}
+	run := &toolRun{s: s, attached: r.Attached}
 	for step := 0; ; step++ {
 		offer := tools
 		if step == MaxSteps {
@@ -105,10 +106,11 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 
 // docs are the documents of the turn: прочитанные, а без чтения — найденные.
 func (r *toolRun) docs() []Doc {
+	used := r.found
 	if len(r.read) > 0 {
-		return r.read
+		used = r.read
 	}
-	return r.found
+	return appendNew(slices.Clone(r.attached), used...)
 }
 
 func searchResult(docs []Doc) string {

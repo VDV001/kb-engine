@@ -723,7 +723,7 @@ const byKey = (k) => draft.sources.find((s) => s._key === k);
 function load(v) {
   state.known = v.sources || [];
   refreshTabs(); // подписи вкладок по источникам зависят от списка
-  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
+  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: target(s), _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
   draft.tokens = {};
   draft.saved = JSON.stringify(payload());
@@ -1872,10 +1872,12 @@ function paintPartial() {
   const el = $("#chat-partial");
   if (!el) return;
   const t = chatState.partial;
+  // Внизу ли человек — до обновления: длинный кусок иначе сам «уводит» вверх.
+  const log = $("#chat-log");
+  const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   el.classList.toggle("streaming", !!t);
   el.innerHTML = t ? answerHTML(t) : `<span class="building"></span>ищу в документах и думаю…`;
-  const log = $("#chat-log");
-  if (log.scrollHeight - log.scrollTop - log.clientHeight < 80) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
+  if (atBottom) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
 }
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
@@ -1894,11 +1896,14 @@ async function askChat() {
   fitChatQ();
   renderChat();
   try {
-    const c = await native().Ask({ id: chatState.id, question: q, refs: chatState.attached.map((a) => a.ref), sources: chatState.only || [] });
-    chatState.attached = [];
+    const sent = chatState.attached.map((a) => a.ref);
+    const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [] });
+    // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
+    chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
     const last = c.messages[c.messages.length - 1];
     if (voice.on && last) speakAnswer(last.text);
+    if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
     await renderChatList();
@@ -1951,7 +1956,8 @@ async function toggleMic() {
   if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
   if (dict.on) { native().StopDictation(); return; }
   dict.base = $("#chat-q").value.replace(/\s+$/, "");
-  try { await native().StartDictation(); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
+  // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
+  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
 }
 $("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
@@ -1981,10 +1987,11 @@ function setVoice(on) {
   $("#chat-voice").setAttribute("aria-pressed", String(on));
   $("#chat-voice").closest(".chat-box").classList.toggle("voice-on", on);
 }
-async function listenVoice() {
+async function listenVoice(keepDraft) {
   if (!voice.on || chatState.busy) return;
-  dict.base = "";
-  $("#chat-q").value = "";
+  // Первый запуск сохраняет набранное — голос его дописывает; дальше поле чистое.
+  dict.base = keepDraft ? $("#chat-q").value.replace(/\s+$/, "") : "";
+  if (!keepDraft) $("#chat-q").value = "";
   fitChatQ();
   try { await native().StartDictation(VOICE_PAUSE); setMic(true); showChatNote("Разговор голосом: говорите — после паузы вопрос уйдет сам · Esc — стоп"); }
   catch (e) { showChatNote("Разговор голосом: " + e); stopVoice(); }
@@ -2001,7 +2008,7 @@ $("#chat-voice").addEventListener("click", () => {
   if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
   if (voice.on) return stopVoice();
   setVoice(true);
-  listenVoice();
+  listenVoice(true);
 });
 // Ответ готов — прочитать; дочитал — слушать снова.
 function speakAnswer(text) {
@@ -2144,7 +2151,10 @@ $("#chat-list").addEventListener("click", async (e) => {
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
-    chatState.only = chatState.chat.sources && chatState.chat.sources.length ? chatState.chat.sources : null;
+    // Источники чата — только те, что есть сейчас: удаленный или выключенный
+    // оставил бы чат искать нигде (ревью #465).
+    const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
+    chatState.only = alive.length ? alive : null;
     renderChatSources();
   } catch (err) { showChatNote("Чат не открылся: " + err); return; }
   paintChatList();

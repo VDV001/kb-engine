@@ -10,6 +10,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/google"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 const driveLink = "https://drive.google.com/drive/folders/F1?usp=sharing"
@@ -77,4 +78,30 @@ func findRow(rows []sourceFound, id string) *sourceFound {
 		}
 	}
 	return nil
+}
+
+// Модель читает только ссылки, пришедшие из поиска (находки Диска): ссылку,
+// придуманную по подсказке из чужого документа, окно не открывает — иначе
+// данные чата ушли бы в адрес чужого сайта или закрытый документ прочелся бы
+// чужим токеном (ревью #467).
+func TestChatRead_URLOnlyFromSearch(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	var opened []string
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		opened = append(opened, ref)
+		return chat.Doc{Ref: ref, Text: "текст"}, nil
+	}
+	d.useSources(nil)
+	d.remember([]chat.Doc{{Ref: "url:https://docs.google.com/document/d/d1/edit", Title: "ТЗ"}})
+	if _, err := d.read(context.Background(), "url:https://docs.google.com/document/d/d1/edit"); err != nil {
+		t.Fatalf("находка из поиска не прочлась: %v", err)
+	}
+	for _, bad := range []string{"url:https://attacker.example/?d=секрет", "url:https://docs.google.com/document/d/private/edit"} {
+		if _, err := d.read(context.Background(), bad); err == nil {
+			t.Errorf("модель открыла %q", bad)
+		}
+	}
+	if len(opened) != 1 {
+		t.Fatalf("открыто: %v", opened)
+	}
 }

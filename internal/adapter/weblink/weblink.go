@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/html"
+	"golang.org/x/net/html/charset"
 )
 
 // Отказы: окно называет их словами человека.
@@ -169,13 +170,17 @@ func page(link string, res *http.Response, raw []byte) (Page, error) {
 	p := Page{URL: link, Title: nameOf(res.Request.URL, res.Header.Get("Content-Disposition"))}
 	ct, _, _ := mime.ParseMediaType(res.Header.Get("Content-Type"))
 	switch {
+	case ct == "application/octet-stream" || ct == "binary/octet-stream" || ct == "":
+		return fileByName(p, raw, ct)
 	case ct == "text/html" || ct == "application/xhtml+xml":
+		raw = utf8Body(raw, res.Header.Get("Content-Type"))
 		title, text := htmlText(raw)
 		if title != "" {
 			p.Title = title
 		}
 		p.Text = text
 	case strings.HasPrefix(ct, "text/") || ct == "application/json" || ct == "application/xml":
+		raw = utf8Body(raw, res.Header.Get("Content-Type"))
 		if !utf8.Valid(raw) {
 			return Page{}, ErrNotText
 		}
@@ -186,6 +191,31 @@ func page(link string, res *http.Response, raw []byte) (Page, error) {
 		return Page{}, fmt.Errorf("%w: %s", ErrNotText, ct)
 	}
 	return p, nil
+}
+
+// fileByName takes a file sent without a type (S3, nginx, загрузки Диска):
+// вид — по имени файла.
+func fileByName(p Page, raw []byte, ct string) (Page, error) {
+	ext := strings.TrimPrefix(strings.ToLower(path.Ext(p.Title)), ".")
+	if !slices.Contains([]string{"pdf", "docx", "png", "jpg", "jpeg", "heic", "tiff"}, ext) {
+		return Page{}, fmt.Errorf("%w: %s", ErrNotText, ct)
+	}
+	p.Ext, p.Raw = ext, raw
+	return p, nil
+}
+
+// utf8Body decodes a body in its declared charset (Content-Type или <meta>):
+// старые сайты в windows-1251 и koi8-r иначе дошли бы до модели мусором.
+func utf8Body(raw []byte, contentType string) []byte {
+	r, err := charset.NewReader(bytes.NewReader(raw), contentType)
+	if err != nil {
+		return raw
+	}
+	out, err := io.ReadAll(r)
+	if err != nil {
+		return raw
+	}
+	return out
 }
 
 // nameOf names the document: имя файла из ответа, иначе последний кусок пути, иначе сайт.
@@ -230,7 +260,7 @@ type textWriter struct {
 }
 
 func (w *textWriter) tag(name string, end bool) {
-	if name == "title" {
+	if name == "title" && w.skip == 0 { // <title> внутри <svg> — подпись значка, не страницы
 		w.inTitle = !end
 	}
 	if skipElement[name] {

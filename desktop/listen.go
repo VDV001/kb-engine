@@ -90,36 +90,51 @@ func (d *dictation) StartWith(pause float64, tr transcriber) error {
 	if pause > 0 {
 		args = append(args, "--pause", strconv.FormatFloat(pause, 'f', 1, 64))
 	}
+	wavPath := ""
 	if tr != nil {
 		f, err := os.CreateTemp(d.tmpDir, "kb-listen-*.wav")
 		if err != nil {
 			return err
 		}
 		_ = f.Close()
-		args = append(args, "--record", f.Name())
+		wavPath = f.Name()
+		args = append(args, "--record", wavPath)
 	}
 	cmd := exec.Command(d.bin, args...)
+	dropWav := func() {
+		if wavPath != "" {
+			_ = os.Remove(wavPath)
+		}
+	}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		dropWav()
 		return err
 	}
 	out, err := cmd.StdoutPipe()
 	if err != nil {
+		dropWav()
 		return err
 	}
 	if err := cmd.Start(); err != nil {
+		dropWav()
 		return err
 	}
 	d.cmd, d.stdin = cmd, stdin
 	limit := time.AfterFunc(maxDictation, d.Stop)
-	go d.read(cmd, out, limit, tr)
+	go d.read(cmd, out, limit, tr, wavPath)
 	return nil
 }
 
 // read forwards the helper's lines and reports the end once, with the last text.
-func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr transcriber) {
+func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr transcriber, wav string) {
+	// Запись стирается при любом исходе: отказ микрофона, сбой помощника — тоже
+	// (ревью #468: в ней может быть речь).
+	if wav != "" {
+		defer func() { _ = os.Remove(wav) }()
+	}
 	sc := bufio.NewScanner(out)
-	final := false
+	var last *listenEvent // итог придерживается до освобождения помощника
 	for sc.Scan() {
 		var he helperEvent
 		if json.Unmarshal(sc.Bytes(), &he) != nil {
@@ -129,7 +144,10 @@ func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr tra
 		if he.Recorded != "" {
 			ev = d.transcribe(he.Recorded, tr)
 		}
-		final = final || ev.Final
+		if ev.Final {
+			last = &ev
+			continue
+		}
 		d.emit(ev)
 	}
 	_ = cmd.Wait() // код выхода уже сказан строкой error
@@ -139,9 +157,12 @@ func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer, tr tra
 		d.cmd, d.stdin = nil, nil
 	}
 	d.mu.Unlock()
-	if !final {
-		d.emit(listenEvent{Final: true})
+	// Итог — после освобождения: страница, что сразу слушает снова (разговор
+	// голосом), не упирается в «диктовка уже идет» (ревью #465).
+	if last == nil {
+		last = &listenEvent{Final: true}
 	}
+	d.emit(*last)
 }
 
 // transcribe sends the recording to the speech server and deletes it.
