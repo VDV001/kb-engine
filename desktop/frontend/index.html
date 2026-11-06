@@ -49,6 +49,13 @@
           <span>источники</span>
         </button>
       </div>
+      <div class="cell">
+        <!-- Шестеренка — настройки самого окна (вкладки, дальше модули);
+             источники остаются своей кнопкой рядом (решение владельца 05.11, #438). -->
+        <button class="gear" id="open-prefs" data-tip="Настройки окна" data-tip-b="Вкладки поиска: какие есть и в каком порядке" aria-label="Настройки окна">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+      </div>
     </header>
 
     <!-- Ветка как на сайте: HEAD — текущий запрос. -->
@@ -77,39 +84,40 @@
 
   <!-- Источники: папки, каталог базы, kb-серверы. Меняются только в окне: в
        браузере (dev-режим) панель только объясняет это — менять источники
-       через HTTP нельзя намеренно. -->
+       через HTTP нельзя намеренно. Та же панель показывает и настройки окна:
+       data-view на панели выбирает, какие разделы видны (sources или prefs). -->
   <div class="scrim" id="scrim" hidden></div>
-  <aside class="settings" id="settings" aria-hidden="true" aria-labelledby="settings-title">
+  <aside class="settings" id="settings" data-view="sources" aria-hidden="true" aria-labelledby="settings-title">
     <div class="settings-head">
       <div>
-        <div class="prompt"><span class="dollar">$</span> kb config sources</div>
+        <div class="prompt"><span class="dollar">$</span> kb config <span id="settings-cmd">sources</span></div>
         <h2 id="settings-title">Источники</h2>
       </div>
       <button class="close" id="close-settings" aria-label="Закрыть">✕</button>
     </div>
-    <p class="muted">Откуда искать. Порядок — приоритет: при равной релевантности выше в выдаче тот, кто выше в списке. Перетащите <b>⠿</b> или нажмите ↑↓. Секреты (.env, ключи) и служебные папки пропускаются всегда.</p>
+    <p class="muted" data-view="sources">Откуда искать. Порядок — приоритет: при равной релевантности выше в выдаче тот, кто выше в списке. Перетащите <b>⠿</b> или нажмите ↑↓. Секреты (.env, ключи) и служебные папки пропускаются всегда.</p>
 
-    <ol class="sources" id="sources"></ol>
-    <div class="add" id="add"></div>
+    <ol class="sources" id="sources" data-view="sources"></ol>
+    <div class="add" id="add" data-view="sources"></div>
 
-    <h3>Не заходить в папки — во всех источниках</h3>
-    <ul class="folders chips" id="excludes"></ul>
-    <div class="add-row">
+    <h3 data-view="sources">Не заходить в папки — во всех источниках</h3>
+    <ul class="folders chips" id="excludes" data-view="sources"></ul>
+    <div class="add-row" data-view="sources">
       <input id="exclude-input" placeholder="имя папки, например finances" spellcheck="false" autocomplete="off">
       <button class="btn" id="add-exclude">Добавить</button>
     </div>
 
-    <h3>Вкладки поиска</h3>
-    <p class="muted">«Все» всегда первая. Вкладка отбирает выдачу по типу или по источнику; меняется сразу, без переиндексации.</p>
-    <ol class="tab-list" id="tab-list"></ol>
-    <div class="add-row" id="tab-add">
+    <h3 data-view="prefs">Вкладки поиска</h3>
+    <p class="muted" data-view="prefs">«Все» всегда первая. Вкладка отбирает выдачу по типу или по источнику; меняется сразу, без переиндексации.</p>
+    <ol class="tab-list" id="tab-list" data-view="prefs"></ol>
+    <div class="add-row" id="tab-add" data-view="prefs">
       <span class="muted">+ вкладка</span>
       <select id="tab-add-type" aria-label="Вкладка по типу"><option value="">по типу…</option></select>
       <select id="tab-add-source" aria-label="Вкладка по источнику"><option value="">по источнику…</option></select>
     </div>
 
     <p class="settings-error" id="settings-error" role="alert" hidden></p>
-    <div class="settings-foot">
+    <div class="settings-foot" data-view="sources">
       <span class="muted" id="settings-note"></span>
       <button class="btn primary" id="save-settings" disabled>Сохранить и переиндексировать</button>
     </div>

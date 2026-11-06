@@ -70,7 +70,7 @@ button { font-family: inherit; }
 /* --- Верхняя полоса: как навигация сайта, ячейки через 1px --------------------- */
 .bar {
   position: relative; /* без z-index: экран индексации (z 4) обязан быть поверх полосы */
-  display: flex; align-items: stretch; height: 44px;
+  display: flex; align-items: stretch; height: 44px; min-width: 0; /* ячейка grid: не шире окна, вкладки прокручиваются */
   background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius);
 }
 .cell { display: flex; align-items: center; padding: 0 16px; border-right: 1px solid var(--z-rule); }
@@ -120,9 +120,12 @@ button { font-family: inherit; }
   .mark-l, .mark-r { transition: none; }
   .brand.wake .mark-dvk { animation: none; }
 }
-.tabs { position: relative; gap: 22px; flex: 1; }
+/* Число стоит справа от имени на той же строке: не влезающие вкладки
+   прокручиваются вбок, а не переносят счет под имя (под чертой). */
+.tabs { position: relative; gap: 22px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
-  position: relative; background: none; border: 0; padding: 0; height: 100%; cursor: pointer;
+  position: relative; background: none; border: 0; padding: 0; height: 100%; cursor: pointer; white-space: nowrap; flex: none;
   color: var(--z-muted); font-size: 13px; transition: color var(--z-dur) var(--z-ease);
 }
 .tabs button:hover, .tabs button.active { color: var(--z-ink); }
@@ -295,6 +298,8 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   transform: translateX(calc(100% + 30px)); transition: transform .45s var(--z-ease);
 }
 .settings.open { transform: none; }
+/* Вид панели: источники или настройки окна; чужие разделы не показываются. */
+.settings[data-view="sources"] [data-view="prefs"], .settings[data-view="prefs"] [data-view="sources"] { display: none; }
 .settings-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings h2 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .settings h3 { margin: 8px 0 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); }
