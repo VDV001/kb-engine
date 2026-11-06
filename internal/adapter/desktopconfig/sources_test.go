@@ -326,3 +326,20 @@ func TestValidate_ShareURL(t *testing.T) {
 		t.Fatalf("ShareVolume = %q", got)
 	}
 }
+
+// Яндекс Диск и любой WebDAV — тоже сетевая папка: macOS монтирует
+// https-адрес WebDAV в /Volumes/<сервер>.
+func TestShareVolume_WebDAV(t *testing.T) {
+	tests := map[string]string{
+		"https://webdav.yandex.ru":         "/Volumes/webdav.yandex.ru",
+		"https://webdav.yandex.ru/":        "/Volumes/webdav.yandex.ru",
+		"https://dav.example.com/remote":   "/Volumes/remote",
+		"http://webdav.yandex.ru":          "",
+		"https://user:pw@webdav.yandex.ru": "",
+	}
+	for in, want := range tests {
+		if got := desktopconfig.ShareVolume(in); got != want {
+			t.Errorf("ShareVolume(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
