@@ -193,6 +193,10 @@ func TestService_BuildAndSearch(t *testing.T) {
 	if st.Indexed != 2 || st.Skipped != 1 {
 		t.Fatalf("stats = %+v", st)
 	}
+	// И назван: окно показывает, какой файл и почему (кнопка «подробнее»).
+	if len(st.SkippedFiles) != 1 || st.SkippedFiles[0].Path != "/w/c.md" || st.SkippedFiles[0].Err == nil {
+		t.Fatalf("SkippedFiles = %+v", st.SkippedFiles)
+	}
 
 	hits, err := svc.Search("договор", 5)
 	if err != nil {
