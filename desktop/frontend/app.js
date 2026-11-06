@@ -203,9 +203,25 @@ function countUp(el, to) {
     requestAnimationFrame(tick);
   });
 }
-function setIndexed(n, skipped, rec) {
-  $("#indexed").textContent = `${n.toLocaleString("ru-RU")} файлов` + (skipped ? ` · ${skipped} не прочитано` : "") +
+// files — непрочитанные файлы из статуса окна (IndexStatus); undefined —
+// источник их не знает (HTTP-ответ поиска), остается прежний список.
+function setIndexed(n, skipped, rec, files) {
+  if (files !== undefined) state.skippedFiles = files || [];
+  const el = $("#indexed");
+  el.textContent = `${n.toLocaleString("ru-RU")} файлов` +
     (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
+  // «Не прочитано» — кнопка «подробнее»: какие файлы и почему (панель справа).
+  if (skipped) {
+    const b = document.createElement("button");
+    b.className = "skipped-link";
+    b.textContent = `${skipped} не прочитано`;
+    b.dataset.tip = "Не прочитано";
+    b.dataset.tipB = "Эти файлы не попали в поиск даже по имени. Нажмите — какие и почему";
+    b.onclick = () => openSettings("skipped");
+    el.append(" · ", b);
+  }
+  el.parentElement.dataset.tip = "Индекс файлов";
+  el.parentElement.dataset.tipB = "Файлы ваших папок, по которым идет поиск" + (skipped ? `; ${skipped} прочитать не удалось` : "");
 }
 
 // Счет растет и после первой сборки: окно пересобирается по таймеру и
@@ -218,7 +234,7 @@ async function pollIndex() {
   if (native() && !document.hidden && !settingsOpen()) {
     const st = await native().IndexStatus().catch(() => null);
     if (st && st.error) $("#indexed").textContent = `пересборка не удалась: ${st.error}`;
-    else if (st && !st.building) setIndexed(st.indexed, st.skipped, st.recognizing);
+    else if (st && !st.building) setIndexed(st.indexed, st.skipped, st.recognizing, st.skippedFiles);
     if (st && (st.building || st.recognizing)) next = 3000;
   }
   setTimeout(pollIndex, next);
@@ -690,7 +706,11 @@ function load(v) {
 // Одна панель, два вида: «источники» (кнопка рядом и ⌘,) и настройки окна
 // (шестеренка, #438). Вид только прячет чужие разделы: черновик источников
 // переживает переход в настройки и обратно.
-const VIEWS = { sources: { title: "Источники", cmd: "sources" }, prefs: { title: "Настройки окна", cmd: "window" } };
+const VIEWS = {
+  sources: { title: "Источники", cmd: "config sources" },
+  prefs: { title: "Настройки окна", cmd: "config window" },
+  skipped: { title: "Не прочитано", cmd: "index --skipped" },
+};
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
   panel.dataset.view = view;
@@ -700,6 +720,11 @@ async function openSettings(view = "sources") {
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
   showError("");
+  if (view === "skipped") {
+    renderSkipped();
+    $("#close-settings").focus();
+    return;
+  }
   if (view === "prefs") {
     renderTabSettings();
     renderAccents();
@@ -1147,7 +1172,7 @@ $("#save-settings").onclick = async () => {
       if (!st.building) {
         if (st.error) showError("Индекс не собрался: " + st.error);
         else hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
-        setIndexed(st.indexed, st.skipped);
+        setIndexed(st.indexed, st.skipped, undefined, st.skippedFiles);
         break;
       }
       await sleep(400);
@@ -1384,3 +1409,35 @@ $("#accent-list").addEventListener("click", (e) => {
   saveAccents({ mode: "", off: off.includes(id) ? off.filter((x) => x !== id) : [...off, id] });
 });
 if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});
+
+// --- Не прочитано (кнопка «подробнее» в строке статуса) ------------------------
+state.skippedFiles = [];
+// midTrim обрезает длинное имя посередине: видны начало и расширение, полное
+// имя — в подсказке.
+const midTrim = (s, max = 44) => (s.length <= max ? s : s.slice(0, Math.ceil((max - 1) * 0.6)) + "…" + s.slice(-Math.floor((max - 1) * 0.4)));
+function renderSkipped() {
+  const files = state.skippedFiles || [];
+  const groups = new Map();
+  for (const f of files) groups.set(f.reason, [...(groups.get(f.reason) || []), f]);
+  const total = $("#indexed").textContent.match(/^[\d\s\u00a0]+/)?.[0]?.trim() || "";
+  $("#skipped-view").innerHTML = `<p class="muted">Этих файлов нет в поиске, даже по имени${total ? ` · ${files.length} из ${esc(total)}` : ""}.</p>` +
+    (files.length ? "" : `<p class="muted">Список появится после следующей сборки индекса.</p>`) +
+    [...groups].map(([reason, list]) => {
+      const [what, todo] = reason.split(" — ");
+      return `<section class="skip-group"><h3>${esc(what)} · ${list.length}</h3>${todo ? `<p class="muted">${esc(todo)}</p>` : ""}
+        <ul class="skip-list">${list.map((f) => {
+          const name = f.path.split("/").pop(), dir = f.path.slice(0, -name.length - 1);
+          return `<li><details><summary><span class="skip-name" data-tip="${esc(name)}" data-tip-b="${esc(tilde(f.path))}">${esc(midTrim(name))}</span>
+            <span class="skip-dir">${esc(tilde(dir))}</span>
+            <button class="btn" data-reveal="${esc(f.path)}" ${native() ? "" : "disabled"}>В Finder</button></summary>
+            <code class="skip-detail">${esc(f.detail)}</code></details></li>`;
+        }).join("")}</ul></section>`;
+    }).join("");
+  dropStaleTip();
+}
+$("#skipped-view").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-reveal]");
+  if (!b) return;
+  e.preventDefault(); // кнопка внутри <summary> не раскрывает строку
+  revealFile(b.dataset.reveal);
+});

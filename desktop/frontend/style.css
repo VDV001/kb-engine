@@ -303,7 +303,9 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 }
 .settings.open { transform: none; }
 /* Вид панели: источники или настройки окна; чужие разделы не показываются. */
-.settings[data-view="sources"] [data-view="prefs"], .settings[data-view="prefs"] [data-view="sources"] { display: none; }
+.settings:not([data-view="sources"]) [data-view="sources"],
+.settings:not([data-view="prefs"]) [data-view="prefs"],
+.settings:not([data-view="skipped"]) [data-view="skipped"] { display: none; }
 .settings-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings h2 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .settings h3 { margin: 8px 0 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); }
@@ -547,3 +549,21 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .accent-list .w { grid-column: 1; color: var(--z-faint); font-size: 11px; }
 .accent-list .sw { grid-column: 2; grid-row: 1 / span 2; }
 .accent-list.off-mode li { opacity: .55; }
+
+/* «N не прочитано» — кнопка в строке статуса; панель «Не прочитано». */
+.skipped-link { background: none; border: 0; padding: 0; font: inherit; color: var(--z-person); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.skipped-link:hover { color: var(--z-ink); }
+.skipped-view { display: grid; gap: 16px; }
+.skip-group { display: grid; gap: 6px; }
+.skip-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
+.skip-list li { border-bottom: 1px solid var(--z-rule); font-size: 12px; }
+.skip-list li:last-child { border-bottom: 0; }
+.skip-list summary { display: grid; grid-template-columns: 10px auto minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 6px 12px; cursor: pointer; list-style: none; }
+.skip-list summary::-webkit-details-marker { display: none; }
+.skip-list summary::before { content: "▸"; color: var(--z-faint); margin-right: -4px; }
+.skip-list details[open] summary::before { content: "▾"; }
+.skip-name { color: var(--z-ink); white-space: nowrap; }
+.skip-dir { color: var(--z-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.skip-list .btn { height: 24px; padding: 0 10px; }
+.skip-detail { display: block; padding: 0 12px 8px 32px; color: var(--z-muted); font: 11px var(--z-font); overflow-wrap: anywhere; user-select: text; }
+.skip-group h3::first-letter { text-transform: uppercase; }
