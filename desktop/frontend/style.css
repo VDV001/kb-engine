@@ -295,6 +295,8 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   transform: translateX(calc(100% + 30px)); transition: transform .45s var(--z-ease);
 }
 .settings.open { transform: none; }
+/* Вид панели: источники или настройки окна; чужие разделы не показываются. */
+.settings[data-view="sources"] [data-view="prefs"], .settings[data-view="prefs"] [data-view="sources"] { display: none; }
 .settings-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings h2 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .settings h3 { margin: 8px 0 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); }

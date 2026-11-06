@@ -396,6 +396,14 @@ function render() {
   $("#count").textContent = state.q ? `${state.items.length}` : "";
   const hl = highlighter(state.q);
   const list = $("#results");
+  // Вкладка источника, убранного из списка, пуста всегда: «Ничего не нашлось»
+  // звало бы менять запрос, а дело во вкладке (#433).
+  const cur = state.tabs.find((t) => tabKey(t) === state.tab);
+  if (cur && cur.kind === "source" && !sourceOf(cur)) {
+    list.innerHTML = `<li class="nothing">Источника этой вкладки больше нет в списке.<br>Убрать вкладку — в настройках окна (шестеренка).</li>`;
+    showEmpty();
+    return;
+  }
   if (state.q && !state.items.length) {
     list.innerHTML = `<li class="nothing">Ничего не нашлось</li>`;
     showEmpty();
@@ -670,12 +678,24 @@ function load(v) {
   draft.saved = JSON.stringify(payload());
 }
 
-async function openSettings() {
+// Одна панель, два вида: «источники» (кнопка рядом и ⌘,) и настройки окна
+// (шестеренка, #438). Вид только прячет чужие разделы: черновик источников
+// переживает переход в настройки и обратно.
+const VIEWS = { sources: { title: "Источники", cmd: "sources" }, prefs: { title: "Настройки окна", cmd: "window" } };
+async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
+  panel.dataset.view = view;
+  $("#settings-title").textContent = VIEWS[view].title;
+  $("#settings-cmd").textContent = VIEWS[view].cmd;
   scrim.hidden = false;
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
   showError("");
+  if (view === "prefs") {
+    renderTabSettings();
+    $("#close-settings").focus();
+    return;
+  }
   const editable = !!native();
   for (const id of ["#add-exclude", "#exclude-input"]) $(id).disabled = !editable;
   if (!editable) {
@@ -1077,7 +1097,8 @@ sourcesList.addEventListener("drop", (e) => {
   toast(`${at + 1}-й по приоритету`, ` · «${label(draft.sources[at])}»`, undo);
 });
 
-$("#open-settings").onclick = openSettings;
+$("#open-settings").onclick = () => openSettings("sources");
+$("#open-prefs").onclick = () => openSettings("prefs");
 $("#close-settings").onclick = closeSettings;
 scrim.onclick = closeSettings;
 $("#add-exclude").onclick = () => {
@@ -1137,7 +1158,7 @@ $("#save-settings").onclick = async () => {
 // Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
 document.addEventListener("keydown", (e) => {
   if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
-  else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings(); }
+  else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings("sources"); }
 }, true);
 
 // --- Вкладки поиска в панели ----------------------------------------------------
@@ -1223,4 +1244,4 @@ function hideIndexingScreen() {
   screen.classList.add("leave");
   setTimeout(() => { screen.hidden = true; screen.classList.remove("leave"); }, 500);
 }
-$("#indexing-settings").onclick = openSettings;
+$("#indexing-settings").onclick = () => openSettings("sources");
