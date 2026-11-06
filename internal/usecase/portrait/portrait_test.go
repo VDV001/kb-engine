@@ -3,6 +3,7 @@ package portrait_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -275,5 +276,24 @@ func TestService_Restore(t *testing.T) {
 	}
 	if err := s.Restore(ctx, f); !errors.Is(err, domain.ErrFactExists) {
 		t.Fatalf("второй возврат = %v", err)
+	}
+}
+
+// Разбор после ответа не шлет модели больше предела (ревью #482): большой
+// портрет и длинный ответ иначе переполняют маленькую модель на Маке.
+func TestService_ExtractBounded(t *testing.T) {
+	ctx := t.Context()
+	m := &fakeModel{reply: "[]"}
+	s, _ := newSvc(t, m)
+	for i := range 60 {
+		if _, err := s.Add(ctx, sect(t, "misc"), fmt.Sprintf("Длинный факт номер %d: %s", i, strings.Repeat("слово ", 40))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.Extract(ctx, "вопрос", strings.Repeat("ответ ", 3000)); err != nil {
+		t.Fatal(err)
+	}
+	if n := len([]rune(m.user)); n > portrait.MaxExtractRunes {
+		t.Fatalf("в разбор ушло %d знаков, предел %d", n, portrait.MaxExtractRunes)
 	}
 }
