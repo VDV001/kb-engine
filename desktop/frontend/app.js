@@ -1194,6 +1194,7 @@ function renderTabSettings() {
   $("#tab-add-source").innerHTML = `<option value="">по источнику…</option>` + srcs.map((x) => `<option value="${esc(x.id)}">${esc(label(x))}</option>`).join("");
   $("#tab-add-type").disabled = !editable || !types.length;
   $("#tab-add-source").disabled = !editable || !srcs.length;
+  $("#tab-reset").disabled = !editable || JSON.stringify(state.tabs) === JSON.stringify(DEFAULT_TABS);
   dropStaleTip();
 }
 // Сохранения идут строго по очереди: Wails зовет привязки параллельно, и
@@ -1234,6 +1235,12 @@ $("#tab-list").addEventListener("change", (e) => {
   saveTabs(state.tabs.map((t, k) => (k === i ? { ...t, name } : t)));
 });
 $("#tab-list").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-tab-name]")) e.target.blur(); });
+// «По умолчанию» — набор DEFAULT_TABS; прежний возвращается из подсказки.
+$("#tab-reset").addEventListener("click", () => {
+  const before = state.tabs;
+  saveTabs(DEFAULT_TABS.map((t) => ({ ...t })));
+  toast("Вкладки по умолчанию", " · прежний набор можно вернуть", () => saveTabs(before));
+});
 $("#tab-add-type").addEventListener("change", (e) => {
   const v = e.target.value;
   if (v) saveTabs([...state.tabs, { name: TYPE_TITLE[v], kind: "type", value: v }]);

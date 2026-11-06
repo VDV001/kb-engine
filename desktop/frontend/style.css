@@ -320,6 +320,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .folders.chips:empty { display: none; }
 .folders.chips li { border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 6px 3px 10px; animation: none; } /* перерисовка черновика не мигает */
 .add-row { display: flex; gap: 8px; }
+.add-row .reset { margin-left: auto; }
 .add-row input {
   flex: 1; min-width: 0; height: 32px; padding: 0 10px; font: 12px var(--z-font);
   background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0;
