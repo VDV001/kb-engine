@@ -941,13 +941,18 @@ function stateOf(s) {
 }
 
 function formOf(s, i) {
-  const what = s.kind === "server" ? "адрес" : "путь";
+  const what = s.kind === "server" ? "адрес" : s.kind === "gdrive" ? "ссылка на папку" : "путь";
+  // Подключение папки Диска меняется здесь же: удаленное подключение иначе
+  // не заменить без удаления папки (ревью #467).
+  const conns = googleConns.some((c) => c.id === s.conn) ? googleConns : [{ id: s.conn || "", name: "нет подключения — выберите" }, ...googleConns];
+  const connField = s.kind === "gdrive"
+    ? `<div class="field"><label for="ec-${s._key}">подключение</label><select id="ec-${s._key}">${conns.map((c) => `<option value="${esc(c.id)}"${c.id === s.conn ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select></div>` : "";
   const pick = s.kind === "folder" && native() ? `<button class="btn" data-pick="${s._key}">Выбрать…</button>` : "";
   if (ui.editing === s._key)
     return `<div class="form">
       <div class="field"><label for="en-${s._key}">имя</label><input id="en-${s._key}" value="${esc(s.name || "")}" placeholder="${esc(label(s))}"></div>
       <div class="field"><label for="ea-${s._key}">${what}</label><input id="ea-${s._key}" value="${esc(target(s))}" spellcheck="false">${pick}</div>
-      ${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
+      ${connField}${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
       <div class="formbar"><button class="btn primary" data-save="${s._key}">Готово</button><button class="btn" data-cancel>Отмена</button></div></div>`;
   if (ui.replacing === s._key)
     return `<div class="form">
@@ -1144,8 +1149,9 @@ panel.addEventListener("click", async (e) => {
     const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
     if (!v) return focusSoon(`#ea-${s._key}`);
     const tok = s.kind === "server" ? $(`#et-${s._key}`).value.trim() : "";
+    const conn = s.kind === "gdrive" ? $(`#ec-${s._key}`).value : s.conn;
     ui.verdict = null;
-    const undo = change(() => { s.name = name; setTarget(s, v); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
+    const undo = change(() => { s.name = name; setTarget(s, v); if (s.kind === "gdrive") s.conn = conn; if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     return toast("Изменено", ` · «${label(s)}»`, undo);
   }
   if (d.doreplace) {

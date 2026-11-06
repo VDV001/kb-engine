@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"slices"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -68,6 +69,39 @@ func (g *googleDesk) Search(ctx context.Context, conn, folder, q string) ([]goog
 		return nil, googleErr(err)
 	}
 	return files, nil
+}
+
+// driveConn is the Google connection of Drive folder source id; "" — не папка Диска.
+func (f *folderSettings) driveConn(id string) string {
+	for _, s := range f.snapshot().cfg.WithSources().Sources {
+		if s.ID == id && s.Kind == desktopconfig.KindGDrive {
+			return s.Conn
+		}
+	}
+	return ""
+}
+
+// checkDriveConns refuses a new or changed Drive folder whose connection is
+// not a Google connection of the window: страница прислала бы любой id.
+// Папка, чье подключение удалили позже, остается («нет подключения» в строке)
+// и не мешает сохранить соседей.
+func checkDriveConns(prev, next desktopconfig.Config) error {
+	old := map[string]desktopconfig.Source{}
+	for _, s := range prev.WithSources().Sources {
+		old[s.ID] = s
+	}
+	for _, s := range next.Sources {
+		if s.Kind != desktopconfig.KindGDrive {
+			continue
+		}
+		if o, ok := old[s.ID]; ok && o.Kind == s.Kind && o.Conn == s.Conn {
+			continue
+		}
+		if c, ok := next.Connection(s.Conn); !ok || c.Kind != desktopconfig.ConnGoogle {
+			return fmt.Errorf("%w: %s: нет такого подключения Google — выберите его в списке", desktopconfig.ErrSourceTarget, s.ID)
+		}
+	}
+	return nil
 }
 
 // driveRow is the state of a Drive folder in the sources list: подключение

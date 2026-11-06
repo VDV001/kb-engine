@@ -19,6 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/google"
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 )
 
 // Подключение Google (решение владельца 06.11: «дать доступ — удобнее»):
@@ -201,7 +202,9 @@ func (g *googleDesk) SetEnabled(id string, on bool) error {
 	})
 }
 
-// Remove deletes a connection and its secrets.
+// Remove deletes a connection and its secrets. Подключение из настроек
+// уходит в любом случае; секреты, которые Связка не отдала, называются вслух
+// (ревью #466): иначе вход молча оставался бы на Маке.
 func (g *googleDesk) Remove(id string) error {
 	if err := g.settings.updateConfig(func(cfg *desktopconfig.Config) {
 		cfg.Connections = slices.DeleteFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.ID == id })
@@ -214,9 +217,9 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
-	_ = g.settings.tokens.Delete(refreshAccount(id))
-	_ = g.settings.tokens.Delete(clientAccount(id))
-	_ = g.settings.tokens.Delete(speechKeyAccount(id))
+	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id)), g.settings.tokens.Delete(speechKeyAccount(id))); err != nil {
+		return fmt.Errorf("подключение убрано, но вход не удален из Связки ключей — удалите записи «conn:%s» в «Связке ключей»: %w", id, err)
+	}
 	return nil
 }
 
@@ -226,31 +229,40 @@ func (g *googleDesk) Remove(id string) error {
 // аккаунта, и документ открыт только второму. Путь: пробовать по очереди на
 // ErrNoAccess.
 func (g *googleDesk) Read(ctx context.Context, link string) (google.Doc, error) {
+	return g.ReadAs(ctx, "", link)
+}
+
+// ReadAs reads a Google link through connection conn ("" — первое
+// включенное): находка папки Диска читается тем аккаунтом, что ее нашел.
+func (g *googleDesk) ReadAs(ctx context.Context, conn, link string) (google.Doc, error) {
 	id := google.FileID(link)
 	if id == "" {
 		return google.Doc{}, errors.New("это не ссылка на документ Google")
 	}
 	cfg := g.settings.snapshot().cfg
-	i := slices.IndexFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.Kind == desktopconfig.ConnGoogle && c.Enabled })
+	i := slices.IndexFunc(cfg.Connections, func(c desktopconfig.Connection) bool {
+		return c.Kind == desktopconfig.ConnGoogle && c.Enabled && (conn == "" || c.ID == conn)
+	})
 	if i < 0 {
 		return google.Doc{}, errNoGoogle
 	}
-	conn := cfg.Connections[i]
-	c, at, err := g.token(ctx, conn.ID)
+	used := cfg.Connections[i]
+	c, at, err := g.token(ctx, used.ID)
 	if err != nil {
 		return google.Doc{}, err
 	}
-	d, err := c.Read(ctx, at, id)
+	d, err := c.ReadLink(ctx, at, link)
 	if err != nil {
-		return google.Doc{}, fmt.Errorf("%s: %w", conn.Name, googleErr(err))
+		return google.Doc{}, fmt.Errorf("%s: %w", used.Name, googleErr(err))
 	}
 	return d, nil
 }
 
 // token returns a client and an access token for connection id: из памяти
-// или обновлением по refresh-токену из Связки.
+// или обновлением по refresh-токену из Связки. Связка читается со сроком
+// ctx, как у kb-серверов: запертая (ждет пароля) не держит поиск (ревью #467).
 func (g *googleDesk) token(ctx context.Context, id string) (google.Client, string, error) {
-	raw, err := g.settings.tokens.Get(clientAccount(id))
+	raw, err := sourcelist.TokenWithin(ctx, g.settings.tokens.Get, clientAccount(id))
 	if err != nil {
 		return google.Client{}, "", fmt.Errorf("клиент Google не прочитан из Связки ключей: %w", err)
 	}
@@ -265,7 +277,7 @@ func (g *googleDesk) token(ctx context.Context, id string) (google.Client, strin
 	if ok && time.Now().Before(t.exp) {
 		return c, t.at, nil
 	}
-	refresh, err := g.settings.tokens.Get(refreshAccount(id))
+	refresh, err := sourcelist.TokenWithin(ctx, g.settings.tokens.Get, refreshAccount(id))
 	if err != nil {
 		return google.Client{}, "", fmt.Errorf("вход Google не прочитан из Связки ключей: %w", err)
 	}
@@ -288,6 +300,10 @@ func googleErr(err error) error {
 		return errors.New("у подключенного аккаунта нет доступа к документу")
 	case errors.Is(err, google.ErrNotFound):
 		return errors.New("документа нет: проверьте ссылку")
+	case errors.Is(err, google.ErrAPIOff):
+		return errors.New("в проекте Google Cloud клиента OAuth не включен Google Drive API — включите его в «APIs & Services»")
+	case errors.Is(err, google.ErrBusy):
+		return errors.New("частота запросов к Google ограничена — попробуйте позже")
 	case errors.Is(err, google.ErrTooBig):
 		return errors.New("документ больше 20 МБ")
 	}

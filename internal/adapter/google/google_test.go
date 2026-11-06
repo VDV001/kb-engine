@@ -161,3 +161,70 @@ func TestAccount(t *testing.T) {
 		t.Fatalf("account: %q, %v", email, err)
 	}
 }
+
+// Таблица по ссылке с #gid — тот лист, что открыт в ссылке: экспорт Диска
+// отдает только первый лист (ревью #466). Лист берется по exportLinks-адресу
+// Документов тем же токеном.
+func TestReadLink_SheetByGid(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer at-1" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		q := r.URL.Query()
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/files/sh1"):
+			_, _ = io.WriteString(w, `{"id":"sh1","name":"Смета","mimeType":"application/vnd.google-apps.spreadsheet"}`)
+		case strings.HasSuffix(r.URL.Path, "/files/sh1/export"):
+			_, _ = io.WriteString(w, "первый лист")
+		case r.URL.Path == "/spreadsheets/export" && q.Get("id") == "sh1" && q.Get("exportFormat") == "csv" && q.Get("gid") == "42":
+			_, _ = io.WriteString(w, "лист 42")
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+	c := google.Client{APIURL: srv.URL, DocsURL: srv.URL, HTTP: srv.Client()}
+	for link, want := range map[string]string{
+		"https://docs.google.com/spreadsheets/d/sh1/edit#gid=42": "лист 42",
+		"https://docs.google.com/spreadsheets/d/sh1/edit":        "первый лист",
+	} {
+		d, err := c.ReadLink(context.Background(), "at-1", link)
+		if err != nil || d.Text != want || d.Name != "Смета" {
+			t.Errorf("%s: %+v, %v; want %q", link, d, err, want)
+		}
+	}
+}
+
+// 403 у Google — не всегда «нет доступа»: выключенный Drive API, лимит
+// запросов и нехватка права называются своими отказами (ревью #466).
+func TestForbiddenReasons(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   error
+	}{
+		{"API выключен", 403, `{"error":{"code":403,"errors":[{"reason":"accessNotConfigured"}]}}`, google.ErrAPIOff},
+		{"API выключен, details", 403, `{"error":{"code":403,"details":[{"reason":"SERVICE_DISABLED"}]}}`, google.ErrAPIOff},
+		{"лимит", 403, `{"error":{"errors":[{"reason":"userRateLimitExceeded"}]}}`, google.ErrBusy},
+		{"лимит 429", 429, ``, google.ErrBusy},
+		{"экспорт велик", 403, `{"error":{"errors":[{"reason":"exportSizeLimitExceeded"}]}}`, google.ErrTooBig},
+		{"нет права входа", 403, `{"error":{"errors":[{"reason":"insufficientPermissions"}]}}`, google.ErrReconnect},
+		{"нет доступа к файлу", 403, `{"error":{"errors":[{"reason":"insufficientFilePermissions"}]}}`, google.ErrNoAccess},
+		{"не JSON", 403, `nope`, google.ErrNoAccess},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(tc.status)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer srv.Close()
+			_, err := google.Client{APIURL: srv.URL, HTTP: srv.Client()}.Read(context.Background(), "at-1", "doc1")
+			if !errors.Is(err, tc.want) {
+				t.Fatalf("err = %v, want %v", err, tc.want)
+			}
+		})
+	}
+}
