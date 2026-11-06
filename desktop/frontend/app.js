@@ -1744,7 +1744,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // режим «модель ищет» делает несколько запросов к модели подряд.
 const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null };
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
-const memState = { p: null, qedit: "" };
+const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1914,7 +1914,7 @@ function renderAccValues() {
   const lb = $("#chat-listens").querySelector('[aria-pressed="true"]');
   $("#acc-v-listen").textContent = lb ? lb.firstChild.textContent : "Mac (бесплатно)";
   const p = memState.p;
-  $("#acc-v-mem").textContent = !p || !p.dir ? "папка не выбрана" : `${approvedFacts().length}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
+  $("#acc-v-mem").textContent = !memOn(p) ? "не включено" : `${approvedFacts().length}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -2442,31 +2442,65 @@ $("#chat-model").addEventListener("submit", async (e) => {
 // --- Портрет «Что DVK помнит обо мне» (#479, прототип 06.11, везде A) -------------
 // Окно хранит портрет в папке человека; новое из чатов ждет одобрения; каждое
 // изменение — подсказкой, где можно — с «Вернуть».
+const memOn = (p) => !!(p && (p.dir || p.server));
+const memServers = () => state.known.filter((s) => s.kind === "server");
 const approvedFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => !f.pending);
 const pendingFacts = () => ((memState.p && memState.p.facts) || []).filter((f) => f.pending);
 async function loadPortrait() {
   if (!native() || !native().Portrait) return;
-  try { memState.p = await native().Portrait(); } catch (e) { memState.p = null; $("#mem-dir-note").textContent = errText(e); }
+  if (native().Sources) state.known = ((await native().Sources().catch(() => null)) || { sources: state.known }).sources || [];
+  memState.err = "";
+  try { memState.p = await native().Portrait(); } catch (e) { memState.p = null; memState.err = errText(e); }
   renderMemSettings();
   renderAccValues();
 }
+// renderMemSettings — где лежит портрет: папка на этом Маке или kb-сервер из
+// «Источников» (тем же токеном); выбранный сервер главнее папки.
 function renderMemSettings() {
-  const s = chatState.settings || {}, p = memState.p;
-  const dir = (p && p.dir) || s.memoryDir || "";
+  const s = chatState.settings || {};
+  const dir = s.memoryDir || "", srv = s.memoryServer || "";
+  const where = memState.where || (srv ? "server" : "local");
+  $("#mem-where").querySelectorAll("[data-mem-where]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.memWhere === where)));
+  $("#mem-local").hidden = where !== "local";
+  $("#mem-servers").hidden = where !== "server";
   $("#mem-dir").textContent = dir ? tilde(dir) + "/portrait.json" : "папка не выбрана";
-  if (!$("#mem-dir-note").textContent || dir) $("#mem-dir-note").textContent = dir
-    ? "Файл с правами 0600: читать его может только Ваш пользователь macOS. Папка в iCloud Drive — и портрет будет на всех Ваших Маках."
-    : "Выберите папку — и DVK начнет помнить о Вас. Пока папки нет, портрет не ведется.";
   $("#mem-pick").textContent = dir ? "Другая папка…" : "Выбрать папку…";
+  const servers = memServers();
+  $("#mem-servers").innerHTML = servers.map((x) => `<button type="button" class="btn" data-mem-server="${esc(x.id)}" aria-pressed="${x.id === srv}">${esc(label(x))}</button>`).join("");
+  const gone = srv && !servers.some((x) => x.id === srv);
+  $("#mem-dir-note").textContent = memState.err || (where === "server"
+    ? !servers.length ? "kb-серверов в «Источниках» нет — добавьте свой, и портрет будет на нем."
+      : gone ? "kb-сервера портрета больше нет в «Источниках» — выберите другой."
+      : srv ? "Рядом с Вашей базой, вход Вашим токеном. На любом устройстве с этим подключением портрет один и тот же."
+      : "Выберите kb-сервер — портрет переедет туда не сам: факты из папки останутся в ней."
+    : dir ? "Файл с правами 0600: читать его может только Ваш пользователь macOS. Папка в iCloud Drive — и портрет будет на всех Ваших Маках."
+      : "Выберите папку — и DVK начнет помнить о Вас. Пока папки нет, портрет не ведется.");
   $("#mem-suggest").checked = !s.memoryQuiet;
   $("#mem-extract").checked = !s.memoryOff;
-  for (const id of ["#mem-suggest", "#mem-extract"]) $(id).disabled = !dir;
+  for (const id of ["#mem-suggest", "#mem-extract"]) $(id).disabled = !(dir || srv);
   renderMemCard();
 }
+$("#mem-where").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mem-where]");
+  if (!b) return;
+  memState.where = b.dataset.memWhere;
+  const s = chatState.settings || {};
+  if (memState.where === "local" && s.memoryServer) {
+    memState.where = "";
+    return void saveChatPart({ memoryServer: "" }, "Портрет", s.memoryDir ? " · в папке " + tilde(s.memoryDir) : " · на этом Маке, выберите папку").then(loadPortrait);
+  }
+  renderMemSettings();
+});
+$("#mem-servers").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mem-server]");
+  if (!b) return;
+  memState.where = "";
+  saveChatPart({ memoryServer: b.dataset.memServer }, "Портрет", " · на kb-сервере «" + b.textContent + "»").then(loadPortrait);
+});
 // renderMemCard — карточка как в english-hub: последний факт, разделы, новое.
 function renderMemCard() {
   const el = $("#mem-card"), p = memState.p;
-  el.hidden = !p || !p.dir;
+  el.hidden = !memOn(p);
   if (el.hidden) return;
   const facts = approvedFacts(), queue = pendingFacts(), last = facts[facts.length - 1];
   const bySec = p.sections.map((sec) => ({ ...sec, n: facts.filter((f) => f.section === sec.id).length })).filter((x) => x.n);
@@ -2479,8 +2513,8 @@ function renderMemCard() {
 // renderPortrait — экран портрета: «Ждут одобрения», ниже разделы с правкой в строке.
 function renderPortrait() {
   const p = memState.p;
-  if (!p || !p.dir) {
-    $("#mem-queue").innerHTML = `<p class="muted">Папка портрета не выбрана: «Чат и модель → 05 Что DVK помнит обо мне».</p>`;
+  if (!memOn(p)) {
+    $("#mem-queue").innerHTML = `<p class="muted">Не выбрано, где лежит портрет: «Чат и модель → 05 Что DVK помнит обо мне».</p>`;
     $("#mem-facts").innerHTML = "";
     return;
   }
@@ -2533,7 +2567,7 @@ $("#mem-pick").addEventListener("click", async () => {
   let dir;
   try { dir = await native().PickPortraitDir(); } catch (e) { $("#mem-dir-note").textContent = errText(e); return; }
   if (!dir) return;
-  await saveChatPart({ memoryDir: dir }, "Папка портрета", " · " + tilde(dir));
+  await saveChatPart({ memoryDir: dir, memoryServer: "" }, "Папка портрета", " · " + tilde(dir));
   await loadPortrait();
 });
 $("#mem-suggest").addEventListener("change", (e) => saveChatPart({ memoryQuiet: !e.target.checked }, "Память", e.target.checked ? " · предлагаю запомнить в чате" : " · новое ждет только в портрете"));
