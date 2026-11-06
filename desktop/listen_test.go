@@ -30,7 +30,7 @@ type events struct {
 func (e *events) add(ev listenEvent) { e.mu.Lock(); e.list = append(e.list, ev); e.mu.Unlock() }
 func (e *events) wait(t *testing.T, done func([]listenEvent) bool) []listenEvent {
 	t.Helper()
-	for range 200 {
+	for range 1000 { // до 10 с: под параллельным just ci помощник стартует медленно
 		e.mu.Lock()
 		cp := append([]listenEvent(nil), e.list...)
 		e.mu.Unlock()
@@ -112,7 +112,7 @@ echo 'RIFF-wav' > "$2"
 echo '{"ready":true}'
 cat >/dev/null
 printf '{"recorded":"%s","final":true}\n' "$2"
-`), emit: ev.add}
+`), emit: ev.add, tmpDir: t.TempDir()}
 	err := d.StartWith(0, func(_ context.Context, wav []byte) (string, error) {
 		gotWav = wav
 		return "Срок поставки?", nil
@@ -138,14 +138,14 @@ printf '{"recorded":"%s","final":true}\n' "$2"
 	if path != "" {
 		t.Fatalf("путь записи ушел странице: %q", path)
 	}
-	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "kb-listen-*.wav"))
+	matches, _ := filepath.Glob(filepath.Join(d.tmpDir, "kb-listen-*.wav"))
 	if len(matches) != 0 {
 		t.Fatalf("запись не стерта: %v", matches)
 	}
 
 	// Отказ сервера — словами, конец диктовки.
 	var ev2 events
-	d2 := &dictation{bin: d.bin, emit: ev2.add}
+	d2 := &dictation{bin: d.bin, emit: ev2.add, tmpDir: t.TempDir()}
 	_ = d2.StartWith(0, func(context.Context, []byte) (string, error) {
 		return "", errors.New("сервер распознавания не ответил")
 	})
