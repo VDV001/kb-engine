@@ -223,7 +223,17 @@
     <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
     <ul class="conn-list" id="conn-list" data-view="conn"></ul>
     <div class="conn-add" data-view="conn">
-      <button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
+      <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
+      <button class="btn" type="button" id="conn-add-speech" aria-expanded="false">+ Распознавание речи</button></div>
+      <form class="conn-google" id="conn-speech" hidden>
+        <p class="muted">Свой сервер распознавания вместо Apple Speech: whisper.cpp (<code>whisper-server</code>), faster-whisper или OpenAI — любой с OpenAI-совместимым <code>/audio/transcriptions</code>. Окно отдает ему запись диктовки.</p>
+        <label>Название<input id="conn-s-name" placeholder="whisper.cpp на этом Маке" autocomplete="off" spellcheck="false"></label>
+        <label>Адрес<input id="conn-s-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off" spellcheck="false"></label>
+        <label>Модель<input id="conn-s-model" placeholder="whisper-1" autocomplete="off" spellcheck="false"></label>
+        <label>Ключ, если нужен<input id="conn-s-key" type="password" autocomplete="off" spellcheck="false"></label>
+        <button class="btn primary" type="submit">Добавить</button>
+        <p class="muted" id="conn-s-note" role="status"></p>
+      </form>
       <form class="conn-google" id="conn-google" hidden>
         <p class="muted">Окно попросит у Google только чтение Диска. Нужен свой клиент OAuth — один раз, около трех минут:</p>
         <ol class="muted conn-steps">
@@ -252,6 +262,9 @@
       <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
       <h3>Голос</h3>
       <p class="muted" id="chat-listen-note"></p>
+      <label>Слушает диктовку
+        <select id="chat-listen"><option value="">Apple Speech на этом Маке</option></select>
+      </label>
       <label>Читает ответ в разговоре голосом
         <select id="chat-voice-name"><option value="">голос системы</option></select>
       </label>

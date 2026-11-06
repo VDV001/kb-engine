@@ -811,7 +811,7 @@ async function openSettings(view = "sources") {
 }
 // renderConnections lists the window's accesses; «Изменить» ведет в раздел,
 // где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
-const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск" };
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи" };
 let connConfirm = null;
 async function renderConnections() {
   const list = $("#conn-list");
@@ -842,6 +842,22 @@ $("#conn-list").addEventListener("click", async (e) => {
     else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; }
     else return;
   } catch (err) { showError(String(err)); }
+  renderConnections();
+});
+$("#conn-add-speech").addEventListener("click", () => {
+  const f = $("#conn-speech");
+  f.hidden = !f.hidden;
+  $("#conn-add-speech").setAttribute("aria-expanded", String(!f.hidden));
+  if (!f.hidden) $("#conn-s-url").focus();
+});
+$("#conn-speech").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!native() || !native().AddSpeechConnection) return void ($("#conn-s-note").textContent = "Подключения меняются в окне приложения.");
+  try {
+    const r = await native().AddSpeechConnection($("#conn-s-name").value, $("#conn-s-url").value, $("#conn-s-model").value, $("#conn-s-key").value);
+    $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Слушает диктовку».";
+    for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
+  } catch (err) { $("#conn-s-note").textContent = String(err); }
   renderConnections();
 });
 $("#conn-add-google").addEventListener("click", () => {
@@ -1754,6 +1770,11 @@ async function renderVoiceSettings() {
   const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
   note.textContent = !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
     : `Слушает: Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
+  const listen = $("#chat-listen");
+  const speech = ((await native().Connections().catch(() => [])) || []).filter((c) => c.kind === "speech");
+  const curListen = (chatState.settings && chatState.settings.listen) || "";
+  listen.innerHTML = `<option value="">Apple Speech на этом Маке</option>` + speech.map((c) => `<option value="${esc(c.id)}"${c.id === curListen ? " selected" : ""}${c.enabled ? "" : " disabled"}>${esc(c.name)}${c.enabled ? "" : " (выключено)"}</option>`).join("");
+  if (curListen && speech.some((c) => c.id === curListen)) note.textContent = "Слушает: " + speech.find((c) => c.id === curListen).name + " — запись диктовки уходит этому серверу.";
   const sel = $("#chat-voice-name");
   const voices = (await native().Voices().catch(() => [])) || [];
   const cur = (chatState.settings && chatState.settings.voice) || "";
@@ -1917,6 +1938,7 @@ async function toggleMic() {
 $("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
   if (ev.error) { if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
+  if (ev.busy) showChatNote("Диктовка: распознаю запись…");
   if (ev.text !== undefined && ev.text !== "") {
     $("#chat-q").value = (dict.base ? dict.base + " " : "") + ev.text;
     fitChatQ();
@@ -2124,7 +2146,7 @@ $(".settings-nav").addEventListener("click", (e) => {
 });
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value };
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "Сохранено";
