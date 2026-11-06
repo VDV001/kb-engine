@@ -15,6 +15,31 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// MaxExtractRunes bounds one extraction request: маленькая модель на Маке
+// держит 4–8 тыс. токенов на все, а разбор идет рядом с чатом.
+// ponytail: пределы в знаках, а не токенах модели. Потолок: на латинице
+// токенов меньше, и модель недозагружена. Путь: предел от контекста модели.
+const (
+	MaxExtractRunes  = maxKnownRunes + maxQuestionRunes + maxAnswerRunes + 100
+	maxKnownRunes    = 1500
+	maxQuestionRunes = 500
+	maxAnswerRunes   = 2000
+)
+
+func firstRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
+}
+
+func lastRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[len(r)-n:])
+	}
+	return s
+}
+
 // ErrModelReply — модель ответила не тем JSON, который просили.
 var ErrModelReply = errors.New("model reply is not the requested JSON")
 
@@ -178,7 +203,9 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 	if known == "" {
 		known = "ничего"
 	}
-	user := "Уже известно:\n" + known + "\n\nВопрос человека:\n" + question + "\n\nОтвет:\n" + answer
+	// Известное — с конца (свежее важнее), вопрос и ответ — с начала.
+	user := "Уже известно:\n" + lastRunes(known, maxKnownRunes) + "\n\nВопрос человека:\n" + firstRunes(question, maxQuestionRunes) +
+		"\n\nОтвет:\n" + firstRunes(answer, maxAnswerRunes)
 	reply, err := s.model.Complete(ctx, extractPrompt, user)
 	if err != nil {
 		return nil, err
