@@ -306,3 +306,23 @@ func TestValidate_GDrive(t *testing.T) {
 		t.Fatalf("DriveFolderID = %q", got)
 	}
 }
+
+// Сетевая папка — папка с адресом шары: окно подключает шару само, когда
+// путь пропал (сон, перезагрузка). Адрес — только smb:// или afp:// без
+// пароля в адресе: пароль хранит Связка ключей macOS.
+func TestValidate_ShareURL(t *testing.T) {
+	ok := desktopconfig.Source{ID: "f1", Kind: desktopconfig.KindFolder, Path: "/Volumes/docs", URL: "smb://nas.local/docs", Enabled: true}
+	if err := (desktopconfig.Config{Sources: []desktopconfig.Source{ok}}).Validate(); err != nil {
+		t.Fatalf("отвергнуто: %v", err)
+	}
+	for _, u := range []string{"http://nas.local/docs", "smb://user:pass@nas.local/docs", "smb://", "smb://nas.local/docs\"; rm -rf ~"} {
+		bad := ok
+		bad.URL = u
+		if err := (desktopconfig.Config{Sources: []desktopconfig.Source{bad}}).Validate(); !errors.Is(err, desktopconfig.ErrSourceTarget) {
+			t.Errorf("адрес %q принят: %v", u, err)
+		}
+	}
+	if got := desktopconfig.ShareVolume("smb://nas.local/Общие%20документы"); got != "/Volumes/Общие документы" {
+		t.Fatalf("ShareVolume = %q", got)
+	}
+}
