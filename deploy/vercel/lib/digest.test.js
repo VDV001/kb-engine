@@ -66,7 +66,7 @@ test("fetchUptime: не-200 и сеть - null", async () => {
 test("сводка: все хорошо", () => {
   assert.equal(
     digestText(ok, parseUptime(monitor(), NOW)),
-    ["<b>🩺 kb-сервер, сводка за сутки</b>", "Сейчас: ✓ /healthz 200 за 312 мс", "Аптайм: 100 % за 24 ч · 99.98 % за 7 дней", "Отклик в среднем: 242 мс", "Сбоев за сутки: нет"].join("\n"),
+    ["<b>🩺 kb-сервер, сводка за сутки</b>", "Сейчас: ✓ <code>/healthz</code> 200 за 312 мс", "Аптайм: 100 % за 24 ч · 99.98 % за 7 дней", "Отклик в среднем: 242 мс", "Сбоев за сутки: нет"].join("\n"),
   );
 });
 
@@ -84,8 +84,8 @@ test("сводка: сбои по Москве, причина экраниро�
 
 test("сводка: сервер не ответил или ответил не 200", () => {
   const u = parseUptime(monitor(), NOW);
-  assert.match(digestText({ code: null, ms: null, why: "TimeoutError" }, u), /Сейчас: ✗ \/healthz не ответил: TimeoutError/);
-  assert.match(digestText({ code: 503, ms: 40, why: "" }, u), /Сейчас: ✗ \/healthz ответил 503/);
+  assert.match(digestText({ code: null, ms: null, why: "TimeoutError" }, u), /Сейчас: ✗ <code>\/healthz<\/code> не ответил: TimeoutError/);
+  assert.match(digestText({ code: 503, ms: 40, why: "" }, u), /Сейчас: ✗ <code>\/healthz<\/code> ответил 503/);
 });
 
 test("сводка: UptimeRobot не ответил - так и пишем, проверка остается", () => {

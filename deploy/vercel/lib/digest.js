@@ -89,7 +89,7 @@ const dur = (sec) => (sec < 60 ? Math.round(sec) + " с" : sec < 3600 ? Math.rou
 
 // HTML для Telegram (parse_mode HTML); u = null - UptimeRobot не ответил, так и пишем
 export function digestText(p, u) {
-  const now = p.code === 200 ? `✓ /healthz 200 за ${p.ms} мс` : `✗ /healthz ${p.code === null ? "не ответил: " + esc(p.why) : "ответил " + p.code}`;
+  const now = p.code === 200 ? `✓ <code>/healthz</code> 200 за ${p.ms} мс` : `✗ <code>/healthz</code> ${p.code === null ? "не ответил: " + esc(p.why) : "ответил " + p.code}`;
   const lines = ["<b>🩺 kb-сервер, сводка за сутки</b>", "Сейчас: " + now];
   if (!u) return [...lines, "UptimeRobot: нет данных"].join("\n");
   lines.push(`Аптайм: ${pct(u.d1)} за 24 ч · ${pct(u.d7)} за 7 дней`);
