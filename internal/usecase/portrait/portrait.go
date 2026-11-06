@@ -1,0 +1,285 @@
+// Package portrait keeps what DVK remembers about the person (#479): ручные
+// правки, разбор обмена моделью в «ждут одобрения», сжатие и текст для чата.
+package portrait
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+	"unicode"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+// ErrModelReply — модель ответила не тем JSON, который просили.
+var ErrModelReply = errors.New("model reply is not the requested JSON")
+
+// Store keeps the portrait: файл в папке человека или kb-сервер.
+type Store interface {
+	Load(ctx context.Context) (domain.Portrait, error)
+	Save(ctx context.Context, p domain.Portrait) error
+}
+
+// Model answers one short request: system — правила, user — данные.
+type Model interface {
+	Complete(ctx context.Context, system, user string) (string, error)
+}
+
+// Пометки происхождения факта: человек видит у каждого, откуда он взялся.
+const (
+	sourceManual     = "добавлено вручную"
+	sourceEdited     = "исправлено вручную"
+	sourceCompressed = "сжато"
+	sourceChat       = "из чата "     // + дата
+	sourceEditedTail = ", исправлено" // одобрено с правкой
+)
+
+// Service changes the portrait and saves every change.
+type Service struct {
+	store Store
+	model Model
+	now   func() time.Time
+	newID func() string
+}
+
+// NewService wires the store, the model, the clock and the id source.
+func NewService(store Store, model Model, now func() time.Time, newID func() string) *Service {
+	return &Service{store: store, model: model, now: now, newID: newID}
+}
+
+// Portrait returns the saved portrait.
+func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { return s.store.Load(ctx) }
+
+func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	p, err := s.store.Load(ctx)
+	if err != nil {
+		return err
+	}
+	if p, err = fn(p); err != nil {
+		return err
+	}
+	return s.store.Save(ctx, p)
+}
+
+// Add adds a fact typed by the person: одобрен сразу.
+func (s *Service) Add(ctx context.Context, section domain.FactSection, text string) (domain.Fact, error) {
+	f, err := domain.NewFact(s.newID(), section, text, sourceManual, domain.FactApproved, s.now())
+	if err != nil {
+		return domain.Fact{}, err
+	}
+	return f, s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
+}
+
+// Edit changes the fact text.
+func (s *Service) Edit(ctx context.Context, id, text string) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Edit(id, text, sourceEdited) })
+}
+
+// Remove forgets the fact.
+func (s *Service) Remove(ctx context.Context, id string) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Remove(id) })
+}
+
+// Approve lets the fact into the chat; text — правка перед одобрением, пусто — как есть.
+func (s *Service) Approve(ctx context.Context, id, text string) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+		if strings.TrimSpace(text) != "" {
+			for _, f := range p.Facts() {
+				if f.ID() == id && strings.TrimSpace(text) != f.Text() {
+					var err error
+					if p, err = p.Edit(id, text, f.Source()+sourceEditedTail); err != nil {
+						return p, err
+					}
+				}
+			}
+		}
+		return p.Approve(id)
+	})
+}
+
+// proposal is a fact the model offers: раздел и текст.
+type proposal struct {
+	Section string `json:"section"`
+	Text    string `json:"text"`
+}
+
+// Proposal is a fact of the compressed portrait the person may accept.
+type Proposal struct {
+	Section domain.FactSection
+	Text    string
+}
+
+const extractPrompt = `Ты ведешь портрет человека: устойчивые факты о нем самом — кто он, работа, планы, предпочтения в общении и привычки.
+По обмену ниже найди НОВЫЕ такие факты. Не бери содержание документов, разовые просьбы и то, что уже известно.
+Ответь только JSON-массивом, без пояснений: [{"section":"about|work|plans|prefs|misc","text":"факт одной фразой от третьего лица"}].
+Нового нет — ответь [].`
+
+// Extract finds new facts in one exchange and puts them to «ждут одобрения».
+func (s *Service) Extract(ctx context.Context, question, answer string) ([]domain.Fact, error) {
+	p, err := s.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	known := domain.PortraitText(p.Facts())
+	if known == "" {
+		known = "ничего"
+	}
+	user := "Уже известно:\n" + known + "\n\nВопрос человека:\n" + question + "\n\nОтвет:\n" + answer
+	reply, err := s.model.Complete(ctx, extractPrompt, user)
+	if err != nil {
+		return nil, err
+	}
+	offered, err := parseProposals(reply)
+	if err != nil {
+		return nil, err
+	}
+	var added []domain.Fact
+	src := sourceChat + s.now().Format("02.01")
+	for _, o := range offered {
+		sec, err := domain.NewFactSection(o.Section)
+		if err != nil {
+			continue // чужой раздел — модель ошиблась, факт мимо
+		}
+		f, err := domain.NewFact(s.newID(), sec, o.Text, src, domain.FactPending, s.now())
+		if err != nil {
+			continue
+		}
+		next, err := p.Add(f)
+		if err != nil {
+			continue // уже известно
+		}
+		p, added = next, append(added, f)
+	}
+	if len(added) == 0 {
+		return nil, nil
+	}
+	return added, s.store.Save(ctx, p)
+}
+
+const compressPrompt = `Сожми портрет человека: объедини похожие факты, убери повторы и мелочи, сохрани суть.
+Каждый раздел — не больше двух коротких фактов. Ответь только JSON-массивом: [{"section":"about|work|plans|prefs|misc","text":"..."}].`
+
+// Compress asks the model for a shorter portrait; применяет ApplyCompressed — по согласию человека.
+func (s *Service) Compress(ctx context.Context) ([]Proposal, error) {
+	p, err := s.store.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reply, err := s.model.Complete(ctx, compressPrompt, domain.PortraitText(p.Approved()))
+	if err != nil {
+		return nil, err
+	}
+	offered, err := parseProposals(reply)
+	if err != nil {
+		return nil, err
+	}
+	var out []Proposal
+	for _, o := range offered {
+		if sec, err := domain.NewFactSection(o.Section); err == nil && strings.TrimSpace(o.Text) != "" {
+			out = append(out, Proposal{Section: sec, Text: strings.TrimSpace(o.Text)})
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%w: empty compression", ErrModelReply)
+	}
+	return out, nil
+}
+
+// ApplyCompressed replaces the approved facts with the accepted proposal; ждущее одобрения остается.
+func (s *Service) ApplyCompressed(ctx context.Context, props []Proposal) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+		next, err := domain.NewPortrait(p.Pending())
+		if err != nil {
+			return p, err
+		}
+		for _, pr := range props {
+			f, err := domain.NewFact(s.newID(), pr.Section, pr.Text, sourceCompressed, domain.FactApproved, s.now())
+			if err != nil {
+				return p, err
+			}
+			if next, err = next.Add(f); err != nil && !errors.Is(err, domain.ErrFactExists) {
+				return p, err
+			}
+		}
+		return next, nil
+	})
+}
+
+// parseProposals reads the model JSON, срезая обертку ``` если она есть.
+func parseProposals(reply string) ([]proposal, error) {
+	r := strings.TrimSpace(reply)
+	if i, j := strings.Index(r, "["), strings.LastIndex(r, "]"); i >= 0 && j > i {
+		r = r[i : j+1]
+	}
+	var out []proposal
+	if err := json.Unmarshal([]byte(r), &out); err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrModelReply, err)
+	}
+	return out, nil
+}
+
+// ContextMode — как портрет идет в чат, когда не помещается.
+type ContextMode string
+
+// Режимы: Auto — целиком, если помещается, иначе ничего, пока человек не выбрал.
+const (
+	ContextAuto     ContextMode = ""
+	ContextFull     ContextMode = "full"
+	ContextRelevant ContextMode = "relevant"
+)
+
+// ChatContext is the portrait for one chat: текст, полный размер и помещается ли.
+type ChatContext struct {
+	Text string
+	Size int // знаков в полном портрете
+	Fits bool
+}
+
+// Context returns the portrait text for a chat within budget runes.
+func Context(p domain.Portrait, question string, budget int, mode ContextMode) ChatContext {
+	full := domain.PortraitText(p.Approved())
+	c := ChatContext{Size: len([]rune(full)), Fits: len([]rune(full)) <= budget}
+	switch {
+	case c.Fits || mode == ContextFull:
+		c.Text = full
+	case mode == ContextRelevant:
+		c.Text = domain.PortraitText(relevant(p.Approved(), question))
+	}
+	return c
+}
+
+// relevant keeps «кто я» и предпочтения всегда, остальное — по общим словам с вопросом.
+// ponytail: совпадение по первым пяти буквам слова. Потолок: синонимы
+// («переезд» и «квартира») не находятся. Путь: отбор моделью или поиском окна.
+func relevant(facts []domain.Fact, question string) []domain.Fact {
+	words := map[string]bool{}
+	for _, w := range strings.FieldsFunc(question, notLetter) {
+		if st := stem(w); len([]rune(st)) >= 4 {
+			words[st] = true
+		}
+	}
+	var out []domain.Fact
+	for _, f := range facts {
+		keep := f.Section() == domain.SectionAbout || f.Section() == domain.SectionPrefs
+		for _, w := range strings.FieldsFunc(f.Text(), notLetter) {
+			keep = keep || words[stem(w)]
+		}
+		if keep {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func notLetter(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) }
+
+func stem(w string) string {
+	r := []rune(strings.ToLower(w))
+	if len(r) > 5 {
+		r = r[:5]
+	}
+	return string(r)
+}
