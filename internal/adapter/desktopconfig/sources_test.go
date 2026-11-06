@@ -343,3 +343,19 @@ func TestShareVolume_WebDAV(t *testing.T) {
 		}
 	}
 }
+
+// Адрес шары не уводит из /Volumes: «..», «.», закодированная черта и
+// пробельные символы — отказ (ревью #469, безопасность).
+func TestShareVolume_NoEscape(t *testing.T) {
+	for _, bad := range []string{
+		"smb://nas/..", "smb://nas/.", "smb://nas/..%2F..%2FUsers", "smb://nas/a%2Fb",
+		"https://dav.example.com/..", "smb://nas/docs\nfoo", "smb://nas/docs ", "https://dav.example.com/a/%2E%2E",
+	} {
+		if got := desktopconfig.ShareVolume(bad); got != "" {
+			t.Errorf("ShareVolume(%q) = %q, want отказ", bad, got)
+		}
+	}
+	if got := desktopconfig.ShareVolume("https://dav.example.com/my%20files"); got != "/Volumes/my files" {
+		t.Errorf("WebDAV %%20: %q", got)
+	}
+}
