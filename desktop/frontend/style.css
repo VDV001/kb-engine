@@ -317,14 +317,16 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .scrim { position: fixed; inset: 0; z-index: 7; background: var(--z-scrim); animation: fade .25s var(--z-ease); }
 /* Окно настроек (решение владельца 06.11): колонка разделов слева, раздел
    справа, каждый короткий и про одно — без простыни. ⌘, и шестеренка
-   открывают его на нужном разделе. */
+   открывают его на нужном разделе. Панель выезжает справа, а не висит посередине,
+   с ровным зазором 12px сверху, снизу и справа (одобрено владельцем 06.11). */
 .settings {
-  position: fixed; z-index: 8; top: 40px; bottom: 20px; left: 50%; width: min(940px, calc(100% - 48px));
+  position: fixed; z-index: 8; top: 12px; bottom: 12px; right: 12px; width: min(940px, calc(100% - 60px));
   display: grid; grid-template-columns: 190px minmax(0, 1fr); overflow: hidden;
-  background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius);
-  opacity: 0; pointer-events: none; transform: translate(-50%, 14px); transition: opacity .2s var(--z-ease), transform .35s var(--z-ease);
+  background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
+  opacity: 0; pointer-events: none; transform: translateX(24px); transition: opacity .2s var(--z-ease), transform .35s var(--z-ease);
 }
-.settings.open { opacity: 1; pointer-events: auto; transform: translate(-50%, 0); }
+.settings.open { opacity: 1; pointer-events: auto; transform: translateX(0); }
 .settings-nav { display: flex; flex-direction: column; gap: 1px; padding: 16px 8px; border-right: 1px solid var(--z-rule); background: var(--z-bg); overflow-y: auto; }
 .settings-nav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 10px; border-radius: var(--z-radius); color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; }
 .settings-nav button:hover { color: var(--z-ink); background: var(--z-bg-2); }
@@ -681,6 +683,8 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; background: none; border: 0; color: var(--z-muted); cursor: pointer; padding: 2px 6px; font-size: 14px; }
 .chat-list li:hover .chat-del, .chat-del:focus-visible { opacity: 1; }
 .chat-del:hover { color: var(--z-bad); }
+.chat-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px; color: var(--z-ink-2); }
+.chat-confirm span { flex-basis: 100%; }
 .chat-model { display: grid; gap: 8px; padding: 6px 4px; }
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }

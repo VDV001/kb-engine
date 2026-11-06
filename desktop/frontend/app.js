@@ -13,6 +13,9 @@ const state = { q: "", tab: "all", kb: [], files: [], items: [], sel: 0, seq: 0,
 
 // --- Окно (Wails) или браузер -------------------------------------------------
 const native = () => window.go && window.go.main && window.go.main.App;
+// errText is the words of a refused call: Wails отдает отказ Go объектом
+// Error, и String(err) показал бы человеку «Error: …».
+const errText = (e) => (e instanceof Error ? e.message : String(e));
 const openFile = (p) => native() && native().Open(p);
 const revealFile = (p) => native() && native().Reveal(p);
 const openURL = (u) => (window.runtime ? window.runtime.BrowserOpenURL(u) : window.open(u, "_blank"));
@@ -356,7 +359,7 @@ const tabItems = (t, kb, files) =>
 // Сборка знает только эти; модуль новой сборки в config.json вкладки не дает.
 const MODULES = {
   chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat" },
-  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/" },
+  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances" }, // сразу раздел финансов, а не главная витрины
 };
 state.modules = [];
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
@@ -797,7 +800,7 @@ async function openSettings(view = "sources") {
     try {
       load(await native().Sources());
     } catch (e) {
-      showError("Не удалось прочитать настройки: " + e);
+      showError("Не удалось прочитать настройки: " + errText(e));
       return;
     }
   }
@@ -817,7 +820,7 @@ async function renderConnections() {
   const list = $("#conn-list");
   if (!native() || !native().Connections) { list.innerHTML = `<li class="muted">Подключения видны в окне приложения.</li>`; return; }
   let rows = [];
-  try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(String(e))}</li>`; return; }
+  try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
   list.innerHTML = rows.map((r) => {
     const acts = r.own
       ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
@@ -841,7 +844,7 @@ $("#conn-list").addEventListener("click", async (e) => {
     else if (e.target.closest("[data-conn-del-no]")) connConfirm = null;
     else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; }
     else return;
-  } catch (err) { showError(String(err)); }
+  } catch (err) { showError(errText(err)); }
   renderConnections();
 });
 $("#conn-add-speech").addEventListener("click", () => {
@@ -857,7 +860,7 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     const r = await native().AddSpeechConnection($("#conn-s-name").value, $("#conn-s-url").value, $("#conn-s-model").value, $("#conn-s-key").value);
     $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Слушает диктовку».";
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
-  } catch (err) { $("#conn-s-note").textContent = String(err); }
+  } catch (err) { $("#conn-s-note").textContent = errText(err); }
   renderConnections();
 });
 $("#conn-add-google").addEventListener("click", () => {
@@ -879,7 +882,7 @@ $("#conn-google").addEventListener("submit", async (e) => {
     $("#conn-google").hidden = true;
     $("#conn-add-google").setAttribute("aria-expanded", "false");
   } catch (err) {
-    $("#conn-g-note").textContent = String(err);
+    $("#conn-g-note").textContent = errText(err);
   } finally {
     go.disabled = false;
     renderConnections();
@@ -973,7 +976,7 @@ const EYE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 
 const tokenField = (id, saved) =>
   `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
     placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}">
-    <button type="button" class="reveal" data-reveal="${id}" aria-pressed="false" aria-label="Показать набранный токен" data-tip="Показать токен" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке">${EYE}</button></div>`;
+    <button type="button" class="reveal" data-eye="${id}" aria-pressed="false" aria-label="Показать набранный токен" data-tip="Показать токен" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке">${EYE}</button></div>`;
 const checkBar = (key) => {
   const v = ui.verdict && ui.verdict.key === key ? ui.verdict : null;
   return `<div class="formbar"><button class="btn" data-check="${key}">Проверить</button>
@@ -1102,9 +1105,11 @@ function setTarget(s, v) {
 const focusSoon = (sel) => requestAnimationFrame(() => $(sel)?.focus());
 
 panel.addEventListener("click", async (e) => {
-  const eye = e.target.closest("[data-reveal]");
+  // data-eye, а не data-reveal: тот же атрибут у «В Finder» в «Проблемах»
+  // нес путь файла, и этот обработчик искал элемент с id-путем и падал.
+  const eye = e.target.closest("[data-eye]");
   if (eye) {
-    const inp = $("#" + eye.dataset.reveal), show = inp.type === "password";
+    const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
     inp.type = show ? "text" : "password";
     eye.setAttribute("aria-pressed", String(show));
     eye.setAttribute("aria-label", show ? "Скрыть токен" : "Показать набранный токен");
@@ -1138,7 +1143,7 @@ panel.addEventListener("click", async (e) => {
       const info = await native().CheckServer(s ? s.id : "", url, tok);
       verdict = { key: d.check, state: "ok", text: `● kbengine ${info.version} · ${fmt(info.entries)} ${plural(info.entries, "запись", "записи", "записей")}` };
     } catch (err) {
-      verdict = { key: d.check, state: "bad", text: String(err).replace(/^Error: /, "") };
+      verdict = { key: d.check, state: "bad", text: errText(err) };
     }
     // Поздний ответ не пишет в закрытую или уже другую форму.
     const open = isNew ? ui.addKind === "server" : ui.editing === d.check;
@@ -1169,7 +1174,7 @@ panel.addEventListener("click", async (e) => {
   }
   if (d.pick) {
     let p = "";
-    try { p = await native().PickFolder(); } catch (err) { return showError(String(err)); }
+    try { p = await native().PickFolder(); } catch (err) { return showError(errText(err)); }
     if (!p) return;
     const input = d.pick === "new" ? $("#na") : $(`#ea-${d.pick}`) || $(`#ra-${d.pick}`);
     if (input) input.value = p;
@@ -1186,7 +1191,7 @@ panel.addEventListener("click", async (e) => {
     toast("Подключаю", " · " + addr + " — macOS может спросить пароль", null, "off");
     let vol;
     try { vol = await native().MountShare(addr); }
-    catch (err) { ui.adding = false; return showError(String(err)); }
+    catch (err) { ui.adding = false; return showError(errText(err)); }
     ui.adding = false;
     const s = { id: "", kind: "folder", name: "", path: vol, url: addr, enabled: true, _key: "k" + ++keySeq };
     const undo = change(() => draft.sources.push(s));
@@ -1209,7 +1214,7 @@ panel.addEventListener("click", async (e) => {
       ui.adding = true;
       // id выдает Go сразу: к нему привязан токен в Связке ключей.
       try { s.id = await native().NewSourceID("server"); }
-      catch (err) { ui.adding = false; return showError("Не удалось добавить сервер: " + err); }
+      catch (err) { ui.adding = false; return showError("Не удалось добавить сервер: " + errText(err)); }
       ui.adding = false;
       if (ui.addKind !== "server") return; // форму сменили, пока ждали
       ui.verdict = null;
@@ -1322,7 +1327,7 @@ $("#save-settings").onclick = async () => {
     await native().SetSources(p.sources, p.exclude, liveTokens());
   } catch (e) {
     setBusy(false);
-    showError(String(e));
+    showError(errText(e));
     btn.disabled = false;
     return;
   }
@@ -1347,7 +1352,7 @@ $("#save-settings").onclick = async () => {
     loadServerStates();
     toast("Сохранено", " · " + $("#settings-note").textContent);
   } catch (e) {
-    showError("Не удалось узнать статус индекса: " + e);
+    showError("Не удалось узнать статус индекса: " + errText(e));
     if (state.q) search(state.q); // сохранение прошло — выдача по новым источникам
     renderSources();
   } finally {
@@ -1402,7 +1407,7 @@ function saveTabs(next) {
   refreshTabs();
   renderTabSettings();
   tabSaves = tabSaves.then(() => native().SetTabs(next)).then(() => showError("")).catch(async (e) => {
-    showError("Вкладки не сохранены: " + e);
+    showError("Вкладки не сохранены: " + errText(e));
     try { state.tabs = (await native().Tabs()) || []; } catch { /* остается то, что на экране */ }
     refreshTabs();
     renderTabSettings();
@@ -1559,7 +1564,7 @@ function saveAccents(next) {
   applyAccents();
   renderAccents();
   accentSaves = accentSaves.then(() => native().SetAccents(next)).then(() => showError("")).catch(async (e) => {
-    showError("Оформление не сохранено: " + e);
+    showError("Оформление не сохранено: " + errText(e));
     try { state.accents = await native().Accents(); } catch { /* остается то, что на экране */ }
     applyAccents();
     renderAccents();
@@ -1618,7 +1623,7 @@ $("#module-list").addEventListener("click", (e) => {
   renderModules();
   refreshTabs();
   moduleSaves = moduleSaves.then(() => native().SetModules([{ id, enabled: on }])).then(() => showError("")).catch(async (err) => {
-    showError("Модуль не сохранен: " + err);
+    showError("Модуль не сохранен: " + errText(err));
     try { state.modules = (await native().Modules()) || []; } catch { /* остается то, что на экране */ }
     renderModules();
     refreshTabs();
@@ -1775,7 +1780,7 @@ document.addEventListener("click", (e) => {
   if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
 });
 async function loadChatSettings() {
-  try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + e); return; }
+  try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + errText(e)); return; }
   const s = chatState.settings;
   $("#chat-url").value = s.url || "";
   $("#chat-name").value = s.model || "";
@@ -1830,8 +1835,12 @@ async function renderChatList() {
 function paintChatList() {
   const q = ($("#chat-find").hidden ? "" : $("#chat-find").value).trim().toLowerCase();
   const list = chatState.list.filter((c) => !q || c.title.toLowerCase().includes(q));
-  $("#chat-list").innerHTML = list.map((c) =>
-    `<li><button class="chat-item${c.id === chatState.id ? " on" : ""}" data-chat="${esc(c.id)}" data-tip="${esc(c.title)}" data-tip-b="${esc(chatWhen(c.updated))}">${esc(c.title)}</button>
+  // Удаление стирает историю с диска насовсем — сначала вопрос в строке, как у
+  // подключений: «×» рядом с названием легко задеть.
+  $("#chat-list").innerHTML = list.map((c) => c.id === chatState.confirmDel
+    ? `<li class="chat-confirm"><span>Удалить «${esc(c.title)}»? История сотрется.</span>
+      <button class="btn danger" data-del-yes="${esc(c.id)}">Удалить</button><button class="btn" data-del-no>Отмена</button></li>`
+    : `<li><button class="chat-item${c.id === chatState.id ? " on" : ""}" data-chat="${esc(c.id)}" data-tip="${esc(c.title)}" data-tip-b="${esc(chatWhen(c.updated))}">${esc(c.title)}</button>
       <button class="chat-del" data-del="${esc(c.id)}" aria-label="Удалить чат: ${esc(c.title)}" data-tip="Удалить чат">×</button></li>`).join("") ||
     `<li class="muted chat-empty" style="padding:7px 10px">${q ? "Чатов с таким названием нет" : "Чатов пока нет"}</li>`;
   dropStaleTip();
@@ -1918,7 +1927,7 @@ async function askChat() {
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
-    showChatNote("Нет ответа: " + e);
+    showChatNote("Нет ответа: " + errText(e));
   } finally {
     chatState.busy = false;
     fitChatQ();
@@ -1963,7 +1972,7 @@ async function toggleMic() {
   if (dict.on) { native().StopDictation(); return; }
   dict.base = $("#chat-q").value.replace(/\s+$/, "");
   // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
-  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
+  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + errText(e)); }
 }
 $("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
@@ -2000,7 +2009,7 @@ async function listenVoice(keepDraft) {
   if (!keepDraft) $("#chat-q").value = "";
   fitChatQ();
   try { await native().StartDictation(VOICE_PAUSE); setMic(true); showChatNote("Разговор голосом: говорите — после паузы вопрос уйдет сам · Esc — стоп"); }
-  catch (e) { showChatNote("Разговор голосом: " + e); stopVoice(); }
+  catch (e) { showChatNote("Разговор голосом: " + errText(e)); stopVoice(); }
 }
 function stopVoice() {
   if (!voice.on) return;
@@ -2020,7 +2029,7 @@ $("#chat-voice").addEventListener("click", () => {
 function speakAnswer(text) {
   if (!voice.on) return;
   showChatNote("Разговор голосом: читаю ответ · Esc — стоп");
-  native().Speak(text).catch((e) => { showChatNote("Голос: " + e); stopVoice(); });
+  native().Speak(text).catch((e) => { showChatNote("Голос: " + errText(e)); stopVoice(); });
 }
 if (window.runtime) window.runtime.EventsOn("speech", () => { if (voice.on) listenVoice(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && voice.on) { e.preventDefault(); stopVoice(); } }, true);
@@ -2077,7 +2086,7 @@ $("#chat-attach-menu").addEventListener("click", async (e) => {
       try {
         const p = await native().PickChatFile();
         if (p) addAttached({ ref: "file:" + p, title: p.split("/").pop(), via: "с диска", hint: tilde(p) });
-      } catch (err) { showChatNote("Файл не выбран: " + err); }
+      } catch (err) { showChatNote("Файл не выбран: " + errText(err)); }
       return;
     }
     const inp = $("#chat-attach-input");
@@ -2098,7 +2107,7 @@ $("#chat-attach-input").addEventListener("input", (e) => {
   const q = e.target.value.trim();
   findTimer = setTimeout(async () => {
     let docs = [];
-    try { docs = (await native().ChatFind(q)) || []; } catch (err) { $("#chat-attach-found").innerHTML = `<li class="muted" style="padding:4px 8px">${esc(String(err))}</li>`; return; }
+    try { docs = (await native().ChatFind(q)) || []; } catch (err) { $("#chat-attach-found").innerHTML = `<li class="muted" style="padding:4px 8px">${esc(errText(err))}</li>`; return; }
     if (q !== $("#chat-attach-input").value.trim()) return; // пока искали, запрос сменился
     $("#chat-attach-found").innerHTML = docs.map((d) => {
       const a = { ref: d.ref, title: d.title, via: d.source || "найдено", hint: d.ref.startsWith("file:") ? tilde(d.ref.slice(5)) : d.source };
@@ -2144,10 +2153,23 @@ document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n" && !$("#chat-view").hidden) { e.preventDefault(); newChat(); }
 });
 $("#chat-list").addEventListener("click", async (e) => {
-  const del = e.target.closest("[data-del]");
-  if (del && !chatState.busy) {
-    try { await native().DeleteChat(del.dataset.del); } catch (err) { showChatNote("Чат не удален: " + err); return; }
-    if (del.dataset.del === chatState.id) { chatState.id = ""; chatState.chat = null; }
+  const ask = e.target.closest("[data-del]");
+  if (ask && !chatState.busy) {
+    chatState.confirmDel = ask.dataset.del;
+    paintChatList();
+    $("[data-del-no]")?.focus(); // случайный Enter не стирает историю
+    return;
+  }
+  if (e.target.closest("[data-del-no]")) {
+    chatState.confirmDel = null;
+    return paintChatList();
+  }
+  const yes = e.target.closest("[data-del-yes]");
+  if (yes && !chatState.busy) {
+    const id = yes.dataset.delYes;
+    chatState.confirmDel = null;
+    try { await native().DeleteChat(id); } catch (err) { paintChatList(); showChatNote("Чат не удален: " + errText(err)); return; }
+    if (id === chatState.id) { chatState.id = ""; chatState.chat = null; }
     await renderChatList();
     renderChat();
     return;
@@ -2162,7 +2184,7 @@ $("#chat-list").addEventListener("click", async (e) => {
     const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
     chatState.only = alive.length ? alive : null;
     renderChatSources();
-  } catch (err) { showChatNote("Чат не открылся: " + err); return; }
+  } catch (err) { showChatNote("Чат не открылся: " + errText(err)); return; }
   paintChatList();
   renderChat();
   renderChatNote();
@@ -2186,7 +2208,7 @@ $("#chat-model").addEventListener("submit", async (e) => {
     $("#chat-model-note").textContent = "Сохранено";
     await loadChatSettings();
   } catch (err) {
-    $("#chat-model-note").textContent = String(err);
+    $("#chat-model-note").textContent = errText(err);
   }
 });
 
