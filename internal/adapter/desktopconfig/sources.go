@@ -63,7 +63,7 @@ func (s Source) check() error {
 			return fmt.Errorf("%w: %s без пути", ErrSourceTarget, s.ID)
 		}
 		if s.Kind == KindFolder && s.URL != "" && ShareVolume(s.URL) == "" {
-			return fmt.Errorf("%w: %s: адрес сетевой папки — smb://сервер/папка или afp://…, без пароля", ErrSourceTarget, s.ID)
+			return fmt.Errorf("%w: %s: адрес сетевой папки — smb://сервер/папка, afp://… или https://… (WebDAV, Яндекс Диск), без пароля", ErrSourceTarget, s.ID)
 		}
 	case KindServer:
 		if err := CheckServerURL(s.URL); err != nil {
@@ -84,10 +84,22 @@ func (s Source) check() error {
 // без символов, которые сломали бы команду подключения.
 var shareAddr = regexp.MustCompile(`^(smb|afp)://[^/@:\s"\\]+(:\d+)?/([^"\\\s?#][^"\\?#]*)$`)
 
+// webdavAddr — WebDAV по https (Яндекс Диск — https://webdav.yandex.ru):
+// macOS монтирует его в /Volumes/<последняя папка пути или сервер>.
+var webdavAddr = regexp.MustCompile(`^https://([^/@:\s"\\]+)(:\d+)?(/[^"\\?#\s]*)?$`)
+
 // ShareVolume returns where macOS mounts the share at addr (/Volumes/<папка>);
 // "" — адрес не сетевой папки или с паролем.
 func ShareVolume(addr string) string {
-	m := shareAddr.FindStringSubmatch(strings.TrimSpace(addr))
+	addr = strings.TrimSpace(addr)
+	if m := webdavAddr.FindStringSubmatch(addr); m != nil {
+		name := m[1]
+		if p := strings.Trim(m[3], "/"); p != "" {
+			name = p[strings.LastIndex(p, "/")+1:]
+		}
+		return "/Volumes/" + name
+	}
+	m := shareAddr.FindStringSubmatch(addr)
 	if m == nil {
 		return ""
 	}

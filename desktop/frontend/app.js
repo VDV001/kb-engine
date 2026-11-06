@@ -1001,8 +1001,8 @@ function renderSources() {
   if (ui.addKind === "folder")
     form = `<div class="row">${native() ? `<button class="btn primary" data-pick="new">Выбрать папку…</button>` : ""}
       <input id="na" placeholder="или путь: ~/Documents, /Volumes/team" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
-      <div class="row"><input id="ns" placeholder="или сетевая: smb://сервер/папка" spellcheck="false"><button class="btn" data-addshare>Подключить</button></div>
-      <span class="hint">сетевая папка подключается сама после сна и перезагрузки; пароль спросит macOS и запомнит в Связке ключей</span>`;
+      <div class="row"><input id="ns" placeholder="или сетевая: smb://сервер/папка · Яндекс Диск: https://webdav.yandex.ru" spellcheck="false"><button class="btn" data-addshare>Подключить</button></div>
+      <span class="hint">сетевая папка подключается сама после сна и перезагрузки; пароль спросит macOS и запомнит в Связке ключей (для Яндекс Диска — пароль приложения из Яндекс ID)</span>`;
   else if (ui.addKind === "catalog")
     form = `<div class="row"><input id="na" placeholder="~/…/knowledge-base/_data/catalog.json" spellcheck="false"><button class="btn" data-addok>Добавить</button></div>
       <span class="hint">читается первый включенный каталог списка</span>`;

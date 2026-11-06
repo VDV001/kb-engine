@@ -204,7 +204,7 @@ func (a *App) RemoveConnection(id string) error { return a.google.Remove(id) }
 func (a *App) MountShare(addr string) (string, error) {
 	vol := desktopconfig.ShareVolume(addr)
 	if vol == "" {
-		return "", errors.New("адрес сетевой папки — smb://сервер/папка или afp://…, без пароля в адресе")
+		return "", errors.New("адрес сетевой папки — smb://сервер/папка, afp://… или https://… (WebDAV, Яндекс Диск), без пароля в адресе")
 	}
 	if err := mountShareCmd(addr); err != nil {
 		return "", fmt.Errorf("сетевая папка не подключилась: %w", err)
