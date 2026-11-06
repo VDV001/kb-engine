@@ -62,6 +62,9 @@ func (s Source) check() error {
 		if strings.TrimSpace(s.Path) == "" {
 			return fmt.Errorf("%w: %s без пути", ErrSourceTarget, s.ID)
 		}
+		if s.Kind == KindFolder && s.URL != "" && ShareVolume(s.URL) == "" {
+			return fmt.Errorf("%w: %s: адрес сетевой папки — smb://сервер/папка или afp://…, без пароля", ErrSourceTarget, s.ID)
+		}
 	case KindServer:
 		if err := CheckServerURL(s.URL); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrSourceTarget, s.ID, err)
@@ -75,6 +78,25 @@ func (s Source) check() error {
 		}
 	}
 	return nil
+}
+
+// shareAddr — адрес сетевой папки: схема, сервер, папка; без пароля и
+// без символов, которые сломали бы команду подключения.
+var shareAddr = regexp.MustCompile(`^(smb|afp)://[^/@:\s"\\]+(:\d+)?/([^"\\\s?#][^"\\?#]*)$`)
+
+// ShareVolume returns where macOS mounts the share at addr (/Volumes/<папка>);
+// "" — адрес не сетевой папки или с паролем.
+func ShareVolume(addr string) string {
+	m := shareAddr.FindStringSubmatch(strings.TrimSpace(addr))
+	if m == nil {
+		return ""
+	}
+	first, _, _ := strings.Cut(m[3], "/")
+	name, err := url.PathUnescape(first)
+	if err != nil || name == "" {
+		return ""
+	}
+	return "/Volumes/" + name
 }
 
 var driveFolder = regexp.MustCompile(`^https://drive\.google\.com/drive/(?:u/\d+/)?folders/([\w-]+)(?:[?#].*)?$`)
