@@ -119,6 +119,11 @@ func (s *Service) Propose(ctx context.Context, section domain.FactSection, text 
 	return f, s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
 }
 
+// Restore puts a forgotten fact back as it was: id, источник, дата, одобрение.
+func (s *Service) Restore(ctx context.Context, f domain.Fact) error {
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
+}
+
 // Edit changes the fact text.
 func (s *Service) Edit(ctx context.Context, id, text string) error {
 	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Edit(id, text, sourceEdited) })

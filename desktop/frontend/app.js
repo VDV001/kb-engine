@@ -2385,6 +2385,8 @@ async function saveChatPart(patch, head, rest) {
     await native().SetChatSettings(next, "");
     chatState.settings = { ...s, ...patch };
     toast(head, rest, () => saveChatPart(before, "Вернул", " · как было"));
+    // Где лежит портрет поменялось (и при «Вернуть» тоже) — портрет с нового места.
+    if ("memoryDir" in patch || "memoryServer" in patch) await loadPortrait();
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
@@ -2554,11 +2556,10 @@ async function memDo(fn, head, rest, undo, tone) {
   if (head) toast(head, rest, undo, tone);
   return true;
 }
-const memAdd = (sec, text) => memDo(() => native().PortraitAdd(sec, text), "Вернул", " · «" + text + "»");
 function memForget(id) {
   const f = factById(id);
   if (!f) return;
-  return memDo(() => native().PortraitRemove(id), "Забыто", ` · «${f.text}»`, f.pending ? null : () => memAdd(f.section, f.text), "del");
+  return memDo(() => native().PortraitRemove(id), "Забыто", ` · «${f.text}»`, () => memDo(() => native().PortraitRestore(f), "Вернул", " · «" + f.text + "»"), "del");
 }
 function memApprove(id, text) {
   const f = factById(id) || { title: "портрет" };

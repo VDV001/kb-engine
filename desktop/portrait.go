@@ -47,12 +47,13 @@ const extractTimeout = 90 * time.Second
 
 // factView is a fact for the page.
 type factView struct {
-	ID      string `json:"id"`
-	Section string `json:"section"`
-	Title   string `json:"title"` // раздел для человека
-	Text    string `json:"text"`
-	Source  string `json:"source"`
-	Pending bool   `json:"pending"` // ждет одобрения
+	ID      string    `json:"id"`
+	Section string    `json:"section"`
+	Title   string    `json:"title"` // раздел для человека
+	Text    string    `json:"text"`
+	Source  string    `json:"source"`
+	Pending bool      `json:"pending"` // ждет одобрения
+	At      time.Time `json:"at"`      // когда появился: «Вернуть» возвращает его же
 }
 
 type sectionView struct {
@@ -106,7 +107,7 @@ type compressionView struct {
 func viewFacts(facts []domain.Fact) []factView {
 	out := make([]factView, 0, len(facts))
 	for _, f := range facts {
-		out = append(out, factView{f.ID(), string(f.Section()), f.Section().Title(), f.Text(), f.Source(), !f.Approved()})
+		out = append(out, factView{f.ID(), string(f.Section()), f.Section().Title(), f.Text(), f.Source(), !f.Approved(), f.At()})
 	}
 	return out
 }
@@ -191,6 +192,23 @@ func (d *chatDesk) PortraitAdd(section, text string) error {
 		_, err := s.Add(context.Background(), sec, text)
 		return err
 	}))
+}
+
+// PortraitRestore puts a forgotten fact back as it was («Вернуть»).
+func (d *chatDesk) PortraitRestore(v factView) error {
+	sec, err := domain.NewFactSection(v.Section)
+	if err != nil {
+		return portraitErr(err)
+	}
+	status := domain.FactApproved
+	if v.Pending {
+		status = domain.FactPending
+	}
+	f, err := domain.NewFact(v.ID, sec, v.Text, v.Source, status, v.At)
+	if err != nil {
+		return portraitErr(err)
+	}
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Restore(context.Background(), f) }))
 }
 
 // PortraitEdit changes a fact text.

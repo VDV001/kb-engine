@@ -127,6 +127,9 @@ func (a *App) Portrait() (portraitView, error) { return a.chat.Portrait() }
 // PortraitAdd adds a fact typed by the person.
 func (a *App) PortraitAdd(section, text string) error { return a.chat.PortraitAdd(section, text) }
 
+// PortraitRestore puts a forgotten fact back as it was.
+func (a *App) PortraitRestore(f factView) error { return a.chat.PortraitRestore(f) }
+
 // PortraitEdit changes a fact text.
 func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(id, text) }
 
