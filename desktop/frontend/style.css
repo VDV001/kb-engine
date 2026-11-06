@@ -661,6 +661,8 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .msg.bot { align-self: flex-start; color: var(--z-ink); }
 .msg.bot code { font: 12px var(--z-font); background: var(--z-bg-3); padding: 0 4px; border-radius: 2px; }
 .msg.thinking { color: var(--z-muted); display: flex; align-items: center; gap: 8px; }
+/* Ответ печатается: текст обычного ответа, бегущая полоса остается под ним. */
+.msg.thinking.streaming { color: var(--z-ink); display: block; }
 /* Поле вопроса как в Claude: блок, сверху текст, снизу ряд кнопок. */
 .chat-ask { padding: 0 12px 6px; }
 .chat-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 8px 14px; border: 1px solid var(--z-rule-2); border-radius: 12px; background: var(--z-bg-3); }

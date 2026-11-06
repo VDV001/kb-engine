@@ -78,7 +78,24 @@ type chatDesk struct {
 	read     func(ctx context.Context, ref string) (chat.Doc, error)
 	model    func(c desktopconfig.Chat, key string) chat.Model
 	now      func() time.Time
-	mu       sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// show shows the answer while the model writes it (событие chat:delta);
+	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
+	show func(text string)
+	mu   sync.Mutex // один вопрос за раз: файл чата пишется целиком
+}
+
+// everyAtMost passes text to show at most once per gap: кусков ответа сотни,
+// а страница перерисовывает весь текст на каждом. Пустой (показанное — не
+// ответ) проходит всегда; пропущенный хвост приходит целым ответом из Ask.
+// Вопрос один за раз, поэтому без замка.
+func everyAtMost(gap time.Duration, now func() time.Time, show func(string)) func(string) {
+	var last time.Time
+	return func(text string) {
+		if t := now(); text == "" || t.Sub(last) >= gap {
+			last = t
+			show(text)
+		}
+	}
 }
 
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
@@ -164,7 +181,7 @@ func (d *chatDesk) Ask(id, question string) (chatRecord, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
 	svc := chat.NewService(searcherFunc(d.search), d.model(c, key), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Answer(ctx, history(rec), question, chatMode(c))
+	turn, err := svc.AnswerStream(ctx, history(rec), question, chatMode(c), d.show)
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}

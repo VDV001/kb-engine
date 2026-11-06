@@ -38,7 +38,7 @@ type toolRun struct {
 // answerWithTools lets the model search and read until it answers. После
 // MaxSteps шагов последний запрос идет без инструментов — модель обязана
 // ответить по тому, что уже видела.
-func (s *Service) answerWithTools(ctx context.Context, history []Message, question string) (Turn, error) {
+func (s *Service) answerWithTools(ctx context.Context, history []Message, question string, show func(string)) (Turn, error) {
 	if s.reader == nil {
 		return Turn{}, ErrNoReader
 	}
@@ -53,7 +53,7 @@ func (s *Service) answerWithTools(ctx context.Context, history []Message, questi
 		if step == MaxSteps {
 			offer = nil
 		}
-		reply, err := s.model.Complete(ctx, msgs, offer)
+		reply, err := s.complete(ctx, msgs, offer, show)
 		if err != nil {
 			return Turn{}, fmt.Errorf("%w: %w", ErrModel, err)
 		}
@@ -62,6 +62,9 @@ func (s *Service) answerWithTools(ctx context.Context, history []Message, questi
 				return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 			}
 			return Turn{Answer: reply.Content, Docs: run.docs()}, nil
+		}
+		if show != nil {
+			show("") // «сейчас поищу» — не ответ
 		}
 		msgs = append(msgs, ModelMessage{Role: RoleAssistant, Content: reply.Content, ToolCalls: reply.ToolCalls})
 		for _, c := range reply.ToolCalls {

@@ -5,6 +5,7 @@
 package llm
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -14,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
@@ -67,6 +69,7 @@ type wireRequest struct {
 	Model    string        `json:"model"`
 	Messages []wireMessage `json:"messages"`
 	Tools    []wireTool    `json:"tools,omitempty"`
+	Stream   bool          `json:"stream,omitempty"`
 }
 
 type wireReply struct {
@@ -77,9 +80,6 @@ type wireReply struct {
 
 // Complete implements chat.Model.
 func (c Client) Complete(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool) (chat.ModelReply, error) {
-	if c.Key != "" && !safeForKey(c.BaseURL) {
-		return chat.ModelReply{}, ErrInsecureURL
-	}
 	raw, err := c.post(ctx, request(c.Model, msgs, tools))
 	if err != nil {
 		return chat.ModelReply{}, err
@@ -89,6 +89,24 @@ func (c Client) Complete(ctx context.Context, msgs []chat.ModelMessage, tools []
 
 // post sends the request and returns the body of a 200 answer.
 func (c Client) post(ctx context.Context, r wireRequest) ([]byte, error) {
+	res, err := c.send(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	raw, err := io.ReadAll(io.LimitReader(res.Body, maxReply))
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrServer, err)
+	}
+	return raw, nil
+}
+
+// send posts the request; ответ не 200 — ошибка, тело закрыто.
+func (c Client) send(ctx context.Context, r wireRequest) (*http.Response, error) {
+	// Ключ уходит только по https или на этот Мак — в одном месте, где ставится заголовок.
+	if c.Key != "" && !safeForKey(c.BaseURL) {
+		return nil, ErrInsecureURL
+	}
 	body, err := json.Marshal(r)
 	if err != nil {
 		return nil, err
@@ -109,13 +127,173 @@ func (c Client) post(ctx context.Context, r wireRequest) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrServer, err)
 	}
-	defer func() { _ = res.Body.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(res.Body, maxReply))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrServer, err)
-	}
 	// Текст ответа с ошибкой не берется: провайдер мог повторить в нем ключ.
-	return raw, statusErr(res.StatusCode)
+	if err := statusErr(res.StatusCode); err != nil {
+		_ = res.Body.Close()
+		return nil, err
+	}
+	return res, nil
+}
+
+// wireDelta is the piece of the reply in one streamed event.
+type wireDelta struct {
+	Content   *string `json:"content"`
+	ToolCalls []struct {
+		Index    int    `json:"index"`
+		ID       string `json:"id"`
+		Function struct {
+			Name      string `json:"name"`
+			Arguments string `json:"arguments"`
+		} `json:"function"`
+	} `json:"tool_calls"`
+}
+
+// wireChunk is one event of a streamed reply.
+type wireChunk struct {
+	Choices []struct {
+		Delta        wireDelta `json:"delta"`
+		FinishReason *string   `json:"finish_reason"`
+	} `json:"choices"`
+	Error json.RawMessage `json:"error"`
+}
+
+// maxToolCalls caps the tool calls of one streamed reply: index приходит от
+// модели, и без потолка битый поток раздул бы список.
+const maxToolCalls = 32
+
+// Stream implements chat.Streamer: тот же запрос со stream: true, ответ —
+// строки SSE «data: {…}» до «data: [DONE]». show получает текст, накопленный
+// к каждому куску; вызовы инструментов собираются из кусков по index.
+func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool, show func(string)) (chat.ModelReply, error) {
+	r := request(c.Model, msgs, tools)
+	r.Stream = true
+	res, err := c.send(ctx, r)
+	if err != nil {
+		return chat.ModelReply{}, err
+	}
+	defer func() { _ = res.Body.Close() }()
+	// Сервер, что не умеет поток, отвечает обычным JSON: это ответ целиком.
+	if ct := res.Header.Get("Content-Type"); strings.HasPrefix(ct, "application/json") {
+		raw, err := io.ReadAll(io.LimitReader(res.Body, maxReply))
+		if err != nil {
+			return chat.ModelReply{}, fmt.Errorf("%w: %w", ErrServer, err)
+		}
+		reply, err := parse(raw)
+		if err == nil && reply.Content != "" {
+			show(reply.Content)
+		}
+		return reply, err
+	}
+	return readStream(io.LimitReader(res.Body, maxReply), show)
+}
+
+// readStream reads SSE events until [DONE] or the end of the body.
+func readStream(body io.Reader, show func(string)) (chat.ModelReply, error) {
+	sc := bufio.NewScanner(body)
+	sc.Buffer(make([]byte, 0, 64<<10), maxReply)
+	var (
+		acc  streamed
+		got  bool
+		done bool // [DONE] или finish_reason: поток кончился сам, а не оборвался
+	)
+	for sc.Scan() {
+		data, ok := strings.CutPrefix(sc.Text(), "data:")
+		if !ok {
+			continue // пустая строка между событиями, «: keep-alive»
+		}
+		data = strings.TrimSpace(data)
+		if data == "[DONE]" {
+			done = true
+			break
+		}
+		ch, err := decodeChunk(data)
+		if err != nil {
+			return chat.ModelReply{}, err
+		}
+		got = true
+		if len(ch.Choices) == 0 {
+			continue // кусок со счетом токенов
+		}
+		if err := acc.add(ch.Choices[0].Delta, show); err != nil {
+			return chat.ModelReply{}, err
+		}
+		if fr := ch.Choices[0].FinishReason; fr != nil && *fr != "" {
+			done = true
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return chat.ModelReply{}, fmt.Errorf("%w: %w", ErrServer, err)
+	}
+	if !got {
+		return chat.ModelReply{}, ErrBadReply
+	}
+	if !done {
+		return chat.ModelReply{}, fmt.Errorf("%w: поток оборвался до конца ответа", ErrServer)
+	}
+	return chat.ModelReply{Content: acc.text.String(), ToolCalls: acc.calls}, nil
+}
+
+// decodeChunk reads one event; ошибка внутри потока — отказ без ее текста (см. send).
+func decodeChunk(data string) (wireChunk, error) {
+	var ch wireChunk
+	if json.Unmarshal([]byte(data), &ch) != nil {
+		return ch, ErrBadReply
+	}
+	if len(ch.Error) > 0 && string(ch.Error) != "null" {
+		return ch, fmt.Errorf("%w: error in stream", ErrServer)
+	}
+	return ch, nil
+}
+
+// streamed is the reply put together from the pieces so far.
+type streamed struct {
+	text  strings.Builder
+	calls []chat.ToolCall
+	slot  map[int]int // index потока → место в calls
+}
+
+// slotFor returns where the pieces of call index go: новый вызов — новый index
+// или тот же index с другим id (провайдер без index, он читается как 0,
+// так не склеивает параллельные вызовы).
+func (a *streamed) slotFor(index int, id string) (int, error) {
+	if a.slot == nil {
+		a.slot = map[int]int{}
+	}
+	pos, ok := a.slot[index]
+	if ok && (id == "" || a.calls[pos].ID == "" || a.calls[pos].ID == id) {
+		return pos, nil
+	}
+	if len(a.calls) >= maxToolCalls {
+		return 0, ErrBadReply
+	}
+	a.calls = append(a.calls, chat.ToolCall{})
+	a.slot[index] = len(a.calls) - 1
+	return len(a.calls) - 1, nil
+}
+
+func (a *streamed) add(d wireDelta, show func(string)) error {
+	if d.Content != nil && *d.Content != "" {
+		a.text.WriteString(*d.Content)
+		show(a.text.String())
+	}
+	for _, tc := range d.ToolCalls {
+		if tc.Index < 0 || tc.Index >= maxToolCalls {
+			return ErrBadReply
+		}
+		pos, err := a.slotFor(tc.Index, tc.ID)
+		if err != nil {
+			return err
+		}
+		cl := &a.calls[pos]
+		if tc.ID != "" {
+			cl.ID = tc.ID
+		}
+		if tc.Function.Name != "" {
+			cl.Name = tc.Function.Name
+		}
+		cl.Arguments += tc.Function.Arguments
+	}
+	return nil
 }
 
 // parse reads the first choice of a reply.

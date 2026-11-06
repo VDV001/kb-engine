@@ -96,6 +96,12 @@ type Model interface {
 	Complete(ctx context.Context, msgs []ModelMessage, tools []Tool) (ModelReply, error)
 }
 
+// Streamer is a Model that shows its answer while writing it: show получает
+// текст текущего ответа, накопленный к этому куску.
+type Streamer interface {
+	Stream(ctx context.Context, msgs []ModelMessage, tools []Tool, show func(text string)) (ModelReply, error)
+}
+
 // Turn is one answered question: ответ и документы, с которыми работали.
 type Turn struct {
 	Answer string
@@ -141,6 +147,17 @@ const systemPrompt = `Ты отвечаешь на вопросы человек
 // «а сколько он стоит?» без существительного находит не то. Путь: режим
 // «модель ищет» (сама формулирует запрос) или переписывание запроса моделью.
 func (s *Service) Answer(ctx context.Context, history []Message, question string, mode Mode) (Turn, error) {
+	return s.AnswerStream(ctx, history, question, mode, nil)
+}
+
+// AnswerStream is Answer that shows the answer while the model writes it:
+// show получает растущий текст, а пустую строку — когда показанное оказалось
+// не ответом (шаг кончился вызовом инструмента). Модель без потока отвечает
+// целиком, и show не зовется.
+func (s *Service) AnswerStream(ctx context.Context, history []Message, question string, mode Mode, show func(text string)) (Turn, error) {
+	if _, ok := s.model.(Streamer); !ok {
+		show = nil
+	}
 	question = strings.TrimSpace(question)
 	if question == "" {
 		return Turn{}, ErrEmptyQuestion
@@ -148,7 +165,7 @@ func (s *Service) Answer(ctx context.Context, history []Message, question string
 	switch mode {
 	case ModeContext:
 	case ModeTools:
-		return s.answerWithTools(ctx, history, question)
+		return s.answerWithTools(ctx, history, question, show)
 	default:
 		return Turn{}, fmt.Errorf("%w: unknown mode %q", ErrModel, mode)
 	}
@@ -161,7 +178,7 @@ func (s *Service) Answer(ctx context.Context, history []Message, question string
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
 	}
 	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: documentsBlock(docs) + "\n\nВопрос: " + question})
-	reply, err := s.model.Complete(ctx, msgs, nil)
+	reply, err := s.complete(ctx, msgs, nil, show)
 	if err != nil {
 		return Turn{}, fmt.Errorf("%w: %w", ErrModel, err)
 	}
@@ -169,6 +186,14 @@ func (s *Service) Answer(ctx context.Context, history []Message, question string
 		return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 	}
 	return Turn{Answer: reply.Content, Docs: cited(reply.Content, docs)}, nil
+}
+
+// complete asks the model, by stream when show is set (тогда модель — Streamer).
+func (s *Service) complete(ctx context.Context, msgs []ModelMessage, tools []Tool, show func(string)) (ModelReply, error) {
+	if show != nil {
+		return s.model.(Streamer).Stream(ctx, msgs, tools, show)
+	}
+	return s.model.Complete(ctx, msgs, tools)
 }
 
 // documentsBlock numbers the documents for the model.

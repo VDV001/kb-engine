@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os/exec"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
@@ -139,7 +140,16 @@ func (a *App) PickFolder() (string, error) {
 	})
 }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	// Кусок уходит странице весь (она перерисовывает текст целиком), поэтому
+	// не чаще раза в 50 мс. Устаревший кусок после ответа прийти не может:
+	// событие и ответ Ask идут в одну очередь главного потока (ExecJS →
+	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
+	if a.chat != nil {
+		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
+	}
+}
 
 // Open opens a found file in its default application.
 //
