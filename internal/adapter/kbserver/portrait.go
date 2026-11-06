@@ -48,7 +48,8 @@ func (s *PortraitStore) Load(ctx context.Context) (domain.Portrait, error) {
 	}
 	p, err := portraitjson.Decode(raw)
 	if err != nil {
-		return domain.Portrait{}, err
+		// Сервер здоров, но его портрет эта версия не читает (раздел новее и т. п.).
+		return domain.Portrait{}, fmt.Errorf("%w: портрет на сервере не читается этой версией окна: %w", ErrRejected, err)
 	}
 	s.mu.Lock()
 	s.etag = resp.Header.Get("ETag")

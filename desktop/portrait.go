@@ -329,7 +329,7 @@ func portraitErr(err error) error {
 	case errors.Is(err, portrait.ErrConflict):
 		return errors.New("портрет меняли на другом устройстве одновременно с Вами — повторите")
 	case errors.Is(err, kbserver.ErrUnreachable), errors.Is(err, kbserver.ErrUnauthorized), errors.Is(err, kbserver.ErrNotKB),
-		errors.Is(err, kbserver.ErrServerError), errors.Is(err, kbserver.ErrRedirect), errors.Is(err, kbserver.ErrTooLarge):
+		errors.Is(err, kbserver.ErrServerError), errors.Is(err, kbserver.ErrRedirect), errors.Is(err, kbserver.ErrTooLarge), errors.Is(err, kbserver.ErrRejected):
 		return humanErr{"kb-сервер портрета: " + serverMessage(err), err}
 	case errors.Is(err, portraitfile.ErrCorrupt):
 		return errors.New("файл портрета испорчен — окно его не перезапишет; поправьте или уберите portrait.json в папке портрета")
