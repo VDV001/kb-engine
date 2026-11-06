@@ -142,8 +142,7 @@ func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googl
 	// как открытая страница.
 	if gd != nil && google.FileID(link) != "" {
 		d, err := gd.Read(ctx, link)
-		switch {
-		case err == nil:
+		if err == nil {
 			text := d.Text
 			if d.Raw != nil {
 				if text, err = extractBytes(ctx, ext, d.Raw, d.Ext); err != nil {
@@ -151,14 +150,28 @@ func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googl
 				}
 			}
 			return chat.Doc{Ref: ref, Title: d.Name, Source: googleSource(gd), Text: text}, nil
-		case !errors.Is(err, errNoGoogle):
-			return chat.Doc{}, err
+		}
+		if !errors.Is(err, errNoGoogle) {
+			// Подключенному аккаунту документ не отдан (нет доступа, API не
+			// включен, не документ) — пробуем как открытую ссылку, как до
+			// подключения; не вышло и так — причина от Google (ревью #466).
+			p, perr := web.Fetch(ctx, link)
+			if perr != nil {
+				return chat.Doc{}, err
+			}
+			return pageDoc(ctx, ext, ref, link, p)
 		}
 	}
 	p, err := web.Fetch(ctx, link)
 	if err != nil {
 		return chat.Doc{}, err
 	}
+	return pageDoc(ctx, ext, ref, link, p)
+}
+
+// pageDoc turns a page read by its link into a chat document.
+func pageDoc(ctx context.Context, ext extraction, ref, link string, p weblink.Page) (chat.Doc, error) {
+	var err error
 	text := p.Text
 	if p.Raw != nil {
 		if text, err = extractBytes(ctx, ext, p.Raw, p.Ext); err != nil {
