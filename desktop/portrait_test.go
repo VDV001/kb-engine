@@ -197,3 +197,50 @@ func TestChat_PortraitOnServer(t *testing.T) {
 		t.Fatalf("убранный сервер: %v", err)
 	}
 }
+
+// rememberModel: в режиме «модель ищет» сначала зовет remember, потом отвечает;
+// разбор после ответа нового не находит.
+type rememberModel struct{ called bool }
+
+func (m *rememberModel) Complete(_ context.Context, msgs []chat.ModelMessage, tools []chat.Tool) (chat.ModelReply, error) {
+	if strings.Contains(msgs[0].Content, "Ты ведешь портрет человека") {
+		return chat.ModelReply{Content: "[]"}, nil
+	}
+	for _, t := range tools {
+		if t.Name == "remember" && !m.called {
+			m.called = true
+			return chat.ModelReply{ToolCalls: []chat.ToolCall{{ID: "c1", Name: "remember", Arguments: `{"section":"prefs","text":"Отвечать коротко"}`}}}, nil
+		}
+	}
+	return chat.ModelReply{Content: "ответ"}, nil
+}
+
+// Инструмент «запомнить» (#479): факт, предложенный моделью, ждет одобрения
+// в портрете и приходит странице тем же событием, что и разбор после ответа.
+func TestChat_PortraitRememberTool(t *testing.T) {
+	d, _, news := newPortraitDesk(t)
+	m := &rememberModel{}
+	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
+	c := desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", Mode: desktopconfig.ChatModeTools, MemoryDir: t.TempDir()}
+	if err := d.SetSettings(c, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Ask(askReq{Question: "отвечай коротко, всегда"}); err != nil {
+		t.Fatal(err)
+	}
+	if !m.called {
+		t.Fatal("remember модели не предложен")
+	}
+	select {
+	case got := <-news:
+		if len(got) != 1 || got[0].Text != "Отвечать коротко" || !got[0].Pending {
+			t.Fatalf("событие: %+v", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("события о предложенном нет")
+	}
+	v, err := d.Portrait()
+	if err != nil || len(v.Facts) != 1 || !v.Facts[0].Pending {
+		t.Fatalf("портрет: %+v %v", v, err)
+	}
+}
