@@ -14,6 +14,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   @dvkbasebot присылает: ответ `/healthz`, аптайм за 24 ч и 7 дней, средний отклик и сбои за сутки по
   UptimeRobot. Отдельный проект Vercel в `deploy/vercel/`: из Yandex Cloud Functions Telegram
   недоступен. Без зависимостей, тесты встроенным раннером Node.
+
+- **Выкатка: проверка kb-сервера по таймеру и алерты (06.11).** Функция `kb-healthcheck`
+  (`deploy/yandex/healthcheck.sh`, код в `deploy/yandex/healthcheck/`, только stdlib) раз в 5 минут
+  проверяет `/healthz` и при сбое пишет ботом владельца в Telegram; токен — в Lockbox, в ответ и логи
+  не попадает. Таймер пока на паузе: из Cloud Functions `api.telegram.org` недоступен. Работающие
+  алерты — UptimeRobot (почта и push); устройство и ограничения — в `deploy/yandex/README.md`.
+
 - **Окно DVK: сетевая папка на постоянной основе (решение владельца 06.11).** «Источники → папка →
   сетевая: smb://сервер/папка → Подключить»: окно подключает шару системным `mount volume` (пароль
   спрашивает macOS и хранит Связка ключей, как у Finder), добавляет ее папкой и запоминает адрес.
