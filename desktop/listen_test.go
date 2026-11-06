@@ -98,3 +98,27 @@ func TestDictation_Refusals(t *testing.T) {
 		t.Fatalf("events = %+v", got)
 	}
 }
+
+// Итог диктовки приходит, когда помощник уже освобожден: страница, что сразу
+// слушает снова (разговор голосом), не получает «диктовка уже идет» (ревью #465).
+func TestDictation_FinalAfterRelease(t *testing.T) {
+	var d *dictation
+	restarted := make(chan error, 1)
+	d = &dictation{bin: fakeListen(t, `echo '{"text":"","final":true}'`), emit: func(ev listenEvent) {
+		if ev.Final {
+			restarted <- d.Start(0)
+		}
+	}}
+	if err := d.Start(0); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-restarted:
+		if err != nil {
+			t.Fatalf("повтор после итога: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("итога нет")
+	}
+	d.Stop()
+}

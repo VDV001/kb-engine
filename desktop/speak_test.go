@@ -58,3 +58,39 @@ func TestParseVoices(t *testing.T) {
 		t.Fatalf("voices = %q", got)
 	}
 }
+
+// Конец чтения сообщается только о своем чтении: прерванное новым ответом не
+// будит микрофон поверх нового (петля «бот слушает сам себя»); пустой ответ —
+// конец сразу, иначе разговор ждал бы вечно (ревью #465).
+func TestSpeaker_DoneOnlyForOwnReading(t *testing.T) {
+	done := make(chan struct{}, 4)
+	s := &speaker{done: func() { done <- struct{}{} }, command: func(string) *exec.Cmd {
+		return exec.Command("/bin/sh", "-c", "cat >/dev/null; sleep 5")
+	}}
+	if err := s.Speak("", "первый ответ"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(100 * time.Millisecond)
+	if err := s.Speak("", "второй ответ"); err != nil { // прерывает первый
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+		t.Fatal("прерванное чтение сообщило конец")
+	case <-time.After(500 * time.Millisecond):
+	}
+	s.Stop()
+	select {
+	case <-done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("остановленное чтение не сообщило конец")
+	}
+	if err := s.Speak("", "[1] **"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("пустой ответ не сообщил конец")
+	}
+}
