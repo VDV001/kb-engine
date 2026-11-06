@@ -351,6 +351,7 @@ const tabItems = (t, kb, files) =>
 // Модули окна (#435): вкладка модуля — после вкладок поиска, ключ module:<id>.
 // Сборка знает только эти; модуль новой сборки в config.json вкладки не дает.
 const MODULES = {
+  chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat" },
   finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/" },
 };
 state.modules = [];
@@ -1382,6 +1383,16 @@ const ACCENTS = [
   ["switch", "Переключатель", "включенный тумблер"],
   ["tip", "Подсказка", "рамка всплывающей подсказки"],
   ["hover", "Наведение на строку", "мягкий перелив слева"],
+  ["chat-send", "Кнопка «Спросить»", "главная кнопка чата"],
+  ["chat-field", "Поле вопроса в фокусе", "рамка поля чата"],
+  ["chat-active", "Открытый чат", "перелив в колонке чатов"],
+  ["chat-grip", "Край колонки чата", "линия, за которую тянут ширину"],
+  ["chat-user", "Ваш вопрос", "рамка сообщения в чате"],
+  ["chat-pane", "Значки колонок", "нажатые значки чатов и документов"],
+  ["chat-new", "Новый чат", "плюс в колонке чатов"],
+  ["chat-docs", "Счет документов", "число документов чата"],
+  ["chat-thinking", "Ожидание ответа", "бегущая полоса, пока модель думает"],
+  ["chat-title", "Заголовок чата", "название в шапке разговора"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1443,8 +1454,10 @@ if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", 
 function showModule(id) {
   const mod = id && MODULES[id];
   $("#app").classList.toggle("module-open", !!mod);
-  $("#module-view").hidden = !mod;
-  if (mod) {
+  $("#module-view").hidden = !mod || !!mod.view;
+  $("#chat-view").hidden = !mod || mod.view !== "chat";
+  if (mod && mod.view === "chat") openChatView();
+  else if (mod) {
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
   }
@@ -1546,3 +1559,293 @@ $("#problems-view").addEventListener("click", (e) => {
   e.preventDefault(); // кнопка внутри <summary> не раскрывает строку
   revealFile(b.dataset.reveal);
 });
+
+// --- Чат над документами (#436) -------------------------------------------------
+// Как в Claude Desktop (решение владельца 06.11): значок панели в шапке
+// показывает и прячет колонку чатов и колонку документов целиком; край
+// колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
+// режим «модель ищет» делает несколько запросов к модели подряд.
+const chatState = { id: "", chat: null, busy: false, settings: null, opened: false, list: [] };
+async function openChatView() {
+  if (!native() || !native().Ask) {
+    $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
+    return;
+  }
+  if (!chatState.opened) {
+    chatState.opened = true;
+    await loadChatSettings();
+  }
+  await renderChatList();
+  renderChat();
+  $("#chat-q").focus();
+}
+async function loadChatSettings() {
+  try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + e); return; }
+  const s = chatState.settings;
+  $("#chat-url").value = s.url || "";
+  $("#chat-name").value = s.model || "";
+  $("#chat-mode").value = s.mode || "";
+  $("#chat-key").value = "";
+  $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
+  renderChatNote();
+  $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
+}
+// renderChatNote says aloud where the documents go (ADR-0006).
+function renderChatNote() {
+  const s = chatState.settings;
+  if (!s) return;
+  const who = s.effectiveMode === "tools" ? "модель сама ищет и читает документы" : "окно находит документы и отдает их модели";
+  showChatNote(s.local
+    ? `${s.model} на этом Маке: документы никуда не уходят · ${who}`
+    : `${s.model}: найденные документы уходят провайдеру модели · ${who}`);
+}
+const showChatNote = (t) => ($("#chat-note").textContent = t);
+// chatWhen is a short date for the tooltip: сегодня — время, иначе день.
+function chatWhen(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  return d.toDateString() === new Date().toDateString()
+    ? d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" });
+}
+async function renderChatList() {
+  try { chatState.list = (await native().Chats()) || []; } catch { chatState.list = []; }
+  paintChatList();
+}
+function paintChatList() {
+  const q = ($("#chat-find").hidden ? "" : $("#chat-find").value).trim().toLowerCase();
+  const list = chatState.list.filter((c) => !q || c.title.toLowerCase().includes(q));
+  $("#chat-list").innerHTML = list.map((c) =>
+    `<li><button class="chat-item${c.id === chatState.id ? " on" : ""}" data-chat="${esc(c.id)}" data-tip="${esc(c.title)}" data-tip-b="${esc(chatWhen(c.updated))}">${esc(c.title)}</button>
+      <button class="chat-del" data-del="${esc(c.id)}" aria-label="Удалить чат: ${esc(c.title)}" data-tip="Удалить чат">×</button></li>`).join("") ||
+    `<li class="muted chat-empty" style="padding:7px 10px">${q ? "Чатов с таким названием нет" : "Чатов пока нет"}</li>`;
+  dropStaleTip();
+}
+// answerHTML shows the model's text: абзацы, **жирный**, `код` — без HTML модели.
+function answerHTML(t) {
+  return esc(t)
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\n/g, "<br>");
+}
+function renderChat() {
+  const c = chatState.chat;
+  const log = $("#chat-log");
+  $("#chat-title").textContent = (c && c.title) || "Новый чат";
+  if (!c) {
+    log.innerHTML = `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
+  } else {
+    log.innerHTML = c.messages.map((m) => m.role === "user"
+      ? `<div class="msg user">${esc(m.text)}</div>`
+      : `<div class="msg bot">${answerHTML(m.text)}</div>`).join("");
+  }
+  if (chatState.busy) log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking"><span class="building"></span>ищу в документах и думаю…</div>`);
+  log.scrollTop = log.scrollHeight;
+  const docs = (c && c.docs) || [];
+  $("#chat-docs-n").textContent = docs.length || "";
+  $("#chat-docs").innerHTML = docs.map((d) => {
+    const file = d.ref.startsWith("file:") ? d.ref.slice(5) : "";
+    return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${esc(d.title)}</span>
+      <span class="muted chat-doc-src">${esc(file ? tilde(d.source || "") : d.source || "")}</span>
+      ${file ? `<span class="chat-doc-acts"><button class="btn" data-open="${esc(file)}">Открыть</button><button class="btn" data-reveal-file="${esc(file)}">В Finder</button></span>` : ""}</li>`;
+  }).join("") || `<li class="muted">Документы появятся после первого ответа.</li>`;
+  dropStaleTip();
+}
+async function askChat() {
+  const q = $("#chat-q").value.trim();
+  if (!q || chatState.busy) return;
+  chatState.busy = true;
+  $("#chat-send").disabled = true;
+  // Вопрос виден сразу, до ответа.
+  chatState.chat = chatState.chat ? { ...chatState.chat, messages: [...chatState.chat.messages, { role: "user", text: q }] } : { title: q, messages: [{ role: "user", text: q }], docs: [] };
+  $("#chat-q").value = "";
+  fitChatQ();
+  renderChat();
+  try {
+    const c = await native().Ask(chatState.id, q);
+    chatState.id = c.id;
+    chatState.chat = c;
+    await renderChatList();
+  } catch (e) {
+    chatState.chat.messages.pop();
+    if (!chatState.chat.messages.length) chatState.chat = null;
+    $("#chat-q").value = q; // вопрос не теряется
+    showChatNote("Нет ответа: " + e);
+  } finally {
+    chatState.busy = false;
+    fitChatQ();
+    renderChat();
+  }
+}
+function newChat() {
+  if (chatState.busy) return;
+  chatState.id = "";
+  chatState.chat = null;
+  paintChatList();
+  renderChat();
+  renderChatNote();
+  $("#chat-q").focus();
+}
+$("#chat-ask").addEventListener("submit", (e) => { e.preventDefault(); askChat(); });
+// Поле растет по тексту до 40% высоты; кнопка «Спросить» — только с вопросом.
+function fitChatQ() {
+  const q = $("#chat-q");
+  q.style.height = "auto";
+  q.style.height = q.scrollHeight + "px";
+  $("#chat-send").disabled = chatState.busy || !q.value.trim();
+  q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
+}
+$("#chat-q").addEventListener("input", fitChatQ);
+$("#chat-model-chip").addEventListener("click", () => {
+  if (chatPanes.l && chatPanes.l.hidden) toggleChatPane("l"); // настройки модели — в колонке чатов
+  $("#chat-model").hidden = false;
+  $("#chat-model-btn").setAttribute("aria-expanded", "true");
+  $("#chat-name").focus();
+});
+$("#chat-q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
+});
+$("#chat-new").addEventListener("click", newChat);
+$("#chat-find-btn").addEventListener("click", () => {
+  const f = $("#chat-find");
+  f.hidden = !f.hidden;
+  $("#chat-find-btn").setAttribute("aria-expanded", String(!f.hidden));
+  if (!f.hidden) f.focus(); else { f.value = ""; paintChatList(); }
+});
+$("#chat-find").addEventListener("input", paintChatList);
+$("#chat-sources-btn").addEventListener("click", () => openSettings("sources"));
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n" && !$("#chat-view").hidden) { e.preventDefault(); newChat(); }
+});
+$("#chat-list").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-del]");
+  if (del && !chatState.busy) {
+    try { await native().DeleteChat(del.dataset.del); } catch (err) { showChatNote("Чат не удален: " + err); return; }
+    if (del.dataset.del === chatState.id) { chatState.id = ""; chatState.chat = null; }
+    await renderChatList();
+    renderChat();
+    return;
+  }
+  const b = e.target.closest("[data-chat]");
+  if (!b || chatState.busy) return;
+  try {
+    chatState.chat = await native().Chat(b.dataset.chat);
+    chatState.id = b.dataset.chat;
+  } catch (err) { showChatNote("Чат не открылся: " + err); return; }
+  paintChatList();
+  renderChat();
+  renderChatNote();
+});
+$("#chat-docs").addEventListener("click", (e) => {
+  const o = e.target.closest("[data-open]");
+  if (o) return void openFile(o.dataset.open);
+  const r = e.target.closest("[data-reveal-file]");
+  if (r) revealFile(r.dataset.revealFile);
+});
+$("#chat-model-btn").addEventListener("click", () => {
+  const f = $("#chat-model");
+  f.hidden = !f.hidden;
+  $("#chat-model-btn").setAttribute("aria-expanded", String(!f.hidden));
+});
+$("#chat-model").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value };
+  try {
+    await native().SetChatSettings(c, $("#chat-key").value);
+    $("#chat-model-note").textContent = "Сохранено";
+    await loadChatSettings();
+  } catch (err) {
+    $("#chat-model-note").textContent = String(err);
+  }
+});
+
+// Колонки чата: видимость (значок в шапке) и ширина (край тянется) —
+// удобство одного Мака, в localStorage. Ширина прилипает к SNAP в пределах
+// 14 px; двойной щелчок по краю — обычная ширина.
+const CHAT_PANES = { l: { def: 248, min: 180, max: 440, snap: [200, 248, 320, 400] }, r: { def: 280, min: 220, max: 520, snap: [240, 280, 360, 480] } };
+const chatPanes = (() => { try { return JSON.parse(localStorage.getItem("chat-panes") || "{}"); } catch { return {}; } })();
+const saveChatPanes = () => { try { localStorage.setItem("chat-panes", JSON.stringify(chatPanes)); } catch { /* только на сеанс */ } };
+function applyChatPanes() {
+  const view = $("#chat-view");
+  for (const side of ["l", "r"]) {
+    const p = chatPanes[side] || {};
+    view.classList.toggle("hide-" + side, !!p.hidden);
+    view.style.setProperty("--chat-" + side, (p.w || CHAT_PANES[side].def) + "px");
+    $("#chat-pane-" + side).setAttribute("aria-pressed", String(!p.hidden));
+  }
+}
+function toggleChatPane(side) {
+  chatPanes[side] = { ...(chatPanes[side] || {}), hidden: !(chatPanes[side] || {}).hidden };
+  saveChatPanes();
+  applyChatPanes();
+}
+document.querySelectorAll("#chat-view [data-pane]").forEach((b) => b.addEventListener("click", () => toggleChatPane(b.dataset.pane)));
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "\\" && !$("#chat-view").hidden) { e.preventDefault(); toggleChatPane("l"); }
+});
+function snapWidth(side, w) {
+  const c = CHAT_PANES[side];
+  w = Math.min(c.max, Math.max(c.min, Math.round(w)));
+  const near = c.snap.find((x) => Math.abs(x - w) <= 14);
+  return near ?? w;
+}
+document.querySelectorAll(".chat-grip").forEach((g) => {
+  const side = g.dataset.side;
+  g.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    hideTip();
+    g.setPointerCapture(e.pointerId);
+    const view = $("#chat-view"), x0 = e.clientX, w0 = (chatPanes[side] || {}).w || CHAT_PANES[side].def;
+    view.classList.add("dragging");
+    g.classList.add("on");
+    const move = (ev) => {
+      const w = snapWidth(side, side === "l" ? w0 + ev.clientX - x0 : w0 - (ev.clientX - x0));
+      chatPanes[side] = { ...(chatPanes[side] || {}), w };
+      view.style.setProperty("--chat-" + side, w + "px");
+    };
+    const up = () => {
+      g.removeEventListener("pointermove", move);
+      view.classList.remove("dragging");
+      g.classList.remove("on");
+      saveChatPanes();
+    };
+    g.addEventListener("pointermove", move);
+    g.addEventListener("pointerup", up, { once: true });
+    g.addEventListener("pointercancel", up, { once: true });
+  });
+  g.addEventListener("dblclick", () => { chatPanes[side] = { ...(chatPanes[side] || {}), w: CHAT_PANES[side].def }; saveChatPanes(); applyChatPanes(); });
+  // Клавиатура: стрелки двигают край по SNAP.
+  g.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const c = CHAT_PANES[side], cur = (chatPanes[side] || {}).w || c.def;
+    const grow = (e.key === "ArrowRight") === (side === "l");
+    const next = grow ? c.snap.find((x) => x > cur) ?? c.max : [...c.snap].reverse().find((x) => x < cur) ?? c.min;
+    chatPanes[side] = { ...(chatPanes[side] || {}), w: next };
+    saveChatPanes();
+    applyChatPanes();
+  });
+});
+applyChatPanes();
+
+// --- Тема окна --------------------------------------------------------------------
+// Кнопка в шапке: как в системе → светлая → темная. Выбор — удобство этого
+// Мака (localStorage); theme.js применяет его до первой отрисовки.
+const THEMES = { system: "как в системе", light: "светлая", dark: "темная" };
+function currentTheme() { return document.documentElement.dataset.theme || "system"; }
+function paintThemeBtn() {
+  const t = currentTheme();
+  // У <svg> нет свойства hidden — только атрибут.
+  document.querySelectorAll("[data-theme-icon]").forEach((svg) => svg.toggleAttribute("hidden", svg.dataset.themeIcon !== t));
+  $("#theme-btn").dataset.tipB = THEMES[t] + " · нажмите, чтобы сменить";
+}
+$("#theme-btn").addEventListener("click", () => {
+  const order = ["system", "light", "dark"];
+  const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
+  if (next === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = next;
+  try { next === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch { /* только на сеанс */ }
+  paintThemeBtn();
+  hideTip();
+});
+paintThemeBtn();

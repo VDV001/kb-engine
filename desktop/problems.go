@@ -86,17 +86,7 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 		if r.State != stateMissing {
 			continue
 		}
-		p := problem{Source: r.ID, Level: levelError, Name: sourceLabel(r.Source), Detail: r.Note}
-		switch r.Kind {
-		case desktopconfig.KindFolder:
-			p.What, p.Todo = "папка недоступна", "подключите диск или VPN, или поправьте путь в «Источниках»"
-		case desktopconfig.KindCatalog:
-			p.What, p.Todo = "каталог не читается", "проверьте файл catalog.json и путь к нему в «Источниках»"
-		default: // сервер: Note уже словами человека (Describe), исходная ошибка — в Detail
-			p.What, p.Todo = splitReason(r.Note)
-			p.Detail = r.Detail
-		}
-		out.Problems = append(out.Problems, p)
+		out.Problems = append(out.Problems, sourceProblem(r))
 	}
 	if st.Error != "" {
 		out.Problems = append(out.Problems, problem{Level: levelError, Name: foldersName, What: "индекс файлов не собрался",
@@ -118,16 +108,38 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 		}
 		out.Problems = append(out.Problems, p)
 	}
-	for _, p := range out.Problems {
-		out.Level = worse(out.Level, p.Level)
+	out.Level = worstLevel(out.Problems, st)
+	return out
+}
+
+// sourceProblem is the problem of a source that cannot be read.
+func sourceProblem(r sourceRow) problem {
+	p := problem{Source: r.ID, Level: levelError, Name: sourceLabel(r.Source), Detail: r.Note}
+	switch r.Kind {
+	case desktopconfig.KindFolder:
+		p.What, p.Todo = "папка недоступна", "подключите диск или VPN, или поправьте путь в «Источниках»"
+	case desktopconfig.KindCatalog:
+		p.What, p.Todo = "каталог не читается", "проверьте файл catalog.json и путь к нему в «Источниках»"
+	default: // сервер: Note уже словами человека (Describe), исходная ошибка — в Detail
+		p.What, p.Todo = splitReason(r.Note)
+		p.Detail = r.Detail
+	}
+	return p
+}
+
+// worstLevel is the level of the whole list, files beyond the named ones included.
+func worstLevel(problems []problem, st indexStatus) string {
+	level := ""
+	for _, p := range problems {
+		level = worse(level, p.Level)
 	}
 	if st.Skipped > 0 { // файлы сверх названных
-		out.Level = worse(out.Level, levelError)
+		level = worse(level, levelError)
 	}
 	if st.UnrecognizedCount > len(st.Unrecognized) {
-		out.Level = worse(out.Level, levelInfo) // уровень названных уже учтен
+		level = worse(level, levelInfo) // уровень названных уже учтен
 	}
-	return out
+	return level
 }
 
 // folderOf finds the folder a file belongs to: самая глубокая из папок, что

@@ -15,6 +15,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -118,6 +119,8 @@ func run() error {
 	}
 
 	app := newApp(idx.files, settings, idx)
+	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
+	app.chat.useSources(idx.files)
 	return wails.Run(&options.App{
 		Title:     "DVK",
 		Width:     1180,

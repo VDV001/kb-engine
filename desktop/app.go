@@ -28,6 +28,7 @@ type App struct {
 	files    fileChecker
 	settings *folderSettings
 	index    *indexer
+	chat     *chatDesk // nil — чата нет (тесты без него)
 	run      func(name string, args ...string) error
 }
 
@@ -105,6 +106,26 @@ func (a *App) Problems(fresh bool) problemsView {
 	st.Unrecognized, st.UnrecognizedCount = a.index.unrecognizedRows()
 	return collectProblems(rows, st, a.settings.home)
 }
+
+// ChatSettings returns the chat model settings, без ключа.
+func (a *App) ChatSettings() chatSettingsView { return a.chat.Settings() }
+
+// SetChatSettings saves the chat model; key — новый ключ, пусто — прежний.
+func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
+	return a.chat.SetSettings(c, key)
+}
+
+// Chats lists the chats, newest first.
+func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
+
+// Chat returns one chat with its messages and documents.
+func (a *App) Chat(id string) (chatRecord, error) { return a.chat.Get(id) }
+
+// Ask answers a question in chat id ("" — новый чат).
+func (a *App) Ask(id, question string) (chatRecord, error) { return a.chat.Ask(id, question) }
+
+// DeleteChat removes a chat.
+func (a *App) DeleteChat(id string) error { return a.chat.Delete(id) }
 
 // IndexStatus reports whether a build is running and how the last one went.
 func (a *App) IndexStatus() indexStatus { return a.index.Status() }
