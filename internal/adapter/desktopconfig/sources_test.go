@@ -306,3 +306,56 @@ func TestValidate_GDrive(t *testing.T) {
 		t.Fatalf("DriveFolderID = %q", got)
 	}
 }
+
+// Сетевая папка — папка с адресом шары: окно подключает шару само, когда
+// путь пропал (сон, перезагрузка). Адрес — только smb:// или afp:// без
+// пароля в адресе: пароль хранит Связка ключей macOS.
+func TestValidate_ShareURL(t *testing.T) {
+	ok := desktopconfig.Source{ID: "f1", Kind: desktopconfig.KindFolder, Path: "/Volumes/docs", URL: "smb://nas.local/docs", Enabled: true}
+	if err := (desktopconfig.Config{Sources: []desktopconfig.Source{ok}}).Validate(); err != nil {
+		t.Fatalf("отвергнуто: %v", err)
+	}
+	for _, u := range []string{"http://nas.local/docs", "smb://user:pass@nas.local/docs", "smb://", "smb://nas.local/docs\"; rm -rf ~"} {
+		bad := ok
+		bad.URL = u
+		if err := (desktopconfig.Config{Sources: []desktopconfig.Source{bad}}).Validate(); !errors.Is(err, desktopconfig.ErrSourceTarget) {
+			t.Errorf("адрес %q принят: %v", u, err)
+		}
+	}
+	if got := desktopconfig.ShareVolume("smb://nas.local/Общие%20документы"); got != "/Volumes/Общие документы" {
+		t.Fatalf("ShareVolume = %q", got)
+	}
+}
+
+// Яндекс Диск и любой WebDAV — тоже сетевая папка: macOS монтирует
+// https-адрес WebDAV в /Volumes/<сервер>.
+func TestShareVolume_WebDAV(t *testing.T) {
+	tests := map[string]string{
+		"https://webdav.yandex.ru":         "/Volumes/webdav.yandex.ru",
+		"https://webdav.yandex.ru/":        "/Volumes/webdav.yandex.ru",
+		"https://dav.example.com/remote":   "/Volumes/remote",
+		"http://webdav.yandex.ru":          "",
+		"https://user:pw@webdav.yandex.ru": "",
+	}
+	for in, want := range tests {
+		if got := desktopconfig.ShareVolume(in); got != want {
+			t.Errorf("ShareVolume(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Адрес шары не уводит из /Volumes: «..», «.», закодированная черта и
+// пробельные символы — отказ (ревью #469, безопасность).
+func TestShareVolume_NoEscape(t *testing.T) {
+	for _, bad := range []string{
+		"smb://nas/..", "smb://nas/.", "smb://nas/..%2F..%2FUsers", "smb://nas/a%2Fb",
+		"https://dav.example.com/..", "smb://nas/docs\nfoo", "smb://nas/docs ", "https://dav.example.com/a/%2E%2E",
+	} {
+		if got := desktopconfig.ShareVolume(bad); got != "" {
+			t.Errorf("ShareVolume(%q) = %q, want отказ", bad, got)
+		}
+	}
+	if got := desktopconfig.ShareVolume("https://dav.example.com/my%20files"); got != "/Volumes/my files" {
+		t.Errorf("WebDAV %%20: %q", got)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"time"
 
@@ -198,6 +199,23 @@ func (a *App) SetConnectionEnabled(id string, on bool) error { return a.google.S
 
 // RemoveConnection deletes a connection and its secrets.
 func (a *App) RemoveConnection(id string) error { return a.google.Remove(id) }
+
+// MountShare connects a network folder now (smb://… или afp://…) and returns
+// its path in /Volumes: macOS спросит пароль и запомнит его в Связке ключей.
+func (a *App) MountShare(addr string) (string, error) {
+	vol := desktopconfig.ShareVolume(addr)
+	if vol == "" {
+		return "", errors.New("адрес сетевой папки — smb://сервер/папка, afp://… или https://… (WebDAV, Яндекс Диск), без пароля в адресе")
+	}
+	if err := mountShareCmd(addr); err != nil {
+		return "", fmt.Errorf("сетевая папка не подключилась: %w", err)
+	}
+	p, ok := mountedVolume(addr, vol, systemMounts())
+	if !ok {
+		return "", fmt.Errorf("шара подключена, но не найдена в /Volumes (имя %s занято другим диском или папки нет) — проверьте адрес", vol)
+	}
+	return p, nil
+}
 
 // PickChatFile asks for a file to attach to the question; "" — передумали.
 func (a *App) PickChatFile() (string, error) {

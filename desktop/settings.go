@@ -56,6 +56,11 @@ type sourcesView struct {
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
+	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.
+	mountShare func(addr string) error
+	shareUp    func(addr string) bool // отвечает ли сервер шары; nil — проверка TCP
+	dirExists  func(path string) bool // есть ли папка шары; nil — isDir
+	shares     shareTries
 	// drive ищет в папке Google Диска (gdrive.go); nil — Диск не ищется.
 	drive driveFunc
 	mu    sync.Mutex
@@ -301,6 +306,7 @@ func (f *folderSettings) checkCatalogs(next desktopconfig.Config) (string, error
 func (f *folderSettings) reconcile() bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.mountMissingShares()
 	roots, _ := desktopconfig.NormalizeRoots(f.cfg.WithSources().FolderRoots(), f.home)
 	if len(roots) == 0 || slices.Equal(roots, f.applied) {
 		return false

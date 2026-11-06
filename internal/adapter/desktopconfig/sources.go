@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
@@ -62,6 +63,9 @@ func (s Source) check() error {
 		if strings.TrimSpace(s.Path) == "" {
 			return fmt.Errorf("%w: %s без пути", ErrSourceTarget, s.ID)
 		}
+		if s.Kind == KindFolder && s.URL != "" && ShareVolume(s.URL) == "" {
+			return fmt.Errorf("%w: %s: адрес сетевой папки — smb://сервер/папка, afp://… или https://… (WebDAV, Яндекс Диск), без пароля", ErrSourceTarget, s.ID)
+		}
 	case KindServer:
 		if err := CheckServerURL(s.URL); err != nil {
 			return fmt.Errorf("%w: %s: %w", ErrSourceTarget, s.ID, err)
@@ -75,6 +79,43 @@ func (s Source) check() error {
 		}
 	}
 	return nil
+}
+
+// shareAddr — адрес сетевой папки: схема, сервер, папка; без пароля и
+// без символов, которые сломали бы команду подключения.
+var shareAddr = regexp.MustCompile(`^(smb|afp)://[^/@:\s"\\]+(:\d+)?/([^"\\\s?#][^"\\?#]*)$`)
+
+// webdavAddr — WebDAV по https (Яндекс Диск — https://webdav.yandex.ru):
+// macOS монтирует его в /Volumes/<последняя папка пути или сервер>.
+var webdavAddr = regexp.MustCompile(`^https://([^/@:\s"\\]+)(:\d+)?(/[^"\\?#\s]*)?$`)
+
+// ShareVolume returns where macOS mounts the share at addr (/Volumes/<папка>);
+// "" — адрес не сетевой папки, с паролем или уводящий из /Volumes.
+func ShareVolume(addr string) string {
+	// Пробел в адресе — только как %20: сырой пробел, табуляция и перевод
+	// строки сломали бы команду подключения или подменили бы шару.
+	if strings.IndexFunc(addr, unicode.IsSpace) >= 0 {
+		return ""
+	}
+	var seg string
+	if m := webdavAddr.FindStringSubmatch(addr); m != nil {
+		seg = m[1]
+		if p := strings.Trim(m[3], "/"); p != "" {
+			seg = p[strings.LastIndex(p, "/")+1:]
+		}
+	} else if m := shareAddr.FindStringSubmatch(addr); m != nil {
+		seg, _, _ = strings.Cut(m[3], "/")
+	} else {
+		return ""
+	}
+	name, err := url.PathUnescape(seg)
+	// Имя тома — одно слово пути: «.», «..» и черта (в том числе %2F) увели бы
+	// из /Volumes — к корню диска или в чужую папку (ревью #469).
+	if err != nil || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\") ||
+		strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.TrimSpace(name) != name {
+		return ""
+	}
+	return "/Volumes/" + name
 }
 
 var driveFolder = regexp.MustCompile(`^https://drive\.google\.com/drive/(?:u/\d+/)?folders/([\w-]+)(?:[?#].*)?$`)
