@@ -1565,7 +1565,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, settings: null, opened: false, list: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [] };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1639,7 +1639,10 @@ function renderChat() {
       ? `<div class="msg user">${esc(m.text)}</div>`
       : `<div class="msg bot">${answerHTML(m.text)}</div>`).join("");
   }
-  if (chatState.busy) log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking"><span class="building"></span>ищу в документах и думаю…</div>`);
+  if (chatState.busy) {
+    log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking" id="chat-partial"></div>`);
+    paintPartial();
+  }
   log.scrollTop = log.scrollHeight;
   const docs = (c && c.docs) || [];
   $("#chat-docs-n").textContent = docs.length || "";
@@ -1651,10 +1654,27 @@ function renderChat() {
   }).join("") || `<li class="muted">Документы появятся после первого ответа.</li>`;
   dropStaleTip();
 }
+// Ответ печатается по мере генерации: окно шлет текст, накопленный к куску
+// (chat:delta), пустой — показанное оказалось не ответом («сейчас поищу»).
+function paintPartial() {
+  const el = $("#chat-partial");
+  if (!el) return;
+  const t = chatState.partial;
+  el.classList.toggle("streaming", !!t);
+  el.innerHTML = t ? answerHTML(t) : `<span class="building"></span>ищу в документах и думаю…`;
+  const log = $("#chat-log");
+  if (log.scrollHeight - log.scrollTop - log.clientHeight < 80) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
+}
+if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
+  if (!chatState.busy) return;
+  chatState.partial = t || "";
+  paintPartial();
+});
 async function askChat() {
   const q = $("#chat-q").value.trim();
   if (!q || chatState.busy) return;
   chatState.busy = true;
+  chatState.partial = "";
   $("#chat-send").disabled = true;
   // Вопрос виден сразу, до ответа.
   chatState.chat = chatState.chat ? { ...chatState.chat, messages: [...chatState.chat.messages, { role: "user", text: q }] } : { title: q, messages: [{ role: "user", text: q }], docs: [] };

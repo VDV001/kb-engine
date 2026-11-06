@@ -139,7 +139,15 @@ func (a *App) PickFolder() (string, error) {
 	})
 }
 
-func (a *App) startup(ctx context.Context) { a.ctx = ctx }
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+	// ponytail: каждый кусок ответа уходит странице весь, без прореживания:
+	// ответ — килобайты, кусков сотни. Потолок: длинный ответ на медленной
+	// странице; путь — слать не чаще раза в 50 мс.
+	if a.chat != nil {
+		a.chat.show = func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) }
+	}
+}
 
 // Open opens a found file in its default application.
 //

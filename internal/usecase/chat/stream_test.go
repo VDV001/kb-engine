@@ -2,6 +2,7 @@ package chat_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
@@ -13,10 +14,10 @@ type streamModel struct{ scriptModel }
 
 func (m *streamModel) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool, show func(string)) (chat.ModelReply, error) {
 	r, err := m.Complete(ctx, msgs, tools)
-	text := ""
+	var text strings.Builder
 	for _, w := range splitWords(r.Content) {
-		text += w
-		show(text)
+		text.WriteString(w)
+		show(text.String())
 	}
 	return r, err
 }
