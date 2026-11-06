@@ -26,6 +26,10 @@ func TestExplain(t *testing.T) {
 	}
 	cp1251 := write("заметка.txt", []byte{0xcf, 0xf0, 0xe8, 0xe2, 0xe5, 0xf2}) // «Привет» в Windows-1251
 	broken := write("отчет.docx", []byte("это не zip"))
+	page := write("tz.docx", []byte("\n  <!DOCTYPE html>\n<html lang=\"ru\"><head><title>Вход</title>"))
+	oldDoc := write("старый.docx", append([]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}, make([]byte, 64)...))
+	pdf := write("скан.docx", []byte("%PDF-1.7\n%âãÏÓ"))
+	empty := write("пусто.docx", nil)
 	src, err := localfiles.New([]string{dir}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -44,6 +48,11 @@ func TestExplain(t *testing.T) {
 	}{
 		{"кодировка", read(cp1251), "кодировка"},
 		{"битый docx", read(broken), "Word"},
+		// Чем файл оказался на самом деле — по содержимому, а не по расширению.
+		{"веб-страница под .docx", read(page), "веб-страница"},
+		{"старый .doc под .docx", read(oldDoc), "старый формат"},
+		{"PDF под .docx", read(pdf), "PDF"},
+		{"пустой файл", read(empty), "пустой"},
 		{"нет прав", fmt.Errorf("open: %w", fs.ErrPermission), "нет прав"},
 		{"прочее — с текстом ошибки", errors.New("diskio: boom"), "boom"},
 	}
