@@ -44,6 +44,8 @@ type Config struct {
 	// Accents — оформление окна: какие акценты спектра включены. Нулевое —
 	// свой набор без выключенных, то есть все.
 	Accents Accents `json:"accents"`
+	// Chat — модель чата (#436): адрес, имя, режим. Ключ — в Связке ключей.
+	Chat Chat `json:"chat"`
 }
 
 // Path is where the window keeps its config.
