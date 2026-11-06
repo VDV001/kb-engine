@@ -1,6 +1,7 @@
 package search_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -88,5 +89,35 @@ func TestFilter_atUsecaseLevel(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Выдача — по силе совпадения, а не по номеру записи: слово в названии выше
+// слова в метке, метка выше описания, целое слово выше начала слова («SLA» —
+// не «Slack»). Равные — в порядке каталога. Протыкивание 06.11: статья с SLA
+// в названии стояла восьмой из 19, потому что номер у нее больше.
+func TestFilter_ranksByWhereTheWordIs(t *testing.T) {
+	es := []domain.Entry{
+		withDescription(t, entry(t, 1, "Платформа агентов"), "интеграция со Slack и почтой"),
+		withDescription(t, entry(t, 2, "Поддержка клиентов"), "договоренность про SLA до инцидента"),
+		entry(t, 3, "Метрики сервиса", "sla"),
+		entry(t, 4, "Между нами SLA: бизнес и поддержка"),
+		withDescription(t, entry(t, 5, "Еще одна поддержка"), "тоже про SLA"),
+	}
+	cases := []struct {
+		query string
+		want  []int
+	}{
+		{"SLA", []int{4, 3, 2, 5, 1}},
+		{"#3", []int{3}},
+	}
+	for _, tc := range cases {
+		var got []int
+		for _, e := range search.Filter(es, tc.query) {
+			got = append(got, e.ID())
+		}
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%q: %v, want %v", tc.query, got, tc.want)
+		}
 	}
 }

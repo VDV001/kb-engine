@@ -3841,8 +3841,8 @@
           "from": "tui",
           "to": "uc-search",
           "call": "FilterWith",
-          "detail": "internal/usecase/search/filter.go:47 экран отдаёт запрос целиком: словарь переводит фразами («сборка мусора»), а по словам такая пара не переводится вовсе",
-          "source": "internal/usecase/search/filter.go:47",
+          "detail": "internal/usecase/search/filter.go:92 экран отдаёт запрос целиком: словарь переводит фразами («сборка мусора»), а по словам такая пара не переводится вовсе",
+          "source": "internal/usecase/search/filter.go:92",
           "unverified": false,
           "symbol": "Matches"
         },
