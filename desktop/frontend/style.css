@@ -6,6 +6,7 @@
 @font-face { font-family: "JetBrains Mono"; src: url(fonts/JetBrainsMono-Bold.woff2) format("woff2"); font-weight: 700; font-display: block; }
 
 :root {
+  color-scheme: dark;
   --z-bg: #0b0b0c; --z-bg-2: #111113; --z-bg-3: #161618;
   --z-ink: #e6e6e6; --z-ink-2: #c4c4c6; --z-muted: #9a9a9c; --z-faint: #808084;
   --z-rule: #232326; --z-rule-2: #54545a;
@@ -33,8 +34,10 @@
   --sp-all: linear-gradient(90deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6));
   --sp-cool: linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6));
 }
+/* Тема: как в системе, или явно — кнопка в шапке ставит data-theme на <html>
+   (решение владельца 06.11: белая тема тоже, переключателем). */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not([data-theme="dark"]) {
     --z-bg: #fff; --z-bg-2: #f6f6f7; --z-bg-3: #ececee;
     --z-ink: #17171a; --z-ink-2: #2f2f34; --z-muted: #55555a; --z-faint: #6e6e74;
     --z-rule: #e2e2e5; --z-rule-2: #a8a8ae;
@@ -44,7 +47,20 @@
     /* янтарь на белом читается плохо (~2:1): подпись HEAD темнее, ~5:1 */
     --z-head-ink: #8a5d00;
     --z-lvl-error: #d32f2f; --z-lvl-warn: #d97706;
+    color-scheme: light;
   }
+}
+:root[data-theme="light"] {
+  --z-bg: #fff; --z-bg-2: #f6f6f7; --z-bg-3: #ececee;
+  --z-ink: #17171a; --z-ink-2: #2f2f34; --z-muted: #55555a; --z-faint: #6e6e74;
+  --z-rule: #e2e2e5; --z-rule-2: #a8a8ae;
+  --z-accent: #2f6fd0; --z-accent-hi: #1f55a8; --z-accent-ink: #fff; --z-accent-wash: #2f6fd01a;
+  --z-person: #b5532f; --z-ok: #1e7f45; --z-bad: #b3261e; --z-bad-wash: #b3261e14;
+  --z-head: #f0a500; --z-head-wash: #f0a50038; --z-scrim: #ffffff99;
+  /* янтарь на белом читается плохо (~2:1): подпись HEAD темнее, ~5:1 */
+  --z-head-ink: #8a5d00;
+  --z-lvl-error: #d32f2f; --z-lvl-warn: #d97706;
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; }
@@ -689,3 +705,6 @@ body:not(.no-chat-thinking) .msg.thinking::after { content: ""; position: absolu
   background: linear-gradient(90deg, transparent, var(--z-sp4), var(--z-sp5), var(--z-sp6), transparent); background-size: 200% 100%; animation: chat-run 1.6s linear infinite; }
 @keyframes chat-run { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @media (prefers-reduced-motion: reduce) { .chat-side, .chat-docs { transition: none; } .msg.thinking::after { animation: none; } }
+
+/* Кнопка темы: показан один значок из трех. */
+.gear svg[hidden] { display: none; }

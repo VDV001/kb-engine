@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DVK</title>
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -51,6 +52,14 @@
         <button class="gear" id="open-settings" data-tip="Источники" data-tip-k="⌘ ," data-tip-b="Папки, базы и kb-серверы, по которым идет поиск" aria-label="Источники">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h5l2 2h11v10H3z"/></svg>
           <span>источники</span>
+        </button>
+      </div>
+      <div class="cell">
+        <!-- Тема: как в системе → светлая → темная (решение владельца 06.11). -->
+        <button class="gear" id="theme-btn" aria-label="Тема окна" data-tip="Тема" data-tip-b="как в системе">
+          <svg viewBox="0 0 24 24" aria-hidden="true" data-theme-icon="system"><circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true" data-theme-icon="light" hidden><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+          <svg viewBox="0 0 24 24" aria-hidden="true" data-theme-icon="dark" hidden><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
         </button>
       </div>
       <div class="cell">

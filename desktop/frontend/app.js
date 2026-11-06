@@ -1814,3 +1814,25 @@ document.querySelectorAll(".chat-grip").forEach((g) => {
   });
 });
 applyChatPanes();
+
+// --- Тема окна --------------------------------------------------------------------
+// Кнопка в шапке: как в системе → светлая → темная. Выбор — удобство этого
+// Мака (localStorage); theme.js применяет его до первой отрисовки.
+const THEMES = { system: "как в системе", light: "светлая", dark: "темная" };
+function currentTheme() { return document.documentElement.dataset.theme || "system"; }
+function paintThemeBtn() {
+  const t = currentTheme();
+  // У <svg> нет свойства hidden — только атрибут.
+  document.querySelectorAll("[data-theme-icon]").forEach((svg) => svg.toggleAttribute("hidden", svg.dataset.themeIcon !== t));
+  $("#theme-btn").dataset.tipB = THEMES[t] + " · нажмите, чтобы сменить";
+}
+$("#theme-btn").addEventListener("click", () => {
+  const order = ["system", "light", "dark"];
+  const next = order[(order.indexOf(currentTheme()) + 1) % order.length];
+  if (next === "system") delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = next;
+  try { next === "system" ? localStorage.removeItem("theme") : localStorage.setItem("theme", next); } catch { /* только на сеанс */ }
+  paintThemeBtn();
+  hideTip();
+});
+paintThemeBtn();
