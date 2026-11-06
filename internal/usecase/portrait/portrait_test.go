@@ -170,3 +170,54 @@ func TestContext(t *testing.T) {
 		t.Fatalf("только нужное: %q", c.Text)
 	}
 }
+
+// raceStore: первое сохранение проигрывает другому устройству — тот успел
+// записать свой факт; хранилище отвечает ErrConflict, как бакет на If-Match.
+type raceStore struct {
+	memStore
+	other domain.Fact
+	lost  bool
+}
+
+func (r *raceStore) Save(ctx context.Context, p domain.Portrait) error {
+	if !r.lost {
+		r.lost = true
+		r.p, _ = r.p.Add(r.other)
+		return portrait.ErrConflict
+	}
+	return r.memStore.Save(ctx, p)
+}
+
+// Портрет на kb-сервере правят два устройства: проигравший перечитывает
+// и применяет свою правку к свежему, ничего чужого не теряя.
+func TestService_ConflictRereads(t *testing.T) {
+	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", "с телефона", domain.FactApproved, now)
+	for _, tc := range []struct {
+		name string
+		do   func(*portrait.Service) error
+		want string
+	}{
+		{"вручную", func(s *portrait.Service) error {
+			_, err := s.Add(t.Context(), domain.SectionWork, "Пишет на Go")
+			return err
+		}, "Пишет на Go"},
+		{"разбор ответа", func(s *portrait.Service) error {
+			_, err := s.Extract(t.Context(), "вопрос", "ответ")
+			return err
+		}, "Отвечать коротко"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			st := &raceStore{other: other}
+			m := &fakeModel{reply: `[{"section":"prefs","text":"Отвечать коротко"}]`}
+			n := 0
+			s := portrait.NewService(st, m, func() time.Time { return now }, func() string { n++; return "f" + string(rune('0'+n)) })
+			if err := tc.do(s); err != nil {
+				t.Fatal(err)
+			}
+			got := domain.PortraitText(st.p.Facts())
+			if !strings.Contains(got, "Слушает ответы в машине") || !strings.Contains(got, tc.want) {
+				t.Fatalf("портрет после конфликта = %q", got)
+			}
+		})
+	}
+}
