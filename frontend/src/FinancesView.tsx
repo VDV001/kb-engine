@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
 import { AccountsCard } from './AccountsCard'
+import { AddTransactionForm } from './AddTransactionForm'
 import { api } from './api'
 import type { CurrencyTotal, Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
@@ -99,8 +101,19 @@ function Bars({
  * `null` — «ответа ещё нет либо сборка о своих источниках не сообщает», и на
  * нём остаётся прежний текст: выдуманная причина хуже неназванной.
  */
-export function FinancesView({ finances, masked }: { finances: Finances | null; masked: boolean }) {
+export function FinancesView({ finances: loaded, masked }: { finances: Finances | null; masked: boolean }) {
   const eng = useResource(api.engine)
+  // После записи операции журнал перечитывается (#435): данные пришли пропом
+  // из общей пачки дашборда, и без этого новая строка появилась бы только
+  // после перезагрузки страницы. rev меняет ключ сводки — ее считает сервер.
+  const [fresh, setFresh] = useState<Finances | null>(null)
+  const [rev, setRev] = useState(0)
+  const [adding, setAdding] = useState(false)
+  const finances = fresh ?? loaded
+  async function reload() {
+    setRev((r) => r + 1)
+    setFresh(await api.finances().catch(() => fresh))
+  }
   const ledgerConnected: boolean | null =
     eng.status === 'ready'
       ? (eng.data.sources?.find((s) => s.flag === 'ledger')?.connected ?? null)
@@ -113,18 +126,55 @@ export function FinancesView({ finances, masked }: { finances: Finances | null; 
       />
     )
   }
+  const form = (
+    <AddTransactionForm
+      transactions={finances.transactions}
+      accounts={finances.accounts}
+      today={todayLocal()}
+      onAdded={() => void reload()}
+    />
+  )
   if (finances.transactions.length === 0 && finances.accounts.length === 0) {
+    // Пустой журнал на сервере с записью — законное начало: первая операция
+    // вносится отсюда же.
     return (
-      <EmptyFinances
-        text={
-          ledgerConnected === true
-            ? 'Журнал подключён и пока пуст — ни одной записи в нём нет.'
-            : 'Леджер не подключён — запустите serve с флагами --ledger и --from.'
-        }
-      />
+      <>
+        <EmptyFinances
+          text={
+            ledgerConnected === true
+              ? 'Журнал подключён и пока пуст — ни одной записи в нём нет.'
+              : 'Леджер не подключён — запустите serve с флагами --ledger и --from.'
+          }
+        />
+        <div className="mx-auto max-w-3xl">
+          <AddButton adding={adding} onToggle={() => setAdding((v) => !v)} />
+          {adding && <div className="mt-4">{form}</div>}
+        </div>
+      </>
     )
   }
-  return <FinancesBody finances={finances} masked={masked} />
+  return (
+    <FinancesBody
+      finances={finances}
+      masked={masked}
+      rev={rev}
+      addButton={<AddButton adding={adding} onToggle={() => setAdding((v) => !v)} />}
+      addForm={adding ? form : null}
+    />
+  )
+}
+
+function AddButton({ adding, onToggle }: { adding: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={adding}
+      className="label flex items-center gap-2 bg-surface-high px-4 py-2 text-xs"
+    >
+      <Icon name={adding ? 'close' : 'payments'} className="text-sm" /> {adding ? 'Скрыть форму' : 'Операция'}
+    </button>
+  )
 }
 
 function EmptyFinances({ text }: { text: string }) {
@@ -136,7 +186,19 @@ function EmptyFinances({ text }: { text: string }) {
   )
 }
 
-function FinancesBody({ finances, masked }: { finances: Finances; masked: boolean }) {
+function FinancesBody({
+  finances,
+  masked,
+  rev,
+  addButton,
+  addForm,
+}: {
+  finances: Finances
+  masked: boolean
+  rev: number
+  addButton: ReactNode
+  addForm: ReactNode
+}) {
   // Несколько месяцев сразу — как в исходном дашборде. Пустой набор значит
   // «за всё время».
   const [selected, setSelected] = useState<string[]>([])
@@ -150,7 +212,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
   const [page, setPage] = useState(1)
 
   const monthsKey = useMemo(() => [...selected].sort().join(','), [selected])
-  const summaryRes = useResource(() => api.financeSummary([...selected].sort()), { key: monthsKey })
+  const summaryRes = useResource(() => api.financeSummary([...selected].sort()), { key: `${monthsKey}|${rev}` })
   const summary = summaryRes.status === 'ready' ? summaryRes.data : null
 
   const today = useMemo(() => todayLocal(), [])
@@ -625,6 +687,7 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
             <p className="label mt-1 text-[10px] tracking-[0.2em] text-on-surface-variant">Все транзакции</p>
           </div>
           <div className="flex gap-3">
+            {addButton}
             <button
               type="button"
               onClick={() => setShowFilters((v) => !v)}
@@ -641,6 +704,8 @@ function FinancesBody({ finances, masked }: { finances: Finances; masked: boolea
             </button>
           </div>
         </div>
+
+        {addForm}
 
         {showFilters && (
           <div className="mb-6 rounded-lg bg-surface-low p-4">
