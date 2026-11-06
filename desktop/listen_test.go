@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -97,4 +99,68 @@ func TestDictation_Refusals(t *testing.T) {
 	if got[0].Text != "ок" {
 		t.Fatalf("events = %+v", got)
 	}
+}
+
+// Слушает сервер распознавания: помощник пишет WAV, окно отдает его серверу,
+// показывает «распознаю» и итог; файл записи после этого стерт.
+func TestDictation_RecordAndTranscribe(t *testing.T) {
+	var ev events
+	var gotWav []byte
+	var path string
+	d := &dictation{bin: fakeListen(t, `while [ "$1" != "--record" ]; do shift; done
+echo 'RIFF-wav' > "$2"
+echo '{"ready":true}'
+cat >/dev/null
+printf '{"recorded":"%s","final":true}\n' "$2"
+`), emit: ev.add}
+	err := d.StartWith(0, func(_ context.Context, wav []byte) (string, error) {
+		gotWav = wav
+		return "Срок поставки?", nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev.wait(t, func(l []listenEvent) bool { return len(l) >= 1 })
+	d.Stop()
+	got := ev.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })
+	last := got[len(got)-1]
+	if strings.TrimSpace(string(gotWav)) != "RIFF-wav" || last.Text != "Срок поставки?" {
+		t.Fatalf("wav %q, events %+v", gotWav, got)
+	}
+	if !slicesContainsBusy(got) {
+		t.Fatalf("нет «распознаю»: %+v", got)
+	}
+	for _, e := range got {
+		if e.Recorded != "" {
+			path = e.Recorded
+		}
+	}
+	if path != "" {
+		t.Fatalf("путь записи ушел странице: %q", path)
+	}
+	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "kb-listen-*.wav"))
+	if len(matches) != 0 {
+		t.Fatalf("запись не стерта: %v", matches)
+	}
+
+	// Отказ сервера — словами, конец диктовки.
+	var ev2 events
+	d2 := &dictation{bin: d.bin, emit: ev2.add}
+	_ = d2.StartWith(0, func(context.Context, []byte) (string, error) {
+		return "", errors.New("сервер распознавания не ответил")
+	})
+	d2.Stop()
+	got = ev2.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })
+	if !strings.Contains(got[len(got)-1].Error, "не ответил") {
+		t.Fatalf("events = %+v", got)
+	}
+}
+
+func slicesContainsBusy(l []listenEvent) bool {
+	for _, e := range l {
+		if e.Busy {
+			return true
+		}
+	}
+	return false
 }
