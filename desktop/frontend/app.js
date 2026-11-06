@@ -221,6 +221,7 @@ function setIndexed(n, skipped, rec, err) {
   const dot = $("#settings-dot"); // точка у раздела «Проблемы» в настройках
   dot.hidden = !total;
   dot.dataset.level = el.parentElement.dataset.level;
+  if (!$("#chat-view").hidden) renderChatSources(); // точка ошибки у плашки источника
   if (total) {
     const b = document.createElement("button");
     b.className = "problems-link";
@@ -253,7 +254,7 @@ async function pollIndex() {
 }
 if (native()) setTimeout(pollIndex, 3000);
 // Список источников — ради цветов строки источников; панель его обновляет сама.
-if (native()) native().Sources().then((v) => { state.known = v.sources || []; refreshTabs(); }).catch(() => {});
+if (native()) native().Sources().then((v) => { state.known = v.sources || []; refreshTabs(); renderChatSources(); }).catch(() => {});
 if (native()) native().Tabs().then((t) => { state.tabs = t || []; refreshTabs(); }).catch(() => {});
 
 // --- Поиск ---------------------------------------------------------------------
@@ -1605,7 +1606,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1617,8 +1618,67 @@ async function openChatView() {
   }
   await renderChatList();
   renderChat();
+  renderChatSources();
   $("#chat-q").focus();
 }
+
+// --- Ряд источников над полем (решение владельца 06.11) ---------------------------
+// В чем ищет этот чат: включенные источники окна плашками их цвета. Щелчок
+// убирает источник из этого чата или возвращает; общие настройки не меняются.
+// Плашка пунктиром с красной точкой — у источника ошибка (сервер не отвечает,
+// нет токена, папка пропала): видно, что подключено, а что нет.
+// chatOnly null — все; список хранится в чате и уходит с вопросом.
+// Функции, а не const: строка статуса зовет renderChatSources раньше, чем
+// исполнится этот кусок файла.
+function chatHues() { return hues(state.known, (s) => s.id); }
+function chatSources() { return state.known.filter((s) => s.enabled); }
+function chatSrcOn(id) { return !chatState.only || chatState.only.includes(id); }
+function chatSrcBad(id) {
+  const p = state.problems && (state.problems.problems || []).find((x) => x.source === id && !x.path && x.level === "error");
+  return p ? p.what + (p.todo ? " · " + p.todo : "") : "";
+}
+function renderChatSources() {
+  const row = $("#chat-srcs");
+  const list = chatSources();
+  row.hidden = !list.length;
+  if (!list.length) return;
+  const hue = chatHues();
+  const chip = (s) => {
+    const bad = chatSrcBad(s.id), on = chatSrcOn(s.id);
+    return `<button type="button" class="chat-src${bad ? " bad" : ""}" style="--c:var(${hue.get(s.id)})" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
+      data-tip="${esc(label(s))}" data-tip-b="${esc(bad || (on ? "этот чат ищет здесь · щелчок — убрать" : "этот чат здесь не ищет · щелчок — вернуть"))}"${bad ? " data-tip-bad" : ""}><i></i><span class="t">${esc(label(s))}</span></button>`;
+  };
+  const max = 6; // больше — в «ещё N»: ряд не переносится
+  const shown = list.slice(0, max), rest = list.slice(max);
+  const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
+  row.innerHTML = `<span class="lbl">ищет в</span>` + shown.map(chip).join("") +
+    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">ещё ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
+    (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
+    (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
+  dropStaleTip();
+}
+function toggleChatSrc(id) {
+  const all = chatSources().map((s) => s.id);
+  let only = chatState.only ? [...chatState.only] : [...all];
+  only = only.includes(id) ? only.filter((x) => x !== id) : [...only, id];
+  if (!only.length) return showChatNote("Хотя бы один источник: иначе чату негде искать.");
+  chatState.only = all.every((x) => only.includes(x)) ? null : only;
+  renderChatSources();
+}
+$("#chat-srcs").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-chat-src]");
+  if (b) return toggleChatSrc(b.dataset.chatSrc);
+  if (e.target.closest("[data-chat-src-all]")) { chatState.only = null; return renderChatSources(); }
+  if (e.target.closest("[data-chat-more]")) { chatState.moreOpen = !chatState.moreOpen; renderChatSources(); }
+});
+$("#chat-srcs").addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-chat-src-cb]");
+  if (cb) { chatState.moreOpen = true; toggleChatSrc(cb.dataset.chatSrcCb); }
+});
+document.addEventListener("click", (e) => {
+  // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
+  if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
+});
 async function loadChatSettings() {
   try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + e); return; }
   const s = chatState.settings;
@@ -1689,7 +1749,8 @@ function renderChat() {
   $("#chat-docs").innerHTML = docs.map((d) => {
     const file = d.ref.startsWith("file:") ? d.ref.slice(5) : "";
     const link = d.ref.startsWith("url:") ? d.ref.slice(4) : "";
-    return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${esc(d.title)}</span>
+    const hue = d.src && chatHues().get(d.src);
+    return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${hue ? `<span class="chat-doc-dot" style="--c:var(${hue})"></span>` : ""}${esc(d.title)}</span>
       <span class="muted chat-doc-src">${esc(file ? tilde(d.source || "") : d.source || "")}</span>
       ${file ? `<span class="chat-doc-acts"><button class="btn" data-open="${esc(file)}">Открыть</button><button class="btn" data-reveal-file="${esc(file)}">В Finder</button></span>` : ""}
       ${link ? `<span class="chat-doc-acts"><button class="btn" data-open-url="${esc(link)}">Открыть</button></span>` : ""}</li>`;
@@ -1724,7 +1785,7 @@ async function askChat() {
   fitChatQ();
   renderChat();
   try {
-    const c = await native().Ask(chatState.id, q, chatState.attached.map((a) => a.ref));
+    const c = await native().Ask({ id: chatState.id, question: q, refs: chatState.attached.map((a) => a.ref), sources: chatState.only || [] });
     chatState.attached = [];
     renderAttached();
     chatState.id = c.id;
@@ -1746,7 +1807,9 @@ function newChat() {
   chatState.id = "";
   chatState.chat = null;
   chatState.attached = [];
+  chatState.only = null;
   renderAttached();
+  renderChatSources();
   paintChatList();
   renderChat();
   renderChatNote();
@@ -1894,6 +1957,8 @@ $("#chat-list").addEventListener("click", async (e) => {
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
+    chatState.only = chatState.chat.sources && chatState.chat.sources.length ? chatState.chat.sources : null;
+    renderChatSources();
   } catch (err) { showChatNote("Чат не открылся: " + err); return; }
   paintChatList();
   renderChat();

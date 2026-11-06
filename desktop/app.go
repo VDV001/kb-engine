@@ -121,11 +121,8 @@ func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
 // Chat returns one chat with its messages and documents.
 func (a *App) Chat(id string) (chatRecord, error) { return a.chat.Get(id) }
 
-// Ask answers a question in chat id ("" — новый чат) with the attached refs
-// (file:…, url:…, найденное).
-func (a *App) Ask(id, question string, refs []string) (chatRecord, error) {
-	return a.chat.Ask(id, question, refs)
-}
+// Ask answers a question: чат, вопрос, приложенное и источники этого чата.
+func (a *App) Ask(r askReq) (chatRecord, error) { return a.chat.Ask(r) }
 
 // Connections lists the window's accesses (раздел «Подключения»).
 func (a *App) Connections() []connRow { return a.settings.Connections() }

@@ -696,6 +696,24 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-box:focus-within { border-color: var(--z-accent); }
 .chat-box textarea { resize: none; border: 0; outline: none; background: none; color: var(--z-ink); font: 13px/1.5 var(--z-font); padding: 0; max-height: 40vh; overflow-y: auto; }
 .chat-box-row { display: flex; align-items: center; gap: 8px; }
+/* Ряд источников над полем (решение владельца 06.11): в чем ищет этот чат и
+   что с подключением. Щелчок — источник для этого чата вкл/выкл; не влезло —
+   «ещё N» с выбором. */
+.chat-srcs { display: flex; gap: 6px; align-items: center; padding: 0 2px 6px; position: relative; flex-wrap: nowrap; overflow: visible; }
+.chat-srcs .lbl { color: var(--z-faint); font: 11px var(--z-font); white-space: nowrap; }
+.chat-src { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--z-rule-2); border-radius: 11px; padding: 1px 9px; background: none; color: var(--z-muted); font: 11px var(--z-font); cursor: pointer; white-space: nowrap; max-width: 180px; }
+.chat-src .t { overflow: hidden; text-overflow: ellipsis; }
+.chat-src i { width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--z-faint)); flex: none; opacity: .45; }
+.chat-src[aria-pressed="true"] { color: var(--z-ink); border-color: var(--c, var(--z-rule-2)); }
+.chat-src[aria-pressed="true"] i { opacity: 1; }
+.chat-src.bad { border-style: dashed; }
+.chat-src.bad::after { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--z-lvl-error); }
+.chat-src:hover { color: var(--z-ink); }
+.chat-srcs-more { position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 5; min-width: 240px; max-height: 300px; overflow-y: auto; background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: 8px; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+.chat-srcs-more label { display: flex; align-items: center; gap: 8px; padding: 4px 6px; font: 12px var(--z-font); color: var(--z-ink); cursor: pointer; }
+.chat-srcs-more label i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
+.chat-srcs-reset { border: 0; background: none; color: var(--z-accent); font: 11px var(--z-font); cursor: pointer; padding: 0 4px; white-space: nowrap; }
+.chat-doc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--z-faint)); margin-right: 6px; vertical-align: 1px; }
 /* Приложенное к вопросу (#436): плашки над полем, меню «+» над рядом кнопок. */
 .chat-box { position: relative; }
 .chat-attached { display: flex; flex-wrap: wrap; gap: 6px; }

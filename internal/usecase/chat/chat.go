@@ -55,6 +55,9 @@ type Message struct {
 // документ («kb:12», «file:/путь»).
 type Doc struct {
 	Ref, Title, Source, Text string
+	// SourceID — id источника окна (папка, каталог, kb-сервер): по нему чат
+	// сужается до отмеченных источников и красит значок документа.
+	SourceID string
 }
 
 // Tool is a function the model may call.
