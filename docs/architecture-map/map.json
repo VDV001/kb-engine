@@ -239,7 +239,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/fin.go:263"
+        "cmd/kbengine/fin.go:295"
       ]
     },
     {
@@ -1227,8 +1227,8 @@
           "from": "cmd-fin",
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, params, force, note)",
-          "detail": "cmd/kbengine/fin.go:217 — appendChecked единственный путь, через который ДОБАВЛЯЕТ строку человек: команда, обе формы TUI и быстрый ввод идут через него, поэтому проверку повтора нельзя обойти, выбрав другой экран. ⚠️ Но не единственный писатель журнала: financejsonl.Save зовут ещё fin import (fin.go:104), правка (cmd/kbengine/fin_edit.go:102 — проверки на повтор там нет), --init (sync.go:171) и обычный fin sync в сторону журнала (sync.go:532), который тоже заводит новые записи для строк книги",
-          "source": "cmd/kbengine/fin.go:297",
+          "detail": "cmd/kbengine/fin.go:226 — appendChecked единственный путь, через который ДОБАВЛЯЕТ строку человек: команда, обе формы TUI и быстрый ввод идут через него, поэтому проверку повтора нельзя обойти, выбрав другой экран. ⚠️ Но не единственный писатель журнала: financejsonl.Save зовут ещё fin import (fin.go:104), правка (cmd/kbengine/fin_edit.go:102 — проверки на повтор там нет), --init (sync.go:171) и обычный fin sync в сторону журнала (sync.go:532), который тоже заводит новые записи для строк книги",
+          "source": "cmd/kbengine/fin.go:329",
           "unverified": false
         },
         {
@@ -1236,7 +1236,7 @@
           "from": "append-checked",
           "to": "ad-financejsonl",
           "call": "financejsonl.Load(ledgerPath, time.Now)",
-          "detail": "cmd/kbengine/fin.go:279 читает весь ledger, чтобы знать, как в базе уже пишут — internal/adapter/financejsonl/store.go:80",
+          "detail": "cmd/kbengine/fin.go:311 читает весь ledger, чтобы знать, как в базе уже пишут — internal/adapter/financejsonl/store.go:80",
           "source": "internal/adapter/financejsonl/store.go:84",
           "unverified": false
         },
@@ -1245,7 +1245,7 @@
           "from": "append-checked",
           "to": "ad-financevocab",
           "call": "financevocab.Load(financevocab.PathNextTo(ledgerPath))",
-          "detail": "cmd/kbengine/fin.go:262 — словарь лежит рядом с ledger и решает раньше исторической частоты: частота это след старых ошибок, словарь это решение владельца — internal/adapter/financevocab/store.go:43",
+          "detail": "cmd/kbengine/fin.go:294 — словарь лежит рядом с ledger и решает раньше исторической частоты: частота это след старых ошибок, словарь это решение владельца — internal/adapter/financevocab/store.go:43",
           "source": "internal/adapter/financevocab/store.go:51",
           "unverified": false
         },
@@ -1254,7 +1254,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.CanonicalWith(recs, voc, p)",
-          "detail": "cmd/kbengine/fin.go:263 приводит написание ДО проверки на повтор — иначе «транспорт» и «Транспорт» считались бы разными тратами; каждая подстановка называется вслух в stdout — internal/usecase/finance/canonical.go:29",
+          "detail": "cmd/kbengine/fin.go:295 приводит написание ДО проверки на повтор — иначе «транспорт» и «Транспорт» считались бы разными тратами; каждая подстановка называется вслух в stdout — internal/usecase/finance/canonical.go:29",
           "source": "internal/usecase/finance/canonical.go:29",
           "unverified": false
         },
@@ -1263,7 +1263,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Duplicate(recs, p)",
-          "detail": "cmd/kbengine/fin.go:297 — при совпадении возвращается ErrRepeat с id существующей записи и требованием --force — internal/usecase/finance/duplicate.go:23",
+          "detail": "cmd/kbengine/fin.go:329 — при совпадении возвращается ErrRepeat с id существующей записи и требованием --force — internal/usecase/finance/duplicate.go:23",
           "source": "internal/usecase/finance/duplicate.go:23",
           "unverified": false
         },
@@ -1272,7 +1272,7 @@
           "from": "append-checked",
           "to": "uc-finance",
           "call": "finance.Add(p, newULID, time.Now)",
-          "detail": "cmd/kbengine/fin.go:307 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:160",
+          "detail": "cmd/kbengine/fin.go:339 строит Record; id это ULID (newULID в cmd/kbengine/fin.go:50), из него потом читается момент записи — internal/usecase/finance/finance.go:160",
           "source": "internal/usecase/finance/finance.go:164",
           "unverified": false,
           "symbol": "Add"
@@ -1291,7 +1291,7 @@
           "from": "append-checked",
           "to": "ad-financejsonl",
           "call": "financejsonl.Save(ledgerPath, recs, time.Now)",
-          "detail": "cmd/kbengine/fin.go:286 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot — internal/adapter/financejsonl/store.go:217",
+          "detail": "cmd/kbengine/fin.go:318 после finance.Sort; Save перед записью делает снимок через filebackup.Snapshot — internal/adapter/financejsonl/store.go:217",
           "source": "internal/adapter/financejsonl/store.go:222",
           "unverified": false
         },
@@ -1447,7 +1447,7 @@
           "from": "cmd-fin",
           "to": "ad-financexlsx",
           "call": "financexlsx.SetBalance(path, bank, balance, now)",
-          "detail": "saveAtomically (internal/adapter/financexlsx/writer.go:202) пишет через временный файл; здесь же чинится объявленный диапазон книги через internal/adapter/xlsxdim — internal/adapter/financexlsx/balance.go:34",
+          "detail": "saveAtomically (internal/adapter/financexlsx/writer.go:208) пишет через временный файл; здесь же чинится объявленный диапазон книги через internal/adapter/xlsxdim — internal/adapter/financexlsx/balance.go:34",
           "source": "internal/adapter/financexlsx/balance.go:34",
           "unverified": false
         },
@@ -1456,8 +1456,8 @@
           "from": "ad-financexlsx",
           "to": "f-workbook",
           "call": "saveAtomically(f, path)",
-          "detail": "internal/adapter/financexlsx/writer.go:202 — запись через временный файл; здесь же чинится объявленный диапазон книги",
-          "source": "internal/adapter/financexlsx/writer.go:277",
+          "detail": "internal/adapter/financexlsx/writer.go:208 — запись через временный файл; здесь же чинится объявленный диапазон книги",
+          "source": "internal/adapter/financexlsx/writer.go:283",
           "unverified": false
         }
       ],
@@ -1548,7 +1548,7 @@
           "to": "uc-finance",
           "call": "finance.Diff(recs, led.Transactions, st)",
           "detail": "cmd/kbengine/sync.go:225 строит Plan и определяет направление; строка книги без id означает, что писали мимо движка",
-          "source": "internal/usecase/finance/sync.go:120",
+          "source": "internal/usecase/finance/sync.go:125",
           "unverified": false
         },
         {
@@ -1556,8 +1556,8 @@
           "from": "cmd-fin",
           "to": "ad-financexlsx",
           "call": "financexlsx.CheckLock(from)",
-          "detail": "financexlsx.CheckLock (internal/adapter/financexlsx/writer.go:169) — замок спрашивается и для dry-run, иначе холостой прогон обещал бы запись в книгу, которую держит редактор. Спрашивается только при направлении В КНИГУ (cmd/kbengine/sync.go:236): отказ читать при открытой книге сделал бы замок большей проблемой, чем он есть",
-          "source": "internal/adapter/financexlsx/writer.go:238",
+          "detail": "financexlsx.CheckLock (internal/adapter/financexlsx/writer.go:175) — замок спрашивается и для dry-run, иначе холостой прогон обещал бы запись в книгу, которую держит редактор. Спрашивается только при направлении В КНИГУ (cmd/kbengine/sync.go:236): отказ читать при открытой книге сделал бы замок большей проблемой, чем он есть",
+          "source": "internal/adapter/financexlsx/writer.go:244",
           "unverified": false
         },
         {
@@ -1565,8 +1565,8 @@
           "from": "cmd-fin",
           "to": "f-workbook",
           "call": "pushToWorkbook / financexlsx.ApplyRows",
-          "detail": "cmd/kbengine/sync.go:276 при направлении DirectionToWorkbook; конфликт (обе стороны изменились) НЕ сливается — cmd/kbengine/sync.go:253 пишет расхождение и выходит с ненулевым кодом — internal/adapter/financexlsx/apply.go:185",
-          "source": "internal/adapter/financexlsx/apply.go:185",
+          "detail": "cmd/kbengine/sync.go:269 при направлении DirectionToWorkbook; конфликт (обе стороны изменились) НЕ сливается — cmd/kbengine/sync.go:253 пишет расхождение и выходит с ненулевым кодом — internal/adapter/financexlsx/apply.go:189",
+          "source": "internal/adapter/financexlsx/apply.go:189",
           "unverified": false
         },
         {
@@ -1574,8 +1574,8 @@
           "from": "cmd-fin",
           "to": "f-syncstate",
           "call": "financejsonl.SaveState(statePath, finance.BaselineOf(recs, now))",
-          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:507 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
-          "source": "cmd/kbengine/sync.go:564",
+          "detail": "новая база сравнения пишется после переноса: cmd/kbengine/sync.go:519 — внутри pushToWorkbook, то есть В КНИГУ (объявлена на :483), а :536 — внутри pullFromWorkbook, то есть В ЖУРНАЛ (:501). Всего боевых вызовов SaveState четыре: ещё :175 в --init и :260 для первого синка",
+          "source": "cmd/kbengine/sync.go:576",
           "unverified": false,
           "symbol": "SaveState"
         }
@@ -2784,8 +2784,8 @@
           "from": "ad-httpapi",
           "to": "uc-finance",
           "call": "finance.Summarize(finance.Match(recs, Filter{Months}))",
-          "detail": "cmd/kbengine/main.go:330 — арифметика остаётся в ОДНОМ месте; вторая реализация на клиенте обязана была бы совпадать с этой — internal/usecase/finance/report.go:157",
-          "source": "internal/usecase/finance/report.go:199",
+          "detail": "cmd/kbengine/main.go:330 — арифметика остаётся в ОДНОМ месте; вторая реализация на клиенте обязана была бы совпадать с этой — internal/usecase/finance/report.go:161",
+          "source": "internal/usecase/finance/report.go:203",
           "unverified": false
         },
         {
@@ -2795,7 +2795,7 @@
           "call": "Transaction.IsInternalTransfer()",
           "symbol": "IsInternalTransfer",
           "source": "internal/domain/transfer.go:31",
-          "detail": "internal/usecase/finance/report.go:196 — единственное место, где правило спрашивают: расход «Прочее / Перевод себе» и доход «Перевод себе» из ИТОГОВ исключаются (internal/domain/transfer.go:31). ⚠️ Прежде признаком расхода была подкатегория «Переводы», и она не отвечала на вопрос «кому»: единственная запись с ней на живых данных оказалась возвратом заказчику, то есть настоящей тратой, выброшенной из итогов. В расчёт остатка счёта переводы входят по-прежнему — асимметрия описана в #159 и закрыта там замером",
+          "detail": "internal/usecase/finance/report.go:200 — единственное место, где правило спрашивают: расход «Прочее / Перевод себе» и доход «Перевод себе» из ИТОГОВ исключаются (internal/domain/transfer.go:31). ⚠️ Прежде признаком расхода была подкатегория «Переводы», и она не отвечала на вопрос «кому»: единственная запись с ней на живых данных оказалась возвратом заказчику, то есть настоящей тратой, выброшенной из итогов. В расчёт остатка счёта переводы входят по-прежнему — асимметрия описана в #159 и закрыта там замером",
           "unverified": false
         }
       ],
@@ -3011,7 +3011,7 @@
           "from": "uc-finance",
           "to": "tui-update",
           "call": "finance.SortByRecency — только терминал",
-          "detail": "internal/usecase/finance/finance.go:259 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:241)",
+          "detail": "internal/usecase/finance/finance.go:259 — единственный вызывающий cmd/kbengine/main.go:489 (ledgerFinances.Recent), а Recent зовёт только TUI. ⚠️ Веб сортирует СВОЕЙ реализацией — sortJournal в frontend/src/financeJournal.ts:78. Поверхности сводит не эта функция, а общее поле recorded_at, которое сервер кладёт в DTO (internal/adapter/httpapi/dto.go:224)",
           "source": "internal/usecase/finance/finance.go:264",
           "unverified": false,
           "symbol": "SortByRecency"
@@ -3029,7 +3029,7 @@
           "from": "append-checked",
           "to": "ad-financevocab",
           "call": "financevocab.Load(PathNextTo(ledger))",
-          "detail": "cmd/kbengine/fin.go:262 — словарь лежит РЯДОМ с ledger и решает раньше исторической частоты — internal/adapter/financevocab/store.go:43",
+          "detail": "cmd/kbengine/fin.go:294 — словарь лежит РЯДОМ с ledger и решает раньше исторической частоты — internal/adapter/financevocab/store.go:43",
           "source": "internal/adapter/financevocab/store.go:51",
           "unverified": false
         },
@@ -3351,8 +3351,8 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, p, force, note)",
           "symbol": "appendChecked",
-          "source": "cmd/kbengine/fin.go:297",
-          "detail": "cmd/kbengine/fin.go:263 — единственная функция записи в журнал, через неё же идёт проверка повтора"
+          "source": "cmd/kbengine/fin.go:329",
+          "detail": "cmd/kbengine/fin.go:295 — единственная функция записи в журнал, через неё же идёт проверка повтора"
         },
         {
           "n": 3,
@@ -3360,8 +3360,8 @@
           "to": "ad-filelock",
           "call": "filelock.With(ledgerPath, …)",
           "symbol": "filelock",
-          "source": "cmd/kbengine/fin.go:305",
-          "detail": "cmd/kbengine/fin.go:298 — под замком идёт ВСЁ окно: прочитать журнал, проверить повтор, дописать строку"
+          "source": "cmd/kbengine/fin.go:337",
+          "detail": "cmd/kbengine/fin.go:330 — под замком идёт ВСЁ окно: прочитать журнал, проверить повтор, дописать строку"
         },
         {
           "n": 4,
@@ -3378,8 +3378,8 @@
           "to": "ad-financejsonl",
           "call": "appendUnderLock",
           "symbol": "appendUnderLock",
-          "source": "cmd/kbengine/fin.go:307",
-          "detail": "cmd/kbengine/fin.go:306 — проверено восемью настоящими процессами: 8 из 8 записей доехали"
+          "source": "cmd/kbengine/fin.go:339",
+          "detail": "cmd/kbengine/fin.go:338 — проверено восемью настоящими процессами: 8 из 8 записей доехали"
         },
         {
           "n": 6,
@@ -3455,8 +3455,8 @@
           "to": "ad-financexlsx",
           "call": "ApplyRows(path, upserts, removals, now)",
           "symbol": "ApplyRows",
-          "source": "internal/adapter/financexlsx/apply.go:185",
-          "detail": "internal/adapter/financexlsx/apply.go:185 — единственный писатель книги; лист «Счета» пишет отдельный путь fin balance"
+          "source": "internal/adapter/financexlsx/apply.go:189",
+          "detail": "internal/adapter/financexlsx/apply.go:189 — единственный писатель книги; лист «Счета» пишет отдельный путь fin balance"
         },
         {
           "n": 3,
@@ -3464,8 +3464,8 @@
           "to": "f-workbook",
           "call": "planRowWrites: строка ищется по id",
           "symbol": "planRowWrites",
-          "source": "internal/adapter/financexlsx/apply.go:297",
-          "detail": "internal/adapter/financexlsx/apply.go:297 строит индекс строк по непустым ячейкам id — именно поэтому строка с пустой ячейкой в индекс не попадала и считалась новой"
+          "source": "internal/adapter/financexlsx/apply.go:306",
+          "detail": "internal/adapter/financexlsx/apply.go:306 строит индекс строк по непустым ячейкам id — именно поэтому строка с пустой ячейкой в индекс не попадала и считалась новой"
         },
         {
           "n": 4,
@@ -3473,8 +3473,8 @@
           "to": "f-workbook",
           "call": "positionalRow(tx.ID(), sheet, idx)",
           "symbol": "positionalRow",
-          "source": "internal/adapter/financexlsx/apply.go:330",
-          "detail": "internal/adapter/financexlsx/apply.go:330 — позиционный id это адрес листа и номера строки, а не безымянность. Проверено отрицательным контролем на двух ВЫПУЩЕННЫХ бинарях: на 0.20.0 книга росла на строку, на 0.21.0 правка ложится на место"
+          "source": "internal/adapter/financexlsx/apply.go:339",
+          "detail": "internal/adapter/financexlsx/apply.go:339 — позиционный id это адрес листа и номера строки, а не безымянность. Проверено отрицательным контролем на двух ВЫПУЩЕННЫХ бинарях: на 0.20.0 книга росла на строку, на 0.21.0 правка ложится на место"
         },
         {
           "n": 5,
@@ -3491,8 +3491,8 @@
           "to": "f-workbook",
           "call": "BackfillIDs: assign[tx.ID()] = tx.ID()",
           "symbol": "assign",
-          "source": "internal/adapter/financexlsx/writer.go:79",
-          "detail": "internal/adapter/financexlsx/writer.go:79 — проход сохраняет ПОЗИЦИОННЫЙ id, а не выдаёт свежий ULID, и это решение про деньги: recorded_at читается из ULID, а расчётный остаток вычитает траты, записанные после подтверждения баланса. ULID сегодняшней датой вычел бы каждую старую запись из остатка, который её уже учитывает"
+          "source": "internal/adapter/financexlsx/writer.go:85",
+          "detail": "internal/adapter/financexlsx/writer.go:85 — проход сохраняет ПОЗИЦИОННЫЙ id, а не выдаёт свежий ULID, и это решение про деньги: recorded_at читается из ULID, а расчётный остаток вычитает траты, записанные после подтверждения баланса. ULID сегодняшней датой вычел бы каждую старую запись из остатка, который её уже учитывает"
         }
       ]
     },
@@ -3516,8 +3516,8 @@
           "to": "uc-finance",
           "call": "warnUnderstated(from, recs, stdout)",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:586",
-          "detail": "cmd/kbengine/sync.go:586 перечисляет спорные записи и просит подтвердить баланс заново"
+          "source": "cmd/kbengine/sync.go:598",
+          "detail": "cmd/kbengine/sync.go:598 перечисляет спорные записи и просит подтвердить баланс заново"
         },
         {
           "n": 3,
@@ -3534,8 +3534,8 @@
           "to": "owner",
           "call": "список спорных трат",
           "symbol": "warnUnderstated",
-          "source": "cmd/kbengine/sync.go:570",
-          "detail": "cmd/kbengine/sync.go:570 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
+          "source": "cmd/kbengine/sync.go:582",
+          "detail": "cmd/kbengine/sync.go:582 — для человека правило проще, чем для движка: записал всё за день, потом подтвердил остаток, и спора не возникает вовсе"
         }
       ]
     },
@@ -3595,8 +3595,8 @@
           "to": "f-workbook",
           "call": "строку в книге чистит обычный fin sync",
           "symbol": "ApplyRows",
-          "source": "internal/adapter/financexlsx/apply.go:185",
-          "detail": "internal/adapter/financexlsx/apply.go:185 — удаление ОЧИЩАЕТ строку, а не выносит её: вынос сдвинул бы всё ниже, а позиционный id соседей это номер строки. Проверено на копии живой книги сторонним ридером: после удаления и синка id не упоминается ни одним листом"
+          "source": "internal/adapter/financexlsx/apply.go:189",
+          "detail": "internal/adapter/financexlsx/apply.go:189 — удаление ОЧИЩАЕТ строку, а не выносит её: вынос сдвинул бы всё ниже, а позиционный id соседей это номер строки. Проверено на копии живой книги сторонним ридером: после удаления и синка id не упоминается ни одним листом"
         }
       ]
     },
