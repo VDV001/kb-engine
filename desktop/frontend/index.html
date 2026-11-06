@@ -226,7 +226,7 @@
       <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
       <button class="btn" type="button" id="conn-add-speech" aria-expanded="false">+ Распознавание речи</button></div>
       <form class="conn-google" id="conn-speech" hidden>
-        <p class="muted">Свой сервер распознавания вместо Apple Speech: whisper.cpp (<code>whisper-server</code>), faster-whisper или OpenAI — любой с OpenAI-совместимым <code>/audio/transcriptions</code>. Окно отдает ему запись диктовки.</p>
+        <p class="muted">Свой сервер распознавания вместо Apple Speech: whisper.cpp (<code>whisper-server</code>), faster-whisper или OpenAI — любой с OpenAI-совместимым <code>/audio/transcriptions</code>. Окно отдает ему запись диктовки. <code>whisper-server</code> запускайте с <code>--inference-path /v1/audio/transcriptions</code>.</p>
         <label>Название<input id="conn-s-name" placeholder="whisper.cpp на этом Маке" autocomplete="off" spellcheck="false"></label>
         <label>Адрес<input id="conn-s-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off" spellcheck="false"></label>
         <label>Модель<input id="conn-s-model" placeholder="whisper-1" autocomplete="off" spellcheck="false"></label>

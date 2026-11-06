@@ -24,7 +24,8 @@ const searchLimit = "40"
 // вложенных папок обходом и искать по «'a' in parents or 'b' in parents».
 func (c Client) Search(ctx context.Context, at, folder, q string) ([]File, error) {
 	esc := strings.NewReplacer(`\`, `\\`, `'`, `\'`)
-	query := "'" + esc.Replace(folder) + "' in parents and trashed = false and fullText contains '" + esc.Replace(q) + "'"
+	// Папки и ярлыки — не документы: открыть их в чате нечем (ревью #467).
+	query := "'" + esc.Replace(folder) + "' in parents and trashed = false and mimeType != 'application/vnd.google-apps.folder' and mimeType != 'application/vnd.google-apps.shortcut' and fullText contains '" + esc.Replace(q) + "'"
 	var res struct {
 		Files []struct {
 			ID           string    `json:"id"`

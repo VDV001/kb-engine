@@ -40,10 +40,19 @@ type speaker struct {
 // Speak reads text with voice ("" — голос системы); пустое не читается.
 func (s *speaker) Speak(voice, text string) error {
 	text = speakable(text)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cmd != nil {
+		_ = s.cmd.Process.Kill() // новый ответ прерывает прежний; конец сообщит только новый
+		s.cmd = nil
+	}
 	if text == "" {
+		// Читать нечего — конец сразу: разговор голосом иначе ждал бы вечно.
+		if s.done != nil {
+			go s.done()
+		}
 		return nil
 	}
-	s.Stop()
 	build := s.command
 	if build == nil {
 		build = sayCommand
@@ -53,17 +62,18 @@ func (s *speaker) Speak(voice, text string) error {
 	if err := cmd.Start(); err != nil {
 		return err
 	}
-	s.mu.Lock()
 	s.cmd = cmd
-	s.mu.Unlock()
 	go func() {
 		_ = cmd.Wait() // прерванное чтение — не ошибка
 		s.mu.Lock()
-		if s.cmd == cmd {
+		own := s.cmd == cmd
+		if own {
 			s.cmd = nil
 		}
 		s.mu.Unlock()
-		if s.done != nil {
+		// Прерванное новым ответом — не конец: иначе микрофон включился бы
+		// поверх нового чтения и бот слушал бы сам себя (ревью #465).
+		if own && s.done != nil {
 			s.done()
 		}
 	}()
@@ -83,7 +93,7 @@ func (s *speaker) Stop() {
 	cmd := s.cmd
 	s.mu.Unlock()
 	if cmd != nil {
-		_ = cmd.Process.Kill()
+		_ = cmd.Process.Kill() // свое чтение: горутина Wait сообщит конец
 	}
 }
 

@@ -103,7 +103,7 @@ func speechErr(name string, err error) error {
 	case errors.Is(err, stt.ErrUnauthorized):
 		return fmt.Errorf("%s не принял ключ — проверьте его в «Подключениях»", name)
 	case errors.Is(err, stt.ErrNotFound):
-		return fmt.Errorf("по адресу %s нет распознавания речи (/audio/transcriptions)", name)
+		return fmt.Errorf("%s: по адресу нет распознавания речи (/audio/transcriptions) — у whisper-server включите --inference-path /v1/audio/transcriptions", name)
 	case errors.Is(err, stt.ErrInsecureURL):
 		return errors.New("ключ уходит только по https или на этот Мак")
 	}

@@ -183,3 +183,38 @@ func TestReadLink_GoogleThroughConnection(t *testing.T) {
 type roundTrip func(*http.Request) (*http.Response, error)
 
 func (f roundTrip) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// Ревью #466: Drive не отдал документ (нет доступа аккаунту, API не включен) —
+// ссылка читается открытым экспортом, как до подключения; чужой state не
+// обрывает вход; пустой refresh-токен — отказ, а не «подключено».
+func TestGoogle_ReviewFixes(t *testing.T) {
+	g, _, _ := newTestGoogle(t)
+	answer := func(state string) func(string) {
+		return func(consent string) {
+			u, _ := url.Parse(consent)
+			cb := u.Query().Get("redirect_uri")
+			go func() {
+				if state != "" {
+					if res, err := http.Get(cb + "?" + url.Values{"code": {"x"}, "state": {state}}.Encode()); err == nil {
+						_ = res.Body.Close()
+					}
+				}
+				if res, err := http.Get(cb + "?" + url.Values{"code": {"c1"}, "state": {u.Query().Get("state")}}.Encode()); err == nil {
+					_ = res.Body.Close()
+				}
+			}()
+		}
+	}
+	g.open = answer("чужой")
+	if _, err := g.Connect("cid.apps.googleusercontent.com", "sec-1"); err != nil {
+		t.Fatalf("чужой state оборвал вход: %v", err)
+	}
+	public := weblink.Client{HTTP: &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
+	})}}
+	link := "https://docs.google.com/document/d/nope/edit" // Drive отвечает 404
+	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	if err != nil || d.Text != "открытый текст" {
+		t.Fatalf("откат на открытый экспорт: %+v, %v", d, err)
+	}
+}

@@ -84,7 +84,10 @@ func (g *googleDesk) Connect(clientID, secret string) (connRow, error) {
 	defer cancel()
 	tok, err := c.Exchange(ctx, code, redirect, verifier)
 	if err != nil {
-		return connRow{}, googleErr(err)
+		return connRow{}, fmt.Errorf("вход не принят Google — проверьте Client ID и Client secret: %w", err)
+	}
+	if tok.Refresh == "" {
+		return connRow{}, errors.New("постоянного входа (refresh-токена) Google не выдал: удалите DVK в доступах аккаунта Google и подключите заново")
 	}
 	email, err := c.Account(ctx, tok.Access)
 	if err != nil {
@@ -119,7 +122,14 @@ func (g *googleDesk) consent(c google.Client, verifier string) (code, redirect s
 			http.NotFound(w, r)
 			return
 		}
-		a := consentAnswer(r.URL.Query(), state)
+		q := r.URL.Query()
+		if q.Get("state") != state {
+			// Чужой ответ (другая вкладка, локальный процесс) не обрывает вход:
+			// ждем настоящий (ревью #466).
+			http.Error(w, "не этот вход", http.StatusBadRequest)
+			return
+		}
+		a := consentAnswer(q, state)
 		msg := "Готово: DVK подключен к Google Диску. Окно можно закрыть."
 		if a.err != nil {
 			msg = "Не подключено: " + a.err.Error()
@@ -195,6 +205,9 @@ func (g *googleDesk) SetEnabled(id string, on bool) error {
 func (g *googleDesk) Remove(id string) error {
 	if err := g.settings.updateConfig(func(cfg *desktopconfig.Config) {
 		cfg.Connections = slices.DeleteFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.ID == id })
+		if cfg.Chat.Listen == id {
+			cfg.Chat.Listen = "" // удаленный сервер распознавания — назад к Apple Speech (ревью #468)
+		}
 	}); err != nil {
 		return err
 	}

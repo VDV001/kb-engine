@@ -59,3 +59,20 @@ func TestSpeechConnection(t *testing.T) {
 		t.Fatal("http в сеть принят")
 	}
 }
+
+// Удаленный сервер распознавания, выбранный в «Слушает», не оставляет чат
+// слушать в пустоту: «Слушает» возвращается к Apple Speech (ревью #468).
+func TestSpeechConnection_RemoveResetsListen(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddSpeech("w", "http://127.0.0.1:8080/v1", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = s.updateConfig(func(c *desktopconfig.Config) { c.Chat.Listen = row.ID })
+	if err := newGoogleDesk(s).Remove(row.ID); err != nil {
+		t.Fatal(err)
+	}
+	if s.snapshot().cfg.Chat.Listen != "" {
+		t.Fatal("«Слушает» осталось на удаленном сервере")
+	}
+}
