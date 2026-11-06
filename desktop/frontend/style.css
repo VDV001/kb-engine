@@ -25,6 +25,10 @@
      (--z-bad), зеленый sp6 совпадал с «хорошо» (--z-ok) — источник не должен
      выглядеть состоянием. */
   --z-src-teal: #5fc4b8; --z-src-violet: #a98fd8;
+  /* Градиенты спектра (решение владельца 06.11: все 21 место из прототипа
+     outputs/2026-11-06_dvk-gradients.html): весь спектр и его холодная половина. */
+  --sp-all: linear-gradient(90deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6));
+  --sp-cool: linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6));
 }
 @media (prefers-color-scheme: light) {
   :root {
@@ -198,8 +202,9 @@ button { font-family: inherit; }
   transition: background var(--z-dur) var(--z-ease);
 }
 @keyframes hit-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-.hit:hover { background: var(--z-bg-3); }
-.hit.sel { background: var(--z-accent-wash); box-shadow: inset 2px 0 0 var(--z-accent); }
+.hit:hover:not(.sel) { background: linear-gradient(90deg, var(--z-accent-wash), transparent 70%); }
+/* Выбранная строка — рамка спектром по всему контуру, а не полоса слева. */
+.hit.sel { border: 1px solid transparent; border-radius: var(--z-radius); background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; }
 .hit-head { display: grid; grid-template-columns: var(--type-col) 1fr auto; gap: var(--type-gap); align-items: baseline; }
 .hit-name { color: var(--z-ink); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hit-meta { color: var(--z-faint); font-size: 11px; }
@@ -469,3 +474,53 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   *, *::before { animation: none !important; transition: none !important; }
   .hit { opacity: 1; }
 }
+
+/* --- Спектр акцентами (решение владельца 06.11, все 21 место прототипа) -------
+   Темный и синий остаются основой; спектр — на линиях, рамках, одном слове.
+   Рамка спектром — прием сайта: заливка padding-box поверх градиента border-box. */
+.tab-ink { background: var(--sp-cool); }                                       /* 1 */
+.search:focus-within { border-color: transparent; background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, var(--sp-cool) border-box; }
+.search input { caret-color: var(--z-sp5); }                                   /* 2 */
+.hit.sel { padding: 9px 15px 10px; }                                           /* 3: рамка 1px не сдвигает текст */
+.branch .node.head b, .settings h2, .big, #count {                             /* 4, 8, 7, 15 */
+  background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+#count { background-image: var(--sp-cool); font-weight: 700; font-size: 13px; }
+.settings h2 { width: fit-content; } /* спектр по слову, а не по ширине панели, как в прототипе */
+#icon-spec .sp4 { stop-color: var(--z-sp4); } #icon-spec .sp5 { stop-color: var(--z-sp5); } #icon-spec .sp6 { stop-color: var(--z-sp6); }
+.btn.primary {                                                                 /* 5 */
+  border-color: transparent; color: var(--z-accent-ink);
+  background: linear-gradient(100deg, var(--z-sp4), var(--z-sp5)) border-box; background-size: 160% 100%;
+  transition: background-position .5s var(--z-ease), border-color var(--z-dur) var(--z-ease);
+}
+.btn.primary:hover:not(:disabled) { background: linear-gradient(100deg, var(--z-sp4), var(--z-sp5)) border-box; background-size: 160% 100%; background-position: 100% 0; border-color: transparent; }
+.chip[aria-pressed="true"] {                                                   /* 6 */
+  border-color: transparent;
+  background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(100deg, var(--c, var(--z-sp4)), var(--z-sp5), var(--z-sp6)) border-box;
+}
+.indexing-bar span { background: var(--sp-all); width: 45%; }                 /* 7 */
+.settings::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--sp-all); } /* 8 */
+mark {                                                                         /* 9 */
+  box-shadow: none; background-color: var(--z-accent-wash); background-image: var(--sp-cool);
+  background-size: 100% 1.5px; background-position: 0 100%; background-repeat: no-repeat;
+}
+.tabs button.active { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; } /* 10 */
+.tabs button.active i { -webkit-text-fill-color: var(--z-faint); }
+.dollar { background: linear-gradient(135deg, var(--z-sp4), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; } /* 11 */
+.bar { border-bottom-color: transparent; }                                     /* 12 */
+.bar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--sp-all); }
+.branch .line.solid { border-top: 0; height: 2px; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp1)); } /* 13 */
+.branch .node.done { background: var(--z-sp4); }
+.pulse {                                                                       /* 14 */
+  width: 8px; height: 8px; animation: spin 3s linear infinite;
+  background: conic-gradient(var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6), var(--z-sp1));
+}
+@keyframes spin { to { transform: rotate(1turn); } }
+.doc-head { border-bottom-color: transparent; background-image: var(--sp-all); background-size: 100% 1px; background-position: 0 100%; background-repeat: no-repeat; } /* 16 */
+.gear svg { stroke: url(#icon-spec); }                                         /* 17 */
+.results::-webkit-scrollbar-thumb, .preview::-webkit-scrollbar-thumb { background: linear-gradient(var(--z-sp4), var(--z-sp6)); border-radius: 4px; } /* 18 */
+.sw[aria-checked="true"] { border-color: transparent; background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5)) border-box; } /* 19 */
+.sw[aria-checked="true"]::after { background: var(--z-accent-ink); }
+.tip { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; } /* 20 */
+/* 21 — наведение на строку выдачи: правило .hit:hover:not(.sel) выше. */
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
