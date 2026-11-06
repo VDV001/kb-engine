@@ -133,3 +133,34 @@ func TestSpeaker_Cloud(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// Облачное распознавание (#478) — /transcription-model шлюза (OpenAI-
+// совместимого /audio/transcriptions у шлюза нет, замер 06.11 — 404): WAV
+// в base64, язык русский, модель в ai-model-id.
+func TestCloudSpeech_Transcribe(t *testing.T) {
+	var model string
+	var body map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/transcription-model" {
+			http.NotFound(w, r)
+			return
+		}
+		model = r.Header.Get("ai-model-id")
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		_, _ = io.WriteString(w, `{"text":" Как настроить голос? ","segments":[]}`)
+	}))
+	defer srv.Close()
+	c := cloudSpeech{base: srv.URL, client: srv.Client(), key: func() (string, error) { return "vck_test", nil }}
+	text, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:best"])
+	if err != nil || text != "Как настроить голос?" {
+		t.Fatalf("text = %q, %v", text, err)
+	}
+	opts, _ := body["providerOptions"].(map[string]any)
+	oa, _ := opts["openai"].(map[string]any)
+	if model != "openai/gpt-4o-transcribe" || body["mediaType"] != "audio/wav" || body["audio"] != base64.StdEncoding.EncodeToString([]byte("RIFFwav")) || oa["language"] != "ru" {
+		t.Fatalf("model %q body %v", model, body)
+	}
+	if cloudListen["cloud:mini"] != "openai/gpt-4o-mini-transcribe" {
+		t.Fatalf("mini = %q", cloudListen["cloud:mini"])
+	}
+}
