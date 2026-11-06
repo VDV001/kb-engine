@@ -127,6 +127,9 @@ func (a *App) Ask(id, question string, refs []string) (chatRecord, error) {
 	return a.chat.Ask(id, question, refs)
 }
 
+// Connections lists the window's accesses (раздел «Подключения»).
+func (a *App) Connections() []connRow { return a.settings.Connections() }
+
 // PickChatFile asks for a file to attach to the question; "" — передумали.
 func (a *App) PickChatFile() (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Приложить к вопросу"})

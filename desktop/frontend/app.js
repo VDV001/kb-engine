@@ -735,6 +735,7 @@ const VIEWS = {
   problems: { title: "Проблемы", cmd: "problems" },
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
+  conn: { title: "Подключения", cmd: "config connections" },
 };
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
@@ -760,6 +761,11 @@ async function openSettings(view = "sources") {
       const i = state.indexed;
       if (i) setIndexed(i.n, i.skipped, i.rec, i.err);
     });
+    return;
+  }
+  if (view === "conn") {
+    await renderConnections();
+    $("#close-settings").focus();
     return;
   }
   if (view === "look") {
@@ -798,6 +804,24 @@ async function openSettings(view = "sources") {
   $("#close-settings").focus();
   loadServerStates();
 }
+// renderConnections lists the window's accesses; «Изменить» ведет в раздел,
+// где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер" };
+async function renderConnections() {
+  const list = $("#conn-list");
+  if (!native() || !native().Connections) { list.innerHTML = `<li class="muted">Подключения видны в окне приложения.</li>`; return; }
+  let rows = [];
+  try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(String(e))}</li>`; return; }
+  list.innerHTML = rows.map((r) => `<li>
+    <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
+    <span class="st${r.ok ? " ok" : ""}">${esc(r.status)}</span>
+    <span class="d">${esc(r.detail)} · использует: ${esc((r.usedBy || []).join(", "))}</span>
+    <span class="conn-acts"><button class="btn" data-go-sec="${esc(r.section)}">Изменить</button></span></li>`).join("");
+}
+$("#conn-list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go-sec]");
+  if (b) openSettings(b.dataset.goSec);
+});
 // Состояние серверов приходит после списка: панель не ждет сеть. Сливается в
 // черновик по id — поля состояния в сохранение не входят и dirty не трогают.
 async function loadServerStates() {

@@ -168,6 +168,7 @@
     <nav class="settings-nav" aria-label="Разделы настроек">
       <div class="settings-grp">Настройки</div>
       <button data-go="sources">Источники</button>
+      <button data-go="conn">Подключения</button>
       <button data-go="chat">Чат и модель</button>
       <button data-go="prefs">Окно</button>
       <button data-go="look">Оформление</button>
@@ -217,6 +218,9 @@
     <ul class="accent-list" id="accent-list" data-view="look"></ul>
 
     <div class="problems-view" id="problems-view" data-view="problems"></div>
+
+    <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
+    <ul class="conn-list" id="conn-list" data-view="conn"></ul>
 
     <p class="muted" data-view="chat">Модель, которая отвечает в чате. Ключ хранится в Связке ключей этого Мака и в файлы не попадает.</p>
     <form class="chat-model" id="chat-model" data-view="chat">

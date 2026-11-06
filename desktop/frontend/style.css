@@ -343,7 +343,16 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .settings:not([data-view="prefs"]) [data-view="prefs"],
 .settings:not([data-view="problems"]) [data-view="problems"],
 .settings:not([data-view="chat"]) [data-view="chat"],
-.settings:not([data-view="look"]) [data-view="look"] { display: none; }
+.settings:not([data-view="look"]) [data-view="look"],
+.settings:not([data-view="conn"]) [data-view="conn"] { display: none; }
+.conn-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--z-rule); }
+.conn-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--z-rule); }
+.conn-list .n { color: var(--z-ink); font-weight: 500; }
+.conn-list .n small { color: var(--z-muted); font-weight: 400; margin-left: 6px; }
+.conn-list .d { grid-column: 1; color: var(--z-muted); font-size: 12px; overflow-wrap: anywhere; }
+.conn-list .st { font-size: 12px; white-space: nowrap; color: var(--z-muted); }
+.conn-list .st.ok { color: var(--z-ok); }
+.conn-list .conn-acts { grid-column: 2; grid-row: 2; justify-self: end; }
 .settings-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings h2 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 .settings h3 { margin: 8px 0 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); }
