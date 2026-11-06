@@ -60,10 +60,11 @@ func TestContextMode(t *testing.T) {
 	if !slices.Equal(s.queries, []string{"какой срок поставки?"}) {
 		t.Errorf("queries = %v", s.queries)
 	}
-	all := ""
+	var b strings.Builder
 	for _, msg := range m.got {
-		all += msg.Content + "\n"
+		b.WriteString(msg.Content + "\n")
 	}
+	all := b.String()
 	for _, want := range []string{"[1] Договор поставки", "Срок поставки — 30 дней", "[2] tz.docx", "какой срок поставки?"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("в запросе к модели нет %q:\n%s", want, all)
