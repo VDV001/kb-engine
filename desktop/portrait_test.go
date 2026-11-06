@@ -17,10 +17,29 @@ import (
 )
 
 // portraitModel отвечает на чат, а на разбор портрета — JSON с фактами.
-type portraitModel struct{ asked [][]chat.ModelMessage }
+// Разбор после ответа зовет ее фоном, одновременно с проверками теста.
+type portraitModel struct {
+	mu    sync.Mutex
+	asked [][]chat.ModelMessage
+}
+
+// at returns request i the model got; n — how many.
+func (m *portraitModel) at(i int) []chat.ModelMessage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.asked[i]
+}
+
+func (m *portraitModel) n() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.asked)
+}
 
 func (m *portraitModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
+	m.mu.Lock()
 	m.asked = append(m.asked, msgs)
+	m.mu.Unlock()
 	if strings.Contains(msgs[0].Content, "Ты ведешь портрет человека") {
 		return chat.ModelReply{Content: `[{"section":"prefs","text":"Отвечать коротко"}]`}, nil
 	}
@@ -61,8 +80,8 @@ func TestChat_Portrait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[0][0].Content, "Разработчик") || rec.Portrait == nil || rec.Portrait.Over {
-		t.Fatalf("портрет в чате: %q, %+v", m.asked[0][0].Content, rec.Portrait)
+	if !strings.Contains(m.at(0)[0].Content, "Разработчик") || rec.Portrait == nil || rec.Portrait.Over {
+		t.Fatalf("портрет в чате: %q, %+v", m.at(0)[0].Content, rec.Portrait)
 	}
 	select {
 	case got := <-news:
@@ -106,17 +125,17 @@ func TestChat_PortraitOverBudget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rec.Portrait == nil || !rec.Portrait.Over || rec.Portrait.Size <= rec.Portrait.Budget || strings.Contains(m.asked[0][0].Content, "О человеке") {
+	if rec.Portrait == nil || !rec.Portrait.Over || rec.Portrait.Size <= rec.Portrait.Budget || strings.Contains(m.at(0)[0].Content, "О человеке") {
 		t.Fatalf("переполнение: %+v", rec.Portrait)
 	}
 	if _, err := d.Ask(askReq{Question: "q", Portrait: "full"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[1][0].Content, "О человеке") {
+	if !strings.Contains(m.at(1)[0].Content, "О человеке") {
 		t.Fatal("«целиком» не дошло")
 	}
-	if len(m.asked) != 2 {
-		t.Fatalf("разбор при MemoryOff: %d запросов", len(m.asked))
+	if m.n() != 2 {
+		t.Fatalf("разбор при MemoryOff: %d запросов", m.n())
 	}
 }
 
@@ -186,8 +205,8 @@ func TestChat_PortraitOnServer(t *testing.T) {
 	if _, err := d.Ask(askReq{Question: "Как настроить голос?"}); err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(m.asked[0][0].Content, "Разработчик") {
-		t.Fatalf("в чате нет портрета с сервера: %q", m.asked[0][0].Content)
+	if !strings.Contains(m.at(0)[0].Content, "Разработчик") {
+		t.Fatalf("в чате нет портрета с сервера: %q", m.at(0)[0].Content)
 	}
 	c.MemoryServer = "server-gone0000"
 	if err := d.SetSettings(c, ""); err != nil {
