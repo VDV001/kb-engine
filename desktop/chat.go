@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/llm"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
+	"github.com/daniil/kb-engine/internal/usecase/portrait"
 )
 
 // chatKeyAccount — учетка ключа модели в Связке ключей окна.
@@ -50,6 +51,8 @@ type chatRecord struct {
 	Sources []string `json:"sources,omitempty"`
 	// Notes — что окно не смогло прочитать из ссылок вопроса; только в ответе.
 	Notes []string `json:"notes,omitempty"`
+	// Portrait — пошел ли портрет в чат (#479); только в ответе.
+	Portrait *portraitNote `json:"portrait,omitempty"`
 }
 
 // askReq is one question from the page: чат ("" — новый), вопрос, приложенное
@@ -59,6 +62,8 @@ type askReq struct {
 	Question string   `json:"question"`
 	Refs     []string `json:"refs"`
 	Sources  []string `json:"sources"`
+	// Portrait — как портрет идет в чат, когда не помещается: "", full, relevant.
+	Portrait string `json:"portrait"`
 }
 
 type chatMessage struct {
@@ -104,6 +109,9 @@ type chatDesk struct {
 	// attach reads one attached document by ref (attach.go); nil — только в окне.
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
 	mu     sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
+	memoryNew  func([]factView)
+	portraitMu sync.Mutex
 
 	foundMu sync.Mutex
 	found   map[string]chat.Doc // предложенное «+ Из найденного»
@@ -161,6 +169,18 @@ func (d *chatDesk) Settings() chatSettingsView {
 	return chatSettingsView{Chat: c, HasKey: err == nil, Local: c.Local(), Mode: string(chatMode(c))}
 }
 
+// modelKey returns the chat model key; у модели на этом Маке ключа может не быть.
+func (d *chatDesk) modelKey(c desktopconfig.Chat) (string, error) {
+	key, err := d.settings.tokens.Get(chatKeyAccount)
+	switch {
+	case err == nil, errors.Is(err, keychain.ErrNotFound) && c.Local():
+		return key, nil
+	case !errors.Is(err, keychain.ErrNotFound):
+		return "", humanErr{keychain.Locked, err}
+	}
+	return "", errors.New("нет ключа модели — введите ключ в настройках чата")
+}
+
 // gatewayKey returns the chat key when the chat goes through Vercel AI
 // Gateway — облачные голоса и распознавание берут его же (#478).
 func (d *chatDesk) gatewayKey() (string, error) { return d.settings.gatewayKey() }
@@ -206,14 +226,16 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		}
 	}
 	c := d.config()
-	key, err := d.settings.tokens.Get(chatKeyAccount)
-	switch {
-	case err == nil:
-	case !errors.Is(err, keychain.ErrNotFound):
-		return chatRecord{}, humanErr{keychain.Locked, err}
-	case !c.Local():
-		return chatRecord{}, errors.New("нет ключа модели — введите ключ в настройках чата")
+	key, err := d.modelKey(c)
+	if err != nil {
+		return chatRecord{}, err
 	}
+	switch r.Portrait {
+	case "", string(portrait.ContextFull), string(portrait.ContextRelevant):
+	default:
+		return chatRecord{}, fmt.Errorf("портрет: режим %q", r.Portrait)
+	}
+	about, pnote := d.portraitFor(c, question, r.Portrait)
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
 	explicit, auto := attachRefs(refs, question)
@@ -223,8 +245,9 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	}
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
-	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.model(c, key), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show})
+	model := d.model(c, key)
+	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), model, chat.WithReader(readerFunc(d.read)))
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
@@ -246,6 +269,8 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		return chatRecord{}, err
 	}
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
+	rec.Portrait = pnote
+	d.extractAfter(c, model, question, turn.Answer)
 	return rec, nil
 }
 

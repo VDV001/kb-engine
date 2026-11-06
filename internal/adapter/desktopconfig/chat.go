@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -53,6 +54,13 @@ type Chat struct {
 	// Accent — произношение английского текста голосом: пусто — по языку
 	// ответа, en-US или en-GB.
 	Accent string `json:"accent,omitempty"`
+	// MemoryDir — папка портрета «Что DVK помнит обо мне» (#479); пусто —
+	// портрет не ведется.
+	MemoryDir string `json:"memoryDir,omitempty"`
+	// MemoryOff — не разбирать ответы на новое о человеке.
+	MemoryOff bool `json:"memoryOff,omitempty"`
+	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
+	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -81,6 +89,10 @@ func (c Chat) Check() error {
 	if utf8.RuneCountInString(c.Voice) > 64 || strings.HasPrefix(c.Voice, "-") ||
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
+	}
+	if c.MemoryDir != "" && (!filepath.IsAbs(c.MemoryDir) || utf8.RuneCountInString(c.MemoryDir) > 1024 ||
+		strings.IndexFunc(c.MemoryDir, unicode.IsControl) >= 0) {
+		return fmt.Errorf("%w: папка портрета %q", ErrChatSettings, c.MemoryDir)
 	}
 	switch c.Accent {
 	case "", "en-US", "en-GB":
