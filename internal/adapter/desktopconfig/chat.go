@@ -74,6 +74,12 @@ func (c Chat) WithDefaults() Chat {
 	return c
 }
 
+// memoryDirOK: пусто — портрет не ведется, иначе абсолютный путь без управляющих символов.
+func memoryDirOK(dir string) bool {
+	return dir == "" || filepath.IsAbs(dir) && utf8.RuneCountInString(dir) <= 1024 &&
+		strings.IndexFunc(dir, unicode.IsControl) < 0
+}
+
 // Check validates the settings: адрес — то же правило, что у kb-сервера
 // (https или http этого Мака), режим — из известных.
 func (c Chat) Check() error {
@@ -90,8 +96,7 @@ func (c Chat) Check() error {
 		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
-	if c.MemoryDir != "" && (!filepath.IsAbs(c.MemoryDir) || utf8.RuneCountInString(c.MemoryDir) > 1024 ||
-		strings.IndexFunc(c.MemoryDir, unicode.IsControl) >= 0) {
+	if !memoryDirOK(c.MemoryDir) {
 		return fmt.Errorf("%w: папка портрета %q", ErrChatSettings, c.MemoryDir)
 	}
 	switch c.Accent {
