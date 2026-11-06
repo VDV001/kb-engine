@@ -25,9 +25,11 @@ type indexStatus struct {
 	SkippedFiles []skippedRow `json:"skippedFiles,omitempty"`
 	Reused       int          `json:"reused"` // взяты из снимка без чтения
 	// Unrecognized — PDF и картинки, которые распознавание не прочитало или
-	// не успело: панель «Проблемы» (#456).
-	Unrecognized []skippedRow `json:"unrecognized,omitempty"`
-	Error        string       `json:"error,omitempty"`
+	// не успело, первые maxUnrecognized; UnrecognizedCount — все. Заполняет
+	// только Problems: IndexStatus опрашивается каждые 3 с и списка не несет.
+	Unrecognized      []skippedRow `json:"unrecognized,omitempty"`
+	UnrecognizedCount int          `json:"unrecognizedCount,omitempty"`
+	Error             string       `json:"error,omitempty"`
 	// Recognizing — идет проход распознавания PDF и картинок: сколько из
 	// скольких. Первый проход длится десятки минут, и без счета он неотличим
 	// от зависания.
@@ -220,6 +222,7 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 			time.AfterFunc(time.Minute, func() { _ = old.Close() })
 		}
 		x.src = src
+		x.pruneUnrecognized(src)
 		if gen == x.gen {
 			x.status = indexStatus{Indexed: st.Indexed, Skipped: st.Skipped, SkippedFiles: skippedRows(st.SkippedFiles), Reused: st.Reused}
 		}
@@ -231,12 +234,39 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 func (x *indexer) Status() indexStatus {
 	x.mu.Lock()
 	st := x.status
-	for _, k := range slices.Sorted(maps.Keys(x.unrecognized)) {
-		st.Unrecognized = append(st.Unrecognized, x.unrecognized[k])
-	}
 	x.mu.Unlock()
 	st.Recognizing = x.progress.Load()
 	return st
+}
+
+// maxUnrecognized caps the named unrecognized files, как maxSkippedFiles.
+const maxUnrecognized = 100
+
+// unrecognizedRows returns the first maxUnrecognized unrecognized files by
+// path and how many there are.
+func (x *indexer) unrecognizedRows() ([]skippedRow, int) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	keys := slices.Sorted(maps.Keys(x.unrecognized))
+	rows := make([]skippedRow, 0, min(len(keys), maxUnrecognized))
+	for _, k := range keys[:min(len(keys), maxUnrecognized)] {
+		rows = append(rows, x.unrecognized[k])
+	}
+	return rows, len(keys)
+}
+
+// pruneUnrecognized drops the files src would not hand to recognition now:
+// файл удален, папку убрали или выключили (ревью #457: призраки в панели до
+// перезапуска окна). Зовется под mu.
+func (x *indexer) pruneUnrecognized(src *localfiles.Source) {
+	for p := range x.unrecognized {
+		f, _, err := src.OpenExtract(p)
+		if err != nil {
+			delete(x.unrecognized, p)
+			continue
+		}
+		_ = f.Close() // только чтение
+	}
 }
 
 // noteRecognized records how recognizing path went: nil — прочитан, из

@@ -162,7 +162,7 @@ func (r remoteServers) ask(ctx context.Context, w withToken, q string) mcpserver
 	s, tok := w.src, w.tok
 	found := mcpserver.RemoteFound{Source: mcpserver.RemoteSource{ID: s.ID, Name: s.Name, URL: s.URL}}
 	if w.err != nil && !errors.Is(w.err, keychain.ErrNotFound) {
-		found.Err = "Связка ключей не ответила: разблокируйте ее"
+		found.Err = keychain.Locked
 		return found
 	}
 	ctx, cancel := context.WithTimeout(ctx, remoteTimeout)
