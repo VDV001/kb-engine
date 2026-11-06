@@ -250,6 +250,33 @@ func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (str
 	return about, note
 }
 
+// rememberFor returns the «запомнить» tool of the chat: факт ложится в
+// «ждут одобрения» и уходит странице событием; портрет не ведется — nil.
+func (d *chatDesk) rememberFor(c desktopconfig.Chat) func(ctx context.Context, section, text string) error {
+	if !memoryOn(c) {
+		return nil
+	}
+	return func(ctx context.Context, section, text string) error {
+		sec, err := domain.NewFactSection(section)
+		if err != nil {
+			return portraitErr(err)
+		}
+		var f domain.Fact
+		err = d.withPortrait(nil, func(s *portrait.Service) error {
+			var err error
+			f, err = s.Propose(ctx, sec, text)
+			return err
+		})
+		if err != nil {
+			return portraitErr(err)
+		}
+		if d.memoryNew != nil {
+			d.memoryNew(viewFacts([]domain.Fact{f}))
+		}
+		return nil
+	}
+}
+
 // extractAfter finds new facts in the exchange in the background and tells the page.
 func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question, answer string) {
 	if !memoryOn(c) || c.MemoryOff {

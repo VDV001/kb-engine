@@ -247,7 +247,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	attached = append(attached, linked...)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), model, chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
