@@ -634,7 +634,10 @@ function renderStrip(shown, hue) {
   if (strip.hidden) return;
   // «все» первым: сброс фильтра виден и нажимается, а не прячется в повторном
   // клике по выбранному источнику (просьба владельца 05.11).
-  const all = `<button class="chip all" data-src="" aria-pressed="${!state.filter}" data-tip="Все источники" data-tip-b="Выдача сразу по всем источникам">все</button>`;
+  // У «все» тот же счет, что у источников, — их сумма; источник с ошибкой чисел не дает.
+  const ok = state.sources.filter((s) => !s.error);
+  const sumShown = ok.reduce((n, s) => n + (shown[s.id] || 0), 0), sumFound = ok.reduce((n, s) => n + (s.found || 0), 0);
+  const all = `<button class="chip all" data-src="" aria-pressed="${!state.filter}" data-tip="Все источники" data-tip-b="Выдача сразу по всем источникам · показано ${fmt(sumShown)} из ${fmt(sumFound)}">все<span class="cnt"><b>${fmt(sumShown)}</b> из ${fmt(sumFound)}</span></button>`;
   strip.innerHTML = `<span class="strip-lbl">источники</span>` + all + state.sources.map((s) => {
     const name = esc(label(s)), c = `style="--c:var(${hue.get(s.id)})"`;
     if (s.error) return `<span class="chip off" ${c} data-tip="${name}" data-tip-b="${esc(s.error)}" data-tip-bad><span class="chip-dot"></span>${name}<span class="cnt">${esc(s.error.split(":")[0])}</span></span>`;
