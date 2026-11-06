@@ -12,6 +12,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/llm"
+	"github.com/daniil/kb-engine/internal/adapter/weblink"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
@@ -56,14 +57,14 @@ func TestChat_AskCreatesAndContinues(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := d.Ask("", "какой срок поставки?")
+	c, err := d.Ask("", "какой срок поставки?", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if c.ID == "" || c.Title != "какой срок поставки?" || len(c.Messages) != 2 || c.Messages[1].Text != "ответ [1]" {
 		t.Fatalf("chat = %+v", c)
 	}
-	c2, err := d.Ask(c.ID, "а штраф?")
+	c2, err := d.Ask(c.ID, "а штраф?", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestChat_Refusals(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "https://ai-gateway.vercel.sh/v1", Model: "x"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := d.Ask("", "q"); err == nil || !strings.Contains(err.Error(), "ключ") || m.n != 0 {
+	if _, err := d.Ask("", "q", nil); err == nil || !strings.Contains(err.Error(), "ключ") || m.n != 0 {
 		t.Fatalf("без ключа: err = %v, model calls %d", err, m.n)
 	}
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://192.0.2.10:11434/v1", Model: "x"}, "k"); err == nil {
@@ -172,7 +173,7 @@ func TestChat_ModelErrorsInWords(t *testing.T) {
 		d, m, _, _ := newTestChatDesk(t)
 		_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
 		m.err = tc.err
-		_, err := d.Ask("", "q")
+		_, err := d.Ask("", "q", nil)
 		if err == nil || !strings.Contains(err.Error(), tc.says) || !strings.Contains(err.Error(), " — ") {
 			t.Errorf("%v: err = %v, want «%s» и действие", tc.err, err, tc.says)
 		}
@@ -183,7 +184,7 @@ func TestChat_ModelErrorsInWords(t *testing.T) {
 func TestChat_Delete(t *testing.T) {
 	d, _, _, _ := newTestChatDesk(t)
 	_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
-	c, err := d.Ask("", "q")
+	c, err := d.Ask("", "q", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,11 +289,76 @@ func TestChat_AskShowsAnswerAsItComes(t *testing.T) {
 	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := d.Ask("", "срок?")
+	c, err := d.Ask("", "срок?", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if strings.Join(seen, "|") != "ответ|ответ [1]" || c.Messages[1].Text != "ответ [1]" {
 		t.Fatalf("seen %q, chat %+v", seen, c)
+	}
+}
+
+// Приложенное к вопросу и ссылки из его текста читаются окном и идут модели
+// первыми; в документах чата остаются адрес и название, текст — нет.
+func TestChat_AskWithAttachments(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	var asked []string
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		asked = append(asked, ref)
+		return chat.Doc{Ref: ref, Title: "по " + ref, Source: "example.com", Text: "приложенный текст " + ref}, nil
+	}
+	c, err := d.Ask("", "что тут? https://example.com/tz.", []string{"file:/w/смета.docx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(asked, " ") != "file:/w/смета.docx url:https://example.com/tz" {
+		t.Fatalf("прочитано: %q", asked)
+	}
+	q := m.asked[0][len(m.asked[0])-1].Content
+	if !strings.Contains(q, "приложенный текст file:/w/смета.docx") || !strings.Contains(q, "приложенный текст url:https://example.com/tz") {
+		t.Fatalf("модель не получила приложенное:\n%s", q)
+	}
+	if len(c.Docs) < 2 || c.Docs[0].Ref != "file:/w/смета.docx" || c.Docs[1].Ref != "url:https://example.com/tz" {
+		t.Fatalf("docs = %+v", c.Docs)
+	}
+	raw, _ := os.ReadFile(filepath.Join(d.dir, c.ID+".json"))
+	if strings.Contains(string(raw), "приложенный текст") {
+		t.Fatal("текст приложенного попал в файл чата")
+	}
+}
+
+// Не прочитанное приложенное — вопрос не уходит, человек видит, что и почему.
+func TestChat_AskAttachmentRefused(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.attach = func(context.Context, string) (chat.Doc, error) { return chat.Doc{}, weblink.ErrClosed }
+	_, err := d.Ask("", "глянь https://docs.google.com/document/d/1A/edit", nil)
+	if err == nil || !strings.Contains(err.Error(), "закрыт") || !strings.Contains(err.Error(), "docs.google.com") || m.n != 0 {
+		t.Fatalf("err = %v, модель звали %d раз", err, m.n)
+	}
+}
+
+// Документ из файла вне папок окна читается с диска: текст как есть, docx —
+// его текстом; не текст — отказ, а не мусор модели.
+func TestReadDiskFile(t *testing.T) {
+	dir := t.TempDir()
+	txt := filepath.Join(dir, "заметка.md")
+	_ = os.WriteFile(txt, []byte("# Срок\n30 дней"), 0o600)
+	bin := filepath.Join(dir, "a.bin")
+	_ = os.WriteFile(bin, []byte{0xff, 0xfe, 0x00}, 0o600)
+	doc, err := readDiskFile(context.Background(), extraction{}, txt)
+	if err != nil || doc.Text != "# Срок\n30 дней" || doc.Title != "заметка.md" || doc.Ref != "file:"+txt {
+		t.Fatalf("md: %+v, %v", doc, err)
+	}
+	if _, err := readDiskFile(context.Background(), extraction{}, bin); err == nil {
+		t.Fatal("двоичный файл прочитан как текст")
+	}
+	if _, err := readDiskFile(context.Background(), extraction{}, filepath.Join(dir, "a.pdf")); err == nil {
+		t.Fatal("PDF без помощника распознавания прочитан")
 	}
 }
