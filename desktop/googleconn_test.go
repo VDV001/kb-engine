@@ -167,14 +167,14 @@ func TestReadLink_GoogleThroughConnection(t *testing.T) {
 	public := weblink.Client{HTTP: &http.Client{Transport: roundTrip(func(*http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
 	})}}
-	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err := readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "открытый текст" {
 		t.Fatalf("без подключения: %+v, %v", d, err)
 	}
 	if _, err := g.Connect("cid.apps.googleusercontent.com", "sec-1"); err != nil {
 		t.Fatal(err)
 	}
-	d, err = readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err = readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "Срок 15 декабря" || d.Title != "ТЗ закрытое" || d.Source != "Google · person@example.com" {
 		t.Fatalf("через подключение: %+v, %v", d, err)
 	}
@@ -213,7 +213,7 @@ func TestGoogle_ReviewFixes(t *testing.T) {
 		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("открытый текст")), Request: &http.Request{URL: &url.URL{Host: "docs.google.com", Path: "/x"}}}, nil
 	})}}
 	link := "https://docs.google.com/document/d/nope/edit" // Drive отвечает 404
-	d, err := readLink(context.Background(), extraction{}, public, g, "url:"+link, link)
+	d, err := readLink(context.Background(), extraction{}, public, g, "", "url:"+link, link)
 	if err != nil || d.Text != "открытый текст" {
 		t.Fatalf("откат на открытый экспорт: %+v, %v", d, err)
 	}

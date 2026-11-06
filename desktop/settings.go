@@ -192,6 +192,9 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	if err := next.Validate(); err != nil {
 		return err
 	}
+	if err := checkDriveConns(f.cfg, next); err != nil {
+		return err
+	}
 	roots, missing, err := f.openableFolders(next)
 	if err != nil {
 		return err

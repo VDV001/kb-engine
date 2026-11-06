@@ -109,6 +109,8 @@ type chatDesk struct {
 	found   map[string]chat.Doc // предложенное «+ Из найденного»
 	seenMu  sync.Mutex
 	seen    map[string]chat.Doc // записи из поисков чата: модель читает только их
+	// driveRead reads a link through Google connection conn (attach.go).
+	driveRead func(ctx context.Context, conn, ref string) (chat.Doc, error)
 }
 
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
@@ -487,8 +489,14 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		// Ссылка — только пришедшая из поиска (находка Диска): ее текст читается
 		// через подключение. Ссылку, которую модель придумала сама (подсказка
 		// из чужого документа), окно не открывает (ревью #467, безопасность).
-		if strings.HasPrefix(ref, "url:") && d.attach != nil {
-			return d.attach(ctx, ref)
+		if strings.HasPrefix(ref, "url:") {
+			// Находка папки Диска — подключением своего источника (ревью #467).
+			if conn := d.settings.driveConn(doc.SourceID); conn != "" && d.driveRead != nil {
+				return d.driveRead(ctx, conn, ref)
+			}
+			if d.attach != nil {
+				return d.attach(ctx, ref)
+			}
 		}
 		return doc, nil
 	}

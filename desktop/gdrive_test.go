@@ -172,7 +172,7 @@ func TestSetSources_DriveNeedsExistingGoogle(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	base := s.snapshot().cfg.WithSources().Sources
+	base := []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true)}
 	with := func(conn string) []desktopconfig.Source {
 		return append(slices.Clone(base), desktopconfig.Source{ID: "gd1", Kind: desktopconfig.KindGDrive, URL: driveLink, Conn: conn, Enabled: true})
 	}
