@@ -669,6 +669,25 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-box:focus-within { border-color: var(--z-accent); }
 .chat-box textarea { resize: none; border: 0; outline: none; background: none; color: var(--z-ink); font: 13px/1.5 var(--z-font); padding: 0; max-height: 40vh; overflow-y: auto; }
 .chat-box-row { display: flex; align-items: center; gap: 8px; }
+/* Приложенное к вопросу (#436): плашки над полем, меню «+» над рядом кнопок. */
+.chat-box { position: relative; }
+.chat-attached { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-att { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; border: 1px solid var(--z-rule-2); border-radius: 12px; padding: 1px 4px 1px 10px; font: 11px var(--z-font); color: var(--z-ink-2); }
+.chat-att .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.chat-att .w { color: var(--z-muted); white-space: nowrap; }
+.chat-att.auto { border-style: dashed; }
+.chat-att button { border: 0; background: none; color: var(--z-muted); cursor: pointer; padding: 0 4px; font: inherit; }
+.chat-att button:hover { color: var(--z-ink); }
+.chat-attach-menu { position: absolute; left: 6px; bottom: calc(100% + 6px); z-index: 5; width: min(360px, calc(100% - 12px)); background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: 8px; padding: 4px; display: flex; flex-direction: column; }
+.chat-attach-menu > button { border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 6px; color: var(--z-ink); font: 12px var(--z-font); cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
+.chat-attach-menu > button:hover, .chat-attach-menu > button:focus-visible { background: var(--z-bg-3); }
+.chat-attach-menu small { color: var(--z-muted); font-size: 11px; }
+.chat-attach-pick { display: flex; flex-direction: column; gap: 4px; padding: 6px; border-top: 1px solid var(--z-rule); }
+.chat-attach-pick input { width: 100%; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: 6px; color: var(--z-ink); font: 12px var(--z-font); padding: 5px 8px; }
+.chat-attach-pick ul { list-style: none; margin: 0; padding: 0; max-height: 220px; overflow-y: auto; }
+.chat-attach-pick li button { width: 100%; border: 0; background: none; text-align: left; padding: 5px 8px; border-radius: 4px; color: var(--z-ink); font: 12px var(--z-font); cursor: pointer; display: flex; justify-content: space-between; gap: 8px; }
+.chat-attach-pick li button:hover { background: var(--z-bg-3); }
+.chat-attach-pick li .s { color: var(--z-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 45%; }
 .chat-spacer { flex: 1; }
 .chat-model-chip { border: 0; background: none; color: var(--z-muted); font: 11px var(--z-font); padding: 4px 6px; border-radius: 6px; cursor: pointer; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-model-chip:hover { background: var(--z-bg-2); color: var(--z-ink); }

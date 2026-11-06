@@ -1565,7 +1565,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [] };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1648,9 +1648,11 @@ function renderChat() {
   $("#chat-docs-n").textContent = docs.length || "";
   $("#chat-docs").innerHTML = docs.map((d) => {
     const file = d.ref.startsWith("file:") ? d.ref.slice(5) : "";
+    const link = d.ref.startsWith("url:") ? d.ref.slice(4) : "";
     return `<li><span class="chat-doc-title" data-tip="${esc(d.title)}" data-tip-b="${esc(file ? tilde(file) : d.source || "")}">${esc(d.title)}</span>
       <span class="muted chat-doc-src">${esc(file ? tilde(d.source || "") : d.source || "")}</span>
-      ${file ? `<span class="chat-doc-acts"><button class="btn" data-open="${esc(file)}">Открыть</button><button class="btn" data-reveal-file="${esc(file)}">В Finder</button></span>` : ""}</li>`;
+      ${file ? `<span class="chat-doc-acts"><button class="btn" data-open="${esc(file)}">Открыть</button><button class="btn" data-reveal-file="${esc(file)}">В Finder</button></span>` : ""}
+      ${link ? `<span class="chat-doc-acts"><button class="btn" data-open-url="${esc(link)}">Открыть</button></span>` : ""}</li>`;
   }).join("") || `<li class="muted">Документы появятся после первого ответа.</li>`;
   dropStaleTip();
 }
@@ -1682,7 +1684,9 @@ async function askChat() {
   fitChatQ();
   renderChat();
   try {
-    const c = await native().Ask(chatState.id, q);
+    const c = await native().Ask(chatState.id, q, chatState.attached.map((a) => a.ref));
+    chatState.attached = [];
+    renderAttached();
     chatState.id = c.id;
     chatState.chat = c;
     await renderChatList();
@@ -1701,6 +1705,8 @@ function newChat() {
   if (chatState.busy) return;
   chatState.id = "";
   chatState.chat = null;
+  chatState.attached = [];
+  renderAttached();
   paintChatList();
   renderChat();
   renderChatNote();
@@ -1715,7 +1721,109 @@ function fitChatQ() {
   $("#chat-send").disabled = chatState.busy || !q.value.trim();
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
 }
-$("#chat-q").addEventListener("input", fitChatQ);
+$("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
+
+// --- Приложенное к вопросу (#436) -------------------------------------------------
+// «+»: файл с диска, найденное, ссылка. Ссылки из текста вопроса окно читает
+// само — их плашки пунктиром, убрать их можно только из текста.
+const LINK_RE = /https?:\/\/[^\s<>"«»]+/g;
+function questionLinks() {
+  const out = [];
+  for (const m of $("#chat-q").value.match(LINK_RE) || []) {
+    const l = m.replace(/[.,;:!?)»'"]+$/, "");
+    if (!out.includes(l) && !chatState.attached.some((a) => a.ref === "url:" + l)) out.push(l);
+  }
+  return out;
+}
+function linkTitle(l) {
+  try { const u = new URL(l); return u.host + (u.pathname.length > 1 ? u.pathname.slice(0, 28) + (u.pathname.length > 28 ? "…" : "") : ""); } catch { return l; }
+}
+function renderAttached() {
+  const box = $("#chat-attached");
+  const auto = questionLinks().map((l) => `<span class="chat-att auto" data-tip="Окно прочтет ссылку из вопроса" data-tip-b="${esc(l)}"><span class="t">${esc(linkTitle(l))}</span><span class="w">ссылка из вопроса</span></span>`);
+  const mine = chatState.attached.map((a, i) => `<span class="chat-att" data-tip="${esc(a.title)}" data-tip-b="${esc(a.hint || "")}"><span class="t">${esc(a.title)}</span><span class="w">${esc(a.via)}</span><button type="button" data-unattach="${i}" aria-label="Убрать: ${esc(a.title)}">×</button></span>`);
+  box.innerHTML = [...mine, ...auto].join("");
+  box.hidden = !box.innerHTML;
+}
+function addAttached(a) {
+  if (!chatState.attached.some((x) => x.ref === a.ref)) chatState.attached.push(a);
+  renderAttached();
+  closeAttachMenu();
+  $("#chat-q").focus();
+}
+function closeAttachMenu() {
+  $("#chat-attach-menu").hidden = true;
+  $("#chat-attach-pick").hidden = true;
+  $("#chat-attach").setAttribute("aria-expanded", "false");
+}
+let attachMode = "";
+$("#chat-attach").addEventListener("click", () => {
+  const m = $("#chat-attach-menu");
+  if (!m.hidden) return closeAttachMenu();
+  m.hidden = false;
+  $("#chat-attach-pick").hidden = true;
+  $("#chat-attach").setAttribute("aria-expanded", "true");
+  hideTip();
+  m.querySelector("button").focus();
+});
+$("#chat-attach-menu").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-attach]");
+  if (b) {
+    attachMode = b.dataset.attach;
+    if (attachMode === "file") {
+      closeAttachMenu();
+      try {
+        const p = await native().PickChatFile();
+        if (p) addAttached({ ref: "file:" + p, title: p.split("/").pop(), via: "с диска", hint: tilde(p) });
+      } catch (err) { showChatNote("Файл не выбран: " + err); }
+      return;
+    }
+    const inp = $("#chat-attach-input");
+    $("#chat-attach-pick").hidden = false;
+    $("#chat-attach-found").innerHTML = attachMode === "link" ? `<li class="muted" style="padding:4px 8px">Enter — приложить. Google-документ открыт по ссылке или приложите файл.</li>` : "";
+    inp.value = "";
+    inp.placeholder = attachMode === "link" ? "https://…" : "найти в своих источниках…";
+    inp.focus();
+    return;
+  }
+  const f = e.target.closest("[data-found]");
+  if (f) addAttached(JSON.parse(f.dataset.found));
+});
+let findTimer = 0;
+$("#chat-attach-input").addEventListener("input", (e) => {
+  if (attachMode !== "found") return;
+  clearTimeout(findTimer);
+  const q = e.target.value.trim();
+  findTimer = setTimeout(async () => {
+    let docs = [];
+    try { docs = (await native().ChatFind(q)) || []; } catch (err) { $("#chat-attach-found").innerHTML = `<li class="muted" style="padding:4px 8px">${esc(String(err))}</li>`; return; }
+    if (q !== $("#chat-attach-input").value.trim()) return; // пока искали, запрос сменился
+    $("#chat-attach-found").innerHTML = docs.map((d) => {
+      const a = { ref: d.ref, title: d.title, via: d.source || "найдено", hint: d.ref.startsWith("file:") ? tilde(d.ref.slice(5)) : d.source };
+      return `<li><button type="button" data-found="${esc(JSON.stringify(a))}"><span>${esc(d.title)}</span><span class="s">${esc(d.source || "")}</span></button></li>`;
+    }).join("") || (q ? `<li class="muted" style="padding:4px 8px">Ничего не нашлось</li>` : "");
+  }, 200);
+});
+$("#chat-attach-input").addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { e.preventDefault(); closeAttachMenu(); $("#chat-attach").focus(); return; }
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  if (attachMode === "found") { const first = $("#chat-attach-found [data-found]"); if (first) first.click(); return; }
+  const v = e.target.value.trim();
+  if (!/^https?:\/\/\S+$/.test(v)) { $("#chat-attach-found").innerHTML = `<li class="muted" style="padding:4px 8px">Нужна ссылка, начинающаяся с http:// или https://</li>`; return; }
+  addAttached({ ref: "url:" + v, title: linkTitle(v), via: "ссылка", hint: v });
+});
+$("#chat-attached").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-unattach]");
+  if (!b) return;
+  chatState.attached.splice(+b.dataset.unattach, 1);
+  renderAttached();
+});
+document.addEventListener("click", (e) => {
+  if (!$("#chat-attach-menu").hidden && !e.target.closest("#chat-attach-menu, #chat-attach")) closeAttachMenu();
+  const u = e.target.closest("[data-open-url]");
+  if (u) openURL(u.dataset.openUrl);
+});
 $("#chat-model-chip").addEventListener("click", () => {
   if (chatPanes.l && chatPanes.l.hidden) toggleChatPane("l"); // настройки модели — в колонке чатов
   $("#chat-model").hidden = false;

@@ -30,6 +30,12 @@ const chatKeyAccount = "chat-model"
 // запросов к модели подряд.
 const askTimeout = 3 * time.Minute
 
+// Поиск для «+ Из найденного»: короткий, это подбор, а не ответ.
+const (
+	findTimeout = 15 * time.Second
+	findLimit   = 20
+)
+
 // chatRecord is one chat as stored: файл на чат рядом с config.json, 0600.
 type chatRecord struct {
 	ID       string        `json:"id"`
@@ -81,7 +87,9 @@ type chatDesk struct {
 	// show shows the answer while the model writes it (событие chat:delta);
 	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
 	show func(text string)
-	mu   sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// attach reads one attached document by ref (attach.go); nil — только в окне.
+	attach func(ctx context.Context, ref string) (chat.Doc, error)
+	mu     sync.Mutex // один вопрос за раз: файл чата пишется целиком
 }
 
 func newChatDesk(s *folderSettings, dir string) *chatDesk {
@@ -144,8 +152,9 @@ func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 	})
 }
 
-// Ask answers question in chat id ("" — новый чат) and saves the chat.
-func (d *chatDesk) Ask(id, question string) (chatRecord, error) {
+// Ask answers question in chat id ("" — новый чат) with the attached refs
+// and the links of the question, and saves the chat.
+func (d *chatDesk) Ask(id, question string, refs []string) (chatRecord, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	rec := chatRecord{Created: d.now()}
@@ -166,26 +175,50 @@ func (d *chatDesk) Ask(id, question string) (chatRecord, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
+	attached, err := d.readAttached(ctx, attachRefs(refs, question))
+	if err != nil {
+		return chatRecord{}, err
+	}
 	svc := chat.NewService(searcherFunc(d.search), d.model(c, key), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.AnswerStream(ctx, history(rec), question, chatMode(c), d.show)
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
 	if rec.ID == "" {
 		rec.ID, rec.Title = newChatID(), title(question)
 	}
-	refs := make([]string, 0, len(turn.Docs))
+	used := make([]string, 0, len(turn.Docs))
 	for _, doc := range turn.Docs {
-		refs = append(refs, doc.Ref)
+		used = append(used, doc.Ref)
 		if !slices.ContainsFunc(rec.Docs, func(x chatDoc) bool { return x.Ref == doc.Ref }) {
 			rec.Docs = append(rec.Docs, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source})
 		}
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
-		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: refs})
+		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
 	rec.Model, rec.Updated = c.Model, d.now()
 	return rec, d.save(rec)
+}
+
+// Find searches for documents to attach («+ Из найденного»): то же, что ищет
+// чат, поэтому найденное потом читается по ref.
+func (d *chatDesk) Find(q string) ([]chatDoc, error) {
+	q = strings.TrimSpace(q)
+	if q == "" || d.search == nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), findTimeout)
+	defer cancel()
+	docs, err := d.search(ctx, q, findLimit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]chatDoc, 0, len(docs))
+	for _, doc := range docs {
+		out = append(out, chatDoc{Ref: doc.Ref, Title: doc.Title, Source: doc.Source})
+	}
+	return out, nil
 }
 
 // List returns the chats, newest first.
