@@ -201,7 +201,9 @@ func (g *googleDesk) SetEnabled(id string, on bool) error {
 	})
 }
 
-// Remove deletes a connection and its secrets.
+// Remove deletes a connection and its secrets. Подключение из настроек
+// уходит в любом случае; секреты, которые Связка не отдала, называются вслух
+// (ревью #466): иначе вход молча оставался бы на Маке.
 func (g *googleDesk) Remove(id string) error {
 	if err := g.settings.updateConfig(func(cfg *desktopconfig.Config) {
 		cfg.Connections = slices.DeleteFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.ID == id })
@@ -211,8 +213,9 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
-	_ = g.settings.tokens.Delete(refreshAccount(id))
-	_ = g.settings.tokens.Delete(clientAccount(id))
+	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id))); err != nil {
+		return fmt.Errorf("подключение убрано, но вход не удален из Связки ключей — удалите записи «conn:%s» в «Связке ключей»: %w", id, err)
+	}
 	return nil
 }
 
@@ -236,7 +239,7 @@ func (g *googleDesk) Read(ctx context.Context, link string) (google.Doc, error) 
 	if err != nil {
 		return google.Doc{}, err
 	}
-	d, err := c.Read(ctx, at, id)
+	d, err := c.ReadLink(ctx, at, link)
 	if err != nil {
 		return google.Doc{}, fmt.Errorf("%s: %w", conn.Name, googleErr(err))
 	}
@@ -284,6 +287,10 @@ func googleErr(err error) error {
 		return errors.New("у подключенного аккаунта нет доступа к документу")
 	case errors.Is(err, google.ErrNotFound):
 		return errors.New("документа нет: проверьте ссылку")
+	case errors.Is(err, google.ErrAPIOff):
+		return errors.New("в проекте Google Cloud клиента OAuth не включен Google Drive API — включите его в «APIs & Services»")
+	case errors.Is(err, google.ErrBusy):
+		return errors.New("частота запросов к Google ограничена — попробуйте позже")
 	case errors.Is(err, google.ErrTooBig):
 		return errors.New("документ больше 20 МБ")
 	}
