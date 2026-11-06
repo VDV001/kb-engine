@@ -405,3 +405,30 @@ func TestChat_FoundAttachmentSurvivesSearches(t *testing.T) {
 		t.Fatalf("doc = %+v, %v", doc, ok)
 	}
 }
+
+// Кусков сотни, а страница перерисовывает весь текст на каждом: показ
+// прореживается до одного раза в промежуток. Пустой (показанное — не ответ)
+// проходит всегда, пропущенный хвост приходит целым ответом из Ask.
+func TestEveryAtMost(t *testing.T) {
+	at := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	now := func() time.Time { return at }
+	var seen []string
+	show := everyAtMost(50*time.Millisecond, now, func(s string) { seen = append(seen, s) })
+	steps := []struct {
+		after time.Duration
+		text  string
+	}{
+		{0, "о"},
+		{10 * time.Millisecond, "от"}, // рано — пропуск
+		{50 * time.Millisecond, "отв"},
+		{10 * time.Millisecond, ""}, // пустой — всегда
+		{60 * time.Millisecond, "ответ"},
+	}
+	for _, s := range steps {
+		at = at.Add(s.after)
+		show(s.text)
+	}
+	if got := strings.Join(seen, "|"); got != "о|отв||ответ" {
+		t.Fatalf("seen %q", got)
+	}
+}
