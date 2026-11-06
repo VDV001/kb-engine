@@ -94,3 +94,22 @@ func TestChatCheck_MemoryDir(t *testing.T) {
 		}
 	}
 }
+
+// kb-сервер портрета — id источника: короткий, без управляющих символов.
+func TestChatCheck_MemoryServer(t *testing.T) {
+	base := desktopconfig.Chat{URL: desktopconfig.DefaultChatURL, Model: "m"}
+	for _, id := range []string{"", "server-ab12cd34"} {
+		c := base
+		c.MemoryServer = id
+		if err := c.Check(); err != nil {
+			t.Errorf("%q отвергнут: %v", id, err)
+		}
+	}
+	for _, id := range []string{"server-\n1", strings.Repeat("s", 65)} {
+		c := base
+		c.MemoryServer = id
+		if err := c.Check(); !errors.Is(err, desktopconfig.ErrChatSettings) {
+			t.Errorf("%q принят: %v", id, err)
+		}
+	}
+}
