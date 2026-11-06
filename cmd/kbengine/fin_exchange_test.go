@@ -87,3 +87,24 @@ func TestRun_finAdd_exchange(t *testing.T) {
 		})
 	}
 }
+
+// fin report называет обмен отдельной строкой с курсом записи, не в тратах.
+func TestRun_finReport_listsAnExchange(t *testing.T) {
+	book := workbookWithDollarAccount(t)
+	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
+	finImport(t, book, ledger)
+	var out, errb bytes.Buffer
+	if code := run([]string{"fin", "add", "--ledger", ledger, "--from", book, "--date", "2026-04-06",
+		"--account", "Сбербанк", "--amount", "9000", "--received", "100", "--received-account", "Банк USD"}, &out, &errb); code != 0 {
+		t.Fatalf("fin add exit = %d, stderr = %s", code, errb.String())
+	}
+	out.Reset()
+	if code := run([]string{"fin", "report", "--ledger", ledger}, &out, &errb); code != 0 {
+		t.Fatalf("fin report exit = %d, stderr = %s", code, errb.String())
+	}
+	for _, want := range []string{"обмен", "2026-04-06", "Сбербанк", "100.00 USD", "Банк USD", "курс 90.00"} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("отчет без %q:\n%s", want, out.String())
+		}
+	}
+}
