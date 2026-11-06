@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"log"
+	"net"
+	"net/url"
 	"os/exec"
 	"sync"
 	"time"
@@ -55,6 +57,25 @@ func mountShareCmd(addr string) error {
 	return run.Run()
 }
 
+// shareReachable reports whether the share's server answers on its port:
+// SMB 445, AFP 548, WebDAV по https 443.
+func shareReachable(addr string) bool {
+	u, err := url.Parse(addr)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	port := u.Port()
+	if port == "" {
+		port = map[string]string{"smb": "445", "afp": "548", "https": "443"}[u.Scheme]
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(u.Hostname(), port), 2*time.Second)
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
 // mountMissingShares starts mounting the enabled network folders whose path
 // is gone; f.mu held. Подключение идет в фоне: следующий тик reconcile
 // откроет вернувшуюся папку.
@@ -70,7 +91,14 @@ func (f *folderSettings) mountMissingShares() {
 		if !f.shares.due(s.URL, now) {
 			continue
 		}
+		up := f.shareUp
+		if up == nil {
+			up = shareReachable
+		}
 		go func(addr string) {
+			if !up(addr) {
+				return // сервер не отвечает — без попытки и без диалога macOS
+			}
 			if err := f.mountShare(addr); err != nil {
 				log.Printf("files: сетевая папка %s не подключилась: %v", addr, err)
 			}

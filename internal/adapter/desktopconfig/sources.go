@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
@@ -89,23 +90,29 @@ var shareAddr = regexp.MustCompile(`^(smb|afp)://[^/@:\s"\\]+(:\d+)?/([^"\\\s?#]
 var webdavAddr = regexp.MustCompile(`^https://([^/@:\s"\\]+)(:\d+)?(/[^"\\?#\s]*)?$`)
 
 // ShareVolume returns where macOS mounts the share at addr (/Volumes/<папка>);
-// "" — адрес не сетевой папки или с паролем.
+// "" — адрес не сетевой папки, с паролем или уводящий из /Volumes.
 func ShareVolume(addr string) string {
-	addr = strings.TrimSpace(addr)
-	if m := webdavAddr.FindStringSubmatch(addr); m != nil {
-		name := m[1]
-		if p := strings.Trim(m[3], "/"); p != "" {
-			name = p[strings.LastIndex(p, "/")+1:]
-		}
-		return "/Volumes/" + name
-	}
-	m := shareAddr.FindStringSubmatch(addr)
-	if m == nil {
+	// Пробел в адресе — только как %20: сырой пробел, табуляция и перевод
+	// строки сломали бы команду подключения или подменили бы шару.
+	if strings.IndexFunc(addr, unicode.IsSpace) >= 0 {
 		return ""
 	}
-	first, _, _ := strings.Cut(m[3], "/")
-	name, err := url.PathUnescape(first)
-	if err != nil || name == "" {
+	var seg string
+	if m := webdavAddr.FindStringSubmatch(addr); m != nil {
+		seg = m[1]
+		if p := strings.Trim(m[3], "/"); p != "" {
+			seg = p[strings.LastIndex(p, "/")+1:]
+		}
+	} else if m := shareAddr.FindStringSubmatch(addr); m != nil {
+		seg, _, _ = strings.Cut(m[3], "/")
+	} else {
+		return ""
+	}
+	name, err := url.PathUnescape(seg)
+	// Имя тома — одно слово пути: «.», «..» и черта (в том числе %2F) увели бы
+	// из /Volumes — к корню диска или в чужую папку (ревью #469).
+	if err != nil || name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\") ||
+		strings.IndexFunc(name, unicode.IsControl) >= 0 || strings.TrimSpace(name) != name {
 		return ""
 	}
 	return "/Volumes/" + name

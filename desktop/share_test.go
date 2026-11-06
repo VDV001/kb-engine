@@ -14,6 +14,7 @@ func TestReconcile_MountsShare(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
 	var mu sync.Mutex
 	var mounted []string
+	s.shareUp = func(string) bool { return true }
 	s.mountShare = func(addr string) error {
 		mu.Lock()
 		mounted = append(mounted, addr)
@@ -52,5 +53,24 @@ func TestMountCommand(t *testing.T) {
 	cmd := mountCommand("smb://nas.local/docs")
 	if len(cmd.Args) != 3 || cmd.Args[0] != "/usr/bin/osascript" || cmd.Args[2] != `mount volume "smb://nas.local/docs"` {
 		t.Fatalf("args = %q", cmd.Args)
+	}
+}
+
+// Сервер шары не отвечает (ноутбук вне домашней сети) — окно не зовет
+// mount volume: иначе macOS показывал бы диалог ошибки на каждом тике (ревью #469).
+func TestReconcile_SkipsUnreachableShare(t *testing.T) {
+	s, _, _ := newSourcesSettings(t)
+	called := make(chan string, 1)
+	s.shareUp = func(string) bool { return false }
+	s.mountShare = func(addr string) error { called <- addr; return nil }
+	_ = s.updateConfig(func(c *desktopconfig.Config) {
+		c.Sources = append(c.WithSources().Sources,
+			desktopconfig.Source{ID: "sh1", Kind: desktopconfig.KindFolder, Path: "/Volumes/нет-такой-шары-kb", URL: "smb://nas.local/нет-такой-шары-kb", Enabled: true})
+	})
+	s.reconcile()
+	select {
+	case a := <-called:
+		t.Fatalf("недоступная шара подключалась: %s", a)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
