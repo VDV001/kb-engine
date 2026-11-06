@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,7 +14,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 )
 
-// Модуль «Финансы» (#435, G2): витрина движка под /app/ в окне и прокси ее
+// Модуль «Финансы» (#435, G2–G3): витрина движка под /app/ в окне и прокси ее
 // запросов на kb-сервер с токеном из Связки ключей.
 //
 // Только из обработчика Wails, никогда с сетевого порта: loopback-порт отдал
@@ -80,10 +81,8 @@ func isProxied(p string) bool {
 
 // proxyToServer sends one витрина request to the server with the token.
 func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt http.RoundTripper) {
-	// ponytail: только чтение до G3 — запись через прокси откроется вместе с
-	// решением по защите от CSRF (#435, G3).
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeAppError(w, http.StatusMethodNotAllowed, "запись из окна — следующим шагом (G3)")
+	if code, why := appWriteRefused(r); code != 0 {
+		writeAppError(w, code, why)
 		return
 	}
 	// Токен — только туда, куда его пускают источники: https или http этого Мака.
@@ -122,6 +121,29 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 		},
 	}
 	rp.ServeHTTP(w, r)
+}
+
+// appWriteHeader marks a write the витрина itself sent (frontend/src/api.ts).
+const appWriteHeader = "X-DVK-App"
+
+// appWriteRefused guards writes through the proxy against CSRF (G3, #435).
+//
+// Сервер отказывает чужому Origin, но прокси Origin не пересылает, и сервер
+// пропустил бы все, что пришло через окно. Поэтому защиту держит окно: запись
+// — только JSON (форму и text/plain браузер шлет без проверки) с заголовком
+// витрины (чужая страница без разрешения CORS его не поставит) и не помеченная
+// браузером как межсайтовая. Чтение проходит как есть.
+func appWriteRefused(r *http.Request) (int, string) {
+	if r.Method == http.MethodGet || r.Method == http.MethodHead {
+		return 0, ""
+	}
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/json" {
+		return http.StatusUnsupportedMediaType, "запись — только JSON"
+	}
+	if r.Header.Get(appWriteHeader) != "1" || r.Header.Get("Sec-Fetch-Site") == "cross-site" {
+		return http.StatusForbidden, "запись не из витрины окна"
+	}
+	return 0, ""
 }
 
 // serveAppUI serves the built витрина; незнакомый путь — index.html, маршруты
