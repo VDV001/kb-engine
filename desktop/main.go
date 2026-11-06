@@ -30,6 +30,12 @@ import (
 //go:embed all:frontend
 var assets embed.FS
 
+// appAssets — собранная витрина движка для модуля «Финансы» (#435, G4):
+// `just desktop` копирует frontend/dist сюда; в git лежит только .keep.
+//
+//go:embed all:app-ui
+var appAssets embed.FS
+
 func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
@@ -83,6 +89,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	appUI, err := fs.Sub(appAssets, "app-ui")
+	if err != nil {
+		return err
+	}
 	// Индекс собирается в фоне: окно открывается сразу и показывает экран
 	// индексации, пока API отвечает 503. Закрытие окна отменяет обход: иначе он
 	// дошел бы до конца, держа диск, уже после выхода из интерфейса.
@@ -121,8 +131,7 @@ func run() error {
 			Assets: ui,
 			// Все, чего нет среди файлов интерфейса: /api/* окна и /app/* модуля
 			// «Финансы» (прокси на kb-сервер с токеном — только здесь, не в -browser).
-			// Витрина в окно встраивается в G4 (#435); до того /app/ так и говорит.
-			Handler: withAppProxy(api, newAppProxy(settings.appUpstream, nil, nil)),
+			Handler: withAppProxy(api, newAppProxy(settings.appUpstream, builtAppUI(appUI), nil)),
 		},
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)

@@ -43,3 +43,7 @@ tfplan
 
 # Побочный продукт запуска валидатора карт: python кэширует импорт validate.py.
 __pycache__/
+
+# Собранная витрина для модуля «Финансы» окна: `just desktop` копирует сюда frontend/dist.
+/desktop/app-ui/*
+!/desktop/app-ui/.keep

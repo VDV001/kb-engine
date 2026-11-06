@@ -200,3 +200,14 @@ func TestAppProxy_passesOtherPathsOn(t *testing.T) {
 		t.Fatal("isAppPath путает /app с соседними путями")
 	}
 }
+
+// Витрина встраивается в окно из desktop/app-ui (G4). В git там только .keep:
+// без сборки (go test, CI без npm) /app/ говорит «не собрана», а не отдает 404.
+func TestBuiltAppUI(t *testing.T) {
+	if builtAppUI(fstest.MapFS{".keep": {}}) != nil {
+		t.Error("папка без index.html принята за собранную витрину")
+	}
+	if builtAppUI(appUI) == nil {
+		t.Error("собранная витрина не принята")
+	}
+}

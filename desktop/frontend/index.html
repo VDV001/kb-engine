@@ -84,6 +84,12 @@
       </section>
       <article class="panel preview" id="preview"></article>
     </div>
+
+    <!-- Модуль окна (#435, G4): вкладка «Финансы» показывает витрину движка с
+         kb-сервера — /app/ из обработчика окна (прокси с токеном), на месте поиска. -->
+    <section class="module-view" id="module-view" hidden>
+      <iframe id="module-frame" title="Модуль окна"></iframe>
+    </section>
   </main>
 
   <!-- Источники: папки, каталог базы, kb-серверы. Меняются только в окне: в
@@ -120,6 +126,10 @@
       <select id="tab-add-source" aria-label="Вкладка по источнику"><option value="">по источнику…</option></select>
       <button class="btn reset" id="tab-reset" data-tip="Вкладки по умолчанию" data-tip-b="База знаний, Документы, Код, Картинки; прежний набор можно вернуть">по умолчанию</button>
     </div>
+
+    <h3 data-view="prefs">Модули</h3>
+    <p class="muted" data-view="prefs">Разделы окна со своей вкладкой рядом с поиском. Данные модулей — на kb-сервере из «Источников».</p>
+    <ul class="accent-list" id="module-list" data-view="prefs"></ul>
 
     <h3 data-view="prefs">Оформление</h3>
     <p class="muted" data-view="prefs">Где в окне цвета спектра. Меняется сразу; «Все» и «Ничего» не стирают твой выбор.</p>
