@@ -188,3 +188,53 @@ func TestDictation_FinalAfterRelease(t *testing.T) {
 	}
 	d.Stop()
 }
+
+// Стоп во время распознавания отменяет запрос к серверу: иначе окно до двух
+// минут «распознает» и не слушает снова (ревью #468). Отмена — не ошибка.
+func TestDictation_StopCancelsTranscription(t *testing.T) {
+	var ev events
+	d := &dictation{bin: fakeListen(t, `while [ "$1" != "--record" ]; do shift; done
+echo '{"ready":true}'
+cat >/dev/null
+printf '{"recorded":"%s","final":true}\n' "$2"
+`), emit: ev.add, tmpDir: t.TempDir()}
+	if err := d.StartWith(0, func(ctx context.Context, _ []byte) (string, error) {
+		<-ctx.Done()
+		return "", ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ev.wait(t, func(l []listenEvent) bool { return len(l) >= 1 })
+	d.Stop()
+	ev.wait(t, slicesContainsBusy)
+	start := time.Now()
+	d.Stop()
+	got := ev.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })
+	if last := got[len(got)-1]; last.Error != "" || last.Text != "" || time.Since(start) > 3*time.Second {
+		t.Fatalf("итог %+v за %v", last, time.Since(start))
+	}
+}
+
+// Запись без речи (помощник сказал silent) серверу не отдается: пустой итог
+// без запроса (ревью #468).
+func TestDictation_SilentRecordingSkipsServer(t *testing.T) {
+	var ev events
+	called := false
+	d := &dictation{bin: fakeListen(t, `while [ "$1" != "--record" ]; do shift; done
+echo '{"ready":true}'
+printf '{"recorded":"%s","final":true,"silent":true}\n' "$2"
+`), emit: ev.add, tmpDir: t.TempDir()}
+	if err := d.StartWith(0, func(context.Context, []byte) (string, error) {
+		called = true
+		return "шум", nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	got := ev.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })
+	if last := got[len(got)-1]; called || last.Text != "" || last.Error != "" || slicesContainsBusy(got) {
+		t.Fatalf("сервер позван: %v, события %+v", called, got)
+	}
+	if m, _ := filepath.Glob(filepath.Join(d.tmpDir, "kb-listen-*.wav")); len(m) != 0 {
+		t.Fatalf("запись не стерта: %v", m)
+	}
+}
