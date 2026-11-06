@@ -218,6 +218,9 @@ function setIndexed(n, skipped, rec, err) {
   // Уровень — цвет точки статуса при наведении (CSS): красная — ошибка,
   // оранжевая — предупреждение, синяя — уведомление.
   el.parentElement.dataset.level = state.problems ? state.problems.level || "" : skipped ? "error" : "";
+  const dot = $("#settings-dot"); // точка у раздела «Проблемы» в настройках
+  dot.hidden = !total;
+  dot.dataset.level = el.parentElement.dataset.level;
   if (total) {
     const b = document.createElement("button");
     b.className = "problems-link";
@@ -728,8 +731,10 @@ function load(v) {
 // переживает переход в настройки и обратно.
 const VIEWS = {
   sources: { title: "Источники", cmd: "config sources" },
-  prefs: { title: "Настройки окна", cmd: "config window" },
+  prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
+  chat: { title: "Чат и модель", cmd: "config chat" },
+  look: { title: "Оформление", cmd: "config look" },
 };
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
@@ -739,7 +744,14 @@ async function openSettings(view = "sources") {
   scrim.hidden = false;
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
+  panel.querySelectorAll("[data-go]").forEach((b) => b.setAttribute("aria-current", String(b.dataset.go === view)));
   showError("");
+  if (view === "chat") {
+    if (native() && native().ChatSettings) await loadChatSettings();
+    $("#chat-model-note").textContent = native() && native().ChatSettings ? "" : "Модель чата настраивается в окне приложения.";
+    $("#chat-name").focus();
+    return;
+  }
   if (view === "problems") {
     renderProblems(); // сразу прежний список, следом свежий: серверы отвечают до 3 с
     $("#close-settings").focus();
@@ -750,10 +762,14 @@ async function openSettings(view = "sources") {
     });
     return;
   }
+  if (view === "look") {
+    renderAccents();
+    $("#close-settings").focus();
+    return;
+  }
   if (view === "prefs") {
     renderTabSettings();
     renderModules();
-    renderAccents();
     $("#close-settings").focus();
     return;
   }
@@ -1824,12 +1840,7 @@ document.addEventListener("click", (e) => {
   const u = e.target.closest("[data-open-url]");
   if (u) openURL(u.dataset.openUrl);
 });
-$("#chat-model-chip").addEventListener("click", () => {
-  if (chatPanes.l && chatPanes.l.hidden) toggleChatPane("l"); // настройки модели — в колонке чатов
-  $("#chat-model").hidden = false;
-  $("#chat-model-btn").setAttribute("aria-expanded", "true");
-  $("#chat-name").focus();
-});
+$("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
 $("#chat-q").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
 });
@@ -1870,10 +1881,10 @@ $("#chat-docs").addEventListener("click", (e) => {
   const r = e.target.closest("[data-reveal-file]");
   if (r) revealFile(r.dataset.revealFile);
 });
-$("#chat-model-btn").addEventListener("click", () => {
-  const f = $("#chat-model");
-  f.hidden = !f.hidden;
-  $("#chat-model-btn").setAttribute("aria-expanded", String(!f.hidden));
+$("#chat-model-btn").addEventListener("click", () => openSettings("chat"));
+$(".settings-nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-go]");
+  if (b && b.dataset.go !== panel.dataset.view) openSettings(b.dataset.go);
 });
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();

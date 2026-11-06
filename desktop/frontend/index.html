@@ -65,7 +65,7 @@
       <div class="cell">
         <!-- Шестеренка — настройки самого окна (вкладки, дальше модули);
              источники остаются своей кнопкой рядом (решение владельца 05.11, #438). -->
-        <button class="gear" id="open-prefs" data-tip="Настройки окна" data-tip-b="Вкладки поиска: какие есть и в каком порядке" aria-label="Настройки окна">
+        <button class="gear" id="open-prefs" data-tip="Настройки" data-tip-b="источники, чат и модель, окно, оформление · ⌘," aria-label="Настройки">
           <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
         </button>
       </div>
@@ -111,21 +111,7 @@
           <input class="chat-find" id="chat-find" placeholder="Найти чат…" aria-label="Найти чат" autocomplete="off" spellcheck="false" hidden>
           <div class="chat-rec">Недавние</div>
           <ul class="chat-list" id="chat-list"></ul>
-          <button class="chat-nav" id="chat-model-btn" aria-expanded="false" data-tip="Модель" data-tip-b="адрес, имя модели, ключ и кто ищет документы"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="9" height="8" rx="1.5"/><path d="M8 2v2.5M6 8h.01M10 8h.01M6.5 10.5h3"/></svg>Модель</button>
-          <form class="chat-model" id="chat-model" hidden>
-            <label>Адрес<input id="chat-url" placeholder="https://ai-gateway.vercel.sh/v1" autocomplete="off" spellcheck="false"></label>
-            <label>Модель<input id="chat-name" placeholder="anthropic/claude-sonnet-5.5" autocomplete="off" spellcheck="false"></label>
-            <label>Кто ищет документы
-              <select id="chat-mode">
-                <option value="">по модели</option>
-                <option value="context">окно ищет (маленькие модели)</option>
-                <option value="tools">модель ищет (сильные модели)</option>
-              </select>
-            </label>
-            <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
-            <button class="btn primary" type="submit">Сохранить</button>
-            <p class="muted" id="chat-model-note"></p>
-          </form>
+          <button class="chat-nav" id="chat-model-btn" data-tip="Модель" data-tip-b="настройки: адрес, имя модели, ключ и кто ищет документы"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="9" height="8" rx="1.5"/><path d="M8 2v2.5M6 8h.01M10 8h.01M6.5 10.5h3"/></svg>Модель</button>
         </div>
       </aside>
       <div class="chat-grip" id="chat-grip-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="Ширина колонки чатов" tabindex="0" data-tip="Тяните · двойной щелчок — обычная ширина"></div>
@@ -179,6 +165,16 @@
        data-view на панели выбирает, какие разделы видны (sources или prefs). -->
   <div class="scrim" id="scrim" hidden></div>
   <aside class="settings" id="settings" data-view="sources" aria-hidden="true" aria-labelledby="settings-title">
+    <nav class="settings-nav" aria-label="Разделы настроек">
+      <div class="settings-grp">Настройки</div>
+      <button data-go="sources">Источники</button>
+      <button data-go="chat">Чат и модель</button>
+      <button data-go="prefs">Окно</button>
+      <button data-go="look">Оформление</button>
+      <div class="settings-grp">Состояние</div>
+      <button data-go="problems">Проблемы <span class="settings-dot" id="settings-dot" hidden></span></button>
+    </nav>
+    <div class="settings-main">
     <div class="settings-head">
       <div>
         <div class="prompt"><span class="dollar">$</span> kb <span id="settings-cmd">config sources</span></div>
@@ -212,21 +208,38 @@
     <p class="muted" data-view="prefs">Разделы окна со своей вкладкой рядом с поиском. Данные модулей — на kb-сервере из «Источников».</p>
     <ul class="accent-list" id="module-list" data-view="prefs"></ul>
 
-    <h3 data-view="prefs">Оформление</h3>
-    <p class="muted" data-view="prefs">Где в окне цвета спектра. Меняется сразу; «Все» и «Ничего» не стирают твой выбор.</p>
-    <div class="accent-presets" id="accent-presets" data-view="prefs">
+    <p class="muted" data-view="look">Где в окне цвета спектра. Меняется сразу; «Все» и «Ничего» не стирают твой выбор.</p>
+    <div class="accent-presets" id="accent-presets" data-view="look">
       <button class="btn" data-preset="mine" aria-pressed="false">Твой выбор (<span id="accent-mine-n">31</span>)</button>
       <button class="btn" data-preset="all" aria-pressed="false">Все <span id="accent-all-n">31</span></button>
       <button class="btn" data-preset="none" aria-pressed="false">Ничего</button>
     </div>
-    <ul class="accent-list" id="accent-list" data-view="prefs"></ul>
+    <ul class="accent-list" id="accent-list" data-view="look"></ul>
 
     <div class="problems-view" id="problems-view" data-view="problems"></div>
+
+    <p class="muted" data-view="chat">Модель, которая отвечает в чате. Ключ хранится в Связке ключей этого Мака и в файлы не попадает.</p>
+    <form class="chat-model" id="chat-model" data-view="chat">
+      <label>Адрес<input id="chat-url" placeholder="https://ai-gateway.vercel.sh/v1" autocomplete="off" spellcheck="false"></label>
+      <label>Модель<input id="chat-name" placeholder="anthropic/claude-sonnet-5.5" autocomplete="off" spellcheck="false"></label>
+      <label>Кто ищет документы
+        <select id="chat-mode">
+          <option value="">по модели</option>
+          <option value="context">окно ищет (маленькие модели)</option>
+          <option value="tools">модель ищет (сильные модели)</option>
+        </select>
+      </label>
+      <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+      <button class="btn primary" type="submit">Сохранить</button>
+      <p class="muted" id="chat-model-note"></p>
+    </form>
+
 
     <p class="settings-error" id="settings-error" role="alert" hidden></p>
     <div class="settings-foot" data-view="sources">
       <span class="muted" id="settings-note"></span>
       <button class="btn primary" id="save-settings" disabled>Сохранить и переиндексировать</button>
+    </div>
     </div>
   </aside>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
