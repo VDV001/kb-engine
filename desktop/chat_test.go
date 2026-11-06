@@ -266,3 +266,33 @@ func TestInterleaveDocs(t *testing.T) {
 		t.Fatalf("refs = %v", refs)
 	}
 }
+
+// streamEcho is echoModel that streams its answer in two pieces.
+type streamEcho struct{ echoModel }
+
+func (m *streamEcho) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool, show func(string)) (chat.ModelReply, error) {
+	r, err := m.Complete(ctx, msgs, tools)
+	show("ответ")
+	show(r.Content)
+	return r, err
+}
+
+// Ответ виден по мере генерации: окно получает растущий текст событием, а
+// сохраняет и возвращает весь ответ, как без потока.
+func TestChat_AskShowsAnswerAsItComes(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	m := &streamEcho{}
+	d.model = func(desktopconfig.Chat, string) chat.Model { return m }
+	var seen []string
+	d.show = func(s string) { seen = append(seen, s) }
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	c, err := d.Ask("", "срок?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(seen, "|") != "ответ|ответ [1]" || c.Messages[1].Text != "ответ [1]" {
+		t.Fatalf("seen %q, chat %+v", seen, c)
+	}
+}
