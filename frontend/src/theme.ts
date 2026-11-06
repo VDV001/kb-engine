@@ -53,8 +53,9 @@ export function saveTheme(theme: Theme): void {
  * page, or another tab), or the system switched while nothing is stored.
  * Returns the unsubscribe. */
 export function watchTheme(onChange: (theme: Theme) => void): () => void {
+  // key === null — localStorage.clear(): выбора больше нет, тоже смена.
   const onStorage = (e: StorageEvent) => {
-    if (e.key === storageKey) onChange(initialTheme())
+    if (e.key === storageKey || e.key === null) onChange(initialTheme())
   }
   const mq = window.matchMedia('(prefers-color-scheme: dark)')
   const onSystem = () => {

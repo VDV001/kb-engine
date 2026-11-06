@@ -1854,6 +1854,7 @@ function setTheme(t) {
 // Тему переключили кнопкой витрины в рамке «Финансов»: окно берет ее себе,
 // чтобы в одном окне не жили две темы.
 window.addEventListener("storage", (e) => {
-  if (e.key === FRAME_THEME_KEY && e.newValue !== null && e.newValue !== currentTheme()) setTheme(e.newValue);
+  // Только свои значения: чужая запись в ключ (не light/dark) не стирает выбор окна.
+  if (e.key === FRAME_THEME_KEY && (e.newValue === "light" || e.newValue === "dark") && e.newValue !== currentTheme()) setTheme(e.newValue);
 });
 paintThemeBtn();

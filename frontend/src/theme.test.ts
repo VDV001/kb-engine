@@ -54,9 +54,11 @@ describe('watchTheme', () => {
     localStorage.removeItem(storageKey)
     window.dispatchEvent(new StorageEvent('storage', { key: storageKey, newValue: null }))
     window.dispatchEvent(new StorageEvent('storage', { key: 'other', newValue: 'x' }))
+    localStorage.setItem(storageKey, 'dark')
+    window.dispatchEvent(new StorageEvent('storage', { key: null })) // clear() другой страницы видится как смена
     stop()
     window.dispatchEvent(new StorageEvent('storage', { key: storageKey, newValue: 'dark' }))
-    expect(seen).toEqual(['dark', 'light'])
+    expect(seen).toEqual(['dark', 'light', 'dark'])
   })
 
   it('follows the system while nothing is stored', () => {
