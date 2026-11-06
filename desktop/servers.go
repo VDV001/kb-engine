@@ -181,7 +181,7 @@ func (f *folderSettings) ServerStates() []sourceRow {
 				// не опрашивается, человеку не предлагается ввести его заново.
 				r.HasToken = true
 				if r.Enabled {
-					r.State, r.Note = stateMissing, "Связка ключей не ответила: разблокируйте ее и откройте панель снова"
+					r.State, r.Note, r.Detail = stateMissing, keychainNote, err.Error()
 				}
 				return
 			}
@@ -194,7 +194,7 @@ func (f *folderSettings) ServerStates() []sourceRow {
 			defer cancel()
 			info, err := f.probe(ctx, r.URL, tok)
 			if err != nil {
-				r.State, r.Note = stateMissing, serverMessage(err)
+				r.State, r.Note, r.Detail = stateMissing, serverMessage(err), err.Error()
 				return
 			}
 			r.State, r.Count, r.Note = stateOK, info.Entries, "kbengine "+info.Version

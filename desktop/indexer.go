@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"log"
+	"maps"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/extractcache"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
@@ -21,6 +24,9 @@ type indexStatus struct {
 	// по кнопке «подробнее» (первые 100, Skipped считает все).
 	SkippedFiles []skippedRow `json:"skippedFiles,omitempty"`
 	Reused       int          `json:"reused"` // взяты из снимка без чтения
+	// Unrecognized — PDF и картинки, которые распознавание не прочитало или
+	// не успело: панель «Проблемы» (#456).
+	Unrecognized []skippedRow `json:"unrecognized,omitempty"`
 	Error        string       `json:"error,omitempty"`
 	// Recognizing — идет проход распознавания PDF и картинок: сколько из
 	// скольких. Первый проход длится десятки минут, и без счета он неотличим
@@ -66,6 +72,13 @@ type indexer struct {
 	// горутина прохода, а проходы не идут одновременно (extracting).
 	retryTimeouts time.Duration
 	timedOut      map[string]time.Time
+	// unrecognized — файлы, что распознавание не прочитало, по пути (под mu).
+	//
+	// ponytail: только в памяти окна. Упавший файл не распознается снова, пока
+	// не изменится, и после перезапуска окна из панели пропадает. Потолок:
+	// человек, перезапустивший окно, не узнает о старом сбое. Путь: класть
+	// ошибку в extractcache рядом с пустым текстом.
+	unrecognized map[string]skippedRow
 }
 
 // rebuildEvery — как часто окно догоняет диск, тот же срок, что у MCP: сборка
@@ -75,7 +88,7 @@ const rebuildEvery = 10 * time.Minute
 
 func newIndexer(files *filesearch.Service, src *localfiles.Source) *indexer {
 	return &indexer{files: files, src: src, pending: src, ctx: context.Background(), every: rebuildEvery,
-		retryTimeouts: time.Hour, timedOut: map[string]time.Time{}}
+		retryTimeouts: time.Hour, timedOut: map[string]time.Time{}, unrecognized: map[string]skippedRow{}}
 }
 
 // start runs the first build with the source the window started with.
@@ -218,9 +231,27 @@ func (x *indexer) finish(ctx context.Context, gen int, src *localfiles.Source, s
 func (x *indexer) Status() indexStatus {
 	x.mu.Lock()
 	st := x.status
+	for _, k := range slices.Sorted(maps.Keys(x.unrecognized)) {
+		st.Unrecognized = append(st.Unrecognized, x.unrecognized[k])
+	}
 	x.mu.Unlock()
 	st.Recognizing = x.progress.Load()
 	return st
+}
+
+// noteRecognized records how recognizing path went: nil — прочитан, из
+// списка уходит; таймаут и сбой — каждый со своей причиной.
+func (x *indexer) noteRecognized(path string, err error) {
+	x.mu.Lock()
+	defer x.mu.Unlock()
+	switch {
+	case err == nil:
+		delete(x.unrecognized, path)
+	case errors.Is(err, extractcache.ErrTimeout):
+		x.unrecognized[path] = skippedRow{Path: path, Reason: recognizeTimedOut, Detail: err.Error()}
+	default:
+		x.unrecognized[path] = skippedRow{Path: path, Reason: recognizeFailed, Detail: err.Error()}
+	}
 }
 
 func (x *indexer) superseded(gen int) bool {

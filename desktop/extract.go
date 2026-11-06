@@ -136,6 +136,7 @@ func (x *indexer) extractOne(ctx context.Context, src *localfiles.Source, d doma
 	case ctx.Err() != nil:
 		return false, ctx.Err()
 	case errors.Is(err, extractcache.ErrTimeout):
+		x.noteRecognized(d.Path(), err)
 		log.Printf("files: не успел распознать %s: %v; повтор не раньше чем через %s", d.Name(), err, x.retryTimeouts)
 		x.timedOut[timeoutKey(d)] = time.Now()
 		return false, nil
@@ -143,6 +144,7 @@ func (x *indexer) extractOne(ctx context.Context, src *localfiles.Source, d doma
 		log.Printf("files: не распознан %s: %v", d.Name(), err)
 		text = ""
 	}
+	x.noteRecognized(d.Path(), err)
 	// Ключ — от открытого файла: это та версия, которую прочел помощник.
 	return true, x.ext.cache.Put(d.Path(), info.Size(), info.ModTime(), text)
 }

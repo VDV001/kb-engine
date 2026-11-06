@@ -41,6 +41,9 @@ type sourceRow struct {
 	// страницу не уходит никогда.
 	HasToken bool   `json:"hasToken,omitempty"`
 	Note     string `json:"note,omitempty"`
+	// Detail — исходная ошибка сервера под Note: панель «Проблемы» показывает
+	// ее в подробностях.
+	Detail string `json:"detail,omitempty"`
 }
 
 // sourcesView is what the sources screen shows and sends back.

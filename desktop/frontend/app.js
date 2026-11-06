@@ -203,21 +203,26 @@ function countUp(el, to) {
     requestAnimationFrame(tick);
   });
 }
-// files — непрочитанные файлы из статуса окна (IndexStatus); undefined —
-// источник их не знает (HTTP-ответ поиска), остается прежний список.
-function setIndexed(n, skipped, rec, files) {
-  if (files !== undefined) state.skippedFiles = files || [];
+// skipped — сколько файлов не прочитано: в браузере (без окна) это весь счет
+// проблем, в окне счет берется из Problems — там и серверы, и каталог.
+function setIndexed(n, skipped, rec) {
+  state.indexed = { n, skipped, rec };
   const el = $("#indexed");
   el.textContent = `${n.toLocaleString("ru-RU")} файлов` +
     (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
-  // «Не прочитано» — кнопка «подробнее»: какие файлы и почему (панель справа).
-  if (skipped) {
+  // «N проблем» — кнопка «подробнее»: что не так у источников, почему и что
+  // сделать (панель справа, #456).
+  const total = state.problems ? state.problems.total : skipped;
+  // Уровень — цвет точки статуса при наведении (CSS): красная — ошибка,
+  // оранжевая — предупреждение, синяя — уведомление.
+  el.parentElement.dataset.level = state.problems ? state.problems.level || "" : skipped ? "error" : "";
+  if (total) {
     const b = document.createElement("button");
-    b.className = "skipped-link";
-    b.textContent = `${skipped} не прочитано`;
-    b.dataset.tip = "Не прочитано";
-    b.dataset.tipB = "Эти файлы не попали в поиск даже по имени. Нажмите — какие и почему";
-    b.onclick = () => openSettings("skipped");
+    b.className = "problems-link";
+    b.textContent = `${fmt(total)} ${plural(total, "проблема", "проблемы", "проблем")}`;
+    b.dataset.tip = "Проблемы";
+    b.dataset.tipB = "Что не так у источников: серверы, каталог, папки и файлы. Нажмите — почему и что сделать";
+    b.onclick = () => openSettings("problems");
     el.append(" · ", b);
   }
   el.parentElement.dataset.tip = "Индекс файлов";
@@ -234,7 +239,10 @@ async function pollIndex() {
   if (native() && !document.hidden && !settingsOpen()) {
     const st = await native().IndexStatus().catch(() => null);
     if (st && st.error) $("#indexed").textContent = `пересборка не удалась: ${st.error}`;
-    else if (st && !st.building) setIndexed(st.indexed, st.skipped, st.recognizing, st.skippedFiles);
+    else if (st && !st.building) {
+      await refreshProblems();
+      setIndexed(st.indexed, st.skipped, st.recognizing);
+    }
     if (st && (st.building || st.recognizing)) next = 3000;
   }
   setTimeout(pollIndex, next);
@@ -719,7 +727,7 @@ function load(v) {
 const VIEWS = {
   sources: { title: "Источники", cmd: "config sources" },
   prefs: { title: "Настройки окна", cmd: "config window" },
-  skipped: { title: "Не прочитано", cmd: "index --skipped" },
+  problems: { title: "Проблемы", cmd: "problems" },
 };
 async function openSettings(view = "sources") {
   hideTip(); // ⌘, перехватывается раньше общего keydown подсказки
@@ -730,9 +738,10 @@ async function openSettings(view = "sources") {
   panel.classList.add("open");
   panel.setAttribute("aria-hidden", "false");
   showError("");
-  if (view === "skipped") {
-    renderSkipped();
+  if (view === "problems") {
+    renderProblems(); // сразу прежний список, следом свежий: серверы отвечают до 3 с
     $("#close-settings").focus();
+    refreshProblems(true).then(() => panel.dataset.view === "problems" && renderProblems());
     return;
   }
   if (view === "prefs") {
@@ -1183,7 +1192,8 @@ $("#save-settings").onclick = async () => {
       if (!st.building) {
         if (st.error) showError("Индекс не собрался: " + st.error);
         else hideIndexingScreen(); // если первая сборка падала, ее экран больше не нужен
-        setIndexed(st.indexed, st.skipped, undefined, st.skippedFiles);
+        await refreshProblems(true);
+        setIndexed(st.indexed, st.skipped);
         break;
       }
       await sleep(400);
@@ -1462,32 +1472,62 @@ $("#module-list").addEventListener("click", (e) => {
 });
 if (native()) native().Modules().then((m) => { state.modules = m || []; refreshTabs(); }).catch(() => {});
 
-// --- Не прочитано (кнопка «подробнее» в строке статуса) ------------------------
-state.skippedFiles = [];
+// --- Проблемы (кнопка «подробнее» в строке статуса, #456) --------------------
+state.problems = null; // null — окно еще не ответило (или это браузер без окна)
+let problemsAt = 0;
+// refreshProblems asks the window at most every 30 s: Problems опрашивает
+// серверы по сети, а строку статуса опрос индекса обновляет каждые 3 с, пока
+// идет распознавание. force — открытие панели и сохранение источников.
+async function refreshProblems(force) {
+  if (!native() || !native().Problems || (!force && Date.now() - problemsAt < 30000)) return;
+  problemsAt = Date.now();
+  try { state.problems = await native().Problems(); } catch { /* прежний список остается */ }
+  if (state.indexed) setIndexed(state.indexed.n, state.indexed.skipped, state.indexed.rec);
+}
 // midTrim обрезает длинное имя посередине: видны начало и расширение, полное
 // имя — в подсказке.
 const midTrim = (s, max = 44) => (s.length <= max ? s : s.slice(0, Math.ceil((max - 1) * 0.6)) + "…" + s.slice(-Math.floor((max - 1) * 0.4)));
-function renderSkipped() {
-  const files = state.skippedFiles || [];
-  const groups = new Map();
-  for (const f of files) groups.set(f.reason, [...(groups.get(f.reason) || []), f]);
-  const total = $("#indexed").textContent.match(/^[\d\s\u00a0]+/)?.[0]?.trim() || "";
-  $("#skipped-view").innerHTML = `<p class="muted">Этих файлов нет в поиске, даже по имени${total ? ` · ${files.length} из ${esc(total)}` : ""}.</p>` +
-    (files.length ? "" : `<p class="muted">Список появится после следующей сборки индекса.</p>`) +
-    [...groups].map(([reason, list]) => {
-      const [what, todo] = reason.split(" — ");
-      return `<section class="skip-group"><h3>${esc(what)} · ${list.length}</h3>${todo ? `<p class="muted">${esc(todo)}</p>` : ""}
-        <ul class="skip-list">${list.map((f) => {
-          const name = f.path.split("/").pop(), dir = f.path.slice(0, -name.length - 1);
-          return `<li><details><summary><span class="skip-name" data-tip="${esc(name)}" data-tip-b="${esc(tilde(f.path))}">${esc(midTrim(name))}</span>
+// renderProblems groups by source, then by reason: у шести одинаковых файлов
+// одна причина и один совет, а не шесть.
+function renderProblems() {
+  const view = $("#problems-view");
+  if (!state.problems) {
+    view.innerHTML = `<p class="muted">${native() ? "Проверяю источники…" : "Проблемы источников видны в окне приложения."}</p>`;
+    return;
+  }
+  const { total, problems } = state.problems;
+  if (!total) {
+    view.innerHTML = `<p class="muted">Проблем нет: все включенные источники читаются.</p>`;
+    return;
+  }
+  const bySource = new Map();
+  for (const p of problems) {
+    const key = p.source + "\0" + p.name;
+    if (!bySource.has(key)) bySource.set(key, { name: p.name, reasons: new Map() });
+    const reasons = bySource.get(key).reasons;
+    reasons.set(p.what, [...(reasons.get(p.what) || []), p]);
+  }
+  const files = problems.filter((p) => p.path).length;
+  const unnamed = total - problems.length; // файлы сверх первых 100
+  view.innerHTML = `<p class="muted">${fmt(total)} ${plural(total, "проблема", "проблемы", "проблем")}${unnamed > 0 ? ` · названо ${fmt(files)} файлов из ${fmt(files + unnamed)}` : ""}${files ? ". Нажмите файл — исходная ошибка" : ""}.</p>` +
+    [...bySource.values()].map(({ name, reasons }) => `<section class="problem-source"><h3 class="problem-source-name">${esc(name)}</h3>` +
+      [...reasons].map(([what, list]) => {
+        const todo = list[0].todo;
+        const head = `<h4><span class="lvl" data-level="${esc(list[0].level)}"></span>${esc(what.charAt(0).toUpperCase() + what.slice(1))}${list[0].path ? ` · ${list.length}` : ""}</h4>${todo ? `<p class="problem-todo">Что сделать: ${esc(todo)}</p>` : ""}`;
+        // Беда источника целиком (сервер, каталог, папка, индекс): под советом
+        // сразу исходная ошибка, без списка.
+        if (!list[0].path) return `<div class="skip-group">${head}${list.map((p) => (p.detail ? `<code class="problem-detail">${esc(p.detail)}</code>` : "")).join("")}</div>`;
+        return `<div class="skip-group">${head}<ul class="skip-list">${list.map((f) => {
+          const fname = f.path.split("/").pop(), dir = f.path.slice(0, -fname.length - 1);
+          return `<li><details><summary><span class="skip-name" data-tip="${esc(fname)}" data-tip-b="${esc(tilde(f.path))}">${esc(midTrim(fname))}</span>
             <span class="skip-dir">${esc(tilde(dir))}</span>
             <button class="btn" data-reveal="${esc(f.path)}" ${native() ? "" : "disabled"}>В Finder</button></summary>
             <code class="skip-detail">${esc(f.detail)}</code></details></li>`;
-        }).join("")}</ul></section>`;
-    }).join("");
+        }).join("")}</ul></div>`;
+      }).join("") + `</section>`).join("");
   dropStaleTip();
 }
-$("#skipped-view").addEventListener("click", (e) => {
+$("#problems-view").addEventListener("click", (e) => {
   const b = e.target.closest("[data-reveal]");
   if (!b) return;
   e.preventDefault(); // кнопка внутри <summary> не раскрывает строку
