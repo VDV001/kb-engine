@@ -8,7 +8,8 @@
 
 export type Theme = 'light' | 'dark'
 
-const storageKey = 'kbengine-theme'
+// Окно DVK пишет сюда выбор своей кнопки, когда витрина живет в его рамке.
+export const storageKey = 'kbengine-theme'
 
 /** resolveTheme picks the theme to open in: a stored choice wins, otherwise
  * the system preference. A stored value this code did not write is ignored —
@@ -31,12 +32,38 @@ export function initialTheme(): Theme {
   )
 }
 
-/** applyTheme makes the choice visible and remembers it. */
+/** applyTheme makes the choice visible. It does not remember it: opening the
+ * page is not a choice, and storing the system theme here once pinned it —
+ * the page stopped following the system and the DVK window. */
 export function applyTheme(theme: Theme): void {
   document.documentElement.classList.toggle('dark', theme === 'dark')
   // color-scheme so the browser's own furniture — scrollbars, form controls,
   // the canvas behind an overscroll — matches the page instead of staying
   // light under a dark dashboard.
   document.documentElement.style.colorScheme = theme
+}
+
+/** saveTheme remembers a deliberate choice — a click on the toggle. */
+export function saveTheme(theme: Theme): void {
   localStorage.setItem(storageKey, theme)
+}
+
+/** watchTheme calls onChange when the theme to show changes from outside:
+ * another page on the origin wrote the choice (the DVK window around this
+ * page, or another tab), or the system switched while nothing is stored.
+ * Returns the unsubscribe. */
+export function watchTheme(onChange: (theme: Theme) => void): () => void {
+  const onStorage = (e: StorageEvent) => {
+    if (e.key === storageKey) onChange(initialTheme())
+  }
+  const mq = window.matchMedia('(prefers-color-scheme: dark)')
+  const onSystem = () => {
+    if (localStorage.getItem(storageKey) === null) onChange(initialTheme())
+  }
+  window.addEventListener('storage', onStorage)
+  mq.addEventListener('change', onSystem)
+  return () => {
+    window.removeEventListener('storage', onStorage)
+    mq.removeEventListener('change', onSystem)
+  }
 }

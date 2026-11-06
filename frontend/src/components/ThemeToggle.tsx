@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Icon } from './Icon'
-import { applyTheme, initialTheme, nextTheme, type Theme } from '../theme'
+import { applyTheme, initialTheme, nextTheme, saveTheme, watchTheme, type Theme } from '../theme'
 
 /**
  * ThemeToggle switches the palette and remembers the choice.
@@ -16,10 +16,18 @@ export function ThemeToggle() {
     applyTheme(theme)
   }, [theme])
 
+  // Выбор, сделанный снаружи (кнопка окна DVK, другая вкладка), и смена
+  // системной темы, пока выбора нет.
+  useEffect(() => watchTheme(setTheme), [])
+
   return (
     <button
       type="button"
-      onClick={() => setTheme(nextTheme)}
+      onClick={() => {
+        const next = nextTheme(theme)
+        saveTheme(next)
+        setTheme(next)
+      }}
       // The label says what the button does, not what the state is — a moon
       // icon alone reads as "you are in dark mode" to about half of people.
       aria-label={theme === 'dark' ? 'Включить светлую тему' : 'Включить тёмную тему'}
