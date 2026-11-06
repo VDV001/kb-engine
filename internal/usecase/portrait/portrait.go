@@ -89,6 +89,15 @@ func (s *Service) Add(ctx context.Context, section domain.FactSection, text stri
 	return f, s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
 }
 
+// Propose puts a fact the model offered in the chat to «ждут одобрения».
+func (s *Service) Propose(ctx context.Context, section domain.FactSection, text string) (domain.Fact, error) {
+	f, err := domain.NewFact(s.newID(), section, text, sourceChat+s.now().Format("02.01"), domain.FactPending, s.now())
+	if err != nil {
+		return domain.Fact{}, err
+	}
+	return f, s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Add(f) })
+}
+
 // Edit changes the fact text.
 func (s *Service) Edit(ctx context.Context, id, text string) error {
 	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Edit(id, text, sourceEdited) })
