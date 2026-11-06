@@ -9,15 +9,16 @@ import (
 )
 
 // Оформление окна сохраняется в config.json без переиндексации и видно
-// снимку; по умолчанию выключенных нет — все акценты спектра на месте.
-func TestSetAccentsOff_SavesWithoutReindex(t *testing.T) {
+// снимку; по умолчанию — твой выбор без выключенных, то есть все акценты.
+// «Все» и «Ничего» не стирают твой набор: к нему можно вернуться.
+func TestSetAccents_SavesWithoutReindex(t *testing.T) {
 	s, applied, _ := newSourcesSettings(t)
-	if got := s.AccentsOff(); len(got) != 0 {
-		t.Fatalf("AccentsOff() по умолчанию = %v", got)
+	if got := s.Accents(); got.Mode != desktopconfig.AccentsMine || len(got.Off) != 0 {
+		t.Fatalf("Accents() по умолчанию = %+v", got)
 	}
 	calls := applied.calls
-	off := []string{"pulse", "tip"}
-	if err := s.SetAccentsOff(off); err != nil {
+	next := desktopconfig.Accents{Mode: desktopconfig.AccentsAll, Off: []string{"pulse", "tip"}}
+	if err := s.SetAccents(next); err != nil {
 		t.Fatal(err)
 	}
 	if applied.calls != calls {
@@ -27,28 +28,22 @@ func TestSetAccentsOff_SavesWithoutReindex(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(cfg.AccentsOff, off) || !slices.Equal(s.AccentsOff(), off) {
-		t.Fatalf("в файле %v, AccentsOff() %v", cfg.AccentsOff, s.AccentsOff())
+	same := func(a desktopconfig.Accents) bool { return a.Mode == next.Mode && slices.Equal(a.Off, next.Off) }
+	if !same(cfg.Accents) || !same(s.Accents()) {
+		t.Fatalf("в файле %+v, Accents() %+v", cfg.Accents, s.Accents())
 	}
-	if !slices.Equal(s.snap.Load().cfg.AccentsOff, off) {
+	if !same(s.snap.Load().cfg.Accents) {
 		t.Error("снимок настроек не обновлен")
-	}
-	// Пустой список — снова все включены.
-	if err := s.SetAccentsOff(nil); err != nil {
-		t.Fatal(err)
-	}
-	if got := s.AccentsOff(); len(got) != 0 {
-		t.Fatalf("AccentsOff() после сброса = %v", got)
 	}
 }
 
-// Негодный id — отказ, файл прежний.
-func TestSetAccentsOff_Rejects(t *testing.T) {
+// Негодное оформление — отказ, файл прежний.
+func TestSetAccents_Rejects(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
-	if err := s.SetAccentsOff([]string{"pulse", "pulse"}); !errors.Is(err, desktopconfig.ErrAccent) {
+	if err := s.SetAccents(desktopconfig.Accents{Off: []string{"pulse", "pulse"}}); !errors.Is(err, desktopconfig.ErrAccent) {
 		t.Fatalf("err = %v, want ErrAccent", err)
 	}
-	if cfg, _ := desktopconfig.Read(s.path); cfg.AccentsOff != nil {
-		t.Errorf("записано %v", cfg.AccentsOff)
+	if cfg, _ := desktopconfig.Read(s.path); cfg.Accents.Mode != "" || cfg.Accents.Off != nil {
+		t.Errorf("записано %+v", cfg.Accents)
 	}
 }
