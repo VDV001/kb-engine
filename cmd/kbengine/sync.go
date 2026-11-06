@@ -251,13 +251,6 @@ func loadSyncInputs(from, ledgerPath string) (syncInputs, error) {
 	if err != nil {
 		return syncInputs{}, err
 	}
-	// В листе «Расходы» нет колонок для второй стороны обмена: синк записал бы
-	// строку без нее, а правка этой строки в Excel стерла бы ее из журнала.
-	for _, r := range recs {
-		if _, ok := r.Transaction().Received(); ok {
-			return syncInputs{}, fmt.Errorf("журнал с обменом валюты (%s) с книгой не синхронизируется: в листе «Расходы» нет второй стороны, и она потерялась бы", r.Transaction().ID())
-		}
-	}
 	led, err := financexlsx.Read(from, time.Now)
 	if err != nil {
 		return syncInputs{}, err
