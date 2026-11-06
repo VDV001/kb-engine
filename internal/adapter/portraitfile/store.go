@@ -4,13 +4,11 @@ package portraitfile
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/portraitjson"
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -21,24 +19,11 @@ const Name = "portrait.json"
 var ErrNoDir = errors.New("portrait folder is not set")
 
 // ErrCorrupt — файл портрета не читается: перезаписывать его пустым нельзя.
-var ErrCorrupt = errors.New("portrait file is corrupt")
+var ErrCorrupt = portraitjson.ErrCorrupt
 
 // Store reads and writes Dir/portrait.json.
 type Store struct {
 	Dir string
-}
-
-type fileFact struct {
-	ID      string    `json:"id"`
-	Section string    `json:"section"`
-	Text    string    `json:"text"`
-	Source  string    `json:"source,omitempty"`
-	Status  string    `json:"status"`
-	At      time.Time `json:"at"`
-}
-
-type file struct {
-	Facts []fileFact `json:"facts"`
 }
 
 func (s Store) path() (string, error) {
@@ -61,23 +46,7 @@ func (s Store) Load(_ context.Context) (domain.Portrait, error) {
 	if err != nil {
 		return domain.Portrait{}, err
 	}
-	var f file
-	if err := json.Unmarshal(raw, &f); err != nil {
-		return domain.Portrait{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
-	}
-	facts := make([]domain.Fact, 0, len(f.Facts))
-	for _, x := range f.Facts {
-		fact, err := domain.NewFact(x.ID, domain.FactSection(x.Section), x.Text, x.Source, domain.FactStatus(x.Status), x.At)
-		if err != nil {
-			return domain.Portrait{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
-		}
-		facts = append(facts, fact)
-	}
-	p, err := domain.NewPortrait(facts)
-	if err != nil {
-		return domain.Portrait{}, fmt.Errorf("%w: %w", ErrCorrupt, err)
-	}
-	return p, nil
+	return portraitjson.Decode(raw)
 }
 
 // Save writes the portrait: во временный файл рядом, затем переименование —
@@ -87,11 +56,7 @@ func (s Store) Save(_ context.Context, p domain.Portrait) error {
 	if err != nil {
 		return err
 	}
-	var f file
-	for _, x := range p.Facts() {
-		f.Facts = append(f.Facts, fileFact{x.ID(), string(x.Section()), x.Text(), x.Source(), string(x.Status()), x.At()})
-	}
-	raw, err := json.MarshalIndent(f, "", "  ")
+	raw, err := portraitjson.Encode(p)
 	if err != nil {
 		return err
 	}

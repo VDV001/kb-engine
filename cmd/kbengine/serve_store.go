@@ -41,6 +41,8 @@ type catalogSource struct {
 	// финансов задают флаги --ledger/--from, как раньше.
 	fin       httpapi.Financier
 	finWriter httpapi.FinanceWriter
+	// portrait — «Что DVK помнит обо мне» (#479) рядом с базой; nil — нет.
+	portrait httpapi.PortraitStore
 }
 
 // options are the server options the source brings: словарь синонимов и, у
@@ -52,6 +54,9 @@ func (s catalogSource) options() []httpapi.Option {
 	}
 	if s.finWriter != nil {
 		opts = append(opts, httpapi.WithFinanceWriter(s.finWriter))
+	}
+	if s.portrait != nil {
+		opts = append(opts, httpapi.WithPortrait(s.portrait))
 	}
 	return opts
 }
@@ -159,7 +164,20 @@ func storeCatalogSource(ctx context.Context, store blob.Store, key string, stder
 	sf := storeFinances{ctx: ctx, store: store, journalKey: path.Join(finDir, "journal.jsonl"),
 		accountsKey: path.Join(finDir, financeaccounts.FileName), vocabKey: path.Join(finDir, financevocab.FileName), now: time.Now}
 	src.fin, src.finWriter = sf, sf
+	src.portrait = storePortrait{store: store, key: path.Join(path.Dir(kbRoot), "portrait.json")}
 	return src, nil
+}
+
+// storePortrait is the person's portrait object: <человек>/portrait.json.
+type storePortrait struct {
+	store blob.Store
+	key   string
+}
+
+func (p storePortrait) Get(ctx context.Context) (blob.Object, error) { return p.store.Get(ctx, p.key) }
+
+func (p storePortrait) Put(ctx context.Context, data []byte, ifMatch string) (string, error) {
+	return p.store.Put(ctx, p.key, data, ifMatch)
 }
 
 // storeSynonyms loads the dictionary from the store. Как synonymsFor с диска:

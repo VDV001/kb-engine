@@ -317,7 +317,12 @@
         <div class="acc-b">
           <p class="muted">Портрет: что DVK знает о Вас и кладет в начало каждого чата. Новое из чатов сначала ждет Вашего одобрения.</p>
           <p class="label-sm">Где лежит</p>
-          <div class="mem-path"><code id="mem-dir"></code><button type="button" class="btn" id="mem-pick">Выбрать папку…</button></div>
+          <div class="choices" id="mem-where" role="group" aria-label="Где лежит портрет">
+            <button type="button" class="btn" data-mem-where="local">На этом Маке, в папке</button>
+            <button type="button" class="btn" data-mem-where="server">На kb-сервере</button>
+          </div>
+          <div class="mem-path" id="mem-local"><code id="mem-dir"></code><button type="button" class="btn" id="mem-pick">Выбрать папку…</button></div>
+          <div class="choices" id="mem-servers" role="group" aria-label="kb-сервер портрета" hidden></div>
           <p class="muted" id="mem-dir-note"></p>
           <label class="mem-switch"><input type="checkbox" id="mem-suggest"> Предлагать запомнить прямо в чате</label>
           <label class="mem-switch"><input type="checkbox" id="mem-extract"> Разбирать каждый ответ: есть ли новое обо мне</label>

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -163,30 +164,9 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 	if len(params) > 0 {
 		target += "?" + params.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	resp, err := c.send(ctx, http.MethodGet, target, path, nil, nil)
 	if err != nil {
-		return fmt.Errorf("%w: %w", ErrUnreachable, err)
-	}
-	// Токен в X-KB-Token, а не в Authorization: Serverless Container
-	// вырезает Authorization и проверяет Bearer как свой IAM-токен. Сервер
-	// понимает оба заголовка.
-	if c.Token != "" {
-		req.Header.Set(TokenHeader, c.Token)
-	}
-	hc := &http.Client{}
-	if c.HTTP != nil {
-		copied := *c.HTTP // транспорт и таймаут вызывающего, но свое правило редиректов
-		hc = &copied
-	}
-	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect }
-	resp, err := hc.Do(req)
-	if errors.Is(err, ErrRedirect) {
-		return fmt.Errorf("%w: %s", ErrRedirect, path)
-	}
-	if err != nil {
-		// Сеть, таймаут, DNS и недоверенный сертификат — для человека одно:
-		// связи нет. Подробность остается в цепочке ошибки.
-		return fmt.Errorf("%w: %w", ErrUnreachable, err)
+		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if err := statusErr(path, resp.StatusCode); err != nil {
@@ -205,6 +185,42 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 		return fmt.Errorf("%w: %s: %w", ErrNotKB, path, err)
 	}
 	return nil
+}
+
+// send makes one request with the token and without redirects: Go пересылает
+// заголовок X-KB-Token на любой хост редиректа, даже чужой.
+func (c Client) send(ctx context.Context, method, target, path string, body []byte, header http.Header) (*http.Response, error) {
+	var rd io.Reader
+	if body != nil {
+		rd = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, rd)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	maps.Copy(req.Header, header)
+	// Токен в X-KB-Token, а не в Authorization: Serverless Container
+	// вырезает Authorization и проверяет Bearer как свой IAM-токен. Сервер
+	// понимает оба заголовка.
+	if c.Token != "" {
+		req.Header.Set(TokenHeader, c.Token)
+	}
+	hc := &http.Client{}
+	if c.HTTP != nil {
+		copied := *c.HTTP // транспорт и таймаут вызывающего, но свое правило редиректов
+		hc = &copied
+	}
+	hc.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect }
+	resp, err := hc.Do(req)
+	if errors.Is(err, ErrRedirect) {
+		return nil, fmt.Errorf("%w: %s", ErrRedirect, path)
+	}
+	if err != nil {
+		// Сеть, таймаут, DNS и недоверенный сертификат — для человека одно:
+		// связи нет. Подробность остается в цепочке ошибки.
+		return nil, fmt.Errorf("%w: %w", ErrUnreachable, err)
+	}
+	return resp, nil
 }
 
 // statusErr maps a response status to the client's errors; nil for 200.

@@ -171,6 +171,7 @@ type options struct {
 	files     FileSearcher
 	writer    CatalogWriter
 	finWriter FinanceWriter
+	portrait  PortraitStore
 }
 
 // WithSynonyms подключает слой перевода терминов.
@@ -245,6 +246,10 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	if o.finWriter != nil {
 		mux.Handle("POST /api/finances/transactions", sameSiteJSON(handleAddTransaction(o.finWriter)))
 		mux.Handle("PUT /api/finances/accounts/{name}/balance", sameSiteJSON(handleConfirmBalance(o.finWriter)))
+	}
+	if o.portrait != nil {
+		mux.HandleFunc("GET /api/portrait", handleGetPortrait(o.portrait))
+		mux.Handle("PUT /api/portrait", sameSiteJSON(handlePutPortrait(o.portrait)))
 	}
 	if o.files != nil {
 		mux.Handle("GET /api/files/search", localHostOnly(handleFilesSearch(o.files)))
