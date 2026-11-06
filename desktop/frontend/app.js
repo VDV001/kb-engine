@@ -1754,6 +1754,7 @@ async function openChatView() {
     chatState.opened = true;
     await loadChatSettings();
   }
+  await loadPortrait(); // размер портрета — для предупреждения в начале нового чата
   await renderChatList();
   renderChat();
   renderChatSources();
@@ -1963,7 +1964,12 @@ function renderChat() {
   const log = $("#chat-log");
   $("#chat-title").textContent = (c && c.title) || "Новый чат";
   if (!c) {
-    log.innerHTML = `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
+    // Портрет не помещается — сказать в начале нового чата, до вопроса
+    // (прототип 06.11, вариант A): иначе первый ответ уйдет без портрета.
+    const p = memState.p;
+    if (!chatState.busy && memOn(p) && p.size > p.budget && !chatState.portraitMode[""] && !(chatState.over && chatState.over.chat === ""))
+      chatState.over = { chat: "", size: p.size, budget: p.budget, props: null, start: true };
+    log.innerHTML = memInChat() + `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
   } else {
     log.innerHTML = c.messages.map((m) => m.role === "user"
       ? `<div class="msg user">${esc(m.text)}</div>`
@@ -2022,6 +2028,7 @@ async function askChat() {
     const mode = chatState.portraitMode[chatState.id] || "";
     const c = await native().Ask({ id: chatState.id, question: q, refs: sent, sources: chatState.only || [], portrait: mode });
     if (mode) chatState.portraitMode[c.id] = mode; // новый чат получил id
+    if (!chatState.id) delete chatState.portraitMode[""]; // выбор до вопроса — только для этого чата
     const pn = c.portrait;
     chatState.over = pn && pn.over && !pn.used ? { chat: c.id, size: pn.size, budget: pn.budget, props: null } : null;
     memAfterAnswer(c.id);
@@ -2054,6 +2061,8 @@ function newChat() {
   if (chatState.busy) return;
   chatState.id = "";
   chatState.chat = null;
+  chatState.over = null;
+  loadPortrait().then(() => { if (!chatState.chat && !chatState.busy) renderChat(); });
   chatState.attached = [];
   chatState.only = null;
   renderAttached();
@@ -2651,7 +2660,7 @@ function memInChat() {
       : `<button type="button" class="btn primary" data-sugg-yes="${esc(f.id)}">Да</button><button type="button" class="btn" data-sugg-no="${esc(f.id)}">Нет</button><button type="button" class="btn" data-sugg-edit="${esc(f.id)}">Изменить</button>`}</div></div>`).join("");
   const o = chatState.over;
   if (o && o.chat === chatState.id) {
-    h += `<div class="mem-over"><b>Портрет ${o.size.toLocaleString("ru-RU")} знаков, а в начало чата у этой модели влезает ${o.budget.toLocaleString("ru-RU")}. В этот ответ он не пошел.</b>`;
+    h += `<div class="mem-over"><b>Портрет ${o.size.toLocaleString("ru-RU")} знаков, а в начало чата у этой модели влезает ${o.budget.toLocaleString("ru-RU")}. ${o.start ? "Решите до вопроса — иначе ответ пойдет без портрета." : "В этот ответ он не пошел."}</b>`;
     if (o.props) {
       const text = o.props.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.reduce((a, x) => a + x.text.length, 0);
       h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ~${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
