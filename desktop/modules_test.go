@@ -13,7 +13,7 @@ import (
 // вкладка, а не источник.
 func TestSetModules_SavesWithoutReindex(t *testing.T) {
 	s, applied, _ := newSourcesSettings(t)
-	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: false}}) {
+	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleChat, Enabled: false}, {ID: desktopconfig.ModuleFinances, Enabled: false}}) {
 		t.Fatalf("Modules() по умолчанию = %+v", got)
 	}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
@@ -29,7 +29,7 @@ func TestSetModules_SavesWithoutReindex(t *testing.T) {
 	if !cfg.ModuleOn(desktopconfig.ModuleFinances) {
 		t.Errorf("в файле модули = %+v", cfg.Modules)
 	}
-	if !s.Modules()[0].Enabled {
+	if !s.Modules()[1].Enabled {
 		t.Error("Modules() не видит включенный модуль")
 	}
 }
@@ -38,7 +38,7 @@ func TestSetModules_SavesWithoutReindex(t *testing.T) {
 // сохранение; источники сохранение модулей не трогает, и наоборот.
 func TestSetModules_KeepsUnknownAndSources(t *testing.T) {
 	s, _, home := newSourcesSettings(t)
-	s.cfg.Modules = []desktopconfig.Module{{ID: "chat", Enabled: true}}
+	s.cfg.Modules = []desktopconfig.Module{{ID: "calendar", Enabled: true}}
 	sources := slices.Clone(s.cfg.Sources)
 	next := []desktopconfig.Source{{ID: "folder-9", Kind: desktopconfig.KindFolder, Path: filepath.Join(home, "notes"), Enabled: true}}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
@@ -48,7 +48,7 @@ func TestSetModules_KeepsUnknownAndSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cfg.ModuleOn("chat") || !cfg.ModuleOn(desktopconfig.ModuleFinances) {
+	if !cfg.ModuleOn("calendar") || !cfg.ModuleOn(desktopconfig.ModuleFinances) {
 		t.Errorf("модули = %+v", cfg.Modules)
 	}
 	if !slices.Equal(cfg.Sources, sources) {
@@ -70,7 +70,7 @@ func TestSetModules_Rejects(t *testing.T) {
 		list []desktopconfig.Module
 		want error
 	}{
-		{"неизвестный", []desktopconfig.Module{{ID: "chat", Enabled: true}}, desktopconfig.ErrUnknownModule},
+		{"неизвестный", []desktopconfig.Module{{ID: "calendar", Enabled: true}}, desktopconfig.ErrUnknownModule},
 		{"повтор", []desktopconfig.Module{{ID: desktopconfig.ModuleFinances}, {ID: desktopconfig.ModuleFinances, Enabled: true}}, desktopconfig.ErrModuleID},
 	}
 	for _, tt := range tests {
@@ -90,11 +90,11 @@ func TestSetModules_Rejects(t *testing.T) {
 // новой сборки, а модуль, которого окно не прислало, остается как был.
 func TestSetModules_KeepsOrderAndOmitted(t *testing.T) {
 	s, _, _ := newSourcesSettings(t)
-	s.cfg.Modules = []desktopconfig.Module{{ID: "chat", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: false}}
+	s.cfg.Modules = []desktopconfig.Module{{ID: "calendar", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: false}}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
 		t.Fatal(err)
 	}
-	want := []desktopconfig.Module{{ID: "chat", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: true}}
+	want := []desktopconfig.Module{{ID: "calendar", Enabled: true}, {ID: desktopconfig.ModuleFinances, Enabled: true}}
 	if cfg, _ := desktopconfig.Read(s.path); !slices.Equal(cfg.Modules, want) {
 		t.Fatalf("modules = %+v, want %+v", cfg.Modules, want)
 	}
