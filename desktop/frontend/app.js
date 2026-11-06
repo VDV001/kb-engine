@@ -1863,7 +1863,8 @@ async function toggleMic() {
   if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
   if (dict.on) { native().StopDictation(); return; }
   dict.base = $("#chat-q").value.replace(/\s+$/, "");
-  try { await native().StartDictation(); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
+  // 0 — без паузы: Wails требует ровно столько аргументов, сколько у метода Go (ревью #465).
+  try { await native().StartDictation(0); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
 }
 $("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
 if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
@@ -1892,10 +1893,11 @@ function setVoice(on) {
   $("#chat-voice").setAttribute("aria-pressed", String(on));
   $("#chat-voice").closest(".chat-box").classList.toggle("voice-on", on);
 }
-async function listenVoice() {
+async function listenVoice(keepDraft) {
   if (!voice.on || chatState.busy) return;
-  dict.base = "";
-  $("#chat-q").value = "";
+  // Первый запуск сохраняет набранное — голос его дописывает; дальше поле чистое.
+  dict.base = keepDraft ? $("#chat-q").value.replace(/\s+$/, "") : "";
+  if (!keepDraft) $("#chat-q").value = "";
   fitChatQ();
   try { await native().StartDictation(VOICE_PAUSE); setMic(true); showChatNote("Разговор голосом: говорите — после паузы вопрос уйдет сам · Esc — стоп"); }
   catch (e) { showChatNote("Разговор голосом: " + e); stopVoice(); }
@@ -1912,7 +1914,7 @@ $("#chat-voice").addEventListener("click", () => {
   if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
   if (voice.on) return stopVoice();
   setVoice(true);
-  listenVoice();
+  listenVoice(true);
 });
 // Ответ готов — прочитать; дочитал — слушать снова.
 function speakAnswer(text) {
@@ -2055,7 +2057,10 @@ $("#chat-list").addEventListener("click", async (e) => {
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
-    chatState.only = chatState.chat.sources && chatState.chat.sources.length ? chatState.chat.sources : null;
+    // Источники чата — только те, что есть сейчас: удаленный или выключенный
+    // оставил бы чат искать нигде (ревью #465).
+    const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
+    chatState.only = alive.length ? alive : null;
     renderChatSources();
   } catch (err) { showChatNote("Чат не открылся: " + err); return; }
   paintChatList();

@@ -88,13 +88,16 @@ func (d *dictation) Start(pause float64) error {
 // read forwards the helper's lines and reports the end once, with the last text.
 func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer) {
 	sc := bufio.NewScanner(out)
-	final := false
+	var last *listenEvent // итог придерживается до освобождения помощника
 	for sc.Scan() {
 		var ev listenEvent
 		if json.Unmarshal(sc.Bytes(), &ev) != nil {
 			continue // строка не по протоколу — не текст
 		}
-		final = final || ev.Final
+		if ev.Final {
+			last = &ev
+			continue
+		}
 		d.emit(ev)
 	}
 	_ = cmd.Wait() // код выхода уже сказан строкой error
@@ -104,9 +107,12 @@ func (d *dictation) read(cmd *exec.Cmd, out io.Reader, limit *time.Timer) {
 		d.cmd, d.stdin = nil, nil
 	}
 	d.mu.Unlock()
-	if !final {
-		d.emit(listenEvent{Final: true})
+	// Итог — после освобождения: страница, что сразу слушает снова (разговор
+	// голосом), не упирается в «диктовка уже идет» (ревью #465).
+	if last == nil {
+		last = &listenEvent{Final: true}
 	}
+	d.emit(*last)
 }
 
 // Stop ends the dictation: помощник дослушивает и отдает итог; не успел за
