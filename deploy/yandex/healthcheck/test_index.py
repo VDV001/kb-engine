@@ -66,6 +66,25 @@ class HealthcheckTest(unittest.TestCase):
         self.assertFalse(out["notified"])
         self.assertNotIn("secret-token", repr(out))
 
+    def test_telegram_refusal_is_named(self):
+        _Handler.status = 503
+        orig = _Handler.do_POST
+
+        def refuse(h):
+            body = b'{"ok":false,"error_code":403,"description":"Forbidden: bot can\'t initiate conversation with a user"}'
+            h.send_response(403)
+            h.send_header("Content-Length", str(len(body)))
+            h.end_headers()
+            h.wfile.write(body)
+
+        _Handler.do_POST = refuse
+        try:
+            out = index.handler({}, None)
+        finally:
+            _Handler.do_POST = orig
+        self.assertEqual(out["telegram"], "Telegram 403 Forbidden: bot can't initiate conversation with a user")
+        self.assertNotIn("secret-token", repr(out))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,6 +10,7 @@ ponytail: состояния нет, поэтому сбой сообщаетс�
 сбое. Путь: хранить последний исход (объект в бакете) и писать только смену.
 """
 
+import json
 import os
 import time
 import urllib.error
@@ -39,23 +40,31 @@ def check(url):
 
 
 def notify(text):
-    """Sends text to the owner's chat; False on any failure. Текст ошибки не
-    возвращается: в нем бывает адрес с токеном бота."""
+    """Sends text to the owner's chat: ("", True) или (причина, False). Текст
+    исключения не возвращается — в нем бывает адрес с токеном бота; отказ
+    Telegram назван его полем description («chat not found» и т. п.), где
+    токена нет."""
     api = os.environ.get("TG_API", "https://api.telegram.org").rstrip("/")
     data = urllib.parse.urlencode({"chat_id": os.environ["TG_CHAT"], "text": text}).encode()
     try:
         url = f"{api}/bot{os.environ['TG_TOKEN']}/sendMessage"
         with urllib.request.urlopen(url, data=data, timeout=TIMEOUT) as r:
-            return r.status == 200
-    except Exception:
-        return False
+            return "", r.status == 200
+    except urllib.error.HTTPError as e:
+        try:
+            desc = json.loads(e.read().decode())["description"]
+        except Exception:
+            desc = ""
+        return f"Telegram {e.code} {desc}".strip(), False
+    except Exception as e:
+        return type(e).__name__, False
 
 
 def handler(event, context):
     url = os.environ["HEALTH_URL"]
     ok, why = check(url)
-    notified = False
+    notified, tg = False, ""
     if not ok:
-        notified = notify(f"kb-сервер не отвечает: {why}\n{url}")
-    print(f"healthcheck ok={ok} why={why} notified={notified}")
-    return {"ok": ok, "why": why, "notified": notified}
+        tg, notified = notify(f"kb-сервер не отвечает: {why}\n{url}")
+    print(f"healthcheck ok={ok} why={why} notified={notified} {tg}".rstrip())
+    return {"ok": ok, "why": why, "notified": notified, "telegram": tg}
