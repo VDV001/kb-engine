@@ -203,6 +203,7 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Unlock()
 	_ = g.settings.tokens.Delete(refreshAccount(id))
 	_ = g.settings.tokens.Delete(clientAccount(id))
+	_ = g.settings.tokens.Delete(speechKeyAccount(id))
 	return nil
 }
 

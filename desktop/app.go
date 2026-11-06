@@ -137,7 +137,11 @@ func (a *App) StartDictation(pause float64) error {
 	if a.listen == nil {
 		return errors.New("диктовка работает только в окне приложения")
 	}
-	return a.listen.Start(pause)
+	tr, err := a.settings.listenTranscriber()
+	if err != nil {
+		return err
+	}
+	return a.listen.StartWith(pause, tr)
 }
 
 // StopDictation ends listening; итог приходит событием dictation с final.
@@ -181,6 +185,11 @@ func (a *App) ConnectGoogle(clientID, secret string) (connRow, error) {
 		return connRow{}, errors.New("подключение Google — в окне приложения")
 	}
 	return a.google.Connect(clientID, secret)
+}
+
+// AddSpeechConnection saves a speech recognition server (whisper и т. п.).
+func (a *App) AddSpeechConnection(name, url, model, key string) (connRow, error) {
+	return a.settings.AddSpeech(name, url, model, key)
 }
 
 // SetConnectionEnabled turns a connection of the window on or off.
