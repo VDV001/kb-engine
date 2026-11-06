@@ -192,6 +192,11 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
 	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's when --from is given, otherwise roubles)")
 	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
+	// Обмен валюты (#432): вторая сторона перевода себе. Курс не вводится —
+	// он считается из двух сумм записи.
+	received := fs.String("received", "", "currency exchange: how much arrived, e.g. 100")
+	receivedCurrency := fs.String("received-currency", "", "currency of --received (default: the receiving account's when --from is given)")
+	receivedAccount := fs.String("received-account", "", "currency exchange: which account the money arrived on")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -201,6 +206,10 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	}
 	if *amount == "" {
 		fmt.Fprintln(stderr, "fin add: --amount is required")
+		return 2
+	}
+	if (*received == "") != (*receivedAccount == "") {
+		fmt.Fprintln(stderr, "fin add: an exchange needs both --received and --received-account")
 		return 2
 	}
 
@@ -229,6 +238,25 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "fin add: %v\n", err)
 		return 1
 	}
+	var exchange *finance.ReceivedAdd
+	if *received != "" {
+		got, err := domain.ParseMoney(*received)
+		if err != nil {
+			fmt.Fprintf(stderr, "fin add: --received: %v\n", err)
+			return 1
+		}
+		cur, err := currencyFlag(*receivedCurrency)
+		if err != nil {
+			fmt.Fprintf(stderr, "fin add: --received-currency: %v\n", err)
+			return 1
+		}
+		exchange = &finance.ReceivedAdd{Amount: got, Currency: cur, Account: *receivedAccount}
+		// Обмен — перевод себе, а не трата: без названной категории он ею и
+		// записывается. Названная другая категория уйдет в домен и получит отказ.
+		if *category == "" && *sub == "" {
+			*category, *sub = "Прочее", "Перевод себе"
+		}
+	}
 
 	rec, err := appendChecked(*ledgerPath, finance.AddParams{
 		Kind:        *kind,
@@ -242,6 +270,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Account:     *account,
 		Currency:    named,
 		Accounts:    accounts,
+		Received:    exchange,
 	}, *force, func(c finance.Correction) {
 		// Подстановка называется вслух: человек набрал одно, записано другое,
 		// и узнать об этом из отчёта через месяц — то же самое молчание.
@@ -259,6 +288,9 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	tx := rec.Transaction()
 	fmt.Fprintf(stdout, "fin add: %s  %s  %10s  %s %s\n",
 		tx.ID(), tx.Date().Format(time.DateOnly), amountText(tx), tx.Category(), tx.Description())
+	if line := exchangeText(tx); line != "" {
+		fmt.Fprintf(stdout, "fin add: %s\n", line)
+	}
 	return 0
 }
 

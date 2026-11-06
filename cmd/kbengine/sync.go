@@ -396,6 +396,25 @@ func amountText(tx domain.Transaction) string {
 	return tx.Amount().String()
 }
 
+// exchangeText is the second side of an exchange as a person reads it —
+// «получено 100.00 USD на «Wise» · курс 90.00», — and "" for any other record.
+// Курс только когда ровно одна сторона в валюте книги (domain.ExchangeRate).
+func exchangeText(tx domain.Transaction) string {
+	r, ok := tx.Received()
+	if !ok {
+		return ""
+	}
+	got := r.Amount().String()
+	if c := r.Currency(); !c.IsBase() {
+		got += " " + c.Code()
+	}
+	out := fmt.Sprintf("получено %s на «%s»", got, r.Account())
+	if rate, ok := tx.ExchangeRate(); ok {
+		out += " · курс " + finance.RateText(rate)
+	}
+	return out
+}
+
 func describeTx(tx domain.Transaction) string {
 	parts := []string{tx.Date().Format(time.DateOnly), amountText(tx)}
 	if c := tx.Category(); c != "" {
