@@ -915,4 +915,58 @@ export const api = {
       sources: sources.sources ?? [],
     }
   },
+
+  /**
+   * Записать операцию — то же, что kbengine fin add (#435). Разбор суммы,
+   * даты и словаря мест делает сервер. Отказ — AddError с кодом: 409 значит
+   * «такая запись уже есть», повтор пишется только с force по явному
+   * действию человека.
+   */
+  async addTransaction(req: TransactionAddRequest): Promise<TransactionAdded> {
+    const res = await fetch(appURL('api/finances/transactions'), {
+      method: 'POST',
+      // X-DVK-App — запись от самой витрины: окно DVK пропускает через прокси только такую.
+      headers: { 'Content-Type': 'application/json', 'X-DVK-App': '1' },
+      body: JSON.stringify(req),
+    })
+    if (!res.ok) throw new AddError(res.status, (await res.text()).trim())
+    return res.json() as Promise<TransactionAdded>
+  },
+}
+
+/** Операция для записи: поля как у флагов fin add, суммы и даты строками. */
+export interface TransactionAddRequest {
+  kind: 'expense' | 'income'
+  date?: string
+  amount: string
+  category?: string
+  subcategory?: string
+  place?: string
+  description?: string
+  source?: string
+  account?: string
+  currency?: string
+  /** Пояс человека (IANA): в нем сервер считает «сегодня». */
+  tz?: string
+  force?: boolean
+}
+
+/** Записанная операция; corrections — написания, приведенные к уже принятым. */
+export interface TransactionAdded {
+  id: string
+  date: string
+  amount: string
+  corrections?: { field: string; typed: string; used: string }[]
+  warnings?: string[]
+}
+
+/** Отказ записи: код ответа и текст сервера как есть. */
+export class AddError extends Error {
+  readonly status: number
+  readonly text: string
+  constructor(status: number, text: string) {
+    super(`add transaction: ${status} ${text}`)
+    this.status = status
+    this.text = text
+  }
 }

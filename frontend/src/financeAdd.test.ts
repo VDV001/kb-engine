@@ -31,6 +31,8 @@ describe('toAddRequest', () => {
 describe('addFailure', () => {
   it.each([
     [409, 'repeat: такая запись уже есть', 'repeat', /уже есть/],
+    // Настоящий ответ сервера (fin add): без подсказки флага и id.
+    [409, 'repeat: такая запись уже есть: 2026-11-06 · 418.50 · Такси ·  (01M6R5KB8CQ1KXDQBVNP5ES3S2) — повторить осознанно: --force', 'repeat', /^Такая запись уже есть: 2026-11-06 · 418\.50 · Такси\. Если/],
     [404, '404 page not found', 'unsupported', /не принимает запись/],
     [405, 'method not allowed', 'unsupported', /не принимает запись/],
     [400, 'amount is required', 'bad', /amount is required/],
