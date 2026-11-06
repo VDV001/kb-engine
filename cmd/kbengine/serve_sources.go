@@ -78,3 +78,15 @@ func startupSources(srcs []source) []string {
 	}
 	return lines
 }
+
+// markJournal marks the ledger connected when the server has finances: журнал
+// из хранилища (serve --tenants, --catalog s3://) — тоже журнал, без пути
+// --ledger. Иначе витрина советовала бы человеку на сервере «запустите serve с
+// --ledger», хотя его операции туда пишутся.
+func markJournal(st []httpapi.SourceStatus, has bool) {
+	for i := range st {
+		if st[i].Flag == "ledger" && has {
+			st[i].Connected = true
+		}
+	}
+}
