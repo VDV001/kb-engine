@@ -83,11 +83,18 @@ func (a *App) CheckServer(id, url, token string) (kbserver.Info, error) {
 }
 
 // Problems returns what the sources cannot do now, with the reason and what
-// to do: серверы опрашиваются, как в ServerStates (≤ probeTimeout).
-func (a *App) Problems() problemsView {
+// to do. fresh — опросить серверы, как ServerStates (≤ probeTimeout, Связка
+// ключей): открытие панели и сохранение. Без fresh — последний известный
+// ответ: строка статуса обновляется каждые 30 с и не ходит ни в сеть, ни в
+// Связку (ревью #457).
+func (a *App) Problems(fresh bool) problemsView {
 	rows := a.settings.GetSources().Sources
+	servers := a.settings.cachedServerStates()
+	if fresh {
+		servers = a.settings.ServerStates()
+	}
 	live := map[string]sourceRow{}
-	for _, r := range a.settings.ServerStates() {
+	for _, r := range servers {
 		live[r.ID] = r
 	}
 	for i, r := range rows {
@@ -95,7 +102,9 @@ func (a *App) Problems() problemsView {
 			rows[i] = s
 		}
 	}
-	return collectProblems(rows, a.index.Status(), a.settings.home)
+	st := a.index.Status()
+	st.Unrecognized, st.UnrecognizedCount = a.index.unrecognizedRows()
+	return collectProblems(rows, st, a.settings.home)
 }
 
 // ChatSettings returns the chat model settings, без ключа.

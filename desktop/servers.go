@@ -201,6 +201,26 @@ func (f *folderSettings) ServerStates() []sourceRow {
 		})
 	}
 	wg.Wait()
+	f.mu.Lock()
+	f.lastServers = map[string]sourceRow{}
+	for _, r := range rows {
+		f.lastServers[r.ID] = r
+	}
+	f.mu.Unlock()
+	return rows
+}
+
+// cachedServerStates returns the last known state of the servers still in the
+// list at the same address; сервер, которого еще не спрашивали, не назван.
+func (f *folderSettings) cachedServerStates() []sourceRow {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var rows []sourceRow
+	for _, s := range f.cfg.WithSources().Sources {
+		if r, ok := f.lastServers[s.ID]; ok && s.Kind == desktopconfig.KindServer && s.Enabled && r.URL == s.URL && r.Enabled {
+			rows = append(rows, r)
+		}
+	}
 	return rows
 }
 

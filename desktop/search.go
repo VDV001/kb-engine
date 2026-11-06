@@ -270,7 +270,7 @@ func (f *folderSettings) searchServer(ctx context.Context, s desktopconfig.Sourc
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		// Связка не ответила — сервер без токена не спрашивается: ответ 401 на
 		// каждую букву ничего бы не сказал, а беда названа своими словами.
-		return nil, "Связка ключей не ответила: разблокируйте ее"
+		return nil, keychain.Locked
 	}
 	// Поиск идет по снимку конфига, а Связка читается позже: SetSources мог за
 	// это время сменить адрес и положить новый токен — и новый токен ушел бы на

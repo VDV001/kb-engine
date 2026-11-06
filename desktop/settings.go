@@ -69,6 +69,9 @@ type folderSettings struct {
 	// tokens и probe — Связка ключей и опрос kb-сервера (servers.go).
 	tokens tokenStore
 	probe  probeFunc
+	// lastServers — последний ответ ServerStates по id (под mu): по нему
+	// строка статуса считает проблемы серверов без сети и Связки ключей.
+	lastServers map[string]sourceRow
 	// find — поиск на kb-сервере для общей выдачи (search.go).
 	find findFunc
 	// snap — снимок настроек для поиска: читается без f.mu, поэтому

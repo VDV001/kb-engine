@@ -157,8 +157,7 @@ func (d *chatDesk) Ask(id, question string) (chatRecord, error) {
 	switch {
 	case err == nil:
 	case !errors.Is(err, keychain.ErrNotFound):
-		// Тот же текст, что keychain.Locked (#459): после его мержа — константа.
-		return chatRecord{}, humanErr{"Связка ключей не ответила — разблокируйте ее", err}
+		return chatRecord{}, humanErr{keychain.Locked, err}
 	case !c.Local():
 		return chatRecord{}, errors.New("нет ключа модели — введите ключ в настройках чата")
 	}
