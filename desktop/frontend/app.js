@@ -2031,7 +2031,6 @@ async function askChat() {
     if (!chatState.id) delete chatState.portraitMode[""]; // выбор до вопроса — только для этого чата
     const pn = c.portrait;
     chatState.over = pn && pn.over && !pn.used ? { chat: c.id, size: pn.size, budget: pn.budget, props: null } : null;
-    memAfterAnswer(c.id);
     // Убрать только отправленное: приложенное, пока модель думала, — к следующему вопросу.
     chatState.attached = chatState.attached.filter((a) => !sent.includes(a.ref));
     renderAttached();
@@ -2042,7 +2041,6 @@ async function askChat() {
     chatState.chat = c;
     await renderChatList();
   } catch (e) {
-    chatState.memWaiting = null; // предложенное осталось в портрете, «Ждут одобрения»
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
@@ -2628,24 +2626,16 @@ $("#memory").addEventListener("keydown", (e) => {
 });
 // Новое из разбора ответа (portrait:new): в портрет уже легло «ждет
 // одобрения»; если человек не выключил — спросить прямо в ленте этого чата.
-// Модель может предложить факт, пока ответ еще печатается (инструмент
-// «запомнить»): у нового чата тогда нет id — предложенное копится и
-// показывается после ответа (memAfterAnswer).
+// Новое на одобрение приходит со своим чатом (portrait:new {chat, facts}):
+// карточка «Запомнить?» встает в тот чат, где факт найден, даже если человек
+// уже открыл другой или чат был новым и id получил во время ответа.
 function memOffer(chat, facts) {
   const n = chatState.memNew && chatState.memNew.chat === chat ? chatState.memNew : { chat, facts: [], edit: "" };
   n.facts = [...n.facts, ...facts.filter((f) => !n.facts.some((x) => x.id === f.id))];
   chatState.memNew = n;
 }
-function memAfterAnswer(chat) {
-  const waiting = chatState.memWaiting || [];
-  chatState.memWaiting = null;
-  if (waiting.length) memOffer(chat, waiting);
-}
-if (window.runtime) window.runtime.EventsOn("portrait:new", (facts) => {
-  if (!(chatState.settings || {}).memoryQuiet && facts && facts.length) {
-    if (chatState.busy) chatState.memWaiting = [...(chatState.memWaiting || []), ...facts];
-    else memOffer(chatState.id, facts);
-  }
+if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
+  if (!(chatState.settings || {}).memoryQuiet && ev && ev.facts && ev.facts.length) memOffer(ev.chat, ev.facts);
   loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
 });
 // memInChat — карточки после ответа: «запомнить?» и «портрет не поместился».

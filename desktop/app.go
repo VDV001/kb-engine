@@ -304,7 +304,7 @@ func (a *App) startup(ctx context.Context) {
 	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
 	if a.chat != nil {
 		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
-		a.chat.memoryNew = func(facts []factView) { runtime.EventsEmit(ctx, "portrait:new", facts) }
+		a.chat.memoryNew = func(n portraitNews) { runtime.EventsEmit(ctx, "portrait:new", n) }
 	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }

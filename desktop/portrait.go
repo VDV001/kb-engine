@@ -70,6 +70,16 @@ type portraitView struct {
 	Budget   int           `json:"budget"` // сколько влезает в начало чата
 }
 
+// portraitNews is the portrait:new event: новое на одобрение и чат, где оно найдено.
+type portraitNews struct {
+	Chat  string     `json:"chat"`
+	Facts []factView `json:"facts"`
+}
+
+// portraitLoadTimeout bounds reading the portrait before a question: kb-сервер
+// портрета не отвечает — чат отвечает без портрета, а не ждет.
+const portraitLoadTimeout = 5 * time.Second
+
 // portraitNote says to the page whether the portrait went to the chat.
 type portraitNote struct {
 	Size   int    `json:"size"`
@@ -224,14 +234,16 @@ func (d *chatDesk) PortraitApplyCompressed(props []proposalView) error {
 }
 
 // portraitFor returns the portrait text for a question and what to tell the page.
-func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (string, *portraitNote) {
+func (d *chatDesk) portraitFor(ctx context.Context, c desktopconfig.Chat, question, mode string) (string, *portraitNote) {
 	if !memoryOn(c) {
 		return "", nil
 	}
 	var about string
 	var note *portraitNote
+	ctx, cancel := context.WithTimeout(ctx, portraitLoadTimeout)
+	defer cancel()
 	err := d.withPortrait(nil, func(s *portrait.Service) error {
-		p, err := s.Portrait(context.Background())
+		p, err := s.Portrait(ctx)
 		if err != nil {
 			return err
 		}
@@ -249,8 +261,8 @@ func (d *chatDesk) portraitFor(c desktopconfig.Chat, question, mode string) (str
 
 // rememberFor returns the «запомнить» tool of the chat: факт ложится в
 // «ждут одобрения» и уходит странице событием; портрет не ведется — nil.
-func (d *chatDesk) rememberFor(c desktopconfig.Chat) func(ctx context.Context, section, text string) error {
-	if !memoryOn(c) {
+func (d *chatDesk) rememberFor(c desktopconfig.Chat, chatID string) func(ctx context.Context, section, text string) error {
+	if !memoryOn(c) || c.MemoryOff { // «Разбирать каждый ответ» выключено — модель о человеке не собирает
 		return nil
 	}
 	return func(ctx context.Context, section, text string) error {
@@ -268,14 +280,14 @@ func (d *chatDesk) rememberFor(c desktopconfig.Chat) func(ctx context.Context, s
 			return portraitErr(err)
 		}
 		if d.memoryNew != nil {
-			d.memoryNew(viewFacts([]domain.Fact{f}))
+			d.memoryNew(portraitNews{chatID, viewFacts([]domain.Fact{f})})
 		}
 		return nil
 	}
 }
 
 // extractAfter finds new facts in the exchange in the background and tells the page.
-func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question, answer string) {
+func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, chatID, question, answer string) {
 	if !memoryOn(c) || c.MemoryOff {
 		return
 	}
@@ -293,7 +305,7 @@ func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, question
 			return
 		}
 		if len(found) > 0 && d.memoryNew != nil {
-			d.memoryNew(viewFacts(found))
+			d.memoryNew(portraitNews{chatID, viewFacts(found)})
 		}
 	}()
 }

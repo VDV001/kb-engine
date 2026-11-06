@@ -110,7 +110,7 @@ type chatDesk struct {
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
 	mu     sync.Mutex // один вопрос за раз: файл чата пишется целиком
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
-	memoryNew  func([]factView)
+	memoryNew  func(portraitNews)
 	portraitMu sync.Mutex
 
 	foundMu sync.Mutex
@@ -235,9 +235,14 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	default:
 		return chatRecord{}, fmt.Errorf("портрет: режим %q", r.Portrait)
 	}
-	about, pnote := d.portraitFor(c, question, r.Portrait)
 	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
 	defer cancel()
+	about, pnote := d.portraitFor(ctx, c, question, r.Portrait)
+	// id — до ответа: «запомнить» во время ответа и разбор после него
+	// называют странице свой чат, даже новый.
+	if rec.ID == "" {
+		rec.ID, rec.Title = newChatID(), title(question)
+	}
 	explicit, auto := attachRefs(refs, question)
 	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
@@ -247,12 +252,9 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	attached = append(attached, linked...)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), model, chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c)})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
-	}
-	if rec.ID == "" {
-		rec.ID, rec.Title = newChatID(), title(question)
 	}
 	used := make([]string, 0, len(turn.Docs))
 	for _, doc := range turn.Docs {
@@ -270,7 +272,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	}
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
-	d.extractAfter(c, model, question, turn.Answer)
+	d.extractAfter(c, model, rec.ID, question, turn.Answer)
 	return rec, nil
 }
 
