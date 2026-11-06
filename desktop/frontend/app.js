@@ -671,7 +671,9 @@ const liveTokens = () => {
 };
 // tokenFor — введенный в черновике токен сервера, но только для этого адреса.
 const tokenFor = (s, url) => { const t = s && draft.tokens[s.id]; return t && t.url === url ? t.token : ""; };
-const dirty = () => JSON.stringify(payload()) !== draft.saved || Object.keys(liveTokens()).length > 0;
+// Черновик, который еще не загружали (saved пуст), не изменен: вид «Настройки
+// окна» источники не читает, и закрытие его звало «Не сохранено» впустую.
+const dirty = () => draft.saved !== "" && (JSON.stringify(payload()) !== draft.saved || Object.keys(liveTokens()).length > 0);
 const byKey = (k) => draft.sources.find((s) => s._key === k);
 
 function load(v) {
@@ -752,7 +754,9 @@ function closeSettings() {
   panel.setAttribute("aria-hidden", "true");
   scrim.hidden = true;
   ui.editing = ui.replacing = ui.confirmDel = null;
-  if (dirty()) toast("Не сохранено", " · черновик ждет в панели, ⌘,", null, "off");
+  // Про черновик источников — только при закрытии «Источников»: настройки окна
+  // сохраняются сразу, им напоминание о сохранении не к месту.
+  if (panel.dataset.view === "sources" && dirty()) toast("Не сохранено", " · черновик ждет в панели, ⌘,", null, "off");
   $("#q").focus();
 }
 const settingsOpen = () => panel.classList.contains("open");
@@ -1326,6 +1330,8 @@ $("#accent-presets").addEventListener("click", (e) => {
   if (!b || !native()) return;
   const mode = b.dataset.preset === "mine" ? "" : b.dataset.preset;
   saveAccents({ mode, off: state.accents.off || [] });
+  // Кнопки «Сохранить» у оформления нет: правка сохраняется сразу — об этом и плашка.
+  toast("Сохранено", " · оформление: " + b.textContent.trim());
 });
 // Щелчок по переключателю правит твой выбор от того, что видно сейчас, и
 // включает его: человек меняет то, что видит.
