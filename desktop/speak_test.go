@@ -94,3 +94,40 @@ func TestSpeaker_DoneOnlyForOwnReading(t *testing.T) {
 		t.Fatal("пустой ответ не сообщил конец")
 	}
 }
+
+// Проба голоса в настройках (#478): говорит пробную фразу выбранным
+// голосом; голос — только «системный» или из списка Мака: в say не уходит
+// чужая строка из окна.
+func TestPreviewVoice(t *testing.T) {
+	var got []string
+	s := &speaker{command: func(voice string) *exec.Cmd {
+		got = append(got, voice)
+		return exec.Command("/usr/bin/true")
+	}}
+	list := func() []string { return []string{"Milena", "Yuri (Enhanced)"} }
+	for _, v := range []string{"", "Milena", "Yuri (Enhanced)"} {
+		if err := previewVoice(s, list, v); err != nil {
+			t.Fatalf("%q: %v", v, err)
+		}
+	}
+	if strings.Join(got, ",") != ",Milena,Yuri (Enhanced)" {
+		t.Fatalf("голоса = %q", got)
+	}
+	for _, v := range []string{"Alex", "-o /tmp/x", "Milena\n"} {
+		if err := previewVoice(s, list, v); err == nil {
+			t.Fatalf("%q: чужой голос принят", v)
+		}
+	}
+	if len(got) != 3 {
+		t.Fatalf("чужой голос дошел до say: %q", got)
+	}
+}
+
+// «Добавить голоса в macOS…» открывает раздел голосов Настроек — адрес
+// зашит, из окна ничего не приходит.
+func TestVoiceSettingsCommand(t *testing.T) {
+	c := voiceSettingsCommand()
+	if strings.Join(c.Args, " ") != "/usr/bin/open "+voiceSettingsURL || !strings.HasPrefix(voiceSettingsURL, "x-apple.systempreferences:") {
+		t.Fatalf("команда = %q", c.Args)
+	}
+}
