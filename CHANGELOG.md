@@ -10,6 +10,11 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Added
 
+- **Суточная сводка kb-сервера в Telegram (решение владельца 06.11).** Раз в сутки в 09:00 МСК бот
+  @dvkbasebot присылает: ответ `/healthz`, аптайм за 24 ч и 7 дней, средний отклик и сбои за сутки по
+  UptimeRobot. Отдельный проект Vercel в `deploy/vercel/`: из Yandex Cloud Functions Telegram
+  недоступен. Без зависимостей, тесты встроенным раннером Node.
+
 - **Выкатка: проверка kb-сервера по таймеру и алерты (06.11).** Функция `kb-healthcheck`
   (`deploy/yandex/healthcheck.sh`, код в `deploy/yandex/healthcheck/`, только stdlib) раз в 5 минут
   проверяет `/healthz` и при сбое пишет ботом владельца в Telegram; токен — в Lockbox, в ответ и логи
