@@ -3,6 +3,7 @@ package chat_test
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -132,5 +133,40 @@ func TestToolsMode_NeedsReader(t *testing.T) {
 	_, err := chat.NewService(&fakeSearch{}, &scriptModel{}).Answer(context.Background(), nil, "q", chat.ModeTools)
 	if !errors.Is(err, chat.ErrNoReader) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// Инструмент «запомнить» (#479): в режиме «модель ищет» модель сама
+// предлагает устойчивый факт о человеке; окно кладет его на одобрение.
+// Без Remember (портрет не ведется) инструмента нет вовсе.
+func TestToolsMode_Remember(t *testing.T) {
+	r := &fakeReader{docs: map[string]chat.Doc{}}
+	m := &scriptModel{replies: []chat.ModelReply{
+		call("c1", "remember", `{"section":"prefs","text":"Отвечать коротко"}`),
+		{Content: "Хорошо, буду коротко."},
+	}}
+	var got []string
+	req := chat.Request{Question: "отвечай коротко, всегда", Mode: chat.ModeTools,
+		Remember: func(_ context.Context, section, text string) error { got = append(got, section+"|"+text); return nil }}
+	turn, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(r)).Respond(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Answer != "Хорошо, буду коротко." || len(got) != 1 || got[0] != "prefs|Отвечать коротко" {
+		t.Fatalf("turn %+v, remembered %v", turn, got)
+	}
+	if res := m.asked[1][len(m.asked[1])-1].Content; !strings.Contains(res, "одобр") {
+		t.Fatalf("модели о предложении: %q", res)
+	}
+	if !slices.ContainsFunc(m.tools[0], func(x chat.Tool) bool { return x.Name == "remember" }) {
+		t.Fatal("remember не предложен модели")
+	}
+	m2 := &scriptModel{replies: []chat.ModelReply{{Content: "ок"}}}
+	req.Remember = nil
+	if _, err := chat.NewService(&fakeSearch{}, m2, chat.WithReader(r)).Respond(context.Background(), req); err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(m2.tools[0], func(x chat.Tool) bool { return x.Name == "remember" }) {
+		t.Fatal("remember предложен без портрета")
 	}
 }
