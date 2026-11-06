@@ -35,6 +35,11 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   свои серверы из «Подключений». Облако — через Vercel AI Gateway по ключу шлюза, протоколом
   `/v4/ai/transcription-model` (OpenAI-совместимого `/audio/transcriptions` у шлюза нет).
 
+### Fixed
+
+- **Окно DVK: «Сохранить» в «01 Модель» больше не сбрасывает акцент голоса.** Кнопка собирала
+  настройки чата заново из полей раздела и теряла все, чего в них нет, — акцент и папку портрета.
+
 ## [0.35.0] — 2026-11-06
 
 ### Added

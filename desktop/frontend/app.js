@@ -2406,7 +2406,10 @@ $("#chat-listens").addEventListener("click", (e) => {
 });
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
+  // Прочие настройки (акцент, портрет) — как сохранены: SetChatSettings
+  // заменяет настройки чата целиком.
+  const { hasKey, local, effectiveMode, ...saved } = chatState.settings || {};
+  const c = { ...saved, url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "";
