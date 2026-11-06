@@ -7,6 +7,10 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <!-- Градиент для обводки иконок шапки (.gear svg): по рамке иконки, не по окну. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs><linearGradient id="icon-spec" x1="0" y1="0" x2="1" y2="1"><stop offset="0" class="sp4"/><stop offset=".5" class="sp5"/><stop offset="1" class="sp6"/></linearGradient></defs>
+  </svg>
   <div class="drag" style="--wails-draggable:drag"></div>
 
   <!-- Первая индексация: журнал команды и одно большое число. -->
