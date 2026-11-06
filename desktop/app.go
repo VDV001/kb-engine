@@ -137,11 +137,11 @@ func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id)
 func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
 
 // PortraitCompress asks the model for a shorter portrait.
-func (a *App) PortraitCompress() ([]proposalView, error) { return a.chat.PortraitCompress() }
+func (a *App) PortraitCompress() (compressionView, error) { return a.chat.PortraitCompress() }
 
 // PortraitApplyCompressed replaces the approved facts with the accepted proposal.
-func (a *App) PortraitApplyCompressed(props []proposalView) error {
-	return a.chat.PortraitApplyCompressed(props)
+func (a *App) PortraitApplyCompressed(c compressionView) error {
+	return a.chat.PortraitApplyCompressed(c)
 }
 
 // PickPortraitDir opens the folder chooser for the portrait; "" — отмена.

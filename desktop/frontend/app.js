@@ -2652,11 +2652,12 @@ function memInChat() {
   if (o && o.chat === chatState.id) {
     h += `<div class="mem-over"><b>Портрет ${o.size.toLocaleString("ru-RU")} знаков, а в начало чата у этой модели влезает ${o.budget.toLocaleString("ru-RU")}. ${o.start ? "Решите до вопроса — иначе ответ пойдет без портрета." : "В этот ответ он не пошел."}</b>`;
     if (o.props) {
-      const text = o.props.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.reduce((a, x) => a + x.text.length, 0);
-      h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ~${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
+      // Размер считает окно — тем же текстом, что уйдет в чат, с разделами и знаками.
+      const text = o.props.proposals.map((x) => `${x.title}: ${x.text}`).join("\n"), size = o.props.size;
+      h += `<p class="label-sm">Предложение: ${o.size.toLocaleString("ru-RU")} → ${size.toLocaleString("ru-RU")} знаков${size > o.budget ? " — все еще не влезает, лишнее лучше удалить в портрете" : ""}</p>
         <textarea readonly aria-label="Сжатый портрет">${esc(text)}</textarea>
         <div class="mem-acts"><button type="button" class="btn primary" data-over="apply">Принять сжатие</button><button type="button" class="btn" data-over="close">Не сейчас</button></div>
-        <p class="muted">Каждый раздел станет короче. Одобренные факты заменятся сжатыми, ждущие одобрения останутся.</p>`;
+        <p class="muted">Каждый раздел станет короче. Сжатые факты заменятся предложением; одобренное после «Сжать» и ждущее одобрения останутся.</p>`;
     } else {
       h += `<div class="mem-acts"><button type="button" class="btn primary" data-over="compress"${o.busy ? " disabled" : ""}>${o.busy ? "Сжимаю…" : "Сжать портрет"}</button><button type="button" class="btn" data-over="relevant">Только нужное в этот чат</button><button type="button" class="btn" data-over="full">Целиком все равно</button></div>
         <p class="muted">«Только нужное» — кто Вы, предпочтения и факты по словам вопроса. «Целиком» — модель раньше забудет начало разговора.</p>`;
@@ -2696,13 +2697,14 @@ $("#chat-log").addEventListener("click", async (e) => {
   if (act === "close") { o.props = null; return void renderChat(); }
   if (act === "compress") {
     o.busy = true; renderChat();
-    try { o.props = (await native().PortraitCompress()) || []; } catch (err) { toast("Не сжато", " · " + errText(err), null, "del"); }
+    try { o.props = await native().PortraitCompress(); } catch (err) { toast("Не сжато", " · " + errText(err), null, "del"); }
     o.busy = false; renderChat();
     return;
   }
   if (act === "apply" && o.props) {
     const props = o.props;
-    if (await memDo(() => native().PortraitApplyCompressed(props), "Портрет сжат", ` · ${props.length} ${plural(props.length, "факт", "факта", "фактов")} вместо ${approvedFacts().length}`, null)) {
+    const n = props.proposals.length;
+    if (await memDo(() => native().PortraitApplyCompressed(props), "Портрет сжат", ` · ${n} ${plural(n, "факт", "факта", "фактов")} вместо ${props.basis.length}`, null)) {
       chatState.over = null;
       renderChat();
     }

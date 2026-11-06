@@ -95,6 +95,14 @@ type proposalView struct {
 	Text    string `json:"text"`
 }
 
+// compressionView is a compressed portrait for the page: предложение, размер
+// его текста в чате и id фактов, из которых оно сжато.
+type compressionView struct {
+	Proposals []proposalView `json:"proposals"`
+	Basis     []string       `json:"basis"`
+	Size      int            `json:"size"`
+}
+
 func viewFacts(facts []domain.Fact) []factView {
 	out := make([]factView, 0, len(facts))
 	for _, f := range facts {
@@ -201,36 +209,37 @@ func (d *chatDesk) PortraitApprove(id, text string) error {
 }
 
 // PortraitCompress asks the chat model for a shorter portrait; применяется по согласию.
-func (d *chatDesk) PortraitCompress() ([]proposalView, error) {
+func (d *chatDesk) PortraitCompress() (compressionView, error) {
 	c := d.config()
 	key, err := d.modelKey(c)
 	if err != nil {
-		return nil, err
+		return compressionView{}, err
 	}
-	var out []proposalView
+	out := compressionView{Proposals: []proposalView{}}
 	err = d.withPortrait(d.model(c, key), func(s *portrait.Service) error {
 		ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 		defer cancel()
-		props, err := s.Compress(ctx)
-		for _, p := range props {
-			out = append(out, proposalView{string(p.Section), p.Section.Title(), p.Text})
+		cmp, err := s.Compress(ctx)
+		for _, p := range cmp.Proposals {
+			out.Proposals = append(out.Proposals, proposalView{string(p.Section), p.Section.Title(), p.Text})
 		}
+		out.Basis, out.Size = cmp.Basis, cmp.Size
 		return err
 	})
 	return out, portraitErr(err)
 }
 
-// PortraitApplyCompressed replaces the approved facts with the accepted proposal.
-func (d *chatDesk) PortraitApplyCompressed(props []proposalView) error {
-	var in []portrait.Proposal
-	for _, p := range props {
+// PortraitApplyCompressed replaces the facts the proposal was made from.
+func (d *chatDesk) PortraitApplyCompressed(v compressionView) error {
+	cmp := portrait.Compression{Basis: v.Basis}
+	for _, p := range v.Proposals {
 		sec, err := domain.NewFactSection(p.Section)
 		if err != nil {
 			return portraitErr(err)
 		}
-		in = append(in, portrait.Proposal{Section: sec, Text: p.Text})
+		cmp.Proposals = append(cmp.Proposals, portrait.Proposal{Section: sec, Text: p.Text})
 	}
-	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.ApplyCompressed(context.Background(), in) }))
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.ApplyCompressed(context.Background(), cmp) }))
 }
 
 // portraitFor returns the portrait text for a question and what to tell the page.
