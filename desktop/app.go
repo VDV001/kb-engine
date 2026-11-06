@@ -122,8 +122,19 @@ func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
 // Chat returns one chat with its messages and documents.
 func (a *App) Chat(id string) (chatRecord, error) { return a.chat.Get(id) }
 
-// Ask answers a question in chat id ("" — новый чат).
-func (a *App) Ask(id, question string) (chatRecord, error) { return a.chat.Ask(id, question) }
+// Ask answers a question in chat id ("" — новый чат) with the attached refs
+// (file:…, url:…, найденное).
+func (a *App) Ask(id, question string, refs []string) (chatRecord, error) {
+	return a.chat.Ask(id, question, refs)
+}
+
+// PickChatFile asks for a file to attach to the question; "" — передумали.
+func (a *App) PickChatFile() (string, error) {
+	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Приложить к вопросу"})
+}
+
+// ChatFind searches the chat's sources for a document to attach.
+func (a *App) ChatFind(q string) ([]chatDoc, error) { return a.chat.Find(q) }
 
 // DeleteChat removes a chat.
 func (a *App) DeleteChat(id string) error { return a.chat.Delete(id) }

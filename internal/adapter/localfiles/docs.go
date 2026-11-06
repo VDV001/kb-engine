@@ -161,3 +161,7 @@ func capText(s string) string {
 	}
 	return s[:cut]
 }
+
+// DocxText returns the text of a .docx held elsewhere than a source folder —
+// файл, приложенный к вопросу чата, или скачанный по ссылке.
+func DocxText(r io.ReaderAt, size int64) (string, error) { return docxText(r, size) }

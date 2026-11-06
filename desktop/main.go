@@ -22,6 +22,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/extractcache"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/weblink"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -121,6 +122,7 @@ func run() error {
 	app := newApp(idx.files, settings, idx)
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
 	app.chat.useSources(idx.files)
+	app.chat.useAttachments(idx.files, ext, weblink.Client{HTTP: &http.Client{Timeout: 30 * time.Second}})
 	return wails.Run(&options.App{
 		Title:     "DVK",
 		Width:     1180,

@@ -30,30 +30,35 @@ var tools = []Tool{
 
 // toolRun is one question in tools mode: что найдено и что прочитано.
 type toolRun struct {
-	s     *Service
-	found []Doc
-	read  []Doc
+	s        *Service
+	attached []Doc // приложенное человеком: в документах хода всегда, первым
+	found    []Doc
+	read     []Doc
 }
 
 // answerWithTools lets the model search and read until it answers. После
 // MaxSteps шагов последний запрос идет без инструментов — модель обязана
 // ответить по тому, что уже видела.
-func (s *Service) answerWithTools(ctx context.Context, history []Message, question string, show func(string)) (Turn, error) {
+func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) {
 	if s.reader == nil {
 		return Turn{}, ErrNoReader
 	}
 	msgs := []ModelMessage{{Role: RoleSystem, Content: toolsPrompt}}
-	for _, m := range history {
+	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
 	}
+	question := r.Question
+	if len(r.Attached) > 0 {
+		question = "Приложенные человеком документы:" + strings.TrimPrefix(documentsBlock(r.Attached, len(r.Attached)), "Документы:") + "\n\nВопрос: " + question
+	}
 	msgs = append(msgs, ModelMessage{Role: RoleUser, Content: question})
-	run := &toolRun{s: s}
+	run := &toolRun{s: s, attached: r.Attached}
 	for step := 0; ; step++ {
 		offer := tools
 		if step == MaxSteps {
 			offer = nil
 		}
-		reply, err := s.complete(ctx, msgs, offer, show)
+		reply, err := s.complete(ctx, msgs, offer, r.Show)
 		if err != nil {
 			return Turn{}, fmt.Errorf("%w: %w", ErrModel, err)
 		}
@@ -63,8 +68,8 @@ func (s *Service) answerWithTools(ctx context.Context, history []Message, questi
 			}
 			return Turn{Answer: reply.Content, Docs: run.docs()}, nil
 		}
-		if show != nil {
-			show("") // «сейчас поищу» — не ответ
+		if r.Show != nil {
+			r.Show("") // «сейчас поищу» — не ответ
 		}
 		msgs = append(msgs, ModelMessage{Role: RoleAssistant, Content: reply.Content, ToolCalls: reply.ToolCalls})
 		for _, c := range reply.ToolCalls {
@@ -101,10 +106,11 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 
 // docs are the documents of the turn: прочитанные, а без чтения — найденные.
 func (r *toolRun) docs() []Doc {
+	used := r.found
 	if len(r.read) > 0 {
-		return r.read
+		used = r.read
 	}
-	return r.found
+	return appendNew(slices.Clone(r.attached), used...)
 }
 
 func searchResult(docs []Doc) string {
