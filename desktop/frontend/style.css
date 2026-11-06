@@ -25,6 +25,9 @@
      (--z-bad), зеленый sp6 совпадал с «хорошо» (--z-ok) — источник не должен
      выглядеть состоянием. */
   --z-src-teal: #5fc4b8; --z-src-violet: #a98fd8;
+  /* Уровни проблем (#456): точка статуса при наведении на «N проблем».
+     Насыщеннее --z-bad и спектра: точка — состояние, а не источник. */
+  --z-lvl-error: #ef5f5f; --z-lvl-warn: #f0953e; --z-lvl-info: var(--z-accent);
   /* Градиенты спектра (решение владельца 06.11: все 21 место из прототипа
      outputs/2026-11-06_dvk-gradients.html): весь спектр и его холодная половина. */
   --sp-all: linear-gradient(90deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6));
@@ -40,6 +43,7 @@
     --z-head: #f0a500; --z-head-wash: #f0a50038; --z-scrim: #ffffff99;
     /* янтарь на белом читается плохо (~2:1): подпись HEAD темнее, ~5:1 */
     --z-head-ink: #8a5d00;
+    --z-lvl-error: #d32f2f; --z-lvl-warn: #d97706;
   }
 }
 
@@ -565,6 +569,15 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .settings .problem-source-name { margin: 0; font-size: 13px; font-weight: 700; color: var(--z-ink); }
 .skip-group h4 { margin: 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); }
 .settings .problem-todo { color: var(--z-ink); }
+.status-cell[data-level="error"], .lvl[data-level="error"] { --lvl: var(--z-lvl-error); }
+.status-cell[data-level="warn"], .lvl[data-level="warn"] { --lvl: var(--z-lvl-warn); }
+.status-cell[data-level="info"], .lvl[data-level="info"] { --lvl: var(--z-lvl-info); }
+.status-cell:has(.problems-link:hover) .pulse {
+  background: var(--lvl, var(--z-lvl-info)); animation: none; transform: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--lvl, var(--z-lvl-info)) 25%, transparent);
+}
+.pulse { transition: background var(--z-dur), box-shadow var(--z-dur); }
+.lvl { display: inline-block; width: 6px; height: 6px; margin-right: 8px; border-radius: 50%; background: var(--lvl); vertical-align: 1px; }
 .problem-detail { display: block; color: var(--z-muted); font: 11px var(--z-font); overflow-wrap: anywhere; user-select: text; }
 .skip-group { display: grid; gap: 6px; }
 .skip-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
@@ -578,4 +591,3 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .skip-dir { color: var(--z-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .skip-list .btn { height: 24px; padding: 0 10px; }
 .skip-detail { display: block; padding: 0 12px 8px 32px; color: var(--z-muted); font: 11px var(--z-font); overflow-wrap: anywhere; user-select: text; }
-.skip-group h4::first-letter { text-transform: uppercase; }

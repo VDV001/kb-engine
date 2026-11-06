@@ -213,6 +213,9 @@ function setIndexed(n, skipped, rec) {
   // «N проблем» — кнопка «подробнее»: что не так у источников, почему и что
   // сделать (панель справа, #456).
   const total = state.problems ? state.problems.total : skipped;
+  // Уровень — цвет точки статуса при наведении (CSS): красная — ошибка,
+  // оранжевая — предупреждение, синяя — уведомление.
+  el.parentElement.dataset.level = state.problems ? state.problems.level || "" : skipped ? "error" : "";
   if (total) {
     const b = document.createElement("button");
     b.className = "problems-link";
@@ -1510,7 +1513,7 @@ function renderProblems() {
     [...bySource.values()].map(({ name, reasons }) => `<section class="problem-source"><h3 class="problem-source-name">${esc(name)}</h3>` +
       [...reasons].map(([what, list]) => {
         const todo = list[0].todo;
-        const head = `<h4>${esc(what)}${list[0].path ? ` · ${list.length}` : ""}</h4>${todo ? `<p class="problem-todo">Что сделать: ${esc(todo)}</p>` : ""}`;
+        const head = `<h4><span class="lvl" data-level="${esc(list[0].level)}"></span>${esc(what.charAt(0).toUpperCase() + what.slice(1))}${list[0].path ? ` · ${list.length}` : ""}</h4>${todo ? `<p class="problem-todo">Что сделать: ${esc(todo)}</p>` : ""}`;
         // Беда источника целиком (сервер, каталог, папка, индекс): под советом
         // сразу исходная ошибка, без списка.
         if (!list[0].path) return `<div class="skip-group">${head}${list.map((p) => (p.detail ? `<code class="problem-detail">${esc(p.detail)}</code>` : "")).join("")}</div>`;

@@ -14,6 +14,7 @@ import (
 // причина и действие, тем меньше человеку гадать.
 type problem struct {
 	Source string `json:"source"`           // id источника; "" — папки целиком (индекс, файл вне списка)
+	Level  string `json:"level"`            // levelError, levelWarn или levelInfo
 	Name   string `json:"name"`             // подпись источника, как в списке
 	What   string `json:"what"`             // что не так, словами человека
 	Todo   string `json:"todo,omitempty"`   // что сделать
@@ -26,7 +27,24 @@ type problemsView struct {
 	// Total считает все, Problems — названные: нечитаемых файлов статус
 	// несет первые 100, а Skipped считает все.
 	Total    int       `json:"total"`
+	Level    string    `json:"level,omitempty"` // худший уровень; "" — проблем нет
 	Problems []problem `json:"problems"`
+}
+
+// Уровни проблем — цвет точки в строке статуса: красная, оранжевая, синяя.
+const (
+	levelError = "error" // источник не читается, файла нет в поиске
+	levelWarn  = "warn"  // файл в поиске, но только по имени
+	levelInfo  = "info"  // окно повторит само
+)
+
+// worse orders the levels; "" — ниже всех.
+func worse(a, b string) string {
+	rank := map[string]int{levelInfo: 1, levelWarn: 2, levelError: 3}
+	if rank[b] > rank[a] {
+		return b
+	}
+	return a
 }
 
 // Причины окна в той же форме «что не так — что сделать», что Explain и Describe.
@@ -55,7 +73,7 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 		if r.State != stateMissing {
 			continue
 		}
-		p := problem{Source: r.ID, Name: sourceLabel(r.Source), Detail: r.Note}
+		p := problem{Source: r.ID, Level: levelError, Name: sourceLabel(r.Source), Detail: r.Note}
 		switch r.Kind {
 		case desktopconfig.KindFolder:
 			p.What, p.Todo = "папка недоступна", "подключите диск или VPN, или поправьте путь в «Источниках»"
@@ -68,17 +86,30 @@ func collectProblems(rows []sourceRow, st indexStatus, home string) problemsView
 		out.Problems = append(out.Problems, p)
 	}
 	if st.Error != "" {
-		out.Problems = append(out.Problems, problem{Name: foldersName, What: "индекс файлов не собрался",
+		out.Problems = append(out.Problems, problem{Level: levelError, Name: foldersName, What: "индекс файлов не собрался",
 			Todo: "проверьте папки в «Источниках» и сохраните их снова", Detail: st.Error})
 	}
 	out.Total = len(out.Problems) + st.Skipped + len(st.Unrecognized)
-	for _, f := range slices.Concat(st.SkippedFiles, st.Unrecognized) {
-		p := problem{Name: foldersName, Path: f.Path, Detail: f.Detail}
+	for i, f := range slices.Concat(st.SkippedFiles, st.Unrecognized) {
+		p := problem{Level: levelError, Name: foldersName, Path: f.Path, Detail: f.Detail}
+		switch {
+		case i < len(st.SkippedFiles): // нечитаемый файл не ищется даже по имени
+		case f.Reason == recognizeTimedOut:
+			p.Level = levelInfo
+		default:
+			p.Level = levelWarn
+		}
 		p.What, p.Todo = splitReason(f.Reason)
 		if r, ok := folderOf(folders, f.Path, home); ok {
 			p.Source, p.Name = r.ID, sourceLabel(r.Source)
 		}
 		out.Problems = append(out.Problems, p)
+	}
+	for _, p := range out.Problems {
+		out.Level = worse(out.Level, p.Level)
+	}
+	if st.Skipped > 0 { // файлы сверх названных
+		out.Level = worse(out.Level, levelError)
 	}
 	return out
 }
