@@ -66,3 +66,18 @@ func TestRespond_AttachedTrimmed(t *testing.T) {
 		t.Fatalf("приложенного ушло %d знаков, ждали %d", n, chat.MaxAttachedRunes)
 	}
 }
+
+// В режиме «модель ищет» найденное поиском остается в документах хода и при
+// приложенном: приложенное — к ним, а не вместо них (ревью #464).
+func TestRespond_ToolsModeKeepsFoundWithAttached(t *testing.T) {
+	m := &scriptModel{replies: []chat.ModelReply{call("c1", "search", `{"q":"срок"}`), {Content: "Срок 30 дней."}}}
+	turn, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(&fakeReader{})).Respond(context.Background(), chat.Request{
+		Question: "срок?", Mode: chat.ModeTools, Attached: []chat.Doc{attached},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(turn.Docs) != 3 || turn.Docs[0].Ref != attached.Ref || turn.Docs[1].Ref != "kb:12" {
+		t.Fatalf("docs = %+v", turn.Docs)
+	}
+}
