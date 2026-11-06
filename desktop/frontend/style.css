@@ -705,6 +705,7 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .choices .btn[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
 .choices .btn small { color: var(--z-muted); margin-left: 6px; font-size: 11px; }
+.chat-model .label-sm { margin: 4px 0 -4px; color: var(--z-faint); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
 .chat-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--z-rule); }
 .chat-title { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--z-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

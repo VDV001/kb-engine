@@ -1,7 +1,9 @@
 package main
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"slices"
@@ -33,40 +35,92 @@ func speakable(text string) string {
 type speaker struct {
 	// command builds the reader for a voice; nil — /usr/bin/say.
 	command func(voice string) *exec.Cmd
-	done    func() // чтение кончилось или прервано
+	// synth returns the audio of a cloud voice (#478); nil — облака нет.
+	synth func(voice, text string) ([]byte, error)
+	// player plays an audio file; nil — /usr/bin/afplay.
+	player func(path string) *exec.Cmd
+	done   func() // чтение кончилось или прервано
 
 	mu  sync.Mutex
 	cmd *exec.Cmd
+	gen int // растет на каждом Speak и Stop: запоздавший облачный звук не играет
 }
 
-// Speak reads text with voice ("" — голос системы); пустое не читается.
+// Speak reads text with voice ("" — голос системы, «gemini:…»/«openai:…» —
+// облако); пустое не читается.
 func (s *speaker) Speak(voice, text string) error {
 	text = speakable(text)
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.cmd != nil {
-		_ = s.cmd.Process.Kill() // новый ответ прерывает прежний; конец сообщит только новый
-		s.cmd = nil
-	}
+	s.gen++
+	gen := s.gen
+	s.killLocked() // новый ответ прерывает прежний; конец сообщит только новый
 	if text == "" {
+		s.mu.Unlock()
 		// Читать нечего — конец сразу: разговор голосом иначе ждал бы вечно.
 		if s.done != nil {
 			go s.done()
 		}
 		return nil
 	}
-	build := s.command
-	if build == nil {
-		build = sayCommand
+	if !isCloudVoice(voice) {
+		defer s.mu.Unlock()
+		build := s.command
+		if build == nil {
+			build = sayCommand
+		}
+		cmd := build(voice)
+		cmd.Stdin = strings.NewReader(text)
+		return s.startLocked(cmd, "")
 	}
-	cmd := build(voice)
-	cmd.Stdin = strings.NewReader(text)
+	s.mu.Unlock()
+	if s.synth == nil {
+		return errors.New("облачный голос работает только в окне приложения")
+	}
+	// Сеть — без замка: Stop успевает прервать, пока облако синтезирует.
+	audio, err := s.synth(voice, text)
+	if err != nil {
+		return err
+	}
+	f, err := os.CreateTemp("", "dvk-voice-*.audio")
+	if err != nil {
+		return err
+	}
+	path := f.Name()
+	_, werr := f.Write(audio)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(path)
+		return werr
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.gen != gen { // пока синтезировали, ответ прерван или сменился новым
+		_ = os.Remove(path)
+		return nil
+	}
+	play := s.player
+	if play == nil {
+		play = afplayCommand
+	}
+	return s.startLocked(play(path), path)
+}
+
+// startLocked starts cmd as the current reading; file — звук облака, убрать после.
+func (s *speaker) startLocked(cmd *exec.Cmd, file string) error {
 	if err := cmd.Start(); err != nil {
+		if file != "" {
+			_ = os.Remove(file)
+		}
 		return err
 	}
 	s.cmd = cmd
 	go func() {
 		_ = cmd.Wait() // прерванное чтение — не ошибка
+		if file != "" {
+			_ = os.Remove(file)
+		}
 		s.mu.Lock()
 		own := s.cmd == cmd
 		if own {
@@ -82,6 +136,15 @@ func (s *speaker) Speak(voice, text string) error {
 	return nil
 }
 
+func (s *speaker) killLocked() {
+	if s.cmd != nil {
+		_ = s.cmd.Process.Kill()
+		s.cmd = nil
+	}
+}
+
+func afplayCommand(path string) *exec.Cmd { return exec.Command("/usr/bin/afplay", path) }
+
 func sayCommand(voice string) *exec.Cmd {
 	if voice == "" {
 		return exec.Command("/usr/bin/say")
@@ -89,9 +152,10 @@ func sayCommand(voice string) *exec.Cmd {
 	return exec.Command("/usr/bin/say", "-v", voice)
 }
 
-// Stop interrupts the reading.
+// Stop interrupts the reading, и облачный звук, который еще синтезируется.
 func (s *speaker) Stop() {
 	s.mu.Lock()
+	s.gen++
 	cmd := s.cmd
 	s.mu.Unlock()
 	if cmd != nil {
@@ -112,6 +176,34 @@ func parseVoices(out, prefix string) []string {
 	return names
 }
 
+// englishVoices — голоса Mac для акцента, лучшие первыми; звуковые эффекты
+// из списка say (Bells, Bad News) голосом не считаются.
+var englishVoices = map[string][]string{
+	"en-US": {"Samantha", "Ava", "Allison", "Alex", "Tom", "Susan"},
+	"en-GB": {"Daniel", "Kate", "Serena", "Oliver", "Stephanie"},
+}
+
+// englishVoiceIn picks the voice for accent from `say -v ?` output; пусто — нет такого.
+func englishVoiceIn(out, accent string) string {
+	have := parseVoices(out, strings.Replace(accent, "-", "_", 1))
+	for _, want := range englishVoices[accent] {
+		for _, v := range have {
+			if v == want || strings.HasPrefix(v, want+" (") {
+				return v
+			}
+		}
+	}
+	return ""
+}
+
+func englishVoice(accent string) string {
+	out, err := exec.Command("/usr/bin/say", "-v", "?").Output()
+	if err != nil {
+		return ""
+	}
+	return englishVoiceIn(string(out), accent)
+}
+
 // russianVoices lists the Russian voices of this Mac.
 func russianVoices() []string {
 	out, err := exec.Command("/usr/bin/say", "-v", "?").Output()
@@ -127,7 +219,7 @@ const previewSample = "Здравствуйте! Так я буду читать
 // previewVoice says the sample with voice: «системный» ("") или голос из
 // списка Мака — чужая строка из окна в say не уходит.
 func previewVoice(s *speaker, voices func() []string, voice string) error {
-	if voice != "" && !slices.Contains(voices(), voice) {
+	if voice != "" && !knownCloudVoice(voice) && !slices.Contains(voices(), voice) {
 		return fmt.Errorf("голоса %q нет на этом Маке", voice)
 	}
 	return s.Speak(voice, previewSample)

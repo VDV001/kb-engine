@@ -161,6 +161,10 @@ func (d *chatDesk) Settings() chatSettingsView {
 	return chatSettingsView{Chat: c, HasKey: err == nil, Local: c.Local(), Mode: string(chatMode(c))}
 }
 
+// gatewayKey returns the chat key when the chat goes through Vercel AI
+// Gateway — облачные голоса и распознавание берут его же (#478).
+func (d *chatDesk) gatewayKey() (string, error) { return d.settings.gatewayKey() }
+
 // SetSettings saves the model settings; key — новый ключ, пусто — прежний.
 func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 	c = c.WithDefaults()

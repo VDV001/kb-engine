@@ -273,8 +273,21 @@
         <div class="acc-b">
           <p class="muted">Каким голосом окно читает ответ в разговоре голосом. Нажмите голос — он скажет пробную фразу.</p>
           <input type="hidden" id="chat-voice-name">
+          <div class="choices" id="chat-engines" role="group" aria-label="Кто читает">
+            <button type="button" class="btn" data-engine="mac">Mac (бесплатно)</button>
+            <button type="button" class="btn" data-engine="cloud">Облако (естественный)</button>
+          </div>
           <div class="choices" id="chat-voices" role="group" aria-label="Голос ответа"></div>
-          <p class="muted">Голоса Premium и Enhanced звучат живее обычных, их скачивают в Настройках macOS. <button type="button" class="lnk" id="voice-add">Добавить голоса в macOS…</button></p>
+          <p class="muted" id="chat-voice-note"></p>
+          <p class="muted" id="voice-add-row">Голоса Premium и Enhanced звучат живее обычных, их скачивают в Настройках macOS. <button type="button" class="lnk" id="voice-add">Добавить голоса в macOS…</button></p>
+          <p class="label-sm">Акцент голоса</p>
+          <input type="hidden" id="chat-accent">
+          <div class="choices" id="chat-accents" role="group" aria-label="Акцент голоса">
+            <button type="button" class="btn" data-accent-v="">по языку ответа</button>
+            <button type="button" class="btn" data-accent-v="en-US">US</button>
+            <button type="button" class="btn" data-accent-v="en-GB">UK</button>
+          </div>
+          <p class="muted" id="chat-accent-note"></p>
         </div>
       </details>
       <details class="acc">
@@ -293,10 +306,10 @@
       <details class="acc">
         <summary><span class="n">04</span><span class="t">Распознавание</span><span class="v" id="acc-v-listen"></span></summary>
         <div class="acc-b">
+          <p class="muted">Кто переводит Ваш голос в текст.</p>
+          <input type="hidden" id="chat-listen">
+          <div class="choices" id="chat-listens" role="group" aria-label="Распознавание"></div>
           <p class="muted" id="chat-listen-note"></p>
-          <label>Кто переводит голос в текст
-            <select id="chat-listen"><option value="">Apple Speech на этом Маке</option></select>
-          </label>
         </div>
       </details>
       <button class="btn primary" type="submit">Сохранить</button>

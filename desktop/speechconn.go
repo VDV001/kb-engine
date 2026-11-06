@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
@@ -74,6 +77,10 @@ func (f *folderSettings) listenTranscriber() (transcriber, error) {
 	if id == "" {
 		return nil, nil
 	}
+	if model, ok := cloudListen[id]; ok {
+		cloud := cloudSpeech{base: gatewayAudio, client: &http.Client{Timeout: 60 * time.Second}, key: f.gatewayKey}
+		return func(ctx context.Context, wav []byte) (string, error) { return cloud.transcribe(ctx, wav, model) }, nil
+	}
 	c, ok := cfg.Connection(id)
 	if !ok || c.Kind != desktopconfig.ConnSpeech {
 		return nil, errors.New("сервер распознавания из «Слушает» удален — выберите другой в «Чат и модель»")
@@ -93,6 +100,20 @@ func (f *folderSettings) listenTranscriber() (transcriber, error) {
 		}
 		return text, nil
 	}, nil
+}
+
+// gatewayKey returns the chat key when the chat goes through Vercel AI
+// Gateway; ключ другого провайдера на шлюз не уходит.
+func (f *folderSettings) gatewayKey() (string, error) {
+	u, err := url.Parse(f.snapshot().cfg.Chat.WithDefaults().URL)
+	if err != nil || u.Hostname() != "ai-gateway.vercel.sh" {
+		return "", errors.New("облачный голос и распознавание работают через Vercel AI Gateway: в «Модель» нужен адрес шлюза и его ключ")
+	}
+	key, err := f.tokens.Get(chatKeyAccount)
+	if err != nil {
+		return "", errors.New("нет ключа шлюза — введите его в «Модель»")
+	}
+	return key, nil
 }
 
 func keychainNote2(err error) error { return humanErr{keychainNote, err} }

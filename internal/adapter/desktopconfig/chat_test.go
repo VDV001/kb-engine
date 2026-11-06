@@ -58,3 +58,20 @@ func TestChatCheck_Mic(t *testing.T) {
 		t.Fatalf("режим push принят: %v", err)
 	}
 }
+
+// Акцент голоса (#478): пусто — по языку ответа, en-US, en-GB.
+func TestChatCheck_Accent(t *testing.T) {
+	base := desktopconfig.Chat{URL: desktopconfig.DefaultChatURL, Model: "m"}
+	for _, a := range []string{"", "en-US", "en-GB"} {
+		c := base
+		c.Accent = a
+		if err := c.Check(); err != nil {
+			t.Errorf("акцент %q отвергнут: %v", a, err)
+		}
+	}
+	c := base
+	c.Accent = "fr-FR"
+	if err := c.Check(); !errors.Is(err, desktopconfig.ErrChatSettings) {
+		t.Fatalf("fr-FR принят: %v", err)
+	}
+}

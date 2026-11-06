@@ -1825,18 +1825,14 @@ async function loadChatSettings() {
 // renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
 // читать ответ.
 async function renderVoiceSettings() {
-  const note = $("#chat-listen-note");
-  if (!native() || !native().ListenStatus) { note.textContent = "Голос настраивается в окне приложения."; return; }
-  const st = await native().ListenStatus().catch(() => ({}));
-  const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
-  note.textContent = !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
-    : `Слушает: Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
-  const listen = $("#chat-listen");
-  const speech = ((await native().Connections().catch(() => [])) || []).filter((c) => c.kind === "speech");
-  const curListen = (chatState.settings && chatState.settings.listen) || "";
-  listen.innerHTML = `<option value="">Apple Speech на этом Маке</option>` + speech.map((c) => `<option value="${esc(c.id)}"${c.id === curListen ? " selected" : ""}${c.enabled ? "" : " disabled"}>${esc(c.name)}${c.enabled ? "" : " (выключено)"}</option>`).join("");
-  if (curListen && speech.some((c) => c.id === curListen)) note.textContent = "Слушает: " + speech.find((c) => c.id === curListen).name + " — запись диктовки уходит этому серверу.";
+  if (!native() || !native().ListenStatus) { $("#chat-listen-note").textContent = "Голос настраивается в окне приложения."; return; }
+  chatState.listenStatus = await native().ListenStatus().catch(() => ({}));
+  chatState.speechConns = ((await native().Connections().catch(() => [])) || []).filter((c) => c.kind === "speech");
+  $("#chat-listen").value = (chatState.settings && chatState.settings.listen) || "";
+  renderListenChoices();
   chatState.voices = (await native().Voices().catch(() => [])) || [];
+  chatState.cloudVoices = (native().CloudVoices && (await native().CloudVoices().catch(() => []))) || [];
+  $("#chat-accent").value = (chatState.settings && chatState.settings.accent) || "";
   $("#chat-voice-name").value = (chatState.settings && chatState.settings.voice) || "";
   renderVoiceChoices();
   renderAccValues();
@@ -1844,17 +1840,48 @@ async function renderVoiceSettings() {
 // voiceTag names the quality from the macOS voice name: Premium и Enhanced
 // (и их русские подписи) звучат живее обычных.
 const voiceTag = (v) => (/premium|преми/i.test(v) ? "премиум" : /enhanced|улучш/i.test(v) ? "улучшенный" : "");
-// renderVoiceChoices: голоса плашками, как в english-hub (#478); выбранный
-// хранится в скрытом поле формы и сохраняется общей кнопкой.
+// renderVoiceChoices: кто читает (Mac или облако) и голос плашками, как в
+// english-hub (#478); выбранное — в скрытом поле формы, сохраняется сразу.
+const ENGINE_NOTE = {
+  mac: "Голоса macOS, без сети и без денег.",
+  cloud: "Gemini через Vercel AI Gateway — около 0,2 цента за реплику, «дороже» — OpenAI, около 0,8 цента. Ключ — ключ шлюза из «Модель».",
+};
+const isCloud = (v) => /^(gemini|openai):/.test(v || "");
 function renderVoiceChoices() {
-  const cur = $("#chat-voice-name").value;
-  const list = chatState.voices || [];
-  const all = [["", "голос системы"], ...list.map((v) => [v, v])];
-  if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке"]);
-  $("#chat-voices").innerHTML = all.map(([v, name]) => {
-    const tag = voiceTag(v);
-    return `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name.replace(/\s*\(.*\)$/, ""))}${tag ? `<small>${tag}</small>` : ""}</button>`;
-  }).join("");
+  const cur = $("#chat-voice-name").value, cloud = isCloud(cur);
+  $("#chat-engines").querySelectorAll("[data-engine]").forEach((b) => b.setAttribute("aria-pressed", String((b.dataset.engine === "cloud") === cloud)));
+  let all;
+  if (cloud) {
+    all = (chatState.cloudVoices || []).map((v) => [v.id, v.label, v.pricey ? "дороже" : v.tag]);
+  } else {
+    const list = chatState.voices || [];
+    all = [["", "голос системы", ""], ...list.map((v) => [v, v.replace(/\s*\(.*\)$/, ""), voiceTag(v)])];
+    if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке", ""]);
+  }
+  $("#chat-voices").innerHTML = all.map(([v, name, tag]) =>
+    `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name)}${tag ? `<small>${esc(tag)}</small>` : ""}</button>`).join("");
+  $("#chat-voice-note").textContent = ENGINE_NOTE[cloud ? "cloud" : "mac"];
+  $("#voice-add-row").hidden = cloud;
+  const acc = $("#chat-accent").value;
+  $("#chat-accents").querySelectorAll("[data-accent-v]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.accentV === acc)));
+  $("#chat-accent-note").textContent = acc
+    ? `Английский ответ читается с ${acc === "en-GB" ? "британским" : "американским"} произношением${cloud ? "" : " — английским голосом Mac"}; русский — как обычно.`
+    : "Русский ответ читает выбранный голос, английский — тоже, без подсказки произношения.";
+}
+// renderListenChoices: распознавание плашками, как в english-hub (#478):
+// Mac, облако через шлюз (быстрее и дешевле или точнее) и свои серверы.
+const CLOUD_LISTEN = { "cloud:mini": ["Облако", "gpt-4o-mini-transcribe через Vercel AI Gateway: около 0,3 цента за минуту речи, лучше с терминами и английскими словами."], "cloud:best": ["Облако: gpt-4o (дороже)", "gpt-4o-transcribe через Vercel AI Gateway: около 0,6 цента за минуту, точнее на шуме и быстрой речи."] };
+function renderListenChoices() {
+  const cur = $("#chat-listen").value, st = chatState.listenStatus || {}, conns = chatState.speechConns || [];
+  const all = [["", "Mac (бесплатно)", true], ...Object.entries(CLOUD_LISTEN).map(([v, [n]]) => [v, n, true]), ...conns.map((c) => [c.id, c.name, c.enabled])];
+  if (cur && !all.some(([v]) => v === cur)) all.push([cur, "удаленный сервер", false]);
+  $("#chat-listens").innerHTML = all.map(([v, n, on]) => `<button type="button" class="btn" data-listen="${esc(v)}" aria-pressed="${v === cur}" ${on ? "" : "disabled"}>${esc(n)}${on ? "" : "<small>выключено</small>"}</button>`).join("");
+  const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
+  const conn = conns.find((c) => c.id === cur);
+  $("#chat-listen-note").textContent = CLOUD_LISTEN[cur] ? CLOUD_LISTEN[cur][1]
+    : conn ? conn.name + ": запись диктовки уходит этому серверу."
+    : !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
+    : `Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
 }
 const MIC_MODES = {
   hold: ["Удерживать", "Держите кнопку микрофона (или пробел на ней) и говорите, отпустили — фраза ушла."],
@@ -1871,10 +1898,10 @@ function renderMicChoices() {
 function renderAccValues() {
   $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
   const v = $("#chat-voice-name").value;
-  $("#acc-v-voice").textContent = v ? v.replace(/\s*\(.*\)$/, "") : "голос системы";
+  $("#acc-v-voice").textContent = isCloud(v) ? v.split(":")[1].replace(/^./, (c) => c.toUpperCase()) + " · облако" : (v ? v.replace(/\s*\(.*\)$/, "") : "голос системы") + " · Mac";
   $("#acc-v-mic").textContent = (MIC_MODES[$("#chat-mic-mode").value] || MIC_MODES[""])[0];
-  const l = $("#chat-listen");
-  $("#acc-v-listen").textContent = l.selectedOptions[0] ? l.selectedOptions[0].textContent.replace(" на этом Маке", "") : "";
+  const lb = $("#chat-listens").querySelector('[aria-pressed="true"]');
+  $("#acc-v-listen").textContent = lb ? lb.firstChild.textContent : "Mac (бесплатно)";
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -2335,8 +2362,10 @@ async function saveChatPart(patch, head, rest) {
     $("#chat-model-note").textContent = errText(err);
   }
   $("#chat-voice-name").value = chatState.settings.voice || "";
+  $("#chat-accent").value = chatState.settings.accent || "";
   $("#chat-mic-mode").value = chatState.settings.mic || "";
   $("#chat-listen").value = chatState.settings.listen || "";
+  renderListenChoices();
   renderVoiceChoices();
   renderMicChoices();
   renderAccValues();
@@ -2346,8 +2375,20 @@ $("#chat-voices").addEventListener("click", (e) => {
   const b = e.target.closest("[data-voice]");
   if (!b) return;
   const v = b.dataset.voice;
-  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => { $("#chat-model-note").textContent = errText(err); });
-  saveChatPart({ voice: v }, "Голос", " · " + (v || "голос системы"));
+  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => toast("Голос не прозвучал", " · " + errText(err), null, "del"));
+  saveChatPart({ voice: v }, "Голос", " · " + (isCloud(v) ? v.split(":")[1] + ", облако" : v || "голос системы"));
+});
+$("#chat-engines").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-engine]");
+  if (!b || (b.dataset.engine === "cloud") === isCloud($("#chat-voice-name").value)) return;
+  const v = b.dataset.engine === "cloud" ? ((chatState.cloudVoices || [])[0] || {}).id || "" : "";
+  if (native() && native().PreviewVoice) native().PreviewVoice(v).catch((err) => toast("Голос не прозвучал", " · " + errText(err), null, "del"));
+  saveChatPart({ voice: v }, "Кто читает", b.dataset.engine === "cloud" ? " · облако, голос " + v.split(":")[1] : " · Mac, голос системы");
+});
+$("#chat-accents").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-accent-v]");
+  if (!b) return;
+  saveChatPart({ accent: b.dataset.accentV }, "Акцент", " · " + b.textContent);
 });
 $("#chat-mics").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mic]");
@@ -2358,7 +2399,11 @@ $("#voice-add").addEventListener("click", () => {
   if (native() && native().OpenVoiceSettings) native().OpenVoiceSettings().catch((err) => { $("#chat-model-note").textContent = errText(err); });
 });
 $("#chat-name").addEventListener("input", renderAccValues);
-$("#chat-listen").addEventListener("change", (e) => saveChatPart({ listen: e.target.value }, "Распознавание", " · " + e.target.selectedOptions[0].textContent));
+$("#chat-listens").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-listen]");
+  if (!b || b.disabled) return;
+  saveChatPart({ listen: b.dataset.listen }, "Распознавание", " · " + b.firstChild.textContent);
+});
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
   const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
