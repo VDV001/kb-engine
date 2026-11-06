@@ -323,7 +323,15 @@ const tabItems = (t, kb, files) =>
   t.kind === "type"
     ? t.value === "kb" ? kb.map(kbItem) : files.filter((f) => f.kind === t.value).map(fileItem)
     : [...kb.filter((e) => e._src === t.value).map(kbItem), ...files.filter((f) => f._src === t.value).map(fileItem)];
-const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey)];
+// Модули окна (#435): вкладка модуля — после вкладок поиска, ключ module:<id>.
+// Сборка знает только эти; модуль новой сборки в config.json вкладки не дает.
+const MODULES = {
+  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/" },
+};
+state.modules = [];
+const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
+const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
+const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
 function itemsOf(key, kb, files) {
   // «Все» — объединение вкладок: все записи базы и все файлы, число равно сумме
   // (решение владельца 06.11; до того база резалась до 5 и «Все» показывало
@@ -354,6 +362,7 @@ function renderTabs() {
   };
   btn("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
   state.tabs.filter(visibleTab).forEach((t) => btn(tabKey(t), t.name, tabTip(t)));
+  moduleKeys().forEach((k) => btn(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what));
   if (!tabKeys().includes(state.tab)) state.tab = "all";
 }
 
@@ -381,8 +390,9 @@ function render() {
   const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
   const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // Счетчик — длина того же списка, что покажет вкладка.
-  document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
+  document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q && !moduleOf(b.dataset.tab) ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
+  if (showModule(moduleOf(state.tab))) return;
 
   // «Показано» у источника — сколько его записей в текущей вкладке до фильтра:
   // клик по одному источнику не обнуляет счет остальных.
@@ -702,6 +712,7 @@ async function openSettings(view = "sources") {
   showError("");
   if (view === "prefs") {
     renderTabSettings();
+    renderModules();
     renderAccents();
     $("#close-settings").focus();
     return;
@@ -1384,3 +1395,44 @@ $("#accent-list").addEventListener("click", (e) => {
   saveAccents({ mode: "", off: off.includes(id) ? off.filter((x) => x !== id) : [...off, id] });
 });
 if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});
+
+// --- Модули окна (#435, G4) -----------------------------------------------------
+// showModule opens a module in place of the search (id) or returns to the search
+// (null), and reports whether a module is open. Фрейм грузится при первом
+// открытии и дальше живет: вкладка туда-обратно не перезагружает витрину.
+function showModule(id) {
+  const mod = id && MODULES[id];
+  $("#app").classList.toggle("module-open", !!mod);
+  $("#module-view").hidden = !mod;
+  if (mod) {
+    const frame = $("#module-frame");
+    if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
+  }
+  return !!mod;
+}
+function renderModules() {
+  const editable = !!native();
+  $("#module-list").innerHTML = Object.entries(MODULES).map(([id, m]) => {
+    const on = state.modules.some((x) => x.id === id && x.enabled);
+    return `<li><span class="t">${esc(m.name)}</span><span class="w">${esc(m.what)}</span>
+      <button class="sw" role="switch" aria-checked="${on}" aria-label="${on ? "Выключить" : "Включить"}: ${esc(m.name)}" data-module="${id}" ${editable ? "" : "disabled"}></button></li>`;
+  }).join("");
+}
+// Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
+let moduleSaves = Promise.resolve();
+$("#module-list").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-module]");
+  if (!b || !native()) return;
+  const id = b.dataset.module, on = !state.modules.some((x) => x.id === id && x.enabled);
+  state.modules = [...state.modules.filter((x) => x.id !== id), { id, enabled: on }];
+  if (!on && moduleOf(state.tab) === id) state.tab = "all"; // выключенный модуль не остается открытым
+  renderModules();
+  refreshTabs();
+  moduleSaves = moduleSaves.then(() => native().SetModules([{ id, enabled: on }])).then(() => showError("")).catch(async (err) => {
+    showError("Модуль не сохранен: " + err);
+    try { state.modules = (await native().Modules()) || []; } catch { /* остается то, что на экране */ }
+    renderModules();
+    refreshTabs();
+  });
+});
+if (native()) native().Modules().then((m) => { state.modules = m || []; refreshTabs(); }).catch(() => {});
