@@ -283,3 +283,26 @@ func TestValidate_ServerURLWithoutQueryOrFragment(t *testing.T) {
 		t.Fatalf("путь в адресе допустим: %v", err)
 	}
 }
+
+// Папка Google Диска — источник со ссылкой на папку и подключением, через
+// которое она читается; без подключения или не со ссылкой на папку — отказ.
+func TestValidate_GDrive(t *testing.T) {
+	ok := desktopconfig.Source{ID: "g1", Kind: desktopconfig.KindGDrive, URL: "https://drive.google.com/drive/folders/1Fo?usp=sharing", Conn: "google-1", Enabled: true}
+	cfg := desktopconfig.Config{Sources: []desktopconfig.Source{ok}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("отвергнуто: %v", err)
+	}
+	for _, bad := range []desktopconfig.Source{
+		{ID: "g2", Kind: desktopconfig.KindGDrive, URL: "https://drive.google.com/drive/folders/1Fo"},
+		{ID: "g3", Kind: desktopconfig.KindGDrive, URL: "https://docs.google.com/document/d/1A/edit", Conn: "google-1"},
+		{ID: "g4", Kind: desktopconfig.KindGDrive, URL: "http://drive.google.com/drive/folders/1Fo", Conn: "google-1"},
+	} {
+		cfg := desktopconfig.Config{Sources: []desktopconfig.Source{bad}}
+		if err := cfg.Validate(); !errors.Is(err, desktopconfig.ErrSourceTarget) {
+			t.Errorf("принят %+v: %v", bad, err)
+		}
+	}
+	if got := desktopconfig.DriveFolderID(ok.URL); got != "1Fo" {
+		t.Fatalf("DriveFolderID = %q", got)
+	}
+}
