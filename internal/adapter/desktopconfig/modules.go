@@ -9,8 +9,13 @@ import (
 // который открывается вкладкой рядом с поиском (решение владельца 05.11.2026).
 type ModuleID string
 
-// ModuleFinances — финансы: витрина движка во вкладке окна.
-const ModuleFinances ModuleID = "finances"
+// Модули окна.
+const (
+	// ModuleFinances — финансы: витрина движка во вкладке окна.
+	ModuleFinances ModuleID = "finances"
+	// ModuleChat — чат над документами (#436).
+	ModuleChat ModuleID = "chat"
+)
 
 // Ошибки списка модулей от окна; вызывающие проверяют errors.Is.
 var (

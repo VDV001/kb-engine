@@ -591,3 +591,91 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .skip-dir { color: var(--z-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .skip-list .btn { height: 24px; padding: 0 10px; }
 .skip-detail { display: block; padding: 0 12px 8px 32px; color: var(--z-muted); font: 11px var(--z-font); overflow-wrap: anywhere; user-select: text; }
+
+/* Чат над документами (#436): как в Claude Desktop — колонки чатов и
+   документов прячутся целиком значком в шапке, без полос и язычков; край
+   колонки тянется и прилипает к удобным ширинам (решения владельца 06.11). */
+.app.module-open .chat-view:not([hidden]) { display: flex; }
+.chat-view { --chat-l: 248px; --chat-r: 280px; min-height: 0; margin-top: 16px; }
+.chat-side, .chat-docs { flex: none; min-height: 0; overflow: hidden; transition: width .3s var(--z-ease), opacity .2s; }
+.chat-side { width: var(--chat-l); }
+.chat-docs { width: var(--chat-r); border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); }
+.chat-view.hide-l .chat-side, .chat-view.hide-r .chat-docs { width: 0; opacity: 0; border-width: 0; }
+.chat-view.hide-l #chat-grip-l, .chat-view.hide-r #chat-grip-r { display: none; }
+.chat-view.dragging .chat-side, .chat-view.dragging .chat-docs { transition: none; }
+.chat-pane-in { height: 100%; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.chat-side .chat-pane-in { width: var(--chat-l); padding: 0 4px 0 0; }
+.chat-docs .chat-pane-in { width: var(--chat-r); padding: 12px; gap: 10px; }
+.chat-grip { flex: none; width: 12px; cursor: col-resize; position: relative; }
+.chat-grip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 5px; width: 2px; border-radius: 1px; background: transparent; transition: background .15s; }
+.chat-grip:hover::after, .chat-grip:focus-visible::after, .chat-view.dragging .chat-grip.on::after { background: var(--z-accent); }
+.chat-grip:focus-visible { outline: none; }
+.chat-nav { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 7px 10px; color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; }
+.chat-nav:hover { background: var(--z-bg-3); color: var(--z-ink); }
+.chat-nav.new { background: var(--z-bg-3); color: var(--z-ink); }
+.chat-nav .ic { width: 16px; height: 16px; flex: none; color: var(--z-muted); }
+.chat-nav:hover .ic, .chat-nav.new .ic { color: var(--z-ink); }
+.chat-find { margin: 2px 0 4px; padding: 6px 10px; font: 12px var(--z-font); border: 1px solid var(--z-rule-2); border-radius: 6px; background: var(--z-bg); color: var(--z-ink); }
+.chat-rec { margin: 14px 10px 4px; font-size: 11px; color: var(--z-faint); }
+.chat-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; min-height: 0; }
+/* Название чата в одну строку, хвост тает (как в Claude Desktop); полное — в подсказке. */
+.chat-item { display: block; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 7px 28px 7px 10px; color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; white-space: nowrap; overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); }
+.chat-list li { position: relative; }
+.chat-item:hover { background: var(--z-bg-3); color: var(--z-ink); }
+.chat-item.on { background: var(--z-bg-3); color: var(--z-ink); }
+.chat-del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; background: none; border: 0; color: var(--z-muted); cursor: pointer; padding: 2px 6px; font-size: 14px; }
+.chat-list li:hover .chat-del, .chat-del:focus-visible { opacity: 1; }
+.chat-del:hover { color: var(--z-bad); }
+.chat-model { display: grid; gap: 8px; padding: 6px 4px; }
+.chat-model[hidden] { display: none; }
+.chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
+.chat-model input, .chat-model select { font: 12px var(--z-font); padding: 5px 8px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); color: var(--z-ink); min-width: 0; }
+.chat-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
+.chat-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-bottom: 1px solid var(--z-rule); }
+.chat-title { flex: 1; min-width: 0; text-align: center; font-size: 12px; color: var(--z-ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-btn { width: 30px; height: 26px; flex: none; border: 1px solid transparent; border-radius: 6px; background: none; display: grid; place-items: center; color: var(--z-muted); padding: 0; cursor: pointer; }
+.pane-btn:hover { background: var(--z-bg-3); color: var(--z-ink); }
+.pane-btn[aria-pressed="true"] { color: var(--z-ink); background: var(--z-bg-3); border-color: var(--z-rule-2); }
+.pane-btn svg { width: 16px; height: 16px; }
+.chat-log { flex: 1; min-height: 0; overflow: auto; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; }
+.chat-hello { margin: auto; text-align: center; display: grid; gap: 6px; }
+.msg { max-width: 72ch; font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; user-select: text; }
+.msg.user { align-self: flex-end; background: var(--z-bg-3); padding: 8px 12px; border-radius: var(--z-radius); }
+.msg.bot { align-self: flex-start; color: var(--z-ink); }
+.msg.bot code { font: 12px var(--z-font); background: var(--z-bg-3); padding: 0 4px; border-radius: 2px; }
+.msg.thinking { color: var(--z-muted); display: flex; align-items: center; gap: 8px; }
+/* Поле вопроса как в Claude: блок, сверху текст, снизу ряд кнопок. */
+.chat-ask { padding: 0 12px 6px; }
+.chat-box { display: flex; flex-direction: column; gap: 6px; padding: 10px 10px 8px 14px; border: 1px solid var(--z-rule-2); border-radius: 12px; background: var(--z-bg-3); }
+.chat-box:focus-within { border-color: var(--z-accent); }
+.chat-box textarea { resize: none; border: 0; outline: none; background: none; color: var(--z-ink); font: 13px/1.5 var(--z-font); padding: 0; max-height: 40vh; overflow-y: auto; }
+.chat-box-row { display: flex; align-items: center; gap: 8px; }
+.chat-spacer { flex: 1; }
+.chat-model-chip { border: 0; background: none; color: var(--z-muted); font: 11px var(--z-font); padding: 4px 6px; border-radius: 6px; cursor: pointer; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-model-chip:hover { background: var(--z-bg-2); color: var(--z-ink); }
+.chat-model-chip::after { content: " ⌄"; }
+.chat-tool { width: 30px; height: 30px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--z-ink-2); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.chat-tool svg { width: 16px; height: 16px; }
+.chat-tool:hover { background: var(--z-bg-2); color: var(--z-ink); }
+.chat-tool[aria-disabled="true"] { color: var(--z-faint); cursor: default; }
+.chat-idle { display: flex; gap: 2px; }
+/* Пустое поле — диктовка и голос; с текстом — кнопка отправки (как в Claude). */
+.chat-box.has-text .chat-idle, .chat-box:not(.has-text) .chat-send { display: none; }
+.chat-send { width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; display: grid; place-items: center; background: var(--z-accent); color: var(--z-accent-ink); cursor: pointer; }
+.chat-send svg { width: 16px; height: 16px; }
+.chat-send:disabled { opacity: .35; cursor: default; }
+.chat-note { padding: 0 12px 10px; font-size: 11px; }
+.chat-docs h3 { margin: 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); white-space: nowrap; }
+#chat-docs { list-style: none; margin: 0; padding: 0; overflow: auto; display: grid; align-content: start; gap: 10px; }
+#chat-docs li { display: grid; gap: 2px; font-size: 12px; min-width: 0; }
+.chat-doc-title { color: var(--z-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-doc-src { font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-doc-acts { display: flex; gap: 6px; margin-top: 2px; }
+.chat-doc-acts .btn { height: 22px; padding: 0 8px; font-size: 11px; }
+/* Спектр в чате — четыре акцента «Оформления» (chat-*). */
+body:not(.no-chat-send) .chat-send { background: linear-gradient(135deg, var(--z-sp4), var(--z-sp5)); }
+body:not(.no-chat-field) .chat-box:focus-within { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)) border-box; }
+body:not(.no-chat-active) .chat-item.on { background: linear-gradient(90deg, var(--z-accent-wash), transparent); }
+body:not(.no-chat-grip) .chat-grip:hover::after, body:not(.no-chat-grip) .chat-view.dragging .chat-grip.on::after { background: linear-gradient(var(--z-sp4), var(--z-sp5), var(--z-sp6)); }
+@media (prefers-reduced-motion: reduce) { .chat-side, .chat-docs { transition: none; } }

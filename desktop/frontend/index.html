@@ -90,6 +90,68 @@
     <section class="module-view" id="module-view" hidden>
       <iframe id="module-frame" title="Модуль окна"></iframe>
     </section>
+
+    <!-- Чат над документами (#436): как в Claude Desktop — значок панели в шапке
+         показывает и прячет чаты и документы целиком, край колонки тянется. -->
+    <section class="chat-view" id="chat-view" hidden>
+      <aside class="chat-side" id="chat-side">
+        <div class="chat-pane-in">
+          <button class="chat-nav new" id="chat-new" data-tip="Новый чат" data-tip-k="⌘N"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg>Новый чат</button>
+          <button class="chat-nav" id="chat-find-btn" aria-expanded="false" data-tip="Поиск" data-tip-b="найти чат по названию"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="7" cy="7" r="4.2"/><path d="m10.2 10.2 3.3 3.3"/></svg>Поиск</button>
+          <button class="chat-nav" id="chat-sources-btn" data-tip="Источники" data-tip-b="откуда чат берет документы: папки, база, kb-серверы"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4.5h4l1.2 1.5H14v6.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z"/></svg>Источники</button>
+          <input class="chat-find" id="chat-find" placeholder="Найти чат…" aria-label="Найти чат" autocomplete="off" spellcheck="false" hidden>
+          <div class="chat-rec">Недавние</div>
+          <ul class="chat-list" id="chat-list"></ul>
+          <button class="chat-nav" id="chat-model-btn" aria-expanded="false" data-tip="Модель" data-tip-b="адрес, имя модели, ключ и кто ищет документы"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="9" height="8" rx="1.5"/><path d="M8 2v2.5M6 8h.01M10 8h.01M6.5 10.5h3"/></svg>Модель</button>
+          <form class="chat-model" id="chat-model" hidden>
+            <label>Адрес<input id="chat-url" placeholder="https://ai-gateway.vercel.sh/v1" autocomplete="off" spellcheck="false"></label>
+            <label>Модель<input id="chat-name" placeholder="anthropic/claude-sonnet-5.5" autocomplete="off" spellcheck="false"></label>
+            <label>Кто ищет документы
+              <select id="chat-mode">
+                <option value="">по модели</option>
+                <option value="context">окно ищет (маленькие модели)</option>
+                <option value="tools">модель ищет (сильные модели)</option>
+              </select>
+            </label>
+            <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+            <button class="btn primary" type="submit">Сохранить</button>
+            <p class="muted" id="chat-model-note"></p>
+          </form>
+        </div>
+      </aside>
+      <div class="chat-grip" id="chat-grip-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="Ширина колонки чатов" tabindex="0" data-tip="Тяните · двойной щелчок — обычная ширина"></div>
+      <div class="chat-main">
+        <div class="chat-head">
+          <button class="pane-btn" id="chat-pane-l" data-pane="l" aria-pressed="true" aria-label="Показать или скрыть чаты" data-tip="Чаты · ⌘\"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><line x1="5.5" y1="2.5" x2="5.5" y2="13.5"/></svg></button>
+          <span class="chat-title" id="chat-title"></span>
+          <button class="pane-btn" id="chat-pane-r" data-pane="r" aria-pressed="true" aria-label="Показать или скрыть документы чата" data-tip="Документы чата"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="1.5" y="2.5" width="13" height="11" rx="2"/><line x1="10.5" y1="2.5" x2="10.5" y2="13.5"/></svg></button>
+        </div>
+        <div class="chat-log" id="chat-log" aria-live="polite"></div>
+        <form class="chat-ask" id="chat-ask">
+          <div class="chat-box">
+            <textarea id="chat-q" rows="1" placeholder="Спросите о своих документах…" aria-label="Вопрос"></textarea>
+            <div class="chat-box-row">
+              <button class="chat-tool" type="button" id="chat-attach" aria-label="Приложить файл" data-tip="Приложить файл" data-tip-b="скоро: файл с диска в разговор" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button>
+              <button class="chat-model-chip" type="button" id="chat-model-chip" data-tip="Модель" data-tip-b="нажмите, чтобы сменить модель или ключ"></button>
+              <span class="chat-spacer"></span>
+              <span class="chat-idle" id="chat-idle">
+                <button class="chat-tool" type="button" aria-label="Диктовка" data-tip="Диктовка" data-tip-b="скоро: голос в текст на этом Маке (whisper)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></svg></button>
+                <button class="chat-tool" type="button" aria-label="Голосовой режим" data-tip="Голосовой режим" data-tip-b="скоро: разговор голосом" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7v2M5 5v6M8 3v10M11 5v6M13.5 7v2"/></svg></button>
+              </span>
+              <button class="chat-send" type="submit" id="chat-send" aria-label="Спросить" data-tip="Спросить" data-tip-k="⏎" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button>
+            </div>
+          </div>
+        </form>
+        <p class="muted chat-note" id="chat-note"></p>
+      </div>
+      <div class="chat-grip" id="chat-grip-r" data-side="r" role="separator" aria-orientation="vertical" aria-label="Ширина колонки документов" tabindex="0" data-tip="Тяните · двойной щелчок — обычная ширина"></div>
+      <aside class="chat-docs" id="chat-docs-pane">
+        <div class="chat-pane-in">
+          <h3>Документы чата <span class="muted" id="chat-docs-n"></span></h3>
+          <ul id="chat-docs"></ul>
+        </div>
+      </aside>
+    </section>
   </main>
 
   <!-- Источники: папки, каталог базы, kb-серверы. Меняются только в окне: в
@@ -134,8 +196,8 @@
     <h3 data-view="prefs">Оформление</h3>
     <p class="muted" data-view="prefs">Где в окне цвета спектра. Меняется сразу; «Все» и «Ничего» не стирают твой выбор.</p>
     <div class="accent-presets" id="accent-presets" data-view="prefs">
-      <button class="btn" data-preset="mine" aria-pressed="false">Твой выбор (<span id="accent-mine-n">21</span>)</button>
-      <button class="btn" data-preset="all" aria-pressed="false">Все <span id="accent-all-n">21</span></button>
+      <button class="btn" data-preset="mine" aria-pressed="false">Твой выбор (<span id="accent-mine-n">25</span>)</button>
+      <button class="btn" data-preset="all" aria-pressed="false">Все <span id="accent-all-n">25</span></button>
       <button class="btn" data-preset="none" aria-pressed="false">Ничего</button>
     </div>
     <ul class="accent-list" id="accent-list" data-view="prefs"></ul>
