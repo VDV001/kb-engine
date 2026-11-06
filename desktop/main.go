@@ -123,6 +123,7 @@ func run() error {
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
 	app.chat.useSources(idx.files)
 	app.google = newGoogleDesk(settings)
+	settings.drive = app.google.Search
 	app.chat.useAttachments(idx.files, ext, weblink.Client{HTTP: &http.Client{Timeout: 30 * time.Second}}, app.google)
 	app.listen = &dictation{emit: func(listenEvent) {}}
 	app.voice = &speaker{}

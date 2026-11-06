@@ -122,7 +122,7 @@ func attachErr(ref string, err error) error {
 func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web weblink.Client, gd *googleDesk) {
 	d.attach = func(ctx context.Context, ref string) (chat.Doc, error) {
 		if link, ok := strings.CutPrefix(ref, "url:"); ok {
-			return readLink(ctx, ext, web, gd, ref, link)
+			return readLink(ctx, ext, web, gd, "", ref, link)
 		}
 		if p, ok := strings.CutPrefix(ref, "file:"); ok {
 			if text, err := files.Read(p); err == nil {
@@ -135,13 +135,18 @@ func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web
 		}
 		return d.read(ctx, ref)
 	}
+	d.driveRead = func(ctx context.Context, conn, ref string) (chat.Doc, error) {
+		return readLink(ctx, ext, web, gd, conn, ref, strings.TrimPrefix(ref, "url:"))
+	}
 }
 
-func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googleDesk, ref, link string) (chat.Doc, error) {
+// readLink reads a link; документ Google — через подключение conn ("" — первое
+// включенное).
+func readLink(ctx context.Context, ext extraction, web weblink.Client, gd *googleDesk, conn, ref, link string) (chat.Doc, error) {
 	// Документ Google — через подключение (закрытые тоже); подключения нет —
 	// как открытая страница.
 	if gd != nil && google.FileID(link) != "" {
-		d, err := gd.Read(ctx, link)
+		d, err := gd.ReadAs(ctx, conn, link)
 		if err == nil {
 			text := d.Text
 			if d.Raw != nil {

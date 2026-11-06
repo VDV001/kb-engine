@@ -56,10 +56,12 @@ type sourcesView struct {
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
-	mu   sync.Mutex
-	path string // config.json
-	home string
-	cfg  desktopconfig.Config
+	// drive ищет в папке Google Диска (gdrive.go); nil — Диск не ищется.
+	drive driveFunc
+	mu    sync.Mutex
+	path  string // config.json
+	home  string
+	cfg   desktopconfig.Config
 	// apply открывает папки, переключает каталог и запускает переиндексацию.
 	apply func(roots, exclude []string, catalog string) error
 	// countFiles и countCatalog — счет для экрана: файлы по папкам из индекса,
@@ -119,6 +121,8 @@ func (f *folderSettings) GetSources() sourcesView {
 			f.catalogRow(r, cfg.CatalogPath())
 		case s.Kind == desktopconfig.KindServer:
 			r.State = stateChecking // состояние догружает ServerStates
+		case s.Kind == desktopconfig.KindGDrive:
+			f.driveRow(r, cfg)
 		default:
 			r.State, r.Note = statePending, "вид источника из более новой версии kb"
 		}
@@ -186,6 +190,9 @@ func (f *folderSettings) SetSources(list []desktopconfig.Source, exclude []strin
 	next.Roots, next.Catalog, next.Server = nil, "", ""
 	next.AssignIDs()
 	if err := next.Validate(); err != nil {
+		return err
+	}
+	if err := checkDriveConns(f.cfg, next); err != nil {
 		return err
 	}
 	roots, missing, err := f.openableFolders(next)

@@ -19,6 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/google"
+	"github.com/daniil/kb-engine/internal/adapter/sourcelist"
 )
 
 // Подключение Google (решение владельца 06.11: «дать доступ — удобнее»):
@@ -225,31 +226,40 @@ func (g *googleDesk) Remove(id string) error {
 // аккаунта, и документ открыт только второму. Путь: пробовать по очереди на
 // ErrNoAccess.
 func (g *googleDesk) Read(ctx context.Context, link string) (google.Doc, error) {
+	return g.ReadAs(ctx, "", link)
+}
+
+// ReadAs reads a Google link through connection conn ("" — первое
+// включенное): находка папки Диска читается тем аккаунтом, что ее нашел.
+func (g *googleDesk) ReadAs(ctx context.Context, conn, link string) (google.Doc, error) {
 	id := google.FileID(link)
 	if id == "" {
 		return google.Doc{}, errors.New("это не ссылка на документ Google")
 	}
 	cfg := g.settings.snapshot().cfg
-	i := slices.IndexFunc(cfg.Connections, func(c desktopconfig.Connection) bool { return c.Kind == desktopconfig.ConnGoogle && c.Enabled })
+	i := slices.IndexFunc(cfg.Connections, func(c desktopconfig.Connection) bool {
+		return c.Kind == desktopconfig.ConnGoogle && c.Enabled && (conn == "" || c.ID == conn)
+	})
 	if i < 0 {
 		return google.Doc{}, errNoGoogle
 	}
-	conn := cfg.Connections[i]
-	c, at, err := g.token(ctx, conn.ID)
+	used := cfg.Connections[i]
+	c, at, err := g.token(ctx, used.ID)
 	if err != nil {
 		return google.Doc{}, err
 	}
 	d, err := c.ReadLink(ctx, at, link)
 	if err != nil {
-		return google.Doc{}, fmt.Errorf("%s: %w", conn.Name, googleErr(err))
+		return google.Doc{}, fmt.Errorf("%s: %w", used.Name, googleErr(err))
 	}
 	return d, nil
 }
 
 // token returns a client and an access token for connection id: из памяти
-// или обновлением по refresh-токену из Связки.
+// или обновлением по refresh-токену из Связки. Связка читается со сроком
+// ctx, как у kb-серверов: запертая (ждет пароля) не держит поиск (ревью #467).
 func (g *googleDesk) token(ctx context.Context, id string) (google.Client, string, error) {
-	raw, err := g.settings.tokens.Get(clientAccount(id))
+	raw, err := sourcelist.TokenWithin(ctx, g.settings.tokens.Get, clientAccount(id))
 	if err != nil {
 		return google.Client{}, "", fmt.Errorf("клиент Google не прочитан из Связки ключей: %w", err)
 	}
@@ -264,7 +274,7 @@ func (g *googleDesk) token(ctx context.Context, id string) (google.Client, strin
 	if ok && time.Now().Before(t.exp) {
 		return c, t.at, nil
 	}
-	refresh, err := g.settings.tokens.Get(refreshAccount(id))
+	refresh, err := sourcelist.TokenWithin(ctx, g.settings.tokens.Get, refreshAccount(id))
 	if err != nil {
 		return google.Client{}, "", fmt.Errorf("вход Google не прочитан из Связки ключей: %w", err)
 	}

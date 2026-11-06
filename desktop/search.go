@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
@@ -86,6 +87,8 @@ func (f *folderSettings) SearchSources(ctx context.Context, q string) sourcesSea
 				items, msg = searchCatalog(desktopconfig.ExpandHome(r.Path, f.home), q)
 			case desktopconfig.KindServer:
 				items, msg = f.searchServer(ctx, r.Source, snap, q)
+			case desktopconfig.KindGDrive:
+				items, msg = f.searchDrive(ctx, r.Source, snap.cfg, q)
 			default:
 				return // папки считает countFolders: их выдача — /api/files/search
 			}
@@ -154,8 +157,13 @@ func (f *folderSettings) countFolders(rows []sourceFound, q string) {
 // что видит MCP (sourcelist.Enabled).
 func sourceRows(cfg desktopconfig.Config) []sourceFound {
 	var rows []sourceFound
-	for _, s := range sourcelist.Enabled(cfg) {
-		rows = append(rows, sourceFound{Source: s})
+	known := sourcelist.Enabled(cfg)
+	// Папка Диска — только в окне: ищет ее подключение Google окна, поэтому
+	// она здесь, а не в общем sourcelist (его читает и kbengine-mcp).
+	for _, s := range cfg.WithSources().Sources {
+		if slices.ContainsFunc(known, func(k desktopconfig.Source) bool { return k.ID == s.ID }) || (s.Kind == desktopconfig.KindGDrive && s.Enabled) {
+			rows = append(rows, sourceFound{Source: s})
+		}
 	}
 	return rows
 }

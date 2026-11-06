@@ -622,7 +622,9 @@ waitForIndex();
 // в черновик, «Сохранить» отдает его Go: проверка там, а не здесь (папка обязана
 // существовать, вложенность, файл каталога, адрес сервера).
 const panel = $("#settings"), scrim = $("#scrim");
-const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер" };
+const KIND = { folder: "папка", catalog: "каталог KB", server: "kb-сервер", gdrive: "папка Google Диска" };
+// Подключения Google для формы папки Диска: обновляются при открытии «Источников».
+let googleConns = [];
 // Ни один цвет источника не совпадает с цветами состояний (--z-bad, --z-ok):
 // красный и зеленый спектра заменены своими (style.css).
 const HUES = ["--z-sp4", "--z-sp2", "--z-src-teal", "--z-sp1", "--z-sp5", "--z-src-violet"];
@@ -635,9 +637,9 @@ const draft = { sources: [], exclude: [], tokens: {}, saved: "" };
 const ui = { editing: null, replacing: null, confirmDel: null, addKind: null, drag: null, verdict: null, checkSeq: 0, adding: false, statesSeq: 0 };
 let keySeq = 0;
 
-const target = (s) => (s.kind === "server" ? s.url : s.path) || "";
+const target = (s) => (s.kind === "server" || s.kind === "gdrive" ? s.url : s.path) || "";
 const tilde = (p) => p.replace(/^\/Users\/[^/]+/, "~");
-const label = (s) => s.name || (s.kind === "server" ? hostOf(s.url) : target(s).split("/").filter(Boolean).pop()) || target(s);
+const label = (s) => s.name || (s.kind === "gdrive" ? "Google Диск" : s.kind === "server" ? hostOf(s.url) : target(s).split("/").filter(Boolean).pop()) || target(s);
 const hostOf = (u) => { try { return new URL(u).host; } catch { return u; } };
 const fmt = (n) => n.toLocaleString("ru-RU");
 function plural(n, one, few, many) {
@@ -698,7 +700,7 @@ $("#strip").addEventListener("click", (e) => {
   render();
 });
 const payload = () => ({
-  sources: draft.sources.map(({ id, kind, name, path, url, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", enabled })),
+  sources: draft.sources.map(({ id, kind, name, path, url, conn, enabled }) => ({ id, kind, name: name || "", path: path || "", url: url || "", conn: conn || "", enabled })),
   exclude: draft.exclude,
 });
 // Токены только для серверов, которые еще в списке: убранный или отмененный
@@ -721,7 +723,7 @@ const byKey = (k) => draft.sources.find((s) => s._key === k);
 function load(v) {
   state.known = v.sources || [];
   refreshTabs(); // подписи вкладок по источникам зависят от списка
-  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: s.kind === "server" ? s.url : s.path, _was: s.enabled }));
+  draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: target(s), _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
   draft.tokens = {};
   draft.saved = JSON.stringify(payload());
@@ -799,6 +801,7 @@ async function openSettings(view = "sources") {
       return;
     }
   }
+  if (native().Connections) googleConns = ((await native().Connections().catch(() => [])) || []).filter((c) => c.kind === "google" && c.enabled);
   const list = $("#sources");
   list.classList.add("enter");
   renderSources();
@@ -922,13 +925,18 @@ function stateOf(s) {
 }
 
 function formOf(s, i) {
-  const what = s.kind === "server" ? "адрес" : "путь";
+  const what = s.kind === "server" ? "адрес" : s.kind === "gdrive" ? "ссылка на папку" : "путь";
+  // Подключение папки Диска меняется здесь же: удаленное подключение иначе
+  // не заменить без удаления папки (ревью #467).
+  const conns = googleConns.some((c) => c.id === s.conn) ? googleConns : [{ id: s.conn || "", name: "нет подключения — выберите" }, ...googleConns];
+  const connField = s.kind === "gdrive"
+    ? `<div class="field"><label for="ec-${s._key}">подключение</label><select id="ec-${s._key}">${conns.map((c) => `<option value="${esc(c.id)}"${c.id === s.conn ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select></div>` : "";
   const pick = s.kind === "folder" && native() ? `<button class="btn" data-pick="${s._key}">Выбрать…</button>` : "";
   if (ui.editing === s._key)
     return `<div class="form">
       <div class="field"><label for="en-${s._key}">имя</label><input id="en-${s._key}" value="${esc(s.name || "")}" placeholder="${esc(label(s))}"></div>
       <div class="field"><label for="ea-${s._key}">${what}</label><input id="ea-${s._key}" value="${esc(target(s))}" spellcheck="false">${pick}</div>
-      ${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
+      ${connField}${s.kind === "server" ? tokenField(`et-${s._key}`, s.hasToken || draft.tokens[s.id]) + checkBar(s._key) : ""}
       <div class="formbar"><button class="btn primary" data-save="${s._key}">Готово</button><button class="btn" data-cancel>Отмена</button></div></div>`;
   if (ui.replacing === s._key)
     return `<div class="form">
@@ -991,6 +999,13 @@ function renderSources() {
       ${tokenField("nt", false)}${checkBar("new")}
       <div class="row"><button class="btn primary" data-addok>Подключить</button>
       <span class="hint">http — только для этого Mac; токен уйдет в Связку ключей macOS, не в config.json</span></div>`;
+  else if (ui.addKind === "gdrive")
+    form = googleConns.length
+      ? `<div class="field"><label for="na">ссылка на папку</label><input id="na" placeholder="https://drive.google.com/drive/folders/…" spellcheck="false"></div>
+        <div class="row"><select id="nc" aria-label="Подключение Google">${googleConns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("")}</select>
+        <input id="nn" placeholder="название, например Тендеры" spellcheck="false"><button class="btn primary" data-addok>Добавить</button></div>
+        <span class="hint">ищет сам Google Диск, файлы на Мак не скачиваются; только файлы прямо в этой папке</span>`
+      : `<div class="row"><span class="muted">Сначала подключите Google — вход один на все папки Диска.</span><button class="btn" data-go-sec="conn">Подключения</button></div>`;
   dropStaleTip();
   $("#add").innerHTML = `<div class="row"><span class="muted">+ источник</span><span class="seg" role="group" aria-label="Вид источника">${kinds}</span></div>${form}`;
 
@@ -1065,7 +1080,7 @@ function move(key, d) {
   $(`[data-${d < 0 ? "up" : "down"}="${key}"]`)?.focus();
 }
 function setTarget(s, v) {
-  if (s.kind === "server") s.url = v; else s.path = v;
+  if (s.kind === "server" || s.kind === "gdrive") s.url = v; else s.path = v;
 }
 const focusSoon = (sel) => requestAnimationFrame(() => $(sel)?.focus());
 
@@ -1118,8 +1133,9 @@ panel.addEventListener("click", async (e) => {
     const s = byKey(d.save), name = $(`#en-${s._key}`).value.trim(), v = $(`#ea-${s._key}`).value.trim();
     if (!v) return focusSoon(`#ea-${s._key}`);
     const tok = s.kind === "server" ? $(`#et-${s._key}`).value.trim() : "";
+    const conn = s.kind === "gdrive" ? $(`#ec-${s._key}`).value : s.conn;
     ui.verdict = null;
-    const undo = change(() => { s.name = name; setTarget(s, v); if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
+    const undo = change(() => { s.name = name; setTarget(s, v); if (s.kind === "gdrive") s.conn = conn; if (tok) draft.tokens[s.id] = { url: v, token: tok }; });
     return toast("Изменено", ` · «${label(s)}»`, undo);
   }
   if (d.doreplace) {
@@ -1143,6 +1159,7 @@ panel.addEventListener("click", async (e) => {
     if (d.pick === "new") $("[data-addok]").click();
     return;
   }
+  if (d.goSec) return openSettings(d.goSec);
   if (d.kind) { ui.addKind = ui.addKind === d.kind ? null : d.kind; renderSources(); return focusSoon("#na"); }
   if ("addok" in d) {
     const v = $("#na").value.trim();
@@ -1152,6 +1169,7 @@ panel.addEventListener("click", async (e) => {
     // Поля читаются до ожидания: за время await форма может перерисоваться.
     const tok = kind === "server" ? $("#nt").value.trim() : "";
     const s = { id: "", kind, name: "", path: "", url: "", enabled: true, _key: "k" + ++keySeq };
+    if (kind === "gdrive") { s.conn = $("#nc").value; s.name = $("#nn").value.trim(); }
     setTarget(s, v);
     if (kind === "server") {
       ui.adding = true;
