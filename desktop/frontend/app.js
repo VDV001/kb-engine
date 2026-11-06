@@ -1706,7 +1706,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [] };
 async function openChatView() {
   if (!native() || !native().Ask) {
     $("#chat-log").innerHTML = `<p class="muted">Чат работает в окне приложения, не в браузере.</p>`;
@@ -1789,6 +1789,7 @@ async function loadChatSettings() {
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
+  renderAccValues();
 }
 // renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
 // читать ответ.
@@ -1804,11 +1805,33 @@ async function renderVoiceSettings() {
   const curListen = (chatState.settings && chatState.settings.listen) || "";
   listen.innerHTML = `<option value="">Apple Speech на этом Маке</option>` + speech.map((c) => `<option value="${esc(c.id)}"${c.id === curListen ? " selected" : ""}${c.enabled ? "" : " disabled"}>${esc(c.name)}${c.enabled ? "" : " (выключено)"}</option>`).join("");
   if (curListen && speech.some((c) => c.id === curListen)) note.textContent = "Слушает: " + speech.find((c) => c.id === curListen).name + " — запись диктовки уходит этому серверу.";
-  const sel = $("#chat-voice-name");
-  const voices = (await native().Voices().catch(() => [])) || [];
-  const cur = (chatState.settings && chatState.settings.voice) || "";
-  sel.innerHTML = `<option value="">голос системы</option>` + voices.map((v) => `<option${v === cur ? " selected" : ""}>${esc(v)}</option>`).join("");
-  if (cur && !voices.includes(cur)) sel.insertAdjacentHTML("beforeend", `<option selected>${esc(cur)}</option>`);
+  chatState.voices = (await native().Voices().catch(() => [])) || [];
+  $("#chat-voice-name").value = (chatState.settings && chatState.settings.voice) || "";
+  renderVoiceChoices();
+  renderAccValues();
+}
+// voiceTag names the quality from the macOS voice name: Premium и Enhanced
+// (и их русские подписи) звучат живее обычных.
+const voiceTag = (v) => (/premium|преми/i.test(v) ? "премиум" : /enhanced|улучш/i.test(v) ? "улучшенный" : "");
+// renderVoiceChoices: голоса плашками, как в english-hub (#478); выбранный
+// хранится в скрытом поле формы и сохраняется общей кнопкой.
+function renderVoiceChoices() {
+  const cur = $("#chat-voice-name").value;
+  const list = chatState.voices || [];
+  const all = [["", "голос системы"], ...list.map((v) => [v, v])];
+  if (cur && !list.includes(cur)) all.push([cur, cur + " — нет на этом Маке"]);
+  $("#chat-voices").innerHTML = all.map(([v, name]) => {
+    const tag = voiceTag(v);
+    return `<button type="button" class="btn" data-voice="${esc(v)}" aria-pressed="${v === cur}">${esc(name.replace(/\s*\(.*\)$/, ""))}${tag ? `<small>${tag}</small>` : ""}</button>`;
+  }).join("");
+}
+// renderAccValues: в заголовке раздела — выбранное, чтобы видеть все, не раскрывая.
+function renderAccValues() {
+  $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
+  const v = $("#chat-voice-name").value;
+  $("#acc-v-voice").textContent = v ? v.replace(/\s*\(.*\)$/, "") : "голос системы";
+  const l = $("#chat-listen");
+  $("#acc-v-listen").textContent = l.selectedOptions[0] ? l.selectedOptions[0].textContent.replace(" на этом Маке", "") : "";
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
@@ -2200,6 +2223,19 @@ $(".settings-nav").addEventListener("click", (e) => {
   const b = e.target.closest("[data-go]");
   if (b && b.dataset.go !== panel.dataset.view) openSettings(b.dataset.go);
 });
+$("#chat-voices").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-voice]");
+  if (!b) return;
+  $("#chat-voice-name").value = b.dataset.voice;
+  renderVoiceChoices();
+  renderAccValues();
+  if (native() && native().PreviewVoice) native().PreviewVoice(b.dataset.voice).catch((err) => { $("#chat-model-note").textContent = errText(err); });
+});
+$("#voice-add").addEventListener("click", () => {
+  if (native() && native().OpenVoiceSettings) native().OpenVoiceSettings().catch((err) => { $("#chat-model-note").textContent = errText(err); });
+});
+$("#chat-name").addEventListener("input", renderAccValues);
+$("#chat-listen").addEventListener("change", renderAccValues);
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
   const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value };

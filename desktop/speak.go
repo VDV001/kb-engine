@@ -1,8 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"os/exec"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 )
@@ -118,3 +120,21 @@ func russianVoices() []string {
 	}
 	return parseVoices(string(out), "ru_")
 }
+
+// previewSample — пробная фраза голоса в настройках (#478).
+const previewSample = "Здравствуйте! Так я буду читать ответы."
+
+// previewVoice says the sample with voice: «системный» ("") или голос из
+// списка Мака — чужая строка из окна в say не уходит.
+func previewVoice(s *speaker, voices func() []string, voice string) error {
+	if voice != "" && !slices.Contains(voices(), voice) {
+		return fmt.Errorf("голоса %q нет на этом Маке", voice)
+	}
+	return s.Speak(voice, previewSample)
+}
+
+// voiceSettingsURL — раздел «Устной контент» Настроек macOS, где скачивают
+// голоса Premium и Enhanced.
+const voiceSettingsURL = "x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent"
+
+func voiceSettingsCommand() *exec.Cmd { return exec.Command("/usr/bin/open", voiceSettingsURL) }
