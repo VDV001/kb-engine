@@ -740,6 +740,7 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 	engine := buildInfo()
 	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
 		changelogPath, nowPath, teamPath, projectsPath, mediaPath, mapPaths))
+	markJournal(engine.Sources, fin != nil)
 	docs.Artefacts = src.artefacts
 	return httpapi.NewServer(query.NewService(loader), audit.NewService(loader),
 		analytics.NewService(loader), fin, cfg, chlog, docs, engine, front, opts...), nil
