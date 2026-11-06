@@ -714,6 +714,13 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-srcs-more label i { width: 7px; height: 7px; border-radius: 50%; background: var(--c); }
 .chat-srcs-reset { border: 0; background: none; color: var(--z-accent); font: 11px var(--z-font); cursor: pointer; padding: 0 4px; white-space: nowrap; }
 .chat-doc-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--c, var(--z-faint)); margin-right: 6px; vertical-align: 1px; }
+/* Диктовка и разговор: пока идут — кнопка в цвете акцента и дышит. */
+.chat-tool#chat-voice[aria-pressed="true"],
+.chat-tool#chat-mic[aria-pressed="true"] { color: var(--z-accent-ink); background: var(--z-accent); animation: mic-on 1.4s ease-in-out infinite; }
+@keyframes mic-on { 50% { box-shadow: 0 0 0 4px var(--z-accent-wash); } }
+@media (prefers-reduced-motion: reduce) { .chat-tool#chat-mic[aria-pressed="true"], .chat-tool#chat-voice[aria-pressed="true"] { animation: none; } }
+/* В разговоре видна кнопка разговора, даже когда в поле уже текст. */
+.chat-box.has-text.voice-on .chat-idle > #chat-voice { display: grid; }
 /* Приложенное к вопросу (#436): плашки над полем, меню «+» над рядом кнопок. */
 .chat-box { position: relative; }
 .chat-attached { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -743,7 +750,10 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-tool[aria-disabled="true"] { color: var(--z-faint); cursor: default; }
 .chat-idle { display: flex; gap: 2px; }
 /* Пустое поле — диктовка и голос; с текстом — кнопка отправки (как в Claude). */
-.chat-box.has-text .chat-idle, .chat-box:not(.has-text) .chat-send { display: none; }
+.chat-box:not(.has-text) .chat-send { display: none; }
+/* Микрофон виден всегда: голосом дописывают и начатый вопрос, им же диктовку
+   останавливают; голосовой режим — только при пустом поле. */
+.chat-box.has-text .chat-idle > :not(#chat-mic) { display: none; }
 .chat-send { width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; display: grid; place-items: center; background: var(--z-accent); color: var(--z-accent-ink); cursor: pointer; }
 .chat-send svg { width: 16px; height: 16px; }
 .chat-send:disabled { opacity: .35; cursor: default; }

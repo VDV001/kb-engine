@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
@@ -32,6 +34,8 @@ type Chat struct {
 	URL   string `json:"url,omitempty"`
 	Model string `json:"model,omitempty"`
 	Mode  string `json:"mode,omitempty"`
+	// Voice — голос Mac, которым читается ответ в разговоре голосом; пусто — голос системы.
+	Voice string `json:"voice,omitempty"`
 }
 
 // WithDefaults fills the empty fields.
@@ -53,10 +57,15 @@ func (c Chat) Check() error {
 	}
 	switch c.Mode {
 	case ChatModeAuto, ChatModeContext, ChatModeTools:
-		return nil
 	default:
 		return fmt.Errorf("%w: режим %q", ErrChatSettings, c.Mode)
 	}
+	// Голос уходит в say аргументом -v: без управляющих символов и не похожий на флаг.
+	if utf8.RuneCountInString(c.Voice) > 64 || strings.HasPrefix(c.Voice, "-") ||
+		strings.IndexFunc(c.Voice, unicode.IsControl) >= 0 {
+		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
+	}
+	return nil
 }
 
 // Local reports whether the model runs on this Mac: документы никуда не уходят.

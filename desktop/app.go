@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -27,6 +28,8 @@ type App struct {
 	ctx      context.Context
 	files    fileChecker
 	settings *folderSettings
+	listen   *dictation // диктовка в поле чата (listen.go)
+	voice    *speaker   // голос ответа в разговоре без рук (speak.go)
 	index    *indexer
 	chat     *chatDesk // nil — чата нет (тесты без него)
 	run      func(name string, args ...string) error
@@ -127,6 +130,49 @@ func (a *App) Ask(r askReq) (chatRecord, error) { return a.chat.Ask(r) }
 // Connections lists the window's accesses (раздел «Подключения»).
 func (a *App) Connections() []connRow { return a.settings.Connections() }
 
+// StartDictation starts listening; текст приходит событием dictation. pause > 0
+// — разговор без рук: тишина pause секунд кончает вопрос.
+func (a *App) StartDictation(pause float64) error {
+	if a.listen == nil {
+		return errors.New("диктовка работает только в окне приложения")
+	}
+	return a.listen.Start(pause)
+}
+
+// StopDictation ends listening; итог приходит событием dictation с final.
+func (a *App) StopDictation() {
+	if a.listen != nil {
+		a.listen.Stop()
+	}
+}
+
+// Speak reads an answer aloud with the voice from the chat settings; конец
+// чтения приходит событием speech.
+func (a *App) Speak(text string) error {
+	if a.voice == nil {
+		return errors.New("голос работает только в окне приложения")
+	}
+	return a.voice.Speak(a.chat.config().Voice, text)
+}
+
+// Voices lists the Russian voices of this Mac for the settings.
+func (a *App) Voices() []string { return russianVoices() }
+
+// ListenStatus says whether dictation works here and without the network.
+func (a *App) ListenStatus() listenStatus {
+	if a.listen == nil {
+		return listenStatus{}
+	}
+	return a.listen.Check()
+}
+
+// StopSpeaking interrupts the reading.
+func (a *App) StopSpeaking() {
+	if a.voice != nil {
+		a.voice.Stop()
+	}
+}
+
 // PickChatFile asks for a file to attach to the question; "" — передумали.
 func (a *App) PickChatFile() (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{Title: "Приложить к вопросу"})
@@ -157,6 +203,12 @@ func (a *App) startup(ctx context.Context) {
 	// странице; путь — слать не чаще раза в 50 мс.
 	if a.chat != nil {
 		a.chat.show = func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) }
+	}
+	if a.listen != nil {
+		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }
+	}
+	if a.voice != nil {
+		a.voice.done = func() { runtime.EventsEmit(ctx, "speech") }
 	}
 }
 

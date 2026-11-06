@@ -53,10 +53,10 @@ echo '{"text":"срок поставки"}'
 cat >/dev/null
 echo '{"text":"Срок поставки?","final":true}'
 `), emit: ev.add}
-	if err := d.Start(); err != nil {
+	if err := d.Start(0); err != nil {
 		t.Fatal(err)
 	}
-	if err := d.Start(); err == nil {
+	if err := d.Start(0); err == nil {
 		t.Fatal("вторая диктовка поверх первой")
 	}
 	ev.wait(t, func(l []listenEvent) bool { return len(l) >= 3 })
@@ -66,7 +66,7 @@ echo '{"text":"Срок поставки?","final":true}'
 	if !got[0].Ready || !got[0].OnDevice || got[1].Text != "срок" || last.Text != "Срок поставки?" {
 		t.Fatalf("events = %+v", got)
 	}
-	if err := d.Start(); err != nil { // после конца — можно снова
+	if err := d.Start(0); err != nil { // после конца — можно снова
 		t.Fatalf("повторный запуск: %v", err)
 	}
 	d.Stop()
@@ -77,20 +77,20 @@ echo '{"text":"Срок поставки?","final":true}'
 func TestDictation_Refusals(t *testing.T) {
 	var ev events
 	d := &dictation{bin: fakeListen(t, `echo '{"error":"нет разрешения на распознавание речи"}'; exit 3`), emit: ev.add}
-	if err := d.Start(); err != nil {
+	if err := d.Start(0); err != nil {
 		t.Fatal(err)
 	}
 	got := ev.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })
 	if !strings.Contains(got[0].Error, "разрешения") {
 		t.Fatalf("events = %+v", got)
 	}
-	if err := (&dictation{emit: ev.add}).Start(); err == nil || !strings.Contains(err.Error(), "собранном окне") {
+	if err := (&dictation{emit: ev.add}).Start(0); err == nil || !strings.Contains(err.Error(), "собранном окне") {
 		t.Fatalf("без помощника: %v", err)
 	}
 	// Мусор в выводе не роняет окно и не становится текстом.
 	var ev2 events
 	d2 := &dictation{bin: fakeListen(t, `echo 'not json'; echo '{"text":"ок","final":true}'`), emit: ev2.add}
-	if err := d2.Start(); err != nil {
+	if err := d2.Start(0); err != nil {
 		t.Fatal(err)
 	}
 	got = ev2.wait(t, func(l []listenEvent) bool { return len(l) > 0 && l[len(l)-1].Final })

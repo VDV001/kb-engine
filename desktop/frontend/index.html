@@ -132,8 +132,8 @@
               <button class="chat-model-chip" type="button" id="chat-model-chip" data-tip="Модель" data-tip-b="нажмите, чтобы сменить модель или ключ"></button>
               <span class="chat-spacer"></span>
               <span class="chat-idle" id="chat-idle">
-                <button class="chat-tool" type="button" aria-label="Диктовка" data-tip="Диктовка" data-tip-b="скоро: голос в текст на этом Маке (whisper)" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></svg></button>
-                <button class="chat-tool" type="button" aria-label="Голосовой режим" data-tip="Голосовой режим" data-tip-b="скоро: разговор голосом" aria-disabled="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7v2M5 5v6M8 3v10M11 5v6M13.5 7v2"/></svg></button>
+                <button class="chat-tool" type="button" id="chat-mic" aria-label="Диктовка" aria-pressed="false" data-tip="Диктовка" data-tip-b="голос в текст на этом Маке · еще раз или Esc — стоп"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></svg></button>
+                <button class="chat-tool" type="button" id="chat-voice" aria-label="Разговор голосом" aria-pressed="false" data-tip="Разговор голосом" data-tip-b="без рук: говорите, после паузы вопрос уходит сам, ответ читается вслух · Esc — стоп"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 7v2M5 5v6M8 3v10M11 5v6M13.5 7v2"/></svg></button>
               </span>
               <button class="chat-send" type="submit" id="chat-send" aria-label="Спросить" data-tip="Спросить" data-tip-k="⏎" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button>
             </div>
@@ -235,6 +235,11 @@
         </select>
       </label>
       <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+      <h3>Голос</h3>
+      <p class="muted" id="chat-listen-note"></p>
+      <label>Читает ответ в разговоре голосом
+        <select id="chat-voice-name"><option value="">голос системы</option></select>
+      </label>
       <button class="btn primary" type="submit">Сохранить</button>
       <p class="muted" id="chat-model-note"></p>
     </form>

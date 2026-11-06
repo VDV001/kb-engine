@@ -750,6 +750,7 @@ async function openSettings(view = "sources") {
   showError("");
   if (view === "chat") {
     if (native() && native().ChatSettings) await loadChatSettings();
+    await renderVoiceSettings();
     $("#chat-model-note").textContent = native() && native().ChatSettings ? "" : "Модель чата настраивается в окне приложения.";
     $("#chat-name").focus();
     return;
@@ -1690,6 +1691,21 @@ async function loadChatSettings() {
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
 }
+// renderVoiceSettings: кто слушает (Apple Speech, без сети ли) и каким голосом
+// читать ответ.
+async function renderVoiceSettings() {
+  const note = $("#chat-listen-note");
+  if (!native() || !native().ListenStatus) { note.textContent = "Голос настраивается в окне приложения."; return; }
+  const st = await native().ListenStatus().catch(() => ({}));
+  const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
+  note.textContent = !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
+    : `Слушает: Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
+  const sel = $("#chat-voice-name");
+  const voices = (await native().Voices().catch(() => [])) || [];
+  const cur = (chatState.settings && chatState.settings.voice) || "";
+  sel.innerHTML = `<option value="">голос системы</option>` + voices.map((v) => `<option${v === cur ? " selected" : ""}>${esc(v)}</option>`).join("");
+  if (cur && !voices.includes(cur)) sel.insertAdjacentHTML("beforeend", `<option selected>${esc(cur)}</option>`);
+}
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
   const s = chatState.settings;
@@ -1788,6 +1804,8 @@ async function askChat() {
     const c = await native().Ask({ id: chatState.id, question: q, refs: chatState.attached.map((a) => a.ref), sources: chatState.only || [] });
     chatState.attached = [];
     renderAttached();
+    const last = c.messages[c.messages.length - 1];
+    if (voice.on && last) speakAnswer(last.text);
     chatState.id = c.id;
     chatState.chat = c;
     await renderChatList();
@@ -1795,6 +1813,7 @@ async function askChat() {
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
     $("#chat-q").value = q; // вопрос не теряется
+    stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
     showChatNote("Нет ответа: " + e);
   } finally {
     chatState.busy = false;
@@ -1825,6 +1844,79 @@ function fitChatQ() {
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
 }
 $("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
+
+// --- Диктовка (#436) ----------------------------------------------------------------
+// Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
+// на сейчас; он встает после того, что было в поле до начала диктовки.
+const dict = { on: false, base: "" };
+function setMic(on) {
+  dict.on = on;
+  $("#chat-mic").setAttribute("aria-pressed", String(on));
+  $("#chat-mic").dataset.tipB = on ? "слушаю · еще раз или Esc — стоп" : "голос в текст на этом Маке · еще раз или Esc — стоп";
+}
+async function toggleMic() {
+  if (!native() || !native().StartDictation) return showChatNote("Диктовка работает в окне приложения.");
+  if (dict.on) { native().StopDictation(); return; }
+  dict.base = $("#chat-q").value.replace(/\s+$/, "");
+  try { await native().StartDictation(); setMic(true); } catch (e) { showChatNote("Диктовка: " + e); }
+}
+$("#chat-mic").addEventListener("click", () => { hideTip(); if (voice.on) stopVoice(); toggleMic(); });
+if (window.runtime) window.runtime.EventsOn("dictation", (ev) => {
+  if (ev.error) { if (voice.on) stopVoice(); showChatNote("Диктовка: " + ev.error); }
+  if (ev.text !== undefined && ev.text !== "") {
+    $("#chat-q").value = (dict.base ? dict.base + " " : "") + ev.text;
+    fitChatQ();
+    renderAttached();
+  }
+  if (ev.final) {
+    setMic(false);
+    $("#chat-q").focus();
+    // Разговор без рук: вопрос договорен — уходит сам; тишина без слов — слушать снова.
+    if (voice.on && !ev.error) $("#chat-q").value.trim() ? askChat() : listenVoice();
+  }
+});
+
+// --- Разговор голосом без рук (#436) ---------------------------------------------
+// Слушает с паузой: тишина 1,2 с после речи — вопрос договорен и уходит сам;
+// ответ читается вслух голосом из настроек; дочитал — снова слушает. Кнопка
+// или Esc останавливают все сразу.
+const voice = { on: false };
+const VOICE_PAUSE = 1.2;
+function setVoice(on) {
+  voice.on = on;
+  $("#chat-voice").setAttribute("aria-pressed", String(on));
+  $("#chat-voice").closest(".chat-box").classList.toggle("voice-on", on);
+}
+async function listenVoice() {
+  if (!voice.on || chatState.busy) return;
+  dict.base = "";
+  $("#chat-q").value = "";
+  fitChatQ();
+  try { await native().StartDictation(VOICE_PAUSE); setMic(true); showChatNote("Разговор голосом: говорите — после паузы вопрос уйдет сам · Esc — стоп"); }
+  catch (e) { showChatNote("Разговор голосом: " + e); stopVoice(); }
+}
+function stopVoice() {
+  if (!voice.on) return;
+  setVoice(false);
+  if (dict.on) native().StopDictation();
+  native().StopSpeaking();
+  renderChatNote();
+}
+$("#chat-voice").addEventListener("click", () => {
+  hideTip();
+  if (!native() || !native().StartDictation) return showChatNote("Разговор голосом работает в окне приложения.");
+  if (voice.on) return stopVoice();
+  setVoice(true);
+  listenVoice();
+});
+// Ответ готов — прочитать; дочитал — слушать снова.
+function speakAnswer(text) {
+  if (!voice.on) return;
+  showChatNote("Разговор голосом: читаю ответ · Esc — стоп");
+  native().Speak(text).catch((e) => { showChatNote("Голос: " + e); stopVoice(); });
+}
+if (window.runtime) window.runtime.EventsOn("speech", () => { if (voice.on) listenVoice(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && voice.on) { e.preventDefault(); stopVoice(); } }, true);
 
 // --- Приложенное к вопросу (#436) -------------------------------------------------
 // «+»: файл с диска, найденное, ссылка. Ссылки из текста вопроса окно читает
@@ -1929,6 +2021,7 @@ document.addEventListener("click", (e) => {
 });
 $("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
 $("#chat-q").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && dict.on) { e.preventDefault(); native().StopDictation(); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }
 });
 $("#chat-new").addEventListener("click", newChat);
@@ -1977,7 +2070,7 @@ $(".settings-nav").addEventListener("click", (e) => {
 });
 $("#chat-model").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value };
+  const c = { url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "Сохранено";

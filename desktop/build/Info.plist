@@ -12,5 +12,7 @@
   <key>CFBundleVersion</key><string>1</string>
   <key>LSMinimumSystemVersion</key><string>12.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Диктовка в чате: DVK слушает микрофон, пока вы держите диктовку включенной. Звук никуда не пишется.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Диктовка в чате: речь превращается в текст на этом Маке.</string>
 </dict>
 </plist>

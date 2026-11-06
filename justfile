@@ -45,6 +45,8 @@ desktop: web
     cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
     # Помощник распознавания: только PDFKit и Vision macOS, ставить ничего не нужно.
     swiftc -O -o bin/kb.app/Contents/MacOS/kb-extract desktop/extract/main.swift
+    # Диктовка: только Speech и AVFoundation macOS; разрешения — в Info.plist окна.
+    swiftc -O -o bin/kb.app/Contents/MacOS/kb-listen desktop/listen/main.swift
     cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
     mkdir -p bin/kb.app/Contents/Resources
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns
