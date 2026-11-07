@@ -707,6 +707,7 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-model { display: grid; gap: 8px; padding: 6px 4px; }
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
+.chat-model .key-field { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
 .chat-model .key-row { display: flex; gap: 6px; align-items: center; }
 .chat-model .key-row input { flex: 1; }
 .chat-model .key-saved { color: var(--z-ok); font-weight: 500; }
