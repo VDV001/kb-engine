@@ -112,5 +112,8 @@ func (c Config) CheckModuleServer(id ModuleID, server string) error {
 			return nil
 		}
 	}
+	if strings.ContainsAny(server, ".:") { // похоже на адрес без схемы
+		return fmt.Errorf("%w: адрес пишется со схемой, например http://%s", ErrModuleServer, server)
+	}
 	return fmt.Errorf("%w: сервера %q нет в «Источниках»", ErrModuleServer, server)
 }

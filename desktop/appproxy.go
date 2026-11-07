@@ -195,6 +195,11 @@ func (f *folderSettings) appUpstream() (appUpstream, bool) {
 	cfg := f.snapshot().cfg
 	choice := cfg.ModuleServer(desktopconfig.ModuleFinances)
 	if desktopconfig.IsLocalServer(choice) {
+		// Правило «только этот Mac» — и здесь, а не только при выборе в окне:
+		// config.json правят руками и пишут другие сборки (ревью #508).
+		if err := cfg.CheckModuleServer(desktopconfig.ModuleFinances, choice); err != nil {
+			return appUpstream{Why: "Адрес финансов в config.json не подходит (" + err.Error() + "): выберите заново в «Настройки → Модули»."}, false
+		}
 		return appUpstream{URL: choice}, true
 	}
 	for _, s := range cfg.Sources {
