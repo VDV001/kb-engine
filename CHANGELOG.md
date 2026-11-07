@@ -103,6 +103,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Changed
 
+- **Локальный CI сканирует образ trivy, а pre-push проверяет якоря карты.** `just ci` в джобе
+  `docker` запускает тот же trivy v0.70.0, что `trivy-action` в CI, образом `aquasec/trivy` по
+  digest и файлом образа (`docker save`), без установки пакета. Прежде скан пропускался, и main три
+  коммита (#509–#511) стоял красным на CVE в `x/net` при зеленом «13 из 13». `arch-map` (около
+  секунды) теперь в pre-push: сдвинутые правкой якоря ловились только полным CI.
+
 - **Окно DVK: «Деньги» считают облачную речь.** Шлюз за распознавание диктовки и облачный голос
   присылает не токены, а цену вызова (`providerMetadata.gateway.cost`, замер 07.11 на живых
   `/transcription-model` и `/speech-model`). Эта цена теперь пишется в журнал (`cost_pico`,
