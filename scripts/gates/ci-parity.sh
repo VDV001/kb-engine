@@ -19,6 +19,14 @@ set -euo pipefail
 
 WORKFLOWS=${CI_PARITY_WORKFLOWS:-.github/workflows}
 
+# Локальный скан trivy повторяет шаг trivy-action в ci.yml: TRIVY_ACTION — его
+# закрепленный SHA (v0.36.0), TRIVY_IMAGE — aquasec/trivy:0.70.0 (17.04.2026), та
+# версия, которую он ставит (в логе CI: trivy-binary-v0.70.0). Dependabot двигает
+# trivy-action сам, поэтому сверка в trivy_scan: SHA в ci.yml другой — отказ с
+# просьбой обновить обе строки, а не молчаливое расхождение сканеров.
+TRIVY_ACTION=ed142fd0673e97e23eac54620cfb913e5ce36c25
+TRIVY_IMAGE=aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e
+
 # Таблица соответствий: "<файл>:<джоба>|<вид>|<пояснение>"
 #   local  — воспроизводится здесь, пояснение печатается человеку
 #   absent — воспроизвести нечем, пояснение это ПРИЧИНА
@@ -38,7 +46,7 @@ TABLE=(
 	"ci.yml:govulncheck|local|govulncheck по всем пакетам"
 	"ci.yml:gitleaks|local|gitleaks по всей истории"
 	"ci.yml:offline|local|самопроверка гейта прогона без сети и он сам (нужен докер)"
-	"ci.yml:docker|local|сборка образа + verify-claims (размер из README); ⚠️ скан trivy не воспроизводится — trivy не установлен"
+	"ci.yml:docker|local|сборка образа, verify-claims и скан trivy той же версии, что в CI (нужен докер; образ здесь arm64, в CI amd64: модули Go те же, пакеты ОС и размер могут отличаться; без скана — TRIVY_SKIP=1)"
 	"ci.yml:terraform|absent|нет opentofu и tflint, а джоба поднимает LocalStack в докере"
 	"ci.yml:k8s|absent|нужен kind (только через nix-shell -p kind), джоба поднимает кластер"
 	"codeql.yml:analyze|absent|нужен CodeQL CLI, на машине его нет"
@@ -69,6 +77,34 @@ lookup() { # печатает "вид|пояснение" или пусто
 		[[ ${row%%|*} == "$key" ]] && { echo "${row#*|}"; return 0; }
 	done
 	return 0 # промах — не ошибка: о нём отчитывается report, назвав джобу
+}
+
+# trivy_scan — тот же скан, что шаг trivy-action в ci.yml, без установки пакета:
+# образ trivy по digest. До 07.11 скан здесь пропускался, и main три коммита
+# (#509–#511) стоял красным на CVE в x/net при зеленом «13 из 13»; govulncheck
+# такое не ловит — он смотрит, дошел ли код до уязвимой функции, а trivy — на
+# версию модуля. Образ отдается файлом (docker save), а не сокетом: у OrbStack
+# /var/run/docker.sock на хосте нет. Файл и кэш — под $HOME: Colima и Lima
+# пробрасывают в докер только его, а не /var/folders.
+trivy_scan() {
+	if [[ ${TRIVY_SKIP:-0} == 1 ]]; then
+		echo "  ⚠️ скан trivy пропущен по TRIVY_SKIP=1 — CI на GitHub его сделает"
+		return 0
+	fi
+	if ! grep -q "aquasecurity/trivy-action@$TRIVY_ACTION" "$WORKFLOWS/ci.yml"; then
+		echo "✘ trivy-action в ci.yml уже не $TRIVY_ACTION: обновите TRIVY_ACTION и TRIVY_IMAGE в $0" >&2
+		echo "  (версия trivy — в логе джобы docker: trivy-binary-vX.Y.Z)" >&2
+		return 1
+	fi
+	mkdir -p "$HOME/.cache/trivy"
+	(
+		tmp=$(mktemp -d "$HOME/.cache/kbengine-trivy.XXXXXX")
+		trap 'rm -rf "$tmp"' EXIT
+		docker save -o "$tmp/img.tar" kbengine:ci
+		docker run --rm -v "$tmp:/in:ro" -v "$HOME/.cache/trivy:/root/.cache/trivy" "$TRIVY_IMAGE" \
+			image --input /in/img.tar --exit-code 1 --ignore-unfixed \
+			--severity CRITICAL,HIGH --vuln-type os,library --quiet
+	)
 }
 
 run_job() {
@@ -144,7 +180,15 @@ run_job() {
 		;;
 	ci.yml:docker)
 		docker build -t kbengine:ci .
-		echo "  ⚠️ скан trivy пропущен: trivy не установлен"
+		# verify-claims — как в ci.yml: размер файловой системы контейнера, а не
+		# docker images. Образ здесь arm64, README называет amd64: 07.11 вышло 18.3
+		# против 18.6 MB, в допуске гейта.
+		cid="$(docker create kbengine:ci)"
+		bytes="$(docker export "$cid" | wc -c)"
+		docker rm "$cid" >/dev/null
+		./scripts/gates/verify-claims.sh --self-test
+		VERIFY_IMAGE_MB="$(awk -v b="$bytes" 'BEGIN{printf "%.1f", b/1048576}')" ./scripts/gates/verify-claims.sh
+		trivy_scan
 		;;
 	*)
 		echo "run_job: нет команды для $1" >&2
