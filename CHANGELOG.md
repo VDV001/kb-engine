@@ -8,6 +8,24 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.37.1] — 2026-11-08
+
+Выпуск 0.37.0 не собрался: тег `v0.37.0` стоит, но goreleaser упал на Windows, и страницы выпуска
+с файлами у него нет. Все, что описано в 0.37.0, выходит в этом выпуске.
+
+### Changed
+
+- **Сборка под каждую ОС выпуска до тега.** Гейт `scripts/gates/cross-build.sh` собирает `./cmd/...`
+  под все ОС из `.goreleaser.yml` (сейчас linux, darwin, windows), как goreleaser, с
+  `CGO_ENABLED=0`. Он идет в pre-push, в джобе `build` CI и в ее локальном двойнике `just ci`.
+  Прежде CI и pre-push собирали только для своей машины.
+
+### Fixed
+
+- **`kbengine` снова собирается под Windows.** `kbengine creds` запускал очистку буфера с
+  `syscall.SysProcAttr{Setsid: true}`, а под Windows такого поля нет. Теперь отсоединение процесса
+  вынесено в файлы по ОС.
+
 ## [0.37.0] — 2026-11-08
 
 ### Added
