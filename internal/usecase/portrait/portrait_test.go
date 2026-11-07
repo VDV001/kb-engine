@@ -337,3 +337,59 @@ func TestText_namesEverySection(t *testing.T) {
 		}
 	}
 }
+
+// countStore считает чтения; changed — что «другое устройство» положит в
+// портрет между первым и вторым чтением (пока думает модель).
+type countStore struct {
+	memStore
+	loads     int
+	versioned bool
+	changed   domain.Fact
+}
+
+func (c *countStore) Load(ctx context.Context) (domain.Portrait, error) {
+	c.loads++
+	if c.loads == 2 && c.changed.ID() != "" {
+		c.p, _ = c.p.Add(c.changed)
+	}
+	return c.memStore.Load(ctx)
+}
+
+// versionedStore — как kb-сервер: Save отказывает, если портрет сменился после Load.
+type versionedStore struct{ *countStore }
+
+func (versionedStore) ConflictChecked() {}
+
+// Разбор ответа на kb-сервере читает портрет один раз (ревью #482: два GET на
+// ответ); в папке, где версий нет, — перечитывает перед записью, чтобы не
+// затереть то, что другой Мак успел записать, пока думала модель.
+func TestService_ExtractLoads(t *testing.T) {
+	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", domain.OriginManual, domain.FactApproved, now)
+	for _, tc := range []struct {
+		name      string
+		versioned bool
+		loads     int
+	}{
+		{"kb-сервер", true, 1},
+		{"папка", false, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cs := &countStore{changed: other}
+			var st portrait.Store = cs
+			if tc.versioned {
+				st, cs.changed = versionedStore{cs}, domain.Fact{}
+			}
+			m := &fakeModel{reply: `[{"section":"prefs","text":"Отвечать коротко"}]`}
+			s := portrait.NewService(st, m, func() time.Time { return now }, func() string { return "n1" })
+			if _, err := s.Extract(t.Context(), "вопрос", "ответ"); err != nil {
+				t.Fatal(err)
+			}
+			if cs.loads != tc.loads {
+				t.Fatalf("чтений %d, ждали %d", cs.loads, tc.loads)
+			}
+			if !tc.versioned && !strings.Contains(portrait.Text(cs.p.Facts()), "Слушает ответы в машине") {
+				t.Fatalf("затерто записанное другим Маком: %q", portrait.Text(cs.p.Facts()))
+			}
+		})
+	}
+}

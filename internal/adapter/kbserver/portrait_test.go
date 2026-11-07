@@ -127,3 +127,7 @@ func TestPortraitStore_Rejected(t *testing.T) {
 		srv.Close()
 	}
 }
+
+// Портрет на сервере пишется только поверх прочитанной версии (If-Match):
+// сервис портрета может не перечитывать его перед записью.
+var _ portrait.ConflictChecked = (*kbserver.PortraitStore)(nil)
