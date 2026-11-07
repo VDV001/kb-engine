@@ -41,6 +41,17 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   same sync `fin sync` runs — while `b` shows what each account holds and records
   a new balance, the same write `fin balance` performs. It reads through the same
   use case the dashboard does, so the two surfaces cannot disagree.
+- **DVK window** (`desktop/`, `just desktop-install`) — a macOS window over the
+  same engine: search across the base, folders, Google Drive and kb servers, plus
+  a chat over your documents (ADR-0006): a small local model gets the documents
+  the window finds, a strong one searches and reads them itself. Answers stream,
+  can be read aloud (macOS voices or cloud voices via Vercel AI Gateway) and asked
+  by voice (hold, toggle or hands-free). **«Что DVK помнит обо мне»** (ADR-0007)
+  is a portrait of the person the chat starts from: facts by section, added by
+  hand, found after an answer or offered by the model — new ones wait for your
+  approval. It lives in a folder of your choice (0600) or on your kb server
+  (`GET/PUT /api/portrait`, versioned by ETag). With a cloud model the approved
+  portrait goes to its provider with every chat; the window says so.
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.

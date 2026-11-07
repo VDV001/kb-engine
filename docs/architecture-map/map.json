@@ -1195,6 +1195,82 @@
       "sources": [
         "frontend/src/AnswersView.tsx:17"
       ]
+    },
+    {
+      "id": "surf-dvk-portrait",
+      "title": "Окно DVK: портрет",
+      "subtitle": "desktop/portrait.go — «Что DVK помнит обо мне»",
+      "layer": "surfaces",
+      "kind": "client",
+      "sources": [
+        "desktop/portrait.go:215"
+      ]
+    },
+    {
+      "id": "uc-portrait",
+      "title": "portrait.Service",
+      "subtitle": "internal/usecase/portrait — правка под замком и повтор при конфликте",
+      "layer": "usecase",
+      "kind": "service",
+      "sources": [
+        "internal/usecase/portrait/portrait.go:110"
+      ]
+    },
+    {
+      "id": "dom-portrait",
+      "title": "Portrait",
+      "subtitle": "internal/domain/portrait.go — факты и инварианты",
+      "layer": "domain",
+      "kind": "data",
+      "sources": [
+        "internal/domain/portrait.go:184"
+      ]
+    },
+    {
+      "id": "adp-portraitfile",
+      "title": "portraitfile.Store",
+      "subtitle": "portrait.json в папке человека, 0600",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/portraitfile/store.go:54"
+      ]
+    },
+    {
+      "id": "adp-kbserver-portrait",
+      "title": "kbserver.PortraitStore",
+      "subtitle": "клиент /api/portrait с ETag",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/kbserver/portrait.go:61"
+      ]
+    },
+    {
+      "id": "adp-httpapi-portrait",
+      "title": "PUT /api/portrait",
+      "subtitle": "internal/adapter/httpapi/portrait.go — запись от прочитанной версии",
+      "layer": "adapters",
+      "kind": "service",
+      "sources": [
+        "internal/adapter/httpapi/portrait.go:55"
+      ]
+    },
+    {
+      "id": "f-portrait-local",
+      "title": "portrait.json (Мак)",
+      "subtitle": "папка, выбранная человеком",
+      "layer": "storage",
+      "kind": "data",
+      "sources": []
+    },
+    {
+      "id": "f-portrait-bucket",
+      "title": "users/<id>/portrait.json",
+      "subtitle": "бакет kb-сервера рядом с базой",
+      "layer": "storage",
+      "kind": "data",
+      "sources": []
     }
   ],
   "flows": [
@@ -4105,6 +4181,124 @@
           "detail": "Сводка и группировка — правила, а не разметка, и живут в frontend/src/answers.ts: число вызовов НЕ равно числу вопросов человека, поэтому величины названы отдельно",
           "source": "frontend/src/answers.ts:24",
           "symbol": "summarise",
+          "unverified": false
+        }
+      ]
+    },
+    {
+      "id": "portrait-edit",
+      "title": "Человек правит портрет — в папке или на kb-сервере",
+      "summary": "окно → сервис под замком → домен → файл 0600 или PUT с If-Match → бакет; чужая версия — перечитать и повторить",
+      "zone": "Окно DVK",
+      "steps": [
+        {
+          "n": 1,
+          "from": "owner",
+          "to": "surf-dvk-portrait",
+          "call": "правит факт в строке экрана портрета",
+          "detail": "desktop/portrait.go:215 — Страница зовет привязку Wails PortraitEdit; правка сохраняется, когда строка теряет фокус",
+          "source": "desktop/portrait.go:215",
+          "symbol": "PortraitEdit",
+          "unverified": false
+        },
+        {
+          "n": 2,
+          "from": "surf-dvk-portrait",
+          "to": "uc-portrait",
+          "call": "portrait(): хранилище по настройке",
+          "detail": "desktop/portrait.go:140 — Выбран kb-сервер из «Источников» — kbserver.PortraitStore с токеном этого источника; иначе файл в папке. Замок окна передается сервису",
+          "source": "desktop/portrait.go:140",
+          "symbol": "NewPortraitStore",
+          "unverified": false
+        },
+        {
+          "n": 3,
+          "from": "uc-portrait",
+          "to": "dom-portrait",
+          "call": "change → Portrait.Edit",
+          "detail": "internal/usecase/portrait/portrait.go:153 — Под замком только чтение-правка-запись; модель думает вне его",
+          "source": "internal/usecase/portrait/portrait.go:153",
+          "symbol": "Edit",
+          "unverified": false
+        },
+        {
+          "n": 4,
+          "from": "dom-portrait",
+          "to": "uc-portrait",
+          "call": "повтор текста в разделе — ErrFactExists",
+          "detail": "internal/domain/portrait.go:194 — Правка не может повторить другой факт раздела: такой портрет следующее чтение отвергло бы целиком",
+          "source": "internal/domain/portrait.go:194",
+          "symbol": "sameText",
+          "unverified": false
+        },
+        {
+          "n": 5,
+          "from": "uc-portrait",
+          "to": "adp-portraitfile",
+          "call": "Save в папку",
+          "detail": "internal/adapter/portraitfile/store.go:54 — Временный файл рядом и переименование: оборванная запись не оставляет полфайла",
+          "source": "internal/adapter/portraitfile/store.go:54",
+          "symbol": "Save",
+          "unverified": false
+        },
+        {
+          "n": 6,
+          "from": "adp-portraitfile",
+          "to": "f-portrait-local",
+          "call": "rename поверх portrait.json",
+          "detail": "internal/adapter/portraitfile/store.go:79 — CreateTemp создает файл 0600 — читать может только пользователь macOS",
+          "source": "internal/adapter/portraitfile/store.go:79",
+          "symbol": "Rename",
+          "unverified": false
+        },
+        {
+          "n": 7,
+          "from": "uc-portrait",
+          "to": "adp-kbserver-portrait",
+          "call": "Save на kb-сервер",
+          "detail": "internal/adapter/kbserver/portrait.go:77 — PUT с If-Match прочитанной версии; портрета еще нет — If-None-Match: *",
+          "source": "internal/adapter/kbserver/portrait.go:77",
+          "symbol": "If-Match",
+          "unverified": false
+        },
+        {
+          "n": 8,
+          "from": "adp-kbserver-portrait",
+          "to": "adp-httpapi-portrait",
+          "call": "PUT /api/portrait",
+          "detail": "internal/adapter/httpapi/server.go:252 — Маршрут человека, найденного по токену; межсайтовая запись отсекается sameSiteJSON",
+          "source": "internal/adapter/httpapi/server.go:252",
+          "symbol": "handlePutPortrait",
+          "unverified": false
+        },
+        {
+          "n": 9,
+          "from": "adp-httpapi-portrait",
+          "to": "dom-portrait",
+          "call": "portraitjson.Decode",
+          "detail": "internal/adapter/httpapi/portrait.go:67 — Сервер проверяет каждый факт доменом и кладет в бакет перекодированное, а не присланные байты; не портрет — 400",
+          "source": "internal/adapter/httpapi/portrait.go:67",
+          "symbol": "portraitjson",
+          "unverified": false
+        },
+        {
+          "n": 10,
+          "from": "adp-httpapi-portrait",
+          "to": "f-portrait-bucket",
+          "call": "Put с ifMatch",
+          "detail": "cmd/kbengine/serve_store.go:179 — Чужая версия — blob.ErrConflict и 412",
+          "source": "cmd/kbengine/serve_store.go:179",
+          "symbol": "Put",
+          "unverified": false
+        },
+        {
+          "n": 11,
+          "from": "adp-kbserver-portrait",
+          "to": "uc-portrait",
+          "call": "412 → portrait.ErrConflict",
+          "detail": "internal/adapter/kbserver/portrait.go:91 — Портрет успело изменить другое устройство: клиент отдает сигнал конфликта; usecase перечитывает портрет и применяет правку заново до 5 раз (internal/usecase/portrait/portrait.go:122) — правка с двух устройств не теряется",
+          "source": "internal/adapter/kbserver/portrait.go:91",
+          "symbol": "ErrConflict",
           "unverified": false
         }
       ]
