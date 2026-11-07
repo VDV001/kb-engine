@@ -142,19 +142,19 @@ func TestCreds_rm(t *testing.T) {
 	}
 }
 
-// Подсказка на пароль, который Связка через security не принимает, не
-// отправляет в окно: у окна то же ограничение (урок приемки 07.11).
-func TestCreds_badValueHint(t *testing.T) {
+// Пароль с любыми знаками Связка теперь принимает (#494); отказ остался один —
+// слишком длинный, и он говорит предел, а не обещает «пока не сохранить».
+func TestCreds_tooLongSaysLimit(t *testing.T) {
 	file, _, _ := credsEnv(t)
-	credsSecrets = func() credsSecretStore { return badValueKeychain{} }
-	_, _, errs := credsRun(t, "with space\n", "add", "--file", file, "--product", "CRM", "--env", "test", "--login", "sp", "--host", "h")
-	if strings.Contains(errs, "из окна") || !strings.Contains(errs, "пробел") {
-		t.Fatalf("подсказка: %q", errs)
+	credsSecrets = func() credsSecretStore { return tooLongKeychain{} }
+	_, _, errs := credsRun(t, "long\n", "add", "--file", file, "--product", "CRM", "--env", "test", "--login", "sp", "--host", "h")
+	if !strings.Contains(errs, "длинн") || strings.Contains(errs, "пока") || strings.Contains(errs, "пробел") {
+		t.Fatalf("отказ: %q", errs)
 	}
 }
 
-// badValueKeychain refuses values like security -i does.
-type badValueKeychain struct{ fakeKeychain }
+// tooLongKeychain refuses values like security -i does past its line limit.
+type tooLongKeychain struct{ fakeKeychain }
 
-func (badValueKeychain) Has(string) (bool, error) { return false, nil }
-func (badValueKeychain) Set(string, string) error { return keychain.ErrBadValue }
+func (tooLongKeychain) Has(string) (bool, error) { return false, nil }
+func (tooLongKeychain) Set(string, string) error { return keychain.ErrTooLong }

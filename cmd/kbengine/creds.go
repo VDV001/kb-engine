@@ -134,13 +134,6 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			// Сирота: пароль лег, а карточка — нет (прерывание между ними).
 			fmt.Fprintf(stderr, "creds add: если карточки %s нет нигде, это сирота прерванного add: security delete-generic-password -s \"DVK credentials\" -a %s\n", c.ID(), c.ID())
 		}
-		if errors.Is(err, keychain.ErrBadValue) {
-			// ponytail: security -i не принимает в значении пробел, кавычку, обратную косую и не-ASCII —
-			// ни в терминале, ни в окне (оно пишет тем же путем). Потолок — такие пароли не
-			// сохранить. Путь — запись через Security.framework в kb-auth после замера, как
-			// Связка спрашивает доступ у неподписанного помощника (#494).
-			fmt.Fprintln(stderr, "creds add: Связка через security не принимает пароль с пробелом, кавычкой, обратной косой или не латиницей — пока такой пароль не сохранить ни здесь, ни в окне (#494)")
-		}
 		return 1
 	}
 	fmt.Fprintf(stdout, "добавлен доступ %s: %s · %s · %s; пароль — в Связке ключей\n", c.ID(), c.Product(), envName[c.Env()], c.Login())
