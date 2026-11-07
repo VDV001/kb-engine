@@ -17,6 +17,8 @@ const (
 	ModuleChat ModuleID = "chat"
 	// ModuleStats — статистика: токены, вызовы модели, активность.
 	ModuleStats ModuleID = "stats"
+	// ModuleAccess — доступы к продуктам: хранилище с Touch ID (#494).
+	ModuleAccess ModuleID = "access"
 )
 
 // Ошибки списка модулей от окна; вызывающие проверяют errors.Is.
