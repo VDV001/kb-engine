@@ -238,8 +238,14 @@
     </div>
 
     <h3 data-view="prefs">Модули</h3>
-    <p class="muted" data-view="prefs">Разделы окна со своей вкладкой рядом с поиском. Данные модулей — на kb-сервере из «Источников».</p>
+    <p class="muted" data-view="prefs">Разделы окна со своей вкладкой рядом с поиском. Финансы — на kb-сервере из «Источников» или в своем <code>kbengine serve</code> на этом Mac.</p>
     <ul class="accent-list" id="module-list" data-view="prefs"></ul>
+    <div class="add-row" id="fin-server" data-view="prefs">
+      <span class="muted">Финансы берут данные из</span>
+      <select id="fin-server-pick" aria-label="Откуда финансы берут данные"></select>
+      <input id="fin-server-url" type="url" spellcheck="false" autocomplete="off" aria-label="Адрес kbengine serve на этом Mac" placeholder="http://127.0.0.1:8097" hidden>
+      <button class="btn" id="fin-server-save" hidden>Сохранить</button>
+    </div>
 
     <p class="muted" data-view="look">Где в окне цвета спектра. Меняется сразу; «Все» и «Ничего» не стирают твой выбор.</p>
     <div class="accent-presets" id="accent-presets" data-view="look">
