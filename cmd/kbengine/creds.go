@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -76,7 +75,7 @@ var credsClipboard = clipboardFor30s
 // credsDefaultFile — рядом с настройками окна: окно и терминал видят одни карточки.
 func credsDefaultFile() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "credentials.json")
+	return credsjson.DefaultPath(home)
 }
 
 func credsService(file string) creds.Service {

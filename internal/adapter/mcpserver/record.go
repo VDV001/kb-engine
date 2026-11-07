@@ -37,6 +37,8 @@ type Config struct {
 	// Remote нулевой означает «kb-серверов нет»: search_catalog отвечает своим
 	// каталогом, как прежде.
 	Remote RemoteSearcher
+	// Access нулевой означает «доступов нет»: search_access не объявляется.
+	Access AccessFinder
 }
 
 // journal — счётчик вызовов, приделанный к регистрации инструментов.

@@ -17,10 +17,12 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
+	"github.com/daniil/kb-engine/internal/adapter/credsjson"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
+	"github.com/daniil/kb-engine/internal/usecase/creds"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -96,8 +98,12 @@ func run(args []string, stderr io.Writer) error {
 	// умирал посреди записи снимка, оставляя временный файл в ~100 МБ (ревью #375).
 	var bg sync.WaitGroup
 	defer func() { cancel(); bg.Wait() }()
-	cfg := mcpserver.Config{Version: version, ViewBase: *viewBase, Recorder: recorder}
-	tools := "search_catalog · get_entry · stats"
+	cfg := mcpserver.Config{Version: version, ViewBase: *viewBase, Recorder: recorder,
+		// Доступы (#494): только карточки. Связки ключей у MCP нет вовсе — пароль
+		// отсюда не достать даже по ошибке: все, что получает агент, уходит
+		// провайдеру модели.
+		Access: creds.Service{Cards: credsjson.Store{Path: credsjson.DefaultPath(userHome())}}}
+	tools := "search_catalog · get_entry · stats · search_access"
 	if *filesConfig != "" {
 		files, err := newFileIndex(*filesConfig, userHome(), stderr)
 		if err != nil {
