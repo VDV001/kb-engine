@@ -59,7 +59,7 @@ export function AddTransactionForm({
     }
   }
 
-  const field = (k: keyof AddForm, label: string, list?: string[], type = 'text') => (
+  const field = (k: keyof AddForm, label: string, list?: string[], type = 'text', placeholder?: string) => (
     <label className="block">
       <span className="label mb-1 block text-[10px] opacity-60">{label}</span>
       <input
@@ -68,6 +68,7 @@ export function AddTransactionForm({
         onChange={set(k)}
         list={list?.length ? `add-${k}` : undefined}
         inputMode={k === 'amount' ? 'decimal' : undefined}
+        placeholder={placeholder}
         className={inputClass}
       />
       {list && list.length > 0 && (
@@ -107,7 +108,7 @@ export function AddTransactionForm({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {field('amount', 'Сумма')}
         {field('date', 'Дата', undefined, 'date')}
-        {field('currency', 'Валюта (пусто — по счету)', hints.currencies)}
+        {field('currency', 'Валюта', hints.currencies, 'text', 'по счету')}
         {field('account', 'Счет', accounts.map((a) => a.bank))}
         {form.kind === 'expense' ? (
           <>

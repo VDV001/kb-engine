@@ -877,8 +877,9 @@ async function openSettings(view = "sources") {
   $("#close-settings").focus();
   loadServerStates();
 }
-// renderConnections lists the window's accesses; «Изменить» ведет в раздел,
-// где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
+// renderConnections lists the window's accesses; «Изменить» открывает сам доступ
+// там, где он живет: kb-сервер — его строку «Источников» в правке, модель — поле
+// ключа в «Чат и модель» (#496).
 const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи" };
 let connConfirm = null;
 async function renderConnections() {
@@ -889,7 +890,7 @@ async function renderConnections() {
   list.innerHTML = rows.map((r) => {
     const acts = r.own
       ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
-      : `<button class="btn" data-go-sec="${esc(r.section)}">Изменить</button>`;
+      : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
     const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
@@ -899,9 +900,20 @@ async function renderConnections() {
     <span class="conn-acts">${acts}</span>${confirm}</li>`;
   }).join("");
 }
+async function openConnection(sec, id) {
+  await openSettings(sec);
+  if (sec === "chat") return focusSoon("#chat-key");
+  const s = sec === "sources" && draft.sources.find((x) => x.id === id);
+  if (!s) return;
+  ui.editing = s._key;
+  ui.replacing = ui.confirmDel = null;
+  renderSources();
+  requestAnimationFrame(() => $(`[data-key="${s._key}"]`)?.scrollIntoView({ block: "nearest" }));
+  focusSoon(`#en-${s._key}`);
+}
 $("#conn-list").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-go-sec]");
-  if (b) return openSettings(b.dataset.goSec);
+  if (b) return openConnection(b.dataset.goSec, b.dataset.goId);
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
   try {
@@ -2000,7 +2012,7 @@ function renderAccValues() {
   const lb = $("#chat-listens").querySelector('[aria-pressed="true"]');
   $("#acc-v-listen").textContent = lb ? lb.firstChild.textContent : "Mac (бесплатно)";
   const p = memState.p;
-  $("#acc-v-mem").textContent = !memOn(p) ? "не включено" : `${approvedFacts().length}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
+  $("#acc-v-mem").textContent = !memOn(p) ? "не включено" : `${approvedFacts().length} ${plural(approvedFacts().length, "факт", "факта", "фактов")}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {

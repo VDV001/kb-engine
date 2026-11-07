@@ -13,6 +13,7 @@
   --donut-secondary: #99462a;
   --donut-tertiary: #76777d;
   --engagement-bg: #eae8e1;
+  --error: #ba1a1a;
   --error-container: #ffdad6;
   --kpi-1-bg: #f6f4ec;
   --kpi-2-bg: #eae8e1;
@@ -83,6 +84,7 @@
   --donut-secondary: #FBF9F2;
   --donut-tertiary: rgba(255,255,255,0.2);
   --engagement-bg: #1A1A1A;
+  --error: #ffb4ab;
   --error-container: #410002;
   --kpi-1-bg: #1F1F1F;
   --kpi-2-bg: #2C2C2C;
@@ -153,6 +155,7 @@
   --color-donut-secondary: var(--donut-secondary);
   --color-donut-tertiary: var(--donut-tertiary);
   --color-engagement-bg: var(--engagement-bg);
+  --color-error: var(--error);
   --color-error-container: var(--error-container);
   --color-kpi-1-bg: var(--kpi-1-bg);
   --color-kpi-2-bg: var(--kpi-2-bg);
