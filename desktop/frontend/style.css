@@ -87,7 +87,7 @@ button { font-family: inherit; }
 .app {
   height: 100%; display: grid; grid-template-rows: auto auto auto auto 1fr;
   padding: 40px 24px 20px;
-  animation: rise .5s var(--z-ease) both;
+  animation: rise .5s var(--z-ease) backwards; /* не both: заполнение после конца делало бы .app точкой отсчета для fixed-окошек шапки */
 }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 
@@ -167,6 +167,7 @@ button { font-family: inherit; }
 .tabs button[data-stab] i { font-style: normal; color: var(--z-faint); font-size: 11px; }
 .tabs button[hidden] { display: none; }
 /* Модули значками справа */
+.hdr-mods[hidden] { display: none; }
 .hdr-mods { display: flex; gap: 14px; margin-left: auto; height: 100%; padding-left: 14px; border-left: 1px solid var(--z-rule); }
 .hdr-mods button .lbl { display: none; }
 /* Меню «еще» и сетка разделов */
@@ -189,7 +190,7 @@ button { font-family: inherit; }
 .hdr-pop kbd { color: var(--z-faint); font: 11px var(--z-mono, inherit); }
 .hdr-grid { grid-template-columns: 1fr 1fr; }
 /* Боковая панель слева: модули столбиком, шапка остается поиску. */
-.app[data-hdr="side"] { padding-left: 100px; animation: none; }
+.app[data-hdr="side"] { padding-left: 100px; }
 .app[data-hdr="side"]:has(.bar[data-lbl="text"]) { padding-left: 170px; }
 .app[data-hdr="side"] .tabs { position: fixed; left: 12px; top: 40px; bottom: 20px; width: 76px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 0; overflow: hidden;
   background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); z-index: 3; }
@@ -201,7 +202,7 @@ button { font-family: inherit; }
 .app[data-hdr="side"] .bar.compact .tabs .lbl { display: inline; }
 .app[data-hdr="side"] .bar[data-lbl="icon"] .tabs .lbl { display: none; }
 .app[data-hdr="side"] .status-cell { margin-left: auto; border-left: 1px solid var(--z-rule); }
-/* Градиент подчеркивания активной вкладки */
+/* Градиент подчеркивания активной вкладки; те же образцы — у градиента сейфа в «Доступах». */
 body[data-ink="spectrum"]:not(.no-tab-ink) .tab-ink, .gs.ink-spectrum { background: linear-gradient(90deg, var(--z-sp1), var(--z-sp3), var(--z-sp4), var(--z-sp6)); }
 body[data-ink="gold"]:not(.no-tab-ink) .tab-ink, .gs.ink-gold { background: linear-gradient(90deg, var(--z-sp1), var(--z-sp2)); }
 body[data-ink="ice"]:not(.no-tab-ink) .tab-ink, .gs.ink-ice { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); }

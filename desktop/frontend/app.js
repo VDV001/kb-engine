@@ -416,7 +416,10 @@ const hdrLook = () => {
 // navOrder — то, что ⌘1…⌘9 выбирают в любом виде шапки: Поиск, потом модули.
 const navOrder = () => ["search", ...moduleKeys()];
 state.searchTab = "all";
-const closeHdrPop = () => document.querySelectorAll(".hdr-pop").forEach((p) => (p.hidden = true));
+const closeHdrPop = () => {
+  document.querySelectorAll(".hdr-pop").forEach((p) => (p.hidden = true));
+  document.querySelectorAll(".hdr-more-btn, .hdr-switch-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
+};
 function renderTabs() {
   const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips"), bar = $(".bar"), L = hdrLook();
   nav.querySelectorAll(":scope > :not(.tab-ink)").forEach((x) => x.remove());
@@ -434,7 +437,7 @@ function renderTabs() {
     b.dataset.tipB = tip;
     const n = navOrder().indexOf(key) + 1;
     if (n > 0 && n <= 9) b.dataset.tipK = "⌘ " + n;
-    b.setAttribute("aria-label", name);
+    if (icon) b.setAttribute("aria-label", name); // у вкладки поиска имя — подпись с числом найденного
     b.innerHTML = `${icon ? `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>` : ""}<span class="lbl">${esc(name)}</span>`;
     return b;
   };
@@ -468,6 +471,7 @@ function renderTabs() {
     }));
     put(sw);
     if (!cur) put(...searchTabs());
+    nav.dataset.sec = moduleOf(state.tab) || "search";
   } else {
     // rows и side: Поиск и модули — кнопками, вкладки поиска — чипами.
     put(searchBtn(), ...mods());
@@ -484,7 +488,6 @@ const pickTab = (key) => {
   closeHdrPop();
   state.tab = key === "search" ? state.searchTab : key;
   state.sel = 0;
-  if (hdrLook().mode === "switch") renderTabs(); // название раздела в кнопке и вкладки поиска меняются
   render();
 };
 $(".bar").addEventListener("click", (e) => {
@@ -516,8 +519,14 @@ document.addEventListener("keydown", (e) => {
 function moveInk() {
   if (!moduleOf(state.tab)) state.searchTab = state.tab;
   const nav = $("#tabs"), ink = $(".tab-ink");
-  // Подчеркнута кнопка, видная в строке: вкладка поиска, если она в строке, иначе Поиск или модуль.
-  const sel = (k) => nav.querySelector(`:scope button[data-tab="${k}"]:not([hidden])`);
+  // Раздел сменился не через pickTab (Tab по вкладкам, выключенный модуль) — у
+  // «Переключателя» другое название и другой ряд вкладок.
+  if (hdrLook().mode === "switch" && nav.dataset.sec !== (moduleOf(state.tab) || "search")) return renderTabs();
+  const row = [...nav.querySelectorAll(":scope > button, .hdr-mods > button")];
+  // Выбранная ушла в «еще» — строка пересчитывается, выбранная остается снаружи.
+  if (row.some((x) => x.hidden && x.dataset.tab === state.tab)) return fitBar();
+  // Подчеркнута кнопка строки (не копия в окошке): вкладка поиска, если она в строке, иначе Поиск или модуль.
+  const sel = (k) => row.find((x) => x.dataset.tab === k && !x.hidden);
   const b = sel(state.tab) || (!moduleOf(state.tab) && sel("search"));
   document.querySelectorAll(".bar button[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab || (x.dataset.tab === "search" && !moduleOf(state.tab))));
   document.querySelectorAll("#chips button").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab));
@@ -543,9 +552,14 @@ function moveInk() {
 function fitBar() {
   const BAR_STEPS = ["compact", "tight", "tighter"]; // внутри: setIndexed зовет fitBar раньше, чем дойдет до этой строки
   const bar = $(".bar"), nav = $("#tabs"), mode = hdrLook().mode, more = $(".hdr-more");
+  // Открытое окошко «еще» не перестраивается под курсором (опрос индексации — каждые 3 с).
+  if (document.querySelector(".hdr-more .hdr-pop:not([hidden])")) return moveInk();
   bar.classList.remove(...BAR_STEPS);
   const row = [...nav.querySelectorAll(":scope > button, .hdr-mods > button")];
   row.forEach((b) => (b.hidden = false));
+  const group = nav.querySelector(".hdr-mods");
+  const syncGroup = () => group && (group.hidden = !row.some((b) => b.parentElement === group && !b.hidden)); // пустая группа не держит разделитель
+  syncGroup();
   if (more) more.hidden = true;
   if (mode !== "side" && row.length) {
     const box = () => nav.getBoundingClientRect();
@@ -568,6 +582,7 @@ function fitBar() {
         if (row[i].dataset.tab === state.tab) continue;
         row[i].hidden = true;
         gone.unshift(row[i]);
+        syncGroup();
       }
       more.querySelector(".hdr-more-btn").textContent = `еще ${gone.length} ▾`;
       const pop = more.querySelector(".hdr-pop");
@@ -1759,7 +1774,7 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
-  renderTabs(); // вид шапки — тоже в оформлении
+  refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
   const a = state.accents, off = offNow(a), editable = !!native();
@@ -3461,12 +3476,11 @@ function renderLookAccess() {
   const host = $("#look-access"); if (!host) return;
   const L = acLook(), editable = !!native(), dis = editable ? "" : " disabled";
   const chip = (k, v, label, pressed, extra = "") => `<button class="look-chip" data-look="${k}" data-v="${esc(v)}" aria-pressed="${pressed}"${dis}>${extra}${esc(label)}</button>`;
-  const SW = { spectrum: "var(--z-sp1),var(--z-sp3),var(--z-sp4),var(--z-sp6)", gold: "var(--z-sp1),var(--z-sp2)", ice: "var(--z-sp4),var(--z-sp5),var(--z-sp6)", dusk: "var(--z-sp2),var(--z-sp3),var(--z-src-violet)", mono: "#55555d,#9a9aa4" };
   const customLock = !AC_LOCKS.some(([v]) => v === L.lock);
   host.innerHTML = `
     <div class="row"><span>Название на табличке</span><div class="opts">${AC_NAMES.map((n) => chip("vault-name", n, n, L.name === n)).join("")}
       <label class="muted">свое <input id="look-name" type="text" maxlength="40" value="${AC_NAMES.includes(L.name) ? "" : esc(L.name)}" style="width:140px"${dis}></label></div></div>
-    <div class="row"><span>Градиент сейфа</span><div class="opts">${Object.entries(AC_GRADS).map(([g, n]) => chip("vault-grad", g, n, L.grad === g, `<i class="gs" style="background:linear-gradient(90deg,${SW[g]})"></i>`)).join("")}</div></div>
+    <div class="row"><span>Градиент сейфа</span><div class="opts">${Object.entries(AC_GRADS).map(([g, n]) => chip("vault-grad", g, n, L.grad === g, `<i class="gs ink-${g}"></i>`)).join("")}</div></div>
     <div class="row"><span>Открытие</span><div class="opts">${[["full", "полное, 2 с"], ["short", "короткое, 0,8 с"], ["none", "без анимации"]].map(([v, n]) => chip("vault-anim", v, n, L.anim === v)).join("")}</div></div>
     <div class="row"><span>Закрывать без дела через</span><div class="opts">${AC_LOCKS.map(([v, n]) => chip("vault-lock", v, n, L.lock === v)).join("")}
       <label class="muted">свое, мин <input id="look-lock" type="number" min="1" max="1440" value="${customLock ? esc(L.lock) : ""}"${dis}></label></div></div>`;
