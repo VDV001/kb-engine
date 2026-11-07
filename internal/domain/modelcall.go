@@ -57,6 +57,9 @@ func NewModelCall(at time.Time, purpose CallPurpose, model string, in, out int, 
 	case took < 0 || firstToken < 0 || firstToken > took:
 		return ModelCall{}, fmt.Errorf("%w: durations %v/%v", ErrInvalidModelCall, firstToken, took)
 	}
+	if !counted {
+		in, out = 0, 0 // счета нет — токены неизвестны, а не числа из строки
+	}
 	return ModelCall{at: at, purpose: purpose, model: model, in: in, out: out, counted: counted, firstToken: firstToken, took: took, failed: failed}, nil
 }
 
