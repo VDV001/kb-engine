@@ -21,8 +21,8 @@ func TestStore_RoundTrip(t *testing.T) {
 		t.Fatalf("пустой: %+v %v", p, err)
 	}
 	at := time.Date(2026, 11, 6, 21, 0, 0, 0, time.UTC)
-	f1, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", "добавлено вручную", domain.FactApproved, at)
-	f2, _ := domain.NewFact("f2", domain.SectionPrefs, "Отвечать коротко", "из чата 06.11", domain.FactPending, at)
+	f1, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", domain.OriginManual, domain.FactApproved, at)
+	f2, _ := domain.NewFact("f2", domain.SectionPrefs, "Отвечать коротко", domain.OriginChat, domain.FactPending, at)
 	p, _ = domain.NewPortrait([]domain.Fact{f1, f2})
 	if err := s.Save(t.Context(), p); err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func TestStore_RoundTrip(t *testing.T) {
 		t.Fatalf("прочитано: %+v %v", got, err)
 	}
 	g := got.Pending()[0]
-	if g.ID() != "f2" || g.Section() != domain.SectionPrefs || g.Text() != "Отвечать коротко" || g.Source() != "из чата 06.11" || !g.At().Equal(at) {
+	if g.ID() != "f2" || g.Section() != domain.SectionPrefs || g.Text() != "Отвечать коротко" || g.Origin() != domain.OriginChat || !g.At().Equal(at) {
 		t.Fatalf("факт = %+v", g)
 	}
 }
