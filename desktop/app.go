@@ -122,6 +122,9 @@ func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 }
 
 // Portrait returns «Что DVK помнит обо мне» (#479).
+// Stats returns the model-call statistics of the last days (экран «Статистика»).
+func (a *App) Stats(days int) (statsView, error) { return a.chat.Stats(days) }
+
 func (a *App) Portrait() (portraitView, error) { return a.chat.Portrait() }
 
 // PortraitAdd adds a fact typed by the person.

@@ -3,7 +3,9 @@
 package usagejsonl
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,4 +58,37 @@ func (j Journal) Record(c domain.ModelCall) error {
 		}
 		return f.Close()
 	})
+}
+
+// Load reads every call back for the statistics screen; файла нет — пусто.
+// Битая строка (обрыв записи, правка руками) пропускается и считается в bad:
+// экран показывает остальное, а не падает целиком.
+func (j Journal) Load() (calls []domain.ModelCall, bad int, err error) {
+	f, err := os.Open(j.Path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, fmt.Errorf("usage: не открыть журнал: %w", err)
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		var l line
+		if json.Unmarshal(sc.Bytes(), &l) != nil {
+			bad++
+			continue
+		}
+		c, err := domain.NewModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, l.In, l.Out, !l.Uncounted,
+			time.Duration(l.FirstMS)*time.Millisecond, time.Duration(l.TookMS)*time.Millisecond, l.Failed)
+		if err != nil {
+			bad++
+			continue
+		}
+		calls = append(calls, c)
+	}
+	if err := sc.Err(); err != nil {
+		return calls, bad, fmt.Errorf("usage: не прочитать журнал: %w", err)
+	}
+	return calls, bad, nil
 }
