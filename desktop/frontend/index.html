@@ -248,6 +248,8 @@
       <button class="btn" data-preset="none" aria-pressed="false">Ничего</button>
     </div>
     <ul class="accent-list" id="accent-list" data-view="look"></ul>
+    <h3 class="look-h" data-view="look">Шапка</h3>
+    <div class="look-access" id="look-header" data-view="look"></div>
     <h3 class="look-h" data-view="look">Доступы</h3>
     <div class="look-access" id="look-access" data-view="look"></div>
 
@@ -298,7 +300,8 @@
               <option value="tools">модель ищет (сильные модели)</option>
             </select>
           </label>
-          <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+          <div class="key-field"><label for="chat-key">Ключ <span class="key-saved" id="chat-key-saved" hidden>· ✓ в Связке ключей</span></label>
+            <span class="key-row"><input id="chat-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="chat-key" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></div>
         </div>
       </details>
       <details class="acc">
