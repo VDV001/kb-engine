@@ -2892,7 +2892,7 @@ function stGo(screen, f, why) {
 $("#st-back").addEventListener("click", () => { const h = st.hist.pop(); if (h) { Object.assign(st, h); stRender(); } });
 $("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open: null, from: null }); stRender(); });
 document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
-$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); });
+$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); }); // «Назад» не вернет строку и день прежнего периода
 
 function stDescribe() {
   const f = st.f, p = [];
