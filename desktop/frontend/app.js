@@ -1298,7 +1298,12 @@ function toast(head, rest, undo, tone = "info") {
 // Ошибка JS не глотает нажатие молча (#505): без этого необработанное
 // исключение или отказ без catch оставляли кнопку без ответа, а в kb.log
 // консоли WebKit нет. Подробности — правый клик в поле ввода → Inspect Element.
-addEventListener("error", (e) => toast("Ошибка окна", " · " + (e.message || "без текста") + " — подробности: правый клик в поле ввода → Inspect Element", null, "bad"));
+// Только ошибки своих скриптов: рантайм Wails (/wails/) и чужие адреса — не
+// наша беда и не повод для подсказки при каждом открытии окна.
+const ownScript = (f) => !!f && f.startsWith(location.origin + "/") && !f.includes("/wails/");
+addEventListener("error", (e) => {
+  if (ownScript(e.filename)) toast("Ошибка окна", " · " + (e.message || "без текста") + " — подробности: правый клик в поле ввода → Inspect Element", null, "bad");
+});
 addEventListener("unhandledrejection", (e) => toast("Действие не выполнено", " · " + errText(e.reason) + " — подробности: правый клик в поле ввода → Inspect Element", null, "bad"));
 $("#toast").addEventListener("click", (e) => {
   if (e.target.id !== "undo" || !undoFn) return;
