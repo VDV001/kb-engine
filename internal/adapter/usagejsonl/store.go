@@ -3,8 +3,12 @@
 package usagejsonl
 
 import (
+	"bufio"
+	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -34,8 +38,9 @@ type line struct {
 // Record appends one call. Под файловым замком, как журнал прогонов: дозапись
 // без него теряет строки, когда ответ и разбор портрета пишут разом.
 // ponytail: журнал растет без предела (строка ~150 байт на вызов, тысячи в
-// месяц — мегабайты в год). Потолок: экран статистики читает его целиком.
-// Путь: ротация по месяцам, когда появится экран.
+// месяц — мегабайты в год), а экран «Статистика» читает его целиком при
+// каждом открытии. Путь апгрейда, когда открытие станет заметно медленным, —
+// файл на месяц и чтение только месяцев периода.
 func (j Journal) Record(c domain.ModelCall) error {
 	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
 		return fmt.Errorf("usage: не создать каталог журнала: %w", err)
@@ -56,4 +61,50 @@ func (j Journal) Record(c domain.ModelCall) error {
 		}
 		return f.Close()
 	})
+}
+
+// Load reads every call back for the statistics screen; файла нет — пусто.
+// Читает под тем же замком, что и Record: иначе недописанная строка читалась
+// бы как битая. Битая строка (обрыв записи, правка руками, строка любой
+// длины) пропускается и считается в bad: экран показывает остальное.
+func (j Journal) Load() (calls []domain.ModelCall, bad int, err error) {
+	if _, err := os.Stat(j.Path); errors.Is(err, os.ErrNotExist) {
+		return nil, 0, nil
+	}
+	err = filelock.With(j.Path, func() error {
+		f, err := os.Open(j.Path)
+		if err != nil {
+			return fmt.Errorf("usage: не открыть журнал: %w", err)
+		}
+		defer func() { _ = f.Close() }()
+		r := bufio.NewReader(f)
+		for {
+			raw, rerr := r.ReadBytes('\n')
+			if len(bytes.TrimSpace(raw)) > 0 {
+				if c, ok := parse(raw); ok {
+					calls = append(calls, c)
+				} else {
+					bad++
+				}
+			}
+			if errors.Is(rerr, io.EOF) {
+				return nil
+			}
+			if rerr != nil {
+				return fmt.Errorf("usage: не прочитать журнал: %w", rerr)
+			}
+		}
+	})
+	return calls, bad, err
+}
+
+// parse reads one journal line; false — строка битая.
+func parse(raw []byte) (domain.ModelCall, bool) {
+	var l line
+	if json.Unmarshal(raw, &l) != nil {
+		return domain.ModelCall{}, false
+	}
+	c, err := domain.NewModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, l.In, l.Out, !l.Uncounted,
+		time.Duration(l.FirstMS)*time.Millisecond, time.Duration(l.TookMS)*time.Millisecond, l.Failed)
+	return c, err == nil
 }

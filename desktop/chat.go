@@ -123,7 +123,7 @@ type chatDesk struct {
 	// driveRead reads a link through Google connection conn (attach.go).
 	driveRead func(ctx context.Context, conn, ref string) (chat.Doc, error)
 	// calls keeps every model call for the window statistics; nil — не считать.
-	calls usage.Recorder
+	calls callLog
 }
 
 // everyAtMost passes text to show at most once per gap: кусков ответа сотни,

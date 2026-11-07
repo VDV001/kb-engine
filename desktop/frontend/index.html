@@ -103,6 +103,26 @@
       <iframe id="module-frame" title="Модуль окна"></iframe>
     </section>
 
+    <!-- Статистика (решение владельца 07.11): вызовы модели из журнала окна.
+         Пульт и Журнал ведут друг в друга; сверху — откуда пришли. -->
+    <section class="stats-view" id="stats-view" hidden>
+      <div class="st-bar">
+        <div class="st-tabs" role="tablist" aria-label="Экраны статистики">
+          <button id="st-t-pulse" data-st="pulse">Пульт</button>
+          <button id="st-t-log" data-st="log">Журнал</button>
+        </div>
+        <span class="st-cmd"><span class="dot">$</span> <span id="st-cmd">dvk stats</span></span>
+        <div class="st-seg" role="group" aria-label="Период" id="st-range">
+          <button data-d="7">7 дн</button><button data-d="30">30 дн</button><button data-d="90">90 дн</button>
+        </div>
+      </div>
+      <div class="st-ctx" id="st-ctx" hidden>
+        <span id="st-ctx-text"></span><span class="st-gap"></span>
+        <button class="btn" id="st-back">← Назад</button><button class="btn" id="st-reset">Сбросить фильтр</button>
+      </div>
+      <div class="st-body" id="st-body"></div>
+    </section>
+
     <!-- Чат над документами (#436): как в Claude Desktop — значок панели в шапке
          показывает и прячет чаты и документы целиком, край колонки тянется. -->
     <section class="chat-view" id="chat-view" hidden>
