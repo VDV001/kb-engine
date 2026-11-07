@@ -35,6 +35,9 @@ func TestTokenPairsAreReadable(t *testing.T) {
 		{"kpi-3-sub", "kpi-3-bg"},
 		{"card-spotlight-text", "card-spotlight-bg"},
 		{"on-error-container", "error-container"},
+		// text-error: подпись ошибки формы «Финансов» лежит на surface-low (#496).
+		{"error", "bg"},
+		{"error", "surface-low"},
 		{"tag-text-1", "tag-bg-1"},
 		{"tag-text-2", "tag-bg-2"},
 		{"tag-text-3", "tag-bg-3"},

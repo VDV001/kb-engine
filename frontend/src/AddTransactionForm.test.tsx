@@ -22,6 +22,13 @@ describe('AddTransactionForm', () => {
     expect(add).not.toHaveBeenCalled()
   })
 
+  // Подпись валюты короткая, пояснение — в поле: длинная переносилась и
+  // сдвигала ряд полей (#496).
+  it('подпись валюты в одно слово, пояснение — подсказкой в поле', () => {
+    render(<AddTransactionForm transactions={[]} accounts={[]} today="2026-11-06" onAdded={() => {}} />)
+    expect((screen.getByLabelText('Валюта') as HTMLInputElement).placeholder).toBe('по счету')
+  })
+
   it('записывает и сообщает, что записано, с поправками сервера', async () => {
     add.mockResolvedValue({ id: '01A', date: '2026-11-06', amount: '418.50', corrections: [{ field: 'place', typed: 'кб', used: 'К&Б' }] })
     const onAdded = vi.fn()
