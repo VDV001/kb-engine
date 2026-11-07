@@ -2,7 +2,12 @@ package desktopconfig
 
 import (
 	"errors"
+	"fmt"
+	"net/url"
 	"slices"
+	"strings"
+
+	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
 
 // ModuleID — модуль окна: раздел, который человек включает в настройках и
@@ -25,6 +30,7 @@ const (
 var (
 	ErrModuleID      = errors.New("у модуля нет id или он повторяется")
 	ErrUnknownModule = errors.New("модуль неизвестен этой сборке окна")
+	ErrModuleServer  = errors.New("сервер модуля не подходит")
 )
 
 // Module — включен ли модуль. Порядок в Config.Modules — порядок вкладок.
@@ -35,6 +41,11 @@ var (
 type Module struct {
 	ID      ModuleID `json:"id"`
 	Enabled bool     `json:"enabled"`
+	// Server — откуда модуль с данными (финансы) их берет: пусто — первый
+	// включенный kb-сервер из источников; id сервера из источников; адрес
+	// kbengine serve на этом Mac (без токена). Решение владельца 07.11: у кого-то
+	// данные на сервере, у кого-то свой serve локально.
+	Server string `json:"server,omitempty"`
 }
 
 // dropBadModules отбрасывает записи без id и повторы (остается первая). Не
@@ -58,4 +69,48 @@ func (c Config) ModuleOn(id ModuleID) bool {
 		}
 	}
 	return false
+}
+
+// ModuleServer returns where the module takes its data; пусто — первый
+// включенный kb-сервер.
+func (c Config) ModuleServer(id ModuleID) string {
+	for _, m := range c.Modules {
+		if m.ID == id {
+			return m.Server
+		}
+	}
+	return ""
+}
+
+// IsLocalServer reports whether server is an address (а не id источника).
+func IsLocalServer(server string) bool { return strings.Contains(server, "://") }
+
+// CheckModuleServer checks a choice of server for the module: только у
+// финансов; адрес — только этого Mac (в сеть токен нужен, а он живет у
+// источника); id — сервера из источников (выключенный тоже: включат позже).
+func (c Config) CheckModuleServer(id ModuleID, server string) error {
+	if id != ModuleFinances {
+		return fmt.Errorf("%w: у модуля %q нет данных на сервере", ErrModuleServer, id)
+	}
+	switch {
+	case server == "":
+		return nil
+	case IsLocalServer(server):
+		if err := CheckServerURL(server); err != nil {
+			return fmt.Errorf("%w: %w", ErrModuleServer, err)
+		}
+		if u, _ := url.Parse(strings.TrimSpace(server)); !loopback.Host(u.Hostname()) {
+			return fmt.Errorf("%w: адрес — только этого Mac; сервер в сети добавьте в «Источники» с токеном", ErrModuleServer)
+		}
+		return nil
+	}
+	for _, s := range c.Sources {
+		if s.ID == server {
+			if s.Kind != KindServer {
+				return fmt.Errorf("%w: источник %q — не kb-сервер", ErrModuleServer, server)
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: сервера %q нет в «Источниках»", ErrModuleServer, server)
 }
