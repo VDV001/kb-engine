@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"strings"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -20,8 +19,10 @@ type Cards interface {
 	Update(fn func([]domain.Credential) ([]domain.Credential, error)) error
 }
 
-// Secrets stores passwords by card id (Связка ключей).
+// Secrets stores passwords by card id (Связка ключей). Связка одна на все
+// файлы карточек, поэтому Has: запись с этим id может быть чужой.
 type Secrets interface {
+	Has(account string) (bool, error)
 	Set(account, secret string) error
 	Get(account string) (string, error)
 	Delete(account string) error
@@ -33,19 +34,23 @@ type Service struct {
 	Secrets Secrets
 }
 
-// Add stores the card and its password. Карточка с тем же id — отказ, пароль
-// той карточки не тронут. Не записалась карточка — пароль, положенный этим
-// вызовом, снимается: в Связке не остается сироты.
-func (s Service) Add(c domain.Credential, password string) error {
-	if strings.TrimSpace(password) == "" {
-		return fmt.Errorf("%w: нет пароля", domain.ErrInvalidCredential)
-	}
+// Add stores the card and its password. Карточка с тем же id или пароль с
+// этим id уже в Связке (сирота, карточка другого файла) — отказ, чужое не
+// тронуто. Не записалась карточка — снимается только пароль, положенный этим
+// вызовом: до него записи с этим id в Связке не было.
+func (s Service) Add(c domain.Credential, password domain.Password) error {
 	placed := false
 	err := s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
 		if slices.ContainsFunc(list, func(x domain.Credential) bool { return x.ID() == c.ID() }) {
 			return nil, fmt.Errorf("%w: %s", domain.ErrCredentialExists, c.ID())
 		}
-		if err := s.Secrets.Set(c.ID(), password); err != nil {
+		switch has, err := s.Secrets.Has(c.ID()); {
+		case err != nil:
+			return nil, fmt.Errorf("creds: Связка ключей не ответила: %w", err)
+		case has:
+			return nil, fmt.Errorf("%w: пароль %s уже лежит в Связке ключей", domain.ErrCredentialExists, c.ID())
+		}
+		if err := s.Secrets.Set(c.ID(), password.Reveal()); err != nil {
 			return nil, fmt.Errorf("creds: пароль не лег в Связку ключей: %w", err)
 		}
 		placed = true

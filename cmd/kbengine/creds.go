@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -56,7 +57,18 @@ const credsUsage = `usage: kbengine creds add --product P --env прод|сте�
 type credsSecretStore = creds.Secrets
 
 // credsSecrets opens the Keychain; тесты подменяют, чтобы не трогать Связку владельца.
-var credsSecrets = func() credsSecretStore { return keychain.Store{Service: "DVK credentials"} }
+var credsSecrets = func() credsSecretStore { return keychainSecrets{keychain.Store{Service: "DVK credentials"}} }
+
+// keychainSecrets adds Has to the Keychain: «нет записи» — false, а не ошибка.
+type keychainSecrets struct{ keychain.Store }
+
+func (k keychainSecrets) Has(account string) (bool, error) {
+	_, err := k.Get(account)
+	if errors.Is(err, keychain.ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
 
 // credsClipboard puts the password on the clipboard and schedules its removal.
 var credsClipboard = clipboardFor30s
@@ -105,13 +117,24 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "creds add:", err)
 		return 1
 	}
-	pw, err := readPassword(stdin, stderr)
+	raw, err := readPassword(stdin, stderr)
+	if err != nil {
+		fmt.Fprintln(stderr, "creds add:", err)
+		return 1
+	}
+	pw, err := domain.NewPassword(raw)
 	if err != nil {
 		fmt.Fprintln(stderr, "creds add:", err)
 		return 1
 	}
 	if err := credsService(*file).Add(c, pw); err != nil {
 		fmt.Fprintln(stderr, "creds add:", err)
+		if errors.Is(err, keychain.ErrBadValue) {
+			// ponytail: security -i не принимает в значении пробел, кавычку, \ и не-ASCII.
+			// Потолок — такие пароли из терминала не сохранить. Путь — запись через
+			// Security.framework (помощник окна на Swift, PR 3 #494) вместо security -i.
+			fmt.Fprintln(stderr, "creds add: Связка через security не принимает пароль с пробелом, кавычкой, обратной косой или не латиницей — сохраните его из окна DVK")
+		}
 		return 1
 	}
 	fmt.Fprintf(stdout, "добавлен доступ %s: %s · %s · %s; пароль — в Связке ключей\n", c.ID(), c.Product(), envName[c.Env()], c.Login())
@@ -125,7 +148,20 @@ func readPassword(stdin io.Reader, stderr io.Writer) (string, error) {
 		if st, err := f.Stat(); err == nil && st.Mode()&os.ModeCharDevice != 0 {
 			fmt.Fprint(stderr, "пароль (не печатается): ")
 			if stty(f, "-echo") == nil {
-				defer func() { _ = stty(f, "echo"); fmt.Fprintln(stderr) }()
+				// Ctrl-C на вводе оставил бы терминал без эха: вернуть его и выйти.
+				sig := make(chan os.Signal, 1)
+				signal.Notify(sig, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+				done := make(chan struct{})
+				go func() {
+					select {
+					case <-sig:
+						_ = stty(f, "echo")
+						fmt.Fprintln(stderr)
+						os.Exit(130)
+					case <-done:
+					}
+				}()
+				defer func() { signal.Stop(sig); close(done); _ = stty(f, "echo"); fmt.Fprintln(stderr) }()
 			}
 		}
 	}
@@ -210,6 +246,11 @@ func clipboardStillOurs(current, sum string) bool { return current != "" && clip
 
 // clipboardFor30s copies the password with pbcopy and starts a detached
 // cleaner that outlives this command.
+//
+// ponytail: pbcopy не помечает данные скрытыми (org.nspasteboard.ConcealedType):
+// менеджеры буфера (Maccy, Raycast) запишут пароль в свою историю, Universal
+// Clipboard отправит на другие устройства — «30 с» держит только сам буфер.
+// Путь — копия через NSPasteboard с ConcealedType в помощнике окна (PR 3 #494).
 func clipboardFor30s(secret string) error {
 	cp := exec.Command("pbcopy")
 	cp.Stdin = strings.NewReader(secret)

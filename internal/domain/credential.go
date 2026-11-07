@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -170,3 +171,22 @@ func (c Credential) Matches(q string) bool {
 	}
 	return true
 }
+
+// Password is the secret of an access. Не печатает себя ни одним глаголом fmt
+// (%v, %+v, %#v, %s, %q): случайный лог или текст ошибки его не выдаст.
+// Значение — только через Reveal, и только туда, где его видит человек сам.
+type Password struct{ v string }
+
+// NewPassword rejects an empty password.
+func NewPassword(s string) (Password, error) {
+	if strings.TrimSpace(s) == "" {
+		return Password{}, fmt.Errorf("%w: нет пароля", ErrInvalidCredential)
+	}
+	return Password{v: s}, nil
+}
+
+// Reveal returns the secret itself.
+func (p Password) Reveal() string { return p.v }
+
+// Format prints dots for every verb.
+func (Password) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, "••••••") }
