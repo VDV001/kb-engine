@@ -685,7 +685,19 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .app.module-open { grid-template-rows: auto 1fr; }
 .app.module-open .branch, .app.module-open .search, .app.module-open .search-chips, .app.module-open .body { display: none; }
 .module-view { min-height: 0; margin-top: 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); overflow: hidden; background: var(--z-bg-2); }
-.module-view iframe { display: block; width: 100%; height: 100%; border: 0; }
+.module-view:not([hidden]) { display: flex; flex-direction: column; }
+.module-view iframe { display: block; width: 100%; flex: 1; min-height: 0; border: 0; }
+.fin-src { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px; padding: 8px 14px; border-bottom: 1px solid var(--z-rule); background: var(--z-bg); font-size: 12px; }
+.fin-src-l { color: var(--z-faint); }
+.fin-src-name { color: var(--z-ink); }
+body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.fin-src-hint { color: var(--z-faint); }
+.fin-src-btn { margin-left: auto; font: 12px var(--z-font); color: var(--z-accent); background: none; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 10px; cursor: pointer; transition: border-color var(--z-dur), color var(--z-dur); }
+.fin-src-btn:hover { color: var(--z-accent-hi); border-color: var(--z-accent); }
+/* «изменить» приводит к выбору в настройках — строка подсвечивается, чтобы ее было видно */
+#fin-server.flash { animation: fin-flash 1.6s var(--z-ease); border-radius: var(--z-radius); }
+@keyframes fin-flash { 0%, 40% { background: var(--z-accent-wash); box-shadow: 0 0 0 1px var(--z-accent); } 100% { background: transparent; box-shadow: 0 0 0 1px transparent; } }
+@media (prefers-reduced-motion: reduce) { #fin-server.flash { animation: none; outline: 1px solid var(--z-accent); } }
 
 /* «N проблем» — кнопка в строке статуса; панель «Проблемы»: источник, под
    ним причины, под причиной файлы или исходная ошибка. */

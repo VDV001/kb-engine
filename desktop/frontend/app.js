@@ -1804,6 +1804,7 @@ const ACCENTS = [
   ["help-search", "Справка: поиск", "рамка поиска в фокусе"],
   ["help-nav", "Справка: раздел", "переливающаяся черта у открытого раздела"],
   ["help-anim", "Справка: появление", "строки раздела выезжают по очереди"],
+  ["fin-src", "Финансы: источник", "имя источника данных над витриной"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1901,6 +1902,8 @@ function showModule(id) {
   else if (mod && mod.view === "access") openAccess();
   else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
   else if (mod) {
+    $("#fin-src").hidden = id !== "finances";
+    renderFinSrc();
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
   }
@@ -1918,13 +1921,13 @@ function renderModules() {
 // Откуда «Финансы» берут данные (решение владельца 07.11): первый kb-сервер,
 // сервер из «Источников» или свой kbengine serve на этом Mac — адрес вписывают.
 const FIN_LOCAL = "http://127.0.0.1:8097";
-const isLocalServer = (v) => v.includes("://");
+const isLocalServer = finIsLocal; // правило — в finsource.js
 function renderFinServer() {
   const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
   const servers = state.known.filter((x) => x.kind === "server");
   const pick = $("#fin-server-pick"), url = $("#fin-server-url");
   const local = isLocalServer(cur);
-  const gone = cur && !local && !servers.some((x) => x.id === cur);
+  const gone = finSource(cur, servers, label).kind === "gone";
   pick.innerHTML = `<option value="">первого kb-сервера из «Источников»</option>` +
     servers.map((x) => `<option value="${esc(x.id)}">сервера «${esc(label(x))}»${x.enabled ? "" : " — выключен"}</option>`).join("") +
     (gone ? `<option value="${esc(cur)}">сервера, которого нет в «Источниках»</option>` : "") +
@@ -1933,7 +1936,27 @@ function renderFinServer() {
   pick.disabled = !native();
   if (document.activeElement !== url) url.value = local ? cur : FIN_LOCAL;
   url.hidden = $("#fin-server-save").hidden = !local;
+  renderFinSrc();
 }
+// renderFinSrc — строка над витриной «Финансов»: откуда данные и как сменить.
+// Сменить можно только в окне: в браузере выбор в настройках неактивен.
+function renderFinSrc() {
+  const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
+  const src = finSource(cur, state.known.filter((x) => x.kind === "server"), label);
+  const editable = !!native();
+  $("#fin-src-name").textContent = src.text;
+  $("#fin-src-hint").textContent = editable && src.kind !== "local" ? "· журнал на этом Mac? выберите «этого Mac — свой kbengine serve»" : "";
+  $("#fin-src-change").hidden = !editable;
+}
+$("#fin-src-change").addEventListener("click", async () => {
+  await openSettings("prefs");
+  const row = $("#fin-server"), pick = $("#fin-server-pick");
+  row.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); // повторный клик снова подсвечивает
+  clearTimeout(row._flash);
+  row._flash = setTimeout(() => row.classList.remove("flash"), 1700); // и без анимации подсветка не остается
+  pick.focus();
+});
 // withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.
 function withModule(id, patch) {
   return state.modules.some((x) => x.id === id)

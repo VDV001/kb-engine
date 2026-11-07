@@ -21,6 +21,9 @@ if (!find("доход").some((c) => c.includes("--kind income"))) fail("«дох
 if (!find("отчёт").some((c) => c.includes("fin report"))) fail("«отчёт» с ё не нашел fin report");
 if (find("пароль буфер").length !== 1) fail("«пароль буфер» — И по словам: " + JSON.stringify(find("пароль буфер")));
 if (find("zzzz").length) fail("«zzzz» что-то нашел");
+if (!find("терминал").some((c) => c.startsWith("kbengine tui"))) fail("«терминал» не нашел kbengine tui");
+if (!find("выдать токен").some((c) => c.startsWith("kbengine users add"))) fail("«выдать токен» не нашел users add: " + JSON.stringify(find("выдать токен")));
+if (!find("входящие бот").some((c) => c.startsWith("kbengine inbox"))) fail("«входящие бот» не нашел inbox");
 const m = helpMarker(helpTerms("q").words)('kbengine search -q "x" <id>');
 if (m.includes("&<mark>") || !m.includes("&quot;x&quot;") || !m.includes("&lt;id&gt;")) fail("подсветка портит экранирование: " + m);
 if (!m.includes("<mark>q</mark>")) fail("«q» не подсвечен: " + m);
