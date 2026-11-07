@@ -28,29 +28,22 @@ const (
 
 var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress}
 
-// NewCallPurpose validates a purpose name.
-func NewCallPurpose(raw string) (CallPurpose, error) {
-	p := CallPurpose(strings.TrimSpace(raw))
-	if !slices.Contains(callPurposes, p) {
-		return "", fmt.Errorf("%w: purpose %q", ErrInvalidModelCall, raw)
-	}
-	return p, nil
-}
-
 // ModelCall is one request to a model.
 type ModelCall struct {
 	at         time.Time
 	purpose    CallPurpose
 	model      string
 	in, out    int
+	counted    bool // провайдер прислал счет; нет — in/out неизвестны, а не нули
 	firstToken time.Duration
 	took       time.Duration
 	failed     bool
 }
 
-// NewModelCall validates a call: firstToken — до первого слова ответа (без
-// потока — весь ответ), took — до конца; первое слово не позже конца.
-func NewModelCall(at time.Time, purpose CallPurpose, model string, in, out int, firstToken, took time.Duration, failed bool) (ModelCall, error) {
+// NewModelCall validates a call: counted — провайдер прислал счет токенов;
+// firstToken — до первого слова ответа (без потока — весь ответ), took — до
+// конца; первое слово не позже конца.
+func NewModelCall(at time.Time, purpose CallPurpose, model string, in, out int, counted bool, firstToken, took time.Duration, failed bool) (ModelCall, error) {
 	model = strings.TrimSpace(model)
 	switch {
 	case at.IsZero():
@@ -64,7 +57,7 @@ func NewModelCall(at time.Time, purpose CallPurpose, model string, in, out int, 
 	case took < 0 || firstToken < 0 || firstToken > took:
 		return ModelCall{}, fmt.Errorf("%w: durations %v/%v", ErrInvalidModelCall, firstToken, took)
 	}
-	return ModelCall{at: at, purpose: purpose, model: model, in: in, out: out, firstToken: firstToken, took: took, failed: failed}, nil
+	return ModelCall{at: at, purpose: purpose, model: model, in: in, out: out, counted: counted, firstToken: firstToken, took: took, failed: failed}, nil
 }
 
 // At returns when the call started.
@@ -81,6 +74,9 @@ func (c ModelCall) In() int { return c.in }
 
 // Out returns the output tokens the provider counted.
 func (c ModelCall) Out() int { return c.out }
+
+// Counted reports whether the provider sent its token count.
+func (c ModelCall) Counted() bool { return c.counted }
 
 // FirstToken returns the time to the first word of the answer.
 func (c ModelCall) FirstToken() time.Duration { return c.firstToken }

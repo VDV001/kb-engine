@@ -24,18 +24,23 @@ type line struct {
 	Model   string    `json:"model"`
 	In      int       `json:"in"`
 	Out     int       `json:"out"`
-	FirstMS int64     `json:"first_ms"`
-	TookMS  int64     `json:"took_ms"`
-	Failed  bool      `json:"failed,omitempty"`
+	// Uncounted — сервер счет не прислал: in/out неизвестны, а не нули.
+	Uncounted bool  `json:"uncounted,omitempty"`
+	FirstMS   int64 `json:"first_ms"`
+	TookMS    int64 `json:"took_ms"`
+	Failed    bool  `json:"failed,omitempty"`
 }
 
-// Record appends one call. Замок тот же, что у журнала прогонов: дозапись
+// Record appends one call. Под файловым замком, как журнал прогонов: дозапись
 // без него теряет строки, когда ответ и разбор портрета пишут разом.
+// ponytail: журнал растет без предела (строка ~150 байт на вызов, тысячи в
+// месяц — мегабайты в год). Потолок: экран статистики читает его целиком.
+// Путь: ротация по месяцам, когда появится экран.
 func (j Journal) Record(c domain.ModelCall) error {
 	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
 		return fmt.Errorf("usage: не создать каталог журнала: %w", err)
 	}
-	raw, err := json.Marshal(line{At: c.At(), Purpose: string(c.Purpose()), Model: c.Model(), In: c.In(), Out: c.Out(),
+	raw, err := json.Marshal(line{At: c.At(), Purpose: string(c.Purpose()), Model: c.Model(), In: c.In(), Out: c.Out(), Uncounted: !c.Counted(),
 		FirstMS: c.FirstToken().Milliseconds(), TookMS: c.Took().Milliseconds(), Failed: c.Failed()})
 	if err != nil {
 		return fmt.Errorf("usage: не закодировать вызов: %w", err)

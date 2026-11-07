@@ -95,7 +95,7 @@ func (u *wireUsage) usage() chat.Usage {
 	if u == nil {
 		return chat.Usage{}
 	}
-	return chat.Usage{In: u.PromptTokens, Out: u.CompletionTokens}
+	return chat.Usage{In: u.PromptTokens, Out: u.CompletionTokens, Counted: true}
 }
 
 // Complete implements chat.Model.
@@ -190,6 +190,11 @@ func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []ch
 	r.Stream = true
 	r.StreamOptions = &wireStreamOptions{IncludeUsage: true}
 	res, err := c.send(ctx, r)
+	if errors.Is(err, errBadRequest) {
+		// Строгий сервер не знает stream_options: поток без счета лучше отказа.
+		r.StreamOptions = nil
+		res, err = c.send(ctx, r)
+	}
 	if err != nil {
 		return chat.ModelReply{}, err
 	}
@@ -230,23 +235,23 @@ func readStream(body io.Reader, show func(string)) (chat.ModelReply, error) {
 		}
 		ch, err := decodeChunk(data)
 		if err != nil {
-			return chat.ModelReply{}, err
+			return chat.ModelReply{Usage: acc.use}, err // счет провайдер уже посчитал
 		}
 		got = true
 		fin, err := acc.take(ch, show)
 		if err != nil {
-			return chat.ModelReply{}, err
+			return chat.ModelReply{Usage: acc.use}, err
 		}
 		done = done || fin
 	}
 	if err := sc.Err(); err != nil {
-		return chat.ModelReply{}, fmt.Errorf("%w: %w", ErrServer, err)
+		return chat.ModelReply{Usage: acc.use}, fmt.Errorf("%w: %w", ErrServer, err)
 	}
 	if !got {
 		return chat.ModelReply{}, ErrBadReply
 	}
 	if !done {
-		return chat.ModelReply{}, fmt.Errorf("%w: поток оборвался до конца ответа", ErrServer)
+		return chat.ModelReply{Usage: acc.use}, fmt.Errorf("%w: поток оборвался до конца ответа", ErrServer)
 	}
 	return chat.ModelReply{Content: acc.text.String(), ToolCalls: acc.calls, Usage: acc.use}, nil
 }
@@ -372,6 +377,9 @@ func request(model string, msgs []chat.ModelMessage, tools []chat.Tool) wireRequ
 	return r
 }
 
+// errBadRequest is a 400: Stream повторяет запрос без stream_options.
+var errBadRequest = errors.New("status 400")
+
 func statusErr(code int) error {
 	switch code {
 	case http.StatusOK:
@@ -382,6 +390,8 @@ func statusErr(code int) error {
 		return ErrNoCredit
 	case http.StatusNotFound:
 		return ErrModelNotFound
+	case http.StatusBadRequest:
+		return fmt.Errorf("%w: %w", ErrServer, errBadRequest)
 	default:
 		return fmt.Errorf("%w: status %d", ErrServer, code)
 	}
