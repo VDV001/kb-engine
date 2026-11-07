@@ -19,6 +19,10 @@ set -euo pipefail
 
 WORKFLOWS=${CI_PARITY_WORKFLOWS:-.github/workflows}
 
+# aquasec/trivy:0.70.0 (17.04.2026) — версия, которую ставит trivy-action в ci.yml.
+# Меняя одно, меняйте и другое: иначе локальный скан и CI разойдутся молча.
+TRIVY_IMAGE=aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310f9f4bca710961a41e
+
 # Таблица соответствий: "<файл>:<джоба>|<вид>|<пояснение>"
 #   local  — воспроизводится здесь, пояснение печатается человеку
 #   absent — воспроизвести нечем, пояснение это ПРИЧИНА
@@ -38,7 +42,7 @@ TABLE=(
 	"ci.yml:govulncheck|local|govulncheck по всем пакетам"
 	"ci.yml:gitleaks|local|gitleaks по всей истории"
 	"ci.yml:offline|local|самопроверка гейта прогона без сети и он сам (нужен докер)"
-	"ci.yml:docker|local|сборка образа + verify-claims (размер из README); ⚠️ скан trivy не воспроизводится — trivy не установлен"
+	"ci.yml:docker|local|сборка образа, verify-claims (размер из README) и скан trivy тем же сканером, что в CI (нужен докер)"
 	"ci.yml:terraform|absent|нет opentofu и tflint, а джоба поднимает LocalStack в докере"
 	"ci.yml:k8s|absent|нужен kind (только через nix-shell -p kind), джоба поднимает кластер"
 	"codeql.yml:analyze|absent|нужен CodeQL CLI, на машине его нет"
@@ -144,7 +148,20 @@ run_job() {
 		;;
 	ci.yml:docker)
 		docker build -t kbengine:ci .
-		echo "  ⚠️ скан trivy пропущен: trivy не установлен"
+		# Тот же сканер, что в CI: trivy-action v0.36.0 ставит trivy v0.70.0, здесь
+		# его образ, закрепленный по digest. Образ отдается файлом (docker save), а
+		# не сокетом: у OrbStack /var/run/docker.sock на хосте нет. До 07.11 скан
+		# здесь пропускался, и main три коммита (#509–#511) стоял красным на
+		# CVE в x/net при зеленом «13 из 13». govulncheck такое не ловит: он смотрит,
+		# дошел ли код до уязвимой функции, а trivy — на версию модуля.
+		(
+			tmp=$(mktemp -d)
+			trap 'rm -rf "$tmp"' EXIT
+			docker save -o "$tmp/img.tar" kbengine:ci
+			docker run --rm -v "$tmp:/in:ro" -v "$HOME/.cache/trivy:/root/.cache/" "$TRIVY_IMAGE" \
+				image --input /in/img.tar --exit-code 1 --ignore-unfixed \
+				--severity CRITICAL,HIGH --vuln-type os,library --quiet
+		)
 		;;
 	*)
 		echo "run_job: нет команды для $1" >&2
