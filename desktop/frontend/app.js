@@ -1921,13 +1921,13 @@ function renderModules() {
 // Откуда «Финансы» берут данные (решение владельца 07.11): первый kb-сервер,
 // сервер из «Источников» или свой kbengine serve на этом Mac — адрес вписывают.
 const FIN_LOCAL = "http://127.0.0.1:8097";
-const isLocalServer = (v) => v.includes("://");
+const isLocalServer = finIsLocal; // правило — в finsource.js
 function renderFinServer() {
   const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
   const servers = state.known.filter((x) => x.kind === "server");
   const pick = $("#fin-server-pick"), url = $("#fin-server-url");
   const local = isLocalServer(cur);
-  const gone = cur && !local && !servers.some((x) => x.id === cur);
+  const gone = finSource(cur, servers, label).kind === "gone";
   pick.innerHTML = `<option value="">первого kb-сервера из «Источников»</option>` +
     servers.map((x) => `<option value="${esc(x.id)}">сервера «${esc(label(x))}»${x.enabled ? "" : " — выключен"}</option>`).join("") +
     (gone ? `<option value="${esc(cur)}">сервера, которого нет в «Источниках»</option>` : "") +
@@ -1939,27 +1939,22 @@ function renderFinServer() {
   renderFinSrc();
 }
 // renderFinSrc — строка над витриной «Финансов»: откуда данные и как сменить.
+// Сменить можно только в окне: в браузере выбор в настройках неактивен.
 function renderFinSrc() {
   const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
-  const servers = state.known.filter((x) => x.kind === "server");
-  let name, hint = "";
-  if (isLocalServer(cur)) name = `этот Mac · ${cur}`;
-  else if (cur) {
-    const s = servers.find((x) => x.id === cur);
-    name = s ? `сервер «${label(s)}»${s.enabled ? "" : " — выключен"}` : "сервер, которого нет в «Источниках»";
-  } else {
-    const s = servers.find((x) => x.enabled);
-    name = s ? `первый kb-сервер «${label(s)}»` : "kb-сервер не подключен";
-  }
-  if (!isLocalServer(cur)) hint = "· журнал на этом Mac? выберите «этот Mac»";
-  $("#fin-src-name").textContent = name;
-  $("#fin-src-hint").textContent = hint;
+  const src = finSource(cur, state.known.filter((x) => x.kind === "server"), label);
+  const editable = !!native();
+  $("#fin-src-name").textContent = src.text;
+  $("#fin-src-hint").textContent = editable && src.kind !== "local" ? "· журнал на этом Mac? выберите «этого Mac — свой kbengine serve»" : "";
+  $("#fin-src-change").hidden = !editable;
 }
 $("#fin-src-change").addEventListener("click", async () => {
   await openSettings("prefs");
   const row = $("#fin-server"), pick = $("#fin-server-pick");
   row.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); // повторный клик снова подсвечивает
+  clearTimeout(row._flash);
+  row._flash = setTimeout(() => row.classList.remove("flash"), 1700); // и без анимации подсветка не остается
   pick.focus();
 });
 // withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.

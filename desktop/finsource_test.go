@@ -10,7 +10,7 @@ import (
 // (ревью #510): правило адреса то же, что у appUpstream, — только этот Mac.
 const finSourceCheck = `
 const vm = require("vm"), fs = require("fs");
-const ctx = {};
+const ctx = { URL }; // в окне URL — глобальный, в чистом контексте vm его нет
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(process.argv[1], "utf8") + ";this.api = { finSource };", ctx);
 const { finSource } = ctx.api;
