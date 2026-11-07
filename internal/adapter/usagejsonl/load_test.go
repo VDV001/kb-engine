@@ -3,9 +3,11 @@ package usagejsonl_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/usagejsonl"
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -40,5 +42,59 @@ func TestJournal_Load(t *testing.T) {
 	}
 	if g := got[1]; g.Counted() || !g.Failed() || g.Model() != "qwen3" {
 		t.Fatalf("второй = %+v", g)
+	}
+}
+
+// Строка длиннее буфера сканера (64 КБ) — одна битая строка, а не ошибка
+// чтения всего журнала: остальные вызовы видны, экран не падает.
+func TestJournal_Load_longLineIsOneBadLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	j := usagejsonl.Journal{Path: path}
+	at := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	c, _ := domain.NewModelCall(at, domain.CallAnswer, "m", 1, 1, true, 0, time.Second, false)
+	if err := j.Record(c); err != nil {
+		t.Fatal(err)
+	}
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	_, _ = f.WriteString(`{"model":"` + strings.Repeat("x", 200<<10) + "\"}\n")
+	_ = f.Close()
+	if err := j.Record(c); err != nil {
+		t.Fatal(err)
+	}
+	got, bad, err := j.Load()
+	if err != nil || len(got) != 2 || bad != 1 {
+		t.Fatalf("прочитано %d, битых %d, %v", len(got), bad, err)
+	}
+}
+
+// Чтение ждет замка записи: иначе недописанная строка читается как битая, и
+// экран показывает ложное «нечитаемых: 1».
+func TestJournal_Load_waitsForWriterLock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	j := usagejsonl.Journal{Path: path}
+	locked, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	go func() {
+		_ = filelock.With(path, func() error {
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	<-locked
+	go func() {
+		_, _, _ = j.Load()
+		close(done)
+	}()
+	select {
+	case <-done:
+		close(release)
+		t.Fatal("Load прочитал журнал под чужим замком")
+	case <-time.After(200 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Load не дождался замка")
 	}
 }

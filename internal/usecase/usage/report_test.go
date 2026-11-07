@@ -1,6 +1,7 @@
 package usage_test
 
 import (
+	"slices"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestReport(t *testing.T) {
 	if len(r.Days) != 3 || r.Days[0].Date != "2026-11-05" || r.Days[2].Date != "2026-11-07" {
 		t.Fatalf("дни = %+v", r.Days)
 	}
-	if d := r.Days[2]; d.In != 8000 || d.Out != 800 || d.Answers != 2 || d.Searches != 1 || d.Calls != 3 || d.Failed != 1 || d.Uncounted != 1 {
+	if d := r.Days[2]; d.In != 8000 || d.Out != 800 || d.Calls != 3 || d.Failed != 1 || d.Uncounted != 1 {
 		t.Fatalf("7 ноября = %+v", d)
 	}
 	if d := r.Days[1]; d.Calls != 1 || d.In != 900 {
@@ -62,5 +63,51 @@ func TestReport(t *testing.T) {
 	}
 	if len(r.Calls) != 4 || !r.Calls[0].At().Equal(day(7, 10)) {
 		t.Fatalf("вызовы периода, свежие первыми: %d", len(r.Calls))
+	}
+}
+
+// Токены — только по вызовам со счетом: строка «без счета» с числами (правка
+// журнала руками, сервер прислал мусор) не попадает в суммы ни дня, ни итога,
+// ни назначения, ни модели.
+func TestReport_uncountedTokensAreNotSummed(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, uz)
+	at := time.Date(2026, 11, 7, 10, 0, 0, 0, uz)
+	calls := []domain.ModelCall{
+		mk(t, at, domain.CallAnswer, "sonnet", 100, 10, true, false),
+		mk(t, at, domain.CallAnswer, "sonnet", 7000, 700, false, false),
+		mk(t, now.AddDate(0, 0, -1), domain.CallAnswer, "sonnet", 9000, 900, false, false), // прошлый период при days=1
+	}
+	r := usage.NewReport(calls, now, 1)
+	for name, x := range map[string]usage.Totals{"день": r.Days[0].Totals, "итог": r.Total, "назначение": r.Purposes[0].Totals, "модель": r.Models[0].Totals} {
+		if x.In != 100 || x.Out != 10 || x.Calls != 2 || x.Uncounted != 1 {
+			t.Errorf("%s = %+v", name, x)
+		}
+	}
+	if r.Prev.In != 0 || r.Prev.Uncounted != 1 {
+		t.Errorf("прошлый = %+v", r.Prev)
+	}
+}
+
+// Назначения с равными токенами идут по имени, а не в порядке обхода map:
+// иначе кольцо и полоски меняют порядок от открытия к открытию.
+func TestReport_purposeOrderIsStable(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, uz)
+	at := time.Date(2026, 11, 7, 10, 0, 0, 0, uz)
+	calls := []domain.ModelCall{
+		mk(t, at, domain.CallSearch, "m", 10, 0, true, false),
+		mk(t, at, domain.CallAnswer, "m", 10, 0, true, false),
+		mk(t, at, domain.CallExtract, "m", 10, 0, true, false),
+		mk(t, at, domain.CallCompress, "m", 50, 0, true, false),
+	}
+	want := []domain.CallPurpose{domain.CallCompress, domain.CallAnswer, domain.CallExtract, domain.CallSearch}
+	for range 50 {
+		r := usage.NewReport(calls, now, 1)
+		var got []domain.CallPurpose
+		for _, p := range r.Purposes {
+			got = append(got, p.Purpose)
+		}
+		if !slices.Equal(got, want) {
+			t.Fatalf("порядок = %v, нужен %v", got, want)
+		}
 	}
 }
