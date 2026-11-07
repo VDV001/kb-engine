@@ -255,3 +255,67 @@ func TestAppProxy_explainsFailures(t *testing.T) {
 		})
 	}
 }
+
+// Находки ревью #511: что прокси НЕ переписывает и что сохраняет.
+func TestAppProxy_explainsOnlyWhatItShould(t *testing.T) {
+	answer := func(code int, body string, h http.Header) roundTripFunc {
+		return func(r *http.Request) (*http.Response, error) {
+			if h == nil {
+				h = http.Header{}
+			}
+			return &http.Response{StatusCode: code, Header: h, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
+	}
+	const remote, local = "https://kb.example.ru", "http://127.0.0.1:8097"
+	write := func() *http.Request {
+		r := httptest.NewRequest(http.MethodPost, "/app/api/finances/transactions", strings.NewReader(`{}`))
+		r.Header.Set("Content-Type", "application/json")
+		r.Header.Set(appWriteHeader, "1")
+		return r
+	}
+	read := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/app/api/finances", nil) }
+	for _, c := range []struct {
+		name, url, token string // token пуст — «этот Mac» без токена
+		req              func() *http.Request
+		rt               roundTripFunc
+		code             int
+		want             []string // подстроки ответа
+	}{
+		// Запись читает форма операции: свой текст сервера (CSRF, токен) — как есть.
+		{"запись: 403 сервера как есть", remote, "tok-1", write, answer(http.StatusForbidden, "cross-site write refused", nil), http.StatusForbidden, []string{"cross-site write refused"}},
+		{"запись: 401 сервера как есть", remote, "tok-1", write, answer(http.StatusUnauthorized, "unauthorized", nil), http.StatusUnauthorized, []string{"unauthorized"}},
+		// Свой serve: текст с этого же Мака и совет про терминал, а не «попробуйте позже».
+		{"свой serve: 500 со своим текстом", local, "", read, answer(http.StatusInternalServerError, "open ledger.jsonl: permission denied", nil), http.StatusInternalServerError, []string{"permission denied", "терминал"}},
+		{"свой serve: 401 — про --token-file", local, "", read, answer(http.StatusUnauthorized, "", nil), http.StatusUnauthorized, []string{"--token-file"}},
+		// Сервер из источников на loopback (туннель) с токеном: 401 — это токен.
+		{"loopback с токеном: 401 — про токен", local, "tok-1", read, answer(http.StatusUnauthorized, "", nil), http.StatusUnauthorized, []string{"введите токен заново"}},
+		// 304 — ответ на проверку кэша, а не перенаправление.
+		{"304 проходит", remote, "tok-1", read, answer(http.StatusNotModified, "", http.Header{"Etag": {`"x"`}}), http.StatusNotModified, nil},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: c.url, Token: c.token}, true }, appUI, c.rt)
+			rec := httptest.NewRecorder()
+			p.ServeHTTP(rec, c.req())
+			if rec.Code != c.code {
+				t.Errorf("код %d, want %d (%q)", rec.Code, c.code, rec.Body.String())
+			}
+			for _, w := range c.want {
+				if !strings.Contains(rec.Body.String(), w) {
+					t.Errorf("ответ %q, want с %q", rec.Body.String(), w)
+				}
+			}
+		})
+	}
+
+	// Заголовки отказа, которые значат для клиента, не теряются.
+	p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: remote, Token: "tok-1"}, true }, appUI,
+		answer(http.StatusTooManyRequests, "slow down", http.Header{"Retry-After": {"30"}}))
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, read())
+	if rec.Header().Get("Retry-After") != "30" {
+		t.Errorf("Retry-After потерян: %v", rec.Header())
+	}
+	if rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("отказ без Cache-Control: no-store: %v", rec.Header())
+	}
+}

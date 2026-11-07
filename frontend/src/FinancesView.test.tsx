@@ -55,10 +55,10 @@ describe('FinancesView — пустой экран объясняет причи
   // «смотрите терминал serve», которого у человека в окне нет.
   it('журнал не прочитан, причина известна: показывает ее и что сделать', async () => {
     engine.value = { sources: [{ flag: 'ledger', connected: true }] }
-    render(<FinancesView finances={null} financesError="нет связи с сервером — проверьте адрес и VPN" masked={false} />)
+    render(<FinancesView finances={null} financesError={'нет связи с сервером\nЧто сделать: проверьте адрес и VPN'} masked={false} />)
 
-    expect(await screen.findByText('нет связи с сервером')).toBeTruthy()
-    expect(screen.getByText(/Что сделать:/).textContent).toContain('проверьте адрес и VPN')
+    const shown = await screen.findByText(/нет связи с сервером/)
+    expect(shown.textContent).toContain('Что сделать: проверьте адрес и VPN')
     expect(screen.queryByText(/в терминале/i)).toBeNull()
   })
 

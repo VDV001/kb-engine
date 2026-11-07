@@ -136,7 +136,7 @@ export function AddTransactionForm({
           </button>
         )}
         {failure && (
-          <p role="alert" className="label text-xs text-error">
+          <p role="alert" className="label text-xs whitespace-pre-line text-error">
             {failure.message}
           </p>
         )}
