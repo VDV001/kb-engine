@@ -24,6 +24,8 @@ const (
 	ModuleStats ModuleID = "stats"
 	// ModuleAccess — доступы к продуктам: хранилище с Touch ID (#494).
 	ModuleAccess ModuleID = "access"
+	// ModuleHelp — справка: команды движка и клавиши окна с поиском по задаче.
+	ModuleHelp ModuleID = "help"
 )
 
 // Ошибки списка модулей от окна; вызывающие проверяют errors.Is.
