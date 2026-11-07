@@ -128,6 +128,40 @@ func TestPortraitStore_Rejected(t *testing.T) {
 	}
 }
 
-// Портрет на сервере пишется только поверх прочитанной версии (If-Match):
-// сервис портрета может не перечитывать его перед записью.
-var _ portrait.ConflictChecked = (*kbserver.PortraitStore)(nil)
+// Версия — в сигнатуре (ревью #490): запись поверх версии, прочитанной этим
+// вызовом, а не последним Load хранилища. Общее хранилище: разбор прочитал
+// v1, страница успела прочитать новую версию — запись разбора все равно
+// получает конфликт, а не затирает чужое.
+func TestPortraitStore_SaveVersionIsTheCallersVersion(t *testing.T) {
+	srv := portraitServer(t)
+	c := kbserver.Client{URL: srv.URL, Token: token}
+	st, other := kbserver.NewPortraitStore(c), kbserver.NewPortraitStore(c)
+	ctx := t.Context()
+	at := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
+	f1, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", domain.OriginManual, domain.FactApproved, at)
+	p, _ := domain.NewPortrait([]domain.Fact{f1})
+	if _, err := st.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Save(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	snap, ver, err := st.LoadVersion(ctx)
+	if err != nil || ver == "" {
+		t.Fatalf("версия %q, %v", ver, err)
+	}
+	// другое устройство дописывает факт
+	q, _ := other.Load(ctx)
+	f2, _ := domain.NewFact("f2", domain.SectionMisc, "Слушает ответы в машине", domain.OriginManual, domain.FactApproved, at)
+	q, _ = q.Add(f2)
+	if err := other.Save(ctx, q); err != nil {
+		t.Fatal(err)
+	}
+	// то же хранилище читает свежую версию (страница), а разбор пишет свою
+	if _, err := st.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SaveVersion(ctx, snap, ver); !errors.Is(err, portrait.ErrConflict) {
+		t.Fatalf("запись поверх устаревшей версии = %v", err)
+	}
+}
