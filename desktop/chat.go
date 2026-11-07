@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,9 +20,11 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/llm"
+	"github.com/daniil/kb-engine/internal/adapter/usagejsonl"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
+	"github.com/daniil/kb-engine/internal/usecase/usage"
 )
 
 // chatKeyAccount — учетка ключа модели в Связке ключей окна.
@@ -119,6 +122,8 @@ type chatDesk struct {
 	seen    map[string]chat.Doc // записи из поисков чата: модель читает только их
 	// driveRead reads a link through Google connection conn (attach.go).
 	driveRead func(ctx context.Context, conn, ref string) (chat.Doc, error)
+	// calls keeps every model call for the window statistics; nil — не считать.
+	calls usage.Recorder
 }
 
 // everyAtMost passes text to show at most once per gap: кусков ответа сотни,
@@ -139,7 +144,17 @@ func newChatDesk(s *folderSettings, dir string) *chatDesk {
 	return &chatDesk{settings: s, dir: dir, now: time.Now,
 		model: func(c desktopconfig.Chat, key string) chat.Model {
 			return llm.Client{BaseURL: strings.TrimRight(c.URL, "/"), Key: key, Model: c.Model}
-		}}
+		},
+		calls: usagejsonl.Journal{Path: filepath.Join(filepath.Dir(dir), "usage.jsonl")}}
+}
+
+// metered counts the calls of m for the window statistics: назначение, токены,
+// время; без журнала — m как есть. Сбой записи не мешает ответу.
+func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose) chat.Model {
+	if d.calls == nil {
+		return m
+	}
+	return usage.NewMeter(m, c.Model, p, d.calls, d.now, func(err error) { log.Printf("статистика: %v", err) })
 }
 
 // chatMode is who finds the documents: явный выбор или по модели.
@@ -251,7 +266,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
 	model := d.model(c, key)
-	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), model, chat.WithReader(readerFunc(d.read)))
+	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))

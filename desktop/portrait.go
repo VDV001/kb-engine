@@ -14,6 +14,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
+	"github.com/daniil/kb-engine/internal/usecase/usage"
 )
 
 // «Что DVK помнит обо мне» (#479, решение владельца 06.11): портрет в папке,
@@ -234,7 +235,7 @@ func (d *chatDesk) PortraitCompress() (compressionView, error) {
 		return compressionView{}, err
 	}
 	out := compressionView{Proposals: []proposalView{}}
-	err = d.withPortrait(d.model(c, key), func(s *portrait.Service) error {
+	err = d.withPortrait(d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress)), func(s *portrait.Service) error {
 		ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 		defer cancel()
 		cmp, err := s.Compress(ctx)
@@ -320,7 +321,7 @@ func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, chatID, 
 	}
 	go func() {
 		var found []domain.Fact
-		err := d.withPortrait(model, func(s *portrait.Service) error {
+		err := d.withPortrait(d.metered(model, c, usage.Fixed(domain.CallExtract)), func(s *portrait.Service) error {
 			ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 			defer cancel()
 			var err error

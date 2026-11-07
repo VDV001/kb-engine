@@ -83,6 +83,12 @@ type ModelMessage struct {
 type ModelReply struct {
 	Content   string
 	ToolCalls []ToolCall
+	Usage     Usage // счет провайдера; нули — сервер его не прислал
+}
+
+// Usage is the tokens the provider counted for one reply.
+type Usage struct {
+	In, Out int
 }
 
 // Searcher finds documents for a query across the person's sources.

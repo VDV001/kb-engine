@@ -56,12 +56,11 @@ func TestJournal_ConcurrentRecords(t *testing.T) {
 	j := usagejsonl.Journal{Path: path}
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() { defer wg.Done(); _ = j.Record(call(t)) }()
+		wg.Go(func() { _ = j.Record(call(t)) })
 	}
 	wg.Wait()
 	f, _ := os.Open(path)
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	n := 0
 	for sc := bufio.NewScanner(f); sc.Scan(); n++ {
 	}
