@@ -1,6 +1,7 @@
 package mcpserver
 
 import (
+	"errors"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -13,6 +14,11 @@ import (
 type AccessFinder interface {
 	Find(q string) ([]domain.Credential, error)
 }
+
+// errAccessUnreadable — карточки не прочитались. Своя ошибка вместо настоящей:
+// в той — полный путь (имя пользователя) и кусок файла, а все, что получает
+// агент, уходит провайдеру модели. Подробности человек видит в терминале.
+var errAccessUnreadable = errors.New("карточки доступов не прочитать; подробности — kbengine creds find в терминале")
 
 type accessArgs struct {
 	Query string `json:"query" jsonschema:"слова: продукт, среда (прод, стенд, тест), логин, роль, адрес; пустой — все доступы"`
@@ -51,7 +57,7 @@ func addAccessTool(s *mcp.Server, j journal, a AccessFinder) {
 	}, func(in accessArgs) (map[string]any, error) {
 		found, err := a.Find(in.Query)
 		if err != nil {
-			return nil, err
+			return nil, errAccessUnreadable
 		}
 		out := make([]accessOut, 0, len(found))
 		for _, c := range found {

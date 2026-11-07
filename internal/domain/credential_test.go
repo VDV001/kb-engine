@@ -91,6 +91,9 @@ func TestCredential_Matches(t *testing.T) {
 	for q, want := range map[string]bool{
 		"": true, "склад": true, "СКЛАД прод": true, "склад prod": true, "admin": true, "192.0.2": true, "администратор": true,
 		"склад тест": false, "портал": false,
+		// заметку поиск не смотрит: туда пишут что угодно, и число найденного
+		// у агента выдавало бы ее содержимое по подстроке
+		"офиса": false, "только": false,
 	} {
 		if got := c.Matches(q); got != want {
 			t.Errorf("Matches(%q) = %v", q, got)

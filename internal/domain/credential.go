@@ -160,10 +160,12 @@ func (c Credential) DTO() CredentialDTO { return c.d }
 var envSay = map[Env]string{EnvProd: "прод", EnvStage: "стенд предпрод", EnvTest: "тест", EnvDev: "разработка"}
 
 // Matches reports whether every word of q is somewhere in the card, без
-// регистра; пустой запрос подходит всем.
+// регистра; пустой запрос подходит всем. Заметку поиск не смотрит: туда пишут
+// что угодно, в том числе пароль, а число найденного у агента (MCP) выдавало
+// бы ее содержимое по подстроке.
 func (c Credential) Matches(q string) bool {
 	d := c.d
-	text := strings.ToLower(strings.Join([]string{d.ID, d.Product, string(d.Env), envSay[d.Env], d.URL, d.Host, d.Login, d.Role, d.Rights, d.IssuedBy, d.Note}, " "))
+	text := strings.ToLower(strings.Join([]string{d.ID, d.Product, string(d.Env), envSay[d.Env], d.URL, d.Host, d.Login, d.Role, d.Rights, d.IssuedBy}, " "))
 	for w := range strings.FieldsSeq(strings.ToLower(q)) {
 		if !strings.Contains(text, w) {
 			return false
