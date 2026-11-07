@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.37.0] — 2026-11-08
+
 ### Added
 
 - **Окно DVK: «Финансы» говорят, откуда данные.** Над витриной строка «Данные: первый kb-сервер
@@ -102,6 +104,9 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   счетом: вызовы «без счета» — отдельным числом и под долями назначений, а не нулями или долей.
 
 ### Changed
+
+- **README: «Доступы», «Статистика» и отладочная сборка окна.** Раздел об окне DVK называет экран
+  «Доступы» и `kbengine creds`, «Статистику» и `just desktop-inspect` для разбора молчащей кнопки.
 
 - **Локальный CI сканирует образ trivy, а pre-push проверяет якоря карты.** `just ci` в джобе
   `docker` делает то же, что CI: `verify-claims` по размеру файловой системы образа и скан trivy

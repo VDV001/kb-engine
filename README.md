@@ -57,6 +57,17 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   this Mac — Settings → Modules → «Финансы берут данные из».
   The **Help** module is a cheat sheet of engine commands and window keys:
   sections on the left, search by task («доход», «пароль»), Enter copies.
+  **Доступы** keeps logins to your products: the card (product, environment,
+  address, login) in `credentials.json` next to the window's settings, the
+  password only in the macOS Keychain, shown or copied after Touch ID;
+  `kbengine creds` does the same from the terminal, and the MCP tool
+  `search_access` gives an agent the card without the password or the note.
+  **Статистика** shows the model calls the window made — a feed, an activity
+  map and money at the gateway's own prices, with a spend limit you set. When a
+  button in the
+  window stays silent, `just desktop-inspect` builds `bin/kb-inspect.app` with
+  the WebKit inspector (right-click in any input → Inspect Element); the
+  installed window has no inspector on purpose.
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.
