@@ -19,7 +19,8 @@ func (k fakeKeychain) Get(a string) (string, error) {
 	}
 	return "", errors.New("нет записи")
 }
-func (k fakeKeychain) Delete(a string) error { delete(k, a); return nil }
+func (k fakeKeychain) Delete(a string) error      { delete(k, a); return nil }
+func (k fakeKeychain) Has(a string) (bool, error) { _, ok := k[a]; return ok, nil }
 
 // credsEnv swaps the keychain and the clipboard for the test and returns the
 // cards file and what went to the clipboard.

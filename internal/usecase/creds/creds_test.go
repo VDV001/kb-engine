@@ -3,6 +3,7 @@ package creds_test
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -29,11 +30,14 @@ func (m *cardsMem) Update(fn func([]domain.Credential) ([]domain.Credential, err
 
 func (m *cardsMem) Load() ([]domain.Credential, error) { return slices.Clone(m.list), nil }
 
-// secretsMem is the keychain; deleted — что откат снял.
+// secretsMem is the keychain; deleted — что откат снял; failDelete — снять не выходит.
 type secretsMem struct {
-	m       map[string]string
-	deleted []string
+	m          map[string]string
+	deleted    []string
+	failDelete bool
 }
+
+func (s *secretsMem) Has(account string) (bool, error) { _, ok := s.m[account]; return ok, nil }
 
 func (s *secretsMem) Set(account, secret string) error { s.m[account] = secret; return nil }
 func (s *secretsMem) Get(account string) (string, error) {
@@ -44,6 +48,9 @@ func (s *secretsMem) Get(account string) (string, error) {
 	return v, nil
 }
 func (s *secretsMem) Delete(account string) error {
+	if s.failDelete {
+		return errors.New("связка заперта")
+	}
 	delete(s.m, account)
 	s.deleted = append(s.deleted, account)
 	return nil
@@ -58,6 +65,15 @@ func card(t *testing.T, product string, env domain.Env, login string) domain.Cre
 	return c
 }
 
+func pw(t *testing.T, s string) domain.Password {
+	t.Helper()
+	p, err := domain.NewPassword(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
 func newSvc() (creds.Service, *cardsMem, *secretsMem) {
 	c, s := &cardsMem{}, &secretsMem{m: map[string]string{}}
 	return creds.Service{Cards: c, Secrets: s}, c, s
@@ -68,20 +84,17 @@ func newSvc() (creds.Service, *cardsMem, *secretsMem) {
 func TestService_Add(t *testing.T) {
 	svc, cards, secrets := newSvc()
 	a := card(t, "Склад-Про", domain.EnvProd, "admin")
-	if err := svc.Add(a, "s3cret"); err != nil {
+	if err := svc.Add(a, pw(t, "s3cret")); err != nil {
 		t.Fatal(err)
 	}
 	if len(cards.list) != 1 || secrets.m[a.ID()] != "s3cret" {
 		t.Fatalf("карточек %d, пароль %q", len(cards.list), secrets.m[a.ID()])
 	}
-	if err := svc.Add(a, "other"); !errors.Is(err, domain.ErrCredentialExists) {
+	if err := svc.Add(a, pw(t, "other")); !errors.Is(err, domain.ErrCredentialExists) {
 		t.Fatalf("повтор принят: %v", err)
 	}
 	if secrets.m[a.ID()] != "s3cret" {
 		t.Fatalf("повтор перезаписал пароль: %q", secrets.m[a.ID()])
-	}
-	if err := svc.Add(card(t, "CRM", domain.EnvTest, "api"), "  "); !errors.Is(err, domain.ErrInvalidCredential) {
-		t.Fatalf("пустой пароль принят: %v", err)
 	}
 }
 
@@ -91,7 +104,7 @@ func TestService_Add_rollsBackOwnSecret(t *testing.T) {
 	svc, cards, secrets := newSvc()
 	a := card(t, "Склад-Про", domain.EnvProd, "admin")
 	cards.failSave = true
-	if err := svc.Add(a, "s3cret"); err == nil {
+	if err := svc.Add(a, pw(t, "s3cret")); err == nil {
 		t.Fatal("ошибка записи карточки потеряна")
 	}
 	if _, ok := secrets.m[a.ID()]; ok || !slices.Equal(secrets.deleted, []string{a.ID()}) {
@@ -127,7 +140,7 @@ func TestService_Find(t *testing.T) {
 func TestService_Password(t *testing.T) {
 	svc, _, _ := newSvc()
 	a := card(t, "Склад-Про", domain.EnvProd, "admin")
-	if err := svc.Add(a, "s3cret"); err != nil {
+	if err := svc.Add(a, pw(t, "s3cret")); err != nil {
 		t.Fatal(err)
 	}
 	if p, err := svc.Password(a.ID()); err != nil || p != "s3cret" {
@@ -135,5 +148,33 @@ func TestService_Password(t *testing.T) {
 	}
 	if _, err := svc.Password("nope"); !errors.Is(err, domain.ErrCredentialNotFound) {
 		t.Fatalf("чужой id: %v", err)
+	}
+}
+
+// Связка одна на все файлы карточек: пароль с этим id уже лежит (сирота,
+// карточка из другого --file) — отказ, чужой пароль не перезаписан и не снят.
+func TestService_Add_refusesForeignSecret(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	secrets.m[a.ID()] = "чужой"
+	if err := svc.Add(a, pw(t, "s3cret")); !errors.Is(err, domain.ErrCredentialExists) {
+		t.Fatalf("чужой пароль затерт: %v", err)
+	}
+	if secrets.m[a.ID()] != "чужой" || len(secrets.deleted) != 0 || len(cards.list) != 0 {
+		t.Fatalf("Связка %v, снято %v, карточек %d", secrets.m, secrets.deleted, len(cards.list))
+	}
+}
+
+// Откат не смог снять свой пароль — ошибка говорит, какой остался в Связке.
+func TestService_Add_rollbackFailureIsReported(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	cards.failSave, secrets.failDelete = true, true
+	err := svc.Add(a, pw(t, "s3cret"))
+	if err == nil || !strings.Contains(err.Error(), a.ID()) || !strings.Contains(err.Error(), "остался") {
+		t.Fatalf("ошибка отката: %v", err)
+	}
+	if strings.Contains(err.Error(), "s3cret") {
+		t.Fatal("пароль в тексте ошибки")
 	}
 }

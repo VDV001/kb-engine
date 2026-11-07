@@ -2,6 +2,7 @@ package domain_test
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,25 @@ func TestCredential_Matches(t *testing.T) {
 	} {
 		if got := c.Matches(q); got != want {
 			t.Errorf("Matches(%q) = %v", q, got)
+		}
+	}
+}
+
+// Пароль — тип, а не строка: пустой — отказ; печать (%v, %+v, %#v, %s)
+// пароля не раскрывает — случайный fmt в логе или ошибке его не выдаст.
+func TestNewPassword(t *testing.T) {
+	for _, bad := range []string{"", "   ", "\n"} {
+		if _, err := domain.NewPassword(bad); !errors.Is(err, domain.ErrInvalidCredential) {
+			t.Errorf("пароль %q принят: %v", bad, err)
+		}
+	}
+	p, err := domain.NewPassword("Kq7!vR2m")
+	if err != nil || p.Reveal() != "Kq7!vR2m" {
+		t.Fatalf("пароль: %v", err)
+	}
+	for _, s := range []string{fmt.Sprint(p), fmt.Sprintf("%v %+v %#v %s %q", p, p, p, p, p), fmt.Sprint(struct{ P domain.Password }{p})} {
+		if strings.Contains(s, "Kq7") {
+			t.Fatalf("печать раскрыла пароль: %s", s)
 		}
 	}
 }
