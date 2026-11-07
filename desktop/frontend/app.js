@@ -367,6 +367,8 @@ const MODULES = {
     icon: '<circle cx="12" cy="12" r="8"/><path d="M10 16.5V7.5h3a2.5 2.5 0 0 1 0 5H8.5M8.5 14.5h5"/>' },
   stats: { name: "Статистика", what: "токены на вход и на выход, вызовы модели, ошибки — по дням, назначениям и моделям", view: "stats",
     icon: '<path d="M4 20h16M7 16.5V12M12 16.5V6.5M17 16.5V9.5"/>' },
+  access: { name: "Доступы", what: "доступы к продуктам: карточки видны, пароль — только по Touch ID", view: "access",
+    icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
 };
 // Значок модуля без своего (новая сборка добавила модуль, а значок забыли) — квадрат, а не пустое место.
 const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
@@ -1606,6 +1608,10 @@ $("#indexing-settings").onclick = () => openSettings("sources");
 // и в блоке «Спектр акцентами» style.css: выключенный акцент — класс no-<id> на
 // body. Go хранит режим и свой набор (desktopconfig.Accents), списка не знает.
 const ACCENTS = [
+  ["vault-edge", "Сейф: кант", "кант двери и корпуса хранилища градиентом"],
+  ["vault-dial", "Сейф: диск", "кольцо кодового диска градиентом"],
+  ["vault-plate", "Сейф: табличка", "название на табличке градиентом"],
+  ["vault-glow", "Сейф: свет", "свет внутри, когда дверь открывается"],
   ["tab-ink", "Черта вкладки", "линия под активной кнопкой шапки и рамка активной вкладки поиска"],
   ["search", "Поле поиска в фокусе", "рамка строки dvk find и курсор"],
   ["row", "Выбранная строка", "рамка по контуру вместо полосы слева"],
@@ -1659,6 +1665,7 @@ function renderAccents() {
     return `<li><span class="t">${esc(t)}</span><span class="w">${esc(w)}</span>
       <button class="sw" role="switch" aria-checked="${on}" aria-label="${on ? "Выключить" : "Включить"}: ${esc(t)}" data-accent="${id}" ${editable ? "" : "disabled"}></button></li>`;
   }).join("");
+  renderLookAccess();
 }
 // Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
 let accentSaves = Promise.resolve();
@@ -1677,7 +1684,7 @@ $("#accent-presets").addEventListener("click", (e) => {
   const b = e.target.closest("[data-preset]");
   if (!b || !native()) return;
   const mode = b.dataset.preset === "mine" ? "" : b.dataset.preset;
-  saveAccents({ mode, off: state.accents.off || [] });
+  saveAccents({ ...state.accents, mode, off: state.accents.off || [] }); // look (выбор значений) не теряется
   // Кнопки «Сохранить» у оформления нет: правка сохраняется сразу — об этом и плашка.
   toast("Сохранено", " · оформление: " + b.textContent.trim());
 });
@@ -1688,7 +1695,7 @@ $("#accent-list").addEventListener("click", (e) => {
   if (!b || !native()) return;
   const id = b.dataset.accent, off = offNow(state.accents), before = { ...state.accents };
   const on = off.includes(id), what = (ACCENTS.find(([x]) => x === id) || [, id])[1];
-  saveAccents({ mode: "", off: on ? off.filter((x) => x !== id) : [...off, id] });
+  saveAccents({ ...state.accents, mode: "", off: on ? off.filter((x) => x !== id) : [...off, id] });
   toast(on ? "Включено" : "Выключено", ` · ${what}`, () => saveAccents(before), on ? "info" : "off");
 });
 if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});
@@ -1705,8 +1712,11 @@ function showModule(id) {
   $("#module-view").hidden = !mod || !!mod.view;
   $("#chat-view").hidden = !mod || mod.view !== "chat";
   $("#stats-view").hidden = !mod || mod.view !== "stats";
+  $("#access-view").hidden = !mod || mod.view !== "access";
+  if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
+  else if (mod && mod.view === "access") openAccess();
   else if (mod) {
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
@@ -3102,3 +3112,233 @@ function stLog(host) {
     $("#st-card-day").addEventListener("click", (e) => { e.stopPropagation(); stGo("log", { day }, `вызов ${time(c.at)} в Журнале`); });
   }
 }
+
+// --- Доступы (#494) -------------------------------------------------------------
+// Закрытое хранилище — черный сейф (решение владельца 07.11); Touch ID
+// открывает (помощник kb-auth), внутри список и карточка, продукт своим цветом.
+// Пароль — только по Touch ID, каждый раз: показать на 30 с или скопировать
+// (буфер со скрытой пометкой, стирается через 30 с). Само закрывается без дела —
+// время в «Оформление → Доступы». Состояние — в state.ac: showModule зовет
+// acLeave раньше, чем дойдет до этих строк.
+state.ac = { open: false, busy: false, list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
+const AC_HUES = ["--z-sp4", "--z-sp2", "--z-src-violet", "--z-sp6", "--z-sp5", "--z-sp1", "--z-sp3"];
+const AC_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
+const AC_NAMES = ["Хранилище", "Шифр", "Сейф", "Ключи"];
+const AC_LOCKS = [["1", "1 мин"], ["3", "3 мин"], ["5", "5 мин"], ["never", "никогда"]];
+const acLook = () => {
+  const l = state.accents.look || {};
+  return { name: l["vault-name"] || "Хранилище", grad: l["vault-grad"] || "spectrum", anim: l["vault-anim"] || "full", lock: l["vault-lock"] || "5" };
+};
+const acLockSec = () => { const v = acLook().lock; return v === "never" ? 0 : Math.max(1, Math.min(1440, +v || 5)) * 60; };
+const acWait = (ms) => new Promise((r) => setTimeout(r, matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : ms));
+const acFmt = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+
+async function openAccess() {
+  const ac = state.ac;
+  if (ac.open) await acLoad();
+  acRender();
+}
+function acLeave() {
+  const ac = state.ac;
+  if (!ac) return;
+  for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
+}
+async function acLoad() {
+  const ac = state.ac;
+  try { ac.list = (await native().AccessList(ac.q)) || []; }
+  catch (e) { ac.list = []; showError("Доступы не прочитать: " + errText(e)); }
+}
+function acVaultHTML() {
+  const L = acLook();
+  const ticks = Array.from({ length: 36 }, (_, i) => { const a = (i * 10 * Math.PI) / 180, r1 = i % 3 ? 55 : 51; return `<line x1="${66 + Math.cos(a) * r1}" y1="${66 + Math.sin(a) * r1}" x2="${66 + Math.cos(a) * 58}" y2="${66 + Math.sin(a) * 58}"/>`; }).join("");
+  return `<div class="vault-stage">
+    <div class="vault g-${esc(L.grad)} anim-${esc(L.anim)}" id="vault" aria-label="Хранилище «${esc(L.name)}», заперто">
+      <div class="shell"></div><div class="inside"></div>
+      <div class="door"><div class="face"></div>
+        <i class="hinge" style="top:22%"></i><i class="hinge" style="bottom:22%"></i>
+        <span class="plate"><span>${esc(L.name)}</span></span>
+        <div class="dial"><svg viewBox="0 0 132 132" aria-hidden="true"><g class="ticks">${ticks}</g>
+          <g class="grip"><line class="spoke" x1="66" y1="30" x2="66" y2="46"/><line class="spoke" x1="66" y1="86" x2="66" y2="102"/><line class="spoke" x1="30" y1="66" x2="46" y2="66"/><line class="spoke" x1="86" y1="66" x2="102" y2="66"/><circle class="hub" cx="66" cy="66" r="15"/><circle cx="66" cy="66" r="4" fill="#08080a"/></g></svg></div>
+        <i class="handle"></i>
+        <span class="lamp"><i class="ac-led" id="ac-led"></i><span id="ac-lamp">заперто</span></span>
+      </div>
+    </div>
+    <div class="vault-cap"><h3>${esc(L.name)}</h3>
+      <span class="muted">Карточки доступов видны поиску и агенту; пароли — только по Touch ID.</span>
+      <div class="btns"><button class="ac-btn pri" data-ac="open">Открыть · Touch ID</button></div></div>
+  </div>`;
+}
+function acCardHTML(c) {
+  const ac = state.ac, open = ac.shown[c.id];
+  const row = (t, v) => (v ? `<dt>${t}</dt><dd>${esc(v)}</dd>` : "");
+  return `<div class="ac-card" style="--c:var(${AC_HUES[acProducts().indexOf(c.product) % AC_HUES.length]})">
+    <div class="crumb"><i class="ac-sw"></i>${esc(c.product)}</div>
+    <h3>${esc(c.login)} <span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span></h3>
+    <dl class="ac-kv">${row("адрес", c.url)}${row("хост", c.host)}${row("роль", c.role)}${row("права", c.rights)}${row("выдал", [c.issuedBy, c.issuedAt].filter(Boolean).join(", "))}${row("заметка", c.note)}
+      <dt>пароль</dt><dd><div class="ac-secret"><code class="${open ? "open" : ""}">${open ? esc(open.pw) : "••••••••••••"}</code>
+        <button class="ac-btn" data-ac="${open ? "hide" : "show"}" data-id="${esc(c.id)}">${open ? "Скрыть" : "Показать · Touch ID"}</button>
+        <button class="ac-btn pri" data-ac="copy" data-id="${esc(c.id)}">Скопировать на 30 с</button>
+        ${open ? `<span class="ac-cd" data-cd="${esc(c.id)}">скроется через ${open.left} с</span>` : ""}</div></dd></dl>
+    <div class="ac-note">Пароль — в Связке ключей этого Мака; агенту через MCP уходит только карточка, без пароля и заметки.</div></div>`;
+}
+const acProducts = () => [...new Set(state.ac.list.map((c) => c.product))];
+function acAddHTML() {
+  const f = (k, t, type = "text") => `<label>${t}<input name="${k}" type="${type}" autocomplete="off" spellcheck="false"></label>`;
+  return `<form class="ac-add" id="ac-add">
+    ${f("product", "продукт")}<label>среда<select name="env"><option value="prod">прод</option><option value="stage">стенд</option><option value="test">тест</option><option value="dev">dev</option></select></label>
+    ${f("login", "логин")}${f("url", "адрес")}${f("host", "хост")}${f("role", "роль")}${f("rights", "права")}${f("issuedBy", "кто выдал")}${f("issuedAt", "когда выдан", "date")}${f("note", "заметка (видна только в окне)")}
+    ${f("password", "пароль", "password")}
+    <div class="acts"><button type="button" class="ac-btn" data-ac="add-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить</button></div></form>`;
+}
+function acInsideHTML() {
+  const ac = state.ac, L = acLook(), sec = acLockSec();
+  const list = ac.list.filter((c) => !ac.env || c.env === ac.env);
+  const cur = list.find((c) => c.id === ac.sel) || list[0];
+  const prods = acProducts();
+  const groups = [...new Set(list.map((c) => c.product))].map((p) => {
+    const items = list.filter((c) => c.product === p), n = items.length;
+    return `<div class="ac-grp" style="--c:var(${AC_HUES[prods.indexOf(p) % AC_HUES.length]})"><div class="ac-gh"><b>${esc(p)}</b><span class="n">${n} ${plural(n, "доступ", "доступа", "доступов")}</span></div>
+      ${items.map((c) => `<button class="ac-acc" data-ac="sel" data-id="${esc(c.id)}" aria-selected="${cur && c.id === cur.id}"><span>${esc(c.login)}</span><span class="ac-env ${esc(c.env)}">${esc(c.envName)}</span><small>${esc(c.role || c.url || c.host)}</small></button>`).join("")}</div>`;
+  }).join("");
+  return `<div class="ac-inside">
+    <div class="ac-meta"><span class="mini"><i class="ac-led on"></i>«${esc(L.name)}» открыто</span>
+      <span class="mini">${sec ? `закроется через <b id="ac-idle">${acFmt(ac.left)}</b> без дела` : "само не закрывается"} <button class="ac-btn" data-ac="close">Закрыть</button></span></div>
+    <div class="ac-find"><input id="ac-q" type="search" placeholder="найти доступ: продукт, среда, логин, роль, адрес" value="${esc(ac.q)}" autocomplete="off" spellcheck="false">
+      ${["", "prod", "stage", "test", "dev"].map((e) => `<button class="look-chip" data-ac="env" data-env="${e}" aria-pressed="${ac.env === e}">${e ? { prod: "прод", stage: "стенд", test: "тест", dev: "dev" }[e] : "все"}</button>`).join("")}
+      <button class="ac-btn pri" data-ac="add">Добавить доступ</button></div>
+    ${ac.adding ? acAddHTML() : ""}
+    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр доступов нет." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}
+  </div>`;
+}
+function acRender() {
+  const ac = state.ac;
+  $("#ac-body").innerHTML = ac.open ? acInsideHTML() : acVaultHTML();
+  if (ac.open && document.activeElement && document.activeElement.id !== "ac-q") { /* фокус не трогаем */ }
+}
+async function acOpen() {
+  const ac = state.ac;
+  if (ac.busy) return;
+  if (!native() || !native().AccessOpen) { showError("Доступы работают в окне приложения."); return; }
+  ac.busy = true;
+  try { await native().AccessOpen(); }
+  catch (e) {
+    ac.busy = false;
+    const v = $("#vault"); v.classList.remove("shake"); void v.offsetWidth; v.classList.add("shake");
+    showError(errText(e));
+    return;
+  }
+  const L = acLook(), k = L.anim === "none" ? 0 : L.anim === "short" ? 0.4 : 1, v = $("#vault");
+  $("#ac-lamp").textContent = "открываю"; v.classList.add("spin"); await acWait(750 * k);
+  v.classList.add("unbolt"); $("#ac-led").classList.add("on"); $("#ac-lamp").textContent = "открыто"; await acWait(420 * k);
+  v.classList.add("open"); await acWait(900 * k);
+  await acLoad();
+  Object.assign(ac, { open: true, busy: false, left: acLockSec() });
+  acIdleStart();
+  acRender();
+}
+function acClose() {
+  const ac = state.ac;
+  acLeave();
+  clearInterval(ac.idle);
+  Object.assign(ac, { open: false, adding: false, list: [] });
+  acRender();
+}
+function acIdleStart() {
+  const ac = state.ac;
+  clearInterval(ac.idle);
+  if (!acLockSec()) return;
+  ac.idle = setInterval(() => {
+    ac.left--;
+    const el = $("#ac-idle"); if (el) el.textContent = acFmt(ac.left);
+    if (ac.left <= 0) acClose();
+  }, 1000);
+}
+// Любое действие на экране доступов откладывает автозакрытие.
+for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListener(ev, () => { if (state.ac.open) state.ac.left = acLockSec(); }, true);
+async function acShow(id) {
+  const ac = state.ac;
+  try {
+    const pw = await native().AccessReveal(id);
+    ac.shown[id] = { pw, left: 30 };
+    clearInterval(ac.timers[id]);
+    ac.timers[id] = setInterval(() => {
+      const s = ac.shown[id]; if (!s) return;
+      if (--s.left <= 0) { acHide(id); return; }
+      document.querySelectorAll(`[data-cd="${CSS.escape(id)}"]`).forEach((e) => (e.textContent = `скроется через ${s.left} с`));
+    }, 1000);
+    acRender();
+  } catch (e) { showError(errText(e)); }
+}
+function acHide(id) { const ac = state.ac; clearInterval(ac.timers[id]); delete ac.shown[id]; acRender(); }
+async function acCopy(id) {
+  try { await native().AccessCopy(id); toast("Скопировано", " · пароль в буфере на 30 с, менеджеры буфера его не сохранят"); }
+  catch (e) { showError(errText(e)); }
+}
+$("#access-view").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-ac]"); if (!b) return;
+  const ac = state.ac, id = b.dataset.id;
+  switch (b.dataset.ac) {
+    case "open": acOpen(); break;
+    case "close": acClose(); break;
+    case "sel": ac.sel = id; acRender(); break;
+    case "env": ac.env = b.dataset.env; acRender(); break;
+    case "show": acShow(id); break;
+    case "hide": acHide(id); break;
+    case "copy": acCopy(id); break;
+    case "add": ac.adding = !ac.adding; acRender(); break;
+    case "add-cancel": ac.adding = false; acRender(); break;
+  }
+});
+let acQT = 0;
+$("#access-view").addEventListener("input", (e) => {
+  if (e.target.id !== "ac-q") return;
+  state.ac.q = e.target.value;
+  clearTimeout(acQT);
+  acQT = setTimeout(async () => { await acLoad(); acRender(); const q = $("#ac-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
+});
+$("#access-view").addEventListener("submit", async (e) => {
+  if (e.target.id !== "ac-add") return;
+  e.preventDefault();
+  const fd = Object.fromEntries(new FormData(e.target)), pw = fd.password;
+  delete fd.password;
+  e.target.elements.password.value = ""; // пароль не остается в поле
+  try {
+    await native().AccessAdd(fd, pw);
+    state.ac.adding = false;
+    await acLoad();
+    acRender();
+    toast("Сохранено", " · доступ добавлен, пароль — в Связке ключей");
+  } catch (err) { showError("Доступ не сохранен: " + errText(err)); }
+});
+
+// «Оформление → Доступы»: выбор значений сохраняется в config.json (accents.look).
+function renderLookAccess() {
+  const host = $("#look-access"); if (!host) return;
+  const L = acLook(), editable = !!native(), dis = editable ? "" : " disabled";
+  const chip = (k, v, label, pressed, extra = "") => `<button class="look-chip" data-look="${k}" data-v="${esc(v)}" aria-pressed="${pressed}"${dis}>${extra}${esc(label)}</button>`;
+  const SW = { spectrum: "var(--z-sp1),var(--z-sp3),var(--z-sp4),var(--z-sp6)", gold: "var(--z-sp1),var(--z-sp2)", ice: "var(--z-sp4),var(--z-sp5),var(--z-sp6)", dusk: "var(--z-sp2),var(--z-sp3),var(--z-src-violet)", mono: "#55555d,#9a9aa4" };
+  const customLock = !AC_LOCKS.some(([v]) => v === L.lock);
+  host.innerHTML = `
+    <div class="row"><span>Название на табличке</span><div class="opts">${AC_NAMES.map((n) => chip("vault-name", n, n, L.name === n)).join("")}
+      <label class="muted">свое <input id="look-name" type="text" maxlength="40" value="${AC_NAMES.includes(L.name) ? "" : esc(L.name)}" style="width:140px"${dis}></label></div></div>
+    <div class="row"><span>Градиент сейфа</span><div class="opts">${Object.entries(AC_GRADS).map(([g, n]) => chip("vault-grad", g, n, L.grad === g, `<i class="gs" style="background:linear-gradient(90deg,${SW[g]})"></i>`)).join("")}</div></div>
+    <div class="row"><span>Открытие</span><div class="opts">${[["full", "полное, 2 с"], ["short", "короткое, 0,8 с"], ["none", "без анимации"]].map(([v, n]) => chip("vault-anim", v, n, L.anim === v)).join("")}</div></div>
+    <div class="row"><span>Закрывать без дела через</span><div class="opts">${AC_LOCKS.map(([v, n]) => chip("vault-lock", v, n, L.lock === v)).join("")}
+      <label class="muted">свое, мин <input id="look-lock" type="number" min="1" max="1440" value="${customLock ? esc(L.lock) : ""}"${dis}></label></div></div>`;
+}
+function saveLook(k, v) {
+  const look = { ...(state.accents.look || {}), [k]: v };
+  saveAccents({ ...state.accents, look });
+  if (!state.ac.open) acRender(); else if (k === "vault-lock") { state.ac.left = acLockSec(); acIdleStart(); acRender(); }
+}
+$("#look-access").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-look]"); if (!b || !native()) return;
+  saveLook(b.dataset.look, b.dataset.v);
+});
+$("#look-access").addEventListener("change", (e) => {
+  if (!native()) return;
+  if (e.target.id === "look-name" && e.target.value.trim()) saveLook("vault-name", e.target.value.trim().slice(0, 40));
+  if (e.target.id !== "look-lock") return;
+  const n = Math.round(+e.target.value);
+  if (n >= 1 && n <= 1440) saveLook("vault-lock", String(n));
+});

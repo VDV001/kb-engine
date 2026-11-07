@@ -950,3 +950,115 @@ rect.st-bar-r { transform-box: fill-box; transform-origin: bottom; animation: st
 .st-tip .r { display: flex; justify-content: space-between; gap: 14px; }
 .st-tip .t { font-weight: 700; color: var(--z-ink); }
 @media (prefers-reduced-motion: reduce) { .st-body > *, rect.st-bar-r, .st-donut, .st-hbars i, .st-hrs i { animation: none !important; } .st-draw { clip-path: none; transition: none; } }
+
+/* --- Доступы (#494): сейф, список и карточка ------------------------------------ */
+.app.module-open .access-view:not([hidden]) { display: block; overflow: auto; min-height: 0; }
+.access-view { padding: 4px 0 20px; }
+.ac-env { display: inline-block; font-size: 11px; padding: 0 5px; border-radius: var(--z-radius); border: 1px solid currentColor; line-height: 16px; white-space: nowrap; }
+.ac-env.prod { color: var(--z-bad); } .ac-env.stage { color: var(--z-lvl-warn); } .ac-env.test, .ac-env.dev { color: var(--z-ok); }
+.ac-btn { background: var(--z-bg-3); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 4px 10px; cursor: pointer; white-space: nowrap; color: var(--z-ink); font: inherit; }
+.ac-btn:hover { border-color: var(--z-accent); }
+.ac-btn.pri { border-color: var(--z-accent); background: var(--z-accent-wash); }
+.ac-sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; background: var(--c); flex: none; }
+
+/* сейф: черный всегда (решение владельца), градиент — из оформления (--g1..--g4) */
+.vault-stage { display: grid; justify-items: center; gap: 18px; padding: 24px 0 8px; perspective: 1600px; }
+.vault { --g1: var(--z-sp1); --g2: var(--z-sp3); --g3: var(--z-sp4); --g4: var(--z-sp6);
+  --grad: linear-gradient(120deg, var(--g1), var(--g2) 35%, var(--g3) 70%, var(--g4));
+  --cone: conic-gradient(from 200deg, var(--g1), var(--g2), var(--g3), var(--g4), var(--g1));
+  position: relative; width: min(100%, 440px); aspect-ratio: 11 / 8; color-scheme: dark; }
+.vault.g-gold { --g1: var(--z-sp1); --g2: var(--z-sp2); --g3: var(--z-sp1); --g4: var(--z-sp2); }
+.vault.g-ice { --g1: var(--z-sp4); --g2: var(--z-sp5); --g3: var(--z-sp6); --g4: var(--z-sp5); }
+.vault.g-dusk { --g1: var(--z-sp2); --g2: var(--z-sp3); --g3: var(--z-src-violet); --g4: var(--z-sp4); }
+.vault.g-mono { --g1: #6b6b74; --g2: #9a9aa4; --g3: #55555d; --g4: #8a8a94; }
+.vault .shell { position: absolute; inset: 0; border-radius: 14px; padding: 1px; background: linear-gradient(160deg, #3a3a42, #121216 60%); box-shadow: 0 30px 60px -20px #000c, 0 0 0 1px #000; }
+body:not(.no-vault-edge) .vault .shell, body:not(.no-vault-edge) .vault .door { background: var(--grad); }
+.vault .shell::before { content: ""; position: absolute; inset: 1px; border-radius: 13px; background: radial-gradient(120% 90% at 30% 0%, #26262c, #0c0c0f 55%, #050506); }
+.vault .inside { position: absolute; inset: 18px; border-radius: 8px; background: #030304; box-shadow: inset 0 0 0 1px #1d1d22, inset 0 10px 30px #000; overflow: hidden; display: grid; place-items: center; }
+.vault .inside::before { content: ""; position: absolute; inset: -20%; background: var(--cone); filter: blur(40px); opacity: 0; transition: opacity .8s .3s; }
+.vault .door { position: absolute; inset: 18px; border-radius: 8px; transform-origin: left center; transform-style: preserve-3d; padding: 1px;
+  background: linear-gradient(150deg, #34343c, #101013 55%, #1c1c21); box-shadow: 0 2px 0 #ffffff0d inset, 0 10px 24px #0009; }
+.vault .door > * { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.vault .door::before { content: ""; position: absolute; inset: 1px; border-radius: 7px; transform: rotateY(180deg); backface-visibility: hidden; -webkit-backface-visibility: hidden; background: linear-gradient(90deg, #08080a, #1a1a1f); }
+.vault .face { position: absolute; inset: 1px; border-radius: 7px; overflow: hidden; background: radial-gradient(90% 70% at 35% 20%, #222228, #0e0e11 60%, #08080a); }
+.vault .face::after { content: ""; position: absolute; inset: 0; background: linear-gradient(115deg, transparent 30%, #ffffff0b 45%, transparent 60%); }
+.vault .hinge { position: absolute; left: -5px; width: 7px; height: 34px; border-radius: 3px; background: linear-gradient(90deg, #3c3c44, #141418); box-shadow: 0 0 0 1px #000; }
+.vault .plate { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); padding: 3px 16px; border-radius: 3px; background: #050506; box-shadow: inset 0 0 0 1px #2a2a30, 0 1px 0 #ffffff10;
+  font-size: 12px; font-weight: 700; letter-spacing: .3em; text-transform: uppercase; color: #c9c9cf; white-space: nowrap; }
+body:not(.no-vault-plate) .vault .plate span { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.vault .dial { position: absolute; left: 50%; top: 50%; width: 132px; height: 132px; margin: -66px 0 0 -66px; border-radius: 50%;
+  background: radial-gradient(circle, #1b1b20 0 58%, #0a0a0c 59% 100%); box-shadow: 0 10px 24px #000c, inset 0 0 0 1px #2c2c33; }
+body:not(.no-vault-dial) .vault .dial { background: radial-gradient(circle, #1b1b20 0 58%, transparent 59%), var(--cone); }
+body:not(.no-vault-dial) .vault .dial::before { content: ""; position: absolute; inset: 5px; border-radius: 50%; background: radial-gradient(circle, transparent 0 66%, #08080a 67%); }
+.vault .dial svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.vault .dial .ticks line { stroke: #6e6e78; stroke-width: 1; }
+.vault .dial .grip { transform-origin: 66px 66px; }
+.vault .dial .spoke { stroke: #c9c9cf; stroke-width: 5; stroke-linecap: round; }
+.vault .dial .hub { fill: #1d1d22; stroke: #2c2c33; }
+.vault .handle { position: absolute; right: 26px; top: 50%; width: 14px; height: 74px; margin-top: -37px; border-radius: 7px; background: linear-gradient(90deg, #3e3e46, #17171b 60%, #2a2a30); box-shadow: 0 4px 10px #000a, inset 0 0 0 1px #000; }
+.vault .lamp { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; font-size: 11px; color: #9a9aa4; white-space: nowrap; letter-spacing: .06em; }
+.ac-led { width: 7px; height: 7px; border-radius: 50%; background: var(--z-bad); box-shadow: 0 0 6px var(--z-bad); }
+.ac-led.on { background: var(--z-ok); box-shadow: 0 0 6px var(--z-ok); }
+.vault-cap { text-align: center; display: grid; gap: 6px; justify-items: center; }
+.vault-cap h3 { margin: 0; font-size: 16px; }
+.vault-cap .btns { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+@media (prefers-reduced-motion: no-preference) {
+  .vault:not(.anim-none) .dial .grip { transition: transform 1s cubic-bezier(.4,.1,.2,1); }
+  .vault:not(.anim-none) .handle { transition: transform .4s cubic-bezier(.5,0,.3,1.4); }
+  .vault:not(.anim-none) .door { transition: transform .9s cubic-bezier(.5,.05,.25,1); }
+  .vault.anim-short .dial .grip { transition-duration: .35s; }
+  .vault.anim-short .door { transition-duration: .45s; }
+  .vault.shake { animation: ac-shake .4s; }
+  .ac-inside { animation: ac-rise .45s var(--z-ease); }
+}
+@keyframes ac-shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes ac-rise { from { opacity: 0; transform: translateY(10px) scale(.985); } }
+.vault.spin .dial .grip { transform: rotate(540deg); }
+.vault.unbolt .handle { transform: rotate(90deg); }
+.vault.open .door { transform: rotateY(-106deg); }
+body:not(.no-vault-glow) .vault.open .inside::before { opacity: .55; }
+
+/* внутри: список (продукт своим цветом) и карточка */
+.ac-meta { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; align-items: center; color: var(--z-muted); font-size: 12px; margin-bottom: 10px; }
+.ac-meta .mini { display: inline-flex; gap: 8px; align-items: center; }
+.ac-find { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; flex-wrap: wrap; }
+.ac-find input { flex: 1 1 220px; min-width: 0; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 10px; color: var(--z-ink); font: inherit; }
+.ac-find input:focus { outline: 0; border-color: var(--z-accent); }
+.ac-grid { display: grid; grid-template-columns: minmax(0, 320px) minmax(0, 1fr); border: 1px solid var(--z-rule); border-radius: var(--z-radius); min-height: 380px; }
+.ac-list { border-right: 1px solid var(--z-rule); overflow: auto; max-height: 560px; }
+.ac-grp { padding-bottom: 6px; }
+.ac-gh { display: flex; align-items: baseline; gap: 8px; padding: 12px 12px 4px; margin: 0 12px 4px; border-bottom: 2px solid var(--c); background: var(--z-bg); position: sticky; top: 0; z-index: 1; }
+.ac-gh b { font-size: 14px; color: var(--c); }
+.ac-gh .n { margin-left: auto; color: var(--z-faint); font-size: 12px; }
+.ac-acc { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; width: 100%; text-align: left; background: none; border: 0; padding: 7px 12px 7px 24px; cursor: pointer; position: relative; color: var(--z-ink); font: inherit; }
+.ac-acc::before { content: ""; position: absolute; left: 13px; top: 15px; width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
+.ac-acc small { grid-column: 1 / -1; color: var(--z-faint); font-size: 12px; }
+.ac-acc:hover { background: var(--z-bg-2); }
+.ac-acc[aria-selected="true"] { background: var(--z-accent-wash); box-shadow: inset 2px 0 0 var(--z-accent); }
+.ac-card { padding: 16px 18px; display: grid; gap: 14px; align-content: start; }
+.ac-card .crumb { display: flex; gap: 8px; align-items: center; color: var(--z-muted); font-size: 12px; }
+.ac-card h3 { margin: 0; font-size: 16px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ac-kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; align-items: baseline; margin: 0; }
+.ac-kv dt { color: var(--z-faint); }
+.ac-kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.ac-secret { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.ac-secret code { font: inherit; letter-spacing: .08em; color: var(--z-ink-2); }
+.ac-secret code.open { color: var(--z-sp1); letter-spacing: 0; }
+.ac-cd { color: var(--z-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.ac-note { color: var(--z-muted); font-size: 12px; border-top: 1px solid var(--z-rule); padding-top: 8px; }
+.ac-add { border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 14px; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 12px; }
+.ac-add label { display: grid; gap: 4px; color: var(--z-muted); font-size: 12px; }
+.ac-add input, .ac-add select { background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 8px; color: var(--z-ink); font: inherit; }
+.ac-add .acts { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }
+@media (max-width: 860px) { .ac-grid { grid-template-columns: 1fr; } .ac-list { border-right: 0; border-bottom: 1px solid var(--z-rule); max-height: 300px; } }
+
+/* «Оформление → Доступы»: выбор значения у элемента */
+.look-h { margin: 18px 0 6px; font-size: 13px; }
+.look-access { display: grid; gap: 10px; }
+.look-access .row { display: grid; grid-template-columns: 150px 1fr; gap: 6px 14px; align-items: center; }
+.look-access .row > span { color: var(--z-muted); font-size: 12px; }
+.look-access .opts { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.look-chip { background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 10px; cursor: pointer; color: var(--z-ink); font: inherit; font-size: 12px; display: inline-flex; gap: 8px; align-items: center; }
+.look-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
+.look-chip .gs { width: 30px; height: 7px; border-radius: 2px; }
+.look-access input { width: 90px; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 3px 8px; color: var(--z-ink); font: inherit; font-size: 12px; }
