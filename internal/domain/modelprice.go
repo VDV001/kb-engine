@@ -28,6 +28,15 @@ func ParseModelPricePerToken(in, out string) (ModelPrice, error) { return parseP
 // ParseModelPricePerMillion reads dollars per million tokens, as a person types them ("0,10").
 func ParseModelPricePerMillion(in, out string) (ModelPrice, error) { return parsePrice(in, out, 6) }
 
+// ParseDollars reads the price of one call in dollars, as the gateway sends it ("0.000335").
+func ParseDollars(s string) (int64, error) {
+	v, err := parseDecimal(s, 12)
+	if err != nil {
+		return 0, fmt.Errorf("%w: %q: %w", ErrInvalidModelPrice, s, err)
+	}
+	return v, nil
+}
+
 func parsePrice(in, out string, scale int) (ModelPrice, error) {
 	i, err := parseDecimal(in, scale)
 	if err != nil {
