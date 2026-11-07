@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -336,4 +337,94 @@ func TestText_namesEverySection(t *testing.T) {
 			t.Errorf("раздел %q без названия: %q", sec, got)
 		}
 	}
+}
+
+// countStore считает чтения; changed — что «другое устройство» положит в
+// портрет между первым и вторым чтением (пока думает модель).
+type countStore struct {
+	memStore
+	loads   int
+	changed domain.Fact
+}
+
+func (c *countStore) Load(ctx context.Context) (domain.Portrait, error) {
+	c.loads++
+	if c.loads == 2 && c.changed.ID() != "" {
+		c.p, _ = c.p.Add(c.changed)
+	}
+	return c.memStore.Load(ctx)
+}
+
+// verStore — как kb-сервер: портрет с версией, запись только поверх своей
+// версии. other другое устройство записывает сразу после первого чтения,
+// пока думает модель.
+type verStore struct {
+	p     domain.Portrait
+	ver   int
+	loads int
+	other domain.Fact
+}
+
+func (v *verStore) LoadVersion(context.Context) (domain.Portrait, string, error) {
+	v.loads++
+	p, ver := v.p, strconv.Itoa(v.ver)
+	if v.loads == 1 && v.other.ID() != "" {
+		v.p, _ = v.p.Add(v.other)
+		v.ver++
+	}
+	return p, ver, nil
+}
+
+func (v *verStore) SaveVersion(_ context.Context, p domain.Portrait, ver string) error {
+	if ver != strconv.Itoa(v.ver) {
+		return portrait.ErrConflict
+	}
+	v.p, v.ver = p, v.ver+1
+	return nil
+}
+
+func (v *verStore) Load(ctx context.Context) (domain.Portrait, error) {
+	p, _, err := v.LoadVersion(ctx)
+	return p, err
+}
+
+func (v *verStore) Save(ctx context.Context, p domain.Portrait) error {
+	return v.SaveVersion(ctx, p, strconv.Itoa(v.ver))
+}
+
+// Разбор ответа на kb-сервере читает портрет один раз (ревью #482: два GET на
+// ответ); в папке, где версий нет, — перечитывает перед записью, чтобы не
+// затереть то, что другой Мак успел записать, пока думала модель.
+func TestService_ExtractLoads(t *testing.T) {
+	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", domain.OriginManual, domain.FactApproved, now)
+	extract := func(t *testing.T, st portrait.Store) {
+		t.Helper()
+		m := &fakeModel{reply: `[{"section":"prefs","text":"Отвечать коротко"}]`}
+		s := portrait.NewService(st, m, func() time.Time { return now }, func() string { return "n1" })
+		if _, err := s.Extract(t.Context(), "вопрос", "ответ"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Run("kb-сервер", func(t *testing.T) {
+		vs := &verStore{}
+		extract(t, vs)
+		if vs.loads != 1 || !strings.Contains(portrait.Text(vs.p.Facts()), "Отвечать коротко") {
+			t.Fatalf("чтений %d, портрет %q", vs.loads, portrait.Text(vs.p.Facts()))
+		}
+	})
+	t.Run("kb-сервер, другое устройство успело", func(t *testing.T) {
+		vs := &verStore{other: other}
+		extract(t, vs)
+		got := portrait.Text(vs.p.Facts())
+		if vs.loads != 2 || !strings.Contains(got, "Слушает ответы в машине") || !strings.Contains(got, "Отвечать коротко") {
+			t.Fatalf("чтений %d, портрет %q", vs.loads, got)
+		}
+	})
+	t.Run("папка", func(t *testing.T) {
+		cs := &countStore{changed: other}
+		extract(t, cs)
+		if cs.loads != 2 || !strings.Contains(portrait.Text(cs.p.Facts()), "Слушает ответы в машине") {
+			t.Fatalf("чтений %d, затерто записанное другим Маком: %q", cs.loads, portrait.Text(cs.p.Facts()))
+		}
+	})
 }

@@ -57,6 +57,16 @@ type Store interface {
 	Save(ctx context.Context, p domain.Portrait) error
 }
 
+// Versioned is a Store that reads with a version and writes only over that
+// version (kb-сервер по If-Match), а чужая версия — ErrConflict. Разбор ответа
+// пишет в такое хранилище прочитанное до модели, без второго чтения. Папка
+// версий не знает и перечитывается: иначе запись затерла бы то, что другой
+// Мак записал, пока думала модель.
+type Versioned interface {
+	LoadVersion(ctx context.Context) (domain.Portrait, string, error)
+	SaveVersion(ctx context.Context, p domain.Portrait, version string) error
+}
+
 // Model answers one short request: system — правила, user — данные.
 type Model interface {
 	Complete(ctx context.Context, system, user string) (string, error)
@@ -142,6 +152,26 @@ func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.P
 	return err
 }
 
+// changeVersioned applies fn to p read at version and writes it over that
+// version; другое устройство успело — перечитать и применить заново.
+func (s *Service) changeVersioned(ctx context.Context, vs Versioned, p domain.Portrait, version string, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	var err error
+	for attempt := 1; ; attempt++ {
+		var next domain.Portrait
+		if next, err = fn(p); err != nil {
+			return err
+		}
+		if err = vs.SaveVersion(ctx, next, version); !errors.Is(err, ErrConflict) || attempt == conflictAttempts {
+			return err
+		}
+		if p, version, err = vs.LoadVersion(ctx); err != nil {
+			return err
+		}
+	}
+}
+
 // Add adds a fact typed by the person: одобрен сразу.
 func (s *Service) Add(ctx context.Context, section domain.FactSection, text string) (domain.Fact, error) {
 	f, err := domain.NewFact(s.newID(), section, text, domain.OriginManual, domain.FactApproved, s.now())
@@ -211,7 +241,7 @@ const extractPrompt = `Ты ведешь портрет человека: уст
 
 // Extract finds new facts in one exchange and puts them to «ждут одобрения».
 func (s *Service) Extract(ctx context.Context, question, answer string) ([]domain.Fact, error) {
-	p, err := s.store.Load(ctx)
+	p, version, err := s.read(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -241,7 +271,7 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 		}
 	}
 	var added []domain.Fact
-	err = s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+	apply := func(p domain.Portrait) (domain.Portrait, error) {
 		added = nil
 		for _, f := range candidates {
 			if next, err := p.Add(f); err == nil { // ошибка — уже известно
@@ -252,11 +282,30 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 			return p, errNothingNew
 		}
 		return p, nil
-	})
+	}
+	err = s.write(ctx, p, version, apply)
 	if errors.Is(err, errNothingNew) {
 		return nil, nil
 	}
 	return added, err
+}
+
+// read loads the portrait; у хранилища с версией — вместе с версией.
+func (s *Service) read(ctx context.Context) (domain.Portrait, string, error) {
+	if vs, ok := s.store.(Versioned); ok {
+		return vs.LoadVersion(ctx)
+	}
+	p, err := s.store.Load(ctx)
+	return p, "", err
+}
+
+// write applies fn to what read returned: хранилище с версией пишет поверх
+// версии чтения, остальные перечитывают перед записью.
+func (s *Service) write(ctx context.Context, p domain.Portrait, version string, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	if vs, ok := s.store.(Versioned); ok {
+		return s.changeVersioned(ctx, vs, p, version, fn)
+	}
+	return s.change(ctx, fn)
 }
 
 // errNothingNew stops change without a save: в обмене нового нет.

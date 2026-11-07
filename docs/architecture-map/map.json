@@ -1213,7 +1213,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/portrait/portrait.go:126"
+        "internal/usecase/portrait/portrait.go:136"
       ]
     },
     {
@@ -1243,7 +1243,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/kbserver/portrait.go:61"
+        "internal/adapter/kbserver/portrait.go:71"
       ]
     },
     {
@@ -4216,8 +4216,8 @@
           "from": "uc-portrait",
           "to": "dom-portrait",
           "call": "change → Portrait.Edit",
-          "detail": "internal/usecase/portrait/portrait.go:169 — Под замком только чтение-правка-запись; модель думает вне его",
-          "source": "internal/usecase/portrait/portrait.go:169",
+          "detail": "internal/usecase/portrait/portrait.go:199 — Под замком только чтение-правка-запись; модель думает вне его",
+          "source": "internal/usecase/portrait/portrait.go:199",
           "symbol": "Edit",
           "unverified": false
         },
@@ -4256,8 +4256,8 @@
           "from": "uc-portrait",
           "to": "adp-kbserver-portrait",
           "call": "Save на kb-сервер",
-          "detail": "internal/adapter/kbserver/portrait.go:77 — PUT с If-Match прочитанной версии; портрета еще нет — If-None-Match: *",
-          "source": "internal/adapter/kbserver/portrait.go:77",
+          "detail": "internal/adapter/kbserver/portrait.go:105 — PUT с If-Match прочитанной версии; портрета еще нет — If-None-Match: *",
+          "source": "internal/adapter/kbserver/portrait.go:105",
           "symbol": "If-Match",
           "unverified": false
         },
@@ -4296,8 +4296,8 @@
           "from": "adp-kbserver-portrait",
           "to": "uc-portrait",
           "call": "412 → portrait.ErrConflict",
-          "detail": "internal/adapter/kbserver/portrait.go:91 — Портрет успело изменить другое устройство: клиент отдает сигнал конфликта; usecase перечитывает портрет и применяет правку заново до 5 раз (internal/usecase/portrait/portrait.go:138) — правка с двух устройств не теряется",
-          "source": "internal/adapter/kbserver/portrait.go:91",
+          "detail": "internal/adapter/kbserver/portrait.go:116 — Портрет успело изменить другое устройство: клиент отдает сигнал конфликта; usecase перечитывает портрет и применяет правку заново до 5 раз (internal/usecase/portrait/portrait.go:148) — правка с двух устройств не теряется",
+          "source": "internal/adapter/kbserver/portrait.go:116",
           "symbol": "ErrConflict",
           "unverified": false
         }
