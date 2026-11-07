@@ -2934,8 +2934,8 @@ function stTip(x, y, html) {
 const stTipHide = () => { if (stTipEl) stTipEl.hidden = true; };
 const stRow = (c, n, v) => `<div class="r"><span>${stSw(c)}${esc(n)}</span><span>${v}</span></div>`;
 
-async function openStats() {
-  st.money = null; st.cal = null; // «Деньги» и календарь перечитываются при каждом открытии
+async function openStats(fresh = true) {
+  if (fresh) { st.money = null; st.cal = null; } // при каждом открытии вкладки; от периода они не зависят
   $("#st-range").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === st.days));
   await stLoad();
 }
@@ -2959,7 +2959,7 @@ function stGo(screen, f, why) {
 $("#st-back").addEventListener("click", () => { const h = st.hist.pop(); if (h) { Object.assign(st, h); stRender(); } });
 $("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open: null, from: null }); stRender(); });
 document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
-$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; st.feedSel = null; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); }); // «Назад» не вернет строку и день прежнего периода
+$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; if (st.f.day || st.f.from) Object.assign(st, { f: { ...st.f, day: undefined, from: undefined, to: undefined }, from: null }); openStats(false); }); // «Назад» не вернет строку, день и отрезок прежнего периода
 
 function stDescribe() {
   const f = st.f, p = [];
@@ -3128,6 +3128,8 @@ const ST_MON_FULL = ["январе", "феврале", "марте", "апрел
 const stWd = (iso) => { const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return (new Date(y, m - 1, d).getDay() + 6) % 7; };
 const stUsd = (v) => "$" + v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: v > 0 && v < 1 ? 4 : 2 });
 const stInRange = (iso, f) => (!f.from || iso.slice(0, 10) >= f.from) && (!f.to || iso.slice(0, 10) <= f.to);
+// stShade colours a cell by its share of max: пусто — фон, дальше — от 18% акцента до полного.
+const stShade = (max) => (n) => (n ? `color-mix(in srgb, var(--z-accent) ${Math.round(18 + (n / max) * 82)}%, var(--z-bg-3))` : "var(--z-bg-3)");
 const stTitle = (id) => st.data.purposes.find((p) => p.id === id)?.title || id;
 
 // stEnsure reloads a longer period when a link points before the current one
@@ -3144,7 +3146,9 @@ function stFeed(host) {
   const at = Object.fromEntries(days.map((d, i) => [d.date, i]));
   const grid = days.map(() => Object.fromEntries(ids.map((id) => [id, 0])));
   for (const c of v.calls) { const i = at[c.at.slice(0, 10)]; if (i != null) grid[i][c.purpose] += c.in + c.out; }
-  const sel = st.feedSel && st.feedSel.b < n ? st.feedSel : { a: 0, b: n - 1 };
+  // Выделение хранится датами: после перезагрузки периода номера дней значат другое.
+  const fa = st.feedSel ? days.findIndex((d) => d.date === st.feedSel.from) : -1, fb = st.feedSel ? days.findIndex((d) => d.date === st.feedSel.to) : -1;
+  const sel = fa >= 0 && fb >= fa ? { a: fa, b: fb } : { a: 0, b: n - 1 };
   const whole = sel.a === 0 && sel.b === n - 1, from = days[sel.a].date, to = days[sel.b].date;
   const calls = v.calls.filter((c) => stInRange(c.at, { from, to }));
   const sum = (k) => calls.reduce((a, c) => a + c[k], 0), failed = calls.filter((c) => c.failed).length;
@@ -3159,7 +3163,7 @@ function stFeed(host) {
     <div class="st-grid"><div class="st-panel"><h3>Доли за период</h3><div class="st-sub">нажмите — Журнал периода с этим назначением</div><div id="st-c4"></div></div>
       <div class="st-panel"><h3>Модели за период</h3><div class="st-sub">нажмите — Журнал периода по модели</div>${models.length ? `<div class="st-hbars">${models.map(([m, k]) => `<button data-fm="${esc(m)}"><span>${esc(m)}</span><i style="width:${Math.max(2, (k / models[0][1]) * 100)}%;background:${stCss("--z-accent")}"></i><span>${stNum(k)}</span></button>`).join("")}</div>` : `<div class="st-sub">Вызовов нет.</div>`}</div></div>`;
   stBindSeg("st-m3", "feed");
-  stFeedChart($("#st-c3"), days, ids, grid, st.modes.feed, whole ? null : sel, (a, b) => { st.feedSel = { a, b }; stRender(); });
+  stFeedChart($("#st-c3"), days, ids, grid, st.modes.feed, whole ? null : sel, (a, b) => { st.feedSel = { from: days[a].date, to: days[b].date }; stRender(); });
   if ($("#st-feed-all")) $("#st-feed-all").addEventListener("click", () => { st.feedSel = null; stRender(); });
   $("#st-feed-log").addEventListener("click", () => stGo("log", whole ? {} : range, why));
   host.querySelectorAll("[data-fk]").forEach((b) => b.addEventListener("click", () => stGo("log", { ...(whole ? {} : range), ...(b.dataset.fk === "failed" ? { failed: true } : {}) }, `«${b.querySelector("span").textContent}» за ${why}`)));
@@ -3211,8 +3215,7 @@ function stHeat(host) {
   const v = st.data, byTok = st.modes.heat === "tokens";
   const cells = Array.from({ length: 7 }, () => Array(24).fill(0));
   for (const c of v.calls) cells[stWd(c.at)][+c.at.slice(11, 13)] += byTok ? c.in + c.out : 1;
-  const max = Math.max(1, ...cells.flat());
-  const shade = (n) => (n ? `color-mix(in srgb, var(--z-accent) ${Math.round(18 + (n / max) * 82)}%, var(--z-bg-3))` : "var(--z-bg-3)");
+  const shade = stShade(Math.max(1, ...cells.flat()));
   host.innerHTML = `<div class="st-panel"><div class="st-hd"><div><h3>Когда зовете модель</h3><div class="st-sub">дни недели × часы за ${st.days} дн; нажмите клетку — Журнал этого часа</div></div>${stSeg("st-m5", [["calls", "вызовы"], ["tokens", "токены"]], st.modes.heat)}</div>
       <div class="st-heat"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hh">${h % 3 ? "" : h}</span>`).join("")}
       ${cells.map((row, wd) => `<span class="wd">${ST_WD[wd]}</span>` + row.map((n, h) => `<button data-wd="${wd}" data-h="${h}" style="background:${shade(n)}" aria-label="${ST_WD_FULL[wd]}, ${h}:00 — ${byTok ? stTok(n) + " токенов" : n + " " + plural(n, "вызов", "вызова", "вызовов")}"></button>`).join("")).join("")}</div></div>
@@ -3228,8 +3231,7 @@ function stHeat(host) {
   else native().Stats(90).then((d) => { st.cal = d; if (st.screen === "heat") stCalendar(); }).catch((e) => { $("#st-cal").innerHTML = `<div class="st-sub">Календарь не прочитан: ${esc(errText(e))}</div>`; });
 }
 function stCalendar() {
-  const days = st.cal.days, pad = stWd(days[0].date), max = Math.max(1, ...days.map((d) => d.calls));
-  const shade = (n) => (n ? `color-mix(in srgb, var(--z-accent) ${Math.round(18 + (n / max) * 82)}%, var(--z-bg-3))` : "var(--z-bg-3)");
+  const days = st.cal.days, pad = stWd(days[0].date), shade = stShade(Math.max(1, ...days.map((d) => d.calls)));
   $("#st-cal").innerHTML = `<div class="st-cal">${ST_WD.map((w) => `<span class="wd">${w}</span>`).join("")}${'<span></span>'.repeat(pad)}${days.map((d) => `<button data-day="${d.date}" aria-pressed="${st.calDay === d.date}" style="background:${shade(d.calls)}" aria-label="${stDay(d.date)}: ${d.calls} ${plural(d.calls, "вызов", "вызова", "вызовов")}"></button>`).join("")}</div>`;
   $("#st-cal").querySelectorAll("button").forEach((b) => {
     const d = days.find((x) => x.date === b.dataset.day);
@@ -3258,9 +3260,12 @@ async function stMoney(host) {
     try { st.money = await native().StatsMoney(); } catch (e) { host.innerHTML = `<div class="st-empty">Не посчитать: ${esc(errText(e))}</div>`; return; }
     if (st.screen !== "money") return;
   }
-  const m = st.money, lim = parseFloat((m.limit || "").replace(",", ".")) || 0, mon = ST_MON_FULL[+m.month.slice(5, 7) - 1];
+  const m = st.money, hasLim = m.limit !== "", lim = hasLim ? +m.limit.replace(",", ".") : 0, mon = ST_MON_FULL[+m.month.slice(5, 7) - 1];
+  // Журнал из Денег — за этот месяц, а не за период Статистики: числа сходятся с долларами.
+  const monthF = { from: m.month + "-01", to: m.month + "-" + String(m.daysPassed).padStart(2, "0") };
+  const toLog = async (f, why) => { await stEnsure(monthF.from); stGo("log", { ...monthF, ...f }, why); };
   const share = (x) => (m.spent ? Math.round((x / m.spent) * 100) : 0);
-  const warn = lim && m.spent >= lim ? `Лимит месяца превышен: ${stUsd(m.spent)} из ${stUsd(lim)}.` : lim && m.spent >= lim * 0.8 ? `Потрачено ${Math.round((m.spent / lim) * 100)}% лимита месяца.` : lim && m.forecast > lim ? `По прогнозу месяц выйдет за лимит на ${stUsd(m.forecast - lim)}.` : "";
+  const warn = hasLim && m.spent >= lim && m.spent > 0 ? `Лимит месяца превышен: ${stUsd(m.spent)} из ${stUsd(lim)}.` : hasLim && lim > 0 && m.spent >= lim * 0.8 ? `Потрачено ${Math.round((m.spent / lim) * 100)}% лимита месяца.` : lim && m.forecast > lim ? `По прогнозу месяц выйдет за лимит на ${stUsd(m.forecast - lim)}.` : "";
   const tips = [];
   const topP = m.purposes.find((p) => p.cost > 0);
   if (topP && share(topP.cost) >= 40) tips.push([`«${topP.title}» — ${share(topP.cost)}% расхода месяца (${stUsd(topP.cost)})`, { purpose: topP.id }, `совет про «${topP.title}» в Деньгах`]);
@@ -3271,30 +3276,33 @@ async function stMoney(host) {
   if (m.unpriced) tips.push([`${m.unpriced} ${plural(m.unpriced, "вызов", "вызова", "вызовов")} без цены модели — не вошли в расход; задайте цену в таблице ниже`, null]);
   host.innerHTML = `<div class="st-kpis"><button data-mk="spent"><span>Потрачено в ${mon}</span><b data-n="${m.spent}" data-f="usd">${stUsd(m.spent)}</b><em>за ${m.daysPassed} ${plural(m.daysPassed, "день", "дня", "дней")}</em><span class="to">Журнал →</span></button>
       <button data-mk="forecast"><span>Прогноз на месяц</span><b data-n="${m.forecast}" data-f="usd">${stUsd(m.forecast)}</b><em>по среднему прошедших дней</em></button>
-      <button data-mk="limit"><span>Лимит месяца</span><b>${lim ? stUsd(lim) : "не задан"}</b><em>${lim ? `осталось ${stUsd(Math.max(0, lim - m.spent))}` : "потяните шкалу ниже"}</em></button>
+      <button data-mk="limit"><span>Лимит месяца</span><b>${hasLim ? stUsd(lim) : "не задан"}</b><em>${hasLim ? `осталось ${stUsd(Math.max(0, lim - m.spent))}` : "потяните шкалу ниже"}</em></button>
       ${m.unpriced || m.uncounted ? `<button data-mk="unknown"><span>Не вошло в расход</span><b>${stNum(m.unpriced + m.uncounted)}</b><em>${m.unpriced ? `без цены ${m.unpriced}` : ""}${m.unpriced && m.uncounted ? " · " : ""}${m.uncounted ? `без счета ${m.uncounted}` : ""}</em></button>` : ""}</div>
     ${warn ? `<div class="st-warn" role="status">${esc(warn)}</div>` : ""}
     <div class="st-panel"><div class="st-hd"><div><h3>Расход против лимита</h3><div class="st-sub">потяните метку лимита по шкале или впишите число; метка 80% — порог предупреждения</div></div>
-      <div class="st-limit-in"><label>лимит, $ <input id="st-lim" inputmode="decimal" value="${esc(m.limit || "")}" placeholder="нет"></label><button class="st-chip" id="st-lim-save">Сохранить</button>${lim ? '<button class="st-chip" id="st-lim-off">Снять</button>' : ""}</div></div>
+      <div class="st-limit-in"><label>лимит, $ <input id="st-lim" inputmode="decimal" value="${esc(m.limit || "")}" placeholder="нет"></label><button class="st-chip" id="st-lim-save">Сохранить</button>${hasLim ? '<button class="st-chip" id="st-lim-off">Снять</button>' : ""}</div></div>
       <div class="st-scale" id="st-scale"></div><div id="st-c6"></div></div>
     <div class="st-grid"><div class="st-panel"><h3>Расход по назначениям</h3><div class="st-sub">нажмите — Журнал с этим назначением</div>${m.purposes.length ? `<div class="st-hbars">${m.purposes.map((p, i) => `<button data-mp="${i}"><span>${stSw(ST_COLORS[p.id] || "--z-faint")}${esc(p.title)}</span><i style="width:${Math.max(2, m.spent ? (p.cost / m.spent) * 100 : 0)}%;background:${stCss(ST_COLORS[p.id] || "--z-faint")}"></i><span>${stUsd(p.cost)}</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} вызовов нет.</div>`}</div>
       <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map(([t, f], i) => `<div>${esc(t)}${f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
     <div class="st-panel"><h3>Цены моделей</h3><div class="st-sub">долларов за 1 млн токенов; «шлюз» — из списка моделей Vercel AI Gateway, раз в сутки; своя цена главнее, пустые поля — снова цена шлюза${m.priceNote ? `. <b>${esc(m.priceNote)}</b>` : ""}</div>
       <div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Модель</th><th class="n">Вызовов</th><th class="n">Расход</th><th class="n">Вход, $</th><th class="n">Выход, $</th><th>Цена</th><th></th></tr></thead><tbody>${m.models.map((x, i) => `<tr data-mi="${i}"><td>${esc(x.id)}</td><td class="n">${stNum(x.calls)}</td><td class="n">${x.priced ? stUsd(x.cost) : "—"}</td>
-        <td class="n"><input class="st-price" data-pin="${i}" value="${esc(x.source === "своя" ? x.in : "")}" placeholder="${esc(x.in || "нет")}" inputmode="decimal"></td><td class="n"><input class="st-price" data-pout="${i}" value="${esc(x.source === "своя" ? x.out : "")}" placeholder="${esc(x.out || "нет")}" inputmode="decimal"></td>
-        <td>${x.source || '<span class="st-pill bad">нет цены</span>'}</td><td><button class="st-chip" data-psave="${i}">Сохранить</button></td></tr>`).join("")}</tbody></table></div></div>`;
+        ${x.priceable ? `<td class="n"><input class="st-price" data-pin="${i}" value="${esc(x.source === "своя" ? x.in : "")}" placeholder="${esc(x.in || "нет")}" inputmode="decimal"></td><td class="n"><input class="st-price" data-pout="${i}" value="${esc(x.source === "своя" ? x.out : "")}" placeholder="${esc(x.out || "нет")}" inputmode="decimal"></td>
+        <td>${x.source || '<span class="st-pill bad">нет цены</span>'}</td><td><button class="st-chip" data-psave="${i}">Сохранить</button></td>` : `<td colspan="4" class="st-sub">шлюз не присылает счет — цена не нужна</td>`}</tr>`).join("")}</tbody></table></div></div>`;
   const reload = async () => { st.money = null; await stMoney(host); if (!stReduce()) stCount(host); };
   const setLimit = async (v) => { try { await native().SetSpendLimit(v); showError(""); } catch (e) { showError("Лимит не сохранен: " + errText(e)); } await reload(); };
   $("#st-lim-save").addEventListener("click", () => setLimit($("#st-lim").value.trim()));
   $("#st-lim").addEventListener("keydown", (e) => e.key === "Enter" && setLimit($("#st-lim").value.trim()));
   if ($("#st-lim-off")) $("#st-lim-off").addEventListener("click", () => setLimit(""));
   host.querySelectorAll('[data-mk="forecast"], [data-mk="limit"]').forEach((b) => b.addEventListener("click", () => $("#st-lim").focus()));
-  host.querySelector('[data-mk="spent"]').addEventListener("click", () => stGo("log", {}, `«Потрачено в ${mon}» в Деньгах`));
-  host.querySelectorAll("[data-mp]").forEach((b) => b.addEventListener("click", () => { const p = m.purposes[+b.dataset.mp]; stGo("log", { purpose: p.id }, `«${p.title}» в Деньгах`); }));
-  host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const [, f, why] = tips[+b.dataset.tipI]; stGo("log", f, why); }));
+  host.querySelector('[data-mk="spent"]').addEventListener("click", () => toLog({}, `«Потрачено в ${mon}» в Деньгах`));
+  host.querySelectorAll("[data-mp]").forEach((b) => b.addEventListener("click", () => { const p = m.purposes[+b.dataset.mp]; toLog({ purpose: p.id }, `«${p.title}» в Деньгах`); }));
+  host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const [, f, why] = tips[+b.dataset.tipI]; toLog(f, why); }));
   host.querySelectorAll("[data-psave]").forEach((b) => b.addEventListener("click", async () => {
     const i = +b.dataset.psave, x = m.models[i];
-    try { await native().SetModelPrice(x.id, host.querySelector(`[data-pin="${i}"]`).value.trim(), host.querySelector(`[data-pout="${i}"]`).value.trim()); showError(""); toast("Сохранено", ` · цена ${x.id}`); }
+    let pin = host.querySelector(`[data-pin="${i}"]`).value.trim(), pout = host.querySelector(`[data-pout="${i}"]`).value.trim();
+    // Заполнена одна сторона — другая берется из нынешней цены (ее и показывает подсказка поля).
+    if (pin || pout) { pin = pin || x.in; pout = pout || x.out; }
+    try { await native().SetModelPrice(x.id, pin, pout); showError(""); toast("Сохранено", ` · цена ${x.id}`); }
     catch (e) { showError("Цена не сохранена: " + errText(e)); return; }
     await reload();
   }));
@@ -3310,16 +3318,18 @@ function stScale(host, m, lim, setLimit) {
       ${lim ? `<i class="p80" style="left:${pct(lim * 0.8)}%"></i>` : ""}<button class="lim" id="st-lim-h" style="left:${pct(lim)}%" aria-label="Лимит месяца ${lim ? stUsd(lim) : "не задан"}; потяните"><span>${lim ? stUsd(lim) : "лимит"}</span></button></div>
     <div class="st-legend"><span>${stSw("--z-accent")}потрачено ${stUsd(m.spent)}</span><span><i class="st-sw st-fc"></i>прогноз ${stUsd(m.forecast)}</span>${lim ? `<span><i class="st-sw st-p80"></i>80% лимита — ${stUsd(lim * 0.8)}</span>` : ""}<span>шкала до ${stUsd(top)}</span></div>`;
   const h = $("#st-lim-h"), track = host.querySelector(".st-track");
-  let val = lim;
-  h.addEventListener("pointerdown", (e) => { h.setPointerCapture(e.pointerId); h.dataset.drag = "1"; });
+  let val = lim, moved = false;
+  h.addEventListener("pointerdown", (e) => { h.setPointerCapture(e.pointerId); h.dataset.drag = "1"; moved = false; });
+  h.addEventListener("pointercancel", () => { delete h.dataset.drag; stScale(host, m, lim, setLimit); }); // прерванная протяжка — метка на место
   h.addEventListener("pointermove", (e) => {
     if (!h.dataset.drag) return;
     const r = track.getBoundingClientRect(), k = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
     val = +round(k * top);
+    moved = true;
     h.style.left = k * 100 + "%";
     h.querySelector("span").textContent = stUsd(val);
   });
-  h.addEventListener("pointerup", () => { if (!h.dataset.drag) return; delete h.dataset.drag; setLimit(val > 0 ? String(val) : ""); });
+  h.addEventListener("pointerup", () => { if (!h.dataset.drag) return; delete h.dataset.drag; if (moved) setLimit(val > 0 ? String(val) : ""); }); // щелчок без протяжки лимит не переписывает
 }
 
 // stMonthChart is the cumulative spend by day with the forecast and the limit.
