@@ -260,3 +260,57 @@ func TestStream_ParallelCallsWithoutIndex(t *testing.T) {
 		t.Fatalf("got %+v, %v", got.ToolCalls, err)
 	}
 }
+
+// Счет токенов для статистики окна: в обычном ответе — поле usage, в
+// потоке — последнее событие без choices; поток просит его сам
+// (stream_options.include_usage), иначе OpenAI-совместимые серверы счет не шлют.
+func TestUsage(t *testing.T) {
+	t.Run("ответ целиком", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ок"}}],"usage":{"prompt_tokens":5200,"completion_tokens":640,"total_tokens":5840}}`)
+		}))
+		defer srv.Close()
+		got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+			Complete(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil)
+		if err != nil || got.Usage != (chat.Usage{In: 5200, Out: 640}) {
+			t.Fatalf("usage = %+v, %v", got.Usage, err)
+		}
+	})
+	t.Run("поток", func(t *testing.T) {
+		var body map[string]any
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &body)
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, line := range []string{
+				`data: {"choices":[{"delta":{"role":"assistant","content":"ок"}}]}`,
+				`data: {"choices":[{"delta":{},"finish_reason":"stop"}]}`,
+				`data: {"choices":[],"usage":{"prompt_tokens":3100,"completion_tokens":180}}`,
+				`data: [DONE]`,
+			} {
+				_, _ = io.WriteString(w, line+"\n\n")
+			}
+		}))
+		defer srv.Close()
+		got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+			Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+		if err != nil || got.Content != "ок" || got.Usage != (chat.Usage{In: 3100, Out: 180}) {
+			t.Fatalf("reply = %+v, %v", got, err)
+		}
+		so, _ := body["stream_options"].(map[string]any)
+		if so["include_usage"] != true {
+			t.Errorf("stream_options = %v", body["stream_options"])
+		}
+	})
+	t.Run("сервер счета не прислал", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"ок"}}]}`)
+		}))
+		defer srv.Close()
+		got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+			Complete(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil)
+		if err != nil || got.Usage != (chat.Usage{}) || got.Content != "ок" {
+			t.Fatalf("reply = %+v, %v", got, err)
+		}
+	})
+}
