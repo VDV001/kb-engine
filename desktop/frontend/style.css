@@ -87,7 +87,7 @@ button { font-family: inherit; }
 .app {
   height: 100%; display: grid; grid-template-rows: auto auto auto auto 1fr;
   padding: 40px 24px 20px;
-  animation: rise .5s var(--z-ease) both;
+  animation: rise .5s var(--z-ease) backwards; /* не both: заполнение после конца делало бы .app точкой отсчета для fixed-окошек шапки */
 }
 @keyframes rise { from { opacity: 0; transform: translateY(6px); } }
 
@@ -156,9 +156,59 @@ button { font-family: inherit; }
 .tabs button svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .tabs button.active svg { color: var(--z-accent); }
 .bar.compact .tabs { gap: 18px; }
-.bar.compact .tabs .lbl { display: none; }
+.bar.compact .tabs button:has(svg) .lbl { display: none; }
 .bar.tight .idx-n, .bar.tight .idx-sep { display: none; }
 .bar.tighter #open-settings span { display: none; }
+/* --- Вид шапки: «Оформление → Шапка» (app.js renderTabs, решение владельца 07.11) ---
+   data-hdr у .app — вид, data-lbl у .bar — подписи, data-ink у body — градиент. */
+.bar[data-lbl="icon"] .tabs button:has(svg) .lbl,
+.bar[data-lbl="icon"] .hdr-mods button .lbl { display: none; }
+.bar[data-lbl="text"]:not(.compact) .tabs > button svg { display: none; }
+.tabs button[data-stab] i { font-style: normal; color: var(--z-faint); font-size: 11px; }
+.tabs button[hidden] { display: none; }
+/* Модули значками справа */
+.hdr-mods[hidden] { display: none; }
+.hdr-mods { display: flex; gap: 14px; margin-left: auto; height: 100%; padding-left: 14px; border-left: 1px solid var(--z-rule); }
+.hdr-mods button .lbl { display: none; }
+/* Меню «еще» и сетка разделов */
+.hdr-more { position: relative; }
+.hdr-more[hidden] { display: none; }
+.hdr-more-btn, .hdr-switch-btn { background: none; border: 0; color: var(--z-muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; display: inline-flex; gap: 7px; align-items: center; height: 100%; padding: 0; }
+.hdr-more-btn:hover, .hdr-switch-btn:hover, .hdr-more-btn.has { color: var(--z-ink); }
+.hdr-more-btn.has { text-decoration: underline; text-decoration-color: var(--z-accent); text-underline-offset: 4px; }
+.hdr-switch { position: relative; height: 100%; display: flex; align-items: center; padding-right: 14px; border-right: 1px solid var(--z-rule); flex: none; }
+.hdr-switch-btn { color: var(--z-ink); font-weight: 600; }
+.hdr-switch-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; color: var(--z-accent); }
+.hdr-switch-btn .car { color: var(--z-faint); font-weight: 400; }
+.hdr-pop { position: fixed; z-index: 30; min-width: 200px; padding: 6px; background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); box-shadow: 0 8px 24px #0006; display: grid; gap: 2px; }
+.hdr-pop[hidden] { display: none; }
+.hdr-pop small { color: var(--z-faint); font-size: 11px; padding: 2px 8px; }
+.hdr-pop button { display: flex; gap: 8px; align-items: center; background: none; border: 0; border-radius: var(--z-radius); padding: 6px 8px; color: var(--z-ink-2); font: inherit; font-size: 13px; cursor: pointer; text-align: left; white-space: nowrap; }
+.hdr-pop button:hover, .hdr-pop button.active { background: var(--z-bg-3); color: var(--z-ink); }
+.hdr-pop button svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.hdr-pop button .lbl { display: inline !important; flex: 1; }
+.hdr-pop kbd { color: var(--z-faint); font: 11px var(--z-mono, inherit); }
+.hdr-grid { grid-template-columns: 1fr 1fr; }
+/* Боковая панель слева: модули столбиком, шапка остается поиску. */
+.app[data-hdr="side"] { padding-left: 100px; }
+.app[data-hdr="side"]:has(.bar[data-lbl="text"]) { padding-left: 170px; }
+.app[data-hdr="side"] .tabs { position: fixed; left: 12px; top: 40px; bottom: 20px; width: 76px; flex-direction: column; align-items: stretch; gap: 4px; padding: 8px 0; overflow: hidden;
+  background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); z-index: 3; }
+.app[data-hdr="side"]:has(.bar[data-lbl="text"]) .tabs { width: 146px; }
+.app[data-hdr="side"] .tabs > button { height: auto; flex-direction: column; gap: 3px; padding: 8px 2px; font-size: 10px; overflow: hidden; text-overflow: ellipsis; border-radius: var(--z-radius); margin: 0 6px; }
+.app[data-hdr="side"]:has(.bar[data-lbl="text"]) .tabs > button { flex-direction: row; font-size: 13px; padding: 8px 10px; justify-content: flex-start; }
+.app[data-hdr="side"] .tabs > button.active { background: var(--z-bg-3); }
+.app[data-hdr="side"] .tabs > button svg { width: 18px; height: 18px; }
+.app[data-hdr="side"] .bar.compact .tabs .lbl { display: inline; }
+.app[data-hdr="side"] .bar[data-lbl="icon"] .tabs .lbl { display: none; }
+.app[data-hdr="side"] .status-cell { margin-left: auto; border-left: 1px solid var(--z-rule); }
+/* Градиент подчеркивания активной вкладки; те же образцы — у градиента сейфа в «Доступах». */
+body[data-ink="spectrum"]:not(.no-tab-ink) .tab-ink, .gs.ink-spectrum { background: linear-gradient(90deg, var(--z-sp1), var(--z-sp3), var(--z-sp4), var(--z-sp6)); }
+body[data-ink="gold"]:not(.no-tab-ink) .tab-ink, .gs.ink-gold { background: linear-gradient(90deg, var(--z-sp1), var(--z-sp2)); }
+body[data-ink="ice"]:not(.no-tab-ink) .tab-ink, .gs.ink-ice { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); }
+body[data-ink="dusk"]:not(.no-tab-ink) .tab-ink, .gs.ink-dusk { background: linear-gradient(90deg, var(--z-sp2), var(--z-sp3), var(--z-src-violet)); }
+body[data-ink="mono"]:not(.no-tab-ink) .tab-ink, .gs.ink-mono { background: linear-gradient(90deg, #55555d, #9a9aa4); }
+.gs.ink-cool { background: var(--sp-cool); }
 
 /* Вкладки поиска — чипами под строкой поиска; в модуле их нет. Свое имя
    класса: .chips уже носят исключения папок в настройках. */
