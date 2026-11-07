@@ -1062,3 +1062,5 @@ body:not(.no-vault-glow) .vault.open .inside::before { opacity: .55; }
 .look-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
 .look-chip .gs { width: 30px; height: 7px; border-radius: 2px; }
 .look-access input { width: 90px; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 3px 8px; color: var(--z-ink); font: inherit; font-size: 12px; }
+.ac-del-btn { margin-left: 10px; color: var(--z-bad); border-color: color-mix(in srgb, var(--z-bad) 45%, var(--z-rule-2)); }
+.ac-del { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-left: 10px; color: var(--z-bad); }

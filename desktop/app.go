@@ -137,6 +137,9 @@ func (a *App) AccessAdd(in accessIn, password string) error { return a.access.Ad
 // AccessReveal returns a password after Touch ID.
 func (a *App) AccessReveal(id string) (string, error) { return a.access.Reveal(id) }
 
+// AccessDelete removes an access after Touch ID.
+func (a *App) AccessDelete(id string) error { return a.access.Delete(id) }
+
 // AccessCopy puts a password on the clipboard after Touch ID.
 func (a *App) AccessCopy(id string) error { return a.access.Copy(id) }
 

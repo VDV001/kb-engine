@@ -3121,7 +3121,7 @@ function stLog(host) {
 // (буфер со скрытой пометкой, стирается через 30 с). Само закрывается без дела —
 // время в «Оформление → Доступы». Состояние — в state.ac: showModule зовет
 // acLeave раньше, чем дойдет до этих строк.
-state.ac = { open: false, busy: false, list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
+state.ac = { open: false, busy: false, confirmDel: "", list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
 const AC_HUES = ["--z-sp4", "--z-sp2", "--z-src-violet", "--z-sp6", "--z-sp5", "--z-sp1", "--z-sp3"];
 const AC_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
 const AC_NAMES = ["Хранилище", "Шифр", "Сейф", "Ключи"];
@@ -3182,7 +3182,9 @@ function acCardHTML(c) {
         <button class="ac-btn" data-ac="${open ? "hide" : "show"}" data-id="${esc(c.id)}">${open ? "Скрыть" : "Показать · Touch ID"}</button>
         <button class="ac-btn pri" data-ac="copy" data-id="${esc(c.id)}">Скопировать на 30 с</button>
         ${open ? `<span class="ac-cd" data-cd="${esc(c.id)}">скроется через ${open.left} с</span>` : ""}</div></dd></dl>
-    <div class="ac-note">Пароль — в Связке ключей этого Мака; агенту через MCP уходит только карточка, без пароля и заметки.</div></div>`;
+    <div class="ac-note">Пароль — в Связке ключей этого Мака; агенту через MCP уходит только карточка, без пароля и заметки.
+      ${ac.confirmDel === c.id ? `<span class="ac-del">Снять доступ ${esc(c.login)}? Пароль уйдет из Связки, это не отменить. <button class="ac-btn" data-ac="del-yes" data-id="${esc(c.id)}">Да, снять · Touch ID</button> <button class="ac-btn" data-ac="del-no">Нет</button></span>`
+        : `<button class="ac-btn ac-del-btn" data-ac="del" data-id="${esc(c.id)}">Удалить</button>`}</div></div>`;
 }
 const acProducts = () => [...new Set(state.ac.list.map((c) => c.product))];
 function acAddHTML() {
@@ -3243,7 +3245,7 @@ function acClose() {
   const ac = state.ac;
   for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
   clearInterval(ac.idle);
-  Object.assign(ac, { open: false, adding: false, list: [] });
+  Object.assign(ac, { open: false, adding: false, confirmDel: "", list: [] });
   if (native() && native().AccessClose) native().AccessClose().catch(() => {});
   acRender();
 }
@@ -3291,6 +3293,16 @@ $("#access-view").addEventListener("click", async (e) => {
     case "copy": acCopy(id); break;
     case "add": ac.adding = !ac.adding; acRender(); break;
     case "add-cancel": ac.adding = false; acRender(); break;
+    case "del": ac.confirmDel = id; acRender(); break;
+    case "del-no": ac.confirmDel = ""; acRender(); break;
+    case "del-yes":
+      try {
+        await native().AccessDelete(id);
+        ac.confirmDel = ""; delete ac.shown[id]; clearInterval(ac.timers[id]);
+        await acLoad(); acRender();
+        toast("Снято", " · доступ удален: карточка и пароль из Связки");
+      } catch (err) { showError("Доступ не снят: " + errText(err)); }
+      break;
   }
 });
 let acQT = 0;

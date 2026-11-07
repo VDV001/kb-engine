@@ -173,6 +173,18 @@ func (d *accessDesk) Reveal(id string) (string, error) {
 	return d.svc.Password(id)
 }
 
+// Delete removes an access after Touch ID — только в открытом хранилище:
+// удаление не отменить.
+func (d *accessDesk) Delete(id string) error {
+	if !d.isOpen() {
+		return errVaultClosed
+	}
+	if err := d.check("снять доступ"); err != nil {
+		return err
+	}
+	return d.svc.Delete(id)
+}
+
 // Copy puts the password on the clipboard after Touch ID.
 func (d *accessDesk) Copy(id string) error {
 	if err := d.check("скопировать пароль"); err != nil {
