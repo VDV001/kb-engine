@@ -43,6 +43,31 @@ type Money struct {
 	Uncounted, Unpriced     int
 }
 
+// costState says whether the price of a call is known.
+type costState int
+
+const (
+	costKnown     costState = iota
+	costUncounted           // счета нет: токены неизвестны
+	costUnpriced            // счет есть, цены модели нет
+)
+
+// callCost returns the price of a call: цену прислал провайдер — она, иначе
+// токены по цене модели; priced — цена модели известна или не нужна.
+func callCost(c domain.ModelCall, prices PriceBook) (cost int64, priced bool, st costState) {
+	if c.Billed() { // цена модели не нужна
+		return c.Cost(), true, costKnown
+	}
+	p, ok := prices.Price(c.Model())
+	switch {
+	case !c.Counted():
+		return 0, ok, costUncounted
+	case !ok:
+		return 0, false, costUnpriced
+	}
+	return p.Cost(c.In(), c.Out()), true, costKnown
+}
+
 // NewMoney builds the month's spend up to now. Прогноз — средний расход
 // прошедших дней (сегодня считается), растянутый на весь месяц.
 func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
@@ -69,25 +94,18 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 		}
 		pc.Calls++
 		mc.Calls++
-		var cost int64
-		if c.Billed() { // цену прислал провайдер: цена модели не нужна
-			mc.Priced = true
+		cost, priced, st := callCost(c, prices)
+		mc.Priced = priced
+		switch st {
+		case costUncounted:
+			m.Uncounted++
+			continue
+		case costUnpriced:
 			mc.Counted++
-			cost = c.Cost()
-		} else {
-			p, ok := prices.Price(c.Model())
-			mc.Priced = ok
-			if !c.Counted() {
-				m.Uncounted++
-				continue
-			}
-			mc.Counted++
-			if !ok {
-				m.Unpriced++
-				continue
-			}
-			cost = p.Cost(c.In(), c.Out())
+			m.Unpriced++
+			continue
 		}
+		mc.Counted++
 		m.Spent += cost
 		m.Days[at.Day()-1] += cost
 		pc.Cost += cost
