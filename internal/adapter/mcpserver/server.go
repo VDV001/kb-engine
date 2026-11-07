@@ -176,6 +176,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 	if cfg.Files != nil {
 		addFileTools(s, j, cfg.Files)
 	}
+	if cfg.Access != nil {
+		addAccessTool(s, j, cfg.Access)
+	}
 	return s
 }
 

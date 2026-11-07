@@ -90,7 +90,7 @@ func TestServer_searchAccess(t *testing.T) {
 		}
 	}
 	empty, _ := json.Marshal(callTool(t, cs, "search_access", map[string]any{"query": "портал"}))
-	if !strings.Contains(string(empty), `"found":0`) {
+	if !strings.Contains(string(empty), `found\": 0`) { // текст ответа — JSON с отступами внутри JSON
 		t.Errorf("пустая выдача: %s", empty)
 	}
 }
