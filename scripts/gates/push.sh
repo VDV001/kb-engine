@@ -37,9 +37,12 @@ COVERAGE_FLOOR="${COVERAGE_FLOOR:-80}"
 branch="$(git rev-parse --abbrev-ref HEAD)"
 saw_refspec=0
 protected_ref=""
-while read -r _local_ref _local_sha remote_ref _remote_sha; do
+pushed_shas=()
+while read -r _local_ref local_sha remote_ref _remote_sha; do
   [ -z "$remote_ref" ] && continue
   saw_refspec=1
+  # Удаление ветки приходит нулевым SHA: проверять в нем нечего.
+  case "$local_sha" in *[!0]*) pushed_shas+=("$local_sha") ;; esac
   case "$remote_ref" in
     refs/heads/main|refs/heads/master) protected_ref="${remote_ref#refs/heads/}" ;;
   esac
@@ -110,6 +113,35 @@ echo "→ architectural gates (full tree)..."
 if ! ./scripts/gates/arch.sh; then
   exit 1
 fi
+
+# ------------------------------------------- 4б. anchors of the architecture map
+# Якоря карты (docs/architecture-map*) — «файл:строка» с проверкой слова рядом.
+# Вставка строк выше якоря сдвигает их, а ловили это только just ci и CI на
+# GitHub: 04.11 три PR ушли в main красными, 07.11 (#511) — дважды за день.
+# Проверяется то, что уходит, а не рабочее дерево: незакоммиченная починка
+# якорей не должна пропускать сдвинутый коммит. Каждый отправляемый коммит —
+# во временном worktree; без refspec (прямой вызов) — HEAD. Гейт идет секунды,
+# поэтому без SKIP_SLOW. Пересчет сдвинутых якорей — выравниванием старой и
+# новой версии файла, а не руками.
+[ "${#pushed_shas[@]}" -eq 0 ] && pushed_shas=("$(git rev-parse HEAD)")
+for sha in "${pushed_shas[@]}"; do
+  echo "→ arch-map (якоря карты архитектуры) @ ${sha:0:8}..."
+  archmap_wt="$(mktemp -d "${TMPDIR:-/tmp}/kb-archmap.XXXXXX")"
+  # Прерванный push (Ctrl-C) не оставляет временный worktree в списке git.
+  trap 'git worktree remove --force "$archmap_wt" 2>/dev/null; rm -f "$archmap_wt.log"' EXIT
+  git worktree add -q --detach "$archmap_wt" "$sha"
+  archmap_rc=0
+  (cd "$archmap_wt" && ./scripts/gates/arch-map.sh) >"$archmap_wt.log" 2>&1 || archmap_rc=$?
+  git worktree remove --force "$archmap_wt"
+  if [ "$archmap_rc" -ne 0 ]; then
+    cat "$archmap_wt.log"
+    rm -f "$archmap_wt.log"
+    echo "✘ якоря карты съехали в ${sha:0:8} — пересчитайте их и закоммитьте до push"
+    exit 1
+  fi
+  rm -f "$archmap_wt.log"
+  trap - EXIT
+done
 
 # ------------------------------------------- 5. owner's data must not leave
 # Вынесен в отдельный скрипт, потому что у него есть --self-test на подсадках,
