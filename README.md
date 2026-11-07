@@ -55,6 +55,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   **Finances** module shows the engine's finance pages inside the window; their
   data comes from a kb server in Sources or from your own `kbengine serve` on
   this Mac — Settings → Modules → «Финансы берут данные из».
+  The **Help** module is a cheat sheet of engine commands and window keys:
+  sections on the left, search by task («доход», «пароль»), Enter copies.
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.
