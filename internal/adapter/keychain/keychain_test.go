@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
@@ -55,16 +56,41 @@ func TestStore_SetGetDelete(t *testing.T) {
 }
 
 // Секрет идет в security через stdin в режиме -i, а не аргументом (аргумент
-// видно в ps). Кавычка, обратная косая или пробел сломали бы разбор команды,
-// поэтому такой секрет — отказ, а не тихая порча.
+// видно в ps), и hex-строкой (-X): пробел, кавычка, обратная косая, не-ASCII
+// и перевод строки не ломают разбор команды. Чтение различает печатное и hex
+// (замер 07.11: -w отдает «deadbeef» и hex от «пароль» одинаково).
+func TestStore_anyCharacters(t *testing.T) {
+	s := tempStore(t)
+	for _, v := range []string{
+		"ab cd", `ab"cd`, `ab\cd`, "пароль", "ab\u00a0cd", "ab\tcd", "ab\ncd",
+		`"edge"`, "end space ", " lead", "deadbeef", "0x41", `a b"c\d ё`,
+	} {
+		if err := s.Set("server-ab12cd34", v); err != nil {
+			t.Fatalf("Set %q: %v", v, err)
+		}
+		if got, err := s.Get("server-ab12cd34"); err != nil || got != v {
+			t.Fatalf("Get после %q = %q, %v", v, got, err)
+		}
+	}
+}
+
+// Строка security -i — до 4096 знаков (замер 07.11), hex удваивает пароль:
+// длиннее — отказ словами, а не «запись не сохранилась».
+func TestStore_tooLong(t *testing.T) {
+	s := tempStore(t)
+	if err := s.Set("server-ab12cd34", strings.Repeat("я", 750)); err != nil {
+		t.Fatalf("1500 байт: %v", err)
+	}
+	if err := s.Set("server-ab12cd34", strings.Repeat("z", 3000)); !errors.Is(err, keychain.ErrTooLong) {
+		t.Fatalf("3000 байт: err = %v, want ErrTooLong", err)
+	}
+}
+
+// Пустой секрет и учетка, которая сломала бы разбор, — отказ, а не тихая порча.
 func TestStore_RejectsUnsafeSecretAndAccount(t *testing.T) {
 	s := keychain.Store{Service: "kb-desktop-test", Keychain: filepath.Join(t.TempDir(), "never.keychain")}
-	// Не-ASCII (кириллица, неразрывный пробел из мессенджера) %q записал бы
-	// как \uXXXX, а security -i не раскрывает такие escape.
-	for _, bad := range []string{"", `ab"cd`, `ab\cd`, "ab cd", "ab\ncd", "ab\tcd", "токен", "ab\u00a0cd"} {
-		if err := s.Set("server-ab12cd34", bad); !errors.Is(err, keychain.ErrBadValue) {
-			t.Fatalf("секрет %q: err = %v, want ErrBadValue", bad, err)
-		}
+	if err := s.Set("server-ab12cd34", ""); !errors.Is(err, keychain.ErrBadValue) {
+		t.Fatalf("пустой секрет: err = %v, want ErrBadValue", err)
 	}
 	for _, bad := range []string{"", `a"b`, "a b"} {
 		if err := s.Set(bad, "token-value"); !errors.Is(err, keychain.ErrBadValue) {
