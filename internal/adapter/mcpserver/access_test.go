@@ -14,15 +14,18 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
-// stubAccess finds cards; fail — карточки не прочитать.
+// stubAccess finds cards; fail — карточки не прочитать (ошибка как у
+// настоящего файла: путь с домашним каталогом и кусок содержимого).
 type stubAccess struct {
 	cards []domain.Credential
 	fail  bool
 }
 
+const failText = "доступы: /Users/someone/Library/Application Support/kb-desktop/credentials.json испорчен: " + notePassword
+
 func (s stubAccess) Find(q string) ([]domain.Credential, error) {
 	if s.fail {
-		return nil, errors.New("credentials.json испорчен")
+		return nil, errors.New(failText)
 	}
 	var out []domain.Credential
 	for _, c := range s.cards {
@@ -101,5 +104,20 @@ func TestServer_searchAccess_failure(t *testing.T) {
 	res := callTool(t, cs, "search_access", map[string]any{"query": "склад"})
 	if !res.IsError {
 		t.Fatal("сбой чтения карточек не стал ошибкой")
+	}
+	raw, _ := json.Marshal(res)
+	for _, leak := range []string{"/Users/someone", "Kq7", notePassword} {
+		if strings.Contains(string(raw), leak) {
+			t.Errorf("ошибка отдала агенту %q: %s", leak, raw)
+		}
+	}
+}
+
+// Заметка не ищется: число найденного не выдает ее содержимое по подстроке.
+func TestServer_searchAccess_noteIsNotSearchable(t *testing.T) {
+	cs := connectAccess(t, stubAccess{cards: []domain.Credential{accessCard(t)}})
+	raw, _ := json.Marshal(callTool(t, cs, "search_access", map[string]any{"query": "Kq7"}))
+	if !strings.Contains(string(raw), `found\": 0`) {
+		t.Fatalf("фрагмент заметки нашелся: %s", raw)
 	}
 }
