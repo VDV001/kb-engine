@@ -119,11 +119,14 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
-			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+			// 304 — ответ на проверку кэша (/app/kb, /app/media), а не перенаправление.
+			if resp.StatusCode >= 300 && resp.StatusCode < 400 && resp.StatusCode != http.StatusNotModified {
 				return errAppRedirect
 			}
 			resp.Header.Del("Set-Cookie")
-			explainRefusal(resp)
+			// Свой serve — «этот Mac» без токена; сервер из источников с токеном
+			// на loopback (туннель) говорит словами удаленного.
+			explainRefusal(resp, up.Token == "" && loopback.Host(base.Hostname()))
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
@@ -133,21 +136,53 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 	rp.ServeHTTP(w, r)
 }
 
-// explainRefusal replaces a server refusal with words for a person: витрина
+// explainRefusal replaces a refusal to a read with words for a person: витрина
 // показывает {"error"} фразой «что не так — что сделать» (kbserver.Describe),
-// а не «502 Bad Gateway» облака. Тело сервера не пересылается: в тексте 500
-// лежит путь к его файлам. Остальные отказы (409, 400 формы операции) — как есть.
-func explainRefusal(resp *http.Response) {
+// а не «502 Bad Gateway» облака. Тело удаленного сервера не пересылается: в
+// тексте 500 лежит путь к его файлам; свой serve на этом Mac — с его текстом и
+// советом про терминал. Запись не трогается: форма операции показывает свой
+// текст сервера (409, 400, отказ CSRF). Заголовки отказа (Retry-After) остаются.
+func explainRefusal(resp *http.Response, local bool) {
 	code := resp.StatusCode
+	if resp.Request.Method != http.MethodGet && resp.Request.Method != http.MethodHead {
+		return
+	}
 	if code != http.StatusUnauthorized && code != http.StatusForbidden &&
 		code != http.StatusTooManyRequests && code < http.StatusInternalServerError {
 		return
 	}
-	body, _ := json.Marshal(map[string]string{"error": kbserver.Describe(kbserver.StatusErr(resp.Request.URL.Path, code))})
+	msg := kbserver.Describe(kbserver.StatusErr(resp.Request.URL.Path, code))
+	if local {
+		msg = localRefusal(code, resp.Body)
+	}
+	body, _ := json.Marshal(map[string]string{"error": msg})
 	_ = resp.Body.Close()
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	resp.ContentLength = int64(len(body))
-	resp.Header = http.Header{"Content-Type": {"application/json; charset=utf-8"}, "Content-Length": {strconv.Itoa(len(body))}}
+	for _, h := range []string{"Content-Encoding", "Content-Range", "Etag", "Last-Modified"} {
+		resp.Header.Del(h)
+	}
+	resp.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	resp.Header.Set("Cache-Control", "no-store")
+}
+
+// localRefusal words a refusal of the person's own kbengine serve: текст с
+// этого же Мака показывать можно, а причину видно в терминале, где он запущен.
+func localRefusal(code int, body io.Reader) string {
+	raw, _ := io.ReadAll(io.LimitReader(body, 1024))
+	text := []rune(strings.Join(strings.Fields(string(raw)), " "))
+	if len(text) > 300 {
+		text = append(text[:300], '…')
+	}
+	what := "kbengine serve на этом Mac ответил " + strconv.Itoa(code)
+	if len(text) > 0 {
+		what += ": " + string(text)
+	}
+	if code == http.StatusUnauthorized {
+		return what + " — окно ходит к своему serve без токена: запустите его без --token-file"
+	}
+	return what + " — посмотрите терминал, где запущен kbengine serve"
 }
 
 // proxyFailure names why the server was not reached. Свой serve на этом Mac

@@ -275,23 +275,25 @@ func TestAppProxy_explainsOnlyWhatItShould(t *testing.T) {
 	}
 	read := func() *http.Request { return httptest.NewRequest(http.MethodGet, "/app/api/finances", nil) }
 	for _, c := range []struct {
-		name, url string
-		req       func() *http.Request
-		rt        roundTripFunc
-		code      int
-		want      []string // подстроки ответа
+		name, url, token string // token пуст — «этот Mac» без токена
+		req              func() *http.Request
+		rt               roundTripFunc
+		code             int
+		want             []string // подстроки ответа
 	}{
 		// Запись читает форма операции: свой текст сервера (CSRF, токен) — как есть.
-		{"запись: 403 сервера как есть", remote, write, answer(http.StatusForbidden, "cross-site write refused", nil), http.StatusForbidden, []string{"cross-site write refused"}},
-		{"запись: 401 сервера как есть", remote, write, answer(http.StatusUnauthorized, "unauthorized", nil), http.StatusUnauthorized, []string{"unauthorized"}},
+		{"запись: 403 сервера как есть", remote, "tok-1", write, answer(http.StatusForbidden, "cross-site write refused", nil), http.StatusForbidden, []string{"cross-site write refused"}},
+		{"запись: 401 сервера как есть", remote, "tok-1", write, answer(http.StatusUnauthorized, "unauthorized", nil), http.StatusUnauthorized, []string{"unauthorized"}},
 		// Свой serve: текст с этого же Мака и совет про терминал, а не «попробуйте позже».
-		{"свой serve: 500 со своим текстом", local, read, answer(http.StatusInternalServerError, "open ledger.jsonl: permission denied", nil), http.StatusInternalServerError, []string{"permission denied", "терминал"}},
-		{"свой serve: 401 — про --token-file", local, read, answer(http.StatusUnauthorized, "", nil), http.StatusUnauthorized, []string{"--token-file"}},
+		{"свой serve: 500 со своим текстом", local, "", read, answer(http.StatusInternalServerError, "open ledger.jsonl: permission denied", nil), http.StatusInternalServerError, []string{"permission denied", "терминал"}},
+		{"свой serve: 401 — про --token-file", local, "", read, answer(http.StatusUnauthorized, "", nil), http.StatusUnauthorized, []string{"--token-file"}},
+		// Сервер из источников на loopback (туннель) с токеном: 401 — это токен.
+		{"loopback с токеном: 401 — про токен", local, "tok-1", read, answer(http.StatusUnauthorized, "", nil), http.StatusUnauthorized, []string{"введите токен заново"}},
 		// 304 — ответ на проверку кэша, а не перенаправление.
-		{"304 проходит", remote, read, answer(http.StatusNotModified, "", http.Header{"Etag": {`"x"`}}), http.StatusNotModified, nil},
+		{"304 проходит", remote, "tok-1", read, answer(http.StatusNotModified, "", http.Header{"Etag": {`"x"`}}), http.StatusNotModified, nil},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: c.url, Token: "tok-1"}, true }, appUI, c.rt)
+			p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: c.url, Token: c.token}, true }, appUI, c.rt)
 			rec := httptest.NewRecorder()
 			p.ServeHTTP(rec, c.req())
 			if rec.Code != c.code {

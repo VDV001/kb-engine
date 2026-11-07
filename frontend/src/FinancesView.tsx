@@ -5,7 +5,6 @@ import { AddTransactionForm } from './AddTransactionForm'
 import { api } from './api'
 import type { CurrencyTotal, Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
-import { splitRefusal } from './resource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
 import { CollapsibleSection, SectionHead } from './components/SectionHead'
@@ -130,10 +129,7 @@ export function FinancesView({
       : null
 
   if (finances === null) {
-    if (financesError) {
-      const [what, todo] = splitRefusal(financesError)
-      return <EmptyFinances text={what} todo={todo} />
-    }
+    if (financesError) return <EmptyFinances text={financesError} />
     return (
       <EmptyFinances
         text="Журнал не прочитан — движок ответил отказом. Причина названа в терминале, где висит serve."
@@ -191,12 +187,11 @@ function AddButton({ adding, onToggle }: { adding: boolean; onToggle: () => void
   )
 }
 
-function EmptyFinances({ text, todo }: { text: string; todo?: string }) {
+function EmptyFinances({ text }: { text: string }) {
   return (
     <div className="p-12 text-center">
       <Icon name="receipt_long" className="mb-4 text-5xl opacity-10" />
-      <p className="label opacity-60">{text}</p>
-      {todo && <p className="mt-2 text-sm text-on-surface-variant">Что сделать: {todo}</p>}
+      <p className="label whitespace-pre-line opacity-60">{text}</p>
     </div>
   )
 }

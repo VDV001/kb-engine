@@ -774,21 +774,35 @@ export interface ArchMapIndexEntry {
 // обязан пройти через его прокси с токеном.
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(appURL(path))
-  if (!res.ok) throw new Error(await refusalText(res))
+  if (!res.ok) {
+    const said = windowPhrase(await res.text().catch(() => ''))
+    // Текст сервера не показывается: в ответе 500 лежит путь к его файлам.
+    throw said
+      ? new WindowRefusal(said)
+      : new Error(`${path}: сервер ответил ${res.status} ${res.statusText} — обновите страницу; если повторится, посмотрите журнал сервера`)
+  }
   return res.json() as Promise<T>
 }
 
+/** Отказ, причину которого назвало окно DVK: «что не так» и «Что сделать». */
+export class WindowRefusal extends Error {}
+
 /**
- * Отказ словами «что не так — что сделать». Окно DVK кладет такую фразу в
- * {"error"}; без нее — код словами. Текст сервера не показывается: в ответе
- * 500 лежит путь к его файлам.
+ * Фраза окна DVK из {"error"} — «что не так — что сделать» (kbserver.Describe)
+ * — строками «что не так» и «Что сделать: …». Делится по последнему « — »:
+ * совет всегда в конце, а в «что не так» тире бывает внутри текста сервера.
+ * null — тело не фраза окна.
  */
-async function refusalText(res: Response): Promise<string> {
-  const body: unknown = await res.json().catch(() => null)
-  if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && body.error) {
-    return body.error
+function windowPhrase(body: string): string | null {
+  let msg: unknown
+  try {
+    msg = (JSON.parse(body) as { error?: unknown }).error
+  } catch {
+    return null
   }
-  return `сервер ответил ${res.status} — обновите страницу; если повторится, причина в терминале, где запущен kbengine serve`
+  if (typeof msg !== 'string' || !msg) return null
+  const i = msg.lastIndexOf(' — ')
+  return i < 0 ? msg : `${msg.slice(0, i)}\nЧто сделать: ${msg.slice(i + 3)}`
 }
 
 /** Всё, что нужно дашборду на первом экране, одним запросом-пачкой. */
@@ -918,15 +932,15 @@ export const api = {
         // читаются» — разные ответы, и подставляя пустоту, дашборд выдавал
         // отказ за законное состояние с ложной инструкцией «добавьте
         // --ledger» при уже переданном флаге.
-        api.finances().catch((e: unknown) => (e instanceof Error ? e : new Error(String(e)))),
+        api.finances().catch((e: unknown) => (e instanceof WindowRefusal ? e : null)),
         // Свежесть источников — та же история: страница со сводкой не должна
         // падать из-за сборки сервера, которая этого эндпоинта не знает.
         api.sources().catch(() => ({ sources: [] })),
       ])
     return {
       stats, entries, audits, duplicates, analytics, analyticsConfig,
-      finances: finances instanceof Error ? null : finances,
-      financesError: finances instanceof Error ? finances.message : undefined,
+      finances: finances instanceof WindowRefusal ? null : finances,
+      financesError: finances instanceof WindowRefusal ? finances.message : undefined,
       sources: sources.sources ?? [],
     }
   },
@@ -944,7 +958,11 @@ export const api = {
       headers: { 'Content-Type': 'application/json', 'X-DVK-App': '1' },
       body: JSON.stringify(req),
     })
-    if (!res.ok) throw new AddError(res.status, (await res.text()).trim())
+    if (!res.ok) {
+      // Фраза окна DVK (нет связи, отказ прокси) — словами, а не сырым JSON.
+      const text = (await res.text()).trim()
+      throw new AddError(res.status, windowPhrase(text) ?? text)
+    }
     return res.json() as Promise<TransactionAdded>
   },
 }
