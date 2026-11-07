@@ -13,25 +13,19 @@ import (
 type Totals struct {
 	Calls, Failed, Uncounted int
 	In, Out                  int
-	Answers, Searches        int
 }
 
 func (t *Totals) add(c domain.ModelCall) {
 	t.Calls++
-	t.In += c.In()
-	t.Out += c.Out()
 	if c.Failed() {
 		t.Failed++
 	}
 	if !c.Counted() {
 		t.Uncounted++
+		return
 	}
-	switch c.Purpose() {
-	case domain.CallAnswer:
-		t.Answers++
-	case domain.CallSearch:
-		t.Searches++
-	}
+	t.In += c.In()
+	t.Out += c.Out()
 }
 
 // DayStat is one day of the period.
@@ -104,7 +98,9 @@ func NewReport(calls []domain.ModelCall, now time.Time, days int) Report {
 	for p, t := range byPurpose {
 		r.Purposes = append(r.Purposes, PurposeStat{p, *t})
 	}
-	slices.SortFunc(r.Purposes, func(a, b PurposeStat) int { return cmp.Compare(b.In+b.Out, a.In+a.Out) })
+	slices.SortFunc(r.Purposes, func(a, b PurposeStat) int {
+		return cmp.Or(cmp.Compare(b.In+b.Out, a.In+a.Out), cmp.Compare(a.Purpose, b.Purpose))
+	})
 	for m, t := range byModel {
 		r.Models = append(r.Models, ModelStat{m, *t})
 	}

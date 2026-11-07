@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/usage"
@@ -30,8 +31,6 @@ type statsTotals struct {
 	Uncounted int `json:"uncounted"` // без счета от провайдера: токены неизвестны
 	In        int `json:"in"`
 	Out       int `json:"out"`
-	Answers   int `json:"answers"`
-	Searches  int `json:"searches"`
 }
 
 type statsDay struct {
@@ -71,7 +70,7 @@ type statsView struct {
 }
 
 func totalsView(t usage.Totals) statsTotals {
-	return statsTotals{t.Calls, t.Failed, t.Uncounted, t.In, t.Out, t.Answers, t.Searches}
+	return statsTotals{t.Calls, t.Failed, t.Uncounted, t.In, t.Out}
 }
 
 // Stats returns the statistics of the last days days.
@@ -99,7 +98,7 @@ func (d *chatDesk) Stats(days int) (statsView, error) {
 		v.Models = append(v.Models, statsGroup{x.Model, x.Model, totalsView(x.Totals)})
 	}
 	for _, c := range r.Calls {
-		v.Calls = append(v.Calls, statsCall{c.At().In(d.now().Location()).Format("2006-01-02T15:04:05Z07:00"), string(c.Purpose()), purposeTitles[c.Purpose()],
+		v.Calls = append(v.Calls, statsCall{c.At().In(d.now().Location()).Format(time.RFC3339), string(c.Purpose()), purposeTitles[c.Purpose()],
 			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed()})
 	}
 	return v, nil

@@ -72,6 +72,10 @@ func TestJournal_Load_longLineIsOneBadLine(t *testing.T) {
 func TestJournal_Load_waitsForWriterLock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "usage.jsonl")
 	j := usagejsonl.Journal{Path: path}
+	c, _ := domain.NewModelCall(time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), domain.CallAnswer, "m", 1, 1, true, 0, time.Second, false)
+	if err := j.Record(c); err != nil {
+		t.Fatal(err)
+	}
 	locked, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go func() {
 		_ = filelock.With(path, func() error {
