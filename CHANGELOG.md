@@ -8,6 +8,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+## [0.36.0] — 2026-11-07
+
 ### Added
 
 - **Окно DVK: «Что DVK помнит обо мне» (#479).** Портрет человека: устойчивые факты о нем (кто он,
@@ -55,6 +57,12 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
   Speech), «Облако» (gpt-4o-mini-transcribe, около 0,3 цента за минуту), «Облако: gpt-4o (дороже)» и
   свои серверы из «Подключений». Облако — через Vercel AI Gateway по ключу шлюза, протоколом
   `/v4/ai/transcription-model` (OpenAI-совместимого `/audio/transcriptions` у шлюза нет).
+
+### Changed
+
+- **Документация портрета и окна.** README описывает окно DVK: поиск, чат, голос и портрет «Что DVK
+  помнит обо мне»; ADR-0007 — решения портрета (одобрение, два хранилища, версия вместо замка,
+  пороги); на карте архитектуры — сценарий «Человек правит портрет» от окна до бакета.
 
 ### Fixed
 
