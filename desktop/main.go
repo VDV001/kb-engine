@@ -159,11 +159,10 @@ func run() error {
 		// Красная кнопка прячет окно: вернуть его — ⌥Space, значок в Dock или в
 		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка.
 		HideWindowOnClose: true,
-		// Стандартное меню WebKit по правому клику — Wails показывает его только
-		// над полем ввода и выделенным текстом. В сборке с тегом devtools (just
-		// desktop) в нем «Inspect Element»: консоль, когда кнопка молчит (#505).
-		// Без меню тег недоступен: в production Wails прячет меню целиком.
-		EnableDefaultContextMenu: true,
+		// Меню WebKit по правому клику — только в сборке just desktop-inspect
+		// (inspector_devtools.go): Wails показывает его над полем ввода и
+		// выделением, в нем Inspect Element. Без меню тег devtools недоступен.
+		EnableDefaultContextMenu: inspectable,
 		OnShutdown:               func(context.Context) { cancel() },
 		Bind:                     []any{app},
 		Mac: &mac.Options{
