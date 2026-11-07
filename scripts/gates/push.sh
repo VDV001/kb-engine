@@ -127,6 +127,8 @@ fi
 for sha in "${pushed_shas[@]}"; do
   echo "→ arch-map (якоря карты архитектуры) @ ${sha:0:8}..."
   archmap_wt="$(mktemp -d "${TMPDIR:-/tmp}/kb-archmap.XXXXXX")"
+  # Прерванный push (Ctrl-C) не оставляет временный worktree в списке git.
+  trap 'git worktree remove --force "$archmap_wt" 2>/dev/null; rm -f "$archmap_wt.log"' EXIT
   git worktree add -q --detach "$archmap_wt" "$sha"
   archmap_rc=0
   (cd "$archmap_wt" && ./scripts/gates/arch-map.sh) >"$archmap_wt.log" 2>&1 || archmap_rc=$?
@@ -138,6 +140,7 @@ for sha in "${pushed_shas[@]}"; do
     exit 1
   fi
   rm -f "$archmap_wt.log"
+  trap - EXIT
 done
 
 # ------------------------------------------- 5. owner's data must not leave
