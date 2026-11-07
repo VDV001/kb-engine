@@ -30,7 +30,8 @@ type ModelCost struct {
 }
 
 // Money is the spend of the current month in the person's time zone (экран
-// «Деньги», #493): по вызовам со счетом и ценой; без счета и без цены —
+// «Деньги», #493): по вызовам со счетом и ценой либо с ценой от провайдера;
+// без счета и без цены —
 // отдельными числами, чтобы «неизвестно» не выглядело бесплатным.
 type Money struct {
 	Month                   string // ГГГГ-ММ
@@ -68,20 +69,25 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 		}
 		pc.Calls++
 		mc.Calls++
-		p, ok := prices.Price(c.Model())
-		mc.Priced = ok
-		switch {
-		case !c.Counted():
-			m.Uncounted++
-			continue
+		var cost int64
+		if c.Billed() { // цену прислал провайдер: цена модели не нужна
+			mc.Priced = true
+			mc.Counted++
+			cost = c.Cost()
+		} else {
+			p, ok := prices.Price(c.Model())
+			mc.Priced = ok
+			if !c.Counted() {
+				m.Uncounted++
+				continue
+			}
+			mc.Counted++
+			if !ok {
+				m.Unpriced++
+				continue
+			}
+			cost = p.Cost(c.In(), c.Out())
 		}
-		mc.Counted++
-		switch {
-		case !ok:
-			m.Unpriced++
-			continue
-		}
-		cost := p.Cost(c.In(), c.Out())
 		m.Spent += cost
 		m.Days[at.Day()-1] += cost
 		pc.Cost += cost

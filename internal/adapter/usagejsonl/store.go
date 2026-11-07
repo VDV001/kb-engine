@@ -29,10 +29,13 @@ type line struct {
 	In      int       `json:"in"`
 	Out     int       `json:"out"`
 	// Uncounted — сервер счет не прислал: in/out неизвестны, а не нули.
-	Uncounted bool  `json:"uncounted,omitempty"`
-	FirstMS   int64 `json:"first_ms"`
-	TookMS    int64 `json:"took_ms"`
-	Failed    bool  `json:"failed,omitempty"`
+	Uncounted bool `json:"uncounted,omitempty"`
+	// CostPico — цену вызова прислал провайдер (облачная речь у шлюза);
+	// указатель: бесплатный по счету вызов (0) — не то же, что без цены.
+	CostPico *int64 `json:"cost_pico,omitempty"`
+	FirstMS  int64  `json:"first_ms"`
+	TookMS   int64  `json:"took_ms"`
+	Failed   bool   `json:"failed,omitempty"`
 }
 
 // Record appends one call. Под файловым замком, как журнал прогонов: дозапись
@@ -47,8 +50,13 @@ func (j Journal) Record(c domain.ModelCall) error {
 	if err := os.MkdirAll(filepath.Dir(j.Path), 0o700); err != nil {
 		return fmt.Errorf("usage: не создать каталог журнала: %w", err)
 	}
-	raw, err := json.Marshal(line{At: c.At(), Purpose: string(c.Purpose()), Model: c.Model(), In: c.In(), Out: c.Out(), Uncounted: !c.Counted(),
-		FirstMS: c.FirstToken().Milliseconds(), TookMS: c.Took().Milliseconds(), Failed: c.Failed()})
+	l := line{At: c.At(), Purpose: string(c.Purpose()), Model: c.Model(), In: c.In(), Out: c.Out(), Uncounted: !c.Counted(),
+		FirstMS: c.FirstToken().Milliseconds(), TookMS: c.Took().Milliseconds(), Failed: c.Failed()}
+	if c.Billed() {
+		cost := c.Cost()
+		l.CostPico = &cost
+	}
+	raw, err := json.Marshal(l)
 	if err != nil {
 		return fmt.Errorf("usage: не закодировать вызов: %w", err)
 	}
@@ -106,7 +114,12 @@ func parse(raw []byte) (domain.ModelCall, bool) {
 	if json.Unmarshal(raw, &l) != nil {
 		return domain.ModelCall{}, false
 	}
+	took := time.Duration(l.TookMS) * time.Millisecond
+	if l.CostPico != nil {
+		c, err := domain.NewBilledModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, *l.CostPico, took, l.Failed)
+		return c, err == nil
+	}
 	c, err := domain.NewModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, l.In, l.Out, !l.Uncounted,
-		time.Duration(l.FirstMS)*time.Millisecond, time.Duration(l.TookMS)*time.Millisecond, l.Failed)
+		time.Duration(l.FirstMS)*time.Millisecond, took, l.Failed)
 	return c, err == nil
 }
