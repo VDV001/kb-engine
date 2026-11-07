@@ -56,8 +56,9 @@ type moneyModel struct {
 	Cost   float64 `json:"cost"`
 	Calls  int     `json:"calls"`
 	Priced bool    `json:"priced"`
-	// Priceable — у модели есть вызовы со счетом; у облачной речи (всегда без
-	// счета) своя цена ничего бы не поменяла — окно не дает ее вводить.
+	// Priceable — у модели есть вызовы со счетом токенов; облачной речи (без
+	// счета или с ценой от шлюза) своя цена ничего бы не поменяла — окно не
+	// дает ее вводить.
 	Priceable bool   `json:"priceable"`
 	Source    string `json:"source"` // «своя», «шлюз» или пусто — цены нет
 	In        string `json:"in"`     // долларов за 1 млн токенов

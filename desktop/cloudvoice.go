@@ -72,13 +72,28 @@ type cloudSpeech struct {
 
 // gatewayBill is the price of a call the gateway sends with the answer (замер
 // 07.11 на живых /transcription-model и /speech-model): доллары строкой,
-// токенов в ответе нет.
+// токенов в ответе нет. Сырым JSON: цена — учет, и другой ее тип (число,
+// null) не должен ломать разбор текста и звука (ревью #507).
 type gatewayBill struct {
 	ProviderMetadata struct {
 		Gateway struct {
-			Cost string `json:"cost"`
+			Cost json.RawMessage `json:"cost"`
 		} `json:"gateway"`
 	} `json:"providerMetadata"`
+}
+
+// cost returns the gateway price as text: строка или число; иначе пусто.
+func (b gatewayBill) cost() string {
+	raw := b.ProviderMetadata.Gateway.Cost
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	var n json.Number
+	if json.Unmarshal(raw, &n) == nil {
+		return n.String()
+	}
+	return ""
 }
 
 // record writes one cloud speech call to the journal; журнал не мешает речи —
@@ -89,9 +104,12 @@ func (c cloudSpeech) record(p domain.CallPurpose, model string, start time.Time,
 		return
 	}
 	took := max(c.clock()().Sub(start), 0)
-	call, err := domain.NewModelCall(start, p, model, 0, 0, false, took, took, failed)
+	var call domain.ModelCall
+	var err error
 	if pico, perr := domain.ParseDollars(cost); perr == nil {
 		call, err = domain.NewBilledModelCall(start, p, model, pico, took, failed)
+	} else {
+		call, err = domain.NewModelCall(start, p, model, 0, 0, false, took, took, failed)
 	}
 	if err == nil {
 		_ = c.calls.Record(call)
@@ -137,7 +155,7 @@ func (c cloudSpeech) synth(voice, text, lang string) ([]byte, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("облачный голос: ответ шлюза не прочитан: %w", err)
 	}
-	cost = out.ProviderMetadata.Gateway.Cost
+	cost = out.cost()
 	audio, err := base64.StdEncoding.DecodeString(out.Audio)
 	if err != nil || len(audio) == 0 {
 		return nil, fmt.Errorf("облачный голос: шлюз не прислал звук")
@@ -217,7 +235,7 @@ func (c cloudSpeech) transcribe(ctx context.Context, wav []byte, model string) (
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", fmt.Errorf("облачное распознавание: ответ не прочитан: %w", err)
 	}
-	cost = out.ProviderMetadata.Gateway.Cost
+	cost = out.cost()
 	failed = false
 	return strings.TrimSpace(out.Text), nil
 }
