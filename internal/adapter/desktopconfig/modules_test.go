@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -99,6 +100,15 @@ func TestConfig_CheckModuleServer(t *testing.T) {
 				t.Fatalf("err = %v, ждали ErrModuleServer", err)
 			}
 		})
+	}
+}
+
+// Адрес без схемы — частая опечатка в поле «этого Mac»: отказ подсказывает
+// схему, а не «сервера нет в «Источниках»» (ревью #508).
+func TestConfig_CheckModuleServer_addressWithoutScheme(t *testing.T) {
+	err := (desktopconfig.Config{}).CheckModuleServer(desktopconfig.ModuleFinances, "127.0.0.1:8097")
+	if !errors.Is(err, desktopconfig.ErrModuleServer) || !strings.Contains(err.Error(), "http://127.0.0.1:8097") {
+		t.Fatalf("err = %v", err)
 	}
 }
 

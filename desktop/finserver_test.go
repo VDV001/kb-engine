@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,6 +41,9 @@ func TestAppUpstream_followsTheChoice(t *testing.T) {
 		{"выбранный выключен", "server-b", false, "", "", "выключен"},
 		{"выбранного больше нет", "server-z", false, "", "", "нет в «Источниках»"},
 		{"этот Mac, без токена", "http://127.0.0.1:8097", true, "http://127.0.0.1:8097", "", ""},
+		// Правило «только этот Mac» — и там, где адрес используют: config.json
+		// правят руками и пишут другие сборки (ревью #508).
+		{"адрес в сети из файла", "https://evil.example.org", false, "", "", "только этого Mac"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			up, ok := finServerSettings(t, tc.server).appUpstream()
@@ -70,7 +74,8 @@ func TestSetModuleServer(t *testing.T) {
 	if cfg.ModuleServer(desktopconfig.ModuleFinances) != "http://127.0.0.1:8097" || cfg.ModuleOn(desktopconfig.ModuleFinances) {
 		t.Fatalf("в файле модули = %+v", cfg.Modules)
 	}
-	if m := s.Modules()[1]; m.ID != desktopconfig.ModuleFinances || m.Server != "http://127.0.0.1:8097" {
+	i := slices.IndexFunc(s.Modules(), func(m desktopconfig.Module) bool { return m.ID == desktopconfig.ModuleFinances })
+	if i < 0 || s.Modules()[i].Server != "http://127.0.0.1:8097" {
 		t.Fatalf("Modules() = %+v", s.Modules())
 	}
 }
