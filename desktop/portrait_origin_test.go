@@ -51,3 +51,29 @@ func TestChat_PortraitRestoreKeepsOrigin(t *testing.T) {
 		t.Fatalf("вернулось: %+v %v", got.Facts, err)
 	}
 }
+
+// У каждого раздела портрета есть подпись в окне.
+func TestSectionTitles_coverEverySection(t *testing.T) {
+	for _, sec := range domain.FactSections() {
+		if sectionTitles[sec] == "" {
+			t.Errorf("раздел %q без подписи в окне", sec)
+		}
+	}
+}
+
+// «Вернуть» с незнакомым кодом (страница старой сборки) возвращает факт как
+// ручной, а не отказывает с чужой причиной «пустой или длинный текст».
+func TestChat_PortraitRestoreUnknownOrigin(t *testing.T) {
+	d, _, _ := newPortraitDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryDir: t.TempDir()}, ""); err != nil {
+		t.Fatal(err)
+	}
+	v := factView{ID: "x8", Section: "work", Text: "Пишет на Go", Origin: "", At: time.Date(2026, 11, 5, 21, 0, 0, 0, time.UTC)}
+	if err := d.PortraitRestore(v); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.Portrait()
+	if err != nil || len(got.Facts) != 1 || got.Facts[0].Origin != string(domain.OriginManual) {
+		t.Fatalf("вернулось: %+v %v", got.Facts, err)
+	}
+}

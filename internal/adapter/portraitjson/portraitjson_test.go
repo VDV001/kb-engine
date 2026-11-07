@@ -38,7 +38,8 @@ func TestEncode_writesOriginCode(t *testing.T) {
 }
 
 // Портреты, записанные до кодов (0.36.0), хранят слова: они читаются в коды,
-// дата «из чата DD.MM» живет в at факта. Чужие слова — испорченный файл.
+// дата «из чата DD.MM» живет в at факта. Поле только для подписи, поэтому
+// незнакомое значение не делает весь портрет испорченным.
 func TestDecode_legacySources(t *testing.T) {
 	for _, c := range []struct {
 		source string
@@ -51,15 +52,20 @@ func TestDecode_legacySources(t *testing.T) {
 		{"сжато", domain.OriginCompressed},
 		{"из чата 05.11", domain.OriginChat},
 		{"из чата 05.11, исправлено", domain.OriginChatEdited},
+		// Окно 0.36.0 на втором устройстве одобряет с правкой факт, который
+		// записало новое окно, и дописывает к коду свой хвост (ревью #489).
+		{"chat, исправлено", domain.OriginChatEdited},
+		{"manual, исправлено", domain.OriginEdited},
+		// Незнакомое не ломает весь портрет: факт читается как ручной.
+		{"", domain.OriginManual},
+		{"с телефона", domain.OriginManual},
 	} {
 		p, err := portraitjson.Decode(doc(c.source))
 		if err != nil || p.Facts()[0].Origin() != c.want {
 			t.Errorf("%q: %+v %v", c.source, p.Facts(), err)
 		}
 	}
-	for _, bad := range []string{"", "с телефона", "из чатика"} {
-		if _, err := portraitjson.Decode(doc(bad)); !errors.Is(err, portraitjson.ErrCorrupt) {
-			t.Errorf("%q принят: %v", bad, err)
-		}
+	if _, err := portraitjson.Decode([]byte(`{"facts":[{"id":"f1","section":"чужой","text":"t","status":"approved"}]}`)); !errors.Is(err, portraitjson.ErrCorrupt) {
+		t.Errorf("чужой раздел принят: %v", err)
 	}
 }

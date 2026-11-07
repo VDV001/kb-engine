@@ -326,3 +326,14 @@ func TestText(t *testing.T) {
 		t.Fatal("пустой портрет не пуст")
 	}
 }
+
+// У каждого раздела есть название для модели: раздел без него ушел бы в
+// запрос как «: текст.».
+func TestText_namesEverySection(t *testing.T) {
+	for _, sec := range domain.FactSections() {
+		f, _ := domain.NewFact("x", sec, "факт", domain.OriginManual, domain.FactApproved, now)
+		if got := portrait.Text([]domain.Fact{f}); strings.HasPrefix(got, ":") {
+			t.Errorf("раздел %q без названия: %q", sec, got)
+		}
+	}
+}
