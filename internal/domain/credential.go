@@ -173,20 +173,28 @@ func (c Credential) Matches(q string) bool {
 }
 
 // Password is the secret of an access. Не печатает себя ни одним глаголом fmt
-// (%v, %+v, %#v, %s, %q): случайный лог или текст ошибки его не выдаст.
+// (%v, %+v, %#v, %s, %q, %x): случайный лог или текст ошибки его не выдаст.
+// Значение — в замыкании, а не в строковом поле: в неэкспортируемом поле
+// чужой структуры fmt читает отражением мимо Format, и строка вышла бы
+// наружу, а у функции отражение покажет только адрес.
 // Значение — только через Reveal, и только туда, где его видит человек сам.
-type Password struct{ v string }
+type Password struct{ v func() string }
 
 // NewPassword rejects an empty password.
 func NewPassword(s string) (Password, error) {
 	if strings.TrimSpace(s) == "" {
 		return Password{}, fmt.Errorf("%w: нет пароля", ErrInvalidCredential)
 	}
-	return Password{v: s}, nil
+	return Password{v: func() string { return s }}, nil
 }
 
 // Reveal returns the secret itself.
-func (p Password) Reveal() string { return p.v }
+func (p Password) Reveal() string {
+	if p.v == nil {
+		return ""
+	}
+	return p.v()
+}
 
 // Format prints dots for every verb.
 func (Password) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, "••••••") }
