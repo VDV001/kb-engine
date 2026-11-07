@@ -1918,14 +1918,29 @@ function renderFinServer() {
   if (document.activeElement !== url) url.value = local ? cur : FIN_LOCAL;
   url.hidden = $("#fin-server-save").hidden = !local;
 }
+// withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.
+function withModule(id, patch) {
+  return state.modules.some((x) => x.id === id)
+    ? state.modules.map((x) => (x.id === id ? { ...x, ...patch } : x))
+    : [...state.modules, { id, enabled: false, ...patch }];
+}
 let finSaves = Promise.resolve();
+function saveFinAddress() {
+  const v = $("#fin-server-url").value.trim();
+  if (!v) { showError("Впишите адрес kbengine serve на этом Mac, например " + FIN_LOCAL); $("#fin-server-url").focus(); return; }
+  saveFinServer(v);
+}
 function saveFinServer(value) {
   const prev = state.modules;
-  state.modules = [...state.modules.filter((x) => x.id !== "finances"), { ...(state.modules.find((x) => x.id === "finances") || { id: "finances", enabled: false }), server: value }];
+  state.modules = withModule("finances", { server: value });
   renderFinServer();
-  finSaves = finSaves.then(() => native().SetModuleServer("finances", value)).then(() => {
+  finSaves = finSaves.then(() => native().SetModuleServer("finances", value)).then(async () => {
     showError("");
-    toast("Финансы", value ? (isLocalServer(value) ? ` · данные из ${value}` : " · данные с выбранного сервера") : " · данные с первого kb-сервера", null, "info");
+    try { state.modules = (await native().Modules()) || state.modules; } catch { /* остается то, что на экране */ }
+    renderFinServer(); // окно приводит адрес (пробелы, «/» в конце) — показать сохраненный
+    const saved = (state.modules.find((x) => x.id === "finances") || {}).server || "";
+    if (isLocalServer(saved)) $("#fin-server-url").value = saved; // поле в фокусе renderFinServer не трогает
+    toast("Финансы", saved ? (isLocalServer(saved) ? ` · данные из ${saved}` : " · данные с выбранного сервера") : " · данные с первого kb-сервера", null, "info");
     const f = $("#module-frame");
     if (f.dataset.src) f.src = f.dataset.src; // открытая витрина перечитывает данные с нового места
   }).catch(async (err) => {
@@ -1943,15 +1958,15 @@ $("#fin-server-pick").addEventListener("change", (e) => {
   url.focus();
   url.select();
 });
-$("#fin-server-save").addEventListener("click", () => saveFinServer($("#fin-server-url").value.trim()));
-$("#fin-server-url").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveFinServer(e.target.value.trim()); } });
+$("#fin-server-save").addEventListener("click", saveFinAddress);
+$("#fin-server-url").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveFinAddress(); } });
 // Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
 let moduleSaves = Promise.resolve();
 $("#module-list").addEventListener("click", (e) => {
   const b = e.target.closest("[data-module]");
   if (!b || !native()) return;
   const id = b.dataset.module, on = !state.modules.some((x) => x.id === id && x.enabled);
-  state.modules = [...state.modules.filter((x) => x.id !== id), { ...state.modules.find((x) => x.id === id), id, enabled: on }]; // выбор сервера остается
+  state.modules = withModule(id, { enabled: on }); // выбор сервера и порядок вкладок остаются
   if (!on && moduleOf(state.tab) === id) state.tab = "all"; // выключенный модуль не остается открытым
   renderModules();
   refreshTabs();
