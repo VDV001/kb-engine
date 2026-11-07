@@ -342,9 +342,8 @@ func TestText_namesEverySection(t *testing.T) {
 // портрет между первым и вторым чтением (пока думает модель).
 type countStore struct {
 	memStore
-	loads     int
-	versioned bool
-	changed   domain.Fact
+	loads   int
+	changed domain.Fact
 }
 
 func (c *countStore) Load(ctx context.Context) (domain.Portrait, error) {
