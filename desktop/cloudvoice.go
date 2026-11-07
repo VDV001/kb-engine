@@ -70,17 +70,30 @@ type cloudSpeech struct {
 	now   func() time.Time
 }
 
+// gatewayBill is the price of a call the gateway sends with the answer (замер
+// 07.11 на живых /transcription-model и /speech-model): доллары строкой,
+// токенов в ответе нет.
+type gatewayBill struct {
+	ProviderMetadata struct {
+		Gateway struct {
+			Cost string `json:"cost"`
+		} `json:"gateway"`
+	} `json:"providerMetadata"`
+}
+
 // record writes one cloud speech call to the journal; журнал не мешает речи —
-// его отказ молча пропускается, как у счетчика модели.
-// ponytail: токены не считаются — формат usage в ответах /transcription-model
-// и /speech-model шлюза не замерен; вызов пишется «без счета» (модель, время,
-// ошибка). Путь — разобрать usage после замера живого ответа.
-func (c cloudSpeech) record(p domain.CallPurpose, model string, start time.Time, failed bool) {
+// его отказ молча пропускается, как у счетчика модели. cost — цена от шлюза;
+// пустая или кривая — вызов «без счета», а не бесплатный.
+func (c cloudSpeech) record(p domain.CallPurpose, model string, start time.Time, failed bool, cost string) {
 	if c.calls == nil {
 		return
 	}
 	took := max(c.clock()().Sub(start), 0)
-	if call, err := domain.NewModelCall(start, p, model, 0, 0, false, took, took, failed); err == nil {
+	call, err := domain.NewModelCall(start, p, model, 0, 0, false, took, took, failed)
+	if pico, perr := domain.ParseDollars(cost); perr == nil {
+		call, err = domain.NewBilledModelCall(start, p, model, pico, took, failed)
+	}
+	if err == nil {
 		_ = c.calls.Record(call)
 	}
 }
@@ -107,8 +120,8 @@ func (c cloudSpeech) synth(voice, text, lang string) ([]byte, error) {
 		return nil, err
 	}
 	kind, _, _ := strings.Cut(voice, ":")
-	start, failed := c.clock()(), true
-	defer func() { c.record(domain.CallSpeak, ttsModel[kind], start, failed) }()
+	start, failed, cost := c.clock()(), true, ""
+	defer func() { c.record(domain.CallSpeak, ttsModel[kind], start, failed, cost) }()
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("облачный голос: шлюз не ответил (%T)", err)
@@ -119,10 +132,12 @@ func (c cloudSpeech) synth(voice, text, lang string) ([]byte, error) {
 	}
 	var out struct {
 		Audio string `json:"audio"`
+		gatewayBill
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return nil, fmt.Errorf("облачный голос: ответ шлюза не прочитан: %w", err)
 	}
+	cost = out.ProviderMetadata.Gateway.Cost
 	audio, err := base64.StdEncoding.DecodeString(out.Audio)
 	if err != nil || len(audio) == 0 {
 		return nil, fmt.Errorf("облачный голос: шлюз не прислал звук")
@@ -185,8 +200,8 @@ func (c cloudSpeech) transcribe(ctx context.Context, wav []byte, model string) (
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("ai-gateway-protocol-version", "0.0.1")
 	req.Header.Set("ai-model-id", model)
-	start, failed := c.clock()(), true
-	defer func() { c.record(domain.CallListen, model, start, failed) }()
+	start, failed, cost := c.clock()(), true, ""
+	defer func() { c.record(domain.CallListen, model, start, failed, cost) }()
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("облачное распознавание: шлюз не ответил (%T)", err)
@@ -197,10 +212,12 @@ func (c cloudSpeech) transcribe(ctx context.Context, wav []byte, model string) (
 	}
 	var out struct {
 		Text string `json:"text"`
+		gatewayBill
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", fmt.Errorf("облачное распознавание: ответ не прочитан: %w", err)
 	}
+	cost = out.ProviderMetadata.Gateway.Cost
 	failed = false
 	return strings.TrimSpace(out.Text), nil
 }
