@@ -35,9 +35,16 @@ type secretsMem struct {
 	m          map[string]string
 	deleted    []string
 	failDelete bool
+	hasErr     error
 }
 
-func (s *secretsMem) Has(account string) (bool, error) { _, ok := s.m[account]; return ok, nil }
+func (s *secretsMem) Has(account string) (bool, error) {
+	if s.hasErr != nil {
+		return false, s.hasErr
+	}
+	_, ok := s.m[account]
+	return ok, nil
+}
 
 func (s *secretsMem) Set(account, secret string) error { s.m[account] = secret; return nil }
 func (s *secretsMem) Get(account string) (string, error) {
@@ -176,5 +183,19 @@ func TestService_Add_rollbackFailureIsReported(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "s3cret") {
 		t.Fatal("пароль в тексте ошибки")
+	}
+}
+
+// Связка не ответила на «есть ли» (заперта) — отказ до записи: ни пароля, ни
+// карточки, ошибка Связки видна.
+func TestService_Add_keychainSilent(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	locked := errors.New("связка заперта")
+	secrets.hasErr = locked
+	if err := svc.Add(card(t, "Склад-Про", domain.EnvProd, "admin"), pw(t, "s3cret")); !errors.Is(err, locked) {
+		t.Fatalf("ошибка Связки потеряна: %v", err)
+	}
+	if len(secrets.m) != 0 || len(cards.list) != 0 {
+		t.Fatalf("записано при запертой Связке: %v, %d", secrets.m, len(cards.list))
 	}
 }
