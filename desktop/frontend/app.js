@@ -1645,6 +1645,8 @@ if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", 
 // открытии и дальше живет: вкладка туда-обратно не перезагружает витрину.
 function showModule(id) {
   const mod = id && MODULES[id];
+  // Подсказка графика не переживает уход с вкладки; stTipHide объявлен ниже и при первом вызове еще недоступен.
+  const stTipNow = document.querySelector(".st-tip"); if (stTipNow) stTipNow.hidden = true;
   $("#app").classList.toggle("module-open", !!mod);
   $("#module-view").hidden = !mod || !!mod.view;
   $("#chat-view").hidden = !mod || mod.view !== "chat";
@@ -2843,7 +2845,7 @@ paintThemeBtn();
 // --- Статистика (решение владельца 07.11) ----------------------------------------
 // Пульт и Журнал на журнале вызовов модели. Правило переходов одно: день или
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
-const st = { screen: "pulse", days: 30, data: null, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut" } };
+const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut" } };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -2872,8 +2874,13 @@ async function openStats() {
 }
 async function stLoad() {
   if (!native() || !native().Stats) { $("#st-body").innerHTML = `<div class="st-empty">Статистика работает в окне приложения.</div>`; return; }
-  try { st.data = await native().Stats(st.days); }
-  catch (e) { $("#st-body").innerHTML = `<div class="st-empty">Не прочитать журнал вызовов: ${esc(errText(e))}</div>`; return; }
+  // Ответ на прежний период, пришедший позже нового, не рисуется: побеждает последний запрос.
+  const seq = ++st.seq;
+  let data;
+  try { data = await native().Stats(st.days); }
+  catch (e) { if (seq === st.seq) $("#st-body").innerHTML = `<div class="st-empty">Не прочитать журнал вызовов: ${esc(errText(e))}</div>`; return; }
+  if (seq !== st.seq) return;
+  st.data = data;
   stRender();
 }
 // stGo moves to a screen with a filter and says where from (why).
@@ -2885,7 +2892,7 @@ function stGo(screen, f, why) {
 $("#st-back").addEventListener("click", () => { const h = st.hist.pop(); if (h) { Object.assign(st, h); stRender(); } });
 $("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open: null, from: null }); stRender(); });
 document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
-$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; openStats(); });
+$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; if (st.f.day) st.f = { ...st.f, day: undefined }; openStats(); });
 
 function stDescribe() {
   const f = st.f, p = [];
@@ -2943,8 +2950,15 @@ function stPulse(host) {
   stBindSeg("st-m1", "tokens"); stBindSeg("st-m2", "share");
   stTimeChart($("#st-c1"), v.days, [{ name: "Вход", color: "--z-accent", get: (x) => x.in }, { name: "Выход", color: "--z-src-teal", get: (x) => x.out }], st.modes.tokens,
     (x) => stGo("log", { day: x.date }, `день ${stDay(x.date)} на графике токенов`));
-  const parts = v.purposes.map((x) => ({ id: x.id, name: x.title, color: ST_COLORS[x.id] || "--z-faint", v: x.in + x.out || x.calls }));
-  stShare($("#st-c2"), parts, st.modes.share, (x) => stGo("log", { purpose: x.id }, `долю «${x.name}» на Пульте`));
+  // Доли — только токены по счету: вызовы без счета (токены неизвестны) — строкой ниже, а не долей.
+  const parts = v.purposes.filter((x) => x.in + x.out > 0).map((x) => ({ id: x.id, name: x.title, color: ST_COLORS[x.id] || "--z-faint", v: x.in + x.out }));
+  const c2 = $("#st-c2"), unc = v.purposes.filter((x) => x.uncounted);
+  if (parts.length) stShare(c2, parts, st.modes.share, (x) => stGo("log", { purpose: x.id }, `долю «${x.name}» на Пульте`));
+  else c2.innerHTML = `<div class="st-sub">Токенов по счету за период нет.</div>`;
+  if (unc.length) {
+    c2.insertAdjacentHTML("beforeend", `<div class="st-sub">Без счета, токены неизвестны: ${unc.map((x) => `<button class="st-chip" data-unc="${esc(x.id)}">${esc(x.title)} · ${stNum(x.uncounted)}</button>`).join(" ")}</div>`);
+    c2.querySelectorAll("[data-unc]").forEach((b) => b.addEventListener("click", () => stGo("log", { purpose: b.dataset.unc, uncounted: true }, `«без счета» под долями на Пульте`)));
+  }
 }
 
 function stTimeChart(host, days, series, mode, onPick) {

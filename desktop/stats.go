@@ -98,8 +98,12 @@ func (d *chatDesk) Stats(days int) (statsView, error) {
 		v.Models = append(v.Models, statsGroup{x.Model, x.Model, totalsView(x.Totals)})
 	}
 	for _, c := range r.Calls {
+		in, out := c.In(), c.Out()
+		if !c.Counted() {
+			in, out = 0, 0 // токены неизвестны: Журнал складывает строки сам
+		}
 		v.Calls = append(v.Calls, statsCall{c.At().In(d.now().Location()).Format(time.RFC3339), string(c.Purpose()), purposeTitles[c.Purpose()],
-			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed()})
+			c.Model(), in, out, c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed()})
 	}
 	return v, nil
 }
