@@ -108,6 +108,25 @@
          своим цветом. Пароль — только по Touch ID, каждый раз. -->
     <section class="access-view" id="access-view" hidden><div id="ac-body"></div></section>
 
+    <!-- Справка (решение владельца 07.11): команды движка и клавиши окна —
+         оглавление разделов и поиск по задаче, как в палитре; Enter копирует. -->
+    <section class="help-view" id="help-view" hidden>
+      <div class="hp-bar"><span class="hp-prompt"><b>$</b> kb help</span><h2 class="hp-title">Справка</h2><span class="hp-count" id="hp-count"></span></div>
+      <div class="hp-find">
+        <div class="hp-box">
+          <span class="hp-k">⌘K</span>
+          <input id="hp-q" type="search" placeholder="что сделать? например: записать доход" aria-label="Найти команду по задаче" autocomplete="off" spellcheck="false">
+          <button class="hp-clear" id="hp-clear" aria-label="Очистить поиск" hidden>✕</button>
+        </div>
+        <div class="hp-chips" id="hp-chips" role="group" aria-label="Разделы справки"></div>
+        <div class="hp-hint"><span class="kbd">/</span> или <span class="kbd">⌘K</span> — поиск · <span class="kbd">↑</span><span class="kbd">↓</span> — строка · <span class="kbd">Enter</span> — скопировать · <span class="kbd">Esc</span> — очистить, еще раз — спрятать окно</div>
+      </div>
+      <div class="hp-cols">
+        <nav class="hp-nav" aria-label="Разделы справки"><div class="hp-cap">РАЗДЕЛЫ</div><div id="hp-nav"></div></nav>
+        <div class="hp-main" id="hp-main" aria-live="polite"></div>
+      </div>
+    </section>
+
     <!-- Статистика (решение владельца 07.11): вызовы модели из журнала окна.
          Пульт и Журнал ведут друг в друга; сверху — откуда пришли. -->
     <section class="stats-view" id="stats-view" hidden>
@@ -395,6 +414,7 @@
   </aside>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <script src="help.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

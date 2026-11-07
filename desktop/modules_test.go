@@ -13,7 +13,7 @@ import (
 // вкладка, а не источник.
 func TestSetModules_SavesWithoutReindex(t *testing.T) {
 	s, applied, _ := newSourcesSettings(t)
-	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleChat, Enabled: false}, {ID: desktopconfig.ModuleFinances, Enabled: false}, {ID: desktopconfig.ModuleStats, Enabled: false}, {ID: desktopconfig.ModuleAccess, Enabled: false}}) {
+	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleChat, Enabled: false}, {ID: desktopconfig.ModuleFinances, Enabled: false}, {ID: desktopconfig.ModuleStats, Enabled: false}, {ID: desktopconfig.ModuleAccess, Enabled: false}, {ID: desktopconfig.ModuleHelp, Enabled: false}}) {
 		t.Fatalf("Modules() по умолчанию = %+v", got)
 	}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {
@@ -107,5 +107,21 @@ func TestSetModules_KeepsOrderAndOmitted(t *testing.T) {
 	// Снимок для чтения без f.mu видит новое значение.
 	if !s.snap.Load().cfg.ModuleOn(desktopconfig.ModuleFinances) {
 		t.Error("снимок настроек не обновлен")
+	}
+}
+
+// Справка (решение владельца 07.11): шпаргалка команд и клавиш — модуль окна
+// со своей вкладкой; данных на сервере у нее нет, включается как остальные.
+func TestSetModules_Help(t *testing.T) {
+	s, _, _ := newSourcesSettings(t)
+	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleHelp, Enabled: true}}); err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(s.Modules(), func(m desktopconfig.Module) bool { return m.ID == desktopconfig.ModuleHelp })
+	if i < 0 || !s.Modules()[i].Enabled {
+		t.Fatalf("Modules() = %+v", s.Modules())
+	}
+	if err := s.SetModuleServer(desktopconfig.ModuleHelp, "http://127.0.0.1:8097"); !errors.Is(err, desktopconfig.ErrModuleServer) {
+		t.Fatalf("у справки нет данных на сервере, а выбор принят: %v", err)
 	}
 }

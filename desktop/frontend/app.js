@@ -369,6 +369,8 @@ const MODULES = {
     icon: '<path d="M4 20h16M7 16.5V12M12 16.5V6.5M17 16.5V9.5"/>' },
   access: { name: "Доступы", what: "доступы к продуктам: карточки видны, пароль — только по Touch ID", view: "access",
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
+  help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
+    icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
 // Значок модуля без своего (новая сборка добавила модуль, а значок забыли) — квадрат, а не пустое место.
 const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
@@ -754,6 +756,13 @@ function showEmpty() {
 // --- Клавиатура ----------------------------------------------------------------
 document.addEventListener("keydown", (e) => {
   if (settingsOpen()) return; // клавиши поиска не трогают панель источников
+  // В модуле выдача поиска скрыта: стрелки и Enter открывали бы ее старую строку,
+  // буквы уводили бы фокус в скрытое поле (ревью #509). Tab листает вкладки, как
+  // везде; Esc прячет окно — скрытый запрос он не трогает.
+  if ($("#app").classList.contains("module-open") && e.key !== "Tab") {
+    if (e.key === "Escape" && !e.defaultPrevented && window.runtime) window.runtime.Hide();
+    return;
+  }
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
@@ -1791,6 +1800,10 @@ const ACCENTS = [
   ["chat-thinking", "Ожидание ответа", "бегущая полоса, пока модель думает"],
   ["chat-title", "Заголовок чата", "название в шапке разговора"],
   ["st-money", "Шкала расхода", "полоса «потрачено» в Деньгах статистики"],
+  ["help-title", "Справка: заголовок", "слово «Справка» спектром"],
+  ["help-search", "Справка: поиск", "рамка поиска в фокусе"],
+  ["help-nav", "Справка: раздел", "переливающаяся черта у открытого раздела"],
+  ["help-anim", "Справка: появление", "строки раздела выезжают по очереди"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1880,10 +1893,13 @@ function showModule(id) {
   $("#chat-view").hidden = !mod || mod.view !== "chat";
   $("#stats-view").hidden = !mod || mod.view !== "stats";
   $("#access-view").hidden = !mod || mod.view !== "access";
+  const helpWasOpen = !$("#help-view").hidden; // render() зовет showModule часто: не сбивать фокус и выбор
+  $("#help-view").hidden = !mod || mod.view !== "help";
   if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
   else if (mod && mod.view === "access") openAccess();
+  else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
   else if (mod) {
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
@@ -3842,4 +3858,91 @@ $("#look-access").addEventListener("change", (e) => {
   if (e.target.id !== "look-lock") return;
   const n = Math.round(+e.target.value);
   if (n >= 1 && n <= 1440) saveLook("vault-lock", String(n));
+});
+
+// --- Справка (решение владельца 07.11) ----------------------------------------
+const hp = { terms: helpTerms(""), sec: "", cur: 0, sel: -1, first: true, mark: helpMarker([]) };
+const hpKeys = (k) => k.map((x) => (x === "→" || x === "…" ? `<span class="hp-sep">${x}</span>` : `<span class="kbd">${hp.mark(x)}</span>`)).join(" ");
+const hpHead = (it) => (it.cmd ? `<div class="hp-cmd"><span class="p">$ </span>${hp.mark(it.cmd)}</div>` : hpKeys(it.k));
+function hpRender(animate) {
+  const q = hp.terms.words.length > 0;
+  const hits = new Map(HELP.map((s) => [s.id, helpHits(s, hp.terms)])); // один раз на отрисовку: счета и список не разойдутся
+  const shown = q ? HELP.filter((s) => (!hp.sec || s.id === hp.sec) && hits.get(s.id).length) : [HELP[hp.cur]];
+  const total = HELP.reduce((n, s) => n + s.items.length, 0);
+  const found = q ? shown.reduce((n, s) => n + hits.get(s.id).length, 0) : total;
+  $("#hp-count").textContent = q ? `найдено ${found} из ${total}` : `${total} ${plural(total, "команда", "команды", "команд")} и клавиш`;
+  $("#hp-nav").innerHTML = HELP.map((s, i) => {
+    const n = hits.get(s.id).length;
+    return `<button data-hs="${i}" aria-current="${q ? hp.sec === s.id : i === hp.cur}" class="${q && !n ? "none" : ""}"><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}<span class="n">${n}</span></button>`;
+  }).join("");
+  $("#hp-chips").innerHTML = HELP.map((s) => `<button data-hc="${s.id}" aria-pressed="${hp.sec === s.id}"><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}${q ? ` <span class="n">${hits.get(s.id).length}</span>` : ""}</button>`).join("");
+  let idx = 0;
+  const main = $("#hp-main");
+  main.classList.toggle("anim", !!animate);
+  main.innerHTML = shown.length ? shown.map((s) => `<section class="hp-sec"><h3><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}</h3><p class="hp-lead">${esc(s.lead)}</p>` +
+    hits.get(s.id).map((it) => `<div class="hp-item" data-hi="${idx}" style="--i:${idx++}"><div class="hp-body">${hpHead(it)}<div class="d">${hp.mark(it.d)}</div></div>${it.cmd ? `<button class="hp-copy" data-copy="${esc(it.cmd)}">копировать</button>` : ""}</div>`).join("") + `</section>`).join("")
+    : `<div class="hp-empty">Ничего не нашлось по «<b>${esc($("#hp-q").value)}</b>». Попробуйте задачу другими словами: «трата», «пароль», «ссылки», «открыть окно».</div>`;
+  hp.sel = q && idx ? 0 : -1;
+  hpPaintSel();
+}
+function hpPaintSel() {
+  document.querySelectorAll(".hp-item").forEach((el) => el.classList.toggle("sel", +el.dataset.hi === hp.sel));
+  const el = document.querySelector(".hp-item.sel");
+  if (el) el.scrollIntoView({ block: "nearest" });
+}
+async function hpCopy(btn) {
+  const text = btn.dataset.copy;
+  try {
+    if (window.runtime && window.runtime.ClipboardSetText) { if (!(await window.runtime.ClipboardSetText(text))) throw new Error("буфер"); }
+    else await navigator.clipboard.writeText(text);
+  } catch {
+    const cell = btn.parentElement.querySelector(".hp-cmd"), r = document.createRange();
+    r.selectNodeContents(cell); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    btn.textContent = "выделено — ⌘C"; return;
+  }
+  btn.textContent = "скопировано ✓"; btn.classList.add("ok");
+  setTimeout(() => { btn.textContent = "копировать"; btn.classList.remove("ok"); }, 1400);
+}
+function hpSetQuery(v) {
+  $("#hp-q").value = v;
+  hp.terms = helpTerms(v);
+  hp.mark = helpMarker(hp.terms.words);
+  if (!v) hp.sec = "";
+  $("#hp-clear").hidden = !v;
+  hpRender(false);
+}
+function openHelp() {
+  hpRender(hp.first); // появление — при первом открытии, дальше вкладка не мигает
+  hp.first = false;
+  setTimeout(() => $("#hp-q").focus(), 0);
+}
+$("#hp-q").addEventListener("input", (e) => hpSetQuery(e.target.value));
+$("#hp-q").addEventListener("keydown", (e) => {
+  const n = document.querySelectorAll(".hp-item").length;
+  if (e.key === "ArrowDown" && n) { e.preventDefault(); hp.sel = (hp.sel + 1) % n; hpPaintSel(); }
+  else if (e.key === "ArrowUp" && n) { e.preventDefault(); hp.sel = (hp.sel - 1 + n) % n; hpPaintSel(); }
+  else if (e.key === "Enter") { const b = document.querySelector(".hp-item.sel .hp-copy"); if (b) { e.preventDefault(); hpCopy(b); } }
+  else if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); hpSetQuery(""); }
+  // пустой Esc уходит дальше: в модуле он прячет окно, как второй Esc поиска
+});
+$("#hp-clear").addEventListener("click", () => { hpSetQuery(""); $("#hp-q").focus(); });
+$("#hp-nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hs]"); if (!b) return;
+  const i = +b.dataset.hs;
+  if (hp.terms.words.length) hp.sec = hp.sec === HELP[i].id ? "" : HELP[i].id;
+  else { hp.cur = i; hp.sec = ""; } // нажатый чип не фильтрует следующий поиск молча (ревью #509)
+  hpRender(true);
+});
+$("#hp-chips").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hc]"); if (!b) return;
+  hp.sec = hp.sec === b.dataset.hc ? "" : b.dataset.hc;
+  if (!hp.terms.words.length && hp.sec) hp.cur = HELP.findIndex((s) => s.id === hp.sec);
+  hpRender(true);
+});
+$("#hp-main").addEventListener("click", (e) => { const b = e.target.closest(".hp-copy"); if (b) hpCopy(b); });
+// / и ⌘K — в поиск справки, только когда она открыта и курсор не в поле.
+document.addEventListener("keydown", (e) => {
+  if ($("#help-view").hidden || settingsOpen()) return;
+  const typing = e.target.closest && e.target.closest("input, textarea, [contenteditable]");
+  if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); $("#hp-q").focus(); $("#hp-q").select(); }
 });

@@ -1,0 +1,39 @@
+package main
+
+import (
+	"os/exec"
+	"testing"
+)
+
+// Поиск справки (frontend/help.js) — чистые функции без DOM; проверяются node,
+// как их видит окно. Стенда для app.js нет, поэтому логика поиска вынесена
+// отдельно (ревью #509): синонимы задачи, «ё», И по словам, подсветка по сырому
+// тексту — по экранированному короткое слово ломало «&quot;».
+const helpSearchCheck = `
+const vm = require("vm"), fs = require("fs");
+const ctx = {};
+vm.createContext(ctx);
+vm.runInContext(fs.readFileSync(process.argv[1], "utf8") + ";this.api = { HELP, helpTerms, helpHits, helpMarker };", ctx);
+const { HELP, helpTerms, helpHits, helpMarker } = ctx.api;
+const fail = (m) => { console.error(m); process.exit(1); };
+const find = (q) => HELP.flatMap((s) => helpHits(s, helpTerms(q)).map((it) => it.cmd || it.k.join(" ")));
+if (!find("доход").some((c) => c.includes("--kind income"))) fail("«доход» не нашел fin add --kind income: " + JSON.stringify(find("доход")));
+if (!find("отчёт").some((c) => c.includes("fin report"))) fail("«отчёт» с ё не нашел fin report");
+if (find("пароль буфер").length !== 1) fail("«пароль буфер» — И по словам: " + JSON.stringify(find("пароль буфер")));
+if (find("zzzz").length) fail("«zzzz» что-то нашел");
+const m = helpMarker(helpTerms("q").words)('kbengine search -q "x" <id>');
+if (m.includes("&<mark>") || !m.includes("&quot;x&quot;") || !m.includes("&lt;id&gt;")) fail("подсветка портит экранирование: " + m);
+if (!m.includes("<mark>q</mark>")) fail("«q» не подсвечен: " + m);
+if (helpMarker([])("<b>") !== "&lt;b&gt;") fail("без слов текст не экранирован");
+`
+
+func TestHelpSearch(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("нет node: поиск справки не проверен")
+	}
+	out, err := exec.Command(node, "-e", helpSearchCheck, "frontend/help.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
