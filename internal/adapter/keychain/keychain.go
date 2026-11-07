@@ -23,12 +23,22 @@ var (
 	// команды security -i (кавычка, обратная косая, пробел, перевод строки).
 	ErrBadValue = errors.New("секрет пустой или учетка с кавычкой, обратной косой или пробелом")
 	// ErrTooLong — строка команды security -i вышла бы за ее предел.
-	ErrTooLong = errors.New("пароль длиннее, чем принимает Связка через security: до 1900 байт")
+	ErrTooLong = errors.New("пароль длиннее 1900 байт — столько Связка через security не принимает")
 )
 
-// maxLine — самая длинная строка, которую security -i еще выполняет (замер
-// 07.11 на проверочной связке: 4096 знаков выполнены, 4098 — молча нет).
-const maxLine = 4096
+// ponytail: пароль идет строкой security -i, а она выполняется до 4096 знаков
+// (замер 07.11 на проверочной связке: 4096 — да, 4097 — молча нет); hex
+// удваивает пароль, отсюда обещанный предел maxSecret с запасом на имя службы,
+// учетки и путь. Чтение разбирает строку "password:" вывода -g — формат не
+// описан в man, его держат тесты на настоящем security. Путь выше потолка —
+// Security.framework в помощнике окна после замера ACL Связки (#494).
+const (
+	maxLine   = 4096
+	maxSecret = 1900
+)
+
+// securityPath — системный security, а не первый в PATH: через него идут пароли.
+const securityPath = "/usr/bin/security"
 
 // Locked — Связка не ответила (заперта, отказ в доступе): одни слова в окне,
 // поиске и MCP, в форме «что не так — что сделать».
@@ -43,7 +53,7 @@ const timeout = 10 * time.Second
 
 func command(args ...string) (*exec.Cmd, context.CancelFunc) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	return exec.CommandContext(ctx, "security", args...), cancel
+	return exec.CommandContext(ctx, securityPath, args...), cancel
 }
 
 // Store is one service in a keychain: Service — имя приложения в Связке
@@ -65,7 +75,7 @@ func (s Store) Set(account, secret string) error {
 	if s.Keychain != "" {
 		line += fmt.Sprintf(" %q", s.Keychain)
 	}
-	if len(line) > maxLine {
+	if len(secret) > maxSecret || len(line) > maxLine {
 		return ErrTooLong
 	}
 	cmd, cancel := command("-i")
@@ -99,7 +109,7 @@ func (s Store) Get(account string) (string, error) {
 		if ee, ok := errors.AsType[*exec.ExitError](err); ok && ee.ExitCode() == notFoundExit {
 			return "", ErrNotFound
 		}
-		return "", fmt.Errorf("security find-generic-password: %w", err)
+		return "", fmt.Errorf("security find-generic-password: %w: %s", err, strings.TrimSpace(errOut.String()))
 	}
 	for line := range strings.Lines(errOut.String()) {
 		if v, ok := strings.CutPrefix(strings.TrimSuffix(line, "\n"), "password: "); ok {
@@ -120,6 +130,9 @@ func parsePassword(v string) (string, error) {
 			return "", fmt.Errorf("security find-generic-password: hex пароля: %w", err)
 		}
 		return string(b), nil
+	}
+	if v == "" {
+		return "", nil // пустой пароль: "password: " без кавычек
 	}
 	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
 		return v[1 : len(v)-1], nil
