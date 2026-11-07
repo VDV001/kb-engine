@@ -39,6 +39,7 @@ func runCreds(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		"add":  func() int { return credsAdd(args[1:], stdin, stdout, stderr) },
 		"find": func() int { return credsFind(args[1:], stdout, stderr) },
 		"copy": func() int { return credsCopy(args[1:], stdout, stderr) },
+		"rm":   func() int { return credsRm(args[1:], stdout, stderr) },
 	}
 	if len(args) == 0 || sub[args[0]] == nil {
 		fmt.Fprintln(stderr, credsUsage)
@@ -50,6 +51,7 @@ func runCreds(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 const credsUsage = `usage: kbengine creds add --product P --env прод|стенд|тест|dev --login L (--url U | --host H) [--role R] [--rights X] [--by B] [--at ГГГГ-ММ-ДД] [--note N] [--id ID]   (пароль — из stdin)
        kbengine creds find [слова]
        kbengine creds copy <id>   (пароль в буфер на 30 с; в терминал не печатается никогда)
+       kbengine creds rm <id>     (снять доступ: пароль из Связки и карточку)
        общий флаг: --file <путь к карточкам>`
 
 // credsSecretStore is the password store the commands use.
@@ -133,10 +135,11 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 			fmt.Fprintf(stderr, "creds add: если карточки %s нет нигде, это сирота прерванного add: security delete-generic-password -s \"DVK credentials\" -a %s\n", c.ID(), c.ID())
 		}
 		if errors.Is(err, keychain.ErrBadValue) {
-			// ponytail: security -i не принимает в значении пробел, кавычку, \ и не-ASCII.
-			// Потолок — такие пароли из терминала не сохранить. Путь — запись через
-			// Security.framework (помощник окна на Swift, PR 3 #494) вместо security -i.
-			fmt.Fprintln(stderr, "creds add: Связка через security не принимает пароль с пробелом, кавычкой, обратной косой или не латиницей — сохраните его из окна DVK")
+			// ponytail: security -i не принимает в значении пробел, кавычку, обратную косую и не-ASCII —
+			// ни в терминале, ни в окне (оно пишет тем же путем). Потолок — такие пароли не
+			// сохранить. Путь — запись через Security.framework в kb-auth после замера, как
+			// Связка спрашивает доступ у неподписанного помощника (#494).
+			fmt.Fprintln(stderr, "creds add: Связка через security не принимает пароль с пробелом, кавычкой, обратной косой или не латиницей — пока такой пароль не сохранить ни здесь, ни в окне (#494)")
 		}
 		return 1
 	}
@@ -296,5 +299,24 @@ func credsClear(_ []string, stdin io.Reader) int {
 	clr := exec.Command("pbcopy")
 	clr.Stdin = strings.NewReader("")
 	_ = clr.Run()
+	return 0
+}
+
+func credsRm(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("creds rm", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	file := fs.String("file", credsDefaultFile(), "файл карточек")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if fs.NArg() != 1 {
+		fmt.Fprintln(stderr, credsUsage)
+		return 2
+	}
+	if err := credsService(*file).Delete(fs.Arg(0)); err != nil {
+		fmt.Fprintln(stderr, "creds rm:", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "доступ %s снят: пароль из Связки ключей и карточка\n", fs.Arg(0))
 	return 0
 }
