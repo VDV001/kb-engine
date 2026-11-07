@@ -52,7 +52,8 @@ type factView struct {
 	Section string    `json:"section"`
 	Title   string    `json:"title"` // раздел для человека
 	Text    string    `json:"text"`
-	Source  string    `json:"source"`
+	Source  string    `json:"source"`  // откуда, словами для человека
+	Origin  string    `json:"origin"`  // код происхождения: «Вернуть» отдает его назад
 	Pending bool      `json:"pending"` // ждет одобрения
 	At      time.Time `json:"at"`      // когда появился: «Вернуть» возвращает его же
 }
@@ -105,10 +106,33 @@ type compressionView struct {
 	Size      int            `json:"size"`
 }
 
+// sectionTitles are the portrait sections as the person reads them.
+var sectionTitles = map[domain.FactSection]string{
+	domain.SectionAbout: "Обо мне", domain.SectionWork: "Работа", domain.SectionPlans: "Планы",
+	domain.SectionPrefs: "Предпочтения", domain.SectionMisc: "Разное",
+}
+
+// originText says where the fact came from; дата чата — когда факт найден.
+func originText(f domain.Fact) string {
+	switch f.Origin() {
+	case domain.OriginManual:
+		return "добавлено вручную"
+	case domain.OriginEdited:
+		return "исправлено вручную"
+	case domain.OriginCompressed:
+		return "сжато"
+	case domain.OriginChat:
+		return "из чата " + f.At().Format("02.01")
+	case domain.OriginChatEdited:
+		return "из чата " + f.At().Format("02.01") + ", исправлено"
+	}
+	return ""
+}
+
 func viewFacts(facts []domain.Fact) []factView {
 	out := make([]factView, 0, len(facts))
 	for _, f := range facts {
-		out = append(out, factView{f.ID(), string(f.Section()), f.Section().Title(), f.Text(), f.Source(), !f.Approved(), f.At()})
+		out = append(out, factView{f.ID(), string(f.Section()), sectionTitles[f.Section()], f.Text(), originText(f), string(f.Origin()), !f.Approved(), f.At()})
 	}
 	return out
 }
@@ -166,7 +190,7 @@ func (d *chatDesk) Portrait() (portraitView, error) {
 	c := d.config()
 	v := portraitView{Dir: c.MemoryDir, Server: c.MemoryServer, Facts: []factView{}, Budget: portraitBudget(c)}
 	for _, s := range domain.FactSections() {
-		v.Sections = append(v.Sections, sectionView{string(s), s.Title()})
+		v.Sections = append(v.Sections, sectionView{string(s), sectionTitles[s]})
 	}
 	if !memoryOn(c) {
 		return v, nil
@@ -177,7 +201,7 @@ func (d *chatDesk) Portrait() (portraitView, error) {
 			return err
 		}
 		v.Facts = viewFacts(p.Facts())
-		v.Size = len([]rune(domain.PortraitText(p.Approved())))
+		v.Size = len([]rune(portrait.Text(p.Approved())))
 		return nil
 	})
 	return v, portraitErr(err)
@@ -205,7 +229,12 @@ func (d *chatDesk) PortraitRestore(v factView) error {
 	if v.Pending {
 		status = domain.FactPending
 	}
-	f, err := domain.NewFact(v.ID, sec, v.Text, v.Source, status, v.At)
+	// Код с незнакомой страницы (старая сборка) — факт ручной, а не отказ.
+	origin, err := domain.NewFactOrigin(v.Origin)
+	if err != nil {
+		origin = domain.OriginManual
+	}
+	f, err := domain.NewFact(v.ID, sec, v.Text, origin, status, v.At)
 	if err != nil {
 		return portraitErr(err)
 	}
@@ -240,7 +269,7 @@ func (d *chatDesk) PortraitCompress() (compressionView, error) {
 		defer cancel()
 		cmp, err := s.Compress(ctx)
 		for _, p := range cmp.Proposals {
-			out.Proposals = append(out.Proposals, proposalView{string(p.Section), p.Section.Title(), p.Text})
+			out.Proposals = append(out.Proposals, proposalView{string(p.Section), sectionTitles[p.Section], p.Text})
 		}
 		out.Basis, out.Size = cmp.Basis, cmp.Size
 		return err

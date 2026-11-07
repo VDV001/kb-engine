@@ -358,3 +358,58 @@ func TestStream_UsageSurvivesBrokenStream(t *testing.T) {
 		t.Fatalf("reply %+v, err %v", got, err)
 	}
 }
+
+// Повтор без stream_options — только для сервера, который поле еще не
+// принимал, и запоминается: строгий сервер не платит лишний запрос на каждом
+// ответе, а настоящая 400 у сервера, принимавшего поле, не идет дважды (ревью #491).
+func TestStream_RetryIsRemembered(t *testing.T) {
+	stream := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range []string{`data: {"choices":[{"delta":{"content":"ок"},"finish_reason":"stop"}]}`, `data: [DONE]`} {
+			_, _ = io.WriteString(w, line+"\n\n")
+		}
+	}
+	ask := func(c llm.Client) error {
+		_, err := c.Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+		return err
+	}
+	t.Run("строгий сервер", func(t *testing.T) {
+		calls := 0
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if b, _ := io.ReadAll(r.Body); strings.Contains(string(b), "stream_options") {
+				http.Error(w, "unknown field", http.StatusBadRequest)
+				return
+			}
+			stream(w)
+		}))
+		defer srv.Close()
+		c := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}
+		if err := ask(c); err != nil {
+			t.Fatal(err)
+		}
+		if err := ask(c); err != nil || calls != 3 {
+			t.Fatalf("запросов %d (ждали 2 + 1), %v", calls, err)
+		}
+	})
+	t.Run("настоящая 400", func(t *testing.T) {
+		calls, bad := 0, false
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls++
+			if bad {
+				http.Error(w, "context too long", http.StatusBadRequest)
+				return
+			}
+			stream(w)
+		}))
+		defer srv.Close()
+		c := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}
+		if err := ask(c); err != nil {
+			t.Fatal(err)
+		}
+		bad = true
+		if err := ask(c); err == nil || calls != 2 {
+			t.Fatalf("запросов %d (ждали 1 + 1), %v", calls, err)
+		}
+	})
+}

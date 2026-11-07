@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
@@ -188,13 +189,7 @@ const maxToolCalls = 32
 func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool, show func(string)) (chat.ModelReply, error) {
 	r := request(c.Model, msgs, tools)
 	r.Stream = true
-	r.StreamOptions = &wireStreamOptions{IncludeUsage: true}
-	res, err := c.send(ctx, r)
-	if errors.Is(err, errBadRequest) {
-		// Строгий сервер не знает stream_options: поток без счета лучше отказа.
-		r.StreamOptions = nil
-		res, err = c.send(ctx, r)
-	}
+	res, err := c.sendStream(ctx, r)
 	if err != nil {
 		return chat.ModelReply{}, err
 	}
@@ -212,6 +207,29 @@ func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []ch
 		return reply, err
 	}
 	return readStream(io.LimitReader(res.Body, maxReply), show)
+}
+
+// sendStream sends a stream request asking for the token count, если сервер
+// не отказывался от stream_options раньше; отказ (400) — тот же запрос без
+// поля, и ответ сервера запоминается.
+func (c Client) sendStream(ctx context.Context, r wireRequest) (*http.Response, error) {
+	takes, known := streamOptions.Load(c.BaseURL)
+	if !known || takes.(bool) {
+		r.StreamOptions = &wireStreamOptions{IncludeUsage: true}
+	}
+	res, err := c.send(ctx, r)
+	switch {
+	case known:
+	case errors.Is(err, errBadRequest):
+		// Строгий сервер не знает stream_options: поток без счета лучше отказа.
+		r.StreamOptions = nil
+		if res, err = c.send(ctx, r); err == nil {
+			streamOptions.Store(c.BaseURL, false)
+		}
+	case err == nil:
+		streamOptions.Store(c.BaseURL, true)
+	}
+	return res, err
 }
 
 // readStream reads SSE events until [DONE] or the end of the body.
@@ -376,6 +394,10 @@ func request(model string, msgs []chat.ModelMessage, tools []chat.Tool) wireRequ
 	}
 	return r
 }
+
+// streamOptions remembers per server whether it takes stream_options: принял
+// раз — его 400 настоящая и не повторяется; отказал — поле больше не шлется.
+var streamOptions sync.Map // BaseURL → bool
 
 // errBadRequest is a 400: Stream повторяет запрос без stream_options.
 var errBadRequest = errors.New("status 400")

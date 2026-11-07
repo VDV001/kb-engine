@@ -62,14 +62,30 @@ type Model interface {
 	Complete(ctx context.Context, system, user string) (string, error)
 }
 
-// Пометки происхождения факта: человек видит у каждого, откуда он взялся.
-const (
-	sourceManual     = "добавлено вручную"
-	sourceEdited     = "исправлено вручную"
-	sourceCompressed = "сжато"
-	sourceChat       = "из чата "     // + дата
-	sourceEditedTail = ", исправлено" // одобрено с правкой
-)
+// sectionNames are the section names in the text for the model: часть
+// запроса, как промпты ниже; подписи для человека — в окне.
+var sectionNames = map[domain.FactSection]string{
+	domain.SectionAbout: "Обо мне", domain.SectionWork: "Работа", domain.SectionPlans: "Планы",
+	domain.SectionPrefs: "Предпочтения", domain.SectionMisc: "Разное",
+}
+
+// Text renders facts for the model: по разделу в строку, в порядке разделов,
+// — «Обо мне: Разработчик; Готовится к роли тимлида.».
+func Text(facts []domain.Fact) string {
+	var lines []string
+	for _, s := range domain.FactSections() {
+		var parts []string
+		for _, f := range facts {
+			if f.Section() == s {
+				parts = append(parts, strings.TrimRight(f.Text(), "."))
+			}
+		}
+		if len(parts) > 0 {
+			lines = append(lines, sectionNames[s]+": "+strings.Join(parts, "; ")+".")
+		}
+	}
+	return strings.Join(lines, "\n")
+}
 
 // Service changes the portrait and saves every change.
 type Service struct {
@@ -128,7 +144,7 @@ func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.P
 
 // Add adds a fact typed by the person: одобрен сразу.
 func (s *Service) Add(ctx context.Context, section domain.FactSection, text string) (domain.Fact, error) {
-	f, err := domain.NewFact(s.newID(), section, text, sourceManual, domain.FactApproved, s.now())
+	f, err := domain.NewFact(s.newID(), section, text, domain.OriginManual, domain.FactApproved, s.now())
 	if err != nil {
 		return domain.Fact{}, err
 	}
@@ -137,7 +153,7 @@ func (s *Service) Add(ctx context.Context, section domain.FactSection, text stri
 
 // Propose puts a fact the model offered in the chat to «ждут одобрения».
 func (s *Service) Propose(ctx context.Context, section domain.FactSection, text string) (domain.Fact, error) {
-	f, err := domain.NewFact(s.newID(), section, text, sourceChat+s.now().Format("02.01"), domain.FactPending, s.now())
+	f, err := domain.NewFact(s.newID(), section, text, domain.OriginChat, domain.FactPending, s.now())
 	if err != nil {
 		return domain.Fact{}, err
 	}
@@ -151,7 +167,7 @@ func (s *Service) Restore(ctx context.Context, f domain.Fact) error {
 
 // Edit changes the fact text.
 func (s *Service) Edit(ctx context.Context, id, text string) error {
-	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Edit(id, text, sourceEdited) })
+	return s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) { return p.Edit(id, text, domain.OriginEdited) })
 }
 
 // Remove forgets the fact.
@@ -166,7 +182,7 @@ func (s *Service) Approve(ctx context.Context, id, text string) error {
 			for _, f := range p.Facts() {
 				if f.ID() == id && strings.TrimSpace(text) != f.Text() {
 					var err error
-					if p, err = p.Edit(id, text, f.Source()+sourceEditedTail); err != nil {
+					if p, err = p.Edit(id, text, f.Origin().Corrected()); err != nil {
 						return p, err
 					}
 				}
@@ -199,7 +215,7 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 	if err != nil {
 		return nil, err
 	}
-	known := domain.PortraitText(p.Facts())
+	known := Text(p.Facts())
 	if known == "" {
 		known = "ничего"
 	}
@@ -215,13 +231,12 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 		return nil, err
 	}
 	var candidates []domain.Fact
-	src := sourceChat + s.now().Format("02.01")
 	for _, o := range offered {
 		sec, err := domain.NewFactSection(o.Section)
 		if err != nil {
 			continue // чужой раздел — модель ошиблась, факт мимо
 		}
-		if f, err := domain.NewFact(s.newID(), sec, o.Text, src, domain.FactPending, s.now()); err == nil {
+		if f, err := domain.NewFact(s.newID(), sec, o.Text, domain.OriginChat, domain.FactPending, s.now()); err == nil {
 			candidates = append(candidates, f)
 		}
 	}
@@ -256,7 +271,7 @@ func (s *Service) Compress(ctx context.Context) (Compression, error) {
 	if err != nil {
 		return Compression{}, err
 	}
-	reply, err := s.model.Complete(ctx, compressPrompt, domain.PortraitText(p.Approved()))
+	reply, err := s.model.Complete(ctx, compressPrompt, Text(p.Approved()))
 	if err != nil {
 		return Compression{}, err
 	}
@@ -271,7 +286,7 @@ func (s *Service) Compress(ctx context.Context) (Compression, error) {
 		if err != nil {
 			continue
 		}
-		f, err := domain.NewFact("size", sec, o.Text, sourceCompressed, domain.FactApproved, s.now())
+		f, err := domain.NewFact("size", sec, o.Text, domain.OriginCompressed, domain.FactApproved, s.now())
 		if err != nil {
 			continue
 		}
@@ -283,7 +298,7 @@ func (s *Service) Compress(ctx context.Context) (Compression, error) {
 	for _, f := range p.Approved() {
 		c.Basis = append(c.Basis, f.ID())
 	}
-	c.Size = len([]rune(domain.PortraitText(facts)))
+	c.Size = len([]rune(Text(facts)))
 	return c, nil
 }
 
@@ -307,7 +322,7 @@ func (s *Service) ApplyCompressed(ctx context.Context, c Compression) error {
 			}
 		}
 		for _, pr := range c.Proposals {
-			f, err := domain.NewFact(s.newID(), pr.Section, pr.Text, sourceCompressed, domain.FactApproved, s.now())
+			f, err := domain.NewFact(s.newID(), pr.Section, pr.Text, domain.OriginCompressed, domain.FactApproved, s.now())
 			if err != nil {
 				return p, err
 			}
@@ -351,7 +366,7 @@ type ChatContext struct {
 
 // Context returns the portrait text for a chat within budget runes.
 func Context(p domain.Portrait, question string, budget int, mode ContextMode) ChatContext {
-	full := domain.PortraitText(p.Approved())
+	full := Text(p.Approved())
 	c := ChatContext{Size: len([]rune(full)), Fits: len([]rune(full)) <= budget}
 	switch {
 	case c.Fits || mode == ContextFull:
@@ -359,10 +374,10 @@ func Context(p domain.Portrait, question string, budget int, mode ContextMode) C
 	case mode == ContextRelevant:
 		facts := relevant(p.Approved(), question)
 		// «Только нужное» тоже в пределах порога: лишнее — с конца.
-		for len(facts) > 0 && len([]rune(domain.PortraitText(facts))) > budget {
+		for len(facts) > 0 && len([]rune(Text(facts))) > budget {
 			facts = facts[:len(facts)-1]
 		}
-		c.Text = domain.PortraitText(facts)
+		c.Text = Text(facts)
 	}
 	return c
 }
