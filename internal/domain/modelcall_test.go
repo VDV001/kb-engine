@@ -39,3 +39,13 @@ func TestNewModelCall(t *testing.T) {
 		}
 	}
 }
+
+// Без счета токены неизвестны, а не числа: вызов без счета их не отдает, даже
+// если пришли (правка журнала руками, сервер прислал мусор). Правило в домене,
+// чтобы каждый потребитель — сводка, окно, журнал — не обнулял их сам.
+func TestNewModelCall_uncountedHasNoTokens(t *testing.T) {
+	c, err := domain.NewModelCall(callAt, domain.CallAnswer, "qwen3", 7000, 700, false, 0, time.Second, false)
+	if err != nil || c.Counted() || c.In() != 0 || c.Out() != 0 {
+		t.Fatalf("вызов без счета = in %d out %d counted %v, %v", c.In(), c.Out(), c.Counted(), err)
+	}
+}
