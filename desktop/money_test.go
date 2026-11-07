@@ -76,8 +76,13 @@ func TestChat_Money(t *testing.T) {
 	if v, _ = d.StatsMoney(); v.Limit != "20" {
 		t.Fatalf("лимит = %q", v.Limit)
 	}
-	if err := d.SetSpendLimit("-1"); err == nil {
-		t.Fatal("отрицательный лимит принят")
+	for _, bad := range []string{"-1", "NaN", "0x10", "1e3", "Inf", "1.2.3"} {
+		if err := d.SetSpendLimit(bad); err == nil {
+			t.Fatalf("лимит %q принят", bad)
+		}
+	}
+	if err := d.SetSpendLimit("12,5"); err != nil {
+		t.Fatalf("12,5: %v", err)
 	}
 	if err := d.SetSpendLimit(""); err != nil {
 		t.Fatal(err)
@@ -97,5 +102,26 @@ func TestChat_Money_gatewayDown(t *testing.T) {
 	v, err := d.StatsMoney()
 	if err != nil || v.PriceNote == "" {
 		t.Fatalf("v=%+v err=%v", v, err)
+	}
+}
+
+// Модель, у которой за месяц только вызовы без счета (облачная речь), цену не
+// получает: своя цена ничего бы не поменяла, поле ввода было бы обманом.
+func TestChat_Money_uncountedOnlyModelIsNotPriceable(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	rec := &callsRec{}
+	d.calls = rec
+	d.prices = gatewayPrices(t)
+	c, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallListen, "openai/gpt-4o-mini-transcribe", 0, 0, false, time.Second, time.Second, false)
+	a, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallSearch, "anthropic/claude-sonnet-5.5", 1000, 0, true, time.Second, time.Second, false)
+	rec.calls = []domain.ModelCall{c, a}
+	v, err := d.StatsMoney()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range v.Models {
+		if want := m.ID == "anthropic/claude-sonnet-5.5"; m.Priceable != want {
+			t.Fatalf("%s: priceable=%v", m.ID, m.Priceable)
+		}
 	}
 }

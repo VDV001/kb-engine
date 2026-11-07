@@ -86,3 +86,29 @@ func TestCache_staleWhenGatewayDown(t *testing.T) {
 		t.Fatalf("без кэша: %d цен, err=%v", len(book), err)
 	}
 }
+
+// Шлюз не ответил — следующие 10 минут в сеть не ходим: без сети «Деньги»
+// иначе висели бы по сроку запроса на каждом открытии.
+func TestCache_backsOffAfterFailure(t *testing.T) {
+	hits := 0
+	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		http.Error(w, "down", http.StatusBadGateway)
+	}))
+	defer s.Close()
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	c := &modelprices.Cache{Path: filepath.Join(t.TempDir(), "prices.json"), BaseURL: s.URL + "/v1", Now: func() time.Time { return now }}
+	for range 3 {
+		if _, err := c.Load(context.Background()); err == nil {
+			t.Fatal("отказ шлюза без ошибки")
+		}
+	}
+	if hits != 1 {
+		t.Fatalf("за минуту в шлюз ходили %d раз", hits)
+	}
+	now = now.Add(11 * time.Minute)
+	_, _ = c.Load(context.Background())
+	if hits != 2 {
+		t.Fatalf("через 11 минут hits=%d", hits)
+	}
+}
