@@ -413,7 +413,7 @@ function renderTabs() {
     b.dataset.tab = key;
     b.dataset.tip = name;
     b.dataset.tipB = tip;
-    b.append(name + " ", document.createElement("i"));
+    b.append(Object.assign(document.createElement("span"), { className: "lbl", textContent: name }), " ", document.createElement("i"));
     chips.append(b);
   };
   top("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON, 1);
@@ -433,7 +433,7 @@ $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button
 $("#chips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
 // ⌘1 — Поиск, ⌘2… — модули по порядку в шапке (подсказка каждой кнопки их называет).
 document.addEventListener("keydown", (e) => {
-  if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key)) return;
+  if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key) || settingsOpen()) return; // под открытыми настройками модуль не сменится незаметно
   const b = document.querySelectorAll("#tabs button")[+e.key - 1];
   if (!b) return;
   e.preventDefault();
@@ -1604,7 +1604,7 @@ $("#indexing-settings").onclick = () => openSettings("sources");
 // и в блоке «Спектр акцентами» style.css: выключенный акцент — класс no-<id> на
 // body. Go хранит режим и свой набор (desktopconfig.Accents), списка не знает.
 const ACCENTS = [
-  ["tab-ink", "Черта вкладки", "линия под активной вкладкой"],
+  ["tab-ink", "Черта вкладки", "линия под активной кнопкой шапки и рамка активной вкладки поиска"],
   ["search", "Поле поиска в фокусе", "рамка строки dvk find и курсор"],
   ["row", "Выбранная строка", "рамка по контуру вместо полосы слева"],
   ["head", "Слово HEAD", "метка над поиском"],
@@ -1613,7 +1613,7 @@ const ACCENTS = [
   ["indexing", "Индексация", "бегущая полоса и большое число"],
   ["panel-title", "Заголовок панели", "слово и верхний край панели"],
   ["marks", "Найденные слова", "подчеркивание совпадений"],
-  ["tab-name", "Имя активной вкладки", "текст вкладки"],
+  ["tab-name", "Имя активной вкладки", "текст активной кнопки шапки и вкладки поиска"],
   ["dollar", "Знак $", "в строке поиска и командах"],
   ["bar-edge", "Нижний край шапки", "тонкая линия под шапкой"],
   ["branch", "Линия ветки", "от готового узла к HEAD"],
