@@ -173,7 +173,7 @@ func (c Client) get(ctx context.Context, path string, params url.Values, limit i
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := statusErr(path, resp.StatusCode); err != nil {
+	if err := StatusErr(path, resp.StatusCode); err != nil {
 		return err
 	}
 	body, err := readLimited(resp, path, limit)
@@ -236,8 +236,9 @@ func readLimited(resp *http.Response, path string, limit int64) ([]byte, error) 
 	return body, nil
 }
 
-// statusErr maps a response status to the client's errors; nil for 200.
-func statusErr(path string, code int) error {
+// StatusErr maps a response status to the client's errors; nil for 200.
+// Прокси «Финансов» окна берет его же, чтобы не держать второй словарь причин.
+func StatusErr(path string, code int) error {
 	switch {
 	case code == http.StatusOK:
 		return nil

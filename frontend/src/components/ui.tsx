@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { splitRefusal } from '../resource'
 
 // Presentational primitives, in the visual language of the Python dashboard.
 //
@@ -221,10 +222,13 @@ export function Spinner() {
   return <div className="p-12 text-center text-on-surface-variant">Загрузка…</div>
 }
 
+/** Фраза «что не так — что сделать» (так пишет окно DVK) — двумя строками. */
 export function ErrorBox({ message }: { message: string }) {
+  const [what, todo] = splitRefusal(message)
   return (
     <div className="rounded-lg bg-error-container p-4 text-sm text-on-error-container">
-      Ошибка: {message}
+      Ошибка: <span>{what}</span>
+      {todo && <div className="mt-1">Что сделать: {todo}</div>}
     </div>
   )
 }

@@ -211,3 +211,47 @@ func TestBuiltAppUI(t *testing.T) {
 		t.Error("собранная витрина не принята")
 	}
 }
+
+// Отказ сервера витрина показывает человеку словами «что не так — что
+// сделать» (kbserver.Describe), а не голым «502 Bad Gateway». Свои ответы
+// сервера на запись (409, 400) проходят как есть: их читает форма операции.
+func TestAppProxy_explainsFailures(t *testing.T) {
+	answer := func(code int, body string) roundTripFunc {
+		return func(r *http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: code, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body)), Request: r}, nil
+		}
+	}
+	down := roundTripFunc(func(*http.Request) (*http.Response, error) { return nil, io.ErrUnexpectedEOF })
+	redirect := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusFound, Header: http.Header{"Location": {"https://x"}}, Body: http.NoBody, Request: r}, nil
+	})
+	const remote, local = "https://kb.example.ru", "http://127.0.0.1:8097"
+	for _, c := range []struct {
+		name, url string
+		rt        roundTripFunc
+		code      int
+		want      string // подстрока ответа
+	}{
+		{"502 облака", remote, answer(http.StatusBadGateway, "<html>Bad Gateway</html>"), http.StatusBadGateway, "сервер не в порядке — "},
+		{"500 сервера без пути к файлу", remote, answer(http.StatusInternalServerError, "open /Users/x/ledger.jsonl: denied"), http.StatusInternalServerError, "журнал сервера"},
+		{"401", remote, answer(http.StatusUnauthorized, ""), http.StatusUnauthorized, "введите токен заново"},
+		{"403", remote, answer(http.StatusForbidden, ""), http.StatusForbidden, "проверьте адрес"},
+		{"сервер недоступен", remote, down, http.StatusBadGateway, "нет связи с сервером — "},
+		{"свой serve не запущен", local, down, http.StatusBadGateway, "kbengine serve"},
+		{"перенаправление", remote, redirect, http.StatusBadGateway, "конечный адрес"},
+		{"409 формы как есть", remote, answer(http.StatusConflict, "такая запись уже есть"), http.StatusConflict, "такая запись уже есть"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			p := newAppProxy(func() (appUpstream, bool) { return appUpstream{URL: c.url, Token: "tok-1"}, true }, appUI, c.rt)
+			rec := httptest.NewRecorder()
+			p.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/app/api/finances", nil))
+			body := rec.Body.String()
+			if rec.Code != c.code || !strings.Contains(body, c.want) {
+				t.Errorf("ответ %d %q, want %d с %q", rec.Code, body, c.code, c.want)
+			}
+			if strings.Contains(body, "/Users/") {
+				t.Errorf("путь к файлу сервера ушел в окно: %q", body)
+			}
+		})
+	}
+}

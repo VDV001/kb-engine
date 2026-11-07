@@ -51,6 +51,17 @@ describe('FinancesView — пустой экран объясняет причи
     expect(screen.queryByText(/запустите serve с флагами/i)).toBeNull()
   })
 
+  // В окне DVK причина приходит от прокси словами: ее и показываем, а не
+  // «смотрите терминал serve», которого у человека в окне нет.
+  it('журнал не прочитан, причина известна: показывает ее и что сделать', async () => {
+    engine.value = { sources: [{ flag: 'ledger', connected: true }] }
+    render(<FinancesView finances={null} financesError="нет связи с сервером — проверьте адрес и VPN" masked={false} />)
+
+    expect(await screen.findByText('нет связи с сервером')).toBeTruthy()
+    expect(screen.getByText(/Что сделать:/).textContent).toContain('проверьте адрес и VPN')
+    expect(screen.queryByText(/в терминале/i)).toBeNull()
+  })
+
   it('леджер не подключён: называет флаги', async () => {
     engine.value = { sources: [{ flag: 'ledger', connected: false }] }
     render(<FinancesView finances={{ transactions: [], accounts: [] }} masked={false} />)

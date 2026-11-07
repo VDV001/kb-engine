@@ -5,6 +5,7 @@ import { AddTransactionForm } from './AddTransactionForm'
 import { api } from './api'
 import type { CurrencyTotal, Finances, Transaction } from './api'
 import { useResource } from './hooks/useResource'
+import { splitRefusal } from './resource'
 import { Icon } from './components/Icon'
 import type { IconName } from './components/icons'
 import { CollapsibleSection, SectionHead } from './components/SectionHead'
@@ -101,7 +102,16 @@ function Bars({
  * `null` — «ответа ещё нет либо сборка о своих источниках не сообщает», и на
  * нём остаётся прежний текст: выдуманная причина хуже неназванной.
  */
-export function FinancesView({ finances: loaded, masked }: { finances: Finances | null; masked: boolean }) {
+export function FinancesView({
+  finances: loaded,
+  financesError,
+  masked,
+}: {
+  finances: Finances | null
+  /** Причина отказа словами (окно DVK); без нее — отсылка к терминалу serve. */
+  financesError?: string
+  masked: boolean
+}) {
   const eng = useResource(api.engine)
   // После записи операции журнал перечитывается (#435): данные пришли пропом
   // из общей пачки дашборда, и без этого новая строка появилась бы только
@@ -120,6 +130,10 @@ export function FinancesView({ finances: loaded, masked }: { finances: Finances 
       : null
 
   if (finances === null) {
+    if (financesError) {
+      const [what, todo] = splitRefusal(financesError)
+      return <EmptyFinances text={what} todo={todo} />
+    }
     return (
       <EmptyFinances
         text="Журнал не прочитан — движок ответил отказом. Причина названа в терминале, где висит serve."
@@ -177,11 +191,12 @@ function AddButton({ adding, onToggle }: { adding: boolean; onToggle: () => void
   )
 }
 
-function EmptyFinances({ text }: { text: string }) {
+function EmptyFinances({ text, todo }: { text: string; todo?: string }) {
   return (
     <div className="p-12 text-center">
       <Icon name="receipt_long" className="mb-4 text-5xl opacity-10" />
       <p className="label opacity-60">{text}</p>
+      {todo && <p className="mt-2 text-sm text-on-surface-variant">Что сделать: {todo}</p>}
     </div>
   )
 }

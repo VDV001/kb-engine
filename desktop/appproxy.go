@@ -1,18 +1,22 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"html"
+	"io"
 	"io/fs"
 	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
+	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
 
 // Модуль «Финансы» (#435, G2–G3): витрина движка под /app/ в окне и прокси ее
@@ -119,13 +123,45 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 				return errAppRedirect
 			}
 			resp.Header.Del("Set-Cookie")
+			explainRefusal(resp)
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, _ *http.Request, err error) {
-			writeAppError(w, http.StatusBadGateway, kbserver.Describe(err))
+			writeAppError(w, http.StatusBadGateway, proxyFailure(base, err))
 		},
 	}
 	rp.ServeHTTP(w, r)
+}
+
+// explainRefusal replaces a server refusal with words for a person: витрина
+// показывает {"error"} фразой «что не так — что сделать» (kbserver.Describe),
+// а не «502 Bad Gateway» облака. Тело сервера не пересылается: в тексте 500
+// лежит путь к его файлам. Остальные отказы (409, 400 формы операции) — как есть.
+func explainRefusal(resp *http.Response) {
+	code := resp.StatusCode
+	if code != http.StatusUnauthorized && code != http.StatusForbidden &&
+		code != http.StatusTooManyRequests && code < http.StatusInternalServerError {
+		return
+	}
+	body, _ := json.Marshal(map[string]string{"error": kbserver.Describe(kbserver.StatusErr(resp.Request.URL.Path, code))})
+	_ = resp.Body.Close()
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	resp.ContentLength = int64(len(body))
+	resp.Header = http.Header{"Content-Type": {"application/json; charset=utf-8"}, "Content-Length": {strconv.Itoa(len(body))}}
+}
+
+// proxyFailure names why the server was not reached. Свой serve на этом Mac
+// — отдельной фразой: «проверьте VPN» человеку с выключенным serve не поможет.
+func proxyFailure(base *url.URL, err error) string {
+	switch {
+	case errors.Is(err, errAppRedirect):
+		return kbserver.Describe(kbserver.ErrRedirect)
+	case loopback.Host(base.Hostname()):
+		return "kbengine serve на этом Mac не отвечает — запустите kbengine serve --addr " + base.Host +
+			" или выберите kb-сервер в «Настройки → Окно → Модули»"
+	default:
+		return kbserver.Describe(err)
+	}
 }
 
 // builtAppUI returns the embedded витрина, nil when the window was built without

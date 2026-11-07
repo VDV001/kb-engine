@@ -52,7 +52,7 @@ func (s *PortraitStore) LoadVersion(ctx context.Context) (domain.Portrait, strin
 		return domain.Portrait{}, "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
-	if err := statusErr(portraitPath, resp.StatusCode); err != nil {
+	if err := StatusErr(portraitPath, resp.StatusCode); err != nil {
 		return domain.Portrait{}, "", err
 	}
 	raw, err := readLimited(resp, portraitPath, maxBody)
@@ -120,7 +120,7 @@ func (s *PortraitStore) save(ctx context.Context, p domain.Portrait, etag string
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
 		return "", fmt.Errorf("%w: %s answered %d — сервер старой версии, без портрета", ErrNotKB, portraitPath, resp.StatusCode)
 	}
-	if err := statusErr(portraitPath, resp.StatusCode); err != nil {
+	if err := StatusErr(portraitPath, resp.StatusCode); err != nil {
 		return "", err
 	}
 	return "", fmt.Errorf("%w: %s answered %d", ErrNotKB, portraitPath, resp.StatusCode)

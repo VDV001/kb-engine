@@ -774,10 +774,21 @@ export interface ArchMapIndexEntry {
 // обязан пройти через его прокси с токеном.
 async function getJSON<T>(path: string): Promise<T> {
   const res = await fetch(appURL(path))
-  if (!res.ok) {
-    throw new Error(`${path}: ${res.status} ${res.statusText}`)
-  }
+  if (!res.ok) throw new Error(await refusalText(res))
   return res.json() as Promise<T>
+}
+
+/**
+ * Отказ словами «что не так — что сделать». Окно DVK кладет такую фразу в
+ * {"error"}; без нее — код словами. Текст сервера не показывается: в ответе
+ * 500 лежит путь к его файлам.
+ */
+async function refusalText(res: Response): Promise<string> {
+  const body: unknown = await res.json().catch(() => null)
+  if (body && typeof body === 'object' && 'error' in body && typeof body.error === 'string' && body.error) {
+    return body.error
+  }
+  return `сервер ответил ${res.status} — обновите страницу; если повторится, причина в терминале, где запущен kbengine serve`
 }
 
 /** Всё, что нужно дашборду на первом экране, одним запросом-пачкой. */
@@ -790,6 +801,8 @@ export interface Dashboard {
   analyticsConfig: AnalyticsConfig
   /** null — спросили и не смогли: отказ, а не отсутствие данных. */
   finances: Finances | null
+  /** Почему finances null — словами, если причина известна. */
+  financesError?: string
   sources: SourceState[]
 }
 
@@ -905,13 +918,15 @@ export const api = {
         // читаются» — разные ответы, и подставляя пустоту, дашборд выдавал
         // отказ за законное состояние с ложной инструкцией «добавьте
         // --ledger» при уже переданном флаге.
-        api.finances().catch(() => null),
+        api.finances().catch((e: unknown) => (e instanceof Error ? e : new Error(String(e)))),
         // Свежесть источников — та же история: страница со сводкой не должна
         // падать из-за сборки сервера, которая этого эндпоинта не знает.
         api.sources().catch(() => ({ sources: [] })),
       ])
     return {
-      stats, entries, audits, duplicates, analytics, analyticsConfig, finances,
+      stats, entries, audits, duplicates, analytics, analyticsConfig,
+      finances: finances instanceof Error ? null : finances,
+      financesError: finances instanceof Error ? finances.message : undefined,
       sources: sources.sources ?? [],
     }
   },
