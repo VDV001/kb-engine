@@ -199,3 +199,37 @@ func TestService_Add_keychainSilent(t *testing.T) {
 		t.Fatalf("записано при запертой Связке: %v, %d", secrets.m, len(cards.list))
 	}
 }
+
+// Удалить: карточка и пароль снимаются; чужой id — отказ; Связка не отдала
+// пароль (заперта) — карточка остается: без нее пароль стал бы сиротой,
+// которую не найти ни поиском, ни окном.
+func TestService_Delete(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	b := card(t, "CRM", domain.EnvTest, "api")
+	for _, c := range []domain.Credential{a, b} {
+		if err := svc.Add(c, pw(t, "s3cret")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.Delete("nope"); !errors.Is(err, domain.ErrCredentialNotFound) {
+		t.Fatalf("чужой id: %v", err)
+	}
+	secrets.failDelete = true
+	if err := svc.Delete(a.ID()); err == nil || len(cards.list) != 2 {
+		t.Fatalf("запертая Связка: %v, карточек %d", err, len(cards.list))
+	}
+	secrets.failDelete = false
+	if err := svc.Delete(a.ID()); err != nil {
+		t.Fatal(err)
+	}
+	if len(cards.list) != 1 || cards.list[0].ID() != b.ID() {
+		t.Fatalf("осталось %v", cards.list)
+	}
+	if _, ok := secrets.m[a.ID()]; ok {
+		t.Fatal("пароль остался в Связке")
+	}
+	if secrets.m[b.ID()] != "s3cret" {
+		t.Fatal("задет чужой пароль")
+	}
+}
