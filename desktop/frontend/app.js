@@ -1196,7 +1196,8 @@ panel.addEventListener("click", async (e) => {
     const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
     inp.type = show ? "text" : "password";
     eye.setAttribute("aria-pressed", String(show));
-    eye.setAttribute("aria-label", show ? "Скрыть токен" : "Показать набранный токен");
+    const what = eye.dataset.eye === "chat-key" ? "ключ" : "токен";
+    eye.setAttribute("aria-label", show ? `Скрыть ${what}` : `Показать набранный ${what}`);
     return;
   }
   const b = e.target.closest("button");
@@ -1925,6 +1926,10 @@ async function loadChatSettings() {
   renderMicChoices();
   setMic(dict.on);
   $("#chat-key").value = "";
+  // Сохраненный ключ на страницу не возвращается; что он есть — говорит отметка (#496).
+  $("#chat-key-saved").hidden = !s.hasKey;
+  $("#chat-key").type = "password";
+  $('[data-eye="chat-key"]').setAttribute("aria-pressed", "false");
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
