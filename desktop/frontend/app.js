@@ -756,6 +756,13 @@ function showEmpty() {
 // --- Клавиатура ----------------------------------------------------------------
 document.addEventListener("keydown", (e) => {
   if (settingsOpen()) return; // клавиши поиска не трогают панель источников
+  // В модуле выдача поиска скрыта: стрелки и Enter открывали бы ее старую строку,
+  // буквы уводили бы фокус в скрытое поле (ревью #509). Tab листает вкладки, как
+  // везде; Esc прячет окно — скрытый запрос он не трогает.
+  if ($("#app").classList.contains("module-open") && e.key !== "Tab") {
+    if (e.key === "Escape" && !e.defaultPrevented && window.runtime) window.runtime.Hide();
+    return;
+  }
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
   else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
@@ -1886,12 +1893,13 @@ function showModule(id) {
   $("#chat-view").hidden = !mod || mod.view !== "chat";
   $("#stats-view").hidden = !mod || mod.view !== "stats";
   $("#access-view").hidden = !mod || mod.view !== "access";
+  const helpWasOpen = !$("#help-view").hidden; // render() зовет showModule часто: не сбивать фокус и выбор
   $("#help-view").hidden = !mod || mod.view !== "help";
   if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
   else if (mod && mod.view === "access") openAccess();
-  else if (mod && mod.view === "help") openHelp();
+  else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
   else if (mod) {
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
@@ -3853,89 +3861,26 @@ $("#look-access").addEventListener("change", (e) => {
 });
 
 // --- Справка (решение владельца 07.11) ----------------------------------------
-// Команды движка и клавиши окна для человека с окном: без личных путей и
-// обёрток. Команды и флаги сверены с `kbengine <команда> --help` сборки 52ad0240;
-// суммы, имена счетов и адреса — примеры. Новая команда движка — строка здесь.
-const HELP = [
-  { id: "window", t: "Окно DVK", c: "var(--z-sp4)", lead: "Клавиши работают в окне; ⌥Space — из любого приложения.", items: [
-    { k: ["⌥Space"], d: "открыть или спрятать окно из любого приложения" },
-    { k: ["⌘,"], d: "настройки: источники, подключения, чат и модель, окно, оформление" },
-    { k: ["⌘1", "…", "⌘9"], d: "Поиск, потом модули по порядку вкладок" },
-    { k: ["↑", "↓", "Enter"], d: "выбрать в выдаче и открыть" },
-    { k: ["Esc"], d: "закрыть настройки или остановить чтение вслух" },
-    { k: ["⌘\\"], d: "в Чате — спрятать или показать панель чатов" },
-  ] },
-  { id: "search", t: "Поиск", c: "var(--z-sp5)", lead: "То же, что строка поиска окна, но из терминала.", items: [
-    { cmd: 'kbengine search -q "сборка мусора" --catalog catalog.json', d: "поиск по базе: слова, опечатки, раскладка; --limit — сколько показать" },
-    { cmd: 'kbengine files -q "договор аренды" --root ~/Documents', d: "поиск по файлам папки; --root можно повторять, --exclude — пропустить папку" },
-    { cmd: "kbengine search --build-index --catalog catalog.json --embed-url http://127.0.0.1:11434/api/embeddings", d: "собрать смысловой индекс рядом с каталогом (нужна служба эмбеддингов, например Ollama)" },
-  ] },
-  { id: "fin", t: "Финансы", c: "var(--z-sp1)", lead: "Журнал — --ledger, книга Excel — --from. Удобно завести алиас с этими путями.", items: [
-    { cmd: "kbengine fin add --amount '1 250' --cat Еда --place Магнит --account Карта", d: "записать трату; дата по умолчанию сегодня, --date ГГГГ-ММ-ДД — другая" },
-    { cmd: "kbengine fin add --kind income --amount 50000 --account Карта --note 'за ноябрь'", d: "записать доход" },
-    { cmd: "kbengine fin report --year 2026 --month 11", d: "отчет за месяц: расходы, доходы, итог, по категориям и счетам" },
-    { cmd: "kbengine fin list --cat Еда --month 11", d: "список записей по фильтру: счет, категория, месяц, вид" },
-    { cmd: "kbengine fin balance --bank Карта --amount '12 400'", d: "подтвердить остаток счета; сначала запишите траты, потом остаток" },
-    { cmd: "kbengine fin sync --dry-run", d: "что уйдет в книгу Excel — посмотреть до записи; без --dry-run — записать" },
-  ] },
-  { id: "serve", t: "Своя витрина", c: "var(--z-sp2)", lead: "Витрина базы и финансов на этом Mac — и данные для модуля «Финансы».", items: [
-    { cmd: "kbengine serve --addr 127.0.0.1:8097 --catalog catalog.json --ledger transactions.jsonl --from Учет.xlsx", d: "запустить витрину и открыть http://127.0.0.1:8097; адрес в сети без --token-file и TLS сервер не примет" },
-    { k: ["Настройки", "→", "Окно", "→", "Модули"], d: "«Финансы берут данные из» → этот Mac, адрес как в --addr" },
-  ] },
-  { id: "access", t: "Доступы", c: "var(--z-src-violet)", lead: "Пароль хранится в Связке ключей и в терминал не печатается.", items: [
-    { cmd: "kbengine creds add --product Биллинг --env прод --login admin --url https://billing.example.org", d: "завести доступ; пароль спросит и положит в Связку ключей" },
-    { cmd: "kbengine creds find биллинг прод", d: "найти карточку доступа по словам" },
-    { cmd: "kbengine creds copy <id>", d: "скопировать пароль в буфер на 30 секунд" },
-    { cmd: "kbengine creds rm <id>", d: "снять доступ: пароль из Связки и карточку" },
-  ] },
-  { id: "kb", t: "База знаний", c: "var(--z-sp6)", lead: "Пополнение и уход за каталогом.", items: [
-    { cmd: "kbengine add --title 'Разбор очередей' --url https://example.org/queues --category engineering --verdict keep", d: "добавить чужой материал по ссылке; свой — --file вместо --url" },
-    { cmd: "kbengine set --ids 12,14 --lifecycle outdated", d: "сменить состояние, категорию, теги у нескольких записей" },
-    { cmd: "kbengine audit", d: "проверить каталог" },
-    { cmd: "kbengine dedup", d: "найти возможные дубли" },
-    { cmd: "kbengine drift --limit 50", d: "проверить, живы ли ссылки; отчет начинается с того, что не проверено" },
-  ] },
-  { id: "mcp", t: "Агент в чате (MCP)", c: "var(--z-sp3)", lead: "База и папки окна прямо в Claude: агент ищет сам.", items: [
-    { cmd: 'kbengine-mcp --catalog catalog.json --files-config "~/Library/Application Support/kb-desktop/config.json"', d: "запустить сервер MCP; источники он берет из настроек окна" },
-    { k: ["search_catalog", "get_entry", "stats"], d: "инструменты агента: поиск по базе, карточка записи, сводка" },
-    { k: ["search_files", "read_file"], d: "инструменты агента: поиск по папкам окна и чтение файла" },
-    { k: ["search_access"], d: "инструмент агента: карточки доступов без паролей — пароль агенту не отдается никогда" },
-  ] },
-];
-// Слова задачи → то, что стоит в команде: человек пишет «трата», а не «fin add».
-const HELP_SYN = { "трата": "fin add", "потратил": "fin add", "расход": "fin add", "доход": "income", "зарплата": "income", "остаток": "balance", "баланс": "balance",
-  "пароль": "creds", "логин": "creds", "ссылки": "drift", "дубли": "dedup", "открыть окно": "⌥space", "горячая": "⌥space", "excel": "sync", "книга": "sync",
-  "агент": "mcp", "claude": "mcp", "файлы": "files", "документ": "files", "настройки": "⌘," };
-const hp = { words: [], sec: "", cur: 0, sel: -1, first: true };
-const hpHay = (s, it) => (s.t + " " + it.d + " " + (it.cmd || it.k.join(" "))).toLowerCase();
-const hpExpand = (w) => [w, ...Object.entries(HELP_SYN).filter(([k]) => k.startsWith(w) || w.startsWith(k)).map(([, v]) => v)];
-const hpHits = (s) => s.items.filter((it) => hp.words.every((w) => hpExpand(w).some((x) => hpHay(s, it).includes(x))));
-function hpMark(text) {
-  let out = esc(text);
-  for (const w of hp.words) {
-    const re = new RegExp("(" + reEsc(w) + ")", "gi");
-    out = out.replace(/(<[^>]*>)|([^<]+)/g, (m, tag, txt) => tag || txt.replace(re, "<mark>$1</mark>"));
-  }
-  return out;
-}
-const hpKeys = (k) => k.map((x) => (x === "→" || x === "…" ? `<span class="hp-sep">${x}</span>` : `<span class="kbd">${hpMark(x)}</span>`)).join(" ");
-const hpHead = (it) => (it.cmd ? `<div class="hp-cmd"><span class="p">$ </span>${hpMark(it.cmd)}</div>` : hpKeys(it.k));
+const hp = { terms: helpTerms(""), sec: "", cur: 0, sel: -1, first: true, mark: helpMarker([]) };
+const hpKeys = (k) => k.map((x) => (x === "→" || x === "…" ? `<span class="hp-sep">${x}</span>` : `<span class="kbd">${hp.mark(x)}</span>`)).join(" ");
+const hpHead = (it) => (it.cmd ? `<div class="hp-cmd"><span class="p">$ </span>${hp.mark(it.cmd)}</div>` : hpKeys(it.k));
 function hpRender(animate) {
-  const q = hp.words.length > 0;
-  const shown = q ? HELP.filter((s) => (!hp.sec || s.id === hp.sec) && hpHits(s).length) : [HELP[hp.cur]];
+  const q = hp.terms.words.length > 0;
+  const hits = new Map(HELP.map((s) => [s.id, helpHits(s, hp.terms)])); // один раз на отрисовку: счета и список не разойдутся
+  const shown = q ? HELP.filter((s) => (!hp.sec || s.id === hp.sec) && hits.get(s.id).length) : [HELP[hp.cur]];
   const total = HELP.reduce((n, s) => n + s.items.length, 0);
-  const found = q ? shown.reduce((n, s) => n + hpHits(s).length, 0) : total;
+  const found = q ? shown.reduce((n, s) => n + hits.get(s.id).length, 0) : total;
   $("#hp-count").textContent = q ? `найдено ${found} из ${total}` : `${total} ${plural(total, "команда", "команды", "команд")} и клавиш`;
   $("#hp-nav").innerHTML = HELP.map((s, i) => {
-    const n = q ? hpHits(s).length : s.items.length;
+    const n = hits.get(s.id).length;
     return `<button data-hs="${i}" aria-current="${q ? hp.sec === s.id : i === hp.cur}" class="${q && !n ? "none" : ""}"><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}<span class="n">${n}</span></button>`;
   }).join("");
-  $("#hp-chips").innerHTML = HELP.map((s) => `<button data-hc="${s.id}" aria-pressed="${hp.sec === s.id}"><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}${q ? ` <span class="n">${hpHits(s).length}</span>` : ""}</button>`).join("");
+  $("#hp-chips").innerHTML = HELP.map((s) => `<button data-hc="${s.id}" aria-pressed="${hp.sec === s.id}"><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}${q ? ` <span class="n">${hits.get(s.id).length}</span>` : ""}</button>`).join("");
   let idx = 0;
   const main = $("#hp-main");
   main.classList.toggle("anim", !!animate);
   main.innerHTML = shown.length ? shown.map((s) => `<section class="hp-sec"><h3><span class="hp-dot" style="background:${s.c}"></span>${esc(s.t)}</h3><p class="hp-lead">${esc(s.lead)}</p>` +
-    (q ? hpHits(s) : s.items).map((it) => `<div class="hp-item" data-hi="${idx}" style="--i:${idx++}"><div class="hp-body">${hpHead(it)}<div class="d">${hpMark(it.d)}</div></div>${it.cmd ? `<button class="hp-copy" data-copy="${esc(it.cmd)}">копировать</button>` : ""}</div>`).join("") + `</section>`).join("")
+    hits.get(s.id).map((it) => `<div class="hp-item" data-hi="${idx}" style="--i:${idx++}"><div class="hp-body">${hpHead(it)}<div class="d">${hp.mark(it.d)}</div></div>${it.cmd ? `<button class="hp-copy" data-copy="${esc(it.cmd)}">копировать</button>` : ""}</div>`).join("") + `</section>`).join("")
     : `<div class="hp-empty">Ничего не нашлось по «<b>${esc($("#hp-q").value)}</b>». Попробуйте задачу другими словами: «трата», «пароль», «ссылки», «открыть окно».</div>`;
   hp.sel = q && idx ? 0 : -1;
   hpPaintSel();
@@ -3960,7 +3905,8 @@ async function hpCopy(btn) {
 }
 function hpSetQuery(v) {
   $("#hp-q").value = v;
-  hp.words = v.toLowerCase().split(/\s+/).filter(Boolean);
+  hp.terms = helpTerms(v);
+  hp.mark = helpMarker(hp.terms.words);
   if (!v) hp.sec = "";
   $("#hp-clear").hidden = !v;
   hpRender(false);
@@ -3977,18 +3923,20 @@ $("#hp-q").addEventListener("keydown", (e) => {
   else if (e.key === "ArrowUp" && n) { e.preventDefault(); hp.sel = (hp.sel - 1 + n) % n; hpPaintSel(); }
   else if (e.key === "Enter") { const b = document.querySelector(".hp-item.sel .hp-copy"); if (b) { e.preventDefault(); hpCopy(b); } }
   else if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); hpSetQuery(""); }
+  // пустой Esc уходит дальше: в модуле он прячет окно, как второй Esc поиска
 });
 $("#hp-clear").addEventListener("click", () => { hpSetQuery(""); $("#hp-q").focus(); });
 $("#hp-nav").addEventListener("click", (e) => {
   const b = e.target.closest("[data-hs]"); if (!b) return;
   const i = +b.dataset.hs;
-  if (hp.words.length) hp.sec = hp.sec === HELP[i].id ? "" : HELP[i].id; else hp.cur = i;
+  if (hp.terms.words.length) hp.sec = hp.sec === HELP[i].id ? "" : HELP[i].id;
+  else { hp.cur = i; hp.sec = ""; } // нажатый чип не фильтрует следующий поиск молча (ревью #509)
   hpRender(true);
 });
 $("#hp-chips").addEventListener("click", (e) => {
   const b = e.target.closest("[data-hc]"); if (!b) return;
   hp.sec = hp.sec === b.dataset.hc ? "" : b.dataset.hc;
-  if (!hp.words.length && hp.sec) hp.cur = HELP.findIndex((s) => s.id === hp.sec);
+  if (!hp.terms.words.length && hp.sec) hp.cur = HELP.findIndex((s) => s.id === hp.sec);
   hpRender(true);
 });
 $("#hp-main").addEventListener("click", (e) => { const b = e.target.closest(".hp-copy"); if (b) hpCopy(b); });
