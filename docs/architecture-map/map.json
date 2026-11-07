@@ -1203,7 +1203,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "desktop/portrait.go:215"
+        "desktop/portrait.go:244"
       ]
     },
     {
@@ -4196,8 +4196,8 @@
           "from": "owner",
           "to": "surf-dvk-portrait",
           "call": "правит факт в строке экрана портрета",
-          "detail": "desktop/portrait.go:215 — Страница зовет привязку Wails PortraitEdit; правка сохраняется, когда строка теряет фокус",
-          "source": "desktop/portrait.go:215",
+          "detail": "desktop/portrait.go:244 — Страница зовет привязку Wails PortraitEdit; правка сохраняется, когда строка теряет фокус",
+          "source": "desktop/portrait.go:244",
           "symbol": "PortraitEdit",
           "unverified": false
         },
@@ -4206,8 +4206,8 @@
           "from": "surf-dvk-portrait",
           "to": "uc-portrait",
           "call": "portrait(): хранилище по настройке",
-          "detail": "desktop/portrait.go:140 — Выбран kb-сервер из «Источников» — kbserver.PortraitStore с токеном этого источника; иначе файл в папке. Замок окна передается сервису",
-          "source": "desktop/portrait.go:140",
+          "detail": "desktop/portrait.go:164 — Выбран kb-сервер из «Источников» — kbserver.PortraitStore с токеном этого источника; иначе файл в папке. Замок окна передается сервису",
+          "source": "desktop/portrait.go:164",
           "symbol": "NewPortraitStore",
           "unverified": false
         },
@@ -4216,8 +4216,8 @@
           "from": "uc-portrait",
           "to": "dom-portrait",
           "call": "change → Portrait.Edit",
-          "detail": "internal/usecase/portrait/portrait.go:153 — Под замком только чтение-правка-запись; модель думает вне его",
-          "source": "internal/usecase/portrait/portrait.go:153",
+          "detail": "internal/usecase/portrait/portrait.go:169 — Под замком только чтение-правка-запись; модель думает вне его",
+          "source": "internal/usecase/portrait/portrait.go:169",
           "symbol": "Edit",
           "unverified": false
         },
@@ -4226,8 +4226,8 @@
           "from": "dom-portrait",
           "to": "uc-portrait",
           "call": "повтор текста в разделе — ErrFactExists",
-          "detail": "internal/domain/portrait.go:194 — Правка не может повторить другой факт раздела: такой портрет следующее чтение отвергло бы целиком",
-          "source": "internal/domain/portrait.go:194",
+          "detail": "internal/domain/portrait.go:226 — Правка не может повторить другой факт раздела: такой портрет следующее чтение отвергло бы целиком",
+          "source": "internal/domain/portrait.go:226",
           "symbol": "sameText",
           "unverified": false
         },
