@@ -2,9 +2,11 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/credsjson"
 	"github.com/daniil/kb-engine/internal/usecase/creds"
@@ -53,6 +55,10 @@ const secretPW = "Kq7!vR2m-Tz9p"
 // Touch ID, каждый раз; отказ Touch ID — ни пароля, ни буфера.
 func TestAccessDesk(t *testing.T) {
 	d, auth := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	auth.asked = nil
 	if err := d.Add(accessIn{Product: "Склад-Про", Env: "прод", Login: "admin.ops", URL: "https://sklad.example.com", Role: "администратор", Note: "только из офиса"}, secretPW); err != nil {
 		t.Fatal(err)
 	}
@@ -92,6 +98,9 @@ func TestAccessDesk(t *testing.T) {
 // Отказы добавления понятны окну: повтор, чужая среда, пустой пароль.
 func TestAccessDesk_addRefusals(t *testing.T) {
 	d, _ := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
 	in := accessIn{Product: "CRM", Env: "test", Login: "api", Host: "192.0.2.61"}
 	if err := d.Add(in, secretPW); err != nil {
 		t.Fatal(err)
@@ -115,11 +124,83 @@ func TestAccessDesk_addRefusals(t *testing.T) {
 // подделать нельзя, и окно говорит, почему.
 func TestAccessDesk_noHelper(t *testing.T) {
 	d, _ := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
 	d.auth = nil
 	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := d.Reveal("crm-test-api"); err == nil || !strings.Contains(err.Error(), "kb-auth") {
 		t.Fatalf("без помощника: %v", err)
+	}
+}
+
+// Список и добавление — только в открытом хранилище: заметки «видны только
+// в окне» и не отдаются любому JS до Touch ID; Close запирает снова.
+func TestAccessDesk_sessionGatesListAndAdd(t *testing.T) {
+	auth := &fakeAuth{ok: true}
+	d := &accessDesk{svc: creds.Service{Cards: credsjson.Store{Path: filepath.Join(t.TempDir(), "c.json")}, Secrets: memSecrets{}}, auth: auth}
+	if _, err := d.List(""); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("список до открытия: %v", err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("добавление до открытия: %v", err)
+	}
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.List(""); err != nil {
+		t.Fatalf("список после открытия: %v", err)
+	}
+	d.Close()
+	if _, err := d.List(""); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("список после закрытия: %v", err)
+	}
+}
+
+// fakeHelper writes a shell script standing in for kb-auth.
+func fakeHelper(t *testing.T, script string) kbAuth {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "kb-auth")
+	if err := os.WriteFile(p, []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return kbAuth{bin: p, wait: 2 * time.Second}
+}
+
+// Коды выхода kb-auth: 0 — подтвердил; 1 — отказ; 2, сигнал — тоже не «да».
+func TestKbAuth_Check(t *testing.T) {
+	for _, c := range []struct {
+		name   string
+		script string
+		ok     bool
+		denied bool
+	}{
+		{"подтвердил", "echo ok; exit 0", true, false},
+		{"отказ", "echo 'Отменено' >&2; exit 1", false, true},
+		{"проверить нечем", "echo 'нет пароля' >&2; exit 2", false, false},
+		{"убит сигналом", "kill -9 $$", false, false},
+	} {
+		err := fakeHelper(t, c.script).Check("тест")
+		if (err == nil) != c.ok || errors.Is(err, errAuthDenied) != c.denied {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+}
+
+// Copy: «copied» — успех; другое или тишина — ошибка, и не вечное ожидание.
+func TestKbAuth_Copy(t *testing.T) {
+	if err := fakeHelper(t, `cat >/dev/null; echo copied; sleep 5`).Copy(secretPW); err != nil {
+		t.Fatalf("copied: %v", err)
+	}
+	if err := fakeHelper(t, `cat >/dev/null; echo nope`).Copy(secretPW); err == nil || strings.Contains(err.Error(), "%!") {
+		t.Fatalf("чужая строка: %v", err)
+	}
+	h := fakeHelper(t, `cat >/dev/null; sleep 30`)
+	h.wait = 300 * time.Millisecond
+	start := time.Now()
+	if err := h.Copy(secretPW); err == nil || time.Since(start) > 5*time.Second {
+		t.Fatalf("зависший помощник: %v за %v", err, time.Since(start))
 	}
 }
