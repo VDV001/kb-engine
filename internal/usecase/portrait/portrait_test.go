@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,21 +60,21 @@ func TestService_Manual(t *testing.T) {
 	ctx := t.Context()
 	s, st := newSvc(t, &fakeModel{})
 	f, err := s.Add(ctx, sect(t, "work"), "Пишет на Go")
-	if err != nil || !f.Approved() || f.Source() != "добавлено вручную" {
+	if err != nil || !f.Approved() || f.Origin() != domain.OriginManual {
 		t.Fatalf("add: %+v %v", f, err)
 	}
 	if err := s.Edit(ctx, f.ID(), "Пишет на Go и TS"); err != nil {
 		t.Fatal(err)
 	}
-	if got := st.p.Approved()[0]; got.Text() != "Пишет на Go и TS" || got.Source() != "исправлено вручную" {
+	if got := st.p.Approved()[0]; got.Text() != "Пишет на Go и TS" || got.Origin() != domain.OriginEdited {
 		t.Fatalf("edit: %+v", got)
 	}
-	pend, _ := domain.NewFact("p1", sect(t, "prefs"), "Отвечать коротко", "из чата 06.11", domain.FactPending, now)
+	pend, _ := domain.NewFact("p1", sect(t, "prefs"), "Отвечать коротко", domain.OriginChat, domain.FactPending, now)
 	st.p, _ = st.p.Add(pend)
 	if err := s.Approve(ctx, "p1", "Отвечать коротко, без вступлений"); err != nil {
 		t.Fatal(err)
 	}
-	if a := st.p.Approved(); len(a) != 2 || a[1].Text() != "Отвечать коротко, без вступлений" || a[1].Source() != "из чата 06.11, исправлено" {
+	if a := st.p.Approved(); len(a) != 2 || a[1].Text() != "Отвечать коротко, без вступлений" || a[1].Origin() != domain.OriginChatEdited {
 		t.Fatalf("approve: %+v", a)
 	}
 	if err := s.Remove(ctx, f.ID()); err != nil || len(st.p.Facts()) != 1 {
@@ -98,7 +99,7 @@ func TestService_Extract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Text() != "Отвечать коротко" || got[0].Approved() || got[0].Source() != "из чата 06.11" {
+	if len(got) != 1 || got[0].Text() != "Отвечать коротко" || got[0].Approved() || got[0].Origin() != domain.OriginChat || !got[0].At().Equal(now) {
 		t.Fatalf("новое = %+v", got)
 	}
 	if len(st.p.Pending()) != 1 {
@@ -127,7 +128,7 @@ func TestService_Compress(t *testing.T) {
 	s, st := newSvc(t, m)
 	_, _ = s.Add(ctx, sect(t, "work"), "Пишет на Go")
 	_, _ = s.Add(ctx, sect(t, "work"), "Пишет на TypeScript")
-	pend, _ := domain.NewFact("p1", sect(t, "plans"), "Выпуск до НГ", "из чата", domain.FactPending, now)
+	pend, _ := domain.NewFact("p1", sect(t, "plans"), "Выпуск до НГ", domain.OriginChat, domain.FactPending, now)
 	st.p, _ = st.p.Add(pend)
 	cmp, err := s.Compress(ctx)
 	prop := cmp.Proposals
@@ -148,8 +149,11 @@ func TestService_Compress(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, p := st.p.Approved(), st.p.Pending()
-	if len(a) != 2 || len(p) != 1 || !strings.Contains(domain.PortraitText(a), "Отвечать коротко") || !strings.Contains(domain.PortraitText(a), "база знаний") {
+	if len(a) != 2 || len(p) != 1 || !strings.Contains(portrait.Text(a), "Отвечать коротко") || !strings.Contains(portrait.Text(a), "база знаний") {
 		t.Fatalf("после: %+v / %+v", a, p)
+	}
+	if !slices.ContainsFunc(a, func(f domain.Fact) bool { return f.Origin() == domain.OriginCompressed }) {
+		t.Fatalf("сжатое не помечено происхождением «сжато»: %+v", a)
 	}
 }
 
@@ -158,14 +162,14 @@ func TestService_Compress(t *testing.T) {
 func TestContext(t *testing.T) {
 	mk := func(id, s, text string) domain.Fact {
 		sec, _ := domain.NewFactSection(s)
-		f, _ := domain.NewFact(id, sec, text, "src", domain.FactApproved, now)
+		f, _ := domain.NewFact(id, sec, text, domain.OriginManual, domain.FactApproved, now)
 		return f
 	}
 	p, _ := domain.NewPortrait([]domain.Fact{
 		mk("a", "about", "Разработчик"), mk("b", "prefs", "Отвечать коротко"),
 		mk("c", "work", "Настраивает голос окна DVK"), mk("d", "plans", "Переезд весной"),
 	})
-	full := domain.PortraitText(p.Approved())
+	full := portrait.Text(p.Approved())
 	if c := portrait.Context(p, "вопрос", 1000, portrait.ContextAuto); !c.Fits || c.Text != full || c.Size != len([]rune(full)) {
 		t.Fatalf("помещается: %+v", c)
 	}
@@ -208,7 +212,7 @@ func (r *raceStore) Save(ctx context.Context, p domain.Portrait) error {
 // Портрет на kb-сервере правят два устройства: проигравший перечитывает
 // и применяет свою правку к свежему, ничего чужого не теряя.
 func TestService_ConflictRereads(t *testing.T) {
-	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", "с телефона", domain.FactApproved, now)
+	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", domain.OriginManual, domain.FactApproved, now)
 	for _, tc := range []struct {
 		name string
 		do   func(*portrait.Service) error
@@ -231,7 +235,7 @@ func TestService_ConflictRereads(t *testing.T) {
 			if err := tc.do(s); err != nil {
 				t.Fatal(err)
 			}
-			got := domain.PortraitText(st.p.Facts())
+			got := portrait.Text(st.p.Facts())
 			if !strings.Contains(got, "Слушает ответы в машине") || !strings.Contains(got, tc.want) {
 				t.Fatalf("портрет после конфликта = %q", got)
 			}
@@ -245,7 +249,7 @@ func TestService_Propose(t *testing.T) {
 	ctx := t.Context()
 	s, st := newSvc(t, &fakeModel{})
 	f, err := s.Propose(ctx, sect(t, "prefs"), "Отвечать коротко")
-	if err != nil || f.Approved() || f.Source() != "из чата 06.11" {
+	if err != nil || f.Approved() || f.Origin() != domain.OriginChat {
 		t.Fatalf("предложено: %+v %v", f, err)
 	}
 	if len(st.p.Pending()) != 1 {
@@ -262,7 +266,7 @@ func TestService_Restore(t *testing.T) {
 	ctx := t.Context()
 	s, st := newSvc(t, &fakeModel{})
 	at := now.Add(-48 * time.Hour)
-	f, _ := domain.NewFact("x7", sect(t, "prefs"), "Отвечать коротко", "из чата 05.11", domain.FactApproved, at)
+	f, _ := domain.NewFact("x7", sect(t, "prefs"), "Отвечать коротко", domain.OriginChat, domain.FactApproved, at)
 	st.p, _ = st.p.Add(f)
 	if err := s.Remove(ctx, "x7"); err != nil {
 		t.Fatal(err)
@@ -271,7 +275,7 @@ func TestService_Restore(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := st.p.Facts()
-	if len(got) != 1 || got[0].ID() != "x7" || got[0].Source() != "из чата 05.11" || !got[0].At().Equal(at) || !got[0].Approved() {
+	if len(got) != 1 || got[0].ID() != "x7" || got[0].Origin() != domain.OriginChat || !got[0].At().Equal(at) || !got[0].Approved() {
 		t.Fatalf("вернулось: %+v", got)
 	}
 	if err := s.Restore(ctx, f); !errors.Is(err, domain.ErrFactExists) {
@@ -295,5 +299,30 @@ func TestService_ExtractBounded(t *testing.T) {
 	}
 	if n := len([]rune(m.user)); n > portrait.MaxExtractRunes {
 		t.Fatalf("в разбор ушло %d знаков, предел %d", n, portrait.MaxExtractRunes)
+	}
+}
+
+// Текст портрета для модели — только одобренное, по разделам в их порядке.
+// Названия разделов здесь — часть запроса к модели, а не подписи окна.
+func TestText(t *testing.T) {
+	mk := func(id, s, text string, st domain.FactStatus) domain.Fact {
+		f, err := domain.NewFact(id, sect(t, s), text, domain.OriginManual, st, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	p, _ := domain.NewPortrait([]domain.Fact{
+		mk("a", "prefs", "Отвечать коротко", domain.FactApproved),
+		mk("b", "about", "Разработчик", domain.FactApproved),
+		mk("c", "about", "Готовится к роли тимлида", domain.FactApproved),
+		mk("d", "work", "Тайное, ждет одобрения", domain.FactPending),
+	})
+	want := "Обо мне: Разработчик; Готовится к роли тимлида.\nПредпочтения: Отвечать коротко."
+	if got := portrait.Text(p.Approved()); got != want {
+		t.Fatalf("текст:\n%s\nwant:\n%s", got, want)
+	}
+	if portrait.Text(nil) != "" {
+		t.Fatal("пустой портрет не пуст")
 	}
 }

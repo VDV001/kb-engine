@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -75,7 +76,7 @@ func TestPortraitStore(t *testing.T) {
 		t.Fatalf("пустой: %v %v", p.Facts(), err)
 	}
 	at := time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC)
-	f, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", "вручную", domain.FactApproved, at)
+	f, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", domain.OriginManual, domain.FactApproved, at)
 	if p, err = p.Add(f); err != nil {
 		t.Fatal(err)
 	}
@@ -89,10 +90,10 @@ func TestPortraitStore(t *testing.T) {
 		t.Fatalf("второе устройство по старой версии = %v", err)
 	}
 	got, err := phone.Load(ctx)
-	if err != nil || !strings.Contains(domain.PortraitText(got.Facts()), "Пишет на Go") {
+	if err != nil || !slices.ContainsFunc(got.Facts(), func(f domain.Fact) bool { return f.Text() == "Пишет на Go" }) {
 		t.Fatalf("прочитано: %v %v", got.Facts(), err)
 	}
-	g, _ := domain.NewFact("f2", domain.SectionPrefs, "Отвечать коротко", "вручную", domain.FactApproved, at)
+	g, _ := domain.NewFact("f2", domain.SectionPrefs, "Отвечать коротко", domain.OriginManual, domain.FactApproved, at)
 	got, _ = got.Add(g)
 	if err := phone.Save(ctx, got); err != nil {
 		t.Fatalf("правка от свежей версии: %v", err)
