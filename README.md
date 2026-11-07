@@ -51,7 +51,10 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   hand, found after an answer or offered by the model — new ones wait for your
   approval. It lives in a folder of your choice (0600) or on your kb server
   (`GET/PUT /api/portrait`, versioned by ETag). With a cloud model the approved
-  portrait goes to its provider with every chat; the window says so.
+  portrait goes to its provider with every chat; the window says so. The
+  **Finances** module shows the engine's finance pages inside the window; their
+  data comes from a kb server in Sources or from your own `kbengine serve` on
+  this Mac — Settings → Modules → «Финансы берут данные из».
 - **Link drift** — `drift` checks whether the catalog's urls are still alive,
   records the verdict, and can replace an address with the canonical one from a
   redirect. Its report starts with what it did **not** check.

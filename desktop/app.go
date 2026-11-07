@@ -64,6 +64,11 @@ func (a *App) Modules() []desktopconfig.Module { return a.settings.Modules() }
 // SetModules saves which modules are on.
 func (a *App) SetModules(list []desktopconfig.Module) error { return a.settings.SetModules(list) }
 
+// SetModuleServer saves where the module takes its data (финансы: сервер или этот Mac).
+func (a *App) SetModuleServer(id desktopconfig.ModuleID, server string) error {
+	return a.settings.SetModuleServer(id, server)
+}
+
 // Tabs returns the search tabs after «Все».
 func (a *App) Tabs() []desktopconfig.Tab { return a.settings.Tabs() }
 

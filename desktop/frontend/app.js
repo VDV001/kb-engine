@@ -363,7 +363,7 @@ const tabItems = (t, kb, files) =>
 const MODULES = {
   chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat",
     icon: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z"/>' },
-  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances", // сразу раздел финансов, а не главная витрины
+  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера или своего kbengine serve", src: "/app/?tab=finances", // сразу раздел финансов, а не главная витрины
     icon: '<circle cx="12" cy="12" r="8"/><path d="M10 16.5V7.5h3a2.5 2.5 0 0 1 0 5H8.5M8.5 14.5h5"/>' },
   stats: { name: "Статистика", what: "токены на вход и на выход, вызовы модели, ошибки — по дням, назначениям и моделям", view: "stats",
     icon: '<path d="M4 20h16M7 16.5V12M12 16.5V6.5M17 16.5V9.5"/>' },
@@ -906,6 +906,7 @@ const byKey = (k) => draft.sources.find((s) => s._key === k);
 function load(v) {
   state.known = v.sources || [];
   refreshTabs(); // подписи вкладок по источникам зависят от списка
+  renderFinServer(); // серверы в выборе «Финансы берут данные из»
   draft.sources = (v.sources || []).map((s) => ({ ...s, _key: "k" + ++keySeq, _orig: target(s), _was: s.enabled }));
   draft.exclude = [...(v.exclude || [])];
   draft.tokens = {};
@@ -1896,14 +1897,76 @@ function renderModules() {
     return `<li><span class="t">${esc(m.name)}</span><span class="w">${esc(m.what)}</span>
       <button class="sw" role="switch" aria-checked="${on}" aria-label="${on ? "Выключить" : "Включить"}: ${esc(m.name)}" data-module="${id}" ${editable ? "" : "disabled"}></button></li>`;
   }).join("");
+  renderFinServer();
 }
+// Откуда «Финансы» берут данные (решение владельца 07.11): первый kb-сервер,
+// сервер из «Источников» или свой kbengine serve на этом Mac — адрес вписывают.
+const FIN_LOCAL = "http://127.0.0.1:8097";
+const isLocalServer = (v) => v.includes("://");
+function renderFinServer() {
+  const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
+  const servers = state.known.filter((x) => x.kind === "server");
+  const pick = $("#fin-server-pick"), url = $("#fin-server-url");
+  const local = isLocalServer(cur);
+  const gone = cur && !local && !servers.some((x) => x.id === cur);
+  pick.innerHTML = `<option value="">первого kb-сервера из «Источников»</option>` +
+    servers.map((x) => `<option value="${esc(x.id)}">сервера «${esc(label(x))}»${x.enabled ? "" : " — выключен"}</option>`).join("") +
+    (gone ? `<option value="${esc(cur)}">сервера, которого нет в «Источниках»</option>` : "") +
+    `<option value="local">этого Mac — свой kbengine serve</option>`;
+  pick.value = local ? "local" : cur;
+  pick.disabled = !native();
+  if (document.activeElement !== url) url.value = local ? cur : FIN_LOCAL;
+  url.hidden = $("#fin-server-save").hidden = !local;
+}
+// withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.
+function withModule(id, patch) {
+  return state.modules.some((x) => x.id === id)
+    ? state.modules.map((x) => (x.id === id ? { ...x, ...patch } : x))
+    : [...state.modules, { id, enabled: false, ...patch }];
+}
+let finSaves = Promise.resolve();
+function saveFinAddress() {
+  const v = $("#fin-server-url").value.trim();
+  if (!v) { showError("Впишите адрес kbengine serve на этом Mac, например " + FIN_LOCAL); $("#fin-server-url").focus(); return; }
+  saveFinServer(v);
+}
+function saveFinServer(value) {
+  const prev = state.modules;
+  state.modules = withModule("finances", { server: value });
+  renderFinServer();
+  finSaves = finSaves.then(() => native().SetModuleServer("finances", value)).then(async () => {
+    showError("");
+    try { state.modules = (await native().Modules()) || state.modules; } catch { /* остается то, что на экране */ }
+    renderFinServer(); // окно приводит адрес (пробелы, «/» в конце) — показать сохраненный
+    const saved = (state.modules.find((x) => x.id === "finances") || {}).server || "";
+    if (isLocalServer(saved)) $("#fin-server-url").value = saved; // поле в фокусе renderFinServer не трогает
+    toast("Финансы", saved ? (isLocalServer(saved) ? ` · данные из ${saved}` : " · данные с выбранного сервера") : " · данные с первого kb-сервера", null, "info");
+    const f = $("#module-frame");
+    if (f.dataset.src) f.src = f.dataset.src; // открытая витрина перечитывает данные с нового места
+  }).catch(async (err) => {
+    showError("Сервер финансов не сохранен: " + errText(err));
+    state.modules = prev;
+    try { state.modules = (await native().Modules()) || prev; } catch { /* остается прежнее */ }
+    renderFinServer();
+  });
+}
+$("#fin-server-pick").addEventListener("change", (e) => {
+  if (!native()) return;
+  if (e.target.value !== "local") { saveFinServer(e.target.value); return; }
+  const url = $("#fin-server-url");
+  url.hidden = $("#fin-server-save").hidden = false;
+  url.focus();
+  url.select();
+});
+$("#fin-server-save").addEventListener("click", saveFinAddress);
+$("#fin-server-url").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); saveFinAddress(); } });
 // Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
 let moduleSaves = Promise.resolve();
 $("#module-list").addEventListener("click", (e) => {
   const b = e.target.closest("[data-module]");
   if (!b || !native()) return;
   const id = b.dataset.module, on = !state.modules.some((x) => x.id === id && x.enabled);
-  state.modules = [...state.modules.filter((x) => x.id !== id), { id, enabled: on }];
+  state.modules = withModule(id, { enabled: on }); // выбор сервера и порядок вкладок остаются
   if (!on && moduleOf(state.tab) === id) state.tab = "all"; // выключенный модуль не остается открытым
   renderModules();
   refreshTabs();
