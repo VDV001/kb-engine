@@ -253,3 +253,24 @@ func TestCloudSpeech_recordsGatewayCost(t *testing.T) {
 		t.Fatalf("кривая цена попала в счет: %+v", bad)
 	}
 }
+
+// Цена — учет, а не речь (ревью #507): шлюз прислал ее числом, null или
+// объектом — текст и звук все равно доходят; число тоже считается.
+func TestCloudSpeech_costOfAnyTypeKeepsSpeech(t *testing.T) {
+	cost := `0.000335`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"text":"привет","providerMetadata":{"gateway":{"cost":`+cost+`}}}`)
+	}))
+	defer srv.Close()
+	rec := &callsRec{}
+	c := cloudSpeech{base: srv.URL, client: srv.Client(), key: func() (string, error) { return "vck_test", nil }, calls: rec}
+	for _, v := range []string{`0.000335`, `null`, `{"usd":"1"}`} {
+		cost = v
+		if text, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:mini"]); err != nil || text != "привет" {
+			t.Fatalf("cost %s: %q, %v", v, text, err)
+		}
+	}
+	if len(rec.calls) != 3 || !rec.calls[0].Billed() || rec.calls[0].Cost() != 335_000_000 || rec.calls[1].Billed() || rec.calls[2].Billed() {
+		t.Fatalf("вызовы %+v", rec.calls)
+	}
+}

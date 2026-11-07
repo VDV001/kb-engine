@@ -97,10 +97,27 @@ func TestMoney_billedCalls(t *testing.T) {
 	if m.Days[6] != 96_250_000 || m.Days[5] != 335_000_000 {
 		t.Fatalf("по дням %v", m.Days)
 	}
-	if len(m.Models) != 2 || m.Models[0].Model != "google/gemini-3.8-flash-tts" || m.Models[0].Cost != 335_000_000 || !m.Models[0].Priced || m.Models[0].Counted != 1 {
+	if len(m.Models) != 2 || m.Models[0].Model != "google/gemini-3.8-flash-tts" || m.Models[0].Cost != 335_000_000 || !m.Models[0].Priced || m.Models[0].Counted != 0 || m.Models[0].Billed != 1 {
 		t.Fatalf("модели %+v", m.Models)
 	}
 	if len(m.Purposes) != 2 || m.Purposes[0].Purpose != domain.CallSpeak {
 		t.Fatalf("назначения %+v", m.Purposes)
+	}
+}
+
+// Вызовы одной модели со счетом шлюза и без него (отказ, ответ без цены):
+// «цена известна» не зависит от того, какой вызов в журнале последний (ревью #507).
+func TestMoney_billedPricedRegardlessOfOrder(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	billed, err := domain.NewBilledModelCall(time.Date(2026, 11, 7, 9, 0, 0, 0, time.UTC), domain.CallSpeak, "tts", 335_000_000, time.Second, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := call(t, time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), domain.CallSpeak, "tts", 0, 0, false)
+	for _, calls := range [][]domain.ModelCall{{billed, failed}, {failed, billed}} {
+		m := usage.NewMoney(calls, now, priceBook{})
+		if len(m.Models) != 1 || !m.Models[0].Priced || m.Models[0].Billed != 1 || m.Models[0].Cost != 335_000_000 || m.Uncounted != 1 {
+			t.Fatalf("модели %+v, без счета %d", m.Models, m.Uncounted)
+		}
 	}
 }

@@ -125,3 +125,21 @@ func TestChat_Money_uncountedOnlyModelIsNotPriceable(t *testing.T) {
 		}
 	}
 }
+
+// Облачная речь со счетом шлюза в деньгах (ревью #507): цена вызова уже
+// известна — расход виден, а поля своей цены нет, она ничего бы не поменяла.
+func TestChat_Money_billedModelShowsCostNotPriceInputs(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	rec := &callsRec{}
+	d.calls = rec
+	d.prices = gatewayPrices(t)
+	b, _ := domain.NewBilledModelCall(d.now().Add(-time.Hour), domain.CallListen, "openai/gpt-4o-mini-transcribe", 96_250_000, time.Second, false)
+	rec.calls = []domain.ModelCall{b}
+	v, err := d.StatsMoney()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Models) != 1 || v.Models[0].Priceable || !v.Models[0].Priced || v.Models[0].Cost <= 0 {
+		t.Fatalf("модели %+v", v.Models)
+	}
+}
