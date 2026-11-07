@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/adapter/keychain"
 )
 
 // fakeKeychain stands in for the macOS Keychain: тест не трогает настоящую
@@ -116,3 +118,43 @@ func TestClipboardStillOurs(t *testing.T) {
 		t.Fatal("в отпечатке сам пароль")
 	}
 }
+
+// rm снимает пароль и карточку; чужой id — отказ; без id — подсказка.
+func TestCreds_rm(t *testing.T) {
+	file, kc, _ := credsEnv(t)
+	if code, _, _ := credsRun(t, secret+"\n", "add", "--file", file, "--product", "CRM", "--env", "test", "--login", "api", "--host", "h"); code != 0 {
+		t.Fatal("add")
+	}
+	if code, out, errs := credsRun(t, "", "rm", "--file", file, "crm-test-api"); code != 0 || !strings.Contains(out, "crm-test-api") {
+		t.Fatalf("rm: %d %q %q", code, out, errs)
+	}
+	if _, ok := kc["crm-test-api"]; ok {
+		t.Fatal("пароль остался в Связке")
+	}
+	if code, out, _ := credsRun(t, "", "find", "--file", file); code != 0 || !strings.Contains(out, "ничего не нашлось") {
+		t.Fatalf("карточка осталась: %q", out)
+	}
+	if code, _, _ := credsRun(t, "", "rm", "--file", file, "crm-test-api"); code != 1 {
+		t.Fatalf("повторный rm: код %d", code)
+	}
+	if code, _, _ := credsRun(t, "", "rm", "--file", file); code != 2 {
+		t.Fatalf("rm без id: код %d", code)
+	}
+}
+
+// Подсказка на пароль, который Связка через security не принимает, не
+// отправляет в окно: у окна то же ограничение (урок приемки 07.11).
+func TestCreds_badValueHint(t *testing.T) {
+	file, _, _ := credsEnv(t)
+	credsSecrets = func() credsSecretStore { return badValueKeychain{} }
+	_, _, errs := credsRun(t, "with space\n", "add", "--file", file, "--product", "CRM", "--env", "test", "--login", "sp", "--host", "h")
+	if strings.Contains(errs, "из окна") || !strings.Contains(errs, "пробел") {
+		t.Fatalf("подсказка: %q", errs)
+	}
+}
+
+// badValueKeychain refuses values like security -i does.
+type badValueKeychain struct{ fakeKeychain }
+
+func (badValueKeychain) Has(string) (bool, error) { return false, nil }
+func (badValueKeychain) Set(string, string) error { return keychain.ErrBadValue }

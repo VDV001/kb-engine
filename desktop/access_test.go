@@ -18,10 +18,14 @@ type fakeAuth struct {
 	ok     bool
 	asked  []string
 	copied []string
+	during func() // что случилось, пока висел диалог Touch ID
 }
 
 func (f *fakeAuth) Check(reason string) error {
 	f.asked = append(f.asked, reason)
+	if f.during != nil {
+		f.during()
+	}
 	if !f.ok {
 		return errAuthDenied
 	}
@@ -202,5 +206,57 @@ func TestKbAuth_Copy(t *testing.T) {
 	start := time.Now()
 	if err := h.Copy(secretPW); err == nil || time.Since(start) > 5*time.Second {
 		t.Fatalf("зависший помощник: %v за %v", err, time.Since(start))
+	}
+}
+
+// Снять доступ из окна — только в открытом хранилище и по Touch ID: удаление
+// не отменить. Отказ Touch ID — карточка и пароль на месте.
+func TestAccessDesk_delete(t *testing.T) {
+	d, auth := newAccess(t)
+	if err := d.Delete("x"); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("удаление в закрытом: %v", err)
+	}
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	auth.ok, auth.asked = false, nil
+	if err := d.Delete("crm-test-api"); !errors.Is(err, errAuthDenied) {
+		t.Fatalf("без Touch ID: %v", err)
+	}
+	if l, _ := d.List(""); len(l) != 1 {
+		t.Fatal("карточка снята без Touch ID")
+	}
+	auth.ok = true
+	if err := d.Delete("crm-test-api"); err != nil || len(auth.asked) != 2 {
+		t.Fatalf("удаление: %v, спросили %v", err, auth.asked)
+	}
+	if l, _ := d.List(""); len(l) != 0 {
+		t.Fatal("карточка осталась")
+	}
+}
+
+// Хранилище закрылось по таймеру, пока висел диалог Touch ID, — удаление не
+// проходит: решение принималось в открытом хранилище, а закрытое — уже нет.
+func TestAccessDesk_delete_closedDuringTouchID(t *testing.T) {
+	d, auth := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	auth.during = d.Close
+	if err := d.Delete("crm-test-api"); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("удаление после закрытия: %v", err)
+	}
+	auth.during = nil
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := d.List(""); len(l) != 1 {
+		t.Fatal("карточка снята в закрытом хранилище")
 	}
 }
