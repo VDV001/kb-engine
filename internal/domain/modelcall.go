@@ -24,9 +24,11 @@ const (
 	CallSearch   CallPurpose = "search"   // шаг, где модель ищет и читает документы
 	CallExtract  CallPurpose = "extract"  // разбор ответа для портрета
 	CallCompress CallPurpose = "compress" // сжатие портрета
+	CallListen   CallPurpose = "listen"   // облачное распознавание диктовки
+	CallSpeak    CallPurpose = "speak"    // облачный голос
 )
 
-var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress}
+var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak}
 
 // ModelCall is one request to a model.
 type ModelCall struct {

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // Облачный голос (#478) — тот же запрос, что у english-hub: /speech-model
@@ -162,5 +164,50 @@ func TestCloudSpeech_Transcribe(t *testing.T) {
 	}
 	if cloudListen["cloud:mini"] != "openai/gpt-4o-mini-transcribe" {
 		t.Fatalf("mini = %q", cloudListen["cloud:mini"])
+	}
+}
+
+// Облачные распознавание и голос пишутся в журнал вызовов (#493): назначение,
+// модель шлюза, время, ошибка. Счета токенов от шлюза не ждем — вызов «без
+// счета», а не ноль.
+func TestCloudSpeech_recordsCalls(t *testing.T) {
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if fail {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		if r.URL.Path == "/speech-model" {
+			_, _ = io.WriteString(w, `{"audio":"`+base64.StdEncoding.EncodeToString([]byte("ID3"))+`"}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"text":"привет"}`)
+	}))
+	defer srv.Close()
+	rec := &callsRec{}
+	at := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	c := cloudSpeech{base: srv.URL, client: srv.Client(), key: func() (string, error) { return "vck_test", nil }, calls: rec, now: func() time.Time { return at }}
+	if _, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:mini"]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.synth("gemini:Kore", "Привет", ""); err != nil {
+		t.Fatal(err)
+	}
+	fail = true
+	if _, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:mini"]); err == nil {
+		t.Fatal("ошибка шлюза не дошла")
+	}
+	if len(rec.calls) != 3 {
+		t.Fatalf("записано %d вызовов", len(rec.calls))
+	}
+	l, s, f := rec.calls[0], rec.calls[1], rec.calls[2]
+	if l.Purpose() != domain.CallListen || l.Model() != "openai/gpt-4o-mini-transcribe" || l.Counted() || l.Failed() || !l.At().Equal(at) {
+		t.Fatalf("распознавание = %+v", l)
+	}
+	if s.Purpose() != domain.CallSpeak || s.Model() != ttsModel["gemini"] || s.Failed() {
+		t.Fatalf("голос = %+v", s)
+	}
+	if !f.Failed() || f.Purpose() != domain.CallListen {
+		t.Fatalf("отказ = %+v", f)
 	}
 }

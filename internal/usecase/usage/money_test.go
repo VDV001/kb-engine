@@ -1,0 +1,79 @@
+package usage_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/usage"
+)
+
+type priceBook map[string]domain.ModelPrice
+
+func (b priceBook) Price(model string) (domain.ModelPrice, bool) { p, ok := b[model]; return p, ok }
+
+func mustPrice(t *testing.T, in, out string) domain.ModelPrice {
+	t.Helper()
+	p, err := domain.ParseModelPricePerMillion(in, out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func call(t *testing.T, at time.Time, p domain.CallPurpose, model string, in, out int, counted bool) domain.ModelCall {
+	t.Helper()
+	c, err := domain.NewModelCall(at, p, model, in, out, counted, time.Second, time.Second, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return c
+}
+
+// «Деньги» — текущий месяц в поясе человека: расход по вызовам со счетом и
+// ценой; без счета и без цены — отдельными числами, а не нулем; прогноз до
+// конца месяца — расход в среднем за прошедшие дни, растянутый на месяц.
+func TestMoney(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	book := priceBook{"haiku": mustPrice(t, "1", "5"), "sonnet": mustPrice(t, "2", "10")}
+	calls := []domain.ModelCall{
+		call(t, time.Date(2026, 10, 31, 23, 0, 0, 0, time.UTC), domain.CallAnswer, "sonnet", 1_000_000, 0, true), // прошлый месяц
+		call(t, time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC), domain.CallAnswer, "haiku", 1_000_000, 100_000, true),
+		call(t, time.Date(2026, 11, 7, 10, 0, 0, 0, time.UTC), domain.CallSearch, "sonnet", 500_000, 100_000, true),
+		call(t, time.Date(2026, 11, 7, 11, 0, 0, 0, time.UTC), domain.CallAnswer, "sonnet", 0, 0, false),      // без счета
+		call(t, time.Date(2026, 11, 7, 11, 30, 0, 0, time.UTC), domain.CallExtract, "local", 9000, 900, true), // без цены
+	}
+	m := usage.NewMoney(calls, now, book)
+	const usd = int64(1_000_000_000_000)
+	// haiku: 1 млн × $1 + 0,1 млн × $5 = $1,5; sonnet: 0,5 × $2 + 0,1 × $10 = $2
+	if m.Month != "2026-11" || m.DaysPassed != 7 || m.DaysInMonth != 30 {
+		t.Fatalf("месяц %q, дней %d из %d", m.Month, m.DaysPassed, m.DaysInMonth)
+	}
+	if m.Spent != 35*usd/10 {
+		t.Fatalf("Spent = %d", m.Spent)
+	}
+	if m.Forecast != 35*usd/10*30/7 {
+		t.Fatalf("Forecast = %d", m.Forecast)
+	}
+	if m.Uncounted != 1 || m.Unpriced != 1 {
+		t.Fatalf("без счета %d, без цены %d", m.Uncounted, m.Unpriced)
+	}
+	if len(m.Days) != 7 || m.Days[0] != 15*usd/10 || m.Days[6] != 2*usd {
+		t.Fatalf("по дням %v", m.Days)
+	}
+	if len(m.Purposes) != 3 || m.Purposes[0].Purpose != domain.CallSearch || m.Purposes[0].Cost != 2*usd || m.Purposes[1].Purpose != domain.CallAnswer {
+		t.Fatalf("назначения %+v", m.Purposes)
+	}
+	if len(m.Models) != 3 || m.Models[0].Model != "sonnet" || m.Models[0].Cost != 2*usd || m.Models[0].Calls != 2 || m.Models[2].Model != "local" || m.Models[2].Priced {
+		t.Fatalf("модели %+v", m.Models)
+	}
+}
+
+// Первый день месяца: прогноз — расход дня на весь месяц; пустой журнал — нули.
+func TestMoney_firstDayAndEmpty(t *testing.T) {
+	now := time.Date(2026, 2, 1, 8, 0, 0, 0, time.UTC)
+	m := usage.NewMoney(nil, now, priceBook{})
+	if m.Spent != 0 || m.Forecast != 0 || m.DaysPassed != 1 || m.DaysInMonth != 28 || len(m.Days) != 1 {
+		t.Fatalf("%+v", m)
+	}
+}

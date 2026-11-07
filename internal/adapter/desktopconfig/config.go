@@ -48,6 +48,8 @@ type Config struct {
 	Connections []Connection `json:"connections,omitempty"`
 	// Chat — модель чата (#436): адрес, имя, режим. Ключ — в Связке ключей.
 	Chat Chat `json:"chat"`
+	// Spend — лимит месяца и свои цены моделей для «Денег» статистики (#493).
+	Spend Spend `json:"spend"`
 }
 
 // Path is where the window keeps its config.
@@ -94,6 +96,7 @@ func Read(path string) (Config, error) {
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
 	cfg.dropBadAccents()
+	cfg.dropBadSpend()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -122,6 +125,7 @@ func Write(path string, cfg Config) error {
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
 	cfg.dropBadAccents()
+	cfg.dropBadSpend()
 	if err := cfg.Validate(); err != nil {
 		return err
 	}

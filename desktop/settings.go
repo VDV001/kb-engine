@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
+	"github.com/daniil/kb-engine/internal/usecase/usage"
 )
 
 // Ошибки выбора папок: окно показывает текст, а тесты и вызывающие проверяют
@@ -56,6 +57,8 @@ type sourcesView struct {
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
+	// speechCalls keeps cloud dictation calls for the statistics (#493); nil — не считать.
+	speechCalls usage.Recorder
 	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.
 	mountShare func(addr string) error
 	shareUp    func(addr string) bool // отвечает ли сервер шары; nil — проверка TCP

@@ -146,6 +146,15 @@ func (a *App) AccessCopy(id string) error { return a.access.Copy(id) }
 // Stats returns the model-call statistics of the last days (экран «Статистика»).
 func (a *App) Stats(days int) (statsView, error) { return a.chat.Stats(days) }
 
+// StatsMoney returns the spend of the current month (экран «Деньги», #493).
+func (a *App) StatsMoney() (moneyView, error) { return a.chat.StatsMoney() }
+
+// SetModelPrice sets a model's own price per million tokens; пустые — цена шлюза.
+func (a *App) SetModelPrice(model, in, out string) error { return a.chat.SetModelPrice(model, in, out) }
+
+// SetSpendLimit sets the monthly spend limit in dollars; пусто — без лимита.
+func (a *App) SetSpendLimit(usd string) error { return a.chat.SetSpendLimit(usd) }
+
 // Portrait returns «Что DVK помнит обо мне» (#479).
 func (a *App) Portrait() (portraitView, error) { return a.chat.Portrait() }
 

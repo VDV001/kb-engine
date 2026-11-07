@@ -49,3 +49,13 @@ func TestNewModelCall_uncountedHasNoTokens(t *testing.T) {
 		t.Fatalf("вызов без счета = in %d out %d counted %v, %v", c.In(), c.Out(), c.Counted(), err)
 	}
 }
+
+// Облачная речь (#493) — свои назначения: распознавание диктовки и облачный
+// голос идут через тот же шлюз и тратят те же деньги.
+func TestNewModelCall_speechPurposes(t *testing.T) {
+	for _, p := range []domain.CallPurpose{domain.CallListen, domain.CallSpeak} {
+		if _, err := domain.NewModelCall(callAt, p, "openai/gpt-4o-mini-transcribe", 0, 0, false, time.Second, time.Second, false); err != nil {
+			t.Fatalf("%s: %v", p, err)
+		}
+	}
+}
