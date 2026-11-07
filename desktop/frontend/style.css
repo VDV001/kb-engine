@@ -757,6 +757,10 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-model { display: grid; gap: 8px; padding: 6px 4px; }
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
+.chat-model .key-field { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
+.chat-model .key-row { display: flex; gap: 6px; align-items: center; }
+.chat-model .key-row input { flex: 1; }
+.chat-model .key-saved { color: var(--z-ok); font-weight: 500; }
 .chat-model input, .chat-model select { font: 12px var(--z-font); padding: 5px 8px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); color: var(--z-ink); min-width: 0; }
 /* Разделы чата аккордеоном (#478): номер, название, справа выбранное. */
 .chat-model .acc { border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); }
@@ -844,7 +848,8 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .chat-spacer { flex: 1; }
 .chat-model-chip { border: 0; background: none; color: var(--z-muted); font: 11px var(--z-font); padding: 4px 6px; border-radius: 6px; cursor: pointer; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-model-chip:hover { background: var(--z-bg-2); color: var(--z-ink); }
-.chat-model-chip::after { content: " ⌄"; }
+/* «›», а не «⌄»: чип ведет в настройки модели, выпадающего списка нет (#496). */
+.chat-model-chip::after { content: " ›"; }
 .chat-tool { width: 30px; height: 30px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--z-ink-2); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .chat-tool svg { width: 16px; height: 16px; }
 .chat-tool:hover { background: var(--z-bg-2); color: var(--z-ink); }

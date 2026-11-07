@@ -1000,8 +1000,9 @@ async function openSettings(view = "sources") {
   $("#close-settings").focus();
   loadServerStates();
 }
-// renderConnections lists the window's accesses; «Изменить» ведет в раздел,
-// где доступ живет (модель — «Чат и модель», kb-сервер — «Источники»).
+// renderConnections lists the window's accesses; «Изменить» открывает сам доступ
+// там, где он живет: kb-сервер — его строку «Источников» в правке, модель — поле
+// ключа в «Чат и модель» (#496).
 const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи" };
 let connConfirm = null;
 async function renderConnections() {
@@ -1012,7 +1013,7 @@ async function renderConnections() {
   list.innerHTML = rows.map((r) => {
     const acts = r.own
       ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
-      : `<button class="btn" data-go-sec="${esc(r.section)}">Изменить</button>`;
+      : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
     const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
@@ -1022,9 +1023,20 @@ async function renderConnections() {
     <span class="conn-acts">${acts}</span>${confirm}</li>`;
   }).join("");
 }
+async function openConnection(sec, id) {
+  await openSettings(sec);
+  if (sec === "chat") {
+    $("#chat-key").closest("details").open = true; // раздел «Модель» мог быть свернут
+    return focusSoon("#chat-key");
+  }
+  if (sec !== "sources") return;
+  const s = draft.sources.find((x) => x.id === id);
+  if (s) return startEdit(s._key);
+  showError("Этого источника нет в несохраненном списке — сохраните или отмените правки, и строка найдется.");
+}
 $("#conn-list").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-go-sec]");
-  if (b) return openSettings(b.dataset.goSec);
+  if (b) return openConnection(b.dataset.goSec, b.dataset.goId);
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
   try {
@@ -1168,6 +1180,7 @@ function formOf(s, i) {
 // что вставил тот токен. Сохраненный токен окно из Связки на страницу не
 // достает: токен и данные подключений не текут из приложения.
 const EYE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M4 4l16 16"/></svg>`;
+$('[data-eye="chat-key"]').innerHTML = EYE; // глаз ключа модели — та же иконка, что у токенов
 const tokenField = (id, saved) =>
   `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
     placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}">
@@ -1298,6 +1311,14 @@ function setTarget(s, v) {
   if (s.kind === "server" || s.kind === "gdrive") s.url = v; else s.path = v;
 }
 const focusSoon = (sel) => requestAnimationFrame(() => $(sel)?.focus());
+// startEdit opens a source row for editing — и из строки, и из «Подключения → Изменить».
+function startEdit(key) {
+  ui.editing = key;
+  ui.replacing = ui.confirmDel = null;
+  renderSources();
+  requestAnimationFrame(() => $(`[data-key="${key}"]`)?.scrollIntoView({ block: "nearest" }));
+  focusSoon(`#en-${key}`);
+}
 
 panel.addEventListener("click", async (e) => {
   // data-eye, а не data-reveal: тот же атрибут у «В Finder» в «Проблемах»
@@ -1307,7 +1328,9 @@ panel.addEventListener("click", async (e) => {
     const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
     inp.type = show ? "text" : "password";
     eye.setAttribute("aria-pressed", String(show));
-    eye.setAttribute("aria-label", show ? "Скрыть токен" : "Показать набранный токен");
+    const what = eye.dataset.eye === "chat-key" ? "ключ" : "токен";
+    eye.setAttribute("aria-label", show ? `Скрыть ${what}` : `Показать набранный ${what}`);
+    eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
     return;
   }
   const b = e.target.closest("button");
@@ -1320,7 +1343,7 @@ panel.addEventListener("click", async (e) => {
   }
   if (d.up) return move(d.up, -1);
   if (d.down) return move(d.down, 1);
-  if (d.edit) { ui.editing = d.edit; ui.replacing = ui.confirmDel = null; renderSources(); return focusSoon(`#en-${d.edit}`); }
+  if (d.edit) return startEdit(d.edit);
   if (d.replace) { ui.replacing = d.replace; ui.editing = ui.confirmDel = null; renderSources(); return focusSoon(`#ra-${d.replace}`); }
   if (d.del) { ui.confirmDel = d.del; ui.editing = ui.replacing = null; renderSources(); return focusSoon(`[data-dodel="${d.del}"]`); }
   if ("cancel" in d) { ui.editing = ui.replacing = ui.confirmDel = ui.verdict = null; return renderSources(); }
@@ -2044,7 +2067,17 @@ document.addEventListener("click", (e) => {
   // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
   if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
 });
+// maskChatKey прячет набранный ключ обратно: при каждой загрузке, даже неудачной.
+function maskChatKey() {
+  const eye = $('[data-eye="chat-key"]');
+  $("#chat-key").type = "password";
+  eye.setAttribute("aria-pressed", "false");
+  eye.setAttribute("aria-label", "Показать набранный ключ");
+  eye.dataset.tip = "Показать ключ";
+}
 async function loadChatSettings() {
+  maskChatKey();
+  $("#chat-key-saved").hidden = true;
   try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + errText(e)); return; }
   const s = chatState.settings;
   $("#chat-url").value = s.url || "";
@@ -2054,6 +2087,8 @@ async function loadChatSettings() {
   renderMicChoices();
   setMic(dict.on);
   $("#chat-key").value = "";
+  // Сохраненный ключ на страницу не возвращается; что он есть — говорит отметка (#496).
+  $("#chat-key-saved").hidden = !s.hasKey;
   $("#chat-key").placeholder = s.hasKey ? "ключ в Связке ключей — пусто, чтобы оставить" : s.local ? "для модели на этом Маке не нужен" : "ключ провайдера";
   renderChatNote();
   $("#chat-model-chip").textContent = (s.model || "").replace(/^[^/]+\//, "");
@@ -2133,6 +2168,7 @@ function renderMicChoices() {
   $("#chat-mic-note").textContent = (MIC_MODES[cur] || MIC_MODES[""])[1];
 }
 // renderAccValues: в заголовке раздела — выбранное, чтобы видеть все, не раскрывая.
+const factsLine = (n, wait) => `${n} ${plural(n, "факт", "факта", "фактов")}` + (wait ? ` · ${wait} ждут` : "");
 function renderAccValues() {
   $("#acc-v-model").textContent = ($("#chat-name").value || $("#chat-name").placeholder).replace(/^[^/]+\//, "");
   const v = $("#chat-voice-name").value;
@@ -2141,7 +2177,7 @@ function renderAccValues() {
   const lb = $("#chat-listens").querySelector('[aria-pressed="true"]');
   $("#acc-v-listen").textContent = lb ? lb.firstChild.textContent : "Mac (бесплатно)";
   const p = memState.p;
-  $("#acc-v-mem").textContent = !memOn(p) ? "не включено" : `${approvedFacts().length}` + (pendingFacts().length ? ` · ${pendingFacts().length} ждут` : "");
+  $("#acc-v-mem").textContent = !memOn(p) ? "не включено" : factsLine(approvedFacts().length, pendingFacts().length);
 }
 // renderChatNote says aloud where the documents go (ADR-0006).
 function renderChatNote() {
