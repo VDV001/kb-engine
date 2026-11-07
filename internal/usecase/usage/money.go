@@ -22,10 +22,11 @@ type PurposeCost struct {
 
 // ModelCost is the month's spend of one model; Priced — цена модели известна.
 type ModelCost struct {
-	Model  string
-	Cost   int64
-	Calls  int
-	Priced bool
+	Model   string
+	Cost    int64
+	Calls   int
+	Counted int // вызовов со счетом: только у них цена что-то меняет
+	Priced  bool
 }
 
 // Money is the spend of the current month in the person's time zone (экран
@@ -73,6 +74,9 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 		case !c.Counted():
 			m.Uncounted++
 			continue
+		}
+		mc.Counted++
+		switch {
 		case !ok:
 			m.Unpriced++
 			continue

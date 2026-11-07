@@ -29,7 +29,7 @@ const pricesTimeout = 10 * time.Second
 type priceList func(context.Context) (map[string]domain.ModelPrice, error)
 
 func gatewayPriceList(dir string) priceList {
-	c := modelprices.Cache{Path: filepath.Join(filepath.Dir(dir), "prices.json"), BaseURL: pricesURL, Now: time.Now}
+	c := &modelprices.Cache{Path: filepath.Join(filepath.Dir(dir), "prices.json"), BaseURL: pricesURL, Now: time.Now}
 	return c.Load
 }
 
@@ -56,9 +56,12 @@ type moneyModel struct {
 	Cost   float64 `json:"cost"`
 	Calls  int     `json:"calls"`
 	Priced bool    `json:"priced"`
-	Source string  `json:"source"` // «своя», «шлюз» или пусто — цены нет
-	In     string  `json:"in"`     // долларов за 1 млн токенов
-	Out    string  `json:"out"`
+	// Priceable — у модели есть вызовы со счетом; у облачной речи (всегда без
+	// счета) своя цена ничего бы не поменяла — окно не дает ее вводить.
+	Priceable bool   `json:"priceable"`
+	Source    string `json:"source"` // «своя», «шлюз» или пусто — цены нет
+	In        string `json:"in"`     // долларов за 1 млн токенов
+	Out       string `json:"out"`
 }
 
 // moneyView is the month's spend for the page; доллары — только для показа,
@@ -121,7 +124,7 @@ func (d *chatDesk) StatsMoney() (moneyView, error) {
 		v.Purposes = append(v.Purposes, moneyGroup{string(p.Purpose), purposeTitles[p.Purpose], dollars(p.Cost), p.Calls})
 	}
 	for _, x := range m.Models {
-		mm := moneyModel{ID: x.Model, Cost: dollars(x.Cost), Calls: x.Calls, Priced: x.Priced}
+		mm := moneyModel{ID: x.Model, Cost: dollars(x.Cost), Calls: x.Calls, Priced: x.Priced, Priceable: x.Counted > 0}
 		if p, ok := book.Price(x.Model); ok {
 			mm.In, mm.Out = p.PerMillion()
 			mm.Source = "шлюз"

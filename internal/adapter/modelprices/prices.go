@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -21,6 +22,10 @@ import (
 
 // maxAge — сколько цены в кэше считаются свежими.
 const maxAge = 24 * time.Hour
+
+// retryAfter — пауза после отказа шлюза: без сети «Деньги» не ждут срок
+// запроса на каждом открытии.
+const retryAfter = 10 * time.Minute
 
 // maxBody — предел ответа шлюза: список ~500 моделей весит ~1 МБ.
 const maxBody = 16 << 20
@@ -31,6 +36,9 @@ type Cache struct {
 	BaseURL string
 	HTTP    *http.Client // nil — http.DefaultClient; срок задает ctx
 	Now     func() time.Time
+
+	mu       sync.Mutex
+	failedAt time.Time // последний отказ шлюза; до retryAfter после него в сеть не ходим
 }
 
 type price struct {
@@ -46,12 +54,23 @@ type file struct {
 // Load returns prices by model id. Кэш свежее суток — без сети; иначе список
 // запрашивается заново, а при отказе шлюза служит старый кэш и ошибка
 // говорит, почему цены не обновились.
-func (c Cache) Load(ctx context.Context) (map[string]domain.ModelPrice, error) {
+func (c *Cache) Load(ctx context.Context) (map[string]domain.ModelPrice, error) {
 	old, readErr := c.read()
 	if readErr == nil && c.Now().Sub(old.FetchedAt) < maxAge {
 		return book(old), nil
 	}
-	fresh, err := c.fetch(ctx)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var err error
+	if !c.failedAt.IsZero() && c.Now().Sub(c.failedAt) < retryAfter {
+		err = errors.New("шлюз недавно не ответил, повтор через несколько минут")
+	}
+	var fresh file
+	if err == nil {
+		if fresh, err = c.fetch(ctx); err != nil {
+			c.failedAt = c.Now()
+		}
+	}
 	if err != nil {
 		if readErr != nil {
 			return map[string]domain.ModelPrice{}, fmt.Errorf("цены моделей: %w", err)
@@ -75,7 +94,7 @@ func book(f file) map[string]domain.ModelPrice {
 	return b
 }
 
-func (c Cache) fetch(ctx context.Context) (file, error) {
+func (c *Cache) fetch(ctx context.Context) (file, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(c.BaseURL, "/")+"/models", nil)
 	if err != nil {
 		return file{}, err
@@ -113,7 +132,7 @@ func (c Cache) fetch(ctx context.Context) (file, error) {
 	return f, nil
 }
 
-func (c Cache) read() (file, error) {
+func (c *Cache) read() (file, error) {
 	b, err := os.ReadFile(c.Path)
 	if err != nil {
 		return file{}, err
@@ -126,7 +145,7 @@ func (c Cache) read() (file, error) {
 }
 
 // write replaces the file atomically: прерванная запись не оставит полфайла.
-func (c Cache) write(f file) error {
+func (c *Cache) write(f file) error {
 	b, err := json.Marshal(f)
 	if err != nil {
 		return err

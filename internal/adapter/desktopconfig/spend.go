@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -28,30 +29,20 @@ type Price struct {
 	Out string `json:"out"`
 }
 
+var limitRe = regexp.MustCompile(`^[0-9]+([.,][0-9]+)?$`)
+
 // CheckLimit validates a monthly limit: пусто или неотрицательное число долларов.
 func CheckLimit(s string) error {
 	if s == "" {
 		return nil
 	}
-	v, err := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64)
-	if err != nil || v < 0 || v > 1e9 {
+	// Только цифры и одна точка или запятая: ParseFloat принял бы и NaN, 1e3, 0x10.
+	if !limitRe.MatchString(s) {
 		return fmt.Errorf("%w: лимит %q — число долларов от 0", ErrSpend, s)
 	}
-	return nil
-}
-
-// Check validates the spend settings the window sends.
-func (s Spend) Check() error {
-	if err := CheckLimit(s.Limit); err != nil {
-		return err
-	}
-	for m, p := range s.Prices {
-		if strings.TrimSpace(m) == "" {
-			return fmt.Errorf("%w: цена без модели", ErrSpend)
-		}
-		if _, err := domain.ParseModelPricePerMillion(p.In, p.Out); err != nil {
-			return fmt.Errorf("%w: %s: %w", ErrSpend, m, err)
-		}
+	v, err := strconv.ParseFloat(strings.Replace(s, ",", ".", 1), 64)
+	if err != nil || v > 1e9 {
+		return fmt.Errorf("%w: лимит %q — число долларов от 0", ErrSpend, s)
 	}
 	return nil
 }
