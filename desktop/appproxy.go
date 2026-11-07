@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"html"
 	"io/fs"
 	"mime"
 	"net/http"
@@ -20,8 +21,9 @@ import (
 // Только из обработчика Wails, никогда с сетевого порта: loopback-порт отдал
 // бы данные с токеном любому процессу Мака. Поэтому в режиме -browser /app нет.
 
-// appUpstream is the server the Finances module talks to.
-type appUpstream struct{ URL, Token string }
+// appUpstream is the server the Finances module talks to; Why — почему его
+// нет, словами для экрана (пусто — серверов нет вовсе).
+type appUpstream struct{ URL, Token, Why string }
 
 // appProxied are the витрина's own paths that live on the server.
 var appProxied = []string{"/app/api/", "/app/kb/", "/app/media/"}
@@ -57,11 +59,12 @@ func newAppProxy(upstream func() (appUpstream, bool), ui fs.FS, rt http.RoundTri
 		}
 		up, ok := upstream()
 		proxied := isProxied(r.URL.Path)
+		why := or(up.Why, noServerText)
 		switch {
 		case !ok && proxied:
-			writeAppError(w, http.StatusServiceUnavailable, noServerText)
+			writeAppError(w, http.StatusServiceUnavailable, why)
 		case !ok:
-			writeNoServerPage(w)
+			writeNoServerPage(w, why)
 		case proxied:
 			proxyToServer(w, r, up, rt)
 		default:
@@ -107,7 +110,9 @@ func proxyToServer(w http.ResponseWriter, r *http.Request, up appUpstream, rt ht
 					pr.Out.Header[h] = v
 				}
 			}
-			pr.Out.Header.Set(kbserver.TokenHeader, up.Token)
+			if up.Token != "" { // свой serve на этом Mac — без токена
+				pr.Out.Header.Set(kbserver.TokenHeader, up.Token)
+			}
 		},
 		ModifyResponse: func(resp *http.Response) error {
 			if resp.StatusCode >= 300 && resp.StatusCode < 400 {
@@ -175,21 +180,36 @@ func writeAppError(w http.ResponseWriter, code int, msg string) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 }
 
-func writeNoServerPage(w http.ResponseWriter) {
+func writeNoServerPage(w http.ResponseWriter, why string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	_, _ = w.Write([]byte(`<!doctype html><meta charset="utf-8"><title>Финансы</title>` +
 		`<body style="font:14px ui-monospace,Menlo,monospace;background:#0b0b0c;color:#c4c4c6;padding:40px">` +
-		`<p>` + noServerText + `</p></body>`))
+		`<p>` + html.EscapeString(why) + `</p></body>`))
 }
 
-// appUpstream returns the first enabled server source and its token.
-// ponytail: первый включенный сервер; выбор, когда их несколько, — потом (#435).
+// appUpstream returns where the Finances module takes its data — по выбору в
+// «Настройки → Модули»: пусто — первый включенный kb-сервер; id — этот сервер
+// из источников; адрес — свой kbengine serve на этом Mac, без токена.
 func (f *folderSettings) appUpstream() (appUpstream, bool) {
-	for _, s := range f.snapshot().cfg.Sources {
-		if s.Kind == desktopconfig.KindServer && s.Enabled {
-			return appUpstream{URL: s.URL, Token: f.token(s.ID)}, true
+	cfg := f.snapshot().cfg
+	choice := cfg.ModuleServer(desktopconfig.ModuleFinances)
+	if desktopconfig.IsLocalServer(choice) {
+		return appUpstream{URL: choice}, true
+	}
+	for _, s := range cfg.Sources {
+		if s.Kind != desktopconfig.KindServer || (choice != "" && s.ID != choice) {
+			continue
 		}
+		switch {
+		case s.Enabled:
+			return appUpstream{URL: s.URL, Token: f.token(s.ID)}, true
+		case choice != "":
+			return appUpstream{Why: "Сервер финансов «" + or(s.Name, s.URL) + "» выключен: включите его в «Источниках» или выберите другой в «Настройки → Модули»."}, false
+		}
+	}
+	if choice != "" {
+		return appUpstream{Why: "Сервера, выбранного для финансов, нет в «Источниках»: выберите другой в «Настройки → Модули»."}, false
 	}
 	return appUpstream{}, false
 }
