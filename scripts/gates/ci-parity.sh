@@ -34,7 +34,7 @@ TRIVY_IMAGE=aquasec/trivy@sha256:be1190afcb28352bfddc4ddeb71470835d16462af68d310
 # Команды живут в run_job ниже: держать их в строке таблицы значило бы
 # экранировать кавычки в кавычках при каждой правке.
 TABLE=(
-	"ci.yml:build|local|форматирование, линтер, тесты с гонками, порог покрытия 80%"
+	"ci.yml:build|local|форматирование, линтер, тесты с гонками, порог покрытия 80%, сборка под каждую ОС выпуска"
 	"ci.yml:frontend|local|npm ci, oxlint, гейт слоёв данных, vitest, сборка бандла"
 	"ci.yml:bench|local|бенчмарки горячих путей с -benchmem и проверкой, что хоть один прогнан"
 	"ci.yml:dep-age|local|самопроверка гейта возраста и он сам против origin/main"
@@ -124,6 +124,8 @@ run_job() {
 			printf "total coverage: %s%%\n", total
 			if (total + 0 < 80.0) { print "coverage below 80% threshold"; exit 1 }
 		}'
+		./scripts/gates/cross-build.sh --self-test
+		./scripts/gates/cross-build.sh
 		;;
 	ci.yml:frontend)
 		(cd frontend && npm ci && npx oxlint src && npx vitest run && npm run build)

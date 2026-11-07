@@ -265,7 +265,7 @@ func clipboardFor30s(secret string) error {
 		return fmt.Errorf("пароль в буфере, но стереть его через 30 с некому: %w", err)
 	}
 	cl := exec.Command(self, "creds", credsClearVerb)
-	cl.SysProcAttr = &syscall.SysProcAttr{Setsid: true} // переживает закрытие терминала
+	cl.SysProcAttr = detachedProcess() // переживает закрытие терминала
 	in, err := cl.StdinPipe()
 	if err != nil {
 		return err

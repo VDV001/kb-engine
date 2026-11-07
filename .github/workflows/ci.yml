@@ -45,6 +45,13 @@ jobs:
           echo "total coverage: ${total}%"
           awk -v t="$total" 'BEGIN { if (t+0 < 80.0) { print "coverage below 80% threshold"; exit 1 } }'
 
+      # Под каждую ОС выпуска (.goreleaser.yml), как goreleaser: 07.11 тег
+      # v0.37.0 упал на Windows, а эта джоба собирала только под Linux.
+      - name: Cross-build release targets
+        run: |
+          scripts/gates/cross-build.sh --self-test
+          scripts/gates/cross-build.sh
+
   bench:
     # Числа горячих путей печатаются на каждый PR, чтобы регрессия была видна
     # как ИЗМЕНЕНИЕ, а не как ощущение. Гейта по величине здесь намеренно нет:
