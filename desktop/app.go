@@ -125,6 +125,9 @@ func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 // AccessOpen asks Touch ID to open the access container (#494).
 func (a *App) AccessOpen() error { return a.access.Open() }
 
+// AccessClose locks the access container.
+func (a *App) AccessClose() { a.access.Close() }
+
 // AccessList returns the access cards with every word of q — без паролей.
 func (a *App) AccessList(q string) ([]accessView, error) { return a.access.List(q) }
 

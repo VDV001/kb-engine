@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -62,6 +63,7 @@ func (f *folderSettings) Accents() desktopconfig.Accents {
 	defer f.mu.Unlock()
 	a := f.cfg.Accents
 	a.Off = slices.Clone(a.Off)
+	a.Look = maps.Clone(a.Look) // как Off: вызывающий не правит конфиг под замком в обход
 	return a
 }
 

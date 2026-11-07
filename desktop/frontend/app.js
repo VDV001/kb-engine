@@ -1696,7 +1696,8 @@ $("#accent-list").addEventListener("click", (e) => {
   const id = b.dataset.accent, off = offNow(state.accents), before = { ...state.accents };
   const on = off.includes(id), what = (ACCENTS.find(([x]) => x === id) || [, id])[1];
   saveAccents({ ...state.accents, mode: "", off: on ? off.filter((x) => x !== id) : [...off, id] });
-  toast(on ? "Включено" : "Выключено", ` · ${what}`, () => saveAccents(before), on ? "info" : "off");
+  // Отмена возвращает только переключатели: выбор значений (look) мог поменяться после.
+  toast(on ? "Включено" : "Выключено", ` · ${what}`, () => saveAccents({ ...state.accents, mode: before.mode, off: before.off }), on ? "info" : "off");
 });
 if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", off: [] }; applyAccents(); }).catch(() => {});
 
@@ -3138,10 +3139,12 @@ async function openAccess() {
   if (ac.open) await acLoad();
   acRender();
 }
+// Уход с вкладки запирает хранилище и стирает показанный пароль из разметки:
+// скрытая секция иначе держала бы его, пока вкладку не откроют снова.
 function acLeave() {
   const ac = state.ac;
-  if (!ac) return;
-  for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
+  if (!ac || !ac.open) return;
+  acClose();
 }
 async function acLoad() {
   const ac = state.ac;
@@ -3238,9 +3241,10 @@ async function acOpen() {
 }
 function acClose() {
   const ac = state.ac;
-  acLeave();
+  for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
   clearInterval(ac.idle);
   Object.assign(ac, { open: false, adding: false, list: [] });
+  if (native() && native().AccessClose) native().AccessClose().catch(() => {});
   acRender();
 }
 function acIdleStart() {

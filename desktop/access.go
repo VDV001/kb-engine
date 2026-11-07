@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/credsjson"
@@ -30,11 +31,20 @@ type authHelper interface {
 	Copy(secret string) error
 }
 
+// errVaultClosed — хранилище не открыто Touch ID: список и добавление ждут
+// открытия, а не отдаются любому JS в окне.
+var errVaultClosed = errors.New("хранилище закрыто: откройте его по Touch ID")
+
 // accessDesk is the access screen; auth nil — окно не из сборки, помощника нет.
+// open — хранилище открыто Touch ID; закрывает окно (уход с вкладки, без дела).
 type accessDesk struct {
 	svc  creds.Service
 	auth authHelper
+	mu   sync.Mutex
+	open bool
 }
+
+func (d *accessDesk) isOpen() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.open }
 
 func newAccessDesk(home string, auth authHelper) *accessDesk {
 	return &accessDesk{
@@ -88,8 +98,11 @@ type accessView struct {
 // envNames — среда словами человека.
 var envNames = map[domain.Env]string{domain.EnvProd: "прод", domain.EnvStage: "стенд", domain.EnvTest: "тест", domain.EnvDev: "dev"}
 
-// List returns the cards with every word of q.
+// List returns the cards with every word of q — только в открытом хранилище.
 func (d *accessDesk) List(q string) ([]accessView, error) {
+	if !d.isOpen() {
+		return nil, errVaultClosed
+	}
 	list, err := d.svc.Find(q)
 	if err != nil {
 		return nil, err
@@ -108,6 +121,9 @@ func (d *accessDesk) List(q string) ([]accessView, error) {
 
 // Add stores a card typed in the window and its password.
 func (d *accessDesk) Add(in accessIn, password string) error {
+	if !d.isOpen() {
+		return errVaultClosed
+	}
 	dto := domain.CredentialDTO{Product: in.Product, Env: domain.Env(in.Env), URL: in.URL, Host: in.Host, Login: in.Login,
 		Role: in.Role, Rights: in.Rights, IssuedBy: in.IssuedBy, Note: in.Note}
 	if in.IssuedAt != "" {
@@ -137,8 +153,17 @@ func (d *accessDesk) check(reason string) error {
 
 // Open asks Touch ID to open the container.
 func (d *accessDesk) Open() error {
-	return d.check("открыть хранилище доступов")
+	if err := d.check("открыть хранилище доступов"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	d.open = true
+	d.mu.Unlock()
+	return nil
 }
+
+// Close locks the container: уход с вкладки, автозакрытие, «Закрыть».
+func (d *accessDesk) Close() { d.mu.Lock(); d.open = false; d.mu.Unlock() }
 
 // Reveal returns the password after Touch ID: показать в окне на 30 с.
 func (d *accessDesk) Reveal(id string) (string, error) {
@@ -160,14 +185,18 @@ func (d *accessDesk) Copy(id string) error {
 	return d.auth.Copy(pw)
 }
 
-// kbAuth runs the kb-auth helper next to the window's binary.
-type kbAuth struct{ bin string }
+// kbAuth runs the kb-auth helper next to the window's binary; wait — сколько
+// ждать «copied»: зависший помощник не вешает окно.
+type kbAuth struct {
+	bin  string
+	wait time.Duration
+}
 
 // authNextTo finds kb-auth next to the window; нет — nil (окно не из сборки).
 func authNextTo(exe string) authHelper {
 	bin := filepath.Join(filepath.Dir(exe), "kb-auth")
 	if info, err := os.Stat(bin); err == nil && info.Mode().IsRegular() && info.Mode()&0o111 != 0 {
-		return kbAuth{bin: bin}
+		return kbAuth{bin: bin, wait: 10 * time.Second}
 	}
 	return nil
 }
@@ -205,13 +234,20 @@ func (a kbAuth) Copy(secret string) error {
 	}
 	_, werr := io.WriteString(in, secret)
 	_ = in.Close()
-	line, rerr := bufio.NewReader(out).ReadString('\n')
+	got := make(chan string, 1)
+	go func() { line, _ := bufio.NewReader(out).ReadString('\n'); got <- strings.TrimSpace(line) }()
 	go func() { _ = cmd.Wait() }() // помощник живет свои 30 с и выходит сам
 	if werr != nil {
 		return werr
 	}
-	if strings.TrimSpace(line) != "copied" {
-		return fmt.Errorf("буфер не принял пароль: %w", rerr)
+	select {
+	case line := <-got:
+		if line != "copied" {
+			return fmt.Errorf("буфер не принял пароль: помощник ответил %q", line)
+		}
+		return nil
+	case <-time.After(a.wait):
+		_ = cmd.Process.Kill()
+		return errors.New("буфер не принял пароль: помощник kb-auth не ответил")
 	}
-	return nil
 }

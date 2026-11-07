@@ -53,13 +53,14 @@ func copy(hold: Double) -> Never {
         fail("пароль не пришел", 2)
     }
     let pb = NSPasteboard.general
-    pb.prepareForNewContents(with: .currentHostOnly)
+    // Номер изменения — тот, что вернула подготовка: чужая запись между ней и
+    // нашей не станет «нашей», и ее не сотрем.
+    let mine = pb.prepareForNewContents(with: .currentHostOnly)
     let item = NSPasteboardItem()
     item.setString(secret, forType: .string)
     item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType"))
     item.setString("", forType: NSPasteboard.PasteboardType("org.nspasteboard.TransientType"))
-    guard pb.writeObjects([item]) else { fail("буфер не принял пароль", 1) }
-    let mine = pb.changeCount
+    guard pb.writeObjects([item]), pb.changeCount == mine else { fail("буфер не принял пароль", 1) }
     print("copied")
     Thread.sleep(forTimeInterval: hold)
     if pb.changeCount == mine {
