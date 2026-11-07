@@ -44,7 +44,7 @@
         </svg>
       </div>
       <nav class="cell tabs" id="tabs">
-        <!-- Кнопки вкладок строит app.js (renderTabs) из настроек окна. -->
+        <!-- Поиск и модули строит app.js (renderTabs); вкладки поиска — в #chips. -->
         <span class="tab-ink"></span>
       </nav>
       <div class="cell status-cell"><span class="pulse"></span><span id="indexed">—</span></div>
@@ -84,6 +84,9 @@
       <input id="q" type="search" placeholder="что ищем" autocomplete="off" spellcheck="false" autofocus>
       <span class="kbd" id="count"></span>
     </label>
+    <!-- Вкладки поиска — чипами под строкой поиска (шапка вариант 1, решение
+         владельца 07.11): нужны только при поиске, в модуле их нет. -->
+    <nav class="search-chips" id="chips" aria-label="Вкладки поиска"></nav>
 
     <div class="body">
       <section class="panel">
