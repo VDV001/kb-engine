@@ -41,6 +41,24 @@ const HELP = [
     { cmd: "kbengine audit", d: "проверить каталог" },
     { cmd: "kbengine dedup", d: "найти возможные дубли" },
     { cmd: "kbengine drift --limit 50", d: "проверить, живы ли ссылки; отчет начинается с того, что не проверено" },
+    { cmd: "kbengine inbox --catalog catalog.json --inbox inbox --processed inbox/done", d: "разобрать входящие из бота в каталог; разобранные файлы — в --processed" },
+    { cmd: "kbengine changelog --in CHANGELOG.md --out changelog.json", d: "CHANGELOG в JSON — для «Что нового» в витрине" },
+    { cmd: "kbengine runs --check", d: "проверить журнал прогонов; код выхода 1, если есть находки" },
+  ] },
+  { id: "tui", t: "Терминал (TUI)", c: "var(--z-src-teal)", lead: "База и финансы в терминале. Tab — следующий экран: поиск → финансы → здоровье.", items: [
+    { cmd: "kbengine tui --catalog catalog.json --ledger transactions.jsonl --from Учет.xlsx", d: "открыть базу в терминале; без --ledger — только записи, без --from — без синка с книгой" },
+    { k: ["Enter"], d: "в списке — открыть карточку записи; Esc — назад" },
+    { k: ["l", "v"], d: "на карточке — сменить состояние и вердикт записи" },
+    { k: ["a", "i"], d: "на экране финансов — трата и доход формой" },
+    { k: ["q"], d: "трата одной строкой: «418 такси карта»" },
+    { k: ["b", "e", "s"], d: "подтвердить остаток, править последние записи, догнать книгу Excel" },
+  ] },
+  { id: "server", t: "Сервер", c: "var(--z-accent-hi)", lead: "Своя база на сервере: окно и агент ходят к ней по токену.", items: [
+    { cmd: "kbengine serve --addr 0.0.0.0:8443 --catalog catalog.json --token-file token.txt --tls-cert cert.pem --tls-key key.pem", d: "открыть витрину в сеть: только с токеном и TLS; токен — в заголовке X-KB-Token" },
+    { cmd: "kbengine serve --addr 0.0.0.0:8443 --tenants s3://bucket --tls-cert cert.pem --tls-key key.pem", d: "сервер на несколько человек: у каждого своя база и свой токен" },
+    { cmd: "kbengine users add --tenants s3://bucket --id anna --token-out ~/.kb-tokens/anna", d: "выдать человеку токен: только в новый файл 0600, в терминал не печатается" },
+    { cmd: "kbengine users revoke --tenants s3://bucket --id anna", d: "закрыть человеку доступ" },
+    { k: ["Настройки", "→", "Источники"], d: "подключить kb-сервер к окну: адрес и токен, токен уходит в Связку ключей" },
   ] },
   { id: "mcp", t: "Агент в чате (MCP)", c: "var(--z-sp3)", lead: "База и папки окна прямо в Claude: агент ищет сам.", items: [
     { cmd: 'kbengine-mcp --catalog catalog.json --files-config "~/Library/Application Support/kb-desktop/config.json"', d: "запустить сервер MCP; источники он берет из настроек окна" },
@@ -52,7 +70,8 @@ const HELP = [
 // Слова задачи → то, что стоит в команде: человек пишет «трата», а не «fin add».
 const HELP_SYN = { "трата": "fin add", "потратил": "fin add", "расход": "fin add", "доход": "income", "зарплата": "income", "остаток": "balance", "баланс": "balance",
   "пароль": "creds", "логин": "creds", "ссылки": "drift", "дубли": "dedup", "открыть окно": "⌥space", "горячая": "⌥space", "excel": "sync", "книга": "sync",
-  "агент": "mcp", "claude": "mcp", "файлы": "files", "документ": "files", "настройки": "⌘," };
+  "агент": "mcp", "claude": "mcp", "файлы": "files", "документ": "files", "настройки": "⌘,",
+  "терминал": "tui", "консоль": "tui", "бот": "inbox", "входящие": "inbox", "токен": "users", "человек": "users", "сервер": "serve", "сеть": "token-file" };
 
 // helpFold — регистр и «ё», как у поиска окна: тексты справки пишутся через «е».
 const helpFold = (s) => s.toLowerCase().replace(/ё/g, "е");
