@@ -3286,8 +3286,8 @@ $("#access-view").addEventListener("click", async (e) => {
   switch (b.dataset.ac) {
     case "open": acOpen(); break;
     case "close": acClose(); break;
-    case "sel": ac.sel = id; acRender(); break;
-    case "env": ac.env = b.dataset.env; acRender(); break;
+    case "sel": ac.sel = id; ac.confirmDel = ""; acRender(); break;
+    case "env": ac.env = b.dataset.env; ac.confirmDel = ""; acRender(); break;
     case "show": acShow(id); break;
     case "hide": acHide(id); break;
     case "copy": acCopy(id); break;
@@ -3296,12 +3296,15 @@ $("#access-view").addEventListener("click", async (e) => {
     case "del": ac.confirmDel = id; acRender(); break;
     case "del-no": ac.confirmDel = ""; acRender(); break;
     case "del-yes":
+      if (ac.deleting) break; // второй «Да», пока идет первый, — не второй Touch ID и не ложная ошибка
+      ac.deleting = true; b.disabled = true;
       try {
         await native().AccessDelete(id);
         ac.confirmDel = ""; delete ac.shown[id]; clearInterval(ac.timers[id]);
         await acLoad(); acRender();
         toast("Снято", " · доступ удален: карточка и пароль из Связки");
       } catch (err) { showError("Доступ не снят: " + errText(err)); }
+      finally { ac.deleting = false; }
       break;
   }
 });

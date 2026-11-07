@@ -99,7 +99,8 @@ func (s Service) Password(id string) (string, error) {
 // не отдала пароль — карточка остается: без нее пароль стал бы сиротой,
 // которую не найти ни поиском, ни окном.
 func (s Service) Delete(id string) error {
-	return s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
+	removed := false
+	err := s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
 		i := slices.IndexFunc(list, func(c domain.Credential) bool { return c.ID() == id })
 		if i < 0 {
 			return nil, fmt.Errorf("%w: %s", domain.ErrCredentialNotFound, id)
@@ -107,6 +108,13 @@ func (s Service) Delete(id string) error {
 		if err := s.Secrets.Delete(id); err != nil {
 			return nil, fmt.Errorf("creds: пароль %s не снят из Связки ключей, карточка оставлена: %w", id, err)
 		}
+		removed = true
 		return slices.Delete(list, i, i+1), nil
 	})
+	if err != nil && removed {
+		// Пароль уже ушел, а карточка осталась: сказать, как есть, и как довести —
+		// повторный rm снимет карточку (Связка «нет записи» не считает ошибкой).
+		return fmt.Errorf("creds: %s — пароль снят из Связки, а карточку записать не вышло, повторите удаление: %w", id, err)
+	}
+	return err
 }

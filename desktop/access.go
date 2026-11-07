@@ -182,6 +182,9 @@ func (d *accessDesk) Delete(id string) error {
 	if err := d.check("снять доступ"); err != nil {
 		return err
 	}
+	if !d.isOpen() { // закрылось по таймеру, пока висел диалог Touch ID
+		return errVaultClosed
+	}
 	return d.svc.Delete(id)
 }
 
