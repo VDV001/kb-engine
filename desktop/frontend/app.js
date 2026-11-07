@@ -1383,6 +1383,21 @@ $("#save-settings").onclick = async () => {
   }
 };
 
+// Esc в поле правки отменяет правку — и только ее: второй Esc закроет панель
+// или спрячет окно. Иначе закрытие сняло бы фокус, и сохранение по уходу из
+// поля записало бы ровно то, от чего человек отказался. Стоит раньше Esc
+// панели: слушатели перехвата одного узла идут в порядке добавления.
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape" || e.isComposing || !(e.target instanceof Element)) return;
+  const tab = e.target.closest("[data-tab-name]"), fact = e.target.closest("[data-mem-edit]");
+  const queued = memState.qedit && e.target.closest("[data-mem-qtext]"), sugg = chatState.memNew?.edit && e.target.closest("[data-sugg-text]");
+  if (!tab && !fact && !queued && !sugg) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (tab) { tab.value = state.tabs[Number(tab.dataset.tabName)].name; tab.blur(); }
+  if (fact) { const f = factById(fact.dataset.memEdit); if (f) fact.textContent = f.text; fact.blur(); }
+  if (queued) { memState.qedit = ""; renderPortrait(); }
+  if (sugg) { chatState.memNew.edit = ""; renderChat(); }
+}, true);
 // Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
 document.addEventListener("keydown", (e) => {
   if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
@@ -2631,7 +2646,6 @@ $("#memory").addEventListener("keydown", (e) => {
   if (e.key === "Enter" && e.target.closest("[data-mem-edit]")) { e.preventDefault(); e.target.blur(); }
   const q = e.key === "Enter" && e.target.closest("[data-mem-qtext]");
   if (q) { e.preventDefault(); const b = document.querySelector(`[data-mem-ok="${CSS.escape(q.dataset.memQtext)}"]`); if (b) b.click(); }
-  if (e.key === "Escape" && e.target.closest("[data-mem-edit]")) { const f = factById(e.target.dataset.memEdit); if (f) e.target.textContent = f.text; e.target.blur(); e.stopPropagation(); }
 });
 // Новое из разбора ответа (portrait:new): в портрет уже легло «ждет
 // одобрения»; если человек не выключил — спросить прямо в ленте этого чата.
