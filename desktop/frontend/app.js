@@ -213,8 +213,10 @@ function countUp(el, to) {
 function setIndexed(n, skipped, rec, err) {
   state.indexed = { n, skipped, rec, err };
   const el = $("#indexed");
-  el.textContent = err ? `пересборка не удалась: ${err}` : `${n.toLocaleString("ru-RU")} файлов` +
-    (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
+  el.textContent = "";
+  // Счет файлов — своим элементом: в тесной шапке он прячется первым (fitBar), проблемы — никогда.
+  el.append(Object.assign(document.createElement("span"), { className: "idx-n", textContent: err ? `пересборка не удалась: ${err}` : `${n.toLocaleString("ru-RU")} файлов` +
+    (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "") }));
   // «N проблем» — кнопка «подробнее»: что не так у источников, почему и что
   // сделать (панель справа, #456).
   const total = state.problems ? state.problems.total : skipped;
@@ -232,8 +234,9 @@ function setIndexed(n, skipped, rec, err) {
     b.dataset.tip = "Проблемы";
     b.dataset.tipB = "Что не так у источников: серверы, каталог, папки и файлы. Нажмите — почему и что сделать";
     b.onclick = () => openSettings("problems");
-    el.append(" · ", b);
+    el.append(Object.assign(document.createElement("span"), { className: "idx-sep", textContent: " · " }), b);
   }
+  fitBar();
   el.parentElement.dataset.tip = "Индекс файлов";
   el.parentElement.dataset.tipB = "Файлы ваших папок, по которым идет поиск" + (skipped ? `; ${skipped} прочитать не удалось` : "");
 }
@@ -358,9 +361,16 @@ const tabItems = (t, kb, files) =>
 // Модули окна (#435): вкладка модуля — после вкладок поиска, ключ module:<id>.
 // Сборка знает только эти; модуль новой сборки в config.json вкладки не дает.
 const MODULES = {
-  chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat" },
-  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances" }, // сразу раздел финансов, а не главная витрины
+  chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat",
+    icon: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z"/>' },
+  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances", // сразу раздел финансов, а не главная витрины
+    icon: '<circle cx="12" cy="12" r="8"/><path d="M10 16.5V7.5h3a2.5 2.5 0 0 1 0 5H8.5M8.5 14.5h5"/>' },
+  stats: { name: "Статистика", what: "токены на вход и на выход, вызовы модели, ошибки — по дням, назначениям и моделям", view: "stats",
+    icon: '<path d="M4 20h16M7 16.5V12M12 16.5V6.5M17 16.5V9.5"/>' },
 };
+// Значок модуля без своего (новая сборка добавила модуль, а значок забыли) — квадрат, а не пустое место.
+const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
+const SEARCH_ICON = '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>';
 state.modules = [];
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
@@ -382,38 +392,83 @@ function tabTip(t) {
 // Полоса вкладок строится заново при смене набора; подчеркивание остается.
 // Полоса и выдача заново: набор вкладок или список источников сменился.
 function refreshTabs() { renderTabs(); render(); }
+// Шапка — вариант 1 (решение владельца 07.11): наверху Поиск и модули со
+// значками, вкладки поиска — чипами под строкой поиска. Кнопка «Поиск» ведет
+// на последнюю вкладку поиска, а не на «Все».
+state.searchTab = "all";
 function renderTabs() {
-  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink");
+  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips");
   nav.querySelectorAll("button").forEach((b) => b.remove());
-  const btn = (key, name, tip) => {
+  chips.textContent = "";
+  const top = (key, name, tip, icon, n) => {
     const b = document.createElement("button");
     b.dataset.tab = key;
     b.dataset.tip = name;
     b.dataset.tipB = tip;
-    b.append(name + " ", document.createElement("i"));
+    if (n <= 9) b.dataset.tipK = "⌘ " + n;
+    b.setAttribute("aria-label", name);
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span class="lbl">${esc(name)}</span>`;
     nav.insertBefore(b, ink);
   };
-  btn("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
-  state.tabs.filter(visibleTab).forEach((t) => btn(tabKey(t), t.name, tabTip(t)));
-  moduleKeys().forEach((k) => btn(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what));
+  const chip = (key, name, tip) => {
+    const b = document.createElement("button");
+    b.dataset.tab = key;
+    b.dataset.tip = name;
+    b.dataset.tipB = tip;
+    b.append(Object.assign(document.createElement("span"), { className: "lbl", textContent: name }), " ", document.createElement("i"));
+    chips.append(b);
+  };
+  top("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON, 1);
+  moduleKeys().forEach((k, i) => top(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what, MODULES[moduleOf(k)].icon || MODULE_ICON, i + 2));
+  chip("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
+  state.tabs.filter(visibleTab).forEach((t) => chip(tabKey(t), t.name, tabTip(t)));
   if (!tabKeys().includes(state.tab)) state.tab = "all";
+  if (!tabKeys().includes(state.searchTab) || moduleOf(state.searchTab)) state.searchTab = "all";
+  fitBar();
 }
-
-$("#tabs").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  state.tab = b.dataset.tab;
+const pickTab = (key) => {
+  state.tab = key === "search" ? state.searchTab : key;
   state.sel = 0;
   render();
+};
+$("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
+$("#chips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
+// ⌘1 — Поиск, ⌘2… — модули по порядку в шапке (подсказка каждой кнопки их называет).
+document.addEventListener("keydown", (e) => {
+  if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key) || settingsOpen()) return; // под открытыми настройками модуль не сменится незаметно
+  const b = document.querySelectorAll("#tabs button")[+e.key - 1];
+  if (!b) return;
+  e.preventDefault();
+  pickTab(b.dataset.tab);
 });
 function moveInk() {
-  const b = $(`#tabs button[data-tab="${state.tab}"]`), ink = $(".tab-ink");
+  if (!moduleOf(state.tab)) state.searchTab = state.tab;
+  const b = $(`#tabs button[data-tab="${moduleOf(state.tab) ? state.tab : "search"}"]`), ink = $(".tab-ink");
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  document.querySelectorAll("#chips button").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab));
+  if (!b) return;
   ink.style.left = b.offsetLeft + "px";
   ink.style.width = b.offsetWidth + "px";
-  // Узкое окно прокручивает полосу вбок: активная вкладка (Tab/⇧Tab) не уходит за край.
-  b.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
+// Шапка не прокручивается никогда. Как только место справа от последней кнопки
+// меньше отступа слева от первой, подписи модулей прячутся (остаются значки с
+// подсказками); тесно и так — короче становится счет файлов, потом «источники»
+// значком. «N проблем» видно всегда (решение владельца 07.11).
+function fitBar() {
+  const BAR_STEPS = ["compact", "tight", "tighter"]; // внутри: setIndexed зовет fitBar раньше, чем дойдет до этой строки
+  const bar = $(".bar"), nav = $("#tabs"), btns = nav.querySelectorAll("button");
+  if (!btns.length) return;
+  bar.classList.remove(...BAR_STEPS);
+  const box = () => nav.getBoundingClientRect();
+  const left = () => btns[0].getBoundingClientRect().left - box().left;
+  const free = () => box().right - btns[btns.length - 1].getBoundingClientRect().right;
+  for (const step of BAR_STEPS) {
+    if (free() >= left()) break;
+    bar.classList.add(step);
+  }
+  moveInk();
+}
+new ResizeObserver(() => fitBar()).observe($(".bar"));
 
 // --- Отрисовка -----------------------------------------------------------------
 function render() {
@@ -423,7 +478,7 @@ function render() {
   const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
   const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // Счетчик — длина того же списка, что покажет вкладка.
-  document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q && !moduleOf(b.dataset.tab) ? itemsOf(b.dataset.tab, kb, files).length : ""));
+  document.querySelectorAll("#chips button").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
   if (showModule(moduleOf(state.tab))) return;
 
@@ -1551,7 +1606,7 @@ $("#indexing-settings").onclick = () => openSettings("sources");
 // и в блоке «Спектр акцентами» style.css: выключенный акцент — класс no-<id> на
 // body. Go хранит режим и свой набор (desktopconfig.Accents), списка не знает.
 const ACCENTS = [
-  ["tab-ink", "Черта вкладки", "линия под активной вкладкой"],
+  ["tab-ink", "Черта вкладки", "линия под активной кнопкой шапки и рамка активной вкладки поиска"],
   ["search", "Поле поиска в фокусе", "рамка строки dvk find и курсор"],
   ["row", "Выбранная строка", "рамка по контуру вместо полосы слева"],
   ["head", "Слово HEAD", "метка над поиском"],
@@ -1560,7 +1615,7 @@ const ACCENTS = [
   ["indexing", "Индексация", "бегущая полоса и большое число"],
   ["panel-title", "Заголовок панели", "слово и верхний край панели"],
   ["marks", "Найденные слова", "подчеркивание совпадений"],
-  ["tab-name", "Имя активной вкладки", "текст вкладки"],
+  ["tab-name", "Имя активной вкладки", "текст активной кнопки шапки и вкладки поиска"],
   ["dollar", "Знак $", "в строке поиска и командах"],
   ["bar-edge", "Нижний край шапки", "тонкая линия под шапкой"],
   ["branch", "Линия ветки", "от готового узла к HEAD"],
@@ -1644,10 +1699,14 @@ if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", 
 // открытии и дальше живет: вкладка туда-обратно не перезагружает витрину.
 function showModule(id) {
   const mod = id && MODULES[id];
+  // Подсказка графика не переживает уход с вкладки; stTipHide объявлен ниже и при первом вызове еще недоступен.
+  const stTipNow = document.querySelector(".st-tip"); if (stTipNow) stTipNow.hidden = true;
   $("#app").classList.toggle("module-open", !!mod);
   $("#module-view").hidden = !mod || !!mod.view;
   $("#chat-view").hidden = !mod || mod.view !== "chat";
+  $("#stats-view").hidden = !mod || mod.view !== "stats";
   if (mod && mod.view === "chat") openChatView();
+  else if (mod && mod.view === "stats") openStats();
   else if (mod) {
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
@@ -2836,3 +2895,210 @@ window.addEventListener("storage", (e) => {
   if (e.key === FRAME_THEME_KEY && (e.newValue === "light" || e.newValue === "dark") && e.newValue !== currentTheme()) setTheme(e.newValue);
 });
 paintThemeBtn();
+
+// --- Статистика (решение владельца 07.11) ----------------------------------------
+// Пульт и Журнал на журнале вызовов модели. Правило переходов одно: день или
+// назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
+const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut" } };
+const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2" };
+const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const stNum = (n) => Math.round(n).toLocaleString("ru-RU");
+const stTok = (n) => (n >= 1e6 ? (n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " млн" : n >= 1e3 ? (n / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " тыс" : stNum(n));
+const stDay = (iso) => { const [, m, d] = iso.split("-").map(Number); return d + " " + ST_MON[m - 1]; };
+const stSec = (ms) => (ms / 1000).toLocaleString("ru-RU", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + " с";
+const stSw = (c) => `<i class="st-sw" style="background:${stCss(c)}"></i>`;
+const stNS = "http://www.w3.org/2000/svg";
+const stEl = (tag, a = {}, p) => { const e = document.createElementNS(stNS, tag); for (const k in a) e.setAttribute(k, a[k]); if (p) p.appendChild(e); return e; };
+const stReduce = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+let stTipEl = null;
+function stTip(x, y, html) {
+  if (!stTipEl) { stTipEl = document.createElement("div"); stTipEl.className = "st-tip"; document.body.appendChild(stTipEl); }
+  stTipEl.innerHTML = html; stTipEl.hidden = false;
+  const w = stTipEl.offsetWidth, h = stTipEl.offsetHeight;
+  stTipEl.style.left = Math.max(8, x + 14 + w > innerWidth - 8 ? x - w - 14 : x + 14) + "px";
+  stTipEl.style.top = Math.max(8, y + 14 + h > innerHeight - 8 ? y - h - 14 : y + 14) + "px";
+}
+const stTipHide = () => { if (stTipEl) stTipEl.hidden = true; };
+const stRow = (c, n, v) => `<div class="r"><span>${stSw(c)}${esc(n)}</span><span>${v}</span></div>`;
+
+async function openStats() {
+  $("#st-range").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === st.days));
+  await stLoad();
+}
+async function stLoad() {
+  if (!native() || !native().Stats) { $("#st-body").innerHTML = `<div class="st-empty">Статистика работает в окне приложения.</div>`; return; }
+  // Ответ на прежний период, пришедший позже нового, не рисуется: побеждает последний запрос.
+  const seq = ++st.seq;
+  let data;
+  try { data = await native().Stats(st.days); }
+  catch (e) { if (seq === st.seq) $("#st-body").innerHTML = `<div class="st-empty">Не прочитать журнал вызовов: ${esc(errText(e))}</div>`; return; }
+  if (seq !== st.seq) return;
+  st.data = data;
+  stRender();
+}
+// stGo moves to a screen with a filter and says where from (why).
+function stGo(screen, f, why) {
+  st.hist.push({ screen: st.screen, f: st.f, open: st.open, from: st.from });
+  Object.assign(st, { screen, f: f || {}, open: null, from: why || null });
+  stRender();
+}
+$("#st-back").addEventListener("click", () => { const h = st.hist.pop(); if (h) { Object.assign(st, h); stRender(); } });
+$("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open: null, from: null }); stRender(); });
+document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
+$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); }); // «Назад» не вернет строку и день прежнего периода
+
+function stDescribe() {
+  const f = st.f, p = [];
+  if (f.day) p.push(`день <b>${stDay(f.day)}</b>`);
+  if (f.purpose) p.push(`назначение <b>${esc(st.data.purposes.find((x) => x.id === f.purpose)?.title || f.purpose)}</b>`);
+  if (f.model) p.push(`модель <b>${esc(f.model)}</b>`);
+  if (f.failed) p.push("<b>только с ошибкой</b>");
+  if (f.uncounted) p.push("<b>только без счета</b>");
+  return p.join(", ");
+}
+function stRender() {
+  stTipHide();
+  if (!st.data) return;
+  document.querySelectorAll("#stats-view [data-st]").forEach((b) => { if (b.dataset.st === st.screen) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
+  const f = st.f, d = stDescribe();
+  $("#st-cmd").textContent = (st.screen === "log" ? "dvk stats log" : "dvk stats") + (f.day ? ` --day ${f.day}` : ` --since ${st.days}d`) + (f.purpose ? ` --purpose ${f.purpose}` : "") + (f.model ? ` --model ${f.model}` : "");
+  $("#st-ctx").hidden = !(st.from || d);
+  $("#st-ctx-text").innerHTML = (st.from ? `Вы пришли сюда, нажав ${esc(st.from)}. ` : "") + (d ? `Показано: ${d}.` : "");
+  $("#st-back").hidden = !st.hist.length; $("#st-reset").hidden = !d;
+  if (!st.data.total.calls) {
+    $("#st-body").innerHTML = `<div class="st-empty"><b>За ${st.days} дн вызовов модели нет.</b><span>Окно считает каждый вызов с этой версии: ответы в «Чате», поиск моделью, разбор портрета. Задайте вопрос в чате — он появится здесь.</span>${st.data.bad ? `<span>Нечитаемых строк в журнале: ${st.data.bad}.</span>` : ""}</div>`;
+    return;
+  }
+  (st.screen === "log" ? stLog : stPulse)($("#st-body"));
+  if (!stReduce()) stCount($("#st-body"));
+}
+function stCount(root) {
+  root.querySelectorAll("[data-n]").forEach((b) => {
+    const v = +b.dataset.n, fmt = b.dataset.f === "tok" ? stTok : stNum, t0 = performance.now();
+    const step = (t) => { const k = Math.min(1, (t - t0) / 800); b.textContent = fmt(k === 1 ? v : v * (1 - Math.pow(1 - k, 3))); if (k < 1 && b.isConnected) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  });
+}
+const stSeg = (id, opts, cur) => `<div class="st-seg" id="${id}">${opts.map(([v, n]) => `<button data-m="${v}" aria-pressed="${v === cur}">${n}</button>`).join("")}</div>`;
+const stBindSeg = (id, key) => document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener("click", () => { st.modes[key] = b.dataset.m; stRender(); }));
+
+function stPulse(host) {
+  const v = st.data, t = v.total, p = v.prev;
+  const delta = (a, b) => { if (!b) return "<em>&nbsp;</em>"; const x = Math.round((a - b) / b * 100); return `<em class="${x >= 0 ? "st-up" : "st-down"}">${x >= 0 ? "+" : ""}${x}% к прошлым ${st.days} дн</em>`; };
+  const k = (key, name, val, f, dl, to) => `<button data-k="${key}"><span>${name}</span><b data-n="${val}" data-f="${f}">${f === "tok" ? stTok(val) : stNum(val)}</b>${dl}<span class="to">${to} →</span></button>`;
+  host.innerHTML = `<div class="st-kpis">${k("in", "Токены на вход", t.in, "tok", delta(t.in, p.in), "Журнал")}${k("out", "Токены на выход", t.out, "tok", delta(t.out, p.out), "Журнал")}${k("calls", "Вызовов модели", t.calls, "n", delta(t.calls, p.calls), "Журнал")}${k("failed", "С ошибкой", t.failed, "n", "<em>&nbsp;</em>", "Журнал")}${t.uncounted ? k("uncounted", "Без счета", t.uncounted, "n", "<em>сервер не прислал токены</em>", "Журнал") : ""}</div>
+    <div class="st-grid">
+      <div class="st-panel"><div class="st-hd"><div><h3>Токены по дням</h3><div class="st-sub">нажмите на день — Журнал этого дня</div></div>${stSeg("st-m1", [["area", "площадь"], ["line", "линии"], ["bars", "столбцы"]], st.modes.tokens)}</div><div id="st-c1"></div>
+        <div class="st-legend"><span>${stSw("--z-accent")}Вход</span><span>${stSw("--z-src-teal")}Выход</span></div></div>
+      <div class="st-panel"><div class="st-hd"><div><h3>На что ушли токены</h3><div class="st-sub">нажмите — Журнал с этим назначением</div></div>${stSeg("st-m2", [["donut", "кольцо"], ["bars", "полоски"]], st.modes.share)}</div><div id="st-c2"></div></div>
+    </div>
+    <div class="st-panel"><h3>Модели</h3><div class="st-sub">нажмите на строку — Журнал по этой модели</div>
+      <div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Модель</th><th class="n">Вызовов</th><th class="n">Вход</th><th class="n">Выход</th><th class="n">С ошибкой</th><th class="n">Без счета</th></tr></thead><tbody>${v.models.map((m) => `<tr class="row" tabindex="0" data-model="${esc(m.id)}"><td>${esc(m.title)}</td><td class="n">${stNum(m.calls)}</td><td class="n">${stTok(m.in)}</td><td class="n">${stTok(m.out)}</td><td class="n">${m.failed}</td><td class="n">${m.uncounted}</td></tr>`).join("")}</tbody></table></div></div>
+    ${v.bad ? `<div class="st-sub">Нечитаемых строк в журнале: ${v.bad} — они пропущены.</div>` : ""}`;
+  host.querySelectorAll(".st-kpis button").forEach((b) => b.addEventListener("click", () => {
+    const key = b.dataset.k, name = b.querySelector("span").textContent;
+    stGo("log", key === "failed" ? { failed: true } : key === "uncounted" ? { uncounted: true } : {}, `«${name}» на Пульте`);
+  }));
+  host.querySelectorAll("tr[data-model]").forEach((tr) => { const go = () => stGo("log", { model: tr.dataset.model }, `модель ${tr.dataset.model} на Пульте`); tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => e.key === "Enter" && go()); });
+  stBindSeg("st-m1", "tokens"); stBindSeg("st-m2", "share");
+  stTimeChart($("#st-c1"), v.days, [{ name: "Вход", color: "--z-accent", get: (x) => x.in }, { name: "Выход", color: "--z-src-teal", get: (x) => x.out }], st.modes.tokens,
+    (x) => stGo("log", { day: x.date }, `день ${stDay(x.date)} на графике токенов`));
+  // Доли — только токены по счету: вызовы без счета (токены неизвестны) — строкой ниже, а не долей.
+  const parts = v.purposes.filter((x) => x.in + x.out > 0).map((x) => ({ id: x.id, name: x.title, color: ST_COLORS[x.id] || "--z-faint", v: x.in + x.out }));
+  const c2 = $("#st-c2"), unc = v.purposes.filter((x) => x.uncounted);
+  if (parts.length) stShare(c2, parts, st.modes.share, (x) => stGo("log", { purpose: x.id }, `долю «${x.name}» на Пульте`));
+  else c2.innerHTML = `<div class="st-sub">Токенов по счету за период нет.</div>`;
+  if (unc.length) {
+    c2.insertAdjacentHTML("beforeend", `<div class="st-sub">Без счета, токены неизвестны: ${unc.map((x) => `<button class="st-chip" data-unc="${esc(x.id)}">${esc(x.title)} · ${stNum(x.uncounted)}</button>`).join(" ")}</div>`);
+    c2.querySelectorAll("[data-unc]").forEach((b) => b.addEventListener("click", () => stGo("log", { purpose: b.dataset.unc, uncounted: true }, `«без счета» под долями на Пульте`)));
+  }
+}
+
+function stTimeChart(host, days, series, mode, onPick) {
+  const W = 640, H = 210, L = 46, R = 8, T = 10, B = 24, n = days.length, bw = (W - L - R) / n;
+  const svg = stEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "токены по дням" }); host.appendChild(svg);
+  const stacks = days.map((d) => { let a = 0; return series.map((s) => (a += s.get(d))); });
+  const max = Math.max(1, ...stacks.map((s) => s[s.length - 1])) * 1.08;
+  const x = (i) => (mode === "bars" ? L + bw * (i + 0.5) : L + (W - L - R) * (n === 1 ? 0.5 : i / (n - 1)));
+  const y = (v) => T + (H - T - B) * (1 - v / max);
+  for (let k = 0; k <= 3; k++) { const v = (max / 1.08) * k / 3; stEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: stCss("--z-rule") }, svg); stEl("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end" }, svg).textContent = stTok(v); }
+  const step = Math.max(1, Math.round(n / 6));
+  days.forEach((d, i) => { if (i % step === 0 || i === n - 1) stEl("text", { x: x(i), y: H - 6, "text-anchor": "middle" }, svg).textContent = stDay(d.date); });
+  const g = stEl("g", { class: mode === "bars" ? "" : "st-draw" }, svg);
+  if (mode === "bars") {
+    days.forEach((d, i) => { let prev = 0; series.forEach((s, si) => { const v = stacks[i][si]; const r = stEl("rect", { class: "st-bar-r", x: x(i) - bw * 0.36, width: bw * 0.72, y: y(v), height: Math.max(0.5, y(prev) - y(v)), fill: stCss(s.color), "fill-opacity": 0.8 }, g); r.style.animationDelay = Math.min(0.6, i * 0.012) + "s"; prev = v; }); });
+  } else {
+    for (let si = series.length - 1; si >= 0; si--) {
+      const top = days.map((d, i) => [x(i), y(mode === "line" ? series[si].get(d) : stacks[i][si])]);
+      if (mode === "area") {
+        const bot = days.map((_, i) => [x(i), y(si ? stacks[i][si - 1] : 0)]).reverse();
+        stEl("path", { d: "M" + top.map((q) => q.join(",")).join("L") + "L" + bot.map((q) => q.join(",")).join("L") + "Z", fill: stCss(series[si].color), "fill-opacity": 0.28 }, g);
+      }
+      stEl("path", { d: "M" + top.map((q) => q.join(",")).join("L"), fill: "none", stroke: stCss(series[si].color), "stroke-width": mode === "line" ? 2 : 1.6 }, g);
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => g.classList.add("in")));
+  }
+  const cross = stEl("line", { y1: T, y2: H - B, stroke: stCss("--z-rule-2"), "stroke-dasharray": "3 3", visibility: "hidden" }, svg);
+  const at = (e) => { const r = svg.getBoundingClientRect(), px = ((e.clientX - r.left) / r.width) * W; return Math.max(0, Math.min(n - 1, mode === "bars" ? Math.floor((px - L) / bw) : Math.round(((px - L) / (W - L - R)) * (n - 1)))); };
+  svg.style.cursor = "pointer";
+  svg.addEventListener("pointermove", (e) => {
+    const i = at(e), d = days[i];
+    cross.setAttribute("x1", x(i)); cross.setAttribute("x2", x(i)); cross.setAttribute("visibility", "visible");
+    stTip(e.clientX, e.clientY, `<div class="t">${stDay(d.date)}</div>` + series.map((s) => stRow(s.color, s.name, stTok(s.get(d)))).join("") + stRow("--z-faint", "Вызовов", stNum(d.calls)) + (d.uncounted ? stRow("--z-lvl-warn", "Без счета", d.uncounted) : "") + `<div class="st-hint">Нажмите — Журнал этого дня</div>`);
+  });
+  svg.addEventListener("pointerleave", () => { cross.setAttribute("visibility", "hidden"); stTipHide(); });
+  svg.addEventListener("click", (e) => onPick(days[at(e)]));
+}
+
+function stShare(host, parts, mode, onPick) {
+  const total = parts.reduce((a, p) => a + p.v, 0) || 1;
+  const tip = (e, p) => stTip(e.clientX, e.clientY, `<div class="t">${esc(p.name)}</div>` + stRow(p.color, "Доля", Math.round((p.v / total) * 100) + "%") + `<div class="st-hint">Нажмите — Журнал с этим назначением</div>`);
+  if (mode === "bars") {
+    const max = Math.max(...parts.map((p) => p.v));
+    host.innerHTML = `<div class="st-hbars">${parts.map((p, i) => `<button data-i="${i}"><span>${stSw(p.color)}${esc(p.name)}</span><i style="width:${Math.max(2, (p.v / max) * 100)}%;background:${stCss(p.color)}"></i><span>${Math.round((p.v / total) * 100)}%</span></button>`).join("")}</div>`;
+    host.querySelectorAll("button").forEach((b) => { const p = parts[+b.dataset.i]; b.addEventListener("click", () => onPick(p)); b.addEventListener("pointermove", (e) => tip(e, p)); b.addEventListener("pointerleave", stTipHide); });
+    return;
+  }
+  const S = 240, R = 100, r = 62, c = S / 2;
+  const svg = stEl("svg", { viewBox: `0 0 ${S} ${S}`, role: "img", "aria-label": "доли назначений", class: "st-donut" }); host.appendChild(svg);
+  let a0 = -Math.PI / 2;
+  const segs = parts.map((p) => {
+    const a1 = a0 + (p.v / total) * Math.PI * 2, big = a1 - a0 > Math.PI ? 1 : 0, pt = (a, rr) => [c + rr * Math.cos(a), c + rr * Math.sin(a)];
+    const [x0, y0] = pt(a0, R), [x1, y1] = pt(a1 - 0.004, R), [x2, y2] = pt(a1 - 0.004, r), [x3, y3] = pt(a0, r);
+    const s = stEl("path", { d: `M${x0},${y0}A${R},${R} 0 ${big} 1 ${x1},${y1}L${x2},${y2}A${r},${r} 0 ${big} 0 ${x3},${y3}Z`, fill: stCss(p.color), stroke: stCss("--z-bg-2"), "stroke-width": 2, tabindex: 0, role: "button", "aria-label": p.name + ": открыть в журнале" }, svg);
+    s.style.cursor = "pointer"; a0 = a1;
+    const hl = (e) => { segs.forEach((q) => q.setAttribute("fill-opacity", q === s ? 1 : 0.5)); bigT.textContent = Math.round((p.v / total) * 100) + "%"; small.textContent = p.name; if (e && e.clientX) tip(e, p); };
+    s.addEventListener("pointermove", hl); s.addEventListener("focus", hl); s.addEventListener("pointerleave", stTipHide);
+    s.addEventListener("click", () => onPick(p)); s.addEventListener("keydown", (e) => e.key === "Enter" && onPick(p));
+    return s;
+  });
+  const bigT = stEl("text", { x: c, y: c + 2, "text-anchor": "middle" }, svg); bigT.style.cssText = "font-size:26px;font-weight:700;fill:var(--z-ink)";
+  const small = stEl("text", { x: c, y: c + 22, "text-anchor": "middle" }, svg); small.style.cssText = "font-size:11px;fill:var(--z-muted)";
+  const top = parts.reduce((a, p) => (p.v > a.v ? p : a)); bigT.textContent = Math.round((top.v / total) * 100) + "%"; small.textContent = top.name;
+}
+
+function stLog(host) {
+  const v = st.data, f = st.f;
+  const rows = v.calls.filter((c) => (!f.day || c.at.slice(0, 10) === f.day) && (!f.purpose || c.purpose === f.purpose) && (!f.model || c.model === f.model) && (!f.failed || c.failed) && (!f.uncounted || !c.counted));
+  const shown = rows.slice(0, 200);
+  const time = (iso) => stDay(iso.slice(0, 10)) + " " + iso.slice(11, 16);
+  host.innerHTML = `<div class="st-hd"><div class="st-chips">${v.purposes.map((p) => `<button class="st-chip" data-p="${p.id}" aria-pressed="${f.purpose === p.id}">${esc(p.title)}</button>`).join("")}</div>
+      <div class="st-chips">${v.models.map((m) => `<button class="st-chip" data-m="${esc(m.id)}" aria-pressed="${f.model === m.id}">${esc(m.title)}</button>`).join("")}</div></div>
+    <div class="st-sub">${rows.length ? `<b>${stNum(rows.length)}</b> вызовов: вход ${stTok(rows.reduce((a, c) => a + c.in, 0))}, выход ${stTok(rows.reduce((a, c) => a + c.out, 0))}. Нажмите строку — подробности.${rows.length > shown.length ? ` Показаны последние ${shown.length}.` : ""}` : "Под этот фильтр вызовов нет."}</div>
+    <div class="st-scroll"><table class="st-table"><thead><tr><th>Когда</th><th>Назначение</th><th>Модель</th><th class="n">Вход</th><th class="n">Выход</th><th class="n">До слова</th><th class="n">Всего</th></tr></thead><tbody>${shown.map((c, i) => `<tr class="row" tabindex="0" data-i="${i}" aria-expanded="${st.open === i}"><td>${time(c.at)}</td><td>${stSw(ST_COLORS[c.purpose] || "--z-faint")}${esc(c.title)}${c.failed ? ' <span class="st-pill bad">ошибка</span>' : ""}</td><td>${esc(c.model)}</td><td class="n">${c.counted ? stNum(c.in) : "—"}</td><td class="n">${c.counted ? stNum(c.out) : "—"}</td><td class="n">${stSec(c.firstMs)}</td><td class="n">${stSec(c.tookMs)}</td></tr>` + (st.open === i ? `<tr class="det"><td colspan="7" id="st-card"></td></tr>` : "")).join("")}</tbody></table></div>`;
+  host.querySelectorAll("[data-p]").forEach((b) => b.addEventListener("click", () => { st.f = { ...st.f, purpose: st.f.purpose === b.dataset.p ? undefined : b.dataset.p }; st.open = null; stRender(); }));
+  host.querySelectorAll("[data-m]").forEach((b) => b.addEventListener("click", () => { st.f = { ...st.f, model: st.f.model === b.dataset.m ? undefined : b.dataset.m }; st.open = null; stRender(); }));
+  host.querySelectorAll("tr.row").forEach((tr) => { const go = () => { st.open = st.open === +tr.dataset.i ? null : +tr.dataset.i; stRender(); }; tr.addEventListener("click", go); tr.addEventListener("keydown", (e) => e.key === "Enter" && go()); });
+  if (st.open != null && shown[st.open]) {
+    const c = shown[st.open], day = c.at.slice(0, 10), same = v.calls.filter((x) => x.at.slice(0, 10) === day), h0 = +c.at.slice(11, 13);
+    const byH = Array.from({ length: 24 }, (_, h) => same.filter((x) => +x.at.slice(11, 13) === h).length), mx = Math.max(1, ...byH);
+    $("#st-card").innerHTML = `<div class="st-card">
+      <div><b>${esc(c.title)}</b> · ${esc(c.model)} · ${time(c.at)}</div>
+      <div class="st-sub">${c.counted ? `Токенов: ${stNum(c.in)} на вход, ${stNum(c.out)} на выход.` : "Сервер не прислал счет токенов."} До первого слова ${stSec(c.firstMs)}, всего ${stSec(c.tookMs)}.${c.failed ? " Вызов закончился ошибкой." : ""} Текст вопроса в журнал не пишется.</div>
+      <div class="st-sub">${stDay(day)}: ${same.length} вызовов по часам; синий — час этого вызова</div>
+      <div class="st-hrs">${byH.map((n, h) => `<i class="${h === h0 ? "me" : ""}" style="height:${Math.max(4, (n / mx) * 100)}%" title="${h}:00 — ${n}"></i>`).join("")}</div>
+      <div><button class="st-go" id="st-card-day">Все ${same.length} вызовов этого дня</button></div></div>`;
+    $("#st-card-day").addEventListener("click", (e) => { e.stopPropagation(); stGo("log", { day }, `вызов ${time(c.at)} в Журнале`); });
+  }
+}

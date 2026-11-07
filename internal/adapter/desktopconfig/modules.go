@@ -15,6 +15,8 @@ const (
 	ModuleFinances ModuleID = "finances"
 	// ModuleChat — чат над документами (#436).
 	ModuleChat ModuleID = "chat"
+	// ModuleStats — статистика: токены, вызовы модели, активность.
+	ModuleStats ModuleID = "stats"
 )
 
 // Ошибки списка модулей от окна; вызывающие проверяют errors.Is.

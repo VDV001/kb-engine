@@ -10,7 +10,7 @@ import (
 
 // knownModules — модули, которые эта сборка окна умеет показать вкладкой;
 // порядок — порядок в настройках.
-var knownModules = []desktopconfig.ModuleID{desktopconfig.ModuleChat, desktopconfig.ModuleFinances}
+var knownModules = []desktopconfig.ModuleID{desktopconfig.ModuleChat, desktopconfig.ModuleFinances, desktopconfig.ModuleStats}
 
 // Modules returns every module this window knows with whether it is on.
 func (f *folderSettings) Modules() []desktopconfig.Module {
