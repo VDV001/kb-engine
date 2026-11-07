@@ -85,7 +85,7 @@ button { font-family: inherit; }
 .drag { position: fixed; inset: 0 0 auto 0; height: 34px; z-index: 5; }
 
 .app {
-  height: 100%; display: grid; grid-template-rows: auto auto auto 1fr;
+  height: 100%; display: grid; grid-template-rows: auto auto auto auto 1fr;
   padding: 40px 24px 20px;
   animation: rise .5s var(--z-ease) both;
 }
@@ -144,16 +144,31 @@ button { font-family: inherit; }
   .mark-l, .mark-r { transition: none; }
   .brand.wake .mark-dvk { animation: none; }
 }
-/* Число стоит справа от имени на той же строке: не влезающие вкладки
-   прокручиваются вбок, а не переносят счет под имя (под чертой). */
-.tabs { position: relative; gap: 22px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; }
-.tabs::-webkit-scrollbar { display: none; }
+/* Верхний ряд — Поиск и модули со значками. Не прокручивается: тесно — fitBar
+   (app.js) прячет подписи, потом счет файлов, потом подпись «источники». */
+.tabs { position: relative; gap: 22px; flex: 1; min-width: 0; overflow: hidden; }
 .tabs button {
-  position: relative; background: none; border: 0; padding: 0; height: 100%; cursor: pointer; white-space: nowrap; flex: none;
+  position: relative; display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 0; padding: 0; height: 100%; cursor: pointer; white-space: nowrap; flex: none;
   color: var(--z-muted); font-size: 13px; transition: color var(--z-dur) var(--z-ease);
 }
 .tabs button:hover, .tabs button.active { color: var(--z-ink); }
-.tabs button i { font-style: normal; color: var(--z-faint); margin-left: 4px; font-size: 11px; }
+.tabs button svg { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button.active svg { color: var(--z-accent); }
+.bar.compact .tabs { gap: 18px; }
+.bar.compact .tabs .lbl { display: none; }
+.bar.tight .idx-n, .bar.tight .idx-sep { display: none; }
+.bar.tighter #open-settings span { display: none; }
+
+/* Вкладки поиска — чипами под строкой поиска; в модуле их нет. */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: -6px 0 14px; }
+.chips button {
+  background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: 999px; padding: 3px 12px; cursor: pointer; white-space: nowrap;
+  color: var(--z-muted); font-size: 12.5px; transition: color var(--z-dur) var(--z-ease), border-color var(--z-dur) var(--z-ease);
+}
+.chips button:hover { color: var(--z-ink); border-color: var(--z-rule-2); }
+.chips button.active { color: var(--z-ink); border-color: var(--z-accent); }
+.chips button i { font-style: normal; color: var(--z-faint); margin-left: 4px; font-size: 11px; }
 .tab-ink {
   position: absolute; bottom: 9px; height: 2px; background: var(--z-accent);
   transition: left .35s var(--z-ease), width .35s var(--z-ease);
@@ -577,8 +592,9 @@ body:not(.no-marks) mark {
   box-shadow: none; background-color: var(--z-accent-wash); background-image: var(--sp-cool);
   background-size: 100% 1.5px; background-position: 0 100%; background-repeat: no-repeat;
 }
-body:not(.no-tab-name) .tabs button.active { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; }
-body:not(.no-tab-name) .tabs button.active i { -webkit-text-fill-color: var(--z-faint); }
+body:not(.no-tab-name) .tabs button.active .lbl { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; }
+/* Активный чип — рамка тем же спектром, что черта вкладки; «Ничего» в оформлении гасит. */
+body:not(.no-tab-ink) .chips button.active { border-color: transparent; background: linear-gradient(var(--z-bg-3), var(--z-bg-3)) padding-box, var(--sp-cool) border-box; }
 body:not(.no-dollar) .dollar { background: linear-gradient(135deg, var(--z-sp4), var(--z-sp6)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 body:not(.no-bar-edge) .bar { border-bottom-color: transparent; }
 body:not(.no-bar-edge) .bar::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; background: var(--sp-all); }
@@ -613,7 +629,7 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 
 /* Модуль окна (#435): витрина во фрейме на месте ветки, поиска и выдачи. */
 .app.module-open { grid-template-rows: auto 1fr; }
-.app.module-open .branch, .app.module-open .search, .app.module-open .body { display: none; }
+.app.module-open .branch, .app.module-open .search, .app.module-open .chips, .app.module-open .body { display: none; }
 .module-view { min-height: 0; margin-top: 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); overflow: hidden; background: var(--z-bg-2); }
 .module-view iframe { display: block; width: 100%; height: 100%; border: 0; }
 

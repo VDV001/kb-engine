@@ -213,8 +213,10 @@ function countUp(el, to) {
 function setIndexed(n, skipped, rec, err) {
   state.indexed = { n, skipped, rec, err };
   const el = $("#indexed");
-  el.textContent = err ? `пересборка не удалась: ${err}` : `${n.toLocaleString("ru-RU")} файлов` +
-    (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "");
+  el.textContent = "";
+  // Счет файлов — своим элементом: в тесной шапке он прячется первым (fitBar), проблемы — никогда.
+  el.append(Object.assign(document.createElement("span"), { className: "idx-n", textContent: err ? `пересборка не удалась: ${err}` : `${n.toLocaleString("ru-RU")} файлов` +
+    (rec ? ` · распознавание ${rec.done.toLocaleString("ru-RU")} из ${rec.total.toLocaleString("ru-RU")}` : "") }));
   // «N проблем» — кнопка «подробнее»: что не так у источников, почему и что
   // сделать (панель справа, #456).
   const total = state.problems ? state.problems.total : skipped;
@@ -232,8 +234,9 @@ function setIndexed(n, skipped, rec, err) {
     b.dataset.tip = "Проблемы";
     b.dataset.tipB = "Что не так у источников: серверы, каталог, папки и файлы. Нажмите — почему и что сделать";
     b.onclick = () => openSettings("problems");
-    el.append(" · ", b);
+    el.append(Object.assign(document.createElement("span"), { className: "idx-sep", textContent: " · " }), b);
   }
+  fitBar();
   el.parentElement.dataset.tip = "Индекс файлов";
   el.parentElement.dataset.tipB = "Файлы ваших папок, по которым идет поиск" + (skipped ? `; ${skipped} прочитать не удалось` : "");
 }
@@ -358,9 +361,14 @@ const tabItems = (t, kb, files) =>
 // Модули окна (#435): вкладка модуля — после вкладок поиска, ключ module:<id>.
 // Сборка знает только эти; модуль новой сборки в config.json вкладки не дает.
 const MODULES = {
-  chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat" },
-  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances" }, // сразу раздел финансов, а не главная витрины
+  chat: { name: "Чат", what: "вопросы к своим документам — ответ со ссылками на записи и файлы", view: "chat",
+    icon: '<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z"/>' },
+  finances: { name: "Финансы", what: "счета, траты, отчеты — с kb-сервера", src: "/app/?tab=finances", // сразу раздел финансов, а не главная витрины
+    icon: '<circle cx="12" cy="12" r="8"/><path d="M10 16.5V7.5h3a2.5 2.5 0 0 1 0 5H8.5M8.5 14.5h5"/>' },
 };
+// Значок модуля без своего (новая сборка добавила модуль, а значок забыли) — квадрат, а не пустое место.
+const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
+const SEARCH_ICON = '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>';
 state.modules = [];
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
@@ -382,38 +390,83 @@ function tabTip(t) {
 // Полоса вкладок строится заново при смене набора; подчеркивание остается.
 // Полоса и выдача заново: набор вкладок или список источников сменился.
 function refreshTabs() { renderTabs(); render(); }
+// Шапка — вариант 1 (решение владельца 07.11): наверху Поиск и модули со
+// значками, вкладки поиска — чипами под строкой поиска. Кнопка «Поиск» ведет
+// на последнюю вкладку поиска, а не на «Все».
+state.searchTab = "all";
 function renderTabs() {
-  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink");
+  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips");
   nav.querySelectorAll("button").forEach((b) => b.remove());
-  const btn = (key, name, tip) => {
+  chips.textContent = "";
+  const top = (key, name, tip, icon, n) => {
+    const b = document.createElement("button");
+    b.dataset.tab = key;
+    b.dataset.tip = name;
+    b.dataset.tipB = tip;
+    if (n <= 9) b.dataset.tipK = "⌘ " + n;
+    b.setAttribute("aria-label", name);
+    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span class="lbl">${esc(name)}</span>`;
+    nav.insertBefore(b, ink);
+  };
+  const chip = (key, name, tip) => {
     const b = document.createElement("button");
     b.dataset.tab = key;
     b.dataset.tip = name;
     b.dataset.tipB = tip;
     b.append(name + " ", document.createElement("i"));
-    nav.insertBefore(b, ink);
+    chips.append(b);
   };
-  btn("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
-  state.tabs.filter(visibleTab).forEach((t) => btn(tabKey(t), t.name, tabTip(t)));
-  moduleKeys().forEach((k) => btn(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what));
+  top("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON, 1);
+  moduleKeys().forEach((k, i) => top(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what, MODULES[moduleOf(k)].icon || MODULE_ICON, i + 2));
+  chip("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
+  state.tabs.filter(visibleTab).forEach((t) => chip(tabKey(t), t.name, tabTip(t)));
   if (!tabKeys().includes(state.tab)) state.tab = "all";
+  if (!tabKeys().includes(state.searchTab) || moduleOf(state.searchTab)) state.searchTab = "all";
+  fitBar();
 }
-
-$("#tabs").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b) return;
-  state.tab = b.dataset.tab;
+const pickTab = (key) => {
+  state.tab = key === "search" ? state.searchTab : key;
   state.sel = 0;
   render();
+};
+$("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
+$("#chips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
+// ⌘1 — Поиск, ⌘2… — модули по порядку в шапке (подсказка каждой кнопки их называет).
+document.addEventListener("keydown", (e) => {
+  if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key)) return;
+  const b = document.querySelectorAll("#tabs button")[+e.key - 1];
+  if (!b) return;
+  e.preventDefault();
+  pickTab(b.dataset.tab);
 });
 function moveInk() {
-  const b = $(`#tabs button[data-tab="${state.tab}"]`), ink = $(".tab-ink");
+  if (!moduleOf(state.tab)) state.searchTab = state.tab;
+  const b = $(`#tabs button[data-tab="${moduleOf(state.tab) ? state.tab : "search"}"]`), ink = $(".tab-ink");
   document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  document.querySelectorAll("#chips button").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab));
+  if (!b) return;
   ink.style.left = b.offsetLeft + "px";
   ink.style.width = b.offsetWidth + "px";
-  // Узкое окно прокручивает полосу вбок: активная вкладка (Tab/⇧Tab) не уходит за край.
-  b.scrollIntoView({ block: "nearest", inline: "nearest" });
 }
+// Шапка не прокручивается никогда. Как только место справа от последней кнопки
+// меньше отступа слева от первой, подписи модулей прячутся (остаются значки с
+// подсказками); тесно и так — короче становится счет файлов, потом «источники»
+// значком. «N проблем» видно всегда (решение владельца 07.11).
+function fitBar() {
+  const BAR_STEPS = ["compact", "tight", "tighter"]; // внутри: setIndexed зовет fitBar раньше, чем дойдет до этой строки
+  const bar = $(".bar"), nav = $("#tabs"), btns = nav.querySelectorAll("button");
+  if (!btns.length) return;
+  bar.classList.remove(...BAR_STEPS);
+  const box = () => nav.getBoundingClientRect();
+  const left = () => btns[0].getBoundingClientRect().left - box().left;
+  const free = () => box().right - btns[btns.length - 1].getBoundingClientRect().right;
+  for (const step of BAR_STEPS) {
+    if (free() >= left()) break;
+    bar.classList.add(step);
+  }
+  moveInk();
+}
+new ResizeObserver(() => fitBar()).observe($(".bar"));
 
 // --- Отрисовка -----------------------------------------------------------------
 function render() {
@@ -423,7 +476,7 @@ function render() {
   const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
   const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // Счетчик — длина того же списка, что покажет вкладка.
-  document.querySelectorAll("#tabs button").forEach((b) => (b.querySelector("i").textContent = state.q && !moduleOf(b.dataset.tab) ? itemsOf(b.dataset.tab, kb, files).length : ""));
+  document.querySelectorAll("#chips button").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
   if (showModule(moduleOf(state.tab))) return;
 
