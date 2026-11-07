@@ -47,6 +47,8 @@ desktop: web
     swiftc -O -o bin/kb.app/Contents/MacOS/kb-extract desktop/extract/main.swift
     # Диктовка: только Speech и AVFoundation macOS; разрешения — в Info.plist окна.
     swiftc -O -o bin/kb.app/Contents/MacOS/kb-listen desktop/listen/main.swift
+    # Touch ID и буфер со скрытой пометкой для экрана «Доступы» (#494)
+    swiftc -O -o bin/kb.app/Contents/MacOS/kb-auth desktop/auth/main.swift
     cp desktop/build/Info.plist bin/kb.app/Contents/Info.plist
     mkdir -p bin/kb.app/Contents/Resources
     cp desktop/build/icon/icon.icns bin/kb.app/Contents/Resources/icon.icns

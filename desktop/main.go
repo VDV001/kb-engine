@@ -131,8 +131,10 @@ func run() error {
 	app.voice = &speaker{synth: func(voice, text string) ([]byte, error) {
 		return cloud.synth(voice, text, speechLang(text, app.chat.config().Accent))
 	}}
+	app.access = newAccessDesk(home, nil)
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)
+		app.access.auth = authNextTo(exe)
 	}
 	return wails.Run(&options.App{
 		Title:     "DVK",
