@@ -12,7 +12,11 @@ const api = (path, signal) => fetch(path, { signal }).then(async (r) => ({ statu
 const state = { q: "", tab: "all", kb: [], files: [], items: [], sel: 0, seq: 0, sources: [], filter: null, known: [] };
 
 // --- Окно (Wails) или браузер -------------------------------------------------
-const native = () => window.go && window.go.main && window.go.main.App;
+// Привязки Go — через обертку (bindings.js, #505): о сохранении, которое ждет
+// ответа дольше 10 с, окно говорит, а не молчит.
+const SLOW_SAVE_TEXT = "ответа нет дольше 10 с. Если macOS спрашивает доступ к Связке ключей — ответьте. Если ответа так и нет — перезапустите окно (⌘Q)";
+const native = () => window.go && window.go.main && window.go.main.App &&
+  withSlowNotice(window.go.main.App, () => toast("Сохранение ждет", " · " + SLOW_SAVE_TEXT, null, "bad"));
 // errText is the words of a refused call: Wails отдает отказ Go объектом
 // Error, и String(err) показал бы человеку «Error: …».
 const errText = (e) => (e instanceof Error ? e.message : String(e));
@@ -1290,10 +1294,15 @@ function toast(head, rest, undo, tone = "info") {
     (undo ? `<button id="undo">Вернуть</button>` : "") + `<span class="life"></span>`;
   t.classList.add("show");
   clearTimeout(toastT);
-  toastT = setTimeout(() => t.classList.remove("show"), 4000);
+  // Беда с советом читается дольше, чем «Сохранено».
+  toastT = setTimeout(() => t.classList.remove("show"), tone === "bad" ? 12000 : 4000);
   t.onmouseenter = () => clearTimeout(toastT);
   t.onmouseleave = () => { toastT = setTimeout(() => t.classList.remove("show"), 1200); };
 }
+// Ошибки окна из bindings.js — подсказкой; накопленные до этой строки — тоже.
+// Причину видно в отладочной сборке just desktop-inspect (Inspect Element).
+windowErrors.show = (head, text) => toast(head, " · " + text + " — причина: just desktop-inspect, правый клик в поле ввода → Inspect Element", null, "bad");
+windowErrors.queue.splice(0).forEach(([h, t]) => windowErrors.show(h, t));
 $("#toast").addEventListener("click", (e) => {
   if (e.target.id !== "undo" || !undoFn) return;
   undoFn(); undoFn = null;
