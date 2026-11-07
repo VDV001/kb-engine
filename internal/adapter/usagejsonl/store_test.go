@@ -15,7 +15,7 @@ import (
 
 func call(t *testing.T) domain.ModelCall {
 	t.Helper()
-	c, err := domain.NewModelCall(time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), domain.CallSearch, "anthropic/claude-sonnet-5.5", 3100, 180, 900*time.Millisecond, 4*time.Second, false)
+	c, err := domain.NewModelCall(time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), domain.CallSearch, "anthropic/claude-sonnet-5.5", 3100, 180, true, 900*time.Millisecond, 4*time.Second, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,8 +45,10 @@ func TestJournal_Record(t *testing.T) {
 			t.Errorf("%s = %v, ждали %v", k, line[k], v)
 		}
 	}
-	if _, ok := line["failed"]; ok {
-		t.Errorf("удачный вызов с полем failed: %s", raw)
+	for _, k := range []string{"failed", "uncounted"} {
+		if _, ok := line[k]; ok {
+			t.Errorf("удачный вызов со счетом, а в строке %s: %s", k, raw)
+		}
 	}
 }
 
@@ -66,5 +68,20 @@ func TestJournal_ConcurrentRecords(t *testing.T) {
 	}
 	if n != 8 {
 		t.Fatalf("строк %d из 8", n)
+	}
+}
+
+// Сервер не прислал счет — это не «ноль токенов»: строка так и говорит.
+func TestJournal_Uncounted(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	c, _ := domain.NewModelCall(time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), domain.CallAnswer, "qwen3", 0, 0, false, time.Second, time.Second, false)
+	if err := (usagejsonl.Journal{Path: path}).Record(c); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(path)
+	var line map[string]any
+	_ = json.Unmarshal(raw, &line)
+	if line["uncounted"] != true {
+		t.Fatalf("строка без пометки: %s", raw)
 	}
 }

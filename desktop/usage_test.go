@@ -53,7 +53,10 @@ func TestChat_RecordsModelCalls(t *testing.T) {
 	if !slices.Contains(got, domain.CallAnswer) || !slices.Contains(got, domain.CallExtract) {
 		t.Fatalf("назначения = %v", got)
 	}
-	for _, c := range rec.calls {
+	rec.mu.Lock()
+	calls := slices.Clone(rec.calls)
+	rec.mu.Unlock()
+	for _, c := range calls {
 		if c.Model() != "qwen3" {
 			t.Fatalf("модель = %q", c.Model())
 		}

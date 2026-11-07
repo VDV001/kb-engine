@@ -272,7 +272,7 @@ func TestUsage(t *testing.T) {
 		defer srv.Close()
 		got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
 			Complete(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil)
-		if err != nil || got.Usage != (chat.Usage{In: 5200, Out: 640}) {
+		if err != nil || got.Usage != (chat.Usage{In: 5200, Out: 640, Counted: true}) {
 			t.Fatalf("usage = %+v, %v", got.Usage, err)
 		}
 	})
@@ -294,7 +294,7 @@ func TestUsage(t *testing.T) {
 		defer srv.Close()
 		got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
 			Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
-		if err != nil || got.Content != "ок" || got.Usage != (chat.Usage{In: 3100, Out: 180}) {
+		if err != nil || got.Content != "ок" || got.Usage != (chat.Usage{In: 3100, Out: 180, Counted: true}) {
 			t.Fatalf("reply = %+v, %v", got, err)
 		}
 		so, _ := body["stream_options"].(map[string]any)
@@ -313,4 +313,48 @@ func TestUsage(t *testing.T) {
 			t.Fatalf("reply = %+v, %v", got, err)
 		}
 	})
+}
+
+// Строгий сервер не знает stream_options и отвечает 400 — поток идет еще раз
+// без поля, чат не ломается; счета тогда нет, и это видно (ревью #491).
+func TestStream_RetriesWithoutStreamOptions(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		b, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(b), "stream_options") {
+			http.Error(w, "Unrecognized request argument: stream_options", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range []string{`data: {"choices":[{"delta":{"content":"ок"},"finish_reason":"stop"}]}`, `data: [DONE]`} {
+			_, _ = io.WriteString(w, line+"\n\n")
+		}
+	}))
+	defer srv.Close()
+	got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if err != nil || got.Content != "ок" || got.Usage.Counted || calls != 2 {
+		t.Fatalf("reply %+v, err %v, запросов %d", got, err, calls)
+	}
+}
+
+// Счет, присланный до сбоя потока, не теряется: провайдер эти токены уже посчитал.
+func TestStream_UsageSurvivesBrokenStream(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, line := range []string{
+			`data: {"choices":[{"delta":{"content":"ок"}}]}`,
+			`data: {"choices":[],"usage":{"prompt_tokens":3100,"completion_tokens":180}}`,
+			`data: {не json`,
+		} {
+			_, _ = io.WriteString(w, line+"\n\n")
+		}
+	}))
+	defer srv.Close()
+	got, err := llm.Client{BaseURL: srv.URL + "/v1", Key: key, Model: "m", HTTP: srv.Client()}.
+		Stream(context.Background(), []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}, nil, func(string) {})
+	if err == nil || got.Usage != (chat.Usage{In: 3100, Out: 180, Counted: true}) {
+		t.Fatalf("reply %+v, err %v", got, err)
+	}
 }

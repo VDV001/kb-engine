@@ -58,10 +58,9 @@ func TestMeter(t *testing.T) {
 		first   time.Duration
 		took    time.Duration
 	}{
-		{"ответ целиком", fakeModel{reply: chat.ModelReply{Content: "ок", Usage: chat.Usage{In: 5200, Out: 640}}}, false, domain.CallAnswer, 3 * time.Second, 3 * time.Second},
-		{"шаг поиска", fakeModel{reply: chat.ModelReply{ToolCalls: []chat.ToolCall{{ID: "1", Name: "search"}}, Usage: chat.Usage{In: 5200, Out: 640}}}, false, domain.CallSearch, 3 * time.Second, 3 * time.Second},
-		{"поток", fakeStreamer{fakeModel{reply: chat.ModelReply{Content: "Сейчас", Usage: chat.Usage{In: 5200, Out: 640}}}}, true, domain.CallAnswer, time.Second, 3 * time.Second},
-		{"поток у модели без потока", fakeModel{reply: chat.ModelReply{Content: "ок", Usage: chat.Usage{In: 5200, Out: 640}}}, true, domain.CallAnswer, 3 * time.Second, 3 * time.Second},
+		{"ответ целиком", fakeModel{reply: chat.ModelReply{Content: "ок", Usage: chat.Usage{In: 5200, Out: 640, Counted: true}}}, false, domain.CallAnswer, 3 * time.Second, 3 * time.Second},
+		{"шаг поиска", fakeModel{reply: chat.ModelReply{ToolCalls: []chat.ToolCall{{ID: "1", Name: "search"}}, Usage: chat.Usage{In: 5200, Out: 640, Counted: true}}}, false, domain.CallSearch, 3 * time.Second, 3 * time.Second},
+		{"поток", fakeStreamer{fakeModel{reply: chat.ModelReply{Content: "Сейчас", Usage: chat.Usage{In: 5200, Out: 640, Counted: true}}}}, true, domain.CallAnswer, time.Second, 3 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := &memRec{}
@@ -75,7 +74,11 @@ func TestMeter(t *testing.T) {
 			var err error
 			var shown []string
 			if tc.stream {
-				got, err = m.Stream(t.Context(), q, nil, func(s string) { shown = append(shown, s) })
+				st, ok := m.(chat.Streamer)
+				if !ok {
+					t.Fatal("счетчик потоковой модели — не поток")
+				}
+				got, err = st.Stream(t.Context(), q, nil, func(s string) { shown = append(shown, s) })
 			} else {
 				got, err = m.Complete(t.Context(), q, nil)
 			}
@@ -90,7 +93,7 @@ func TestMeter(t *testing.T) {
 			}
 			r := rec.calls[0]
 			if r.Purpose() != tc.purpose || r.In() != 5200 || r.Out() != 640 || r.Model() != "anthropic/claude-sonnet-5.5" ||
-				r.FirstToken() != tc.first || r.Took() != tc.took || r.Failed() || !r.At().Equal(t0) {
+				!r.Counted() || r.FirstToken() != tc.first || r.Took() != tc.took || r.Failed() || !r.At().Equal(t0) {
 				t.Fatalf("запись = %+v", r)
 			}
 		})
@@ -124,5 +127,29 @@ func TestMeter_RecordFailureDoesNotBreakAnswer(t *testing.T) {
 	got, err := m.Complete(t.Context(), nil, nil)
 	if err != nil || got.Content != "ок" || reported == nil {
 		t.Fatalf("ответ %+v, ошибка %v, сообщено %v", got, err, reported)
+	}
+}
+
+// Модель без потока остается без потока и за счетчиком: чат по этому
+// признаку не показывает ответ кусками (ревью #491).
+func TestMeter_StreamerOnlyIfInnerStreams(t *testing.T) {
+	rec := &memRec{}
+	if _, ok := usage.NewMeter(fakeModel{}, "m", usage.AnswerOrSearch, rec, time.Now, nil).(chat.Streamer); ok {
+		t.Fatal("счетчик модели без потока притворяется потоком")
+	}
+	if _, ok := usage.NewMeter(fakeStreamer{}, "m", usage.AnswerOrSearch, rec, time.Now, nil).(chat.Streamer); !ok {
+		t.Fatal("счетчик потоковой модели — не поток")
+	}
+}
+
+// Неудачный шаг, где модели давали инструменты, — шаг поиска: ответа нет, и
+// по нему назначение не узнать (ревью #491).
+func TestMeter_FailedStepWithTools(t *testing.T) {
+	rec := &memRec{}
+	c := &clock{t: []time.Time{t0, t0.Add(time.Second)}}
+	m := usage.NewMeter(fakeModel{err: errors.New("timeout")}, "m", usage.AnswerOrSearch, rec, c.now, nil)
+	_, _ = m.Complete(t.Context(), nil, []chat.Tool{{Name: "search"}})
+	if len(rec.calls) != 1 || rec.calls[0].Purpose() != domain.CallSearch || rec.calls[0].Counted() {
+		t.Fatalf("записи = %+v", rec.calls)
 	}
 }
