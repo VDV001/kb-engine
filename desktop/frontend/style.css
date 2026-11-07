@@ -930,6 +930,35 @@ rect.st-bar-r { transform-box: fill-box; transform-origin: bottom; animation: st
 .st-table .n { text-align: right; font-variant-numeric: tabular-nums; }
 .st-table tr.row { cursor: pointer; }
 .st-table tr.row:hover td { background: var(--z-bg-3); }
+/* Лента, Карта, Деньги (#493) */
+.st-line { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.st-line .st-go[disabled] { opacity: .5; cursor: default; }
+.st-selr { fill: var(--z-accent-wash); stroke: var(--z-accent); stroke-width: 1; stroke-dasharray: 3 3; pointer-events: none; }
+.st-heat { display: grid; grid-template-columns: 26px repeat(24, minmax(0, 1fr)); gap: 3px; align-items: center; }
+.st-heat .hh, .st-heat .wd, .st-cal .wd { color: var(--z-faint); font-size: 10px; text-align: center; }
+.st-heat button { height: 22px; }
+.st-heat button, .st-cal button { min-width: 0; border: 0; border-radius: 2px; cursor: pointer; padding: 0; transition: transform var(--z-dur) var(--z-ease); }
+.st-heat button:hover, .st-cal button:hover { transform: scale(1.25); outline: 1px solid var(--z-ink-2); }
+.st-cal { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 14px); grid-auto-columns: 14px; gap: 3px; overflow-x: auto; padding-bottom: 4px; }
+.st-cal .wd { line-height: 14px; }
+.st-cal button { width: 14px; height: 14px; }
+.st-cal button[aria-pressed="true"] { outline: 2px solid var(--z-accent); outline-offset: 1px; }
+.st-warn { border: 1px solid var(--z-lvl-warn, var(--z-bad)); color: var(--z-ink); background: color-mix(in srgb, var(--z-lvl-warn, var(--z-bad)) 12%, transparent); border-radius: var(--z-radius); padding: 8px 12px; font-size: 13px; }
+.st-limit-in { display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--z-muted); }
+.st-limit-in input, .st-price { width: 80px; font: 12px var(--z-font); padding: 3px 6px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); color: var(--z-ink); text-align: right; }
+.st-track { position: relative; height: 14px; margin: 18px 0 6px; background: var(--z-bg-3); border-radius: 7px; }
+.st-track .fill { position: absolute; inset: 0 auto 0 0; border-radius: 7px; background: var(--z-accent); transition: width .6s var(--z-ease); }
+body:not(.no-st-money) .st-track .fill { background: var(--sp-cool); }
+.st-track .fill.hot { background: var(--z-lvl-warn, var(--z-bad)); }
+.st-track .fc, .st-track .p80 { position: absolute; top: -4px; bottom: -4px; width: 0; border-left: 2px dashed var(--z-ink-2); }
+.st-track .p80 { border-left: 2px solid var(--z-lvl-warn, var(--z-bad)); opacity: .7; }
+.st-track .lim { position: absolute; top: -6px; width: 14px; height: 26px; margin-left: -7px; border: 2px solid var(--z-ink); border-radius: 4px; background: var(--z-bg-2); cursor: ew-resize; padding: 0; touch-action: none; }
+.st-track .lim span { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11px; color: var(--z-ink); }
+.st-sw.st-fc { background: none; border-left: 2px dashed var(--z-ink-2); width: 0; }
+.st-sw.st-p80 { background: var(--z-lvl-warn, var(--z-bad)); }
+.st-tips { display: grid; gap: 8px; font-size: 13px; }
+.st-hbars button > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (prefers-reduced-motion: reduce) { .st-track .fill, .st-heat button, .st-cal button { transition: none; } }
 .st-table tr.det td { background: var(--z-bg); white-space: normal; }
 .st-scroll { overflow: auto; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); max-height: 60vh; }
 .st-chips { display: flex; flex-wrap: wrap; gap: 6px; }

@@ -1643,6 +1643,7 @@ const ACCENTS = [
   ["chat-docs", "Счет документов", "число документов чата"],
   ["chat-thinking", "Ожидание ответа", "бегущая полоса, пока модель думает"],
   ["chat-title", "Заголовок чата", "название в шапке разговора"],
+  ["st-money", "Шкала расхода", "полоса «потрачено» в Деньгах статистики"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -2910,7 +2911,7 @@ paintThemeBtn();
 // --- Статистика (решение владельца 07.11) ----------------------------------------
 // Пульт и Журнал на журнале вызовов модели. Правило переходов одно: день или
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
-const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut" } };
+const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut", feed: "bars", heat: "calls" }, feedSel: null, cal: null, calDay: null, money: null };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
@@ -2934,6 +2935,7 @@ const stTipHide = () => { if (stTipEl) stTipEl.hidden = true; };
 const stRow = (c, n, v) => `<div class="r"><span>${stSw(c)}${esc(n)}</span><span>${v}</span></div>`;
 
 async function openStats() {
+  st.money = null; st.cal = null; // «Деньги» и календарь перечитываются при каждом открытии
   $("#st-range").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === st.days));
   await stLoad();
 }
@@ -2957,11 +2959,13 @@ function stGo(screen, f, why) {
 $("#st-back").addEventListener("click", () => { const h = st.hist.pop(); if (h) { Object.assign(st, h); stRender(); } });
 $("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open: null, from: null }); stRender(); });
 document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
-$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); }); // «Назад» не вернет строку и день прежнего периода
+$("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; st.feedSel = null; if (st.f.day) Object.assign(st, { f: { ...st.f, day: undefined }, from: null }); openStats(); }); // «Назад» не вернет строку и день прежнего периода
 
 function stDescribe() {
   const f = st.f, p = [];
   if (f.day) p.push(`день <b>${stDay(f.day)}</b>`);
+  if (f.from) p.push(`период <b>${stDay(f.from)} — ${stDay(f.to)}</b>`);
+  if (f.wd != null) p.push(`<b>${ST_WD_FULL[f.wd]}, ${f.hour}:00–${f.hour + 1}:00</b>`);
   if (f.purpose) p.push(`назначение <b>${esc(st.data.purposes.find((x) => x.id === f.purpose)?.title || f.purpose)}</b>`);
   if (f.model) p.push(`модель <b>${esc(f.model)}</b>`);
   if (f.failed) p.push("<b>только с ошибкой</b>");
@@ -2973,20 +2977,20 @@ function stRender() {
   if (!st.data) return;
   document.querySelectorAll("#stats-view [data-st]").forEach((b) => { if (b.dataset.st === st.screen) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
   const f = st.f, d = stDescribe();
-  $("#st-cmd").textContent = (st.screen === "log" ? "dvk stats log" : "dvk stats") + (f.day ? ` --day ${f.day}` : ` --since ${st.days}d`) + (f.purpose ? ` --purpose ${f.purpose}` : "") + (f.model ? ` --model ${f.model}` : "");
+  $("#st-cmd").textContent = "dvk stats" + (st.screen === "pulse" ? "" : " " + st.screen) + (st.screen === "money" ? " --month" : f.day ? ` --day ${f.day}` : f.from ? ` --from ${f.from} --to ${f.to}` : ` --since ${st.days}d`) + (f.wd != null ? ` --weekday ${f.wd + 1} --hour ${f.hour}` : "") + (f.purpose ? ` --purpose ${f.purpose}` : "") + (f.model ? ` --model ${f.model}` : "");
   $("#st-ctx").hidden = !(st.from || d);
   $("#st-ctx-text").innerHTML = (st.from ? `Вы пришли сюда, нажав ${esc(st.from)}. ` : "") + (d ? `Показано: ${d}.` : "");
   $("#st-back").hidden = !st.hist.length; $("#st-reset").hidden = !d;
-  if (!st.data.total.calls) {
+  if (!st.data.total.calls && st.screen !== "money") {
     $("#st-body").innerHTML = `<div class="st-empty"><b>За ${st.days} дн вызовов модели нет.</b><span>Окно считает каждый вызов с этой версии: ответы в «Чате», поиск моделью, разбор портрета. Задайте вопрос в чате — он появится здесь.</span>${st.data.bad ? `<span>Нечитаемых строк в журнале: ${st.data.bad}.</span>` : ""}</div>`;
     return;
   }
-  (st.screen === "log" ? stLog : stPulse)($("#st-body"));
+  (ST_SCREENS[st.screen] || stPulse)($("#st-body"));
   if (!stReduce()) stCount($("#st-body"));
 }
 function stCount(root) {
   root.querySelectorAll("[data-n]").forEach((b) => {
-    const v = +b.dataset.n, fmt = b.dataset.f === "tok" ? stTok : stNum, t0 = performance.now();
+    const v = +b.dataset.n, fmt = b.dataset.f === "tok" ? stTok : b.dataset.f === "usd" ? stUsd : stNum, t0 = performance.now();
     const step = (t) => { const k = Math.min(1, (t - t0) / 800); b.textContent = fmt(k === 1 ? v : v * (1 - Math.pow(1 - k, 3))); if (k < 1 && b.isConnected) requestAnimationFrame(step); };
     requestAnimationFrame(step);
   });
@@ -3091,7 +3095,7 @@ function stShare(host, parts, mode, onPick) {
 
 function stLog(host) {
   const v = st.data, f = st.f;
-  const rows = v.calls.filter((c) => (!f.day || c.at.slice(0, 10) === f.day) && (!f.purpose || c.purpose === f.purpose) && (!f.model || c.model === f.model) && (!f.failed || c.failed) && (!f.uncounted || !c.counted));
+  const rows = v.calls.filter((c) => (!f.day || c.at.slice(0, 10) === f.day) && stInRange(c.at, f) && (f.wd == null || (stWd(c.at) === f.wd && +c.at.slice(11, 13) === f.hour)) && (!f.purpose || c.purpose === f.purpose) && (!f.model || c.model === f.model) && (!f.failed || c.failed) && (!f.uncounted || !c.counted));
   const shown = rows.slice(0, 200);
   const time = (iso) => stDay(iso.slice(0, 10)) + " " + iso.slice(11, 16);
   host.innerHTML = `<div class="st-hd"><div class="st-chips">${v.purposes.map((p) => `<button class="st-chip" data-p="${p.id}" aria-pressed="${f.purpose === p.id}">${esc(p.title)}</button>`).join("")}</div>
@@ -3113,6 +3117,235 @@ function stLog(host) {
     $("#st-card-day").addEventListener("click", (e) => { e.stopPropagation(); stGo("log", { day }, `вызов ${time(c.at)} в Журнале`); });
   }
 }
+
+// --- Лента, Карта активности, Деньги (#493) ---------------------------------------
+// То же правило переходов: время → Лента, что именно → Журнал, один вызов →
+// его день на Карте, цена и лимит → Деньги. Лента и Карта считаются здесь из
+// вызовов периода; Деньги — из окна (StatsMoney): цены и лимит живут там.
+const ST_WD = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"];
+const ST_WD_FULL = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"];
+const ST_MON_FULL = ["январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"];
+const stWd = (iso) => { const [y, m, d] = iso.slice(0, 10).split("-").map(Number); return (new Date(y, m - 1, d).getDay() + 6) % 7; };
+const stUsd = (v) => "$" + v.toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: v > 0 && v < 1 ? 4 : 2 });
+const stInRange = (iso, f) => (!f.from || iso.slice(0, 10) >= f.from) && (!f.to || iso.slice(0, 10) <= f.to);
+const stTitle = (id) => st.data.purposes.find((p) => p.id === id)?.title || id;
+
+// stEnsure reloads a longer period when a link points before the current one
+// (день календаря 90 дней при периоде 7 дн): Журнал читает вызовы периода.
+async function stEnsure(day) {
+  if (st.data.days.some((d) => d.date === day)) return;
+  st.days = 90;
+  $("#st-range").querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.d === st.days));
+  st.data = await native().Stats(st.days);
+}
+
+function stFeed(host) {
+  const v = st.data, days = v.days, n = days.length, ids = v.purposes.map((p) => p.id);
+  const at = Object.fromEntries(days.map((d, i) => [d.date, i]));
+  const grid = days.map(() => Object.fromEntries(ids.map((id) => [id, 0])));
+  for (const c of v.calls) { const i = at[c.at.slice(0, 10)]; if (i != null) grid[i][c.purpose] += c.in + c.out; }
+  const sel = st.feedSel && st.feedSel.b < n ? st.feedSel : { a: 0, b: n - 1 };
+  const whole = sel.a === 0 && sel.b === n - 1, from = days[sel.a].date, to = days[sel.b].date;
+  const calls = v.calls.filter((c) => stInRange(c.at, { from, to }));
+  const sum = (k) => calls.reduce((a, c) => a + c[k], 0), failed = calls.filter((c) => c.failed).length;
+  const parts = ids.map((id) => ({ id, name: stTitle(id), color: ST_COLORS[id] || "--z-faint", v: calls.filter((c) => c.purpose === id).reduce((a, c) => a + c.in + c.out, 0) })).filter((p) => p.v > 0);
+  const models = Object.entries(calls.reduce((a, c) => ((a[c.model] = (a[c.model] || 0) + 1), a), {})).sort((a, b) => b[1] - a[1]);
+  const range = { from, to }, why = whole ? `Ленту за ${n} дн` : `период ${stDay(from)} — ${stDay(to)} на Ленте`;
+  host.innerHTML = `<div class="st-panel"><div class="st-hd"><div><h3>Лента токенов по назначениям</h3><div class="st-sub">протяните по графику — цифры ниже пересчитаются под период; нажмите — один день</div></div>${stSeg("st-m3", [["bars", "столбцы"], ["area", "площадь"]], st.modes.feed)}</div><div id="st-c3"></div>
+      <div class="st-legend">${ids.map((id) => `<span>${stSw(ST_COLORS[id] || "--z-faint")}${esc(stTitle(id))}</span>`).join("")}</div></div>
+    <div class="st-line"><b>${whole ? `Весь период, ${n} дн` : `${stDay(from)} — ${stDay(to)}, ${sel.b - sel.a + 1} дн`}</b>${whole ? "" : ` <button class="st-chip" id="st-feed-all">весь период</button>`}
+      <span class="st-gap"></span><button class="st-go" id="st-feed-log"${calls.length ? "" : " disabled"}>Открыть ${stNum(calls.length)} ${plural(calls.length, "вызов", "вызова", "вызовов")} периода в Журнале</button></div>
+    <div class="st-kpis"><button data-fk="in"><span>Вход</span><b data-n="${sum("in")}" data-f="tok">${stTok(sum("in"))}</b><span class="to">Журнал →</span></button><button data-fk="out"><span>Выход</span><b data-n="${sum("out")}" data-f="tok">${stTok(sum("out"))}</b><span class="to">Журнал →</span></button><button data-fk="calls"><span>Вызовов</span><b data-n="${calls.length}">${stNum(calls.length)}</b><span class="to">Журнал →</span></button><button data-fk="failed"><span>С ошибкой</span><b data-n="${failed}">${stNum(failed)}</b><span class="to">Журнал →</span></button></div>
+    <div class="st-grid"><div class="st-panel"><h3>Доли за период</h3><div class="st-sub">нажмите — Журнал периода с этим назначением</div><div id="st-c4"></div></div>
+      <div class="st-panel"><h3>Модели за период</h3><div class="st-sub">нажмите — Журнал периода по модели</div>${models.length ? `<div class="st-hbars">${models.map(([m, k]) => `<button data-fm="${esc(m)}"><span>${esc(m)}</span><i style="width:${Math.max(2, (k / models[0][1]) * 100)}%;background:${stCss("--z-accent")}"></i><span>${stNum(k)}</span></button>`).join("")}</div>` : `<div class="st-sub">Вызовов нет.</div>`}</div></div>`;
+  stBindSeg("st-m3", "feed");
+  stFeedChart($("#st-c3"), days, ids, grid, st.modes.feed, whole ? null : sel, (a, b) => { st.feedSel = { a, b }; stRender(); });
+  if ($("#st-feed-all")) $("#st-feed-all").addEventListener("click", () => { st.feedSel = null; stRender(); });
+  $("#st-feed-log").addEventListener("click", () => stGo("log", whole ? {} : range, why));
+  host.querySelectorAll("[data-fk]").forEach((b) => b.addEventListener("click", () => stGo("log", { ...(whole ? {} : range), ...(b.dataset.fk === "failed" ? { failed: true } : {}) }, `«${b.querySelector("span").textContent}» за ${why}`)));
+  host.querySelectorAll("[data-fm]").forEach((b) => b.addEventListener("click", () => stGo("log", { ...(whole ? {} : range), model: b.dataset.fm }, `модель ${b.dataset.fm} за ${why}`)));
+  if (parts.length) stShare($("#st-c4"), parts, st.modes.share, (p) => stGo("log", { ...(whole ? {} : range), purpose: p.id }, `долю «${p.name}» за ${why}`));
+  else $("#st-c4").innerHTML = `<div class="st-sub">Токенов по счету за период нет.</div>`;
+}
+
+// stFeedChart draws tokens by day stacked by purpose; протяжка выделяет период.
+function stFeedChart(host, days, ids, grid, mode, sel, onSel) {
+  const W = 1040, H = 230, L = 46, R = 8, T = 10, B = 24, n = days.length, bw = (W - L - R) / n;
+  const svg = stEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "лента токенов по назначениям" }); host.appendChild(svg);
+  const stacks = grid.map((g) => { let a = 0; return ids.map((id) => (a += g[id])); });
+  const max = Math.max(1, ...stacks.map((s) => s[s.length - 1] || 0)) * 1.08;
+  const x = (i) => L + bw * (i + 0.5), y = (v) => T + (H - T - B) * (1 - v / max);
+  for (let k = 0; k <= 3; k++) { const v = (max / 1.08) * k / 3; stEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: stCss("--z-rule") }, svg); stEl("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end" }, svg).textContent = stTok(v); }
+  const step = Math.max(1, Math.round(n / 6));
+  days.forEach((d, i) => { if (i % step === 0 || i === n - 1) stEl("text", { x: x(i), y: H - 6, "text-anchor": "middle" }, svg).textContent = stDay(d.date); });
+  const selR = stEl("rect", { class: "st-selr", y: T, height: H - T - B, x: 0, width: 0, visibility: "hidden" }, svg);
+  const showSel = (a, b) => { const lo = Math.min(a, b), hi = Math.max(a, b); selR.setAttribute("x", L + bw * lo); selR.setAttribute("width", bw * (hi - lo + 1)); selR.setAttribute("visibility", "visible"); };
+  if (sel) showSel(sel.a, sel.b);
+  const g = stEl("g", { class: mode === "bars" ? "" : "st-draw" }, svg);
+  if (mode === "bars") {
+    grid.forEach((_, i) => { let prev = 0; ids.forEach((id, k) => { const v = stacks[i][k]; if (v === prev) return; const r = stEl("rect", { class: "st-bar-r", x: x(i) - bw * 0.36, width: bw * 0.72, y: y(v), height: Math.max(0.5, y(prev) - y(v)), fill: stCss(ST_COLORS[id] || "--z-faint"), "fill-opacity": 0.85 }, g); r.style.animationDelay = Math.min(0.6, i * 0.012) + "s"; prev = v; }); });
+  } else {
+    for (let k = ids.length - 1; k >= 0; k--) {
+      const top = grid.map((_, i) => [x(i), y(stacks[i][k])]), bot = grid.map((_, i) => [x(i), y(k ? stacks[i][k - 1] : 0)]).reverse();
+      stEl("path", { d: "M" + top.map((q) => q.join(",")).join("L") + "L" + bot.map((q) => q.join(",")).join("L") + "Z", fill: stCss(ST_COLORS[ids[k]] || "--z-faint"), "fill-opacity": 0.3 }, g);
+      stEl("path", { d: "M" + top.map((q) => q.join(",")).join("L"), fill: "none", stroke: stCss(ST_COLORS[ids[k]] || "--z-faint"), "stroke-width": 1.6 }, g);
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => g.classList.add("in")));
+  }
+  const pos = (e) => { const r = svg.getBoundingClientRect(), px = ((e.clientX - r.left) / r.width) * W; return Math.max(0, Math.min(n - 1, Math.floor((px - L) / bw))); };
+  let drag = null;
+  svg.style.cursor = "crosshair";
+  svg.addEventListener("pointerdown", (e) => { drag = pos(e); svg.setPointerCapture(e.pointerId); showSel(drag, drag); stTipHide(); });
+  svg.addEventListener("pointermove", (e) => {
+    const i = pos(e);
+    if (drag != null) return showSel(drag, i);
+    const d = days[i];
+    stTip(e.clientX, e.clientY, `<div class="t">${stDay(d.date)}</div>` + ids.filter((id) => grid[i][id]).map((id) => stRow(ST_COLORS[id] || "--z-faint", stTitle(id), stTok(grid[i][id]))).join("") + stRow("--z-faint", "Вызовов", stNum(d.calls)) + `<div class="st-hint">Протяните — период, нажмите — день</div>`);
+  });
+  svg.addEventListener("pointerleave", () => { if (drag == null) stTipHide(); });
+  svg.addEventListener("pointerup", (e) => { if (drag == null) return; const a = drag, b = pos(e); drag = null; onSel(Math.min(a, b), Math.max(a, b)); });
+  svg.addEventListener("pointercancel", () => { drag = null; });
+}
+
+function stHeat(host) {
+  const v = st.data, byTok = st.modes.heat === "tokens";
+  const cells = Array.from({ length: 7 }, () => Array(24).fill(0));
+  for (const c of v.calls) cells[stWd(c.at)][+c.at.slice(11, 13)] += byTok ? c.in + c.out : 1;
+  const max = Math.max(1, ...cells.flat());
+  const shade = (n) => (n ? `color-mix(in srgb, var(--z-accent) ${Math.round(18 + (n / max) * 82)}%, var(--z-bg-3))` : "var(--z-bg-3)");
+  host.innerHTML = `<div class="st-panel"><div class="st-hd"><div><h3>Когда зовете модель</h3><div class="st-sub">дни недели × часы за ${st.days} дн; нажмите клетку — Журнал этого часа</div></div>${stSeg("st-m5", [["calls", "вызовы"], ["tokens", "токены"]], st.modes.heat)}</div>
+      <div class="st-heat"><span></span>${Array.from({ length: 24 }, (_, h) => `<span class="hh">${h % 3 ? "" : h}</span>`).join("")}
+      ${cells.map((row, wd) => `<span class="wd">${ST_WD[wd]}</span>` + row.map((n, h) => `<button data-wd="${wd}" data-h="${h}" style="background:${shade(n)}" aria-label="${ST_WD_FULL[wd]}, ${h}:00 — ${byTok ? stTok(n) + " токенов" : n + " " + plural(n, "вызов", "вызова", "вызовов")}"></button>`).join("")).join("")}</div></div>
+    <div class="st-panel"><div class="st-hd"><div><h3>Календарь 90 дней</h3><div class="st-sub">нажмите день — карточка дня</div></div></div><div id="st-cal">${st.cal ? "" : '<div class="st-sub">читаю 90 дней…</div>'}</div><div id="st-calday"></div></div>`;
+  stBindSeg("st-m5", "heat");
+  host.querySelectorAll(".st-heat button").forEach((b) => {
+    const wd = +b.dataset.wd, h = +b.dataset.h;
+    b.addEventListener("pointermove", (e) => stTip(e.clientX, e.clientY, `<div class="t">${ST_WD_FULL[wd]}, ${h}:00–${h + 1}:00</div>` + stRow("--z-accent", byTok ? "Токенов" : "Вызовов", byTok ? stTok(cells[wd][h]) : stNum(cells[wd][h])) + `<div class="st-hint">Нажмите — Журнал этого часа</div>`));
+    b.addEventListener("pointerleave", stTipHide);
+    b.addEventListener("click", () => stGo("log", { wd, hour: h }, `клетку «${ST_WD[wd]}, ${h}:00» на Карте`));
+  });
+  if (st.cal) stCalendar();
+  else native().Stats(90).then((d) => { st.cal = d; if (st.screen === "heat") stCalendar(); }).catch((e) => { $("#st-cal").innerHTML = `<div class="st-sub">Календарь не прочитан: ${esc(errText(e))}</div>`; });
+}
+function stCalendar() {
+  const days = st.cal.days, pad = stWd(days[0].date), max = Math.max(1, ...days.map((d) => d.calls));
+  const shade = (n) => (n ? `color-mix(in srgb, var(--z-accent) ${Math.round(18 + (n / max) * 82)}%, var(--z-bg-3))` : "var(--z-bg-3)");
+  $("#st-cal").innerHTML = `<div class="st-cal">${ST_WD.map((w) => `<span class="wd">${w}</span>`).join("")}${'<span></span>'.repeat(pad)}${days.map((d) => `<button data-day="${d.date}" aria-pressed="${st.calDay === d.date}" style="background:${shade(d.calls)}" aria-label="${stDay(d.date)}: ${d.calls} ${plural(d.calls, "вызов", "вызова", "вызовов")}"></button>`).join("")}</div>`;
+  $("#st-cal").querySelectorAll("button").forEach((b) => {
+    const d = days.find((x) => x.date === b.dataset.day);
+    b.addEventListener("pointermove", (e) => stTip(e.clientX, e.clientY, `<div class="t">${stDay(d.date)}, ${ST_WD[stWd(d.date)]}</div>` + stRow("--z-accent", "Вызовов", stNum(d.calls)) + stRow("--z-faint", "Токенов", stTok(d.in + d.out)) + `<div class="st-hint">Нажмите — карточка дня</div>`));
+    b.addEventListener("pointerleave", stTipHide);
+    b.addEventListener("click", () => { st.calDay = d.date; stCalendar(); });
+  });
+  stCalDay();
+}
+function stCalDay() {
+  const host = $("#st-calday"), d = st.cal && st.cal.days.find((x) => x.date === st.calDay);
+  if (!d) { host.innerHTML = ""; return; }
+  const calls = st.cal.calls.filter((c) => c.at.slice(0, 10) === d.date);
+  const by = Object.entries(calls.reduce((a, c) => ((a[c.title] = (a[c.title] || 0) + 1), a), {}));
+  host.innerHTML = `<div class="st-card"><div><b>${stDay(d.date)}, ${ST_WD_FULL[stWd(d.date)]}</b></div>
+    <div class="st-sub">${d.calls ? `${stNum(d.calls)} ${plural(d.calls, "вызов", "вызова", "вызовов")}: вход ${stTok(d.in)}, выход ${stTok(d.out)}${d.failed ? `, с ошибкой ${d.failed}` : ""}${d.uncounted ? `, без счета ${d.uncounted}` : ""}.` : "В этот день модель не звали."}</div>
+    ${by.length ? `<div class="st-sub">${by.map(([t, k]) => `${esc(t)} — ${k}`).join(" · ")}</div>` : ""}
+    ${d.calls ? `<div><button class="st-go" id="st-calday-log">Все ${d.calls} ${plural(d.calls, "вызов", "вызова", "вызовов")} этого дня в Журнале</button></div>` : ""}</div>`;
+  if ($("#st-calday-log")) $("#st-calday-log").addEventListener("click", async () => { await stEnsure(d.date); stGo("log", { day: d.date }, `день ${stDay(d.date)} в календаре Карты`); });
+}
+
+async function stMoney(host) {
+  if (!native().StatsMoney) { host.innerHTML = `<div class="st-empty">Деньги считает окно приложения.</div>`; return; }
+  if (!st.money) {
+    host.innerHTML = `<div class="st-empty">Считаю расход месяца…</div>`;
+    try { st.money = await native().StatsMoney(); } catch (e) { host.innerHTML = `<div class="st-empty">Не посчитать: ${esc(errText(e))}</div>`; return; }
+    if (st.screen !== "money") return;
+  }
+  const m = st.money, lim = parseFloat((m.limit || "").replace(",", ".")) || 0, mon = ST_MON_FULL[+m.month.slice(5, 7) - 1];
+  const share = (x) => (m.spent ? Math.round((x / m.spent) * 100) : 0);
+  const warn = lim && m.spent >= lim ? `Лимит месяца превышен: ${stUsd(m.spent)} из ${stUsd(lim)}.` : lim && m.spent >= lim * 0.8 ? `Потрачено ${Math.round((m.spent / lim) * 100)}% лимита месяца.` : lim && m.forecast > lim ? `По прогнозу месяц выйдет за лимит на ${stUsd(m.forecast - lim)}.` : "";
+  const tips = [];
+  const topP = m.purposes.find((p) => p.cost > 0);
+  if (topP && share(topP.cost) >= 40) tips.push([`«${topP.title}» — ${share(topP.cost)}% расхода месяца (${stUsd(topP.cost)})`, { purpose: topP.id }, `совет про «${topP.title}» в Деньгах`]);
+  const search = m.purposes.find((p) => p.id === "search" && p.cost > 0);
+  if (search) tips.push([`Шаги поиска моделью стоили ${stUsd(search.cost)}: в режиме «Кто ищет документы → окно» этих шагов нет`, { purpose: "search" }, "совет про поиск моделью в Деньгах"]);
+  const topM = m.models.find((x) => x.cost > 0);
+  if (topM && m.models.filter((x) => x.cost > 0).length > 1) tips.push([`${topM.id} — ${share(topM.cost)}% расхода месяца (${stUsd(topM.cost)}); модель меняется в «Чат и модель»`, { model: topM.id }, `совет про ${topM.id} в Деньгах`]);
+  if (m.unpriced) tips.push([`${m.unpriced} ${plural(m.unpriced, "вызов", "вызова", "вызовов")} без цены модели — не вошли в расход; задайте цену в таблице ниже`, null]);
+  host.innerHTML = `<div class="st-kpis"><button data-mk="spent"><span>Потрачено в ${mon}</span><b data-n="${m.spent}" data-f="usd">${stUsd(m.spent)}</b><em>за ${m.daysPassed} ${plural(m.daysPassed, "день", "дня", "дней")}</em><span class="to">Журнал →</span></button>
+      <button data-mk="forecast"><span>Прогноз на месяц</span><b data-n="${m.forecast}" data-f="usd">${stUsd(m.forecast)}</b><em>по среднему прошедших дней</em></button>
+      <button data-mk="limit"><span>Лимит месяца</span><b>${lim ? stUsd(lim) : "не задан"}</b><em>${lim ? `осталось ${stUsd(Math.max(0, lim - m.spent))}` : "потяните шкалу ниже"}</em></button>
+      ${m.unpriced || m.uncounted ? `<button data-mk="unknown"><span>Не вошло в расход</span><b>${stNum(m.unpriced + m.uncounted)}</b><em>${m.unpriced ? `без цены ${m.unpriced}` : ""}${m.unpriced && m.uncounted ? " · " : ""}${m.uncounted ? `без счета ${m.uncounted}` : ""}</em></button>` : ""}</div>
+    ${warn ? `<div class="st-warn" role="status">${esc(warn)}</div>` : ""}
+    <div class="st-panel"><div class="st-hd"><div><h3>Расход против лимита</h3><div class="st-sub">потяните метку лимита по шкале или впишите число; метка 80% — порог предупреждения</div></div>
+      <div class="st-limit-in"><label>лимит, $ <input id="st-lim" inputmode="decimal" value="${esc(m.limit || "")}" placeholder="нет"></label><button class="st-chip" id="st-lim-save">Сохранить</button>${lim ? '<button class="st-chip" id="st-lim-off">Снять</button>' : ""}</div></div>
+      <div class="st-scale" id="st-scale"></div><div id="st-c6"></div></div>
+    <div class="st-grid"><div class="st-panel"><h3>Расход по назначениям</h3><div class="st-sub">нажмите — Журнал с этим назначением</div>${m.purposes.length ? `<div class="st-hbars">${m.purposes.map((p, i) => `<button data-mp="${i}"><span>${stSw(ST_COLORS[p.id] || "--z-faint")}${esc(p.title)}</span><i style="width:${Math.max(2, m.spent ? (p.cost / m.spent) * 100 : 0)}%;background:${stCss(ST_COLORS[p.id] || "--z-faint")}"></i><span>${stUsd(p.cost)}</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} вызовов нет.</div>`}</div>
+      <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map(([t, f], i) => `<div>${esc(t)}${f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
+    <div class="st-panel"><h3>Цены моделей</h3><div class="st-sub">долларов за 1 млн токенов; «шлюз» — из списка моделей Vercel AI Gateway, раз в сутки; своя цена главнее, пустые поля — снова цена шлюза${m.priceNote ? `. <b>${esc(m.priceNote)}</b>` : ""}</div>
+      <div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Модель</th><th class="n">Вызовов</th><th class="n">Расход</th><th class="n">Вход, $</th><th class="n">Выход, $</th><th>Цена</th><th></th></tr></thead><tbody>${m.models.map((x, i) => `<tr data-mi="${i}"><td>${esc(x.id)}</td><td class="n">${stNum(x.calls)}</td><td class="n">${x.priced ? stUsd(x.cost) : "—"}</td>
+        <td class="n"><input class="st-price" data-pin="${i}" value="${esc(x.source === "своя" ? x.in : "")}" placeholder="${esc(x.in || "нет")}" inputmode="decimal"></td><td class="n"><input class="st-price" data-pout="${i}" value="${esc(x.source === "своя" ? x.out : "")}" placeholder="${esc(x.out || "нет")}" inputmode="decimal"></td>
+        <td>${x.source || '<span class="st-pill bad">нет цены</span>'}</td><td><button class="st-chip" data-psave="${i}">Сохранить</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  const reload = async () => { st.money = null; await stMoney(host); if (!stReduce()) stCount(host); };
+  const setLimit = async (v) => { try { await native().SetSpendLimit(v); showError(""); } catch (e) { showError("Лимит не сохранен: " + errText(e)); } await reload(); };
+  $("#st-lim-save").addEventListener("click", () => setLimit($("#st-lim").value.trim()));
+  $("#st-lim").addEventListener("keydown", (e) => e.key === "Enter" && setLimit($("#st-lim").value.trim()));
+  if ($("#st-lim-off")) $("#st-lim-off").addEventListener("click", () => setLimit(""));
+  host.querySelectorAll('[data-mk="forecast"], [data-mk="limit"]').forEach((b) => b.addEventListener("click", () => $("#st-lim").focus()));
+  host.querySelector('[data-mk="spent"]').addEventListener("click", () => stGo("log", {}, `«Потрачено в ${mon}» в Деньгах`));
+  host.querySelectorAll("[data-mp]").forEach((b) => b.addEventListener("click", () => { const p = m.purposes[+b.dataset.mp]; stGo("log", { purpose: p.id }, `«${p.title}» в Деньгах`); }));
+  host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const [, f, why] = tips[+b.dataset.tipI]; stGo("log", f, why); }));
+  host.querySelectorAll("[data-psave]").forEach((b) => b.addEventListener("click", async () => {
+    const i = +b.dataset.psave, x = m.models[i];
+    try { await native().SetModelPrice(x.id, host.querySelector(`[data-pin="${i}"]`).value.trim(), host.querySelector(`[data-pout="${i}"]`).value.trim()); showError(""); toast("Сохранено", ` · цена ${x.id}`); }
+    catch (e) { showError("Цена не сохранена: " + errText(e)); return; }
+    await reload();
+  }));
+  stScale($("#st-scale"), m, lim, setLimit);
+  stMonthChart($("#st-c6"), m, lim);
+}
+
+// stScale is the month's spend against the limit; метку лимита тянут мышью.
+function stScale(host, m, lim, setLimit) {
+  const top = Math.max(lim, m.forecast, m.spent, 1) * 1.25, pct = (v) => Math.min(100, (v / top) * 100);
+  const round = (v) => (top > 20 ? String(Math.round(v)) : (Math.round(v * 10) / 10).toString());
+  host.innerHTML = `<div class="st-track"><i class="fill${lim && m.spent >= lim * 0.8 ? " hot" : ""}" style="width:${pct(m.spent)}%"></i><i class="fc" style="left:${pct(m.forecast)}%" title="прогноз ${stUsd(m.forecast)}"></i>
+      ${lim ? `<i class="p80" style="left:${pct(lim * 0.8)}%"></i>` : ""}<button class="lim" id="st-lim-h" style="left:${pct(lim)}%" aria-label="Лимит месяца ${lim ? stUsd(lim) : "не задан"}; потяните"><span>${lim ? stUsd(lim) : "лимит"}</span></button></div>
+    <div class="st-legend"><span>${stSw("--z-accent")}потрачено ${stUsd(m.spent)}</span><span><i class="st-sw st-fc"></i>прогноз ${stUsd(m.forecast)}</span>${lim ? `<span><i class="st-sw st-p80"></i>80% лимита — ${stUsd(lim * 0.8)}</span>` : ""}<span>шкала до ${stUsd(top)}</span></div>`;
+  const h = $("#st-lim-h"), track = host.querySelector(".st-track");
+  let val = lim;
+  h.addEventListener("pointerdown", (e) => { h.setPointerCapture(e.pointerId); h.dataset.drag = "1"; });
+  h.addEventListener("pointermove", (e) => {
+    if (!h.dataset.drag) return;
+    const r = track.getBoundingClientRect(), k = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    val = +round(k * top);
+    h.style.left = k * 100 + "%";
+    h.querySelector("span").textContent = stUsd(val);
+  });
+  h.addEventListener("pointerup", () => { if (!h.dataset.drag) return; delete h.dataset.drag; setLimit(val > 0 ? String(val) : ""); });
+}
+
+// stMonthChart is the cumulative spend by day with the forecast and the limit.
+function stMonthChart(host, m, lim) {
+  const W = 1040, H = 170, L = 46, R = 8, T = 10, B = 22, n = m.daysInMonth;
+  const svg = stEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": "расход месяца нарастающим итогом" }); host.appendChild(svg);
+  let a = 0; const cum = m.days.map((v) => (a += v));
+  const max = Math.max(lim, m.forecast, a, 0.01) * 1.1, x = (i) => L + ((W - L - R) * i) / Math.max(1, n - 1), y = (v) => T + (H - T - B) * (1 - v / max);
+  for (let k = 0; k <= 3; k++) { const v = (max / 1.1) * k / 3; stEl("line", { x1: L, x2: W - R, y1: y(v), y2: y(v), stroke: stCss("--z-rule") }, svg); stEl("text", { x: L - 6, y: y(v) + 3, "text-anchor": "end" }, svg).textContent = stUsd(v); }
+  [1, 10, 20, n].forEach((d) => { stEl("text", { x: x(d - 1), y: H - 5, "text-anchor": "middle" }, svg).textContent = d; });
+  if (lim) { stEl("line", { x1: L, x2: W - R, y1: y(lim), y2: y(lim), stroke: stCss("--z-lvl-warn") || stCss("--z-bad"), "stroke-dasharray": "5 4" }, svg); stEl("text", { x: W - R, y: y(lim) - 4, "text-anchor": "end" }, svg).textContent = "лимит " + stUsd(lim); }
+  const g = stEl("g", { class: "st-draw" }, svg);
+  if (cum.length) {
+    stEl("path", { d: "M" + cum.map((v, i) => `${x(i)},${y(v)}`).join("L") + `L${x(cum.length - 1)},${y(0)}L${x(0)},${y(0)}Z`, fill: stCss("--z-accent"), "fill-opacity": 0.2 }, g);
+    stEl("path", { d: "M" + cum.map((v, i) => `${x(i)},${y(v)}`).join("L"), fill: "none", stroke: stCss("--z-accent"), "stroke-width": 2 }, g);
+    stEl("path", { d: `M${x(cum.length - 1)},${y(a)}L${x(n - 1)},${y(m.forecast)}`, fill: "none", stroke: stCss("--z-accent"), "stroke-width": 1.4, "stroke-dasharray": "3 4" }, g);
+  }
+  requestAnimationFrame(() => requestAnimationFrame(() => g.classList.add("in")));
+  svg.addEventListener("pointermove", (e) => {
+    const r = svg.getBoundingClientRect(), i = Math.max(0, Math.min(n - 1, Math.round((((e.clientX - r.left) / r.width) * W - L) / ((W - L - R) / Math.max(1, n - 1)))));
+    stTip(e.clientX, e.clientY, `<div class="t">${i + 1} число</div>` + (i < cum.length ? stRow("--z-accent", "За день", stUsd(m.days[i])) + stRow("--z-accent", "С начала месяца", stUsd(cum[i])) : stRow("--z-faint", "Прогноз к этому дню", stUsd(a + ((m.forecast - a) * (i + 1 - cum.length)) / Math.max(1, n - cum.length)))));
+  });
+  svg.addEventListener("pointerleave", stTipHide);
+}
+
+const ST_SCREENS = { pulse: stPulse, feed: stFeed, heat: stHeat, money: stMoney, log: stLog };
 
 // --- Доступы (#494) -------------------------------------------------------------
 // Закрытое хранилище — черный сейф (решение владельца 07.11); Touch ID
