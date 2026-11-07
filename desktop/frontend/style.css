@@ -580,6 +580,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .toast.show { opacity: 1; transform: none; pointer-events: auto; }
 .toast[data-tone="del"] { --g1: var(--z-sp1); --g2: var(--z-sp2); --g3: var(--z-sp3); }
 .toast[data-tone="off"] { --g1: var(--z-rule-2); --g2: var(--z-faint); --g3: var(--z-muted); }
+.toast[data-tone="bad"] { --g1: var(--z-bad); --g2: var(--z-bad); --g3: var(--z-bad); }
 .toast .glow { width: 7px; height: 7px; border-radius: 50%; flex: none; background: linear-gradient(135deg, var(--g1), var(--g3)); }
 .toast b { color: var(--z-ink); font-weight: 500; }
 .toast span { color: var(--z-muted); }

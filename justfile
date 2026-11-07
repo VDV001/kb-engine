@@ -38,11 +38,13 @@ build:
 # plain go build with the desktop tags; UTType is linked by hand, the CLI does
 # that itself. Separate module, so the engine's CI and gates are untouched.
 desktop: web
+    # devtools: «Inspect Element» по правому клику в поле ввода (#505) — консоль
+    # WebKit, когда кнопка молчит; в kb.log ее нет.
     # Витрина движка — модуль «Финансы» окна под /app/ (#435, G4): свежая сборка
     # frontend/dist встраивается в окно; прежняя копия заменяется целиком.
     find desktop/app-ui -mindepth 1 ! -name .keep -delete
     cp -R frontend/dist/. desktop/app-ui/
-    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production,devtools -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
     # Помощник распознавания: только PDFKit и Vision macOS, ставить ничего не нужно.
     swiftc -O -o bin/kb.app/Contents/MacOS/kb-extract desktop/extract/main.swift
     # Диктовка: только Speech и AVFoundation macOS; разрешения — в Info.plist окна.

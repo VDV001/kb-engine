@@ -12,7 +12,8 @@ const api = (path, signal) => fetch(path, { signal }).then(async (r) => ({ statu
 const state = { q: "", tab: "all", kb: [], files: [], items: [], sel: 0, seq: 0, sources: [], filter: null, known: [] };
 
 // --- Окно (Wails) или браузер -------------------------------------------------
-const native = () => window.go && window.go.main && window.go.main.App;
+// Привязки Go — через срок у сохранений (savedeadline.js, #505).
+const native = () => window.go && window.go.main && window.go.main.App && withSaveDeadline(window.go.main.App);
 // errText is the words of a refused call: Wails отдает отказ Go объектом
 // Error, и String(err) показал бы человеку «Error: …».
 const errText = (e) => (e instanceof Error ? e.message : String(e));
@@ -1294,6 +1295,11 @@ function toast(head, rest, undo, tone = "info") {
   t.onmouseenter = () => clearTimeout(toastT);
   t.onmouseleave = () => { toastT = setTimeout(() => t.classList.remove("show"), 1200); };
 }
+// Ошибка JS не глотает нажатие молча (#505): без этого необработанное
+// исключение или отказ без catch оставляли кнопку без ответа, а в kb.log
+// консоли WebKit нет. Подробности — правый клик в поле ввода → Inspect Element.
+addEventListener("error", (e) => toast("Ошибка окна", " · " + (e.message || "без текста") + " — подробности: правый клик в поле ввода → Inspect Element", null, "bad"));
+addEventListener("unhandledrejection", (e) => toast("Действие не выполнено", " · " + errText(e.reason) + " — подробности: правый клик в поле ввода → Inspect Element", null, "bad"));
 $("#toast").addEventListener("click", (e) => {
   if (e.target.id !== "undo" || !undoFn) return;
   undoFn(); undoFn = null;
