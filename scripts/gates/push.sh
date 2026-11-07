@@ -106,6 +106,13 @@ if ! go build ./... 2>&1; then
   exit 1
 fi
 
+# Под каждую ОС выпуска (.goreleaser.yml): своя машина собирает только себя, и
+# 07.11 тег v0.37.0 упал в goreleaser на Windows. Секунды при теплом кэше.
+echo "→ cross-build (ОС выпуска)..."
+if ! ./scripts/gates/cross-build.sh; then
+  exit 1
+fi
+
 # ------------------------------------------- 4. architectural gates (all)
 # pre-commit checks only staged files; here the whole tree is verified, so a
 # violation cannot slip in through a file that was never staged in this branch.
