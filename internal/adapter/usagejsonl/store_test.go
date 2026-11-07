@@ -85,3 +85,37 @@ func TestJournal_Uncounted(t *testing.T) {
 		t.Fatalf("строка без пометки: %s", raw)
 	}
 }
+
+// Цена вызова от шлюза переживает журнал: пишется пикодолларами и читается
+// обратно; у обычного вызова поля цены в строке нет.
+func TestJournal_Billed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	j := usagejsonl.Journal{Path: path}
+	c, err := domain.NewBilledModelCall(time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC), domain.CallListen, "openai/gpt-4o-mini-transcribe", 96_250_000, time.Second, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(c); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(call(t)); err != nil {
+		t.Fatal(err)
+	}
+	calls, bad, err := j.Load()
+	if err != nil || bad != 0 || len(calls) != 2 {
+		t.Fatalf("прочитано %d, битых %d, %v", len(calls), bad, err)
+	}
+	if !calls[0].Billed() || calls[0].Cost() != 96_250_000 || calls[1].Billed() {
+		t.Fatalf("цена не пережила журнал: %+v", calls)
+	}
+	f, _ := os.Open(path)
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	sc.Scan()
+	sc.Scan()
+	var plain map[string]any
+	_ = json.Unmarshal(sc.Bytes(), &plain)
+	if _, ok := plain["cost_pico"]; ok {
+		t.Fatalf("у вызова без цены поле цены: %s", sc.Bytes())
+	}
+}

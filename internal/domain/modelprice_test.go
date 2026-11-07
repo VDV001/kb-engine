@@ -77,3 +77,18 @@ func TestModelPrice_perMillion(t *testing.T) {
 		t.Fatalf("PerMillion = %q, %q", in, out)
 	}
 }
+
+// Цена вызова, как ее шлюз кладет в providerMetadata.gateway.cost — доллары
+// строкой; внутри — пикодоллары, как у цен моделей.
+func TestParseDollars(t *testing.T) {
+	for in, want := range map[string]int64{"0.00009625": 96_250_000, "0.000335": 335_000_000, "0": 0, "1.5": 1_500_000_000_000} {
+		if got, err := domain.ParseDollars(in); err != nil || got != want {
+			t.Errorf("%q = %d, %v; ждали %d", in, got, err, want)
+		}
+	}
+	for _, bad := range []string{"", "-0.1", "1e-5", "0.0000000000001", "дешево"} {
+		if _, err := domain.ParseDollars(bad); !errors.Is(err, domain.ErrInvalidModelPrice) {
+			t.Errorf("%q принят (%v)", bad, err)
+		}
+	}
+}

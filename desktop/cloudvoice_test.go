@@ -211,3 +211,66 @@ func TestCloudSpeech_recordsCalls(t *testing.T) {
 		t.Fatalf("отказ = %+v", f)
 	}
 }
+
+// Шлюз кладет цену вызова в providerMetadata.gateway.cost (замер 07.11 на
+// живых /transcription-model и /speech-model) — она идет в журнал, и
+// «Деньги» считают облачную речь. Цена кривая или ее нет — вызов «без счета».
+func TestCloudSpeech_recordsGatewayCost(t *testing.T) {
+	cost := `"0.00009625"`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		meta := `"providerMetadata":{"gateway":{"cost":` + cost + `,"generationId":"gen_x"}}`
+		if r.URL.Path == "/speech-model" {
+			_, _ = io.WriteString(w, `{"audio":"`+base64.StdEncoding.EncodeToString([]byte("RIFF"))+`",`+meta+`}`)
+			return
+		}
+		_, _ = io.WriteString(w, `{"text":"привет",`+meta+`}`)
+	}))
+	defer srv.Close()
+	rec := &callsRec{}
+	c := cloudSpeech{base: srv.URL, client: srv.Client(), key: func() (string, error) { return "vck_test", nil }, calls: rec}
+	if _, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:mini"]); err != nil {
+		t.Fatal(err)
+	}
+	cost = `"0.000335"`
+	if _, err := c.synth("gemini:Kore", "Привет", ""); err != nil {
+		t.Fatal(err)
+	}
+	cost = `"-1"`
+	if _, err := c.synth("gemini:Kore", "Привет", ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(rec.calls) != 3 {
+		t.Fatalf("записано %d вызовов", len(rec.calls))
+	}
+	l, s, bad := rec.calls[0], rec.calls[1], rec.calls[2]
+	if !l.Billed() || l.Cost() != 96_250_000 || l.Purpose() != domain.CallListen {
+		t.Fatalf("распознавание = %+v", l)
+	}
+	if !s.Billed() || s.Cost() != 335_000_000 || s.Purpose() != domain.CallSpeak {
+		t.Fatalf("голос = %+v", s)
+	}
+	if bad.Billed() || bad.Counted() {
+		t.Fatalf("кривая цена попала в счет: %+v", bad)
+	}
+}
+
+// Цена — учет, а не речь (ревью #507): шлюз прислал ее числом, null или
+// объектом — текст и звук все равно доходят; число тоже считается.
+func TestCloudSpeech_costOfAnyTypeKeepsSpeech(t *testing.T) {
+	cost := `0.000335`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"text":"привет","providerMetadata":{"gateway":{"cost":`+cost+`}}}`)
+	}))
+	defer srv.Close()
+	rec := &callsRec{}
+	c := cloudSpeech{base: srv.URL, client: srv.Client(), key: func() (string, error) { return "vck_test", nil }, calls: rec}
+	for _, v := range []string{`0.000335`, `null`, `{"usd":"1"}`} {
+		cost = v
+		if text, err := c.transcribe(t.Context(), []byte("RIFFwav"), cloudListen["cloud:mini"]); err != nil || text != "привет" {
+			t.Fatalf("cost %s: %q, %v", v, text, err)
+		}
+	}
+	if len(rec.calls) != 3 || !rec.calls[0].Billed() || rec.calls[0].Cost() != 335_000_000 || rec.calls[1].Billed() || rec.calls[2].Billed() {
+		t.Fatalf("вызовы %+v", rec.calls)
+	}
+}

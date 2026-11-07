@@ -36,7 +36,9 @@ type ModelCall struct {
 	purpose    CallPurpose
 	model      string
 	in, out    int
-	counted    bool // провайдер прислал счет; нет — in/out неизвестны, а не нули
+	counted    bool  // провайдер прислал счет; нет — in/out неизвестны, а не нули
+	billed     bool  // провайдер прислал цену вызова (облачная речь у шлюза)
+	cost       int64 // пикодолларов; только при billed
 	firstToken time.Duration
 	took       time.Duration
 	failed     bool
@@ -65,6 +67,21 @@ func NewModelCall(at time.Time, purpose CallPurpose, model string, in, out int, 
 	return ModelCall{at: at, purpose: purpose, model: model, in: in, out: out, counted: counted, firstToken: firstToken, took: took, failed: failed}, nil
 }
 
+// NewBilledModelCall validates a call the provider billed in money, а не в
+// токенах: шлюз за облачную речь присылает цену вызова (замер 07.11,
+// providerMetadata.gateway.cost). Ответ не потоком — первое слово в конце.
+func NewBilledModelCall(at time.Time, purpose CallPurpose, model string, cost int64, took time.Duration, failed bool) (ModelCall, error) {
+	if cost < 0 {
+		return ModelCall{}, fmt.Errorf("%w: cost %d", ErrInvalidModelCall, cost)
+	}
+	c, err := NewModelCall(at, purpose, model, 0, 0, false, took, took, failed)
+	if err != nil {
+		return ModelCall{}, err
+	}
+	c.billed, c.cost = true, cost
+	return c, nil
+}
+
 // At returns when the call started.
 func (c ModelCall) At() time.Time { return c.at }
 
@@ -82,6 +99,12 @@ func (c ModelCall) Out() int { return c.out }
 
 // Counted reports whether the provider sent its token count.
 func (c ModelCall) Counted() bool { return c.counted }
+
+// Billed reports whether the provider sent the price of the call.
+func (c ModelCall) Billed() bool { return c.billed }
+
+// Cost returns the price the provider billed, in picodollars.
+func (c ModelCall) Cost() int64 { return c.cost }
 
 // FirstToken returns the time to the first word of the answer.
 func (c ModelCall) FirstToken() time.Duration { return c.firstToken }
