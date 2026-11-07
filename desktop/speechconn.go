@@ -78,7 +78,7 @@ func (f *folderSettings) listenTranscriber() (transcriber, error) {
 		return nil, nil
 	}
 	if model, ok := cloudListen[id]; ok {
-		cloud := cloudSpeech{base: gatewayAudio, client: &http.Client{Timeout: 60 * time.Second}, key: f.gatewayKey}
+		cloud := cloudSpeech{base: gatewayAudio, client: &http.Client{Timeout: 60 * time.Second}, key: f.gatewayKey, calls: f.speechCalls}
 		return func(ctx context.Context, wav []byte) (string, error) { return cloud.transcribe(ctx, wav, model) }, nil
 	}
 	c, ok := cfg.Connection(id)

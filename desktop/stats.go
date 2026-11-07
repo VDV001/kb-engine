@@ -19,6 +19,7 @@ type callLog interface {
 var purposeTitles = map[domain.CallPurpose]string{
 	domain.CallAnswer: "Ответ в чате", domain.CallSearch: "Поиск моделью",
 	domain.CallExtract: "Разбор портрета", domain.CallCompress: "Сжатие портрета",
+	domain.CallListen: "Распознавание речи", domain.CallSpeak: "Облачный голос",
 }
 
 // maxStatsDays bounds the period: экран предлагает 7, 30 и 90 дней.
