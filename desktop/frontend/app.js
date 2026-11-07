@@ -1804,6 +1804,7 @@ const ACCENTS = [
   ["help-search", "Справка: поиск", "рамка поиска в фокусе"],
   ["help-nav", "Справка: раздел", "переливающаяся черта у открытого раздела"],
   ["help-anim", "Справка: появление", "строки раздела выезжают по очереди"],
+  ["fin-src", "Финансы: источник", "имя источника данных над витриной"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1901,6 +1902,8 @@ function showModule(id) {
   else if (mod && mod.view === "access") openAccess();
   else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
   else if (mod) {
+    $("#fin-src").hidden = id !== "finances";
+    renderFinSrc();
     const frame = $("#module-frame");
     if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
   }
@@ -1933,7 +1936,32 @@ function renderFinServer() {
   pick.disabled = !native();
   if (document.activeElement !== url) url.value = local ? cur : FIN_LOCAL;
   url.hidden = $("#fin-server-save").hidden = !local;
+  renderFinSrc();
 }
+// renderFinSrc — строка над витриной «Финансов»: откуда данные и как сменить.
+function renderFinSrc() {
+  const cur = (state.modules.find((x) => x.id === "finances") || {}).server || "";
+  const servers = state.known.filter((x) => x.kind === "server");
+  let name, hint = "";
+  if (isLocalServer(cur)) name = `этот Mac · ${cur}`;
+  else if (cur) {
+    const s = servers.find((x) => x.id === cur);
+    name = s ? `сервер «${label(s)}»${s.enabled ? "" : " — выключен"}` : "сервер, которого нет в «Источниках»";
+  } else {
+    const s = servers.find((x) => x.enabled);
+    name = s ? `первый kb-сервер «${label(s)}»` : "kb-сервер не подключен";
+  }
+  if (!isLocalServer(cur)) hint = "· журнал на этом Mac? выберите «этот Mac»";
+  $("#fin-src-name").textContent = name;
+  $("#fin-src-hint").textContent = hint;
+}
+$("#fin-src-change").addEventListener("click", async () => {
+  await openSettings("prefs");
+  const row = $("#fin-server"), pick = $("#fin-server-pick");
+  row.scrollIntoView({ block: "center", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  row.classList.remove("flash"); void row.offsetWidth; row.classList.add("flash"); // повторный клик снова подсвечивает
+  pick.focus();
+});
 // withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.
 function withModule(id, patch) {
   return state.modules.some((x) => x.id === id)

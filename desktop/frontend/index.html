@@ -100,6 +100,13 @@
     <!-- Модуль окна (#435, G4): вкладка «Финансы» показывает витрину движка с
          kb-сервера — /app/ из обработчика окна (прокси с токеном), на месте поиска. -->
     <section class="module-view" id="module-view" hidden>
+      <!-- Откуда «Финансы» берут данные (просьба владельца 07.11: выбор прятался
+           в настройках, а пустой журнал не говорил, что данные могут быть на этом Mac). -->
+      <div class="fin-src" id="fin-src" hidden>
+        <span class="fin-src-l">Данные:</span><span class="fin-src-name" id="fin-src-name"></span>
+        <span class="fin-src-hint" id="fin-src-hint"></span>
+        <button class="fin-src-btn" id="fin-src-change">изменить</button>
+      </div>
       <iframe id="module-frame" title="Модуль окна"></iframe>
     </section>
 
