@@ -1213,7 +1213,7 @@
       "layer": "usecase",
       "kind": "service",
       "sources": [
-        "internal/usecase/portrait/portrait.go:110"
+        "internal/usecase/portrait/portrait.go:126"
       ]
     },
     {
@@ -1223,7 +1223,7 @@
       "layer": "domain",
       "kind": "data",
       "sources": [
-        "internal/domain/portrait.go:184"
+        "internal/domain/portrait.go:213"
       ]
     },
     {
@@ -4296,7 +4296,7 @@
           "from": "adp-kbserver-portrait",
           "to": "uc-portrait",
           "call": "412 → portrait.ErrConflict",
-          "detail": "internal/adapter/kbserver/portrait.go:91 — Портрет успело изменить другое устройство: клиент отдает сигнал конфликта; usecase перечитывает портрет и применяет правку заново до 5 раз (internal/usecase/portrait/portrait.go:122) — правка с двух устройств не теряется",
+          "detail": "internal/adapter/kbserver/portrait.go:91 — Портрет успело изменить другое устройство: клиент отдает сигнал конфликта; usecase перечитывает портрет и применяет правку заново до 5 раз (internal/usecase/portrait/portrait.go:138) — правка с двух устройств не теряется",
           "source": "internal/adapter/kbserver/portrait.go:91",
           "symbol": "ErrConflict",
           "unverified": false

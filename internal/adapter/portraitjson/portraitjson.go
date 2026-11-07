@@ -60,22 +60,31 @@ func Decode(raw []byte) (domain.Portrait, error) {
 	return p, nil
 }
 
-// origin reads the origin code; портреты до кодов (0.36.0) хранили слова
-// окна — они переводятся, дата «из чата DD.MM» уже лежит в at факта.
-// Незнакомое возвращается как есть, и NewFact отклоняет его как испорченное.
+// origin reads the origin code. Поле — только для подписи, поэтому чтение
+// терпимое: подписи 0.36.0 переводятся в коды, хвост «, исправлено», который
+// окно 0.36.0 дописывает к чужому коду, — в «исправлено», а незнакомое
+// читается как ручной факт: иначе одно поле сделало бы испорченным весь портрет.
 func origin(raw string) domain.FactOrigin {
-	switch t := strings.TrimSpace(raw); {
-	case t == "добавлено вручную":
-		return domain.OriginManual
-	case t == "исправлено вручную":
-		return domain.OriginEdited
-	case t == "сжато":
-		return domain.OriginCompressed
-	case strings.HasPrefix(t, "из чата ") && strings.HasSuffix(t, ", исправлено"):
-		return domain.OriginChatEdited
-	case strings.HasPrefix(t, "из чата "):
-		return domain.OriginChat
+	t := strings.TrimSpace(raw)
+	base, edited := strings.CutSuffix(t, ", исправлено")
+	var o domain.FactOrigin
+	switch {
+	case base == "добавлено вручную":
+		o = domain.OriginManual
+	case base == "исправлено вручную":
+		o = domain.OriginEdited
+	case base == "сжато":
+		o = domain.OriginCompressed
+	case strings.HasPrefix(base, "из чата"):
+		o = domain.OriginChat
 	default:
-		return domain.FactOrigin(t)
+		var err error
+		if o, err = domain.NewFactOrigin(base); err != nil {
+			o = domain.OriginManual
+		}
 	}
+	if edited {
+		o = o.Corrected()
+	}
+	return o
 }

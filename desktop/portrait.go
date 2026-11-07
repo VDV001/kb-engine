@@ -228,9 +228,10 @@ func (d *chatDesk) PortraitRestore(v factView) error {
 	if v.Pending {
 		status = domain.FactPending
 	}
+	// Код с незнакомой страницы (старая сборка) — факт ручной, а не отказ.
 	origin, err := domain.NewFactOrigin(v.Origin)
 	if err != nil {
-		return portraitErr(err)
+		origin = domain.OriginManual
 	}
 	f, err := domain.NewFact(v.ID, sec, v.Text, origin, status, v.At)
 	if err != nil {
