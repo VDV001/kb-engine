@@ -78,11 +78,11 @@ func TestStore_anyCharacters(t *testing.T) {
 // длиннее — отказ словами, а не «запись не сохранилась».
 func TestStore_tooLong(t *testing.T) {
 	s := tempStore(t)
-	if err := s.Set("server-ab12cd34", strings.Repeat("я", 750)); err != nil {
-		t.Fatalf("1500 байт: %v", err)
+	if err := s.Set("server-ab12cd34", strings.Repeat("я", 950)); err != nil {
+		t.Fatalf("1900 байт: %v", err)
 	}
-	if err := s.Set("server-ab12cd34", strings.Repeat("z", 3000)); !errors.Is(err, keychain.ErrTooLong) {
-		t.Fatalf("3000 байт: err = %v, want ErrTooLong", err)
+	if err := s.Set("server-ab12cd34", strings.Repeat("z", 1901)); !errors.Is(err, keychain.ErrTooLong) {
+		t.Fatalf("1901 байт: err = %v, want ErrTooLong", err)
 	}
 }
 
@@ -96,5 +96,17 @@ func TestStore_RejectsUnsafeSecretAndAccount(t *testing.T) {
 		if err := s.Set(bad, "token-value"); !errors.Is(err, keychain.ErrBadValue) {
 			t.Fatalf("учетка %q: err = %v, want ErrBadValue", bad, err)
 		}
+	}
+}
+
+// Пустой пароль, заведенный в Связке руками или другой программой, читается
+// пустым, а не ошибкой: -g печатает для него "password: " без кавычек.
+func TestStore_emptyPasswordReadsEmpty(t *testing.T) {
+	s := tempStore(t)
+	if out, err := exec.Command("security", "add-generic-password", "-s", s.Service, "-a", "server-ab12cd34", "-w", "", s.Keychain).CombinedOutput(); err != nil {
+		t.Fatalf("add: %v %s", err, out)
+	}
+	if got, err := s.Get("server-ab12cd34"); err != nil || got != "" {
+		t.Fatalf("Get = %q, %v", got, err)
 	}
 }
