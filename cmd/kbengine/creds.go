@@ -128,6 +128,10 @@ func credsAdd(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	if err := credsService(*file).Add(c, pw); err != nil {
 		fmt.Fprintln(stderr, "creds add:", err)
+		if errors.Is(err, domain.ErrCredentialExists) && strings.Contains(err.Error(), "Связке") {
+			// Сирота: пароль лег, а карточка — нет (прерывание между ними).
+			fmt.Fprintf(stderr, "creds add: если карточки %s нет нигде, это сирота прерванного add: security delete-generic-password -s \"DVK credentials\" -a %s\n", c.ID(), c.ID())
+		}
 		if errors.Is(err, keychain.ErrBadValue) {
 			// ponytail: security -i не принимает в значении пробел, кавычку, \ и не-ASCII.
 			// Потолок — такие пароли из терминала не сохранить. Путь — запись через
@@ -153,10 +157,14 @@ func readPassword(stdin io.Reader, stderr io.Writer) (string, error) {
 				done := make(chan struct{})
 				go func() {
 					select {
-					case <-sig:
+					case s := <-sig:
 						_ = stty(f, "echo")
 						fmt.Fprintln(stderr)
-						os.Exit(130)
+						code := 130 // 128 + номер сигнала, как у оболочки
+						if n, ok := s.(syscall.Signal); ok {
+							code = 128 + int(n)
+						}
+						os.Exit(code)
 					case <-done:
 					}
 				}()

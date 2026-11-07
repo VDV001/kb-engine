@@ -110,7 +110,9 @@ func TestNewPassword(t *testing.T) {
 	if err != nil || p.Reveal() != "Kq7!vR2m" {
 		t.Fatalf("пароль: %v", err)
 	}
-	for _, s := range []string{fmt.Sprint(p), fmt.Sprintf("%v %+v %#v %s %q", p, p, p, p, p), fmt.Sprint(struct{ P domain.Password }{p})} {
+	for _, s := range []string{fmt.Sprint(p), fmt.Sprintf("%v %+v %#v %s %q", p, p, p, p, p), fmt.Sprint(struct{ P domain.Password }{p}),
+		fmt.Sprintf("%+v %#v", struct{ p domain.Password }{p}, struct{ p domain.Password }{p}), // неэкспортируемое поле fmt читает отражением, мимо Format
+		fmt.Sprintf("%v", []domain.Password{p}), fmt.Sprintf("%x %d", p, p)} {
 		if strings.Contains(s, "Kq7") {
 			t.Fatalf("печать раскрыла пароль: %s", s)
 		}
