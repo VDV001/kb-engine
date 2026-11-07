@@ -100,3 +100,20 @@ func TestChat_Stats(t *testing.T) {
 		t.Fatal("период 0 дней принят")
 	}
 }
+
+// Вызов без счета отдается окну без токенов: Журнал складывает строки сам, и
+// числа из строки «без счета» (правка журнала руками) попали бы в его сумму.
+func TestChat_Stats_uncountedCallHasNoTokens(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	rec := &callsRec{}
+	d.calls = rec
+	c, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallAnswer, "qwen3", 7000, 700, false, time.Second, time.Second, false)
+	rec.calls = []domain.ModelCall{c}
+	v, err := d.Stats(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Calls[0]; got.Counted || got.In != 0 || got.Out != 0 {
+		t.Fatalf("вызов без счета = %+v", got)
+	}
+}
