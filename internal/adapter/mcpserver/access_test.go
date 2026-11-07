@@ -11,7 +11,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/domain"
-	"github.com/daniil/kb-engine/internal/search"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // stubAccess finds cards; fail — карточки не прочитать.
