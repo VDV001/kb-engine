@@ -124,6 +124,8 @@ type chatDesk struct {
 	driveRead func(ctx context.Context, conn, ref string) (chat.Doc, error)
 	// calls keeps every model call for the window statistics; nil — не считать.
 	calls callLog
+	// prices gives the gateway's model prices for «Деньги» (#493); nil — без цен шлюза.
+	prices priceList
 }
 
 // everyAtMost passes text to show at most once per gap: кусков ответа сотни,
@@ -145,7 +147,7 @@ func newChatDesk(s *folderSettings, dir string) *chatDesk {
 		model: func(c desktopconfig.Chat, key string) chat.Model {
 			return llm.Client{BaseURL: strings.TrimRight(c.URL, "/"), Key: key, Model: c.Model}
 		},
-		calls: usagejsonl.Journal{Path: filepath.Join(filepath.Dir(dir), "usage.jsonl")}}
+		calls: usagejsonl.Journal{Path: filepath.Join(filepath.Dir(dir), "usage.jsonl")}, prices: gatewayPriceList(dir)}
 }
 
 // metered counts the calls of m for the window statistics: назначение, токены,
