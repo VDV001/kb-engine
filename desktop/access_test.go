@@ -18,10 +18,14 @@ type fakeAuth struct {
 	ok     bool
 	asked  []string
 	copied []string
+	during func() // что случилось, пока висел диалог Touch ID
 }
 
 func (f *fakeAuth) Check(reason string) error {
 	f.asked = append(f.asked, reason)
+	if f.during != nil {
+		f.during()
+	}
 	if !f.ok {
 		return errAuthDenied
 	}
@@ -231,5 +235,28 @@ func TestAccessDesk_delete(t *testing.T) {
 	}
 	if l, _ := d.List(""); len(l) != 0 {
 		t.Fatal("карточка осталась")
+	}
+}
+
+// Хранилище закрылось по таймеру, пока висел диалог Touch ID, — удаление не
+// проходит: решение принималось в открытом хранилище, а закрытое — уже нет.
+func TestAccessDesk_delete_closedDuringTouchID(t *testing.T) {
+	d, auth := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	auth.during = d.Close
+	if err := d.Delete("crm-test-api"); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("удаление после закрытия: %v", err)
+	}
+	auth.during = nil
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if l, _ := d.List(""); len(l) != 1 {
+		t.Fatal("карточка снята в закрытом хранилище")
 	}
 }

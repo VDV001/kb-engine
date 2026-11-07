@@ -233,3 +233,22 @@ func TestService_Delete(t *testing.T) {
 		t.Fatal("задет чужой пароль")
 	}
 }
+
+// Пароль снят, а файл карточек не записался — ошибка говорит, как есть:
+// пароля уже нет, карточку снимет повторный rm (Связка «нет записи» не
+// считает ошибкой).
+func TestService_Delete_cardsWriteFails(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	if err := svc.Add(a, pw(t, "s3cret")); err != nil {
+		t.Fatal(err)
+	}
+	cards.failSave = true
+	err := svc.Delete(a.ID())
+	if err == nil || !strings.Contains(err.Error(), "пароль снят") || !strings.Contains(err.Error(), "повторите") {
+		t.Fatalf("ошибка: %v", err)
+	}
+	if _, ok := secrets.m[a.ID()]; ok {
+		t.Fatal("пароль на месте, а ошибка говорит «снят»")
+	}
+}
