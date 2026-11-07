@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-const portraitDoc = `{"facts":[{"id":"f1","section":"work","text":"PORTRAIT-ALPHA пишет на Go","status":"approved","at":"2026-11-07T10:00:00Z"}]}`
+const portraitDoc = `{"facts":[{"id":"f1","section":"work","text":"PORTRAIT-ALPHA пишет на Go","source":"manual","status":"approved","at":"2026-11-07T10:00:00Z"}]}`
 
 func portraitPut(h http.Handler, body, token string, header ...string) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPut, "/api/portrait", strings.NewReader(body))

@@ -38,12 +38,8 @@ const (
 	SectionMisc  FactSection = "misc"
 )
 
-var sectionTitles = map[FactSection]string{
-	SectionAbout: "Обо мне", SectionWork: "Работа", SectionPlans: "Планы",
-	SectionPrefs: "Предпочтения", SectionMisc: "Разное",
-}
-
-// FactSections lists the sections in display order.
+// FactSections lists the sections in display order; названия для человека —
+// в окне, для модели — в usecase портрета.
 func FactSections() []FactSection {
 	return []FactSection{SectionAbout, SectionWork, SectionPlans, SectionPrefs, SectionMisc}
 }
@@ -51,14 +47,44 @@ func FactSections() []FactSection {
 // NewFactSection validates a section name.
 func NewFactSection(raw string) (FactSection, error) {
 	s := FactSection(strings.TrimSpace(raw))
-	if _, ok := sectionTitles[s]; !ok {
+	if !slices.Contains(FactSections(), s) {
 		return "", fmt.Errorf("%w: section %q", ErrInvalidFact, raw)
 	}
 	return s, nil
 }
 
-// Title is the section name a person reads.
-func (s FactSection) Title() string { return sectionTitles[s] }
+// FactOrigin — откуда факт; код, а не слова: подпись для человека («из чата
+// 05.11», «добавлено вручную») собирает окно, дата — At факта.
+type FactOrigin string
+
+// Происхождение факта.
+const (
+	OriginManual     FactOrigin = "manual"      // добавлен вручную
+	OriginEdited     FactOrigin = "edited"      // исправлен вручную
+	OriginChat       FactOrigin = "chat"        // найден в чате
+	OriginChatEdited FactOrigin = "chat-edited" // найден в чате, одобрен с правкой
+	OriginCompressed FactOrigin = "compressed"  // из сжатия портрета
+)
+
+var factOrigins = []FactOrigin{OriginManual, OriginEdited, OriginChat, OriginChatEdited, OriginCompressed}
+
+// NewFactOrigin validates an origin code.
+func NewFactOrigin(raw string) (FactOrigin, error) {
+	o := FactOrigin(strings.TrimSpace(raw))
+	if !slices.Contains(factOrigins, o) {
+		return "", fmt.Errorf("%w: origin %q", ErrInvalidFact, raw)
+	}
+	return o, nil
+}
+
+// Corrected is the origin after the person changed the text while approving:
+// найденное в чате остается найденным в чате, остальное — исправлено вручную.
+func (o FactOrigin) Corrected() FactOrigin {
+	if o == OriginChat || o == OriginChatEdited {
+		return OriginChatEdited
+	}
+	return OriginEdited
+}
 
 // FactStatus — одобрен ли факт человеком.
 type FactStatus string
@@ -74,18 +100,21 @@ type Fact struct {
 	id      string
 	section FactSection
 	text    string
-	source  string
+	origin  FactOrigin
 	status  FactStatus
 	at      time.Time
 }
 
-// NewFact validates a fact; source — откуда он («из чата 06.11», «добавлено вручную»).
-func NewFact(id string, section FactSection, text, source string, status FactStatus, at time.Time) (Fact, error) {
+// NewFact validates a fact; origin — откуда он.
+func NewFact(id string, section FactSection, text string, origin FactOrigin, status FactStatus, at time.Time) (Fact, error) {
 	if strings.TrimSpace(id) == "" {
 		return Fact{}, fmt.Errorf("%w: id is required", ErrInvalidFact)
 	}
-	if _, ok := sectionTitles[section]; !ok {
+	if !slices.Contains(FactSections(), section) {
 		return Fact{}, fmt.Errorf("%w: section %q", ErrInvalidFact, section)
+	}
+	if !slices.Contains(factOrigins, origin) {
+		return Fact{}, fmt.Errorf("%w: origin %q", ErrInvalidFact, origin)
 	}
 	if status != FactPending && status != FactApproved {
 		return Fact{}, fmt.Errorf("%w: status %q", ErrInvalidFact, status)
@@ -94,7 +123,7 @@ func NewFact(id string, section FactSection, text, source string, status FactSta
 	if err != nil {
 		return Fact{}, err
 	}
-	return Fact{id: id, section: section, text: t, source: strings.TrimSpace(source), status: status, at: at}, nil
+	return Fact{id: id, section: section, text: t, origin: origin, status: status, at: at}, nil
 }
 
 func factText(raw string) (string, error) {
@@ -119,8 +148,8 @@ func (f Fact) Section() FactSection { return f.section }
 // Text returns the fact text.
 func (f Fact) Text() string { return f.text }
 
-// Source returns where the fact came from.
-func (f Fact) Source() string { return f.source }
+// Origin returns where the fact came from.
+func (f Fact) Origin() FactOrigin { return f.origin }
 
 // Status returns whether the person approved the fact.
 func (f Fact) Status() FactStatus { return f.status }
@@ -179,12 +208,15 @@ func (p Portrait) Approve(id string) (Portrait, error) {
 	return Portrait{facts: facts}, nil
 }
 
-// Edit returns the portrait with the fact text changed; source — новая пометка
-// («исправлено вручную»).
-func (p Portrait) Edit(id, text, source string) (Portrait, error) {
+// Edit returns the portrait with the fact text changed; origin — новое
+// происхождение (исправлено вручную или при одобрении).
+func (p Portrait) Edit(id, text string, origin FactOrigin) (Portrait, error) {
 	i, err := p.index(id)
 	if err != nil {
 		return p, err
+	}
+	if !slices.Contains(factOrigins, origin) {
+		return p, fmt.Errorf("%w: origin %q", ErrInvalidFact, origin)
 	}
 	t, err := factText(text)
 	if err != nil {
@@ -196,7 +228,7 @@ func (p Portrait) Edit(id, text, source string) (Portrait, error) {
 		}
 	}
 	facts := slices.Clone(p.facts)
-	facts[i].text, facts[i].source = t, strings.TrimSpace(source)
+	facts[i].text, facts[i].origin = t, origin
 	return Portrait{facts: facts}, nil
 }
 
@@ -220,22 +252,4 @@ func (p Portrait) Approved() []Fact {
 // Pending returns the facts waiting for the person's approval.
 func (p Portrait) Pending() []Fact {
 	return slices.DeleteFunc(slices.Clone(p.facts), func(f Fact) bool { return f.Approved() })
-}
-
-// PortraitText renders facts for the model: по разделу в строку, в порядке
-// разделов, — «Обо мне: Разработчик; Готовится к роли тимлида.».
-func PortraitText(facts []Fact) string {
-	var lines []string
-	for _, s := range FactSections() {
-		var parts []string
-		for _, f := range facts {
-			if f.section == s {
-				parts = append(parts, strings.TrimRight(f.text, "."))
-			}
-		}
-		if len(parts) > 0 {
-			lines = append(lines, s.Title()+": "+strings.Join(parts, "; ")+".")
-		}
-	}
-	return strings.Join(lines, "\n")
 }
