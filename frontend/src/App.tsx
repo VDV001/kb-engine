@@ -179,7 +179,7 @@ export default function App() {
                 }}
               />
             )}
-            {tab === 'finances' && <FinancesView finances={data.finances} masked={masked} />}
+            {tab === 'finances' && <FinancesView finances={data.finances} financesError={data.financesError} masked={masked} />}
             {tab === 'projects' && <ProjectsView />}
             {tab === 'team' && <DocumentView load={api.team} name="Team" masked={masked} />}
             {tab === 'now' && <NowView />}

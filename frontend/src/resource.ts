@@ -20,3 +20,9 @@ export function errorMessage(e: unknown): string {
   if (typeof e === 'string') return e || 'Unknown error'
   return String(e)
 }
+
+/** Делит по первому « — »; без него — вся фраза и пустое «что сделать». */
+export function splitRefusal(message: string): [string, string] {
+  const i = message.indexOf(' — ')
+  return i < 0 ? [message, ''] : [message.slice(0, i), message.slice(i + 3)]
+}

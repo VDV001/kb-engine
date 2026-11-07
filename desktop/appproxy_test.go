@@ -233,7 +233,7 @@ func TestAppProxy_explainsFailures(t *testing.T) {
 		want      string // подстрока ответа
 	}{
 		{"502 облака", remote, answer(http.StatusBadGateway, "<html>Bad Gateway</html>"), http.StatusBadGateway, "сервер не в порядке — "},
-		{"500 сервера без пути к файлу", remote, answer(http.StatusInternalServerError, "open /Users/x/ledger.jsonl: denied"), http.StatusBadGateway, "журнал сервера"},
+		{"500 сервера без пути к файлу", remote, answer(http.StatusInternalServerError, "open /Users/x/ledger.jsonl: denied"), http.StatusInternalServerError, "журнал сервера"},
 		{"401", remote, answer(http.StatusUnauthorized, ""), http.StatusUnauthorized, "введите токен заново"},
 		{"403", remote, answer(http.StatusForbidden, ""), http.StatusForbidden, "проверьте адрес"},
 		{"сервер недоступен", remote, down, http.StatusBadGateway, "нет связи с сервером — "},
