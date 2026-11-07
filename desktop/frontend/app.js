@@ -1384,8 +1384,10 @@ $("#save-settings").onclick = async () => {
 };
 
 // Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
+// Правку факта портрета Esc отменяет сам (#memory): закрытие панели сняло бы
+// фокус, и focusout сохранил бы ровно то, от чего человек отказался.
 document.addEventListener("keydown", (e) => {
-  if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
+  if (settingsOpen() && e.key === "Escape" && !e.target.closest?.("[data-mem-edit]")) { e.stopImmediatePropagation(); closeSettings(); }
   else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings("sources"); }
 }, true);
 
