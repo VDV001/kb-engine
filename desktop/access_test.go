@@ -204,3 +204,32 @@ func TestKbAuth_Copy(t *testing.T) {
 		t.Fatalf("зависший помощник: %v за %v", err, time.Since(start))
 	}
 }
+
+// Снять доступ из окна — только в открытом хранилище и по Touch ID: удаление
+// не отменить. Отказ Touch ID — карточка и пароль на месте.
+func TestAccessDesk_delete(t *testing.T) {
+	d, auth := newAccess(t)
+	if err := d.Delete("x"); !errors.Is(err, errVaultClosed) {
+		t.Fatalf("удаление в закрытом: %v", err)
+	}
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "h"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	auth.ok, auth.asked = false, nil
+	if err := d.Delete("crm-test-api"); !errors.Is(err, errAuthDenied) {
+		t.Fatalf("без Touch ID: %v", err)
+	}
+	if l, _ := d.List(""); len(l) != 1 {
+		t.Fatal("карточка снята без Touch ID")
+	}
+	auth.ok = true
+	if err := d.Delete("crm-test-api"); err != nil || len(auth.asked) != 2 {
+		t.Fatalf("удаление: %v, спросили %v", err, auth.asked)
+	}
+	if l, _ := d.List(""); len(l) != 0 {
+		t.Fatal("карточка осталась")
+	}
+}
