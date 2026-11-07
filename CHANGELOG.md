@@ -8,6 +8,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Changed
+
+- **Портрет DVK хранит код происхождения факта, а не подпись.** В `portrait.json` и в бакете
+  kb-сервера поле `source` теперь `manual`, `edited`, `chat`, `chat-edited` или `compressed`;
+  подписи «добавлено вручную», «из чата 05.11» окно собирает само, дату берет из факта. Портреты,
+  записанные 0.36.0, читаются как раньше: старые подписи переводятся в коды при чтении.
+
 ## [0.36.0] — 2026-11-07
 
 ### Added
