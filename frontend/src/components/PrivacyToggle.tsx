@@ -28,7 +28,7 @@ export function PrivacyToggle({ masked, onChange }: { masked: boolean; onChange:
       {/* На узком экране подпись уходит: состояние видно по глазу и положению
           переключателя, а голосом его называет aria-label. С ней шапка на
           320–360 px не помещалась в один ряд. */}
-      <span className="label hidden text-[10px] text-on-surface-variant sm:inline">{masked ? 'Hidden' : 'Open'}</span>
+      <span className="label hidden text-[10px] text-on-surface-variant sm:inline">{masked ? 'Скрыто' : 'Видно'}</span>
     </div>
   )
 }

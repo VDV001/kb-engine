@@ -18,6 +18,7 @@ type Palette struct {
 	DonutSecondary     string
 	DonutTertiary      string
 	EngagementBg       string
+	Error              string
 	ErrorContainer     string
 	Kpi1Bg             string
 	Kpi2Bg             string
@@ -86,6 +87,7 @@ var Light = Palette{
 	DonutSecondary:     "#99462a",
 	DonutTertiary:      "#76777d",
 	EngagementBg:       "#eae8e1",
+	Error:              "#ba1a1a",
 	ErrorContainer:     "#ffdad6",
 	Kpi1Bg:             "#f6f4ec",
 	Kpi2Bg:             "#eae8e1",
@@ -154,6 +156,7 @@ var Dark = Palette{
 	DonutSecondary:     "#fbf9f2",
 	DonutTertiary:      "#484848",
 	EngagementBg:       "#1a1a1a",
+	Error:              "#ffb4ab",
 	ErrorContainer:     "#410002",
 	Kpi1Bg:             "#1f1f1f",
 	Kpi2Bg:             "#2c2c2c",

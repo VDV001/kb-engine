@@ -295,7 +295,8 @@
               <option value="tools">модель ищет (сильные модели)</option>
             </select>
           </label>
-          <label>Ключ<input id="chat-key" type="password" autocomplete="off" spellcheck="false"></label>
+          <div class="key-field"><label for="chat-key">Ключ <span class="key-saved" id="chat-key-saved" hidden>· ✓ в Связке ключей</span></label>
+            <span class="key-row"><input id="chat-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="chat-key" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></div>
         </div>
       </details>
       <details class="acc">
