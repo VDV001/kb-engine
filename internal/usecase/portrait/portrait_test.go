@@ -393,3 +393,23 @@ func TestService_ExtractLoads(t *testing.T) {
 		})
 	}
 }
+
+type versionedRace struct{ *raceStore }
+
+func (versionedRace) ConflictChecked() {}
+
+// На kb-сервере разбор пишет прочитанное до модели; другое устройство успело
+// записать — Save отказывает, и сервис перечитывает, ничего не теряя.
+func TestService_ExtractConflictOnServer(t *testing.T) {
+	other, _ := domain.NewFact("o1", domain.SectionMisc, "Слушает ответы в машине", domain.OriginManual, domain.FactApproved, now)
+	rs := &raceStore{other: other}
+	m := &fakeModel{reply: `[{"section":"prefs","text":"Отвечать коротко"}]`}
+	s := portrait.NewService(versionedRace{rs}, m, func() time.Time { return now }, func() string { return "n1" })
+	if _, err := s.Extract(t.Context(), "вопрос", "ответ"); err != nil {
+		t.Fatal(err)
+	}
+	got := portrait.Text(rs.p.Facts())
+	if !strings.Contains(got, "Слушает ответы в машине") || !strings.Contains(got, "Отвечать коротко") {
+		t.Fatalf("после конфликта = %q", got)
+	}
+}

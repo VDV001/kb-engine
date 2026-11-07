@@ -28,6 +28,9 @@ type PortraitStore struct {
 // NewPortraitStore returns the portrait store of the person behind c.Token.
 func NewPortraitStore(c Client) *PortraitStore { return &PortraitStore{c: c} }
 
+// ConflictChecked: Save пишет только поверх версии последнего Load (If-Match).
+func (s *PortraitStore) ConflictChecked() {}
+
 // Load reads the portrait and remembers its version.
 func (s *PortraitStore) Load(ctx context.Context) (domain.Portrait, error) {
 	target, err := url.JoinPath(s.c.URL, portraitPath)

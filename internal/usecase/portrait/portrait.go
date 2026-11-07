@@ -57,6 +57,13 @@ type Store interface {
 	Save(ctx context.Context, p domain.Portrait) error
 }
 
+// ConflictChecked marks a Store whose Save refuses (ErrConflict) a portrait
+// changed since its Load, как kb-сервер по If-Match: разбор ответа пишет в
+// него прочитанное до модели, без второго чтения. Папка версий не знает и
+// перечитывается — иначе запись затерла бы то, что другой Мак записал, пока
+// думала модель.
+type ConflictChecked interface{ ConflictChecked() }
+
 // Model answers one short request: system — правила, user — данные.
 type Model interface {
 	Complete(ctx context.Context, system, user string) (string, error)
@@ -124,12 +131,23 @@ func (s *Service) Portrait(ctx context.Context) (domain.Portrait, error) { retur
 // change applies fn to the stored portrait and saves it; проиграл гонку
 // (ErrConflict) — fn применяется заново к свежему портрету.
 func (s *Service) change(ctx context.Context, fn func(domain.Portrait) (domain.Portrait, error)) error {
+	return s.changeFrom(ctx, nil, fn)
+}
+
+// changeFrom is change whose first attempt starts from loaded, если хранилище
+// само ловит чужую запись (ConflictChecked); иначе — от свежего чтения.
+func (s *Service) changeFrom(ctx context.Context, loaded *domain.Portrait, fn func(domain.Portrait) (domain.Portrait, error)) error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	if _, ok := s.store.(ConflictChecked); !ok {
+		loaded = nil
+	}
 	var err error
 	for range conflictAttempts {
 		var p domain.Portrait
-		if p, err = s.store.Load(ctx); err != nil {
+		if loaded != nil {
+			p, loaded = *loaded, nil
+		} else if p, err = s.store.Load(ctx); err != nil {
 			return err
 		}
 		if p, err = fn(p); err != nil {
@@ -241,7 +259,7 @@ func (s *Service) Extract(ctx context.Context, question, answer string) ([]domai
 		}
 	}
 	var added []domain.Fact
-	err = s.change(ctx, func(p domain.Portrait) (domain.Portrait, error) {
+	err = s.changeFrom(ctx, &p, func(p domain.Portrait) (domain.Portrait, error) {
 		added = nil
 		for _, f := range candidates {
 			if next, err := p.Add(f); err == nil { // ошибка — уже известно
