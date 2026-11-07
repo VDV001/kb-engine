@@ -1,0 +1,86 @@
+// Package creds keeps access cards and their passwords (#494): карточка —
+// файлом, ее видят поиск, терминал и агент; пароль — в Связке ключей, и
+// наружу он выходит только сюда, в Password, по прямому id.
+package creds
+
+import (
+	"cmp"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+// Cards stores access cards; Update — чтение и запись под одним замком, иначе
+// два одновременных «добавить» потеряли бы карточку.
+type Cards interface {
+	Load() ([]domain.Credential, error)
+	Update(fn func([]domain.Credential) ([]domain.Credential, error)) error
+}
+
+// Secrets stores passwords by card id (Связка ключей).
+type Secrets interface {
+	Set(account, secret string) error
+	Get(account string) (string, error)
+	Delete(account string) error
+}
+
+// Service adds, finds and opens access cards.
+type Service struct {
+	Cards   Cards
+	Secrets Secrets
+}
+
+// Add stores the card and its password. Карточка с тем же id — отказ, пароль
+// той карточки не тронут. Не записалась карточка — пароль, положенный этим
+// вызовом, снимается: в Связке не остается сироты.
+func (s Service) Add(c domain.Credential, password string) error {
+	if strings.TrimSpace(password) == "" {
+		return fmt.Errorf("%w: нет пароля", domain.ErrInvalidCredential)
+	}
+	placed := false
+	err := s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
+		if slices.ContainsFunc(list, func(x domain.Credential) bool { return x.ID() == c.ID() }) {
+			return nil, fmt.Errorf("%w: %s", domain.ErrCredentialExists, c.ID())
+		}
+		if err := s.Secrets.Set(c.ID(), password); err != nil {
+			return nil, fmt.Errorf("creds: пароль не лег в Связку ключей: %w", err)
+		}
+		placed = true
+		return append(list, c), nil
+	})
+	if err != nil && placed {
+		if derr := s.Secrets.Delete(c.ID()); derr != nil {
+			return errors.Join(err, fmt.Errorf("creds: пароль %s остался в Связке ключей: %w", c.ID(), derr))
+		}
+	}
+	return err
+}
+
+// Find returns the cards with every word of q, по продукту, среде и логину.
+func (s Service) Find(q string) ([]domain.Credential, error) {
+	list, err := s.Cards.Load()
+	if err != nil {
+		return nil, err
+	}
+	list = slices.DeleteFunc(list, func(c domain.Credential) bool { return !c.Matches(q) })
+	slices.SortFunc(list, func(a, b domain.Credential) int {
+		return cmp.Or(cmp.Compare(a.Product(), b.Product()), cmp.Compare(a.Env(), b.Env()), cmp.Compare(a.Login(), b.Login()))
+	})
+	return list, nil
+}
+
+// Password returns the password of the card id. Звать только оттуда, где его
+// видит человек сам (буфер, окно по Touch ID), — никогда из MCP.
+func (s Service) Password(id string) (string, error) {
+	list, err := s.Cards.Load()
+	if err != nil {
+		return "", err
+	}
+	if !slices.ContainsFunc(list, func(c domain.Credential) bool { return c.ID() == id }) {
+		return "", fmt.Errorf("%w: %s", domain.ErrCredentialNotFound, id)
+	}
+	return s.Secrets.Get(id)
+}
