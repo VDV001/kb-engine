@@ -83,6 +83,14 @@ type ModelMessage struct {
 type ModelReply struct {
 	Content   string
 	ToolCalls []ToolCall
+	Usage     Usage // счет провайдера
+}
+
+// Usage is the tokens the provider counted for one reply; Counted — счет
+// пришел (сервер мог его не прислать, и нули тогда значат «неизвестно»).
+type Usage struct {
+	In, Out int
+	Counted bool
 }
 
 // Searcher finds documents for a query across the person's sources.

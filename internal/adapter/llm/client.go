@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
@@ -70,12 +71,32 @@ type wireRequest struct {
 	Messages []wireMessage `json:"messages"`
 	Tools    []wireTool    `json:"tools,omitempty"`
 	Stream   bool          `json:"stream,omitempty"`
+	// Счет токенов в потоке OpenAI-совместимые серверы шлют только по просьбе.
+	StreamOptions *wireStreamOptions `json:"stream_options,omitempty"`
 }
 
 type wireReply struct {
 	Choices []struct {
 		Message wireMessage `json:"message"`
 	} `json:"choices"`
+	Usage *wireUsage `json:"usage"`
+}
+
+type wireStreamOptions struct {
+	IncludeUsage bool `json:"include_usage"`
+}
+
+// wireUsage is the provider's token count.
+type wireUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+}
+
+func (u *wireUsage) usage() chat.Usage {
+	if u == nil {
+		return chat.Usage{}
+	}
+	return chat.Usage{In: u.PromptTokens, Out: u.CompletionTokens, Counted: true}
 }
 
 // Complete implements chat.Model.
@@ -155,6 +176,7 @@ type wireChunk struct {
 		FinishReason *string   `json:"finish_reason"`
 	} `json:"choices"`
 	Error json.RawMessage `json:"error"`
+	Usage *wireUsage      `json:"usage"`
 }
 
 // maxToolCalls caps the tool calls of one streamed reply: index приходит от
@@ -167,7 +189,7 @@ const maxToolCalls = 32
 func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []chat.Tool, show func(string)) (chat.ModelReply, error) {
 	r := request(c.Model, msgs, tools)
 	r.Stream = true
-	res, err := c.send(ctx, r)
+	res, err := c.sendStream(ctx, r)
 	if err != nil {
 		return chat.ModelReply{}, err
 	}
@@ -185,6 +207,29 @@ func (c Client) Stream(ctx context.Context, msgs []chat.ModelMessage, tools []ch
 		return reply, err
 	}
 	return readStream(io.LimitReader(res.Body, maxReply), show)
+}
+
+// sendStream sends a stream request asking for the token count, если сервер
+// не отказывался от stream_options раньше; отказ (400) — тот же запрос без
+// поля, и ответ сервера запоминается.
+func (c Client) sendStream(ctx context.Context, r wireRequest) (*http.Response, error) {
+	takes, known := streamOptions.Load(c.BaseURL)
+	if !known || takes.(bool) {
+		r.StreamOptions = &wireStreamOptions{IncludeUsage: true}
+	}
+	res, err := c.send(ctx, r)
+	switch {
+	case known:
+	case errors.Is(err, errBadRequest):
+		// Строгий сервер не знает stream_options: поток без счета лучше отказа.
+		r.StreamOptions = nil
+		if res, err = c.send(ctx, r); err == nil {
+			streamOptions.Store(c.BaseURL, false)
+		}
+	case err == nil:
+		streamOptions.Store(c.BaseURL, true)
+	}
+	return res, err
 }
 
 // readStream reads SSE events until [DONE] or the end of the body.
@@ -208,29 +253,40 @@ func readStream(body io.Reader, show func(string)) (chat.ModelReply, error) {
 		}
 		ch, err := decodeChunk(data)
 		if err != nil {
-			return chat.ModelReply{}, err
+			return chat.ModelReply{Usage: acc.use}, err // счет провайдер уже посчитал
 		}
 		got = true
-		if len(ch.Choices) == 0 {
-			continue // кусок со счетом токенов
+		fin, err := acc.take(ch, show)
+		if err != nil {
+			return chat.ModelReply{Usage: acc.use}, err
 		}
-		if err := acc.add(ch.Choices[0].Delta, show); err != nil {
-			return chat.ModelReply{}, err
-		}
-		if fr := ch.Choices[0].FinishReason; fr != nil && *fr != "" {
-			done = true
-		}
+		done = done || fin
 	}
 	if err := sc.Err(); err != nil {
-		return chat.ModelReply{}, fmt.Errorf("%w: %w", ErrServer, err)
+		return chat.ModelReply{Usage: acc.use}, fmt.Errorf("%w: %w", ErrServer, err)
 	}
 	if !got {
 		return chat.ModelReply{}, ErrBadReply
 	}
 	if !done {
-		return chat.ModelReply{}, fmt.Errorf("%w: поток оборвался до конца ответа", ErrServer)
+		return chat.ModelReply{Usage: acc.use}, fmt.Errorf("%w: поток оборвался до конца ответа", ErrServer)
 	}
-	return chat.ModelReply{Content: acc.text.String(), ToolCalls: acc.calls}, nil
+	return chat.ModelReply{Content: acc.text.String(), ToolCalls: acc.calls, Usage: acc.use}, nil
+}
+
+// take adds one event; true — поток кончился сам (finish_reason).
+func (a *streamed) take(ch wireChunk, show func(string)) (bool, error) {
+	if ch.Usage != nil {
+		a.use = ch.Usage.usage()
+	}
+	if len(ch.Choices) == 0 {
+		return false, nil // кусок со счетом токенов
+	}
+	if err := a.add(ch.Choices[0].Delta, show); err != nil {
+		return false, err
+	}
+	fr := ch.Choices[0].FinishReason
+	return fr != nil && *fr != "", nil
 }
 
 // decodeChunk reads one event; ошибка внутри потока — отказ без ее текста (см. send).
@@ -250,6 +306,7 @@ type streamed struct {
 	text  strings.Builder
 	calls []chat.ToolCall
 	slot  map[int]int // index потока → место в calls
+	use   chat.Usage  // счет токенов: в последнем событии без choices
 }
 
 // slotFor returns where the pieces of call index go: новый вызов — новый index
@@ -303,7 +360,7 @@ func parse(raw []byte) (chat.ModelReply, error) {
 		return chat.ModelReply{}, ErrBadReply
 	}
 	m := w.Choices[0].Message
-	out := chat.ModelReply{}
+	out := chat.ModelReply{Usage: w.Usage.usage()}
 	if m.Content != nil {
 		out.Content = *m.Content
 	}
@@ -338,6 +395,13 @@ func request(model string, msgs []chat.ModelMessage, tools []chat.Tool) wireRequ
 	return r
 }
 
+// streamOptions remembers per server whether it takes stream_options: принял
+// раз — его 400 настоящая и не повторяется; отказал — поле больше не шлется.
+var streamOptions sync.Map // BaseURL → bool
+
+// errBadRequest is a 400: Stream повторяет запрос без stream_options.
+var errBadRequest = errors.New("status 400")
+
 func statusErr(code int) error {
 	switch code {
 	case http.StatusOK:
@@ -348,6 +412,8 @@ func statusErr(code int) error {
 		return ErrNoCredit
 	case http.StatusNotFound:
 		return ErrModelNotFound
+	case http.StatusBadRequest:
+		return fmt.Errorf("%w: %w", ErrServer, errBadRequest)
 	default:
 		return fmt.Errorf("%w: status %d", ErrServer, code)
 	}
