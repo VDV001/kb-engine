@@ -59,3 +59,34 @@ func TestNewModelCall_speechPurposes(t *testing.T) {
 		}
 	}
 }
+
+// Шлюз за облачную речь присылает не токены, а цену вызова в долларах (замер
+// 07.11: /transcription-model и /speech-model, providerMetadata.gateway.cost).
+// Такой вызов — со счетом в деньгах: цена известна, токены нет.
+func TestNewBilledModelCall(t *testing.T) {
+	c, err := domain.NewBilledModelCall(callAt, domain.CallListen, " openai/gpt-4o-mini-transcribe ", 96_250_000, 2*time.Second, false)
+	if err != nil || !c.Billed() || c.Cost() != 96_250_000 || c.Counted() || c.In() != 0 || c.Out() != 0 ||
+		c.Model() != "openai/gpt-4o-mini-transcribe" || c.Purpose() != domain.CallListen || c.Took() != 2*time.Second || c.FirstToken() != 2*time.Second {
+		t.Fatalf("вызов = %+v, %v", c, err)
+	}
+	if free, err := domain.NewBilledModelCall(callAt, domain.CallSpeak, "m", 0, time.Second, false); err != nil || !free.Billed() || free.Cost() != 0 {
+		t.Fatalf("бесплатный по счету = %+v, %v", free, err)
+	}
+	for _, c := range []struct {
+		name  string
+		model string
+		cost  int64
+		took  time.Duration
+	}{
+		{"цена меньше нуля", "m", -1, time.Second},
+		{"без модели", " ", 1, time.Second},
+		{"время меньше нуля", "m", 1, -time.Second},
+	} {
+		if _, err := domain.NewBilledModelCall(callAt, domain.CallListen, c.model, c.cost, c.took, false); !errors.Is(err, domain.ErrInvalidModelCall) {
+			t.Errorf("%s: принят (%v)", c.name, err)
+		}
+	}
+	if plain, _ := domain.NewModelCall(callAt, domain.CallAnswer, "m", 1, 1, true, 0, time.Second, false); plain.Billed() || plain.Cost() != 0 {
+		t.Fatalf("обычный вызов со счетом в деньгах: %+v", plain)
+	}
+}
