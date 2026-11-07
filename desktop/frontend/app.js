@@ -394,79 +394,187 @@ function tabTip(t) {
 // Полоса вкладок строится заново при смене набора; подчеркивание остается.
 // Полоса и выдача заново: набор вкладок или список источников сменился.
 function refreshTabs() { renderTabs(); render(); }
-// Шапка — вариант 1 (решение владельца 07.11): наверху Поиск и модули со
-// значками, вкладки поиска — чипами под строкой поиска. Кнопка «Поиск» ведет
-// на последнюю вкладку поиска, а не на «Все».
+// Шапка (решение владельца 07.11, прототип outputs/2026-11-07_dvk-header-variants.html):
+// по умолчанию вариант 1 — наверху Поиск и модули со значками, вкладки поиска
+// чипами под строкой поиска. Остальные четыре варианта, вид подписей и градиент
+// подчеркивания выбираются в «Оформление → Шапка» (accents.look). Кнопка «Поиск»
+// ведет на последнюю вкладку поиска, а не на «Все».
+const HDR_MODES = [
+  ["rows", "Два ряда", "модули сверху, вкладки поиска чипами под строкой"],
+  ["icons", "Модули значками справа", "вкладки поиска текстом, модули значками у правого края"],
+  ["more", "Меню «еще»", "все в одну строку, что не влезло — в «еще ▾»"],
+  ["side", "Боковая панель", "модули в полосе слева, шапка — поиску"],
+  ["switch", "Переключатель в начале", "кнопка раздела открывает сетку модулей, ⌘1…⌘9"],
+];
+const HDR_LABELS = [["both", "текст и значок"], ["icon", "только значок"], ["text", "только текст"]];
+const HDR_INKS = [["cool", "Холодный"], ["spectrum", "Спектр DVK"], ["gold", "Золото"], ["ice", "Лед"], ["dusk", "Закат"], ["mono", "Без цвета"]];
+const hdrLook = () => {
+  const l = (state.accents && state.accents.look) || {};
+  const pick = (list, k, d) => (list.some(([v]) => v === l[k]) ? l[k] : d);
+  return { mode: pick(HDR_MODES, "header-mode", "rows"), labels: pick(HDR_LABELS, "header-labels", "both"), ink: pick(HDR_INKS, "header-ink", "cool") };
+};
+// navOrder — то, что ⌘1…⌘9 выбирают в любом виде шапки: Поиск, потом модули.
+const navOrder = () => ["search", ...moduleKeys()];
 state.searchTab = "all";
+const closeHdrPop = () => document.querySelectorAll(".hdr-pop").forEach((p) => (p.hidden = true));
 function renderTabs() {
-  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips");
-  nav.querySelectorAll("button").forEach((b) => b.remove());
+  const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips"), bar = $(".bar"), L = hdrLook();
+  nav.querySelectorAll(":scope > :not(.tab-ink)").forEach((x) => x.remove());
+  bar.querySelectorAll(".hdr-more").forEach((x) => x.remove());
   chips.textContent = "";
-  const top = (key, name, tip, icon, n) => {
-    const b = document.createElement("button");
-    b.dataset.tab = key;
-    b.dataset.tip = name;
-    b.dataset.tipB = tip;
-    if (n <= 9) b.dataset.tipK = "⌘ " + n;
-    b.setAttribute("aria-label", name);
-    b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg><span class="lbl">${esc(name)}</span>`;
-    nav.insertBefore(b, ink);
-  };
-  const chip = (key, name, tip) => {
-    const b = document.createElement("button");
-    b.dataset.tab = key;
-    b.dataset.tip = name;
-    b.dataset.tipB = tip;
-    b.append(Object.assign(document.createElement("span"), { className: "lbl", textContent: name }), " ", document.createElement("i"));
-    chips.append(b);
-  };
-  top("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON, 1);
-  moduleKeys().forEach((k, i) => top(k, MODULES[moduleOf(k)].name, MODULES[moduleOf(k)].what, MODULES[moduleOf(k)].icon || MODULE_ICON, i + 2));
-  chip("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе");
-  state.tabs.filter(visibleTab).forEach((t) => chip(tabKey(t), t.name, tabTip(t)));
+  $("#app").dataset.hdr = L.mode;
+  bar.dataset.lbl = L.labels;
+  document.body.dataset.ink = L.ink;
   if (!tabKeys().includes(state.tab)) state.tab = "all";
   if (!tabKeys().includes(state.searchTab) || moduleOf(state.searchTab)) state.searchTab = "all";
+  const btn = (key, name, tip, icon) => {
+    const b = document.createElement("button");
+    b.dataset.tab = key;
+    b.dataset.tip = name;
+    b.dataset.tipB = tip;
+    const n = navOrder().indexOf(key) + 1;
+    if (n > 0 && n <= 9) b.dataset.tipK = "⌘ " + n;
+    b.setAttribute("aria-label", name);
+    b.innerHTML = `${icon ? `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>` : ""}<span class="lbl">${esc(name)}</span>`;
+    return b;
+  };
+  // Вкладка поиска: с числом найденного (его пишет render()).
+  const stab = (key, name, tip) => {
+    const b = btn(key, name, tip);
+    b.dataset.stab = "";
+    b.append(" ", document.createElement("i"));
+    return b;
+  };
+  const searchTabs = () => [stab("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе"),
+    ...state.tabs.filter(visibleTab).map((t) => stab(tabKey(t), t.name, tabTip(t)))];
+  const searchBtn = () => btn("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON);
+  const mods = () => moduleKeys().map((k) => { const m = MODULES[moduleOf(k)]; return btn(k, m.name, m.what, m.icon || MODULE_ICON); });
+  const put = (...xs) => xs.forEach((x) => nav.insertBefore(x, ink));
+  if (L.mode === "icons") {
+    put(...searchTabs());
+    const group = Object.assign(document.createElement("span"), { className: "hdr-mods" });
+    group.append(...mods());
+    put(group);
+  } else if (L.mode === "more") {
+    put(...searchTabs(), ...mods());
+  } else if (L.mode === "switch") {
+    const cur = moduleOf(state.tab) ? MODULES[moduleOf(state.tab)] : null;
+    const sw = document.createElement("span");
+    sw.className = "hdr-switch";
+    sw.innerHTML = `<button type="button" class="hdr-switch-btn" aria-haspopup="true" aria-expanded="false" data-tip="Разделы" data-tip-b="Поиск и модули · ⌘1…⌘9"><svg viewBox="0 0 24 24" aria-hidden="true">${cur ? cur.icon || MODULE_ICON : SEARCH_ICON}</svg><span class="nm">${esc(cur ? cur.name : "Поиск")}</span><span class="car">▾</span></button><div class="hdr-pop hdr-grid" hidden></div>`;
+    sw.querySelector(".hdr-grid").append(...[searchBtn(), ...mods()].map((b, i) => {
+      if (i < 9) b.append(Object.assign(document.createElement("kbd"), { textContent: "⌘" + (i + 1) }));
+      return b;
+    }));
+    put(sw);
+    if (!cur) put(...searchTabs());
+  } else {
+    // rows и side: Поиск и модули — кнопками, вкладки поиска — чипами.
+    put(searchBtn(), ...mods());
+    chips.append(...searchTabs());
+  }
+  // «еще ▾» есть в любом виде: в «Меню еще» туда уходит все, что не влезло, в
+  // остальных — текстовые вкладки, когда даже значки не помогли (прокрутки нет).
+  const more = Object.assign(document.createElement("div"), { className: "cell hdr-more", hidden: true });
+  more.innerHTML = `<button type="button" class="hdr-more-btn" aria-expanded="false" aria-haspopup="true"></button><div class="hdr-pop" hidden></div>`;
+  nav.after(more);
   fitBar();
 }
 const pickTab = (key) => {
+  closeHdrPop();
   state.tab = key === "search" ? state.searchTab : key;
   state.sel = 0;
+  if (hdrLook().mode === "switch") renderTabs(); // название раздела в кнопке и вкладки поиска меняются
   render();
 };
-$("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
+$(".bar").addEventListener("click", (e) => {
+  const opener = e.target.closest(".hdr-more-btn, .hdr-switch-btn");
+  if (opener) {
+    const pop = opener.nextElementSibling, open = pop.hidden, r = opener.getBoundingClientRect();
+    closeHdrPop();
+    pop.hidden = !open;
+    // Окошко фиксированное (полоса вкладок обрезает свое содержимое) — место ему задается от кнопки.
+    pop.style.top = r.bottom + 6 + "px";
+    pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pop.offsetWidth - 8)) + "px";
+    opener.setAttribute("aria-expanded", String(open));
+    return;
+  }
+  const b = e.target.closest("button[data-tab]");
+  if (b) pickTab(b.dataset.tab);
+});
 $("#chips").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) pickTab(b.dataset.tab); });
-// ⌘1 — Поиск, ⌘2… — модули по порядку в шапке (подсказка каждой кнопки их называет).
+document.addEventListener("click", (e) => { if (!e.target.closest(".hdr-more, .hdr-switch")) closeHdrPop(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".hdr-pop:not([hidden])")) { e.stopPropagation(); closeHdrPop(); } }, true);
+// ⌘1 — Поиск, ⌘2… — модули по порядку (подсказка каждой кнопки их называет).
 document.addEventListener("keydown", (e) => {
   if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key) || settingsOpen()) return; // под открытыми настройками модуль не сменится незаметно
-  const b = document.querySelectorAll("#tabs button")[+e.key - 1];
-  if (!b) return;
+  const key = navOrder()[+e.key - 1];
+  if (!key) return;
   e.preventDefault();
-  pickTab(b.dataset.tab);
+  pickTab(key);
 });
 function moveInk() {
   if (!moduleOf(state.tab)) state.searchTab = state.tab;
-  const b = $(`#tabs button[data-tab="${moduleOf(state.tab) ? state.tab : "search"}"]`), ink = $(".tab-ink");
-  document.querySelectorAll("#tabs button").forEach((x) => x.classList.toggle("active", x === b));
+  const nav = $("#tabs"), ink = $(".tab-ink");
+  // Подчеркнута кнопка, видная в строке: вкладка поиска, если она в строке, иначе Поиск или модуль.
+  const sel = (k) => nav.querySelector(`:scope button[data-tab="${k}"]:not([hidden])`);
+  const b = sel(state.tab) || (!moduleOf(state.tab) && sel("search"));
+  document.querySelectorAll(".bar button[data-tab]").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab || (x.dataset.tab === "search" && !moduleOf(state.tab))));
   document.querySelectorAll("#chips button").forEach((x) => x.classList.toggle("active", x.dataset.tab === state.tab));
-  if (!b) return;
+  const more = $(".hdr-more-btn");
+  if (more) more.classList.toggle("has", !!document.querySelector(`.hdr-more .hdr-pop button[data-tab="${state.tab}"]`));
+  ink.hidden = !b || hdrLook().mode === "side";
+  if (ink.hidden) return;
   ink.style.left = b.offsetLeft + "px";
   ink.style.width = b.offsetWidth + "px";
 }
-// Шапка не прокручивается никогда. Как только место справа от последней кнопки
-// меньше отступа слева от первой, подписи модулей прячутся (остаются значки с
-// подсказками); тесно и так — короче становится счет файлов, потом «источники»
-// значком. «N проблем» видно всегда (решение владельца 07.11).
+// Шапка не прокручивается никогда (решение владельца 07.11). Порядок сжатия: в
+// «Двух рядах» — как только место справа от последней кнопки меньше отступа слева
+// от первой, подписи у кнопок со значком прячутся; тесно и так — короче счет
+// файлов, потом «источники» значком; «N проблем» видно всегда. «Только текст»
+// уступает тому же правилу: тесно — значки возвращаются. Что не влезло и так —
+// с конца уходит в «еще ▾»; выбранная кнопка остается в строке. В «Меню еще»
+// подписи не прячутся: туда сразу уходит лишнее.
+// ponytail: в «еще» уходят кнопки строки, но не кнопка «Переключателя» и не «Все»
+// (первая кнопка). Замер 07.11 на 4 модулях: от MinWidth окна 760 px и шире
+// прокрутки нет ни в одном виде; на 480 px «Модули справа» и «Переключатель»
+// вылезают. Модулей станет больше — поднять MinWidth по замеру или уводить в
+// «еще» и первую вкладку.
 function fitBar() {
   const BAR_STEPS = ["compact", "tight", "tighter"]; // внутри: setIndexed зовет fitBar раньше, чем дойдет до этой строки
-  const bar = $(".bar"), nav = $("#tabs"), btns = nav.querySelectorAll("button");
-  if (!btns.length) return;
+  const bar = $(".bar"), nav = $("#tabs"), mode = hdrLook().mode, more = $(".hdr-more");
   bar.classList.remove(...BAR_STEPS);
-  const box = () => nav.getBoundingClientRect();
-  const left = () => btns[0].getBoundingClientRect().left - box().left;
-  const free = () => box().right - btns[btns.length - 1].getBoundingClientRect().right;
-  for (const step of BAR_STEPS) {
-    if (free() >= left()) break;
-    bar.classList.add(step);
+  const row = [...nav.querySelectorAll(":scope > button, .hdr-mods > button")];
+  row.forEach((b) => (b.hidden = false));
+  if (more) more.hidden = true;
+  if (mode !== "side" && row.length) {
+    const box = () => nav.getBoundingClientRect();
+    const scrolls = () => nav.scrollWidth > nav.clientWidth + 1;
+    const spare = () => {
+      const all = [...nav.querySelectorAll("button")].filter((b) => !b.closest(".hdr-pop") && !b.hidden);
+      return box().right - Math.max(...all.map((b) => b.getBoundingClientRect().right)) >= all[0].getBoundingClientRect().left - box().left;
+    };
+    const fits = () => !scrolls() && (mode !== "rows" || spare());
+    for (const step of mode === "more" ? BAR_STEPS.slice(1) : BAR_STEPS) {
+      if (fits()) break;
+      bar.classList.add(step);
+    }
+    if (more && scrolls()) {
+      // Кнопка «еще» сама занимает место — мерить с ней и с самой длинной надписью.
+      more.hidden = false;
+      more.querySelector(".hdr-more-btn").textContent = `еще ${row.length} ▾`;
+      const gone = [];
+      for (let i = row.length - 1; i > 0 && scrolls(); i--) {
+        if (row[i].dataset.tab === state.tab) continue;
+        row[i].hidden = true;
+        gone.unshift(row[i]);
+      }
+      more.querySelector(".hdr-more-btn").textContent = `еще ${gone.length} ▾`;
+      const pop = more.querySelector(".hdr-pop");
+      pop.innerHTML = `<small>не поместились</small>`;
+      pop.append(...gone.map((b) => Object.assign(b.cloneNode(true), { hidden: false })));
+      more.hidden = !gone.length;
+    }
   }
   moveInk();
 }
@@ -480,7 +588,7 @@ function render() {
   const kb = only ? state.kb.filter((e) => e._src === only) : state.kb;
   const files = only ? state.files.filter((f) => f._src === only) : state.files;
   // Счетчик — длина того же списка, что покажет вкладка.
-  document.querySelectorAll("#chips button").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
+  document.querySelectorAll("[data-stab]").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
   if (showModule(moduleOf(state.tab))) return;
 
@@ -1651,6 +1759,7 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
+  renderTabs(); // вид шапки — тоже в оформлении
 }
 function renderAccents() {
   const a = state.accents, off = offNow(a), editable = !!native();
@@ -1666,7 +1775,24 @@ function renderAccents() {
       <button class="sw" role="switch" aria-checked="${on}" aria-label="${on ? "Выключить" : "Включить"}: ${esc(t)}" data-accent="${id}" ${editable ? "" : "disabled"}></button></li>`;
   }).join("");
   renderLookAccess();
+  renderLookHeader();
 }
+// «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
+// в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».
+function renderLookHeader() {
+  const host = $("#look-header"); if (!host) return;
+  const L = hdrLook(), dis = native() ? "" : " disabled";
+  const chip = (k, v, label, tip = "", pre = "") => `<button class="look-chip" data-hlook="${k}" data-v="${v}" aria-pressed="${L[k.slice(7)] === v}"${tip ? ` data-tip="${esc(label)}" data-tip-b="${esc(tip)}"` : ""}${dis}>${pre}${esc(label)}</button>`;
+  host.innerHTML = `
+    <div class="row"><span>Вид</span><div class="opts">${HDR_MODES.map(([v, n, w]) => chip("header-mode", v, n, w)).join("")}</div></div>
+    <div class="row"><span>Подписи</span><div class="opts">${HDR_LABELS.map(([v, n]) => chip("header-labels", v, n)).join("")}
+      <span class="muted">тесно — остаются значки: шапка не прокручивается</span></div></div>
+    <div class="row"><span>Подчеркивание</span><div class="opts">${HDR_INKS.map(([v, n]) => chip("header-ink", v, n, "", `<i class="gs ink-${v}"></i>`)).join("")}</div></div>`;
+}
+$("#look-header").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hlook]"); if (!b || !native()) return;
+  saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), [b.dataset.hlook]: b.dataset.v } });
+});
 // Сохранения по очереди, как у вкладок; при отказе — перечитать из окна.
 let accentSaves = Promise.resolve();
 function saveAccents(next) {
