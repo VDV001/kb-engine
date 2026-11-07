@@ -103,6 +103,11 @@
       <iframe id="module-frame" title="Модуль окна"></iframe>
     </section>
 
+    <!-- Доступы (#494, решения владельца 07.11): закрытое хранилище — черный
+         сейф с градиентом; Touch ID открывает, внутри список и карточка, продукт
+         своим цветом. Пароль — только по Touch ID, каждый раз. -->
+    <section class="access-view" id="access-view" hidden><div id="ac-body"></div></section>
+
     <!-- Статистика (решение владельца 07.11): вызовы модели из журнала окна.
          Пульт и Журнал ведут друг в друга; сверху — откуда пришли. -->
     <section class="stats-view" id="stats-view" hidden>
@@ -240,6 +245,8 @@
       <button class="btn" data-preset="none" aria-pressed="false">Ничего</button>
     </div>
     <ul class="accent-list" id="accent-list" data-view="look"></ul>
+    <h3 class="look-h" data-view="look">Доступы</h3>
+    <div class="look-access" id="look-access" data-view="look"></div>
 
     <div class="problems-view" id="problems-view" data-view="problems"></div>
 

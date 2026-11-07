@@ -35,6 +35,7 @@ type App struct {
 	google   *googleDesk // подключения Google (googleconn.go)
 	index    *indexer
 	chat     *chatDesk // nil — чата нет (тесты без него)
+	access   *accessDesk
 	run      func(name string, args ...string) error
 }
 
@@ -120,6 +121,24 @@ func (a *App) ChatSettings() chatSettingsView { return a.chat.Settings() }
 func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 	return a.chat.SetSettings(c, key)
 }
+
+// AccessOpen asks Touch ID to open the access container (#494).
+func (a *App) AccessOpen() error { return a.access.Open() }
+
+// AccessClose locks the access container.
+func (a *App) AccessClose() { a.access.Close() }
+
+// AccessList returns the access cards with every word of q — без паролей.
+func (a *App) AccessList(q string) ([]accessView, error) { return a.access.List(q) }
+
+// AccessAdd stores an access card and its password.
+func (a *App) AccessAdd(in accessIn, password string) error { return a.access.Add(in, password) }
+
+// AccessReveal returns a password after Touch ID.
+func (a *App) AccessReveal(id string) (string, error) { return a.access.Reveal(id) }
+
+// AccessCopy puts a password on the clipboard after Touch ID.
+func (a *App) AccessCopy(id string) error { return a.access.Copy(id) }
 
 // Stats returns the model-call statistics of the last days (экран «Статистика»).
 func (a *App) Stats(days int) (statsView, error) { return a.chat.Stats(days) }

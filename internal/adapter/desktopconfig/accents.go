@@ -3,8 +3,11 @@ package desktopconfig
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
+	"strings"
+	"unicode/utf8"
 )
 
 // ErrAccent — у оформления неизвестный режим или id акцента пустой, не того
@@ -29,9 +32,21 @@ var accentID = regexp.MustCompile(`^[a-z0-9-]{1,32}$`)
 
 // Accents — оформление окна: режим и свой набор (выключенные в нем акценты).
 // Пустой Off — все включены: новый акцент новой сборки появляется сам.
+//
+// Look — выбор значения у элемента, а не «вкл/выкл»: название сейфа, градиент,
+// анимация (решение владельца 07.11: все до мелочей настраивается). Ключ — того
+// же вида, что id акцента; значение — короткая строка, ее смысл знает окно.
 type Accents struct {
-	Mode AccentsMode `json:"mode,omitempty"`
-	Off  []string    `json:"off,omitempty"`
+	Mode AccentsMode       `json:"mode,omitempty"`
+	Off  []string          `json:"off,omitempty"`
+	Look map[string]string `json:"look,omitempty"`
+}
+
+// maxLookValue — длина значения выбора в знаках: название на табличке, имя градиента.
+const maxLookValue = 40
+
+func badLook(k, v string) bool {
+	return !accentID.MatchString(k) || strings.TrimSpace(v) == "" || utf8.RuneCountInString(v) > maxLookValue || strings.ContainsAny(v, "\n\r\t")
 }
 
 // Check validates the look the window sends.
@@ -45,6 +60,11 @@ func (a Accents) Check() error {
 		}
 		if slices.Contains(a.Off[:i], id) {
 			return fmt.Errorf("%w: %q повторяется", ErrAccent, id)
+		}
+	}
+	for k, v := range a.Look {
+		if badLook(k, v) {
+			return fmt.Errorf("%w: выбор %q = %q", ErrAccent, k, v)
 		}
 	}
 	return nil
@@ -66,4 +86,5 @@ func (c *Config) dropBadAccents() {
 		seen[id] = true
 		return bad
 	})
+	maps.DeleteFunc(c.Accents.Look, badLook)
 }
