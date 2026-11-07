@@ -14,6 +14,12 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// DefaultPath is the cards file next to the window settings: окно, терминал и
+// MCP видят одни карточки.
+func DefaultPath(home string) string {
+	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "credentials.json")
+}
+
 // Store is the cards file at Path.
 type Store struct {
 	Path string
