@@ -8,6 +8,13 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ## [Unreleased]
 
+### Added
+
+- `kbengine memory init|check|add` (ADR-0008, прототип): двухуровневая память из коробки.
+  `init` заводит скелет (`HOT.md` с потолком 4 000 знаков, `cold/INDEX.md`), `check` проверяет
+  потолок, описания и индекс (код 1 при нарушении), `add` кладет запись в холодный слой и строку
+  в индекс.
+
 ### Changed
 
 - **MCP `search_catalog` отдает не больше 20 записей и компактный JSON.** Широкий запрос в
