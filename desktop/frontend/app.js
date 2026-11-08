@@ -1957,6 +1957,37 @@ function renderFinSrc() {
   $("#fin-src-hint").textContent = editable && src.kind !== "local" ? "· журнал на этом Mac? выберите «этого Mac — свой kbengine serve»" : "";
   $("#fin-src-change").hidden = !editable;
 }
+// Состояние serve над витриной: зеленая точка «на связи» или красная «нет связи».
+// null — еще не мерили (точки нет). Перемена в любую сторону перечитывает iframe.
+let finAlive = null;
+function renderFinLive() {
+  const el = $("#fin-live");
+  el.hidden = finAlive === null || !native();
+  el.classList.toggle("off", finAlive === false);
+  const text = finAlive ? "на связи" : "нет связи";
+  $("#fin-live-t").textContent = text;
+  el.setAttribute("aria-label", "Источник данных: " + text + ". Нажмите, чтобы проверить и перечитать");
+  el.title = (finAlive ? "Источник отвечает" : "Источник не отвечает: запустите его, окно заметит само") + " · нажмите, чтобы перечитать сейчас";
+}
+async function probeFin() {
+  if (!native() || document.hidden || $("#module-view").hidden || $("#fin-src").hidden) return;
+  let code = 0;
+  try { code = (await fetch("/app/api/capabilities", { cache: "no-store" })).status; } catch { /* нет ответа — как 0 */ }
+  const now = finServeAlive(code);
+  const flipped = finServeFlipped(finAlive, now);
+  finAlive = now;
+  renderFinLive();
+  const f = $("#module-frame");
+  if (flipped && f.dataset.src) f.src = f.dataset.src;
+}
+// ponytail: опрос раз в 4 с пока открыты «Финансы» — потолок: лишний запрос к своему serve; апгрейд — событие от Go-процесса (фоновая проверка в окне).
+setInterval(probeFin, 4000);
+window.addEventListener("focus", probeFin);
+$("#fin-live").addEventListener("click", () => { // руками: перечитать витрину, не дожидаясь опроса
+  const f = $("#module-frame");
+  if (f.dataset.src) f.src = f.dataset.src; // load-обработчик замерит заново
+});
+$("#module-frame").addEventListener("load", () => { finAlive = null; probeFin(); });
 $("#fin-src-change").addEventListener("click", async () => {
   await openSettings("prefs");
   const row = $("#fin-server"), pick = $("#fin-server-pick");

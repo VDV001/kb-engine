@@ -693,7 +693,12 @@ body:not(.no-hover) .hit:hover:not(.sel) { background: linear-gradient(90deg, va
 .fin-src-name { color: var(--z-ink); }
 body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .fin-src-hint { color: var(--z-faint); }
-.fin-src-btn { margin-left: auto; font: 12px var(--z-font); color: var(--z-accent); background: none; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 10px; cursor: pointer; transition: border-color var(--z-dur), color var(--z-dur); }
+.fin-live { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; color: var(--z-faint); font: 12px var(--z-font); background: none; border: 0; padding: 3px 4px; cursor: pointer; }
+.fin-live:hover { color: var(--z-ink); }
+.fin-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--z-ok); }
+.fin-live.off i { background: var(--z-bad); }
+.fin-live.off { color: var(--z-bad); }
+.fin-src-btn { margin-left: 0; font: 12px var(--z-font); color: var(--z-accent); background: none; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 10px; cursor: pointer; transition: border-color var(--z-dur), color var(--z-dur); }
 .fin-src-btn:hover { color: var(--z-accent-hi); border-color: var(--z-accent); }
 /* «изменить» приводит к выбору в настройках — строка подсвечивается, чтобы ее было видно */
 #fin-server.flash { animation: fin-flash 1.6s var(--z-ease); border-radius: var(--z-radius); }
