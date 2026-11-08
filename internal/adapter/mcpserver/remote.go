@@ -81,7 +81,7 @@ type candidate struct {
 // (sourcesearch.Merge): порядок — списка окна, дубль — у источника выше,
 // запись, известная только ключом, в ответ не идет. Свой каталог отвечает под
 // id catalog без предела: get_entry и read_file — только по нему.
-func mergeRemote(own []domain.Entry, remote []RemoteFound, q string, m search.Matcher) ([]sourcedEntry, []sourceOut) {
+func mergeRemote(own []domain.Entry, remote []RemoteFound, q string, m search.Matcher, limit int) ([]sourcedEntry, []sourceOut, int) {
 	var lists []sourcesearch.Found[candidate]
 	sources := []sourceOut{}
 	ownSeen := false
@@ -107,8 +107,17 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound, q string, m search.Ma
 	}
 	out := []sourcedEntry{}
 	shown := map[string]int{}
+	total := 0
 	for _, h := range sourcesearch.Merge(lists, func(c candidate) string { return c.key }) {
-		if h.Item.entry == nil || (h.Source != catalogSource && shown[h.Source] == RemoteLimit) {
+		total++ // нашли источники: показанные, ключи склейки и усеченные пределом
+		// Предел у каждого источника свой: общий отдавал места первому, своему
+		// каталогу, и сервер окна не показывал ни одной записи (ревью #519).
+		// match считается ниже, только для показанных.
+		capFor := limit
+		if h.Source != catalogSource {
+			capFor = min(limit, RemoteLimit)
+		}
+		if h.Item.entry == nil || shown[h.Source] >= capFor {
 			continue
 		}
 		shown[h.Source]++
@@ -118,7 +127,7 @@ func mergeRemote(own []domain.Entry, remote []RemoteFound, q string, m search.Ma
 		}
 		out = append(out, sourcedEntry{entryOut: e, Source: h.Source})
 	}
-	return out, sources
+	return out, sources, total
 }
 
 // projected is a catalog's entries as candidates. У записи чужого каталога
