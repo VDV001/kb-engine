@@ -24,13 +24,30 @@ type Service struct {
 }
 
 // New builds the service; limit<=0 берет DefaultHotLimit.
-func New(store Store, limit int) *Service { return &Service{store: store, limit: limit} }
+func New(store Store, limit int) *Service {
+	if limit <= 0 {
+		limit = domain.DefaultHotLimit
+	}
+	return &Service{store: store, limit: limit}
+}
 
 // Init заводит скелет.
-func (s *Service) Init() error { return nil }
+func (s *Service) Init() error { return s.store.Init() }
 
 // Check returns the violations of the layout.
-func (s *Service) Check() ([]domain.MemoryProblem, error) { return nil, nil }
+func (s *Service) Check() ([]domain.MemoryProblem, error) {
+	snap, err := s.store.Load()
+	if err != nil {
+		return nil, err
+	}
+	return domain.CheckMemory(snap.Hot, s.limit, snap.Notes, snap.Index), nil
+}
 
 // Add кладет запись в холодный слой и строку в индекс.
-func (s *Service) Add(name, description, body string) error { return nil }
+func (s *Service) Add(name, description, body string) error {
+	n, err := domain.NewColdNote(name, description)
+	if err != nil {
+		return err
+	}
+	return s.store.Add(n, body)
+}
