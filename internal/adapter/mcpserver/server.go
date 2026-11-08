@@ -68,6 +68,9 @@ func project(e domain.Entry) entryOut {
 // каждым ходом. Из 12 вызовов журнала агента 8 были такими широкими.
 const DefaultSearchLimit = 20
 
+// MaxSearchLimit — потолок limit: весь каталог агенту по MCP не нужен.
+const MaxSearchLimit = 200
+
 type searchArgs struct {
 	Query string `json:"query" jsonschema:"слова запроса; пустой запрос отдаёт начало каталога (см. limit)"`
 	Limit int    `json:"limit,omitempty" jsonschema:"сколько записей отдать, по умолчанию 20; нашлось больше - в ответе total и more=true"`
