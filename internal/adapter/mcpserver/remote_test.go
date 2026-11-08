@@ -137,7 +137,8 @@ func TestServer_searchRemoteBounded(t *testing.T) {
 		many = append(many, json.RawMessage(`{"id":`+itoa(1000+i)+`,"title":"с`+itoa(i)+`","file":"notes/x.md","related_ids":[1],"category":"ai","kind":"article","lifecycle":"active"}`))
 	}
 	cs := connectRemote(t, fakeRemote{found: []mcpserver.RemoteFound{own, {Source: mcpserver.RemoteSource{ID: "server-a"}, Entries: many}}})
-	raw := text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес"}))
+	// limit большой: проверяется предел одного сервера (RemoteLimit), а не общий предел ответа.
+	raw := text(t, callTool(t, cs, "search_catalog", map[string]any{"query": "кубернетес", "limit": 1000}))
 	var out struct {
 		Entries []map[string]any `json:"entries"`
 		Sources []struct {
