@@ -62,8 +62,36 @@ func project(e domain.Entry) entryOut {
 	return out
 }
 
+// DefaultSearchLimit — сколько записей search_catalog отдает без явного limit.
+// Замер 08.11: «агент» в каталоге на 1620 записей давал 652 карточки, а «claude
+// code» 189 (68 тыс. токенов); ответ остается в контексте и перечитывается
+// каждым ходом. Из 12 вызовов журнала агента 8 были такими широкими.
+const DefaultSearchLimit = 20
+
 type searchArgs struct {
-	Query string `json:"query" jsonschema:"слова запроса; пустой запрос отдаёт весь каталог"`
+	Query string `json:"query" jsonschema:"слова запроса; пустой запрос отдаёт начало каталога (см. limit)"`
+	Limit int    `json:"limit,omitempty" jsonschema:"сколько записей отдать, по умолчанию 20; нашлось больше - в ответе total и more=true"`
+}
+
+// limitOf is the answer size the caller asked for; пусто или не больше нуля —
+// предел по умолчанию, а не «без предела»: нужный весь каталог просят числом.
+func (a searchArgs) limitOf() int {
+	if a.Limit <= 0 {
+		return DefaultSearchLimit
+	}
+	return a.Limit
+}
+
+// capAnswer cuts entries to limit and says so: total — сколько нашлось, more —
+// что часть не показана. Без усечения полей нет: «more» у полного ответа сбил
+// бы агента искать то, чего нет.
+func capAnswer[T any](entries []T, limit int, answer map[string]any) []T {
+	if len(entries) <= limit {
+		return entries
+	}
+	answer["total"] = len(entries)
+	answer["more"] = true
+	return entries[:limit]
 }
 
 type entryArgs struct {
@@ -94,7 +122,8 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			"записи поле source, у ответа список sources — сколько нашел каждый " +
 			"источник или почему не ответил; выключенный в окне источник не " +
 			"спрашивается, а свой каталог, которого в списке нет, не ищется. found тогда — сколько записей в ответе (не больше 40 от " +
-			"источника, кроме своего каталога). Номер записи другого источника — " +
+			"источника, кроме своего каталога). Ответ не длиннее limit записей (по умолчанию 20): " +
+			"нашлось больше - есть total и more=true, сузьте запрос или задайте limit. Номер записи другого источника — " +
 			"номер в ЕГО каталоге: get_entry и read_file отвечают только за source=catalog.",
 	}, func(in searchArgs) []string {
 		// Пустой запрос аргументом не записывается: пустая строка в журнале и
@@ -119,27 +148,26 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 			// источник, у источника — найдено или беда. Список из одного своего
 			// каталога — форма ответа прежняя.
 			entries, sources := mergeRemote(found, remote, in.Query, m)
-			return map[string]any{
-				"found":   len(entries),
-				"entries": entries,
-				"sources": sources,
-				"view":    viewURL(cfg.ViewBase, "archives", in.Query),
-			}, nil
+			answer := map[string]any{"sources": sources, "view": viewURL(cfg.ViewBase, "archives", in.Query)}
+			entries = capAnswer(entries, in.limitOf(), answer)
+			answer["found"], answer["entries"] = len(entries), entries
+			return answer, nil
 		}
+		answer := map[string]any{
+			// Адрес витрины с той же выборкой: человек проверяет ответ по
+			// первичным данным, а не по моему пересказу. Пустой, когда витрина
+			// не объявлена — выдуманная ссылка хуже отсутствующей.
+			"view": viewURL(cfg.ViewBase, "archives", in.Query),
+		}
+		found = capAnswer(found, in.limitOf(), answer)
 		out := make([]entryOut, 0, len(found))
 		for _, e := range found {
 			p := project(e)
 			p.Match = sourcelist.MatchOf(search.Explain(e, in.Query, m))
 			out = append(out, p)
 		}
-		return map[string]any{
-			"found":   len(out),
-			"entries": out,
-			// Адрес витрины с той же выборкой: человек проверяет ответ по
-			// первичным данным, а не по моему пересказу. Пустой, когда витрина
-			// не объявлена — выдуманная ссылка хуже отсутствующей.
-			"view": viewURL(cfg.ViewBase, "archives", in.Query),
-		}, nil
+		answer["found"], answer["entries"] = len(out), out
+		return answer, nil
 	})
 
 	addTool(s, j, &mcp.Tool{
@@ -188,7 +216,7 @@ func jsonResult(v any) (*mcp.CallToolResult, any, error) {
 	var b strings.Builder
 	enc := json.NewEncoder(&b)
 	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
+	// Без отступов: на тех же данных они стоили 24% токенов (замер 08.11).
 	if err := enc.Encode(v); err != nil {
 		return nil, nil, fmt.Errorf("ответ не сериализуется: %w", err)
 	}

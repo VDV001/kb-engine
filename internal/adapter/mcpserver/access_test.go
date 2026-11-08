@@ -93,7 +93,7 @@ func TestServer_searchAccess(t *testing.T) {
 		}
 	}
 	empty, _ := json.Marshal(callTool(t, cs, "search_access", map[string]any{"query": "портал"}))
-	if !strings.Contains(string(empty), `found\": 0`) { // текст ответа — JSON с отступами внутри JSON
+	if !strings.Contains(string(empty), `found\":0`) { // текст ответа — компактный JSON внутри JSON
 		t.Errorf("пустая выдача: %s", empty)
 	}
 }
@@ -117,7 +117,7 @@ func TestServer_searchAccess_failure(t *testing.T) {
 func TestServer_searchAccess_noteIsNotSearchable(t *testing.T) {
 	cs := connectAccess(t, stubAccess{cards: []domain.Credential{accessCard(t)}})
 	raw, _ := json.Marshal(callTool(t, cs, "search_access", map[string]any{"query": "Kq7"}))
-	if !strings.Contains(string(raw), `found\": 0`) {
+	if !strings.Contains(string(raw), `found\":0`) {
 		t.Fatalf("фрагмент заметки нашелся: %s", raw)
 	}
 }
