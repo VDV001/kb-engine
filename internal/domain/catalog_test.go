@@ -130,16 +130,16 @@ func TestCatalog_EntriesIsACopy(t *testing.T) {
 	}
 }
 
-// Каталог несёт не только записи, но и словарь своих категорий: ключ вида
+// Каталог несет не только записи, но и словарь своих категорий: ключ вида
 // "claude-ecosystem" и человеческое название рядом с ним. Без словаря вид
 // вынужден показывать ключ, а ключ — это идентификатор, не имя.
 func TestCatalog_categoryLabels(t *testing.T) {
-	labels := map[string]string{"local-ai": "Локальный AI: запуск моделей на своём железе"}
+	labels := map[string]string{"local-ai": "Локальный AI: запуск моделей на своем железе"}
 	c, err := domain.NewCatalog(nil, domain.WithCategoryLabels(labels))
 	if err != nil {
 		t.Fatalf("new catalog: %v", err)
 	}
-	const want = "Локальный AI: запуск моделей на своём железе"
+	const want = "Локальный AI: запуск моделей на своем железе"
 	if got := c.CategoryLabels()["local-ai"]; got != want {
 		t.Errorf("label = %q, want %q", got, want)
 	}

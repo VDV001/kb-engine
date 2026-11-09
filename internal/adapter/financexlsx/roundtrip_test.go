@@ -129,7 +129,7 @@ func formTx(t *testing.T, id string, form rowForm) domain.Transaction {
 		Now:         writeClock,
 	}
 	if form.kind == domain.KindExpense {
-		p.Category, p.Subcategory, p.Place = "Еда", "Продукты", "Пятёрочка"
+		p.Category, p.Subcategory, p.Place = "Еда", "Продукты", "Пятерочка"
 	}
 	out, err := domain.NewTransaction(p)
 	if err != nil {

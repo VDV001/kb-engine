@@ -30,11 +30,11 @@ func TestRun_finDelete_removesTheEntry(t *testing.T) {
 	}
 	// Запись называется в выводе: удаление денег не должно происходить молча.
 	if !strings.Contains(stdout, id) {
-		t.Errorf("вывод %q не называет удалённую запись", stdout)
+		t.Errorf("вывод %q не называет удаленную запись", stdout)
 	}
 	after := readLedgerFile(t, ledger)
 	if len(after) != len(before)-1 {
-		t.Fatalf("строк стало %d, было %d — ожидалась ровно одна удалённая", len(after), len(before))
+		t.Fatalf("строк стало %d, было %d — ожидалась ровно одна удаленная", len(after), len(before))
 	}
 	if ledgerFileHas(t, ledger, id) {
 		t.Errorf("запись %s осталась в файле", id)
@@ -79,7 +79,7 @@ func TestRun_finDelete_refusesUnknownID(t *testing.T) {
 }
 
 // Подтверждение — не формальность: сначала показывается сама запись, потом
-// задаётся вопрос. Ответ «нет» обязан оставить файл нетронутым.
+// задается вопрос. Ответ «нет» обязан оставить файл нетронутым.
 func TestRun_finDelete_asksBeforeDeleting(t *testing.T) {
 	tests := []struct {
 		name    string

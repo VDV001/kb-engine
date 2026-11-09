@@ -8,7 +8,7 @@ import (
 )
 
 // Правка записи через движок, а не руками в файле: ровно ручная правка однажды
-// положила в книгу строку без id, и синк принял её как новую.
+// положила в книгу строку без id, и синк принял ее как новую.
 
 func finEdit(t *testing.T, ledger string, extra ...string) (code int, stdout, stderr string) {
 	t.Helper()
@@ -18,7 +18,7 @@ func finEdit(t *testing.T, ledger string, extra ...string) (code int, stdout, st
 	return code, out.String(), errb.String()
 }
 
-// rowOf находит строку леджера по id и разбирает её как JSON. Проверяется файл,
+// rowOf находит строку леджера по id и разбирает ее как JSON. Проверяется файл,
 // а не собственный парсер: именно в файл смотрит следующая команда.
 func rowOf(t *testing.T, ledger, id string) map[string]any {
 	t.Helper()
@@ -66,7 +66,7 @@ func TestRun_finEdit_setsTheAccount(t *testing.T) {
 
 	row := rowOf(t, ledger, id)
 	if got := row["account"]; got != "Сбербанк" {
-		t.Errorf("счёт в леджере = %v, ожидался Сбербанк", got)
+		t.Errorf("счет в леджере = %v, ожидался Сбербанк", got)
 	}
 	// Правка одного поля не должна уносить остальные.
 	if got := row["description"]; got != "такси до центра" {
@@ -76,7 +76,7 @@ func TestRun_finEdit_setsTheAccount(t *testing.T) {
 		t.Errorf("сумма изменилась: %v", got)
 	}
 	if rev, _ := row["rev"].(float64); rev < 2 {
-		t.Errorf("ревизия = %v, правка должна её повысить", row["rev"])
+		t.Errorf("ревизия = %v, правка должна ее повысить", row["rev"])
 	}
 }
 
@@ -120,14 +120,14 @@ func TestRun_finEdit_clearsOnExplicitEmpty(t *testing.T) {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
 	if got := rowOf(t, ledger, id)["account"]; got != nil && got != "" {
-		t.Errorf("счёт не стёрт: %v", got)
+		t.Errorf("счет не стерт: %v", got)
 	}
 }
 
 // Правка обходила единственную проверку на повтор: добавить одинаковую трату
-// движок отказывается, а сделать её одинаковой правкой давал. Проверяется живой
+// движок отказывается, а сделать ее одинаковой правкой давал. Проверяется живой
 // путь команды, а не функция: проверку внутри usecase обходит первый же новый
-// экран, просто не позвав её.
+// экран, просто не позвав ее.
 func TestRun_finEdit_refusesToCreateARepeat(t *testing.T) {
 	_, ledger := pairedLedger(t)
 	add := func(amount string) {
@@ -162,7 +162,7 @@ func TestRun_finEdit_refusesToCreateARepeat(t *testing.T) {
 	}
 
 	// Отрицательный контроль: отказ ничего не записал. Команда, сообщающая об
-	// ошибке и всё же тронувшая файл, хуже обеих понятных исходов.
+	// ошибке и все же тронувшая файл, хуже обеих понятных исходов.
 	if after := readLedgerFile(t, ledger); len(after) != len(before) ||
 		strings.Join(after, "\n") != strings.Join(before, "\n") {
 		t.Error("файл изменился, хотя правка отвергнута")

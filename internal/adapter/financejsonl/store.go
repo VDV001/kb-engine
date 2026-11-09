@@ -55,9 +55,9 @@ type line struct {
 	Source      string `json:"source,omitempty"`
 	Account     string `json:"account,omitempty"`
 	// Currency опускается для рубля: так строки, записанные до поля, и новые
-	// рублёвые выглядят одинаково.
+	// рублевые выглядят одинаково.
 	Currency string `json:"currency,omitempty"`
-	// RepeatOf — id записи, поверх которой повтор подтверждён человеком. Поле
+	// RepeatOf — id записи, поверх которой повтор подтвержден человеком. Поле
 	// опускается, когда его нет: пустое место в строке журнала честно значит
 	// «неизвестно», а нулевое значение выглядело бы решением.
 	RepeatOf string `json:"repeat_of,omitempty"`

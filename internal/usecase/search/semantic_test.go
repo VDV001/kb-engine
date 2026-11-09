@@ -20,7 +20,7 @@ func TestCosine(t *testing.T) {
 		{"противоположные", search.Vector{1, 0}, search.Vector{-1, 0}, -1},
 		{"длина не важна", search.Vector{2, 2}, search.Vector{8, 8}, 1},
 		// Нулевой вектор не «ортогонален всему», а не имеет направления вовсе.
-		// Вернуть для него 0 значит поставить его в один ряд с честно далёкими.
+		// Вернуть для него 0 значит поставить его в один ряд с честно далекими.
 		{"нулевой вектор", search.Vector{0, 0}, search.Vector{1, 1}, math.NaN()},
 		{"разная размерность", search.Vector{1, 0}, search.Vector{1, 0, 0}, math.NaN()},
 	}
@@ -63,7 +63,7 @@ func TestIndex_Nearest(t *testing.T) {
 	}
 }
 
-// Отрицательный контроль, которого требует приёмка задачи: запрос про то, чего
+// Отрицательный контроль, которого требует приемка задачи: запрос про то, чего
 // в базе нет, не имеет права вернуть «похожее» с высокой уверенностью.
 func TestIndex_Nearest_nothingCloseEnough(t *testing.T) {
 	ix := search.Index{Model: "тестовая", Dims: 2, Vectors: map[int]search.Vector{
@@ -133,7 +133,7 @@ func TestSemantic_threeAnswers(t *testing.T) {
 		}
 	})
 
-	t.Run("эмбеддер отказал — говорим об этом, а не отдаём пустоту", func(t *testing.T) {
+	t.Run("эмбеддер отказал — говорим об этом, а не отдаем пустоту", func(t *testing.T) {
 		boom := errors.New("модель недоступна")
 		s := search.NewSemantic(ix, stubEmbedder{err: boom})
 		if _, err := s.Search("что угодно", 5, 0.5); !errors.Is(err, boom) {
@@ -149,9 +149,9 @@ type stubEmbedder struct {
 
 func (s stubEmbedder) Embed(text string) (search.Vector, error) { return s.v, s.err }
 
-// Индекс — производный файл: он снят в определённый момент и о записях,
+// Индекс — производный файл: он снят в определенный момент и о записях,
 // добавленных позже, не знает. Пока он об этом молчит, «смысловой слой не
-// нашёл» и «смысловой слой этой записи не видел» выглядят одинаково, а
+// нашел» и «смысловой слой этой записи не видел» выглядят одинаково, а
 // означают разное (#254).
 func TestIndex_uncovered(t *testing.T) {
 	ix := search.Index{Dims: 2, Vectors: map[int]search.Vector{
@@ -159,7 +159,7 @@ func TestIndex_uncovered(t *testing.T) {
 		2: {0, 1},
 	}}
 
-	t.Run("называет записи, которых в нём нет", func(t *testing.T) {
+	t.Run("называет записи, которых в нем нет", func(t *testing.T) {
 		got := ix.Uncovered([]int{1, 2, 7, 9})
 		if !slices.Equal(got, []int{7, 9}) {
 			t.Errorf("Uncovered = %v, ожидалось [7 9]", got)
@@ -172,7 +172,7 @@ func TestIndex_uncovered(t *testing.T) {
 		}
 	})
 
-	// Индекс шире каталога — не пробел, а хвост от удалённых записей. Считать
+	// Индекс шире каталога — не пробел, а хвост от удаленных записей. Считать
 	// его недостачей значило бы ругаться на то, что уже почищено.
 	t.Run("лишние векторы недостачей не считаются", func(t *testing.T) {
 		if got := ix.Uncovered([]int{1}); len(got) != 0 {

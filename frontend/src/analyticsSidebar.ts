@@ -1,7 +1,7 @@
 import type { Entry } from './api'
 import { dateOf } from './catalog'
 
-// Оба расчёта берут dateOf — то есть date_added, а при его отсутствии
+// Оба расчета берут dateOf — то есть date_added, а при его отсутствии
 // date_created. Исходный дашборд считал ТОЛЬКО по date_created, и на этой базе
 // это другой факт: 862 записи несут только date_added, 461 только
 // date_created. По исходной формуле «рост за 12 недель» получался +92, потому
@@ -52,7 +52,7 @@ export function staleCategories(entries: Entry[], today: Date, limit: number): S
 export interface Growth {
   weeks: number[]
   total: number
-  /** Среднее за неделю, округлённое до десятой: «7.7/нед» как в исходнике. */
+  /** Среднее за неделю, округленное до десятой: «7.7/нед» как в исходнике. */
   perWeek: number
 }
 

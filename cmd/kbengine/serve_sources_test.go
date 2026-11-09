@@ -38,7 +38,7 @@ func TestStartupSources(t *testing.T) {
 			notWant: []string{"not connected"},
 		},
 		{
-			name: "ни одного — только строка о неподключённых",
+			name: "ни одного — только строка о неподключенных",
 			srcs: []source{
 				{flag: "analytics-config"},
 				{flag: "ledger"},
@@ -77,19 +77,19 @@ func TestStartupSources(t *testing.T) {
 			got := strings.Join(startupSources(tt.srcs), "\n")
 			for _, w := range tt.want {
 				if !strings.Contains(got, w) {
-					t.Errorf("отчёт не содержит %q:\n%s", w, got)
+					t.Errorf("отчет не содержит %q:\n%s", w, got)
 				}
 			}
 			for _, n := range tt.notWant {
 				if strings.Contains(got, n) {
-					t.Errorf("отчёт содержит лишнее %q:\n%s", n, got)
+					t.Errorf("отчет содержит лишнее %q:\n%s", n, got)
 				}
 			}
 		})
 	}
 }
 
-// Строка о неподключённом источнике должна объяснять последствие, а не только
+// Строка о неподключенном источнике должна объяснять последствие, а не только
 // перечислять флаги: «--analytics-config» ничего не говорит тому, кто смотрит
 // на пустую вкладку и не знает, что она читает именно этот файл.
 func TestStartupSources_namesTheConsequence(t *testing.T) {
@@ -141,10 +141,10 @@ func TestBuildServeHandler_reportsSourceStatuses(t *testing.T) {
 		t.Fatalf("движок не упоминает семантический слой вовсе: %v", without)
 	}
 	if without["analytics-config"] {
-		t.Error("движок называет семантический слой подключённым, хотя флаг не передавали")
+		t.Error("движок называет семантический слой подключенным, хотя флаг не передавали")
 	}
 	if with := statuses(t, cfg); !with["analytics-config"] {
-		t.Errorf("движок не признаёт переданный --analytics-config подключённым: %v", with)
+		t.Errorf("движок не признает переданный --analytics-config подключенным: %v", with)
 	}
 }
 
@@ -170,9 +170,9 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// Юнит выше проверяет, как отчёт СОБРАН; этот — что он вообще ПЕЧАТАЕТСЯ при
+// Юнит выше проверяет, как отчет СОБРАН; этот — что он вообще ПЕЧАТАЕТСЯ при
 // запуске. Разница не теоретическая: молчал движок именно на этом шаге, а
-// функция, которую никто не зовёт, проходит любые тесты.
+// функция, которую никто не зовет, проходит любые тесты.
 func TestRun_serve_announcesUnconnectedSources(t *testing.T) {
 	catalog := writeCatalog(t, `{"entries":[
 		{"id":1,"habr_id":1,"title":"T","url":"https://h/","category":"golang","status":"keep"}
@@ -192,7 +192,7 @@ func TestRun_serve_announcesUnconnectedSources(t *testing.T) {
 	}
 	got := out.String()
 	if !strings.Contains(got, "--analytics-config") {
-		t.Errorf("запуск без семантического слоя молчит о нём:\n%s", got)
+		t.Errorf("запуск без семантического слоя молчит о нем:\n%s", got)
 	}
 	if !strings.Contains(got, "serving dashboard") {
 		t.Errorf("обычная строка запуска пропала:\n%s", got)

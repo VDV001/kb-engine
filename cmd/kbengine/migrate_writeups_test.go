@@ -23,7 +23,7 @@ func writeupBase(t *testing.T) string {
 	root := t.TempDir()
 	for path, body := range map[string]string{
 		"notes/batch9.md":                 "# Batch 9 — разбор двадцати статей\n\nтекст\n",
-		"notes/rescued/6_dead-article.md": "# Чужая статья D\n\nспасённый текст\n",
+		"notes/rescued/6_dead-article.md": "# Чужая статья D\n\nспасенный текст\n",
 		"notes/solo.md":                   "# Solo — разбор одной статьи\n",
 		"standards/harness/v1.md":         "# Harness\nversion: 1.0.0\n",
 		"docs/deepread.md":                "# Deepread\n",

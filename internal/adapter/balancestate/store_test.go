@@ -9,7 +9,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 )
 
-// Момент подтверждения переживает запись и чтение. Ради этого файл и заведён:
+// Момент подтверждения переживает запись и чтение. Ради этого файл и заведен:
 // лист «Счета» хранит день, а внутри дня решает момент.
 func TestRecordThenLoad(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
@@ -33,7 +33,7 @@ func TestRecordThenLoad(t *testing.T) {
 }
 
 // Файла нет — это не сбой. У книги, которую ни разу не подтверждали через
-// движок, состояния нет, и расчёт обязан продолжить работать по прежнему
+// движок, состояния нет, и расчет обязан продолжить работать по прежнему
 // правилу, а не отказать целиком.
 func TestLoadMissingFileIsEmptyNotAnError(t *testing.T) {
 	got, err := balancestate.Load(filepath.Join(t.TempDir(), "нет-такого.json"))
@@ -45,7 +45,7 @@ func TestLoadMissingFileIsEmptyNotAnError(t *testing.T) {
 	}
 }
 
-// Битый файл — это уже сбой, и молчать о нём нельзя: расчёт вернётся к прежнему
+// Битый файл — это уже сбой, и молчать о нем нельзя: расчет вернется к прежнему
 // правилу и завысит остаток, а человек будет думать, что смотрит на точное
 // число. Пустой ответ и испорченный файл — разные ответы.
 func TestLoadReportsABrokenFile(t *testing.T) {
@@ -59,7 +59,7 @@ func TestLoadReportsABrokenFile(t *testing.T) {
 	}
 }
 
-// Подтверждение одного счёта не стирает то, что известно про остальные.
+// Подтверждение одного счета не стирает то, что известно про остальные.
 func TestRecordKeepsTheOtherAccounts(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
 	first := time.Date(2026, 8, 4, 14, 18, 0, 0, time.UTC)
@@ -84,8 +84,8 @@ func TestRecordKeepsTheOtherAccounts(t *testing.T) {
 	}
 }
 
-// Повторное подтверждение того же счёта заменяет момент, а не добавляет второй.
-// Иначе расчёт однажды сравнил бы трату с давно устаревшим подтверждением.
+// Повторное подтверждение того же счета заменяет момент, а не добавляет второй.
+// Иначе расчет однажды сравнил бы трату с давно устаревшим подтверждением.
 func TestRecordReplacesTheMomentOfTheSameAccount(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
 	older := time.Date(2026, 8, 10, 12, 0, 0, 0, time.UTC)
@@ -109,9 +109,9 @@ func TestRecordReplacesTheMomentOfTheSameAccount(t *testing.T) {
 	}
 }
 
-// Написание счёта решает домен и здесь: «долг→кузнецов», записанный терминалом,
-// и «Долг → Кузнецов» с листа «Счета» — один счёт, иначе у него окажется две
-// записи и расчёт возьмёт ту, что попалась.
+// Написание счета решает домен и здесь: «долг→кузнецов», записанный терминалом,
+// и «Долг → Кузнецов» с листа «Счета» — один счет, иначе у него окажется две
+// записи и расчет возьмет ту, что попалась.
 func TestRecordMatchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
 	older := time.Date(2026, 8, 4, 12, 0, 0, 0, time.UTC)
@@ -129,26 +129,26 @@ func TestRecordMatchesTheAccountTheWayTheDomainDoes(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if len(got) != 1 {
-		t.Fatalf("записей %d, ожидалась 1 — это один и тот же счёт", len(got))
+		t.Fatalf("записей %d, ожидалась 1 — это один и тот же счет", len(got))
 	}
 	if moment, _ := got.At("Долг → Кузнецов"); !moment.Equal(newer) {
 		t.Errorf("момент = %s, ожидался %s", moment, newer)
 	}
 }
 
-// Состояние лежит рядом с книгой, потому что подтверждают остаток счёта, а
-// счета живут в книге. Команда `fin balance` другого пути и не знает: у неё
+// Состояние лежит рядом с книгой, потому что подтверждают остаток счета, а
+// счета живут в книге. Команда `fin balance` другого пути и не знает: у нее
 // есть --from и нет --ledger.
 func TestPathNextToTheWorkbook(t *testing.T) {
-	got := balancestate.PathNextTo(filepath.Join("/дом", "finances", "Учёт_финансов.xlsx"))
+	got := balancestate.PathNextTo(filepath.Join("/дом", "finances", "Учет_финансов.xlsx"))
 	want := filepath.Join("/дом", "finances", ".balance-state.json")
 	if got != want {
 		t.Errorf("путь = %s, ожидался %s", got, want)
 	}
 }
 
-// Переименованный счёт без своего момента не наследует чужой: момент,
-// оставшийся под новым именем от удалённого счёта, поменял бы, какие траты
+// Переименованный счет без своего момента не наследует чужой: момент,
+// оставшийся под новым именем от удаленного счета, поменял бы, какие траты
 // вычитаются, и никто бы этого не заметил.
 func TestRename_withoutAMomentDropsAStaleOneUnderTheNewName(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
@@ -156,7 +156,7 @@ func TestRename_withoutAMomentDropsAStaleOneUnderTheNewName(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := balancestate.Rename(path, "Кошелёк", "Наличные"); err != nil {
+	if err := balancestate.Rename(path, "Кошелек", "Наличные"); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
 	got, err := balancestate.Load(path)
@@ -164,11 +164,11 @@ func TestRename_withoutAMomentDropsAStaleOneUnderTheNewName(t *testing.T) {
 		t.Fatal(err)
 	}
 	if at, ok := got.At("Наличные"); ok {
-		t.Errorf("переименованный счёт унаследовал чужой момент %v", at)
+		t.Errorf("переименованный счет унаследовал чужой момент %v", at)
 	}
 }
 
-// Два написания одного счёта в старом файле: переезжает самый поздний момент,
+// Два написания одного счета в старом файле: переезжает самый поздний момент,
 // а не тот, что первым попался в карте.
 func TestRename_takesTheLatestOfTwoSpellings(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
@@ -198,7 +198,7 @@ func TestRename_takesTheLatestOfTwoSpellings(t *testing.T) {
 // Нечего переносить — файл не появляется и не переписывается.
 func TestRename_withNothingToMoveLeavesNoFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".balance-state.json")
-	if err := balancestate.Rename(path, "Кошелёк", "Наличные"); err != nil {
+	if err := balancestate.Rename(path, "Кошелек", "Наличные"); err != nil {
 		t.Fatalf("Rename: %v", err)
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {

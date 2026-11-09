@@ -53,12 +53,12 @@ describe('projectFilters', () => {
 
   // Незнакомый тег показывается как есть: выдуманное название прячет то, что
   // словарь отстал от данных.
-  it('незнакомый тег остаётся собой', () => {
+  it('незнакомый тег остается собой', () => {
     const one: ProjectSection[] = [{ title: 'x', cards: [{ title: 'a', tags: ['quantum'] }] }]
     expect(projectFilters(one)).toEqual([{ tag: 'quantum', label: 'quantum', count: 1 }])
   })
 
-  it('карточки без тегов не ломают счёт', () => {
+  it('карточки без тегов не ломают счет', () => {
     const one: ProjectSection[] = [{ title: 'x', cards: [{ title: 'a' }] }]
     expect(projectFilters(one)).toEqual([])
   })
@@ -66,7 +66,7 @@ describe('projectFilters', () => {
 
 describe('filterSections', () => {
   const tests: { name: string; tag: string; query: string; want: string[] }[] = [
-    { name: 'пустой фильтр отдаёт всё', tag: '', query: '', want: ['AI Sales Assistant', 'Движок базы знаний', 'English Hub'] },
+    { name: 'пустой фильтр отдает все', tag: '', query: '', want: ['AI Sales Assistant', 'Движок базы знаний', 'English Hub'] },
     { name: 'по тегу', tag: 'go', query: '', want: ['AI Sales Assistant', 'Движок базы знаний'] },
     { name: 'по названию', tag: '', query: 'движок', want: ['Движок базы знаний'] },
     // Короткое имя — то, под которым владелец называет проект вслух, и искать
@@ -114,16 +114,16 @@ describe('cover', () => {
     expect(cover({ title: 'a', accent: 'dealsense' })).toEqual({ className: 'proj-dealsense', style: undefined })
   })
 
-  // Файл владельца может задать и готовый градиент — тогда он идёт инлайном,
+  // Файл владельца может задать и готовый градиент — тогда он идет инлайном,
   // потому что в таблице стилей репозитория его нет.
-  it('готовый градиент идёт инлайном', () => {
+  it('готовый градиент идет инлайном', () => {
     const g = 'linear-gradient(135deg,#04141a 0%,#1b7f92 100%)'
     expect(cover({ title: 'a', accent: g })).toEqual({ className: '', style: { background: g } })
   })
 
-  // Без акцента — тёмная поверхность из токенов, а не случайный цвет: пустая
+  // Без акцента — темная поверхность из токенов, а не случайный цвет: пустая
   // белая рамка выглядит как незагрузившаяся картинка.
-  it('без акцента — нейтральная тёмная плашка', () => {
+  it('без акцента — нейтральная темная плашка', () => {
     expect(cover({ title: 'a' })).toEqual({
       className: '',
       style: { background: 'var(--card-spotlight-bg)' },
@@ -149,7 +149,7 @@ describe('badgeTone', () => {
     ['Опубликован OSS', 'badge-published'],
     ['Опубликована', 'badge-published'],
     ['Private repo', 'badge-private'],
-    // Незнакомый статус получает нейтральный тон, а не зелёный: выдать
+    // Незнакомый статус получает нейтральный тон, а не зеленый: выдать
     // непонятое за «работает» — худшее из возможных умолчаний.
     ['Черновик', 'badge-private'],
   ]

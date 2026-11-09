@@ -25,7 +25,7 @@ func vocabulary() finance.Vocabulary {
 	}
 }
 
-// Строка, набранная так, как человек её произносит, должна разложиться по полям
+// Строка, набранная так, как человек ее произносит, должна разложиться по полям
 // без единого Tab. Это и есть смысл быстрого ввода: три слова вместо семи полей.
 func TestParseQuick(t *testing.T) {
 	for _, c := range []struct {
@@ -74,7 +74,7 @@ func TestParseQuick(t *testing.T) {
 				{"категория", p.Category, c.category},
 				{"подкатегория", p.Subcategory, c.subcategory},
 				{"место", p.Place, c.place},
-				{"счёт", p.Account, c.account},
+				{"счет", p.Account, c.account},
 			} {
 				if f.got != f.want {
 					t.Errorf("%s = %q, ожидалось %q", f.name, f.got, f.want)
@@ -87,7 +87,7 @@ func TestParseQuick(t *testing.T) {
 	}
 }
 
-// Незнакомое слово не угадывается. Движок называет его и отдаёт решение
+// Незнакомое слово не угадывается. Движок называет его и отдает решение
 // человеку — вероятностное может предлагать, но не принимать.
 func TestParseQuick_namesWhatItDoesNotKnow(t *testing.T) {
 	got, err := finance.ParseQuick("140 живика альфа", vocabulary())
@@ -97,16 +97,16 @@ func TestParseQuick_namesWhatItDoesNotKnow(t *testing.T) {
 	if len(got.Unknown) != 1 || got.Unknown[0] != "живика" {
 		t.Fatalf("нераспознанное = %v, ожидалось [живика]", got.Unknown)
 	}
-	// Всё, что распозналось, остаётся распознанным: человеку доуточнять одно
+	// Все, что распозналось, остается распознанным: человеку доуточнять одно
 	// поле, а не набирать строку заново.
 	if got.Params.Amount.Kopecks() != 14000 {
 		t.Errorf("сумма = %d копеек, ожидалось 14000", got.Params.Amount.Kopecks())
 	}
 	if got.Params.Account != "Альфа-Банк" {
-		t.Errorf("счёт = %q, ожидался Альфа-Банк", got.Params.Account)
+		t.Errorf("счет = %q, ожидался Альфа-Банк", got.Params.Account)
 	}
 	if got.Params.Category != "" {
-		t.Errorf("категория = %q, ожидалась пустая: её никто не называл", got.Params.Category)
+		t.Errorf("категория = %q, ожидалась пустая: ее никто не называл", got.Params.Category)
 	}
 }
 
@@ -125,7 +125,7 @@ func TestParseQuick_refusesLineWithoutAmount(t *testing.T) {
 
 // Название из двух слов — одно слово словаря. «Своя компания» разбиралась как
 // «своя» плюс непонятная «компания», и экран спрашивал про слово, которое уже
-// разобрано: место найдено, а лишний хвост всё равно требовал решения.
+// разобрано: место найдено, а лишний хвост все равно требовал решения.
 func TestParseQuick_readsMultiWordNames(t *testing.T) {
 	v := finance.Vocabulary{
 		Accounts: map[string]string{"сбер": "Сбербанк", "альфа": "Альфа-Банк"},
@@ -138,8 +138,8 @@ func TestParseQuick_readsMultiWordNames(t *testing.T) {
 	}
 	for _, c := range []struct{ name, line, place, account string }{
 		{"два слова", "800 своя компания альфа", "Своя Компания", "Альфа-Банк"},
-		{"два слова без счёта", "320 ара жарит", "Ара Жарит", ""},
-		// Длинное совпадение важнее короткого: «яндекс такси» — своё место, и
+		{"два слова без счета", "320 ара жарит", "Ара Жарит", ""},
+		// Длинное совпадение важнее короткого: «яндекс такси» — свое место, и
 		// разобрать его как «такси» значило бы потерять, у кого куплено.
 		{"длинное совпадение важнее", "418 яндекс такси сбер", "Яндекс Такси", "Сбербанк"},
 	} {
@@ -155,7 +155,7 @@ func TestParseQuick_readsMultiWordNames(t *testing.T) {
 				t.Errorf("место = %q, ожидалось %q", got.Params.Place, c.place)
 			}
 			if got.Params.Account != c.account {
-				t.Errorf("счёт = %q, ожидалось %q", got.Params.Account, c.account)
+				t.Errorf("счет = %q, ожидалось %q", got.Params.Account, c.account)
 			}
 		})
 	}

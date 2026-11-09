@@ -12,9 +12,9 @@ import (
 )
 
 // Колонка «Валюта» ищется по заголовку, как id, а не по номеру: восьмая колонка
-// живой книги без заголовка держит счёт, девятая — id, и любой «следующий номер»
+// живой книги без заголовка держит счет, девятая — id, и любой «следующий номер»
 // легко попадает в чужую клетку. Рубль — пустая ячейка: книга, где валюты нет
-// вовсе, читается как прежде и от рублёвых записей не меняется.
+// вовсе, читается как прежде и от рублевых записей не меняется.
 
 func foreignTx(t *testing.T, id, kind, code string) domain.Transaction {
 	t.Helper()
@@ -105,7 +105,7 @@ func TestApplyRows_currencyColumn(t *testing.T) {
 	}
 }
 
-// Рублёвая запись колонку не заводит: у книги владельца её нет, и первая же
+// Рублевая запись колонку не заводит: у книги владельца ее нет, и первая же
 // синхронизация не должна менять вид листа, если валюты в данных нет.
 func TestApplyRows_roublesLeaveTheSheetWithoutACurrencyColumn(t *testing.T) {
 	path := paired(t)
@@ -113,12 +113,12 @@ func TestApplyRows_roublesLeaveTheSheetWithoutACurrencyColumn(t *testing.T) {
 		t.Fatalf("ApplyRows: %v", err)
 	}
 	if col := headerColumn(t, path, "Расходы", "Валюта"); col != 0 {
-		t.Errorf("рублёвая запись завела колонку «Валюта» (%d)", col)
+		t.Errorf("рублевая запись завела колонку «Валюта» (%d)", col)
 	}
 }
 
 // Запись, вернувшаяся к рублю, обязана очистить свою ячейку. Иначе следующее
-// чтение увидит в книге старую валюту и сверка вернёт её в журнал.
+// чтение увидит в книге старую валюту и сверка вернет ее в журнал.
 func TestApplyRows_clearsTheCurrencyOfARowBackInRoubles(t *testing.T) {
 	path := paired(t)
 	if err := financexlsx.ApplyRows(path, []domain.Transaction{foreignTx(t, "01D", domain.KindExpense, "USD")}, nil, writeClock); err != nil {
@@ -132,7 +132,7 @@ func TestApplyRows_clearsTheCurrencyOfARowBackInRoubles(t *testing.T) {
 	}
 }
 
-// Удалённая строка уносит и свою валюту: оставшееся «USD» в пустой строке
+// Удаленная строка уносит и свою валюту: оставшееся «USD» в пустой строке
 // приняли бы за начало новой записи.
 func TestApplyRows_removalClearsTheCurrencyCell(t *testing.T) {
 	path := paired(t)
@@ -152,8 +152,8 @@ func TestApplyRows_removalClearsTheCurrencyCell(t *testing.T) {
 	}
 }
 
-// Код, набранный руками, читается без учёта регистра, а негодный — отказ, а не
-// рубль: «не разобрал — значит рубль» показало бы долларовую трату рублёвой.
+// Код, набранный руками, читается без учета регистра, а негодный — отказ, а не
+// рубль: «не разобрал — значит рубль» показало бы долларовую трату рублевой.
 func TestRead_currencyColumn(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -190,11 +190,11 @@ func TestRead_currencyColumn(t *testing.T) {
 }
 
 // Последний рубеж перед книгой. Запись могла попасть в журнал без книги под
-// рукой — тогда валюту счёта не подставили и не сверили. Книга знает валюты
-// счетов, и строку, которая противоречит своему счёту, она не примет: иначе
-// доллары легли бы в рублёвый счёт молча.
+// рукой — тогда валюту счета не подставили и не сверили. Книга знает валюты
+// счетов, и строку, которая противоречит своему счету, она не примет: иначе
+// доллары легли бы в рублевый счет молча.
 func TestApplyRows_refusesACurrencyAgainstItsAccount(t *testing.T) {
-	path := paired(t) // «Сбербанк» на листе «Счета» рублёвый
+	path := paired(t) // «Сбербанк» на листе «Счета» рублевый
 	p := domain.TransactionParams{
 		ID: "01D", Kind: domain.KindExpense, Date: time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC),
 		Amount: domain.NewMoney(1230), Category: "Сервисы", Account: "Сбербанк",

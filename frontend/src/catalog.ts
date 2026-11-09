@@ -57,7 +57,7 @@ export interface StatusView {
   tone: string
 }
 
-// Подписи и тона статусов — один источник на всё приложение. Раньше они лежали
+// Подписи и тона статусов — один источник на все приложение. Раньше они лежали
 // двумя словарями внутри CatalogView, и таблица с сеткой уже расходились в
 // старом дашборде именно потому, что копий было две.
 const STATUS_STYLE: Record<string, [tone: string, label: string]> = {
@@ -96,7 +96,7 @@ export function statusStyle(key: string): StatusView {
  * filterEntries применяет ФАСЕТЫ — то, что витрина знает про уже загруженные
  * записи: категорию, статус, источник, стадию жизни, перевод, тег.
  *
- * Текстовый поиск сюда не входит намеренно. Он живёт в usecase движка, и
+ * Текстовый поиск сюда не входит намеренно. Он живет в usecase движка, и
  * витрина получает от него готовое множество id: до #252 здесь лежала вторая
  * реализация того же правила на TypeScript, и она расходилась с первой
  * измеримо — «кубернетес» давал 10 записей в терминале и ноль в браузере.
@@ -173,7 +173,7 @@ export function pageWindow(current: number, total: number): (number | null)[] {
 export const WRITEUP_CATEGORY = 'writeups'
 
 export interface WriteupLinks {
-  /** id статьи → id её разбора. */
+  /** id статьи → id ее разбора. */
   writeupOf: Map<number, number>
   /** id разбора → сколько записей на него ссылаются. */
   coverage: Map<number, number>
@@ -198,8 +198,8 @@ export function writeupLinks(entries: Entry[]): WriteupLinks {
   const coverage = new Map<number, number>()
   for (const e of entries) {
     for (const id of e.related_ids ?? []) {
-      // Ссылка в никуда сюда не попадает: её ловит audit --check integrity, а
-      // вид обязан просто пережить её, не рисуя разбор, которого нет.
+      // Ссылка в никуда сюда не попадает: ее ловит audit --check integrity, а
+      // вид обязан просто пережить ее, не рисуя разбор, которого нет.
       if (!writeups.has(id)) continue
       writeupOf.set(e.id, id)
       coverage.set(id, (coverage.get(id) ?? 0) + 1)
@@ -208,9 +208,9 @@ export function writeupLinks(entries: Entry[]): WriteupLinks {
   return { writeupOf, coverage }
 }
 
-// Формы слова берёт платформа, а не самописный список хвостов: правило для
+// Формы слова берет платформа, а не самописный список хвостов: правило для
 // русского уже лежит в Intl, и повторять его руками значило бы завести второй
-// источник истины ради трёх слов.
+// источник истины ради трех слов.
 const RU_PLURAL = new Intl.PluralRules('ru')
 const ENTRY_FORMS: Record<string, string> = {
   one: 'запись',

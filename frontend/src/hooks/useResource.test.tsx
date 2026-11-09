@@ -22,14 +22,14 @@ function Probe({
 
 afterEach(() => {
   // Автоочистка @testing-library включается только при globals: true, а его у
-  // нас нет — без этой строки разметка прошлого теста остаётся в документе и
+  // нас нет — без этой строки разметка прошлого теста остается в документе и
   // getByText находит два совпадения вместо одного.
   cleanup()
   vi.restoreAllMocks()
 })
 
 describe('useResource', () => {
-  it('грузит один раз при монтировании и отдаёт данные', async () => {
+  it('грузит один раз при монтировании и отдает данные', async () => {
     const load = vi.fn().mockResolvedValue('первое')
     render(<Probe load={load} />)
 
@@ -66,7 +66,7 @@ describe('useResource', () => {
     await waitFor(() => expect(screen.getByText('данные: июль')).toBeTruthy())
 
     // Старые данные под новым ключом — это неверные данные: подпись периода
-    // уже переключилась, а цифры ещё от прошлого. Лучше честная загрузка.
+    // уже переключилась, а цифры еще от прошлого. Лучше честная загрузка.
     let resolve: (v: string) => void = () => {}
     rerender(<Probe load={() => new Promise<string>((r) => { resolve = r })} resourceKey="2026-06" />)
     await waitFor(() => expect(screen.getByText('загрузка')).toBeTruthy())
@@ -93,8 +93,8 @@ describe('useResource', () => {
     await waitFor(() => expect(screen.getByText('ошибка: /api/x: 500')).toBeTruthy())
   })
 
-  it('ответ отменённого запроса не затирает актуальный', async () => {
-    // Ключ сменился, пока первый запрос ещё шёл. Его поздний ответ обязан быть
+  it('ответ отмененного запроса не затирает актуальный', async () => {
+    // Ключ сменился, пока первый запрос еще шел. Его поздний ответ обязан быть
     // отброшен: иначе на экране окажутся данные периода, который уже не выбран.
     let resolveFirst: (v: string) => void = () => {}
     const { rerender } = render(

@@ -2,11 +2,11 @@ import type { PeriodTotal } from './api'
 import { toKopecks } from './money'
 
 // Чистая часть графиков: подготовка рядов. Отдельным файлом от компонентов по
-// двум причинам сразу — иначе Fast Refresh перестаёт работать (файл экспортирует
+// двум причинам сразу — иначе Fast Refresh перестает работать (файл экспортирует
 // и компоненты, и функции), а тест на .ts, импортирующий .tsx, теряет типы.
 
 export interface Bar {
-  /** Ключ периода как он пришёл с сервера. */
+  /** Ключ периода как он пришел с сервера. */
   key: string
   /** Что подписать под столбцом. */
   label: string
@@ -52,7 +52,7 @@ export function monthBars(byMonth: PeriodTotal[], today: string): Bar[] {
 
 /**
  * Последние `days` дней, включая сегодня, с нулями там, где трат не было.
- * Окно знает график, а не отчёт, — сервер отдаёт только дни с расходами.
+ * Окно знает график, а не отчет, — сервер отдает только дни с расходами.
  */
 export function dayBars(byDay: PeriodTotal[], today: string, days = 31): Bar[] {
   const sums = new Map(byDay.map((d) => [d.period, toKopecks(d.total)]))

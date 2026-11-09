@@ -19,7 +19,7 @@ import (
 func TestServerTiming_offByDefault(t *testing.T) {
 	rec := get(t, newTestServer(), "/api/stats")
 	if h := rec.Header().Get("Server-Timing"); h != "" {
-		t.Fatalf("заголовок пришёл без флага: %q", h)
+		t.Fatalf("заголовок пришел без флага: %q", h)
 	}
 }
 
@@ -27,7 +27,7 @@ func TestServerTiming_namesTheStepsWhenOn(t *testing.T) {
 	rec := get(t, newTestServerWith(httpapi.WithServerTiming()), "/api/stats")
 	h := rec.Header().Get("Server-Timing")
 	if h == "" {
-		t.Fatal("флаг включён, а заголовка нет")
+		t.Fatal("флаг включен, а заголовка нет")
 	}
 	// total обязателен: без него шаги не с чем сравнивать, и «где медленно»
 	// снова становится вопросом без ответа.
@@ -63,7 +63,7 @@ func TestServerTiming_notOnMetrics(t *testing.T) {
 		t.Fatalf("/metrics: код %d", rec.Code)
 	}
 	if h := rec.Header().Get("Server-Timing"); h != "" {
-		t.Fatalf("на /metrics пришёл заголовок: %q", h)
+		t.Fatalf("на /metrics пришел заголовок: %q", h)
 	}
 }
 

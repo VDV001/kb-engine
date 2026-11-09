@@ -43,11 +43,11 @@ func connectWithRecorder(t *testing.T, q mcpserver.Querier, rec mcpserver.Record
 }
 
 // Каждый инструмент оставляет след — проверяется на ЖИВОМ пути протокола, а не
-// на функции записи: до этого счётчика не было вовсе, и вопрос «окупились ли
+// на функции записи: до этого счетчика не было вовсе, и вопрос «окупились ли
 // ссылки на витрину» оставался мнением.
 //
 // Проверяются все три инструмента разом: запись, приделанная к каждому вручную,
-// однажды забудется у четвёртого.
+// однажды забудется у четвертого.
 func TestServer_recordsEveryToolCall(t *testing.T) {
 	rec := &recorderStub{}
 	cs := connectWithRecorder(t, stubQuerier{entries: fixture(t)}, rec)
@@ -75,7 +75,7 @@ func TestServer_recordsEveryToolCall(t *testing.T) {
 			t.Errorf("вызов %q записан с кодом %d, ждали 0", w, rec.calls[i].exitCode)
 		}
 	}
-	// Запрос записывается: без него счётчик отвечает «сколько», но не «о чём», а
+	// Запрос записывается: без него счетчик отвечает «сколько», но не «о чем», а
 	// вкладка «Ответы» строится именно на этом.
 	if len(rec.calls[0].args) != 1 || rec.calls[0].args[0] != "кубернетес" {
 		t.Errorf("аргументы поиска = %v, ждали [кубернетес]", rec.calls[0].args)
@@ -83,8 +83,8 @@ func TestServer_recordsEveryToolCall(t *testing.T) {
 }
 
 // Отрицательный контроль: неудавшийся вызов записывается ОТДЕЛЬНЫМ кодом.
-// Иначе «спросили и не получили ответа» выглядело бы в счётчике как удачный
-// вызов — то же самое, что показывать зелёным проверку, которая не выполнилась.
+// Иначе «спросили и не получили ответа» выглядело бы в счетчике как удачный
+// вызов — то же самое, что показывать зеленым проверку, которая не выполнилась.
 func TestServer_recordsFailedCallWithNonZeroCode(t *testing.T) {
 	rec := &recorderStub{}
 	cs := connectWithRecorder(t, stubQuerier{entries: fixture(t)}, rec)
@@ -97,7 +97,7 @@ func TestServer_recordsFailedCallWithNonZeroCode(t *testing.T) {
 		t.Fatalf("записано вызовов %d, ждали 1", len(rec.calls))
 	}
 	if rec.calls[0].exitCode == 0 {
-		t.Errorf("промах по id записан с кодом 0 — в счётчике он неотличим от удачного вызова")
+		t.Errorf("промах по id записан с кодом 0 — в счетчике он неотличим от удачного вызова")
 	}
 }
 

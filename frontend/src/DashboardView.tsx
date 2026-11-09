@@ -9,7 +9,7 @@ import { useResource } from './hooks/useResource'
 /** Сколько недель показывает лента активности. */
 const WEEKS = 21
 
-/** Сколько дней в столбчатом графике: месяц — тот горизонт, на котором ещё
+/** Сколько дней в столбчатом графике: месяц — тот горизонт, на котором еще
  * различимы отдельные дни. */
 const BAR_DAYS = 30
 
@@ -52,7 +52,7 @@ export function DashboardView({
         <h1 className="font-headline text-4xl font-bold tracking-tighter md:text-5xl">База знаний.</h1>
         <p className="mt-2 max-w-3xl text-on-surface-variant">
           Живая память об AI-разработке: записи, категории и активность добавления. У каждой записи —
-          lifecycle-статус, поэтому база не гниёт, а стареет управляемо.
+          lifecycle-статус, поэтому база не гниет, а стареет управляемо.
         </p>
       </header>
 
@@ -65,7 +65,7 @@ export function DashboardView({
             лента активности показывает форму, но не итог. */}
         <Kpi label="Добавлено за месяц" value={lastMonth} bg="bg-kpi-2-bg">
           {/* «−53% к прошлому» не говорило, к чему именно: читатель видел долю
-              без второго числа и не мог её проверить. Теперь рядом стоит само
+              без второго числа и не мог ее проверить. Теперь рядом стоит само
               число за предыдущие 30 дней. */}
           {perWeek} в неделю ·{' '}
           {prevMonth === 0
@@ -101,7 +101,7 @@ export function DashboardView({
 
       <TagCloud entries={entries} labels={stats.tag_labels ?? {}} onPickTag={onPickTag} />
 
-      <Section title="Граф знаний" subtitle="Связи категорий через общие теги. Пересчёт при каждом обращении — данные факт">
+      <Section title="Граф знаний" subtitle="Связи категорий через общие теги. Пересчет при каждом обращении — данные факт">
         {graph === null ? (
           <p className="p-8 text-center text-on-surface-variant">Загрузка…</p>
         ) : (
@@ -276,7 +276,7 @@ function Donut({
               {key === '—прочее' ? 'прочее' : categoryLabel(key, labels)}
             </span>
             {/* И доля, и само число: процент отвечает «насколько велика тема»,
-                счётчик — «сколько там читать». */}
+                счетчик — «сколько там читать». */}
             <span className="shrink-0 font-mono text-xs text-on-surface-variant tabular-nums">{n}</span>
             <span className="w-10 shrink-0 text-right font-mono text-xs font-bold tabular-nums">
               {total > 0 ? Math.round((n / total) * 100) : 0}%
@@ -364,7 +364,7 @@ function Heatmap({ activity }: { activity: ReturnType<typeof buildActivity> }) {
   )
 }
 
-/** Облако свёрнуто по умолчанию: развёрнутое оно занимает экран целиком, а
+/** Облако свернуто по умолчанию: развернутое оно занимает экран целиком, а
  * читают его редко. */
 function TagCloud({
   entries,

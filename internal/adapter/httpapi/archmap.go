@@ -14,7 +14,7 @@ import (
 // while the dashboard is open shows up on reload.
 type MapsLoader func() ([]archmap.Map, error)
 
-// mapIndexEntry — карта в оглавлении: чем она себя называет и какого объёма.
+// mapIndexEntry — карта в оглавлении: чем она себя называет и какого объема.
 // Сценарии и узлы сюда не входят намеренно — живые карты весят по сотне с
 // лишним килобайт, а на вкладку заходят сначала выбрать карту.
 type mapIndexEntry struct {
@@ -24,7 +24,7 @@ type mapIndexEntry struct {
 	CheckedAt string        `json:"checked_at,omitempty"`
 	Zones     []string      `json:"zones"`
 	Stats     archmap.Stats `json:"stats"`
-	// Accepted — сколько зон имеют запись о приёмке. Ноль при непустых зонах
+	// Accepted — сколько зон имеют запись о приемке. Ноль при непустых зонах
 	// значит «сверять не с чем», и это не то же самое, что «не принято».
 	Accepted int `json:"accepted_zones"`
 }

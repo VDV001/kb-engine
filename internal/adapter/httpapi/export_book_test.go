@@ -63,7 +63,7 @@ func TestFinanceWorkbook(t *testing.T) {
 		t.Errorf("the amount is text, the column cannot be summed")
 	}
 	accs := sheetRows(t, f, "Счета")
-	if len(accs) != 2 || accs[0][0] != "Счёт" {
+	if len(accs) != 2 || accs[0][0] != "Счет" {
 		t.Fatalf("Счета %v", accs)
 	}
 	head := strings.Join(accs[0], "|")

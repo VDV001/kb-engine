@@ -63,7 +63,7 @@ func TestStore_anyCharacters(t *testing.T) {
 	s := tempStore(t)
 	for _, v := range []string{
 		"ab cd", `ab"cd`, `ab\cd`, "пароль", "ab\u00a0cd", "ab\tcd", "ab\ncd",
-		`"edge"`, "end space ", " lead", "deadbeef", "0x41", `a b"c\d ё`,
+		`"edge"`, "end space ", " lead", "deadbeef", "0x41", `a b"c\d е`,
 	} {
 		if err := s.Set("server-ab12cd34", v); err != nil {
 			t.Fatalf("Set %q: %v", v, err)

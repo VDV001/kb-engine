@@ -5,11 +5,11 @@ import { Card, Label } from '../components/ui'
 import { Anchor } from './Anchor'
 
 /**
- * Что карта нашла, пока её писали.
+ * Что карта нашла, пока ее писали.
  *
  * Починенные находки остаются здесь намеренно. Вычистить их значит потерять
  * причину, по которой проверка выглядит именно так: почти каждая механическая
- * проверка в этих проектах заведена после того, как её отсутствие чего-то
+ * проверка в этих проектах заведена после того, как ее отсутствие чего-то
  * стоило.
  */
 export function FindingsPanel({ map, roots }: { map: ArchMap; roots: Record<string, string> }) {
@@ -21,7 +21,7 @@ export function FindingsPanel({ map, roots }: { map: ArchMap; roots: Record<stri
       <Card>
         <p className="text-sm text-on-surface-variant">
           Раздела находок в этой карте нет. Это не «ничего не нашли» — записи о находках
-          карта просто не ведёт.
+          карта просто не ведет.
         </p>
       </Card>
     )

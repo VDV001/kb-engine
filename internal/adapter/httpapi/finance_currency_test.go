@@ -13,7 +13,7 @@ import (
 )
 
 // Витрина о валюте не знала ничего: #332 заведена вопросом владельца к экрану —
-// «почему тут рублёвый счёт, я же получил наличными». Домен научился валюте
+// «почему тут рублевый счет, я же получил наличными». Домен научился валюте
 // раньше (PR #336), запись пришла следующей (#340), а API продолжал отдавать
 // одно число без единицы, и страница показывала цену входа как текущую оценку.
 //
@@ -95,7 +95,7 @@ func financeAccounts(t *testing.T) financeAccountsBody {
 }
 
 // Сумма в своей валюте и единица рядом с ней. Без кода валюты «500.00» у
-// долларового счёта читается как рубли — ровно тот дефект, из-за которого
+// долларового счета читается как рубли — ровно тот дефект, из-за которого
 // issue и заведена.
 func TestFinances_accountCarriesItsCurrency(t *testing.T) {
 	body := financeAccounts(t)
@@ -117,17 +117,17 @@ func TestFinances_accountCarriesItsCurrency(t *testing.T) {
 	}
 }
 
-// Рублёвый счёт остаётся ровно таким, каким был: пустая валюта и никакого
+// Рублевый счет остается ровно таким, каким был: пустая валюта и никакого
 // курса. Иначе каждая существующая страница обязана была бы научиться новому,
 // чтобы показать прежнее.
 func TestFinances_rubleAccountStaysQuiet(t *testing.T) {
 	body := financeAccounts(t)
 	plain := body.Accounts[0]
 	if plain.Currency != "" || plain.Rate != "" {
-		t.Errorf("рублёвый счёт = %+v, ждали пустые валюту и курс", plain)
+		t.Errorf("рублевый счет = %+v, ждали пустые валюту и курс", plain)
 	}
 	if plain.Unvalued {
-		t.Error("рублёвый счёт помечен неоценённым")
+		t.Error("рублевый счет помечен неоцененным")
 	}
 }
 
@@ -137,7 +137,7 @@ func TestFinances_unknownRateIsNotZero(t *testing.T) {
 	body := financeAccounts(t)
 	eur := body.Accounts[2]
 	if !eur.Unvalued {
-		t.Error("счёт без курса не помечен неоценённым")
+		t.Error("счет без курса не помечен неоцененным")
 	}
 	if eur.Currency != "EUR" {
 		t.Errorf("currency = %q, ждали EUR", eur.Currency)
@@ -165,11 +165,11 @@ func TestFinances_groupTotalsComeFromUsecase(t *testing.T) {
 	if kubyshka.Total != "42140.00" {
 		t.Errorf("итог рода = %q, ждали 42140.00 (евро не оценены и не входят)", kubyshka.Total)
 	}
-	// Имя ПОЛНОЕ, а не «Евро»: список неоценённых читается и вне контекста
-	// рода — в отчёте, в логе, в чужом ответе, — и «Евро» там ничего не
+	// Имя ПОЛНОЕ, а не «Евро»: список неоцененных читается и вне контекста
+	// рода — в отчете, в логе, в чужом ответе, — и «Евро» там ничего не
 	// значит. Решение принято usecase раньше и здесь не переоткрывается.
 	if len(kubyshka.Unvalued) != 1 || kubyshka.Unvalued[0] != "Кубышка → Евро" {
-		t.Errorf("неоценённые = %v, ждали [Кубышка → Евро]", kubyshka.Unvalued)
+		t.Errorf("неоцененные = %v, ждали [Кубышка → Евро]", kubyshka.Unvalued)
 	}
 	if len(kubyshka.Rates) != 1 {
 		t.Fatalf("курсов %d, ждали 1", len(kubyshka.Rates))

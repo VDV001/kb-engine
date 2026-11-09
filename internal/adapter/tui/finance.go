@@ -81,10 +81,10 @@ func (m Model) updateFinances(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m Model) renderFinances() string {
 	var b strings.Builder
-	b.WriteString(screenHead("финансы", "за всё время"))
+	b.WriteString(screenHead("финансы", "за все время"))
 
 	if m.finErr != nil {
-		b.WriteString(styleTitle.Render("отчёт не построен") + "\n")
+		b.WriteString(styleTitle.Render("отчет не построен") + "\n")
 		b.WriteString(m.finErr.Error() + "\n")
 		return b.String() + "\n" + m.financeHint()
 	}
@@ -118,7 +118,7 @@ func (m Model) renderFinances() string {
 
 	// «Расходы по …», а не «по …»: рядом стоят балансы счетов, и подпись «по
 	// счетам» над суммами трат читается как остаток на карте. Владелец сравнил
-	// её с балансом в вебе и увидел разные числа под одним словом.
+	// ее с балансом в вебе и увидел разные числа под одним словом.
 	writeTotals(&b, "расходы по категориям", s.ByCategory)
 	writeTotals(&b, "расходы по счетам", s.ByAccount)
 
@@ -204,7 +204,7 @@ func writeTotals(b *strings.Builder, title string, rows []finance.CategoryTotal)
 			styleDim.Render(fmt.Sprintf("%4d", r.Count)))
 	}
 	if len(rows) > financeRows {
-		b.WriteString(styleDim.Render(fmt.Sprintf("  … ещё %d\n", len(rows)-financeRows)))
+		b.WriteString(styleDim.Render(fmt.Sprintf("  … еще %d\n", len(rows)-financeRows)))
 	}
 	b.WriteString("\n")
 }
@@ -216,8 +216,8 @@ const (
 	hintFinancesWrite = "a — расход · i — доход"
 	hintFinancesSync  = "s — книга"
 	hintBalanceKey    = "b — баланс"
-	hintWorkbook      = "книга Учёт_финансов.xlsx не тронута — kbengine fin sync"
-	hintWorkbookKey   = "книга Учёт_финансов.xlsx отстала — s синхронизирует"
+	hintWorkbook      = "книга Учет_финансов.xlsx не тронута — kbengine fin sync"
+	hintWorkbookKey   = "книга Учет_финансов.xlsx отстала — s синхронизирует"
 )
 
 // exchangeLine is one currency exchange on the finances screen: когда, сколько

@@ -12,7 +12,7 @@ import (
 )
 
 // Журнал прогонов существует ради вопроса «запускали ли», поэтому проверяется
-// живой путь целиком: обёртка вокруг диспетчера, а не функция записи отдельно.
+// живой путь целиком: обертка вокруг диспетчера, а не функция записи отдельно.
 // Записывать должна КАЖДАЯ команда, включая ту, которой нет.
 func TestRunLogged_recordsEveryRun(t *testing.T) {
 	tests := []struct {
@@ -86,7 +86,7 @@ func TestRunLogged_journalFailureDoesNotChangeExitCodeButIsSaidAloud(t *testing.
 	if err := os.WriteFile(blocker, []byte("не каталог"), 0o600); err != nil {
 		t.Fatalf("setup: %v", err)
 	}
-	// Путь ведёт ВНУТРЬ обычного файла — каталог там создать нельзя.
+	// Путь ведет ВНУТРЬ обычного файла — каталог там создать нельзя.
 	t.Setenv("KBENGINE_RUNLOG", filepath.Join(blocker, "runs.jsonl"))
 
 	var out, errb bytes.Buffer
@@ -104,7 +104,7 @@ func TestRunLogged_journalFailureDoesNotChangeExitCodeButIsSaidAloud(t *testing.
 
 // --- #328: причина отказа попадает в журнал ---------------------------------
 
-// Причина берётся из ПЕРВОЙ строки stderr, а не из последней: движок называет
+// Причина берется из ПЕРВОЙ строки stderr, а не из последней: движок называет
 // причину сразу, а хвост занимают подсказки и перечисления. Тот же урок, что
 // «причина отказа стоит в начале, не в хвосте».
 func TestRunLogged_recordsWhyItFailed(t *testing.T) {
@@ -122,15 +122,15 @@ func TestRunLogged_recordsWhyItFailed(t *testing.T) {
 		t.Fatalf("Load: %v, записей %d", err, len(recs))
 	}
 	if recs[0].Reason() == "" {
-		t.Fatal("причина не записана — отчёт снова не отличит поломку от защиты")
+		t.Fatal("причина не записана — отчет снова не отличит поломку от защиты")
 	}
 	if !strings.Contains(errb.String(), recs[0].Reason()) {
 		t.Errorf("причина %q не встречается в stderr — записано не то, что видел человек", recs[0].Reason())
 	}
 }
 
-// Успешный прогон причины не заводит: у успеха её нет по конструкции, и
-// пустая строка в журнале означала бы «причина была, но её потеряли».
+// Успешный прогон причины не заводит: у успеха ее нет по конструкции, и
+// пустая строка в журнале означала бы «причина была, но ее потеряли».
 func TestRunLogged_successCarriesNoReason(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.jsonl")
 	t.Setenv("KBENGINE_RUNLOG", path)
@@ -148,8 +148,8 @@ func TestRunLogged_successCarriesNoReason(t *testing.T) {
 	}
 }
 
-// Вывод команды не должен пострадать от того, что его подслушивают: обёртка
-// над stderr обязана пропускать всё дальше байт в байт.
+// Вывод команды не должен пострадать от того, что его подслушивают: обертка
+// над stderr обязана пропускать все дальше байт в байт.
 func TestRunLogged_stderrPassesThroughUnchanged(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.jsonl")
 	t.Setenv("KBENGINE_RUNLOG", path)

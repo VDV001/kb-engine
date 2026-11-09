@@ -22,13 +22,13 @@ func TestRun_finBalanceCreatesANewAccount(t *testing.T) {
 	// The report says the row is new. «Займ → Коллеге: 3000.00» alone reads the
 	// same as an update, and the difference is exactly what the person asked to
 	// confirm by passing the flag.
-	for _, want := range []string{"Займ → Коллеге", "3000.00", "новый счёт"} {
+	for _, want := range []string{"Займ → Коллеге", "3000.00", "новый счет"} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("вывод не содержит %q:\n%s", want, out.String())
 		}
 	}
 	// Сравнение числом, а не строкой: сколько знаков после запятой покажет
-	// ячейка, решает её формат, и в фикстуре его нет. Наследование формата —
+	// ячейка, решает ее формат, и в фикстуре его нет. Наследование формата —
 	// вопрос отдельного теста в адаптере, здесь проверяется записанная сумма.
 	if got := accountBalanceValue(t, book, "Займ → Коллеге"); got != 3000 {
 		t.Errorf("баланс в книге = %v, ожидалось 3000", got)
@@ -44,7 +44,7 @@ func TestRun_finBalanceCreateRefusesAnAccountThatExists(t *testing.T) {
 	var out, errb bytes.Buffer
 	code := run([]string{"fin", "balance", "--from", book, "--bank", "сбербанк", "--amount", "500", "--create"}, &out, &errb)
 	if code == 0 {
-		t.Fatal("существующий счёт заведён повторно, ожидался отказ")
+		t.Fatal("существующий счет заведен повторно, ожидался отказ")
 	}
 	// The refusal names the spelling that is already there and points at the
 	// command that does what the person probably meant.
@@ -54,7 +54,7 @@ func TestRun_finBalanceCreateRefusesAnAccountThatExists(t *testing.T) {
 		}
 	}
 	if got := accountBalanceValue(t, book, "Сбербанк"); got == 500 {
-		t.Error("баланс существующего счёта переписан отказавшей командой")
+		t.Error("баланс существующего счета переписан отказавшей командой")
 	}
 }
 
@@ -78,9 +78,9 @@ func TestRun_finBalanceWithoutCreateStillRefusesAnUnknownBank(t *testing.T) {
 
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "balance", "--from", book, "--bank", "Займ → Коллеге", "--amount", "3000"}, &out, &errb); code == 0 {
-		t.Fatal("неизвестный счёт записан без --create")
+		t.Fatal("неизвестный счет записан без --create")
 	}
 	if !strings.Contains(errb.String(), "--create") {
-		t.Errorf("отказ не назвал флаг, которым счёт заводится:\n%s", errb.String())
+		t.Errorf("отказ не назвал флаг, которым счет заводится:\n%s", errb.String())
 	}
 }

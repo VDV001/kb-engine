@@ -22,7 +22,7 @@ import {
 // отданная под самое редкое содержимое.
 
 // Команда перепроверки. CLI умеет только читать (ни audit, ни dedup не имеют
-// --apply), поэтому кнопка даёт команду, которая ПОКАЖЕТ находки заново, и
+// --apply), поэтому кнопка дает команду, которая ПОКАЖЕТ находки заново, и
 // честно не обещает исправить их за тебя. $KB_CATALOG — путь к catalog.json:
 // подставить сюда путь с сервера значило бы напечатать чужую файловую систему
 // на странице, которую AGPL разрешает открыть наружу.
@@ -39,7 +39,7 @@ function CopyButton({ text, title }: { text: string; title: string }) {
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(
           () => setDone(true),
-          // Отказ буфера (нет разрешения, не защищённый контекст) не должен
+          // Отказ буфера (нет разрешения, не защищенный контекст) не должен
           // выглядеть как успех: кнопка просто не меняет подпись.
           () => setDone(false),
         )
@@ -75,8 +75,8 @@ function FindingRow({
   conflict: boolean
   onOpen: (id: number) => void
 }) {
-  // Причина, по которой находка попала в группу, стоит в её заголовке —
-  // повторять её в каждой строке значит печатать одно слово пятьдесят раз.
+  // Причина, по которой находка попала в группу, стоит в ее заголовке —
+  // повторять ее в каждой строке значит печатать одно слово пятьдесят раз.
   const extra = finding.Reasons.slice(1)
   return (
     <li className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-outline-variant px-4 py-2.5 text-sm first:border-t-0">
@@ -186,7 +186,7 @@ function AuditSection({
 }) {
   const items = findings ?? []
   // Пустой раздел не занимает карточку: «Проблем замен (0)» — это не находка,
-  // а её отсутствие, и место на экране оно занимать не должно.
+  // а ее отсутствие, и место на экране оно занимать не должно.
   if (items.length === 0) return null
   const ids = items.map((f) => f.EntryID).join(', ')
   return (
@@ -233,7 +233,7 @@ function DuplicateCard({
 
       {/* Две записи рядом, а не два номера через запятую: решение «дубль или
           нет» принимается сравнением заголовков, дат и статусов, и если их не
-          показать, за ними всё равно придётся идти в архив — по одной. */}
+          показать, за ними все равно придется идти в архив — по одной. */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {members.map((e) => {
           const s = statusOf(e)
@@ -278,7 +278,7 @@ const DRIFT_COMMAND = 'kbengine drift --catalog "$KB_CATALOG" --apply'
  *
  * Непроверенные показываются всегда, включая ноль. Это Правило 11 в исходной
  * формулировке: доля живых без числа непроверенных читается как утверждение обо
- * всей базе, хотя относится только к спрошенной её части.
+ * всей базе, хотя относится только к спрошенной ее части.
  */
 function LinkHealthSection() {
   const res = useResource(api.linkHealth)
@@ -390,7 +390,7 @@ export function HealthView({
       />
       <AuditSection
         title="Замены не сходятся"
-        hint="supersedes_id ведёт не туда"
+        hint="supersedes_id ведет не туда"
         check="supersession"
         findings={audits.supersession}
         byID={byID}

@@ -44,7 +44,7 @@ func TestRun_finAdd_currency(t *testing.T) {
 		wantErr  string
 	}{
 		{
-			name:     "валюта берётся у счёта из книги",
+			name:     "валюта берется у счета из книги",
 			extra:    func(book string) []string { return []string{"--from", book, "--account", "Банк USD"} },
 			wantLine: `"currency":"USD"`,
 		},
@@ -54,7 +54,7 @@ func TestRun_finAdd_currency(t *testing.T) {
 			wantLine: `"currency":"USD"`,
 		},
 		{
-			name: "рубли с долларового счёта — отказ",
+			name: "рубли с долларового счета — отказ",
 			extra: func(book string) []string {
 				return []string{"--from", book, "--account", "Банк USD", "--currency", "RUB"}
 			},
@@ -68,7 +68,7 @@ func TestRun_finAdd_currency(t *testing.T) {
 			wantErr:  "currency",
 		},
 		{
-			name:  "рублёвая трата поля не несёт",
+			name:  "рублевая трата поля не несет",
 			extra: func(book string) []string { return []string{"--from", book, "--account", "Сбербанк"} },
 		},
 	}
@@ -94,7 +94,7 @@ func TestRun_finAdd_currency(t *testing.T) {
 			line := lastLedgerLine(t, ledger)
 			if tc.wantLine == "" {
 				if strings.Contains(line, `"currency"`) {
-					t.Errorf("рублёвая строка несёт валюту:\n%s", line)
+					t.Errorf("рублевая строка несет валюту:\n%s", line)
 				}
 				return
 			}
@@ -127,8 +127,8 @@ func TestRun_finEdit_currency(t *testing.T) {
 	}
 }
 
-// Форма терминала пишет тем же путём, что fin add, и обязана так же брать валюту
-// у счёта: иначе трата с долларового счёта, введённая в TUI, ушла бы рублями и
+// Форма терминала пишет тем же путем, что fin add, и обязана так же брать валюту
+// у счета: иначе трата с долларового счета, введенная в TUI, ушла бы рублями и
 // встала бы на сверке отказом.
 func TestLedgerFinances_addTakesTheAccountCurrency(t *testing.T) {
 	book := workbookWithDollarAccount(t)
@@ -146,7 +146,7 @@ func TestLedgerFinances_addTakesTheAccountCurrency(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 	if line := lastLedgerLine(t, ledger); !strings.Contains(line, `"currency":"USD"`) {
-		t.Errorf("трата из формы без валюты счёта:\n%s", line)
+		t.Errorf("трата из формы без валюты счета:\n%s", line)
 	}
 }
 
@@ -168,7 +168,7 @@ func TestRun_finSummary_namesOtherCurrencies(t *testing.T) {
 	}
 }
 
-// Сумма печатается вместе с валютой везде, где её читает человек. Без кода
+// Сумма печатается вместе с валютой везде, где ее читает человек. Без кода
 // дифф сверки показал бы «27196.00 → 312.40», и правильный перевод в доллары
 // выглядел бы как сумма, упавшая в десятки раз.
 func TestAmountText_namesTheCurrency(t *testing.T) {
@@ -176,7 +176,7 @@ func TestAmountText_namesTheCurrency(t *testing.T) {
 	mk := func(c domain.Currency) domain.Transaction {
 		tx, err := domain.NewTransaction(domain.TransactionParams{
 			ID: "01X", Kind: domain.KindExpense, Date: time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC),
-			Amount: domain.NewMoney(31240), Category: "Жильё", Currency: c,
+			Amount: domain.NewMoney(31240), Category: "Жилье", Currency: c,
 			Now: func() time.Time { return time.Date(2026, 4, 7, 0, 0, 0, 0, time.UTC) },
 		})
 		if err != nil {
@@ -188,7 +188,7 @@ func TestAmountText_namesTheCurrency(t *testing.T) {
 		t.Errorf("строка сверки без валюты: %q", got)
 	}
 	if got := describeTx(mk(domain.Currency{})); strings.Contains(got, "RUB") {
-		t.Errorf("рублёвая строка сверки изменила вид: %q", got)
+		t.Errorf("рублевая строка сверки изменила вид: %q", got)
 	}
 }
 
@@ -205,8 +205,8 @@ func TestRun_finAdd_printsTheCurrency(t *testing.T) {
 }
 
 // Быстрый ввод не зависит от того, разбирается ли книга целиком: испорченная
-// ячейка «Валюта» на листе трат не мешает записать рублёвую трату, потому что
-// для валюты счёта нужен только лист «Счета».
+// ячейка «Валюта» на листе трат не мешает записать рублевую трату, потому что
+// для валюты счета нужен только лист «Счета».
 func TestLedgerFinances_addSurvivesABrokenCurrencyCell(t *testing.T) {
 	book := workbookWithDollarAccount(t)
 	f, err := excelize.OpenFile(book)
@@ -233,6 +233,6 @@ func TestLedgerFinances_addSurvivesABrokenCurrencyCell(t *testing.T) {
 		t.Fatalf("Add отказал из-за чужой испорченной ячейки: %v", err)
 	}
 	if line := lastLedgerLine(t, ledger); !strings.Contains(line, `"currency":"USD"`) {
-		t.Errorf("валюта счёта не подставлена:\n%s", line)
+		t.Errorf("валюта счета не подставлена:\n%s", line)
 	}
 }

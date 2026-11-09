@@ -49,7 +49,7 @@ func financeTenantIn(t *testing.T, dir string, wrap func(blob.Store) blob.Store)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Put(ctx, "users/anna/fin/finance-aliases.json", []byte(`{"places":{"пятерочка":{"place":"Пятёрочка","category":"Еда"}}}`), ""); err != nil {
+	if _, err := s.Put(ctx, "users/anna/fin/finance-aliases.json", []byte(`{"places":{"пятерочка":{"place":"Пятерочка","category":"Еда"}}}`), ""); err != nil {
 		t.Fatal(err)
 	}
 	var stderr bytes.Buffer
@@ -84,7 +84,7 @@ func TestTransactionThroughTheAPI(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("POST: %d %s", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), `"used":"Пятёрочка"`) {
+	if !strings.Contains(rec.Body.String(), `"used":"Пятерочка"`) {
 		t.Errorf("the vocabulary substitution is not reported: %s", rec.Body.String())
 	}
 	if got := transactions(t, h, tok); len(got) != 1 {
@@ -187,7 +187,7 @@ func TestVocabularyConflictIsReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.Put(ctx, "users/anna/fin/finance-aliases.json",
-		[]byte(`{"places":{"пятерочка":{"place":"Пятёрочка","category":"Еда"},"ПЯТЕРОЧКА":{"place":"Пятёрочка","category":"Дом"}}}`), cur.ETag); err != nil {
+		[]byte(`{"places":{"пятерочка":{"place":"Пятерочка","category":"Еда"},"ПЯТЕРОЧКА":{"place":"Пятерочка","category":"Дом"}}}`), cur.ETag); err != nil {
 		t.Fatal(err)
 	}
 	rec := do(h, http.MethodPost, "/api/finances/transactions", `{"kind":"expense","amount":"418","category":"Еда","place":"пятерочка","date":"2026-04-06"}`, tok)

@@ -72,7 +72,7 @@ func TestFinancesShowTheExchange(t *testing.T) {
 	ops := sheetRows(t, f, "Операции")
 	head := strings.Join(ops[0], "|")
 	line := strings.Join(ops[1], "|")
-	for _, want := range []string{"Получено", "На счёт", "Курс"} {
+	for _, want := range []string{"Получено", "На счет", "Курс"} {
 		if !strings.Contains(head, want) {
 			t.Errorf("Операции lacks %s: %v", want, ops[0])
 		}

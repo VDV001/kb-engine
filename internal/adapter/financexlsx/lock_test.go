@@ -12,8 +12,8 @@ import (
 // CheckLock knew one editor. The owner opens this workbook in whatever is at
 // hand, and the two families of editors mark an open file differently:
 //
-//	LibreOffice   .~lock.Учёт_финансов.xlsx#
-//	Excel         ~$Учёт_финансов.xlsx
+//	LibreOffice   .~lock.Учет_финансов.xlsx#
+//	Excel         ~$Учет_финансов.xlsx
 //
 // Writing underneath either one produces two divergent versions, and the one
 // the editor holds wins the moment it saves — taking the rows written meanwhile
@@ -32,7 +32,7 @@ func TestCheckLock_recognisesEveryEditorsLockFile(t *testing.T) {
 	for name, lockName := range tests {
 		t.Run(name, func(t *testing.T) {
 			dir := t.TempDir()
-			path := filepath.Join(dir, "Учёт_финансов.xlsx")
+			path := filepath.Join(dir, "Учет_финансов.xlsx")
 			if err := os.WriteFile(path, []byte("workbook"), 0o600); err != nil {
 				t.Fatalf("create workbook: %v", err)
 			}
@@ -64,7 +64,7 @@ func TestCheckLock_failsClosedWhenItCannotLook(t *testing.T) {
 	if err := os.Mkdir(sub, 0o700); err != nil {
 		t.Fatalf("mkdir: %v", err)
 	}
-	path := filepath.Join(sub, "Учёт_финансов.xlsx")
+	path := filepath.Join(sub, "Учет_финансов.xlsx")
 	if err := os.WriteFile(path, []byte("workbook"), 0o600); err != nil {
 		t.Fatalf("create workbook: %v", err)
 	}

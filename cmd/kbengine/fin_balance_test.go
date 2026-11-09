@@ -81,7 +81,7 @@ func TestRun_finBalanceRefusesAnUnparsableAmount(t *testing.T) {
 //
 // Проверка стоит на живом пути команды, а не на функции записи: экран терминала
 // и команда пишут баланс одним вызовом ровно затем, чтобы момент нельзя было
-// потерять, выбрав другую поверхность. День при этом остаётся в книге — колонку
+// потерять, выбрав другую поверхность. День при этом остается в книге — колонку
 // «Обновлено» читает человек.
 func TestRun_finBalanceRecordsTheConfirmationMoment(t *testing.T) {
 	book := workbook(t)
@@ -97,7 +97,7 @@ func TestRun_finBalanceRecordsTheConfirmationMoment(t *testing.T) {
 	}
 	moment, known := state.At("Сбербанк")
 	if !known {
-		t.Fatal("момент подтверждения не записан — расчёт останется на приблизительном правиле")
+		t.Fatal("момент подтверждения не записан — расчет останется на приблизительном правиле")
 	}
 	if time.Since(moment) > time.Minute {
 		t.Errorf("момент = %s, ожидался момент этого запуска", moment)
@@ -122,16 +122,16 @@ func accountBalance(t *testing.T, path, bank string) string {
 			return r[1]
 		}
 	}
-	t.Fatalf("счёт %q не найден", bank)
+	t.Fatalf("счет %q не найден", bank)
 	return ""
 }
 
-// Отчёт о прежнем значении читает лист тем же правилом, что и запись.
+// Отчет о прежнем значении читает лист тем же правилом, что и запись.
 //
 // balanceOf сравнивал имя побайтово, поэтому при другом написании запись
-// проходила, а отчёт прежнего значения не находил и печатал строку вида
-// «Сбербанк: 4321.55», как для счёта, которого раньше не было. Человек видел
-// «завёл новый счёт» там, где обновил существующий.
+// проходила, а отчет прежнего значения не находил и печатал строку вида
+// «Сбербанк: 4321.55», как для счета, которого раньше не было. Человек видел
+// «завел новый счет» там, где обновил существующий.
 func TestRun_finBalanceReportsThePreviousValueAcrossSpellings(t *testing.T) {
 	book := workbook(t)
 
@@ -141,6 +141,6 @@ func TestRun_finBalanceReportsThePreviousValueAcrossSpellings(t *testing.T) {
 	}
 
 	if !strings.Contains(out.String(), "→") {
-		t.Errorf("отчёт не показал прежнее значение:\n%s", out.String())
+		t.Errorf("отчет не показал прежнее значение:\n%s", out.String())
 	}
 }

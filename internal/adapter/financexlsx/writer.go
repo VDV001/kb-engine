@@ -34,7 +34,7 @@ const (
 	// #432): правка строки в Excel ее не теряет. По заголовку, как «Валюта».
 	receivedHeader    = "Получено"
 	receivedCurHeader = "Валюта получения"
-	receivedAccHeader = "Счёт получения"
+	receivedAccHeader = "Счет получения"
 	// headerRow is where the workbook keeps its column names; row 1 is a title.
 	headerRow = 2
 	// backupsKept is enough to undo a bad afternoon and few enough that the
@@ -231,8 +231,8 @@ func resolvePlacements(f *excelize.File, assign map[string]string) ([]placement,
 // Both families of editors are checked, because the owner opens this file in
 // whatever is at hand:
 //
-//	LibreOffice   .~lock.Учёт_финансов.xlsx#
-//	Excel         ~$Учёт_финансов.xlsx
+//	LibreOffice   .~lock.Учет_финансов.xlsx#
+//	Excel         ~$Учет_финансов.xlsx
 //
 // A stat that fails for any reason other than "not there" is reported rather
 // than swallowed: a check that cannot look is not a check that found nothing,

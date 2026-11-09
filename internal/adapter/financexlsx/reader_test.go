@@ -11,7 +11,7 @@ import (
 
 // fixture builds a workbook shaped exactly like the real ledger: a title row,
 // a header row, then data from row 3. Sheet and column layout mirror
-// Учёт_финансов.xlsx.
+// Учет_финансов.xlsx.
 func fixture(t *testing.T) string {
 	t.Helper()
 	f := excelize.NewFile()
@@ -32,7 +32,7 @@ func fixture(t *testing.T) string {
 
 	// --- Расходы: Дата | Категория | Подкатегория | Место | Описание | Сумма | Источник
 	must(f.SetSheetName("Sheet1", "Расходы"))
-	must(f.SetCellValue("Расходы", "A1", "Учёт расходов"))
+	must(f.SetCellValue("Расходы", "A1", "Учет расходов"))
 	must(f.SetCellValue("Расходы", "A2", "Дата"))
 	must(f.SetCellValue("Расходы", "A3", time.Date(2026, 3, 29, 0, 0, 0, 0, time.UTC)))
 	must(f.SetCellValue("Расходы", "B3", "Еда"))

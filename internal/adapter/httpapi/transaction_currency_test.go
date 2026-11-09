@@ -50,6 +50,6 @@ func TestFinances_transactionCarriesItsCurrency(t *testing.T) {
 		t.Errorf("долларовая запись: currency = %v, want USD", got["01U"])
 	}
 	if got["01R"] != nil {
-		t.Errorf("рублёвая запись несёт currency = %v, want отсутствие поля", got["01R"])
+		t.Errorf("рублевая запись несет currency = %v, want отсутствие поля", got["01R"])
 	}
 }

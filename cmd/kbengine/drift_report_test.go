@@ -47,7 +47,7 @@ func TestPrintDriftReport_startsWithWhatWasNotEstablished(t *testing.T) {
 	s := out.String()
 
 	notChecked := strings.Index(s, "НЕ проверено")
-	dead := strings.Index(s, "мёртвые ссылки")
+	dead := strings.Index(s, "мертвые ссылки")
 	if notChecked < 0 {
 		t.Fatalf("report does not state what was not checked:\n%s", s)
 	}
@@ -66,7 +66,7 @@ func TestPrintDriftReport_saysWhenNothingIsDead(t *testing.T) {
 	printDriftReport(&out, drift.Report{TotalEntries: 1, Results: []drift.Result{
 		{EntryID: 1, Code: 200, Status: mustStatus(t, 200)},
 	}})
-	if !strings.Contains(out.String(), "мёртвых ссылок не найдено") {
+	if !strings.Contains(out.String(), "мертвых ссылок не найдено") {
 		t.Errorf("a clean scan does not say so:\n%s", out.String())
 	}
 }
@@ -116,7 +116,7 @@ func TestRunDrift_applyRecordsTheCheck(t *testing.T) {
 // HTTP-запросов уходило впустую, прежде чем человек узнавал, что перепутал
 // флаги.
 //
-// Отказ известен до первого запроса, поэтому счётчик обращений обязан остаться
+// Отказ известен до первого запроса, поэтому счетчик обращений обязан остаться
 // на нуле. Считает сам сервер, к которому вела бы ссылка записи.
 func TestRunDrift_updateURLsRefusesBeforeScanning(t *testing.T) {
 	var hits atomic.Int64

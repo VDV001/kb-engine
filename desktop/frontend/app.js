@@ -150,7 +150,7 @@ const worth = (m) => FIELD[m.field] && HOW[m.how] !== undefined && !(VISIBLE.has
 const hitsWhere = (e, fields, how) => (e.match || []).filter((m) => fields.has(m.field) && how(m.how)).map((m) => m.hit).filter(Boolean);
 // В заголовке и описании подсвечиваются все совпадения этих полей, и
 // буквальные тоже: разбор запроса в окне не повторяет нормы движка (ё и е,
-// запрос из одной буквы), и «Ёжик» по «еж» иначе остался бы без подсветки.
+// запрос из одной буквы), и «Ежик» по «еж» иначе остался бы без подсветки.
 const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => HOW[h] !== undefined);
 const metaHits = (e) => hitsWhere(e, new Set(["author", "category"]), (h) => HOW[h] !== undefined);
 function whyLine(e) {
@@ -2179,11 +2179,11 @@ function renderChatSources() {
     return `<button type="button" class="chat-src${bad ? " bad" : ""}" style="--c:var(${hue.get(s.id)})" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
       data-tip="${esc(label(s))}" data-tip-b="${esc(bad || (on ? "этот чат ищет здесь · щелчок — убрать" : "этот чат здесь не ищет · щелчок — вернуть"))}"${bad ? " data-tip-bad" : ""}><i></i><span class="t">${esc(label(s))}</span></button>`;
   };
-  const max = 6; // больше — в «ещё N»: ряд не переносится
+  const max = 6; // больше — в «еще N»: ряд не переносится
   const shown = list.slice(0, max), rest = list.slice(max);
   const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
   row.innerHTML = `<span class="lbl">ищет в</span>` + shown.map(chip).join("") +
-    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">ещё ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
+    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
     (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
     (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
   dropStaleTip();

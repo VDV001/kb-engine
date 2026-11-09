@@ -125,7 +125,7 @@ func TestFinancesAsksForWholeHistory(t *testing.T) {
 }
 
 // Экран финансов называет записи в другой валюте рядом с итогом. Без строки
-// доллары просто пропали бы с экрана: в рублёвые суммы они не входят.
+// доллары просто пропали бы с экрана: в рублевые суммы они не входят.
 func TestFinancesNamesOtherCurrencies(t *testing.T) {
 	sum := sampleSummary()
 	sum.OtherCurrencies = []finance.CurrencyTotal{{Currency: "USD", ExpenseCount: 2, Expenses: domain.NewMoney(1730)}}

@@ -41,7 +41,7 @@ const stats = {
 }
 
 describe('AboutView', () => {
-  // Версия движка живёт только в бинаре: до этого её нельзя было увидеть,
+  // Версия движка живет только в бинаре: до этого ее нельзя было увидеть,
   // не выйдя в терминал за `kbengine version`.
   it('показывает версию движка и коммит', async () => {
     render(<AboutView stats={stats} onPickCategory={() => {}} />)
@@ -50,14 +50,14 @@ describe('AboutView', () => {
   })
 
   // Ключи категорий («ai-agents-tools») — это имена для машины. Читаемые
-  // названия каталог уже несёт, и Архив их показывает; здесь они терялись.
+  // названия каталог уже несет, и Архив их показывает; здесь они терялись.
   it('показывает читаемые названия категорий, а не ключи', () => {
     render(<AboutView stats={stats} onPickCategory={() => {}} />)
     expect(screen.getByText('AI-агенты и MCP')).toBeDefined()
     expect(screen.queryByText('ai-agents-tools')).toBeNull()
   })
 
-  it('клик по категории отдаёт наверх её ключ, а не название', () => {
+  it('клик по категории отдает наверх ее ключ, а не название', () => {
     const picked: string[] = []
     render(<AboutView stats={stats} onPickCategory={(c) => picked.push(c)} />)
     fireEvent.click(screen.getByText('AI-агенты и MCP'))
@@ -92,7 +92,7 @@ describe('AboutView', () => {
     const many = {
       ...stats,
       by_category: { a: 5, b: 4, c: 3, d: 2, e: 1 },
-      category_labels: { a: 'Первая', b: 'Вторая', c: 'Третья', d: 'Четвёртая', e: 'Пятая' },
+      category_labels: { a: 'Первая', b: 'Вторая', c: 'Третья', d: 'Четвертая', e: 'Пятая' },
     }
     const { container } = render(<AboutView stats={many} onPickCategory={() => {}} />)
     const stacks = container.querySelectorAll('div.divide-y.border')
@@ -101,14 +101,14 @@ describe('AboutView', () => {
       Array.from(s.querySelectorAll('button')).map((b) => b.textContent),
     )
     expect(names.length).toBe(5)
-    for (const label of ['Первая', 'Вторая', 'Третья', 'Четвёртая', 'Пятая']) {
+    for (const label of ['Первая', 'Вторая', 'Третья', 'Четвертая', 'Пятая']) {
       expect(names.filter((n) => n?.includes(label)).length).toBe(1)
     }
   })
 
   it('показывает статусную таблицу возможностей из /api/capabilities', async () => {
     render(<AboutView stats={stats} onPickCategory={() => {}} />)
-    // Ждём асинхронную загрузку возможностей.
+    // Ждем асинхронную загрузку возможностей.
     expect(await screen.findByText('Возможности и их зрелость')).toBeTruthy()
     expect(screen.getByText('MCP-сервер над каталогом')).toBeTruthy()
     // Статус показан, а не проглочен: без него таблица не отличается от списка.
@@ -138,7 +138,7 @@ describe('engineVersionLabel', () => {
 
 describe('AboutView, когда changelog не разобран', () => {
   // Живой случай: вместо CHANGELOG.md движку подсунули changelog.json, парсер
-  // markdown не нашёл ни одного заголовка и отдал пустой документ. Страница
+  // markdown не нашел ни одного заголовка и отдал пустой документ. Страница
   // печатала «v0.0.0 · —», и ноль выглядел фактом о базе.
   it('говорит, что файл не разобран, вместо версии 0.0.0', async () => {
     changelog.value = { current_version: '0.0.0', current_date: null, current_tagline: '', releases: [] }

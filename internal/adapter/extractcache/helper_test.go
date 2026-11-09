@@ -83,7 +83,7 @@ func TestHelper_Timeout(t *testing.T) {
 // Вывод помощника режется по MaxText на границе руны: текст скана в сотни
 // страниц не раздувает ни память, ни кеш.
 func TestHelper_CapsOutput(t *testing.T) {
-	h := extractcache.Helper{Bin: fakeHelper(t, `yes ёёёёёёёё | head -c 4000000`)}
+	h := extractcache.Helper{Bin: fakeHelper(t, `yes ееееееее | head -c 4000000`)}
 	got, err := h.Extract(context.Background(), strings.NewReader(""), "pdf")
 	if err != nil {
 		t.Fatal(err)

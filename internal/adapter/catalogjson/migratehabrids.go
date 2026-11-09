@@ -9,7 +9,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/botinbox"
 )
 
-// HabrIDFill — одна запись, которой номер статьи проставляется из её адреса.
+// HabrIDFill — одна запись, которой номер статьи проставляется из ее адреса.
 type HabrIDFill struct {
 	EntryID int
 	Title   string
@@ -38,7 +38,7 @@ type HabrIDPlan struct {
 // readHabrID разбирает поле, которое хранит номер и числом, и строкой.
 //
 // Второе значение говорит, лежала ли там строка: строка — это то же знание в
-// форме, в которой оно не сравнивается с числом, поэтому её приводят к числу.
+// форме, в которой оно не сравнивается с числом, поэтому ее приводят к числу.
 func readHabrID(raw json.RawMessage) (id int, wasString, present bool) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return 0, false, false
@@ -65,7 +65,7 @@ func readHabrID(raw json.RawMessage) (id int, wasString, present bool) {
 // остальную, а молчание читается как «дубликатов нет».
 //
 // Расхождение между полем и адресом не решается: движок не знает, что из двух
-// верно, и молча выбрав одно, он стёр бы решение человека. Такие записи только
+// верно, и молча выбрав одно, он стер бы решение человека. Такие записи только
 // называются.
 func MigrateHabrIDs(path string, apply bool) (HabrIDPlan, error) {
 	members, entries, err := readEntries(path)
@@ -97,7 +97,7 @@ func MigrateHabrIDs(path string, apply bool) (HabrIDPlan, error) {
 	return plan, nil
 }
 
-// fillHabrID решает судьбу одной записи и возвращает её обновлённой, когда
+// fillHabrID решает судьбу одной записи и возвращает ее обновленной, когда
 // номер надо записать. Вынесено из цикла: решений здесь пять, и вместе с
 // обходом каталога они читались как одно длинное.
 func fillHabrID(raw json.RawMessage, plan *HabrIDPlan) (json.RawMessage, bool, error) {
@@ -121,7 +121,7 @@ func fillHabrID(raw json.RawMessage, plan *HabrIDPlan) (json.RawMessage, bool, e
 	switch {
 	case present && stored != inURL:
 		// Что верно — поле или адрес — движок не знает, и молча выбрав одно,
-		// он стёр бы решение человека.
+		// он стер бы решение человека.
 		plan.Conflicts = append(plan.Conflicts, HabrIDConflict{
 			EntryID: head.ID, Title: head.Title, Stored: stored, InURL: inURL,
 		})

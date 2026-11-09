@@ -26,8 +26,8 @@ func mustRate(t *testing.T, kopecks int64) domain.Rate {
 	return r
 }
 
-// Рублёвый счёт обязан работать без единой правки — ни в книге, ни у
-// вызывающего (первый пункт приёмки #332). Прежний конструктор остаётся
+// Рублевый счет обязан работать без единой правки — ни в книге, ни у
+// вызывающего (первый пункт приемки #332). Прежний конструктор остается
 // прежним, а не получает два новых аргумента: иначе «обратная совместимость»
 // держалась бы на том, что каждое из существующих мест не забыло передать RUB.
 func TestNewAccountStaysBaseCurrency(t *testing.T) {
@@ -39,10 +39,10 @@ func TestNewAccountStaysBaseCurrency(t *testing.T) {
 	if !acc.Currency().IsBase() {
 		t.Errorf("Currency() = %q, ожидался рубль", acc.Currency().Code())
 	}
-	// У рублёвого счёта курса нет и быть не должно: он и есть база, а не
+	// У рублевого счета курса нет и быть не должно: он и есть база, а не
 	// оценка. Известный курс «1» здесь означал бы, что кто-то что-то измерял.
 	if acc.Rate().Known() {
-		t.Error("у рублёвого счёта известен курс — оценивать базу в базе нечем")
+		t.Error("у рублевого счета известен курс — оценивать базу в базе нечем")
 	}
 	value, ok := acc.BaseValue()
 	if !ok || value.Kopecks() != 120000 {
@@ -50,8 +50,8 @@ func TestNewAccountStaysBaseCurrency(t *testing.T) {
 	}
 }
 
-// Валютный счёт хранит сумму В СВОЕЙ валюте и курс, по которому её оценили, а
-// не одну пересчитанную цифру: сохранив только пересчёт, мы теряем ровно то,
+// Валютный счет хранит сумму В СВОЕЙ валюте и курс, по которому ее оценили, а
+// не одну пересчитанную цифру: сохранив только пересчет, мы теряем ровно то,
 // ради чего валюта заводилась.
 func TestForeignAccountKeepsOwnAmountAndRate(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC) }
@@ -65,14 +65,14 @@ func TestForeignAccountKeepsOwnAmountAndRate(t *testing.T) {
 	if acc.Currency().Code() != "USD" {
 		t.Errorf("Currency() = %q, ожидалось USD", acc.Currency().Code())
 	}
-	// Баланс остаётся в своей валюте: 500,00 доллара, а не рубли.
+	// Баланс остается в своей валюте: 500,00 доллара, а не рубли.
 	if acc.Balance().Kopecks() != 50000 {
 		t.Errorf("Balance() = %d, ожидалось 50000 (в долларах)", acc.Balance().Kopecks())
 	}
 	// 500,00 × 84,28 = 42 140,00 ₽
 	value, ok := acc.BaseValue()
 	if !ok {
-		t.Fatal("BaseValue() не смог оценить счёт с известным курсом")
+		t.Fatal("BaseValue() не смог оценить счет с известным курсом")
 	}
 	if value.Kopecks() != 4214000 {
 		t.Errorf("BaseValue() = %d, ожидалось 4214000 копеек", value.Kopecks())
@@ -81,7 +81,7 @@ func TestForeignAccountKeepsOwnAmountAndRate(t *testing.T) {
 
 // «Курс неизвестен» — отдельный ответ, а не ноль и не последний известный.
 // Витрина обязана сказать «оценка неизвестна», а не показать ноль: молча
-// подставленный курс даёт число, на которое смотрят как на замер.
+// подставленный курс дает число, на которое смотрят как на замер.
 func TestForeignAccountWithoutRateRefusesToValue(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC) }
 	try := mustCurrency(t, "TRY")
@@ -91,7 +91,7 @@ func TestForeignAccountWithoutRateRefusesToValue(t *testing.T) {
 		t.Fatalf("NewForeignAccount: %v", err)
 	}
 	if _, ok := acc.BaseValue(); ok {
-		t.Error("счёт без курса оценён — вызывающий примет выдуманное число за замер")
+		t.Error("счет без курса оценен — вызывающий примет выдуманное число за замер")
 	}
 	// Сумма при этом не потеряна: неизвестен курс, а не остаток.
 	if acc.Balance().Kopecks() != 300000 {
@@ -108,6 +108,6 @@ func TestBaseCurrencyRejectsRate(t *testing.T) {
 
 	_, err := domain.NewForeignAccount("Сбербанк", domain.NewMoney(120000), rub, mustRate(t, 8428), now(), now)
 	if !errors.Is(err, domain.ErrInvalidAccount) {
-		t.Errorf("рублёвый счёт с курсом принят, ожидался ErrInvalidAccount (получено %v)", err)
+		t.Errorf("рублевый счет с курсом принят, ожидался ErrInvalidAccount (получено %v)", err)
 	}
 }

@@ -11,8 +11,8 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// Переименование нужно, чтобы перенести счёт в другой род: имя без стрелки —
-// обычный счёт, имя со стрелкой — род, и другого способа сказать это книге нет.
+// Переименование нужно, чтобы перенести счет в другой род: имя без стрелки —
+// обычный счет, имя со стрелкой — род, и другого способа сказать это книге нет.
 // Баланс, дата и валюта обязаны пережить смену имени: меняется слово, а не деньги.
 func TestRenameAccount_keepsTheMoneyUnderTheNewName(t *testing.T) {
 	path := workbookWithExtraColumn(t)
@@ -46,7 +46,7 @@ func TestRenameAccount_keepsTheMoneyUnderTheNewName(t *testing.T) {
 }
 
 // Момент подтверждения хранится по имени рядом с книгой. Не переехав вместе со
-// счётом, он молча вернул бы расчёт к приблизительному правилу «по дню».
+// счетом, он молча вернул бы расчет к приблизительному правилу «по дню».
 func TestRenameAccount_movesTheConfirmationMoment(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	at := time.Date(2026, 8, 4, 15, 30, 0, 0, time.UTC)
@@ -72,9 +72,9 @@ func TestRenameAccount_movesTheConfirmationMoment(t *testing.T) {
 
 // Отказы обязаны оставлять книгу байт в байт прежней.
 //
-// Счёт, на который ссылаются строки «Расходов», переименовать нельзя: лист
-// «Счета» — словарь, по которому читается колонка счёта, и старое имя в этих
-// строках прочиталось бы как источник, а не как счёт. Следующая синхронизация
+// Счет, на который ссылаются строки «Расходов», переименовать нельзя: лист
+// «Счета» — словарь, по которому читается колонка счета, и старое имя в этих
+// строках прочиталось бы как источник, а не как счет. Следующая синхронизация
 // отказала бы, а история тихо поменяла бы смысл.
 func TestRenameAccount_refuses(t *testing.T) {
 	cases := []struct {
@@ -82,9 +82,9 @@ func TestRenameAccount_refuses(t *testing.T) {
 		from, to string
 		want     error
 	}{
-		{"на счёт ссылаются расходы", "Сбербанк", "Сбер", financexlsx.ErrAccountInUse},
+		{"на счет ссылаются расходы", "Сбербанк", "Сбер", financexlsx.ErrAccountInUse},
 		{"новое имя уже занято", "Т-Банк", "альфа банк", financexlsx.ErrAccountExists},
-		{"такого счёта нет", "Почта Банк", "Почта", financexlsx.ErrUnknownAccount},
+		{"такого счета нет", "Почта Банк", "Почта", financexlsx.ErrUnknownAccount},
 		{"пустое новое имя", "Т-Банк", "  ", domain.ErrInvalidAccount},
 	}
 	for _, c := range cases {
@@ -120,7 +120,7 @@ func currency(t *testing.T, code string) domain.Currency {
 }
 
 // Испорченное состояние рядом с книгой — отказ ДО записи книги, а не после:
-// иначе счёт переименован, а момент остался под старым именем.
+// иначе счет переименован, а момент остался под старым именем.
 func TestRenameAccount_refusesBeforeWritingWhenTheStateIsBroken(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	if err := os.WriteFile(balancestate.PathNextTo(path), []byte("{не json"), 0o600); err != nil {
@@ -144,10 +144,10 @@ func TestRenameAccount_refusesBeforeWritingWhenTheStateIsBroken(t *testing.T) {
 }
 
 // Новое имя, которое уже стоит в строках «Расходов» источником, после
-// переименования прочиталось бы как счёт: история поменяла бы смысл.
+// переименования прочиталось бы как счет: история поменяла бы смысл.
 func TestRenameAccount_refusesANewNameThatExpenseRowsAlreadyCarry(t *testing.T) {
 	path := workbookWithExtraColumn(t)
-	// В фикстуре G4 = «Чек» — способ записи, а не счёт.
+	// В фикстуре G4 = «Чек» — способ записи, а не счет.
 	_, err := financexlsx.RenameAccount(path, "Т-Банк", "Чек", fixedClock(2026, 8, 5))
 	if !errors.Is(err, financexlsx.ErrAccountInUse) {
 		t.Fatalf("ошибка = %v, ожидалась ErrAccountInUse", err)
@@ -155,7 +155,7 @@ func TestRenameAccount_refusesANewNameThatExpenseRowsAlreadyCarry(t *testing.T) 
 }
 
 // Функция возвращает прежнее имя так, как оно записано на листе: вызывающему
-// незачем перечитывать всю книгу, чтобы назвать его в отчёте.
+// незачем перечитывать всю книгу, чтобы назвать его в отчете.
 func TestRenameAccount_returnsTheOldNameAsTheSheetSpellsIt(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	old, err := financexlsx.RenameAccount(path, "т банк", "Т-Банк карта", fixedClock(2026, 8, 5))

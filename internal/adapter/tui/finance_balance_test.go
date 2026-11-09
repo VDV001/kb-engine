@@ -28,7 +28,7 @@ type balanceCall struct {
 
 func (s *stubAccounts) Accounts() ([]domain.Account, error) { return s.list, s.err }
 
-// Balances отдаёт то же, что посчитал бы usecase на этих счетах без трат:
+// Balances отдает то же, что посчитал бы usecase на этих счетах без трат:
 // стаб стоит вместо книги, а не вместо арифметики.
 func (s *stubAccounts) Balances() ([]finance.AccountBalance, error) {
 	if s.err != nil {
@@ -37,9 +37,9 @@ func (s *stubAccounts) Balances() ([]finance.AccountBalance, error) {
 	return finance.CurrentBalances(s.list, nil, nil), nil
 }
 
-// AddAccount заводит счёт, которого на листе ещё нет. Отдельный метод, а не
+// AddAccount заводит счет, которого на листе еще нет. Отдельный метод, а не
 // флаг у SetBalance: экран обязан различать «поправил число» и «пополнил
-// словарь, решающий, что вообще считается счётом».
+// словарь, решающий, что вообще считается счетом».
 func (s *stubAccounts) AddAccount(bank string, amount domain.Money) error {
 	if s.createErr != nil {
 		return s.createErr
@@ -110,7 +110,7 @@ func TestBalances_writesFromTheScreen(t *testing.T) {
 	m, _ := balanceModel(acc)
 
 	m = press(press(m, tab()), runes("b"))
-	m = fill(m, "Альфа-Банк") // счёт
+	m = fill(m, "Альфа-Банк") // счет
 	m = press(m, runes("4321,55"))
 	m = press(m, enter())
 
@@ -118,7 +118,7 @@ func TestBalances_writesFromTheScreen(t *testing.T) {
 		t.Fatalf("баланс записан %d раз, ожидался 1", len(acc.got))
 	}
 	if acc.got[0].bank != "Альфа-Банк" {
-		t.Errorf("счёт = %q, ожидался Альфа-Банк", acc.got[0].bank)
+		t.Errorf("счет = %q, ожидался Альфа-Банк", acc.got[0].bank)
 	}
 	if acc.got[0].amount.Kopecks() != 432155 {
 		t.Errorf("сумма = %d копеек, ожидалось 432155", acc.got[0].amount.Kopecks())

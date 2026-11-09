@@ -180,7 +180,7 @@ func TestOutdatedCandidates(t *testing.T) {
 		article(t, 2, articleParams{title: "Статья удалена автором", description: "x", lifecycle: "active", verdict: "keep"}),
 		article(t, 3, articleParams{title: "Deprecated approach", description: "no longer available", lifecycle: "active", verdict: "keep"}),
 		article(t, 4, articleParams{title: "Gone", description: "y", lifecycle: "active", verdict: "skip-unavailable"}),
-		article(t, 5, articleParams{title: "удалён", description: "z", lifecycle: "outdated", verdict: "keep"}),
+		article(t, 5, articleParams{title: "удален", description: "z", lifecycle: "outdated", verdict: "keep"}),
 	})
 	if err != nil {
 		t.Fatalf("catalog: %v", err)
@@ -212,7 +212,7 @@ func TestOutdatedCandidates(t *testing.T) {
 
 func TestOutdatedCandidates_wordBoundary(t *testing.T) {
 	cat, err := domain.NewCatalog([]domain.Entry{
-		article(t, 10, articleParams{title: "Удалёнка убивает тело", lifecycle: "active", verdict: "keep"}),
+		article(t, 10, articleParams{title: "Удаленка убивает тело", lifecycle: "active", verdict: "keep"}),
 		article(t, 11, articleParams{title: "Снятся ли ИИ овцы", lifecycle: "active", verdict: "keep"}),
 		article(t, 12, articleParams{title: "Решение удаления терминов", lifecycle: "active", verdict: "keep"}),
 		article(t, 13, articleParams{title: "Статья удалена автором", lifecycle: "active", verdict: "keep"}),
@@ -230,7 +230,7 @@ func TestOutdatedCandidates_wordBoundary(t *testing.T) {
 		got[f.EntryID] = true
 	}
 
-	for _, notWant := range []int{10, 11, 12} { // удалёнка / снятся / удаления — different words
+	for _, notWant := range []int{10, 11, 12} { // удаленка / снятся / удаления — different words
 		if got[notWant] {
 			t.Errorf("entry %d falsely flagged (substring false positive)", notWant)
 		}
@@ -327,7 +327,7 @@ func TestDuplicates(t *testing.T) {
 		// same URL → exact-url duplicate
 		article(t, 1, articleParams{title: "Alpha one two three", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
 		article(t, 2, articleParams{title: "Beta four five six", lifecycle: "active", verdict: "keep", url: "https://dup.example/x"}),
-		// Части одного цикла — РАЗНЫЕ материалы, а не одна запись, заведённая
+		// Части одного цикла — РАЗНЫЕ материалы, а не одна запись, заведенная
 		// дважды. Раньше они схлопывались намеренно, и на живом каталоге это
 		// дало единственную находку дедупа — ложную: «Разбираемся в ML без
 		// воды. Часть 1» и «Часть 2» стояли в паре как дубликаты.
@@ -470,7 +470,7 @@ func TestSupersessionIssues_reportsHalfDoneMerges(t *testing.T) {
 // хранится для истории», и пометить их устаревшими нечего добавить.
 //
 // На живом каталоге это была не мелочь: из 52 кандидатов 49 уже лежали в
-// dead-end, и массовая правка по такому списку стёрла бы осмысленный статус,
+// dead-end, и массовая правка по такому списку стерла бы осмысленный статус,
 // заменив его более общим. Аудит должен показывать работу, а не повторять
 // сделанную.
 func TestOutdatedCandidates_skipsTerminalLifecycles(t *testing.T) {
@@ -503,7 +503,7 @@ func TestOutdatedCandidates_skipsTerminalLifecycles(t *testing.T) {
 // Ссылка в никуда — дефект, который не виден ни на одном экране: связь просто
 // не рисуется. На живом каталоге такая нашлась только при ручном разборе:
 // стандарт ссылался на 1028104 — номер статьи Хабра из URL другой записи, то
-// есть id чужой системы нумерации в поле, которое ждёт id каталога.
+// есть id чужой системы нумерации в поле, которое ждет id каталога.
 func TestIntegrityIssues_reportsBrokenRelatedIDs(t *testing.T) {
 	cat, err := domain.NewCatalog([]domain.Entry{
 		article(t, 1, articleParams{title: "A", description: "x", lifecycle: "active", verdict: "keep", relatedIDs: []int{2, 1028104}}),
@@ -562,8 +562,8 @@ func TestIntegrityIssues_cleanCatalogIsSilent(t *testing.T) {
 }
 
 // Запись, которую уже сняли с дистанции, не может быть кандидатом в канон.
-// «Замещена» и «тупик» — это решения, принятые про неё; предлагать их пересмотреть
-// по счётчику ссылок значит спорить с решением, которого проверка не читала.
+// «Замещена» и «тупик» — это решения, принятые про нее; предлагать их пересмотреть
+// по счетчику ссылок значит спорить с решением, которого проверка не читала.
 // На живой базе так висели две находки, и обе годами не требовали действия.
 func TestCanonicalCandidates_skipsRetiredEntries(t *testing.T) {
 	ref := func(id, target int) domain.Entry {

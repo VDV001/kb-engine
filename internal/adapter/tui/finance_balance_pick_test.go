@@ -11,7 +11,7 @@ func left() tea.KeyMsg  { return tea.KeyMsg{Type: tea.KeyLeft} }
 func right() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyRight} }
 
 // Форма просила набрать руками имя, которое движок только что показал списком.
-// Отсюда и вопрос «зачем эта страница, если на экране всё видно»: она отбирала
+// Отсюда и вопрос «зачем эта страница, если на экране все видно»: она отбирала
 // экран и требовала работы, которой не должно быть.
 func TestBalanceForm_opensOnAnAccountFromTheBook(t *testing.T) {
 	m, _ := balanceModel(accountsStub(t))
@@ -19,9 +19,9 @@ func TestBalanceForm_opensOnAnAccountFromTheBook(t *testing.T) {
 	view := press(press(m, tab()), runes("b")).View()
 
 	if !strings.Contains(view, "Сбербанк") {
-		t.Errorf("форма открылась без выбранного счёта\n--- view ---\n%s", view)
+		t.Errorf("форма открылась без выбранного счета\n--- view ---\n%s", view)
 	}
-	// И сразу видно, что у этого счёта записано: подтверждая баланс, человек
+	// И сразу видно, что у этого счета записано: подтверждая баланс, человек
 	// решает, глядя на прежнее число, а форма закрывает собой экран, где оно
 	// было.
 	for _, want := range []string{"1 000,50", "28.07"} {
@@ -39,7 +39,7 @@ func TestBalanceForm_arrowsWalkTheAccounts(t *testing.T) {
 
 	view := press(m, right()).View()
 	if !strings.Contains(view, "Альфа-Банк") || !strings.Contains(view, "1 507,12") {
-		t.Errorf("→ не перевела на второй счёт\n--- view ---\n%s", view)
+		t.Errorf("→ не перевела на второй счет\n--- view ---\n%s", view)
 	}
 	// По кругу: за последним снова первый. Тупик в конце списка человек читает
 	// как поломку клавиши.
@@ -51,7 +51,7 @@ func TestBalanceForm_arrowsWalkTheAccounts(t *testing.T) {
 	}
 }
 
-// Выбор не запирает форму: новый счёт всё ещё вводится буквами, иначе ctrl+n
+// Выбор не запирает форму: новый счет все еще вводится буквами, иначе ctrl+n
 // нечем воспользоваться — заводить было бы нечего.
 func TestBalanceForm_typingReplacesTheChoice(t *testing.T) {
 	m, _ := balanceModel(accountsStub(t))
@@ -68,14 +68,14 @@ func TestBalanceForm_typingReplacesTheChoice(t *testing.T) {
 	if strings.Contains(view, "Сбербанк") {
 		t.Errorf("набор дописался к подставленному имени\n--- view ---\n%s", view)
 	}
-	// И форма говорит, что такого счёта на листе нет, — до нажатия Enter.
+	// И форма говорит, что такого счета на листе нет, — до нажатия Enter.
 	if !strings.Contains(strings.ToLower(view), "ctrl+n") {
-		t.Errorf("форма не сказала, что счёт незнакомый\n--- view ---\n%s", view)
+		t.Errorf("форма не сказала, что счет незнакомый\n--- view ---\n%s", view)
 	}
 }
 
-// Стрелки листают счёт только когда курсор на нём: на поле суммы они не должны
-// незаметно менять счёт, в который уйдёт набранное число.
+// Стрелки листают счет только когда курсор на нем: на поле суммы они не должны
+// незаметно менять счет, в который уйдет набранное число.
 func TestBalanceForm_arrowsDoNothingOnTheAmountField(t *testing.T) {
 	m, _ := balanceModel(accountsStub(t))
 	m = press(press(m, tab()), runes("b"))
@@ -84,6 +84,6 @@ func TestBalanceForm_arrowsDoNothingOnTheAmountField(t *testing.T) {
 	view := press(m, right()).View()
 
 	if strings.Contains(view, "Альфа-Банк") {
-		t.Errorf("счёт сменился со стрелки на поле суммы\n--- view ---\n%s", view)
+		t.Errorf("счет сменился со стрелки на поле суммы\n--- view ---\n%s", view)
 	}
 }

@@ -44,7 +44,7 @@ func expense(t *testing.T, id string) finance.Record {
 		Amount:      domain.NewMoney(20245),
 		Category:    "Еда",
 		Subcategory: "Продукты",
-		Place:       "Пятёрочка",
+		Place:       "Пятерочка",
 		Description: "хлеб & молоко <2 шт>",
 		Source:      "Чек",
 		Account:     "Сбербанк",

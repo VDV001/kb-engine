@@ -7,8 +7,8 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
-// Записи в другой валюте едут вместе с суммами, как исключённые переводы: они
-// объясняют, почему сумма строк журнала не сходится с рублёвыми расходами.
+// Записи в другой валюте едут вместе с суммами, как исключенные переводы: они
+// объясняют, почему сумма строк журнала не сходится с рублевыми расходами.
 func TestFinanceSummaryCarriesOtherCurrencies(t *testing.T) {
 	fin := &summaryFinance{summary: finance.Summary{
 		OtherCurrencies: []finance.CurrencyTotal{

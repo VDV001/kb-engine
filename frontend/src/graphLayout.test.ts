@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Graph } from './api'
 import { layoutGraph } from './graphLayout'
 
-// Категории по убыванию — так их и отдаёт сервер.
+// Категории по убыванию — так их и отдает сервер.
 const graph: Graph = {
   nodes: [
     { category: 'golang', count: 100 },
@@ -45,7 +45,7 @@ describe('layoutGraph', () => {
   })
 
   // Узел, вылезший за край, обрезается контейнером — а обрезанная подпись
-  // выглядит поломкой вёрстки, хотя данные целы.
+  // выглядит поломкой верстки, хотя данные целы.
   it('keeps every node fully inside the canvas', () => {
     for (const b of [box, { width: 420, height: 360 }, { width: 1600, height: 900 }]) {
       const l = layoutGraph(graph, b)
@@ -58,8 +58,8 @@ describe('layoutGraph', () => {
     }
   })
 
-  // Ребро, чей конец не попал в раскладку, рисовать не из чего: сервер отдаёт
-  // связи по всему каталогу, а на холст берётся только верхушка.
+  // Ребро, чей конец не попал в раскладку, рисовать не из чего: сервер отдает
+  // связи по всему каталогу, а на холст берется только верхушка.
   it('drops edges whose endpoint is not on the canvas', () => {
     const l = layoutGraph(graph, box)
     expect(l.edges).toHaveLength(2)
@@ -67,7 +67,7 @@ describe('layoutGraph', () => {
   })
 
   // Сильные связи — сплошные, слабые — пунктир: иначе плотный граф читается
-  // как равномерная сетка, где всё связано со всем одинаково.
+  // как равномерная сетка, где все связано со всем одинаково.
   it('marks strong links apart from weak ones', () => {
     const l = layoutGraph(graph, box)
     const strong = l.edges.find((e) => e.from === 'golang' && e.to === 'meta')
@@ -101,7 +101,7 @@ describe('layoutGraph', () => {
 // Кольцо теперь означает связь с ядром, а не размер: размер уже показан числом
 // на узле и площадью прямоугольника, и третий канал под то же самое —
 // потраченная ось. Ближнее кольцо читается как «грани основной линии»,
-// дальнее — как «острова со своим словарём».
+// дальнее — как «острова со своим словарем».
 describe('layoutGraph: слои по связи с ядром', () => {
   const byLink: Graph = {
     nodes: [
@@ -127,7 +127,7 @@ describe('layoutGraph: слои по связи с ядром', () => {
     expect(ring('big-island')).toBe('outer')
   })
 
-  it('кладёт категорию без связей с ядром во внешнее кольцо', () => {
+  it('кладет категорию без связей с ядром во внешнее кольцо', () => {
     const l = layoutGraph(byLink, box)
     const lonely = l.nodes.find((n) => n.key === 'lonely')!
     expect(lonely.linkToHub).toBe(0)
@@ -138,7 +138,7 @@ describe('layoutGraph: слои по связи с ядром', () => {
     const l = layoutGraph(byLink, box)
     expect(l.nodes.find((n) => n.key === 'small-core')!.linkToHub).toBe(12)
     expect(l.nodes.find((n) => n.key === 'mid')!.linkToHub).toBe(5)
-    // Связь big-island↔mid идёт мимо ядра и на близость не влияет.
+    // Связь big-island↔mid идет мимо ядра и на близость не влияет.
     expect(l.nodes.find((n) => n.key === 'big-island')!.linkToHub).toBe(0)
   })
 
@@ -154,7 +154,7 @@ describe('layoutGraph: слои по связи с ядром', () => {
 
   // Прямоугольники не должны наезжать друг на друга: прежняя раскладка держала
   // это тем, что мелкие уходили на длинную внешнюю дугу, а порядок теперь другой.
-  it('не даёт прямоугольникам перекрываться', () => {
+  it('не дает прямоугольникам перекрываться', () => {
     const l = layoutGraph(graph, box)
     for (let i = 0; i < l.nodes.length; i++) {
       for (let j = i + 1; j < l.nodes.length; j++) {

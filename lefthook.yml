@@ -41,7 +41,7 @@ pre-commit:
       run: go vet ./... || echo "⚠ go vet reported issues (expected on a TDD RED commit; pre-push blocks)"
 
     # ---- слои фронта ------------------------------------------------------
-    # Запросы в api.ts, загрузка в hooks/. Обычный grep по дереву — дешёвый,
+    # Запросы в api.ts, загрузка в hooks/. Обычный grep по дереву — дешевый,
     # поэтому на commit, а не на push.
     web-data-layer:
       glob: "frontend/src/**/*.{ts,tsx}"

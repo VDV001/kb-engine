@@ -58,7 +58,7 @@ func TestAppendEntries_keepsFileAndVersion(t *testing.T) {
 }
 
 // Обратная сторона: у записи без файла и версии эти ключи не должны появляться
-// пустыми — иначе каталог обрастёт полями, которых у записи нет.
+// пустыми — иначе каталог обрастет полями, которых у записи нет.
 func TestAppendEntries_omitsEmptyFileAndVersion(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "catalog.json")
 	if err := os.WriteFile(path, []byte(`{"entries": [], "last_updated": "2026-08-01"}`), 0o600); err != nil {

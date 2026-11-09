@@ -45,7 +45,7 @@ func TestVersionMention(t *testing.T) {
 			want:    "",
 		},
 		{
-			// Своей версии движок может не знать — сборка из исходников даёт
+			// Своей версии движок может не знать — сборка из исходников дает
 			// псевдоверсию. Тогда он молчит, а не объявляет всех отставшими.
 			name:    "своя версия неизвестна — не судим",
 			text:    `{"note":"v0.5.0 · kb-engine"}`,
@@ -59,7 +59,7 @@ func TestVersionMention(t *testing.T) {
 			got := freshness.VersionMention(tc.text, "kb-engine", tc.current)
 			if tc.want == "" {
 				if got != nil {
-					t.Fatalf("находка там, где её быть не должно: %+v", got)
+					t.Fatalf("находка там, где ее быть не должно: %+v", got)
 				}
 				return
 			}
@@ -74,7 +74,7 @@ func TestVersionMention(t *testing.T) {
 }
 
 // Источник, у которого опор нет вовсе, обязан сказать именно это. Молча
-// показанная зелёная галочка означала бы «проверено», а проверки не было.
+// показанная зеленая галочка означала бы «проверено», а проверки не было.
 func TestSource_saysWhenThereIsNothingToCompareWith(t *testing.T) {
 	got := freshness.CheckSource(freshness.Source{
 		Name: "Team", Flag: "--team",
@@ -95,7 +95,7 @@ func TestSource_saysWhenThereIsNothingToCompareWith(t *testing.T) {
 	}
 }
 
-// Источник с опорами ведёт себя как Now: называет, что случилось после правки.
+// Источник с опорами ведет себя как Now: называет, что случилось после правки.
 func TestSource_carriesTheFactsItWasGiven(t *testing.T) {
 	got := freshness.CheckSource(freshness.Source{
 		Name: "Projects", Flag: "--projects", Anchored: true,
@@ -114,7 +114,7 @@ func TestSource_carriesTheFactsItWasGiven(t *testing.T) {
 	}
 }
 
-// «Опор нет» и «опоры есть, но всё сошлось» — разные вещи, и путать их нельзя.
+// «Опор нет» и «опоры есть, но все сошлось» — разные вещи, и путать их нельзя.
 // Поймано живым прогоном: страница Now, у которой опор три, показывалась как
 // «сверять не с чем» ровно потому, что в тот день ничего не разошлось.
 func TestSource_distinguishesNothingToCompareFromNothingFound(t *testing.T) {
@@ -135,8 +135,8 @@ func TestSource_distinguishesNothingToCompareFromNothingFound(t *testing.T) {
 //
 // Разбор по тексту требовал, чтобы имя продукта и его версия оказались в одном
 // куске после разрезания строки по `","`. На живом projects.json это так, и
-// проверка работала. Но естественная правка — вынести версию в своё поле рядом
-// с именем — разводит их по разным кускам, и проверка молчит: «всё свежо» при
+// проверка работала. Но естественная правка — вынести версию в свое поле рядом
+// с именем — разводит их по разным кускам, и проверка молчит: «все свежо» при
 // карточке, отставшей на десять выпусков. Молчание выглядит как порядок, ровно
 // то, от чего эта проверка и защищает.
 func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
@@ -156,7 +156,7 @@ func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
 			want: "v0.5.0",
 		},
 		{
-			// Изоляция соседей — то, ради чего разбор идёт по объектам, а не по
+			// Изоляция соседей — то, ради чего разбор идет по объектам, а не по
 			// файлу разом: версия чужого проекта не должна стать нашей.
 			name: "версия соседнего проекта — не наша",
 			text: `{"projects":[{"name":"floq","version":"v0.113.0"},{"name":"kb-engine"}]}`,
@@ -182,7 +182,7 @@ func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
 	}
 }
 
-// Не-JSON остаётся на прежнем разборе по строкам: markdown иначе не прочитать,
+// Не-JSON остается на прежнем разборе по строкам: markdown иначе не прочитать,
 // и это сознательное решение, а не забытая ветка.
 func TestVersionMention_fallsBackToTextForMarkdown(t *testing.T) {
 	got := freshness.VersionMention("## Проекты\n\nkb-engine v0.5.0 — движок базы\n", "kb-engine", "0.15.0")
@@ -215,11 +215,11 @@ func TestVersionMention_showsTheBaseReleaseNotTheBuildString(t *testing.T) {
 }
 
 // Сборка из исходников — основной способ, которым владелец обновляет движок
-// (`kbup`), и версия у неё псевдо: 0.15.1-0.20260804151919-e9b33a0aa068. Пока
+// (`kbup`), и версия у нее псевдо: 0.15.1-0.20260804151919-e9b33a0aa068. Пока
 // такая версия считалась «не знаю», проверка Projects не срабатывала никогда
 // именно в том сценарии, ради которого заводилась.
 //
-// Но псевдоверсия не пустая: Go строит её как «следующий patch после последнего
+// Но псевдоверсия не пустая: Go строит ее как «следующий patch после последнего
 // тега», то есть 0.15.1-0.… означает «собрано после 0.15.0».
 func TestBaseRelease(t *testing.T) {
 	cases := []struct{ in, want string }{
@@ -261,8 +261,8 @@ func TestVersionMention_usesTheBaseReleaseOfAPseudoVersion(t *testing.T) {
 //
 // Случай не выдуман: тег ставится через API, локально его нет, и `kbup` сразу
 // после выпуска собирает движок с псевдоверсией от ПРЕДЫДУЩЕГО тега. Карточка
-// при этом обновлена и права, а проверка обвиняла её в отставании — то есть
-// инструмент, заведённый против тихого вранья витрины, врал сам.
+// при этом обновлена и права, а проверка обвиняла ее в отставании — то есть
+// инструмент, заведенный против тихого вранья витрины, врал сам.
 func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -291,7 +291,7 @@ func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
 			wantKind: "stale-build",
 		},
 		{
-			name:     "минорная разница в другую сторону — всё ещё страница",
+			name:     "минорная разница в другую сторону — все еще страница",
 			page:     "v0.14.0",
 			current:  "0.15.0",
 			wantKind: "version-mention",
@@ -311,7 +311,7 @@ func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
 }
 
 // «Отстала страница» и «отстала сборка» — разные ответы, и лечатся они разным:
-// первое правкой файла, второе обновлением движка. Свести их в один жёлтый
+// первое правкой файла, второе обновлением движка. Свести их в один желтый
 // ярлык значит послать человека править то, что верно.
 func TestSource_doesNotBlameThePageForAStaleBuild(t *testing.T) {
 	s := freshness.CheckSource(freshness.Source{

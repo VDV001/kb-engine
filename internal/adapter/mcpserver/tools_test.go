@@ -11,7 +11,7 @@ import (
 )
 
 // stubQuerier — каталог в памяти. Настоящий Service читает с диска, а вопрос
-// этих тестов не в чтении, а в том, что MCP зовёт тот же поиск.
+// этих тестов не в чтении, а в том, что MCP зовет тот же поиск.
 type stubQuerier struct {
 	entries []domain.Entry
 	err     error
@@ -59,7 +59,7 @@ func fixture(t *testing.T) []domain.Entry {
 	}
 }
 
-// Главное требование задачи #273: MCP не заводит третью копию поиска, а зовёт
+// Главное требование задачи #273: MCP не заводит третью копию поиска, а зовет
 // тот же usecase. Проверяется контрастом — набор совпадает с search.FilterWith
 // на тех же данных, а не «выглядит правдоподобным».
 func TestSearchCatalog_sameSetAsUsecase(t *testing.T) {
@@ -81,7 +81,7 @@ func TestSearchCatalog_sameSetAsUsecase(t *testing.T) {
 	}
 }
 
-// Отрицательный контроль из приёмки задачи: запрос, которого в базе нет,
+// Отрицательный контроль из приемки задачи: запрос, которого в базе нет,
 // возвращает пусто, а не падение и не первую попавшуюся запись.
 func TestSearchCatalog_unknownQueryReturnsEmpty(t *testing.T) {
 	got, err := mcpserver.SearchCatalog(stubQuerier{entries: fixture(t)}, search.Matcher{}, "выдуманнаятемакоторойнет")

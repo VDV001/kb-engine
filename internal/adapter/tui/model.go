@@ -20,11 +20,11 @@ const listWindow = 15
 
 // listChrome is how many lines the list screen spends on everything that is not
 // an entry: the query, the counter and the blank after them (3), the blank and
-// the "… ещё N" line under a long list (2), the blank and the hint at the
+// the "… еще N" line under a long list (2), the blank and the hint at the
 // bottom (2).
 //
 // It counts the tallest case, not the usual one. Counting six — the screen
-// without "… ещё" — made the view one line taller than the window exactly when
+// without "… еще" — made the view one line taller than the window exactly when
 // the list was long: the terminal scrolled, and the query line, the only thing
 // saying what was typed, went off the top edge.
 const listChrome = 7
@@ -44,7 +44,7 @@ type Model struct {
 
 	// saver is nil on a read-only screen; picker is open while a value is being
 	// chosen; status carries the last outcome to the person who caused it.
-	// matcher несёт слои поиска. Нулевое значение законно: без словаря
+	// matcher несет слои поиска. Нулевое значение законно: без словаря
 	// работают подстрока, транслитерация и опечатки.
 	matcher search.Matcher
 
@@ -79,7 +79,7 @@ type Model struct {
 	// Снимок, а не запрос по месту: чтение книги стоит 74 мс на живом файле, а
 	// список нужен отрисовке — то есть каждому нажатию клавиши. Владелец увидел
 	// это как «буквы не появляются»: восемь букв давали больше полусекунды
-	// отставания. Отрисовка обязана быть дешёвой и не ходить в файлы.
+	// отставания. Отрисовка обязана быть дешевой и не ходить в файлы.
 	accountSnapshot []finance.AccountBalance
 	accountErr      error
 
@@ -284,7 +284,7 @@ func (m Model) renderList() string {
 		idx := m.first() + i
 		// Состояние приглушено, если решение по записи уже принято: канон,
 		// устаревшее, тупик. Так глаз в списке из 1400 строк цепляется за то,
-		// что ещё живо, а не за ровный столбец слова «active».
+		// что еще живо, а не за ровный столбец слова «active».
 		state := lifecycleOf(e)
 		line := fmt.Sprintf("%5d  %-9s %s", e.ID(), state, e.Title())
 		if idx == m.cursor {
@@ -295,7 +295,7 @@ func (m Model) renderList() string {
 			lifecycleStyle(e).Render(fmt.Sprintf("%-9s", state)) + e.Title() + "\n")
 	}
 	if len(m.visible) > m.height {
-		b.WriteString(styleDim.Render(fmt.Sprintf("\n… ещё %d", len(m.visible)-m.first()-len(m.window()))) + "\n")
+		b.WriteString(styleDim.Render(fmt.Sprintf("\n… еще %d", len(m.visible)-m.first()-len(m.window()))) + "\n")
 	}
 	return b.String() + "\n" + styleDim.Render(m.listHint())
 }
@@ -405,7 +405,7 @@ var (
 	styleTitle    = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.OnSurface })).Bold(true)
 	styleQuery    = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.Secondary })).Bold(true)
 	styleDim      = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.OnSurfaceVariant }))
-	// styleAccent — суммы и всё, что читают первым: тот же акцент, что несёт
+	// styleAccent — суммы и все, что читают первым: тот же акцент, что несет
 	// заголовок экрана, чтобы глаз находил числа без подписей.
 	styleAccent = lipgloss.NewStyle().Foreground(adaptive(func(p theme.Palette) string { return p.Primary })).Bold(true)
 	// styleBar и styleBarRest — заполненная и пустая часть полоски доли.

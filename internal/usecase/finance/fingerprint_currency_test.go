@@ -35,7 +35,7 @@ func TestFingerprint_currencyIsContent(t *testing.T) {
 	}
 }
 
-// Отпечаток рублёвой записи обязан остаться ровно тем, что лежит в
+// Отпечаток рублевой записи обязан остаться ровно тем, что лежит в
 // .sync-state.json у владельца. Поменяйся он у всех записей разом — первая
 // сверка после обновления объявила бы, что изменились обе стороны во всех
 // строках, то есть конфликт по всей книге. Значение снято с кода до появления
@@ -43,6 +43,6 @@ func TestFingerprint_currencyIsContent(t *testing.T) {
 func TestFingerprint_roublesHashAsBefore(t *testing.T) {
 	const before = "268b0976353df45cd3b1a01e25fb16b2"
 	if got := finance.Fingerprint(expenseTx(t, "01A", 29, 20245, "Еда", "хлеб")); got != before {
-		t.Errorf("Fingerprint рублёвой записи = %s, want %s (как до валюты)", got, before)
+		t.Errorf("Fingerprint рублевой записи = %s, want %s (как до валюты)", got, before)
 	}
 }

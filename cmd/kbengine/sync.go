@@ -25,7 +25,7 @@ func runFinSync(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin sync", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
-	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
+	from := fs.String("from", "", "path to Учет_финансов.xlsx")
 	initialize := fs.Bool("init", false, "give every row a stable id on both sides")
 	migrateIDs := fs.Bool("migrate-ids", false,
 		"move ids off the column the account uses, on a book paired by an older version")
@@ -426,14 +426,14 @@ func describeTx(tx domain.Transaction) string {
 	if s := tx.Source(); s != "" && !tx.IsExpense() {
 		parts = append(parts, s)
 	}
-	// Счёт расхода печатается наравне с остальным, а его отсутствие называется
-	// вслух. Раньше строка без счёта выглядела полной, и трата уехала в книгу
-	// ничьей — в разбивке по счетам её нет, а по отчёту не видно, почему.
+	// Счет расхода печатается наравне с остальным, а его отсутствие называется
+	// вслух. Раньше строка без счета выглядела полной, и трата уехала в книгу
+	// ничьей — в разбивке по счетам ее нет, а по отчету не видно, почему.
 	if tx.IsExpense() {
 		if a := tx.Account(); a != "" {
 			parts = append(parts, a)
 		} else {
-			parts = append(parts, "без счёта")
+			parts = append(parts, "без счета")
 		}
 	}
 	return strings.Join(parts, "  ")
@@ -472,7 +472,7 @@ func writeSide(b *strings.Builder, title string, s finance.Side, primary, fallba
 }
 
 // writeDiff печатает, какие именно строки тронутся: `+` на появляющихся, `-` на
-// уходящих, и обе подряд там, где запись изменилась. Счётчики выше отвечают на
+// уходящих, и обе подряд там, где запись изменилась. Счетчики выше отвечают на
 // «сколько», это — на «что именно», и решение принимается по второму.
 //
 // Цвет добавляется только для терминала. В файле или пайпе ESC-последовательности
@@ -483,7 +483,7 @@ func writeDiff(w io.Writer, plan finance.Plan, ledgerSide, workbookSide map[stri
 		label string
 		s     finance.Side
 		// primary — как запись выглядит на этой стороне, fallback — на другой;
-		// удалённую строку описать можно только оттуда, где она ещё есть.
+		// удаленную строку описать можно только оттуда, где она еще есть.
 		primary, fallback map[string]string
 	}{
 		{"ledger", plan.Ledger, ledgerSide, workbookSide},
@@ -535,7 +535,7 @@ func writeDiffLine(w io.Writer, color bool, sign byte, text string) {
 	fmt.Fprintln(w, tint+line+reset)
 }
 
-// isTerminal отвечает, смотрит ли человек в терминал прямо сейчас. Проверка идёт
+// isTerminal отвечает, смотрит ли человек в терминал прямо сейчас. Проверка идет
 // по типу назначения, а не по имени команды: тот же вывод уходит и в файл.
 func isTerminal(w io.Writer) bool {
 	f, ok := w.(*os.File)
@@ -586,15 +586,15 @@ func pushToWorkbook(from, ledgerPath string, recs []finance.Record, workbook []d
 // warnUnderstated называет траты, которые вычтутся из остатка, уже включавшего
 // их.
 //
-// Такая трата датирована днём подтверждения баланса и записана после его
-// момента: движок предполагает «человек её ещё не видел», и для записи задним
-// числом это предположение неверно. Арифметику при этом менять нельзя — расчёт
+// Такая трата датирована днем подтверждения баланса и записана после его
+// момента: движок предполагает «человек ее еще не видел», и для записи задним
+// числом это предположение неверно. Арифметику при этом менять нельзя — расчет
 // обещает занижать и никогда не завышать, — поэтому здесь говорится вслух то,
 // что иначе человек находит сам, сверяя экран с приложением банка.
 //
 // Молчит, когда сказать нечего: предупреждение, приходящее всегда, перестают
 // читать. Молчит и когда книгу или состояние прочитать не удалось — синхронизация
-// уже прошла, и ронять её отчёт из-за подсказки было бы хуже неё самой.
+// уже прошла, и ронять ее отчет из-за подсказки было бы хуже нее самой.
 func warnUnderstated(from string, recs []finance.Record, stdout io.Writer) {
 	led, err := financexlsx.Read(from, time.Now)
 	if err != nil {
@@ -622,11 +622,11 @@ func warnUnderstated(from string, recs []finance.Record, stdout io.Writer) {
 		return
 	}
 
-	fmt.Fprintf(stdout, "\n  записано после того, как баланс подтвердили, и датировано тем же днём:\n")
+	fmt.Fprintf(stdout, "\n  записано после того, как баланс подтвердили, и датировано тем же днем:\n")
 	for _, h := range hits {
 		fmt.Fprintf(stdout, "    %s  %s  %s\n", h.tx.Amount(), h.bank, h.tx.Place())
 	}
-	fmt.Fprintf(stdout, "  если эти траты уже прошли по банку к моменту подтверждения — расчётный\n")
+	fmt.Fprintf(stdout, "  если эти траты уже прошли по банку к моменту подтверждения — расчетный\n")
 	fmt.Fprintf(stdout, "  остаток занижен на них; подтвердите баланс заново\n")
 }
 

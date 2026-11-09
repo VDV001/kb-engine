@@ -1,7 +1,7 @@
 import type { ArchFlow, ArchLayer, ArchMap, ArchNode, ArchStep } from './api'
 import { plural } from './hygiene'
 
-/** Счётчики карты одним правилом на все панели: «1 сценарий», «3 шага». */
+/** Счетчики карты одним правилом на все панели: «1 сценарий», «3 шага». */
 export const counts = {
   flows: (n: number) => `${n} ${plural(n, ['сценарий', 'сценария', 'сценариев'])}`,
   steps: (n: number) => `${n} ${plural(n, ['шаг', 'шага', 'шагов'])}`,
@@ -17,7 +17,7 @@ export const counts = {
 
 /** Якорь карты: «engine:internal/domain/money.go:125» или без имени дерева. */
 export interface Anchor {
-  /** Имя дерева, если якорь его несёт. Карта рабочего места живёт в трёх
+  /** Имя дерева, если якорь его несет. Карта рабочего места живет в трех
    * деревьях сразу, и без префикса путь некуда развернуть. */
   root?: string
   path: string
@@ -29,8 +29,8 @@ export interface Anchor {
 }
 
 /**
- * Разбирает якорь. Двоеточий в нём бывает два, и значат они разное: первое
- * отделяет дерево, последнее — строку. Разбор идёт с конца именно поэтому.
+ * Разбирает якорь. Двоеточий в нем бывает два, и значат они разное: первое
+ * отделяет дерево, последнее — строку. Разбор идет с конца именно поэтому.
  */
 export function parseAnchor(raw: string, roots: Record<string, string> = {}): Anchor {
   const trimmed = raw.trim()
@@ -40,7 +40,7 @@ export function parseAnchor(raw: string, roots: Record<string, string> = {}): An
 
   const rootSplit = /^([A-Za-z][\w-]*):(.+)$/.exec(body)
   // Путь вида «C:/…» здесь не бывает, а вот «cowork:digest/run.sh» бывает: имя
-  // дерева признаётся только тогда, когда оно объявлено в самой карте.
+  // дерева признается только тогда, когда оно объявлено в самой карте.
   if (rootSplit && Object.prototype.hasOwnProperty.call(roots, rootSplit[1])) {
     const root = rootSplit[1]
     const path = rootSplit[2]
@@ -58,7 +58,7 @@ export function anchorLabel(a: Anchor): string {
   return a.line ? `${a.path}:${a.line}` : a.path
 }
 
-/** Прямоугольник карточки на поле — то, что отдаёт getBoundingClientRect. */
+/** Прямоугольник карточки на поле — то, что отдает getBoundingClientRect. */
 export interface Box {
   left: number
   top: number
@@ -104,7 +104,7 @@ export function wirePath(from: Box, to: Box, field: Box): Wire {
 // обязан читаться и при слабом различении оттенков.
 //
 // Наборы у карт разные: у карты кода пять типов, у карты рабочего места
-// пятнадцать. Незнакомый тип получает точку и своё же имя, а не выпадает из
+// пятнадцать. Незнакомый тип получает точку и свое же имя, а не выпадает из
 // легенды: показать участника без подписи честнее, чем не показать вовсе.
 const KINDS: Record<string, { glyph: string; label: string }> = {
   actor: { glyph: '▲', label: 'человек' },
@@ -120,10 +120,10 @@ const KINDS: Record<string, { glyph: string; label: string }> = {
   data: { glyph: '◆', label: 'данные' },
   external: { glyph: '◇', label: 'внешний' },
   // Пять состояний, а не сортов. Узел не «такого типа» — он в таком
-  // положении, и это находка, а не свойство: скрипт, которого никто не зовёт,
+  // положении, и это находка, а не свойство: скрипт, которого никто не зовет,
   // выглядит на карте так же, как рабочий.
   'job-missing': { glyph: '⊘', label: 'расписания нет' },
-  'script-orphan': { glyph: '⊘', label: 'никто не зовёт' },
+  'script-orphan': { glyph: '⊘', label: 'никто не зовет' },
   'script-retired': { glyph: '⊗', label: 'выведен из работы' },
   'data-stale': { glyph: '◇', label: 'канал иссяк' },
   'data-missing': { glyph: '◇', label: 'файла нет' },
@@ -154,11 +154,11 @@ export function legendKinds(nodes: ArchNode[]): string[] {
 }
 
 /**
- * Счётчики карты — те же, что печатала страница-предшественник.
+ * Счетчики карты — те же, что печатала страница-предшественник.
  *
- * Половина из них про границу знания, а не про объём: сколько узлов стоит на
- * якоре, сколько шагов несёт источник, сколько узлов в сломанном положении.
- * Объём без них читается как «карта полная».
+ * Половина из них про границу знания, а не про объем: сколько узлов стоит на
+ * якоре, сколько шагов несет источник, сколько узлов в сломанном положении.
+ * Объем без них читается как «карта полная».
  */
 export function mapCounts(map: Pick<ArchMap, 'nodes' | 'flows' | 'findings' | 'gaps' | 'runtime_checks' | 'stats'>) {
   const steps = map.flows.flatMap((f) => f.steps)
@@ -177,7 +177,7 @@ export function mapCounts(map: Pick<ArchMap, 'nodes' | 'flows' | 'findings' | 'g
 }
 
 /**
- * Цвет слоя берётся по его месту в порядке, а не по имени: у двух карт слои
+ * Цвет слоя берется по его месту в порядке, а не по имени: у двух карт слои
  * называются по-разному («домен» и «хуки и скиллы»), и словарь по именам
  * оставил бы чужую карту серой.
  */
@@ -197,7 +197,7 @@ export function filterNodes(nodes: ArchNode[], f: NodeFilter): ArchNode[] {
     if (f.layer && n.layer !== f.layer) return false
     if (f.kind && n.kind !== f.kind) return false
     if (!q) return true
-    // Поиск идёт и по якорям: чаще всего сюда приходят с именем файла из
+    // Поиск идет и по якорям: чаще всего сюда приходят с именем файла из
     // трассы, а не с названием узла.
     const hay = [n.title, n.subtitle ?? '', n.id, ...(n.sources ?? [])].join(' ').toLowerCase()
     return hay.includes(q)
@@ -228,14 +228,14 @@ export function groupByLayer(nodes: ArchNode[], layers: ArchLayer[]): LayerGroup
     else orphans.push(n)
   }
   const out = groups.filter((g) => g.nodes.length > 0)
-  if (orphans.length > 0) out.push({ id: '', title: 'Вне объявленных слоёв', nodes: orphans })
+  if (orphans.length > 0) out.push({ id: '', title: 'Вне объявленных слоев', nodes: orphans })
   return out
 }
 
 export interface FlowFilter {
   zone?: string
   query?: string
-  /** Только сценарии, где есть хоть один неподтверждённый шаг. */
+  /** Только сценарии, где есть хоть один неподтвержденный шаг. */
   unverifiedOnly?: boolean
 }
 
@@ -270,9 +270,9 @@ export function kindsOf(nodes: ArchNode[]): string[] {
 const SEVERITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 }
 
 /**
- * Порядок находок: сначала тяжесть, внутри неё — открытые перед починенными.
- * Починенная находка остаётся на странице намеренно: она объясняет, почему
- * проверка выглядит именно так, а вычистить её значит потерять причину.
+ * Порядок находок: сначала тяжесть, внутри нее — открытые перед починенными.
+ * Починенная находка остается на странице намеренно: она объясняет, почему
+ * проверка выглядит именно так, а вычистить ее значит потерять причину.
  */
 export function sortFindings<T extends { severity?: string; status?: string }>(items: T[]): T[] {
   return [...items].sort((a, b) => {
@@ -295,8 +295,8 @@ export function rootsOf(map: Pick<ArchMap, 'roots'>): Record<string, string> {
 
 /**
  * Что карта говорит о собственной проверенности — одной строкой, тремя
- * состояниями. «Приёмки нет» и «зоны не приняты» — разные ответы: первое
- * значит «сверять не с чем», и зелёная галочка там была бы обещанием.
+ * состояниями. «Приемки нет» и «зоны не приняты» — разные ответы: первое
+ * значит «сверять не с чем», и зеленая галочка там была бы обещанием.
  */
 export function acceptanceState(map: Pick<ArchMap, 'zones' | 'acceptance'>): {
   state: 'accepted' | 'partial' | 'unknown'

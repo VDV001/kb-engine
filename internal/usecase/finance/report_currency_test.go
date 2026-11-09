@@ -10,8 +10,8 @@ import (
 
 // Доллары и сумы не складываются с рублями: без курса сумма «100 ₽ + $12,30»
 // не значит ничего, а с курсом это уже оценка, а не итог. Записи в другой
-// валюте проходят мимо рублёвых сумм и разбивок, как внутренние переводы, и
-// считаются отдельно по каждой валюте — иначе отчёт молча завысил бы траты.
+// валюте проходят мимо рублевых сумм и разбивок, как внутренние переводы, и
+// считаются отдельно по каждой валюте — иначе отчет молча завысил бы траты.
 func TestSummarize_keepsOtherCurrenciesApart(t *testing.T) {
 	add := func(kind, category, source string, kopecks int64, code string) finance.Record {
 		t.Helper()
@@ -38,17 +38,17 @@ func TestSummarize_keepsOtherCurrenciesApart(t *testing.T) {
 	s := finance.Summarize(recs)
 
 	if s.Expenses != domain.NewMoney(10000) || s.ExpenseCount != 1 {
-		t.Errorf("рублёвые траты = %s (%d), want 100.00 (1)", s.Expenses, s.ExpenseCount)
+		t.Errorf("рублевые траты = %s (%d), want 100.00 (1)", s.Expenses, s.ExpenseCount)
 	}
 	if !s.Income.IsZero() || s.IncomeCount != 0 {
-		t.Errorf("рублёвые доходы = %s (%d), want 0", s.Income, s.IncomeCount)
+		t.Errorf("рублевые доходы = %s (%d), want 0", s.Income, s.IncomeCount)
 	}
 	if s.Net != domain.NewMoney(-10000) {
 		t.Errorf("Net = %s, want -100.00", s.Net)
 	}
 	for _, c := range s.ByCategory {
 		if c.Category == "Сервисы" {
-			t.Errorf("долларовая категория попала в рублёвую разбивку: %+v", c)
+			t.Errorf("долларовая категория попала в рублевую разбивку: %+v", c)
 		}
 		if c.Category == "Еда" && c.Total != domain.NewMoney(10000) {
 			t.Errorf("Еда = %s, want 100.00 — доллары смешаны с рублями", c.Total)
@@ -69,7 +69,7 @@ func TestSummarize_keepsOtherCurrenciesApart(t *testing.T) {
 	}
 }
 
-// Перевод себе в долларах — не рублёвый перевод. Сложить его с рублёвыми
+// Перевод себе в долларах — не рублевый перевод. Сложить его с рублевыми
 // переводами значило бы сделать ровно то, чего итоги избегают.
 func TestSummarize_transferInAnotherCurrencyIsNotARoubleTransfer(t *testing.T) {
 	mk := func(code string) finance.Record {
@@ -89,7 +89,7 @@ func TestSummarize_transferInAnotherCurrencyIsNotARoubleTransfer(t *testing.T) {
 	}
 	s := finance.Summarize([]finance.Record{mk(""), mk("USD")})
 	if s.ExcludedTransfers != domain.NewMoney(100000) || s.ExcludedTransferCount != 1 {
-		t.Errorf("рублёвые переводы = %s (%d), want 1000.00 (1)", s.ExcludedTransfers, s.ExcludedTransferCount)
+		t.Errorf("рублевые переводы = %s (%d), want 1000.00 (1)", s.ExcludedTransfers, s.ExcludedTransferCount)
 	}
 	if len(s.OtherCurrencies) != 1 || s.OtherCurrencies[0].TransferCount != 1 ||
 		s.OtherCurrencies[0].Transfers != domain.NewMoney(100000) || s.OtherCurrencies[0].ExpenseCount != 0 {

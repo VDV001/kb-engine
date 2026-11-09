@@ -32,7 +32,7 @@ func (t Transaction) IsInternalTransfer() bool {
 	if t.IsExpense() {
 		return eqField(t.category, transferCategory) && eqField(t.subcategory, transferSubcategory)
 	}
-	// Доход перемещения не несёт счёта, поэтому вторая сторона перевода движку
+	// Доход перемещения не несет счета, поэтому вторая сторона перевода движку
 	// не видна — ограничение названо на экране остатков и здесь не лечится.
 	return eqField(t.source, transferSource)
 }

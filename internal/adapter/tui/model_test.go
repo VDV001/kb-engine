@@ -12,7 +12,7 @@ import (
 
 func key(s string) tea.KeyMsg {
 	// По рунам, а не по байтам: кириллическая буква занимает два байта и
-	// уходила в switch ниже, где её ждала паника «unknown key».
+	// уходила в switch ниже, где ее ждала паника «unknown key».
 	if len([]rune(s)) == 1 {
 		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}
 	}
@@ -112,7 +112,7 @@ func TestModel_enterOpensTheCardAndEscReturns(t *testing.T) {
 	}
 }
 
-// На карточке буквы — это уже не поиск: иначе выход из неё менял бы выдачу.
+// На карточке буквы — это уже не поиск: иначе выход из нее менял бы выдачу.
 func TestModel_typingOnTheCardDoesNotSearch(t *testing.T) {
 	m := send(tui.NewModel(fixture(t)), "enter", "q", "a", "esc")
 	if got := len(m.Visible()); got != 3 {
@@ -142,17 +142,17 @@ func TestModel_windowFollowsTheCursor(t *testing.T) {
 	}
 	view := m.View()
 	if !strings.Contains(view, "   21") {
-		t.Errorf("курсор ушёл за окно — выбранной записи не видно:\n%s", view)
+		t.Errorf("курсор ушел за окно — выбранной записи не видно:\n%s", view)
 	}
 	if strings.Contains(view, "    1 ") {
-		t.Errorf("окно не поехало: первая запись всё ещё на экране:\n%s", view)
+		t.Errorf("окно не поехало: первая запись все еще на экране:\n%s", view)
 	}
-	if !strings.Contains(view, "… ещё") {
+	if !strings.Contains(view, "… еще") {
 		t.Error("не сказано, сколько записей осталось за экраном")
 	}
 }
 
-// Экран меньше трёх строк — это уже не список; окно не должно схлопнуться в
+// Экран меньше трех строк — это уже не список; окно не должно схлопнуться в
 // ноль и уронить срез.
 func TestModel_survivesATinyTerminal(t *testing.T) {
 	m := resize(tui.NewModel(manyEntries(t, 20)), 40, 1)
@@ -195,10 +195,10 @@ func TestModel_cardFallsBackToReadState(t *testing.T) {
 // терминал прокручивает вывод, и строка поиска — то единственное, что говорит,
 // что именно набрано, — уезжает за верхний край.
 //
-// Проверяется на длинном списке, потому что дефект живёт именно там: когда
-// найденного больше, чем влезает, снизу добавляется блок «… ещё N», которого
+// Проверяется на длинном списке, потому что дефект живет именно там: когда
+// найденного больше, чем влезает, снизу добавляется блок «… еще N», которого
 // при коротком результате нет. Поэтому же баг и выглядел плавающим — при двух
-// найденных записях всё было видно.
+// найденных записях все было видно.
 func TestModel_viewFitsTheWindow(t *testing.T) {
 	for _, c := range []struct {
 		name          string
@@ -222,7 +222,7 @@ func TestModel_viewFitsTheWindow(t *testing.T) {
 }
 
 // Строка поиска — первая строка экрана, и она обязана остаться видимой на
-// длинном списке: без неё не видно, что набрано.
+// длинном списке: без нее не видно, что набрано.
 func TestModel_queryStaysOnScreen(t *testing.T) {
 	m := resize(tui.NewModel(manyEntries(t, 1000)), 100, 24)
 	m = send(m, "з")

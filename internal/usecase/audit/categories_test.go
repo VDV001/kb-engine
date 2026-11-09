@@ -10,7 +10,7 @@ import (
 )
 
 // categoriesCatalog собирает каталог, объявивший две категории, и записи в
-// категориях, которые в этом словаре есть и которых в нём нет.
+// категориях, которые в этом словаре есть и которых в нем нет.
 func categoriesCatalog(t *testing.T, labels map[string]string, cats ...string) *domain.Catalog {
 	t.Helper()
 	entries := make([]domain.Entry, 0, len(cats))
@@ -92,7 +92,7 @@ func TestUndeclaredCategoryIssues(t *testing.T) {
 			if tc.wantNamed == "" {
 				return
 			}
-			// Находка обязана называть саму категорию: без неё непонятно, что
+			// Находка обязана называть саму категорию: без нее непонятно, что
 			// чинить — переименовать запись или дописать словарь.
 			joined := strings.Join(findings[len(findings)-1].Reasons, " ")
 			if !strings.Contains(joined, tc.wantNamed) {

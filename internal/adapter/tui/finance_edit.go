@@ -74,7 +74,7 @@ func (m Model) updateEntryList(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// openEditForm ставит форму на выбранную запись, заполнив её текущими
+// openEditForm ставит форму на выбранную запись, заполнив ее текущими
 // значениями: правка начинается с того, что есть, а не с пустого бланка.
 func (m Model) openEditForm() Model {
 	if len(m.entries.recs) == 0 {
@@ -171,12 +171,12 @@ func (m Model) renderEntryList() string {
 
 	for i, rec := range m.entries.recs {
 		tx := rec.Transaction()
-		// Счёт печатается всегда, и его отсутствие названо вслух: ради этой
-		// строки экран и заводился — трата без счёта не попадает в разбивку,
+		// Счет печатается всегда, и его отсутствие названо вслух: ради этой
+		// строки экран и заводился — трата без счета не попадает в разбивку,
 		// а по остальным полям выглядит полной.
 		account := tx.Account()
 		if account == "" && tx.IsExpense() {
-			account = "без счёта"
+			account = "без счета"
 		}
 		line := fmt.Sprintf("%-10s %10s  %-12s %-24s %s",
 			tx.Date().Format("2006-01-02"), human(tx.Amount()),

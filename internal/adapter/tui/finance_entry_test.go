@@ -55,7 +55,7 @@ func TestFinancesWritesAnExpense(t *testing.T) {
 	m = fill(m, "Еда")      // категория
 	m = fill(m, "Продукты") // подкатегория
 	m = fill(m, "Магнит")   // место
-	m = fill(m, "Сбербанк") // счёт
+	m = fill(m, "Сбербанк") // счет
 	m = fill(m, "по пути")  // заметка
 	press(m, enter())
 
@@ -206,7 +206,7 @@ func TestFinancesRefusesAMalformedDate(t *testing.T) {
 	m = fill(m, "Еда")
 	m = fill(m, "") // подкатегория
 	m = fill(m, "") // место
-	m = fill(m, "") // счёт
+	m = fill(m, "") // счет
 	m = fill(m, "") // заметка
 	m = fill(m, "31.07.2026")
 	m = press(m, enter())
@@ -294,7 +294,7 @@ func TestFinancesSyncsTheWorkbook(t *testing.T) {
 // A locked workbook is the common case — the book is open in an editor. It must
 // read as a refusal, not as a quiet success.
 func TestFinancesNamesASyncFailure(t *testing.T) {
-	sync := &stubSyncer{err: errors.New("fin sync: Учёт_финансов.xlsx is open in another program")}
+	sync := &stubSyncer{err: errors.New("fin sync: Учет_финансов.xlsx is open in another program")}
 	m, _, _ := withSyncer(sync)
 
 	m = press(press(m, tab()), runes("s"))
@@ -322,14 +322,14 @@ func TestFinancesDropsTheWorkbookNoteAfterSyncing(t *testing.T) {
 	if len(w.got) != 1 {
 		t.Fatalf("ledger written %d time(s), want 1", len(w.got))
 	}
-	if !strings.Contains(m.View(), "Учёт_финансов.xlsx") {
+	if !strings.Contains(m.View(), "Учет_финансов.xlsx") {
 		t.Fatal("после записи не сказано, что книга отстала")
 	}
 
 	m = press(m, runes("s"))
 
-	if view := m.View(); strings.Contains(view, "Учёт_финансов.xlsx") {
-		t.Errorf("после синхронизации экран всё ещё говорит, что книга отстала\n--- view ---\n%s", view)
+	if view := m.View(); strings.Contains(view, "Учет_финансов.xlsx") {
+		t.Errorf("после синхронизации экран все еще говорит, что книга отстала\n--- view ---\n%s", view)
 	}
 }
 
@@ -346,7 +346,7 @@ func TestFinancesOffersNoSyncKeyWithoutAWorkbook(t *testing.T) {
 	}
 }
 
-// stubVocab отдаёт словарь и запоминает то, что экран просит запомнить.
+// stubVocab отдает словарь и запоминает то, что экран просит запомнить.
 type stubVocab struct {
 	v         finance.Vocabulary
 	err       error
@@ -402,7 +402,7 @@ func TestQuickEntry_writesFromOneLine(t *testing.T) {
 	for _, c := range []struct{ name, got, want string }{
 		{"категория", got.Category, "Транспорт"},
 		{"подкатегория", got.Subcategory, "Такси"},
-		{"счёт", got.Account, "Сбербанк"},
+		{"счет", got.Account, "Сбербанк"},
 	} {
 		if c.got != c.want {
 			t.Errorf("%s = %q, ожидалось %q", c.name, c.got, c.want)
@@ -426,7 +426,7 @@ func TestQuickEntry_writesFromOneLine(t *testing.T) {
 	}
 }
 
-// Разобранное показывается ДО записи: догадка видна в момент, когда её ещё
+// Разобранное показывается ДО записи: догадка видна в момент, когда ее еще
 // можно отменить, а не после того, как строка ушла в файл.
 func TestQuickEntry_showsWhatItUnderstoodBeforeWriting(t *testing.T) {
 	m, w := quickModel(knownWords())
@@ -463,7 +463,7 @@ func TestQuickEntry_refusesToGuessAnUnknownWord(t *testing.T) {
 	if len(w.got) != 0 {
 		t.Error("трата записана с нераспознанным словом, хотя категория неизвестна")
 	}
-	// Отказ оставляет строку там, где её можно поправить, и называет причину.
+	// Отказ оставляет строку там, где ее можно поправить, и называет причину.
 	// Закрыться молча значило бы потерять набранное и не объяснить, почему.
 	if !m.OnQuickEntry() {
 		t.Error("форма закрылась после отказа — набранная строка потеряна")

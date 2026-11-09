@@ -32,7 +32,7 @@ const stats = {
   health: { total: 1395, processed: 900, with_notes: 300, notes_base: 900 },
 }
 
-// Ровно то, что отдаёт сервер, когда семантический слой не подключён: все
+// Ровно то, что отдает сервер, когда семантический слой не подключен: все
 // списки приходят как null (Go так пишет nil-слайс), а не отсутствуют.
 const emptyConfig: AnalyticsConfig = {
   patterns: null,
@@ -49,13 +49,13 @@ const filledConfig: AnalyticsConfig = {
 // оказались пусты, и экран читался как поломка релиза. На деле файл просто не
 // попросили загрузить. Пустота обязана сама сказать, чего не хватает — это то
 // же Правило 11, что уже применено к логу запуска.
-describe('AnalyticsView — неподключённый семантический слой', () => {
+describe('AnalyticsView — неподключенный семантический слой', () => {
   it('вместо пустоты называет флаг, которым подключается источник', async () => {
     render(<AnalyticsView config={emptyConfig} stats={stats} entries={[]} />)
     expect(await screen.findByText(/--analytics-config/)).toBeDefined()
   })
 
-  it('когда источник подключён и в нём есть данные, объяснения нет', async () => {
+  it('когда источник подключен и в нем есть данные, объяснения нет', async () => {
     engine.value = {
       version: '0.9.0',
       commit: 'abc1234',
@@ -67,7 +67,7 @@ describe('AnalyticsView — неподключённый семантическ�
     expect(screen.queryByText(/--analytics-config/)).toBeNull()
   })
 
-  it('подключённый, но пустой источник отличается от неподключённого', async () => {
+  it('подключенный, но пустой источник отличается от неподключенного', async () => {
     engine.value = {
       version: '0.9.0',
       commit: 'abc1234',

@@ -21,8 +21,8 @@ var ErrAccountInUse = errors.New("expense rows name this account")
 
 // RenameAccount changes what an account is called on the Счета sheet.
 //
-// Род счёта читается из имени («Займ → Коллеге» — род «Займ», имя без стрелки —
-// обычный счёт), поэтому переименование — единственный способ перенести счёт из
+// Род счета читается из имени («Займ → Коллеге» — род «Займ», имя без стрелки —
+// обычный счет), поэтому переименование — единственный способ перенести счет из
 // рода в род. Баланс, дата подтверждения и валюта остаются: меняется слово, а не
 // деньги, и дата не сдвигается, потому что остаток никто заново не смотрел.
 //
@@ -39,7 +39,7 @@ func RenameAccount(path, from, to string, now func() time.Time) (string, error) 
 	}
 
 	// Состояние рядом с книгой читается до записи: испорченное, оно отказало бы
-	// уже после сохранения, и счёт остался бы переименованным без момента.
+	// уже после сохранения, и счет остался бы переименованным без момента.
 	if _, err := balancestate.Load(balancestate.PathNextTo(path)); err != nil {
 		return "", err
 	}
@@ -95,7 +95,7 @@ func renameTarget(f *excelize.File, from, to string) (row int, current string, e
 	current = strings.TrimSpace(current)
 
 	// Новое имя, которое лист уже знает, — это слияние двух счетов, а не
-	// переименование. Своё же имя в другом написании допустимо: так правят
+	// переименование. Свое же имя в другом написании допустимо: так правят
 	// регистр и пробелы вокруг стрелки.
 	if !domain.SameAccountName(current, to) {
 		if taken, err := accountRow(f, to); err == nil && taken != row {
@@ -111,7 +111,7 @@ func renameTarget(f *excelize.File, from, to string) (row int, current string, e
 			ErrAccountInUse, current, n, sheetExpenses)
 	}
 	// И обратная сторона: строки, где новое имя уже стоит источником, после
-	// переименования прочитались бы тратами этого счёта.
+	// переименования прочитались бы тратами этого счета.
 	if !domain.SameAccountName(current, to) {
 		if n, err := expenseRowsNaming(f, to); err != nil {
 			return 0, "", err

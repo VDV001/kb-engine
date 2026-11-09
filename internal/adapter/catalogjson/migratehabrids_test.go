@@ -43,7 +43,7 @@ func TestMigrateHabrIDs(t *testing.T) {
 	// Пока это так, сравнение с числом промахивается на половине записей, и
 	// промах выглядит как «такой статьи в базе нет».
 	if len(plan.Normalized) != 1 || plan.Normalized[0].EntryID != 7 {
-		t.Fatalf("строковый номер не приведён к числу: %+v", plan.Normalized)
+		t.Fatalf("строковый номер не приведен к числу: %+v", plan.Normalized)
 	}
 	// План ничего не пишет.
 	if raw, _ := habrIDRaw(t, path, 1); raw != "" {

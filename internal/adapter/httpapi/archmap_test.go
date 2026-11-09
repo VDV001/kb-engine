@@ -36,7 +36,7 @@ func testMaps() []archmap.Map {
 }
 
 // Сервер собирается С фронтендом намеренно. Прежний тест неизвестного маршрута
-// был зелёным, проверяя сборку без него, — то есть сервер вообще без фолбэка,
+// был зеленым, проверяя сборку без него, — то есть сервер вообще без фолбэка,
 // который в отгружаемом бинаре как раз и стоит.
 func serverWithMaps(load func() ([]archmap.Map, error)) http.Handler {
 	front := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>SPA</html>")}}
@@ -46,7 +46,7 @@ func serverWithMaps(load func() ([]archmap.Map, error)) http.Handler {
 		httpapi.Documents{Maps: load}, testEngine, front)
 }
 
-// Список — это оглавление, и возить в нём сценарии со всеми шагами незачем:
+// Список — это оглавление, и возить в нем сценарии со всеми шагами незачем:
 // живые карты весят 136 и 120 КБ, а на вкладку заходят выбрать карту.
 func TestMaps_listIsAnIndexNotTheWholeMap(t *testing.T) {
 	rec := get(t, serverWithMaps(func() ([]archmap.Map, error) { return testMaps(), nil }), "/api/maps")
@@ -64,7 +64,7 @@ func TestMaps_listIsAnIndexNotTheWholeMap(t *testing.T) {
 	}
 	for _, heavy := range []string{"nodes", "flows", "findings"} {
 		if _, present := body.Maps[0][heavy]; present {
-			t.Errorf("оглавление несёт раздел %q целиком", heavy)
+			t.Errorf("оглавление несет раздел %q целиком", heavy)
 		}
 	}
 	for _, need := range []string{"id", "project", "stats"} {
@@ -134,7 +134,7 @@ func TestMaps_loaderFailure(t *testing.T) {
 }
 
 // Отрицательный контроль. Код ответа сам по себе не доказывает ничего: SPA
-// отдаёт 200 на любой путь, и три выпуска подряд строка «N эндпоинтов 200»
+// отдает 200 на любой путь, и три выпуска подряд строка «N эндпоинтов 200»
 // значила только это. Выдуманный сосед обязан давать 404 с телом, отличным от
 // разметки страницы.
 func TestMaps_neighbouringInventedPathIs404(t *testing.T) {

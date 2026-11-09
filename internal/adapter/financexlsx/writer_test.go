@@ -71,7 +71,7 @@ func workbookWithExtraColumn(t *testing.T) string {
 		must(f.SetCellValue("Счета", updated, time.Date(2026, 7, 28, 0, 0, 0, 0, time.UTC)))
 	}
 
-	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
+	path := filepath.Join(t.TempDir(), "Учет_финансов.xlsx")
 	must(f.SaveAs(path))
 	return path
 }
@@ -182,7 +182,7 @@ func TestAssignIDs_skipsDocumentedColumnsThatLookEmpty(t *testing.T) {
 	_, err := f.NewSheet("Доходы")
 	must(err)
 	must(f.SetCellValue("Доходы", "A2", "Дата"))
-	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
+	path := filepath.Join(t.TempDir(), "Учет_финансов.xlsx")
 	must(f.SaveAs(path))
 
 	if err := financexlsx.AssignIDs(path, map[string]string{"expense-r3": "01A"}, writeClock); err != nil {

@@ -20,7 +20,7 @@ func TestLifecycles_matchWhatIsAccepted(t *testing.T) {
 		}
 	}
 	if got[0] != "active" {
-		t.Errorf("первым идёт %q — список должен начинаться с состояния живой записи", got[0])
+		t.Errorf("первым идет %q — список должен начинаться с состояния живой записи", got[0])
 	}
 }
 

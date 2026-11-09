@@ -41,20 +41,20 @@ describe('graphInsights', () => {
     expect(insights.core?.closeCount).toBe(1) // knowledge 1.69; claude 0.81 уже нет
   })
 
-  it('в сросшиеся берёт самые плотные по тегам на запись, а не самые крупные', () => {
+  it('в сросшиеся берет самые плотные по тегам на запись, а не самые крупные', () => {
     const keys = insights.fused.map((f) => f.key)
     expect(keys[0]).toBe('knowledge')
     expect(keys).not.toContain('meta') // крупнейшая по абсолютной связи, но разрежена
   })
 
-  it('в острова берёт самые разреженные', () => {
+  it('в острова берет самые разреженные', () => {
     const keys = insights.islands.map((i) => i.key)
     expect(keys[0]).toBe('databases')
     expect(keys).toContain('meta')
     expect(keys).not.toContain('knowledge')
   })
 
-  // Крошечная категория даёт шумное отношение: восемь общих тегов на две
+  // Крошечная категория дает шумное отношение: восемь общих тегов на две
   // записи — это про то, что у записи много меток, а не про близость темы.
   it('не пускает в выводы категории мельче процента базы', () => {
     expect(insights.fused.map((f) => f.key)).not.toContain('tiny')
@@ -67,7 +67,7 @@ describe('graphInsights', () => {
     expect(k?.weight).toBe(22)
   })
 
-  it('остров помнит, с чем он всё-таки связан крепче всего', () => {
+  it('остров помнит, с чем он все-таки связан крепче всего', () => {
     const db = insights.islands.find((i) => i.key === 'databases')
     expect(db?.linkedTo).toBe('ai-agents')
   })

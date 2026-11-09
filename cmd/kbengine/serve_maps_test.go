@@ -17,7 +17,7 @@ const testEngineMap = `{
   "nodes": [{"id": "cmd", "title": "команда", "layer": "commands", "kind": "service", "sources": ["cmd/kbengine/fin.go:1"]}],
   "flows": [{"id": "f1", "title": "Сценарий", "zone": "Деньги",
     "steps": [{"n": 1, "from": "cmd", "to": "cmd", "call": "Add", "source": "internal/usecase/finance/finance.go:1"}]}],
-  "runtime_checks": ["прогнано живьём"]
+  "runtime_checks": ["прогнано живьем"]
 }`
 
 const testWorkspaceMap = `{
@@ -132,7 +132,7 @@ func TestServeSources_includesMaps(t *testing.T) {
 		if s.flag == "maps" {
 			found = true
 			if s.path == "" {
-				t.Error("переданные карты числятся неподключённым источником")
+				t.Error("переданные карты числятся неподключенным источником")
 			}
 		}
 	}
@@ -141,6 +141,6 @@ func TestServeSources_includesMaps(t *testing.T) {
 	}
 	if strings.Contains(strings.Join(startupSources(serveSources("", "", "", "", "", "", "", "", nil)), "\n"),
 		"connected: --maps") {
-		t.Error("карты названы подключёнными без флага")
+		t.Error("карты названы подключенными без флага")
 	}
 }

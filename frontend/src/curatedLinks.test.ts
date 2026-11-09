@@ -9,7 +9,7 @@ function graph(partial: Partial<Graph>): Graph {
 }
 
 describe('curatedRows', () => {
-  it('берёт только подписанные связи', () => {
+  it('берет только подписанные связи', () => {
     const g = graph({
       edges: [
         { from: 'ai-agents-tools', to: 'security', weight: 5, labels: ['prompt injection'] },
@@ -27,7 +27,7 @@ describe('curatedRows', () => {
     expect(rows[0].fromLabel).toBe('AI-агенты')
   })
 
-  it('связь с несколькими смыслами идёт первой и не теряет ни одного', () => {
+  it('связь с несколькими смыслами идет первой и не теряет ни одного', () => {
     const g = graph({
       edges: [
         { from: 'devops', to: 'security', weight: 3, labels: ['одна'] },

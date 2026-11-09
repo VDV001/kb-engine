@@ -103,7 +103,7 @@ func TestAppend_doesNotOverwritePreviousRuns(t *testing.T) {
 		t.Errorf("нечитаемых строк %d, ждали 0", unreadable)
 	}
 	if len(recs) != 2 {
-		t.Fatalf("записей %d, ждали 2 — дозапись затёрла прошлое", len(recs))
+		t.Fatalf("записей %d, ждали 2 — дозапись затерла прошлое", len(recs))
 	}
 	if recs[0].Command() != "audit" || recs[1].Command() != "drift" {
 		t.Errorf("порядок записей: %q, %q", recs[0].Command(), recs[1].Command())
@@ -154,7 +154,7 @@ func TestLoad_missingFileIsAnEmptyJournal(t *testing.T) {
 }
 
 // Битая строка не должна глушить журнал целиком: одна оборванная запись
-// сделала бы немыми все инварианты. Но и молчать о ней нельзя — её считают.
+// сделала бы немыми все инварианты. Но и молчать о ней нельзя — ее считают.
 func TestLoad_countsUnreadableLinesInsteadOfGivingUp(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runs.jsonl")
 	if err := runlogjsonl.Append(path, record(t, "audit", nil, 0)); err != nil {
@@ -208,7 +208,7 @@ func TestAppendLoad_carriesFailureReason(t *testing.T) {
 	}
 }
 
-// Строка, записанная ДО появления поля, читается и даёт пустую причину.
+// Строка, записанная ДО появления поля, читается и дает пустую причину.
 // ⚠️ Это «причину не записывали», а не «причины не было» — различить их по
 // такой строке нечем, и проверка существует, чтобы это было сказано вслух.
 func TestLoad_oldLineWithoutReason(t *testing.T) {

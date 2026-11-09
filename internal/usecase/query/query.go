@@ -25,7 +25,7 @@ type Stats struct {
 	Unreadable []UnreadableEntry `json:"unreadable,omitempty"`
 }
 
-// UnreadableEntry — одна непрочитанная запись так, как её показывают человеку.
+// UnreadableEntry — одна непрочитанная запись так, как ее показывают человеку.
 type UnreadableEntry struct {
 	Index  int    `json:"index"`
 	ID     int    `json:"id"`
