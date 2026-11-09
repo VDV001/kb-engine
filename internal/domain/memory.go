@@ -37,6 +37,9 @@ var ErrNoRulesSection = errors.New("HOT.md has no rules section")
 // RulesHeading — заголовок раздела правил в HOT.md, куда `approve --to hot` дописывает.
 const RulesHeading = "## Правила работы"
 
+// ErrNoPortraitMarkers — в HOT.md нет пары меток блока «Кто я».
+var ErrNoPortraitMarkers = errors.New("HOT.md has no portrait markers")
+
 // DefaultHotLimit — потолок горячего слоя в знаках.
 const DefaultHotLimit = 4000
 
@@ -49,6 +52,14 @@ const MaxHookRunes = 150
 
 // MaxTopicRunes — потолок названия темы: она попадает в перечень тем горячего слоя.
 const MaxTopicRunes = 40
+
+// Метки блока «Кто я» в HOT.md: между ними `kbengine memory who` держит копию
+// одобренных фактов портрета DVK (ADR-0007). Источник правды один — портрет;
+// блок производный и руками не правится.
+const (
+	PortraitStart = "<!-- portrait:start -->"
+	PortraitEnd   = "<!-- portrait:end -->"
+)
 
 // Метки блока «перечень тем» в HOT.md: между ними `kbengine memory topics` держит
 // список тем холодного слоя (ADR-0008: без перечня правила без слов-триггеров теряются).
@@ -239,14 +250,18 @@ func TopicList(notes []ColdNote) []string {
 	return out
 }
 
-// topicsBlock cuts the text between the markers; ok=false — меток нет или они не по порядку.
-func topicsBlock(hot string) (before, body, after string, ok bool) {
-	before, rest, ok := strings.Cut(hot, TopicsStart)
+// cutBlock cuts the text between a pair of markers; ok=false — меток нет или они не по порядку.
+func cutBlock(hot, start, end string) (before, body, after string, ok bool) {
+	before, rest, ok := strings.Cut(hot, start)
 	if !ok {
 		return "", "", "", false
 	}
-	body, after, ok = strings.Cut(rest, TopicsEnd)
+	body, after, ok = strings.Cut(rest, end)
 	return before, body, after, ok
+}
+
+func topicsBlock(hot string) (before, body, after string, ok bool) {
+	return cutBlock(hot, TopicsStart, TopicsEnd)
 }
 
 func topicLines(notes []ColdNote) []string {
@@ -269,6 +284,24 @@ func ReplaceTopics(hot string, notes []ColdNote) (string, error) {
 		lines += "\n"
 	}
 	return before + TopicsStart + "\n" + lines + TopicsEnd + after, nil
+}
+
+// ReplacePortrait rewrites the «Кто я» block with the portrait text, everything else
+// stays byte for byte. Разметка комментария в тексте отвергается: текст из портрета
+// не должен уметь закрыть блок раньше срока или подделать метки перечня тем.
+func ReplacePortrait(hot, text string) (string, error) {
+	if strings.Contains(text, "<!--") || strings.Contains(text, "-->") {
+		return "", fmt.Errorf("%w: текст портрета содержит разметку комментария", ErrInvalidNote)
+	}
+	before, _, after, ok := cutBlock(hot, PortraitStart, PortraitEnd)
+	if !ok {
+		return "", ErrNoPortraitMarkers
+	}
+	text = strings.TrimSpace(text)
+	if text != "" {
+		text += "\n"
+	}
+	return before + PortraitStart + "\n" + text + PortraitEnd + after, nil
 }
 
 // HasTopicList says whether the hot layer carries a non-empty topic list block.

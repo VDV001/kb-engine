@@ -47,11 +47,47 @@ type PendingNote struct {
 
 // Service — сценарии памяти.
 type Service struct {
-	store  Store
-	limits Limits
-	now    func() time.Time
-	embed  search.Embedder
-	model  string
+	store    Store
+	limits   Limits
+	now      func() time.Time
+	embed    search.Embedder
+	model    string
+	portrait PortraitSource
+}
+
+// PortraitSource отдает текст одобренных фактов портрета DVK для блока «Кто я».
+type PortraitSource interface {
+	Text() (string, error)
+}
+
+// ErrNoPortrait — источник портрета не подключен: папка не выбрана.
+var ErrNoPortrait = errors.New("memory: портрет не подключен")
+
+// WithPortrait подключает портрет DVK как единственный источник блока «Кто я».
+func (s *Service) WithPortrait(p PortraitSource) *Service {
+	s.portrait = p
+	return s
+}
+
+// Who переписывает блок «Кто я» в HOT.md из портрета. changed=false — блок уже
+// актуален; ErrNoPortraitMarkers — HOT.md правили руками, его не переписывают.
+func (s *Service) Who() (changed bool, err error) {
+	if s.portrait == nil {
+		return false, ErrNoPortrait
+	}
+	text, err := s.portrait.Text()
+	if err != nil {
+		return false, err
+	}
+	snap, err := s.store.Load()
+	if err != nil {
+		return false, err
+	}
+	hot, err := domain.ReplacePortrait(snap.Hot, text)
+	if err != nil || hot == snap.Hot {
+		return false, err
+	}
+	return true, s.store.SaveHot(hot)
 }
 
 // WithEmbedder подключает смысловой слой: службу эмбеддингов и имя ее модели.

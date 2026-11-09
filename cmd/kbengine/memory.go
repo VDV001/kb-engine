@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -8,13 +9,16 @@ import (
 	"os"
 	"strings"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/embedhttp"
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
+	"github.com/daniil/kb-engine/internal/adapter/portraitfile"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
+	"github.com/daniil/kb-engine/internal/usecase/portrait"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -27,6 +31,7 @@ var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"reject":  memoryReject,
 	"index":   memoryIndex,
 	"find":    memoryFind,
+	"who":     memoryWho,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -295,5 +300,65 @@ func memoryFind(args []string, stdout, stderr io.Writer) int {
 	if res.Notice != "" {
 		fmt.Fprintf(stdout, "⚠️ %s\n", res.Notice)
 	}
+	return 0
+}
+
+// portraitFolder returns the portrait folder: флаг, иначе папка из настроек окна.
+// Портрет на kb-сервере отсюда не читается (ponytail: только папка; путь вверх —
+// kbserver-клиент портрета, он уже есть в окне).
+func portraitFolder(flagValue string) (string, error) {
+	if flagValue != "" {
+		return flagValue, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	cfg, err := desktopconfig.Read(desktopconfig.Path(home))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+	case err != nil:
+		return "", err
+	case cfg.Chat.MemoryServer != "":
+		return "", errors.New("портрет лежит на kb-сервере, а memory who читает папку: укажите --portrait-dir")
+	case cfg.Chat.MemoryDir != "":
+		return cfg.Chat.MemoryDir, nil
+	}
+	return "", errors.New("папка портрета не выбрана: укажите --portrait-dir или выберите папку в окне («Чат и модель → Что DVK помнит обо мне»)")
+}
+
+// folderPortrait is the memory.PortraitSource over portrait.json in a folder.
+type folderPortrait struct{ dir string }
+
+func (f folderPortrait) Text() (string, error) {
+	p, err := portraitfile.Store{Dir: f.dir}.Load(context.Background())
+	if err != nil {
+		return "", err
+	}
+	return portrait.Text(p.Approved()), nil
+}
+
+func memoryWho(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory who", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	pdir := fs.String("portrait-dir", "", "папка портрета DVK (по умолчанию из настроек окна)")
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	folder, err := portraitFolder(*pdir)
+	if err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
+	}
+	changed, err := memory.New(memorydir.New(dir), memory.Limits{}).WithPortrait(folderPortrait{folder}).Who()
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	if !changed {
+		fmt.Fprintln(stdout, "memory: блок «Кто я» актуален")
+		return 0
+	}
+	fmt.Fprintln(stdout, "memory: блок «Кто я» обновлен из портрета; одобренные факты теперь лежат в HOT.md, а его читают агенты")
 	return 0
 }

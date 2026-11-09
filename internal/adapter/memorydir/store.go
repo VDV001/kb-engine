@@ -46,7 +46,9 @@ const hotSkeleton = `# Горячая память
 
 ## Кто я
 
--
+<!-- Блок собирает kbengine memory who из портрета DVK (источник один), руками не править. -->
+` + domain.PortraitStart + `
+` + domain.PortraitEnd + `
 
 ## Правила работы
 
