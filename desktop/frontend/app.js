@@ -4130,10 +4130,12 @@ const MEM_PROBLEMS = {
   "long-hook": "Крючок длиннее 150 знаков",
   "index-too-big": "Индекс больше потолка",
   "stale-vectors": "Векторы отстали от записей",
+  "invalid-note": "У записи недопустимый текст",
+  "hot-changed-outside": "HOT.md изменен мимо системы",
 };
 // Плашка при входе (решение владельца 09.11): эти файлы читают агенты в каждой
 // сессии, поэтому правка горячего слоя меняет их поведение везде.
-const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Отклоненное не удаляется, а уходит в journal/.</div>`;
+const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Любая запись в HOT.md идет по Touch ID и остается в журнале решений; правка файла мимо системы будет видна. Отклоненное не удаляется, а уходит в journal/.</div>`;
 const MEM_TOPIC_FIX = new Set(["no-topic-list", "stale-topics"]);
 const mmTokens = (n) => n.toLocaleString("ru-RU");
 async function openMemory() { await mmLoad(); mmRender(); }
@@ -4152,7 +4154,8 @@ function mmEmptyHTML(d) {
 function mmHeadHTML(d) {
   const bad = d.problems;
   const list = bad.map((p) => `<li><b>${esc(MEM_PROBLEMS[p.kind] || p.kind)}</b> <span class="muted">${esc(p.file)} · ${esc(p.detail)}</span></li>`).join("");
-  const fix = bad.some((p) => MEM_TOPIC_FIX.has(p.kind)) ? `<button class="ac-btn pri" data-mm="topics">Пересобрать перечень тем</button>` : "";
+  const fix = (bad.some((p) => MEM_TOPIC_FIX.has(p.kind)) ? `<button class="ac-btn pri" data-mm="topics">Пересобрать перечень тем · Touch ID</button>` : "") +
+    (bad.some((p) => p.kind === "hot-changed-outside") ? `<button class="ac-btn pri" data-mm="seal" title="Подтверждение остается в журнале решений">Прочитал, принимаю текущий HOT.md · Touch ID</button>` : "");
   return `<div class="mm-head"><h2>Память</h2>
       <span class="${bad.length ? "mm-bad" : "mm-ok"}" role="status">${bad.length ? `check: нарушений ${bad.length}` : "check: ok"}</span>
       <span class="muted mm-dir">${esc(d.dir)}</span></div>
@@ -4175,7 +4178,7 @@ function mmHotHTML(d) {
       <button class="ac-btn" type="submit">Сохранить</button>
       <span class="muted">Новому человеку хватает 4 000, свод правил больше. Потолок лежит в memory.json: терминал меряет той же линейкой.</span></form>
     <div class="mm-topics"><span class="muted">Темы холодного слоя:</span> ${topics}</div>
-    <div class="mm-acts"><button class="ac-btn" data-mm="who">Обновить «Кто я» из портрета</button></div>
+    <div class="mm-acts"><button class="ac-btn" data-mm="who">Обновить «Кто я» из портрета · Touch ID</button></div>
     <pre class="mm-text" tabindex="0" aria-label="Текст HOT.md">${esc(h.text)}</pre>`;
 }
 function mmColdHTML(d) {
@@ -4184,15 +4187,20 @@ function mmColdHTML(d) {
     `<li><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic || "без темы")}</span>${n.origin === "agent" ? ` <span class="mm-chip agent">агент</span>` : ""}<div class="muted">${esc(n.description)}</div></li>`).join("") + `</ul>`;
 }
 function mmJournalHTML(d) {
-  if (!d.journal.length) return `<h3>journal/</h3><p class="muted">Журнал пуст. Сюда попадают отклоненные и перенесенные в горячий слой предложения, handoffs и хроника.</p>`;
-  return `<h3>journal/ <span class="muted">· ${d.journal.length}</span></h3><p class="muted">Только дописывается и в обычный поиск не входит.</p><ul class="mm-notes">` + d.journal.slice().reverse().map((f) => `<li class="mono">${esc(f)}</li>`).join("") + `</ul>`;
+  const dec = d.decisions.length
+    ? `<h4>Журнал решений</h4><p class="muted">Что вы одобрили, отклонили и подтвердили; только дописывается.</p><ol class="mm-decisions">${d.decisions.slice().reverse().map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`
+    : `<h4>Журнал решений</h4><p class="muted">Пока пуст: сюда попадет каждое ваше одобрение, отклонение и подтверждение.</p>`;
+  const files = d.journal.length
+    ? `<h4>Файлы</h4><p class="muted">Отклоненное и перенесенное в горячий слой, handoffs и хроника. В обычный поиск не входят.</p><ul class="mm-notes">${d.journal.slice().reverse().map((f) => `<li class="mono">${esc(f)}</li>`).join("")}</ul>`
+    : `<h4>Файлы</h4><p class="muted">Файлов нет.</p>`;
+  return `<h3>journal/ <span class="muted">· ${d.journal.length}</span></h3>${dec}${files}`;
 }
 function mmQueueHTML(d) {
   if (!d.queue.length) return `<h3>Ждет одобрения</h3><p class="muted">Очередь пуста. Агент сам в горячий слой не пишет: его предложения (<code>kbengine memory add --origin agent</code>) придут сюда.</p>`;
   return `<h3>Ждет одобрения <span class="muted">· ${d.queue.length}</span></h3>` + d.queue.map((n) =>
     `<article class="mm-card"><header><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic)}</span></header>
       <p>${esc(n.description)}</p>${n.body ? `<pre class="mm-text">${esc(n.body)}</pre>` : ""}
-      <div class="mm-acts"><button class="ac-btn pri" data-mm="approve" data-to="cold" data-name="${esc(n.name)}">В холодный слой</button>
+      <div class="mm-acts"><button class="ac-btn pri" data-mm="approve" data-to="cold" data-name="${esc(n.name)}" title="Тема записи попадет в перечень HOT.md: потребуется Touch ID">В холодный слой · Touch ID</button>
         ${state.mm.confirm === n.name
           ? `<span class="mm-confirm" role="alert"><b>Правило «${esc(n.description)}» начнет действовать во всех сессиях агентов.</b> <button class="ac-btn pri" data-mm="approve-yes" data-name="${esc(n.name)}">Подтвердить · Touch ID</button> <button class="ac-btn" data-mm="approve-no">Отмена</button></span>`
           : `<button class="ac-btn" data-mm="approve-ask" data-name="${esc(n.name)}" title="В горячий слой уйдет одна строка: описание станет правилом; потребуется Touch ID">В горячий слой, как правило</button>`}
@@ -4223,6 +4231,7 @@ $("#mm-body").addEventListener("click", (e) => {
   const api = native();
   if (a === "init") mmDo(() => api.MemoryInit(), () => ["Память заведена", " · HOT.md, cold/, journal/"]);
   else if (a === "topics") mmDo(() => api.MemoryTopics(), (ch) => ["Перечень тем", ch ? " · обновлен" : " · уже актуален"]);
+  else if (a === "seal") mmDo(() => api.MemorySeal(), () => ["Принято", " · текущий HOT.md подтвержден, запись в журнале решений"]);
   else if (a === "who") mmDo(() => api.MemoryWho(), (ch) => ["«Кто я»", ch ? " · обновлено из портрета, одобренные факты теперь в HOT.md" : " · уже актуально"]);
   else if (a === "reject") mmDo(() => api.MemoryReject(name), () => ["Отклонено", ` · ${name}, файл в journal/`]);
   else if (a === "approve-ask") { state.mm.confirm = name; mmRender(); }
@@ -4241,5 +4250,9 @@ $("#mm-body").addEventListener("submit", (e) => {
   if (!f) return;
   e.preventDefault();
   const n = parseInt($("#mm-limit").value, 10);
+  // Пустое поле дало бы NaN, до Go дошел бы 0 («умолчание»), и свой потолок молча сбросился бы.
+  if (!Number.isFinite(n)) { toast("Потолок", " · укажите число знаков", null, "bad"); return; }
+  const runes = state.mm.data ? state.mm.data.hot.runes : 0;
+  if (n < runes) toast("Потолок ниже размера", ` · сейчас в HOT.md ${mmTokens(runes)} знаков, check покажет нарушение`, null, "off");
   mmDo(() => native().MemorySetHotLimit(n), () => ["Потолок сохранен", ` · ${mmTokens(n)} знаков`]);
 });

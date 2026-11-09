@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -18,7 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who|seal> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -32,6 +33,7 @@ var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"index":   memoryIndex,
 	"find":    memoryFind,
 	"who":     memoryWho,
+	"seal":    memorySeal,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -249,6 +251,14 @@ func memoryApprove(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return memoryFail(stderr, err)
 	}
+	if layer == domain.LayerHot {
+		// Правило в горячем слое начнет действовать во всех сессиях агентов: имя
+		// записи вводится руками, как подтверждение, что человек его прочитал.
+		if err := memoryConfirm("Правило из записи "+*name+" начнет действовать во всех сессиях агентов. Введите имя записи для подтверждения: ", *name); err != nil {
+			fmt.Fprintf(stderr, "memory: %v\n", err)
+			return 1
+		}
+	}
 	if err := memory.New(st, lim).Approve(*name, layer); err != nil {
 		return memoryFail(stderr, err)
 	}
@@ -397,5 +407,57 @@ func memoryWho(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	fmt.Fprintln(stdout, "memory: блок «Кто я» обновлен из портрета; одобренные факты теперь лежат в HOT.md, а его читают агенты")
+	return 0
+}
+
+// errNotConfirmed — человек не подтвердил действие в терминале.
+var errNotConfirmed = errors.New("не подтверждено")
+
+// memoryConfirm asks the person to type want before a write that changes what every
+// agent session reads. Переменная, чтобы тесты подменяли терминал.
+var memoryConfirm = confirmOnTerminal(os.Stdin, os.Stderr)
+
+// confirmOnTerminal returns a confirmation that works only on a real terminal and
+// only with the exact word typed: агент, запущенный без терминала, и случайный Enter
+// не проходят. ponytail: это жест, а не замок. Агент с доступом к псевдотерминалу
+// может его изобразить; настоящая граница — MCP-инструменты памяти без approve и
+// Touch ID в окне.
+func confirmOnTerminal(in io.Reader, out io.Writer) func(prompt, want string) error {
+	return func(prompt, want string) error {
+		f, ok := in.(*os.File)
+		if !ok {
+			return fmt.Errorf("%w: нужен терминал, а ввод идет не из него", errNotConfirmed)
+		}
+		if fi, err := f.Stat(); err != nil || fi.Mode()&os.ModeCharDevice == 0 {
+			return fmt.Errorf("%w: нужен терминал, а ввод идет не из него", errNotConfirmed)
+		}
+		fmt.Fprint(out, prompt)
+		line, err := bufio.NewReader(f).ReadString('\n')
+		if err != nil && line == "" {
+			return fmt.Errorf("%w: ответа нет", errNotConfirmed)
+		}
+		if strings.TrimSpace(line) != want {
+			return fmt.Errorf("%w: введено не %q", errNotConfirmed, want)
+		}
+		return nil
+	}
+}
+
+func memorySeal(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory seal", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	const word = "подтверждаю"
+	if err := memoryConfirm("HOT.md изменен не системой. Прочитайте его и, если все верно, введите «"+word+"»: ", word); err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
+	}
+	if err := memory.New(memorydir.New(dir), memory.Limits{}).Seal(); err != nil {
+		return memoryFail(stderr, err)
+	}
+	fmt.Fprintln(stdout, "memory: текущий HOT.md принят, подтверждение записано в journal/decisions.md")
 	return 0
 }

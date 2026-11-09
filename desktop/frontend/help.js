@@ -39,6 +39,7 @@ const HELP = [
     { cmd: "kbengine memory pending", d: "что ждет решения" },
     { cmd: "kbengine memory approve --name x --to cold", d: "одобрить: cold — запись и строка индекса, hot — одна строка правила в HOT.md" },
     { cmd: "kbengine memory reject --name x", d: "отклонить: файл уходит в journal/, не удаляется" },
+    { cmd: "kbengine memory seal", d: "принять HOT.md, измененный мимо системы (check называет это hot-changed-outside); нужен терминал и слово «подтверждаю»" },
     { cmd: "kbengine memory who", d: "блок «Кто я» в HOT.md из одобренных фактов портрета; сам блок руками не правится" },
   ] },
   { id: "access", t: "Доступы", c: "var(--z-src-violet)", lead: "Пароль хранится в Связке ключей и в терминал не печатается.", items: [

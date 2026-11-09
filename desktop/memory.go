@@ -65,11 +65,13 @@ type memoryView struct {
 	Queue    []noteView    `json:"queue"`
 	Journal  []string      `json:"journal"`
 	Problems []problemView `json:"problems"`
+	// Decisions — последние решения человека из journal/decisions.md, старые первыми.
+	Decisions []string `json:"decisions"`
 }
 
 // State returns the screen; памяти еще нет — пустой вид с Exists=false, папка не создается.
 func (d *memoryDesk) State() (memoryView, error) {
-	v := memoryView{Dir: d.dir, Cold: []noteView{}, Queue: []noteView{}, Journal: []string{}, Problems: []problemView{}}
+	v := memoryView{Dir: d.dir, Cold: []noteView{}, Queue: []noteView{}, Journal: []string{}, Problems: []problemView{}, Decisions: []string{}}
 	if _, err := os.Stat(filepath.Join(d.dir, "HOT.md")); errors.Is(err, os.ErrNotExist) {
 		return v, nil
 	} else if err != nil {
@@ -93,6 +95,7 @@ func (d *memoryDesk) State() (memoryView, error) {
 		v.Queue = append(v.Queue, noteView{Name: p.Note.Name, Topic: p.Note.Topic, Origin: originOf(p.Note.Origin), Description: p.Note.Description, Body: p.Body})
 	}
 	v.Journal = append(v.Journal, ov.Journal...)
+	v.Decisions = append(v.Decisions, ov.Decisions...)
 	for _, p := range ov.Problems {
 		v.Problems = append(v.Problems, problemView{Kind: string(p.Kind), File: p.File, Detail: p.Detail})
 	}
@@ -114,22 +117,30 @@ func (d *memoryDesk) Init() error {
 	return memory.New(memorydir.New(d.dir), memory.Limits{}).Init()
 }
 
+// guard asks Touch ID before a write that changes HOT.md, which every agent session
+// reads (решение владельца 09.11: система доверия). Проверка здесь, в Go, а не в
+// окне: страница не может ее пропустить. Отклонение и потолок HOT.md не меняют.
+func (d *memoryDesk) guard(reason string) error {
+	if d.auth == nil {
+		return errors.New("нет помощника kb-auth: Touch ID работает в собранном окне")
+	}
+	return d.auth.Check(reason)
+}
+
 // Approve moves a queued note to the layer the person chose ("cold" или "hot").
+// В горячий слой уходит правило, в холодный запись и ее тема в перечне HOT.md:
+// и то и другое по Touch ID.
 func (d *memoryDesk) Approve(name, to string) error {
 	layer, err := domain.ParseLayer(to)
 	if err != nil {
 		return err
 	}
-	// Правило в горячем слое начинает действовать во всех сессиях агентов сразу:
-	// решение владельца 09.11 — Touch ID каждый раз. Проверка здесь, в Go, а не в
-	// окне: страница не может ее пропустить.
+	reason := "добавить запись в холодную память"
 	if layer == domain.LayerHot {
-		if d.auth == nil {
-			return errors.New("нет помощника kb-auth: Touch ID работает в собранном окне")
-		}
-		if err := d.auth.Check("добавить правило в горячий слой памяти"); err != nil {
-			return err
-		}
+		reason = "добавить правило в горячий слой памяти"
+	}
+	if err := d.guard(reason); err != nil {
+		return err
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -166,6 +177,9 @@ func (d *memoryDesk) SetHotLimit(n int) error {
 
 // Topics rebuilds the topic list of the hot layer from the notes.
 func (d *memoryDesk) Topics() (bool, error) {
+	if err := d.guard("обновить перечень тем в HOT.md"); err != nil {
+		return false, err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	svc, _, err := d.service()
@@ -177,6 +191,9 @@ func (d *memoryDesk) Topics() (bool, error) {
 
 // Who rewrites the «Кто я» block from the portrait.
 func (d *memoryDesk) Who(src memory.PortraitSource) (bool, error) {
+	if err := d.guard("обновить блок «Кто я» в HOT.md"); err != nil {
+		return false, err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	svc, _, err := d.service()
@@ -190,3 +207,19 @@ func (d *memoryDesk) Who(src memory.PortraitSource) (bool, error) {
 type portraitText func() (string, error)
 
 func (f portraitText) Text() (string, error) { return f() }
+
+// Seal accepts the current HOT.md after the person read it: файл изменен не окном и
+// не kbengine (агентом с доступом к файлам или вручную). По Touch ID, подтверждение
+// остается в журнале решений.
+func (d *memoryDesk) Seal() error {
+	if err := d.guard("подтвердить текущий HOT.md"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	svc, _, err := d.service()
+	if err != nil {
+		return err
+	}
+	return svc.Seal()
+}

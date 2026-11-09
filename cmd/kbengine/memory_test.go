@@ -37,6 +37,7 @@ func TestMemory_initThenCheckIsGreen(t *testing.T) {
 }
 
 func TestMemory_checkNamesTheProblem(t *testing.T) {
+	askHuman(t, true)
 	dir := t.TempDir()
 	runMem(t, "init", dir)
 	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(strings.Repeat("я", 5000)), 0o644); err != nil {
@@ -377,6 +378,7 @@ func TestMemory_whoNeedsAPortraitFolder(t *testing.T) {
 // Потолок задается при init (ADR-0008) и дальше живет в memory.json: окно и
 // терминал меряют одной линейкой.
 func TestMemory_initHotLimitIsRememberedByCheck(t *testing.T) {
+	askHuman(t, true)
 	dir := filepath.Join(t.TempDir(), "mem")
 	if code, _, e := runMem(t, "init", "--hot-limit", "6000", dir); code != 0 {
 		t.Fatalf("init: %d %s", code, e)

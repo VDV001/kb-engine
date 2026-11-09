@@ -220,6 +220,10 @@ func (a *App) MemoryReject(name string) error { return a.memory.Reject(name) }
 // MemorySetHotLimit saves the ceiling of the hot layer in characters.
 func (a *App) MemorySetHotLimit(n int) error { return a.memory.SetHotLimit(n) }
 
+// MemorySeal accepts the current HOT.md after a change made outside the window and
+// kbengine; по Touch ID.
+func (a *App) MemorySeal() error { return a.memory.Seal() }
+
 // MemoryTopics rebuilds the topic list of the hot layer.
 func (a *App) MemoryTopics() (bool, error) { return a.memory.Topics() }
 
