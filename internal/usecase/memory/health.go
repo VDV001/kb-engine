@@ -1,0 +1,87 @@
+package memory
+
+import (
+	"fmt"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+// allDecisions — сколько строк журнала читает здоровье: все, что есть. Журнал
+// растет на строку за решение человека, до предела тут далеко.
+const allDecisions = 1 << 20
+
+// Health measures how well the memory is kept (ADR-0008): ритм решений, очередь,
+// целостность и свежесть правил. Читает только то, что система и так пишет.
+func (s *Service) Health() (domain.Health, error) {
+	snap, err := s.store.Load()
+	if err != nil {
+		return domain.Health{}, err
+	}
+	pending, err := s.store.Pending()
+	if err != nil {
+		return domain.Health{}, err
+	}
+	lines, err := s.store.Decisions(allDecisions)
+	if err != nil {
+		return domain.Health{}, err
+	}
+	h, _, err := s.assess(snap, pending, lines)
+	return h, err
+}
+
+// assess computes the health from already loaded parts and returns the parsed
+// decisions with it: окну нужны и счёт, и события для ритма.
+func (s *Service) assess(snap Snapshot, pending []PendingNote, lines []string) (domain.Health, []domain.Decision, error) {
+	st, err := s.state(snap)
+	if err != nil {
+		return domain.Health{}, nil, err
+	}
+	var events []domain.Decision
+	for _, l := range lines {
+		if d, ok := domain.ParseDecision(l); ok {
+			events = append(events, d)
+		}
+	}
+	today := domain.DayOf(s.now())
+	queue := make([]domain.PendingItem, 0, len(pending))
+	for _, p := range pending {
+		since := today // дата файла неизвестна: ждёт «с сегодня», штраф за возраст не выдумываем
+		if !p.Since.IsZero() {
+			since = domain.DayOf(p.Since)
+		}
+		queue = append(queue, domain.PendingItem{Name: p.Note.Name, Since: since})
+	}
+	return domain.AssessHealth(domain.HealthInput{
+		Today:        today,
+		Decisions:    events,
+		Rules:        domain.RulesOf(snap.Hot),
+		Notes:        len(snap.Notes),
+		Queue:        queue,
+		SealOK:       st.SealDigest == "" || st.SealDigest == st.HotDigest,
+		StaleVectors: domain.StaleVectors(st),
+	}), events, nil
+}
+
+// Review records that the person looked through the memory and changed nothing:
+// давность осмотра считается по таким отметкам и по любым другим суждениям.
+func (s *Service) Review() error {
+	return s.decide("%sбез изменений", domain.DecisionPrefixReview)
+}
+
+// ConfirmRule records that the person re-read a rule of the hot layer and keeps it.
+// Правило ищется в HOT.md по ключу (регистр, пробелы, точка), в журнал идет его
+// текст из файла: по нему здоровье потом узнаёт правило. Выдуманное правило
+// отвергается — подтверждение не должно придумывать то, чего нет.
+func (s *Service) ConfirmRule(text string) error {
+	snap, err := s.store.Load()
+	if err != nil {
+		return err
+	}
+	key := domain.RuleKey(text)
+	for _, r := range domain.RulesOf(snap.Hot) {
+		if domain.RuleKey(r) == key {
+			return s.decide("%s%s", domain.DecisionPrefixConfirmRule, r)
+		}
+	}
+	return fmt.Errorf("%w: %q", domain.ErrNoSuchRule, text)
+}

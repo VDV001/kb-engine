@@ -365,7 +365,13 @@ func (s *Store) Pending() ([]memory.PendingNote, error) {
 			return nil, err
 		}
 		n, body := parseNote(e.Name(), string(b))
-		out = append(out, memory.PendingNote{Note: n, Body: body})
+		p := memory.PendingNote{Note: n, Body: body}
+		// ponytail: срок ожидания — время файла; копирование его сбросит и предложение
+		// «помолодеет». Путь вверх: дата в шапке записи при Propose.
+		if info, err := e.Info(); err == nil {
+			p.Since = info.ModTime()
+		}
+		out = append(out, p)
 	}
 	return out, nil
 }

@@ -62,6 +62,12 @@ const (
 	DecisionTextIndex         = "индекс векторов пересобран"
 )
 
+// DayOf returns the calendar day of t as a midnight UTC mark: дни сравниваются
+// без часового пояса и без перехода на летнее время.
+func DayOf(t time.Time) time.Time {
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 const decisionStamp = "2006-01-02 15:04"
 
 // ParseDecision reads a journal line ("2026-11-01 10:05 текст"); строка без
@@ -74,7 +80,7 @@ func ParseDecision(line string) (Decision, bool) {
 	if err != nil {
 		return Decision{}, false
 	}
-	day := time.Date(at.Year(), at.Month(), at.Day(), 0, 0, 0, 0, time.UTC)
+	day := DayOf(at)
 	rest := strings.TrimSpace(line[len(decisionStamp):])
 	d := Decision{Day: day, Kind: DecisionOther, Text: rest}
 	switch {

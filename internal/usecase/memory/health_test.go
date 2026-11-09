@@ -106,3 +106,52 @@ func TestService_HealthMissingDirectoryDecisionsIsNotAnError(t *testing.T) {
 		t.Fatalf("idle = %d, err = %v", h.IdleDays, err)
 	}
 }
+
+// Здоровье читает журнал по формулировкам сценария: если одна поменяется без другой,
+// решение станет «неизвестным» и перестанет считаться осмотром. Тест держит их вместе.
+func TestService_EveryLoggedDecisionIsRecognisedByHealth(t *testing.T) {
+	st := &fakeStore{
+		snap: memory.Snapshot{Hot: healthHot + "\n<!-- topics:start -->\n<!-- topics:end -->\n<!-- portrait:start -->\n<!-- portrait:end -->\n"},
+		pending: []memory.PendingNote{
+			{Note: domain.ColdNote{Name: "to-hot", Topic: "т", Description: "новое правило"}},
+			{Note: domain.ColdNote{Name: "to-cold", Topic: "т", Description: "факт"}},
+			{Note: domain.ColdNote{Name: "to-bin", Topic: "т", Description: "мусор"}},
+		},
+	}
+	svc := healthService(st).WithPortrait(fixedPortrait("обо мне"))
+	steps := []struct {
+		name string
+		do   func() error
+		kind domain.DecisionKind
+		text string
+	}{
+		{"hot", func() error { return svc.Approve("to-hot", domain.LayerHot) }, domain.DecisionApproveHot, "новое правило"},
+		{"cold", func() error { return svc.Approve("to-cold", domain.LayerCold) }, domain.DecisionApproveCold, "to-cold"},
+		{"reject", func() error { return svc.Reject("to-bin") }, domain.DecisionReject, "to-bin"},
+		{"seal", svc.Seal, domain.DecisionSeal, ""},
+		{"review", svc.Review, domain.DecisionReview, ""},
+		{"confirm", func() error { return svc.ConfirmRule("Релиз в пятницу не катим") }, domain.DecisionConfirmRule, "Релиз в пятницу не катим"},
+		{"topics", func() error {
+			st.snap.Notes = append(st.snap.Notes, domain.ColdNote{Name: "x", Topic: "новая тема"})
+			_, err := svc.Topics()
+			return err
+		}, domain.DecisionTopics, ""},
+		{"portrait", func() error { _, err := svc.Who(); return err }, domain.DecisionPortrait, ""},
+	}
+	for i, s := range steps {
+		if err := s.do(); err != nil {
+			t.Fatalf("%s: %v", s.name, err)
+		}
+		if len(st.decisions) != i+1 {
+			t.Fatalf("%s: в журнале %d строк, want %d", s.name, len(st.decisions), i+1)
+		}
+		d, ok := domain.ParseDecision(st.decisions[i])
+		if !ok || d.Kind != s.kind || d.Text != s.text {
+			t.Errorf("%s: %q разобрано как %+v (ok=%v), want %s %q", s.name, st.decisions[i], d, ok, s.kind, s.text)
+		}
+	}
+}
+
+type fixedPortrait string
+
+func (f fixedPortrait) Text() (string, error) { return string(f), nil }

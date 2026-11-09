@@ -30,6 +30,9 @@ var ErrNoTopicMarkers = errors.New("HOT.md has no topic list markers")
 // ErrNoSuchPending — в очереди одобрения нет записи с таким именем.
 var ErrNoSuchPending = errors.New("no such pending memory note")
 
+// ErrNoSuchRule — в разделе правил HOT.md нет такого правила, подтверждать нечего.
+var ErrNoSuchRule = errors.New("no such rule in HOT.md")
+
 // ErrHotFull — правило не помещается в горячий слой: потолок не обходится одобрением.
 var ErrHotFull = errors.New("hot layer would exceed its limit")
 
@@ -480,8 +483,18 @@ func checkIndex(st MemoryState) []MemoryProblem {
 // checkVectors сверяет отпечатки: индекс векторов необязателен, но если он есть,
 // он не должен отстать от текста записей.
 func checkVectors(st MemoryState) []MemoryProblem {
-	if !st.HasVectors {
+	stale := StaleVectors(st)
+	if stale == 0 {
 		return nil
+	}
+	return []MemoryProblem{{ProblemStaleVectors, "cold/.vectors.json", fmt.Sprintf("записей без свежего вектора или с лишним: %d, kbengine memory index", stale)}}
+}
+
+// StaleVectors counts the notes whose vector is missing or taken from other text,
+// plus the vectors of notes that are gone; без индекса векторов — 0.
+func StaleVectors(st MemoryState) int {
+	if !st.HasVectors {
+		return 0
 	}
 	names := make(map[string]bool, len(st.Notes))
 	stale := 0
@@ -496,8 +509,5 @@ func checkVectors(st MemoryState) []MemoryProblem {
 			stale++
 		}
 	}
-	if stale == 0 {
-		return nil
-	}
-	return []MemoryProblem{{ProblemStaleVectors, "cold/.vectors.json", fmt.Sprintf("записей без свежего вектора или с лишним: %d, kbengine memory index", stale)}}
+	return stale
 }
