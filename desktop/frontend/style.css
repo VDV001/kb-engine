@@ -1286,3 +1286,14 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .mm-empty { padding: 30px 8px; max-width: 640px; display: grid; gap: 12px; justify-items: start; }
 .mm-empty h3 { margin: 0; }
 @media (prefers-reduced-motion: reduce) { body:not(.no-mm-nav) .mm-node[aria-selected="true"]::before { animation: none; } }
+
+/* --- Заполнение контекста чата (решение владельца 09.11) ------------------------- */
+.chat-ctx { display: flex; gap: 10px 14px; align-items: center; flex-wrap: wrap; padding: 6px 2px 0; font-size: 12px; color: var(--z-muted); }
+.chat-ctx b { color: var(--z-ink); font-weight: 600; }
+.chat-ctx-bar { flex: 0 0 120px; height: 5px; border-radius: 3px; background: var(--z-bg-3); overflow: hidden; }
+.chat-ctx-bar i { display: block; height: 100%; background: var(--z-ok); }
+.chat-ctx[data-tone="warn"] .chat-ctx-bar i { background: var(--z-lvl-warn); }
+.chat-ctx[data-tone="bad"] .chat-ctx-bar i { background: var(--z-bad); }
+.chat-ctx-hint { flex-basis: 100%; color: var(--z-ink); }
+.chat-ctx[data-tone="warn"] .chat-ctx-hint { color: var(--z-lvl-warn); }
+.chat-ctx[data-tone="bad"] .chat-ctx-hint { color: var(--z-bad); }

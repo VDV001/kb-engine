@@ -2235,6 +2235,7 @@ async function loadChatSettings() {
   $("#chat-url").value = s.url || "";
   $("#chat-name").value = s.model || "";
   $("#chat-mode").value = s.mode || "";
+  $("#chat-ctx-win").value = s.contextWindow || "";
   $("#chat-mic-mode").value = s.mic || "";
   renderMicChoices();
   setMic(dict.on);
@@ -2375,7 +2376,29 @@ function answerHTML(t) {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\n/g, "<br>");
 }
+// Заполнение контекста (решение владельца 09.11): около половины качество еще то
+// же, дальше разговор пухнет, и пора записать handoff и начать новый чат. Счет
+// токенов — от провайдера, размер контекста человек вносит в настройках.
+const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
+function renderChatCtx() {
+  const box = $("#chat-ctx"), x = chatState.chat && chatState.chat.context;
+  if (!x || !x.used) { box.hidden = true; box.innerHTML = ""; return; }
+  const n = (v) => v.toLocaleString("ru-RU");
+  box.hidden = false;
+  if (!x.window) {
+    box.dataset.tone = "ok";
+    box.innerHTML = `<span>Контекст: <b>${n(x.used)}</b> токенов.</span><span class="muted">Внесите размер контекста модели в «Чат и модель», и окно скажет, когда пора в новый чат.</span>`;
+    return;
+  }
+  const f = x.used / x.window, tone = f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
+  box.dataset.tone = tone;
+  box.innerHTML = `<span>Контекст: <b>${n(x.used)}</b> из ${n(x.window)} токенов · ${Math.round(f * 100)}%</span>
+    <span class="chat-ctx-bar" role="meter" aria-label="Заполнение контекста" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></span>` +
+    (f >= CTX_HINT_AT ? `<span class="chat-ctx-hint">Разговор заполнил ${f >= CTX_WARN_AT ? "почти весь контекст" : "половину контекста"}, дальше он пухнет. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат. <button class="ac-btn" id="chat-ctx-new" type="button">Новый чат</button></span>` : "");
+}
+$("#chat-ctx").addEventListener("click", (e) => { if (e.target.closest("#chat-ctx-new")) newChat(); });
 function renderChat() {
+  renderChatCtx();
   const c = chatState.chat;
   const log = $("#chat-log");
   $("#chat-title").textContent = (c && c.title) || "Новый чат";
@@ -2855,7 +2878,7 @@ $("#chat-model").addEventListener("submit", async (e) => {
   // Прочие настройки (акцент, портрет) — как сохранены: SetChatSettings
   // заменяет настройки чата целиком.
   const { hasKey, local, effectiveMode, ...saved } = chatState.settings || {};
-  const c = { ...saved, url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
+  const c = { ...saved, url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value, contextWindow: parseInt($("#chat-ctx-win").value, 10) || 0 };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "";
