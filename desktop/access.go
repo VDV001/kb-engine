@@ -154,7 +154,8 @@ func (in accessIn) details() (domain.CredentialDTO, error) {
 }
 
 // Update changes an access after Touch ID — только в открытом хранилище. Продукт,
-// среда и логин не меняются; пароль необязателен: пусто — прежний остается.
+// среда и логин можно исправить (адрес карточки и пароль в Связке переедут сами);
+// пароль необязателен: пусто — прежний остается.
 func (d *accessDesk) Update(id string, in accessIn, password string) error {
 	if !d.isOpen() {
 		return errVaultClosed
@@ -163,6 +164,7 @@ func (d *accessDesk) Update(id string, in accessIn, password string) error {
 	if err != nil {
 		return err
 	}
+	dto.Product, dto.Env, dto.Login = in.Product, domain.Env(in.Env), in.Login // пустые — не менять
 	var pw *domain.Password
 	if strings.TrimSpace(password) != "" {
 		p, err := domain.NewPassword(password)

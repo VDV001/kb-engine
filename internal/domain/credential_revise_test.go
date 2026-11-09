@@ -40,7 +40,7 @@ func TestCredential_Revise(t *testing.T) {
 
 func TestCredential_Revise_keepsAHandWrittenID(t *testing.T) {
 	c, _ := NewCredential(CredentialDTO{ID: "crm-main", Product: "CRM", Env: "test", Login: "api", Host: "192.0.2.1"})
-	got, err := c.Revise(CredentialDTO{Env: "dev"})
+	got, err := c.Revise(CredentialDTO{Env: "dev", Host: "192.0.2.1"})
 	if err != nil || got.ID() != "crm-main" || got.Env() != EnvDev {
 		t.Fatalf("%v %+v", err, got.DTO())
 	}

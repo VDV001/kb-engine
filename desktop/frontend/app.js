@@ -3953,13 +3953,16 @@ function acAddHTML() {
     ${f("password", "пароль", "password")}
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="add-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить</button></div></form>`;
 }
-// Правка доступа: продукт, среда и логин не меняются (из них собран адрес карточки), остальное да.
-// Пароль необязателен: пусто — прежний остается. Поля держит черновик, как у формы добавления.
+// Правка доступа: можно исправить и продукт, среду, логин (ошибся при вводе): адрес карточки пересчитается,
+// пароль в Связке переедет сам. Пароль необязателен: пусто — прежний остается. Поля держит черновик.
 function acEditHTML(c) {
   const d = state.ac.draft, v = (k, cur) => esc(d[k] !== undefined ? d[k] : cur || "");
   const f = (k, t, cur, type = "text") => `<label>${t}<input name="${k}" type="${type}" value="${v(k, cur)}" autocomplete="off" spellcheck="false"></label>`;
+  const env = d.env !== undefined ? d.env : c.env;
+  const opt = (val, t) => `<option value="${val}"${env === val ? " selected" : ""}>${t}</option>`;
   return `<form class="ac-add ac-edit" id="ac-edit" data-id="${esc(c.id)}">
-    <p class="ac-edit-who">Изменить доступ: <b>${esc(c.product)}</b> · ${esc(c.envName)} · логин <code class="ac-login">${esc(c.login)}</code> <span class="muted">(продукт, среда и логин не меняются)</span></p>
+    <p class="ac-edit-who">Изменить доступ. Если поправить продукт, среду или логин, карточка и пароль перенесутся сами.</p>
+    ${f("product", "продукт (куда доступ)", c.product)}<label>среда<select name="env">${opt("prod", "прод")}${opt("stage", "стенд")}${opt("test", "тест")}${opt("dev", "dev")}</select></label>${f("login", "логин (имя для входа)", c.login)}
     ${f("url", "адрес (ссылка для входа)", c.url)}${f("host", "хост (сервер или IP)", c.host)}${f("role", "роль", c.role)}${f("rights", "права", c.rights)}
     ${f("issuedBy", "кто выдал", c.issuedBy)}${f("issuedAt", "когда выдан", c.issuedAt, "date")}${f("note", "заметка (видна только в окне)", c.note)}
     ${f("password", "новый пароль (пусто — не менять)", "", "password")}
@@ -4099,7 +4102,7 @@ $("#access-view").addEventListener("submit", async (e) => {
     e.target.elements.password.value = ""; // пароль не остается в поле
     try {
       await native().AccessUpdate(id, fd, pw || "");
-      state.ac.editing = ""; state.ac.draft = {};
+      state.ac.editing = ""; state.ac.draft = {}; state.ac.sel = ""; // адрес карточки мог измениться: выбор встанет на первую
       await acLoad(); acRender();
       toast("Сохранено", pw ? " · доступ обновлен, пароль сменен" : " · доступ обновлен");
     } catch (err) { showError("Доступ не изменен: " + errText(err)); }
