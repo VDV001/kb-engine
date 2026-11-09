@@ -76,8 +76,7 @@ func (s Service) Add(c domain.Credential, password domain.Password) error {
 // возвращается, иначе доступ остался бы с паролем, которого нет в карточке.
 // Нет такой карточки, правка невалидна или новый адрес занят — ничего не тронуто.
 func (s Service) Update(id string, details domain.CredentialDTO, password *domain.Password) error {
-	var old, movedTo string
-	var hadOld, changed bool
+	var mv pwMove
 	err := s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
 		i := slices.IndexFunc(list, func(c domain.Credential) bool { return c.ID() == id })
 		if i < 0 {
@@ -87,60 +86,90 @@ func (s Service) Update(id string, details domain.CredentialDTO, password *domai
 		if err != nil {
 			return nil, err
 		}
-		newID := revised.ID()
-		if newID != id {
-			if slices.ContainsFunc(list, func(c domain.Credential) bool { return c.ID() == newID }) {
-				return nil, fmt.Errorf("%w: %s", domain.ErrCredentialExists, newID)
-			}
-			switch has, err := s.Secrets.Has(newID); {
-			case err != nil:
-				return nil, fmt.Errorf("creds: Связка ключей не ответила: %w", err)
-			case has:
-				return nil, fmt.Errorf("%w: пароль %s уже лежит в Связке ключей", domain.ErrCredentialExists, newID)
-			}
+		if err := s.newIDFree(list, id, revised.ID()); err != nil {
+			return nil, err
 		}
-		if password != nil || newID != id {
-			cur, err := s.Secrets.Get(id)
-			if err != nil {
-				return nil, fmt.Errorf("creds: прежний пароль не прочитан, правка отменена: %w", err)
-			}
-			old, hadOld = cur, true
-			next := cur
-			if password != nil {
-				next = password.Reveal()
-			}
-			if err := s.Secrets.Set(newID, next); err != nil {
-				return nil, fmt.Errorf("creds: пароль не лег в Связку ключей: %w", err)
-			}
-			changed = true
-			if newID != id {
-				movedTo = newID
-			}
+		if err := s.placePassword(&mv, id, revised.ID(), password); err != nil {
+			return nil, err
 		}
 		list[i] = revised
 		return list, nil
 	})
-	if err != nil {
-		if !changed {
-			return err
-		}
-		if movedTo != "" {
-			if derr := s.Secrets.Delete(movedTo); derr != nil {
-				err = errors.Join(err, fmt.Errorf("creds: пароль %s остался в Связке ключей: %w", movedTo, derr))
-			}
-		} else if hadOld {
-			if rerr := s.Secrets.Set(id, old); rerr != nil {
-				err = errors.Join(err, fmt.Errorf("creds: прежний пароль %s не возвращен в Связку ключей: %w", id, rerr))
-			}
-		}
-		return err
+	return s.finishUpdate(id, mv, err)
+}
+
+// pwMove remembers what an update did to the keychain, to undo it or finish it.
+type pwMove struct {
+	old     string // прежний пароль, если читали
+	hadOld  bool
+	changed bool   // в Связку что-то записано этим вызовом
+	movedTo string // новый адрес, если пароль переезжал
+}
+
+// newIDFree refuses a new id that another card or a stray password already holds.
+func (s Service) newIDFree(list []domain.Credential, id, newID string) error {
+	if newID == id {
+		return nil
 	}
-	if movedTo != "" {
-		if derr := s.Secrets.Delete(id); derr != nil {
-			return fmt.Errorf("creds: карточка сохранена под новым адресом, но старый пароль %s остался в Связке ключей: %w", id, derr)
-		}
+	if slices.ContainsFunc(list, func(c domain.Credential) bool { return c.ID() == newID }) {
+		return fmt.Errorf("%w: %s", domain.ErrCredentialExists, newID)
+	}
+	switch has, err := s.Secrets.Has(newID); {
+	case err != nil:
+		return fmt.Errorf("creds: Связка ключей не ответила: %w", err)
+	case has:
+		return fmt.Errorf("%w: пароль %s уже лежит в Связке ключей", domain.ErrCredentialExists, newID)
 	}
 	return nil
+}
+
+// placePassword writes the password under newID when it changes or the id moves.
+func (s Service) placePassword(mv *pwMove, id, newID string, password *domain.Password) error {
+	if password == nil && newID == id {
+		return nil
+	}
+	cur, err := s.Secrets.Get(id)
+	if err != nil {
+		return fmt.Errorf("creds: прежний пароль не прочитан, правка отменена: %w", err)
+	}
+	mv.old, mv.hadOld = cur, true
+	next := cur
+	if password != nil {
+		next = password.Reveal()
+	}
+	if err := s.Secrets.Set(newID, next); err != nil {
+		return fmt.Errorf("creds: пароль не лег в Связку ключей: %w", err)
+	}
+	mv.changed = true
+	if newID != id {
+		mv.movedTo = newID
+	}
+	return nil
+}
+
+// finishUpdate undoes the keychain writes when the card did not save, and removes
+// the old password after a successful move.
+func (s Service) finishUpdate(id string, mv pwMove, err error) error {
+	if err == nil {
+		if mv.movedTo != "" {
+			if derr := s.Secrets.Delete(id); derr != nil {
+				return fmt.Errorf("creds: карточка сохранена под новым адресом, но старый пароль %s остался в Связке ключей: %w", id, derr)
+			}
+		}
+		return nil
+	}
+	switch {
+	case !mv.changed:
+	case mv.movedTo != "":
+		if derr := s.Secrets.Delete(mv.movedTo); derr != nil {
+			err = errors.Join(err, fmt.Errorf("creds: пароль %s остался в Связке ключей: %w", mv.movedTo, derr))
+		}
+	case mv.hadOld:
+		if rerr := s.Secrets.Set(id, mv.old); rerr != nil {
+			err = errors.Join(err, fmt.Errorf("creds: прежний пароль %s не возвращен в Связку ключей: %w", id, rerr))
+		}
+	}
+	return err
 }
 
 // Find returns the cards with every word of q, по продукту, среде и логину.
