@@ -1093,7 +1093,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "cmd/kbengine-mcp/main.go:35"
+        "cmd/kbengine-mcp/main.go:36"
       ]
     },
     {
@@ -1113,7 +1113,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/mcpserver/record.go:83"
+        "internal/adapter/mcpserver/record.go:85"
       ]
     },
     {
@@ -4042,7 +4042,7 @@
           "to": "cmd-mcp",
           "call": "tools/call search_catalog",
           "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-          "source": "cmd/kbengine-mcp/main.go:136",
+          "source": "cmd/kbengine-mcp/main.go:139",
           "symbol": "StdioTransport",
           "unverified": false
         },
@@ -4052,7 +4052,7 @@
           "to": "adp-mcpserver",
           "call": "mcpserver.New(svc, matcher, version)",
           "detail": "Каталог читается на СТАРТЕ, а не при первом запросе (cmd/kbengine-mcp/main.go): агент подключается молча, и «сервер поднялся» с нечитаемым каталогом выглядело бы рабочим состоянием до первого пустого ответа",
-          "source": "cmd/kbengine-mcp/main.go:69",
+          "source": "cmd/kbengine-mcp/main.go:70",
           "symbol": "svc.Stats",
           "unverified": false
         },
@@ -4092,7 +4092,7 @@
           "to": "adp-mcp-journal",
           "call": "addTool(s, j, tool, argsOf, handler)",
           "detail": "Журнал вызовов приделан к РЕГИСТРАЦИИ инструмента в internal/adapter/mcpserver/record.go, а не к телу обработчика: четвёртый инструмент попадёт в счётчик тем, что он объявлен, а не тем, что автор вспомнил про журнал. Тот же приём, что у runLogged вокруг единственного диспетчера команд",
-          "source": "internal/adapter/mcpserver/record.go:82",
+          "source": "internal/adapter/mcpserver/record.go:84",
           "symbol": "addTool",
           "unverified": false
         },
