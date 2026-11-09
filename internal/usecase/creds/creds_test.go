@@ -252,3 +252,77 @@ func TestService_Delete_cardsWriteFails(t *testing.T) {
 		t.Fatal("пароль на месте, а ошибка говорит «снят»")
 	}
 }
+
+// Правка: поля карточки меняются, пароль остается, если новый не задан.
+func TestService_Update_detailsKeepThePassword(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	if err := svc.Add(a, pw(t, "s3cret")); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Update(a.ID(), domain.CredentialDTO{Host: "192.0.2.9", Note: "новая заметка"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	got := cards.list[0].DTO()
+	if got.Host != "192.0.2.9" || got.Note != "новая заметка" || cards.list[0].ID() != a.ID() {
+		t.Fatalf("карточка: %+v", got)
+	}
+	if secrets.m[a.ID()] != "s3cret" {
+		t.Fatalf("пароль тронут: %q", secrets.m[a.ID()])
+	}
+}
+
+// Сменился пароль: новый ложится в Связку под тем же id.
+func TestService_Update_newPassword(t *testing.T) {
+	svc, _, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	_ = svc.Add(a, pw(t, "old-pass"))
+	np := pw(t, "new-pass")
+	if err := svc.Update(a.ID(), domain.CredentialDTO{Host: "192.0.2.1"}, &np); err != nil {
+		t.Fatal(err)
+	}
+	if secrets.m[a.ID()] != "new-pass" {
+		t.Fatalf("пароль = %q", secrets.m[a.ID()])
+	}
+}
+
+func TestService_Update_unknownIDChangesNothing(t *testing.T) {
+	svc, _, secrets := newSvc()
+	np := pw(t, "x-pass")
+	if err := svc.Update("нет-такого", domain.CredentialDTO{Host: "h"}, &np); !errors.Is(err, domain.ErrCredentialNotFound) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(secrets.m) != 0 {
+		t.Fatalf("чужой пароль записан: %v", secrets.m)
+	}
+}
+
+// Карточка не записалась после смены пароля: прежний пароль возвращается, иначе
+// доступ остался бы с паролем, которого нет в карточке (откат знает, что менял).
+func TestService_Update_rollsBackThePasswordWhenTheCardFails(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	_ = svc.Add(a, pw(t, "old-pass"))
+	cards.failSave = true
+	np := pw(t, "new-pass")
+	if err := svc.Update(a.ID(), domain.CredentialDTO{Host: "192.0.2.9"}, &np); err == nil {
+		t.Fatal("ошибка записи карточки потеряна")
+	}
+	if secrets.m[a.ID()] != "old-pass" {
+		t.Fatalf("прежний пароль не возвращен: %q", secrets.m[a.ID()])
+	}
+}
+
+// Правка без адреса и хоста нарушает инвариант карточки: ни карточка, ни пароль не тронуты.
+func TestService_Update_invalidDetailsChangeNothing(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	_ = svc.Add(a, pw(t, "old-pass"))
+	np := pw(t, "new-pass")
+	if err := svc.Update(a.ID(), domain.CredentialDTO{}, &np); !errors.Is(err, domain.ErrInvalidCredential) {
+		t.Fatalf("err = %v", err)
+	}
+	if secrets.m[a.ID()] != "old-pass" || cards.list[0].DTO().Host != "192.0.2.1" {
+		t.Fatalf("тронуто: %q %+v", secrets.m[a.ID()], cards.list[0].DTO())
+	}
+}

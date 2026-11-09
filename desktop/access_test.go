@@ -260,3 +260,48 @@ func TestAccessDesk_delete_closedDuringTouchID(t *testing.T) {
 		t.Fatal("карточка снята в закрытом хранилище")
 	}
 }
+
+// Правка карточки: по Touch ID и только в открытом хранилище; пароль необязателен
+// (пусто — не менять), id остается тем же.
+func TestAccessDesk_update(t *testing.T) {
+	d, auth := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "192.0.2.61", Note: "старая"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	id := "crm-test-api"
+	auth.asked = nil
+	if err := d.Update(id, accessIn{Host: "192.0.2.62", Note: "новая", IssuedAt: "2026-11-09"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if len(auth.asked) != 1 || !strings.Contains(auth.asked[0], "api") {
+		t.Errorf("Touch ID: %q", auth.asked)
+	}
+	list, _ := d.List("crm")
+	if len(list) != 1 || list[0].ID != id || list[0].Host != "192.0.2.62" || list[0].Note != "новая" || list[0].IssuedAt != "2026-11-09" {
+		t.Fatalf("после правки: %+v", list)
+	}
+	if pw, _ := d.Reveal(id); pw != secretPW {
+		t.Errorf("пустой пароль не должен менять прежний: %q", pw)
+	}
+	if err := d.Update(id, accessIn{Host: "192.0.2.62"}, "Nw9!new-pass"); err != nil {
+		t.Fatal(err)
+	}
+	if pw, _ := d.Reveal(id); pw != "Nw9!new-pass" {
+		t.Errorf("пароль не сменился: %q", pw)
+	}
+	auth.ok = false
+	if err := d.Update(id, accessIn{Host: "192.0.2.99"}, ""); !errors.Is(err, errAuthDenied) {
+		t.Errorf("без Touch ID: %v", err)
+	}
+	if list, _ := d.List("crm"); list[0].Host != "192.0.2.62" {
+		t.Errorf("отказ Touch ID изменил карточку: %+v", list[0])
+	}
+	auth.ok = true
+	d.Close()
+	if err := d.Update(id, accessIn{Host: "h"}, ""); !errors.Is(err, errVaultClosed) {
+		t.Errorf("закрытое хранилище: %v", err)
+	}
+}
