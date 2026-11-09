@@ -4224,6 +4224,8 @@ const MEM_PROBLEMS = {
 const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Любая запись в HOT.md идет по Touch ID и остается в журнале решений; правка файла мимо системы будет видна. Отклоненное не удаляется, а уходит в journal/.</div>`;
 const MEM_TOPIC_FIX = new Set(["no-topic-list", "stale-topics"]);
 const mmTokens = (n) => n.toLocaleString("ru-RU");
+// Путь у каждого свой (домашняя папка пользователя): на экране ~, чтобы имя учетной записи не светилось на скриншотах.
+const mmPath = (p) => p.replace(/^\/Users\/[^/]+/, "~");
 async function openMemory() { await mmLoad(); mmRender(); }
 // Сигнал о здоровье виден и снаружи экрана: точка на кнопке «Память» в шапке (решение
 // владельца 09.11: внимание должно бросаться в глаза, иначе человек пропустит и забудет).
@@ -4261,7 +4263,7 @@ function mmPct(h) { return h.limit ? Math.round((h.runes * 100) / h.limit) : 0; 
 function mmTone(h) { const p = mmPct(h); return p > 100 ? "over" : p >= 80 ? "warn" : "ok"; }
 function mmEmptyHTML(d) {
   return `<div class="mm-empty"><h3>Памяти еще нет</h3>
-    <p class="muted">Заведем скелет: <code>HOT.md</code> читается в каждой сессии, в <code>cold/</code> лежат факты, в <code>journal/</code> хроника. Все это обычные файлы с правами 0600 в <code>${esc(d.dir)}</code>, терминал их читает так же (<code>kbengine memory</code>).</p>
+    <p class="muted">Заведем скелет: <code>HOT.md</code> читается в каждой сессии, в <code>cold/</code> лежат факты, в <code>journal/</code> хроника. Все это обычные файлы с правами 0600 в <code title="${esc(d.dir)}">${esc(mmPath(d.dir))}</code>, терминал их читает так же (<code>kbengine memory</code>).</p>
     <button class="ac-btn pri" data-mm="init">Завести память</button></div>`;
 }
 function mmHeadHTML(d) {
@@ -4272,7 +4274,7 @@ function mmHeadHTML(d) {
   return `<div class="mm-head"><h2>Память</h2>
       <span class="${bad.length ? "mm-bad" : "mm-ok"}" role="status">${bad.length ? `check: нарушений ${bad.length}` : "check: ok"}</span>
       <button class="mh-headpill" data-mm="hv" data-v="pulse" title="Здоровье памяти: открыть пульт">${mhModePill(d.health)}<span class="muted">${d.health.total}/100</span></button>
-      <span class="muted mm-dir">${esc(d.dir)}</span></div>
+      <span class="muted mm-dir" title="${esc(d.dir)}">${esc(mmPath(d.dir))}</span></div>
     ${bad.length ? `<ul class="mm-problems">${list}</ul><div class="mm-fix">${fix}</div>` : ""}`;
 }
 function mmTreeHTML(d) {
