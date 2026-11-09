@@ -326,3 +326,53 @@ func TestService_Update_invalidDetailsChangeNothing(t *testing.T) {
 		t.Fatalf("тронуто: %q %+v", secrets.m[a.ID()], cards.list[0].DTO())
 	}
 }
+
+// Исправить среду, поставленную не так: адрес карточки меняется, пароль переезжает
+// в Связке под новый адрес, старый снимается.
+func TestService_Update_changingTheIdentityMovesThePassword(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	_ = svc.Add(a, pw(t, "s3cret"))
+	if err := svc.Update(a.ID(), domain.CredentialDTO{Env: domain.EnvStage, Host: "192.0.2.1"}, nil); err != nil {
+		t.Fatal(err)
+	}
+	newID := "sklad-pro-stage-admin"
+	if len(cards.list) != 1 || cards.list[0].ID() != newID || cards.list[0].Env() != domain.EnvStage {
+		t.Fatalf("карточка: %+v", cards.list)
+	}
+	if secrets.m[newID] != "s3cret" {
+		t.Fatalf("пароль не переехал: %v", secrets.m)
+	}
+	if _, old := secrets.m[a.ID()]; old {
+		t.Fatalf("старый пароль остался в Связке: %v", secrets.m)
+	}
+}
+
+// Новая личность совпала с другой карточкой: отказ, ничего не тронуто.
+func TestService_Update_identityCollisionChangesNothing(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	prod := card(t, "Склад-Про", domain.EnvProd, "admin")
+	stage := card(t, "Склад-Про", domain.EnvStage, "admin")
+	_ = svc.Add(prod, pw(t, "p-prod"))
+	_ = svc.Add(stage, pw(t, "p-stage"))
+	if err := svc.Update(prod.ID(), domain.CredentialDTO{Env: domain.EnvStage, Host: "h"}, nil); !errors.Is(err, domain.ErrCredentialExists) {
+		t.Fatalf("err = %v", err)
+	}
+	if len(cards.list) != 2 || secrets.m[prod.ID()] != "p-prod" || secrets.m[stage.ID()] != "p-stage" {
+		t.Fatalf("тронуто: %d карточек, %v", len(cards.list), secrets.m)
+	}
+}
+
+// Карточка не записалась после переезда пароля: новый адрес снят, старый пароль на месте.
+func TestService_Update_identityMoveRollsBack(t *testing.T) {
+	svc, cards, secrets := newSvc()
+	a := card(t, "Склад-Про", domain.EnvProd, "admin")
+	_ = svc.Add(a, pw(t, "s3cret"))
+	cards.failSave = true
+	if err := svc.Update(a.ID(), domain.CredentialDTO{Env: domain.EnvStage, Host: "h"}, nil); err == nil {
+		t.Fatal("ошибка записи потеряна")
+	}
+	if secrets.m[a.ID()] != "s3cret" || len(secrets.m) != 1 {
+		t.Fatalf("Связка после отката: %v", secrets.m)
+	}
+}

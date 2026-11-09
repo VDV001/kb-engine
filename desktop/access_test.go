@@ -305,3 +305,24 @@ func TestAccessDesk_update(t *testing.T) {
 		t.Errorf("закрытое хранилище: %v", err)
 	}
 }
+
+// Среда поставлена не так: правка меняет ее, адрес карточки пересчитывается, пароль переезжает.
+func TestAccessDesk_updateFixesTheEnvironment(t *testing.T) {
+	d, _ := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Add(accessIn{Product: "Проектное бюро", Env: "prod", Login: "planb", URL: "https://x.example"}, secretPW); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Update("proektnoe-byuro-prod-planb", accessIn{Product: "Проектное бюро", Env: "stage", Login: "planb", URL: "https://x.example"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	list, _ := d.List("planb")
+	if len(list) != 1 || list[0].Env != "stage" || list[0].ID != "proektnoe-byuro-stage-planb" {
+		t.Fatalf("после правки: %+v", list)
+	}
+	if pw, err := d.Reveal(list[0].ID); err != nil || pw != secretPW {
+		t.Errorf("пароль не переехал: %q %v", pw, err)
+	}
+}

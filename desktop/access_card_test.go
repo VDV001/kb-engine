@@ -7,7 +7,7 @@ import (
 )
 
 // Карточка доступа подписывает логин отдельной строкой «логин» (владелец 09.11: «не очень
-// понятно, что из этого логин») и дает «Изменить»; форма правки не меняет продукт, среду, логин.
+// понятно, что из этого логин») и дает «Изменить»; форма правки позволяет исправить продукт, среду и логин.
 func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
 	js, err := os.ReadFile("frontend/app.js")
 	if err != nil {
@@ -31,9 +31,9 @@ func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
 	}
 	j := strings.Index(src[i:], "\n}\n")
 	edit := src[i : i+j]
-	for _, name := range []string{`name="product"`, `"product"`, `"login"`, `"env"`} {
-		if strings.Contains(edit, name) {
-			t.Errorf("форма правки дает менять %s", name)
+	for _, want := range []string{`f("product"`, `f("login"`, `name="env"`} {
+		if !strings.Contains(edit, want) {
+			t.Errorf("в форме правки нельзя исправить поле: нет %s", want)
 		}
 	}
 }
