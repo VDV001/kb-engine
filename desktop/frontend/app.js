@@ -1862,6 +1862,9 @@ const ACCENTS = [
   ["mm-title", "Память: заголовок", "слово «Память» спектром"],
   ["mm-meter", "Память: шкала", "заполнение горячего слоя спектром; у потолка оранжевая, выше красная"],
   ["mm-nav", "Память: раздел", "переливающаяся черта у открытого раздела"],
+  ["mh-signal", "Здоровье: сигнал", "рамка с переливом, когда памяти нужно внимание"],
+  ["mh-score", "Здоровье: счет", "число и шкала здоровья переливом"],
+  ["mh-heat", "Здоровье: ритм", "клетки ритма градиентом"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1870,6 +1873,8 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
+  const hl = mhLook(); // палитра, скорость и громкость сигнала здоровья памяти
+  document.body.dataset.mhg = hl.grad; document.body.dataset.mha = hl.anim; document.body.dataset.mhs = hl.signal;
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
@@ -1887,7 +1892,33 @@ function renderAccents() {
   }).join("");
   renderLookAccess();
   renderLookHeader();
+  renderLookHealth();
 }
+// «Оформление → Здоровье памяти»: палитра, перелив и громкость сигнала (accents.look).
+// По умолчанию перелив включен: сигнал должен бросаться в глаза.
+const MH_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
+const MH_ANIMS = [["full", "перелив, 6 с"], ["soft", "медленный, 14 с"], ["none", "без анимации"]];
+const MH_SIGNALS = [["loud", "заметный: карточка над экраном"], ["calm", "спокойный: одна строка"]];
+function mhLook() {
+  const l = state.accents.look || {};
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  return { grad: pick(l["health-grad"], Object.keys(MH_GRADS), "spectrum"), anim: pick(l["health-anim"], MH_ANIMS.map((x) => x[0]), "full"), signal: pick(l["health-signal"], MH_SIGNALS.map((x) => x[0]), "loud") };
+}
+function renderLookHealth() {
+  const host = $("#look-health"); if (!host) return;
+  const L = mhLook(), dis = native() ? "" : " disabled";
+  const chip = (k, v, label, on, extra = "") => `<button class="look-chip" data-hl="${k}" data-v="${v}" aria-pressed="${on}"${dis}>${extra}${esc(label)}</button>`;
+  host.innerHTML = `
+    <div class="row"><span>Градиент</span><div class="opts">${Object.entries(MH_GRADS).map(([g, n]) => chip("health-grad", g, n, L.grad === g, `<i class="gs ink-${g}"></i>`)).join("")}
+      <span class="muted">цвета счета, шкалы, ритма и черты раздела; при проблемах сигнал краснеет сам</span></div></div>
+    <div class="row"><span>Анимация</span><div class="opts">${MH_ANIMS.map(([v, n]) => chip("health-anim", v, n, L.anim === v)).join("")}</div></div>
+    <div class="row"><span>Сигнал о проблемах</span><div class="opts">${MH_SIGNALS.map(([v, n]) => chip("health-signal", v, n, L.signal === v)).join("")}
+      <span class="muted">точка у кнопки «Память» в шапке остается в любом случае</span></div></div>`;
+}
+$("#look-health").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-hl]"); if (!b || !native()) return;
+  saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), [b.dataset.hl]: b.dataset.v } });
+});
 // «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
 // в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».
 function renderLookHeader() {
@@ -4310,9 +4341,9 @@ function mhPulseHTML(d) {
   const tiles = h.parts.map((p) => { const t = mhTone(p.value / p.max); return `<button class="mh-tile" ${MH_TILE_GO[p.id]}><span class="mh-cap">${MH_PARTS[p.id]}</span><span class="mh-n ${t}">${Math.round(p.value)}<small> / ${p.max}</small></span><span class="mh-bar ${t}"><i style="width:${(p.value / p.max) * 100}%"></i></span><span class="muted">${esc(mhPartHint(h, p.id))}</span></button>`; }).join("");
   const mini = mhHeat(h, "");
   return `<div class="mh-top"><span class="mh-pill ${tone} lg"><i></i>${head}</span>
-      <div class="mh-score ${tone}"><b>${h.total}</b><span class="muted"> / 100</span></div>
+      <div class="mh-score ${tone} ${tone === "ok" ? "" : "mh-tone-" + tone}"><b>${h.total}</b><span class="muted"> / 100</span></div>
       <button class="ac-btn pri mh-push" data-mm="review" title="Запишет в журнал, что вы просмотрели память">Отметить осмотр · Touch ID</button></div>
-    <div class="mh-bar ${tone} wide"><i style="width:${h.total}%"></i></div>
+    <div class="mh-bar ${tone} wide ${tone === "ok" ? "" : "mh-tone-" + tone}"><i style="width:${h.total}%"></i></div>
     <div class="mh-tiles">${tiles}</div>
     <h4>Что не так</h4>${mhReasonsHTML(h)}
     <div class="mh-side"><div class="mh-box"><h4>Режим доверия</h4><p>${mhModePill(h)}</p><p class="mh-eff ${tone}">${esc(mw)}: ${esc(MH_MODES[h.mode][2])}</p>

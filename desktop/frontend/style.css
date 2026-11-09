@@ -1340,7 +1340,7 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .mh-nav { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--z-rule); }
 .mh-nav button { background: none; border: 0; padding: 7px 14px; cursor: pointer; font: inherit; color: var(--z-muted); position: relative; }
 .mh-nav button:hover { color: var(--z-ink); }
-.mh-nav button[aria-selected="true"] { color: var(--z-ink); box-shadow: inset 0 -2px 0 var(--z-accent); }
+.mh-nav button[aria-selected="true"] { color: var(--z-ink); }
 .mh-body { display: grid; gap: 12px; align-content: start; }
 .mh-top { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
 .mh-score b { font-size: 40px; font-weight: 700; line-height: 1; }
@@ -1397,21 +1397,67 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .mh-chip.up { color: var(--z-faint); }
 .mh-box > .ac-btn { justify-self: start; }
 
-/* Сигнал здоровья: должен бросаться в глаза (решение владельца 09.11). */
-.mm-alert { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-left: 5px; vertical-align: middle; background: var(--z-lvl-warn); box-shadow: 0 0 0 0 var(--z-lvl-warn); animation: mm-ping 1.6s ease-out infinite; }
-.mm-alert.bad { background: var(--z-bad); box-shadow: 0 0 0 0 var(--z-bad); animation-duration: 1.1s; }
-@keyframes mm-ping { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 0%, transparent), 0 0 0 0 var(--ping, #f0953e99); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
-.mm-alert { --ping: #f0953eaa; } .mm-alert.bad { --ping: #ef5f5faa; }
-.mh-alert { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; margin: 0 0 14px; padding: 14px 18px; border: 2px solid var(--z-lvl-warn); border-left-width: 8px; border-radius: var(--z-radius); background: color-mix(in srgb, var(--z-lvl-warn) 14%, var(--z-bg)); animation: mh-glow 2.2s ease-in-out infinite; }
-.mh-alert.bad { border-color: var(--z-bad); background: color-mix(in srgb, var(--z-bad) 16%, var(--z-bg)); animation-duration: 1.4s; }
-.mh-alert-ic { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-size: 24px; font-weight: 800; color: var(--z-bg); background: var(--z-lvl-warn); }
-.mh-alert.bad .mh-alert-ic { background: var(--z-bad); }
-.mh-alert-t { font-size: 18px; font-weight: 800; letter-spacing: .02em; color: var(--z-lvl-warn); }
-.mh-alert.bad .mh-alert-t { color: var(--z-bad); }
-.mh-alert-n { font-size: 13px; font-weight: 600; color: var(--z-muted); margin-left: 8px; }
+
+/* ── Здоровье памяти: градиенты и сигнал (стиль KB: нейтральная карточка, тонкая градиентная
+   рамка, перелив). Палитра, скорость и громкость — «Оформление → Здоровье памяти»;
+   каждый элемент выключается своим переключателем mh-*. ─────────────────────────── */
+body { --mh1: var(--z-sp1); --mh2: var(--z-sp3); --mh3: var(--z-sp4); --mh4: var(--z-sp6); --mh-speed: 6s; }
+body[data-mhg="gold"] { --mh1: var(--z-sp1); --mh2: var(--z-sp2); --mh3: var(--z-sp1); --mh4: var(--z-sp2); }
+body[data-mhg="ice"] { --mh1: var(--z-sp4); --mh2: var(--z-sp5); --mh3: var(--z-sp6); --mh4: var(--z-sp5); }
+body[data-mhg="dusk"] { --mh1: var(--z-sp2); --mh2: var(--z-sp3); --mh3: var(--z-src-violet); --mh4: var(--z-sp4); }
+body[data-mhg="mono"] { --mh1: #6b6b74; --mh2: #9a9aa4; --mh3: #55555d; --mh4: #8a8a94; }
+body[data-mha="soft"] { --mh-speed: 14s; }
+.mh-warn-pal, .mh-alert.warn, .mh-tone-warn { --mh1: var(--z-lvl-warn); --mh2: #f5c04a; --mh3: var(--z-lvl-warn); --mh4: #f5c04a; }
+.mh-bad-pal, .mh-alert.bad, .mh-tone-bad { --mh1: var(--z-bad); --mh2: var(--z-lvl-error); --mh3: var(--z-lvl-warn); --mh4: var(--z-lvl-error); }
+/* зеркальный градиент: туда-обратно без шва */
+.mh-flow, .mh-bar.wide i, .mh-score b, .mh-alert-ic, .mh-alert-t, .mh-nav button[aria-selected="true"]::after {
+  background-image: linear-gradient(90deg, var(--mh1), var(--mh2), var(--mh3), var(--mh4), var(--mh3), var(--mh2), var(--mh1));
+  background-size: 200% 100%; animation: mh-flow var(--mh-speed) ease-in-out infinite alternate;
+}
+@keyframes mh-flow { to { background-position: 100% 0; } }
+@keyframes mh-flow-b { to { background-position: 0 0, 100% 0; } }
+body[data-mha="none"] .mh-flow, body[data-mha="none"] .mh-bar.wide i, body[data-mha="none"] .mh-score b, body[data-mha="none"] .mh-alert-ic, body[data-mha="none"] .mh-alert-t,
+body[data-mha="none"] .mh-nav button[aria-selected="true"]::after, body[data-mha="none"] .mh-alert, body[data-mha="none"] .mm-alert { animation: none; }
+.mh-score b, .mh-alert-t { -webkit-background-clip: text; background-clip: text; color: transparent; }
+.mh-score b, .mh-score.ok b, .mh-score.warn b, .mh-score.bad b { color: transparent; }
+body.no-mh-score .mh-score b, body.no-mh-score .mh-score.ok b, body.no-mh-score .mh-score.warn b, body.no-mh-score .mh-score.bad b { color: var(--z-ink); }
+.mh-bar.wide i { background-color: transparent; }
+.mh-nav button { position: relative; }
+.mh-nav button[aria-selected="true"]::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: -1px; height: 2px; border-radius: 2px; }
+/* плитки и клетки: тонко, без заливок */
+.mh-heat button.l2 { background: linear-gradient(135deg, var(--mh1), var(--mh4)); }
+.mh-heat button.l1 { background: linear-gradient(135deg, color-mix(in srgb, var(--mh1) 50%, transparent), color-mix(in srgb, var(--mh4) 50%, transparent)); }
+.mh-heat button.sel { outline: 1px solid var(--mh2); box-shadow: 0 0 0 3px color-mix(in srgb, var(--mh2) 25%, transparent); }
+.mh-tile:hover { border-color: transparent; background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, linear-gradient(90deg, var(--mh1), var(--mh4)) border-box; }
+.mh-rule.sel { background: var(--z-accent-wash); box-shadow: none; position: relative; }
+.mh-rule.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, var(--mh1), var(--mh3), var(--mh4)); }
+/* сигнал: карточка как поле поиска в фокусе — нейтральный фон, живая рамка */
+.mh-alert { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; margin: 0 0 14px; padding: 14px 18px; border: 2px solid transparent; border-radius: var(--z-radius);
+  background: linear-gradient(color-mix(in srgb, var(--mh1) 7%, var(--z-bg-2)), color-mix(in srgb, var(--mh1) 7%, var(--z-bg-2))) padding-box,
+              linear-gradient(90deg, var(--mh1), var(--mh2), var(--mh3), var(--mh4), var(--mh3), var(--mh2), var(--mh1)) border-box;
+  background-size: 100% 100%, 200% 100%; animation: mh-flow-b var(--mh-speed) ease-in-out infinite alternate; }
+.mh-alert-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 800; color: var(--z-bg); }
+.mh-alert-t { font-size: 17px; font-weight: 800; letter-spacing: .03em; display: inline-block; }
+.mh-alert-n { font-size: 13px; font-weight: 600; color: var(--z-muted); margin-left: 8px; -webkit-text-fill-color: var(--z-muted); }
 .mh-alert p { margin: 4px 0 8px; color: var(--z-ink); }
 .mh-alert ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
-.mh-alert li { display: flex; gap: 8px 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid color-mix(in srgb, currentColor 20%, transparent); }
-@keyframes mh-glow { 0%, 100% { box-shadow: 0 0 0 0 transparent; } 50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--z-lvl-warn) 30%, transparent); } }
-.mh-alert.bad { --glow: var(--z-bad); }
-@media (prefers-reduced-motion: reduce) { .mm-alert, .mh-alert { animation: none; } }
+.mh-alert li { display: flex; gap: 8px 14px; align-items: center; justify-content: space-between; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid var(--z-rule); }
+/* точка на кнопке «Память» в шапке */
+.mm-alert { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; vertical-align: middle; background: var(--z-lvl-warn); animation: mm-ping 1.8s ease-out infinite; --ping: #f0953eaa; }
+.mm-alert.bad { background: var(--z-bad); --ping: #ef5f5faa; animation-duration: 1.2s; }
+@keyframes mm-ping { 0% { box-shadow: 0 0 0 0 var(--ping); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+/* «спокойный» сигнал: строка вместо карточки, без перелива; точка в шапке остаётся */
+body[data-mhs="calm"] .mh-alert { padding: 8px 12px; border-width: 1px; animation: none; background-size: 100% 100%, 100% 100%; gap: 10px; }
+body[data-mhs="calm"] .mh-alert-ic { width: 22px; height: 22px; font-size: 14px; animation: none; }
+body[data-mhs="calm"] .mh-alert-t { font-size: 14px; animation: none; }
+body[data-mhs="calm"] .mh-alert p { display: none; }
+/* выключатели */
+body.no-mh-signal .mh-alert { animation: none; background: color-mix(in srgb, var(--mh1) 7%, var(--z-bg-2)); border-color: var(--mh1); }
+body.no-mh-signal .mh-alert-ic { background: var(--mh1); animation: none; }
+body.no-mh-signal .mh-alert-t { background: none; color: var(--mh1); animation: none; }
+body.no-mh-score .mh-score b { background: none; color: var(--z-ink); animation: none; }
+body.no-mh-score .mh-bar.wide i { background: var(--z-ok); animation: none; }
+body.no-mh-heat .mh-heat button.l2 { background: var(--z-ok); } body.no-mh-heat .mh-heat button.l1 { background: color-mix(in srgb, var(--z-ok) 45%, transparent); }
+@media (prefers-reduced-motion: reduce) { .mh-flow, .mh-bar.wide i, .mh-score b, .mh-alert, .mh-alert-ic, .mh-alert-t, .mh-nav button[aria-selected="true"]::after, .mm-alert { animation: none; } }
+/* старая плашка не спорит с сигналом здоровья */
+.mm-warn { border-color: var(--z-rule-2); border-left-color: var(--z-lvl-warn); color: var(--z-muted); }
