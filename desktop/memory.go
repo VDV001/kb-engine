@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -47,7 +48,70 @@ type noteView struct {
 	Topic       string `json:"topic"`
 	Origin      string `json:"origin"`
 	Description string `json:"description"`
-	Body        string `json:"body,omitempty"` // только у очереди: решать надо по тексту
+	Body        string `json:"body,omitempty"`     // только у очереди: решать надо по тексту
+	WaitDays    int    `json:"waitDays,omitempty"` // только у очереди: сколько дней предложение ждёт
+}
+
+// healthView is the health of the memory as the screen draws it (ADR-0008). Тексты
+// причин и названия частей собирает страница: Go отдаёт виды и числа.
+type healthView struct {
+	Mode              string       `json:"mode"` // ok, warn, bad
+	Total             int          `json:"total"`
+	IdleDays          int          `json:"idleDays"` // -1: суждений в журнале нет
+	OldestPendingDays int          `json:"oldestPendingDays"`
+	StaleRules        int          `json:"staleRules"`
+	Today             string       `json:"today"` // YYYY-MM-DD: от этого дня считались возрасты
+	Parts             []partView   `json:"parts"`
+	Reasons           []reasonView `json:"reasons"`
+	Rules             []ruleView   `json:"rules"`
+	Events            []eventView  `json:"events"` // все решения журнала, старые первыми
+}
+
+type partView struct {
+	ID    string  `json:"id"`
+	Value float64 `json:"value"`
+	Max   float64 `json:"max"`
+}
+
+type reasonView struct {
+	Kind string `json:"kind"`
+	N    int    `json:"n"`
+}
+
+type ruleView struct {
+	Text    string `json:"text"`
+	AgeDays int    `json:"ageDays"` // -1: отметки нет совсем
+	Stale   bool   `json:"stale"`
+}
+
+type eventView struct {
+	Day      string `json:"day"` // YYYY-MM-DD
+	Kind     string `json:"kind"`
+	Text     string `json:"text"`
+	Judgment bool   `json:"judgment"` // суждение человека, а не обслуживание
+}
+
+const dayLayout = "2006-01-02"
+
+func newHealthView(h domain.Health, events []domain.Decision, today time.Time) healthView {
+	v := healthView{
+		Mode: string(h.Mode), Total: h.Total, IdleDays: h.IdleDays, OldestPendingDays: h.OldestPendingDays,
+		StaleRules: h.StaleRules, Today: today.Format(dayLayout),
+		Parts: []partView{}, Reasons: []reasonView{}, Rules: []ruleView{}, Events: []eventView{},
+	}
+	for _, p := range h.Parts {
+		v.Parts = append(v.Parts, partView{p.ID, p.Value, p.Max})
+	}
+	for _, r := range h.Reasons {
+		v.Reasons = append(v.Reasons, reasonView{string(r.Kind), r.N})
+	}
+	for _, r := range h.Rules {
+		v.Rules = append(v.Rules, ruleView{r.Text, r.AgeDays, r.Stale})
+	}
+	for _, e := range events {
+		v.Events = append(v.Events, eventView{e.Day.Format(dayLayout), string(e.Kind), e.Text, e.Kind.IsJudgment()})
+	}
+	return v
 }
 
 type problemView struct {
@@ -66,12 +130,13 @@ type memoryView struct {
 	Journal  []string      `json:"journal"`
 	Problems []problemView `json:"problems"`
 	// Decisions — последние решения человека из journal/decisions.md, старые первыми.
-	Decisions []string `json:"decisions"`
+	Decisions []string   `json:"decisions"`
+	Health    healthView `json:"health"`
 }
 
 // State returns the screen; памяти еще нет — пустой вид с Exists=false, папка не создается.
 func (d *memoryDesk) State() (memoryView, error) {
-	v := memoryView{Dir: d.dir, Cold: []noteView{}, Queue: []noteView{}, Journal: []string{}, Problems: []problemView{}, Decisions: []string{}}
+	v := memoryView{Dir: d.dir, Cold: []noteView{}, Queue: []noteView{}, Journal: []string{}, Problems: []problemView{}, Decisions: []string{}, Health: newHealthView(domain.Health{IdleDays: -1}, nil, domain.DayOf(time.Now()))}
 	if _, err := os.Stat(filepath.Join(d.dir, "HOT.md")); errors.Is(err, os.ErrNotExist) {
 		return v, nil
 	} else if err != nil {
@@ -92,8 +157,13 @@ func (d *memoryDesk) State() (memoryView, error) {
 		v.Cold = append(v.Cold, noteView{Name: n.Name, Topic: n.Topic, Origin: originOf(n.Origin), Description: n.Description})
 	}
 	for _, p := range ov.Pending {
-		v.Queue = append(v.Queue, noteView{Name: p.Note.Name, Topic: p.Note.Topic, Origin: originOf(p.Note.Origin), Description: p.Note.Description, Body: p.Body})
+		wait := 0
+		if !p.Since.IsZero() {
+			wait = max(0, int(ov.Today.Sub(domain.DayOf(p.Since)).Hours()/24))
+		}
+		v.Queue = append(v.Queue, noteView{Name: p.Note.Name, Topic: p.Note.Topic, Origin: originOf(p.Note.Origin), Description: p.Note.Description, Body: p.Body, WaitDays: wait})
 	}
+	v.Health = newHealthView(ov.Health, ov.Events, ov.Today)
 	v.Journal = append(v.Journal, ov.Journal...)
 	v.Decisions = append(v.Decisions, ov.Decisions...)
 	for _, p := range ov.Problems {
@@ -222,4 +292,34 @@ func (d *memoryDesk) Seal() error {
 		return err
 	}
 	return svc.Seal()
+}
+
+// Review records that the person looked through the memory and changed nothing.
+// По Touch ID: осмотр поднимает доверие, и отметить его должен человек, а не
+// страница, которой что-то подсунули.
+func (d *memoryDesk) Review() error {
+	if err := d.guard("отметить осмотр памяти"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	svc, _, err := d.service()
+	if err != nil {
+		return err
+	}
+	return svc.Review()
+}
+
+// ConfirmRule records that the person re-read a rule of the hot layer and keeps it.
+func (d *memoryDesk) ConfirmRule(text string) error {
+	if err := d.guard("подтвердить правило в памяти"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	svc, _, err := d.service()
+	if err != nil {
+		return err
+	}
+	return svc.ConfirmRule(text)
 }

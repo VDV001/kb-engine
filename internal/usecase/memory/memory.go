@@ -348,6 +348,8 @@ type Overview struct {
 	// Health и Events — здоровье памяти и все решения журнала, разобранные (для ритма).
 	Health domain.Health
 	Events []domain.Decision
+	// Today — день, от которого считались возрасты (по часам сценария).
+	Today time.Time
 }
 
 // recentDecisions — сколько последних решений показывает экран.
@@ -380,5 +382,5 @@ func (s *Service) Overview() (Overview, error) {
 		return Overview{}, err
 	}
 	decisions := lines[max(0, len(lines)-recentDecisions):]
-	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Decisions: decisions, Problems: problems, Limits: s.limits, Health: health, Events: events}, nil
+	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Decisions: decisions, Problems: problems, Limits: s.limits, Health: health, Events: events, Today: domain.DayOf(s.now())}, nil
 }
