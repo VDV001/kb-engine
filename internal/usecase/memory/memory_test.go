@@ -2,6 +2,7 @@ package memory_test
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -20,9 +21,12 @@ type fakeStore struct {
 	archived map[string]string // имя в очереди -> имя в журнале
 
 	texts      []memory.NoteText
+	journal    []string
 	vectors    memory.VectorIndex
 	hasVectors bool
 }
+
+func (f *fakeStore) JournalNames() ([]string, error) { return f.journal, nil }
 
 func (f *fakeStore) ColdTexts() ([]memory.NoteText, error) { return f.texts, nil }
 func (f *fakeStore) LoadVectors() (memory.VectorIndex, error) {
@@ -271,5 +275,28 @@ func TestService_WhoRefusals(t *testing.T) {
 	svc = svc.WithPortrait(fakePortrait{err: errors.New("файл не читается")})
 	if _, err := svc.Who(); err == nil || st.savedHot != "" {
 		t.Errorf("ошибка источника должна всплыть и не стирать блок: %v saved=%q", err, st.savedHot)
+	}
+}
+
+func TestService_OverviewGathersEverythingTheWindowShows(t *testing.T) {
+	st := &fakeStore{
+		snap:    memory.Snapshot{Hot: strings.Repeat("я", 50), Notes: []domain.ColdNote{{File: "a.md", Name: "a", Topic: "t", Description: "d"}}},
+		journal: []string{"2026-11-09-x.md"},
+	}
+	svc := memory.New(st, memory.Limits{Hot: 10})
+	_ = svc.Propose("agent-note", "стиль", "про это", "body")
+	ov, err := svc.Overview()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ov.Snapshot.Notes) != 1 || len(ov.Pending) != 1 || len(ov.Journal) != 1 || ov.Limits.Hot != 10 {
+		t.Errorf("overview = %+v", ov)
+	}
+	var kinds []domain.ProblemKind
+	for _, p := range ov.Problems {
+		kinds = append(kinds, p.Kind)
+	}
+	if !slices.Contains(kinds, domain.ProblemHotTooBig) {
+		t.Errorf("проблемы не посчитаны: %v", kinds)
 	}
 }

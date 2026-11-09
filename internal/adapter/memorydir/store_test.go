@@ -327,3 +327,46 @@ func TestInit_skeletonHasPortraitAndTopicMarkers(t *testing.T) {
 		}
 	}
 }
+
+func TestLimits_roundTrip(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	if got, err := st.Limits(); err != nil || got != (memory.Limits{}) {
+		t.Fatalf("без файла: %+v, %v (ноль = умолчания)", got, err)
+	}
+	if err := st.SaveLimits(memory.Limits{Hot: 6000, Index: 40000}); err != nil {
+		t.Fatal(err)
+	}
+	got, err := st.Limits()
+	if err != nil || got.Hot != 6000 || got.Index != 40000 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "memory.json"))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("права = %v, want 0600", info.Mode().Perm())
+	}
+	if err := st.SaveLimits(memory.Limits{Hot: 5}); !errors.Is(err, domain.ErrInvalidLimits) {
+		t.Errorf("негодный потолок: %v", err)
+	}
+	if got, _ := st.Limits(); got.Hot != 6000 {
+		t.Error("отказ не должен затирать прежний потолок")
+	}
+	_ = os.WriteFile(filepath.Join(dir, "memory.json"), []byte("{"), 0o600)
+	if _, err := st.Limits(); err == nil {
+		t.Error("битый memory.json должен быть ошибкой, а не умолчанием")
+	}
+}
+
+func TestJournalNames(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	for _, n := range []string{"2026-11-09-b.md", "2026-11-08-a.md", "note.txt"} {
+		_ = os.WriteFile(filepath.Join(dir, "journal", n), []byte("x"), 0o600)
+	}
+	got, err := st.JournalNames()
+	if err != nil || len(got) != 2 || got[0] != "2026-11-08-a.md" || got[1] != "2026-11-09-b.md" {
+		t.Fatalf("got %v, %v (только .md, по имени)", got, err)
+	}
+}

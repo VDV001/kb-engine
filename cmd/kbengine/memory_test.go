@@ -371,3 +371,24 @@ func TestMemory_whoNeedsAPortraitFolder(t *testing.T) {
 		t.Errorf("who без папки: code=%d err=%q", code, e)
 	}
 }
+
+// Потолок задается при init (ADR-0008) и дальше живет в memory.json: окно и
+// терминал меряют одной линейкой.
+func TestMemory_initHotLimitIsRememberedByCheck(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "mem")
+	if code, _, e := runMem(t, "init", "--hot-limit", "6000", dir); code != 0 {
+		t.Fatalf("init: %d %s", code, e)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(strings.Repeat("я", 5000)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("потолок 6000 из init должен пускать 5000 знаков: %d %q", code, out)
+	}
+	if code, out, _ := runMem(t, "check", "--hot-limit", "4000", dir); code != 1 || !strings.Contains(out, "hot-too-big") {
+		t.Errorf("флаг сильнее файла: %d %q", code, out)
+	}
+	if code, _, _ := runMem(t, "init", "--hot-limit", "7", filepath.Join(t.TempDir(), "m")); code != 2 {
+		t.Errorf("негодный потолок: code=%d, want 2", code)
+	}
+}

@@ -230,3 +230,26 @@ func TestReplacePortrait(t *testing.T) {
 		t.Errorf("метка внутри текста err = %v, want ErrInvalidNote", err)
 	}
 }
+
+func TestValidateLimits(t *testing.T) {
+	tests := []struct {
+		name      string
+		hot, idx  int
+		wantValid bool
+	}{
+		{"оба не заданы — берутся умолчания", 0, 0, true},
+		{"обычные", 6000, 40000, true},
+		{"горячий слишком мал", 50, 0, false},
+		{"горячий слишком велик", 300000, 0, false},
+		{"индекс слишком мал", 0, 10, false},
+		{"отрицательный", -1, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := domain.ValidateLimits(tt.hot, tt.idx)
+			if tt.wantValid != (err == nil) || (!tt.wantValid && !errors.Is(err, domain.ErrInvalidLimits)) {
+				t.Errorf("ValidateLimits(%d, %d) = %v", tt.hot, tt.idx, err)
+			}
+		})
+	}
+}
