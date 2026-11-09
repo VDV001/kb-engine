@@ -113,15 +113,20 @@ func TestFind_vectorAnswerIsNotMixedWithText(t *testing.T) {
 	_, svc := newFind(t, finNote(), docNote())
 	svc = svc.WithEmbedder(emb, "bge-m3")
 	_, _ = svc.BuildIndex()
-	// «врач» есть в тексте doctor, но смысл запроса про деньги.
-	res, _ := svc.Find("деньги врач", memory.FindOptions{Threshold: 0.5})
-	if res.Via != "vector" || len(res.Hits) == 0 {
-		t.Fatalf("res = %+v", res)
+	// «деньги» есть в тексте budget-rules, «врач» по смыслу тянет doctor; текст и
+	// вектор дали бы разные списки, а в авто-режиме обязан остаться вектор.
+	const q = "деньги врач"
+	auto, err := svc.Find(q, memory.FindOptions{})
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, h := range res.Hits {
-		if h.Score > 1.0001 { // у BM25 оценки не ограничены единицей, у косинуса да
-			t.Errorf("в выдаче вектора оценка текста: %+v", h)
-		}
+	vec, _ := svc.Find(q, memory.FindOptions{Mode: memory.ModeVector})
+	if auto.Via != "vector" || strings.Join(names(auto.Hits), ",") != strings.Join(names(vec.Hits), ",") || len(auto.Hits) == 0 {
+		t.Fatalf("auto=%+v vector=%+v", auto, vec)
+	}
+	txt, _ := svc.Find(q, memory.FindOptions{Mode: memory.ModeText})
+	if strings.Join(names(txt.Hits), ",") == strings.Join(names(auto.Hits), ",") {
+		t.Fatalf("запрос не различает слои: текст дал то же %v", names(txt.Hits))
 	}
 }
 
