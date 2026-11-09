@@ -30,7 +30,7 @@ const (
 	DecisionOther       DecisionKind = "other"
 )
 
-// IsJudgment: решение — суждение человека, а не обслуживание перечня и индекса.
+// IsJudgment says whether the decision is a human judgment: решение — суждение человека, а не обслуживание перечня и индекса.
 func (k DecisionKind) IsJudgment() bool {
 	switch k {
 	case DecisionApproveHot, DecisionApproveCold, DecisionReject, DecisionSeal, DecisionReview, DecisionConfirmRule:
@@ -164,7 +164,7 @@ const (
 	TrustBad  TrustMode = "bad"
 )
 
-// AgentMayPropose: в режиме «не доверяю» очередь предложений приостановлена —
+// AgentMayPropose says whether the agent may queue proposals: в режиме «не доверяю» очередь предложений приостановлена —
 // человек не успевает разбирать то, что уже копится.
 func (m TrustMode) AgentMayPropose() bool { return m != TrustBad }
 
@@ -265,45 +265,16 @@ func AssessHealth(in HealthInput) Health {
 	if !h.LastJudgment.IsZero() {
 		h.IdleDays = max(0, daysBetween(h.LastJudgment, in.Today))
 	}
-
 	h.Rules = ruleHealths(in)
-	var fresh float64
-	for _, r := range h.Rules {
-		if r.Stale {
-			h.StaleRules++
-		}
-		if r.AgeDays >= 0 {
-			fresh += max(0, 1-float64(r.AgeDays)/RuleLifeDays)
-		}
-	}
-	rules := float64(maxRules)
-	if len(h.Rules) > 0 {
-		rules = fresh / float64(len(h.Rules)) * maxRules
-	}
-
 	for _, q := range in.Queue {
 		h.OldestPendingDays = max(h.OldestPendingDays, daysBetween(q.Since, in.Today))
 	}
-	queue := max(0, maxQueue-3*float64(len(in.Queue))-0.6*float64(max(0, h.OldestPendingDays-QueueGraceDays)))
-
-	integrity := max(0, 8-2*float64(in.StaleVectors))
-	if in.SealOK {
-		integrity += 12
-	}
-
-	// Пустая память осмотра не требует; с чем-то на хранении отсутствие суждений — пробел.
-	rhythm := float64(maxRhythm)
-	hasStock := len(in.Rules)+in.Notes+len(in.Queue) > 0
-	switch {
-	case h.IdleDays >= 0:
-		rhythm = max(0, maxRhythm-float64(h.IdleDays))
-	case hasStock:
-		rhythm = 0
-	}
-
+	rules := rulesScore(&h)
 	h.Parts = []HealthPart{
-		{"rhythm", rhythm, maxRhythm}, {"queue", queue, maxQueue},
-		{"integrity", integrity, maxIntegrity}, {"rules", rules, maxRules},
+		{"rhythm", rhythmScore(in, h.IdleDays), maxRhythm},
+		{"queue", queueScore(in, h.OldestPendingDays), maxQueue},
+		{"integrity", integrityScore(in), maxIntegrity},
+		{"rules", rules, maxRules},
 	}
 	var sum float64
 	for _, p := range h.Parts {
@@ -318,23 +289,71 @@ func AssessHealth(in HealthInput) Health {
 	default:
 		h.Mode = TrustOK
 	}
+	h.Reasons = reasonsOf(in, h)
+	return h
+}
 
+func hasStock(in HealthInput) bool { return len(in.Rules)+in.Notes+len(in.Queue) > 0 }
+
+// rhythmScore: пустая память осмотра не требует; с чем-то на хранении отсутствие
+// суждений — пробел.
+func rhythmScore(in HealthInput, idle int) float64 {
+	switch {
+	case idle >= 0:
+		return max(0, maxRhythm-float64(idle))
+	case hasStock(in):
+		return 0
+	}
+	return maxRhythm
+}
+
+func queueScore(in HealthInput, oldest int) float64 {
+	return max(0, maxQueue-3*float64(len(in.Queue))-0.6*float64(max(0, oldest-QueueGraceDays)))
+}
+
+func integrityScore(in HealthInput) float64 {
+	v := max(0, 8-2*float64(in.StaleVectors))
+	if in.SealOK {
+		v += 12
+	}
+	return v
+}
+
+// rulesScore averages the freshness of the rules and counts the stale ones into h.
+func rulesScore(h *Health) float64 {
+	if len(h.Rules) == 0 {
+		return maxRules
+	}
+	var fresh float64
+	for _, r := range h.Rules {
+		if r.Stale {
+			h.StaleRules++
+		}
+		if r.AgeDays >= 0 {
+			fresh += max(0, 1-float64(r.AgeDays)/RuleLifeDays)
+		}
+	}
+	return fresh / float64(len(h.Rules)) * maxRules
+}
+
+func reasonsOf(in HealthInput, h Health) []HealthReason {
+	var rs []HealthReason
 	if !in.SealOK {
-		h.Reasons = append(h.Reasons, HealthReason{ReasonSeal, 1})
+		rs = append(rs, HealthReason{ReasonSeal, 1})
 	}
 	if len(in.Queue) > 0 {
-		h.Reasons = append(h.Reasons, HealthReason{ReasonQueue, len(in.Queue)})
+		rs = append(rs, HealthReason{ReasonQueue, len(in.Queue)})
 	}
 	if h.StaleRules > 0 {
-		h.Reasons = append(h.Reasons, HealthReason{ReasonRules, h.StaleRules})
+		rs = append(rs, HealthReason{ReasonRules, h.StaleRules})
 	}
 	if in.StaleVectors > 0 {
-		h.Reasons = append(h.Reasons, HealthReason{ReasonVectors, in.StaleVectors})
+		rs = append(rs, HealthReason{ReasonVectors, in.StaleVectors})
 	}
-	if (h.IdleDays > IdleWarnDays) || (h.IdleDays < 0 && hasStock) {
-		h.Reasons = append(h.Reasons, HealthReason{ReasonRhythm, h.IdleDays})
+	if h.IdleDays > IdleWarnDays || (h.IdleDays < 0 && hasStock(in)) {
+		rs = append(rs, HealthReason{ReasonRhythm, h.IdleDays})
 	}
-	return h
+	return rs
 }
 
 // ruleHealths dates each rule by the latest approval or confirmation naming it.
