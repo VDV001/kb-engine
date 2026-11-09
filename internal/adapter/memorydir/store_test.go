@@ -254,3 +254,64 @@ func TestArchivePending_movesToJournal(t *testing.T) {
 		t.Errorf("в очереди осталось: %v", left)
 	}
 }
+
+func TestColdTexts_coldOnlyWithDigest(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	n, _ := domain.NewColdNote("a", "стиль", "про a")
+	_ = st.Add(n, "тело a")
+	_ = st.AddPending(agentNote(t, "p1"), "ждет")
+	_ = os.WriteFile(filepath.Join(dir, "journal", "2026-11-09.md"), []byte("хроника"), 0o600)
+
+	texts, err := st.ColdTexts()
+	if err != nil || len(texts) != 1 || texts[0].Note.Name != "a" || texts[0].Body != "тело a" {
+		t.Fatalf("texts = %+v, %v (журнал и очередь в поиск не входят)", texts, err)
+	}
+	d1 := texts[0].Note.Digest
+	if d1 == "" {
+		t.Fatal("Digest пуст")
+	}
+	snap, _ := st.Load()
+	if snap.Notes[0].Digest != d1 {
+		t.Errorf("Load и ColdTexts считают отпечаток по-разному: %q vs %q", snap.Notes[0].Digest, d1)
+	}
+	// правка файла руками меняет отпечаток
+	b, _ := os.ReadFile(filepath.Join(dir, "cold", "a.md"))
+	_ = os.WriteFile(filepath.Join(dir, "cold", "a.md"), append(b, []byte("правка\n")...), 0o600)
+	texts, _ = st.ColdTexts()
+	if texts[0].Note.Digest == d1 {
+		t.Error("отпечаток не изменился после правки")
+	}
+}
+
+func TestVectors_roundTripAndAbsent(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	if _, err := st.LoadVectors(); !errors.Is(err, memory.ErrNoVectors) {
+		t.Fatalf("нет файла: err = %v, want ErrNoVectors", err)
+	}
+	in := memory.VectorIndex{Model: "bge-m3", Dims: 2, Built: "2026-11-09T12:00:00Z",
+		Entries: map[string]memory.VectorEntry{"a": {Digest: "d", Vector: []float32{0.5, -1}}}}
+	if err := st.SaveVectors(in); err != nil {
+		t.Fatal(err)
+	}
+	out, err := st.LoadVectors()
+	if err != nil || out.Model != "bge-m3" || out.Dims != 2 || out.Entries["a"].Digest != "d" || out.Entries["a"].Vector[1] != -1 {
+		t.Fatalf("out = %+v, %v", out, err)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "cold", ".vectors.json"))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("права = %v, want 0600", info.Mode().Perm())
+	}
+	// файл векторов не должен читаться как запись холодного слоя
+	if snap, _ := st.Load(); len(snap.Notes) != 0 {
+		t.Errorf("векторы попали в записи: %v", snap.Notes)
+	}
+	// битый файл — ошибка, а не «векторов нет»
+	_ = os.WriteFile(filepath.Join(dir, "cold", ".vectors.json"), []byte("{"), 0o600)
+	if _, err := st.LoadVectors(); err == nil || errors.Is(err, memory.ErrNoVectors) {
+		t.Errorf("битый файл: err = %v", err)
+	}
+}

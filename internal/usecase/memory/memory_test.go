@@ -18,6 +18,22 @@ type fakeStore struct {
 	pending  []memory.PendingNote
 	promoted []string
 	archived map[string]string // имя в очереди -> имя в журнале
+
+	texts      []memory.NoteText
+	vectors    memory.VectorIndex
+	hasVectors bool
+}
+
+func (f *fakeStore) ColdTexts() ([]memory.NoteText, error) { return f.texts, nil }
+func (f *fakeStore) LoadVectors() (memory.VectorIndex, error) {
+	if !f.hasVectors {
+		return memory.VectorIndex{}, memory.ErrNoVectors
+	}
+	return f.vectors, nil
+}
+func (f *fakeStore) SaveVectors(v memory.VectorIndex) error {
+	f.vectors, f.hasVectors = v, true
+	return nil
 }
 
 func (f *fakeStore) AddPending(n domain.ColdNote, body string) error {

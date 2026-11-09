@@ -124,6 +124,47 @@ func TestReplaceTopics(t *testing.T) {
 	}
 }
 
+func TestCheckMemory_staleVectors(t *testing.T) {
+	topicList := domain.TopicsStart + "\n- финансы\n" + domain.TopicsEnd
+	note := func(name, digest string) domain.ColdNote {
+		return domain.ColdNote{File: name + ".md", Name: name, Topic: "финансы", Description: "d", Digest: digest}
+	}
+	idx := func(names ...string) []domain.IndexEntry {
+		var out []domain.IndexEntry
+		for _, n := range names {
+			out = append(out, domain.IndexEntry{File: n + ".md", Hook: "d"})
+		}
+		return out
+	}
+	tests := []struct {
+		name    string
+		notes   []domain.ColdNote
+		vectors map[string]string // nil — индекса векторов нет
+		want    []domain.ProblemKind
+	}{
+		{"индекса векторов нет — слой необязателен", []domain.ColdNote{note("a", "1")}, nil, nil},
+		{"векторы свежие", []domain.ColdNote{note("a", "1")}, map[string]string{"a": "1"}, nil},
+		{"текст записи изменился", []domain.ColdNote{note("a", "2")}, map[string]string{"a": "1"}, []domain.ProblemKind{domain.ProblemStaleVectors}},
+		{"у записи нет вектора", []domain.ColdNote{note("a", "1"), note("b", "1")}, map[string]string{"a": "1"}, []domain.ProblemKind{domain.ProblemStaleVectors}},
+		{"вектор записи, которой нет", []domain.ColdNote{note("a", "1")}, map[string]string{"a": "1", "gone": "1"}, []domain.ProblemKind{domain.ProblemStaleVectors}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var names []string
+			for _, n := range tt.notes {
+				names = append(names, n.Name)
+			}
+			got := kinds(domain.CheckMemory(domain.MemoryState{
+				Hot: topicList, HotLimit: 1000, Notes: tt.notes, Index: idx(names...),
+				HasVectors: tt.vectors != nil, VectorDigests: tt.vectors,
+			}))
+			if len(got) != len(tt.want) || (len(got) == 1 && got[0] != tt.want[0]) {
+				t.Errorf("got %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestParseOrigin(t *testing.T) {
 	for in, want := range map[string]domain.Origin{"": domain.OriginHuman, "human": domain.OriginHuman, "agent": domain.OriginAgent} {
 		got, err := domain.ParseOrigin(in)

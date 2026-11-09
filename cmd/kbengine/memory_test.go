@@ -2,8 +2,12 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -217,5 +221,86 @@ func TestMemory_approveToHotAndReject(t *testing.T) {
 	}
 	if code, _, _ := runMem(t, "approve", "--name", "x", "--to", "middle", dir); code != 2 {
 		t.Errorf("--to middle: code=%d, want 2", code)
+	}
+}
+
+// embedServer говорит протоколом Ollama: те же две оси, что в тестах сценария.
+func embedServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	money, health := regexp.MustCompile(`(?i)фин|ден|бюдж`), regexp.MustCompile(`(?i)здоров|врач`)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ Prompt string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		_ = json.NewEncoder(w).Encode(map[string]any{"embedding": []float32{
+			float32(len(money.FindAllString(in.Prompt, -1))), float32(len(health.FindAllString(in.Prompt, -1))), 0.1,
+		}})
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func seedForFind(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--name", "budget-rules", "--topic", "финансы", "--description", "бюджет и деньги по месяцам", "--body", "Расходы без переводов себе.", dir)
+	runMem(t, "add", "--name", "doctor", "--topic", "здоровье", "--description", "визит к врачу раз в год", "--body", "Код PROD-0079.", dir)
+	return dir
+}
+
+func TestMemory_findTextOutOfTheBox(t *testing.T) {
+	dir := seedForFind(t)
+	code, out, e := runMem(t, "find", "--mode", "text", "--q", "бюджет", dir)
+	if code != 0 || !strings.Contains(out, "budget-rules") || strings.Contains(out, "doctor") {
+		t.Fatalf("find: %d %q %s", code, out, e)
+	}
+	if code, out, _ := runMem(t, "find", "--mode", "text", "--q", "квантовая гравитация", dir); code != 0 || !strings.Contains(out, "ничего не найдено") {
+		t.Errorf("пустая выдача: %d %q", code, out)
+	}
+	if code, _, _ := runMem(t, "find", dir); code != 2 {
+		t.Errorf("find без --q: code=%d, want 2", code)
+	}
+	if code, _, _ := runMem(t, "find", "--mode", "mix", "--q", "x", dir); code != 2 {
+		t.Errorf("--mode mix: code=%d, want 2", code)
+	}
+}
+
+func TestMemory_indexThenFindByMeaning(t *testing.T) {
+	dir := seedForFind(t)
+	srv := embedServer(t)
+	if code, out, e := runMem(t, "index", "--embed-url", srv.URL, dir); code != 0 || !strings.Contains(out, "2") {
+		t.Fatalf("index: %d %q %s", code, out, e)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cold", ".vectors.json")); err != nil {
+		t.Fatalf("индекса нет: %v", err)
+	}
+	code, out, _ := runMem(t, "find", "--embed-url", srv.URL, "--q", "сколько денег уходит", dir)
+	if code != 0 || !strings.Contains(out, "vector") || !strings.Contains(out, "budget-rules") {
+		t.Fatalf("find по смыслу: %d %q", code, out)
+	}
+	// записали новое мимо индекса: check называет, index чинит
+	runMem(t, "add", "--name", "extra", "--topic", "финансы", "--description", "еще про деньги", dir)
+	if code, out, _ := runMem(t, "check", dir); code != 1 || !strings.Contains(out, "stale-vectors") {
+		t.Fatalf("check: %d %q", code, out)
+	}
+	runMem(t, "index", "--embed-url", srv.URL, dir)
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("после index check красный: %d %q", code, out)
+	}
+}
+
+// Служба эмбеддингов недоступна: поиск не молчит и не падает.
+func TestMemory_findFallsBackWhenEmbedServiceIsDown(t *testing.T) {
+	dir := seedForFind(t)
+	code, out, _ := runMem(t, "find", "--embed-url", "http://127.0.0.1:1/api/embeddings", "--q", "бюджет", dir)
+	if code != 0 || !strings.Contains(out, "budget-rules") {
+		t.Fatalf("find: %d %q", code, out)
+	}
+}
+
+func TestMemory_indexNeedsAnEmbedService(t *testing.T) {
+	dir := seedForFind(t)
+	if code, _, _ := runMem(t, "index", "--embed-url", "http://127.0.0.1:1/api/embeddings", dir); code != 1 {
+		t.Errorf("недоступная служба: code=%d, want 1", code)
 	}
 }
