@@ -1468,6 +1468,7 @@ body.no-mh-heat .mh-heat button.l2 { background: var(--z-ok); } body.no-mh-heat 
 #look-health input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: none; cursor: pointer; vertical-align: middle; }
 
 /* Доступы: логин подписан и выделен (владелец 09.11: «не очень понятно, что из этого логин»). */
-.ac-login { font-weight: 700; padding: 1px 8px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg-2); color: var(--z-ink); }
+.ac-login { font-size: 15px; font-weight: 800; padding: 2px 12px; border: 1.5px solid var(--ac-login, var(--z-accent)); border-radius: var(--z-radius); color: var(--ac-login, var(--z-accent-hi)); background: color-mix(in srgb, var(--ac-login, var(--z-accent)) 16%, var(--z-bg-2)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ac-login, var(--z-accent)) 18%, transparent); }
 .ac-lbl { font-style: normal; font-size: 11px; color: var(--z-faint); margin-right: 4px; }
 .ac-edit-who { grid-column: 1 / -1; margin: 0; }
+#look-access input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: none; cursor: pointer; vertical-align: middle; }

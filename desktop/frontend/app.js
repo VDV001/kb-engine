@@ -1873,6 +1873,7 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
+  acLoginApply(); // цвет плашки логина в «Доступах»
   mhApply(); // палитра, скорость, ползунки и громкость сигнала здоровья памяти
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
@@ -3877,6 +3878,15 @@ state.ac = { open: false, busy: false, draft: {}, editing: "", confirmDel: "", l
 const AC_HUES = ["--z-sp4", "--z-sp2", "--z-src-violet", "--z-sp6", "--z-sp5", "--z-sp1", "--z-sp3"];
 const AC_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
 const AC_NAMES = ["Хранилище", "Шифр", "Сейф", "Ключи"];
+// Цвет плашки логина (владелец 09.11: плашка должна выделяться и настраиваться по цветам).
+const AC_LOGIN_COLORS = { accent: ["Акцент", ""], gold: ["Золото", "#e8b04a"], green: ["Зеленый", "#5fc98a"], ice: ["Лед", "#5aa9e6"], violet: ["Фиолет", "#9b7cff"], pink: ["Розовый", "#e8688f"], custom: ["Свой цвет", ""] };
+const AC_HEX = /^#[0-9a-fA-F]{6}$/;
+function acLoginColor() {
+  const l = state.accents.look || {}, id = AC_LOGIN_COLORS[l["login-color"]] ? l["login-color"] : "accent";
+  const hex = AC_HEX.test(l["login-hex"] || "") ? l["login-hex"] : "#e8b04a";
+  return { id, hex, css: id === "custom" ? hex : AC_LOGIN_COLORS[id][1] };
+}
+function acLoginApply() { const c = acLoginColor(); if (c.css) document.body.style.setProperty("--ac-login", c.css); else document.body.style.removeProperty("--ac-login"); }
 const AC_LOCKS = [["1", "1 мин"], ["3", "3 мин"], ["5", "5 мин"], ["never", "никогда"]];
 const acLook = () => {
   const l = state.accents.look || {};
@@ -4134,6 +4144,9 @@ function renderLookAccess() {
       <label class="muted">свое <input id="look-name" type="text" maxlength="40" value="${AC_NAMES.includes(L.name) ? "" : esc(L.name)}" style="width:140px"${dis}></label></div></div>
     <div class="row"><span>Градиент сейфа</span><div class="opts">${Object.entries(AC_GRADS).map(([g, n]) => chip("vault-grad", g, n, L.grad === g, `<i class="gs ink-${g}"></i>`)).join("")}</div></div>
     <div class="row"><span>Открытие</span><div class="opts">${[["full", "полное, 2 с"], ["short", "короткое, 0,8 с"], ["none", "без анимации"]].map(([v, n]) => chip("vault-anim", v, n, L.anim === v)).join("")}</div></div>
+    <div class="row"><span>Цвет плашки логина</span><div class="opts">${Object.entries(AC_LOGIN_COLORS).map(([id, [n, hex]]) => chip("login-color", id, n, acLoginColor().id === id, hex ? `<i class="gs" style="background:${hex}"></i>` : "")).join("")}
+      ${acLoginColor().id === "custom" ? `<label class="muted"><input type="color" id="look-login-hex" value="${acLoginColor().hex}"${dis}></label>` : ""}
+      <span class="muted">плашка с логином на карточке доступа</span></div></div>
     <div class="row"><span>Закрывать без дела через</span><div class="opts">${AC_LOCKS.map(([v, n]) => chip("vault-lock", v, n, L.lock === v)).join("")}
       <label class="muted">свое, мин <input id="look-lock" type="number" min="1" max="1440" value="${customLock ? esc(L.lock) : ""}"${dis}></label></div></div>`;
 }
@@ -4148,6 +4161,7 @@ $("#look-access").addEventListener("click", (e) => {
 });
 $("#look-access").addEventListener("change", (e) => {
   if (!native()) return;
+  if (e.target.id === "look-login-hex" && AC_HEX.test(e.target.value)) saveLook("login-hex", e.target.value);
   if (e.target.id === "look-name" && e.target.value.trim()) saveLook("vault-name", e.target.value.trim().slice(0, 40));
   if (e.target.id !== "look-lock") return;
   const n = Math.round(+e.target.value);

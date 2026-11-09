@@ -37,3 +37,16 @@ func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
 		}
 	}
 }
+
+// Цвет плашки логина настраивается в «Оформление → Доступы» (владелец: плашка должна выделяться
+// и настраиваться по цветам); стиль берет цвет из переменной, а не жестко.
+func TestAccessLogin_colourIsConfigurable(t *testing.T) {
+	js, _ := os.ReadFile("frontend/app.js")
+	css, _ := os.ReadFile("frontend/style.css")
+	if !strings.Contains(string(js), `"login-color"`) || !strings.Contains(string(js), "acLoginApply()") {
+		t.Error("нет настройки цвета плашки логина")
+	}
+	if !strings.Contains(string(css), "var(--ac-login") {
+		t.Error("плашка логина не берет цвет из --ac-login")
+	}
+}
