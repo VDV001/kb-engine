@@ -60,6 +60,28 @@ func (a memoryAgent) Find(query string, limit int) ([]mcpserver.MemoryHit, strin
 	return out, res.Via, nil
 }
 
+// Trust: режим по здоровью памяти. Здоровье читает те же файлы, что окно и терминал.
+func (a memoryAgent) Trust() (mcpserver.MemoryTrust, error) {
+	if err := a.exists(); err != nil {
+		return mcpserver.MemoryTrust{}, err
+	}
+	svc, err := a.service()
+	if err != nil {
+		return mcpserver.MemoryTrust{}, err
+	}
+	h, err := svc.Health()
+	if err != nil {
+		return mcpserver.MemoryTrust{}, err
+	}
+	t := mcpserver.MemoryTrust{Mode: string(h.Mode)}
+	for _, r := range h.Rules {
+		if r.Stale {
+			t.StaleRules = append(t.StaleRules, r.Text)
+		}
+	}
+	return t, nil
+}
+
 func (a memoryAgent) Propose(name, topic, description, body string) error {
 	if err := a.exists(); err != nil {
 		return err
