@@ -6,13 +6,15 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
+	"github.com/daniil/kb-engine/internal/adapter/embedhttp"
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -23,6 +25,8 @@ var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"pending": memoryPending,
 	"approve": memoryApprove,
 	"reject":  memoryReject,
+	"index":   memoryIndex,
+	"find":    memoryFind,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -222,5 +226,74 @@ func memoryReject(args []string, stdout, stderr io.Writer) int {
 		return memoryFail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "memory: %s отклонена, файл убран в journal/\n", *name)
+	return 0
+}
+
+// Служба эмбеддингов по умолчанию — локальная Ollama с bge-m3 (ADR-0008). Без нее
+// `find` ищет по тексту; к службе обращаются только если индекс векторов снят.
+const (
+	defaultEmbedURL   = "http://127.0.0.1:11434/api/embeddings"
+	defaultEmbedModel = "bge-m3"
+)
+
+// memoryEmbedService собирает сценарий со смысловым слоем из флагов службы.
+func memoryEmbedService(dir, url, model string, lim memory.Limits) *memory.Service {
+	return memory.New(memorydir.New(dir), lim).WithEmbedder(embedhttp.New(url, model), model)
+}
+
+func memoryIndex(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory index", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	url := fs.String("embed-url", defaultEmbedURL, "адрес службы эмбеддингов (протокол Ollama)")
+	model := fs.String("embed-model", defaultEmbedModel, "модель эмбеддингов")
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	rep, err := memoryEmbedService(dir, *url, *model, memory.Limits{}).BuildIndex()
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "memory: индекс векторов записан: снято %d, переиспользовано %d, модель %s\n", rep.Embedded, rep.Reused, *model)
+	if rep.Failed > 0 {
+		fmt.Fprintf(stdout, "⚠️ не снято: %d — эти записи смысловой слой не найдет\n", rep.Failed)
+	}
+	return 0
+}
+
+func memoryFind(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory find", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	q := fs.String("q", "", "запрос")
+	mode := fs.String("mode", "auto", "auto: вектор первым, текст запасным; text; vector")
+	limit := fs.Int("limit", memory.DefaultFindLimit, "сколько записей показать")
+	threshold := fs.Float64("threshold", memory.DefaultFindThreshold, "порог близости смыслового слоя")
+	url := fs.String("embed-url", defaultEmbedURL, "адрес службы эмбеддингов (протокол Ollama)")
+	model := fs.String("embed-model", defaultEmbedModel, "модель эмбеддингов")
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	if strings.TrimSpace(*q) == "" {
+		fmt.Fprintln(stderr, "memory find: нужен --q")
+		return 2
+	}
+	m, err := memory.ParseFindMode(*mode)
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	res, err := memoryEmbedService(dir, *url, *model, memory.Limits{}).Find(*q, memory.FindOptions{Mode: m, Limit: *limit, Threshold: *threshold})
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	if len(res.Hits) == 0 {
+		fmt.Fprintf(stdout, "memory: ничего не найдено (слой: %s)\n", res.Via)
+	}
+	for _, h := range res.Hits {
+		fmt.Fprintf(stdout, "%s\t%.3f\t%s\t%s\t%s\n", res.Via, h.Score, h.Note.Name, h.Note.Topic, h.Note.Description)
+	}
+	if res.Notice != "" {
+		fmt.Fprintf(stdout, "⚠️ %s\n", res.Notice)
+	}
 	return 0
 }

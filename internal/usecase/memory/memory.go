@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // Snapshot — что лежит в папке памяти.
@@ -31,6 +32,11 @@ type Store interface {
 	PromotePending(name string) error
 	// ArchivePending убирает запись из очереди в журнал под именем as: не удаляет.
 	ArchivePending(name, as string) error
+	// ColdTexts — записи холодного слоя с телом; журнал и очередь сюда не входят.
+	ColdTexts() ([]NoteText, error)
+	// LoadVectors возвращает ErrNoVectors, если индекс векторов еще не снят.
+	LoadVectors() (VectorIndex, error)
+	SaveVectors(v VectorIndex) error
 }
 
 // PendingNote — запись агента, ждущая решения человека.
@@ -44,6 +50,14 @@ type Service struct {
 	store  Store
 	limits Limits
 	now    func() time.Time
+	embed  search.Embedder
+	model  string
+}
+
+// WithEmbedder подключает смысловой слой: службу эмбеддингов и имя ее модели.
+func (s *Service) WithEmbedder(e search.Embedder, model string) *Service {
+	s.embed, s.model = e, model
+	return s
 }
 
 // WithClock replaces the clock used to name archived notes; для тестов.
@@ -78,11 +92,23 @@ func (s *Service) Check() ([]domain.MemoryProblem, error) {
 	if err != nil {
 		return nil, err
 	}
-	return domain.CheckMemory(domain.MemoryState{
+	st := domain.MemoryState{
 		Hot: snap.Hot, HotLimit: s.limits.Hot,
 		IndexRunes: snap.IndexRunes, IndexLimit: s.limits.Index,
 		Notes: snap.Notes, Index: snap.Index,
-	}), nil
+	}
+	switch vi, err := s.store.LoadVectors(); {
+	case errors.Is(err, ErrNoVectors):
+	case err != nil:
+		return nil, err
+	default:
+		st.HasVectors = true
+		st.VectorDigests = make(map[string]string, len(vi.Entries))
+		for name, e := range vi.Entries {
+			st.VectorDigests[name] = e.Digest
+		}
+	}
+	return domain.CheckMemory(st), nil
 }
 
 // Topics собирает перечень тем горячего слоя из тем записей. changed=false —

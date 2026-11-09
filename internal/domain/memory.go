@@ -113,6 +113,7 @@ const (
 	ProblemNoTopicList   ProblemKind = "no-topic-list"
 	ProblemIndexTooBig   ProblemKind = "index-too-big"
 	ProblemStaleTopics   ProblemKind = "stale-topics"
+	ProblemStaleVectors  ProblemKind = "stale-vectors"
 )
 
 // MemoryProblem — одно нарушение: что и где.
@@ -129,6 +130,8 @@ type ColdNote struct {
 	Topic       string
 	Origin      Origin
 	Description string
+	// Digest — отпечаток файла записи: по нему видно, что вектор снят с другого текста.
+	Digest string
 }
 
 // MemoryState — всё, что видит проверка раскладки. Лимиты подставляет сценарий;
@@ -140,6 +143,10 @@ type MemoryState struct {
 	IndexLimit int
 	Notes      []ColdNote
 	Index      []IndexEntry
+	// HasVectors — снят ли индекс векторов (слой необязателен); VectorDigests —
+	// имя записи → отпечаток, с которого вектор снят.
+	HasVectors    bool
+	VectorDigests map[string]string
 }
 
 // IndexEntry — строка индекса холодной памяти.
@@ -318,6 +325,22 @@ func CheckMemory(st MemoryState) []MemoryProblem {
 		}
 		if n := utf8.RuneCountInString(e.Hook); n > MaxHookRunes {
 			ps = append(ps, MemoryProblem{ProblemLongHook, e.File, fmt.Sprintf("крючок %d знаков при потолке %d", n, MaxHookRunes)})
+		}
+	}
+	if st.HasVectors {
+		stale := 0
+		for _, n := range st.Notes {
+			if d, ok := st.VectorDigests[n.Name]; !ok || d != n.Digest {
+				stale++
+			}
+		}
+		for name := range st.VectorDigests {
+			if !exists[name+".md"] {
+				stale++
+			}
+		}
+		if stale > 0 {
+			ps = append(ps, MemoryProblem{ProblemStaleVectors, "cold/.vectors.json", fmt.Sprintf("записей без свежего вектора или с лишним: %d, kbengine memory index", stale)})
 		}
 	}
 	if st.IndexRunes > st.IndexLimit {

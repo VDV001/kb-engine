@@ -3,6 +3,9 @@ package memorydir
 
 import (
 	"bufio"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -137,28 +140,111 @@ func (s *Store) Load() (memory.Snapshot, error) {
 		}
 	}
 
-	entries, err := os.ReadDir(cold)
+	texts, err := s.ColdTexts()
 	if err != nil {
 		return snap, err
 	}
+	for _, t := range texts {
+		snap.Notes = append(snap.Notes, t.Note)
+	}
+	return snap, nil
+}
+
+// ColdTexts reads every note of cold/ with its body and digest. Журнал, очередь и
+// служебные файлы (INDEX.md, .vectors.json) сюда не входят.
+func (s *Store) ColdTexts() ([]memory.NoteText, error) {
+	cold := filepath.Join(s.dir, coldDir)
+	entries, err := os.ReadDir(cold)
+	if err != nil {
+		return nil, err
+	}
+	var out []memory.NoteText
 	for _, e := range entries {
 		if e.IsDir() || e.Name() == indexFile || !strings.HasSuffix(e.Name(), ".md") {
 			continue
 		}
 		b, err := os.ReadFile(filepath.Join(cold, e.Name()))
 		if err != nil {
-			return snap, err
+			return nil, err
 		}
-		n, _ := parseNote(e.Name(), string(b))
-		snap.Notes = append(snap.Notes, n)
+		n, body := parseNote(e.Name(), string(b))
+		out = append(out, memory.NoteText{Note: n, Body: body})
 	}
-	return snap, nil
+	return out, nil
+}
+
+const vectorsFile = ".vectors.json"
+
+type vectorsJSON struct {
+	Model   string                `json:"model"`
+	Dims    int                   `json:"dims"`
+	Built   string                `json:"built"`
+	Vectors map[string]vectorJSON `json:"vectors"`
+}
+
+type vectorJSON struct {
+	Digest string    `json:"digest"`
+	V      []float32 `json:"v"`
+}
+
+// LoadVectors reads cold/.vectors.json; файла нет — memory.ErrNoVectors, битый
+// файл — обычная ошибка (не путать «не снят» с «сломан»).
+func (s *Store) LoadVectors() (memory.VectorIndex, error) {
+	raw, err := os.ReadFile(filepath.Join(s.dir, coldDir, vectorsFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return memory.VectorIndex{}, memory.ErrNoVectors
+	}
+	if err != nil {
+		return memory.VectorIndex{}, err
+	}
+	var in vectorsJSON
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return memory.VectorIndex{}, fmt.Errorf("%s: %w", vectorsFile, err)
+	}
+	out := memory.VectorIndex{Model: in.Model, Dims: in.Dims, Built: in.Built, Entries: make(map[string]memory.VectorEntry, len(in.Vectors))}
+	for name, v := range in.Vectors {
+		out.Entries[name] = memory.VectorEntry{Digest: v.Digest, Vector: v.V}
+	}
+	return out, nil
+}
+
+// SaveVectors writes the index atomically: временный файл рядом и переименование.
+func (s *Store) SaveVectors(v memory.VectorIndex) error {
+	out := vectorsJSON{Model: v.Model, Dims: v.Dims, Built: v.Built, Vectors: make(map[string]vectorJSON, len(v.Entries))}
+	for name, e := range v.Entries {
+		out.Vectors[name] = vectorJSON{Digest: e.Digest, V: e.Vector}
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return err
+	}
+	dir := filepath.Join(s.dir, coldDir)
+	tmp, err := os.CreateTemp(dir, ".vectors-*.tmp") // CreateTemp — 0600
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(dir, vectorsFile)); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
 }
 
 // parseNote читает шапку между двумя «---» (name, topic, origin, description) и
 // тело после нее. Нет шапки или имени — имя берется из имени файла.
 func parseNote(file, text string) (n domain.ColdNote, body string) {
 	n.File = file
+	sum := sha256.Sum256([]byte(text))
+	n.Digest = hex.EncodeToString(sum[:])
 	lines := strings.Split(text, "\n")
 	rest := 0
 	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
