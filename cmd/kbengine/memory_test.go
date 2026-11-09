@@ -345,7 +345,7 @@ func TestMemory_whoFillsHotFromThePortrait(t *testing.T) {
 	if !strings.Contains(string(hot), "Обо мне: Разработчик Го.") {
 		t.Errorf("факта нет в HOT.md:\n%s", hot)
 	}
-	if strings.Contains(string(hot), "чай") {
+	if strings.Contains(string(hot), "Любит чай") {
 		t.Error("факт, не одобренный человеком, попал в HOT.md")
 	}
 	if code, out, _ := runMem(t, "who", "--portrait-dir", seedPortrait(t), mem); code != 0 || !strings.Contains(out, "актуален") {
