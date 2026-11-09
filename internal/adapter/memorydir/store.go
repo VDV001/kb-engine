@@ -449,7 +449,7 @@ func (s *Store) PromotePending(name string) error {
 	}
 	if err := s.appendIndexLine(p.Note); err != nil {
 		if rerr := moveNoClobber(dst, src); rerr != nil {
-			return fmt.Errorf("индекс не записан (%w), и запись не вернулась в очередь: %v", err, rerr)
+			return fmt.Errorf("индекс не записан (%w), и запись не вернулась в очередь: %w", err, rerr)
 		}
 		return fmt.Errorf("индекс не записан, запись осталась в очереди: %w", err)
 	}

@@ -107,6 +107,34 @@ func embedText(n NoteText) string {
 	return t
 }
 
+// embedNotes embeds the notes the previous index does not cover; unchanged ones are reused.
+func (s *Service) embedNotes(texts []NoteText, prev VectorIndex) (VectorIndex, BuildReport) {
+	var rep BuildReport
+	out := VectorIndex{Model: s.model, Built: s.now().Format(time.RFC3339), Entries: map[string]VectorEntry{}}
+	for _, t := range texts {
+		old, had := prev.Entries[t.Note.Name]
+		had = had && prev.Model == s.model
+		if had && old.Digest == t.Note.Digest {
+			out.Entries[t.Note.Name] = old
+			rep.Reused++
+			continue
+		}
+		v, err := s.embed.Embed(embedText(t))
+		if err != nil {
+			rep.Failed++
+			// Прежний вектор остается: он отстал (check назовет stale-vectors), но
+			// запись не выпадает из смыслового поиска из-за одного сбоя службы.
+			if had {
+				out.Entries[t.Note.Name] = old
+			}
+			continue
+		}
+		out.Entries[t.Note.Name] = VectorEntry{Digest: t.Note.Digest, Vector: v}
+		rep.Embedded++
+	}
+	return out, rep
+}
+
 // BuildIndex снимает векторы холодного слоя. Записи с прежним отпечатком и той же
 // моделью переиспользуются, остальные считаются заново; отказ на одной записи не
 // бросает индекс, но считается и называется.
@@ -123,26 +151,7 @@ func (s *Service) BuildIndex() (BuildReport, error) {
 	if err != nil && !errors.Is(err, ErrNoVectors) {
 		return rep, err
 	}
-	out := VectorIndex{Model: s.model, Built: s.now().Format(time.RFC3339), Entries: map[string]VectorEntry{}}
-	for _, t := range texts {
-		if e, ok := prev.Entries[t.Note.Name]; ok && prev.Model == s.model && e.Digest == t.Note.Digest {
-			out.Entries[t.Note.Name] = e
-			rep.Reused++
-			continue
-		}
-		v, err := s.embed.Embed(embedText(t))
-		if err != nil {
-			rep.Failed++
-			// Прежний вектор остается: он отстал (check назовет stale-vectors), но
-			// запись не выпадает из смыслового поиска из-за одного сбоя службы.
-			if e, ok := prev.Entries[t.Note.Name]; ok && prev.Model == s.model {
-				out.Entries[t.Note.Name] = e
-			}
-			continue
-		}
-		out.Entries[t.Note.Name] = VectorEntry{Digest: t.Note.Digest, Vector: v}
-		rep.Embedded++
-	}
+	out, rep := s.embedNotes(texts, prev)
 	for _, e := range out.Entries {
 		out.Dims = len(e.Vector) // размерность одна у всех: индекс снят одной моделью
 		break

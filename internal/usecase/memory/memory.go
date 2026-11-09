@@ -256,14 +256,22 @@ func (s *Service) Approve(name string, to domain.Layer) error {
 		return err
 	}
 	if to == domain.LayerCold {
-		if err := s.store.PromotePending(name); err != nil {
-			return err
-		}
-		if _, err := s.topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
-			return err
-		}
-		return s.decide("одобрено в холодный слой: %s (тема «%s»)", name, p.Note.Topic)
+		return s.approveCold(name, p)
 	}
+	return s.approveHot(name, p)
+}
+
+func (s *Service) approveCold(name string, p PendingNote) error {
+	if err := s.store.PromotePending(name); err != nil {
+		return err
+	}
+	if _, err := s.topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
+		return err
+	}
+	return s.decide("одобрено в холодный слой: %s (тема «%s»)", name, p.Note.Topic)
+}
+
+func (s *Service) approveHot(name string, p PendingNote) error {
 	snap, err := s.store.Load()
 	if err != nil {
 		return err
