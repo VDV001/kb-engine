@@ -433,8 +433,10 @@ func TestMemoryDesk_indexRebuildsVectors(t *testing.T) {
 	if hasVectors() {
 		t.Error("после пересборки векторы свежие")
 	}
+	// Старые записи берутся из индекса без службы; новая, которую встроить нечем, называется отказом.
+	_, _ = svc.Add("third", "финансы", "новая", "тело")
 	d.embed = stubEmbedder{err: errors.New("служба молчит")}
-	if _, err := d.Index(); err == nil {
-		t.Error("недоступная служба эмбеддингов должна вернуть ошибку")
+	if rep, err := d.Index(); err == nil && rep.Failed != 1 {
+		t.Errorf("недоступная служба должна дать ошибку или отказ по записи: %+v", rep)
 	}
 }
