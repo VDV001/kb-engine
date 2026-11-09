@@ -3,6 +3,9 @@ package memory
 
 import (
 	"errors"
+	"fmt"
+	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -21,12 +24,32 @@ type Store interface {
 	Load() (Snapshot, error)
 	Add(n domain.ColdNote, body string) error
 	SaveHot(hot string) error
+	AddPending(n domain.ColdNote, body string) error
+	Pending() ([]PendingNote, error)
+	ReadPending(name string) (PendingNote, error)
+	// PromotePending переносит запись из очереди в холодный слой со строкой индекса.
+	PromotePending(name string) error
+	// ArchivePending убирает запись из очереди в журнал под именем as: не удаляет.
+	ArchivePending(name, as string) error
+}
+
+// PendingNote — запись агента, ждущая решения человека.
+type PendingNote struct {
+	Note domain.ColdNote
+	Body string
 }
 
 // Service — сценарии памяти.
 type Service struct {
 	store  Store
 	limits Limits
+	now    func() time.Time
+}
+
+// WithClock replaces the clock used to name archived notes; для тестов.
+func (s *Service) WithClock(now func() time.Time) *Service {
+	s.now = now
+	return s
 }
 
 // Limits — потолки проверки; ноль берет значение по умолчанию.
@@ -43,7 +66,7 @@ func New(store Store, l Limits) *Service {
 	if l.Index <= 0 {
 		l.Index = domain.DefaultIndexLimit
 	}
-	return &Service{store: store, limits: l}
+	return &Service{store: store, limits: l, now: time.Now}
 }
 
 // Init заводит скелет.
@@ -95,4 +118,67 @@ func (s *Service) Add(name, topic, description, body string) (refreshed bool, er
 		return false, err
 	}
 	return true, nil
+}
+
+// Propose кладет запись агента в очередь одобрения: ни холодный, ни горячий слой,
+// ни перечень тем не меняются, пока человек не решит.
+func (s *Service) Propose(name, topic, description, body string) error {
+	n, err := domain.NewColdNote(name, topic, description)
+	if err != nil {
+		return err
+	}
+	n.Origin = domain.OriginAgent
+	return s.store.AddPending(n, body)
+}
+
+// Pending lists the queue.
+func (s *Service) Pending() ([]PendingNote, error) { return s.store.Pending() }
+
+// Approve moves a queued note to the layer the human chose. В горячий слой уходит
+// одна строка (description) как правило, а сама запись — в журнал; потолок слоя
+// не обходится: при нехватке места запись остается в очереди.
+func (s *Service) Approve(name string, to domain.Layer) error {
+	p, err := s.store.ReadPending(name)
+	if err != nil {
+		return err
+	}
+	if to == domain.LayerCold {
+		if err := s.store.PromotePending(name); err != nil {
+			return err
+		}
+		if _, err := s.Topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
+			return err
+		}
+		return nil
+	}
+	snap, err := s.store.Load()
+	if err != nil {
+		return err
+	}
+	hot, err := domain.AppendRule(snap.Hot, p.Note.Description)
+	if err != nil {
+		return err
+	}
+	if n := utf8.RuneCountInString(hot); n > s.limits.Hot {
+		return fmt.Errorf("%w: стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)
+	}
+	// ponytail: два шага без транзакции. Сбой после SaveHot оставит правило и в
+	// горячем слое, и в очереди; повторное одобрение продублирует строку. Путь
+	// вверх: проверять наличие строки перед дописыванием.
+	if err := s.store.SaveHot(hot); err != nil {
+		return err
+	}
+	return s.store.ArchivePending(name, s.archiveName("approved", name))
+}
+
+// Reject archives a queued note to the journal instead of deleting it.
+func (s *Service) Reject(name string) error {
+	if _, err := s.store.ReadPending(name); err != nil {
+		return err
+	}
+	return s.store.ArchivePending(name, s.archiveName("rejected", name))
+}
+
+func (s *Service) archiveName(verdict, name string) string {
+	return fmt.Sprintf("%s-%s-%s.md", s.now().Format("2006-01-02"), verdict, name)
 }

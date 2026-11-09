@@ -12,14 +12,17 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
-	"init":   memoryInit,
-	"check":  memoryCheck,
-	"add":    memoryAdd,
-	"topics": memoryTopics,
+	"init":    memoryInit,
+	"check":   memoryCheck,
+	"add":     memoryAdd,
+	"topics":  memoryTopics,
+	"pending": memoryPending,
+	"approve": memoryApprove,
+	"reject":  memoryReject,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -106,19 +109,29 @@ func memoryAdd(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	name := fs.String("name", "", "имя записи: латиница, цифры, дефисы")
 	topic := fs.String("topic", "", "тема записи: попадает в перечень тем горячего слоя")
+	origin := fs.String("origin", "human", "кто пишет: human — прямо в холодный слой, agent — в очередь одобрения")
 	desc := fs.String("description", "", "одна строка до 150 знаков — она же крючок в индексе")
 	body := fs.String("body", "", "текст записи")
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
 	}
-	refreshed, err := memory.New(memorydir.New(dir), memory.Limits{}).Add(*name, *topic, *desc, *body)
+	by, err := domain.ParseOrigin(*origin)
 	if err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
-		if errors.Is(err, domain.ErrInvalidNote) {
-			return 2
+		return 2
+	}
+	svc := memory.New(memorydir.New(dir), memory.Limits{})
+	if by == domain.OriginAgent {
+		if err := svc.Propose(*name, *topic, *desc, *body); err != nil {
+			return memoryFail(stderr, err)
 		}
-		return 1
+		fmt.Fprintf(stdout, "memory: %s ждет одобрения (kbengine memory pending, approve --to cold|hot, reject)\n", *name)
+		return 0
+	}
+	refreshed, err := svc.Add(*name, *topic, *desc, *body)
+	if err != nil {
+		return memoryFail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "memory: добавлено %s.md и строка в индексе\n", *name)
 	if !refreshed {
@@ -144,5 +157,70 @@ func memoryTopics(args []string, stdout, stderr io.Writer) int {
 	} else {
 		fmt.Fprintln(stdout, "memory: перечень тем актуален")
 	}
+	return 0
+}
+
+// memoryFail prints the error; неверный ввод — код 2, остальное — 1.
+func memoryFail(stderr io.Writer, err error) int {
+	fmt.Fprintf(stderr, "memory: %v\n", err)
+	if errors.Is(err, domain.ErrInvalidNote) {
+		return 2
+	}
+	return 1
+}
+
+func memoryPending(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory pending", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	list, err := memory.New(memorydir.New(dir), memory.Limits{}).Pending()
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	if len(list) == 0 {
+		fmt.Fprintln(stdout, "memory: очередь пуста")
+		return 0
+	}
+	for _, p := range list {
+		fmt.Fprintf(stdout, "%s\t%s\t%s\n", p.Note.Name, p.Note.Topic, p.Note.Description)
+	}
+	return 0
+}
+
+func memoryApprove(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory approve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	name := fs.String("name", "", "имя записи из очереди")
+	to := fs.String("to", "cold", "слой: cold — запись и строка индекса, hot — одна строка правила в HOT.md")
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	layer, err := domain.ParseLayer(*to)
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	if err := memory.New(memorydir.New(dir), memory.Limits{}).Approve(*name, layer); err != nil {
+		return memoryFail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "memory: %s одобрена в слой %s\n", *name, layer)
+	return 0
+}
+
+func memoryReject(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory reject", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	name := fs.String("name", "", "имя записи из очереди")
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	if err := memory.New(memorydir.New(dir), memory.Limits{}).Reject(*name); err != nil {
+		return memoryFail(stderr, err)
+	}
+	fmt.Fprintf(stdout, "memory: %s отклонена, файл убран в journal/\n", *name)
 	return 0
 }

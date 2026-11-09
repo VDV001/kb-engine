@@ -20,6 +20,7 @@ const (
 	hotFile    = "HOT.md"
 	coldDir    = "cold"
 	journalDir = "journal"
+	pendingDir = "pending"
 	indexFile  = "INDEX.md"
 )
 
@@ -29,7 +30,7 @@ func DefaultPath(home string) string {
 	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "dvk-memory")
 }
 
-// Store — папка памяти: HOT.md, cold/ с INDEX.md и journal/.
+// Store — папка памяти: HOT.md, cold/ с INDEX.md, journal/ и pending/ (очередь одобрения).
 type Store struct{ dir string }
 
 // New points the store at dir.
@@ -148,62 +149,68 @@ func (s *Store) Load() (memory.Snapshot, error) {
 		if err != nil {
 			return snap, err
 		}
-		name, topic, desc := frontmatter(string(b))
-		if name == "" {
-			name = strings.TrimSuffix(e.Name(), ".md")
-		}
-		snap.Notes = append(snap.Notes, domain.ColdNote{File: e.Name(), Name: name, Topic: topic, Description: desc})
+		n, _ := parseNote(e.Name(), string(b))
+		snap.Notes = append(snap.Notes, n)
 	}
 	return snap, nil
 }
 
-// frontmatter читает name, topic и description из шапки между двумя «---».
-func frontmatter(text string) (name, topic, desc string) {
+// parseNote читает шапку между двумя «---» (name, topic, origin, description) и
+// тело после нее. Нет шапки или имени — имя берется из имени файла.
+func parseNote(file, text string) (n domain.ColdNote, body string) {
+	n.File = file
 	lines := strings.Split(text, "\n")
-	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return "", "", ""
+	rest := 0
+	if len(lines) > 0 && strings.TrimSpace(lines[0]) == "---" {
+		for i, l := range lines[1:] {
+			if strings.TrimSpace(l) == "---" {
+				rest = i + 2
+				break
+			}
+			k, v, ok := strings.Cut(l, ":")
+			if !ok {
+				continue
+			}
+			v = strings.TrimSpace(v)
+			switch strings.TrimSpace(k) {
+			case "name":
+				n.Name = v
+			case "topic":
+				n.Topic = v
+			case "origin":
+				n.Origin = domain.Origin(v)
+			case "description":
+				n.Description = v
+			}
+		}
 	}
-	for _, l := range lines[1:] {
-		if strings.TrimSpace(l) == "---" {
-			break
-		}
-		k, v, ok := strings.Cut(l, ":")
-		if !ok {
-			continue
-		}
-		switch strings.TrimSpace(k) {
-		case "name":
-			name = strings.TrimSpace(v)
-		case "topic":
-			topic = strings.TrimSpace(v)
-		case "description":
-			desc = strings.TrimSpace(v)
-		}
+	if n.Name == "" {
+		n.Name = strings.TrimSuffix(file, ".md")
 	}
-	return name, topic, desc
+	return n, strings.TrimSpace(strings.Join(lines[rest:], "\n"))
 }
 
-// Add writes the note and its index line.
-// ponytail: две записи подряд без транзакции. Сбой между ними оставляет запись
-// без строки в индексе, и `check` назовет ее not-indexed; путь вверх — писать
-// во временный файл и переименовывать, если такое случится на деле.
-func (s *Store) Add(n domain.ColdNote, body string) error {
-	path := filepath.Join(s.dir, coldDir, n.File)
-	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+// writeNote creates dir/n.File with the front matter and body; существующий файл не затирает.
+func writeNote(dir string, n domain.ColdNote, body string) error {
+	f, err := os.OpenFile(filepath.Join(dir, n.File), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, fs.ErrExist) {
 		return fmt.Errorf("%w: %s", domain.ErrNoteExists, n.File)
 	}
 	if err != nil {
 		return err
 	}
-	_, werr := fmt.Fprintf(f, "---\nname: %s\ntopic: %s\ndescription: %s\n---\n\n%s\n", n.Name, n.Topic, n.Description, strings.TrimSpace(body))
+	origin := n.Origin
+	if origin == "" {
+		origin = domain.OriginHuman
+	}
+	_, werr := fmt.Fprintf(f, "---\nname: %s\ntopic: %s\norigin: %s\ndescription: %s\n---\n\n%s\n", n.Name, n.Topic, origin, n.Description, strings.TrimSpace(body))
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
-	if werr != nil {
-		return werr
-	}
+	return werr
+}
 
+func (s *Store) appendIndexLine(n domain.ColdNote) error {
 	idx := filepath.Join(s.dir, coldDir, indexFile)
 	cur, err := os.ReadFile(idx)
 	if err != nil {
@@ -217,9 +224,121 @@ func (s *Store) Add(n domain.ColdNote, body string) error {
 	if err != nil {
 		return err
 	}
-	_, werr = fi.WriteString(line)
+	_, werr := fi.WriteString(line)
 	if cerr := fi.Close(); werr == nil {
 		werr = cerr
 	}
 	return werr
+}
+
+// Add writes the note and its index line.
+// ponytail: две записи подряд без транзакции. Сбой между ними оставляет запись
+// без строки в индексе, и `check` назовет ее not-indexed; путь вверх — писать
+// во временный файл и переименовывать, если такое случится на деле.
+func (s *Store) Add(n domain.ColdNote, body string) error {
+	if err := writeNote(filepath.Join(s.dir, coldDir), n, body); err != nil {
+		return err
+	}
+	return s.appendIndexLine(n)
+}
+
+// AddPending puts an agent's proposal in pending/: туда не заглядывают ни Load,
+// ни индекс, ни перечень тем. Имя, занятое в холодном слое, не принимается.
+func (s *Store) AddPending(n domain.ColdNote, body string) error {
+	if _, err := os.Stat(filepath.Join(s.dir, coldDir, n.File)); err == nil {
+		return fmt.Errorf("%w: %s", domain.ErrNoteExists, n.File)
+	}
+	dir := filepath.Join(s.dir, pendingDir)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	return writeNote(dir, n, body)
+}
+
+// Pending lists the queue by file name; папки очереди еще нет — очередь пуста.
+func (s *Store) Pending() ([]memory.PendingNote, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, pendingDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []memory.PendingNote
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(s.dir, pendingDir, e.Name()))
+		if err != nil {
+			return nil, err
+		}
+		n, body := parseNote(e.Name(), string(b))
+		out = append(out, memory.PendingNote{Note: n, Body: body})
+	}
+	return out, nil
+}
+
+// pendingPath validates name on the boundary: имя из флага не должно вести
+// за пределы pending/.
+func (s *Store) pendingPath(name string) (string, error) {
+	if !domain.ValidNoteName(name) {
+		return "", fmt.Errorf("%w: %q", domain.ErrNoSuchPending, name)
+	}
+	return filepath.Join(s.dir, pendingDir, name+".md"), nil
+}
+
+// ReadPending returns one queued note.
+func (s *Store) ReadPending(name string) (memory.PendingNote, error) {
+	path, err := s.pendingPath(name)
+	if err != nil {
+		return memory.PendingNote{}, err
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return memory.PendingNote{}, fmt.Errorf("%w: %q", domain.ErrNoSuchPending, name)
+	}
+	if err != nil {
+		return memory.PendingNote{}, err
+	}
+	n, body := parseNote(name+".md", string(b))
+	return memory.PendingNote{Note: n, Body: body}, nil
+}
+
+// moveNoClobber moves src to dst without overwriting: жесткая ссылка отказывает
+// атомарно, если dst есть, а переименование молча затерло бы его.
+func moveNoClobber(src, dst string) error {
+	if err := os.Link(src, dst); err != nil {
+		if errors.Is(err, fs.ErrExist) {
+			return fmt.Errorf("%w: %s", domain.ErrNoteExists, filepath.Base(dst))
+		}
+		return err
+	}
+	return os.Remove(src)
+}
+
+// PromotePending moves a queued note to cold/ and adds its index line.
+func (s *Store) PromotePending(name string) error {
+	p, err := s.ReadPending(name)
+	if err != nil {
+		return err
+	}
+	src, _ := s.pendingPath(name)
+	if err := moveNoClobber(src, filepath.Join(s.dir, coldDir, p.Note.File)); err != nil {
+		return err
+	}
+	return s.appendIndexLine(p.Note)
+}
+
+// ArchivePending moves a queued note to journal/<as>: решение человека остается
+// в журнале, ничего не удаляется.
+func (s *Store) ArchivePending(name, as string) error {
+	src, err := s.pendingPath(name)
+	if err != nil {
+		return err
+	}
+	if filepath.Base(as) != as || !strings.HasSuffix(as, ".md") {
+		return fmt.Errorf("%w: имя в журнале %q", domain.ErrInvalidNote, as)
+	}
+	return moveNoClobber(src, filepath.Join(s.dir, journalDir, as))
 }

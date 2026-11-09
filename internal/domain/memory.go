@@ -25,6 +25,18 @@ var ErrNoteExists = errors.New("memory note already exists")
 // переписывать его вслепую нельзя.
 var ErrNoTopicMarkers = errors.New("HOT.md has no topic list markers")
 
+// ErrNoSuchPending — в очереди одобрения нет записи с таким именем.
+var ErrNoSuchPending = errors.New("no such pending memory note")
+
+// ErrHotFull — правило не помещается в горячий слой: потолок не обходится одобрением.
+var ErrHotFull = errors.New("hot layer would exceed its limit")
+
+// ErrNoRulesSection — в HOT.md нет раздела правил, и дописывать правило некуда.
+var ErrNoRulesSection = errors.New("HOT.md has no rules section")
+
+// RulesHeading — заголовок раздела правил в HOT.md, куда `approve --to hot` дописывает.
+const RulesHeading = "## Правила работы"
+
 // DefaultHotLimit — потолок горячего слоя в знаках.
 const DefaultHotLimit = 4000
 
@@ -44,6 +56,48 @@ const (
 	TopicsStart = "<!-- topics:start -->"
 	TopicsEnd   = "<!-- topics:end -->"
 )
+
+// Origin says who wrote a note: человек или агент (запись агента ждет одобрения).
+type Origin string
+
+// Авторы записей.
+const (
+	OriginHuman Origin = "human"
+	OriginAgent Origin = "agent"
+)
+
+// ParseOrigin reads a flag value; пустое значение — человек.
+func ParseOrigin(s string) (Origin, error) {
+	switch Origin(s) {
+	case "", OriginHuman:
+		return OriginHuman, nil
+	case OriginAgent:
+		return OriginAgent, nil
+	}
+	return "", fmt.Errorf("%w: origin %q — human или agent", ErrInvalidNote, s)
+}
+
+// Layer — слой, куда одобряется запись из очереди.
+type Layer string
+
+// Слои памяти.
+const (
+	LayerCold Layer = "cold"
+	LayerHot  Layer = "hot"
+)
+
+// ParseLayer reads --to.
+func ParseLayer(s string) (Layer, error) {
+	switch Layer(s) {
+	case LayerCold, LayerHot:
+		return Layer(s), nil
+	}
+	return "", fmt.Errorf("%w: слой %q — cold или hot", ErrInvalidNote, s)
+}
+
+// ValidNoteName says whether name can be a note name (and so a file name):
+// проверка на границе, чтобы имя из флага не вело за пределы папки памяти.
+func ValidNoteName(name string) bool { return noteName.MatchString(name) }
 
 // ProblemKind — класс нарушения раскладки памяти.
 type ProblemKind string
@@ -73,6 +127,7 @@ type ColdNote struct {
 	File        string
 	Name        string
 	Topic       string
+	Origin      Origin
 	Description string
 }
 
@@ -118,6 +173,47 @@ func NewColdNote(name, topic, description string) (ColdNote, error) {
 		return ColdNote{}, fmt.Errorf("%w: описание длиннее %d знаков", ErrInvalidNote, MaxHookRunes)
 	}
 	return ColdNote{File: name + ".md", Name: name, Topic: topic, Description: description}, nil
+}
+
+// AppendRule adds one rule as a bullet at the end of the rules section of the hot
+// layer; пустой маркер «-» из скелета заменяется, а не копится.
+func AppendRule(hot, rule string) (string, error) {
+	rule = strings.TrimSpace(rule)
+	if rule == "" || strings.ContainsAny(rule, "\r\n") {
+		return "", fmt.Errorf("%w: правило — одна непустая строка", ErrInvalidNote)
+	}
+	lines := strings.Split(hot, "\n")
+	h := slices.IndexFunc(lines, func(l string) bool { return strings.TrimSpace(l) == RulesHeading })
+	if h < 0 {
+		return "", ErrNoRulesSection
+	}
+	end := len(lines)
+	for i := h + 1; i < len(lines); i++ {
+		if strings.HasPrefix(lines[i], "## ") {
+			end = i
+			break
+		}
+	}
+	last := -1
+	for i := h + 1; i < end; i++ {
+		if l := strings.TrimSpace(lines[i]); l == "-" || strings.HasPrefix(l, "- ") {
+			last = i
+		}
+	}
+	bullet := "- " + rule
+	switch {
+	case last >= 0 && strings.TrimSpace(lines[last]) == "-":
+		lines[last] = bullet
+	case last >= 0:
+		lines = slices.Insert(lines, last+1, bullet)
+	default:
+		lines = slices.Insert(lines, h+1, bullet)
+	}
+	out := strings.Join(lines, "\n")
+	if !strings.HasSuffix(out, "\n") {
+		out += "\n"
+	}
+	return out, nil
 }
 
 // TopicList returns the distinct topics of the notes, alphabetical, one spelling per
