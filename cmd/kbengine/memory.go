@@ -19,7 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who|seal> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who|seal|health|review|confirm> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -34,6 +34,9 @@ var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"find":    memoryFind,
 	"who":     memoryWho,
 	"seal":    memorySeal,
+	"health":  memoryHealth,
+	"review":  memoryReview,
+	"confirm": memoryConfirmRule,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
