@@ -1151,6 +1151,7 @@ body:not(.no-vault-glow) .vault.open .inside::before { opacity: .55; }
 .ac-cd { color: var(--z-faint); font-size: 12px; font-variant-numeric: tabular-nums; }
 .ac-note { color: var(--z-muted); font-size: 12px; border-top: 1px solid var(--z-rule); padding-top: 8px; }
 .ac-add { border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 14px; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: 12px; }
+.ac-acts { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 8px; }
 .ac-add label { display: grid; gap: 4px; color: var(--z-muted); font-size: 12px; }
 .ac-add input, .ac-add select { background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 8px; color: var(--z-ink); font: inherit; }
 .ac-add .acts { grid-column: 1 / -1; display: flex; gap: 8px; justify-content: flex-end; }

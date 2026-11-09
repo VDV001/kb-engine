@@ -3873,7 +3873,7 @@ const ST_SCREENS = { pulse: stPulse, feed: stFeed, heat: stHeat, money: stMoney,
 // (буфер со скрытой пометкой, стирается через 30 с). Само закрывается без дела —
 // время в «Оформление → Доступы». Состояние — в state.ac: showModule зовет
 // acLeave раньше, чем дойдет до этих строк.
-state.ac = { open: false, busy: false, confirmDel: "", list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
+state.ac = { open: false, busy: false, draft: {}, confirmDel: "", list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
 const AC_HUES = ["--z-sp4", "--z-sp2", "--z-src-violet", "--z-sp6", "--z-sp5", "--z-sp1", "--z-sp3"];
 const AC_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
 const AC_NAMES = ["Хранилище", "Шифр", "Сейф", "Ключи"];
@@ -3940,12 +3940,16 @@ function acCardHTML(c) {
 }
 const acProducts = () => [...new Set(state.ac.list.map((c) => c.product))];
 function acAddHTML() {
-  const f = (k, t, type = "text") => `<label>${t}<input name="${k}" type="${type}" autocomplete="off" spellcheck="false"></label>`;
+  // Черновик живет в state.ac.draft: перерисовка (фильтр среды, поиск) не стирает набранное. Пароль в
+  // состояние не кладется: он остается только в поле и после перерисовки вводится заново.
+  const d = state.ac.draft;
+  const f = (k, t, type = "text") => `<label>${t}<input name="${k}" type="${type}" autocomplete="off" spellcheck="false"${k !== "password" && d[k] ? ` value="${esc(d[k])}"` : ""}></label>`;
+  const env = (v, t) => `<option value="${v}"${(d.env || "prod") === v ? " selected" : ""}>${t}</option>`;
   return `<form class="ac-add" id="ac-add">
-    ${f("product", "продукт")}<label>среда<select name="env"><option value="prod">прод</option><option value="stage">стенд</option><option value="test">тест</option><option value="dev">dev</option></select></label>
+    ${f("product", "продукт")}<label>среда<select name="env">${env("prod", "прод")}${env("stage", "стенд")}${env("test", "тест")}${env("dev", "dev")}</select></label>
     ${f("login", "логин")}${f("url", "адрес")}${f("host", "хост")}${f("role", "роль")}${f("rights", "права")}${f("issuedBy", "кто выдал")}${f("issuedAt", "когда выдан", "date")}${f("note", "заметка (видна только в окне)")}
     ${f("password", "пароль", "password")}
-    <div class="acts"><button type="button" class="ac-btn" data-ac="add-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить</button></div></form>`;
+    <div class="ac-acts"><button type="button" class="ac-btn" data-ac="add-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить</button></div></form>`;
 }
 function acInsideHTML() {
   const ac = state.ac, L = acLook(), sec = acLockSec();
@@ -3962,7 +3966,7 @@ function acInsideHTML() {
       <span class="mini">${sec ? `закроется через <b id="ac-idle">${acFmt(ac.left)}</b> без дела` : "само не закрывается"} <button class="ac-btn" data-ac="close">Закрыть</button></span></div>
     <div class="ac-find"><input id="ac-q" type="search" placeholder="найти доступ: продукт, среда, логин, роль, адрес" value="${esc(ac.q)}" autocomplete="off" spellcheck="false">
       ${["", "prod", "stage", "test", "dev"].map((e) => `<button class="look-chip" data-ac="env" data-env="${e}" aria-pressed="${ac.env === e}">${e ? { prod: "прод", stage: "стенд", test: "тест", dev: "dev" }[e] : "все"}</button>`).join("")}
-      <button class="ac-btn pri" data-ac="add">Добавить доступ</button></div>
+      <button class="ac-btn pri" data-ac="add">${ac.adding ? "Свернуть форму" : "Добавить доступ"}</button></div>
     ${ac.adding ? acAddHTML() : ""}
     ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр доступов нет." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}
   </div>`;
@@ -3997,7 +4001,7 @@ function acClose() {
   const ac = state.ac;
   for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
   clearInterval(ac.idle);
-  Object.assign(ac, { open: false, adding: false, confirmDel: "", list: [] });
+  Object.assign(ac, { open: false, adding: false, draft: {}, confirmDel: "", list: [] });
   if (native() && native().AccessClose) native().AccessClose().catch(() => {});
   acRender();
 }
@@ -4043,8 +4047,8 @@ $("#access-view").addEventListener("click", async (e) => {
     case "show": acShow(id); break;
     case "hide": acHide(id); break;
     case "copy": acCopy(id); break;
-    case "add": ac.adding = !ac.adding; acRender(); break;
-    case "add-cancel": ac.adding = false; acRender(); break;
+    case "add": ac.adding = !ac.adding; acRender(); if (ac.adding) $("#ac-add [name=product]").focus(); break; // свернутая форма держит набранное
+    case "add-cancel": ac.adding = false; ac.draft = {}; acRender(); break;
     case "del": ac.confirmDel = id; acRender(); break;
     case "del-no": ac.confirmDel = ""; acRender(); break;
     case "del-yes":
@@ -4067,6 +4071,10 @@ $("#access-view").addEventListener("input", (e) => {
   clearTimeout(acQT);
   acQT = setTimeout(async () => { await acLoad(); acRender(); const q = $("#ac-q"); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 200);
 });
+$("#access-view").addEventListener("input", (e) => {
+  const el = e.target;
+  if (el.form && el.form.id === "ac-add" && el.name !== "password") state.ac.draft[el.name] = el.value;
+});
 $("#access-view").addEventListener("submit", async (e) => {
   if (e.target.id !== "ac-add") return;
   e.preventDefault();
@@ -4076,6 +4084,7 @@ $("#access-view").addEventListener("submit", async (e) => {
   try {
     await native().AccessAdd(fd, pw);
     state.ac.adding = false;
+    state.ac.draft = {};
     await acLoad();
     acRender();
     toast("Сохранено", " · доступ добавлен, пароль — в Связке ключей");
