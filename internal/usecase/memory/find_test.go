@@ -115,9 +115,12 @@ func TestFind_vectorAnswerIsNotMixedWithText(t *testing.T) {
 	_, _ = svc.BuildIndex()
 	// «врач» есть в тексте doctor, но смысл запроса про деньги.
 	res, _ := svc.Find("деньги врач", memory.FindOptions{Threshold: 0.5})
+	if res.Via != "vector" || len(res.Hits) == 0 {
+		t.Fatalf("res = %+v", res)
+	}
 	for _, h := range res.Hits {
-		if h.Via != "vector" {
-			t.Errorf("в выдаче вектора оказался %q: %+v", h.Via, h)
+		if h.Score > 1.0001 { // у BM25 оценки не ограничены единицей, у косинуса да
+			t.Errorf("в выдаче вектора оценка текста: %+v", h)
 		}
 	}
 }
