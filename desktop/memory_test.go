@@ -12,6 +12,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 func newMemDesk(t *testing.T) *memoryDesk {
@@ -360,5 +361,71 @@ func TestMemoryDesk_reviewAndConfirmAskTouchID(t *testing.T) {
 	}
 	if decisions() != before+2 {
 		t.Errorf("в журнале %d, want %d", decisions(), before+2)
+	}
+}
+
+// Подтвердить все устаревшие правила одним жестом: Touch ID один раз, запись по каждому.
+func TestMemoryDesk_confirmRulesAsksTouchIDOnce(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("r-a", "стиль", "не пушить в main", "x")
+	_ = svc.Propose("r-b", "стиль", "релиз в пятницу не катим", "x")
+	for _, n := range []string{"r-a", "r-b"} {
+		if err := d.Approve(n, "hot"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auth.asked = nil
+	auth.ok = false
+	if err := d.ConfirmRules([]string{"не пушить в main", "релиз в пятницу не катим"}); !errors.Is(err, errAuthDenied) {
+		t.Fatalf("без Touch ID: %v", err)
+	}
+	auth.ok = true
+	before, _ := d.State()
+	if err := d.ConfirmRules([]string{"не пушить в main", "Релиз в пятницу не катим."}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := d.State()
+	if len(auth.asked) != 2 || len(after.Decisions) != len(before.Decisions)+2 {
+		t.Errorf("asked=%d decisions %d -> %d", len(auth.asked), len(before.Decisions), len(after.Decisions))
+	}
+}
+
+type stubEmbedder struct{ err error }
+
+func (s stubEmbedder) Embed(string) (search.Vector, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return search.Vector{1, 0, 0}, nil
+}
+
+// Кнопка «Пересобрать векторы»: без Touch ID (HOT.md не меняется), ошибка службы — словами.
+func TestMemoryDesk_indexRebuildsVectors(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	d.embed = stubEmbedder{}
+	if _, err := svc.Add("fin-rules", "финансы", "про деньги", "тело"); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := d.Index()
+	if err != nil || rep.Embedded != 1 || len(auth.asked) != 0 {
+		t.Fatalf("rep=%+v err=%v asked=%v", rep, err, auth.asked)
+	}
+	_, _ = svc.Add("second", "финансы", "еще", "тело")
+	if v, _ := d.State(); len(v.Health.Reasons) == 0 || v.Health.Reasons[len(v.Health.Reasons)-1].Kind != "vectors" {
+		t.Fatalf("после новой записи векторы отстали: %+v", v.Health.Reasons)
+	}
+	if _, err := d.Index(); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := d.State(); len(v.Health.Reasons) != 0 {
+		t.Errorf("после пересборки причин нет, got %+v", v.Health.Reasons)
+	}
+	d.embed = stubEmbedder{err: errors.New("служба молчит")}
+	if _, err := d.Index(); err == nil {
+		t.Error("недоступная служба эмбеддингов должна вернуть ошибку")
 	}
 }

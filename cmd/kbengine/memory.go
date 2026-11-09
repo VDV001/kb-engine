@@ -287,8 +287,8 @@ func memoryReject(args []string, stdout, stderr io.Writer) int {
 // Служба эмбеддингов по умолчанию — локальная Ollama с bge-m3 (ADR-0008). Без нее
 // `find` ищет по тексту; к службе обращаются только если индекс векторов снят.
 const (
-	defaultEmbedURL   = "http://127.0.0.1:11434/api/embeddings"
-	defaultEmbedModel = "bge-m3"
+	defaultEmbedURL   = memorydir.EmbedURL
+	defaultEmbedModel = memorydir.EmbedModel
 )
 
 // memoryEmbedService собирает сценарий со смысловым слоем из флагов службы.

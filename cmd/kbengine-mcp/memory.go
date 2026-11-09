@@ -11,13 +11,6 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
-// Служба эмбеддингов та же, что у `kbengine memory find`; к ней идут, только если
-// индекс векторов снят.
-const (
-	memoryEmbedURL   = "http://127.0.0.1:11434/api/embeddings"
-	memoryEmbedModel = "bge-m3"
-)
-
 // memoryAgent is the agent's door to the person's memory: найти и предложить, и
 // больше ничего (ADR-0008, ревью #521). Одобрить предложение агент не может: у
 // сервера нет такого инструмента, а решает человек в окне по Touch ID.
@@ -29,7 +22,7 @@ func (a memoryAgent) service() (*memory.Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return memory.New(st, lim).WithEmbedder(embedhttp.New(memoryEmbedURL, memoryEmbedModel), memoryEmbedModel), nil
+	return memory.New(st, lim).WithEmbedder(embedhttp.New(memorydir.EmbedURL, memorydir.EmbedModel), memorydir.EmbedModel), nil
 }
 
 // exists: памяти нет — предложение некуда класть, и папку по просьбе агента не заводят.

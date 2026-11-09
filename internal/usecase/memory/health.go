@@ -69,19 +69,33 @@ func (s *Service) Review() error {
 }
 
 // ConfirmRule records that the person re-read a rule of the hot layer and keeps it.
-// Правило ищется в HOT.md по ключу (регистр, пробелы, точка), в журнал идет его
-// текст из файла: по нему здоровье потом узнаёт правило. Выдуманное правило
-// отвергается — подтверждение не должно придумывать то, чего нет.
-func (s *Service) ConfirmRule(text string) error {
+func (s *Service) ConfirmRule(text string) error { return s.ConfirmRules([]string{text}) }
+
+// ConfirmRules confirms several rules at once: всё или ничего. Каждое правило ищется
+// в HOT.md по ключу (регистр, пробелы, точка), в журнал идет его текст из файла: по
+// нему здоровье потом узнаёт правило. Выдуманное правило отвергается до первой
+// записи: подтверждение не должно придумывать то, чего нет.
+func (s *Service) ConfirmRules(texts []string) error {
 	snap, err := s.store.Load()
 	if err != nil {
 		return err
 	}
-	key := domain.RuleKey(text)
+	byKey := make(map[string]string)
 	for _, r := range domain.RulesOf(snap.Hot) {
-		if domain.RuleKey(r) == key {
-			return s.decide("%s%s", domain.DecisionPrefixConfirmRule, r)
+		byKey[domain.RuleKey(r)] = r
+	}
+	found := make([]string, 0, len(texts))
+	for _, t := range texts {
+		r, ok := byKey[domain.RuleKey(t)]
+		if !ok {
+			return fmt.Errorf("%w: %q", domain.ErrNoSuchRule, t)
+		}
+		found = append(found, r)
+	}
+	for _, r := range found {
+		if err := s.decide("%s%s", domain.DecisionPrefixConfirmRule, r); err != nil {
+			return err
 		}
 	}
-	return fmt.Errorf("%w: %q", domain.ErrNoSuchRule, text)
+	return nil
 }

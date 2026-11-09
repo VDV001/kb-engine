@@ -27,6 +27,13 @@ const (
 	indexFile  = "INDEX.md"
 )
 
+// Служба эмбеддингов памяти по умолчанию — локальная Ollama с bge-m3 (ADR-0008): один
+// адрес для терминала, MCP и окна. Без нее поиск идет по тексту.
+const (
+	EmbedURL   = "http://127.0.0.1:11434/api/embeddings"
+	EmbedModel = "bge-m3"
+)
+
 // DefaultPath — папка памяти по умолчанию: рядом с настройками окна, чтобы окно
 // и терминал видели одну память.
 func DefaultPath(home string) string {
