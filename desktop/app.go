@@ -144,6 +144,11 @@ func (a *App) AccessAdd(in accessIn, password string) error { return a.access.Ad
 // AccessReveal returns a password after Touch ID.
 func (a *App) AccessReveal(id string) (string, error) { return a.access.Reveal(id) }
 
+// AccessUpdate changes an access card (and its password, if given) after Touch ID.
+func (a *App) AccessUpdate(id string, in accessIn, password string) error {
+	return a.access.Update(id, in, password)
+}
+
 // AccessDelete removes an access after Touch ID.
 func (a *App) AccessDelete(id string) error { return a.access.Delete(id) }
 

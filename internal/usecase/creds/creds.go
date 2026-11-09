@@ -69,6 +69,43 @@ func (s Service) Add(c domain.Credential, password domain.Password) error {
 	return err
 }
 
+// Update changes the details of the card id and, when password is not nil, its
+// password. Продукт, среда и логин не меняются (Credential.Revise). Пароль
+// меняется первым, прежний запоминается: не записалась карточка — он
+// возвращается, иначе доступ остался бы с паролем, которого нет в карточке.
+// Нет такой карточки или правка невалидна — ничего не тронуто.
+func (s Service) Update(id string, details domain.CredentialDTO, password *domain.Password) error {
+	var old string
+	changed := false
+	err := s.Cards.Update(func(list []domain.Credential) ([]domain.Credential, error) {
+		i := slices.IndexFunc(list, func(c domain.Credential) bool { return c.ID() == id })
+		if i < 0 {
+			return nil, fmt.Errorf("%w: %s", domain.ErrCredentialNotFound, id)
+		}
+		revised, err := list[i].Revise(details)
+		if err != nil {
+			return nil, err
+		}
+		if password != nil {
+			if old, err = s.Secrets.Get(id); err != nil {
+				return nil, fmt.Errorf("creds: прежний пароль не прочитан, смена отменена: %w", err)
+			}
+			if err := s.Secrets.Set(id, password.Reveal()); err != nil {
+				return nil, fmt.Errorf("creds: новый пароль не лег в Связку ключей: %w", err)
+			}
+			changed = true
+		}
+		list[i] = revised
+		return list, nil
+	})
+	if err != nil && changed {
+		if rerr := s.Secrets.Set(id, old); rerr != nil {
+			return errors.Join(err, fmt.Errorf("creds: прежний пароль %s не возвращен в Связку ключей: %w", id, rerr))
+		}
+	}
+	return err
+}
+
 // Find returns the cards with every word of q, по продукту, среде и логину.
 func (s Service) Find(q string) ([]domain.Credential, error) {
 	list, err := s.Cards.Load()

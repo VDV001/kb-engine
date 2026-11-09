@@ -104,6 +104,15 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 	return Credential{d: d}, nil
 }
 
+// Revise returns the card with the details of d: адрес, хост, роль, права, кто и
+// когда выдал, заметка. Продукт, среда, логин и id остаются прежними: id собран из
+// них, и правка не должна превращать карточку в другую. Инварианты те же, что у
+// NewCredential (нужен адрес или хост).
+func (c Credential) Revise(d CredentialDTO) (Credential, error) {
+	d.ID, d.Product, d.Env, d.Login = c.d.ID, c.d.Product, c.d.Env, c.d.Login
+	return NewCredential(d)
+}
+
 // slug is a name in Latin letters, digits and dashes: «Склад-Про» → sklad-pro.
 func slug(s string) string {
 	var b strings.Builder
