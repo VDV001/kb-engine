@@ -1308,3 +1308,20 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .chat-ctx-pop[data-tone="warn"] .chat-ctx-bar i { background: var(--z-lvl-warn); } .chat-ctx-pop[data-tone="bad"] .chat-ctx-bar i { background: var(--z-bad); }
 .mm-warn { margin: 0 0 12px; padding: 9px 14px; border: 1px solid var(--z-lvl-warn); border-left-width: 3px; border-radius: var(--z-radius); color: var(--z-ink); font-size: 12.5px; line-height: 1.5; }
 .mm-warn b { color: var(--z-lvl-warn); }
+
+/* --- Длинные сообщения: строка с «…» и «Подробнее» (решение владельца 09.11) ----- */
+.clamped { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.clamp-line { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.clamp-more { flex: none; background: none; border: 0; padding: 0; color: var(--z-accent); text-decoration: underline; cursor: pointer; font: inherit; }
+.toast-text.clamp-line { max-width: 46ch; display: inline-block; vertical-align: bottom; }
+#toast-more { flex: none; }
+.more-ov { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: #0008; padding: 20px; }
+.more-card { position: relative; overflow: hidden; width: min(640px, 100%); max-height: 80vh; display: grid; grid-template-rows: auto 1fr auto; gap: 10px; padding: 14px 16px; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); box-shadow: 0 12px 40px #0006; }
+.more-head { display: flex; justify-content: space-between; align-items: center; }
+.more-x { background: none; border: 0; color: var(--z-faint); cursor: pointer; font: inherit; }
+.more-text { margin: 0; overflow: auto; white-space: pre-wrap; word-break: break-word; padding: 10px 12px; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); font: 12.5px/1.55 var(--z-mono, ui-monospace, monospace); }
+.more-acts { display: flex; gap: 8px; justify-content: flex-end; }
+.more-card::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 3px; background: var(--sp-all); }
+.more-card { padding: 18px 20px 16px; gap: 12px; }
+.more-head b { font-size: 15px; }
+.more-text { max-height: 50vh; }

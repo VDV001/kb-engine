@@ -19,6 +19,44 @@ const native = () => window.go && window.go.main && window.go.main.App &&
   withSlowNotice(window.go.main.App, () => toast("Сохранение ждет", " · " + SLOW_SAVE_TEXT, null, "bad"));
 // errText is the words of a refused call: Wails отдает отказ Go объектом
 // Error, и String(err) показал бы человеку «Error: …».
+// Длинное сообщение (решение владельца 09.11) не растягивает экран: одна строка с «…»
+// и кнопка «Подробнее», полный текст — окошком поверх, его можно скопировать.
+const CLAMP_AT = 90;
+function moreDialog(title, text) {
+  const ov = document.createElement("div");
+  ov.className = "more-ov";
+  ov.innerHTML = `<div class="more-card" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="more-head"><b>${esc(title)}</b><button class="more-x" type="button" aria-label="Закрыть">✕</button></div><pre class="more-text"></pre><div class="more-acts"><button class="btn" type="button" data-more="copy">Копировать</button><button class="btn primary" type="button" data-more="close">Закрыть</button></div></div>`;
+  ov.querySelector(".more-text").textContent = text;
+  const close = () => { ov.remove(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  ov.addEventListener("click", (e) => {
+    if (e.target === ov || e.target.closest(".more-x, [data-more=close]")) close();
+    else if (e.target.closest("[data-more=copy]")) {
+      const b = e.target.closest("button");
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => { b.textContent = "Скопировано"; }, () => { b.textContent = "Не вышло: выделите и скопируйте"; });
+    }
+  });
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(ov);
+  ov.querySelector("[data-more=close]").focus();
+}
+// setClamped puts text into el: короткий как есть, длинный — строкой с «…» и кнопкой.
+function setClamped(el, text, title) {
+  el.replaceChildren();
+  if (text.length <= CLAMP_AT) { el.textContent = text; el.classList.remove("clamped"); return; }
+  const line = document.createElement("span");
+  line.className = "clamp-line";
+  line.textContent = text;
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "clamp-more"; b.textContent = "Подробнее";
+  b.addEventListener("click", () => {
+    // «Нет ответа: …» — начало до двоеточия становится заголовком окошка, остальное телом.
+    const m = text.match(/^([^:\n]{3,40}):\s+([\s\S]+)$/);
+    moreDialog(m ? m[1] : title || "Сообщение", m ? m[2] : text);
+  });
+  el.classList.add("clamped");
+  el.append(line, b);
+}
 const errText = (e) => (e instanceof Error ? e.message : String(e));
 const openFile = (p) => native() && native().Open(p);
 const revealFile = (p) => native() && native().Reveal(p);
@@ -1282,7 +1320,7 @@ function patchStates() {
 
 function showError(msg) {
   const el = $("#settings-error");
-  el.textContent = msg;
+  setClamped(el, msg || "", "Сообщение");
   el.hidden = !msg;
 }
 
@@ -1293,8 +1331,11 @@ function toast(head, rest, undo, tone = "info") {
   undoFn = undo;
   t.dataset.tone = tone;
   t.classList.remove("show"); void t.offsetWidth; // перезапуск полоски
-  t.innerHTML = `<span class="glow"></span><span><b>${esc(head)}</b>${esc(rest)}</span>` +
+  const long = head.length + rest.length > CLAMP_AT + 20;
+  t.innerHTML = `<span class="glow"></span><span class="toast-text${long ? " clamp-line" : ""}"><b>${esc(head)}</b>${esc(rest)}</span>` +
+    (long ? `<button id="toast-more">Подробнее</button>` : "") +
     (undo ? `<button id="undo">Вернуть</button>` : "") + `<span class="life"></span>`;
+  if (long) t.querySelector("#toast-more").onclick = () => moreDialog(head, rest.replace(/^ · /, ""));
   t.classList.add("show");
   clearTimeout(toastT);
   // Беда с советом читается дольше, чем «Сохранено».
@@ -2343,7 +2384,7 @@ function renderChatNote() {
     ? `${s.model} на этом Маке: ${what} никуда не уходят · ${who}`
     : `${s.model}: найденные ${what} уходят провайдеру модели · ${who}`);
 }
-const showChatNote = (t) => ($("#chat-note").textContent = t);
+const showChatNote = (t) => setClamped($("#chat-note"), t, "Сообщение чата");
 // chatWhen is a short date for the tooltip: сегодня — время, иначе день.
 function chatWhen(iso) {
   const d = new Date(iso);
