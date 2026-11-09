@@ -412,7 +412,7 @@ const MODULES = {
   access: { name: "Доступы", what: "доступы к продуктам: карточки видны, пароль — только по Touch ID", view: "access",
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
   memory: { name: "Память", what: "правила и факты для агентов: горячий слой с потолком, холодный, журнал и очередь на одобрение", view: "memory",
-    icon: '<path d="M12 4 4 8l8 4 8-4z"/><path d="m4 12 8 4 8-4M4 16l8 4 8-4"/>' },
+    icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -420,7 +420,7 @@ const MODULES = {
 const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
 const SEARCH_ICON = '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>';
 state.modules = [];
-state.mm = { data: null, sel: "hot", busy: false, confirm: "" }; // экран «Память»
+state.mm = { data: null, alert: "", sel: "health", busy: false, confirm: "", hv: { view: "pulse", day: null, rule: null, jf: "all" } }; // экран «Память»
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
 const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
@@ -486,6 +486,7 @@ function renderTabs() {
     if (n > 0 && n <= 9) b.dataset.tipK = "⌘ " + n;
     if (icon) b.setAttribute("aria-label", name); // у вкладки поиска имя — подпись с числом найденного
     b.innerHTML = `${icon ? `<svg viewBox="0 0 24 24" aria-hidden="true">${icon}</svg>` : ""}<span class="lbl">${esc(name)}</span>`;
+    if (key === "module:memory") b.insertAdjacentHTML("beforeend", mmDot());
     return b;
   };
   // Вкладка поиска: с числом найденного (его пишет render()).
@@ -511,7 +512,7 @@ function renderTabs() {
     const cur = moduleOf(state.tab) ? MODULES[moduleOf(state.tab)] : null;
     const sw = document.createElement("span");
     sw.className = "hdr-switch";
-    sw.innerHTML = `<button type="button" class="hdr-switch-btn" aria-haspopup="true" aria-expanded="false" data-tip="Разделы" data-tip-b="Поиск и модули · ⌘1…⌘9"><svg viewBox="0 0 24 24" aria-hidden="true">${cur ? cur.icon || MODULE_ICON : SEARCH_ICON}</svg><span class="nm">${esc(cur ? cur.name : "Поиск")}</span><span class="car">▾</span></button><div class="hdr-pop hdr-grid" hidden></div>`;
+    sw.innerHTML = `<button type="button" class="hdr-switch-btn" aria-haspopup="true" aria-expanded="false" data-tip="Разделы" data-tip-b="Поиск и модули · ⌘1…⌘9"><svg viewBox="0 0 24 24" aria-hidden="true">${cur ? cur.icon || MODULE_ICON : SEARCH_ICON}</svg><span class="nm">${esc(cur ? cur.name : "Поиск")}</span><span class="car">▾</span>${mmDot()}</button><div class="hdr-pop hdr-grid" hidden></div>`;
     sw.querySelector(".hdr-grid").append(...[searchBtn(), ...mods()].map((b, i) => {
       if (i < 9) b.append(Object.assign(document.createElement("kbd"), { textContent: "⌘" + (i + 1) }));
       return b;
@@ -1861,6 +1862,9 @@ const ACCENTS = [
   ["mm-title", "Память: заголовок", "слово «Память» спектром"],
   ["mm-meter", "Память: шкала", "заполнение горячего слоя спектром; у потолка оранжевая, выше красная"],
   ["mm-nav", "Память: раздел", "переливающаяся черта у открытого раздела"],
+  ["mh-signal", "Здоровье: сигнал", "рамка с переливом, когда памяти нужно внимание"],
+  ["mh-score", "Здоровье: счет", "число и шкала здоровья переливом"],
+  ["mh-heat", "Здоровье: ритм", "клетки ритма градиентом"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1869,6 +1873,7 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
+  mhApply(); // палитра, скорость, ползунки и громкость сигнала здоровья памяти
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
@@ -1886,7 +1891,88 @@ function renderAccents() {
   }).join("");
   renderLookAccess();
   renderLookHeader();
+  renderLookHealth();
 }
+// «Оформление → Здоровье памяти»: палитра, перелив и громкость сигнала (accents.look).
+// По умолчанию перелив включен: сигнал должен бросаться в глаза.
+const MH_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета", custom: "Свои цвета" };
+const MH_ANIMS = [["full", "перелив"], ["none", "без анимации"]];
+const MH_SIGNALS = [["loud", "заметный: карточка над экраном"], ["calm", "спокойный: одна строка"]];
+// Ползунки: ключ в accents.look, пределы, шаг, единица, подпись, значение по умолчанию.
+const MH_RANGES = [
+  ["health-speed", 2, 30, 1, " с", "Скорость перелива", 6, "меньше секунд — быстрее; без анимации не действует"],
+  ["health-edge", 1, 4, 1, " px", "Толщина рамки сигнала", 2, "у «спокойного» сигнала рамка всегда 1 px"],
+  ["health-tint", 0, 20, 1, " %", "Тонировка карточки", 7, "насколько карточка сигнала подкрашена цветом состояния"],
+];
+const MH_HEX = /^#[0-9a-fA-F]{6}$/;
+function mhLook() {
+  const l = state.accents.look || {};
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  const num = (k, lo, hi, d) => { const n = Math.round(+l[k]); return Number.isFinite(n) && n >= lo && n <= hi ? n : d; };
+  return {
+    grad: pick(l["health-grad"], Object.keys(MH_GRADS), "spectrum"), anim: pick(l["health-anim"], MH_ANIMS.map((x) => x[0]), "full"), signal: pick(l["health-signal"], MH_SIGNALS.map((x) => x[0]), "loud"),
+    speed: num("health-speed", 2, 30, 6), edge: num("health-edge", 1, 4, 2), tint: num("health-tint", 0, 20, 7),
+    c1: MH_HEX.test(l["health-c1"] || "") ? l["health-c1"] : "#f0953e", c2: MH_HEX.test(l["health-c2"] || "") ? l["health-c2"] : "#5aa9e6",
+  };
+}
+// mhApply кладет вид на body: палитру и числа ползунков. Свои цвета — в переменные, остальное — в CSS.
+function mhApply(L = mhLook()) {
+  const st = document.body.style, b = document.body.dataset;
+  b.mhg = L.grad; b.mha = L.anim; b.mhs = L.signal;
+  st.setProperty("--mh-speed", L.speed + "s"); st.setProperty("--mh-edge", L.edge + "px"); st.setProperty("--mh-tint", L.tint + "%");
+  for (const [i, v] of [[1, L.c1], [2, L.c2], [3, L.c1], [4, L.c2]]) {
+    if (L.grad === "custom") st.setProperty("--mh" + i, v); else st.removeProperty("--mh" + i);
+  }
+}
+function renderLookHealth() {
+  const host = $("#look-health"); if (!host) return;
+  const L = mhLook(), dis = native() ? "" : " disabled";
+  const chip = (k, v, label, on, extra = "") => `<button class="look-chip" data-hl="${k}" data-v="${v}" aria-pressed="${on}"${dis}>${extra}${esc(label)}</button>`;
+  const grads = Object.entries(MH_GRADS).map(([g, n]) => chip("health-grad", g, n, L.grad === g, g === "custom" ? `<i class="gs" style="background:linear-gradient(90deg,${L.c1},${L.c2})"></i>` : `<i class="gs ink-${g}"></i>`)).join("");
+  const colors = L.grad === "custom" ? `<label class="muted">от <input type="color" data-hc="health-c1" value="${L.c1}"${dis}></label> <label class="muted">до <input type="color" data-hc="health-c2" value="${L.c2}"${dis}></label>` : "";
+  const ranges = MH_RANGES.map(([k, lo, hi, step, unit, name, , tip]) => `<div class="row"><span>${name}</span><div class="opts look-range"><input type="range" data-hr="${k}" min="${lo}" max="${hi}" step="${step}" value="${L[k.slice(7)]}" aria-label="${name}"${dis}><output>${L[k.slice(7)]}${unit}</output><span class="muted">${tip}</span></div></div>`).join("");
+  host.innerHTML = `
+    <div class="row"><span>Градиент</span><div class="opts">${grads}${colors}
+      <span class="muted">цвета счета, шкалы, ритма и черты раздела; при проблемах сигнал краснеет сам</span></div></div>
+    <div class="row"><span>Анимация</span><div class="opts">${MH_ANIMS.map(([v, n]) => chip("health-anim", v, n, L.anim === v)).join("")}</div></div>
+    ${ranges}
+    <div class="row"><span>Сигнал о проблемах</span><div class="opts">${MH_SIGNALS.map(([v, n]) => chip("health-signal", v, n, L.signal === v)).join("")}
+      <span class="muted">точка у кнопки «Память» в шапке остается в любом случае</span></div></div>
+    <div class="row"><span></span><div class="opts"><button class="look-chip" data-hl-reset${dis}>Сбросить вид здоровья</button>
+      <span class="muted">отдельные элементы включаются выше, в списке «Здоровье: …»</span></div></div>`;
+}
+const MH_KEYS = ["health-grad", "health-anim", "health-signal", "health-speed", "health-edge", "health-tint", "health-c1", "health-c2"];
+const mhSave = (patch) => saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), ...patch } });
+$("#look-health").addEventListener("click", (e) => {
+  if (!native()) return;
+  if (e.target.closest("[data-hl-reset]")) {
+    const look = { ...(state.accents.look || {}) };
+    for (const k of MH_KEYS) delete look[k];
+    saveAccents({ ...state.accents, look });
+    toast("Сброшено", " · вид здоровья памяти по умолчанию");
+    return;
+  }
+  const b = e.target.closest("[data-hl]"); if (!b) return;
+  mhSave({ [b.dataset.hl]: b.dataset.v });
+});
+// Ползунок двигается вживую (виден результат), сохраняется при отпускании.
+$("#look-health").addEventListener("input", (e) => {
+  const r = e.target.closest("[data-hr]");
+  if (r) {
+    const def = MH_RANGES.find((x) => x[0] === r.dataset.hr);
+    r.nextElementSibling.textContent = r.value + def[4];
+    mhApply({ ...mhLook(), [r.dataset.hr.slice(7)]: +r.value });
+    return;
+  }
+  const c = e.target.closest("[data-hc]");
+  if (c) mhApply({ ...mhLook(), [c.dataset.hc.slice(7)]: c.value });
+});
+$("#look-health").addEventListener("change", (e) => {
+  if (!native()) return;
+  const r = e.target.closest("[data-hr]"), c = e.target.closest("[data-hc]");
+  if (r) mhSave({ [r.dataset.hr]: r.value });
+  else if (c) mhSave({ [c.dataset.hc]: c.value });
+});
 // «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
 // в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».
 function renderLookHeader() {
@@ -4118,7 +4204,7 @@ document.addEventListener("keydown", (e) => {
 // --- Память (ADR-0008) -------------------------------------------------------------
 // Два слоя и журнал рядом, очередь на одобрение, потолок горячего слоя. Окно
 // показывает те же файлы, что читает `kbengine memory`; своего хранилища нет.
-const MEM_TREE = [["hot", "HOT.md", "читается в каждой сессии"], ["cold", "cold/", "факты, которые ищутся"], ["journal", "journal/", "хроника, из поиска исключена"], ["queue", "Ждет одобрения", "предложения агента"]];
+const MEM_TREE = [["health", "Здоровье", "можно ли доверять памяти"], ["hot", "HOT.md", "читается в каждой сессии"], ["cold", "cold/", "факты, которые ищутся"], ["journal", "journal/", "хроника, из поиска исключена"], ["queue", "Ждет одобрения", "предложения агента"]];
 const MEM_PROBLEMS = {
   "hot-too-big": "Горячий слой больше потолка",
   "no-topic-list": "В HOT.md нет перечня тем",
@@ -4138,17 +4224,46 @@ const MEM_PROBLEMS = {
 const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Любая запись в HOT.md идет по Touch ID и остается в журнале решений; правка файла мимо системы будет видна. Отклоненное не удаляется, а уходит в journal/.</div>`;
 const MEM_TOPIC_FIX = new Set(["no-topic-list", "stale-topics"]);
 const mmTokens = (n) => n.toLocaleString("ru-RU");
+// Путь у каждого свой (домашняя папка пользователя): на экране ~, чтобы имя учетной записи не светилось на скриншотах.
+const mmPath = (p) => p.replace(/^\/Users\/[^/]+/, "~");
 async function openMemory() { await mmLoad(); mmRender(); }
+// Сигнал о здоровье виден и снаружи экрана: точка на кнопке «Память» в шапке (решение
+// владельца 09.11: внимание должно бросаться в глаза, иначе человек пропустит и забудет).
+function mmDot() { return state.mm.alert ? `<i class="mm-alert ${state.mm.alert}" role="img" aria-label="Память требует внимания" title="Память требует внимания: откройте раздел «Память»"></i>` : ""; }
+function mmSetAlert(d) {
+  const a = d && d.exists && d.health && d.health.mode !== "ok" ? d.health.mode : "";
+  if (a !== state.mm.alert) { state.mm.alert = a; renderTabs(); }
+}
+async function mmProbe() {
+  if (!native() || !state.modules.some((m) => m.id === "memory" && m.enabled)) return;
+  try {
+    const d = await native().MemoryState();
+    mmSetAlert(d);
+    if (!$("#memory-view").hidden && !state.mm.busy) { state.mm.data = d; mmRender(); } // открытый экран не остаётся со старым счётом
+  } catch { /* сигнал необязателен: экран сам покажет ошибку */ }
+}
+setTimeout(mmProbe, 1500);
+setInterval(mmProbe, 10 * 60 * 1000);
+window.addEventListener("focus", mmProbe);
+function mmAlertHTML(d) {
+  const h = d.health;
+  if (!d.exists || h.mode === "ok") return "";
+  const bad = h.mode === "bad";
+  const items = h.reasons.map((r) => { const [t, det, act] = mhReasonHTML(h, r); return `<li><span><b>${t}</b> <span class="muted">${det}</span></span>${act}</li>`; }).join("");
+  return `<div class="mh-alert ${h.mode}" role="alert"><div class="mh-alert-ic" aria-hidden="true">!</div>
+    <div class="mh-alert-main"><div class="mh-alert-t">${bad ? "ПАМЯТЬ НЕ ПРОВЕРЕНА: ЕЙ РАНО ДОВЕРЯТЬ" : "ПАМЯТИ НУЖЕН ОСМОТР"} <span class="mh-alert-n">${h.total}/100</span></div>
+      <p>${esc(MH_MODES[h.mode][2])}</p><ul>${items}</ul></div></div>`;
+}
 async function mmLoad() {
   if (!native()) return;
-  try { state.mm.data = await native().MemoryState(); }
+  try { state.mm.data = await native().MemoryState(); mmSetAlert(state.mm.data); }
   catch (e) { state.mm.data = null; showError("Память не прочитать: " + errText(e)); }
 }
 function mmPct(h) { return h.limit ? Math.round((h.runes * 100) / h.limit) : 0; }
 function mmTone(h) { const p = mmPct(h); return p > 100 ? "over" : p >= 80 ? "warn" : "ok"; }
 function mmEmptyHTML(d) {
   return `<div class="mm-empty"><h3>Памяти еще нет</h3>
-    <p class="muted">Заведем скелет: <code>HOT.md</code> читается в каждой сессии, в <code>cold/</code> лежат факты, в <code>journal/</code> хроника. Все это обычные файлы с правами 0600 в <code>${esc(d.dir)}</code>, терминал их читает так же (<code>kbengine memory</code>).</p>
+    <p class="muted">Заведем скелет: <code>HOT.md</code> читается в каждой сессии, в <code>cold/</code> лежат факты, в <code>journal/</code> хроника. Все это обычные файлы с правами 0600 в <code title="${esc(d.dir)}">${esc(mmPath(d.dir))}</code>, терминал их читает так же (<code>kbengine memory</code>).</p>
     <button class="ac-btn pri" data-mm="init">Завести память</button></div>`;
 }
 function mmHeadHTML(d) {
@@ -4158,13 +4273,14 @@ function mmHeadHTML(d) {
     (bad.some((p) => p.kind === "hot-changed-outside") ? `<button class="ac-btn pri" data-mm="seal" title="Подтверждение остается в журнале решений">Прочитал, принимаю текущий HOT.md · Touch ID</button>` : "");
   return `<div class="mm-head"><h2>Память</h2>
       <span class="${bad.length ? "mm-bad" : "mm-ok"}" role="status">${bad.length ? `check: нарушений ${bad.length}` : "check: ok"}</span>
-      <span class="muted mm-dir">${esc(d.dir)}</span></div>
+      <button class="mh-headpill" data-mm="hv" data-v="pulse" title="Здоровье памяти: открыть пульт">${mhModePill(d.health)}<span class="muted">${d.health.total}/100</span></button>
+      <span class="muted mm-dir" title="${esc(d.dir)}">${esc(mmPath(d.dir))}</span></div>
     ${bad.length ? `<ul class="mm-problems">${list}</ul><div class="mm-fix">${fix}</div>` : ""}`;
 }
 function mmTreeHTML(d) {
-  const n = { hot: `${mmPct(d.hot)}%`, cold: d.cold.length, journal: d.journal.length, queue: d.queue.length };
+  const n = { health: String(d.health.total), hot: `${mmPct(d.hot)}%`, cold: d.cold.length, journal: d.journal.length, queue: d.queue.length };
   return `<div class="ac-list mm-tree" role="tablist" aria-label="Память">` + MEM_TREE.map(([id, name, hint]) =>
-    `<button class="mm-node${id === "queue" && d.queue.length ? " wait" : ""}" role="tab" data-mm="sel" data-v="${id}" aria-selected="${state.mm.sel === id}"><span>${esc(name)}<small>${esc(hint)}</small></span><b>${esc(String(n[id]))}</b></button>`).join("") +
+    `<button class="mm-node${id === "queue" && d.queue.length ? " wait" : ""}${id === "health" ? " h-" + d.health.mode : ""}" role="tab" data-mm="sel" data-v="${id}" aria-selected="${state.mm.sel === id}"><span>${esc(name)}<small>${esc(hint)}</small></span><b>${esc(String(n[id]))}</b></button>`).join("") +
     `<div class="mm-sub">Все лежит файлами и читается и правится без окна.</div></div>`;
 }
 function mmHotHTML(d) {
@@ -4187,9 +4303,7 @@ function mmColdHTML(d) {
     `<li><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic || "без темы")}</span>${n.origin === "agent" ? ` <span class="mm-chip agent">агент</span>` : ""}<div class="muted">${esc(n.description)}</div></li>`).join("") + `</ul>`;
 }
 function mmJournalHTML(d) {
-  const dec = d.decisions.length
-    ? `<h4>Журнал решений</h4><p class="muted">Что вы одобрили, отклонили и подтвердили; только дописывается.</p><ol class="mm-decisions">${d.decisions.slice().reverse().map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`
-    : `<h4>Журнал решений</h4><p class="muted">Пока пуст: сюда попадет каждое ваше одобрение, отклонение и подтверждение.</p>`;
+  const dec = mhJournalHTML(d);
   const files = d.journal.length
     ? `<h4>Файлы</h4><p class="muted">Отклоненное и перенесенное в горячий слой, handoffs и хроника. В обычный поиск не входят.</p><ul class="mm-notes">${d.journal.slice().reverse().map((f) => `<li class="mono">${esc(f)}</li>`).join("")}</ul>`
     : `<h4>Файлы</h4><p class="muted">Файлов нет.</p>`;
@@ -4198,7 +4312,7 @@ function mmJournalHTML(d) {
 function mmQueueHTML(d) {
   if (!d.queue.length) return `<h3>Ждет одобрения</h3><p class="muted">Очередь пуста. Агент сам в горячий слой не пишет: его предложения (<code>kbengine memory add --origin agent</code>) придут сюда.</p>`;
   return `<h3>Ждет одобрения <span class="muted">· ${d.queue.length}</span></h3>` + d.queue.map((n) =>
-    `<article class="mm-card"><header><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic)}</span></header>
+    `<article class="mm-card"><header><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic)}</span> <span class="muted">ждет ${mhDays(n.waitDays || 0)}</span></header>
       <p>${esc(n.description)}</p>${n.body ? `<pre class="mm-text">${esc(n.body)}</pre>` : ""}
       <div class="mm-acts"><button class="ac-btn pri" data-mm="approve" data-to="cold" data-name="${esc(n.name)}" title="Тема записи попадет в перечень HOT.md: потребуется Touch ID">В холодный слой · Touch ID</button>
         ${state.mm.confirm === n.name
@@ -4211,8 +4325,159 @@ function mmRender() {
   if (!native()) { host.innerHTML = `<div class="mm-empty"><h3>Память</h3><p class="muted">Экран работает в окне DVK.</p></div>`; return; }
   if (!d) { host.innerHTML = `<div class="mm-empty muted">Читаю…</div>`; return; }
   if (!d.exists) { host.innerHTML = mmEmptyHTML(d); return; }
-  const pane = { hot: mmHotHTML, cold: mmColdHTML, journal: mmJournalHTML, queue: mmQueueHTML }[m.sel](d);
-  host.innerHTML = MM_WARN + mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
+  const pane = { health: mmHealthHTML, hot: mmHotHTML, cold: mmColdHTML, journal: mmJournalHTML, queue: mmQueueHTML }[m.sel](d);
+  host.innerHTML = mmAlertHTML(d) + MM_WARN + mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
+}
+// --- Здоровье памяти (ADR-0008) ----------------------------------------------------
+// Чем реже человек смотрит память, тем ниже доверие. Счёт и причины считает Go (те же
+// числа в терминале: `kbengine memory health`); страница рисует и ведёт от ритма к дню,
+// от дня к решению, от решения к правилу. Имена с префиксом mh: mm и mem заняты.
+const MH_VIEWS = [["pulse", "Пульт"], ["rhythm", "Ритм"], ["rules", "Правила"], ["modes", "Режимы"]];
+const MH_PARTS = { rhythm: "Давность осмотра", queue: "Очередь предложений", integrity: "Целостность", rules: "Свежесть правил" };
+const MH_MODES = {
+  ok: ["Доверяю", "ok", "Агент получает ответы памяти без оговорок, его предложения идут в очередь."],
+  warn: ["С оговоркой", "warn", "Каждый ответ memory_find и memory_propose несёт пометку «память давно не проверялась» и список правил без подтверждения больше 30 дней. Предложения идут в очередь."],
+  bad: ["Не доверяю", "bad", "Ответы несут пометку «память не проверена», а memory_propose отказывает, пока вы не осмотрите память."],
+};
+const MH_KINDS = {
+  "approve-hot": ["в горячий слой", "hot"], "approve-cold": ["в холодный слой", "cold"], reject: ["отклонено", "rej"], seal: ["печать подтверждена", "seal"],
+  review: ["осмотр", "rev"], "confirm-rule": ["правило подтверждено", "hot"], topics: ["перечень тем", "up"], portrait: ["«Кто я»", "up"], index: ["индекс векторов", "up"], other: ["запись", "up"],
+};
+const MH_FILTERS = [["all", "Все"], ["hot", "Горячий слой"], ["cold", "Холодный слой"], ["rej", "Отклонено"], ["rev", "Осмотры"], ["up", "Обслуживание"]];
+const MH_TILE_GO = { rhythm: `data-mm="hv" data-v="rhythm"`, queue: `data-mm="sel" data-v="queue"`, integrity: `data-mm="sel" data-v="hot"`, rules: `data-mm="hv" data-v="rules"` };
+const MH_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"], MH_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const mhNum = (iso) => { const [y, m, d] = iso.split("-").map(Number); return Math.round(Date.UTC(y, m - 1, d) / 864e5); };
+const mhIso = (n) => new Date(n * 864e5).toISOString().slice(0, 10);
+const mhLabel = (n) => { const x = new Date(n * 864e5); return `${MH_WD[x.getUTCDay()]}, ${x.getUTCDate()} ${MH_MON[x.getUTCMonth()]}`; };
+const mhKey = (s) => s.toLowerCase().split(/\s+/).filter(Boolean).join(" ").replace(/\.+$/, "");
+const mhTone = (ratio) => (ratio > 0.7 ? "ok" : ratio > 0.4 ? "warn" : "bad");
+const mhPart = (h, id) => h.parts.find((p) => p.id === id) || { value: 0, max: 1 };
+function mhRuleIndex(h, text) { const k = mhKey(text); return h.rules.findIndex((r) => mhKey(r.text) === k); }
+const mhWord = (n, one, few, many) => { const a = Math.abs(n) % 100, b = a % 10; return a > 10 && a < 20 ? many : b === 1 ? one : b >= 2 && b <= 4 ? few : many; };
+const mhDays = (n) => `${n} ${mhWord(n, "день", "дня", "дней")}`;
+function mhReasonHTML(h, r) {
+  const L = (view, label) => `<button class="ac-btn" data-mm="hv" data-v="${view}">${label} →</button>`;
+  switch (r.kind) {
+    case "seal": return [`HOT.md изменен мимо системы`, `файл правили после последней записи системы: прочитайте его и подтвердите`, `<button class="ac-btn pri" data-mm="seal">Принять · Touch ID</button>`];
+    case "queue": return [`Предложения ждут решения: ${r.n}`, `самое старое ждет ${mhDays(h.oldestPendingDays)}`, `<button class="ac-btn" data-mm="sel" data-v="queue">Разобрать →</button>`];
+    case "rules": return [`Правил без подтверждения больше 30 дней: ${r.n}`, `агент опирается на них вслепую`, L("rules", "Смотреть правила")];
+    case "vectors": return [`Векторы отстали от записей: ${r.n}`, `поиск по смыслу их не видит; нужна локальная Ollama с bge-m3`, `<button class="ac-btn" data-mm="index">Пересобрать векторы</button>`];
+    default: return [r.n < 0 ? `Решений в журнале нет` : `Осмотра не было ${mhDays(r.n)}`, `память лежит без суждения человека`, `<button class="ac-btn pri" data-mm="review">Отметить осмотр · Touch ID</button>`];
+  }
+}
+function mhReasonsHTML(h) {
+  if (!h.reasons.length) return `<p class="mh-ok">Всё в порядке: осмотр свежий, очередь пуста, печать и векторы целы.</p>`;
+  return h.reasons.map((r) => { const [t, d, act] = mhReasonHTML(h, r); return `<div class="mh-row"><div><b>${t}</b><div class="muted">${d}</div></div>${act}</div>`; }).join("");
+}
+function mhPartHint(h, id) {
+  const q = h.reasons.find((r) => r.kind === "queue"), seal = h.reasons.find((r) => r.kind === "seal"), vec = h.reasons.find((r) => r.kind === "vectors");
+  if (id === "rhythm") return h.idleDays < 0 ? "решений в журнале нет" : `последнее решение ${mhDays(h.idleDays)} назад`;
+  if (id === "queue") return q ? `ждет ${q.n}, старшее ${mhDays(h.oldestPendingDays)}` : "очередь пуста";
+  if (id === "integrity") return seal ? "HOT.md правили мимо системы" : vec ? `векторов отстало: ${vec.n}` : "печать и векторы в порядке";
+  return `устаревших: ${h.staleRules} из ${h.rules.length}`;
+}
+function mhModePill(h) { const [name, tone] = MH_MODES[h.mode]; return `<span class="mh-pill ${tone}"><i></i>${name}</span>`; }
+function mhHeat(h, cur) {
+  const today = mhNum(h.today), judged = {};
+  for (const e of h.events) if (e.judgment) judged[e.day] = (judged[e.day] || 0) + 1;
+  const all = {};
+  for (const e of h.events) all[e.day] = (all[e.day] || 0) + 1;
+  return Array.from({ length: 91 }, (_, i) => {
+    const n = today - 90 + i, iso = mhIso(n), c = judged[iso] || 0;
+    const lvl = c >= 2 ? " l2" : c === 1 ? " l1" : all[iso] ? " up" : "";
+    return `<button class="${lvl}${n === today ? " today" : ""}${iso === cur ? " sel" : ""}" data-mm="hv" data-v="rhythm" data-day="${iso}" title="${mhLabel(n)}: решений ${c}" aria-label="${mhLabel(n)}: решений ${c}"></button>`;
+  }).join("");
+}
+function mhEventHTML(h, e, withDay = true, withRule = true) {
+  const [label, cls] = MH_KINDS[e.kind] || MH_KINDS.other;
+  const ri = withRule && (e.kind === "approve-hot" || e.kind === "confirm-rule") ? mhRuleIndex(h, e.text) : -1;
+  const link = ri >= 0 ? ` <button class="mh-link" data-mm="hv" data-v="rules" data-rule="${ri}">→ правило</button>` : "";
+  const day = withDay ? `<button class="mh-link faint" data-mm="hv" data-v="rhythm" data-day="${e.day}">${mhLabel(mhNum(e.day))}</button>` : "";
+  return `<div class="mh-row"><div><span class="mh-chip ${cls}">${label}</span> ${esc(e.text)}${link}</div>${day}</div>`;
+}
+function mhPulseHTML(d) {
+  const h = d.health, [mw, tone] = MH_MODES[h.mode];
+  const head = h.mode === "ok" ? "Память в порядке" : h.mode === "warn" ? "Нужно внимание" : "Доверять рано";
+  const tiles = h.parts.map((p) => { const t = mhTone(p.value / p.max); return `<button class="mh-tile" ${MH_TILE_GO[p.id]}><span class="mh-cap">${MH_PARTS[p.id]}</span><span class="mh-n ${t}">${Math.round(p.value)}<small> / ${p.max}</small></span><span class="mh-bar ${t}"><i style="width:${(p.value / p.max) * 100}%"></i></span><span class="muted">${esc(mhPartHint(h, p.id))}</span></button>`; }).join("");
+  const mini = mhHeat(h, "");
+  return `<div class="mh-top"><span class="mh-pill ${tone} lg"><i></i>${head}</span>
+      <div class="mh-score ${tone} ${tone === "ok" ? "" : "mh-tone-" + tone}"><b>${h.total}</b><span class="muted"> / 100</span></div>
+      <button class="ac-btn pri mh-push" data-mm="review" title="Запишет в журнал, что вы просмотрели память">Отметить осмотр · Touch ID</button></div>
+    <div class="mh-bar ${tone} wide ${tone === "ok" ? "" : "mh-tone-" + tone}"><i style="width:${h.total}%"></i></div>
+    <div class="mh-tiles">${tiles}</div>
+    <h4>Что не так</h4>${mhReasonsHTML(h)}
+    <div class="mh-side"><div class="mh-box"><h4>Режим доверия</h4><p>${mhModePill(h)}</p><p class="mh-eff ${tone}">${esc(mw)}: ${esc(MH_MODES[h.mode][2])}</p>
+      <button class="mh-link" data-mm="hv" data-v="modes">что меняется на каждой ступени →</button></div>
+    <div class="mh-box"><h4>Ритм · 13 недель</h4><p class="muted">Нажмите на день: откроется, что в тот день решали.</p><div class="mh-heat mini">${mini}</div>
+      <button class="mh-link" data-mm="hv" data-v="rhythm">весь ритм →</button></div></div>`;
+}
+function mhRhythmHTML(d) {
+  const h = d.health, hv = state.mm.hv, today = mhNum(h.today);
+  const last = h.events.filter((e) => e.judgment).map((e) => e.day).sort().pop();
+  const cur = hv.day && mhNum(hv.day) <= today && mhNum(hv.day) > today - 91 ? hv.day : last || h.today;
+  const days = new Set(h.events.filter((e) => e.judgment).map((e) => e.day));
+  const weeks = Array.from({ length: 13 }, (_, w) => Array.from({ length: 7 }, (_, k) => mhIso(today - 90 + w * 7 + k)).some((x) => days.has(x))).filter(Boolean).length;
+  const ev = h.events.filter((e) => e.day === cur);
+  const idleTone = h.idleDays < 0 || h.idleDays > 14 ? "bad" : h.idleDays > 7 ? "warn" : "ok";
+  return `<p class="muted">Каждая клетка — день; чем ярче, тем больше решений человека (обслуживание перечня и индекса не в счёт, оно бледнее). Здоровье равно регулярности.</p>
+    <div class="mh-heat">${mhHeat(h, cur)}</div>
+    <div class="mh-stats"><div><b>${weeks}</b> <span class="muted">из 13 недель с решениями</span></div>
+      <div><b class="${idleTone}">${h.idleDays < 0 ? "—" : h.idleDays}</b> <span class="muted">${h.idleDays < 0 ? "решений в журнале нет" : "дн. с последнего решения"}</span></div></div>
+    <div class="mh-box"><div class="mh-crumbs"><button class="mh-link" data-mm="hv" data-v="rhythm" data-day="">Ритм</button> › <b>${mhLabel(mhNum(cur))}</b></div>
+      <h4>Решений в этот день: ${ev.length}</h4>
+      ${ev.length ? ev.map((e) => mhEventHTML(h, e, false)).join("") : `<p class="muted">В этот день ничего не решали.${cur === h.today ? ` <button class="ac-btn" data-mm="review">Отметить осмотр сегодня · Touch ID</button>` : ""}</p>`}
+      <p class="muted">Каждое решение остается в journal/decisions.md: что, когда и с каким текстом. <button class="mh-link" data-mm="sel" data-v="journal">весь журнал →</button></p></div>`;
+}
+function mhRulesHTML(d) {
+  const h = d.health, hv = state.mm.hv;
+  if (!h.rules.length) return `<p class="muted">В разделе «Правила работы» горячего слоя правил нет. Они появятся, когда вы одобрите предложение агента «в горячий слой».</p>`;
+  const order = h.rules.map((r, i) => i).sort((a, b) => (h.rules[b].ageDays < 0 ? 9999 : h.rules[b].ageDays) - (h.rules[a].ageDays < 0 ? 9999 : h.rules[a].ageDays));
+  const i = hv.rule != null && h.rules[hv.rule] ? hv.rule : order[0], sel = h.rules[i];
+  const age = (r) => (r.ageDays < 0 ? "отметки нет" : `подтверждалось ${mhDays(r.ageDays)} назад`);
+  const list = order.map((j) => { const r = h.rules[j], f = r.ageDays < 0 ? 0 : Math.max(0, 1 - r.ageDays / 60), t = f > 0.55 ? "ok" : f > 0.2 ? "warn" : "bad";
+    return `<button class="mh-rule${j === i ? " sel" : ""}" data-mm="hv" data-v="rules" data-rule="${j}"><span>${esc(r.text)}<span class="muted">${age(r)}</span></span><b class="${r.stale ? "warn" : "ok"}">${r.stale ? "устарело" : "свежее"}</b><span class="mh-bar ${t}"><i style="width:${f * 100}%"></i></span></button>`; }).join("");
+  const key = mhKey(sel.text), hist = h.events.filter((e) => (e.kind === "approve-hot" || e.kind === "confirm-rule") && mhKey(e.text) === key).slice().reverse();
+  const seen = sel.stale ? `<span class="mh-badge bad">${sel.ageDays < 0 ? "не подтверждалось ни разу" : `проверено ${mhDays(sel.ageDays)} назад`}</span>` : `<span class="mh-badge ok">проверено ${mhDays(sel.ageDays)} назад</span>`;
+  const agent = sel.stale ? "это правило агент получит в списке «давно не подтверждалось» в любом режиме" : "это правило агент получит без пометки: оно свежее";
+  const stale = h.rules.filter((x) => x.stale).length;
+  const bulk = !stale ? "" : state.mm.confirm === "*stale"
+    ? `<div class="mm-confirm" role="alert"><b>Вы перечитали ${stale} ${mhWord(stale, "правило", "правила", "правил")} (${h.rules.filter((x) => x.stale).map((x) => "«" + esc(x.text) + "»").join(", ")}) и они верны?</b> <button class="ac-btn pri" data-mm="confirm-all">Подтвердить все · Touch ID</button> <button class="ac-btn" data-mm="confirm-all-no">Отмена</button></div>`
+    : `<button class="ac-btn pri" data-mm="confirm-all-ask" title="Один Touch ID, запись в журнале по каждому правилу">Подтвердить все устаревшие (${stale})</button>`;
+  return `<div class="mh-cols"><div><p class="muted">Здоровье у каждого правила своё: когда его в последний раз подтверждал человек (одобрение в горячий слой тоже считается).</p>${bulk}${list}</div>
+    <div class="mh-stack"><div class="mh-box"><div class="mh-crumbs"><button class="mh-link" data-mm="hv" data-v="rules" data-rule="">Правила</button> › <b>правило ${i + 1}</b></div>
+      <h3>${esc(sel.text)}</h3><p>${seen}</p>
+      <button class="ac-btn pri" data-mm="confirm" data-i="${i}">Подтвердить сегодня · Touch ID</button>
+      <h4>История решений по правилу</h4>${hist.map((e) => mhEventHTML(h, e, true, false)).join("") || `<p class="muted">Решений по этому правилу в журнале нет: правило было в HOT.md до учёта.</p>`}</div>
+    <div class="mh-box"><h4>Как это увидит агент</h4><p class="muted">${esc(agent)}.</p></div></div></div>`;
+}
+function mhModesHTML(d) {
+  const h = d.health, rs = h.reasons;
+  const col = (k, range, items) => `<div class="mh-lvl ${k}${h.mode === k ? " cur" : ""}"><b>${MH_MODES[k][0]}</b><div class="muted">${range}</div><ul>${items.map((x) => `<li>${x}</li>`).join("")}</ul></div>`;
+  return `<p class="muted">Режим считается из здоровья (${h.total} из 100) и действует через MCP (<code>kbengine-mcp</code>): он виден агенту в каждом ответе памяти. Сейчас: <b class="${MH_MODES[h.mode][1]}">${MH_MODES[h.mode][0]}</b>.</p>
+    <div class="mh-lvls">${col("ok", "здоровье 75 и выше", ["ответы без оговорок; правила без подтверждения всё равно называются", "предложения идут в очередь"])}
+      ${col("warn", "от 50 до 74", ["ответы несут пометку «давно не проверялась»", "и список правил без подтверждения > 30 дней", "предложения идут в очередь"])}
+      ${col("bad", "ниже 50 или правка HOT.md мимо системы", ["ответы несут пометку «память не проверена»", "memory_propose отказывает: очередь приостановлена"])}</div>
+    <div class="mh-eff ${MH_MODES[h.mode][1]}">Для агента сейчас: ${esc(MH_MODES[h.mode][2])}</div>
+    <p class="muted"><b>Чего режим не закрывает.</b> Агент, который читает HOT.md прямо с диска (а не через MCP), пометок не увидит; это сигнал, а не замок. Он честен ровно в той мере, в какой агент спрашивает память через инструменты.</p>
+    <div class="mh-cols"><div class="mh-box"><h4>Что вернет доверие</h4>${mhReasonsHTML(h)}</div>
+    <div class="mh-box"><h4>Как считается здоровье</h4><table class="mh-formula"><tr><td>Давность осмотра</td><td>35, минус 1 за каждый день без решений человека</td></tr><tr><td>Очередь</td><td>25, минус 3 за предложение и 0,6 за день ожидания сверх недели</td></tr><tr><td>Целостность</td><td>12 за целую печать HOT.md и 8 за свежие векторы (−2 за отстающий)</td></tr><tr><td>Свежесть правил</td><td>20, средняя свежесть; правило устаревает за 60 дней, «устарело» после 30</td></tr></table>
+      <p class="muted">Формула не откалибрована: веса выбраны, а не измерены. То же считает <code>kbengine memory health</code>.</p></div></div>`;
+}
+function mmHealthHTML(d) {
+  const hv = state.mm.hv, view = MH_VIEWS.some(([id]) => id === hv.view) ? hv.view : "pulse";
+  const nav = `<div class="mh-nav" role="tablist" aria-label="Здоровье памяти">${MH_VIEWS.map(([id, name]) => `<button role="tab" data-mm="hv" data-v="${id}" aria-selected="${id === view}">${name}</button>`).join("")}</div>`;
+  const body = { pulse: mhPulseHTML, rhythm: mhRhythmHTML, rules: mhRulesHTML, modes: mhModesHTML }[view](d);
+  return `<h3>Здоровье <span class="muted">· чем реже смотрите память, тем ниже доверие</span></h3>${nav}<div class="mh-body">${body}</div>`;
+}
+function mhJournalHTML(d) {
+  const h = d.health, jf = state.mm.hv.jf;
+  const chips = `<div class="mh-filter">${MH_FILTERS.map(([id, name]) => `<button data-mm="jf" data-v="${id}" aria-pressed="${id === jf}">${name}</button>`).join("")}</div>`;
+  const all = h.events.slice().reverse().filter((e) => jf === "all" || (MH_KINDS[e.kind] || MH_KINDS.other)[1] === jf);
+  const shown = all.slice(0, 60);
+  if (!h.events.length) return `<h4>Журнал решений</h4><p class="muted">Пока пуст: сюда попадет каждое ваше одобрение, отклонение и подтверждение.</p>`;
+  return `<h4>Журнал решений</h4><p class="muted">Что вы одобрили, отклонили и подтвердили; только дописывается.</p>${chips}
+    ${shown.map((e) => mhEventHTML(h, e)).join("") || `<p class="muted">В этом разрезе решений нет.</p>`}
+    ${all.length > shown.length ? `<p class="muted">Показаны последние ${shown.length} из ${all.length}; остальное в journal/decisions.md.</p>` : ""}`;
 }
 // mmDo runs one action of the screen: блокирует повторное нажатие, после — перечитывает память.
 async function mmDo(fn, done) {
@@ -4228,8 +4493,29 @@ $("#mm-body").addEventListener("click", (e) => {
   if (!b) return;
   const a = b.dataset.mm, name = b.dataset.name;
   if (a === "sel") { state.mm.sel = b.dataset.v; mmRender(); return; }
+  if (a === "hv") { // переход внутри «Здоровья»: ритм → день → решение → правило
+    const hv = state.mm.hv;
+    state.mm.sel = "health"; hv.view = b.dataset.v;
+    if ("day" in b.dataset) hv.day = b.dataset.day || null;
+    if ("rule" in b.dataset) hv.rule = b.dataset.rule === "" ? null : +b.dataset.rule;
+    mmRender(); return;
+  }
+  if (a === "jf") { state.mm.hv.jf = b.dataset.v; mmRender(); return; }
   const api = native();
   if (a === "init") mmDo(() => api.MemoryInit(), () => ["Память заведена", " · HOT.md, cold/, journal/"]);
+  else if (a === "review") mmDo(() => api.MemoryReview(), () => ["Осмотр отмечен", " · запись в журнале решений"]);
+  else if (a === "index") mmDo(() => api.MemoryIndex(), (rep) => ["Векторы пересобраны", ` · новых ${rep.embedded}, из индекса ${rep.reused}${rep.failed ? `, отказов ${rep.failed}: служба не смогла встроить запись` : ""}`]);
+  else if (a === "confirm-all-ask") { state.mm.confirm = "*stale"; mmRender(); }
+  else if (a === "confirm-all-no") { state.mm.confirm = ""; mmRender(); }
+  else if (a === "confirm-all") {
+    state.mm.confirm = "";
+    const texts = state.mm.data.health.rules.filter((x) => x.stale).map((x) => x.text);
+    mmDo(() => api.MemoryConfirmRules(texts), () => ["Правила подтверждены", ` · ${texts.length}, запись в журнале по каждому`]);
+  }
+  else if (a === "confirm") {
+    const r = state.mm.data.health.rules[+b.dataset.i];
+    if (r) mmDo(() => api.MemoryConfirmRule(r.text), () => ["Правило подтверждено", " · запись в журнале решений"]);
+  }
   else if (a === "topics") mmDo(() => api.MemoryTopics(), (ch) => ["Перечень тем", ch ? " · обновлен" : " · уже актуален"]);
   else if (a === "seal") mmDo(() => api.MemorySeal(), () => ["Принято", " · текущий HOT.md подтвержден, запись в журнале решений"]);
   else if (a === "who") mmDo(() => api.MemoryWho(), (ch) => ["«Кто я»", ch ? " · обновлено из портрета, одобренные факты теперь в HOT.md" : " · уже актуально"]);

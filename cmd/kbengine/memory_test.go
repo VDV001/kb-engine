@@ -199,6 +199,7 @@ func TestMemory_agentQueueEndToEnd(t *testing.T) {
 	if code, out, _ := runMem(t, "pending", dir); code != 0 || !strings.Contains(out, "agent-note") {
 		t.Fatalf("pending: %d %q", code, out)
 	}
+	askHuman(t, true) // любое одобрение поднимает здоровье и ждет жеста человека
 	if code, _, e := runMem(t, "approve", "--name", "agent-note", "--to", "cold", dir); code != 0 {
 		t.Fatalf("approve: %d %s", code, e)
 	}
@@ -458,5 +459,105 @@ func TestMemory_hotWritesNeedAHuman(t *testing.T) {
 func TestConfirmOnTerminal_refusesNonTerminals(t *testing.T) {
 	if err := confirmOnTerminal(strings.NewReader("rule-1\n"), &bytes.Buffer{})("Введите имя", "rule-1"); err == nil {
 		t.Error("ввод не из терминала должен отвергаться")
+	}
+}
+
+// Здоровье памяти: свежая память в порядке, правка мимо системы возвращает «не доверяю».
+func TestMemory_healthFreshAndOutsideEdit(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	code, out, e := runMem(t, "health", dir)
+	if code != 0 || !strings.Contains(out, "Доверяю") || !strings.Contains(out, "здоровье 100 из 100") {
+		t.Fatalf("свежая память: code=%d out=%q err=%q", code, out, e)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("правка мимо системы"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ = runMem(t, "health", dir)
+	if code != 1 || !strings.Contains(out, "Не доверяю") || !strings.Contains(out, "мимо системы") {
+		t.Fatalf("правка мимо системы: code=%d out=%q", code, out)
+	}
+}
+
+func TestMemory_healthJSON(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	code, out, e := runMem(t, "health", "--json", dir)
+	var got struct {
+		Mode  string `json:"mode"`
+		Total int    `json:"total"`
+		Parts []struct {
+			ID    string  `json:"id"`
+			Value float64 `json:"value"`
+			Max   float64 `json:"max"`
+		} `json:"parts"`
+	}
+	if err := json.Unmarshal([]byte(out), &got); err != nil || code != 0 {
+		t.Fatalf("code=%d err=%v out=%q stderr=%q", code, err, out, e)
+	}
+	if got.Mode != "ok" || got.Total != 100 || len(got.Parts) != 4 {
+		t.Fatalf("got %+v", got)
+	}
+}
+
+func TestMemory_reviewAndConfirmNeedAHuman(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
+	askHuman(t, true)
+	if code, _, e := runMem(t, "approve", "--name", "rule-1", "--to", "hot", dir); code != 0 {
+		t.Fatalf("approve: %d %s", code, e)
+	}
+	journal := func() string {
+		b, _ := os.ReadFile(filepath.Join(dir, "journal", "decisions.md"))
+		return string(b)
+	}
+	askHuman(t, false)
+	if code, _, _ := runMem(t, "review", dir); code != 1 || strings.Contains(journal(), "осмотр:") {
+		t.Errorf("review без подтверждения: code=%d journal=%q", code, journal())
+	}
+	if code, _, _ := runMem(t, "confirm", "--rule", "не пушить в main", dir); code != 1 || strings.Contains(journal(), "правило подтверждено") {
+		t.Errorf("confirm без подтверждения: code=%d", code)
+	}
+	askHuman(t, true)
+	if code, _, e := runMem(t, "review", dir); code != 0 || !strings.Contains(journal(), "осмотр: без изменений") {
+		t.Fatalf("review: %d %s", code, e)
+	}
+	if code, _, e := runMem(t, "confirm", "--rule", "Не пушить в MAIN.", dir); code != 0 || !strings.Contains(journal(), "правило подтверждено: не пушить в main") {
+		t.Fatalf("confirm: %d %s journal=%q", code, e, journal())
+	}
+	if code, _, e := runMem(t, "confirm", "--rule", "выдуманное", dir); code != 1 || !strings.Contains(e, "нет такого правила") {
+		t.Errorf("confirm выдуманного: code=%d err=%q", code, e)
+	}
+}
+
+func TestMemory_usageListsHealthVerbs(t *testing.T) {
+	_, _, e := runMem(t)
+	for _, v := range []string{"health", "review", "confirm"} {
+		if !strings.Contains(e, v) {
+			t.Errorf("usage не называет %q: %q", v, e)
+		}
+	}
+}
+
+// reject и approve --to cold поднимают здоровье, поэтому тоже ждут жеста человека
+// (ревью: иначе агент с shell «осматривал» бы память сам).
+func TestMemory_rejectAndColdApproveNeedAHuman(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
+	askHuman(t, false)
+	if code, _, _ := runMem(t, "reject", "--name", "rule-1", dir); code != 1 {
+		t.Errorf("reject без подтверждения: code=%d", code)
+	}
+	if code, _, _ := runMem(t, "approve", "--name", "rule-1", "--to", "cold", dir); code != 1 {
+		t.Errorf("approve cold без подтверждения: code=%d", code)
+	}
+	if _, out, _ := runMem(t, "pending", dir); !strings.Contains(out, "rule-1") {
+		t.Error("запись пропала из очереди без подтверждения")
+	}
+	askHuman(t, true)
+	if code, _, e := runMem(t, "reject", "--name", "rule-1", dir); code != 0 {
+		t.Errorf("reject с подтверждением: %d %s", code, e)
 	}
 }

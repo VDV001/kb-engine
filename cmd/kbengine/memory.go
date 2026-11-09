@@ -19,7 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who|seal> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics|pending|approve|reject|index|find|who|seal|health|review|confirm> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -34,6 +34,9 @@ var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
 	"find":    memoryFind,
 	"who":     memoryWho,
 	"seal":    memorySeal,
+	"health":  memoryHealth,
+	"review":  memoryReview,
+	"confirm": memoryConfirmRule,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -251,13 +254,16 @@ func memoryApprove(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return memoryFail(stderr, err)
 	}
+	// Правило в горячем слое начнет действовать во всех сессиях агентов, а любое одобрение
+	// поднимает здоровье: имя записи вводится руками, как подтверждение, что человек
+	// ее прочитал.
+	prompt := "Запись " + *name + " уйдет в холодный слой. Введите имя записи для подтверждения: "
 	if layer == domain.LayerHot {
-		// Правило в горячем слое начнет действовать во всех сессиях агентов: имя
-		// записи вводится руками, как подтверждение, что человек его прочитал.
-		if err := memoryConfirm("Правило из записи "+*name+" начнет действовать во всех сессиях агентов. Введите имя записи для подтверждения: ", *name); err != nil {
-			fmt.Fprintf(stderr, "memory: %v\n", err)
-			return 1
-		}
+		prompt = "Правило из записи " + *name + " начнет действовать во всех сессиях агентов. Введите имя записи для подтверждения: "
+	}
+	if err := memoryConfirm(prompt, *name); err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
 	}
 	if err := memory.New(st, lim).Approve(*name, layer); err != nil {
 		return memoryFail(stderr, err)
@@ -274,6 +280,10 @@ func memoryReject(args []string, stdout, stderr io.Writer) int {
 	if stop {
 		return code
 	}
+	if err := memoryConfirm("Отклонить запись "+*name+"? Введите имя записи для подтверждения: ", *name); err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
+	}
 	if err := memory.New(memorydir.New(dir), memory.Limits{}).Reject(*name); err != nil {
 		return memoryFail(stderr, err)
 	}
@@ -284,8 +294,8 @@ func memoryReject(args []string, stdout, stderr io.Writer) int {
 // Служба эмбеддингов по умолчанию — локальная Ollama с bge-m3 (ADR-0008). Без нее
 // `find` ищет по тексту; к службе обращаются только если индекс векторов снят.
 const (
-	defaultEmbedURL   = "http://127.0.0.1:11434/api/embeddings"
-	defaultEmbedModel = "bge-m3"
+	defaultEmbedURL   = memorydir.EmbedURL
+	defaultEmbedModel = memorydir.EmbedModel
 )
 
 // memoryEmbedService собирает сценарий со смысловым слоем из флагов службы.

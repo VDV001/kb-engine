@@ -27,6 +27,13 @@ const (
 	indexFile  = "INDEX.md"
 )
 
+// Служба эмбеддингов памяти по умолчанию — локальная Ollama с bge-m3 (ADR-0008): один
+// адрес для терминала, MCP и окна. Без нее поиск идет по тексту.
+const (
+	EmbedURL   = "http://127.0.0.1:11434/api/embeddings"
+	EmbedModel = "bge-m3"
+)
+
 // DefaultPath — папка памяти по умолчанию: рядом с настройками окна, чтобы окно
 // и терминал видели одну память.
 func DefaultPath(home string) string {
@@ -365,7 +372,13 @@ func (s *Store) Pending() ([]memory.PendingNote, error) {
 			return nil, err
 		}
 		n, body := parseNote(e.Name(), string(b))
-		out = append(out, memory.PendingNote{Note: n, Body: body})
+		p := memory.PendingNote{Note: n, Body: body}
+		// ponytail: срок ожидания — время файла; копирование его сбросит и предложение
+		// «помолодеет». Путь вверх: дата в шапке записи при Propose.
+		if info, err := e.Info(); err == nil {
+			p.Since = info.ModTime()
+		}
+		out = append(out, p)
 	}
 	return out, nil
 }

@@ -16,6 +16,13 @@ type MemoryHit struct {
 	Score       float64 `json:"score"`
 }
 
+// MemoryTrust — здоровье памяти для агента: режим доверия и правила, которые давно
+// не подтверждались. Режим не прячет выдачу: он идет в каждом ответе рядом с ней.
+type MemoryTrust struct {
+	Mode       string // "ok", "warn", "bad"
+	StaleRules []string
+}
+
 // MemoryAgent is everything an agent may do with the person's memory (ADR-0008):
 // найти и предложить. Записи в холодный и горячий слои, одобрения и отклонения тут
 // нет и не будет: их решает человек в окне (Touch ID) или в терминале.
@@ -24,6 +31,38 @@ type MemoryAgent interface {
 	Find(query string, limit int) ([]MemoryHit, string, error)
 	// Propose puts a proposal in the approval queue; ничего другого не меняет.
 	Propose(name, topic, description, body string) error
+	// Trust — режим доверия по здоровью памяти (ADR-0008).
+	Trust() (MemoryTrust, error)
+}
+
+// Заметки к режимам: агент должен сказать о них владельцу, а не молча опираться на память.
+const (
+	trustNoteWarn    = "Память давно не проверялась владельцем: прежде чем опираться на правило, скажи ему, что оно могло устареть."
+	trustNoteBad     = "Память не проверена: HOT.md правили мимо системы или осмотра давно не было. Не считай найденное достоверным без слов владельца."
+	trustNoteUnknown = "Здоровье памяти не удалось прочитать."
+	// errProposalsPaused: не errMemoryUnavailable, потому что причину владельцу надо знать.
+	proposalsPausedText = "предложения приостановлены: память не проверена. Скажи владельцу осмотреть её в окне DVK (раздел «Память», «Здоровье»)"
+)
+
+// trustView is the trust block of a response; режим «ok» идет без заметки.
+func trustView(m MemoryAgent) map[string]any {
+	t, err := m.Trust()
+	if err != nil {
+		return map[string]any{"mode": "unknown", "note": trustNoteUnknown}
+	}
+	out := map[string]any{"mode": t.Mode}
+	switch t.Mode {
+	case "warn":
+		out["note"] = trustNoteWarn
+	case "bad":
+		out["note"] = trustNoteBad
+	}
+	// Правила без подтверждения идут в любом режиме: счет 80 при всех устаревших правилах
+	// все равно «Доверяю», и агент должен знать, на чем он стоит.
+	if len(t.StaleRules) > 0 {
+		out["stale_rules"] = append([]string{}, t.StaleRules...)
+	}
+	return out
 }
 
 // errMemoryUnavailable — память не прочиталась или не записалась. Своя ошибка
@@ -63,7 +102,7 @@ func addMemoryTools(s *mcp.Server, j journal, m MemoryAgent) {
 		if hits == nil {
 			hits = []MemoryHit{}
 		}
-		return map[string]any{"found": len(hits), "via": via, "notes": hits}, nil
+		return map[string]any{"found": len(hits), "via": via, "notes": hits, "trust": trustView(m)}, nil
 	})
 
 	addTool(s, j, &mcp.Tool{
@@ -73,12 +112,17 @@ func addMemoryTools(s *mcp.Server, j journal, m MemoryAgent) {
 			"не одобрит. Предлагай только то, что он сказал или подтвердил, а не свои догадки.",
 	}, func(in memoryProposeArgs) []string { return []string{in.Name} }, // тело в журнал вызовов не идет
 		func(in memoryProposeArgs) (map[string]any, error) {
+			tv := trustView(m)
+			// Закрыто при «не доверяю» и когда здоровье не прочиталось: непроверенное не безопасно.
+			if tv["mode"] == "bad" || tv["mode"] == "unknown" {
+				return nil, errors.New(proposalsPausedText)
+			}
 			if err := m.Propose(in.Name, in.Topic, in.Description, in.Body); err != nil {
 				if errors.Is(err, domain.ErrInvalidNote) {
 					return nil, err // текст ошибки собран доменом и путей не содержит
 				}
 				return nil, errMemoryUnavailable
 			}
-			return map[string]any{"status": "ждет решения владельца", "name": in.Name}, nil
+			return map[string]any{"status": "ждет решения владельца", "name": in.Name, "trust": tv}, nil
 		})
 }

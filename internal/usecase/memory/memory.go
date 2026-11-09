@@ -53,6 +53,8 @@ type Store interface {
 type PendingNote struct {
 	Note domain.ColdNote
 	Body string
+	// Since — когда предложение легло в очередь (время файла); нулевое — неизвестно.
+	Since time.Time
 }
 
 // Service — сценарии памяти.
@@ -105,7 +107,7 @@ func (s *Service) Who() (changed bool, err error) {
 	if err := s.store.SaveHot(hot); err != nil {
 		return false, err
 	}
-	return true, s.decide("блок «Кто я» в HOT.md обновлен из одобренных фактов портрета")
+	return true, s.decide("%s", domain.DecisionTextPortrait)
 }
 
 // WithEmbedder подключает смысловой слой: службу эмбеддингов и имя ее модели.
@@ -151,9 +153,18 @@ func (s *Service) Check() ([]domain.MemoryProblem, error) {
 
 // checkSnapshot checks an already loaded snapshot: окну не нужно читать папку дважды.
 func (s *Service) checkSnapshot(snap Snapshot) ([]domain.MemoryProblem, error) {
-	sealed, err := s.store.SealedDigest()
+	st, err := s.state(snap)
 	if err != nil {
 		return nil, err
+	}
+	return domain.CheckMemory(st), nil
+}
+
+// state gathers what the layout check and the health both read.
+func (s *Service) state(snap Snapshot) (domain.MemoryState, error) {
+	sealed, err := s.store.SealedDigest()
+	if err != nil {
+		return domain.MemoryState{}, err
 	}
 	st := domain.MemoryState{
 		Hot: snap.Hot, HotLimit: s.limits.Hot,
@@ -164,7 +175,7 @@ func (s *Service) checkSnapshot(snap Snapshot) ([]domain.MemoryProblem, error) {
 	switch vi, err := s.store.LoadVectors(); {
 	case errors.Is(err, ErrNoVectors):
 	case err != nil:
-		return nil, err
+		return domain.MemoryState{}, err
 	default:
 		st.HasVectors = true
 		st.VectorDigests = make(map[string]string, len(vi.Entries))
@@ -172,7 +183,7 @@ func (s *Service) checkSnapshot(snap Snapshot) ([]domain.MemoryProblem, error) {
 			st.VectorDigests[name] = e.Digest
 		}
 	}
-	return domain.CheckMemory(st), nil
+	return st, nil
 }
 
 // decide writes one decision of the person to the journal; одна строка, с датой.
@@ -192,7 +203,7 @@ func (s *Service) decide(format string, args ...any) error {
 func (s *Service) Topics() (changed bool, err error) {
 	changed, err = s.topics()
 	if err == nil && changed {
-		err = s.decide("перечень тем в HOT.md пересобран из тем записей")
+		err = s.decide("%s", domain.DecisionTextTopics)
 	}
 	return changed, err
 }
@@ -268,7 +279,7 @@ func (s *Service) approveCold(name string, p PendingNote) error {
 	if _, err := s.topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
 		return err
 	}
-	return s.decide("одобрено в холодный слой: %s (тема «%s»)", name, p.Note.Topic)
+	return s.decide(domain.DecisionPrefixApproveCold+"%s (тема «%s»)", name, p.Note.Topic)
 }
 
 func (s *Service) approveHot(name string, p PendingNote) error {
@@ -280,9 +291,9 @@ func (s *Service) approveHot(name string, p PendingNote) error {
 	if err != nil {
 		return err
 	}
-	verdict := "одобрено в горячий слой: %s — «%s»"
+	verdict := domain.DecisionPrefixApproveHot + "%s — «%s»"
 	if hot == snap.Hot {
-		verdict += " (такое правило уже было)"
+		verdict += domain.DecisionSuffixDup
 	} else {
 		if n := utf8.RuneCountInString(hot); n > s.limits.Hot {
 			return fmt.Errorf("%w: стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)
@@ -309,7 +320,7 @@ func (s *Service) Reject(name string) error {
 	if err := s.store.ArchivePending(name, s.archiveName("rejected", name)); err != nil {
 		return err
 	}
-	return s.decide("отклонено: %s — «%s»", name, p.Note.Description)
+	return s.decide(domain.DecisionPrefixReject+"%s — «%s»", name, p.Note.Description)
 }
 
 // Seal accepts the current HOT.md as is: человек прочитал правку, сделанную мимо
@@ -318,7 +329,7 @@ func (s *Service) Seal() error {
 	if err := s.store.Seal(); err != nil {
 		return err
 	}
-	return s.decide("подтверждено: текущий HOT.md принят как есть")
+	return s.decide("%s", domain.DecisionTextSeal)
 }
 
 func (s *Service) archiveName(verdict, name string) string {
@@ -334,6 +345,11 @@ type Overview struct {
 	Decisions []string
 	Problems  []domain.MemoryProblem
 	Limits    Limits
+	// Health и Events — здоровье памяти и все решения журнала, разобранные (для ритма).
+	Health domain.Health
+	Events []domain.Decision
+	// Today — день, от которого считались возрасты (по часам сценария).
+	Today time.Time
 }
 
 // recentDecisions — сколько последних решений показывает экран.
@@ -353,7 +369,7 @@ func (s *Service) Overview() (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
-	decisions, err := s.store.Decisions(recentDecisions)
+	lines, err := s.store.Decisions(allDecisions)
 	if err != nil {
 		return Overview{}, err
 	}
@@ -361,5 +377,10 @@ func (s *Service) Overview() (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
-	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Decisions: decisions, Problems: problems, Limits: s.limits}, nil
+	health, events, err := s.assess(snap, pending, lines)
+	if err != nil {
+		return Overview{}, err
+	}
+	decisions := lines[max(0, len(lines)-recentDecisions):]
+	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Decisions: decisions, Problems: problems, Limits: s.limits, Health: health, Events: events, Today: domain.DayOf(s.now())}, nil
 }

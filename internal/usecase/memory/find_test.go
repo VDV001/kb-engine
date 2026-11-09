@@ -337,3 +337,18 @@ func TestBuildIndex_failureKeepsThePreviousVector(t *testing.T) {
 		t.Fatalf("rep=%+v err=%v entries=%v", rep, err, st.vectors.Entries)
 	}
 }
+
+// Пересборка индекса остается в журнале решений, но осмотром не считается.
+func TestBuildIndex_isLoggedAsUpkeep(t *testing.T) {
+	st, svc := newFind(t, finNote(), docNote())
+	svc = svc.WithEmbedder(&fakeEmbedder{}, "bge-m3")
+	if _, err := svc.BuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.decisions) != 1 || !strings.HasSuffix(st.decisions[0], " "+domain.DecisionTextIndex) {
+		t.Fatalf("decisions = %q", st.decisions)
+	}
+	if d, ok := domain.ParseDecision(st.decisions[0]); !ok || d.Kind != domain.DecisionIndex || d.Kind.IsJudgment() {
+		t.Fatalf("parsed = %+v ok=%v", d, ok)
+	}
+}

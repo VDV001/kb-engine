@@ -7,10 +7,12 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 func newMemDesk(t *testing.T) *memoryDesk {
@@ -242,9 +244,15 @@ func TestMemoryDesk_everyHotWriteAsksTouchID(t *testing.T) {
 	}
 	_ = svc.Propose("junk", "стиль", "лишнее", "x")
 	n := len(auth.asked)
-	if err := d.Reject("junk"); err != nil || len(auth.asked) != n {
-		t.Errorf("Reject не пишет в HOT.md и Touch ID не просит: %v", err)
+	if err := d.Reject("junk"); !errors.Is(err, errAuthDenied) || len(auth.asked) != n+1 {
+		t.Errorf("Reject поднимает здоровье и идет по Touch ID: %v", err)
 	}
+	auth.ok = true
+	if err := d.Reject("junk"); err != nil {
+		t.Errorf("Reject с Touch ID: %v", err)
+	}
+	auth.ok = false
+	n = len(auth.asked)
 	if err := d.SetHotLimit(6000); err != nil || len(auth.asked) != n {
 		t.Errorf("потолок не меняет содержимое: %v", err)
 	}
@@ -282,5 +290,175 @@ func TestMemoryDesk_stateShowsDecisionsAndSeal(t *testing.T) {
 		if p.Kind == "hot-changed-outside" {
 			t.Error("после Seal печать должна совпасть")
 		}
+	}
+}
+
+// Экран «Здоровье»: счёт, режим, правила с возрастом и события для ритма приходят
+// вместе с остальным состоянием, одним чтением папки.
+func TestMemoryDesk_stateCarriesHealth(t *testing.T) {
+	d := newMemDesk(t)
+	svc := d.seed(t)
+	v, _ := d.State()
+	if v.Health.Mode != "ok" || v.Health.Total != 100 || len(v.Health.Parts) != 4 {
+		t.Fatalf("свежая память: %+v", v.Health)
+	}
+	_ = svc.Propose("rule-a", "стиль", "не пушить в main", "x")
+	if err := d.Approve("rule-a", "hot"); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = d.State()
+	h := v.Health
+	if len(h.Rules) != 1 || h.Rules[0].Text != "не пушить в main" || h.Rules[0].AgeDays != 0 || h.Rules[0].Stale {
+		t.Errorf("rules = %+v", h.Rules)
+	}
+	if len(h.Events) != 1 || h.Events[0].Kind != "approve-hot" || h.Events[0].Text != "не пушить в main" {
+		t.Errorf("events = %+v", h.Events)
+	}
+	if h.Today == "" || h.Events[0].Day != h.Today || h.IdleDays != 0 {
+		t.Errorf("today=%q day=%q idle=%d", h.Today, h.Events[0].Day, h.IdleDays)
+	}
+}
+
+func TestMemoryDesk_queueShowsHowLongItWaits(t *testing.T) {
+	d := newMemDesk(t)
+	svc := d.seed(t)
+	_ = svc.Propose("old-one", "стиль", "давно ждет", "x")
+	old := time.Now().AddDate(0, 0, -12)
+	if err := os.Chtimes(filepath.Join(d.dir, "pending", "old-one.md"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := d.State()
+	if len(v.Queue) != 1 || v.Queue[0].WaitDays != 12 || v.Health.OldestPendingDays != 12 {
+		t.Fatalf("queue=%+v health.oldest=%d", v.Queue, v.Health.OldestPendingDays)
+	}
+}
+
+// Осмотр и подтверждение правила поднимают доверие, поэтому идут по Touch ID, как
+// запись в горячий слой; отказ ничего не пишет в журнал.
+func TestMemoryDesk_reviewAndConfirmAskTouchID(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("rule-a", "стиль", "не пушить в main", "x")
+	if err := d.Approve("rule-a", "hot"); err != nil {
+		t.Fatal(err)
+	}
+	decisions := func() int { v, _ := d.State(); return len(v.Decisions) }
+	before := decisions()
+	auth.ok = false
+	if err := d.Review(); !errors.Is(err, errAuthDenied) {
+		t.Errorf("Review: %v", err)
+	}
+	if err := d.ConfirmRule("не пушить в main"); !errors.Is(err, errAuthDenied) {
+		t.Errorf("ConfirmRule: %v", err)
+	}
+	if decisions() != before {
+		t.Error("отказ Touch ID оставил запись в журнале")
+	}
+	auth.ok = true
+	if err := d.Review(); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ConfirmRule("Не пушить в main."); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.ConfirmRule("выдуманное"); !errors.Is(err, domain.ErrNoSuchRule) {
+		t.Errorf("выдуманное правило: %v", err)
+	}
+	if decisions() != before+2 {
+		t.Errorf("в журнале %d, want %d", decisions(), before+2)
+	}
+}
+
+// Подтвердить все устаревшие правила одним жестом: Touch ID один раз, запись по каждому.
+func TestMemoryDesk_confirmRulesAsksTouchIDOnce(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("r-a", "стиль", "не пушить в main", "x")
+	_ = svc.Propose("r-b", "стиль", "релиз в пятницу не катим", "x")
+	for _, n := range []string{"r-a", "r-b"} {
+		if err := d.Approve(n, "hot"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	auth.asked = nil
+	auth.ok = false
+	if err := d.ConfirmRules([]string{"не пушить в main", "релиз в пятницу не катим"}); !errors.Is(err, errAuthDenied) {
+		t.Fatalf("без Touch ID: %v", err)
+	}
+	auth.ok = true
+	before, _ := d.State()
+	if err := d.ConfirmRules([]string{"не пушить в main", "Релиз в пятницу не катим."}); err != nil {
+		t.Fatal(err)
+	}
+	after, _ := d.State()
+	if len(auth.asked) != 2 || len(after.Decisions) != len(before.Decisions)+2 {
+		t.Errorf("asked=%d decisions %d -> %d", len(auth.asked), len(before.Decisions), len(after.Decisions))
+	}
+}
+
+type stubEmbedder struct{ err error }
+
+func (s stubEmbedder) Embed(string) (search.Vector, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return search.Vector{1, 0, 0}, nil
+}
+
+// Кнопка «Пересобрать векторы»: без Touch ID (HOT.md не меняется), ошибка службы — словами.
+func TestMemoryDesk_indexRebuildsVectors(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	d.embed = stubEmbedder{}
+	if _, err := svc.Add("fin-rules", "финансы", "про деньги", "тело"); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := d.Index()
+	if err != nil || rep.Embedded != 1 || len(auth.asked) != 0 {
+		t.Fatalf("rep=%+v err=%v asked=%v", rep, err, auth.asked)
+	}
+	_, _ = svc.Add("second", "финансы", "еще", "тело")
+	hasVectors := func() bool {
+		v, _ := d.State()
+		for _, r := range v.Health.Reasons {
+			if r.Kind == "vectors" {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasVectors() {
+		t.Fatal("после новой записи векторы должны отстать")
+	}
+	if _, err := d.Index(); err != nil {
+		t.Fatal(err)
+	}
+	if hasVectors() {
+		t.Error("после пересборки векторы свежие")
+	}
+	// Старые записи берутся из индекса без службы; новая, которую встроить нечем, называется отказом.
+	_, _ = svc.Add("third", "финансы", "новая", "тело")
+	d.embed = stubEmbedder{err: errors.New("служба молчит")}
+	if rep, err := d.Index(); err == nil && rep.Failed != 1 {
+		t.Errorf("недоступная служба должна дать ошибку или отказ по записи: %+v", rep)
+	}
+}
+
+// В запросе Touch ID видно, что именно подтверждается: подсунутую команду не принять за настоящую.
+func TestMemoryDesk_confirmRuleNamesTheRuleInTheTouchIDPrompt(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("r-a", "стиль", "не пушить в main", "x")
+	_ = d.Approve("r-a", "hot")
+	auth.asked = nil
+	if err := d.ConfirmRule("не пушить в main"); err != nil {
+		t.Fatal(err)
+	}
+	if len(auth.asked) != 1 || !strings.Contains(auth.asked[0], "не пушить в main") {
+		t.Errorf("asked = %q", auth.asked)
 	}
 }

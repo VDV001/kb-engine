@@ -159,7 +159,10 @@ func (s *Service) BuildIndex() (BuildReport, error) {
 	if len(out.Entries) == 0 {
 		return rep, fmt.Errorf("memory: не снято ни одного вектора (записей %d, отказов %d): индекс не записан", len(texts), rep.Failed)
 	}
-	return rep, s.store.SaveVectors(out)
+	if err := s.store.SaveVectors(out); err != nil {
+		return rep, err
+	}
+	return rep, s.decide("%s", domain.DecisionTextIndex)
 }
 
 func (o FindOptions) withDefaults() FindOptions {

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -480,5 +481,23 @@ func TestDecisions_appendOnlyOneLineEach(t *testing.T) {
 	}
 	if none, err := memorydir.New(t.TempDir()).Decisions(5); err != nil || len(none) != 0 {
 		t.Errorf("нет файла — пустой журнал: %v, %v", none, err)
+	}
+}
+
+// Здоровье меряет, сколько предложение ждёт: срок берется со времени файла в очереди.
+func TestPending_reportsSinceFromTheFile(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	if err := st.AddPending(agentNote(t, "p1"), "тело"); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Date(2026, 10, 1, 9, 0, 0, 0, time.Local)
+	if err := os.Chtimes(filepath.Join(dir, "pending", "p1.md"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	list, err := st.Pending()
+	if err != nil || len(list) != 1 || !list[0].Since.Equal(old) {
+		t.Fatalf("Pending = %+v, %v", list, err)
 	}
 }

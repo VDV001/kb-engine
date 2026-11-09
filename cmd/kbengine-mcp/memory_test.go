@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -48,5 +49,30 @@ func TestMemoryAgent_noMemoryYetIsAnError(t *testing.T) {
 	agent := memoryAgent{dir: filepath.Join(t.TempDir(), "нет")}
 	if err := agent.Propose("a", "t", "d", ""); err == nil {
 		t.Error("памяти еще нет: предложение некуда класть")
+	}
+}
+
+// Режим доверия агента идет из того же здоровья, что видит окно: свежая память —
+// «ok», правка HOT.md мимо системы — «bad», устаревшие правила называются.
+func TestMemoryAgent_trustFollowsTheHealth(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dvk-memory")
+	st := memorydir.New(dir)
+	if err := st.Init(); err != nil {
+		t.Fatal(err)
+	}
+	agent := memoryAgent{dir: dir}
+	if tr, err := agent.Trust(); err != nil || tr.Mode != "ok" {
+		t.Fatalf("свежая память: %+v %v", tr, err)
+	}
+	hot := "# HOT\n\n" + domain.RulesHeading + "\n\n- Правило без отметки\n"
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(hot), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr, err := agent.Trust()
+	if err != nil || tr.Mode != "bad" || len(tr.StaleRules) != 1 || tr.StaleRules[0] != "Правило без отметки" {
+		t.Fatalf("правка мимо системы: %+v %v", tr, err)
+	}
+	if _, err := (memoryAgent{dir: filepath.Join(t.TempDir(), "нет")}).Trust(); err == nil {
+		t.Error("памяти нет: режим не определить")
 	}
 }
