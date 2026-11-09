@@ -21,6 +21,7 @@ type echoModel struct {
 	n     int
 	asked [][]chat.ModelMessage
 	err   error
+	usage chat.Usage
 }
 
 func (m *echoModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
@@ -29,7 +30,7 @@ func (m *echoModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []ch
 	if m.err != nil {
 		return chat.ModelReply{}, m.err
 	}
-	return chat.ModelReply{Content: "ответ [1]"}, nil
+	return chat.ModelReply{Content: "ответ [1]", Usage: m.usage}, nil
 }
 
 // newTestChatDesk wires a chat over a fake search and model; settings — как в
@@ -514,5 +515,28 @@ func TestEnglishVoice(t *testing.T) {
 	}
 	if v := englishVoiceIn("Bells               en_US    # Hello\n", "en-US"); v != "" {
 		t.Fatalf("эффект выбран голосом: %q", v)
+	}
+}
+
+// Ответ называет странице заполнение контекста: сколько токенов насчитал
+// провайдер и размер контекста модели из настроек. В файл чата это не пишется,
+// без счета провайдера и без размера окна странице нечего показывать.
+func TestChat_AskReportsContextFill(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	m.usage = chat.Usage{In: 6000, Out: 100, Counted: true}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", ContextWindow: 12000}, ""); err != nil {
+		t.Fatal(err)
+	}
+	c, err := d.Ask(askReq{Question: "какой срок поставки?"})
+	if err != nil || c.Context == nil || c.Context.Used != 6000 || c.Context.Window != 12000 {
+		t.Fatalf("context = %+v, err %v", c.Context, err)
+	}
+	if got, _ := d.Get(c.ID); got.Context != nil {
+		t.Errorf("заполнение контекста попало в файл чата: %+v", got.Context)
+	}
+	m.usage = chat.Usage{}
+	c, _ = d.Ask(askReq{ID: c.ID, Question: "а штраф?"})
+	if c.Context != nil {
+		t.Errorf("провайдер не прислал счет — показывать нечего: %+v", c.Context)
 	}
 }

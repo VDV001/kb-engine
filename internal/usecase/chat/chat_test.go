@@ -174,3 +174,26 @@ func TestRespond_About(t *testing.T) {
 		t.Fatalf("пустой портрет попал: %q", m.got[0].Content)
 	}
 }
+
+// Сколько токенов провайдер насчитал в запросе — это заполнение контекста: чат
+// отдает его странице, чтобы вовремя сказать «пора в новый чат».
+func TestTurn_PromptTokens(t *testing.T) {
+	tests := []struct {
+		name  string
+		usage chat.Usage
+		want  int
+	}{
+		{"счет пришел", chat.Usage{In: 5000, Out: 80, Counted: true}, 5000},
+		{"счета нет — неизвестно, а не ноль", chat.Usage{In: 5000}, 0},
+		{"пустой счет", chat.Usage{}, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := chat.NewService(&fakeSearch{docs: docs}, &fakeModel{reply: chat.ModelReply{Content: "Срок — 30 дней [1].", Usage: tt.usage}})
+			turn, err := svc.Answer(context.Background(), nil, "какой срок поставки?", chat.ModeContext)
+			if err != nil || turn.PromptTokens != tt.want {
+				t.Errorf("PromptTokens = %d (err %v), want %d", turn.PromptTokens, err, tt.want)
+			}
+		})
+	}
+}
