@@ -148,9 +148,16 @@ func TestMemory_topicsFixesStaleList(t *testing.T) {
 		t.Fatal(err)
 	}
 	idx := filepath.Join(dir, "cold", "INDEX.md")
-	f, _ := os.OpenFile(idx, os.O_APPEND|os.O_WRONLY, 0)
-	f.WriteString("- [b](b.md) — про b\n")
-	f.Close()
+	f, err := os.OpenFile(idx, os.O_APPEND|os.O_WRONLY, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("- [b](b.md) — про b\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if code, out, _ := runMem(t, "check", dir); code != 1 || !strings.Contains(out, "stale-topics") {
 		t.Fatalf("check: %d %q", code, out)
 	}

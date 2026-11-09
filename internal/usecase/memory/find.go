@@ -147,8 +147,7 @@ func (s *Service) BuildIndex() (BuildReport, error) {
 	return rep, s.store.SaveVectors(out)
 }
 
-// Find ищет в холодном слое. Журнал и очередь одобрения в поиск не входят.
-func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
+func (o FindOptions) withDefaults() FindOptions {
 	if o.Mode == "" {
 		o.Mode = ModeAuto
 	}
@@ -158,6 +157,12 @@ func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
 	if o.Threshold <= 0 {
 		o.Threshold = DefaultFindThreshold
 	}
+	return o
+}
+
+// Find ищет в холодном слое. Журнал и очередь одобрения в поиск не входят.
+func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
+	o = o.withDefaults()
 	texts, err := s.store.ColdTexts()
 	if err != nil {
 		return FindResult{}, err
@@ -165,23 +170,32 @@ func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
 	if o.Mode == ModeText {
 		return FindResult{Hits: textSearch(texts, query, o.Limit), Via: "text"}, nil
 	}
-
 	vi, vErr := s.store.LoadVectors()
-	usable := s.embed != nil && vErr == nil && vi.Model == s.model
 	if vErr != nil && !errors.Is(vErr, ErrNoVectors) {
 		return FindResult{}, vErr
 	}
-	if !usable {
-		if o.Mode == ModeVector {
-			return FindResult{}, search.ErrNoSemanticLayer
-		}
-		res := FindResult{Hits: textSearch(texts, query, o.Limit), Via: "text"}
-		if s.embed != nil && vErr == nil { // индекс есть, но снят другой моделью
-			res.Notice = fmt.Sprintf("индекс векторов снят моделью %q, а ищем %q: kbengine memory index", vi.Model, s.model)
-		}
-		return res, nil
+	if s.embed == nil || vErr != nil || vi.Model != s.model {
+		return s.withoutVectors(texts, vi, vErr == nil, query, o)
 	}
+	return s.findByVector(texts, vi, query, o)
+}
 
+// withoutVectors answers when the vector layer cannot: эмбеддера нет, индекс не
+// снят или снят другой моделью. Режим vector в этом случае отказывает.
+func (s *Service) withoutVectors(texts []NoteText, vi VectorIndex, hasIndex bool, query string, o FindOptions) (FindResult, error) {
+	if o.Mode == ModeVector {
+		return FindResult{}, search.ErrNoSemanticLayer
+	}
+	res := FindResult{Hits: textSearch(texts, query, o.Limit), Via: "text"}
+	if s.embed != nil && hasIndex { // индекс есть, но снят другой моделью
+		res.Notice = fmt.Sprintf("индекс векторов снят моделью %q, а ищем %q: kbengine memory index", vi.Model, s.model)
+	}
+	return res, nil
+}
+
+// findByVector answers from the vector layer and falls back to text only in auto
+// mode: служба упала или все записи ниже порога. Причина называется в Notice.
+func (s *Service) findByVector(texts []NoteText, vi VectorIndex, query string, o FindOptions) (FindResult, error) {
 	qv, err := s.embed.Embed(query)
 	if err != nil {
 		if o.Mode == ModeVector {
@@ -192,38 +206,7 @@ func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
 			Notice: fmt.Sprintf("смысловой слой недоступен: %v; ответ по тексту", err),
 		}, nil
 	}
-
-	byName := make(map[string]domain.ColdNote, len(texts))
-	unindexed := 0
-	for _, t := range texts {
-		byName[t.Note.Name] = t.Note
-		if e, ok := vi.Entries[t.Note.Name]; !ok || e.Digest != t.Note.Digest {
-			unindexed++
-		}
-	}
-	var hits []Hit
-	for name, e := range vi.Entries {
-		n, ok := byName[name]
-		if !ok {
-			continue
-		}
-		if sc := search.Cosine(qv, e.Vector); sc >= o.Threshold { // NaN сюда не пройдет
-			hits = append(hits, Hit{Note: n, Score: sc})
-		}
-	}
-	slices.SortFunc(hits, func(a, b Hit) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		}
-		return strings.Compare(a.Note.Name, b.Note.Name)
-	})
-	if len(hits) > o.Limit {
-		hits = hits[:o.Limit]
-	}
-
+	hits, unindexed := nearest(texts, vi, qv, o)
 	var notes []string
 	if unindexed > 0 {
 		notes = append(notes, fmt.Sprintf("%d %s без свежего вектора, их вектор не видит: kbengine memory index", unindexed, plural(unindexed, "запись", "записи", "записей")))
@@ -233,6 +216,38 @@ func (s *Service) Find(query string, o FindOptions) (FindResult, error) {
 	}
 	notes = append([]string{fmt.Sprintf("смысловой слой: все записи ниже порога %.2f, ответ по тексту", o.Threshold)}, notes...)
 	return FindResult{Hits: textSearch(texts, query, o.Limit), Via: "text", Notice: strings.Join(notes, "; ")}, nil
+}
+
+// nearest ranks the notes by closeness to the query vector and counts the notes
+// the index does not see (нет вектора или отпечаток разошелся с текстом).
+func nearest(texts []NoteText, vi VectorIndex, qv search.Vector, o FindOptions) (hits []Hit, unindexed int) {
+	for _, t := range texts {
+		e, ok := vi.Entries[t.Note.Name]
+		if !ok || e.Digest != t.Note.Digest {
+			unindexed++
+		}
+		if !ok {
+			continue
+		}
+		if sc := search.Cosine(qv, e.Vector); sc >= o.Threshold { // NaN сюда не пройдет
+			hits = append(hits, Hit{Note: t.Note, Score: sc})
+		}
+	}
+	sortHits(hits)
+	return hits[:min(len(hits), o.Limit)], unindexed
+}
+
+// sortHits orders hits by score, best first; равные — по имени, чтобы выдача была устойчивой.
+func sortHits(hits []Hit) {
+	slices.SortFunc(hits, func(a, b Hit) int {
+		switch {
+		case a.Score > b.Score:
+			return -1
+		case a.Score < b.Score:
+			return 1
+		}
+		return strings.Compare(a.Note.Name, b.Note.Name)
+	})
 }
 
 // plural выбирает форму существительного по числу: 1 запись, 2 записи, 5 записей.

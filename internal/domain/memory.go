@@ -205,19 +205,7 @@ func AppendRule(hot, rule string) (string, error) {
 	if h < 0 {
 		return "", ErrNoRulesSection
 	}
-	end := len(lines)
-	for i := h + 1; i < len(lines); i++ {
-		if strings.HasPrefix(lines[i], "## ") {
-			end = i
-			break
-		}
-	}
-	last := -1
-	for i := h + 1; i < end; i++ {
-		if l := strings.TrimSpace(lines[i]); l == "-" || strings.HasPrefix(l, "- ") {
-			last = i
-		}
-	}
+	last := lastBullet(lines, h)
 	bullet := "- " + rule
 	switch {
 	case last >= 0 && strings.TrimSpace(lines[last]) == "-":
@@ -232,6 +220,18 @@ func AppendRule(hot, rule string) (string, error) {
 		out += "\n"
 	}
 	return out, nil
+}
+
+// lastBullet returns the index of the last bullet in the section that starts at
+// the heading line h, or -1; раздел кончается заголовком «## » или концом файла.
+func lastBullet(lines []string, h int) int {
+	last := -1
+	for i := h + 1; i < len(lines) && !strings.HasPrefix(lines[i], "## "); i++ {
+		if l := strings.TrimSpace(lines[i]); l == "-" || strings.HasPrefix(l, "- ") {
+			last = i
+		}
+	}
+	return last
 }
 
 // TopicList returns the distinct topics of the notes, alphabetical, one spelling per
@@ -314,7 +314,7 @@ func HasTopicList(hot string) bool {
 func topicListIsCurrent(hot string, notes []ColdNote) bool {
 	_, body, _, _ := topicsBlock(hot)
 	var have []string
-	for _, l := range strings.Split(body, "\n") {
+	for l := range strings.SplitSeq(body, "\n") {
 		if l = strings.TrimSpace(l); l != "" {
 			have = append(have, l)
 		}
@@ -323,8 +323,19 @@ func topicListIsCurrent(hot string, notes []ColdNote) bool {
 }
 
 // CheckMemory returns every violation of the layout, in a stable order:
-// горячий слой, записи холодного, затем индекс.
+// горячий слой, записи холодного, индекс, векторы, размер индекса.
 func CheckMemory(st MemoryState) []MemoryProblem {
+	ps := checkHot(st)
+	ps = append(ps, checkNotes(st)...)
+	ps = append(ps, checkIndex(st)...)
+	ps = append(ps, checkVectors(st)...)
+	if st.IndexRunes > st.IndexLimit {
+		ps = append(ps, MemoryProblem{ProblemIndexTooBig, "cold/INDEX.md", fmt.Sprintf("%d знаков при потолке %d", st.IndexRunes, st.IndexLimit)})
+	}
+	return ps
+}
+
+func checkHot(st MemoryState) []MemoryProblem {
 	var ps []MemoryProblem
 	if n := utf8.RuneCountInString(st.Hot); n > st.HotLimit {
 		ps = append(ps, MemoryProblem{ProblemHotTooBig, "HOT.md", fmt.Sprintf("%d знаков при лимите %d", n, st.HotLimit)})
@@ -335,13 +346,16 @@ func CheckMemory(st MemoryState) []MemoryProblem {
 	if len(st.Notes) > 0 && HasTopicList(st.Hot) && !topicListIsCurrent(st.Hot, st.Notes) {
 		ps = append(ps, MemoryProblem{ProblemStaleTopics, "HOT.md", "перечень тем не совпадает с темами записей: kbengine memory topics"})
 	}
+	return ps
+}
+
+func checkNotes(st MemoryState) []MemoryProblem {
 	indexed := make(map[string]bool, len(st.Index))
 	for _, e := range st.Index {
 		indexed[e.File] = true
 	}
-	exists := make(map[string]bool, len(st.Notes))
+	var ps []MemoryProblem
 	for _, n := range st.Notes {
-		exists[n.File] = true
 		if strings.TrimSpace(n.Description) == "" {
 			ps = append(ps, MemoryProblem{ProblemNoDescription, n.File, "в шапке нет description"})
 		}
@@ -352,6 +366,15 @@ func CheckMemory(st MemoryState) []MemoryProblem {
 			ps = append(ps, MemoryProblem{ProblemNotIndexed, n.File, "нет строки в cold/INDEX.md"})
 		}
 	}
+	return ps
+}
+
+func checkIndex(st MemoryState) []MemoryProblem {
+	exists := make(map[string]bool, len(st.Notes))
+	for _, n := range st.Notes {
+		exists[n.File] = true
+	}
+	var ps []MemoryProblem
 	for _, e := range st.Index {
 		if !exists[e.File] {
 			ps = append(ps, MemoryProblem{ProblemDangling, e.File, "индекс ведет на файл, которого нет"})
@@ -360,24 +383,30 @@ func CheckMemory(st MemoryState) []MemoryProblem {
 			ps = append(ps, MemoryProblem{ProblemLongHook, e.File, fmt.Sprintf("крючок %d знаков при потолке %d", n, MaxHookRunes)})
 		}
 	}
-	if st.HasVectors {
-		stale := 0
-		for _, n := range st.Notes {
-			if d, ok := st.VectorDigests[n.Name]; !ok || d != n.Digest {
-				stale++
-			}
-		}
-		for name := range st.VectorDigests {
-			if !exists[name+".md"] {
-				stale++
-			}
-		}
-		if stale > 0 {
-			ps = append(ps, MemoryProblem{ProblemStaleVectors, "cold/.vectors.json", fmt.Sprintf("записей без свежего вектора или с лишним: %d, kbengine memory index", stale)})
-		}
-	}
-	if st.IndexRunes > st.IndexLimit {
-		ps = append(ps, MemoryProblem{ProblemIndexTooBig, "cold/INDEX.md", fmt.Sprintf("%d знаков при потолке %d", st.IndexRunes, st.IndexLimit)})
-	}
 	return ps
+}
+
+// checkVectors сверяет отпечатки: индекс векторов необязателен, но если он есть,
+// он не должен отстать от текста записей.
+func checkVectors(st MemoryState) []MemoryProblem {
+	if !st.HasVectors {
+		return nil
+	}
+	names := make(map[string]bool, len(st.Notes))
+	stale := 0
+	for _, n := range st.Notes {
+		names[n.Name] = true
+		if d, ok := st.VectorDigests[n.Name]; !ok || d != n.Digest {
+			stale++
+		}
+	}
+	for name := range st.VectorDigests {
+		if !names[name] {
+			stale++
+		}
+	}
+	if stale == 0 {
+		return nil
+	}
+	return []MemoryProblem{{ProblemStaleVectors, "cold/.vectors.json", fmt.Sprintf("записей без свежего вектора или с лишним: %d, kbengine memory index", stale)}}
 }

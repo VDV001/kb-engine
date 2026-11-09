@@ -23,65 +23,66 @@ func tokens(s string) []string {
 	return words
 }
 
+// corpus — слова записей и статистика, нужная BM25.
+type corpus struct {
+	docs [][]string
+	df   map[string]int // в скольких записях встретилось слово
+	avg  float64        // средняя длина записи в словах
+}
+
+// newCorpus tokenizes name, topic, description and body of every note. Описание
+// считается дважды: это то, что автор записи счел главным.
+func newCorpus(texts []NoteText) corpus {
+	c := corpus{docs: make([][]string, len(texts)), df: map[string]int{}}
+	var total int
+	for i, t := range texts {
+		d := tokens(strings.Join([]string{t.Note.Name, t.Note.Topic, t.Note.Description, t.Note.Description, t.Body}, " "))
+		c.docs[i] = d
+		total += len(d)
+		for _, w := range slices.Compact(slices.Sorted(slices.Values(d))) {
+			c.df[w]++
+		}
+	}
+	c.avg = float64(total) / float64(len(texts))
+	return c
+}
+
+// score is the BM25 of one record for the query words.
+func (c corpus) score(doc, query []string) float64 {
+	const k1, b = 1.2, 0.75
+	tf := map[string]int{}
+	for _, w := range doc {
+		tf[w]++
+	}
+	n := float64(len(c.docs))
+	var sum float64
+	for _, w := range query {
+		f := float64(tf[w])
+		if f == 0 {
+			continue
+		}
+		df := float64(c.df[w])
+		idf := math.Log(1 + (n-df+0.5)/(df+0.5))
+		sum += idf * f * (k1 + 1) / (f + k1*(1-b+b*float64(len(doc))/c.avg))
+	}
+	return sum
+}
+
 // textSearch ranks notes by BM25 over name, topic, description and body.
-// Описание считается дважды: это то, что автор записи счел главным.
 // ponytail: индекс строится на каждый запрос; на сотнях записей это доли
 // миллисекунды, на десятках тысяч нужен кэш.
 func textSearch(texts []NoteText, query string, limit int) []Hit {
-	q := tokens(query)
-	slices.Sort(q)
-	q = slices.Compact(q)
+	q := slices.Compact(slices.Sorted(slices.Values(tokens(query))))
 	if len(q) == 0 || len(texts) == 0 {
 		return nil
 	}
-	docs := make([][]string, len(texts))
-	df := map[string]int{}
-	var total float64
-	for i, t := range texts {
-		d := tokens(strings.Join([]string{t.Note.Name, t.Note.Topic, t.Note.Description, t.Note.Description, t.Body}, " "))
-		docs[i] = d
-		total += float64(len(d))
-		seen := map[string]bool{}
-		for _, w := range d {
-			if !seen[w] {
-				seen[w] = true
-				df[w]++
-			}
-		}
-	}
-	avg := total / float64(len(texts))
-	const k1, b = 1.2, 0.75
-	n := float64(len(texts))
+	c := newCorpus(texts)
 	var hits []Hit
-	for i, d := range docs {
-		tf := map[string]int{}
-		for _, w := range d {
-			tf[w]++
-		}
-		var score float64
-		for _, w := range q {
-			f := float64(tf[w])
-			if f == 0 {
-				continue
-			}
-			idf := math.Log(1 + (n-float64(df[w])+0.5)/(float64(df[w])+0.5))
-			score += idf * f * (k1 + 1) / (f + k1*(1-b+b*float64(len(d))/avg))
-		}
-		if score > 0 {
-			hits = append(hits, Hit{Note: texts[i].Note, Score: score})
+	for i, d := range c.docs {
+		if sc := c.score(d, q); sc > 0 {
+			hits = append(hits, Hit{Note: texts[i].Note, Score: sc})
 		}
 	}
-	slices.SortFunc(hits, func(a, b Hit) int {
-		switch {
-		case a.Score > b.Score:
-			return -1
-		case a.Score < b.Score:
-			return 1
-		}
-		return strings.Compare(a.Note.Name, b.Note.Name)
-	})
-	if len(hits) > limit {
-		hits = hits[:limit]
-	}
-	return hits
+	sortHits(hits)
+	return hits[:min(len(hits), limit)]
 }
