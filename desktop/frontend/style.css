@@ -1466,3 +1466,8 @@ body.no-mh-heat .mh-heat button.l2 { background: var(--z-ok); } body.no-mh-heat 
 .look-range input[type="range"] { width: 180px; accent-color: var(--z-accent); }
 .look-range output { min-width: 44px; font-variant-numeric: tabular-nums; }
 #look-health input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: none; cursor: pointer; vertical-align: middle; }
+
+/* Доступы: логин подписан и выделен (владелец 09.11: «не очень понятно, что из этого логин»). */
+.ac-login { font-weight: 700; padding: 1px 8px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg-2); color: var(--z-ink); }
+.ac-lbl { font-style: normal; font-size: 11px; color: var(--z-faint); margin-right: 4px; }
+.ac-edit-who { grid-column: 1 / -1; margin: 0; }
