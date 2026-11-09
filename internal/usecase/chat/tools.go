@@ -78,7 +78,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 			if strings.TrimSpace(reply.Content) == "" {
 				return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 			}
-			return Turn{Answer: reply.Content, Docs: run.docs()}, nil
+			return Turn{Answer: reply.Content, Docs: run.docs(), PromptTokens: promptTokens(reply.Usage)}, nil
 		}
 		if r.Show != nil {
 			r.Show("") // «сейчас поищу» — не ответ

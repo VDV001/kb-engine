@@ -37,6 +37,12 @@ const (
 )
 
 // ErrChatSettings — настройки чата не подходят.
+// Границы размера контекста в токенах: от маленькой локальной модели до миллиона.
+const (
+	MinContextWindow = 1000
+	MaxContextWindow = 2000000
+)
+
 var ErrChatSettings = errors.New("настройки чата не подходят")
 
 // Chat — модель чата окна. Ключ сюда не пишется никогда: он в Связке ключей.
@@ -62,6 +68,10 @@ type Chat struct {
 	MemoryServer string `json:"memoryServer,omitempty"`
 	// MemoryOff — не разбирать ответы на новое о человеке.
 	MemoryOff bool `json:"memoryOff,omitempty"`
+	// ContextWindow — размер контекста модели в токенах; 0 — не задан, и окно
+	// показывает заполнение только числом. Сервер его не сообщает, поэтому
+	// человек вносит сам.
+	ContextWindow int `json:"contextWindow,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
 	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
 }
@@ -108,6 +118,9 @@ func (c Chat) Check() error {
 	}
 	if err := c.checkMemory(); err != nil {
 		return err
+	}
+	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
+		return fmt.Errorf("%w: контекст %d токенов, допустимо %d-%d", ErrChatSettings, c.ContextWindow, MinContextWindow, MaxContextWindow)
 	}
 	switch c.Accent {
 	case "", "en-US", "en-GB":

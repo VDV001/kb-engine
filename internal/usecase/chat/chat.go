@@ -118,6 +118,17 @@ type Streamer interface {
 type Turn struct {
 	Answer string
 	Docs   []Doc
+	// PromptTokens — сколько токенов провайдер насчитал в запросе последнего
+	// вызова модели: это заполнение контекста. 0 — счет не пришел (неизвестно).
+	PromptTokens int
+}
+
+// promptTokens is the provider's count of the request, or 0 when it sent none.
+func promptTokens(u Usage) int {
+	if !u.Counted {
+		return 0
+	}
+	return u.In
 }
 
 // Сколько документов и текста уходит модели в режиме «окно ищет»: маленькие
@@ -233,7 +244,7 @@ func (s *Service) Respond(ctx context.Context, r Request) (Turn, error) {
 	if len(r.Attached) > 0 && len(used) < len(docs) {
 		used = appendNew(slices.Clone(r.Attached), used...)
 	}
-	return Turn{Answer: reply.Content, Docs: used}, nil
+	return Turn{Answer: reply.Content, Docs: used, PromptTokens: promptTokens(reply.Usage)}, nil
 }
 
 // withAbout adds the person's portrait to the system prompt.

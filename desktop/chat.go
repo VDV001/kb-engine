@@ -56,6 +56,17 @@ type chatRecord struct {
 	Notes []string `json:"notes,omitempty"`
 	// Portrait — пошел ли портрет в чат (#479); только в ответе.
 	Portrait *portraitNote `json:"portrait,omitempty"`
+	// Context — заполнение контекста модели после этого ответа; только в ответе.
+	Context *contextNote `json:"context,omitempty"`
+}
+
+// contextNote is how full the model's context is: токены запроса по счету
+// провайдера и размер контекста из настроек (0 — не задан). Решение владельца
+// 09.11: около половины контекста качество еще то же, дальше пора записать
+// handoff и начать новый чат; порог выбирает окно, а не провайдер.
+type contextNote struct {
+	Used   int `json:"used"`
+	Window int `json:"window"`
 }
 
 // askReq is one question from the page: чат ("" — новый), вопрос, приложенное
@@ -289,6 +300,9 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	}
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
+	if turn.PromptTokens > 0 {
+		rec.Context = &contextNote{Used: turn.PromptTokens, Window: c.ContextWindow}
+	}
 	d.extractAfter(c, model, rec.ID, question, turn.Answer)
 	return rec, nil
 }
