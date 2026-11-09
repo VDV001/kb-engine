@@ -37,6 +37,8 @@ type Store interface {
 	// LoadVectors возвращает ErrNoVectors, если индекс векторов еще не снят.
 	LoadVectors() (VectorIndex, error)
 	SaveVectors(v VectorIndex) error
+	// JournalNames — имена файлов journal/ по возрастанию.
+	JournalNames() ([]string, error)
 }
 
 // PendingNote — запись агента, ждущая решения человека.
@@ -243,4 +245,35 @@ func (s *Service) Reject(name string) error {
 
 func (s *Service) archiveName(verdict, name string) string {
 	return fmt.Sprintf("%s-%s-%s.md", s.now().Format("2006-01-02"), verdict, name)
+}
+
+// Overview — все, что показывает экран памяти: слои, очередь, журнал, нарушения и
+// действующие потолки.
+type Overview struct {
+	Snapshot Snapshot
+	Pending  []PendingNote
+	Journal  []string
+	Problems []domain.MemoryProblem
+	Limits   Limits
+}
+
+// Overview gathers the state for the window in one pass.
+func (s *Service) Overview() (Overview, error) {
+	snap, err := s.store.Load()
+	if err != nil {
+		return Overview{}, err
+	}
+	pending, err := s.store.Pending()
+	if err != nil {
+		return Overview{}, err
+	}
+	journal, err := s.store.JournalNames()
+	if err != nil {
+		return Overview{}, err
+	}
+	problems, err := s.Check()
+	if err != nil {
+		return Overview{}, err
+	}
+	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Problems: problems, Limits: s.limits}, nil
 }

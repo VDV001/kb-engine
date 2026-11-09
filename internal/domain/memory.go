@@ -40,6 +40,29 @@ const RulesHeading = "## Правила работы"
 // ErrNoPortraitMarkers — в HOT.md нет пары меток блока «Кто я».
 var ErrNoPortraitMarkers = errors.New("HOT.md has no portrait markers")
 
+// ErrInvalidLimits — потолок горячего слоя или индекса вне разумного.
+var ErrInvalidLimits = errors.New("invalid memory limits")
+
+// Границы потолков в знаках: ниже горячий слой не вмещает и скелет, выше он перестает
+// быть «горячим» (ADR-0008: потолок по качеству не найден, выбирают по цене токенов).
+const (
+	MinHotLimit   = 200
+	MaxHotLimit   = 200000
+	MinIndexLimit = 1000
+	MaxIndexLimit = 1000000
+)
+
+// ValidateLimits checks the ceilings a person sets; 0 — «не задан, брать умолчание».
+func ValidateLimits(hot, index int) error {
+	if hot != 0 && (hot < MinHotLimit || hot > MaxHotLimit) {
+		return fmt.Errorf("%w: горячий слой %d знаков, допустимо %d-%d", ErrInvalidLimits, hot, MinHotLimit, MaxHotLimit)
+	}
+	if index != 0 && (index < MinIndexLimit || index > MaxIndexLimit) {
+		return fmt.Errorf("%w: индекс %d знаков, допустимо %d-%d", ErrInvalidLimits, index, MinIndexLimit, MaxIndexLimit)
+	}
+	return nil
+}
+
 // DefaultHotLimit — потолок горячего слоя в знаках.
 const DefaultHotLimit = 4000
 

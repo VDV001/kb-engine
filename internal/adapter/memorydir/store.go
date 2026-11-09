@@ -430,3 +430,81 @@ func (s *Store) ArchivePending(name, as string) error {
 	}
 	return moveNoClobber(src, filepath.Join(s.dir, journalDir, as))
 }
+
+// JournalNames lists journal/ by name; журнал только дописывается, поэтому порядок
+// имен с датой в начале — порядок времени.
+func (s *Store) JournalNames() ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.dir, journalDir))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			out = append(out, e.Name())
+		}
+	}
+	return out, nil // ReadDir уже отдает по имени
+}
+
+const limitsFile = "memory.json"
+
+type limitsJSON struct {
+	HotLimit   int `json:"hotLimit,omitempty"`
+	IndexLimit int `json:"indexLimit,omitempty"`
+}
+
+// Limits reads the ceilings set for this memory; файла нет — нули (умолчания).
+// Битый файл — ошибка: молчаливое умолчание сделало бы потолок человека невидимым.
+func (s *Store) Limits() (memory.Limits, error) {
+	raw, err := os.ReadFile(filepath.Join(s.dir, limitsFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return memory.Limits{}, nil
+	}
+	if err != nil {
+		return memory.Limits{}, err
+	}
+	var in limitsJSON
+	if err := json.Unmarshal(raw, &in); err != nil {
+		return memory.Limits{}, fmt.Errorf("%s: %w", limitsFile, err)
+	}
+	if err := domain.ValidateLimits(in.HotLimit, in.IndexLimit); err != nil {
+		return memory.Limits{}, fmt.Errorf("%s: %w", limitsFile, err)
+	}
+	return memory.Limits{Hot: in.HotLimit, Index: in.IndexLimit}, nil
+}
+
+// SaveLimits stores the ceilings atomically; негодное значение прежний файл не трогает.
+func (s *Store) SaveLimits(l memory.Limits) error {
+	if err := domain.ValidateLimits(l.Hot, l.Index); err != nil {
+		return err
+	}
+	raw, err := json.MarshalIndent(limitsJSON{HotLimit: l.Hot, IndexLimit: l.Index}, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(s.dir, 0o700); err != nil {
+		return err
+	}
+	tmp, err := os.CreateTemp(s.dir, ".memory-*.tmp") // CreateTemp — 0600
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.Write(append(raw, '\n')); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, limitsFile)); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}

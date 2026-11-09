@@ -77,28 +77,60 @@ func memoryDirArg(fs *flag.FlagSet, args []string, stderr io.Writer) (dir string
 func memoryInit(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("memory init", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	hot := fs.Int("hot-limit", 0, "потолок горячего слоя в знаках (по умолчанию 4000); запоминается в memory.json")
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
 	}
-	if err := memory.New(memorydir.New(dir), memory.Limits{}).Init(); err != nil {
+	if err := domain.ValidateLimits(*hot, 0); err != nil { // до скелета: отказ не оставляет полупустую папку
+		return memoryFail(stderr, err)
+	}
+	st := memorydir.New(dir)
+	if err := memory.New(st, memory.Limits{}).Init(); err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		return 1
+	}
+	if *hot > 0 {
+		if err := st.SaveLimits(memory.Limits{Hot: *hot}); err != nil {
+			return memoryFail(stderr, err)
+		}
 	}
 	fmt.Fprintf(stdout, "memory: скелет в %s (HOT.md, cold/INDEX.md, journal/)\n", dir)
 	return 0
 }
 
+// memoryLimits собирает потолки: флаг, если задан, иначе memory.json этой памяти,
+// иначе умолчания сценария (нули).
+func memoryLimits(st *memorydir.Store, hotFlag, indexFlag int) (memory.Limits, error) {
+	l, err := st.Limits()
+	if err != nil {
+		return l, err
+	}
+	if hotFlag > 0 {
+		l.Hot = hotFlag
+	}
+	if indexFlag > 0 {
+		l.Index = indexFlag
+	}
+	return l, nil
+}
+
 func memoryCheck(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("memory check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	limit := fs.Int("hot-limit", domain.DefaultHotLimit, "потолок горячего слоя в знаках")
-	idxLimit := fs.Int("index-limit", domain.DefaultIndexLimit, "потолок cold/INDEX.md в знаках")
+	limit := fs.Int("hot-limit", 0, "потолок горячего слоя в знаках (0 — из memory.json, иначе 4000)")
+	idxLimit := fs.Int("index-limit", 0, "потолок cold/INDEX.md в знаках (0 — из memory.json, иначе 30000)")
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
 	}
-	ps, err := memory.New(memorydir.New(dir), memory.Limits{Hot: *limit, Index: *idxLimit}).Check()
+	st := memorydir.New(dir)
+	lim, err := memoryLimits(st, *limit, *idxLimit)
+	if err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
+	}
+	ps, err := memory.New(st, lim).Check()
 	if err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		return 1
@@ -172,7 +204,7 @@ func memoryTopics(args []string, stdout, stderr io.Writer) int {
 // memoryFail prints the error; неверный ввод — код 2, остальное — 1.
 func memoryFail(stderr io.Writer, err error) int {
 	fmt.Fprintf(stderr, "memory: %v\n", err)
-	if errors.Is(err, domain.ErrInvalidNote) {
+	if errors.Is(err, domain.ErrInvalidNote) || errors.Is(err, domain.ErrInvalidLimits) {
 		return 2
 	}
 	return 1
@@ -212,7 +244,12 @@ func memoryApprove(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return memoryFail(stderr, err)
 	}
-	if err := memory.New(memorydir.New(dir), memory.Limits{}).Approve(*name, layer); err != nil {
+	st := memorydir.New(dir)
+	lim, err := memoryLimits(st, 0, 0)
+	if err != nil {
+		return memoryFail(stderr, err)
+	}
+	if err := memory.New(st, lim).Approve(*name, layer); err != nil {
 		return memoryFail(stderr, err)
 	}
 	fmt.Fprintf(stdout, "memory: %s одобрена в слой %s\n", *name, layer)
