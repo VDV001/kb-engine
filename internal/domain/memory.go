@@ -28,6 +28,7 @@ const MaxHookRunes = 150
 // ProblemKind — класс нарушения раскладки памяти.
 type ProblemKind string
 
+// Классы нарушений: их имена печатает `kbengine memory check` и читают скрипты.
 const (
 	ProblemHotTooBig     ProblemKind = "hot-too-big"
 	ProblemNoDescription ProblemKind = "no-description"
