@@ -15,7 +15,7 @@ import (
 
 func newMemDesk(t *testing.T) *memoryDesk {
 	t.Helper()
-	return &memoryDesk{dir: filepath.Join(t.TempDir(), "dvk-memory")}
+	return &memoryDesk{dir: filepath.Join(t.TempDir(), "dvk-memory"), auth: &fakeAuth{ok: true}}
 }
 
 func (d *memoryDesk) seed(t *testing.T) *memory.Service {
@@ -172,5 +172,50 @@ func TestMemoryDesk_whoFillsThePortraitBlock(t *testing.T) {
 	}
 	if v, _ := d.State(); !strings.Contains(v.Hot.Text, "Обо мне: Разработчик.") {
 		t.Errorf("блок не заполнен:\n%s", v.Hot.Text)
+	}
+}
+
+// Правило в горячем слое начинает действовать во всех сессиях агентов сразу,
+// поэтому одобрение туда идет только после Touch ID, каждый раз; в холодный слой
+// и отклонение Touch ID не просят.
+func TestMemoryDesk_approveToHotAsksTouchID(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("rule-a", "стиль", "не пушить в main", "x")
+	_ = svc.Propose("note-b", "стиль", "факт", "x")
+
+	auth.ok = false
+	if err := d.Approve("rule-a", "hot"); !errors.Is(err, errAuthDenied) {
+		t.Fatalf("отказ Touch ID: %v", err)
+	}
+	v, _ := d.State()
+	if strings.Contains(v.Hot.Text, "не пушить") || len(v.Queue) != 2 {
+		t.Errorf("после отказа правило попало в слой или ушло из очереди: queue=%d", len(v.Queue))
+	}
+
+	auth.ok = true
+	if err := d.Approve("rule-a", "hot"); err != nil {
+		t.Fatal(err)
+	}
+	if len(auth.asked) != 2 || !strings.Contains(auth.asked[1], "горяч") {
+		t.Errorf("asked = %v", auth.asked)
+	}
+
+	n := len(auth.asked)
+	if err := d.Approve("note-b", "cold"); err != nil || len(auth.asked) != n {
+		t.Errorf("холодный слой не должен просить Touch ID: err=%v asked=%v", err, auth.asked)
+	}
+}
+
+func TestMemoryDesk_approveToHotWithoutHelperRefuses(t *testing.T) {
+	d := newMemDesk(t)
+	d.auth = nil
+	_ = d.seed(t).Propose("rule-a", "стиль", "правило", "x")
+	if err := d.Approve("rule-a", "hot"); err == nil {
+		t.Error("без помощника kb-auth правило не должно пройти в горячий слой")
+	}
+	if v, _ := d.State(); len(v.Queue) != 1 {
+		t.Error("очередь изменилась")
 	}
 }
