@@ -1,9 +1,11 @@
 package domain
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 )
@@ -18,6 +20,10 @@ var ErrMemoryExists = errors.New("memory already exists")
 
 // ErrNoteExists — запись с таким именем в холодной памяти уже есть.
 var ErrNoteExists = errors.New("memory note already exists")
+
+// ErrNoTopicMarkers — в HOT.md нет пары меток перечня тем: файл правили руками, и
+// переписывать его вслепую нельзя.
+var ErrNoTopicMarkers = errors.New("HOT.md has no topic list markers")
 
 // DefaultHotLimit — потолок горячего слоя в знаках.
 const DefaultHotLimit = 4000
@@ -52,6 +58,7 @@ const (
 	ProblemNoTopic       ProblemKind = "no-topic"
 	ProblemNoTopicList   ProblemKind = "no-topic-list"
 	ProblemIndexTooBig   ProblemKind = "index-too-big"
+	ProblemStaleTopics   ProblemKind = "stale-topics"
 )
 
 // MemoryProblem — одно нарушение: что и где.
@@ -113,14 +120,70 @@ func NewColdNote(name, topic, description string) (ColdNote, error) {
 	return ColdNote{File: name + ".md", Name: name, Topic: topic, Description: description}, nil
 }
 
+// TopicList returns the distinct topics of the notes, alphabetical, one spelling per
+// topic (первое встреченное); записи без темы пропускаются.
+func TopicList(notes []ColdNote) []string {
+	seen := make(map[string]bool, len(notes))
+	var out []string
+	for _, n := range notes {
+		t := strings.TrimSpace(n.Topic)
+		if k := strings.ToLower(t); t != "" && !seen[k] {
+			seen[k] = true
+			out = append(out, t)
+		}
+	}
+	slices.SortFunc(out, func(a, b string) int { return cmp.Compare(strings.ToLower(a), strings.ToLower(b)) })
+	return out
+}
+
+// topicsBlock cuts the text between the markers; ok=false — меток нет или они не по порядку.
+func topicsBlock(hot string) (before, body, after string, ok bool) {
+	before, rest, ok := strings.Cut(hot, TopicsStart)
+	if !ok {
+		return "", "", "", false
+	}
+	body, after, ok = strings.Cut(rest, TopicsEnd)
+	return before, body, after, ok
+}
+
+func topicLines(notes []ColdNote) []string {
+	topics := TopicList(notes)
+	for i, t := range topics {
+		topics[i] = "- " + t
+	}
+	return topics
+}
+
+// ReplaceTopics rewrites the block between the markers with the notes' topics,
+// everything else in the hot layer stays byte for byte.
+func ReplaceTopics(hot string, notes []ColdNote) (string, error) {
+	before, _, after, ok := topicsBlock(hot)
+	if !ok {
+		return "", ErrNoTopicMarkers
+	}
+	lines := strings.Join(topicLines(notes), "\n")
+	if lines != "" {
+		lines += "\n"
+	}
+	return before + TopicsStart + "\n" + lines + TopicsEnd + after, nil
+}
+
 // HasTopicList says whether the hot layer carries a non-empty topic list block.
 func HasTopicList(hot string) bool {
-	_, rest, ok := strings.Cut(hot, TopicsStart)
-	if !ok {
-		return false
-	}
-	body, _, ok := strings.Cut(rest, TopicsEnd)
+	_, body, _, ok := topicsBlock(hot)
 	return ok && strings.TrimSpace(body) != ""
+}
+
+// topicListIsCurrent compares the block with what the notes' topics would produce.
+func topicListIsCurrent(hot string, notes []ColdNote) bool {
+	_, body, _, _ := topicsBlock(hot)
+	var have []string
+	for _, l := range strings.Split(body, "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			have = append(have, l)
+		}
+	}
+	return slices.Equal(have, topicLines(notes))
 }
 
 // CheckMemory returns every violation of the layout, in a stable order:
@@ -132,6 +195,9 @@ func CheckMemory(st MemoryState) []MemoryProblem {
 	}
 	if len(st.Notes) > 0 && !HasTopicList(st.Hot) {
 		ps = append(ps, MemoryProblem{ProblemNoTopicList, "HOT.md", "записи есть, перечня тем между " + TopicsStart + " и " + TopicsEnd + " нет: kbengine memory topics"})
+	}
+	if len(st.Notes) > 0 && HasTopicList(st.Hot) && !topicListIsCurrent(st.Hot, st.Notes) {
+		ps = append(ps, MemoryProblem{ProblemStaleTopics, "HOT.md", "перечень тем не совпадает с темами записей: kbengine memory topics"})
 	}
 	indexed := make(map[string]bool, len(st.Index))
 	for _, e := range st.Index {

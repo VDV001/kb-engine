@@ -89,6 +89,29 @@ func (s *Store) Init() error {
 	return os.WriteFile(idx, []byte(indexSkeleton), 0o600)
 }
 
+// SaveHot replaces HOT.md: временный файл рядом и переименование, оборванная
+// запись не оставляет полфайла (горячий слой читается каждой сессией).
+func (s *Store) SaveHot(hot string) error {
+	tmp, err := os.CreateTemp(s.dir, ".hot-*") // CreateTemp — 0600
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.WriteString(hot); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, hotFile)); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}
+
 var indexLine = regexp.MustCompile(`^- \[[^\]]*\]\(([^)]+)\)(?:\s+[—-]\s+(.*))?$`)
 
 // Load reads the layer files.

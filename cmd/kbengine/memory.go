@@ -12,13 +12,14 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
+const memoryUsage = "usage: kbengine memory <init|check|add|topics> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
-	"init":  memoryInit,
-	"check": memoryCheck,
-	"add":   memoryAdd,
+	"init":   memoryInit,
+	"check":  memoryCheck,
+	"add":    memoryAdd,
+	"topics": memoryTopics,
 }
 
 // runMemory — `kbengine memory init|check|add` (ADR-0008): скелет двухуровневой
@@ -111,7 +112,8 @@ func memoryAdd(args []string, stdout, stderr io.Writer) int {
 	if stop {
 		return code
 	}
-	if err := memory.New(memorydir.New(dir), memory.Limits{}).Add(*name, *topic, *desc, *body); err != nil {
+	refreshed, err := memory.New(memorydir.New(dir), memory.Limits{}).Add(*name, *topic, *desc, *body)
+	if err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		if errors.Is(err, domain.ErrInvalidNote) {
 			return 2
@@ -119,5 +121,28 @@ func memoryAdd(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 	fmt.Fprintf(stdout, "memory: добавлено %s.md и строка в индексе\n", *name)
+	if !refreshed {
+		fmt.Fprintln(stdout, "memory: в HOT.md нет меток перечня тем, он не обновлен (kbengine memory check назовет это)")
+	}
+	return 0
+}
+
+func memoryTopics(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("memory topics", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	dir, code, stop := memoryDirArg(fs, args, stderr)
+	if stop {
+		return code
+	}
+	changed, err := memory.New(memorydir.New(dir), memory.Limits{}).Topics()
+	if err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
+	}
+	if changed {
+		fmt.Fprintln(stdout, "memory: перечень тем в HOT.md обновлен")
+	} else {
+		fmt.Fprintln(stdout, "memory: перечень тем актуален")
+	}
 	return 0
 }

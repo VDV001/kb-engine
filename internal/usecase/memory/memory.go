@@ -1,7 +1,11 @@
 // Package memory — двухуровневая память: скелет, проверка размера и записи (ADR-0008).
 package memory
 
-import "github.com/daniil/kb-engine/internal/domain"
+import (
+	"errors"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
 
 // Snapshot — что лежит в папке памяти.
 type Snapshot struct {
@@ -16,6 +20,7 @@ type Store interface {
 	Init() error
 	Load() (Snapshot, error)
 	Add(n domain.ColdNote, body string) error
+	SaveHot(hot string) error
 }
 
 // Service — сценарии памяти.
@@ -57,11 +62,37 @@ func (s *Service) Check() ([]domain.MemoryProblem, error) {
 	}), nil
 }
 
-// Add кладет запись в холодный слой и строку в индекс.
-func (s *Service) Add(name, topic, description, body string) error {
+// Topics собирает перечень тем горячего слоя из тем записей. changed=false —
+// перечень уже актуален и файл не тронут; ErrNoTopicMarkers — HOT.md правили
+// руками, и его не переписывают.
+func (s *Service) Topics() (changed bool, err error) {
+	snap, err := s.store.Load()
+	if err != nil {
+		return false, err
+	}
+	hot, err := domain.ReplaceTopics(snap.Hot, snap.Notes)
+	if err != nil || hot == snap.Hot {
+		return false, err
+	}
+	return true, s.store.SaveHot(hot)
+}
+
+// Add кладет запись в холодный слой и строку в индекс, затем обновляет перечень
+// тем. refreshed=false при nil-ошибке — в HOT.md нет меток перечня: запись
+// сохранена, а перечень человеку придется вести самому.
+func (s *Service) Add(name, topic, description, body string) (refreshed bool, err error) {
 	n, err := domain.NewColdNote(name, topic, description)
 	if err != nil {
-		return err
+		return false, err
 	}
-	return s.store.Add(n, body)
+	if err := s.store.Add(n, body); err != nil {
+		return false, err
+	}
+	if _, err := s.Topics(); err != nil {
+		if errors.Is(err, domain.ErrNoTopicMarkers) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
