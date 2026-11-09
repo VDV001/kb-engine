@@ -5,13 +5,14 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
-const memoryUsage = "usage: kbengine memory <init|check|add> [flags] <dir>"
+const memoryUsage = "usage: kbengine memory <init|check|add> [flags] [dir]  (dir по умолчанию: ~/Library/Application Support/kb-desktop/dvk-memory)"
 
 // memoryVerbs — подкоманды `kbengine memory`; у каждой свой набор флагов.
 var memoryVerbs = map[string]func(args []string, stdout, stderr io.Writer) int{
@@ -39,16 +40,25 @@ func runMemory(args []string, stdout, stderr io.Writer) int {
 	return verb(args[1:], stdout, stderr)
 }
 
-// memoryDirArg разбирает флаги подкоманды и возвращает папку памяти.
+// memoryDirArg разбирает флаги подкоманды и возвращает папку памяти: аргумент
+// или папка по умолчанию рядом с настройками окна.
 func memoryDirArg(fs *flag.FlagSet, args []string, stderr io.Writer) (dir string, code int, stop bool) {
 	if code, stop := parseFlags(fs, args); stop {
 		return "", code, true
 	}
-	if fs.NArg() != 1 {
-		fmt.Fprintln(stderr, memoryUsage)
-		return "", 2, true
+	switch fs.NArg() {
+	case 0:
+		home, err := os.UserHomeDir()
+		if err != nil {
+			fmt.Fprintf(stderr, "memory: папка по умолчанию недоступна: %v\n", err)
+			return "", 1, true
+		}
+		return memorydir.DefaultPath(home), 0, false
+	case 1:
+		return fs.Arg(0), 0, false
 	}
-	return fs.Arg(0), 0, false
+	fmt.Fprintln(stderr, memoryUsage)
+	return "", 2, true
 }
 
 func memoryInit(args []string, stdout, stderr io.Writer) int {
@@ -58,11 +68,11 @@ func memoryInit(args []string, stdout, stderr io.Writer) int {
 	if stop {
 		return code
 	}
-	if err := memory.New(memorydir.New(dir), 0).Init(); err != nil {
+	if err := memory.New(memorydir.New(dir), memory.Limits{}).Init(); err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "memory: скелет в %s (HOT.md, cold/INDEX.md)\n", dir)
+	fmt.Fprintf(stdout, "memory: скелет в %s (HOT.md, cold/INDEX.md, journal/)\n", dir)
 	return 0
 }
 
@@ -70,11 +80,12 @@ func memoryCheck(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("memory check", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	limit := fs.Int("hot-limit", domain.DefaultHotLimit, "потолок горячего слоя в знаках")
+	idxLimit := fs.Int("index-limit", domain.DefaultIndexLimit, "потолок cold/INDEX.md в знаках")
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
 	}
-	ps, err := memory.New(memorydir.New(dir), *limit).Check()
+	ps, err := memory.New(memorydir.New(dir), memory.Limits{Hot: *limit, Index: *idxLimit}).Check()
 	if err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		return 1
@@ -93,13 +104,14 @@ func memoryAdd(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("memory add", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	name := fs.String("name", "", "имя записи: латиница, цифры, дефисы")
+	topic := fs.String("topic", "", "тема записи: попадает в перечень тем горячего слоя")
 	desc := fs.String("description", "", "одна строка до 150 знаков — она же крючок в индексе")
 	body := fs.String("body", "", "текст записи")
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
 	}
-	if err := memory.New(memorydir.New(dir), 0).Add(*name, *desc, *body); err != nil {
+	if err := memory.New(memorydir.New(dir), memory.Limits{}).Add(*name, *topic, *desc, *body); err != nil {
 		fmt.Fprintf(stderr, "memory: %v\n", err)
 		if errors.Is(err, domain.ErrInvalidNote) {
 			return 2

@@ -10,18 +10,26 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
 const (
-	hotFile   = "HOT.md"
-	coldDir   = "cold"
-	indexFile = "INDEX.md"
+	hotFile    = "HOT.md"
+	coldDir    = "cold"
+	journalDir = "journal"
+	indexFile  = "INDEX.md"
 )
 
-// Store — папка памяти: HOT.md и cold/ с INDEX.md.
+// DefaultPath — папка памяти по умолчанию: рядом с настройками окна, чтобы окно
+// и терминал видели одну память.
+func DefaultPath(home string) string {
+	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "dvk-memory")
+}
+
+// Store — папка памяти: HOT.md, cold/ с INDEX.md и journal/.
 type Store struct{ dir string }
 
 // New points the store at dir.
@@ -46,8 +54,13 @@ const hotSkeleton = `# Горячая память
 
 ## Холодная память
 
-Целиком не загружается. Индекс: cold/INDEX.md, одна строка на запись.
-Нужна тема: найди строку в индексе и открой файл.
+Целиком не загружается: факты лежат в cold/, по файлу на факт.
+Тема не про правила выше: сначала поищи в холодной памяти (kbengine memory find), потом отвечай.
+
+Темы холодной памяти (собирает kbengine memory topics):
+
+` + domain.TopicsStart + `
+` + domain.TopicsEnd + `
 `
 
 const indexSkeleton = `# Индекс холодной памяти
@@ -65,8 +78,10 @@ func (s *Store) Init() error {
 			return fmt.Errorf("%w: %s", domain.ErrMemoryExists, p)
 		}
 	}
-	if err := os.MkdirAll(filepath.Join(s.dir, coldDir), 0o700); err != nil {
-		return err
+	for _, d := range []string{coldDir, journalDir} {
+		if err := os.MkdirAll(filepath.Join(s.dir, d), 0o700); err != nil {
+			return err
+		}
 	}
 	if err := os.WriteFile(hot, []byte(hotSkeleton), 0o600); err != nil {
 		return err
@@ -90,6 +105,7 @@ func (s *Store) Load() (memory.Snapshot, error) {
 	if err != nil {
 		return snap, fmt.Errorf("индекс: %w", err)
 	}
+	snap.IndexRunes = utf8.RuneCount(idx)
 	sc := bufio.NewScanner(strings.NewReader(string(idx)))
 	for sc.Scan() {
 		if m := indexLine.FindStringSubmatch(strings.TrimSpace(sc.Text())); m != nil {
@@ -109,20 +125,20 @@ func (s *Store) Load() (memory.Snapshot, error) {
 		if err != nil {
 			return snap, err
 		}
-		name, desc := frontmatter(string(b))
+		name, topic, desc := frontmatter(string(b))
 		if name == "" {
 			name = strings.TrimSuffix(e.Name(), ".md")
 		}
-		snap.Notes = append(snap.Notes, domain.ColdNote{File: e.Name(), Name: name, Description: desc})
+		snap.Notes = append(snap.Notes, domain.ColdNote{File: e.Name(), Name: name, Topic: topic, Description: desc})
 	}
 	return snap, nil
 }
 
-// frontmatter читает name и description из шапки между двумя «---».
-func frontmatter(text string) (name, desc string) {
+// frontmatter читает name, topic и description из шапки между двумя «---».
+func frontmatter(text string) (name, topic, desc string) {
 	lines := strings.Split(text, "\n")
 	if len(lines) == 0 || strings.TrimSpace(lines[0]) != "---" {
-		return "", ""
+		return "", "", ""
 	}
 	for _, l := range lines[1:] {
 		if strings.TrimSpace(l) == "---" {
@@ -135,11 +151,13 @@ func frontmatter(text string) (name, desc string) {
 		switch strings.TrimSpace(k) {
 		case "name":
 			name = strings.TrimSpace(v)
+		case "topic":
+			topic = strings.TrimSpace(v)
 		case "description":
 			desc = strings.TrimSpace(v)
 		}
 	}
-	return name, desc
+	return name, topic, desc
 }
 
 // Add writes the note and its index line.
@@ -155,7 +173,7 @@ func (s *Store) Add(n domain.ColdNote, body string) error {
 	if err != nil {
 		return err
 	}
-	_, werr := fmt.Fprintf(f, "---\nname: %s\ndescription: %s\n---\n\n%s\n", n.Name, n.Description, strings.TrimSpace(body))
+	_, werr := fmt.Fprintf(f, "---\nname: %s\ntopic: %s\ndescription: %s\n---\n\n%s\n", n.Name, n.Topic, n.Description, strings.TrimSpace(body))
 	if cerr := f.Close(); werr == nil {
 		werr = cerr
 	}
