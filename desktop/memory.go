@@ -7,9 +7,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/embedhttp"
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
+	"github.com/daniil/kb-engine/internal/usecase/search"
 )
 
 // Экран «Память» (ADR-0008): два слоя и журнал рядом, очередь на одобрение,
@@ -21,6 +23,8 @@ type memoryDesk struct {
 	dir  string
 	auth authHelper // Touch ID для изменений горячего слоя; nil — окно не из сборки, помощника нет
 	mu   sync.Mutex // изменения идут по одному: одобрение и потолок читают-пишут один HOT.md
+	// embed — служба эмбеддингов для «Пересобрать векторы»; nil — локальная Ollama по умолчанию.
+	embed search.Embedder
 }
 
 func newMemoryDesk(home string) *memoryDesk { return &memoryDesk{dir: memorydir.DefaultPath(home)} }
@@ -322,4 +326,43 @@ func (d *memoryDesk) ConfirmRule(text string) error {
 		return err
 	}
 	return svc.ConfirmRule(text)
+}
+
+// ConfirmRules records that the person re-read several rules of the hot layer and
+// keeps them: один Touch ID на весь список, запись по каждому правилу, всё или ничего.
+func (d *memoryDesk) ConfirmRules(texts []string) error {
+	if err := d.guard("подтвердить правила в памяти"); err != nil {
+		return err
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	svc, _, err := d.service()
+	if err != nil {
+		return err
+	}
+	return svc.ConfirmRules(texts)
+}
+
+// indexReport is the outcome of a vector rebuild as the screen shows it.
+type indexReport struct {
+	Embedded int `json:"embedded"`
+	Reused   int `json:"reused"`
+	Failed   int `json:"failed"`
+}
+
+// Index rebuilds the vector index of the cold layer. Touch ID не нужен: HOT.md не
+// меняется, векторы — производный файл, а решение остается в журнале как обслуживание.
+func (d *memoryDesk) Index() (indexReport, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	svc, _, err := d.service()
+	if err != nil {
+		return indexReport{}, err
+	}
+	emb := d.embed
+	if emb == nil {
+		emb = embedhttp.New(memorydir.EmbedURL, memorydir.EmbedModel)
+	}
+	rep, err := svc.WithEmbedder(emb, memorydir.EmbedModel).BuildIndex()
+	return indexReport{rep.Embedded, rep.Reused, rep.Failed}, err
 }

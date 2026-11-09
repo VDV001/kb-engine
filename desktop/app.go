@@ -230,6 +230,12 @@ func (a *App) MemoryReview() error { return a.memory.Review() }
 // MemoryConfirmRule records that the person keeps a rule of the hot layer (по Touch ID).
 func (a *App) MemoryConfirmRule(text string) error { return a.memory.ConfirmRule(text) }
 
+// MemoryConfirmRules records that the person keeps several rules (один Touch ID).
+func (a *App) MemoryConfirmRules(texts []string) error { return a.memory.ConfirmRules(texts) }
+
+// MemoryIndex rebuilds the vector index of the cold layer through the local Ollama.
+func (a *App) MemoryIndex() (indexReport, error) { return a.memory.Index() }
+
 // MemoryTopics rebuilds the topic list of the hot layer.
 func (a *App) MemoryTopics() (bool, error) { return a.memory.Topics() }
 

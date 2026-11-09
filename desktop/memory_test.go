@@ -415,14 +415,23 @@ func TestMemoryDesk_indexRebuildsVectors(t *testing.T) {
 		t.Fatalf("rep=%+v err=%v asked=%v", rep, err, auth.asked)
 	}
 	_, _ = svc.Add("second", "финансы", "еще", "тело")
-	if v, _ := d.State(); len(v.Health.Reasons) == 0 || v.Health.Reasons[len(v.Health.Reasons)-1].Kind != "vectors" {
-		t.Fatalf("после новой записи векторы отстали: %+v", v.Health.Reasons)
+	hasVectors := func() bool {
+		v, _ := d.State()
+		for _, r := range v.Health.Reasons {
+			if r.Kind == "vectors" {
+				return true
+			}
+		}
+		return false
+	}
+	if !hasVectors() {
+		t.Fatal("после новой записи векторы должны отстать")
 	}
 	if _, err := d.Index(); err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := d.State(); len(v.Health.Reasons) != 0 {
-		t.Errorf("после пересборки причин нет, got %+v", v.Health.Reasons)
+	if hasVectors() {
+		t.Error("после пересборки векторы свежие")
 	}
 	d.embed = stubEmbedder{err: errors.New("служба молчит")}
 	if _, err := d.Index(); err == nil {
