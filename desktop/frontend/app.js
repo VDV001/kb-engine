@@ -1873,8 +1873,7 @@ const offNow = (a) => (a.mode === "all" ? [] : a.mode === "none" ? ACCENT_IDS : 
 function applyAccents() {
   const off = offNow(state.accents);
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
-  const hl = mhLook(); // палитра, скорость и громкость сигнала здоровья памяти
-  document.body.dataset.mhg = hl.grad; document.body.dataset.mha = hl.anim; document.body.dataset.mhs = hl.signal;
+  mhApply(); // палитра, скорость, ползунки и громкость сигнала здоровья памяти
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
@@ -1896,28 +1895,83 @@ function renderAccents() {
 }
 // «Оформление → Здоровье памяти»: палитра, перелив и громкость сигнала (accents.look).
 // По умолчанию перелив включен: сигнал должен бросаться в глаза.
-const MH_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
-const MH_ANIMS = [["full", "перелив, 6 с"], ["soft", "медленный, 14 с"], ["none", "без анимации"]];
+const MH_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета", custom: "Свои цвета" };
+const MH_ANIMS = [["full", "перелив"], ["none", "без анимации"]];
 const MH_SIGNALS = [["loud", "заметный: карточка над экраном"], ["calm", "спокойный: одна строка"]];
+// Ползунки: ключ в accents.look, пределы, шаг, единица, подпись, значение по умолчанию.
+const MH_RANGES = [
+  ["health-speed", 2, 30, 1, " с", "Скорость перелива", 6, "меньше секунд — быстрее; без анимации не действует"],
+  ["health-edge", 1, 4, 1, " px", "Толщина рамки сигнала", 2, "у «спокойного» сигнала рамка всегда 1 px"],
+  ["health-tint", 0, 20, 1, " %", "Тонировка карточки", 7, "насколько карточка сигнала подкрашена цветом состояния"],
+];
+const MH_HEX = /^#[0-9a-fA-F]{6}$/;
 function mhLook() {
   const l = state.accents.look || {};
   const pick = (v, list, d) => (list.includes(v) ? v : d);
-  return { grad: pick(l["health-grad"], Object.keys(MH_GRADS), "spectrum"), anim: pick(l["health-anim"], MH_ANIMS.map((x) => x[0]), "full"), signal: pick(l["health-signal"], MH_SIGNALS.map((x) => x[0]), "loud") };
+  const num = (k, lo, hi, d) => { const n = Math.round(+l[k]); return Number.isFinite(n) && n >= lo && n <= hi ? n : d; };
+  return {
+    grad: pick(l["health-grad"], Object.keys(MH_GRADS), "spectrum"), anim: pick(l["health-anim"], MH_ANIMS.map((x) => x[0]), "full"), signal: pick(l["health-signal"], MH_SIGNALS.map((x) => x[0]), "loud"),
+    speed: num("health-speed", 2, 30, 6), edge: num("health-edge", 1, 4, 2), tint: num("health-tint", 0, 20, 7),
+    c1: MH_HEX.test(l["health-c1"] || "") ? l["health-c1"] : "#f0953e", c2: MH_HEX.test(l["health-c2"] || "") ? l["health-c2"] : "#5aa9e6",
+  };
+}
+// mhApply кладет вид на body: палитру и числа ползунков. Свои цвета — в переменные, остальное — в CSS.
+function mhApply(L = mhLook()) {
+  const st = document.body.style, b = document.body.dataset;
+  b.mhg = L.grad; b.mha = L.anim; b.mhs = L.signal;
+  st.setProperty("--mh-speed", L.speed + "s"); st.setProperty("--mh-edge", L.edge + "px"); st.setProperty("--mh-tint", L.tint + "%");
+  for (const [i, v] of [[1, L.c1], [2, L.c2], [3, L.c1], [4, L.c2]]) {
+    if (L.grad === "custom") st.setProperty("--mh" + i, v); else st.removeProperty("--mh" + i);
+  }
 }
 function renderLookHealth() {
   const host = $("#look-health"); if (!host) return;
   const L = mhLook(), dis = native() ? "" : " disabled";
   const chip = (k, v, label, on, extra = "") => `<button class="look-chip" data-hl="${k}" data-v="${v}" aria-pressed="${on}"${dis}>${extra}${esc(label)}</button>`;
+  const grads = Object.entries(MH_GRADS).map(([g, n]) => chip("health-grad", g, n, L.grad === g, g === "custom" ? `<i class="gs" style="background:linear-gradient(90deg,${L.c1},${L.c2})"></i>` : `<i class="gs ink-${g}"></i>`)).join("");
+  const colors = L.grad === "custom" ? `<label class="muted">от <input type="color" data-hc="health-c1" value="${L.c1}"${dis}></label> <label class="muted">до <input type="color" data-hc="health-c2" value="${L.c2}"${dis}></label>` : "";
+  const ranges = MH_RANGES.map(([k, lo, hi, step, unit, name, , tip]) => `<div class="row"><span>${name}</span><div class="opts look-range"><input type="range" data-hr="${k}" min="${lo}" max="${hi}" step="${step}" value="${L[k.slice(7)]}" aria-label="${name}"${dis}><output>${L[k.slice(7)]}${unit}</output><span class="muted">${tip}</span></div></div>`).join("");
   host.innerHTML = `
-    <div class="row"><span>Градиент</span><div class="opts">${Object.entries(MH_GRADS).map(([g, n]) => chip("health-grad", g, n, L.grad === g, `<i class="gs ink-${g}"></i>`)).join("")}
+    <div class="row"><span>Градиент</span><div class="opts">${grads}${colors}
       <span class="muted">цвета счета, шкалы, ритма и черты раздела; при проблемах сигнал краснеет сам</span></div></div>
     <div class="row"><span>Анимация</span><div class="opts">${MH_ANIMS.map(([v, n]) => chip("health-anim", v, n, L.anim === v)).join("")}</div></div>
+    ${ranges}
     <div class="row"><span>Сигнал о проблемах</span><div class="opts">${MH_SIGNALS.map(([v, n]) => chip("health-signal", v, n, L.signal === v)).join("")}
-      <span class="muted">точка у кнопки «Память» в шапке остается в любом случае</span></div></div>`;
+      <span class="muted">точка у кнопки «Память» в шапке остается в любом случае</span></div></div>
+    <div class="row"><span></span><div class="opts"><button class="look-chip" data-hl-reset${dis}>Сбросить вид здоровья</button>
+      <span class="muted">отдельные элементы включаются выше, в списке «Здоровье: …»</span></div></div>`;
 }
+const MH_KEYS = ["health-grad", "health-anim", "health-signal", "health-speed", "health-edge", "health-tint", "health-c1", "health-c2"];
+const mhSave = (patch) => saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), ...patch } });
 $("#look-health").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-hl]"); if (!b || !native()) return;
-  saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), [b.dataset.hl]: b.dataset.v } });
+  if (!native()) return;
+  if (e.target.closest("[data-hl-reset]")) {
+    const look = { ...(state.accents.look || {}) };
+    for (const k of MH_KEYS) delete look[k];
+    saveAccents({ ...state.accents, look });
+    toast("Сброшено", " · вид здоровья памяти по умолчанию");
+    return;
+  }
+  const b = e.target.closest("[data-hl]"); if (!b) return;
+  mhSave({ [b.dataset.hl]: b.dataset.v });
+});
+// Ползунок двигается вживую (виден результат), сохраняется при отпускании.
+$("#look-health").addEventListener("input", (e) => {
+  const r = e.target.closest("[data-hr]");
+  if (r) {
+    const def = MH_RANGES.find((x) => x[0] === r.dataset.hr);
+    r.nextElementSibling.textContent = r.value + def[4];
+    mhApply({ ...mhLook(), [r.dataset.hr.slice(7)]: +r.value });
+    return;
+  }
+  const c = e.target.closest("[data-hc]");
+  if (c) mhApply({ ...mhLook(), [c.dataset.hc.slice(7)]: c.value });
+});
+$("#look-health").addEventListener("change", (e) => {
+  if (!native()) return;
+  const r = e.target.closest("[data-hr]"), c = e.target.closest("[data-hc]");
+  if (r) mhSave({ [r.dataset.hr]: r.value });
+  else if (c) mhSave({ [c.dataset.hc]: c.value });
 });
 // «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
 // в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».

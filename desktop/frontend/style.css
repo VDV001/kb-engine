@@ -1406,7 +1406,6 @@ body[data-mhg="gold"] { --mh1: var(--z-sp1); --mh2: var(--z-sp2); --mh3: var(--z
 body[data-mhg="ice"] { --mh1: var(--z-sp4); --mh2: var(--z-sp5); --mh3: var(--z-sp6); --mh4: var(--z-sp5); }
 body[data-mhg="dusk"] { --mh1: var(--z-sp2); --mh2: var(--z-sp3); --mh3: var(--z-src-violet); --mh4: var(--z-sp4); }
 body[data-mhg="mono"] { --mh1: #6b6b74; --mh2: #9a9aa4; --mh3: #55555d; --mh4: #8a8a94; }
-body[data-mha="soft"] { --mh-speed: 14s; }
 .mh-warn-pal, .mh-alert.warn, .mh-tone-warn { --mh1: var(--z-lvl-warn); --mh2: #f5c04a; --mh3: var(--z-lvl-warn); --mh4: #f5c04a; }
 .mh-bad-pal, .mh-alert.bad, .mh-tone-bad { --mh1: var(--z-bad); --mh2: var(--z-lvl-error); --mh3: var(--z-lvl-warn); --mh4: var(--z-lvl-error); }
 /* зеркальный градиент: туда-обратно без шва */
@@ -1432,8 +1431,8 @@ body.no-mh-score .mh-score b, body.no-mh-score .mh-score.ok b, body.no-mh-score 
 .mh-rule.sel { background: var(--z-accent-wash); box-shadow: none; position: relative; }
 .mh-rule.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: linear-gradient(180deg, var(--mh1), var(--mh3), var(--mh4)); }
 /* сигнал: карточка как поле поиска в фокусе — нейтральный фон, живая рамка */
-.mh-alert { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; margin: 0 0 14px; padding: 14px 18px; border: 2px solid transparent; border-radius: var(--z-radius);
-  background: linear-gradient(color-mix(in srgb, var(--mh1) 7%, var(--z-bg-2)), color-mix(in srgb, var(--mh1) 7%, var(--z-bg-2))) padding-box,
+.mh-alert { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 14px; align-items: start; margin: 0 0 14px; padding: 14px 18px; border: var(--mh-edge, 2px) solid transparent; border-radius: var(--z-radius);
+  background: linear-gradient(color-mix(in srgb, var(--mh1) var(--mh-tint, 7%), var(--z-bg-2)), color-mix(in srgb, var(--mh1) var(--mh-tint, 7%), var(--z-bg-2))) padding-box,
               linear-gradient(90deg, var(--mh1), var(--mh2), var(--mh3), var(--mh4), var(--mh3), var(--mh2), var(--mh1)) border-box;
   background-size: 100% 100%, 200% 100%; animation: mh-flow-b var(--mh-speed) ease-in-out infinite alternate; }
 .mh-alert-ic { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: 22px; font-weight: 800; color: var(--z-bg); }
@@ -1461,3 +1460,8 @@ body.no-mh-heat .mh-heat button.l2 { background: var(--z-ok); } body.no-mh-heat 
 @media (prefers-reduced-motion: reduce) { .mh-flow, .mh-bar.wide i, .mh-score b, .mh-alert, .mh-alert-ic, .mh-alert-t, .mh-nav button[aria-selected="true"]::after, .mm-alert { animation: none; } }
 /* старая плашка не спорит с сигналом здоровья */
 .mm-warn { border-color: var(--z-rule-2); border-left-color: var(--z-lvl-warn); color: var(--z-muted); }
+
+.look-range { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.look-range input[type="range"] { width: 180px; accent-color: var(--z-accent); }
+.look-range output { min-width: 44px; font-variant-numeric: tabular-nums; }
+#look-health input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: none; cursor: pointer; vertical-align: middle; }
