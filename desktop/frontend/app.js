@@ -4355,7 +4355,7 @@ function mhReasonHTML(h, r) {
     case "seal": return [`HOT.md изменен мимо системы`, `файл правили после последней записи системы: прочитайте его и подтвердите`, `<button class="ac-btn pri" data-mm="seal">Принять · Touch ID</button>`];
     case "queue": return [`Предложения ждут решения: ${r.n}`, `самое старое ждет ${mhDays(h.oldestPendingDays)}`, `<button class="ac-btn" data-mm="sel" data-v="queue">Разобрать →</button>`];
     case "rules": return [`Правил без подтверждения больше 30 дней: ${r.n}`, `агент опирается на них вслепую`, L("rules", "Смотреть правила")];
-    case "vectors": return [`Векторы отстали от записей: ${r.n}`, `поиск по смыслу их не видит; в терминале: <code>kbengine memory index</code>`, ""];
+    case "vectors": return [`Векторы отстали от записей: ${r.n}`, `поиск по смыслу их не видит; нужна локальная Ollama с bge-m3`, `<button class="ac-btn" data-mm="index">Пересобрать векторы</button>`];
     default: return [r.n < 0 ? `Решений в журнале нет` : `Осмотра не было ${mhDays(r.n)}`, `память лежит без суждения человека`, `<button class="ac-btn pri" data-mm="review">Отметить осмотр · Touch ID</button>`];
   }
 }
@@ -4433,7 +4433,11 @@ function mhRulesHTML(d) {
   const key = mhKey(sel.text), hist = h.events.filter((e) => (e.kind === "approve-hot" || e.kind === "confirm-rule") && mhKey(e.text) === key).slice().reverse();
   const seen = sel.stale ? `<span class="mh-badge bad">${sel.ageDays < 0 ? "не подтверждалось ни разу" : `проверено ${mhDays(sel.ageDays)} назад`}</span>` : `<span class="mh-badge ok">проверено ${mhDays(sel.ageDays)} назад</span>`;
   const agent = h.mode === "warn" || h.mode === "bad" ? (sel.stale ? "это правило агент получит в списке «давно не подтверждалось»" : "это правило агент получит без пометки: оно свежее") : "в режиме «Доверяю» агент пометок не получает";
-  return `<div class="mh-cols"><div><p class="muted">Здоровье у каждого правила своё: когда его в последний раз подтверждал человек (одобрение в горячий слой тоже считается).</p>${list}</div>
+  const stale = h.rules.filter((x) => x.stale).length;
+  const bulk = !stale ? "" : state.mm.confirm === "*stale"
+    ? `<div class="mm-confirm" role="alert"><b>Вы перечитали ${stale} ${mhWord(stale, "правило", "правила", "правил")} (${h.rules.filter((x) => x.stale).map((x) => "«" + esc(x.text) + "»").join(", ")}) и они верны?</b> <button class="ac-btn pri" data-mm="confirm-all">Подтвердить все · Touch ID</button> <button class="ac-btn" data-mm="confirm-all-no">Отмена</button></div>`
+    : `<button class="ac-btn pri" data-mm="confirm-all-ask" title="Один Touch ID, запись в журнале по каждому правилу">Подтвердить все устаревшие (${stale})</button>`;
+  return `<div class="mh-cols"><div><p class="muted">Здоровье у каждого правила своё: когда его в последний раз подтверждал человек (одобрение в горячий слой тоже считается).</p>${bulk}${list}</div>
     <div class="mh-stack"><div class="mh-box"><div class="mh-crumbs"><button class="mh-link" data-mm="hv" data-v="rules" data-rule="">Правила</button> › <b>правило ${i + 1}</b></div>
       <h3>${esc(sel.text)}</h3><p>${seen}</p>
       <button class="ac-btn pri" data-mm="confirm" data-i="${i}">Подтвердить сегодня · Touch ID</button>
@@ -4494,6 +4498,14 @@ $("#mm-body").addEventListener("click", (e) => {
   const api = native();
   if (a === "init") mmDo(() => api.MemoryInit(), () => ["Память заведена", " · HOT.md, cold/, journal/"]);
   else if (a === "review") mmDo(() => api.MemoryReview(), () => ["Осмотр отмечен", " · запись в журнале решений"]);
+  else if (a === "index") mmDo(() => api.MemoryIndex(), (rep) => ["Векторы пересобраны", ` · новых ${rep.embedded}, из индекса ${rep.reused}${rep.failed ? `, отказов ${rep.failed}: служба не смогла встроить запись` : ""}`]);
+  else if (a === "confirm-all-ask") { state.mm.confirm = "*stale"; mmRender(); }
+  else if (a === "confirm-all-no") { state.mm.confirm = ""; mmRender(); }
+  else if (a === "confirm-all") {
+    state.mm.confirm = "";
+    const texts = state.mm.data.health.rules.filter((x) => x.stale).map((x) => x.text);
+    mmDo(() => api.MemoryConfirmRules(texts), () => ["Правила подтверждены", ` · ${texts.length}, запись в журнале по каждому`]);
+  }
   else if (a === "confirm") {
     const r = state.mm.data.health.rules[+b.dataset.i];
     if (r) mmDo(() => api.MemoryConfirmRule(r.text), () => ["Правило подтверждено", " · запись в журнале решений"]);
