@@ -36,13 +36,13 @@ const (
 	MicAuto   = "auto"
 )
 
-// ErrChatSettings — настройки чата не подходят.
 // Границы размера контекста в токенах: от маленькой локальной модели до миллиона.
 const (
 	MinContextWindow = 1000
 	MaxContextWindow = 2000000
 )
 
+// ErrChatSettings — настройки чата не подходят.
 var ErrChatSettings = errors.New("настройки чата не подходят")
 
 // Chat — модель чата окна. Ключ сюда не пишется никогда: он в Связке ключей.
@@ -100,6 +100,14 @@ func (c Chat) checkMemory() error {
 	return nil
 }
 
+// checkContextWindow: 0 — не задан, иначе в границах.
+func (c Chat) checkContextWindow() error {
+	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
+		return fmt.Errorf("%w: контекст %d токенов, допустимо %d-%d", ErrChatSettings, c.ContextWindow, MinContextWindow, MaxContextWindow)
+	}
+	return nil
+}
+
 // Check validates the settings: адрес — то же правило, что у kb-сервера
 // (https или http этого Мака), режим — из известных.
 func (c Chat) Check() error {
@@ -119,8 +127,8 @@ func (c Chat) Check() error {
 	if err := c.checkMemory(); err != nil {
 		return err
 	}
-	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
-		return fmt.Errorf("%w: контекст %d токенов, допустимо %d-%d", ErrChatSettings, c.ContextWindow, MinContextWindow, MaxContextWindow)
+	if err := c.checkContextWindow(); err != nil {
+		return err
 	}
 	switch c.Accent {
 	case "", "en-US", "en-GB":

@@ -2380,23 +2380,52 @@ function answerHTML(t) {
 // же, дальше разговор пухнет, и пора записать handoff и начать новый чат. Счет
 // токенов — от провайдера, размер контекста человек вносит в настройках.
 const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
+const ctxNum = (v) => v.toLocaleString("ru-RU");
 function renderChatCtx() {
-  const box = $("#chat-ctx"), x = chatState.chat && chatState.chat.context;
-  if (!x || !x.used) { box.hidden = true; box.innerHTML = ""; return; }
-  const n = (v) => v.toLocaleString("ru-RU");
-  box.hidden = false;
-  if (!x.window) {
-    box.dataset.tone = "ok";
-    box.innerHTML = `<span>Контекст: <b>${n(x.used)}</b> токенов.</span><span class="muted">Внесите размер контекста модели в «Чат и модель», и окно скажет, когда пора в новый чат.</span>`;
-    return;
-  }
-  const f = x.used / x.window, tone = f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
-  box.dataset.tone = tone;
-  box.innerHTML = `<span>Контекст: <b>${n(x.used)}</b> из ${n(x.window)} токенов · ${Math.round(f * 100)}%</span>
-    <span class="chat-ctx-bar" role="meter" aria-label="Заполнение контекста" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></span>` +
-    (f >= CTX_HINT_AT ? `<span class="chat-ctx-hint">Разговор заполнил ${f >= CTX_WARN_AT ? "почти весь контекст" : "половину контекста"}, дальше он пухнет. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат. <button class="ac-btn" id="chat-ctx-new" type="button">Новый чат</button></span>` : "");
+  const ring = $("#chat-ctx-ring"), x = chatState.chat && chatState.chat.context;
+  if (!x || !x.used) { ring.hidden = true; closeChatCtx(); return; }
+  const f = x.window ? x.used / x.window : 0, tone = !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
+  const R = 8, C = 2 * Math.PI * R;
+  ring.hidden = false;
+  ring.dataset.tone = tone;
+  ring.setAttribute("aria-label", x.window ? `Контекст заполнен на ${Math.round(f * 100)}%: подробнее` : "Контекст: подробнее");
+  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.window ? Math.round(f * 100) + "%" : "?"}</span>`;
+  if (!$("#chat-ctx-pop").hidden) fillChatCtx(x, f, tone);
 }
-$("#chat-ctx").addEventListener("click", (e) => { if (e.target.closest("#chat-ctx-new")) newChat(); });
+// Подробности — окошком поверх по кнопке-кольцу: что насчитал провайдер, размер
+// контекста и что делать дальше; в строке поля остается только кольцо.
+function fillChatCtx(x, f, tone) {
+  const pop = $("#chat-ctx-pop");
+  pop.dataset.tone = tone;
+  const advice = !x.window
+    ? `<p class="muted">Размер контекста модели не указан, поэтому окно не знает, сколько осталось. Внесите его в настройках чата.</p><div class="cx-acts"><button class="btn" type="button" id="chat-ctx-set">Указать размер</button></div>`
+    : f >= CTX_HINT_AT
+      ? `<p><b>${f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> Дальше разговор пухнет, ответы дороже и хуже. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts"><button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button></div>`
+      : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
+  pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
+    ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
+    <dl class="cx-kv"><dt>В запросе</dt><dd>${ctxNum(x.used)} токенов <span class="muted">по счету провайдера</span></dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
+}
+function openChatCtx() {
+  const x = chatState.chat && chatState.chat.context;
+  if (!x) return;
+  const f = x.window ? x.used / x.window : 0;
+  fillChatCtx(x, f, !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok");
+  $("#chat-ctx-pop").hidden = false;
+  $("#chat-ctx-ring").setAttribute("aria-expanded", "true");
+}
+function closeChatCtx() {
+  $("#chat-ctx-pop").hidden = true;
+  $("#chat-ctx-ring").setAttribute("aria-expanded", "false");
+}
+$("#chat-ctx-ring").addEventListener("click", () => ($("#chat-ctx-pop").hidden ? openChatCtx() : closeChatCtx()));
+$("#chat-ctx-pop").addEventListener("click", (e) => {
+  if (e.target.closest("#chat-ctx-close")) closeChatCtx();
+  else if (e.target.closest("#chat-ctx-new")) { closeChatCtx(); newChat(); }
+  else if (e.target.closest("#chat-ctx-set")) { closeChatCtx(); openSettings("chat").then(() => $("#chat-ctx-win").focus()); }
+});
+document.addEventListener("click", (e) => { if (!$("#chat-ctx-pop").hidden && !e.target.closest("#chat-ctx-pop, #chat-ctx-ring")) closeChatCtx(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-ctx-pop").hidden) { closeChatCtx(); e.stopPropagation(); } }, true);
 function renderChat() {
   renderChatCtx();
   const c = chatState.chat;
@@ -4059,6 +4088,9 @@ const MEM_PROBLEMS = {
   "index-too-big": "Индекс больше потолка",
   "stale-vectors": "Векторы отстали от записей",
 };
+// Плашка при входе (решение владельца 09.11): эти файлы читают агенты в каждой
+// сессии, поэтому правка горячего слоя меняет их поведение везде.
+const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Отклоненное не удаляется, а уходит в journal/.</div>`;
 const MEM_TOPIC_FIX = new Set(["no-topic-list", "stale-topics"]);
 const mmTokens = (n) => n.toLocaleString("ru-RU");
 async function openMemory() { await mmLoad(); mmRender(); }
@@ -4127,7 +4159,7 @@ function mmRender() {
   if (!d) { host.innerHTML = `<div class="mm-empty muted">Читаю…</div>`; return; }
   if (!d.exists) { host.innerHTML = mmEmptyHTML(d); return; }
   const pane = { hot: mmHotHTML, cold: mmColdHTML, journal: mmJournalHTML, queue: mmQueueHTML }[m.sel](d);
-  host.innerHTML = mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
+  host.innerHTML = MM_WARN + mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
 }
 // mmDo runs one action of the screen: блокирует повторное нажатие, после — перечитывает память.
 async function mmDo(fn, done) {
