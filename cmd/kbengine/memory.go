@@ -254,13 +254,16 @@ func memoryApprove(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return memoryFail(stderr, err)
 	}
+	// Правило в горячем слое начнет действовать во всех сессиях агентов, а любое одобрение
+	// поднимает здоровье: имя записи вводится руками, как подтверждение, что человек
+	// ее прочитал.
+	prompt := "Запись " + *name + " уйдет в холодный слой. Введите имя записи для подтверждения: "
 	if layer == domain.LayerHot {
-		// Правило в горячем слое начнет действовать во всех сессиях агентов: имя
-		// записи вводится руками, как подтверждение, что человек его прочитал.
-		if err := memoryConfirm("Правило из записи "+*name+" начнет действовать во всех сессиях агентов. Введите имя записи для подтверждения: ", *name); err != nil {
-			fmt.Fprintf(stderr, "memory: %v\n", err)
-			return 1
-		}
+		prompt = "Правило из записи " + *name + " начнет действовать во всех сессиях агентов. Введите имя записи для подтверждения: "
+	}
+	if err := memoryConfirm(prompt, *name); err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
 	}
 	if err := memory.New(st, lim).Approve(*name, layer); err != nil {
 		return memoryFail(stderr, err)
@@ -276,6 +279,10 @@ func memoryReject(args []string, stdout, stderr io.Writer) int {
 	dir, code, stop := memoryDirArg(fs, args, stderr)
 	if stop {
 		return code
+	}
+	if err := memoryConfirm("Отклонить запись "+*name+"? Введите имя записи для подтверждения: ", *name); err != nil {
+		fmt.Fprintf(stderr, "memory: %v\n", err)
+		return 1
 	}
 	if err := memory.New(memorydir.New(dir), memory.Limits{}).Reject(*name); err != nil {
 		return memoryFail(stderr, err)

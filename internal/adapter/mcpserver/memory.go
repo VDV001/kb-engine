@@ -54,9 +54,13 @@ func trustView(m MemoryAgent) map[string]any {
 	switch t.Mode {
 	case "warn":
 		out["note"] = trustNoteWarn
-		out["stale_rules"] = append([]string{}, t.StaleRules...)
 	case "bad":
 		out["note"] = trustNoteBad
+	}
+	// Правила без подтверждения идут в любом режиме: счет 80 при всех устаревших правилах
+	// все равно «Доверяю», и агент должен знать, на чем он стоит.
+	if len(t.StaleRules) > 0 {
+		out["stale_rules"] = append([]string{}, t.StaleRules...)
 	}
 	return out
 }
@@ -109,7 +113,8 @@ func addMemoryTools(s *mcp.Server, j journal, m MemoryAgent) {
 	}, func(in memoryProposeArgs) []string { return []string{in.Name} }, // тело в журнал вызовов не идет
 		func(in memoryProposeArgs) (map[string]any, error) {
 			tv := trustView(m)
-			if tv["mode"] == "bad" {
+			// Закрыто при «не доверяю» и когда здоровье не прочиталось: непроверенное не безопасно.
+			if tv["mode"] == "bad" || tv["mode"] == "unknown" {
 				return nil, errors.New(proposalsPausedText)
 			}
 			if err := m.Propose(in.Name, in.Topic, in.Description, in.Body); err != nil {

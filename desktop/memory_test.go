@@ -244,9 +244,15 @@ func TestMemoryDesk_everyHotWriteAsksTouchID(t *testing.T) {
 	}
 	_ = svc.Propose("junk", "стиль", "лишнее", "x")
 	n := len(auth.asked)
-	if err := d.Reject("junk"); err != nil || len(auth.asked) != n {
-		t.Errorf("Reject не пишет в HOT.md и Touch ID не просит: %v", err)
+	if err := d.Reject("junk"); !errors.Is(err, errAuthDenied) || len(auth.asked) != n+1 {
+		t.Errorf("Reject поднимает здоровье и идет по Touch ID: %v", err)
 	}
+	auth.ok = true
+	if err := d.Reject("junk"); err != nil {
+		t.Errorf("Reject с Touch ID: %v", err)
+	}
+	auth.ok = false
+	n = len(auth.asked)
 	if err := d.SetHotLimit(6000); err != nil || len(auth.asked) != n {
 		t.Errorf("потолок не меняет содержимое: %v", err)
 	}
@@ -438,5 +444,21 @@ func TestMemoryDesk_indexRebuildsVectors(t *testing.T) {
 	d.embed = stubEmbedder{err: errors.New("служба молчит")}
 	if rep, err := d.Index(); err == nil && rep.Failed != 1 {
 		t.Errorf("недоступная служба должна дать ошибку или отказ по записи: %+v", rep)
+	}
+}
+
+// В запросе Touch ID видно, что именно подтверждается: подсунутую команду не принять за настоящую.
+func TestMemoryDesk_confirmRuleNamesTheRuleInTheTouchIDPrompt(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	_ = svc.Propose("r-a", "стиль", "не пушить в main", "x")
+	_ = d.Approve("r-a", "hot")
+	auth.asked = nil
+	if err := d.ConfirmRule("не пушить в main"); err != nil {
+		t.Fatal(err)
+	}
+	if len(auth.asked) != 1 || !strings.Contains(auth.asked[0], "не пушить в main") {
+		t.Errorf("asked = %q", auth.asked)
 	}
 }

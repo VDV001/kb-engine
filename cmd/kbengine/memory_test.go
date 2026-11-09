@@ -199,6 +199,7 @@ func TestMemory_agentQueueEndToEnd(t *testing.T) {
 	if code, out, _ := runMem(t, "pending", dir); code != 0 || !strings.Contains(out, "agent-note") {
 		t.Fatalf("pending: %d %q", code, out)
 	}
+	askHuman(t, true) // любое одобрение поднимает здоровье и ждет жеста человека
 	if code, _, e := runMem(t, "approve", "--name", "agent-note", "--to", "cold", dir); code != 0 {
 		t.Fatalf("approve: %d %s", code, e)
 	}
@@ -466,7 +467,7 @@ func TestMemory_healthFreshAndOutsideEdit(t *testing.T) {
 	dir := t.TempDir()
 	runMem(t, "init", dir)
 	code, out, e := runMem(t, "health", dir)
-	if code != 0 || !strings.Contains(out, "Доверяю") || !strings.Contains(out, "100") {
+	if code != 0 || !strings.Contains(out, "Доверяю") || !strings.Contains(out, "здоровье 100 из 100") {
 		t.Fatalf("свежая память: code=%d out=%q err=%q", code, out, e)
 	}
 	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("правка мимо системы"), 0o600); err != nil {
@@ -536,5 +537,27 @@ func TestMemory_usageListsHealthVerbs(t *testing.T) {
 		if !strings.Contains(e, v) {
 			t.Errorf("usage не называет %q: %q", v, e)
 		}
+	}
+}
+
+// reject и approve --to cold поднимают здоровье, поэтому тоже ждут жеста человека
+// (ревью: иначе агент с shell «осматривал» бы память сам).
+func TestMemory_rejectAndColdApproveNeedAHuman(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
+	askHuman(t, false)
+	if code, _, _ := runMem(t, "reject", "--name", "rule-1", dir); code != 1 {
+		t.Errorf("reject без подтверждения: code=%d", code)
+	}
+	if code, _, _ := runMem(t, "approve", "--name", "rule-1", "--to", "cold", dir); code != 1 {
+		t.Errorf("approve cold без подтверждения: code=%d", code)
+	}
+	if _, out, _ := runMem(t, "pending", dir); !strings.Contains(out, "rule-1") {
+		t.Error("запись пропала из очереди без подтверждения")
+	}
+	askHuman(t, true)
+	if code, _, e := runMem(t, "reject", "--name", "rule-1", dir); code != 0 {
+		t.Errorf("reject с подтверждением: %d %s", code, e)
 	}
 }

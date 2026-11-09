@@ -412,7 +412,7 @@ const MODULES = {
   access: { name: "Доступы", what: "доступы к продуктам: карточки видны, пароль — только по Touch ID", view: "access",
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
   memory: { name: "Память", what: "правила и факты для агентов: горячий слой с потолком, холодный, журнал и очередь на одобрение", view: "memory",
-    icon: '<path d="M12 4 4 8l8 4 8-4z"/><path d="m4 12 8 4 8-4M4 16l8 4 8-4"/>' },
+    icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -4234,7 +4234,11 @@ function mmSetAlert(d) {
 }
 async function mmProbe() {
   if (!native() || !state.modules.some((m) => m.id === "memory" && m.enabled)) return;
-  try { mmSetAlert(await native().MemoryState()); } catch { /* сигнал необязателен: экран сам покажет ошибку */ }
+  try {
+    const d = await native().MemoryState();
+    mmSetAlert(d);
+    if (!$("#memory-view").hidden && !state.mm.busy) { state.mm.data = d; mmRender(); } // открытый экран не остаётся со старым счётом
+  } catch { /* сигнал необязателен: экран сам покажет ошибку */ }
 }
 setTimeout(mmProbe, 1500);
 setInterval(mmProbe, 10 * 60 * 1000);
@@ -4432,7 +4436,7 @@ function mhRulesHTML(d) {
     return `<button class="mh-rule${j === i ? " sel" : ""}" data-mm="hv" data-v="rules" data-rule="${j}"><span>${esc(r.text)}<span class="muted">${age(r)}</span></span><b class="${r.stale ? "warn" : "ok"}">${r.stale ? "устарело" : "свежее"}</b><span class="mh-bar ${t}"><i style="width:${f * 100}%"></i></span></button>`; }).join("");
   const key = mhKey(sel.text), hist = h.events.filter((e) => (e.kind === "approve-hot" || e.kind === "confirm-rule") && mhKey(e.text) === key).slice().reverse();
   const seen = sel.stale ? `<span class="mh-badge bad">${sel.ageDays < 0 ? "не подтверждалось ни разу" : `проверено ${mhDays(sel.ageDays)} назад`}</span>` : `<span class="mh-badge ok">проверено ${mhDays(sel.ageDays)} назад</span>`;
-  const agent = h.mode === "warn" || h.mode === "bad" ? (sel.stale ? "это правило агент получит в списке «давно не подтверждалось»" : "это правило агент получит без пометки: оно свежее") : "в режиме «Доверяю» агент пометок не получает";
+  const agent = sel.stale ? "это правило агент получит в списке «давно не подтверждалось» в любом режиме" : "это правило агент получит без пометки: оно свежее";
   const stale = h.rules.filter((x) => x.stale).length;
   const bulk = !stale ? "" : state.mm.confirm === "*stale"
     ? `<div class="mm-confirm" role="alert"><b>Вы перечитали ${stale} ${mhWord(stale, "правило", "правила", "правил")} (${h.rules.filter((x) => x.stale).map((x) => "«" + esc(x.text) + "»").join(", ")}) и они верны?</b> <button class="ac-btn pri" data-mm="confirm-all">Подтвердить все · Touch ID</button> <button class="ac-btn" data-mm="confirm-all-no">Отмена</button></div>`
@@ -4448,9 +4452,9 @@ function mhModesHTML(d) {
   const h = d.health, rs = h.reasons;
   const col = (k, range, items) => `<div class="mh-lvl ${k}${h.mode === k ? " cur" : ""}"><b>${MH_MODES[k][0]}</b><div class="muted">${range}</div><ul>${items.map((x) => `<li>${x}</li>`).join("")}</ul></div>`;
   return `<p class="muted">Режим считается из здоровья (${h.total} из 100) и действует через MCP (<code>kbengine-mcp</code>): он виден агенту в каждом ответе памяти. Сейчас: <b class="${MH_MODES[h.mode][1]}">${MH_MODES[h.mode][0]}</b>.</p>
-    <div class="mh-lvls">${col("ok", "здоровье 75 и выше", ["ответы без оговорок", "предложения идут в очередь"])}
-      ${col("warn", "от 45 до 74", ["ответы несут пометку «давно не проверялась»", "и список правил без подтверждения > 30 дней", "предложения идут в очередь"])}
-      ${col("bad", "ниже 45 или правка HOT.md мимо системы", ["ответы несут пометку «память не проверена»", "memory_propose отказывает: очередь приостановлена"])}</div>
+    <div class="mh-lvls">${col("ok", "здоровье 75 и выше", ["ответы без оговорок; правила без подтверждения всё равно называются", "предложения идут в очередь"])}
+      ${col("warn", "от 50 до 74", ["ответы несут пометку «давно не проверялась»", "и список правил без подтверждения > 30 дней", "предложения идут в очередь"])}
+      ${col("bad", "ниже 50 или правка HOT.md мимо системы", ["ответы несут пометку «память не проверена»", "memory_propose отказывает: очередь приостановлена"])}</div>
     <div class="mh-eff ${MH_MODES[h.mode][1]}">Для агента сейчас: ${esc(MH_MODES[h.mode][2])}</div>
     <p class="muted"><b>Чего режим не закрывает.</b> Агент, который читает HOT.md прямо с диска (а не через MCP), пометок не увидит; это сигнал, а не замок. Он честен ровно в той мере, в какой агент спрашивает память через инструменты.</p>
     <div class="mh-cols"><div class="mh-box"><h4>Что вернет доверие</h4>${mhReasonsHTML(h)}</div>

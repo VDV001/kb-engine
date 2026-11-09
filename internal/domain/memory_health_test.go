@@ -24,7 +24,7 @@ func TestParseDecision(t *testing.T) {
 		judgment bool
 	}{
 		{"hot rule", "2026-11-01 10:05 одобрено в горячий слой: agent-style — «ответы владельцу короче»", true, DecisionApproveHot, "ответы владельцу короче", "2026-11-01", true},
-		{"hot rule already there", "2026-11-01 10:05 одобрено в горячий слой: agent-style — «ответы короче» (такое правило уже было)", true, DecisionApproveHot, "ответы короче", "2026-11-01", true},
+		{"hot rule already there", "2026-11-01 10:05 одобрено в горячий слой: agent-style — «ответы короче» (такое правило уже было)", true, DecisionApproveDup, "ответы короче", "2026-11-01", true},
 		{"cold", "2026-11-02 09:00 одобрено в холодный слой: vpn-notes (тема «сети»)", true, DecisionApproveCold, "vpn-notes", "2026-11-02", true},
 		{"reject", "2026-11-03 09:00 отклонено: junk-note — «мусор»", true, DecisionReject, "junk-note", "2026-11-03", true},
 		{"seal", "2026-11-04 09:00 подтверждено: текущий HOT.md принят как есть", true, DecisionSeal, "", "2026-11-04", true},
@@ -201,5 +201,46 @@ func TestAssessHealth(t *testing.T) {
 func TestTrustMode_Effect(t *testing.T) {
 	if TrustOK.AgentMayPropose() != true || TrustWarn.AgentMayPropose() != true || TrustBad.AgentMayPropose() != false {
 		t.Fatal("в режиме «не доверяю» предложения агента приостановлены, в остальных идут")
+	}
+}
+
+// Только невнимание, без единой другой беды, доводит до «не доверяю»: полгода без осмотра и
+// все правила устарели (ревью: раньше выходило ровно 45 и режим застревал на «с оговоркой»).
+func TestAssessHealth_neglectAloneReachesBad(t *testing.T) {
+	in := HealthInput{
+		Today:     day("2026-11-10"),
+		Decisions: []Decision{dec("2026-05-01", DecisionApproveHot, "Правило один")},
+		Rules:     []string{"Правило один"},
+		SealOK:    true,
+	}
+	h := AssessHealth(in)
+	if h.Mode != TrustBad {
+		t.Fatalf("mode = %s, total = %d", h.Mode, h.Total)
+	}
+}
+
+// Дата из будущего (сбой часов, подделка) не замораживает свежесть.
+func TestAssessHealth_ignoresDecisionsFromTheFuture(t *testing.T) {
+	in := HealthInput{
+		Today:     day("2026-11-10"),
+		Decisions: []Decision{dec("2099-01-01", DecisionReview, ""), dec("2099-01-01", DecisionConfirmRule, "Правило один")},
+		Rules:     []string{"Правило один"},
+		SealOK:    true,
+	}
+	h := AssessHealth(in)
+	if h.IdleDays != -1 || h.Rules[0].AgeDays != -1 || !h.Rules[0].Stale {
+		t.Fatalf("idle=%d rules=%+v", h.IdleDays, h.Rules)
+	}
+}
+
+// Повторное одобрение уже лежащего правила не освежает его: никто его не перечитывал.
+func TestParseDecision_duplicateApprovalDoesNotDateTheRule(t *testing.T) {
+	d, ok := ParseDecision("2026-11-01 10:05 одобрено в горячий слой: x — «правило один» (такое правило уже было)")
+	if !ok || d.Kind != DecisionApproveDup || !d.Kind.IsJudgment() || d.Text != "правило один" {
+		t.Fatalf("got %+v ok=%v", d, ok)
+	}
+	h := AssessHealth(HealthInput{Today: day("2026-11-10"), Decisions: []Decision{d}, Rules: []string{"Правило один"}, SealOK: true})
+	if h.Rules[0].AgeDays != -1 {
+		t.Fatalf("правило не должно свежеть от дубля: %+v", h.Rules[0])
 	}
 }

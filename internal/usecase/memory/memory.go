@@ -293,7 +293,7 @@ func (s *Service) approveHot(name string, p PendingNote) error {
 	}
 	verdict := domain.DecisionPrefixApproveHot + "%s — «%s»"
 	if hot == snap.Hot {
-		verdict += " (такое правило уже было)"
+		verdict += domain.DecisionSuffixDup
 	} else {
 		if n := utf8.RuneCountInString(hot); n > s.limits.Hot {
 			return fmt.Errorf("%w: стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)

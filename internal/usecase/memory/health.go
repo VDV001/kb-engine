@@ -92,6 +92,8 @@ func (s *Service) ConfirmRules(texts []string) error {
 		}
 		found = append(found, r)
 	}
+	// ponytail: проверка до записи, а не транзакция: сбой диска посреди цикла оставит
+	// часть отметок. Путь вверх: одна запись журнала со списком правил.
 	for _, r := range found {
 		if err := s.decide("%s%s", domain.DecisionPrefixConfirmRule, r); err != nil {
 			return err

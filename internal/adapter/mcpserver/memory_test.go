@@ -194,3 +194,23 @@ func TestServer_memoryProposeIsPausedWhenTrustIsBad(t *testing.T) {
 		}
 	}
 }
+
+// Если здоровье не прочиталось, очередь не открывается: непроверенное не считается безопасным.
+func TestServer_memoryProposeFailsClosedWhenTrustIsUnknown(t *testing.T) {
+	m := &stubMemory{trustErr: errors.New("диск")}
+	res := callTool(t, connectMemory(t, m), "memory_propose", map[string]any{"name": "a", "topic": "t", "description": "d"})
+	if !res.IsError || len(m.proposed) != 0 {
+		t.Fatalf("isError=%v proposed=%v", res.IsError, m.proposed)
+	}
+}
+
+// Список правил без подтверждения идет агенту в любом режиме, где он есть.
+func TestServer_memoryFindNamesStaleRulesInEveryMode(t *testing.T) {
+	for _, mode := range []string{"ok", "warn", "bad"} {
+		m := &stubMemory{trust: mcpserver.MemoryTrust{Mode: mode, StaleRules: []string{"Старое правило"}}}
+		tr := trustOf(t, callTool(t, connectMemory(t, m), "memory_find", map[string]any{"query": "x"}))
+		if strings.Join(anyStrings(tr["stale_rules"]), "|") != "Старое правило" {
+			t.Errorf("%s: stale_rules = %v", mode, tr["stale_rules"])
+		}
+	}
+}

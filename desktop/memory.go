@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -227,6 +228,10 @@ func (d *memoryDesk) Approve(name, to string) error {
 
 // Reject archives a queued note to the journal instead of deleting it.
 func (d *memoryDesk) Reject(name string) error {
+	// Отклонение считается осмотром очереди и поднимает здоровье, поэтому по Touch ID.
+	if err := d.guard("отклонить предложение агента «" + name + "»"); err != nil {
+		return err
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	svc, _, err := d.service()
@@ -316,7 +321,7 @@ func (d *memoryDesk) Review() error {
 
 // ConfirmRule records that the person re-read a rule of the hot layer and keeps it.
 func (d *memoryDesk) ConfirmRule(text string) error {
-	if err := d.guard("подтвердить правило в памяти"); err != nil {
+	if err := d.guard("подтвердить правило: «" + clip(text, 80) + "»"); err != nil {
 		return err
 	}
 	d.mu.Lock()
@@ -331,7 +336,7 @@ func (d *memoryDesk) ConfirmRule(text string) error {
 // ConfirmRules records that the person re-read several rules of the hot layer and
 // keeps them: один Touch ID на весь список, запись по каждому правилу, всё или ничего.
 func (d *memoryDesk) ConfirmRules(texts []string) error {
-	if err := d.guard("подтвердить правила в памяти"); err != nil {
+	if err := d.guard(fmt.Sprintf("подтвердить правил в памяти: %d", len(texts))); err != nil {
 		return err
 	}
 	d.mu.Lock()
@@ -365,4 +370,13 @@ func (d *memoryDesk) Index() (indexReport, error) {
 	}
 	rep, err := svc.WithEmbedder(emb, memorydir.EmbedModel).BuildIndex()
 	return indexReport{rep.Embedded, rep.Reused, rep.Failed}, err
+}
+
+// clip cuts text to n runes for the Touch ID prompt: длинное правило не растягивает диалог.
+func clip(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }

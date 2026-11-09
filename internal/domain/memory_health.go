@@ -2,6 +2,7 @@ package domain
 
 import (
 	"math"
+	"slices"
 	"strings"
 	"time"
 )
@@ -18,7 +19,10 @@ type DecisionKind string
 // Виды решений. Первые пять — суждение человека и сбрасывают давность осмотра;
 // остальные — обслуживание, оно журналируется, но осмотром не считается.
 const (
-	DecisionApproveHot  DecisionKind = "approve-hot"
+	DecisionApproveHot DecisionKind = "approve-hot"
+	// DecisionApproveDup — одобрено правило, которое уже лежало в HOT.md: суждение
+	// человека, но правило оно не освежает (его никто не перечитывал).
+	DecisionApproveDup  DecisionKind = "approve-hot-dup"
 	DecisionApproveCold DecisionKind = "approve-cold"
 	DecisionReject      DecisionKind = "reject"
 	DecisionSeal        DecisionKind = "seal"
@@ -33,7 +37,7 @@ const (
 // IsJudgment says whether the decision is a human judgment: решение — суждение человека, а не обслуживание перечня и индекса.
 func (k DecisionKind) IsJudgment() bool {
 	switch k {
-	case DecisionApproveHot, DecisionApproveCold, DecisionReject, DecisionSeal, DecisionReview, DecisionConfirmRule:
+	case DecisionApproveHot, DecisionApproveDup, DecisionApproveCold, DecisionReject, DecisionSeal, DecisionReview, DecisionConfirmRule:
 		return true
 	}
 	return false
@@ -52,6 +56,7 @@ type Decision struct {
 // Одна таблица на оба конца, чтобы формулировка не разошлась с разбором.
 const (
 	DecisionPrefixApproveHot  = "одобрено в горячий слой: "
+	DecisionSuffixDup         = " (такое правило уже было)"
 	DecisionPrefixApproveCold = "одобрено в холодный слой: "
 	DecisionPrefixReject      = "отклонено: "
 	DecisionTextSeal          = "подтверждено: текущий HOT.md принят как есть"
@@ -83,27 +88,36 @@ func ParseDecision(line string) (Decision, bool) {
 	day := DayOf(at)
 	rest := strings.TrimSpace(line[len(decisionStamp):])
 	d := Decision{Day: day, Kind: DecisionOther, Text: rest}
-	switch {
-	case strings.HasPrefix(rest, DecisionPrefixApproveHot):
-		d.Kind, d.Text = DecisionApproveHot, quoted(rest)
-	case strings.HasPrefix(rest, DecisionPrefixApproveCold):
-		d.Kind, d.Text = DecisionApproveCold, nameAfter(rest, DecisionPrefixApproveCold)
-	case strings.HasPrefix(rest, DecisionPrefixReject):
-		d.Kind, d.Text = DecisionReject, nameAfter(rest, DecisionPrefixReject)
-	case rest == DecisionTextSeal:
-		d.Kind, d.Text = DecisionSeal, ""
-	case strings.HasPrefix(rest, DecisionPrefixReview):
-		d.Kind, d.Text = DecisionReview, ""
-	case strings.HasPrefix(rest, DecisionPrefixConfirmRule):
-		d.Kind, d.Text = DecisionConfirmRule, strings.TrimSpace(strings.TrimPrefix(rest, DecisionPrefixConfirmRule))
-	case rest == DecisionTextTopics:
-		d.Kind, d.Text = DecisionTopics, ""
-	case rest == DecisionTextPortrait:
-		d.Kind, d.Text = DecisionPortrait, ""
-	case rest == DecisionTextIndex:
-		d.Kind, d.Text = DecisionIndex, ""
+	for _, r := range decisionRules {
+		if (r.exact && rest == r.pat) || (!r.exact && strings.HasPrefix(rest, r.pat)) {
+			d.Kind, d.Text = r.kind, r.text(rest)
+			if d.Kind == DecisionApproveHot && strings.HasSuffix(rest, DecisionSuffixDup) {
+				d.Kind = DecisionApproveDup
+			}
+			break
+		}
 	}
 	return d, true
+}
+
+// decisionRule maps a journal text to its kind and to the text worth keeping.
+type decisionRule struct {
+	pat   string
+	exact bool // весь текст равен pat, иначе pat — префикс
+	kind  DecisionKind
+	text  func(rest string) string
+}
+
+var decisionRules = []decisionRule{
+	{DecisionPrefixApproveHot, false, DecisionApproveHot, quoted},
+	{DecisionPrefixApproveCold, false, DecisionApproveCold, func(r string) string { return nameAfter(r, DecisionPrefixApproveCold) }},
+	{DecisionPrefixReject, false, DecisionReject, func(r string) string { return nameAfter(r, DecisionPrefixReject) }},
+	{DecisionTextSeal, true, DecisionSeal, func(string) string { return "" }},
+	{DecisionPrefixReview, false, DecisionReview, func(string) string { return "" }},
+	{DecisionPrefixConfirmRule, false, DecisionConfirmRule, func(r string) string { return strings.TrimSpace(strings.TrimPrefix(r, DecisionPrefixConfirmRule)) }},
+	{DecisionTextTopics, true, DecisionTopics, func(string) string { return "" }},
+	{DecisionTextPortrait, true, DecisionPortrait, func(string) string { return "" }},
+	{DecisionTextIndex, true, DecisionIndex, func(string) string { return "" }},
 }
 
 // quoted returns the text inside the first «…» up to the last », the rule as it
@@ -180,7 +194,7 @@ const (
 	QueueGraceDays = 7
 
 	trustOKFrom   = 75
-	trustWarnFrom = 45
+	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) даёт 45
 
 	maxRhythm, maxQueue, maxIntegrity, maxRules = 35, 25, 20, 20
 )
@@ -257,6 +271,8 @@ func daysBetween(from, to time.Time) int { return int(to.Sub(from).Hours() / 24)
 // перекрывает.
 func AssessHealth(in HealthInput) Health {
 	h := Health{IdleDays: -1}
+	// Дата позже сегодняшней (сбой часов, подделка строки) не освежает ничего.
+	in.Decisions = slices.DeleteFunc(slices.Clone(in.Decisions), func(d Decision) bool { return d.Day.After(in.Today) })
 	for _, d := range in.Decisions {
 		if d.Kind.IsJudgment() && d.Day.After(h.LastJudgment) {
 			h.LastJudgment = d.Day
