@@ -95,13 +95,40 @@ func NewCredential(d CredentialDTO) (Credential, error) {
 	}
 	d.Env = env
 	if d.ID == "" {
-		d.ID = slug(d.Product) + "-" + string(env) + "-" + slug(d.Login)
+		d.ID = derivedID(d.Product, env, d.Login)
 	}
 	d.ID = strings.ToLower(d.ID)
 	if !credentialID.MatchString(d.ID) {
 		return Credential{}, fmt.Errorf("%w: id %q — латиница, цифры и дефис, до 64 знаков", ErrInvalidCredential, d.ID)
 	}
 	return Credential{d: d}, nil
+}
+
+// Revise returns the card with the details of d. Пустые продукт, среда и логин
+// значат «не менять»; заполненные исправляют ошибку ввода. Адрес собран из них: у
+// карточки с собранным адресом он пересчитывается, у карточки с заданным руками id
+// остается. Инварианты те же, что у NewCredential (нужен адрес или хост).
+func (c Credential) Revise(d CredentialDTO) (Credential, error) {
+	old := c.d
+	if strings.TrimSpace(d.Product) == "" {
+		d.Product = old.Product
+	}
+	if strings.TrimSpace(string(d.Env)) == "" {
+		d.Env = old.Env
+	}
+	if strings.TrimSpace(d.Login) == "" {
+		d.Login = old.Login
+	}
+	d.ID = old.ID
+	if old.ID == derivedID(old.Product, old.Env, old.Login) {
+		d.ID = ""
+	}
+	return NewCredential(d)
+}
+
+// derivedID is the id built from product, environment and login.
+func derivedID(product string, env Env, login string) string {
+	return slug(product) + "-" + string(env) + "-" + slug(login)
 }
 
 // slug is a name in Latin letters, digits and dashes: «Склад-Про» → sklad-pro.
