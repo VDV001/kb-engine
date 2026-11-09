@@ -315,3 +315,15 @@ func TestVectors_roundTripAndAbsent(t *testing.T) {
 		t.Errorf("битый файл: err = %v", err)
 	}
 }
+
+func TestInit_skeletonHasPortraitAndTopicMarkers(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	b, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	for _, m := range []string{domain.PortraitStart, domain.PortraitEnd, domain.TopicsStart, domain.TopicsEnd} {
+		if !strings.Contains(string(b), m) {
+			t.Errorf("в скелете нет метки %s", m)
+		}
+	}
+}

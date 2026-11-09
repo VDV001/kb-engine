@@ -234,3 +234,42 @@ func TestService_RejectArchivesInsteadOfDeleting(t *testing.T) {
 		t.Errorf("reject чужого: %v", err)
 	}
 }
+
+type fakePortrait struct {
+	text string
+	err  error
+}
+
+func (f fakePortrait) Text() (string, error) { return f.text, f.err }
+
+const whoHot = "## Кто я\n\n" + domain.PortraitStart + "\n" + domain.PortraitEnd + "\n"
+
+func TestService_WhoWritesPortraitIntoHot(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: whoHot}}
+	svc := memory.New(st, memory.Limits{}).WithPortrait(fakePortrait{text: "Обо мне: Разработчик."})
+	changed, err := svc.Who()
+	if err != nil || !changed || !strings.Contains(st.savedHot, "Обо мне: Разработчик.") {
+		t.Fatalf("changed=%v err=%v hot=%q", changed, err, st.savedHot)
+	}
+	st.savedHot = ""
+	if changed, err := svc.Who(); err != nil || changed || st.savedHot != "" {
+		t.Errorf("второй вызов ничего не меняет: changed=%v err=%v saved=%q", changed, err, st.savedHot)
+	}
+}
+
+func TestService_WhoRefusals(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: "ручной горячий слой"}}
+	svc := memory.New(st, memory.Limits{})
+	if _, err := svc.Who(); !errors.Is(err, memory.ErrNoPortrait) {
+		t.Errorf("без источника err = %v, want ErrNoPortrait", err)
+	}
+	svc = svc.WithPortrait(fakePortrait{text: "x"})
+	if _, err := svc.Who(); !errors.Is(err, domain.ErrNoPortraitMarkers) || st.savedHot != "" {
+		t.Errorf("без меток err = %v saved=%q", err, st.savedHot)
+	}
+	st.snap.Hot = whoHot
+	svc = svc.WithPortrait(fakePortrait{err: errors.New("файл не читается")})
+	if _, err := svc.Who(); err == nil || st.savedHot != "" {
+		t.Errorf("ошибка источника должна всплыть и не стирать блок: %v saved=%q", err, st.savedHot)
+	}
+}

@@ -10,6 +10,10 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/adapter/portraitfile"
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 func runMem(t *testing.T, args ...string) (int, string, string) {
@@ -302,5 +306,61 @@ func TestMemory_indexNeedsAnEmbedService(t *testing.T) {
 	dir := seedForFind(t)
 	if code, _, _ := runMem(t, "index", "--embed-url", "http://127.0.0.1:1/api/embeddings", dir); code != 1 {
 		t.Errorf("недоступная служба: code=%d, want 1", code)
+	}
+}
+
+// seedPortrait кладет в папку портрета выдуманный портрет: один одобренный факт,
+// один ждущий одобрения (его в HOT.md быть не должно).
+func seedPortrait(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	at := time.Date(2026, 11, 9, 12, 0, 0, 0, time.UTC)
+	ok, err := domain.NewFact("f1", domain.SectionAbout, "Разработчик Го", domain.OriginManual, domain.FactApproved, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wait, err := domain.NewFact("f2", domain.SectionMisc, "Любит чай", domain.OriginChat, domain.FactPending, at)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := domain.NewPortrait([]domain.Fact{ok, wait})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (portraitfile.Store{Dir: dir}).Save(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestMemory_whoFillsHotFromThePortrait(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	mem := t.TempDir()
+	runMem(t, "init", mem)
+	code, out, e := runMem(t, "who", "--portrait-dir", seedPortrait(t), mem)
+	if code != 0 {
+		t.Fatalf("who: %d %q %s", code, out, e)
+	}
+	hot, _ := os.ReadFile(filepath.Join(mem, "HOT.md"))
+	if !strings.Contains(string(hot), "Обо мне: Разработчик Го.") {
+		t.Errorf("факта нет в HOT.md:\n%s", hot)
+	}
+	if strings.Contains(string(hot), "чай") {
+		t.Error("факт, не одобренный человеком, попал в HOT.md")
+	}
+	if code, out, _ := runMem(t, "who", "--portrait-dir", seedPortrait(t), mem); code != 0 || !strings.Contains(out, "актуален") {
+		t.Errorf("повторный who: %d %q", code, out)
+	}
+	if code, out, _ := runMem(t, "check", mem); code != 0 {
+		t.Errorf("после who check красный: %d %q", code, out)
+	}
+}
+
+func TestMemory_whoNeedsAPortraitFolder(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // настроек окна нет
+	mem := t.TempDir()
+	runMem(t, "init", mem)
+	if code, _, e := runMem(t, "who", mem); code != 1 || !strings.Contains(e, "портрет") {
+		t.Errorf("who без папки: code=%d err=%q", code, e)
 	}
 }

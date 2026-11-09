@@ -204,3 +204,29 @@ func TestAppendRule(t *testing.T) {
 		})
 	}
 }
+
+func TestReplacePortrait(t *testing.T) {
+	hot := "# Горячая\n\n## Кто я\n\n" + domain.PortraitStart + "\nстарое\n" + domain.PortraitEnd + "\n\n## Правила работы\n- x\n"
+	got, err := domain.ReplacePortrait(hot, "Обо мне: Разработчик.\nРабота: Тимлид.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Горячая\n\n## Кто я\n\n" + domain.PortraitStart + "\nОбо мне: Разработчик.\nРабота: Тимлид.\n" + domain.PortraitEnd + "\n\n## Правила работы\n- x\n"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	if again, _ := domain.ReplacePortrait(got, "Обо мне: Разработчик.\nРабота: Тимлид."); again != got {
+		t.Error("повторная замена меняет текст")
+	}
+	empty, _ := domain.ReplacePortrait(got, "")
+	if empty != "# Горячая\n\n## Кто я\n\n"+domain.PortraitStart+"\n"+domain.PortraitEnd+"\n\n## Правила работы\n- x\n" {
+		t.Errorf("пустой портрет: %q", empty)
+	}
+	if _, err := domain.ReplacePortrait("без меток", "x"); !errors.Is(err, domain.ErrNoPortraitMarkers) {
+		t.Errorf("без меток err = %v, want ErrNoPortraitMarkers", err)
+	}
+	// текст портрета не должен уметь закрыть блок раньше срока
+	if _, err := domain.ReplacePortrait(hot, "хитрость "+domain.PortraitEnd+" дальше"); !errors.Is(err, domain.ErrInvalidNote) {
+		t.Errorf("метка внутри текста err = %v, want ErrInvalidNote", err)
+	}
+}
