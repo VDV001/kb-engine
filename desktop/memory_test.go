@@ -132,6 +132,9 @@ func TestMemoryDesk_problemsSurface(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(d.dir, "HOT.md"), []byte(strings.Repeat("я", 5000)), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := memorydir.New(d.dir).Seal(); err != nil { // правка руками подтверждена
+		t.Fatal(err)
+	}
 	v, err := d.State()
 	if err != nil || len(v.Problems) != 1 || v.Problems[0].Kind != "hot-too-big" || v.Problems[0].File != "HOT.md" {
 		t.Fatalf("problems=%+v err=%v", v.Problems, err)
@@ -202,9 +205,10 @@ func TestMemoryDesk_approveToHotAsksTouchID(t *testing.T) {
 		t.Errorf("asked = %v", auth.asked)
 	}
 
+	// Холодный слой тоже переписывает HOT.md (перечень тем): Touch ID и там.
 	n := len(auth.asked)
-	if err := d.Approve("note-b", "cold"); err != nil || len(auth.asked) != n {
-		t.Errorf("холодный слой не должен просить Touch ID: err=%v asked=%v", err, auth.asked)
+	if err := d.Approve("note-b", "cold"); err != nil || len(auth.asked) != n+1 {
+		t.Errorf("холодный слой должен просить Touch ID: err=%v asked=%v", err, auth.asked)
 	}
 }
 
@@ -217,5 +221,66 @@ func TestMemoryDesk_approveToHotWithoutHelperRefuses(t *testing.T) {
 	}
 	if v, _ := d.State(); len(v.Queue) != 1 {
 		t.Error("очередь изменилась")
+	}
+}
+
+// Любая запись в HOT.md из окна — по Touch ID: правила, перечень тем, «Кто я»,
+// подтверждение печати. Отклонить и потолок HOT.md не меняют.
+func TestMemoryDesk_everyHotWriteAsksTouchID(t *testing.T) {
+	d := newMemDesk(t)
+	auth := d.auth.(*fakeAuth)
+	svc := d.seed(t)
+	auth.ok = false
+	if _, err := d.Topics(); !errors.Is(err, errAuthDenied) {
+		t.Errorf("Topics: %v", err)
+	}
+	if _, err := d.Who(textSource("Обо мне: x.")); !errors.Is(err, errAuthDenied) {
+		t.Errorf("Who: %v", err)
+	}
+	if err := d.Seal(); !errors.Is(err, errAuthDenied) {
+		t.Errorf("Seal: %v", err)
+	}
+	_ = svc.Propose("junk", "стиль", "лишнее", "x")
+	n := len(auth.asked)
+	if err := d.Reject("junk"); err != nil || len(auth.asked) != n {
+		t.Errorf("Reject не пишет в HOT.md и Touch ID не просит: %v", err)
+	}
+	if err := d.SetHotLimit(6000); err != nil || len(auth.asked) != n {
+		t.Errorf("потолок не меняет содержимое: %v", err)
+	}
+}
+
+func TestMemoryDesk_stateShowsDecisionsAndSeal(t *testing.T) {
+	d := newMemDesk(t)
+	svc := d.seed(t)
+	_ = svc.Propose("rule-a", "стиль", "не пушить в main", "x")
+	if err := d.Approve("rule-a", "hot"); err != nil {
+		t.Fatal(err)
+	}
+	v, _ := d.State()
+	if len(v.Decisions) != 1 || !strings.Contains(v.Decisions[0], "rule-a") {
+		t.Errorf("decisions = %v", v.Decisions)
+	}
+	if err := os.WriteFile(filepath.Join(d.dir, "HOT.md"), []byte("подсунули"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = d.State()
+	found := false
+	for _, p := range v.Problems {
+		found = found || p.Kind == "hot-changed-outside"
+	}
+	if !found {
+		t.Errorf("правка мимо системы не видна: %+v", v.Problems)
+	}
+	if err := d.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ = d.State(); len(v.Problems) != 1 && len(v.Problems) != 0 { // «подсунули» — не наш формат: допустимы другие нарушения, но не печать
+		t.Logf("problems: %+v", v.Problems)
+	}
+	for _, p := range v.Problems {
+		if p.Kind == "hot-changed-outside" {
+			t.Error("после Seal печать должна совпасть")
+		}
 	}
 }

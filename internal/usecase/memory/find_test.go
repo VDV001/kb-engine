@@ -308,3 +308,32 @@ func TestFind_defaultThresholdFitsBgeM3Scores(t *testing.T) {
 		t.Fatalf("res=%+v err=%v", res, err)
 	}
 }
+
+// Индекс, где все векторы переиспользованы, все равно знает свою размерность.
+func TestBuildIndex_dimsSurviveFullReuse(t *testing.T) {
+	emb := &fakeEmbedder{}
+	st, svc := newFind(t, finNote(), docNote())
+	svc = svc.WithEmbedder(emb, "bge-m3")
+	_, _ = svc.BuildIndex()
+	if _, err := svc.BuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	if st.vectors.Dims != 3 {
+		t.Errorf("Dims = %d, want 3", st.vectors.Dims)
+	}
+}
+
+// Сбой эмбеддера на изменившейся записи не выбрасывает ее прежний вектор: он
+// отстал (check назовет stale-vectors), но запись из векторного поиска не пропала.
+func TestBuildIndex_failureKeepsThePreviousVector(t *testing.T) {
+	emb := &fakeEmbedder{}
+	st, svc := newFind(t, finNote(), docNote())
+	svc = svc.WithEmbedder(emb, "bge-m3")
+	_, _ = svc.BuildIndex()
+	st.texts[1].Note.Digest = "d-doc-2"
+	emb.failOn = "врач"
+	rep, err := svc.BuildIndex()
+	if err != nil || rep.Failed != 1 || len(st.vectors.Entries) != 2 || st.vectors.Entries["doctor"].Digest != "d-doc" {
+		t.Fatalf("rep=%+v err=%v entries=%v", rep, err, st.vectors.Entries)
+	}
+}

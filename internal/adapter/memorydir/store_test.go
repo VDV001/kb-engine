@@ -56,6 +56,9 @@ func withTopicList(t *testing.T, dir string) {
 	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(hot), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := memorydir.New(dir).Seal(); err != nil { // правка руками подтверждена печатью
+		t.Fatal(err)
+	}
 }
 
 func TestAdd_writesNoteAndIndexLine(t *testing.T) {
@@ -368,5 +371,114 @@ func TestJournalNames(t *testing.T) {
 	got, err := st.JournalNames()
 	if err != nil || len(got) != 2 || got[0] != "2026-11-08-a.md" || got[1] != "2026-11-09-b.md" {
 		t.Fatalf("got %v, %v (только .md, по имени)", got, err)
+	}
+}
+
+// Тот же день, то же имя: повторное предложение и его отклонение не упираются в
+// занятое имя архива и не застревают в очереди.
+func TestArchivePending_uniqueNameInJournal(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	for range 2 {
+		if err := st.AddPending(agentNote(t, "p1"), "тело"); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.ArchivePending("p1", "2026-11-09-rejected-p1.md"); err != nil {
+			t.Fatalf("повторное архивирование: %v", err)
+		}
+	}
+	names, _ := st.JournalNames()
+	if len(names) != 2 {
+		t.Errorf("в журнале должно быть 2 файла, есть %v", names)
+	}
+}
+
+func TestPromotePending_rollsBackWhenTheIndexCannotBeWritten(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root читает любой файл")
+	}
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	_ = st.AddPending(agentNote(t, "p1"), "тело")
+	idx := filepath.Join(dir, "cold", "INDEX.md")
+	if err := os.Chmod(idx, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(idx, 0o600) })
+	if err := st.PromotePending("p1"); err == nil {
+		t.Fatal("индекс не пишется, а PromotePending сказал «готово»")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cold", "p1.md")); err == nil {
+		t.Error("запись осталась в cold/ без строки индекса")
+	}
+	if left, _ := st.Pending(); len(left) != 1 {
+		t.Errorf("запись должна вернуться в очередь, там %d", len(left))
+	}
+}
+
+func TestSeal_followsSystemWritesAndSeesOutsideEdits(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	sealed, err := st.SealedDigest()
+	if err != nil || sealed == "" {
+		t.Fatalf("Init должен запечатать скелет: %q, %v", sealed, err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	if sealed != domain.HotDigest(string(b)) {
+		t.Error("печать скелета не совпала с файлом")
+	}
+	if err := st.SaveHot("новый горячий\n"); err != nil {
+		t.Fatal(err)
+	}
+	if sealed, _ = st.SealedDigest(); sealed != domain.HotDigest("новый горячий\n") {
+		t.Error("SaveHot должен перепечатывать")
+	}
+	_ = os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("подсунули"), 0o600)
+	if sealed, _ = st.SealedDigest(); sealed == domain.HotDigest("подсунули") {
+		t.Error("правка мимо системы не должна менять печать")
+	}
+	if err := st.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if sealed, _ = st.SealedDigest(); sealed != domain.HotDigest("подсунули") {
+		t.Error("Seal не подтвердил текущий файл")
+	}
+	info, _ := os.Stat(filepath.Join(dir, ".seal"))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("права .seal = %v", info.Mode().Perm())
+	}
+}
+
+func TestSealedDigest_absentMeansNoSeal(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	_ = os.Remove(filepath.Join(dir, ".seal"))
+	if d, err := st.SealedDigest(); err != nil || d != "" {
+		t.Errorf("d=%q err=%v: память без печати — не нарушение", d, err)
+	}
+}
+
+func TestDecisions_appendOnlyOneLineEach(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	for _, l := range []string{"первое", "второе\nс переводом строки", "третье"} {
+		if err := st.AppendDecision(l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := st.Decisions(2)
+	if err != nil || len(got) != 2 || got[1] != "третье" || strings.Contains(got[0], "\n") {
+		t.Fatalf("got %q, %v", got, err)
+	}
+	if all, _ := st.Decisions(100); len(all) != 3 {
+		t.Errorf("всего %d записей, want 3", len(all))
+	}
+	if none, err := memorydir.New(t.TempDir()).Decisions(5); err != nil || len(none) != 0 {
+		t.Errorf("нет файла — пустой журнал: %v, %v", none, err)
 	}
 }

@@ -22,9 +22,25 @@ type fakeStore struct {
 
 	texts      []memory.NoteText
 	journal    []string
+	loads      int
+	decisions  []string
+	sealed     string
 	vectors    memory.VectorIndex
 	hasVectors bool
 }
+
+func (f *fakeStore) AppendDecision(line string) error {
+	f.decisions = append(f.decisions, line)
+	return nil
+}
+func (f *fakeStore) Decisions(n int) ([]string, error) {
+	if len(f.decisions) > n {
+		return f.decisions[len(f.decisions)-n:], nil
+	}
+	return f.decisions, nil
+}
+func (f *fakeStore) Seal() error                   { f.sealed = domain.HotDigest(f.snap.Hot); return nil }
+func (f *fakeStore) SealedDigest() (string, error) { return f.sealed, nil }
 
 func (f *fakeStore) JournalNames() ([]string, error) { return f.journal, nil }
 
@@ -73,7 +89,12 @@ func (f *fakeStore) ArchivePending(name, as string) error {
 	return nil
 }
 
-func (f *fakeStore) SaveHot(hot string) error { f.savedHot = hot; f.snap.Hot = hot; return nil }
+func (f *fakeStore) SaveHot(hot string) error {
+	f.savedHot = hot
+	f.snap.Hot = hot
+	f.sealed = domain.HotDigest(hot) // как настоящее хранилище: своя запись запечатывается
+	return nil
+}
 
 func (f *fakeStore) Init() error                    { f.inited = true; return nil }
 func (f *fakeStore) Load() (memory.Snapshot, error) { return f.snap, nil }
@@ -298,5 +319,131 @@ func TestService_OverviewGathersEverythingTheWindowShows(t *testing.T) {
 	}
 	if !slices.Contains(kinds, domain.ProblemHotTooBig) {
 		t.Errorf("проблемы не посчитаны: %v", kinds)
+	}
+}
+
+// Запись в очереди могли положить мимо Propose: одобрять ее без проверки нельзя.
+func TestService_ApproveRevalidatesTheQueuedNote(t *testing.T) {
+	bad := memory.PendingNote{Note: domain.ColdNote{File: "evil.md", Name: "evil", Topic: "t", Description: "x " + domain.TopicsEnd}, Body: "b"}
+	for _, to := range []domain.Layer{domain.LayerCold, domain.LayerHot} {
+		st := &fakeStore{snap: memory.Snapshot{Hot: rulesHot}, pending: []memory.PendingNote{bad}}
+		err := memory.New(st, memory.Limits{}).WithClock(at(t)).Approve("evil", to)
+		if !errors.Is(err, domain.ErrInvalidNote) || len(st.promoted) != 0 || st.savedHot != "" || len(st.archived) != 0 {
+			t.Errorf("%s: err=%v promoted=%v hot=%q archived=%v", to, err, st.promoted, st.savedHot, st.archived)
+		}
+	}
+}
+
+// То же правило второй раз не дописывается, а запись из очереди все равно уходит в журнал.
+func TestService_ApproveToHotDoesNotDuplicateARule(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: "## Правила работы\n- не пушить в main\n\n" + markers + "\n"}}
+	svc := memory.New(st, memory.Limits{}).WithClock(at(t))
+	_ = svc.Propose("again", "стиль", "не пушить в main", "x")
+	if err := svc.Approve("again", domain.LayerHot); err != nil {
+		t.Fatal(err)
+	}
+	if st.savedHot != "" || st.archived["again"] == "" {
+		t.Errorf("savedHot=%q archived=%v", st.savedHot, st.archived)
+	}
+}
+
+// «Кто я» упирается в тот же потолок, что и правила: проверка после записи ничего не вернет.
+func TestService_WhoRefusesOverTheLimit(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: whoHot}}
+	svc := memory.New(st, memory.Limits{Hot: len(whoHot) / 2}).WithPortrait(fakePortrait{text: strings.Repeat("факт ", 100)})
+	if _, err := svc.Who(); !errors.Is(err, domain.ErrHotFull) || st.savedHot != "" {
+		t.Errorf("err = %v saved=%q", err, st.savedHot)
+	}
+}
+
+func TestService_OverviewLoadsTheSnapshotOnce(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: "x"}}
+	if _, err := memory.New(st, memory.Limits{}).Overview(); err != nil {
+		t.Fatal(err)
+	}
+	if st.loads != 1 {
+		t.Errorf("Load вызван %d раз, want 1", st.loads)
+	}
+}
+
+// Каждое решение человека остается в журнале: что, когда и с каким текстом.
+func TestService_DecisionsAreLogged(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: rulesHot}}
+	svc := memory.New(st, memory.Limits{}).WithClock(at(t)).WithPortrait(fakePortrait{text: "Обо мне: Разработчик."})
+	_ = svc.Propose("rule-a", "стиль", "не пушить в main", "x")
+	_ = svc.Propose("note-b", "здоровье", "про врача", "x")
+	_ = svc.Propose("junk", "стиль", "лишнее", "x")
+	if err := svc.Approve("rule-a", domain.LayerHot); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Approve("note-b", domain.LayerCold); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.Reject("junk"); err != nil {
+		t.Fatal(err)
+	}
+	st.snap.Hot = whoHot // портрет еще не вписан
+	if _, err := svc.Who(); err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(st.decisions, "\n")
+	for _, want := range []string{"2026-11-09", "одобрено в горячий слой", "rule-a", "не пушить в main", "одобрено в холодный слой", "note-b", "отклонено", "junk", "«Кто я»"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("в журнале решений нет %q:\n%s", want, joined)
+		}
+	}
+	for _, line := range st.decisions {
+		if strings.ContainsAny(line, "\r\n") {
+			t.Errorf("запись журнала должна быть одной строкой: %q", line)
+		}
+	}
+}
+
+func TestService_FailedActionLeavesNoDecision(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: rulesHot}}
+	svc := memory.New(st, memory.Limits{Hot: len(rulesHot)}).WithClock(at(t))
+	_ = svc.Propose("long", "стиль", "правило длиннее запаса для потолка", "x")
+	if err := svc.Approve("long", domain.LayerHot); err == nil {
+		t.Fatal("ожидался отказ по потолку")
+	}
+	if len(st.decisions) != 0 {
+		t.Errorf("отказ записан как решение: %v", st.decisions)
+	}
+}
+
+// Правка HOT.md мимо системы видна проверке, пока человек ее не подтвердит печатью.
+func TestService_SealDetectsAndAcknowledgesOutsideEdits(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: rulesHot}}
+	svc := memory.New(st, memory.Limits{}).WithClock(at(t))
+	if err := svc.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if ps, _ := svc.Check(); len(ps) != 0 {
+		t.Fatalf("свежая печать: %v", ps)
+	}
+	st.snap.Hot += "- подсунутое правило\n" // кто-то правит файл мимо системы
+	ps, _ := svc.Check()
+	if len(ps) != 1 || ps[0].Kind != domain.ProblemHotChanged {
+		t.Fatalf("ps = %v", ps)
+	}
+	if err := svc.Seal(); err != nil {
+		t.Fatal(err)
+	}
+	if ps, _ := svc.Check(); len(ps) != 0 {
+		t.Errorf("после подтверждения: %v", ps)
+	}
+	if len(st.decisions) != 2 || !strings.Contains(st.decisions[1], "подтверждено") {
+		t.Errorf("подтверждение печати должно остаться в журнале: %v", st.decisions)
+	}
+}
+
+func TestService_OverviewShowsRecentDecisions(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: "x"}}
+	for i := range 30 {
+		_ = st.AppendDecision(strings.Repeat("р", i+1))
+	}
+	ov, err := memory.New(st, memory.Limits{}).Overview()
+	if err != nil || len(ov.Decisions) != 20 || len(ov.Decisions[19]) != 30 {
+		t.Fatalf("decisions=%d err=%v", len(ov.Decisions), err)
 	}
 }

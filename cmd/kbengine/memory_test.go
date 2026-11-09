@@ -46,6 +46,7 @@ func TestMemory_checkNamesTheProblem(t *testing.T) {
 	if code != 1 || !strings.Contains(out, "hot-too-big") || !strings.Contains(out, "5000") {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
+	runMem(t, "seal", dir)
 	// свой лимит
 	if code, _, _ := runMem(t, "check", "--hot-limit", "6000", dir); code != 0 {
 		t.Errorf("--hot-limit 6000 должен пускать 5000 знаков, code=%d", code)
@@ -209,6 +210,7 @@ func TestMemory_agentQueueEndToEnd(t *testing.T) {
 }
 
 func TestMemory_approveToHotAndReject(t *testing.T) {
+	askHuman(t, true)
 	dir := t.TempDir()
 	runMem(t, "init", dir)
 	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
@@ -382,6 +384,7 @@ func TestMemory_initHotLimitIsRememberedByCheck(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(strings.Repeat("я", 5000)), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	runMem(t, "seal", dir) // правка руками подтверждена
 	if code, out, _ := runMem(t, "check", dir); code != 0 {
 		t.Errorf("потолок 6000 из init должен пускать 5000 знаков: %d %q", code, out)
 	}
@@ -390,5 +393,68 @@ func TestMemory_initHotLimitIsRememberedByCheck(t *testing.T) {
 	}
 	if code, _, _ := runMem(t, "init", "--hot-limit", "7", filepath.Join(t.TempDir(), "m")); code != 2 {
 		t.Errorf("негодный потолок: code=%d, want 2", code)
+	}
+}
+
+// askHuman подменяет подтверждение в терминале: ok — человек ввел имя верно.
+func askHuman(t *testing.T, ok bool) {
+	t.Helper()
+	prev := memoryConfirm
+	memoryConfirm = func(prompt, want string) error {
+		if !ok {
+			return errNotConfirmed
+		}
+		return nil
+	}
+	t.Cleanup(func() { memoryConfirm = prev })
+}
+
+func TestMemory_sealWorkflow(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Fatalf("свежая память: %d %q", code, out)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("правка мимо системы"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 1 || !strings.Contains(out, "hot-changed-outside") {
+		t.Fatalf("правка мимо системы не названа: %d %q", code, out)
+	}
+	askHuman(t, true)
+	if code, _, e := runMem(t, "seal", dir); code != 0 {
+		t.Fatalf("seal: %d %s", code, e)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("после seal: %d %q", code, out)
+	}
+}
+
+// Запись в горячий слой из терминала — только с жестом человека: имя записи
+// вводится руками. Агент без терминала и с чужим именем не пройдет.
+func TestMemory_hotWritesNeedAHuman(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
+	askHuman(t, false)
+	if code, _, e := runMem(t, "approve", "--name", "rule-1", "--to", "hot", dir); code != 1 || !strings.Contains(e, "подтвержд") {
+		t.Fatalf("без подтверждения: code=%d err=%q", code, e)
+	}
+	if code, _, _ := runMem(t, "seal", dir); code != 1 {
+		t.Errorf("seal без подтверждения: code=%d", code)
+	}
+	hot, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	if strings.Contains(string(hot), "не пушить в main") {
+		t.Error("правило попало в HOT.md без подтверждения")
+	}
+	if _, out, _ := runMem(t, "pending", dir); !strings.Contains(out, "rule-1") {
+		t.Error("запись пропала из очереди")
+	}
+}
+
+// Настоящее подтверждение: stdin не терминал (так запускает агент) — отказ.
+func TestConfirmOnTerminal_refusesNonTerminals(t *testing.T) {
+	if err := confirmOnTerminal(strings.NewReader("rule-1\n"), &bytes.Buffer{})("Введите имя", "rule-1"); err == nil {
+		t.Error("ввод не из терминала должен отвергаться")
 	}
 }
