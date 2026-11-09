@@ -17,8 +17,9 @@ import (
 
 // memoryDesk is the memory screen over one folder of the person.
 type memoryDesk struct {
-	dir string
-	mu  sync.Mutex // изменения идут по одному: одобрение и потолок читают-пишут один HOT.md
+	dir  string
+	auth authHelper // Touch ID для изменений горячего слоя; nil — окно не из сборки, помощника нет
+	mu   sync.Mutex // изменения идут по одному: одобрение и потолок читают-пишут один HOT.md
 }
 
 func newMemoryDesk(home string) *memoryDesk { return &memoryDesk{dir: memorydir.DefaultPath(home)} }
@@ -118,6 +119,17 @@ func (d *memoryDesk) Approve(name, to string) error {
 	layer, err := domain.ParseLayer(to)
 	if err != nil {
 		return err
+	}
+	// Правило в горячем слое начинает действовать во всех сессиях агентов сразу:
+	// решение владельца 09.11 — Touch ID каждый раз. Проверка здесь, в Go, а не в
+	// окне: страница не может ее пропустить.
+	if layer == domain.LayerHot {
+		if d.auth == nil {
+			return errors.New("нет помощника kb-auth: Touch ID работает в собранном окне")
+		}
+		if err := d.auth.Check("добавить правило в горячий слой памяти"); err != nil {
+			return err
+		}
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()

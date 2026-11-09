@@ -420,7 +420,7 @@ const MODULES = {
 const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
 const SEARCH_ICON = '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>';
 state.modules = [];
-state.mm = { data: null, sel: "hot", busy: false }; // экран «Память»
+state.mm = { data: null, sel: "hot", busy: false, confirm: "" }; // экран «Память»
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
 const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
@@ -2380,9 +2380,11 @@ function renderChatNote() {
   const who = s.effectiveMode === "tools" ? "модель сама ищет и читает документы" : "окно находит документы и отдает их модели";
   // Портрет идет в каждый чат — человек видит, что он уходит туда же, куда документы.
   const what = memOn(memState.p) ? "документы и портрет" : "документы";
+  // Пустое имя (настройки без модели) не должно попадать в строку словом «undefined».
+  const model = (s.model || "").trim() || "Модель по умолчанию";
   showChatNote(s.local
-    ? `${s.model} на этом Маке: ${what} никуда не уходят · ${who}`
-    : `${s.model}: найденные ${what} уходят провайдеру модели · ${who}`);
+    ? `${model} на этом Маке: ${what} никуда не уходят · ${who}`
+    : `${model}: найденные ${what} уходят провайдеру модели · ${who}`);
 }
 const showChatNote = (t) => setClamped($("#chat-note"), t, "Сообщение чата");
 // chatWhen is a short date for the tooltip: сегодня — время, иначе день.
@@ -4191,7 +4193,9 @@ function mmQueueHTML(d) {
     `<article class="mm-card"><header><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic)}</span></header>
       <p>${esc(n.description)}</p>${n.body ? `<pre class="mm-text">${esc(n.body)}</pre>` : ""}
       <div class="mm-acts"><button class="ac-btn pri" data-mm="approve" data-to="cold" data-name="${esc(n.name)}">В холодный слой</button>
-        <button class="ac-btn" data-mm="approve" data-to="hot" data-name="${esc(n.name)}" title="В горячий слой уйдет одна строка: описание станет правилом">В горячий слой, как правило</button>
+        ${state.mm.confirm === n.name
+          ? `<span class="mm-confirm" role="alert"><b>Правило «${esc(n.description)}» начнет действовать во всех сессиях агентов.</b> <button class="ac-btn pri" data-mm="approve-yes" data-name="${esc(n.name)}">Подтвердить · Touch ID</button> <button class="ac-btn" data-mm="approve-no">Отмена</button></span>`
+          : `<button class="ac-btn" data-mm="approve-ask" data-name="${esc(n.name)}" title="В горячий слой уйдет одна строка: описание станет правилом; потребуется Touch ID">В горячий слой, как правило</button>`}
         <button class="ac-btn" data-mm="reject" data-name="${esc(n.name)}" title="Файл уйдет в journal/, не удалится">Отклонить</button></div></article>`).join("");
 }
 function mmRender() {
@@ -4221,6 +4225,12 @@ $("#mm-body").addEventListener("click", (e) => {
   else if (a === "topics") mmDo(() => api.MemoryTopics(), (ch) => ["Перечень тем", ch ? " · обновлен" : " · уже актуален"]);
   else if (a === "who") mmDo(() => api.MemoryWho(), (ch) => ["«Кто я»", ch ? " · обновлено из портрета, одобренные факты теперь в HOT.md" : " · уже актуально"]);
   else if (a === "reject") mmDo(() => api.MemoryReject(name), () => ["Отклонено", ` · ${name}, файл в journal/`]);
+  else if (a === "approve-ask") { state.mm.confirm = name; mmRender(); }
+  else if (a === "approve-no") { state.mm.confirm = ""; mmRender(); }
+  else if (a === "approve-yes") {
+    state.mm.confirm = "";
+    mmDo(() => api.MemoryApprove(name, "hot"), () => ["Одобрено", ` · ${name} стало правилом в HOT.md`]);
+  }
   else if (a === "approve") {
     const to = b.dataset.to;
     mmDo(() => api.MemoryApprove(name, to), () => ["Одобрено", to === "hot" ? ` · ${name} стало правилом в HOT.md` : ` · ${name} в холодном слое`]);

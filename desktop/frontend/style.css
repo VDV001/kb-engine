@@ -1325,3 +1325,4 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .more-card { padding: 18px 20px 16px; gap: 12px; }
 .more-head b { font-size: 15px; }
 .more-text { max-height: 50vh; }
+.mm-confirm { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; padding: 8px 10px; border: 1px solid var(--z-lvl-warn); border-radius: var(--z-radius); background: var(--z-bg-2); flex-basis: 100%; }

@@ -137,6 +137,7 @@ func run() error {
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)
 		app.access.auth = authNextTo(exe)
+		app.memory.auth = app.access.auth
 	}
 	return wails.Run(&options.App{
 		Title:     "DVK",
