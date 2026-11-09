@@ -155,3 +155,26 @@ func TestService_EveryLoggedDecisionIsRecognisedByHealth(t *testing.T) {
 type fixedPortrait string
 
 func (f fixedPortrait) Text() (string, error) { return string(f), nil }
+
+// Подтвердить сразу несколько правил: всё или ничего, чтобы выдуманное правило в
+// списке не оставило в журнале половину отметок.
+func TestService_ConfirmRulesIsAllOrNothing(t *testing.T) {
+	st := &fakeStore{snap: memory.Snapshot{Hot: healthHot}}
+	svc := healthService(st)
+	if err := svc.ConfirmRules([]string{"Цену называть от нижней границы", "выдуманное"}); !errors.Is(err, domain.ErrNoSuchRule) || len(st.decisions) != 0 {
+		t.Fatalf("err = %v, decisions = %q", err, st.decisions)
+	}
+	if err := svc.ConfirmRules([]string{"цену называть от нижней границы.", "Релиз в пятницу не катим"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(st.decisions) != 2 || st.decisions[0] != "2026-11-10 12:00 правило подтверждено: Цену называть от нижней границы" {
+		t.Fatalf("decisions = %q", st.decisions)
+	}
+	if err := svc.ConfirmRules(nil); err != nil || len(st.decisions) != 2 {
+		t.Errorf("пустой список — ничего не делает: %v %q", err, st.decisions)
+	}
+	h, _ := svc.Health()
+	if h.StaleRules != 0 || h.Rules[0].AgeDays != 0 || h.Rules[1].AgeDays != 0 {
+		t.Errorf("rules = %+v", h.Rules)
+	}
+}
