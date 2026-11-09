@@ -37,8 +37,9 @@ func TestCheckMemory(t *testing.T) {
 		{"записи есть, перечня тем в горячем нет", domain.MemoryState{Hot: "правила", HotLimit: 1000, Notes: []domain.ColdNote{good}, Index: idxA}, []domain.ProblemKind{domain.ProblemNoTopicList}},
 		{"метки перечня есть, внутри пусто", domain.MemoryState{Hot: domain.TopicsStart + "\n  \n" + domain.TopicsEnd, HotLimit: 1000, Notes: []domain.ColdNote{good}, Index: idxA}, []domain.ProblemKind{domain.ProblemNoTopicList}},
 		{"записей нет — перечень не нужен", domain.MemoryState{Hot: "правила", HotLimit: 1000}, nil},
-		{"запись без темы", domain.MemoryState{Hot: topicList, HotLimit: 1000, Notes: []domain.ColdNote{{File: "a.md", Name: "a", Description: "про a"}}, Index: idxA}, []domain.ProblemKind{domain.ProblemNoTopic}},
+		{"запись без темы", domain.MemoryState{Hot: topicList, HotLimit: 1000, Notes: []domain.ColdNote{good, {File: "b.md", Name: "b", Description: "про b"}}, Index: append([]domain.IndexEntry{{File: "b.md", Hook: "про b"}}, idxA...)}, []domain.ProblemKind{domain.ProblemNoTopic}},
 		{"индекс выше потолка", domain.MemoryState{Hot: topicList, HotLimit: 1000, IndexRunes: 101, IndexLimit: 100, Notes: []domain.ColdNote{good}, Index: idxA}, []domain.ProblemKind{domain.ProblemIndexTooBig}},
+		{"перечень отстал: в записях тема, которой в нем нет", domain.MemoryState{Hot: topicList, HotLimit: 1000, Notes: []domain.ColdNote{good, {File: "b.md", Name: "b", Topic: "здоровье", Description: "про b"}}, Index: append([]domain.IndexEntry{{File: "b.md", Hook: "про b"}}, idxA...)}, []domain.ProblemKind{domain.ProblemStaleTopics}},
 		{"индекс ровно в потолок", domain.MemoryState{Hot: topicList, HotLimit: 1000, IndexRunes: 100, IndexLimit: 100, Notes: []domain.ColdNote{good}, Index: idxA}, nil},
 	}
 	for _, tt := range tests {
@@ -86,5 +87,39 @@ func TestNewColdNote(t *testing.T) {
 				t.Errorf("err = %v, want ErrInvalidNote", err)
 			}
 		})
+	}
+}
+
+func TestTopicList(t *testing.T) {
+	notes := []domain.ColdNote{
+		{Topic: "финансы"}, {Topic: "Здоровье"}, {Topic: "финансы"}, {Topic: "ФИНАНСЫ"}, {Topic: ""},
+	}
+	got := domain.TopicList(notes)
+	want := []string{"Здоровье", "финансы"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("TopicList = %v, want %v (без повторов с разным регистром, без пустых, по алфавиту)", got, want)
+	}
+}
+
+func TestReplaceTopics(t *testing.T) {
+	notes := []domain.ColdNote{{Topic: "финансы"}, {Topic: "здоровье"}}
+	hot := "до\n\n" + domain.TopicsStart + "\n- старое\n" + domain.TopicsEnd + "\n\nпосле\n"
+	got, err := domain.ReplaceTopics(hot, notes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "до\n\n" + domain.TopicsStart + "\n- здоровье\n- финансы\n" + domain.TopicsEnd + "\n\nпосле\n"
+	if got != want {
+		t.Errorf("got %q\nwant %q", got, want)
+	}
+	again, _ := domain.ReplaceTopics(got, notes)
+	if again != got {
+		t.Error("повторная замена меняет текст: перечень должен быть идемпотентным")
+	}
+	if _, err := domain.ReplaceTopics("без меток", notes); !errors.Is(err, domain.ErrNoTopicMarkers) {
+		t.Errorf("без меток err = %v, want ErrNoTopicMarkers", err)
+	}
+	if _, err := domain.ReplaceTopics(domain.TopicsEnd+" "+domain.TopicsStart, notes); !errors.Is(err, domain.ErrNoTopicMarkers) {
+		t.Errorf("метки в обратном порядке err = %v, want ErrNoTopicMarkers", err)
 	}
 }

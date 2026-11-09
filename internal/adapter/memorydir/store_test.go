@@ -150,3 +150,24 @@ func TestLoad_reportsIndexSize(t *testing.T) {
 		t.Error("IndexRunes не посчитан")
 	}
 }
+
+func TestSaveHot_replacesAtomically(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	if err := st.SaveHot("новый горячий\n"); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	if string(b) != "новый горячий\n" {
+		t.Errorf("HOT.md = %q", b)
+	}
+	left, _ := filepath.Glob(filepath.Join(dir, ".hot-*"))
+	if len(left) != 0 {
+		t.Errorf("остались временные файлы: %v", left)
+	}
+	info, _ := os.Stat(filepath.Join(dir, "HOT.md"))
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("права HOT.md = %v, want 0600", info.Mode().Perm())
+	}
+}

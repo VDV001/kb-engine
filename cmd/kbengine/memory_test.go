@@ -6,8 +6,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/daniil/kb-engine/internal/domain"
 )
 
 func runMem(t *testing.T, args ...string) (int, string, string) {
@@ -52,10 +50,6 @@ func TestMemory_addThenCheck(t *testing.T) {
 	code, _, e := runMem(t, "add", "--name", "likes-short", "--topic", "стиль", "--description", "любит коротко", "--body", "текст", dir)
 	if code != 0 {
 		t.Fatalf("add: %d %s", code, e)
-	}
-	hot := "# Горячая\n" + domain.TopicsStart + "\n- стиль\n" + domain.TopicsEnd + "\n"
-	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte(hot), 0o600); err != nil {
-		t.Fatal(err)
 	}
 	if code, out, _ := runMem(t, "check", dir); code != 0 {
 		t.Errorf("check после add: %d %s", code, out)
@@ -105,6 +99,9 @@ func TestMemory_checkNamesMissingTopicList(t *testing.T) {
 	dir := t.TempDir()
 	runMem(t, "init", dir)
 	runMem(t, "add", "--name", "x", "--topic", "стиль", "--description", "y", dir)
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("ручной горячий слой"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	code, out, _ := runMem(t, "check", dir)
 	if code != 1 || !strings.Contains(out, "no-topic-list") {
 		t.Fatalf("code=%d out=%q", code, out)
@@ -116,5 +113,58 @@ func TestMemory_checkIndexLimitFlag(t *testing.T) {
 	runMem(t, "init", dir)
 	if code, out, _ := runMem(t, "check", "--index-limit", "5", dir); code != 1 || !strings.Contains(out, "index-too-big") {
 		t.Fatalf("code=%d out=%q", code, out)
+	}
+}
+
+func TestMemory_addKeepsTopicListFresh(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--name", "a", "--topic", "финансы", "--description", "про a", dir)
+	runMem(t, "add", "--name", "b", "--topic", "здоровье", "--description", "про b", dir)
+	hot, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	if !strings.Contains(string(hot), "- здоровье\n- финансы") {
+		t.Fatalf("перечень тем не собран:\n%s", hot)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("check: %d %s", code, out)
+	}
+}
+
+// Запись положили мимо add: перечень отстал, check называет это, topics чинит.
+func TestMemory_topicsFixesStaleList(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--name", "a", "--topic", "финансы", "--description", "про a", dir)
+	hand := "---\nname: b\ntopic: здоровье\ndescription: про b\n---\n\nтекст\n"
+	if err := os.WriteFile(filepath.Join(dir, "cold", "b.md"), []byte(hand), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	idx := filepath.Join(dir, "cold", "INDEX.md")
+	f, _ := os.OpenFile(idx, os.O_APPEND|os.O_WRONLY, 0)
+	f.WriteString("- [b](b.md) — про b\n")
+	f.Close()
+	if code, out, _ := runMem(t, "check", dir); code != 1 || !strings.Contains(out, "stale-topics") {
+		t.Fatalf("check: %d %q", code, out)
+	}
+	if code, _, e := runMem(t, "topics", dir); code != 0 {
+		t.Fatalf("topics: %d %s", code, e)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("после topics check красный: %d %s", code, out)
+	}
+}
+
+func TestMemory_topicsWithoutMarkersLeavesHotAlone(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--name", "a", "--topic", "финансы", "--description", "про a", dir)
+	if err := os.WriteFile(filepath.Join(dir, "HOT.md"), []byte("ручной"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := runMem(t, "topics", dir); code != 1 {
+		t.Errorf("topics без меток: code=%d, want 1", code)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "HOT.md")); string(b) != "ручной" {
+		t.Errorf("HOT.md затронут: %q", b)
 	}
 }
