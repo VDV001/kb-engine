@@ -24,6 +24,8 @@ const (
 	ModuleStats ModuleID = "stats"
 	// ModuleAccess — доступы к продуктам: хранилище с Touch ID (#494).
 	ModuleAccess ModuleID = "access"
+	// ModuleMemory — память: два слоя, очередь на одобрение, потолок (ADR-0008).
+	ModuleMemory ModuleID = "memory"
 	// ModuleHelp — справка: команды движка и клавиши окна с поиском по задаче.
 	ModuleHelp ModuleID = "help"
 )
