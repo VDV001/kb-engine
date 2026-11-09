@@ -133,9 +133,11 @@ func run() error {
 		return cloud.synth(voice, text, speechLang(text, app.chat.config().Accent))
 	}}
 	app.access = newAccessDesk(home, nil)
+	app.memory = newMemoryDesk(home)
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)
 		app.access.auth = authNextTo(exe)
+		app.memory.auth = app.access.auth
 	}
 	return wails.Run(&options.App{
 		Title:     "DVK",

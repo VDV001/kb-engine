@@ -119,7 +119,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:953"
+        "cmd/kbengine/main.go:954"
       ]
     },
     {
@@ -129,7 +129,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:771"
+        "cmd/kbengine/main.go:772"
       ]
     },
     {
@@ -159,7 +159,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:791"
+        "cmd/kbengine/main.go:792"
       ]
     },
     {
@@ -209,7 +209,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:270"
+        "cmd/kbengine/main.go:271"
       ]
     },
     {
@@ -219,7 +219,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:151"
+        "cmd/kbengine/main.go:152"
       ]
     },
     {
@@ -229,7 +229,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:154"
+        "cmd/kbengine/main.go:155"
       ]
     },
     {
@@ -249,7 +249,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:572"
+        "cmd/kbengine/main.go:573"
       ]
     },
     {
@@ -799,7 +799,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:262"
+        "cmd/kbengine/main.go:263"
       ]
     },
     {
@@ -809,7 +809,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:450"
+        "cmd/kbengine/main.go:451"
       ]
     },
     {
@@ -933,7 +933,7 @@
       "layer": "commands",
       "kind": "service",
       "sources": [
-        "cmd/kbengine/main.go:101"
+        "cmd/kbengine/main.go:102"
       ]
     },
     {
@@ -1093,7 +1093,7 @@
       "layer": "surfaces",
       "kind": "client",
       "sources": [
-        "cmd/kbengine-mcp/main.go:35"
+        "cmd/kbengine-mcp/main.go:36"
       ]
     },
     {
@@ -1113,7 +1113,7 @@
       "layer": "adapters",
       "kind": "service",
       "sources": [
-        "internal/adapter/mcpserver/record.go:83"
+        "internal/adapter/mcpserver/record.go:85"
       ]
     },
     {
@@ -1422,7 +1422,7 @@
           "to": "append-checked",
           "call": "appendToLedger / appendChecked",
           "detail": "форма зовёт ledgerFinances.Add (cmd/kbengine/main.go:367), а та — appendChecked (cmd/kbengine/main.go:369), ту же функцию, что и команда fin add: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:502",
+          "source": "cmd/kbengine/main.go:503",
           "unverified": false
         }
       ],
@@ -1478,7 +1478,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.EditEntry(id, p)",
           "detail": "cmd/kbengine/main.go:398 — экран не заводит своей копии «загрузить → изменить → отсортировать → сохранить»",
-          "source": "cmd/kbengine/main.go:528",
+          "source": "cmd/kbengine/main.go:529",
           "unverified": false,
           "symbol": "EditEntry"
         },
@@ -1687,7 +1687,7 @@
           "to": "ad-financejsonl",
           "call": "ledgerFinances.Finances()",
           "detail": "cmd/kbengine/main.go:301 — ledgerFinances.Finances читает журнал НА КАЖДЫЙ запрос, а книгу только при непустом пути (main.go:307): развёртывание со строками и без балансов законно. Файлы правят руками при открытом дашборде, и устаревший баланс хуже перечитывания",
-          "source": "cmd/kbengine/main.go:450",
+          "source": "cmd/kbengine/main.go:451",
           "unverified": false
         },
         {
@@ -1886,7 +1886,7 @@
           "to": "cmd-set",
           "call": "kbengine set --ids 1,2 --lifecycle … --related …",
           "detail": "флаги объявлены в cmd/kbengine/main.go:895-743; «флаг не передавали» и «сотри» различает isFlagSet (объявлена на main.go:842, спрашивается для --url на :782 и для --related на :788), поэтому стирание — отдельное намерение: --url= и --related=",
-          "source": "cmd/kbengine/main.go:1007",
+          "source": "cmd/kbengine/main.go:1008",
           "unverified": false
         },
         {
@@ -1921,7 +1921,7 @@
           "to": "cmd-audit",
           "call": "kbengine audit --catalog … --check all",
           "detail": "cmd/kbengine/main.go:771 — набор проверок перечислен в cmd/kbengine/main.go:874-797 (десятая, categories, добавлена 16.08: категория записи обязана быть ключом meta.categories)",
-          "source": "cmd/kbengine/main.go:874",
+          "source": "cmd/kbengine/main.go:875",
           "unverified": false
         },
         {
@@ -1949,7 +1949,7 @@
           "to": "owner",
           "call": "печать находок + строка о непроверенном",
           "detail": "cmd/kbengine/main.go:813 печатает находки. ⚠️ Проверка links в all НЕ входит: selectAudits (cmd/kbengine/main.go:909) отдаёт её только при явном --check links, а --check all печатает одну строку через linkCoverageLine — 527 непроверенных записей похоронили бы настоящие находки. Тем же жанром идёт строка про объявленные, но пустые категории (:742), и по той же причине: пустой раздел законен, а находка на каждый приучила бы пролистывать важные",
-          "source": "cmd/kbengine/main.go:917",
+          "source": "cmd/kbengine/main.go:918",
           "unverified": false,
           "symbol": "linkCoverageLine"
         }
@@ -2012,7 +2012,7 @@
           "to": "cmd-serve",
           "call": "kbengine serve --catalog … + 8 необязательных источников",
           "detail": "cmd/kbengine/main.go:260 — вход команды; там же на :250 --from без --ledger отвергается на старте, потому что баланс некуда положить",
-          "source": "cmd/kbengine/main.go:301",
+          "source": "cmd/kbengine/main.go:302",
           "unverified": false
         },
         {
@@ -2021,7 +2021,7 @@
           "to": "build-serve",
           "call": "buildServeHandler(...)",
           "detail": "cmd/kbengine/main.go:572 собирает порты; с #174 туда же приходит список карт (mapPaths → mapsLoader на :539). Чтение на старте — это ПРОВЕРКА читаемости, а не загрузка: и analytics_config (:510-516), и книга (:526-533) перечитываются на КАЖДЫЙ запрос. Смысл ранней проверки в том, чтобы опечатка в пути стала отказом запуска, а не 500 на одной вкладке",
-          "source": "cmd/kbengine/main.go:669",
+          "source": "cmd/kbengine/main.go:670",
           "unverified": false
         },
         {
@@ -2039,7 +2039,7 @@
           "to": "owner",
           "call": "startupSources(serveSources(...))",
           "detail": "cmd/kbengine/main.go:412 печатает все восемь необязательных флагов ДО ListenAndServe: после него терминал занят, а смотрят в него именно в этот момент",
-          "source": "cmd/kbengine/main.go:411",
+          "source": "cmd/kbengine/main.go:412",
           "unverified": false
         },
         {
@@ -2163,8 +2163,8 @@
           "from": "owner",
           "to": "cmd-dedup",
           "call": "kbengine dedup --catalog …",
-          "detail": "cmd/kbengine/main.go:661",
-          "source": "cmd/kbengine/main.go:841",
+          "detail": "cmd/kbengine/main.go:662",
+          "source": "cmd/kbengine/main.go:842",
           "unverified": false
         },
         {
@@ -2243,7 +2243,7 @@
           "to": "ad-changelog",
           "call": "changelogWarning(path, len(changelog.Parse(raw).Releases))",
           "detail": "cmd/kbengine/main.go:406 — предупреждение о непонятном журнале печатается при запуске serve, потому что поймать его посреди работы уже нельзя: смотрят в этот момент на страницу",
-          "source": "cmd/kbengine/main.go:429",
+          "source": "cmd/kbengine/main.go:430",
           "unverified": false,
           "branch": true
         }
@@ -2390,7 +2390,7 @@
           "to": "ad-catalogjson",
           "call": "catalogjson.SetFields(path, []int{e.ID}, Changes{Lifecycle, Verdict})",
           "detail": "cmd/kbengine/main.go:296 — правка с карточки превращается в тот же вызов, что делает команда set: два пути записи однажды применили бы разные правила к одному файлу",
-          "source": "cmd/kbengine/main.go:294",
+          "source": "cmd/kbengine/main.go:295",
           "unverified": false
         }
       ],
@@ -2444,7 +2444,7 @@
           "to": "ledger-writer",
           "call": "ledgerFinances.Add(params)",
           "detail": "cmd/kbengine/main.go:367 — форма записи траты книгу НЕ трогает: это был бы третий путь в таблицу, и экран вместо этого вслух говорит, что книга отстала. Другими клавишами экран книгу пишет — баланс (main.go:441), заведение счёта (main.go:448) и синк (main.go:456)",
-          "source": "cmd/kbengine/main.go:495",
+          "source": "cmd/kbengine/main.go:496",
           "unverified": false
         },
         {
@@ -2453,7 +2453,7 @@
           "to": "append-checked",
           "call": "appendChecked(ledgerPath, p, false, note)",
           "detail": "cmd/kbengine/main.go:369 — та же функция, что у команды: один источник id, один порядок сортировки, одна проверка повтора",
-          "source": "cmd/kbengine/main.go:502",
+          "source": "cmd/kbengine/main.go:503",
           "unverified": false
         }
       ],
@@ -2560,7 +2560,7 @@
           "to": "ad-httpapi",
           "call": "buildInfo()",
           "detail": "cmd/kbengine/main.go:92 — одно место на весь процесс: его печатает kbengine version и его же отдаёт /api/engine, расходиться этим двум ответам не с чего",
-          "source": "cmd/kbengine/main.go:155",
+          "source": "cmd/kbengine/main.go:156",
           "unverified": false
         },
         {
@@ -2898,7 +2898,7 @@
           "to": "f-now",
           "call": "readNowDoc(path)",
           "detail": "cmd/kbengine/main.go:754 читает документ ВМЕСТЕ со временем правки: страница сравнивает себя с тем, что случилось после неё, и без даты сравнивать не с чем",
-          "source": "cmd/kbengine/main.go:753",
+          "source": "cmd/kbengine/main.go:754",
           "unverified": false
         },
         {
@@ -3043,7 +3043,7 @@
           "to": "cmd-tui",
           "call": "runTUI(args, stdout, stderr)",
           "detail": "cmd/kbengine/main.go:185 — флаги --ledger и --from включают экран финансов и клавишу синка",
-          "source": "cmd/kbengine/main.go:218",
+          "source": "cmd/kbengine/main.go:219",
           "unverified": false
         },
         {
@@ -3132,7 +3132,7 @@
           "to": "cli",
           "call": "kbengine serve --maps <map.json>",
           "symbol": "runServe",
-          "source": "cmd/kbengine/main.go:301",
+          "source": "cmd/kbengine/main.go:302",
           "detail": "cmd/kbengine/main.go:310 — флаг повторяемый (fs.Var на :238), карт может быть несколько; без флага раздела нет вовсе, а не пустой"
         },
         {
@@ -3141,7 +3141,7 @@
           "to": "build-serve",
           "call": "mapsLoader(mapPaths)",
           "symbol": "mapsLoader",
-          "source": "cmd/kbengine/main.go:659",
+          "source": "cmd/kbengine/main.go:660",
           "detail": "cmd/kbengine/main.go:598 собирает загрузчик карт до старта сервера: нечитаемая карта — отказ запуска, а не пустая вкладка"
         },
         {
@@ -3274,7 +3274,7 @@
           "to": "f-artefacts",
           "call": "fsys.Open(rel)",
           "symbol": "artefactsFS",
-          "source": "cmd/kbengine/main.go:832",
+          "source": "cmd/kbengine/main.go:833",
           "detail": "cmd/kbengine/main.go:820 — корень выводится из обязательного --catalog тем же способом, каким его выводит audit --check files; отдельного флага нет намеренно"
         },
         {
@@ -3479,7 +3479,7 @@
           "to": "cli",
           "call": "kbengine set --ids … --lifecycle …",
           "symbol": "runSet",
-          "source": "cmd/kbengine/main.go:1002",
+          "source": "cmd/kbengine/main.go:1003",
           "detail": "cmd/kbengine/main.go:883 — любой из семи писателей каталога: set, add, inbox, migrate, drift --apply"
         },
         {
@@ -3898,7 +3898,7 @@
           "to": "adp-searchsyn",
           "call": "searchsyn.Load",
           "detail": "cmd/kbengine/main.go:254 словарь необязателен, его отсутствие называется вслух — молча оставшись без слоя перевода, поиск выглядел бы просто плохим",
-          "source": "cmd/kbengine/main.go:261",
+          "source": "cmd/kbengine/main.go:262",
           "unverified": false,
           "symbol": "searchsyn"
         },
@@ -4042,7 +4042,7 @@
           "to": "cmd-mcp",
           "call": "tools/call search_catalog",
           "detail": "Клиент запускает бинарь процессом и говорит по JSON-RPC поверх stdin/stdout (cmd/kbengine-mcp/main.go). Диагностика уходит в stderr: любая лишняя строка в stdout ломает разбор у клиента",
-          "source": "cmd/kbengine-mcp/main.go:136",
+          "source": "cmd/kbengine-mcp/main.go:139",
           "symbol": "StdioTransport",
           "unverified": false
         },
@@ -4052,7 +4052,7 @@
           "to": "adp-mcpserver",
           "call": "mcpserver.New(svc, matcher, version)",
           "detail": "Каталог читается на СТАРТЕ, а не при первом запросе (cmd/kbengine-mcp/main.go): агент подключается молча, и «сервер поднялся» с нечитаемым каталогом выглядело бы рабочим состоянием до первого пустого ответа",
-          "source": "cmd/kbengine-mcp/main.go:69",
+          "source": "cmd/kbengine-mcp/main.go:70",
           "symbol": "svc.Stats",
           "unverified": false
         },
@@ -4092,7 +4092,7 @@
           "to": "adp-mcp-journal",
           "call": "addTool(s, j, tool, argsOf, handler)",
           "detail": "Журнал вызовов приделан к РЕГИСТРАЦИИ инструмента в internal/adapter/mcpserver/record.go, а не к телу обработчика: четвёртый инструмент попадёт в счётчик тем, что он объявлен, а не тем, что автор вспомнил про журнал. Тот же приём, что у runLogged вокруг единственного диспетчера команд",
-          "source": "internal/adapter/mcpserver/record.go:82",
+          "source": "internal/adapter/mcpserver/record.go:84",
           "symbol": "addTool",
           "unverified": false
         },

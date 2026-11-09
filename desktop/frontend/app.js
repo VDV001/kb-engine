@@ -19,6 +19,44 @@ const native = () => window.go && window.go.main && window.go.main.App &&
   withSlowNotice(window.go.main.App, () => toast("Сохранение ждет", " · " + SLOW_SAVE_TEXT, null, "bad"));
 // errText is the words of a refused call: Wails отдает отказ Go объектом
 // Error, и String(err) показал бы человеку «Error: …».
+// Длинное сообщение (решение владельца 09.11) не растягивает экран: одна строка с «…»
+// и кнопка «Подробнее», полный текст — окошком поверх, его можно скопировать.
+const CLAMP_AT = 90;
+function moreDialog(title, text) {
+  const ov = document.createElement("div");
+  ov.className = "more-ov";
+  ov.innerHTML = `<div class="more-card" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="more-head"><b>${esc(title)}</b><button class="more-x" type="button" aria-label="Закрыть">✕</button></div><pre class="more-text"></pre><div class="more-acts"><button class="btn" type="button" data-more="copy">Копировать</button><button class="btn primary" type="button" data-more="close">Закрыть</button></div></div>`;
+  ov.querySelector(".more-text").textContent = text;
+  const close = () => { ov.remove(); document.removeEventListener("keydown", onKey, true); };
+  const onKey = (e) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+  ov.addEventListener("click", (e) => {
+    if (e.target === ov || e.target.closest(".more-x, [data-more=close]")) close();
+    else if (e.target.closest("[data-more=copy]")) {
+      const b = e.target.closest("button");
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(() => { b.textContent = "Скопировано"; }, () => { b.textContent = "Не вышло: выделите и скопируйте"; });
+    }
+  });
+  document.addEventListener("keydown", onKey, true);
+  document.body.append(ov);
+  ov.querySelector("[data-more=close]").focus();
+}
+// setClamped puts text into el: короткий как есть, длинный — строкой с «…» и кнопкой.
+function setClamped(el, text, title) {
+  el.replaceChildren();
+  if (text.length <= CLAMP_AT) { el.textContent = text; el.classList.remove("clamped"); return; }
+  const line = document.createElement("span");
+  line.className = "clamp-line";
+  line.textContent = text;
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "clamp-more"; b.textContent = "Подробнее";
+  b.addEventListener("click", () => {
+    // «Нет ответа: …» — начало до двоеточия становится заголовком окошка, остальное телом.
+    const m = text.match(/^([^:\n]{3,40}):\s+([\s\S]+)$/);
+    moreDialog(m ? m[1] : title || "Сообщение", m ? m[2] : text);
+  });
+  el.classList.add("clamped");
+  el.append(line, b);
+}
 const errText = (e) => (e instanceof Error ? e.message : String(e));
 const openFile = (p) => native() && native().Open(p);
 const revealFile = (p) => native() && native().Reveal(p);
@@ -373,6 +411,8 @@ const MODULES = {
     icon: '<path d="M4 20h16M7 16.5V12M12 16.5V6.5M17 16.5V9.5"/>' },
   access: { name: "Доступы", what: "доступы к продуктам: карточки видны, пароль — только по Touch ID", view: "access",
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
+  memory: { name: "Память", what: "правила и факты для агентов: горячий слой с потолком, холодный, журнал и очередь на одобрение", view: "memory",
+    icon: '<path d="M12 4 4 8l8 4 8-4z"/><path d="m4 12 8 4 8-4M4 16l8 4 8-4"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -380,6 +420,7 @@ const MODULES = {
 const MODULE_ICON = '<rect x="5" y="5" width="14" height="14" rx="2"/>';
 const SEARCH_ICON = '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>';
 state.modules = [];
+state.mm = { data: null, sel: "hot", busy: false, confirm: "" }; // экран «Память»
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
 const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
@@ -1279,7 +1320,7 @@ function patchStates() {
 
 function showError(msg) {
   const el = $("#settings-error");
-  el.textContent = msg;
+  setClamped(el, msg || "", "Сообщение");
   el.hidden = !msg;
 }
 
@@ -1290,8 +1331,11 @@ function toast(head, rest, undo, tone = "info") {
   undoFn = undo;
   t.dataset.tone = tone;
   t.classList.remove("show"); void t.offsetWidth; // перезапуск полоски
-  t.innerHTML = `<span class="glow"></span><span><b>${esc(head)}</b>${esc(rest)}</span>` +
+  const long = head.length + rest.length > CLAMP_AT + 20;
+  t.innerHTML = `<span class="glow"></span><span class="toast-text${long ? " clamp-line" : ""}"><b>${esc(head)}</b>${esc(rest)}</span>` +
+    (long ? `<button id="toast-more">Подробнее</button>` : "") +
     (undo ? `<button id="undo">Вернуть</button>` : "") + `<span class="life"></span>`;
+  if (long) t.querySelector("#toast-more").onclick = () => moreDialog(head, rest.replace(/^ · /, ""));
   t.classList.add("show");
   clearTimeout(toastT);
   // Беда с советом читается дольше, чем «Сохранено».
@@ -1814,6 +1858,9 @@ const ACCENTS = [
   ["help-nav", "Справка: раздел", "переливающаяся черта у открытого раздела"],
   ["help-anim", "Справка: появление", "строки раздела выезжают по очереди"],
   ["fin-src", "Финансы: источник", "имя источника данных над витриной"],
+  ["mm-title", "Память: заголовок", "слово «Память» спектром"],
+  ["mm-meter", "Память: шкала", "заполнение горячего слоя спектром; у потолка оранжевая, выше красная"],
+  ["mm-nav", "Память: раздел", "переливающаяся черта у открытого раздела"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -1903,12 +1950,15 @@ function showModule(id) {
   $("#chat-view").hidden = !mod || mod.view !== "chat";
   $("#stats-view").hidden = !mod || mod.view !== "stats";
   $("#access-view").hidden = !mod || mod.view !== "access";
+  const mmWasOpen = !$("#memory-view").hidden; // render() зовет showModule часто: не перечитывать память зря
+  $("#memory-view").hidden = !mod || mod.view !== "memory";
   const helpWasOpen = !$("#help-view").hidden; // render() зовет showModule часто: не сбивать фокус и выбор
   $("#help-view").hidden = !mod || mod.view !== "help";
   if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
   else if (mod && mod.view === "access") openAccess();
+  else if (mod && mod.view === "memory") { if (!mmWasOpen) openMemory(); }
   else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
   else if (mod) {
     $("#fin-src").hidden = id !== "finances";
@@ -2226,6 +2276,7 @@ async function loadChatSettings() {
   $("#chat-url").value = s.url || "";
   $("#chat-name").value = s.model || "";
   $("#chat-mode").value = s.mode || "";
+  $("#chat-ctx-win").value = s.contextWindow || "";
   $("#chat-mic-mode").value = s.mic || "";
   renderMicChoices();
   setMic(dict.on);
@@ -2329,11 +2380,13 @@ function renderChatNote() {
   const who = s.effectiveMode === "tools" ? "модель сама ищет и читает документы" : "окно находит документы и отдает их модели";
   // Портрет идет в каждый чат — человек видит, что он уходит туда же, куда документы.
   const what = memOn(memState.p) ? "документы и портрет" : "документы";
+  // Пустое имя (настройки без модели) не должно попадать в строку словом «undefined».
+  const model = (s.model || "").trim() || "Модель по умолчанию";
   showChatNote(s.local
-    ? `${s.model} на этом Маке: ${what} никуда не уходят · ${who}`
-    : `${s.model}: найденные ${what} уходят провайдеру модели · ${who}`);
+    ? `${model} на этом Маке: ${what} никуда не уходят · ${who}`
+    : `${model}: найденные ${what} уходят провайдеру модели · ${who}`);
 }
-const showChatNote = (t) => ($("#chat-note").textContent = t);
+const showChatNote = (t) => setClamped($("#chat-note"), t, "Сообщение чата");
 // chatWhen is a short date for the tooltip: сегодня — время, иначе день.
 function chatWhen(iso) {
   const d = new Date(iso);
@@ -2366,7 +2419,58 @@ function answerHTML(t) {
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\n/g, "<br>");
 }
+// Заполнение контекста (решение владельца 09.11): около половины качество еще то
+// же, дальше разговор пухнет, и пора записать handoff и начать новый чат. Счет
+// токенов — от провайдера, размер контекста человек вносит в настройках.
+const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
+const ctxNum = (v) => v.toLocaleString("ru-RU");
+function renderChatCtx() {
+  const ring = $("#chat-ctx-ring"), x = chatState.chat && chatState.chat.context;
+  if (!x || !x.used) { ring.hidden = true; closeChatCtx(); return; }
+  const f = x.window ? x.used / x.window : 0, tone = !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
+  const R = 8, C = 2 * Math.PI * R;
+  ring.hidden = false;
+  ring.dataset.tone = tone;
+  ring.setAttribute("aria-label", x.window ? `Контекст заполнен на ${Math.round(f * 100)}%: подробнее` : "Контекст: подробнее");
+  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.window ? Math.round(f * 100) + "%" : "?"}</span>`;
+  if (!$("#chat-ctx-pop").hidden) fillChatCtx(x, f, tone);
+}
+// Подробности — окошком поверх по кнопке-кольцу: что насчитал провайдер, размер
+// контекста и что делать дальше; в строке поля остается только кольцо.
+function fillChatCtx(x, f, tone) {
+  const pop = $("#chat-ctx-pop");
+  pop.dataset.tone = tone;
+  const advice = !x.window
+    ? `<p class="muted">Размер контекста модели не указан, поэтому окно не знает, сколько осталось. Внесите его в настройках чата.</p><div class="cx-acts"><button class="btn" type="button" id="chat-ctx-set">Указать размер</button></div>`
+    : f >= CTX_HINT_AT
+      ? `<p><b>${f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> Дальше разговор пухнет, ответы дороже и хуже. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts"><button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button></div>`
+      : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
+  pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
+    ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
+    <dl class="cx-kv"><dt>В запросе</dt><dd>${ctxNum(x.used)} токенов <span class="muted">по счету провайдера</span></dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
+}
+function openChatCtx() {
+  const x = chatState.chat && chatState.chat.context;
+  if (!x) return;
+  const f = x.window ? x.used / x.window : 0;
+  fillChatCtx(x, f, !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok");
+  $("#chat-ctx-pop").hidden = false;
+  $("#chat-ctx-ring").setAttribute("aria-expanded", "true");
+}
+function closeChatCtx() {
+  $("#chat-ctx-pop").hidden = true;
+  $("#chat-ctx-ring").setAttribute("aria-expanded", "false");
+}
+$("#chat-ctx-ring").addEventListener("click", () => ($("#chat-ctx-pop").hidden ? openChatCtx() : closeChatCtx()));
+$("#chat-ctx-pop").addEventListener("click", (e) => {
+  if (e.target.closest("#chat-ctx-close")) closeChatCtx();
+  else if (e.target.closest("#chat-ctx-new")) { closeChatCtx(); newChat(); }
+  else if (e.target.closest("#chat-ctx-set")) { closeChatCtx(); openSettings("chat").then(() => $("#chat-ctx-win").focus()); }
+});
+document.addEventListener("click", (e) => { if (!$("#chat-ctx-pop").hidden && !e.target.closest("#chat-ctx-pop, #chat-ctx-ring")) closeChatCtx(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-ctx-pop").hidden) { closeChatCtx(); e.stopPropagation(); } }, true);
 function renderChat() {
+  renderChatCtx();
   const c = chatState.chat;
   const log = $("#chat-log");
   $("#chat-title").textContent = (c && c.title) || "Новый чат";
@@ -2846,7 +2950,7 @@ $("#chat-model").addEventListener("submit", async (e) => {
   // Прочие настройки (акцент, портрет) — как сохранены: SetChatSettings
   // заменяет настройки чата целиком.
   const { hasKey, local, effectiveMode, ...saved } = chatState.settings || {};
-  const c = { ...saved, url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value };
+  const c = { ...saved, url: $("#chat-url").value.trim(), model: $("#chat-name").value.trim(), mode: $("#chat-mode").value, voice: $("#chat-voice-name").value, listen: $("#chat-listen").value, mic: $("#chat-mic-mode").value, contextWindow: parseInt($("#chat-ctx-win").value, 10) || 0 };
   try {
     await native().SetChatSettings(c, $("#chat-key").value);
     $("#chat-model-note").textContent = "";
@@ -4008,4 +4112,147 @@ document.addEventListener("keydown", (e) => {
   if ($("#help-view").hidden || settingsOpen()) return;
   const typing = e.target.closest && e.target.closest("input, textarea, [contenteditable]");
   if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); $("#hp-q").focus(); $("#hp-q").select(); }
+});
+
+
+// --- Память (ADR-0008) -------------------------------------------------------------
+// Два слоя и журнал рядом, очередь на одобрение, потолок горячего слоя. Окно
+// показывает те же файлы, что читает `kbengine memory`; своего хранилища нет.
+const MEM_TREE = [["hot", "HOT.md", "читается в каждой сессии"], ["cold", "cold/", "факты, которые ищутся"], ["journal", "journal/", "хроника, из поиска исключена"], ["queue", "Ждет одобрения", "предложения агента"]];
+const MEM_PROBLEMS = {
+  "hot-too-big": "Горячий слой больше потолка",
+  "no-topic-list": "В HOT.md нет перечня тем",
+  "stale-topics": "Перечень тем отстал от записей",
+  "no-topic": "У записи нет темы",
+  "no-description": "У записи нет описания",
+  "not-indexed": "Записи нет в индексе",
+  "dangling-index": "Индекс ведет на файл, которого нет",
+  "long-hook": "Крючок длиннее 150 знаков",
+  "index-too-big": "Индекс больше потолка",
+  "stale-vectors": "Векторы отстали от записей",
+  "invalid-note": "У записи недопустимый текст",
+  "hot-changed-outside": "HOT.md изменен мимо системы",
+};
+// Плашка при входе (решение владельца 09.11): эти файлы читают агенты в каждой
+// сессии, поэтому правка горячего слоя меняет их поведение везде.
+const MM_WARN = `<div class="mm-warn" role="note"><b>Чувствительный уровень.</b> Эти файлы читают агенты в каждой сессии: правило в горячем слое начинает действовать везде сразу, а в памяти могут лежать личные и рабочие факты. Решайте внимательно и не показывайте экран другим. Любая запись в HOT.md идет по Touch ID и остается в журнале решений; правка файла мимо системы будет видна. Отклоненное не удаляется, а уходит в journal/.</div>`;
+const MEM_TOPIC_FIX = new Set(["no-topic-list", "stale-topics"]);
+const mmTokens = (n) => n.toLocaleString("ru-RU");
+async function openMemory() { await mmLoad(); mmRender(); }
+async function mmLoad() {
+  if (!native()) return;
+  try { state.mm.data = await native().MemoryState(); }
+  catch (e) { state.mm.data = null; showError("Память не прочитать: " + errText(e)); }
+}
+function mmPct(h) { return h.limit ? Math.round((h.runes * 100) / h.limit) : 0; }
+function mmTone(h) { const p = mmPct(h); return p > 100 ? "over" : p >= 80 ? "warn" : "ok"; }
+function mmEmptyHTML(d) {
+  return `<div class="mm-empty"><h3>Памяти еще нет</h3>
+    <p class="muted">Заведем скелет: <code>HOT.md</code> читается в каждой сессии, в <code>cold/</code> лежат факты, в <code>journal/</code> хроника. Все это обычные файлы с правами 0600 в <code>${esc(d.dir)}</code>, терминал их читает так же (<code>kbengine memory</code>).</p>
+    <button class="ac-btn pri" data-mm="init">Завести память</button></div>`;
+}
+function mmHeadHTML(d) {
+  const bad = d.problems;
+  const list = bad.map((p) => `<li><b>${esc(MEM_PROBLEMS[p.kind] || p.kind)}</b> <span class="muted">${esc(p.file)} · ${esc(p.detail)}</span></li>`).join("");
+  const fix = (bad.some((p) => MEM_TOPIC_FIX.has(p.kind)) ? `<button class="ac-btn pri" data-mm="topics">Пересобрать перечень тем · Touch ID</button>` : "") +
+    (bad.some((p) => p.kind === "hot-changed-outside") ? `<button class="ac-btn pri" data-mm="seal" title="Подтверждение остается в журнале решений">Прочитал, принимаю текущий HOT.md · Touch ID</button>` : "");
+  return `<div class="mm-head"><h2>Память</h2>
+      <span class="${bad.length ? "mm-bad" : "mm-ok"}" role="status">${bad.length ? `check: нарушений ${bad.length}` : "check: ok"}</span>
+      <span class="muted mm-dir">${esc(d.dir)}</span></div>
+    ${bad.length ? `<ul class="mm-problems">${list}</ul><div class="mm-fix">${fix}</div>` : ""}`;
+}
+function mmTreeHTML(d) {
+  const n = { hot: `${mmPct(d.hot)}%`, cold: d.cold.length, journal: d.journal.length, queue: d.queue.length };
+  return `<div class="ac-list mm-tree" role="tablist" aria-label="Память">` + MEM_TREE.map(([id, name, hint]) =>
+    `<button class="mm-node${id === "queue" && d.queue.length ? " wait" : ""}" role="tab" data-mm="sel" data-v="${id}" aria-selected="${state.mm.sel === id}"><span>${esc(name)}<small>${esc(hint)}</small></span><b>${esc(String(n[id]))}</b></button>`).join("") +
+    `<div class="mm-sub">Все лежит файлами и читается и правится без окна.</div></div>`;
+}
+function mmHotHTML(d) {
+  const h = d.hot, pct = mmPct(h);
+  const topics = h.topics.length ? h.topics.map((t) => `<span class="mm-chip">${esc(t)}</span>`).join("") : `<span class="muted">тем нет, они появятся с первой записью холодного слоя</span>`;
+  return `<h3>HOT.md <span class="muted">· читается в каждой сессии</span></h3>
+    <div class="mm-meter ${mmTone(h)}" role="meter" aria-label="Заполнение горячего слоя" aria-valuemin="0" aria-valuemax="${h.limit}" aria-valuenow="${h.runes}"><i style="width:${Math.min(pct, 100)}%"></i></div>
+    <p class="mm-count"><b>${mmTokens(h.runes)}</b> из ${mmTokens(h.limit)} знаков · ${pct}% · на глаз ${mmTokens(h.tokens)} токенов на каждый ход</p>
+    <form class="mm-limit" data-mm-form="limit"><label for="mm-limit">Потолок, знаков</label>
+      <input id="mm-limit" type="number" min="200" max="200000" step="100" value="${h.limit}" inputmode="numeric">
+      <button class="ac-btn" type="submit">Сохранить</button>
+      <span class="muted">Новому человеку хватает 4 000, свод правил больше. Потолок лежит в memory.json: терминал меряет той же линейкой.</span></form>
+    <div class="mm-topics"><span class="muted">Темы холодного слоя:</span> ${topics}</div>
+    <div class="mm-acts"><button class="ac-btn" data-mm="who">Обновить «Кто я» из портрета · Touch ID</button></div>
+    <pre class="mm-text" tabindex="0" aria-label="Текст HOT.md">${esc(h.text)}</pre>`;
+}
+function mmColdHTML(d) {
+  if (!d.cold.length) return `<h3>cold/</h3><p class="muted">Холодный слой пуст. Запись добавляет <code>kbengine memory add</code> или вы одобряете предложение агента.</p>`;
+  return `<h3>cold/ <span class="muted">· ${d.cold.length}</span></h3><ul class="mm-notes">` + d.cold.map((n) =>
+    `<li><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic || "без темы")}</span>${n.origin === "agent" ? ` <span class="mm-chip agent">агент</span>` : ""}<div class="muted">${esc(n.description)}</div></li>`).join("") + `</ul>`;
+}
+function mmJournalHTML(d) {
+  const dec = d.decisions.length
+    ? `<h4>Журнал решений</h4><p class="muted">Что вы одобрили, отклонили и подтвердили; только дописывается.</p><ol class="mm-decisions">${d.decisions.slice().reverse().map((x) => `<li>${esc(x)}</li>`).join("")}</ol>`
+    : `<h4>Журнал решений</h4><p class="muted">Пока пуст: сюда попадет каждое ваше одобрение, отклонение и подтверждение.</p>`;
+  const files = d.journal.length
+    ? `<h4>Файлы</h4><p class="muted">Отклоненное и перенесенное в горячий слой, handoffs и хроника. В обычный поиск не входят.</p><ul class="mm-notes">${d.journal.slice().reverse().map((f) => `<li class="mono">${esc(f)}</li>`).join("")}</ul>`
+    : `<h4>Файлы</h4><p class="muted">Файлов нет.</p>`;
+  return `<h3>journal/ <span class="muted">· ${d.journal.length}</span></h3>${dec}${files}`;
+}
+function mmQueueHTML(d) {
+  if (!d.queue.length) return `<h3>Ждет одобрения</h3><p class="muted">Очередь пуста. Агент сам в горячий слой не пишет: его предложения (<code>kbengine memory add --origin agent</code>) придут сюда.</p>`;
+  return `<h3>Ждет одобрения <span class="muted">· ${d.queue.length}</span></h3>` + d.queue.map((n) =>
+    `<article class="mm-card"><header><b class="mono">${esc(n.name)}</b> <span class="mm-chip">${esc(n.topic)}</span></header>
+      <p>${esc(n.description)}</p>${n.body ? `<pre class="mm-text">${esc(n.body)}</pre>` : ""}
+      <div class="mm-acts"><button class="ac-btn pri" data-mm="approve" data-to="cold" data-name="${esc(n.name)}" title="Тема записи попадет в перечень HOT.md: потребуется Touch ID">В холодный слой · Touch ID</button>
+        ${state.mm.confirm === n.name
+          ? `<span class="mm-confirm" role="alert"><b>Правило «${esc(n.description)}» начнет действовать во всех сессиях агентов.</b> <button class="ac-btn pri" data-mm="approve-yes" data-name="${esc(n.name)}">Подтвердить · Touch ID</button> <button class="ac-btn" data-mm="approve-no">Отмена</button></span>`
+          : `<button class="ac-btn" data-mm="approve-ask" data-name="${esc(n.name)}" title="В горячий слой уйдет одна строка: описание станет правилом; потребуется Touch ID">В горячий слой, как правило</button>`}
+        <button class="ac-btn" data-mm="reject" data-name="${esc(n.name)}" title="Файл уйдет в journal/, не удалится">Отклонить</button></div></article>`).join("");
+}
+function mmRender() {
+  const host = $("#mm-body"), m = state.mm, d = m.data;
+  if (!native()) { host.innerHTML = `<div class="mm-empty"><h3>Память</h3><p class="muted">Экран работает в окне DVK.</p></div>`; return; }
+  if (!d) { host.innerHTML = `<div class="mm-empty muted">Читаю…</div>`; return; }
+  if (!d.exists) { host.innerHTML = mmEmptyHTML(d); return; }
+  const pane = { hot: mmHotHTML, cold: mmColdHTML, journal: mmJournalHTML, queue: mmQueueHTML }[m.sel](d);
+  host.innerHTML = MM_WARN + mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
+}
+// mmDo runs one action of the screen: блокирует повторное нажатие, после — перечитывает память.
+async function mmDo(fn, done) {
+  const m = state.mm;
+  if (m.busy) return;
+  m.busy = true;
+  try { const r = await fn(); if (done) toast(...done(r)); }
+  catch (e) { toast("Память", " · " + errText(e), null, "bad"); }
+  finally { m.busy = false; await mmLoad(); mmRender(); }
+}
+$("#mm-body").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mm]");
+  if (!b) return;
+  const a = b.dataset.mm, name = b.dataset.name;
+  if (a === "sel") { state.mm.sel = b.dataset.v; mmRender(); return; }
+  const api = native();
+  if (a === "init") mmDo(() => api.MemoryInit(), () => ["Память заведена", " · HOT.md, cold/, journal/"]);
+  else if (a === "topics") mmDo(() => api.MemoryTopics(), (ch) => ["Перечень тем", ch ? " · обновлен" : " · уже актуален"]);
+  else if (a === "seal") mmDo(() => api.MemorySeal(), () => ["Принято", " · текущий HOT.md подтвержден, запись в журнале решений"]);
+  else if (a === "who") mmDo(() => api.MemoryWho(), (ch) => ["«Кто я»", ch ? " · обновлено из портрета, одобренные факты теперь в HOT.md" : " · уже актуально"]);
+  else if (a === "reject") mmDo(() => api.MemoryReject(name), () => ["Отклонено", ` · ${name}, файл в journal/`]);
+  else if (a === "approve-ask") { state.mm.confirm = name; mmRender(); }
+  else if (a === "approve-no") { state.mm.confirm = ""; mmRender(); }
+  else if (a === "approve-yes") {
+    state.mm.confirm = "";
+    mmDo(() => api.MemoryApprove(name, "hot"), () => ["Одобрено", ` · ${name} стало правилом в HOT.md`]);
+  }
+  else if (a === "approve") {
+    const to = b.dataset.to;
+    mmDo(() => api.MemoryApprove(name, to), () => ["Одобрено", to === "hot" ? ` · ${name} стало правилом в HOT.md` : ` · ${name} в холодном слое`]);
+  }
+});
+$("#mm-body").addEventListener("submit", (e) => {
+  const f = e.target.closest("[data-mm-form]");
+  if (!f) return;
+  e.preventDefault();
+  const n = parseInt($("#mm-limit").value, 10);
+  // Пустое поле дало бы NaN, до Go дошел бы 0 («умолчание»), и свой потолок молча сбросился бы.
+  if (!Number.isFinite(n)) { toast("Потолок", " · укажите число знаков", null, "bad"); return; }
+  const runes = state.mm.data ? state.mm.data.hot.runes : 0;
+  if (n < runes) toast("Потолок ниже размера", ` · сейчас в HOT.md ${mmTokens(runes)} знаков, check покажет нарушение`, null, "off");
+  mmDo(() => native().MemorySetHotLimit(n), () => ["Потолок сохранен", ` · ${mmTokens(n)} знаков`]);
 });

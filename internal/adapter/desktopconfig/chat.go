@@ -36,6 +36,12 @@ const (
 	MicAuto   = "auto"
 )
 
+// Границы размера контекста в токенах: от маленькой локальной модели до миллиона.
+const (
+	MinContextWindow = 1000
+	MaxContextWindow = 2000000
+)
+
 // ErrChatSettings — настройки чата не подходят.
 var ErrChatSettings = errors.New("настройки чата не подходят")
 
@@ -62,6 +68,10 @@ type Chat struct {
 	MemoryServer string `json:"memoryServer,omitempty"`
 	// MemoryOff — не разбирать ответы на новое о человеке.
 	MemoryOff bool `json:"memoryOff,omitempty"`
+	// ContextWindow — размер контекста модели в токенах; 0 — не задан, и окно
+	// показывает заполнение только числом. Сервер его не сообщает, поэтому
+	// человек вносит сам.
+	ContextWindow int `json:"contextWindow,omitempty"`
 	// MemoryQuiet — новое ждет в портрете, в чате не предлагается.
 	MemoryQuiet bool `json:"memoryQuiet,omitempty"`
 }
@@ -90,6 +100,14 @@ func (c Chat) checkMemory() error {
 	return nil
 }
 
+// checkContextWindow: 0 — не задан, иначе в границах.
+func (c Chat) checkContextWindow() error {
+	if c.ContextWindow != 0 && (c.ContextWindow < MinContextWindow || c.ContextWindow > MaxContextWindow) {
+		return fmt.Errorf("%w: контекст %d токенов, допустимо %d-%d", ErrChatSettings, c.ContextWindow, MinContextWindow, MaxContextWindow)
+	}
+	return nil
+}
+
 // Check validates the settings: адрес — то же правило, что у kb-сервера
 // (https или http этого Мака), режим — из известных.
 func (c Chat) Check() error {
@@ -107,6 +125,9 @@ func (c Chat) Check() error {
 		return fmt.Errorf("%w: голос %q", ErrChatSettings, c.Voice)
 	}
 	if err := c.checkMemory(); err != nil {
+		return err
+	}
+	if err := c.checkContextWindow(); err != nil {
 		return err
 	}
 	switch c.Accent {

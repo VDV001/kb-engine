@@ -117,6 +117,10 @@
          своим цветом. Пароль — только по Touch ID, каждый раз. -->
     <section class="access-view" id="access-view" hidden><div id="ac-body"></div></section>
 
+    <!-- Память (ADR-0008): два слоя и журнал рядом, очередь на одобрение, потолок
+         горячего слоя. Окно показывает те же файлы, что читает `kbengine memory`. -->
+    <section class="memory-view" id="memory-view" hidden><div id="mm-body"></div></section>
+
     <!-- Справка (решение владельца 07.11): команды движка и клавиши окна —
          оглавление разделов и поиск по задаче, как в палитре; Enter копирует. -->
     <section class="help-view" id="help-view" hidden>
@@ -185,10 +189,12 @@
           <div class="chat-srcs" id="chat-srcs" role="group" aria-label="Источники этого чата" hidden></div>
           <div class="chat-box">
             <div class="chat-attached" id="chat-attached" hidden></div>
+            <div class="chat-ctx-pop" id="chat-ctx-pop" role="dialog" aria-label="Заполнение контекста" hidden></div>
             <textarea id="chat-q" rows="1" placeholder="Спросите о своих документах…" aria-label="Вопрос"></textarea>
             <div class="chat-box-row">
               <button class="chat-tool" type="button" id="chat-attach" aria-label="Приложить к вопросу" aria-haspopup="menu" aria-expanded="false" data-tip="Приложить к вопросу" data-tip-b="файл с диска, найденное или ссылку"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button>
               <button class="chat-model-chip" type="button" id="chat-model-chip" data-tip="Модель" data-tip-b="нажмите, чтобы сменить модель или ключ"></button>
+              <button class="chat-ctx-ring" type="button" id="chat-ctx-ring" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat-ctx-pop" hidden></button>
               <span class="chat-spacer"></span>
               <span class="chat-idle" id="chat-idle">
                 <button class="chat-tool" type="button" id="chat-mic" aria-label="Диктовка" aria-pressed="false" data-tip="Диктовка" data-tip-b="голос в текст на этом Маке · еще раз или Esc — стоп"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="4" height="7.5" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5V14"/></svg></button>
@@ -334,6 +340,7 @@
               <option value="tools">модель ищет (сильные модели)</option>
             </select>
           </label>
+          <label>Контекст модели, токенов<input id="chat-ctx-win" type="number" min="1000" max="2000000" step="1000" placeholder="не задан" inputmode="numeric"></label>
           <div class="key-field"><label for="chat-key">Ключ <span class="key-saved" id="chat-key-saved" hidden>· ✓ в Связке ключей</span></label>
             <span class="key-row"><input id="chat-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="chat-key" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></div>
         </div>
