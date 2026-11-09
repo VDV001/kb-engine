@@ -277,3 +277,34 @@ func TestCheck_reportsStaleVectors(t *testing.T) {
 		t.Errorf("ps = %v", ps)
 	}
 }
+
+// scriptedEmbedder отдает заранее заданные векторы по подстроке текста.
+type scriptedEmbedder struct{ byText map[string]search.Vector }
+
+func (e scriptedEmbedder) Embed(text string) (search.Vector, error) {
+	for k, v := range e.byText {
+		if strings.Contains(text, k) {
+			return v, nil
+		}
+	}
+	return search.Vector{0, 0, 1}, nil
+}
+
+// Живой замер bge-m3 (09.11): верные ответы 0.46-0.63, чужие запросы до 0.32.
+// Порог по умолчанию обязан пропускать первое и не пропускать второе.
+func TestFind_defaultThresholdFitsBgeM3Scores(t *testing.T) {
+	emb := scriptedEmbedder{byText: map[string]search.Vector{
+		"budget-rules": {0.46, 0.8879, 0}, // косинус с запросом {1,0,0} = 0.46
+		"doctor":       {0.30, 0.9539, 0}, // 0.30
+		"запрос":       {1, 0, 0},
+	}}
+	_, svc := newFind(t, finNote(), docNote())
+	svc = svc.WithEmbedder(emb, "bge-m3")
+	if _, err := svc.BuildIndex(); err != nil {
+		t.Fatal(err)
+	}
+	res, err := svc.Find("запрос", memory.FindOptions{})
+	if err != nil || res.Via != "vector" || strings.Join(names(res.Hits), ",") != "budget-rules" {
+		t.Fatalf("res=%+v err=%v", res, err)
+	}
+}
