@@ -123,3 +123,43 @@ func TestReplaceTopics(t *testing.T) {
 		t.Errorf("метки в обратном порядке err = %v, want ErrNoTopicMarkers", err)
 	}
 }
+
+func TestParseOrigin(t *testing.T) {
+	for in, want := range map[string]domain.Origin{"": domain.OriginHuman, "human": domain.OriginHuman, "agent": domain.OriginAgent} {
+		got, err := domain.ParseOrigin(in)
+		if err != nil || got != want {
+			t.Errorf("ParseOrigin(%q) = %q, %v; want %q", in, got, err, want)
+		}
+	}
+	if _, err := domain.ParseOrigin("robot"); !errors.Is(err, domain.ErrInvalidNote) {
+		t.Errorf("robot: err = %v, want ErrInvalidNote", err)
+	}
+}
+
+func TestAppendRule(t *testing.T) {
+	const placeholder = "# Горячая\n\n## Правила работы\n\n-\n\n## Сейчас в работе\n\n-\n"
+	tests := []struct {
+		name, hot, rule, want string
+		err                   error
+	}{
+		{"пустой маркер заменяется", placeholder, "не пушить в main",
+			"# Горячая\n\n## Правила работы\n\n- не пушить в main\n\n## Сейчас в работе\n\n-\n", nil},
+		{"дописывается после последнего правила, до следующего раздела",
+			"## Правила работы\n- первое\n- второе\n\n## Дальше\n- x\n", "третье",
+			"## Правила работы\n- первое\n- второе\n- третье\n\n## Дальше\n- x\n", nil},
+		{"раздел последний в файле", "## Правила работы\n- первое", "второе", "## Правила работы\n- первое\n- второе\n", nil},
+		{"нет раздела правил", "# Горячая\nтекст\n", "x", "", domain.ErrNoRulesSection},
+		{"правило с переводом строки", placeholder, "a\nb", "", domain.ErrInvalidNote},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := domain.AppendRule(tt.hot, tt.rule)
+			if !errors.Is(err, tt.err) {
+				t.Fatalf("err = %v, want %v", err, tt.err)
+			}
+			if got != tt.want {
+				t.Errorf("got %q\nwant %q", got, tt.want)
+			}
+		})
+	}
+}

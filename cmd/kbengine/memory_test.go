@@ -168,3 +168,54 @@ func TestMemory_topicsWithoutMarkersLeavesHotAlone(t *testing.T) {
 		t.Errorf("HOT.md затронут: %q", b)
 	}
 }
+
+func TestMemory_agentQueueEndToEnd(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	code, out, e := runMem(t, "add", "--origin", "agent", "--name", "agent-note", "--topic", "стиль", "--description", "предложение", "--body", "тело", dir)
+	if code != 0 || !strings.Contains(out, "ждет одобрения") {
+		t.Fatalf("add --origin agent: %d %q %s", code, out, e)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cold", "agent-note.md")); err == nil {
+		t.Fatal("агент записал прямо в холодный слой")
+	}
+	if code, out, _ := runMem(t, "pending", dir); code != 0 || !strings.Contains(out, "agent-note") {
+		t.Fatalf("pending: %d %q", code, out)
+	}
+	if code, _, e := runMem(t, "approve", "--name", "agent-note", "--to", "cold", dir); code != 0 {
+		t.Fatalf("approve: %d %s", code, e)
+	}
+	if code, out, _ := runMem(t, "check", dir); code != 0 {
+		t.Errorf("после approve check красный: %d %s", code, out)
+	}
+	if code, out, _ := runMem(t, "pending", dir); !strings.Contains(out, "очередь пуста") || code != 0 {
+		t.Errorf("pending после approve: %d %q", code, out)
+	}
+}
+
+func TestMemory_approveToHotAndReject(t *testing.T) {
+	dir := t.TempDir()
+	runMem(t, "init", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-1", "--topic", "стиль", "--description", "не пушить в main", dir)
+	runMem(t, "add", "--origin", "agent", "--name", "rule-2", "--topic", "стиль", "--description", "лишнее", dir)
+	if code, _, e := runMem(t, "approve", "--name", "rule-1", "--to", "hot", dir); code != 0 {
+		t.Fatalf("approve hot: %d %s", code, e)
+	}
+	hot, _ := os.ReadFile(filepath.Join(dir, "HOT.md"))
+	if !strings.Contains(string(hot), "- не пушить в main") {
+		t.Errorf("правила нет в HOT.md:\n%s", hot)
+	}
+	if code, _, e := runMem(t, "reject", "--name", "rule-2", dir); code != 0 {
+		t.Fatalf("reject: %d %s", code, e)
+	}
+	left, _ := filepath.Glob(filepath.Join(dir, "journal", "*rule-*"))
+	if len(left) != 2 {
+		t.Errorf("в журнале должно быть 2 файла (одобренное и отклоненное), есть %v", left)
+	}
+	if code, _, _ := runMem(t, "approve", "--name", "rule-1", "--to", "hot", dir); code != 1 {
+		t.Errorf("повторное одобрение: code=%d, want 1", code)
+	}
+	if code, _, _ := runMem(t, "approve", "--name", "x", "--to", "middle", dir); code != 2 {
+		t.Errorf("--to middle: code=%d, want 2", code)
+	}
+}

@@ -171,3 +171,79 @@ func TestSaveHot_replacesAtomically(t *testing.T) {
 		t.Errorf("права HOT.md = %v, want 0600", info.Mode().Perm())
 	}
 }
+
+func agentNote(t *testing.T, name string) domain.ColdNote {
+	t.Helper()
+	n, err := domain.NewColdNote(name, "стиль", "предложил агент")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.Origin = domain.OriginAgent
+	return n
+}
+
+// Очередь не видна ни проверке, ни перечню: pending/ не часть холодного слоя.
+func TestPending_staysOutOfColdLayer(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	if err := st.AddPending(agentNote(t, "p1"), "тело"); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddPending(agentNote(t, "p1"), "еще"); !errors.Is(err, domain.ErrNoteExists) {
+		t.Errorf("дубль в очереди: %v", err)
+	}
+	snap, _ := st.Load()
+	if len(snap.Notes) != 0 || len(snap.Index) != 0 {
+		t.Fatalf("очередь попала в холодный слой: %+v", snap)
+	}
+	list, err := st.Pending()
+	if err != nil || len(list) != 1 || list[0].Note.Name != "p1" || list[0].Note.Origin != domain.OriginAgent || list[0].Body != "тело" {
+		t.Fatalf("Pending = %+v, %v", list, err)
+	}
+	if _, err := st.ReadPending("нет"); !errors.Is(err, domain.ErrNoSuchPending) {
+		t.Errorf("ReadPending чужого: %v", err)
+	}
+}
+
+func TestPromotePending_movesToColdWithIndexLine(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	_ = st.AddPending(agentNote(t, "p1"), "тело")
+	if err := st.PromotePending("p1"); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := st.Load()
+	if len(snap.Notes) != 1 || snap.Notes[0].Origin != domain.OriginAgent || len(snap.Index) != 1 {
+		t.Fatalf("snap = %+v", snap)
+	}
+	if left, _ := st.Pending(); len(left) != 0 {
+		t.Errorf("в очереди осталось: %v", left)
+	}
+	// Холодная запись с тем же именем уже есть: очередь ее не затирает.
+	_ = st.AddPending(agentNote(t, "p1"), "второй")
+	if err := st.PromotePending("p1"); !errors.Is(err, domain.ErrNoteExists) {
+		t.Errorf("затирание холодной записи: %v", err)
+	}
+	if left, _ := st.Pending(); len(left) != 1 {
+		t.Error("отказ не должен терять запись из очереди")
+	}
+}
+
+func TestArchivePending_movesToJournal(t *testing.T) {
+	dir := t.TempDir()
+	st := memorydir.New(dir)
+	_ = st.Init()
+	_ = st.AddPending(agentNote(t, "p1"), "тело")
+	if err := st.ArchivePending("p1", "2026-11-09-rejected-p1.md"); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "journal", "2026-11-09-rejected-p1.md"))
+	if err != nil || !strings.Contains(string(b), "тело") {
+		t.Fatalf("журнал: %q, %v", b, err)
+	}
+	if left, _ := st.Pending(); len(left) != 0 {
+		t.Errorf("в очереди осталось: %v", left)
+	}
+}
