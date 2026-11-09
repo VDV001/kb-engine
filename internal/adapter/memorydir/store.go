@@ -92,7 +92,10 @@ func (s *Store) Init() error {
 	if err := os.WriteFile(hot, []byte(hotSkeleton), 0o600); err != nil {
 		return err
 	}
-	return os.WriteFile(idx, []byte(indexSkeleton), 0o600)
+	if err := os.WriteFile(idx, []byte(indexSkeleton), 0o600); err != nil {
+		return err
+	}
+	return s.Seal()
 }
 
 // SaveHot replaces HOT.md: временный файл рядом и переименование, оборванная
@@ -115,7 +118,7 @@ func (s *Store) SaveHot(hot string) error {
 		_ = os.Remove(tmp.Name())
 		return err
 	}
-	return nil
+	return s.writeSeal(domain.HotDigest(hot)) // своя запись системы запечатывается
 }
 
 var indexLine = regexp.MustCompile(`^- \[[^\]]*\]\(([^)]+)\)(?:\s+[—-]\s+(.*))?$`)
@@ -394,32 +397,68 @@ func (s *Store) ReadPending(name string) (memory.PendingNote, error) {
 }
 
 // moveNoClobber moves src to dst without overwriting: жесткая ссылка отказывает
-// атомарно, если dst есть, а переименование молча затерло бы его.
+// атомарно, если dst есть, а переименование молча затерло бы его. Где жестких
+// ссылок нет (exFAT, SMB, облачные папки), переносит копированием.
 func moveNoClobber(src, dst string) error {
-	if err := os.Link(src, dst); err != nil {
-		if errors.Is(err, fs.ErrExist) {
-			return fmt.Errorf("%w: %s", domain.ErrNoteExists, filepath.Base(dst))
-		}
+	err := os.Link(src, dst)
+	switch {
+	case err == nil:
+		return os.Remove(src)
+	case errors.Is(err, fs.ErrExist):
+		return fmt.Errorf("%w: %s", domain.ErrNoteExists, filepath.Base(dst))
+	}
+	return moveByCopy(src, dst)
+}
+
+// moveByCopy creates dst exclusively, copies src into it and removes src.
+func moveByCopy(src, dst string) error {
+	body, err := os.ReadFile(src)
+	if err != nil {
 		return err
+	}
+	f, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%w: %s", domain.ErrNoteExists, filepath.Base(dst))
+	}
+	if err != nil {
+		return err
+	}
+	_, werr := f.Write(body)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	if werr != nil {
+		_ = os.Remove(dst) // недописанная копия хуже ее отсутствия
+		return werr
 	}
 	return os.Remove(src)
 }
 
-// PromotePending moves a queued note to cold/ and adds its index line.
+// PromotePending moves a queued note to cold/ and adds its index line. Если строку
+// индекса записать не вышло, запись возвращается в очередь: ни «пол-готово», ни
+// потерянной записи.
 func (s *Store) PromotePending(name string) error {
 	p, err := s.ReadPending(name)
 	if err != nil {
 		return err
 	}
 	src, _ := s.pendingPath(name)
-	if err := moveNoClobber(src, filepath.Join(s.dir, coldDir, p.Note.File)); err != nil {
+	dst := filepath.Join(s.dir, coldDir, p.Note.File)
+	if err := moveNoClobber(src, dst); err != nil {
 		return err
 	}
-	return s.appendIndexLine(p.Note)
+	if err := s.appendIndexLine(p.Note); err != nil {
+		if rerr := moveNoClobber(dst, src); rerr != nil {
+			return fmt.Errorf("индекс не записан (%w), и запись не вернулась в очередь: %v", err, rerr)
+		}
+		return fmt.Errorf("индекс не записан, запись осталась в очереди: %w", err)
+	}
+	return nil
 }
 
 // ArchivePending moves a queued note to journal/<as>: решение человека остается
-// в журнале, ничего не удаляется.
+// в журнале, ничего не удаляется. Имя занято (то же имя в тот же день) — к нему
+// добавляется номер.
 func (s *Store) ArchivePending(name, as string) error {
 	src, err := s.pendingPath(name)
 	if err != nil {
@@ -428,7 +467,18 @@ func (s *Store) ArchivePending(name, as string) error {
 	if filepath.Base(as) != as || !strings.HasSuffix(as, ".md") {
 		return fmt.Errorf("%w: имя в журнале %q", domain.ErrInvalidNote, as)
 	}
-	return moveNoClobber(src, filepath.Join(s.dir, journalDir, as))
+	stem := strings.TrimSuffix(as, ".md")
+	for i := 1; i <= 99; i++ {
+		target := as
+		if i > 1 {
+			target = fmt.Sprintf("%s-%d.md", stem, i)
+		}
+		err := moveNoClobber(src, filepath.Join(s.dir, journalDir, target))
+		if !errors.Is(err, domain.ErrNoteExists) {
+			return err
+		}
+	}
+	return fmt.Errorf("%w: в журнале слишком много записей с именем %s", domain.ErrNoteExists, as)
 }
 
 // JournalNames lists journal/ by name; журнал только дописывается, поэтому порядок
@@ -443,7 +493,7 @@ func (s *Store) JournalNames() ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") && e.Name() != decisionsFile {
 			out = append(out, e.Name())
 		}
 	}
@@ -507,4 +557,94 @@ func (s *Store) SaveLimits(l memory.Limits) error {
 		return err
 	}
 	return nil
+}
+
+const (
+	sealFile      = ".seal"
+	decisionsFile = "decisions.md"
+)
+
+// writeSeal stores the digest atomically, 0600.
+func (s *Store) writeSeal(digest string) error {
+	tmp, err := os.CreateTemp(s.dir, ".seal-*.tmp")
+	if err != nil {
+		return err
+	}
+	if _, err := tmp.WriteString(digest + "\n"); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	if err := os.Rename(tmp.Name(), filepath.Join(s.dir, sealFile)); err != nil {
+		_ = os.Remove(tmp.Name())
+		return err
+	}
+	return nil
+}
+
+// Seal accepts the current HOT.md as is: запоминает его отпечаток.
+// ponytail: печать — сигнал, а не замок. Тот, кто может править HOT.md, может
+// править и .seal; она ловит правку мимо системы (агента с доступом к файлам,
+// забытую ручную), но не остановит намеренную подделку обоих файлов. Путь вверх:
+// печать в Связке ключей или подпись ключом из Secure Enclave.
+func (s *Store) Seal() error {
+	b, err := os.ReadFile(filepath.Join(s.dir, hotFile))
+	if err != nil {
+		return fmt.Errorf("горячий слой: %w", err)
+	}
+	return s.writeSeal(domain.HotDigest(string(b)))
+}
+
+// SealedDigest returns the accepted digest; печати нет — "" (память без печати не нарушение).
+func (s *Store) SealedDigest() (string, error) {
+	b, err := os.ReadFile(filepath.Join(s.dir, sealFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	return strings.TrimSpace(string(b)), err
+}
+
+// AppendDecision appends one line to journal/decisions.md; файл только дописывается.
+func (s *Store) AppendDecision(line string) error {
+	line = strings.Join(strings.Fields(line), " ") // одна строка, без управляющих
+	if err := os.MkdirAll(filepath.Join(s.dir, journalDir), 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(s.dir, journalDir, decisionsFile)
+	_, statErr := os.Stat(path)
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	text := "- " + line + "\n"
+	if errors.Is(statErr, fs.ErrNotExist) {
+		text = "# Журнал решений\n\nТолько дописывается: что человек одобрил, отклонил и подтвердил.\n\n" + text
+	}
+	_, werr := f.WriteString(text)
+	if cerr := f.Close(); werr == nil {
+		werr = cerr
+	}
+	return werr
+}
+
+// Decisions returns the last n decisions, oldest first; файла нет — пусто.
+func (s *Store) Decisions(n int) ([]string, error) {
+	b, err := os.ReadFile(filepath.Join(s.dir, journalDir, decisionsFile))
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var all []string
+	for l := range strings.SplitSeq(string(b), "\n") {
+		if rest, ok := strings.CutPrefix(l, "- "); ok {
+			all = append(all, rest)
+		}
+	}
+	return all[max(0, len(all)-n):], nil
 }

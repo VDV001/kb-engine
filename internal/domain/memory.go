@@ -2,6 +2,8 @@ package domain
 
 import (
 	"cmp"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"regexp"
@@ -148,6 +150,8 @@ const (
 	ProblemIndexTooBig   ProblemKind = "index-too-big"
 	ProblemStaleTopics   ProblemKind = "stale-topics"
 	ProblemStaleVectors  ProblemKind = "stale-vectors"
+	ProblemInvalidNote   ProblemKind = "invalid-note"
+	ProblemHotChanged    ProblemKind = "hot-changed-outside"
 )
 
 // MemoryProblem — одно нарушение: что и где.
@@ -181,6 +185,9 @@ type MemoryState struct {
 	// имя записи → отпечаток, с которого вектор снят.
 	HasVectors    bool
 	VectorDigests map[string]string
+	// HotDigest — отпечаток HOT.md сейчас; SealDigest — отпечаток после последней
+	// записи системы или подтверждения человеком ("" — печати нет, это не нарушение).
+	HotDigest, SealDigest string
 }
 
 // IndexEntry — строка индекса холодной памяти.
@@ -191,37 +198,69 @@ type IndexEntry struct {
 
 var noteName = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
+// noMarkup refuses the comment markers that delimit the generated blocks of HOT.md:
+// текст с ними мог бы закрыть блок раньше срока или подделать метки, а HOT.md читает
+// каждая сессия агента.
+func noMarkup(what, s string) error {
+	if strings.Contains(s, "<!--") || strings.Contains(s, "-->") {
+		return fmt.Errorf("%w: %s содержит разметку комментария", ErrInvalidNote, what)
+	}
+	return nil
+}
+
+// validateFields checks the parts of a note that reach HOT.md and the index.
+func validateFields(topic, description string) error {
+	switch {
+	case topic == "":
+		return fmt.Errorf("%w: тема пустая", ErrInvalidNote)
+	case strings.ContainsAny(topic, "\r\n"):
+		return fmt.Errorf("%w: тема в одну строку", ErrInvalidNote)
+	case utf8.RuneCountInString(topic) > MaxTopicRunes:
+		return fmt.Errorf("%w: тема длиннее %d знаков", ErrInvalidNote, MaxTopicRunes)
+	case description == "":
+		return fmt.Errorf("%w: описание пустое", ErrInvalidNote)
+	case strings.ContainsAny(description, "\r\n"):
+		return fmt.Errorf("%w: описание в одну строку", ErrInvalidNote)
+	case utf8.RuneCountInString(description) > MaxHookRunes:
+		return fmt.Errorf("%w: описание длиннее %d знаков", ErrInvalidNote, MaxHookRunes)
+	}
+	if err := noMarkup("тема", topic); err != nil {
+		return err
+	}
+	return noMarkup("описание", description)
+}
+
+// ValidateNote re-checks a note that did not come through NewColdNote: файл могли
+// положить руками или агент в обход инструмента (ревью #521).
+func ValidateNote(n ColdNote) error {
+	return validateFields(strings.TrimSpace(n.Topic), strings.TrimSpace(n.Description))
+}
+
 // NewColdNote validates a new cold note: имя — kebab-латиница (оно же имя файла),
 // тема — одна строка до MaxTopicRunes (по ней собирается перечень тем горячего слоя),
 // описание — одна строка до MaxHookRunes, потому что оно же крючок в индексе.
 func NewColdNote(name, topic, description string) (ColdNote, error) {
 	topic = strings.TrimSpace(topic)
 	description = strings.TrimSpace(description)
-	switch {
-	case !noteName.MatchString(name):
+	if !noteName.MatchString(name) {
 		return ColdNote{}, fmt.Errorf("%w: имя %q — латиница в нижнем регистре, цифры и дефисы", ErrInvalidNote, name)
-	case topic == "":
-		return ColdNote{}, fmt.Errorf("%w: тема пустая", ErrInvalidNote)
-	case strings.ContainsAny(topic, "\r\n"):
-		return ColdNote{}, fmt.Errorf("%w: тема в одну строку", ErrInvalidNote)
-	case utf8.RuneCountInString(topic) > MaxTopicRunes:
-		return ColdNote{}, fmt.Errorf("%w: тема длиннее %d знаков", ErrInvalidNote, MaxTopicRunes)
-	case description == "":
-		return ColdNote{}, fmt.Errorf("%w: описание пустое", ErrInvalidNote)
-	case strings.ContainsAny(description, "\r\n"):
-		return ColdNote{}, fmt.Errorf("%w: описание в одну строку", ErrInvalidNote)
-	case utf8.RuneCountInString(description) > MaxHookRunes:
-		return ColdNote{}, fmt.Errorf("%w: описание длиннее %d знаков", ErrInvalidNote, MaxHookRunes)
+	}
+	if err := validateFields(topic, description); err != nil {
+		return ColdNote{}, err
 	}
 	return ColdNote{File: name + ".md", Name: name, Topic: topic, Description: description}, nil
 }
 
 // AppendRule adds one rule as a bullet at the end of the rules section of the hot
-// layer; пустой маркер «-» из скелета заменяется, а не копится.
+// layer; пустой маркер «-» из скелета заменяется, а не копится. То же правило
+// второй раз не дописывается: текст возвращается как был.
 func AppendRule(hot, rule string) (string, error) {
 	rule = strings.TrimSpace(rule)
 	if rule == "" || strings.ContainsAny(rule, "\r\n") {
 		return "", fmt.Errorf("%w: правило — одна непустая строка", ErrInvalidNote)
+	}
+	if err := noMarkup("правило", rule); err != nil {
+		return "", err
 	}
 	lines := strings.Split(hot, "\n")
 	h := slices.IndexFunc(lines, func(l string) bool { return strings.TrimSpace(l) == RulesHeading })
@@ -230,6 +269,11 @@ func AppendRule(hot, rule string) (string, error) {
 	}
 	last := lastBullet(lines, h)
 	bullet := "- " + rule
+	for i := h + 1; i <= last; i++ {
+		if strings.EqualFold(strings.TrimSpace(lines[i]), bullet) {
+			return hot, nil
+		}
+	}
 	switch {
 	case last >= 0 && strings.TrimSpace(lines[last]) == "-":
 		lines[last] = bullet
@@ -302,6 +346,11 @@ func ReplaceTopics(hot string, notes []ColdNote) (string, error) {
 	if !ok {
 		return "", ErrNoTopicMarkers
 	}
+	for _, n := range notes {
+		if err := noMarkup("тема", n.Topic); err != nil {
+			return "", err
+		}
+	}
 	lines := strings.Join(topicLines(notes), "\n")
 	if lines != "" {
 		lines += "\n"
@@ -349,6 +398,7 @@ func topicListIsCurrent(hot string, notes []ColdNote) bool {
 // горячий слой, записи холодного, индекс, векторы, размер индекса.
 func CheckMemory(st MemoryState) []MemoryProblem {
 	ps := checkHot(st)
+	ps = append(ps, checkSeal(st)...)
 	ps = append(ps, checkNotes(st)...)
 	ps = append(ps, checkIndex(st)...)
 	ps = append(ps, checkVectors(st)...)
@@ -372,6 +422,19 @@ func checkHot(st MemoryState) []MemoryProblem {
 	return ps
 }
 
+// HotDigest is the fingerprint of the hot layer's text; по нему видно правку мимо системы.
+func HotDigest(hot string) string {
+	sum := sha256.Sum256([]byte(hot))
+	return hex.EncodeToString(sum[:])
+}
+
+func checkSeal(st MemoryState) []MemoryProblem {
+	if st.SealDigest == "" || st.SealDigest == st.HotDigest {
+		return nil
+	}
+	return []MemoryProblem{{ProblemHotChanged, "HOT.md", "файл изменен не окном и не kbengine после последней записи системы: прочитайте его и подтвердите (kbengine memory seal)"}}
+}
+
 func checkNotes(st MemoryState) []MemoryProblem {
 	indexed := make(map[string]bool, len(st.Index))
 	for _, e := range st.Index {
@@ -387,6 +450,11 @@ func checkNotes(st MemoryState) []MemoryProblem {
 		}
 		if !indexed[n.File] {
 			ps = append(ps, MemoryProblem{ProblemNotIndexed, n.File, "нет строки в cold/INDEX.md"})
+		}
+		if n.Topic != "" && n.Description != "" {
+			if err := ValidateNote(n); err != nil {
+				ps = append(ps, MemoryProblem{ProblemInvalidNote, n.File, err.Error()})
+			}
 		}
 	}
 	return ps

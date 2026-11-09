@@ -133,13 +133,19 @@ func (s *Service) BuildIndex() (BuildReport, error) {
 		v, err := s.embed.Embed(embedText(t))
 		if err != nil {
 			rep.Failed++
+			// Прежний вектор остается: он отстал (check назовет stale-vectors), но
+			// запись не выпадает из смыслового поиска из-за одного сбоя службы.
+			if e, ok := prev.Entries[t.Note.Name]; ok && prev.Model == s.model {
+				out.Entries[t.Note.Name] = e
+			}
 			continue
 		}
 		out.Entries[t.Note.Name] = VectorEntry{Digest: t.Note.Digest, Vector: v}
-		if out.Dims == 0 {
-			out.Dims = len(v)
-		}
 		rep.Embedded++
+	}
+	for _, e := range out.Entries {
+		out.Dims = len(e.Vector) // размерность одна у всех: индекс снят одной моделью
+		break
 	}
 	if len(out.Entries) == 0 {
 		return rep, fmt.Errorf("memory: не снято ни одного вектора (записей %d, отказов %d): индекс не записан", len(texts), rep.Failed)

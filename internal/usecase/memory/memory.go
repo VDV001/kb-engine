@@ -39,6 +39,14 @@ type Store interface {
 	SaveVectors(v VectorIndex) error
 	// JournalNames — имена файлов journal/ по возрастанию.
 	JournalNames() ([]string, error)
+	// AppendDecision дописывает решение человека в журнал решений (только дописывается).
+	AppendDecision(line string) error
+	// Decisions — последние n записей журнала решений.
+	Decisions(n int) ([]string, error)
+	// Seal запоминает отпечаток текущего HOT.md как «принятый»; SealedDigest его
+	// отдает ("" — печати нет).
+	Seal() error
+	SealedDigest() (string, error)
 }
 
 // PendingNote — запись агента, ждущая решения человека.
@@ -89,7 +97,15 @@ func (s *Service) Who() (changed bool, err error) {
 	if err != nil || hot == snap.Hot {
 		return false, err
 	}
-	return true, s.store.SaveHot(hot)
+	// Потолок и здесь: портрет, который распухает, вытесняет правила. Уменьшать
+	// переполненный слой можно всегда.
+	if n, old := utf8.RuneCountInString(hot), utf8.RuneCountInString(snap.Hot); n > s.limits.Hot && n > old {
+		return false, fmt.Errorf("%w: с портретом стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)
+	}
+	if err := s.store.SaveHot(hot); err != nil {
+		return false, err
+	}
+	return true, s.decide("блок «Кто я» в HOT.md обновлен из одобренных фактов портрета")
 }
 
 // WithEmbedder подключает смысловой слой: службу эмбеддингов и имя ее модели.
@@ -130,10 +146,20 @@ func (s *Service) Check() ([]domain.MemoryProblem, error) {
 	if err != nil {
 		return nil, err
 	}
+	return s.checkSnapshot(snap)
+}
+
+// checkSnapshot checks an already loaded snapshot: окну не нужно читать папку дважды.
+func (s *Service) checkSnapshot(snap Snapshot) ([]domain.MemoryProblem, error) {
+	sealed, err := s.store.SealedDigest()
+	if err != nil {
+		return nil, err
+	}
 	st := domain.MemoryState{
 		Hot: snap.Hot, HotLimit: s.limits.Hot,
 		IndexRunes: snap.IndexRunes, IndexLimit: s.limits.Index,
 		Notes: snap.Notes, Index: snap.Index,
+		HotDigest: domain.HotDigest(snap.Hot), SealDigest: sealed,
 	}
 	switch vi, err := s.store.LoadVectors(); {
 	case errors.Is(err, ErrNoVectors):
@@ -149,10 +175,29 @@ func (s *Service) Check() ([]domain.MemoryProblem, error) {
 	return domain.CheckMemory(st), nil
 }
 
+// decide writes one decision of the person to the journal; одна строка, с датой.
+// Решение, которое не удалось записать, возвращается ошибкой: действие уже сделано,
+// и человеку надо знать, что следа в журнале нет.
+func (s *Service) decide(format string, args ...any) error {
+	line := s.now().Format("2006-01-02 15:04") + " " + fmt.Sprintf(format, args...)
+	if err := s.store.AppendDecision(line); err != nil {
+		return fmt.Errorf("действие выполнено, но журнал решений не записан: %w", err)
+	}
+	return nil
+}
+
 // Topics собирает перечень тем горячего слоя из тем записей. changed=false —
 // перечень уже актуален и файл не тронут; ErrNoTopicMarkers — HOT.md правили
 // руками, и его не переписывают.
 func (s *Service) Topics() (changed bool, err error) {
+	changed, err = s.topics()
+	if err == nil && changed {
+		err = s.decide("перечень тем в HOT.md пересобран из тем записей")
+	}
+	return changed, err
+}
+
+func (s *Service) topics() (changed bool, err error) {
 	snap, err := s.store.Load()
 	if err != nil {
 		return false, err
@@ -175,7 +220,7 @@ func (s *Service) Add(name, topic, description, body string) (refreshed bool, er
 	if err := s.store.Add(n, body); err != nil {
 		return false, err
 	}
-	if _, err := s.Topics(); err != nil {
+	if _, err := s.topics(); err != nil {
 		if errors.Is(err, domain.ErrNoTopicMarkers) {
 			return false, nil
 		}
@@ -198,22 +243,26 @@ func (s *Service) Propose(name, topic, description, body string) error {
 // Pending lists the queue.
 func (s *Service) Pending() ([]PendingNote, error) { return s.store.Pending() }
 
-// Approve moves a queued note to the layer the human chose. В горячий слой уходит
+// Approve moves a queued note to the layer the person chose. В горячий слой уходит
 // одна строка (description) как правило, а сама запись — в журнал; потолок слоя
-// не обходится: при нехватке места запись остается в очереди.
+// не обходится: при нехватке места запись остается в очереди. Запись из очереди
+// проверяется заново: файл могли положить мимо Propose. Решение остается в журнале.
 func (s *Service) Approve(name string, to domain.Layer) error {
 	p, err := s.store.ReadPending(name)
 	if err != nil {
+		return err
+	}
+	if err := domain.ValidateNote(p.Note); err != nil {
 		return err
 	}
 	if to == domain.LayerCold {
 		if err := s.store.PromotePending(name); err != nil {
 			return err
 		}
-		if _, err := s.Topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
+		if _, err := s.topics(); err != nil && !errors.Is(err, domain.ErrNoTopicMarkers) {
 			return err
 		}
-		return nil
+		return s.decide("одобрено в холодный слой: %s (тема «%s»)", name, p.Note.Topic)
 	}
 	snap, err := s.store.Load()
 	if err != nil {
@@ -223,41 +272,66 @@ func (s *Service) Approve(name string, to domain.Layer) error {
 	if err != nil {
 		return err
 	}
-	if n := utf8.RuneCountInString(hot); n > s.limits.Hot {
-		return fmt.Errorf("%w: стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)
+	verdict := "одобрено в горячий слой: %s — «%s»"
+	if hot == snap.Hot {
+		verdict += " (такое правило уже было)"
+	} else {
+		if n := utf8.RuneCountInString(hot); n > s.limits.Hot {
+			return fmt.Errorf("%w: стало бы %d знаков при потолке %d", domain.ErrHotFull, n, s.limits.Hot)
+		}
+		// ponytail: два шага без транзакции. Сбой после SaveHot оставит правило и в
+		// горячем слое, и в очереди; повторное одобрение правило не продублирует
+		// (AppendRule узнает его), а запись уйдет в журнал.
+		if err := s.store.SaveHot(hot); err != nil {
+			return err
+		}
 	}
-	// ponytail: два шага без транзакции. Сбой после SaveHot оставит правило и в
-	// горячем слое, и в очереди; повторное одобрение продублирует строку. Путь
-	// вверх: проверять наличие строки перед дописыванием.
-	if err := s.store.SaveHot(hot); err != nil {
+	if err := s.store.ArchivePending(name, s.archiveName("approved", name)); err != nil {
 		return err
 	}
-	return s.store.ArchivePending(name, s.archiveName("approved", name))
+	return s.decide(verdict, name, p.Note.Description)
 }
 
 // Reject archives a queued note to the journal instead of deleting it.
 func (s *Service) Reject(name string) error {
-	if _, err := s.store.ReadPending(name); err != nil {
+	p, err := s.store.ReadPending(name)
+	if err != nil {
 		return err
 	}
-	return s.store.ArchivePending(name, s.archiveName("rejected", name))
+	if err := s.store.ArchivePending(name, s.archiveName("rejected", name)); err != nil {
+		return err
+	}
+	return s.decide("отклонено: %s — «%s»", name, p.Note.Description)
+}
+
+// Seal accepts the current HOT.md as is: человек прочитал правку, сделанную мимо
+// системы, и берет ее на себя. Подтверждение остается в журнале.
+func (s *Service) Seal() error {
+	if err := s.store.Seal(); err != nil {
+		return err
+	}
+	return s.decide("подтверждено: текущий HOT.md принят как есть")
 }
 
 func (s *Service) archiveName(verdict, name string) string {
 	return fmt.Sprintf("%s-%s-%s.md", s.now().Format("2006-01-02"), verdict, name)
 }
 
-// Overview — все, что показывает экран памяти: слои, очередь, журнал, нарушения и
-// действующие потолки.
+// Overview — все, что показывает экран памяти: слои, очередь, журнал, решения,
+// нарушения и действующие потолки.
 type Overview struct {
-	Snapshot Snapshot
-	Pending  []PendingNote
-	Journal  []string
-	Problems []domain.MemoryProblem
-	Limits   Limits
+	Snapshot  Snapshot
+	Pending   []PendingNote
+	Journal   []string
+	Decisions []string
+	Problems  []domain.MemoryProblem
+	Limits    Limits
 }
 
-// Overview gathers the state for the window in one pass.
+// recentDecisions — сколько последних решений показывает экран.
+const recentDecisions = 20
+
+// Overview gathers the state for the window in one pass: папка читается один раз.
 func (s *Service) Overview() (Overview, error) {
 	snap, err := s.store.Load()
 	if err != nil {
@@ -271,9 +345,13 @@ func (s *Service) Overview() (Overview, error) {
 	if err != nil {
 		return Overview{}, err
 	}
-	problems, err := s.Check()
+	decisions, err := s.store.Decisions(recentDecisions)
 	if err != nil {
 		return Overview{}, err
 	}
-	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Problems: problems, Limits: s.limits}, nil
+	problems, err := s.checkSnapshot(snap)
+	if err != nil {
+		return Overview{}, err
+	}
+	return Overview{Snapshot: snap, Pending: pending, Journal: journal, Decisions: decisions, Problems: problems, Limits: s.limits}, nil
 }

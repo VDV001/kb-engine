@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
@@ -97,7 +98,7 @@ func (f *fakeStore) SaveHot(hot string) error {
 }
 
 func (f *fakeStore) Init() error                    { f.inited = true; return nil }
-func (f *fakeStore) Load() (memory.Snapshot, error) { return f.snap, nil }
+func (f *fakeStore) Load() (memory.Snapshot, error) { f.loads++; return f.snap, nil }
 func (f *fakeStore) Add(n domain.ColdNote, _ string) error {
 	f.added = append(f.added, n)
 	f.snap.Notes = append(f.snap.Notes, n)
@@ -443,7 +444,7 @@ func TestService_OverviewShowsRecentDecisions(t *testing.T) {
 		_ = st.AppendDecision(strings.Repeat("р", i+1))
 	}
 	ov, err := memory.New(st, memory.Limits{}).Overview()
-	if err != nil || len(ov.Decisions) != 20 || len(ov.Decisions[19]) != 30 {
+	if err != nil || len(ov.Decisions) != 20 || utf8.RuneCountInString(ov.Decisions[19]) != 30 {
 		t.Fatalf("decisions=%d err=%v", len(ov.Decisions), err)
 	}
 }
