@@ -1,0 +1,39 @@
+package main
+
+import (
+	"os"
+	"strings"
+	"testing"
+)
+
+// Карточка доступа подписывает логин отдельной строкой «логин» (владелец 09.11: «не очень
+// понятно, что из этого логин») и дает «Изменить»; форма правки не меняет продукт, среду, логин.
+func TestAccessCard_labelsTheLoginAndOffersEdit(t *testing.T) {
+	js, err := os.ReadFile("frontend/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(js)
+	start := strings.Index(src, "function acCardHTML(")
+	end := strings.Index(src, "const acProducts")
+	card := src[start:end]
+	for _, want := range []string{`<dt>логин</dt>`, `data-ac="edit"`} {
+		if !strings.Contains(card, want) {
+			t.Errorf("в карточке нет %s", want)
+		}
+	}
+	if !strings.Contains(src, "function acEditHTML(") || !strings.Contains(src, `AccessUpdate(`) {
+		t.Error("нет формы правки или вызова AccessUpdate")
+	}
+	i := strings.Index(src, "function acEditHTML(")
+	if i < 0 {
+		t.Fatal("нет acEditHTML")
+	}
+	j := strings.Index(src[i:], "\n}\n")
+	edit := src[i : i+j]
+	for _, name := range []string{`name="product"`, `"product"`, `"login"`, `"env"`} {
+		if strings.Contains(edit, name) {
+			t.Errorf("форма правки дает менять %s", name)
+		}
+	}
+}
