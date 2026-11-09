@@ -222,7 +222,14 @@ func TestPromotePending_movesToColdWithIndexLine(t *testing.T) {
 		t.Errorf("в очереди осталось: %v", left)
 	}
 	// Холодная запись с тем же именем уже есть: очередь ее не затирает.
-	_ = st.AddPending(agentNote(t, "p1"), "второй")
+	// AddPending такое имя уже не принимает (занято в cold/), поэтому файл кладем руками.
+	dup := "---\nname: p1\ntopic: стиль\norigin: agent\ndescription: дубль\n---\n\nвторой\n"
+	if err := os.WriteFile(filepath.Join(dir, "pending", "p1.md"), []byte(dup), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.AddPending(agentNote(t, "p1"), "x"); !errors.Is(err, domain.ErrNoteExists) {
+		t.Errorf("AddPending с именем из cold/: %v", err)
+	}
 	if err := st.PromotePending("p1"); !errors.Is(err, domain.ErrNoteExists) {
 		t.Errorf("затирание холодной записи: %v", err)
 	}
