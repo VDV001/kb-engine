@@ -112,32 +112,35 @@ func forwardBrowser(w http.ResponseWriter, r *http.Request, up browserUpstream, 
 // shapeBrowserResponse lets through only what the page needs: кадр как image/jpeg,
 // у ввода без тела, остальное текстом. Что сервер сказал о типе, окно не берет на веру.
 func shapeBrowserResponse(resp *http.Response, name string) error {
-	if resp.StatusCode >= 300 && resp.StatusCode < 400 {
+	code := resp.StatusCode
+	if code >= 300 && code < 400 {
 		return errBrowserRedirect // токен не уходит по чужому Location
 	}
-	keep := http.Header{}
-	if name == "frame" && resp.StatusCode == http.StatusOK {
-		for _, h := range browserFrameHeaders {
-			if v := resp.Header.Values(h); len(v) > 0 {
-				keep[http.CanonicalHeaderKey(h)] = v
-			}
-		}
+	keep := http.Header{"X-Content-Type-Options": {"nosniff"}}
+	switch {
+	case name == "frame" && code == http.StatusOK:
+		copyHeaders(keep, resp.Header, browserFrameHeaders)
 		keep.Set("Content-Type", "image/jpeg")
-	} else if resp.StatusCode == http.StatusNoContent || (name == "input" && resp.StatusCode/100 == 2) {
-		for _, h := range browserFrameHeaders {
-			if v := resp.Header.Values(h); len(v) > 0 && name == "frame" {
-				keep[http.CanonicalHeaderKey(h)] = v
-			}
+	case code == http.StatusNoContent || (name == "input" && code/100 == 2):
+		if name == "frame" {
+			copyHeaders(keep, resp.Header, browserFrameHeaders) // эпоха нужна и пустому ответу
 		}
 		resp.StatusCode, resp.Status = http.StatusNoContent, "204 No Content"
 		_ = resp.Body.Close()
 		resp.Body, resp.ContentLength = http.NoBody, 0
-	} else {
+	default:
 		keep.Set("Content-Type", "text/plain; charset=utf-8")
 	}
-	keep.Set("X-Content-Type-Options", "nosniff")
 	resp.Header = keep
 	return nil
+}
+
+func copyHeaders(dst, src http.Header, names []string) {
+	for _, h := range names {
+		if v := src.Values(h); len(v) > 0 {
+			dst[http.CanonicalHeaderKey(h)] = v
+		}
+	}
 }
 
 func plain(w http.ResponseWriter, code int, msg string) {
