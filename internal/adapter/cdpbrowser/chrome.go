@@ -242,7 +242,7 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	_ = json.Unmarshal(r, &ts)
 	// Работаем со своей страницей, а не с первой попавшейся: Brave при запуске держит две
 	// пустые страницы, одна из них скрыта и кадров не рисует (белый экран во вкладке).
-	r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": "about:blank"})
+	r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": StartURL()}) // сразу со стартовой страницей: пустая about:blank дозагрузилась бы позже и перекрыла ее
 	if err != nil {
 		return err // своей страницы нет: чужие не трогаем, иначе браузер остался бы без окон
 	}
@@ -270,10 +270,40 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	if err := c.prime(ctx, sess); err != nil {
 		return err
 	}
+	if err := c.openStart(ctx, sess); err != nil {
+		return err
+	}
 	// Окна, которые открывает сама страница (target=_blank, вход через Google), и
 	// закрытие окон приходят событиями Target.*; страницы уже известны выше.
 	_, err = c.call(ctx, "", "Target.setDiscoverTargets", map[string]any{"discover": true})
 	return err
+}
+
+// openStart makes sure the page shows the start page instead of a white screen (сервер сам идет
+// на data:-адрес, человеку он закрыт). Brave сразу после запуска молча теряет загрузки и переходы,
+// поэтому адрес проверяется, и переход повторяется. Не открылась совсем — не ошибка: пустая
+// страница рабочая.
+//
+// ponytail: до 10 попыток по 250 мс; потолок — браузер, который не принимает переход дольше
+// двух с половиной секунд, остается на пустой странице; путь — ждать событие готовности браузера.
+func (c *Chrome) openStart(ctx context.Context, sess string) error {
+	for range 10 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+		if err := c.syncFrameTree(ctx, sess); err != nil {
+			return err
+		}
+		if c.currentURL() == StartURL() {
+			return nil
+		}
+		if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c *Chrome) attachTo(ctx context.Context, target string) (string, error) {
@@ -376,7 +406,23 @@ func (c *Chrome) startScreencast(ctx context.Context, sess string) error {
 	c.mu.Lock()
 	w, h := c.w, c.h
 	c.mu.Unlock()
-	_, err := c.call(ctx, sess, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": w, "maxHeight": h, "everyNthFrame": 1})
+	// Сразу после перехода на новую страницу браузер на миг отвечает «Not attached to an
+	// active page»: пробуем заново, а не оставляем вкладку без кадров.
+	//
+	// ponytail: до 20 попыток по 100 мс; потолок — страница, которая не подключается
+	// дольше двух секунд, получит ошибку; путь — ждать событие готовности страницы.
+	var err error
+	for range 20 {
+		_, err = c.call(ctx, sess, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": w, "maxHeight": h, "everyNthFrame": 1})
+		if err == nil || !strings.Contains(err.Error(), "Not attached to an active page") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 	return err
 }
 
@@ -623,7 +669,7 @@ func (c *Chrome) onFrame(sess string, p json.RawMessage) {
 
 // publishLocked makes jpg the current frame and wakes the viewers; c.mu взят.
 func (c *Chrome) publishLocked(jpg []byte) {
-	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: c.url}
+	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: displayURL(c.url)}
 	close(c.change)
 	c.change = make(chan struct{})
 }
@@ -676,9 +722,16 @@ func (c *Chrome) snapshot(ctx context.Context) {
 
 func (c *Chrome) onTargetCreated(p json.RawMessage) {
 	var t struct {
-		TargetInfo struct{ TargetID, Type string } `json:"targetInfo"`
+		TargetInfo struct {
+			TargetID, Type, OpenerID string
+		} `json:"targetInfo"`
 	}
 	if json.Unmarshal(p, &t) != nil || t.TargetInfo.Type != "page" {
+		return
+	}
+	// Окном экрана становится только то, что открыла страница (у него есть opener). Страницу без
+	// opener браузер открыл сам (Brave вместо закрытых нами): она экраном не бывает.
+	if t.TargetInfo.OpenerID == "" {
 		return
 	}
 	id := t.TargetInfo.TargetID

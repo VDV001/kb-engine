@@ -20,16 +20,23 @@ type fakeCDP struct {
 	calls []string // «метод» или «метод:целевая страница»
 	pages []string // страницы, которые браузер показывает в getTargets
 
-	failCreate bool // браузер отказывает в создании страницы
-	castFrame  bool // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
-	shots      int  // сколько раз просили скриншот
+	failCreate    bool           // браузер отказывает в создании страницы
+	castFrame     bool           // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
+	shots         int            // сколько раз просили скриншот
+	navs          []string       // адреса Page.navigate
+	castFails     int            // сколько раз Page.startScreencast отвечает «Not attached to an active page»
+	navDrops      int            // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
+	pageURL       string         // адрес, который браузер считает адресом страницы
+	created       []string       // адреса Target.createTarget
+	replyW        *io.PipeWriter // канал ответов и событий браузера
+	blankOnCreate bool           // созданная страница остается пустой (загрузка потеряна)
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 	t.Helper()
 	cmdR, cmdW := io.Pipe()
 	replyR, replyW := io.Pipe()
-	f := &fakeCDP{pages: pages}
+	f := &fakeCDP{pages: pages, replyW: replyW}
 	c := newChrome(nil, cmdW)
 	go c.readLoop(replyR)
 	go func() {
@@ -50,6 +57,7 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 			}
 			var p struct {
 				TargetID string `json:"targetId"`
+				URL      string `json:"url"`
 			}
 			_ = json.Unmarshal(m.Params, &p)
 			f.mu.Lock()
@@ -58,6 +66,14 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				call += ":" + p.TargetID
 			}
 			f.calls = append(f.calls, call)
+			if m.Method == "Page.navigate" {
+				f.navs = append(f.navs, p.URL)
+				if f.navDrops > 0 {
+					f.navDrops--
+				} else {
+					f.pageURL = p.URL
+				}
+			}
 			var res string
 			switch m.Method {
 			case "Target.getTargets":
@@ -67,6 +83,10 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				}
 				res = `{"targetInfos":[` + strings.Join(infos, ",") + `]}`
 			case "Target.createTarget":
+				f.created = append(f.created, p.URL)
+				if !f.blankOnCreate {
+					f.pageURL = p.URL
+				}
 				res = `{"targetId":"ours"}`
 			case "Target.attachToTarget":
 				res = fmt.Sprintf(`{"sessionId":"S-%s"}`, p.TargetID)
@@ -74,15 +94,26 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				f.shots++
 				res = `{"data":"SlBHMQ=="}` // base64("JPG1")
 			case "Page.getFrameTree":
-				res = `{"frameTree":{"frame":{"id":"F","url":"about:blank"}}}`
+				u := f.pageURL
+				if u == "" {
+					u = "about:blank"
+				}
+				res = fmt.Sprintf(`{"frameTree":{"frame":{"id":"F","url":%q}}}`, u)
 			default:
 				res = `{}`
 			}
 			failed := f.failCreate && m.Method == "Target.createTarget"
+			notAttached := m.Method == "Page.startScreencast" && f.castFails > 0
+			if notAttached {
+				f.castFails--
+			}
 			f.mu.Unlock()
 			reply := map[string]any{"id": m.ID, "sessionId": m.SessionID, "result": json.RawMessage(res)}
 			if failed {
 				reply = map[string]any{"id": m.ID, "sessionId": m.SessionID, "error": map[string]any{"code": -32000, "message": "нет окон"}}
+			}
+			if notAttached {
+				reply = map[string]any{"id": m.ID, "sessionId": m.SessionID, "error": map[string]any{"code": -32000, "message": "Not attached to an active page"}}
 			}
 			out, _ := json.Marshal(reply)
 			if _, err := replyW.Write(append(out, 0)); err != nil {
@@ -221,5 +252,133 @@ func TestAttachEnablesFocusEmulation(t *testing.T) {
 	}
 	if !slices.Contains(f.seen(), "Emulation.setFocusEmulationEnabled") {
 		t.Fatalf("фокус страницы не включен; вызовы: %v", f.seen())
+	}
+}
+
+func (f *fakeCDP) navigations() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.navs)
+}
+
+// После перехода на новую страницу браузер на миг отвечает «Not attached to an active
+// page»: картинку включаем заново, а не падаем (вкладка иначе остается без кадров).
+func TestWatchRetriesWhileNotAttached(t *testing.T) {
+	c, f := startFakeCDP(t)
+	f.castFails = 3
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.watch(ctx); err != nil {
+		t.Fatalf("watch = %v: временный отказ должен повторяться", err)
+	}
+	n := 0
+	for _, call := range f.seen() {
+		if call == "Page.startScreencast" {
+			n++
+		}
+	}
+	if n != 4 {
+		t.Fatalf("startScreencast вызван %d раз, want 4 (три отказа и успех)", n)
+	}
+}
+
+// Настоящая ошибка не повторяется бесконечно.
+func TestWatchGivesUpOnPersistentFailure(t *testing.T) {
+	c, f := startFakeCDP(t)
+	f.castFails = 1000
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.watch(ctx); err == nil {
+		t.Fatal("watch должен вернуть ошибку, когда страница так и не подключилась")
+	}
+}
+
+// Brave сразу после запуска молча теряет первые переходы: страница остается пустой.
+// Сервер проверяет адрес и повторяет переход, пока стартовая страница не откроется.
+func TestAttachRetriesStartPageWhenNavigationIsLost(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	f.blankOnCreate = true // загрузка при создании потеряна
+	f.navDrops = 2
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.currentURL(); got != StartURL() {
+		t.Fatalf("адрес страницы = %.40q…, want стартовая страница", got)
+	}
+	if n := len(f.navigations()); n != 3 {
+		t.Fatalf("переходов %d, want 3 (два потеряны и один принят)", n)
+	}
+}
+
+// Не открылась совсем: это не ошибка запуска (пустая страница рабочая), и повторов не бесконечно много.
+func TestAttachGivesUpStartPageQuietly(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	f.blankOnCreate = true
+	f.navDrops = 1000
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatalf("attach = %v: пустая страница вместо стартовой — не ошибка", err)
+	}
+	if n := len(f.navigations()); n < 2 || n > 12 {
+		t.Fatalf("переходов %d, want от 2 до 12", n)
+	}
+}
+
+// emit sends a browser event (without a session: это события самого браузера).
+func (f *fakeCDP) emit(method string, params any) {
+	ev, _ := json.Marshal(map[string]any{"method": method, "params": params})
+	_, _ = f.replyW.Write(append(ev, 0))
+}
+
+func waitSession(c *Chrome, want string, d time.Duration) bool {
+	for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if c.session() == want {
+			return true
+		}
+	}
+	return false
+}
+
+// Когда закрываются прежние страницы, Brave сам открывает вместо них пустую вкладку. Это
+// не окно, которое открыла страница: экраном остается своя страница, а не пустая вкладка.
+func TestIgnoresPagesTheBrowserOpensOnItsOwn(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	f.emit("Target.targetCreated", map[string]any{"targetInfo": map[string]any{"targetId": "replacement", "type": "page"}})
+	if waitSession(c, "S-replacement", 400*time.Millisecond) {
+		t.Fatal("экраном стала пустая вкладка, которую браузер открыл сам")
+	}
+	if slices.Contains(f.seen(), "Target.attachToTarget:replacement") {
+		t.Fatal("сервер подключился к вкладке, которую браузер открыл сам")
+	}
+	if got := c.session(); got != "S-ours" {
+		t.Fatalf("сессия = %q, want S-ours", got)
+	}
+}
+
+// Окно, которое открыла страница (target=_blank, вход через Google), становится экраном.
+func TestAdoptsPagesOpenedByThePage(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	f.emit("Target.targetCreated", map[string]any{"targetInfo": map[string]any{"targetId": "popup", "type": "page", "openerId": "ours"}})
+	if !waitSession(c, "S-popup", 3*time.Second) {
+		t.Fatalf("окно, открытое страницей, не стало экраном: сессия %q", c.session())
 	}
 }
