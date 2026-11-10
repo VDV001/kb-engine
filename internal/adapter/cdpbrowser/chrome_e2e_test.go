@@ -200,7 +200,7 @@ func TestChromePopupsAndIdleScreencast(t *testing.T) {
 	urlIs := func(want string) {
 		t.Helper()
 		seq := first.Seq
-		for i := 0; i < 60; i++ {
+		for range 60 {
 			f, err := c.Next(ctx, seq)
 			if err != nil {
 				t.Fatal(err)

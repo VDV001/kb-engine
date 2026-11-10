@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -683,9 +684,9 @@ func (c *Chrome) onTargetDestroyed(p json.RawMessage) {
 	wasCurrent := gone.sess != "" && gone.sess == c.sess
 	var back page
 	if wasCurrent {
-		for i := len(c.pages) - 1; i >= 0; i-- {
-			if c.pages[i].sess != "" {
-				back = c.pages[i]
+		for _, pg := range slices.Backward(c.pages) {
+			if pg.sess != "" {
+				back = pg
 				break
 			}
 		}
@@ -773,22 +774,7 @@ var namedKeys = map[string]struct {
 func (c *Chrome) Input(ctx context.Context, in Input) error {
 	switch in.T {
 	case "mouse":
-		typ := map[string]string{"pressed": "mousePressed", "released": "mouseReleased", "moved": "mouseMoved"}[in.Type]
-		c.mu.Lock()
-		if in.Type != "moved" {
-			c.down = in.Type == "pressed"
-		}
-		down := c.down
-		c.mu.Unlock()
-		p := map[string]any{"type": typ, "x": in.X, "y": in.Y, "button": "none", "modifiers": in.Mods}
-		if in.Type != "moved" {
-			// Двойной щелчок выделяет слово, тройной строку: число щелчков считает окно.
-			p["button"], p["clickCount"] = "left", max(in.Count, 1)
-		} else if down {
-			p["button"], p["buttons"] = "left", 1
-		}
-		_, err := c.call(ctx, c.session(), "Input.dispatchMouseEvent", p)
-		return err
+		return c.inputMouse(ctx, in)
 	case "wheel":
 		_, err := c.call(ctx, c.session(), "Input.dispatchMouseEvent", map[string]any{"type": "mouseWheel", "x": in.X, "y": in.Y, "deltaX": in.DX, "deltaY": in.DY})
 		return err
@@ -796,28 +782,51 @@ func (c *Chrome) Input(ctx context.Context, in Input) error {
 		_, err := c.call(ctx, c.session(), "Input.insertText", map[string]any{"text": in.Text})
 		return err
 	case "key":
-		k := namedKeys[in.Key]
-		key, mods := in.Key, in.Mods
-		down := map[string]any{"type": "rawKeyDown", "key": key, "code": k.code, "windowsVirtualKeyCode": k.vk}
-		if in.Key == "SelectAll" { // Cmd+A и Ctrl+A окна: команда редактора, а не буква
-			key, mods = "a", modMeta
-			down["key"], down["commands"] = key, []string{"selectAll"}
-		}
-		down["modifiers"] = mods
-		if k.text != "" {
-			down["type"], down["text"] = "keyDown", k.text
-		}
-		if _, err := c.call(ctx, c.session(), "Input.dispatchKeyEvent", down); err != nil {
-			return err
-		}
-		_, err := c.call(ctx, c.session(), "Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": key, "code": k.code, "windowsVirtualKeyCode": k.vk, "modifiers": mods})
-		return err
+		return c.inputKey(ctx, in)
 	case "nav":
 		return c.navigate(ctx, in.Text)
 	case "resize":
 		return c.resize(ctx, int(in.X), int(in.Y))
 	}
 	return fmt.Errorf("событие %q не поддержано", in.T)
+}
+
+func (c *Chrome) inputMouse(ctx context.Context, in Input) error {
+	typ := map[string]string{"pressed": "mousePressed", "released": "mouseReleased", "moved": "mouseMoved"}[in.Type]
+	c.mu.Lock()
+	if in.Type != "moved" {
+		c.down = in.Type == "pressed"
+	}
+	down := c.down
+	c.mu.Unlock()
+	p := map[string]any{"type": typ, "x": in.X, "y": in.Y, "button": "none", "modifiers": in.Mods}
+	if in.Type != "moved" {
+		// Двойной щелчок выделяет слово, тройной строку: число щелчков считает окно.
+		p["button"], p["clickCount"] = "left", max(in.Count, 1)
+	} else if down {
+		p["button"], p["buttons"] = "left", 1
+	}
+	_, err := c.call(ctx, c.session(), "Input.dispatchMouseEvent", p)
+	return err
+}
+
+func (c *Chrome) inputKey(ctx context.Context, in Input) error {
+	k := namedKeys[in.Key]
+	key, mods := in.Key, in.Mods
+	down := map[string]any{"type": "rawKeyDown", "key": key, "code": k.code, "windowsVirtualKeyCode": k.vk}
+	if in.Key == "SelectAll" { // Cmd+A и Ctrl+A окна: команда редактора, а не буква
+		key, mods = "a", modMeta
+		down["key"], down["commands"] = key, []string{"selectAll"}
+	}
+	down["modifiers"] = mods
+	if k.text != "" {
+		down["type"], down["text"] = "keyDown", k.text
+	}
+	if _, err := c.call(ctx, c.session(), "Input.dispatchKeyEvent", down); err != nil {
+		return err
+	}
+	_, err := c.call(ctx, c.session(), "Input.dispatchKeyEvent", map[string]any{"type": "keyUp", "key": key, "code": k.code, "windowsVirtualKeyCode": k.vk, "modifiers": mods})
+	return err
 }
 
 func (c *Chrome) navigate(ctx context.Context, what string) error {

@@ -133,8 +133,8 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 // validate returns why the event is refused; пусто — можно передавать браузеру.
 func validate(in Input) string {
 	inside := in.X >= 0 && in.X <= MaxWidth && in.Y >= 0 && in.Y <= MaxHeight
-	if in.Mods < 0 || in.Mods > modMask || in.Count < 0 || in.Count > maxClick {
-		return "модификаторы или число щелчков вне пределов"
+	if why := limitsRefusal(in); why != "" {
+		return why
 	}
 	switch in.T {
 	case "resize":
@@ -154,6 +154,13 @@ func validate(in Input) string {
 		return navRefusal(in.Text)
 	}
 	return "неизвестный вид события"
+}
+
+func limitsRefusal(in Input) string {
+	if in.Mods < 0 || in.Mods > modMask || in.Count < 0 || in.Count > maxClick {
+		return "модификаторы или число щелчков вне пределов"
+	}
+	return ""
 }
 
 func resizeRefusal(in Input) string {
