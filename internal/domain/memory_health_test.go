@@ -324,3 +324,36 @@ func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
 		t.Fatalf("очередь режим не меняет: mode=%s total=%d, want ok 75", h.Mode, h.Total)
 	}
 }
+
+// Границы очереди: без штрафа до QueueSoftCap, дальше два балла за каждое, на QueueHardCap
+// штраф уже выбран целиком, а режим остаётся «доверяю».
+func TestAssessHealth_queueBoundaries(t *testing.T) {
+	today := day("2026-11-10")
+	tests := []struct {
+		pending    int
+		queueScore float64
+		total      int
+	}{
+		{QueueSoftCap, 25, 100},
+		{QueueSoftCap + 1, 23, 98},
+		{QueueSoftCap + 2, 21, 96},
+		{QueueHardCap - 1, 0, 75},
+		{QueueHardCap, 0, 75},
+	}
+	for _, tt := range tests {
+		var q []PendingItem
+		for range tt.pending {
+			q = append(q, PendingItem{Name: "n", Since: today})
+		}
+		h := AssessHealth(HealthInput{Today: today, Queue: q, SealOK: true})
+		var got float64
+		for _, p := range h.Parts {
+			if p.ID == "queue" {
+				got = p.Value
+			}
+		}
+		if got != tt.queueScore || h.Total != tt.total || h.Mode != TrustOK {
+			t.Errorf("%d предложений: queue=%v total=%d mode=%s, want %v %d ok", tt.pending, got, h.Total, h.Mode, tt.queueScore, tt.total)
+		}
+	}
+}
