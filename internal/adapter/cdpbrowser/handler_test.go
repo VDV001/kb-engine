@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -69,7 +70,7 @@ func TestToken(t *testing.T) {
 		{"тот же префикс", testToken[:31], http.StatusUnauthorized},
 		{"верный", testToken, http.StatusOK},
 	}
-	for _, p := range []string{"/", "/frame?after=0", "/input"} {
+	for _, p := range []string{"/frame?after=0", "/input"} {
 		for _, tc := range tests {
 			t.Run(p+" "+tc.name, func(t *testing.T) {
 				method := http.MethodGet
@@ -94,34 +95,34 @@ func TestToken(t *testing.T) {
 func TestTokenEmptyConfigRefuses(t *testing.T) {
 	// Пустой токен в конфиге не «без защиты»: обработчик отказывает всем.
 	h := Handler(&fakeScreen{}, Config{Width: 1280, Height: 800})
-	if got := do(h, http.MethodGet, "/", "", "").Code; got != http.StatusUnauthorized {
+	if got := do(h, http.MethodGet, "/frame?after=0", "", "").Code; got != http.StatusUnauthorized {
 		t.Fatalf("без токена в конфиге: %d, want 401", got)
 	}
 }
 
-func TestViewerPage(t *testing.T) {
-	w := do(newTestHandler(&fakeScreen{}), http.MethodGet, "/", "", testToken)
-	if w.Code != http.StatusOK || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
-		t.Fatalf("страница: %d %q", w.Code, w.Header().Get("Content-Type"))
-	}
-	body := w.Body.String()
-	// Относительные адреса: окно открывает страницу под /browser/, и абсолютный
-	// /frame ушел бы мимо прокси.
-	if strings.Contains(body, `"/frame`) || strings.Contains(body, `'/frame`) || strings.Contains(body, `"/input`) {
-		t.Fatal("страница ходит по абсолютным адресам")
-	}
-	if !strings.Contains(body, "1280") || !strings.Contains(body, "800") {
-		t.Fatal("размер экрана не подставлен в страницу")
+// Страницу-экран отдает само окно, а не сервер: HTML от того, кто занял порт,
+// выполнился бы в источнике окна (находка security-ревью #526, F1). Поэтому
+// у сервера страницы нет вовсе.
+func TestServerHasNoPage(t *testing.T) {
+	h := newTestHandler(&fakeScreen{})
+	for _, p := range []string{"/", "/index.html", "/viewer.html"} {
+		if got := do(h, http.MethodGet, p, "", testToken).Code; got != http.StatusNotFound {
+			t.Fatalf("%s: %d, want 404", p, got)
+		}
 	}
 }
 
 func TestFrame(t *testing.T) {
-	s := &fakeScreen{frames: []Frame{{Seq: 3, JPEG: []byte("\xff\xd8jpeg")}}}
+	s := &fakeScreen{frames: []Frame{{Seq: 3, JPEG: []byte("\xff\xd8jpeg"), URL: "https://example.com/путь?a=1&b=2"}}}
 	h := newTestHandler(s)
 
 	w := do(h, http.MethodGet, "/frame?after=0", "", testToken)
 	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/jpeg" || w.Header().Get("X-Frame-Seq") != "3" || w.Body.String() != "\xff\xd8jpeg" {
 		t.Fatalf("кадр: %d %q seq=%q body=%q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("X-Frame-Seq"), w.Body.String())
+	}
+	// Адрес страницы идет заголовком, закодированным: человек видит, где он на самом деле.
+	if got, err := url.QueryUnescape(w.Header().Get("X-Frame-URL")); err != nil || got != "https://example.com/путь?a=1&b=2" {
+		t.Fatalf("X-Frame-URL = %q (%v)", w.Header().Get("X-Frame-URL"), err)
 	}
 	if w.Header().Get("Cache-Control") != "no-store" {
 		t.Fatal("кадр кэшируется: в кэше осел бы кусок страницы")
@@ -134,6 +135,21 @@ func TestFrame(t *testing.T) {
 		if got := do(h, http.MethodGet, bad, "", testToken).Code; got != http.StatusBadRequest {
 			t.Fatalf("%s: %d, want 400", bad, got)
 		}
+	}
+}
+
+// Эпоха кадров: после перезапуска сервера номера идут с единицы, и окно со старым
+// «after=4200» ждало бы вечно; по смене эпохи оно начинает с нуля.
+func TestFrameEpoch(t *testing.T) {
+	s := &fakeScreen{frames: []Frame{{Seq: 1, JPEG: []byte("\xff\xd8a")}}}
+	h := newTestHandler(s)
+	ok := do(h, http.MethodGet, "/frame?after=0", "", testToken).Header().Get("X-Frame-Epoch")
+	none := do(h, http.MethodGet, "/frame?after=1", "", testToken).Header().Get("X-Frame-Epoch")
+	if ok == "" || ok != none {
+		t.Fatalf("эпоха у кадра %q и у 204 %q: должна быть и совпадать", ok, none)
+	}
+	if other := do(newTestHandler(s), http.MethodGet, "/frame?after=0", "", testToken).Header().Get("X-Frame-Epoch"); other == ok {
+		t.Fatal("у второго запуска та же эпоха")
 	}
 }
 
