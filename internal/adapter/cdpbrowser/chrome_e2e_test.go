@@ -18,7 +18,7 @@ import (
 // зеленый «пропущен» ничего не доказывает — поэтому условие названо вслух).
 func TestChromeEndToEnd(t *testing.T) {
 	if os.Getenv("KB_BROWSER_E2E") != "1" {
-		t.Skip("нужен установленный Chrome: KB_BROWSER_E2E=1 go test ./internal/adapter/cdpbrowser -run EndToEnd")
+		t.Skip("нужен установленный Chrome: KB_BROWSER_E2E=1 [KB_BROWSER_PATH=/путь/к/браузеру] go test ./internal/adapter/cdpbrowser -run EndToEnd")
 	}
 	var mu sync.Mutex
 	var typed string
@@ -59,7 +59,7 @@ func TestChromeEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = os.RemoveAll(profile) }()
-	c, err := Launch(ctx, Options{Profile: profile, Width: 1280, Height: 800, Headless: true})
+	c, err := Launch(ctx, Options{Path: os.Getenv("KB_BROWSER_PATH"), Profile: profile, Width: 1280, Height: 800, Headless: true})
 	if err != nil {
 		t.Fatal(err)
 	}
