@@ -113,3 +113,17 @@ func TestChatCheck_MemoryServer(t *testing.T) {
 		}
 	}
 }
+
+func TestChat_ContextWindow(t *testing.T) {
+	base := desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "m"}
+	for _, tt := range []struct {
+		n  int
+		ok bool
+	}{{0, true}, {4096, true}, {200000, true}, {-1, false}, {500, false}, {5000000, false}} {
+		c := base
+		c.ContextWindow = tt.n
+		if err := c.Check(); (err == nil) != tt.ok || (err != nil && !errors.Is(err, desktopconfig.ErrChatSettings)) {
+			t.Errorf("ContextWindow %d: err = %v, want ok=%v", tt.n, err, tt.ok)
+		}
+	}
+}

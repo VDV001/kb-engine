@@ -124,15 +124,11 @@ func (d *accessDesk) Add(in accessIn, password string) error {
 	if !d.isOpen() {
 		return errVaultClosed
 	}
-	dto := domain.CredentialDTO{Product: in.Product, Env: domain.Env(in.Env), URL: in.URL, Host: in.Host, Login: in.Login,
-		Role: in.Role, Rights: in.Rights, IssuedBy: in.IssuedBy, Note: in.Note}
-	if in.IssuedAt != "" {
-		at, err := time.Parse(time.DateOnly, in.IssuedAt)
-		if err != nil {
-			return fmt.Errorf("дата выдачи %q — нужна ГГГГ-ММ-ДД", in.IssuedAt)
-		}
-		dto.IssuedAt = at
+	dto, err := in.details()
+	if err != nil {
+		return err
 	}
+	dto.Product, dto.Env, dto.Login = in.Product, domain.Env(in.Env), in.Login
 	c, err := domain.NewCredential(dto)
 	if err != nil {
 		return err
@@ -142,6 +138,58 @@ func (d *accessDesk) Add(in accessIn, password string) error {
 		return err
 	}
 	return d.svc.Add(c, pw)
+}
+
+// details turns what the window sent into card details; дата — ГГГГ-ММ-ДД или пусто.
+func (in accessIn) details() (domain.CredentialDTO, error) {
+	dto := domain.CredentialDTO{URL: in.URL, Host: in.Host, Role: in.Role, Rights: in.Rights, IssuedBy: in.IssuedBy, Note: in.Note}
+	if in.IssuedAt != "" {
+		at, err := time.Parse(time.DateOnly, in.IssuedAt)
+		if err != nil {
+			return dto, fmt.Errorf("дата выдачи %q — нужна ГГГГ-ММ-ДД", in.IssuedAt)
+		}
+		dto.IssuedAt = at
+	}
+	return dto, nil
+}
+
+// Update changes an access after Touch ID — только в открытом хранилище. Продукт,
+// среда и логин можно исправить (адрес карточки и пароль в Связке переедут сами);
+// пароль необязателен: пусто — прежний остается.
+func (d *accessDesk) Update(id string, in accessIn, password string) error {
+	if !d.isOpen() {
+		return errVaultClosed
+	}
+	dto, err := in.details()
+	if err != nil {
+		return err
+	}
+	dto.Product, dto.Env, dto.Login = in.Product, domain.Env(in.Env), in.Login // пустые — не менять
+	var pw *domain.Password
+	if strings.TrimSpace(password) != "" {
+		p, err := domain.NewPassword(password)
+		if err != nil {
+			return err
+		}
+		pw = &p
+	}
+	list, err := d.svc.Find(id)
+	if err != nil {
+		return err
+	}
+	login := id
+	for _, c := range list {
+		if c.ID() == id {
+			login = c.Login()
+		}
+	}
+	if err := d.check("изменить доступ «" + login + "»"); err != nil {
+		return err
+	}
+	if !d.isOpen() { // закрылось по таймеру, пока висел диалог Touch ID
+		return errVaultClosed
+	}
+	return d.svc.Update(id, dto, pw)
 }
 
 func (d *accessDesk) check(reason string) error {

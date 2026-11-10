@@ -13,7 +13,7 @@ import (
 // вкладка, а не источник.
 func TestSetModules_SavesWithoutReindex(t *testing.T) {
 	s, applied, _ := newSourcesSettings(t)
-	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleChat, Enabled: false}, {ID: desktopconfig.ModuleFinances, Enabled: false}, {ID: desktopconfig.ModuleStats, Enabled: false}, {ID: desktopconfig.ModuleAccess, Enabled: false}, {ID: desktopconfig.ModuleHelp, Enabled: false}}) {
+	if got := s.Modules(); !slices.Equal(got, []desktopconfig.Module{{ID: desktopconfig.ModuleChat, Enabled: false}, {ID: desktopconfig.ModuleFinances, Enabled: false}, {ID: desktopconfig.ModuleStats, Enabled: false}, {ID: desktopconfig.ModuleAccess, Enabled: false}, {ID: desktopconfig.ModuleMemory, Enabled: false}, {ID: desktopconfig.ModuleBrowser, Enabled: false}, {ID: desktopconfig.ModuleHelp, Enabled: false}}) {
 		t.Fatalf("Modules() по умолчанию = %+v", got)
 	}
 	if err := s.SetModules([]desktopconfig.Module{{ID: desktopconfig.ModuleFinances, Enabled: true}}); err != nil {

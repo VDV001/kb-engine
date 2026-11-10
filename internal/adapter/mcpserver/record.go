@@ -39,6 +39,8 @@ type Config struct {
 	Remote RemoteSearcher
 	// Access нулевой означает «доступов нет»: search_access не объявляется.
 	Access AccessFinder
+	// Memory нулевой означает «памяти нет»: memory_find и memory_propose не объявляются.
+	Memory MemoryAgent
 }
 
 // journal — счетчик вызовов, приделанный к регистрации инструментов.

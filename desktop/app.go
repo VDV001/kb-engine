@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
+	"github.com/daniil/kb-engine/internal/usecase/portrait"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -36,6 +37,7 @@ type App struct {
 	index    *indexer
 	chat     *chatDesk // nil — чата нет (тесты без него)
 	access   *accessDesk
+	memory   *memoryDesk
 	run      func(name string, args ...string) error
 }
 
@@ -142,6 +144,11 @@ func (a *App) AccessAdd(in accessIn, password string) error { return a.access.Ad
 // AccessReveal returns a password after Touch ID.
 func (a *App) AccessReveal(id string) (string, error) { return a.access.Reveal(id) }
 
+// AccessUpdate changes an access card (and its password, if given) after Touch ID.
+func (a *App) AccessUpdate(id string, in accessIn, password string) error {
+	return a.access.Update(id, in, password)
+}
+
 // AccessDelete removes an access after Touch ID.
 func (a *App) AccessDelete(id string) error { return a.access.Delete(id) }
 
@@ -202,6 +209,57 @@ func (a *App) Chat(id string) (chatRecord, error) { return a.chat.Get(id) }
 
 // Ask answers a question: чат, вопрос, приложенное и источники этого чата.
 func (a *App) Ask(r askReq) (chatRecord, error) { return a.chat.Ask(r) }
+
+// MemoryState returns the memory screen: слои, очередь, журнал, нарушения (ADR-0008).
+func (a *App) MemoryState() (memoryView, error) { return a.memory.State() }
+
+// MemoryInit creates the memory skeleton.
+func (a *App) MemoryInit() error { return a.memory.Init() }
+
+// MemoryApprove moves a queued note to "cold" or "hot".
+func (a *App) MemoryApprove(name, to string) error { return a.memory.Approve(name, to) }
+
+// MemoryReject archives a queued note to the journal.
+func (a *App) MemoryReject(name string) error { return a.memory.Reject(name) }
+
+// MemorySetHotLimit saves the ceiling of the hot layer in characters.
+func (a *App) MemorySetHotLimit(n int) error { return a.memory.SetHotLimit(n) }
+
+// MemorySeal accepts the current HOT.md after a change made outside the window and
+// kbengine; по Touch ID.
+func (a *App) MemorySeal() error { return a.memory.Seal() }
+
+// MemoryReview records an inspection of the memory (по Touch ID).
+func (a *App) MemoryReview() error { return a.memory.Review() }
+
+// MemoryConfirmRule records that the person keeps a rule of the hot layer (по Touch ID).
+func (a *App) MemoryConfirmRule(text string) error { return a.memory.ConfirmRule(text) }
+
+// MemoryConfirmRules records that the person keeps several rules (один Touch ID).
+func (a *App) MemoryConfirmRules(texts []string) error { return a.memory.ConfirmRules(texts) }
+
+// MemoryIndex rebuilds the vector index of the cold layer through the local Ollama.
+func (a *App) MemoryIndex() (indexReport, error) { return a.memory.Index() }
+
+// MemoryTopics rebuilds the topic list of the hot layer.
+func (a *App) MemoryTopics() (bool, error) { return a.memory.Topics() }
+
+// MemoryWho rewrites the «Кто я» block of the hot layer from the approved facts of
+// the portrait (папка или kb-сервер — как выбрано в «Чат и модель»).
+func (a *App) MemoryWho() (bool, error) {
+	if a.chat == nil {
+		return false, errNoPortraitDir
+	}
+	return a.memory.Who(portraitText(func() (string, error) {
+		var text string
+		err := a.chat.withPortrait(nil, func(s *portrait.Service) error {
+			p, err := s.Portrait(context.Background())
+			text = portrait.Text(p.Approved())
+			return err
+		})
+		return text, portraitErr(err)
+	}))
+}
 
 // Connections lists the window's accesses (раздел «Подключения»).
 func (a *App) Connections() []connRow { return a.settings.Connections() }
