@@ -55,7 +55,6 @@ func (s *Service) assess(snap Snapshot, pending []PendingNote, lines []string) (
 		Today:        today,
 		Decisions:    events,
 		Rules:        domain.RulesOf(snap.Hot),
-		Notes:        len(snap.Notes),
 		Queue:        queue,
 		SealOK:       st.SealDigest == "" || st.SealDigest == st.HotDigest,
 		StaleVectors: domain.StaleVectors(st),

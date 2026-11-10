@@ -8,6 +8,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/embedhttp"
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/adapter/memorydir"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
 
@@ -66,7 +67,7 @@ func (a memoryAgent) Trust() (mcpserver.MemoryTrust, error) {
 	if err != nil {
 		return mcpserver.MemoryTrust{}, err
 	}
-	t := mcpserver.MemoryTrust{Mode: string(h.Mode)}
+	t := mcpserver.MemoryTrust{Mode: string(h.Mode), QueueFull: h.Pending >= domain.QueueHardCap}
 	for _, r := range h.Rules {
 		if r.Stale {
 			t.StaleRules = append(t.StaleRules, r.Text)

@@ -111,32 +111,77 @@ func TestAssessHealth(t *testing.T) {
 		reason []ReasonKind
 	}{
 		{name: "всё свежее", mut: func(*HealthInput) {}, total: 100, mode: TrustOK},
-		{name: "20 дней без решений: правила остывают вместе с осмотром", mut: func(in *HealthInput) {
+		{name: "20 дней без решений, ждать нечему: баллов не снято, причина названа как сведение", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-21", DecisionConfirmRule, "Правило один"), dec("2026-10-21", DecisionConfirmRule, "Правило два")}
-		}, total: 73, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
-			if h.IdleDays != 20 || part(h, "rhythm").Value != 15 {
+		}, total: 93, mode: TrustOK, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if h.IdleDays != 20 || part(h, "rhythm").Value != 35 {
 				t.Fatalf("idle=%d rhythm=%v", h.IdleDays, part(h, "rhythm").Value)
 			}
 		}},
-		{name: "30 дней без решений — оговорка", mut: func(in *HealthInput) {
+		{name: "30 дней без решений, правила на границе свежести — баллов не снято, причина осмотра названа", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-11", DecisionApproveHot, "Правило один"), dec("2026-10-11", DecisionApproveHot, "Правило два")}
 			in.Rules = []string{"Правило один", "Правило два"}
-		}, total: 60, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}},
-		{name: "обслуживание не сбрасывает давность осмотра", mut: func(in *HealthInput) {
-			in.Decisions = []Decision{dec("2026-10-01", DecisionReview, ""), dec(today, DecisionTopics, ""), dec(today, DecisionIndex, ""), dec(today, DecisionPortrait, "")}
-			in.Rules = nil
-		}, total: 65, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
-			if h.IdleDays != 40 {
-				t.Fatalf("idle = %d, want 40", h.IdleDays)
+		}, total: 90, mode: TrustOK, reason: []ReasonKind{ReasonRhythm}},
+		{name: "правило просрочено на 10 дней — ритм снимает 10, а не дни с последнего осмотра", mut: func(in *HealthInput) {
+			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-01", DecisionConfirmRule, "Правило один")}
+			in.Rules = []string{"Правило один"}
+		}, total: 77, mode: TrustOK, reason: []ReasonKind{ReasonRules, ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 25 {
+				t.Fatalf("rhythm = %v", part(h, "rhythm").Value)
 			}
 		}},
-		{name: "очередь: два предложения, старшее 17 дней", mut: func(in *HealthInput) {
+		{name: "правило на 31-м дне: штраф ритма 1 балл, а не скачок на 31", mut: func(in *HealthInput) {
+			in.Decisions = []Decision{dec(today, DecisionReview, ""), dec("2026-10-10", DecisionConfirmRule, "Правило один")}
+			in.Rules = []string{"Правило один"}
+		}, total: 89, mode: TrustOK, reason: []ReasonKind{ReasonRules}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 34 {
+				t.Fatalf("rhythm = %v, want 34", part(h, "rhythm").Value)
+			}
+		}},
+		{name: "предложение ждёт 20 дней, человек смотрел вчера: ритм считает по возрасту предложения", mut: func(in *HealthInput) {
+			in.Decisions = []Decision{dec("2026-11-09", DecisionReview, ""), dec(today, DecisionConfirmRule, "Правило один"), dec(today, DecisionConfirmRule, "Правило два")}
+			in.Queue = []PendingItem{{Name: "a", Since: day("2026-10-21")}}
+		}, total: 80, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 15 {
+				t.Fatalf("rhythm = %v, want 15", part(h, "rhythm").Value)
+			}
+		}},
+		{name: "правило без отметки при пустом журнале: возраст неизвестен, штрафа ритма нет и память не Bad", mut: func(in *HealthInput) {
+			in.Decisions = nil
+			in.Rules = []string{"Правило без следа"}
+		}, total: 80, mode: TrustOK, reason: []ReasonKind{ReasonRules, ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 35 || part(h, "rules").Value != 0 {
+				t.Fatalf("rhythm=%v rules=%v", part(h, "rhythm").Value, part(h, "rules").Value)
+			}
+		}},
+		{name: "очередь при пустом журнале: ритм по возрасту старшего предложения", mut: func(in *HealthInput) {
+			in.Decisions, in.Rules = nil, nil
 			in.Queue = []PendingItem{{Name: "a", Since: day("2026-10-24")}, {Name: "b", Since: day("2026-11-08")}}
-		}, total: 88, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
-			if p := part(h, "queue"); p.Value != 13 || h.OldestPendingDays != 17 {
-				t.Fatalf("queue=%v oldest=%d", p.Value, h.OldestPendingDays)
+		}, total: 83, mode: TrustOK, reason: []ReasonKind{ReasonQueue, ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 18 {
+				t.Fatalf("rhythm = %v, want 18", part(h, "rhythm").Value)
 			}
 		}},
+		{name: "обслуживание не сбрасывает давность осмотра: правило без отметки датируется днями без суждений", mut: func(in *HealthInput) {
+			in.Decisions = []Decision{dec("2026-10-01", DecisionReview, ""), dec(today, DecisionTopics, ""), dec(today, DecisionIndex, ""), dec(today, DecisionPortrait, "")}
+			in.Rules = []string{"Правило без следа"}
+		}, total: 70, mode: TrustWarn, reason: []ReasonKind{ReasonRules, ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if h.IdleDays != 40 || part(h, "rhythm").Value != 25 {
+				t.Fatalf("idle=%d rhythm=%v, want 40 и 25", h.IdleDays, part(h, "rhythm").Value)
+			}
+		}},
+		{name: "очередь: два предложения, старшее 17 дней — очередь без штрафа, ритм снимает 17", mut: func(in *HealthInput) {
+			in.Queue = []PendingItem{{Name: "a", Since: day("2026-10-24")}, {Name: "b", Since: day("2026-11-08")}}
+		}, total: 83, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
+			if p := part(h, "queue"); p.Value != 25 || h.OldestPendingDays != 17 || part(h, "rhythm").Value != 18 {
+				t.Fatalf("queue=%v oldest=%d rhythm=%v", p.Value, h.OldestPendingDays, part(h, "rhythm").Value)
+			}
+		}},
+		{name: "очередь за мягким потолком: 12 предложений — по два балла за лишнее", mut: func(in *HealthInput) {
+			for range 12 {
+				in.Queue = append(in.Queue, PendingItem{Name: "n", Since: day("2026-11-09")})
+			}
+		}, total: 95, mode: TrustOK, reason: []ReasonKind{ReasonQueue}},
 		{name: "печать нарушена — не доверяю при любом счете", mut: func(in *HealthInput) { in.SealOK = false },
 			total: 88, mode: TrustBad, reason: []ReasonKind{ReasonSeal}},
 		{name: "векторы отстали", mut: func(in *HealthInput) { in.StaleVectors = 3 },
@@ -158,11 +203,10 @@ func TestAssessHealth(t *testing.T) {
 		{name: "правило находится по ключу, а не по точному тексту", mut: func(in *HealthInput) {
 			in.Rules = []string{"  правило ОДИН. ", "Правило два"}
 		}, total: 100, mode: TrustOK},
-		{name: "решений нет, а хранить есть что", mut: func(in *HealthInput) {
+		{name: "решений нет, записи лежат, ждать нечему", mut: func(in *HealthInput) {
 			in.Decisions = nil
-			in.Notes = 2
 			in.Rules = nil
-		}, total: 65, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
+		}, total: 100, mode: TrustOK, check: func(t *testing.T, h Health) {
 			if h.IdleDays != -1 {
 				t.Fatalf("idle = %d, want -1", h.IdleDays)
 			}
@@ -242,5 +286,74 @@ func TestParseDecision_duplicateApprovalDoesNotDateTheRule(t *testing.T) {
 	h := AssessHealth(HealthInput{Today: day("2026-11-10"), Decisions: []Decision{d}, Rules: []string{"Правило один"}, SealOK: true})
 	if h.Rules[0].AgeDays != -1 {
 		t.Fatalf("правило не должно свежеть от дубля: %+v", h.Rules[0])
+	}
+}
+
+// Очередь сама не может опустить режим: максимальный штраф очереди 25 баллов, а остальное здорово.
+// Поэтому пауза предложений идёт по жёсткому потолку очереди, а не по режиму, и счёт с режимом не трогает.
+func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
+	today := day("2026-11-10")
+	queue := func(n int) []PendingItem {
+		var q []PendingItem
+		for range n {
+			q = append(q, PendingItem{Name: "n", Since: today})
+		}
+		return q
+	}
+	tests := []struct {
+		name   string
+		queue  int
+		sealOK bool
+		may    bool
+	}{
+		{"29 предложений ещё идут", QueueHardCap - 1, true, true},
+		{"30 предложений: пауза", QueueHardCap, true, false},
+		{"200 предложений: пауза", 200, true, false},
+		{"очередь пуста, печать нарушена: пауза по режиму", 0, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := AssessHealth(HealthInput{Today: today, Queue: queue(tt.queue), SealOK: tt.sealOK})
+			if h.AgentMayPropose() != tt.may {
+				t.Fatalf("AgentMayPropose = %v, want %v (mode=%s, pending=%d)", h.AgentMayPropose(), tt.may, h.Mode, h.Pending)
+			}
+		})
+	}
+	h := AssessHealth(HealthInput{Today: today, Queue: queue(QueueHardCap), SealOK: true})
+	if h.Mode != TrustOK || h.Total != 75 {
+		t.Fatalf("очередь режим не меняет: mode=%s total=%d, want ok 75", h.Mode, h.Total)
+	}
+}
+
+// Границы очереди: без штрафа до QueueSoftCap, дальше два балла за каждое, на QueueHardCap
+// штраф уже выбран целиком, а режим остаётся «доверяю».
+func TestAssessHealth_queueBoundaries(t *testing.T) {
+	today := day("2026-11-10")
+	tests := []struct {
+		pending    int
+		queueScore float64
+		total      int
+	}{
+		{QueueSoftCap, 25, 100},
+		{QueueSoftCap + 1, 23, 98},
+		{QueueSoftCap + 2, 21, 96},
+		{QueueHardCap - 1, 0, 75},
+		{QueueHardCap, 0, 75},
+	}
+	for _, tt := range tests {
+		var q []PendingItem
+		for range tt.pending {
+			q = append(q, PendingItem{Name: "n", Since: today})
+		}
+		h := AssessHealth(HealthInput{Today: today, Queue: q, SealOK: true})
+		var got float64
+		for _, p := range h.Parts {
+			if p.ID == "queue" {
+				got = p.Value
+			}
+		}
+		if got != tt.queueScore || h.Total != tt.total || h.Mode != TrustOK {
+			t.Errorf("%d предложений: queue=%v total=%d mode=%s, want %v %d ok", tt.pending, got, h.Total, h.Mode, tt.queueScore, tt.total)
+		}
 	}
 }

@@ -195,6 +195,17 @@ func TestServer_memoryProposeIsPausedWhenTrustIsBad(t *testing.T) {
 	}
 }
 
+// Завал в очереди закрывает предложения независимо от режима: при «ok» агент всё равно остановлен
+// и получает причину, которую надо передать владельцу.
+func TestServer_memoryProposeIsPausedWhenTheQueueIsFull(t *testing.T) {
+	m := &stubMemory{trust: mcpserver.MemoryTrust{Mode: "ok", QueueFull: true}}
+	res := callTool(t, connectMemory(t, m), "memory_propose", map[string]any{"name": "a", "topic": "t", "description": "d"})
+	raw, _ := json.Marshal(res)
+	if !res.IsError || len(m.proposed) != 0 || !strings.Contains(string(raw), "очереди") {
+		t.Fatalf("isError=%v proposed=%v %s", res.IsError, m.proposed, raw)
+	}
+}
+
 // Если здоровье не прочиталось, очередь не открывается: непроверенное не считается безопасным.
 func TestServer_memoryProposeFailsClosedWhenTrustIsUnknown(t *testing.T) {
 	m := &stubMemory{trustErr: errors.New("диск")}

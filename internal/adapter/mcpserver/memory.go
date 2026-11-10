@@ -21,6 +21,9 @@ type MemoryHit struct {
 type MemoryTrust struct {
 	Mode       string // "ok", "warn", "bad"
 	StaleRules []string
+	// QueueFull: в очереди одобрения столько предложений, что новые не принимаются; режим от
+	// этого не меняется.
+	QueueFull bool
 }
 
 // MemoryAgent is everything an agent may do with the person's memory (ADR-0008):
@@ -42,11 +45,15 @@ const (
 	trustNoteUnknown = "Здоровье памяти не удалось прочитать."
 	// errProposalsPaused: не errMemoryUnavailable, потому что причину владельцу надо знать.
 	proposalsPausedText = "предложения приостановлены: память не проверена. Скажи владельцу осмотреть её в окне DVK (раздел «Память», «Здоровье»)"
+	queueFullText       = "предложения приостановлены: в очереди слишком много неразобранных. Скажи владельцу разобрать их в окне DVK (раздел «Память», «Очередь»)"
 )
 
 // trustView is the trust block of a response; режим «ok» идет без заметки.
-func trustView(m MemoryAgent) map[string]any {
-	t, err := m.Trust()
+func trustView(m MemoryAgent) map[string]any { return trustBlock(m.Trust()) }
+
+// trustBlock builds the trust block from an already read trust: propose читает здоровье
+// один раз и для блока, и для проверки очереди.
+func trustBlock(t MemoryTrust, err error) map[string]any {
 	if err != nil {
 		return map[string]any{"mode": "unknown", "note": trustNoteUnknown}
 	}
@@ -112,10 +119,14 @@ func addMemoryTools(s *mcp.Server, j journal, m MemoryAgent) {
 			"не одобрит. Предлагай только то, что он сказал или подтвердил, а не свои догадки.",
 	}, func(in memoryProposeArgs) []string { return []string{in.Name} }, // тело в журнал вызовов не идет
 		func(in memoryProposeArgs) (map[string]any, error) {
-			tv := trustView(m)
+			t, terr := m.Trust()
+			tv := trustBlock(t, terr)
 			// Закрыто при «не доверяю» и когда здоровье не прочиталось: непроверенное не безопасно.
 			if tv["mode"] == "bad" || tv["mode"] == "unknown" {
 				return nil, errors.New(proposalsPausedText)
+			}
+			if t.QueueFull {
+				return nil, errors.New(queueFullText)
 			}
 			if err := m.Propose(in.Name, in.Topic, in.Description, in.Body); err != nil {
 				if errors.Is(err, domain.ErrInvalidNote) {

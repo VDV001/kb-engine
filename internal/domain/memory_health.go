@@ -190,8 +190,13 @@ const (
 	RuleLifeDays = 60
 	// IdleWarnDays: после стольких дней без решений осмотр попадает в причины.
 	IdleWarnDays = 7
-	// QueueGraceDays: предложение ждёт без штрафа за возраст столько дней.
-	QueueGraceDays = 7
+	// QueueSoftCap: сколько предложений могут ждать без штрафа. Непринятое предложение
+	// агенту не доверено, памяти оно не вредит: счёт падает только от завала сверх этого.
+	QueueSoftCap = 10
+	// QueueHardCap: столько предложений в очереди закрывают предложения агента независимо
+	// от режима. Штраф очереди не больше 25 баллов, так что завал сам режим не опускает:
+	// пауза идет по этому потолку, счёт и режим он не трогает.
+	QueueHardCap = 30
 
 	trustOKFrom   = 75
 	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) даёт 45
@@ -208,11 +213,9 @@ type PendingItem struct {
 // HealthInput — всё, из чего считается здоровье.
 type HealthInput struct {
 	// Today — календарный день расчёта (как у Decision.Day).
-	Today     time.Time
-	Decisions []Decision
-	Rules     []string
-	// Notes — записей холодного слоя; нужен, чтобы пустая память не считалась запущенной.
-	Notes        int
+	Today        time.Time
+	Decisions    []Decision
+	Rules        []string
 	Queue        []PendingItem
 	SealOK       bool
 	StaleVectors int
@@ -260,8 +263,16 @@ type Health struct {
 	IdleDays          int
 	LastJudgment      time.Time
 	OldestPendingDays int
-	StaleRules        int
-	Rules             []RuleHealth
+	// Pending — предложений в очереди одобрения.
+	Pending    int
+	StaleRules int
+	Rules      []RuleHealth
+}
+
+// AgentMayPropose says whether the agent may queue proposals: режим не «не доверяю» и
+// очередь не завалена (QueueHardCap).
+func (h Health) AgentMayPropose() bool {
+	return h.Mode.AgentMayPropose() && h.Pending < QueueHardCap
 }
 
 func daysBetween(from, to time.Time) int { return int(to.Sub(from).Hours() / 24) }
@@ -282,13 +293,14 @@ func AssessHealth(in HealthInput) Health {
 		h.IdleDays = max(0, daysBetween(h.LastJudgment, in.Today))
 	}
 	h.Rules = ruleHealths(in)
+	h.Pending = len(in.Queue)
 	for _, q := range in.Queue {
 		h.OldestPendingDays = max(h.OldestPendingDays, daysBetween(q.Since, in.Today))
 	}
 	rules := rulesScore(&h)
 	h.Parts = []HealthPart{
-		{"rhythm", rhythmScore(in, h.IdleDays), maxRhythm},
-		{"queue", queueScore(in, h.OldestPendingDays), maxQueue},
+		{"rhythm", rhythmScore(oldestWaitingDays(in, h), awaitsReview(in, h)), maxRhythm},
+		{"queue", queueScore(in), maxQueue},
 		{"integrity", integrityScore(in), maxIntegrity},
 		{"rules", rules, maxRules},
 	}
@@ -309,22 +321,42 @@ func AssessHealth(in HealthInput) Health {
 	return h
 }
 
-func hasStock(in HealthInput) bool { return len(in.Rules)+in.Notes+len(in.Queue) > 0 }
+// awaitsReview: осмотра ждёт предложение в очереди или правило без свежего подтверждения.
+func awaitsReview(in HealthInput, h Health) bool { return len(in.Queue) > 0 || h.StaleRules > 0 }
 
-// rhythmScore: пустая память осмотра не требует; с чем-то на хранении отсутствие
-// суждений — пробел.
-func rhythmScore(in HealthInput, idle int) float64 {
-	switch {
-	case idle >= 0:
-		return max(0, maxRhythm-float64(idle))
-	case hasStock(in):
-		return 0
+// oldestWaitingDays: сколько дней ждёт самое старое из того, что просит осмотра:
+// предложение в очереди или правило сверх RuleStaleDays. Правило без отметки
+// датируется днями без суждений; суждений нет совсем — возраст неизвестен, штрафа нет.
+// Штраф растёт по дню, без скачка на границе срока.
+func oldestWaitingDays(in HealthInput, h Health) int {
+	days := 0
+	if len(in.Queue) > 0 {
+		days = h.OldestPendingDays
 	}
-	return maxRhythm
+	for _, r := range h.Rules {
+		if !r.Stale {
+			continue
+		}
+		age := r.AgeDays
+		if age < 0 {
+			age = h.IdleDays
+		}
+		days = max(days, age-RuleStaleDays)
+	}
+	return days
 }
 
-func queueScore(in HealthInput, oldest int) float64 {
-	return max(0, maxQueue-3*float64(len(in.Queue))-0.6*float64(max(0, oldest-QueueGraceDays)))
+// rhythmScore: ожидание осмотра снимает баллы по дню, только когда есть что осматривать.
+// Тихая память, где агент ничего не предлагал и правила свежи, не виновата в тишине.
+func rhythmScore(waitingDays int, awaits bool) float64 {
+	if !awaits {
+		return maxRhythm
+	}
+	return max(0, maxRhythm-float64(waitingDays))
+}
+
+func queueScore(in HealthInput) float64 {
+	return max(0, maxQueue-2*float64(max(0, len(in.Queue)-QueueSoftCap)))
 }
 
 func integrityScore(in HealthInput) float64 {
@@ -366,7 +398,9 @@ func reasonsOf(in HealthInput, h Health) []HealthReason {
 	if in.StaleVectors > 0 {
 		rs = append(rs, HealthReason{ReasonVectors, in.StaleVectors})
 	}
-	if h.IdleDays > IdleWarnDays || (h.IdleDays < 0 && hasStock(in)) {
+	// Давность осмотра называется и у тихой памяти: баллов она не снимает (это делает ожидание),
+	// но человек видит, что память давно не смотрели. Пустой журнал молчит, пока ждать нечему.
+	if h.IdleDays > IdleWarnDays || (h.IdleDays < 0 && awaitsReview(in, h)) {
 		rs = append(rs, HealthReason{ReasonRhythm, h.IdleDays})
 	}
 	return rs
