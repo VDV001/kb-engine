@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -60,14 +61,11 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 			var res string
 			switch m.Method {
 			case "Target.getTargets":
-				infos := ""
-				for i, id := range f.pages {
-					if i > 0 {
-						infos += ","
-					}
-					infos += fmt.Sprintf(`{"targetId":%q,"type":"page"}`, id)
+				infos := make([]string, 0, len(f.pages))
+				for _, id := range f.pages {
+					infos = append(infos, fmt.Sprintf(`{"targetId":%q,"type":"page"}`, id))
 				}
-				res = `{"targetInfos":[` + infos + `]}`
+				res = `{"targetInfos":[` + strings.Join(infos, ",") + `]}`
 			case "Target.createTarget":
 				res = `{"targetId":"ours"}`
 			case "Target.attachToTarget":
