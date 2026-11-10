@@ -1,6 +1,7 @@
 package cdpbrowser
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -72,7 +73,7 @@ func TestFindBrowserIsFirstInstalled(t *testing.T) {
 
 func TestFindBrowserNoneInstalled(t *testing.T) {
 	fakeBrowsers(t, func(string) []Browser { return nil })
-	if _, err := FindBrowser(); err != ErrNoBrowser {
+	if _, err := FindBrowser(); !errors.Is(err, ErrNoBrowser) {
 		t.Fatalf("err = %v, want ErrNoBrowser", err)
 	}
 }
