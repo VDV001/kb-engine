@@ -1322,7 +1322,9 @@ function patchStates() {
 }
 
 function showError(msg) {
-  const el = $("#settings-error");
+  // Пока открыты «Доступы», панель настроек скрыта: ошибка в ее строке никому не видна
+  // («поменял прод на стенд, сохранить — и ничего не происходит»).
+  const el = $(!$("#access-view").hidden ? "#ac-error" : "#settings-error");
   setClamped(el, msg || "", "Сообщение");
   el.hidden = !msg;
 }
@@ -3916,6 +3918,7 @@ async function openAccess() {
 // Уход с вкладки запирает хранилище и стирает показанный пароль из разметки:
 // скрытая секция иначе держала бы его, пока вкладку не откроют снова.
 function acLeave() {
+  $("#ac-error").hidden = true;
   const ac = state.ac;
   if (!ac || !ac.open) return;
   acClose();
@@ -4055,7 +4058,10 @@ function acIdleStart() {
   }, 1000);
 }
 // Любое действие на экране доступов откладывает автозакрытие.
-for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListener(ev, () => { if (state.ac.open) state.ac.left = acLockSec(); }, true);
+for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListener(ev, (e) => {
+  if (state.ac.open) state.ac.left = acLockSec();
+  if (!e.target.closest("#ac-error")) $("#ac-error").hidden = true; // прежняя ошибка снимается следующим действием, «Подробнее» ее не трогает
+}, true);
 async function acShow(id) {
   const ac = state.ac;
   try {
