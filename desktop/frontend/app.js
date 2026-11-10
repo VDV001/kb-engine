@@ -2032,7 +2032,12 @@ if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", 
 // открытии и дальше живет: вкладка туда-обратно не перезагружает витрину.
 function showModule(id) {
   const mod = id && MODULES[id];
-  if (!mod || mod.view) $("#module-frame").dataset.shown = ""; // вернулись с другого экрана: браузер откроем заново
+  if (!mod || mod.view) {
+    const f = $("#module-frame");
+    // Ушли с «Браузера» на другой экран: скрытая страница иначе продолжала бы опрашивать кадры и рисовать.
+    if (f.dataset.shown === "browser") { f.src = "about:blank"; f.dataset.src = ""; }
+    f.dataset.shown = "";
+  }
   // Подсказка графика не переживает уход с вкладки; stTipHide объявлен ниже и при первом вызове еще недоступен.
   const stTipNow = document.querySelector(".st-tip"); if (stTipNow) stTipNow.hidden = true;
   $("#app").classList.toggle("module-open", !!mod);

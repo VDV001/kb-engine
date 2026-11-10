@@ -23,12 +23,6 @@ const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/brows
        Браузер для вкладки «Браузер» окна DVK: Chrome, Brave, Edge или Chromium на этом Mac.
        Сервер слушает unix-сокет в вашей папке (не сетевой порт) и каждый запрос проверяет по токену.`
 
-// Размер экрана вкладки. Одно число на сервер: окно масштабирует картинку.
-const (
-	browserWidth  = 1280
-	browserHeight = 800
-)
-
 // Отказы запуска. Сокет, а не порт: порт на loopback занимает любой процесс
 // Мака (и чужой пользователь), а папка с правами 0700 достается только вам
 // (находка security-ревью #526, F1).
@@ -80,7 +74,7 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 		fmt.Fprintln(stderr, "сокет:", err)
 		return 1
 	}
-	scr, err := launch(ctx, cdpbrowser.Options{Path: o.chrome, Profile: o.profile, Width: browserWidth, Height: browserHeight, Headless: o.headless})
+	scr, err := launch(ctx, cdpbrowser.Options{Path: o.chrome, Profile: o.profile, Width: cdpbrowser.DefaultWidth, Height: cdpbrowser.DefaultHeight, Headless: o.headless})
 	if err != nil {
 		_ = ln.Close()
 		fmt.Fprintln(stderr, "браузер:", err)
@@ -102,7 +96,7 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 		}()
 	}
 	fmt.Fprintf(stdout, "kbengine browser: слушает %s, токен в %s\n", o.socket, o.tokenFile)
-	if err := serveUntil(ctx, ln, cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: browserWidth, Height: browserHeight, Wait: 25 * time.Second})); err != nil {
+	if err := serveUntil(ctx, ln, cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: cdpbrowser.DefaultWidth, Height: cdpbrowser.DefaultHeight, Wait: 25 * time.Second})); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}

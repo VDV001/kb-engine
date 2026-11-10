@@ -291,3 +291,17 @@ func TestReadBrowserToken(t *testing.T) {
 		})
 	}
 }
+
+// 204 («нового кадра нет») несет эпоху: по ней страница замечает перезапуск сервера
+// и сбрасывает номер кадра, иначе после перезапуска она ждала бы кадр №4200 вечно.
+func TestBrowserProxy_noFrameStillCarriesEpoch(t *testing.T) {
+	sock := browserSocket(t, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Frame-Epoch", "e2")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	rec := httptest.NewRecorder()
+	browserProxyAt(sock, "t").ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/browser/frame?after=9", nil))
+	if rec.Code != http.StatusNoContent || rec.Header().Get("X-Frame-Epoch") != "e2" {
+		t.Fatalf("204: %d epoch=%q, want 204 с эпохой", rec.Code, rec.Header().Get("X-Frame-Epoch"))
+	}
+}

@@ -8,6 +8,12 @@ import (
 	"time"
 )
 
+// Размер экрана вкладки: один на сервер и на страницу окна (окно масштабирует картинку).
+const (
+	DefaultWidth  = 1280
+	DefaultHeight = 800
+)
+
 // Frame is one picture of the page; Seq grows with every change.
 type Frame struct {
 	Seq  uint64
