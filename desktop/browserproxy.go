@@ -29,7 +29,7 @@ import (
 // Why — почему его нет, словами для экрана (пусто — не запущен).
 type browserUpstream struct{ Socket, Token, Why string }
 
-const browserHint = "Браузер не запущен: выполните в терминале kbengine browser serve — он создаст токен и откроет браузер. Потом обновите вкладку."
+const browserHint = "Браузер не запущен. Выполните в терминале kbengine browser serve (он создаст токен и запустит браузер), потом обновите вкладку."
 
 var errBrowserRedirect = errors.New("сервер браузера ответил перенаправлением")
 

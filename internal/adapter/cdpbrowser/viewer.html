@@ -37,7 +37,7 @@ function send(ev) {
   const run = async () => {
     try {
       const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev) });
-      if (!r.ok) say("Браузер: " + (await r.text()).trim().slice(0, 200)); else say("");
+      if (!r.ok) { const t = (await r.text()).trim().slice(0, 200); say(r.status >= 500 ? t : "Ввод не принят: " + t); } else say("");
     } catch (e) { say("Браузер не отвечает"); }
   };
   chain = chain.then(run);
@@ -56,7 +56,7 @@ let seq = 0, epoch = "";
         if (u !== null && document.activeElement !== addr) { try { addr.value = decodeURIComponent(u); } catch (_) { addr.value = u; } addr.classList.toggle("plain", addr.value.startsWith("http:")); }
         const bmp = await createImageBitmap(await r.blob());
         x.drawImage(bmp, 0, 0, W, H); bmp.close(); say("");
-      } else if (r.status !== 204) { say("Браузер: " + (await r.text()).trim().slice(0, 200)); await sleep(1500); }
+      } else if (r.status !== 204) { say((await r.text()).trim().slice(0, 200)); await sleep(1500); }
     } catch (e) { say("Браузер не отвечает"); await sleep(1500); }
   }
 })();
