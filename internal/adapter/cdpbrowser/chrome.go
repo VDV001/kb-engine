@@ -230,24 +230,17 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 		TargetInfos []struct{ TargetID, Type string } `json:"targetInfos"`
 	}
 	_ = json.Unmarshal(r, &ts)
-	id := ""
-	for _, t := range ts.TargetInfos {
-		if t.Type == "page" {
-			id = t.TargetID
-			break
-		}
+	// Работаем со своей страницей, а не с первой попавшейся: Brave при запуске держит две
+	// пустые страницы, одна из них скрыта и кадров не рисует (белый экран во вкладке).
+	r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": "about:blank"})
+	if err != nil {
+		return err // своей страницы нет: чужие не трогаем, иначе браузер остался бы без окон
 	}
-	if id == "" {
-		r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": "about:blank"})
-		if err != nil {
-			return err
-		}
-		var ct struct {
-			TargetID string `json:"targetId"`
-		}
-		_ = json.Unmarshal(r, &ct)
-		id = ct.TargetID
+	var ct struct {
+		TargetID string `json:"targetId"`
 	}
+	_ = json.Unmarshal(r, &ct)
+	id := ct.TargetID
 	sess, err := c.attachTo(ctx, id)
 	if err != nil {
 		return err
@@ -255,6 +248,11 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	c.mu.Lock()
 	c.sess, c.pages, c.w, c.h = sess, []page{{id, sess}}, o.Width, o.Height
 	c.mu.Unlock()
+	for _, t := range ts.TargetInfos { // старые страницы закрываем, когда своя уже есть
+		if t.Type == "page" && t.TargetID != id {
+			_, _ = c.call(ctx, "", "Target.closeTarget", map[string]any{"targetId": t.TargetID})
+		}
+	}
 	// Загрузки закрыты: страница не кладет файлы в ~/Downloads мимо человека.
 	if _, err := c.call(ctx, "", "Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}); err != nil {
 		return err

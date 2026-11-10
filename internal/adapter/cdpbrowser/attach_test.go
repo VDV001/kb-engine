@@ -20,6 +20,8 @@ type fakeCDP struct {
 	pages []string // страницы, которые браузер показывает в getTargets
 
 	failCreate bool // браузер отказывает в создании страницы
+	castFrame  bool // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
+	shots      int  // сколько раз просили скриншот
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
@@ -70,6 +72,9 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				res = `{"targetId":"ours"}`
 			case "Target.attachToTarget":
 				res = fmt.Sprintf(`{"sessionId":"S-%s"}`, p.TargetID)
+			case "Page.captureScreenshot":
+				f.shots++
+				res = `{"data":"SlBHMQ=="}` // base64("JPG1")
 			case "Page.getFrameTree":
 				res = `{"frameTree":{"frame":{"id":"F","url":"about:blank"}}}`
 			default:
@@ -84,6 +89,15 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 			out, _ := json.Marshal(reply)
 			if _, err := replyW.Write(append(out, 0)); err != nil {
 				return
+			}
+			f.mu.Lock()
+			emit := f.castFrame && m.Method == "Page.startScreencast"
+			f.mu.Unlock()
+			if emit {
+				ev, _ := json.Marshal(map[string]any{"method": "Page.screencastFrame", "sessionId": m.SessionID, "params": map[string]any{"data": "Q0FTVA==", "sessionId": 1}}) // base64("CAST")
+				if _, err := replyW.Write(append(ev, 0)); err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -143,5 +157,57 @@ func TestAttachClosesNothingWhenOwnPageFails(t *testing.T) {
 		if call == "Target.closeTarget:hidden-1" || call == "Target.closeTarget:shown-2" {
 			t.Fatalf("закрыта чужая страница %q, хотя своей нет", call)
 		}
+	}
+}
+
+func (f *fakeCDP) shotCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.shots
+}
+
+// Brave без окна не шлет кадры скринкаста, но скриншоты отдает: если кадров нет,
+// а зритель ждет, сервер снимает скриншоты сам. Иначе во вкладке белый экран.
+func TestNextFallsBackToScreenshotsWhenCastIsSilent(t *testing.T) {
+	c, f := startFakeCDP(t)
+	c.noFrameWait = 80 * time.Millisecond
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	fr, err := c.Next(ctx, 0)
+	if err != nil {
+		t.Fatalf("Next = %v: кадра нет, а скриншот можно снять", err)
+	}
+	if string(fr.JPEG) != "JPG1" || fr.Seq != 1 {
+		t.Fatalf("кадр = %q seq %d, want JPG1 seq 1", fr.JPEG, fr.Seq)
+	}
+	if f.shotCount() == 0 {
+		t.Fatal("скриншот не снимали")
+	}
+}
+
+// Отрицательный контроль: у Chrome кадры идут сами, и скриншоты не снимаются
+// (иначе вкладка нагружала бы процессор лишним).
+func TestNextDoesNotTakeScreenshotsWhenCastWorks(t *testing.T) {
+	c, f := startFakeCDP(t)
+	f.castFrame = true
+	c.noFrameWait = 80 * time.Millisecond
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	fr, err := c.Next(ctx, 0)
+	if err != nil || string(fr.JPEG) != "CAST" {
+		t.Fatalf("Next = %q, %v; want кадр скринкаста CAST", fr.JPEG, err)
+	}
+	// Неподвижная страница: следующего кадра нет, ждем дольше noFrameWait, чтобы запасной путь мог включиться.
+	wait, stop := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer stop()
+	_, _ = c.Next(wait, fr.Seq)
+	if n := f.shotCount(); n != 0 {
+		t.Fatalf("снято скриншотов: %d, want 0: скринкаст работает", n)
 	}
 }
