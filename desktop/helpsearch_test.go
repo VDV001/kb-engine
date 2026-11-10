@@ -24,6 +24,13 @@ if (find("zzzz").length) fail("«zzzz» что-то нашел");
 if (!find("терминал").some((c) => c.startsWith("kbengine tui"))) fail("«терминал» не нашел kbengine tui");
 if (!find("выдать токен").some((c) => c.startsWith("kbengine users add"))) fail("«выдать токен» не нашел users add: " + JSON.stringify(find("выдать токен")));
 if (!find("входящие бот").some((c) => c.startsWith("kbengine inbox"))) fail("«входящие бот» не нашел inbox");
+// «Браузер»: человек ищет задачу, а не команду.
+if (!find("браузер").some((c) => c.startsWith("kbengine browser serve"))) fail("«браузер» не нашел kbengine browser serve: " + JSON.stringify(find("браузер")));
+if (!find("chrome путь").some((c) => c.includes("--chrome"))) fail("«chrome путь» не нашел --chrome: " + JSON.stringify(find("chrome путь")));
+if (!find("brave").length || !find("сайт").length) fail("«brave» и «сайт» ничего не нашли");
+if (!find("окно скрыто").some((c) => c.includes("--window"))) fail("«окно скрыто» не нашел --window: " + JSON.stringify(find("окно скрыто")));
+if (!find("не запущен").length) fail("«не запущен» не нашел подсказку про запуск");
+if (!find("порядок вкладок").length || !find("config.json").length) fail("настройки окна не находятся");
 const m = helpMarker(helpTerms("q").words)('kbengine search -q "x" <id>');
 if (m.includes("&<mark>") || !m.includes("&quot;x&quot;") || !m.includes("&lt;id&gt;")) fail("подсветка портит экранирование: " + m);
 if (!m.includes("<mark>q</mark>")) fail("«q» не подсвечен: " + m);

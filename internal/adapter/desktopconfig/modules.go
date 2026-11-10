@@ -26,6 +26,8 @@ const (
 	ModuleAccess ModuleID = "access"
 	// ModuleMemory — память: два слоя, очередь на одобрение, потолок (ADR-0008).
 	ModuleMemory ModuleID = "memory"
+	// ModuleBrowser — браузер во вкладке: Chrome и т. п. на этом Mac, картинка и ввод через kbengine browser serve.
+	ModuleBrowser ModuleID = "browser"
 	// ModuleHelp — справка: команды движка и клавиши окна с поиском по задаче.
 	ModuleHelp ModuleID = "help"
 )

@@ -413,6 +413,8 @@ const MODULES = {
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
   memory: { name: "Память", what: "правила и факты для агентов: горячий слой с потолком, холодный, журнал и очередь на одобрение", view: "memory",
     icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
+  browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; запуск — kbengine browser serve", src: "/browser/",
+    icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.3 3.7 5 3.7 8s-1.2 5.7-3.7 8c-2.5-2.3-3.7-5-3.7-8S9.5 6.3 12 4Z"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -2030,6 +2032,12 @@ if (native()) native().Accents().then((a) => { state.accents = a || { mode: "", 
 // открытии и дальше живет: вкладка туда-обратно не перезагружает витрину.
 function showModule(id) {
   const mod = id && MODULES[id];
+  if (!mod || mod.view) {
+    const f = $("#module-frame");
+    // Ушли с «Браузера» на другой экран: скрытая страница иначе продолжала бы опрашивать кадры и рисовать.
+    if (f.dataset.shown === "browser") { f.src = "about:blank"; f.dataset.src = ""; }
+    f.dataset.shown = "";
+  }
   // Подсказка графика не переживает уход с вкладки; stTipHide объявлен ниже и при первом вызове еще недоступен.
   const stTipNow = document.querySelector(".st-tip"); if (stTipNow) stTipNow.hidden = true;
   $("#app").classList.toggle("module-open", !!mod);
@@ -2051,7 +2059,11 @@ function showModule(id) {
     $("#fin-src").hidden = id !== "finances";
     renderFinSrc();
     const frame = $("#module-frame");
-    if (frame.dataset.src !== mod.src) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
+    // Браузер открывается заново каждый раз, когда вкладку выбрали: если serve запустили
+    // после первой попытки, пояснение «не запущен» не должно висеть до перезапуска окна.
+    const reopen = id === "browser" && frame.dataset.shown !== id;
+    frame.dataset.shown = id;
+    if (frame.dataset.src !== mod.src || reopen) { frame.src = mod.src; frame.dataset.src = mod.src; frame.title = mod.name; }
   }
   return !!mod;
 }

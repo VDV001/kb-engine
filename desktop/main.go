@@ -152,7 +152,7 @@ func run() error {
 			Assets: ui,
 			// Все, чего нет среди файлов интерфейса: /api/* окна и /app/* модуля
 			// «Финансы» (прокси на kb-сервер с токеном — только здесь, не в -browser).
-			Handler: withAppProxy(api, newAppProxy(settings.appUpstream, builtAppUI(appUI), nil)),
+			Handler: withBrowserProxy(withAppProxy(api, newAppProxy(settings.appUpstream, builtAppUI(appUI), nil)), newBrowserProxy(settings.browserUpstream)),
 		},
 		OnStartup: func(ctx context.Context) {
 			app.startup(ctx)
