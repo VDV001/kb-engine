@@ -115,7 +115,7 @@ func TestBrowserProxy_explainsWhyThereIsNoBrowser(t *testing.T) {
 	down := httptest.NewServer(http.NotFoundHandler())
 	down.Close()
 	cases := map[string]http.Handler{
-		"нет токена":  newBrowserProxy(func() browserUpstream { return browserUpstream{Why: "нет файла токена"} }, nil),
+		"нет токена":  newBrowserProxy(func() browserUpstream { return browserUpstream{} }, nil),
 		"не отвечает": newBrowserProxy(func() browserUpstream { return browserUpstream{URL: down.URL, Token: "t"} }, down.Client().Transport),
 	}
 	for name, h := range cases {
