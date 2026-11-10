@@ -289,3 +289,39 @@ func TestParseDecision_duplicateApprovalDoesNotDateTheRule(t *testing.T) {
 		t.Fatalf("правило не должно свежеть от дубля: %+v", h.Rules[0])
 	}
 }
+
+// Очередь сама не может опустить режим: максимальный штраф очереди 25 баллов, а остальное здорово.
+// Поэтому пауза предложений идёт по жёсткому потолку очереди, а не по режиму, и счёт с режимом не трогает.
+func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
+	today := day("2026-11-10")
+	queue := func(n int) []PendingItem {
+		var q []PendingItem
+		for range n {
+			q = append(q, PendingItem{Name: "n", Since: today})
+		}
+		return q
+	}
+	tests := []struct {
+		name   string
+		queue  int
+		sealOK bool
+		may    bool
+	}{
+		{"29 предложений ещё идут", QueueHardCap - 1, true, true},
+		{"30 предложений: пауза", QueueHardCap, true, false},
+		{"200 предложений: пауза", 200, true, false},
+		{"очередь пуста, печать нарушена: пауза по режиму", 0, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := AssessHealth(HealthInput{Today: today, Queue: queue(tt.queue), SealOK: tt.sealOK})
+			if h.AgentMayPropose() != tt.may {
+				t.Fatalf("AgentMayPropose = %v, want %v (mode=%s, pending=%d)", h.AgentMayPropose(), tt.may, h.Mode, h.Pending)
+			}
+		})
+	}
+	h := AssessHealth(HealthInput{Today: today, Queue: queue(QueueHardCap), SealOK: true})
+	if h.Mode != TrustOK || h.Total != 75 {
+		t.Fatalf("очередь режим не меняет: mode=%s total=%d, want ok 75", h.Mode, h.Total)
+	}
+}

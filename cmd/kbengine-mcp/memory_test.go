@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -74,5 +75,27 @@ func TestMemoryAgent_trustFollowsTheHealth(t *testing.T) {
 	}
 	if _, err := (memoryAgent{dir: filepath.Join(t.TempDir(), "нет")}).Trust(); err == nil {
 		t.Error("памяти нет: режим не определить")
+	}
+}
+
+// Завал в очереди доходит до агента: при QueueHardCap предложениях Trust называет очередь полной, на одно меньше — нет.
+func TestMemoryAgent_trustReportsAFullQueue(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "dvk-memory")
+	if err := memorydir.New(dir).Init(); err != nil {
+		t.Fatal(err)
+	}
+	agent := memoryAgent{dir: dir}
+	for i := range domain.QueueHardCap {
+		if i == domain.QueueHardCap-1 {
+			if tr, err := agent.Trust(); err != nil || tr.QueueFull {
+				t.Fatalf("%d предложений: очередь ещё не полна: %+v %v", i, tr, err)
+			}
+		}
+		if err := agent.Propose(fmt.Sprintf("rule-%d", i), "git", "правило", ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if tr, err := agent.Trust(); err != nil || !tr.QueueFull || tr.Mode != "ok" {
+		t.Fatalf("%d предложений: очередь полна, режим не меняется: %+v %v", domain.QueueHardCap, tr, err)
 	}
 }
