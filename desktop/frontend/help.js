@@ -69,6 +69,7 @@ const HELP = [
   { id: "server", t: "Сервер", c: "var(--z-accent-hi)", lead: "Своя база на сервере: окно и агент ходят к ней по токену.", items: [
     { cmd: "kbengine serve --addr 0.0.0.0:8443 --catalog catalog.json --token-file token.txt --tls-cert cert.pem --tls-key key.pem", d: "открыть витрину в сеть: только с токеном и TLS; токен — в заголовке X-KB-Token" },
     { cmd: "kbengine serve --addr 0.0.0.0:8443 --tenants s3://bucket --tls-cert cert.pem --tls-key key.pem", d: "сервер на несколько человек: у каждого своя база и свой токен" },
+    { cmd: "kbengine browser serve", d: "браузер для вкладки «Браузер»: Chrome, Brave, Edge или Chromium этого Mac; порт только 127.0.0.1, токен создаст сам в ~/.kb-tokens/browser" },
     { cmd: "kbengine users add --tenants s3://bucket --id anna --token-out ~/.kb-tokens/anna", d: "выдать человеку токен: только в новый файл 0600, в терминал не печатается" },
     { cmd: "kbengine users revoke --tenants s3://bucket --id anna", d: "закрыть человеку доступ" },
     { k: ["Настройки", "→", "Источники"], d: "подключить kb-сервер к окну: адрес и токен, токен уходит в Связку ключей" },
