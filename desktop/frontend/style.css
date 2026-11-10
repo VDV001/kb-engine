@@ -1136,6 +1136,7 @@ body:not(.no-vault-glow) .vault.open .inside::before { opacity: .55; }
 .ac-gh .n { margin-left: auto; color: var(--z-faint); font-size: 12px; }
 .ac-acc { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; width: 100%; text-align: left; background: none; border: 0; padding: 7px 12px 7px 24px; cursor: pointer; position: relative; color: var(--z-ink); font: inherit; }
 .ac-acc::before { content: ""; position: absolute; left: 13px; top: 15px; width: 5px; height: 5px; border-radius: 50%; background: var(--c); }
+.ac-acc .ac-env { align-self: start; } /* элемент сетки растягивается на строку: при длинном логине плашка становилась прямоугольником */
 .ac-acc small { grid-column: 1 / -1; color: var(--z-faint); font-size: 12px; }
 .ac-acc:hover { background: var(--z-bg-2); }
 .ac-acc[aria-selected="true"] { background: var(--z-accent-wash); box-shadow: inset 2px 0 0 var(--z-accent); }
