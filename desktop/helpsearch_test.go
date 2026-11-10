@@ -26,6 +26,7 @@ if (!find("выдать токен").some((c) => c.startsWith("kbengine users ad
 if (!find("входящие бот").some((c) => c.startsWith("kbengine inbox"))) fail("«входящие бот» не нашел inbox");
 // «Браузер»: человек ищет задачу, а не команду.
 if (!find("браузер").some((c) => c.startsWith("kbengine browser serve"))) fail("«браузер» не нашел kbengine browser serve: " + JSON.stringify(find("браузер")));
+if (!find("brave").some((c) => c.includes("Brave Browser.app"))) fail("«brave» не нашел команду именно для Brave: " + JSON.stringify(find("brave")));
 if (!find("chrome путь").some((c) => c.includes("--chrome"))) fail("«chrome путь» не нашел --chrome: " + JSON.stringify(find("chrome путь")));
 if (!find("brave").length || !find("сайт").length) fail("«brave» и «сайт» ничего не нашли");
 if (!find("окно скрыто").some((c) => c.includes("--window"))) fail("«окно скрыто» не нашел --window: " + JSON.stringify(find("окно скрыто")));
