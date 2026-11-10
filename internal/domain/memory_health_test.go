@@ -205,7 +205,6 @@ func TestAssessHealth(t *testing.T) {
 		}, total: 100, mode: TrustOK},
 		{name: "решений нет, записи лежат, ждать нечему", mut: func(in *HealthInput) {
 			in.Decisions = nil
-			in.Notes = 2
 			in.Rules = nil
 		}, total: 100, mode: TrustOK, check: func(t *testing.T, h Health) {
 			if h.IdleDays != -1 {

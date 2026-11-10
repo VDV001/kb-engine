@@ -213,11 +213,9 @@ type PendingItem struct {
 // HealthInput — всё, из чего считается здоровье.
 type HealthInput struct {
 	// Today — календарный день расчёта (как у Decision.Day).
-	Today     time.Time
-	Decisions []Decision
-	Rules     []string
-	// Notes — записей холодного слоя; нужен, чтобы пустая память не считалась запущенной.
-	Notes        int
+	Today        time.Time
+	Decisions    []Decision
+	Rules        []string
 	Queue        []PendingItem
 	SealOK       bool
 	StaleVectors int
