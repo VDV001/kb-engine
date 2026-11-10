@@ -65,6 +65,7 @@ func TestVersionMention(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatalf("отставание версии не найдено")
+				return
 			}
 			if !strings.Contains(got.Text, tc.want) || !strings.Contains(got.Text, tc.current) {
 				t.Errorf("текст находки не называет обе версии: %q", got.Text)
@@ -188,6 +189,7 @@ func TestVersionMention_fallsBackToTextForMarkdown(t *testing.T) {
 	got := freshness.VersionMention("## Проекты\n\nkb-engine v0.5.0 — движок базы\n", "kb-engine", "0.15.0")
 	if got == nil {
 		t.Fatal("отставание не найдено в markdown")
+		return
 	}
 	if !strings.Contains(got.Text, "v0.5.0") {
 		t.Errorf("текст находки не называет версию страницы: %q", got.Text)
@@ -251,6 +253,7 @@ func TestVersionMention_usesTheBaseReleaseOfAPseudoVersion(t *testing.T) {
 		"0.15.1-0.20260804151919-e9b33a0aa068")
 	if got == nil {
 		t.Fatal("отставание не найдено при собранной из исходников версии")
+		return
 	}
 	if !strings.Contains(got.Text, "0.15.0") || strings.Contains(got.Text, "dirty") {
 		t.Errorf("в тексте не базовый выпуск: %q", got.Text)
