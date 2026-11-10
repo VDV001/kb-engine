@@ -28,6 +28,7 @@ const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/brows
 // (находка security-ревью #526, F1).
 var (
 	errBrowserSocketDir = errors.New("папка сокета доступна другим: нужны права 0700")
+	errBrowserNotSocket = errors.New("по пути --socket лежит не сокет, файл не тронут")
 	errBrowserRunning   = errors.New("kbengine browser serve уже запущен на этом сокете")
 	errBrowserSockPath  = errors.New("путь сокета длиннее предела системы (104 байта на macOS): выберите короче флагом --socket")
 )
@@ -133,7 +134,10 @@ func listenBrowserSocket(path string) (net.Listener, error) {
 	if st.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf("%w: %s", errBrowserSocketDir, dir)
 	}
-	if _, err := os.Lstat(path); err == nil {
+	if fi, err := os.Lstat(path); err == nil {
+		if fi.Mode()&os.ModeSocket == 0 {
+			return nil, fmt.Errorf("%w (%s)", errBrowserNotSocket, path)
+		}
 		if c, err := net.DialTimeout("unix", path, 500*time.Millisecond); err == nil {
 			_ = c.Close()
 			return nil, fmt.Errorf("%w (%s)", errBrowserRunning, path)
