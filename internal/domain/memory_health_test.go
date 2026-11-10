@@ -111,17 +111,17 @@ func TestAssessHealth(t *testing.T) {
 		reason []ReasonKind
 	}{
 		{name: "всё свежее", mut: func(*HealthInput) {}, total: 100, mode: TrustOK},
-		{name: "20 дней без решений, ждать нечему: тишина не наказывается", mut: func(in *HealthInput) {
+		{name: "20 дней без решений, ждать нечему: баллов не снято, причина названа как сведение", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-21", DecisionConfirmRule, "Правило один"), dec("2026-10-21", DecisionConfirmRule, "Правило два")}
-		}, total: 93, mode: TrustOK, check: func(t *testing.T, h Health) {
+		}, total: 93, mode: TrustOK, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
 			if h.IdleDays != 20 || part(h, "rhythm").Value != 35 {
 				t.Fatalf("idle=%d rhythm=%v", h.IdleDays, part(h, "rhythm").Value)
 			}
 		}},
-		{name: "30 дней без решений, правила на границе свежести — молчим", mut: func(in *HealthInput) {
+		{name: "30 дней без решений, правила на границе свежести — баллов не снято, причина осмотра названа", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-11", DecisionApproveHot, "Правило один"), dec("2026-10-11", DecisionApproveHot, "Правило два")}
 			in.Rules = []string{"Правило один", "Правило два"}
-		}, total: 90, mode: TrustOK},
+		}, total: 90, mode: TrustOK, reason: []ReasonKind{ReasonRhythm}},
 		{name: "правило просрочено на 10 дней — ритм снимает 10, а не дни с последнего осмотра", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-01", DecisionConfirmRule, "Правило один")}
 			in.Rules = []string{"Правило один"}
