@@ -50,6 +50,8 @@ type Config struct {
 	Chat Chat `json:"chat"`
 	// Spend — лимит месяца и свои цены моделей для «Денег» статистики (#493).
 	Spend Spend `json:"spend"`
+	// Browser — какой браузер запускает кнопка «Включить» во вкладке «Браузер».
+	Browser Browser `json:"browser"`
 }
 
 // Path is where the window keeps its config.
@@ -97,6 +99,7 @@ func Read(path string) (Config, error) {
 	cfg.dropBadTabs()
 	cfg.dropBadAccents()
 	cfg.dropBadSpend()
+	cfg.dropBadBrowser()
 	if err := cfg.Validate(); err != nil {
 		return Config{}, fmt.Errorf("config %s: %w", path, err)
 	}
@@ -126,6 +129,7 @@ func Write(path string, cfg Config) error {
 	cfg.dropBadTabs()
 	cfg.dropBadAccents()
 	cfg.dropBadSpend()
+	cfg.dropBadBrowser()
 	if err := cfg.Validate(); err != nil {
 		return err
 	}

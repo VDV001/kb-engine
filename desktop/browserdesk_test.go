@@ -1,7 +1,10 @@
+//go:build unix
+
 package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -177,5 +180,15 @@ func TestFindKbengine(t *testing.T) {
 				t.Fatalf("findKbengine = %q, %v; want %q", got, err, tc.want)
 			}
 		})
+	}
+}
+
+func mkExec(t *testing.T, path string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 }
