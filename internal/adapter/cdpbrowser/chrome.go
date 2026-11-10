@@ -32,15 +32,18 @@ type Options struct {
 
 const defaultScreencastIdle = 10 * time.Second
 
-// browsers are the Chromium-based browsers the module can drive, in the order
-// they are looked for: любой на движке Chromium говорит на одном протоколе.
+// Browser is an installed Chromium-based browser: Name — для человека, Path — что запускать.
+type Browser struct{ Name, Path string }
+
+// Любой браузер на движке Chromium говорит на одном протоколе; порядок списка —
+// порядок поиска без выбора человека.
 var (
-	macBrowsers = []string{
-		"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-		"/Applications/Brave Browser.app/Contents/MacOS/Brave Browser",
-		"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-		"/Applications/Chromium.app/Contents/MacOS/Chromium",
-		"/Applications/Vivaldi.app/Contents/MacOS/Vivaldi",
+	macBrowsers = []Browser{
+		{"Google Chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"},
+		{"Brave", "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"},
+		{"Microsoft Edge", "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"},
+		{"Chromium", "/Applications/Chromium.app/Contents/MacOS/Chromium"},
+		{"Vivaldi", "/Applications/Vivaldi.app/Contents/MacOS/Vivaldi"},
 	}
 	pathBrowsers = []string{"google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave-browser", "microsoft-edge"}
 )
@@ -48,17 +51,30 @@ var (
 // ErrNoBrowser means no Chromium-based browser was found.
 var ErrNoBrowser = errors.New("не нашла браузер на движке Chromium (Chrome, Brave, Edge, Chromium): поставьте любой или укажите путь флагом --chrome")
 
-// FindBrowser returns the first installed Chromium-based browser.
-func FindBrowser() (string, error) {
-	for _, p := range macBrowsers {
-		if st, err := os.Stat(p); err == nil && !st.IsDir() {
-			return p, nil
+// Installed lists the Chromium-based browsers on this machine: сначала
+// приложения Мака, потом найденные по PATH; один файл — одна запись.
+func Installed() []Browser {
+	var out []Browser
+	add := func(b Browser) {
+		if st, err := os.Stat(b.Path); err == nil && !st.IsDir() && !slices.ContainsFunc(out, func(o Browser) bool { return o.Path == b.Path }) {
+			out = append(out, b)
 		}
+	}
+	for _, b := range macBrowsers {
+		add(b)
 	}
 	for _, name := range pathBrowsers {
 		if p, err := exec.LookPath(name); err == nil {
-			return p, nil
+			add(Browser{name, p})
 		}
+	}
+	return out
+}
+
+// FindBrowser returns the first installed Chromium-based browser.
+func FindBrowser() (string, error) {
+	if all := Installed(); len(all) > 0 {
+		return all[0].Path, nil
 	}
 	return "", ErrNoBrowser
 }
