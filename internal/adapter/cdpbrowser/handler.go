@@ -105,33 +105,45 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 
 // validate returns why the event is refused; пусто — можно передавать браузеру.
 func validate(in Input, cfg Config) string {
-	inside := func() bool {
-		return in.X >= 0 && in.X <= float64(cfg.Width) && in.Y >= 0 && in.Y <= float64(cfg.Height)
-	}
+	inside := in.X >= 0 && in.X <= float64(cfg.Width) && in.Y >= 0 && in.Y <= float64(cfg.Height)
 	switch in.T {
 	case "mouse":
-		if in.Type != "pressed" && in.Type != "released" && in.Type != "moved" {
-			return "мышь: pressed, released или moved"
-		}
-		if !inside() {
-			return "мышь вне экрана"
-		}
+		return mouseRefusal(in, inside)
 	case "wheel":
-		if !inside() || abs(in.DX) > maxWheel || abs(in.DY) > maxWheel {
-			return "колесо вне экрана или слишком сильное"
-		}
+		return wheelRefusal(in, inside)
 	case "text":
-		if in.Text == "" || utf8.RuneCountInString(in.Text) > maxText || !utf8.ValidString(in.Text) {
-			return "текст пуст или длиннее " + strconv.Itoa(maxText)
-		}
+		return textRefusal(in.Text)
 	case "key":
 		if !keys[in.Key] {
 			return "клавиша не из списка"
 		}
+		return ""
 	case "nav":
 		return navRefusal(in.Text)
-	default:
-		return "неизвестный вид события"
+	}
+	return "неизвестный вид события"
+}
+
+func wheelRefusal(in Input, inside bool) string {
+	if !inside || abs(in.DX) > maxWheel || abs(in.DY) > maxWheel {
+		return "колесо вне экрана или слишком сильное"
+	}
+	return ""
+}
+
+func textRefusal(text string) string {
+	if text == "" || utf8.RuneCountInString(text) > maxText || !utf8.ValidString(text) {
+		return "текст пуст или длиннее " + strconv.Itoa(maxText)
+	}
+	return ""
+}
+
+func mouseRefusal(in Input, inside bool) string {
+	if in.Type != "pressed" && in.Type != "released" && in.Type != "moved" {
+		return "мышь: pressed, released или moved"
+	}
+	if !inside {
+		return "мышь вне экрана"
 	}
 	return ""
 }

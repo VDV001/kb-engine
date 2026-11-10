@@ -61,59 +61,79 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 		fmt.Fprintln(stderr, browserUsage)
 		return 2
 	}
-	home, _ := os.UserHomeDir()
-	cfgDir, _ := os.UserConfigDir()
-	fs := flag.NewFlagSet("browser serve", flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	addr := fs.String("addr", "127.0.0.1:8790", "address to listen on (loopback only)")
-	tokenFile := fs.String("token-file", filepath.Join(home, ".kb-tokens", "browser"), "token file (mode 0600); created with a random token if missing")
-	profile := fs.String("profile", filepath.Join(cfgDir, "kb-browser", "profile"), "browser profile folder (separate from your everyday browser)")
-	chrome := fs.String("chrome", "", "path to a Chromium-based browser; empty means find Chrome, Brave, Edge or Chromium")
-	headless := fs.Bool("headless", false, "no browser window on screen (checks and servers)")
-	if err := fs.Parse(args[1:]); err != nil {
-		return 2
+	o, code := parseBrowserFlags(args[1:], stderr)
+	if code != 0 {
+		return code
 	}
-	host, _, err := net.SplitHostPort(*addr)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v: %q\n", errBadAddr, *addr)
-		return 2
-	}
-	if !loopback.Host(host) {
-		fmt.Fprintln(stderr, errBrowserNotLoopback)
-		return 2
-	}
-	token, err := ensureBrowserToken(*tokenFile)
+	token, err := ensureBrowserToken(o.tokenFile)
 	if err != nil {
 		fmt.Fprintln(stderr, "токен браузера:", err)
 		return 1
 	}
-	scr, err := launch(ctx, cdpbrowser.Options{Path: *chrome, Profile: *profile, Width: browserWidth, Height: browserHeight, Headless: *headless})
+	scr, err := launch(ctx, cdpbrowser.Options{Path: o.chrome, Profile: o.profile, Width: browserWidth, Height: browserHeight, Headless: o.headless})
 	if err != nil {
 		fmt.Fprintln(stderr, "браузер:", err)
 		return 1
 	}
 	defer func() { _ = scr.Close() }()
-	ln, err := net.Listen("tcp", *addr)
+	ln, err := net.Listen("tcp", o.addr)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	srv := &http.Server{
-		Handler:           cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: browserWidth, Height: browserHeight, Wait: 25 * time.Second}),
-		ReadHeaderTimeout: 10 * time.Second,
+	fmt.Fprintf(stdout, "kbengine browser: слушает http://%s, токен в %s\n", ln.Addr(), o.tokenFile)
+	if err := serveUntil(ctx, ln, cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: browserWidth, Height: browserHeight, Wait: 25 * time.Second})); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
 	}
-	fmt.Fprintf(stdout, "kbengine browser: слушает http://%s, токен в %s\n", ln.Addr(), *tokenFile)
+	return 0
+}
+
+// serveUntil serves h on ln until ctx ends; остановка по ctx — не ошибка.
+func serveUntil(ctx context.Context, ln net.Listener, h http.Handler) error {
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = srv.Shutdown(shut)
 	}()
-	if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		fmt.Fprintln(stderr, err)
-		return 1
+	if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
+		return err
 	}
-	return 0
+	return nil
+}
+
+type browserFlags struct {
+	addr, tokenFile, profile, chrome string
+	headless                         bool
+}
+
+// parseBrowserFlags reads the flags and refuses a non-loopback address; ненулевой код — выход.
+func parseBrowserFlags(args []string, stderr io.Writer) (browserFlags, int) {
+	home, _ := os.UserHomeDir()
+	cfgDir, _ := os.UserConfigDir()
+	var o browserFlags
+	fs := flag.NewFlagSet("browser serve", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&o.addr, "addr", "127.0.0.1:8790", "address to listen on (loopback only)")
+	fs.StringVar(&o.tokenFile, "token-file", filepath.Join(home, ".kb-tokens", "browser"), "token file (mode 0600); created with a random token if missing")
+	fs.StringVar(&o.profile, "profile", filepath.Join(cfgDir, "kb-browser", "profile"), "browser profile folder (separate from your everyday browser)")
+	fs.StringVar(&o.chrome, "chrome", "", "path to a Chromium-based browser; empty means find Chrome, Brave, Edge or Chromium")
+	fs.BoolVar(&o.headless, "headless", false, "no browser window on screen (checks and servers)")
+	if err := fs.Parse(args); err != nil {
+		return o, 2
+	}
+	host, _, err := net.SplitHostPort(o.addr)
+	if err != nil {
+		fmt.Fprintf(stderr, "%v: %q\n", errBadAddr, o.addr)
+		return o, 2
+	}
+	if !loopback.Host(host) {
+		fmt.Fprintln(stderr, errBrowserNotLoopback)
+		return o, 2
+	}
+	return o, 0
 }
 
 // ensureBrowserToken reads the token or, when the file is missing, makes one:

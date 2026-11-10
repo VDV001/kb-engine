@@ -119,7 +119,10 @@ func Launch(ctx context.Context, o Options) (*Chrome, error) {
 		c.kill()
 		return nil, err
 	}
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
 	if err != nil {
 		c.kill()
 		return nil, fmt.Errorf("подключение к браузеру: %w", err)
