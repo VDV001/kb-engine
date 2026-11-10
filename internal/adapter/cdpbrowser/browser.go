@@ -24,7 +24,7 @@ type Frame struct {
 // Input is one thing the person did on the picture. Только то, что Handler
 // проверил: тип из списка, координаты внутри экрана, адрес http(s).
 type Input struct {
-	T    string  `json:"t"`    // mouse | wheel | text | key | nav
+	T    string  `json:"t"`    // mouse | wheel | text | key | nav | resize (X, Y — ширина и высота экрана)
 	Type string  `json:"type"` // mouse: pressed | released | moved
 	X    float64 `json:"x"`
 	Y    float64 `json:"y"`

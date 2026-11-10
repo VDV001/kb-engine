@@ -9,8 +9,8 @@
   #bar button { background: #16171a; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
   #bar button:hover { border-color: #4a4b50; }
   #addr { flex: 1; background: #101113; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; font: inherit; }
-  #stage { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; }
-  canvas { width: 100%; max-width: {{W}}px; height: auto; align-self: flex-start; cursor: default; background: #fff; }
+  #stage { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: default; background: #fff; }}px; height: auto; align-self: flex-start; cursor: default; background: #fff; }
   #kb { position: fixed; left: -999px; top: 0; width: 1px; height: 1px; opacity: 0; }
   #addr.plain { color: #e0a458; }
   #msg { padding: 4px 8px; color: #e0a458; }
@@ -25,7 +25,7 @@
 <div id="stage"><canvas id="c" width="{{W}}" height="{{H}}"></canvas></div>
 <textarea id="kb" aria-label="Ввод в браузер"></textarea>
 <script>
-const W = {{W}}, H = {{H}};
+let W = {{W}}, H = {{H}}; // подгоняются под вкладку: экран браузера занимает все окно
 const c = document.getElementById("c"), x = c.getContext("2d"), kb = document.getElementById("kb"), msg = document.getElementById("msg"), addr = document.getElementById("addr");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (t) => { msg.hidden = !t; msg.textContent = t || ""; };
@@ -60,6 +60,18 @@ let seq = 0, epoch = "";
     } catch (e) { say("Браузер не отвечает"); await sleep(1500); }
   }
 })();
+const stage = document.getElementById("stage");
+let sent = "";
+function fit() {
+  const r = stage.getBoundingClientRect();
+  const w = Math.round(Math.max(320, Math.min(3840, r.width))), h = Math.round(Math.max(240, Math.min(2400, r.height)));
+  if (w === W && h === H && sent) return;
+  W = w; H = h; c.width = w; c.height = h;
+  if (sent !== w + "x" + h) { sent = w + "x" + h; send({ t: "resize", x: w, y: h }); }
+}
+let fitTimer = 0;
+new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 150); }).observe(stage);
+fit();
 const pos = (e) => { const r = c.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) * W / r.width, W), y: clamp((e.clientY - r.top) * H / r.height, H) }; };
 let lastMove = 0, down = false;
 c.addEventListener("mousedown", (e) => { down = true; send({ t: "mouse", type: "pressed", ...pos(e) }); kb.focus(); e.preventDefault(); });

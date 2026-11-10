@@ -18,6 +18,13 @@ const (
 	maxWheel   = 5000 // пикселей за одно событие колеса
 )
 
+// Пределы экрана: вкладка занимает все окно DVK, и размер приходит от окна
+// событием resize; за пределами — отказ (экран на 8K раздул бы кадры).
+const (
+	MinWidth, MinHeight = 320, 240
+	MaxWidth, MaxHeight = 3840, 2400
+)
+
 // keys is every key the window may press by name; буквы и знаки идут текстом.
 // Список закрытый: незнакомое имя — отказ, а не передача браузеру как есть.
 var keys = map[string]bool{
@@ -35,7 +42,7 @@ func Handler(s Screen, cfg Config) http.Handler {
 	epoch := newEpoch()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /frame", func(w http.ResponseWriter, r *http.Request) { serveFrame(w, r, s, cfg, epoch) })
-	mux.HandleFunc("POST /input", func(w http.ResponseWriter, r *http.Request) { serveInput(w, r, s, cfg) })
+	mux.HandleFunc("POST /input", func(w http.ResponseWriter, r *http.Request) { serveInput(w, r, s) })
 	return authorized(cfg.Token, mux)
 }
 
@@ -89,7 +96,7 @@ func serveFrame(w http.ResponseWriter, r *http.Request, s Screen, cfg Config, ep
 	_, _ = w.Write(f.JPEG)
 }
 
-func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
+func serveInput(w http.ResponseWriter, r *http.Request, s Screen) {
 	var in Input
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	dec.DisallowUnknownFields() // лишнее поле — не событие окна, а попытка проверить, что пропустят
@@ -97,7 +104,7 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 		http.Error(w, "не событие: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := validate(in, cfg); err != "" {
+	if err := validate(in); err != "" {
 		http.Error(w, err, http.StatusBadRequest)
 		return
 	}
@@ -109,9 +116,11 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 }
 
 // validate returns why the event is refused; пусто — можно передавать браузеру.
-func validate(in Input, cfg Config) string {
-	inside := in.X >= 0 && in.X <= float64(cfg.Width) && in.Y >= 0 && in.Y <= float64(cfg.Height)
+func validate(in Input) string {
+	inside := in.X >= 0 && in.X <= MaxWidth && in.Y >= 0 && in.Y <= MaxHeight
 	switch in.T {
+	case "resize":
+		return resizeRefusal(in)
 	case "mouse":
 		return mouseRefusal(in, inside)
 	case "wheel":
@@ -127,6 +136,13 @@ func validate(in Input, cfg Config) string {
 		return navRefusal(in.Text)
 	}
 	return "неизвестный вид события"
+}
+
+func resizeRefusal(in Input) string {
+	if in.X < MinWidth || in.X > MaxWidth || in.Y < MinHeight || in.Y > MaxHeight || in.X != float64(int(in.X)) || in.Y != float64(int(in.Y)) {
+		return "размер экрана вне пределов"
+	}
+	return ""
 }
 
 func wheelRefusal(in Input, inside bool) string {

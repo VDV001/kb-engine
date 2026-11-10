@@ -19,7 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/cdpbrowser"
 )
 
-const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/browser.sock] [--token-file ~/.kb-tokens/browser] [--profile DIR] [--chrome PATH] [--headless]
+const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/browser.sock] [--token-file ~/.kb-tokens/browser] [--profile DIR] [--chrome PATH] [--window]
        Браузер для вкладки «Браузер» окна DVK: Chrome, Brave, Edge или Chromium на этом Mac.
        Сервер слушает unix-сокет в вашей папке (не сетевой порт) и каждый запрос проверяет по токену.`
 
@@ -187,10 +187,11 @@ func parseBrowserFlags(args []string, stderr io.Writer) (browserFlags, int) {
 	fs.StringVar(&o.tokenFile, "token-file", filepath.Join(home, ".kb-tokens", "browser"), "token file (mode 0600); created with a random token if missing")
 	fs.StringVar(&o.profile, "profile", filepath.Join(cfgDir, "kb-browser", "profile"), "browser profile folder (separate from your everyday browser)")
 	fs.StringVar(&o.chrome, "chrome", "", "path to a Chromium-based browser; empty means find Chrome, Brave, Edge or Chromium")
-	fs.BoolVar(&o.headless, "headless", false, "no browser window on screen (checks and servers)")
+	window := fs.Bool("window", false, "show the browser's own window too (by default the picture is only in the DVK tab)")
 	if err := fs.Parse(args); err != nil {
 		return o, 2
 	}
+	o.headless = !*window
 	return o, 0
 }
 

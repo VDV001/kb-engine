@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -186,19 +187,43 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	if _, err := c.call(ctx, "", "Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}); err != nil {
 		return err
 	}
-	for _, step := range []struct {
-		m string
-		p any
-	}{
-		{"Page.enable", nil},
-		{"Emulation.setDeviceMetricsOverride", map[string]any{"width": o.Width, "height": o.Height, "deviceScaleFactor": 1, "mobile": false}},
-		{"Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": o.Width, "maxHeight": o.Height, "everyNthFrame": 1}},
-	} {
-		if _, err := c.call(ctx, c.sess, step.m, step.p); err != nil {
+	if _, err := c.call(ctx, c.sess, "Page.enable", nil); err != nil {
+		return err
+	}
+	if o.Headless {
+		// Без окна Chrome называет себя HeadlessChrome, и часть сайтов видит в этом бота.
+		if err := c.hideHeadless(ctx); err != nil {
 			return err
 		}
 	}
-	return nil
+	return c.resize(ctx, o.Width, o.Height)
+}
+
+func (c *Chrome) hideHeadless(ctx context.Context) error {
+	r, err := c.call(ctx, "", "Browser.getVersion", nil)
+	if err != nil {
+		return err
+	}
+	var v struct {
+		UserAgent string `json:"userAgent"`
+	}
+	_ = json.Unmarshal(r, &v)
+	if !strings.Contains(v.UserAgent, "HeadlessChrome") {
+		return nil
+	}
+	_, err = c.call(ctx, c.sess, "Emulation.setUserAgentOverride", map[string]any{"userAgent": strings.Replace(v.UserAgent, "HeadlessChrome", "Chrome", 1)})
+	return err
+}
+
+// resize sets the page's screen size and restarts the picture stream at it:
+// вкладка занимает все окно DVK, и размер приходит от окна.
+func (c *Chrome) resize(ctx context.Context, w, h int) error {
+	if _, err := c.call(ctx, c.sess, "Emulation.setDeviceMetricsOverride", map[string]any{"width": w, "height": h, "deviceScaleFactor": 1, "mobile": false}); err != nil {
+		return err
+	}
+	_, _ = c.call(ctx, c.sess, "Page.stopScreencast", nil) // первый запуск: останавливать нечего
+	_, err := c.call(ctx, c.sess, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": w, "maxHeight": h, "everyNthFrame": 1})
+	return err
 }
 
 // die records why the browser is gone; первое слово остается.
@@ -429,6 +454,8 @@ func (c *Chrome) Input(ctx context.Context, in Input) error {
 		return err
 	case "nav":
 		return c.navigate(ctx, in.Text)
+	case "resize":
+		return c.resize(ctx, int(in.X), int(in.Y))
 	}
 	return fmt.Errorf("событие %q не поддержано", in.T)
 }
