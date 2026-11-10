@@ -400,7 +400,9 @@ func reasonsOf(in HealthInput, h Health) []HealthReason {
 	if in.StaleVectors > 0 {
 		rs = append(rs, HealthReason{ReasonVectors, in.StaleVectors})
 	}
-	if awaitsReview(in, h) && (h.IdleDays > IdleWarnDays || h.IdleDays < 0) {
+	// Давность осмотра называется и у тихой памяти: баллов она не снимает (это делает ожидание),
+	// но человек видит, что память давно не смотрели. Пустой журнал молчит, пока ждать нечему.
+	if h.IdleDays > IdleWarnDays || (h.IdleDays < 0 && awaitsReview(in, h)) {
 		rs = append(rs, HealthReason{ReasonRhythm, h.IdleDays})
 	}
 	return rs
