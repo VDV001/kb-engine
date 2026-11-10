@@ -82,11 +82,18 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 		return 1
 	}
 	defer func() { _ = scr.Close() }()
+	fmt.Fprintf(stdout, "kbengine browser: слушает %s, токен в %s\n", o.socket, o.tokenFile)
+	return runBrowserServer(ctx, ln, scr, token, stderr)
+}
+
+// runBrowserServer serves until ctx ends or the browser closes; закрытый
+// браузер — код 1: отвечать 502 вечно незачем, вкладка подскажет запустить заново.
+func runBrowserServer(ctx context.Context, ln net.Listener, scr browserScreen, token string, stderr io.Writer) int {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	closed := make(chan struct{})
 	if d, ok := scr.(interface{ Done() <-chan struct{} }); ok {
-		go func() { // закрыли окно Chrome: отвечать 502 вечно незачем, вкладка подскажет запустить заново
+		go func() {
 			select {
 			case <-d.Done():
 				fmt.Fprintln(stderr, "браузер закрыт: serve завершается, запустите его снова")
@@ -96,8 +103,8 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 			}
 		}()
 	}
-	fmt.Fprintf(stdout, "kbengine browser: слушает %s, токен в %s\n", o.socket, o.tokenFile)
-	if err := serveUntil(ctx, ln, cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: cdpbrowser.DefaultWidth, Height: cdpbrowser.DefaultHeight, Wait: 25 * time.Second})); err != nil {
+	h := cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: cdpbrowser.DefaultWidth, Height: cdpbrowser.DefaultHeight, Wait: 25 * time.Second})
+	if err := serveUntil(ctx, ln, h); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
