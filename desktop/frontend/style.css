@@ -483,6 +483,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 #fin-server { margin-top: 8px; flex-wrap: wrap; }
 #fin-server input { flex: 1 1 240px; }
 #tab-add select, #fin-server select { height: 30px; font: 12px var(--z-font); background: var(--z-bg); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; }
+.access-view > .settings-error { margin: 10px 14px 0; }
 .settings-error { color: var(--z-bad); background: var(--z-bad-wash); padding: 8px 12px; border-left: 2px solid var(--z-bad); }
 .settings-foot { margin-top: auto; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding-top: 14px; border-top: 1px solid var(--z-rule); }
 /* Строка источника: ⠿, номер, кто, состояние и переключатель; действия второй
