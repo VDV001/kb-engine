@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge</title>
+<style>
+/* Стартовая страница браузера DVK: мозг как солнце, планеты базы на орбитах, аврора и звезды. Тема одна, темная. */
+:root { --fg: #e6e6e6; --muted: #9a9a9c; --faint: #808084; --accent-hi: #8fb2e3; --wash: #5e8fd024; --win: #07070a; --star: 235, 240, 255; --glass: 12, 12, 16;
+  --s1: #e8b84a; --s2: #e8925a; --s3: #e07070; --s4: #5e8fd0; --s5: #5fb0d8; --s6: #8fc79a;
+  --spec: linear-gradient(100deg, #e8b84a, #e8925a 22%, #e07070 42%, #5e8fd0 60%, #5fb0d8 80%, #8fc79a);
+  --mono: "JetBrains Mono", ui-monospace, Menlo, monospace; --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--win); color: var(--fg); font: 14px/1.5 var(--sans); }
+.page { position: fixed; inset: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px 16px; background: var(--win); }
+.page > * { position: relative; z-index: 2; }
+/* аврора из третьего варианта */
+.blob { position: absolute !important; z-index: 0 !important; width: 520px; height: 520px; border-radius: 50%; filter: blur(40px); opacity: .34; animation: drift 18s ease-in-out infinite alternate; }
+.b1 { left: -120px; top: -140px; background: radial-gradient(circle, var(--s2), transparent 66%); }
+.b2 { right: -140px; top: 20px; background: radial-gradient(circle, var(--s4), transparent 66%); animation-duration: 23s; animation-delay: -6s; }
+.b3 { left: 30%; bottom: -260px; background: radial-gradient(circle, var(--s6), transparent 66%); animation-duration: 27s; animation-delay: -11s; }
+.b4 { left: 8%; bottom: -120px; background: radial-gradient(circle, var(--s3), transparent 66%); animation-duration: 21s; animation-delay: -3s; opacity: .22; }
+@keyframes drift { to { transform: translate(80px, 50px) scale(1.15); } }
+.page > canvas { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; color: var(--faint); }
+/* солнце: мозг */
+.sun { position: relative; width: 150px; height: 150px; display: grid; place-items: center; margin-top: -6px; }
+.sun::before { content: ""; position: absolute; inset: -46px; border-radius: 50%; background: radial-gradient(circle, rgba(232, 146, 90, .42), rgba(94, 143, 208, .22) 45%, transparent 70%); animation: glow 5s ease-in-out infinite; z-index: -1; }
+@keyframes glow { 50% { transform: scale(1.14); opacity: .8; } }
+.brain { width: 128px; height: 128px; overflow: visible; filter: drop-shadow(0 0 14px rgba(94, 143, 208, .5)); }
+.lobe-l, .lobe-r { transition: transform .5s cubic-bezier(.16, 1, .3, 1); }
+.sun:hover .lobe-l, .page:focus-within .lobe-l { transform: translateX(-3px); } .sun:hover .lobe-r, .page:focus-within .lobe-r { transform: translateX(3px); }
+.cut { fill: none; stroke: var(--win); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; } .cutf { fill: var(--win); }
+.cutf circle { animation: padb 1.5s ease-in-out infinite; } .cutf circle:nth-child(2) { animation-delay: .25s !important; } .cutf circle:nth-child(3) { animation-delay: .5s !important; } .cutf circle:nth-child(4) { animation-delay: .75s !important; }
+.typing .gyri { stroke-dasharray: 5 3.5; animation: march 1.1s linear infinite; }
+@keyframes padb { 50% { opacity: .15; } } @keyframes march { to { stroke-dashoffset: -17; } }
+.hi { font-size: 14px; color: var(--muted); margin-top: -2px; }
+.word { font: 700 46px/1.05 var(--sans); letter-spacing: -.035em; background: linear-gradient(100deg, var(--s1), var(--s2), var(--s3), var(--s4), var(--s5), var(--s6), var(--s1)); background-size: 300% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: flow 8s linear infinite; margin-top: -2px; }
+@keyframes flow { to { background-position: 150% 0; } }
+.q { position: relative; display: flex; align-items: center; gap: 10px; width: min(560px, 100%); border-radius: 999px; padding: 13px 22px; border: 0;
+  background: linear-gradient(rgba(var(--glass), .22), rgba(var(--glass), .22));
+  backdrop-filter: blur(18px) saturate(1.6); -webkit-backdrop-filter: blur(18px) saturate(1.6);
+  box-shadow: inset 0 1px 0 rgba(var(--glass), .3), 0 14px 56px -20px rgba(94, 143, 208, .55), 0 0 30px -12px rgba(232, 146, 90, .4); transition: box-shadow .3s, background .3s; }
+.q::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; transition: opacity .3s;
+  background: linear-gradient(100deg, rgba(232, 184, 74, .75), rgba(224, 112, 112, .6) 35%, rgba(94, 143, 208, .75) 65%, rgba(143, 199, 154, .7));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; opacity: .8; }
+.q:focus-within { background: linear-gradient(rgba(var(--glass), .34), rgba(var(--glass), .34)); box-shadow: inset 0 1px 0 rgba(var(--glass), .4), 0 0 0 4px var(--wash), 0 16px 64px -16px rgba(94, 143, 208, .7), 0 0 40px -10px rgba(232, 146, 90, .5); }
+.q:focus-within::before { opacity: 1; }
+.q input::placeholder { color: var(--faint); opacity: .85; }
+.q .go { font: 11px var(--mono); color: var(--faint); border: 1px solid transparent; border-radius: 6px; padding: 1px 7px; background: rgba(var(--glass), .25); }
+.q input { flex: 1; min-width: 0; border: 0; outline: 0; background: none; color: var(--fg); font: 16px var(--sans); }
+.q svg { width: 16px; height: 16px; color: var(--faint); flex: none; }
+.hint { font: 12px var(--mono); color: var(--muted); min-height: 18px; text-align: center; overflow-wrap: anywhere; max-width: 100%; }
+.hint b { color: var(--accent-hi); font-weight: 500; }
+input:focus-visible { outline: none; }
+
+/* работающий мозг: импульсы бегут по извилинам и дорожкам, нейроны вспыхивают, на стыке искры */
+.brain { animation: breathe 4.6s ease-in-out infinite; transform-origin: 50% 50%; }
+@keyframes breathe { 50% { transform: scale(1.03); } }
+.sig { fill: none; stroke-linecap: round; stroke-dasharray: .17 1; stroke-dashoffset: .17; opacity: 0; animation: sig calc(var(--d, 2.6s) * var(--k, 1)) linear infinite; animation-delay: var(--dl, 0s); }
+.sigL { stroke: #fff2c8; stroke-width: 1.5; filter: drop-shadow(0 0 1.3px #ffc25a); }
+.sigR { stroke: #d2f5ff; stroke-width: 1.5; filter: drop-shadow(0 0 1.3px #4fc8ff); }
+@keyframes sig { 0% { stroke-dashoffset: .17; opacity: 0; } 8% { opacity: 1; } 88% { opacity: 1; } 100% { stroke-dashoffset: -1; opacity: 0; } }
+.neu, .rip, .spark { transform-box: fill-box; transform-origin: center; animation-delay: var(--dl, 0s); }
+.neu { fill: #fff0bd; filter: drop-shadow(0 0 2px #ffb84a); animation: fire calc(2.4s * var(--k, 1)) ease-in-out infinite; }
+.rip { fill: none; stroke: #ffd27a; stroke-width: .45; opacity: 0; animation: ripple calc(2.4s * var(--k, 1)) ease-out infinite; }
+.spark { fill: #fff; filter: drop-shadow(0 0 2px #8fd8ff); opacity: 0; animation: spark calc(2.1s * var(--k, 1)) ease-in-out infinite; }
+@keyframes fire { 0%, 100% { transform: scale(.7); opacity: .35; } 18% { transform: scale(1.6); opacity: 1; } 45% { transform: scale(1); opacity: .55; } }
+@keyframes ripple { 0% { transform: scale(1); opacity: .9; } 70%, 100% { transform: scale(5); opacity: 0; } }
+@keyframes spark { 0%, 70%, 100% { opacity: 0; transform: scale(.5); } 82% { opacity: 1; transform: scale(2.2); } }
+.typing .brain { --k: .42; }
+.typing .sig { stroke-width: 1.9; }
+@media (max-width: 640px) { .word { font-size: 30px; } .page { min-height: 560px; } .sun { width: 118px; height: 118px; } .brain { width: 100px; height: 100px; } }
+@media (prefers-reduced-motion: reduce) { .blob, .sun::before, .word, .typing .gyri, .cutf circle, .brain, .sig, .neu, .rip, .spark { animation: none; } .sig { opacity: 0; } .lobe-l, .lobe-r { transition: none; } }
+
+/* экономный режим: без действий анимация замирает, и вкладка не шлет кадры и не греет процессор */
+.calm *, .calm *::before, .calm *::after { animation-play-state: paused !important; }
+</style>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="g64" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="60" y2="0"><stop offset="0" stop-color="#e8b84a"/><stop offset=".22" stop-color="#e8925a"/><stop offset=".42" stop-color="#e07070"/><stop offset=".6" stop-color="#5e8fd0"/><stop offset=".8" stop-color="#5fb0d8"/><stop offset="1" stop-color="#8fc79a"/></linearGradient>
+</defs></svg>
+<div class="page" id="page">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div>
+  <canvas id="cv" aria-hidden="true"></canvas>
+  <div class="sun" id="sun"><svg class="brain" id="brain" viewBox="0 0 64 64" aria-hidden="true"></svg></div>
+  <div class="hi" id="hi"></div>
+  <div class="word">Knowledge</div>
+  <label class="q"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><input id="in" type="text" placeholder="Введите адрес или запрос" autocomplete="off" autofocus aria-label="Адрес или запрос"><span class="go">Enter</span></label>
+  <div class="hint" id="hint">наведите на планету</div>
+</div>
+<script id="route">
+const SEARCH = "https://www.google.com/search?q=";
+// route: что делать с введенным. Адрес открывается, слова уходят в поиск, опасные схемы закрыты.
+function route(raw) {
+  const t = String(raw).trim();
+  if (!t) return { kind: "none" };
+  if (/^(javascript|data|file|chrome|chrome-extension|about|blob|view-source|vbscript|brave|edge|filesystem|ftp|ws|wss):/i.test(t)) return { kind: "refused" };
+  if (/^https?:\/\//i.test(t)) { try { return { kind: "open", url: new URL(t).href }; } catch (e) { return { kind: "search", url: SEARCH + encodeURIComponent(t) }; } }
+  if (!/\s/.test(t) && /^(localhost|(\d{1,3}\.){3}\d{1,3}|([\p{L}\p{N}-]+\.)+\p{L}{2,})(:\d+)?([/?#]\S*)?$/iu.test(t)) {
+    const local = /^(localhost|\d{1,3}(\.\d{1,3}){3})(:|\/|$)/i.test(t);
+    try { return { kind: "open", url: new URL((local ? "http://" : "https://") + t).href }; } catch (e) { /* ниже поиск */ }
+  }
+  return { kind: "search", url: SEARCH + encodeURIComponent(t) };
+}
+</script>
+<script>
+
+const $ = (s) => document.querySelector(s);
+const LEFT = "M31 10C27 6.5 21 6.5 18 10C12.5 9 8.5 13.5 9.5 18.5C5.5 21 4.5 26.5 7.5 30.5C4.5 34.5 5.5 40.5 10 42.5C10.5 47.5 15.5 51.5 20.5 50C23.5 54 29 54 31 51Z";
+const RIGHT = "M33 10H40L46 12.5H50L54.5 18V23.5L58 28.5V35.5L55 40V44.5L50 49.5H44L38.5 52.5H33Z";
+const GYRI = "M24 14C20 15.5 19.5 20 23 22.5M13.5 22C18 22 20.5 26.5 17 29.5M11.5 35.5C16 33 21 35 21 39.5M27 26.5C22.5 28.5 23 33.5 27.5 34.5M17.5 45.5C20.5 42 26 42.5 27.5 46";
+const TRACE = "M33 18H42L46 22M33 29H50M33 40H40L44 44M38 29V34H46";
+const PADS = [[47.6, 23.6], [52, 29], [45.6, 45.6], [48, 34]];
+const sub = (d) => d.split("M").filter(Boolean).map((x) => "M" + x);
+const NEUR = [[23, 22.5], [17, 29.5], [21, 39.5], [27.5, 34.5], [27.5, 46], [24, 14]], SEAM = [[32, 17], [32, 29], [32, 41]];
+const dl = (i, k, o = 0) => `style="--d:${(2.3 + (i % 4) * .41).toFixed(2)}s;--dl:${(i * k + o).toFixed(2)}s"`;
+$("#brain").innerHTML = `<g class="lobe-l"><path fill="url(#g64)" d="${LEFT}"/><path class="cut gyri" d="${GYRI}"/>
+  ${sub(GYRI).map((d, i) => `<path class="sig sigL" pathLength="1" d="${d}" ${dl(i, .55)}/>`).join("")}
+  ${NEUR.map(([x, y], i) => `<circle class="rip" cx="${x}" cy="${y}" r="1.4" ${dl(i, .47, .4)}/><circle class="neu" cx="${x}" cy="${y}" r="1.25" ${dl(i, .47, .4)}/>`).join("")}</g>
+  <g class="lobe-r"><path fill="url(#g64)" d="${RIGHT}"/><path class="cut" d="${TRACE}"/>
+  ${sub(TRACE).map((d, i) => `<path class="sig sigR" pathLength="1" d="${d}" ${dl(i, .6, .3)}/>`).join("")}
+  <g class="cutf">${PADS.map(([x, y]) => `<circle cx="${x}" cy="${y}" r="2"/>`).join("")}</g></g>
+  <g class="seam">${SEAM.map(([x, y], i) => `<circle class="spark" cx="${x}" cy="${y}" r=".95" style="--dl:${(i * .8).toFixed(2)}s"/>`).join("")}</g>`;
+
+// ---------- планеты: у каждой своя текстура, вращение и освещение от «солнца» (мозга) ----------
+const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const mix = (c, d, k) => c.map((v, i) => Math.round(v + (d[i] - v) * k));
+const rgb = (c, a = 1) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const seeded = (n) => () => (n = (n * 16807) % 2147483647) / 2147483647;
+const TW = 256, TH = 128;
+function texture(kind, color, seed) {
+  const cv2 = document.createElement("canvas"); cv2.width = TW; cv2.height = TH;
+  const g = cv2.getContext("2d"), R = seeded(seed), base = hex(color);
+  const light = mix(base, [255, 255, 255], .5), dark = mix(base, [0, 0, 0], .55), white = [255, 255, 255];
+  const wrap = (fn) => [-TW, 0, TW].forEach(fn);
+  const blob = (x, y, rx, ry, col, al) => wrap((dx) => { g.save(); g.translate(x + dx, y); g.scale(1, ry / rx); const gr = g.createRadialGradient(0, 0, 0, 0, 0, rx); gr.addColorStop(0, rgb(col, al)); gr.addColorStop(1, rgb(col, 0)); g.fillStyle = gr; g.beginPath(); g.arc(0, 0, rx, 0, 7); g.fill(); g.restore(); });
+  const band = (y, h, col, al, amp, k, ph) => { g.fillStyle = rgb(col, al); g.beginPath(); g.moveTo(0, y); for (let x = 0; x <= TW; x += 4) g.lineTo(x, y + Math.sin(6.2832 * k * x / TW + ph) * amp); g.lineTo(TW, y + h); g.lineTo(0, y + h); g.fill(); };
+  const crater = (x, y, r, al) => wrap((dx) => { g.fillStyle = rgb(dark, al); g.beginPath(); g.arc(x + dx, y, r, 0, 7); g.fill(); g.strokeStyle = rgb(light, al * .9); g.lineWidth = .8; g.beginPath(); g.arc(x + dx - r * .15, y - r * .15, r, 0, 7); g.stroke(); });
+  if (kind === "gas") {
+    g.fillStyle = rgb(base); g.fillRect(0, 0, TW, TH);
+    for (let y = 0; y < TH; y += 2 + R() * 7) band(y, 3 + R() * 7, R() < .5 ? mix(base, light, R() * .85) : mix(base, dark, R() * .75), .6, 1 + R() * 2.2, 1 + Math.floor(R() * 3), R() * 6);
+    const sy = TH * (.55 + R() * .15), sx = R() * TW; blob(sx, sy, 26, 12, dark, .55); blob(sx, sy, 17, 8, light, .75); blob(sx, sy, 8, 4, mix(base, [255, 120, 60], .5), .8);
+  } else if (kind === "ice") {
+    const gr = g.createLinearGradient(0, 0, 0, TH); gr.addColorStop(0, rgb(mix(base, dark, .35))); gr.addColorStop(.5, rgb(mix(base, light, .3))); gr.addColorStop(1, rgb(mix(base, dark, .4))); g.fillStyle = gr; g.fillRect(0, 0, TW, TH);
+    for (let i = 0; i < 9; i++) band(10 + R() * 108, 2 + R() * 5, R() < .5 ? light : dark, .16, .8 + R(), 1 + Math.floor(R() * 2), R() * 6);
+    blob(R() * TW, 70, 16, 5, white, .35);
+  } else if (kind === "terra") {
+    const ocean = mix([36, 86, 168], base, .18); g.fillStyle = rgb(ocean); g.fillRect(0, 0, TW, TH);
+    blob(80, 64, 120, 60, mix(ocean, [90, 170, 220], .5), .35);
+    for (let c = 0; c < 6; c++) { const cx0 = R() * TW, cy0 = 22 + R() * 84; for (let k = 0; k < 7; k++) blob(cx0 + (R() - .5) * 46, cy0 + (R() - .5) * 26, 14 + R() * 18, 8 + R() * 10, R() < .3 ? mix(base, [150, 120, 70], .6) : mix(base, dark, .2 + R() * .3), .95); }
+    for (let k = 0; k < 40; k++) blob(R() * TW, 10 + R() * 108, 4 + R() * 7, 3 + R() * 4, mix(base, white, .5), .35);
+    blob(TW / 2, 2, 150, 16, white, .95); blob(TW / 2, TH - 2, 150, 14, white, .9);
+    for (let k = 0; k < 20; k++) blob(R() * TW, 8 + R() * 112, 18 + R() * 24, 3 + R() * 4, white, .55);
+  } else if (kind === "desert") {
+    g.fillStyle = rgb(mix(base, dark, .15)); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 6; k++) blob(R() * TW, 20 + R() * 88, 24 + R() * 30, 9 + R() * 14, R() < .5 ? dark : light, .4);
+    for (let k = 0; k < 140; k++) { const y = R() * TH, x = R() * TW; g.strokeStyle = rgb(R() < .5 ? light : dark, .12 + R() * .1); g.lineWidth = 1 + R() * 1.5; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 10 + R() * 30, y + (R() - .5) * 3); g.stroke(); }
+    for (let k = 0; k < 16; k++) crater(R() * TW, 14 + R() * 100, 2 + R() * 5, .4);
+    blob(TW / 2, 1, 120, 9, white, .85); blob(TW / 2, TH - 1, 120, 8, white, .75);
+  } else if (kind === "moon") {
+    g.fillStyle = rgb([150, 150, 156]); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 9; k++) blob(R() * TW, R() * TH, 20 + R() * 30, 12 + R() * 14, R() < .5 ? [90, 90, 96] : [200, 200, 205], .35);
+    for (let k = 0; k < 34; k++) crater(R() * TW, 8 + R() * 112, 1.5 + R() * 6, .5);
+  } else if (kind === "lava") {
+    g.fillStyle = rgb([34, 12, 14]); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 10; k++) blob(R() * TW, R() * TH, 18 + R() * 26, 10 + R() * 12, [90, 34, 28], .55);
+    g.shadowColor = "#ff7a30"; g.shadowBlur = 6; g.lineCap = "round";
+    for (let k = 0; k < 28; k++) { let x = R() * TW, y = R() * TH; g.strokeStyle = rgb(R() < .5 ? [255, 130, 50] : [255, 190, 90], .8); g.lineWidth = .8 + R() * 1.4; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 5; j++) { x += (R() - .4) * 18; y += (R() - .5) * 14; g.lineTo(x, y); } g.stroke(); }
+    g.shadowBlur = 0; for (let k = 0; k < 8; k++) blob(R() * TW, R() * TH, 12 + R() * 14, 8 + R() * 8, [255, 120, 40], .32);
+  } else if (kind === "venus") {
+    g.fillStyle = rgb(mix(base, [255, 238, 200], .45)); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 46; k++) { const y = R() * TH; g.strokeStyle = rgb(R() < .5 ? mix(base, dark, .35) : white, .14 + R() * .16); g.lineWidth = 2 + R() * 5; g.beginPath(); for (let x = 0; x <= TW; x += 6) g.lineTo(x, y + Math.sin(6.2832 * (1 + Math.floor(R() * 2)) * x / TW + k) * (2 + R() * 3)); g.stroke(); }
+    blob(TW * .3, TH * .5, 26, 14, mix(base, dark, .4), .4);
+  } else if (kind === "jupiter") {
+    const pal = [[238, 222, 192], [214, 146, 84], [160, 98, 62], [246, 236, 214], [196, 120, 70]]; g.fillStyle = rgb(pal[0]); g.fillRect(0, 0, TW, TH);
+    for (let y = 0; y < TH; y += 3 + R() * 7) band(y, 4 + R() * 9, pal[Math.floor(R() * pal.length)], .78, .8 + R() * 1.8, 1 + Math.floor(R() * 3), R() * 6);
+    blob(TW * .55, TH * .64, 26, 14, [210, 110, 70], .95); blob(TW * .55, TH * .64, 16, 8, [168, 58, 44], .95); blob(TW * .55, TH * .64, 6, 3, [225, 140, 100], .9);
+  } else if (kind === "neptune") {
+    const gr = g.createLinearGradient(0, 0, 0, TH); gr.addColorStop(0, "#1c3a92"); gr.addColorStop(.5, "#3a6ad2"); gr.addColorStop(1, "#1a3688"); g.fillStyle = gr; g.fillRect(0, 0, TW, TH);
+    for (let i = 0; i < 8; i++) band(10 + R() * 108, 3 + R() * 6, R() < .5 ? [90, 140, 230] : [20, 44, 120], .3, 1 + R(), 1 + Math.floor(R() * 2), R() * 6);
+    for (let i = 0; i < 14; i++) blob(R() * TW, 12 + R() * 104, 24 + R() * 30, 1.6 + R() * 2.2, white, .6);
+    blob(TW * .3, TH * .58, 17, 8, [8, 22, 76], .85); blob(TW * .3 + 5, TH * .5, 10, 3, white, .6);
+  } else if (kind === "uranus") {
+    const gr = g.createLinearGradient(0, 0, 0, TH); gr.addColorStop(0, "#7fcfd6"); gr.addColorStop(.5, "#b4eef0"); gr.addColorStop(1, "#76c4cc"); g.fillStyle = gr; g.fillRect(0, 0, TW, TH);
+    for (let i = 0; i < 5; i++) band(14 + R() * 100, 3 + R() * 5, R() < .5 ? white : [90, 180, 190], .16, .6, 1, R() * 6);
+  } else if (kind === "europa") {
+    g.fillStyle = rgb([226, 231, 238]); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 10; k++) blob(R() * TW, R() * TH, 22 + R() * 30, 12 + R() * 14, R() < .5 ? [170, 200, 226] : [196, 160, 132], .38);
+    g.lineCap = "round"; for (let k = 0; k < 62; k++) { let x = R() * TW, y = R() * TH; g.strokeStyle = rgb([150, 98, 78], .5 + R() * .3); g.lineWidth = .6 + R() * 1.5; g.beginPath(); g.moveTo(x, y); for (let j = 0; j < 4; j++) { x += (R() - .5) * 40; y += (R() - .5) * 20; g.lineTo(x, y); } g.stroke(); }
+  } else if (kind === "ocean") {
+    g.fillStyle = rgb([16, 104, 150]); g.fillRect(0, 0, TW, TH); blob(TW * .5, TH * .5, 150, 62, [70, 200, 210], .42);
+    for (let k = 0; k < 5; k++) { const x = R() * TW, y = 22 + R() * 84; blob(x, y, 9 + R() * 8, 5 + R() * 5, [232, 214, 150], .95); blob(x, y, 5, 3, [70, 150, 70], .9); }
+    for (let k = 0; k < 4; k++) { const cx0 = R() * TW, cy0 = 20 + R() * 88; for (let j = 0; j < 34; j++) { const an = j * .38; blob(cx0 + Math.cos(an) * j * .8 * 1.6, cy0 + Math.sin(an) * j * .8 * .7, 6, 2.6, white, .38); } }
+    for (let k = 0; k < 12; k++) blob(R() * TW, 8 + R() * 112, 20 + R() * 20, 2.4 + R() * 3, white, .4);
+  } else if (kind === "io") {
+    g.fillStyle = rgb([232, 204, 72]); g.fillRect(0, 0, TW, TH);
+    for (let k = 0; k < 10; k++) blob(R() * TW, R() * TH, 20 + R() * 28, 10 + R() * 14, R() < .5 ? [242, 150, 40] : [250, 236, 154], .55);
+    for (let k = 0; k < 10; k++) { const x = R() * TW, y = 8 + R() * 112; blob(x, y, 8, 6, [255, 108, 30], .75); blob(x, y, 3.4, 2.6, [30, 16, 12], 1); }
+    blob(TW * .2, 10, 30, 9, white, .55); blob(TW * .7, TH - 8, 30, 9, white, .5);
+  } else if (kind === "swirl") {
+    g.fillStyle = rgb([100, 50, 168]); g.fillRect(0, 0, TW, TH); const pal = [[232, 92, 204], [96, 212, 242], [252, 214, 255], [150, 72, 224], [255, 142, 172]];
+    for (let y = 0; y < TH; y += 2 + R() * 5) band(y, 3 + R() * 8, pal[Math.floor(R() * pal.length)], .72, 2 + R() * 4, 1 + Math.floor(R() * 3), R() * 6);
+    for (let v = 0; v < 3; v++) { const cx0 = R() * TW, cy0 = 26 + R() * 76; for (let j = 0; j < 26; j++) { const an = j * .42; blob(cx0 + Math.cos(an) * j * .9 * 1.5, cy0 + Math.sin(an) * j * .9 * .8, 5, 2.4, pal[j % 5], .6); } }
+  }
+  return cv2;
+}
+// name, цвет свечения, орбита, угол, радиус, подпись, спутники, вид текстуры, цвет текстуры, кольца (full | thin)
+const PLANETS = [
+  ["Доступы", "#d0613a", 0, 0.2, 11, "сейф с Touch ID", 1, "desert", "#c8603a"], ["Финансы", "#e8c84a", 0, 2.1, 12, "операции и счета", 0, "io", "#e8cc48"],
+  ["Память", "#e06040", 0, 4.2, 10, "два слоя памяти", 2, "lava", "#e06040"],
+  ["Чат", "#3a6ad0", 1, 1.1, 15, "чат с моделью", 2, "neptune", "#3a6ad0"], ["Документы", "#e0c48a", 1, 2.6, 21, "документы и поиск", 3, "gas", "#dcc08a", "full"],
+  ["Заметки", "#4a90d0", 1, 4.0, 12, "заметки из папок", 1, "terra", "#5aa05a"], ["Браузер", "#c060d8", 1, 5.3, 14, "браузер в окне", 1, "swirl", "#6432a8"],
+  ["Статистика", "#a0a0a8", 2, 0.7, 8, "токены и деньги", 0, "moon", "#969ca4"], ["Справка", "#8fe0e0", 2, 1.9, 13, "команды и клавиши", 0, "uranus", "#9ee0e4", "thin"],
+  ["Голос", "#dfe6ee", 2, 3.1, 10, "диктовка", 1, "europa", "#e2e8ee"], ["Портрет", "#d6924c", 2, 4.1, 19, "что DVK помнит о вас", 2, "jupiter", "#d6924c"],
+  ["Источники", "#2aa6b0", 2, 5.3, 14, "папки и серверы", 2, "ocean", "#1a7aa0"],
+].map(([name, col, ring, a0, r, sub, moons, kind, tcol, rings], i) => ({ name, col, ring, a0, r, sub, moons, kind, rings: rings || "", tex: texture(kind, tcol, 11 + i * 37), spin: (.004 + (i % 4) * .0016) * (i % 2 ? 1 : -1) }));
+const RINGS = [{ rx: .25, ry: .15, w: 1.8e-4 }, { rx: .36, ry: .23, w: 1.1e-4 }, { rx: .47, ry: .31, w: 7e-5 }];
+const TILT = [-.14, -.1, -.07];
+
+const cv = $("#cv"), ctx = cv.getContext("2d"), input = $("#in"), hint = $("#hint"), sun = $("#sun");
+const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const rnd = seeded(7);
+const STARS = Array.from({ length: 380 }, () => {
+  const band = rnd() < .72, u = rnd(), n = (rnd() + rnd() + rnd() - 1.5) * .22;
+  return { u: band ? u : rnd(), v: band ? 1 - u + n : rnd(), z: rnd(), p: rnd() * 6.28, c: ["#e8b84a", "#e8925a", "#5e8fd0", "#5fb0d8", "#8fc79a", "#ffffff"][Math.floor(rnd() * 6)] };
+});
+// астероиды: у каждого своя эллиптическая орбита (вытянутость, разворот, наклон), скорость по Кеплеру
+const gauss = () => (rnd() + rnd() + rnd() - 1.5) / 1.5;
+const BELT = Array.from({ length: 520 }, (_, i) => { const far = i >= 400, wild = !far && rnd() < .16; return {
+  M0: rnd() * 6.28, k: far ? 1.55 + gauss() * .13 : 1 + gauss() * (wild ? .38 : .2), e: wild ? .28 + rnd() * .4 : rnd() * .14, om: rnd() * 6.28,
+  tilt: -.12 + (rnd() - .5) * .3, z: far ? .25 + rnd() * .3 : rnd(), s: .45 + Math.pow(rnd(), 3) * 1.9, c: rnd() < .12 ? "#e8b89a" : rnd() < .22 ? "#a9b4d0" : "#cfd3e0", far }; });
+// «троянцы»: две стайки камней впереди и позади гиганта Документы, летят вместе с ним
+const TROJ = Array.from({ length: 44 }, (_, i) => ({ d: (i % 2 ? 1 : -1) * (1.02 + gauss() * .16), f: 1 + gauss() * .07, z: rnd(), s: .5 + rnd() * 1.1 }));
+let W = 0, H = 0, ui = { l: 0, r: 0, t: 0, b: 0 }, cx = 0, cy = 0, t = 0, mx = -99, my = -99, hot = -1, picked = -1, shoot = null, nextShoot = 3500;
+function size() {
+  const r = cv.getBoundingClientRect(), d = devicePixelRatio || 1; W = r.width; H = r.height; cv.width = W * d; cv.height = H * d; ctx.setTransform(d, 0, 0, d, 0, 0);
+  const s = sun.getBoundingClientRect(); cx = s.left - r.left + s.width / 2; cy = s.top - r.top + s.height / 2;
+  const els = ["#hi", ".word", ".q", "#hint"].map((q) => $(q).getBoundingClientRect()); // колонка с текстом: планеты за ней тускнеют
+  ui = { l: Math.min(...els.map((e) => e.left)) - r.left, r: Math.max(...els.map((e) => e.right)) - r.left, t: Math.min(...els.map((e) => e.top)) - r.top, b: Math.max(...els.map((e) => e.bottom)) - r.top };
+}
+const rot = (x, y, T) => [x * Math.cos(T) - y * Math.sin(T), x * Math.sin(T) + y * Math.cos(T)];
+const at = (p, time) => { const R = RINGS[p.ring], a = p.a0 + time * R.w, [px, py] = rot(Math.cos(a) * R.rx * W, Math.sin(a) * R.ry * H, TILT[p.ring]); return { x: cx + px, y: cy + py, depth: Math.sin(a) }; };
+const isDark = () => getComputedStyle(cv).getPropertyValue("--star").trim().startsWith("235");
+
+// сфера: текстура, прокручиваемая по диску, затемнение к краю и тень от «солнца»
+function sphere(tex, x, y, r, spin, lx, ly, dark, col) {
+  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip();
+  const sw = TW / 2, sx = ((spin % TW) + TW) % TW, w1 = Math.min(sw, TW - sx), k = 2 * r / sw;
+  ctx.drawImage(tex, sx, 0, w1, TH, x - r, y - r, w1 * k, 2 * r);
+  if (w1 < sw) ctx.drawImage(tex, 0, 0, sw - w1, TH, x - r + w1 * k, y - r, (sw - w1) * k, 2 * r);
+  let g = ctx.createRadialGradient(x, y, r * .5, x, y, r); g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(1, "rgba(0,0,0,.45)"); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  g = ctx.createRadialGradient(x + lx * r * .55, y + ly * r * .55, r * .15, x + lx * r * .55, y + ly * r * .55, r * 2.05);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(.42, "rgba(0,0,0,.1)"); g.addColorStop(.72, `rgba(0,0,0,${dark ? .72 : .5})`); g.addColorStop(1, `rgba(0,0,0,${dark ? .94 : .66})`);
+  ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+  ctx.restore();
+  // дымка атмосферы на освещенной стороне
+  ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip();
+  const a = ctx.createRadialGradient(x + lx * r * .1, y + ly * r * .1, r * .78, x, y, r * 1.02); a.addColorStop(0, rgb(hex(col), 0)); a.addColorStop(1, rgb(mix(hex(col), [255, 255, 255], .4), .5)); ctx.fillStyle = a; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); ctx.restore();
+}
+function ringArc(x, y, r, col, front, thin) {
+  ctx.save(); ctx.translate(x, y);
+  if (thin) { ctx.rotate(-1.28); ctx.strokeStyle = "rgba(210,240,245,.55)"; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.ellipse(0, 0, r * 1.95, r * 1.95 * .2, 0, front ? 0 : Math.PI, front ? Math.PI : 7); ctx.stroke(); ctx.restore(); return; }
+  ctx.rotate(-.38);
+  [[2.55, .78, 1.4, .35], [2.3, .7, 2.2, .55], [2.05, .62, 1.6, .45], [1.8, .55, 1.2, .3]].forEach(([k, e, w, al], i) => { ctx.strokeStyle = rgb(mix(hex(col), [255, 245, 225], .25 + i * .1), al); ctx.lineWidth = w + r / 14; ctx.beginPath(); ctx.ellipse(0, 0, r * k, r * k * .28, 0, front ? 0 : Math.PI, front ? Math.PI : 7); ctx.stroke(); });
+  ctx.restore();
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const dark = isDark(), q = input.value.trim().toLowerCase();
+  STARS.forEach((s) => { const tw = .55 + .45 * Math.sin(t / 700 + s.p); ctx.globalAlpha = (dark ? .75 : .5) * tw * (.3 + s.z * .7); ctx.fillStyle = dark ? s.c : "#3a4a8a"; ctx.beginPath(); ctx.arc(s.u * W, s.v * H, .5 + s.z * 1.3, 0, 7); ctx.fill(); });
+  ctx.globalAlpha = 1;
+  RINGS.forEach((R, i) => { ctx.save(); ctx.translate(cx, cy); ctx.rotate(TILT[i]); ctx.strokeStyle = dark ? "rgba(180,200,255,.14)" : "rgba(60,80,140,.15)"; ctx.lineWidth = 1; ctx.setLineDash([2, 6]); ctx.beginPath(); ctx.ellipse(0, 0, R.rx * W, R.ry * H, 0, 0, 7); ctx.stroke(); ctx.restore(); });
+  ctx.setLineDash([]);
+  // пояс астероидов: каждый по своей орбите; стайки-«троянцы» летят с Документами
+  { const kep = (o, time) => { const n = 1.4e-4 / Math.pow(o.k, 1.5), M = o.M0 + time * n; let E = M; for (let j = 0; j < 3; j++) E = M + o.e * Math.sin(E);
+      const nu = 2 * Math.atan2(Math.sqrt(1 + o.e) * Math.sin(E / 2), Math.sqrt(1 - o.e) * Math.cos(E / 2)), f = o.k * (1 - o.e * o.e) / (1 + o.e * Math.cos(nu)), an = nu + o.om;
+      const [px, py] = rot(Math.cos(an) * (o.far ? .303 : .305) * W * f, Math.sin(an) * (o.far ? .2 : .19) * H * f, o.tilt); return [cx + px, cy + py]; };
+    BELT.forEach((o) => { const [x, y] = kep(o, t); ctx.globalAlpha = (dark ? .62 : .46) * (.35 + o.z * .65) * (.8 + .2 * Math.sin(t / 380 + o.M0 * 9)) * (o.far ? .6 : 1); ctx.fillStyle = dark ? o.c : "#6b7080"; ctx.beginPath(); ctx.arc(x, y, o.s, 0, 7); ctx.fill(); });
+    const dp = PLANETS.find((q) => q.name === "Документы"), R1 = RINGS[dp.ring];
+    TROJ.forEach((o) => { const a = dp.a0 + t * R1.w + o.d, [px, py] = rot(Math.cos(a) * R1.rx * W * o.f, Math.sin(a) * R1.ry * H * o.f, TILT[dp.ring]); ctx.globalAlpha = (dark ? .75 : .5) * (.4 + o.z * .6); ctx.fillStyle = dark ? "#dfe3ee" : "#6b7080"; ctx.beginPath(); ctx.arc(cx + px, cy + py, o.s, 0, 7); ctx.fill(); }); }
+  ctx.globalAlpha = 1;
+  // комета: вытянутая орбита, хвост всегда от солнца
+  { const a = t * 2.6e-5 + 1.2, e = .74, rr = (.13 * W) / (1 + e * Math.cos(a)), [px, py] = rot(Math.cos(a) * rr, Math.sin(a) * rr * .62, -.5), x = cx + px, y = cy + py, d = Math.hypot(px, py) || 1, len = Math.max(30, 190 - d * .28);
+    [["rgba(120,170,255,", 1, 1.6], ["rgba(255,205,120,", .72, 2.8]].forEach(([c0, k, w]) => { const dx = px / d, dy = py / d, g = ctx.createLinearGradient(x, y, x + dx * len * k, y + dy * len * k); g.addColorStop(0, c0 + (dark ? .8 : .55) + ")"); g.addColorStop(1, c0 + "0)"); ctx.strokeStyle = g; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + dx * len * k * .5 + dy * 6, y + dy * len * k * .5 - dx * 6, x + dx * len * k, y + dy * len * k); ctx.stroke(); });
+    ctx.shadowColor = "#bcd6ff"; ctx.shadowBlur = 12; ctx.fillStyle = dark ? "#fff" : "#5a7fc0"; ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill(); ctx.shadowBlur = 0; }
+  hot = -1;
+  const list = PLANETS.map((p, i) => ({ p, i, ...at(p, t) })).sort((a, b) => a.depth - b.depth);
+  list.forEach(({ p, i, x, y, depth }) => {
+    const match = q && p.name.toLowerCase().includes(q), on = match || i === picked, near = Math.hypot(mx - x, my - y) < p.r * 1.5 + 10;
+    if (near) hot = i;
+    const lit = on || near, r = p.r * 1.5 * (.84 + .16 * depth) * (lit ? 1.18 : 1);
+    const behind = !lit && x > ui.l - 12 && x < ui.r + 12 && y > ui.t - 8 && y < ui.b + 8; ctx.globalAlpha = behind ? .1 : 1;
+    const dd = Math.hypot(cx - x, cy - y) || 1, lx = (cx - x) / dd, ly = (cy - y) / dd;
+    if (match) { const g = ctx.createLinearGradient(cx, cy, x, y); g.addColorStop(0, p.col + "00"); g.addColorStop(1, p.col + "ee"); ctx.strokeStyle = g; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y); ctx.stroke(); }
+    ctx.shadowColor = p.col; ctx.shadowBlur = lit ? 34 : 14; ctx.fillStyle = p.col; ctx.beginPath(); ctx.arc(x, y, r * .96, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
+    if (p.rings) ringArc(x, y, r, p.col, false, p.rings === "thin");
+    sphere(p.tex, x, y, r, t * p.spin * 6, lx, ly, dark, p.col);
+    if (p.rings) ringArc(x, y, r, p.col, true, p.rings === "thin");
+    for (let m = 0; !behind && m < p.moons; m++) { const a = t / (700 + m * 300) + m * 2.1 + i, mxp = x + Math.cos(a) * (r + 10 + m * 6), myp = y + Math.sin(a) * (r + 10 + m * 6) * .55, g = ctx.createRadialGradient(mxp + lx, myp + ly, .3, mxp, myp, 2.8); g.addColorStop(0, "#fff"); g.addColorStop(.5, "#aab"); g.addColorStop(1, "#334"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(mxp, myp, 2.6, 0, 7); ctx.fill(); }
+    if (!behind) { ctx.fillStyle = getComputedStyle(cv).color; ctx.globalAlpha = lit ? 1 : .6 + .3 * depth; ctx.font = (lit ? "600 " : "") + "11.5px IBM Plex Sans, system-ui, sans-serif"; ctx.textAlign = "center"; ctx.fillText(p.name, x, y + r + (p.rings === "full" ? 24 : 15)); }
+    ctx.globalAlpha = 1;
+  });
+  // падающая звезда
+  if (!still) { if (!shoot && t > nextShoot) { shoot = { t0: t, x: W * (.45 + rnd() * .5), y: H * (.04 + rnd() * .3) }; nextShoot = t + 6000 + rnd() * 8000; }
+    if (shoot) { const k = (t - shoot.t0) / 800; if (k > 1) shoot = null; else { const x = shoot.x - k * W * .32, y = shoot.y + k * H * .16, g = ctx.createLinearGradient(x, y, x + 90, y - 45); g.addColorStop(0, `rgba(${dark ? "255,255,255" : "70,90,160"},${.9 * (1 - k)})`); g.addColorStop(1, "rgba(255,255,255,0)"); ctx.strokeStyle = g; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 90, y - 45); ctx.stroke(); } } }
+  if (hot >= 0 || (!input.value && picked < 0)) hint.textContent = hot >= 0 ? `${PLANETS[hot].name} · ${PLANETS[hot].sub}` : "наведите на планету";
+}
+// Экономный режим: анимация идет, пока с вкладкой что-то делают (ACTIVE_MS), потом замирает.
+// Часы t идут только пока анимация идет: после паузы планеты не прыгают.
+const ACTIVE_MS = 15000;
+let running = false, prevTs = 0, lastPoke = 0;
+function poke() {
+  lastPoke = performance.now();
+  document.documentElement.classList.remove("calm");
+  if (!running && !still) { running = true; prevTs = lastPoke; requestAnimationFrame(loop); }
+}
+const loop = (ts) => {
+  t += Math.min(ts - prevTs, 100); prevTs = ts; draw();
+  if (ts - lastPoke < ACTIVE_MS) requestAnimationFrame(loop);
+  else { running = false; document.documentElement.classList.add("calm"); }
+};
+new ResizeObserver(() => { size(); draw(); }).observe(cv);
+const move = (e) => { const r = cv.getBoundingClientRect(); mx = e.clientX - r.left; my = e.clientY - r.top; if (still) draw(); poke(); };
+$("#page").addEventListener("pointermove", move);
+$("#page").addEventListener("pointerleave", () => { mx = my = -99; if (still) draw(); });
+function setHint(text) { hint.textContent = text; }
+function decide() {
+  const v = input.value.trim(); $("#brain").classList.toggle("typing", !!v);
+  poke();
+  if (!v) { picked = -1; setHint("наведите на планету"); return; }
+  const r = route(v);
+  setHint(r.kind === "refused" ? "закрыто: такие адреса браузер не открывает" : r.kind === "open" ? "откроется " + r.url : "поиск в сети: " + v);
+}
+function go() { const r = route(input.value); if (r.kind === "open" || r.kind === "search") location.href = r.url; else decide(); }
+input.addEventListener("input", () => { picked = -1; decide(); });
+input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+document.addEventListener("keydown", poke);
+const h = new Date().getHours(); $("#hi").textContent = h < 5 ? "Доброй ночи" : h < 12 ? "Доброе утро" : h < 18 ? "Добрый день" : "Добрый вечер";
+size(); if (still) draw(); poke(); input.focus();
+</script>

@@ -270,6 +270,10 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	if err := c.prime(ctx, sess); err != nil {
 		return err
 	}
+	// Вместо белого экрана — своя стартовая страница (сервер сам идет на data:-адрес, человеку он закрыт).
+	if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
+		return err
+	}
 	// Окна, которые открывает сама страница (target=_blank, вход через Google), и
 	// закрытие окон приходят событиями Target.*; страницы уже известны выше.
 	_, err = c.call(ctx, "", "Target.setDiscoverTargets", map[string]any{"discover": true})
@@ -623,7 +627,7 @@ func (c *Chrome) onFrame(sess string, p json.RawMessage) {
 
 // publishLocked makes jpg the current frame and wakes the viewers; c.mu взят.
 func (c *Chrome) publishLocked(jpg []byte) {
-	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: c.url}
+	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: displayURL(c.url)}
 	close(c.change)
 	c.change = make(chan struct{})
 }

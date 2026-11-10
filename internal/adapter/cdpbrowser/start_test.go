@@ -95,7 +95,7 @@ func TestStartRoute(t *testing.T) {
 		t.Fatal(`нет блока <script id="route">`)
 	}
 	script := m[1] + `
-const cases = JSON.parse(process.argv[1]);
+const cases = JSON.parse(process.argv[2]);
 const bad = [];
 for (const [input, kind, url] of cases) {
   const r = route(input);
