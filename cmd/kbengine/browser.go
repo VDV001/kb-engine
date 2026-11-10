@@ -29,6 +29,7 @@ const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/brows
 var (
 	errBrowserSocketDir = errors.New("папка сокета доступна другим: нужны права 0700")
 	errBrowserRunning   = errors.New("kbengine browser serve уже запущен на этом сокете")
+	errBrowserSockPath  = errors.New("путь сокета длиннее предела системы (104 байта на macOS): выберите короче флагом --socket")
 )
 
 // browserScreen is a launched browser as the command uses it.
@@ -111,6 +112,9 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 // listenBrowserSocket opens the unix socket: папка 0700 и только ваша, файл
 // 0600; сокет от убитого прошлого запуска заменяется, живой — отказ.
 func listenBrowserSocket(path string) (net.Listener, error) {
+	if len(path) >= 104 { // sockaddr_un: на macOS 104 байта, bind молча отвечает «invalid argument»
+		return nil, fmt.Errorf("%w (%d)", errBrowserSockPath, len(path))
+	}
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err

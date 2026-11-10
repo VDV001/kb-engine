@@ -72,6 +72,7 @@ func TestBrowserServeRefusals(t *testing.T) {
 		{"нет подкоманды", nil, "usage"},
 		{"чужая подкоманда", []string{"fly"}, "usage"},
 		{"папка сокета открыта другим", []string{"serve", "--socket", open, "--token-file", tok}, "доступна другим"},
+		{"слишком длинный путь сокета", []string{"serve", "--socket", filepath.Join(t.TempDir(), strings.Repeat("d", 120), "b.sock"), "--token-file", tok}, "длиннее предела"},
 		{"адрес вместо сокета", []string{"serve", "--addr", "127.0.0.1:8790"}, "flag provided but not defined"},
 	}
 	for _, tc := range tests {
