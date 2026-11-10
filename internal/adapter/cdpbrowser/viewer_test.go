@@ -29,3 +29,21 @@ func TestViewer(t *testing.T) {
 		t.Error("проверка схемы адреса не по «://»")
 	}
 }
+
+// Находка повторного ревью #526: хвост `}}px; height: auto; ...` в правиле canvas
+// съедал следующее правило #kb, и скрытое поле ввода показывалось белым прямоугольником.
+func TestViewerCSSIsBalanced(t *testing.T) {
+	page := Viewer(1280, 800)
+	start := strings.Index(page, "<style>")
+	end := strings.Index(page, "</style>")
+	if start < 0 || end < start {
+		t.Fatal("в странице нет <style>")
+	}
+	css := page[start:end]
+	if strings.Contains(css, "}}") {
+		t.Error("в стилях лишняя закрывающая скобка `}}`")
+	}
+	if open, closed := strings.Count(css, "{"), strings.Count(css, "}"); open != closed {
+		t.Errorf("скобки стилей не сходятся: { %d, } %d", open, closed)
+	}
+}

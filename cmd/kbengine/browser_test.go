@@ -253,3 +253,24 @@ func TestBrowserFlagsHeadlessByDefault(t *testing.T) {
 		t.Fatalf("--window: headless=%v код %d, want с окном", o.headless, code)
 	}
 }
+
+// Находка повторного ревью #526: опечатка в --socket, указавшая на обычный файл
+// (например, токен), удаляла файл и подменяла его сокетом.
+func TestBrowserServeKeepsRegularFileAtSocketPath(t *testing.T) {
+	path := shortSock(t) // короткий путь: на macOS предел сокета 104 байта
+	if err := os.WriteFile(path, []byte("важное"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second) // старый код поднимал сервер и не возвращался
+	defer cancel()
+	var out, errb bytes.Buffer
+	code := browserServe(ctx, []string{"serve", "--socket", path, "--token-file", filepath.Join(t.TempDir(), "tok"), "--profile", t.TempDir()}, &out, &errb,
+		func(context.Context, cdpbrowser.Options) (browserScreen, error) { return &stubBrowser{}, nil })
+	if code == 0 || !strings.Contains(errb.String(), "не сокет") {
+		t.Fatalf("code=%d err=%q, want отказ со словом «не сокет»", code, errb.String())
+	}
+	got, err := os.ReadFile(path)
+	if err != nil || string(got) != "важное" {
+		t.Fatalf("файл тронут: %q, %v", got, err)
+	}
+}
