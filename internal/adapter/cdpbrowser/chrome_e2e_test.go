@@ -43,26 +43,33 @@ func TestChromeEndToEnd(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
 	defer cancel()
-	c, err := Launch(ctx, Options{Profile: t.TempDir(), Width: 1280, Height: 800, Headless: true})
+	// Не t.TempDir: помощники Chrome дописывают профиль еще миг после выхода, и
+	// уборка папки роняла бы проверку, которая прошла.
+	profile, err := os.MkdirTemp("", "kb-browser-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(profile) }()
+	c, err := Launch(ctx, Options{Profile: profile, Width: 1280, Height: 800, Headless: true})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
 
+	// Кадр приходит сам, и после перехода он новый: картинка страницы, а не пустая.
+	first, err := c.Next(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := c.Input(ctx, Input{T: "nav", Text: srv.URL}); err != nil {
 		t.Fatal(err)
 	}
-	// Кадр со страницей приходит сам: после перехода картинка меняется.
-	var seq uint64
-	for range 3 {
-		f, err := c.Next(ctx, seq)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(f.JPEG) < 3 || f.JPEG[0] != 0xff || f.JPEG[1] != 0xd8 {
-			t.Fatalf("кадр не JPEG: %d байт", len(f.JPEG))
-		}
-		seq = f.Seq
+	f, err := c.Next(ctx, first.Seq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(f.JPEG) < 3 || f.JPEG[0] != 0xff || f.JPEG[1] != 0xd8 {
+		t.Fatalf("кадр не JPEG: %d байт", len(f.JPEG))
 	}
 	for _, in := range []Input{
 		{T: "mouse", Type: "pressed", X: 100, Y: 35}, {T: "mouse", Type: "released", X: 100, Y: 35},
