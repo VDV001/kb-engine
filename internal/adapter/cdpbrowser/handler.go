@@ -21,8 +21,10 @@ const (
 // Пределы экрана: вкладка занимает все окно DVK, и размер приходит от окна
 // событием resize; за пределами — отказ (экран на 8K раздул бы кадры).
 const (
-	MinWidth, MinHeight = 320, 240
-	MaxWidth, MaxHeight = 3840, 2400
+	MinWidth  = 320
+	MinHeight = 240
+	MaxWidth  = 3840
+	MaxHeight = 2400
 )
 
 // keys is every key the window may press by name; буквы и знаки идут текстом.
