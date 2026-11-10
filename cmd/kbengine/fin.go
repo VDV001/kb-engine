@@ -37,7 +37,7 @@ var finCommands = map[string]func(args []string, stdin io.Reader, stdout, stderr
 	"sync":     finWithoutStdin(runFinSync),
 }
 
-// finWithoutStdin адаптирует подкоманду, которая ни о чём не спрашивает.
+// finWithoutStdin адаптирует подкоманду, которая ни о чем не спрашивает.
 func finWithoutStdin(f func(args []string, stdout, stderr io.Writer) int,
 ) func([]string, io.Reader, io.Writer, io.Writer) int {
 	return func(a []string, _ io.Reader, o, e io.Writer) int { return f(a, o, e) }
@@ -55,7 +55,7 @@ func runFin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, finUsageLine())
 		return 2
 	}
-	// Как и на верхнем уровне: помощь узнаётся до реестра, иначе просьба о
+	// Как и на верхнем уровне: помощь узнается до реестра, иначе просьба о
 	// помощи получает ответ «неизвестная подкоманда».
 	if args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(stdout, finUsageLine())
@@ -66,7 +66,7 @@ func runFin(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "unknown fin subcommand %q\n", args[0])
 		return 2
 	}
-	// Отказ разбора опознаётся здесь, а не в девяти подкомандах: диспетчер —
+	// Отказ разбора опознается здесь, а не в девяти подкомандах: диспетчер —
 	// единственное место, которое знает и о семье, и об исходе.
 	watched := &headWriter{w: stderr}
 	code := sub(args[1:], stdin, stdout, watched)
@@ -125,7 +125,7 @@ func runFinImport(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin import", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	ledgerPath := ledgerFlags(fs)
-	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
+	from := fs.String("from", "", "path to Учет_финансов.xlsx")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -191,7 +191,7 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 	date := fs.String("date", "", "date as YYYY-MM-DD (default today)")
 	force := fs.Bool("force", false, "write even if the ledger already holds the same entry")
 	currency := fs.String("currency", "", "currency code, e.g. USD (default: the account's when --from is given, otherwise roubles)")
-	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
+	from := fs.String("from", "", "path to Учет_финансов.xlsx, to take and check the account's currency")
 	// Обмен валюты (#432): вторая сторона перевода себе. Курс не вводится —
 	// он считается из двух сумм записи.
 	received := fs.String("received", "", "currency exchange: how much arrived, e.g. 100")
@@ -254,11 +254,11 @@ func runFinAdd(args []string, stdout, stderr io.Writer) int {
 		Received:    exchange,
 	}, *force, func(c finance.Correction) {
 		// Подстановка называется вслух: человек набрал одно, записано другое,
-		// и узнать об этом из отчёта через месяц — то же самое молчание.
+		// и узнать об этом из отчета через месяц — то же самое молчание.
 		fmt.Fprintf(stdout, "fin add: %s — записано %q, набрано %q (так уже пишут в базе)\n",
 			c.Field, c.Used, c.Typed)
 	}, func(w string) {
-		// В stderr, а не в stdout: это состояние словаря, а не часть отчёта о
+		// В stderr, а не в stdout: это состояние словаря, а не часть отчета о
 		// записи, и конвейеру, читающему вывод команды, оно не нужно.
 		fmt.Fprintf(stderr, "fin add: %s\n", w)
 	})
@@ -345,7 +345,7 @@ func repeatSubject(tx domain.Transaction) string {
 func appendChecked(ledgerPath string, p finance.AddParams, force bool,
 	note func(finance.Correction), warn func(string),
 ) (finance.Record, error) {
-	// Замок держится на всём чтении-правке-записи, а не на самой записи.
+	// Замок держится на всем чтении-правке-записи, а не на самой записи.
 	// Проверка повтора судит по прочитанному состоянию, и если между чтением и
 	// записью успел вклиниться второй процесс, победит последний: замер восемью
 	// одновременными `fin add` давал одну строку при восьми успехах.
@@ -406,9 +406,9 @@ func planAdd(recs []finance.Record, voc finance.Vocabulary, vocErr error, p fina
 		}
 	}
 	// Дубль ищется всегда, а не только без --force: при осознанном повторе
-	// найденная запись становится следом решения. Иначе подтверждённый повтор и
+	// найденная запись становится следом решения. Иначе подтвержденный повтор и
 	// проскочивший дубль в файле неразличимы, и разбор недельной давности
-	// упирается в гадание — ровно та неразрешимость, ради которой заведён гейт.
+	// упирается в гадание — ровно та неразрешимость, ради которой заведен гейт.
 	if dup := finance.Duplicate(recs, p); dup != nil {
 		tx := dup.Transaction()
 		if !force {
@@ -451,11 +451,11 @@ func runFinList(args []string, stdout, stderr io.Writer) int {
 	})
 	for _, r := range matched {
 		tx := r.Transaction()
-		// Подтверждённый повтор называется прямо в строке: иначе две одинаковые
+		// Подтвержденный повтор называется прямо в строке: иначе две одинаковые
 		// траты рядом снова читаются как вопрос без ответа.
 		var repeat string
 		if id := tx.RepeatOf(); id != "" {
-			repeat = fmt.Sprintf("  ↺ повтор подтверждён поверх %s", id)
+			repeat = fmt.Sprintf("  ↺ повтор подтвержден поверх %s", id)
 		}
 		fmt.Fprintf(stdout, "%s  %s  %12s  %-14s %s%s\n",
 			tx.Date().Format(time.DateOnly), tx.ID(), amountText(tx), tx.Category(), tx.Description(), repeat)
@@ -490,7 +490,7 @@ func runFinReport(args []string, stdout, stderr io.Writer) int {
 	fmt.Fprintf(stdout, "expenses  %14s  (%d)\n", s.Expenses, s.ExpenseCount)
 	fmt.Fprintf(stdout, "income    %14s  (%d)\n", s.Income, s.IncomeCount)
 	fmt.Fprintf(stdout, "net       %14s\n", s.Net)
-	// Исключённое называется рядом с итогом, а не подразумевается: сумма строк
+	// Исключенное называется рядом с итогом, а не подразумевается: сумма строк
 	// в журнале не сходится с расходами ровно на эту величину, и без строки
 	// расхождение приходится объяснять себе самому. Молчит, когда исключать
 	// было нечего.

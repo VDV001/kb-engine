@@ -7,7 +7,7 @@ export function pairKey(a: string, b: string): string {
   return a < b ? `${a}|${b}` : `${b}|${a}`
 }
 
-/** Одна связь, которую владелец подписал руками, со всеми её смыслами. */
+/** Одна связь, которую владелец подписал руками, со всеми ее смыслами. */
 export interface CuratedRow {
   from: string
   to: string
@@ -38,8 +38,8 @@ export function curatedRows(graph: Graph, labels: Record<string, string>): Curat
 }
 
 /**
- * coverageNote — строка, которая не даёт принять весь граф за размеченный
- * вручную. Без неё несколько выделенных связей читаются как «здесь всё
+ * coverageNote — строка, которая не дает принять весь граф за размеченный
+ * вручную. Без нее несколько выделенных связей читаются как «здесь все
  * продумано», хотя подписана меньше десятой части.
  */
 export function coverageNote(graph: Graph): string {

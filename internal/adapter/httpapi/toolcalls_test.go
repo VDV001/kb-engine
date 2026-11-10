@@ -26,9 +26,9 @@ var sample = []runs.Call{
 	{Tool: "get_entry", Query: "#9999", At: time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC), OK: false},
 }
 
-// Вкладка «Ответы» показывает, о чём агент спрашивал базу. Без этого маршрута
+// Вкладка «Ответы» показывает, о чем агент спрашивал базу. Без этого маршрута
 // журнал копится, а увидеть его можно только командой в терминале — то есть
-// половина смысла счётчика остаётся в консоли.
+// половина смысла счетчика остается в консоли.
 func TestToolCalls_servesWhatTheAgentAsked(t *testing.T) {
 	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample, exists: true}))
 	rec := get(t, h, "/api/tool-calls")
@@ -85,8 +85,8 @@ func TestToolCalls_withoutJournalSaysSoInsteadOfFailing(t *testing.T) {
 // в том же журнале и не имеют права попасть на страницу — там настоящие суммы
 // и места владельца.
 func TestToolCalls_neverCarriesEngineCommandArguments(t *testing.T) {
-	// Порт отдаёт только вызовы по конструкции, поэтому проверяется то, что
-	// проверяемо здесь: страница не выдумывает поля и отдаёт ровно их.
+	// Порт отдает только вызовы по конструкции, поэтому проверяется то, что
+	// проверяемо здесь: страница не выдумывает поля и отдает ровно их.
 	h := newTestServerWith(httpapi.WithToolCalls(callsStub{calls: sample, exists: true}))
 	body := get(t, h, "/api/tool-calls").Body.String()
 	for _, secret := range []string{"418.50", "Сбербанк", "--amount", "--place"} {
@@ -99,7 +99,7 @@ func TestToolCalls_neverCarriesEngineCommandArguments(t *testing.T) {
 // ⚠️ Отсутствующий журнал приходит от ПОРТА, а не от отсутствия порта: сервер
 // поднят с журналом, которого нет на диске. Прежний тест проверял другое —
 // сервер вовсе без журнала, — и потому пропустил живой дефект: витрина
-// отвечала «журнал заведён, вызовов нет» там, где файла не существовало.
+// отвечала «журнал заведен, вызовов нет» там, где файла не существовало.
 func TestToolCalls_journalOnDiskMissingIsNotAnEmptyJournal(t *testing.T) {
 	h := newTestServerWith(httpapi.WithToolCalls(callsStub{}))
 	rec := get(t, h, "/api/tool-calls")
@@ -110,6 +110,6 @@ func TestToolCalls_journalOnDiskMissingIsNotAnEmptyJournal(t *testing.T) {
 		t.Fatal(err)
 	}
 	if out.Exists {
-		t.Error("файла журнала нет, а ответ говорит, что он заведён")
+		t.Error("файла журнала нет, а ответ говорит, что он заведен")
 	}
 }

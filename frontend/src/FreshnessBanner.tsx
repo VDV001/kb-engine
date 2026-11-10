@@ -4,7 +4,7 @@ import type { Freshness } from './api'
 /**
  * Полоса «страница отстала от базы».
  *
- * Повод конкретный: страница «что в работе сейчас» тухнет тихо. Текст остаётся
+ * Повод конкретный: страница «что в работе сейчас» тухнет тихо. Текст остается
  * правдоподобным — «четыре PR смержены» выглядит ровно так же, как если бы их
  * было четыре, — и владелец увидел собственную страницу с этой строкой в момент,
  * когда PR было восемь.
@@ -17,7 +17,7 @@ import type { Freshness } from './api'
 export function FreshnessBanner({ freshness }: { freshness?: Freshness }) {
   const [copied, setCopied] = useState(false)
 
-  // Старая сборка сервера поля не отдаёт. Тогда страница показывает документ
+  // Старая сборка сервера поля не отдает. Тогда страница показывает документ
   // без проверки — молча, потому что выдуманная причина хуже пустоты.
   if (!freshness) return null
 
@@ -48,7 +48,7 @@ export function FreshnessBanner({ freshness }: { freshness?: Freshness }) {
         {freshness.facts.map((f) => (
           <li key={f.kind}>
             {f.text}
-            {/* Записи названы поимённо, но не все: пять — это подсказка,
+            {/* Записи названы поименно, но не все: пять — это подсказка,
                 двадцать — вторая лента поверх той, что уже есть на Dashboard. */}
             {f.ids && f.ids.length > 0 && (
               <span className="tabular"> — {f.ids.map((id) => `#${id}`).join(', ')}</span>
@@ -63,7 +63,7 @@ export function FreshnessBanner({ freshness }: { freshness?: Freshness }) {
             черновик блока — скопировать и дописать словами
           </summary>
           {/* Движок не пишет в файл сам: Now — личный документ, и автотекст в
-              нём за неделю стал бы шумом, который перестают читать. Заготовка
+              нем за неделю стал бы шумом, который перестают читать. Заготовка
               собирает факты, слова остаются за человеком. */}
           <pre
             className="mt-2 overflow-x-auto rounded bg-surface-container p-3 text-xs"
@@ -87,7 +87,7 @@ export function FreshnessBanner({ freshness }: { freshness?: Freshness }) {
   )
 }
 
-/** Дата правки в том виде, в каком её читает человек: 04.08 15:12. */
+/** Дата правки в том виде, в каком ее читает человек: 04.08 15:12. */
 function shortDateTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso

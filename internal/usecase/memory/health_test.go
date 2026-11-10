@@ -156,7 +156,7 @@ type fixedPortrait string
 
 func (f fixedPortrait) Text() (string, error) { return string(f), nil }
 
-// Подтвердить сразу несколько правил: всё или ничего, чтобы выдуманное правило в
+// Подтвердить сразу несколько правил: все или ничего, чтобы выдуманное правило в
 // списке не оставило в журнале половину отметок.
 func TestService_ConfirmRulesIsAllOrNothing(t *testing.T) {
 	st := &fakeStore{snap: memory.Snapshot{Hot: healthHot}}

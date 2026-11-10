@@ -35,12 +35,12 @@ function EmptyTabNote({ what, connected }: { what: string; connected: boolean | 
     <p className="rounded-lg border border-outline-variant bg-surface-container p-4 text-sm text-on-surface-variant">
       {connected ? (
         <>
-          Семантический слой подключён, но {what} в нём нет — вкладка пуста из-за содержимого
+          Семантический слой подключен, но {what} в нем нет — вкладка пуста из-за содержимого
           файла <code>analytics_config.json</code>, а не из-за того, как запущен движок.
         </>
       ) : (
         <>
-          Семантический слой не подключён: движок запущен без{' '}
+          Семантический слой не подключен: движок запущен без{' '}
           <code className="text-on-surface">--analytics-config</code>. Здесь пусто не потому, что
           {' '}{what} нет, а потому что файл не попросили загрузить.
         </>
@@ -68,7 +68,7 @@ const WEIGHTS: Record<string, { label: string; tone: string; bar: string; icon: 
     icon: 'precision_manufacturing',
   },
   'founding-architecture': {
-    label: 'Где живёт результат',
+    label: 'Где живет результат',
     tone: 'text-on-surface',
     bar: 'var(--on-surface)',
     icon: 'hub',
@@ -148,7 +148,7 @@ const FULL_REACH = 12
 
 /**
  * PatternCard — карточка паттерна: бейдж охвата, текст и полоса внизу.
- * Свёрнута по умолчанию: у описаний тут по десять строк, и развёрнутыми они
+ * Свернута по умолчанию: у описаний тут по десять строк, и развернутыми они
  * превращают вкладку в стену. Шапка и охват видны всегда — по ним и выбирают,
  * что раскрыть.
  */
@@ -247,7 +247,7 @@ function ContradictionCard({ c, index }: { c: Contradiction; index: number }) {
 
 
 /** Приоритет пробела: подпись, иконка и цвет полосы. Иконки взяты из набора
- * движка — «!» и «внимание» в нём нет, роль играют смысловые ближайшие. */
+ * движка — «!» и «внимание» в нем нет, роль играют смысловые ближайшие. */
 const GAP_PRIORITY: Record<string, { label: string; icon: IconName; bar: string }> = {
   high: { label: 'Высокий', icon: 'trending_up', bar: 'var(--primary)' },
   medium: { label: 'Средний', icon: 'update', bar: 'var(--secondary)' },
@@ -314,7 +314,7 @@ export function AnalyticsView({
   const [tab, setTab] = useState<TabId>('манифест')
   const [chainOpen, setChainOpen] = useState(false)
   const [supportsOpen, setSupportsOpen] = useState(false)
-  // Граф грузится сразу: на нём держится не только вкладка, но и «центральные
+  // Граф грузится сразу: на нем держится не только вкладка, но и «центральные
   // узлы» в сайдбаре, который виден со всех вкладок.
   // Падение запроса рендерится как пустой граф: подпись рядом обещает связи из
   // каталога, и пустая картинка честнее ошибки на весь экран.
@@ -322,9 +322,9 @@ export function AnalyticsView({
   const graph: Graph | null =
     res.status === 'ready' ? res.data : res.status === 'failed' ? { nodes: [], edges: [] } : null
 
-  // Подключён ли семантический слой — знает только движок: страница о флагах
-  // командной строки не осведомлена. null означает «ответа ещё нет либо сборка
-  // о своих источниках не сообщает», и на нём подпись молчит.
+  // Подключен ли семантический слой — знает только движок: страница о флагах
+  // командной строки не осведомлена. null означает «ответа еще нет либо сборка
+  // о своих источниках не сообщает», и на нем подпись молчит.
   const eng = useResource(api.engine)
   const semanticLayer: boolean | null =
     eng.status === 'ready'
@@ -337,7 +337,7 @@ export function AnalyticsView({
   const quotes = config.manifesto_quotes ?? []
   const chain = config.inference_chain ?? []
   // Правый столбец: опоры под выводом и разбиение категорий по тому, что с
-  // ними делает AI. Всё это лежало в конфиге и обрезалось по дороге.
+  // ними делает AI. Все это лежало в конфиге и обрезалось по дороге.
   const supports = config.pull_quote_supports ?? []
   const amplify = config.amplify_clusters ?? []
   const replace = config.replace_clusters ?? []
@@ -345,7 +345,7 @@ export function AnalyticsView({
   const now = useMemo(() => new Date(), [])
   const stale = useMemo(() => staleCategories(entries, now, 6), [entries, now])
   const growth = useMemo(() => weeklyGrowth(entries, now, 12), [entries, now])
-  // Центральный узел — тот, у кого больше связей. Считаем по рёбрам графа,
+  // Центральный узел — тот, у кого больше связей. Считаем по ребрам графа,
   // который уже посчитан сервером, а не заново по тегам.
   const central = useMemo(() => {
     if (!graph) return []
@@ -360,7 +360,7 @@ export function AnalyticsView({
   const topClusters = Object.entries(stats.by_category)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-  // Дата берётся при отрисовке: панель обещает срез на сегодня.
+  // Дата берется при отрисовке: панель обещает срез на сегодня.
   const today = new Date().toLocaleDateString('ru-RU')
 
   return (
@@ -448,8 +448,8 @@ export function AnalyticsView({
           {tab === 'граф' && (
             <div className="space-y-3">
               <p className="text-sm text-on-surface-variant">
-                Сам граф живёт на дашборде — рисовать одну и ту же топологию на двух экранах значит
-                держать две картинки, которые однажды разойдутся. Здесь остаются выводы из неё.
+                Сам граф живет на дашборде — рисовать одну и ту же топологию на двух экранах значит
+                держать две картинки, которые однажды разойдутся. Здесь остаются выводы из нее.
               </p>
               {graph === null ? (
                 <p className="p-8 text-center text-on-surface-variant">Загрузка…</p>
@@ -548,8 +548,8 @@ export function AnalyticsView({
 
             {supports.length > 0 && (
               <div className="border-b border-outline-variant px-6 py-5">
-                {/* Опор почти семьдесят: развёрнутые они длиннее самой страницы,
-                    поэтому свёрнуты, но счётчик обещает ровно то, что раскроется. */}
+                {/* Опор почти семьдесят: развернутые они длиннее самой страницы,
+                    поэтому свернуты, но счетчик обещает ровно то, что раскроется. */}
                 <button
                   type="button"
                   onClick={() => setSupportsOpen(!supportsOpen)}

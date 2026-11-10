@@ -36,7 +36,7 @@ func TestParseMoney_acceptsWrittenRubles(t *testing.T) {
 }
 
 // Буква валюты не должна превращать мусор в число: «р» отдельно, «4р1р8» и
-// прочее — по-прежнему отказ, иначе очистка суффикса начнёт чинить опечатки.
+// прочее — по-прежнему отказ, иначе очистка суффикса начнет чинить опечатки.
 func TestParseMoney_stillRefusesNonsense(t *testing.T) {
 	for _, raw := range []string{"р", "руб", "₽", "4р18", "418рр", "418 рубл"} {
 		t.Run(raw, func(t *testing.T) {

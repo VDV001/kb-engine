@@ -22,7 +22,7 @@ var ErrNoSuchEntry = errors.New("записи с таким id нет")
 // способом оставалась правка файла руками, а это ровно та дверь, через которую
 // в книгу однажды попала строка без id.
 //
-// Пустое значение флага означает «не передавали»: правка счёта не должна
+// Пустое значение флага означает «не передавали»: правка счета не должна
 // уносить заметку. Стирание выражается явно — `--account=`, и различает их
 // flag.Visit, а не догадка по содержимому строки.
 func runFinEdit(args []string, stdout, stderr io.Writer) int {
@@ -39,7 +39,7 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 	account := fs.String("account", "", "new account (--account= clears it)")
 	date := fs.String("date", "", "new date as YYYY-MM-DD")
 	currency := fs.String("currency", "", "new currency code, e.g. USD")
-	from := fs.String("from", "", "path to Учёт_финансов.xlsx, to take and check the account's currency")
+	from := fs.String("from", "", "path to Учет_финансов.xlsx, to take and check the account's currency")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -82,11 +82,11 @@ func runFinEdit(args []string, stdout, stderr io.Writer) int {
 }
 
 // editInLedger — единственный путь правки, как appendChecked единственный путь
-// записи. Экран терминала зовёт эту же функцию: две копии «загрузить → изменить
+// записи. Экран терминала зовет эту же функцию: две копии «загрузить → изменить
 // → отсортировать → сохранить» разошлись бы ровно так же, как разошлись когда-то
 // книга и леджер.
 func editInLedger(ledgerPath, id string, p finance.EditParams) (finance.Record, error) {
-	// Замок на всё чтение-правку-запись, по той же причине, что и у добавления:
+	// Замок на все чтение-правку-запись, по той же причине, что и у добавления:
 	// проверка повтора судит по прочитанному, а перезаписывается файл целиком.
 	var rec finance.Record
 	err := filelock.With(ledgerPath, func() error {
@@ -117,7 +117,7 @@ func editUnderLock(ledgerPath, id string, p finance.EditParams) (finance.Record,
 		// повтор» от «файл не открылся» одинаково.
 		if twin := finance.RepeatOf(recs, edited); twin != nil {
 			tx := twin.Transaction()
-			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — правка сделала бы её копией",
+			return finance.Record{}, fmt.Errorf("%w: %s · %s · %s · %s (%s) — правка сделала бы ее копией",
 				ErrRepeat, tx.Date().Format(time.DateOnly), amountText(tx),
 				repeatSubject(tx), tx.Account(), tx.ID())
 		}
@@ -139,7 +139,7 @@ type editText struct {
 
 // editParams превращает флаги в параметры правки.
 //
-// Пустое значение и «поле стёрли» — разные намерения, и различает их только
+// Пустое значение и «поле стерли» — разные намерения, и различает их только
 // факт передачи флага: `--account=` стирает, отсутствие `--account` не трогает.
 func editParams(fs *flag.FlagSet, amount, date string, t editText) (finance.EditParams, error) {
 	p := finance.EditParams{

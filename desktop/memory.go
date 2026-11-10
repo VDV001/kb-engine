@@ -54,11 +54,11 @@ type noteView struct {
 	Origin      string `json:"origin"`
 	Description string `json:"description"`
 	Body        string `json:"body,omitempty"`     // только у очереди: решать надо по тексту
-	WaitDays    int    `json:"waitDays,omitempty"` // только у очереди: сколько дней предложение ждёт
+	WaitDays    int    `json:"waitDays,omitempty"` // только у очереди: сколько дней предложение ждет
 }
 
 // healthView is the health of the memory as the screen draws it (ADR-0008). Тексты
-// причин и названия частей собирает страница: Go отдаёт виды и числа.
+// причин и названия частей собирает страница: Go отдает виды и числа.
 type healthView struct {
 	Mode              string       `json:"mode"` // ok, warn, bad
 	Total             int          `json:"total"`
@@ -334,7 +334,7 @@ func (d *memoryDesk) ConfirmRule(text string) error {
 }
 
 // ConfirmRules records that the person re-read several rules of the hot layer and
-// keeps them: один Touch ID на весь список, запись по каждому правилу, всё или ничего.
+// keeps them: один Touch ID на весь список, запись по каждому правилу, все или ничего.
 func (d *memoryDesk) ConfirmRules(texts []string) error {
 	if err := d.guard(fmt.Sprintf("подтвердить правил в памяти: %d", len(texts))); err != nil {
 		return err

@@ -157,9 +157,9 @@ func TestReport_undecidableIsCountedSeparately(t *testing.T) {
 // catalog cannot tell a fresh check from one made in May.
 func TestScan_stampsEveryResult(t *testing.T) {
 	when := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
-	// Каталог из ТРЁХ записей, а не из одной: на одной записи «каждый» и
+	// Каталог из ТРЕХ записей, а не из одной: на одной записи «каждый» и
 	// «первый» — одно и то же, и штамп, проставленный только первому
-	// результату, прошёл бы проверку (issue #229). Три разных кода ответа
+	// результату, прошел бы проверку (issue #229). Три разных кода ответа
 	// заодно закрывают догадку, что штамп ставится лишь удачным.
 	urls := map[string]int{
 		"https://example.com/a": 200,
@@ -261,9 +261,9 @@ func TestReport_movedSkipsRedirectsWithoutATarget(t *testing.T) {
 
 // Ответ, которого нет в HTTP, стоил всего прогона.
 //
-// Скан — десять минут по живой базе, и он терял всё из-за одного сервера,
+// Скан — десять минут по живой базе, и он терял все из-за одного сервера,
 // вернувшего код вне 100-599 (так отвечает, например, LinkedIn своим 999).
-// Сетевой отказ при этом, наоборот, копился в отчёте и скан продолжался: два
+// Сетевой отказ при этом, наоборот, копился в отчете и скан продолжался: два
 // похожих по природе отказа имели противоположную цену, и ни из имени команды,
 // ни из документации это не следовало.
 func TestScan_survivesAnAnswerOutsideHTTP(t *testing.T) {
@@ -293,11 +293,11 @@ func TestScan_survivesAnAnswerOutsideHTTP(t *testing.T) {
 	}
 }
 
-// Прерванный скан отдаёт то, что успел узнать.
+// Прерванный скан отдает то, что успел узнать.
 //
 // Десять минут работы, и Ctrl-C терял их целиком: каталог трогается один раз в
 // самом конце. Отмена — не отказ, а решение человека остановиться, поэтому
-// отчёт возвращается частичным и помеченным, а не ошибкой.
+// отчет возвращается частичным и помеченным, а не ошибкой.
 func TestScan_returnsWhatItHasWhenStopped(t *testing.T) {
 	c := catalogOf(t,
 		entry(t, 1, "https://example.com/one"),
@@ -312,10 +312,10 @@ func TestScan_returnsWhatItHasWhenStopped(t *testing.T) {
 
 	rep, err := drift.NewService(fixedLoader{c}, checker).Scan(ctx, time.Now())
 	if err != nil {
-		t.Fatalf("отмена пришла ошибкой, а не частичным отчётом: %v", err)
+		t.Fatalf("отмена пришла ошибкой, а не частичным отчетом: %v", err)
 	}
 	if !rep.Stopped {
-		t.Error("отчёт не помечен прерванным — читатель примет его за полный")
+		t.Error("отчет не помечен прерванным — читатель примет его за полный")
 	}
 	if got := len(rep.Results); got != 1 {
 		t.Errorf("получено %d вердиктов, ожидался 1 — успевший ответ должен остаться", got)
@@ -366,7 +366,7 @@ func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
 		want  []int // ids expected to be asked, in any order
 	}{
 		{
-			name: "никогда не проверенная идёт первой, хотя лежит в хвосте",
+			name: "никогда не проверенная идет первой, хотя лежит в хвосте",
 			entry: []domain.Entry{
 				entryChecked(t, 1, "https://example.com/a", recent),
 				entryChecked(t, 2, "https://example.com/b", recent),
@@ -376,7 +376,7 @@ func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
 			want:  []int{3},
 		},
 		{
-			name: "при всех проверенных берётся самая давняя",
+			name: "при всех проверенных берется самая давняя",
 			entry: []domain.Entry{
 				entryChecked(t, 1, "https://example.com/a", recent),
 				entryChecked(t, 2, "https://example.com/b", old),
@@ -420,7 +420,7 @@ func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
 			want := slices.Clone(tt.want)
 			slices.Sort(want)
 			if !slices.Equal(got, want) {
-				t.Fatalf("спрошены записи %v, ожидались %v — отбор идёт по порядку каталога, а не по давности проверки", got, want)
+				t.Fatalf("спрошены записи %v, ожидались %v — отбор идет по порядку каталога, а не по давности проверки", got, want)
 			}
 			if sum := len(rep.Results) + len(rep.Unreachable) + rep.WithoutURL + rep.NotAttempted; sum != rep.TotalEntries {
 				t.Fatalf("buckets sum to %d, catalog has %d", sum, rep.TotalEntries)
@@ -429,12 +429,12 @@ func TestScan_limitPicksTheLeastRecentlyChecked(t *testing.T) {
 	}
 }
 
-// Отчёт обязан называть, сколько записей не проверялось НИ РАЗУ. «Проверено 6
+// Отчет обязан называть, сколько записей не проверялось НИ РАЗУ. «Проверено 6
 // из 1525» звучит как выборка из проверенного массива, а на деле часть базы
 // может не спрашиваться никогда: новые записи дописываются в хвост, и до
 // починки 28.08.2026 малый --limit до них не доходил вовсе.
 //
-// Это то же самое требование, что и к остальным полям отчёта: назвать не
+// Это то же самое требование, что и к остальным полям отчета: назвать не
 // только найденное, но и не установленное.
 func TestScan_reportsHowManyWereNeverChecked(t *testing.T) {
 	checked := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
@@ -458,14 +458,14 @@ func TestScan_reportsHowManyWereNeverChecked(t *testing.T) {
 	}
 	// Считается состояние ДО прогона: сколько записей входило в него, ни разу
 	// не проверенными. Иначе число зависело бы от того, что успел сделать сам
-	// прогон, и «сколько ещё не трогали» стало бы невычислимым.
+	// прогон, и «сколько еще не трогали» стало бы невычислимым.
 	if rep.NeverChecked != 2 {
-		t.Fatalf("NeverChecked = %d, want 2 — отчёт не называет, сколько записей не спрашивали ни разу", rep.NeverChecked)
+		t.Fatalf("NeverChecked = %d, want 2 — отчет не называет, сколько записей не спрашивали ни разу", rep.NeverChecked)
 	}
 }
 
 // Отрицательный контроль: у полностью проверенной базы число обязано быть
-// нулём, а не «сколько-то». Иначе детектор ругался бы на правду.
+// нулем, а не «сколько-то». Иначе детектор ругался бы на правду.
 func TestScan_neverCheckedIsZeroWhenAllHaveDates(t *testing.T) {
 	checked := time.Date(2026, 8, 27, 0, 0, 0, 0, time.UTC)
 	c := catalogOf(t,

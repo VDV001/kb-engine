@@ -67,7 +67,7 @@ const openURL = (u) => (window.runtime ? window.runtime.BrowserOpenURL(u) : wind
 // обязана находить «договора» по запросу «договор», как и поиск.
 const ENDINGS = ["иями","ями","ами","ого","его","ому","ему","ыми","ими","ией","ием","иях","ях","ах","ов","ев","ей","ой","ий","ый","ая","яя","ое","ее","ые","ие","ую","юю","ом","ем","ам","ям","ия","ию","ии","ых","их","а","я","о","е","ы","и","у","ю","ь"];
 function stem(w) {
-  if (!/[а-яё]/i.test(w)) return w;
+  if (!/[а-яе]/i.test(w)) return w;
   for (const e of ENDINGS) if (w.endsWith(e) && [...w].length - [...e].length >= 3) return w.slice(0, -e.length);
   return w;
 }
@@ -187,8 +187,8 @@ const worth = (m) => FIELD[m.field] && HOW[m.how] !== undefined && !(VISIBLE.has
 // подсвечиваются нигде: их называет строка «совпало».
 const hitsWhere = (e, fields, how) => (e.match || []).filter((m) => fields.has(m.field) && how(m.how)).map((m) => m.hit).filter(Boolean);
 // В заголовке и описании подсвечиваются все совпадения этих полей, и
-// буквальные тоже: разбор запроса в окне не повторяет нормы движка (ё и е,
-// запрос из одной буквы), и «Ёжик» по «еж» иначе остался бы без подсветки.
+// буквальные тоже: разбор запроса в окне не повторяет нормы движка (е и е,
+// запрос из одной буквы), и «Ежик» по «еж» иначе остался бы без подсветки.
 const rowHits = (e) => hitsWhere(e, VISIBLE, (h) => HOW[h] !== undefined);
 const metaHits = (e) => hitsWhere(e, new Set(["author", "category"]), (h) => HOW[h] !== undefined);
 function whyLine(e) {
@@ -2328,11 +2328,11 @@ function renderChatSources() {
     return `<button type="button" class="chat-src${bad ? " bad" : ""}" style="--c:var(${hue.get(s.id)})" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
       data-tip="${esc(label(s))}" data-tip-b="${esc(bad || (on ? "этот чат ищет здесь · щелчок — убрать" : "этот чат здесь не ищет · щелчок — вернуть"))}"${bad ? " data-tip-bad" : ""}><i></i><span class="t">${esc(label(s))}</span></button>`;
   };
-  const max = 6; // больше — в «ещё N»: ряд не переносится
+  const max = 6; // больше — в «еще N»: ряд не переносится
   const shown = list.slice(0, max), rest = list.slice(max);
   const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
   row.innerHTML = `<span class="lbl">ищет в</span>` + shown.map(chip).join("") +
-    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">ещё ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
+    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
     (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
     (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
   dropStaleTip();
@@ -4306,7 +4306,7 @@ async function mmProbe() {
   try {
     const d = await native().MemoryState();
     mmSetAlert(d);
-    if (!$("#memory-view").hidden && !state.mm.busy) { state.mm.data = d; mmRender(); } // открытый экран не остаётся со старым счётом
+    if (!$("#memory-view").hidden && !state.mm.busy) { state.mm.data = d; mmRender(); } // открытый экран не остается со старым счетом
   } catch { /* сигнал необязателен: экран сам покажет ошибку */ }
 }
 setTimeout(mmProbe, 1500);
@@ -4396,14 +4396,14 @@ function mmRender() {
   host.innerHTML = mmAlertHTML(d) + MM_WARN + mmHeadHTML(d) + `<div class="ac-grid mm-grid">${mmTreeHTML(d)}<div class="mm-pane" role="tabpanel">${pane}</div></div>`;
 }
 // --- Здоровье памяти (ADR-0008) ----------------------------------------------------
-// Чем реже человек смотрит память, тем ниже доверие. Счёт и причины считает Go (те же
-// числа в терминале: `kbengine memory health`); страница рисует и ведёт от ритма к дню,
+// Чем реже человек смотрит память, тем ниже доверие. Счет и причины считает Go (те же
+// числа в терминале: `kbengine memory health`); страница рисует и ведет от ритма к дню,
 // от дня к решению, от решения к правилу. Имена с префиксом mh: mm и mem заняты.
 const MH_VIEWS = [["pulse", "Пульт"], ["rhythm", "Ритм"], ["rules", "Правила"], ["modes", "Режимы"]];
 const MH_PARTS = { rhythm: "Давность осмотра", queue: "Очередь предложений", integrity: "Целостность", rules: "Свежесть правил" };
 const MH_MODES = {
   ok: ["Доверяю", "ok", "Агент получает ответы памяти без оговорок, его предложения идут в очередь."],
-  warn: ["С оговоркой", "warn", "Каждый ответ memory_find и memory_propose несёт пометку «память давно не проверялась» и список правил без подтверждения больше 30 дней. Предложения идут в очередь."],
+  warn: ["С оговоркой", "warn", "Каждый ответ memory_find и memory_propose несет пометку «память давно не проверялась» и список правил без подтверждения больше 30 дней. Предложения идут в очередь."],
   bad: ["Не доверяю", "bad", "Ответы несут пометку «память не проверена», а memory_propose отказывает, пока вы не осмотрите память."],
 };
 const MH_KINDS = {
@@ -4433,7 +4433,7 @@ function mhReasonHTML(h, r) {
   }
 }
 function mhReasonsHTML(h) {
-  if (!h.reasons.length) return `<p class="mh-ok">Всё в порядке: осмотр свежий, очередь пуста, печать и векторы целы.</p>`;
+  if (!h.reasons.length) return `<p class="mh-ok">Все в порядке: осмотр свежий, очередь пуста, печать и векторы целы.</p>`;
   return h.reasons.map((r) => { const [t, d, act] = mhReasonHTML(h, r); return `<div class="mh-row"><div><b>${t}</b><div class="muted">${d}</div></div>${act}</div>`; }).join("");
 }
 function mhPartHint(h, id) {
@@ -4486,7 +4486,7 @@ function mhRhythmHTML(d) {
   const weeks = Array.from({ length: 13 }, (_, w) => Array.from({ length: 7 }, (_, k) => mhIso(today - 90 + w * 7 + k)).some((x) => days.has(x))).filter(Boolean).length;
   const ev = h.events.filter((e) => e.day === cur);
   const idleTone = h.idleDays < 0 || h.idleDays > 14 ? "bad" : h.idleDays > 7 ? "warn" : "ok";
-  return `<p class="muted">Каждая клетка — день; чем ярче, тем больше решений человека (обслуживание перечня и индекса не в счёт, оно бледнее). Здоровье равно регулярности.</p>
+  return `<p class="muted">Каждая клетка — день; чем ярче, тем больше решений человека (обслуживание перечня и индекса не в счет, оно бледнее). Здоровье равно регулярности.</p>
     <div class="mh-heat">${mhHeat(h, cur)}</div>
     <div class="mh-stats"><div><b>${weeks}</b> <span class="muted">из 13 недель с решениями</span></div>
       <div><b class="${idleTone}">${h.idleDays < 0 ? "—" : h.idleDays}</b> <span class="muted">${h.idleDays < 0 ? "решений в журнале нет" : "дн. с последнего решения"}</span></div></div>
@@ -4510,18 +4510,18 @@ function mhRulesHTML(d) {
   const bulk = !stale ? "" : state.mm.confirm === "*stale"
     ? `<div class="mm-confirm" role="alert"><b>Вы перечитали ${stale} ${mhWord(stale, "правило", "правила", "правил")} (${h.rules.filter((x) => x.stale).map((x) => "«" + esc(x.text) + "»").join(", ")}) и они верны?</b> <button class="ac-btn pri" data-mm="confirm-all">Подтвердить все · Touch ID</button> <button class="ac-btn" data-mm="confirm-all-no">Отмена</button></div>`
     : `<button class="ac-btn pri" data-mm="confirm-all-ask" title="Один Touch ID, запись в журнале по каждому правилу">Подтвердить все устаревшие (${stale})</button>`;
-  return `<div class="mh-cols"><div><p class="muted">Здоровье у каждого правила своё: когда его в последний раз подтверждал человек (одобрение в горячий слой тоже считается).</p>${bulk}${list}</div>
+  return `<div class="mh-cols"><div><p class="muted">Здоровье у каждого правила свое: когда его в последний раз подтверждал человек (одобрение в горячий слой тоже считается).</p>${bulk}${list}</div>
     <div class="mh-stack"><div class="mh-box"><div class="mh-crumbs"><button class="mh-link" data-mm="hv" data-v="rules" data-rule="">Правила</button> › <b>правило ${i + 1}</b></div>
       <h3>${esc(sel.text)}</h3><p>${seen}</p>
       <button class="ac-btn pri" data-mm="confirm" data-i="${i}">Подтвердить сегодня · Touch ID</button>
-      <h4>История решений по правилу</h4>${hist.map((e) => mhEventHTML(h, e, true, false)).join("") || `<p class="muted">Решений по этому правилу в журнале нет: правило было в HOT.md до учёта.</p>`}</div>
+      <h4>История решений по правилу</h4>${hist.map((e) => mhEventHTML(h, e, true, false)).join("") || `<p class="muted">Решений по этому правилу в журнале нет: правило было в HOT.md до учета.</p>`}</div>
     <div class="mh-box"><h4>Как это увидит агент</h4><p class="muted">${esc(agent)}.</p></div></div></div>`;
 }
 function mhModesHTML(d) {
   const h = d.health, rs = h.reasons;
   const col = (k, range, items) => `<div class="mh-lvl ${k}${h.mode === k ? " cur" : ""}"><b>${MH_MODES[k][0]}</b><div class="muted">${range}</div><ul>${items.map((x) => `<li>${x}</li>`).join("")}</ul></div>`;
   return `<p class="muted">Режим считается из здоровья (${h.total} из 100) и действует через MCP (<code>kbengine-mcp</code>): он виден агенту в каждом ответе памяти. Сейчас: <b class="${MH_MODES[h.mode][1]}">${MH_MODES[h.mode][0]}</b>.</p>
-    <div class="mh-lvls">${col("ok", "здоровье 75 и выше", ["ответы без оговорок; правила без подтверждения всё равно называются", "предложения идут в очередь"])}
+    <div class="mh-lvls">${col("ok", "здоровье 75 и выше", ["ответы без оговорок; правила без подтверждения все равно называются", "предложения идут в очередь"])}
       ${col("warn", "от 50 до 74", ["ответы несут пометку «давно не проверялась»", "и список правил без подтверждения > 30 дней", "предложения идут в очередь"])}
       ${col("bad", "ниже 50 или правка HOT.md мимо системы", ["ответы несут пометку «память не проверена»", "memory_propose отказывает: очередь приостановлена"])}</div>
     <div class="mh-eff ${MH_MODES[h.mode][1]}">Для агента сейчас: ${esc(MH_MODES[h.mode][2])}</div>

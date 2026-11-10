@@ -102,7 +102,7 @@ type Documents struct {
 }
 
 // EngineInfo — сборка, которая прямо сейчас отвечает на запросы. Приходит
-// снаружи, а не читается здесь из runtime/debug: адаптер отдаёт то, что ему
+// снаружи, а не читается здесь из runtime/debug: адаптер отдает то, что ему
 // дали, и тогда его можно проверить тестом, не собирая бинарь.
 //
 // Нужна она не для украшения: подвал предлагает исходники по AGPL §13, а
@@ -137,7 +137,7 @@ type Finances struct {
 	Transactions []domain.Transaction
 	Accounts     []domain.Account
 	// Confirmations — моменты подтверждения остатков, если они известны. Пустая
-	// карта — законное состояние, а не сбой: у счёта, подтверждённого до
+	// карта — законное состояние, а не сбой: у счета, подтвержденного до
 	// появления файла состояния, момента нет.
 	Confirmations finance.Confirmations
 }
@@ -176,8 +176,8 @@ type options struct {
 
 // WithSynonyms подключает слой перевода терминов.
 //
-// До неё словарь был подключён ТОЛЬКО к терминалу: main.go отдавал его в
-// tui.Sources, сервер о нём не знал, и «конкурентность» находила concurrency в
+// До нее словарь был подключен ТОЛЬКО к терминалу: main.go отдавал его в
+// tui.Sources, сервер о нем не знал, и «конкурентность» находила concurrency в
 // одной поверхности из двух. Тот же класс, что #252, этажом выше — правило
 // одно, а доступ к нему был выдан не всем.
 func WithSynonyms(m search.Matcher) Option {
@@ -261,7 +261,7 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 	// Регистрируется всегда, а не под флагом: без источника обработчик отвечает
 	// 404, и это тот же ответ, что у не названного каталогом пути. Под условием
 	// шаблона не было бы вовсе, и запрос артефакта доходил бы до SPA-фолбэка —
-	// 200 с разметкой там, где браузер ждёт документ.
+	// 200 с разметкой там, где браузер ждет документ.
 	mux.Handle("GET /kb/", kbFilesHandler(docs.Artefacts, q))
 	if frontend != nil {
 		// Фолбэк на index.html нужен клиентским маршрутам страницы (/archives,
@@ -275,13 +275,13 @@ func NewServer(q Querier, a Auditor, an Analyzer, fin Financier, cfg ConfigLoade
 		mux.Handle("/api/", http.NotFoundHandler())
 		// То же самое для медиа. Без --media шаблона "GET /media/" выше нет
 		// вовсе, и запрос картинки доходил до фолбэка — 200 с разметкой там,
-		// где потребитель ждёт изображение. Когда флаг передан, побеждает
+		// где потребитель ждет изображение. Когда флаг передан, побеждает
 		// конкретный "GET /media/": он матчит подмножество запросов, и
 		// ServeMux выбирает более специфичный шаблон.
 		mux.Handle("/media/", http.NotFoundHandler())
 		mux.Handle("/", spaHandler(frontend))
 	}
-	// Обёртка снаружи mux, а не middleware на каждом обработчике: ServeMux
+	// Обертка снаружи mux, а не middleware на каждом обработчике: ServeMux
 	// заполняет Request.Pattern при сопоставлении, поэтому шаблон маршрута
 	// известен только после его работы. Регистрация нового эндпоинта попадает
 	// в метрики сама, без строчки в отдельном списке.
@@ -310,7 +310,7 @@ func handleReadyz(q Querier) http.HandlerFunc {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		// Непрочитанные записи — не повод объявлять сервис негодным: витрины
 		// работают. Но и молчать нельзя, иначе «ready» будет означать «показано
-		// всё», чего никто не проверял.
+		// все», чего никто не проверял.
 		if n := len(st.Unreadable); n > 0 {
 			fmt.Fprintf(w, "ready, but %d entr(ies) in the catalog could not be read\n", n)
 			return
@@ -336,14 +336,14 @@ type NowDoc struct {
 	EditedAt time.Time
 }
 
-// handleNow отдаёт документ вместе с ответом на вопрос, не отстал ли он.
+// handleNow отдает документ вместе с ответом на вопрос, не отстал ли он.
 //
-// Страница тухнет тихо: текст остаётся правдоподобным, а мир вокруг уходит
-// вперёд. Считать отставание по возрасту файла нельзя — документ, которого не
+// Страница тухнет тихо: текст остается правдоподобным, а мир вокруг уходит
+// вперед. Считать отставание по возрасту файла нельзя — документ, которого не
 // касались месяц, но и база вокруг которого не менялась, верен. Поэтому
 // сравниваются события: записи, версия базы, операции ПОСЛЕ последней правки.
 //
-// Проверка необязательна: без каталога, журнала и книги остаётся один markdown,
+// Проверка необязательна: без каталога, журнала и книги остается один markdown,
 // и это меньшая страница, а не ошибка.
 func handleNow(load func() (NowDoc, error), q Querier, chlog ChangelogLoader, fin Financier) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -368,7 +368,7 @@ func handleNow(load func() (NowDoc, error), q Querier, chlog ChangelogLoader, fi
 //
 // Отдельно от /api/engine, где перечислено, какие флаги переданы: там про
 // запуск, здесь про содержимое. Страница, у которой опор для сверки нет,
-// говорит именно это — зелёная галочка означала бы «проверено», а проверки не
+// говорит именно это — зеленая галочка означала бы «проверено», а проверки не
 // было.
 func handleSources(docs Documents, q Querier, chlog ChangelogLoader, fin Financier, engine EngineInfo) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -384,7 +384,7 @@ func handleSources(docs Documents, q Querier, chlog ChangelogLoader, fin Financi
 			}
 		}
 		// Projects знает о самом движке: карточка называет его версию, и она
-		// живёт своей жизнью. На живом файле там стояло v0.5.0 при 0.15.0 —
+		// живет своей жизнью. На живом файле там стояло v0.5.0 при 0.15.0 —
 		// страница врала о собственном проекте втрое.
 		if docs.Projects != nil {
 			if doc, err := docs.Projects(); err == nil {
@@ -436,8 +436,8 @@ func checkNowFreshness(doc NowDoc, q Querier, chlog ChangelogLoader, fin Financi
 	}
 	if chlog != nil {
 		if cl, err := chlog(); err == nil {
-			// Дата приходит строкой, как её написали в журнале. Нечитаемая — это
-			// «не знаю, когда»: тогда версия в расчёт не идёт вовсе, вместо того
+			// Дата приходит строкой, как ее написали в журнале. Нечитаемая — это
+			// «не знаю, когда»: тогда версия в расчет не идет вовсе, вместо того
 			// чтобы попасть туда с нулевым временем и объявить отставание всегда.
 			if d, err := time.Parse(time.DateOnly, cl.CurrentDate); err == nil {
 				in.Version, in.VersionDate = cl.CurrentVersion, d
@@ -494,7 +494,7 @@ func handleRawJSON(load func() (FileDoc, error)) http.HandlerFunc {
 func handleChangelog(chlog ChangelogLoader) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
 		if chlog == nil {
-			// Не настроен — валидное развёртывание: view покажет пусто.
+			// Не настроен — валидное развертывание: view покажет пусто.
 			writeJSON(w, changelog.Document{})
 			return
 		}
@@ -595,7 +595,7 @@ func handleEntries(q Querier) http.HandlerFunc {
 // забирал весь каталог и фильтровал у себя подстрокой — вторая реализация
 // одного правила, разошедшаяся с первой на измеримую величину (#252).
 //
-// Пустой q возвращает весь каталог, а не ошибку: так ведёт себя терминал, и
+// Пустой q возвращает весь каталог, а не ошибку: так ведет себя терминал, и
 // расхождение здесь было бы тем же дефектом в миниатюре.
 func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -606,8 +606,8 @@ func handleSearch(q Querier, syn search.Matcher) http.HandlerFunc {
 			writeError(w, err)
 			return
 		}
-		// Поиск отделён от чтения намеренно: у него четыре слоя, и на живом
-		// каталоге он стоит миллисекунды — если разбивка сольёт его с чтением,
+		// Поиск отделен от чтения намеренно: у него четыре слоя, и на живом
+		// каталоге он стоит миллисекунды — если разбивка сольет его с чтением,
 		// вопрос «где медленно» останется без ответа ровно там, где он и возник.
 		searchDone := track(r.Context(), "search")
 		// FilterWith, а не Filter: слой перевода приходит снаружи, и его
@@ -665,7 +665,7 @@ func handleAudits(a Auditor) http.HandlerFunc {
 }
 
 // handleLinkHealth serves the drift summary. Its own endpoint rather than a
-// field on /api/audits: that one answers with lists of findings, and a счётчик
+// field on /api/audits: that one answers with lists of findings, and a счетчик
 // among them would have to pretend to be a finding to fit the shape.
 func handleLinkHealth(a Auditor) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
@@ -691,7 +691,7 @@ func handleFinances(fin Financier) http.HandlerFunc {
 		groups := []groupDTO{}
 		currencies := []currencyBalanceDTO{}
 		totals := []balanceTotalDTO{}
-		// Свободные деньги считает usecase и отдаёт числом: посчитай их
+		// Свободные деньги считает usecase и отдает числом: посчитай их
 		// витрина сама — правило про деньги оказалось бы написано трижды
 		// (терминал, веб, и однажды кто-то третий), и разошлось бы молча.
 		free := domain.Money{}
@@ -785,7 +785,7 @@ func handleDuplicates(a Auditor) http.HandlerFunc {
 		// «Дублей нет» — это пустой список, а не отсутствие ответа. Go пишет
 		// nil-слайс как null, и пока в каталоге находилась хоть одна группа,
 		// разницы никто не замечал. Когда починка дедупа убрала последнюю,
-		// клиент взял длину у null и снял всё дерево — пустая страница вместо
+		// клиент взял длину у null и снял все дерево — пустая страница вместо
 		// дашборда. Соседние эндпоинты (entries, finances) уже отвечают пустым
 		// списком; этот выбивался из общего правила.
 		if groups == nil {

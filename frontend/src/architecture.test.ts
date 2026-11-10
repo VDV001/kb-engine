@@ -34,7 +34,7 @@ const flows: ArchFlow[] = [
     zone: 'Деньги',
     steps: [
       { n: 1, from: 'cmd-fin', to: 'dom-money', call: 'ParseMoney', source: 'internal/domain/money.go:125', unverified: false, branch: false },
-      { n: 2, from: 'dom-money', to: 'cmd-fin', call: 'Add', unverified: true, why: 'живьём не прогонялось', branch: false },
+      { n: 2, from: 'dom-money', to: 'cmd-fin', call: 'Add', unverified: true, why: 'живьем не прогонялось', branch: false },
     ],
   },
   {
@@ -54,14 +54,14 @@ describe('parseAnchor', () => {
     expect(a.absolute).toBe('~/claude-cowork/digest/run_digest.sh')
   })
 
-  it('без имени дерева отдаёт путь как есть', () => {
+  it('без имени дерева отдает путь как есть', () => {
     const a = parseAnchor('internal/domain/money.go:125', roots)
     expect(a).toMatchObject({ path: 'internal/domain/money.go', line: 125 })
     expect(a.root).toBeUndefined()
     expect(a.absolute).toBeUndefined()
   })
 
-  // Имя дерева признаётся только объявленное в самой карте. Иначе «Package:
+  // Имя дерева признается только объявленное в самой карте. Иначе «Package:
   // note» в тексте якоря превратился бы в корень, которого нет.
   it('не выдумывает дерево, которого карта не объявляла', () => {
     const a = parseAnchor('unknown:some/file.go:7', roots)
@@ -86,8 +86,8 @@ describe('wirePath', () => {
   const a = { left: 100, top: 100, width: 200, height: 60 }
   const b = { left: 500, top: 300, width: 200, height: 60 }
 
-  it('выходит из правого края вперёд и из левого назад', () => {
-    // Вперёд: из правого края A (300) в левый край B (500).
+  it('выходит из правого края вперед и из левого назад', () => {
+    // Вперед: из правого края A (300) в левый край B (500).
     expect(wirePath(a, b, field).d).toMatch(/^M 300 130 C /)
     expect(wirePath(a, b, field).d).toMatch(/500 330$/)
     // Назад: из левого края B (500) в правый край A (300) — иначе две
@@ -110,7 +110,7 @@ describe('wirePath', () => {
 })
 
 describe('типы узлов', () => {
-  // Пять типов — это не сорта, а состояния: скрипт, которого никто не зовёт,
+  // Пять типов — это не сорта, а состояния: скрипт, которого никто не зовет,
   // выглядит на карте так же, как рабочий, и вся разница в этом слове.
   it('различает состояние и сорт', () => {
     expect(isBrokenKind('script-orphan')).toBe(true)
@@ -137,7 +137,7 @@ describe('типы узлов', () => {
 })
 
 describe('mapCounts', () => {
-  // Половина счётчиков — про границу знания, а не про объём: без них карта
+  // Половина счетчиков — про границу знания, а не про объем: без них карта
   // читается как полная.
   it('считает якоря, источники и сломанные узлы', () => {
     const c = mapCounts({
@@ -175,9 +175,9 @@ describe('kindGlyph и laneColor', () => {
     expect(kindGlyph(undefined)).toBe('•')
   })
 
-  // Слои у двух карт называются по-разному, поэтому цвет берётся по месту в
+  // Слои у двух карт называются по-разному, поэтому цвет берется по месту в
   // порядке: словарь по именам оставил бы чужую карту серой.
-  it('цвет слоя идёт по кругу и не кончается', () => {
+  it('цвет слоя идет по кругу и не кончается', () => {
     expect(laneColor(0)).toBe('var(--lane-1)')
     expect(laneColor(7)).toBe('var(--lane-8)')
     expect(laneColor(8)).toBe('var(--lane-1)')
@@ -206,15 +206,15 @@ describe('groupByLayer', () => {
     { id: 'commands', title: 'Команды', order: 3 },
   ]
 
-  it('идёт в объявленном порядке, а не в порядке узлов', () => {
+  it('идет в объявленном порядке, а не в порядке узлов', () => {
     expect(groupByLayer(nodes, layers).map((g) => g.id)).toEqual(['commands', 'domain', ''])
   })
 
   // Узел со слоем, которого в карте нет, — это дыра в самой карте, и молча
-  // терять его значит рисовать её полнее, чем она есть.
+  // терять его значит рисовать ее полнее, чем она есть.
   it('узел неизвестного слоя виден отдельной группой', () => {
     const last = groupByLayer(nodes, layers).at(-1)
-    expect(last?.title).toBe('Вне объявленных слоёв')
+    expect(last?.title).toBe('Вне объявленных слоев')
     expect(last?.nodes.map((n) => n.id)).toEqual(['ghost'])
   })
 
@@ -263,13 +263,13 @@ describe('acceptanceState', () => {
     { name: 'B', accepted: false, flows: 1, steps: 1 },
   ]
 
-  // Три ответа, а не два. Карта без раздела приёмки не «не принята» — сверять
+  // Три ответа, а не два. Карта без раздела приемки не «не принята» — сверять
   // с ней просто нечего, и галочка там обещала бы проверку, которой не было.
-  it('без раздела приёмки — «сверять не с чем»', () => {
+  it('без раздела приемки — «сверять не с чем»', () => {
     expect(acceptanceState({ zones, acceptance: undefined })).toMatchObject({ state: 'unknown' })
   })
 
-  it('часть зон — частичная приёмка', () => {
+  it('часть зон — частичная приемка', () => {
     expect(
       acceptanceState({ zones, acceptance: { classes_run: [], not_done: '', note: '' } }),
     ).toMatchObject({ state: 'partial', accepted: 1, total: 2 })

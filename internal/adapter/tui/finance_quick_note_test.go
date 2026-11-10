@@ -29,12 +29,12 @@ func TestQuick_tabMovesUnknownWordsIntoTheNote(t *testing.T) {
 
 	m = press(m, tab()) // забрать незнакомое в заметку
 
-	// Метку и значение искать в ОДНОЙ строке разбора: само слово стоит ещё и в
+	// Метку и значение искать в ОДНОЙ строке разбора: само слово стоит еще и в
 	// набранной строке сверху, и проверка по нему проходила бы, ничего не
 	// проверяя. Этот тест уже обманул один раз именно так.
 	after := m.View()
 	if strings.Contains(after, "не знаю") {
-		t.Errorf("после Tab слово всё ещё числится незнакомым:\n%s", after)
+		t.Errorf("после Tab слово все еще числится незнакомым:\n%s", after)
 	}
 	shown := false
 	for l := range strings.SplitSeq(after, "\n") {
@@ -49,7 +49,7 @@ func TestQuick_tabMovesUnknownWordsIntoTheNote(t *testing.T) {
 	press(m, enter()) // и записать
 
 	if len(w.got) != 1 {
-		t.Fatalf("записей %d, ожидалась 1 — незнакомое слово всё ещё блокирует", len(w.got))
+		t.Fatalf("записей %d, ожидалась 1 — незнакомое слово все еще блокирует", len(w.got))
 	}
 	if w.got[0].Description != "страховка" {
 		t.Errorf("заметка = %q, ожидалась «страховка»", w.got[0].Description)

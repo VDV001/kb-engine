@@ -11,7 +11,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/query"
 )
 
-// emptyQuery — каталог без записей: проверяем, что llms.txt остаётся валидным.
+// emptyQuery — каталог без записей: проверяем, что llms.txt остается валидным.
 type emptyQuery struct{}
 
 func (emptyQuery) Stats() (query.Stats, error)      { return query.Stats{}, nil }
@@ -20,7 +20,7 @@ func (emptyQuery) Health() (query.Health, error)    { return query.Health{}, nil
 
 // llms.txt — машиночитаемая карта базы для агентов и LLM-поисковиков (идея из
 // Blume). Собирается ИЗ каталога: добавили категорию — она появилась без правки
-// руками. Отдаётся только публичное, как и /kb/.
+// руками. Отдается только публичное, как и /kb/.
 func TestLlmsTxt_builtFromCatalog(t *testing.T) {
 	rec := get(t, newTestServer(), "/llms.txt")
 	if rec.Code != 200 {
@@ -34,7 +34,7 @@ func TestLlmsTxt_builtFromCatalog(t *testing.T) {
 	if !strings.HasPrefix(body, "# ") {
 		t.Fatalf("файл не начинается с # заголовка: %.40q", body)
 	}
-	// Категория из каталога с её человеческой меткой, а не голым ключом.
+	// Категория из каталога с ее человеческой меткой, а не голым ключом.
 	if !strings.Contains(body, "Go: язык и экосистема") {
 		t.Fatalf("нет метки категории из каталога: %q", body)
 	}
@@ -44,7 +44,7 @@ func TestLlmsTxt_builtFromCatalog(t *testing.T) {
 	}
 }
 
-// Отрицательный контроль: пустой каталог даёт валидный llms.txt с заголовком и
+// Отрицательный контроль: пустой каталог дает валидный llms.txt с заголовком и
 // пустым перечнем, а не 500. «Разделов нет» — законная форма, не ошибка.
 func TestLlmsTxt_emptyCatalogStillValid(t *testing.T) {
 	srv := httpapi.NewServer(emptyQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},

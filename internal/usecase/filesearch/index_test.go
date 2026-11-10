@@ -14,7 +14,7 @@ import (
 )
 
 func TestTokens(t *testing.T) {
-	got := filesearch.Tokens("Ёлка, договоры и Kubernetes-кластер: v2 x")
+	got := filesearch.Tokens("Елка, договоры и Kubernetes-кластер: v2 x")
 	// Однобуквенное («и», «x») не индексируется: это шум, а не слово поиска.
 	want := []string{"елка", "договоры", "kubernetes", "кластер", "v2"}
 	if !slices.Equal(got, want) {

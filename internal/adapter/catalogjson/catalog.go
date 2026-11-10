@@ -332,7 +332,7 @@ func flexIntsToInts(fs []flexInt) []int {
 //
 // Запись, нарушившую инвариант, чтение пропускает и называет через
 // Catalog.Unreadable. Порванный JSON — по-прежнему отказ: там неизвестно даже,
-// сколько записей в файле, и показывать «всё, кроме одной» не из чего.
+// сколько записей в файле, и показывать «все, кроме одной» не из чего.
 func Decode(r io.Reader) (*domain.Catalog, error) {
 	var dto catalogDTO
 	if err := json.NewDecoder(r).Decode(&dto); err != nil {

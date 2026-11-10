@@ -15,7 +15,7 @@ import (
 
 // entryOut — проекция записи наружу.
 //
-// Наружу уходит ровно то, что каталог и так публикует: список разрешённого
+// Наружу уходит ровно то, что каталог и так публикует: список разрешенного
 // здесь тот же, что у маршрута /kb/ — запись каталога. Личные заметки и книга
 // финансов лежат в том же дереве и в каталоге не значатся, поэтому их путей в
 // ответе появиться неоткуда.
@@ -72,7 +72,7 @@ const DefaultSearchLimit = 20
 const MaxSearchLimit = 200
 
 type searchArgs struct {
-	Query string `json:"query" jsonschema:"слова запроса; пустой запрос отдаёт начало каталога (см. limit)"`
+	Query string `json:"query" jsonschema:"слова запроса; пустой запрос отдает начало каталога (см. limit)"`
 	Limit int    `json:"limit,omitempty" jsonschema:"сколько записей отдать, по умолчанию 20; нашлось больше - в ответе total и more=true"`
 }
 
@@ -177,7 +177,7 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 
 	addTool(s, j, &mcp.Tool{
 		Name:        "get_entry",
-		Description: "Карточка одной записи каталога по её номеру.",
+		Description: "Карточка одной записи каталога по ее номеру.",
 	}, func(in entryArgs) []string {
 		return []string{fmt.Sprintf("#%d", in.ID)}
 	}, func(in entryArgs) (map[string]any, error) {

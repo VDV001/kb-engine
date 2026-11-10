@@ -41,7 +41,7 @@ func (s *Service) UndeclaredCategoryIssues() ([]Finding, error) {
 		if _, ok := declared[cat]; ok {
 			continue
 		}
-		// Категория названа в причине: без неё непонятно, что чинить —
+		// Категория названа в причине: без нее непонятно, что чинить —
 		// переписать категорию записи или дописать словарь.
 		findings = append(findings, driftFinding(e,
 			fmt.Sprintf("категория %q не объявлена в meta.categories", cat)))

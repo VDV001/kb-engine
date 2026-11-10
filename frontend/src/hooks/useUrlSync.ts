@@ -4,7 +4,7 @@ import { writeUrlState, type Tab } from '../urlstate'
 // Держит адресную строку в согласии с тем, что видно на экране, чтобы ссылку на
 // текущую выборку можно было просто скопировать.
 //
-// Запись идёт replaceState, а не pushState: пролистывать поиск кнопкой «назад»
+// Запись идет replaceState, а не pushState: пролистывать поиск кнопкой «назад»
 // никто не просил, а история из полусотни шагов мешает уйти со страницы вовсе.
 export function useUrlSync(tab: Tab, search: string): void {
   useEffect(() => {

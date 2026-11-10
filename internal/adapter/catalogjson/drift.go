@@ -41,8 +41,8 @@ func ApplyDriftWithURLs(path string, records []DriftRecord) (int, error) {
 // editMatchingEntries rewrites in place every entry named by byID, removing it
 // from the map as it goes, and returns how many of them ACTUALLY changed.
 //
-// Счёт идёт по изменившимся, а не по совпавшим с записями прогона: повтор в тот
-// же день кладёт те же значения, файл не меняется ни на байт, и «записано N»
+// Счет идет по изменившимся, а не по совпавшим с записями прогона: повтор в тот
+// же день кладет те же значения, файл не меняется ни на байт, и «записано N»
 // означало бы успех без содержания — ровно то, что запрещает гейт против
 // ложного успеха.
 func editMatchingEntries(entries []json.RawMessage, byID map[int]DriftRecord, withURLs bool) (int, error) {
@@ -109,9 +109,9 @@ func applyDrift(path string, records []DriftRecord, withURLs bool) (int, error) 
 }
 
 // applyDriftToEntry returns the edited entry and whether it differs from the
-// original. Сравнение идёт КАНОНА С КАНОНОМ: сырой элемент несёт отступы из
-// файла, а сборка выдаёт единообразный вид, поэтому побайтовое сравнение
-// сырого с собранным объявляло бы изменившимся всё подряд.
+// original. Сравнение идет КАНОНА С КАНОНОМ: сырой элемент несет отступы из
+// файла, а сборка выдает единообразный вид, поэтому побайтовое сравнение
+// сырого с собранным объявляло бы изменившимся все подряд.
 func applyDriftToEntry(raw json.RawMessage, rec DriftRecord, withURLs bool) (json.RawMessage, bool, error) {
 	members, err := readTopLevel(raw)
 	if err != nil {

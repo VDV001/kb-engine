@@ -13,17 +13,17 @@ import { filterJournal, sortJournal, toExportRows } from './financeJournal'
 import { dayBars, monthBars } from './financeSeries'
 import { formatMoney, formatRub, monthLabel, monthOf, toKopecks, todayLocal } from './money'
 
-// Вид «Финансовый архив», перенесённый из Python-дашборда поблочно: те же
+// Вид «Финансовый архив», перенесенный из Python-дашборда поблочно: те же
 // секции в том же порядке и с той же типографикой. Арифметику считает сервер
 // (GET /api/finances/summary), здесь остаются показ и журнал — он листает и
-// фильтрует сами строки, поэтому берёт их из /api/finances.
+// фильтрует сами строки, поэтому берет их из /api/finances.
 
 const PAGE_SIZE = 20
 
 const CATEGORY_ICONS: Record<string, IconName> = {
   Еда: 'restaurant',
   Транспорт: 'directions_car',
-  Жильё: 'home',
+  Жилье: 'home',
   Подписки: 'subscriptions',
   Развлечения: 'sports_esports',
   Здоровье: 'health_and_safety',
@@ -93,13 +93,13 @@ function Bars({
  *
  * `finances === null` означает «спросили и не смогли»: запрос упал, и до
  * причины отсюда не дотянуться — в тексте отказа лежит путь к личному файлу,
- * поэтому сервер отдаёт клиенту только факт, а причину пишет в свой терминал.
+ * поэтому сервер отдает клиенту только факт, а причину пишет в свой терминал.
  * Прежде этот случай подставлял пустоту и печатал совет добавить флаги,
  * которые уже переданы: отказ был переодет в законное состояние.
  *
- * Подключён ли журнал, знает движок, а не страница: спрашиваем `/api/engine`.
- * `null` — «ответа ещё нет либо сборка о своих источниках не сообщает», и на
- * нём остаётся прежний текст: выдуманная причина хуже неназванной.
+ * Подключен ли журнал, знает движок, а не страница: спрашиваем `/api/engine`.
+ * `null` — «ответа еще нет либо сборка о своих источниках не сообщает», и на
+ * нем остается прежний текст: выдуманная причина хуже неназванной.
  */
 export function FinancesView({
   finances: loaded,
@@ -152,8 +152,8 @@ export function FinancesView({
         <EmptyFinances
           text={
             ledgerConnected === true
-              ? 'Журнал подключён и пока пуст — ни одной записи в нём нет.'
-              : 'Леджер не подключён — запустите serve с флагами --ledger и --from.'
+              ? 'Журнал подключен и пока пуст — ни одной записи в нем нет.'
+              : 'Леджер не подключен — запустите serve с флагами --ledger и --from.'
           }
         />
         <div className="mx-auto max-w-3xl">
@@ -210,7 +210,7 @@ function FinancesBody({
   addForm: ReactNode
 }) {
   // Несколько месяцев сразу — как в исходном дашборде. Пустой набор значит
-  // «за всё время».
+  // «за все время».
   const [selected, setSelected] = useState<string[]>([])
   const [showFilters, setShowFilters] = useState(false)
   const [filterCat, setFilterCat] = useState('all')
@@ -240,9 +240,9 @@ function FinancesBody({
 
   const spent = summary ? toKopecks(summary.expenses) : 0
   const earned = summary ? toKopecks(summary.income) : 0
-  const periodText = selected.length === 0 ? 'За всё время' : [...selected].sort().map(monthLabel).join(' · ')
+  const periodText = selected.length === 0 ? 'За все время' : [...selected].sort().map(monthLabel).join(' · ')
 
-  // Место → категория, чтобы подобрать иконку. Это не пересчёт сумм, а поиск
+  // Место → категория, чтобы подобрать иконку. Это не пересчет сумм, а поиск
   // подписи: суммы по местам уже посчитаны сервером.
   const placeCategory = useMemo(() => {
     const m = new Map<string, string>()
@@ -307,7 +307,7 @@ function FinancesBody({
 
   // Экспорт делает сервер: excelize у движка уже есть, а собирать zip с XML
   // в браузере ради того же результата — лишняя библиотека. Строки уходят
-  // ровно те, что на экране, поэтому фильтрация остаётся в одном месте.
+  // ровно те, что на экране, поэтому фильтрация остается в одном месте.
   async function exportXLSX() {
     const blob = await api.financeExport(toExportRows(journal))
     const a = document.createElement('a')
@@ -319,9 +319,9 @@ function FinancesBody({
 
   return (
     <div className={masked ? 'privacy-on' : undefined}>
-      {/* Карточка счетов идёт колонкой слева и не уезжает при прокрутке: она
+      {/* Карточка счетов идет колонкой слева и не уезжает при прокрутке: она
           отвечает на вопрос «где деньги», который задают в любом месте
-          страницы. На узком экране колонка схлопывается и карточка встаёт
+          страницы. На узком экране колонка схлопывается и карточка встает
           сверху — там же, где она была в мобильном виде старого дашборда. */}
       <div className="flex flex-col gap-8 xl:flex-row">
         <aside className="shrink-0 xl:w-72">
@@ -348,7 +348,7 @@ function FinancesBody({
             <p className="label mb-3 tracking-[0.3em] text-secondary">{periodText}</p>
             <h1 className="mb-4 text-4xl leading-none tracking-tight md:text-5xl">Финансовый Архив.</h1>
             <p className="leading-relaxed text-on-surface-variant">
-              Структурированный учёт расходов и доходов. Данные из леджера, перечитываются на каждый запрос.
+              Структурированный учет расходов и доходов. Данные из леджера, перечитываются на каждый запрос.
             </p>
           </div>
           {/* Итог по счетам переехал в карточку слева и здесь больше не
@@ -387,7 +387,7 @@ function FinancesBody({
                   : 'bg-surface-high text-on-surface-variant hover:bg-surface-highest'
               }`}
             >
-              За всё время
+              За все время
             </button>
             {allMonths.map((m) => (
               <button
@@ -429,13 +429,13 @@ function FinancesBody({
                 <span className="privacy-mask text-3xl font-bold">{formatRub(spent)}</span>
                 <span className="label text-[10px] text-secondary">{periodText}</span>
               </div>
-              {/* Исключённое называется рядом с числом, которое оно объясняет:
+              {/* Исключенное называется рядом с числом, которое оно объясняет:
                   сумма строк в журнале не сходится с расходами ровно на эту
                   величину, и без строки расхождение выглядит ошибкой. Молчит,
                   когда исключать было нечего. */}
               {summary.excludedTransferCount > 0 && (
                 <p className="label mt-2 text-[10px] opacity-60">
-                  переводы себе не в счёт:{' '}
+                  переводы себе не в счет:{' '}
                   <span className="privacy-mask">{formatRub(toKopecks(summary.excludedTransfers))}</span>{' '}
                   ({summary.excludedTransferCount})
                 </p>
@@ -446,7 +446,7 @@ function FinancesBody({
             <div className="flex min-h-[200px] flex-col justify-between rounded-lg bg-surface-high p-8">
               <div className="flex items-center justify-between">
                 <span className="label text-on-surface-variant">Доходы</span>
-                {/* Записи, а не только рублёвые: «0 шт» над строкой «не в рублях:
+                {/* Записи, а не только рублевые: «0 шт» над строкой «не в рублях:
                     … (1)» противоречил бы сам себе. */}
                 <span className="label text-[9px] opacity-40">
                   {summary.incomeCount + (summary.otherCurrencies ?? []).reduce((n, c) => n + c.incomeCount, 0)} шт
@@ -546,7 +546,7 @@ function FinancesBody({
                     const max = toKopecks(summary.bySubcategory[0].total)
                     return (
                       // На телефоне две строки: подпись с суммой сверху, полоса под
-                      // ними. В одну строку w-48 + сумма + процент давали 368 px ещё
+                      // ними. В одну строку w-48 + сумма + процент давали 368 px еще
                       // без полосы, а подпись, сжатая до 96 px, теряла подкатегорию.
                       <div
                         key={`${s.category}/${s.subcategory}`}
@@ -884,13 +884,13 @@ function FinancesBody({
   )
 }
 
-// OtherCurrencies называет записи не в рублях под рублёвым итогом. Они в итог
+// OtherCurrencies называет записи не в рублях под рублевым итогом. Они в итог
 // не входят (без курса доллар и рубль не складываются), и без строки сумма
 // журнала не сходилась бы с итогом без объяснения. Молчит, когда таких нет.
 //
-// Под расходами — ещё и переводы себе в этой валюте: они в траты не входят, и
+// Под расходами — еще и переводы себе в этой валюте: они в траты не входят, и
 // без строки доллары журнала не сходились бы с итогом, как рубли без
-// «переводы себе не в счёт».
+// «переводы себе не в счет».
 function OtherCurrencies({ totals, side }: { totals?: CurrencyTotal[]; side: 'expenses' | 'income' }) {
   const parts = (totals ?? []).flatMap((c) =>
     side === 'income'

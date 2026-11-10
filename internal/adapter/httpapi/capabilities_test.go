@@ -9,7 +9,7 @@ import (
 
 // Статусная таблица возможностей (идея из T3MP3ST): честное деление на
 // stable / experimental / roadmap. Источник ОДИН — Go-срез в движке; и вкладка
-// About, и README читают его, иначе таблица разойдётся молча («число живёт
+// About, и README читают его, иначе таблица разойдется молча («число живет
 // дважды»).
 func TestCapabilities_endpointServesTypedTable(t *testing.T) {
 	rec := get(t, newTestServer(), "/api/capabilities")
@@ -23,7 +23,7 @@ func TestCapabilities_endpointServesTypedTable(t *testing.T) {
 	if len(caps) == 0 {
 		t.Fatal("пустая таблица возможностей")
 	}
-	// Каждая строка несёт один из трёх статусов — иначе «честное деление»
+	// Каждая строка несет один из трех статусов — иначе «честное деление»
 	// превращается в список без деления.
 	allowed := map[string]bool{"stable": true, "experimental": true, "roadmap": true}
 	for _, c := range caps {
@@ -37,7 +37,7 @@ func TestCapabilities_endpointServesTypedTable(t *testing.T) {
 }
 
 // Отрицательный контроль на инвариант источника: в наборе есть хотя бы по
-// одному стабильному и одному не-стабильному — иначе таблица, где всё «stable»,
+// одному стабильному и одному не-стабильному — иначе таблица, где все «stable»,
 // не отличалась бы от отсутствия деления вовсе.
 func TestCapabilities_notAllOneStatus(t *testing.T) {
 	caps := httpapi.Capabilities()

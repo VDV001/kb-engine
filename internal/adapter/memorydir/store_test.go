@@ -484,7 +484,7 @@ func TestDecisions_appendOnlyOneLineEach(t *testing.T) {
 	}
 }
 
-// Здоровье меряет, сколько предложение ждёт: срок берется со времени файла в очереди.
+// Здоровье меряет, сколько предложение ждет: срок берется со времени файла в очереди.
 func TestPending_reportsSinceFromTheFile(t *testing.T) {
 	dir := t.TempDir()
 	st := memorydir.New(dir)

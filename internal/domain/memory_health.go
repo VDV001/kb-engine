@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Здоровье памяти (ADR-0008): чем реже человек её смотрит, тем меньше оснований
+// Здоровье памяти (ADR-0008): чем реже человек ее смотрит, тем меньше оснований
 // ей доверять. Здоровье считается только по тому, что система и так пишет: журнал
 // решений, очередь одобрения, печать HOT.md, отпечатки векторов. Формула не
 // откалибрована на данных: пороги и веса выбраны, а не измерены (ponytail: потолок
@@ -121,7 +121,7 @@ var decisionRules = []decisionRule{
 }
 
 // quoted returns the text inside the first «…» up to the last », the rule as it
-// went to HOT.md; хвост "(такое правило уже было)" остаётся снаружи.
+// went to HOT.md; хвост "(такое правило уже было)" остается снаружи.
 func quoted(s string) string {
 	_, rest, ok := strings.Cut(s, "«")
 	if !ok {
@@ -191,28 +191,28 @@ const (
 	// IdleWarnDays: после стольких дней без решений осмотр попадает в причины.
 	IdleWarnDays = 7
 	// QueueSoftCap: сколько предложений могут ждать без штрафа. Непринятое предложение
-	// агенту не доверено, памяти оно не вредит: счёт падает только от завала сверх этого.
+	// агенту не доверено, памяти оно не вредит: счет падает только от завала сверх этого.
 	QueueSoftCap = 10
 	// QueueHardCap: столько предложений в очереди закрывают предложения агента независимо
 	// от режима. Штраф очереди не больше 25 баллов, так что завал сам режим не опускает:
-	// пауза идет по этому потолку, счёт и режим он не трогает.
+	// пауза идет по этому потолку, счет и режим он не трогает.
 	QueueHardCap = 30
 
 	trustOKFrom   = 75
-	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) даёт 45
+	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) дает 45
 
 	maxRhythm, maxQueue, maxIntegrity, maxRules = 35, 25, 20, 20
 )
 
-// PendingItem — предложение в очереди одобрения и с какого дня оно ждёт.
+// PendingItem — предложение в очереди одобрения и с какого дня оно ждет.
 type PendingItem struct {
 	Name  string
 	Since time.Time
 }
 
-// HealthInput — всё, из чего считается здоровье.
+// HealthInput — все, из чего считается здоровье.
 type HealthInput struct {
-	// Today — календарный день расчёта (как у Decision.Day).
+	// Today — календарный день расчета (как у Decision.Day).
 	Today        time.Time
 	Decisions    []Decision
 	Rules        []string
@@ -221,7 +221,7 @@ type HealthInput struct {
 	StaleVectors int
 }
 
-// HealthPart — одна составляющая счёта.
+// HealthPart — одна составляющая счета.
 type HealthPart struct {
 	ID         string
 	Value, Max float64
@@ -239,7 +239,7 @@ const (
 	ReasonRhythm  ReasonKind = "rhythm"
 )
 
-// HealthReason — причина и число, с которым её называют (предложений, правил, дней).
+// HealthReason — причина и число, с которым ее называют (предложений, правил, дней).
 type HealthReason struct {
 	Kind ReasonKind
 	N    int
@@ -253,7 +253,7 @@ type RuleHealth struct {
 	Stale   bool
 }
 
-// Health — итог: счёт, режим доверия, причины и правила с возрастом.
+// Health — итог: счет, режим доверия, причины и правила с возрастом.
 type Health struct {
 	Parts   []HealthPart
 	Total   int
@@ -278,7 +278,7 @@ func (h Health) AgentMayPropose() bool {
 func daysBetween(from, to time.Time) int { return int(to.Sub(from).Hours() / 24) }
 
 // AssessHealth computes the health of the memory. Режим «не доверяю» наступает при
-// счёте ниже trustWarnFrom либо при правке HOT.md мимо системы: счёт этого не
+// счете ниже trustWarnFrom либо при правке HOT.md мимо системы: счет этого не
 // перекрывает.
 func AssessHealth(in HealthInput) Health {
 	h := Health{IdleDays: -1}
@@ -321,13 +321,13 @@ func AssessHealth(in HealthInput) Health {
 	return h
 }
 
-// awaitsReview: осмотра ждёт предложение в очереди или правило без свежего подтверждения.
+// awaitsReview: осмотра ждет предложение в очереди или правило без свежего подтверждения.
 func awaitsReview(in HealthInput, h Health) bool { return len(in.Queue) > 0 || h.StaleRules > 0 }
 
-// oldestWaitingDays: сколько дней ждёт самое старое из того, что просит осмотра:
+// oldestWaitingDays: сколько дней ждет самое старое из того, что просит осмотра:
 // предложение в очереди или правило сверх RuleStaleDays. Правило без отметки
 // датируется днями без суждений; суждений нет совсем — возраст неизвестен, штрафа нет.
-// Штраф растёт по дню, без скачка на границе срока.
+// Штраф растет по дню, без скачка на границе срока.
 func oldestWaitingDays(in HealthInput, h Health) int {
 	days := 0
 	if len(in.Queue) > 0 {

@@ -8,7 +8,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 )
 
-// Отсутствие файла и пустой файл — разные ответы. Load отдаёт ноль записей в
+// Отсутствие файла и пустой файл — разные ответы. Load отдает ноль записей в
 // обоих случаях, поэтому различить их может только отдельный вопрос.
 func TestExists(t *testing.T) {
 	dir := t.TempDir()

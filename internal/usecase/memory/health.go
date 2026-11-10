@@ -30,7 +30,7 @@ func (s *Service) Health() (domain.Health, error) {
 }
 
 // assess computes the health from already loaded parts and returns the parsed
-// decisions with it: окну нужны и счёт, и события для ритма.
+// decisions with it: окну нужны и счет, и события для ритма.
 func (s *Service) assess(snap Snapshot, pending []PendingNote, lines []string) (domain.Health, []domain.Decision, error) {
 	st, err := s.state(snap)
 	if err != nil {
@@ -45,7 +45,7 @@ func (s *Service) assess(snap Snapshot, pending []PendingNote, lines []string) (
 	today := domain.DayOf(s.now())
 	queue := make([]domain.PendingItem, 0, len(pending))
 	for _, p := range pending {
-		since := today // дата файла неизвестна: ждёт «с сегодня», штраф за возраст не выдумываем
+		since := today // дата файла неизвестна: ждет «с сегодня», штраф за возраст не выдумываем
 		if !p.Since.IsZero() {
 			since = domain.DayOf(p.Since)
 		}
@@ -70,9 +70,9 @@ func (s *Service) Review() error {
 // ConfirmRule records that the person re-read a rule of the hot layer and keeps it.
 func (s *Service) ConfirmRule(text string) error { return s.ConfirmRules([]string{text}) }
 
-// ConfirmRules confirms several rules at once: всё или ничего. Каждое правило ищется
+// ConfirmRules confirms several rules at once: все или ничего. Каждое правило ищется
 // в HOT.md по ключу (регистр, пробелы, точка), в журнал идет его текст из файла: по
-// нему здоровье потом узнаёт правило. Выдуманное правило отвергается до первой
+// нему здоровье потом узнает правило. Выдуманное правило отвергается до первой
 // записи: подтверждение не должно придумывать то, чего нет.
 func (s *Service) ConfirmRules(texts []string) error {
 	snap, err := s.store.Load()

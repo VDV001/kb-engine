@@ -55,11 +55,11 @@ func NewService(loader CatalogLoader) *Service {
 }
 
 // outdatedKeywords are whole-word signals that an entry is stale. They are
-// matched on word boundaries (not as substrings) so that, e.g., "удалёнка"
-// (remote work) does not trigger on "удалён" (removed).
+// matched on word boundaries (not as substrings) so that, e.g., "удаленка"
+// (remote work) does not trigger on "удален" (removed).
 var outdatedKeywords = []string{
 	"снят", "снята", "снято",
-	"удалён", "удалена", "удалено",
+	"удален", "удалена", "удалено",
 	"403", "материал был",
 	"removed", "no longer available", "deprecated",
 }
@@ -91,7 +91,7 @@ func outdatedCandidates(c *domain.Catalog) []Finding {
 	for _, e := range c.Entries() {
 		// Пропускаются все терминальные состояния, а не одно outdated: dead-end и
 		// superseded — тоже уже принятые решения, и предлагать по ним работу
-		// значит показывать 49 находок там, где её ноль.
+		// значит показывать 49 находок там, где ее ноль.
 		if e.Lifecycle().IsTerminal() {
 			continue
 		}

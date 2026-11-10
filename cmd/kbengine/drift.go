@@ -31,7 +31,7 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, "drift: --catalog is required")
 		return 2
 	}
-	// Выполнимость намерения выясняется до работы, а не после неё. Скан —
+	// Выполнимость намерения выясняется до работы, а не после нее. Скан —
 	// самое дорогое, что делает движок: на живом каталоге это 1342 запроса по
 	// сети, и все они уходили впустую, потому что об ошибке в командной строке
 	// сообщалось последней строкой.
@@ -41,7 +41,7 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 	}
 
 	// Ctrl-C прекращает опрос, но не выбрасывает работу: прогон по живой базе
-	// идёт минутами, и полученные ответы записываются, если попросили --apply.
+	// идет минутами, и полученные ответы записываются, если попросили --apply.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
@@ -60,7 +60,7 @@ func runDrift(args []string, stdout, stderr io.Writer) int {
 
 	if !*apply {
 		if len(rep.Results) > 0 {
-			fmt.Fprintln(stdout, "\n(результат нигде не сохранён — добавьте --apply, чтобы база запомнила проверку)")
+			fmt.Fprintln(stdout, "\n(результат нигде не сохранен — добавьте --apply, чтобы база запомнила проверку)")
 		}
 		return 0
 	}
@@ -142,16 +142,16 @@ func printDriftReport(stdout io.Writer, rep drift.Report) {
 	// Без него «проверено N из M» читается как выборка из проверенного
 	// массива, а не как «часть базы не трогали никогда».
 	if rep.NeverChecked > 0 {
-		fmt.Fprintf(stdout, "  ни разу не проверялись: %d (их берёт --limit в первую очередь)\n",
+		fmt.Fprintf(stdout, "  ни разу не проверялись: %d (их берет --limit в первую очередь)\n",
 			rep.NeverChecked)
 	}
 
 	gone := rep.Actionable()
 	if len(gone) == 0 {
-		fmt.Fprintln(stdout, "  мёртвых ссылок не найдено")
+		fmt.Fprintln(stdout, "  мертвых ссылок не найдено")
 		return
 	}
-	fmt.Fprintf(stdout, "\nмёртвые ссылки (%d):\n", len(gone))
+	fmt.Fprintf(stdout, "\nмертвые ссылки (%d):\n", len(gone))
 	for _, r := range gone {
 		fmt.Fprintf(stdout, "  id=%d code=%d %s\n      %s\n", r.EntryID, r.Code, r.URL, r.Title)
 	}

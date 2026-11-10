@@ -30,7 +30,7 @@ type Response struct {
 
 // LinkChecker asks one URL for its status. Implementations do network I/O.
 //
-// Контекст здесь потому, что скан живой базы идёт минутами: без него человек не
+// Контекст здесь потому, что скан живой базы идет минутами: без него человек не
 // может остановить его иначе, чем потеряв весь прогон.
 type LinkChecker interface {
 	Head(ctx context.Context, url string) (Response, error)
@@ -76,7 +76,7 @@ type Report struct {
 	// проверенного массива, хотя часть базы может не спрашиваться никогда:
 	// новые записи дописываются в хвост. Число обязано считаться до прогона,
 	// иначе оно зависело бы от того, что успел сделать сам прогон, и вопрос
-	// «сколько ещё не трогали» стал бы невычислимым.
+	// «сколько еще не трогали» стал бы невычислимым.
 	NeverChecked int
 	// Stopped — скан прерван человеком и оборван на середине. Отдельно от
 	// NotAttempted: «не дошла очередь из-за --limit» это выбранная выборка, а
@@ -145,7 +145,7 @@ func NewService(loader CatalogLoader, checker LinkChecker) *Service {
 // записей с url, шесть без даты проверки, и все шесть последние по порядку:
 // `--limit 6` не доставал до них вовсе, помогал только полный прогон.
 //
-// Без предела порядок не трогаем: полный прогон всё равно обойдёт всех, а
+// Без предела порядок не трогаем: полный прогон все равно обойдет всех, а
 // стабильный порядок каталога делает вывод сопоставимым между запусками.
 func scanOrder(entries []domain.Entry, limit int) []domain.Entry {
 	if limit <= 0 {
@@ -158,7 +158,7 @@ func scanOrder(entries []domain.Entry, limit int) []domain.Entry {
 		case da == nil && db == nil:
 			return 0
 		case da == nil:
-			return -1 // никогда не проверенная идёт раньше любой проверенной
+			return -1 // никогда не проверенная идет раньше любой проверенной
 		case db == nil:
 			return 1
 		default:
@@ -212,7 +212,7 @@ func (s *Service) Scan(ctx context.Context, now time.Time) (Report, error) {
 		status, err := domain.ClassifyLinkStatus(resp.Code)
 		if err != nil {
 			// Ответ, которого нет в HTTP (999 у LinkedIn и подобное), — это не
-			// повод выбросить весь прогон. Он идёт туда же, где живут
+			// повод выбросить весь прогон. Он идет туда же, где живут
 			// неответившие: движок не понял ответа и говорит об этом, вместо
 			// того чтобы выдумать вердикт или обрушить скан.
 			rep.Unreachable = append(rep.Unreachable, Unreachable{

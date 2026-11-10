@@ -8,7 +8,7 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
-// breakdownLedger — набор, в котором каждый разрез даёт разный ответ, чтобы
+// breakdownLedger — набор, в котором каждый разрез дает разный ответ, чтобы
 // перепутанные поля были видны: две подкатегории внутри одной категории, одно
 // место, повторяющееся в разных категориях, источник и у расхода (чем платил),
 // и у дохода (откуда пришло), два месяца и два года.
@@ -44,7 +44,7 @@ func breakdownLedger(t *testing.T) []finance.Record {
 		build("01A", domain.KindExpense, 2025, time.January, 15, 50000, "Еда", "Кафе", "Пекарня", "Тинькофф"),
 		// Январь 2026.
 		build("01B", domain.KindExpense, 2026, time.January, 10, 30000, "Еда", "Кафе", "Пекарня", "Тинькофф"),
-		build("01C", domain.KindExpense, 2026, time.January, 10, 20000, "Еда", "Продукты", "Пятёрочка", "Сбербанк"),
+		build("01C", domain.KindExpense, 2026, time.January, 10, 20000, "Еда", "Продукты", "Пятерочка", "Сбербанк"),
 		// Февраль 2026 — то же место, но другая категория.
 		build("01D", domain.KindExpense, 2026, time.February, 3, 70000, "Развлечения", "", "Пекарня", "Сбербанк"),
 		// Доходы: источник дохода не должен смешаться с источником оплаты.
@@ -107,7 +107,7 @@ func TestSummarizeByPlaceAndSource(t *testing.T) {
 				count int
 			}{
 				{"Пекарня", 150000, 3},
-				{"Пятёрочка", 20000, 1},
+				{"Пятерочка", 20000, 1},
 			},
 		},
 		{
@@ -223,7 +223,7 @@ func TestSummarizeByDay(t *testing.T) {
 
 func TestSummarizeBreakdownsIgnoreIncomeForExpenseCuts(t *testing.T) {
 	// Доход не имеет ни категории, ни места, ни подкатегории — но у него ЕСТЬ
-	// источник, и именно на нём легко перепутать разрезы. Проверяем, что
+	// источник, и именно на нем легко перепутать разрезы. Проверяем, что
 	// расходные разрезы дохода не видят вовсе.
 	s := finance.Summarize(breakdownLedger(t))
 
@@ -259,7 +259,7 @@ func TestSummarizeEmptyLedgerHasNoBreakdownRows(t *testing.T) {
 	}
 	for name, n := range cuts {
 		if n != 0 {
-			t.Errorf("%s на пустом леджере даёт %d строк, want 0", name, n)
+			t.Errorf("%s на пустом леджере дает %d строк, want 0", name, n)
 		}
 	}
 }

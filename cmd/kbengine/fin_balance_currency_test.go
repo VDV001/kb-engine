@@ -9,7 +9,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/financexlsx"
 )
 
-// Движок научился ЧИТАТЬ валюту счёта (#332, пункт 1), но записать её было
+// Движок научился ЧИТАТЬ валюту счета (#332, пункт 1), но записать ее было
 // нечем: колонки заполнялись руками. Правило проекта прямое — в книгу пишет
 // только движок, потому что строка, дописанная мимо него, не имеет ни формата,
 // ни проверенных инвариантов.
@@ -41,17 +41,17 @@ func TestFinBalance_writesCurrencyAndRate(t *testing.T) {
 		if !ok || per.Kopecks() != 8428 {
 			t.Errorf("курс = %d, %v; ожидалось 8428 и true", per.Kopecks(), ok)
 		}
-		// Сумма остаётся в своей валюте: 500,00 доллара.
+		// Сумма остается в своей валюте: 500,00 доллара.
 		if a.Balance().Kopecks() != 50000 {
 			t.Errorf("Balance() = %d, ожидалось 50000", a.Balance().Kopecks())
 		}
 		return
 	}
-	t.Fatal("счёт не найден в книге после записи")
+	t.Fatal("счет не найден в книге после записи")
 }
 
 // Валюта без курса — законный случай: наличные, полученные подарком, курса не
-// имеют вовсе. Записывается валюта, курс остаётся неизвестным, и это НЕ ошибка.
+// имеют вовсе. Записывается валюта, курс остается неизвестным, и это НЕ ошибка.
 func TestFinBalance_currencyWithoutRateIsAllowed(t *testing.T) {
 	book := workbook(t)
 	var out, errb bytes.Buffer
@@ -78,7 +78,7 @@ func TestFinBalance_currencyWithoutRateIsAllowed(t *testing.T) {
 		}
 		return
 	}
-	t.Fatal("счёт не найден")
+	t.Fatal("счет не найден")
 }
 
 // Курс без валюты — противоречие: рубль оценивают в рублях только по единице.
@@ -104,7 +104,7 @@ func TestFinBalance_rateWithoutCurrencyIsRefused(t *testing.T) {
 	led, _ := financexlsx.Read(book, time.Now)
 	for _, a := range led.Accounts {
 		if a.Bank() == "Кубышка → Ошибка" {
-			t.Fatal("отказавшая команда всё же дописала строку в книгу")
+			t.Fatal("отказавшая команда все же дописала строку в книгу")
 		}
 	}
 }
@@ -117,7 +117,7 @@ func TestFinBalance_brokenCurrencyIsRefused(t *testing.T) {
 
 	code := run([]string{
 		"fin", "balance", "--from", book,
-		"--bank", "Кубышка → Ещё", "--amount", "100",
+		"--bank", "Кубышка → Еще", "--amount", "100",
 		"--currency", "доллары", "--create",
 	}, &out, &errb)
 	if code == 0 {
@@ -125,11 +125,11 @@ func TestFinBalance_brokenCurrencyIsRefused(t *testing.T) {
 	}
 }
 
-// Отчёт об ОБНОВЛЕНИИ валютного счёта тоже обязан называть единицу.
+// Отчет об ОБНОВЛЕНИИ валютного счета тоже обязан называть единицу.
 //
 // Найдено живым прогоном 02.09: заведение печатало «500.00 USD по курсу
-// 84.28», а обновление существующего счёта — голое «44425.00 → 500.00». Путь
-// обновления при этом главный: счёт заводят однажды, а подтверждают каждую
+// 84.28», а обновление существующего счета — голое «44425.00 → 500.00». Путь
+// обновления при этом главный: счет заводят однажды, а подтверждают каждую
 // неделю. Класс тот же, из-за которого заведена #332, — число без единицы
 // читается как рубли, — и жил он в команде, которая эту же issue закрывала.
 func TestFinBalance_updateReportNamesCurrency(t *testing.T) {
@@ -155,15 +155,15 @@ func TestFinBalance_updateReportNamesCurrency(t *testing.T) {
 
 	got := out.String()
 	if !strings.Contains(got, "USD") {
-		t.Errorf("отчёт об обновлении = %q, ждали код валюты", got)
+		t.Errorf("отчет об обновлении = %q, ждали код валюты", got)
 	}
 	if !strings.Contains(got, "84.28") {
-		t.Errorf("отчёт об обновлении = %q, ждали курс", got)
+		t.Errorf("отчет об обновлении = %q, ждали курс", got)
 	}
 }
 
-// Рублёвый счёт остаётся тихим: приписка «RUB» к каждой строке — шум, который
-// приучает не читать конец строки, а читать его придётся именно у валютной.
+// Рублевый счет остается тихим: приписка «RUB» к каждой строке — шум, который
+// приучает не читать конец строки, а читать его придется именно у валютной.
 func TestFinBalance_updateReportStaysQuietForRubles(t *testing.T) {
 	book := workbook(t)
 	var out, errb bytes.Buffer
@@ -182,6 +182,6 @@ func TestFinBalance_updateReportStaysQuietForRubles(t *testing.T) {
 		t.Fatalf("обновление: exit = %d, stderr = %s", code, errb.String())
 	}
 	if got := out.String(); strings.Contains(got, "RUB") || strings.Contains(got, "курс") {
-		t.Errorf("отчёт рублёвого счёта = %q, ждали без валюты и курса", got)
+		t.Errorf("отчет рублевого счета = %q, ждали без валюты и курса", got)
 	}
 }

@@ -11,7 +11,7 @@ import (
 )
 
 // Обмен валюты в книге — одна строка «Расходов» и три колонки по заголовку:
-// «Получено», «Валюта получения», «Счёт получения» (решение владельца
+// «Получено», «Валюта получения», «Счет получения» (решение владельца
 // 06.11.2026, #432). Правка строки в Excel не теряет вторую сторону, потому
 // что она в той же строке. Колонки ищутся по заголовку, как «Валюта» и id.
 
@@ -68,7 +68,7 @@ func TestApplyRows_exchangeRoundTrip(t *testing.T) {
 		t.Fatalf("ApplyRows: %v", err)
 	}
 	cols := map[string]int{}
-	for _, h := range []string{"Получено", "Валюта получения", "Счёт получения"} {
+	for _, h := range []string{"Получено", "Валюта получения", "Счет получения"} {
 		c := headerColumn(t, path, "Расходы", h)
 		if c == 0 {
 			t.Fatalf("нет заголовка «%s»", h)
@@ -78,7 +78,7 @@ func TestApplyRows_exchangeRoundTrip(t *testing.T) {
 		}
 		cols[h] = c
 	}
-	if len(map[int]bool{cols["Получено"]: true, cols["Валюта получения"]: true, cols["Счёт получения"]: true}) != 3 {
+	if len(map[int]bool{cols["Получено"]: true, cols["Валюта получения"]: true, cols["Счет получения"]: true}) != 3 {
 		t.Fatalf("колонки обмена делят клетку: %v", cols)
 	}
 
@@ -120,7 +120,7 @@ func TestApplyRows_removalClearsTheExchange(t *testing.T) {
 	if err := financexlsx.ApplyRows(path, nil, []string{"01X"}, writeClock); err != nil {
 		t.Fatalf("remove: %v", err)
 	}
-	for _, h := range []string{"Получено", "Валюта получения", "Счёт получения"} {
+	for _, h := range []string{"Получено", "Валюта получения", "Счет получения"} {
 		col := headerColumn(t, path, "Расходы", h)
 		if v := cellAt(t, path, "Расходы", col, 5); v != "" {
 			t.Errorf("«%s» после удаления = %q", h, v)
@@ -138,7 +138,7 @@ func TestApplyRows_currencyAndExchangeColumnsInOnePass(t *testing.T) {
 		t.Fatalf("ApplyRows: %v", err)
 	}
 	seen := map[int]string{}
-	for _, h := range []string{"Валюта", "Получено", "Валюта получения", "Счёт получения"} {
+	for _, h := range []string{"Валюта", "Получено", "Валюта получения", "Счет получения"} {
 		c := headerColumn(t, path, "Расходы", h)
 		if c == 0 {
 			t.Fatalf("нет заголовка «%s»", h)

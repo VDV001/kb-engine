@@ -14,7 +14,7 @@ import (
 )
 
 // Валюта записи переживает круг «записал — прочитал», а рубль не пишется вовсе:
-// так журнал, заведённый до поля, и новый рублёвый журнал читаются одинаково, и
+// так журнал, заведенный до поля, и новый рублевый журнал читаются одинаково, и
 // в строке не появляется ничего, чего человек раньше там не видел.
 func TestSaveLoad_currency(t *testing.T) {
 	usd, err := domain.NewCurrency("USD")
@@ -40,7 +40,7 @@ func TestSaveLoad_currency(t *testing.T) {
 	}
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	if strings.Contains(lines[0], `"currency"`) {
-		t.Errorf("рублёвая запись не должна нести поле currency:\n%s", lines[0])
+		t.Errorf("рублевая запись не должна нести поле currency:\n%s", lines[0])
 	}
 	if !strings.Contains(lines[1], `"currency":"USD"`) {
 		t.Errorf("долларовая запись обязана нести currency:\n%s", lines[1])
@@ -51,7 +51,7 @@ func TestSaveLoad_currency(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 	if c := got[0].Transaction().Currency(); !c.IsBase() {
-		t.Errorf("рублёвая запись прочитана в %s", c.Code())
+		t.Errorf("рублевая запись прочитана в %s", c.Code())
 	}
 	if c := got[1].Transaction().Currency().Code(); c != "USD" {
 		t.Errorf("долларовая запись прочитана в %s", c)
@@ -59,7 +59,7 @@ func TestSaveLoad_currency(t *testing.T) {
 }
 
 // Негодный код в журнале — отказ, а не рубль. Молчаливое «не разобрал — значит
-// рубль» показало бы долларовую трату рублёвой, ровно тот дефект, ради которого
+// рубль» показало бы долларовую трату рублевой, ровно тот дефект, ради которого
 // поле заведено.
 func TestLoad_rejectsAnUnreadableCurrency(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "transactions.jsonl")
@@ -68,8 +68,8 @@ func TestLoad_rejectsAnUnreadableCurrency(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Отказ обязан быть ИЗ-ЗА ВАЛЮТЫ. Журнал, не знающий поля, тоже откажет —
-	// по неизвестному ключу, — и тест, проверяющий только «ошибка есть», прошёл
-	// бы на коде без поддержки валюты вовсе. Так он и прошёл в первый раз.
+	// по неизвестному ключу, — и тест, проверяющий только «ошибка есть», прошел
+	// бы на коде без поддержки валюты вовсе. Так он и прошел в первый раз.
 	_, err := financejsonl.Load(path, loadedAt)
 	if !errors.Is(err, domain.ErrInvalidCurrency) {
 		t.Fatalf("Load = %v, want ErrInvalidCurrency", err)

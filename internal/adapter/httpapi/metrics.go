@@ -15,15 +15,15 @@ import (
 
 // Формат экспозиции Prometheus — это текст: имя, метки, число, перевод строки.
 // Клиентская библиотека здесь удвоила бы четыре прямые зависимости движка ради
-// того, что печатается через fmt, поэтому её нет.
+// того, что печатается через fmt, поэтому ее нет.
 //
-// ponytail: собственная реализация покрывает счётчик и гистограмму с
+// ponytail: собственная реализация покрывает счетчик и гистограмму с
 // фиксированными корзинами — ровно то, что нужно для RED (частота, ошибки,
 // длительность). Потолок: нет exemplars, нет OpenMetrics, нет метрик рантайма
 // Go. Когда понадобится хоть одно — брать client_golang, а не дописывать это.
 
 // bucketsSeconds — границы корзин длительности. Взяты вокруг того, что движок
-// реально делает: чтение каталога с диска занимает десятки миллисекунд, а всё,
+// реально делает: чтение каталога с диска занимает десятки миллисекунд, а все,
 // что дольше секунды, уже повод смотреть отдельно.
 var bucketsSeconds = []float64{0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5}
 
@@ -33,15 +33,15 @@ type requestKey struct {
 }
 
 type histogram struct {
-	// Слайс, а не массив: длина берётся из bucketsSeconds, а границы корзин —
+	// Слайс, а не массив: длина берется из bucketsSeconds, а границы корзин —
 	// значение, которое правят, а не константа языка.
 	counts []uint64
 	sum    float64
 	count  uint64
 }
 
-// metrics хранит счётчики процесса. Живёт столько же, сколько сервер: рестарт
-// обнуляет ряды, и это нормально — Prometheus знает про сброс счётчика.
+// metrics хранит счетчики процесса. Живет столько же, сколько сервер: рестарт
+// обнуляет ряды, и это нормально — Prometheus знает про сброс счетчика.
 type metrics struct {
 	mu     sync.Mutex
 	totals map[requestKey]uint64
@@ -76,8 +76,8 @@ func (m *metrics) observe(route string, code int, d time.Duration) {
 	}
 }
 
-// statusRecorder запоминает код ответа: http.ResponseWriter его не отдаёт, а
-// без кода счётчик не отличит успешные запросы от пятисоток — то есть букву E
+// statusRecorder запоминает код ответа: http.ResponseWriter его не отдает, а
+// без кода счетчик не отличит успешные запросы от пятисоток — то есть букву E
 // в RED.
 type statusRecorder struct {
 	http.ResponseWriter
@@ -91,7 +91,7 @@ func (r *statusRecorder) WriteHeader(code int) {
 
 func (r *statusRecorder) Write(b []byte) (int, error) {
 	// Обработчик, написавший тело без WriteHeader, ответил 200 — иначе код
-	// остался бы нулём и попал в метку как "0".
+	// остался бы нулем и попал в метку как "0".
 	if r.code == 0 {
 		r.code = http.StatusOK
 	}
@@ -100,10 +100,10 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 
 // instrument оборачивает mux, считая запросы по ШАБЛОНУ маршрута, а не по
 // запрошенному пути. Разница решающая: путей вида /api/maps/<id> столько же,
-// сколько карт, и каждый завёл бы собственный временной ряд. Это взрыв
+// сколько карт, и каждый завел бы собственный временной ряд. Это взрыв
 // кардинальности — то, чем метрики убивают хранилище.
 //
-// Шаблон берётся из http.Request.Pattern, который ServeMux заполняет сам после
+// Шаблон берется из http.Request.Pattern, который ServeMux заполняет сам после
 // сопоставления; собственная таблица маршрутов разошлась бы с регистрацией на
 // первом же новом эндпоинте.
 func instrument(mux *http.ServeMux, m *metrics, timing bool) http.Handler {
@@ -111,7 +111,7 @@ func instrument(mux *http.ServeMux, m *metrics, timing bool) http.Handler {
 		if r.URL.Path == metricsPath {
 			// Заголовок разбивки здесь не нужен: /metrics читает Prometheus,
 			// а не человек, и собственная длительность экспозиции ничего не
-			// говорит о запросах, ради которых её собирают.
+			// говорит о запросах, ради которых ее собирают.
 			mux.ServeHTTP(w, r)
 			return
 		}
@@ -134,8 +134,8 @@ func instrument(mux *http.ServeMux, m *metrics, timing bool) http.Handler {
 const metricsPath = "/metrics"
 
 // routeOf возвращает шаблон, по которому запрос попал в обработчик. Пустой
-// шаблон означает, что не подошёл ни один — такие запросы сводятся в одну
-// серию, иначе сканер чужих адресов насоздаёт рядов сколько захочет.
+// шаблон означает, что не подошел ни один — такие запросы сводятся в одну
+// серию, иначе сканер чужих адресов насоздает рядов сколько захочет.
 func routeOf(r *http.Request) string {
 	pattern := r.Pattern
 	if pattern == "" {
@@ -150,13 +150,13 @@ func routeOf(r *http.Request) string {
 }
 
 // handleMetrics печатает экспозицию. Каталог читается на каждый опрос, а не
-// кэшируется: одно чтение стоит десятки миллисекунд, а опрос идёт раз в
+// кэшируется: одно чтение стоит десятки миллисекунд, а опрос идет раз в
 // несколько секунд — зато число всегда настоящее, а не то, каким было при
 // старте.
 func handleMetrics(m *metrics, q Querier, engine EngineInfo) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
-		// Версия формата в Content-Type: без неё Prometheus разбирает ответ по
-		// умолчанию, и смена формата однажды пройдёт молча.
+		// Версия формата в Content-Type: без нее Prometheus разбирает ответ по
+		// умолчанию, и смена формата однажды пройдет молча.
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 
 		fmt.Fprintf(w, "# HELP kbengine_build_info Version of the running binary; always 1.\n")
@@ -220,7 +220,7 @@ func (m *metrics) write(w io.Writer) {
 			fmt.Fprintf(w, "kbengine_http_request_duration_seconds_bucket{route=%q,le=%q} %d\n",
 				route, strconv.FormatFloat(b, 'g', -1, 64), h.counts[i])
 		}
-		// +Inf обязателен по формату: без него счётчик корзин не сходится с
+		// +Inf обязателен по формату: без него счетчик корзин не сходится с
 		// _count, и запрос дольше пяти секунд просто исчезает из гистограммы.
 		fmt.Fprintf(w, "kbengine_http_request_duration_seconds_bucket{route=%q,le=\"+Inf\"} %d\n", route, h.count)
 		fmt.Fprintf(w, "kbengine_http_request_duration_seconds_sum{route=%q} %g\n", route, h.sum)

@@ -42,10 +42,10 @@ func NewAccount(bank string, balance Money, updated time.Time, now func() time.T
 	if now == nil {
 		return Account{}, fmt.Errorf("%w: clock is required", ErrInvalidAccount)
 	}
-	// День сравнивается с днём, как в NewTransaction. Голое updated.After(now())
-	// сравнивало бы ДЕНЬ из ячейки (excelize отдаёт его полуночью UTC) с
+	// День сравнивается с днем, как в NewTransaction. Голое updated.After(now())
+	// сравнивало бы ДЕНЬ из ячейки (excelize отдает его полуночью UTC) с
 	// МОМЕНТОМ часов: между полуночью и пятью утра по книге сегодняшнее число
-	// оказывалось «в будущем», и домен отвергал счёт, записанный самим движком.
+	// оказывалось «в будущем», и домен отвергал счет, записанный самим движком.
 	if !updated.IsZero() && Day(updated).After(Day(now())) {
 		return Account{}, fmt.Errorf("%w: updated %s is in the future", ErrInvalidAccount, updated.Format(time.DateOnly))
 	}
@@ -60,7 +60,7 @@ func NewAccount(bank string, balance Money, updated time.Time, now func() time.T
 // сказать «рубль», и обратная совместимость держалась бы на том, что никто из
 // них не забыл это сделать.
 //
-// Баланс здесь — сумма В СВОЕЙ валюте, а не пересчёт: сохранив только рублёвую
+// Баланс здесь — сумма В СВОЕЙ валюте, а не пересчет: сохранив только рублевую
 // оценку, мы потеряли бы ровно то, ради чего валюта заводится. Курс хранится
 // рядом и может быть неизвестен.
 func NewForeignAccount(bank string, balance Money, currency Currency, rate Rate, updated time.Time, now func() time.Time) (Account, error) {

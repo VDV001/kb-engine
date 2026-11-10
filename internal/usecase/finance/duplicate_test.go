@@ -13,7 +13,7 @@ import (
 // по 140 ₽. Заметить это можно только глазом на витрине, через день или через
 // месяц, и разобрать уже трудно — какая из двух настоящая, не знает никто.
 //
-// Поэтому вопрос задаётся в момент записи, когда ответ ещё очевиден.
+// Поэтому вопрос задается в момент записи, когда ответ еще очевиден.
 func TestDuplicate_findsTheSameExpenseOnTheSameDay(t *testing.T) {
 	existing := expenseRecord(t, addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", ""))
 
@@ -41,7 +41,7 @@ func TestDuplicate_allowsTwoSimilarExpensesToldApartByTheirNote(t *testing.T) {
 }
 
 // Совпадение ищется по всему, что различает трату. Разный день, разная сумма,
-// разный счёт — разные траты.
+// разный счет — разные траты.
 func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 	base := addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", "")
 	existing := expenseRecord(t, base)
@@ -53,7 +53,7 @@ func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 		{"другой день", addParams(t, "2026-08-01", "140", "Здоровье", "Аптека", "Живика", "Альфа-Банк", "")},
 		{"другая сумма", addParams(t, "2026-08-02", "141", "Здоровье", "Аптека", "Живика", "Альфа-Банк", "")},
 		{"другое место", addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Монетка", "Альфа-Банк", "")},
-		{"другой счёт", addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Сбербанк", "")},
+		{"другой счет", addParams(t, "2026-08-02", "140", "Здоровье", "Аптека", "Живика", "Сбербанк", "")},
 		{"другая категория", addParams(t, "2026-08-02", "140", "Еда", "Аптека", "Живика", "Альфа-Банк", "")},
 	} {
 		if got := finance.Duplicate([]finance.Record{existing}, c.p); got != nil {
@@ -66,8 +66,8 @@ func TestDuplicate_comparesEveryFieldThatTellsExpensesApart(t *testing.T) {
 // запись реально ляжет. Иначе защита отключается ровно в самом частом случае —
 // когда дату не пишут.
 func TestDuplicate_resolvesAnEmptyDateToTheSameDayTheRecordWouldGet(t *testing.T) {
-	// «Сегодня» здесь обязано совпасть с тем днём, который подставит движок, а он
-	// берёт МЕСТНЫЙ (domain.Day(now())). Взятый в UTC день расходится с ним между
+	// «Сегодня» здесь обязано совпасть с тем днем, который подставит движок, а он
+	// берет МЕСТНЫЙ (domain.Day(now())). Взятый в UTC день расходится с ним между
 	// полуночью и пятью утра по книге — и тест краснел ровно в те часы.
 	today := time.Now().Format(time.DateOnly)
 	existing := expenseRecord(t, addParams(t, today, "418", "Транспорт", "Такси", "Яндекс Такси", "Сбербанк", ""))

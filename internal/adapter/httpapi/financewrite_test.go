@@ -40,7 +40,7 @@ func (f *fakeFinWriter) AddTransaction(_ context.Context, a httpapi.TransactionA
 		return httpapi.TransactionAdded{}, f.err
 	}
 	return httpapi.TransactionAdded{ID: "01J", Date: "2026-11-05", Amount: "418.00",
-		Corrections: []httpapi.Correction{{Field: "place", Typed: "пятерочка", Used: "Пятёрочка"}}}, nil
+		Corrections: []httpapi.Correction{{Field: "place", Typed: "пятерочка", Used: "Пятерочка"}}}, nil
 }
 
 func finServer(w httpapi.FinanceWriter) http.Handler {
@@ -61,7 +61,7 @@ func TestPostTransaction(t *testing.T) {
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status %d, body %s", rec.Code, rec.Body.String())
 	}
-	for _, want := range []string{`"id":"01J"`, `"typed":"пятерочка"`, `"used":"Пятёрочка"`} {
+	for _, want := range []string{`"id":"01J"`, `"typed":"пятерочка"`, `"used":"Пятерочка"`} {
 		if !strings.Contains(rec.Body.String(), want) {
 			t.Errorf("body lacks %s: %s", want, rec.Body.String())
 		}

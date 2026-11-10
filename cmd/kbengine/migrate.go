@@ -124,7 +124,7 @@ func runMigrateHabrIDs(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "migrate habr-ids: нечего заполнять")
 		return 0
 	}
-	verb := "проставится/приведётся"
+	verb := "проставится/приведется"
 	tail := " (файл не тронут, для записи добавьте --apply)"
 	if *apply {
 		verb, tail = "проставлено/приведено", ""

@@ -11,10 +11,10 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 )
 
-// Синхронизация называет траты, которые занизят расчётный остаток.
+// Синхронизация называет траты, которые занизят расчетный остаток.
 //
-// Расчёт вычитает из подтверждённого числа всё, записанное после момента
-// подтверждения. Трата, ДАТИРОВАННАЯ днём подтверждения, попадает под это
+// Расчет вычитает из подтвержденного числа все, записанное после момента
+// подтверждения. Трата, ДАТИРОВАННАЯ днем подтверждения, попадает под это
 // правило, даже если по банку она прошла раньше — и тогда вычитается второй
 // раз. Арифметика при этом верна по своему замыслу: движок обещал занижать и
 // никогда не завышать. Неверно молчание — человек видит расхождение с банком и
@@ -29,7 +29,7 @@ func TestRun_finSyncNamesExpensesThatUnderstateTheBalance(t *testing.T) {
 	initSync(t, book, ledger)
 	confirmBalance(t, book, "Сбербанк", "1000,00")
 
-	// Трата сегодняшним днём, записанная ПОСЛЕ подтверждения.
+	// Трата сегодняшним днем, записанная ПОСЛЕ подтверждения.
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "add", "--ledger", ledger, "--kind", "expense",
 		"--cat", "Транспорт", "--amount", "105", "--account", "Сбербанк"}, &out, &errb); code != 0 {
@@ -43,7 +43,7 @@ func TestRun_finSyncNamesExpensesThatUnderstateTheBalance(t *testing.T) {
 
 	for _, want := range []string{"105", "Сбербанк", "подтвердите"} {
 		if !strings.Contains(out.String(), want) {
-			t.Errorf("отчёт не содержит %q:\n%s", want, out.String())
+			t.Errorf("отчет не содержит %q:\n%s", want, out.String())
 		}
 	}
 }
@@ -57,7 +57,7 @@ func TestRun_finSyncSilentWhenNothingUnderstates(t *testing.T) {
 	initSync(t, book, ledger)
 	confirmBalance(t, book, "Сбербанк", "1000,00")
 
-	// Трата вчерашняя: день не совпадает с днём подтверждения, спора нет.
+	// Трата вчерашняя: день не совпадает с днем подтверждения, спора нет.
 	yesterday := time.Now().AddDate(0, 0, -1).Format(time.DateOnly)
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "add", "--ledger", ledger, "--kind", "expense", "--date", yesterday,
@@ -75,8 +75,8 @@ func TestRun_finSyncSilentWhenNothingUnderstates(t *testing.T) {
 	}
 }
 
-// confirmBalance записывает остаток счёта через ту же команду, что и человек —
-// вместе с моментом подтверждения, который эта команда кладёт рядом с книгой.
+// confirmBalance записывает остаток счета через ту же команду, что и человек —
+// вместе с моментом подтверждения, который эта команда кладет рядом с книгой.
 //
 // Момент отодвигается на час назад намеренно. Команда ставит «сейчас», а тест
 // пишет трату следующей строкой, и обе укладываются в одну миллисекунду; момент
@@ -95,7 +95,7 @@ func confirmBalance(t *testing.T, book, bank, amount string) {
 	}
 }
 
-// initSync создаёт baseline трёхстороннего сравнения. Без него первая же
+// initSync создает baseline трехстороннего сравнения. Без него первая же
 // синхронизация видит расхождение двух сторон и отказывается решать, какая
 // права — правильное поведение, но не то, что проверяют эти тесты.
 func initSync(t *testing.T, book, ledger string) {

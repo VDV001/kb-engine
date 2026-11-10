@@ -15,14 +15,14 @@ type SpellingForm struct {
 	Count int
 	// FromVocabulary — написание пришло из словаря быстрого ввода, а не из
 	// журнала. У него Count может быть нулевым, и это самый тревожный случай:
-	// словарь ПИШЕТ, поэтому первая же новая покупка вернёт форму, которой в
+	// словарь ПИШЕТ, поэтому первая же новая покупка вернет форму, которой в
 	// данных нет.
 	FromVocabulary bool
 }
 
-// SpellingFinding — одно место или счёт, записанные больше чем одним способом.
+// SpellingFinding — одно место или счет, записанные больше чем одним способом.
 type SpellingFinding struct {
-	Kind   string // "место" | "счёт"
+	Kind   string // "место" | "счет"
 	Forms  []SpellingForm
 	Reason string
 }
@@ -50,7 +50,7 @@ func SpellingIssues(records []Record, voc Vocabulary) []SpellingFinding {
 	}
 
 	findings := groupByName("место", places)
-	findings = append(findings, groupByName("счёт", accounts)...)
+	findings = append(findings, groupByName("счет", accounts)...)
 	findings = append(findings, vocabularyDrift(places, voc)...)
 	return findings
 }
@@ -102,7 +102,7 @@ func vocabularyDrift(places map[string]int, voc Vocabulary) []SpellingFinding {
 		if canon == "" || places[canon] > 0 {
 			continue
 		}
-		// Что же тогда лежит в журнале: место, к которому это слово ведёт.
+		// Что же тогда лежит в журнале: место, к которому это слово ведет.
 		// Ищется по самому слову словаря — транслитерация здесь бессильна,
 		// «Пицца» и «Pizza» расходятся уже на второй букве.
 		var actual []string
@@ -123,7 +123,7 @@ func vocabularyDrift(places map[string]int, voc Vocabulary) []SpellingFinding {
 		out = append(out, SpellingFinding{
 			Kind:   "место",
 			Forms:  forms,
-			Reason: fmt.Sprintf("словарь: ключ %q ведёт на написание, которого в журнале нет ни разу", word),
+			Reason: fmt.Sprintf("словарь: ключ %q ведет на написание, которого в журнале нет ни разу", word),
 		})
 	}
 	return out
@@ -144,7 +144,7 @@ func reasonFor(names []string) string {
 // King», но НЕ свяжет «Италиан Пицца» с «Italian Pizza» — «ц» становится «ts»,
 // а не «z». Потолок назван честно: полное сопоставление требует словаря
 // заимствований, а не таблицы букв. Такие пары ловит проверка словаря, где
-// связь идёт по ключу, а не по звучанию.
+// связь идет по ключу, а не по звучанию.
 func translitKey(s string) string {
 	return domain.Translit(domain.FoldName(s))
 }

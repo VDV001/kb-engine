@@ -17,7 +17,7 @@ import (
 //
 // Проверка стоит в usecase, а не в каждой команде: планировщиков два, и правило,
 // написанное дважды, разошлось бы — ровно как поиск, который жил копиями в
-// терминале и вебе, пока #252 не свёл его в одно место.
+// терминале и вебе, пока #252 не свел его в одно место.
 func withLabels(t *testing.T, labels map[string]string, entries ...domain.Entry) *domain.Catalog {
 	t.Helper()
 	c, err := domain.NewCatalog(entries, domain.WithCategoryLabels(labels))
@@ -100,18 +100,18 @@ func TestPlanners_rejectACategoryOutsideTheDictionary(t *testing.T) {
 				t.Fatalf("без словаря проверять нечем — запись должна пройти, получено: %v", err)
 			}
 			if !rep.CategoriesUnchecked {
-				t.Error("отчёт обязан назвать, что категория не проверялась: молчание тут неотличимо от проверки")
+				t.Error("отчет обязан назвать, что категория не проверялась: молчание тут неотличимо от проверки")
 			}
 		})
 
-		t.Run(planner.name+"/со словарём отчёт не жалуется", func(t *testing.T) {
+		t.Run(planner.name+"/со словарем отчет не жалуется", func(t *testing.T) {
 			c := withLabels(t, labels)
 			rep, err := planner.run(c, paramsInCategory(t, "golang"))
 			if err != nil {
 				t.Fatalf("неожиданная ошибка: %v", err)
 			}
 			if rep.CategoriesUnchecked {
-				t.Error("словарь есть — проверка состоялась, отчёт не должен говорить обратное")
+				t.Error("словарь есть — проверка состоялась, отчет не должен говорить обратное")
 			}
 		})
 	}

@@ -10,14 +10,14 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// ctrlN — подтверждение «этого счёта ещё нет, заведи». Отдельная клавиша, а не
+// ctrlN — подтверждение «этого счета еще нет, заведи». Отдельная клавиша, а не
 // повторный Enter: Enter в этой форме уже значит «записать», и нагружать его
-// вторым смыслом значит сделать заведение счёта следствием нетерпеливости.
+// вторым смыслом значит сделать заведение счета следствием нетерпеливости.
 func ctrlN() tea.KeyMsg { return tea.KeyMsg{Type: tea.KeyCtrlN} }
 
-var errAccountRefused = errors.New("счёт уже есть на листе «Счета»")
+var errAccountRefused = errors.New("счет уже есть на листе «Счета»")
 
-// namedAccount собирает один счёт с подтверждённым остатком.
+// namedAccount собирает один счет с подтвержденным остатком.
 func namedAccount(t *testing.T, bank, sum string) domain.Account {
 	t.Helper()
 	at := time.Date(2026, 8, 4, 0, 0, 0, 0, time.UTC)
@@ -33,14 +33,14 @@ func namedAccount(t *testing.T, bank, sum string) domain.Account {
 	return acc
 }
 
-// Завести счёт можно было только из CLI, и это отправляло владельца из
+// Завести счет можно было только из CLI, и это отправляло владельца из
 // терминала в терминал же — но другой командой и с путями, которые на экране
 // уже открыты. Форма баланса знает и имя, и сумму: ей не хватало только
-// отдельного намерения «этого счёта ещё нет».
+// отдельного намерения «этого счета еще нет».
 //
 // Намерение отдельное, потому что имя, которого лист не знает, — чаще опечатка,
-// чем новый счёт. Молча заводя его, экран пополнял бы словарь, решающий, что
-// вообще считается счётом, каждой промашкой в раскладке.
+// чем новый счет. Молча заводя его, экран пополнял бы словарь, решающий, что
+// вообще считается счетом, каждой промашкой в раскладке.
 func TestNewAccount_offersToCreateWhenTheNameIsUnknown(t *testing.T) {
 	acc := accountsStub(t)
 	m, _ := balanceModel(acc)
@@ -50,12 +50,12 @@ func TestNewAccount_offersToCreateWhenTheNameIsUnknown(t *testing.T) {
 	m = press(m, runes("3000"))
 	m = press(m, enter())
 
-	// Ничего не записано: ни как баланс существующего счёта, ни как новый.
+	// Ничего не записано: ни как баланс существующего счета, ни как новый.
 	if len(acc.got) != 0 {
-		t.Fatalf("записан баланс несуществующего счёта: %+v", acc.got)
+		t.Fatalf("записан баланс несуществующего счета: %+v", acc.got)
 	}
 	if len(acc.created) != 0 {
-		t.Fatalf("счёт заведён без подтверждения: %+v", acc.created)
+		t.Fatalf("счет заведен без подтверждения: %+v", acc.created)
 	}
 	// Форма осталась открытой с набранным: исправлять опечатку заново — цена,
 	// которую платит человек за подсказку движка.
@@ -65,13 +65,13 @@ func TestNewAccount_offersToCreateWhenTheNameIsUnknown(t *testing.T) {
 	view := m.View()
 	for _, want := range []string{"Займ → Коллеге", "ctrl+n"} {
 		if !strings.Contains(strings.ToLower(view), strings.ToLower(want)) {
-			t.Errorf("экран не подсказал, как завести счёт (нет %q)\n--- view ---\n%s", want, view)
+			t.Errorf("экран не подсказал, как завести счет (нет %q)\n--- view ---\n%s", want, view)
 		}
 	}
 }
 
-// Подтверждение заводит счёт с той же суммой, которая уже набрана: заставлять
-// набирать её второй раз значит просить человека повторить то, что он только
+// Подтверждение заводит счет с той же суммой, которая уже набрана: заставлять
+// набирать ее второй раз значит просить человека повторить то, что он только
 // что сделал, и получить расхождение при опечатке.
 func TestNewAccount_createsOnConfirmation(t *testing.T) {
 	acc := accountsStub(t)
@@ -84,7 +84,7 @@ func TestNewAccount_createsOnConfirmation(t *testing.T) {
 	m = press(m, ctrlN())
 
 	if len(acc.created) != 1 {
-		t.Fatalf("счёт заведён %d раз, ожидался 1: %+v", len(acc.created), acc.created)
+		t.Fatalf("счет заведен %d раз, ожидался 1: %+v", len(acc.created), acc.created)
 	}
 	if acc.created[0].bank != "Займ → Коллеге" {
 		t.Errorf("имя = %q, ожидалось «Займ → Коллеге»", acc.created[0].bank)
@@ -93,14 +93,14 @@ func TestNewAccount_createsOnConfirmation(t *testing.T) {
 		t.Errorf("сумма = %d копеек, ожидалось 300000", acc.created[0].amount.Kopecks())
 	}
 	if m.OnBalanceForm() {
-		t.Error("форма осталась открытой после заведения счёта")
+		t.Error("форма осталась открытой после заведения счета")
 	}
-	if view := m.View(); !strings.Contains(view, "новый счёт") {
-		t.Errorf("экран не сказал, что счёт новый\n--- view ---\n%s", view)
+	if view := m.View(); !strings.Contains(view, "новый счет") {
+		t.Errorf("экран не сказал, что счет новый\n--- view ---\n%s", view)
 	}
 }
 
-// Клавиша работает только там, где движок сам сказал «такого счёта нет».
+// Клавиша работает только там, где движок сам сказал «такого счета нет».
 // Иначе она стала бы вторым способом писать баланс — тем, который не проверяет
 // написание и заводит «сбербанк» рядом со «Сбербанком».
 func TestNewAccount_doesNothingWithoutTheOffer(t *testing.T) {
@@ -113,12 +113,12 @@ func TestNewAccount_doesNothingWithoutTheOffer(t *testing.T) {
 	press(m, ctrlN())
 
 	if len(acc.created) != 0 {
-		t.Fatalf("счёт заведён без предложения: %+v", acc.created)
+		t.Fatalf("счет заведен без предложения: %+v", acc.created)
 	}
 }
 
-// Написание, которое лист уже знает, счётом не считается — даже когда буквы
-// другие. Предложи экран завести «сбербанк», в книге появилось бы два счёта
+// Написание, которое лист уже знает, счетом не считается — даже когда буквы
+// другие. Предложи экран завести «сбербанк», в книге появилось бы два счета
 // об одном, и оба выглядели бы одинаково правдоподобно.
 func TestNewAccount_doesNotOfferForAKnownSpelling(t *testing.T) {
 	acc := accountsStub(t)
@@ -129,9 +129,9 @@ func TestNewAccount_doesNotOfferForAKnownSpelling(t *testing.T) {
 	m = press(m, runes("500"))
 	press(m, enter())
 
-	// Это обычная запись баланса: домен считает написания одним счётом.
+	// Это обычная запись баланса: домен считает написания одним счетом.
 	if len(acc.created) != 0 {
-		t.Errorf("предложено завести счёт, который уже есть: %+v", acc.created)
+		t.Errorf("предложено завести счет, который уже есть: %+v", acc.created)
 	}
 	if len(acc.got) != 1 {
 		t.Fatalf("баланс записан %d раз, ожидался 1", len(acc.got))
@@ -139,7 +139,7 @@ func TestNewAccount_doesNotOfferForAKnownSpelling(t *testing.T) {
 }
 
 // Отказ движка на заведении показывается так же, как отказ на записи: набранное
-// остаётся, причина названа. Отдельный путь для нового счёта не значит отдельных
+// остается, причина названа. Отдельный путь для нового счета не значит отдельных
 // правил обращения с ошибкой.
 func TestNewAccount_namesTheRefusal(t *testing.T) {
 	acc := accountsStub(t)

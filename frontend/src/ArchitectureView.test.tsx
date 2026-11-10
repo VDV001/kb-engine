@@ -41,7 +41,7 @@ function engineMap(): ArchMap {
         zone: 'Деньги',
         steps: [
           { n: 1, from: 'cmd-fin', to: 'ledger', call: 'appendChecked', detail: 'единственный путь записи', source: 'cmd/kbengine/fin.go:210', unverified: false, branch: false },
-          { n: 2, from: 'ledger', to: 'cmd-fin', call: 'financejsonl.Save', unverified: true, why: 'живьём не прогонялось', branch: false },
+          { n: 2, from: 'ledger', to: 'cmd-fin', call: 'financejsonl.Save', unverified: true, why: 'живьем не прогонялось', branch: false },
         ],
       },
     ],
@@ -65,11 +65,11 @@ function workspaceMap(): ArchMap {
     nodes: [],
     flows: [],
     findings: [
-      { id: 'f-orphan', title: 'Сторож написан, но его никто не зовёт', severity: 'high', status: 'починено', evidence: 'cowork:digest/audit_watch.sh:38' },
+      { id: 'f-orphan', title: 'Сторож написан, но его никто не зовет', severity: 'high', status: 'починено', evidence: 'cowork:digest/audit_watch.sh:38' },
     ],
     gaps: [],
     runtime_checks: [],
-    acceptance: { classes_run: ['дубли заголовков — 0'], not_done: '', note: 'приёмка про смысл' },
+    acceptance: { classes_run: ['дубли заголовков — 0'], not_done: '', note: 'приемка про смысл' },
     stats: { ...emptyStats, findings: 1 },
   }
 }
@@ -111,14 +111,14 @@ describe('ArchitectureView', () => {
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: 'claude-cowork' }))
     expect(await screen.findByText(/Коммита нет/)).toBeDefined()
-    // У карты без коммита свежесть держится на пересчёте якорей, и говорить
+    // У карты без коммита свежесть держится на пересчете якорей, и говорить
     // об этом надо словами, а не отсутствием строки.
     expect(screen.getByText(/убраны намеренно/)).toBeDefined()
   })
 
-  // Третий ответ. Зона без записи о приёмке — это «сверять не с чем», и
-  // зелёная галочка здесь обещала бы проверку, которой не было.
-  it('различает принятую зону и зону без записи о приёмке', async () => {
+  // Третий ответ. Зона без записи о приемке — это «сверять не с чем», и
+  // зеленая галочка здесь обещала бы проверку, которой не было.
+  it('различает принятую зону и зону без записи о приемке', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
@@ -134,7 +134,7 @@ describe('ArchitectureView', () => {
   // «1 сценариев» — то, что видно на живой карте первым делом, и ровно та
   // ошибка, которую однажды уже ловили на «51 операций»: склонение в проекте
   // есть, но позвать его забыли.
-  it('склоняет счётчики', async () => {
+  it('склоняет счетчики', async () => {
     const m = engineMap()
     m.zones = [{ name: 'Журнал версий', accepted: false, flows: 1, steps: 3 }]
     setMaps(m)
@@ -144,26 +144,26 @@ describe('ArchitectureView', () => {
   })
 
   // На живой карте not_done — не строка, а абзац: в узкой карточке шапки он
-  // растягивает её вдвое против соседней. Место ему там, где читают приёмку.
-  it('держит длинный текст приёмки в зонах, а не в шапке', async () => {
+  // растягивает ее вдвое против соседней. Место ему там, где читают приемку.
+  it('держит длинный текст приемки в зонах, а не в шапке', async () => {
     const m = workspaceMap()
-    m.acceptance = { classes_run: [], not_done: 'зона «Совет» живьём не прогонялась', note: '' }
+    m.acceptance = { classes_run: [], not_done: 'зона «Совет» живьем не прогонялась', note: '' }
     setMaps(m)
     render(<ArchitectureView />)
-    // Шапка называет счёт принятых зон — короткую сводку, а не абзац.
+    // Шапка называет счет принятых зон — короткую сводку, а не абзац.
     expect(await screen.findByText(/1 из 1/)).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Зоны' }))
     expect(screen.getByText(/Совет.*не прогонялась/)).toBeDefined()
 
-    // Уходим со вкладки зон: текст приёмки обязан уйти вместе с ними. Пока он
+    // Уходим со вкладки зон: текст приемки обязан уйти вместе с ними. Пока он
     // лежит в шапке, он виден на каждом разделе, включая те, где он не к месту.
     fireEvent.click(screen.getByRole('button', { name: 'Сценарии' }))
     expect(screen.queryByText(/Совет.*не прогонялась/)).toBeNull()
   })
 
-  // Счётчики страницы-предшественницы наполовину про границу знания, а не про
-  // объём: без «из них с якорем» и «шагов с источником» карта читается полной.
-  it('показывает счётчики границы знания, а не только объём', async () => {
+  // Счетчики страницы-предшественницы наполовину про границу знания, а не про
+  // объем: без «из них с якорем» и «шагов с источником» карта читается полной.
+  it('показывает счетчики границы знания, а не только объем', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
     expect(await screen.findByText('из них с якорем')).toBeDefined()
@@ -172,7 +172,7 @@ describe('ArchitectureView', () => {
   })
 
   // Тип узла на схеме называется по-русски, а состояние отличается от сорта:
-  // скрипт, которого никто не зовёт, выглядит как рабочий, и вся разница в
+  // скрипт, которого никто не зовет, выглядит как рабочий, и вся разница в
   // слове под значком.
   it('переводит типы узлов и называет сломанное состояние', async () => {
     const m = engineMap()
@@ -183,7 +183,7 @@ describe('ArchitectureView', () => {
     setMaps(m)
     render(<ArchitectureView />)
     expect((await screen.findAllByText('код')).length).toBeGreaterThan(0)
-    expect(screen.getAllByText('никто не зовёт').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('никто не зовет').length).toBeGreaterThan(0)
     expect(screen.getByText('узлов в сломанном состоянии')).toBeDefined()
   })
 
@@ -194,7 +194,7 @@ describe('ArchitectureView', () => {
     expect(screen.getByText(/нарисованная по памяти/)).toBeDefined()
   })
 
-  // Правило 11 в чистом виде: число подсадок отрицательного контроля живёт в
+  // Правило 11 в чистом виде: число подсадок отрицательного контроля живет в
   // сборке карты, а не в данных, и врать им нельзя.
   it('называет то, чего сама страница не знает', async () => {
     setMaps(engineMap())
@@ -203,7 +203,7 @@ describe('ArchitectureView', () => {
     expect(await screen.findByText(/Чего эта страница не знает/)).toBeDefined()
   })
 
-  it('клик по зоне ведёт в её сценарии', async () => {
+  it('клик по зоне ведет в ее сценарии', async () => {
     setMaps(engineMap())
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: 'Зоны' }))
@@ -220,11 +220,11 @@ describe('ArchitectureView', () => {
     expect(await screen.findByText('appendChecked')).toBeDefined()
     expect(screen.getByText('не подтверждено')).toBeDefined()
     // Причина стоит рядом со своим шагом: собранная в отдельный список, она
-    // перестаёт читаться как оговорка к конкретному утверждению.
-    expect(screen.getByText(/живьём не прогонялось/)).toBeDefined()
+    // перестает читаться как оговорка к конкретному утверждению.
+    expect(screen.getByText(/живьем не прогонялось/)).toBeDefined()
   })
 
-  // Узел без якорей — утверждение, ничем не подпёртое. Половина зоны
+  // Узел без якорей — утверждение, ничем не подпертое. Половина зоны
   // «Автоматизация» однажды состояла из таких, и увидели это не глазами.
   it('называет узел без единого якоря', async () => {
     setMaps(engineMap())
@@ -237,7 +237,7 @@ describe('ArchitectureView', () => {
     setMaps(workspaceMap())
     render(<ArchitectureView />)
     fireEvent.click(await screen.findByRole('button', { name: /Находки/ }))
-    expect(await screen.findByText('Сторож написан, но его никто не зовёт')).toBeDefined()
+    expect(await screen.findByText('Сторож написан, но его никто не зовет')).toBeDefined()
     expect(screen.getByText('починено')).toBeDefined()
   })
 
@@ -251,7 +251,7 @@ describe('ArchitectureView', () => {
   })
 
   // Фраза «не список модулей, а действия целиком» без примеров — утверждение ни
-  // о чём. На странице-предшественнице примеры стояли рядом с ней и при
+  // о чем. На странице-предшественнице примеры стояли рядом с ней и при
   // переносе пропали у обеих карт.
   it('показывает примеры действий из карты', async () => {
     setMaps(engineMap())
@@ -261,21 +261,21 @@ describe('ArchitectureView', () => {
   })
 
   // Карта без примеров показывает лид без них, а не выдуманные: пример,
-  // сочинённый вкладкой, читался бы как факт о проекте.
+  // сочиненный вкладкой, читался бы как факт о проекте.
   it('без примеров не выдумывает их', async () => {
     setMaps(workspaceMap())
     render(<ArchitectureView />)
     expect(await screen.findByText(/действия целиком/)).toBeDefined()
-    // Примеры соседней карты — то, что появится, если вкладка зашьёт их в
-    // вёрстку вместо чтения из данных. Проверка на «нет никаких примеров»
-    // такую подсадку пропускала: она проходила и до починки, и после неё.
+    // Примеры соседней карты — то, что появится, если вкладка зашьет их в
+    // верстку вместо чтения из данных. Проверка на «нет никаких примеров»
+    // такую подсадку пропускала: она проходила и до починки, и после нее.
     expect(screen.queryByText(/владелец записывает трату/)).toBeNull()
   })
 })
 
 // Раздел «Разбор» — страница, написанную человеком, прямо в карте. Появляется
 // он только у карты, которая эту страницу называет: кнопка, открывающая
-// пустоту, читается как поломка, а её отсутствие — как «здесь этого нет».
+// пустоту, читается как поломка, а ее отсутствие — как «здесь этого нет».
 describe('раздел «Разбор»', () => {
   it('не показывается у карты без page', async () => {
     state.index = [{ id: 'kb-engine', project: 'kb-engine', zones: [], stats: emptyStats, accepted_zones: 0 }]
@@ -285,7 +285,7 @@ describe('раздел «Разбор»', () => {
     expect(screen.queryByText('Разбор')).toBeNull()
   })
 
-  it('показывается у карты с page и грузит её маршрутом /kb/', async () => {
+  it('показывается у карты с page и грузит ее маршрутом /kb/', async () => {
     const m = engineMap()
     m.page = 'creations/projects/2026-08-15_x/x.html'
     state.index = [{ id: 'kb-engine', project: 'kb-engine', zones: [], stats: emptyStats, accepted_zones: 0 }]
@@ -297,7 +297,7 @@ describe('раздел «Разбор»', () => {
 
     const frame = document.querySelector('iframe')
     expect(frame).toBeTruthy()
-    // Именно /kb/, а не file:// и не путь на диске: маршрут отдаёт только то,
+    // Именно /kb/, а не file:// и не путь на диске: маршрут отдает только то,
     // что каталог называет, и это единственный способ открыть артефакт базы.
     expect(frame?.getAttribute('src')).toBe(appURL('kb/creations/projects/2026-08-15_x/x.html'))
   })

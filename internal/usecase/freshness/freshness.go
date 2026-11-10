@@ -1,6 +1,6 @@
-// Package freshness решает, отстала ли страница-документ от базы вокруг неё.
+// Package freshness решает, отстала ли страница-документ от базы вокруг нее.
 //
-// Повод: страница «что в работе сейчас» тухнет тихо. Текст остаётся
+// Повод: страница «что в работе сейчас» тухнет тихо. Текст остается
 // правдоподобным — в шапке стоит «четыре PR смержены», и выглядит это ровно так
 // же, как если бы их было четыре. Владелец увидел собственную страницу с этой
 // строкой в тот момент, когда PR было восемь.
@@ -39,13 +39,13 @@ type Input struct {
 	Operations []time.Time
 }
 
-// Fact — одна причина считать страницу отставшей, в терминах её источника.
+// Fact — одна причина считать страницу отставшей, в терминах ее источника.
 type Fact struct {
-	// Kind — какой источник ушёл вперёд: catalog, version, ledger.
+	// Kind — какой источник ушел вперед: catalog, version, ledger.
 	Kind  string
 	Text  string
 	Count int
-	// IDs — несколько записей поимённо, чтобы было с чего начать. Не все:
+	// IDs — несколько записей поименно, чтобы было с чего начать. Не все:
 	// двадцать заголовков подряд — вторая лента поверх той, что уже есть.
 	IDs []int
 }
@@ -53,7 +53,7 @@ type Fact struct {
 // Report — ответ: отстала ли страница, чем именно и что можно дописать.
 type Report struct {
 	Behind bool
-	// Unknown — дату правки узнать не удалось. Это «не знаю», а не «всё
+	// Unknown — дату правки узнать не удалось. Это «не знаю», а не «все
 	// хорошо»: молча промолчав, страница выглядела бы проверенной.
 	Unknown  bool
 	EditedAt time.Time
@@ -65,7 +65,7 @@ type Report struct {
 	Draft string
 }
 
-// namedEntries — сколько записей называется поимённо.
+// namedEntries — сколько записей называется поименно.
 const namedEntries = 5
 
 // Check сравнивает дату последней правки документа с тем, что произошло после.
@@ -118,7 +118,7 @@ func Check(in Input) Report {
 	return out
 }
 
-// draft собирает заготовку блока: дата сегодняшним днём и факты списком.
+// draft собирает заготовку блока: дата сегодняшним днем и факты списком.
 func draft(in Input, added []EntryFact) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "## %s\n\n", in.Now.Format(time.DateOnly))
@@ -133,7 +133,7 @@ func draft(in Input, added []EntryFact) string {
 			fmt.Fprintf(&b, "  - #%d — %s\n", e.ID, title)
 		}
 		if len(added) > namedEntries {
-			fmt.Fprintf(&b, "  - … и ещё %d\n", len(added)-namedEntries)
+			fmt.Fprintf(&b, "  - … и еще %d\n", len(added)-namedEntries)
 		}
 	}
 	if in.Version != "" && in.VersionDate.After(in.EditedAt) {

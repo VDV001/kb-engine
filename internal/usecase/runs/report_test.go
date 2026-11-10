@@ -56,7 +56,7 @@ func TestBuild(t *testing.T) {
 			journal: journalStub{exists: false},
 			want: func(t *testing.T, r runs.Report) {
 				if r.Exists {
-					t.Error("журнала нет, а отчёт говорит, что есть")
+					t.Error("журнала нет, а отчет говорит, что есть")
 				}
 				if r.Total != 0 {
 					t.Errorf("записей %d, ожидалось 0", r.Total)
@@ -71,7 +71,7 @@ func TestBuild(t *testing.T) {
 			journal: journalStub{exists: true},
 			want: func(t *testing.T, r runs.Report) {
 				if !r.Exists {
-					t.Error("журнал есть, а отчёт говорит, что нет")
+					t.Error("журнал есть, а отчет говорит, что нет")
 				}
 				if len(r.NeverRan) != len(known) {
 					t.Errorf("не запускалось %d команд, ожидалось %d", len(r.NeverRan), len(known))
@@ -92,7 +92,7 @@ func TestBuild(t *testing.T) {
 				}
 				fin, ok := stat(r, "fin")
 				if !ok {
-					t.Fatal("fin в отчёте не нашлась")
+					t.Fatal("fin в отчете не нашлась")
 				}
 				if fin.Runs != 3 {
 					t.Errorf("fin прогонов %d, ожидалось 3", fin.Runs)
@@ -103,17 +103,17 @@ func TestBuild(t *testing.T) {
 				if !fin.LastRun.Equal(day(0)) {
 					t.Errorf("fin последний прогон %v, ожидался %v", fin.LastRun, day(0))
 				}
-				// Первая запись журнала задаёт горизонт: без него «ни разу»
+				// Первая запись журнала задает горизонт: без него «ни разу»
 				// читается как «никогда», а это утверждение о движке, которого
 				// журнал сделать не может.
 				if !r.Since.Equal(day(9)) {
-					t.Errorf("журнал ведётся с %v, ожидалось %v", r.Since, day(9))
+					t.Errorf("журнал ведется с %v, ожидалось %v", r.Since, day(9))
 				}
 			},
 		},
 		{
 			// Давние сверху: так «давно не запускали» видно без выдуманного
-			// порога, а выдуманный порог красит зелёное в красное и учит не
+			// порога, а выдуманный порог красит зеленое в красное и учит не
 			// смотреть на предупреждения.
 			name: "порядок — по давности последнего прогона",
 			journal: journalStub{exists: true, recs: []domain.RunRecord{
@@ -155,7 +155,7 @@ func TestBuild(t *testing.T) {
 		{
 			// Нечитаемая строка обязана доехать числом: одна оборванная запись
 			// делает выводы неполными, и молчание об этом — ровно то, от чего
-			// журнал заведён.
+			// журнал заведен.
 			name:    "нечитаемые строки названы",
 			journal: journalStub{exists: true, unreadable: 2},
 			want: func(t *testing.T, r runs.Report) {
@@ -177,8 +177,8 @@ func TestBuild(t *testing.T) {
 	}
 }
 
-// Отказ журнала не выдумывает пустого отчёта: пустой отчёт читается как
-// «прогонов не было», а это худший ответ для проверки, заведённой ради
+// Отказ журнала не выдумывает пустого отчета: пустой отчет читается как
+// «прогонов не было», а это худший ответ для проверки, заведенной ради
 // вопроса «запускали ли».
 func TestBuild_journalError(t *testing.T) {
 	boom := errors.New("журнал не прочитался")
@@ -209,7 +209,7 @@ func took(t *testing.T, command string, when time.Time, d time.Duration, args ..
 }
 
 // Признак «в окнах разный состав подкоманд» считается ИЗ ЗАПИСЕЙ, и это надо
-// проверять на записях: тест инварианта подаёт MixedShape готовым и вычисление
+// проверять на записях: тест инварианта подает MixedShape готовым и вычисление
 // не трогает. Дыру нашла подсадка — детектор, всегда отвечающий «состав
 // одинаков», не уронил ни одного теста.
 func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
@@ -221,7 +221,7 @@ func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
 		}
 		return out
 	}
-	// ранние — лёгкий spelling, поздние — тяжёлый sync: ровно случай живого
+	// ранние — легкий spelling, поздние — тяжелый sync: ровно случай живого
 	// журнала, где медиана дала «медленнее в 5,2 раза» на пустом месте.
 	var mixed []domain.RunRecord
 	mixed = append(mixed, mk("spelling", 8, 5*time.Millisecond, 0)...)
@@ -262,7 +262,7 @@ func TestBuild_detectsMixedShapeFromRecords(t *testing.T) {
 // первый аргумент — флаг `--catalog`, поэтому форма по первому аргументу у всех
 // прогонов одна. А работа разная: ранние звались с узким `--check files`
 // (18 мс), поздние девять раз без `--check` вовсе, то есть полным набором
-// (374 мс). Форму задаёт НАБОР ИМЁН флагов, а не первое слово.
+// (374 мс). Форму задает НАБОР ИМЕН флагов, а не первое слово.
 func TestBuild_shapeUsesFlagNames(t *testing.T) {
 	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
 	var recs []domain.RunRecord
@@ -288,7 +288,7 @@ func TestBuild_shapeUsesFlagNames(t *testing.T) {
 func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
 	base := time.Date(2026, 8, 19, 10, 0, 0, 0, time.UTC)
 	var recs []domain.RunRecord
-	places := []string{"Пятёрочка", "Магнит", "Монетка", "Верный"}
+	places := []string{"Пятерочка", "Магнит", "Монетка", "Верный"}
 	for i := range 8 {
 		recs = append(recs, took(t, "fin", base.Add(time.Duration(i)*time.Minute),
 			5*time.Millisecond, "add", "--place", places[i%len(places)]))
@@ -308,10 +308,10 @@ func TestBuild_shapeIgnoresFlagValues(t *testing.T) {
 
 // --- #328: класс последнего отказа -----------------------------------------
 
-// Счётчик «отказов N» нечитаем, пока не сказано, ЧЕГО эти отказы. Замер
+// Счетчик «отказов N» нечитаем, пока не сказано, ЧЕГО эти отказы. Замер
 // 29.08.2026 по живому журналу: 287 отказов из 1917, и среди них `runs --check`
-// возвращает 1 ровно потому, что нашёл расхождение, — то есть защита сработала.
-// Класс выводится из кода возврата и НЕ показывает текста: текст несёт имена
+// возвращает 1 ровно потому, что нашел расхождение, — то есть защита сработала.
+// Класс выводится из кода возврата и НЕ показывает текста: текст несет имена
 // счетов владельца, а правило пакета — имена команд и числа.
 func TestBuild_lastFailureKind(t *testing.T) {
 	now := time.Date(2026, 8, 29, 15, 0, 0, 0, time.UTC)
@@ -337,7 +337,7 @@ func TestBuild_lastFailureKind(t *testing.T) {
 	}
 }
 
-// Два отказа РАЗНЫХ классов не сливаются: если бы отчёт хранил только счёт,
+// Два отказа РАЗНЫХ классов не сливаются: если бы отчет хранил только счет,
 // «отказов 2» у команды с ошибкой вызова и сработавшей защитой выглядело бы
 // одинаково с двумя поломками подряд.
 func TestBuild_lastFailureKindDistinguishesClasses(t *testing.T) {

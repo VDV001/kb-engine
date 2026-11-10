@@ -88,7 +88,7 @@ func TestMemoryAgent_trustReportsAFullQueue(t *testing.T) {
 	for i := range domain.QueueHardCap {
 		if i == domain.QueueHardCap-1 {
 			if tr, err := agent.Trust(); err != nil || tr.QueueFull {
-				t.Fatalf("%d предложений: очередь ещё не полна: %+v %v", i, tr, err)
+				t.Fatalf("%d предложений: очередь еще не полна: %+v %v", i, tr, err)
 			}
 		}
 		if err := agent.Propose(fmt.Sprintf("rule-%d", i), "git", "правило", ""); err != nil {

@@ -6,7 +6,7 @@ const entry = (over: Record<string, unknown> = {}) =>
   ({ id: 1, title: 'x', category: 'creations', tags: [], ...over }) as never
 
 describe('артефакты базы', () => {
-  // Файл отдаёт маршрут /kb/, и список разрешённого — сам каталог: путь, не
+  // Файл отдает маршрут /kb/, и список разрешенного — сам каталог: путь, не
   // названный ни одной записью, наружу не уходит.
   it('строит адрес артефакта от корня витрины', () => {
     expect(artefactHref('creations/cheatsheets/x/y.html')).toBe(appURL('kb/creations/cheatsheets/x/y.html'))
@@ -25,19 +25,19 @@ describe('артефакты базы', () => {
     )
   })
 
-  // Признак шпаргалки живёт в ДАННЫХ — тег, который проставлен всем пяти. Знать
+  // Признак шпаргалки живет в ДАННЫХ — тег, который проставлен всем пяти. Знать
   // про структуру папок фронту незачем: перенос файла не должен ломать вкладку.
   it('отбирает шпаргалки по тегу, а не по пути', () => {
     const list = [
       entry({ id: 1, tags: ['cheatsheet', 'tui'], file: 'creations/cheatsheets/a/a.html' }),
       entry({ id: 2, tags: ['habr'], file: 'creations/habr/b/b.html' }),
-      entry({ id: 3, tags: ['cheatsheet'], file: 'куда-то/ещё/c.html' }),
+      entry({ id: 3, tags: ['cheatsheet'], file: 'куда-то/еще/c.html' }),
     ]
     expect(cheatsheetsOf(list).map((e) => e.id)).toEqual([1, 3])
   })
 
   // Запись с тегом, но без файла открыть нечем: показывать плитку, которая
-  // никуда не ведёт, значит обещать больше, чем есть.
+  // никуда не ведет, значит обещать больше, чем есть.
   it('шпаргалку без файла не показывает', () => {
     expect(cheatsheetsOf([entry({ id: 9, tags: ['cheatsheet'] })])).toEqual([])
   })
@@ -50,13 +50,13 @@ describe('артефакты базы', () => {
     expect(cheatsheetsOf(list).map((e) => e.id)).toEqual([2, 1])
   })
 
-  // Движок отдаёт markdown как text/markdown, и браузер такой тип СКАЧИВАЕТ, а
+  // Движок отдает markdown как text/markdown, и браузер такой тип СКАЧИВАЕТ, а
   // не показывает. Кнопка «открыть», после которой падает файл в загрузки,
-  // обещает больше, чем делает, поэтому её там нет.
+  // обещает больше, чем делает, поэтому ее там нет.
   it('открывается в браузере только то, что браузер покажет', () => {
     expect(opensInBrowser('creations/cheatsheets/a/a.html')).toBe(true)
     expect(opensInBrowser('creations/x/y.HTML')).toBe(true)
-    // Markdown движок отдаёт как text/plain (см. kbfiles.go), поэтому браузер
+    // Markdown движок отдает как text/plain (см. kbfiles.go), поэтому браузер
     // его показывает, а не скачивает — кнопка у таких записей законна.
     expect(opensInBrowser('notes/2026-03-26_future-plans_v1.md')).toBe(true)
     expect(opensInBrowser('standards/memory-architecture/v1.md')).toBe(true)

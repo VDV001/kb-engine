@@ -171,7 +171,7 @@ func RememberPlace(path, word string, rule finance.PlaceRule) error {
 // first: a word learned in the terminal must not drop the words added by hand.
 func update(path string, apply func(*file) bool) error {
 	f := file{Accounts: map[string]string{}, Places: map[string]placeRule{}}
-	// Всё, что движок не знает («_comment» владельца), едет через запись как
+	// Все, что движок не знает («_comment» владельца), едет через запись как
 	// есть: разбор в структуру без этих полей молча срезал их при каждой записи.
 	extra := map[string]json.RawMessage{}
 	switch raw, err := os.ReadFile(path); {

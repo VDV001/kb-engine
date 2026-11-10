@@ -3,7 +3,7 @@
 #
 # Источник ОДИН — срез Capabilities() в internal/adapter/httpapi/capabilities.go.
 # Его же читает вкладка About. README держит копию таблицы для читателя гитхаба,
-# и без этого гейта копия разошлась бы молча — тот же дефект «число живёт
+# и без этого гейта копия разошлась бы молча — тот же дефект «число живет
 # дважды», что ловит verify-claims.
 #
 # Проверяется в обе стороны: каждая возможность источника есть в README с ТЕМ ЖЕ
@@ -65,13 +65,13 @@ if [ "${1:-}" = "--self-test" ]; then
     echo "✘ self-test: живые README и источник разошлись"; fail=1
   fi
 
-  # 2. подсадка: в README у возможности сменён статус → гейт обязан назвать
+  # 2. подсадка: в README у возможности сменен статус → гейт обязан назвать
   cp "$src" "$tmp_src"
   sed -E 's/(Метрики Prometheus \| )✅ stable/\1🚧 roadmap/' "$readme" > "$tmp_rd"
   out="$(check "$tmp_src" "$tmp_rd" 2>&1)" && { echo "✘ self-test: смена статуса в README не поймана"; fail=1; }
   case "$out" in *"Метрики Prometheus"*) ;; *) echo "✘ self-test: расхождение не названо: $out"; fail=1;; esac
 
-  # 3. подсадка: в источник добавлена возможность, в README её нет → поймать
+  # 3. подсадка: в источник добавлена возможность, в README ее нет → поймать
   cp "$readme" "$tmp_rd"
   sed -E 's#(return \[\]Capability\{)#\1\n\t\t{"Выдуманная фича", "stable", "нет в README"},#' "$src" > "$tmp_src"
   out="$(check "$tmp_src" "$tmp_rd" 2>&1)" && { echo "✘ self-test: новая возможность без строки в README не поймана"; fail=1; }

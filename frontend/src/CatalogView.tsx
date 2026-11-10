@@ -54,7 +54,7 @@ function Tags({ tags, labels }: { tags?: string[]; labels: Record<string, string
       {(tags ?? []).slice(0, 3).map((t, i) => (
         <span
           key={t}
-          // Ключ остаётся в title: подпись отвечает на «что это», ключ — на
+          // Ключ остается в title: подпись отвечает на «что это», ключ — на
           // «что искать», и после сведения русских тегов к латинским ключам
           // второе перестало быть очевидным из первого.
           title={t}
@@ -70,7 +70,7 @@ function Tags({ tags, labels }: { tags?: string[]; labels: Record<string, string
 /**
  * Title — заголовок записи. Ссылкой он становится только при адресе: у 122
  * записей каталога адреса нет вовсе (свой файл вместо чужой статьи), а
- * подчёркивание при наведении обещало переход, которого не происходило.
+ * подчеркивание при наведении обещало переход, которого не происходило.
  */
 function Title({ e, className = '' }: { e: Entry; className?: string }) {
   const base = `font-headline text-base font-bold ${className}`
@@ -83,9 +83,9 @@ function Title({ e, className = '' }: { e: Entry; className?: string }) {
 }
 
 /**
- * WriteupLink — дорога от статьи к её разбору. Ведёт поиском по номеру, тем
- * же путём, которым открывает запись гигиена: читают разбор там же, где
- * читают всё остальное, и заводить ради него вторую поверхность незачем.
+ * WriteupLink — дорога от статьи к ее разбору. Ведет поиском по номеру, тем
+ * же путем, которым открывает запись гигиена: читают разбор там же, где
+ * читают все остальное, и заводить ради него вторую поверхность незачем.
  */
 function WriteupLink({ id, onOpen }: { id: number; onOpen: () => void }) {
   return (
@@ -145,7 +145,7 @@ function Pagination({
           </button>
         ),
       )}
-      <button type="button" className={arrow} disabled={page === pages} onClick={() => onPage(page + 1)} aria-label="Вперёд">
+      <button type="button" className={arrow} disabled={page === pages} onClick={() => onPage(page + 1)} aria-label="Вперед">
         ›
       </button>
     </div>
@@ -163,11 +163,11 @@ const selectClass =
  */
 
 /**
- * Дата, относящаяся к самому материалу, а не к записи о нём.
+ * Дата, относящаяся к самому материалу, а не к записи о нем.
  *
  * Подпись обязательна: рядом уже стоит дата попадания в базу, и три числа без
- * слов читаются как одно и то же в трёх вариантах. Вопросы разные — «насколько
- * это свежее» и «когда я разобрал это всерьёз».
+ * слов читаются как одно и то же в трех вариантах. Вопросы разные — «насколько
+ * это свежее» и «когда я разобрал это всерьез».
  */
 function MaterialDate({ label, date, title }: { label: string; date: string; title: string }) {
   return (
@@ -202,7 +202,7 @@ export function CatalogView({
   pickedCategory: string
   onPickedCategoryChange: (c: string) => void
   health: Health
-  /** Запрос из поля в шапке: поле живёт там, а фильтрует этот вид. */
+  /** Запрос из поля в шапке: поле живет там, а фильтрует этот вид. */
   search: string
   onSearchChange: (v: string) => void
   /** Запрос, с которым страницу открыли по ссылке агента; '' — открыли иначе. */
@@ -220,7 +220,7 @@ export function CatalogView({
   const [grid, setGrid] = useState(false)
   const [withDescriptions, setWithDescriptions] = useState(true)
   const [spotlightOpen, setSpotlightOpen] = useState(false)
-  // Свёрнутый сайдбар отдаёт таблице свои 256px. Ниже xl он свёрнут по
+  // Свернутый сайдбар отдает таблице свои 256px. Ниже xl он свернут по
   // умолчанию: там места нет, а разворачивать его — осознанный выбор.
   const [sideOpen, setSideOpen] = useState(() => window.innerWidth >= 1280)
 
@@ -230,7 +230,7 @@ export function CatalogView({
   const newest = useMemo(() => sortByDate(entries)[0], [entries])
 
   // Связь считается по всему каталогу, а не по текущей выдаче: разбор и
-  // статья почти никогда не попадают в одну страницу фильтра, и счёт по
+  // статья почти никогда не попадают в одну страницу фильтра, и счет по
   // видимому куску показывал бы «разбирает 1» там, где записей десять.
   const { writeupOf, coverage } = useMemo(() => writeupLinks(entries), [entries])
   // Открыть разбор — это поиск по его номеру: тот же путь, которым гигиена
@@ -264,7 +264,7 @@ export function CatalogView({
     [entries],
   )
   // Список строится из того, что реально лежит в каталоге, а не из зашитого
-  // перечня: пункт, который ничего не найдёт, хуже отсутствующего.
+  // перечня: пункт, который ничего не найдет, хуже отсутствующего.
   const statuses = useMemo(
     () => [...new Set(entries.map((e) => statusOf(e).key))].sort().map(statusStyle),
     [entries],
@@ -273,7 +273,7 @@ export function CatalogView({
   // Новый запрос возвращает на первую страницу — иначе, стоя на пятой, ищешь и
   // видишь пустоту, потому что у найденного столько страниц нет. Подстройка
   // состояния при рендере, а не useEffect: эффект дорисовал бы кадр со старой
-  // страницей и тут же перерисовал, да и гейт слоёв держит useEffect в hooks/.
+  // страницей и тут же перерисовал, да и гейт слоев держит useEffect в hooks/.
   const [searchShown, setSearchShown] = useState(search)
   if (searchShown !== search) {
     setSearchShown(search)
@@ -294,7 +294,7 @@ export function CatalogView({
     setPage(1)
   }
 
-  // Запрос из шапки подмешивается к остальным фильтрам, а не живёт отдельной
+  // Запрос из шапки подмешивается к остальным фильтрам, а не живет отдельной
   // веткой: для filterEntries он такое же условие, как категория или статус.
   const active = useMemo(
     () => ({ ...filter, search, tag: pickedTag }),
@@ -324,15 +324,15 @@ export function CatalogView({
     // И тег, пришедший из облака на дашборде: он не нарисован среди селекторов,
     // но он такой же действующий фильтр.
     onPickedTagChange('')
-    // Категория с About видна в своём селекторе и снимается вместе с ним, но
-    // забыть её наверху нельзя: иначе повторный клик по тому же ящику не сменит
-    // состояние и фильтр не вернётся.
+    // Категория с About видна в своем селекторе и снимается вместе с ним, но
+    // забыть ее наверху нельзя: иначе повторный клик по тому же ящику не сменит
+    // состояние и фильтр не вернется.
     onPickedCategoryChange('')
     setPage(1)
   }
 
   // Полоса объясняет, ЧТО за список на экране. Решение о ней — правило, а не
-  // разметка, и живёт оно в selection.ts, где проверяется без монтирования.
+  // разметка, и живет оно в selection.ts, где проверяется без монтирования.
   const selection = selectionOf({
     query: search,
     linkedQuery,
@@ -350,7 +350,7 @@ export function CatalogView({
         {/* Sidebar: structure, so square corners and a hairline — not a card. */}
         {/* Сайдбар сворачивается до ширины своей же кнопки: на 1024 он забирал
             256px, и таблице оставалось 670 при нужных ~830. */}
-        {/* Свёрнутый — по размеру содержимого, а не во всю ширину: до lg строка
+        {/* Свернутый — по размеру содержимого, а не во всю ширину: до lg строка
             вертикальная, и полоса на весь экран с одинокой стрелкой читалась как
             неизвестно что. Там же у кнопки появляется подпись. */}
         <aside className={`shrink-0 ${sideOpen ? 'w-full lg:w-64' : 'w-fit lg:w-12'}`}>
@@ -377,10 +377,10 @@ export function CatalogView({
                 className="relative flex h-11 shrink-0 items-center justify-center gap-1.5 px-3 text-on-surface-variant hover:text-on-surface lg:w-12 lg:px-0"
               >
                 <Icon name={sideOpen ? 'chevron_left' : 'chevron_right'} className="text-xl" />
-                {/* До lg рядом со стрелкой стоит слово: там кнопка лежит поперёк
+                {/* До lg рядом со стрелкой стоит слово: там кнопка лежит поперек
                     страницы, и одна стрелка не объясняет, что за ней. */}
                 {!sideOpen && <span className="text-sm lg:hidden">Категории</span>}
-                {/* Точка говорит, что фильтр по категории включён: в свёрнутом
+                {/* Точка говорит, что фильтр по категории включен: в свернутом
                     виде списка не видно, и выборка иначе выглядела бы поломкой. */}
                 {!sideOpen && filter.category !== '' && (
                   <span className="absolute top-2 right-2 h-1.5 w-1.5 rounded-full bg-secondary" />
@@ -473,7 +473,7 @@ export function CatalogView({
             </select>
             {/* Переводов в базе шестьдесят. Пока признак жил словом в заголовке,
                 отобрать их можно было только поиском по этому слову — и поиск
-                заодно приносил всё, где «перевод» упомянут в описании. */}
+                заодно приносил все, где «перевод» упомянут в описании. */}
             <select
               value={filter.translation}
               onChange={(e) => set({ translation: e.target.value })}
@@ -583,7 +583,7 @@ export function CatalogView({
               {slice.map((e) => (
                 <li key={e.id} className="border-t border-outline-variant first:border-t-0">
                   <div className="px-5 py-4">
-                    {/* Одна строка метаданных: перенос разрешён, чтобы на узком
+                    {/* Одна строка метаданных: перенос разрешен, чтобы на узком
                         экране они переехали, а не наехали друг на друга. */}
                     <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
                       <span className="font-label text-xs whitespace-nowrap text-on-surface-variant">
@@ -612,7 +612,7 @@ export function CatalogView({
                       <Tags tags={e.tags} labels={tagLabels} />
                       <Status e={e} />
                       {/* Дорога к разбору стоит среди метаданных записи, а не
-                          под текстом: это свойство записи, как её статус или
+                          под текстом: это свойство записи, как ее статус или
                           категория, и искать его глазами в другом месте не надо. */}
                       {writeupOf.has(e.id) && (
                         <WriteupLink id={writeupOf.get(e.id)!} onOpen={() => openEntry(writeupOf.get(e.id)!)} />
@@ -633,7 +633,7 @@ export function CatalogView({
                         </a>
                       )}
                       {/* У своих артефактов внешнего адреса нет вовсе, поэтому
-                          ml-auto достаётся тому, кто в строке первый: иначе
+                          ml-auto достается тому, кто в строке первый: иначе
                           запись без url прижимала бы значок к тексту. */}
                       {!e.url && e.file && <span className="ml-auto" />}
                       <ArtefactLink file={e.file} />
@@ -660,8 +660,8 @@ export function CatalogView({
             <Pagination page={current} pages={pages} onPage={setPage} />
           </div>
 
-          {/* items-start: у карточек резко разный объём содержимого, и растягивать
-              правую до высоты левой незачем — она берёт высоту по своему. */}
+          {/* items-start: у карточек резко разный объем содержимого, и растягивать
+              правую до высоты левой незачем — она берет высоту по своему. */}
           <section className="grid grid-cols-1 items-start gap-6 pt-8 md:grid-cols-3">
             <SpotlightCard
               entry={newest}

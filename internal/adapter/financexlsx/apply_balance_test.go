@@ -151,7 +151,7 @@ func TestSetBalance_theDateStillReadsAsADate(t *testing.T) {
 	// as 46236.69 then depends on a format the writer does not control.
 	raw := rawCell(t, path, "Счета", "C4")
 	if strings.Contains(raw, ".") {
-		t.Errorf("в ячейке %s — баланс подтверждается днём, а записан момент", raw)
+		t.Errorf("в ячейке %s — баланс подтверждается днем, а записан момент", raw)
 	}
 	if got := formattedCell(t, path, "Счета", "C4"); !strings.Contains(got, "2026") {
 		t.Errorf("дата в книге = %q — читается не как дата", got)
@@ -211,7 +211,7 @@ func accountOnSheet(t *testing.T, path, bank string) domain.Account {
 			return a
 		}
 	}
-	t.Fatalf("счёт %q не найден на листе", bank)
+	t.Fatalf("счет %q не найден на листе", bank)
 	return domain.Account{}
 }
 

@@ -105,8 +105,8 @@ func TestSnapshot_rotationLeavesOtherFilesAlone(t *testing.T) {
 // other away.
 func TestSnapshot_rotationIsPerExtensionToo(t *testing.T) {
 	dir := t.TempDir()
-	book := filepath.Join(dir, "Учёт_финансов.xlsx")
-	ledger := filepath.Join(dir, "Учёт_финансов.jsonl")
+	book := filepath.Join(dir, "Учет_финансов.xlsx")
+	ledger := filepath.Join(dir, "Учет_финансов.jsonl")
 
 	write(t, book, "book\n")
 	for i := range 4 {

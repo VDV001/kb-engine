@@ -49,7 +49,7 @@ func Run(s Sources, in io.Reader, out io.Writer) error {
 	if s.Saver != nil {
 		model = NewEditableModel(entries, s.Saver, s.Entries)
 	}
-	// Ставится ПОСЛЕ выбора конструктора: редактируемая модель создаётся
+	// Ставится ПОСЛЕ выбора конструктора: редактируемая модель создается
 	// заново, и матчер, отданный конструктору, потерялся бы молча.
 	model = model.WithSynonyms(s.Synonyms)
 	if s.Finances != nil {

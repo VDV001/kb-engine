@@ -12,7 +12,7 @@ import (
 // setCellNum пишет ЧИСЛОВУЮ ячейку, в отличие от соседнего setCell.
 //
 // Разница не косметическая: в живой книге курс набирают числом, и excelize
-// отдаёт его как "84.28000000000001". Проверив только текстовую ячейку, тест
+// отдает его как "84.28000000000001". Проверив только текстовую ячейку, тест
 // зеленел бы на разборе, который на настоящей книге ошибается.
 func setCellNum(t *testing.T, path, sheet, cell string, value float64) {
 	t.Helper()
@@ -43,10 +43,10 @@ func accountsByName(t *testing.T, path string) map[string]domain.Account {
 }
 
 // Книга владельца существует в единственном экземпляре, и колонок валюты в ней
-// нет. Пункт приёмки #332: старая книга читается, счета не теряются, поведение
+// нет. Пункт приемки #332: старая книга читается, счета не теряются, поведение
 // прежнее.
 //
-// Это главный тест среза. Всё остальное можно доделать позже; книга, которая
+// Это главный тест среза. Все остальное можно доделать позже; книга, которая
 // перестала читаться, — потеря данных.
 func TestRead_oldWorkbookWithoutCurrencyColumns(t *testing.T) {
 	accounts := accountsByName(t, workbookWithExtraColumn(t))
@@ -56,10 +56,10 @@ func TestRead_oldWorkbookWithoutCurrencyColumns(t *testing.T) {
 	}
 	for name, acc := range accounts {
 		if !acc.Currency().IsBase() {
-			t.Errorf("%s: Currency() = %q, у старой книги все счета рублёвые", name, acc.Currency().Code())
+			t.Errorf("%s: Currency() = %q, у старой книги все счета рублевые", name, acc.Currency().Code())
 		}
 		if acc.Rate().Known() {
-			t.Errorf("%s: у счёта из старой книги взялся курс — его там неоткуда взять", name)
+			t.Errorf("%s: у счета из старой книги взялся курс — его там неоткуда взять", name)
 		}
 		value, ok := acc.BaseValue()
 		if !ok || value.Kopecks() != 10000 {
@@ -68,7 +68,7 @@ func TestRead_oldWorkbookWithoutCurrencyColumns(t *testing.T) {
 	}
 }
 
-// Валюта и курс читаются из четвёртой и пятой колонок. Сумма остаётся в своей
+// Валюта и курс читаются из четвертой и пятой колонок. Сумма остается в своей
 // валюте, курс лежит рядом — а не одна пересчитанная цифра.
 func TestRead_currencyAndRateColumns(t *testing.T) {
 	path := workbookWithExtraColumn(t)
@@ -80,7 +80,7 @@ func TestRead_currencyAndRateColumns(t *testing.T) {
 		t.Fatalf("Currency() = %q, ожидалось USD", acc.Currency().Code())
 	}
 	if acc.Balance().Kopecks() != 10000 {
-		t.Errorf("Balance() = %d, ожидалось 10000 — сумма остаётся в своей валюте", acc.Balance().Kopecks())
+		t.Errorf("Balance() = %d, ожидалось 10000 — сумма остается в своей валюте", acc.Balance().Kopecks())
 	}
 	per, ok := acc.Rate().PerUnit()
 	if !ok || per.Kopecks() != 8428 {
@@ -108,7 +108,7 @@ func TestRead_currencyWithoutRateStaysUnknown(t *testing.T) {
 		t.Error("курс объявлен известным при пустой ячейке")
 	}
 	if _, ok := acc.BaseValue(); ok {
-		t.Error("счёт без курса оценён — витрина покажет выдуманное число как замер")
+		t.Error("счет без курса оценен — витрина покажет выдуманное число как замер")
 	}
 	if acc.Balance().Kopecks() != 10000 {
 		t.Errorf("Balance() = %d, ожидалось 10000 — неизвестен курс, а не остаток", acc.Balance().Kopecks())
@@ -116,8 +116,8 @@ func TestRead_currencyWithoutRateStaysUnknown(t *testing.T) {
 }
 
 // Негодное значение в колонке валюты — отказ с номером строки, а не молчаливое
-// «считаем рублёвым». Молча проигнорировав его, движок показал бы валютный
-// счёт рублёвым, то есть ровно тот дефект, ради которого заведена #332.
+// «считаем рублевым». Молча проигнорировав его, движок показал бы валютный
+// счет рублевым, то есть ровно тот дефект, ради которого заведена #332.
 func TestRead_brokenCurrencyIsRefusedWithRow(t *testing.T) {
 	path := workbookWithExtraColumn(t)
 	setCell(t, path, "Счета", "D3", "рубли")
@@ -141,6 +141,6 @@ func TestRead_rateWithoutCurrencyIsRefused(t *testing.T) {
 	setCellNum(t, path, "Счета", "E3", 84.28)
 
 	if _, err := financexlsx.Read(path, writeClock); err == nil {
-		t.Fatal("курс у рублёвого счёта принят молча")
+		t.Fatal("курс у рублевого счета принят молча")
 	}
 }

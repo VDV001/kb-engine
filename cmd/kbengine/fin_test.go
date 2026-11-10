@@ -12,7 +12,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// workbook writes a miniature Учёт_финансов.xlsx: title row, header row, data
+// workbook writes a miniature Учет_финансов.xlsx: title row, header row, data
 // from row 3. Two expenses and one income, one of them with kopecks.
 func workbook(t *testing.T) string {
 	t.Helper()
@@ -51,7 +51,7 @@ func workbook(t *testing.T) string {
 	must(f.SetCellValue("Счета", "B3", 1000.50))
 	must(f.SetCellValue("Счета", "C3", time.Date(2026, 4, 6, 0, 0, 0, 0, time.UTC)))
 
-	path := filepath.Join(t.TempDir(), "Учёт_финансов.xlsx")
+	path := filepath.Join(t.TempDir(), "Учет_финансов.xlsx")
 	must(f.SaveAs(path))
 	return path
 }
@@ -147,11 +147,11 @@ func TestRun_finAdd(t *testing.T) {
 // Осознанный повтор оставляет след, иначе решение человека принято и тут же
 // забыто.
 //
-// Гейт повторов заведён потому, что дубль, найденный на витрине неделей позже,
+// Гейт повторов заведен потому, что дубль, найденный на витрине неделей позже,
 // почти неразрешим: никто не скажет, какая из двух строк была настоящей
 // покупкой. `--force` сохранял ровно эту неразрешимость — записывал строку,
-// ничем не отличимую от обычной. Разбор живого журнала 10.08 упёрся в это на
-// паре от 07.08: подтверждённый повтор или проскочивший дубль — данные не
+// ничем не отличимую от обычной. Разбор живого журнала 10.08 уперся в это на
+// паре от 07.08: подтвержденный повтор или проскочивший дубль — данные не
 // различают.
 func TestRun_finAdd_forceLeavesATrace(t *testing.T) {
 	ledger := filepath.Join(t.TempDir(), "transactions.jsonl")
@@ -181,13 +181,13 @@ func TestRun_finAdd_forceLeavesATrace(t *testing.T) {
 	}
 
 	if code, msg := add(t, "--force"); code != 0 {
-		t.Fatalf("осознанный повтор не прошёл: exit=%d %s", code, msg)
+		t.Fatalf("осознанный повтор не прошел: exit=%d %s", code, msg)
 	}
 	repeat := lastLedgerLine(t, ledger)
 	if got := jsonField(t, repeat, "repeat_of"); got != firstID {
-		t.Errorf("repeat_of = %q, ожидался id подтверждённой записи %q:\n%s", got, firstID, repeat)
+		t.Errorf("repeat_of = %q, ожидался id подтвержденной записи %q:\n%s", got, firstID, repeat)
 	}
-	// Обычная запись поля не несёт: пустое означает «не знаю», и приписывать
+	// Обычная запись поля не несет: пустое означает «не знаю», и приписывать
 	// его прошлым строкам значило бы выдумать за них решение.
 	if got := jsonField(t, first, "repeat_of"); got != "" {
 		t.Errorf("у обычной записи появился след повтора: %q", got)

@@ -193,7 +193,7 @@ func TestSetFields_emptyChangeIsAnError(t *testing.T) {
 	}
 }
 
-// Запись 1235 живого каталога несёт путь к конспекту в поле url, а file у неё
+// Запись 1235 живого каталога несет путь к конспекту в поле url, а file у нее
 // пустое. Починить это без движка было нечем: set не писал ни то, ни другое.
 func TestSetFields_writesNotesFileAndURL(t *testing.T) {
 	path := writeFixture(t)
@@ -243,7 +243,7 @@ func TestSetFields_rejectsANonHTTPURL(t *testing.T) {
 	}
 }
 
-// Путь к конспекту живёт внутри базы. Абсолютный путь или выход наверх — это
+// Путь к конспекту живет внутри базы. Абсолютный путь или выход наверх — это
 // запись про файл, которого у другого пользователя не будет.
 func TestSetFields_rejectsAnEscapingNotesFile(t *testing.T) {
 	path := writeFixture(t)
@@ -256,7 +256,7 @@ func TestSetFields_rejectsAnEscapingNotesFile(t *testing.T) {
 }
 
 // У записей 1235-1237 в url лежит путь к файлу. Перенести его в file мало —
-// неверный адрес надо убрать, иначе путаница остаётся ровно там, где была.
+// неверный адрес надо убрать, иначе путаница остается ровно там, где была.
 func TestSetFields_clearsURLWhenAskedExplicitly(t *testing.T) {
 	path := writeFixture(t)
 
@@ -288,7 +288,7 @@ func TestSetFields_clearURLConflictsWithURL(t *testing.T) {
 	}
 }
 
-// Аудит требует у канонической записи заметку, а править её было нечем: движок
+// Аудит требует у канонической записи заметку, а править ее было нечем: движок
 // читал notes, description, title и author, но не писал ни одного из них.
 func TestSetFields_writesTextFields(t *testing.T) {
 	path := writeFixture(t)

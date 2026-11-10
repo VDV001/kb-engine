@@ -43,7 +43,7 @@ func New(timeout, delay time.Duration) *Checker {
 func (c *Checker) Head(ctx context.Context, url string) (drift.Response, error) {
 	if !c.lastHit.IsZero() {
 		if wait := c.Delay - time.Since(c.lastHit); wait > 0 {
-			// Пауза ждёт и отмену тоже: полсекунды сна на каждый адрес — это
+			// Пауза ждет и отмену тоже: полсекунды сна на каждый адрес — это
 			// половина времени скана, и Ctrl-C, упирающийся в sleep, читается
 			// как зависшая команда.
 			select {

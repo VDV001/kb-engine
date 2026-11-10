@@ -243,7 +243,7 @@ func TestBrowserServeReplacesStaleSocket(t *testing.T) {
 }
 
 // Окно Chrome поверх DVK не нужно: картинка только во вкладке, поэтому браузер
-// по умолчанию без окна, а своё окно включает --window.
+// по умолчанию без окна, а свое окно включает --window.
 func TestBrowserFlagsHeadlessByDefault(t *testing.T) {
 	var errb bytes.Buffer
 	if o, code := parseBrowserFlags(nil, &errb); code != 0 || !o.headless {

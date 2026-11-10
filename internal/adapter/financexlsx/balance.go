@@ -191,10 +191,10 @@ func accountRow(f *excelize.File, bank string) (int, error) {
 		if name == "" {
 			continue
 		}
-		// Написание решает домен, как и при заведении счёта строкой ниже. Лист
+		// Написание решает домен, как и при заведении счета строкой ниже. Лист
 		// «Счета» и то, что человек набирает в терминале, расходятся регистром
 		// и пробелами вокруг стрелки, и побайтовое равенство давало про один
-		// счёт два ответа: «уже есть» на --create и «такого нет» здесь.
+		// счет два ответа: «уже есть» на --create и «такого нет» здесь.
 		if domain.SameAccountName(name, want) {
 			return rowNum, nil
 		}
@@ -245,15 +245,15 @@ func writeBalance(f *excelize.File, row int, balance domain.Money, updated time.
 	return applyStyles(f, sheetAccounts, row, styles)
 }
 
-// saveAndRemember сохраняет книгу и запоминает, КОГДА остаток был подтверждён.
+// saveAndRemember сохраняет книгу и запоминает, КОГДА остаток был подтвержден.
 //
-// Момент нужен расчёту и не нужен человеку: колонка «Обновлено» хранит день,
-// потому что её читают глазами, а спор «видел ли человек эту трату» внутри дня
-// днём не решается. Оба писателя баланса — команда и экран терминала — проходят
+// Момент нужен расчету и не нужен человеку: колонка «Обновлено» хранит день,
+// потому что ее читают глазами, а спор «видел ли человек эту трату» внутри дня
+// днем не решается. Оба писателя баланса — команда и экран терминала — проходят
 // здесь, поэтому потерять момент, выбрав другую поверхность, нельзя.
 //
 // Неудача записи момента не отменяет записанный баланс — книга уже сохранена, —
-// но и молчать о ней нельзя: без момента расчёт вернётся к приблизительному
+// но и молчать о ней нельзя: без момента расчет вернется к приблизительному
 // правилу и завысит остаток на траты, записанные после подтверждения.
 func saveAndRemember(f *excelize.File, path, bank string, now func() time.Time) error {
 	if err := saveAtomically(f, path); err != nil {
@@ -265,9 +265,9 @@ func saveAndRemember(f *excelize.File, path, bank string, now func() time.Time) 
 	return nil
 }
 
-// writeCurrency записывает валюту и курс счёта в свои колонки.
+// writeCurrency записывает валюту и курс счета в свои колонки.
 //
-// Рублёвый счёт колонок не получает вовсе: пустая ячейка и есть «валюта книги»
+// Рублевый счет колонок не получает вовсе: пустая ячейка и есть «валюта книги»
 // по конструкции чтения, а «RUB» с курсом «1» были бы двумя лишними значениями,
 // которые однажды разойдутся с этим правилом.
 func writeCurrency(f *excelize.File, row int, currency domain.Currency, rate domain.Rate) error {
@@ -283,7 +283,7 @@ func writeCurrency(f *excelize.File, row int, currency domain.Currency, rate dom
 	}
 	per, ok := rate.PerUnit()
 	if !ok {
-		return nil // курс неизвестен — ячейка остаётся пустой, а не нулём
+		return nil // курс неизвестен — ячейка остается пустой, а не нулем
 	}
 	cell, err := excelize.CoordinatesToCellName(rateColumn, row)
 	if err != nil {
@@ -295,7 +295,7 @@ func writeCurrency(f *excelize.File, row int, currency domain.Currency, rate dom
 	return nil
 }
 
-// SetCurrency меняет валюту и курс у счёта, который на листе уже есть.
+// SetCurrency меняет валюту и курс у счета, который на листе уже есть.
 func SetCurrency(path, bank string, currency domain.Currency, rate domain.Rate, now func() time.Time) error {
 	if err := CheckLock(path); err != nil {
 		return err

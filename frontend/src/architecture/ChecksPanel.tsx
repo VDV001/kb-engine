@@ -15,7 +15,7 @@ export function ChecksPanel({ map }: { map: ArchMap }) {
   return (
     <div className="space-y-4">
       <Card>
-        <Label>Прогнано живьём</Label>
+        <Label>Прогнано живьем</Label>
         {map.runtime_checks.length === 0 ? (
           <p className="mt-2 text-sm text-on-surface-variant">
             Ни одного прогона: карта целиком стоит на чтении кода.
@@ -90,7 +90,7 @@ export function ChecksPanel({ map }: { map: ArchMap }) {
         <Label>Чего карта не знает</Label>
         {map.gaps.length === 0 ? (
           <p className="mt-2 text-sm text-on-surface-variant">
-            Раздела о собственных пробелах в карте нет — а это ровно тот раздел, чьё
+            Раздела о собственных пробелах в карте нет — а это ровно тот раздел, чье
             отсутствие ничем не отличается от «пробелов не нашли».
           </p>
         ) : (

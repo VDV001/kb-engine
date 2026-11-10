@@ -84,7 +84,7 @@ func writeFindings(b *strings.Builder, title string, findings []audit.Finding) {
 		fmt.Fprintf(b, "  #%-6d %-40s %s\n", f.EntryID, trim(f.Title, 40), styleDim.Render(strings.Join(f.Reasons, ", ")))
 	}
 	if len(findings) > healthRows {
-		b.WriteString(styleDim.Render(fmt.Sprintf("  … ещё %d\n", len(findings)-healthRows)))
+		b.WriteString(styleDim.Render(fmt.Sprintf("  … еще %d\n", len(findings)-healthRows)))
 	}
 	b.WriteString("\n")
 }
@@ -102,7 +102,7 @@ func writeDuplicates(b *strings.Builder, groups []audit.DuplicateGroup) {
 		fmt.Fprintf(b, "  %-16s %-30s %s\n", g.Kind, trim(g.Key, 30), styleDim.Render(strings.Join(ids, " ")))
 	}
 	if len(groups) > healthRows {
-		b.WriteString(styleDim.Render(fmt.Sprintf("  … ещё %d\n", len(groups)-healthRows)))
+		b.WriteString(styleDim.Render(fmt.Sprintf("  … еще %d\n", len(groups)-healthRows)))
 	}
 	b.WriteString("\n")
 }

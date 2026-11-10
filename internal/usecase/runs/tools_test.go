@@ -10,7 +10,7 @@ import (
 
 // Имя вызова инструмента в журнале строится и разбирается ОДНИМ местом.
 // Вторая копия формы имени разошлась бы с первой молча, и тогда писатель
-// клал бы в журнал то, чего читатель не узнаёт, — счётчик показывал бы ноль
+// клал бы в журнал то, чего читатель не узнает, — счетчик показывал бы ноль
 // при исправной записи.
 func TestToolCommand_roundTrip(t *testing.T) {
 	cmd := runs.ToolCommand("search_catalog")
@@ -22,7 +22,7 @@ func TestToolCommand_roundTrip(t *testing.T) {
 		t.Fatalf("ToolOf(%q) = %q, %v; ждали search_catalog, true", cmd, name, ok)
 	}
 	// Отрицательный контроль: обычная команда движка вызовом не считается,
-	// иначе счётчик вызовов пополнялся бы каждым `kbengine audit`.
+	// иначе счетчик вызовов пополнялся бы каждым `kbengine audit`.
 	if name, ok := runs.ToolOf("audit"); ok {
 		t.Errorf("ToolOf(\"audit\") = %q, true; команда движка не вызов инструмента", name)
 	}
@@ -48,7 +48,7 @@ func TestBuild_mcpCallsAreCountedApart(t *testing.T) {
 	}
 
 	if got := len(r.Tools); got != 2 {
-		t.Fatalf("инструментов в отчёте %d, ждали 2: %+v", got, r.Tools)
+		t.Fatalf("инструментов в отчете %d, ждали 2: %+v", got, r.Tools)
 	}
 	byName := map[string]runs.CommandStat{}
 	for _, s := range r.Tools {
@@ -58,7 +58,7 @@ func TestBuild_mcpCallsAreCountedApart(t *testing.T) {
 		t.Errorf("search_catalog: прогонов %d, отказов %d; ждали 2 и 0", s.Runs, s.Failures)
 	}
 	// Отказ инструмента считается отказом: «спросили и не получили ответа» —
-	// то, ради чего счётчик и заводится.
+	// то, ради чего счетчик и заводится.
 	if s := byName["get_entry"]; s.Runs != 1 || s.Failures != 1 {
 		t.Errorf("get_entry: прогонов %d, отказов %d; ждали 1 и 1", s.Runs, s.Failures)
 	}

@@ -14,8 +14,8 @@ import { ThemeToggle } from './ThemeToggle'
  * needs a padding that has to be kept equal to a height nobody remembers to
  * measure again; sticky keeps the same effect and cannot drift.
  */
-/** Число ждущей работы рядом с названием вкладки. Тон приглушённый: это
- * счётчик, а не тревога — база живёт и с полусотней кандидатов в аудите. */
+/** Число ждущей работы рядом с названием вкладки. Тон приглушенный: это
+ * счетчик, а не тревога — база живет и с полусотней кандидатов в аудите. */
 function TabBadge({ value }: { value: number }) {
   return (
     <span className="ml-1.5 rounded-full bg-surface-high px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-on-surface-variant">
@@ -31,7 +31,7 @@ export function Header<T extends string>({
   count,
   extra,
 }: {
-  /** badge — число, которое вкладка несёт с собой: сколько там ждёт работы. */
+  /** badge — число, которое вкладка несет с собой: сколько там ждет работы. */
   tabs: { id: T; label: string; badge?: number }[]
   current: T
   onSelect: (id: T) => void
@@ -61,8 +61,8 @@ export function Header<T extends string>({
 
   return (
     <header ref={ref} className="no-print sticky top-0 z-50 border-b border-nav-border bg-nav-bg backdrop-blur-xl">
-      {/* Промежутки по горизонтали — отступами, а не gap: свёрнутая навигация
-          стоит в строке, чтобы её мерить, и gap добавлял бы вокруг неё 24 px,
+      {/* Промежутки по горизонтали — отступами, а не gap: свернутая навигация
+          стоит в строке, чтобы ее мерить, и gap добавлял бы вокруг нее 24 px,
           которых на 360–390 px не хватало — шапка ломалась на два ряда. */}
       <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center gap-y-3 px-4 py-3 sm:px-6 lg:px-8">
         <a
@@ -81,14 +81,14 @@ export function Header<T extends string>({
             Порог xl когда-то посчитали под десять вкладок (~1138 px, на
             финансах ~1250). Вкладок стало двенадцать, и при 1280–1440 px, а на
             большом мониторе — при масштабе браузера, пункты ложились поверх
-            переключателя, темы и счётчика. Список меряется в месте, которое ему
-            оставлено: не помещается — строка прячется (место за ней остаётся,
+            переключателя, темы и счетчика. Список меряется в месте, которое ему
+            оставлено: не помещается — строка прячется (место за ней остается,
             чтобы мерить дальше), пункты уходят в бургер. Новая вкладка или
             переключатель на одном виде больше ничего не ломают. */}
-        {/* overflow-x-clip, а не overflow-hidden: вертикаль остаётся открытой,
+        {/* overflow-x-clip, а не overflow-hidden: вертикаль остается открытой,
             иначе кольцо фокуса у вкладок обрезалось сверху и снизу. Отступ —
             тот же, что у логотипа: по нему хук считает место для разворота.
-            invisible сам убирает свёрнутую строку из дерева доступности и из
+            invisible сам убирает свернутую строку из дерева доступности и из
             обхода по Tab, отдельный aria-hidden не нужен. */}
         <nav
           ref={navRef}
@@ -103,7 +103,7 @@ export function Header<T extends string>({
                     type="button"
                     onClick={() => onSelect(t.id)}
                     aria-current={active ? 'page' : undefined}
-                    // Активный пункт — тёмный текст с цветной чертой, а не
+                    // Активный пункт — темный текст с цветной чертой, а не
                     // цветной текст: красить и то, и другое значит заставить
                     // акцент кричать и не оставить признака текущей страницы.
                     className={`border-b-2 pb-1 text-sm font-medium transition-colors ${
@@ -138,7 +138,7 @@ export function Header<T extends string>({
           <ThemeToggle />
           {count !== undefined && (
             <span
-              // Высота как у иконок ряда — 9. Раньше бейдж набирал её из
+              // Высота как у иконок ряда — 9. Раньше бейдж набирал ее из
               // собственных паддингов и вставал чуть выше остальных.
               className="flex h-9 items-center rounded-md bg-secondary px-2.5 font-mono text-xs tabular-nums text-white"
               title="Записей в каталоге"
@@ -150,7 +150,7 @@ export function Header<T extends string>({
       </div>
 
       {/* Панель бургера: под шапкой, на всю ширину. Закрывается выбором —
-          оставлять её открытой после перехода незачем, страница уже сменилась. */}
+          оставлять ее открытой после перехода незачем, страница уже сменилась. */}
       {menuOpen && collapsed && (
         <div className="border-t border-outline-variant bg-nav-bg backdrop-blur-xl">
           <ul className="mx-auto max-w-screen-2xl px-4 py-2 sm:px-6">

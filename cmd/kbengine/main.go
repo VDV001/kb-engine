@@ -54,8 +54,8 @@ func main() {
 // дальше. До этого помощь и ошибка были снаружи неотличимы: обе давали 2, и
 // журнал прогонов считал каждую просьбу о помощи отказом.
 //
-// Текст помощи остаётся в stderr, как и был. flag печатает его в fs.Output()
-// ДО того, как вернёт ErrHelp, поэтому увести помощь в stdout, не уведя туда
+// Текст помощи остается в stderr, как и был. flag печатает его в fs.Output()
+// ДО того, как вернет ErrHelp, поэтому увести помощь в stdout, не уведя туда
 // же сообщения об ошибках, можно только через буфер в каждой команде — цена
 // выше пользы, пока `--help | less` никому не понадобился.
 func parseFlags(fs *flag.FlagSet, args []string) (code int, stop bool) {
@@ -76,9 +76,9 @@ func parseFlags(fs *flag.FlagSet, args []string) (code int, stop bool) {
 // command was making the dispatcher itself more complex, though dispatching
 // never got harder.
 //
-// Обработчик получает stdin ПАРАМЕТРОМ, а не берёт os.Stdin сам. Раньше так
+// Обработчик получает stdin ПАРАМЕТРОМ, а не берет os.Stdin сам. Раньше так
 // делал audit-tasks — и был единственной командой, которую нельзя прогнать
-// через run() в тесте: ответ на её вопрос приходилось бы подсовывать через
+// через run() в тесте: ответ на ее вопрос приходилось бы подсовывать через
 // глобаль. Подтверждение удаления той же природы, и заводить вторую такую
 // команду значило бы закрепить исключение.
 var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io.Writer) int{
@@ -101,9 +101,9 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 	"version":     withoutStdin(runVersion),
 }
 
-// withoutStdin адаптирует команду, которая ни о чём не спрашивает. Отдельный
+// withoutStdin адаптирует команду, которая ни о чем не спрашивает. Отдельный
 // помощник вместо тринадцати одинаковых замыканий: у большинства команд вопроса
-// нет, и подчёркнуто пустой аргумент читается лучше, чем повторённая обвязка.
+// нет, и подчеркнуто пустой аргумент читается лучше, чем повторенная обвязка.
 func withoutStdin(f func(args []string, stdout, stderr io.Writer) int,
 ) func([]string, io.Reader, io.Writer, io.Writer) int {
 	return func(a []string, _ io.Reader, o, e io.Writer) int { return f(a, o, e) }
@@ -130,14 +130,14 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		fmt.Fprintln(stderr, usageLine())
 		return 2
 	}
-	// Помощь узнаётся до реестра: `--help` не команда, и без этой проверки
+	// Помощь узнается до реестра: `--help` не команда, и без этой проверки
 	// диспетчер честно отвечает «неизвестная команда» на просьбу о помощи.
 	if args[0] == "--help" || args[0] == "-h" {
 		fmt.Fprintln(stdout, usageLine())
 		return 0
 	}
-	// То же и с версией: её спрашивают первой на незнакомом бинаре, и до этой
-	// строки ответом было «неизвестная команда». Печатает её тот же runVersion,
+	// То же и с версией: ее спрашивают первой на незнакомом бинаре, и до этой
+	// строки ответом было «неизвестная команда». Печатает ее тот же runVersion,
 	// что и `kbengine version`, — двум ответам на один вопрос расходиться не с
 	// чего.
 	if args[0] == "--version" || args[0] == "-v" {
@@ -152,7 +152,7 @@ func runWithStdin(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 }
 
 // buildInfo — версия, коммит и время сборки текущего бинаря. Одно место на
-// весь процесс: их печатает `kbengine version` и их же отдаёт /api/engine,
+// весь процесс: их печатает `kbengine version` и их же отдает /api/engine,
 // и расходиться этим двум ответам не с чего.
 func buildInfo() httpapi.EngineInfo {
 	e := httpapi.EngineInfo{Version: version}
@@ -177,9 +177,9 @@ func buildInfo() httpapi.EngineInfo {
 // runVersion prints the build version, plus VCS revision and build time when
 // the binary carries Go module build info (e.g. installed via `go install`).
 func runVersion(args []string, stdout, stderr io.Writer) int {
-	// FlagSet у команды без флагов заведён не для флагов, а ради `--help`:
+	// FlagSet у команды без флагов заведен не для флагов, а ради `--help`:
 	// без него version молча проглатывала любые аргументы, и проверка «помощь
-	// работает у каждой команды» проходила бы у неё по неверной причине.
+	// работает у каждой команды» проходила бы у нее по неверной причине.
 	fs := flag.NewFlagSet("version", flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	if code, stop := parseFlags(fs, args); stop {
@@ -197,19 +197,19 @@ func runVersion(args []string, stdout, stderr io.Writer) int {
 }
 
 // changelogWarning — текст предупреждения, когда из указанного файла не вышло
-// ни одного релиза. Пустая строка означает «всё в порядке».
+// ни одного релиза. Пустая строка означает «все в порядке».
 //
 // Молчать здесь нельзя: пустой разбор доезжает до страницы как «v0.0.0 · —»,
 // то есть выглядит фактом о базе, а не сообщением о том, что движок не понял
 // файл. Ошибкой это тоже не сделать — у молодого проекта CHANGELOG.md без
-// релизов законен, и падать на нём значит требовать релиз ради запуска.
+// релизов законен, и падать на нем значит требовать релиз ради запуска.
 func changelogWarning(path string, releases int) string {
 	if releases > 0 {
 		return ""
 	}
 	msg := fmt.Sprintf("changelog: в %s не нашлось ни одного релиза — «Что нового» будет пустым", path)
 	if strings.HasSuffix(strings.ToLower(path), ".json") {
-		msg += "\n  --changelog ждёт CHANGELOG.md (сам markdown), а не changelog.json, собранный из него"
+		msg += "\n  --changelog ждет CHANGELOG.md (сам markdown), а не changelog.json, собранный из него"
 	}
 	return msg
 }
@@ -222,7 +222,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	catalogPath := fs.String("catalog", "", "path to catalog.json")
 	ledgerPath := fs.String("ledger", "", "path to the finance ledger (enables the finances screen)")
-	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (enables the sync key)")
+	workbookPath := fs.String("from", "", "optional path to Учет_финансов.xlsx (enables the sync key)")
 	if code, stop := parseFlags(fs, args); stop {
 		return code
 	}
@@ -247,7 +247,7 @@ func runTUI(args []string, stdout, stderr io.Writer) int {
 	// Balances come from the workbook, so without --from there is no source for
 	// them and the key is absent rather than opening a form that cannot write.
 	var accounts tui.AccountsSource
-	// Правка живёт там же, где леджер: без него нечего ни показывать, ни менять.
+	// Правка живет там же, где леджер: без него нечего ни показывать, ни менять.
 	var editor tui.EntryEditor
 	if *ledgerPath != "" {
 		l := ledgerFinances{ledgerPath: *ledgerPath, workbookPath: *workbookPath}
@@ -309,7 +309,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	s3TokenFile := fs.String("s3-token-file", "", "optional file with an IAM token for --catalog s3://… (mode 0600); without it the token comes from the cloud metadata service")
 	configPath := fs.String("analytics-config", "", "optional path to analytics_config.json (semantic layer)")
 	ledgerPath := fs.String("ledger", "", "optional path to transactions.jsonl (enables the finances view)")
-	workbookPath := fs.String("from", "", "optional path to Учёт_финансов.xlsx (account balances)")
+	workbookPath := fs.String("from", "", "optional path to Учет_финансов.xlsx (account balances)")
 	changelogPath := fs.String("changelog", "", "optional path to CHANGELOG.md («Что нового» in Settings)")
 	nowPath := fs.String("now", "", "optional path to active-pipeline.md (the Now view)")
 	teamPath := fs.String("team", "", "optional path to team.json (the Team view)")
@@ -328,7 +328,7 @@ func runServe(args []string, stdout, stderr io.Writer) int {
 	// и профилировщик: заголовок рассказывает, из чего состоит обработка, а
 	// витрину можно отдать наружу.
 	timing := fs.Bool("server-timing", false, "add a Server-Timing header breaking each response into steps (catalog, search, ledger)")
-	// Профилировщик выключен, пока не назван адрес: он отдаёт дампы кучи и
+	// Профилировщик выключен, пока не назван адрес: он отдает дампы кучи и
 	// стеки всех горутин, и висеть по умолчанию рядом с личными финансами
 	// ему нечего. Слушатель отдельный — см. cmd/kbengine/pprof.go.
 	pprofAddr := fs.String("pprof", "", "optional address for the pprof profiler (e.g. 127.0.0.1:6060); empty means off")
@@ -466,7 +466,7 @@ func (f ledgerFinances) Finances() (httpapi.Finances, error) {
 		}
 		out.Accounts = led.Accounts
 		// Момент подтверждения решает спор внутри дня. Испорченное состояние —
-		// отказ, а не тихий возврат к приблизительному правилу: расчёт тогда
+		// отказ, а не тихий возврат к приблизительному правилу: расчет тогда
 		// завысит остаток, и снаружи это неотличимо от точного числа.
 		confs, err := balancestate.Load(balancestate.PathNextTo(f.workbookPath))
 		if err != nil {
@@ -500,7 +500,7 @@ func (f ledgerFinances) Add(p finance.AddParams) ([]finance.Correction, error) {
 	var fixed []finance.Correction
 	// warn=nil осознанно: эта функция обслуживает формы TUI, а печатать в
 	// stdout под живым экраном значит испортить раскладку. Конфликт словаря
-	// терминал показывает на своём пути — при быстром вводе, где словарь и
+	// терминал показывает на своем пути — при быстром вводе, где словарь и
 	// спрашивают.
 	_, err := appendChecked(f.ledgerPath, p, false, func(c finance.Correction) {
 		fixed = append(fixed, c)
@@ -572,12 +572,12 @@ func (f ledgerFinances) Accounts() ([]domain.Account, error) {
 	return led.Accounts, nil
 }
 
-// Balances считает остаток каждого счёта на сейчас: подтверждённое число минус
+// Balances считает остаток каждого счета на сейчас: подтвержденное число минус
 // траты, записанные после подтверждения.
 //
 // Считает usecase, а не поверхность. Терминал и веб зовут одно и то же, поэтому
 // не могут показать разные остатки для одной книги — та же причина, по которой
-// период передаётся аргументом в Summary, а не считается на каждой стороне.
+// период передается аргументом в Summary, а не считается на каждой стороне.
 func (f ledgerFinances) Balances() ([]finance.AccountBalance, error) {
 	accounts, err := f.Accounts()
 	if err != nil {
@@ -610,12 +610,12 @@ func (f ledgerFinances) SetBalance(bank string, amount domain.Money) error {
 	return financexlsx.SetBalance(f.workbookPath, bank, amount, time.Now)
 }
 
-// AddAccount заводит счёт тем же вызовом, что и `fin balance --create`: экран и
+// AddAccount заводит счет тем же вызовом, что и `fin balance --create`: экран и
 // команда пополняют словарь книги одной функцией, иначе одна из них однажды
 // научилась бы заводить то, что вторая отвергает.
 func (f ledgerFinances) AddAccount(bank string, amount domain.Money) error {
-	// Валюта здесь не передаётся намеренно: TUI её не спрашивает, а счёт в
-	// валюте книги — умолчание по конструкции. Заводить валютный счёт можно
+	// Валюта здесь не передается намеренно: TUI ее не спрашивает, а счет в
+	// валюте книги — умолчание по конструкции. Заводить валютный счет можно
 	// командой `fin balance --currency`; когда экран научится спрашивать, сюда
 	// приедут те же два значения.
 	return financexlsx.AddAccount(f.workbookPath, bank, amount, domain.Currency{}, domain.UnknownRate(), time.Now)
@@ -652,12 +652,12 @@ func (p *repeatedPath) Set(v string) error {
 	return nil
 }
 
-// mapsLoader разбирает карты сразу и отдаёт загрузчик, читающий их заново на
+// mapsLoader разбирает карты сразу и отдает загрузчик, читающий их заново на
 // каждый запрос.
 //
 // Разбор при старте нужен затем же, зачем он есть у журнала и семантического
 // слоя: опечатка в пути и битый json должны остановить запуск, пока на
-// терминал ещё смотрят. Перечитывание на запрос — затем, что правку карты
+// терминал еще смотрят. Перечитывание на запрос — затем, что правку карты
 // видно по перезагрузке страницы, как правку каталога.
 func mapsLoader(paths []string) (httpapi.MapsLoader, error) {
 	if len(paths) == 0 {
@@ -738,7 +738,7 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 			return changelog.Parse(string(raw)), nil
 		}
 	}
-	// Тот же список, из которого печатается строка запуска: страница задаёт
+	// Тот же список, из которого печатается строка запуска: страница задает
 	// движку тот же вопрос, что и терминал, и ответ обязан совпадать.
 	engine := buildInfo()
 	engine.Sources = sourceStatuses(serveSources(configPath, ledgerPath, workbookPath,
@@ -752,7 +752,7 @@ func buildServeHandlerFrom(src catalogSource, configPath, ledgerPath, workbookPa
 // readNowDoc читает документ вместе со временем его последней правки.
 //
 // Обе величины берутся одним вызовом: страница сравнивает себя с тем, что
-// случилось после неё, и без даты сравнивать не с чем. Ошибка stat страницу не
+// случилось после нее, и без даты сравнивать не с чем. Ошибка stat страницу не
 // роняет — документ показывается, а проверка честно говорит «не знаю».
 func readNowDoc(path string) (httpapi.NowDoc, error) {
 	raw, err := os.ReadFile(path)
@@ -826,12 +826,12 @@ func buildDocuments(nowPath, teamPath, projectsPath, mediaPath string) (httpapi.
 	return docs, nil
 }
 
-// artefactsFS — дерево базы знаний, из которого маршрут /kb/ отдаёт собственные
+// artefactsFS — дерево базы знаний, из которого маршрут /kb/ отдает собственные
 // артефакты. Корень выводится из пути к каталогу тем же правилом, каким его уже
 // выводит `audit --check files`: поле file у записи задано относительно базы, и
-// второй способ узнать корень однажды разошёлся бы с первым.
+// второй способ узнать корень однажды разошелся бы с первым.
 //
-// Отдельного флага намеренно нет. Флаг, который забыли, даёт пустую вкладку —
+// Отдельного флага намеренно нет. Флаг, который забыли, дает пустую вкладку —
 // а здесь источник выводится из обязательного --catalog, и забыть его нельзя.
 func artefactsFS(catalogPath string) fs.FS {
 	root := artefactRoot(catalogPath)
@@ -898,7 +898,7 @@ func runAudit(args []string, stdout, stderr io.Writer) int {
 			// «Сверять не с чем» не должно убивать остальные восемь проверок:
 			// каталог без meta.categories — это меньшая база, а не поломка. Но
 			// молчать тоже нельзя, иначе `all` выглядел бы полным. Когда проверку
-			// спросили поимённо, отказ остаётся отказом: человек просил именно её.
+			// спросили поименно, отказ остается отказом: человек просил именно ее.
 			if errors.Is(err, audit.ErrNoDeclaredCategories) && *check == "all" {
 				fmt.Fprintf(stdout, "[%s] пропущена: каталог не объявляет ни одной категории — сверять не с чем\n", a.name)
 				continue
@@ -1083,7 +1083,7 @@ func runSet(args []string, stdout, stderr io.Writer) int {
 	return reportSet(n, err, stdout, stderr)
 }
 
-// reportSet отвечает за то, чтобы правка не соврала о своём итоге.
+// reportSet отвечает за то, чтобы правка не соврала о своем итоге.
 //
 // Ноль изменений — не успех: записи нашлись (иначе была бы ошибка), но значения
 // в них уже такие, какие просили поставить. Промолчать здесь значит отчитаться

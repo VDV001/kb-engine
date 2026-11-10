@@ -26,10 +26,10 @@ jobs:
       # Состояний три, а не два, и третье стоило красных прогонов.
       #
       # Нет токена — шаг говорит об этом и включает auto-merge. Токен есть и
-      # права у него есть — ревью ставится, и на зелёном CI обновление уезжает
+      # права у него есть — ревью ставится, и на зеленом CI обновление уезжает
       # само. А вот токен есть, но прав на `addPullRequestReview` у него нет:
       # `gh pr review` падает, `set -e` обрывает шаг, и до `gh pr merge --auto`
-      # дело не доходит вовсе. Прогон красный, auto-merge не включён, PR висит.
+      # дело не доходит вовсе. Прогон красный, auto-merge не включен, PR висит.
       # Именно так вышло с #194 и #195: «Resource not accessible by personal
       # access token».
       #
@@ -42,7 +42,7 @@ jobs:
         run: |
           if [ -n "$APPROVAL_TOKEN" ]; then
             if ! GH_TOKEN="$APPROVAL_TOKEN" gh pr review --approve "$PR_URL"; then
-              echo "::warning title=Approval rejected::DEPENDABOT_PAT не смог поставить ревью — токену нужны права Pull requests: write на этот репозиторий. Auto-merge включён, но PR ждёт живого ревью."
+              echo "::warning title=Approval rejected::DEPENDABOT_PAT не смог поставить ревью — токену нужны права Pull requests: write на этот репозиторий. Auto-merge включен, но PR ждет живого ревью."
             fi
           else
             echo "::notice title=No approval token::DEPENDABOT_PAT is not set — enabling auto-merge only; this PR waits for a review before it lands."

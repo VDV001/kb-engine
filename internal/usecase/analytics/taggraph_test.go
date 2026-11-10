@@ -49,7 +49,7 @@ func TestTagGraph(t *testing.T) {
 	if len(g.Nodes) != 4 {
 		t.Fatalf("nodes = %d, want 4 (categories, including the tagless one)", len(g.Nodes))
 	}
-	// Крупнейшая категория первой — так дашборд ставит её в центр.
+	// Крупнейшая категория первой — так дашборд ставит ее в центр.
 	if g.Nodes[0].Category != "golang" || g.Nodes[0].Count != 2 {
 		t.Errorf("nodes[0] = %+v, want golang/2", g.Nodes[0])
 	}

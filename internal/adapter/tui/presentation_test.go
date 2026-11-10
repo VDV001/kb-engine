@@ -52,7 +52,7 @@ func TestList_hintNamesTab(t *testing.T) {
 	}
 
 	// Без единого второго экрана Tab не упоминается: клавиша, которая ничего не
-	// делает, в подсказке хуже её отсутствия.
+	// делает, в подсказке хуже ее отсутствия.
 	if view := tui.NewModel(nil).View(); strings.Contains(view, "Tab") {
 		t.Errorf("подсказка обещает Tab без второго экрана\n--- view ---\n%s", view)
 	}

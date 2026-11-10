@@ -8,9 +8,9 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
-// У записи не было валюты, поэтому трата со счёта в долларах читалась
-// рублями: имя счёта говорило одно, число — другое, и итоги складывали доллары
-// с рублями. Нулевая валюта — рубль, как у счёта: старый журнал и старая книга
+// У записи не было валюты, поэтому трата со счета в долларах читалась
+// рублями: имя счета говорило одно, число — другое, и итоги складывали доллары
+// с рублями. Нулевая валюта — рубль, как у счета: старый журнал и старая книга
 // о валюте не знают, и умолчание обязано быть тем, чем они пользовались.
 func TestNewTransaction_currency(t *testing.T) {
 	usd, err := domain.NewCurrency("USD")
@@ -24,9 +24,9 @@ func TestNewTransaction_currency(t *testing.T) {
 		want     string
 		wantBase bool
 	}{
-		{"без валюты трата рублёвая", domain.KindExpense, domain.Currency{}, "RUB", true},
+		{"без валюты трата рублевая", domain.KindExpense, domain.Currency{}, "RUB", true},
 		{"валюта траты сохраняется", domain.KindExpense, usd, "USD", false},
-		{"доход тоже несёт валюту", domain.KindIncome, usd, "USD", false},
+		{"доход тоже несет валюту", domain.KindIncome, usd, "USD", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -51,10 +51,10 @@ func TestNewTransaction_currency(t *testing.T) {
 	}
 }
 
-// Трата со счёта обязана быть в его валюте. Иначе расчётный остаток вычитает
-// доллары из сумов, а итог по счёту складывает одно с другим, и ни одна из двух
-// цифр уже не значит ничего. Правило про то, что такое трата со счёта, поэтому
-// живёт здесь, а не там, где его впервые встречают.
+// Трата со счета обязана быть в его валюте. Иначе расчетный остаток вычитает
+// доллары из сумов, а итог по счету складывает одно с другим, и ни одна из двух
+// цифр уже не значит ничего. Правило про то, что такое трата со счета, поэтому
+// живет здесь, а не там, где его впервые встречают.
 func TestTransaction_CheckAccountCurrency(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 10, 23, 0, 0, 0, 0, time.UTC) }
 	day := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
@@ -76,11 +76,11 @@ func TestTransaction_CheckAccountCurrency(t *testing.T) {
 		account  domain.Account
 		wantErr  bool
 	}{
-		{"рубли с рублёвого счёта", domain.Currency{}, rubAcc, false},
-		{"доллары с долларового счёта", usd, usdAcc, false},
-		{"доллары с рублёвого счёта", usd, rubAcc, true},
-		{"рубли с долларового счёта", domain.Currency{}, usdAcc, true},
-		{"сумы с долларового счёта", uzs, usdAcc, true},
+		{"рубли с рублевого счета", domain.Currency{}, rubAcc, false},
+		{"доллары с долларового счета", usd, usdAcc, false},
+		{"доллары с рублевого счета", usd, rubAcc, true},
+		{"рубли с долларового счета", domain.Currency{}, usdAcc, true},
+		{"сумы с долларового счета", uzs, usdAcc, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

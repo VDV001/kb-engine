@@ -107,7 +107,7 @@ func TestAdd_refusesToAddTheSameFileTwice(t *testing.T) {
 		t.Errorf("записей = %d, want 1 — файл добавился дважды", n)
 	}
 	if !strings.Contains(out.String(), "already in the catalog") {
-		t.Errorf("повтор прошёл молча: %s", out.String())
+		t.Errorf("повтор прошел молча: %s", out.String())
 	}
 }
 

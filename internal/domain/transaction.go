@@ -32,8 +32,8 @@ var ErrIncomeFieldNotApplicable = errors.New("an income does not carry this fiel
 // ErrCurrencyMismatch is returned when a transaction names an account held in a
 // different currency.
 //
-// Трата со счёта движется в его валюте. Доллары, списанные с рублёвого счёта,
-// вычли бы из рублёвого остатка как рубли, и итог по счёту сложил бы одно с
+// Трата со счета движется в его валюте. Доллары, списанные с рублевого счета,
+// вычли бы из рублевого остатка как рубли, и итог по счету сложил бы одно с
 // другим.
 var ErrCurrencyMismatch = errors.New("the transaction currency differs from its account")
 
@@ -63,10 +63,10 @@ type Transaction struct {
 	description string
 	source      string
 	account     string
-	// currency — в чём записана сумма. Нулевое значение — рубль: журнал и книга,
-	// записанные до появления поля, о валюте не знают и все их суммы рублёвые.
+	// currency — в чем записана сумма. Нулевое значение — рубль: журнал и книга,
+	// записанные до появления поля, о валюте не знают и все их суммы рублевые.
 	currency Currency
-	// repeatOf — id записи, поверх которой этот повтор подтверждён человеком.
+	// repeatOf — id записи, поверх которой этот повтор подтвержден человеком.
 	// Пустое значение означает «не знаю», а не «не повтор»: у строк, записанных
 	// до появления поля, решения никто не сохранял, и выдумывать его за них
 	// нельзя.
@@ -160,7 +160,7 @@ func NewTransaction(p TransactionParams) (Transaction, error) {
 
 	repeatOf := strings.TrimSpace(p.RepeatOf)
 	if repeatOf == id {
-		// Запись, объявленная повтором самой себя, читалась бы как подтверждённая
+		// Запись, объявленная повтором самой себя, читалась бы как подтвержденная
 		// человеком, хотя подтверждать было нечего.
 		return Transaction{}, fmt.Errorf("%w: repeat_of points at the record itself", ErrInvalidTransaction)
 	}

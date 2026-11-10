@@ -195,7 +195,7 @@ func TestServer_memoryProposeIsPausedWhenTrustIsBad(t *testing.T) {
 	}
 }
 
-// Завал в очереди закрывает предложения независимо от режима: при «ok» агент всё равно остановлен
+// Завал в очереди закрывает предложения независимо от режима: при «ok» агент все равно остановлен
 // и получает причину, которую надо передать владельцу.
 func TestServer_memoryProposeIsPausedWhenTheQueueIsFull(t *testing.T) {
 	m := &stubMemory{trust: mcpserver.MemoryTrust{Mode: "ok", QueueFull: true}}

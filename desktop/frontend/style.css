@@ -823,7 +823,7 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-box-row { display: flex; align-items: center; gap: 8px; }
 /* Ряд источников над полем (решение владельца 06.11): в чем ищет этот чат и
    что с подключением. Щелчок — источник для этого чата вкл/выкл; не влезло —
-   «ещё N» с выбором. */
+   «еще N» с выбором. */
 .chat-srcs { display: flex; gap: 6px; align-items: center; padding: 0 2px 6px; position: relative; flex-wrap: nowrap; overflow: visible; }
 .chat-srcs .lbl { color: var(--z-faint); font: 11px var(--z-font); white-space: nowrap; }
 .chat-src { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--z-rule-2); border-radius: 11px; padding: 1px 9px; background: none; color: var(--z-muted); font: 11px var(--z-font); cursor: pointer; white-space: nowrap; max-width: 180px; }
@@ -1446,7 +1446,7 @@ body.no-mh-score .mh-score b, body.no-mh-score .mh-score.ok b, body.no-mh-score 
 .mm-alert { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; vertical-align: middle; background: var(--z-lvl-warn); animation: mm-ping 1.8s ease-out infinite; --ping: #f0953eaa; }
 .mm-alert.bad { background: var(--z-bad); --ping: #ef5f5faa; animation-duration: 1.2s; }
 @keyframes mm-ping { 0% { box-shadow: 0 0 0 0 var(--ping); } 70% { box-shadow: 0 0 0 8px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
-/* «спокойный» сигнал: строка вместо карточки, без перелива; точка в шапке остаётся */
+/* «спокойный» сигнал: строка вместо карточки, без перелива; точка в шапке остается */
 body[data-mhs="calm"] .mh-alert { padding: 8px 12px; border-width: 1px; animation: none; background-size: 100% 100%, 100% 100%; gap: 10px; }
 body[data-mhs="calm"] .mh-alert-ic { width: 22px; height: 22px; font-size: 14px; animation: none; }
 body[data-mhs="calm"] .mh-alert-t { font-size: 14px; animation: none; }

@@ -81,7 +81,7 @@ func TestModel_changingVerdictFromTheCard(t *testing.T) {
 }
 
 // Отказ домена обязан доехать до экрана: молча проглоченная ошибка означает,
-// что человек считает правку применённой, а в файле её нет.
+// что человек считает правку примененной, а в файле ее нет.
 func TestModel_showsWhyTheWriteWasRefused(t *testing.T) {
 	saver := &saverSpy{fail: errors.New("status is a publish stage, not a verdict")}
 	m := send(editable(t, saver, &reloadSpy{entries: fixture(t)}), "enter", "v", "down", "enter")
@@ -131,8 +131,8 @@ func TestModel_saysWhatWasWritten(t *testing.T) {
 // Выбор открывается на текущем значении: промахнувшийся Enter не должен
 // поменять состояние записи на первое из списка.
 //
-// Запись берётся НЕ в состоянии active: оно первое в списке, и на нём тест
-// прошёл бы даже с курсором, прибитым к нулю. Проверено подсадкой дефекта.
+// Запись берется НЕ в состоянии active: оно первое в списке, и на нем тест
+// прошел бы даже с курсором, прибитым к нулю. Проверено подсадкой дефекта.
 func TestModel_pickerStartsOnTheCurrentValue(t *testing.T) {
 	saver := &saverSpy{}
 	entries := []domain.Entry{withLifecycle(t, mustEntry(t, 7, "канонический разбор", "ai-agents", nil), "canonical")}

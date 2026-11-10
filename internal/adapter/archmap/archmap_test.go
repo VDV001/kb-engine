@@ -30,7 +30,7 @@ const engineMap = `{
     {"id": "expense", "title": "Трата", "summary": "команда → журнал", "zone": "Деньги",
      "steps": [
        {"n": 1, "from": "cmd-fin", "to": "dom-money", "call": "ParseMoney", "detail": "разбор суммы", "source": "internal/domain/money.go:125", "unverified": false},
-       {"n": 2, "from": "dom-money", "to": "cmd-fin", "call": "Add", "detail": "запись", "source": "internal/usecase/finance/finance.go:108", "unverified": true, "why": "живьём не прогонялось"}
+       {"n": 2, "from": "dom-money", "to": "cmd-fin", "call": "Add", "detail": "запись", "source": "internal/usecase/finance/finance.go:108", "unverified": true, "why": "живьем не прогонялось"}
      ]},
     {"id": "serve", "title": "Витрина", "summary": "флаги → маршруты", "zone": "Витрина",
      "steps": [
@@ -59,22 +59,22 @@ const coworkMap = `{
      "steps": [{"n": 1, "from": "digest", "to": "digest", "call": "collect.py", "detail": "сбор", "source": "work:digest/collect.py:40", "unverified": false}]}
   ],
   "findings": [
-    {"id": "f-orphan", "zone": "Автоматизация", "title": "Сторож написан, но его никто не зовёт",
+    {"id": "f-orphan", "zone": "Автоматизация", "title": "Сторож написан, но его никто не зовет",
      "detail": "задания в launchd нет", "evidence": "work:digest/audit_watch.sh:38",
-     "severity": "high", "status": "починено", "fix": "заведён plist на 21:00"}
+     "severity": "high", "status": "починено", "fix": "заведен plist на 21:00"}
   ],
   "gaps": ["код движка в область карты не входит"],
-  "runtime_checks": ["сбор прогнан живьём: 42 кандидата, ошибок нет"],
+  "runtime_checks": ["сбор прогнан живьем: 42 кандидата, ошибок нет"],
   "coverage": {
     "scope": {"root": "work", "patterns": ["*.sh", "*.py"], "also": [".claude/commands/*.md"], "exclude_dirs": [".venv", "node_modules"]},
-    "exclusions": [{"path": "_setup/stop-hook.py", "why": "черновик хука, не подключён ничем"}],
-    "note": "область берётся с диска, а не из списка в карте"
+    "exclusions": [{"path": "_setup/stop-hook.py", "why": "черновик хука, не подключен ничем"}],
+    "note": "область берется с диска, а не из списка в карте"
   },
   "acceptance": {
     "zones": {"Автоматизация": "принята: 1 сценарий, найден 1 дефект", "Память": "принята: сверено с кодом"},
     "classes_run": ["дубли заголовков сценариев — 0"],
-    "not_done": "зона «Совет» живьём не прогонялась",
-    "note": "приёмка нужна для того, чего валидатор спросить не умеет"
+    "not_done": "зона «Совет» живьем не прогонялась",
+    "note": "приемка нужна для того, чего валидатор спросить не умеет"
   }
 }`
 
@@ -120,13 +120,13 @@ func TestLoad_engineSchema(t *testing.T) {
 	if !m.Flows[1].Steps[0].Branch {
 		t.Error("branch step lost its flag")
 	}
-	if m.Flows[0].Steps[1].Why != "живьём не прогонялось" {
+	if m.Flows[0].Steps[1].Why != "живьем не прогонялось" {
 		t.Errorf("why = %q", m.Flows[0].Steps[1].Why)
 	}
 }
 
 // У карты движка нет раздела zones вовсе, а зона у каждого сценария есть. Без
-// вывода зон из сценариев вкладка показала бы её пустой ровно там, где данные
+// вывода зон из сценариев вкладка показала бы ее пустой ровно там, где данные
 // в файле лежат.
 func TestLoad_zonesDerivedFromFlowsWhenAbsent(t *testing.T) {
 	m := loadOne(t, engineMap)
@@ -141,10 +141,10 @@ func TestLoad_zonesDerivedFromFlowsWhenAbsent(t *testing.T) {
 	if m.Zones[0].Flows != 1 || m.Zones[0].Steps != 2 {
 		t.Errorf("zone Деньги: flows=%d steps=%d, want 1 и 2", m.Zones[0].Flows, m.Zones[0].Steps)
 	}
-	// Приёмки у этой карты нет — и это НЕ «не принята»: третий ответ, «сверять
+	// Приемки у этой карты нет — и это НЕ «не принята»: третий ответ, «сверять
 	// не с чем», должен отличаться от «принята» и от «отклонена».
 	if m.Zones[0].Accepted {
-		t.Error("зона названа принятой при отсутствующем разделе приёмки")
+		t.Error("зона названа принятой при отсутствующем разделе приемки")
 	}
 }
 
@@ -160,7 +160,7 @@ func TestLoad_workspaceSchema(t *testing.T) {
 	if !strings.Contains(m.Note, "не под git") {
 		t.Errorf("Note = %q, want provenance.note", m.Note)
 	}
-	// Корни — карта живёт в трёх деревьях, и якорь несёт имя дерева префиксом.
+	// Корни — карта живет в трех деревьях, и якорь несет имя дерева префиксом.
 	// Без словаря корней «work:digest/run.sh:12» некуда развернуть.
 	if len(m.Roots) != 2 {
 		t.Fatalf("Roots = %+v, want 2", m.Roots)
@@ -182,8 +182,8 @@ func TestLoad_workspaceSchema(t *testing.T) {
 	}
 }
 
-// Приёмка в файле лежит отдельным словарём, а читают её на зоне. Свести их
-// должен адаптер: иначе страница держала бы своё правило соответствия, а
+// Приемка в файле лежит отдельным словарем, а читают ее на зоне. Свести их
+// должен адаптер: иначе страница держала бы свое правило соответствия, а
 // правило, записанное дважды, однажды разъедется.
 func TestLoad_acceptanceAttachedToZone(t *testing.T) {
 	m := loadOne(t, coworkMap)
@@ -194,15 +194,15 @@ func TestLoad_acceptanceAttachedToZone(t *testing.T) {
 	if !m.Zones[0].Accepted || !strings.Contains(m.Zones[0].Note, "найден 1 дефект") {
 		t.Errorf("zone[0] = %+v, want accepted with its note", m.Zones[0])
 	}
-	// Явный список зон главнее сценариев: зона без единого сценария всё равно
+	// Явный список зон главнее сценариев: зона без единого сценария все равно
 	// существует, и молчать о ней значило бы скрыть непокрытое место.
 	if m.Zones[1].Name != "Память" || m.Zones[1].Flows != 0 {
-		t.Errorf("zone[1] = %+v, want Память с нулём сценариев", m.Zones[1])
+		t.Errorf("zone[1] = %+v, want Память с нулем сценариев", m.Zones[1])
 	}
 }
 
-// Счёт непроверенных шагов делает адаптер, а не проза в карте: на карте движка
-// раздел gaps говорил «пять шагов unverified» при четырёх — расхождение прозы с
+// Счет непроверенных шагов делает адаптер, а не проза в карте: на карте движка
+// раздел gaps говорил «пять шагов unverified» при четырех — расхождение прозы с
 // данными и есть причина считать это здесь.
 func TestLoad_countsUnverifiedSteps(t *testing.T) {
 	m := loadOne(t, engineMap)
@@ -299,7 +299,7 @@ func TestLoadAll(t *testing.T) {
 // Обе страницы-предшественницы объясняли фразу «не список модулей, а действия
 // целиком» примерами — «владелец записывает трату», «сбор кандидатов в 10:03».
 // При переносе на вкладку фраза осталась, примеры пропали, и она стала
-// утверждением ни о чём. Место примеров в карте, а не в вёрстке: у каждой карты
+// утверждением ни о чем. Место примеров в карте, а не в верстке: у каждой карты
 // они свои, а вкладка одна на обе.
 func TestLoad_leadExamples(t *testing.T) {
 	m := loadOne(t, strings.Replace(engineMap,
@@ -331,7 +331,7 @@ func TestLoad_leadExamplesAbsentStayEmpty(t *testing.T) {
 // Карта может нести собственный разбор — страницу, написанную человеком, с
 // рисованными диаграммами и рассказом о том, чего механическая карта сказать
 // не умеет: что делалось по неделям, зачем каждая технология, где ошиблись.
-// Путь ведёт в базу знаний, а витрина открывает его маршрутом /kb/.
+// Путь ведет в базу знаний, а витрина открывает его маршрутом /kb/.
 func TestLoad_ownWriteUpPage(t *testing.T) {
 	m := loadOne(t, strings.Replace(engineMap,
 		`"project": "test-engine",`,

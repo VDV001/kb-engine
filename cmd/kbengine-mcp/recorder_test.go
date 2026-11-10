@@ -36,7 +36,7 @@ func TestJournalRecorder_writesWhereRunsReads(t *testing.T) {
 	}
 	got := recs[0]
 	if want := runs.ToolCommand("search_catalog"); got.Command() != want {
-		t.Errorf("команда %q, ждали %q — под другим именем счётчик вызовов её не найдёт", got.Command(), want)
+		t.Errorf("команда %q, ждали %q — под другим именем счетчик вызовов ее не найдет", got.Command(), want)
 	}
 	if name, ok := runs.ToolOf(got.Command()); !ok || name != "search_catalog" {
 		t.Errorf("читатель не разобрал имя вызова: %q, %v", name, ok)
@@ -50,8 +50,8 @@ func TestJournalRecorder_writesWhereRunsReads(t *testing.T) {
 }
 
 // Отрицательный контроль: сломанный журнал НАЗЫВАЕТСЯ вслух и не роняет ответ.
-// Молчащий журнал читается как «вызовов не было» — худший ответ для счётчика,
-// заведённого ради вопроса «сколько раз спрашивали».
+// Молчащий журнал читается как «вызовов не было» — худший ответ для счетчика,
+// заведенного ради вопроса «сколько раз спрашивали».
 func TestJournalRecorder_brokenJournalIsNamedNotSwallowed(t *testing.T) {
 	// Файл на месте каталога журнала: создать каталог поверх файла нельзя.
 	dir := t.TempDir()

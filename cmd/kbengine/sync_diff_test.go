@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// addToLedgerWithAccount кладёт расход с указанным счётом — или без него,
-// когда счёт пустой, как и получилось у владельца.
+// addToLedgerWithAccount кладет расход с указанным счетом — или без него,
+// когда счет пустой, как и получилось у владельца.
 func addToLedgerWithAccount(t *testing.T, ledger, account string) {
 	t.Helper()
 	args := []string{
@@ -25,10 +25,10 @@ func addToLedgerWithAccount(t *testing.T, ledger, account string) {
 
 // Сухой прогон печатал три числа: «+1 added, 0 modified, -0 removed». Числа
 // говорят, сколько строк тронется, и не говорят каких — а решение принимается
-// именно по содержимому: та ли это трата, тот ли счёт, не поедет ли в книгу
+// именно по содержимому: та ли это трата, тот ли счет, не поедет ли в книгу
 // вторая копия. Владелец назвал образец: diff, как показывает lazygit.
 //
-// Отсюда построчный вывод: `+` на том, что появится, `-` на том, что уйдёт, и
+// Отсюда построчный вывод: `+` на том, что появится, `-` на том, что уйдет, и
 // обе строки подряд там, где запись изменилась.
 
 func TestSyncDryRunShowsWhatChanges(t *testing.T) {
@@ -39,7 +39,7 @@ func TestSyncDryRunShowsWhatChanges(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("exit = %d, stderr = %s", code, stderr)
 	}
-	// Счётчики остаются: они отвечают на «сколько», строки — на «что именно».
+	// Счетчики остаются: они отвечают на «сколько», строки — на «что именно».
 	if !strings.Contains(stdout, "1 added") {
 		t.Errorf("сводка пропала из вывода:\n%s", stdout)
 	}
@@ -48,28 +48,28 @@ func TestSyncDryRunShowsWhatChanges(t *testing.T) {
 	}
 }
 
-// Счёт расхода в описании строки не показывался вовсе — его печатали только у
+// Счет расхода в описании строки не показывался вовсе — его печатали только у
 // дохода. Ровно этого поля не хватило, когда трата ушла в книгу ничьей: в
-// отчёте она выглядела полной.
+// отчете она выглядела полной.
 func TestSyncDiffNamesTheAccountOfAnExpense(t *testing.T) {
 	xlsx, ledger := pairedLedger(t)
 	addToLedgerWithAccount(t, ledger, "Сбербанк")
 
 	_, stdout, _ := sync(t, xlsx, ledger, "--dry-run")
 	if !strings.Contains(stdout, "Сбербанк") {
-		t.Errorf("счёт расхода не назван в diff:\n%s", stdout)
+		t.Errorf("счет расхода не назван в diff:\n%s", stdout)
 	}
 }
 
-// Расход без счёта нельзя показывать так же, как расход со счётом: именно эта
+// Расход без счета нельзя показывать так же, как расход со счетом: именно эта
 // неразличимость и позволила записи уехать незамеченной.
 func TestSyncDiffMarksAnExpenseWithoutAccount(t *testing.T) {
 	xlsx, ledger := pairedLedger(t)
 	addToLedgerWithAccount(t, ledger, "")
 
 	_, stdout, _ := sync(t, xlsx, ledger, "--dry-run")
-	if !strings.Contains(stdout, "без счёта") {
-		t.Errorf("расход без счёта ничем не помечен:\n%s", stdout)
+	if !strings.Contains(stdout, "без счета") {
+		t.Errorf("расход без счета ничем не помечен:\n%s", stdout)
 	}
 }
 

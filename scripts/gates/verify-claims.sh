@@ -10,10 +10,10 @@
 # is a ~13.5 MB … binary», и это ОБРАЗ, собранный с `-trimpath -ldflags="-s -w"`
 # CGO=0 (Dockerfile), а не `go build` (тот 19 МБ — другой артефакт). Проверять
 # `go build` значило бы повторить ошибку замера, из-за которой этот гейт чуть не
-# завёлся на ложном поводе: README был точен, а «устарел» — мой неверный замер.
+# завелся на ложном поводе: README был точен, а «устарел» — мой неверный замер.
 #
 # Использование:
-#   scripts/gates/verify-claims.sh                 размер берётся у docker
+#   scripts/gates/verify-claims.sh                 размер берется у docker
 #   VERIFY_IMAGE_MB=13.5 scripts/gates/verify-claims.sh   размер задан (для CI,
 #                                                   где образ уже собран джобой)
 #   scripts/gates/verify-claims.sh --self-test     прогон на подсадках
@@ -22,7 +22,7 @@ root="$(git rev-parse --show-toplevel)"
 cd "$root"
 
 readme="README.md"
-# Допуск: README округляет и пишет «~», а образ ещё и зависит от архитектуры —
+# Допуск: README округляет и пишет «~», а образ еще и зависит от архитектуры —
 # amd64 крупнее arm64 примерно на мегабайт (замерено: 17,4 против 16,3). ±1,5 МБ
 # покрывает и это, и мелкий рост с кодом; шире прятало бы настоящий дрейф.
 tol_mb="1.5"
@@ -38,7 +38,7 @@ check() {
   local claimed
   claimed="$(claimed_mb "$readme_file")"
   if [ -z "$claimed" ]; then
-    # Пропажа claim — не молчание: удалённая строка иначе прошла бы как «сходится».
+    # Пропажа claim — не молчание: удаленная строка иначе прошла бы как «сходится».
     echo "✘ verify-claims: в ${readme_file} нет заявленного размера образа (искали 'image is a ~N MB')"
     return 1
   fi
@@ -55,7 +55,7 @@ if [ "${1:-}" = "--self-test" ]; then
   fail=0
   tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
 
-  # 1. верный README + верный размер → зелёный
+  # 1. верный README + верный размер → зеленый
   printf 'The image is a ~13.5 MB distroless/static binary.\n' > "$tmp"
   if ! check "$tmp" 13.5 >/dev/null; then echo "✘ self-test: точное число названо расхождением"; fail=1; fi
 
@@ -69,12 +69,12 @@ if [ "${1:-}" = "--self-test" ]; then
   out="$(check "$tmp" 13.5 2>&1)" && { echo "✘ self-test: отсутствие claim прошло как успех"; fail=1; }
   case "$out" in *"нет заявленного размера"*) ;; *) echo "✘ self-test: пропажа claim не названа: $out"; fail=1;; esac
 
-  # 4. в пределах допуска → зелёный (README округляет, образ чуть подрос)
+  # 4. в пределах допуска → зеленый (README округляет, образ чуть подрос)
   printf 'The image is a ~13.5 MB distroless/static binary.\n' > "$tmp"
   if ! check "$tmp" 14.2 >/dev/null; then echo "✘ self-test: 14.2 против 13.5 в пределах допуска, а названо расхождением"; fail=1; fi
 
   if [ "$fail" -ne 0 ]; then exit 1; fi
-  echo "✓ verify-claims --self-test: точное сходится, устаревшее краснеет с обоими числами, пропажа claim — отдельный отказ, допуск соблюдён"
+  echo "✓ verify-claims --self-test: точное сходится, устаревшее краснеет с обоими числами, пропажа claim — отдельный отказ, допуск соблюден"
   exit 0
 fi
 

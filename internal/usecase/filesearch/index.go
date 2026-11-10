@@ -18,7 +18,7 @@ import (
 const minTokenRunes = 2
 
 // Tokens splits text into lowercase words. «ё» folds to «е»: в текстах
-// владельца ё не пишут, а в чужих пишут, и одно слово не должно жить под
+// владельца е не пишут, а в чужих пишут, и одно слово не должно жить под
 // двумя написаниями.
 func Tokens(text string) []string {
 	fields := strings.FieldsFunc(strings.ToLower(text), func(r rune) bool {

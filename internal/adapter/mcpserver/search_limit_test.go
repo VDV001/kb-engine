@@ -43,7 +43,7 @@ func searchLimited(t *testing.T, n int, args map[string]any) (limitedAnswer, str
 	return out, raw
 }
 
-// Широкий запрос без limit отдаёт не больше 20 записей и говорит, что нашлось
+// Широкий запрос без limit отдает не больше 20 записей и говорит, что нашлось
 // больше: замер 08.11 — «агент» в живом каталоге давал 652 карточки, сотни
 // тысяч токенов за один вызов, и они же оставались в контексте.
 func TestServer_searchLimitsTheAnswerByDefault(t *testing.T) {

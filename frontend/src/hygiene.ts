@@ -11,7 +11,7 @@ import type { Audits, DuplicateGroup, Entry, Finding } from './api'
 export type PluralForms = [one: string, few: string, many: string]
 
 // Правила склонения живут в платформе с ES2018 — своя арифметика по остаткам
-// от 10 и 100 была бы четвёртой копией того, что уже есть в Intl.
+// от 10 и 100 была бы четвертой копией того, что уже есть в Intl.
 const ruPlural = new Intl.PluralRules('ru')
 
 export function plural(n: number, forms: PluralForms): string {
@@ -27,7 +27,7 @@ const MONTHS: PluralForms = ['месяц', 'месяца', 'месяцев']
 /** Причины, у которых нет переменной части. */
 const REASONS: Record<string, string> = {
   'verdict:skip-unavailable': 'Автор снял статью',
-  'marked superseded but no entry supersedes it': 'Помечена заменённой, но замены нет',
+  'marked superseded but no entry supersedes it': 'Помечена замененной, но замены нет',
   'supersedes_id forms a cycle': 'Замены образуют цикл',
 }
 
@@ -39,13 +39,13 @@ const PATTERNS: [RegExp, (m: RegExpMatchArray) => string][] = [
     (m) => {
       const n = Number(m[1])
       const verb = plural(n, ['ссылается', 'ссылаются', 'ссылаются'])
-      return `На неё ${verb} ${n} ${plural(n, ENTRIES)}`
+      return `На нее ${verb} ${n} ${plural(n, ENTRIES)}`
     },
   ],
   [/^supersedes_id (\d+) does not exist$/, (m) => `Замена указана на запись ${m[1]}, которой нет`],
   [
     /^supersedes_id (\d+) is not marked superseded$/,
-    (m) => `Запись ${m[1]} названа заменённой, но статус у неё другой`,
+    (m) => `Запись ${m[1]} названа замененной, но статус у нее другой`,
   ],
   [
     /^habr article older than (\d+) months \(created (.+)\)$/,
@@ -85,7 +85,7 @@ export interface ReasonGroup {
 
 /**
  * groupByReason сводит находки в группы по ПЕРВОЙ причине. Первая, а не все:
- * иначе запись с двумя причинами попадёт в две группы, и сумма размеров
+ * иначе запись с двумя причинами попадет в две группы, и сумма размеров
  * перестанет сходиться с числом находок. Остальные причины остаются на самой
  * строке — они уточняют находку, а не создают отдельную работу.
  */
@@ -102,7 +102,7 @@ export function groupByReason(findings: Finding[] | null): ReasonGroup[] {
     .sort((a, b) => b.items.length - a.items.length)
 }
 
-/** Записи группы дублей — в порядке её id, без тех, кого в каталоге уже нет. */
+/** Записи группы дублей — в порядке ее id, без тех, кого в каталоге уже нет. */
 export function duplicateEntries(group: DuplicateGroup, entries: Entry[]): Entry[] {
   const byID = new Map(entries.map((e) => [e.id, e]))
   return group.EntryIDs.map((id) => byID.get(id)).filter((e): e is Entry => e !== undefined)
@@ -110,7 +110,7 @@ export function duplicateEntries(group: DuplicateGroup, entries: Entry[]): Entry
 
 /**
  * conflictingIds — записи, попавшие больше чем в один раздел аудита. На живом
- * каталоге это #481: движок предлагает пометить её и устаревшей, и
+ * каталоге это #481: движок предлагает пометить ее и устаревшей, и
  * канонической. Два совета, которые нельзя выполнить оба, — это не два совета,
  * а один вопрос, и задать его надо явно.
  */
@@ -124,7 +124,7 @@ export function conflictingIds(audits: Audits): number[] {
   return [...seen.entries()].filter(([, n]) => n > 1).map(([id]) => id)
 }
 
-/** Объём работы для счётчика во вкладке: находки аудита плюс группы дублей. */
+/** Объем работы для счетчика во вкладке: находки аудита плюс группы дублей. */
 export function findingCount(audits: Audits, duplicates: DuplicateGroup[]): number {
   const sections = [audits.outdated, audits.canonical, audits.supersession]
   // Группы дублей считаются так же осторожно, как разделы аудита. Асимметрия

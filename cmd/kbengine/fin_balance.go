@@ -27,7 +27,7 @@ import (
 func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("fin balance", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	from := fs.String("from", "", "path to Учёт_финансов.xlsx")
+	from := fs.String("from", "", "path to Учет_финансов.xlsx")
 	bank := fs.String("bank", "", "account name as the Счета sheet spells it")
 	amount := fs.String("amount", "", "new balance, e.g. 4321,55")
 	create := fs.Bool("create", false, "add the account to the Счета sheet (it must not be there yet)")
@@ -49,7 +49,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 		return code
 	}
 
-	// Прежнее значение читается до записи, чтобы отчёт мог сказать, что именно
+	// Прежнее значение читается до записи, чтобы отчет мог сказать, что именно
 	// произошло. Одно сообщение и на «сумма изменилась», и на «сумма уже была
 	// такой» — это «выполнено» без содержания: после него никто не приходит
 	// проверять, хотя изменилась только дата подтверждения.
@@ -73,12 +73,12 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 
 	if err := financexlsx.SetBalance(*from, *bank, money, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", err)
-		// Незнакомое имя — это либо опечатка, либо счёт, которого ещё нет.
+		// Незнакомое имя — это либо опечатка, либо счет, которого еще нет.
 		// Движок не может решить, какое из двух, но обязан назвать выход из
 		// второго случая: иначе человек ищет его вне движка, а вне движка
 		// единственный способ — писать в ячейки мимо него.
 		if errors.Is(err, financexlsx.ErrUnknownAccount) {
-			fmt.Fprintf(stderr, "  если это новый счёт, а не опечатка — тот же вызов с --create заведёт его\n")
+			fmt.Fprintf(stderr, "  если это новый счет, а не опечатка — тот же вызов с --create заведет его\n")
 		}
 		return 1
 	}
@@ -92,7 +92,7 @@ func runFinBalance(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-// reportParams — что нужно знать, чтобы напечатать одну строку отчёта.
+// reportParams — что нужно знать, чтобы напечатать одну строку отчета.
 //
 // Структурой, а не восемью аргументами: у половины из них один тип, и порядок
 // в вызове перепутать легче, чем заметить это потом.
@@ -106,21 +106,21 @@ type reportParams struct {
 	today                    string
 }
 
-// reportUpdate печатает, что стало со счётом.
+// reportUpdate печатает, что стало со счетом.
 //
 // Отдельной функцией: сама команда уже разбирает флаги, читает книгу, пишет и
-// решает три вида отказа — отчёт был в ней четвёртой заботой, и линтер это
+// решает три вида отказа — отчет был в ней четвертой заботой, и линтер это
 // заметил раньше меня.
 func reportUpdate(p reportParams, stdout io.Writer) {
-	// Счёт называется так, как он записан на листе, а не так, как его набрали:
-	// «сбербанк» в отчёте о собственной книге читается как другой счёт.
+	// Счет называется так, как он записан на листе, а не так, как его набрали:
+	// «сбербанк» в отчете о собственной книге читается как другой счет.
 	name := p.bank
 	if p.known && p.existing.Bank() != "" {
 		name = p.existing.Bank()
 	}
-	// Единица берётся у счёта, КАК ОН ЛЕЖИТ В КНИГЕ ПОСЛЕ ЗАПИСИ, а не у
-	// флагов: обновляя баланс валютного счёта, --currency обычно не передают —
-	// он там уже записан, и молчание отчёта про валюту было бы молчанием про
+	// Единица берется у счета, КАК ОН ЛЕЖИТ В КНИГЕ ПОСЛЕ ЗАПИСИ, а не у
+	// флагов: обновляя баланс валютного счета, --currency обычно не передают —
+	// он там уже записан, и молчание отчета про валюту было бы молчанием про
 	// самое важное в строке.
 	unit := unitSuffix(p.currency, p.rate)
 	if p.flagCurrency == "" {
@@ -140,7 +140,7 @@ func reportUpdate(p reportParams, stdout io.Writer) {
 	}
 }
 
-// createAccount заводит счёт, которого на листе «Счета» ещё нет.
+// createAccount заводит счет, которого на листе «Счета» еще нет.
 //
 // Отдельная функция, а не ветка внутри команды: заведение и правка баланса —
 // разные намерения, и читаются они врозь.
@@ -148,26 +148,26 @@ func createAccount(path, bank string, amount domain.Money, currency domain.Curre
 	if err := financexlsx.AddAccount(path, bank, amount, currency, rate, time.Now); err != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", err)
 		if errors.Is(err, financexlsx.ErrAccountExists) {
-			fmt.Fprintf(stderr, "  счёт уже есть — обновить его баланс можно тем же вызовом без --create\n")
+			fmt.Fprintf(stderr, "  счет уже есть — обновить его баланс можно тем же вызовом без --create\n")
 		}
 		return 1
 	}
 	// Заведение названо вслух отдельной строкой: «Займ → Коллеге: 3000.00»
-	// читается одинаково и когда счёт появился, и когда у него поменялась
+	// читается одинаково и когда счет появился, и когда у него поменялась
 	// сумма, а различить их — ровно то, ради чего человек передал флаг.
-	// Валюта называется вслух, если она не рублёвая: строка «500.00» у счёта в
+	// Валюта называется вслух, если она не рублевая: строка «500.00» у счета в
 	// долларах читается как рубли, и это ровно тот дефект, из-за которого
 	// заведена #332.
-	fmt.Fprintf(stdout, "%s: %s%s — новый счёт на листе «Счета» (%s)\n",
+	fmt.Fprintf(stdout, "%s: %s%s — новый счет на листе «Счета» (%s)\n",
 		bank, amount, unitSuffix(currency, rate), time.Now().Format(time.DateOnly))
 	return 0
 }
 
-// unitSuffix — чем строка отчёта заканчивается у валютного счёта и чем не
-// заканчивается у рублёвого.
+// unitSuffix — чем строка отчета заканчивается у валютного счета и чем не
+// заканчивается у рублевого.
 //
-// Рублёвый молчит намеренно: приписка «RUB» к каждой строке — шум, который
-// приучает не дочитывать строку до конца, а дочитать её придётся именно у
+// Рублевый молчит намеренно: приписка «RUB» к каждой строке — шум, который
+// приучает не дочитывать строку до конца, а дочитать ее придется именно у
 // валютной. «Курс неизвестен» при этом произносится: пустота на месте курса
 // снаружи неотличима от курса, который забыли напечатать.
 func unitSuffix(currency domain.Currency, rate domain.Rate) string {
@@ -180,13 +180,13 @@ func unitSuffix(currency domain.Currency, rate domain.Rate) string {
 	return " " + currency.Code() + " (курс неизвестен)"
 }
 
-// balanceOf возвращает остаток, записанный на счёте сейчас, и его имя так, как
+// balanceOf возвращает остаток, записанный на счете сейчас, и его имя так, как
 // оно стоит на листе. Последнее значение — false, когда книгу прочитать не
-// удалось или счёта в ней нет: тогда отчёт молчит о прежнем значении, а не
+// удалось или счета в ней нет: тогда отчет молчит о прежнем значении, а не
 // выдумывает его.
 //
 // Написание сверяет домен — тем же правилом, которым его сверяет запись. Раньше
-// здесь стояло побайтовое равенство, и отчёт не узнавал счёт, который сам же
+// здесь стояло побайтовое равенство, и отчет не узнавал счет, который сам же
 // только что обновил.
 func balanceOf(path, bank string) (domain.Account, bool) {
 	led, err := financexlsx.Read(path, time.Now)
@@ -212,7 +212,7 @@ func parseCurrencyAndRate(code, rawRate string, stderr io.Writer) (domain.Curren
 	rate := domain.UnknownRate()
 	if code == "" {
 		if rawRate != "" {
-			fmt.Fprintf(stderr, "fin balance: --rate без --currency: у счёта в валюте книги курс всегда единица\n")
+			fmt.Fprintf(stderr, "fin balance: --rate без --currency: у счета в валюте книги курс всегда единица\n")
 			return domain.Currency{}, rate, 2
 		}
 		return domain.Currency{}, rate, 0
@@ -237,10 +237,10 @@ func parseCurrencyAndRate(code, rawRate string, stderr io.Writer) (domain.Curren
 	return cur, rate, 0
 }
 
-// applyCurrency обновляет валюту счёта, который на листе уже есть.
+// applyCurrency обновляет валюту счета, который на листе уже есть.
 //
 // Вынесено из runFinBalance ради читаемости: сама команда и без того решает
-// четыре вопроса — разобрать сумму, завести счёт, обновить остаток, сказать,
+// четыре вопроса — разобрать сумму, завести счет, обновить остаток, сказать,
 // что именно изменилось.
 func applyCurrency(path, bank, rawCurrency, rawRate string, currency domain.Currency, rate domain.Rate, stderr io.Writer) int {
 	if rawCurrency == "" && rawRate == "" {
@@ -256,7 +256,7 @@ func applyCurrency(path, bank, rawCurrency, rawRate string, currency domain.Curr
 // requireBalanceArgs проверяет обязательные флаги и разбирает сумму.
 //
 // ParseMoney, а не MoneyFromFloat: это текст, который набрал человек, поэтому
-// точность мельче копейки — опечатка, и о ней сообщают, а не округляют её.
+// точность мельче копейки — опечатка, и о ней сообщают, а не округляют ее.
 func requireBalanceArgs(from, bank, amount string, stderr io.Writer) (domain.Money, int) {
 	for _, req := range []struct{ flag, value string }{
 		{"--from", from}, {"--bank", bank}, {"--amount", amount},
@@ -280,16 +280,16 @@ type renameParams struct {
 	mixed                  bool
 }
 
-// renameAccount переименовывает счёт: лист «Счета», момент подтверждения и
+// renameAccount переименовывает счет: лист «Счета», момент подтверждения и
 // словарь быстрого ввода.
 //
 // Отдельное намерение, как и заведение: сумма здесь не нужна, и переданная
 // вместе с --rename она делала бы два дела одной командой — отказ второго
 // оставил бы первое сделанным наполовину.
 //
-// Журнал обязателен: счёт по имени называют его записи — и перенесённые в
-// книгу, и ещё нет, — и словарь рядом с журналом (правило 26: словарь —
-// писатель, и правка одного читателя ничего не закрывает). Счёт с любой
+// Журнал обязателен: счет по имени называют его записи — и перенесенные в
+// книгу, и еще нет, — и словарь рядом с журналом (правило 26: словарь —
+// писатель, и правка одного читателя ничего не закрывает). Счет с любой
 // историей переименовать нельзя намеренно: история обязана читаться так, как
 // была записана, а слияние счетов — отдельная, не сделанная работа.
 func renameAccount(p renameParams, stdout, stderr io.Writer) int {
@@ -306,11 +306,11 @@ func renameAccount(p renameParams, stdout, stderr io.Writer) int {
 	if code := finishRename(old, to, vocab, err, stderr); code != 0 {
 		return code
 	}
-	fmt.Fprintf(stdout, "%s → %s: счёт переименован, сумма и дата подтверждения прежние\n", old, to)
+	fmt.Fprintf(stdout, "%s → %s: счет переименован, сумма и дата подтверждения прежние\n", old, to)
 	return 0
 }
 
-// checkRename — всё, что можно проверить до записи: флаги, журнал в обе
+// checkRename — все, что можно проверить до записи: флаги, журнал в обе
 // стороны и читаемость словаря. Возвращает путь словаря.
 func checkRename(p renameParams, stderr io.Writer) (string, int) {
 	if p.book == "" || p.bank == "" || p.ledger == "" {
@@ -331,8 +331,8 @@ func checkRename(p renameParams, stderr io.Writer) (string, int) {
 			n, p.ledger, p.bank)
 		return "", 1
 	}
-	// И обратная сторона, как у книги: записи, где новое имя уже стоит счётом,
-	// после переименования стали бы тратами этого счёта.
+	// И обратная сторона, как у книги: записи, где новое имя уже стоит счетом,
+	// после переименования стали бы тратами этого счета.
 	if n := recordsNaming(recs, p.to); n > 0 {
 		fmt.Fprintf(stderr, "fin balance: %d record(s) of %s already name %q — they would start counting as this account\n",
 			n, p.ledger, strings.TrimSpace(p.to))
@@ -357,7 +357,7 @@ func finishRename(old, to, vocab string, stateErr error, stderr io.Writer) int {
 	vocabErr := financevocab.RenameAccount(vocab, old, to)
 	if stateErr != nil {
 		fmt.Fprintf(stderr, "fin balance: %v\n", stateErr)
-		fmt.Fprintf(stderr, "  книга уже под новым именем; момент подтверждения вернётся следующим `fin balance --bank %q --amount …`\n", to)
+		fmt.Fprintf(stderr, "  книга уже под новым именем; момент подтверждения вернется следующим `fin balance --bank %q --amount …`\n", to)
 	}
 	if vocabErr != nil {
 		fmt.Fprintf(stderr, "fin balance: account renamed, vocabulary not: %v\n", vocabErr)

@@ -163,7 +163,7 @@ type sheetIndex struct {
 	curCol       int
 	freeCol      int
 	newCurHeader bool
-	// recCols are the Получено, Валюта получения and Счёт получения columns, 0
+	// recCols are the Получено, Валюта получения and Счет получения columns, 0
 	// while the sheet has none; newRecHeaders asks for their headers.
 	recCols       [3]int
 	newRecHeaders bool

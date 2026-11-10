@@ -5,7 +5,7 @@ import { Icon } from './components/Icon'
 
 // Длина окружности кольца: r=18 в системе координат 48×48. Захардкожена
 // намеренно — она обязана совпадать со strokeDasharray в разметке, и вычислять
-// её в двух местах значит однажды разойтись.
+// ее в двух местах значит однажды разойтись.
 const RING = 2 * Math.PI * 18
 
 function Ring({ percent, label, detail, tone }: {
@@ -28,7 +28,7 @@ function Ring({ percent, label, detail, tone }: {
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={RING}
-            // Заполнение идёт от нуля к доле: смещение — это непройденная часть.
+            // Заполнение идет от нуля к доле: смещение — это непройденная часть.
             strokeDashoffset={RING - (RING * percent) / 100}
             className="transition-[stroke-dashoffset] duration-1000 ease-out"
           />
@@ -47,7 +47,7 @@ function Ring({ percent, label, detail, tone }: {
 
 /**
  * Карточка «Здоровье базы»: две доли кольцами, их среднее полосой и пульс на
- * фоне, частота которого растёт вместе со счётом.
+ * фоне, частота которого растет вместе со счетом.
  *
  * Все три числа приходят посчитанными с сервера. Здесь только показ — иначе та
  * же арифметика завелась бы вторым экземпляром и однажды разошлась с первым.
@@ -60,7 +60,7 @@ export function HealthCard({ health }: { health: Health }) {
   const pct = (part: number, base: number) => (base > 0 ? Math.round((part / base) * 100) : 0)
   const processed = pct(health.processed, health.total)
   const withNotes = pct(health.with_notes, health.notes_base)
-  // Пульс идёт по главной оси. Раньше здесь был усреднённый «score», из-за
+  // Пульс идет по главной оси. Раньше здесь был усредненный «score», из-за
   // которого фон карточки выглядел вдвое хуже, чем база на самом деле.
   const pulse = ecg(processed)
 
@@ -129,8 +129,8 @@ export function SpotlightCard({
     <div className="relative col-span-1 overflow-hidden rounded-2xl border border-outline-variant bg-card-spotlight-bg p-8 md:col-span-2">
       <div className="relative z-10 flex h-full flex-col justify-between">
         <div>
-          {/* secondary-light, а не secondary: карточка тёмно-синяя, и терракота
-              даёт на ней 2.67 — ниже порога даже для крупного текста. */}
+          {/* secondary-light, а не secondary: карточка темно-синяя, и терракота
+              дает на ней 2.67 — ниже порога даже для крупного текста. */}
           <span className="mb-4 block font-label text-[10px] font-bold tracking-[0.2em] text-secondary-light uppercase">
             Последнее добавление
           </span>

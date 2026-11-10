@@ -15,7 +15,7 @@ import (
 // то есть на каждое нажатие клавиши. Восемь букв «Сбербанк» давали больше
 // полусекунды отставания, и экран выглядел неживым.
 //
-// Тест считает обращения к источнику: после открытия формы их число не растёт,
+// Тест считает обращения к источнику: после открытия формы их число не растет,
 // сколько бы кадров ни нарисовали.
 
 type countingAccounts struct {
@@ -57,7 +57,7 @@ func TestBalanceForm_doesNotReadTheBookWhileTyping(t *testing.T) {
 	}
 
 	if acc.reads != after {
-		t.Errorf("книга прочитана %d раз при наборе четырёх букв — чтение стоит 74 мс на живом файле",
+		t.Errorf("книга прочитана %d раз при наборе четырех букв — чтение стоит 74 мс на живом файле",
 			acc.reads-after)
 	}
 }
@@ -67,7 +67,7 @@ func TestEntryForm_doesNotReadTheBookWhileTyping(t *testing.T) {
 	fin := &stubFinances{sum: sampleSummary()}
 	m := newModelWithAccounts(fin, acc)
 
-	m = onForm(m, "a") // форма расхода: подсказка счёта тоже читает книгу
+	m = onForm(m, "a") // форма расхода: подсказка счета тоже читает книгу
 	after := acc.reads
 
 	for _, r := range []string{"4", "1", "8"} {
@@ -76,7 +76,7 @@ func TestEntryForm_doesNotReadTheBookWhileTyping(t *testing.T) {
 	}
 
 	if acc.reads != after {
-		t.Errorf("книга прочитана %d раз при наборе трёх букв", acc.reads-after)
+		t.Errorf("книга прочитана %d раз при наборе трех букв", acc.reads-after)
 	}
 }
 

@@ -55,7 +55,7 @@ func (fakeQuery) Entries() ([]domain.Entry, error) {
 		HabrDate: &habrPublished, DeepReadDate: &deepRead,
 	})
 	// Разбор — отдельная запись, а не поле первой: после ADR-0004 конспект
-	// живёт собственной записью, у которой есть файл и нет адреса.
+	// живет собственной записью, у которой есть файл и нет адреса.
 	wcat, _ := domain.NewCategory("writeups")
 	w, _ := domain.NewEntry(domain.EntryParams{
 		ID: 2, Kind: "article", Title: "Разбор: Hello", Category: wcat, Lifecycle: lc,
@@ -144,7 +144,7 @@ func newTestServerWith(opts ...httpapi.Option) http.Handler {
 		}, httpapi.Documents{}, testEngine, nil, opts...)
 }
 
-// Версия движка живёт в бинаре, и на странице её иначе не показать. Нужна она
+// Версия движка живет в бинаре, и на странице ее иначе не показать. Нужна она
 // не из любопытства: подвал предлагает исходники по AGPL §13, а предложение без
 // версии неполно — непонятно, исходники какой именно сборки предлагаются.
 func TestServer_engine(t *testing.T) {
@@ -177,7 +177,7 @@ func TestServer_engine(t *testing.T) {
 // непереданный файл, может только нарисовать пустоту — и пустота неотличима от
 // «в базе действительно ничего нет».
 //
-// Список приходит снаружи вместе с версией: адаптер отдаёт то, что ему дали, и
+// Список приходит снаружи вместе с версией: адаптер отдает то, что ему дали, и
 // не выясняет сам, чем его запустили.
 func TestServer_engine_sources(t *testing.T) {
 	engine := httpapi.EngineInfo{
@@ -209,10 +209,10 @@ func TestServer_engine_sources(t *testing.T) {
 		t.Fatalf("sources = %d, want 2: %s", len(body.Sources), rec.Body.String())
 	}
 	if body.Sources[0].Flag != "analytics-config" || body.Sources[0].Connected {
-		t.Errorf("первый источник = %+v, ждали неподключённый analytics-config", body.Sources[0])
+		t.Errorf("первый источник = %+v, ждали неподключенный analytics-config", body.Sources[0])
 	}
 	if body.Sources[1].Flag != "ledger" || !body.Sources[1].Connected {
-		t.Errorf("второй источник = %+v, ждали подключённый ledger", body.Sources[1])
+		t.Errorf("второй источник = %+v, ждали подключенный ledger", body.Sources[1])
 	}
 }
 
@@ -355,7 +355,7 @@ func TestServer_entries(t *testing.T) {
 	}
 }
 
-// Связь «статья → её разбор» и путь к собственному тексту записи обязаны
+// Связь «статья → ее разбор» и путь к собственному тексту записи обязаны
 // доехать до фронта: после ADR-0004 разбор — отдельная запись, и без этих
 // двух полей 357 связей и 122 файла живой базы для дашборда не существуют.
 func TestServer_entriesCarryWriteupLink(t *testing.T) {
@@ -426,7 +426,7 @@ func (emptyAudit) LinkHealth() (audit.LinkHealth, error)         { return audit.
 
 // Пустой список — это `[]`, а не `null`. Разница не косметическая: nil-слайс
 // уходит в JSON как null, клиент считает его длину, и вся страница снимается
-// с одной непроверенной точки. Клиент от этого защищён отдельно, но контракт
+// с одной непроверенной точки. Клиент от этого защищен отдельно, но контракт
 // чинится здесь: «находок нет» — законный ответ, и выглядеть он должен как
 // пустой список, а не как отсутствие ответа.
 func TestServer_duplicates_emptyIsAnArrayNotNull(t *testing.T) {
@@ -456,14 +456,14 @@ func TestServer_unknownRoute(t *testing.T) {
 // TestServer_unknownRoute выше строит сервер БЕЗ фронтенда (последний аргумент
 // nil) — то есть без index.html-фолбэка, и потому получает честный 404. В
 // выпущенном бинаре фронтенд вшит, фолбэк ловит любой путь, и `/api/nope`
-// отвечает 200 с HTML. Зелёный тест утверждал поведение, которого у сборки нет.
+// отвечает 200 с HTML. Зеленый тест утверждал поведение, которого у сборки нет.
 //
 // Поймано не чтением кода: при проверке выпуска 0.17.0 прогон эндпоинтов дал
 // 200 на `/api/finance` — маршрута с таким именем не существует, настоящий
 // `/api/finances`. Код ответа не различал их, потому что различать было нечем.
 //
 // Цена не в дашборде (он ходит по верным путям), а в потребителе API: опечатка
-// в пути даёт 200 и HTML вместо 404, то есть провал, который на его стороне
+// в пути дает 200 и HTML вместо 404, то есть провал, который на его стороне
 // выглядит успехом.
 func TestServer_unknownAPIRouteWithFrontend(t *testing.T) {
 	frontend := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>")}}
@@ -481,14 +481,14 @@ func TestServer_unknownAPIRouteWithFrontend(t *testing.T) {
 	})
 
 	// Контроль в обе стороны: починка не должна ни сломать настоящий маршрут,
-	// ни отобрать у SPA её собственный фолбэк для клиентских путей.
+	// ни отобрать у SPA ее собственный фолбэк для клиентских путей.
 	t.Run("настоящий маршрут по-прежнему отвечает", func(t *testing.T) {
 		if rec := get(t, srv, "/api/stats"); rec.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rec.Code)
 		}
 	})
 
-	t.Run("клиентский путь вне /api/ по-прежнему отдаёт страницу", func(t *testing.T) {
+	t.Run("клиентский путь вне /api/ по-прежнему отдает страницу", func(t *testing.T) {
 		rec := get(t, srv, "/archives")
 		if rec.Code != http.StatusOK {
 			t.Errorf("status = %d, want 200", rec.Code)
@@ -508,7 +508,7 @@ func TestServer_unknownAPIRouteWithFrontend(t *testing.T) {
 //
 // Контроль в обе стороны обязателен: подсадка «отдавать 404 всегда» должна
 // валить подтест с флагом, иначе проверка утверждала бы, что /media/ сломан
-// целиком, и была бы зелёной на сломанной сборке.
+// целиком, и была бы зеленой на сломанной сборке.
 func TestServer_mediaRouteWithFrontend(t *testing.T) {
 	frontend := fstest.MapFS{"index.html": &fstest.MapFile{Data: []byte("<html>")}}
 	newSrv := func(media fs.FS) http.Handler {
@@ -526,7 +526,7 @@ func TestServer_mediaRouteWithFrontend(t *testing.T) {
 		}
 	})
 
-	t.Run("с --media настоящий файл по-прежнему отдаётся", func(t *testing.T) {
+	t.Run("с --media настоящий файл по-прежнему отдается", func(t *testing.T) {
 		media := fstest.MapFS{"floq.png": &fstest.MapFile{Data: []byte("PNG")}}
 		rec := get(t, newSrv(media), "/media/floq.png")
 		if rec.Code != http.StatusOK {
@@ -545,7 +545,7 @@ func TestServer_mediaRouteWithFrontend(t *testing.T) {
 		}
 	})
 
-	t.Run("клиентский путь вне /media/ по-прежнему отдаёт страницу", func(t *testing.T) {
+	t.Run("клиентский путь вне /media/ по-прежнему отдает страницу", func(t *testing.T) {
 		rec := get(t, newSrv(nil), "/projects")
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status = %d, want 200", rec.Code)
@@ -640,7 +640,7 @@ func TestServer_documents(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"Team"`) {
 		t.Errorf("team = %d %q", rec.Code, rec.Body.String())
 	}
-	// JSON-файл владельца отдаётся как есть — движок не пересобирает чужой
+	// JSON-файл владельца отдается как есть — движок не пересобирает чужой
 	// контент, поэтому Content-Type обязан остаться JSON.
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "application/json") {
 		t.Errorf("team content-type = %q", ct)
@@ -673,9 +673,9 @@ func TestServer_statsCarriesCategoryLabels(t *testing.T) {
 }
 
 // Страница «что в работе сейчас» должна говорить, что отстала, — иначе она
-// тухнет тихо: текст остаётся правдоподобным, а база уходит вперёд.
+// тухнет тихо: текст остается правдоподобным, а база уходит вперед.
 func TestServer_now_reportsThatThePageFellBehind(t *testing.T) {
-	// Раньше и записи каталога фикстуры (11.07), и её траты (01.07): обе
+	// Раньше и записи каталога фикстуры (11.07), и ее траты (01.07): обе
 	// случились после правки, значит страница отстала от обеих.
 	edited := time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
@@ -720,7 +720,7 @@ func TestServer_now_reportsThatThePageFellBehind(t *testing.T) {
 }
 
 // Пустой список фактов уезжает как [], а не null: nil-слайс Go пишется как
-// null, и `.length` у него роняет всё дерево React — этой граблёй дашборд уже
+// null, и `.length` у него роняет все дерево React — этой граблей дашборд уже
 // белел целиком.
 func TestServer_now_freshnessFactsAreNeverNull(t *testing.T) {
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
@@ -736,7 +736,7 @@ func TestServer_now_freshnessFactsAreNeverNull(t *testing.T) {
 
 // Страницы Team и Projects тухнут так же, как Now, но смотрят на них реже —
 // значит врут дольше. Один эндпоинт отвечает про все сразу, и у каждой честно
-// назван её случай: отстала, свежая или сверять не с чем.
+// назван ее случай: отстала, свежая или сверять не с чем.
 func TestServer_sources(t *testing.T) {
 	edited := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	srv := httpapi.NewServer(fakeQuery{}, fakeAudit{}, fakeAnalytics{}, fakeFinance{},
@@ -789,7 +789,7 @@ func TestServer_sources(t *testing.T) {
 		!strings.Contains(p.Facts[0].Text, "v0.5.0") {
 		t.Errorf("Projects не назвал отставшую версию: %+v", p)
 	}
-	// Team сверять не с чем — и это отдельное состояние, не «всё хорошо».
+	// Team сверять не с чем — и это отдельное состояние, не «все хорошо».
 	if tm := body.Sources[by["Team"]]; tm.Behind || !tm.NoAnchors {
 		t.Errorf("Team: behind=%v no_anchors=%v, ожидалось false/true", tm.Behind, tm.NoAnchors)
 	}

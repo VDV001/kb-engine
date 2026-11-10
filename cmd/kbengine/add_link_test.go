@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-// catalogWithCategories кладёт каталог со словарём категорий — без него
+// catalogWithCategories кладет каталог со словарем категорий — без него
 // проверка категории отвечать не может и молчит.
 func catalogWithCategories(t *testing.T) string {
 	t.Helper()
@@ -27,8 +27,8 @@ func catalogWithCategories(t *testing.T) string {
 }
 
 // До этой правки движок не умел записать ЧУЖУЮ статью с моим разбором: `add`
-// требовал --file (свой артефакт), `inbox` жёстко ставил source=bot-inbox и
-// категорию по карте хабов. Поэтому разбор дайджеста шёл правкой catalog.json
+// требовал --file (свой артефакт), `inbox` жестко ставил source=bot-inbox и
+// категорию по карте хабов. Поэтому разбор дайджеста шел правкой catalog.json
 // руками — мимо всех проверок движка. Тот же класс, что был в финансах, где
 // запись мимо движка оставляла строку без id.
 func TestAdd_writesSomeoneElsesArticleByURL(t *testing.T) {
@@ -57,7 +57,7 @@ func TestAdd_writesSomeoneElsesArticleByURL(t *testing.T) {
 		"category": "dev-practices",
 		"source":   "digest",
 		"author":   "someone",
-		// Одно поле status несёт вердикт, и вердикт означает «прочитано».
+		// Одно поле status несет вердикт, и вердикт означает «прочитано».
 		"status": "keep",
 	} {
 		if got := e[field]; got != want {

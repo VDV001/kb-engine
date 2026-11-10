@@ -64,7 +64,7 @@ func runFinDelete(args []string, stdin io.Reader, stdout, stderr io.Writer) int 
 		return 1
 	}
 	// Строку в книге чистит обычный синк — он это уже умеет, и второй путь к
-	// одному и тому же однажды разошёлся бы с первым.
+	// одному и тому же однажды разошелся бы с первым.
 	fmt.Fprintf(stdout, "fin delete: удалена %s — строку в книге очистит `fin sync`\n", *id)
 	return 0
 }

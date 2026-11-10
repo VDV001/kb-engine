@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// Двадцать шесть отказов `fin` из девяноста четырёх прогонов — перенос пары
+// Двадцать шесть отказов `fin` из девяноста четырех прогонов — перенос пары
 // флагов с соседней подкоманды: `--from` есть у balance/sync/import и нет у
 // list/report, `--ledger` есть у восьми (у balance — только ради --rename). Внутри это логично
 // (balance пишет на лист «Счета», report читает журнал), снаружи не сказано
@@ -51,7 +51,7 @@ func TestFinSaysNothingExtraOnSuccess(t *testing.T) {
 	}
 }
 
-// Опечатка в имени флага — отдельный случай от «флаг живёт у соседа»: здесь
+// Опечатка в имени флага — отдельный случай от «флаг живет у соседа»: здесь
 // такого флага нет ни у кого, но он в ОДНОЙ правке от настоящего.
 func TestFinNamesTheNearMiss(t *testing.T) {
 	var out, errb bytes.Buffer
@@ -68,7 +68,7 @@ func TestFinNamesTheNearMiss(t *testing.T) {
 
 // ⚠️ Отрицательный контроль, ради которого порог и выбран одной правкой.
 // Замер: у `--book` ближайший настоящий флаг — `--bank` на расстоянии двух
-// правок. Это СЧЁТ, а книга здесь `--from`, то есть на пороге в две правки
+// правок. Это СЧЕТ, а книга здесь `--from`, то есть на пороге в две правки
 // движок уверенно предложил бы не то поле. В денежном инструменте это хуже
 // молчания, поэтому `--book` обязан остаться без подсказки.
 func TestFinStaysSilentWhenTheNearestIsADifferentThing(t *testing.T) {
@@ -77,7 +77,7 @@ func TestFinStaysSilentWhenTheNearestIsADifferentThing(t *testing.T) {
 
 	said := out.String() + errb.String()
 	if strings.Contains(said, "--bank") {
-		t.Errorf("движок предложил счёт вместо книги:\n%s", said)
+		t.Errorf("движок предложил счет вместо книги:\n%s", said)
 	}
 	if strings.Contains(said, "похоже") {
 		t.Errorf("подсказка выдумана там, где ближайшее — другое понятие:\n%s", said)

@@ -20,7 +20,7 @@ func connect(t *testing.T, q mcpserver.Querier) *mcp.ClientSession {
 }
 
 // connectWithView — тот же сервер, но с объявленной витриной: поле view
-// проверяется отдельно, чтобы остальные тесты не зависели от её адреса.
+// проверяется отдельно, чтобы остальные тесты не зависели от ее адреса.
 func connectWithView(t *testing.T, q mcpserver.Querier, viewBase string) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()
@@ -54,7 +54,7 @@ func TestServer_advertisesItsTools(t *testing.T) {
 	}
 }
 
-// Тот же вопрос, что задаёт агент, и тот же ответ, что у usecase — иначе
+// Тот же вопрос, что задает агент, и тот же ответ, что у usecase — иначе
 // завелась бы третья копия правила поиска (#252 этажом выше).
 func TestServer_searchGoesThroughTheProtocol(t *testing.T) {
 	cs := connect(t, stubQuerier{entries: fixture(t)})
@@ -82,7 +82,7 @@ func TestServer_searchGoesThroughTheProtocol(t *testing.T) {
 	}
 }
 
-// Отрицательный контроль приёмки: запрос, которого в базе нет, отвечает пусто
+// Отрицательный контроль приемки: запрос, которого в базе нет, отвечает пусто
 // и БЕЗ признака ошибки — «ничего не нашлось» и «сломалось» это разные ответы.
 func TestServer_unknownQueryIsEmptyNotError(t *testing.T) {
 	cs := connect(t, stubQuerier{entries: fixture(t)})
@@ -155,7 +155,7 @@ func TestServer_searchCarriesTheViewURL(t *testing.T) {
 }
 
 // Отрицательный контроль: без объявленной витрины адреса нет вовсе. Ссылка в
-// никуда хуже её отсутствия — по ней сходят один раз и перестают верить полю.
+// никуда хуже ее отсутствия — по ней сходят один раз и перестают верить полю.
 func TestServer_withoutViewBaseTheFieldStaysEmpty(t *testing.T) {
 	cs := connect(t, stubQuerier{entries: fixture(t)})
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{

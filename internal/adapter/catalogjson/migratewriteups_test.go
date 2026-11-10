@@ -17,7 +17,7 @@ func writeupCatalog(t *testing.T) string {
 {"id":1,"title":"Статья A","url":"https://h/a","category":"golang","status":"keep","lifecycle":"active","file":"notes/batch.md"},
 {"id":2,"title":"Статья B","url":"https://h/b","category":"golang","status":"keep","lifecycle":"active","file":"notes/batch.md","related_ids":[3]},
 {"id":3,"title":"Мой стандарт","url":"","category":"standards","status":"read","lifecycle":"canonical","file":"standards/x/v1.md"},
-{"id":4,"title":"Спасённая","url":"https://h/d","category":"golang","status":"keep","lifecycle":"active","file":"notes/rescued/4_dead.md"}
+{"id":4,"title":"Спасенная","url":"https://h/d","category":"golang","status":"keep","lifecycle":"active","file":"notes/rescued/4_dead.md"}
 ]}`
 	if err := os.WriteFile(path, []byte(doc), 0o600); err != nil {
 		t.Fatalf("write: %v", err)

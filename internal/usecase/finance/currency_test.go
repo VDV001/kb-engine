@@ -9,10 +9,10 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/finance"
 )
 
-// Валюта траты берётся у счёта, если человек её не назвал: «потратил 12,30 с
-// долларового счёта» — это доллары, и заставлять каждый раз дописывать «USD» значит
+// Валюта траты берется у счета, если человек ее не назвал: «потратил 12,30 с
+// долларового счета» — это доллары, и заставлять каждый раз дописывать «USD» значит
 // рано или поздно получить доллары, записанные рублями. Названная валюта
-// сверяется со счётом доменным правилом, а без книги под рукой (счетов нет)
+// сверяется со счетом доменным правилом, а без книги под рукой (счетов нет)
 // подставлять нечего — тогда рубль, как было всегда.
 
 var currencyNow = func() time.Time { return day(2026, time.October, 23) }
@@ -50,17 +50,17 @@ func TestAdd_currency(t *testing.T) {
 		want     string
 		wantErr  error
 	}{
-		{"валюта не названа — берётся у долларового счёта", "Банк USD", nil, accounts, "USD", nil},
-		{"валюта не названа — рублёвый счёт даёт рубль", "Первый банк", nil, accounts, "RUB", nil},
-		{"без счёта и валюты — рубль", "", nil, accounts, "RUB", nil},
-		{"названная совпадает со счётом", "Банк USD", cur(t, "USD"), accounts, "USD", nil},
-		{"рубли с долларового счёта — отказ", "Банк USD", cur(t, "RUB"), accounts, "", domain.ErrCurrencyMismatch},
-		{"доллары с рублёвого счёта — отказ", "Первый банк", cur(t, "USD"), accounts, "", domain.ErrCurrencyMismatch},
+		{"валюта не названа — берется у долларового счета", "Банк USD", nil, accounts, "USD", nil},
+		{"валюта не названа — рублевый счет дает рубль", "Первый банк", nil, accounts, "RUB", nil},
+		{"без счета и валюты — рубль", "", nil, accounts, "RUB", nil},
+		{"названная совпадает со счетом", "Банк USD", cur(t, "USD"), accounts, "USD", nil},
+		{"рубли с долларового счета — отказ", "Банк USD", cur(t, "RUB"), accounts, "", domain.ErrCurrencyMismatch},
+		{"доллары с рублевого счета — отказ", "Первый банк", cur(t, "USD"), accounts, "", domain.ErrCurrencyMismatch},
 		{"без книги названная валюта сохраняется", "Банк USD", cur(t, "USD"), nil, "USD", nil},
 		{"без книги и без валюты — рубль", "Банк USD", nil, nil, "RUB", nil},
-		// Счёт ищется так же, как его ищет весь движок: регистр и пробелы не
-		// делают другого счёта. Иначе другое написание теряло бы валюту.
-		{"другое написание счёта — та же валюта", "банк  usd", nil, accounts, "USD", nil},
+		// Счет ищется так же, как его ищет весь движок: регистр и пробелы не
+		// делают другого счета. Иначе другое написание теряло бы валюту.
+		{"другое написание счета — та же валюта", "банк  usd", nil, accounts, "USD", nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -104,7 +104,7 @@ func TestDuplicate_currencyTellsEntriesApart(t *testing.T) {
 		Category: "Еда", Place: "Лавка",
 	}
 	if dup := finance.Duplicate([]finance.Record{existing}, p); dup == nil {
-		t.Fatal("рублёвый повтор не найден — контроль сломан, тест ниже ничего не значит")
+		t.Fatal("рублевый повтор не найден — контроль сломан, тест ниже ничего не значит")
 	}
 	p.Currency = cur(t, "USD")
 	if dup := finance.Duplicate([]finance.Record{existing}, p); dup != nil {
@@ -153,13 +153,13 @@ func TestEdit_currency(t *testing.T) {
 		wantErr error
 	}{
 		{"валюта меняется явно", usdRecord(t), finance.EditParams{Currency: cur(t, "UZS")}, "UZS", nil},
-		// Сумма записана в одной валюте; новый счёт в другой не делает её суммой
+		// Сумма записана в одной валюте; новый счет в другой не делает ее суммой
 		// в другой валюте. Молча сменить код значило бы превратить 50 долларов в
 		// 50 рублей, поэтому без явной валюты (и новой суммы) — отказ.
-		{"рубли на долларовый счёт — отказ", rub, finance.EditParams{Account: "Банк USD", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
-		{"доллары на рублёвый счёт — отказ", usdRecord(t), finance.EditParams{Account: "Первый банк", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
-		{"смена счёта с названной валютой", rub, finance.EditParams{Account: "Банк USD", Currency: cur(t, "USD"), Accounts: accounts}, "USD", nil},
-		{"названная валюта против счёта — отказ", rub, finance.EditParams{Currency: cur(t, "USD"), Accounts: accounts}, "", domain.ErrCurrencyMismatch},
+		{"рубли на долларовый счет — отказ", rub, finance.EditParams{Account: "Банк USD", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
+		{"доллары на рублевый счет — отказ", usdRecord(t), finance.EditParams{Account: "Первый банк", Accounts: accounts}, "", domain.ErrCurrencyMismatch},
+		{"смена счета с названной валютой", rub, finance.EditParams{Account: "Банк USD", Currency: cur(t, "USD"), Accounts: accounts}, "USD", nil},
+		{"названная валюта против счета — отказ", rub, finance.EditParams{Currency: cur(t, "USD"), Accounts: accounts}, "", domain.ErrCurrencyMismatch},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/catalogjson"
 )
 
-// «1 entry(ies) updated» печаталось и тогда, когда запись не менялась: счёт вёлся
-// по записям, к которым правку применили, а не по тем, что от неё изменились.
+// «1 entry(ies) updated» печаталось и тогда, когда запись не менялась: счет велся
+// по записям, к которым правку применили, а не по тем, что от нее изменились.
 // Это «выполнено» без содержания — после такого ответа никто не приходит
 // проверять, а правка на деле ничего не сделала.
 func TestSetFields_countsOnlyRealChanges(t *testing.T) {
@@ -23,7 +23,7 @@ func TestSetFields_countsOnlyRealChanges(t *testing.T) {
 	}
 }
 
-// Тег, который уже стоит, добавить нельзя дважды — и отчитываться о нём как об
+// Тег, который уже стоит, добавить нельзя дважды — и отчитываться о нем как об
 // изменении тоже нельзя.
 func TestSetFields_addingAnExistingTagChangesNothing(t *testing.T) {
 	path := writeFixture(t)

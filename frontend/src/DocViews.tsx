@@ -20,11 +20,11 @@ const badgeTone: Record<string, string> = {
   published: 'bg-tag-bg-2 text-tag-text-2',
   private: 'bg-tag-bg-3 text-tag-text-3',
   paused: 'bg-tag-bg-3 text-tag-text-3',
-  // Состояния людей в команде. «Уходит» и «ушёл» — разные вещи: первое ещё
+  // Состояния людей в команде. «Уходит» и «ушел» — разные вещи: первое еще
   // можно застать, второе уже нет, и по цвету это должно быть видно.
   работает: 'bg-tag-bg-2 text-tag-text-2',
   уходит: 'bg-tag-bg-4 text-tag-text-4',
-  ушёл: 'bg-tag-bg-3 text-tag-text-3',
+  ушел: 'bg-tag-bg-3 text-tag-text-3',
   вакансия: 'bg-tag-bg-1 text-tag-text-1',
 }
 
@@ -32,7 +32,7 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
   return (
     <Card className="space-y-2">
       {c.eyebrow && (
-        // Подпись роли идёт НАД именем: страница про то, кто за что отвечает,
+        // Подпись роли идет НАД именем: страница про то, кто за что отвечает,
         // и роль здесь — то, что ищут глазами, а имя — то, чем она занята.
         <div className="flex items-center justify-between gap-2">
           <span className="label text-secondary">{c.eyebrow}</span>
@@ -47,7 +47,7 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
         <h3 className="font-headline text-base font-bold">
           {masked ? (
             // Заголовок карточки в этом виде — имя человека. Под маской от него
-            // остаётся длина: полоса на месте имени читается как «здесь имя,
+            // остается длина: полоса на месте имени читается как «здесь имя,
             // скрытое», а пустая строка — как сломанная карточка.
             <span className="select-none text-on-surface-variant" aria-label="имя скрыто">
               {'•'.repeat(Math.min(12, Math.max(3, c.title.length)))}
@@ -60,7 +60,7 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
             c.title
           )}
         </h3>
-        {/* Бейдж рисуется один раз: с подписью-ролью он ушёл наверх, к ней. */}
+        {/* Бейдж рисуется один раз: с подписью-ролью он ушел наверх, к ней. */}
         {c.badge && !c.eyebrow && (
           <span
             className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -72,12 +72,12 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
         )}
       </div>
       {/* Роль и статус остаются под маской, заметка — нет: «Тим-лид, уходит»
-          говорит о положении дел, а «на нём держится вот это» — о человеке. */}
+          говорит о положении дел, а «на нем держится вот это» — о человеке. */}
       {c.body && !masked && (
         <p className="text-sm leading-relaxed text-on-surface-variant">{c.body}</p>
       )}
-      {/* Зона ответственности остаётся под маской: скрыто, КТО занимает роль,
-          а не за что она отвечает — иначе страница перестаёт быть моделью. */}
+      {/* Зона ответственности остается под маской: скрыто, КТО занимает роль,
+          а не за что она отвечает — иначе страница перестает быть моделью. */}
       {(c.points ?? []).length > 0 && (
         <ul className="space-y-1.5 pt-1">
           {c.points!.map((p) => (
@@ -104,12 +104,12 @@ function DocCardView({ c, masked = false }: { c: DocCard; masked?: boolean }) {
 
 /**
  * Схема потока: участники и стрелки между ними. Рисуется над карточками той же
- * секции, а не вместо них — граф отвечает «куда идёт работа», карточка «что там
+ * секции, а не вместо них — граф отвечает «куда идет работа», карточка «что там
  * происходит», и второе списком читается лучше, чем подписью на стрелке.
  *
  * Ширина фиксированная и скроллится по горизонтали: сжимать схему до ширины
  * телефона значило бы налепить подписи друг на друга, а нечитаемая схема хуже
- * её отсутствия.
+ * ее отсутствия.
  */
 /** Образец линии для легенды: та же геометрия, что и на схеме. */
 function LegendLine({ status }: { status: boolean }) {
@@ -132,7 +132,7 @@ function LegendLine({ status }: { status: boolean }) {
 /**
  * Легенда занимает место справа от схемы, которое иначе пустует: сама схема
  * узкая, а секция широкая. Она объясняет нотацию — то, что нарисовано, — а
- * состав участников берёт из самой схемы, чтобы список не разошёлся с
+ * состав участников берет из самой схемы, чтобы список не разошелся с
  * картинкой при первом же изменении файла.
  */
 function FlowLegend({ flow }: { flow: FlowLayout }) {
@@ -161,7 +161,7 @@ function FlowLegend({ flow }: { flow: FlowLayout }) {
           <div>
             <dt className="font-medium">Статус наверх</dt>
             <dd className="text-on-surface-variant">
-              Отчёты, блокеры, эскалация. Пунктир, {statuses} на схеме; уведён вбок, чтобы не лечь
+              Отчеты, блокеры, эскалация. Пунктир, {statuses} на схеме; уведен вбок, чтобы не лечь
               поверх встречной задачи.
             </dd>
           </div>
@@ -198,8 +198,8 @@ function FlowGraph({ cards }: { cards: DocCard[] }) {
 
   return (
     // Схема и легенда стоят рядом, пока хватает ширины: место справа от узкой
-    // схемы всё равно пустует, а объяснение нужнее всего рядом с картинкой.
-    // На узком экране легенда уходит под схему, а не сжимает её.
+    // схемы все равно пустует, а объяснение нужнее всего рядом с картинкой.
+    // На узком экране легенда уходит под схему, а не сжимает ее.
     <div className="flex flex-col gap-6 pb-2 lg:flex-row lg:items-start lg:gap-10">
       <div className="-mx-1 overflow-x-auto px-1">
       <svg
@@ -229,7 +229,7 @@ function FlowGraph({ cards }: { cards: DocCard[] }) {
           const y2 = down ? b.top : b.bottom
           const status = e.kind === 'status'
           // Статусы уводятся вбок: они идут по той же паре, что и задача, и
-          // ровно поверх неё их было бы не видно как отдельный поток.
+          // ровно поверх нее их было бы не видно как отдельный поток.
           const bend = status ? 26 : 0
           return (
             <path
@@ -300,7 +300,7 @@ function SectionView({ s, masked = false }: { s: DocSection; masked?: boolean })
   )
 }
 
-/** Вид не настроен: сервер ответил null, либо запрос не дошёл. */
+/** Вид не настроен: сервер ответил null, либо запрос не дошел. */
 function NotConfigured({ name, hint }: { name: string; hint: string }) {
   return (
     <p className="p-12 text-center text-sm text-on-surface-variant">
@@ -320,7 +320,7 @@ function LoadFailed({ name, error }: { name: string; error: string }) {
       {notJSON ? (
         <>
           <p>
-            Файл для вида «{name}» найден, но не разобран: это не JSON. Флаг ждёт{' '}
+            Файл для вида «{name}» найден, но не разобран: это не JSON. Флаг ждет{' '}
             <code className="tabular">team.json</code> — структуру, а не markdown.
           </p>
           <p className="mt-2">
@@ -394,7 +394,7 @@ export function NowView() {
       {/* Полоса свежести стоит НАД текстом, а не под ним: читать страницу,
           не зная, что она отстала, — ровно то, от чего она заводилась. */}
       <FreshnessBanner freshness={now.freshness} />
-      {/* prose-стили руками: tailwind typography — ещё одна зависимость ради
+      {/* prose-стили руками: tailwind typography — еще одна зависимость ради
           одного view, а нужных правил здесь полтора десятка. */}
       <div className="now-prose max-w-4xl">
         <ReactMarkdown remarkPlugins={[remarkGfm]}>{now.markdown}</ReactMarkdown>

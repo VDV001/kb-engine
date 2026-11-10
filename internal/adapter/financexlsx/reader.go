@@ -15,7 +15,7 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// Sheet and column layout of Учёт_финансов.xlsx. Data starts at row 3: row 1 is
+// Sheet and column layout of Учет_финансов.xlsx. Data starts at row 3: row 1 is
 // a title, row 2 the header.
 const (
 	sheetExpenses = "Расходы"
@@ -223,7 +223,7 @@ func readAccounts(f *excelize.File, now func() time.Time) ([]domain.Account, err
 		}
 		// Колонки валюты и курса появились позже книги и остаются
 		// необязательными: у владельца их нет вовсе, и старая книга обязана
-		// читаться как прежде (#332). Пустые ячейки дают рублёвый счёт без
+		// читаться как прежде (#332). Пустые ячейки дают рублевый счет без
 		// курса — то самое поведение, что было до появления колонок.
 		acc, err := readAccountCurrency(bank, balance, updated, cell(row, 3), cell(row, 4), now)
 		if err != nil {
@@ -280,8 +280,8 @@ func parseDate(raw string) (time.Time, error) {
 // readAccountCurrency builds an account from the optional currency and rate
 // cells beside its balance.
 //
-// Негодное значение здесь ОТКАЗЫВАЕТ, а не считается рублём. Молчаливое «не
-// разобрал — значит рубль» показало бы валютный счёт рублёвым, то есть ровно
+// Негодное значение здесь ОТКАЗЫВАЕТ, а не считается рублем. Молчаливое «не
+// разобрал — значит рубль» показало бы валютный счет рублевым, то есть ровно
 // тот дефект, ради которого #332 и заведена: имя говорит одно, число другое.
 func readAccountCurrency(bank string, balance domain.Money, updated time.Time, rawCurrency, rawRate string, now func() time.Time) (domain.Account, error) {
 	rawCurrency = strings.TrimSpace(rawCurrency)
@@ -316,7 +316,7 @@ func readAccountCurrency(bank string, balance domain.Money, updated time.Time, r
 
 // readCurrency reads a row's Валюта cell. Пустая ячейка или отсутствие колонки —
 // рубль. Негодный код — отказ, а не рубль: молчаливое «не разобрал — значит
-// рубль» показало бы долларовую трату рублёвой.
+// рубль» показало бы долларовую трату рублевой.
 // readCurrencies reads the row's currency and an exchange's second side.
 func readCurrencies(row []string, curCol int, recCols [3]int) (domain.Currency, domain.ReceivedParams, error) {
 	cur, err := readCurrency(row, curCol)

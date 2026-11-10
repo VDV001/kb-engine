@@ -33,8 +33,8 @@ describe('состояние адреса на входе', () => {
     expect(screen.getByTestId('v').textContent).toBe('mcp|ddd')
   })
 
-  // Отрицательный контроль: новый заход по адресу без отметки её не выдумывает.
-  it('на своём поиске отметки нет', () => {
+  // Отрицательный контроль: новый заход по адресу без отметки ее не выдумывает.
+  it('на своем поиске отметки нет', () => {
     window.history.replaceState(null, '', '/?tab=archives&q=ddd')
     render(<Probe />)
     expect(screen.getByTestId('v').textContent).toBe('нет|ddd')

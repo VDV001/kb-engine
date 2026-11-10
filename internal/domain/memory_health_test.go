@@ -110,7 +110,7 @@ func TestAssessHealth(t *testing.T) {
 		check  func(t *testing.T, h Health)
 		reason []ReasonKind
 	}{
-		{name: "всё свежее", mut: func(*HealthInput) {}, total: 100, mode: TrustOK},
+		{name: "все свежее", mut: func(*HealthInput) {}, total: 100, mode: TrustOK},
 		{name: "20 дней без решений, ждать нечему: баллов не снято, причина названа как сведение", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-21", DecisionConfirmRule, "Правило один"), dec("2026-10-21", DecisionConfirmRule, "Правило два")}
 		}, total: 93, mode: TrustOK, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
@@ -138,7 +138,7 @@ func TestAssessHealth(t *testing.T) {
 				t.Fatalf("rhythm = %v, want 34", part(h, "rhythm").Value)
 			}
 		}},
-		{name: "предложение ждёт 20 дней, человек смотрел вчера: ритм считает по возрасту предложения", mut: func(in *HealthInput) {
+		{name: "предложение ждет 20 дней, человек смотрел вчера: ритм считает по возрасту предложения", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-11-09", DecisionReview, ""), dec(today, DecisionConfirmRule, "Правило один"), dec(today, DecisionConfirmRule, "Правило два")}
 			in.Queue = []PendingItem{{Name: "a", Since: day("2026-10-21")}}
 		}, total: 80, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
@@ -290,7 +290,7 @@ func TestParseDecision_duplicateApprovalDoesNotDateTheRule(t *testing.T) {
 }
 
 // Очередь сама не может опустить режим: максимальный штраф очереди 25 баллов, а остальное здорово.
-// Поэтому пауза предложений идёт по жёсткому потолку очереди, а не по режиму, и счёт с режимом не трогает.
+// Поэтому пауза предложений идет по жесткому потолку очереди, а не по режиму, и счет с режимом не трогает.
 func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
 	today := day("2026-11-10")
 	queue := func(n int) []PendingItem {
@@ -306,7 +306,7 @@ func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
 		sealOK bool
 		may    bool
 	}{
-		{"29 предложений ещё идут", QueueHardCap - 1, true, true},
+		{"29 предложений еще идут", QueueHardCap - 1, true, true},
 		{"30 предложений: пауза", QueueHardCap, true, false},
 		{"200 предложений: пауза", 200, true, false},
 		{"очередь пуста, печать нарушена: пауза по режиму", 0, false, false},
@@ -326,7 +326,7 @@ func TestHealth_AgentMayPropose_queueHardCap(t *testing.T) {
 }
 
 // Границы очереди: без штрафа до QueueSoftCap, дальше два балла за каждое, на QueueHardCap
-// штраф уже выбран целиком, а режим остаётся «доверяю».
+// штраф уже выбран целиком, а режим остается «доверяю».
 func TestAssessHealth_queueBoundaries(t *testing.T) {
 	today := day("2026-11-10")
 	tests := []struct {

@@ -293,7 +293,7 @@ func TestMemoryDesk_stateShowsDecisionsAndSeal(t *testing.T) {
 	}
 }
 
-// Экран «Здоровье»: счёт, режим, правила с возрастом и события для ритма приходят
+// Экран «Здоровье»: счет, режим, правила с возрастом и события для ритма приходят
 // вместе с остальным состоянием, одним чтением папки.
 func TestMemoryDesk_stateCarriesHealth(t *testing.T) {
 	d := newMemDesk(t)

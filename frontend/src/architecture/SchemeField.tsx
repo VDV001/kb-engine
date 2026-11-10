@@ -38,7 +38,7 @@ export function SchemeField({
 
   const columns = [
     ...layers.map((l) => ({ id: l.id, title: l.title, nodes: map.nodes.filter((n) => n.layer === l.id) })),
-    ...(orphans.length > 0 ? [{ id: '', title: 'Вне объявленных слоёв', nodes: orphans }] : []),
+    ...(orphans.length > 0 ? [{ id: '', title: 'Вне объявленных слоев', nodes: orphans }] : []),
   ].filter((c) => c.nodes.length > 0)
 
   return (
@@ -69,7 +69,7 @@ export function SchemeField({
                 fill="none"
                 strokeWidth={w.step === hotStep ? 2.5 : 1.5}
                 // Непроверенный шаг рисуется пунктиром: на схеме он выглядит
-                // такой же связью, как остальные, а подтверждён он ничем.
+                // такой же связью, как остальные, а подтвержден он ничем.
                 strokeDasharray={w.unverified ? '5 4' : undefined}
                 stroke="var(--secondary)"
                 opacity={w.step === hotStep ? 1 : 0.85}

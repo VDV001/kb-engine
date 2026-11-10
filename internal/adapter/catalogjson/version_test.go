@@ -64,7 +64,7 @@ func TestDecode_versionAndRevision(t *testing.T) {
 
 // Both fields at once is rejected by the domain. Запись пропускается и
 // называется — молча потерять одно из полей хуже, чем не прочитать запись
-// целиком, и хуже же было ронять из-за неё весь каталог.
+// целиком, и хуже же было ронять из-за нее весь каталог.
 func TestDecode_versionAndRevisionTogetherIsNamed(t *testing.T) {
 	c, err := catalogjson.Decode(strings.NewReader(versionedJSON(`,"version":"1.0.0","revision":2`)))
 	if err != nil {

@@ -13,11 +13,11 @@ import (
 // compared against the Python build. Skipped unless LEDGER points at a workbook,
 // because the file is personal and lives outside the repository.
 //
-//	LEDGER=~/claude-cowork/finances/Учёт_финансов.xlsx go test ./internal/adapter/financexlsx/ -run Live -v
+//	LEDGER=~/claude-cowork/finances/Учет_финансов.xlsx go test ./internal/adapter/financexlsx/ -run Live -v
 func TestLive_realLedger(t *testing.T) {
 	path := os.Getenv("LEDGER")
 	if path == "" {
-		t.Skip("set LEDGER=<path to Учёт_финансов.xlsx> to run")
+		t.Skip("set LEDGER=<path to Учет_финансов.xlsx> to run")
 	}
 	led, err := financexlsx.Read(path, time.Now)
 	if err != nil {
