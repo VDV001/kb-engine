@@ -23,6 +23,7 @@ type fakeCDP struct {
 	failCreate bool // браузер отказывает в создании страницы
 	castFrame  bool // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
 	shots      int  // сколько раз просили скриншот
+	navs       []string // адреса Page.navigate
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
@@ -50,6 +51,7 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 			}
 			var p struct {
 				TargetID string `json:"targetId"`
+				URL      string `json:"url"`
 			}
 			_ = json.Unmarshal(m.Params, &p)
 			f.mu.Lock()
@@ -58,6 +60,9 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				call += ":" + p.TargetID
 			}
 			f.calls = append(f.calls, call)
+			if m.Method == "Page.navigate" {
+				f.navs = append(f.navs, p.URL)
+			}
 			var res string
 			switch m.Method {
 			case "Target.getTargets":
@@ -222,4 +227,10 @@ func TestAttachEnablesFocusEmulation(t *testing.T) {
 	if !slices.Contains(f.seen(), "Emulation.setFocusEmulationEnabled") {
 		t.Fatalf("фокус страницы не включен; вызовы: %v", f.seen())
 	}
+}
+
+func (f *fakeCDP) navigations() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return slices.Clone(f.navs)
 }

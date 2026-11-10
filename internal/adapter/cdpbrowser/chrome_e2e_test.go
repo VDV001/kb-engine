@@ -242,3 +242,51 @@ func TestChromePopupsAndIdleScreencast(t *testing.T) {
 		t.Fatal("после нового запроса кадров скринкаст не возобновился")
 	}
 }
+
+// Стартовая страница в настоящем браузере: он открывается на ней, адрес в строке
+// dvk://start, а введенный на ней адрес открывается.
+func TestChromeStartPageNavigates(t *testing.T) {
+	if os.Getenv("KB_BROWSER_E2E") != "1" {
+		t.Skip("нужен установленный Chrome: KB_BROWSER_E2E=1")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html><meta charset=utf-8><title>hello</title><h1>hello</h1>`))
+	}))
+	defer srv.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	profile, err := os.MkdirTemp("", "kb-browser-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(profile) }()
+	c, err := Launch(ctx, Options{Path: os.Getenv("KB_BROWSER_PATH"), Profile: profile, Width: 1280, Height: 800, Headless: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+
+	urlIs := func(after uint64, want string) uint64 {
+		t.Helper()
+		seq := after
+		for range 80 {
+			f, err := c.Next(ctx, seq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seq = f.Seq; f.URL == want {
+				return seq
+			}
+		}
+		t.Fatalf("адрес так и не стал %q", want)
+		return 0
+	}
+	seq := urlIs(0, "dvk://start") // браузер открывается на своей странице, а не на белом экране
+	// Фокус в строке уже стоит (страница сама его ставит): печатаем адрес и Enter.
+	for _, in := range []Input{{T: "text", Text: srv.URL}, {T: "key", Key: "Enter"}} {
+		if err := c.Input(ctx, in); err != nil {
+			t.Fatal(err)
+		}
+	}
+	urlIs(seq, srv.URL+"/")
+}
