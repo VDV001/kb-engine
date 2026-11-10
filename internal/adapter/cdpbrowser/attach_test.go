@@ -20,22 +20,23 @@ type fakeCDP struct {
 	calls []string // «метод» или «метод:целевая страница»
 	pages []string // страницы, которые браузер показывает в getTargets
 
-	failCreate    bool     // браузер отказывает в создании страницы
-	castFrame     bool     // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
-	shots         int      // сколько раз просили скриншот
-	navs          []string // адреса Page.navigate
-	castFails     int      // сколько раз Page.startScreencast отвечает «Not attached to an active page»
-	navDrops      int      // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
-	pageURL       string   // адрес, который браузер считает адресом страницы
-	created       []string // адреса Target.createTarget
-	blankOnCreate bool     // созданная страница остается пустой (загрузка потеряна)
+	failCreate    bool           // браузер отказывает в создании страницы
+	castFrame     bool           // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
+	shots         int            // сколько раз просили скриншот
+	navs          []string       // адреса Page.navigate
+	castFails     int            // сколько раз Page.startScreencast отвечает «Not attached to an active page»
+	navDrops      int            // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
+	pageURL       string         // адрес, который браузер считает адресом страницы
+	created       []string       // адреса Target.createTarget
+	replyW        *io.PipeWriter // канал ответов и событий браузера
+	blankOnCreate bool           // созданная страница остается пустой (загрузка потеряна)
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 	t.Helper()
 	cmdR, cmdW := io.Pipe()
 	replyR, replyW := io.Pipe()
-	f := &fakeCDP{pages: pages}
+	f := &fakeCDP{pages: pages, replyW: replyW}
 	c := newChrome(nil, cmdW)
 	go c.readLoop(replyR)
 	go func() {
@@ -329,5 +330,55 @@ func TestAttachGivesUpStartPageQuietly(t *testing.T) {
 	}
 	if n := len(f.navigations()); n < 2 || n > 12 {
 		t.Fatalf("переходов %d, want от 2 до 12", n)
+	}
+}
+
+// emit sends a browser event (without a session: это события самого браузера).
+func (f *fakeCDP) emit(method string, params any) {
+	ev, _ := json.Marshal(map[string]any{"method": method, "params": params})
+	_, _ = f.replyW.Write(append(ev, 0))
+}
+
+func waitSession(c *Chrome, want string, d time.Duration) bool {
+	for end := time.Now().Add(d); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if c.session() == want {
+			return true
+		}
+	}
+	return false
+}
+
+// Когда закрываются прежние страницы, Brave сам открывает вместо них пустую вкладку. Это
+// не окно, которое открыла страница: экраном остается своя страница, а не пустая вкладка.
+func TestIgnoresPagesTheBrowserOpensOnItsOwn(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	f.emit("Target.targetCreated", map[string]any{"targetInfo": map[string]any{"targetId": "replacement", "type": "page"}})
+	if waitSession(c, "S-replacement", 400*time.Millisecond) {
+		t.Fatal("экраном стала пустая вкладка, которую браузер открыл сам")
+	}
+	if slices.Contains(f.seen(), "Target.attachToTarget:replacement") {
+		t.Fatal("сервер подключился к вкладке, которую браузер открыл сам")
+	}
+	if got := c.session(); got != "S-ours" {
+		t.Fatalf("сессия = %q, want S-ours", got)
+	}
+}
+
+// Окно, которое открыла страница (target=_blank, вход через Google), становится экраном.
+func TestAdoptsPagesOpenedByThePage(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	f.emit("Target.targetCreated", map[string]any{"targetInfo": map[string]any{"targetId": "popup", "type": "page", "openerId": "ours"}})
+	if !waitSession(c, "S-popup", 3*time.Second) {
+		t.Fatalf("окно, открытое страницей, не стало экраном: сессия %q", c.session())
 	}
 }

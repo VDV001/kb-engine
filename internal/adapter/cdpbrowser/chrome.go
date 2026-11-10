@@ -242,7 +242,7 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	_ = json.Unmarshal(r, &ts)
 	// Работаем со своей страницей, а не с первой попавшейся: Brave при запуске держит две
 	// пустые страницы, одна из них скрыта и кадров не рисует (белый экран во вкладке).
-	r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": "about:blank"})
+	r, err = c.call(ctx, "", "Target.createTarget", map[string]any{"url": StartURL()}) // сразу со стартовой страницей: пустая about:blank дозагрузилась бы позже и перекрыла ее
 	if err != nil {
 		return err // своей страницы нет: чужие не трогаем, иначе браузер остался бы без окон
 	}
@@ -279,17 +279,15 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	return err
 }
 
-// openStart opens the start page instead of a white screen (сервер сам идет на data:-адрес,
-// человеку он закрыт). Brave сразу после запуска молча теряет первые переходы, поэтому адрес
-// проверяется, и переход повторяется. Не открылась совсем — не ошибка: пустая страница рабочая.
+// openStart makes sure the page shows the start page instead of a white screen (сервер сам идет
+// на data:-адрес, человеку он закрыт). Brave сразу после запуска молча теряет загрузки и переходы,
+// поэтому адрес проверяется, и переход повторяется. Не открылась совсем — не ошибка: пустая
+// страница рабочая.
 //
 // ponytail: до 10 попыток по 250 мс; потолок — браузер, который не принимает переход дольше
 // двух с половиной секунд, остается на пустой странице; путь — ждать событие готовности браузера.
 func (c *Chrome) openStart(ctx context.Context, sess string) error {
 	for range 10 {
-		if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
-			return err
-		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
@@ -300,6 +298,9 @@ func (c *Chrome) openStart(ctx context.Context, sess string) error {
 		}
 		if c.currentURL() == StartURL() {
 			return nil
+		}
+		if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
+			return err
 		}
 	}
 	return nil
