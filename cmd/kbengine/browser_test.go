@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"io"
 	"net"
 	"net/http"
 	"os"

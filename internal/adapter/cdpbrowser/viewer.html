@@ -12,6 +12,7 @@
   #stage { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; }
   canvas { width: 100%; max-width: {{W}}px; height: auto; align-self: flex-start; cursor: default; background: #fff; }
   #kb { position: fixed; left: -999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+  #addr.plain { color: #e0a458; }
   #msg { padding: 4px 8px; color: #e0a458; }
 </style>
 <div id="bar">
@@ -25,35 +26,47 @@
 <textarea id="kb" aria-label="Ввод в браузер"></textarea>
 <script>
 const W = {{W}}, H = {{H}};
-const c = document.getElementById("c"), x = c.getContext("2d"), kb = document.getElementById("kb"), msg = document.getElementById("msg");
+const c = document.getElementById("c"), x = c.getContext("2d"), kb = document.getElementById("kb"), msg = document.getElementById("msg"), addr = document.getElementById("addr");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const say = (t) => { msg.hidden = !t; msg.textContent = t || ""; };
+const clamp = (v, hi) => Math.max(0, Math.min(hi, v));
 // Адреса относительные: окно открывает страницу под своим префиксом, и абсолютный путь ушел бы мимо прокси.
-async function send(ev) {
-  try {
-    const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev) });
-    if (!r.ok) say("Браузер: " + (await r.text()).trim().slice(0, 200)); else say("");
-  } catch (e) { say("Браузер не отвечает"); }
+// Ввод идет одной очередью: параллельные запросы доходили бы до браузера вразнобой (буквы, Enter раньше текста).
+let chain = Promise.resolve(), moving = false;
+function send(ev) {
+  const run = async () => {
+    try {
+      const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev) });
+      if (!r.ok) say("Браузер: " + (await r.text()).trim().slice(0, 200)); else say("");
+    } catch (e) { say("Браузер не отвечает"); }
+  };
+  chain = chain.then(run);
+  return chain;
 }
-let seq = 0;
+let seq = 0, epoch = "";
 (async function frames() {
   for (;;) {
     try {
       const r = await fetch("frame?after=" + seq, { cache: "no-store" });
+      const e = r.headers.get("X-Frame-Epoch");
+      if (e && e !== epoch) { epoch = e; seq = 0; if (r.status === 204) continue; } // сервер перезапущен: номера кадров с единицы
       if (r.status === 200) {
         seq = +r.headers.get("X-Frame-Seq");
+        const u = r.headers.get("X-Frame-URL");
+        if (u !== null && document.activeElement !== addr) { try { addr.value = decodeURIComponent(u); } catch (_) { addr.value = u; } addr.classList.toggle("plain", addr.value.startsWith("http:")); }
         const bmp = await createImageBitmap(await r.blob());
         x.drawImage(bmp, 0, 0, W, H); bmp.close(); say("");
       } else if (r.status !== 204) { say("Браузер: " + (await r.text()).trim().slice(0, 200)); await sleep(1500); }
     } catch (e) { say("Браузер не отвечает"); await sleep(1500); }
   }
 })();
-const pos = (e) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
-let lastMove = 0;
-c.addEventListener("mousedown", (e) => { send({ t: "mouse", type: "pressed", ...pos(e) }); kb.focus(); e.preventDefault(); });
-c.addEventListener("mouseup", (e) => send({ t: "mouse", type: "released", ...pos(e) }));
-c.addEventListener("mousemove", (e) => { const n = Date.now(); if (n - lastMove > 50) { lastMove = n; send({ t: "mouse", type: "moved", ...pos(e) }); } });
-c.addEventListener("wheel", (e) => { e.preventDefault(); const p = pos(e); send({ t: "wheel", dx: e.deltaX, dy: e.deltaY, ...p }); }, { passive: false });
+const pos = (e) => { const r = c.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) * W / r.width, W), y: clamp((e.clientY - r.top) * H / r.height, H) }; };
+let lastMove = 0, down = false;
+c.addEventListener("mousedown", (e) => { down = true; send({ t: "mouse", type: "pressed", ...pos(e) }); kb.focus(); e.preventDefault(); });
+// Кнопку могут отпустить вне холста: отпускание слушаем на окне, иначе браузер считал бы кнопку зажатой.
+window.addEventListener("mouseup", (e) => { if (down) { down = false; send({ t: "mouse", type: "released", ...pos(e) }); } });
+c.addEventListener("mousemove", (e) => { const n = Date.now(); if (!moving && n - lastMove > 50) { lastMove = n; moving = true; send({ t: "mouse", type: "moved", ...pos(e) }).then(() => { moving = false; }); } });
+c.addEventListener("wheel", (e) => { e.preventDefault(); send({ t: "wheel", dx: e.deltaX, dy: e.deltaY, ...pos(e) }); }, { passive: false });
 // Текст — из скрытого поля: так приходят и обычные буквы, и кириллица с IME, и вставка Cmd+V.
 kb.addEventListener("input", (e) => { if (!e.isComposing && kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
 kb.addEventListener("compositionend", () => { if (kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
@@ -63,11 +76,10 @@ const nav = (text) => send({ t: "nav", text });
 document.getElementById("back").onclick = () => nav("back");
 document.getElementById("fwd").onclick = () => nav("forward");
 document.getElementById("rel").onclick = () => nav("reload");
-const addr = document.getElementById("addr");
 addr.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
   let v = addr.value.trim();
-  if (v && !/^[a-z][a-z0-9+.-]*:/i.test(v)) v = "https://" + v;
-  if (v) nav(v);
+  if (v && !/^[a-z][a-z0-9+.-]*:\/\//i.test(v)) v = "https://" + v; // «localhost:3000» схемой не считается
+  if (v) { nav(v); addr.blur(); }
 });
 </script>

@@ -1,21 +1,20 @@
 package cdpbrowser
 
 import (
+	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/coder/websocket"
 )
 
 // Options of a launched Chrome.
@@ -59,17 +58,23 @@ func FindBrowser() (string, error) {
 }
 
 // Chrome is a running browser; it is a Screen.
+//
+// CDP идет по каналу (--remote-debugging-pipe, дескрипторы 3 и 4), а не по
+// порту: порт отладки открыт любому локальному процессу без токена, а через
+// него — cookie и вкладки (находка security-ревью #526, F2).
 type Chrome struct {
 	cmd  *exec.Cmd
-	conn *websocket.Conn
-	sess string // сессия страницы в CDP
+	out  io.WriteCloser // команды браузеру
+	wmu  sync.Mutex     // запись в канал — по одному сообщению
+	sess string         // сессия страницы в CDP
 
 	nextID atomic.Int64
 	mu     sync.Mutex
 	wait   map[int64]chan cdpReply
 	frame  Frame
 	change chan struct{} // закрывается при каждом новом кадре
-	down   bool          // кнопка мыши зажата: движение тогда перетаскивание
+	url    string
+	down   bool // кнопка мыши зажата: движение тогда перетаскивание
 
 	dead    chan struct{}
 	deadErr error
@@ -80,6 +85,9 @@ type cdpReply struct {
 	result json.RawMessage
 	err    error
 }
+
+// Done is closed when the browser is gone: закрыли окно или он упал.
+func (c *Chrome) Done() <-chan struct{} { return c.dead }
 
 // Launch starts the browser and attaches to its first page.
 func Launch(ctx context.Context, o Options) (*Chrome, error) {
@@ -96,66 +104,44 @@ func Launch(ctx context.Context, o Options) (*Chrome, error) {
 	if err := os.MkdirAll(o.Profile, 0o700); err != nil {
 		return nil, err
 	}
-	portFile := filepath.Join(o.Profile, "DevToolsActivePort")
-	_ = os.Remove(portFile) // от прошлого запуска: иначе подключимся к умершему порту
 	args := []string{
-		"--remote-debugging-port=0", // порт выбирает система: чужой процесс его заранее не знает
-		"--user-data-dir=" + o.Profile, "--no-first-run", "--no-default-browser-check",
+		"--remote-debugging-pipe", "--user-data-dir=" + o.Profile, "--no-first-run", "--no-default-browser-check",
 		"--window-size=" + strconv.Itoa(o.Width) + "," + strconv.Itoa(o.Height),
+		// Закрытое другим окном или свернутое окно Chrome иначе перестает рисовать, и картинка замирает.
+		"--disable-backgrounding-occluded-windows", "--disable-renderer-backgrounding", "--disable-background-timer-throttling",
 	}
 	if o.Headless {
 		args = append(args, "--headless=new")
 	}
-	// Без CommandContext: запуск живет дольше ctx вызова, остановка — Close.
-	cmd := exec.Command(path, append(args, "about:blank")...)
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("запуск %s: %w", filepath.Base(path), err)
-	}
-	c := &Chrome{cmd: cmd, wait: map[int64]chan cdpReply{}, change: make(chan struct{}), dead: make(chan struct{})}
-	go func() { c.die(cmd.Wait()) }()
-
-	wsURL, err := waitDevTools(ctx, portFile, c.dead)
+	childIn, parentOut, err := os.Pipe() // браузер читает fd 3, мы пишем
 	if err != nil {
-		c.kill()
 		return nil, err
 	}
-	conn, resp, err := websocket.Dial(ctx, wsURL, nil)
-	if resp != nil && resp.Body != nil {
-		_ = resp.Body.Close()
-	}
+	parentIn, childOut, err := os.Pipe() // браузер пишет fd 4, мы читаем
 	if err != nil {
-		c.kill()
-		return nil, fmt.Errorf("подключение к браузеру: %w", err)
+		_ = childIn.Close()
+		_ = parentOut.Close()
+		return nil, err
 	}
-	conn.SetReadLimit(32 << 20) // кадр JPEG бывает в сотни КБ
-	c.conn = conn
-	go c.readLoop()
+	// Без CommandContext: запуск живет дольше ctx вызова, остановка — Close.
+	cmd := exec.Command(path, append(args, "about:blank")...)
+	cmd.ExtraFiles = []*os.File{childIn, childOut}
+	if err := cmd.Start(); err != nil {
+		for _, f := range []*os.File{childIn, parentOut, parentIn, childOut} {
+			_ = f.Close()
+		}
+		return nil, fmt.Errorf("запуск %s: %w", filepath.Base(path), err)
+	}
+	_ = childIn.Close() // концы ребенка остались у него
+	_ = childOut.Close()
+	c := &Chrome{cmd: cmd, out: parentOut, wait: map[int64]chan cdpReply{}, change: make(chan struct{}), dead: make(chan struct{})}
+	go func() { c.die(cmd.Wait()) }()
+	go c.readLoop(parentIn)
 	if err := c.attach(ctx, o); err != nil {
 		_ = c.Close()
 		return nil, err
 	}
 	return c, nil
-}
-
-// waitDevTools reads the port and path Chrome writes once it listens.
-func waitDevTools(ctx context.Context, portFile string, dead <-chan struct{}) (string, error) {
-	deadline := time.After(20 * time.Second)
-	for {
-		if raw, err := os.ReadFile(portFile); err == nil {
-			if lines := strings.Split(strings.TrimSpace(string(raw)), "\n"); len(lines) >= 2 {
-				return "ws://127.0.0.1:" + strings.TrimSpace(lines[0]) + strings.TrimSpace(lines[1]), nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-dead:
-			return "", errors.New("браузер закрылся сразу после запуска")
-		case <-deadline:
-			return "", errors.New("браузер не открыл порт отладки за 20 с")
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
 }
 
 func (c *Chrome) attach(ctx context.Context, o Options) error {
@@ -196,6 +182,10 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 		return errors.New("браузер не дал сессию страницы")
 	}
 	c.sess = at.SessionID
+	// Загрузки закрыты: страница не кладет файлы в ~/Downloads мимо человека.
+	if _, err := c.call(ctx, "", "Browser.setDownloadBehavior", map[string]any{"behavior": "deny"}); err != nil {
+		return err
+	}
 	for _, step := range []struct {
 		m string
 		p any
@@ -222,29 +212,25 @@ func (c *Chrome) die(err error) {
 	})
 }
 
-func (c *Chrome) kill() {
-	if c.cmd != nil && c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
-	}
-}
-
 // Close stops the browser: сначала просьбой закрыться (профиль остается
 // целым), потом, если не вышло за три секунды, силой.
+//
+// ponytail: убитый kbengine оставляет Chrome с занятым профилем; канал при этом
+// закрывается, и Chrome сам завершается (EOF на fd 3). Потолок — зависший
+// Chrome, не читающий канал; путь — убивать по PID из файла.
 func (c *Chrome) Close() error {
-	if c.conn != nil {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		_, _ = c.call(ctx, "", "Browser.close", nil)
-		cancel()
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	_, _ = c.call(ctx, "", "Browser.close", nil)
+	cancel()
 	select {
 	case <-c.dead:
 	case <-time.After(3 * time.Second):
-		c.kill()
+		if c.cmd.Process != nil {
+			_ = c.cmd.Process.Kill()
+		}
 		<-c.dead
 	}
-	if c.conn != nil {
-		_ = c.conn.CloseNow()
-	}
+	_ = c.out.Close()
 	return nil
 }
 
@@ -254,6 +240,11 @@ func (c *Chrome) call(ctx context.Context, sess, method string, params any) (jso
 	c.mu.Lock()
 	c.wait[id] = ch
 	c.mu.Unlock()
+	defer func() { // ответа может не быть (отмена, смерть браузера): запись не должна копиться
+		c.mu.Lock()
+		delete(c.wait, id)
+		c.mu.Unlock()
+	}()
 	msg := map[string]any{"id": id, "method": method}
 	if params != nil {
 		msg["params"] = params
@@ -262,7 +253,10 @@ func (c *Chrome) call(ctx context.Context, sess, method string, params any) (jso
 		msg["sessionId"] = sess
 	}
 	b, _ := json.Marshal(msg)
-	if err := c.conn.Write(ctx, websocket.MessageText, b); err != nil {
+	c.wmu.Lock()
+	_, err := c.out.Write(append(b, 0)) // сообщения в канале разделены нулевым байтом
+	c.wmu.Unlock()
+	if err != nil {
 		return nil, err
 	}
 	select {
@@ -275,9 +269,10 @@ func (c *Chrome) call(ctx context.Context, sess, method string, params any) (jso
 	}
 }
 
-func (c *Chrome) readLoop() {
+func (c *Chrome) readLoop(in io.Reader) {
+	br := bufio.NewReaderSize(in, 1<<20) // кадр JPEG бывает в сотни КБ
 	for {
-		_, b, err := c.conn.Read(context.Background())
+		b, err := br.ReadBytes(0)
 		if err != nil {
 			c.die(err)
 			return
@@ -291,7 +286,7 @@ func (c *Chrome) readLoop() {
 				Message string `json:"message"`
 			} `json:"error"`
 		}
-		if json.Unmarshal(b, &m) != nil {
+		if json.Unmarshal(b[:len(b)-1], &m) != nil {
 			continue
 		}
 		switch {
@@ -310,8 +305,34 @@ func (c *Chrome) readLoop() {
 			}
 		case m.Method == "Page.screencastFrame":
 			c.onFrame(m.Params)
+		case m.Method == "Page.frameNavigated":
+			c.onNavigated(m.Params)
+		case m.Method == "Page.javascriptDialogOpening":
+			// Диалог без ответа замораживает страницу, а окна Chrome человек может не видеть.
+			// ponytail: отказываемся молча; потолок — beforeunload и confirm нельзя принять;
+			// путь — показывать текст диалога в окне и спрашивать.
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_, _ = c.call(ctx, c.sess, "Page.handleJavaScriptDialog", map[string]any{"accept": false})
+			}()
 		}
 	}
+}
+
+func (c *Chrome) onNavigated(p json.RawMessage) {
+	var f struct {
+		Frame struct {
+			ParentID string `json:"parentId"`
+			URL      string `json:"url"`
+		} `json:"frame"`
+	}
+	if json.Unmarshal(p, &f) != nil || f.Frame.ParentID != "" {
+		return // только главный фрейм: вложенные не адрес страницы
+	}
+	c.mu.Lock()
+	c.url = f.Frame.URL
+	c.mu.Unlock()
 }
 
 func (c *Chrome) onFrame(p json.RawMessage) {
@@ -333,7 +354,7 @@ func (c *Chrome) onFrame(p json.RawMessage) {
 		return
 	}
 	c.mu.Lock()
-	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg}
+	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: c.url}
 	close(c.change)
 	c.change = make(chan struct{})
 	c.mu.Unlock()

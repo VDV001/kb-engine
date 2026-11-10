@@ -12,6 +12,7 @@ import (
 type Frame struct {
 	Seq  uint64
 	JPEG []byte
+	URL  string // адрес главного фрейма: человек вводит пароли и должен видеть, где он
 }
 
 // Input is one thing the person did on the picture. Только то, что Handler

@@ -1,18 +1,15 @@
 package cdpbrowser
 
 import (
+	"crypto/rand"
 	"crypto/subtle"
-	_ "embed"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"unicode/utf8"
 )
-
-//go:embed viewer.html
-var viewerHTML string
 
 const (
 	maxBody    = 64 << 10 // событие — несколько десятков байт; больше — не событие
@@ -29,20 +26,26 @@ var keys = map[string]bool{
 	"Home": true, "End": true, "PageUp": true, "PageDown": true,
 }
 
-// Handler serves the viewer page, the frame long-poll and the input endpoint.
-// Все три — только с токеном в X-KB-Token: через CDP браузер отдается целиком
-// (входы в сайты, cookie), а порт на loopback достанется любому процессу Мака.
+// Handler serves the frame long-poll and the input endpoint, nothing else:
+// страницу-экран отдает само окно (Viewer). HTML от того, кто слушает сокет,
+// выполнился бы в источнике окна, поэтому у сервера страницы нет вовсе.
+// Оба пути — только с токеном в X-KB-Token: через CDP браузер отдается целиком
+// (входы в сайты, cookie).
 func Handler(s Screen, cfg Config) http.Handler {
-	page := strings.NewReplacer("{{W}}", strconv.Itoa(cfg.Width), "{{H}}", strconv.Itoa(cfg.Height)).Replace(viewerHTML)
+	epoch := newEpoch()
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-store")
-		_, _ = w.Write([]byte(page))
-	})
-	mux.HandleFunc("GET /frame", func(w http.ResponseWriter, r *http.Request) { serveFrame(w, r, s, cfg) })
+	mux.HandleFunc("GET /frame", func(w http.ResponseWriter, r *http.Request) { serveFrame(w, r, s, cfg, epoch) })
 	mux.HandleFunc("POST /input", func(w http.ResponseWriter, r *http.Request) { serveInput(w, r, s, cfg) })
 	return authorized(cfg.Token, mux)
+}
+
+// newEpoch names this run of the server: после перезапуска номера кадров идут с
+// единицы, и окно со старым after=4200 ждало бы вечно; по смене эпохи оно
+// начинает с нуля.
+func newEpoch() string {
+	b := make([]byte, 6)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // authorized refuses every request without the token. Пустой токен в
@@ -58,12 +61,13 @@ func authorized(token string, next http.Handler) http.Handler {
 	})
 }
 
-func serveFrame(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
+func serveFrame(w http.ResponseWriter, r *http.Request, s Screen, cfg Config, epoch string) {
 	after, err := strconv.ParseUint(r.URL.Query().Get("after"), 10, 64)
 	if err != nil {
 		http.Error(w, "after — номер последнего кадра, 0 для первого", http.StatusBadRequest)
 		return
 	}
+	w.Header().Set("X-Frame-Epoch", epoch)
 	ctx, cancel := withWait(r.Context(), cfg.Wait)
 	defer cancel()
 	f, err := s.Next(ctx, after)
@@ -81,6 +85,7 @@ func serveFrame(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 	w.Header().Set("Content-Type", "image/jpeg")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Frame-Seq", strconv.FormatUint(f.Seq, 10))
+	w.Header().Set("X-Frame-URL", url.QueryEscape(truncateRunes(f.URL, maxAddress)))
 	_, _ = w.Write(f.JPEG)
 }
 
@@ -170,4 +175,11 @@ func abs(f float64) float64 {
 		return -f
 	}
 	return f
+}
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }

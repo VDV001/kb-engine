@@ -80,6 +80,21 @@ func TestChromeEndToEnd(t *testing.T) {
 		}
 	}
 	waitFor(t, "текст дошел до поля", func() bool { mu.Lock(); defer mu.Unlock(); return typed == "Привет" })
+	// Адрес страницы идет вместе с кадром: человек видит, где он на самом деле.
+	gotURL := ""
+	for seq := f.Seq; gotURL == "" || gotURL == "about:blank"; {
+		fr, err := c.Next(ctx, seq)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seq, gotURL = fr.Seq, fr.URL
+		if gotURL == srv.URL+"/" {
+			break
+		}
+		if seq > f.Seq+20 {
+			t.Fatalf("адрес кадра %q, want %q", gotURL, srv.URL+"/")
+		}
+	}
 	if err := c.Input(ctx, Input{T: "key", Key: "Backspace"}); err != nil {
 		t.Fatal(err)
 	}

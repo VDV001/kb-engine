@@ -17,12 +17,11 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/cdpbrowser"
-	"github.com/daniil/kb-engine/internal/adapter/loopback"
 )
 
-const browserUsage = `usage: kbengine browser serve [--addr 127.0.0.1:8790] [--token-file ~/.kb-tokens/browser] [--profile DIR] [--chrome PATH] [--headless]
-       Браузер для вкладки «Браузер» окна DVK: Chrome, Brave, Edge или Chromium на этом Mac,
-       картинка страницы и ввод — за токеном, только на 127.0.0.1.`
+const browserUsage = `usage: kbengine browser serve [--socket ~/.kb-tokens/browser.sock] [--token-file ~/.kb-tokens/browser] [--profile DIR] [--chrome PATH] [--headless]
+       Браузер для вкладки «Браузер» окна DVK: Chrome, Brave, Edge или Chromium на этом Mac.
+       Сервер слушает unix-сокет в вашей папке (не сетевой порт) и каждый запрос проверяет по токену.`
 
 // Размер экрана вкладки. Одно число на сервер: окно масштабирует картинку.
 const (
@@ -30,9 +29,13 @@ const (
 	browserHeight = 800
 )
 
-// errBrowserNotLoopback: через CDP браузер отдается целиком (входы в сайты,
-// cookie), поэтому наружу его не открывают ни флагом, ни токеном.
-var errBrowserNotLoopback = errors.New("адрес — только 127.0.0.1, ::1 или localhost: браузер с вашими входами в сеть не открывается")
+// Отказы запуска. Сокет, а не порт: порт на loopback занимает любой процесс
+// Мака (и чужой пользователь), а папка с правами 0700 достается только вам
+// (находка security-ревью #526, F1).
+var (
+	errBrowserSocketDir = errors.New("папка сокета доступна другим: нужны права 0700")
+	errBrowserRunning   = errors.New("kbengine browser serve уже запущен на этом сокете")
+)
 
 // browserScreen is a launched browser as the command uses it.
 type browserScreen interface {
@@ -70,28 +73,87 @@ func browserServe(ctx context.Context, args []string, stdout, stderr io.Writer,
 		fmt.Fprintln(stderr, "токен браузера:", err)
 		return 1
 	}
+	// Сокет раньше браузера: занятый или чужой путь — отказ до того, как Chrome
+	// откроет окно и тронет профиль.
+	ln, err := listenBrowserSocket(o.socket)
+	if err != nil {
+		fmt.Fprintln(stderr, "сокет:", err)
+		return 1
+	}
 	scr, err := launch(ctx, cdpbrowser.Options{Path: o.chrome, Profile: o.profile, Width: browserWidth, Height: browserHeight, Headless: o.headless})
 	if err != nil {
+		_ = ln.Close()
 		fmt.Fprintln(stderr, "браузер:", err)
 		return 1
 	}
 	defer func() { _ = scr.Close() }()
-	ln, err := net.Listen("tcp", o.addr)
-	if err != nil {
-		fmt.Fprintln(stderr, err)
-		return 1
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	closed := make(chan struct{})
+	if d, ok := scr.(interface{ Done() <-chan struct{} }); ok {
+		go func() { // закрыли окно Chrome: отвечать 502 вечно незачем, вкладка подскажет запустить заново
+			select {
+			case <-d.Done():
+				fmt.Fprintln(stderr, "браузер закрыт: serve завершается, запустите его снова")
+				close(closed)
+				cancel()
+			case <-ctx.Done():
+			}
+		}()
 	}
-	fmt.Fprintf(stdout, "kbengine browser: слушает http://%s, токен в %s\n", ln.Addr(), o.tokenFile)
+	fmt.Fprintf(stdout, "kbengine browser: слушает %s, токен в %s\n", o.socket, o.tokenFile)
 	if err := serveUntil(ctx, ln, cdpbrowser.Handler(scr, cdpbrowser.Config{Token: token, Width: browserWidth, Height: browserHeight, Wait: 25 * time.Second})); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	return 0
+	select {
+	case <-closed:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// listenBrowserSocket opens the unix socket: папка 0700 и только ваша, файл
+// 0600; сокет от убитого прошлого запуска заменяется, живой — отказ.
+func listenBrowserSocket(path string) (net.Listener, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	st, err := os.Stat(dir)
+	if err != nil {
+		return nil, err
+	}
+	if st.Mode().Perm()&0o077 != 0 {
+		return nil, fmt.Errorf("%w: %s", errBrowserSocketDir, dir)
+	}
+	if _, err := os.Lstat(path); err == nil {
+		if c, err := net.DialTimeout("unix", path, 500*time.Millisecond); err == nil {
+			_ = c.Close()
+			return nil, fmt.Errorf("%w (%s)", errBrowserRunning, path)
+		}
+		if err := os.Remove(path); err != nil {
+			return nil, err
+		}
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }
 
 // serveUntil serves h on ln until ctx ends; остановка по ctx — не ошибка.
 func serveUntil(ctx context.Context, ln net.Listener, h http.Handler) error {
-	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second}
+	// ponytail: ограничений на число одновременных /frame нет (каждый держится до 25 с);
+	// за токеном и в папке 0700 это только свой процесс. Потолок — зависший клиент;
+	// путь — лимит соединений и WriteTimeout на /input.
+	srv := &http.Server{Handler: h, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -105,32 +167,23 @@ func serveUntil(ctx context.Context, ln net.Listener, h http.Handler) error {
 }
 
 type browserFlags struct {
-	addr, tokenFile, profile, chrome string
-	headless                         bool
+	socket, tokenFile, profile, chrome string
+	headless                           bool
 }
 
-// parseBrowserFlags reads the flags and refuses a non-loopback address; ненулевой код — выход.
+// parseBrowserFlags reads the flags; ненулевой код — выход.
 func parseBrowserFlags(args []string, stderr io.Writer) (browserFlags, int) {
 	home, _ := os.UserHomeDir()
 	cfgDir, _ := os.UserConfigDir()
 	var o browserFlags
 	fs := flag.NewFlagSet("browser serve", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fs.StringVar(&o.addr, "addr", "127.0.0.1:8790", "address to listen on (loopback only)")
+	fs.StringVar(&o.socket, "socket", filepath.Join(home, ".kb-tokens", "browser.sock"), "unix socket to listen on (its folder must be 0700)")
 	fs.StringVar(&o.tokenFile, "token-file", filepath.Join(home, ".kb-tokens", "browser"), "token file (mode 0600); created with a random token if missing")
 	fs.StringVar(&o.profile, "profile", filepath.Join(cfgDir, "kb-browser", "profile"), "browser profile folder (separate from your everyday browser)")
 	fs.StringVar(&o.chrome, "chrome", "", "path to a Chromium-based browser; empty means find Chrome, Brave, Edge or Chromium")
 	fs.BoolVar(&o.headless, "headless", false, "no browser window on screen (checks and servers)")
 	if err := fs.Parse(args); err != nil {
-		return o, 2
-	}
-	host, _, err := net.SplitHostPort(o.addr)
-	if err != nil {
-		fmt.Fprintf(stderr, "%v: %q\n", errBadAddr, o.addr)
-		return o, 2
-	}
-	if !loopback.Host(host) {
-		fmt.Fprintln(stderr, errBrowserNotLoopback)
 		return o, 2
 	}
 	return o, 0
