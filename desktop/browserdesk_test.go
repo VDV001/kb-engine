@@ -192,3 +192,21 @@ func mkExec(t *testing.T, path string) {
 		t.Fatal(err)
 	}
 }
+
+// Привязки Wails: окно зовет их по именам, и все они идут через browserDesk.
+func TestAppBrowserBindings(t *testing.T) {
+	d, h, _ := newTestDesk(t, chromeApp, braveApp)
+	a := &App{browser: d}
+	if got := a.BrowserState(); len(got.Installed) != 2 || got.Auto != "Google Chrome" {
+		t.Fatalf("BrowserState = %+v", got)
+	}
+	if err := a.BrowserChoose(braveApp.Path); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.BrowserStart(); err != nil || !slices.Equal(h.started, []string{braveApp.Path}) {
+		t.Fatalf("BrowserStart = %v, started %v", err, h.started)
+	}
+	if err := a.BrowserStop(); err != nil || h.stopped != 1 {
+		t.Fatalf("BrowserStop = %v, stopped %d", err, h.stopped)
+	}
+}
