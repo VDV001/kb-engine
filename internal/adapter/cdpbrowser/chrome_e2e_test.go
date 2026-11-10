@@ -159,3 +159,86 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 	}
 	t.Fatal("не дождались: " + what)
 }
+
+// Находки повторного ревью #526 на настоящем Chrome: окно, открытое страницей
+// (target=_blank, OAuth), становится экраном; закрытое окно возвращает прежнее;
+// скринкаст не идет, пока никто не смотрит.
+func TestChromePopupsAndIdleScreencast(t *testing.T) {
+	if os.Getenv("KB_BROWSER_E2E") != "1" {
+		t.Skip("нужен установленный Chrome: KB_BROWSER_E2E=1")
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/pop", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html><meta charset=utf-8><title>pop</title><body style="margin:0"><button id=b style="position:absolute;left:0;top:0;width:200px;height:60px" onclick="window.close()">close</button>`))
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`<!doctype html><meta charset=utf-8><title>main</title><body style="margin:0"><a id=a href="/pop" target="_blank" style="position:absolute;left:0;top:0;width:300px;height:80px;display:block">open</a>`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	profile, err := os.MkdirTemp("", "kb-browser-e2e")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = os.RemoveAll(profile) }()
+	c, err := Launch(ctx, Options{Path: os.Getenv("KB_BROWSER_PATH"), Profile: profile, Width: 1280, Height: 800, Headless: true, ScreencastIdle: 400 * time.Millisecond})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+
+	first, err := c.Next(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Input(ctx, Input{T: "nav", Text: srv.URL + "/"}); err != nil {
+		t.Fatal(err)
+	}
+	urlIs := func(want string) {
+		t.Helper()
+		seq := first.Seq
+		for range 60 {
+			f, err := c.Next(ctx, seq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if seq = f.Seq; f.URL == want {
+				return
+			}
+		}
+		t.Fatalf("адрес так и не стал %q", want)
+	}
+	urlIs(srv.URL + "/")
+	for _, ev := range []string{"pressed", "released"} {
+		if err := c.Input(ctx, Input{T: "mouse", Type: ev, X: 20, Y: 20, Count: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	urlIs(srv.URL + "/pop") // окно, открытое страницей, стало экраном
+	for _, ev := range []string{"pressed", "released"} {
+		if err := c.Input(ctx, Input{T: "mouse", Type: ev, X: 20, Y: 20, Count: 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	urlIs(srv.URL + "/") // закрыли окно: вернулись на прежнее
+
+	// Никто не спрашивает кадры: скринкаст останавливается.
+	waitFor(t, "скринкаст остановлен без зрителя", func() bool { return !c.screencasting() })
+	last := c.lastFrame().Seq
+	got := make(chan Frame, 1)
+	go func() {
+		f, _ := c.Next(ctx, last)
+		got <- f
+	}()
+	select {
+	case f := <-got:
+		if f.Seq <= last {
+			t.Fatal("кадр после возобновления не новый")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("после нового запроса кадров скринкаст не возобновился")
+	}
+}

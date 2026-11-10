@@ -1,10 +1,12 @@
 package cdpbrowser
 
 import (
+	"cmp"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,7 +35,15 @@ var keys = map[string]bool{
 	"Enter": true, "Backspace": true, "Tab": true, "Escape": true, "Delete": true,
 	"ArrowLeft": true, "ArrowRight": true, "ArrowUp": true, "ArrowDown": true,
 	"Home": true, "End": true, "PageUp": true, "PageDown": true,
+	"SelectAll": true, // Cmd+A и Ctrl+A окна
 }
+
+// Модификаторы клавиш в маске CDP.
+const (
+	modMeta  = 4
+	modMask  = 15 // Alt | Ctrl | Meta | Shift
+	maxClick = 3  // двойной и тройной щелчок; дальше щелчки не считаются
+)
 
 // Handler serves the frame long-poll and the input endpoint, nothing else:
 // страницу-экран отдает само окно (Viewer). HTML от того, кто слушает сокет,
@@ -44,7 +54,7 @@ func Handler(s Screen, cfg Config) http.Handler {
 	epoch := newEpoch()
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /frame", func(w http.ResponseWriter, r *http.Request) { serveFrame(w, r, s, cfg, epoch) })
-	mux.HandleFunc("POST /input", func(w http.ResponseWriter, r *http.Request) { serveInput(w, r, s) })
+	mux.HandleFunc("POST /input", func(w http.ResponseWriter, r *http.Request) { serveInput(w, r, s, cfg) })
 	return authorized(cfg.Token, mux)
 }
 
@@ -98,7 +108,7 @@ func serveFrame(w http.ResponseWriter, r *http.Request, s Screen, cfg Config, ep
 	_, _ = w.Write(f.JPEG)
 }
 
-func serveInput(w http.ResponseWriter, r *http.Request, s Screen) {
+func serveInput(w http.ResponseWriter, r *http.Request, s Screen, cfg Config) {
 	var in Input
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBody))
 	dec.DisallowUnknownFields() // лишнее поле — не событие окна, а попытка проверить, что пропустят
@@ -110,7 +120,10 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen) {
 		http.Error(w, err, http.StatusBadRequest)
 		return
 	}
-	if err := s.Input(r.Context(), in); err != nil {
+	// Зависший вызов (renderer, beforeunload) не держит /input вечно: за ним стоит вся очередь ввода окна.
+	ctx, cancel := withWait(r.Context(), cmp.Or(cfg.InputWait, defaultInputWait))
+	defer cancel()
+	if err := s.Input(ctx, in); err != nil {
 		http.Error(w, "браузер не ответил: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -120,6 +133,9 @@ func serveInput(w http.ResponseWriter, r *http.Request, s Screen) {
 // validate returns why the event is refused; пусто — можно передавать браузеру.
 func validate(in Input) string {
 	inside := in.X >= 0 && in.X <= MaxWidth && in.Y >= 0 && in.Y <= MaxHeight
+	if why := limitsRefusal(in); why != "" {
+		return why
+	}
 	switch in.T {
 	case "resize":
 		return resizeRefusal(in)
@@ -140,6 +156,13 @@ func validate(in Input) string {
 	return "неизвестный вид события"
 }
 
+func limitsRefusal(in Input) string {
+	if in.Mods < 0 || in.Mods > modMask || in.Count < 0 || in.Count > maxClick {
+		return "модификаторы или число щелчков вне пределов"
+	}
+	return ""
+}
+
 func resizeRefusal(in Input) string {
 	if in.X < MinWidth || in.X > MaxWidth || in.Y < MinHeight || in.Y > MaxHeight || in.X != float64(int(in.X)) || in.Y != float64(int(in.Y)) {
 		return "размер экрана вне пределов"
@@ -148,7 +171,7 @@ func resizeRefusal(in Input) string {
 }
 
 func wheelRefusal(in Input, inside bool) string {
-	if !inside || abs(in.DX) > maxWheel || abs(in.DY) > maxWheel {
+	if !inside || math.Abs(in.DX) > maxWheel || math.Abs(in.DY) > maxWheel {
 		return "колесо вне экрана или слишком сильное"
 	}
 	return ""
@@ -186,13 +209,6 @@ func navRefusal(addr string) string {
 		return "адрес — только http:// или https://"
 	}
 	return ""
-}
-
-func abs(f float64) float64 {
-	if f < 0 {
-		return -f
-	}
-	return f
 }
 
 func truncateRunes(s string, n int) string {
