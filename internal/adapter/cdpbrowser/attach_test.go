@@ -211,3 +211,17 @@ func TestNextDoesNotTakeScreenshotsWhenCastWorks(t *testing.T) {
 		t.Fatalf("снято скриншотов: %d, want 0: скринкаст работает", n)
 	}
 }
+
+// Догоняющий тест (e2e на Brave был красным, правку нашли по нему): страница без окна
+// не считает себя активной, и ввод в поле не доходит, пока фокус не эмулируется.
+func TestAttachEnablesFocusEmulation(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(f.seen(), "Emulation.setFocusEmulationEnabled") {
+		t.Fatalf("фокус страницы не включен; вызовы: %v", f.seen())
+	}
+}

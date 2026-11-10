@@ -2,6 +2,7 @@ package cdpbrowser
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -31,6 +32,9 @@ type Options struct {
 }
 
 const defaultScreencastIdle = 10 * time.Second
+
+// defaultNoFrameWait — сколько ждать первый кадр скринкаста, прежде чем снимать скриншоты.
+const defaultNoFrameWait = 1500 * time.Millisecond
 
 // Browser is an installed Chromium-based browser: Name — для человека, Path — что запускать.
 type Browser struct{ Name, Path string }
@@ -104,10 +108,16 @@ type Chrome struct {
 
 	// Картинка идет, только пока кто-то спрашивает кадры: иначе страница с
 	// видео грузила бы процессор при любой другой открытой вкладке окна.
-	castMu   sync.Mutex // casting и вызовы start/stopScreencast — вместе
+	castMu   sync.Mutex // casting, castedAt и вызовы start/stopScreencast — вместе
 	casting  bool
+	castedAt time.Time // когда скринкаст запущен последний раз
 	polling  int       // сколько запросов кадра ждут прямо сейчас (под mu)
 	lastPoll time.Time // когда ушел последний (под mu)
+
+	// Запасной путь: Brave без окна не шлет кадры скринкаста, но скриншоты отдает.
+	// Кадров нет noFrameWait после запуска скринкаста — снимаем скриншоты сами.
+	noFrameWait time.Duration
+	fallback    bool // под mu; снимается, как только кадр скринкаста пришел
 
 	dead    chan struct{}
 	deadErr error
@@ -119,7 +129,7 @@ type page struct{ target, sess string }
 
 // newChrome builds the state around a started browser; out — канал команд.
 func newChrome(cmd *exec.Cmd, out io.WriteCloser) *Chrome {
-	return &Chrome{cmd: cmd, out: out, wait: map[int64]chan cdpReply{}, change: make(chan struct{}), dead: make(chan struct{}), lastPoll: time.Now()}
+	return &Chrome{cmd: cmd, out: out, wait: map[int64]chan cdpReply{}, change: make(chan struct{}), dead: make(chan struct{}), lastPoll: time.Now(), noFrameWait: defaultNoFrameWait}
 }
 
 func (c *Chrome) session() string {
@@ -296,6 +306,8 @@ func (c *Chrome) prime(ctx context.Context, sess string) error {
 	c.mu.Lock()
 	w, h := c.w, c.h
 	c.mu.Unlock()
+	// Страница без окна не считает себя активной: фокус и ввод в ней не работают (Brave).
+	_, _ = c.call(ctx, sess, "Emulation.setFocusEmulationEnabled", map[string]any{"enabled": true})
 	_, err := c.call(ctx, sess, "Emulation.setDeviceMetricsOverride", map[string]any{"width": w, "height": h, "deviceScaleFactor": 1, "mobile": false})
 	if err != nil {
 		return err
@@ -378,7 +390,7 @@ func (c *Chrome) watch(ctx context.Context) error {
 	if err := c.startScreencast(ctx, c.session()); err != nil {
 		return err
 	}
-	c.casting = true
+	c.casting, c.castedAt = true, time.Now()
 	return nil
 }
 
@@ -605,9 +617,61 @@ func (c *Chrome) onFrame(sess string, p json.RawMessage) {
 	if sess != c.sess {
 		return // закрытая или фоновая страница не перекрывает текущую
 	}
+	c.fallback = false // скринкаст работает: скриншоты не нужны
+	c.publishLocked(jpg)
+}
+
+// publishLocked makes jpg the current frame and wakes the viewers; c.mu взят.
+func (c *Chrome) publishLocked(jpg []byte) {
 	c.frame = Frame{Seq: c.frame.Seq + 1, JPEG: jpg, URL: c.url}
 	close(c.change)
 	c.change = make(chan struct{})
+}
+
+// wantSnapshot reports whether frames come from screenshots: скринкаст запущен, а
+// кадра нет дольше noFrameWait (Brave без окна). Включившись, остается включенным,
+// пока не придет кадр скринкаста.
+//
+// ponytail: скриншот каждые 200 мс, пока зритель ждет, — потолок около 5 кадров в
+// секунду и лишний процессор у браузера без скринкаста; путь — BeginFrame-управление
+// или окно браузера за экраном.
+func (c *Chrome) wantSnapshot() bool {
+	c.castMu.Lock()
+	casting, since := c.casting, time.Since(c.castedAt)
+	c.castMu.Unlock()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.fallback && casting && c.frame.Seq == 0 && since > c.noFrameWait {
+		c.fallback = true
+	}
+	return c.fallback
+}
+
+// snapshot takes one screenshot as a frame; одинаковая картинка не новый кадр.
+func (c *Chrome) snapshot(ctx context.Context) {
+	sess := c.session()
+	cctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	r, err := c.call(cctx, sess, "Page.captureScreenshot", map[string]any{"format": "jpeg", "quality": 70})
+	if err != nil {
+		return
+	}
+	var shot struct {
+		Data string `json:"data"`
+	}
+	if json.Unmarshal(r, &shot) != nil {
+		return
+	}
+	jpg, err := base64.StdEncoding.DecodeString(shot.Data)
+	if err != nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if sess != c.sess || bytes.Equal(jpg, c.frame.JPEG) {
+		return
+	}
+	c.publishLocked(jpg)
 }
 
 func (c *Chrome) onTargetCreated(p json.RawMessage) {
@@ -754,6 +818,8 @@ func (c *Chrome) Next(ctx context.Context, after uint64) (Frame, error) {
 	if err := c.watch(ctx); err != nil {
 		return Frame{}, err
 	}
+	tick := time.NewTicker(200 * time.Millisecond)
+	defer tick.Stop()
 	for {
 		c.mu.Lock()
 		f, ch := c.frame, c.change
@@ -767,6 +833,10 @@ func (c *Chrome) Next(ctx context.Context, after uint64) (Frame, error) {
 		case <-c.dead:
 			return Frame{}, c.deadErr
 		case <-ch:
+		case <-tick.C:
+			if c.wantSnapshot() {
+				c.snapshot(ctx)
+			}
 		}
 	}
 }
