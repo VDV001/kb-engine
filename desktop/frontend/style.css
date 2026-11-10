@@ -699,6 +699,21 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .fin-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--z-ok); }
 .fin-live.off i { background: var(--z-bad); }
 .fin-live.off { color: var(--z-bad); }
+/* Управление браузером (вкладка «Браузер»): чипы с браузерами, переключатель, статус, подсказка. */
+.br-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.br-chips .chip { border-radius: 999px; }
+.br-chips .chip[aria-pressed="true"] { border-color: transparent; background: linear-gradient(var(--z-bg), var(--z-bg)) padding-box, var(--sp-cool) border-box; border: 1px solid transparent; }
+.br-chips .chip:disabled { opacity: .55; cursor: default; }
+.br-st { color: var(--z-muted); display: inline-flex; align-items: center; gap: 6px; }
+.br-st i { width: 7px; height: 7px; border-radius: 50%; background: var(--z-rule-2); }
+.br-st.on i { background: var(--z-ok); }
+.br-st.wait i { background: var(--z-accent); animation: blink 1s infinite; }
+.br-st.bad i { background: var(--z-bad); }
+.br-hint { color: var(--z-faint); background: var(--z-bg-2); line-height: 1.5; }
+.br-hint b { color: var(--z-ink); font-weight: 600; }
+.br-err { padding: 6px 14px; border-bottom: 1px solid var(--z-rule); background: var(--z-bad-wash); color: var(--z-bad); font-size: 12px; }
+.br-err .clamp-line { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) { .br-st.wait i { animation: none; } }
 .fin-src-btn { margin-left: 0; font: 12px var(--z-font); color: var(--z-accent); background: none; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 3px 10px; cursor: pointer; transition: border-color var(--z-dur), color var(--z-dur); }
 .fin-src-btn:hover { color: var(--z-accent-hi); border-color: var(--z-accent); }
 /* «изменить» приводит к выбору в настройках — строка подсвечивается, чтобы ее было видно */
