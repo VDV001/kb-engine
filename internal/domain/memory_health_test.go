@@ -111,21 +111,29 @@ func TestAssessHealth(t *testing.T) {
 		reason []ReasonKind
 	}{
 		{name: "всё свежее", mut: func(*HealthInput) {}, total: 100, mode: TrustOK},
-		{name: "20 дней без решений: правила остывают вместе с осмотром", mut: func(in *HealthInput) {
+		{name: "20 дней без решений, ждать нечему: тишина не наказывается", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-21", DecisionConfirmRule, "Правило один"), dec("2026-10-21", DecisionConfirmRule, "Правило два")}
-		}, total: 73, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
-			if h.IdleDays != 20 || part(h, "rhythm").Value != 15 {
+		}, total: 93, mode: TrustOK, check: func(t *testing.T, h Health) {
+			if h.IdleDays != 20 || part(h, "rhythm").Value != 35 {
 				t.Fatalf("idle=%d rhythm=%v", h.IdleDays, part(h, "rhythm").Value)
 			}
 		}},
-		{name: "30 дней без решений — оговорка", mut: func(in *HealthInput) {
+		{name: "30 дней без решений, правила на границе свежести — молчим", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-11", DecisionApproveHot, "Правило один"), dec("2026-10-11", DecisionApproveHot, "Правило два")}
 			in.Rules = []string{"Правило один", "Правило два"}
-		}, total: 60, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}},
+		}, total: 90, mode: TrustOK},
+		{name: "ждёт устаревшее правило и 20 дней без решений — ритм снимает", mut: func(in *HealthInput) {
+			in.Decisions = []Decision{dec("2026-10-21", DecisionReview, ""), dec("2026-10-01", DecisionConfirmRule, "Правило один")}
+			in.Rules = []string{"Правило один"}
+		}, total: 67, mode: TrustWarn, reason: []ReasonKind{ReasonRules, ReasonRhythm}, check: func(t *testing.T, h Health) {
+			if part(h, "rhythm").Value != 15 {
+				t.Fatalf("rhythm = %v", part(h, "rhythm").Value)
+			}
+		}},
 		{name: "обслуживание не сбрасывает давность осмотра", mut: func(in *HealthInput) {
 			in.Decisions = []Decision{dec("2026-10-01", DecisionReview, ""), dec(today, DecisionTopics, ""), dec(today, DecisionIndex, ""), dec(today, DecisionPortrait, "")}
 			in.Rules = nil
-		}, total: 65, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
+		}, total: 100, mode: TrustOK, check: func(t *testing.T, h Health) {
 			if h.IdleDays != 40 {
 				t.Fatalf("idle = %d, want 40", h.IdleDays)
 			}
@@ -158,11 +166,11 @@ func TestAssessHealth(t *testing.T) {
 		{name: "правило находится по ключу, а не по точному тексту", mut: func(in *HealthInput) {
 			in.Rules = []string{"  правило ОДИН. ", "Правило два"}
 		}, total: 100, mode: TrustOK},
-		{name: "решений нет, а хранить есть что", mut: func(in *HealthInput) {
+		{name: "решений нет, записи лежат, ждать нечему", mut: func(in *HealthInput) {
 			in.Decisions = nil
 			in.Notes = 2
 			in.Rules = nil
-		}, total: 65, mode: TrustWarn, reason: []ReasonKind{ReasonRhythm}, check: func(t *testing.T, h Health) {
+		}, total: 100, mode: TrustOK, check: func(t *testing.T, h Health) {
 			if h.IdleDays != -1 {
 				t.Fatalf("idle = %d, want -1", h.IdleDays)
 			}
