@@ -121,6 +121,8 @@ func run() error {
 	}
 
 	app := newApp(idx.files, settings, idx)
+	browserHost := newBrowserHost(settings.home)
+	app.browser = newBrowserDesk(settings, browserHost)
 	app.chat = newChatDesk(settings, filepath.Join(filepath.Dir(cfgPath), "chats"))
 	app.chat.useSources(idx.files)
 	app.google = newGoogleDesk(settings)
@@ -165,8 +167,11 @@ func run() error {
 		// (inspector_devtools.go): Wails показывает его над полем ввода и
 		// выделением, в нем Inspect Element. Без меню тег devtools недоступен.
 		EnableDefaultContextMenu: inspectable,
-		OnShutdown:               func(context.Context) { cancel() },
-		Bind:                     []any{app},
+		OnShutdown: func(context.Context) {
+			_ = browserHost.Stop() // сервер, запущенный кнопкой, не переживает окно
+			cancel()
+		},
+		Bind: []any{app},
 		Mac: &mac.Options{
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,

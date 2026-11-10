@@ -38,6 +38,7 @@ type App struct {
 	chat     *chatDesk // nil — чата нет (тесты без него)
 	access   *accessDesk
 	memory   *memoryDesk
+	browser  *browserDesk // кнопки вкладки «Браузер»
 	run      func(name string, args ...string) error
 }
 
@@ -128,6 +129,18 @@ func (a *App) ChatSettings() chatSettingsView { return a.chat.Settings() }
 func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 	return a.chat.SetSettings(c, key)
 }
+
+// BrowserState returns the Browser tab's controls: установленные браузеры, выбор и работает ли сервер.
+func (a *App) BrowserState() browserView { return a.browser.View() }
+
+// BrowserChoose saves the browser for the next start; пусто — «Автоматически».
+func (a *App) BrowserChoose(path string) error { return a.browser.Choose(path) }
+
+// BrowserStart launches the browser server (kbengine browser serve) with the chosen browser.
+func (a *App) BrowserStart() error { return a.browser.Start() }
+
+// BrowserStop stops the browser server this window started.
+func (a *App) BrowserStop() error { return a.browser.Stop() }
 
 // AccessOpen asks Touch ID to open the access container (#494).
 func (a *App) AccessOpen() error { return a.access.Open() }
