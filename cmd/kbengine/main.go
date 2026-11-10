@@ -86,6 +86,7 @@ var commands = map[string]func(args []string, stdin io.Reader, stdout, stderr io
 	"set":         withoutStdin(runSet),
 	"audit":       withoutStdin(runAudit),
 	"audit-tasks": runAuditTasks,
+	"browser":     withoutStdin(runBrowser),
 	"changelog":   withoutStdin(runChangelog),
 	"creds":       runCreds,
 	"dedup":       withoutStdin(runDedup),
