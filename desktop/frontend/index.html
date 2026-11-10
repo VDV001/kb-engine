@@ -109,6 +109,16 @@
         <button class="fin-live" id="fin-live" hidden><i></i><span id="fin-live-t"></span></button>
         <button class="fin-src-btn" id="fin-src-change">изменить</button>
       </div>
+      <!-- Управление браузером без терминала: выбрать браузер, включить, выключить.
+           Команда kbengine browser serve остается для тех, кому так удобнее. -->
+      <div class="fin-src br-bar" id="br-bar" hidden>
+        <span class="fin-src-l">Браузер</span>
+        <span class="br-chips" id="br-chips" role="group" aria-label="Какой браузер запускать"></span>
+        <button class="sw" id="br-sw" role="switch" aria-checked="false" aria-label="Браузер выключен" disabled></button>
+        <span class="br-st" id="br-st"></span>
+      </div>
+      <div class="fin-src br-hint" id="br-hint" hidden></div>
+      <div class="br-err" id="br-err" role="alert" hidden></div>
       <iframe id="module-frame" title="Модуль окна"></iframe>
     </section>
 

@@ -413,7 +413,7 @@ const MODULES = {
     icon: '<rect x="5" y="10.5" width="14" height="9.5" rx="1.5"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>' },
   memory: { name: "Память", what: "правила и факты для агентов: горячий слой с потолком, холодный, журнал и очередь на одобрение", view: "memory",
     icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
-  browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; запуск — kbengine browser serve", src: "/browser/",
+  browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; включается кнопкой над страницей (из терминала — kbengine browser serve)", src: "/browser/",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.3 3.7 5 3.7 8s-1.2 5.7-3.7 8c-2.5-2.3-3.7-5-3.7-8S9.5 6.3 12 4Z"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
@@ -2058,6 +2058,7 @@ function showModule(id) {
   else if (mod) {
     $("#fin-src").hidden = id !== "finances";
     renderFinSrc();
+    brOpen(id === "browser");
     const frame = $("#module-frame");
     // Браузер открывается заново каждый раз, когда вкладку выбрали: если serve запустили
     // после первой попытки, пояснение «не запущен» не должно висеть до перезапуска окна.
@@ -2146,6 +2147,68 @@ $("#fin-src-change").addEventListener("click", async () => {
   row._flash = setTimeout(() => row.classList.remove("flash"), 1700); // и без анимации подсветка не остается
   pick.focus();
 });
+// Управление браузером (вкладка «Браузер»): выбрать, включить, выключить. Окно само
+// запускает kbengine browser serve; состояние — из Go раз в 2 с, пока вкладка открыта.
+let br = null, brBusy = false, brErr = "", brWasRunning = null;
+function brOpen(on) {
+  $("#br-bar").hidden = !on || !native();
+  if (on) pollBrowser(); else { $("#br-hint").hidden = $("#br-err").hidden = true; brWasRunning = null; }
+}
+async function pollBrowser() {
+  if (!native() || document.hidden || $("#br-bar").hidden) return;
+  try { br = await native().BrowserState(); } catch { return; }
+  const running = br.State.Running;
+  const f = $("#module-frame");
+  if (brWasRunning !== null && running !== brWasRunning && f.dataset.src) f.src = f.dataset.src; // включили или выключили: страница перечитывается
+  brWasRunning = running;
+  renderBrowser();
+}
+function renderBrowser() {
+  if (!br) return;
+  const { Installed: list = [], Chosen: chosen, Auto: auto, State: st } = br;
+  const locked = st.Running || brBusy;
+  const chips = [{ Name: "Автоматически", Path: "" }, ...list];
+  $("#br-chips").innerHTML = chips.map((b) => `<button class="chip" type="button" data-br-path="${esc(b.Path)}" aria-pressed="${b.Path === chosen}" ${locked ? "disabled" : ""}>${esc(b.Name)}</button>`).join("");
+  const sw = $("#br-sw");
+  const foreign = st.Running && !st.Own;
+  sw.setAttribute("aria-checked", String(st.Running || brBusy));
+  sw.setAttribute("aria-label", st.Running || brBusy ? "Браузер включен: выключить" : "Браузер выключен: включить");
+  sw.disabled = !list.length || foreign;
+  const [cls, text] = brBusy ? ["wait", "запускается…"]
+    : st.Running ? ["on", foreign ? "включен из терминала" : "включен"]
+    : brErr || st.Why ? ["bad", "не запустился"] : ["", "выключен"];
+  $("#br-st").className = "br-st " + cls;
+  $("#br-st").innerHTML = `<i></i>${esc(text)}`;
+  const names = list.map((b) => b.Name).join(", ");
+  const hint = $("#br-hint");
+  hint.hidden = false;
+  const name = (list.find((b) => b.Path === chosen) || {}).Name;
+  hint.innerHTML = !list.length ? "Не нашла браузер на движке Chromium (Chrome, Brave, Edge, Chromium, Vivaldi): поставьте любой, он появится здесь."
+    : foreign ? "Браузер запущен в терминале: остановите его там (Ctrl+C), окно чужой процесс не выключает."
+    : (chosen ? `Выбран <b class="fin-src-name">${esc(name)}</b>: запустится он, а не первый найденный.`
+      : `<b>Автоматически</b> значит: окно само берет первый найденный на этом Mac браузер, сейчас это <b class="fin-src-name">${esc(auto)}</b>.`) + ` Найдено: ${esc(names)}.`;
+  hint.innerHTML = `<span>${hint.innerHTML}</span>`; // одним куском: у .fin-src между детьми промежуток
+  const why = brErr || (!st.Running ? st.Why : "");
+  $("#br-err").hidden = !why;
+  if (why) setClamped($("#br-err"), why, "Не удалось запустить браузер");
+}
+$("#br-chips").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-br-path]");
+  if (!b || b.disabled) return;
+  try { await native().BrowserChoose(b.dataset.brPath); brErr = ""; } catch (err) { brErr = errText(err); }
+  pollBrowser();
+});
+$("#br-sw").addEventListener("click", async () => {
+  if (!br || brBusy || $("#br-sw").disabled) return;
+  const stop = br.State.Running;
+  brBusy = !stop; brErr = "";
+  renderBrowser();
+  try { await (stop ? native().BrowserStop() : native().BrowserStart()); } catch (err) { brErr = errText(err); }
+  brBusy = false;
+  pollBrowser();
+});
+setInterval(pollBrowser, 2000);
+window.addEventListener("focus", pollBrowser);
 // withModule меняет запись модуля на месте: порядок state.modules — порядок вкладок.
 function withModule(id, patch) {
   return state.modules.some((x) => x.id === id)

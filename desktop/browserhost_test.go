@@ -26,7 +26,7 @@ func TestMain(m *testing.M) {
 
 func fakeBrowserServe(mode string, args []string) int {
 	if mode == "fail" {
-		os.Stderr.WriteString("не удалось запустить Brave: профиль занят\n")
+		_, _ = os.Stderr.WriteString("не удалось запустить Brave: профиль занят\n")
 		return 1
 	}
 	var sock string
@@ -173,7 +173,7 @@ func TestBrowserHostLeavesForeignServerAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	go func() {
 		for {
 			c, err := ln.Accept()

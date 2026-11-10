@@ -43,6 +43,9 @@ desktop: web
     find desktop/app-ui -mindepth 1 ! -name .keep -delete
     cp -R frontend/dist/. desktop/app-ui/
     cd desktop && CGO_LDFLAGS="-framework UniformTypeIdentifiers" go build -tags desktop,production -ldflags "-s -w" -o ../bin/kb.app/Contents/MacOS/kb .
+    # Движок рядом с окном: кнопка «Включить» во вкладке «Браузер» запускает из него
+    # kbengine browser serve (desktop/browserdesk.go ищет его рядом с окном первым).
+    go build -o bin/kb.app/Contents/MacOS/kbengine ./cmd/kbengine
     # Помощник распознавания: только PDFKit и Vision macOS, ставить ничего не нужно.
     swiftc -O -o bin/kb.app/Contents/MacOS/kb-extract desktop/extract/main.swift
     # Диктовка: только Speech и AVFoundation macOS; разрешения — в Info.plist окна.
