@@ -5,7 +5,6 @@ package cdpbrowser
 
 import (
 	"context"
-	"net/http"
 	"time"
 )
 
@@ -40,9 +39,4 @@ type Config struct {
 	Token         string        // обязателен: CDP отдает браузер целиком
 	Width, Height int           // размер экрана в пикселях страницы
 	Wait          time.Duration // сколько /frame ждет новый кадр до 204
-}
-
-// Handler serves the viewer, /frame and /input behind the token.
-func Handler(Screen, Config) http.Handler {
-	return http.NotFoundHandler()
 }

@@ -1,0 +1,73 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Браузер</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  html, body { margin: 0; height: 100%; background: #0b0b0c; color: #c4c4c6; font: 13px ui-monospace, Menlo, monospace; }
+  body { display: flex; flex-direction: column; }
+  #bar { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid #222; }
+  #bar button { background: #16171a; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  #bar button:hover { border-color: #4a4b50; }
+  #addr { flex: 1; background: #101113; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; font: inherit; }
+  #stage { flex: 1; min-height: 0; overflow: auto; display: flex; justify-content: center; }
+  canvas { width: 100%; max-width: {{W}}px; height: auto; align-self: flex-start; cursor: default; background: #fff; }
+  #kb { position: fixed; left: -999px; top: 0; width: 1px; height: 1px; opacity: 0; }
+  #msg { padding: 4px 8px; color: #e0a458; }
+</style>
+<div id="bar">
+  <button id="back" title="Назад" aria-label="Назад">←</button>
+  <button id="fwd" title="Вперед" aria-label="Вперед">→</button>
+  <button id="rel" title="Обновить" aria-label="Обновить">↻</button>
+  <input id="addr" placeholder="Адрес: https://…" autocomplete="off" spellcheck="false">
+</div>
+<div id="msg" hidden></div>
+<div id="stage"><canvas id="c" width="{{W}}" height="{{H}}"></canvas></div>
+<textarea id="kb" aria-label="Ввод в браузер"></textarea>
+<script>
+const W = {{W}}, H = {{H}};
+const c = document.getElementById("c"), x = c.getContext("2d"), kb = document.getElementById("kb"), msg = document.getElementById("msg");
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const say = (t) => { msg.hidden = !t; msg.textContent = t || ""; };
+// Адреса относительные: окно открывает страницу под своим префиксом, и абсолютный путь ушел бы мимо прокси.
+async function send(ev) {
+  try {
+    const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev) });
+    if (!r.ok) say("Браузер: " + (await r.text()).trim().slice(0, 200)); else say("");
+  } catch (e) { say("Браузер не отвечает"); }
+}
+let seq = 0;
+(async function frames() {
+  for (;;) {
+    try {
+      const r = await fetch("frame?after=" + seq, { cache: "no-store" });
+      if (r.status === 200) {
+        seq = +r.headers.get("X-Frame-Seq");
+        const bmp = await createImageBitmap(await r.blob());
+        x.drawImage(bmp, 0, 0, W, H); bmp.close(); say("");
+      } else if (r.status !== 204) { say("Браузер: " + (await r.text()).trim().slice(0, 200)); await sleep(1500); }
+    } catch (e) { say("Браузер не отвечает"); await sleep(1500); }
+  }
+})();
+const pos = (e) => { const r = c.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
+let lastMove = 0;
+c.addEventListener("mousedown", (e) => { send({ t: "mouse", type: "pressed", ...pos(e) }); kb.focus(); e.preventDefault(); });
+c.addEventListener("mouseup", (e) => send({ t: "mouse", type: "released", ...pos(e) }));
+c.addEventListener("mousemove", (e) => { const n = Date.now(); if (n - lastMove > 50) { lastMove = n; send({ t: "mouse", type: "moved", ...pos(e) }); } });
+c.addEventListener("wheel", (e) => { e.preventDefault(); const p = pos(e); send({ t: "wheel", dx: e.deltaX, dy: e.deltaY, ...p }); }, { passive: false });
+// Текст — из скрытого поля: так приходят и обычные буквы, и кириллица с IME, и вставка Cmd+V.
+kb.addEventListener("input", (e) => { if (!e.isComposing && kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
+kb.addEventListener("compositionend", () => { if (kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
+const NAMED = new Set(["Enter", "Backspace", "Tab", "Escape", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+kb.addEventListener("keydown", (e) => { if (!e.isComposing && !e.metaKey && !e.ctrlKey && NAMED.has(e.key)) { send({ t: "key", key: e.key }); e.preventDefault(); } });
+const nav = (text) => send({ t: "nav", text });
+document.getElementById("back").onclick = () => nav("back");
+document.getElementById("fwd").onclick = () => nav("forward");
+document.getElementById("rel").onclick = () => nav("reload");
+const addr = document.getElementById("addr");
+addr.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  let v = addr.value.trim();
+  if (v && !/^[a-z][a-z0-9+.-]*:/i.test(v)) v = "https://" + v;
+  if (v) nav(v);
+});
+</script>
