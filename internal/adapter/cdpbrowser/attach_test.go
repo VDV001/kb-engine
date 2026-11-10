@@ -25,6 +25,8 @@ type fakeCDP struct {
 	shots      int      // сколько раз просили скриншот
 	navs       []string // адреса Page.navigate
 	castFails  int      // сколько раз Page.startScreencast отвечает «Not attached to an active page»
+	navDrops   int      // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
+	pageURL    string   // адрес, который браузер считает адресом страницы
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
@@ -63,6 +65,11 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 			f.calls = append(f.calls, call)
 			if m.Method == "Page.navigate" {
 				f.navs = append(f.navs, p.URL)
+				if f.navDrops > 0 {
+					f.navDrops--
+				} else {
+					f.pageURL = p.URL
+				}
 			}
 			var res string
 			switch m.Method {
@@ -80,7 +87,11 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				f.shots++
 				res = `{"data":"SlBHMQ=="}` // base64("JPG1")
 			case "Page.getFrameTree":
-				res = `{"frameTree":{"frame":{"id":"F","url":"about:blank"}}}`
+				u := f.pageURL
+				if u == "" {
+					u = "about:blank"
+				}
+				res = fmt.Sprintf(`{"frameTree":{"frame":{"id":"F","url":%q}}}`, u)
 			default:
 				res = `{}`
 			}
@@ -278,5 +289,37 @@ func TestWatchGivesUpOnPersistentFailure(t *testing.T) {
 	defer cancel()
 	if err := c.watch(ctx); err == nil {
 		t.Fatal("watch должен вернуть ошибку, когда страница так и не подключилась")
+	}
+}
+
+// Brave сразу после запуска молча теряет первые переходы: страница остается пустой.
+// Сервер проверяет адрес и повторяет переход, пока стартовая страница не откроется.
+func TestAttachRetriesStartPageWhenNavigationIsLost(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	f.navDrops = 2
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.currentURL(); got != StartURL() {
+		t.Fatalf("адрес страницы = %.40q…, want стартовая страница", got)
+	}
+	if n := len(f.navigations()); n != 3 {
+		t.Fatalf("переходов %d, want 3 (два потеряны и один принят)", n)
+	}
+}
+
+// Не открылась совсем: это не ошибка запуска (пустая страница рабочая), и повторов не бесконечно много.
+func TestAttachGivesUpStartPageQuietly(t *testing.T) {
+	c, f := startFakeCDP(t, "x")
+	f.navDrops = 1000
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
+		t.Fatalf("attach = %v: пустая страница вместо стартовой — не ошибка", err)
+	}
+	if n := len(f.navigations()); n < 2 || n > 12 {
+		t.Fatalf("переходов %d, want от 2 до 12", n)
 	}
 }
