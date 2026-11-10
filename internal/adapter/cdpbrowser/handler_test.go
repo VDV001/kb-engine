@@ -160,7 +160,12 @@ func TestInputValidation(t *testing.T) {
 	}{
 		{"мышь", `{"t":"mouse","type":"pressed","x":10,"y":20}`, http.StatusNoContent},
 		{"мышь на краю", `{"t":"mouse","type":"moved","x":1280,"y":800}`, http.StatusNoContent},
-		{"мышь за краем справа", `{"t":"mouse","type":"moved","x":1281,"y":5}`, http.StatusBadRequest},
+		{"мышь за краем справа", `{"t":"mouse","type":"moved","x":4000,"y":5}`, http.StatusBadRequest},
+		{"мышь на большом экране", `{"t":"mouse","type":"moved","x":2500,"y":1500}`, http.StatusNoContent},
+		{"размер окна", `{"t":"resize","x":1600,"y":900}`, http.StatusNoContent},
+		{"размер слишком мал", `{"t":"resize","x":100,"y":900}`, http.StatusBadRequest},
+		{"размер слишком велик", `{"t":"resize","x":9000,"y":900}`, http.StatusBadRequest},
+		{"размер нулевой", `{"t":"resize","x":0,"y":0}`, http.StatusBadRequest},
 		{"мышь левее нуля", `{"t":"mouse","type":"moved","x":-1,"y":5}`, http.StatusBadRequest},
 		{"мышь, чужой тип", `{"t":"mouse","type":"drag","x":5,"y":5}`, http.StatusBadRequest},
 		{"колесо", `{"t":"wheel","x":5,"y":5,"dx":0,"dy":120}`, http.StatusNoContent},

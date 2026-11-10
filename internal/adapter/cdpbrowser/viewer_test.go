@@ -19,7 +19,7 @@ func TestViewer(t *testing.T) {
 	}
 	// Находки code-review #526: очередь ввода, отпускание кнопки вне холста,
 	// сброс номера кадра по смене эпохи.
-	for _, want := range []string{"X-Frame-Epoch", "window.addEventListener(\"mouseup\"", "X-Frame-URL"} {
+	for _, want := range []string{"ResizeObserver", "\"resize\"", "X-Frame-Epoch", "window.addEventListener(\"mouseup\"", "X-Frame-URL"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("в странице нет %q", want)
 		}
