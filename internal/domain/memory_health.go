@@ -287,7 +287,7 @@ func AssessHealth(in HealthInput) Health {
 	}
 	rules := rulesScore(&h)
 	h.Parts = []HealthPart{
-		{"rhythm", rhythmScore(in, h.IdleDays), maxRhythm},
+		{"rhythm", rhythmScore(h.IdleDays, awaitsReview(in, h)), maxRhythm},
 		{"queue", queueScore(in, h.OldestPendingDays), maxQueue},
 		{"integrity", integrityScore(in), maxIntegrity},
 		{"rules", rules, maxRules},
@@ -309,18 +309,19 @@ func AssessHealth(in HealthInput) Health {
 	return h
 }
 
-func hasStock(in HealthInput) bool { return len(in.Rules)+in.Notes+len(in.Queue) > 0 }
+// awaitsReview: осмотра ждёт предложение в очереди или правило без свежего подтверждения.
+func awaitsReview(in HealthInput, h Health) bool { return len(in.Queue) > 0 || h.StaleRules > 0 }
 
-// rhythmScore: пустая память осмотра не требует; с чем-то на хранении отсутствие
-// суждений — пробел.
-func rhythmScore(in HealthInput, idle int) float64 {
+// rhythmScore: давность осмотра снимает баллы, только когда есть что осматривать.
+// Тихая память, где агент ничего не предлагал и правила свежи, не виновата в тишине.
+func rhythmScore(idle int, awaits bool) float64 {
 	switch {
+	case !awaits:
+		return maxRhythm
 	case idle >= 0:
 		return max(0, maxRhythm-float64(idle))
-	case hasStock(in):
-		return 0
 	}
-	return maxRhythm
+	return 0
 }
 
 func queueScore(in HealthInput, oldest int) float64 {
@@ -366,7 +367,7 @@ func reasonsOf(in HealthInput, h Health) []HealthReason {
 	if in.StaleVectors > 0 {
 		rs = append(rs, HealthReason{ReasonVectors, in.StaleVectors})
 	}
-	if h.IdleDays > IdleWarnDays || (h.IdleDays < 0 && hasStock(in)) {
+	if awaitsReview(in, h) && (h.IdleDays > IdleWarnDays || h.IdleDays < 0) {
 		rs = append(rs, HealthReason{ReasonRhythm, h.IdleDays})
 	}
 	return rs
