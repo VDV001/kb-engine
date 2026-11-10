@@ -270,14 +270,39 @@ func (c *Chrome) attach(ctx context.Context, o Options) error {
 	if err := c.prime(ctx, sess); err != nil {
 		return err
 	}
-	// Вместо белого экрана — своя стартовая страница (сервер сам идет на data:-адрес, человеку он закрыт).
-	if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
+	if err := c.openStart(ctx, sess); err != nil {
 		return err
 	}
 	// Окна, которые открывает сама страница (target=_blank, вход через Google), и
 	// закрытие окон приходят событиями Target.*; страницы уже известны выше.
 	_, err = c.call(ctx, "", "Target.setDiscoverTargets", map[string]any{"discover": true})
 	return err
+}
+
+// openStart opens the start page instead of a white screen (сервер сам идет на data:-адрес,
+// человеку он закрыт). Brave сразу после запуска молча теряет первые переходы, поэтому адрес
+// проверяется, и переход повторяется. Не открылась совсем — не ошибка: пустая страница рабочая.
+//
+// ponytail: до 10 попыток по 250 мс; потолок — браузер, который не принимает переход дольше
+// двух с половиной секунд, остается на пустой странице; путь — ждать событие готовности браузера.
+func (c *Chrome) openStart(ctx context.Context, sess string) error {
+	for range 10 {
+		if _, err := c.call(ctx, sess, "Page.navigate", map[string]any{"url": StartURL()}); err != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(250 * time.Millisecond):
+		}
+		if err := c.syncFrameTree(ctx, sess); err != nil {
+			return err
+		}
+		if c.currentURL() == StartURL() {
+			return nil
+		}
+	}
+	return nil
 }
 
 func (c *Chrome) attachTo(ctx context.Context, target string) (string, error) {

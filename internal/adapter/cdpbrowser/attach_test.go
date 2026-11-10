@@ -20,13 +20,15 @@ type fakeCDP struct {
 	calls []string // «метод» или «метод:целевая страница»
 	pages []string // страницы, которые браузер показывает в getTargets
 
-	failCreate bool     // браузер отказывает в создании страницы
-	castFrame  bool     // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
-	shots      int      // сколько раз просили скриншот
-	navs       []string // адреса Page.navigate
-	castFails  int      // сколько раз Page.startScreencast отвечает «Not attached to an active page»
-	navDrops   int      // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
-	pageURL    string   // адрес, который браузер считает адресом страницы
+	failCreate    bool     // браузер отказывает в создании страницы
+	castFrame     bool     // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
+	shots         int      // сколько раз просили скриншот
+	navs          []string // адреса Page.navigate
+	castFails     int      // сколько раз Page.startScreencast отвечает «Not attached to an active page»
+	navDrops      int      // сколько первых Page.navigate браузер теряет молча (Brave сразу после запуска)
+	pageURL       string   // адрес, который браузер считает адресом страницы
+	created       []string // адреса Target.createTarget
+	blankOnCreate bool     // созданная страница остается пустой (загрузка потеряна)
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
@@ -80,6 +82,10 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				}
 				res = `{"targetInfos":[` + strings.Join(infos, ",") + `]}`
 			case "Target.createTarget":
+				f.created = append(f.created, p.URL)
+				if !f.blankOnCreate {
+					f.pageURL = p.URL
+				}
 				res = `{"targetId":"ours"}`
 			case "Target.attachToTarget":
 				res = fmt.Sprintf(`{"sessionId":"S-%s"}`, p.TargetID)
@@ -296,6 +302,7 @@ func TestWatchGivesUpOnPersistentFailure(t *testing.T) {
 // Сервер проверяет адрес и повторяет переход, пока стартовая страница не откроется.
 func TestAttachRetriesStartPageWhenNavigationIsLost(t *testing.T) {
 	c, f := startFakeCDP(t, "x")
+	f.blankOnCreate = true // загрузка при создании потеряна
 	f.navDrops = 2
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -313,6 +320,7 @@ func TestAttachRetriesStartPageWhenNavigationIsLost(t *testing.T) {
 // Не открылась совсем: это не ошибка запуска (пустая страница рабочая), и повторов не бесконечно много.
 func TestAttachGivesUpStartPageQuietly(t *testing.T) {
 	c, f := startFakeCDP(t, "x")
+	f.blankOnCreate = true
 	f.navDrops = 1000
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()

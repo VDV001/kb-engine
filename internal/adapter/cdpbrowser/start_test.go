@@ -70,16 +70,23 @@ type nopCloser struct{}
 func (nopCloser) Write(p []byte) (int, error) { return len(p), nil }
 func (nopCloser) Close() error                { return nil }
 
-func TestAttachOpensStartPage(t *testing.T) {
+// Страница создается сразу со стартовым адресом: пустая about:blank, загруженная
+// позже, перекрывала бы переход (Brave), и вкладка оставалась белой.
+func TestAttachCreatesPageWithStartURL(t *testing.T) {
 	c, f := startFakeCDP(t, "x")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	if err := c.attach(ctx, Options{Width: 1280, Height: 800}); err != nil {
 		t.Fatal(err)
 	}
-	navs := f.navigations()
-	if len(navs) != 1 || navs[0] != StartURL() {
-		t.Fatalf("Page.navigate = %v, want одна — на стартовую страницу", navs)
+	f.mu.Lock()
+	created := append([]string(nil), f.created...)
+	f.mu.Unlock()
+	if len(created) != 1 || created[0] != StartURL() {
+		t.Fatalf("createTarget url = %v, want стартовая страница", created)
+	}
+	if navs := f.navigations(); len(navs) != 0 {
+		t.Fatalf("Page.navigate = %d раз, want 0: страница уже открыта", len(navs))
 	}
 }
 
