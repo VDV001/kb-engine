@@ -36,20 +36,22 @@ let chain = Promise.resolve(), moving = false;
 function send(ev) {
   const run = async () => {
     try {
-      const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev) });
-      if (!r.ok) { const t = (await r.text()).trim().slice(0, 200); say(r.status >= 500 ? t : "Ввод не принят: " + t); } else say("");
-    } catch (e) { say("Браузер не отвечает"); }
+      // Без срока один зависший запрос держал бы за собой всю очередь ввода.
+      const r = await fetch("input", { method: "POST", headers: { "Content-Type": "application/json", "X-DVK-App": "1" }, body: JSON.stringify(ev), signal: AbortSignal.timeout(15000) });
+      if (!r.ok) { const t = (await r.text()).trim().slice(0, 200); say(r.status >= 500 ? t : "Ввод не принят: " + t); return false; }
+      say(""); return true;
+    } catch (e) { say("Браузер не отвечает"); return false; }
   };
   chain = chain.then(run);
   return chain;
 }
-let seq = 0, epoch = "";
+let seq = 0, epoch = "", sent = "";
 (async function frames() {
   for (;;) {
     try {
       const r = await fetch("frame?after=" + seq, { cache: "no-store" });
       const e = r.headers.get("X-Frame-Epoch");
-      if (e && e !== epoch) { epoch = e; seq = 0; if (r.status === 204) continue; } // сервер перезапущен: номера кадров с единицы
+      if (e && e !== epoch) { const restarted = epoch !== ""; epoch = e; seq = 0; if (restarted) { sent = ""; fit(); } if (r.status === 204) continue; } // сервер перезапущен: номера кадров с единицы, а браузер снова 1280x800
       if (r.status === 200) {
         seq = +r.headers.get("X-Frame-Seq");
         const u = r.headers.get("X-Frame-URL");
@@ -61,29 +63,39 @@ let seq = 0, epoch = "";
   }
 })();
 const stage = document.getElementById("stage");
-let sent = "";
 function fit() {
   const r = stage.getBoundingClientRect();
   const w = Math.round(Math.max(320, Math.min(3840, r.width))), h = Math.round(Math.max(240, Math.min(2400, r.height)));
   if (w === W && h === H && sent) return;
   W = w; H = h; c.width = w; c.height = h;
-  if (sent !== w + "x" + h) { sent = w + "x" + h; send({ t: "resize", x: w, y: h }); }
+  if (sent !== w + "x" + h) {
+    sent = w + "x" + h;
+    // Размер считается отправленным только после ответа: сбой сбрасывает отметку и повторяется.
+    send({ t: "resize", x: w, y: h }).then((ok) => { if (!ok) { sent = ""; setTimeout(fit, 1500); } });
+  }
 }
 let fitTimer = 0;
 new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 150); }).observe(stage);
 fit();
+const mods = (e) => (e.altKey ? 1 : 0) | (e.ctrlKey ? 2 : 0) | (e.metaKey ? 4 : 0) | (e.shiftKey ? 8 : 0);
+const clicks = (e) => Math.max(1, Math.min(3, e.detail || 1)); // двойной щелчок выделяет слово, тройной строку
 const pos = (e) => { const r = c.getBoundingClientRect(); return { x: clamp((e.clientX - r.left) * W / r.width, W), y: clamp((e.clientY - r.top) * H / r.height, H) }; };
 let lastMove = 0, down = false;
-c.addEventListener("mousedown", (e) => { down = true; send({ t: "mouse", type: "pressed", ...pos(e) }); kb.focus(); e.preventDefault(); });
+c.addEventListener("mousedown", (e) => { down = true; send({ t: "mouse", type: "pressed", count: clicks(e), mods: mods(e), ...pos(e) }); kb.focus(); e.preventDefault(); });
 // Кнопку могут отпустить вне холста: отпускание слушаем на окне, иначе браузер считал бы кнопку зажатой.
-window.addEventListener("mouseup", (e) => { if (down) { down = false; send({ t: "mouse", type: "released", ...pos(e) }); } });
+window.addEventListener("mouseup", (e) => { if (down) { down = false; send({ t: "mouse", type: "released", count: clicks(e), mods: mods(e), ...pos(e) }); } });
 c.addEventListener("mousemove", (e) => { const n = Date.now(); if (!moving && n - lastMove > 50) { lastMove = n; moving = true; send({ t: "mouse", type: "moved", ...pos(e) }).then(() => { moving = false; }); } });
 c.addEventListener("wheel", (e) => { e.preventDefault(); send({ t: "wheel", dx: e.deltaX, dy: e.deltaY, ...pos(e) }); }, { passive: false });
 // Текст — из скрытого поля: так приходят и обычные буквы, и кириллица с IME, и вставка Cmd+V.
 kb.addEventListener("input", (e) => { if (!e.isComposing && kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
 kb.addEventListener("compositionend", () => { if (kb.value) { send({ t: "text", text: kb.value }); kb.value = ""; } });
 const NAMED = new Set(["Enter", "Backspace", "Tab", "Escape", "Delete", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
-kb.addEventListener("keydown", (e) => { if (!e.isComposing && !e.metaKey && !e.ctrlKey && NAMED.has(e.key)) { send({ t: "key", key: e.key }); e.preventDefault(); } });
+kb.addEventListener("keydown", (e) => {
+  if (e.isComposing) return;
+  // Cmd+A и Ctrl+A выделяют все на странице; Cmd+V остается обычной вставкой в скрытое поле.
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "a") { send({ t: "key", key: "SelectAll" }); e.preventDefault(); return; }
+  if (!e.metaKey && !e.ctrlKey && NAMED.has(e.key)) { send({ t: "key", key: e.key, mods: mods(e) }); e.preventDefault(); }
+});
 const nav = (text) => send({ t: "nav", text });
 document.getElementById("back").onclick = () => nav("back");
 document.getElementById("fwd").onclick = () => nav("forward");

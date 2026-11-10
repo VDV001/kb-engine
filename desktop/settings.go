@@ -57,6 +57,7 @@ type sourcesView struct {
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
+	browserTok browserTokenCache // токен «Браузера», пока файл не изменился (browserproxy.go)
 	// speechCalls keeps cloud dictation calls for the statistics (#493); nil — не считать.
 	speechCalls usage.Recorder
 	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.

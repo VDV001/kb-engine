@@ -180,7 +180,7 @@ func (f *folderSettings) browserUpstream() browserUpstream {
 		return browserUpstream{Why: "Модуль «Браузер» выключен: включите его в «Настройки → Окно → Модули»."}
 	}
 	dir := filepath.Join(f.home, ".kb-tokens")
-	token, err := readBrowserToken(filepath.Join(dir, "browser"))
+	token, err := f.browserTok.read(filepath.Join(dir, "browser"))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 		return browserUpstream{} // сервер ни разу не запускали
@@ -188,6 +188,44 @@ func (f *folderSettings) browserUpstream() browserUpstream {
 		return browserUpstream{Why: "Файл токена браузера не подходит (" + err.Error() + "): удалите ~/.kb-tokens/browser и выполните kbengine browser serve."}
 	}
 	return browserUpstream{Socket: filepath.Join(dir, "browser.sock"), Token: token}
+}
+
+// browserTokenCache keeps the token until the file changes: страница ходит за
+// кадром и движением мыши десятки раз в секунду, и каждый раз читать файл не нужно.
+// Тип и права проверяются при каждом запросе (Lstat дешев), чтобы подмена файла
+// не пряталась за кэшем.
+//
+// ponytail: файл сверяется по inode, времени и размеру; потолок — подмена с теми же
+// inode, временем и размером за одну секунду; путь — читать всегда.
+type browserTokenCache struct {
+	mu    sync.Mutex
+	path  string
+	info  os.FileInfo
+	token string
+	reads int // сколько раз файл читали с диска (для проверки)
+}
+
+func (c *browserTokenCache) read(path string) (string, error) {
+	fi, err := os.Lstat(path)
+	if err != nil {
+		return "", err
+	}
+	if !fi.Mode().IsRegular() || fi.Mode().Perm()&0o077 != 0 {
+		return "", errBrowserTokenFile
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.info != nil && c.path == path && os.SameFile(c.info, fi) && c.info.ModTime().Equal(fi.ModTime()) && c.info.Size() == fi.Size() {
+		return c.token, nil
+	}
+	tok, err := readBrowserToken(path)
+	if err != nil {
+		c.info = nil
+		return "", err
+	}
+	c.reads++
+	c.path, c.info, c.token = path, fi, tok
+	return tok, nil
 }
 
 const (

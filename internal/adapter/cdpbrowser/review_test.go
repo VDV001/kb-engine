@@ -111,13 +111,13 @@ func TestFramesOnlyFromCurrentSession(t *testing.T) {
 func TestViewerResendsResizeAfterFailureAndRestart(t *testing.T) {
 	page := Viewer(1280, 800)
 	for _, want := range []string{
-		`.then((ok) => { if (!ok) sent = ""`, // сбой resize — отметка сброшена
-		`epoch = e; seq = 0; sent = ""`,      // новая эпоха: Chrome снова 1280x800
-		`AbortSignal.timeout(`,               // запрос ввода не висит вечно
-		`return false`,                       // run сообщает об отказе
-		`count:`,                             // двойной и тройной щелчок
-		`mods:`,                              // модификаторы клавиш
-		`"SelectAll"`,                        // Cmd+A и Ctrl+A
+		`.then((ok) => { if (!ok) { sent = ""`, // сбой resize — отметка сброшена
+		`sent = ""; fit();`,                    // новая эпоха: Chrome снова 1280x800
+		`AbortSignal.timeout(`,                 // запрос ввода не висит вечно
+		`return false`,                         // run сообщает об отказе
+		`count:`,                               // двойной и тройной щелчок
+		`mods:`,                                // модификаторы клавиш
+		`"SelectAll"`,                          // Cmd+A и Ctrl+A
 	} {
 		if !strings.Contains(page, want) {
 			t.Errorf("в странице нет %q", want)
