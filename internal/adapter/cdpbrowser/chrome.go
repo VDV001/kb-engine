@@ -380,7 +380,23 @@ func (c *Chrome) startScreencast(ctx context.Context, sess string) error {
 	c.mu.Lock()
 	w, h := c.w, c.h
 	c.mu.Unlock()
-	_, err := c.call(ctx, sess, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": w, "maxHeight": h, "everyNthFrame": 1})
+	// Сразу после перехода на новую страницу браузер на миг отвечает «Not attached to an
+	// active page»: пробуем заново, а не оставляем вкладку без кадров.
+	//
+	// ponytail: до 20 попыток по 100 мс; потолок — страница, которая не подключается
+	// дольше двух секунд, получит ошибку; путь — ждать событие готовности страницы.
+	var err error
+	for range 20 {
+		_, err = c.call(ctx, sess, "Page.startScreencast", map[string]any{"format": "jpeg", "quality": 70, "maxWidth": w, "maxHeight": h, "everyNthFrame": 1})
+		if err == nil || !strings.Contains(err.Error(), "Not attached to an active page") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 	return err
 }
 
