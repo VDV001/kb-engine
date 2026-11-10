@@ -73,9 +73,15 @@ func TestChromeEndToEnd(t *testing.T) {
 	if err := c.Input(ctx, Input{T: "nav", Text: srv.URL}); err != nil {
 		t.Fatal(err)
 	}
+	// Браузер открывается на стартовой странице, а она рисует кадры сама: новая страница — по адресу.
 	f, err := c.Next(ctx, first.Seq)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for seq := f.Seq; f.URL != srv.URL+"/"; seq = f.Seq {
+		if f, err = c.Next(ctx, seq); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(f.JPEG) < 3 || f.JPEG[0] != 0xff || f.JPEG[1] != 0xd8 {
 		t.Fatalf("кадр не JPEG: %d байт", len(f.JPEG))

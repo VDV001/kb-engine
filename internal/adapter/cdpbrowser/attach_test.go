@@ -20,10 +20,11 @@ type fakeCDP struct {
 	calls []string // «метод» или «метод:целевая страница»
 	pages []string // страницы, которые браузер показывает в getTargets
 
-	failCreate bool // браузер отказывает в создании страницы
-	castFrame  bool // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
-	shots      int  // сколько раз просили скриншот
+	failCreate bool     // браузер отказывает в создании страницы
+	castFrame  bool     // после Page.startScreencast браузер шлет кадр (Chrome); Brave без окна молчит
+	shots      int      // сколько раз просили скриншот
 	navs       []string // адреса Page.navigate
+	castFails  int      // сколько раз Page.startScreencast отвечает «Not attached to an active page»
 }
 
 func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
@@ -84,10 +85,17 @@ func startFakeCDP(t *testing.T, pages ...string) (*Chrome, *fakeCDP) {
 				res = `{}`
 			}
 			failed := f.failCreate && m.Method == "Target.createTarget"
+			notAttached := m.Method == "Page.startScreencast" && f.castFails > 0
+			if notAttached {
+				f.castFails--
+			}
 			f.mu.Unlock()
 			reply := map[string]any{"id": m.ID, "sessionId": m.SessionID, "result": json.RawMessage(res)}
 			if failed {
 				reply = map[string]any{"id": m.ID, "sessionId": m.SessionID, "error": map[string]any{"code": -32000, "message": "нет окон"}}
+			}
+			if notAttached {
+				reply = map[string]any{"id": m.ID, "sessionId": m.SessionID, "error": map[string]any{"code": -32000, "message": "Not attached to an active page"}}
 			}
 			out, _ := json.Marshal(reply)
 			if _, err := replyW.Write(append(out, 0)); err != nil {
@@ -233,4 +241,42 @@ func (f *fakeCDP) navigations() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return slices.Clone(f.navs)
+}
+
+// После перехода на новую страницу браузер на миг отвечает «Not attached to an active
+// page»: картинку включаем заново, а не падаем (вкладка иначе остается без кадров).
+func TestWatchRetriesWhileNotAttached(t *testing.T) {
+	c, f := startFakeCDP(t)
+	f.castFails = 3
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := c.watch(ctx); err != nil {
+		t.Fatalf("watch = %v: временный отказ должен повторяться", err)
+	}
+	n := 0
+	for _, call := range f.seen() {
+		if call == "Page.startScreencast" {
+			n++
+		}
+	}
+	if n != 4 {
+		t.Fatalf("startScreencast вызван %d раз, want 4 (три отказа и успех)", n)
+	}
+}
+
+// Настоящая ошибка не повторяется бесконечно.
+func TestWatchGivesUpOnPersistentFailure(t *testing.T) {
+	c, f := startFakeCDP(t)
+	f.castFails = 1000
+	c.mu.Lock()
+	c.sess = "S1"
+	c.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := c.watch(ctx); err == nil {
+		t.Fatal("watch должен вернуть ошибку, когда страница так и не подключилась")
+	}
 }
