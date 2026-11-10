@@ -231,7 +231,7 @@ func TestBrowserHostNoticesServerExit(t *testing.T) {
 	_ = h.cmd.Process.Signal(syscall.SIGTERM)
 	h.mu.Unlock()
 	deadline := time.Now().Add(3 * time.Second)
-	for h.State().Running && time.Now().Before(deadline) {
+	for h.State().Own && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if st := h.State(); st.Running || st.Own {
