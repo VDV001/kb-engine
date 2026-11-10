@@ -149,7 +149,7 @@ func TestAssessHealth(t *testing.T) {
 		{name: "правило без отметки при пустом журнале: возраст неизвестен, штрафа ритма нет и память не Bad", mut: func(in *HealthInput) {
 			in.Decisions = nil
 			in.Rules = []string{"Правило без следа"}
-		}, total: 80, mode: TrustOK, reason: []ReasonKind{ReasonRules}, check: func(t *testing.T, h Health) {
+		}, total: 80, mode: TrustOK, reason: []ReasonKind{ReasonRules, ReasonRhythm}, check: func(t *testing.T, h Health) {
 			if part(h, "rhythm").Value != 35 || part(h, "rules").Value != 0 {
 				t.Fatalf("rhythm=%v rules=%v", part(h, "rhythm").Value, part(h, "rules").Value)
 			}

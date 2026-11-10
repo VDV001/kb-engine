@@ -288,7 +288,7 @@ func AssessHealth(in HealthInput) Health {
 	}
 	rules := rulesScore(&h)
 	h.Parts = []HealthPart{
-		{"rhythm", rhythmScore(h.IdleDays, awaitsReview(in, h)), maxRhythm},
+		{"rhythm", rhythmScore(oldestWaitingDays(in, h), awaitsReview(in, h)), maxRhythm},
 		{"queue", queueScore(in), maxQueue},
 		{"integrity", integrityScore(in), maxIntegrity},
 		{"rules", rules, maxRules},
@@ -313,16 +313,35 @@ func AssessHealth(in HealthInput) Health {
 // awaitsReview: осмотра ждёт предложение в очереди или правило без свежего подтверждения.
 func awaitsReview(in HealthInput, h Health) bool { return len(in.Queue) > 0 || h.StaleRules > 0 }
 
-// rhythmScore: давность осмотра снимает баллы, только когда есть что осматривать.
-// Тихая память, где агент ничего не предлагал и правила свежи, не виновата в тишине.
-func rhythmScore(idle int, awaits bool) float64 {
-	switch {
-	case !awaits:
-		return maxRhythm
-	case idle >= 0:
-		return max(0, maxRhythm-float64(idle))
+// oldestWaitingDays: сколько дней ждёт самое старое из того, что просит осмотра:
+// предложение в очереди или правило сверх RuleStaleDays. Правило без отметки
+// датируется днями без суждений; суждений нет совсем — возраст неизвестен, штрафа нет.
+// Штраф растёт по дню, без скачка на границе срока.
+func oldestWaitingDays(in HealthInput, h Health) int {
+	days := 0
+	if len(in.Queue) > 0 {
+		days = h.OldestPendingDays
 	}
-	return 0
+	for _, r := range h.Rules {
+		if !r.Stale {
+			continue
+		}
+		age := r.AgeDays
+		if age < 0 {
+			age = h.IdleDays
+		}
+		days = max(days, age-RuleStaleDays)
+	}
+	return days
+}
+
+// rhythmScore: ожидание осмотра снимает баллы по дню, только когда есть что осматривать.
+// Тихая память, где агент ничего не предлагал и правила свежи, не виновата в тишине.
+func rhythmScore(waitingDays int, awaits bool) float64 {
+	if !awaits {
+		return maxRhythm
+	}
+	return max(0, maxRhythm-float64(waitingDays))
 }
 
 func queueScore(in HealthInput) float64 {
