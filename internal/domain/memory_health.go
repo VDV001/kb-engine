@@ -193,6 +193,10 @@ const (
 	// QueueSoftCap: сколько предложений могут ждать без штрафа. Непринятое предложение
 	// агенту не доверено, памяти оно не вредит: счёт падает только от завала сверх этого.
 	QueueSoftCap = 10
+	// QueueHardCap: столько предложений в очереди закрывают предложения агента независимо
+	// от режима. Штраф очереди не больше 25 баллов, так что завал сам режим не опускает:
+	// пауза идет по этому потолку, счёт и режим он не трогает.
+	QueueHardCap = 30
 
 	trustOKFrom   = 75
 	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) даёт 45
@@ -261,8 +265,16 @@ type Health struct {
 	IdleDays          int
 	LastJudgment      time.Time
 	OldestPendingDays int
-	StaleRules        int
-	Rules             []RuleHealth
+	// Pending — предложений в очереди одобрения.
+	Pending    int
+	StaleRules int
+	Rules      []RuleHealth
+}
+
+// AgentMayPropose says whether the agent may queue proposals: режим не «не доверяю» и
+// очередь не завалена (QueueHardCap).
+func (h Health) AgentMayPropose() bool {
+	return h.Mode.AgentMayPropose() && h.Pending < QueueHardCap
 }
 
 func daysBetween(from, to time.Time) int { return int(to.Sub(from).Hours() / 24) }
@@ -283,6 +295,7 @@ func AssessHealth(in HealthInput) Health {
 		h.IdleDays = max(0, daysBetween(h.LastJudgment, in.Today))
 	}
 	h.Rules = ruleHealths(in)
+	h.Pending = len(in.Queue)
 	for _, q := range in.Queue {
 		h.OldestPendingDays = max(h.OldestPendingDays, daysBetween(q.Since, in.Today))
 	}

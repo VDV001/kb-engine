@@ -201,7 +201,7 @@ func TestServer_memoryProposeIsPausedWhenTheQueueIsFull(t *testing.T) {
 	m := &stubMemory{trust: mcpserver.MemoryTrust{Mode: "ok", QueueFull: true}}
 	res := callTool(t, connectMemory(t, m), "memory_propose", map[string]any{"name": "a", "topic": "t", "description": "d"})
 	raw, _ := json.Marshal(res)
-	if !res.IsError || len(m.proposed) != 0 || !strings.Contains(string(raw), "очередь") {
+	if !res.IsError || len(m.proposed) != 0 || !strings.Contains(string(raw), "очереди") {
 		t.Fatalf("isError=%v proposed=%v %s", res.IsError, m.proposed, raw)
 	}
 }
