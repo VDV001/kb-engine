@@ -722,9 +722,16 @@ func (c *Chrome) snapshot(ctx context.Context) {
 
 func (c *Chrome) onTargetCreated(p json.RawMessage) {
 	var t struct {
-		TargetInfo struct{ TargetID, Type string } `json:"targetInfo"`
+		TargetInfo struct {
+			TargetID, Type, OpenerID string
+		} `json:"targetInfo"`
 	}
 	if json.Unmarshal(p, &t) != nil || t.TargetInfo.Type != "page" {
+		return
+	}
+	// Окном экрана становится только то, что открыла страница (у него есть opener). Страницу без
+	// opener браузер открыл сам (Brave вместо закрытых нами): она экраном не бывает.
+	if t.TargetInfo.OpenerID == "" {
 		return
 	}
 	id := t.TargetInfo.TargetID
