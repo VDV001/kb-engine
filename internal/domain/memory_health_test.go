@@ -138,13 +138,18 @@ func TestAssessHealth(t *testing.T) {
 				t.Fatalf("idle = %d, want 40", h.IdleDays)
 			}
 		}},
-		{name: "очередь: два предложения, старшее 17 дней", mut: func(in *HealthInput) {
+		{name: "очередь: два предложения, старшее 17 дней — причина названа, баллов не снято", mut: func(in *HealthInput) {
 			in.Queue = []PendingItem{{Name: "a", Since: day("2026-10-24")}, {Name: "b", Since: day("2026-11-08")}}
-		}, total: 88, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
-			if p := part(h, "queue"); p.Value != 13 || h.OldestPendingDays != 17 {
+		}, total: 100, mode: TrustOK, reason: []ReasonKind{ReasonQueue}, check: func(t *testing.T, h Health) {
+			if p := part(h, "queue"); p.Value != 25 || h.OldestPendingDays != 17 {
 				t.Fatalf("queue=%v oldest=%d", p.Value, h.OldestPendingDays)
 			}
 		}},
+		{name: "очередь за мягким потолком: 12 предложений — по два балла за лишнее", mut: func(in *HealthInput) {
+			for range 12 {
+				in.Queue = append(in.Queue, PendingItem{Name: "n", Since: day("2026-11-09")})
+			}
+		}, total: 96, mode: TrustOK, reason: []ReasonKind{ReasonQueue}},
 		{name: "печать нарушена — не доверяю при любом счете", mut: func(in *HealthInput) { in.SealOK = false },
 			total: 88, mode: TrustBad, reason: []ReasonKind{ReasonSeal}},
 		{name: "векторы отстали", mut: func(in *HealthInput) { in.StaleVectors = 3 },
