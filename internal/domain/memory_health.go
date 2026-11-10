@@ -190,8 +190,9 @@ const (
 	RuleLifeDays = 60
 	// IdleWarnDays: после стольких дней без решений осмотр попадает в причины.
 	IdleWarnDays = 7
-	// QueueGraceDays: предложение ждёт без штрафа за возраст столько дней.
-	QueueGraceDays = 7
+	// QueueSoftCap: сколько предложений могут ждать без штрафа. Непринятое предложение
+	// агенту не доверено, памяти оно не вредит: счёт падает только от завала сверх этого.
+	QueueSoftCap = 10
 
 	trustOKFrom   = 75
 	trustWarnFrom = 50 // ниже 50 — «не доверяю»: одно невнимание (осмотра нет, правила остыли) даёт 45
@@ -288,7 +289,7 @@ func AssessHealth(in HealthInput) Health {
 	rules := rulesScore(&h)
 	h.Parts = []HealthPart{
 		{"rhythm", rhythmScore(h.IdleDays, awaitsReview(in, h)), maxRhythm},
-		{"queue", queueScore(in, h.OldestPendingDays), maxQueue},
+		{"queue", queueScore(in), maxQueue},
 		{"integrity", integrityScore(in), maxIntegrity},
 		{"rules", rules, maxRules},
 	}
@@ -324,8 +325,8 @@ func rhythmScore(idle int, awaits bool) float64 {
 	return 0
 }
 
-func queueScore(in HealthInput, oldest int) float64 {
-	return max(0, maxQueue-3*float64(len(in.Queue))-0.6*float64(max(0, oldest-QueueGraceDays)))
+func queueScore(in HealthInput) float64 {
+	return max(0, maxQueue-2*float64(max(0, len(in.Queue)-QueueSoftCap)))
 }
 
 func integrityScore(in HealthInput) float64 {
