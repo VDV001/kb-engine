@@ -51,6 +51,16 @@ type moneyGroup struct {
 	Calls int     `json:"calls"`
 }
 
+// moneyChat is one chat in the month's spend (#541): Share — доля общего
+// расхода месяца (0..1).
+type moneyChat struct {
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	Cost  float64 `json:"cost"`
+	Calls int     `json:"calls"`
+	Share float64 `json:"share"`
+}
+
 type moneyModel struct {
 	ID     string  `json:"id"`
 	Cost   float64 `json:"cost"`
@@ -76,6 +86,7 @@ type moneyView struct {
 	Days        []float64    `json:"days"`
 	Purposes    []moneyGroup `json:"purposes"`
 	Models      []moneyModel `json:"models"`
+	Chats       []moneyChat  `json:"chats"`
 	Uncounted   int          `json:"uncounted"`
 	Unpriced    int          `json:"unpriced"`
 	Limit       string       `json:"limit"`
@@ -104,7 +115,7 @@ func (d *chatDesk) StatsMoney() (moneyView, error) {
 			own[m] = mp
 		}
 	}
-	v := moneyView{Limit: spend.Limit, Purposes: []moneyGroup{}, Models: []moneyModel{}}
+	v := moneyView{Limit: spend.Limit, Purposes: []moneyGroup{}, Models: []moneyModel{}, Chats: []moneyChat{}}
 	gw := map[string]domain.ModelPrice{}
 	if d.prices != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), pricesTimeout)

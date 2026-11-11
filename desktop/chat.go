@@ -163,7 +163,7 @@ func newChatDesk(s *folderSettings, dir string) *chatDesk {
 
 // metered counts the calls of m for the window statistics: назначение, токены,
 // время; без журнала — m как есть. Сбой записи не мешает ответу.
-func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose) chat.Model {
+func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose, chatID string) chat.Model {
 	if d.calls == nil {
 		return m
 	}
@@ -279,7 +279,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
 	model := d.model(c, key)
-	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch), chat.WithReader(readerFunc(d.read)))
+	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))

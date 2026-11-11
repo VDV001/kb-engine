@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 func gatewayPrices(t *testing.T) func(context.Context) (map[string]domain.ModelPrice, error) {
@@ -141,5 +143,54 @@ func TestChat_Money_billedModelShowsCostNotPriceInputs(t *testing.T) {
 	}
 	if len(v.Models) != 1 || v.Models[0].Priceable || !v.Models[0].Priced || v.Models[0].Cost <= 0 {
 		t.Fatalf("модели %+v", v.Models)
+	}
+}
+
+// «Деньги» по чатам (#541): вызовы ответа и разбора пишутся с id чата, список
+// идет от дорогих к дешевым с названием чата и долей расхода месяца; удаленный
+// чат остается в расходе под общим названием, а вызов вне чата в список не входит.
+func TestChat_MoneyByChat(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	rec := &callsRec{}
+	d.calls = rec
+	m.usage = chat.Usage{In: 1_000_000, Counted: true}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryOff: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetModelPrice("qwen3", "1", "0"); err != nil {
+		t.Fatal(err)
+	}
+	a, err := d.Ask(askReq{Question: "первый чат"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := d.Ask(askReq{Question: "второй чат"})
+	if _, err := d.Ask(askReq{ID: b.ID, Question: "еще вопрос"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range rec.calls {
+		if c.Chat() != a.ID && c.Chat() != b.ID {
+			t.Fatalf("вызов без чата: %+v", c)
+		}
+	}
+	v, err := d.StatsMoney()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Chats) != 2 {
+		t.Fatalf("чатов %d: %+v", len(v.Chats), v.Chats)
+	}
+	if x := v.Chats[0]; x.ID != b.ID || x.Title != "второй чат" || !near(x.Cost, 2) || x.Calls != 2 || !near(x.Share, 2.0/3) {
+		t.Errorf("первый = %+v", x)
+	}
+	if x := v.Chats[1]; x.ID != a.ID || x.Title != "первый чат" || !near(x.Cost, 1) || !near(x.Share, 1.0/3) {
+		t.Errorf("второй = %+v", x)
+	}
+	if err := d.Delete(a.ID); err != nil {
+		t.Fatal(err)
+	}
+	v, _ = d.StatsMoney()
+	if x := v.Chats[1]; x.ID != a.ID || x.Title != "Удаленный чат" {
+		t.Errorf("удаленный = %+v", x)
 	}
 }
