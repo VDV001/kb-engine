@@ -4145,7 +4145,7 @@ function acModeHTML() {
   return `<span class="ac-seg" role="group" aria-label="Что показывать">${[["acc", "Учётки"], ["mach", "Машины"]]
     .map(([k, t]) => `<button class="look-chip" data-ac="mode" data-mode="${k}" aria-pressed="${state.ac.mode === k}">${t}</button>`).join("")}</span>`;
 }
-const maProjectsText = (m) => (m ? m.projects : []).map((p) => [p.name, p.path, p.port, p.what].join(" | ").replace(/( \| )+$/, "")).join("\n");
+const maProjectsText = (m) => ((m && m.projects) || []).map((p) => [p.name, p.path, p.port, p.what].join(" | ").replace(/( \| )+$/, "")).join("\n");
 // «имя | путь | порт | что это», по строке на проект; лишнее после четвертой черты остается в «что это».
 function maParseProjects(text) {
   return text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [name, path = "", port = "", ...what] = l.split("|").map((x) => x.trim()); return { name, path, port, what: what.join(" | ") }; });
@@ -4160,8 +4160,8 @@ function acMachFormHTML(m) {
     ${m ? `<p class="ac-edit-who">Изменить машину. Пароль пустой — прежний остается.</p>` : ""}
     ${f("name", "имя машины", m && m.name)}${f("group", "группа (папка в списке)", m && m.group)}${sel("env", "среда (необязательно)", [["", "не задана"], ["prod", "прод"], ["stage", "стенд"], ["test", "тест"], ["dev", "dev"]], m ? m.env : "")}
     ${f("host", "хост (сервер или IP)", m && m.host)}${f("port", "порт ssh (пусто — 22)", m && m.port !== 22 ? m.port : "", "number")}${f("user", "пользователь", m && m.user)}
-    ${sel("auth", "как входить", [["key", "Ключ ssh"], ["password", "Пароль"], ["token", "Сертификат или токен"]], m ? m.auth : "key")}${f("keyPath", "файл ключа (путь, сам ключ не хранится)", m && m.keyPath)}${sel("jump", "заходить через (бастион)", [["", "напрямую"], ...others], m ? m.jump : "")}
-    ${f("tokenHint", "где взять токен или сертификат (если вход по ним)", m && m.tokenHint)}${f("note", "заметка (видна только в окне)", m && m.note)}${f("password", "пароль (если вход по паролю)", "", "password")}
+    ${sel("auth", "как входить", [["key", "Ключ ssh"], ["password", "Пароль"], ["token", "Сертификат или токен"]], m ? m.auth : "key")}${f("keyPath", "файл ключа (только путь)", m && m.keyPath)}${sel("jump", "заходить через (бастион)", [["", "напрямую"], ...others], m ? m.jump : "")}
+    ${f("tokenHint", "токен или сертификат: где взять", m && m.tokenHint)}${f("note", "заметка (видна только в окне)", m && m.note)}${f("password", "пароль (если вход по паролю)", "", "password")}
     <label class="ac-wide">что на машине: проект | путь | порт | что это, по строке на проект<textarea name="projects" rows="4" spellcheck="false">${esc(pj)}</textarea></label>
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="${m ? "medit-cancel" : "madd-cancel"}">Отмена</button><button class="ac-btn pri" type="submit">Сохранить${m ? " · Touch ID" : ""}</button></div></form>`;
 }
@@ -4183,7 +4183,7 @@ function acMachCardHTML(m) {
   const pw = m.auth === "password" ? `<dt>пароль</dt><dd><div class="ac-secret"><code class="${open ? "open" : ""}">${open ? esc(open.pw) : m.hasPassword ? "••••••••••••" : "не задан"}</code>
     <button class="ac-btn" data-ac="${open ? "mhide" : "mshow"}" data-id="${esc(m.id)}">${open ? "Скрыть" : "Показать · Touch ID"}</button>
     <button class="ac-btn pri" data-ac="mcopy" data-id="${esc(m.id)}">Скопировать на 30 с</button>${open ? `<span class="ac-cd" data-cd="m:${esc(m.id)}">скроется через ${open.left} с</span>` : ""}</div></dd>` : "";
-  const pj = m.projects.length ? `<table class="ac-pj"><thead><tr><th>проект</th><th>путь</th><th>порт</th><th>что это</th></tr></thead><tbody>${m.projects.map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.path || "")}</td><td>${esc(p.port || "")}</td><td>${esc(p.what || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">Проектов пока нет: просканируйте машину или впишите их при правке.</p>`;
+  const pj = (m.projects || []).length ? `<table class="ac-pj"><thead><tr><th>проект</th><th>путь</th><th>порт</th><th>что это</th></tr></thead><tbody>${(m.projects || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.path || "")}</td><td>${esc(p.port || "")}</td><td>${esc(p.what || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">Проектов пока нет: просканируйте машину или впишите их при правке.</p>`;
   return `<div class="ac-card" style="--c:var(--z-sp4)">
     <div class="crumb"><i class="ac-sw"></i>машина${m.group ? " · " + esc(m.group) : ""}</div>
     <h3>${esc(m.name)} ${m.env ? `<span class="ac-env ${esc(m.env)}">${esc(m.envName)}</span>` : ""}</h3>
@@ -4283,7 +4283,7 @@ async function acMachClick(b, ac, id) {
       const picked = [...document.querySelectorAll("[data-scan]:checked")].map((c) => s.found[+c.dataset.scan]);
       if (!picked.length) break;
       const input = { name: m.name, group: m.group, env: m.env, host: m.host, port: m.port, user: m.user, auth: m.auth, keyPath: m.keyPath, jump: m.jump, tokenHint: m.tokenHint, note: m.note,
-        projects: [...m.projects, ...picked.map((f) => ({ name: f.name, path: f.path || "", port: f.port || "", what: f.what }))] };
+        projects: [...(m.projects || []), ...picked.map((f) => ({ name: f.name, path: f.path || "", port: f.port || "", what: f.what }))] };
       try {
         await native().MachineUpdate(id, input, "");
         ac.scan = null; await acLoad(); acRender();

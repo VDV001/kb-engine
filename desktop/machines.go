@@ -64,6 +64,14 @@ type machineView struct {
 	HasPassword bool                    `json:"hasPassword"`
 }
 
+// nonNil turns a nil list into an empty one: JSON null окно не читает (m.projects.length).
+func nonNil[T any](xs []T) []T {
+	if xs == nil {
+		return []T{}
+	}
+	return xs
+}
+
 // machineSecret is the Keychain account of a machine password.
 func machineSecret(id string) string { return "machine:" + id }
 
@@ -80,7 +88,7 @@ func (d *accessDesk) Machines(q string) ([]machineView, error) {
 	for _, m := range list {
 		v := machineView{ID: m.ID(), Name: m.Name(), Group: m.Group(), Env: string(m.Env()), EnvName: envNames[m.Env()], Risky: m.Env().Risky(),
 			Host: m.Host(), Port: m.Port(), User: m.User(), Auth: string(m.Auth()), KeyPath: m.KeyPath(), Jump: m.Jump(),
-			TokenHint: m.TokenHint(), Note: m.Note(), Projects: m.Projects()}
+			TokenHint: m.TokenHint(), Note: m.Note(), Projects: nonNil(m.Projects())}
 		switch cmd, err := d.machines.Command(m.ID()); {
 		case errors.Is(err, domain.ErrMachineChain):
 			v.ChainError = err.Error()
