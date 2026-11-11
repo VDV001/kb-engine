@@ -148,3 +148,16 @@ func TestStorageDesk_clearProfileRefusedWhileBrowserRuns(t *testing.T) {
 		t.Errorf("профиль не очищен: %+v", it)
 	}
 }
+
+func TestBrowserProfileDir_isTheCLIDefault(t *testing.T) {
+	if got := browserProfileDir(); !strings.HasSuffix(got, filepath.Join("kb-browser", "profile")) {
+		t.Errorf("путь профиля разошелся с CLI: %s", got)
+	}
+}
+
+func TestApp_storageNilIsSafe(t *testing.T) {
+	a := &App{}
+	if a.StorageItems() != nil || a.StorageClear("chats") == nil {
+		t.Error("без хранилища: пусто и отказ, не паника")
+	}
+}

@@ -135,6 +135,7 @@ func run() error {
 		return cloud.synth(voice, text, speechLang(text, app.chat.config().Accent))
 	}}
 	app.access = newAccessDesk(home, nil)
+	app.storage = newStorageDesk(filepath.Dir(cfgPath), browserProfileDir())
 	app.memory = newMemoryDesk(home)
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)
