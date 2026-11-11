@@ -298,6 +298,9 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
+	// Вопрос ушел: черновик и этого чата, и «нового» (из него чат родился) не нужен.
+	_ = d.DropDraft("")
+	_ = d.DropDraft(rec.ID)
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
 	if turn.PromptTokens > 0 {
@@ -410,6 +413,7 @@ func (d *chatDesk) Delete(id string) error {
 	if err != nil {
 		return err
 	}
+	_ = d.DropDraft(id) // черновик не переживает свой чат
 	return os.Remove(p)
 }
 
