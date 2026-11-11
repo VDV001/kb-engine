@@ -59,6 +59,12 @@ func TestNewMachine_rejects(t *testing.T) {
 		{"проект без имени", func(d *domain.MachineDTO) { d.Projects[0].Name = "" }},
 		{"незнакомая среда", func(d *domain.MachineDTO) { d.Env = "qa-2" }},
 		{"кривой id", func(d *domain.MachineDTO) { d.ID = "Build 01!" }},
+		// Команда ssh копируется в терминал: хост или пользователь не должны стать опцией или двумя словами.
+		{"хост как опция ssh", func(d *domain.MachineDTO) { d.Host = "-oProxyCommand=touch_x" }},
+		{"хост с пробелом", func(d *domain.MachineDTO) { d.Host = "10.0.0.5 -p 1" }},
+		{"пользователь как опция", func(d *domain.MachineDTO) { d.User = "-l" }},
+		{"пользователь с пробелом", func(d *domain.MachineDTO) { d.User = "dep loy" }},
+		{"пользователь с собакой", func(d *domain.MachineDTO) { d.User = "a@b" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			d := machineDTO()
