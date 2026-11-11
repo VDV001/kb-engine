@@ -137,7 +137,25 @@ func (d *accessDesk) Add(in accessIn, password string) error {
 	if err != nil {
 		return err
 	}
-	return d.svc.Add(c, pw)
+	return sayTaken(d.svc.Add(c, pw))
+}
+
+// takenError — занятый адрес словами окна; Unwrap оставляет errors.Is(ErrCredentialExists).
+type takenError struct{ msg string }
+
+func (e takenError) Error() string { return e.msg }
+func (takenError) Unwrap() error   { return domain.ErrCredentialExists }
+
+// sayTaken переводит отказ «такой доступ уже есть» с внутренним id на язык окна;
+// остальные ошибки проходят как есть. Пароль без карточки в Связке — другой отказ.
+func sayTaken(err error) error {
+	if !errors.Is(err, domain.ErrCredentialExists) {
+		return err
+	}
+	if strings.Contains(err.Error(), "Связке") {
+		return takenError{"Под таким продуктом, средой и логином в Связке ключей уже лежит чужой пароль. Измените продукт, среду или логин"}
+	}
+	return takenError{"Такой доступ уже есть: продукт, среда и логин совпадают с другой карточкой. Измените продукт, среду или логин"}
 }
 
 // details turns what the window sent into card details; дата — ГГГГ-ММ-ДД или пусто.
@@ -189,7 +207,7 @@ func (d *accessDesk) Update(id string, in accessIn, password string) error {
 	if !d.isOpen() { // закрылось по таймеру, пока висел диалог Touch ID
 		return errVaultClosed
 	}
-	return d.svc.Update(id, dto, pw)
+	return sayTaken(d.svc.Update(id, dto, pw))
 }
 
 func (d *accessDesk) check(reason string) error {

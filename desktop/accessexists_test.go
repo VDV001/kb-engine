@@ -47,3 +47,16 @@ func TestAccessDesk_takenAddressIsSaidInRussian(t *testing.T) {
 		})
 	}
 }
+
+// Пароль под этим адресом остался в Связке без карточки: это другой отказ.
+func TestAccessDesk_strayKeychainPasswordIsSaidInRussian(t *testing.T) {
+	d, _ := newAccess(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	d.svc.Secrets.(memSecrets)["crm-test-api"] = "left-behind"
+	err := d.Add(accessIn{Product: "CRM", Env: "test", Login: "api", Host: "203.0.113.5"}, secretPW)
+	if !errors.Is(err, domain.ErrCredentialExists) || !strings.Contains(err.Error(), "в Связке ключей") || strings.Contains(err.Error(), "crm-test-api") {
+		t.Fatalf("сообщение: %v", err)
+	}
+}
