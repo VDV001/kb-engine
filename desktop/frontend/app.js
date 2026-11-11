@@ -2624,10 +2624,37 @@ function paintChatList() {
   $("#chat-list").innerHTML = list.map((c) => c.id === chatState.confirmDel
     ? `<li class="chat-confirm"><span>Удалить «${esc(c.title)}»? История сотрется.</span>
       <button class="btn danger" data-del-yes="${esc(c.id)}">Удалить</button><button class="btn" data-del-no>Отмена</button></li>`
+    : c.id === chatState.renaming
+    ? `<li class="chat-rename"><input class="chat-find" id="chat-rename-in" maxlength="60" value="${esc(c.title)}" aria-label="Название чата"></li>`
     : `<li><button class="chat-item${c.id === chatState.id ? " on" : ""}" data-chat="${esc(c.id)}" data-tip="${esc(c.title)}" data-tip-b="${esc(chatWhen(c.updated))}">${esc(c.title)}</button>
+      <button class="chat-ren" data-ren="${esc(c.id)}" aria-label="Переименовать чат: ${esc(c.title)}" data-tip="Переименовать">✎</button>
       <button class="chat-del" data-del="${esc(c.id)}" aria-label="Удалить чат: ${esc(c.title)}" data-tip="Удалить чат">×</button></li>`).join("") ||
     `<li class="muted chat-empty" style="padding:7px 10px">${q ? "Чатов с таким названием нет" : "Чатов пока нет"}</li>`;
   dropStaleTip();
+  const inp = $("#chat-rename-in");
+  if (inp && document.activeElement !== inp) { inp.focus(); inp.select(); }
+}
+// Переименование (двойной щелчок по названию или «✎»): Enter сохраняет, Esc и
+// пустое поле оставляют прежнее название, уход из поля сохраняет как в Finder.
+function startRename(id) {
+  if (chatState.busy || !chatState.list.some((c) => c.id === id)) return;
+  chatState.renaming = id;
+  chatState.confirmDel = null;
+  paintChatList();
+}
+async function finishRename(save) {
+  const id = chatState.renaming, inp = $("#chat-rename-in");
+  if (!id) return; // Esc уже закрыл поле: уход из него второй раз не сохраняет
+  chatState.renaming = null;
+  const name = inp ? inp.value.trim() : "", old = (chatState.list.find((c) => c.id === id) || {}).title;
+  if (save && name && name !== old) {
+    try {
+      await native().RenameChat(id, name);
+      if (id === chatState.id && chatState.chat) { chatState.chat.title = name; renderChat(); }
+    } catch (e) { showChatNote("Название не сохранено: " + errText(e)); }
+    return renderChatList();
+  }
+  paintChatList();
 }
 // answerHTML shows the model's text: абзацы, **жирный**, `код` — без HTML модели.
 function answerHTML(t) {
@@ -3052,7 +3079,21 @@ $("#chat-sources-btn").addEventListener("click", () => openSettings("sources"));
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n" && !$("#chat-view").hidden) { e.preventDefault(); newChat(); }
 });
+$("#chat-list").addEventListener("dblclick", (e) => {
+  const b = e.target.closest("[data-chat]");
+  if (b) startRename(b.dataset.chat);
+});
+$("#chat-list").addEventListener("keydown", (e) => {
+  if (!e.target.closest("#chat-rename-in")) return;
+  if (e.key === "Enter") { e.preventDefault(); finishRename(true); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finishRename(false); }
+});
+$("#chat-list").addEventListener("focusout", (e) => {
+  if (e.target.closest("#chat-rename-in")) finishRename(true);
+});
 $("#chat-list").addEventListener("click", async (e) => {
+  const ren = e.target.closest("[data-ren]");
+  if (ren) return startRename(ren.dataset.ren);
   const ask = e.target.closest("[data-del]");
   if (ask && !chatState.busy) {
     chatState.confirmDel = ask.dataset.del;

@@ -785,7 +785,7 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-rec { margin: 14px 10px 4px; font-size: 11px; color: var(--z-faint); }
 .chat-list { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; min-height: 0; }
 /* Название чата в одну строку, хвост тает (как в Claude Desktop); полное — в подсказке. */
-.chat-item { display: block; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 7px 28px 7px 10px; color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; white-space: nowrap; overflow: hidden;
+.chat-item { display: block; width: 100%; text-align: left; border: 0; background: none; border-radius: 6px; padding: 7px 50px 7px 10px; color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; white-space: nowrap; overflow: hidden;
   -webkit-mask-image: linear-gradient(90deg, #000 82%, transparent); mask-image: linear-gradient(90deg, #000 82%, transparent); }
 .chat-list li { position: relative; }
 .chat-item:hover { background: var(--z-bg-3); color: var(--z-ink); }
@@ -793,6 +793,10 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-del { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; background: none; border: 0; color: var(--z-muted); cursor: pointer; padding: 2px 6px; font-size: 14px; }
 .chat-list li:hover .chat-del, .chat-del:focus-visible { opacity: 1; }
 .chat-del:hover { color: var(--z-bad); }
+.chat-ren { position: absolute; right: 24px; top: 50%; transform: translateY(-50%); opacity: 0; background: none; border: 0; color: var(--z-muted); cursor: pointer; padding: 2px 6px; font-size: 13px; }
+.chat-list li:hover .chat-ren, .chat-ren:focus-visible { opacity: 1; }
+.chat-ren:hover { color: var(--z-ink); }
+.chat-rename .chat-find { width: 100%; margin: 0; box-sizing: border-box; }
 .chat-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 7px 10px; font-size: 12px; color: var(--z-ink-2); }
 .chat-confirm span { flex-basis: 100%; }
 .chat-model { display: grid; gap: 8px; padding: 6px 4px; }

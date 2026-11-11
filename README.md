@@ -46,7 +46,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   a chat over your documents (ADR-0006): a small local model gets the documents
   the window finds, a strong one searches and reads them itself. Answers stream,
   can be read aloud (macOS voices or cloud voices via Vercel AI Gateway) and asked
-  by voice (hold, toggle or hands-free). **«Что DVK помнит обо мне»** (ADR-0007)
+  by voice (hold, toggle or hands-free); chats can be renamed (double-click a
+  title). **«Что DVK помнит обо мне»** (ADR-0007)
   is a portrait of the person the chat starts from: facts by section, added by
   hand, found after an answer or offered by the model — new ones wait for your
   approval. It lives in a folder of your choice (0600) or on your kb server
