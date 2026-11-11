@@ -1544,7 +1544,9 @@ body:not(.no-scan-run) .ac-run-bar::after { content: ""; position: absolute; ins
 .ac-found label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 
 /* Экран «Версии» (#547): семейства документов лентой по времени. */
-.ver-q { width: 100%; box-sizing: border-box; margin: 6px 0 12px; }
+.search.ver-search { height: 44px; margin: 6px 0 12px; }
+.ver-search .cmd { font-size: 13px; }
+.ver-search input { font-size: 14px; }
 .ver-fam { border-top: 1px solid var(--z-line); padding: 10px 0; }
 .ver-fam h4 { margin: 0 0 6px; font-size: 13px; color: var(--z-ink); overflow-wrap: anywhere; }
 .ver-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 4px 10px; padding: 4px 0; font-size: 12px; }

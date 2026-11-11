@@ -313,7 +313,12 @@
     <ul class="conn-list storage-list" id="storage-list" data-view="storage"></ul>
 
     <p class="muted" data-view="versions">Итерации одного документа (docx, pptx, xlsx, pdf) из папок окна одним списком: у каждой версии написано, что в неё добавили. Файлы не меняются и не удаляются. Копия байт в байт показана как дубль.</p>
-    <input class="ver-q" id="ver-q" type="search" placeholder="Имя документа, например «КП»" aria-label="Найти документ" data-view="versions">
+    <label class="search ver-search" data-view="versions">
+      <span class="dollar">$</span>
+      <span class="cmd">dvk versions</span>
+      <input id="ver-q" type="search" placeholder="КП, смета, ТЗ…" aria-label="Найти документ" autocomplete="off" spellcheck="false">
+      <span class="kbd" id="ver-count"></span>
+    </label>
     <div class="ver-list" id="ver-list" data-view="versions"></div>
 
     <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>

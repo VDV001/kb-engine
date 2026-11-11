@@ -1091,6 +1091,7 @@ async function renderVersions(fresh) {
   let fams = [];
   try { fams = (await native().Versions($("#ver-q").value, !!fresh)) || []; } catch (e) { if (seq === verSeq) box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
   if (seq !== verSeq) return; // пришел ответ на устаревший запрос
+  $("#ver-count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
   if (!fams.length) { box.innerHTML = `<p class="muted">${$("#ver-q").value.trim() ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Найти одинокий файл можно по имени."}</p>`; return; }
   box.innerHTML = fams.map((f) => `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}</h4>${
     f.versions.map((v) => `<div class="ver-row"><span class="ver-date">${esc(v.date)}</span><span class="ver-note">${esc(v.note)} · ${sizeText(v.size)}</span><span class="ver-path">${esc(v.path)}</span>${
