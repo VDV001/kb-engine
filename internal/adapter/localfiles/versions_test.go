@@ -208,3 +208,20 @@ func TestVersions_PptxLineBreakSeparatesWords(t *testing.T) {
 		t.Errorf("a:br склеил слова: %q", tx)
 	}
 }
+
+func TestVersions_FileOverTheReadLimitIsListedNotRead(t *testing.T) {
+	root := t.TempDir()
+	small := writePptx(t, root, "p/Проект_2026_11_10.pptx", []string{"Текст"})
+	big := write(t, root, "p/Проект_2026_11_05.pptx", "")
+	if err := os.Truncate(big, 33<<20); err != nil { // больше 32 МБ: порога чтения документов
+		t.Fatal(err)
+	}
+	got := collect(t, newSource(t, root))
+	b, ok := got[big]
+	if !ok || !b.TooBig || b.Hash != "" || b.Text != "" {
+		t.Errorf("большой файл: %+v (в списке: %v)", b, ok)
+	}
+	if got[small].TooBig || got[small].Text == "" {
+		t.Errorf("обычный файл тронут: %+v", got[small])
+	}
+}

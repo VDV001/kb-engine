@@ -170,3 +170,18 @@ func TestWhen_PrefersNameDateOverMtime(t *testing.T) {
 		t.Errorf("дата из имени проиграла времени изменения: %v", got)
 	}
 }
+
+func TestGroup_TooBigFileIsNamedNotSkipped(t *testing.T) {
+	big := file("/a/Проект_2026_11_05.pptx", "", "", day(11, 5))
+	big.TooBig = true
+	got := versions.Group([]versions.File{big, file("/a/Проект_2026_11_10.pptx", "h", "Текст", day(11, 10))})
+	if len(got) != 1 || len(got[0].Versions) != 2 {
+		t.Fatalf("большой файл выпал из семейства: %+v", got)
+	}
+	if c := got[0].Versions[0].Change; c.Kind != versions.KindTooBig {
+		t.Errorf("большой файл не назван: %+v", c)
+	}
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindNoText {
+		t.Errorf("сравнивать с непрочитанным нельзя: %+v", c)
+	}
+}
