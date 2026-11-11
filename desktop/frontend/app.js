@@ -2417,6 +2417,7 @@ async function openChatView() {
   await renderChatList();
   renderChat();
   renderChatSources();
+  await loadChatDraft();
   $("#chat-q").focus();
 }
 
@@ -2783,7 +2784,9 @@ async function askChat() {
   // «Слушает сам»: ответ пришел — снова слушать (с голосом это делает разговор голосом).
   if (micLoop.on && !voice.on) startMic(VOICE_PAUSE, true);
 }
-function newChat() {
+async function newChat() {
+  if (chatState.busy) return;
+  await flushChatDraft(); // набранное остается за прежним чатом
   if (chatState.busy) return;
   chatState.id = "";
   chatState.chat = null;
@@ -2796,9 +2799,46 @@ function newChat() {
   paintChatList();
   renderChat();
   renderChatNote();
+  await loadChatDraft();
   $("#chat-q").focus();
 }
 $("#chat-ask").addEventListener("submit", (e) => { e.preventDefault(); askChat(); });
+// Черновик (#540): набранное, но не отправленное, лежит в окне по чатам и
+// переживает смену чата и перезапуск. Сохраняется с задержкой, пока человек
+// печатает; смена чата сохраняет сразу. saved — что окно уже знает: повторно
+// то же не пишем.
+const chatDraft = { timer: 0, id: "", saved: "" };
+function scheduleChatDraft() {
+  if (!native() || !native().SaveChatDraft) return;
+  clearTimeout(chatDraft.timer);
+  const id = chatState.id, text = $("#chat-q").value;
+  if (id === chatDraft.id && text === chatDraft.saved) return;
+  chatDraft.timer = setTimeout(() => writeChatDraft(id, text), 500);
+}
+async function writeChatDraft(id, text) {
+  try {
+    await native().SaveChatDraft(id, text);
+    chatDraft.id = id; chatDraft.saved = text;
+  } catch (e) { showChatNote("Черновик не сохранен: " + errText(e)); }
+}
+// flushChatDraft saves the pending draft now, before the field changes owner.
+async function flushChatDraft() {
+  if (!chatDraft.timer) return;
+  clearTimeout(chatDraft.timer);
+  chatDraft.timer = 0;
+  await writeChatDraft(chatState.id, $("#chat-q").value);
+}
+// loadChatDraft puts the saved draft of the open chat into the field.
+async function loadChatDraft() {
+  if (!native() || !native().ChatDraft) return;
+  const id = chatState.id;
+  let text = "";
+  try { text = await native().ChatDraft(id); } catch { /* нет черновика — пустое поле */ }
+  if (chatState.id !== id || chatState.busy) return; // чат успели сменить
+  $("#chat-q").value = text;
+  chatDraft.id = id; chatDraft.saved = text;
+  fitChatQ();
+}
 // Поле растет по тексту до 40% высоты; кнопка «Спросить» — только с вопросом.
 function fitChatQ() {
   const q = $("#chat-q");
@@ -2806,6 +2846,7 @@ function fitChatQ() {
   q.style.height = q.scrollHeight + "px";
   $("#chat-send").disabled = chatState.busy || !q.value.trim();
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
+  scheduleChatDraft();
 }
 $("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
 
@@ -3074,10 +3115,12 @@ $("#chat-list").addEventListener("click", async (e) => {
     if (id === chatState.id) { chatState.id = ""; chatState.chat = null; }
     await renderChatList();
     renderChat();
+    if (!chatState.id) await loadChatDraft(); // у «нового» чата свой черновик
     return;
   }
   const b = e.target.closest("[data-chat]");
   if (!b || chatState.busy) return;
+  await flushChatDraft(); // набранное остается за прежним чатом
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
@@ -3090,6 +3133,7 @@ $("#chat-list").addEventListener("click", async (e) => {
   paintChatList();
   renderChat();
   renderChatNote();
+  await loadChatDraft();
 });
 $("#chat-docs").addEventListener("click", (e) => {
   const o = e.target.closest("[data-open]");
