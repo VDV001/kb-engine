@@ -65,6 +65,7 @@ func TestVersionMention(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatalf("отставание версии не найдено")
+				return
 			}
 			if !strings.Contains(got.Text, tc.want) || !strings.Contains(got.Text, tc.current) {
 				t.Errorf("текст находки не называет обе версии: %q", got.Text)
@@ -174,6 +175,7 @@ func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatal("отставание не найдено — проверка молчит")
+				return
 			}
 			if !strings.Contains(got.Text, tc.want) {
 				t.Errorf("текст находки не называет версию страницы: %q", got.Text)
@@ -188,6 +190,7 @@ func TestVersionMention_fallsBackToTextForMarkdown(t *testing.T) {
 	got := freshness.VersionMention("## Проекты\n\nkb-engine v0.5.0 — движок базы\n", "kb-engine", "0.15.0")
 	if got == nil {
 		t.Fatal("отставание не найдено в markdown")
+		return
 	}
 	if !strings.Contains(got.Text, "v0.5.0") {
 		t.Errorf("текст находки не называет версию страницы: %q", got.Text)
@@ -206,6 +209,7 @@ func TestVersionMention_showsTheBaseReleaseNotTheBuildString(t *testing.T) {
 		"v0.15.1-0.20260804145247-fea441f0ae51+dirty")
 	if got == nil {
 		t.Fatal("отставание не найдено на сборке из исходников")
+		return
 	}
 	for _, bad := range []string{"dirty", "20260804", "fea441f"} {
 		if strings.Contains(got.Text, bad) {
@@ -251,6 +255,7 @@ func TestVersionMention_usesTheBaseReleaseOfAPseudoVersion(t *testing.T) {
 		"0.15.1-0.20260804151919-e9b33a0aa068")
 	if got == nil {
 		t.Fatal("отставание не найдено при собранной из исходников версии")
+		return
 	}
 	if !strings.Contains(got.Text, "0.15.0") || strings.Contains(got.Text, "dirty") {
 		t.Errorf("в тексте не базовый выпуск: %q", got.Text)
@@ -302,6 +307,7 @@ func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
 			got := freshness.VersionMention(`{"note":"`+tc.page+` · kb-engine"}`, "kb-engine", tc.current)
 			if got == nil {
 				t.Fatal("расхождение версий не найдено вовсе")
+				return
 			}
 			if got.Kind != tc.wantKind {
 				t.Errorf("Kind = %q, ожидалось %q (текст: %q)", got.Kind, tc.wantKind, got.Text)
