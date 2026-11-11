@@ -73,8 +73,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   machines (ssh hosts) with a project scan. **Memory** (ADR-0008) has two
   layers (`kbengine memory`: a hot `HOT.md` of rules and a cold layer) with a
   health score that drops when nobody reviews it. Settings → **Хранилище** shows
-  what takes disk space and clears each item on its own. Settings →
-  **Версии** gathers the iterations of one document (docx, pptx, xlsx, pdf)
+  what takes disk space and clears each item on its own. The
+  **Артефакты** module (switch it on in Settings → Окно → Модули) gathers the iterations of one document (docx, pptx, xlsx, pdf)
   from the window's folders into a family, oldest first, each version saying
   what was added or removed since the previous one; a byte-identical copy is
   shown as a duplicate, and files are never changed.

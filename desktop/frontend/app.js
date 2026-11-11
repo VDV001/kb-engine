@@ -415,6 +415,8 @@ const MODULES = {
     icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
   browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; включается кнопкой над страницей (из терминала — kbengine browser serve)", src: "/browser/",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.3 3.7 5 3.7 8s-1.2 5.7-3.7 8c-2.5-2.3-3.7-5-3.7-8S9.5 6.3 12 4Z"/>' },
+  artifacts: { name: "Артефакты", what: "документы из папок окна и их версии: у каждой — что нового относительно предыдущей", view: "artifacts",
+    icon: '<path d="M7 4h7l4 4v12H7z"/><path d="M14 4v4h4M10 12h5M10 15.5h5"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -978,7 +980,6 @@ const VIEWS = {
   prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
   storage: { title: "Хранилище", cmd: "storage" },
-  versions: { title: "Версии", cmd: "versions" },
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
   conn: { title: "Подключения", cmd: "config connections" },
@@ -1021,11 +1022,6 @@ async function openSettings(view = "sources") {
   if (view === "storage") {
     await renderStorage();
     $("#close-settings").focus();
-    return;
-  }
-  if (view === "versions") {
-    $("#ver-q").focus();
-    await renderVersions(false); // свежий обход — только когда кэш минутный устарел: он читает и хеширует документы
     return;
   }
   if (view === "conn") {
@@ -1081,7 +1077,12 @@ function sizeText(b) {
   if (b < 1073741824) return `${(b / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: b < 10485760 ? 1 : 0 })} МБ`;
   return `${(b / 1073741824).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ГБ`;
 }
-// Экран «Версии» (#547): список приходит из Go целиком, запрос фильтрует там же.
+// Модуль «Артефакты» (#547): список приходит из Go целиком, запрос фильтрует там же.
+// Свежий обход — только когда кэш минутный устарел: он читает и хеширует документы.
+function openArtifacts() {
+  renderVersions(false);
+  $("#ver-q").focus();
+}
 let verSeq = 0;
 async function renderVersions(fresh) {
   const box = $("#ver-list");
@@ -2129,12 +2130,15 @@ function showModule(id) {
   $("#memory-view").hidden = !mod || mod.view !== "memory";
   const helpWasOpen = !$("#help-view").hidden; // render() зовет showModule часто: не сбивать фокус и выбор
   $("#help-view").hidden = !mod || mod.view !== "help";
+  const artWasOpen = !$("#artifacts-view").hidden; // render() зовет showModule часто: не обходить папки зря
+  $("#artifacts-view").hidden = !mod || mod.view !== "artifacts";
   if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
   else if (mod && mod.view === "access") openAccess();
   else if (mod && mod.view === "memory") { if (!mmWasOpen) openMemory(); }
   else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
+  else if (mod && mod.view === "artifacts") { if (!artWasOpen) openArtifacts(); }
   else if (mod) {
     $("#fin-src").hidden = id !== "finances";
     renderFinSrc();
