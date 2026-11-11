@@ -54,7 +54,9 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   hand, found after an answer or offered by the model — new ones wait for your
   approval. It lives in a folder of your choice (0600) or on your kb server
   (`GET/PUT /api/portrait`, versioned by ETag). With a cloud model the approved
-  portrait goes to its provider with every chat; the window says so. The
+  portrait goes to its provider with every chat; the window says so. An unsent
+  question is kept as a draft per chat (0600, next to the history) and comes
+  back after a restart. The
   **Finances** module shows the engine's finance pages inside the window; their
   data comes from a kb server in Sources or from your own `kbengine serve` on
   this Mac — Settings → Modules → «Финансы берут данные из».
