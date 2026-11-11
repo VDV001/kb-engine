@@ -2641,9 +2641,14 @@ function answerHTML(t) {
 // токенов — от провайдера, размер контекста человек вносит в настройках.
 const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
 const ctxNum = (v) => v.toLocaleString("ru-RU");
+// Кольцо видно всегда: счета провайдера еще нет (новый чат) — пустое кольцо с
+// размером окна из настроек, а если и его нет — со знаком вопроса.
+const ctxNow = () => {
+  const x = chatState.chat && chatState.chat.context;
+  return x && x.used ? x : { used: 0, window: (chatState.settings && chatState.settings.contextWindow) || 0 };
+};
 function renderChatCtx() {
-  const ring = $("#chat-ctx-ring"), x = chatState.chat && chatState.chat.context;
-  if (!x || !x.used) { ring.hidden = true; closeChatCtx(); return; }
+  const ring = $("#chat-ctx-ring"), x = ctxNow();
   const f = x.window ? x.used / x.window : 0, tone = !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
   const R = 8, C = 2 * Math.PI * R;
   ring.hidden = false;
@@ -2664,11 +2669,10 @@ function fillChatCtx(x, f, tone) {
       : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
   pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
     ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
-    <dl class="cx-kv"><dt>В запросе</dt><dd>${x.est ? "≈ " : ""}${ctxNum(x.used)} токенов <span class="muted">${x.est ? "оценка после сжатия, точный счет придет с ответом" : "по счету провайдера"}</span></dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
+    <dl class="cx-kv"><dt>В запросе</dt><dd>${!x.used ? `<span class="muted">счет придет с ближайшим ответом</span>` : `${x.est ? "≈ " : ""}${ctxNum(x.used)} токенов <span class="muted">${x.est ? "оценка после сжатия, точный счет придет с ответом" : "по счету провайдера"}</span>`}</dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
 }
 function openChatCtx() {
-  const x = chatState.chat && chatState.chat.context;
-  if (!x) return;
+  const x = ctxNow();
   const f = x.window ? x.used / x.window : 0;
   fillChatCtx(x, f, !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok");
   $("#chat-ctx-pop").hidden = false;
@@ -3254,7 +3258,8 @@ $("#chat-model").addEventListener("submit", async (e) => {
     toast("Сохранено", " · модель " + (c.model || $("#chat-name").placeholder).replace(/^[^/]+\//, ""));
     await loadChatSettings();
     // Размер контекста новой модели — к открытому чату: кольцо и предложение сжать.
-    if (chatState.chat && chatState.chat.context) { chatState.chat.context.window = c.contextWindow; chatState.declined = false; renderChat(); }
+    if (chatState.chat && chatState.chat.context) { chatState.chat.context.window = c.contextWindow; chatState.declined = false; }
+    renderChat();
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
