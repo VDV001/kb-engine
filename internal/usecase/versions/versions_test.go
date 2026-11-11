@@ -2,6 +2,7 @@ package versions_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,11 +37,11 @@ func TestGroup_OneFamilyAcrossFormatsAndFolders(t *testing.T) {
 	if !strings.HasSuffix(kp.Versions[0].Path, "05.pptx") || !strings.HasSuffix(kp.Versions[1].Path, "10.pptx") {
 		t.Errorf("лента не по времени: %v, %v", kp.Versions[0].Path, kp.Versions[1].Path)
 	}
-	if kp.Versions[0].Note != "первая версия" {
-		t.Errorf("первая версия: %q", kp.Versions[0].Note)
+	if c := kp.Versions[0].Change; c.Kind != versions.KindFirst {
+		t.Errorf("первая версия: %+v", c)
 	}
-	if n := kp.Versions[1].Note; !strings.Contains(n, "Гарантия") || !strings.Contains(n, "добавлено 1") {
-		t.Errorf("что нового: %q", n)
+	if c := kp.Versions[1].Change; c.Kind != versions.KindDiff || !slices.Equal(c.Added, []string{"Гарантия"}) || len(c.Removed) != 0 {
+		t.Errorf("что нового: %+v", c)
 	}
 }
 
@@ -92,9 +93,8 @@ func TestGroup_LayoutOnlyChangeIsNotUnchanged(t *testing.T) {
 		file("/a/КП_2026_11_05.pptx", "h1", "Цена 100", day(11, 5)),
 		file("/a/КП_2026_11_10.pptx", "h2", "Цена 100", day(11, 10)),
 	})
-	n := got[0].Versions[1].Note
-	if !strings.Contains(n, "текст не менялся") || strings.Contains(n, "без изменений") {
-		t.Errorf("правка вёрстки не названа: %q", n)
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindLayoutOnly {
+		t.Errorf("правка вёрстки не названа: %+v", c)
 	}
 }
 
@@ -105,11 +105,11 @@ func TestGroup_NoteComparesWithSameFormat(t *testing.T) {
 		file("/a/КП_2026_11_10.pptx", "h3", "Цена 100\nГарантия", day(11, 10)),
 	})
 	vs := got[0].Versions
-	if !strings.Contains(vs[1].Note, "pdf") {
-		t.Errorf("новый формат не назван: %q", vs[1].Note)
+	if c := vs[1].Change; c.Kind != versions.KindNewFormat || c.Format != "pdf" {
+		t.Errorf("новый формат не назван: %+v", c)
 	}
-	if strings.Contains(vs[2].Note, "PDF-шум") || !strings.Contains(vs[2].Note, "Гарантия") {
-		t.Errorf("дифф должен идти от предыдущего pptx: %q", vs[2].Note)
+	if c := vs[2].Change; c.Kind != versions.KindDiff || !slices.Equal(c.Added, []string{"Гарантия"}) || len(c.Removed) != 0 {
+		t.Errorf("дифф должен идти от предыдущего pptx: %+v", c)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestGroup_MissingText(t *testing.T) {
 		file("/a/Скан_2026_11_05.pdf", "h1", "", day(11, 5)),
 		file("/a/Скан_2026_11_10.pdf", "h2", "", day(11, 10)),
 	})
-	if n := got[0].Versions[1].Note; !strings.Contains(n, "текст недоступен") {
-		t.Errorf("нет текста: %q", n)
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindNoText {
+		t.Errorf("нет текста: %+v", c)
 	}
 }
 
@@ -159,8 +159,8 @@ func TestGroup_BigTextsDiffFast(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("сравнение двух текстов по 30 тыс. строк заняло %v", d)
 	}
-	if n := got[0].Versions[1].Note; !strings.Contains(n, "добавлено 30000") {
-		t.Errorf("подпись: %q", n)
+	if c := got[0].Versions[1].Change; len(c.Added) != 30000 || len(c.Removed) != 30000 {
+		t.Errorf("добавлено %d, убрано %d, ждали по 30000", len(c.Added), len(c.Removed))
 	}
 }
 

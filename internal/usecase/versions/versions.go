@@ -5,7 +5,6 @@ package versions
 
 import (
 	"cmp"
-	"fmt"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -23,11 +22,32 @@ type File struct {
 	Text string // пусто — текст недоступен
 }
 
-// Version — версия в семействе с подписью «что нового».
+// Kind — что произошло с версией относительно предыдущей. Слова для человека
+// подбирает окно: ядро отдает вид и данные, а не готовый текст.
+type Kind int
+
+// Виды изменения версии.
+const (
+	KindFirst      Kind = iota + 1 // первая версия семейства
+	KindNewFormat                  // первая в своем формате; Format назван
+	KindNoText                     // текста нет у одной из версий, сравнить нельзя
+	KindLayoutOnly                 // текст тот же, файл другой: правка оформления или вложений
+	KindDiff                       // Added и Removed — строки, что появились и что ушли
+)
+
+// Change — что нового в версии относительно предыдущей того же формата.
+type Change struct {
+	Kind    Kind
+	Format  string // расширение без точки, для KindNewFormat
+	Added   []string
+	Removed []string
+}
+
+// Version — версия в семействе с описанием «что нового».
 type Version struct {
 	File
-	Dups []string // пути байт-в-байт копий
-	Note string
+	Dups   []string // пути байт-в-байт копий
+	Change Change
 }
 
 // Family — итерации одного документа лентой по времени.
@@ -35,12 +55,6 @@ type Family struct {
 	Name     string
 	Versions []Version
 }
-
-// Для подписи «что нового»: сколько примеров строк и какой длины показывать.
-const (
-	maxSamples   = 3
-	maxSampleLen = 60
-)
 
 var (
 	// \b в Go не знает кириллицы, поэтому имя режется на слова по разделителям.
@@ -151,14 +165,14 @@ func family(fs []File) Family {
 		vs = append(vs, Version{File: f})
 	}
 	for i := range vs {
-		vs[i].Note = note(vs[:i], vs[i])
+		vs[i].Change = change(vs[:i], vs[i])
 	}
 	name := strings.TrimSuffix(filepath.Base(vs[0].Path), filepath.Ext(vs[0].Path))
 	return Family{Name: name, Versions: vs}
 }
 
-// note подписывает версию относительно предыдущей версии того же формата.
-func note(before []Version, v Version) string {
+// change описывает версию относительно предыдущей версии того же формата.
+func change(before []Version, v Version) Change {
 	var prev *Version
 	for i, b := range slices.Backward(before) {
 		if ext(b.Path) == ext(v.Path) {
@@ -168,24 +182,17 @@ func note(before []Version, v Version) string {
 	}
 	switch {
 	case prev == nil && len(before) == 0:
-		return "первая версия"
+		return Change{Kind: KindFirst}
 	case prev == nil:
-		return "новый формат: " + ext(v.Path)
+		return Change{Kind: KindNewFormat, Format: ext(v.Path)}
 	case prev.Text == "" || v.Text == "":
-		return "текст недоступен, сравнить нельзя"
+		return Change{Kind: KindNoText}
 	}
 	added, removed := lineDiff(prev.Text, v.Text)
 	if len(added) == 0 && len(removed) == 0 {
-		return "текст не менялся, файл отличается (правка оформления или вложений)"
+		return Change{Kind: KindLayoutOnly}
 	}
-	var parts []string
-	if len(added) > 0 {
-		parts = append(parts, fmt.Sprintf("добавлено %d: %s", len(added), samples(added)))
-	}
-	if len(removed) > 0 {
-		parts = append(parts, fmt.Sprintf("убрано %d: %s", len(removed), samples(removed)))
-	}
-	return strings.Join(parts, "; ")
+	return Change{Kind: KindDiff, Added: added, Removed: removed}
 }
 
 func lines(text string) []string {
@@ -222,19 +229,4 @@ func lineDiff(oldText, newText string) (added, removed []string) {
 		}
 	}
 	return added, removed
-}
-
-func samples(ls []string) string {
-	var out []string
-	for i, l := range ls {
-		if i == maxSamples {
-			out = append(out, fmt.Sprintf("…и ещё %d", len(ls)-maxSamples))
-			break
-		}
-		if r := []rune(l); len(r) > maxSampleLen {
-			l = string(r[:maxSampleLen]) + "…"
-		}
-		out = append(out, "«"+l+"»")
-	}
-	return strings.Join(out, ", ")
 }

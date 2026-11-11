@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -107,8 +108,8 @@ func TestVersions_ReadsDocxPptxXlsxOfAFamily(t *testing.T) {
 	}
 	// вся цепочка до подписей: правка цены видна как «убрано/добавлено»
 	fams := versions.Group([]versions.File{got[p1], got[p2]})
-	if n := fams[0].Versions[1].Note; !strings.Contains(n, "Цена 120") || !strings.Contains(n, "убрано 1") {
-		t.Errorf("подпись: %q", n)
+	if c := fams[0].Versions[1].Change; !slices.Equal(c.Added, []string{"Цена 120"}) || !slices.Equal(c.Removed, []string{"Цена 100"}) {
+		t.Errorf("что нового: %+v", c)
 	}
 }
 

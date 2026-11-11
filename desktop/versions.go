@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -101,7 +102,7 @@ func view(f versions.Family) familyView {
 	for _, x := range f.Versions {
 		when := versions.When(x.File) // та же дата, по которой версии выстроены
 		v.Versions = append(v.Versions, versionView{
-			Path: x.Path, Date: when.Format("02.01.2006"), Size: x.Size, Note: x.Note, Dups: append([]string{}, x.Dups...),
+			Path: x.Path, Date: when.Format("02.01.2006"), Size: x.Size, Note: noteText(x.Change), Dups: append([]string{}, x.Dups...),
 		})
 		v.latest = when
 	}
@@ -122,4 +123,48 @@ func matches(f familyView, q string) bool {
 		}
 	}
 	return false
+}
+
+// Для описания «что нового»: сколько примеров строк и какой длины показывать.
+const (
+	maxSamples   = 3
+	maxSampleLen = 60
+)
+
+// noteText — описание версии словами окна: ядро (versions) отдает вид
+// изменения и строки, формулировки живут здесь.
+func noteText(c versions.Change) string {
+	switch c.Kind {
+	case versions.KindFirst:
+		return "первая версия"
+	case versions.KindNewFormat:
+		return "новый формат: " + c.Format
+	case versions.KindNoText:
+		return "текст недоступен, сравнить нельзя"
+	case versions.KindLayoutOnly:
+		return "текст не менялся, файл отличается (правка оформления или вложений)"
+	}
+	var parts []string
+	if len(c.Added) > 0 {
+		parts = append(parts, fmt.Sprintf("добавлено %d: %s", len(c.Added), samples(c.Added)))
+	}
+	if len(c.Removed) > 0 {
+		parts = append(parts, fmt.Sprintf("убрано %d: %s", len(c.Removed), samples(c.Removed)))
+	}
+	return strings.Join(parts, "; ")
+}
+
+func samples(ls []string) string {
+	var out []string
+	for i, l := range ls {
+		if i == maxSamples {
+			out = append(out, fmt.Sprintf("…и ещё %d", len(ls)-maxSamples))
+			break
+		}
+		if r := []rune(l); len(r) > maxSampleLen {
+			l = string(r[:maxSampleLen]) + "…"
+		}
+		out = append(out, "«"+l+"»")
+	}
+	return strings.Join(out, ", ")
 }
