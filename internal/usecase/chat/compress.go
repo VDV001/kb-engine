@@ -19,37 +19,71 @@ type Compression struct {
 
 const compressPrompt = `Сожми начало разговора в краткий конспект для себя: о чем спрашивал человек, что выяснили, какие документы и числа назывались, что осталось нерешенным. Пиши от третьего лица, без вступлений, на языке разговора. Ответь только конспектом.`
 
+// compressChunkRunes — сколько знаков истории уходит модели за один вызов.
+// Сжимают как раз то, что не лезет в контекст, поэтому историю нельзя слать
+// одним запросом: она кусками, а конспект прошлого куска едет в следующий.
+const compressChunkRunes = 24000
+
 // Compress asks the model to fold all but the last keep messages into a summary.
 func (s *Service) Compress(ctx context.Context, history []Message, keep int) (Compression, error) {
 	folded := len(history) - max(keep, 0)
 	if folded <= 0 {
 		return Compression{}, ErrNothingToCompress
 	}
-	var b strings.Builder
-	for _, m := range history[:folded] {
-		fmt.Fprintf(&b, "%s: %s\n\n", m.Role, m.Text)
+	summary := ""
+	for _, chunk := range chunks(history[:folded], compressChunkRunes) {
+		content := chunk
+		if summary != "" {
+			content = "Конспект предыдущей части:\n" + summary + "\n\nПродолжение разговора:\n" + chunk
+		}
+		reply, err := s.model.Complete(ctx, []ModelMessage{
+			{Role: RoleSystem, Content: compressPrompt},
+			{Role: RoleUser, Content: content},
+		}, nil)
+		if err != nil {
+			return Compression{}, fmt.Errorf("%w: %w", ErrModel, err)
+		}
+		if summary = strings.TrimSpace(reply.Content); summary == "" {
+			return Compression{}, fmt.Errorf("%w: empty summary", ErrModel)
+		}
 	}
-	reply, err := s.model.Complete(ctx, []ModelMessage{
-		{Role: RoleSystem, Content: compressPrompt},
-		{Role: RoleUser, Content: b.String()},
-	}, nil)
-	if err != nil {
-		return Compression{}, fmt.Errorf("%w: %w", ErrModel, err)
+	return Compression{Text: summary, Folded: folded}, nil
+}
+
+// chunks renders messages as «роль: текст» and groups them up to limit runes;
+// сообщение длиннее предела обрезается.
+func chunks(msgs []Message, limit int) []string {
+	var out []string
+	var cur strings.Builder
+	n := 0
+	for _, m := range msgs {
+		line := fmt.Sprintf("%s: %s\n\n", m.Role, trimRunes(m.Text, limit-100))
+		if size := len([]rune(line)); n > 0 && n+size > limit {
+			out = append(out, cur.String())
+			cur.Reset()
+			n = 0
+		}
+		cur.WriteString(line)
+		n += len([]rune(line))
 	}
-	text := strings.TrimSpace(reply.Content)
-	if text == "" {
-		return Compression{}, fmt.Errorf("%w: empty summary", ErrModel)
-	}
-	return Compression{Text: text, Folded: folded}, nil
+	return append(out, cur.String())
 }
 
 // Apply returns the history the model sees: конспект вместо свернутых сообщений
-// и хвост как есть. Исходный срез не меняется.
+// и хвост как есть. Исходный срез не меняется. Конспект идет от человека; если
+// хвост начинается с сообщения человека, они сливаются в одно: провайдеры с
+// чередованием ролей не принимают два сообщения человека подряд.
 func (c Compression) Apply(history []Message) []Message {
 	if c.Folded <= 0 || c.Folded > len(history) {
 		return history
 	}
-	out := make([]Message, 0, len(history)-c.Folded+1)
-	out = append(out, Message{Role: RoleUser, Text: fmt.Sprintf("Конспект начала разговора (сжато %d сообщ.):\n%s", c.Folded, c.Text)})
-	return append(out, history[c.Folded:]...)
+	note := fmt.Sprintf("Конспект начала разговора (сжато %d сообщ.):\n%s", c.Folded, c.Text)
+	tail := history[c.Folded:]
+	out := make([]Message, 0, len(tail)+1)
+	if len(tail) > 0 && tail[0].Role == RoleUser {
+		out = append(out, Message{Role: RoleUser, Text: note + "\n\n" + tail[0].Text})
+		return append(out, tail[1:]...)
+	}
+	out = append(out, Message{Role: RoleUser, Text: note})
+	return append(out, tail...)
 }

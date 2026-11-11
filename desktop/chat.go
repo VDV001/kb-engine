@@ -312,6 +312,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	}
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
+	rec.CanCompress = canCompress(rec)
 	if turn.PromptTokens > 0 {
 		rec.Context = &contextNote{Used: turn.PromptTokens, Window: c.ContextWindow}
 	}
@@ -414,7 +415,11 @@ func (d *chatDesk) List() ([]chatSummary, error) {
 }
 
 // Get returns one chat.
-func (d *chatDesk) Get(id string) (chatRecord, error) { return d.load(id) }
+func (d *chatDesk) Get(id string) (chatRecord, error) {
+	rec, err := d.load(id)
+	rec.CanCompress = canCompress(rec)
+	return rec, err
+}
 
 // Delete removes a chat.
 func (d *chatDesk) Delete(id string) error {
@@ -702,6 +707,12 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 	if err != nil {
 		return chatRecord{}, err
 	}
+	// Сжато уже до этой точки (двойной щелчок, устаревшая страница): ответ тот же
+	// и без платного вызова модели.
+	if rec.Compressed != nil && rec.Compressed.Folded == len(rec.Messages)-compressKeep {
+		rec.CanCompress = canCompress(rec)
+		return rec, nil
+	}
 	raw := make([]chat.Message, 0, len(rec.Messages))
 	for _, m := range rec.Messages {
 		raw = append(raw, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
@@ -721,5 +732,10 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
+	rec.CanCompress = canCompress(rec)
 	return rec, nil
 }
+
+// canCompress tells the page whether the chat has more than compressKeep
+// messages: число «шесть» знает только окно.
+func canCompress(rec chatRecord) bool { return len(rec.Messages) > compressKeep }
