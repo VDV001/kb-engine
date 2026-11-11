@@ -263,11 +263,20 @@ func (a *App) PickPortraitDir() (string, error) {
 // Chats lists the chats, newest first.
 func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
 
+// ChatDraft returns the unsent text of chat id ("" — новый чат) saved before.
+func (a *App) ChatDraft(id string) (string, error) { return a.chat.Draft(id) }
+
+// SaveChatDraft keeps the unsent text of chat id; пустой текст черновик снимает.
+func (a *App) SaveChatDraft(id, text string) error { return a.chat.SaveDraft(id, text) }
+
 // Chat returns one chat with its messages and documents.
 func (a *App) Chat(id string) (chatRecord, error) { return a.chat.Get(id) }
 
 // Ask answers a question: чат, вопрос, приложенное и источники этого чата.
 func (a *App) Ask(r askReq) (chatRecord, error) { return a.chat.Ask(r) }
+
+// CompressChat folds the old part of a chat into a summary (#539).
+func (a *App) CompressChat(id string) (chatRecord, error) { return a.chat.CompressChat(id) }
 
 // MemoryState returns the memory screen: слои, очередь, журнал, нарушения (ADR-0008).
 func (a *App) MemoryState() (memoryView, error) { return a.memory.State() }

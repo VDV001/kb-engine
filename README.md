@@ -46,12 +46,17 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   a chat over your documents (ADR-0006): a small local model gets the documents
   the window finds, a strong one searches and reads them itself. Answers stream,
   can be read aloud (macOS voices or cloud voices via Vercel AI Gateway) and asked
-  by voice (hold, toggle or hands-free). **«Что DVK помнит обо мне»** (ADR-0007)
+  by voice (hold, toggle or hands-free). The context ring is always in the input
+  row; when a question would not fit the model's context, the window offers to
+  fold the old part of the chat into a summary (the file keeps every message,
+  nothing is folded without your consent). **«Что DVK помнит обо мне»** (ADR-0007)
   is a portrait of the person the chat starts from: facts by section, added by
   hand, found after an answer or offered by the model — new ones wait for your
   approval. It lives in a folder of your choice (0600) or on your kb server
   (`GET/PUT /api/portrait`, versioned by ETag). With a cloud model the approved
-  portrait goes to its provider with every chat; the window says so. The
+  portrait goes to its provider with every chat; the window says so. An unsent
+  question is kept as a draft per chat (0600, next to the history) and comes
+  back after a restart. The
   **Finances** module shows the engine's finance pages inside the window; their
   data comes from a kb server in Sources or from your own `kbengine serve` on
   this Mac — Settings → Modules → «Финансы берут данные из».
@@ -63,7 +68,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   `kbengine creds` does the same from the terminal, and the MCP tool
   `search_access` gives an agent the card without the password or the note.
   **Статистика** shows the model calls the window made — a feed, an activity
-  map and money at the gateway's own prices, with a spend limit you set. When a
+  map and money at the gateway's own prices, with a spend limit you set and the
+  month's spend by chat (the dearest chats and their share). When a
   button in the
   window stays silent, `just desktop-inspect` builds `bin/kb-inspect.app` with
   the WebKit inspector (right-click in any input → Inspect Element); the

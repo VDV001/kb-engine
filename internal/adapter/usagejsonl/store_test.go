@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -117,5 +118,29 @@ func TestJournal_Billed(t *testing.T) {
 	_ = json.Unmarshal(sc.Bytes(), &plain)
 	if _, ok := plain["cost_pico"]; ok {
 		t.Fatalf("у вызова без цены поле цены: %s", sc.Bytes())
+	}
+}
+
+// Чат вызова переживает запись и чтение; вызов вне чата не получает пустого поля.
+func TestJournal_ChatRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "usage.jsonl")
+	j := usagejsonl.Journal{Path: path}
+	if err := j.Record(call(t).WithChat("0123456789abcdef")); err != nil {
+		t.Fatal(err)
+	}
+	if err := j.Record(call(t)); err != nil {
+		t.Fatal(err)
+	}
+	calls, bad, err := j.Load()
+	if err != nil || bad != 0 || len(calls) != 2 {
+		t.Fatalf("Load = %d вызовов, %d битых, %v", len(calls), bad, err)
+	}
+	if calls[0].Chat() != "0123456789abcdef" || calls[1].Chat() != "" {
+		t.Fatalf("чаты: %q, %q", calls[0].Chat(), calls[1].Chat())
+	}
+	raw, _ := os.ReadFile(path)
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if !strings.Contains(lines[0], `"chat":"0123456789abcdef"`) || strings.Contains(lines[1], `"chat"`) {
+		t.Fatalf("строки журнала:\n%s", raw)
 	}
 }

@@ -121,3 +121,39 @@ func TestMoney_billedPricedRegardlessOfOrder(t *testing.T) {
 		}
 	}
 }
+
+// Расход по чатам (#541): чаты от дорогих к дешевым, вызовы вне чата в список
+// не входят, неизвестная цена расходом чата не считается, а сумма чатов и
+// вызовов вне чата равна общему расходу.
+func TestMoney_Chats(t *testing.T) {
+	now := time.Date(2026, 11, 7, 12, 0, 0, 0, time.UTC)
+	book := priceBook{"haiku": mustPrice(t, "1", "5")}
+	day := func(d int) time.Time { return time.Date(2026, 11, d, 9, 0, 0, 0, time.UTC) }
+	calls := []domain.ModelCall{
+		call(t, day(2), domain.CallAnswer, "haiku", 1_000_000, 0, true).WithChat("aaaaaaaaaaaaaaaa"),                                        // $1
+		call(t, day(3), domain.CallSearch, "haiku", 1_000_000, 0, true).WithChat("aaaaaaaaaaaaaaaa"),                                        // $1
+		call(t, day(4), domain.CallAnswer, "haiku", 3_000_000, 0, true).WithChat("bbbbbbbbbbbbbbbb"),                                        // $3
+		call(t, day(5), domain.CallExtract, "haiku", 500_000, 0, true),                                                                      // вне чата, $0,5
+		call(t, day(6), domain.CallAnswer, "haiku", 0, 0, false).WithChat("cccccccccccccccc"),                                               // без счета
+		call(t, day(7), domain.CallAnswer, "other", 1_000_000, 0, true).WithChat("dddddddddddddddd"),                                        // без цены
+		call(t, time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC), domain.CallAnswer, "haiku", 9_000_000, 0, true).WithChat("eeeeeeeeeeeeeeee"), // прошлый месяц
+	}
+	m := usage.NewMoney(calls, now, book)
+	const usd = int64(1_000_000_000_000)
+	if len(m.Chats) != 4 {
+		t.Fatalf("чатов %d: %+v", len(m.Chats), m.Chats)
+	}
+	if got := m.Chats[0]; got.Chat != "bbbbbbbbbbbbbbbb" || got.Cost != 3*usd || got.Calls != 1 {
+		t.Errorf("первый = %+v", got)
+	}
+	if got := m.Chats[1]; got.Chat != "aaaaaaaaaaaaaaaa" || got.Cost != 2*usd || got.Calls != 2 {
+		t.Errorf("второй = %+v", got)
+	}
+	var sum int64
+	for _, c := range m.Chats {
+		sum += c.Cost
+	}
+	if sum+usd/2 != m.Spent {
+		t.Errorf("сумма чатов %d + вне чатов %d != расход %d", sum, usd/2, m.Spent)
+	}
+}

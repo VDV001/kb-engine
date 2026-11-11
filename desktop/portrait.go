@@ -264,7 +264,7 @@ func (d *chatDesk) PortraitCompress() (compressionView, error) {
 		return compressionView{}, err
 	}
 	out := compressionView{Proposals: []proposalView{}}
-	err = d.withPortrait(d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress)), func(s *portrait.Service) error {
+	err = d.withPortrait(d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress), ""), func(s *portrait.Service) error {
 		ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 		defer cancel()
 		cmp, err := s.Compress(ctx)
@@ -350,7 +350,7 @@ func (d *chatDesk) extractAfter(c desktopconfig.Chat, model chat.Model, chatID, 
 	}
 	go func() {
 		var found []domain.Fact
-		err := d.withPortrait(d.metered(model, c, usage.Fixed(domain.CallExtract)), func(s *portrait.Service) error {
+		err := d.withPortrait(d.metered(model, c, usage.Fixed(domain.CallExtract), chatID), func(s *portrait.Service) error {
 			ctx, cancel := context.WithTimeout(context.Background(), extractTimeout)
 			defer cancel()
 			var err error
