@@ -40,6 +40,7 @@ type App struct {
 	access   *accessDesk
 	memory   *memoryDesk
 	browser  *browserDesk // кнопки вкладки «Браузер»
+	storage  *storageDesk // экран «Хранилище» (storage.go); nil — тесты без него
 	run      func(name string, args ...string) error
 }
 
@@ -92,6 +93,22 @@ func (a *App) NewSourceID(kind string) string { return desktopconfig.NewID(deskt
 // ServerStates returns the live state of the server sources; панель зовет его
 // после того, как нарисовала список.
 func (a *App) ServerStates() []sourceRow { return a.settings.ServerStates() }
+
+// StorageItems returns the «Хранилище» rows with current sizes.
+func (a *App) StorageItems() []storageItem {
+	if a.storage == nil {
+		return nil
+	}
+	return a.storage.Items()
+}
+
+// StorageClear wipes one «Хранилище» item; подтверждение человека — в окне.
+func (a *App) StorageClear(id string) error {
+	if a.storage == nil {
+		return errors.New("хранилище недоступно")
+	}
+	return a.storage.Clear(id)
+}
 
 // CheckServer is the «Проверить» button of the server form.
 func (a *App) CheckServer(id, url, token string) (kbserver.Info, error) {

@@ -977,6 +977,7 @@ const VIEWS = {
   sources: { title: "Источники", cmd: "config sources" },
   prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
+  storage: { title: "Хранилище", cmd: "storage" },
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
   conn: { title: "Подключения", cmd: "config connections" },
@@ -1014,6 +1015,11 @@ async function openSettings(view = "sources") {
       const i = state.indexed;
       if (i) setIndexed(i.n, i.skipped, i.rec, i.err);
     });
+    return;
+  }
+  if (view === "storage") {
+    await renderStorage();
+    $("#close-settings").focus();
     return;
   }
   if (view === "conn") {
@@ -1061,6 +1067,51 @@ async function openSettings(view = "sources") {
 // renderConnections lists the window's accesses; «Изменить» открывает сам доступ
 // там, где он живет: kb-сервер — его строку «Источников» в правке, модель — поле
 // ключа в «Чат и модель» (#496).
+// «Хранилище» (#543): размер того, что окно копит, и очистка по пункту. Подтверждение
+// стоит в самой строке и называет, что пропадет; общей кнопки «очистить все» нет.
+function sizeText(b) {
+  if (b < 1024) return `${b} Б`;
+  if (b < 1048576) return `${fmt(Math.round(b / 1024))} КБ`;
+  if (b < 1073741824) return `${(b / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: b < 10485760 ? 1 : 0 })} МБ`;
+  return `${(b / 1073741824).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ГБ`;
+}
+let storageConfirm = null;
+async function renderStorage() {
+  const list = $("#storage-list");
+  if (!native() || !native().StorageItems) { list.innerHTML = `<li class="muted">Хранилище видно в окне приложения.</li>`; return; }
+  let rows = [];
+  try { rows = (await native().StorageItems()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
+  const total = rows.reduce((n, r) => n + r.bytes, 0);
+  list.innerHTML = rows.map((r) => {
+    const ask = storageConfirm === r.id ? `<span class="conn-confirm">${esc(r.loses)}
+      <button class="btn" data-st-yes="${esc(r.id)}">${r.danger ? "Стереть" : "Очистить"}</button><button class="btn" data-st-no>Отмена</button></span>` : "";
+    return `<li data-danger="${r.danger}">
+    <span class="n">${esc(r.name)}</span>
+    <span class="st">${sizeText(r.bytes)}</span>
+    <span class="d">${fmt(r.files)} ${plural(r.files, "файл", "файла", "файлов")}</span>
+    <span class="conn-acts"><button class="btn" data-st-ask="${esc(r.id)}" ${r.bytes ? "" : "disabled"}>${r.danger ? "Стереть…" : "Очистить…"}</button></span>${ask}</li>`;
+  }).join("") + `<li class="storage-total">Всего: ${sizeText(total)}</li>`;
+}
+$("#storage-list").addEventListener("click", async (e) => {
+  const ask = e.target.closest("[data-st-ask]"), yes = e.target.closest("[data-st-yes]");
+  try {
+    if (ask) storageConfirm = ask.dataset.stAsk;
+    else if (e.target.closest("[data-st-no]")) storageConfirm = null;
+    else if (yes) {
+      const name = yes.closest("li").querySelector(".n").textContent;
+      if (yes.dataset.stYes === "chats" && chatState.busy) throw new Error("Модель отвечает: дождитесь конца ответа, иначе чат запишется заново.");
+      await native().StorageClear(yes.dataset.stYes);
+      storageConfirm = null;
+      if (yes.dataset.stYes === "chats") { // открытый чат и список остались бы в окне призраками
+        chatState.id = ""; chatState.chat = null;
+        await renderChatList();
+        renderChat();
+      }
+      toast("Очищено", ` · «${name}»`, null, "del");
+    } else return;
+  } catch (err) { storageConfirm = null; showError(errText(err)); }
+  renderStorage();
+});
 const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи" };
 let connConfirm = null;
 async function renderConnections() {
