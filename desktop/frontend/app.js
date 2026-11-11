@@ -2641,15 +2641,24 @@ function answerHTML(t) {
 // токенов — от провайдера, размер контекста человек вносит в настройках.
 const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
 const ctxNum = (v) => v.toLocaleString("ru-RU");
+// Кольцо видно всегда: счета провайдера еще нет (новый чат) — пустое кольцо с
+// размером окна из настроек, а если и его нет — со знаком вопроса.
+const ctxNow = () => {
+  const x = chatState.chat && chatState.chat.context;
+  if (x && x.used) return x;
+  // unknown: в чате уже есть разговор, а счета провайдера нет (чат из старой
+  // сборки или провайдер счет не шлет) — «0%» было бы неправдой.
+  const talked = !!(chatState.chat && (chatState.chat.messages || []).length);
+  return { used: 0, unknown: talked, window: (chatState.settings && chatState.settings.contextWindow) || 0 };
+};
 function renderChatCtx() {
-  const ring = $("#chat-ctx-ring"), x = chatState.chat && chatState.chat.context;
-  if (!x || !x.used) { ring.hidden = true; closeChatCtx(); return; }
+  const ring = $("#chat-ctx-ring"), x = ctxNow();
   const f = x.window ? x.used / x.window : 0, tone = !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok";
   const R = 8, C = 2 * Math.PI * R;
   ring.hidden = false;
   ring.dataset.tone = tone;
   ring.setAttribute("aria-label", x.window ? `Контекст заполнен на ${Math.round(f * 100)}%: подробнее` : "Контекст: подробнее");
-  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.window ? Math.round(f * 100) + "%" : "?"}</span>`;
+  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.unknown ? "—" : x.window ? (x.est ? "~" : "") + Math.round(f * 100) + "%" : "?"}</span>`;
   if (!$("#chat-ctx-pop").hidden) fillChatCtx(x, f, tone);
 }
 // Подробности — окошком поверх по кнопке-кольцу: что насчитал провайдер, размер
@@ -2659,16 +2668,17 @@ function fillChatCtx(x, f, tone) {
   pop.dataset.tone = tone;
   const advice = !x.window
     ? `<p class="muted">Размер контекста модели не указан, поэтому окно не знает, сколько осталось. Внесите его в настройках чата.</p><div class="cx-acts"><button class="btn" type="button" id="chat-ctx-set">Указать размер</button></div>`
+    : x.unknown
+      ? `<p class="muted">Счета провайдера для этого чата пока нет, поэтому заполнение неизвестно. Он придет с ближайшим ответом.</p>`
     : f >= CTX_HINT_AT
-      ? `<p><b>${f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> Дальше разговор пухнет, ответы дороже и хуже. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts"><button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button></div>`
+      ? `<p><b>${f >= 1 ? "Контекст переполнен." : f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> ${f >= 1 ? "Запрос не помещается в окно модели: часть разговора она не видит или провайдер откажет. " : "Дальше разговор пухнет, ответы дороже и хуже. "}Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts">${canCompress() ? `<button class="btn primary" type="button" id="chat-ctx-compress">Сжать разговор</button><button class="btn" type="button" id="chat-ctx-new">Новый чат</button>` : `<button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button>`}</div>`
       : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
   pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
     ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
-    <dl class="cx-kv"><dt>В запросе</dt><dd>${ctxNum(x.used)} токенов <span class="muted">по счету провайдера</span></dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
+    <dl class="cx-kv"><dt>В запросе</dt><dd>${!x.used ? `<span class="muted">${x.unknown ? "счета пока нет" : "счет придет с ближайшим ответом"}</span>` : `${x.est ? "≈ " : ""}${ctxNum(x.used)} токенов <span class="muted">${x.est ? "оценка после сжатия, точный счет придет с ответом" : "по счету провайдера"}</span>`}</dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов${x.unknown ? "" : " · занято " + Math.round(f * 100) + "%"}</dd>` : ""}</dl>${advice}`;
 }
 function openChatCtx() {
-  const x = chatState.chat && chatState.chat.context;
-  if (!x) return;
+  const x = ctxNow();
   const f = x.window ? x.used / x.window : 0;
   fillChatCtx(x, f, !x.window ? "ok" : f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok");
   $("#chat-ctx-pop").hidden = false;
@@ -2682,12 +2692,14 @@ $("#chat-ctx-ring").addEventListener("click", () => ($("#chat-ctx-pop").hidden ?
 $("#chat-ctx-pop").addEventListener("click", (e) => {
   if (e.target.closest("#chat-ctx-close")) closeChatCtx();
   else if (e.target.closest("#chat-ctx-new")) { closeChatCtx(); newChat(); }
+  else if (e.target.closest("#chat-ctx-compress")) { if (!chatState.compressing) compressChat(false); }
   else if (e.target.closest("#chat-ctx-set")) { closeChatCtx(); openSettings("chat").then(() => $("#chat-ctx-win").focus()); }
 });
 document.addEventListener("click", (e) => { if (!$("#chat-ctx-pop").hidden && !e.target.closest("#chat-ctx-pop, #chat-ctx-ring")) closeChatCtx(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-ctx-pop").hidden) { closeChatCtx(); e.stopPropagation(); } }, true);
 function renderChat() {
   renderChatCtx();
+  renderCompressOffer();
   const c = chatState.chat;
   const log = $("#chat-log");
   $("#chat-title").textContent = (c && c.title) || "Новый чат";
@@ -2699,9 +2711,11 @@ function renderChat() {
       chatState.over = { chat: "", size: p.size, budget: p.budget, props: null, start: true };
     log.innerHTML = memInChat() + `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
   } else {
-    log.innerHTML = c.messages.map((m) => m.role === "user"
+    const folded = (c.compressed && c.compressed.folded) || 0;
+    log.innerHTML = c.messages.map((m, i) => (m.role === "user"
       ? `<div class="msg user">${esc(m.text)}</div>`
-      : `<div class="msg bot">${answerHTML(m.text)}</div>`).join("");
+      : `<div class="msg bot">${answerHTML(m.text)}</div>`)
+      + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
   if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat());
   if (chatState.busy) {
@@ -2740,9 +2754,77 @@ if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   chatState.partial = t || "";
   paintPartial();
 });
+// Сжатие длинного чата (#539). Предлагается, когда занятое не помещается в
+// контекст модели (сменили модель на меньшую) или когда не поместится вопрос;
+// без согласия ничего не меняется. Сжимает окно (CompressChat): сообщения в
+// файле остаются, модель видит конспект и хвост последних сообщений; есть ли
+// что сжимать, говорит окно (canCompress): число хвоста знает только оно.
+const CHARS_PER_TOKEN = 3; // грубо для русского; счет провайдера придет с ответом
+const askNeedsRoom = (q) => {
+  const c = chatState.chat, x = c && c.context;
+  return !!(x && x.window && x.used + Math.ceil([...q].length / CHARS_PER_TOKEN) > x.window);
+};
+const canCompress = () => {
+  const c = chatState.chat;
+  return !!(c && c.id && c.canCompress && !chatState.busy);
+};
+function renderCompressOffer() {
+  const el = $("#chat-offer"), x = chatState.chat && chatState.chat.context;
+  const over = !!(x && x.window && x.used > x.window);
+  const show = canCompress() && !chatState.declined && (over || chatState.offerAsk);
+  el.hidden = !show;
+  if (!show) return;
+  el.innerHTML = `<span>${over && !chatState.offerAsk ? "Занято больше, чем помещается в контекст модели." : "Вопрос не поместится в контекст модели."} Сжать старую часть разговора в конспект? Исходный разговор останется.</span>
+    <button class="btn primary" type="button" data-offer="yes"${chatState.compressing ? " disabled" : ""}>${chatState.compressing ? "Сжимаю…" : "Сжать"}</button><button class="btn" type="button" data-offer="no"${chatState.compressing ? " disabled" : ""}>Не надо</button>`;
+}
+$("#chat-offer").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-offer]");
+  if (!b || chatState.busy || chatState.compressing) return;
+  // Вопрос ждет в поле: после ответа на предложение он уходит сам, иначе «Не надо»
+  // выглядит как зависание.
+  const pending = chatState.offerAsk && $("#chat-q").value.trim() !== "";
+  if (b.dataset.offer === "no") {
+    chatState.declined = true; chatState.offerAsk = false;
+    renderChat();
+    if (pending) askChat();
+    return;
+  }
+  compressChat(pending);
+});
+async function compressChat(pending) {
+  // Своя отметка, а не busy: busy рисует «модель отвечает», а это не ответ.
+  const id = chatState.id;
+  chatState.compressing = true;
+  closeChatCtx();
+  renderChat();
+  try {
+    const prev = chatState.chat.context;
+    const c = await native().CompressChat(id);
+    if (chatState.id !== id) return; // чат успели сменить или удалить: чужую запись не подставлять
+    // Счет провайдера придет с ответом; до него оценка: прежний счет минус то,
+    // что сжатие сняло (свернутые знаки за вычетом конспекта). Системное
+    // сообщение, портрет и документы остаются в счете.
+    if (prev && prev.window) {
+      const gone = c.messages.slice(0, c.compressed.folded).reduce((n, m) => n + Array.from(m.text).length, 0) - Array.from(c.compressed.text).length;
+      c.context = { used: Math.max(0, prev.used - Math.ceil(Math.max(0, gone) / CHARS_PER_TOKEN)), window: prev.window, est: true };
+    }
+    chatState.chat = c;
+    chatState.offerAsk = false;
+    toast("Чат сжат", " · свернуто " + c.compressed.folded + " сообщ.");
+  } catch (err) {
+    showChatNote("Не сжато: " + errText(err));
+    return;
+  } finally {
+    chatState.compressing = false;
+    renderChat();
+  }
+  if (pending) askChat();
+}
 async function askChat() {
   const q = $("#chat-q").value.trim();
-  if (!q || chatState.busy) return;
+  if (!q || chatState.busy || chatState.compressing) return;
+  // Вопрос не помещается: предложить сжать до отправки; текст остается в поле.
+  if (canCompress() && !chatState.declined && askNeedsRoom(q)) { chatState.offerAsk = true; renderChat(); return; }
   chatState.busy = true;
   chatState.partial = "";
   $("#chat-send").disabled = true;
@@ -2767,10 +2849,12 @@ async function askChat() {
     if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
+    chatState.offerAsk = chatState.declined = false;
     await renderChatList();
   } catch (e) {
     chatState.chat.messages.pop();
     if (!chatState.chat.messages.length) chatState.chat = null;
+    chatState.declined = false; // «Не надо» не глушит предложение после сбоя ответа
     $("#chat-q").value = q; // вопрос не теряется
     micLoop.on = false;
     stopVoice(); // до заметки: остановка возвращает обычную подпись под полем
@@ -2784,7 +2868,8 @@ async function askChat() {
   if (micLoop.on && !voice.on) startMic(VOICE_PAUSE, true);
 }
 function newChat() {
-  if (chatState.busy) return;
+  if (chatState.busy || chatState.compressing) return;
+  chatState.offerAsk = chatState.declined = false;
   chatState.id = "";
   chatState.chat = null;
   chatState.over = null;
@@ -2807,7 +2892,11 @@ function fitChatQ() {
   $("#chat-send").disabled = chatState.busy || !q.value.trim();
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
 }
-$("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
+$("#chat-q").addEventListener("input", () => {
+  fitChatQ(); renderAttached();
+  // Вопрос подправили или стерли: «не поместится» считается заново, а не висит.
+  if (chatState.offerAsk && !askNeedsRoom($("#chat-q").value.trim())) { chatState.offerAsk = false; renderChat(); }
+});
 
 // --- Диктовка (#436) ----------------------------------------------------------------
 // Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
@@ -3077,10 +3166,11 @@ $("#chat-list").addEventListener("click", async (e) => {
     return;
   }
   const b = e.target.closest("[data-chat]");
-  if (!b || chatState.busy) return;
+  if (!b || chatState.busy || chatState.compressing) return;
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
+    chatState.offerAsk = chatState.declined = false; // предложение сжать — про тот чат, где его показали
     // Источники чата — только те, что есть сейчас: удаленный или выключенный
     // оставил бы чат искать нигде (ревью #465).
     const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
@@ -3173,6 +3263,9 @@ $("#chat-model").addEventListener("submit", async (e) => {
     $("#chat-model-note").textContent = "";
     toast("Сохранено", " · модель " + (c.model || $("#chat-name").placeholder).replace(/^[^/]+\//, ""));
     await loadChatSettings();
+    // Размер контекста новой модели — к открытому чату: кольцо и предложение сжать.
+    if (chatState.chat && chatState.chat.context) { chatState.chat.context.window = c.contextWindow; chatState.declined = false; }
+    renderChat();
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }

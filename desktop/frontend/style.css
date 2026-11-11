@@ -905,6 +905,11 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-send svg { width: 16px; height: 16px; }
 .chat-send:disabled { opacity: .35; cursor: default; }
 .chat-note { padding: 0 12px 10px; font-size: 11px; }
+.chat-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 8px 10px; margin-bottom: 6px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-3); font-size: 12px; color: var(--z-ink-2); }
+.chat-offer[hidden] { display: none; }
+.chat-offer > span { flex: 1 1 220px; }
+.chat-offer .btn { height: 24px; padding: 0 10px; font-size: 11px; }
+.chat-fold { align-self: stretch; margin: 2px 0; padding: 6px 0; border-top: 1px dashed var(--z-rule); border-bottom: 1px dashed var(--z-rule); text-align: center; font-size: 11px; color: var(--z-muted); }
 .chat-docs h3 { margin: 0; font-size: 12px; font-weight: 500; color: var(--z-ink-2); white-space: nowrap; }
 #chat-docs { list-style: none; margin: 0; padding: 0; overflow: auto; display: grid; align-content: start; gap: 10px; }
 #chat-docs li { display: grid; gap: 2px; font-size: 12px; min-width: 0; }
