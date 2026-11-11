@@ -123,17 +123,36 @@ func TestCompress_LongHistoryGoesInChunks(t *testing.T) {
 	}
 }
 
-// Одно огромное сообщение не раздувает запрос: оно обрезается до куска.
-func TestCompress_OneHugeMessageIsCut(t *testing.T) {
+// Одно огромное сообщение не раздувает запрос, но и не теряет хвост: оно
+// режется на части, и все знаки доходят до модели.
+func TestCompress_OneHugeMessageIsSplitNotCut(t *testing.T) {
 	h := append([]chat.Message{{Role: chat.RoleUser, Text: strings.Repeat("я", 200000)}}, talk(6)...)
 	m := &seqModel{}
 	if _, err := chat.NewService(&fakeSearch{}, m).Compress(context.Background(), h, 2); err != nil {
 		t.Fatal(err)
 	}
+	sent := 0
 	for i, r := range m.reqs {
 		if got := runes(r); got > 30000 {
 			t.Errorf("запрос %d: %d знаков", i, got)
 		}
+		sent += strings.Count(r[1].Content, "я")
+	}
+	if sent < 200000 {
+		t.Fatalf("до модели дошло %d из 200000 знаков: хвост сообщения потерян", sent)
+	}
+}
+
+// Сжимать до пустого хвоста нельзя: за конспектом сразу идет новый вопрос, и
+// два сообщения человека подряд не принимают провайдеры с чередованием ролей.
+func TestCompress_AlwaysKeepsATail(t *testing.T) {
+	m := &seqModel{}
+	c, err := chat.NewService(&fakeSearch{}, m).Compress(context.Background(), talk(4), 0)
+	if err != nil || c.Folded != 3 {
+		t.Fatalf("keep=0 обязан оставлять хвост из одного сообщения: %+v, %v", c, err)
+	}
+	if got := (chat.Compression{Text: "К", Folded: 4}).Apply(talk(4)); len(got) != 4 {
+		t.Fatalf("конспект на всю историю без хвоста не применяется: %+v", got)
 	}
 }
 

@@ -148,3 +148,39 @@ func TestChat_CanCompressComesFromTheWindow(t *testing.T) {
 		t.Error("ответ Ask не несет canCompress")
 	}
 }
+
+// Уже сжатый до хвоста чат сжать нечем: страница не должна звать «Сжать» снова
+// (плашка висела бы, а щелчок возвращал бы ту же запись).
+func TestChat_CanCompressFalseOnceFoldedToTheTail(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	id := longChat(t, d, 5)
+	c, err := d.CompressChat(id)
+	if err != nil || c.CanCompress {
+		t.Fatalf("после сжатия canCompress = %v, %v", c.CanCompress, err)
+	}
+	if got, _ := d.Get(id); got.CanCompress {
+		t.Error("Get после сжатия обещает, что сжимать есть что")
+	}
+	c, _ = d.Ask(askReq{ID: id, Question: "еще один"})
+	if !c.CanCompress {
+		t.Error("появились новые сообщения: сжимать снова есть что")
+	}
+}
+
+// Флаг «только в ответе»: даже если запись из Get пошла в save, в файл он не
+// попадает.
+func TestChat_SaveDropsCanCompress(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	id := longChat(t, d, 5)
+	rec, err := d.Get(id)
+	if err != nil || !rec.CanCompress {
+		t.Fatalf("Get: %v %v", rec.CanCompress, err)
+	}
+	if err := d.save(rec); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := os.ReadFile(filepath.Join(d.dir, id+".json"))
+	if strings.Contains(string(raw), "canCompress") {
+		t.Fatalf("флаг записан в файл чата: %s", raw)
+	}
+}
