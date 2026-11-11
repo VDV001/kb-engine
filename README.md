@@ -68,6 +68,12 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   password only in the macOS Keychain, shown or copied after Touch ID;
   `kbengine creds` does the same from the terminal, and the MCP tool
   `search_access` gives an agent the card without the password or the note.
+  **Браузер** drives your own Chrome, Brave, Edge or Chromium inside the window
+  (`kbengine browser serve`, DevTools protocol), and **Доступы** also keeps
+  machines (ssh hosts) with a project scan. **Memory** (ADR-0008) has two
+  layers (`kbengine memory`: a hot `HOT.md` of rules and a cold layer) with a
+  health score that drops when nobody reviews it. Settings → **Хранилище** shows
+  what takes disk space and clears each item on its own.
   **Статистика** shows the model calls the window made — a feed, an activity
   map and money at the gateway's own prices, with a spend limit you set and the
   month's spend by chat (the dearest chats and their share). When a
