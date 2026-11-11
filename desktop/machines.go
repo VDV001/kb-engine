@@ -1,11 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"cmp"
+	"context"
 	"errors"
 	"fmt"
+	"io"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/machines"
 )
 
 // Машины в окне (#549): те же ворота, что у доступов. Список, запись и удаление
@@ -223,4 +230,61 @@ func (d *accessDesk) CopyMachinePassword(id string) error {
 		return err
 	}
 	return d.auth.Copy(pw)
+}
+
+// MachineScanPlan is what a scan does on the machine, step by step: человек
+// читает это до запуска.
+func (d *accessDesk) MachineScanPlan() []string { return machines.ScanPlan() }
+
+// MachineScan reads what lies on the machine over ssh — только чтение, только в
+// открытом хранилище; вход по ключу или агенту ssh на этом Mac.
+func (d *accessDesk) MachineScan(id string) ([]machines.Found, error) {
+	if !d.isOpen() {
+		return nil, errVaultClosed
+	}
+	var run machines.Runner = sshRunner{}
+	if d.scanner != nil {
+		run = d.scanner
+	}
+	return d.machines.Scan(context.Background(), id, run)
+}
+
+// Скан не ждет вечно: соединение 10 секунд, весь запуск 30, вывод до 1 МиБ.
+const (
+	scanTimeout = 30 * time.Second
+	maxScanOut  = 1 << 20
+)
+
+// sshRunner runs the system ssh without questions: BatchMode не просит пароль и
+// не принимает ключ хоста молча (неизвестный хост — отказ с понятным текстом).
+type sshRunner struct{ bin string } // bin пусто — ssh из PATH
+
+// Run runs remote on the machine reached by args; ошибка — сообщение ssh, без
+// вывода машины: в нем может быть что угодно.
+func (r sshRunner) Run(ctx context.Context, args []string, remote string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
+	defer cancel()
+	full := append([]string{"-o", "BatchMode=yes", "-o", "ConnectTimeout=10"}, args...)
+	cmd := exec.CommandContext(ctx, cmp.Or(r.bin, "ssh"), append(full, remote)...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	if err := cmd.Start(); err != nil {
+		return "", fmt.Errorf("ssh не запустился: %w", err)
+	}
+	out, _ := io.ReadAll(io.LimitReader(stdout, maxScanOut))
+	if len(out) == maxScanOut {
+		cancel() // вывод больше предела: машина не должна завесить окно потоком
+	}
+	if err := cmd.Wait(); err != nil && len(out) < maxScanOut {
+		msg := strings.TrimSpace(stderr.String())
+		if i := strings.LastIndex(msg, "\n"); i >= 0 {
+			msg = strings.TrimSpace(msg[i+1:])
+		}
+		return "", fmt.Errorf("ssh: %s", cmp.Or(msg, err.Error()))
+	}
+	return string(out), nil
 }

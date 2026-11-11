@@ -41,6 +41,7 @@ var errVaultClosed = errors.New("хранилище закрыто: открой
 type accessDesk struct {
 	svc      creds.Service
 	machines machines.Service // машины (#549): за тем же хранилищем и тем же Touch ID
+	scanner  machines.Runner  // запуск ssh для скана; nil — настоящий ssh
 	auth     authHelper
 	mu       sync.Mutex
 	open     bool

@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
+	"github.com/daniil/kb-engine/internal/usecase/machines"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -189,6 +190,12 @@ func (a *App) MachineReveal(id string) (string, error) { return a.access.RevealM
 
 // MachineCopy puts a machine password on the clipboard after Touch ID.
 func (a *App) MachineCopy(id string) error { return a.access.CopyMachinePassword(id) }
+
+// MachineScanPlan returns what a machine scan will run, step by step.
+func (a *App) MachineScanPlan() []string { return a.access.MachineScanPlan() }
+
+// MachineScan reads the projects lying on a machine over ssh (read-only).
+func (a *App) MachineScan(id string) ([]machines.Found, error) { return a.access.MachineScan(id) }
 
 // Stats returns the model-call statistics of the last days (экран «Статистика»).
 func (a *App) Stats(days int) (statsView, error) { return a.chat.Stats(days) }
