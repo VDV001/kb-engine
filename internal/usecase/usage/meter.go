@@ -46,11 +46,20 @@ type Meter struct {
 	report  func(error) // сбой записи: ответ человеку важнее счета
 }
 
+// MeterOption tunes a Meter.
+type MeterOption func(*Meter)
+
+// WithChat ties every recorded call to chat id (расход по чатам, #541).
+func WithChat(id string) MeterOption { return func(*Meter) {} }
+
 // NewMeter wraps next; report gets record failures (nil — молча). Обертка
 // умеет поток (chat.Streamer), только если умеет next: чат по этому признаку
 // решает, показывать ли ответ кусками.
-func NewMeter(next chat.Model, model string, purpose Purpose, rec Recorder, now func() time.Time, report func(error)) chat.Model {
+func NewMeter(next chat.Model, model string, purpose Purpose, rec Recorder, now func() time.Time, report func(error), opts ...MeterOption) chat.Model {
 	m := &Meter{next: next, model: model, purpose: purpose, rec: rec, now: now, report: report}
+	for _, o := range opts {
+		o(m)
+	}
 	if s, ok := next.(chat.Streamer); ok {
 		return &streamMeter{Meter: m, next: s}
 	}

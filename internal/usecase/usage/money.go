@@ -20,6 +20,13 @@ type PurposeCost struct {
 	Calls   int
 }
 
+// ChatCost is the month's spend of one chat (#541).
+type ChatCost struct {
+	Chat  string
+	Cost  int64 // пикодолларов
+	Calls int
+}
+
 // ModelCost is the month's spend of one model; Priced — цена модели известна.
 type ModelCost struct {
 	Model   string
@@ -53,6 +60,7 @@ type Money struct {
 	Days                    []int64 // расход по дням с 1-го по сегодня
 	Purposes                []PurposeCost
 	Models                  []ModelCost
+	Chats                   []ChatCost // от дорогих к дешевым; вызовы вне чата сюда не входят
 	Uncounted, Unpriced     int
 }
 

@@ -153,3 +153,24 @@ func TestMeter_FailedStepWithTools(t *testing.T) {
 		t.Fatalf("записи = %+v", rec.calls)
 	}
 }
+
+// Счетчик с чатом пишет его в каждый вызов; без чата — вызов вне чата.
+func TestMeter_Chat(t *testing.T) {
+	q := []chat.ModelMessage{{Role: chat.RoleUser, Content: "q"}}
+	for _, tc := range []struct {
+		name string
+		opts []usage.MeterOption
+		want string
+	}{{"с чатом", []usage.MeterOption{usage.WithChat("0123456789abcdef")}, "0123456789abcdef"}, {"без чата", nil, ""}} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := &memRec{}
+			m := usage.NewMeter(fakeModel{reply: chat.ModelReply{Content: "ok", Usage: chat.Usage{In: 10, Out: 5, Counted: true}}}, "m", usage.AnswerOrSearch, rec, (&clock{t: []time.Time{t0}}).now, nil, tc.opts...)
+			if _, err := m.Complete(t.Context(), q, nil); err != nil {
+				t.Fatal(err)
+			}
+			if len(rec.calls) != 1 || rec.calls[0].Chat() != tc.want {
+				t.Fatalf("записано %+v, чат ждали %q", rec.calls, tc.want)
+			}
+		})
+	}
+}
