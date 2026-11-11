@@ -219,3 +219,20 @@ func TestChat_ContextSurvivesReopenAndFollowsWindow(t *testing.T) {
 		t.Fatalf("после смены окна: context = %+v", got.Context)
 	}
 }
+
+// После сжатия прежний счет провайдера неверен: чат не показывает его, пока
+// не придет счет нового ответа.
+func TestChat_CompressForgetsTheOldContextCount(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	m.usage = chat.Usage{In: 9000, Counted: true}
+	id := longChat(t, d, 5)
+	if got, _ := d.Get(id); got.Context == nil || got.Context.Used != 9000 {
+		t.Fatalf("до сжатия context = %+v", got.Context)
+	}
+	if _, err := d.CompressChat(id); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.Get(id); got.Context != nil {
+		t.Fatalf("после сжатия context = %+v, старый счет не должен жить", got.Context)
+	}
+}

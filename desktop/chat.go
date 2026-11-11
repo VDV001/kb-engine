@@ -311,15 +311,14 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
 	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
+	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
 	rec.CanCompress = canCompress(rec)
-	if turn.PromptTokens > 0 {
-		rec.Context = &contextNote{Used: turn.PromptTokens, Window: c.ContextWindow}
-	}
+	rec.Context = d.contextOf(rec)
 	d.extractAfter(c, model, rec.ID, question, turn.Answer)
 	return rec, nil
 }
@@ -429,7 +428,10 @@ func (d *chatDesk) Get(id string) (chatRecord, error) {
 // contextOf is the fill of rec's context: последний счет провайдера против
 // размера окна модели из нынешних настроек; счета нет — nil.
 func (d *chatDesk) contextOf(rec chatRecord) *contextNote {
-	return nil
+	if rec.ContextUsed <= 0 {
+		return nil
+	}
+	return &contextNote{Used: rec.ContextUsed, Window: d.config().ContextWindow}
 }
 
 // Delete removes a chat.
@@ -745,6 +747,7 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 		return chatRecord{}, errors.New(chatError(err))
 	}
 	rec.Compressed = &chatCompressed{Text: sum.Text, Folded: sum.Folded}
+	rec.ContextUsed = 0 // счет был до сжатия; новый придет с ближайшим ответом
 	rec.Updated = d.now()
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err

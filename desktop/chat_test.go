@@ -519,8 +519,9 @@ func TestEnglishVoice(t *testing.T) {
 }
 
 // Ответ называет странице заполнение контекста: сколько токенов насчитал
-// провайдер и размер контекста модели из настроек. В файл чата это не пишется,
-// без счета провайдера и без размера окна странице нечего показывать.
+// провайдер и размер контекста модели из настроек. Счет лежит в файле чата,
+// размер окна берется из нынешних настроек; без счета провайдера показывать
+// нечего.
 func TestChat_AskReportsContextFill(t *testing.T) {
 	d, m, _, _ := newTestChatDesk(t)
 	m.usage = chat.Usage{In: 6000, Out: 100, Counted: true}
@@ -531,12 +532,12 @@ func TestChat_AskReportsContextFill(t *testing.T) {
 	if err != nil || c.Context == nil || c.Context.Used != 6000 || c.Context.Window != 12000 {
 		t.Fatalf("context = %+v, err %v", c.Context, err)
 	}
-	if got, _ := d.Get(c.ID); got.Context != nil {
-		t.Errorf("заполнение контекста попало в файл чата: %+v", got.Context)
-	}
 	m.usage = chat.Usage{}
 	c, _ = d.Ask(askReq{ID: c.ID, Question: "а штраф?"})
 	if c.Context != nil {
 		t.Errorf("провайдер не прислал счет — показывать нечего: %+v", c.Context)
+	}
+	if got, _ := d.Get(c.ID); got.Context != nil {
+		t.Errorf("старый счет пережил ответ без счета: %+v", got.Context)
 	}
 }
