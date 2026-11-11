@@ -16,6 +16,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/creds"
+	"github.com/daniil/kb-engine/internal/usecase/machines"
 )
 
 // Экран «Доступы» (#494): карточки видны окну без пароля; пароль показать и
@@ -38,18 +39,20 @@ var errVaultClosed = errors.New("хранилище закрыто: открой
 // accessDesk is the access screen; auth nil — окно не из сборки, помощника нет.
 // open — хранилище открыто Touch ID; закрывает окно (уход с вкладки, без дела).
 type accessDesk struct {
-	svc  creds.Service
-	auth authHelper
-	mu   sync.Mutex
-	open bool
+	svc      creds.Service
+	machines machines.Service // машины (#549): за тем же хранилищем и тем же Touch ID
+	auth     authHelper
+	mu       sync.Mutex
+	open     bool
 }
 
 func (d *accessDesk) isOpen() bool { d.mu.Lock(); defer d.mu.Unlock(); return d.open }
 
 func newAccessDesk(home string, auth authHelper) *accessDesk {
 	return &accessDesk{
-		svc:  creds.Service{Cards: credsjson.Store{Path: credsjson.DefaultPath(home)}, Secrets: windowSecrets{keychain.Store{Service: "DVK credentials"}}},
-		auth: auth,
+		svc:      creds.Service{Cards: credsjson.Store{Path: credsjson.DefaultPath(home)}, Secrets: windowSecrets{keychain.Store{Service: "DVK credentials"}}},
+		machines: machines.Service{Machines: credsjson.MachineStore{Path: credsjson.MachineDefaultPath(home)}},
+		auth:     auth,
 	}
 }
 
