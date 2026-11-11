@@ -55,3 +55,45 @@ func TestStore_Corrupt(t *testing.T) {
 		t.Fatalf("без папки = %v", err)
 	}
 }
+
+// Запись портрета (#542) идет только в Dir/portrait.json. Если на месте файла
+// лежит ссылка наружу, Save заменяет ссылку, а не пишет сквозь нее: чужой файл
+// остается нетронутым.
+func TestStore_SaveDoesNotWriteThroughSymlink(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim.txt")
+	if err := os.WriteFile(victim, []byte("не трогать"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, portraitfile.Name)); err != nil {
+		t.Fatal(err)
+	}
+	s := portraitfile.Store{Dir: dir}
+	f, _ := domain.NewFact("f1", domain.SectionWork, "Пишет на Go", domain.OriginManual, domain.FactApproved, time.Date(2026, 11, 6, 21, 0, 0, 0, time.UTC))
+	p, _ := domain.NewPortrait([]domain.Fact{f})
+	if err := s.Save(t.Context(), p); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(victim); string(got) != "не трогать" {
+		t.Fatalf("Save записал сквозь ссылку: %q", got)
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if e.Name() != portraitfile.Name {
+			t.Errorf("в папке остался лишний файл %q", e.Name())
+		}
+	}
+}
+
+// Без папки запись отказывает, а не пишет в текущий каталог процесса.
+func TestStore_SaveWithoutDirRefuses(t *testing.T) {
+	cwd := t.TempDir()
+	t.Chdir(cwd)
+	p, _ := domain.NewPortrait(nil)
+	if err := (portraitfile.Store{}).Save(t.Context(), p); !errors.Is(err, portraitfile.ErrNoDir) {
+		t.Fatalf("err = %v, want ErrNoDir", err)
+	}
+	if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+		t.Fatalf("в текущем каталоге появилось: %v", entries)
+	}
+}

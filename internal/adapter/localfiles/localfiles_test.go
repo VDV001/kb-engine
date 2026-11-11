@@ -246,3 +246,76 @@ func TestWalk_StopsWhenContextIsCancelled(t *testing.T) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
 }
+
+// Граница корня (#542): ReadText и Check получают путь снаружи (MCP, окно),
+// и ни одна форма пути не должна выводить за папки окна.
+func TestReadText_StaysInsideRoots(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "inside.md", "свое")
+	outsideDir := t.TempDir()
+	secret := write(t, outsideDir, "secret.md", "чужое")
+	// Папка-ссылка наружу: сам файл за ней обычный, ссылка стоит в середине пути.
+	if err := os.Symlink(outsideDir, filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	// Ссылка на файл снаружи с безобидным именем.
+	if err := os.Symlink(secret, filepath.Join(root, "alias.md")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+
+	tests := []struct{ name, path string }{
+		{"абсолютный вне папок", secret},
+		{"относительный", "inside.md"},
+		{"относительный с ..", filepath.Join("..", filepath.Base(outsideDir), "secret.md")},
+		{"абсолютный с .. наружу", filepath.Join(root, "..", filepath.Base(outsideDir), "secret.md")},
+		{"через папку-ссылку", filepath.Join(root, "linked", "secret.md")},
+		{"ссылка на файл снаружи", filepath.Join(root, "alias.md")},
+		{"сам корень", root},
+		{"корень с .. и обратно", filepath.Join(root, "..", filepath.Base(root))},
+		{"префикс-двойник корня", root + "-twin/inside.md"},
+		{"пустой путь", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := s.ReadText(tt.path); !errors.Is(err, localfiles.ErrNotAllowed) {
+				t.Errorf("ReadText(%q) err = %v, want ErrNotAllowed", tt.path, err)
+			}
+			if err := s.Check(tt.path); !errors.Is(err, localfiles.ErrNotAllowed) {
+				t.Errorf("Check(%q) err = %v, want ErrNotAllowed", tt.path, err)
+			}
+		})
+	}
+	if got, err := s.ReadText(filepath.Join(root, "inside.md")); err != nil || got != "свое" {
+		t.Fatalf("свой файл должен читаться: %q, %v", got, err)
+	}
+}
+
+// Обход тоже не выходит за корень по ссылкам: чужой файл не попадает в выдачу
+// search_files, значит read_file за ним не придет.
+func TestWalk_DoesNotFollowSymlinksOutside(t *testing.T) {
+	root := t.TempDir()
+	write(t, root, "inside.md", "свое")
+	outsideDir := t.TempDir()
+	write(t, outsideDir, "secret.md", "чужое")
+	if err := os.Symlink(outsideDir, filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outsideDir, "secret.md"), filepath.Join(root, "alias.md")); err != nil {
+		t.Fatal(err)
+	}
+	s, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	for _, p := range walked(t, s) {
+		if strings.Contains(p, "secret") || strings.Contains(p, "alias") || strings.Contains(p, "linked") {
+			t.Errorf("в обходе путь за границей: %q", p)
+		}
+	}
+}
