@@ -4162,6 +4162,7 @@ function acMachFormHTML(m) {
     ${f("host", "хост (сервер или IP)", m && m.host)}${f("port", "порт ssh (пусто — 22)", m && m.port !== 22 ? m.port : "", "number")}${f("user", "пользователь", m && m.user)}
     ${sel("auth", "как входить", [["key", "Ключ ssh"], ["password", "Пароль"], ["token", "Сертификат или токен"]], m ? m.auth : "key")}${f("keyPath", "файл ключа (только путь)", m && m.keyPath)}${sel("jump", "заходить через (бастион)", [["", "напрямую"], ...others], m ? m.jump : "")}
     ${f("tokenHint", "токен или сертификат: где взять", m && m.tokenHint)}${f("note", "заметка (видна только в окне)", m && m.note)}${f("password", "пароль (если вход по паролю)", "", "password")}
+    <label class="ac-wide ac-chk"><input type="checkbox" name="scan"${m ? "" : " checked"}> просканировать после сохранения <span class="muted">по ssh только чтение, на машине ничего не меняется; нужен ключ ssh или агент, по паролю скан не работает</span></label>
     <label class="ac-wide">что на машине: проект | путь | порт | что это, по строке на проект<textarea name="projects" rows="4" spellcheck="false">${esc(pj)}</textarea></label>
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="${m ? "medit-cancel" : "madd-cancel"}">Отмена</button><button class="ac-btn pri" type="submit">Сохранить${m ? " · Touch ID" : ""}</button></div></form>`;
 }
@@ -4211,6 +4212,7 @@ function acMachTailHTML() {
 function maInput(fd) {
   const o = { ...fd, port: fd.port ? Number(fd.port) : 0, projects: maParseProjects(fd.projects || "") };
   delete o.password;
+  delete o.scan;
   return o;
 }
 async function acMShow(id) {
@@ -4295,17 +4297,35 @@ async function acMachClick(b, ac, id) {
   }
   return true;
 }
+// Скан после сохранения (галочка формы): найденное новое вставляется само, без выбора;
+// пусто — «проектов пока 0». Не удался — машина все равно сохранена, об этом и говорим.
+async function acAutoScan(name) {
+  const ac = state.ac, m = ac.machines.find((x) => x.name === name);
+  if (!m) return;
+  if (m.auth === "password") return toast("Скан не выполнен", " · по паролю скан не работает: добавьте ключ ssh или агент, проектов пока 0", null, "bad");
+  let found;
+  try { found = (await native().MachineScan(m.id)) || []; }
+  catch (e) { return toast("Машина сохранена, скан не удался", " · " + errText(e), null, "bad"); }
+  const fresh = found.filter((f) => f.new);
+  if (!fresh.length) return toast("Скан", found.length ? " · новых проектов нет" : " · проектов пока 0");
+  const input = { name: m.name, group: m.group, env: m.env, host: m.host, port: m.port, user: m.user, auth: m.auth, keyPath: m.keyPath, jump: m.jump, tokenHint: m.tokenHint, note: m.note,
+    projects: [...(m.projects || []), ...fresh.map((f) => ({ name: f.name, path: f.path || "", port: f.port || "", what: f.what }))] };
+  try { await native().MachineUpdate(m.id, input, ""); await acLoad(); acRender(); toast("Скан", ` · найдено и добавлено: ${fresh.length} ${plural(fresh.length, "проект", "проекта", "проектов")}`); }
+  catch (err) { showError("Проекты из скана не добавлены: " + errText(err)); }
+}
 async function acMachSubmit(form) {
-  const fd = Object.fromEntries(new FormData(form)), pw = fd.password || "";
+  const fd = Object.fromEntries(new FormData(form)), pw = fd.password || "", scan = "scan" in fd;
   form.elements.password.value = ""; // пароль не остается в поле
   const input = maInput(fd), ac = state.ac;
   if (form.id === "mach-edit") {
     try { await native().MachineUpdate(form.dataset.id, input, pw); ac.mediting = ""; ac.mdraft = {}; await acLoad(); acRender(); toast("Сохранено", pw ? " · машина обновлена, пароль сменен" : " · машина обновлена"); }
-    catch (err) { showError("Машина не изменена: " + errText(err)); }
+    catch (err) { showError("Машина не изменена: " + errText(err)); return; }
+    if (scan) await acAutoScan(input.name);
     return;
   }
   try { await native().MachineAdd(input, pw); ac.madding = false; ac.mdraft = {}; await acLoad(); acRender(); toast("Сохранено", pw ? " · машина добавлена, пароль — в Связке ключей" : " · машина добавлена"); }
-  catch (err) { showError("Машина не сохранена: " + errText(err)); }
+  catch (err) { showError("Машина не сохранена: " + errText(err)); return; }
+  if (scan) await acAutoScan(input.name);
 }
 async function acShow(id) {
   const ac = state.ac;

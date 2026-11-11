@@ -1495,6 +1495,8 @@ body.no-mh-heat .mh-heat button.l2 { background: var(--z-ok); } body.no-mh-heat 
 .ac-add textarea { background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 8px; color: var(--z-ink); font: inherit; resize: vertical; min-width: 0; }
 .ac-add textarea:focus { outline: 0; border-color: var(--z-accent); }
 .ac-add .ac-wide { grid-column: 1 / -1; }
+.ac-add .ac-chk { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; color: var(--z-ink-2); }
+.ac-add .ac-chk input { padding: 0; }
 .ac-cmd { display: flex; gap: 8px; align-items: center; min-width: 0; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 10px; }
 .ac-cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--z-ok); font: inherit; }
 .ac-warn { margin: 0; color: var(--z-bad); }
