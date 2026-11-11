@@ -188,6 +188,12 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 // with the path as shown (в написании корня, как его задал человек) and, for an
 // image, the number of images in its folder (иначе ноль).
 func (s *Source) walk(ctx context.Context, fn func(shown string, info os.FileInfo, imgs int) error) error {
+	return s.walkBy(ctx, s.indexable, fn)
+}
+
+// walkBy is walk with the name rule given: обход версий берет документы,
+// которые поиск по тексту не индексирует (pptx, xlsx).
+func (s *Source) walkBy(ctx context.Context, accept func(name string) bool, fn func(shown string, info os.FileInfo, imgs int) error) error {
 	for i, root := range s.resolved {
 		imgs := map[string]int{}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -203,7 +209,7 @@ func (s *Source) walk(ctx context.Context, fn func(shown string, info os.FileInf
 				}
 				return nil
 			}
-			info, ok := s.fileInfo(d)
+			info, ok := s.fileInfo(d, accept)
 			if !ok {
 				return nil
 			}
@@ -235,8 +241,8 @@ func (s *Source) imagesIn(dir, name string, imgs map[string]int) int {
 
 // fileInfo returns the info of a walked entry the rules let through by type,
 // name and size.
-func (s *Source) fileInfo(d fs.DirEntry) (os.FileInfo, bool) {
-	if !d.Type().IsRegular() || !s.indexable(d.Name()) {
+func (s *Source) fileInfo(d fs.DirEntry, accept func(name string) bool) (os.FileInfo, bool) {
+	if !d.Type().IsRegular() || !accept(d.Name()) {
 		return nil, false
 	}
 	info, err := d.Info()

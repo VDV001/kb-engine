@@ -91,6 +91,9 @@ func date(y, mo, d string, fallback time.Time) time.Time {
 	return t
 }
 
+// Key — ключ семейства: файлы с одним ключом — итерации одного документа.
+func Key(path string) string { return stem(path) }
+
 func ext(path string) string { return strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".") }
 
 // Group собирает файлы в семейства: одно имя без шума — одно семейство, в любой

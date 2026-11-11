@@ -34,9 +34,15 @@ var wordNS = map[string]bool{
 // isDocx tells whether a file is read through docxText rather than as text.
 func isDocx(name string) bool { return strings.EqualFold(filepath.Ext(name), ".docx") }
 
+// isOffice tells pptx and xlsx: их читает только обход версий (versions.go).
+func isOffice(name string) bool {
+	e := strings.ToLower(filepath.Ext(name))
+	return e == ".pptx" || e == ".xlsx"
+}
+
 // maxBytes is the size limit for a file on disk.
 func maxBytes(name string) int64 {
-	if isDocx(name) || extractable(name) {
+	if isDocx(name) || extractable(name) || isOffice(name) {
 		return maxDocBytes
 	}
 	return MaxFileBytes
