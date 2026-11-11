@@ -182,14 +182,15 @@ func TestMachine_SSHCommand(t *testing.T) {
 		t.Errorf("команда без бастиона:\n got %s\nwant %s", got, want)
 	}
 
-	// Путь ключа с пробелом не должен рассыпать команду при копировании.
+	// Путь ключа с пробелом не должен рассыпать команду при копировании; тильда
+	// вне кавычек, иначе оболочка ее не раскроет.
 	spaced := machineDTO()
 	spaced.KeyPath = "~/My Keys/id"
 	m, err := domain.NewMachine(spaced)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := domain.SSHCommand([]domain.Machine{m}); !strings.Contains(got, "-i '~/My Keys/id'") {
+	if got := domain.SSHCommand([]domain.Machine{m}); !strings.Contains(got, "-i ~/'My Keys/id'") {
 		t.Errorf("путь с пробелом не взят в кавычки: %s", got)
 	}
 }
