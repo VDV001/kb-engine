@@ -175,6 +175,7 @@ func TestVersionMention_readsJSONNotFormatting(t *testing.T) {
 			}
 			if got == nil {
 				t.Fatal("отставание не найдено — проверка молчит")
+				return
 			}
 			if !strings.Contains(got.Text, tc.want) {
 				t.Errorf("текст находки не называет версию страницы: %q", got.Text)
@@ -208,6 +209,7 @@ func TestVersionMention_showsTheBaseReleaseNotTheBuildString(t *testing.T) {
 		"v0.15.1-0.20260804145247-fea441f0ae51+dirty")
 	if got == nil {
 		t.Fatal("отставание не найдено на сборке из исходников")
+		return
 	}
 	for _, bad := range []string{"dirty", "20260804", "fea441f"} {
 		if strings.Contains(got.Text, bad) {
@@ -305,6 +307,7 @@ func TestVersionMention_tellsAStaleBuildFromAStalePage(t *testing.T) {
 			got := freshness.VersionMention(`{"note":"`+tc.page+` · kb-engine"}`, "kb-engine", tc.current)
 			if got == nil {
 				t.Fatal("расхождение версий не найдено вовсе")
+				return
 			}
 			if got.Kind != tc.wantKind {
 				t.Errorf("Kind = %q, ожидалось %q (текст: %q)", got.Kind, tc.wantKind, got.Text)
