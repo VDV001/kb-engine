@@ -2645,7 +2645,11 @@ const ctxNum = (v) => v.toLocaleString("ru-RU");
 // размером окна из настроек, а если и его нет — со знаком вопроса.
 const ctxNow = () => {
   const x = chatState.chat && chatState.chat.context;
-  return x && x.used ? x : { used: 0, window: (chatState.settings && chatState.settings.contextWindow) || 0 };
+  if (x && x.used) return x;
+  // unknown: в чате уже есть разговор, а счета провайдера нет (чат из старой
+  // сборки или провайдер счет не шлет) — «0%» было бы неправдой.
+  const talked = !!(chatState.chat && (chatState.chat.messages || []).length);
+  return { used: 0, unknown: talked, window: (chatState.settings && chatState.settings.contextWindow) || 0 };
 };
 function renderChatCtx() {
   const ring = $("#chat-ctx-ring"), x = ctxNow();
@@ -2654,7 +2658,7 @@ function renderChatCtx() {
   ring.hidden = false;
   ring.dataset.tone = tone;
   ring.setAttribute("aria-label", x.window ? `Контекст заполнен на ${Math.round(f * 100)}%: подробнее` : "Контекст: подробнее");
-  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.window ? (x.est ? "~" : "") + Math.round(f * 100) + "%" : "?"}</span>`;
+  ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.unknown ? "—" : x.window ? (x.est ? "~" : "") + Math.round(f * 100) + "%" : "?"}</span>`;
   if (!$("#chat-ctx-pop").hidden) fillChatCtx(x, f, tone);
 }
 // Подробности — окошком поверх по кнопке-кольцу: что насчитал провайдер, размер
@@ -2664,12 +2668,14 @@ function fillChatCtx(x, f, tone) {
   pop.dataset.tone = tone;
   const advice = !x.window
     ? `<p class="muted">Размер контекста модели не указан, поэтому окно не знает, сколько осталось. Внесите его в настройках чата.</p><div class="cx-acts"><button class="btn" type="button" id="chat-ctx-set">Указать размер</button></div>`
+    : x.unknown
+      ? `<p class="muted">Счета провайдера для этого чата пока нет, поэтому заполнение неизвестно. Он придет с ближайшим ответом.</p>`
     : f >= CTX_HINT_AT
       ? `<p><b>${f >= 1 ? "Контекст переполнен." : f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> ${f >= 1 ? "Запрос не помещается в окно модели: часть разговора она не видит или провайдер откажет. " : "Дальше разговор пухнет, ответы дороже и хуже. "}Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts">${canCompress() ? `<button class="btn primary" type="button" id="chat-ctx-compress">Сжать разговор</button><button class="btn" type="button" id="chat-ctx-new">Новый чат</button>` : `<button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button>`}</div>`
       : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
   pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
     ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
-    <dl class="cx-kv"><dt>В запросе</dt><dd>${!x.used ? `<span class="muted">счет придет с ближайшим ответом</span>` : `${x.est ? "≈ " : ""}${ctxNum(x.used)} токенов <span class="muted">${x.est ? "оценка после сжатия, точный счет придет с ответом" : "по счету провайдера"}</span>`}</dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов · занято ${Math.round(f * 100)}%</dd>` : ""}</dl>${advice}`;
+    <dl class="cx-kv"><dt>В запросе</dt><dd>${!x.used ? `<span class="muted">${x.unknown ? "счета пока нет" : "счет придет с ближайшим ответом"}</span>` : `${x.est ? "≈ " : ""}${ctxNum(x.used)} токенов <span class="muted">${x.est ? "оценка после сжатия, точный счет придет с ответом" : "по счету провайдера"}</span>`}</dd>${x.window ? `<dt>Контекст модели</dt><dd>${ctxNum(x.window)} токенов${x.unknown ? "" : " · занято " + Math.round(f * 100) + "%"}</dd>` : ""}</dl>${advice}`;
 }
 function openChatCtx() {
   const x = ctxNow();
