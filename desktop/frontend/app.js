@@ -2660,7 +2660,7 @@ function fillChatCtx(x, f, tone) {
   const advice = !x.window
     ? `<p class="muted">Размер контекста модели не указан, поэтому окно не знает, сколько осталось. Внесите его в настройках чата.</p><div class="cx-acts"><button class="btn" type="button" id="chat-ctx-set">Указать размер</button></div>`
     : f >= CTX_HINT_AT
-      ? `<p><b>${f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> Дальше разговор пухнет, ответы дороже и хуже. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts"><button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button></div>`
+      ? `<p><b>${f >= CTX_WARN_AT ? "Контекст почти полон." : "Контекст наполовину полон."}</b> Дальше разговор пухнет, ответы дороже и хуже. Запишите handoff (что сделано, что не сработало, следующий шаг) и начните новый чат.</p><div class="cx-acts">${canCompress() ? `<button class="btn primary" type="button" id="chat-ctx-compress">Сжать разговор</button><button class="btn" type="button" id="chat-ctx-new">Новый чат</button>` : `<button class="btn primary" type="button" id="chat-ctx-new">Новый чат</button>`}</div>`
       : `<p class="muted">Пока места хватает. Около половины окно подскажет записать handoff и начать новый чат.</p>`;
   pop.innerHTML = `<div class="cx-head"><b>Контекст чата</b><button class="cx-x" type="button" id="chat-ctx-close" aria-label="Закрыть">✕</button></div>
     ${x.window ? `<div class="chat-ctx-bar" role="meter" aria-valuemin="0" aria-valuemax="${x.window}" aria-valuenow="${x.used}"><i style="width:${Math.min(100, f * 100)}%"></i></div>` : ""}
@@ -2682,6 +2682,7 @@ $("#chat-ctx-ring").addEventListener("click", () => ($("#chat-ctx-pop").hidden ?
 $("#chat-ctx-pop").addEventListener("click", (e) => {
   if (e.target.closest("#chat-ctx-close")) closeChatCtx();
   else if (e.target.closest("#chat-ctx-new")) { closeChatCtx(); newChat(); }
+  else if (e.target.closest("#chat-ctx-compress")) { if (!chatState.compressing) compressChat(false); }
   else if (e.target.closest("#chat-ctx-set")) { closeChatCtx(); openSettings("chat").then(() => $("#chat-ctx-win").focus()); }
 });
 document.addEventListener("click", (e) => { if (!$("#chat-ctx-pop").hidden && !e.target.closest("#chat-ctx-pop, #chat-ctx-ring")) closeChatCtx(); });
@@ -2766,7 +2767,7 @@ function renderCompressOffer() {
   el.innerHTML = `<span>${over && !chatState.offerAsk ? "Занято больше, чем помещается в контекст модели." : "Вопрос не поместится в контекст модели."} Сжать старую часть разговора в конспект? Исходный разговор останется.</span>
     <button class="btn primary" type="button" data-offer="yes"${chatState.compressing ? " disabled" : ""}>${chatState.compressing ? "Сжимаю…" : "Сжать"}</button><button class="btn" type="button" data-offer="no"${chatState.compressing ? " disabled" : ""}>Не надо</button>`;
 }
-$("#chat-offer").addEventListener("click", async (e) => {
+$("#chat-offer").addEventListener("click", (e) => {
   const b = e.target.closest("[data-offer]");
   if (!b || chatState.busy || chatState.compressing) return;
   // Вопрос ждет в поле: после ответа на предложение он уходит сам, иначе «Не надо»
@@ -2778,9 +2779,13 @@ $("#chat-offer").addEventListener("click", async (e) => {
     if (pending) askChat();
     return;
   }
+  compressChat(pending);
+});
+async function compressChat(pending) {
   // Своя отметка, а не busy: busy рисует «модель отвечает», а это не ответ.
   const id = chatState.id;
   chatState.compressing = true;
+  closeChatCtx();
   renderChat();
   try {
     const prev = chatState.chat.context;
@@ -2804,7 +2809,7 @@ $("#chat-offer").addEventListener("click", async (e) => {
     renderChat();
   }
   if (pending) askChat();
-});
+}
 async function askChat() {
   const q = $("#chat-q").value.trim();
   if (!q || chatState.busy || chatState.compressing) return;
