@@ -51,6 +51,16 @@ type moneyGroup struct {
 	Calls int     `json:"calls"`
 }
 
+// moneyChat is one chat in the month's spend (#541): Share — доля общего
+// расхода месяца (0..1).
+type moneyChat struct {
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	Cost  float64 `json:"cost"`
+	Calls int     `json:"calls"`
+	Share float64 `json:"share"`
+}
+
 type moneyModel struct {
 	ID     string  `json:"id"`
 	Cost   float64 `json:"cost"`
@@ -76,6 +86,7 @@ type moneyView struct {
 	Days        []float64    `json:"days"`
 	Purposes    []moneyGroup `json:"purposes"`
 	Models      []moneyModel `json:"models"`
+	Chats       []moneyChat  `json:"chats"`
 	Uncounted   int          `json:"uncounted"`
 	Unpriced    int          `json:"unpriced"`
 	Limit       string       `json:"limit"`
@@ -104,7 +115,7 @@ func (d *chatDesk) StatsMoney() (moneyView, error) {
 			own[m] = mp
 		}
 	}
-	v := moneyView{Limit: spend.Limit, Purposes: []moneyGroup{}, Models: []moneyModel{}}
+	v := moneyView{Limit: spend.Limit, Purposes: []moneyGroup{}, Models: []moneyModel{}, Chats: []moneyChat{}}
 	gw := map[string]domain.ModelPrice{}
 	if d.prices != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), pricesTimeout)
@@ -124,6 +135,7 @@ func (d *chatDesk) StatsMoney() (moneyView, error) {
 	for _, p := range m.Purposes {
 		v.Purposes = append(v.Purposes, moneyGroup{string(p.Purpose), purposeTitles[p.Purpose], dollars(p.Cost), p.Calls})
 	}
+	v.Chats = d.chatsView(m)
 	for _, x := range m.Models {
 		mm := moneyModel{ID: x.Model, Cost: dollars(x.Cost), Calls: x.Calls, Priced: x.Priced, Priceable: x.Counted > 0}
 		if p, ok := book.Price(x.Model); ok {
@@ -171,4 +183,29 @@ func (d *chatDesk) SetSpendLimit(usd string) error {
 		return err
 	}
 	return d.settings.updateConfig(func(c *desktopconfig.Config) { c.Spend.Limit = usd })
+}
+
+// deletedChatTitle names a chat that is gone but still has spend in the month.
+const deletedChatTitle = "Удаленный чат"
+
+// chatTitle is the title of chat id; чата нет (удален) — общее название.
+func (d *chatDesk) chatTitle(id string) string {
+	if rec, err := d.load(id); err == nil && rec.Title != "" {
+		return rec.Title
+	}
+	return deletedChatTitle
+}
+
+// chatsView is the chats of the month's spend, dearest first, with the share
+// of the whole spend.
+func (d *chatDesk) chatsView(m usage.Money) []moneyChat {
+	out := make([]moneyChat, 0, len(m.Chats))
+	for _, x := range m.Chats {
+		c := moneyChat{ID: x.Chat, Title: d.chatTitle(x.Chat), Cost: dollars(x.Cost), Calls: x.Calls}
+		if m.Spent > 0 {
+			c.Share = float64(x.Cost) / float64(m.Spent)
+		}
+		out = append(out, c)
+	}
+	return out
 }
