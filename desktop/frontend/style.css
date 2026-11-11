@@ -414,6 +414,7 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .settings:not([data-view="look"]) [data-view="look"],
 .settings:not([data-view="conn"]) [data-view="conn"],
 .settings:not([data-view="storage"]) [data-view="storage"],
+.settings:not([data-view="versions"]) [data-view="versions"],
 .settings:not([data-view="memory"]) [data-view="memory"] { display: none; }
 .conn-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--z-rule); }
 .conn-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--z-rule); }
@@ -1541,3 +1542,13 @@ body:not(.no-scan-run) .ac-run-bar::after { content: ""; position: absolute; ins
 .ac-plan { margin: 0; padding: 8px 10px; background: var(--z-bg); border: 1px solid var(--z-rule); border-radius: var(--z-radius); color: var(--z-ok); overflow-x: auto; font: inherit; font-size: 12px; }
 .ac-found { display: grid; gap: 4px; }
 .ac-found label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+
+/* Экран «Версии» (#547): семейства документов лентой по времени. */
+.ver-q { width: 100%; box-sizing: border-box; margin: 6px 0 12px; }
+.ver-fam { border-top: 1px solid var(--z-line); padding: 10px 0; }
+.ver-fam h4 { margin: 0 0 6px; font-size: 13px; color: var(--z-ink); overflow-wrap: anywhere; }
+.ver-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 4px 10px; padding: 4px 0; font-size: 12px; }
+.ver-date { color: var(--z-muted); font-variant-numeric: tabular-nums; }
+.ver-note { color: var(--z-ink); overflow-wrap: anywhere; }
+.ver-path, .ver-dup { color: var(--z-muted); font-size: 11px; overflow-wrap: anywhere; grid-column: 2; }
+.ver-dup::before { content: "дубль: "; }
