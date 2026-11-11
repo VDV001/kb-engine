@@ -270,11 +270,27 @@ func ResolveChain(m Machine, byID func(id string) (Machine, bool)) ([]Machine, e
 // ключи берутся из ssh-agent или ssh_config; потолок, пока не понадобится
 // ProxyCommand с -i на каждом звене.
 func SSHCommand(chain []Machine) string {
-	if len(chain) == 0 {
+	args := SSHArgs(chain)
+	if args == nil {
 		return ""
 	}
+	for i, a := range args {
+		if i > 0 && args[i-1] == "-i" {
+			args[i] = shellPath(a)
+		}
+	}
+	return "ssh " + strings.Join(args, " ")
+}
+
+// SSHArgs is the ssh argument list for a chain without the command: для запуска
+// программой, где оболочки нет и кавычки не нужны. Первое звено цепочки не
+// ключ, а бастион; цель последняя.
+func SSHArgs(chain []Machine) []string {
+	if len(chain) == 0 {
+		return nil
+	}
 	target, hops := chain[len(chain)-1], chain[:len(chain)-1]
-	args := []string{"ssh"}
+	var args []string
 	if len(hops) > 0 {
 		via := make([]string, len(hops))
 		for i, h := range hops {
@@ -283,9 +299,9 @@ func SSHCommand(chain []Machine) string {
 		args = append(args, "-J", strings.Join(via, ","))
 	}
 	if target.Auth() == AuthKey && target.KeyPath() != "" {
-		args = append(args, "-i", shellPath(target.KeyPath()))
+		args = append(args, "-i", target.KeyPath())
 	}
-	return strings.Join(append(args, "-p", strconv.Itoa(target.Port()), target.User()+"@"+target.Host()), " ")
+	return append(args, "-p", strconv.Itoa(target.Port()), target.User()+"@"+target.Host())
 }
 
 // shellPath quotes a path for copy-paste into a shell, оставляя ~/ вне кавычек:
