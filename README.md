@@ -63,7 +63,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   `kbengine creds` does the same from the terminal, and the MCP tool
   `search_access` gives an agent the card without the password or the note.
   **Статистика** shows the model calls the window made — a feed, an activity
-  map and money at the gateway's own prices, with a spend limit you set. When a
+  map and money at the gateway's own prices, with a spend limit you set and the
+  month's spend by chat (the dearest chats and their share). When a
   button in the
   window stays silent, `just desktop-inspect` builds `bin/kb-inspect.app` with
   the WebKit inspector (right-click in any input → Inspect Element); the
