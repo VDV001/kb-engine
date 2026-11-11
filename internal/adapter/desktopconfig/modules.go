@@ -28,8 +28,6 @@ const (
 	ModuleMemory ModuleID = "memory"
 	// ModuleBrowser — браузер во вкладке: Chrome и т. п. на этом Mac, картинка и ввод через kbengine browser serve.
 	ModuleBrowser ModuleID = "browser"
-	// ModuleArtifacts — артефакты: документы папок окна и их версии, у каждой — что нового (#547).
-	ModuleArtifacts ModuleID = "artifacts"
 	// ModuleHelp — справка: команды движка и клавиши окна с поиском по задаче.
 	ModuleHelp ModuleID = "help"
 )

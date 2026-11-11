@@ -132,18 +132,12 @@
     <section class="memory-view" id="memory-view" hidden><div id="mm-body"></div></section>
 
     <!-- Артефакты (#547): документы папок окна и их версии — у каждой, что нового
-         относительно предыдущей. Модуль в шапке (решение владельца 11.11): экран
-         жил в настройках и там его не находили. -->
+         относительно предыдущей. Вкладка в строке поиска при основных (решение
+         владельца 11.11): запрос — строка поиска, выдача заменяется этим списком. -->
     <section class="art-view" id="artifacts-view" hidden>
       <div class="art-bar"><span class="hp-prompt"><b>$</b> kb artifacts</span><h2 class="hp-title">Артефакты</h2></div>
       <div class="art-body">
-        <p class="muted">Итерации одного документа (docx, pptx, xlsx, pdf) из папок окна одним списком: у каждой версии написано, что в неё добавили. Файлы не меняются и не удаляются. Копия байт в байт показана как дубль.</p>
-        <label class="ver-search">
-          <span class="dollar">$</span>
-          <span class="cmd">dvk artifacts</span>
-          <input id="ver-q" type="search" placeholder="КП, смета, ТЗ…" aria-label="Найти документ" autocomplete="off" spellcheck="false">
-          <span class="kbd" id="ver-count"></span>
-        </label>
+        <p class="muted">Итерации одного документа (docx, pptx, xlsx, pdf) из папок окна одним списком: у каждой версии написано, что в неё добавили. Ищите по имени в строке сверху. Файлы не меняются и не удаляются. Копия байт в байт показана как дубль.</p>
         <div class="ver-list" id="ver-list"></div>
       </div>
     </section>

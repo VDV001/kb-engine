@@ -1543,26 +1543,12 @@ body:not(.no-scan-run) .ac-run-bar::after { content: ""; position: absolute; ins
 .ac-found label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 
 /* Модуль «Артефакты» (#547): семейства документов лентой по времени. */
-.app.module-open .art-view:not([hidden]) { display: flex; }
-.art-view { flex-direction: column; min-height: 0; margin-top: 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
+.app.art-open .body { display: none; }
+.app.art-open .art-view:not([hidden]) { display: flex; }
+.art-view { flex-direction: column; min-height: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
 .art-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--z-rule); background: var(--z-bg); }
 body:not(.no-help-title) .art-bar .hp-title { background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .art-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 20px; }
-/* Свой класс, а не .search: правило module-open прячет строку поиска окна. */
-.ver-search {
-  display: flex; align-items: center; gap: 10px; height: 60px; flex-shrink: 0; padding: 0 18px; margin: 8px 0 16px;
-  background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius);
-  transition: border-color var(--z-dur) var(--z-ease);
-}
-.ver-search:focus-within { border-color: var(--z-accent); }
-.ver-search .dollar { font-size: 18px; font-weight: 700; }
-.ver-search .cmd { color: var(--z-faint); font-size: 16px; }
-.ver-search input {
-  flex: 1; min-width: 0; background: none; border: 0; outline: 0; color: var(--z-ink);
-  font: 500 17px var(--z-font); caret-color: var(--z-accent);
-}
-.ver-search input::placeholder { color: var(--z-faint); }
-.ver-search input::-webkit-search-cancel-button { display: none; }
 .ver-fam { border-top: 1px solid var(--z-line); padding: 10px 0; }
 .ver-fam h4 { margin: 0 0 6px; font-size: 13px; color: var(--z-ink); overflow-wrap: anywhere; }
 .ver-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 4px 10px; padding: 4px 0; font-size: 12px; }
