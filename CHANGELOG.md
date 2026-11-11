@@ -10,6 +10,8 @@ parse this file itself: `kbengine changelog --in CHANGELOG.md --out changelog.js
 
 ### Fixed
 
+- **`just desktop` снова собирает окно на чистой машине.** `desktop/go.mod` отстал от корневого модуля (`excelize`, `mscfb`, `efp`, версии подняли Dependabot-PR в корне), и сборка падала с «updates to go.mod needed; run go mod tidy». Версии выровнены по корню, новых версий не вводится. GitHub CI модуль `desktop/` не собирает, поэтому расхождение никто не видел.
+
 - **«Доступы»: занятый адрес объяснен словами окна.** При правке среды или добавлении дубля окно показывало «credential already exists: proektnoe-byuro-stage-planb», по-английски и с внутренним id. Теперь: «Такой доступ уже есть: продукт, среда и логин совпадают с другой карточкой. Измените продукт, среду или логин»; отдельный текст, когда под адресом в Связке лежит чужой пароль. `errors.Is(ErrCredentialExists)` сохранен.
 
 ### Added
