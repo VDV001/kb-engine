@@ -57,7 +57,11 @@ type chatRecord struct {
 	Notes []string `json:"notes,omitempty"`
 	// Portrait — пошел ли портрет в чат (#479); только в ответе.
 	Portrait *portraitNote `json:"portrait,omitempty"`
-	// Context — заполнение контекста модели после этого ответа; только в ответе.
+	// ContextUsed — токены запроса по счету провайдера в последнем ответе; в
+	// файле, чтобы кольцо контекста было и у открытого позже чата (0 — не знаем).
+	ContextUsed int `json:"contextUsed,omitempty"`
+	// Context — заполнение контекста модели; собирается из ContextUsed и
+	// размера окна из текущих настроек, в файл не пишется.
 	Context *contextNote `json:"context,omitempty"`
 	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
 	Compressed *chatCompressed `json:"compressed,omitempty"`
@@ -418,7 +422,14 @@ func (d *chatDesk) List() ([]chatSummary, error) {
 func (d *chatDesk) Get(id string) (chatRecord, error) {
 	rec, err := d.load(id)
 	rec.CanCompress = canCompress(rec)
+	rec.Context = d.contextOf(rec)
 	return rec, err
+}
+
+// contextOf is the fill of rec's context: последний счет провайдера против
+// размера окна модели из нынешних настроек; счета нет — nil.
+func (d *chatDesk) contextOf(rec chatRecord) *contextNote {
+	return nil
 }
 
 // Delete removes a chat.

@@ -8,6 +8,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 // longChat asks n questions in one chat and returns its id.
@@ -182,5 +183,39 @@ func TestChat_SaveDropsCanCompress(t *testing.T) {
 	raw, _ := os.ReadFile(filepath.Join(d.dir, id+".json"))
 	if strings.Contains(string(raw), "canCompress") {
 		t.Fatalf("флаг записан в файл чата: %s", raw)
+	}
+}
+
+// Кольцо контекста не должно пропадать: счет провайдера лежит в файле чата, а
+// размер окна берется из нынешних настроек, поэтому чат, открытый позже или
+// после смены окна, показывает то же заполнение.
+func TestChat_ContextSurvivesReopenAndFollowsWindow(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	m.usage = chat.Usage{In: 4161, Counted: true}
+	set := func(window int) {
+		t.Helper()
+		if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", ContextWindow: window}, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	set(2000)
+	c, err := d.Ask(askReq{Question: "вопрос"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Context == nil || c.Context.Used != 4161 || c.Context.Window != 2000 {
+		t.Fatalf("в ответе context = %+v", c.Context)
+	}
+	got, err := d.Get(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Context == nil || got.Context.Used != 4161 || got.Context.Window != 2000 {
+		t.Fatalf("открытый позже чат: context = %+v", got.Context)
+	}
+	set(200000)
+	got, _ = d.Get(c.ID)
+	if got.Context == nil || got.Context.Used != 4161 || got.Context.Window != 200000 {
+		t.Fatalf("после смены окна: context = %+v", got.Context)
 	}
 }
