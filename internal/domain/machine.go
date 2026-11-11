@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -76,6 +77,14 @@ type MachineDTO struct {
 // Machine is a validated machine card without a password.
 type Machine struct{ d MachineDTO }
 
+// Команда ssh копируется человеком в терминал, поэтому хост и пользователь не
+// могут стать опцией (-oProxyCommand=…) или двумя словами: первый знак не дефис,
+// пробелов и кавычек нет. Хост допускает скобки и двоеточия для IPv6.
+var (
+	sshHost = regexp.MustCompile(`^[A-Za-z0-9_.:\[\]][A-Za-z0-9_.:\[\]-]*$`)
+	sshUser = regexp.MustCompile(`^[A-Za-z0-9_.][A-Za-z0-9_.-]*$`)
+)
+
 // defaultSSHPort — порт, если не указан.
 const defaultSSHPort = 22
 
@@ -93,6 +102,12 @@ func NewMachine(d MachineDTO) (Machine, error) {
 		return Machine{}, fmt.Errorf("%w: нет хоста", ErrInvalidMachine)
 	case d.User == "":
 		return Machine{}, fmt.Errorf("%w: нет пользователя", ErrInvalidMachine)
+	}
+	if !sshHost.MatchString(d.Host) {
+		return Machine{}, fmt.Errorf("%w: хост %q — имя или адрес без пробелов, не с дефиса", ErrInvalidMachine, d.Host)
+	}
+	if !sshUser.MatchString(d.User) {
+		return Machine{}, fmt.Errorf("%w: пользователь %q — буквы, цифры, точка, дефис и подчеркивание, не с дефиса", ErrInvalidMachine, d.User)
 	}
 	if d.Port == 0 {
 		d.Port = defaultSSHPort
