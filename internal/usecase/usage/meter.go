@@ -44,13 +44,14 @@ type Meter struct {
 	rec     Recorder
 	now     func() time.Time
 	report  func(error) // сбой записи: ответ человеку важнее счета
+	chat    string      // чат окна; пусто — вызов вне чата
 }
 
 // MeterOption tunes a Meter.
 type MeterOption func(*Meter)
 
 // WithChat ties every recorded call to chat id (расход по чатам, #541).
-func WithChat(id string) MeterOption { return func(*Meter) {} }
+func WithChat(id string) MeterOption { return func(m *Meter) { m.chat = id } }
 
 // NewMeter wraps next; report gets record failures (nil — молча). Обертка
 // умеет поток (chat.Streamer), только если умеет next: чат по этому признаку
@@ -102,7 +103,7 @@ func (m *streamMeter) Stream(ctx context.Context, msgs []chat.ModelMessage, tool
 func (m *Meter) record(at time.Time, tools []chat.Tool, r chat.ModelReply, first, took time.Duration, err error) {
 	c, cerr := domain.NewModelCall(at, m.purpose(tools, r, err != nil), m.model, r.Usage.In, r.Usage.Out, r.Usage.Counted, first, took, err != nil)
 	if cerr == nil {
-		cerr = m.rec.Record(c)
+		cerr = m.rec.Record(c.WithChat(m.chat))
 	}
 	if cerr != nil && m.report != nil {
 		m.report(cerr)

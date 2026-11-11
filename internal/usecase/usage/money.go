@@ -99,6 +99,7 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 	m := Money{Month: start.Format("2006-01"), DaysPassed: d, DaysInMonth: start.AddDate(0, 1, -1).Day(), Days: make([]int64, d)}
 	byPurpose := map[domain.CallPurpose]*PurposeCost{}
 	byModel := map[string]*ModelCost{}
+	byChat := map[string]*ChatCost{}
 	for _, c := range calls {
 		at := c.At().In(loc)
 		if at.Before(start) || at.Year() != y || at.Month() != mo || at.Day() > d {
@@ -115,6 +116,14 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 			byModel[c.Model()] = mc
 		}
 		pc.Calls++
+		var cc *ChatCost
+		if c.Chat() != "" {
+			if cc = byChat[c.Chat()]; cc == nil {
+				cc = &ChatCost{Chat: c.Chat()}
+				byChat[c.Chat()] = cc
+			}
+			cc.Calls++
+		}
 		cost, priced, st := callCost(c, prices)
 		mc.add(st, priced)
 		switch st {
@@ -129,6 +138,9 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 		m.Days[at.Day()-1] += cost
 		pc.Cost += cost
 		mc.Cost += cost
+		if cc != nil {
+			cc.Cost += cost
+		}
 	}
 	m.Forecast = m.Spent * int64(m.DaysInMonth) / int64(m.DaysPassed)
 	for _, p := range byPurpose {
@@ -136,6 +148,12 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 	}
 	slices.SortFunc(m.Purposes, func(a, b PurposeCost) int {
 		return cmp.Or(cmp.Compare(b.Cost, a.Cost), cmp.Compare(b.Calls, a.Calls), cmp.Compare(a.Purpose, b.Purpose))
+	})
+	for _, x := range byChat {
+		m.Chats = append(m.Chats, *x)
+	}
+	slices.SortFunc(m.Chats, func(a, b ChatCost) int {
+		return cmp.Or(cmp.Compare(b.Cost, a.Cost), cmp.Compare(b.Calls, a.Calls), cmp.Compare(a.Chat, b.Chat))
 	})
 	for _, x := range byModel {
 		m.Models = append(m.Models, *x)
