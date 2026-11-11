@@ -44,8 +44,9 @@ const (
 
 var (
 	// \b в Go не знает кириллицы, поэтому имя режется на слова по разделителям.
-	isoDate   = regexp.MustCompile(`(\d{4})[-_.](\d{1,2})[-_.](\d{1,2})`)
-	dmyDate   = regexp.MustCompile(`(\d{1,2})[-_.](\d{1,2})[-_.](\d{4})`)
+	// Год 19xx или 20xx: «1000_12_5» и «2_3_1500» — номера, а не даты.
+	isoDate   = regexp.MustCompile(`((?:19|20)\d{2})[-_.](\d{1,2})[-_.](\d{1,2})`)
+	dmyDate   = regexp.MustCompile(`(\d{1,2})[-_.](\d{1,2})[-_.]((?:19|20)\d{2})`)
 	parenNum  = regexp.MustCompile(`\(\d+\)`)
 	separator = regexp.MustCompile(`[\s_.\-]+`)
 	versionNo = regexp.MustCompile(`^v\d+$`)
@@ -53,11 +54,12 @@ var (
 )
 
 // stem — имя без расширения, дат, номеров версий и слов «копия/финал»:
-// ключ семейства.
+// ключ семейства. Имя целиком из такого шума («2026-11-10.docx», «v2.pptx»)
+// остается собой: пустой ключ склеил бы чужие документы в одно семейство.
 func stem(path string) string {
-	name := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
-	name = isoDate.ReplaceAllString(name, " ")
-	name = dmyDate.ReplaceAllString(name, " ")
+	whole := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+	name := stripDates(whole, isoDate, func(m []string) (time.Time, bool) { return parseDate(m[1], m[2], m[3]) })
+	name = stripDates(name, dmyDate, func(m []string) (time.Time, bool) { return parseDate(m[3], m[2], m[1]) })
 	name = parenNum.ReplaceAllString(name, " ")
 	var keep []string
 	for w := range strings.SplitSeq(separator.ReplaceAllString(name, " "), " ") {
@@ -65,17 +67,35 @@ func stem(path string) string {
 			keep = append(keep, w)
 		}
 	}
+	if len(keep) == 0 {
+		return whole
+	}
 	return strings.Join(keep, " ")
+}
+
+// stripDates blanks the matches of re that are real calendar dates: 31.02 —
+// не дата и в ключе остается.
+func stripDates(name string, re *regexp.Regexp, parse func(m []string) (time.Time, bool)) string {
+	return re.ReplaceAllStringFunc(name, func(match string) string {
+		if _, ok := parse(re.FindStringSubmatch(match)); ok {
+			return " "
+		}
+		return match
+	})
 }
 
 // when — дата версии: из имени, если она там есть, иначе время изменения.
 func when(f File) time.Time {
 	base := filepath.Base(f.Path)
 	if m := isoDate.FindStringSubmatch(base); m != nil {
-		return date(m[1], m[2], m[3], f.Mod)
+		if t, ok := parseDate(m[1], m[2], m[3]); ok {
+			return t
+		}
 	}
 	if m := dmyDate.FindStringSubmatch(base); m != nil {
-		return date(m[3], m[2], m[1], f.Mod)
+		if t, ok := parseDate(m[3], m[2], m[1]); ok {
+			return t
+		}
 	}
 	return f.Mod
 }
@@ -83,15 +103,13 @@ func when(f File) time.Time {
 // When — дата версии: из имени, иначе время изменения. Её же показывает окно.
 func When(f File) time.Time { return when(f) }
 
-func date(y, mo, d string, fallback time.Time) time.Time {
+// parseDate reports whether y-mo-d is a calendar date (31.02 — нет).
+func parseDate(y, mo, d string) (time.Time, bool) {
 	yi, _ := strconv.Atoi(y)
 	mi, _ := strconv.Atoi(mo)
 	di, _ := strconv.Atoi(d)
 	t := time.Date(yi, time.Month(mi), di, 0, 0, 0, 0, time.UTC)
-	if t.Year() != yi || int(t.Month()) != mi || t.Day() != di {
-		return fallback // 31.02 и подобное — не дата
-	}
-	return t
+	return t, t.Year() == yi && int(t.Month()) == mi && t.Day() == di
 }
 
 // Key — ключ семейства: файлы с одним ключом — итерации одного документа.
@@ -186,13 +204,20 @@ func lines(text string) []string {
 // Потолок: «поменяли местами два слайда». Путь: LCS по строкам.
 func lineDiff(oldText, newText string) (added, removed []string) {
 	o, n := lines(oldText), lines(newText)
+	inOld, inNew := make(map[string]bool, len(o)), make(map[string]bool, len(n))
+	for _, l := range o {
+		inOld[l] = true
+	}
 	for _, l := range n {
-		if !slices.Contains(o, l) {
+		inNew[l] = true
+	}
+	for _, l := range n {
+		if !inOld[l] {
 			added = append(added, l)
 		}
 	}
 	for _, l := range o {
-		if !slices.Contains(n, l) {
+		if !inNew[l] {
 			removed = append(removed, l)
 		}
 	}

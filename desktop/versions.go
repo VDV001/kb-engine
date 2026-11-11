@@ -99,10 +99,11 @@ func (d *versionsDesk) collect(ctx context.Context, src *localfiles.Source, fres
 func view(f versions.Family) familyView {
 	v := familyView{Name: f.Name, Versions: make([]versionView, 0, len(f.Versions))}
 	for _, x := range f.Versions {
+		when := versions.When(x.File) // та же дата, по которой версии выстроены
 		v.Versions = append(v.Versions, versionView{
-			Path: x.Path, Date: x.Mod.Format("02.01.2006"), Size: x.Size, Note: x.Note, Dups: append([]string{}, x.Dups...),
+			Path: x.Path, Date: when.Format("02.01.2006"), Size: x.Size, Note: x.Note, Dups: append([]string{}, x.Dups...),
 		})
-		v.latest = x.Mod
+		v.latest = when
 	}
 	return v
 }

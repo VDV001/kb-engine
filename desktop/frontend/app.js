@@ -1025,7 +1025,7 @@ async function openSettings(view = "sources") {
   }
   if (view === "versions") {
     $("#ver-q").focus();
-    await renderVersions(true);
+    await renderVersions(false); // свежий обход — только когда кэш минутный устарел: он читает и хеширует документы
     return;
   }
   if (view === "conn") {

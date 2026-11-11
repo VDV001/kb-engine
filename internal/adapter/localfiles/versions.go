@@ -91,7 +91,11 @@ func (s *Source) fill(f *versions.File) {
 			f.Text, _ = s.readExtracted(i, rel, f.Path)
 		}
 	default:
-		f.Text, _ = officeText(s.dirs[i], rel)
+		// Текст, прочитанный с ошибкой, не берется: половина слайда в сравнении
+		// выглядела бы как «убрано N строк».
+		if text, err := officeText(s.dirs[i], rel); err == nil {
+			f.Text = text
+		}
 	}
 }
 
@@ -194,8 +198,14 @@ func drawingText(r io.Reader, b *strings.Builder) error {
 func drawingToken(tok xml.Token, inText *bool, b *strings.Builder) {
 	switch t := tok.(type) {
 	case xml.StartElement:
-		if drawingNS[t.Name.Space] && t.Name.Local == "t" {
+		if !drawingNS[t.Name.Space] {
+			return
+		}
+		switch t.Name.Local {
+		case "t":
 			*inText = true
+		case "br":
+			b.WriteByte('\n')
 		}
 	case xml.EndElement:
 		if !drawingNS[t.Name.Space] {
