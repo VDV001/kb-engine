@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"slices"
@@ -201,5 +202,30 @@ func TestMachineDesk_delete(t *testing.T) {
 	}
 	if len(sec) != 0 {
 		t.Fatalf("пароль остался в Связке: %v", sec)
+	}
+}
+
+// Машина без проектов уходит в окно как "projects": [], а не null: окно считает
+// m.projects.length, и null давал «Машина не сохранена: null is not an object».
+func TestMachineDesk_noProjectsIsAnEmptyListNotNull(t *testing.T) {
+	d, _, _ := newMachineDesk(t)
+	if err := d.Open(); err != nil {
+		t.Fatal(err)
+	}
+	in := buildIn()
+	in.Projects = nil
+	if err := d.AddMachine(in, machinePW); err != nil {
+		t.Fatal(err)
+	}
+	list, err := d.Machines("")
+	if err != nil || len(list) != 1 {
+		t.Fatalf("список: %v %v", list, err)
+	}
+	raw, err := json.Marshal(list[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"projects":[]`) || strings.Contains(string(raw), `"projects":null`) {
+		t.Errorf("projects в JSON: %s", raw)
 	}
 }
