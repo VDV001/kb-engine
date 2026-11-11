@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -49,15 +50,18 @@ func versionable(name string) bool {
 // Хеш и текст считаются только у файлов, у которых в обходе есть однофамилец
 // (versions.Key): одинокий документ не читается, обход по Загрузкам не
 // превращается в хеширование всего диска. Файл, который не читается, остается
-// без текста, но не пропадает. Файлы пользователя не меняются.
+// без текста, но не пропадает; больше предела чтения — с пометкой TooBig. Файлы пользователя не меняются.
 //
 // ponytail: хеш и текст считаются заново при каждом вызове. Потолок: сотни
 // документов по 30 МБ в семействах. Путь: кэш по размеру и времени изменения,
 // как у extractcache.
 func (s *Source) Versions(ctx context.Context) ([]versions.File, error) {
 	var files []versions.File
-	err := s.walkBy(ctx, versionable, func(shown string, info os.FileInfo, _ int) error {
-		files = append(files, versions.File{Path: shown, Size: info.Size(), Mod: info.ModTime()})
+	// Большие файлы обход не отбрасывает: они в списке с пометкой TooBig, иначе
+	// версия с большим файлом рядом с малым выглядела бы одиноким документом.
+	unlimited := func(string) int64 { return math.MaxInt64 }
+	err := s.walkBy(ctx, versionable, unlimited, func(shown string, info os.FileInfo, _ int) error {
+		files = append(files, versions.File{Path: shown, Size: info.Size(), Mod: info.ModTime(), TooBig: info.Size() > maxBytes(info.Name())})
 		return nil
 	})
 	if err != nil {
@@ -71,7 +75,7 @@ func (s *Source) Versions(ctx context.Context) ([]versions.File, error) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		if family[versions.Key(files[i].Path)] > 1 {
+		if family[versions.Key(files[i].Path)] > 1 && !files[i].TooBig {
 			s.fill(&files[i])
 		}
 	}

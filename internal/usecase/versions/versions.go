@@ -176,6 +176,9 @@ func family(fs []File) Family {
 
 // change описывает версию относительно предыдущей версии того же формата.
 func change(before []Version, v Version) Change {
+	if v.TooBig {
+		return Change{Kind: KindTooBig}
+	}
 	var prev *Version
 	for i, b := range slices.Backward(before) {
 		if ext(b.Path) == ext(v.Path) {

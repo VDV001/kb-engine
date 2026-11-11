@@ -141,6 +141,8 @@ func noteText(c versions.Change) string {
 		return "новый формат: " + c.Format
 	case versions.KindNoText:
 		return "текст недоступен, сравнить нельзя"
+	case versions.KindTooBig:
+		return "слишком большой, не читался"
 	case versions.KindLayoutOnly:
 		return "текст не менялся, файл отличается (правка оформления или вложений)"
 	}

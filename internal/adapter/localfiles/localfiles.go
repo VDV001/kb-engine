@@ -188,12 +188,13 @@ func (s *Source) Walk(ctx context.Context, fn func(domain.FileDoc) error) error 
 // with the path as shown (в написании корня, как его задал человек) and, for an
 // image, the number of images in its folder (иначе ноль).
 func (s *Source) walk(ctx context.Context, fn func(shown string, info os.FileInfo, imgs int) error) error {
-	return s.walkBy(ctx, s.indexable, fn)
+	return s.walkBy(ctx, s.indexable, maxBytes, fn)
 }
 
-// walkBy is walk with the name rule given: обход версий берет документы,
-// которые поиск по тексту не индексирует (pptx, xlsx).
-func (s *Source) walkBy(ctx context.Context, accept func(name string) bool, fn func(shown string, info os.FileInfo, imgs int) error) error {
+// walkBy is walk with the name rule and the size limit given: обход версий
+// берет документы, которые поиск по тексту не индексирует (pptx, xlsx), и сам
+// решает, что делать с большими.
+func (s *Source) walkBy(ctx context.Context, accept func(name string) bool, limit func(name string) int64, fn func(shown string, info os.FileInfo, imgs int) error) error {
 	for i, root := range s.resolved {
 		imgs := map[string]int{}
 		err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -209,7 +210,7 @@ func (s *Source) walkBy(ctx context.Context, accept func(name string) bool, fn f
 				}
 				return nil
 			}
-			info, ok := s.fileInfo(d, accept)
+			info, ok := s.fileInfo(d, accept, limit)
 			if !ok {
 				return nil
 			}
@@ -241,12 +242,12 @@ func (s *Source) imagesIn(dir, name string, imgs map[string]int) int {
 
 // fileInfo returns the info of a walked entry the rules let through by type,
 // name and size.
-func (s *Source) fileInfo(d fs.DirEntry, accept func(name string) bool) (os.FileInfo, bool) {
+func (s *Source) fileInfo(d fs.DirEntry, accept func(name string) bool, limit func(name string) int64) (os.FileInfo, bool) {
 	if !d.Type().IsRegular() || !accept(d.Name()) {
 		return nil, false
 	}
 	info, err := d.Info()
-	if err != nil || info.Size() > maxBytes(d.Name()) {
+	if err != nil || info.Size() > limit(d.Name()) {
 		return nil, false
 	}
 	return info, true
