@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
+	"github.com/daniil/kb-engine/internal/usecase/versions"
 )
 
 func docxFile(t *testing.T, path string, paras ...string) {
@@ -113,5 +114,28 @@ func TestVersions_ShownDateFollowsTheNameNotTheCopyTime(t *testing.T) {
 	vs := got[0].Versions
 	if vs[0].Date != "05.11.2026" || vs[1].Date != "10.11.2026" {
 		t.Errorf("даты: %q, %q", vs[0].Date, vs[1].Date)
+	}
+}
+
+func TestNoteText(t *testing.T) {
+	long := strings.Repeat("я", 70)
+	for _, c := range []struct {
+		name string
+		in   versions.Change
+		want string
+	}{
+		{"первая", versions.Change{Kind: versions.KindFirst}, "первая версия"},
+		{"формат", versions.Change{Kind: versions.KindNewFormat, Format: "pdf"}, "новый формат: pdf"},
+		{"без текста", versions.Change{Kind: versions.KindNoText}, "текст недоступен, сравнить нельзя"},
+		{"оформление", versions.Change{Kind: versions.KindLayoutOnly}, "текст не менялся, файл отличается (правка оформления или вложений)"},
+		{"большой", versions.Change{Kind: versions.KindTooBig}, "слишком большой, не читался"},
+		{"дифф", versions.Change{Kind: versions.KindDiff, Added: []string{"a", "b"}, Removed: []string{"c"}}, "добавлено строк: 2 — «a», «b»; убрано строк: 1 — «c»"},
+		{"замена", versions.Change{Kind: versions.KindRewrite, Added: make([]string, 900), Removed: make([]string, 298), Total: 1000},
+			"почти другой документ: новых строк 900, убранных 298, всего в этой версии 1000"},
+		{"много и длинно", versions.Change{Kind: versions.KindDiff, Added: []string{long, "b", "c", "d", "e"}}, "добавлено строк: 5 — «" + strings.Repeat("я", 60) + "…», «b», «c», …и ещё 2"},
+	} {
+		if got := noteText(c.in); got != c.want {
+			t.Errorf("%s: %q, ждали %q", c.name, got, c.want)
+		}
 	}
 }
