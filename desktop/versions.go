@@ -143,15 +143,17 @@ func noteText(c versions.Change) string {
 		return "текст недоступен, сравнить нельзя"
 	case versions.KindTooBig:
 		return "слишком большой, не читался"
+	case versions.KindRewrite:
+		return fmt.Sprintf("почти другой документ: новых строк %d, убранных %d, всего в этой версии %d", len(c.Added), len(c.Removed), c.Total)
 	case versions.KindLayoutOnly:
 		return "текст не менялся, файл отличается (правка оформления или вложений)"
 	}
 	var parts []string
 	if len(c.Added) > 0 {
-		parts = append(parts, fmt.Sprintf("добавлено %d: %s", len(c.Added), samples(c.Added)))
+		parts = append(parts, fmt.Sprintf("добавлено строк: %d — %s", len(c.Added), samples(c.Added)))
 	}
 	if len(c.Removed) > 0 {
-		parts = append(parts, fmt.Sprintf("убрано %d: %s", len(c.Removed), samples(c.Removed)))
+		parts = append(parts, fmt.Sprintf("убрано строк: %d — %s", len(c.Removed), samples(c.Removed)))
 	}
 	return strings.Join(parts, "; ")
 }

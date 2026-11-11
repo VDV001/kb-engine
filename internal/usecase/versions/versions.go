@@ -176,6 +176,14 @@ func family(fs []File) Family {
 	return Family{Name: name, Versions: vs}
 }
 
+// Замена, а не правка: от длинного текста осталось меньше rewriteShare.
+// Короткие тексты замену не получают — у записки в три строки правка и есть
+// почти весь текст.
+const (
+	rewriteShare    = 0.3
+	minRewriteLines = 10
+)
+
 // change описывает версию относительно предыдущей версии того же формата.
 func change(before []Version, v Version) Change {
 	if v.TooBig {
@@ -196,9 +204,12 @@ func change(before []Version, v Version) Change {
 	case prev.Text == "" || v.Text == "":
 		return Change{Kind: KindNoText}
 	}
-	added, removed := lineDiff(prev.Text, v.Text)
+	added, removed, oldN, newN := lineDiff(prev.Text, v.Text)
 	if len(added) == 0 && len(removed) == 0 {
 		return Change{Kind: KindLayoutOnly}
+	}
+	if kept := newN - len(added); newN >= minRewriteLines && float64(kept) < rewriteShare*float64(max(oldN, newN)) {
+		return Change{Kind: KindRewrite, Added: added, Removed: removed, Total: newN}
 	}
 	return Change{Kind: KindDiff, Added: added, Removed: removed}
 }
@@ -217,7 +228,7 @@ func lines(text string) []string {
 //
 // ponytail: сравнение по множеству строк — перестановка абзацев не видна.
 // Потолок: «поменяли местами два слайда». Путь: LCS по строкам.
-func lineDiff(oldText, newText string) (added, removed []string) {
+func lineDiff(oldText, newText string) (added, removed []string, oldN, newN int) {
 	o, n := lines(oldText), lines(newText)
 	inOld, inNew := make(map[string]bool, len(o)), make(map[string]bool, len(n))
 	for _, l := range o {
@@ -236,5 +247,5 @@ func lineDiff(oldText, newText string) (added, removed []string) {
 			removed = append(removed, l)
 		}
 	}
-	return added, removed
+	return added, removed, len(o), len(n)
 }
