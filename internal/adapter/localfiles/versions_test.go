@@ -165,3 +165,45 @@ func mustRead(t *testing.T, p string) string {
 	}
 	return string(b)
 }
+
+// writePptxRaw кладет pptx, у которого слайды — готовая разметка (в том числе битая).
+func writePptxRaw(t *testing.T, root, rel string, slides ...string) string {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for i, x := range slides {
+		w, err := zw.Create(fmt.Sprintf("ppt/slides/slide%d.xml", i+1))
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprint(w, x)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return write(t, root, rel, buf.String())
+}
+
+const sldHead = `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree>`
+
+func TestVersions_TruncatedPptxHasNoPartialText(t *testing.T) {
+	root := t.TempDir()
+	a := writePptxRaw(t, root, "p/Дек_2026_11_05.pptx", sldHead+`<a:p><a:r><a:t>Цена 100</a:t></a:r></a:p>`+`</p:spTree></p:cSld></p:sld>`)
+	b := writePptxRaw(t, root, "p/Дек_2026_11_10.pptx", sldHead+`<a:p><a:r><a:t>Цена 100</a:t></a:r></a:p><a:p><a:r><a:t>Гара`)
+	got := collect(t, newSource(t, root))
+	if got[b].Text != "" {
+		t.Errorf("оборванный слайд дал часть текста: %q", got[b].Text)
+	}
+	if got[a].Text == "" {
+		t.Error("целый файл остался без текста")
+	}
+}
+
+func TestVersions_PptxLineBreakSeparatesWords(t *testing.T) {
+	root := t.TempDir()
+	a := writePptxRaw(t, root, "p/Дек_2026_11_05.pptx", sldHead+`<a:p><a:r><a:t>до</a:t></a:r><a:br/><a:r><a:t>после</a:t></a:r></a:p></p:spTree></p:cSld></p:sld>`)
+	writePptxRaw(t, root, "p/Дек_2026_11_10.pptx", sldHead+`</p:spTree></p:cSld></p:sld>`)
+	if tx := collect(t, newSource(t, root))[a].Text; !strings.Contains(tx, "до\nпосле") {
+		t.Errorf("a:br склеил слова: %q", tx)
+	}
+}

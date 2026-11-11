@@ -1,6 +1,7 @@
 package versions_test
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -119,5 +120,53 @@ func TestGroup_MissingText(t *testing.T) {
 	})
 	if n := got[0].Versions[1].Note; !strings.Contains(n, "текст недоступен") {
 		t.Errorf("нет текста: %q", n)
+	}
+}
+
+func TestGroup_NameMadeOfNoiseStaysApart(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/2026-11-10.docx", "x", "один", day(11, 1)),
+		file("/b/v2.docx", "y", "два", day(11, 2)),
+		file("/c/Копия.docx", "z", "три", day(11, 3)),
+	})
+	if len(got) != 3 {
+		t.Fatalf("документы без имени склеились в %d семейств: %+v", len(got), got)
+	}
+}
+
+func TestGroup_NumbersAreNotDates(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Смета_1000_12_5.xlsx", "x", "один", day(11, 1)),
+		file("/a/Смета_2000_3_4.xlsx", "y", "два", day(11, 2)),
+		file("/a/Смета_2026_13_40.xlsx", "z", "три", day(11, 3)), // месяца 13 нет
+	})
+	if len(got) != 3 {
+		t.Fatalf("номера приняты за даты: %d семейств, ждали 3: %+v", len(got), got)
+	}
+}
+
+func TestGroup_BigTextsDiffFast(t *testing.T) {
+	var a, b strings.Builder
+	for i := range 30000 {
+		fmt.Fprintf(&a, "строка a%d\n", i)
+		fmt.Fprintf(&b, "строка b%d\n", i)
+	}
+	start := time.Now()
+	got := versions.Group([]versions.File{
+		file("/a/Таблица_2026_11_05.xlsx", "x", a.String(), day(11, 5)),
+		file("/a/Таблица_2026_11_10.xlsx", "y", b.String(), day(11, 10)),
+	})
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("сравнение двух текстов по 30 тыс. строк заняло %v", d)
+	}
+	if n := got[0].Versions[1].Note; !strings.Contains(n, "добавлено 30000") {
+		t.Errorf("подпись: %q", n)
+	}
+}
+
+func TestWhen_PrefersNameDateOverMtime(t *testing.T) {
+	f := file("/a/КП_2026_11_05.docx", "x", "t", day(12, 31))
+	if got := versions.When(f); got.Day() != 5 || got.Month() != time.November {
+		t.Errorf("дата из имени проиграла времени изменения: %v", got)
 	}
 }

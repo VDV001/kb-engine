@@ -80,6 +80,9 @@ func when(f File) time.Time {
 	return f.Mod
 }
 
+// When — дата версии: из имени, иначе время изменения. Её же показывает окно.
+func When(f File) time.Time { return when(f) }
+
 func date(y, mo, d string, fallback time.Time) time.Time {
 	yi, _ := strconv.Atoi(y)
 	mi, _ := strconv.Atoi(mo)

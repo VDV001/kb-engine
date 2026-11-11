@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 )
@@ -93,5 +94,24 @@ func TestVersions_NoSourceIsEmpty(t *testing.T) {
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil || len(got) != 0 {
 		t.Errorf("без источника: %+v %v", got, err)
+	}
+}
+
+func TestVersions_ShownDateFollowsTheNameNotTheCopyTime(t *testing.T) {
+	root := t.TempDir()
+	a, b := filepath.Join(root, "КП_2026_11_05.docx"), filepath.Join(root, "КП_2026_11_10.docx")
+	docxFile(t, a, "Цена")
+	docxFile(t, b, "Цена", "Гарантия")
+	// копия старой версии свежее новой: по времени изменения порядок был бы обратным
+	now := time.Now()
+	_ = os.Chtimes(a, now, now)
+	_ = os.Chtimes(b, now.Add(-72*time.Hour), now.Add(-72*time.Hour))
+	got, err := versionsDeskOver(t, root).Families(context.Background(), "", true)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	vs := got[0].Versions
+	if vs[0].Date != "05.11.2026" || vs[1].Date != "10.11.2026" {
+		t.Errorf("даты: %q, %q", vs[0].Date, vs[1].Date)
 	}
 }
