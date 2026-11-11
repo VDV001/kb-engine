@@ -80,10 +80,10 @@ func TestService_Find(t *testing.T) {
 		q    string
 		want []string
 	}{
-		{"", []string{"edge-02", "db-03", "build-01"}},
+		{"", []string{"db-03", "edge-02", "build-01"}},
 		{"проект-б", []string{"build-01"}},
 		{"проект-а", []string{"db-03", "build-01"}},
-		{"прод", []string{"edge-02", "db-03"}},
+		{"прод", []string{"db-03", "edge-02"}},
 		{"нет-такого", nil},
 	} {
 		got, err := s.Find(c.q)

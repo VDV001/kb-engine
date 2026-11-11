@@ -20,6 +20,12 @@ import (
 // ErrInvalidMachine — карточка машины нарушает инвариант.
 var ErrInvalidMachine = errors.New("invalid machine")
 
+// ErrMachineExists — машина с таким id уже есть.
+var ErrMachineExists = errors.New("machine already exists")
+
+// ErrMachineNotFound — машины с таким id нет.
+var ErrMachineNotFound = errors.New("machine not found")
+
 // ErrMachineChain — цепочка через бастион не собирается: нет машины или петля.
 var ErrMachineChain = errors.New("machine chain")
 
