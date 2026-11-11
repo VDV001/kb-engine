@@ -3,6 +3,7 @@ package domain_test
 import (
 	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -230,4 +231,21 @@ func ids(ms []domain.Machine) []string {
 		out[i] = m.ID()
 	}
 	return out
+}
+
+// Аргументы ssh без команды: для запуска программой, где кавычки не нужны
+// (оболочки нет), путь ключа идет как есть.
+func TestSSHArgs(t *testing.T) {
+	target, _, _, byID := bastions(t)
+	chain, err := domain.ResolveChain(target, byID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"-J", "ops@203.0.113.7:2222,ops@10.0.1.4:22", "-i", "~/.ssh/build_ed25519", "-p", "22", "deploy@10.0.0.5"}
+	if got := domain.SSHArgs(chain); !slices.Equal(got, want) {
+		t.Errorf("аргументы:\n got %q\nwant %q", got, want)
+	}
+	if got := domain.SSHArgs(nil); got != nil {
+		t.Errorf("пустая цепочка дала %q", got)
+	}
 }
