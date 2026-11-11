@@ -49,6 +49,9 @@ func writeXlsx(t *testing.T, root, rel string, cells map[string]any) string {
 		}
 	}
 	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.SaveAs(p); err != nil {
 		t.Fatal(err)
 	}
@@ -223,5 +226,22 @@ func TestVersions_FileOverTheReadLimitIsListedNotRead(t *testing.T) {
 	}
 	if got[small].TooBig || got[small].Text == "" {
 		t.Errorf("обычный файл тронут: %+v", got[small])
+	}
+}
+
+// Характеризация: лист больше предела текста обрезается, начало остается.
+// Проходил и до перехода на потоковое чтение: сам выигрыш в памяти тестом
+// не измерен.
+func TestVersions_HugeXlsxSheetIsCapped(t *testing.T) {
+	root := t.TempDir()
+	cells := map[string]any{}
+	for i := 1; i <= 20000; i++ {
+		cells[fmt.Sprintf("A%d", i)] = fmt.Sprintf("строка %d %s", i, strings.Repeat("я", 120))
+	}
+	a := writeXlsx(t, root, "p/Большая_2026_11_05.xlsx", cells)
+	writeXlsx(t, root, "p/Большая_2026_11_10.xlsx", map[string]any{"A1": "x"})
+	tx := collect(t, newSource(t, root))[a].Text
+	if len(tx) == 0 || len(tx) > localfiles.MaxFileBytes || !strings.Contains(tx, "строка 1 ") {
+		t.Errorf("длина %d, предел %d", len(tx), localfiles.MaxFileBytes)
 	}
 }

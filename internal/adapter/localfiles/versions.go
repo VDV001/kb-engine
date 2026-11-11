@@ -242,15 +242,23 @@ func xlsxText(r io.Reader) (string, error) {
 			break
 		}
 		fmt.Fprintf(&b, "Лист: %s\n", name)
-		rows, err := wb.GetRows(name)
+		// Rows читает лист потоком: GetRows собрал бы весь лист в память до
+		// того, как предел текста вообще проверится.
+		rows, err := wb.Rows(name)
 		if err != nil {
-			return capText(b.String()), fmt.Errorf("xlsx: %w", err)
+			return "", fmt.Errorf("xlsx: %w", err)
 		}
-		for _, row := range rows {
-			if line := strings.TrimRight(strings.Join(row, " | "), " |"); line != "" {
+		for rows.Next() && b.Len() < MaxFileBytes {
+			cols, err := rows.Columns()
+			if err != nil {
+				_ = rows.Close() // только чтение
+				return "", fmt.Errorf("xlsx: %w", err)
+			}
+			if line := strings.TrimRight(strings.Join(cols, " | "), " |"); line != "" {
 				b.WriteString(line + "\n")
 			}
 		}
+		_ = rows.Close() // только чтение
 	}
 	return capText(b.String()), nil
 }
