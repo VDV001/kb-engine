@@ -159,8 +159,8 @@ func TestGroup_BigTextsDiffFast(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("сравнение двух текстов по 30 тыс. строк заняло %v", d)
 	}
-	if c := got[0].Versions[1].Change; len(c.Added) != 30000 || len(c.Removed) != 30000 {
-		t.Errorf("добавлено %d, убрано %d, ждали по 30000", len(c.Added), len(c.Removed))
+	if c := got[0].Versions[1].Change; len(c.Added) != 30000 || len(c.Removed) != 30000 || c.Total != 30000 {
+		t.Errorf("добавлено %d, убрано %d, всего %d, ждали по 30000", len(c.Added), len(c.Removed), c.Total)
 	}
 }
 
@@ -183,5 +183,46 @@ func TestGroup_TooBigFileIsNamedNotSkipped(t *testing.T) {
 	}
 	if c := got[0].Versions[1].Change; c.Kind != versions.KindNoText {
 		t.Errorf("сравнивать с непрочитанным нельзя: %+v", c)
+	}
+}
+
+func numbered(prefix string, n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "%s%d\n", prefix, i)
+	}
+	return b.String()
+}
+
+func TestGroup_AlmostNothingInCommonIsARewrite(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Отчет_2026_11_05.docx", "x", numbered("a", 100), day(11, 5)),
+		file("/a/Отчет_2026_11_10.docx", "y", numbered("b", 100), day(11, 10)),
+	})
+	c := got[0].Versions[1].Change
+	if c.Kind != versions.KindRewrite || c.Total != 100 || len(c.Added) != 100 || len(c.Removed) != 100 {
+		t.Errorf("замена документа не названа: kind %v, total %d, +%d -%d", c.Kind, c.Total, len(c.Added), len(c.Removed))
+	}
+}
+
+func TestGroup_SmallEditOfABigDocumentIsADiff(t *testing.T) {
+	old := numbered("a", 100)
+	edited := strings.Replace(old, "a7\n", "новая семерка\n", 1)
+	got := versions.Group([]versions.File{
+		file("/a/Отчет_2026_11_05.docx", "x", old, day(11, 5)),
+		file("/a/Отчет_2026_11_10.docx", "y", edited, day(11, 10)),
+	})
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff || len(c.Added) != 1 || len(c.Removed) != 1 {
+		t.Errorf("мелкая правка: %+v", c)
+	}
+}
+
+func TestGroup_ShortDocumentsAreNeverARewrite(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Записка_2026_11_05.docx", "x", "Привет\nМир", day(11, 5)),
+		file("/a/Записка_2026_11_10.docx", "y", "Пока\nСвет", day(11, 10)),
+	})
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff {
+		t.Errorf("короткий документ принят за замену: %+v", c)
 	}
 }
