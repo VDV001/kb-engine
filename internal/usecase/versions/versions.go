@@ -204,7 +204,12 @@ func change(before []Version, v Version) Change {
 	case prev.Text == "" || v.Text == "":
 		return Change{Kind: KindNoText}
 	}
-	added, removed, oldN, newN := lineDiff(prev.Text, v.Text)
+	return textChange(prev.Text, v.Text)
+}
+
+// textChange сравнивает тексты двух версий одного формата.
+func textChange(oldText, newText string) Change {
+	added, removed, oldN, newN := lineDiff(oldText, newText)
 	if len(added) == 0 && len(removed) == 0 {
 		return Change{Kind: KindLayoutOnly}
 	}
