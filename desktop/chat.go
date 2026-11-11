@@ -162,12 +162,13 @@ func newChatDesk(s *folderSettings, dir string) *chatDesk {
 }
 
 // metered counts the calls of m for the window statistics: назначение, токены,
-// время; без журнала — m как есть. Сбой записи не мешает ответу.
+// время и чат (chatID, пусто — вызов вне чата); без журнала — m как есть. Сбой
+// записи не мешает ответу.
 func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose, chatID string) chat.Model {
 	if d.calls == nil {
 		return m
 	}
-	return usage.NewMeter(m, c.Model, p, d.calls, d.now, func(err error) { log.Printf("статистика: %v", err) })
+	return usage.NewMeter(m, c.Model, p, d.calls, d.now, func(err error) { log.Printf("статистика: %v", err) }, usage.WithChat(chatID))
 }
 
 // chatMode is who finds the documents: явный выбор или по модели.

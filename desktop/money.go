@@ -135,6 +135,7 @@ func (d *chatDesk) StatsMoney() (moneyView, error) {
 	for _, p := range m.Purposes {
 		v.Purposes = append(v.Purposes, moneyGroup{string(p.Purpose), purposeTitles[p.Purpose], dollars(p.Cost), p.Calls})
 	}
+	v.Chats = d.chatsView(m)
 	for _, x := range m.Models {
 		mm := moneyModel{ID: x.Model, Cost: dollars(x.Cost), Calls: x.Calls, Priced: x.Priced, Priceable: x.Counted > 0}
 		if p, ok := book.Price(x.Model); ok {
@@ -182,4 +183,29 @@ func (d *chatDesk) SetSpendLimit(usd string) error {
 		return err
 	}
 	return d.settings.updateConfig(func(c *desktopconfig.Config) { c.Spend.Limit = usd })
+}
+
+// deletedChatTitle names a chat that is gone but still has spend in the month.
+const deletedChatTitle = "Удаленный чат"
+
+// chatTitle is the title of chat id; чата нет (удален) — общее название.
+func (d *chatDesk) chatTitle(id string) string {
+	if rec, err := d.load(id); err == nil && rec.Title != "" {
+		return rec.Title
+	}
+	return deletedChatTitle
+}
+
+// chatsView is the chats of the month's spend, dearest first, with the share
+// of the whole spend.
+func (d *chatDesk) chatsView(m usage.Money) []moneyChat {
+	out := make([]moneyChat, 0, len(m.Chats))
+	for _, x := range m.Chats {
+		c := moneyChat{ID: x.Chat, Title: d.chatTitle(x.Chat), Cost: dollars(x.Cost), Calls: x.Calls}
+		if m.Spent > 0 {
+			c.Share = float64(x.Cost) / float64(m.Spent)
+		}
+		out = append(out, c)
+	}
+	return out
 }
