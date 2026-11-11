@@ -263,6 +263,9 @@ func (a *App) PickPortraitDir() (string, error) {
 // Chats lists the chats, newest first.
 func (a *App) Chats() ([]chatSummary, error) { return a.chat.List() }
 
+// RenameChat gives chat id the title the person typed.
+func (a *App) RenameChat(id, title string) error { return a.chat.RenameChat(id, title) }
+
 // ChatDraft returns the unsent text of chat id ("" — новый чат) saved before.
 func (a *App) ChatDraft(id string) (string, error) { return a.chat.Draft(id) }
 

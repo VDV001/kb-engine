@@ -46,7 +46,8 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   a chat over your documents (ADR-0006): a small local model gets the documents
   the window finds, a strong one searches and reads them itself. Answers stream,
   can be read aloud (macOS voices or cloud voices via Vercel AI Gateway) and asked
-  by voice (hold, toggle or hands-free). The context ring is always in the input
+  by voice (hold, toggle or hands-free); chats can be renamed (double-click a
+  title). The context ring is always in the input
   row; when a question would not fit the model's context, the window offers to
   fold the old part of the chat into a summary (the file keeps every message,
   nothing is folded without your consent). **«Что DVK помнит обо мне»** (ADR-0007)
