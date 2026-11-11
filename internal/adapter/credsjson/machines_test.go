@@ -75,13 +75,11 @@ func TestMachineStore_concurrentUpdates(t *testing.T) {
 	s := credsjson.MachineStore{Path: filepath.Join(t.TempDir(), "machines.json")}
 	var wg sync.WaitGroup
 	for i := range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			if err := s.Update(addMachine(machine(t, fmt.Sprintf("m-%d", i)))); err != nil {
 				t.Error(err)
 			}
-		}()
+		})
 	}
 	wg.Wait()
 	if got, err := s.Load(); err != nil || len(got) != 8 {

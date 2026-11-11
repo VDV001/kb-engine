@@ -101,40 +101,14 @@ func NewMachine(d MachineDTO) (Machine, error) {
 	for _, f := range []*string{&d.ID, &d.Name, &d.Group, &d.Host, &d.User, &d.KeyPath, &d.Jump, &d.TokenHint, &d.Note} {
 		*f = strings.TrimSpace(*f)
 	}
-	switch {
-	case d.Name == "":
+	if d.Name == "" {
 		return Machine{}, fmt.Errorf("%w: нет имени", ErrInvalidMachine)
-	case d.Host == "":
-		return Machine{}, fmt.Errorf("%w: нет хоста", ErrInvalidMachine)
-	case d.User == "":
-		return Machine{}, fmt.Errorf("%w: нет пользователя", ErrInvalidMachine)
 	}
-	if !sshHost.MatchString(d.Host) {
-		return Machine{}, fmt.Errorf("%w: хост %q — имя или адрес без пробелов, не с дефиса", ErrInvalidMachine, d.Host)
-	}
-	if !sshUser.MatchString(d.User) {
-		return Machine{}, fmt.Errorf("%w: пользователь %q — буквы, цифры, точка, дефис и подчеркивание, не с дефиса", ErrInvalidMachine, d.User)
-	}
-	if d.Port == 0 {
-		d.Port = defaultSSHPort
-	}
-	if d.Port < 1 || d.Port > 65535 {
-		return Machine{}, fmt.Errorf("%w: порт %d — от 1 до 65535", ErrInvalidMachine, d.Port)
-	}
-	if d.Auth == "" {
-		d.Auth = AuthKey
-	}
-	auth, err := ParseAuth(string(d.Auth))
-	if err != nil {
+	if err := d.checkEndpoint(); err != nil {
 		return Machine{}, err
 	}
-	d.Auth = auth
-	if d.Env != "" {
-		env, err := ParseEnv(string(d.Env))
-		if err != nil {
-			return Machine{}, fmt.Errorf("%w: %w", ErrInvalidMachine, err)
-		}
-		d.Env = env
+	if err := d.checkAuthAndEnv(); err != nil {
+		return Machine{}, err
 	}
 	if d.ID == "" {
 		d.ID = slug(d.Name)
@@ -144,15 +118,65 @@ func NewMachine(d MachineDTO) (Machine, error) {
 	if !credentialID.MatchString(d.ID) {
 		return Machine{}, fmt.Errorf("%w: id %q — латиница, цифры и дефис, до 64 знаков", ErrInvalidMachine, d.ID)
 	}
+	if err := d.normalizeProjects(); err != nil {
+		return Machine{}, err
+	}
+	return Machine{d: d}, nil
+}
+
+// checkEndpoint checks where and as whom to connect: хост, пользователь и порт.
+func (d *MachineDTO) checkEndpoint() error {
+	switch {
+	case d.Host == "":
+		return fmt.Errorf("%w: нет хоста", ErrInvalidMachine)
+	case d.User == "":
+		return fmt.Errorf("%w: нет пользователя", ErrInvalidMachine)
+	case !sshHost.MatchString(d.Host):
+		return fmt.Errorf("%w: хост %q — имя или адрес без пробелов, не с дефиса", ErrInvalidMachine, d.Host)
+	case !sshUser.MatchString(d.User):
+		return fmt.Errorf("%w: пользователь %q — буквы, цифры, точка, дефис и подчеркивание, не с дефиса", ErrInvalidMachine, d.User)
+	}
+	if d.Port == 0 {
+		d.Port = defaultSSHPort
+	}
+	if d.Port < 1 || d.Port > 65535 {
+		return fmt.Errorf("%w: порт %d — от 1 до 65535", ErrInvalidMachine, d.Port)
+	}
+	return nil
+}
+
+// checkAuthAndEnv reads the sign-in method (пустой — ключ) and the optional environment.
+func (d *MachineDTO) checkAuthAndEnv() error {
+	if d.Auth == "" {
+		d.Auth = AuthKey
+	}
+	auth, err := ParseAuth(string(d.Auth))
+	if err != nil {
+		return err
+	}
+	d.Auth = auth
+	if d.Env == "" {
+		return nil
+	}
+	env, err := ParseEnv(string(d.Env))
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidMachine, err)
+	}
+	d.Env = env
+	return nil
+}
+
+// normalizeProjects copies and trims the projects; проект без имени — отказ.
+func (d *MachineDTO) normalizeProjects() error {
 	d.Projects = slices.Clone(d.Projects)
 	for i := range d.Projects {
 		p := &d.Projects[i]
 		p.Name, p.Path, p.Port, p.What = strings.TrimSpace(p.Name), strings.TrimSpace(p.Path), strings.TrimSpace(p.Port), strings.TrimSpace(p.What)
 		if p.Name == "" {
-			return Machine{}, fmt.Errorf("%w: проект %d без имени", ErrInvalidMachine, i+1)
+			return fmt.Errorf("%w: проект %d без имени", ErrInvalidMachine, i+1)
 		}
 	}
-	return Machine{d: d}, nil
+	return nil
 }
 
 // ID is the stable name of the machine: build-01.
@@ -275,12 +299,16 @@ func shellPath(p string) string {
 
 // shellQuote leaves a safe word as is and wraps anything else in single quotes.
 func shellQuote(s string) string {
-	if s != "" && strings.IndexFunc(s, func(r rune) bool {
-		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_@%+=:,./-", r))
-	}) < 0 {
+	if s != "" && strings.IndexFunc(s, unsafeShellRune) < 0 {
 		return s
 	}
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// unsafeShellRune reports a character that a shell would read as more than a name.
+func unsafeShellRune(r rune) bool {
+	letter, digit := r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z', r >= '0' && r <= '9'
+	return !letter && !digit && !strings.ContainsRune("_@%+=:,./-", r)
 }
 
 // MachineAgentView is a card for the agent. Ни пути ключа, ни подсказки про
