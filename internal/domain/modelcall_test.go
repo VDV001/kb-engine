@@ -90,3 +90,19 @@ func TestNewBilledModelCall(t *testing.T) {
 		t.Fatalf("обычный вызов со счетом в деньгах: %+v", plain)
 	}
 }
+
+// Вызов помнит чат, из которого он сделан (расход по чатам, #541); вызов вне
+// чата — пусто; исходный вызов не меняется.
+func TestModelCall_Chat(t *testing.T) {
+	c, err := domain.NewModelCall(callAt, domain.CallAnswer, "m", 1, 1, true, time.Second, time.Second, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Chat() != "" {
+		t.Fatalf("вызов вне чата: %q", c.Chat())
+	}
+	w := c.WithChat("  0123456789abcdef ")
+	if w.Chat() != "0123456789abcdef" || c.Chat() != "" {
+		t.Fatalf("с чатом %q, исходный %q", w.Chat(), c.Chat())
+	}
+}

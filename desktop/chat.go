@@ -178,12 +178,13 @@ func newChatDesk(s *folderSettings, dir string) *chatDesk {
 }
 
 // metered counts the calls of m for the window statistics: назначение, токены,
-// время; без журнала — m как есть. Сбой записи не мешает ответу.
-func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose) chat.Model {
+// время и чат (chatID, пусто — вызов вне чата); без журнала — m как есть. Сбой
+// записи не мешает ответу.
+func (d *chatDesk) metered(m chat.Model, c desktopconfig.Chat, p usage.Purpose, chatID string) chat.Model {
 	if d.calls == nil {
 		return m
 	}
-	return usage.NewMeter(m, c.Model, p, d.calls, d.now, func(err error) { log.Printf("статистика: %v", err) })
+	return usage.NewMeter(m, c.Model, p, d.calls, d.now, func(err error) { log.Printf("статистика: %v", err) }, usage.WithChat(chatID))
 }
 
 // chatMode is who finds the documents: явный выбор или по модели.
@@ -295,7 +296,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
 	model := d.model(c, key)
-	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch), chat.WithReader(readerFunc(d.read)))
+	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
@@ -742,7 +743,7 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), compressTimeout)
 	defer cancel()
-	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress))
+	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress), id)
 	sum, err := chat.NewService(nil, model).Compress(ctx, raw, compressKeep)
 	switch {
 	case errors.Is(err, chat.ErrNothingToCompress):

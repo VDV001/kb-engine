@@ -42,6 +42,7 @@ type ModelCall struct {
 	firstToken time.Duration
 	took       time.Duration
 	failed     bool
+	chat       string // чат окна, из которого вызов; пусто — вызов вне чата (портрет)
 }
 
 // NewModelCall validates a call: counted — провайдер прислал счет токенов;
@@ -81,6 +82,15 @@ func NewBilledModelCall(at time.Time, purpose CallPurpose, model string, cost in
 	c.billed, c.cost = true, cost
 	return c, nil
 }
+
+// WithChat returns the call tied to chat id (расход по чатам, #541).
+func (c ModelCall) WithChat(id string) ModelCall {
+	c.chat = strings.TrimSpace(id)
+	return c
+}
+
+// Chat returns the chat the call was made for; "" — вне чата.
+func (c ModelCall) Chat() string { return c.chat }
 
 // At returns when the call started.
 func (c ModelCall) At() time.Time { return c.at }

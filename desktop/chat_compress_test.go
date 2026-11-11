@@ -104,6 +104,9 @@ func TestChat_CompressIsMetered(t *testing.T) {
 	for _, c := range calls {
 		if c.Purpose() == domain.CallCompress {
 			n++
+			if c.Chat() != id { // расход сжатия — расход этого чата (#541)
+				t.Errorf("сжатие записано за чатом %q, want %q", c.Chat(), id)
+			}
 		}
 	}
 	if n != 1 {

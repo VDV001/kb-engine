@@ -36,6 +36,8 @@ type line struct {
 	FirstMS  int64  `json:"first_ms"`
 	TookMS   int64  `json:"took_ms"`
 	Failed   bool   `json:"failed,omitempty"`
+	// Chat — чат окна, из которого вызов (расход по чатам, #541); нет — вне чата.
+	Chat string `json:"chat,omitempty"`
 }
 
 // Record appends one call. Под файловым замком, как журнал прогонов: дозапись
@@ -51,7 +53,7 @@ func (j Journal) Record(c domain.ModelCall) error {
 		return fmt.Errorf("usage: не создать каталог журнала: %w", err)
 	}
 	l := line{At: c.At(), Purpose: string(c.Purpose()), Model: c.Model(), In: c.In(), Out: c.Out(), Uncounted: !c.Counted(),
-		FirstMS: c.FirstToken().Milliseconds(), TookMS: c.Took().Milliseconds(), Failed: c.Failed()}
+		FirstMS: c.FirstToken().Milliseconds(), TookMS: c.Took().Milliseconds(), Failed: c.Failed(), Chat: c.Chat()}
 	if c.Billed() {
 		cost := c.Cost()
 		l.CostPico = &cost
@@ -117,9 +119,9 @@ func parse(raw []byte) (domain.ModelCall, bool) {
 	took := time.Duration(l.TookMS) * time.Millisecond
 	if l.CostPico != nil {
 		c, err := domain.NewBilledModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, *l.CostPico, took, l.Failed)
-		return c, err == nil
+		return c.WithChat(l.Chat), err == nil
 	}
 	c, err := domain.NewModelCall(l.At, domain.CallPurpose(l.Purpose), l.Model, l.In, l.Out, !l.Uncounted,
 		time.Duration(l.FirstMS)*time.Millisecond, took, l.Failed)
-	return c, err == nil
+	return c.WithChat(l.Chat), err == nil
 }
