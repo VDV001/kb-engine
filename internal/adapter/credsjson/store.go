@@ -72,18 +72,24 @@ func (s Store) Update(fn func([]domain.Credential) ([]domain.Credential, error))
 		if err != nil {
 			return fmt.Errorf("доступы: не закодировать: %w", err)
 		}
-		tmp, err := os.CreateTemp(filepath.Dir(s.Path), ".credentials-*.tmp") // CreateTemp создает с 0600
-		if err != nil {
-			return fmt.Errorf("доступы: не записать: %w", err)
-		}
-		defer func() { _ = os.Remove(tmp.Name()) }()
-		if _, err := tmp.Write(append(raw, '\n')); err != nil {
-			_ = tmp.Close()
-			return fmt.Errorf("доступы: не записать: %w", err)
-		}
-		if err := tmp.Close(); err != nil {
-			return fmt.Errorf("доступы: не записать: %w", err)
-		}
-		return os.Rename(tmp.Name(), s.Path)
+		return writeAtomic(s.Path, ".credentials-*.tmp", append(raw, '\n'))
 	})
+}
+
+// writeAtomic writes raw to path through a temp file in the same directory and a
+// rename: читатель видит старый файл или новый целиком. CreateTemp создает 0600.
+func writeAtomic(path, pattern string, raw []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), pattern)
+	if err != nil {
+		return fmt.Errorf("доступы: не записать: %w", err)
+	}
+	defer func() { _ = os.Remove(tmp.Name()) }()
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("доступы: не записать: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("доступы: не записать: %w", err)
+	}
+	return os.Rename(tmp.Name(), path)
 }
