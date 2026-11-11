@@ -2688,6 +2688,7 @@ document.addEventListener("click", (e) => { if (!$("#chat-ctx-pop").hidden && !e
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-ctx-pop").hidden) { closeChatCtx(); e.stopPropagation(); } }, true);
 function renderChat() {
   renderChatCtx();
+  renderCompressOffer();
   const c = chatState.chat;
   const log = $("#chat-log");
   $("#chat-title").textContent = (c && c.title) || "Новый чат";
@@ -2699,9 +2700,11 @@ function renderChat() {
       chatState.over = { chat: "", size: p.size, budget: p.budget, props: null, start: true };
     log.innerHTML = memInChat() + `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
   } else {
-    log.innerHTML = c.messages.map((m) => m.role === "user"
+    const folded = (c.compressed && c.compressed.folded) || 0;
+    log.innerHTML = c.messages.map((m, i) => (m.role === "user"
       ? `<div class="msg user">${esc(m.text)}</div>`
-      : `<div class="msg bot">${answerHTML(m.text)}</div>`).join("");
+      : `<div class="msg bot">${answerHTML(m.text)}</div>`)
+      + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
   if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat());
   if (chatState.busy) {
@@ -2740,9 +2743,52 @@ if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   chatState.partial = t || "";
   paintPartial();
 });
+// Сжатие длинного чата (#539). Предлагается, когда занятое не помещается в
+// контекст модели (сменили модель на меньшую) или когда не поместится вопрос;
+// без согласия ничего не меняется. Сжимает окно (CompressChat): сообщения в
+// файле остаются, модель видит конспект и последние CHAT_KEEP сообщений.
+const CHAT_KEEP = 6; // как compressKeep в desktop/chat.go
+const CHARS_PER_TOKEN = 3; // грубо для русского; счет провайдера придет с ответом
+const askNeedsRoom = (q) => {
+  const c = chatState.chat, x = c && c.context;
+  return !!(x && x.window && x.used + Math.ceil([...q].length / CHARS_PER_TOKEN) > x.window);
+};
+const canCompress = () => {
+  const c = chatState.chat;
+  return !!(c && c.id && !chatState.busy && c.messages.length > CHAT_KEEP);
+};
+function renderCompressOffer() {
+  const el = $("#chat-offer"), x = chatState.chat && chatState.chat.context;
+  const over = !!(x && x.window && x.used > x.window);
+  const show = canCompress() && !chatState.declined && (over || chatState.offerAsk);
+  el.hidden = !show;
+  if (!show) return;
+  el.innerHTML = `<span>${over && !chatState.offerAsk ? "Занято больше, чем помещается в контекст модели." : "Вопрос не поместится в контекст модели."} Сжать старую часть разговора в конспект? Исходный разговор останется.</span>
+    <button class="btn primary" type="button" data-offer="yes">Сжать</button><button class="btn" type="button" data-offer="no">Не надо</button>`;
+}
+$("#chat-offer").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-offer]");
+  if (!b || chatState.busy) return;
+  if (b.dataset.offer === "no") { chatState.declined = true; chatState.offerAsk = false; renderChat(); return; }
+  chatState.busy = true;
+  b.disabled = true;
+  b.textContent = "Сжимаю…";
+  try {
+    chatState.chat = await native().CompressChat(chatState.id);
+    chatState.offerAsk = false;
+    toast("Чат сжат", " · свернуто " + chatState.chat.compressed.folded + " сообщ.");
+  } catch (err) {
+    showChatNote("Не сжато: " + errText(err));
+  } finally {
+    chatState.busy = false;
+    renderChat();
+  }
+});
 async function askChat() {
   const q = $("#chat-q").value.trim();
   if (!q || chatState.busy) return;
+  // Вопрос не помещается: предложить сжать до отправки; текст остается в поле.
+  if (canCompress() && !chatState.declined && askNeedsRoom(q)) { chatState.offerAsk = true; renderChat(); return; }
   chatState.busy = true;
   chatState.partial = "";
   $("#chat-send").disabled = true;
@@ -2767,6 +2813,7 @@ async function askChat() {
     if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
+    chatState.offerAsk = chatState.declined = false;
     await renderChatList();
   } catch (e) {
     chatState.chat.messages.pop();
@@ -2785,6 +2832,7 @@ async function askChat() {
 }
 function newChat() {
   if (chatState.busy) return;
+  chatState.offerAsk = chatState.declined = false;
   chatState.id = "";
   chatState.chat = null;
   chatState.over = null;
@@ -3173,6 +3221,8 @@ $("#chat-model").addEventListener("submit", async (e) => {
     $("#chat-model-note").textContent = "";
     toast("Сохранено", " · модель " + (c.model || $("#chat-name").placeholder).replace(/^[^/]+\//, ""));
     await loadChatSettings();
+    // Размер контекста новой модели — к открытому чату: кольцо и предложение сжать.
+    if (chatState.chat && chatState.chat.context) { chatState.chat.context.window = c.contextWindow; chatState.declined = false; renderChat(); }
   } catch (err) {
     $("#chat-model-note").textContent = errText(err);
   }
