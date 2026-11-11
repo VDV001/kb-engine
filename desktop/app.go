@@ -168,6 +168,28 @@ func (a *App) AccessDelete(id string) error { return a.access.Delete(id) }
 // AccessCopy puts a password on the clipboard after Touch ID.
 func (a *App) AccessCopy(id string) error { return a.access.Copy(id) }
 
+// MachineList returns the machines with every word of q — без паролей, только в открытом хранилище (#549).
+func (a *App) MachineList(q string) ([]machineView, error) { return a.access.Machines(q) }
+
+// MachineAdd stores a machine and, for a password sign-in, its password.
+func (a *App) MachineAdd(in machineIn, password string) error {
+	return a.access.AddMachine(in, password)
+}
+
+// MachineUpdate changes a machine (and its password, if given).
+func (a *App) MachineUpdate(id string, in machineIn, password string) error {
+	return a.access.UpdateMachine(id, in, password)
+}
+
+// MachineDelete removes a machine after Touch ID.
+func (a *App) MachineDelete(id string) error { return a.access.DeleteMachine(id) }
+
+// MachineReveal returns a machine password after Touch ID.
+func (a *App) MachineReveal(id string) (string, error) { return a.access.RevealMachinePassword(id) }
+
+// MachineCopy puts a machine password on the clipboard after Touch ID.
+func (a *App) MachineCopy(id string) error { return a.access.CopyMachinePassword(id) }
+
 // Stats returns the model-call statistics of the last days (экран «Статистика»).
 func (a *App) Stats(days int) (statsView, error) { return a.chat.Stats(days) }
 
