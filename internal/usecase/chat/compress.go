@@ -26,7 +26,9 @@ const compressChunkRunes = 24000
 
 // Compress asks the model to fold all but the last keep messages into a summary.
 func (s *Service) Compress(ctx context.Context, history []Message, keep int) (Compression, error) {
-	folded := len(history) - max(keep, 0)
+	// Хвост не пуст всегда: за конспектом идет новый вопрос, и два сообщения
+	// человека подряд провайдеры с чередованием ролей не принимают.
+	folded := len(history) - max(keep, 1)
 	if folded <= 0 {
 		return Compression{}, ErrNothingToCompress
 	}
@@ -51,22 +53,38 @@ func (s *Service) Compress(ctx context.Context, history []Message, keep int) (Co
 }
 
 // chunks renders messages as «роль: текст» and groups them up to limit runes;
-// сообщение длиннее предела обрезается.
+// сообщение длиннее предела режется на части, а не обрезается: хвост длинного
+// ответа не должен пропасть из конспекта вместе с исходником в запросе.
 func chunks(msgs []Message, limit int) []string {
 	var out []string
 	var cur strings.Builder
 	n := 0
-	for _, m := range msgs {
-		line := fmt.Sprintf("%s: %s\n\n", m.Role, trimRunes(m.Text, limit-100))
-		if size := len([]rune(line)); n > 0 && n+size > limit {
+	flush := func() {
+		if n > 0 {
 			out = append(out, cur.String())
 			cur.Reset()
 			n = 0
 		}
-		cur.WriteString(line)
-		n += len([]rune(line))
 	}
-	return append(out, cur.String())
+	for _, m := range msgs {
+		text := []rune(m.Text)
+		for part := 0; part == 0 || len(text) > 0; part++ {
+			take := min(len(text), limit-100)
+			label := string(m.Role)
+			if part > 0 {
+				label += " (продолжение)"
+			}
+			line := fmt.Sprintf("%s: %s\n\n", label, string(text[:take]))
+			text = text[take:]
+			if size := len([]rune(line)); n > 0 && n+size > limit {
+				flush()
+			}
+			cur.WriteString(line)
+			n += len([]rune(line))
+		}
+	}
+	flush()
+	return out
 }
 
 // Apply returns the history the model sees: конспект вместо свернутых сообщений
@@ -74,7 +92,7 @@ func chunks(msgs []Message, limit int) []string {
 // хвост начинается с сообщения человека, они сливаются в одно: провайдеры с
 // чередованием ролей не принимают два сообщения человека подряд.
 func (c Compression) Apply(history []Message) []Message {
-	if c.Folded <= 0 || c.Folded > len(history) {
+	if c.Folded <= 0 || c.Folded >= len(history) {
 		return history
 	}
 	note := fmt.Sprintf("Конспект начала разговора (сжато %d сообщ.):\n%s", c.Folded, c.Text)

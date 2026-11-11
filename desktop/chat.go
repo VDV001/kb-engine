@@ -458,6 +458,7 @@ func (d *chatDesk) load(id string) (chatRecord, error) {
 
 // save writes the chat atomically, 0600: история — личное.
 func (d *chatDesk) save(rec chatRecord) error {
+	rec.CanCompress = false // только в ответе страницы, в файл не пишется
 	p, err := d.path(rec.ID)
 	if err != nil {
 		return err
@@ -687,6 +688,11 @@ func interleave(a, b []chat.Doc, limit int) []chat.Doc {
 // compressKeep — сколько последних сообщений остается живыми при сжатии.
 const compressKeep = 6
 
+// compressTimeout — сколько ждать сжатие целиком: длинная история идет
+// несколькими вызовами подряд, а общий срок ответа (askTimeout) рассчитан на
+// один ход.
+const compressTimeout = 10 * time.Minute
+
 // CompressChat folds the old part of chat id into a summary (#539). Сообщения
 // в файле остаются целыми: конспект лежит рядом и подменяет начало только в
 // запросе к модели. Повторное сжатие считает по исходным сообщениям, а не по
@@ -717,7 +723,7 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 	for _, m := range rec.Messages {
 		raw = append(raw, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), compressTimeout)
 	defer cancel()
 	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress))
 	sum, err := chat.NewService(nil, model).Compress(ctx, raw, compressKeep)
@@ -738,4 +744,9 @@ func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
 
 // canCompress tells the page whether the chat has more than compressKeep
 // messages: число «шесть» знает только окно.
-func canCompress(rec chatRecord) bool { return len(rec.Messages) > compressKeep }
+func canCompress(rec chatRecord) bool {
+	if rec.Compressed != nil && rec.Compressed.Folded >= len(rec.Messages)-compressKeep {
+		return false // уже свернуто до хвоста: повторное сжатие вернуло бы то же
+	}
+	return len(rec.Messages) > compressKeep
+}
