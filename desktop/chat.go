@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/llm"
 	"github.com/daniil/kb-engine/internal/adapter/usagejsonl"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
@@ -56,8 +57,23 @@ type chatRecord struct {
 	Notes []string `json:"notes,omitempty"`
 	// Portrait — пошел ли портрет в чат (#479); только в ответе.
 	Portrait *portraitNote `json:"portrait,omitempty"`
-	// Context — заполнение контекста модели после этого ответа; только в ответе.
+	// ContextUsed — токены запроса по счету провайдера в последнем ответе; в
+	// файле, чтобы кольцо контекста было и у открытого позже чата (0 — не знаем).
+	ContextUsed int `json:"contextUsed,omitempty"`
+	// Context — заполнение контекста модели; собирается из ContextUsed и
+	// размера окна из текущих настроек, в файл не пишется.
 	Context *contextNote `json:"context,omitempty"`
+	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
+	Compressed *chatCompressed `json:"compressed,omitempty"`
+	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
+	CanCompress bool `json:"canCompress,omitempty"`
+}
+
+// chatCompressed is the summary that stands for the first Folded messages
+// when the model is asked.
+type chatCompressed struct {
+	Text   string `json:"text"`
+	Folded int    `json:"folded"`
 }
 
 // contextNote is how full the model's context is: токены запроса по счету
@@ -295,6 +311,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
 	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
+	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
@@ -303,9 +320,8 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	_ = d.DropDraft(rec.ID)
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
-	if turn.PromptTokens > 0 {
-		rec.Context = &contextNote{Used: turn.PromptTokens, Window: c.ContextWindow}
-	}
+	rec.CanCompress = canCompress(rec)
+	rec.Context = d.contextOf(rec)
 	d.extractAfter(c, model, rec.ID, question, turn.Answer)
 	return rec, nil
 }
@@ -405,7 +421,21 @@ func (d *chatDesk) List() ([]chatSummary, error) {
 }
 
 // Get returns one chat.
-func (d *chatDesk) Get(id string) (chatRecord, error) { return d.load(id) }
+func (d *chatDesk) Get(id string) (chatRecord, error) {
+	rec, err := d.load(id)
+	rec.CanCompress = canCompress(rec)
+	rec.Context = d.contextOf(rec)
+	return rec, err
+}
+
+// contextOf is the fill of rec's context: последний счет провайдера против
+// размера окна модели из нынешних настроек; счета нет — nil.
+func (d *chatDesk) contextOf(rec chatRecord) *contextNote {
+	if rec.ContextUsed <= 0 {
+		return nil
+	}
+	return &contextNote{Used: rec.ContextUsed, Window: d.config().ContextWindow}
+}
 
 // Delete removes a chat.
 func (d *chatDesk) Delete(id string) error {
@@ -445,6 +475,7 @@ func (d *chatDesk) load(id string) (chatRecord, error) {
 
 // save writes the chat atomically, 0600: история — личное.
 func (d *chatDesk) save(rec chatRecord) error {
+	rec.CanCompress = false // только в ответе страницы, в файл не пишется
 	p, err := d.path(rec.ID)
 	if err != nil {
 		return err
@@ -475,6 +506,9 @@ func history(rec chatRecord) []chat.Message {
 	out := make([]chat.Message, 0, len(rec.Messages))
 	for _, m := range rec.Messages {
 		out = append(out, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
+	}
+	if c := rec.Compressed; c != nil {
+		return chat.Compression{Text: c.Text, Folded: c.Folded}.Apply(out)
 	}
 	return out
 }
@@ -666,4 +700,71 @@ func interleave(a, b []chat.Doc, limit int) []chat.Doc {
 		}
 	}
 	return out
+}
+
+// compressKeep — сколько последних сообщений остается живыми при сжатии.
+const compressKeep = 6
+
+// compressTimeout — сколько ждать сжатие целиком: длинная история идет
+// несколькими вызовами подряд, а общий срок ответа (askTimeout) рассчитан на
+// один ход.
+const compressTimeout = 10 * time.Minute
+
+// CompressChat folds the old part of chat id into a summary (#539). Сообщения
+// в файле остаются целыми: конспект лежит рядом и подменяет начало только в
+// запросе к модели. Повторное сжатие считает по исходным сообщениям, а не по
+// прежнему конспекту.
+//
+// ponytail: повторное сжатие заново читает всю исходную историю. Потолок:
+// чат на сотни сообщений дороже по токенам, чем сжатие поверх старого
+// конспекта. Путь: сворачивать конспект и новую часть, сдвигая Folded.
+func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rec, err := d.load(id)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	c := d.config()
+	key, err := d.modelKey(c)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	// Сжато уже до этой точки (двойной щелчок, устаревшая страница): ответ тот же
+	// и без платного вызова модели.
+	if rec.Compressed != nil && rec.Compressed.Folded == len(rec.Messages)-compressKeep {
+		rec.CanCompress = canCompress(rec)
+		return rec, nil
+	}
+	raw := make([]chat.Message, 0, len(rec.Messages))
+	for _, m := range rec.Messages {
+		raw = append(raw, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), compressTimeout)
+	defer cancel()
+	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress))
+	sum, err := chat.NewService(nil, model).Compress(ctx, raw, compressKeep)
+	switch {
+	case errors.Is(err, chat.ErrNothingToCompress):
+		return chatRecord{}, errors.New("чат короткий, сжимать нечего")
+	case err != nil:
+		return chatRecord{}, errors.New(chatError(err))
+	}
+	rec.Compressed = &chatCompressed{Text: sum.Text, Folded: sum.Folded}
+	rec.ContextUsed = 0 // счет был до сжатия; новый придет с ближайшим ответом
+	rec.Updated = d.now()
+	if err := d.save(rec); err != nil {
+		return chatRecord{}, err
+	}
+	rec.CanCompress = canCompress(rec)
+	return rec, nil
+}
+
+// canCompress tells the page whether the chat has more than compressKeep
+// messages: число «шесть» знает только окно.
+func canCompress(rec chatRecord) bool {
+	if rec.Compressed != nil && rec.Compressed.Folded >= len(rec.Messages)-compressKeep {
+		return false // уже свернуто до хвоста: повторное сжатие вернуло бы то же
+	}
+	return len(rec.Messages) > compressKeep
 }
