@@ -2769,28 +2769,41 @@ function renderCompressOffer() {
 $("#chat-offer").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-offer]");
   if (!b || chatState.busy || chatState.compressing) return;
-  if (b.dataset.offer === "no") { chatState.declined = true; chatState.offerAsk = false; renderChat(); return; }
+  // Вопрос ждет в поле: после ответа на предложение он уходит сам, иначе «Не надо»
+  // выглядит как зависание.
+  const pending = chatState.offerAsk && $("#chat-q").value.trim() !== "";
+  if (b.dataset.offer === "no") {
+    chatState.declined = true; chatState.offerAsk = false;
+    renderChat();
+    if (pending) askChat();
+    return;
+  }
   // Своя отметка, а не busy: busy рисует «модель отвечает», а это не ответ.
+  const id = chatState.id;
   chatState.compressing = true;
   renderChat();
   try {
     const prev = chatState.chat.context;
-    const c = await native().CompressChat(chatState.id);
-    // Счет провайдера придет с ответом; до него оценка по знакам конспекта и
-    // хвоста (без системного сообщения и документов) — кольцо помечено «~».
+    const c = await native().CompressChat(id);
+    if (chatState.id !== id) return; // чат успели сменить или удалить: чужую запись не подставлять
+    // Счет провайдера придет с ответом; до него оценка: прежний счет минус то,
+    // что сжатие сняло (свернутые знаки за вычетом конспекта). Системное
+    // сообщение, портрет и документы остаются в счете.
     if (prev && prev.window) {
-      const kept = c.messages.slice(c.compressed.folded).map((m) => m.text);
-      c.context = { used: Math.ceil(Array.from([c.compressed.text, ...kept].join("")).length / CHARS_PER_TOKEN), window: prev.window, est: true };
+      const gone = c.messages.slice(0, c.compressed.folded).reduce((n, m) => n + Array.from(m.text).length, 0) - Array.from(c.compressed.text).length;
+      c.context = { used: Math.max(0, prev.used - Math.ceil(Math.max(0, gone) / CHARS_PER_TOKEN)), window: prev.window, est: true };
     }
     chatState.chat = c;
     chatState.offerAsk = false;
     toast("Чат сжат", " · свернуто " + c.compressed.folded + " сообщ.");
   } catch (err) {
     showChatNote("Не сжато: " + errText(err));
+    return;
   } finally {
     chatState.compressing = false;
     renderChat();
   }
+  if (pending) askChat();
 });
 async function askChat() {
   const q = $("#chat-q").value.trim();
@@ -2840,7 +2853,7 @@ async function askChat() {
   if (micLoop.on && !voice.on) startMic(VOICE_PAUSE, true);
 }
 function newChat() {
-  if (chatState.busy) return;
+  if (chatState.busy || chatState.compressing) return;
   chatState.offerAsk = chatState.declined = false;
   chatState.id = "";
   chatState.chat = null;
@@ -2864,7 +2877,11 @@ function fitChatQ() {
   $("#chat-send").disabled = chatState.busy || !q.value.trim();
   q.closest(".chat-box").classList.toggle("has-text", !!q.value.trim() || chatState.busy);
 }
-$("#chat-q").addEventListener("input", () => { fitChatQ(); renderAttached(); });
+$("#chat-q").addEventListener("input", () => {
+  fitChatQ(); renderAttached();
+  // Вопрос подправили или стерли: «не поместится» считается заново, а не висит.
+  if (chatState.offerAsk && !askNeedsRoom($("#chat-q").value.trim())) { chatState.offerAsk = false; renderChat(); }
+});
 
 // --- Диктовка (#436) ----------------------------------------------------------------
 // Помощник kb-listen (Apple Speech, на этом Маке) шлет текст сказанного целиком
@@ -3134,10 +3151,11 @@ $("#chat-list").addEventListener("click", async (e) => {
     return;
   }
   const b = e.target.closest("[data-chat]");
-  if (!b || chatState.busy) return;
+  if (!b || chatState.busy || chatState.compressing) return;
   try {
     chatState.chat = await native().Chat(b.dataset.chat);
     chatState.id = b.dataset.chat;
+    chatState.offerAsk = chatState.declined = false; // предложение сжать — про тот чат, где его показали
     // Источники чата — только те, что есть сейчас: удаленный или выключенный
     // оставил бы чат искать нигде (ревью #465).
     const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
