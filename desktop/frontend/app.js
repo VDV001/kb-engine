@@ -3205,7 +3205,6 @@ $("#chat-find-btn").addEventListener("click", () => {
   if (!f.hidden) f.focus(); else { f.value = ""; paintChatList(); }
 });
 $("#chat-find").addEventListener("input", paintChatList);
-$("#chat-sources-btn").addEventListener("click", () => openSettings("sources"));
 document.addEventListener("keydown", (e) => {
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n" && !$("#chat-view").hidden) { e.preventDefault(); newChat(); }
 });
