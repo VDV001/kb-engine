@@ -102,26 +102,15 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 	byChat := map[string]*ChatCost{}
 	for _, c := range calls {
 		at := c.At().In(loc)
-		if at.Before(start) || at.Year() != y || at.Month() != mo || at.Day() > d {
+		if !inMonth(at, start, d) {
 			continue // прошлый месяц или из будущего: часы Мака сбились
 		}
-		pc := byPurpose[c.Purpose()]
-		if pc == nil {
-			pc = &PurposeCost{Purpose: c.Purpose()}
-			byPurpose[c.Purpose()] = pc
-		}
-		mc := byModel[c.Model()]
-		if mc == nil {
-			mc = &ModelCost{Model: c.Model()}
-			byModel[c.Model()] = mc
-		}
+		pc := entry(byPurpose, c.Purpose(), PurposeCost{Purpose: c.Purpose()})
+		mc := entry(byModel, c.Model(), ModelCost{Model: c.Model()})
 		pc.Calls++
 		var cc *ChatCost
 		if c.Chat() != "" {
-			if cc = byChat[c.Chat()]; cc == nil {
-				cc = &ChatCost{Chat: c.Chat()}
-				byChat[c.Chat()] = cc
-			}
+			cc = entry(byChat, c.Chat(), ChatCost{Chat: c.Chat()})
 			cc.Calls++
 		}
 		cost, priced, st := callCost(c, prices)
@@ -162,4 +151,19 @@ func NewMoney(calls []domain.ModelCall, now time.Time, prices PriceBook) Money {
 		return cmp.Or(cmp.Compare(b.Cost, a.Cost), cmp.Compare(b.Calls, a.Calls), cmp.Compare(a.Model, b.Model))
 	})
 	return m
+}
+
+// inMonth reports whether at falls in the month that starts at start, on a day
+// up to day (сегодня).
+func inMonth(at, start time.Time, day int) bool {
+	return !at.Before(start) && at.Year() == start.Year() && at.Month() == start.Month() && at.Day() <= day
+}
+
+// entry returns the item of m under key, adding zero when there is none.
+func entry[K comparable, V any](m map[K]*V, key K, zero V) *V {
+	if v := m[key]; v != nil {
+		return v
+	}
+	m[key] = &zero
+	return &zero
 }
