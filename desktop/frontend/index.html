@@ -131,6 +131,17 @@
          горячего слоя. Окно показывает те же файлы, что читает `kbengine memory`. -->
     <section class="memory-view" id="memory-view" hidden><div id="mm-body"></div></section>
 
+    <!-- Артефакты (#547): документы папок окна и их версии — у каждой, что нового
+         относительно предыдущей. Вкладка в строке поиска при основных (решение
+         владельца 11.11): запрос — строка поиска, выдача заменяется этим списком. -->
+    <section class="art-view" id="artifacts-view" hidden>
+      <div class="art-bar"><span class="hp-prompt"><b>$</b> kb artifacts</span><h2 class="hp-title">Артефакты</h2></div>
+      <div class="art-body">
+        <p class="muted">Итерации одного документа (docx, pptx, xlsx, pdf) из папок окна одним списком: у каждой версии написано, что в неё добавили. Ищите по имени в строке сверху. Файлы не меняются и не удаляются. Копия байт в байт показана как дубль.</p>
+        <div class="ver-list" id="ver-list"></div>
+      </div>
+    </section>
+
     <!-- Справка (решение владельца 07.11): команды движка и клавиши окна —
          оглавление разделов и поиск по задаче, как в палитре; Enter копирует. -->
     <section class="help-view" id="help-view" hidden>
@@ -251,7 +262,6 @@
       <div class="settings-grp">Состояние</div>
       <button data-go="problems">Проблемы <span class="settings-dot" id="settings-dot" hidden></span></button>
       <button data-go="storage">Хранилище</button>
-      <button data-go="versions">Версии</button>
     </nav>
     <div class="settings-main">
     <div class="settings-head">
@@ -312,14 +322,6 @@
     <p class="muted" data-view="storage">Сколько места занимает то, что окно копит на диске. Каждый пункт очищается отдельно и называет, что пропадет. Настройки, источники, ключи и «Доступы» здесь не затрагиваются.</p>
     <ul class="conn-list storage-list" id="storage-list" data-view="storage"></ul>
 
-    <p class="muted" data-view="versions">Итерации одного документа (docx, pptx, xlsx, pdf) из папок окна одним списком: у каждой версии написано, что в неё добавили. Файлы не меняются и не удаляются. Копия байт в байт показана как дубль.</p>
-    <label class="search ver-search" data-view="versions">
-      <span class="dollar">$</span>
-      <span class="cmd">dvk versions</span>
-      <input id="ver-q" type="search" placeholder="КП, смета, ТЗ…" aria-label="Найти документ" autocomplete="off" spellcheck="false">
-      <span class="kbd" id="ver-count"></span>
-    </label>
-    <div class="ver-list" id="ver-list" data-view="versions"></div>
 
     <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
     <ul class="conn-list" id="conn-list" data-view="conn"></ul>

@@ -425,7 +425,7 @@ state.modules = [];
 state.mm = { data: null, alert: "", sel: "health", busy: false, confirm: "", hv: { view: "pulse", day: null, rule: null, jf: "all" } }; // экран «Память»
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
-const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
+const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), "artifacts", ...moduleKeys()];
 function itemsOf(key, kb, files) {
   // «Все» — объединение вкладок: все записи базы и все файлы, число равно сумме
   // (решение владельца 06.11; до того база резалась до 5 и «Все» показывало
@@ -499,7 +499,9 @@ function renderTabs() {
     return b;
   };
   const searchTabs = () => [stab("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе"),
-    ...state.tabs.filter(visibleTab).map((t) => stab(tabKey(t), t.name, tabTip(t)))];
+    ...state.tabs.filter(visibleTab).map((t) => stab(tabKey(t), t.name, tabTip(t))),
+    // «Артефакты» — не вкладка по типу и не модуль: она при основных всегда (решение владельца 11.11).
+    btn("artifacts", "Артефакты", "Документы из папок и их версии: у каждой написано, что в нее добавили")];
   const searchBtn = () => btn("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON);
   const mods = () => moduleKeys().map((k) => { const m = MODULES[moduleOf(k)]; return btn(k, m.name, m.what, m.icon || MODULE_ICON); });
   const put = (...xs) => xs.forEach((x) => nav.insertBefore(x, ink));
@@ -655,7 +657,12 @@ function render() {
   // Счетчик — длина того же списка, что покажет вкладка.
   document.querySelectorAll("[data-stab]").forEach((b) => (b.querySelector("i").textContent = state.q ? itemsOf(b.dataset.tab, kb, files).length : ""));
   moveInk();
+  // «Артефакты» занимают место выдачи: строка поиска и вкладки остаются, запрос идет в них.
+  const art = state.tab === "artifacts";
+  $("#app").classList.toggle("art-open", art);
+  $("#artifacts-view").hidden = !art;
   if (showModule(moduleOf(state.tab))) return;
+  if (art) { renderArtifacts(); return; }
 
   // «Показано» у источника — сколько его записей в текущей вкладке до фильтра:
   // клик по одному источнику не обнуляет счет остальных.
@@ -978,7 +985,6 @@ const VIEWS = {
   prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
   storage: { title: "Хранилище", cmd: "storage" },
-  versions: { title: "Версии", cmd: "versions" },
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
   conn: { title: "Подключения", cmd: "config connections" },
@@ -1021,11 +1027,6 @@ async function openSettings(view = "sources") {
   if (view === "storage") {
     await renderStorage();
     $("#close-settings").focus();
-    return;
-  }
-  if (view === "versions") {
-    $("#ver-q").focus();
-    await renderVersions(false); // свежий обход — только когда кэш минутный устарел: он читает и хеширует документы
     return;
   }
   if (view === "conn") {
@@ -1081,24 +1082,24 @@ function sizeText(b) {
   if (b < 1073741824) return `${(b / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: b < 10485760 ? 1 : 0 })} МБ`;
   return `${(b / 1073741824).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ГБ`;
 }
-// Экран «Версии» (#547): список приходит из Go целиком, запрос фильтрует там же.
+// Вкладка «Артефакты» (#547): список приходит из Go целиком, запрос фильтрует там же;
+// запрос — строка поиска окна. Обход папок читает и хеширует документы, поэтому
+// свежим он идет только по устаревшему минутному кэшу.
 let verSeq = 0;
-async function renderVersions(fresh) {
-  const box = $("#ver-list");
-  if (!native() || !native().Versions) { box.innerHTML = `<p class="muted">Версии видны в окне приложения.</p>`; return; }
+async function renderArtifacts() {
+  const box = $("#ver-list"), q = state.q || "";
+  if (!native() || !native().Versions) { box.innerHTML = `<p class="muted">Артефакты видны в окне приложения.</p>`; return; }
   const seq = ++verSeq;
-  if (fresh) box.innerHTML = `<p class="muted">Собираю документы…</p>`;
+  if (!box.firstChild) box.innerHTML = `<p class="muted">Собираю документы…</p>`;
   let fams = [];
-  try { fams = (await native().Versions($("#ver-q").value, !!fresh)) || []; } catch (e) { if (seq === verSeq) box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
+  try { fams = (await native().Versions(q, false)) || []; } catch (e) { if (seq === verSeq) box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
   if (seq !== verSeq) return; // пришел ответ на устаревший запрос
-  $("#ver-count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
-  if (!fams.length) { box.innerHTML = `<p class="muted">${$("#ver-q").value.trim() ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Найти одинокий файл можно по имени."}</p>`; return; }
+  $("#count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
+  if (!fams.length) { box.innerHTML = `<p class="muted">${q ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Одинокий файл находится по имени в строке поиска."}</p>`; return; }
   box.innerHTML = fams.map((f) => `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}</h4>${
     f.versions.map((v) => `<div class="ver-row"><span class="ver-date">${esc(v.date)}</span><span class="ver-note">${esc(v.note)} · ${sizeText(v.size)}</span><span class="ver-path">${esc(v.path)}</span>${
       (v.dups || []).map((d) => `<span class="ver-dup">${esc(d)}</span>`).join("")}</div>`).join("")}</section>`).join("");
 }
-let verTimer = null;
-$("#ver-q").addEventListener("input", () => { clearTimeout(verTimer); verTimer = setTimeout(() => renderVersions(false), 200); });
 
 let storageConfirm = null;
 async function renderStorage() {

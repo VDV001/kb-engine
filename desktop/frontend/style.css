@@ -414,7 +414,6 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .settings:not([data-view="look"]) [data-view="look"],
 .settings:not([data-view="conn"]) [data-view="conn"],
 .settings:not([data-view="storage"]) [data-view="storage"],
-.settings:not([data-view="versions"]) [data-view="versions"],
 .settings:not([data-view="memory"]) [data-view="memory"] { display: none; }
 .conn-list { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--z-rule); }
 .conn-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; padding: 10px 2px; border-bottom: 1px solid var(--z-rule); }
@@ -1543,11 +1542,13 @@ body:not(.no-scan-run) .ac-run-bar::after { content: ""; position: absolute; ins
 .ac-found { display: grid; gap: 4px; }
 .ac-found label { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 
-/* Экран «Версии» (#547): семейства документов лентой по времени. */
-.search.ver-search { height: 60px; flex-shrink: 0; margin: 8px 0 16px; padding: 0 18px; }
-.ver-search .dollar { font-size: 18px; }
-.ver-search .cmd { font-size: 16px; }
-.ver-search input { font-size: 17px; }
+/* Модуль «Артефакты» (#547): семейства документов лентой по времени. */
+.app.art-open .body { display: none; }
+.app.art-open .art-view:not([hidden]) { display: flex; }
+.art-view { flex-direction: column; min-height: 0; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
+.art-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--z-rule); background: var(--z-bg); }
+body:not(.no-help-title) .art-bar .hp-title { background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.art-body { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 20px; }
 .ver-fam { border-top: 1px solid var(--z-line); padding: 10px 0; }
 .ver-fam h4 { margin: 0 0 6px; font-size: 13px; color: var(--z-ink); overflow-wrap: anywhere; }
 .ver-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 4px 10px; padding: 4px 0; font-size: 12px; }
