@@ -1920,6 +1920,8 @@ const ACCENTS = [
   ["mh-signal", "Здоровье: сигнал", "рамка с переливом, когда памяти нужно внимание"],
   ["mh-score", "Здоровье: счет", "число и шкала здоровья переливом"],
   ["mh-heat", "Здоровье: ритм", "клетки ритма градиентом"],
+  ["ac-buttons", "Машины: главные кнопки", "«Сканировать машину», «Запустить скан» и «Сохранить» в форме машины"],
+  ["scan-run", "Машины: ход скана", "бегущая полоса, пока идет скан по ssh"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -4002,7 +4004,9 @@ const ST_SCREENS = { pulse: stPulse, feed: stFeed, heat: stHeat, money: stMoney,
 // (буфер со скрытой пометкой, стирается через 30 с). Само закрывается без дела —
 // время в «Оформление → Доступы». Состояние — в state.ac: showModule зовет
 // acLeave раньше, чем дойдет до этих строк.
-state.ac = { open: false, busy: false, draft: {}, editing: "", confirmDel: "", list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {} };
+state.ac = { open: false, busy: false, draft: {}, editing: "", confirmDel: "", list: [], q: "", env: "", sel: "", shown: {}, adding: false, left: 0, idle: 0, timers: {},
+  // Машины (#549): рядом с учетками, тот же замок и Touch ID.
+  mode: "acc", machines: [], msel: "", madding: false, mediting: "", mdraft: {}, mconfirm: "", mshown: {}, scan: null };
 const AC_HUES = ["--z-sp4", "--z-sp2", "--z-src-violet", "--z-sp6", "--z-sp5", "--z-sp1", "--z-sp3"];
 const AC_GRADS = { spectrum: "Спектр DVK", gold: "Золото", ice: "Лед", dusk: "Закат", mono: "Без цвета" };
 const AC_NAMES = ["Хранилище", "Шифр", "Сейф", "Ключи"];
@@ -4041,6 +4045,9 @@ async function acLoad() {
   const ac = state.ac;
   try { ac.list = (await native().AccessList(ac.q)) || []; }
   catch (e) { ac.list = []; showError("Доступы не прочитать: " + errText(e)); }
+  if (!native().MachineList) return; // сборка окна без машин
+  try { ac.machines = (await native().MachineList(ac.q)) || []; }
+  catch (e) { ac.machines = []; showError("Машины не прочитать: " + errText(e)); }
 }
 function acVaultHTML() {
   const L = acLook();
@@ -4107,6 +4114,11 @@ function acEditHTML(c) {
     ${f("password", "новый пароль (пусто — не менять)", "", "password")}
     <div class="ac-acts"><button type="button" class="ac-btn" data-ac="edit-cancel">Отмена</button><button class="ac-btn pri" type="submit">Сохранить · Touch ID</button></div></form>`;
 }
+// Хвост экрана учеток: форма, список и карточка (как было до машин).
+function acAccTailHTML(ac, list, cur, groups) {
+  return `${ac.adding ? acAddHTML() : ""}${ac.editing && cur && cur.id === ac.editing ? acEditHTML(cur) : ""}
+    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр доступов нет." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}`;
+}
 function acInsideHTML() {
   const ac = state.ac, L = acLook(), sec = acLockSec();
   const list = ac.list.filter((c) => !ac.env || c.env === ac.env);
@@ -4122,9 +4134,8 @@ function acInsideHTML() {
       <span class="mini">${sec ? `закроется через <b id="ac-idle">${acFmt(ac.left)}</b> без дела` : "само не закрывается"} <button class="ac-btn" data-ac="close">Закрыть</button></span></div>
     <div class="ac-find"><input id="ac-q" type="search" placeholder="найти доступ: продукт, среда, логин, роль, адрес" value="${esc(ac.q)}" autocomplete="off" spellcheck="false">
       ${["", "prod", "stage", "test", "dev"].map((e) => `<button class="look-chip" data-ac="env" data-env="${e}" aria-pressed="${ac.env === e}">${e ? { prod: "прод", stage: "стенд", test: "тест", dev: "dev" }[e] : "все"}</button>`).join("")}
-      <button class="ac-btn pri" data-ac="add">${ac.adding ? "Свернуть форму" : "Добавить доступ"}</button></div>
-    ${ac.adding ? acAddHTML() : ""}${ac.editing && cur && cur.id === ac.editing ? acEditHTML(cur) : ""}
-    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Доступы">${groups}</div>${acCardHTML(cur)}</div>` : `<p class="muted">${ac.list.length ? "Под этот фильтр доступов нет." : "Доступов пока нет: «Добавить доступ» или kbengine creds add в терминале."}</p>`}
+      ${acModeHTML()}<button class="ac-btn pri" data-ac="${ac.mode === "mach" ? "madd" : "add"}">${(ac.mode === "mach" ? ac.madding : ac.adding) ? "Свернуть форму" : ac.mode === "mach" ? "Добавить машину" : "Добавить доступ"}</button></div>
+    ${ac.mode === "mach" ? acMachTailHTML() : acAccTailHTML(ac, list, cur, groups)}
   </div>`;
 }
 function acRender() {
@@ -4157,7 +4168,8 @@ function acClose() {
   const ac = state.ac;
   for (const id of Object.keys(ac.shown)) { clearInterval(ac.timers[id]); delete ac.shown[id]; }
   clearInterval(ac.idle);
-  Object.assign(ac, { open: false, adding: false, editing: "", draft: {}, confirmDel: "", list: [] });
+  for (const id of Object.keys(ac.mshown)) { clearInterval(ac.timers["m:" + id]); delete ac.mshown[id]; }
+  Object.assign(ac, { open: false, adding: false, editing: "", draft: {}, confirmDel: "", list: [], machines: [], madding: false, mediting: "", mdraft: {}, mconfirm: "", scan: null });
   if (native() && native().AccessClose) native().AccessClose().catch(() => {});
   acRender();
 }
@@ -4176,6 +4188,198 @@ for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListen
   if (state.ac.open) state.ac.left = acLockSec();
   if (!e.target.closest("#ac-error")) $("#ac-error").hidden = true; // прежняя ошибка снимается следующим действием, «Подробнее» ее не трогает
 }, true);
+// ---- Машины (#549) --------------------------------------------------------------------------------------
+// Сервер, на котором лежит много проектов: не учетка на стенде, а хост, порт, способ входа, цепочка через
+// бастион и список проектов. Пароль (при входе по паролю) — в Связке, только по Touch ID; агенту через MCP
+// уходит карточка без пароля, пути ключа, подсказки про токен и заметки. Скан читает проекты по ssh.
+const MA_AUTH = { password: "Пароль", key: "Ключ ssh", token: "Сертификат или токен" };
+function acModeHTML() {
+  if (!native().MachineList) return "";
+  return `<span class="ac-seg" role="group" aria-label="Что показывать">${[["acc", "Учётки"], ["mach", "Машины"]]
+    .map(([k, t]) => `<button class="look-chip" data-ac="mode" data-mode="${k}" aria-pressed="${state.ac.mode === k}">${t}</button>`).join("")}</span>`;
+}
+const maProjectsText = (m) => ((m && m.projects) || []).map((p) => [p.name, p.path, p.port, p.what].join(" | ").replace(/( \| )+$/, "")).join("\n");
+// «имя | путь | порт | что это», по строке на проект; лишнее после четвертой черты остается в «что это».
+function maParseProjects(text) {
+  return text.split("\n").map((l) => l.trim()).filter(Boolean).map((l) => { const [name, path = "", port = "", ...what] = l.split("|").map((x) => x.trim()); return { name, path, port, what: what.join(" | ") }; });
+}
+function acMachFormHTML(m) {
+  const d = state.ac.mdraft, v = (k, cur) => esc(d[k] !== undefined ? d[k] : cur === undefined || cur === null ? "" : cur);
+  const f = (k, t, cur, type = "text") => `<label>${t}<input name="${k}" type="${type}" value="${v(k, cur)}" autocomplete="off" spellcheck="false"></label>`;
+  const sel = (k, t, opts, cur) => { const val = d[k] !== undefined ? d[k] : cur; return `<label>${t}<select name="${k}">${opts.map(([o, n]) => `<option value="${esc(o)}"${val === o ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`; };
+  const others = state.ac.machines.filter((x) => !m || x.id !== m.id).map((x) => [x.id, x.name]);
+  const pj = d.projects !== undefined ? d.projects : maProjectsText(m);
+  return `<form class="ac-add ${m ? "ac-edit" : ""}" id="${m ? "mach-edit" : "mach-add"}" data-id="${m ? esc(m.id) : ""}">
+    ${m ? `<p class="ac-edit-who">Изменить машину. Пароль пустой — прежний остается.</p>` : ""}
+    ${f("name", "имя машины", m && m.name)}${f("group", "группа (папка в списке)", m && m.group)}${sel("env", "среда (необязательно)", [["", "не задана"], ["prod", "прод"], ["stage", "стенд"], ["test", "тест"], ["dev", "dev"]], m ? m.env : "")}
+    ${f("host", "хост (сервер или IP)", m && m.host)}${f("port", "порт ssh (пусто — 22)", m && m.port !== 22 ? m.port : "", "number")}${f("user", "пользователь", m && m.user)}
+    ${sel("auth", "как входить", [["key", "Ключ ssh"], ["password", "Пароль"], ["token", "Сертификат или токен"]], m ? m.auth : "key")}${f("keyPath", "файл ключа (только путь)", m && m.keyPath)}${sel("jump", "заходить через (бастион)", [["", "напрямую"], ...others], m ? m.jump : "")}
+    ${f("tokenHint", "токен или сертификат: где взять", m && m.tokenHint)}${f("note", "заметка (видна только в окне)", m && m.note)}${f("password", "пароль (если вход по паролю)", "", "password")}
+    <label class="ac-wide ac-chk"><input type="checkbox" name="scan"${m ? "" : " checked"}> просканировать после сохранения <span class="muted">по ssh только чтение, на машине ничего не меняется; нужен ключ ssh или агент, по паролю скан не работает</span></label>
+    <label class="ac-wide">что на машине: проект | путь | порт | что это, по строке на проект<textarea name="projects" rows="4" spellcheck="false">${esc(pj)}</textarea></label>
+    <div class="ac-acts"><button type="button" class="ac-btn" data-ac="${m ? "medit-cancel" : "madd-cancel"}">Отмена</button><button class="ac-btn pri" type="submit">Сохранить${m ? " · Touch ID" : ""}</button></div></form>`;
+}
+function acScanHTML(m) {
+  const s = state.ac.scan;
+  if (!s || s.id !== m.id) return `<div class="ac-scan idle"><button class="ac-btn pri ac-scan-go" data-ac="mscan" data-id="${esc(m.id)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M4.6 4.6a4.8 4.8 0 0 0 0 6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8M2.3 2.3a8 8 0 0 0 0 11.4M13.7 2.3a8 8 0 0 1 0 11.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Сканировать машину</button><span class="muted">по ssh только чтение: проекты на машине заполнятся сами</span></div>`;
+  if (s.step === "ask") return `<div class="ac-scan"><b>Скан «${esc(m.name)}»</b><p class="muted">По ssh выполнится только чтение, на машине ничего не меняется:</p><pre class="ac-plan">${s.plan.map(esc).join("\n")}</pre>
+    <p class="muted">Вход по вашему ключу или агенту ssh на этом Mac; пароль не подставляется, секреты и содержимое файлов не читаются, в карточку попадают имена, пути и порты.${m.auth === "password" ? " <b>У этой машины вход по паролю, скан по паролю не работает.</b>" : ""}</p>
+    <div class="ac-acts"><button class="ac-btn" data-ac="mscan-x">Отмена</button><button class="ac-btn pri" data-ac="mscan-run" data-id="${esc(m.id)}"${m.auth === "password" ? " disabled" : ""}>Запустить скан</button></div></div>`;
+  if (s.step === "run") return `<div class="ac-scan run"><i class="ac-run-bar" aria-hidden="true"></i><span class="muted">Сканирую «${esc(m.name)}»…</span></div>`;
+  const n = s.found.filter((f) => f.new).length;
+  return `<div class="ac-scan"><b>Найдено ${s.found.length}, новых ${n}</b>
+    ${s.found.length ? `<div class="ac-found">${s.found.map((f, i) => `<label><input type="checkbox" data-scan="${i}"${f.new ? " checked" : " disabled"}> <b>${esc(f.name)}</b> <span class="muted">${[f.path, f.port ? "порт " + f.port : "", f.what, f.new ? "" : "уже в списке"].filter(Boolean).map(esc).join(" · ")}</span></label>`).join("")}</div>` : `<p class="muted">Ничего не нашлось: на машине нет docker, служб, сайтов nginx и каталогов в /srv, либо нет прав на чтение.</p>`}
+    <div class="ac-acts"><button class="ac-btn" data-ac="mscan-x">Закрыть</button><button class="ac-btn pri" data-ac="mscan-add" data-id="${esc(m.id)}"${n ? "" : " disabled"}>Добавить выбранные</button></div>
+    <p class="muted">Повторный скан покажет только новое; то, что вы вписали или поправили, не затирается.</p></div>`;
+}
+function acMachCardHTML(m) {
+  const ac = state.ac, open = ac.mshown[m.id], row = (t, v) => (v ? `<dt>${t}</dt><dd>${esc(v)}</dd>` : "");
+  const pw = m.auth === "password" ? `<dt>пароль</dt><dd><div class="ac-secret"><code class="${open ? "open" : ""}">${open ? esc(open.pw) : m.hasPassword ? "••••••••••••" : "не задан"}</code>
+    <button class="ac-btn" data-ac="${open ? "mhide" : "mshow"}" data-id="${esc(m.id)}">${open ? "Скрыть" : "Показать · Touch ID"}</button>
+    <button class="ac-btn pri" data-ac="mcopy" data-id="${esc(m.id)}">Скопировать на 30 с</button>${open ? `<span class="ac-cd" data-cd="m:${esc(m.id)}">скроется через ${open.left} с</span>` : ""}</div></dd>` : "";
+  const pj = (m.projects || []).length ? `<table class="ac-pj"><thead><tr><th>проект</th><th>путь</th><th>порт</th><th>что это</th></tr></thead><tbody>${(m.projects || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.path || "")}</td><td>${esc(p.port || "")}</td><td>${esc(p.what || "")}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">Проектов пока нет: просканируйте машину или впишите их при правке.</p>`;
+  return `<div class="ac-card" style="--c:var(--z-sp4)">
+    <div class="crumb"><i class="ac-sw"></i>машина${m.group ? " · " + esc(m.group) : ""}</div>
+    <h3>${esc(m.name)} ${m.env ? `<span class="ac-env ${esc(m.env)}">${esc(m.envName)}</span>` : ""}</h3>
+    ${m.command ? `<div class="ac-cmd"><code>${esc(m.command)}</code><button class="ac-btn" data-ac="mcmd" data-id="${esc(m.id)}">Скопировать</button></div>` : `<p class="ac-warn">Цепочка не собирается: ${esc(m.chainError)}</p>`}
+    <dl class="ac-kv"><dt>хост</dt><dd><code class="ac-login">${esc(m.host)}:${m.port}</code></dd><dt>пользователь</dt><dd>${esc(m.user)}</dd>
+      <dt>вход</dt><dd>${esc(MA_AUTH[m.auth] || m.auth)}${m.jump ? ` · через ${esc((ac.machines.find((x) => x.id === m.jump) || { name: m.jump }).name)}` : ""}</dd>
+      ${row("ключ", m.keyPath)}${row("где взять", m.tokenHint)}${pw}${row("заметка", m.note)}</dl>
+    <h4 class="ac-sub">Что на машине</h4>${pj}${acScanHTML(m)}
+    <div class="ac-note">Пароль — в Связке ключей этого Мака; агенту через MCP уходит карточка без пароля, пути ключа, подсказки про токен и заметки.
+      ${ac.mconfirm === m.id ? `<span class="ac-del">Снять машину ${esc(m.name)}? Пароль уйдет из Связки, это не отменить. <button class="ac-btn" data-ac="mdel-yes" data-id="${esc(m.id)}">Да, снять · Touch ID</button> <button class="ac-btn" data-ac="mdel-no">Нет</button></span>`
+        : `<button class="ac-btn" data-ac="medit" data-id="${esc(m.id)}" title="Поменять хост, вход, проекты, заметку или пароль">Изменить</button> <button class="ac-btn ac-del-btn" data-ac="mdel" data-id="${esc(m.id)}">Удалить</button>`}</div></div>`;
+}
+// Хвост экрана машин: форма, список слева (по группам) и карточка справа; фильтр среды и поиск работают так же.
+function acMachTailHTML() {
+  const ac = state.ac, list = ac.machines.filter((m) => !ac.env || m.env === ac.env);
+  const cur = list.find((m) => m.id === ac.msel) || list[0];
+  const gname = (m) => m.group || "Без группы", groups = [...new Set(list.map(gname))];
+  const left = groups.map((g) => { const items = list.filter((m) => gname(m) === g), n = items.length;
+    return `<div class="ac-grp" style="--c:var(${AC_HUES[groups.indexOf(g) % AC_HUES.length]})"><div class="ac-gh"><b>${esc(g)}</b><span class="n">${n} ${plural(n, "машина", "машины", "машин")}</span></div>
+      ${items.map((m) => `<button class="ac-acc" data-ac="msel" data-id="${esc(m.id)}" aria-selected="${cur && m.id === cur.id}"><span><i class="ac-lbl">машина</i> ${esc(m.name)}</span>${m.env ? `<span class="ac-env ${esc(m.env)}">${esc(m.envName)}</span>` : ""}</button>`).join("")}</div>`; }).join("");
+  return `${ac.madding ? acMachFormHTML(null) : ""}${ac.mediting && cur && cur.id === ac.mediting ? acMachFormHTML(cur) : ""}
+    ${list.length ? `<div class="ac-grid"><div class="ac-list" role="listbox" aria-label="Машины">${left}</div>${acMachCardHTML(cur)}</div>` : `<p class="muted">${ac.machines.length ? "Под этот фильтр машин нет." : "Машин пока нет: «Добавить машину» заведет первую, а скан сам заполнит проекты на ней."}</p>`}`;
+}
+// Форма окна → то, что принимает Go: порт числом, проекты списком.
+function maInput(fd) {
+  const o = { ...fd, port: fd.port ? Number(fd.port) : 0, projects: maParseProjects(fd.projects || "") };
+  delete o.password;
+  delete o.scan;
+  return o;
+}
+async function acMShow(id) {
+  const ac = state.ac;
+  try {
+    const pw = await native().MachineReveal(id);
+    ac.mshown[id] = { pw, left: 30 };
+    clearInterval(ac.timers["m:" + id]);
+    ac.timers["m:" + id] = setInterval(() => {
+      const s = ac.mshown[id]; if (!s) return;
+      if (--s.left <= 0) { acMHide(id); return; }
+      document.querySelectorAll(`[data-cd="${CSS.escape("m:" + id)}"]`).forEach((e) => (e.textContent = `скроется через ${s.left} с`));
+    }, 1000);
+    acRender();
+  } catch (e) { showError(errText(e)); }
+}
+function acMHide(id) { const ac = state.ac; clearInterval(ac.timers["m:" + id]); delete ac.mshown[id]; acRender(); }
+async function acMCopyCmd(btn, id) {
+  const m = state.ac.machines.find((x) => x.id === id); if (!m || !m.command) return;
+  try {
+    if (window.runtime && window.runtime.ClipboardSetText) { if (!(await window.runtime.ClipboardSetText(m.command))) throw new Error("буфер"); }
+    else await navigator.clipboard.writeText(m.command);
+    btn.textContent = "скопировано ✓";
+  } catch { const r = document.createRange(); r.selectNodeContents(btn.previousElementSibling); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); btn.textContent = "выделено — ⌘C"; }
+}
+// Действия машин из общего обработчика кликов; true — клик обработан здесь.
+async function acMachClick(b, ac, id) {
+  switch (b.dataset.ac) {
+    case "mode": ac.mode = b.dataset.mode; ac.scan = null; ac.confirmDel = ""; ac.mconfirm = ""; acRender(); break;
+    case "msel": ac.msel = id; ac.mconfirm = ""; ac.mediting = ""; ac.mdraft = {}; ac.scan = null; acRender(); break;
+    case "madd": ac.madding = !ac.madding; ac.mediting = ""; acRender(); if (ac.madding) $("#mach-add [name=name]").focus(); break;
+    case "madd-cancel": ac.madding = false; ac.mdraft = {}; acRender(); break;
+    case "medit": ac.mediting = id; ac.madding = false; ac.mconfirm = ""; ac.mdraft = {}; acRender(); $("#mach-edit [name=name]").focus(); break;
+    case "medit-cancel": ac.mediting = ""; ac.mdraft = {}; acRender(); break;
+    case "mshow": acMShow(id); break;
+    case "mhide": acMHide(id); break;
+    case "mcopy":
+      try { await native().MachineCopy(id); toast("Скопировано", " · пароль машины в буфере на 30 с, менеджеры буфера его не сохранят"); }
+      catch (e) { showError(errText(e)); }
+      break;
+    case "mcmd": acMCopyCmd(b, id); break;
+    case "mdel": ac.mconfirm = id; acRender(); break;
+    case "mdel-no": ac.mconfirm = ""; acRender(); break;
+    case "mdel-yes":
+      if (ac.deleting) break;
+      ac.deleting = true; b.disabled = true;
+      try {
+        await native().MachineDelete(id);
+        ac.mconfirm = ""; delete ac.mshown[id]; clearInterval(ac.timers["m:" + id]); ac.msel = "";
+        await acLoad(); acRender();
+        toast("Снято", " · машина удалена: карточка и пароль из Связки");
+      } catch (err) { showError("Машина не снята: " + errText(err)); }
+      finally { ac.deleting = false; }
+      break;
+    case "mscan":
+      try { ac.scan = { id, step: "ask", plan: (await native().MachineScanPlan()) || [] }; acRender(); }
+      catch (e) { showError(errText(e)); }
+      break;
+    case "mscan-x": ac.scan = null; acRender(); break;
+    case "mscan-run": {
+      const plan = ac.scan && ac.scan.plan;
+      ac.scan = { id, step: "run", plan }; acRender();
+      try { ac.scan = { id, step: "done", plan, found: (await native().MachineScan(id)) || [] }; }
+      catch (e) { showError("Скан не удался: " + errText(e)); ac.scan = { id, step: "ask", plan }; }
+      acRender();
+      break;
+    }
+    case "mscan-add": {
+      const m = ac.machines.find((x) => x.id === id), s = ac.scan; if (!m || !s || s.step !== "done") break;
+      const picked = [...document.querySelectorAll("[data-scan]:checked")].map((c) => s.found[+c.dataset.scan]);
+      if (!picked.length) break;
+      const input = { name: m.name, group: m.group, env: m.env, host: m.host, port: m.port, user: m.user, auth: m.auth, keyPath: m.keyPath, jump: m.jump, tokenHint: m.tokenHint, note: m.note,
+        projects: [...(m.projects || []), ...picked.map((f) => ({ name: f.name, path: f.path || "", port: f.port || "", what: f.what }))] };
+      try {
+        await native().MachineUpdate(id, input, "");
+        ac.scan = null; await acLoad(); acRender();
+        toast("Добавлено", ` · из скана: ${picked.length} ${plural(picked.length, "проект", "проекта", "проектов")}`);
+      } catch (err) { showError("Проекты не добавлены: " + errText(err)); }
+      break;
+    }
+    default: return false;
+  }
+  return true;
+}
+// Скан после сохранения (галочка формы): найденное новое вставляется само, без выбора;
+// пусто — «проектов пока 0». Не удался — машина все равно сохранена, об этом и говорим.
+async function acAutoScan(name) {
+  const ac = state.ac, m = ac.machines.find((x) => x.name === name);
+  if (!m) return;
+  if (m.auth === "password") return toast("Скан не выполнен", " · по паролю скан не работает: добавьте ключ ssh или агент, проектов пока 0", null, "bad");
+  let found;
+  try { found = (await native().MachineScan(m.id)) || []; }
+  catch (e) { return toast("Машина сохранена, скан не удался", " · " + errText(e), null, "bad"); }
+  const fresh = found.filter((f) => f.new);
+  if (!fresh.length) return toast("Скан", found.length ? " · новых проектов нет" : " · проектов пока 0");
+  const input = { name: m.name, group: m.group, env: m.env, host: m.host, port: m.port, user: m.user, auth: m.auth, keyPath: m.keyPath, jump: m.jump, tokenHint: m.tokenHint, note: m.note,
+    projects: [...(m.projects || []), ...fresh.map((f) => ({ name: f.name, path: f.path || "", port: f.port || "", what: f.what }))] };
+  try { await native().MachineUpdate(m.id, input, ""); await acLoad(); acRender(); toast("Скан", ` · найдено и добавлено: ${fresh.length} ${plural(fresh.length, "проект", "проекта", "проектов")}`); }
+  catch (err) { showError("Проекты из скана не добавлены: " + errText(err)); }
+}
+async function acMachSubmit(form) {
+  const fd = Object.fromEntries(new FormData(form)), pw = fd.password || "", scan = "scan" in fd;
+  form.elements.password.value = ""; // пароль не остается в поле
+  const input = maInput(fd), ac = state.ac;
+  if (form.id === "mach-edit") {
+    try { await native().MachineUpdate(form.dataset.id, input, pw); ac.mediting = ""; ac.mdraft = {}; await acLoad(); acRender(); toast("Сохранено", pw ? " · машина обновлена, пароль сменен" : " · машина обновлена"); }
+    catch (err) { showError("Машина не изменена: " + errText(err)); return; }
+    if (scan) await acAutoScan(input.name);
+    return;
+  }
+  try { await native().MachineAdd(input, pw); ac.madding = false; ac.mdraft = {}; await acLoad(); acRender(); toast("Сохранено", pw ? " · машина добавлена, пароль — в Связке ключей" : " · машина добавлена"); }
+  catch (err) { showError("Машина не сохранена: " + errText(err)); return; }
+  if (scan) await acAutoScan(input.name);
+}
 async function acShow(id) {
   const ac = state.ac;
   try {
@@ -4198,6 +4402,7 @@ async function acCopy(id) {
 $("#access-view").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-ac]"); if (!b) return;
   const ac = state.ac, id = b.dataset.id;
+  if (await acMachClick(b, ac, id)) return;
   switch (b.dataset.ac) {
     case "open": acOpen(); break;
     case "close": acClose(); break;
@@ -4235,8 +4440,10 @@ $("#access-view").addEventListener("input", (e) => {
 $("#access-view").addEventListener("input", (e) => {
   const el = e.target;
   if (el.form && (el.form.id === "ac-add" || el.form.id === "ac-edit") && el.name !== "password") state.ac.draft[el.name] = el.value;
+  if (el.form && (el.form.id === "mach-add" || el.form.id === "mach-edit") && el.name !== "password") state.ac.mdraft[el.name] = el.value;
 });
 $("#access-view").addEventListener("submit", async (e) => {
+  if (e.target.id === "mach-add" || e.target.id === "mach-edit") { e.preventDefault(); acMachSubmit(e.target); return; }
   if (e.target.id === "ac-edit") {
     e.preventDefault();
     const fd = Object.fromEntries(new FormData(e.target)), pw = fd.password, id = e.target.dataset.id;

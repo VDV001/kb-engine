@@ -39,6 +39,8 @@ type Config struct {
 	Remote RemoteSearcher
 	// Access нулевой означает «доступов нет»: search_access не объявляется.
 	Access AccessFinder
+	// Machines — машины (#549); nil — инструмента search_machines нет.
+	Machines MachineFinder
 	// Memory нулевой означает «памяти нет»: memory_find и memory_propose не объявляются.
 	Memory MemoryAgent
 }

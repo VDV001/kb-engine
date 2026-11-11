@@ -212,6 +212,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 	if cfg.Access != nil {
 		addAccessTool(s, j, cfg.Access)
 	}
+	if cfg.Machines != nil {
+		addMachineTool(s, j, cfg.Machines)
+	}
 	if cfg.Memory != nil {
 		addMemoryTools(s, j, cfg.Memory)
 	}

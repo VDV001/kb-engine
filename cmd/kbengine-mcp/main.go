@@ -24,6 +24,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/runlogjsonl"
 	"github.com/daniil/kb-engine/internal/adapter/searchsyn"
 	"github.com/daniil/kb-engine/internal/usecase/creds"
+	"github.com/daniil/kb-engine/internal/usecase/machines"
 	"github.com/daniil/kb-engine/internal/usecase/query"
 	"github.com/daniil/kb-engine/internal/usecase/search"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -104,9 +105,11 @@ func run(args []string, stderr io.Writer) error {
 		// отсюда не достать даже по ошибке: все, что получает агент, уходит
 		// провайдеру модели.
 		Access: creds.Service{Cards: credsjson.Store{Path: credsjson.DefaultPath(userHome())}},
+		// Машины (#549): тоже только карточки, без пароля, пути ключа и заметки.
+		Machines: machines.Service{Machines: credsjson.MachineStore{Path: credsjson.MachineDefaultPath(userHome())}},
 		// Память (ADR-0008): агент находит и предлагает, одобряет только человек.
 		Memory: memoryAgent{dir: memorydir.DefaultPath(userHome())}}
-	tools := "search_catalog · get_entry · stats · search_access · memory_find · memory_propose"
+	tools := "search_catalog · get_entry · stats · search_access · search_machines · memory_find · memory_propose"
 	if *filesConfig != "" {
 		files, err := newFileIndex(*filesConfig, userHome(), stderr)
 		if err != nil {
