@@ -23,7 +23,7 @@ const (
 	CallAnswer   CallPurpose = "answer"   // ответ в чате
 	CallSearch   CallPurpose = "search"   // шаг, где модель ищет и читает документы
 	CallExtract  CallPurpose = "extract"  // разбор ответа для портрета
-	CallCompress CallPurpose = "compress" // сжатие портрета
+	CallCompress CallPurpose = "compress" // сжатие портрета или чата
 	CallListen   CallPurpose = "listen"   // облачное распознавание диктовки
 	CallSpeak    CallPurpose = "speak"    // облачный голос
 )

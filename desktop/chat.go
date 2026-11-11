@@ -21,6 +21,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/llm"
 	"github.com/daniil/kb-engine/internal/adapter/usagejsonl"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
@@ -481,6 +482,9 @@ func history(rec chatRecord) []chat.Message {
 	for _, m := range rec.Messages {
 		out = append(out, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
 	}
+	if c := rec.Compressed; c != nil {
+		return chat.Compression{Text: c.Text, Folded: c.Folded}.Apply(out)
+	}
 	return out
 }
 
@@ -673,7 +677,47 @@ func interleave(a, b []chat.Doc, limit int) []chat.Doc {
 	return out
 }
 
-// CompressChat folds the old part of chat id into a summary (#539).
+// compressKeep — сколько последних сообщений остается живыми при сжатии.
+const compressKeep = 6
+
+// CompressChat folds the old part of chat id into a summary (#539). Сообщения
+// в файле остаются целыми: конспект лежит рядом и подменяет начало только в
+// запросе к модели. Повторное сжатие считает по исходным сообщениям, а не по
+// прежнему конспекту.
+//
+// ponytail: повторное сжатие заново читает всю исходную историю. Потолок:
+// чат на сотни сообщений дороже по токенам, чем сжатие поверх старого
+// конспекта. Путь: сворачивать конспект и новую часть, сдвигая Folded.
 func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
-	return chatRecord{}, errors.New("not implemented")
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	rec, err := d.load(id)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	c := d.config()
+	key, err := d.modelKey(c)
+	if err != nil {
+		return chatRecord{}, err
+	}
+	raw := make([]chat.Message, 0, len(rec.Messages))
+	for _, m := range rec.Messages {
+		raw = append(raw, chat.Message{Role: chat.Role(m.Role), Text: m.Text})
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+	defer cancel()
+	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallCompress))
+	sum, err := chat.NewService(nil, model).Compress(ctx, raw, compressKeep)
+	switch {
+	case errors.Is(err, chat.ErrNothingToCompress):
+		return chatRecord{}, errors.New("чат короткий, сжимать нечего")
+	case err != nil:
+		return chatRecord{}, errors.New(chatError(err))
+	}
+	rec.Compressed = &chatCompressed{Text: sum.Text, Folded: sum.Folded}
+	rec.Updated = d.now()
+	if err := d.save(rec); err != nil {
+		return chatRecord{}, err
+	}
+	return rec, nil
 }
