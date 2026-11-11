@@ -2,6 +2,7 @@ package versions_test
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -36,11 +37,11 @@ func TestGroup_OneFamilyAcrossFormatsAndFolders(t *testing.T) {
 	if !strings.HasSuffix(kp.Versions[0].Path, "05.pptx") || !strings.HasSuffix(kp.Versions[1].Path, "10.pptx") {
 		t.Errorf("лента не по времени: %v, %v", kp.Versions[0].Path, kp.Versions[1].Path)
 	}
-	if kp.Versions[0].Note != "первая версия" {
-		t.Errorf("первая версия: %q", kp.Versions[0].Note)
+	if c := kp.Versions[0].Change; c.Kind != versions.KindFirst {
+		t.Errorf("первая версия: %+v", c)
 	}
-	if n := kp.Versions[1].Note; !strings.Contains(n, "Гарантия") || !strings.Contains(n, "добавлено 1") {
-		t.Errorf("что нового: %q", n)
+	if c := kp.Versions[1].Change; c.Kind != versions.KindDiff || !slices.Equal(c.Added, []string{"Гарантия"}) || len(c.Removed) != 0 {
+		t.Errorf("что нового: %+v", c)
 	}
 }
 
@@ -92,9 +93,8 @@ func TestGroup_LayoutOnlyChangeIsNotUnchanged(t *testing.T) {
 		file("/a/КП_2026_11_05.pptx", "h1", "Цена 100", day(11, 5)),
 		file("/a/КП_2026_11_10.pptx", "h2", "Цена 100", day(11, 10)),
 	})
-	n := got[0].Versions[1].Note
-	if !strings.Contains(n, "текст не менялся") || strings.Contains(n, "без изменений") {
-		t.Errorf("правка вёрстки не названа: %q", n)
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindLayoutOnly {
+		t.Errorf("правка вёрстки не названа: %+v", c)
 	}
 }
 
@@ -105,11 +105,11 @@ func TestGroup_NoteComparesWithSameFormat(t *testing.T) {
 		file("/a/КП_2026_11_10.pptx", "h3", "Цена 100\nГарантия", day(11, 10)),
 	})
 	vs := got[0].Versions
-	if !strings.Contains(vs[1].Note, "pdf") {
-		t.Errorf("новый формат не назван: %q", vs[1].Note)
+	if c := vs[1].Change; c.Kind != versions.KindNewFormat || c.Format != "pdf" {
+		t.Errorf("новый формат не назван: %+v", c)
 	}
-	if strings.Contains(vs[2].Note, "PDF-шум") || !strings.Contains(vs[2].Note, "Гарантия") {
-		t.Errorf("дифф должен идти от предыдущего pptx: %q", vs[2].Note)
+	if c := vs[2].Change; c.Kind != versions.KindDiff || !slices.Equal(c.Added, []string{"Гарантия"}) || len(c.Removed) != 0 {
+		t.Errorf("дифф должен идти от предыдущего pptx: %+v", c)
 	}
 }
 
@@ -118,8 +118,8 @@ func TestGroup_MissingText(t *testing.T) {
 		file("/a/Скан_2026_11_05.pdf", "h1", "", day(11, 5)),
 		file("/a/Скан_2026_11_10.pdf", "h2", "", day(11, 10)),
 	})
-	if n := got[0].Versions[1].Note; !strings.Contains(n, "текст недоступен") {
-		t.Errorf("нет текста: %q", n)
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindNoText {
+		t.Errorf("нет текста: %+v", c)
 	}
 }
 
@@ -159,8 +159,8 @@ func TestGroup_BigTextsDiffFast(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("сравнение двух текстов по 30 тыс. строк заняло %v", d)
 	}
-	if n := got[0].Versions[1].Note; !strings.Contains(n, "добавлено 30000") {
-		t.Errorf("подпись: %q", n)
+	if c := got[0].Versions[1].Change; len(c.Added) != 30000 || len(c.Removed) != 30000 || c.Total != 30000 {
+		t.Errorf("добавлено %d, убрано %d, всего %d, ждали по 30000", len(c.Added), len(c.Removed), c.Total)
 	}
 }
 
@@ -168,5 +168,61 @@ func TestWhen_PrefersNameDateOverMtime(t *testing.T) {
 	f := file("/a/КП_2026_11_05.docx", "x", "t", day(12, 31))
 	if got := versions.When(f); got.Day() != 5 || got.Month() != time.November {
 		t.Errorf("дата из имени проиграла времени изменения: %v", got)
+	}
+}
+
+func TestGroup_TooBigFileIsNamedNotSkipped(t *testing.T) {
+	big := file("/a/Проект_2026_11_05.pptx", "", "", day(11, 5))
+	big.TooBig = true
+	got := versions.Group([]versions.File{big, file("/a/Проект_2026_11_10.pptx", "h", "Текст", day(11, 10))})
+	if len(got) != 1 || len(got[0].Versions) != 2 {
+		t.Fatalf("большой файл выпал из семейства: %+v", got)
+	}
+	if c := got[0].Versions[0].Change; c.Kind != versions.KindTooBig {
+		t.Errorf("большой файл не назван: %+v", c)
+	}
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindNoText {
+		t.Errorf("сравнивать с непрочитанным нельзя: %+v", c)
+	}
+}
+
+func numbered(prefix string, n int) string {
+	var b strings.Builder
+	for i := range n {
+		fmt.Fprintf(&b, "%s%d\n", prefix, i)
+	}
+	return b.String()
+}
+
+func TestGroup_AlmostNothingInCommonIsARewrite(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Отчет_2026_11_05.docx", "x", numbered("a", 100), day(11, 5)),
+		file("/a/Отчет_2026_11_10.docx", "y", numbered("b", 100), day(11, 10)),
+	})
+	c := got[0].Versions[1].Change
+	if c.Kind != versions.KindRewrite || c.Total != 100 || len(c.Added) != 100 || len(c.Removed) != 100 {
+		t.Errorf("замена документа не названа: kind %v, total %d, +%d -%d", c.Kind, c.Total, len(c.Added), len(c.Removed))
+	}
+}
+
+func TestGroup_SmallEditOfABigDocumentIsADiff(t *testing.T) {
+	old := numbered("a", 100)
+	edited := strings.Replace(old, "a7\n", "новая семерка\n", 1)
+	got := versions.Group([]versions.File{
+		file("/a/Отчет_2026_11_05.docx", "x", old, day(11, 5)),
+		file("/a/Отчет_2026_11_10.docx", "y", edited, day(11, 10)),
+	})
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff || len(c.Added) != 1 || len(c.Removed) != 1 {
+		t.Errorf("мелкая правка: %+v", c)
+	}
+}
+
+func TestGroup_ShortDocumentsAreNeverARewrite(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Записка_2026_11_05.docx", "x", "Привет\nМир", day(11, 5)),
+		file("/a/Записка_2026_11_10.docx", "y", "Пока\nСвет", day(11, 10)),
+	})
+	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff {
+		t.Errorf("короткий документ принят за замену: %+v", c)
 	}
 }

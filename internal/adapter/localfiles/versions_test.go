@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,6 +49,9 @@ func writeXlsx(t *testing.T, root, rel string, cells map[string]any) string {
 		}
 	}
 	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := f.SaveAs(p); err != nil {
 		t.Fatal(err)
 	}
@@ -107,8 +111,8 @@ func TestVersions_ReadsDocxPptxXlsxOfAFamily(t *testing.T) {
 	}
 	// вся цепочка до подписей: правка цены видна как «убрано/добавлено»
 	fams := versions.Group([]versions.File{got[p1], got[p2]})
-	if n := fams[0].Versions[1].Note; !strings.Contains(n, "Цена 120") || !strings.Contains(n, "убрано 1") {
-		t.Errorf("подпись: %q", n)
+	if c := fams[0].Versions[1].Change; !slices.Equal(c.Added, []string{"Цена 120"}) || !slices.Equal(c.Removed, []string{"Цена 100"}) {
+		t.Errorf("что нового: %+v", c)
 	}
 }
 
@@ -205,5 +209,39 @@ func TestVersions_PptxLineBreakSeparatesWords(t *testing.T) {
 	writePptxRaw(t, root, "p/Дек_2026_11_10.pptx", sldHead+`</p:spTree></p:cSld></p:sld>`)
 	if tx := collect(t, newSource(t, root))[a].Text; !strings.Contains(tx, "до\nпосле") {
 		t.Errorf("a:br склеил слова: %q", tx)
+	}
+}
+
+func TestVersions_FileOverTheReadLimitIsListedNotRead(t *testing.T) {
+	root := t.TempDir()
+	small := writePptx(t, root, "p/Проект_2026_11_10.pptx", []string{"Текст"})
+	big := write(t, root, "p/Проект_2026_11_05.pptx", "")
+	if err := os.Truncate(big, 33<<20); err != nil { // больше 32 МБ: порога чтения документов
+		t.Fatal(err)
+	}
+	got := collect(t, newSource(t, root))
+	b, ok := got[big]
+	if !ok || !b.TooBig || b.Hash != "" || b.Text != "" {
+		t.Errorf("большой файл: %+v (в списке: %v)", b, ok)
+	}
+	if got[small].TooBig || got[small].Text == "" {
+		t.Errorf("обычный файл тронут: %+v", got[small])
+	}
+}
+
+// Характеризация: лист больше предела текста обрезается, начало остается.
+// Проходил и до перехода на потоковое чтение: сам выигрыш в памяти тестом
+// не измерен.
+func TestVersions_HugeXlsxSheetIsCapped(t *testing.T) {
+	root := t.TempDir()
+	cells := map[string]any{}
+	for i := 1; i <= 20000; i++ {
+		cells[fmt.Sprintf("A%d", i)] = fmt.Sprintf("строка %d %s", i, strings.Repeat("я", 120))
+	}
+	a := writeXlsx(t, root, "p/Большая_2026_11_05.xlsx", cells)
+	writeXlsx(t, root, "p/Большая_2026_11_10.xlsx", map[string]any{"A1": "x"})
+	tx := collect(t, newSource(t, root))[a].Text
+	if len(tx) == 0 || len(tx) > localfiles.MaxFileBytes || !strings.Contains(tx, "строка 1 ") {
+		t.Errorf("длина %d, предел %d", len(tx), localfiles.MaxFileBytes)
 	}
 }
