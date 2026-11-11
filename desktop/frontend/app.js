@@ -1869,6 +1869,8 @@ const ACCENTS = [
   ["mh-signal", "Здоровье: сигнал", "рамка с переливом, когда памяти нужно внимание"],
   ["mh-score", "Здоровье: счет", "число и шкала здоровья переливом"],
   ["mh-heat", "Здоровье: ритм", "клетки ритма градиентом"],
+  ["ac-buttons", "Машины: главные кнопки", "«Сканировать машину», «Запустить скан» и «Сохранить» в форме машины"],
+  ["scan-run", "Машины: ход скана", "бегущая полоса, пока идет скан по ssh"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -4168,11 +4170,11 @@ function acMachFormHTML(m) {
 }
 function acScanHTML(m) {
   const s = state.ac.scan;
-  if (!s || s.id !== m.id) return `<div class="ac-scan"><button class="ac-btn" data-ac="mscan" data-id="${esc(m.id)}">Сканировать машину</button> <span class="muted">один раз после выдачи доступа: список проектов заполнится сам</span></div>`;
+  if (!s || s.id !== m.id) return `<div class="ac-scan idle"><button class="ac-btn pri ac-scan-go" data-ac="mscan" data-id="${esc(m.id)}"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2" fill="currentColor"/><path d="M4.6 4.6a4.8 4.8 0 0 0 0 6.8M11.4 4.6a4.8 4.8 0 0 1 0 6.8M2.3 2.3a8 8 0 0 0 0 11.4M13.7 2.3a8 8 0 0 1 0 11.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>Сканировать машину</button><span class="muted">по ssh только чтение: проекты на машине заполнятся сами</span></div>`;
   if (s.step === "ask") return `<div class="ac-scan"><b>Скан «${esc(m.name)}»</b><p class="muted">По ssh выполнится только чтение, на машине ничего не меняется:</p><pre class="ac-plan">${s.plan.map(esc).join("\n")}</pre>
     <p class="muted">Вход по вашему ключу или агенту ssh на этом Mac; пароль не подставляется, секреты и содержимое файлов не читаются, в карточку попадают имена, пути и порты.${m.auth === "password" ? " <b>У этой машины вход по паролю, скан по паролю не работает.</b>" : ""}</p>
     <div class="ac-acts"><button class="ac-btn" data-ac="mscan-x">Отмена</button><button class="ac-btn pri" data-ac="mscan-run" data-id="${esc(m.id)}"${m.auth === "password" ? " disabled" : ""}>Запустить скан</button></div></div>`;
-  if (s.step === "run") return `<div class="ac-scan"><span class="muted">Сканирую «${esc(m.name)}»…</span></div>`;
+  if (s.step === "run") return `<div class="ac-scan run"><i class="ac-run-bar" aria-hidden="true"></i><span class="muted">Сканирую «${esc(m.name)}»…</span></div>`;
   const n = s.found.filter((f) => f.new).length;
   return `<div class="ac-scan"><b>Найдено ${s.found.length}, новых ${n}</b>
     ${s.found.length ? `<div class="ac-found">${s.found.map((f, i) => `<label><input type="checkbox" data-scan="${i}"${f.new ? " checked" : " disabled"}> <b>${esc(f.name)}</b> <span class="muted">${[f.path, f.port ? "порт " + f.port : "", f.what, f.new ? "" : "уже в списке"].filter(Boolean).map(esc).join(" · ")}</span></label>`).join("")}</div>` : `<p class="muted">Ничего не нашлось: на машине нет docker, служб, сайтов nginx и каталогов в /srv, либо нет прав на чтение.</p>`}
