@@ -58,6 +58,15 @@ type chatRecord struct {
 	Portrait *portraitNote `json:"portrait,omitempty"`
 	// Context — заполнение контекста модели после этого ответа; только в ответе.
 	Context *contextNote `json:"context,omitempty"`
+	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
+	Compressed *chatCompressed `json:"compressed,omitempty"`
+}
+
+// chatCompressed is the summary that stands for the first Folded messages
+// when the model is asked.
+type chatCompressed struct {
+	Text   string `json:"text"`
+	Folded int    `json:"folded"`
 }
 
 // contextNote is how full the model's context is: токены запроса по счету
@@ -662,4 +671,9 @@ func interleave(a, b []chat.Doc, limit int) []chat.Doc {
 		}
 	}
 	return out
+}
+
+// CompressChat folds the old part of chat id into a summary (#539).
+func (d *chatDesk) CompressChat(id string) (chatRecord, error) {
+	return chatRecord{}, errors.New("not implemented")
 }
