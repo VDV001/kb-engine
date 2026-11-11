@@ -39,8 +39,9 @@ type App struct {
 	chat     *chatDesk // nil — чата нет (тесты без него)
 	access   *accessDesk
 	memory   *memoryDesk
-	browser  *browserDesk // кнопки вкладки «Браузер»
-	storage  *storageDesk // экран «Хранилище» (storage.go); nil — тесты без него
+	browser  *browserDesk  // кнопки вкладки «Браузер»
+	storage  *storageDesk  // экран «Хранилище» (storage.go); nil — тесты без него
+	versions *versionsDesk // экран «Версии» (versions.go); nil — тесты без него
 	run      func(name string, args ...string) error
 }
 
@@ -100,6 +101,14 @@ func (a *App) StorageItems() []storageItem {
 		return nil
 	}
 	return a.storage.Items()
+}
+
+// Versions returns the document families for the «Версии» screen.
+func (a *App) Versions(q string, fresh bool) ([]familyView, error) {
+	if a.versions == nil {
+		return []familyView{}, nil
+	}
+	return a.versions.Families(a.ctx, q, fresh)
 }
 
 // StorageClear wipes one «Хранилище» item; подтверждение человека — в окне.

@@ -73,7 +73,11 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   machines (ssh hosts) with a project scan. **Memory** (ADR-0008) has two
   layers (`kbengine memory`: a hot `HOT.md` of rules and a cold layer) with a
   health score that drops when nobody reviews it. Settings → **Хранилище** shows
-  what takes disk space and clears each item on its own.
+  what takes disk space and clears each item on its own. Settings →
+  **Версии** gathers the iterations of one document (docx, pptx, xlsx, pdf)
+  from the window's folders into a family, oldest first, each version saying
+  what was added or removed since the previous one; a byte-identical copy is
+  shown as a duplicate, and files are never changed.
   **Статистика** shows the model calls the window made — a feed, an activity
   map and money at the gateway's own prices, with a spend limit you set and the
   month's spend by chat (the dearest chats and their share). When a

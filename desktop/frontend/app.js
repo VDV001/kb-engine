@@ -978,6 +978,7 @@ const VIEWS = {
   prefs: { title: "Окно", cmd: "config window" },
   problems: { title: "Проблемы", cmd: "problems" },
   storage: { title: "Хранилище", cmd: "storage" },
+  versions: { title: "Версии", cmd: "versions" },
   chat: { title: "Чат и модель", cmd: "config chat" },
   look: { title: "Оформление", cmd: "config look" },
   conn: { title: "Подключения", cmd: "config connections" },
@@ -1020,6 +1021,11 @@ async function openSettings(view = "sources") {
   if (view === "storage") {
     await renderStorage();
     $("#close-settings").focus();
+    return;
+  }
+  if (view === "versions") {
+    $("#ver-q").focus();
+    await renderVersions(false); // свежий обход — только когда кэш минутный устарел: он читает и хеширует документы
     return;
   }
   if (view === "conn") {
@@ -1075,6 +1081,25 @@ function sizeText(b) {
   if (b < 1073741824) return `${(b / 1048576).toLocaleString("ru-RU", { maximumFractionDigits: b < 10485760 ? 1 : 0 })} МБ`;
   return `${(b / 1073741824).toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ГБ`;
 }
+// Экран «Версии» (#547): список приходит из Go целиком, запрос фильтрует там же.
+let verSeq = 0;
+async function renderVersions(fresh) {
+  const box = $("#ver-list");
+  if (!native() || !native().Versions) { box.innerHTML = `<p class="muted">Версии видны в окне приложения.</p>`; return; }
+  const seq = ++verSeq;
+  if (fresh) box.innerHTML = `<p class="muted">Собираю документы…</p>`;
+  let fams = [];
+  try { fams = (await native().Versions($("#ver-q").value, !!fresh)) || []; } catch (e) { if (seq === verSeq) box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
+  if (seq !== verSeq) return; // пришел ответ на устаревший запрос
+  $("#ver-count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
+  if (!fams.length) { box.innerHTML = `<p class="muted">${$("#ver-q").value.trim() ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Найти одинокий файл можно по имени."}</p>`; return; }
+  box.innerHTML = fams.map((f) => `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}</h4>${
+    f.versions.map((v) => `<div class="ver-row"><span class="ver-date">${esc(v.date)}</span><span class="ver-note">${esc(v.note)} · ${sizeText(v.size)}</span><span class="ver-path">${esc(v.path)}</span>${
+      (v.dups || []).map((d) => `<span class="ver-dup">${esc(d)}</span>`).join("")}</div>`).join("")}</section>`).join("");
+}
+let verTimer = null;
+$("#ver-q").addEventListener("input", () => { clearTimeout(verTimer); verTimer = setTimeout(() => renderVersions(false), 200); });
+
 let storageConfirm = null;
 async function renderStorage() {
   const list = $("#storage-list");
