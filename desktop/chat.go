@@ -61,6 +61,8 @@ type chatRecord struct {
 	Context *contextNote `json:"context,omitempty"`
 	// Compressed — конспект начала разговора (#539); Messages остаются целыми.
 	Compressed *chatCompressed `json:"compressed,omitempty"`
+	// CanCompress — есть ли что сжимать; только в ответе, в файл не пишется.
+	CanCompress bool `json:"canCompress,omitempty"`
 }
 
 // chatCompressed is the summary that stands for the first Folded messages

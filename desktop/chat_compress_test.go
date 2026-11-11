@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -105,5 +107,44 @@ func TestChat_CompressIsMetered(t *testing.T) {
 	}
 	if n != 1 {
 		t.Fatalf("вызовов сжатия в журнале %d, want 1", n)
+	}
+}
+
+// Повторное сжатие без новых сообщений ничего не меняет и не платит за вызов
+// модели: двойной щелчок или устаревшая страница.
+func TestChat_CompressTwiceIsOneCall(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	id := longChat(t, d, 5)
+	if _, err := d.CompressChat(id); err != nil {
+		t.Fatal(err)
+	}
+	asked := m.n
+	c, err := d.CompressChat(id)
+	if err != nil || c.Compressed == nil || c.Compressed.Folded != 4 {
+		t.Fatalf("повтор: %+v, %v", c.Compressed, err)
+	}
+	if m.n != asked {
+		t.Fatalf("повторное сжатие позвало модель %d раз(а)", m.n-asked)
+	}
+}
+
+// Страница узнает, есть ли что сжимать, от окна, а не по своей копии числа
+// «шесть»; в файл чата флаг не попадает.
+func TestChat_CanCompressComesFromTheWindow(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	short, long := longChat(t, d, 2), longChat(t, d, 5)
+	for id, want := range map[string]bool{short: false, long: true} {
+		got, err := d.Get(id)
+		if err != nil || got.CanCompress != want {
+			t.Fatalf("Get(%s).CanCompress = %v, want %v (%v)", id, got.CanCompress, want, err)
+		}
+		raw, _ := os.ReadFile(filepath.Join(d.dir, id+".json"))
+		if strings.Contains(string(raw), "canCompress") {
+			t.Errorf("флаг попал в файл чата: %s", raw)
+		}
+	}
+	c, _ := d.Ask(askReq{ID: long, Question: "еще"})
+	if !c.CanCompress {
+		t.Error("ответ Ask не несет canCompress")
 	}
 }
