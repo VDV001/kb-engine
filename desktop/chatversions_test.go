@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 func docxFile(t *testing.T, path string, paras ...string) {
@@ -193,5 +194,14 @@ func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
 	m.err = errors.New("dial tcp 127.0.0.1:11434: connection refused")
 	if _, err := cd.DescribeVersion(v1, v2, true); err == nil {
 		t.Error("сбой модели не стал ошибкой")
+	}
+}
+
+// Пустой ответ после предела шагов окно объясняет словами, без «model failed»
+// (живая проверка 12.11).
+func TestChatError_OutOfStepsIsExplained(t *testing.T) {
+	got := chatError(fmt.Errorf("%w: %w", chat.ErrModel, chat.ErrOutOfSteps))
+	if strings.Contains(got, "model failed") || !strings.Contains(got, "шагов") {
+		t.Errorf("сообщение = %q", got)
 	}
 }
