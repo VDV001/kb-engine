@@ -2227,7 +2227,6 @@ function renderLookArtifacts() {
     <div class="row"><span></span><div class="opts"><button class="look-chip" data-al-reset${dis}>Сбросить вид Артефактов</button>
       <span class="muted">кнопки и «сравнить» выключаются выше, в списке «Артефакты: …»</span></div></div>`;
 }
-const agSave = (patch) => saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), ...patch } });
 $("#look-artifacts").addEventListener("click", (e) => {
   if (!native()) return;
   if (e.target.closest("[data-al-reset]")) {
@@ -2238,11 +2237,16 @@ $("#look-artifacts").addEventListener("click", (e) => {
     return;
   }
   const b = e.target.closest("[data-al]"); if (!b) return;
-  agSave({ [b.dataset.al]: b.dataset.v });
+  mhSave({ [b.dataset.al]: b.dataset.v }); // mhSave пишет любой ключ accents.look
 });
 // Цвет меняется вживую, сохраняется при отпускании.
-$("#look-artifacts").addEventListener("input", (e) => { const c = e.target.closest("[data-ac]"); if (c) agApply({ ...agLook(), [c.dataset.ac.slice(4)]: c.value }); });
-$("#look-artifacts").addEventListener("change", (e) => { const c = e.target.closest("[data-ac]"); if (c && native()) agSave({ [c.dataset.ac]: c.value }); });
+$("#look-artifacts").addEventListener("input", (e) => {
+  const c = e.target.closest("[data-ac]"); if (!c) return;
+  const L = { ...agLook(), [c.dataset.ac.slice(4)]: c.value };
+  agApply(L);
+  const sw = $('#look-artifacts [data-v="custom"] .gs'); if (sw) sw.style.background = `linear-gradient(90deg,${L.c1},${L.c2})`; // образец не ждет отпускания
+});
+$("#look-artifacts").addEventListener("change", (e) => { const c = e.target.closest("[data-ac]"); if (c && native()) mhSave({ [c.dataset.ac]: c.value }); });
 // «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
 // в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».
 function renderLookHeader() {
