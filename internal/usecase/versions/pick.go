@@ -19,7 +19,7 @@ type Choice struct {
 }
 
 var (
-	askedNo   = regexp.MustCompile(`(?:\bv|\bв|версия|версию|версии|№|#)\s*(\d+)`)
+	askedNo   = regexp.MustCompile(`(?:^|[^а-яёa-z0-9])(?:v|в|версия|версию|версии|№|#)\s*(\d+)`)
 	askedDate = regexp.MustCompile(`(\d{1,2})[./-](\d{1,2})(?:[./-](\d{2,4}))?`)
 )
 
@@ -36,38 +36,47 @@ func Pick(vs []Choice, words string) []int {
 	if out, ok := byOrder(vs, w); ok {
 		return out
 	}
+	if m := askedDate.FindStringSubmatch(w); m != nil {
+		return indexes(vs, func(v Choice) bool { return dateIs(v.Date, m[1], m[2], m[3]) })
+	}
 	if m := askedNo.FindStringSubmatch(w); m != nil {
 		if k, err := strconv.Atoi(m[1]); err == nil && k >= 1 && k <= len(vs) {
 			return []int{k - 1}
 		}
 		return nil
 	}
-	if m := askedDate.FindStringSubmatch(w); m != nil {
-		return indexes(vs, func(v Choice) bool { return dateIs(v.Date, m[1], m[2], m[3]) })
-	}
 	return byWords(vs, w)
 }
 
 // byOrder resolves the words about the order or the badge; ok=false — таких слов нет.
+// Слова узнаются целиком («последняя», «первую», «текущая»): «Новикову»,
+// «первоначальная» и «текущий ремонт» — слова заметки, а не порядок версий.
 func byOrder(vs []Choice, w string) (out []int, ok bool) {
 	n := len(vs)
-	has := func(stems ...string) bool {
-		return slices.ContainsFunc(stems, func(s string) bool { return strings.Contains(w, s) })
+	words := strings.FieldsFunc(w, func(r rune) bool { return !isLetter(r) })
+	has := func(prefixes, exact []string) bool {
+		return slices.ContainsFunc(words, func(word string) bool {
+			return slices.Contains(exact, word) || slices.ContainsFunc(prefixes, func(p string) bool { return strings.HasPrefix(word, p) })
+		})
 	}
 	switch {
-	case has("предыдущ", "предпоследн"):
+	case has([]string{"предыдущ", "предпоследн"}, nil):
 		if n < 2 {
 			return nil, true
 		}
 		return []int{n - 2}, true
-	case has("последн", "свеж", "нов"):
+	case has([]string{"последн", "свеж", "новейш"}, nil):
 		return []int{n - 1}, true
-	case has("перв", "самая стар"):
+	case has([]string{"старейш"}, []string{"первая", "первую", "первой", "первый", "первое"}) || strings.Contains(w, "самая старая"):
 		return []int{0}, true
-	case has("актуальн", "текущ"):
+	case has([]string{"актуальн"}, []string{"текущая", "текущую", "текущей"}):
 		return indexes(vs, func(v Choice) bool { return v.Current }), true
 	}
 	return nil, false
+}
+
+func isLetter(r rune) bool {
+	return r >= 'a' && r <= 'z' || r >= 'а' && r <= 'я' || r == 'ё' || r >= '0' && r <= '9'
 }
 
 func indexes(vs []Choice, ok func(Choice) bool) []int {
@@ -128,11 +137,8 @@ func byWords(vs []Choice, w string) []int {
 
 // wordStems — первые четыре буквы каждого слова от четырех букв.
 func wordStems(w string) []string {
-	isWord := func(r rune) bool {
-		return r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'а' && r <= 'я' || r == 'ё'
-	}
 	var stems []string
-	for word := range strings.FieldsFuncSeq(w, func(r rune) bool { return !isWord(r) }) {
+	for word := range strings.FieldsFuncSeq(w, func(r rune) bool { return !isLetter(r) }) {
 		if r := []rune(word); len(r) >= 4 {
 			stems = append(stems, string(r[:4]))
 		}
