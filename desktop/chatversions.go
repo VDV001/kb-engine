@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/versionbook"
@@ -53,7 +54,7 @@ func (c chatVersions) Text(ctx context.Context, path string) (string, error) {
 const (
 	describeLines  = 40
 	describeRunes  = 200
-	describeSystem = `Ты ведешь журнал версий документа. По строкам, которых нет в другой версии, опиши одним-двумя предложениями по-русски, что изменилось в новой версии относительно старой. Только по этим строкам, ничего не добавляй от себя, без вступлений и без пересказа документа.`
+	describeSystem = `Ты ведешь журнал версий документа. По строкам, которых нет в другой версии, опиши одним-двумя предложениями по-русски простым текстом в одну строку, без Markdown и списков, что изменилось в новой версии относительно старой. Только по этим строкам, ничего не добавляй от себя, без вступлений и без пересказа документа.`
 )
 
 // DescribeVersion asks the model what changed in the newer version (шаг 3, #547).
@@ -94,6 +95,7 @@ func (d *chatDesk) DescribeVersion(older, newer string, consent bool) (string, e
 	if text == "" {
 		return "", errors.New("модель не ответила: попробуйте еще раз")
 	}
+	text = plainNote(text)
 	if r := []rune(text); len(r) > versionbook.MaxNoteRunes {
 		text = string(r[:versionbook.MaxNoteRunes-1]) + "…"
 	}
@@ -128,6 +130,36 @@ func describePrompt(name string, removed, added []string) string {
 	b.WriteString("\nДобавлено (есть в новой версии):\n")
 	for _, l := range added {
 		b.WriteString("- " + l + "\n")
+	}
+	return b.String()
+}
+
+var listMark = regexp.MustCompile(`^(?:[-*•]|\d+[.)])\s+`)
+
+// plainNote folds a Markdown reply into one line of plain text: заметка —
+// однострочное поле, а модель отвечает списками вопреки просьбе (живая
+// проверка 12.11). Заголовок становится «Заголовок:», пункты — предложениями.
+func plainNote(s string) string {
+	var b strings.Builder
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		heading := strings.HasPrefix(line, "#")
+		line = strings.TrimSpace(strings.TrimLeft(line, "#"))
+		line = listMark.ReplaceAllString(line, "")
+		line = strings.TrimSpace(strings.NewReplacer("**", "", "__", "", "`", "").Replace(line))
+		if line == "" {
+			continue
+		}
+		if heading && !strings.HasSuffix(line, ":") {
+			line += ":"
+		}
+		if b.Len() > 0 {
+			if prev := b.String(); !strings.ContainsAny(prev[len(prev)-1:], ":.;!?") {
+				b.WriteString(".")
+			}
+			b.WriteString(" ")
+		}
+		b.WriteString(line)
 	}
 	return b.String()
 }
