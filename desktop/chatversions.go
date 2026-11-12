@@ -40,3 +40,9 @@ func (c chatVersions) Families(ctx context.Context, q string) ([]chat.VersionFam
 func (c chatVersions) Text(ctx context.Context, path string) (string, error) {
 	return c.d.Text(ctx, path)
 }
+
+// DescribeVersion asks the model what changed in the newer version (шаг 3, #547).
+// consent — человек увидел, что строки версий уйдут провайдеру модели.
+func (d *chatDesk) DescribeVersion(older, newer string, consent bool) (string, error) {
+	return "", nil
+}

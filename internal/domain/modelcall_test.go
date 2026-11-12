@@ -106,3 +106,12 @@ func TestModelCall_Chat(t *testing.T) {
 		t.Fatalf("с чатом %q, исходный %q", w.Chat(), c.Chat())
 	}
 }
+
+// Описание версии документа (#547) — отдельное назначение вызова: его расход
+// виден в статистике, а не прячется в ответах чата.
+func TestNewModelCall_describePurpose(t *testing.T) {
+	c, err := domain.NewModelCall(callAt, domain.CallDescribe, "m", 10, 5, true, 0, time.Second, false)
+	if err != nil || c.Purpose() != domain.CallDescribe {
+		t.Fatalf("describe: %+v %v", c, err)
+	}
+}

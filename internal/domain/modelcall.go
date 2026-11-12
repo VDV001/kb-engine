@@ -26,6 +26,7 @@ const (
 	CallCompress CallPurpose = "compress" // сжатие портрета или чата
 	CallListen   CallPurpose = "listen"   // облачное распознавание диктовки
 	CallSpeak    CallPurpose = "speak"    // облачный голос
+	CallDescribe CallPurpose = "describe" // описание версии документа (#547)
 )
 
 var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak}

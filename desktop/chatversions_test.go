@@ -4,12 +4,14 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
 )
 
@@ -103,5 +105,76 @@ func TestChatVersions_NilWithoutTheDesk(t *testing.T) {
 	}
 	if (&chatDesk{versions: versionsDeskOver(t, t.TempDir())}).versionsAccess() == nil {
 		t.Error("с вкладкой инструменты версий должны быть")
+	}
+}
+
+func localChat(t *testing.T) (*chatDesk, *echoModel) {
+	t.Helper()
+	d, m, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	return d, m
+}
+
+// Без согласия человека в модель не уходит ничего. С согласием модель получает
+// только строки, которых нет в другой версии: не весь файл.
+func TestDescribeVersion_NeedsConsentAndSendsOnlyChangedLines(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	if _, err := cd.DescribeVersion(v1, v2, false); err == nil || m.n != 0 {
+		t.Fatalf("без согласия: ошибка %v, вызовов модели %d", err, m.n)
+	}
+	got, err := cd.DescribeVersion(v1, v2, true)
+	if err != nil || got != "ответ [1]" || m.n != 1 {
+		t.Fatalf("описание: %q %v, вызовов %d", got, err, m.n)
+	}
+	var prompt strings.Builder
+	for _, msg := range m.asked[0] {
+		prompt.WriteString(msg.Content + "\n")
+	}
+	for _, want := range []string{"Срок 7 дней", "Срок 5 дней", "Гарантия"} {
+		if !strings.Contains(prompt.String(), want) {
+			t.Errorf("в запросе к модели нет измененной строки %q:\n%s", want, prompt.String())
+		}
+	}
+	if strings.Contains(prompt.String(), "Цена 100") {
+		t.Errorf("в запросе общая строка: провайдер получил больше, чем изменилось:\n%s", prompt.String())
+	}
+}
+
+func TestDescribeVersion_NothingChangedAndBadPairsDoNotCallTheModel(t *testing.T) {
+	cd, m := localChat(t)
+	root, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	a, b := filepath.Join(root, "q", "Опись_2026_11_01.docx"), filepath.Join(root, "q", "Опись_2026_11_09.docx")
+	docxFile(t, a, "один", "два")
+	docxFile(t, b, "два", "один") // тот же набор строк, другой порядок: файл иной, изменений нет
+	if _, err := vd.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cd.DescribeVersion(a, b, true); err == nil {
+		t.Error("строки те же, а описание запрошено")
+	}
+	if _, err := cd.DescribeVersion(v1, b, true); err == nil {
+		t.Error("версии разных документов приняты")
+	}
+	if _, err := cd.DescribeVersion(v1, "/etc/hosts", true); err == nil {
+		t.Error("файл вне списка принят")
+	}
+	if m.n != 0 {
+		t.Errorf("модель вызвана %d раз при нечем описывать", m.n)
+	}
+	_ = v2
+}
+
+func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	m.err = errors.New("dial tcp 127.0.0.1:11434: connection refused")
+	if _, err := cd.DescribeVersion(v1, v2, true); err == nil {
+		t.Error("сбой модели не стал ошибкой")
 	}
 }
