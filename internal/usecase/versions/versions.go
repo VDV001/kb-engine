@@ -44,6 +44,7 @@ type Change struct {
 	Format  string // расширение без точки, для KindNewFormat
 	Added   []string
 	Removed []string
+	Skipped int // версий без текста между этой и той, с которой сравнено
 }
 
 // Version — версия в семействе с описанием «что нового».

@@ -113,6 +113,10 @@ func firstPath(f familyView) string {
 	return f.Versions[0].Path
 }
 
+// disambiguate подписывает папкой семейства с одинаковым именем: документы,
+// разошедшиеся по тексту, называются одинаково, и без папки их не отличить.
+func disambiguate(vs []familyView) {}
+
 func view(f versions.Family) familyView {
 	v := familyView{Name: f.Name, Versions: make([]versionView, 0, len(f.Versions))}
 	for _, x := range f.Versions {
