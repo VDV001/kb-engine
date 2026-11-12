@@ -453,6 +453,7 @@ func (d *chatDesk) Delete(id string) error {
 		return err
 	}
 	_ = d.DropDraft(id) // черновик не переживает свой чат
+	d.dropChatProposals(id)
 	return os.Remove(p)
 }
 

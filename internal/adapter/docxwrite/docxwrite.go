@@ -35,12 +35,20 @@ func Bytes(text string) ([]byte, error) {
 	}
 	var doc strings.Builder
 	doc.WriteString(docHead)
-	for line := range strings.SplitSeq(strings.ReplaceAll(strings.TrimRight(text, "\n"), "\r\n", "\n"), "\n") {
-		var esc bytes.Buffer
-		if err := xml.EscapeText(&esc, []byte(line)); err != nil {
-			return nil, err
+	normal := strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	for line := range strings.SplitSeq(strings.TrimRight(normal, "\n"), "\n") {
+		doc.WriteString("<w:p>")
+		for i, part := range strings.Split(line, "\t") {
+			if i > 0 {
+				doc.WriteString("<w:r><w:tab/></w:r>")
+			}
+			var esc bytes.Buffer
+			if err := xml.EscapeText(&esc, []byte(part)); err != nil {
+				return nil, err
+			}
+			doc.WriteString(`<w:r><w:t xml:space="preserve">` + esc.String() + `</w:t></w:r>`)
 		}
-		doc.WriteString(`<w:p><w:r><w:t xml:space="preserve">` + esc.String() + `</w:t></w:r></w:p>`)
+		doc.WriteString("</w:p>")
 	}
 	doc.WriteString(docTail)
 

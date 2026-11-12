@@ -220,11 +220,7 @@ func TestSaveVersion_TwoCallsAtOnceWriteOneFile(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make([]error, 4)
 	for i := range errs {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			_, errs[i] = r.cd.saveVersionProposal(context.Background(), p.ID, "d", "n")
-		}()
+		wg.Go(func() { _, errs[i] = r.cd.saveVersionProposal(context.Background(), p.ID, "d", "n") })
 	}
 	wg.Wait()
 	ok := 0

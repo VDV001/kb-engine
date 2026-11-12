@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/daniil/kb-engine/internal/adapter/docxwrite"
@@ -53,7 +54,11 @@ type iterationView struct {
 }
 
 func (p pendingIteration) view() iterationView {
-	return iterationView{p.ID, p.ChatID, p.Family, p.Folder, p.File, p.Description, p.Note, len(p.Text), ""}
+	preview := p.Text
+	if r := []rune(preview); len(r) > previewRunes {
+		preview = string(r[:previewRunes]) + "…"
+	}
+	return iterationView{p.ID, p.ChatID, p.Family, p.Folder, p.File, p.Description, p.Note, len(p.Text), preview}
 }
 
 // proposeVersionFor returns the propose_version tool of the chat; nil, когда у окна нет вкладки «Артефакты».
@@ -65,22 +70,20 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 		if len(p.Text) > maxProposalBytes {
 			return errors.New("текст слишком большой для одной версии")
 		}
-		fams, err := d.versions.Families(ctx, p.Family, false)
-		switch {
-		case err != nil:
-			return err
-		case len(fams) == 0:
-			return errors.New("документ не найден: уточните имя")
-		case len(fams) > 1:
-			return errors.New("найдено несколько документов, уточните имя")
+		if n := len([]rune(joinMark(p.Note, p.Description))); n > versionbook.MaxNoteRunes {
+			return fmt.Errorf("описание файла и «что нового» вместе длиннее %d знаков (%d): сократи их", versionbook.MaxNoteRunes, n)
 		}
-		fam := fams[0]
+		fam, err := d.proposalFamily(ctx, p.Family)
+		if err != nil {
+			return err
+		}
 		latest := fam.Versions[len(fam.Versions)-1]
 		pi := pendingIteration{ID: newChatID(), ChatID: chatID, Family: fam.Name, Folder: filepath.Dir(latest.Path),
-			File: strings.ReplaceAll(fam.Name, " ", "_") + "_" + d.now().Format("2006_01_02") + ".docx", Text: p.Text, Description: p.Description, Note: p.Note}
+			File: fileSafe(fam.Name) + "_" + d.now().Format("2006_01_02") + ".docx", Text: p.Text, Description: p.Description, Note: p.Note}
 		d.pmu.Lock()
-		if len(d.proposals) == maxPending {
-			d.proposals = d.proposals[1:] // самое старое неотвеченное уступает место
+		if len(d.proposals) >= maxPending {
+			d.pmu.Unlock()
+			return errors.New("слишком много предложений ждут ответа: человек их еще не просмотрел, не предлагай новых")
 		}
 		d.proposals = append(d.proposals, pi)
 		d.pmu.Unlock()
@@ -89,6 +92,30 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 		}
 		return nil
 	}
+}
+
+// proposalFamily finds the one document the proposal is about: точное имя
+// важнее подстроки («КП» и «КП Ромашка» — разные документы).
+func (d *chatDesk) proposalFamily(ctx context.Context, name string) (versionbook.FamilyView, error) {
+	fams, err := d.versions.Families(ctx, name, false)
+	if err != nil {
+		return versionbook.FamilyView{}, err
+	}
+	var exact []versionbook.FamilyView
+	for _, f := range fams {
+		if strings.EqualFold(f.Name, strings.TrimSpace(name)) {
+			exact = append(exact, f)
+		}
+	}
+	switch {
+	case len(exact) == 1:
+		return exact[0], nil
+	case len(fams) == 0:
+		return versionbook.FamilyView{}, errors.New("документ не найден: уточните имя")
+	case len(fams) > 1:
+		return versionbook.FamilyView{}, errors.New("найдено несколько документов, уточните имя")
+	}
+	return fams[0], nil
 }
 
 // versionProposals lists the proposals nobody answered yet.
@@ -114,50 +141,60 @@ func (d *chatDesk) dropVersionProposal(id string) {
 	}
 }
 
-// saveVersionProposal creates the proposal as a new docx and marks it with the
-// note of the person. Ошибка до записи оставляет предложение в ожидании: человек
-// исправит поля и повторит.
-func (d *chatDesk) saveVersionProposal(ctx context.Context, id, description, note string) (savedVersion, error) {
-	path, err := d.saveVersionProposalOld(ctx, id, description, note)
-	return savedVersion{Path: path}, err
-}
-
-func (d *chatDesk) saveVersionProposalOld(ctx context.Context, id, description, note string) (string, error) {
-	mark := joinMark(note, description)
-	if n := len([]rune(mark)); n > versionbook.MaxNoteRunes {
-		return "", fmt.Errorf("заметка длиннее %d знаков (%d): сократите описание", versionbook.MaxNoteRunes, n)
-	}
+// claim takes the proposal out of the queue: сохранить его может только один
+// вызов, двойной щелчок не создает дубль.
+func (d *chatDesk) claim(id string) (pendingIteration, bool) {
 	d.pmu.Lock()
-	var pi pendingIteration
-	found := false
-	for _, p := range d.proposals {
+	defer d.pmu.Unlock()
+	for i, p := range d.proposals {
 		if p.ID == id {
-			pi, found = p, true
+			d.proposals = append(d.proposals[:i:i], d.proposals[i+1:]...)
+			return p, true
 		}
 	}
+	return pendingIteration{}, false
+}
+
+// restore puts a claimed proposal back: запись не удалась, человек повторит.
+func (d *chatDesk) restore(p pendingIteration) {
+	d.pmu.Lock()
+	d.proposals = append(d.proposals, p)
 	d.pmu.Unlock()
-	if !found {
-		return "", errors.New("такого предложения нет: возможно, оно уже сохранено или отклонено")
+}
+
+// saveVersionProposal creates the proposal as a new docx and marks it with the
+// note of the person. Ошибка ДО записи возвращает предложение в ожидание: человек
+// исправит поля и повторит. Что не удалось ПОСЛЕ записи (список версий, заметка),
+// идет предупреждением: файл уже создан, и повтор дал бы дубль.
+func (d *chatDesk) saveVersionProposal(ctx context.Context, id, description, note string) (savedVersion, error) {
+	mark := joinMark(note, description)
+	if n := len([]rune(mark)); n > versionbook.MaxNoteRunes {
+		return savedVersion{}, fmt.Errorf("заметка длиннее %d знаков (%d): сократите описание", versionbook.MaxNoteRunes, n)
+	}
+	pi, ok := d.claim(id)
+	if !ok {
+		return savedVersion{}, errors.New("такого предложения нет: возможно, оно уже сохранено или отклонено")
 	}
 	data, err := docxwrite.Bytes(pi.Text)
 	if err != nil {
-		return "", err
+		d.restore(pi)
+		return savedVersion{}, err
 	}
 	path, err := createNew(pi.Folder, pi.File, data)
 	if err != nil {
-		return "", err
+		d.restore(pi)
+		return savedVersion{}, err
 	}
-	d.dropVersionProposal(id)
 	// Новый файл должен встать в ленту, чтобы заметка нашла свою версию.
 	if _, err := d.versions.Families(ctx, "", true); err != nil {
-		return path, fmt.Errorf("файл сохранен, но список версий не обновился: %w", err)
+		return savedVersion{Path: path, Warning: "список версий не обновился: " + err.Error()}, nil
 	}
 	if mark != "" {
 		if err := d.versions.Mark(path, mark); err != nil {
-			return path, fmt.Errorf("файл сохранен, но заметка не поставлена: %w", err)
+			return savedVersion{Path: path, Warning: "заметка не поставлена: " + err.Error()}, nil
 		}
 	}
-	return path, nil
+	return savedVersion{Path: path}, nil
 }
 
 // joinMark is the note of the new version: что нового, затем описание файла.
@@ -204,8 +241,29 @@ func createNew(dir, name string, data []byte) (string, error) {
 	return "", errors.New("не подобрать свободное имя файла")
 }
 
-// fileSafe makes a family name fit a file name.
-func fileSafe(name string) string { return name }
+// fileSafe makes a family name fit a file name: разделители пути, двоеточия и
+// управляющие знаки уходят в «_», пробелы тоже; точки и «_» по краям срезаются,
+// чтобы файл не вышел скрытым и не попал в подкаталог.
+func fileSafe(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r == '/' || r == '\\' || r == ':' || r == ' ' || r < 0x20 || r == 0x7f:
+			b.WriteRune('_')
+		default:
+			b.WriteRune(r)
+		}
+	}
+	if out := strings.Trim(b.String(), "._"); out != "" {
+		return out
+	}
+	return "версия"
+}
 
-// dropChatProposals forgets the proposals of a deleted chat.
-func (d *chatDesk) dropChatProposals(chatID string) {}
+// dropChatProposals forgets the proposals of a deleted chat: их текст иначе
+// лежал бы в памяти до перезапуска.
+func (d *chatDesk) dropChatProposals(chatID string) {
+	d.pmu.Lock()
+	defer d.pmu.Unlock()
+	d.proposals = slices.DeleteFunc(d.proposals, func(p pendingIteration) bool { return p.ChatID == chatID })
+}

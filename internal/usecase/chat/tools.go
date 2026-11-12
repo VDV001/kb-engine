@@ -46,6 +46,9 @@ var tools = []Tool{
 		Parameters: []byte(`{"type":"object","properties":{"ref":{"type":"string"}},"required":["ref"]}`)},
 }
 
+// toolArgs — аргументы вызова инструмента, как их присылает модель.
+type toolArgs struct{ Q, Ref, Section, Text, Which, Description, Note string }
+
 // toolRun is one question in tools mode: что найдено и что прочитано.
 type toolRun struct {
 	s        *Service
@@ -134,7 +137,7 @@ func offeredTools(r Request) []Tool {
 
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
-	var args struct{ Q, Ref, Section, Text, Which, Description, Note string }
+	var args toolArgs
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
 	}
@@ -154,7 +157,7 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		r.read = appendNew(r.read, d)
 		return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes)
 	case "versions", "open_version", "propose_version":
-		return r.execVersionTool(ctx, c.Name, args.Q, args.Which, VersionProposal{Family: strings.TrimSpace(args.Q), Text: args.Text, Description: strings.TrimSpace(args.Description), Note: strings.TrimSpace(args.Note)})
+		return r.execVersionTool(ctx, c.Name, args)
 	case "remember":
 		if r.remember == nil {
 			return "ошибка: портрет не ведется"
@@ -169,17 +172,17 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 }
 
 // execVersionTool runs the tools about the versions of documents.
-func (r *toolRun) execVersionTool(ctx context.Context, name, q, which string, p VersionProposal) string {
+func (r *toolRun) execVersionTool(ctx context.Context, name string, a toolArgs) string {
 	if name == "propose_version" {
-		return r.proposeVersion(ctx, p)
+		return r.proposeVersion(ctx, VersionProposal{Family: strings.TrimSpace(a.Q), Text: a.Text, Description: strings.TrimSpace(a.Description), Note: strings.TrimSpace(a.Note)})
 	}
 	if r.versions == nil {
 		return "ошибка: версии документов недоступны"
 	}
 	if name == "versions" {
-		return r.listVersions(ctx, q)
+		return r.listVersions(ctx, a.Q)
 	}
-	return r.openVersion(ctx, q, which)
+	return r.openVersion(ctx, a.Q, a.Which)
 }
 
 // docs are the documents of the turn: прочитанные, а без чтения — найденные.
