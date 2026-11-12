@@ -20,6 +20,7 @@ var (
 	ErrSearch        = errors.New("search failed")
 	ErrModel         = errors.New("model failed")
 	ErrNoReader      = errors.New("tools mode needs a document reader")
+	ErrOutOfSteps    = errors.New("no answer after the step limit")
 )
 
 // Role is who said a message.

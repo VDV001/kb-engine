@@ -127,7 +127,11 @@ func (r *toolRun) openVersion(ctx context.Context, q, which string) string {
 	}
 	title := f.Name + " · " + v.Date
 	r.read = appendNew(r.read, Doc{Ref: v.Path, Title: title, Source: "версии", Text: text})
-	return title + "\n" + trimRunes(text, MaxReadRunes)
+	if n := len([]rune(text)); n > MaxReadRunes {
+		return fmt.Sprintf("%s\n%s\n[показано %d из %d знаков: версия прочитана не целиком. Новую версию этого документа из чата предложить нельзя — скажи человеку, что документ слишком длинный для правки в чате]",
+			title, trimRunes(text, MaxReadRunes), MaxReadRunes, n)
+	}
+	return title + "\n" + text
 }
 
 func choices(vs []VersionInfo) []versions.Choice {

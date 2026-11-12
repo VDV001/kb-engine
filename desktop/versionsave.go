@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/adapter/docxwrite"
 	"github.com/daniil/kb-engine/internal/adapter/versionbook"
@@ -77,6 +78,9 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 		if err != nil {
 			return err
 		}
+		if n := d.longestVersion(ctx, fam); n > chat.MaxReadRunes {
+			return fmt.Errorf("документ длиннее, чем модель читает за раз (%d знаков из %d): новую версию из чата сохранить нельзя, скажи это человеку", n, chat.MaxReadRunes)
+		}
 		latest := fam.Versions[len(fam.Versions)-1]
 		pi := pendingIteration{ID: newChatID(), ChatID: chatID, Family: fam.Name, Folder: filepath.Dir(latest.Path),
 			File: fileSafe(fam.Name) + "_" + d.now().Format("2006_01_02") + ".docx", Text: p.Text, Description: p.Description, Note: p.Note}
@@ -116,6 +120,21 @@ func (d *chatDesk) proposalFamily(ctx context.Context, name string) (versionbook
 		return versionbook.FamilyView{}, errors.New("найдено несколько документов, уточните имя")
 	}
 	return fams[0], nil
+}
+
+// longestVersion is the length in runes of the longest readable version of fam:
+// модель читает версию не длиннее chat.MaxReadRunes, и новая итерация по
+// обрезанному тексту потеряла бы конец документа (живая проверка 12.11).
+// Проверяются все версии: модель могла переписать и старую. Нечитаемая версия
+// пропускается — ее модель и не видела.
+func (d *chatDesk) longestVersion(ctx context.Context, fam versionbook.FamilyView) int {
+	n := 0
+	for _, v := range fam.Versions {
+		if text, err := d.versions.Text(ctx, v.Path); err == nil {
+			n = max(n, utf8.RuneCountInString(text))
+		}
+	}
+	return n
 }
 
 // versionProposals lists the proposals nobody answered yet.

@@ -13,6 +13,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/localfiles"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 func docxFile(t *testing.T, path string, paras ...string) {
@@ -169,6 +170,48 @@ func TestDescribeVersion_NothingChangedAndBadPairsDoNotCallTheModel(t *testing.T
 	_ = v2
 }
 
+// Заметка — одна строка простого текста: настоящая модель отвечает Markdown со
+// списками вопреки просьбе (живая проверка 12.11), а поле заметки однострочное.
+func TestDescribeVersion_MarkdownBecomesOnePlainLine(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	m.reply = "**Убрано:**\n- Срок 7 дней.\n\n**Добавлено:**\n- Срок 5 дней;\n* `Гарантия` 1 год\n## Итог\n1. Короче срок"
+	got, err := cd.DescribeVersion(v1, v2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Убрано: Срок 7 дней. Добавлено: Срок 5 дней; Гарантия 1 год. Итог: Короче срок"
+	if got != want {
+		t.Errorf("заметка:\n got %q\nwant %q", got, want)
+	}
+}
+
+// Мелочи свертки (ревью #577): «#541» — не заголовок, многоточие — конец
+// предложения, ответ из одной разметки — пустой ответ, а не пустая заметка.
+func TestPlainNote(t *testing.T) {
+	for in, want := range map[string]string{
+		"#541 закрыт, срок сокращен":          "#541 закрыт, срок сокращен",
+		"Срок сокращен…\nДобавлено: гарантия": "Срок сокращен… Добавлено: гарантия",
+		"## Итог\nКороче срок":                "Итог: Короче срок",
+		"**\n- \n## ":                         "",
+	} {
+		if got := plainNote(in); got != want {
+			t.Errorf("plainNote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDescribeVersion_MarkupOnlyReplyIsAnError(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	m.reply = "**\n- "
+	if got, err := cd.DescribeVersion(v1, v2, true); err == nil {
+		t.Errorf("пустая после свертки заметка %q принята", got)
+	}
+}
+
 func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
 	cd, m := localChat(t)
 	_, vd, v1, v2 := kp(t)
@@ -176,5 +219,14 @@ func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
 	m.err = errors.New("dial tcp 127.0.0.1:11434: connection refused")
 	if _, err := cd.DescribeVersion(v1, v2, true); err == nil {
 		t.Error("сбой модели не стал ошибкой")
+	}
+}
+
+// Пустой ответ после предела шагов окно объясняет словами, без «model failed»
+// (живая проверка 12.11).
+func TestChatError_OutOfStepsIsExplained(t *testing.T) {
+	got := chatError(fmt.Errorf("%w: %w", chat.ErrModel, chat.ErrOutOfSteps))
+	if strings.Contains(got, "model failed") || !strings.Contains(got, "шагов") {
+		t.Errorf("сообщение = %q", got)
 	}
 }

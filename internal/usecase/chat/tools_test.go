@@ -116,6 +116,25 @@ func TestToolsMode_StepLimit(t *testing.T) {
 	}
 }
 
+// Последний шаг говорит модели словами, что шаги кончились; пустой ответ после
+// него — своя ошибка, а не «empty answer» (живая проверка 12.11: модель на
+// последнем шаге снова звала инструмент и молчала).
+func TestToolsMode_StepLimitAsksToAnswerAndNamesTheEmptyEnd(t *testing.T) {
+	var replies []chat.ModelReply
+	for range chat.MaxSteps + 1 {
+		replies = append(replies, call("c", "search", `{"q":"x"}`))
+	}
+	m := &scriptModel{replies: replies}
+	_, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(&fakeReader{})).Answer(context.Background(), nil, "q", chat.ModeTools)
+	if !errors.Is(err, chat.ErrOutOfSteps) || !errors.Is(err, chat.ErrModel) {
+		t.Fatalf("ошибка = %v, ждали ErrOutOfSteps", err)
+	}
+	last := m.asked[len(m.asked)-1]
+	if msg := last[len(last)-1]; msg.Role != chat.RoleUser || !strings.Contains(msg.Content, "ответь сейчас") {
+		t.Errorf("последний запрос не просит ответить: %+v", msg)
+	}
+}
+
 // Без чтения документов модель могла отвечать по поиску: документы чата —
 // найденные поиском, без повторов.
 func TestToolsMode_DocsFromSearchWhenNothingRead(t *testing.T) {

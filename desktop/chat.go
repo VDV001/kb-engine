@@ -553,6 +553,8 @@ func chatError(err error) string {
 		return "ключ уходит только по https или на этот Мак — поправьте адрес модели"
 	case errors.Is(err, context.DeadlineExceeded):
 		return "модель не ответила за 3 минуты — спросите короче или выберите модель быстрее"
+	case errors.Is(err, chat.ErrOutOfSteps):
+		return fmt.Sprintf("модель сделала %d шагов поиска и не сформулировала ответ — уточните вопрос или назовите документ точнее", chat.MaxSteps)
 	case errors.Is(err, chat.ErrSearch):
 		return "поиск по источникам не удался — посмотрите панель «Проблемы»"
 	case errors.Is(err, llm.ErrServer):
