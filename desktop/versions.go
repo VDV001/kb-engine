@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -97,9 +98,19 @@ func (d *versionsDesk) collect(ctx context.Context, src *localfiles.Source, fres
 	return d.cache, nil
 }
 
-// sortViews — новее первым.
+// sortViews — новее первым; при равных датах по имени и пути, чтобы список не
+// прыгал между обходами.
 func sortViews(vs []familyView) {
-	slices.SortFunc(vs, func(a, b familyView) int { return b.latest.Compare(a.latest) })
+	slices.SortFunc(vs, func(a, b familyView) int {
+		return cmp.Or(b.latest.Compare(a.latest), cmp.Compare(a.Name, b.Name), cmp.Compare(firstPath(a), firstPath(b)))
+	})
+}
+
+func firstPath(f familyView) string {
+	if len(f.Versions) == 0 {
+		return ""
+	}
+	return f.Versions[0].Path
 }
 
 func view(f versions.Family) familyView {

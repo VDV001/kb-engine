@@ -405,7 +405,7 @@ func TestGroup_VersionAfterATooBigOneComparesWithTheLastReadableOne(t *testing.T
 func TestKey_DateIsNotCutOutOfALongerNumber(t *testing.T) {
 	for _, c := range []struct{ a, b string }{
 		{"Акт 0220.05.2026.docx", "Акт 02.docx"},
-		{"Счет 12345_2026_1_2.docx", "Счет 12345.docx"},
+		{"Заказ 12026_1_2.docx", "Заказ 1.docx"},
 		{"Акт 20.05.20269.docx", "Акт.docx"},
 	} {
 		if versions.Key("/a/"+c.a) == versions.Key("/a/"+c.b) {
