@@ -79,7 +79,7 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 			return err
 		}
 		if n := d.longestVersion(ctx, fam); n > chat.MaxReadRunes {
-			return fmt.Errorf("документ длиннее, чем модель читает за раз (%d знаков из %d): новую версию из чата сохранить нельзя, скажи это человеку", n, chat.MaxReadRunes)
+			return fmt.Errorf("документ длиннее, чем модель читает за раз (%d знаков из %d): новую версию из чата сохранить нельзя — ни по прочитанному, ни по тексту, вставленному в чат, ни в новом чате. Скажи человеку, что длинный документ правят в Word или Pages, и других обходов не предлагай", n, chat.MaxReadRunes)
 		}
 		latest := fam.Versions[len(fam.Versions)-1]
 		pi := pendingIteration{ID: newChatID(), ChatID: chatID, Family: fam.Name, Folder: filepath.Dir(latest.Path),
