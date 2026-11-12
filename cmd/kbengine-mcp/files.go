@@ -84,6 +84,10 @@ func newFileIndex(cfgPath, home string, stderr io.Writer) (*fileIndex, error) {
 	return x, nil
 }
 
+// versionsSource returns the folders of the current index for the versions of
+// documents.
+func (x *fileIndex) versionsSource() *localfiles.Source { return nil }
+
 // open reads the config and opens its folders.
 func (x *fileIndex) open() (*localfiles.Source, time.Time, error) {
 	info, err := os.Stat(x.cfgPath)
