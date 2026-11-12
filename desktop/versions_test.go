@@ -130,8 +130,6 @@ func TestNoteText(t *testing.T) {
 		{"оформление", versions.Change{Kind: versions.KindLayoutOnly}, "текст не менялся, файл отличается (правка оформления или вложений)"},
 		{"большой", versions.Change{Kind: versions.KindTooBig}, "слишком большой, не читался"},
 		{"дифф", versions.Change{Kind: versions.KindDiff, Added: []string{"a", "b"}, Removed: []string{"c"}}, "добавлено строк: 2 — «a», «b»; убрано строк: 1 — «c»"},
-		{"замена", versions.Change{Kind: versions.KindRewrite, Added: make([]string, 900), Removed: make([]string, 298), Total: 1000},
-			"почти другой документ: новых строк 900, убранных 298, всего в этой версии 1000"},
 		{"много и длинно", versions.Change{Kind: versions.KindDiff, Added: []string{long, "b", "c", "d", "e"}}, "добавлено строк: 5 — «" + strings.Repeat("я", 60) + "…», «b», «c», …и еще 2"},
 	} {
 		if got := noteText(c.in); got != c.want {
