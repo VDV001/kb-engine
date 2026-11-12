@@ -145,7 +145,7 @@ type chatDesk struct {
 	// (событие versions:proposal); proposals ждут подтверждения в памяти.
 	versionNew func(iterationView)
 	pmu        sync.Mutex
-	proposals  map[string]pendingIteration
+	proposals  []pendingIteration
 	mu         sync.Mutex // один вопрос за раз: файл чата пишется целиком
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
 	memoryNew  func(portraitNews)
