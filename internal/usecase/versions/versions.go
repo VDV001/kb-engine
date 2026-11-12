@@ -377,7 +377,7 @@ func change(before []Version, v Version) Change {
 	// Сравнивается с последней версией того же формата, у которой есть текст:
 	// слишком большая или нечитаемая версия посередине ленты ее не заслоняет.
 	var prev *Version
-	sameFormat := false
+	sameFormat, skipped := false, 0
 	for i, b := range slices.Backward(before) {
 		if ext(b.Path) != ext(v.Path) {
 			continue
@@ -387,6 +387,7 @@ func change(before []Version, v Version) Change {
 			prev = &before[i]
 			break
 		}
+		skipped++
 	}
 	switch {
 	case !sameFormat && len(before) == 0:
@@ -396,7 +397,9 @@ func change(before []Version, v Version) Change {
 	case prev == nil || v.Text == "":
 		return Change{Kind: KindNoText}
 	}
-	return textChange(prev.Text, v.Text)
+	c := textChange(prev.Text, v.Text)
+	c.Skipped = skipped
+	return c
 }
 
 // textChange сравнивает тексты двух версий одного формата.
