@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -62,6 +63,10 @@ type fileIndex struct {
 	builtAt  time.Time          // нулевой — индекса в памяти нет
 	failedAt time.Time          // последняя упавшая сборка: повтор не чаще опроса
 
+	vmu    sync.Mutex         // источник версий документов (versionsSource)
+	vsrc   *localfiles.Source // открыт по конфигу с отметкой vstamp
+	vstamp time.Time
+
 	lastUse atomic.Int64       // UnixNano последнего search_files, 0 — не искали
 	loaded  atomic.Bool        // индекс в памяти: поиску не нужно будить run
 	wake    chan chan struct{} // поиск просит собрать индекс и ждет закрытия канала
@@ -84,9 +89,26 @@ func newFileIndex(cfgPath, home string, stderr io.Writer) (*fileIndex, error) {
 	return x, nil
 }
 
-// versionsSource returns the folders of the current index for the versions of
-// documents.
-func (x *fileIndex) versionsSource() *localfiles.Source { return nil }
+// versionsSource opens the folders of the window's config for the versions of
+// documents: свой источник, а не x.src, который трогает только run. Он держится,
+// пока конфиг не изменился; смена папок в окне подхватывается без перезапуска.
+func (x *fileIndex) versionsSource() *localfiles.Source {
+	x.vmu.Lock()
+	defer x.vmu.Unlock()
+	info, err := os.Stat(x.cfgPath)
+	if err != nil || (x.vsrc != nil && info.ModTime().Equal(x.vstamp)) {
+		return x.vsrc
+	}
+	src, stamp, err := x.open()
+	if err != nil {
+		return x.vsrc // прежний источник лучше, чем никакого: окно пишет конфиг не атомарно
+	}
+	if x.vsrc != nil {
+		_ = x.vsrc.Close()
+	}
+	x.vsrc, x.vstamp = src, stamp
+	return src
+}
 
 // open reads the config and opens its folders.
 func (x *fileIndex) open() (*localfiles.Source, time.Time, error) {
