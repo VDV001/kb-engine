@@ -94,10 +94,15 @@ func TestClient_InfoErrors(t *testing.T) {
 
 // Сервер, который не отвечает, не вешает окно: ответ ограничен контекстом.
 func TestClient_InfoRespectsContext(t *testing.T) {
-	slow := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		<-r.Context().Done()
+	// Сервер молчит до конца теста, а не до обрыва соединения: ответив пустым 200
+	// сразу после обрыва, он мог успеть раньше таймаута клиента, и под нагрузкой CI
+	// тест получал «unexpected end of JSON input» вместо «недоступен» (main 0a2885f1).
+	release := make(chan struct{})
+	slow := httptest.NewTLSServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		<-release
 	}))
 	t.Cleanup(slow.Close)
+	t.Cleanup(func() { close(release) }) // раньше slow.Close: Close ждет обработчики
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	start := time.Now()
