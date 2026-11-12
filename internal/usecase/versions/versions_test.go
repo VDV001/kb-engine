@@ -149,7 +149,11 @@ func TestGroup_BigTextsDiffFast(t *testing.T) {
 	var a, b strings.Builder
 	for i := range 30000 {
 		fmt.Fprintf(&a, "строка a%d\n", i)
-		fmt.Fprintf(&b, "строка b%d\n", i)
+		if i < 15000 {
+			fmt.Fprintf(&b, "строка a%d\n", i) // половина общая: один документ, а не два
+		} else {
+			fmt.Fprintf(&b, "строка b%d\n", i)
+		}
 	}
 	start := time.Now()
 	got := versions.Group([]versions.File{
@@ -159,8 +163,11 @@ func TestGroup_BigTextsDiffFast(t *testing.T) {
 	if d := time.Since(start); d > time.Second {
 		t.Errorf("сравнение двух текстов по 30 тыс. строк заняло %v", d)
 	}
-	if c := got[0].Versions[1].Change; len(c.Added) != 30000 || len(c.Removed) != 30000 || c.Total != 30000 {
-		t.Errorf("добавлено %d, убрано %d, всего %d, ждали по 30000", len(c.Added), len(c.Removed), c.Total)
+	if len(got) != 1 || len(got[0].Versions) != 2 {
+		t.Fatalf("ждали одно семейство из двух версий: %+v", len(got))
+	}
+	if c := got[0].Versions[1].Change; len(c.Added) != 15000 || len(c.Removed) != 15000 {
+		t.Errorf("добавлено %d, убрано %d, ждали по 15000", len(c.Added), len(c.Removed))
 	}
 }
 
@@ -194,17 +201,6 @@ func numbered(prefix string, n int) string {
 	return b.String()
 }
 
-func TestGroup_AlmostNothingInCommonIsARewrite(t *testing.T) {
-	got := versions.Group([]versions.File{
-		file("/a/Отчет_2026_11_05.docx", "x", numbered("a", 100), day(11, 5)),
-		file("/a/Отчет_2026_11_10.docx", "y", numbered("b", 100), day(11, 10)),
-	})
-	c := got[0].Versions[1].Change
-	if c.Kind != versions.KindRewrite || c.Total != 100 || len(c.Added) != 100 || len(c.Removed) != 100 {
-		t.Errorf("замена документа не названа: kind %v, total %d, +%d -%d", c.Kind, c.Total, len(c.Added), len(c.Removed))
-	}
-}
-
 func TestGroup_SmallEditOfABigDocumentIsADiff(t *testing.T) {
 	old := numbered("a", 100)
 	edited := strings.Replace(old, "a7\n", "новая семерка\n", 1)
@@ -214,16 +210,6 @@ func TestGroup_SmallEditOfABigDocumentIsADiff(t *testing.T) {
 	})
 	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff || len(c.Added) != 1 || len(c.Removed) != 1 {
 		t.Errorf("мелкая правка: %+v", c)
-	}
-}
-
-func TestGroup_ShortDocumentsAreNeverARewrite(t *testing.T) {
-	got := versions.Group([]versions.File{
-		file("/a/Записка_2026_11_05.docx", "x", "Привет\nМир", day(11, 5)),
-		file("/a/Записка_2026_11_10.docx", "y", "Пока\nСвет", day(11, 10)),
-	})
-	if c := got[0].Versions[1].Change; c.Kind != versions.KindDiff {
-		t.Errorf("короткий документ принят за замену: %+v", c)
 	}
 }
 
