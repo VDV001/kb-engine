@@ -89,6 +89,9 @@ func newFileIndex(cfgPath, home string, stderr io.Writer) (*fileIndex, error) {
 	return x, nil
 }
 
+// dropIdleVersions lets the versions source go after filesIdleAfter without calls.
+func (x *fileIndex) dropIdleVersions(now time.Time) {}
+
 // versionsSource opens the folders of the window's config for the versions of
 // documents: свой источник, а не x.src, который трогает только run. Он держится,
 // пока конфиг не изменился; смена папок в окне подхватывается без перезапуска.

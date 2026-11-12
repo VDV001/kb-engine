@@ -104,3 +104,68 @@ func TestVersionsAgent_ServesWhatTheWindowShows(t *testing.T) {
 		t.Errorf("после смены папок: %+v %v", fams, err)
 	}
 }
+
+func versionsIndex(t *testing.T) (x *fileIndex, cfgPath, root string) {
+	t.Helper()
+	dir := t.TempDir()
+	root = filepath.Join(dir, "docs")
+	docx(t, filepath.Join(root, "КП_2026_11_05.docx"), "а")
+	docx(t, filepath.Join(root, "КП_2026_11_10.docx"), "а", "б")
+	cfgPath = filepath.Join(dir, "kb-desktop", "config.json")
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Roots: []string{root}}); err != nil {
+		t.Fatal(err)
+	}
+	x, err := newFileIndex(cfgPath, dir, &bytes.Buffer{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return x, cfgPath, root
+}
+
+// Параллельный вызов уже получил прежний источник: смена папок в окне не
+// должна закрывать его под рукой.
+func TestVersionsSource_ReplacedSourceStaysUsableForACallInFlight(t *testing.T) {
+	x, cfgPath, _ := versionsIndex(t)
+	old := x.versionsSource()
+	other := filepath.Join(filepath.Dir(filepath.Dir(cfgPath)), "other")
+	docx(t, filepath.Join(other, "Смета_2026_11_01.docx"), "а")
+	later := time.Now().Add(2 * time.Second)
+	if err := desktopconfig.Write(cfgPath, desktopconfig.Config{Roots: []string{other}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(cfgPath, later, later); err != nil {
+		t.Fatal(err)
+	}
+	if fresh := x.versionsSource(); fresh == old {
+		t.Fatal("источник не сменился после смены конфига")
+	}
+	if _, err := old.Versions(context.Background()); err != nil {
+		t.Errorf("прежний источник закрыт под рукой у идущего вызова: %v", err)
+	}
+}
+
+// Простаивающий MCP не держит открытые папки: источник версий уходит вместе с
+// индексом и открывается заново по первому вызову.
+func TestVersionsSource_ReleasedWhenIdleAndReopenedOnDemand(t *testing.T) {
+	x, _, _ := versionsIndex(t)
+	if x.versionsSource() == nil {
+		t.Fatal("источник не открылся")
+	}
+	x.dropIdleVersions(time.Now().Add(filesIdleAfter / 2))
+	x.vmu.Lock()
+	still := x.vsrc != nil
+	x.vmu.Unlock()
+	if !still {
+		t.Error("источник отпущен раньше срока простоя")
+	}
+	x.dropIdleVersions(time.Now().Add(2 * filesIdleAfter))
+	x.vmu.Lock()
+	gone := x.vsrc == nil
+	x.vmu.Unlock()
+	if !gone {
+		t.Error("источник версий не отпущен при простое")
+	}
+	if x.versionsSource() == nil {
+		t.Error("после простоя источник не открылся заново")
+	}
+}
