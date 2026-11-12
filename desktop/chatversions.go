@@ -147,7 +147,7 @@ var (
 // проверка 12.11). Заголовок становится «Заголовок:», пункты — предложениями.
 func plainNote(s string) string {
 	var b strings.Builder
-	for _, line := range strings.Split(s, "\n") {
+	for line := range strings.SplitSeq(s, "\n") {
 		line = strings.TrimSpace(line)
 		head := heading.MatchString(line) // «#541» — не заголовок: после решеток нужен пробел
 		line = heading.ReplaceAllString(line, "")
