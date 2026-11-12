@@ -516,3 +516,52 @@ func (a *App) Reveal(path string) error {
 	}
 	return a.run("open", "-R", path)
 }
+
+// Preview opens the file in Quick Look without waiting for the window to close.
+func (a *App) Preview(path string) error {
+	if err := a.files.Check(path); err != nil {
+		return err
+	}
+	// qlmanage -p держит окно, пока его не закроют, поэтому ждем только мгновенный
+	// отказ (нет программы, нет превью): он иначе остался бы молчаливой кнопкой.
+	// ponytail: каждый клик — отдельный процесс qlmanage до закрытия его окна.
+	// Потолок: десяток окон просмотра, если кликать не закрывая. Путь: держать
+	// один процесс и убивать прежний.
+	done := make(chan error, 1)
+	go func() { done <- a.run("qlmanage", "-p", path) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(previewGrace):
+		return nil
+	}
+}
+
+// previewGrace — сколько ждем, не упал ли просмотр сразу.
+const previewGrace = 400 * time.Millisecond
+
+var errNoVersions = errors.New("артефакты недоступны")
+
+// VersionMark saves the note to a version of the «Артефакты» tab.
+func (a *App) VersionMark(path, note string) error {
+	if a.versions == nil {
+		return errNoVersions
+	}
+	return a.versions.Mark(path, note)
+}
+
+// VersionCurrent puts or takes off the «актуальная» badge.
+func (a *App) VersionCurrent(path string, on bool) error {
+	if a.versions == nil {
+		return errNoVersions
+	}
+	return a.versions.SetCurrent(path, on)
+}
+
+// VersionCompare returns two versions side by side.
+func (a *App) VersionCompare(older, newer string) (compareView, error) {
+	if a.versions == nil {
+		return compareView{}, errNoVersions
+	}
+	return a.versions.Compare(a.ctx, older, newer)
+}

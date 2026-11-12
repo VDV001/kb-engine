@@ -245,3 +245,30 @@ func TestVersions_HugeXlsxSheetIsCapped(t *testing.T) {
 		t.Errorf("длина %d, предел %d", len(tx), localfiles.MaxFileBytes)
 	}
 }
+
+func TestVersionText_ReadsOneVersionThroughTheRoots(t *testing.T) {
+	root := t.TempDir()
+	d := writeDocx(t, root, "p/ТЗ_2026_11_10.docx", `<w:p><w:r><w:t>Цель</w:t></w:r></w:p><w:p><w:r><w:t>Сроки</w:t></w:r></w:p>`, false)
+	got, err := newSource(t, root).VersionText(d)
+	if err != nil || got != "Цель\nСроки\n" {
+		t.Errorf("текст версии: %q, %v", got, err)
+	}
+}
+
+func TestVersionText_RefusesWhatIsNotAVersion(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	write(t, outside, "чужой.docx", "x")
+	secret := writeDocx(t, root, "p/credentials.docx", `<w:p><w:r><w:t>пароль</w:t></w:r></w:p>`, false)
+	note := write(t, root, "p/заметка.txt", "обычный текст")
+	s := newSource(t, root)
+	for name, p := range map[string]string{
+		"вне корней":       filepath.Join(outside, "чужой.docx"),
+		"файл с доступами": secret,
+		"не документ":      note,
+		"нет такого файла": filepath.Join(root, "p", "нет.docx"),
+	} {
+		if text, err := s.VersionText(p); err == nil {
+			t.Errorf("%s: ждали отказ, получили текст %q", name, text)
+		}
+	}
+}

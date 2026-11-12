@@ -1554,5 +1554,22 @@ body:not(.no-help-title) .art-bar .hp-title { background: var(--sp-all); -webkit
 .ver-row { display: grid; grid-template-columns: 82px minmax(0, 1fr); gap: 4px 10px; padding: 4px 0; font-size: 12px; }
 .ver-date { color: var(--z-muted); font-variant-numeric: tabular-nums; }
 .ver-note { color: var(--z-ink); overflow-wrap: anywhere; }
+.ver-badge { font-weight: 600; font-size: 11px; color: var(--z-ok); border: 1px solid var(--z-ok); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.ver-row.cur .ver-date { color: var(--z-ok); }
+.ver-mark { grid-column: 2; color: var(--z-ink); font-size: 12px; font-style: italic; overflow-wrap: anywhere; }
+.ver-note-in { grid-column: 2; min-width: 0; font: inherit; font-size: 12px; color: var(--z-ink); background: var(--z-bg-3); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 4px 8px; }
+.ver-acts { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 2px; }
+.ver-act { font: inherit; font-size: 11px; color: var(--z-muted); background: none; border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 2px 8px; cursor: pointer; }
+.ver-act:hover { color: var(--z-ink); border-color: var(--z-rule-2); }
+.ver-pick { font-size: 11px; color: var(--z-muted); display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
+.ver-fam h4 .ver-act { margin-left: 8px; color: var(--z-ink); }
+.ver-cmp { margin: 8px 0 2px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); padding: 8px 10px; }
+.ver-cmp-bar { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 6px; }
+.ver-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+.ver-col { min-width: 0; max-height: 360px; overflow: auto; }
+.ver-col h5 { margin: 0 0 4px; font-size: 11px; color: var(--z-muted); overflow-wrap: anywhere; position: sticky; top: 0; background: var(--z-bg); }
+.ver-line { font-size: 12px; padding: 1px 4px; overflow-wrap: anywhere; border-left: 2px solid transparent; }
+.ver-line.add { background: color-mix(in srgb, var(--z-ok) 16%, transparent); border-left-color: var(--z-ok); }
+.ver-line.del { background: var(--z-bad-wash); border-left-color: var(--z-bad); }
 .ver-path, .ver-dup { color: var(--z-muted); font-size: 11px; overflow-wrap: anywhere; grid-column: 2; }
 .ver-dup::before { content: "дубль: "; }

@@ -136,7 +136,7 @@ func run() error {
 	}}
 	app.access = newAccessDesk(home, nil)
 	app.storage = newStorageDesk(filepath.Dir(cfgPath), browserProfileDir())
-	app.versions = newVersionsDesk(idx.currentSource)
+	app.versions = newVersionsDesk(idx.currentSource, filepath.Join(filepath.Dir(cfgPath), "version-marks.json"))
 	app.memory = newMemoryDesk(home)
 	if exe, err := os.Executable(); err == nil {
 		app.listen.bin = listenNextTo(exe)

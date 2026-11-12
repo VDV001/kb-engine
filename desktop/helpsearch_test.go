@@ -21,6 +21,7 @@ if (!find("доход").some((c) => c.includes("--kind income"))) fail("«дох
 if (!find("отчёт").some((c) => c.includes("fin report"))) fail("«отчёт» с ё не нашел fin report");
 if (find("пароль буфер").length !== 1) fail("«пароль буфер» — И по словам: " + JSON.stringify(find("пароль буфер")));
 if (!find("артефакты").length || !find("версии документа").length || !find("дубль").length) fail("справка не знает про Артефакты: " + JSON.stringify(find("артефакты")));
+if (!find("заметка версии").length || !find("актуальная").length || !find("сравнить версии").length) fail("справка не знает про заметки, значок и сравнение версий");
 if (find("zzzz").length) fail("«zzzz» что-то нашел");
 if (!find("терминал").some((c) => c.startsWith("kbengine tui"))) fail("«терминал» не нашел kbengine tui");
 if (!find("выдать токен").some((c) => c.startsWith("kbengine users add"))) fail("«выдать токен» не нашел users add: " + JSON.stringify(find("выдать токен")));
