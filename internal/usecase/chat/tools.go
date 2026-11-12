@@ -54,6 +54,7 @@ type toolRun struct {
 	read     []Doc
 	remember func(ctx context.Context, section, text string) error
 	versions Versions
+	propose  func(ctx context.Context, p VersionProposal) error
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -64,7 +65,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		return Turn{}, ErrNoReader
 	}
 	msgs := toolsMessages(r)
-	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions}
+	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions, propose: r.ProposeVersion}
 	offered := offeredTools(r)
 	for step := 0; ; step++ {
 		offer := offered
@@ -101,6 +102,9 @@ func toolsMessages(r Request) []ModelMessage {
 	if r.Versions != nil {
 		prompt += versionsPrompt
 	}
+	if r.ProposeVersion != nil {
+		prompt += proposeVersionPrompt
+	}
 	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(prompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
@@ -119,6 +123,9 @@ func offeredTools(r Request) []Tool {
 	if r.Versions != nil {
 		offered = append(offered, versionTools...)
 	}
+	if r.ProposeVersion != nil {
+		offered = append(offered, proposeVersionTool)
+	}
 	if r.Remember != nil {
 		offered = append(offered, rememberTool)
 	}
@@ -127,7 +134,7 @@ func offeredTools(r Request) []Tool {
 
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
-	var args struct{ Q, Ref, Section, Text, Which string }
+	var args struct{ Q, Ref, Section, Text, Which, Description, Note string }
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
 	}
@@ -146,14 +153,8 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		}
 		r.read = appendNew(r.read, d)
 		return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes)
-	case "versions", "open_version":
-		if r.versions == nil {
-			return "ошибка: версии документов недоступны"
-		}
-		if c.Name == "versions" {
-			return r.listVersions(ctx, args.Q)
-		}
-		return r.openVersion(ctx, args.Q, args.Which)
+	case "versions", "open_version", "propose_version":
+		return r.execVersionTool(ctx, c.Name, args.Q, args.Which, VersionProposal{Family: strings.TrimSpace(args.Q), Text: args.Text, Description: strings.TrimSpace(args.Description), Note: strings.TrimSpace(args.Note)})
 	case "remember":
 		if r.remember == nil {
 			return "ошибка: портрет не ведется"
@@ -165,6 +166,20 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 	default:
 		return "ошибка: неизвестный инструмент " + c.Name
 	}
+}
+
+// execVersionTool runs the tools about the versions of documents.
+func (r *toolRun) execVersionTool(ctx context.Context, name, q, which string, p VersionProposal) string {
+	if name == "propose_version" {
+		return r.proposeVersion(ctx, p)
+	}
+	if r.versions == nil {
+		return "ошибка: версии документов недоступны"
+	}
+	if name == "versions" {
+		return r.listVersions(ctx, q)
+	}
+	return r.openVersion(ctx, q, which)
 }
 
 // docs are the documents of the turn: прочитанные, а без чтения — найденные.

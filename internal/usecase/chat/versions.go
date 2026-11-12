@@ -138,6 +138,29 @@ func choices(vs []VersionInfo) []versions.Choice {
 	return out
 }
 
+// proposeVersionPrompt is added when the window can ask the person to save a version.
+const proposeVersionPrompt = `
+Когда результат работы — новый текст документа, у которого уже есть версии, предложи сохранить его новой итерацией инструментом propose_version: полный текст, описание файла и описание итерации (что нового). Файл появится только после подтверждения человека, а прежние версии не меняются.`
+
+var proposeVersionTool = Tool{Name: "propose_version", Description: "Предложить сохранить текст новой итерацией документа. Человек подтвердит или откажется; без подтверждения ничего не создается.",
+	Parameters: []byte(`{"type":"object","properties":{"q":{"type":"string","description":"имя документа, у которого появится новая версия"},"text":{"type":"string","description":"полный текст новой версии"},"description":{"type":"string","description":"описание файла одной-двумя фразами"},"note":{"type":"string","description":"что нового в этой итерации"}},"required":["q","text","description","note"]}`)}
+
+// proposeVersion hands the proposal to the person; сам файл не создается.
+func (r *toolRun) proposeVersion(ctx context.Context, p VersionProposal) string {
+	switch {
+	case r.propose == nil:
+		return "ошибка: сохранять версии из чата нельзя"
+	case p.Family == "":
+		return "ошибка: не названо, чья это версия (q)"
+	case strings.TrimSpace(p.Text) == "":
+		return "ошибка: нет текста новой версии"
+	}
+	if err := r.propose(ctx, p); err != nil {
+		return "не предложено: " + err.Error()
+	}
+	return "предложено: ждет подтверждения человека, файл без него не будет создан"
+}
+
 // VersionProposal — предложение модели сохранить результат работы новой
 // итерацией документа (#548): ждет подтверждения человека, без него ничего не
 // создается.
