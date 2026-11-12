@@ -1,6 +1,7 @@
 package main
 
 import (
+	"maps"
 	"slices"
 	"sync"
 	"testing"
@@ -98,6 +99,38 @@ func TestChat_Stats(t *testing.T) {
 	}
 	if _, err := d.Stats(0); err == nil {
 		t.Fatal("период 0 дней принят")
+	}
+}
+
+// Журнал фильтрует вызовы по чату (#541): вызов несет id чата, а названия
+// чатов приходят одной картой, по одному чтению на чат; удаленный чат —
+// общим названием, как в «Деньгах».
+func TestChat_Stats_callsCarryChat(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", MemoryOff: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := d.Ask(askReq{Question: "первый чат"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rec := &callsRec{}
+	d.calls = rec
+	now := d.now()
+	in, _ := domain.NewModelCall(now.Add(-time.Hour), domain.CallAnswer, "qwen3", 100, 10, true, time.Second, time.Second, false)
+	gone, _ := domain.NewModelCall(now.Add(-2*time.Hour), domain.CallAnswer, "qwen3", 100, 10, true, time.Second, time.Second, false)
+	out, _ := domain.NewModelCall(now.Add(-3*time.Hour), domain.CallExtract, "qwen3", 100, 10, true, time.Second, time.Second, false)
+	rec.calls = []domain.ModelCall{in.WithChat(a.ID), gone.WithChat("0123456789abcdef"), out}
+	v, err := d.Stats(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Calls) != 3 || v.Calls[0].Chat != a.ID || v.Calls[1].Chat != "0123456789abcdef" || v.Calls[2].Chat != "" {
+		t.Fatalf("чаты вызовов = %+v", v.Calls)
+	}
+	want := map[string]string{a.ID: "первый чат", "0123456789abcdef": "Удаленный чат"}
+	if !maps.Equal(v.Chats, want) {
+		t.Fatalf("названия чатов = %v, want %v", v.Chats, want)
 	}
 }
 

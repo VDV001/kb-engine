@@ -2557,7 +2557,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "" };
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
 const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
@@ -2574,7 +2574,20 @@ async function openChatView() {
   renderChat();
   renderChatSources();
   await loadChatDraft();
+  const want = chatState.openCost;
+  chatState.openCost = "";
+  if (want && !chatState.busy && !chatState.compressing && await selectChat(want)) {
+    chatState.offerCost = true;
+    renderChat();
+    if (!canCompress()) showChatNote("Сжимать пока нечего: старой части разговора мало.");
+  }
   $("#chat-q").focus();
+}
+// openCostlyChat opens chat id from «Деньги» with the offer to compress it (#541).
+function openCostlyChat(id) {
+  if (!tabKeys().includes("module:chat")) { showError("Чат выключен в «Модулях»: включите его, чтобы открыть этот разговор."); return; }
+  chatState.openCost = id;
+  pickTab("module:chat");
 }
 
 // --- Ряд источников над полем (решение владельца 06.11) ---------------------------
@@ -2955,10 +2968,11 @@ const canCompress = () => {
 function renderCompressOffer() {
   const el = $("#chat-offer"), x = chatState.chat && chatState.chat.context;
   const over = !!(x && x.window && x.used > x.window);
-  const show = canCompress() && !chatState.declined && (over || chatState.offerAsk);
+  // offerCost — пришли из «Денег» по подсказке «дорогой чат» (#541).
+  const show = canCompress() && !chatState.declined && (over || chatState.offerAsk || chatState.offerCost);
   el.hidden = !show;
   if (!show) return;
-  el.innerHTML = `<span>${over && !chatState.offerAsk ? "Занято больше, чем помещается в контекст модели." : "Вопрос не поместится в контекст модели."} Сжать старую часть разговора в конспект? Исходный разговор останется.</span>
+  el.innerHTML = `<span>${chatState.offerAsk ? "Вопрос не поместится в контекст модели." : over ? "Занято больше, чем помещается в контекст модели." : "Чат дорогой: каждый вопрос заново отправляет модели весь разговор."} Сжать старую часть разговора в конспект? Исходный разговор останется.</span>
     <button class="btn primary" type="button" data-offer="yes"${chatState.compressing ? " disabled" : ""}>${chatState.compressing ? "Сжимаю…" : "Сжать"}</button><button class="btn" type="button" data-offer="no"${chatState.compressing ? " disabled" : ""}>Не надо</button>`;
 }
 $("#chat-offer").addEventListener("click", (e) => {
@@ -2968,7 +2982,7 @@ $("#chat-offer").addEventListener("click", (e) => {
   // выглядит как зависание.
   const pending = chatState.offerAsk && $("#chat-q").value.trim() !== "";
   if (b.dataset.offer === "no") {
-    chatState.declined = true; chatState.offerAsk = false;
+    chatState.declined = true; chatState.offerAsk = chatState.offerCost = false;
     renderChat();
     if (pending) askChat();
     return;
@@ -2993,7 +3007,7 @@ async function compressChat(pending) {
       c.context = { used: Math.max(0, prev.used - Math.ceil(Math.max(0, gone) / CHARS_PER_TOKEN)), window: prev.window, est: true };
     }
     chatState.chat = c;
-    chatState.offerAsk = false;
+    chatState.offerAsk = chatState.offerCost = false;
     toast("Чат сжат", " · свернуто " + c.compressed.folded + " сообщ.");
   } catch (err) {
     showChatNote("Не сжато: " + errText(err));
@@ -3033,7 +3047,7 @@ async function askChat() {
     if (c.notes && c.notes.length) setTimeout(() => showChatNote("Не прочитано: " + c.notes.join(" · ")), 0);
     chatState.id = c.id;
     chatState.chat = c;
-    chatState.offerAsk = chatState.declined = false;
+    chatState.offerAsk = chatState.offerCost = chatState.declined = false;
     await renderChatList();
   } catch (e) {
     chatState.chat.messages.pop();
@@ -3055,7 +3069,7 @@ async function newChat() {
   if (chatState.busy || chatState.compressing) return;
   await flushChatDraft(); // набранное остается за прежним чатом
   if (chatState.busy || chatState.compressing) return;
-  chatState.offerAsk = chatState.declined = false;
+  chatState.offerAsk = chatState.offerCost = chatState.declined = false;
   chatState.id = "";
   chatState.chat = null;
   chatState.over = null;
@@ -3405,22 +3419,27 @@ $("#chat-list").addEventListener("click", async (e) => {
   }
   const b = e.target.closest("[data-chat]");
   if (!b || chatState.busy || chatState.compressing) return;
+  await selectChat(b.dataset.chat);
+});
+// selectChat opens chat id in the chat view: из колонки чатов и из «Денег» (#541).
+async function selectChat(id) {
   await flushChatDraft(); // набранное остается за прежним чатом
   try {
-    chatState.chat = await native().Chat(b.dataset.chat);
-    chatState.id = b.dataset.chat;
-    chatState.offerAsk = chatState.declined = false; // предложение сжать — про тот чат, где его показали
+    chatState.chat = await native().Chat(id);
+    chatState.id = id;
+    chatState.offerAsk = chatState.offerCost = chatState.declined = false; // предложение сжать — про тот чат, где его показали
     // Источники чата — только те, что есть сейчас: удаленный или выключенный
     // оставил бы чат искать нигде (ревью #465).
     const alive = (chatState.chat.sources || []).filter((id) => chatSources().some((s) => s.id === id));
     chatState.only = alive.length ? alive : null;
     renderChatSources();
-  } catch (err) { showChatNote("Чат не открылся: " + errText(err)); return; }
+  } catch (err) { showChatNote("Чат не открылся: " + errText(err)); return false; }
   paintChatList();
   renderChat();
   renderChatNote();
   await loadChatDraft();
-});
+  return true;
+}
 $("#chat-docs").addEventListener("click", (e) => {
   const o = e.target.closest("[data-open]");
   if (o) return void openFile(o.dataset.open);
@@ -3976,6 +3995,7 @@ $("#st-reset").addEventListener("click", () => { Object.assign(st, { f: {}, open
 document.querySelectorAll("#stats-view [data-st]").forEach((b) => b.addEventListener("click", () => { st.hist = []; Object.assign(st, { screen: b.dataset.st, f: {}, open: null, from: null }); stRender(); }));
 $("#st-range").addEventListener("click", (e) => { const b = e.target.closest("[data-d]"); if (!b) return; st.days = +b.dataset.d; st.open = null; st.hist = []; if (st.f.day || st.f.from) Object.assign(st, { f: { ...st.f, day: undefined, from: undefined, to: undefined }, from: null }); openStats(false); }); // «Назад» не вернет строку, день и отрезок прежнего периода
 
+const stChatTitle = (id) => (st.data.chats && st.data.chats[id]) || "Удаленный чат";
 function stDescribe() {
   const f = st.f, p = [];
   if (f.day) p.push(`день <b>${stDay(f.day)}</b>`);
@@ -3983,6 +4003,7 @@ function stDescribe() {
   if (f.wd != null) p.push(`<b>${ST_WD_FULL[f.wd]}, ${f.hour}:00–${f.hour + 1}:00</b>`);
   if (f.purpose) p.push(`назначение <b>${esc(st.data.purposes.find((x) => x.id === f.purpose)?.title || f.purpose)}</b>`);
   if (f.model) p.push(`модель <b>${esc(f.model)}</b>`);
+  if (f.chat) p.push(`чат <b>«${esc(stChatTitle(f.chat))}»</b>`);
   if (f.failed) p.push("<b>только с ошибкой</b>");
   if (f.uncounted) p.push("<b>только без счета</b>");
   return p.join(", ");
@@ -3992,7 +4013,7 @@ function stRender() {
   if (!st.data) return;
   document.querySelectorAll("#stats-view [data-st]").forEach((b) => { if (b.dataset.st === st.screen) b.setAttribute("aria-current", "page"); else b.removeAttribute("aria-current"); });
   const f = st.f, d = stDescribe();
-  $("#st-cmd").textContent = "dvk stats" + (st.screen === "pulse" ? "" : " " + st.screen) + (st.screen === "money" ? " --month" : f.day ? ` --day ${f.day}` : f.from ? ` --from ${f.from} --to ${f.to}` : ` --since ${st.days}d`) + (f.wd != null ? ` --weekday ${f.wd + 1} --hour ${f.hour}` : "") + (f.purpose ? ` --purpose ${f.purpose}` : "") + (f.model ? ` --model ${f.model}` : "");
+  $("#st-cmd").textContent = "dvk stats" + (st.screen === "pulse" ? "" : " " + st.screen) + (st.screen === "money" ? " --month" : f.day ? ` --day ${f.day}` : f.from ? ` --from ${f.from} --to ${f.to}` : ` --since ${st.days}d`) + (f.wd != null ? ` --weekday ${f.wd + 1} --hour ${f.hour}` : "") + (f.purpose ? ` --purpose ${f.purpose}` : "") + (f.model ? ` --model ${f.model}` : "") + (f.chat ? ` --chat ${f.chat}` : "");
   $("#st-ctx").hidden = !(st.from || d);
   $("#st-ctx-text").innerHTML = (st.from ? `Вы пришли сюда, нажав ${esc(st.from)}. ` : "") + (d ? `Показано: ${d}.` : "");
   $("#st-back").hidden = !st.hist.length; $("#st-reset").hidden = !d;
@@ -4110,7 +4131,7 @@ function stShare(host, parts, mode, onPick) {
 
 function stLog(host) {
   const v = st.data, f = st.f;
-  const rows = v.calls.filter((c) => (!f.day || c.at.slice(0, 10) === f.day) && stInRange(c.at, f) && (f.wd == null || (stWd(c.at) === f.wd && +c.at.slice(11, 13) === f.hour)) && (!f.purpose || c.purpose === f.purpose) && (!f.model || c.model === f.model) && (!f.failed || c.failed) && (!f.uncounted || !c.counted));
+  const rows = v.calls.filter((c) => (!f.day || c.at.slice(0, 10) === f.day) && stInRange(c.at, f) && (f.wd == null || (stWd(c.at) === f.wd && +c.at.slice(11, 13) === f.hour)) && (!f.purpose || c.purpose === f.purpose) && (!f.model || c.model === f.model) && (!f.chat || c.chat === f.chat) && (!f.failed || c.failed) && (!f.uncounted || !c.counted));
   const shown = rows.slice(0, 200);
   const time = (iso) => stDay(iso.slice(0, 10)) + " " + iso.slice(11, 16);
   host.innerHTML = `<div class="st-hd"><div class="st-chips">${v.purposes.map((p) => `<button class="st-chip" data-p="${p.id}" aria-pressed="${f.purpose === p.id}">${esc(p.title)}</button>`).join("")}</div>
@@ -4290,7 +4311,7 @@ async function stMoney(host) {
   if (topM && m.models.filter((x) => x.cost > 0).length > 1) tips.push([`${topM.id} — ${share(topM.cost)}% расхода месяца (${stUsd(topM.cost)}); модель меняется в «Чат и модель»`, { model: topM.id }, `совет про ${topM.id} в Деньгах`]);
   // Дорогой чат (#541): длинный разговор дорожает с каждым вопросом — сжатие (#539) режет его.
   const topC = (m.chats || []).find((c) => c.cost > 0 && c.id);
-  if (topC && topC.share >= 0.4 && topC.calls >= 4 && topC.title !== "Удаленный чат") tips.push([`Чат «${topC.title}» — ${Math.round(topC.share * 100)}% расхода месяца (${stUsd(topC.cost)}): длинный разговор дорожает с каждым вопросом; откройте его и нажмите «Сжать разговор» в кольце контекста`, null]);
+  if (topC && topC.share >= 0.4 && topC.calls >= 4 && topC.title !== "Удаленный чат") tips.push([`Чат «${topC.title}» — ${Math.round(topC.share * 100)}% расхода месяца (${stUsd(topC.cost)}): длинный разговор дорожает с каждым вопросом, сжатие старой части в конспект это снимает`, { chat: topC.id }, `совет про чат «${topC.title}» в Деньгах`, ["Открыть и сжать", () => openCostlyChat(topC.id)]]);
   if (m.unpriced) tips.push([`${m.unpriced} ${plural(m.unpriced, "вызов", "вызова", "вызовов")} без цены модели — не вошли в расход; задайте цену в таблице ниже`, null]);
   host.innerHTML = `<div class="st-kpis"><button data-mk="spent"><span>Потрачено в ${mon}</span><b data-n="${m.spent}" data-f="usd">${stUsd(m.spent)}</b><em>за ${m.daysPassed} ${plural(m.daysPassed, "день", "дня", "дней")}</em><span class="to">Журнал →</span></button>
       <button data-mk="forecast"><span>Прогноз на месяц</span><b data-n="${m.forecast}" data-f="usd">${stUsd(m.forecast)}</b><em>по среднему прошедших дней</em></button>
@@ -4301,8 +4322,8 @@ async function stMoney(host) {
       <div class="st-limit-in"><label>лимит, $ <input id="st-lim" inputmode="decimal" value="${esc(m.limit || "")}" placeholder="нет"></label><button class="st-chip" id="st-lim-save">Сохранить</button>${hasLim ? '<button class="st-chip" id="st-lim-off">Снять</button>' : ""}</div></div>
       <div class="st-scale" id="st-scale"></div><div id="st-c6"></div></div>
     <div class="st-grid"><div class="st-panel"><h3>Расход по назначениям</h3><div class="st-sub">нажмите — Журнал с этим назначением</div>${m.purposes.length ? `<div class="st-hbars">${m.purposes.map((p, i) => `<button data-mp="${i}"><span>${stSw(ST_COLORS[p.id] || "--z-faint")}${esc(p.title)}</span><i style="width:${Math.max(2, m.spent ? (p.cost / m.spent) * 100 : 0)}%;background:${stCss(ST_COLORS[p.id] || "--z-faint")}"></i><span>${stUsd(p.cost)}</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} вызовов нет.</div>`}</div>
-      <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map(([t, f], i) => `<div>${esc(t)}${f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
-    <div class="st-panel"><h3>Расход по чатам</h3><div class="st-sub">самые дорогие чаты за ${esc(mon)}; доля — от всего расхода месяца, остальное — вызовы вне чатов (разбор, портрет)</div>${(m.chats || []).filter((c) => c.cost > 0).length ? `<div class="st-hbars chats">${m.chats.filter((c) => c.cost > 0).slice(0, 5).map((c) => `<div title="${esc(c.title)}: ${stUsd(c.cost)}, ${c.calls} ${plural(c.calls, "вызов", "вызова", "вызовов")}"><span>${esc(c.title)}</span><i style="width:${Math.max(2, c.share * 100)}%;background:${stCss("--z-accent")}"></i><span>${stUsd(c.cost)} · ${Math.round(c.share * 100)}%</span></div>`).join("")}</div>` : `<div class="st-sub">В ${mon} расхода по чатам нет.</div>`}</div>
+      <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map(([t, f, , a], i) => `<div>${esc(t)}${a ? ` <button class="st-chip" data-tip-a="${i}">${esc(a[0])}</button>` : ""}${f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
+    <div class="st-panel"><h3>Расход по чатам</h3><div class="st-sub">самые дорогие чаты за ${esc(mon)}; доля — от всего расхода месяца, остальное — вызовы вне чатов (разбор, портрет); нажмите — Журнал этого чата</div>${(m.chats || []).filter((c) => c.cost > 0).length ? `<div class="st-hbars chats">${m.chats.filter((c) => c.cost > 0).slice(0, 5).map((c) => `<button data-mc="${esc(c.id)}" title="${esc(c.title)}: ${stUsd(c.cost)}, ${c.calls} ${plural(c.calls, "вызов", "вызова", "вызовов")}"><span>${esc(c.title)}</span><i style="width:${Math.max(2, c.share * 100)}%;background:${stCss("--z-accent")}"></i><span>${stUsd(c.cost)} · ${Math.round(c.share * 100)}%</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} расхода по чатам нет.</div>`}</div>
     <div class="st-panel"><h3>Цены моделей</h3><div class="st-sub">долларов за 1 млн токенов; «шлюз» — из списка моделей Vercel AI Gateway, раз в сутки; своя цена главнее, пустые поля — снова цена шлюза${m.priceNote ? `. <b>${esc(m.priceNote)}</b>` : ""}</div>
       <div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Модель</th><th class="n">Вызовов</th><th class="n">Расход</th><th class="n">Вход, $</th><th class="n">Выход, $</th><th>Цена</th><th></th></tr></thead><tbody>${m.models.map((x, i) => `<tr data-mi="${i}"><td>${esc(x.id)}</td><td class="n">${stNum(x.calls)}</td><td class="n">${x.priced ? stUsd(x.cost) : "—"}</td>
         ${x.priceable ? `<td class="n"><input class="st-price" data-pin="${i}" value="${esc(x.source === "своя" ? x.in : "")}" placeholder="${esc(x.in || "нет")}" inputmode="decimal"></td><td class="n"><input class="st-price" data-pout="${i}" value="${esc(x.source === "своя" ? x.out : "")}" placeholder="${esc(x.out || "нет")}" inputmode="decimal"></td>
@@ -4314,8 +4335,10 @@ async function stMoney(host) {
   if ($("#st-lim-off")) $("#st-lim-off").addEventListener("click", () => setLimit(""));
   host.querySelectorAll('[data-mk="forecast"], [data-mk="limit"]').forEach((b) => b.addEventListener("click", () => $("#st-lim").focus()));
   host.querySelector('[data-mk="spent"]').addEventListener("click", () => toLog({}, `«Потрачено в ${mon}» в Деньгах`));
+  host.querySelectorAll("[data-mc]").forEach((b) => b.addEventListener("click", () => { const c = m.chats.find((x) => x.id === b.dataset.mc); toLog({ chat: c.id }, `чат «${c.title}» в Деньгах`); }));
   host.querySelectorAll("[data-mp]").forEach((b) => b.addEventListener("click", () => { const p = m.purposes[+b.dataset.mp]; toLog({ purpose: p.id }, `«${p.title}» в Деньгах`); }));
   host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const [, f, why] = tips[+b.dataset.tipI]; toLog(f, why); }));
+  host.querySelectorAll("[data-tip-a]").forEach((b) => b.addEventListener("click", () => tips[+b.dataset.tipA][3][1]()));
   host.querySelectorAll("[data-psave]").forEach((b) => b.addEventListener("click", async () => {
     const i = +b.dataset.psave, x = m.models[i];
     let pin = host.querySelector(`[data-pin="${i}"]`).value.trim(), pout = host.querySelector(`[data-pout="${i}"]`).value.trim();

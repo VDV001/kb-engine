@@ -58,17 +58,19 @@ type statsCall struct {
 	FirstMS int64  `json:"firstMs"`
 	TookMS  int64  `json:"tookMs"`
 	Failed  bool   `json:"failed"`
+	Chat    string `json:"chat,omitempty"` // чат окна (#541); пусто — вызов вне чата
 }
 
 // statsView is the statistics of the last days for the page.
 type statsView struct {
-	Days     []statsDay   `json:"days"`
-	Purposes []statsGroup `json:"purposes"`
-	Models   []statsGroup `json:"models"`
-	Total    statsTotals  `json:"total"`
-	Prev     statsTotals  `json:"prev"`
-	Calls    []statsCall  `json:"calls"`
-	Bad      int          `json:"bad"` // нечитаемых строк журнала
+	Days     []statsDay        `json:"days"`
+	Purposes []statsGroup      `json:"purposes"`
+	Models   []statsGroup      `json:"models"`
+	Total    statsTotals       `json:"total"`
+	Prev     statsTotals       `json:"prev"`
+	Calls    []statsCall       `json:"calls"`
+	Chats    map[string]string `json:"chats"` // названия чатов из Calls: Журнал фильтрует по чату (#541)
+	Bad      int               `json:"bad"`   // нечитаемых строк журнала
 }
 
 func totalsView(t usage.Totals) statsTotals {
@@ -89,7 +91,7 @@ func (d *chatDesk) Stats(days int) (statsView, error) {
 	}
 	r := usage.NewReport(calls, d.now(), days)
 	v := statsView{Total: totalsView(r.Total), Prev: totalsView(r.Prev), Bad: bad,
-		Days: make([]statsDay, 0, len(r.Days)), Purposes: []statsGroup{}, Models: []statsGroup{}, Calls: make([]statsCall, 0, len(r.Calls))}
+		Days: make([]statsDay, 0, len(r.Days)), Purposes: []statsGroup{}, Models: []statsGroup{}, Calls: make([]statsCall, 0, len(r.Calls)), Chats: map[string]string{}}
 	for _, x := range r.Days {
 		v.Days = append(v.Days, statsDay{x.Date, totalsView(x.Totals)})
 	}
@@ -101,7 +103,12 @@ func (d *chatDesk) Stats(days int) (statsView, error) {
 	}
 	for _, c := range r.Calls {
 		v.Calls = append(v.Calls, statsCall{c.At().In(d.now().Location()).Format(time.RFC3339), string(c.Purpose()), purposeTitles[c.Purpose()],
-			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed()})
+			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed(), c.Chat()})
+		if id := c.Chat(); id != "" {
+			if _, ok := v.Chats[id]; !ok {
+				v.Chats[id] = d.chatTitle(id)
+			}
+		}
 	}
 	return v, nil
 }
