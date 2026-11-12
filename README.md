@@ -77,7 +77,13 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   **Артефакты** search tab (always next to the main ones) gathers the iterations of one document (docx, pptx, xlsx, pdf)
   from the window's folders into a family, oldest first, each version saying
   what was added or removed since the previous one; a byte-identical copy is
-  shown as a duplicate, and files are never changed.
+  shown as a duplicate, and files are never changed. Each version takes your
+  note and an «актуальная» badge, two versions open side by side with the
+  differing lines marked, and a button asks the model (with your consent, only
+  the differing lines leave) to draft the note. The chat and the MCP tools
+  `search_versions` / `open_version` read the same families, and the chat can
+  offer a result as a new iteration: a new docx next to the others, only after
+  you confirm, never over an existing file.
   **Статистика** shows the model calls the window made — a feed, an activity
   map and money at the gateway's own prices, with a spend limit you set and the
   month's spend by chat (the dearest chats and their share). When a
