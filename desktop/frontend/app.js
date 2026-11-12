@@ -2574,12 +2574,13 @@ async function openChatView() {
   renderChat();
   renderChatSources();
   await loadChatDraft();
+  // Чат из «Денег» (#541); человек успел выбрать другой — его выбор главнее (клик в колонке снимает openCost).
   const want = chatState.openCost;
   chatState.openCost = "";
-  if (want && !chatState.busy && !chatState.compressing && await selectChat(want)) {
-    chatState.offerCost = true;
-    renderChat();
-    if (!canCompress()) showChatNote("Сжимать пока нечего: старой части разговора мало.");
+  if (want && (chatState.busy || chatState.compressing)) showChatNote("Модель сейчас отвечает: откройте дорогой чат после ответа.");
+  else if (want && await selectChat(want)) {
+    if (canCompress()) { chatState.offerCost = true; renderChat(); }
+    else showChatNote("Сжимать пока нечего: старой части разговора мало.");
   }
   $("#chat-q").focus();
 }
@@ -3419,6 +3420,7 @@ $("#chat-list").addEventListener("click", async (e) => {
   }
   const b = e.target.closest("[data-chat]");
   if (!b || chatState.busy || chatState.compressing) return;
+  chatState.openCost = "";
   await selectChat(b.dataset.chat);
 });
 // selectChat opens chat id in the chat view: из колонки чатов и из «Денег» (#541).
@@ -4304,15 +4306,15 @@ async function stMoney(host) {
   const warn = hasLim && m.spent >= lim && m.spent > 0 ? `Лимит месяца превышен: ${stUsd(m.spent)} из ${stUsd(lim)}.` : hasLim && lim > 0 && m.spent >= lim * 0.8 ? `Потрачено ${Math.round((m.spent / lim) * 100)}% лимита месяца.` : lim && m.forecast > lim ? `По прогнозу месяц выйдет за лимит на ${stUsd(m.forecast - lim)}.` : "";
   const tips = [];
   const topP = m.purposes.find((p) => p.cost > 0);
-  if (topP && share(topP.cost) >= 40) tips.push([`«${topP.title}» — ${share(topP.cost)}% расхода месяца (${stUsd(topP.cost)})`, { purpose: topP.id }, `совет про «${topP.title}» в Деньгах`]);
+  if (topP && share(topP.cost) >= 40) tips.push({ text: `«${topP.title}» — ${share(topP.cost)}% расхода месяца (${stUsd(topP.cost)})`, f: { purpose: topP.id }, why: `совет про «${topP.title}» в Деньгах` });
   const search = m.purposes.find((p) => p.id === "search" && p.cost > 0);
-  if (search) tips.push([`Шаги поиска моделью стоили ${stUsd(search.cost)}: в режиме «Кто ищет документы → окно» этих шагов нет`, { purpose: "search" }, "совет про поиск моделью в Деньгах"]);
+  if (search) tips.push({ text: `Шаги поиска моделью стоили ${stUsd(search.cost)}: в режиме «Кто ищет документы → окно» этих шагов нет`, f: { purpose: "search" }, why: "совет про поиск моделью в Деньгах" });
   const topM = m.models.find((x) => x.cost > 0);
-  if (topM && m.models.filter((x) => x.cost > 0).length > 1) tips.push([`${topM.id} — ${share(topM.cost)}% расхода месяца (${stUsd(topM.cost)}); модель меняется в «Чат и модель»`, { model: topM.id }, `совет про ${topM.id} в Деньгах`]);
+  if (topM && m.models.filter((x) => x.cost > 0).length > 1) tips.push({ text: `${topM.id} — ${share(topM.cost)}% расхода месяца (${stUsd(topM.cost)}); модель меняется в «Чат и модель»`, f: { model: topM.id }, why: `совет про ${topM.id} в Деньгах` });
   // Дорогой чат (#541): длинный разговор дорожает с каждым вопросом — сжатие (#539) режет его.
   const topC = (m.chats || []).find((c) => c.cost > 0 && c.id);
-  if (topC && topC.share >= 0.4 && topC.calls >= 4 && topC.title !== "Удаленный чат") tips.push([`Чат «${topC.title}» — ${Math.round(topC.share * 100)}% расхода месяца (${stUsd(topC.cost)}): длинный разговор дорожает с каждым вопросом, сжатие старой части в конспект это снимает`, { chat: topC.id }, `совет про чат «${topC.title}» в Деньгах`, ["Открыть и сжать", () => openCostlyChat(topC.id)]]);
-  if (m.unpriced) tips.push([`${m.unpriced} ${plural(m.unpriced, "вызов", "вызова", "вызовов")} без цены модели — не вошли в расход; задайте цену в таблице ниже`, null]);
+  if (topC && topC.share >= 0.4 && topC.calls >= 4 && topC.title !== "Удаленный чат") tips.push({ text: `Чат «${topC.title}» — ${Math.round(topC.share * 100)}% расхода месяца (${stUsd(topC.cost)}): длинный разговор дорожает с каждым вопросом, сжатие старой части в конспект это снимает`, f: { chat: topC.id }, why: `совет про чат «${topC.title}» в Деньгах`, act: "Открыть и сжать", run: () => openCostlyChat(topC.id) });
+  if (m.unpriced) tips.push({ text: `${m.unpriced} ${plural(m.unpriced, "вызов", "вызова", "вызовов")} без цены модели — не вошли в расход; задайте цену в таблице ниже` });
   host.innerHTML = `<div class="st-kpis"><button data-mk="spent"><span>Потрачено в ${mon}</span><b data-n="${m.spent}" data-f="usd">${stUsd(m.spent)}</b><em>за ${m.daysPassed} ${plural(m.daysPassed, "день", "дня", "дней")}</em><span class="to">Журнал →</span></button>
       <button data-mk="forecast"><span>Прогноз на месяц</span><b data-n="${m.forecast}" data-f="usd">${stUsd(m.forecast)}</b><em>по среднему прошедших дней</em></button>
       <button data-mk="limit"><span>Лимит месяца</span><b>${hasLim ? stUsd(lim) : "не задан"}</b><em>${hasLim ? `осталось ${stUsd(Math.max(0, lim - m.spent))}` : "потяните шкалу ниже"}</em></button>
@@ -4322,8 +4324,8 @@ async function stMoney(host) {
       <div class="st-limit-in"><label>лимит, $ <input id="st-lim" inputmode="decimal" value="${esc(m.limit || "")}" placeholder="нет"></label><button class="st-chip" id="st-lim-save">Сохранить</button>${hasLim ? '<button class="st-chip" id="st-lim-off">Снять</button>' : ""}</div></div>
       <div class="st-scale" id="st-scale"></div><div id="st-c6"></div></div>
     <div class="st-grid"><div class="st-panel"><h3>Расход по назначениям</h3><div class="st-sub">нажмите — Журнал с этим назначением</div>${m.purposes.length ? `<div class="st-hbars">${m.purposes.map((p, i) => `<button data-mp="${i}"><span>${stSw(ST_COLORS[p.id] || "--z-faint")}${esc(p.title)}</span><i style="width:${Math.max(2, m.spent ? (p.cost / m.spent) * 100 : 0)}%;background:${stCss(ST_COLORS[p.id] || "--z-faint")}"></i><span>${stUsd(p.cost)}</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} вызовов нет.</div>`}</div>
-      <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map(([t, f, , a], i) => `<div>${esc(t)}${a ? ` <button class="st-chip" data-tip-a="${i}">${esc(a[0])}</button>` : ""}${f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
-    <div class="st-panel"><h3>Расход по чатам</h3><div class="st-sub">самые дорогие чаты за ${esc(mon)}; доля — от всего расхода месяца, остальное — вызовы вне чатов (разбор, портрет); нажмите — Журнал этого чата</div>${(m.chats || []).filter((c) => c.cost > 0).length ? `<div class="st-hbars chats">${m.chats.filter((c) => c.cost > 0).slice(0, 5).map((c) => `<button data-mc="${esc(c.id)}" title="${esc(c.title)}: ${stUsd(c.cost)}, ${c.calls} ${plural(c.calls, "вызов", "вызова", "вызовов")}"><span>${esc(c.title)}</span><i style="width:${Math.max(2, c.share * 100)}%;background:${stCss("--z-accent")}"></i><span>${stUsd(c.cost)} · ${Math.round(c.share * 100)}%</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} расхода по чатам нет.</div>`}</div>
+      <div class="st-panel"><h3>Где сэкономить</h3>${tips.length ? `<div class="st-tips">${tips.map((x, i) => `<div>${esc(x.text)}${x.act ? ` <button class="st-chip" data-tip-a="${i}">${esc(x.act)}</button>` : ""}${x.f ? ` <button class="st-chip" data-tip-i="${i}">Журнал →</button>` : ""}</div>`).join("")}</div>` : `<div class="st-sub">Подсказок нет: расход ровный.</div>`}</div></div>
+    <div class="st-panel"><h3>Расход по чатам</h3><div class="st-sub">самые дорогие чаты за ${esc(mon)}; доля — от всего расхода месяца, остальное — вызовы вне чатов (разбор, портрет); нажмите — Журнал этого чата</div>${(m.chats || []).filter((c) => c.cost > 0).length ? `<div class="st-hbars chats">${m.chats.filter((c) => c.cost > 0).slice(0, 5).map((c, i) => `<button data-mc="${i}" title="${esc(c.title)}: ${stUsd(c.cost)}, ${c.calls} ${plural(c.calls, "вызов", "вызова", "вызовов")}"><span>${esc(c.title)}</span><i style="width:${Math.max(2, c.share * 100)}%;background:${stCss("--z-accent")}"></i><span>${stUsd(c.cost)} · ${Math.round(c.share * 100)}%</span></button>`).join("")}</div>` : `<div class="st-sub">В ${mon} расхода по чатам нет.</div>`}</div>
     <div class="st-panel"><h3>Цены моделей</h3><div class="st-sub">долларов за 1 млн токенов; «шлюз» — из списка моделей Vercel AI Gateway, раз в сутки; своя цена главнее, пустые поля — снова цена шлюза${m.priceNote ? `. <b>${esc(m.priceNote)}</b>` : ""}</div>
       <div style="overflow-x:auto"><table class="st-table"><thead><tr><th>Модель</th><th class="n">Вызовов</th><th class="n">Расход</th><th class="n">Вход, $</th><th class="n">Выход, $</th><th>Цена</th><th></th></tr></thead><tbody>${m.models.map((x, i) => `<tr data-mi="${i}"><td>${esc(x.id)}</td><td class="n">${stNum(x.calls)}</td><td class="n">${x.priced ? stUsd(x.cost) : "—"}</td>
         ${x.priceable ? `<td class="n"><input class="st-price" data-pin="${i}" value="${esc(x.source === "своя" ? x.in : "")}" placeholder="${esc(x.in || "нет")}" inputmode="decimal"></td><td class="n"><input class="st-price" data-pout="${i}" value="${esc(x.source === "своя" ? x.out : "")}" placeholder="${esc(x.out || "нет")}" inputmode="decimal"></td>
@@ -4335,10 +4337,10 @@ async function stMoney(host) {
   if ($("#st-lim-off")) $("#st-lim-off").addEventListener("click", () => setLimit(""));
   host.querySelectorAll('[data-mk="forecast"], [data-mk="limit"]').forEach((b) => b.addEventListener("click", () => $("#st-lim").focus()));
   host.querySelector('[data-mk="spent"]').addEventListener("click", () => toLog({}, `«Потрачено в ${mon}» в Деньгах`));
-  host.querySelectorAll("[data-mc]").forEach((b) => b.addEventListener("click", () => { const c = m.chats.find((x) => x.id === b.dataset.mc); toLog({ chat: c.id }, `чат «${c.title}» в Деньгах`); }));
+  host.querySelectorAll("[data-mc]").forEach((b) => b.addEventListener("click", () => { const c = m.chats.filter((x) => x.cost > 0)[+b.dataset.mc]; toLog({ chat: c.id }, `чат «${c.title}» в Деньгах`); }));
   host.querySelectorAll("[data-mp]").forEach((b) => b.addEventListener("click", () => { const p = m.purposes[+b.dataset.mp]; toLog({ purpose: p.id }, `«${p.title}» в Деньгах`); }));
-  host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const [, f, why] = tips[+b.dataset.tipI]; toLog(f, why); }));
-  host.querySelectorAll("[data-tip-a]").forEach((b) => b.addEventListener("click", () => tips[+b.dataset.tipA][3][1]()));
+  host.querySelectorAll("[data-tip-i]").forEach((b) => b.addEventListener("click", () => { const x = tips[+b.dataset.tipI]; toLog(x.f, x.why); }));
+  host.querySelectorAll("[data-tip-a]").forEach((b) => b.addEventListener("click", () => tips[+b.dataset.tipA].run()));
   host.querySelectorAll("[data-psave]").forEach((b) => b.addEventListener("click", async () => {
     const i = +b.dataset.psave, x = m.models[i];
     let pin = host.querySelector(`[data-pin="${i}"]`).value.trim(), pout = host.querySelector(`[data-pout="${i}"]`).value.trim();
