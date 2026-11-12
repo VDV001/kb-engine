@@ -475,3 +475,29 @@ func TestGroup_ComparisonSkippingAnUnreadableVersionSaysSo(t *testing.T) {
 		t.Errorf("ничего не пропущено, а Skipped = %d", c.Skipped)
 	}
 }
+
+func TestPick_ChoosesTheVersionByTheWordsOfThePerson(t *testing.T) {
+	vs := []versions.Choice{
+		{Path: "/p/КП_2026_11_05.docx", Date: "05.11.2026", Note: "первая версия", Mark: "отправлено Алексею"},
+		{Path: "/p/КП_2026_11_10.docx", Date: "10.11.2026", Note: "добавлено строк: 1 — «Гарантия»", Current: true},
+		{Path: "/p/КП_2026_11_12.docx", Date: "12.11.2026", Note: "убрано строк: 1 — «Срок 7 дней»"},
+	}
+	for _, c := range []struct {
+		words string
+		want  []int
+	}{
+		{"последняя", []int{2}}, {"самая свежая", []int{2}}, {"предыдущая", []int{1}}, {"первая", []int{0}},
+		{"v2", []int{1}}, {"версия 3", []int{2}}, {"v9", nil}, {"от 05.11", []int{0}}, {"от 10.11.26", []int{1}}, {"от 10.11.2025", nil},
+		{"актуальная", []int{1}}, {"та, что отправили Алексею", []int{0}}, {"где убрали срок", []int{2}}, {"что-то совсем другое", nil}, {"", nil},
+	} {
+		if got := versions.Pick(vs, c.words); !slices.Equal(got, c.want) {
+			t.Errorf("«%s»: %v, ждали %v", c.words, got, c.want)
+		}
+	}
+	if got := versions.Pick(nil, "последняя"); got != nil {
+		t.Errorf("пустая лента: %v", got)
+	}
+	if got := versions.Pick(vs[:1], "предыдущая"); got != nil {
+		t.Errorf("предыдущей у единственной версии нет: %v", got)
+	}
+}
