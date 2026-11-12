@@ -94,18 +94,23 @@ func (s *Source) fill(f *versions.File) {
 		return
 	}
 	f.Hash = fileHash(s.dirs[i], rel)
-	switch {
-	case extractable(rel):
-		if s.extracted != nil && s.extractReady(i, rel) {
-			f.Text, _ = s.readExtracted(i, rel, f.Path)
-		}
-	default:
-		// Текст, прочитанный с ошибкой, не берется: половина слайда в сравнении
-		// выглядела бы как «убрано N строк».
-		if text, err := officeText(s.dirs[i], rel); err == nil {
-			f.Text = text
-		}
+	// Текст, прочитанный с ошибкой, не берется: половина слайда в сравнении
+	// выглядела бы как «убрано N строк».
+	if text, err := s.versionText(i, rel, f.Path); err == nil {
+		f.Text = text
 	}
+}
+
+// versionText reads the text of a version: у pdf — распознанный окном, у
+// остальных — из самого файла.
+func (s *Source) versionText(i int, rel, path string) (string, error) {
+	if extractable(rel) {
+		if s.extracted == nil || !s.extractReady(i, rel) {
+			return "", fmt.Errorf("%w: нет распознанного текста у %q", ErrNotAllowed, path)
+		}
+		return s.readExtracted(i, rel, path)
+	}
+	return officeText(s.dirs[i], rel)
 }
 
 func fileHash(root *os.Root, rel string) string {
@@ -269,6 +274,19 @@ func xlsxText(r io.Reader) (string, error) {
 }
 
 // VersionText returns the text of one version, as the comparison of versions sees it.
+// Путь должен лежать в корнях окна и быть документом, который видят версии
+// (не файл с доступами, не копия .bak); больше предела чтения не читается.
 func (s *Source) VersionText(path string) (string, error) {
-	return "", nil
+	i, rel, ok := s.locate(path)
+	if !ok || !versionable(filepath.Base(rel)) {
+		return "", fmt.Errorf("%w: %q", ErrNotAllowed, path)
+	}
+	info, err := s.dirs[i].Stat(rel)
+	if err != nil {
+		return "", err
+	}
+	if info.Size() > maxBytes(info.Name()) {
+		return "", fmt.Errorf("%w: %q слишком большой", ErrNotAllowed, path)
+	}
+	return s.versionText(i, rel, path)
 }
