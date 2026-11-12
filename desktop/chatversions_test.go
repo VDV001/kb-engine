@@ -169,6 +169,23 @@ func TestDescribeVersion_NothingChangedAndBadPairsDoNotCallTheModel(t *testing.T
 	_ = v2
 }
 
+// Заметка — одна строка простого текста: настоящая модель отвечает Markdown со
+// списками вопреки просьбе (живая проверка 12.11), а поле заметки однострочное.
+func TestDescribeVersion_MarkdownBecomesOnePlainLine(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	m.reply = "**Убрано:**\n- Срок 7 дней.\n\n**Добавлено:**\n- Срок 5 дней;\n* `Гарантия` 1 год\n## Итог\n1. Короче срок"
+	got, err := cd.DescribeVersion(v1, v2, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "Убрано: Срок 7 дней. Добавлено: Срок 5 дней; Гарантия 1 год. Итог: Короче срок"
+	if got != want {
+		t.Errorf("заметка:\n got %q\nwant %q", got, want)
+	}
+}
+
 func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
 	cd, m := localChat(t)
 	_, vd, v1, v2 := kp(t)

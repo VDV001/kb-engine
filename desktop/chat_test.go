@@ -22,6 +22,7 @@ type echoModel struct {
 	asked [][]chat.ModelMessage
 	err   error
 	usage chat.Usage
+	reply string // ответ модели; пусто — «ответ [1]»
 }
 
 func (m *echoModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []chat.Tool) (chat.ModelReply, error) {
@@ -29,6 +30,9 @@ func (m *echoModel) Complete(_ context.Context, msgs []chat.ModelMessage, _ []ch
 	m.asked = append(m.asked, msgs)
 	if m.err != nil {
 		return chat.ModelReply{}, m.err
+	}
+	if m.reply != "" {
+		return chat.ModelReply{Content: m.reply, Usage: m.usage}, nil
 	}
 	return chat.ModelReply{Content: "ответ [1]", Usage: m.usage}, nil
 }
