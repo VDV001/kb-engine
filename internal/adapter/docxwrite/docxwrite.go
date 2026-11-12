@@ -35,7 +35,7 @@ func Bytes(text string) ([]byte, error) {
 	}
 	var doc strings.Builder
 	doc.WriteString(docHead)
-	for _, line := range strings.Split(strings.ReplaceAll(strings.TrimRight(text, "\n"), "\r\n", "\n"), "\n") {
+	for line := range strings.SplitSeq(strings.ReplaceAll(strings.TrimRight(text, "\n"), "\r\n", "\n"), "\n") {
 		var esc bytes.Buffer
 		if err := xml.EscapeText(&esc, []byte(line)); err != nil {
 			return nil, err

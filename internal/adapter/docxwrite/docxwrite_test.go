@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"io"
 	"slices"
 	"strings"
@@ -40,7 +41,7 @@ func paragraphs(t *testing.T, doc string) []string {
 	inT := false
 	for {
 		tok, err := dec.Token()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return out
 		}
 		if err != nil {
