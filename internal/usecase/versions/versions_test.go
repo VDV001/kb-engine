@@ -455,3 +455,23 @@ func TestCompare_EmptyTextsGiveNoLines(t *testing.T) {
 		t.Errorf("пустые тексты: %+v %+v", old, nw)
 	}
 }
+
+func TestGroup_ComparisonSkippingAnUnreadableVersionSaysSo(t *testing.T) {
+	big := file("/a/Проект_2026_11_06.pptx", "", "", day(11, 6))
+	big.TooBig = true
+	got := versions.Group([]versions.File{
+		file("/a/Проект_2026_11_05.pptx", "h1", "Цена 100", day(11, 5)),
+		big,
+		file("/a/Проект_2026_11_10.pptx", "h3", "Цена 100\nГарантия", day(11, 10)),
+	})
+	if c := got[0].Versions[2].Change; c.Skipped != 1 {
+		t.Errorf("пропущена одна версия без текста, а Skipped = %d", c.Skipped)
+	}
+	got = versions.Group([]versions.File{
+		file("/a/Проект_2026_11_05.pptx", "h1", "Цена 100", day(11, 5)),
+		file("/a/Проект_2026_11_10.pptx", "h3", "Цена 100\nГарантия", day(11, 10)),
+	})
+	if c := got[0].Versions[1].Change; c.Skipped != 0 {
+		t.Errorf("ничего не пропущено, а Skipped = %d", c.Skipped)
+	}
+}

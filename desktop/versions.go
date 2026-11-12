@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -255,6 +256,7 @@ func (d *versionsDesk) collect(ctx context.Context, src *localfiles.Source, fres
 	for _, f := range fams {
 		d.cache = append(d.cache, view(f))
 	}
+	disambiguate(d.cache)
 	sortViews(d.cache)
 	d.src, d.at = src, time.Now()
 	return d.cache, nil
@@ -273,6 +275,22 @@ func firstPath(f familyView) string {
 		return ""
 	}
 	return f.Versions[0].Path
+}
+
+// disambiguate подписывает папкой семейства с одинаковым именем: документы,
+// разошедшиеся по тексту, называются одинаково, и без папки их не отличить.
+func disambiguate(vs []familyView) {
+	for _, withDir := range []func(string) string{filepath.Base, func(d string) string { return d }} {
+		count := map[string]int{}
+		for _, v := range vs {
+			count[v.Name]++
+		}
+		for i := range vs {
+			if count[vs[i].Name] > 1 && len(vs[i].Versions) > 0 {
+				vs[i].Name += " (" + withDir(filepath.Dir(vs[i].Versions[0].Path)) + ")"
+			}
+		}
+	}
 }
 
 func view(f versions.Family) familyView {
@@ -322,7 +340,7 @@ func noteText(c versions.Change) string {
 	case versions.KindTooBig:
 		return "слишком большой, не читался"
 	case versions.KindLayoutOnly:
-		return "текст не менялся, файл отличается (правка оформления или вложений)"
+		return "текст не менялся, файл отличается (правка оформления или вложений)" + skippedNote(c)
 	}
 	var parts []string
 	if len(c.Added) > 0 {
@@ -331,7 +349,28 @@ func noteText(c versions.Change) string {
 	if len(c.Removed) > 0 {
 		parts = append(parts, fmt.Sprintf("убрано строк: %d — %s", len(c.Removed), samples(c.Removed)))
 	}
-	return strings.Join(parts, "; ")
+	return strings.Join(parts, "; ") + skippedNote(c)
+}
+
+// skippedNote — сравнение шло мимо версий без текста: без пометки правки
+// пропущенной версии выглядели бы правками этой.
+func skippedNote(c versions.Change) string {
+	if c.Skipped == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" (сравнено через %d %s без текста)", c.Skipped, ruPlural(c.Skipped, "версию", "версии", "версий"))
+}
+
+func ruPlural(n int, one, few, many string) string {
+	switch {
+	case n%100 >= 11 && n%100 <= 14:
+		return many
+	case n%10 == 1:
+		return one
+	case n%10 >= 2 && n%10 <= 4:
+		return few
+	}
+	return many
 }
 
 func samples(ls []string) string {

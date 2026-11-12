@@ -80,3 +80,10 @@ func TestApp_VersionMethodsWithoutTheDeskAreRefusedNotPanics(t *testing.T) {
 		t.Error("VersionCompare без окна версий")
 	}
 }
+
+func TestApp_PreviewReportsAnImmediateFailure(t *testing.T) {
+	a := &App{files: fakeReader{}, run: func(string, ...string) error { return errors.New("qlmanage: not found") }}
+	if err := a.Preview("/w/ok.md"); err == nil {
+		t.Error("мгновенный сбой просмотра проглочен: кнопка молча не работает")
+	}
+}
