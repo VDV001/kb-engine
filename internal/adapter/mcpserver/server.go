@@ -218,6 +218,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 	if cfg.Memory != nil {
 		addMemoryTools(s, j, cfg.Memory)
 	}
+	if cfg.Versions != nil {
+		addVersionTools(s, j, cfg.Versions)
+	}
 	return s
 }
 
