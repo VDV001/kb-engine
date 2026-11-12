@@ -650,7 +650,7 @@ new ResizeObserver(() => fitBar()).observe($(".bar"));
 // --- Отрисовка -----------------------------------------------------------------
 // Отметки и сравнение «Артефактов» (#547, шаг 2): что выбрано на экране; сами
 // заметки и значки хранит Go (version-marks.json рядом с config.json).
-const verUI = { fams: [], pick: [], cmp: null, noteFor: "" };
+const verUI = { fams: [], pick: [], cmp: null, noteFor: "", noteDraft: null, painting: false }; // noteDraft — набранное в поле заметки, пока список перерисовывается
 let verSeq = 0, verTimer = 0, verSeen = false, verFresh = false; // «Артефакты»: verSeen — вкладка уже была открыта в прошлой отрисовке; verFresh — вход ждет свежего обхода
 function render() {
   // Фильтр источника оставляет только его записи: у базы знаний — записи,
@@ -1114,6 +1114,7 @@ async function loadArtifacts(fresh) {
   $("#count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
   if (!fams.length) { box.innerHTML = `<p class="muted">${q ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Одинокий файл находится по имени в строке поиска."}</p>`; return; }
   verUI.fams = fams;
+  if (fresh) verUI.cmp = null; // свежий обход: показанное сравнение могло устареть
   const known = new Set(fams.flatMap((f) => f.versions.map((v) => v.path)));
   verUI.pick = verUI.pick.filter((p) => known.has(p));
   if (verUI.cmp && !(known.has(verUI.cmp.oldPath) && known.has(verUI.cmp.newPath))) verUI.cmp = null;
@@ -1123,7 +1124,7 @@ async function loadArtifacts(fresh) {
 const verBtn = (act, path, label, title, extra = "") => `<button class="ver-act" data-act="${act}" data-path="${esc(path)}" title="${esc(title)}" ${extra}>${label}</button>`;
 function verRow(v, fi) {
   const mark = verUI.noteFor === v.path
-    ? `<input class="ver-note-in" data-note-in="${esc(v.path)}" maxlength="500" value="${esc(v.mark || "")}" placeholder="Заметка, например: отправлено Алексею" aria-label="Заметка к версии">`
+    ? `<input class="ver-note-in" data-note-in="${esc(v.path)}" maxlength="500" value="${esc(verUI.noteDraft ?? v.mark ?? "")}" placeholder="Заметка, например: отправлено Алексею" aria-label="Заметка к версии">`
     : v.mark ? `<span class="ver-mark">${esc(v.mark)}</span>` : "";
   return `<div class="ver-row${v.current ? " cur" : ""}"><span class="ver-date">${esc(v.date)}</span><span class="ver-note">${v.current ? `<b class="ver-badge">актуальная</b> ` : ""}${esc(v.note)} · ${sizeText(v.size)}</span><span class="ver-path">${esc(v.path)}</span>${
     (v.dups || []).map((d) => `<span class="ver-dup">${esc(d)}</span>`).join("")}${mark}<span class="ver-acts">${
@@ -1137,12 +1138,19 @@ function verCmpHTML(c) {
     col(c.oldTitle, c.view.old, "del")}${col(c.newTitle, c.view.new, "add")}</div><p class="muted">Подсвечены строки, которых нет в другой версии. Перестановка абзацев не видна.</p></div>`;
 }
 function verPaint() {
+  // Перерисовка не должна отнимать у человека поле, в котором он печатает.
+  const was = document.activeElement?.matches?.("[data-note-in]") ? document.activeElement : null;
+  const caret = was ? [was.selectionStart, was.selectionEnd] : null;
+  verUI.painting = true; // снятие фокуса с удаляемого поля — не «сохранить»
   $("#ver-list").innerHTML = verUI.fams.map((f, fi) => {
     const picked = f.versions.filter((v) => verUI.pick.includes(v.path));
     const cmp = verUI.cmp && f.versions.some((v) => v.path === verUI.cmp.oldPath) ? verCmpHTML(verUI.cmp) : "";
     return `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}${
       picked.length === 2 ? ` ${verBtn("compare", "", "Сравнить выбранные", "Две отмеченные версии рядом", `data-fam="${fi}"`)}` : ""}</h4>${f.versions.map((v) => verRow(v, fi)).join("")}${cmp}</section>`;
   }).join("");
+  const now = was && $("#ver-list [data-note-in]");
+  if (now) { now.focus(); now.setSelectionRange(caret[0], caret[1]); }
+  verUI.painting = false;
 }
 const baseName = (p) => p.split("/").pop();
 async function verCompare(fi) {
@@ -1163,6 +1171,7 @@ async function verSaveNote(input) {
   const path = input.dataset.noteIn;
   if (verUI.noteFor !== path) return; // Esc или повторный вызов
   verUI.noteFor = "";
+  verUI.noteDraft = null;
   try { await native().VersionMark(path, input.value); } catch (e) { toast("Заметка не сохранена", errText(e), null, "bad"); }
   loadArtifacts(false);
 }
@@ -1175,7 +1184,7 @@ $("#ver-list").addEventListener("click", async (e) => {
     else if (act === "reveal") await revealFile(path);
     else if (act === "preview") await native().Preview(path);
     else if (act === "current") { await native().VersionCurrent(path, b.dataset.on !== "1"); await loadArtifacts(false); }
-    else if (act === "note") { verUI.noteFor = path; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
+    else if (act === "note") { verUI.noteFor = path; verUI.noteDraft = null; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
     else if (act === "pick") verPick(path, +b.dataset.fam, b.checked);
     else if (act === "compare") await verCompare(+b.dataset.fam);
     else if (act === "cmp-close") { verUI.cmp = null; verPaint(); }
@@ -1185,9 +1194,10 @@ $("#ver-list").addEventListener("keydown", (e) => {
   const input = e.target.closest("[data-note-in]");
   if (!input) return;
   if (e.key === "Enter") { e.preventDefault(); verSaveNote(input); }
-  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); verUI.noteFor = ""; verPaint(); }
+  else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); verUI.noteFor = ""; verUI.noteDraft = null; verPaint(); }
 });
-$("#ver-list").addEventListener("focusout", (e) => { const input = e.target.closest("[data-note-in]"); if (input) verSaveNote(input); });
+$("#ver-list").addEventListener("input", (e) => { if (e.target.matches("[data-note-in]")) verUI.noteDraft = e.target.value; });
+$("#ver-list").addEventListener("focusout", (e) => { const input = e.target.closest("[data-note-in]"); if (input && !verUI.painting) verSaveNote(input); });
 
 let storageConfirm = null;
 async function renderStorage() {
