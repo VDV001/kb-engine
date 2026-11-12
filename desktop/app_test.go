@@ -79,6 +79,9 @@ func TestApp_VersionMethodsWithoutTheDeskAreRefusedNotPanics(t *testing.T) {
 	if _, err := a.VersionCompare("/a", "/b"); err == nil {
 		t.Error("VersionCompare без окна версий")
 	}
+	if _, err := a.VersionDescribe("/a", "/b", true); err == nil {
+		t.Error("VersionDescribe без чата")
+	}
 }
 
 func TestApp_PreviewReportsAnImmediateFailure(t *testing.T) {
