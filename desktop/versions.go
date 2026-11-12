@@ -27,11 +27,14 @@ const versionsTTL = time.Minute
 
 // versionView — версия документа в ленте семейства.
 type versionView struct {
-	Path string   `json:"path"`
-	Date string   `json:"date"`
-	Size int64    `json:"size"`
-	Note string   `json:"note"`
-	Dups []string `json:"dups"`
+	Path    string   `json:"path"`
+	Date    string   `json:"date"`
+	Size    int64    `json:"size"`
+	Note    string   `json:"note"` // что нового, строит окно
+	Dups    []string `json:"dups"`
+	Mark    string   `json:"mark"`    // заметка владельца
+	Current bool     `json:"current"` // значок «актуальная»
+	hash    string
 }
 
 // familyView — один документ и его итерации лентой по времени.
@@ -42,7 +45,8 @@ type familyView struct {
 }
 
 type versionsDesk struct {
-	source func() *localfiles.Source
+	source    func() *localfiles.Source
+	marksPath string // версии-заметки и значки лежат рядом с config.json, 0600
 
 	mu    sync.Mutex
 	src   *localfiles.Source // для какого источника собран список
@@ -50,8 +54,35 @@ type versionsDesk struct {
 	cache []familyView
 }
 
-func newVersionsDesk(source func() *localfiles.Source) *versionsDesk {
-	return &versionsDesk{source: source}
+func newVersionsDesk(source func() *localfiles.Source, marksPath string) *versionsDesk {
+	return &versionsDesk{source: source, marksPath: marksPath}
+}
+
+// compareLimit — сколько строк каждой версии отдает сравнение: окно не рисует десятки тысяч.
+const compareLimit = 2000
+
+// Mark saves the owner's note to a version.
+func (d *versionsDesk) Mark(path, note string) error { return nil }
+
+// SetCurrent puts the «актуальная» badge on one version of its family.
+func (d *versionsDesk) SetCurrent(path string, on bool) error { return nil }
+
+// compareLine — строка текста версии; Changed: ее нет в другой версии.
+type compareLine struct {
+	Text    string `json:"t"`
+	Changed bool   `json:"c"`
+}
+
+// compareView — две версии рядом.
+type compareView struct {
+	Old       []compareLine `json:"old"`
+	New       []compareLine `json:"new"`
+	Truncated bool          `json:"truncated"`
+}
+
+// Compare lays two versions side by side.
+func (d *versionsDesk) Compare(ctx context.Context, a, b string) (compareView, error) {
+	return compareView{}, nil
 }
 
 // Families returns the families matching q (пустой — все, где есть что

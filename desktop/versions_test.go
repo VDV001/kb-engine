@@ -46,7 +46,18 @@ func versionsDeskOver(t *testing.T, root string) *versionsDesk {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = src.Close() })
-	return newVersionsDesk(func() *localfiles.Source { return src })
+	return newVersionsDesk(func() *localfiles.Source { return src }, filepath.Join(t.TempDir(), "version-marks.json"))
+}
+
+// restarted — новое окно над той же папкой и тем же файлом заметок.
+func restarted(t *testing.T, root string, old *versionsDesk) *versionsDesk {
+	t.Helper()
+	src, err := localfiles.New([]string{root}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = src.Close() })
+	return newVersionsDesk(func() *localfiles.Source { return src }, old.marksPath)
 }
 
 func TestVersions_FamiliesShowTheRibbonAndSkipLoneFiles(t *testing.T) {
@@ -91,7 +102,7 @@ func TestVersions_CopyShownAsDuplicate(t *testing.T) {
 }
 
 func TestVersions_NoSourceIsEmpty(t *testing.T) {
-	d := newVersionsDesk(func() *localfiles.Source { return nil })
+	d := newVersionsDesk(func() *localfiles.Source { return nil }, "")
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil || len(got) != 0 {
 		t.Errorf("без источника: %+v %v", got, err)
@@ -151,5 +162,179 @@ func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
 	}
 	if a[0].Name != "В" || a[1].Name != "А" {
 		t.Errorf("новее первым, при равных датах по имени: %v", a)
+	}
+}
+
+// kp кладет две версии КП и возвращает окно, пути версий и семейство.
+func kp(t *testing.T) (root string, d *versionsDesk, v1, v2 string) {
+	t.Helper()
+	root = t.TempDir()
+	v1, v2 = filepath.Join(root, "p", "КП_2026_11_05.docx"), filepath.Join(root, "p", "КП_2026_11_10.docx")
+	docxFile(t, v1, "Цена 100", "Срок 7 дней")
+	docxFile(t, v2, "Цена 100", "Срок 5 дней", "Гарантия")
+	d = versionsDeskOver(t, root)
+	if _, err := d.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	return root, d, v1, v2
+}
+
+func versionsOf(t *testing.T, d *versionsDesk) []versionView {
+	t.Helper()
+	got, err := d.Families(context.Background(), "", false)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("%+v %v", got, err)
+	}
+	return got[0].Versions
+}
+
+func TestMark_NoteSurvivesRestartAndRename(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	if err := d.Mark(v1, "  отправлено Алексею  "); err != nil {
+		t.Fatal(err)
+	}
+	renamed := filepath.Join(root, "p", "КП_2026_11_05 (1).docx")
+	if err := os.Rename(v1, renamed); err != nil {
+		t.Fatal(err)
+	}
+	d2 := restarted(t, root, d)
+	if _, err := d2.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	vs := versionsOf(t, d2)
+	if vs[0].Mark != "отправлено Алексею" {
+		t.Errorf("заметка не пережила перезапуск и переименование файла: %+v", vs)
+	}
+	if vs[1].Mark != "" {
+		t.Errorf("заметка прилипла к соседней версии: %+v", vs)
+	}
+}
+
+func TestMark_EmptyNoteRemovesItAndLongOnesAreRefused(t *testing.T) {
+	_, d, v1, _ := kp(t)
+	if err := d.Mark(v1, "заметка"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Mark(v1, "   "); err != nil {
+		t.Fatal(err)
+	}
+	if got := versionsOf(t, d)[0].Mark; got != "" {
+		t.Errorf("пустая заметка должна убрать прежнюю: %q", got)
+	}
+	if err := d.Mark(v1, strings.Repeat("я", 501)); err == nil {
+		t.Error("заметка длиннее 500 знаков должна быть отклонена")
+	}
+}
+
+func TestMark_OnlyForKnownVersions(t *testing.T) {
+	root, d, _, _ := kp(t)
+	other := filepath.Join(root, "p", "Другой.docx")
+	docxFile(t, other, "x")
+	for name, p := range map[string]string{"вне списка": other, "вне папок": "/etc/hosts", "относительный": "КП.docx"} {
+		if err := d.Mark(p, "заметка"); err == nil {
+			t.Errorf("%s: заметка принята", name)
+		}
+		if err := d.SetCurrent(p, true); err == nil {
+			t.Errorf("%s: значок принят", name)
+		}
+	}
+}
+
+func TestSetCurrent_OneBadgePerFamily(t *testing.T) {
+	_, d, v1, v2 := kp(t)
+	if err := d.SetCurrent(v1, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetCurrent(v2, true); err != nil {
+		t.Fatal(err)
+	}
+	vs := versionsOf(t, d)
+	if vs[0].Current || !vs[1].Current {
+		t.Errorf("значок должен быть у одной версии, последней отмеченной: %+v", vs)
+	}
+	if err := d.SetCurrent(v2, false); err != nil {
+		t.Fatal(err)
+	}
+	if vs = versionsOf(t, d); vs[0].Current || vs[1].Current {
+		t.Errorf("значок не снялся: %+v", vs)
+	}
+}
+
+func TestMark_CopyShareTheNoteOfTheOriginal(t *testing.T) {
+	root := t.TempDir()
+	orig := filepath.Join(root, "p", "Смета.docx")
+	docxFile(t, orig, "Строка")
+	b, _ := os.ReadFile(orig)
+	cp := filepath.Join(root, "Загрузки", "Смета (1).docx")
+	_ = os.MkdirAll(filepath.Dir(cp), 0o755)
+	if err := os.WriteFile(cp, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	d := versionsDeskOver(t, root)
+	if _, err := d.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Mark(cp, "актуальная смета"); err != nil {
+		t.Fatalf("заметка к дублю: %v", err)
+	}
+	if got := versionsOf(t, d)[0].Mark; got != "актуальная смета" {
+		t.Errorf("дубль и оригинал — одно содержимое, заметка общая: %q", got)
+	}
+}
+
+func TestMark_FoundBySearchAndBrokenFileIsIgnored(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	if err := d.Mark(v1, "отправлено Алексею"); err != nil {
+		t.Fatal(err)
+	}
+	found, err := d.Families(context.Background(), "алексею", false)
+	if err != nil || len(found) != 1 {
+		t.Errorf("поиск по заметке: %+v %v", found, err)
+	}
+	info, err := os.Stat(d.marksPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("файл заметок: %v %v (ждали 0600)", info, err)
+	}
+	if err := os.WriteFile(d.marksPath, []byte("{не json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d2 := restarted(t, root, d)
+	if _, err := d2.Families(context.Background(), "", true); err != nil {
+		t.Errorf("битый файл заметок не должен ломать список: %v", err)
+	}
+}
+
+func TestCompare_SideBySideMarksChangedLines(t *testing.T) {
+	_, d, v1, v2 := kp(t)
+	got, err := d.Compare(context.Background(), v1, v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Old) != 2 || !got.Old[1].Changed || got.Old[0].Changed {
+		t.Errorf("старая версия: %+v", got.Old)
+	}
+	if len(got.New) != 3 || got.New[0].Changed || !got.New[1].Changed || !got.New[2].Changed || got.Truncated {
+		t.Errorf("новая версия: %+v", got.New)
+	}
+}
+
+func TestCompare_RefusesUnknownPathsAndCapsHugeTexts(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	if _, err := d.Compare(context.Background(), v1, "/etc/hosts"); err == nil {
+		t.Error("сравнение с чужим файлом принято")
+	}
+	big1, big2 := filepath.Join(root, "p", "Большой_2026_11_05.docx"), filepath.Join(root, "p", "Большой_2026_11_10.docx")
+	var paras []string
+	for i := range compareLimit + 100 {
+		paras = append(paras, fmt.Sprintf("строка %d", i))
+	}
+	docxFile(t, big1, paras...)
+	docxFile(t, big2, append(paras, "новая")...)
+	if _, err := d.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	got, err := d.Compare(context.Background(), big1, big2)
+	if err != nil || !got.Truncated || len(got.Old) != compareLimit || len(got.New) != compareLimit {
+		t.Errorf("большой текст: %d/%d строк, truncated=%v, %v", len(got.Old), len(got.New), got.Truncated, err)
 	}
 }
