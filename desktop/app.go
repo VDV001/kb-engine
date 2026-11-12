@@ -586,10 +586,10 @@ func (a *App) VersionProposals() []iterationView {
 
 // SaveVersionProposal creates the offered iteration as a new document next to
 // the family: description и note — то, что человек оставил после правки.
-// Возвращает путь нового файла.
-func (a *App) SaveVersionProposal(id, description, note string) (string, error) {
+// Возвращает путь нового файла и предупреждение, если после записи что-то не удалось.
+func (a *App) SaveVersionProposal(id, description, note string) (savedVersion, error) {
 	if a.chat == nil {
-		return "", errNoVersions
+		return savedVersion{}, errNoVersions
 	}
 	return a.chat.saveVersionProposal(a.ctx, id, description, note)
 }

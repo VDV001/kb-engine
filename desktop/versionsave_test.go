@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/versionbook"
@@ -99,7 +101,8 @@ func TestSaveVersion_CreatesANewDocxAndLeavesTheOldOnesAlone(t *testing.T) {
 	b1, _ := os.ReadFile(r.v1)
 	b2, _ := os.ReadFile(r.v2)
 	p := offer(t, r, "Новый\nтекст")
-	path, err := r.cd.saveVersionProposal(context.Background(), p.ID, "КП для Ромашки, правка", "добавлена гарантия, срок 5 дней")
+	saved, err := r.cd.saveVersionProposal(context.Background(), p.ID, "КП для Ромашки, правка", "добавлена гарантия, срок 5 дней")
+	path := saved.Path
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,14 +138,15 @@ func TestSaveVersion_NeverOverwritesAnExistingFile(t *testing.T) {
 	r := newSaveRig(t)
 	first := offer(t, r, "Первый")
 	second := offer(t, r, "Второй")
-	p1, err := r.cd.saveVersionProposal(context.Background(), first.ID, "d", "n")
+	s1, err := r.cd.saveVersionProposal(context.Background(), first.ID, "d", "n")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p2, err := r.cd.saveVersionProposal(context.Background(), second.ID, "d", "n")
+	s2, err := r.cd.saveVersionProposal(context.Background(), second.ID, "d", "n")
 	if err != nil {
 		t.Fatal(err)
 	}
+	p1, p2 := s1.Path, s2.Path
 	if p1 == p2 || !strings.HasSuffix(p2, " (2).docx") {
 		t.Errorf("второй файл должен получить другое имя: %q и %q", p1, p2)
 	}
@@ -175,5 +179,134 @@ func TestSaveVersion_RefusesTooLongNoteAndHugeText(t *testing.T) {
 	}
 	if err := r.propose(context.Background(), chat.VersionProposal{Family: "кп", Text: strings.Repeat("я", maxProposalBytes+1), Description: "d", Note: "n"}); err == nil {
 		t.Error("огромный текст принят")
+	}
+}
+
+// Файл уже создан, а заметка не встала: это предупреждение, а не провал, иначе
+// карточка залипает, и повтор дал бы дубль.
+func TestSaveVersion_FailureAfterTheWriteIsAWarningNotAFailure(t *testing.T) {
+	r := newSaveRig(t)
+	p := offer(t, r, "Новый текст")
+	dir := filepath.Dir(r.vd.MarksPath())
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+	if f, err := os.CreateTemp(dir, "probe"); err == nil { // под root права не мешают
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		t.Skip("каталог заметок пишется несмотря на chmod 0500")
+	}
+	saved, err := r.cd.saveVersionProposal(context.Background(), p.ID, "d", "n")
+	if err != nil {
+		t.Fatalf("после записи файла ошибка должна стать предупреждением: %v", err)
+	}
+	if _, statErr := os.Stat(saved.Path); statErr != nil || saved.Warning == "" {
+		t.Errorf("файл %q и предупреждение %q", saved.Path, saved.Warning)
+	}
+	if len(r.cd.versionProposals()) != 0 {
+		t.Error("предложение осталось в ожидании: повтор создал бы дубль")
+	}
+}
+
+// Двойной щелчок и параллельные вызовы создают один файл.
+func TestSaveVersion_TwoCallsAtOnceWriteOneFile(t *testing.T) {
+	r := newSaveRig(t)
+	p := offer(t, r, "Новый текст")
+	before := len(listDir(t, filepath.Join(r.root, "p")))
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = r.cd.saveVersionProposal(context.Background(), p.ID, "d", "n")
+		}()
+	}
+	wg.Wait()
+	ok := 0
+	for _, err := range errs {
+		if err == nil {
+			ok++
+		}
+	}
+	if ok != 1 || len(listDir(t, filepath.Join(r.root, "p"))) != before+1 {
+		t.Errorf("успешных сохранений %d, файлов добавилось %d: нужен ровно один", ok, len(listDir(t, filepath.Join(r.root, "p")))-before)
+	}
+}
+
+// Человек одобряет текст, а не название: карточка показывает, что будет записано.
+func TestProposeVersion_CardShowsTheTextToApprove(t *testing.T) {
+	r := newSaveRig(t)
+	p := offer(t, r, "Первая строка\nВторая строка")
+	if !strings.Contains(p.Preview, "Вторая строка") || p.Size == 0 {
+		t.Errorf("предпросмотр %q, размер %d", p.Preview, p.Size)
+	}
+	long := strings.Repeat("я", previewRunes+500)
+	if got := offer(t, r, long); len([]rune(got.Preview)) > previewRunes+1 {
+		t.Errorf("предпросмотр не ограничен: %d знаков", len([]rune(got.Preview)))
+	}
+}
+
+func TestFileSafe_NoSeparatorsControlsOrLeadingDots(t *testing.T) {
+	for in, want := range map[string]string{"КП Ромашка": "КП_Ромашка", "А/Б\\В:Г": "А_Б_В_Г", "..скрытый": "скрытый", "т\x00аб\n": "т_аб", "///": "версия"} {
+		if got := fileSafe(in); got != want {
+			t.Errorf("fileSafe(%q) = %q, ждали %q", in, got, want)
+		}
+	}
+}
+
+func TestProposeVersion_TooLongNoteIsRefusedWhenOffered(t *testing.T) {
+	r := newSaveRig(t)
+	err := r.propose(context.Background(), chat.VersionProposal{Family: "кп", Text: "т", Description: strings.Repeat("я", 300), Note: strings.Repeat("я", 300)})
+	if err == nil || len(r.events) != 0 {
+		t.Errorf("длинную заметку надо вернуть модели сразу, а не человеку: %v, событий %d", err, len(r.events))
+	}
+}
+
+// Переполненная очередь не вытесняет молча: человек мог уже править карточку.
+func TestProposeVersion_FullQueueRefusesInsteadOfEvicting(t *testing.T) {
+	r := newSaveRig(t)
+	for i := range maxPending {
+		offer(t, r, fmt.Sprintf("текст %d", i))
+	}
+	if err := r.propose(context.Background(), chat.VersionProposal{Family: "кп", Text: "лишний", Description: "d", Note: "n"}); err == nil {
+		t.Error("предложение сверх очереди принято")
+	}
+	if got := r.cd.versionProposals(); len(got) != maxPending || got[0].Size != len("текст 0") {
+		t.Errorf("прежние предложения изменились: %d", len(got))
+	}
+}
+
+func TestDeleteChat_DropsItsProposals(t *testing.T) {
+	r := newSaveRig(t)
+	offer(t, r, "т")
+	other := r.cd.proposeVersionFor("chat-2")
+	if err := other(context.Background(), chat.VersionProposal{Family: "кп", Text: "чужой", Description: "d", Note: "n"}); err != nil {
+		t.Fatal(err)
+	}
+	r.cd.dropChatProposals("chat-1")
+	left := r.cd.versionProposals()
+	if len(left) != 1 || left[0].ChatID != "chat-2" {
+		t.Errorf("после удаления чата осталось %+v", left)
+	}
+}
+
+// Из двух подходящих имен берется то, что названо точно.
+func TestProposeVersion_ExactNameBeatsASubstring(t *testing.T) {
+	r := newSaveRig(t)
+	docxFile(t, filepath.Join(r.root, "p", "КП Ромашка_2026_11_01.docx"), "а")
+	docxFile(t, filepath.Join(r.root, "p", "КП Ромашка_2026_11_09.docx"), "а", "б")
+	if _, err := r.vd.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.propose(context.Background(), chat.VersionProposal{Family: "КП", Text: "т", Description: "d", Note: "n"}); err != nil {
+		t.Fatalf("точное имя «КП» должно выбрать свой документ: %v", err)
+	}
+	if len(r.events) != 1 || r.events[0].Family != "КП" {
+		t.Errorf("выбрано %+v", r.events)
 	}
 }

@@ -50,6 +50,9 @@ func paragraphs(t *testing.T, doc string) []string {
 		switch e := tok.(type) {
 		case xml.StartElement:
 			inT = e.Name.Local == "t"
+			if e.Name.Local == "tab" {
+				cur.WriteString("\t")
+			}
 		case xml.EndElement:
 			if e.Name.Local == "p" {
 				out = append(out, cur.String())
@@ -85,5 +88,29 @@ func TestBytes_ValidDocxWithAParagraphPerLine(t *testing.T) {
 func TestBytes_EmptyTextIsRefused(t *testing.T) {
 	if _, err := docxwrite.Bytes("  \n "); err == nil {
 		t.Error("пустой документ создан")
+	}
+}
+
+// Концы строк: CRLF и одиночный CR — это перевод строки, а не символ внутри
+// абзаца; таб — настоящий w:tab, а не знак внутри w:t.
+func TestBytes_LineEndingsAndTabs(t *testing.T) {
+	b, err := docxwrite.Bytes("первая\r\nвторая\rтретья\r\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := paragraphs(t, open(t, b)["word/document.xml"])
+	if want := []string{"первая", "вторая", "третья"}; !slices.Equal(got, want) {
+		t.Errorf("абзацы %q, ждали %q", got, want)
+	}
+	b, err = docxwrite.Bytes("а\tб")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc := open(t, b)["word/document.xml"]
+	if !strings.Contains(doc, "<w:tab/>") || strings.Contains(doc, "а\tб") {
+		t.Errorf("таб записан знаком внутри w:t, а не w:tab: %s", doc)
+	}
+	if got := paragraphs(t, doc); !slices.Equal(got, []string{"а\tб"}) {
+		t.Errorf("абзац с табом %q", got)
 	}
 }

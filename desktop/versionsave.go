@@ -21,8 +21,18 @@ import (
 // maxProposalBytes — предел текста новой итерации из чата.
 const maxProposalBytes = 1 << 20
 
+// previewRunes — сколько знаков текста карточка показывает человеку для одобрения.
+const previewRunes = 20000
+
 // maxPending — сколько неотвеченных предложений окно держит в памяти.
 const maxPending = 20
+
+// savedVersion is the result of confirming a proposal: файл создан; Warning —
+// что после этого не удалось (список версий, заметка), без отмены сохранения.
+type savedVersion struct {
+	Path    string `json:"path"`
+	Warning string `json:"warning,omitempty"`
+}
 
 // pendingIteration is a new iteration that the chat offered and the person has not answered yet.
 type pendingIteration struct {
@@ -39,10 +49,11 @@ type iterationView struct {
 	Description string `json:"description"`
 	Note        string `json:"note"`
 	Size        int    `json:"size"`
+	Preview     string `json:"preview"` // начало текста: человек видит, что будет записано
 }
 
 func (p pendingIteration) view() iterationView {
-	return iterationView{p.ID, p.ChatID, p.Family, p.Folder, p.File, p.Description, p.Note, len(p.Text)}
+	return iterationView{p.ID, p.ChatID, p.Family, p.Folder, p.File, p.Description, p.Note, len(p.Text), ""}
 }
 
 // proposeVersionFor returns the propose_version tool of the chat; nil, когда у окна нет вкладки «Артефакты».
@@ -106,7 +117,12 @@ func (d *chatDesk) dropVersionProposal(id string) {
 // saveVersionProposal creates the proposal as a new docx and marks it with the
 // note of the person. Ошибка до записи оставляет предложение в ожидании: человек
 // исправит поля и повторит.
-func (d *chatDesk) saveVersionProposal(ctx context.Context, id, description, note string) (string, error) {
+func (d *chatDesk) saveVersionProposal(ctx context.Context, id, description, note string) (savedVersion, error) {
+	path, err := d.saveVersionProposalOld(ctx, id, description, note)
+	return savedVersion{Path: path}, err
+}
+
+func (d *chatDesk) saveVersionProposalOld(ctx context.Context, id, description, note string) (string, error) {
 	mark := joinMark(note, description)
 	if n := len([]rune(mark)); n > versionbook.MaxNoteRunes {
 		return "", fmt.Errorf("заметка длиннее %d знаков (%d): сократите описание", versionbook.MaxNoteRunes, n)
@@ -187,3 +203,9 @@ func createNew(dir, name string, data []byte) (string, error) {
 	}
 	return "", errors.New("не подобрать свободное имя файла")
 }
+
+// fileSafe makes a family name fit a file name.
+func fileSafe(name string) string { return name }
+
+// dropChatProposals forgets the proposals of a deleted chat.
+func (d *chatDesk) dropChatProposals(chatID string) {}
