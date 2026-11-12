@@ -374,3 +374,67 @@ func TestSortViews_EqualDatesAndNamesGoByFirstPath(t *testing.T) {
 		t.Errorf("при равных дате и имени порядок по пути: %v", a)
 	}
 }
+
+func TestMarks_BrokenFileIsKeptAsBrokenNotOverwritten(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	if err := os.WriteFile(d.marksPath, []byte("{не json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d2 := restarted(t, root, d)
+	if _, err := d2.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d2.Mark(v1, "новая заметка"); err != nil {
+		t.Fatal(err)
+	}
+	kept, err := os.ReadFile(d.marksPath + ".broken")
+	if err != nil || string(kept) != "{не json" {
+		t.Errorf("битый файл заметок должен остаться рядом как .broken, а не пропасть: %q, %v", kept, err)
+	}
+}
+
+func TestMarks_UnreadableFileIsNotOverwritten(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	if err := d.Mark(v1, "важная заметка"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(d.marksPath, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(d.marksPath, 0o600) })
+	if f, err := os.Open(d.marksPath); err == nil { // под root права не мешают
+		_ = f.Close()
+		t.Skip("файл читается несмотря на chmod 000")
+	}
+	d2 := restarted(t, root, d)
+	if _, err := d2.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if err := d2.Mark(v1, "другая"); err == nil {
+		t.Error("нечитаемый файл заметок был бы перезаписан")
+	}
+	_ = os.Chmod(d.marksPath, 0o600)
+	if b, _ := os.ReadFile(d.marksPath); !strings.Contains(string(b), "важная заметка") {
+		t.Errorf("прежние заметки потеряны: %s", b)
+	}
+}
+
+func TestCompare_PairMustBeOneDocumentOldFirst(t *testing.T) {
+	root, d, v1, v2 := kp(t)
+	got, err := d.Compare(context.Background(), v2, v1) // порядок перепутан
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Old) != 2 || len(got.New) != 3 {
+		t.Errorf("старая версия должна быть слева независимо от порядка вызова: %d/%d строк", len(got.Old), len(got.New))
+	}
+	other1, other2 := filepath.Join(root, "p", "Смета_2026_11_05.docx"), filepath.Join(root, "p", "Смета_2026_11_10.docx")
+	docxFile(t, other1, "а")
+	docxFile(t, other2, "а", "б")
+	if _, err := d.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Compare(context.Background(), v1, other2); err == nil {
+		t.Error("версии разных документов сравнились")
+	}
+}
