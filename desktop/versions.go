@@ -246,6 +246,25 @@ func (d *versionsDesk) Compare(ctx context.Context, a, b string) (compareView, e
 	return out, nil
 }
 
+// Text returns the text of a version of the last list: чат и вкладка читают
+// только то, что окно само показало. Файлы не меняются.
+func (d *versionsDesk) Text(ctx context.Context, path string) (string, error) {
+	src := d.source()
+	if src == nil {
+		return "", errors.New("папки окна не подключены")
+	}
+	d.mu.Lock()
+	_, _, ok := d.find(path)
+	d.mu.Unlock()
+	if !ok {
+		return "", errors.New("такой версии в списке нет")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	return src.VersionText(path)
+}
+
 func capLines(ls []versions.Line) []compareLine {
 	out := make([]compareLine, 0, min(len(ls), compareLimit))
 	for _, l := range ls[:min(len(ls), compareLimit)] {
