@@ -1,6 +1,8 @@
 package versions_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -526,6 +528,27 @@ func TestPick_OrderWordsAreWholeWordsAndNumbersAreNotDates(t *testing.T) {
 	} {
 		if got := versions.Pick(vs, c.words); !slices.Equal(got, c.want) {
 			t.Errorf("«%s»: %v, ждали %v", c.words, got, c.want)
+		}
+	}
+}
+
+func TestExplain_NamesTheCauseButNeverTheText(t *testing.T) {
+	leak := errors.New("обход: /Users/someone/Documents/КП.docx не открылся: SECRET-в-тексте")
+	for name, c := range map[string]struct {
+		err  error
+		want string
+	}{
+		"папки не подключены": {fmt.Errorf("версии: %w", versions.ErrNoSource), "папки окна не подключены"},
+		"отменено":            {context.Canceled, "отменен"},
+		"не успело":           {context.DeadlineExceeded, "не успел"},
+		"прочее":              {leak, "не прочитать"},
+	} {
+		got := versions.Explain(c.err)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q не называет причину (%q)", name, got, c.want)
+		}
+		if strings.Contains(got, "/Users/someone") || strings.Contains(got, "SECRET") {
+			t.Errorf("%s: в объяснении текст ошибки: %q", name, got)
 		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,18 +12,23 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/mcpserver"
 	"github.com/daniil/kb-engine/internal/usecase/search"
+	"github.com/daniil/kb-engine/internal/usecase/versions"
 )
 
 type stubVersions struct {
 	fams []mcpserver.VersionFamily
 	text map[string]string
 	fail bool
+	err  error // причина сбоя; пусто и fail — текст с путем и содержимым
 	read []string
 }
 
 const versionsFailText = "обход: /Users/someone/Documents/КП.docx не открылся: SECRET-в-тексте"
 
 func (s *stubVersions) Families(_ context.Context, q string) ([]mcpserver.VersionFamily, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	if s.fail {
 		return nil, errors.New(versionsFailText)
 	}
@@ -149,6 +155,24 @@ func TestServer_versions_failureLeaksNothing(t *testing.T) {
 			if strings.Contains(asText(t, res), leak) {
 				t.Errorf("%s: ошибка отдала агенту %q", c.tool, leak)
 			}
+		}
+	}
+}
+
+// Причина сбоя названа словами, но без текста ошибки: «папки не подключены» и
+// «запрос отменен» агенту полезны, путь с домашним каталогом — нет.
+func TestServer_versions_failureNamesTheCause(t *testing.T) {
+	for name, c := range map[string]struct {
+		err  error
+		want string
+	}{
+		"папки не подключены": {fmt.Errorf("обход: %w", versions.ErrNoSource), "папки окна не подключены"},
+		"отменено":            {context.Canceled, "отменен"},
+	} {
+		cs := connectVersions(t, &stubVersions{err: c.err})
+		res := callTool(t, cs, "search_versions", map[string]any{"query": "кп"})
+		if !res.IsError || !strings.Contains(asText(t, res), c.want) {
+			t.Errorf("%s: %s", name, asText(t, res))
 		}
 	}
 }

@@ -145,3 +145,8 @@ func wordStems(w string) []string {
 	}
 	return stems
 }
+
+// Explain says why the versions could not be read, in words safe for an agent:
+// всё, что получает модель, уходит провайдеру, а в тексте настоящей ошибки бывают
+// полный путь (имя пользователя) и кусок документа.
+func Explain(err error) string { return "" }

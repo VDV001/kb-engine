@@ -62,11 +62,14 @@ type Desk struct {
 	// требуется медленный обход.
 	walk func(ctx context.Context, src *localfiles.Source) ([]versions.File, error)
 
+	cmu sync.Mutex // один обход за раз; d.mu на время обхода свободен для заметок и чтения
+
 	mu       sync.Mutex
 	src      *localfiles.Source // для какого источника собран список
 	at       time.Time
 	cache    []FamilyView
 	marks    map[string]versionMark // отметки владельца; nil — еще не читались
+	stamp    fileStamp              // каким был файл заметок при чтении: другой процесс мог его записать
 	marksErr error                  // файл заметок не прочитался: записи отклоняются, чтобы не затереть его
 }
 
@@ -118,10 +121,12 @@ func (d *Desk) withMarks(fams []FamilyView) []FamilyView {
 	return out
 }
 
-// loadedMarks reads the marks file once; the caller holds d.mu.
+// loadedMarks returns the marks and rereads the file when another process
+// (окно или MCP) has changed it since; the caller holds d.mu.
 func (d *Desk) loadedMarks() map[string]versionMark {
-	if d.marks == nil {
+	if st := stampOf(d.marksPath); d.marks == nil || st != d.stamp {
 		d.marks, d.marksErr = loadMarks(d.marksPath)
+		d.stamp = st
 	}
 	return d.marks
 }
@@ -202,7 +207,7 @@ func (d *Desk) update(path string, change func(marks map[string]versionMark, key
 	if err := saveMarks(d.marksPath, next); err != nil {
 		return err
 	}
-	d.marks = next
+	d.marks, d.stamp = next, stampOf(d.marksPath)
 	return nil
 }
 
@@ -227,7 +232,7 @@ type CompareView struct {
 func (d *Desk) Compare(ctx context.Context, a, b string) (CompareView, error) {
 	src := d.source()
 	if src == nil {
-		return CompareView{}, errors.New("папки окна не подключены")
+		return CompareView{}, versions.ErrNoSource
 	}
 	d.mu.Lock()
 	famA, verA, okA := d.find(a)
@@ -264,7 +269,7 @@ func (d *Desk) Compare(ctx context.Context, a, b string) (CompareView, error) {
 func (d *Desk) Text(ctx context.Context, path string) (string, error) {
 	src := d.source()
 	if src == nil {
-		return "", errors.New("папки окна не подключены")
+		return "", versions.ErrNoSource
 	}
 	d.mu.Lock()
 	_, _, ok := d.find(path)
@@ -287,24 +292,30 @@ func capLines(ls []versions.Line) []CompareLine {
 }
 
 func (d *Desk) collect(ctx context.Context, src *localfiles.Source, fresh bool) ([]FamilyView, error) {
+	d.cmu.Lock()
+	defer d.cmu.Unlock()
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	if !fresh && d.src == src && time.Since(d.at) < versionsTTL {
-		return d.cache, nil
+		cached := d.cache
+		d.mu.Unlock()
+		return cached, nil
 	}
-	files, err := d.walk(ctx, src)
+	d.mu.Unlock()
+	files, err := d.walk(ctx, src) // секунды: d.mu свободен, заметки и текст не ждут
 	if err != nil {
 		return nil, err
 	}
 	fams := versions.Group(files)
-	d.cache = make([]FamilyView, 0, len(fams))
+	next := make([]FamilyView, 0, len(fams))
 	for _, f := range fams {
-		d.cache = append(d.cache, view(f))
+		next = append(next, view(f))
 	}
-	disambiguate(d.cache)
-	sortViews(d.cache)
-	d.src, d.at = src, time.Now()
-	return d.cache, nil
+	disambiguate(next)
+	sortViews(next)
+	d.mu.Lock()
+	d.cache, d.src, d.at = next, src, time.Now()
+	d.mu.Unlock()
+	return next, nil
 }
 
 // sortViews — новее первым; при равных датах по имени и пути, чтобы список не
