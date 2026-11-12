@@ -138,7 +138,10 @@ type chatDesk struct {
 	show func(text string)
 	// attach reads one attached document by ref (attach.go); nil — только в окне.
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
-	mu     sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// versions — итерации документов для инструментов versions и open_version
+	// режима «модель ищет»; nil — инструментов нет (тесты без вкладки «Артефакты»).
+	versions *versionsDesk
+	mu       sync.Mutex // один вопрос за раз: файл чата пишется целиком
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
 	memoryNew  func(portraitNews)
 	portraitMu sync.Mutex
@@ -297,7 +300,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	attached = append(attached, linked...)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID)})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess()})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}

@@ -438,3 +438,48 @@ func TestCompare_PairMustBeOneDocumentOldFirst(t *testing.T) {
 		t.Error("версии разных документов сравнились")
 	}
 }
+
+func TestChatVersions_SameFamiliesNotesAndBadgesAsTheTab(t *testing.T) {
+	_, d, v1, v2 := kp(t)
+	if err := d.Mark(v1, "отправлено Алексею"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SetCurrent(v2, true); err != nil {
+		t.Fatal(err)
+	}
+	fams, err := chatVersions{d}.Families(context.Background(), "кп")
+	if err != nil || len(fams) != 1 || len(fams[0].Versions) != 2 {
+		t.Fatalf("семейства для чата: %+v %v", fams, err)
+	}
+	a, b := fams[0].Versions[0], fams[0].Versions[1]
+	if a.Path != v1 || a.Date != "05.11.2026" || a.Mark != "отправлено Алексею" || a.Current || a.Note != "первая версия" {
+		t.Errorf("старая версия: %+v", a)
+	}
+	if b.Path != v2 || !b.Current || !strings.Contains(b.Note, "Гарантия") {
+		t.Errorf("новая версия: %+v", b)
+	}
+}
+
+func TestChatVersions_TextOnlyOfVersionsTheTabShows(t *testing.T) {
+	root, d, v1, _ := kp(t)
+	got, err := chatVersions{d}.Text(context.Background(), v1)
+	if err != nil || !strings.Contains(got, "Срок 7 дней") {
+		t.Errorf("текст версии: %q %v", got, err)
+	}
+	other := filepath.Join(root, "p", "Чужой.docx")
+	docxFile(t, other, "секрет")
+	for name, p := range map[string]string{"не из списка": other, "вне папок": "/etc/hosts"} {
+		if text, err := (chatVersions{d}).Text(context.Background(), p); err == nil {
+			t.Errorf("%s: модель получила текст %q", name, text)
+		}
+	}
+}
+
+func TestChatVersions_NilWithoutTheDesk(t *testing.T) {
+	if (&chatDesk{}).versionsAccess() != nil {
+		t.Error("без вкладки «Артефакты» инструментов версий быть не должно")
+	}
+	if (&chatDesk{versions: versionsDeskOver(t, t.TempDir())}).versionsAccess() == nil {
+		t.Error("с вкладкой инструменты версий должны быть")
+	}
+}
