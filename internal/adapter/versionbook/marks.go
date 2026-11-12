@@ -1,4 +1,4 @@
-package main
+package versionbook
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // versionMark — что владелец отметил у версии: заметка и значок «актуальная».
@@ -79,9 +80,24 @@ func saveMarks(path string, marks map[string]versionMark) error {
 // ponytail: одинаковое содержимое в двух семействах делит заметку и значок
 // (копия под другим именем — это тот же документ по содержимому). Потолок:
 // «актуальная» у двух семейств сразу. Путь: ключ из хеша и имени семейства.
-func markKey(v versionView) string {
+func markKey(v VersionView) string {
 	if v.hash != "" {
 		return v.hash
 	}
 	return "path:" + v.Path
+}
+
+// fileStamp is what a marks file looked like when it was read: время и размер.
+type fileStamp struct {
+	mod  time.Time
+	size int64
+}
+
+// stampOf stats the file; нет файла — нулевая отметка.
+func stampOf(path string) fileStamp {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileStamp{}
+	}
+	return fileStamp{info.ModTime(), info.Size()}
 }

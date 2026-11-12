@@ -1,9 +1,10 @@
-package main
+package versionbook
 
 import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,25 +40,25 @@ func docxFile(t *testing.T, path string, paras ...string) {
 	}
 }
 
-func versionsDeskOver(t *testing.T, root string) *versionsDesk {
+func deskOver(t *testing.T, root string) *Desk {
 	t.Helper()
 	src, err := localfiles.New([]string{root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = src.Close() })
-	return newVersionsDesk(func() *localfiles.Source { return src }, filepath.Join(t.TempDir(), "version-marks.json"))
+	return New(func() *localfiles.Source { return src }, filepath.Join(t.TempDir(), "version-marks.json"))
 }
 
 // restarted — новое окно над той же папкой и тем же файлом заметок.
-func restarted(t *testing.T, root string, old *versionsDesk) *versionsDesk {
+func restarted(t *testing.T, root string, old *Desk) *Desk {
 	t.Helper()
 	src, err := localfiles.New([]string{root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = src.Close() })
-	return newVersionsDesk(func() *localfiles.Source { return src }, old.marksPath)
+	return New(func() *localfiles.Source { return src }, old.marksPath)
 }
 
 func TestVersions_FamiliesShowTheRibbonAndSkipLoneFiles(t *testing.T) {
@@ -65,7 +66,7 @@ func TestVersions_FamiliesShowTheRibbonAndSkipLoneFiles(t *testing.T) {
 	docxFile(t, filepath.Join(root, "p", "КП_2026_11_05.docx"), "Цена 100")
 	docxFile(t, filepath.Join(root, "p", "КП_2026_11_10.docx"), "Цена 100", "Гарантия")
 	docxFile(t, filepath.Join(root, "p", "Одинокий.docx"), "Текст")
-	d := versionsDeskOver(t, root)
+	d := deskOver(t, root)
 
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil {
@@ -95,14 +96,14 @@ func TestVersions_CopyShownAsDuplicate(t *testing.T) {
 	if err := os.WriteFile(cp, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := versionsDeskOver(t, root).Families(context.Background(), "", true)
+	got, err := deskOver(t, root).Families(context.Background(), "", true)
 	if err != nil || len(got) != 1 || len(got[0].Versions) != 1 || len(got[0].Versions[0].Dups) != 1 {
 		t.Fatalf("дубль: %+v %v", got, err)
 	}
 }
 
 func TestVersions_NoSourceIsEmpty(t *testing.T) {
-	d := newVersionsDesk(func() *localfiles.Source { return nil }, "")
+	d := New(func() *localfiles.Source { return nil }, "")
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil || len(got) != 0 {
 		t.Errorf("без источника: %+v %v", got, err)
@@ -118,7 +119,7 @@ func TestVersions_ShownDateFollowsTheNameNotTheCopyTime(t *testing.T) {
 	now := time.Now()
 	_ = os.Chtimes(a, now, now)
 	_ = os.Chtimes(b, now.Add(-72*time.Hour), now.Add(-72*time.Hour))
-	got, err := versionsDeskOver(t, root).Families(context.Background(), "", true)
+	got, err := deskOver(t, root).Families(context.Background(), "", true)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("%+v %v", got, err)
 	}
@@ -151,8 +152,8 @@ func TestNoteText(t *testing.T) {
 
 func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
 	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	a := []familyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
-	b := []familyView{a[1], a[2], a[0]}
+	a := []FamilyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
+	b := []FamilyView{a[1], a[2], a[0]}
 	sortViews(a)
 	sortViews(b)
 	for i := range a {
@@ -166,20 +167,20 @@ func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
 }
 
 // kp кладет две версии КП и возвращает окно, пути версий и семейство.
-func kp(t *testing.T) (root string, d *versionsDesk, v1, v2 string) {
+func kp(t *testing.T) (root string, d *Desk, v1, v2 string) {
 	t.Helper()
 	root = t.TempDir()
 	v1, v2 = filepath.Join(root, "p", "КП_2026_11_05.docx"), filepath.Join(root, "p", "КП_2026_11_10.docx")
 	docxFile(t, v1, "Цена 100", "Срок 7 дней")
 	docxFile(t, v2, "Цена 100", "Срок 5 дней", "Гарантия")
-	d = versionsDeskOver(t, root)
+	d = deskOver(t, root)
 	if _, err := d.Families(context.Background(), "", true); err != nil {
 		t.Fatal(err)
 	}
 	return root, d, v1, v2
 }
 
-func versionsOf(t *testing.T, d *versionsDesk) []versionView {
+func versionsOf(t *testing.T, d *Desk) []VersionView {
 	t.Helper()
 	got, err := d.Families(context.Background(), "", false)
 	if err != nil || len(got) != 1 {
@@ -270,7 +271,7 @@ func TestMark_CopyShareTheNoteOfTheOriginal(t *testing.T) {
 	if err := os.WriteFile(cp, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d := versionsDeskOver(t, root)
+	d := deskOver(t, root)
 	if _, err := d.Families(context.Background(), "", true); err != nil {
 		t.Fatal(err)
 	}
@@ -350,10 +351,10 @@ func TestNoteText_SaysWhenUnreadableVersionsWereSkipped(t *testing.T) {
 }
 
 func TestDisambiguate_SameNameGetsItsFolder(t *testing.T) {
-	mk := func(name, path string) familyView {
-		return familyView{Name: name, Versions: []versionView{{Path: path}}}
+	mk := func(name, path string) FamilyView {
+		return FamilyView{Name: name, Versions: []VersionView{{Path: path}}}
 	}
-	vs := []familyView{mk("ТЗ", "/Уроки/ТЗ.docx"), mk("ТЗ", "/Работа/ТЗ.docx"), mk("Смета", "/a/Смета.xlsx")}
+	vs := []FamilyView{mk("ТЗ", "/Уроки/ТЗ.docx"), mk("ТЗ", "/Работа/ТЗ.docx"), mk("Смета", "/a/Смета.xlsx")}
 	disambiguate(vs)
 	if vs[0].Name != "ТЗ (Уроки)" || vs[1].Name != "ТЗ (Работа)" {
 		t.Errorf("одинаковые имена не различены папкой: %q, %q", vs[0].Name, vs[1].Name)
@@ -365,10 +366,10 @@ func TestDisambiguate_SameNameGetsItsFolder(t *testing.T) {
 
 func TestSortViews_EqualDatesAndNamesGoByFirstPath(t *testing.T) {
 	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	mk := func(p string) familyView {
-		return familyView{Name: "ТЗ", latest: d, Versions: []versionView{{Path: p}}}
+	mk := func(p string) FamilyView {
+		return FamilyView{Name: "ТЗ", latest: d, Versions: []VersionView{{Path: p}}}
 	}
-	a := []familyView{mk("/б/ТЗ.docx"), mk("/а/ТЗ.docx")}
+	a := []FamilyView{mk("/б/ТЗ.docx"), mk("/а/ТЗ.docx")}
 	sortViews(a)
 	if a[0].Versions[0].Path != "/а/ТЗ.docx" {
 		t.Errorf("при равных дате и имени порядок по пути: %v", a)
@@ -436,5 +437,73 @@ func TestCompare_PairMustBeOneDocumentOldFirst(t *testing.T) {
 	}
 	if _, err := d.Compare(context.Background(), v1, other2); err == nil {
 		t.Error("версии разных документов сравнились")
+	}
+}
+
+// Заметки пишет окно, а MCP — отдельный долгоживущий процесс над тем же файлом:
+// он должен видеть новые заметки без перезапуска.
+func TestMarks_ChangedByAnotherProcessAreSeenWithoutRestart(t *testing.T) {
+	root, d, v1, v2 := kp(t)
+	other := restarted(t, root, d)
+	if _, err := other.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	// у d файла заметок еще нет: пустой набор не должен залипнуть
+	if got := versionsOf(t, d)[0].Mark; got != "" {
+		t.Fatalf("заметки до записи: %q", got)
+	}
+	if err := other.Mark(v1, "отправлено Алексею"); err != nil {
+		t.Fatal(err)
+	}
+	if got := versionsOf(t, d)[0].Mark; got != "отправлено Алексею" {
+		t.Errorf("заметка соседнего процесса не видна: %q", got)
+	}
+	if err := other.SetCurrent(v2, true); err != nil {
+		t.Fatal(err)
+	}
+	if !versionsOf(t, d)[1].Current {
+		t.Error("значок соседнего процесса не виден")
+	}
+}
+
+func TestDesk_NoSourceIsNamedNotGeneric(t *testing.T) {
+	d := New(func() *localfiles.Source { return nil }, "")
+	if _, err := d.Text(context.Background(), "/a/b.docx"); !errors.Is(err, versions.ErrNoSource) {
+		t.Errorf("Text без источника: %v", err)
+	}
+	if _, err := d.Compare(context.Background(), "/a/b.docx", "/a/c.docx"); !errors.Is(err, versions.ErrNoSource) {
+		t.Errorf("Compare без источника: %v", err)
+	}
+}
+
+// Обход папок идет секунды; заметки, значок и чтение текста не должны ждать его.
+func TestDesk_SlowWalkDoesNotBlockMarks(t *testing.T) {
+	_, d, v1, _ := kp(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	d.walk = func(ctx context.Context, src *localfiles.Source) ([]versions.File, error) {
+		close(entered)
+		<-release
+		return src.Versions(ctx)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := d.Families(context.Background(), "", true); done <- err }()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("обход не начался")
+	}
+	marked := make(chan error, 1)
+	go func() { marked <- d.Mark(v1, "заметка во время обхода") }()
+	select {
+	case err := <-marked:
+		if err != nil {
+			t.Errorf("Mark во время обхода: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("Mark ждет конца обхода папок")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

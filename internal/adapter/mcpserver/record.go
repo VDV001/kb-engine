@@ -43,6 +43,8 @@ type Config struct {
 	Machines MachineFinder
 	// Memory нулевой означает «памяти нет»: memory_find и memory_propose не объявляются.
 	Memory MemoryAgent
+	// Versions — версии документов (#547); nil — search_versions и open_version не объявляются.
+	Versions VersionFinder
 }
 
 // journal — счетчик вызовов, приделанный к регистрации инструментов.

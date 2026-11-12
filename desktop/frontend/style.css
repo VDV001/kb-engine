@@ -1561,6 +1561,7 @@ body:not(.no-help-title) .art-bar .hp-title { background: var(--sp-all); -webkit
 .ver-acts { grid-column: 2; display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin-top: 2px; }
 .ver-act { font: inherit; font-size: 11px; color: var(--z-muted); background: none; border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 2px 8px; cursor: pointer; }
 .ver-act:hover { color: var(--z-ink); border-color: var(--z-rule-2); }
+.ver-consent { font-size: 11px; color: var(--z-muted); display: inline-flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .ver-pick { font-size: 11px; color: var(--z-muted); display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
 .ver-fam h4 .ver-act { margin-left: 8px; color: var(--z-ink); }
 .ver-cmp { margin: 8px 0 2px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); padding: 8px 10px; }

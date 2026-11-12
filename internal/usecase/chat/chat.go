@@ -159,6 +159,9 @@ type Request struct {
 	// Remember offers a fact about the person for approval (инструмент
 	// «запомнить» режима «модель ищет»); nil — портрет не ведется, инструмента нет.
 	Remember func(ctx context.Context, section, text string) error
+	// Versions gives the model the iterations of documents (инструменты
+	// versions и open_version режима «модель ищет»); nil — инструментов нет.
+	Versions Versions
 }
 
 // Service answers questions.

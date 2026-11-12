@@ -206,6 +206,13 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 		return map[string]any{"stats": st, "view": viewURL(cfg.ViewBase, "overview", "")}, nil
 	})
 
+	addOptionalTools(s, j, cfg)
+	return s
+}
+
+// addOptionalTools registers the tools whose source the config may leave out:
+// без источника инструмента нет вовсе.
+func addOptionalTools(s *mcp.Server, j journal, cfg Config) {
 	if cfg.Files != nil {
 		addFileTools(s, j, cfg.Files)
 	}
@@ -218,7 +225,9 @@ func New(q Querier, m search.Matcher, cfg Config) *mcp.Server {
 	if cfg.Memory != nil {
 		addMemoryTools(s, j, cfg.Memory)
 	}
-	return s
+	if cfg.Versions != nil {
+		addVersionTools(s, j, cfg.Versions)
+	}
 }
 
 func jsonResult(v any) (*mcp.CallToolResult, any, error) {

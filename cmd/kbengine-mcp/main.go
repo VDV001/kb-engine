@@ -117,7 +117,8 @@ func run(args []string, stderr io.Writer) error {
 		}
 		bg.Go(func() { files.run(ctx) })
 		cfg.Files = files
-		tools += " · search_files · read_file"
+		cfg.Versions = newVersionsAgent(files)
+		tools += " · search_files · read_file · search_versions · open_version"
 		// kb-серверы из того же списка источников: search_catalog отвечает и
 		// их записями, как общая выдача окна. Токены — в той же Связке ключей.
 		// Свой каталог узнается в списке окна по полному пути: относительный

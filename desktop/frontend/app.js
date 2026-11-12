@@ -650,7 +650,7 @@ new ResizeObserver(() => fitBar()).observe($(".bar"));
 // --- Отрисовка -----------------------------------------------------------------
 // Отметки и сравнение «Артефактов» (#547, шаг 2): что выбрано на экране; сами
 // заметки и значки хранит Go (version-marks.json рядом с config.json).
-const verUI = { fams: [], pick: [], cmp: null, noteFor: "", noteDraft: null, painting: false }; // noteDraft — набранное в поле заметки, пока список перерисовывается
+const verUI = { fams: [], pick: [], cmp: null, noteFor: "", noteDraft: null, painting: false, describe: "", busy: new Set(), drafts: {} }; // busy — версии, по которым модель пишет описание; drafts — ее готовые ответы, не открытые в поле // noteDraft — набранное в поле заметки, пока список перерисовывается
 let verSeq = 0, verTimer = 0, verSeen = false, verFresh = false; // «Артефакты»: verSeen — вкладка уже была открыта в прошлой отрисовке; verFresh — вход ждет свежего обхода
 function render() {
   // Фильтр источника оставляет только его записи: у базы знаний — записи,
@@ -1122,14 +1122,27 @@ async function loadArtifacts(fresh) {
 }
 
 const verBtn = (act, path, label, title, extra = "") => `<button class="ver-act" data-act="${act}" data-path="${esc(path)}" title="${esc(title)}" ${extra}>${label}</button>`;
-function verRow(v, fi) {
+// prevOf — с чем сравнивать версию j для описания: ближайшая прежняя в том же формате, иначе просто прежняя.
+function prevOf(f, j) {
+  const ext = (p) => p.split(".").pop().toLowerCase();
+  for (let k = j - 1; k >= 0; k--) if (ext(f.versions[k].path) === ext(f.versions[j].path)) return f.versions[k];
+  return j > 0 ? f.versions[j - 1] : null;
+}
+function verDescribeBtn(f, j, v) {
+  if (!prevOf(f, j)) return "";
+  if (verUI.busy.has(v.path)) return `<button class="ver-act" disabled>Модель пишет…</button>`;
+  if (verUI.describe !== v.path) return verBtn("describe", v.path, "Описать", "Модель предложит заметку о том, что изменилось");
+  return `<span class="ver-consent">Строки, которых нет в другой версии, уйдут провайдеру модели чата. Файлы целиком не уходят. ${
+    verBtn("describe-go", v.path, "Отправить", "Спросить модель")}${verBtn("describe-no", v.path, "Отмена", "Не отправлять")}</span>`;
+}
+function verRow(v, fi, j, f) {
   const mark = verUI.noteFor === v.path
     ? `<input class="ver-note-in" data-note-in="${esc(v.path)}" maxlength="500" value="${esc(verUI.noteDraft ?? v.mark ?? "")}" placeholder="Заметка, например: отправлено Алексею" aria-label="Заметка к версии">`
     : v.mark ? `<span class="ver-mark">${esc(v.mark)}</span>` : "";
   return `<div class="ver-row${v.current ? " cur" : ""}"><span class="ver-date">${esc(v.date)}</span><span class="ver-note">${v.current ? `<b class="ver-badge">актуальная</b> ` : ""}${esc(v.note)} · ${sizeText(v.size)}</span><span class="ver-path">${esc(v.path)}</span>${
     (v.dups || []).map((d) => `<span class="ver-dup">${esc(d)}</span>`).join("")}${mark}<span class="ver-acts">${
     verBtn("open", v.path, "Открыть", "Открыть файл")}${verBtn("preview", v.path, "Просмотр", "Быстрый просмотр (Quick Look)")}${verBtn("reveal", v.path, "В Finder", "Показать в Finder")}${
-    verBtn("current", v.path, v.current ? "Снять «актуальная»" : "Актуальная", "Один значок на документ", `data-on="${v.current ? 1 : 0}"`)}${verBtn("note", v.path, "Заметка", "Заметка к версии")}<label class="ver-pick"><input type="checkbox" data-act="pick" data-path="${esc(v.path)}" data-fam="${fi}" ${verUI.pick.includes(v.path) ? "checked" : ""}> сравнить</label></span></div>`;
+    verBtn("current", v.path, v.current ? "Снять «актуальная»" : "Актуальная", "Один значок на документ", `data-on="${v.current ? 1 : 0}"`)}${verBtn("note", v.path, "Заметка", "Заметка к версии")}${verDescribeBtn(f, j, v)}<label class="ver-pick"><input type="checkbox" data-act="pick" data-path="${esc(v.path)}" data-fam="${fi}" ${verUI.pick.includes(v.path) ? "checked" : ""}> сравнить</label></span></div>`;
 }
 function verCmpHTML(c) {
   const col = (title, lines, cls) => `<div class="ver-col"><h5>${esc(title)}</h5>${lines.map((l) => `<div class="ver-line${l.c ? " " + cls : ""}">${esc(l.t)}</div>`).join("") || `<p class="muted">Текста нет.</p>`}</div>`;
@@ -1146,7 +1159,7 @@ function verPaint() {
     const picked = f.versions.filter((v) => verUI.pick.includes(v.path));
     const cmp = verUI.cmp && f.versions.some((v) => v.path === verUI.cmp.oldPath) ? verCmpHTML(verUI.cmp) : "";
     return `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}${
-      picked.length === 2 ? ` ${verBtn("compare", "", "Сравнить выбранные", "Две отмеченные версии рядом", `data-fam="${fi}"`)}` : ""}</h4>${f.versions.map((v) => verRow(v, fi)).join("")}${cmp}</section>`;
+      picked.length === 2 ? ` ${verBtn("compare", "", "Сравнить выбранные", "Две отмеченные версии рядом", `data-fam="${fi}"`)}` : ""}</h4>${f.versions.map((v, j) => verRow(v, fi, j, f)).join("")}${cmp}</section>`;
   }).join("");
   const now = was && $("#ver-list [data-note-in]");
   if (now) { now.focus(); now.setSelectionRange(caret[0], caret[1]); }
@@ -1167,6 +1180,22 @@ function verPick(path, fi, on) {
   if (verUI.pick.length > 2) verUI.pick.shift(); // третья вытесняет самую раннюю отметку
   verPaint();
 }
+// verDescribe asks the model for a note about what changed; ответ идет в поле
+// заметки на правку и сам не сохраняется. Согласие человека уже получено кнопкой.
+async function verDescribe(path) {
+  const f = verUI.fams.find((x) => x.versions.some((v) => v.path === path));
+  const j = f.versions.findIndex((v) => v.path === path), prev = prevOf(f, j);
+  verUI.describe = ""; verUI.busy.add(path); verPaint();
+  let text = "";
+  try { text = await native().VersionDescribe(prev.path, path, true); } catch (e) { toast("Описание не получено", errText(e), null, "bad"); }
+  verUI.busy.delete(path);
+  if (text) {
+    // Ответ не затирает то, что человек набирает в другой заметке: он ждет в черновиках до «Заметка».
+    if (verUI.noteFor && verUI.noteFor !== path) { verUI.drafts[path] = text; toast("Описание готово", "Откройте «Заметка» у этой версии"); } else { verUI.noteFor = path; verUI.noteDraft = text; }
+  }
+  verPaint();
+  $("#ver-list [data-note-in]")?.focus();
+}
 async function verSaveNote(input) {
   const path = input.dataset.noteIn;
   if (verUI.noteFor !== path) return; // Esc или повторный вызов
@@ -1184,10 +1213,13 @@ $("#ver-list").addEventListener("click", async (e) => {
     else if (act === "reveal") await revealFile(path);
     else if (act === "preview") await native().Preview(path);
     else if (act === "current") { await native().VersionCurrent(path, b.dataset.on !== "1"); await loadArtifacts(false); }
-    else if (act === "note") { verUI.noteFor = path; verUI.noteDraft = null; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
+    else if (act === "note") { verUI.noteFor = path; verUI.noteDraft = verUI.drafts[path] ?? null; delete verUI.drafts[path]; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
     else if (act === "pick") verPick(path, +b.dataset.fam, b.checked);
     else if (act === "compare") await verCompare(+b.dataset.fam);
     else if (act === "cmp-close") { verUI.cmp = null; verPaint(); }
+    else if (act === "describe") { verUI.describe = path; verPaint(); }
+    else if (act === "describe-no") { verUI.describe = ""; verPaint(); }
+    else if (act === "describe-go") await verDescribe(path);
   } catch (err) { toast("Артефакты", errText(err), null, "bad"); }
 });
 $("#ver-list").addEventListener("keydown", (e) => {
@@ -3854,7 +3886,7 @@ paintThemeBtn();
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
 const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut", feed: "bars", heat: "calls" }, feedSel: null, cal: null, calDay: null, money: null };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet" };
+const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const stNum = (n) => Math.round(n).toLocaleString("ru-RU");
 const stTok = (n) => (n >= 1e6 ? (n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " млн" : n >= 1e3 ? (n / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " тыс" : stNum(n));

@@ -565,3 +565,12 @@ func (a *App) VersionCompare(older, newer string) (compareView, error) {
 	}
 	return a.versions.Compare(a.ctx, older, newer)
 }
+
+// VersionDescribe asks the model to describe what changed in the newer version;
+// consent — человек подтвердил, что строки версий уйдут провайдеру модели.
+func (a *App) VersionDescribe(older, newer string, consent bool) (string, error) {
+	if a.chat == nil {
+		return "", errNoVersions
+	}
+	return a.chat.DescribeVersion(older, newer, consent)
+}

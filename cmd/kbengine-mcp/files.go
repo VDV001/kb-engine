@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -62,6 +63,11 @@ type fileIndex struct {
 	builtAt  time.Time          // нулевой — индекса в памяти нет
 	failedAt time.Time          // последняя упавшая сборка: повтор не чаще опроса
 
+	vmu    sync.Mutex         // источник версий документов (versionsSource)
+	vsrc   *localfiles.Source // открыт по конфигу с отметкой vstamp
+	vstamp time.Time
+	vlast  time.Time // последний вызов версий: по нему источник отпускается при простое
+
 	lastUse atomic.Int64       // UnixNano последнего search_files, 0 — не искали
 	loaded  atomic.Bool        // индекс в памяти: поиску не нужно будить run
 	wake    chan chan struct{} // поиск просит собрать индекс и ждет закрытия канала
@@ -82,6 +88,52 @@ func newFileIndex(cfgPath, home string, stderr io.Writer) (*fileIndex, error) {
 	x.src, x.stamp = src, stamp
 	x.svc = filesearch.NewService(src, fileindexgob.Option(desktopconfig.IndexPath(x.cfgPath)))
 	return x, nil
+}
+
+// versionsCloseAfter — через сколько закрывается замененный источник версий:
+// вызов, который уже получил его, успевает закончиться.
+//
+// ponytail: срок, а не счетчик ссылок. Потолок: вызов дольше минуты (обход
+// огромных папок) получит закрытый источник. Путь: счетчик ссылок в Desk.
+const versionsCloseAfter = time.Minute
+
+// dropIdleVersions lets the versions source go after filesIdleAfter without
+// calls: простаивающий MCP не держит открытые папки; следующий вызов откроет их заново.
+func (x *fileIndex) dropIdleVersions(now time.Time) {
+	x.vmu.Lock()
+	defer x.vmu.Unlock()
+	if x.vsrc != nil && now.Sub(x.vlast) >= filesIdleAfter {
+		x.closeLater(x.vsrc)
+		x.vsrc, x.vstamp = nil, time.Time{}
+	}
+}
+
+// closeLater closes a replaced source after versionsCloseAfter.
+func (x *fileIndex) closeLater(src *localfiles.Source) {
+	time.AfterFunc(versionsCloseAfter, func() { _ = src.Close() })
+}
+
+// versionsSource opens the folders of the window's config for the versions of
+// documents: свой источник, а не x.src, который трогает только run. Он держится,
+// пока конфиг не изменился и пока его зовут; смена папок в окне подхватывается
+// без перезапуска.
+func (x *fileIndex) versionsSource() *localfiles.Source {
+	x.vmu.Lock()
+	defer x.vmu.Unlock()
+	x.vlast = time.Now()
+	info, err := os.Stat(x.cfgPath)
+	if err != nil || (x.vsrc != nil && info.ModTime().Equal(x.vstamp)) {
+		return x.vsrc
+	}
+	src, stamp, err := x.open()
+	if err != nil {
+		return x.vsrc // прежний источник лучше, чем никакого: окно пишет конфиг не атомарно
+	}
+	if x.vsrc != nil {
+		x.closeLater(x.vsrc)
+	}
+	x.vsrc, x.vstamp = src, stamp
+	return src
 }
 
 // open reads the config and opens its folders.
@@ -133,6 +185,7 @@ func (x *fileIndex) run(ctx context.Context) {
 // otherwise rebuilds when the index is due or the last build failed. Сессия,
 // которая давно не искала, индекс отпускает.
 func (x *fileIndex) refresh(ctx context.Context, now time.Time) {
+	x.dropIdleVersions(now)
 	if info, err := os.Stat(x.cfgPath); err == nil && !info.ModTime().Equal(x.stamp) {
 		// Источник меняется и без поиска: это граница read_file. Сессия,
 		// которая не ищет, меняет его без сборки (ревью #377: шесть
