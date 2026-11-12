@@ -4092,7 +4092,7 @@
           "to": "adp-mcp-journal",
           "call": "addTool(s, j, tool, argsOf, handler)",
           "detail": "Журнал вызовов приделан к РЕГИСТРАЦИИ инструмента в internal/adapter/mcpserver/record.go, а не к телу обработчика: четвертый инструмент попадет в счетчик тем, что он объявлен, а не тем, что автор вспомнил про журнал. Тот же прием, что у runLogged вокруг единственного диспетчера команд",
-          "source": "internal/adapter/mcpserver/record.go:86",
+          "source": "internal/adapter/mcpserver/record.go:90",
           "symbol": "addTool",
           "unverified": false
         },
