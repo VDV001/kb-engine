@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/usecase/versions"
+
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
@@ -200,3 +202,26 @@ func TestProposeVersion_EmptyOrRefusedProposalIsReportedNotSaved(t *testing.T) {
 		}
 	}
 }
+
+// Сбой чтения версий уходит модели без пути и без куска текста: тот же закон,
+// что у MCP, потому что ответ инструмента идет провайдеру.
+func TestVersionTools_FailureIsExplainedWithoutTheText(t *testing.T) {
+	leak := errors.New("обход: /Users/someone/Documents/КП.docx: SECRET-в-тексте")
+	for _, c := range []struct{ tool, args string }{{"versions", `{"q":"кп"}`}, {"open_version", `{"q":"кп","which":"последняя"}`}} {
+		got, _ := toolAnswer(t, &failingVersions{err: leak}, c.tool, c.args)
+		if strings.Contains(got, "/Users/someone") || strings.Contains(got, "SECRET") || !strings.Contains(got, "не прочитать") {
+			t.Errorf("%s: ответ модели %q", c.tool, got)
+		}
+	}
+	got, _ := toolAnswer(t, &failingVersions{err: fmt.Errorf("версии: %w", versions.ErrNoSource)}, "versions", `{"q":"кп"}`)
+	if !strings.Contains(got, "папки окна не подключены") {
+		t.Errorf("причина «папки не подключены» не названа: %q", got)
+	}
+}
+
+type failingVersions struct{ err error }
+
+func (f *failingVersions) Families(context.Context, string) ([]chat.VersionFamily, error) {
+	return nil, f.err
+}
+func (f *failingVersions) Text(context.Context, string) (string, error) { return "", f.err }

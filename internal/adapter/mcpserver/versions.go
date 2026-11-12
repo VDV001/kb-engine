@@ -33,10 +33,10 @@ type VersionEntry struct {
 	Current                bool
 }
 
-// errVersionsUnreadable — версии не прочитались. Своя ошибка вместо настоящей:
-// в той бывает полный путь (имя пользователя) и кусок текста, а все, что
-// получает агент, уходит провайдеру модели.
-var errVersionsUnreadable = errors.New("версии документов не прочитать; подробности в окне DVK")
+// unreadable — версии не прочитались. Своя ошибка вместо настоящей: в той бывает
+// полный путь (имя пользователя) и кусок текста, а все, что получает агент,
+// уходит провайдеру модели. Причина названа словами (versions.Explain).
+func unreadable(err error) error { return errors.New(versions.Explain(err)) }
 
 const (
 	// maxVersionFamilies — сколько документов отдает один search_versions.
@@ -96,7 +96,7 @@ func addVersionTools(s *mcp.Server, j journal, f VersionFinder) {
 	}, func(ctx context.Context, in searchVersionsArgs) (map[string]any, error) {
 		fams, err := f.Families(ctx, in.Query)
 		if err != nil {
-			return nil, errVersionsUnreadable
+			return nil, unreadable(err)
 		}
 		type famJSON struct {
 			Name     string        `json:"name"`
@@ -116,7 +116,7 @@ func addVersionTools(s *mcp.Server, j journal, f VersionFinder) {
 		func(ctx context.Context, in openVersionArgs) (map[string]any, error) {
 			fams, err := f.Families(ctx, in.Query)
 			if err != nil {
-				return nil, errVersionsUnreadable
+				return nil, unreadable(err)
 			}
 			return openVersion(ctx, f, fams, in)
 		})
@@ -148,7 +148,7 @@ func openVersion(ctx context.Context, f VersionFinder, fams []VersionFamily, in 
 	v := fam.Versions[picked[0]]
 	text, err := f.Text(ctx, v.Path)
 	if err != nil {
-		return nil, errVersionsUnreadable
+		return nil, unreadable(err)
 	}
 	return map[string]any{"name": fam.Name, "date": v.Date, "path": v.Path, "text": clip(text, maxVersionRunes)}, nil
 }

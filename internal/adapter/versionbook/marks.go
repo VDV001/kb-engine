@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // versionMark — что владелец отметил у версии: заметка и значок «актуальная».
@@ -84,4 +85,19 @@ func markKey(v VersionView) string {
 		return v.hash
 	}
 	return "path:" + v.Path
+}
+
+// fileStamp is what a marks file looked like when it was read: время и размер.
+type fileStamp struct {
+	mod  time.Time
+	size int64
+}
+
+// stampOf stats the file; нет файла — нулевая отметка.
+func stampOf(path string) fileStamp {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fileStamp{}
+	}
+	return fileStamp{info.ModTime(), info.Size()}
 }

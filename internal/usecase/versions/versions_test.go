@@ -1,6 +1,8 @@
 package versions_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -499,5 +501,54 @@ func TestPick_ChoosesTheVersionByTheWordsOfThePerson(t *testing.T) {
 	}
 	if got := versions.Pick(vs[:1], "предыдущая"); got != nil {
 		t.Errorf("предыдущей у единственной версии нет: %v", got)
+	}
+}
+
+// Слова порядка и значка узнаются по целому слову, а не по куску: «Новиков»,
+// «новая цена», «первоначальная» и «текущий ремонт» — это слова заметки.
+func TestPick_OrderWordsAreWholeWordsAndNumbersAreNotDates(t *testing.T) {
+	vs := []versions.Choice{
+		{Path: "/p/a.docx", Date: "05.11.2026", Note: "первая версия", Mark: "отправлено Новикову"},
+		{Path: "/p/b.docx", Date: "10.11.2026", Note: "новая цена и первоначальная смета", Mark: "текущий ремонт"},
+		{Path: "/p/c.docx", Date: "12.11.2026", Note: "убрано строк: 1", Current: true},
+	}
+	for _, c := range []struct {
+		words string
+		want  []int
+	}{
+		{"отправленная Новикову", []int{0}},
+		{"новая цена", []int{1}},
+		{"первоначальная", []int{0, 1}}, // слово заметки, не «первая»: кандидаты, спросит человека
+		{"текущий ремонт", []int{1}},
+		{"в 3 версии", []int{2}},
+		{"версия 05.11", []int{0}},
+		{"новейшая", []int{2}},
+		{"текущая", []int{2}},
+		{"первую", []int{0}},
+	} {
+		if got := versions.Pick(vs, c.words); !slices.Equal(got, c.want) {
+			t.Errorf("«%s»: %v, ждали %v", c.words, got, c.want)
+		}
+	}
+}
+
+func TestExplain_NamesTheCauseButNeverTheText(t *testing.T) {
+	leak := errors.New("обход: /Users/someone/Documents/КП.docx не открылся: SECRET-в-тексте")
+	for name, c := range map[string]struct {
+		err  error
+		want string
+	}{
+		"папки не подключены": {fmt.Errorf("версии: %w", versions.ErrNoSource), "папки окна не подключены"},
+		"отменено":            {context.Canceled, "отменен"},
+		"не успело":           {context.DeadlineExceeded, "не успел"},
+		"прочее":              {leak, "не прочитать"},
+	} {
+		got := versions.Explain(c.err)
+		if !strings.Contains(got, c.want) {
+			t.Errorf("%s: %q не называет причину (%q)", name, got, c.want)
+		}
+		if strings.Contains(got, "/Users/someone") || strings.Contains(got, "SECRET") {
+			t.Errorf("%s: в объяснении текст ошибки: %q", name, got)
+		}
 	}
 }

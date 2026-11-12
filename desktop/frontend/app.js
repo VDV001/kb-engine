@@ -650,7 +650,7 @@ new ResizeObserver(() => fitBar()).observe($(".bar"));
 // --- Отрисовка -----------------------------------------------------------------
 // Отметки и сравнение «Артефактов» (#547, шаг 2): что выбрано на экране; сами
 // заметки и значки хранит Go (version-marks.json рядом с config.json).
-const verUI = { fams: [], pick: [], cmp: null, noteFor: "", noteDraft: null, painting: false, describe: "", busy: "" }; // noteDraft — набранное в поле заметки, пока список перерисовывается
+const verUI = { fams: [], pick: [], cmp: null, noteFor: "", noteDraft: null, painting: false, describe: "", busy: new Set(), drafts: {} }; // busy — версии, по которым модель пишет описание; drafts — ее готовые ответы, не открытые в поле // noteDraft — набранное в поле заметки, пока список перерисовывается
 let verSeq = 0, verTimer = 0, verSeen = false, verFresh = false; // «Артефакты»: verSeen — вкладка уже была открыта в прошлой отрисовке; verFresh — вход ждет свежего обхода
 function render() {
   // Фильтр источника оставляет только его записи: у базы знаний — записи,
@@ -1130,7 +1130,7 @@ function prevOf(f, j) {
 }
 function verDescribeBtn(f, j, v) {
   if (!prevOf(f, j)) return "";
-  if (verUI.busy === v.path) return `<button class="ver-act" disabled>Модель пишет…</button>`;
+  if (verUI.busy.has(v.path)) return `<button class="ver-act" disabled>Модель пишет…</button>`;
   if (verUI.describe !== v.path) return verBtn("describe", v.path, "Описать", "Модель предложит заметку о том, что изменилось");
   return `<span class="ver-consent">Строки, которых нет в другой версии, уйдут провайдеру модели чата. Файлы целиком не уходят. ${
     verBtn("describe-go", v.path, "Отправить", "Спросить модель")}${verBtn("describe-no", v.path, "Отмена", "Не отправлять")}</span>`;
@@ -1185,12 +1185,14 @@ function verPick(path, fi, on) {
 async function verDescribe(path) {
   const f = verUI.fams.find((x) => x.versions.some((v) => v.path === path));
   const j = f.versions.findIndex((v) => v.path === path), prev = prevOf(f, j);
-  verUI.describe = ""; verUI.busy = path; verPaint();
-  try {
-    verUI.noteDraft = await native().VersionDescribe(prev.path, path, true);
-    verUI.noteFor = path;
-  } catch (e) { toast("Описание не получено", errText(e), null, "bad"); }
-  verUI.busy = "";
+  verUI.describe = ""; verUI.busy.add(path); verPaint();
+  let text = "";
+  try { text = await native().VersionDescribe(prev.path, path, true); } catch (e) { toast("Описание не получено", errText(e), null, "bad"); }
+  verUI.busy.delete(path);
+  if (text) {
+    // Ответ не затирает то, что человек набирает в другой заметке: он ждет в черновиках до «Заметка».
+    if (verUI.noteFor && verUI.noteFor !== path) { verUI.drafts[path] = text; toast("Описание готово", "Откройте «Заметка» у этой версии"); } else { verUI.noteFor = path; verUI.noteDraft = text; }
+  }
   verPaint();
   $("#ver-list [data-note-in]")?.focus();
 }
@@ -1211,7 +1213,7 @@ $("#ver-list").addEventListener("click", async (e) => {
     else if (act === "reveal") await revealFile(path);
     else if (act === "preview") await native().Preview(path);
     else if (act === "current") { await native().VersionCurrent(path, b.dataset.on !== "1"); await loadArtifacts(false); }
-    else if (act === "note") { verUI.noteFor = path; verUI.noteDraft = null; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
+    else if (act === "note") { verUI.noteFor = path; verUI.noteDraft = verUI.drafts[path] ?? null; delete verUI.drafts[path]; verPaint(); $("#ver-list [data-note-in]")?.focus(); }
     else if (act === "pick") verPick(path, +b.dataset.fam, b.checked);
     else if (act === "compare") await verCompare(+b.dataset.fam);
     else if (act === "cmp-close") { verUI.cmp = null; verPaint(); }

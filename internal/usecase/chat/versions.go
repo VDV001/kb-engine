@@ -52,7 +52,7 @@ var versionTools = []Tool{
 func (r *toolRun) listVersions(ctx context.Context, q string) string {
 	fams, err := r.versions.Families(ctx, q)
 	if err != nil {
-		return "ошибка версий: " + err.Error()
+		return "ошибка: " + versions.Explain(err)
 	}
 	if len(fams) == 0 {
 		return "ничего не найдено"
@@ -90,7 +90,7 @@ func versionLine(v VersionInfo) string {
 func (r *toolRun) openVersion(ctx context.Context, q, which string) string {
 	fams, err := r.versions.Families(ctx, q)
 	if err != nil {
-		return "ошибка версий: " + err.Error()
+		return "ошибка: " + versions.Explain(err)
 	}
 	switch {
 	case len(fams) == 0:
@@ -120,7 +120,7 @@ func (r *toolRun) openVersion(ctx context.Context, q, which string) string {
 	v := f.Versions[picked[0]]
 	text, err := r.versions.Text(ctx, v.Path)
 	if err != nil {
-		return "ошибка чтения версии " + v.Path + ": " + err.Error()
+		return "ошибка чтения версии " + v.Path + ": " + versions.Explain(err)
 	}
 	if strings.TrimSpace(text) == "" {
 		return "у версии " + v.Path + " нет текста (скан без распознавания или пустой файл)"
