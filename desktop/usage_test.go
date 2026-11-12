@@ -2,6 +2,8 @@ package main
 
 import (
 	"maps"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"testing"
@@ -131,6 +133,30 @@ func TestChat_Stats_callsCarryChat(t *testing.T) {
 	want := map[string]string{a.ID: "первый чат", "0123456789abcdef": "Удаленный чат"}
 	if !maps.Equal(v.Chats, want) {
 		t.Fatalf("названия чатов = %v, want %v", v.Chats, want)
+	}
+}
+
+// Нечитаемый файл чата — не удаленный чат (ревью #575): «Удаленный чат»
+// прячет подсказку «сжать» для чата, который лежит на диске.
+func TestChat_Stats_unreadableChatIsNotDeleted(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	const id = "0123456789abcdef"
+	if err := os.MkdirAll(d.dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(d.dir, id+".json"), []byte("{не json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	rec := &callsRec{}
+	d.calls = rec
+	c, _ := domain.NewModelCall(d.now().Add(-time.Hour), domain.CallAnswer, "qwen3", 100, 10, true, time.Second, time.Second, false)
+	rec.calls = []domain.ModelCall{c.WithChat(id)}
+	v, err := d.Stats(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v.Chats[id]; got != unreadableChatTitle {
+		t.Fatalf("название = %q, want %q", got, unreadableChatTitle)
 	}
 }
 
