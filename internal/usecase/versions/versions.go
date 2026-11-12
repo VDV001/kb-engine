@@ -177,13 +177,51 @@ func family(fs []File) Family {
 	return Family{Name: name, Versions: vs}
 }
 
-// Один документ или два: у длинных текстов (от minJudgedLines строк с обеих
-// сторон) общей должна быть хотя бы доля sameDocShare строк. Короткие тексты
-// не судим: у записки в три строки правка и есть почти весь текст.
+// Один документ или два: у длинных текстов (от minJudgedLines разных строк с
+// обеих сторон) общей должна быть хотя бы доля sameDocShare от меньшего текста.
+// Меньшего, а не большего: урезанная спецификация остается собой. Короткие
+// тексты не судим: у записки в три строки правка и есть почти весь текст.
 const (
 	sameDocShare   = 0.3
 	minJudgedLines = 10
 )
+
+// textSet — разные непустые строки текста.
+type textSet map[string]struct{}
+
+// texts кэширует наборы строк по пути: каждый файл разбирается один раз,
+// сколько бы документов с ним ни сравнивали.
+type texts map[string]textSet
+
+func (c texts) of(f File) textSet {
+	if s, ok := c[f.Path]; ok {
+		return s
+	}
+	s := textSet{}
+	for _, l := range lines(f.Text) {
+		s[l] = struct{}{}
+	}
+	c[f.Path] = s
+	return s
+}
+
+// share — доля общих строк от меньшего из двух наборов; judged=false: один из
+// них короче minJudgedLines, судить рано.
+func share(a, b textSet) (frac float64, judged bool) {
+	if len(a) < minJudgedLines || len(b) < minJudgedLines {
+		return 0, false
+	}
+	if len(b) < len(a) {
+		a, b = b, a
+	}
+	n := 0
+	for l := range a {
+		if _, ok := b[l]; ok {
+			n++
+		}
+	}
+	return float64(n) / float64(len(a)), true
+}
 
 // split разводит файлы одного имени по документам. Файлы идут по времени; каждый
 // садится к документу, на который похож текстом, иначе открывает новый.
@@ -192,8 +230,9 @@ func split(fs []File) [][]File {
 		return cmp.Or(when(a).Compare(when(b)), cmp.Compare(a.Path, b.Path))
 	})
 	var docs [][]File
+	tx := texts{}
 	for _, f := range fs {
-		if i := home(docs, f); i >= 0 {
+		if i := home(docs, f, tx); i >= 0 {
 			docs[i] = append(docs[i], f)
 		} else {
 			docs = append(docs, []File{f})
@@ -203,65 +242,100 @@ func split(fs []File) [][]File {
 }
 
 // home — индекс документа, к которому относится f, или -1 (новый документ).
-// Копия по хешу идет к оригиналу. Дальше f сравнивается с последней версией
-// каждого документа в том же формате: у PDF строки рвутся иначе, чем у docx,
-// и сравнение через формат разводило бы один документ. Где судить не из чего
-// (нет текста, короткий текст, нет версии в этом формате), f садится к
-// последнему из таких документов.
 //
-// ponytail: «последний из неясных» — по порядку появления, не по дате.
-// Потолок: файл без текста может сесть не к тому из двух одноимённых документов.
-// Путь: приписывать по ближайшей дате версии.
-func home(docs [][]File, f File) int {
-	if f.Hash != "" {
-		for i, d := range docs {
-			if slices.ContainsFunc(d, func(m File) bool { return m.Hash == f.Hash }) {
-				return i
-			}
-		}
+// Копия по хешу идет к оригиналу. Дальше f сравнивается со всеми версиями
+// документа в том же формате (откат к старой правке находит свое семейство):
+// у PDF строки рвутся иначе, чем у docx, и сравнение через формат разводило бы
+// один документ. Где судить не из чего (нет текста, короткий текст, нет версии
+// в этом формате), f не открывает новый документ: сначала садится к тому из
+// «неясных», на который похож текстом в любом формате, иначе — по соседству
+// (nearest).
+func home(docs [][]File, f File, tx texts) int {
+	if i := byHash(docs, f); i >= 0 {
+		return i
 	}
 	if f.Text == "" {
-		return len(docs) - 1
-	}
-	best, bestShare, unsure := -1, 0.0, -1
-	for i, d := range docs {
-		prev := lastTextIn(d, ext(f.Path))
-		if prev == nil {
-			unsure = i
-			continue
+		all := make([]int, len(docs))
+		for i := range docs {
+			all[i] = i
 		}
-		share, judged := similarity(prev.Text, f.Text)
+		return nearest(docs, all, f)
+	}
+	mine := tx.of(f)
+	best, bestShare := -1, 0.0
+	var unsure []int
+	for i, d := range docs {
+		frac, judged := bestShareIn(d, f, mine, tx, true)
 		switch {
 		case !judged:
-			unsure = i
-		case share >= sameDocShare && share > bestShare:
-			best, bestShare = i, share
+			unsure = append(unsure, i)
+		case frac >= sameDocShare && frac > bestShare:
+			best, bestShare = i, frac
 		}
 	}
 	if best >= 0 {
 		return best
 	}
-	return unsure
+	if i := resembling(docs, unsure, f, mine, tx); i >= 0 {
+		return i
+	}
+	return nearest(docs, unsure, f)
 }
 
-// lastTextIn — последняя версия документа в формате format, у которой есть текст.
-func lastTextIn(d []File, format string) *File {
-	for j, m := range slices.Backward(d) {
-		if m.Text != "" && ext(m.Path) == format {
-			return &d[j]
+// resembling — документ из among, на который f похож текстом в любом формате
+// (долей не меньше sameDocShare), или -1. Формат разный: этого признака хватает,
+// чтобы присоединить файл, но не чтобы открыть новый документ.
+func resembling(docs [][]File, among []int, f File, mine textSet, tx texts) int {
+	best, bestShare := -1, 0.0
+	for _, i := range among {
+		if frac, judged := bestShareIn(docs[i], f, mine, tx, false); judged && frac >= sameDocShare && frac > bestShare {
+			best, bestShare = i, frac
 		}
 	}
-	return nil
+	return best
 }
 
-// similarity — доля строк нового текста, что есть в старом (от большего из
-// двух). judged=false: текст короче minJudgedLines, судить рано.
-func similarity(oldText, newText string) (share float64, judged bool) {
-	added, _, oldN, newN := lineDiff(oldText, newText)
-	if oldN < minJudgedLines || newN < minJudgedLines {
-		return 0, false
+// byHash — документ, где уже лежит файл с тем же хешем, или -1.
+func byHash(docs [][]File, f File) int {
+	if f.Hash == "" {
+		return -1
 	}
-	return float64(newN-len(added)) / float64(max(oldN, newN)), true
+	return slices.IndexFunc(docs, func(d []File) bool {
+		return slices.ContainsFunc(d, func(m File) bool { return m.Hash == f.Hash })
+	})
+}
+
+// bestShareIn — наибольшая доля общих строк f с версиями документа d (только
+// того же формата, если sameFormat); judged=false, если сравнить было не с чем.
+func bestShareIn(d []File, f File, mine textSet, tx texts, sameFormat bool) (best float64, judged bool) {
+	for _, m := range d {
+		if m.Text == "" || sameFormat && ext(m.Path) != ext(f.Path) {
+			continue
+		}
+		if frac, ok := share(mine, tx.of(m)); ok {
+			best, judged = max(best, frac), true
+		}
+	}
+	return best, judged
+}
+
+// nearest — документ из among, к которому f ближе всего: сначала тот, у кого
+// есть файл в той же папке, затем тот, чья последняя версия новее. -1, если among пуст.
+//
+// ponytail: подсказок два — папка и дата. Потолок: два одноимённых документа
+// в одной папке, а файл без текста и без общих строк с ними. Путь: имя
+// родительской папки и размер.
+func nearest(docs [][]File, among []int, f File) int {
+	best, bestSame, bestAt := -1, false, time.Time{}
+	for _, i := range among {
+		d := docs[i]
+		same := slices.ContainsFunc(d, func(m File) bool { return filepath.Dir(m.Path) == filepath.Dir(f.Path) })
+		at := when(d[len(d)-1])
+		if best < 0 || same && !bestSame || same == bestSame && !at.Before(bestAt) {
+			best, bestSame, bestAt = i, same, at
+		}
+	}
+	return best
 }
 
 // change описывает версию относительно предыдущей версии того же формата.
