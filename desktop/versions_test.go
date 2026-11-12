@@ -137,3 +137,19 @@ func TestNoteText(t *testing.T) {
 		}
 	}
 }
+
+func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
+	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	a := []familyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
+	b := []familyView{a[1], a[2], a[0]}
+	sortViews(a)
+	sortViews(b)
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			t.Fatalf("порядок зависит от входа: %v и %v", a, b)
+		}
+	}
+	if a[0].Name != "В" || a[1].Name != "А" {
+		t.Errorf("новее первым, при равных датах по имени: %v", a)
+	}
+}

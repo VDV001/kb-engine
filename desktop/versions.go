@@ -92,9 +92,14 @@ func (d *versionsDesk) collect(ctx context.Context, src *localfiles.Source, fres
 	for _, f := range fams {
 		d.cache = append(d.cache, view(f))
 	}
-	slices.SortFunc(d.cache, func(a, b familyView) int { return b.latest.Compare(a.latest) })
+	sortViews(d.cache)
 	d.src, d.at = src, time.Now()
 	return d.cache, nil
+}
+
+// sortViews — новее первым.
+func sortViews(vs []familyView) {
+	slices.SortFunc(vs, func(a, b familyView) int { return b.latest.Compare(a.latest) })
 }
 
 func view(f versions.Family) familyView {

@@ -387,3 +387,42 @@ func TestGroup_ManyBigSameNameFilesAreFast(t *testing.T) {
 		t.Errorf("ждали 2 документа, есть %d", len(got))
 	}
 }
+
+func TestGroup_VersionAfterATooBigOneComparesWithTheLastReadableOne(t *testing.T) {
+	big := file("/a/Проект_2026_11_06.pptx", "", "", day(11, 6))
+	big.TooBig = true
+	got := versions.Group([]versions.File{
+		file("/a/Проект_2026_11_05.pptx", "h1", "Цена 100", day(11, 5)),
+		big,
+		file("/a/Проект_2026_11_10.pptx", "h3", "Цена 100\nГарантия", day(11, 10)),
+	})
+	vs := got[0].Versions
+	if c := vs[2].Change; c.Kind != versions.KindDiff || !slices.Equal(c.Added, []string{"Гарантия"}) {
+		t.Errorf("версия после слишком большой должна сравниваться с последней читаемой: %+v", c)
+	}
+}
+
+func TestKey_DateIsNotCutOutOfALongerNumber(t *testing.T) {
+	for _, c := range []struct{ a, b string }{
+		{"Акт 0220.05.2026.docx", "Акт 02.docx"},
+		{"Счет 12345_2026_1_2.docx", "Счет 12345.docx"},
+		{"Акт 20.05.20269.docx", "Акт.docx"},
+	} {
+		if versions.Key("/a/"+c.a) == versions.Key("/a/"+c.b) {
+			t.Errorf("%q склеился с %q: часть номера принята за дату", c.a, c.b)
+		}
+	}
+	if versions.Key("/a/Акт 20.05.2026.docx") != versions.Key("/a/Акт.docx") {
+		t.Error("настоящая дата в имени должна по-прежнему вырезаться")
+	}
+}
+
+func TestGroup_FamilyNameKeepsCaseAndDropsDatesAndNoise(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/КП_Ромашка_2026_11_05.pptx", "h1", "а", day(11, 5)),
+		file("/a/КП_Ромашка_2026_11_10 (копия).pptx", "h2", "б", day(11, 10)),
+	})
+	if got[0].Name != "КП Ромашка" {
+		t.Errorf("имя семейства %q, ждали «КП Ромашка»", got[0].Name)
+	}
+}
