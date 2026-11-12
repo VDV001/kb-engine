@@ -1031,6 +1031,7 @@ rect.st-bar-r { transform-box: fill-box; transform-origin: bottom; animation: st
 .st-hbars { display: grid; gap: 6px; }
 .st-hbars button { display: grid; grid-template-columns: 140px 1fr 60px; gap: 10px; align-items: center; padding: 2px 4px; border: 0; background: none; cursor: pointer; font: inherit; font-size: 12px; color: var(--z-ink); text-align: left; border-radius: var(--z-radius); }
 .st-hbars button:hover { background: var(--z-bg-3); }
+.st-hbars.chats button { grid-template-columns: 140px 1fr 90px; }
 .st-hbars > div { display: grid; grid-template-columns: 140px 1fr 90px; gap: 10px; align-items: center; padding: 2px 4px; font-size: 12px; color: var(--z-ink); }
 .st-hbars > div > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .st-hbars i { display: block; height: 12px; border-radius: 2px; transform-origin: left; animation: st-grow-x .7s cubic-bezier(.16,1,.3,1) both; }
