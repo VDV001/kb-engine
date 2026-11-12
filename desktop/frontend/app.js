@@ -2078,6 +2078,8 @@ const ACCENTS = [
   ["mh-heat", "Здоровье: ритм", "клетки ритма градиентом"],
   ["ac-buttons", "Машины: главные кнопки", "«Сканировать машину», «Запустить скан» и «Сохранить» в форме машины"],
   ["scan-run", "Машины: ход скана", "бегущая полоса, пока идет скан по ssh"],
+  ["art-buttons", "Артефакты: кнопки версии", "Открыть, Просмотр, В Finder, Актуальная, Заметка, Описать — рамкой градиента; палитра в «Артефакты» ниже"],
+  ["art-pick", "Артефакты: «сравнить»", "отметка и подпись цветом палитры"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -2088,6 +2090,7 @@ function applyAccents() {
   for (const id of ACCENT_IDS) document.body.classList.toggle("no-" + id, off.includes(id));
   acLoginApply(); // цвет плашки логина в «Доступах»
   mhApply(); // палитра, скорость, ползунки и громкость сигнала здоровья памяти
+  agApply(); // палитра и поведение кнопок «Артефактов»
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
@@ -2106,6 +2109,7 @@ function renderAccents() {
   renderLookAccess();
   renderLookHeader();
   renderLookHealth();
+  renderLookArtifacts();
 }
 // «Оформление → Здоровье памяти»: палитра, перелив и громкость сигнала (accents.look).
 // По умолчанию перелив включен: сигнал должен бросаться в глаза.
@@ -2187,6 +2191,58 @@ $("#look-health").addEventListener("change", (e) => {
   if (r) mhSave({ [r.dataset.hr]: r.value });
   else if (c) mhSave({ [c.dataset.hc]: c.value });
 });
+// «Оформление → Артефакты» (accents.look art-*): палитра кнопок версии, когда
+// видна рамка и перелив. Владелец 12.11: в темной теме кнопок не видно, нужна
+// гибкость под человека — палитры как у здоровья памяти, свои цвета, тихий режим.
+const AG_MODES = [["fill", "рамка и заливка"], ["always", "только рамка"], ["hover", "рамка при наведении"]];
+const AG_ANIMS = [["full", "перелив при наведении"], ["none", "без анимации"]];
+const AG_KEYS = ["art-grad", "art-mode", "art-anim", "art-c1", "art-c2"];
+function agLook() {
+  const l = state.accents.look || {};
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  return {
+    grad: pick(l["art-grad"], Object.keys(MH_GRADS), "ice"), mode: pick(l["art-mode"], AG_MODES.map((x) => x[0]), "fill"), anim: pick(l["art-anim"], AG_ANIMS.map((x) => x[0]), "full"),
+    c1: MH_HEX.test(l["art-c1"] || "") ? l["art-c1"] : "#5e8fd0", c2: MH_HEX.test(l["art-c2"] || "") ? l["art-c2"] : "#8fc79a",
+  };
+}
+function agApply(L = agLook()) {
+  const st = document.body.style, b = document.body.dataset;
+  b.ag = L.grad; b.agm = L.mode; b.aga = L.anim;
+  for (const [i, v] of [[1, L.c1], [2, L.c2], [3, L.c2]]) {
+    if (L.grad === "custom") st.setProperty("--ag" + i, v); else st.removeProperty("--ag" + i);
+  }
+}
+function renderLookArtifacts() {
+  const host = $("#look-artifacts"); if (!host) return;
+  const L = agLook(), dis = native() ? "" : " disabled";
+  const chip = (k, v, label, on, extra = "") => `<button class="look-chip" data-al="${k}" data-v="${v}" aria-pressed="${on}"${dis}>${extra}${esc(label)}</button>`;
+  const grads = Object.entries(MH_GRADS).map(([g, n]) => chip("art-grad", g, n, L.grad === g, g === "custom" ? `<i class="gs" style="background:linear-gradient(90deg,${L.c1},${L.c2})"></i>` : `<i class="gs ink-${g}"></i>`)).join("");
+  const colors = L.grad === "custom" ? `<label class="muted">от <input type="color" data-ac="art-c1" value="${L.c1}"${dis}></label> <label class="muted">до <input type="color" data-ac="art-c2" value="${L.c2}"${dis}></label>` : "";
+  host.innerHTML = `
+    <div class="row"><span>Градиент</span><div class="opts">${grads}${colors}
+      <span class="muted">рамка кнопок версии и отметка «сравнить»</span></div></div>
+    <div class="row"><span>Рамка</span><div class="opts">${AG_MODES.map(([v, n]) => chip("art-mode", v, n, L.mode === v)).join("")}
+      <span class="muted">при наведении — спокойнее, когда версий много</span></div></div>
+    <div class="row"><span>Анимация</span><div class="opts">${AG_ANIMS.map(([v, n]) => chip("art-anim", v, n, L.anim === v)).join("")}</div></div>
+    <div class="row"><span></span><div class="opts"><button class="look-chip" data-al-reset${dis}>Сбросить вид Артефактов</button>
+      <span class="muted">кнопки и «сравнить» выключаются выше, в списке «Артефакты: …»</span></div></div>`;
+}
+const agSave = (patch) => saveAccents({ ...state.accents, look: { ...(state.accents.look || {}), ...patch } });
+$("#look-artifacts").addEventListener("click", (e) => {
+  if (!native()) return;
+  if (e.target.closest("[data-al-reset]")) {
+    const look = { ...(state.accents.look || {}) };
+    for (const k of AG_KEYS) delete look[k];
+    saveAccents({ ...state.accents, look });
+    toast("Сброшено", " · вид Артефактов по умолчанию");
+    return;
+  }
+  const b = e.target.closest("[data-al]"); if (!b) return;
+  agSave({ [b.dataset.al]: b.dataset.v });
+});
+// Цвет меняется вживую, сохраняется при отпускании.
+$("#look-artifacts").addEventListener("input", (e) => { const c = e.target.closest("[data-ac]"); if (c) agApply({ ...agLook(), [c.dataset.ac.slice(4)]: c.value }); });
+$("#look-artifacts").addEventListener("change", (e) => { const c = e.target.closest("[data-ac]"); if (c && native()) agSave({ [c.dataset.ac]: c.value }); });
 // «Оформление → Шапка»: вид, подписи и градиент подчеркивания; порядок модулей —
 // в «Модули», порядок вкладок поиска — перетаскиванием в «Вкладки».
 function renderLookHeader() {

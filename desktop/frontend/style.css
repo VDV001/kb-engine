@@ -1569,6 +1569,26 @@ body:not(.no-help-title) .art-bar .hp-title { background: var(--sp-all); -webkit
 .ver-consent { font-size: 11px; color: var(--z-muted); display: inline-flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
 .ver-pick { font-size: 11px; color: var(--z-muted); display: inline-flex; gap: 4px; align-items: center; cursor: pointer; }
 .ver-fam h4 .ver-act { margin-left: 8px; color: var(--z-ink); }
+/* Кнопки версии рамкой градиента (акцент art-buttons, вид — accents.look art-*):
+   палитра --ag1..3, «при наведении» прячет рамку до наведения, перелив — по наведению. */
+body { --ag1: var(--z-sp4); --ag2: var(--z-sp5); --ag3: var(--z-sp6); }
+body[data-ag="spectrum"] { --ag1: var(--z-sp1); --ag2: var(--z-sp4); --ag3: var(--z-sp6); }
+body[data-ag="gold"] { --ag1: var(--z-sp1); --ag2: var(--z-sp2); --ag3: var(--z-sp1); }
+body[data-ag="dusk"] { --ag1: var(--z-sp2); --ag2: var(--z-sp3); --ag3: var(--z-src-violet); }
+body[data-ag="mono"] { --ag1: #6b6b74; --ag2: #9a9aa4; --ag3: #55555d; }
+body:not(.no-art-buttons):not([data-agm="hover"]) .ver-act, body:not(.no-art-buttons) .ver-act:hover:not([disabled]) {
+  color: var(--z-ink); border-color: transparent;
+  background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, linear-gradient(100deg, var(--ag1), var(--ag2), var(--ag3), var(--ag2), var(--ag1)) border-box;
+  background-size: 100% 100%, 200% 100%; background-position: 0 0, 0 0;
+}
+body:not(.no-art-buttons) .ver-act:hover:not([disabled]) { background-image: linear-gradient(var(--z-bg-3), var(--z-bg-3)), linear-gradient(100deg, var(--ag1), var(--ag2), var(--ag3), var(--ag2), var(--ag1)); }
+body:not(.no-art-buttons):not([data-aga="none"]) .ver-act:hover:not([disabled]) { animation: ag-flow 1.6s linear infinite alternate; }
+body:not(.no-art-buttons) .ver-act[data-on="1"] { color: var(--ag2); }
+body:not(.no-art-buttons)[data-agm="fill"] .ver-act:not(:hover) { background-image: linear-gradient(color-mix(in srgb, var(--ag2) 12%, var(--z-bg-2)), color-mix(in srgb, var(--ag1) 12%, var(--z-bg-2))), linear-gradient(100deg, var(--ag1), var(--ag2), var(--ag3), var(--ag2), var(--ag1)); }
+@keyframes ag-flow { to { background-position: 0 0, 100% 0; } }
+body:not(.no-art-pick) .ver-pick { color: var(--z-ink); }
+body:not(.no-art-pick) .ver-pick input { accent-color: var(--ag2); }
+@media (prefers-reduced-motion: reduce) { .ver-act:hover { animation: none !important; } }
 .ver-cmp { margin: 8px 0 2px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); padding: 8px 10px; }
 .ver-cmp-bar { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 6px; }
 .ver-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
