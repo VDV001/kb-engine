@@ -974,6 +974,7 @@ body:not(.no-chat-thinking) .msg.thinking::after { content: ""; position: absolu
 .mem-add { display: flex; gap: 8px; margin-top: 6px; }
 .mem-add input { flex: 1; min-width: 0; }
 .ver-offer { align-self: flex-start; max-width: 72ch; border: 1px dashed var(--z-ok); border-radius: var(--z-radius); padding: 10px 12px; display: grid; gap: 8px; background: var(--z-bg-3); font-size: 13px; }
+.ver-offer-text pre { margin: 6px 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; color: var(--z-ink); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 6px 8px; }
 .ver-offer label { display: grid; gap: 3px; font-size: 11px; }
 .ver-offer input { font: inherit; font-size: 13px; color: var(--z-ink); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 4px 8px; }
 .mem-sugg { align-self: flex-start; max-width: 72ch; border: 1px dashed var(--z-head); border-radius: var(--z-radius); padding: 10px 12px; display: grid; gap: 8px; background: var(--z-bg-3); font-size: 13px; }

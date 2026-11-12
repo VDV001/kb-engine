@@ -3711,6 +3711,7 @@ if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
 function verOffersInChat() {
   return chatState.verOffers.filter((o) => !o.chatId || o.chatId === chatState.id).map((o) => `<div class="ver-offer" data-vo="${esc(o.id)}">
     <span class="muted">Сохранить как новую версию «${esc(o.family)}»? Файл <b>${esc(o.file)}</b> ляжет в ${esc(o.folder)}; прежние версии не меняются.</span>
+    <details class="ver-offer-text" open><summary class="muted">Текст новой версии, ${(o.size || 0).toLocaleString("ru-RU")} знаков: это будет записано в файл</summary><pre>${esc(o.preview || "")}</pre></details>
     <label class="muted">Описание файла<input data-vo-desc maxlength="300" value="${esc(o.description || "")}"></label>
     <label class="muted">Что нового<input data-vo-note maxlength="300" value="${esc(o.note || "")}"></label>
     <div class="mem-acts"><button type="button" class="btn primary" data-vo-save>Сохранить новой версией</button><button type="button" class="btn" data-vo-drop>Отклонить</button></div>
@@ -3735,13 +3736,16 @@ $("#chat-log").addEventListener("click", async (e) => {
   if (!card) return;
   const id = card.dataset.vo, o = chatState.verOffers.find((x) => x.id === id);
   if (e.target.closest("[data-vo-drop]")) { try { await native().DropVersionProposal(id); } catch (err) { /* предложение и так не сохранится */ } verOfferGone(id); return; }
-  if (!e.target.closest("[data-vo-save]") || !o) return;
+  const save = e.target.closest("[data-vo-save]");
+  if (!save || !o || save.disabled) return;
+  save.disabled = true; // двойной щелчок не создает второй файл
   try {
-    const path = await native().SaveVersionProposal(id, o.description || "", o.note || "");
-    toast("Версия сохранена", path);
+    const res = await native().SaveVersionProposal(id, o.description || "", o.note || "");
+    // Файл создан: карточка уходит, даже если после записи что-то не удалось (тогда это предупреждение).
+    toast(res.warning ? "Версия сохранена, но…" : "Версия сохранена", res.warning ? `${res.path}\n${res.warning}` : res.path);
     verOfferGone(id);
     if (state.tab === "artifacts") loadArtifacts(true);
-  } catch (err) { toast("Версия не сохранена", errText(err), null, "bad"); }
+  } catch (err) { save.disabled = false; toast("Версия не сохранена", errText(err), null, "bad"); }
 });
 // memInChat — карточки после ответа: «запомнить?» и «портрет не поместился».
 function memInChat() {
