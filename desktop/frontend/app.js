@@ -4402,7 +4402,7 @@ for (const ev of ["click", "keydown", "input"]) $("#access-view").addEventListen
 const MA_AUTH = { password: "Пароль", key: "Ключ ssh", token: "Сертификат или токен" };
 function acModeHTML() {
   if (!native().MachineList) return "";
-  return `<span class="ac-seg" role="group" aria-label="Что показывать">${[["acc", "Учётки"], ["mach", "Машины"]]
+  return `<span class="ac-seg" role="group" aria-label="Что показывать">${[["acc", "Учетки"], ["mach", "Машины"]]
     .map(([k, t]) => `<button class="look-chip" data-ac="mode" data-mode="${k}" aria-pressed="${state.ac.mode === k}">${t}</button>`).join("")}</span>`;
 }
 const maProjectsText = (m) => ((m && m.projects) || []).map((p) => [p.name, p.path, p.port, p.what].join(" | ").replace(/( \| )+$/, "")).join("\n");
