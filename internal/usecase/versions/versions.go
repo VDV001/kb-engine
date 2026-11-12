@@ -442,3 +442,16 @@ func lineDiff(oldText, newText string) (added, removed []string, oldN, newN int)
 	}
 	return added, removed, len(o), len(n)
 }
+
+// Line — строка текста версии в сравнении двух версий.
+type Line struct {
+	Text    string
+	Changed bool // строки нет в другой версии
+}
+
+// Compare раскладывает тексты двух версий по строкам и помечает те, которых
+// нет в другой версии. Тот же счет, что у подписи «что нового»: порядок и
+// повторы строк не учитываются.
+func Compare(oldText, newText string) (oldLines, newLines []Line) {
+	return nil, nil
+}

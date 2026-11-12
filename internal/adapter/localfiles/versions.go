@@ -267,3 +267,8 @@ func xlsxText(r io.Reader) (string, error) {
 	}
 	return capText(b.String()), nil
 }
+
+// VersionText returns the text of one version, as the comparison of versions sees it.
+func (s *Source) VersionText(path string) (string, error) {
+	return "", nil
+}

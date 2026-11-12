@@ -426,3 +426,32 @@ func TestGroup_FamilyNameKeepsCaseAndDropsDatesAndNoise(t *testing.T) {
 		t.Errorf("имя семейства %q, ждали «КП Ромашка»", got[0].Name)
 	}
 }
+
+func TestCompare_MarksLinesMissingInTheOtherVersion(t *testing.T) {
+	old, nw := versions.Compare("Цена 100\nСрок 7 дней\nГарантия", "Цена 100\nСрок 5 дней\nГарантия\nСкидка 5%")
+	wantOld := []versions.Line{{"Цена 100", false}, {"Срок 7 дней", true}, {"Гарантия", false}}
+	wantNew := []versions.Line{{"Цена 100", false}, {"Срок 5 дней", true}, {"Гарантия", false}, {"Скидка 5%", true}}
+	if !slices.Equal(old, wantOld) {
+		t.Errorf("старая версия: %+v", old)
+	}
+	if !slices.Equal(nw, wantNew) {
+		t.Errorf("новая версия: %+v", nw)
+	}
+}
+
+func TestCompare_SkipsBlankLinesAndKeepsOrderAndRepeats(t *testing.T) {
+	old, nw := versions.Compare("\n  а  \n\nб\nа\n", "б\nа\nв")
+	if !slices.Equal(old, []versions.Line{{"а", false}, {"б", false}, {"а", false}}) {
+		t.Errorf("старая: %+v", old)
+	}
+	if !slices.Equal(nw, []versions.Line{{"б", false}, {"а", false}, {"в", true}}) {
+		t.Errorf("новая: %+v", nw)
+	}
+}
+
+func TestCompare_EmptyTextsGiveNoLines(t *testing.T) {
+	old, nw := versions.Compare("", "")
+	if len(old) != 0 || len(nw) != 0 {
+		t.Errorf("пустые тексты: %+v %+v", old, nw)
+	}
+}
