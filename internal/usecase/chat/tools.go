@@ -163,7 +163,10 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 			return "ошибка чтения " + args.Ref + ": " + err.Error()
 		}
 		r.read = appendNew(r.read, d)
-		return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes)
+		if n := len([]rune(d.Text)); n > MaxReadRunes {
+			return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes) + "\n" + partialNote("документ", n)
+		}
+		return d.Title + "\n" + d.Text
 	case "versions", "open_version", "propose_version":
 		return r.execVersionTool(ctx, c.Name, args)
 	case "remember":

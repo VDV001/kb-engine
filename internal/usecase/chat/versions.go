@@ -128,8 +128,7 @@ func (r *toolRun) openVersion(ctx context.Context, q, which string) string {
 	title := f.Name + " · " + v.Date
 	r.read = appendNew(r.read, Doc{Ref: v.Path, Title: title, Source: "версии", Text: text})
 	if n := len([]rune(text)); n > MaxReadRunes {
-		return fmt.Sprintf("%s\n%s\n[показано %d из %d знаков: версия прочитана не целиком. Новую версию этого документа из чата предложить нельзя ни по прочитанному, ни по тексту, вставленному в чат — скажи человеку, что длинный документ правят в Word или Pages]",
-			title, trimRunes(text, MaxReadRunes), MaxReadRunes, n)
+		return title + "\n" + trimRunes(text, MaxReadRunes) + "\n" + partialNote("документ", n)
 	}
 	return title + "\n" + text
 }
@@ -142,14 +141,27 @@ func choices(vs []VersionInfo) []versions.Choice {
 	return out
 }
 
-// LongDocAdvice and LongDocument — заглушки RED.
-const LongDocAdvice = ""
+// LongDocAdvice is what the model tells the person about a document it cannot
+// read whole: один текст на все пути (open_version, read, отказ окна), иначе они
+// расходятся (ревью #581). Обходы названы, потому что модель их и предлагала
+// (живая проверка 13.11): «вставьте полный текст», «попробую в новой сессии».
+const LongDocAdvice = "новую версию по нему из чата сохранить нельзя: ни по прочитанному, ни по тексту, вставленному в чат, ни в новом чате. Скажи человеку, что такой документ правят в Word или Pages, и других обходов не предлагай"
 
-func LongDocument(longest int) string { return "" }
+// LongDocument is the refusal of a new iteration for a document whose longest
+// version (longest runes) the model cannot read whole.
+func LongDocument(longest int) string {
+	return fmt.Sprintf("у документа есть версия длиннее, чем модель читает за раз (%d знаков из %d), %s", longest, MaxReadRunes, LongDocAdvice)
+}
 
-// proposeVersionPrompt is added when the window can ask the person to save a version.
-const proposeVersionPrompt = `
-Когда результат работы — новый текст документа, у которого уже есть версии, предложи сохранить его новой итерацией инструментом propose_version: полный текст, описание файла и описание итерации (что нового). Файл появится только после подтверждения человека, а прежние версии не меняются.`
+// partialNote marks text cut at MaxReadRunes so the model does not take it for the whole.
+func partialNote(what string, n int) string {
+	return fmt.Sprintf("[показано %d из %d знаков, %s прочитан не целиком: %s]", MaxReadRunes, n, what, LongDocAdvice)
+}
+
+// proposeVersionPrompt is added when the window can ask the person to save a
+// version; предел чтения — заранее, а не в отказе после работы (ревью #581).
+var proposeVersionPrompt = fmt.Sprintf(`
+Когда результат работы — новый текст документа, у которого уже есть версии, предложи сохранить его новой итерацией инструментом propose_version: полный текст, описание файла и описание итерации (что нового). Файл появится только после подтверждения человека, а прежние версии не меняются. Документ, у которого есть версия длиннее %d знаков, ты не читаешь целиком: его новую версию из чата не предлагай и не переписывай, сразу скажи, что такой документ правят в Word или Pages.`, MaxReadRunes)
 
 var proposeVersionTool = Tool{Name: "propose_version", Description: "Предложить сохранить текст новой итерацией документа. Человек подтвердит или откажется; без подтверждения ничего не создается.",
 	Parameters: []byte(`{"type":"object","properties":{"q":{"type":"string","description":"имя документа, у которого появится новая версия"},"text":{"type":"string","description":"полный текст новой версии"},"description":{"type":"string","description":"описание файла одной-двумя фразами"},"note":{"type":"string","description":"что нового в этой итерации"}},"required":["q","text","description","note"]}`)}
