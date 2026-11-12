@@ -162,7 +162,7 @@ func samples(ls []string) string {
 	var out []string
 	for i, l := range ls {
 		if i == maxSamples {
-			out = append(out, fmt.Sprintf("…и ещё %d", len(ls)-maxSamples))
+			out = append(out, fmt.Sprintf("…и еще %d", len(ls)-maxSamples))
 			break
 		}
 		if r := []rune(l); len(r) > maxSampleLen {
