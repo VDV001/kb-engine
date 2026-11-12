@@ -306,3 +306,32 @@ func TestProposeVersion_ExactNameBeatsASubstring(t *testing.T) {
 		t.Errorf("выбрано %+v", r.events)
 	}
 }
+
+// Документ, у которого есть версия длиннее того, что модель читает за раз, новой
+// версией из чата не предлагается: в docx ушел бы обрезанный текст (живая
+// проверка 12.11). Документ выбирается так же, как при записи: точное имя
+// главнее похожего (ревью #577: «Договор» рядом с «Договор Ромашка»), и длинной
+// может быть не последняя версия.
+func TestProposeVersion_RefusesDocumentLongerThanTheModelReads(t *testing.T) {
+	long := strings.Repeat("я", chat.MaxReadRunes+1)
+	for name, files := range map[string][][2]string{
+		"последняя длинная": {{"Договор_2026_11_01.docx", "коротко"}, {"Договор_2026_11_09.docx", long}},
+		"старая длинная":    {{"Договор_2026_11_01.docx", long}, {"Договор_2026_11_09.docx", "коротко"}},
+	} {
+		r := newSaveRig(t)
+		for _, f := range files {
+			docxFile(t, filepath.Join(r.root, "d", f[0]), f[1])
+		}
+		docxFile(t, filepath.Join(r.root, "d", "Договор Ромашка_2026_11_02.docx"), "другой документ")
+		if _, err := r.vd.Families(context.Background(), "", true); err != nil {
+			t.Fatal(err)
+		}
+		err := r.propose(context.Background(), chat.VersionProposal{Family: "Договор", Text: "новый текст", Description: "d", Note: "n"})
+		if err == nil || !strings.Contains(err.Error(), "длиннее") {
+			t.Errorf("%s: ошибка %v", name, err)
+		}
+		if len(r.events) != 0 {
+			t.Errorf("%s: предложение дошло до человека", name)
+		}
+	}
+}

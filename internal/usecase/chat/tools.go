@@ -73,13 +73,18 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 	for step := 0; ; step++ {
 		offer := offered
 		if step == MaxSteps {
+			// Без слов модель на последнем шаге снова зовет инструмент и молчит (живая проверка 12.11).
 			offer = nil
+			msgs = append(msgs, ModelMessage{Role: RoleUser, Content: lastStepPrompt})
 		}
 		reply, err := s.complete(ctx, msgs, offer, r.Show)
 		if err != nil {
 			return Turn{}, fmt.Errorf("%w: %w", ErrModel, err)
 		}
 		if len(reply.ToolCalls) == 0 || offer == nil {
+			if strings.TrimSpace(reply.Content) == "" && offer == nil {
+				return Turn{}, fmt.Errorf("%w: %w", ErrModel, ErrOutOfSteps)
+			}
 			if strings.TrimSpace(reply.Content) == "" {
 				return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 			}
@@ -94,6 +99,9 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		}
 	}
 }
+
+// lastStepPrompt asks for the answer when the steps are over.
+const lastStepPrompt = "Шаги поиска кончились, инструментов больше нет: ответь сейчас по тому, что уже видел. Если ответа нет, так и скажи и предложи, что уточнить."
 
 // toolsMessages is the start of a tools-mode turn: правила (с «запомнить»,
 // если портрет ведется), прежний разговор и вопрос с приложенным.

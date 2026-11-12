@@ -139,6 +139,17 @@ func TestOpenVersion_LongTextIsTrimmedLikeRead(t *testing.T) {
 	}
 }
 
+// Обрезанный текст модель видит обрезанным словами, а не одним «…»: иначе она
+// перепишет начало документа как целый (живая проверка 12.11).
+func TestOpenVersion_TrimmedTextSaysItIsPartial(t *testing.T) {
+	v := kpVersions()
+	v.texts["/p/КП_2026_11_12.docx"] = strings.Repeat("я", chat.MaxReadRunes+500)
+	got, _ := toolAnswer(t, v, "open_version", `{"q":"кп","which":"последняя"}`)
+	if !strings.Contains(got, fmt.Sprintf("показано %d из %d знаков", chat.MaxReadRunes, chat.MaxReadRunes+500)) {
+		t.Errorf("модель не узнала, что текст обрезан: %q", got[len(got)-300:])
+	}
+}
+
 func proposeAnswer(t *testing.T, args string, propose func(context.Context, chat.VersionProposal) error) (string, *scriptModel) {
 	t.Helper()
 	m := &scriptModel{replies: []chat.ModelReply{call("c1", "propose_version", args), {Content: "готово"}}}
