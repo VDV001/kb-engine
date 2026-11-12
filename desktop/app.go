@@ -518,13 +518,36 @@ func (a *App) Reveal(path string) error {
 }
 
 // Preview opens the file in Quick Look without waiting for the window to close.
-func (a *App) Preview(path string) error { return nil }
+func (a *App) Preview(path string) error {
+	if err := a.files.Check(path); err != nil {
+		return err
+	}
+	go func() { _ = a.run("qlmanage", "-p", path) }() // держит окно, пока его не закроют
+	return nil
+}
+
+var errNoVersions = errors.New("артефакты недоступны")
 
 // VersionMark saves the note to a version of the «Артефакты» tab.
-func (a *App) VersionMark(path, note string) error { return nil }
+func (a *App) VersionMark(path, note string) error {
+	if a.versions == nil {
+		return errNoVersions
+	}
+	return a.versions.Mark(path, note)
+}
 
 // VersionCurrent puts or takes off the «актуальная» badge.
-func (a *App) VersionCurrent(path string, on bool) error { return nil }
+func (a *App) VersionCurrent(path string, on bool) error {
+	if a.versions == nil {
+		return errNoVersions
+	}
+	return a.versions.SetCurrent(path, on)
+}
 
 // VersionCompare returns two versions side by side.
-func (a *App) VersionCompare(older, newer string) (compareView, error) { return compareView{}, nil }
+func (a *App) VersionCompare(older, newer string) (compareView, error) {
+	if a.versions == nil {
+		return compareView{}, errNoVersions
+	}
+	return a.versions.Compare(a.ctx, older, newer)
+}
