@@ -1,4 +1,4 @@
-package main
+package versionbook
 
 import (
 	"archive/zip"
@@ -39,25 +39,25 @@ func docxFile(t *testing.T, path string, paras ...string) {
 	}
 }
 
-func versionsDeskOver(t *testing.T, root string) *versionsDesk {
+func deskOver(t *testing.T, root string) *Desk {
 	t.Helper()
 	src, err := localfiles.New([]string{root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = src.Close() })
-	return newVersionsDesk(func() *localfiles.Source { return src }, filepath.Join(t.TempDir(), "version-marks.json"))
+	return New(func() *localfiles.Source { return src }, filepath.Join(t.TempDir(), "version-marks.json"))
 }
 
 // restarted — новое окно над той же папкой и тем же файлом заметок.
-func restarted(t *testing.T, root string, old *versionsDesk) *versionsDesk {
+func restarted(t *testing.T, root string, old *Desk) *Desk {
 	t.Helper()
 	src, err := localfiles.New([]string{root}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = src.Close() })
-	return newVersionsDesk(func() *localfiles.Source { return src }, old.marksPath)
+	return New(func() *localfiles.Source { return src }, old.marksPath)
 }
 
 func TestVersions_FamiliesShowTheRibbonAndSkipLoneFiles(t *testing.T) {
@@ -65,7 +65,7 @@ func TestVersions_FamiliesShowTheRibbonAndSkipLoneFiles(t *testing.T) {
 	docxFile(t, filepath.Join(root, "p", "КП_2026_11_05.docx"), "Цена 100")
 	docxFile(t, filepath.Join(root, "p", "КП_2026_11_10.docx"), "Цена 100", "Гарантия")
 	docxFile(t, filepath.Join(root, "p", "Одинокий.docx"), "Текст")
-	d := versionsDeskOver(t, root)
+	d := deskOver(t, root)
 
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil {
@@ -95,14 +95,14 @@ func TestVersions_CopyShownAsDuplicate(t *testing.T) {
 	if err := os.WriteFile(cp, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	got, err := versionsDeskOver(t, root).Families(context.Background(), "", true)
+	got, err := deskOver(t, root).Families(context.Background(), "", true)
 	if err != nil || len(got) != 1 || len(got[0].Versions) != 1 || len(got[0].Versions[0].Dups) != 1 {
 		t.Fatalf("дубль: %+v %v", got, err)
 	}
 }
 
 func TestVersions_NoSourceIsEmpty(t *testing.T) {
-	d := newVersionsDesk(func() *localfiles.Source { return nil }, "")
+	d := New(func() *localfiles.Source { return nil }, "")
 	got, err := d.Families(context.Background(), "", true)
 	if err != nil || len(got) != 0 {
 		t.Errorf("без источника: %+v %v", got, err)
@@ -118,7 +118,7 @@ func TestVersions_ShownDateFollowsTheNameNotTheCopyTime(t *testing.T) {
 	now := time.Now()
 	_ = os.Chtimes(a, now, now)
 	_ = os.Chtimes(b, now.Add(-72*time.Hour), now.Add(-72*time.Hour))
-	got, err := versionsDeskOver(t, root).Families(context.Background(), "", true)
+	got, err := deskOver(t, root).Families(context.Background(), "", true)
 	if err != nil || len(got) != 1 {
 		t.Fatalf("%+v %v", got, err)
 	}
@@ -151,8 +151,8 @@ func TestNoteText(t *testing.T) {
 
 func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
 	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	a := []familyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
-	b := []familyView{a[1], a[2], a[0]}
+	a := []FamilyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
+	b := []FamilyView{a[1], a[2], a[0]}
 	sortViews(a)
 	sortViews(b)
 	for i := range a {
@@ -166,20 +166,20 @@ func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
 }
 
 // kp кладет две версии КП и возвращает окно, пути версий и семейство.
-func kp(t *testing.T) (root string, d *versionsDesk, v1, v2 string) {
+func kp(t *testing.T) (root string, d *Desk, v1, v2 string) {
 	t.Helper()
 	root = t.TempDir()
 	v1, v2 = filepath.Join(root, "p", "КП_2026_11_05.docx"), filepath.Join(root, "p", "КП_2026_11_10.docx")
 	docxFile(t, v1, "Цена 100", "Срок 7 дней")
 	docxFile(t, v2, "Цена 100", "Срок 5 дней", "Гарантия")
-	d = versionsDeskOver(t, root)
+	d = deskOver(t, root)
 	if _, err := d.Families(context.Background(), "", true); err != nil {
 		t.Fatal(err)
 	}
 	return root, d, v1, v2
 }
 
-func versionsOf(t *testing.T, d *versionsDesk) []versionView {
+func versionsOf(t *testing.T, d *Desk) []VersionView {
 	t.Helper()
 	got, err := d.Families(context.Background(), "", false)
 	if err != nil || len(got) != 1 {
@@ -270,7 +270,7 @@ func TestMark_CopyShareTheNoteOfTheOriginal(t *testing.T) {
 	if err := os.WriteFile(cp, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	d := versionsDeskOver(t, root)
+	d := deskOver(t, root)
 	if _, err := d.Families(context.Background(), "", true); err != nil {
 		t.Fatal(err)
 	}
@@ -350,10 +350,10 @@ func TestNoteText_SaysWhenUnreadableVersionsWereSkipped(t *testing.T) {
 }
 
 func TestDisambiguate_SameNameGetsItsFolder(t *testing.T) {
-	mk := func(name, path string) familyView {
-		return familyView{Name: name, Versions: []versionView{{Path: path}}}
+	mk := func(name, path string) FamilyView {
+		return FamilyView{Name: name, Versions: []VersionView{{Path: path}}}
 	}
-	vs := []familyView{mk("ТЗ", "/Уроки/ТЗ.docx"), mk("ТЗ", "/Работа/ТЗ.docx"), mk("Смета", "/a/Смета.xlsx")}
+	vs := []FamilyView{mk("ТЗ", "/Уроки/ТЗ.docx"), mk("ТЗ", "/Работа/ТЗ.docx"), mk("Смета", "/a/Смета.xlsx")}
 	disambiguate(vs)
 	if vs[0].Name != "ТЗ (Уроки)" || vs[1].Name != "ТЗ (Работа)" {
 		t.Errorf("одинаковые имена не различены папкой: %q, %q", vs[0].Name, vs[1].Name)
@@ -365,10 +365,10 @@ func TestDisambiguate_SameNameGetsItsFolder(t *testing.T) {
 
 func TestSortViews_EqualDatesAndNamesGoByFirstPath(t *testing.T) {
 	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
-	mk := func(p string) familyView {
-		return familyView{Name: "ТЗ", latest: d, Versions: []versionView{{Path: p}}}
+	mk := func(p string) FamilyView {
+		return FamilyView{Name: "ТЗ", latest: d, Versions: []VersionView{{Path: p}}}
 	}
-	a := []familyView{mk("/б/ТЗ.docx"), mk("/а/ТЗ.docx")}
+	a := []FamilyView{mk("/б/ТЗ.docx"), mk("/а/ТЗ.docx")}
 	sortViews(a)
 	if a[0].Versions[0].Path != "/а/ТЗ.docx" {
 		t.Errorf("при равных дате и имени порядок по пути: %v", a)
@@ -436,50 +436,5 @@ func TestCompare_PairMustBeOneDocumentOldFirst(t *testing.T) {
 	}
 	if _, err := d.Compare(context.Background(), v1, other2); err == nil {
 		t.Error("версии разных документов сравнились")
-	}
-}
-
-func TestChatVersions_SameFamiliesNotesAndBadgesAsTheTab(t *testing.T) {
-	_, d, v1, v2 := kp(t)
-	if err := d.Mark(v1, "отправлено Алексею"); err != nil {
-		t.Fatal(err)
-	}
-	if err := d.SetCurrent(v2, true); err != nil {
-		t.Fatal(err)
-	}
-	fams, err := chatVersions{d}.Families(context.Background(), "кп")
-	if err != nil || len(fams) != 1 || len(fams[0].Versions) != 2 {
-		t.Fatalf("семейства для чата: %+v %v", fams, err)
-	}
-	a, b := fams[0].Versions[0], fams[0].Versions[1]
-	if a.Path != v1 || a.Date != "05.11.2026" || a.Mark != "отправлено Алексею" || a.Current || a.Note != "первая версия" {
-		t.Errorf("старая версия: %+v", a)
-	}
-	if b.Path != v2 || !b.Current || !strings.Contains(b.Note, "Гарантия") {
-		t.Errorf("новая версия: %+v", b)
-	}
-}
-
-func TestChatVersions_TextOnlyOfVersionsTheTabShows(t *testing.T) {
-	root, d, v1, _ := kp(t)
-	got, err := chatVersions{d}.Text(context.Background(), v1)
-	if err != nil || !strings.Contains(got, "Срок 7 дней") {
-		t.Errorf("текст версии: %q %v", got, err)
-	}
-	other := filepath.Join(root, "p", "Чужой.docx")
-	docxFile(t, other, "секрет")
-	for name, p := range map[string]string{"не из списка": other, "вне папок": "/etc/hosts"} {
-		if text, err := (chatVersions{d}).Text(context.Background(), p); err == nil {
-			t.Errorf("%s: модель получила текст %q", name, text)
-		}
-	}
-}
-
-func TestChatVersions_NilWithoutTheDesk(t *testing.T) {
-	if (&chatDesk{}).versionsAccess() != nil {
-		t.Error("без вкладки «Артефакты» инструментов версий быть не должно")
-	}
-	if (&chatDesk{versions: versionsDeskOver(t, t.TempDir())}).versionsAccess() == nil {
-		t.Error("с вкладкой инструменты версий должны быть")
 	}
 }

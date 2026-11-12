@@ -1,4 +1,4 @@
-package main
+package versionbook
 
 import (
 	"encoding/json"
@@ -79,7 +79,7 @@ func saveMarks(path string, marks map[string]versionMark) error {
 // ponytail: одинаковое содержимое в двух семействах делит заметку и значок
 // (копия под другим именем — это тот же документ по содержимому). Потолок:
 // «актуальная» у двух семейств сразу. Путь: ключ из хеша и имени семейства.
-func markKey(v versionView) string {
+func markKey(v VersionView) string {
 	if v.hash != "" {
 		return v.hash
 	}
