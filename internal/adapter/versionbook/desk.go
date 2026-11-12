@@ -443,3 +443,7 @@ func samples(ls []string) string {
 	}
 	return strings.Join(out, ", ")
 }
+
+// MarksPath is the file of the notes and badges; нужен окну и тестам, чтобы
+// знать, где они лежат.
+func (d *Desk) MarksPath() string { return d.marksPath }

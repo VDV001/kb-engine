@@ -139,6 +139,70 @@ func TestOpenVersion_LongTextIsTrimmedLikeRead(t *testing.T) {
 	}
 }
 
+func proposeAnswer(t *testing.T, args string, propose func(context.Context, chat.VersionProposal) error) (string, *scriptModel) {
+	t.Helper()
+	m := &scriptModel{replies: []chat.ModelReply{call("c1", "propose_version", args), {Content: "готово"}}}
+	if _, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(&fakeReader{})).Respond(context.Background(),
+		chat.Request{Question: "сохрани как новую версию", Mode: chat.ModeTools, Versions: kpVersions(), ProposeVersion: propose}); err != nil {
+		t.Fatal(err)
+	}
+	return m.asked[1][len(m.asked[1])-1].Content, m
+}
+
+func TestProposeVersion_OfferedOnlyWhenTheWindowCanAsk(t *testing.T) {
+	for name, propose := range map[string]func(context.Context, chat.VersionProposal) error{
+		"есть": func(context.Context, chat.VersionProposal) error { return nil }, "нет": nil,
+	} {
+		m := &scriptModel{replies: []chat.ModelReply{{Content: "ок"}}}
+		if _, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(&fakeReader{})).Respond(context.Background(),
+			chat.Request{Question: "q", Mode: chat.ModeTools, Versions: kpVersions(), ProposeVersion: propose}); err != nil {
+			t.Fatal(err)
+		}
+		var has bool
+		for _, tl := range m.tools[0] {
+			has = has || tl.Name == "propose_version"
+		}
+		if has != (propose != nil) {
+			t.Errorf("%s: инструмент propose_version объявлен=%v", name, has)
+		}
+	}
+}
+
+func TestProposeVersion_HandsTheProposalToThePersonAndSaysItWaits(t *testing.T) {
+	var got chat.VersionProposal
+	var n int
+	reply, _ := proposeAnswer(t, `{"q":"кп","text":"Новый текст КП","description":"КП для Ромашки","note":"добавлена гарантия"}`,
+		func(_ context.Context, p chat.VersionProposal) error { got, n = p, n+1; return nil })
+	want := chat.VersionProposal{Family: "кп", Text: "Новый текст КП", Description: "КП для Ромашки", Note: "добавлена гарантия"}
+	if n != 1 || got != want {
+		t.Errorf("предложение: %+v (вызовов %d), ждали %+v", got, n, want)
+	}
+	if !strings.Contains(reply, "ждет подтверждения") {
+		t.Errorf("модель не узнала, что файла еще нет: %q", reply)
+	}
+}
+
+func TestProposeVersion_EmptyOrRefusedProposalIsReportedNotSaved(t *testing.T) {
+	for name, c := range map[string]struct {
+		args string
+		err  error
+		want string
+	}{
+		"пустой текст":  {`{"q":"кп","text":" ","description":"d","note":"n"}`, nil, "нет текста"},
+		"нет документа": {`{"q":"","text":"т","description":"d","note":"n"}`, nil, "не названо"},
+		"окно отказало": {`{"q":"кп","text":"т","description":"d","note":"n"}`, errors.New("документ не найден"), "не предложено: документ не найден"},
+	} {
+		var n int
+		reply, _ := proposeAnswer(t, c.args, func(context.Context, chat.VersionProposal) error { n++; return c.err })
+		if !strings.Contains(reply, c.want) {
+			t.Errorf("%s: ответ модели %q, ждали %q", name, reply, c.want)
+		}
+		if c.err == nil && n != 0 {
+			t.Errorf("%s: предложение ушло человеку при пустых данных", name)
+		}
+	}
+}
+
 // Сбой чтения версий уходит модели без пути и без куска текста: тот же закон,
 // что у MCP, потому что ответ инструмента идет провайдеру.
 func TestVersionTools_FailureIsExplainedWithoutTheText(t *testing.T) {

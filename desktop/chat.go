@@ -141,7 +141,12 @@ type chatDesk struct {
 	// versions — итерации документов для инструментов versions и open_version
 	// режима «модель ищет»; nil — инструментов нет (тесты без вкладки «Артефакты»).
 	versions *versionsDesk
-	mu       sync.Mutex // один вопрос за раз: файл чата пишется целиком
+	// versionNew tells the page about a new iteration offered for approval
+	// (событие versions:proposal); proposals ждут подтверждения в памяти.
+	versionNew func(iterationView)
+	pmu        sync.Mutex
+	proposals  []pendingIteration
+	mu         sync.Mutex // один вопрос за раз: файл чата пишется целиком
 	// memoryNew tells the page about new facts waiting for approval (событие portrait:new).
 	memoryNew  func(portraitNews)
 	portraitMu sync.Mutex
@@ -300,7 +305,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	attached = append(attached, linked...)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess()})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
@@ -448,6 +453,7 @@ func (d *chatDesk) Delete(id string) error {
 		return err
 	}
 	_ = d.DropDraft(id) // черновик не переживает свой чат
+	d.dropChatProposals(id)
 	return os.Remove(p)
 }
 

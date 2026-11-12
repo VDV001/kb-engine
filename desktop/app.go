@@ -485,6 +485,7 @@ func (a *App) startup(ctx context.Context) {
 	if a.chat != nil {
 		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
 		a.chat.memoryNew = func(n portraitNews) { runtime.EventsEmit(ctx, "portrait:new", n) }
+		a.chat.versionNew = func(p iterationView) { runtime.EventsEmit(ctx, "versions:proposal", p) }
 	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }
@@ -573,4 +574,29 @@ func (a *App) VersionDescribe(older, newer string, consent bool) (string, error)
 		return "", errNoVersions
 	}
 	return a.chat.DescribeVersion(older, newer, consent)
+}
+
+// VersionProposals returns the new iterations that the chat offered and nobody answered yet.
+func (a *App) VersionProposals() []iterationView {
+	if a.chat == nil {
+		return []iterationView{}
+	}
+	return a.chat.versionProposals()
+}
+
+// SaveVersionProposal creates the offered iteration as a new document next to
+// the family: description и note — то, что человек оставил после правки.
+// Возвращает путь нового файла и предупреждение, если после записи что-то не удалось.
+func (a *App) SaveVersionProposal(id, description, note string) (savedVersion, error) {
+	if a.chat == nil {
+		return savedVersion{}, errNoVersions
+	}
+	return a.chat.saveVersionProposal(a.ctx, id, description, note)
+}
+
+// DropVersionProposal discards an offered iteration; файл не создается.
+func (a *App) DropVersionProposal(id string) {
+	if a.chat != nil {
+		a.chat.dropVersionProposal(id)
+	}
 }

@@ -162,6 +162,10 @@ type Request struct {
 	// Versions gives the model the iterations of documents (инструменты
 	// versions и open_version режима «модель ищет»); nil — инструментов нет.
 	Versions Versions
+	// ProposeVersion offers the result of the work as a new iteration of a
+	// document (инструмент propose_version, #548): предложение уходит человеку
+	// на подтверждение; nil — инструмента нет.
+	ProposeVersion func(ctx context.Context, p VersionProposal) error
 }
 
 // Service answers questions.
