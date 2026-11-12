@@ -329,11 +329,21 @@ func TestProposeVersion_RefusesDocumentLongerThanTheModelReads(t *testing.T) {
 		err := r.propose(context.Background(), chat.VersionProposal{Family: "Договор", Text: "новый текст", Description: "d", Note: "n"})
 		// Модель предлагала обходы, которые упираются в ту же проверку (живая проверка 13.11):
 		// «вставьте полный текст», «попробую в новой сессии». Отказ называет их и говорит, где править.
-		if err == nil || !strings.Contains(err.Error(), "длиннее") || !strings.Contains(err.Error(), "вставленному в чат") || !strings.Contains(err.Error(), "Word или Pages") {
+		if err == nil || chat.LongDocAdvice == "" || !strings.Contains(err.Error(), chat.LongDocAdvice) {
 			t.Errorf("%s: ошибка %v", name, err)
 		}
 		if len(r.events) != 0 {
 			t.Errorf("%s: предложение дошло до человека", name)
 		}
+	}
+}
+
+// Отказ по размеру текста тоже говорит, где править (ревью #581): иначе модель
+// придумывала «разбейте на части и вставьте по очереди».
+func TestProposeVersion_TooBigTextNamesWhereToEdit(t *testing.T) {
+	r := newSaveRig(t)
+	err := r.propose(context.Background(), chat.VersionProposal{Family: "кп", Text: strings.Repeat("я", maxProposalBytes), Description: "d", Note: "n"})
+	if err == nil || chat.LongDocAdvice == "" || !strings.Contains(err.Error(), chat.LongDocAdvice) {
+		t.Errorf("ошибка %v", err)
 	}
 }

@@ -142,6 +142,11 @@ func choices(vs []VersionInfo) []versions.Choice {
 	return out
 }
 
+// LongDocAdvice and LongDocument — заглушки RED.
+const LongDocAdvice = ""
+
+func LongDocument(longest int) string { return "" }
+
 // proposeVersionPrompt is added when the window can ask the person to save a version.
 const proposeVersionPrompt = `
 Когда результат работы — новый текст документа, у которого уже есть версии, предложи сохранить его новой итерацией инструментом propose_version: полный текст, описание файла и описание итерации (что нового). Файл появится только после подтверждения человека, а прежние версии не меняются.`
