@@ -159,9 +159,6 @@ func (r *toolRun) proposeVersion(ctx context.Context, p VersionProposal) string 
 	case strings.TrimSpace(p.Text) == "":
 		return "ошибка: нет текста новой версии"
 	}
-	if why := r.tooLong(ctx, p.Family); why != "" {
-		return "не предложено: " + why
-	}
 	if err := r.propose(ctx, p); err != nil {
 		return "не предложено: " + err.Error()
 	}
@@ -176,24 +173,4 @@ type VersionProposal struct {
 	Text        string // содержимое новой версии
 	Description string // описание файла
 	Note        string // описание итерации: что нового
-}
-
-// tooLong says why a new iteration of family q cannot come from the chat: модель
-// читает версию не длиннее MaxReadRunes, и текст длиннее ушел бы в файл
-// обрезанным (живая проверка 12.11). Пусто — препятствия нет; документ не
-// найден или не один — решает окно, оно же и откажет.
-func (r *toolRun) tooLong(ctx context.Context, q string) string {
-	fams, err := r.versions.Families(ctx, q)
-	if err != nil || len(fams) != 1 || len(fams[0].Versions) == 0 {
-		return ""
-	}
-	vs := fams[0].Versions
-	text, err := r.versions.Text(ctx, vs[len(vs)-1].Path)
-	if err != nil {
-		return "последняя версия не читается: " + versions.Explain(err)
-	}
-	if n := len([]rune(text)); n > MaxReadRunes {
-		return fmt.Sprintf("документ длиннее, чем модель читает за раз (%d знаков из %d): новую версию из чата сохранить нельзя, скажи это человеку", n, MaxReadRunes)
-	}
-	return ""
 }

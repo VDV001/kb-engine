@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/adapter/versionbook"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -95,7 +96,9 @@ func (d *chatDesk) DescribeVersion(older, newer string, consent bool) (string, e
 	if text == "" {
 		return "", errors.New("модель не ответила: попробуйте еще раз")
 	}
-	text = plainNote(text)
+	if text = plainNote(text); text == "" {
+		return "", errors.New("модель не ответила: попробуйте еще раз")
+	}
 	if r := []rune(text); len(r) > versionbook.MaxNoteRunes {
 		text = string(r[:versionbook.MaxNoteRunes-1]) + "…"
 	}
@@ -134,7 +137,10 @@ func describePrompt(name string, removed, added []string) string {
 	return b.String()
 }
 
-var listMark = regexp.MustCompile(`^(?:[-*•]|\d+[.)])\s+`)
+var (
+	listMark = regexp.MustCompile(`^(?:[-*•]|\d+[.)])(?:\s+|$)`)
+	heading  = regexp.MustCompile(`^#+(?:\s+|$)`)
+)
 
 // plainNote folds a Markdown reply into one line of plain text: заметка —
 // однострочное поле, а модель отвечает списками вопреки просьбе (живая
@@ -143,18 +149,18 @@ func plainNote(s string) string {
 	var b strings.Builder
 	for _, line := range strings.Split(s, "\n") {
 		line = strings.TrimSpace(line)
-		heading := strings.HasPrefix(line, "#")
-		line = strings.TrimSpace(strings.TrimLeft(line, "#"))
+		head := heading.MatchString(line) // «#541» — не заголовок: после решеток нужен пробел
+		line = heading.ReplaceAllString(line, "")
 		line = listMark.ReplaceAllString(line, "")
 		line = strings.TrimSpace(strings.NewReplacer("**", "", "__", "", "`", "").Replace(line))
 		if line == "" {
 			continue
 		}
-		if heading && !strings.HasSuffix(line, ":") {
+		if head && !strings.HasSuffix(line, ":") {
 			line += ":"
 		}
 		if b.Len() > 0 {
-			if prev := b.String(); !strings.ContainsAny(prev[len(prev)-1:], ":.;!?") {
+			if last, _ := utf8.DecodeLastRuneInString(b.String()); !strings.ContainsRune(":.;!?…", last) {
 				b.WriteString(".")
 			}
 			b.WriteString(" ")

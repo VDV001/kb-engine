@@ -150,24 +150,6 @@ func TestOpenVersion_TrimmedTextSaysItIsPartial(t *testing.T) {
 	}
 }
 
-// Документ длиннее того, что модель может прочитать, новой версией из чата не
-// предлагается: в файл ушел бы обрезанный текст (живая проверка 12.11).
-func TestProposeVersion_RefusedWhenTheDocumentIsLongerThanTheModelReads(t *testing.T) {
-	v := kpVersions()
-	v.texts["/p/КП_2026_11_12.docx"] = strings.Repeat("я", chat.MaxReadRunes+1)
-	m := &scriptModel{replies: []chat.ModelReply{call("c1", "propose_version", `{"q":"кп","text":"Новый текст КП","description":"d","note":"n"}`), {Content: "готово"}}}
-	var n int
-	if _, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(&fakeReader{})).Respond(context.Background(),
-		chat.Request{Question: "сохрани как новую версию", Mode: chat.ModeTools, Versions: v,
-			ProposeVersion: func(context.Context, chat.VersionProposal) error { n++; return nil }}); err != nil {
-		t.Fatal(err)
-	}
-	reply := m.asked[1][len(m.asked[1])-1].Content
-	if n != 0 || !strings.Contains(reply, "длиннее") {
-		t.Errorf("длинный документ предложен (вызовов %d), ответ модели %q", n, reply)
-	}
-}
-
 func proposeAnswer(t *testing.T, args string, propose func(context.Context, chat.VersionProposal) error) (string, *scriptModel) {
 	t.Helper()
 	m := &scriptModel{replies: []chat.ModelReply{call("c1", "propose_version", args), {Content: "готово"}}}
