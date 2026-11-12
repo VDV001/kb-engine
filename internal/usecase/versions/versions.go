@@ -44,6 +44,7 @@ type Change struct {
 	Format  string // расширение без точки, для KindNewFormat
 	Added   []string
 	Removed []string
+	Skipped int // версий без текста между этой и той, с которой сравнено
 }
 
 // Version — версия в семействе с описанием «что нового».
@@ -70,17 +71,18 @@ var (
 	noise     = map[string]bool{"копия": true, "copy": true, "финал": true, "final": true}
 )
 
-// stem — имя без расширения, дат, номеров версий и слов «копия/финал»:
-// ключ семейства. Имя целиком из такого шума («2026-11-10.docx», «v2.pptx»)
-// остается собой: пустой ключ склеил бы чужие документы в одно семейство.
-func stem(path string) string {
-	whole := strings.ToLower(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
+// display — имя без расширения, дат, номеров версий и слов «копия/финал», с
+// сохраненным регистром: им подписано семейство. Имя целиком из такого шума
+// («2026-11-10.docx», «v2.pptx») остается собой: пустое имя склеило бы чужие
+// документы в одно семейство.
+func display(path string) string {
+	whole := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
 	name := stripDates(whole, isoDate, func(m []string) (time.Time, bool) { return parseDate(m[1], m[2], m[3]) })
 	name = stripDates(name, dmyDate, func(m []string) (time.Time, bool) { return parseDate(m[3], m[2], m[1]) })
 	name = parenNum.ReplaceAllString(name, " ")
 	var keep []string
 	for w := range strings.SplitSeq(separator.ReplaceAllString(name, " "), " ") {
-		if w != "" && !noise[w] && !versionNo.MatchString(w) {
+		if lw := strings.ToLower(w); w != "" && !noise[lw] && !versionNo.MatchString(lw) {
 			keep = append(keep, w)
 		}
 	}
@@ -90,29 +92,59 @@ func stem(path string) string {
 	return strings.Join(keep, " ")
 }
 
-// stripDates blanks the matches of re that are real calendar dates: 31.02 —
-// не дата и в ключе остается.
-func stripDates(name string, re *regexp.Regexp, parse func(m []string) (time.Time, bool)) string {
-	return re.ReplaceAllStringFunc(name, func(match string) string {
-		if _, ok := parse(re.FindStringSubmatch(match)); ok {
-			return " "
+// stem — ключ семейства: display без регистра.
+func stem(path string) string { return strings.ToLower(display(path)) }
+
+// dateSpan — настоящая календарная дата в имени: где она стоит и какой день.
+type dateSpan struct {
+	start, end int
+	day        time.Time
+}
+
+// dates находит в имени даты по re. Дата отдельная: цифра вплотную к ней
+// значит, что это кусок номера («0220.05.2026» — не 20.05.2026), а 31.02 —
+// не дата вовсе.
+func dates(name string, re *regexp.Regexp, parse func(m []string) (time.Time, bool)) []dateSpan {
+	var out []dateSpan
+	for _, ix := range re.FindAllStringSubmatchIndex(name, -1) {
+		start, end := ix[0], ix[1]
+		if start > 0 && isDigit(name[start-1]) || end < len(name) && isDigit(name[end]) {
+			continue
 		}
-		return match
-	})
+		sub := make([]string, len(ix)/2)
+		for i := range sub {
+			sub[i] = name[ix[2*i]:ix[2*i+1]]
+		}
+		if day, ok := parse(sub); ok {
+			out = append(out, dateSpan{start, end, day})
+		}
+	}
+	return out
+}
+
+func isDigit(c byte) bool { return c >= '0' && c <= '9' }
+
+// stripDates blanks the dates of name that re finds.
+func stripDates(name string, re *regexp.Regexp, parse func(m []string) (time.Time, bool)) string {
+	var b strings.Builder
+	last := 0
+	for _, d := range dates(name, re, parse) {
+		b.WriteString(name[last:d.start])
+		b.WriteByte(' ')
+		last = d.end
+	}
+	b.WriteString(name[last:])
+	return b.String()
 }
 
 // when — дата версии: из имени, если она там есть, иначе время изменения.
 func when(f File) time.Time {
 	base := filepath.Base(f.Path)
-	if m := isoDate.FindStringSubmatch(base); m != nil {
-		if t, ok := parseDate(m[1], m[2], m[3]); ok {
-			return t
-		}
+	if d := dates(base, isoDate, func(m []string) (time.Time, bool) { return parseDate(m[1], m[2], m[3]) }); len(d) > 0 {
+		return d[0].day
 	}
-	if m := dmyDate.FindStringSubmatch(base); m != nil {
-		if t, ok := parseDate(m[3], m[2], m[1]); ok {
-			return t
-		}
+	if d := dates(base, dmyDate, func(m []string) (time.Time, bool) { return parseDate(m[3], m[2], m[1]) }); len(d) > 0 {
+		return d[0].day
 	}
 	return f.Mod
 }
@@ -173,8 +205,7 @@ func family(fs []File) Family {
 	for i := range vs {
 		vs[i].Change = change(vs[:i], vs[i])
 	}
-	name := strings.TrimSuffix(filepath.Base(vs[0].Path), filepath.Ext(vs[0].Path))
-	return Family{Name: name, Versions: vs}
+	return Family{Name: display(vs[0].Path), Versions: vs}
 }
 
 // Один документ или два: у длинных текстов (от minJudgedLines разных строк с
@@ -343,22 +374,32 @@ func change(before []Version, v Version) Change {
 	if v.TooBig {
 		return Change{Kind: KindTooBig}
 	}
+	// Сравнивается с последней версией того же формата, у которой есть текст:
+	// слишком большая или нечитаемая версия посередине ленты ее не заслоняет.
 	var prev *Version
+	sameFormat, skipped := false, 0
 	for i, b := range slices.Backward(before) {
-		if ext(b.Path) == ext(v.Path) {
+		if ext(b.Path) != ext(v.Path) {
+			continue
+		}
+		sameFormat = true
+		if b.Text != "" {
 			prev = &before[i]
 			break
 		}
+		skipped++
 	}
 	switch {
-	case prev == nil && len(before) == 0:
+	case !sameFormat && len(before) == 0:
 		return Change{Kind: KindFirst}
-	case prev == nil:
+	case !sameFormat:
 		return Change{Kind: KindNewFormat, Format: ext(v.Path)}
-	case prev.Text == "" || v.Text == "":
+	case prev == nil || v.Text == "":
 		return Change{Kind: KindNoText}
 	}
-	return textChange(prev.Text, v.Text)
+	c := textChange(prev.Text, v.Text)
+	c.Skipped = skipped
+	return c
 }
 
 // textChange сравнивает тексты двух версий одного формата.

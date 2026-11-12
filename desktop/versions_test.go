@@ -137,3 +137,55 @@ func TestNoteText(t *testing.T) {
 		}
 	}
 }
+
+func TestSortViews_EqualDatesKeepAStableOrder(t *testing.T) {
+	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	a := []familyView{{Name: "Б", latest: d}, {Name: "А", latest: d}, {Name: "В", latest: d.AddDate(0, 0, 1)}}
+	b := []familyView{a[1], a[2], a[0]}
+	sortViews(a)
+	sortViews(b)
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			t.Fatalf("порядок зависит от входа: %v и %v", a, b)
+		}
+	}
+	if a[0].Name != "В" || a[1].Name != "А" {
+		t.Errorf("новее первым, при равных датах по имени: %v", a)
+	}
+}
+
+func TestNoteText_SaysWhenUnreadableVersionsWereSkipped(t *testing.T) {
+	got := noteText(versions.Change{Kind: versions.KindDiff, Added: []string{"a"}, Skipped: 2})
+	if !strings.Contains(got, "через 2 версии без текста") {
+		t.Errorf("подпись не говорит о пропущенных версиях: %q", got)
+	}
+	if got := noteText(versions.Change{Kind: versions.KindDiff, Added: []string{"a"}}); strings.Contains(got, "без текста") {
+		t.Errorf("лишняя пометка: %q", got)
+	}
+}
+
+func TestDisambiguate_SameNameGetsItsFolder(t *testing.T) {
+	mk := func(name, path string) familyView {
+		return familyView{Name: name, Versions: []versionView{{Path: path}}}
+	}
+	vs := []familyView{mk("ТЗ", "/Уроки/ТЗ.docx"), mk("ТЗ", "/Работа/ТЗ.docx"), mk("Смета", "/a/Смета.xlsx")}
+	disambiguate(vs)
+	if vs[0].Name != "ТЗ (Уроки)" || vs[1].Name != "ТЗ (Работа)" {
+		t.Errorf("одинаковые имена не различены папкой: %q, %q", vs[0].Name, vs[1].Name)
+	}
+	if vs[2].Name != "Смета" {
+		t.Errorf("уникальное имя тронуто: %q", vs[2].Name)
+	}
+}
+
+func TestSortViews_EqualDatesAndNamesGoByFirstPath(t *testing.T) {
+	d := time.Date(2026, 11, 5, 0, 0, 0, 0, time.UTC)
+	mk := func(p string) familyView {
+		return familyView{Name: "ТЗ", latest: d, Versions: []versionView{{Path: p}}}
+	}
+	a := []familyView{mk("/б/ТЗ.docx"), mk("/а/ТЗ.docx")}
+	sortViews(a)
+	if a[0].Versions[0].Path != "/а/ТЗ.docx" {
+		t.Errorf("при равных дате и имени порядок по пути: %v", a)
+	}
+}
