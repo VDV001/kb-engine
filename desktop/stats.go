@@ -58,17 +58,19 @@ type statsCall struct {
 	FirstMS int64  `json:"firstMs"`
 	TookMS  int64  `json:"tookMs"`
 	Failed  bool   `json:"failed"`
+	Chat    string `json:"chat,omitempty"` // чат окна (#541); пусто — вызов вне чата
 }
 
 // statsView is the statistics of the last days for the page.
 type statsView struct {
-	Days     []statsDay   `json:"days"`
-	Purposes []statsGroup `json:"purposes"`
-	Models   []statsGroup `json:"models"`
-	Total    statsTotals  `json:"total"`
-	Prev     statsTotals  `json:"prev"`
-	Calls    []statsCall  `json:"calls"`
-	Bad      int          `json:"bad"` // нечитаемых строк журнала
+	Days     []statsDay        `json:"days"`
+	Purposes []statsGroup      `json:"purposes"`
+	Models   []statsGroup      `json:"models"`
+	Total    statsTotals       `json:"total"`
+	Prev     statsTotals       `json:"prev"`
+	Calls    []statsCall       `json:"calls"`
+	Chats    map[string]string `json:"chats"` // названия чатов из Calls: Журнал фильтрует по чату (#541)
+	Bad      int               `json:"bad"`   // нечитаемых строк журнала
 }
 
 func totalsView(t usage.Totals) statsTotals {
@@ -101,7 +103,7 @@ func (d *chatDesk) Stats(days int) (statsView, error) {
 	}
 	for _, c := range r.Calls {
 		v.Calls = append(v.Calls, statsCall{c.At().In(d.now().Location()).Format(time.RFC3339), string(c.Purpose()), purposeTitles[c.Purpose()],
-			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed()})
+			c.Model(), c.In(), c.Out(), c.Counted(), c.FirstToken().Milliseconds(), c.Took().Milliseconds(), c.Failed(), ""})
 	}
 	return v, nil
 }
