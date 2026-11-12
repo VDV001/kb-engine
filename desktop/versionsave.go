@@ -69,7 +69,7 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 	}
 	return func(ctx context.Context, p chat.VersionProposal) error {
 		if len(p.Text) > maxProposalBytes {
-			return errors.New("текст слишком большой для одной версии")
+			return errors.New("текст слишком большой для одной версии, " + chat.LongDocAdvice)
 		}
 		if n := len([]rune(joinMark(p.Note, p.Description))); n > versionbook.MaxNoteRunes {
 			return fmt.Errorf("описание файла и «что нового» вместе длиннее %d знаков (%d): сократи их", versionbook.MaxNoteRunes, n)
@@ -79,7 +79,7 @@ func (d *chatDesk) proposeVersionFor(chatID string) func(ctx context.Context, p 
 			return err
 		}
 		if n := d.longestVersion(ctx, fam); n > chat.MaxReadRunes {
-			return fmt.Errorf("документ длиннее, чем модель читает за раз (%d знаков из %d): новую версию из чата сохранить нельзя, скажи это человеку", n, chat.MaxReadRunes)
+			return errors.New(chat.LongDocument(n))
 		}
 		latest := fam.Versions[len(fam.Versions)-1]
 		pi := pendingIteration{ID: newChatID(), ChatID: chatID, Family: fam.Name, Folder: filepath.Dir(latest.Path),
