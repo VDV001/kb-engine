@@ -143,8 +143,6 @@ func noteText(c versions.Change) string {
 		return "текст недоступен, сравнить нельзя"
 	case versions.KindTooBig:
 		return "слишком большой, не читался"
-	case versions.KindRewrite:
-		return fmt.Sprintf("почти другой документ: новых строк %d, убранных %d, всего в этой версии %d", len(c.Added), len(c.Removed), c.Total)
 	case versions.KindLayoutOnly:
 		return "текст не менялся, файл отличается (правка оформления или вложений)"
 	}

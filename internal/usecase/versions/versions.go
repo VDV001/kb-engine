@@ -36,7 +36,6 @@ const (
 	KindLayoutOnly                 // текст тот же, файл другой: правка оформления или вложений
 	KindDiff                       // Added и Removed — строки, что появились и что ушли
 	KindTooBig                     // файл больше предела чтения, не сравнивался
-	KindRewrite                    // почти ничего общего с предыдущей: скорее другой документ; Total — строк в этой версии
 )
 
 // Change — что нового в версии относительно предыдущей того же формата.
@@ -45,7 +44,6 @@ type Change struct {
 	Format  string // расширение без точки, для KindNewFormat
 	Added   []string
 	Removed []string
-	Total   int // строк текста в этой версии (для KindRewrite)
 }
 
 // Version — версия в семействе с описанием «что нового».
@@ -136,8 +134,9 @@ func Key(path string) string { return stem(path) }
 
 func ext(path string) string { return strings.TrimPrefix(strings.ToLower(filepath.Ext(path)), ".") }
 
-// Group собирает файлы в семейства: одно имя без шума — одно семейство, в любой
-// папке и формате. Байт-в-байт копии (по хешу) уходят в Dups самой ранней
+// Group собирает файлы в семейства: одно имя без шума — кандидат в одно
+// семейство, в любой папке и формате; тексты решают, один это документ или
+// несколько (split). Байт-в-байт копии (по хешу) уходят в Dups самой ранней
 // версии и версиями не считаются.
 func Group(files []File) []Family {
 	byStem := map[string][]File{}
@@ -147,7 +146,9 @@ func Group(files []File) []Family {
 	}
 	fams := make([]Family, 0, len(byStem))
 	for _, fs := range byStem {
-		fams = append(fams, family(fs))
+		for _, doc := range split(fs) {
+			fams = append(fams, family(doc))
+		}
 	}
 	slices.SortFunc(fams, func(a, b Family) int {
 		return cmp.Or(when(a.Versions[0].File).Compare(when(b.Versions[0].File)), cmp.Compare(a.Name, b.Name))
@@ -176,13 +177,92 @@ func family(fs []File) Family {
 	return Family{Name: name, Versions: vs}
 }
 
-// Замена, а не правка: от длинного текста осталось меньше rewriteShare.
-// Короткие тексты замену не получают — у записки в три строки правка и есть
-// почти весь текст.
+// Один документ или два: у длинных текстов (от minJudgedLines строк с обеих
+// сторон) общей должна быть хотя бы доля sameDocShare строк. Короткие тексты
+// не судим: у записки в три строки правка и есть почти весь текст.
 const (
-	rewriteShare    = 0.3
-	minRewriteLines = 10
+	sameDocShare   = 0.3
+	minJudgedLines = 10
 )
+
+// split разводит файлы одного имени по документам. Файлы идут по времени; каждый
+// садится к документу, на который похож текстом, иначе открывает новый.
+func split(fs []File) [][]File {
+	slices.SortFunc(fs, func(a, b File) int {
+		return cmp.Or(when(a).Compare(when(b)), cmp.Compare(a.Path, b.Path))
+	})
+	var docs [][]File
+	for _, f := range fs {
+		if i := home(docs, f); i >= 0 {
+			docs[i] = append(docs[i], f)
+		} else {
+			docs = append(docs, []File{f})
+		}
+	}
+	return docs
+}
+
+// home — индекс документа, к которому относится f, или -1 (новый документ).
+// Копия по хешу идет к оригиналу. Дальше f сравнивается с последней версией
+// каждого документа в том же формате: у PDF строки рвутся иначе, чем у docx,
+// и сравнение через формат разводило бы один документ. Где судить не из чего
+// (нет текста, короткий текст, нет версии в этом формате), f садится к
+// последнему из таких документов.
+//
+// ponytail: «последний из неясных» — по порядку появления, не по дате.
+// Потолок: файл без текста может сесть не к тому из двух одноимённых документов.
+// Путь: приписывать по ближайшей дате версии.
+func home(docs [][]File, f File) int {
+	if f.Hash != "" {
+		for i, d := range docs {
+			if slices.ContainsFunc(d, func(m File) bool { return m.Hash == f.Hash }) {
+				return i
+			}
+		}
+	}
+	if f.Text == "" {
+		return len(docs) - 1
+	}
+	best, bestShare, unsure := -1, 0.0, -1
+	for i, d := range docs {
+		prev := lastTextIn(d, ext(f.Path))
+		if prev == nil {
+			unsure = i
+			continue
+		}
+		share, judged := similarity(prev.Text, f.Text)
+		switch {
+		case !judged:
+			unsure = i
+		case share >= sameDocShare && share > bestShare:
+			best, bestShare = i, share
+		}
+	}
+	if best >= 0 {
+		return best
+	}
+	return unsure
+}
+
+// lastTextIn — последняя версия документа в формате format, у которой есть текст.
+func lastTextIn(d []File, format string) *File {
+	for j, m := range slices.Backward(d) {
+		if m.Text != "" && ext(m.Path) == format {
+			return &d[j]
+		}
+	}
+	return nil
+}
+
+// similarity — доля строк нового текста, что есть в старом (от большего из
+// двух). judged=false: текст короче minJudgedLines, судить рано.
+func similarity(oldText, newText string) (share float64, judged bool) {
+	added, _, oldN, newN := lineDiff(oldText, newText)
+	if oldN < minJudgedLines || newN < minJudgedLines {
+		return 0, false
+	}
+	return float64(newN-len(added)) / float64(max(oldN, newN)), true
+}
 
 // change описывает версию относительно предыдущей версии того же формата.
 func change(before []Version, v Version) Change {
@@ -209,12 +289,9 @@ func change(before []Version, v Version) Change {
 
 // textChange сравнивает тексты двух версий одного формата.
 func textChange(oldText, newText string) Change {
-	added, removed, oldN, newN := lineDiff(oldText, newText)
+	added, removed, _, _ := lineDiff(oldText, newText)
 	if len(added) == 0 && len(removed) == 0 {
 		return Change{Kind: KindLayoutOnly}
-	}
-	if kept := newN - len(added); newN >= minRewriteLines && float64(kept) < rewriteShare*float64(max(oldN, newN)) {
-		return Change{Kind: KindRewrite, Added: added, Removed: removed, Total: newN}
 	}
 	return Change{Kind: KindDiff, Added: added, Removed: removed}
 }
