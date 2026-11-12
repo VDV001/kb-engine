@@ -226,3 +226,60 @@ func TestGroup_ShortDocumentsAreNeverARewrite(t *testing.T) {
 		t.Errorf("короткий документ принят за замену: %+v", c)
 	}
 }
+
+func TestGroup_SameNameDifferentTextsAreDifferentFamilies(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/Уроки/T3.docx", "x", numbered("a", 40), day(11, 5)),
+		file("/Работа/T3.docx", "y", numbered("b", 40), day(11, 10)),
+	})
+	if len(got) != 2 {
+		t.Fatalf("два разных документа с одним именем склеились: %+v", got)
+	}
+	for _, f := range got {
+		if len(f.Versions) != 1 || f.Versions[0].Change.Kind != versions.KindFirst {
+			t.Errorf("каждый документ — своя первая версия: %+v", f)
+		}
+	}
+}
+
+func TestGroup_EditsKeepOneFamilyWhileAnotherStaysApart(t *testing.T) {
+	a := numbered("a", 40)
+	got := versions.Group([]versions.File{
+		file("/p/T3_2026_11_01.docx", "h1", a, day(11, 1)),
+		file("/q/T3.docx", "h2", numbered("b", 40), day(11, 3)),
+		file("/p/T3_2026_11_05.docx", "h3", strings.Replace(a, "a7\n", "правка\n", 1), day(11, 5)),
+	})
+	if len(got) != 2 {
+		t.Fatalf("ждали 2 семейства, есть %d: %+v", len(got), got)
+	}
+	var mine versions.Family
+	for _, f := range got {
+		if len(f.Versions) == 2 {
+			mine = f
+		}
+	}
+	if len(mine.Versions) != 2 || mine.Versions[1].Change.Kind != versions.KindDiff {
+		t.Errorf("правки первого документа потерялись: %+v", got)
+	}
+}
+
+func TestGroup_NoJudgmentKeepsFamilyTogether(t *testing.T) {
+	for name, fs := range map[string][]versions.File{
+		"короткие тексты": {
+			file("/a/Записка_2026_11_05.docx", "x", "Привет\nМир", day(11, 5)),
+			file("/b/Записка_2026_11_10.docx", "y", "Пока\nСвет", day(11, 10)),
+		},
+		"нет текста": {
+			file("/a/Скан_2026_11_05.pdf", "x", "", day(11, 5)),
+			file("/b/Скан_2026_11_10.pdf", "y", numbered("b", 40), day(11, 10)),
+		},
+		"другой формат": {
+			file("/a/Отчет_2026_11_05.docx", "x", numbered("a", 40), day(11, 5)),
+			file("/b/Отчет_2026_11_10.pdf", "y", numbered("b", 40), day(11, 10)),
+		},
+	} {
+		if got := versions.Group(fs); len(got) != 1 || len(got[0].Versions) != 2 {
+			t.Errorf("%s: семейство распалось без оснований: %+v", name, got)
+		}
+	}
+}
