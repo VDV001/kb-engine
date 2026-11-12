@@ -137,3 +137,13 @@ func choices(vs []VersionInfo) []versions.Choice {
 	}
 	return out
 }
+
+// VersionProposal — предложение модели сохранить результат работы новой
+// итерацией документа (#548): ждет подтверждения человека, без него ничего не
+// создается.
+type VersionProposal struct {
+	Family      string // имя документа, у которого появится новая версия
+	Text        string // содержимое новой версии
+	Description string // описание файла
+	Note        string // описание итерации: что нового
+}
