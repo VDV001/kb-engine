@@ -187,6 +187,31 @@ func TestDescribeVersion_MarkdownBecomesOnePlainLine(t *testing.T) {
 	}
 }
 
+// Мелочи свертки (ревью #577): «#541» — не заголовок, многоточие — конец
+// предложения, ответ из одной разметки — пустой ответ, а не пустая заметка.
+func TestPlainNote(t *testing.T) {
+	for in, want := range map[string]string{
+		"#541 закрыт, срок сокращен":          "#541 закрыт, срок сокращен",
+		"Срок сокращен…\nДобавлено: гарантия": "Срок сокращен… Добавлено: гарантия",
+		"## Итог\nКороче срок":                "Итог: Короче срок",
+		"**\n- \n## ":                         "",
+	} {
+		if got := plainNote(in); got != want {
+			t.Errorf("plainNote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestDescribeVersion_MarkupOnlyReplyIsAnError(t *testing.T) {
+	cd, m := localChat(t)
+	_, vd, v1, v2 := kp(t)
+	cd.versions = vd
+	m.reply = "**\n- "
+	if got, err := cd.DescribeVersion(v1, v2, true); err == nil {
+		t.Errorf("пустая после свертки заметка %q принята", got)
+	}
+}
+
 func TestDescribeVersion_ModelFailureIsReadable(t *testing.T) {
 	cd, m := localChat(t)
 	_, vd, v1, v2 := kp(t)
