@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -436,5 +437,73 @@ func TestCompare_PairMustBeOneDocumentOldFirst(t *testing.T) {
 	}
 	if _, err := d.Compare(context.Background(), v1, other2); err == nil {
 		t.Error("версии разных документов сравнились")
+	}
+}
+
+// Заметки пишет окно, а MCP — отдельный долгоживущий процесс над тем же файлом:
+// он должен видеть новые заметки без перезапуска.
+func TestMarks_ChangedByAnotherProcessAreSeenWithoutRestart(t *testing.T) {
+	root, d, v1, v2 := kp(t)
+	other := restarted(t, root, d)
+	if _, err := other.Families(context.Background(), "", true); err != nil {
+		t.Fatal(err)
+	}
+	// у d файла заметок еще нет: пустой набор не должен залипнуть
+	if got := versionsOf(t, d)[0].Mark; got != "" {
+		t.Fatalf("заметки до записи: %q", got)
+	}
+	if err := other.Mark(v1, "отправлено Алексею"); err != nil {
+		t.Fatal(err)
+	}
+	if got := versionsOf(t, d)[0].Mark; got != "отправлено Алексею" {
+		t.Errorf("заметка соседнего процесса не видна: %q", got)
+	}
+	if err := other.SetCurrent(v2, true); err != nil {
+		t.Fatal(err)
+	}
+	if !versionsOf(t, d)[1].Current {
+		t.Error("значок соседнего процесса не виден")
+	}
+}
+
+func TestDesk_NoSourceIsNamedNotGeneric(t *testing.T) {
+	d := New(func() *localfiles.Source { return nil }, "")
+	if _, err := d.Text(context.Background(), "/a/b.docx"); !errors.Is(err, versions.ErrNoSource) {
+		t.Errorf("Text без источника: %v", err)
+	}
+	if _, err := d.Compare(context.Background(), "/a/b.docx", "/a/c.docx"); !errors.Is(err, versions.ErrNoSource) {
+		t.Errorf("Compare без источника: %v", err)
+	}
+}
+
+// Обход папок идет секунды; заметки, значок и чтение текста не должны ждать его.
+func TestDesk_SlowWalkDoesNotBlockMarks(t *testing.T) {
+	_, d, v1, _ := kp(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	d.walk = func(ctx context.Context, src *localfiles.Source) ([]versions.File, error) {
+		close(entered)
+		<-release
+		return src.Versions(ctx)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := d.Families(context.Background(), "", true); done <- err }()
+	select {
+	case <-entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("обход не начался")
+	}
+	marked := make(chan error, 1)
+	go func() { marked <- d.Mark(v1, "заметка во время обхода") }()
+	select {
+	case err := <-marked:
+		if err != nil {
+			t.Errorf("Mark во время обхода: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Error("Mark ждет конца обхода папок")
+	}
+	close(release)
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

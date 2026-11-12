@@ -58,6 +58,10 @@ type Desk struct {
 	source    func() *localfiles.Source
 	marksPath string // версии-заметки и значки лежат рядом с config.json, 0600
 
+	// walk — обход папок; по умолчанию src.Versions. Шов нужен тесту, которому
+	// требуется медленный обход.
+	walk func(ctx context.Context, src *localfiles.Source) ([]versions.File, error)
+
 	mu       sync.Mutex
 	src      *localfiles.Source // для какого источника собран список
 	at       time.Time
@@ -69,7 +73,7 @@ type Desk struct {
 // New returns a Desk over the current source of the window; marksPath — файл
 // заметок и значков (0600), пустой — отметки не сохраняются.
 func New(source func() *localfiles.Source, marksPath string) *Desk {
-	return &Desk{source: source, marksPath: marksPath}
+	return &Desk{source: source, marksPath: marksPath, walk: func(ctx context.Context, src *localfiles.Source) ([]versions.File, error) { return src.Versions(ctx) }}
 }
 
 // Families returns the families matching q (пустой — все, где есть что
@@ -288,7 +292,7 @@ func (d *Desk) collect(ctx context.Context, src *localfiles.Source, fresh bool) 
 	if !fresh && d.src == src && time.Since(d.at) < versionsTTL {
 		return d.cache, nil
 	}
-	files, err := src.Versions(ctx)
+	files, err := d.walk(ctx, src)
 	if err != nil {
 		return nil, err
 	}
