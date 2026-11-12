@@ -648,6 +648,7 @@ function fitBar() {
 new ResizeObserver(() => fitBar()).observe($(".bar"));
 
 // --- Отрисовка -----------------------------------------------------------------
+let verSeq = 0, verTimer = 0, verSeen = false; // «Артефакты»: verSeen — вкладка уже была открыта в прошлой отрисовке
 function render() {
   // Фильтр источника оставляет только его записи: у базы знаний — записи,
   // у папки — ее файлы.
@@ -662,7 +663,9 @@ function render() {
   $("#app").classList.toggle("art-open", art);
   $("#artifacts-view").hidden = !art;
   if (showModule(moduleOf(state.tab))) return;
-  if (art) { renderArtifacts(); return; }
+  if (!art) verSeen = false;
+  // Скрытый список выдачи не должен отвечать на стрелки и Enter.
+  if (art) { state.items = []; state.sel = 0; renderArtifacts(); return; }
 
   // «Показано» у источника — сколько его записей в текущей вкладке до фильтра:
   // клик по одному источнику не обнуляет счет остальных.
@@ -1085,15 +1088,23 @@ function sizeText(b) {
 // Вкладка «Артефакты» (#547): список приходит из Go целиком, запрос фильтрует там же;
 // запрос — строка поиска окна. Обход папок читает и хеширует документы, поэтому
 // свежим он идет только по устаревшему минутному кэшу.
-let verSeq = 0;
-async function renderArtifacts() {
+function renderArtifacts() {
+  // Вход на вкладку собирает документы заново, набор запроса — из минутного кэша
+  // и после паузы в наборе: обход папок читает и хеширует файлы.
+  const fresh = !verSeen;
+  verSeen = true;
+  clearTimeout(verTimer);
+  verTimer = setTimeout(() => loadArtifacts(fresh), fresh ? 0 : 200);
+}
+async function loadArtifacts(fresh) {
   const box = $("#ver-list"), q = state.q || "";
   if (!native() || !native().Versions) { box.innerHTML = `<p class="muted">Артефакты видны в окне приложения.</p>`; return; }
   const seq = ++verSeq;
   if (!box.firstChild) box.innerHTML = `<p class="muted">Собираю документы…</p>`;
   let fams = [];
-  try { fams = (await native().Versions(q, false)) || []; } catch (e) { if (seq === verSeq) box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
-  if (seq !== verSeq) return; // пришел ответ на устаревший запрос
+  const live = () => seq === verSeq && state.tab === "artifacts"; // ответ не перетирает ни новый запрос, ни другой экран
+  try { fams = (await native().Versions(q, fresh)) || []; } catch (e) { if (live()) { $("#count").textContent = ""; box.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; } return; }
+  if (!live()) return;
   $("#count").textContent = fams.length ? `${fams.length} ${plural(fams.length, "документ", "документа", "документов")}` : "";
   if (!fams.length) { box.innerHTML = `<p class="muted">${q ? "Ничего не нашлось." : "Документов с несколькими версиями нет. Одинокий файл находится по имени в строке поиска."}</p>`; return; }
   box.innerHTML = fams.map((f) => `<section class="ver-fam"><h4>${esc(f.name)} · ${f.versions.length} ${plural(f.versions.length, "версия", "версии", "версий")}</h4>${
