@@ -53,6 +53,7 @@ type toolRun struct {
 	found    []Doc
 	read     []Doc
 	remember func(ctx context.Context, section, text string) error
+	versions Versions
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -63,7 +64,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		return Turn{}, ErrNoReader
 	}
 	msgs := toolsMessages(r)
-	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember}
+	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions}
 	offered := offeredTools(r)
 	for step := 0; ; step++ {
 		offer := offered
@@ -97,6 +98,9 @@ func toolsMessages(r Request) []ModelMessage {
 	if r.Remember != nil {
 		prompt += rememberPrompt
 	}
+	if r.Versions != nil {
+		prompt += versionsPrompt
+	}
 	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(prompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
@@ -108,17 +112,22 @@ func toolsMessages(r Request) []ModelMessage {
 	return append(msgs, ModelMessage{Role: RoleUser, Content: question})
 }
 
-// offeredTools: поиск и чтение всегда, «запомнить» — когда портрет ведется.
+// offeredTools: поиск и чтение всегда, версии — когда у окна они есть,
+// «запомнить» — когда портрет ведется.
 func offeredTools(r Request) []Tool {
-	if r.Remember == nil {
-		return tools
+	offered := slices.Clone(tools)
+	if r.Versions != nil {
+		offered = append(offered, versionTools...)
 	}
-	return append(slices.Clone(tools), rememberTool)
+	if r.Remember != nil {
+		offered = append(offered, rememberTool)
+	}
+	return offered
 }
 
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
-	var args struct{ Q, Ref, Section, Text string }
+	var args struct{ Q, Ref, Section, Text, Which string }
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
 	}
@@ -137,6 +146,14 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		}
 		r.read = appendNew(r.read, d)
 		return d.Title + "\n" + trimRunes(d.Text, MaxReadRunes)
+	case "versions", "open_version":
+		if r.versions == nil {
+			return "ошибка: версии документов недоступны"
+		}
+		if c.Name == "versions" {
+			return r.listVersions(ctx, args.Q)
+		}
+		return r.openVersion(ctx, args.Q, args.Which)
 	case "remember":
 		if r.remember == nil {
 			return "ошибка: портрет не ведется"
