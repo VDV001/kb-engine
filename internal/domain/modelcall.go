@@ -29,7 +29,7 @@ const (
 	CallDescribe CallPurpose = "describe" // описание версии документа (#547)
 )
 
-var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak}
+var callPurposes = []CallPurpose{CallAnswer, CallSearch, CallExtract, CallCompress, CallListen, CallSpeak, CallDescribe}
 
 // ModelCall is one request to a model.
 type ModelCall struct {

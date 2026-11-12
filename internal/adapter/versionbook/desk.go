@@ -135,14 +135,14 @@ func (d *Desk) find(path string) (fam, ver int, ok bool) {
 	return 0, 0, false
 }
 
-// maxNoteRunes — длиннее заметка не нужна: это «отправлено Алексею», а не письмо.
-const maxNoteRunes = 500
+// MaxNoteRunes — длиннее заметка не нужна: это «отправлено Алексею», а не письмо.
+const MaxNoteRunes = 500
 
 // Mark saves the owner's note to a version; an empty note removes it.
 func (d *Desk) Mark(path, note string) error {
 	note = strings.TrimSpace(note)
-	if n := len([]rune(note)); n > maxNoteRunes {
-		return fmt.Errorf("заметка длиннее %d знаков (%d)", maxNoteRunes, n)
+	if n := len([]rune(note)); n > MaxNoteRunes {
+		return fmt.Errorf("заметка длиннее %d знаков (%d)", MaxNoteRunes, n)
 	}
 	return d.update(path, func(marks map[string]versionMark, key string, _ []VersionView) {
 		m := marks[key]

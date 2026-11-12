@@ -12,6 +12,7 @@ type (
 	versionsDesk = versionbook.Desk
 	familyView   = versionbook.FamilyView
 	compareView  = versionbook.CompareView
+	compareLine  = versionbook.CompareLine
 )
 
 func newVersionsDesk(source func() *localfiles.Source, marksPath string) *versionsDesk {
