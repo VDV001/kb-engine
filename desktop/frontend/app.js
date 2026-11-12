@@ -2555,7 +2555,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [] };
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
 const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
@@ -2891,7 +2891,7 @@ function renderChat() {
     const p = memState.p;
     if (!chatState.busy && memOn(p) && p.size > p.budget && !chatState.portraitMode[""] && !(chatState.over && chatState.over.chat === ""))
       chatState.over = { chat: "", size: p.size, budget: p.budget, props: null, start: true };
-    log.innerHTML = memInChat() + `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
+    log.innerHTML = memInChat() + verOffersInChat() + `<div class="chat-hello"><p>Спросите о своих записях и файлах.</p><p class="muted">Ответ — со ссылками на документы; к чату можно вернуться в колонке чатов.</p></div>`;
   } else {
     const folded = (c.compressed && c.compressed.folded) || 0;
     log.innerHTML = c.messages.map((m, i) => (m.role === "user"
@@ -2899,7 +2899,7 @@ function renderChat() {
       : `<div class="msg bot">${answerHTML(m.text)}</div>`)
       + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
-  if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat());
+  if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat() + verOffersInChat());
   if (chatState.busy) {
     log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking" id="chat-partial"></div>`);
     paintPartial();
@@ -3702,6 +3702,44 @@ function memOffer(chat, facts) {
 if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
   if (!(chatState.settings || {}).memoryQuiet && ev && ev.facts && ev.facts.length) memOffer(ev.chat, ev.facts);
   loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
+});
+// Новая итерация из чата (#548): модель только предлагает (versions:proposal), файл
+// появляется после «Сохранить новой версией». Описание и «что нового» человек
+// правит здесь же; прежние версии не меняются.
+function verOffersInChat() {
+  return chatState.verOffers.filter((o) => !o.chatId || o.chatId === chatState.id).map((o) => `<div class="ver-offer" data-vo="${esc(o.id)}">
+    <span class="muted">Сохранить как новую версию «${esc(o.family)}»? Файл <b>${esc(o.file)}</b> ляжет в ${esc(o.folder)}; прежние версии не меняются.</span>
+    <label class="muted">Описание файла<input data-vo-desc maxlength="300" value="${esc(o.description || "")}"></label>
+    <label class="muted">Что нового<input data-vo-note maxlength="300" value="${esc(o.note || "")}"></label>
+    <div class="mem-acts"><button type="button" class="btn primary" data-vo-save>Сохранить новой версией</button><button type="button" class="btn" data-vo-drop>Отклонить</button></div>
+  </div>`).join("");
+}
+function verOfferGone(id) { chatState.verOffers = chatState.verOffers.filter((o) => o.id !== id); renderChat(); }
+if (window.runtime) window.runtime.EventsOn("versions:proposal", (o) => {
+  if (!o || chatState.verOffers.some((x) => x.id === o.id)) return;
+  chatState.verOffers.push(o);
+  if (!chatState.busy) renderChat();
+});
+native()?.VersionProposals?.().then((list) => { if (list && list.length) { chatState.verOffers = list; if (!chatState.busy) renderChat(); } }).catch(() => {});
+$("#chat-log").addEventListener("input", (e) => {
+  const card = e.target.closest("[data-vo]");
+  const o = card && chatState.verOffers.find((x) => x.id === card.dataset.vo);
+  if (!o) return;
+  if (e.target.matches("[data-vo-desc]")) o.description = e.target.value;
+  if (e.target.matches("[data-vo-note]")) o.note = e.target.value;
+});
+$("#chat-log").addEventListener("click", async (e) => {
+  const card = e.target.closest("[data-vo]");
+  if (!card) return;
+  const id = card.dataset.vo, o = chatState.verOffers.find((x) => x.id === id);
+  if (e.target.closest("[data-vo-drop]")) { try { await native().DropVersionProposal(id); } catch (err) { /* предложение и так не сохранится */ } verOfferGone(id); return; }
+  if (!e.target.closest("[data-vo-save]") || !o) return;
+  try {
+    const path = await native().SaveVersionProposal(id, o.description || "", o.note || "");
+    toast("Версия сохранена", path);
+    verOfferGone(id);
+    if (state.tab === "artifacts") loadArtifacts(true);
+  } catch (err) { toast("Версия не сохранена", errText(err), null, "bad"); }
 });
 // memInChat — карточки после ответа: «запомнить?» и «портрет не поместился».
 function memInChat() {

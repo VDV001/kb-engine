@@ -23,6 +23,7 @@ if (find("пароль буфер").length !== 1) fail("«пароль буфе�
 if (!find("артефакты").length || !find("версии документа").length || !find("дубль").length) fail("справка не знает про Артефакты: " + JSON.stringify(find("артефакты")));
 if (!find("заметка версии").length || !find("актуальная").length || !find("сравнить версии").length) fail("справка не знает про заметки, значок и сравнение версий");
 if (!find("описать версию").length || !find("версии в чате").length) fail("справка не знает про описание версий и версии в чате");
+if (!find("новая версия из чата").length) fail("справка не знает про новую версию из чата");
 if (find("zzzz").length) fail("«zzzz» что-то нашел");
 if (!find("терминал").some((c) => c.startsWith("kbengine tui"))) fail("«терминал» не нашел kbengine tui");
 if (!find("выдать токен").some((c) => c.startsWith("kbengine users add"))) fail("«выдать токен» не нашел users add: " + JSON.stringify(find("выдать токен")));
