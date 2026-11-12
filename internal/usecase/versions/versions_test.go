@@ -269,3 +269,121 @@ func TestGroup_NoJudgmentKeepsFamilyTogether(t *testing.T) {
 		}
 	}
 }
+
+// numberedRange возвращает prefix{from}..prefix{to-1}, по строке на номер.
+func numberedRange(prefix string, from, to int) string {
+	var b strings.Builder
+	for i := from; i < to; i++ {
+		fmt.Fprintf(&b, "%s%d\n", prefix, i)
+	}
+	return b.String()
+}
+
+func famWith(t *testing.T, fams []versions.Family, path string) versions.Family {
+	t.Helper()
+	for _, f := range fams {
+		for _, v := range f.Versions {
+			if v.Path == path {
+				return f
+			}
+			if slices.Contains(v.Dups, path) {
+				return f
+			}
+		}
+	}
+	t.Fatalf("%s не найден ни в одном семействе: %+v", path, fams)
+	return versions.Family{}
+}
+
+func TestGroup_OtherFormatJoinsTheDocumentItResembles(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/T3.docx", "h1", numbered("a", 40), day(11, 1)),
+		file("/b/T3.docx", "h2", numbered("b", 40), day(11, 3)),
+		file("/a/T3.pdf", "h3", numbered("a", 40), day(11, 5)), // PDF документа A, пришёл позже B
+	})
+	if len(got) != 2 {
+		t.Fatalf("ждали 2 семейства: %+v", got)
+	}
+	if f := famWith(t, got, "/a/T3.pdf"); famWith(t, got, "/a/T3.docx").Versions[0].Path != f.Versions[0].Path {
+		t.Errorf("PDF документа A ушёл в чужое семейство: %+v", got)
+	}
+}
+
+func TestGroup_FileWithoutTextJoinsTheDocumentInItsFolder(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/T3.docx", "h1", numbered("a", 40), day(11, 1)),
+		file("/b/T3.docx", "h2", numbered("b", 40), day(11, 3)),
+		file("/a/T3.pdf", "h3", "", day(11, 5)), // скан рядом с A
+	})
+	if f := famWith(t, got, "/a/T3.pdf"); !slices.ContainsFunc(f.Versions, func(v versions.Version) bool { return v.Path == "/a/T3.docx" }) {
+		t.Errorf("скан ушёл не в семейство своей папки: %+v", got)
+	}
+}
+
+func TestGroup_FileWithoutTextAndFolderClueJoinsTheNearestInTime(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/T3_2026_11_01.docx", "h1", numbered("a", 40), day(11, 1)),
+		file("/b/T3_2026_11_03.docx", "h2", numbered("b", 40), day(11, 3)),
+		file("/a/T3_2026_11_08.docx", "h3", numberedRange("a", 0, 39)+"правка\n", day(11, 8)),
+		file("/c/T3_2026_11_10.pdf", "h4", "", day(11, 10)),
+	})
+	if f := famWith(t, got, "/c/T3_2026_11_10.pdf"); !slices.ContainsFunc(f.Versions, func(v versions.Version) bool { return strings.HasSuffix(v.Path, "11_08.docx") }) {
+		t.Errorf("файл без подсказок ушёл не к ближайшему по времени документу: %+v", got)
+	}
+}
+
+func TestGroup_TrimmedDocumentStaysInTheFamily(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Спека_2026_11_01.docx", "h1", numbered("a", 200), day(11, 1)),
+		file("/a/Спека_2026_11_05.docx", "h2", numbered("a", 50), day(11, 5)), // та же спека, урезанная
+	})
+	if len(got) != 1 || len(got[0].Versions) != 2 {
+		t.Errorf("урезанный документ ушёл из семейства: %+v", got)
+	}
+}
+
+func TestGroup_RevertToAnEarlierVersionJoinsItsFamily(t *testing.T) {
+	got := versions.Group([]versions.File{
+		file("/a/Док_2026_11_01.docx", "h1", numberedRange("a", 0, 40), day(11, 1)),
+		file("/a/Док_2026_11_02.docx", "h2", numberedRange("a", 0, 20)+numberedRange("c", 0, 20), day(11, 2)),
+		file("/a/Док_2026_11_03.docx", "h3", numberedRange("c", 0, 20)+numberedRange("d", 0, 20), day(11, 3)),
+		file("/a/Док_2026_11_04.docx", "h4", numberedRange("a", 0, 40), day(11, 4)), // откат к первой версии
+	})
+	if len(got) != 1 || len(got[0].Versions) != 4 {
+		t.Errorf("откат к старой версии открыл новое семейство: %d семейств %+v", len(got), got)
+	}
+}
+
+func TestGroup_JoinsTheCloserOfTwoDocuments(t *testing.T) {
+	b := numbered("b", 40)
+	got := versions.Group([]versions.File{
+		file("/a/T3.docx", "h1", numbered("a", 40), day(11, 1)),
+		file("/b/T3.docx", "h2", b, day(11, 3)),
+		file("/b/T3_2026_11_05.docx", "h3", strings.Replace(b, "b7\n", "правка\n", 1), day(11, 5)),
+	})
+	if len(got) != 2 {
+		t.Fatalf("ждали 2 семейства: %+v", got)
+	}
+	if f := famWith(t, got, "/b/T3_2026_11_05.docx"); len(f.Versions) != 2 || !slices.ContainsFunc(f.Versions, func(v versions.Version) bool { return v.Path == "/b/T3.docx" }) {
+		t.Errorf("правка B ушла не к B: %+v", got)
+	}
+}
+
+func TestGroup_ManyBigSameNameFilesAreFast(t *testing.T) {
+	var fs []versions.File
+	for i := range 8 {
+		p := "a"
+		if i%2 == 1 {
+			p = "b"
+		}
+		fs = append(fs, file(fmt.Sprintf("/d%d/T3.docx", i), fmt.Sprint("h", i), numberedRange(p, 0, 20000)+numberedRange("u", i*10, i*10+5), day(11, i+1)))
+	}
+	start := time.Now()
+	got := versions.Group(fs)
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("8 файлов по 20 тыс. строк разведены за %v", d)
+	}
+	if len(got) != 2 {
+		t.Errorf("ждали 2 документа, есть %d", len(got))
+	}
+}
