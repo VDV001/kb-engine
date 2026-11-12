@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/daniil/kb-engine/internal/usecase/versions"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/versions"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 )

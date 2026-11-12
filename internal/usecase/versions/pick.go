@@ -1,6 +1,7 @@
 package versions
 
 import (
+	"context"
 	"errors"
 	"regexp"
 	"slices"
@@ -149,4 +150,14 @@ func wordStems(w string) []string {
 // Explain says why the versions could not be read, in words safe for an agent:
 // всё, что получает модель, уходит провайдеру, а в тексте настоящей ошибки бывают
 // полный путь (имя пользователя) и кусок документа.
-func Explain(err error) string { return "" }
+func Explain(err error) string {
+	switch {
+	case errors.Is(err, ErrNoSource):
+		return "папки окна не подключены: откройте окно DVK и выберите папки"
+	case errors.Is(err, context.Canceled):
+		return "запрос отменен"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "запрос не успел выполниться"
+	}
+	return "версии документов не прочитать; подробности в окне DVK"
+}
