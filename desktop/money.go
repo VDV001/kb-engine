@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"path/filepath"
 	"strings"
@@ -191,12 +192,17 @@ const deletedChatTitle = "Удаленный чат"
 // unreadableChatTitle names a chat whose file is there but does not read.
 const unreadableChatTitle = "Чат не читается"
 
-// chatTitle is the title of chat id; чата нет (удален) — общее название.
+// chatTitle is the title of chat id; чата нет (удален) — общее название,
+// файл есть, но не читается — свое: такой чат не удален (ревью #575).
 func (d *chatDesk) chatTitle(id string) string {
-	if rec, err := d.load(id); err == nil && rec.Title != "" {
-		return rec.Title
+	rec, err := d.load(id)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return deletedChatTitle
+	case err != nil:
+		return unreadableChatTitle
 	}
-	return deletedChatTitle
+	return rec.Title
 }
 
 // chatsView is the chats of the month's spend, dearest first, with the share
