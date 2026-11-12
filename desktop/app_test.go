@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
 )
@@ -40,5 +41,42 @@ func TestApp_OpenAndRevealCheckThePathFirst(t *testing.T) {
 	want := [][]string{{"open", "/w/ok.md"}, {"open", "-R", "/w/ok.md"}}
 	if !slices.EqualFunc(calls, want, slices.Equal) {
 		t.Fatalf("calls = %q, want %q", calls, want)
+	}
+}
+
+func TestApp_PreviewChecksThePathAndDoesNotWaitForTheWindow(t *testing.T) {
+	started, release := make(chan []string, 1), make(chan struct{})
+	a := &App{files: fakeReader{}, run: func(name string, args ...string) error {
+		started <- append([]string{name}, args...)
+		<-release // qlmanage -p держит окно, пока его не закроют
+		return nil
+	}}
+	defer close(release)
+	if err := a.Preview("/w/ok.md"); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-started:
+		if !slices.Equal(got, []string{"qlmanage", "-p", "/w/ok.md"}) {
+			t.Errorf("вызов %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("быстрый просмотр не запущен")
+	}
+	if err := a.Preview("/w/.env"); !errors.Is(err, filesearch.ErrNotAllowed) {
+		t.Errorf("запрещенный путь дошел до просмотра: %v", err)
+	}
+}
+
+func TestApp_VersionMethodsWithoutTheDeskAreRefusedNotPanics(t *testing.T) {
+	a := &App{}
+	if err := a.VersionMark("/a", "x"); err == nil {
+		t.Error("VersionMark без окна версий")
+	}
+	if err := a.VersionCurrent("/a", true); err == nil {
+		t.Error("VersionCurrent без окна версий")
+	}
+	if _, err := a.VersionCompare("/a", "/b"); err == nil {
+		t.Error("VersionCompare без окна версий")
 	}
 }

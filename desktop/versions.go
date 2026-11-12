@@ -3,7 +3,9 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -52,37 +54,11 @@ type versionsDesk struct {
 	src   *localfiles.Source // для какого источника собран список
 	at    time.Time
 	cache []familyView
+	marks map[string]versionMark // отметки владельца; nil — еще не читались
 }
 
 func newVersionsDesk(source func() *localfiles.Source, marksPath string) *versionsDesk {
 	return &versionsDesk{source: source, marksPath: marksPath}
-}
-
-// compareLimit — сколько строк каждой версии отдает сравнение: окно не рисует десятки тысяч.
-const compareLimit = 2000
-
-// Mark saves the owner's note to a version.
-func (d *versionsDesk) Mark(path, note string) error { return nil }
-
-// SetCurrent puts the «актуальная» badge on one version of its family.
-func (d *versionsDesk) SetCurrent(path string, on bool) error { return nil }
-
-// compareLine — строка текста версии; Changed: ее нет в другой версии.
-type compareLine struct {
-	Text    string `json:"t"`
-	Changed bool   `json:"c"`
-}
-
-// compareView — две версии рядом.
-type compareView struct {
-	Old       []compareLine `json:"old"`
-	New       []compareLine `json:"new"`
-	Truncated bool          `json:"truncated"`
-}
-
-// Compare lays two versions side by side.
-func (d *versionsDesk) Compare(ctx context.Context, a, b string) (compareView, error) {
-	return compareView{}, nil
 }
 
 // Families returns the families matching q (пустой — все, где есть что
@@ -98,7 +74,7 @@ func (d *versionsDesk) Families(ctx context.Context, q string, fresh bool) ([]fa
 	}
 	q = strings.ToLower(strings.TrimSpace(q))
 	out := []familyView{}
-	for _, f := range all {
+	for _, f := range d.withMarks(all) {
 		if q == "" && len(f.Versions) < 2 && len(f.Versions[0].Dups) == 0 {
 			continue
 		}
@@ -107,6 +83,161 @@ func (d *versionsDesk) Families(ctx context.Context, q string, fresh bool) ([]fa
 		}
 	}
 	return out, nil
+}
+
+// withMarks puts the owner's notes and badges on a copy of the families: список
+// из кэша общий, а отметки меняются без нового обхода.
+func (d *versionsDesk) withMarks(fams []familyView) []familyView {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	marks := d.loadedMarks()
+	out := make([]familyView, len(fams))
+	for i, f := range fams {
+		out[i] = f
+		out[i].Versions = slices.Clone(f.Versions)
+		for j, v := range out[i].Versions {
+			m := marks[markKey(v)]
+			out[i].Versions[j].Mark, out[i].Versions[j].Current = m.Note, m.Current
+		}
+	}
+	return out
+}
+
+// loadedMarks reads the marks file once; the caller holds d.mu.
+func (d *versionsDesk) loadedMarks() map[string]versionMark {
+	if d.marks == nil {
+		d.marks = loadMarks(d.marksPath)
+	}
+	return d.marks
+}
+
+// find looks the path up among the versions and the copies of the last list:
+// отметить и сравнить можно только то, что окно само показало. The caller holds d.mu.
+func (d *versionsDesk) find(path string) (fam, ver int, ok bool) {
+	for i, f := range d.cache {
+		for j, v := range f.Versions {
+			if v.Path == path || slices.Contains(v.Dups, path) {
+				return i, j, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+// maxNoteRunes — длиннее заметка не нужна: это «отправлено Алексею», а не письмо.
+const maxNoteRunes = 500
+
+// Mark saves the owner's note to a version; an empty note removes it.
+func (d *versionsDesk) Mark(path, note string) error {
+	note = strings.TrimSpace(note)
+	if n := len([]rune(note)); n > maxNoteRunes {
+		return fmt.Errorf("заметка длиннее %d знаков (%d)", maxNoteRunes, n)
+	}
+	return d.update(path, func(marks map[string]versionMark, key string, _ []versionView) {
+		m := marks[key]
+		m.Note = note
+		setMark(marks, key, m)
+	})
+}
+
+// SetCurrent puts the «актуальная» badge on the version; в семействе он один,
+// у прежней отмеченной версии снимается.
+func (d *versionsDesk) SetCurrent(path string, on bool) error {
+	return d.update(path, func(marks map[string]versionMark, key string, fam []versionView) {
+		if on {
+			for _, v := range fam {
+				if k := markKey(v); k != key {
+					m := marks[k]
+					m.Current = false
+					setMark(marks, k, m)
+				}
+			}
+		}
+		m := marks[key]
+		m.Current = on
+		setMark(marks, key, m)
+	})
+}
+
+func setMark(marks map[string]versionMark, key string, m versionMark) {
+	if m.empty() {
+		delete(marks, key)
+		return
+	}
+	marks[key] = m
+}
+
+// update applies change to a copy of the marks of the version at path and saves
+// the copy: при сбое записи прежние отметки остаются в памяти.
+func (d *versionsDesk) update(path string, change func(marks map[string]versionMark, key string, fam []versionView)) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	i, j, ok := d.find(path)
+	if !ok {
+		return errors.New("такой версии в списке нет")
+	}
+	next := maps.Clone(d.loadedMarks())
+	change(next, markKey(d.cache[i].Versions[j]), d.cache[i].Versions)
+	if err := saveMarks(d.marksPath, next); err != nil {
+		return err
+	}
+	d.marks = next
+	return nil
+}
+
+// compareLimit — сколько строк каждой версии отдает сравнение: окно не рисует десятки тысяч.
+const compareLimit = 2000
+
+// compareLine — строка текста версии; Changed: ее нет в другой версии.
+type compareLine struct {
+	Text    string `json:"t"`
+	Changed bool   `json:"c"`
+}
+
+// compareView — две версии рядом.
+type compareView struct {
+	Old       []compareLine `json:"old"`
+	New       []compareLine `json:"new"`
+	Truncated bool          `json:"truncated"`
+}
+
+// Compare lays two versions side by side: a — старая, b — новая. Читает только
+// версии из последнего списка; файлы не меняются.
+func (d *versionsDesk) Compare(ctx context.Context, a, b string) (compareView, error) {
+	src := d.source()
+	if src == nil {
+		return compareView{}, errors.New("папки окна не подключены")
+	}
+	d.mu.Lock()
+	_, _, okA := d.find(a)
+	_, _, okB := d.find(b)
+	d.mu.Unlock()
+	if !okA || !okB {
+		return compareView{}, errors.New("такой версии в списке нет")
+	}
+	if err := ctx.Err(); err != nil {
+		return compareView{}, err
+	}
+	ta, err := src.VersionText(a)
+	if err != nil {
+		return compareView{}, fmt.Errorf("текст старой версии недоступен: %w", err)
+	}
+	tb, err := src.VersionText(b)
+	if err != nil {
+		return compareView{}, fmt.Errorf("текст новой версии недоступен: %w", err)
+	}
+	oldLines, newLines := versions.Compare(ta, tb)
+	out := compareView{Truncated: len(oldLines) > compareLimit || len(newLines) > compareLimit}
+	out.Old, out.New = capLines(oldLines), capLines(newLines)
+	return out, nil
+}
+
+func capLines(ls []versions.Line) []compareLine {
+	out := make([]compareLine, 0, min(len(ls), compareLimit))
+	for _, l := range ls[:min(len(ls), compareLimit)] {
+		out = append(out, compareLine{Text: l.Text, Changed: l.Changed})
+	}
+	return out
 }
 
 func (d *versionsDesk) collect(ctx context.Context, src *localfiles.Source, fresh bool) ([]familyView, error) {
@@ -149,7 +280,7 @@ func view(f versions.Family) familyView {
 	for _, x := range f.Versions {
 		when := versions.When(x.File) // та же дата, по которой версии выстроены
 		v.Versions = append(v.Versions, versionView{
-			Path: x.Path, Date: when.Format("02.01.2006"), Size: x.Size, Note: noteText(x.Change), Dups: append([]string{}, x.Dups...),
+			Path: x.Path, Date: when.Format("02.01.2006"), Size: x.Size, Note: noteText(x.Change), Dups: append([]string{}, x.Dups...), hash: x.Hash,
 		})
 		v.latest = when
 	}
@@ -162,7 +293,7 @@ func matches(f familyView, q string) bool {
 		return true
 	}
 	for _, v := range f.Versions {
-		if strings.Contains(strings.ToLower(v.Path), q) {
+		if strings.Contains(strings.ToLower(v.Path), q) || strings.Contains(strings.ToLower(v.Mark), q) {
 			return true
 		}
 		if slices.ContainsFunc(v.Dups, func(p string) bool { return strings.Contains(strings.ToLower(p), q) }) {

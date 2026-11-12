@@ -516,3 +516,15 @@ func (a *App) Reveal(path string) error {
 	}
 	return a.run("open", "-R", path)
 }
+
+// Preview opens the file in Quick Look without waiting for the window to close.
+func (a *App) Preview(path string) error { return nil }
+
+// VersionMark saves the note to a version of the «Артефакты» tab.
+func (a *App) VersionMark(path, note string) error { return nil }
+
+// VersionCurrent puts or takes off the «актуальная» badge.
+func (a *App) VersionCurrent(path string, on bool) error { return nil }
+
+// VersionCompare returns two versions side by side.
+func (a *App) VersionCompare(older, newer string) (compareView, error) { return compareView{}, nil }
