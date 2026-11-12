@@ -188,6 +188,9 @@ func (d *chatDesk) SetSpendLimit(usd string) error {
 // deletedChatTitle names a chat that is gone but still has spend in the month.
 const deletedChatTitle = "Удаленный чат"
 
+// unreadableChatTitle names a chat whose file is there but does not read.
+const unreadableChatTitle = "Чат не читается"
+
 // chatTitle is the title of chat id; чата нет (удален) — общее название.
 func (d *chatDesk) chatTitle(id string) string {
 	if rec, err := d.load(id); err == nil && rec.Title != "" {
