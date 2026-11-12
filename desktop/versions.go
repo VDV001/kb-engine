@@ -51,11 +51,12 @@ type versionsDesk struct {
 	source    func() *localfiles.Source
 	marksPath string // версии-заметки и значки лежат рядом с config.json, 0600
 
-	mu    sync.Mutex
-	src   *localfiles.Source // для какого источника собран список
-	at    time.Time
-	cache []familyView
-	marks map[string]versionMark // отметки владельца; nil — еще не читались
+	mu       sync.Mutex
+	src      *localfiles.Source // для какого источника собран список
+	at       time.Time
+	cache    []familyView
+	marks    map[string]versionMark // отметки владельца; nil — еще не читались
+	marksErr error                  // файл заметок не прочитался: записи отклоняются, чтобы не затереть его
 }
 
 func newVersionsDesk(source func() *localfiles.Source, marksPath string) *versionsDesk {
@@ -107,7 +108,7 @@ func (d *versionsDesk) withMarks(fams []familyView) []familyView {
 // loadedMarks reads the marks file once; the caller holds d.mu.
 func (d *versionsDesk) loadedMarks() map[string]versionMark {
 	if d.marks == nil {
-		d.marks = loadMarks(d.marksPath)
+		d.marks, d.marksErr = loadMarks(d.marksPath)
 	}
 	return d.marks
 }
@@ -177,7 +178,13 @@ func (d *versionsDesk) update(path string, change func(marks map[string]versionM
 	if !ok {
 		return errors.New("такой версии в списке нет")
 	}
+	if d.marksErr != nil {
+		d.marks = nil // вдруг файл уже читается
+	}
 	next := maps.Clone(d.loadedMarks())
+	if d.marksErr != nil {
+		return fmt.Errorf("файл заметок не читается, заметки не тронуты: %w", d.marksErr)
+	}
 	change(next, markKey(d.cache[i].Versions[j]), d.cache[i].Versions)
 	if err := saveMarks(d.marksPath, next); err != nil {
 		return err
@@ -210,11 +217,17 @@ func (d *versionsDesk) Compare(ctx context.Context, a, b string) (compareView, e
 		return compareView{}, errors.New("папки окна не подключены")
 	}
 	d.mu.Lock()
-	_, _, okA := d.find(a)
-	_, _, okB := d.find(b)
+	famA, verA, okA := d.find(a)
+	famB, verB, okB := d.find(b)
 	d.mu.Unlock()
 	if !okA || !okB {
 		return compareView{}, errors.New("такой версии в списке нет")
+	}
+	if famA != famB {
+		return compareView{}, errors.New("версии из разных документов не сравниваются")
+	}
+	if verA > verB {
+		a, b = b, a // старая слева, как бы ни пришли аргументы
 	}
 	if err := ctx.Err(); err != nil {
 		return compareView{}, err

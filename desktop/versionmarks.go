@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 )
@@ -16,18 +17,29 @@ type versionMark struct {
 
 func (m versionMark) empty() bool { return m.Note == "" && !m.Current }
 
-// loadMarks reads the marks file; a missing or broken file is an empty set:
-// заметки не стоят того, чтобы окно не открыло список документов.
-func loadMarks(path string) map[string]versionMark {
+// loadMarks reads the marks file. Нет файла — пустой набор. Битый файл
+// откладывается рядом как .broken, и набор начинается заново: заметки не стоят
+// того, чтобы окно не открыло список. Нечитаемый файл (права, диск) — ошибка:
+// первая же новая запись иначе затерла бы целый файл.
+func loadMarks(path string) (map[string]versionMark, error) {
 	out := map[string]versionMark{}
 	if path == "" {
-		return out
+		return out, nil
 	}
 	b, err := os.ReadFile(path)
-	if err != nil || json.Unmarshal(b, &out) != nil || out == nil {
-		return map[string]versionMark{}
+	if errors.Is(err, fs.ErrNotExist) {
+		return out, nil
 	}
-	return out
+	if err != nil {
+		return out, err
+	}
+	if err := json.Unmarshal(b, &out); err != nil || out == nil {
+		if err := os.Rename(path, path+".broken"); err != nil {
+			return map[string]versionMark{}, err
+		}
+		return map[string]versionMark{}, nil
+	}
+	return out, nil
 }
 
 // saveMarks writes the marks atomically, 0600: заметки — личное.
@@ -63,6 +75,10 @@ func saveMarks(path string, marks map[string]versionMark) error {
 // markKey — под каким ключом лежит отметка версии: хеш содержимого, а значит
 // переименование и перенос файла ее не теряют, а копия делит ее с оригиналом.
 // Файл без хеша (слишком большой) отмечается по пути.
+//
+// ponytail: одинаковое содержимое в двух семействах делит заметку и значок
+// (копия под другим именем — это тот же документ по содержимому). Потолок:
+// «актуальная» у двух семейств сразу. Путь: ключ из хеша и имени семейства.
 func markKey(v versionView) string {
 	if v.hash != "" {
 		return v.hash

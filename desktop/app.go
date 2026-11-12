@@ -522,9 +522,23 @@ func (a *App) Preview(path string) error {
 	if err := a.files.Check(path); err != nil {
 		return err
 	}
-	go func() { _ = a.run("qlmanage", "-p", path) }() // держит окно, пока его не закроют
-	return nil
+	// qlmanage -p держит окно, пока его не закроют, поэтому ждем только мгновенный
+	// отказ (нет программы, нет превью): он иначе остался бы молчаливой кнопкой.
+	// ponytail: каждый клик — отдельный процесс qlmanage до закрытия его окна.
+	// Потолок: десяток окон просмотра, если кликать не закрывая. Путь: держать
+	// один процесс и убивать прежний.
+	done := make(chan error, 1)
+	go func() { done <- a.run("qlmanage", "-p", path) }()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(previewGrace):
+		return nil
+	}
 }
+
+// previewGrace — сколько ждем, не упал ли просмотр сразу.
+const previewGrace = 400 * time.Millisecond
 
 var errNoVersions = errors.New("артефакты недоступны")
 
