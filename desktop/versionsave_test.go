@@ -327,7 +327,9 @@ func TestProposeVersion_RefusesDocumentLongerThanTheModelReads(t *testing.T) {
 			t.Fatal(err)
 		}
 		err := r.propose(context.Background(), chat.VersionProposal{Family: "Договор", Text: "новый текст", Description: "d", Note: "n"})
-		if err == nil || !strings.Contains(err.Error(), "длиннее") {
+		// Модель предлагала обходы, которые упираются в ту же проверку (живая проверка 13.11):
+		// «вставьте полный текст», «попробую в новой сессии». Отказ называет их и говорит, где править.
+		if err == nil || !strings.Contains(err.Error(), "длиннее") || !strings.Contains(err.Error(), "вставленному в чат") || !strings.Contains(err.Error(), "Word или Pages") {
 			t.Errorf("%s: ошибка %v", name, err)
 		}
 		if len(r.events) != 0 {

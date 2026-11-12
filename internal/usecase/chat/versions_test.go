@@ -145,7 +145,7 @@ func TestOpenVersion_TrimmedTextSaysItIsPartial(t *testing.T) {
 	v := kpVersions()
 	v.texts["/p/КП_2026_11_12.docx"] = strings.Repeat("я", chat.MaxReadRunes+500)
 	got, _ := toolAnswer(t, v, "open_version", `{"q":"кп","which":"последняя"}`)
-	if !strings.Contains(got, fmt.Sprintf("показано %d из %d знаков", chat.MaxReadRunes, chat.MaxReadRunes+500)) {
+	if !strings.Contains(got, fmt.Sprintf("показано %d из %d знаков", chat.MaxReadRunes, chat.MaxReadRunes+500)) || !strings.Contains(got, "Word или Pages") {
 		t.Errorf("модель не узнала, что текст обрезан: %q", got[len(got)-300:])
 	}
 }
