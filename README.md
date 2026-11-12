@@ -83,10 +83,14 @@ Built with TDD + DDD + Clean Architecture. Design notes:
   the differing lines leave) to draft the note. The chat and the MCP tools
   `search_versions` / `open_version` read the same families, and the chat can
   offer a result as a new iteration: a new docx next to the others, only after
-  you confirm, never over an existing file.
+  you confirm, never over an existing file (not for a document with a version
+  longer than the model reads at once — the model says so instead of saving a
+  cut text). The version buttons take a palette, a border style and an
+  animation in Оформление → Артефакты.
   **Статистика** shows the model calls the window made — a feed, an activity
   map and money at the gateway's own prices, with a spend limit you set and the
-  month's spend by chat (the dearest chats and their share). When a
+  month's spend by chat (the dearest chats and their share; a chat opens its
+  Journal, and a costly one offers to open it and compress). When a
   button in the
   window stays silent, `just desktop-inspect` builds `bin/kb-inspect.app` with
   the WebKit inspector (right-click in any input → Inspect Element); the
