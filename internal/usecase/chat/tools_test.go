@@ -308,7 +308,7 @@ func TestToolsMode_PromptAsksToNameWhereFrom(t *testing.T) {
 	if _, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(&fakeReader{})).Answer(context.Background(), nil, "?", chat.ModeTools); err != nil {
 		t.Fatal(err)
 	}
-	p := m.asked[0][0].Content
+	p := strings.ToLower(m.asked[0][0].Content)
 	for _, want := range []string{"откуда", "подключени", "интернет"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("system prompt lacks %q:\n%s", want, p)
