@@ -16,7 +16,7 @@ import (
 )
 
 // Инструменты магазина в чате окна (#580): модель в режиме «модель ищет» сама
-// спрашивает сводку, топ, «что довезти» и карточку товара — только у
+// спрашивает сводку, топ, «что довезти», карточку товара, деньги и пропажи — только у
 // кабинетов, которым человек разрешил давать цифры модели (Share, ревью #593):
 // названия товаров и продажи уходят провайдеру модели.
 
@@ -75,7 +75,44 @@ func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time
 		mu.Unlock()
 		return d, nil
 	}
-	return []chat.Extra{shopExtra{markets.ShopTools{Load: load}}}
+	full := map[string]markets.ShopData{} // с начислениями и возвратами: только по просьбе модели, раз за ход
+	money := func(ctx context.Context, cabinet string) (markets.ShopData, error) {
+		d, err := load(ctx, cabinet)
+		if err != nil {
+			return markets.ShopData{}, err
+		}
+		c, _ := pickCabinet(sharedOzon(s.snapshot().cfg), cabinet) // load уже нашел его
+		mu.Lock()
+		f, ok := full[c.ID]
+		mu.Unlock()
+		if ok {
+			return f, nil
+		}
+		if d, err = readMoney(ctx, s, base, hc, c, d, now()); err != nil {
+			return markets.ShopData{}, err
+		}
+		mu.Lock()
+		full[c.ID] = d
+		mu.Unlock()
+		return d, nil
+	}
+	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}}}
+}
+
+// readMoney adds the cabinet's accruals and returns to d — те же 90 дней.
+func readMoney(ctx context.Context, s *folderSettings, base string, hc *http.Client, c desktopconfig.Connection, d markets.ShopData, now time.Time) (markets.ShopData, error) {
+	cl, _, err := s.ozonCabinet(c.ID, base, hc)
+	if err != nil {
+		return markets.ShopData{}, err
+	}
+	if d.Accruals, err = cl.Accruals(ctx, d.From, d.To); err != nil {
+		return markets.ShopData{}, errors.New(economyErr(c.Name, err))
+	}
+	if d.Returns, err = cl.Returns(ctx, d.From, d.To); err != nil {
+		return markets.ShopData{}, errors.New(returnsErr(c.Name, err))
+	}
+	d.Now = now
+	return d, nil
 }
 
 // readShop reads cabinet c: отправления из 10-минутной памяти, остатки свежие.
