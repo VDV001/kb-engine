@@ -74,18 +74,7 @@ func OzonLosses(posts []OzonPosting, acc []OzonAccrual, rets []OzonReturn, now t
 // по отправлению (логистику Ozon начисляет при отгрузке и доставке), а без них —
 // от создания (ревью #595).
 func unsold(posts []OzonPosting, acc []OzonAccrual, now time.Time) []ShopLoss {
-	sold, last := map[string]bool{}, map[string]time.Time{}
-	for _, a := range acc {
-		if a.Unit == "" {
-			continue
-		}
-		if a.Kind == AccrualSale && a.Amount.Kopecks() > 0 {
-			sold[a.Unit] = true // одно сторно без продажи — не продажа
-		}
-		if a.Day.After(last[a.Unit]) {
-			last[a.Unit] = a.Day
-		}
-	}
+	sold, last := byUnit(acc)
 	var out []ShopLoss
 	for _, p := range posts {
 		since := p.At
@@ -100,6 +89,23 @@ func unsold(posts []OzonPosting, acc []OzonAccrual, now time.Time) []ShopLoss {
 		}
 	}
 	return out
+}
+
+// byUnit tells, by posting number, whether a sale was accrued and the last accrual day.
+func byUnit(acc []OzonAccrual) (sold map[string]bool, last map[string]time.Time) {
+	sold, last = map[string]bool{}, map[string]time.Time{}
+	for _, a := range acc {
+		if a.Unit == "" {
+			continue
+		}
+		if a.Kind == AccrualSale && a.Amount.Kopecks() > 0 {
+			sold[a.Unit] = true // одно сторно без продажи — не продажа
+		}
+		if a.Day.After(last[a.Unit]) {
+			last[a.Unit] = a.Day
+		}
+	}
+	return sold, last
 }
 
 // returnLosses lists returns that did not come back: списан, утилизирован,
