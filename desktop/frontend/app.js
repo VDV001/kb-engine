@@ -1355,6 +1355,7 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Распознавание».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
+    maskKey("conn-s-key");
   } catch (err) { $("#conn-s-note").textContent = errText(err); }
   renderConnections();
 });
@@ -1377,6 +1378,7 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
     $("#conn-o-note").textContent = "Добавлено: " + r.name + ". Загрузите его в «Маркеты → Магазин».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
+    maskKey("conn-o-key");
     $("#conn-o-share").checked = false;
   } catch (err) { $("#conn-o-note").textContent = errText(err); }
   renderConnections();
@@ -1398,6 +1400,7 @@ $("#conn-google").addEventListener("submit", async (e) => {
     $("#conn-g-note").textContent = "Подключено: " + r.name;
     toast("Подключено", ` · «${r.name}»`);
     $("#conn-g-secret").value = "";
+    maskKey("conn-g-secret");
     $("#conn-google").hidden = true;
     $("#conn-add-google").setAttribute("aria-expanded", "false");
   } catch (err) {
@@ -1492,7 +1495,8 @@ function formOf(s, i) {
 // что вставил тот токен. Сохраненный токен окно из Связки на страницу не
 // достает: токен и данные подключений не текут из приложения.
 const EYE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M4 4l16 16"/></svg>`;
-$('[data-eye="chat-key"]').innerHTML = EYE; // глаз ключа модели — та же иконка, что у токенов
+// глаз ключей модели и подключений — та же иконка, что у токенов
+for (const b of document.querySelectorAll("button[data-eye]")) b.innerHTML = EYE;
 const tokenField = (id, saved) =>
   `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
     placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}">
@@ -1650,7 +1654,7 @@ panel.addEventListener("click", async (e) => {
     const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
     inp.type = show ? "text" : "password";
     eye.setAttribute("aria-pressed", String(show));
-    const what = eye.dataset.eye === "chat-key" ? "ключ" : "токен";
+    const what = eye.dataset.what || "токен";
     eye.setAttribute("aria-label", show ? `Скрыть ${what}` : `Показать набранный ${what}`);
     eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
     return;
@@ -2768,16 +2772,16 @@ document.addEventListener("click", (e) => {
   // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
   if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
 });
-// maskChatKey прячет набранный ключ обратно: при каждой загрузке, даже неудачной.
-function maskChatKey() {
-  const eye = $('[data-eye="chat-key"]');
-  $("#chat-key").type = "password";
+// maskKey прячет набранный ключ обратно: при каждой загрузке и после «Добавить».
+function maskKey(id) {
+  const eye = $(`[data-eye="${id}"]`), what = eye.dataset.what || "токен";
+  $("#" + id).type = "password";
   eye.setAttribute("aria-pressed", "false");
-  eye.setAttribute("aria-label", "Показать набранный ключ");
-  eye.dataset.tip = "Показать ключ";
+  eye.setAttribute("aria-label", "Показать набранный " + what);
+  eye.dataset.tip = "Показать " + what;
 }
 async function loadChatSettings() {
-  maskChatKey();
+  maskKey("chat-key");
   $("#chat-key-saved").hidden = true;
   try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + errText(e)); return; }
   const s = chatState.settings;
@@ -5307,12 +5311,14 @@ function mkShown() {
 function mkRenderFilters() {
   const ns = mk.tb.niches, cols = mkShown();
   const mps = Object.keys(MK_MP).filter((m) => ns.some((n) => n.markets.includes(m)));
-  if (!mps.length) mk.mp = "all";
-  $("#mk-mp").innerHTML = mps.length ? [["all", "все", "ниши всех площадок"], ...mps.map((m) => [m, MK_MP[m], "только ниши, которые есть на " + MK_MP[m]])]
+  if (mps.length < 2) mk.mp = "all";
+  // Одна площадка или один порядок — выбирать не из чего: кнопка, которая
+  // ничего не меняет, читается как сломанная (отзыв владельца 13.11).
+  $("#mk-mp").innerHTML = mps.length > 1 ? [["all", "все", "ниши всех площадок"], ...mps.map((m) => [m, MK_MP[m], "только ниши, которые есть на " + MK_MP[m]])]
     .map(([v, n, t]) => `<button type="button" data-mk-mp="${v}" aria-pressed="${mk.mp === v}"${mkTip(n, t)}>${n}</button>`).join("") : "";
   const sorts = [["score", "по оценке", "сначала ниши с большей оценкой 0-100"], ["growth", "по росту", "сначала ниши, где спрос растет быстрее"], ["sales", "по продажам", "сначала ниши с большими продажами в штуках"]]
     .filter(([v]) => cols.includes(v));
-  $("#mk-sort").innerHTML = sorts.map(([v, n, t]) => `<button type="button" data-mk-by="${v}" aria-pressed="${mk.sort === v}"${mkTip(n, t)}>${n}</button>`).join("");
+  $("#mk-sort").innerHTML = sorts.length < 2 ? "" : `<span class="mk-seg-l">сортировка</span>` + sorts.map(([v, n, t]) => `<button type="button" data-mk-by="${v}" aria-pressed="${mk.sort === v}"${mkTip(n, t)}>${n}</button>`).join("");
   const hasSeason = ns.some((n) => n.score.peak);
   $("#mk-season-l").hidden = !hasSeason;
   if (!hasSeason) mk.season = false;
@@ -5716,7 +5722,7 @@ function shVal(k, p) {
     case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
-    case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
+    case "rating": return p.reviews || p.rating ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
     case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
     case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
     default: return fmt(Math.round(p[k] || 0));
@@ -5732,14 +5738,33 @@ async function shRead(src) {
   const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
   $("#sh-open").disabled = b.disabled = true;
   if (oz) b.textContent = "Загружаю из Ozon…";
+  const stop = shProgress(oz ? "Загружаю кабинет из Ozon: отправления за 90 дней и остатки" : "Читаю отчет");
+  let done = "";
   try {
     sh.v = oz ? await native().MarketsOzon(src.slice(5)) : await native().MarketsShop(src);
     Object.assign(sh, { sel: 0, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 });
     shSave();
     if (oz && [...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
+    done = `${oz ? "Загружено из Ozon" : "Отчет прочитан"}: товаров ${fmt(sh.v.products.length)}`;
   } catch (e) { mkErr((oz ? "Не загрузил кабинет: " : "Не прочитал отчет: ") + errText(e)); }
-  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; b.textContent = "Загрузить из Ozon"; }
+  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; b.textContent = "Загрузить из Ozon"; stop(done); }
   shRender();
+}
+// shProgress показывает бегущую полосу и секунды, пока идет загрузка; stop(итог)
+// убирает полосу и оставляет итог со временем, пустой итог — прячет строку
+// (ошибку называет mkErr).
+function shProgress(what) {
+  const box = $("#sh-progress"), bar = $("#sh-progress-bar"), t = $("#sh-progress-t"), t0 = Date.now();
+  const tick = () => { t.textContent = `${what}… ${Math.round((Date.now() - t0) / 1000)} с`; };
+  box.hidden = bar.hidden = false;
+  tick();
+  const timer = setInterval(tick, 1000);
+  return (done) => {
+    clearInterval(timer);
+    bar.hidden = true;
+    box.hidden = !done;
+    t.textContent = done ? `✓ ${done} · ${new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}` : "";
+  };
 }
 // shCabinets — включенные кабинеты Ozon; выбор виден, когда их больше одного.
 async function shCabinets() {
@@ -5843,7 +5868,7 @@ function shLoss() {
   if (l.err) return void (el.innerHTML = `<div class="note">Пропажи не проверены: ${esc(l.err)}</div>`);
   const sum = l.rows.reduce((a, r) => a + r.price, 0), kind = (k) => SH_LOSS[k] || [k, ""];
   el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара</summary><div class="wrap"><table><tbody>` +
-    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${esc(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
+    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${shOzonSKU(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
     `</tbody></table></div><div class="note">компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, смотрите в отчете о компенсациях в разделе «Финансы» кабинета</div></details>`;
 }
 // Советы (#580): домен решает, каким товарам какой совет; слова здесь.
@@ -5880,7 +5905,7 @@ function shTable() {
   const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
-    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
       shCols().map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
   $("#sh-none").hidden = list.length > 0;
   shCard();
@@ -5899,6 +5924,9 @@ function shWhy(p) {
   if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : p.stock ? `заказов за период не было, лежит ${fmt(p.stock)} шт: акция, реклама или вывоз со склада` : "заказов за период не было");
   return out;
 }
+// shOzonSKU — SKU ссылкой на страницу товара на ozon.ru; не число — просто текст.
+const shOzonSKU = (sku) => /^\d+$/.test(sku || "")
+  ? `<button type="button" class="lnk" data-open-url="https://www.ozon.ru/product/${sku}/"${mkTip("Открыть на Ozon", "страница товара на ozon.ru в браузере")}>${sku} ↗</button>` : esc(sku || "—");
 function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
@@ -5911,7 +5939,7 @@ function shCard() {
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
-  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : esc(v)}</dd>`).join("")}</dl>` +
     shMoneyCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.

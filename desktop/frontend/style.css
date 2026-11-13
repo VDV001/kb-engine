@@ -805,8 +805,9 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
 .chat-model .key-field { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
-.chat-model .key-row { display: flex; gap: 6px; align-items: center; }
-.chat-model .key-row input { flex: 1; }
+.key-row { display: flex; gap: 6px; align-items: center; }
+.key-row input { flex: 1; min-width: 0; }
+.conn-google .key-row .reveal { align-self: stretch; width: 44px; height: auto; } /* поле подключений выше 30px: глаз в рост поля */
 .chat-model .key-saved { color: var(--z-ok); font-weight: 500; }
 .chat-model input, .chat-model select { font: 12px var(--z-font); padding: 5px 8px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); color: var(--z-ink); min-width: 0; }
 /* Разделы чата аккордеоном (#478): номер, название, справа выбранное. */
@@ -1665,6 +1666,15 @@ body:not(.no-mk-buttons):not([data-mka="none"]) .mk-view .btn.mk-main:not([aria-
 .mk-seg:empty { display: none; }
 .mk-seg button { font: 13px var(--z-font); color: var(--z-muted); background: var(--z-bg); border: 0; padding: 7px 14px; cursor: pointer; }
 .mk-seg button + button { border-left: 1px solid var(--z-rule); }
+.mk-seg-l { font: 12px var(--z-font); color: var(--z-muted); padding: 7px 10px; align-self: center; border-right: 1px solid var(--z-rule); }
+.sh-progress { margin: 0 18px; font-size: 13px; color: var(--z-muted); }
+.sh-progress .indexing-bar { height: 3px; margin-bottom: 6px; max-width: 420px; }
+#sh-progress-bar { position: relative; }
+/* своя пробежка: sweep экрана индексации рассчитан на дорожку во весь экран и здесь почти все время за краем */
+#sh-progress-bar span { position: absolute; left: -30%; width: 30%; background: var(--z-accent); animation: sh-run 1.2s linear infinite; }
+@keyframes sh-run { to { left: 100%; } }
+.sh-progress .indexing-bar[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { #sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
 .mk-seg button[aria-pressed="true"] { color: var(--z-ink); background: var(--z-bg-3, var(--z-bg-2)); font-weight: 700; }
 .mk-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-ink-2); cursor: pointer; }
 .mk-check input { accent-color: color-mix(in srgb, var(--mk2) 70%, var(--z-ink)); width: 15px; height: 15px; }
