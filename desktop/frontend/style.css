@@ -1709,5 +1709,42 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-probs { font-size: 12px; color: var(--z-muted); }
 .mk-probs summary { cursor: pointer; }
 .mk-probs ul { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
+/* «Прогноз» (#580 шаг 2): три файла, итоги, график по дням. */
+.mk-fc { display: flex; flex-direction: column; gap: 14px; padding: 0 18px; }
+.mk-files { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.mk-file { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); font-size: 12px; min-width: 0; }
+.mk-file.ok { border-color: color-mix(in srgb, var(--z-ok) 50%, var(--z-rule)); }
+.mk-file h4 { margin: 0; font-size: 13px; color: var(--z-ink); }
+.mk-file .hint { color: var(--z-muted); line-height: 1.45; }
+.mk-file .name { color: var(--z-ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-file .meta { color: var(--z-muted); }
+.mk-file .btn { align-self: flex-start; }
+.mk-fc-run { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.mk-fc-note { font-size: 12px; color: var(--z-muted); }
+.mk-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+.mk-kpi { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-kpi .k { font-size: 12px; color: var(--z-muted); }
+.mk-kpi .v { font-size: 20px; font-weight: 700; color: var(--z-ink); font-variant-numeric: tabular-nums; margin: 4px 0 2px; }
+body:not(.no-mk-score) .mk-kpi .v.hl { background: linear-gradient(90deg, var(--mk1), var(--mk2), var(--mk3)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.mk-kpi .s { font-size: 12px; color: var(--z-muted); }
+.mk-chart { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-chart h4 { margin: 0 0 8px; font-size: 13px; color: var(--z-ink); font-weight: 400; }
+.mk-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.mk-chart .band { fill: color-mix(in srgb, var(--mk2) 22%, transparent); }
+.mk-chart .ly { fill: none; stroke: var(--z-muted); stroke-width: 1.2; stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; }
+.mk-chart .fc { fill: none; stroke: var(--z-accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+body:not(.no-mk-spark) .mk-chart .fc { stroke: url(#mk-grad); }
+.mk-chart .we { fill: var(--z-bg-2); }
+.mk-chart .pk { fill: var(--z-ink); }
+.mk-chart .pkl { fill: var(--z-ink); font: 11px var(--z-font); }
+.mk-chart .ax { fill: var(--z-muted); font: 10px var(--z-font); }
+.mk-chart .hit { fill: transparent; cursor: default; }
+.mk-chart .hit:hover { fill: color-mix(in srgb, var(--z-ink) 8%, transparent); }
+.mk-legend { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--z-muted); }
+.mk-legend i { display: inline-block; width: 18px; height: 0; vertical-align: middle; margin-right: 6px; border-top: 2px solid var(--z-accent); }
+body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, var(--mk1), var(--mk2), var(--mk3)) 1; }
+.mk-legend i.band { height: 8px; border: 0; background: color-mix(in srgb, var(--mk2) 22%, transparent); }
+.mk-legend i.ly { border-top: 1px dashed var(--z-muted); }
+@media (max-width: 900px) { .mk-files { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .mk-view .btn.mk-main:hover { animation: none !important; } }
 @media (max-width: 900px) { .mk-grid { grid-template-columns: minmax(0, 1fr); } .mk-tabs { margin-left: 0; } }
