@@ -108,6 +108,12 @@ func (tb *Table) addNiches(read []parsedRow, percent map[domain.NicheColumn]bool
 			}
 		}
 		n, err := domain.NewNiche(p.name, p.values)
+		if err == nil {
+			n, err = n.WithMonths(p.months)
+		}
+		if err == nil {
+			n, err = n.WithMarketplaces(p.markets)
+		}
 		if err != nil {
 			tb.Problems = append(tb.Problems, Problem{Row: p.row, Reason: err.Error()})
 			continue
@@ -117,9 +123,11 @@ func (tb *Table) addNiches(read []parsedRow, percent map[domain.NicheColumn]bool
 }
 
 type parsedRow struct {
-	row    int
-	name   string
-	values map[domain.NicheColumn]float64
+	row     int
+	name    string
+	values  map[domain.NicheColumn]float64
+	months  []domain.MonthSales
+	markets []domain.Marketplace
 }
 
 // readRow reads the numbers of one row and names the share columns written in
@@ -129,10 +137,16 @@ func readRow(row []string, cols []Column) (parsedRow, []domain.NicheColumn, erro
 	p := parsedRow{values: map[domain.NicheColumn]float64{}}
 	var pctCols []domain.NicheColumn
 	for _, c := range cols {
+		raw := cell(row, c.Index)
+		if c.Field == domain.NicheMarketplace || c.Month != 0 {
+			if err := p.readExtra(c, raw); err != nil {
+				return p, nil, err
+			}
+			continue
+		}
 		if c.Field == "" || c.Field == domain.NicheName {
 			continue
 		}
-		raw := cell(row, c.Index)
 		v, pct, empty, err := parseNumber(raw)
 		if err != nil {
 			return p, nil, fmt.Errorf("«%s»: %w «%s»", c.Header, ErrNotANumber, strings.TrimSpace(raw))
@@ -146,6 +160,23 @@ func readRow(row []string, cols []Column) (parsedRow, []domain.NicheColumn, erro
 		}
 	}
 	return p, pctCols, nil
+}
+
+// readExtra reads a marketplaces cell or a month's sales; пустой месяц — месяца нет.
+func (p *parsedRow) readExtra(c Column, raw string) error {
+	if c.Field == domain.NicheMarketplace {
+		ms, err := domain.ParseMarketplaces(raw)
+		p.markets = ms
+		return err
+	}
+	v, _, empty, err := parseNumber(raw)
+	if err != nil {
+		return fmt.Errorf("«%s»: %w «%s»", c.Header, ErrNotANumber, strings.TrimSpace(raw))
+	}
+	if !empty {
+		p.months = append(p.months, domain.MonthSales{Month: c.Month, Year: c.Year, Value: v})
+	}
+	return nil
 }
 
 // headerRow finds the header: первая строка сверху, где узнаны хотя бы две
@@ -195,6 +226,12 @@ func columns(header []string, picks map[int]domain.NicheColumn) ([]Column, error
 		}
 		picked[f] = i
 	}
+	return recognize(header, picks, picked), nil
+}
+
+// recognize names the columns the person did not pick: месяц, иначе
+// величина, если ее еще нет у другой колонки.
+func recognize(header []string, picks map[int]domain.NicheColumn, picked map[domain.NicheColumn]int) []Column {
 	cols := make([]Column, len(header))
 	taken := map[domain.NicheColumn]bool{}
 	for f := range picked {
@@ -206,12 +243,16 @@ func columns(header []string, picks map[int]domain.NicheColumn) ([]Column, error
 			cols[i].Field = f
 			continue
 		}
+		if m, y, ok := domain.RecognizeNicheMonth(hd); ok {
+			cols[i].Month, cols[i].Year = m, y
+			continue
+		}
 		if f, ok := domain.RecognizeNicheColumn(hd); ok && !taken[f] {
 			cols[i].Field = f
 			taken[f] = true
 		}
 	}
-	return cols, nil
+	return cols
 }
 
 func cell(row []string, i int) string {
