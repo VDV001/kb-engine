@@ -4021,7 +4021,7 @@ paintThemeBtn();
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
 const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut", feed: "bars", heat: "calls" }, feedSel: null, cal: null, calDay: null, money: null };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3" };
+const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3", forecast: "--z-sp6" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const stNum = (n) => Math.round(n).toLocaleString("ru-RU");
 const stTok = (n) => (n >= 1e6 ? (n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " млн" : n >= 1e3 ? (n / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " тыс" : stNum(n));
@@ -5146,6 +5146,7 @@ function mkSeasonLabel() {
   return `пик в ${MK_IN[m]}-${MK_IN[last]}`;
 }
 function mkRender() {
+  if ($('[data-mk-tab="forecast"]').getAttribute("aria-selected") === "true") return; // «Ниша» нарисуется при возвращении на вкладку
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
   $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
@@ -5281,7 +5282,7 @@ function mkRenderCard() {
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
-    `<div class="row"><button class="btn primary" type="button" aria-disabled="true"${mkTip("Прогноз — следующий шаг", "прогноз продаж этой ниши по месяцам и дата пика появятся с экраном «Прогноз»")}>Прогноз по этой нише</button>` +
+    `<div class="row"><button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
     `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
 }
 // mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
@@ -5355,6 +5356,129 @@ $("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb &
 $("#mk-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });
+// --- Маркеты → Прогноз (#580 шаг 2) -----------------------------------------------
+// Три файла, расчет формулой в Go (MarketsForecast), итоги, график по дням.
+// Окно помнит только пути — в localStorage, удобство одного Мака.
+const fc = { paths: ["", "", ""], v: null, niche: "", busy: false };
+const FC_KEY = "dvk.markets.forecast";
+const FC_SLOTS = [
+  ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики: продажи ниши по дням за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025"],
+  ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка за последние недели — например, сен-окт 2026"],
+  ["3 · Свои продажи", "Свои продажи", "отчет площадки или своя таблица: дата и количество за те же недели; позже — из подключения Ozon и Wildberries"],
+];
+const FC_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const fcDate = (s) => new Date(s + "T00:00:00");
+const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.getMonth()]}, ${FC_WD[d.getDay()]}`; };
+const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
+function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
+// mkTab переключает «Ниша» и «Прогноз»; «План» и «Подключения» — следующие шаги.
+function mkTab(id) {
+  for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
+  for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
+  if (id === "forecast") fcRender(); else mkRender(); // «Ниша» сама решает, что из нее видно
+}
+$("#markets-view").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-mk-tab]");
+  if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
+  const go = e.target.closest("[data-mk-go-fc]");
+  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); }
+});
+function fcRender() {
+  $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
+  $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
+    const p = fc.paths[i], info = fc.v && fc.v.files[i];
+    const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
+    return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
+      `<span class="name"${p ? mkTip("Файл", p) : ""}>${esc(p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(meta)}</span>` +
+      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p ? "Другой файл…" : "Выбрать файл…"}</button></div>`;
+  }).join("");
+  const v = fc.v;
+  $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
+  if (v) { fcKpis(v); fcChart(v); }
+}
+$("#mk-files").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-fc-pick]"); if (!b) return;
+  hideTip();
+  if (!native() || !native().MarketsPickFileTitled) return mkErr("Прогноз работает в окне приложения.");
+  let p = "";
+  try { p = await native().MarketsPickFileTitled(b.dataset.fcTitle); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
+  if (!p) return;
+  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+});
+$("#mk-fc-go").addEventListener("click", async () => {
+  hideTip();
+  if (fc.busy) return;
+  if (!native() || !native().MarketsForecast) return mkErr("Прогноз работает в окне приложения.");
+  const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
+  if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
+  mkErr(""); fc.busy = true; $("#mk-fc-go").textContent = "Считаю…";
+  try { fc.v = await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
+  fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
+  fcRender();
+});
+// «Посчитать моделью»: первое нажатие говорит, что уйдет провайдеру; второе — отправляет.
+fc.ask = false;
+$("#mk-fc-model").addEventListener("click", async () => {
+  hideTip();
+  if (fc.busy) return;
+  if (!native() || !native().MarketsModelForecast) return mkErr("Расчет моделью работает в окне приложения.");
+  const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
+  if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
+  const box = $("#mk-model");
+  if (!fc.ask) {
+    fc.ask = true;
+    box.hidden = false;
+    box.innerHTML = `<h4>Отправить модели?</h4><p class="warn">Модели чата уйдут только суммы продаж по неделям из трех файлов и их периоды — без названий товаров, продавцов и файлов. Это вызов модели за деньги, он появится в «Статистике» как «Прогноз продаж». Нажмите «Посчитать моделью» еще раз, чтобы отправить.</p>`;
+    $("#mk-fc-model").textContent = "Отправить модели";
+    return;
+  }
+  fc.ask = false; fc.busy = true; mkErr("");
+  $("#mk-fc-model").textContent = "Модель считает…";
+  box.innerHTML = '<p class="warn">Модель считает…</p>';
+  try { fcModel(await native().MarketsModelForecast(...fc.paths, true)); }
+  catch (err) { box.innerHTML = `<h4>Модель не посчитала</h4><p class="warn">${esc(errText(err))}</p>`; }
+  fc.busy = false; $("#mk-fc-model").textContent = "Посчитать моделью";
+});
+function fcModel(m) {
+  const pct = (x) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x * 100)) + " %";
+  $("#mk-model").innerHTML = `<h4${mkTip("Расчет модели", "модель " + m.model + " посчитала по тем же суммам по неделям; формула выше проверена тестами, модель — нет")}>Расчет модели ${esc(m.model)} — перепроверьте</h4>` +
+    `<p class="warn">Модель считает на глаз: ее числа нельзя проверить тестом, а формула выше проверена. Если расхождение больше 15 %, верьте формуле и спросите модель, почему она думает иначе.</p>` +
+    `<table><thead><tr><th>Месяц</th><th>модель</th><th>формула</th><th>расхождение</th></tr></thead><tbody>` +
+    m.months.map((x) => `<tr><td>${esc(x.label)}</td><td>${fmt(x.model)} шт</td><td>${x.formula ? fmt(x.formula) + " шт" : "—"}</td><td class="${Math.abs(x.diff) > 0.15 ? "far" : ""}">${x.formula ? pct(x.diff) : "нет в формуле"}</td></tr>`).join("") +
+    `</tbody></table><p>Пик по модели: <b>${esc(fcDay(m.peak))}</b>${fc.v ? ` · по формуле: ${esc(fcDay(fc.v.peak.day))}` : ""}</p>` +
+    (m.note ? `<p class="warn">Модель: ${esc(m.note)}</p>` : "");
+}
+function fcKpis(v) {
+  const pct = (x) => (x * 100).toFixed(1).replace(".", ",") + " %";
+  const months = v.months.map((m) => `<div class="mk-kpi"${mkTip(m.label + ", прогноз", "сумма прогноза по дням месяца; диапазон — из разброса прошлого года")}><div class="k">${esc(m.label[0].toUpperCase() + m.label.slice(1))}, прогноз</div>` +
+    `<div class="v">${fmt(m.value)} шт</div><div class="s">${fmt(m.lo)}–${fmt(m.hi)}</div></div>`).join("");
+  const g = v.growth, gs = (g > 0 ? "+" : g < 0 ? "−" : "") + Math.abs(Math.round(g * 100)) + " %";
+  $("#mk-kpis").innerHTML = months +
+    `<div class="mk-kpi"${mkTip("Пик продаж", "день с наибольшим прогнозом; рядом стоит проверить акции площадки")}><div class="k">Пик продаж</div><div class="v hl">${esc(fcDay(v.peak.day))}</div><div class="s">≈ ${fmt(Math.round(v.peak.value))} шт за день</div></div>` +
+    `<div class="mk-kpi"${mkTip("Ваша доля ниши", "Ваши продажи в штуках к продажам ниши за те же дни из файлов 2 и 3")}><div class="k">Ваша доля ниши</div><div class="v">${pct(v.share)}</div><div class="s">по штукам, ${esc(v.files[2].from)}–${esc(v.files[2].to)}</div></div>` +
+    `<div class="mk-kpi"${mkTip("Рост ниши", "продажи ниши сейчас к тем же дням прошлого года")}><div class="k">Рост ниши к году</div><div class="v">${gs}</div><div class="s">по файлам 1 и 2</div></div>`;
+}
+function fcChart(v) {
+  const W = 920, H = 240, padL = 40, padB = 22, padT = 18, n = v.days.length;
+  const top = Math.max(...v.days.map((d) => d.hi), ...v.lastYear.map((d) => d.value), 1);
+  const x = (i) => padL + (n > 1 ? (i * (W - padL - 8)) / (n - 1) : 0), y = (val) => padT + (H - padT - padB) * (1 - val / top);
+  const step = n > 1 ? (W - padL - 8) / (n - 1) : 0;
+  const pts = (arr, k) => arr.map((d, i) => `${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(" ");
+  const band = v.days.map((d, i) => `${x(i).toFixed(1)},${y(d.hi).toFixed(1)}`).join(" ") + " " + v.days.map((d, i) => `${x(i).toFixed(1)},${y(d.lo).toFixed(1)}`).reverse().join(" ");
+  const we = v.days.map((d, i) => { const wd = fcDate(d.day).getDay(); return wd === 0 || wd === 6 ? `<rect class="we" x="${(x(i) - step / 2).toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${H - padT - padB}"/>` : ""; }).join("");
+  const pi = v.days.findIndex((d) => d.day === v.peak.day);
+  const ticks = v.days.map((d, i) => { const dt = fcDate(d.day); return dt.getDate() === 1 || dt.getDate() % 7 === 1 ? `<text class="ax" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${dt.getDate()} ${MON_GEN[dt.getMonth()].slice(0, 3)}</text>` : ""; }).join("");
+  const yt = [0, 0.5, 1].map((f) => `<text class="ax" x="${padL - 6}" y="${(y(top * f) + 3).toFixed(1)}" text-anchor="end">${fmt(Math.round(top * f))}</text>`).join("");
+  const hits = v.days.map((d, i) => `<rect class="hit" x="${(x(i) - step / 2).toFixed(1)}" y="${padT}" width="${Math.max(step, 2).toFixed(1)}" height="${H - padT - padB}"` +
+    `${mkTip(fcDay(d.day), `прогноз ${fmt(Math.round(d.value))} шт · диапазон ${fmt(Math.round(d.lo))}–${fmt(Math.round(d.hi))} · прошлый год в Вашем масштабе ${fmt(Math.round(v.lastYear[i].value))}`)}/>`).join("");
+  $("#mk-chart").innerHTML = `<h4>Продажи по дням, ${esc(v.months.map((m) => m.label).join(" — "))}</h4>` +
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Прогноз продаж по дням">${we}<polygon class="band" points="${band}"/>` +
+    `<polyline class="ly" points="${pts(v.lastYear, "value")}"/><polyline class="fc" points="${pts(v.days, "value")}"/>` +
+    (pi >= 0 ? `<circle class="pk" cx="${x(pi).toFixed(1)}" cy="${y(v.days[pi].value).toFixed(1)}" r="4"/><text class="pkl" x="${x(pi).toFixed(1)}" y="${(y(v.days[pi].value) - 9).toFixed(1)}" text-anchor="middle">пик</text>` : "") +
+    `${ticks}${yt}${hits}</svg>` +
+    `<div class="mk-legend"><span><i class="fc"></i>прогноз, штук</span><span><i class="band"></i>диапазон</span><span><i class="ly"></i>прошлый год, кривая ниши в Вашем масштабе</span><span>серым — выходные</span></div>`;
+}
 // «Оформление → Маркеты» (accents.look mk-*): палитра, свои цвета, анимация,
 // вид графика и плотность строк. Владелец 13.11: гибкость, как у Артефактов.
 const MK_ANIMS = [["full", "перелив при наведении"], ["none", "без анимации"]];
