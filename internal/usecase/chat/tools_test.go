@@ -238,3 +238,21 @@ func TestToolsMode_Extra(t *testing.T) {
 		t.Error("shop_summary not offered")
 	}
 }
+
+// Инструмент без обязательных полей модель зовет с пустыми аргументами:
+// через шлюз Haiku прислал "" к shop_money, и чат ответил «аргументы не
+// разобраны» вместо денег магазина (живой чат 14.11). Пусто — это «{}».
+func TestToolsMode_EmptyArgumentsAreNoArguments(t *testing.T) {
+	for _, args := range []string{"", "  ", "\n"} {
+		r := &fakeReader{docs: map[string]chat.Doc{}}
+		m := &scriptModel{replies: []chat.ModelReply{call("c1", "shop_summary", args), {Content: "Заказано 10 шт."}}}
+		x := &fakeExtra{}
+		if _, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(r)).Respond(context.Background(),
+			chat.Request{Question: "как магазин?", Mode: chat.ModeTools, Extras: []chat.Extra{x}}); err != nil {
+			t.Fatal(err)
+		}
+		if res := m.asked[1][len(m.asked[1])-1].Content; res != "заказано 10 шт" || len(x.ran) != 1 {
+			t.Errorf("args %q: tool result %q, ran %v", args, res, x.ran)
+		}
+	}
+}
