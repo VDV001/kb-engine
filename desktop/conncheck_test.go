@@ -249,3 +249,41 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 		t.Errorf("file + MPStats: %v", err)
 	}
 }
+
+// «Ниша → Из MPStats» (решение владельца 13.11): подкатегории выбранной
+// категории за период и те же дни год назад — рост к году и оценка 0-100.
+func TestNichesMPStats(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	if _, err := s.nichesMPStats(context.Background(), nil, "Одежда", "2026-10-14", "2026-11-12", time.Now()); err == nil || !strings.Contains(err.Error(), "MPStats") {
+		t.Errorf("no connection: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			if r.URL.Query().Get("d1") == "2025-10-14" {
+				_, _ = w.Write([]byte(`[{"name":"Куртки","sales":100,"revenue":1000,"sellers_with_sells":5}]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":1},{"name":"Куртки","sales":150,"revenue":3000,"sellers_with_sells":7},{"name":"Шарфы","sales":30,"revenue":300,"sellers_with_sells":2}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 {
+		t.Errorf("view = %+v", v)
+	}
+	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-11-12", "2026-10-14", time.Now()); err == nil {
+		t.Error("reversed period accepted")
+	}
+}
