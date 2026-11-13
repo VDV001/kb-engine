@@ -245,6 +245,10 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	if n != 10 {
 		t.Errorf("%d requests for two forecasts, want 10 (7 + 3, once)", n)
 	}
+	// Подключение в запомненном источнике удалили, а другое есть — берется оно (живая проверка 13.11).
+	if _, err := s.forecast(context.Background(), "", srv.Client(), "mpstats:старое|Одежда/Куртки", "mpstats:старое|Одежда/Куртки", own, today); err != nil {
+		t.Errorf("stale connection id: %v", err)
+	}
 	if _, err := s.forecast(context.Background(), "", srv.Client(), own, src, own, today); err == nil || !strings.Contains(err.Error(), "обе ниши") {
 		t.Errorf("file + MPStats: %v", err)
 	}
