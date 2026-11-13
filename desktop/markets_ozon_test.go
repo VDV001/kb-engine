@@ -267,3 +267,40 @@ func TestOzonShopPeriod(t *testing.T) {
 		t.Error("disabled cabinet still served from memory")
 	}
 }
+
+// «Магазин» открывается последней загрузкой (отзыв владельца 13.11): она лежит
+// рядом с настройками и переживает перезапуск окна; «Загрузить из Ozon» —
+// только по кнопке. Период режется и из сохраненной; удаление кабинета стирает ее.
+func TestOzonShopLast(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ozonShopLast(row.ID); err == nil {
+		t.Error("last load before any load")
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	s.shopLoads = shopLoadCache{} // как после перезапуска окна
+	v, err := s.ozonShopLast(row.ID)
+	if err != nil {
+		t.Fatalf("last: %v", err)
+	}
+	if len(v.Products) != 2 || v.LoadedAt == "" || v.Economy == nil || v.Economy.Total != 462.5 {
+		t.Errorf("last view: %d products, loaded %q, economy %+v", len(v.Products), v.LoadedAt, v.Economy)
+	}
+	s.shopLoads = shopLoadCache{}
+	if p, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12"); err != nil || p.PeriodDays != 3 {
+		t.Errorf("period from the saved load: %v, %+v", err, p.PeriodDays)
+	}
+	s.dropShopLoad(row.ID)
+	s.shopLoads = shopLoadCache{}
+	if _, err := s.ozonShopLast(row.ID); err == nil {
+		t.Error("dropped load still read")
+	}
+}
