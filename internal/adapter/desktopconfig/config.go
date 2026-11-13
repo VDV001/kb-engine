@@ -41,6 +41,8 @@ type Config struct {
 	// (TabList отдает DefaultTabs), пустой список — только «Все». Без
 	// omitempty: пустой список иначе не записался бы и вернулся бы набором.
 	Tabs []Tab `json:"tabs"`
+	// TabsV — версия набора вкладок (tabsVersion); 0 — запись прежней сборки.
+	TabsV int `json:"tabsV,omitempty"`
 	// Accents — оформление окна: какие акценты спектра включены. Нулевое —
 	// свой набор без выключенных, то есть все.
 	Accents Accents `json:"accents"`
@@ -97,6 +99,7 @@ func Read(path string) (Config, error) {
 	cfg.migrate()
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
+	cfg.addArtifactsTab()
 	cfg.dropBadAccents()
 	cfg.dropBadSpend()
 	cfg.dropBadBrowser()
@@ -127,6 +130,7 @@ func Write(path string, cfg Config) error {
 	cfg.migrate()
 	cfg.dropBadModules()
 	cfg.dropBadTabs()
+	cfg.TabsV = tabsVersion // набор пишет эта сборка: «Артефакты» в нем решены человеком
 	cfg.dropBadAccents()
 	cfg.dropBadSpend()
 	cfg.dropBadBrowser()

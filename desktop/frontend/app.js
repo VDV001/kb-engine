@@ -380,6 +380,7 @@ const DEFAULT_TABS = [
   { name: "Документы", kind: "type", value: "doc" },
   { name: "Код", kind: "type", value: "code" },
   { name: "Картинки", kind: "type", value: "image" },
+  { name: "Артефакты", kind: "view", value: "artifacts" },
 ];
 const TYPE_TIP = {
   kb: "Записи каталога и kb-серверов",
@@ -388,16 +389,21 @@ const TYPE_TIP = {
   image: "Найденные картинки папок: текст на них распознается",
 };
 const TYPE_NAME = { kb: "база", doc: "док", code: "код", image: "картинки" };
+// Экраны окна среди вкладок поиска (desktopconfig.TabView): двигаются и убираются,
+// как вкладки по типу (решение владельца 13.11); ключ — имя экрана, как раньше.
+const VIEW_NAME = { artifacts: "артефакты" };
+const VIEW_TIP = { artifacts: "Документы из папок и их версии: у каждой написано, что в нее добавили" };
 state.tabs = DEFAULT_TABS;
 // Ключ вкладки — вид и значение (desktopconfig.Tab.Key), а не номер: после
 // удаления или перестановки активной иначе стала бы соседняя. Вкладку
 // неизвестного вида (ее записала новая сборка) окно хранит, но не показывает.
-const tabKey = (t) => t.kind + ":" + t.value;
-const visibleTab = (t) => (t.kind === "type" && TYPE_NAME[t.value] !== undefined) || t.kind === "source";
+const tabKey = (t) => (t.kind === "view" ? t.value : t.kind + ":" + t.value);
+const visibleTab = (t) => (t.kind === "type" && TYPE_NAME[t.value] !== undefined) || (t.kind === "view" && VIEW_NAME[t.value] !== undefined) || t.kind === "source";
 const kbItem = (e) => ({ type: "kb", e });
 const fileItem = (f) => ({ type: "file", f });
 const tabItems = (t, kb, files) =>
-  t.kind === "type"
+  t.kind === "view" ? [] // экран, а не выдача
+  : t.kind === "type"
     ? t.value === "kb" ? kb.map(kbItem) : files.filter((f) => f.kind === t.value).map(fileItem)
     : [...kb.filter((e) => e._src === t.value).map(kbItem), ...files.filter((f) => f._src === t.value).map(fileItem)];
 // Модули окна (#435): вкладка модуля — после вкладок поиска, ключ module:<id>.
@@ -416,7 +422,8 @@ const MODULES = {
   browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; включается кнопкой над страницей (из терминала — kbengine browser serve)", src: "/browser/",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.3 3.7 5 3.7 8s-1.2 5.7-3.7 8c-2.5-2.3-3.7-5-3.7-8S9.5 6.3 12 4Z"/>' },
   markets: { name: "Маркеты", what: "ниши Wildberries и Ozon из выгрузки сервиса аналитики: продажи, выручка, продавцы, рост", view: "markets",
-    icon: '<path d="M5.5 8h13l-1.1 11a1.5 1.5 0 0 1-1.5 1.4H8.1a1.5 1.5 0 0 1-1.5-1.4z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>' },
+    // Тележка, а не сумка: сумка в 16 px читалась как мусорная корзина (замечание владельца 13.11).
+    icon: '<path d="M3.5 4.5h2.2l2.1 10.3a1.5 1.5 0 0 0 1.5 1.2h8.1a1.5 1.5 0 0 0 1.5-1.1l1.6-6.4H6.6"/><circle cx="9.8" cy="19.6" r="1.3"/><circle cx="16.6" cy="19.6" r="1.3"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -427,7 +434,7 @@ state.modules = [];
 state.mm = { data: null, alert: "", sel: "health", busy: false, confirm: "", hv: { view: "pulse", day: null, rule: null, jf: "all" } }; // экран «Память»
 const moduleKeys = () => state.modules.filter((m) => m.enabled && MODULES[m.id]).map((m) => "module:" + m.id);
 const moduleOf = (key) => (key.startsWith("module:") ? key.slice("module:".length) : null);
-const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), "artifacts", ...moduleKeys()];
+const tabKeys = () => ["all", ...state.tabs.filter(visibleTab).map(tabKey), ...moduleKeys()];
 function itemsOf(key, kb, files) {
   // «Все» — объединение вкладок: все записи базы и все файлы, число равно сумме
   // (решение владельца 06.11; до того база резалась до 5 и «Все» показывало
@@ -439,6 +446,7 @@ function itemsOf(key, kb, files) {
 const sourceOf = (t) => state.known.find((x) => x.id === t.value);
 function tabTip(t) {
   if (t.kind === "type") return TYPE_TIP[t.value] || "";
+  if (t.kind === "view") return VIEW_TIP[t.value] || "";
   const s = sourceOf(t);
   return s ? `Записи и файлы источника ${label(s)}` : "Источника больше нет в списке — вкладка пуста";
 }
@@ -501,9 +509,8 @@ function renderTabs() {
     return b;
   };
   const searchTabs = () => [stab("all", "Все", "Записи базы и найденные файлы папок — все вкладки вместе"),
-    ...state.tabs.filter(visibleTab).map((t) => stab(tabKey(t), t.name, tabTip(t))),
-    // «Артефакты» — не вкладка по типу и не модуль: она при основных всегда (решение владельца 11.11).
-    btn("artifacts", "Артефакты", "Документы из папок и их версии: у каждой написано, что в нее добавили")];
+    // Экран («Артефакты») — без числа найденного: он ищет сам.
+    ...state.tabs.filter(visibleTab).map((t) => (t.kind === "view" ? btn : stab)(tabKey(t), t.name, tabTip(t)))];
   const searchBtn = () => btn("search", "Поиск", "Записи базы и файлы ваших папок; вкладки — под строкой поиска", SEARCH_ICON);
   const mods = () => moduleKeys().map((k) => { const m = MODULES[moduleOf(k)]; return btn(k, m.name, m.what, m.icon || MODULE_ICON); });
   const put = (...xs) => xs.forEach((x) => nav.insertBefore(x, ink));
@@ -1923,6 +1930,7 @@ function renderTabSettings() {
   const what = (t) => {
     if (!visibleTab(t)) return `<span class="what gone">из новой версии окна</span>`;
     if (t.kind === "type") return `<span class="what">тип · ${esc(TYPE_NAME[t.value])}</span>`;
+    if (t.kind === "view") return `<span class="what">экран · ${esc(VIEW_NAME[t.value])}</span>`;
     const src = sourceOf(t);
     return src ? `<span class="what">источник · ${esc(label(src))}</span>` : `<span class="what gone">источник убран</span>`;
   };
@@ -1936,8 +1944,10 @@ function renderTabSettings() {
         <button data-tab-down="${i}" aria-label="Ниже" ${editable && i < n - 1 ? "" : "disabled"}>↓</button>
         <button class="del" data-tab-del="${i}" aria-label="Убрать вкладку ${esc(t.name)}" ${editable ? "" : "disabled"}>✕</button>
       </span></li>`).join("");
-  const types = Object.keys(TYPE_NAME).filter((v) => !state.tabs.some((t) => t.kind === "type" && t.value === v));
-  $("#tab-add-type").innerHTML = `<option value="">по типу…</option>` + types.map((v) => `<option value="${v}">${esc(TYPE_NAME[v])}</option>`).join("");
+  // «По типу…» — и типы выдачи, и экраны («Артефакты»), которых нет в наборе.
+  const types = [...Object.keys(TYPE_NAME).map((v) => ["type", v, TYPE_NAME[v]]), ...Object.keys(VIEW_NAME).map((v) => ["view", v, VIEW_NAME[v]])]
+    .filter(([k, v]) => !state.tabs.some((t) => t.kind === k && t.value === v));
+  $("#tab-add-type").innerHTML = `<option value="">по типу…</option>` + types.map(([k, v, n]) => `<option value="${k}:${v}">${esc(n)}</option>`).join("");
   const srcs = state.known.filter((x) => !state.tabs.some((t) => t.kind === "source" && t.value === x.id));
   $("#tab-add-source").innerHTML = `<option value="">по источнику…</option>` + srcs.map((x) => `<option value="${esc(x.id)}">${esc(label(x))}</option>`).join("");
   $("#tab-add-type").disabled = !editable || !types.length;
@@ -1961,7 +1971,7 @@ function saveTabs(next) {
   });
 }
 // Имена «+ по типу» — из набора по умолчанию: одна копия, а не вторая.
-const TYPE_TITLE = Object.fromEntries(DEFAULT_TABS.map((t) => [t.value, t.name]));
+const TYPE_TITLE = Object.fromEntries(DEFAULT_TABS.map((t) => [t.kind + ":" + t.value, t.name]));
 $("#tab-list").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
@@ -2033,11 +2043,11 @@ tabList.addEventListener("drop", (e) => {
   toast(`${to + 2}-я вкладка`, ` · «${moved.name}»`, () => saveTabs(before));
 });
 $("#tab-add-type").addEventListener("change", (e) => {
-  const v = e.target.value;
+  const [kind, v] = e.target.value.split(":");
   if (!v) return;
-  const before = state.tabs.slice();
-  saveTabs([...state.tabs, { name: TYPE_TITLE[v], kind: "type", value: v }]);
-  toast("Вкладка добавлена", ` · «${TYPE_TITLE[v]}»`, () => saveTabs(before));
+  const before = state.tabs.slice(), name = TYPE_TITLE[kind + ":" + v];
+  saveTabs([...state.tabs, { name, kind, value: v }]);
+  toast("Вкладка добавлена", ` · «${name}»`, () => saveTabs(before));
 });
 $("#tab-add-source").addEventListener("change", (e) => {
   const s = state.known.find((x) => x.id === e.target.value);

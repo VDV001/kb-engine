@@ -29,6 +29,17 @@ var ErrTab = errors.New("вкладка задана не полностью")
 // виды файлов из домена («прочее» вкладкой не бывает).
 var tabTypes = []string{"kb", domain.FileKindDoc.String(), domain.FileKindCode.String(), domain.FileKindImage.String()}
 
+// tabViews — экраны окна, которые стоят среди вкладок поиска.
+var tabViews = []string{"artifacts"}
+
+// artifactsTab — «Артефакты» (#547): до 13.11.2026 стояли при вкладках всегда,
+// теперь — вкладка списка, ее двигают и убирают (решение владельца 13.11).
+var artifactsTab = Tab{Name: "Артефакты", Kind: TabView, Value: "artifacts"}
+
+// tabsVersion — версия набора вкладок: 1 — «Артефакты» уже в списке. У записи
+// без нее (прежняя сборка) «Артефакты» дописываются один раз.
+const tabsVersion = 1
+
 // Tab — вкладка поиска окна. «Все» в списке не хранится: она всегда первая.
 type Tab struct {
 	Name  string  `json:"name"`
@@ -50,6 +61,10 @@ func (t Tab) Check() error {
 		if t.Value == "" {
 			return fmt.Errorf("%w: %s без источника", ErrTab, t.Name)
 		}
+	case TabView:
+		if !slices.Contains(tabViews, t.Value) {
+			return fmt.Errorf("%w: экран %q", ErrTab, t.Value)
+		}
 	default:
 		return fmt.Errorf("%w: вид %q", ErrTab, t.Kind)
 	}
@@ -64,7 +79,18 @@ func DefaultTabs() []Tab {
 		{Name: "Документы", Kind: TabByType, Value: "doc"},
 		{Name: "Код", Kind: TabByType, Value: "code"},
 		{Name: "Картинки", Kind: TabByType, Value: "image"},
+		artifactsTab,
 	}
+}
+
+// addArtifactsTab дописывает «Артефакты» в конец набора прежней сборки: тогда
+// они были видны всегда, и пропасть после обновления не должны. Убранные
+// человеком в этой сборке не возвращаются — набор уже помечен версией.
+func (c *Config) addArtifactsTab() {
+	if c.Tabs != nil && c.TabsV < tabsVersion && !slices.ContainsFunc(c.Tabs, func(t Tab) bool { return t.Key() == artifactsTab.Key() }) {
+		c.Tabs = append(c.Tabs, artifactsTab)
+	}
+	c.TabsV = tabsVersion
 }
 
 // TabList returns the tabs after «Все»: заданные, а без записи — DefaultTabs.
