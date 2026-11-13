@@ -41,10 +41,12 @@ type Problem struct {
 
 // Table — прочитанный файл ниш. HeaderRow — номер строки заголовков с 1.
 type Table struct {
-	HeaderRow int
-	Columns   []Column
-	Niches    []*domain.Niche
-	Problems  []Problem
+	HeaderRow  int
+	PeriodDays int // за сколько дней выгрузка; 0 — не знаю
+	Items      int // ниши собраны из стольких товаров; 0 — выгрузка ниш
+	Columns    []Column
+	Niches     []*domain.Niche
+	Problems   []Problem
 }
 
 // headerScan — сколько строк сверху смотреть в поисках заголовков: над ними

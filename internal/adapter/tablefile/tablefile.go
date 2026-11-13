@@ -3,10 +3,13 @@
 package tablefile
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -101,4 +104,63 @@ func delimiter(b []byte) rune {
 		return ';'
 	}
 	return ','
+}
+
+// sniffBytes — сколько байт сверху пробовать на кодировку и разделитель.
+const sniffBytes = 64 << 10
+
+// Rows streams a csv row by row without the MaxBytes limit: выгрузка MPStats
+// «Товары категории» весит 650-800 МБ (живая проверка #580). Кодировку и
+// разделитель решает по началу файла, как Read; xlsx не потоковый — ошибка.
+func Rows(path string) iter.Seq2[[]string, error] {
+	return func(yield func([]string, error) bool) {
+		if ext := strings.ToLower(filepath.Ext(path)); ext != ".csv" {
+			yield(nil, fmt.Errorf("%w потоком: %s", ErrUnsupported, filepath.Base(path)))
+			return
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
+		defer func() { _ = f.Close() }()
+		br := bufio.NewReaderSize(f, sniffBytes)
+		head, err := br.Peek(sniffBytes)
+		if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, bufio.ErrBufferFull) {
+			yield(nil, err)
+			return
+		}
+		if bom := []byte("\xef\xbb\xbf"); bytes.HasPrefix(head, bom) {
+			_, _ = br.Discard(len(bom)) // в буфере: Discard не читает файл и не падает
+			head = head[len(bom):]
+		}
+		var src io.Reader = br
+		if !utf8Head(head) {
+			src = charmap.Windows1251.NewDecoder().Reader(br)
+		}
+		r := csv.NewReader(src)
+		r.Comma = delimiter(head)
+		r.FieldsPerRecord = -1
+		r.LazyQuotes = true
+		for {
+			row, err := r.Read()
+			if errors.Is(err, io.EOF) {
+				return
+			}
+			if !yield(row, err) || err != nil {
+				return
+			}
+		}
+	}
+}
+
+// utf8Head reports whether the start of a file is UTF-8: последняя буква
+// пробы может быть разрезана границей, она не делает файл Windows-1251.
+func utf8Head(b []byte) bool {
+	for cut := 0; cut < utf8.UTFMax && len(b) > cut; cut++ {
+		if utf8.Valid(b[:len(b)-cut]) {
+			return true
+		}
+	}
+	return utf8.Valid(b)
 }
