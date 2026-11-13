@@ -29,7 +29,10 @@ type ShopData struct {
 	// читают ради сводки.
 	Accruals []OzonAccrual
 	Returns  []OzonReturn
-	Now      time.Time // от него «две недели» пропаж
+	// ReturnsErr — почему возвратов нет (у ключа нет к ним доступа): деньги
+	// отвечают, пропажи называют причину (ревью #597).
+	ReturnsErr error
+	Now        time.Time // от него «две недели» пропаж
 }
 
 // ShopToolSpec — инструмент для модели: имя, описание, JSON-схема аргументов.

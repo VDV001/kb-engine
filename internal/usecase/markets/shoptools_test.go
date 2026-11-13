@@ -2,6 +2,7 @@ package markets_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -168,5 +169,18 @@ func TestShopTools_moneyAndLosses(t *testing.T) {
 	out, err := markets.ShopTools{Load: tools.Load}.Run(context.Background(), "shop_money", []byte(`{}`))
 	if err != nil || !strings.Contains(out, "недоступн") {
 		t.Errorf("no money loader: %q, %v", out, err)
+	}
+}
+
+// Возвраты закрыты, начисления есть: деньги отвечают, пропажи называют причину (ревью #597).
+func TestShopTools_returnsUnavailable(t *testing.T) {
+	d := shopData()
+	d.ReturnsErr = errors.New("нет доступа к возвратам")
+	tools := markets.ShopTools{Money: func(context.Context, string) (markets.ShopData, error) { return d, nil }}
+	if out, err := tools.Run(context.Background(), "shop_money", []byte(`{}`)); err != nil || !strings.Contains(out, "на счет") {
+		t.Errorf("money without returns: %q, %v", out, err)
+	}
+	if out, err := tools.Run(context.Background(), "shop_losses", []byte(`{}`)); err != nil || !strings.Contains(out, "нет доступа к возвратам") {
+		t.Errorf("losses without returns: %q, %v", out, err)
 	}
 }
