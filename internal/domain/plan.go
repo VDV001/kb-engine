@@ -181,5 +181,8 @@ func (p Plan) Supply() (qty float64, by time.Time) {
 	return max(p.demand-p.stock, 0), p.out.AddDate(0, 0, -p.lead)
 }
 
+// Peak is the forecast's peak day.
+func (p Plan) Peak() time.Time { return p.peak }
+
 // ShortForPeak — остаток кончится раньше дня пика или в него.
 func (p Plan) ShortForPeak() bool { return !p.out.IsZero() && !p.out.After(p.peak) }
