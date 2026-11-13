@@ -211,3 +211,44 @@ func TestOzonShopStages(t *testing.T) {
 		}
 	}
 }
+
+// «Магазин» за выбранные даты (отзыв владельца 13.11): режется из загруженных
+// 90 дней без новых запросов; до загрузки, вне окна и задом наперед — отказ.
+func TestOzonShopPeriod(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12"); err == nil {
+		t.Error("period before any load accepted")
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close() // дальше — только загруженное
+
+	v, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12")
+	if err != nil {
+		t.Fatalf("period: %v", err)
+	}
+	if v.Period != "10.11.2026 – 12.11.2026" || v.PeriodDays != 3 || v.Source != "ozon" || v.From != "2026-11-10" || v.WindowFrom != "2026-08-15" || v.WindowTo != "2026-11-12" {
+		t.Errorf("view = %q %d %q from %q window %q–%q", v.Period, v.PeriodDays, v.Source, v.From, v.WindowFrom, v.WindowTo)
+	}
+	if v.Economy == nil || v.Economy.Total != 462.5 {
+		t.Errorf("economy = %+v, want the 12.11 accrual only", v.Economy)
+	}
+	if v.Losses == nil || len(v.Losses.Rows) != 0 {
+		t.Errorf("losses = %+v; the October write-off is outside the days", v.Losses)
+	}
+	if v, err := s.ozonShopPeriod(row.ID, "2026-10-01", "2026-10-31"); err != nil || v.Economy.Total != 0 || len(v.Losses.Rows) != 1 {
+		t.Errorf("October: err %v, economy %+v, losses %+v", err, v.Economy, v.Losses)
+	}
+	for _, bad := range [][2]string{{"2026-08-01", "2026-08-20"}, {"2026-11-12", "2026-11-10"}, {"вчера", "2026-11-12"}} {
+		if _, err := s.ozonShopPeriod(row.ID, bad[0], bad[1]); err == nil {
+			t.Errorf("period %v accepted", bad)
+		}
+	}
+}
