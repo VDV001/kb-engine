@@ -2082,6 +2082,12 @@ const ACCENTS = [
   ["scan-run", "Машины: ход скана", "бегущая полоса, пока идет скан по ssh"],
   ["art-buttons", "Артефакты: кнопки версии", "Открыть, Просмотр, В Finder, Актуальная, Заметка, Описать — рамкой градиента; палитра в «Артефакты» ниже"],
   ["art-pick", "Артефакты: «сравнить»", "отметка и подпись цветом палитры"],
+  ["mk-title", "Маркеты: заголовок", "слово «Маркеты» градиентом; палитра в «Маркеты» ниже"],
+  ["mk-tab", "Маркеты: вкладка", "открытая вкладка рамкой градиента и черта под шапкой"],
+  ["mk-score", "Маркеты: оценка", "значок оценки градиентом; без него — цвет по уровню: зеленый, желтый, красный"],
+  ["mk-spark", "Маркеты: график сезона", "линия продаж по месяцам градиентом"],
+  ["mk-row", "Маркеты: выбранная ниша", "черта градиентом у выбранной строки"],
+  ["mk-buttons", "Маркеты: главные кнопки", "«Открыть выгрузку» и «Сравнить» рамкой градиента"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -2093,6 +2099,7 @@ function applyAccents() {
   acLoginApply(); // цвет плашки логина в «Доступах»
   mhApply(); // палитра, скорость, ползунки и громкость сигнала здоровья памяти
   agApply(); // палитра и поведение кнопок «Артефактов»
+  mkApply(); // палитра, анимация, график и плотность «Маркетов»
   refreshTabs(); // вид шапки — тоже в оформлении; render возвращает числа у вкладок
 }
 function renderAccents() {
@@ -2112,6 +2119,7 @@ function renderAccents() {
   renderLookHeader();
   renderLookHealth();
   renderLookArtifacts();
+  renderLookMarkets();
 }
 // «Оформление → Здоровье памяти»: палитра, перелив и громкость сигнала (accents.look).
 // По умолчанию перелив включен: сигнал должен бросаться в глаза.
@@ -5062,14 +5070,31 @@ document.addEventListener("keydown", (e) => {
   if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); $("#hp-q").focus(); $("#hp-q").select(); }
 });
 
-// --- Маркеты (#580): экран «Ниша» ------------------------------------------------
-// Выгрузку читает Go (MarketsRead) при открытии и при каждом выборе колонки;
-// окно помнит только путь и выбор колонок — в localStorage, удобство одного Мака.
-const mk = { tb: null, picks: [], q: "", sort: "", dir: -1, sel: 0, first: true };
+// --- Маркеты (#580): экран «Ниша» по макету владельца 12.11 ----------------------
+// Выгрузку читает Go (MarketsRead): колонки, ниши, оценку и сезон считает домен;
+// окно показывает и объясняет. Помнит только путь и выбор колонок — в localStorage.
+const mk = { tb: null, picks: [], q: "", sort: "", dir: -1, sel: 0, mp: "all", season: false, cmp: [], first: true };
 const MK_KEY = "dvk.markets.niche";
+const MK_MON = ["", "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
+const MK_IN = ["", "январе", "феврале", "марте", "апреле", "мае", "июне", "июле", "августе", "сентябре", "октябре", "ноябре", "декабре"];
+const MK_MP = { wb: "Wildberries", ozon: "Ozon" };
+const MK_PART = { growth: "рост к году", perSeller: "выручка на продавца", top10: "свобода от топ-10", months: "сезон" };
+const MK_MISS = { growth: "роста к году", perSeller: "выручки (или продаж и цены) и продавцов", top10: "доли топ-10", months: "продаж по месяцам" };
+// Что значит колонка: подсказка у заголовка таблицы, строки карточки и выбора колонки.
+const MK_TIP = {
+  name: "ниша — предмет или категория из выгрузки",
+  sales: "продано штук в месяц по всей нише, по данным сервиса аналитики",
+  revenue: "выручка всей ниши в месяц, ₽",
+  sellers: "сколько продавцов торгует в нише; чем меньше, тем легче выделиться",
+  price: "средняя цена продажи в нише, ₽",
+  growth: "как изменился спрос к тому же периоду прошлого года; зеленый — растет, красный — падает",
+  top10: "какую долю выручки забирают 10 крупнейших продавцов; больше 45 % — войти труднее",
+  marketplace: "на каких площадках есть ниша",
+};
 function mkSave() { try { localStorage.setItem(MK_KEY, JSON.stringify({ path: mk.tb.path, picks: mk.picks })); } catch (_) { /* без хранилища окно просто не вспомнит файл */ } }
 function mkLoad() { try { return JSON.parse(localStorage.getItem(MK_KEY) || "null"); } catch (_) { return null; } }
-const mkLabel = (id) => (id === "name" ? "Ниша" : ((mk.tb.fields.find((f) => f.id === id) || {}).label || id));
+const mkLabel = (id) => (id === "name" ? "Ниша" : id === "season" ? "Сезон" : id === "score" ? "Оценка" : ((mk.tb.fields.find((f) => f.id === id) || {}).label || id));
+const mkTip = (title, body) => ` data-tip="${esc(title)}" data-tip-b="${esc(body)}"`;
 function mkVal(id, v) {
   if (v === undefined) return "—";
   if (id === "growth") return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v * 100)) + " %";
@@ -5077,12 +5102,22 @@ function mkVal(id, v) {
   const s = fmt(Math.round(v));
   return id === "revenue" || id === "price" ? s + " ₽" : s;
 }
+const mkMoney = (v) => (v >= 1e6 ? fmt(Math.round(v / 1e6)) + " млн ₽" : v >= 1e3 ? fmt(Math.round(v / 1e3)) + " тыс. ₽" : fmt(Math.round(v)) + " ₽");
+const mkLevel = (s) => (!s.ok ? "na" : s.score >= 65 ? "hi" : s.score >= 45 ? "mid" : "lo");
+// mkScoreTip объясняет число: из каких частей и с каким весом сложено, чего не хватило.
+function mkScoreTip(s) {
+  const miss = s.missing.map((m) => MK_MISS[m]).filter(Boolean);
+  if (!s.ok) return mkTip("Оценки нет", "в файле нет " + miss.join(", ") + ": без этого оценку не посчитать");
+  const parts = s.parts.map((p) => `${MK_PART[p.id]}: ${Math.round(p.value * 100)} из 100, вес ${Math.round(p.weight * 100)} %`).join(" · ");
+  return mkTip(`Оценка ${s.score} из 100`, parts + (miss.length ? ` · без ${miss.join(", ")}: веса поделены заново` : "") + " · подсказка, а не решение");
+}
 function mkErr(t) { $("#mk-err").textContent = t; $("#mk-err").hidden = !t; }
 async function mkRead(path, picks) {
   mkErr("");
   try {
     mk.tb = await native().MarketsRead(path, picks);
     mk.picks = picks;
+    mk.cmp = mk.cmp.filter((i) => i < mk.tb.niches.length);
     mkSave();
   } catch (e) { mkErr("Не прочитал файл: " + errText(e)); }
   mkRender();
@@ -5090,40 +5125,51 @@ async function mkRead(path, picks) {
 async function openMarkets() {
   if (!mk.first) return;
   mk.first = false;
+  mkRender();
   if (!native() || !native().MarketsRead) return mkErr("Экран «Ниша» работает в окне приложения.");
   const last = mkLoad();
   if (last && last.path) await mkRead(last.path, last.picks || []);
 }
 $("#mk-open").addEventListener("click", async () => {
+  hideTip();
   if (!native() || !native().MarketsPickFile) return mkErr("Экран «Ниша» работает в окне приложения.");
   let p = "";
   try { p = await native().MarketsPickFile(); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
   if (!p) return;
-  mk.sel = 0; mk.sort = ""; mk.q = ""; $("#mk-q").value = "";
+  Object.assign(mk, { sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
+  $("#mk-q").value = "";
   await mkRead(p, []);
 });
+// mkSeasonLabel — «пик в ноябре-январе»: этот месяц и два следующих, как в оценке.
+function mkSeasonLabel() {
+  const m = new Date().getMonth() + 1, last = ((m + 1) % 12) + 1;
+  return `пик в ${MK_IN[m]}-${MK_IN[last]}`;
+}
 function mkRender() {
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
   $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
-  $("#mk-file").title = tb ? tb.path : "";
+  $("#mk-file").dataset.tipB = tb ? `${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят` : "";
   $("#mk-cols").hidden = !tb;
   $("#mk-body").hidden = !tb || tb.needName;
   if (!tb) return;
   mkRenderCols();
-  if (!tb.needName) { mkRenderTable(); mkRenderProbs(); }
+  if (!tb.needName) { mkRenderFilters(); mkRenderTable(); mkRenderCmp(); mkRenderProbs(); }
 }
 // mkRenderCols: колонки файла и что в них; без колонки ниши — вопрос раскрыт.
 function mkRenderCols() {
-  const tb = mk.tb, known = tb.columns.filter((c) => c.field).length;
+  const tb = mk.tb, known = tb.columns.filter((c) => c.field || c.month).length, months = tb.columns.filter((c) => c.month).length;
   $("#mk-cols").classList.toggle("ask", tb.needName);
   if (tb.needName) $("#mk-cols").open = true;
   $("#mk-cols-sum").textContent = tb.needName ? "Не нашел колонку с названием ниши: выберите ее ниже"
-    : `Колонки файла: узнано ${known} из ${tb.columns.length} · заголовки в строке ${tb.headerRow}`;
+    : `Колонки файла: узнано ${known} из ${tb.columns.length}${months ? ` (месяцев ${months})` : ""} · заголовки в строке ${tb.headerRow}`;
   const opts = (sel) => `<option value=""${sel ? "" : " selected"}>не нужна</option>` +
     tb.fields.map((f) => `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc(f.label)}</option>`).join("");
-  $("#mk-cols-b").innerHTML = tb.columns.map((c) => `<label for="mk-c${c.index}" class="${c.field ? "" : "unk"}">${esc(c.header || "колонка " + (c.index + 1))}</label>` +
-    `<select id="mk-c${c.index}" data-mk-col="${c.index}">${opts(c.field)}</select>`).join("");
+  $("#mk-cols-b").innerHTML = tb.columns.map((c) => {
+    const head = `<label for="mk-c${c.index}" class="${c.field || c.month ? "" : "unk"}">${esc(c.header || "колонка " + (c.index + 1))}</label>`;
+    if (c.month) return head + `<span class="mon"${mkTip("Продажи за месяц", "из таких колонок строится график сезона и ищется пик")}>продажи за месяц</span>`;
+    return head + `<select id="mk-c${c.index}" data-mk-col="${c.index}"${mkTip("Что в колонке", c.field ? MK_TIP[c.field] || "" : "окно не узнало колонку: выберите, что в ней, или оставьте «не нужна»")}>${opts(c.field)}</select>`;
+  }).join("");
 }
 $("#mk-cols-b").addEventListener("change", (e) => {
   const s = e.target.closest("[data-mk-col]");
@@ -5131,37 +5177,135 @@ $("#mk-cols-b").addEventListener("change", (e) => {
   const i = +s.dataset.mkCol;
   mkRead(mk.tb.path, [...mk.picks.filter((p) => p.index !== i), { index: i, field: s.value }]);
 });
-// mkShown: величины, которые есть хоть у одной ниши, в порядке колонок.
-const mkShown = () => mk.tb.fields.map((f) => f.id).filter((id) => id !== "name" && mk.tb.niches.some((n) => n.values[id] !== undefined));
-// mkList: номера ниш под поиском в порядке сортировки; ниша без величины — внизу.
+// mkShown: величины для таблицы по макету — из тех, что есть хоть у одной ниши.
+function mkShown() {
+  const ns = mk.tb.niches, has = (id) => ns.some((n) => n.values[id] !== undefined);
+  const cols = ["sales", "growth", "sellers", "price"].filter(has);
+  if (ns.some((n) => n.months.length)) cols.push("season");
+  if (ns.some((n) => n.score.ok)) cols.push("score");
+  return cols;
+}
+function mkRenderFilters() {
+  const ns = mk.tb.niches, cols = mkShown();
+  const mps = Object.keys(MK_MP).filter((m) => ns.some((n) => n.markets.includes(m)));
+  if (!mps.length) mk.mp = "all";
+  $("#mk-mp").innerHTML = mps.length ? [["all", "все", "ниши всех площадок"], ...mps.map((m) => [m, MK_MP[m], "только ниши, которые есть на " + MK_MP[m]])]
+    .map(([v, n, t]) => `<button type="button" data-mk-mp="${v}" aria-pressed="${mk.mp === v}"${mkTip(n, t)}>${n}</button>`).join("") : "";
+  const sorts = [["score", "по оценке", "сначала ниши с большей оценкой 0-100"], ["growth", "по росту", "сначала ниши, где спрос растет быстрее"], ["sales", "по продажам", "сначала ниши с большими продажами в штуках"]]
+    .filter(([v]) => cols.includes(v));
+  $("#mk-sort").innerHTML = sorts.map(([v, n, t]) => `<button type="button" data-mk-by="${v}" aria-pressed="${mk.sort === v}"${mkTip(n, t)}>${n}</button>`).join("");
+  const hasSeason = ns.some((n) => n.score.peak);
+  $("#mk-season-l").hidden = !hasSeason;
+  if (!hasSeason) mk.season = false;
+  $("#mk-season").checked = mk.season;
+  $("#mk-season-t").textContent = mkSeasonLabel();
+  $("#mk-season-l").dataset.tip = mkSeasonLabel();
+  $("#mk-season-l").dataset.tipB = "только ниши, где пик продаж в этом месяце или в двух следующих: под них еще успеть с поставкой";
+}
+// mkList: номера ниш под поиском и фильтрами в порядке сортировки; ниша без величины — внизу.
 function mkList() {
   const fold = (t) => t.toLowerCase().replace(/ё/g, "е");
   const q = fold(mk.q.trim()), key = mk.sort, ns = mk.tb.niches;
-  return ns.map((_, i) => i).filter((i) => !q || fold(ns[i].name).includes(q)).sort((x, y) => {
-    if (key === "name") return mk.dir * ns[x].name.localeCompare(ns[y].name, "ru");
-    const a = ns[x].values[key], b = ns[y].values[key];
-    if (a === undefined || b === undefined) return (a === undefined) - (b === undefined);
-    return mk.dir * (a - b);
-  });
+  const val = (n) => (key === "score" ? (n.score.ok ? n.score.score : undefined) : key === "season" ? (n.months.length ? n.score.peak : undefined) : n.values[key]);
+  return ns.map((_, i) => i)
+    .filter((i) => (!q || fold(ns[i].name).includes(q)) && (mk.mp === "all" || ns[i].markets.includes(mk.mp)) && (!mk.season || ns[i].score.inSeason))
+    .sort((x, y) => {
+      if (key === "name") return mk.dir * ns[x].name.localeCompare(ns[y].name, "ru");
+      const a = val(ns[x]), b = val(ns[y]);
+      if (a === undefined || b === undefined) return (a === undefined) - (b === undefined);
+      return mk.dir * (a - b);
+    });
 }
+// mkSpark рисует продажи по месяцам; точка — пик.
+function mkSpark(months, w, h) {
+  if (!months.length) return "";
+  const vals = months.map((m) => m.value), top = Math.max(...vals) || 1, step = months.length > 1 ? (w - 4) / (months.length - 1) : 0;
+  const pts = vals.map((v, i) => [2 + i * step, h - 2 - (v / top) * (h - 6)]);
+  const line = pts.map(([x, y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const pk = pts[vals.indexOf(top)];
+  return `<svg class="mk-spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polygon class="ar" points="2,${h} ${line} ${pts[pts.length - 1][0].toFixed(1)},${h}"/><polyline class="ln" points="${line}"/><circle class="pk" cx="${pk[0].toFixed(1)}" cy="${pk[1].toFixed(1)}" r="${w > 120 ? 3 : 2}"/></svg>`;
+}
+const mkRange = (n) => (n.months.length ? `${n.months[0].label} — ${n.months[n.months.length - 1].label}` : "");
+function mkSeasonTip(n) {
+  if (!n.months.length) return mkTip("Сезона нет", "в файле нет продаж ниши по месяцам");
+  const s = n.score;
+  return mkTip("Продажи по месяцам", `${mkRange(n)}${s.peak ? ` · пик в ${MK_IN[s.peak]}` + (s.inSeason ? " — скоро" : " — сейчас не сезон") : " · пик не найти: нужно хотя бы полгода"}`);
+}
+const MK_HEAD_TIP = { ...MK_TIP, season: "продажи ниши по месяцам; точка — пик", score: "0-100: рост, выручка на продавца, свобода от топ-10 и сезон; подробнее — наведите на число в строке" };
 function mkRenderTable() {
   const shown = mkShown(), ns = mk.tb.niches;
-  if (mk.sort !== "name" && !shown.includes(mk.sort)) { mk.sort = shown.includes("sales") ? "sales" : shown[0] || "name"; mk.dir = mk.sort === "name" ? 1 : -1; }
+  if (mk.sort !== "name" && !shown.includes(mk.sort)) { mk.sort = shown.includes("score") ? "score" : shown.includes("sales") ? "sales" : shown[0] || "name"; mk.dir = mk.sort === "name" ? 1 : -1; }
   const list = mkList();
   if (!list.includes(mk.sel)) mk.sel = list.length ? list[0] : -1;
   const th = (id, cls) => `<th class="${cls}"${mk.sort === id ? ` aria-sort="${mk.dir > 0 ? "ascending" : "descending"}"` : ""}>` +
-    `<button type="button" data-mk-sort="${id}">${esc(mkLabel(id))}${mk.sort === id ? (mk.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const td = (id, v) => `<td class="n${id === "growth" && v > 0 ? " up" : id === "growth" && v < 0 ? " down" : ""}">${mkVal(id, v)}</td>`;
-  $("#mk-table").innerHTML = `<thead><tr>${th("name", "")}${shown.map((id) => th(id, "n")).join("")}</tr></thead><tbody>` +
-    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td>${esc(ns[i].name)}</td>${shown.map((id) => td(id, ns[i].values[id])).join("")}</tr>`).join("") + "</tbody>";
+    `<button type="button" data-mk-sort="${id}"${mkTip(mkLabel(id), (MK_HEAD_TIP[id] || "") + " · нажмите — сортировка")}>${esc(mkLabel(id))}${mk.sort === id ? (mk.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
+  const td = (n, id) => {
+    if (id === "season") return `<td class="sp"${mkSeasonTip(n)}>${mkSpark(n.months, 80, 22)}</td>`;
+    if (id === "score") return `<td class="n"><span class="mk-sc ${mkLevel(n.score)}"${mkScoreTip(n.score)}>${n.score.ok ? n.score.score : "—"}</span></td>`;
+    const v = n.values[id];
+    return `<td class="n${id === "growth" && v > 0 ? " up" : id === "growth" && v < 0 ? " down" : ""}">${mkVal(id, v)}</td>`;
+  };
+  $("#mk-table").innerHTML = `<thead><tr>${th("name", "")}${shown.map((id) => th(id, id === "season" ? "" : "n")).join("")}</tr></thead><tbody>` +
+    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td>${esc(ns[i].name)}</td>${shown.map((id) => td(ns[i], id)).join("")}</tr>`).join("") + "</tbody>";
   $("#mk-none").hidden = list.length > 0;
+  for (const b of document.querySelectorAll("[data-mk-by]")) b.setAttribute("aria-pressed", String(b.dataset.mkBy === mk.sort));
   mkRenderCard();
+}
+// mkWhy — выводы карточки из фактов домена; числа те же, что в таблице.
+function mkWhy(n) {
+  const s = n.score, v = n.values, out = [];
+  if (v.growth !== undefined) {
+    const g = mkVal("growth", v.growth);
+    out.push(s.growth === "fast" ? `спрос растет быстро: ${g} к прошлому году` : s.growth === "falling" ? `спрос падает: ${g} к прошлому году` : `спрос растет умеренно: ${g}`);
+  }
+  if (v.top10 !== undefined) out.push(`топ-10 держат ${mkVal("top10", v.top10)} выручки — ${s.crowded ? "войти труднее" : "рынок не занят"}`);
+  if (s.perSeller) out.push(`на продавца в среднем ${mkMoney(s.perSeller)} выручки в месяц`);
+  if (s.peak) out.push(!s.inSeason ? `пик в ${MK_IN[s.peak]}: сейчас не сезон` : s.weeksFrom === 0 ? `пик сейчас, в ${MK_IN[s.peak]}` : `пик в ${MK_IN[s.peak]}: до него ${s.weeksFrom}-${s.weeksTo} недель`);
+  const miss = s.missing.map((m) => MK_MISS[m]).filter(Boolean);
+  if (!s.ok) out.push(`оценки нет: в файле нет ${miss.join(", ")}`);
+  else if (miss.length) out.push(`оценка без ${miss.join(", ")}: веса остальных частей поделены заново`);
+  return out;
 }
 function mkRenderCard() {
   const n = mk.tb.niches[mk.sel];
   if (!n) { $("#mk-card").innerHTML = ""; return; }
-  const rows = mk.tb.fields.filter((f) => f.id !== "name" && n.values[f.id] !== undefined).map((f) => `<dt>${esc(f.label)}</dt><dd>${mkVal(f.id, n.values[f.id])}</dd>`);
-  $("#mk-card").innerHTML = `<h3>${esc(n.name)}</h3><dl>${rows.join("")}</dl><p class="how">Числа — как в выгрузке; прогноз и план по нише — следующим шагом.</p>`;
+  const v = n.values, s = n.score, kv = [];
+  const rev = v.revenue !== undefined ? v.revenue : v.sales !== undefined && v.price !== undefined ? v.sales * v.price : undefined;
+  if (rev !== undefined) kv.push(["Выручка ниши", mkMoney(rev) + " в месяц", v.revenue !== undefined ? "из колонки выручки" : "продажи × средняя цена: колонки выручки в файле нет"]);
+  if (v.sales !== undefined) kv.push(["Продажи", fmt(Math.round(v.sales)) + " шт в месяц", MK_TIP.sales]);
+  if (v.sellers !== undefined) kv.push(["Продавцов", fmt(Math.round(v.sellers)), MK_TIP.sellers]);
+  if (v.price !== undefined) kv.push(["Средняя цена", mkVal("price", v.price), MK_TIP.price]);
+  if (n.markets.length) kv.push(["Маркетплейсы", n.markets.map((m) => MK_MP[m]).join(", "), MK_TIP.marketplace]);
+  const inCmp = mk.cmp.includes(mk.sel);
+  $("#mk-card").innerHTML = `<div class="mk-card-h"><h3>${esc(n.name)}</h3><span class="mk-sc ${mkLevel(s)}"${mkScoreTip(s)}>${s.ok ? s.score : "—"}</span></div>` +
+    (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
+    `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
+    `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
+    `<div class="row"><button class="btn primary" type="button" aria-disabled="true"${mkTip("Прогноз — следующий шаг", "прогноз продаж этой ниши по месяцам и дата пика появятся с экраном «Прогноз»")}>Прогноз по этой нише</button>` +
+    `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
+}
+// mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
+function mkRenderCmp() {
+  const ns = mk.tb.niches, list = mk.cmp.filter((i) => ns[i]);
+  $("#mk-cmp").hidden = !list.length;
+  if (!list.length) return;
+  const rows = [["score", "Оценка", (n) => (n.score.ok ? n.score.score : undefined), (x) => String(x), 1],
+    ["sales", "Продажи, шт/мес", (n) => n.values.sales, (x) => fmt(Math.round(x)), 1],
+    ["revenue", "Выручка, ₽/мес", (n) => n.values.revenue, mkMoney, 1],
+    ["perSeller", "На продавца", (n) => n.score.perSeller || undefined, mkMoney, 1],
+    ["growth", "Рост к году", (n) => n.values.growth, (x) => mkVal("growth", x), 1],
+    ["sellers", "Продавцов", (n) => n.values.sellers, (x) => fmt(Math.round(x)), -1],
+    ["top10", "Доля топ-10", (n) => n.values.top10, (x) => mkVal("top10", x), -1],
+    ["peak", "Пик", (n) => n.score.peak || undefined, (x) => MK_MON[x], 0]]
+    .filter(([, , get]) => list.some((i) => get(ns[i]) !== undefined));
+  const cell = ([, , get, show, better]) => {
+    const vals = list.map((i) => get(ns[i])), known = vals.filter((x) => x !== undefined);
+    const best = better && known.length > 1 ? (better > 0 ? Math.max(...known) : Math.min(...known)) : undefined;
+    return vals.map((x) => `<td class="${x !== undefined && x === best ? "best" : ""}">${x === undefined ? "—" : esc(show(x))}</td>`).join("");
+  };
+  $("#mk-cmp").innerHTML = `<div class="mk-cmp-h"><span>Сравнение ниш · ${list.length} из 3</span><button class="btn" type="button" data-mk-cmp-clear${mkTip("Очистить сравнение", "убрать все ниши из сравнения")}>Очистить</button></div>` +
+    `<table><thead><tr><th></th>${list.map((i) => `<th>${esc(ns[i].name)}<button class="x" type="button" data-mk-cmp="${i}" aria-label="Убрать ${esc(ns[i].name)}">✕</button></th>`).join("")}</tr></thead>` +
+    `<tbody>${rows.map((r) => `<tr><td${mkTip(r[1], r[4] > 0 ? "лучше — больше" : r[4] < 0 ? "лучше — меньше" : "месяц пика продаж")}>${r[1]}</td>${cell(r)}</tr>`).join("")}</tbody></table>`;
 }
 function mkRenderProbs() {
   const p = mk.tb.problems;
@@ -5169,7 +5313,22 @@ function mkRenderProbs() {
   $("#mk-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
   $("#mk-probs-list").innerHTML = p.map((x) => `<li>строка ${x.row}: ${esc(x.reason)}</li>`).join("");
 }
-$("#mk-table").addEventListener("click", (e) => {
+$("#markets-view").addEventListener("click", (e) => {
+  const cmp = e.target.closest("[data-mk-cmp]");
+  if (cmp) {
+    hideTip();
+    const i = +cmp.dataset.mkCmp;
+    if (mk.cmp.includes(i)) mk.cmp = mk.cmp.filter((x) => x !== i);
+    else if (mk.cmp.length >= 3) { toast("Сравнение", " · не больше трех ниш: уберите одну"); return; }
+    else mk.cmp = [...mk.cmp, i];
+    mkRenderCard(); mkRenderCmp();
+    return;
+  }
+  if (e.target.closest("[data-mk-cmp-clear]")) { mk.cmp = []; mkRenderCard(); mkRenderCmp(); return; }
+  const mp = e.target.closest("[data-mk-mp]");
+  if (mp) { mk.mp = mp.dataset.mkMp; mkRenderFilters(); mkRenderTable(); return; }
+  const by = e.target.closest("[data-mk-by]");
+  if (by) { mk.sort = by.dataset.mkBy; mk.dir = -1; mkRenderTable(); return; }
   const b = e.target.closest("[data-mk-sort]");
   if (b) {
     const id = b.dataset.mkSort;
@@ -5181,6 +5340,7 @@ $("#mk-table").addEventListener("click", (e) => {
   const tr = e.target.closest("[data-mk-n]");
   if (tr) { mk.sel = +tr.dataset.mkN; mkRenderTable(); }
 });
+$("#mk-season").addEventListener("change", (e) => { mk.season = e.target.checked; mkRenderTable(); });
 $("#mk-table").addEventListener("keydown", (e) => {
   const tr = e.target.closest("[data-mk-n]");
   if (!tr) return;
@@ -5195,6 +5355,65 @@ $("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb &
 $("#mk-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });
+// «Оформление → Маркеты» (accents.look mk-*): палитра, свои цвета, анимация,
+// вид графика и плотность строк. Владелец 13.11: гибкость, как у Артефактов.
+const MK_ANIMS = [["full", "перелив при наведении"], ["none", "без анимации"]];
+const MK_CHARTS = [["line", "линия"], ["area", "линия с заливкой"]];
+const MK_DENSE = [["normal", "обычные"], ["dense", "плотные"]];
+const MK_KEYS = ["mk-grad", "mk-anim", "mk-chart", "mk-dense", "mk-c1", "mk-c2"];
+function mkLook() {
+  const l = state.accents.look || {};
+  const pick = (v, list, d) => (list.includes(v) ? v : d);
+  return {
+    grad: pick(l["mk-grad"], Object.keys(MH_GRADS), "spectrum"), anim: pick(l["mk-anim"], MK_ANIMS.map((x) => x[0]), "full"),
+    chart: pick(l["mk-chart"], MK_CHARTS.map((x) => x[0]), "line"), dense: pick(l["mk-dense"], MK_DENSE.map((x) => x[0]), "normal"),
+    c1: MH_HEX.test(l["mk-c1"] || "") ? l["mk-c1"] : "#e8b84a", c2: MH_HEX.test(l["mk-c2"] || "") ? l["mk-c2"] : "#5fb0d8",
+  };
+}
+function mkApply(L = mkLook()) {
+  const st = document.body.style, b = document.body.dataset;
+  b.mk = L.grad; b.mka = L.anim; b.mkc = L.chart; b.mkd = L.dense;
+  for (const [i, v] of [[1, L.c1], [2, L.c2], [3, L.c2]]) {
+    if (L.grad === "custom") st.setProperty("--mk" + i, v); else st.removeProperty("--mk" + i);
+  }
+}
+function renderLookMarkets() {
+  const host = $("#look-markets"); if (!host) return;
+  const L = mkLook(), dis = native() ? "" : " disabled";
+  const chip = (k, v, label, on, extra = "") => `<button class="look-chip" data-ml="${k}" data-v="${v}" aria-pressed="${on}"${dis}>${extra}${esc(label)}</button>`;
+  const grads = Object.entries(MH_GRADS).map(([g, n]) => chip("mk-grad", g, n, L.grad === g, g === "custom" ? `<i class="gs" style="background:linear-gradient(90deg,${L.c1},${L.c2})"></i>` : `<i class="gs ink-${g}"></i>`)).join("");
+  const colors = L.grad === "custom" ? `<label class="muted">от <input type="color" data-mc="mk-c1" value="${L.c1}"${dis}></label> <label class="muted">до <input type="color" data-mc="mk-c2" value="${L.c2}"${dis}></label>` : "";
+  host.innerHTML = `
+    <div class="row"><span>Градиент</span><div class="opts">${grads}${colors}
+      <span class="muted">заголовок, вкладка, оценка, график сезона, выбранная строка и главные кнопки</span></div></div>
+    <div class="row"><span>Анимация</span><div class="opts">${MK_ANIMS.map(([v, n]) => chip("mk-anim", v, n, L.anim === v)).join("")}</div></div>
+    <div class="row"><span>График сезона</span><div class="opts">${MK_CHARTS.map(([v, n]) => chip("mk-chart", v, n, L.chart === v)).join("")}
+      <span class="muted">заливка под линией — легче увидеть, где провал</span></div></div>
+    <div class="row"><span>Строки таблицы</span><div class="opts">${MK_DENSE.map(([v, n]) => chip("mk-dense", v, n, L.dense === v)).join("")}
+      <span class="muted">плотные — больше ниш на экране</span></div></div>
+    <div class="row"><span></span><div class="opts"><button class="look-chip" data-ml-reset${dis}>Сбросить вид Маркетов</button>
+      <span class="muted">отдельные элементы выключаются выше, в списке «Маркеты: …»</span></div></div>`;
+}
+$("#look-markets").addEventListener("click", (e) => {
+  if (!native()) return;
+  if (e.target.closest("[data-ml-reset]")) {
+    const look = { ...(state.accents.look || {}) };
+    for (const k of MK_KEYS) delete look[k];
+    saveAccents({ ...state.accents, look });
+    toast("Сброшено", " · вид Маркетов по умолчанию");
+    return;
+  }
+  const b = e.target.closest("[data-ml]"); if (!b) return;
+  mhSave({ [b.dataset.ml]: b.dataset.v }); // mhSave пишет любой ключ accents.look
+});
+// Цвет меняется вживую, сохраняется при отпускании.
+$("#look-markets").addEventListener("input", (e) => {
+  const c = e.target.closest("[data-mc]"); if (!c) return;
+  const L = { ...mkLook(), [c.dataset.mc.slice(3)]: c.value };
+  mkApply(L);
+  const sw = $('#look-markets [data-v="custom"] .gs'); if (sw) sw.style.background = `linear-gradient(90deg,${L.c1},${L.c2})`;
+});
+$("#look-markets").addEventListener("change", (e) => { const c = e.target.closest("[data-mc]"); if (c && native()) mhSave({ [c.dataset.mc]: c.value }); });
 
 
 // --- Память (ADR-0008) -------------------------------------------------------------
