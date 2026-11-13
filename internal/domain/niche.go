@@ -30,16 +30,17 @@ const (
 	NicheTop10   NicheColumn = "top10"   // доля выручки у топ-10 продавцов, 0..1
 )
 
-var nicheColumns = []NicheColumn{NicheName, NicheSales, NicheRevenue, NicheSellers, NichePrice, NicheGrowth, NicheTop10}
+var nicheColumns = []NicheColumn{NicheName, NicheSales, NicheRevenue, NicheSellers, NichePrice, NicheGrowth, NicheTop10, NicheMarketplace}
 
 var nicheLabels = map[NicheColumn]string{
-	NicheName:    "Ниша",
-	NicheSales:   "Продажи, шт/мес",
-	NicheRevenue: "Выручка, ₽/мес",
-	NicheSellers: "Продавцов",
-	NichePrice:   "Средняя цена, ₽",
-	NicheGrowth:  "Рост к году",
-	NicheTop10:   "Доля топ-10",
+	NicheName:        "Ниша",
+	NicheSales:       "Продажи, шт/мес",
+	NicheRevenue:     "Выручка, ₽/мес",
+	NicheSellers:     "Продавцов",
+	NichePrice:       "Средняя цена, ₽",
+	NicheGrowth:      "Рост к году",
+	NicheTop10:       "Доля топ-10",
+	NicheMarketplace: "Маркетплейсы",
 }
 
 // nicheHeaders — начала заголовков после FoldName. Узнается по началу, а не
@@ -69,6 +70,8 @@ var nicheHeaders = []struct {
 	{"оборот", NicheRevenue},
 	{"продажи", NicheSales},
 	{"продаж", NicheSales},
+	{"маркетплейс", NicheMarketplace},
+	{"площадк", NicheMarketplace},
 	{"ниша", NicheName},
 	{"предмет", NicheName},
 	{"категория", NicheName},
@@ -107,6 +110,10 @@ func RecognizeNicheColumn(header string) (NicheColumn, bool) {
 	if h == "" {
 		return "", false
 	}
+	// «Продажи, окт 2026» — продажи за месяц, а не продажи в месяц.
+	if _, _, month := RecognizeNicheMonth(header); month {
+		return "", false
+	}
 	for _, x := range nicheHeaders {
 		if strings.HasPrefix(h, x.prefix) {
 			return x.col, true
@@ -118,8 +125,10 @@ func RecognizeNicheColumn(header string) (NicheColumn, bool) {
 // Niche — ниша из выгрузки: название и те величины, что были в файле.
 // Величины, которой в файле не было, у ниши нет — нулем она не притворяется.
 type Niche struct {
-	name   string
-	values map[NicheColumn]float64
+	name    string
+	values  map[NicheColumn]float64
+	months  []MonthSales
+	markets []Marketplace
 }
 
 // NewNiche checks the niche's rules and keeps its own copy of values.
@@ -130,8 +139,8 @@ func NewNiche(name string, values map[NicheColumn]float64) (*Niche, error) {
 	}
 	for c, v := range values {
 		switch c {
-		case NicheName:
-			return nil, fmt.Errorf("%w: название — не число", ErrInvalidNiche)
+		case NicheName, NicheMarketplace:
+			return nil, fmt.Errorf("%w: %s — не число", ErrInvalidNiche, c.Label())
 		case NicheSales, NicheRevenue, NicheSellers, NichePrice:
 			if v < 0 {
 				return nil, fmt.Errorf("%w: «%s» %s меньше нуля", ErrInvalidNiche, name, c.Label())
