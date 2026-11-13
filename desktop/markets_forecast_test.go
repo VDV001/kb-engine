@@ -221,3 +221,32 @@ func TestForecastItemsExport(t *testing.T) {
 		}
 	}
 }
+
+// Широкий файл «товар × дни» с колонками товаров категории — продажи по дням,
+// а не выгрузка «Товары категории»: прогноз его читает (ревью #602).
+func TestForecastWideWithItemColumns(t *testing.T) {
+	at := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	var b strings.Builder
+	b.WriteString(`"Seller";"Sales, pcs";"Revenue, ₽";"Niche Name"`)
+	for d := at(2025, 9, 1); !d.After(at(2025, 12, 31)); d = d.AddDate(0, 0, 1) {
+		fmt.Fprintf(&b, ";%q", d.Format("02.01.2006"))
+	}
+	b.WriteString("\n\"Продавец\";\"1\";\"1\";\"Куртки\"")
+	for d := at(2025, 9, 1); !d.After(at(2025, 12, 31)); d = d.AddDate(0, 0, 1) {
+		b.WriteString(";\"100\"")
+	}
+	b.WriteString("\n")
+	last := filepath.Join(t.TempDir(), "wide.csv")
+	if err := os.WriteFile(last, []byte(b.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := longCSV(t, "сейчас.csv", at(2026, 9, 1), at(2026, 10, 31), func(time.Time) int { return 150 })
+	own := longCSV(t, "свои.csv", at(2026, 9, 1), at(2026, 10, 31), func(time.Time) int { return 15 })
+	v, err := forecastFiles(last, now, own)
+	if err != nil {
+		t.Fatalf("wide file with item columns: %v", err)
+	}
+	if v.Files[0].Format != "wide" || v.Files[0].Days != 122 {
+		t.Errorf("files[0] = %+v", v.Files[0])
+	}
+}
