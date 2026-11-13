@@ -115,15 +115,22 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
-	fin := startFinance(ctx, cl, from, to)
+	stage := func(s string) {
+		if f.ozonStage != nil {
+			f.ozonStage(s)
+		}
+	}
+	fin := startFinance(ctx, cl, from, to, stage)
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
 	}
+	stage("posts")
 	stock, err := cl.Stocks(ctx)
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
 	}
+	stage("stock")
 	rep, err := markets.OzonShop(posts, stock, from, to)
 	if err != nil {
 		return shopView{}, err
@@ -163,8 +170,12 @@ type finance struct {
 
 // startFinance reads accruals and returns in parallel, независимо от
 // отправлений и друг от друга (ревью #594, #595); wait — дождаться обоих.
-// Одна копия для окна и чата (ревью #597).
-func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time) (wait func() finance) {
+// Одна копия для окна и чата (ревью #597). done узнает о каждом прочитанном
+// списке («accruals», «returns»), с ошибкой или без; nil — не сообщать.
+func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time, done func(string)) (wait func() finance) {
+	if done == nil {
+		done = func(string) {}
+	}
 	type accrued struct {
 		acc []markets.OzonAccrual
 		err error
@@ -176,10 +187,12 @@ func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time) (wait
 	accCh, retCh := make(chan accrued, 1), make(chan returned, 1)
 	go func() {
 		acc, err := cl.Accruals(ctx, from, to)
+		done("accruals")
 		accCh <- accrued{acc, err}
 	}()
 	go func() {
 		rets, err := cl.Returns(ctx, from, to)
+		done("returns")
 		retCh <- returned{rets, err}
 	}()
 	return func() finance {

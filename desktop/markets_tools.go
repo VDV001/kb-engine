@@ -118,7 +118,7 @@ func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time
 // параллельно, как в окне. Без возвратов деньги отвечают, пропажи называют причину.
 func withMoney(ctx context.Context, t *shopTurn, now time.Time) (markets.ShopData, error) {
 	d := t.d
-	fn := startFinance(ctx, t.cl, d.From, d.To)()
+	fn := startFinance(ctx, t.cl, d.From, d.To, nil)()
 	if fn.accErr != nil {
 		return t.d, chatMoneyErr(t.c.Name, fn.accErr, economyErr)
 	}
