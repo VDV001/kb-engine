@@ -81,8 +81,10 @@ func TestOzonShop_daysAcrossDST(t *testing.T) {
 }
 
 func TestOzonDaily(t *testing.T) {
-	// Свои продажи по дням для «Прогноза» (#580): штуки без отмен по дню
-	// отправления в часовом поясе продавца; день без продаж — ноль, а не пропуск.
+	// Свои заказы по дням для «Прогноза» (#580): штуки ВКЛЮЧАЯ отмены — у
+	// свежих отправлений отмены еще не закрылись, и ряд «без отмен» завышал бы
+	// старые дни против новых (ревью #592); по дню создания в часовом поясе
+	// продавца; день без заказов — ноль; отправление без даты — в счетчик.
 	msk := time.FixedZone("MSK", 3*3600)
 	at := func(d, h int) time.Time { return time.Date(2026, 11, d, h, 0, 0, 0, time.UTC) }
 	item := []markets.OzonItem{{SKU: "1", Qty: 2}}
@@ -91,17 +93,21 @@ func TestOzonDaily(t *testing.T) {
 		{Status: "delivering", At: at(10, 22), Items: item}, // 01:00 11-го по Москве
 		{Status: "cancelled", At: at(10, 10), Items: item},
 		{Status: "delivered", At: at(20, 10), Items: item}, // вне окна
+		{Status: "delivered", Items: item},                 // без даты
 	}
 	from := time.Date(2026, 11, 10, 0, 0, 0, 0, msk)
-	s, err := markets.OzonDaily(posts, from, from.AddDate(0, 0, 2), msk)
+	s, undated, err := markets.OzonDaily(posts, from, from.AddDate(0, 0, 2), msk)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if undated != 1 {
+		t.Errorf("undated = %d, want 1", undated)
 	}
 	var got []float64
 	for _, d := range s.Days() {
 		got = append(got, d.Value)
 	}
-	if len(got) != 3 || got[0] != 2 || got[1] != 2 || got[2] != 0 {
-		t.Errorf("days = %v, want [2 2 0]", got)
+	if len(got) != 3 || got[0] != 4 || got[1] != 2 || got[2] != 0 {
+		t.Errorf("days = %v, want [4 2 0]", got)
 	}
 }

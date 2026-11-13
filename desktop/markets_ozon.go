@@ -188,10 +188,18 @@ func (f *folderSettings) ozonForecastSeries(ctx context.Context, base string, hc
 	if err != nil {
 		return series, nil, ozonErr(c.Name, err)
 	}
-	if series[2], err = markets.OzonDaily(posts, from, to, today.Location()); err != nil {
+	if series[2], _, err = markets.OzonDaily(posts, from, to, today.Location()); err != nil {
 		return series, nil, err
 	}
 	files = append(files, forecastFile{File: "Ozon · " + c.Name, Format: "ozon", Days: len(series[2].Days()),
 		From: from.Format("02.01.2006"), To: to.Format("02.01.2006")})
 	return series, files, nil
+}
+
+// forecast is not written yet.
+func (f *folderSettings) forecast(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time) (forecastView, error) {
+	if id, ok := strings.CutPrefix(own, "ozon:"); ok {
+		return f.forecastOzon(ctx, base, hc, last, now, id, today)
+	}
+	return forecastFiles(last, now, own)
 }

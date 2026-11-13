@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -73,8 +74,8 @@ func TestForecastFiles(t *testing.T) {
 	}
 }
 
-// Свои продажи из кабинета Ozon вместо третьего файла (#580): тот же расчет,
-// окно — 90 дней до вчера, отмены не в счет.
+// Свои заказы из кабинета Ozon вместо третьего файла (#580): тот же расчет,
+// окно — 90 дней до вчера, заказы включая отмены (ревью #592).
 func TestForecastOzon(t *testing.T) {
 	at := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
 	last := longCSV(t, "прошлый.csv", at(2025, 9, 1), at(2025, 12, 31), func(d time.Time) int {
@@ -88,8 +89,8 @@ func TestForecastOzon(t *testing.T) {
 	item := `"products":[{"sku":11,"offer_id":"a","name":"Брюки","quantity":15,"price":{"amount":"100","currency":"RUB"}}]`
 	for d := at(2026, 9, 1); !d.After(at(2026, 10, 31)); d = d.AddDate(0, 0, 1) {
 		ts := d.Add(9 * time.Hour).Format(time.RFC3339)
-		posts = append(posts, `{"status":"delivered","in_process_at":"`+ts+`",`+item+`}`,
-			`{"status":"cancelled","in_process_at":"`+ts+`",`+item+`}`)
+		posts = append(posts, `{"status":"delivered","created_at":"`+ts+`",`+item+`}`,
+			`{"status":"cancelled","created_at":"`+ts+`",`+item+`}`)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Api-Key") != "k-1" {
@@ -109,9 +110,9 @@ func TestForecastOzon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := s.forecastOzon(context.Background(), srv.URL, srv.Client(), last, now, row.ID, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	v, err := s.forecast(context.Background(), srv.URL, srv.Client(), last, now, "ozon:"+row.ID, time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
 	if err != nil {
-		t.Fatalf("forecastOzon: %v", err)
+		t.Fatalf("forecast: %v", err)
 	}
 	if len(v.Files) != 3 {
 		t.Fatalf("files = %d, want 3", len(v.Files))
@@ -119,7 +120,10 @@ func TestForecastOzon(t *testing.T) {
 	if v.Files[2].File != "Ozon · Пижамы" || v.Files[2].Format != "ozon" || v.Files[2].To != "31.10.2026" || v.Files[2].Days != 90 {
 		t.Errorf("own = %+v", v.Files[2])
 	}
-	if v.Share != 0.1 {
-		t.Errorf("share = %v, want 0.1 (15 of 150, cancels not counted)", v.Share)
+	if v.Share != 0.2 {
+		t.Errorf("share = %v, want 0.2 (30 orders of 150 with cancels)", v.Share)
+	}
+	if !slices.Contains(s.Connections()[len(s.Connections())-1].UsedBy, "Маркеты → Прогноз") {
+		t.Errorf("connection used by = %v, want the forecast too", s.Connections()[len(s.Connections())-1].UsedBy)
 	}
 }
