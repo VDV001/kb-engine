@@ -312,7 +312,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
-		Extras: shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), Step: d.step})
+		Extras: append(shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), mpstatsExtras(d.settings, nil, time.Now, r.Sources)...), Step: d.step})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}

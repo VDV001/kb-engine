@@ -72,7 +72,7 @@ func TestMPStatsExtra(t *testing.T) {
 	if out := run("mpstats_categories", `{"q":"брюки муж"}`); !strings.Contains(out, "Одежда/Мужская одежда/Брюки") || strings.Contains(out, "Женская") {
 		t.Errorf("categories = %q", out)
 	}
-	if out := run("mpstats_niche", `{"path":"Одежда/Мужская одежда"}`); !strings.Contains(out, "Брюки") || !strings.Contains(out, "150") || !strings.Contains(out, "2026-10-15") {
+	if out := run("mpstats_niche", `{"path":"Одежда/Мужская одежда"}`); !strings.Contains(out, "Брюки: Продажи, шт/мес 152") || !strings.Contains(out, "оценка") || !strings.Contains(out, "2026-10-15") {
 		t.Errorf("niche = %q", out)
 	}
 	// Недели с понедельника: 02.11 — 15 шт, 09.11 — 2 шт.
