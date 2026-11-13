@@ -5491,7 +5491,7 @@ const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.g
 const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
 function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
-// mkTab переключает «Ниша» и «Прогноз»; «План» и «Подключения» — следующие шаги.
+// mkTab переключает «Ниша», «Прогноз» и «Магазин»; «План» живет под прогнозом.
 function mkTab(id) {
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
@@ -5501,7 +5501,15 @@ $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
   const go = e.target.closest("[data-mk-go-fc]");
-  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); }
+  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); return; }
+  // «План» строится по прогнозу: вкладка ведет к блоку под ним, а без прогноза — к его кнопке.
+  if (e.target.closest("#mk-plan-tab")) {
+    hideTip();
+    mkTab("forecast");
+    const plan = $("#mk-plan");
+    if (plan.hidden) { mkErr("План строится по прогнозу: выберите три источника и нажмите «Посчитать прогноз» — блок плана появится под ним."); $("#mk-fc-go").scrollIntoView({ block: "center" }); }
+    else plan.scrollIntoView({ block: "start" });
+  }
 });
 function fcRender() {
   $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
