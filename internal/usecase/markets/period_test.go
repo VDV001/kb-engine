@@ -1,10 +1,12 @@
 package markets_test
 
 import (
+	"math"
 	"slices"
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
@@ -50,4 +52,30 @@ func units(as []markets.OzonAccrual) (out []string) {
 		out = append(out, a.Unit)
 	}
 	return out
+}
+
+// Ниши из MPStats (#580): продажи и выручка за период — в месяц, цена —
+// выручка на штуку, рост — к тем же дням год назад; имя — полный путь.
+func TestMPStatsNiches(t *testing.T) {
+	cur := []markets.NicheSale{{Name: "Куртки", Sales: 300, Revenue: 3000000, Sellers: 40}, {Name: "Новая", Sales: 10, Revenue: 1000, Sellers: 1}}
+	prev := []markets.NicheSale{{Name: "Куртки", Sales: 200, Revenue: 1}}
+	tb, err := markets.MPStatsNiches("Одежда/Мужская одежда", cur, prev, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tb.PeriodDays != 30 || len(tb.Niches) != 2 || tb.Niches[0].Name() != "Одежда/Мужская одежда/Куртки" {
+		t.Fatalf("table = %+v", tb)
+	}
+	n := tb.Niches[0]
+	for _, c := range []struct {
+		col  domain.NicheColumn
+		want float64
+	}{{domain.NicheSales, 300 / 30.0 * 365.25 / 12}, {domain.NicheSellers, 40}, {domain.NichePrice, 10000}, {domain.NicheGrowth, 0.5}} {
+		if v, ok := n.Value(c.col); !ok || math.Abs(v-c.want) > 1e-6 {
+			t.Errorf("%s = %v (%v), want %v", c.col, v, ok, c.want)
+		}
+	}
+	if _, ok := tb.Niches[1].Value(domain.NicheGrowth); ok {
+		t.Error("a niche without last year's sales got a growth")
+	}
 }

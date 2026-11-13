@@ -126,3 +126,38 @@ func TestCategoryByDay_stopsOnFirstError(t *testing.T) {
 		t.Errorf("%d requests after the first refusal, want at most the first round of 4", n)
 	}
 }
+
+// Ниши категории за период (живой ответ 13.11): строка «Текущая категория» —
+// итог самой категории, не ниша; продавцы — с продажами.
+func TestSubcategories(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.URL.Path != "/api/oz/get/category/subcategories" || q.Get("path") != "Одежда" || q.Get("d1") != "2026-10-14" || q.Get("d2") != "2026-11-12" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":10,"revenue":100,"sellers_with_sells":5},` +
+			`{"name":"Женская одежда","sales":6,"revenue":60,"sellers_with_sells":3,"avg_price":12},{"name":"Мужская одежда","sales":4,"revenue":40,"sellers_with_sells":2}]`))
+	}))
+	t.Cleanup(srv.Close)
+	subs, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Subcategories(context.Background(), "Одежда",
+		time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(subs) != 2 || subs[0].Name != "Женская одежда" || subs[0].Sales != 6 || subs[0].Revenue != 60 || subs[0].Sellers != 3 {
+		t.Errorf("subs = %+v", subs)
+	}
+}
+
+// Пути всех категорий Ozon — подсказки поля «Категория».
+func TestCategories(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"url":"/category/a","path":"Одежда/Женская одежда","name":"Женская одежда"},{"url":"/category/b","path":"Одежда","name":"Одежда"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	paths, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Categories(context.Background())
+	if err != nil || !slices.Equal(paths, []string{"Одежда", "Одежда/Женская одежда"}) {
+		t.Errorf("paths = %v, %v; want sorted", paths, err)
+	}
+}
