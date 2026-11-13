@@ -3,18 +3,36 @@
 <title>Браузер</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-  html, body { margin: 0; height: 100%; background: #0b0b0c; color: #c4c4c6; font: 13px ui-monospace, Menlo, monospace; }
+  /* Тема — как у окна (ключ theme в localStorage того же адреса): пока браузер
+     не подключен, область страницы — фон темы, а не белый лист (отзыв 13.11). */
+  :root { --bg: #0b0b0c; --fg: #c4c4c6; --rule: #222; --btn: #16171a; --edge: #2a2b2f; --edge-hi: #4a4b50; --field: #101113; --warn: #e0a458; }
+  :root[data-theme="light"] { --bg: #ffffff; --fg: #2a2b2f; --rule: #e2e2e6; --btn: #f4f4f6; --edge: #d4d4da; --edge-hi: #a8a8b0; --field: #ffffff; --warn: #9a5a00; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme]) { --bg: #ffffff; --fg: #2a2b2f; --rule: #e2e2e6; --btn: #f4f4f6; --edge: #d4d4da; --edge-hi: #a8a8b0; --field: #ffffff; --warn: #9a5a00; } }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 13px ui-monospace, Menlo, monospace; }
   body { display: flex; flex-direction: column; }
-  #bar { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid #222; }
-  #bar button { background: #16171a; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; cursor: pointer; }
-  #bar button:hover { border-color: #4a4b50; }
-  #addr { flex: 1; background: #101113; color: inherit; border: 1px solid #2a2b2f; border-radius: 6px; padding: 4px 10px; font: inherit; }
+  #bar { display: flex; gap: 6px; padding: 6px; border-bottom: 1px solid var(--rule); }
+  #bar button { background: var(--btn); color: inherit; border: 1px solid var(--edge); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  #bar button:hover { border-color: var(--edge-hi); }
+  #addr { flex: 1; background: var(--field); color: inherit; border: 1px solid var(--edge); border-radius: 6px; padding: 4px 10px; font: inherit; }
   #stage { flex: 1; min-height: 0; overflow: hidden; position: relative; }
-  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: default; background: #fff; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: default; background: var(--bg); }
   #kb { position: fixed; left: -999px; top: 0; width: 1px; height: 1px; opacity: 0; }
-  #addr.plain { color: #e0a458; }
-  #msg { padding: 4px 8px; color: #e0a458; }
+  #addr.plain { color: var(--warn); }
+  #msg { padding: 4px 8px; color: var(--warn); }
 </style>
+<script>
+  // Тема окна: «light»/«dark» в ключе theme, нет ключа — как в системе.
+  (function () {
+    const apply = () => {
+      let t = null;
+      try { t = localStorage.getItem("theme"); } catch (_) { /* как в системе */ }
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      else delete document.documentElement.dataset.theme;
+    };
+    apply();
+    addEventListener("storage", (e) => { if (e.key === "theme" || e.key === null) apply(); });
+  })();
+</script>
 <div id="bar">
   <button id="back" title="Назад" aria-label="Назад">←</button>
   <button id="fwd" title="Вперед" aria-label="Вперед">→</button>
