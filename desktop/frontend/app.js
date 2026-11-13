@@ -3435,7 +3435,76 @@ document.addEventListener("click", (e) => {
   const u = e.target.closest("[data-open-url]");
   if (u) openURL(u.dataset.openUrl);
 });
-$("#chat-model-chip").addEventListener("click", () => openSettings("chat"));
+$("#chat-model-chip").addEventListener("click", () => { hideTip(); $("#chat-mdl-pop").hidden ? openModelPick() : closeModelPick(); });
+// --- Быстрый выбор модели (#584) -----------------------------------------------------
+// Чип под полем — список: последние модели сверху, все модели шлюза с ценой за
+// миллион токенов, поиск; выбор меняет только модель. «Настройки чата» слева — все остальное.
+const mdl = { v: null, q: "", sel: 0 };
+async function openModelPick() {
+  if (!native() || !native().ChatModels) return openSettings("chat");
+  closeChatCtx();
+  const pop = $("#chat-mdl-pop");
+  pop.hidden = false;
+  $("#chat-model-chip").setAttribute("aria-expanded", "true");
+  pop.innerHTML = '<p class="md-note">Загружаю список моделей…</p>';
+  try { mdl.v = await native().ChatModels(); } catch (e) { pop.innerHTML = `<p class="md-note">Список не прочитан: ${esc(errText(e))}</p>`; return; }
+  mdl.q = ""; mdl.sel = 0;
+  pop.innerHTML = `<input id="md-q" type="search" placeholder="найти модель${mdl.v.gateway ? "" : " или вписать имя"}…" aria-label="Найти модель" autocomplete="off" spellcheck="false"><div class="md-list" id="md-list" role="listbox" aria-label="Модели"></div>` +
+    (mdl.v.priceNote ? `<p class="md-note">Цены шлюза не загружены: ${esc(mdl.v.priceNote)}</p>` : "") +
+    (mdl.v.gateway ? "" : '<p class="md-note">Адрес чата — не шлюз Vercel: окно знает только модели, которыми Вы уже пользовались. Другую впишите в поиск и нажмите Enter.</p>') +
+    '<button class="md-foot" type="button" id="md-set">Все настройки чата →</button>';
+  renderModelPick();
+  $("#md-q").focus();
+}
+function closeModelPick() {
+  $("#chat-mdl-pop").hidden = true;
+  $("#chat-model-chip").setAttribute("aria-expanded", "false");
+}
+// mdlItems — строки списка: без поиска «Последние» и «Все», с поиском — найденные; вписанное имя — последней строкой.
+function mdlItems() {
+  const q = mdl.q.trim().toLowerCase(), v = mdl.v, out = [];
+  if (!q) {
+    v.recent.forEach((m) => out.push({ cap: out.length ? "" : "Последние", m }));
+    const rest = v.all.filter((m) => !v.recent.some((r) => r.id === m.id));
+    rest.forEach((m, i) => out.push({ cap: i ? "" : v.gateway ? "Все модели шлюза" : "Модели", m }));
+  } else {
+    v.all.filter((m) => m.id.toLowerCase().includes(q)).forEach((m) => out.push({ cap: "", m }));
+    if (!v.all.some((m) => m.id.toLowerCase() === q)) out.push({ cap: "", m: { id: mdl.q.trim(), in: "", out: "", typed: true } });
+  }
+  return out;
+}
+function renderModelPick() {
+  const items = mdlItems(), cur = mdl.v.current;
+  mdl.sel = Math.max(0, Math.min(mdl.sel, items.length - 1));
+  const price = (m) => (m.typed ? "вписать" : m.in ? `$${m.in} / $${m.out}` : "цена неизвестна");
+  const tip = (m) => (m.typed ? "модель с таким именем у адреса чата; окно его не проверяет — проверит первый ответ"
+    : m.in ? `за миллион токенов: $${m.in} на входе, $${m.out} на выходе${m.own ? " · своя цена из «Статистики»" : " · цена шлюза"}` : "цены нет ни у шлюза, ни своей в «Статистике»");
+  $("#md-list").innerHTML = items.map(({ cap, m }, i) => (cap ? `<div class="md-cap">${cap}</div>` : "") +
+    `<button class="md-it" type="button" role="option" data-mdl="${esc(m.id)}" aria-selected="${i === mdl.sel}" data-tip="${esc(m.id)}" data-tip-b="${esc(tip(m))}">` +
+    `<span class="dot">${m.id === cur ? "●" : ""}</span><span class="id">${esc(m.id)}</span><span class="pr">${price(m)}</span></button>`).join("");
+  const s = $("#md-list").querySelector('[aria-selected="true"]'); if (s) s.scrollIntoView({ block: "nearest" });
+}
+async function chooseModel(id) {
+  closeModelPick();
+  if (!id || id === mdl.v.current) return;
+  try { await native().SetChatModel(id); } catch (e) { return showChatNote("Модель не сменилась: " + errText(e)); }
+  await loadChatSettings();
+  toast("Модель", " · " + id);
+}
+$("#chat-mdl-pop").addEventListener("input", (e) => { if (e.target.id === "md-q") { mdl.q = e.target.value; mdl.sel = 0; renderModelPick(); } });
+$("#chat-mdl-pop").addEventListener("keydown", (e) => {
+  if (e.target.id !== "md-q") return;
+  const n = mdlItems().length;
+  if (e.key === "ArrowDown" && n) { e.preventDefault(); mdl.sel = (mdl.sel + 1) % n; renderModelPick(); }
+  else if (e.key === "ArrowUp" && n) { e.preventDefault(); mdl.sel = (mdl.sel - 1 + n) % n; renderModelPick(); }
+  else if (e.key === "Enter") { e.preventDefault(); const it = mdlItems()[mdl.sel]; if (it) chooseModel(it.m.id); }
+});
+$("#chat-mdl-pop").addEventListener("click", (e) => {
+  if (e.target.closest("#md-set")) { closeModelPick(); openSettings("chat"); return; }
+  const b = e.target.closest("[data-mdl]"); if (b) { hideTip(); chooseModel(b.dataset.mdl); }
+});
+document.addEventListener("click", (e) => { if (!$("#chat-mdl-pop").hidden && !e.target.closest("#chat-mdl-pop, #chat-model-chip")) closeModelPick(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#chat-mdl-pop").hidden) { closeModelPick(); $("#chat-q").focus(); e.stopPropagation(); } }, true);
 $("#chat-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && (dict.on || micLoop.on)) { e.preventDefault(); micLoop.on = false; stopMic(false); setMic(dict.on); return; }
   if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); askChat(); }

@@ -157,6 +157,12 @@ func (a *App) SetChatSettings(c desktopconfig.Chat, key string) error {
 	return a.chat.SetSettings(c, key)
 }
 
+// ChatModels returns the quick picker list under the chat field (#584).
+func (a *App) ChatModels() (modelsView, error) { return a.chat.Models() }
+
+// SetChatModel switches the chat model from the quick picker; остальное не трогает.
+func (a *App) SetChatModel(model string) error { return a.chat.SetModel(model) }
+
 // BrowserState returns the Browser tab's controls: установленные браузеры, выбор и работает ли сервер.
 func (a *App) BrowserState() browserView { return a.browser.View() }
 

@@ -894,7 +894,8 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-model-chip { border: 0; background: none; color: var(--z-muted); font: 11px var(--z-font); padding: 4px 6px; border-radius: 6px; cursor: pointer; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-model-chip:hover { background: var(--z-bg-2); color: var(--z-ink); }
 /* «›», а не «⌄»: чип ведет в настройки модели, выпадающего списка нет (#496). */
-.chat-model-chip::after { content: " ›"; }
+.chat-model-chip::after { content: " ⌄"; }
+.chat-model-chip[aria-expanded="true"] { background: var(--z-bg-2); color: var(--z-ink); }
 .chat-tool { width: 30px; height: 30px; flex: none; border: 0; border-radius: 8px; background: none; color: var(--z-ink-2); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .chat-tool svg { width: 16px; height: 16px; }
 .chat-tool:hover { background: var(--z-bg-2); color: var(--z-ink); }
@@ -1337,6 +1338,20 @@ body:not(.no-mm-meter) .mm-meter i { background: var(--sp-all); }
 .chat-ctx-pop { position: absolute; left: 10px; right: 10px; bottom: calc(100% + 8px); max-width: 420px; padding: 12px 14px; display: grid; gap: 8px; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-left: 3px solid var(--z-ok); border-radius: var(--z-radius); box-shadow: 0 8px 28px #0004; font-size: 13px; z-index: 5; }
 .chat-ctx-pop[data-tone="warn"] { border-left-color: var(--z-lvl-warn); } .chat-ctx-pop[data-tone="bad"] { border-left-color: var(--z-bad); }
 .chat-ctx-pop p { margin: 0; line-height: 1.5; }
+/* Быстрый выбор модели (#584): над полем, как окошко контекста. */
+.chat-mdl-pop { position: absolute; left: 10px; bottom: calc(100% + 8px); width: min(440px, calc(100% - 20px)); max-height: 360px; display: flex; flex-direction: column; background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); box-shadow: 0 8px 28px #0004; font-size: 13px; z-index: 6; overflow: hidden; }
+.chat-mdl-pop input { margin: 8px; padding: 7px 9px; font: 13px var(--z-font); color: var(--z-ink); background: var(--z-bg-2); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0; }
+.chat-mdl-pop input:focus { border-color: var(--z-accent); }
+.chat-mdl-pop .md-list { overflow: auto; padding: 0 4px 4px; }
+.chat-mdl-pop .md-cap { padding: 6px 8px 2px; font-size: 11px; color: var(--z-faint); }
+.chat-mdl-pop .md-it { all: unset; box-sizing: border-box; display: grid; grid-template-columns: 14px minmax(0, 1fr) max-content; gap: 8px; align-items: center; width: 100%; padding: 6px 8px; border-radius: var(--z-radius); cursor: pointer; color: var(--z-ink); }
+.chat-mdl-pop .md-it .id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-mdl-pop .md-it .pr { color: var(--z-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chat-mdl-pop .md-it .dot { color: var(--z-accent); }
+.chat-mdl-pop .md-it[aria-selected="true"], .chat-mdl-pop .md-it:hover { background: var(--z-bg-2); }
+.chat-mdl-pop .md-note { padding: 6px 10px; font-size: 12px; color: var(--z-muted); }
+.chat-mdl-pop .md-foot { all: unset; cursor: pointer; padding: 9px 12px; border-top: 1px solid var(--z-rule); color: var(--z-ink-2); font-size: 12px; }
+.chat-mdl-pop .md-foot:hover { color: var(--z-ink); background: var(--z-bg-2); }
 .chat-ctx-pop .cx-head { display: flex; justify-content: space-between; align-items: center; }
 .chat-ctx-pop .cx-x { background: none; border: 0; color: var(--z-faint); cursor: pointer; font: inherit; }
 .chat-ctx-pop .cx-kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0; }
