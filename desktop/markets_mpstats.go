@@ -1,11 +1,13 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -27,15 +29,54 @@ func (f *folderSettings) mpstatsBase() string {
 	return mpstats.DefaultURL
 }
 
+// mpstatsTTL — сколько ряд ниши живет в памяти окна: «Посчитать», «Посчитать
+// моделью» и пересчет со своим файлом не тратят тариф заново (ревью #605).
+// ponytail: память процесса; потолок — после перезапуска окна ряд качается
+// снова; путь — кэш на диске, если тариф станет тесным.
+const mpstatsTTL = 10 * time.Minute
+
+type nicheEntry struct {
+	at     time.Time
+	series [2]domain.DailySales
+	files  []forecastFile
+}
+
+// nicheCache keeps MPStats niche series by «id|путь|сегодня».
+type nicheCache struct {
+	mu sync.Mutex
+	m  map[string]nicheEntry
+}
+
+func (c *nicheCache) get(k string, now time.Time) (nicheEntry, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[k]
+	return e, ok && now.Sub(e.at) < mpstatsTTL
+}
+
+func (c *nicheCache) put(k string, e nicheEntry) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]nicheEntry{}
+	}
+	c.m[k] = e
+}
+
 // nicheSeries reads the two niche series: из MPStats или файлами.
 func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last, now string, today time.Time) ([2]domain.DailySales, []forecastFile, error) {
 	var series [2]domain.DailySales
-	src, ok := strings.CutPrefix(last, "mpstats:")
-	if !ok {
+	lastMP, nowMP := strings.HasPrefix(last, "mpstats:"), strings.HasPrefix(now, "mpstats:")
+	switch {
+	case !lastMP && !nowMP:
 		return readNiche(last, now)
+	case last != now: // обе — из MPStats одним источником или обе файлами (ревью #605)
+		return series, nil, errors.New("обе ниши — из MPStats или обе файлами: нажмите «Из MPStats» еще раз или выберите оба файла")
 	}
-	if now != last {
-		return series, nil, errors.New("обе ниши — из MPStats: нажмите «Из MPStats» еще раз")
+	src := strings.TrimPrefix(last, "mpstats:")
+	key := src + "|" + today.Format(time.DateOnly)
+	if e, ok := f.mpstatsNiche.get(key, time.Now()); ok {
+		return e.series, e.files, nil
 	}
 	cl, path, err := f.mpstatsSource(src, hc)
 	if err != nil {
@@ -43,27 +84,40 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 	}
 	from, to := ozonWindow(today)
 	spans := [2][2]time.Time{{from.AddDate(-1, 0, 0), to.AddDate(-1, 0, mpstatsHorizon)}, {from, to}}
-	var files []forecastFile
-	for i, sp := range spans {
-		days, err := cl.CategoryByDay(ctx, path, sp[0], sp[1])
-		if err != nil {
-			return series, nil, errors.New(mpstatsMessage(err))
-		}
-		ds := make([]domain.DaySales, 0, len(days))
-		for _, d := range days {
-			ds = append(ds, domain.DaySales{Day: d.Day, Value: d.Sales})
-		}
-		if series[i], err = domain.NewDailySales(ds); err != nil {
-			return series, nil, err
-		}
-		got := series[i].Days()
-		if len(got) == 0 {
-			return series, nil, fmt.Errorf("в MPStats нет продаж ниши «%s» за %s – %s: проверьте путь категории", path, sp[0].Format("02.01.2006"), sp[1].Format("02.01.2006"))
-		}
-		files = append(files, forecastFile{File: "MPStats · " + path, Format: "mpstats", Days: len(got),
-			From: got[0].Day.Format("02.01.2006"), To: got[len(got)-1].Day.Format("02.01.2006")})
+	var files [2]forecastFile
+	var errs [2]error
+	var wg sync.WaitGroup
+	for i, sp := range spans { // ряды независимы: качаются сразу, а не друг за другом (ревью #605)
+		wg.Go(func() { series[i], files[i], errs[i] = mpstatsSpan(ctx, cl, path, sp[0], sp[1]) })
 	}
-	return series, files, nil
+	wg.Wait()
+	if err := cmp.Or(errs[0], errs[1]); err != nil {
+		return series, nil, err
+	}
+	f.mpstatsNiche.put(key, nicheEntry{at: time.Now(), series: series, files: files[:]})
+	return series, files[:], nil
+}
+
+// mpstatsSpan reads one niche series for days from..to.
+func mpstatsSpan(ctx context.Context, cl mpstats.Client, path string, from, to time.Time) (domain.DailySales, forecastFile, error) {
+	days, err := cl.CategoryByDay(ctx, path, from, to)
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, errors.New(mpstatsMessage(err))
+	}
+	ds := make([]domain.DaySales, 0, len(days))
+	for _, d := range days {
+		ds = append(ds, domain.DaySales{Day: d.Day, Value: d.Sales})
+	}
+	s, err := domain.NewDailySales(ds)
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, err
+	}
+	got := s.Days()
+	if len(got) == 0 {
+		return domain.DailySales{}, forecastFile{}, fmt.Errorf("в MPStats нет продаж ниши «%s» за %s – %s: проверьте путь категории", path, from.Format("02.01.2006"), to.Format("02.01.2006"))
+	}
+	return s, forecastFile{File: "MPStats · " + path, Format: "mpstats", Days: len(got),
+		From: got[0].Day.Format("02.01.2006"), To: got[len(got)-1].Day.Format("02.01.2006")}, nil
 }
 
 // mpstatsSource resolves «<id>|<путь>» into a client with the saved key.

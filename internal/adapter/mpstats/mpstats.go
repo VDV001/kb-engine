@@ -3,6 +3,7 @@
 package mpstats
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -75,12 +76,20 @@ func (c Client) CategoryByDay(ctx context.Context, path string, from, to time.Ti
 	parts := make([][]DaySales, len(spans))
 	errs := make([]error, len(spans))
 	sem := make(chan struct{}, parallel)
+	// Первая отказавшая часть отменяет остальные: не тратить тариф ради одной ошибки (ревью #605).
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var wg sync.WaitGroup
 	for i, sp := range spans {
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			parts[i], errs[i] = c.categorySpan(ctx, path, sp[0], sp[1])
+			if ctx.Err() != nil {
+				return
+			}
+			if parts[i], errs[i] = c.categorySpan(ctx, path, sp[0], sp[1]); errs[i] != nil {
+				cancel()
+			}
 		})
 	}
 	wg.Wait()
@@ -99,14 +108,16 @@ func minTime(a, b time.Time) time.Time {
 	return b
 }
 
-// firstErr — первая ошибка частей: человеку одна причина, а не семь одинаковых.
+// firstErr — причина отказа: первая не «отменено» (отмена — следствие), иначе любая.
 func firstErr(errs []error) error {
+	var any error
 	for _, e := range errs {
-		if e != nil {
+		if e != nil && !errors.Is(e, context.Canceled) {
 			return e
 		}
+		any = cmp.Or(any, e)
 	}
-	return nil
+	return any
 }
 
 // categorySpan asks one part of the range.

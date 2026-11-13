@@ -58,13 +58,14 @@ type sourcesView struct {
 // (привязки Wails), а не через HTTP API: иначе любой, кто достучался до API,
 // мог бы направить индекс на чужие папки.
 type folderSettings struct {
-	browserTok browserTokenCache // токен «Браузера», пока файл не изменился (browserproxy.go)
-	ozonPosts  ozonPostCache     // отправления кабинетов Ozon на 10 минут (markets_ozon.go)
-	shopLoads  shopLoadCache     // последний загруженный «Магазин» кабинета — для выбранных дней
-	mpstatsURL string            // API MPStats; "" — настоящий (markets_mpstats.go)
-	costMu     sync.Mutex        // costs.json: себестоимость кабинетов (markets_costs.go)
-	planMu     sync.Mutex        // последний построенный план (markets_plan.go)
-	lastPlan   *domain.Plan
+	browserTok   browserTokenCache // токен «Браузера», пока файл не изменился (browserproxy.go)
+	ozonPosts    ozonPostCache     // отправления кабинетов Ozon на 10 минут (markets_ozon.go)
+	shopLoads    shopLoadCache     // последний загруженный «Магазин» кабинета — для выбранных дней
+	mpstatsURL   string            // API MPStats; "" — настоящий (markets_mpstats.go)
+	mpstatsNiche nicheCache        // ряды ниш MPStats на 10 минут (markets_mpstats.go)
+	costMu       sync.Mutex        // costs.json: себестоимость кабинетов (markets_costs.go)
+	planMu       sync.Mutex        // последний построенный план (markets_plan.go)
+	lastPlan     *domain.Plan
 	// speechCalls keeps cloud dictation calls for the statistics (#493); nil — не считать.
 	speechCalls usage.Recorder
 	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.

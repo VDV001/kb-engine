@@ -1287,6 +1287,13 @@ $("#storage-list").addEventListener("click", async (e) => {
   renderStorage();
 });
 const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon", mpstats: "MPStats" };
+// Что случится после удаления — у каждого вида свое (ревью #605).
+const CONN_DEL_NOTE = {
+  ozon: "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет.",
+  mpstats: "Ключ сотрется из Связки ключей, «Прогноз → Из MPStats» перестанет работать.",
+  speech: "Ключ сотрется из Связки ключей, диктовка вернется к Apple Speech.",
+  google: "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.",
+};
 // Итоги «Проверить» по id подключения: строка под подключением до перерисовки окна.
 const connChecks = {};
 let connConfirm = null;
@@ -1303,7 +1310,7 @@ async function renderConnections() {
       : `${chk}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
     const ck = connChecks[r.id];
     const ckLine = ck ? `<span class="conn-check${ck.busy ? "" : ck.ok ? " ok" : " bad"}" role="status">${ck.busy ? "проверяю…" : (ck.ok ? "✓ " : "✕ ") + esc(ck.note)}</span>` : "";
-    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${r.kind === "ozon" ? "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет." : "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться."}
+    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${CONN_DEL_NOTE[r.kind] || CONN_DEL_NOTE.google}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
     <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
@@ -5556,7 +5563,16 @@ $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
   const go = e.target.closest("[data-mk-go-fc]");
-  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); return; }
+  if (go) {
+    hideTip();
+    fc.niche = go.dataset.mkGoFc;
+    if (fc.paths[0].startsWith("mpstats:")) { // источник MPStats берет новую нишу, а не считает прежнюю (ревью #605)
+      const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+      fc.paths[0] = fc.paths[1] = `mpstats:${id}|${fc.niche}`; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave();
+    }
+    mkTab("forecast");
+    return;
+  }
   // «План» строится по прогнозу: вкладка ведет к блоку под ним, а без прогноза — к его кнопке.
   if (e.target.closest("#mk-plan-tab")) {
     hideTip();
@@ -5597,9 +5613,11 @@ function fcRender() {
   if (v) { fcKpis(v); fcChart(v); }
 }
 $("#mk-files").addEventListener("change", (e) => {
-  if (e.target.id === "fc-mps-path" && !fc.busy) {
+  if (e.target.id === "fc-mps-path") {
+    if (fc.busy) { mkErr("Идет расчет — ниша сменится после него."); return fcRender(); } // поле вернется к считаемой нише
     const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
-    fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`; fc.v = null; fcSave(); return fcRender();
+    fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`;
+    fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); return fcRender(); // сравнение с моделью — по прежней нише (ревью #605)
   }
   if (e.target.id !== "fc-cab" || fc.busy) return;
   fc.paths[2] = "ozon:" + e.target.value; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();

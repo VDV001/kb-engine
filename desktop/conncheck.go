@@ -54,6 +54,9 @@ func (a *App) CheckConnection(id string) connCheck {
 	ctx, cancel := context.WithTimeout(a.ctx, checkTimeout)
 	defer cancel()
 	if c, ok := a.settings.snapshot().cfg.Connection(id); ok && c.Kind == desktopconfig.ConnGoogle {
+		if !c.Enabled {
+			return failed("подключение выключено — включите его, чтобы проверить")
+		}
 		return a.google.check(ctx, id)
 	}
 	return a.settings.checkConn(ctx, id, liveEndpoints())
@@ -133,9 +136,9 @@ func (f *folderSettings) checkConn(ctx context.Context, id string, ep checkEndpo
 	if !c.Enabled {
 		return failed("подключение выключено — включите его, чтобы проверить")
 	}
-	key, err := f.tokens.Get(connKeyAccount(id))
-	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
-		return failed(keychainNote)
+	key, bad := f.connKey(c)
+	if bad != "" {
+		return failed(bad)
 	}
 	switch c.Kind {
 	case desktopconfig.ConnOzon:
@@ -163,8 +166,8 @@ func checkOzon(ctx context.Context, cl ozon.Client, name string) connCheck {
 	return checked(fmt.Sprintf("ключ принят · товаров в кабинете %d", len(st)))
 }
 
-// checkOpenAI asks an OpenAI-compatible server for /models: 401 и 403 — ключ
-// не принят, любой другой ответ — сервер отвечает.
+// checkOpenAI asks an OpenAI-compatible server for /models: зеленое — только
+// 2xx; 401 и 403 — ключ, 429 — занят, 404 и перенаправление — не тот путь (ревью #605).
 func checkOpenAI(ctx context.Context, base, key string, hc *http.Client, what string) connCheck {
 	status, body, err := getWithKey(ctx, strings.TrimRight(base, "/")+"/models", key, hc)
 	switch {
@@ -172,8 +175,12 @@ func checkOpenAI(ctx context.Context, base, key string, hc *http.Client, what st
 		return failed(what + " не отвечает: " + err.Error())
 	case status == http.StatusUnauthorized || status == http.StatusForbidden:
 		return failed("ключ не принят: " + what + " ответил " + fmt.Sprint(status))
+	case status == http.StatusTooManyRequests:
+		return failed(what + " занят (429) — попробуйте через минуту")
 	case status >= 500:
 		return failed(fmt.Sprintf("%s отвечает ошибкой %d — попробуйте позже", what, status))
+	case status < 200 || status > 299:
+		return failed(fmt.Sprintf("%s ответил %d — проверьте путь: адрес обычно кончается на /v1", what, status))
 	}
 	var list struct{ Data []json.RawMessage }
 	if json.Unmarshal(body, &list) == nil && len(list.Data) > 0 {
@@ -239,4 +246,17 @@ func (g *googleDesk) check(ctx context.Context, id string) connCheck {
 		return failed(googleErr(err).Error())
 	}
 	return checked("вход действует · " + who)
+}
+
+// connKey reads the connection's key; bad — почему проверить нельзя.
+// Распознаванию речи ключ не обязателен.
+func (f *folderSettings) connKey(c desktopconfig.Connection) (key, bad string) {
+	key, err := f.tokens.Get(connKeyAccount(c.ID))
+	switch {
+	case errors.Is(err, keychain.ErrNotFound) && c.Kind != desktopconfig.ConnSpeech:
+		return "", "ключа нет в Связке ключей — удалите подключение и добавьте заново"
+	case err != nil && !errors.Is(err, keychain.ErrNotFound):
+		return "", keychainNote
+	}
+	return key, ""
 }
