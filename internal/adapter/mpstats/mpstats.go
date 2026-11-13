@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
@@ -167,7 +168,7 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 		if err == nil {
 			return json.Unmarshal(data, out)
 		}
-		if !errors.Is(err, ErrDropped) && !errors.Is(err, ErrTimeout) || try == retries || ctx.Err() != nil {
+		if !errors.Is(err, ErrDropped) || try == retries || ctx.Err() != nil { // таймаут клиента — 90 с, не повторяем (ревью #606)
 			return err
 		}
 		select {
@@ -176,6 +177,26 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 		case <-time.After(time.Duration(try+1) * time.Second):
 		}
 	}
+}
+
+// transportErr names a failed request without its URL (адрес с путем ниши
+// человеку не нужен): обрыв — ErrDropped (его повторяют), таймаут — ErrTimeout,
+// нет сети, сертификат, отказ в соединении — своей причиной (ревью #606).
+func transportErr(ctx context.Context, err error) error {
+	var ue *url.Error
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case errors.Is(err, ErrRedirect):
+		return ErrRedirect
+	case errors.As(err, &ue) && ue.Timeout():
+		return ErrTimeout
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return ErrDropped
+	case errors.As(err, &ue):
+		return ue.Err
+	}
+	return err
 }
 
 // once makes one request; обрыв и 502/504 — ErrDropped/ErrTimeout, их повторяет get.
@@ -187,15 +208,7 @@ func (c Client) once(ctx context.Context, client *http.Client, target string) ([
 	req.Header.Set("X-Mpstats-TOKEN", c.Token)
 	resp, err := client.Do(req)
 	if err != nil {
-		// Адрес с путем ниши и сетевые подробности человеку не нужны (живая проверка 13.11).
-		var ue *url.Error
-		switch {
-		case errors.As(err, &ue) && ue.Timeout():
-			return nil, ErrTimeout
-		case errors.Is(err, ErrRedirect), ctx.Err() != nil:
-			return nil, err
-		}
-		return nil, ErrDropped
+		return nil, transportErr(ctx, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
@@ -221,11 +234,8 @@ func statusErr(status int) error {
 	case http.StatusTooManyRequests:
 		return ErrQuota
 	}
-	if status == http.StatusGatewayTimeout {
-		return ErrTimeout
-	}
-	if status == http.StatusBadGateway {
-		return ErrDropped
+	if status == http.StatusGatewayTimeout || status == http.StatusBadGateway {
+		return ErrDropped // MPStats сам не дождался — повторяется, как обрыв
 	}
 	return fmt.Errorf("MPStats ответил %d", status)
 }
@@ -243,14 +253,22 @@ type Subcategory struct {
 	AvgPrice float64 `json:"avg_price"`
 }
 
-// Subcategories returns the category's direct subcategories for days from..to.
-func (c Client) Subcategories(ctx context.Context, path string, from, to time.Time) ([]Subcategory, error) {
+// Subcategories returns the category's direct subcategories for days from..to
+// and the category itself (self): у конечной ниши подкатегорий нет, есть она сама.
+func (c Client) Subcategories(ctx context.Context, path string, from, to time.Time) (subs []Subcategory, self Subcategory, err error) {
 	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
 	var rows []Subcategory
 	if err := c.get(ctx, "/api/oz/get/category/subcategories", q, &rows); err != nil {
-		return nil, err
+		return nil, Subcategory{}, err
 	}
-	return slices.DeleteFunc(rows, func(s Subcategory) bool { return s.Name == currentCategory }), nil
+	for _, r := range rows {
+		if r.Name == currentCategory {
+			self = r
+		} else {
+			subs = append(subs, r)
+		}
+	}
+	return subs, self, nil
 }
 
 // Categories returns the paths of all Ozon categories, по алфавиту.

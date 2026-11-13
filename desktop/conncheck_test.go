@@ -266,6 +266,10 @@ func TestNichesMPStats(t *testing.T) {
 		case "/api/user/report_api_limit":
 			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
 		case "/api/oz/get/category/subcategories":
+			if r.URL.Query().Get("path") == "Одежда/Куртки" {
+				_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":150,"revenue":3000,"sellers_with_sells":7}]`))
+				return
+			}
 			if r.URL.Query().Get("d1") == "2025-08-14" { // год назад у MPStats данных нет
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -298,6 +302,10 @@ func TestNichesMPStats(t *testing.T) {
 		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
 		t.Errorf("view = %+v", v)
 	}
+	// Конечная ниша без подкатегорий — в таблице она сама (живая проверка 13.11: «Пижамы женские»).
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" {
+		t.Errorf("leaf: %v, %+v", err, v.Niches)
+	}
 	// Путь, скопированный с вида «Одежда / Куртки», — тот же путь (живая проверка 13.11).
 	if v, err := s.nichesMPStats(context.Background(), srv.Client(), " Одежда / ", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || v.File != "MPStats · Одежда" {
 		t.Errorf("spaced path: %v, %q", err, v.File)
@@ -308,10 +316,11 @@ func TestNichesMPStats(t *testing.T) {
 	if err != nil || len(v2.Niches) != 2 || v2.Niches[0].Values["growth"] != 0 {
 		t.Errorf("without last year: %v, %+v", err, v2.Niches)
 	}
-	notes := ""
+	var nb strings.Builder
 	for _, p := range v2.Problems {
-		notes += p.Reason + " | "
+		nb.WriteString(p.Reason + " | ")
 	}
+	notes := nb.String()
 	if !strings.Contains(notes, "рост") || !strings.Contains(notes, "лимит") {
 		t.Errorf("problems = %q; want the growth and the quota named", notes)
 	}

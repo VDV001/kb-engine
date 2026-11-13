@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -201,30 +200,30 @@ func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, pat
 	if path == "" {
 		return nicheTable{}, errors.New("впишите категорию Ozon, например «Одежда/Мужская одежда»")
 	}
-	d1, err1 := time.Parse(time.DateOnly, from)
-	d2, err2 := time.Parse(time.DateOnly, to)
-	switch {
-	case err1 != nil || err2 != nil:
-		return nicheTable{}, fmt.Errorf("даты периода не прочитаны: %q – %q", from, to)
-	case d2.Before(d1):
-		return nicheTable{}, markets.ErrOzonPeriod
+	d1, d2, err := mpstatsDays(from, to)
+	if err != nil {
+		return nicheTable{}, err
 	}
 	cl, err := f.mpstatsConnClient(hc)
 	if err != nil {
 		return nicheTable{}, err
 	}
 	var subs [2][]mpstats.Subcategory
+	var self [2]mpstats.Subcategory
 	var errs [2]error
 	var wg sync.WaitGroup
 	for i, back := range []int{0, -1} { // сейчас и те же дни год назад — для роста к году
-		wg.Go(func() { subs[i], errs[i] = cl.Subcategories(ctx, path, d1.AddDate(back, 0, 0), d2.AddDate(back, 0, 0)) })
+		wg.Go(func() {
+			subs[i], self[i], errs[i] = cl.Subcategories(ctx, path, d1.AddDate(back, 0, 0), d2.AddDate(back, 0, 0))
+		})
 	}
 	wg.Wait()
-	if err := cmp.Or(errs[0], errs[1]); err != nil {
-		return nicheTable{}, errors.New(mpstatsMessage(err))
+	if errs[0] != nil { // год назад — только для роста: без него ниши есть (ревью #606)
+		return nicheTable{}, errors.New(mpstatsMessage(errs[0]))
 	}
-	if len(subs[0]) == 0 {
-		return nicheTable{}, fmt.Errorf("у категории «%s» в MPStats нет подкатегорий: это уже ниша — откройте ее в «Прогнозе» или выберите категорию выше", path)
+	parent, subs, err := leafAsNiche(path, subs, self)
+	if err != nil {
+		return nicheTable{}, err
 	}
 	sale := func(ss []mpstats.Subcategory) []markets.NicheSale {
 		out := make([]markets.NicheSale, 0, len(ss))
@@ -234,23 +233,31 @@ func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, pat
 		return out
 	}
 	cur := sale(subs[0])
-	missed := topTen(ctx, cl, path, d1, d2, cur)
-	tb, err := markets.MPStatsNiches(path, cur, sale(subs[1]), int(d2.Sub(d1).Hours()/24)+1)
+	missed, why := topTen(ctx, cl, parent, d1, d2, cur)
+	tb, err := markets.MPStatsNiches(parent, cur, sale(subs[1]), int(d2.Sub(d1).Hours()/24)+1)
 	if err != nil {
 		return nicheTable{}, err
 	}
+	if errs[1] != nil {
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: "рост к году не посчитан: " + mpstatsMessage(errs[1])})
+	}
 	if missed > 0 {
-		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш MPStats не отдал продавцов: без доли топ-10 у них нет оценки", missed)})
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш нет доли топ-10 и оценки: %s", missed, why)})
 	}
 	return nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now), nil
 }
 
 // topTen fills the top-10 revenue of each niche: запрос на нишу, до четырех
-// сразу (около 5 с на нишу, замер 13.11); missed — сколько ниш без ответа.
-func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time.Time, ns []markets.NicheSale) (missed int) {
+// сразу (около 5 с на нишу, замер 13.11). Исчерпанный лимит и отказ ключа
+// останавливают остальные запросы (ревью #606); missed — сколько ниш без
+// ответа, why — причина словами.
+func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time.Time, ns []markets.NicheSale) (missed int, why string) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	sem := make(chan struct{}, 4)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
+	var cause error // первая настоящая причина; отмена — следствие остановки
 	for i := range ns {
 		if ns[i].Revenue <= 0 {
 			continue
@@ -261,13 +268,49 @@ func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time
 			v, err := cl.TopSellersRevenue(ctx, parent+"/"+ns[i].Name, from, to, 10)
 			mu.Lock()
 			defer mu.Unlock()
-			if err != nil {
-				missed++
+			if err == nil {
+				ns[i].Top10Revenue = v
 				return
 			}
-			ns[i].Top10Revenue = v
+			missed++
+			if errors.Is(err, mpstats.ErrQuota) || errors.Is(err, mpstats.ErrUnauthorized) {
+				cancel()
+			}
+			if cause == nil || (errors.Is(cause, context.Canceled) && !errors.Is(err, context.Canceled)) {
+				cause = err
+			}
 		})
 	}
 	wg.Wait()
-	return missed
+	if cause != nil {
+		why = mpstatsMessage(cause)
+	}
+	return missed, why
+}
+
+// mpstatsDays reads the period «ГГГГ-ММ-ДД».
+func mpstatsDays(from, to string) (d1, d2 time.Time, err error) {
+	d1, err1 := time.Parse(time.DateOnly, from)
+	d2, err2 := time.Parse(time.DateOnly, to)
+	switch {
+	case err1 != nil || err2 != nil:
+		return d1, d2, fmt.Errorf("даты периода не прочитаны: %q – %q", from, to)
+	case d2.Before(d1):
+		return d1, d2, markets.ErrOzonPeriod
+	}
+	return d1, d2, nil
+}
+
+// leafAsNiche: у конечной ниши подкатегорий нет — в таблице она сама (живая
+// проверка 13.11, «Пижамы женские»); parent — путь, в котором она лежит.
+func leafAsNiche(path string, subs [2][]mpstats.Subcategory, self [2]mpstats.Subcategory) (string, [2][]mpstats.Subcategory, error) {
+	if len(subs[0]) > 0 {
+		return path, subs, nil
+	}
+	if self[0].Sales <= 0 && self[0].Revenue <= 0 {
+		return "", subs, fmt.Errorf("в MPStats нет продаж категории «%s» за эти дни — проверьте путь (окно подскажет пути)", path)
+	}
+	i := strings.LastIndex(path, "/")
+	self[0].Name, self[1].Name = path[i+1:], path[i+1:]
+	return path[:max(i, 0)], [2][]mpstats.Subcategory{{self[0]}, {self[1]}}, nil
 }

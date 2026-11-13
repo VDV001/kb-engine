@@ -1656,7 +1656,13 @@ body:not(.no-mk-tab) .mk-tab[aria-selected="true"] { border-color: transparent; 
 .mk-mps-cat input:focus-visible { outline: 1px solid var(--z-accent); outline-offset: 1px; }
 .mk-mps-crumbs { font-size: 12px; color: var(--z-muted); }
 .mk-mps-crumbs:empty { display: none; }
-.sh-src { font-size: 13px; color: var(--z-ink-2); }
+.src-tag { flex-shrink: 0; font-size: 11px; font-weight: 700; letter-spacing: .02em; padding: 3px 8px; border-radius: var(--z-radius); white-space: nowrap; cursor: default; }
+.src-tag[hidden] { display: none; }
+.mk-file .src-tag { align-self: flex-start; margin-top: 2px; }
+.src-tag[data-kind="file"] { color: var(--z-sp2); background: color-mix(in srgb, var(--z-sp2) 16%, transparent); }
+.src-tag[data-kind="mps"] { color: var(--z-sp5); background: color-mix(in srgb, var(--z-sp5) 16%, transparent); }
+.src-tag[data-kind="ozon"] { color: var(--z-sp4); background: color-mix(in srgb, var(--z-sp4) 16%, transparent); }
+.sh-src { font-size: 13px; color: var(--z-ink-2); max-width: 40ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; } /* полностью — в подсказке */
 .sh-src:empty { display: none; }
 .sh-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 18px; font-size: 13px; color: var(--z-muted); }
 .sh-period[hidden] { display: none; }

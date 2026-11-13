@@ -140,10 +140,13 @@ func TestSubcategories(t *testing.T) {
 			`{"name":"Женская одежда","sales":6,"revenue":60,"sellers_with_sells":3,"avg_price":12},{"name":"Мужская одежда","sales":4,"revenue":40,"sellers_with_sells":2}]`))
 	}))
 	t.Cleanup(srv.Close)
-	subs, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Subcategories(context.Background(), "Одежда",
+	subs, self, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Subcategories(context.Background(), "Одежда",
 		time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if self.Sales != 10 || self.Sellers != 5 { // сама категория — для конечной ниши без подкатегорий
+		t.Errorf("self = %+v", self)
 	}
 	if len(subs) != 2 || subs[0].Name != "Женская одежда" || subs[0].Sales != 6 || subs[0].Revenue != 60 || subs[0].Sellers != 3 {
 		t.Errorf("subs = %+v", subs)

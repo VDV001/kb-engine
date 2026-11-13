@@ -1,7 +1,6 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -145,7 +144,7 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	stage("stock")
 	fn := fin()
-	l := shopLoad{Name: c.Name, From: from, To: to, Now: now, At: time.Now(), Posts: posts, Stock: stock, Acc: fn.acc, Rets: fn.rets}
+	l := shopLoad{Name: c.Name, From: from, To: to, Now: now, At: now, Posts: posts, Stock: stock, Acc: fn.acc, Rets: fn.rets}
 	if fn.accErr != nil { // причины — словами сразу: сохраненная загрузка их уже не разберет
 		l.AccWhy = economyErr(c.Name, fn.accErr)
 	}
@@ -155,7 +154,7 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	f.shopLoads.put(id, l)
 	if err := f.saveShopLoad(id, l); err != nil {
 		v, verr := f.shopFor(id, l, from, to)
-		v.CostsErr = cmp.Or(v.CostsErr, "последняя загрузка не сохранена на этом Маке: "+err.Error())
+		v.CostsErr = strings.TrimPrefix(v.CostsErr+"; последняя загрузка не сохранена на этом Маке: "+err.Error(), "; ") // обе причины, а не одна (ревью #606)
 		return v, verr
 	}
 	return f.shopFor(id, l, from, to)
@@ -348,10 +347,14 @@ func (f *folderSettings) saveShopLoad(id string, l shopLoad) error {
 	return os.Rename(tmp, p)
 }
 
-// dropShopLoad forgets the cabinet's last load: и в памяти, и на диске.
-func (f *folderSettings) dropShopLoad(id string) {
+// dropShopLoad forgets the cabinet's last load: и в памяти, и на диске; нет
+// файла — нечего стирать, другой отказ называется (ревью #606).
+func (f *folderSettings) dropShopLoad(id string) error {
 	f.shopLoads.drop(id)
-	_ = os.Remove(f.shopLoadPath(id)) // нет файла — нечего стирать
+	if err := os.Remove(f.shopLoadPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 // finance — начисления и возвраты кабинета, у каждого своя ошибка: отказ в

@@ -298,7 +298,9 @@ func TestOzonShopLast(t *testing.T) {
 	if p, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12"); err != nil || p.PeriodDays != 3 {
 		t.Errorf("period from the saved load: %v, %+v", err, p.PeriodDays)
 	}
-	s.dropShopLoad(row.ID)
+	if err := s.dropShopLoad(row.ID); err != nil {
+		t.Fatal(err)
+	}
 	s.shopLoads = shopLoadCache{}
 	if _, err := s.ozonShopLast(row.ID); err == nil {
 		t.Error("dropped load still read")
