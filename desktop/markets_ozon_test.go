@@ -28,6 +28,17 @@ func fakeOzon(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(`{"items":[{"id":901,"offer_id":"100_46","name":"Брюки тестовые"},{"id":903,"offer_id":"300_M","name":"Пижама тестовая"}]}`))
 		case "/v4/posting/fbs/list":
 			_, _ = w.Write([]byte(`{"has_next":false,"cursor":"","postings":[]}`))
+		case "/v1/finance/accrual/by-day":
+			// Одна продажа 12.11 — последний день окна; остальные дни пустые.
+			var body struct{ Date string }
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			acc := ""
+			if body.Date == "2026-11-12" {
+				acc = `{"accrual_id":1,"date":"2026-11-12","total_amount":{"amount":"462.50","currency":"RUB"},"accrued_category":"POSTING","posting":{"products":[{"sku":11,"quantity":1,` +
+					`"delivery":{"services":[{"type_id":32,"accrued":{"amount":"-150","currency":"RUB"}},{"type_id":29,"accrued":{"amount":"-11.50","currency":"RUB"}}]},` +
+					`"commission":{"sale_amount":{"amount":"1200","currency":"RUB"},"commission":{"amount":"-576","currency":"RUB"}}}]}}`
+			}
+			_, _ = w.Write([]byte(`{"accruals":[` + acc + `],"last_id":""}`))
 		case "/v4/product/info/stocks":
 			_, _ = w.Write([]byte(`{"cursor":"","items":[{"product_id":901,"offer_id":"100_46","stocks":[{"type":"fbo","present":0,"reserved":0,"sku":11}]},{"product_id":903,"offer_id":"300_M","stocks":[{"type":"fbo","present":40,"reserved":0,"sku":33}]}]}`))
 		default:
@@ -92,5 +103,43 @@ func TestMarketsOzon(t *testing.T) {
 	}
 	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), "нет-такого", now); err == nil {
 		t.Error("unknown connection read")
+	}
+}
+
+// Начисления: «Магазин» кабинета показывает, сколько пришло на счет, строками
+// «Экономики магазина»; отказ Ozon в финансах не прячет товары.
+func TestMarketsOzonEconomy(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("FURIA", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now)
+	if err != nil {
+		t.Fatalf("ozonShop: %v", err)
+	}
+	want := economyView{Sales: 1200, Commission: -576, Delivery: -150, Partners: -11.5, Total: 462.5}
+	if v.Economy == nil || *v.Economy != want {
+		t.Errorf("economy = %+v, want %+v", v.Economy, want)
+	}
+
+	// Ключ без доступа к финансам: товары есть, у экономики — слова Ozon, без ключа.
+	finance := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/finance/accrual/by-day" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		srv.Config.Handler.ServeHTTP(w, r)
+	})
+	refused := httptest.NewServer(finance)
+	defer refused.Close()
+	v, err = s.ozonShop(context.Background(), refused.URL, refused.Client(), row.ID, now)
+	if err != nil {
+		t.Fatalf("ozonShop without finance: %v", err)
+	}
+	if len(v.Products) != 2 || v.Economy == nil || !strings.Contains(v.Economy.Err, "не принял") || strings.Contains(v.Economy.Err, "k-1") || v.Economy.Total != 0 {
+		t.Errorf("refused finance: products %d, economy %+v", len(v.Products), v.Economy)
 	}
 }
