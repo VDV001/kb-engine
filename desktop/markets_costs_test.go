@@ -37,7 +37,7 @@ func TestMarketsCosts(t *testing.T) {
 		t.Error("a cost for an unknown cabinet saved")
 	}
 	srv := fakeOzon(t)
-	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local))
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestMarketsCosts_review598(t *testing.T) {
 		srv.Config.Handler.ServeHTTP(w, r)
 	}))
 	defer noFin.Close()
-	v, err := s.ozonShop(context.Background(), noFin.URL, noFin.Client(), row.ID, now)
+	v, err := s.ozonShop(context.Background(), noFin.URL, noFin.Client(), row.ID, now, nil)
 	if err != nil || v.Products[0].Money == nil || v.Products[0].Money.UnitCost != 480 {
 		t.Errorf("without accruals: err %v, money %+v", err, v.Products[0].Money)
 	}
@@ -101,7 +101,7 @@ func TestMarketsCosts_review598(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(filepath.Dir(s.path), "costs.json"), []byte("{не json"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	v, err = s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now)
+	v, err = s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil)
 	if err != nil || len(v.Products) != 2 || !strings.Contains(v.CostsErr, "себестоимость") {
 		t.Errorf("broken costs.json: err %v, products %d, costsErr %q", err, len(v.Products), v.CostsErr)
 	}

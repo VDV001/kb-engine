@@ -82,7 +82,7 @@ func TestMarketsOzon(t *testing.T) {
 
 	srv := fakeOzon(t)
 	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
-	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now)
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil)
 	if err != nil {
 		t.Fatalf("ozonShop: %v", err)
 	}
@@ -105,10 +105,10 @@ func TestMarketsOzon(t *testing.T) {
 		t.Error("the view carries the key")
 	}
 	tok.m[connKeyAccount(row.ID)] = "wrong-secret"
-	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now); err == nil || !strings.Contains(err.Error(), "не принял") || strings.Contains(err.Error(), "wrong-secret") {
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil); err == nil || !strings.Contains(err.Error(), "не принял") || strings.Contains(err.Error(), "wrong-secret") {
 		t.Errorf("wrong key: err = %v, want words about the key and not the key itself", err)
 	}
-	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), "нет-такого", now); err == nil {
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), "нет-такого", now, nil); err == nil {
 		t.Error("unknown connection read")
 	}
 }
@@ -123,7 +123,7 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	}
 	srv := fakeOzon(t)
 	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
-	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now)
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil)
 	if err != nil {
 		t.Fatalf("ozonShop: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	})
 	refused := httptest.NewServer(finance)
 	defer refused.Close()
-	v, err = s.ozonShop(context.Background(), refused.URL, refused.Client(), row.ID, now)
+	v, err = s.ozonShop(context.Background(), refused.URL, refused.Client(), row.ID, now, nil)
 	if err != nil {
 		t.Fatalf("ozonShop without finance: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestMarketsOzonEconomy(t *testing.T) {
 		srv.Config.Handler.ServeHTTP(w, r)
 	}))
 	defer noReturns.Close()
-	if v, err := s.ozonShop(context.Background(), noReturns.URL, noReturns.Client(), row.ID, now); err != nil || v.Losses == nil ||
+	if v, err := s.ozonShop(context.Background(), noReturns.URL, noReturns.Client(), row.ID, now, nil); err != nil || v.Losses == nil ||
 		!strings.Contains(v.Losses.Err, "возврат") || strings.Contains(v.Losses.Err, "начислени") || v.Economy == nil || v.Economy.Total != 462.5 {
 		t.Errorf("returns refused: err %v, losses %+v, economy %+v", err, v.Losses, v.Economy)
 	}
@@ -174,22 +174,40 @@ func TestMarketsOzonEconomy(t *testing.T) {
 }
 
 // «Загрузить из Ozon» называет пройденные этапы (отзыв владельца 13.11: по
-// бегущей полосе не понять, где загрузка): отправления, остатки, начисления, возвраты.
+// бегущей полосе не понять, где загрузка): отправления, остатки, начисления,
+// возвраты. Этап с отказом не назван: окно не рисует ему ✓ (ревью #603).
 func TestOzonShopStages(t *testing.T) {
 	s, _, _ := newServerSettings(t)
 	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var mu sync.Mutex
-	var got []string
-	s.ozonStage = func(stage string) { mu.Lock(); got = append(got, stage); mu.Unlock() }
 	srv := fakeOzon(t)
-	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)); err != nil {
-		t.Fatal(err)
-	}
-	slices.Sort(got)
-	if want := []string{"accruals", "posts", "returns", "stock"}; !slices.Equal(got, want) {
-		t.Errorf("stages = %v, want %v", got, want)
+	noFin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/finance/accrual/by-day" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		srv.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer noFin.Close()
+	for _, tc := range []struct {
+		name string
+		srv  *httptest.Server
+		want []string
+	}{
+		{"все прочитано", srv, []string{"accruals", "posts", "returns", "stock"}},
+		{"начисления отказаны", noFin, []string{"posts", "returns", "stock"}},
+	} {
+		var mu sync.Mutex
+		var got []string
+		stage := func(stage string) { mu.Lock(); got = append(got, stage); mu.Unlock() }
+		if _, err := s.ozonShop(context.Background(), tc.srv.URL, tc.srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local), stage); err != nil {
+			t.Fatal(err)
+		}
+		slices.Sort(got)
+		if !slices.Equal(got, tc.want) {
+			t.Errorf("%s: stages = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }
