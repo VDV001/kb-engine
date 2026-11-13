@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -168,5 +170,26 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	// Без начислений «доставлено без продажи» не проверить: окно говорит об этом, а не молчит.
 	if l := v.Losses; l == nil || !strings.Contains(l.Err, "начислени") {
 		t.Errorf("losses without accruals = %+v, want the reason", v.Losses)
+	}
+}
+
+// «Загрузить из Ozon» называет пройденные этапы (отзыв владельца 13.11: по
+// бегущей полосе не понять, где загрузка): отправления, остатки, начисления, возвраты.
+func TestOzonShopStages(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var got []string
+	s.ozonStage = func(stage string) { mu.Lock(); got = append(got, stage); mu.Unlock() }
+	srv := fakeOzon(t)
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)); err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(got)
+	if want := []string{"accruals", "posts", "returns", "stock"}; !slices.Equal(got, want) {
+		t.Errorf("stages = %v, want %v", got, want)
 	}
 }
