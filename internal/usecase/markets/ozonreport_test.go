@@ -2,6 +2,7 @@ package markets_test
 
 import (
 	"errors"
+	"math"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -57,5 +58,33 @@ func TestReadOzonProducts_notAReport(t *testing.T) {
 	// И наоборот: отчет магазина — не выгрузка ниш, «Ниша» называет его, а не читает мусор.
 	if _, err := markets.ReadNiches(ozonRows, nil); !errors.Is(err, markets.ErrShopReport) {
 		t.Errorf("shop report as niches: err = %v, want ErrShopReport", err)
+	}
+}
+
+func TestReadOzonProducts_mergesSKU(t *testing.T) {
+	// Ozon делит один SKU на несколько строк — по категории, бренду и схеме
+	// (настоящий отчет #580: 48 строк на 12 SKU). Окно склеивает их в товар:
+	// суммы складываются, худшее (срочно, дни без остатка) остается, рейтинг —
+	// по отзывам, ДРР — по сумме заказов. Остаток не складывается: на настоящем
+	// отчете сумма строк втрое больше итога Ozon — берется наибольший.
+	rows := append([][]string{}, ozonRows...)
+	rows = append(rows, []string{"Куртка А", "1001", "FBS", "A", "100000", "–", "20", "–", "10", "6", "1", "5000", "0.05", "12 из 28", "4", "–", "–", "4", "4.8", "2 из 92"})
+	r, err := markets.ReadOzonProducts(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Products) != 2 {
+		t.Fatalf("products = %d, want 2 (SKU 1001 once)", len(r.Products))
+	}
+	a := r.Products[0].Data()
+	if a.SKU != "1001" || a.Ordered != 140 || a.BoughtOut != 40 || a.Cancelled != 91 || a.Returned != 6 || a.Stock != 4 || a.OrderedSum != 600000 ||
+		a.Scheme != "FBO, FBS" || !a.UrgentSupply || a.SupplyQty != 40 || a.DaysOut != 12 || a.DaysOutOf != 28 || a.PromoDays != 8 {
+		t.Errorf("merged = %+v", a)
+	}
+	if want := (4.2*12 + 4.8*4) / 16; math.Abs(a.Rating-want) > 1e-9 || a.Reviews != 16 {
+		t.Errorf("rating = %v of %v reviews, want %v of 16", a.Rating, a.Reviews, want)
+	}
+	if want := (0.2*500000 + 0.05*100000) / 600000; math.Abs(a.DRR-want) > 1e-9 || math.Abs(a.AvgPrice-600000.0/140) > 1e-9 {
+		t.Errorf("drr = %v, avg = %v", a.DRR, a.AvgPrice)
 	}
 }
