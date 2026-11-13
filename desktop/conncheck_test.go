@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 )
@@ -101,5 +104,63 @@ func TestCheckConnection(t *testing.T) {
 		if got := s.checkConn(context.Background(), id, ep); got.OK || !strings.Contains(got.Note, "не принят") {
 			t.Errorf("%s with a wrong key: %+v", id, got)
 		}
+	}
+}
+
+// «Прогноз» берет нишу из MPStats (отзыв владельца 13.11): обе ниши — одним
+// источником «mpstats:<id>|<путь>»: сейчас — 90 дней до вчера, прошлый год —
+// те же дни годом раньше и 120 дней после них.
+func TestForecastMPStats(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Mpstats-TOKEN") != "m-1" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.URL.Path == "/api/user/report_api_limit" {
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+			return
+		}
+		q := r.URL.Query()
+		if q.Get("path") != "Одежда/Куртки" {
+			_, _ = w.Write([]byte(`[]`))
+			return
+		}
+		asked = append(asked, q.Get("d1")+"…"+q.Get("d2"))
+		d1, _ := time.Parse(time.DateOnly, q.Get("d1"))
+		d2, _ := time.Parse(time.DateOnly, q.Get("d2"))
+		var b strings.Builder
+		b.WriteString("[")
+		for d := d1; !d.After(d2); d = d.AddDate(0, 0, 1) {
+			if d != d1 {
+				b.WriteString(",")
+			}
+			fmt.Fprintf(&b, `{"period":%q,"sales":100}`, d.Format(time.DateOnly))
+		}
+		b.WriteString("]")
+		_, _ = w.Write([]byte(b.String()))
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
+	own := longCSV(t, "свои.csv", time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC), func(time.Time) int { return 10 })
+	src := "mpstats:" + row.ID + "|Одежда/Куртки"
+	v, err := s.forecast(context.Background(), "", srv.Client(), src, src, own, today)
+	if err != nil {
+		t.Fatalf("forecast: %v", err)
+	}
+	if want := []string{"2025-08-15…2026-03-12", "2026-08-15…2026-11-12"}; !slices.Equal(asked, want) {
+		t.Errorf("asked %v, want %v", asked, want)
+	}
+	if len(v.Files) != 3 || !strings.Contains(v.Files[0].File, "MPStats") || v.Files[1].Days != 90 || len(v.Days) == 0 || v.Share != 0.1 {
+		t.Errorf("files %+v, days %d, share %v", v.Files, len(v.Days), v.Share)
+	}
+	if _, err := s.forecast(context.Background(), "", srv.Client(), "mpstats:"+row.ID+"|Нет/Такой", "mpstats:"+row.ID+"|Нет/Такой", own, today); err == nil || !strings.Contains(err.Error(), "Нет/Такой") {
+		t.Errorf("unknown niche: %v", err)
 	}
 }
