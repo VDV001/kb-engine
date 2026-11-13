@@ -24,6 +24,7 @@ type OzonItem struct {
 // OzonPosting — отправление Ozon: схема FBO или FBS, статус и причина отмены.
 type OzonPosting struct {
 	Scheme, Status, CancelReason string
+	At                           time.Time // когда отправление ушло в обработку
 	Items                        []OzonItem
 }
 
@@ -148,4 +149,9 @@ func (a *ozonAcc) finish(days int) domain.ShopProductData {
 func calendarDays(from, to time.Time) int {
 	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
+}
+
+// OzonDaily is not written yet.
+func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (domain.DailySales, error) {
+	return domain.DailySales{}, nil
 }

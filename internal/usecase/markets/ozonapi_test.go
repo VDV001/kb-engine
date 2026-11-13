@@ -75,3 +75,29 @@ func TestOzonShop_daysAcrossDST(t *testing.T) {
 		t.Errorf("days = %d (%v), want 90", r.PeriodDays, err)
 	}
 }
+
+func TestOzonDaily(t *testing.T) {
+	// Свои продажи по дням для «Прогноза» (#580): штуки без отмен по дню
+	// отправления в часовом поясе продавца; день без продаж — ноль, а не пропуск.
+	msk := time.FixedZone("MSK", 3*3600)
+	at := func(d, h int) time.Time { return time.Date(2026, 11, d, h, 0, 0, 0, time.UTC) }
+	item := []markets.OzonItem{{SKU: "1", Qty: 2}}
+	posts := []markets.OzonPosting{
+		{Status: "delivered", At: at(10, 9), Items: item},
+		{Status: "delivering", At: at(10, 22), Items: item}, // 01:00 11-го по Москве
+		{Status: "cancelled", At: at(10, 10), Items: item},
+		{Status: "delivered", At: at(20, 10), Items: item}, // вне окна
+	}
+	from := time.Date(2026, 11, 10, 0, 0, 0, 0, msk)
+	s, err := markets.OzonDaily(posts, from, from.AddDate(0, 0, 2), msk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []float64
+	for _, d := range s.Days() {
+		got = append(got, d.Value)
+	}
+	if len(got) != 3 || got[0] != 2 || got[1] != 2 || got[2] != 0 {
+		t.Errorf("days = %v, want [2 2 0]", got)
+	}
+}

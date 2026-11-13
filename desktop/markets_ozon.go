@@ -138,3 +138,8 @@ func adviceOf(ps []*domain.ShopProduct) []shopAdvice {
 	}
 	return out
 }
+
+// forecastOzon is not written yet.
+func (f *folderSettings) forecastOzon(ctx context.Context, base string, hc *http.Client, last, now, id string, today time.Time) (forecastView, error) {
+	return forecastView{}, nil
+}
