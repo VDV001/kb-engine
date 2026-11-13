@@ -36,7 +36,7 @@ func shopData() markets.ShopData {
 
 func run(t *testing.T, name, args string) string {
 	t.Helper()
-	tools := markets.ShopTools{Load: func(context.Context) (markets.ShopData, error) { return shopData(), nil }}
+	tools := markets.ShopTools{Load: func(context.Context, string) (markets.ShopData, error) { return shopData(), nil }}
 	out, err := tools.Run(context.Background(), name, []byte(args))
 	if err != nil {
 		t.Fatalf("%s: %v", name, err)
@@ -85,7 +85,9 @@ func TestShopTools(t *testing.T) {
 }
 
 func TestShopTools_unknownAndLoadError(t *testing.T) {
-	tools := markets.ShopTools{Load: func(context.Context) (markets.ShopData, error) { return markets.ShopData{}, markets.ErrOzonPeriod }}
+	tools := markets.ShopTools{Load: func(context.Context, string) (markets.ShopData, error) {
+		return markets.ShopData{}, markets.ErrOzonPeriod
+	}}
 	if _, err := tools.Run(context.Background(), "shop_summary", []byte(`{}`)); err == nil {
 		t.Error("load error swallowed")
 	}

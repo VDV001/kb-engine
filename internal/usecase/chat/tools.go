@@ -58,6 +58,7 @@ type toolRun struct {
 	remember func(ctx context.Context, section, text string) error
 	versions Versions
 	propose  func(ctx context.Context, p VersionProposal) error
+	extras   []Extra
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -68,7 +69,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		return Turn{}, ErrNoReader
 	}
 	msgs := toolsMessages(r)
-	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions, propose: r.ProposeVersion}
+	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions, propose: r.ProposeVersion, extras: r.Extras}
 	offered := offeredTools(r)
 	for step := 0; ; step++ {
 		offer := offered
@@ -116,6 +117,9 @@ func toolsMessages(r Request) []ModelMessage {
 	if r.ProposeVersion != nil {
 		prompt += proposeVersionPrompt
 	}
+	for _, x := range r.Extras {
+		prompt += x.Prompt()
+	}
 	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(prompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
@@ -139,6 +143,9 @@ func offeredTools(r Request) []Tool {
 	}
 	if r.Remember != nil {
 		offered = append(offered, rememberTool)
+	}
+	for _, x := range r.Extras {
+		offered = append(offered, x.Tools()...)
 	}
 	return offered
 }
@@ -178,6 +185,11 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		}
 		return "предложено: ждет одобрения человека, в портрет без него не попадет"
 	default:
+		for _, x := range r.extras {
+			if out, ok := x.Exec(ctx, c.Name, []byte(c.Arguments)); ok {
+				return out
+			}
+		}
 		return "ошибка: неизвестный инструмент " + c.Name
 	}
 }
