@@ -2824,17 +2824,54 @@ function renderChatSources() {
       data-tip="${esc(connLabel(c))}: чату запрещено" data-tip-b="модель не видит его данных · щелчок — «Подключения», там «Чату: разрешить»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`
     : `<button type="button" class="chat-src conn locked" data-chat-mode-off aria-disabled="true"
       data-tip="${esc(connLabel(c))}: чат не спрашивает" data-tip-b="окно само ищет документы и отдает их модели, подключения так не спрашиваются · щелчок — «Чат и модель», режим «модель ищет»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`;
-  const max = 6; // больше — в «еще N»: ряд не переносится
-  const shown = list.slice(0, max), rest = list.slice(max);
-  const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
-  // Две группы (отзыв 14.11: в узком окне подключения уходили за край): не
-  // помещаются рядом — «спрашивает» переносится второй строкой, плашки сжимаются.
-  row.innerHTML = (list.length ? `<span class="chat-srcs-grp"><span class="lbl">ищет в</span>` + shown.map(chip).join("") +
-    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") + `</span>` : "") +
-    (conns.length || locked.length ? `<span class="chat-srcs-grp"><span class="lbl">спрашивает</span>` + conns.map(connChip).join("") + locked.map(lockChip).join("") + `</span>` : "") +
-    (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
-    (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
+  // Один ряд всегда (отзыв 14.11: перенос дал бы «этажи» при многих
+  // подключениях): плашки по порядку — источники, потом подключения; что не
+  // влезло по ширине, уходит за кнопку «еще N»; окошко по ней — все источники и
+  // подключения разделами, с переключателями.
+  const items = [...list.map((s) => ({ s, html: chip(s), conn: false })), ...conns.map((s) => ({ s, html: connChip(s), conn: true })), ...locked.map((c) => ({ lock: c, html: lockChip(c), conn: true }))];
+  const popRow = (it) => it.lock
+    ? `<label class="off"><input type="checkbox" disabled><i></i>${esc(connLabel(it.lock))} <button type="button" class="chat-srcs-reset" ${tools ? `data-chat-conn-off="${esc(it.lock.id)}">чату запрещено` : `data-chat-mode-off>не спрашивается`}</button></label>`
+    : `<label style="--c:var(${it.conn ? "--z-accent" : hue.get(it.s.id)})"><input type="checkbox" data-chat-src-cb="${esc(it.s.id)}"${chatSrcOn(it.s.id) ? " checked" : ""}><i></i>${esc(it.conn ? connLabel(it.s.conn) : label(it.s))}${chatSrcBad(it.s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`;
+  // Кого прятать первым: источники с конца (один остается), потом подключения
+  // с конца, потом последний источник — подключения видны дольше (отзыв 14.11).
+  const docIdx = items.map((it, i) => (it.conn ? -1 : i)).filter((i) => i >= 0);
+  const connIdx = items.map((it, i) => (it.conn ? i : -1)).filter((i) => i >= 0);
+  const hideOrder = [...docIdx.slice(1).reverse(), ...connIdx.reverse(), ...docIdx.slice(0, 1)];
+  const paint = (n) => {
+    const hidden = new Set(hideOrder.slice(0, items.length - n));
+    const shown = items.filter((_, i) => !hidden.has(i)), rest = items.filter((_, i) => hidden.has(i));
+    const restOn = rest.filter((it) => !it.lock && chatSrcOn(it.s.id)).length;
+    const firstConn = shown.findIndex((it) => it.conn);
+    row.innerHTML = (list.length ? `<span class="lbl">ищет в</span>` : "") +
+      shown.map((it, i) => (i === firstConn ? `<span class="lbl">спрашивает</span>` : "") + it.html).join("") +
+      (rest.length ? `<button type="button" class="chat-src more" data-chat-more aria-expanded="${chatState.moreOpen}" data-tip="Все источники и подключения" data-tip-b="в ряд не влезли еще ${rest.length}${chatState.only ? `, из них включено ${restOn}` : ""} · щелчок — окошко со всеми, там включить или выключить">еще ${rest.length}</button>` : "") +
+      (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
+      (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more" role="group" aria-label="Где ищет этот чат">` +
+        (list.length ? `<div class="hd">Источники</div>` + items.filter((it) => !it.conn).map(popRow).join("") : "") +
+        (items.some((it) => it.conn) ? `<div class="hd">Подключения</div>` + items.filter((it) => it.conn).map(popRow).join("") : "") + `</div>` : "");
+  };
+  // Ширину знает только раскладка: убирать по плашке, пока последний элемент ряда выходит за край.
+  const over = () => {
+    const edge = row.getBoundingClientRect().right + 1;
+    return [...row.children].some((el) => !el.classList.contains("chat-srcs-more") && el.getBoundingClientRect().right > edge);
+  };
+  let n = items.length;
+  row.classList.remove("squeeze");
+  paint(n);
+  while (n > 0 && row.clientWidth > 0 && over()) paint(--n);
+  // Совсем узко — одна плашка остается, сжатая многоточием: ряд не пустой.
+  if (n === 0 && items.length) { row.classList.add("squeeze"); paint(1); }
+  // ponytail: подбор перерисовкой по одной плашке — O(n²) по числу плашек; на
+  // десятках незаметно, путь — замерить ширины один раз и посчитать без перерисовок.
   dropStaleTip();
+}
+// Окно сузили или расширили — пересчитать, сколько плашек влезает.
+if (window.ResizeObserver) {
+  let lastW = 0;
+  new ResizeObserver(([e]) => {
+    const w = Math.round(e.contentRect.width);
+    if (w !== lastW) { lastW = w; requestAnimationFrame(renderChatSources); }
+  }).observe($("#chat-srcs"));
 }
 function toggleChatSrc(id) {
   const all = chatSources().map((s) => s.id);
