@@ -309,7 +309,9 @@ func TestToolsMode_PromptAsksToNameWhereFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := strings.ToLower(m.asked[0][0].Content)
-	for _, want := range []string{"откуда", "подключени", "интернет"} {
+	// «ссылк»: ссылки из вопроса окно прочло само — модель не должна говорить,
+	// что их не открывала (живая проверка 14.11).
+	for _, want := range []string{"откуда", "подключени", "интернет", "ссылки из вопроса"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("system prompt lacks %q:\n%s", want, p)
 		}
