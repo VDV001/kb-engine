@@ -5551,6 +5551,7 @@ $("#mk-fc-go").addEventListener("click", async () => {
   const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
   if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
   mkErr(""); fc.busy = true; $("#mk-fc-go").textContent = "Считаю…";
+  plRender(null); // новый прогноз — старый план не остается под ним (ревью #599)
   try { fc.v = await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
   fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
   fcRender();
@@ -5558,7 +5559,12 @@ $("#mk-fc-go").addEventListener("click", async () => {
 // «План продаж» (#580): по тем же трем источникам, что прогноз, и вводу человека.
 const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "comm", "log", "lead"];
 try { const v = JSON.parse(localStorage.getItem(PL_KEY) || "null"); if (v) for (const k of PL_IN) if (v[k] !== undefined) $("#pl-" + k).value = v[k]; } catch (_) { /* без хранилища — значения по умолчанию */ }
-const plNum = (k) => Number(String($("#pl-" + k).value).replace(/\s|₽|%/g, "").replace(",", "."));
+// Число как пишет человек: «1 500», «1.500» (точка — тысячи), «1500,5», «−5» (ревью #599).
+function plNum(k) {
+  let t = String($("#pl-" + k).value).replace(/[\s\u00a0₽%]/g, "").replace(/\u2212/g, "-");
+  if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, "");
+  return t.split(",").length > 2 ? NaN : Number(t.replace(",", "."));
+}
 function plInput() {
   try { localStorage.setItem(PL_KEY, JSON.stringify(Object.fromEntries(PL_IN.map((k) => [k, $("#pl-" + k).value])))); } catch (_) { /* окно просто не вспомнит ввод */ }
   const bad = PL_IN.filter((k) => !Number.isFinite(plNum(k)) || String($("#pl-" + k).value).trim() === "");
@@ -5573,7 +5579,7 @@ function plRender(v) {
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#pl-kpis").innerHTML = kpi("Продать", fmt(v.sell) + " шт", `за ${fmt(v.weeks.length)} недель прогноза`, "", "сколько продать за период, не больше остатка") +
     kpi("Прибыль по плану", fmt(v.profit) + " ₽", "до рекламы и налогов", v.profit < 0 ? "bad" : "", "сумма прибыли по дням плана") +
-    (v.supplyQty ? kpi("Довезти", fmt(v.supplyQty) + " шт", "к " + v.supplyBy, "bad", "недостающее к спросу; дата — когда остаток кончится, минус срок поставки")
+    (v.supplyQty ? kpi("Довезти", fmt(v.supplyQty) + " шт", v.supplyLate ? `срок прошел (${v.supplyBy}) — везти сейчас` : "к " + v.supplyBy, "bad", "недостающее к спросу; дата — когда остаток кончится, минус срок поставки")
       : kpi("Довезти", "не нужно", "остатка хватает на весь прогноз", "", "")) +
     kpi("Пик", v.peak, v.shortForPeak ? "остатка не хватит на пик" : "остатка на пик хватает", v.shortForPeak ? "bad" : "", "день с наибольшим прогнозом");
   const marks = (w) => [w.peak && "пик", w.dip && "провал", w.short && "не хватит остатка"].filter(Boolean).join(", ");
@@ -5588,14 +5594,16 @@ $("#pl-go").addEventListener("click", async () => {
   if (!inp) return mkErr("Заполните все поля плана числами.");
   mkErr(""); $("#pl-go").textContent = "Строю…";
   try { plRender(await native().MarketsPlan(...fc.paths, inp)); } catch (err) { plRender(null); mkErr("План не построен: " + errText(err)); }
+  // ввод с этого момента — тот, по которому построен план
   $("#pl-go").textContent = "Построить план";
 });
+// Правка ввода после расчета — Excel гаснет до нового «Построить план»: файл не разойдется с таблицей.
+$("#mk-plan").addEventListener("input", (e) => { if (e.target.matches("input")) $("#pl-xlsx").disabled = true; });
 $("#pl-xlsx").addEventListener("click", async () => {
   hideTip();
-  const inp = plInput();
-  if (!inp || !native() || !native().MarketsPlanExcel) return;
+  if (!native() || !native().MarketsPlanExcel) return;
   try {
-    const path = await native().MarketsPlanExcel(...fc.paths, inp);
+    const path = await native().MarketsPlanExcel(); // ровно план на экране (ревью #599)
     if (path) toast("План сохранен", " · " + path.split("/").pop());
   } catch (err) { mkErr("Excel не сохранен: " + errText(err)); }
 });

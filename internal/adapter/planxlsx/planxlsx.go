@@ -52,7 +52,7 @@ func weekRows(p domain.Plan) [][]any {
 		if w.Short {
 			marks = append(marks, "не хватит остатка")
 		}
-		out = append(out, []any{w.From.Format("02.01.2006"), w.Days, round(w.Demand), round(w.Sell), round(w.StockEnd), round(w.Price), round(w.Profit), strings.Join(marks, ", ")})
+		out = append(out, []any{w.From, w.Days, round(w.Demand), round(w.Sell), round(w.StockEnd), round(w.Price), round(w.Profit), strings.Join(marks, ", ")})
 	}
 	return out
 }
@@ -60,7 +60,7 @@ func weekRows(p domain.Plan) [][]any {
 func dayRows(p domain.Plan) [][]any {
 	var out [][]any
 	for _, d := range p.Days() {
-		out = append(out, []any{d.Day.Format("02.01.2006"), round(d.Demand), round(d.Sell), round(d.StockEnd), round(d.Price), round(d.Profit)})
+		out = append(out, []any{d.Day, round(d.Demand), round(d.Sell), round(d.StockEnd), round(d.Price), round(d.Profit)})
 	}
 	return out
 }
@@ -80,6 +80,21 @@ func writeRows(f *excelize.File, sheet string, head []any, rows [][]any) error {
 			return err
 		}
 		if err := f.SetSheetRow(sheet, cell, &r); err != nil {
+			return err
+		}
+	}
+	// Даты — датами с видом «ДД.ММ.ГГГГ»: Excel сортирует и строит по ним (ревью #599).
+	fmtDate := "dd.mm.yyyy"
+	style, err := f.NewStyle(&excelize.Style{CustomNumFmt: &fmtDate})
+	if err != nil {
+		return err
+	}
+	if len(rows) > 0 {
+		last, err := excelize.CoordinatesToCellName(1, len(rows)+1)
+		if err != nil {
+			return err
+		}
+		if err := f.SetCellStyle(sheet, "A2", last, style); err != nil {
 			return err
 		}
 	}

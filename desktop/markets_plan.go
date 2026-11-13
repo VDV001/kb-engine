@@ -2,8 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -57,8 +62,9 @@ func (f *folderSettings) buildPlan(ctx context.Context, base string, hc *http.Cl
 	if err != nil {
 		return domain.Plan{}, err
 	}
+	day := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC) // дни прогноза — полночь UTC
 	return domain.NewPlan(fc, domain.PlanInput{Stock: in.Stock, Cost: in.Cost, Price: in.Price,
-		Commission: in.Commission / 100, Logistics: in.Logistics / 100, LeadDays: in.LeadDays})
+		Commission: in.Commission / 100, Logistics: in.Logistics / 100, LeadDays: in.LeadDays, From: day})
 }
 
 // plan builds the «План» view: недели, итог, поставка.
@@ -68,7 +74,10 @@ func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client,
 		return planView{}, err
 	}
 	r := func(x float64) float64 { return math.Round(x) }
-	v := planView{Weeks: []planWeek{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak()}
+	f.planMu.Lock()
+	f.lastPlan = &p // «Скачать Excel» пишет ровно этот план (ревью #599)
+	f.planMu.Unlock()
+	v := planView{Weeks: []planWeek{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate()}
 	qty, by := p.Supply()
 	v.SupplyQty = r(qty)
 	if !by.IsZero() {
@@ -82,11 +91,27 @@ func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client,
 	return v, nil
 }
 
-// planExcel writes the last built plan to path.
-func (f *folderSettings) planExcel(path string) error { return nil }
+// errNoPlan — Excel просят до плана.
+var errNoPlan = errors.New("сначала постройте план")
 
-// xlsxPath adds .xlsx when the name has no such extension.
-func xlsxPath(p string) string { return p }
+// planExcel writes the last built plan to path.
+func (f *folderSettings) planExcel(path string) error {
+	f.planMu.Lock()
+	p := f.lastPlan
+	f.planMu.Unlock()
+	if p == nil {
+		return errNoPlan
+	}
+	return planxlsx.Write(path, *p)
+}
+
+// xlsxPath adds .xlsx when the name has no such extension, в любом регистре.
+func xlsxPath(p string) string {
+	if strings.EqualFold(filepath.Ext(p), ".xlsx") {
+		return p
+	}
+	return p + ".xlsx"
+}
 
 // MarketsPlan builds the plan from the forecast's three sources.
 func (a *App) MarketsPlan(lastYear, nicheNow, own string, in planInput) (planView, error) {
@@ -103,6 +128,12 @@ func (a *App) MarketsPlanExcel() (string, error) {
 	if err != nil || path == "" {
 		return "", err
 	}
-	path = xlsxPath(path)
+	if full := xlsxPath(path); full != path {
+		// Диалог подтвердил имя без расширения: чужой файл с .xlsx молча не затираем (ревью #599).
+		if _, err := os.Stat(full); err == nil {
+			return "", fmt.Errorf("файл %s уже есть — выберите другое имя", filepath.Base(full))
+		}
+		path = full
+	}
 	return path, a.settings.planExcel(path)
 }

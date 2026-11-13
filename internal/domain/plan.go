@@ -43,6 +43,7 @@ type Plan struct {
 	weeks         []PlanWeek
 	demand, stock float64
 	out, peak     time.Time // день, когда остатка не хватило (ноль — хватило), и день пика
+	from          time.Time // первый день плана — сегодня
 	lead          int
 }
 
@@ -66,10 +67,20 @@ func NewPlan(f Forecast, in PlanInput) (Plan, error) {
 	if len(f.days) == 0 {
 		return Plan{}, fmt.Errorf("%w: прогноз пуст", ErrInvalidPlan)
 	}
+	if f.Peak().Day.IsZero() {
+		return Plan{}, fmt.Errorf("%w: прогноз нулевой — продаж не ждем, пика нет", ErrInvalidPlan)
+	}
+	days := f.days
+	if !in.From.IsZero() { // прошедшие дни уже проданы: остаток — на сегодня (ревью #599)
+		days = slices.DeleteFunc(slices.Clone(days), func(d ForecastDay) bool { return d.Day.Before(in.From) })
+	}
+	if len(days) == 0 {
+		return Plan{}, fmt.Errorf("%w: прогноз кончился до сегодня", ErrInvalidPlan)
+	}
 	prices := weekPrices(f, in.Price)
-	p := Plan{lead: in.LeadDays, peak: f.Peak().Day}
+	p := Plan{lead: in.LeadDays, peak: f.Peak().Day, from: days[0].Day}
 	left := in.Stock
-	for _, d := range f.days {
+	for _, d := range days {
 		price := prices[monday(d.Day)]
 		sell := min(d.Value, left)
 		left -= sell
@@ -188,7 +199,10 @@ func (p Plan) Supply() (qty float64, by time.Time) {
 func (p Plan) Peak() time.Time { return p.peak }
 
 // SupplyLate — срок поставки уже прошел: везти сейчас.
-func (p Plan) SupplyLate() bool { return false }
+func (p Plan) SupplyLate() bool {
+	_, by := p.Supply()
+	return !by.IsZero() && by.Before(p.from)
+}
 
 // ShortForPeak — остаток кончится раньше дня пика или в него.
 func (p Plan) ShortForPeak() bool { return !p.out.IsZero() && !p.out.After(p.peak) }
