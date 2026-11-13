@@ -408,6 +408,7 @@ type accrualJSON struct {
 	Posting  *struct {
 		Products []struct {
 			SKU      int64 `json:"sku"`
+			Quantity int   `json:"quantity"`
 			Delivery *struct {
 				Services []feeJSON `json:"services"`
 			} `json:"delivery"`
@@ -419,8 +420,9 @@ type accrualJSON struct {
 	} `json:"posting"`
 	ItemFees *struct {
 		Fees []struct {
-			SKU  int64     `json:"sku"`
-			Fees []feeJSON `json:"fees"`
+			SKU      int64     `json:"sku"`
+			Quantity int       `json:"quantity"`
+			Fees     []feeJSON `json:"fees"`
 		} `json:"fees"`
 	} `json:"item_fees"`
 	NonItemFee *feeJSON `json:"non_item_fee"`
@@ -429,6 +431,7 @@ type accrualJSON struct {
 // part is one piece of an accrual before its amount is read.
 type part struct {
 	sku    int64
+	qty    int
 	kind   markets.AccrualKind
 	typeID int
 	v      amount
@@ -440,11 +443,11 @@ func (a accrualJSON) parts() []part {
 	if a.Posting != nil {
 		for _, p := range a.Posting.Products {
 			if c := p.Commission; c != nil {
-				out = append(out, part{p.SKU, markets.AccrualSale, 0, c.SaleAmount}, part{p.SKU, markets.AccrualCommission, 0, c.Commission})
+				out = append(out, part{p.SKU, p.Quantity, markets.AccrualSale, 0, c.SaleAmount}, part{p.SKU, p.Quantity, markets.AccrualCommission, 0, c.Commission})
 			}
 			if p.Delivery != nil {
 				for _, f := range p.Delivery.Services {
-					out = append(out, part{p.SKU, markets.AccrualService, f.TypeID, f.Accrued})
+					out = append(out, part{p.SKU, p.Quantity, markets.AccrualService, f.TypeID, f.Accrued})
 				}
 			}
 		}
@@ -452,12 +455,12 @@ func (a accrualJSON) parts() []part {
 	if a.ItemFees != nil {
 		for _, it := range a.ItemFees.Fees {
 			for _, f := range it.Fees {
-				out = append(out, part{it.SKU, markets.AccrualService, f.TypeID, f.Accrued})
+				out = append(out, part{it.SKU, it.Quantity, markets.AccrualService, f.TypeID, f.Accrued})
 			}
 		}
 	}
 	if f := a.NonItemFee; f != nil {
-		out = append(out, part{0, markets.AccrualService, f.TypeID, f.Accrued})
+		out = append(out, part{0, 0, markets.AccrualService, f.TypeID, f.Accrued})
 	}
 	return out
 }
@@ -486,7 +489,7 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 		if p.sku != 0 {
 			sku = strconv.FormatInt(p.sku, 10)
 		}
-		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Unit: unit, Kind: p.kind, TypeID: p.typeID, Amount: m})
+		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Unit: unit, Kind: p.kind, TypeID: p.typeID, Qty: p.qty, Amount: m})
 		sum = sum.Add(m)
 	}
 	if rest := total.Sub(sum); !rest.IsZero() {

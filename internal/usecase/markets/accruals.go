@@ -67,24 +67,29 @@ var ozonGroups = map[int]economyGroup{
 func OzonEconomy(acc []OzonAccrual) ShopEconomy {
 	var e ShopEconomy
 	for _, a := range acc {
-		line := &e.Other
-		switch a.Kind {
-		case AccrualSale:
-			line = &e.Sales
-		case AccrualCommission:
-			line = &e.Commission
-		case AccrualService:
-			switch ozonGroups[a.TypeID] {
-			case groupDelivery:
-				line = &e.Delivery
-			case groupPromotion:
-				line = &e.Promotion
-			case groupPartners:
-				line = &e.Partners
-			}
-		}
-		*line = line.Add(a.Amount)
-		e.Total = e.Total.Add(a.Amount)
+		e.add(a)
 	}
 	return e
+}
+
+// add puts one accrual line into its row and into Total.
+func (e *ShopEconomy) add(a OzonAccrual) {
+	line := &e.Other
+	switch a.Kind {
+	case AccrualSale:
+		line = &e.Sales
+	case AccrualCommission:
+		line = &e.Commission
+	case AccrualService:
+		switch ozonGroups[a.TypeID] {
+		case groupDelivery:
+			line = &e.Delivery
+		case groupPromotion:
+			line = &e.Promotion
+		case groupPartners:
+			line = &e.Partners
+		}
+	}
+	*line = line.Add(a.Amount)
+	e.Total = e.Total.Add(a.Amount)
 }
