@@ -23,11 +23,13 @@ type SKUEconomy struct {
 }
 
 // Cost — себестоимость проданного: штука × проданные штуки.
+// Возвратов за период больше, чем продаж (продано раньше окна) — себестоимости
+// нет: товар вернулся на склад, а не продан в минус (ревью #598).
 func (e SKUEconomy) Cost() domain.Money {
 	if !e.HasCost {
 		return domain.Money{}
 	}
-	return domain.NewMoney(e.UnitCost.Kopecks() * int64(e.Units))
+	return domain.NewMoney(e.UnitCost.Kopecks() * int64(max(e.Units, 0)))
 }
 
 // Profit — на счет минус себестоимость: прибыль товара до рекламы и налогов.
@@ -79,32 +81,38 @@ func ReadCosts(rows [][]string) (map[string]domain.Money, []Problem, error) {
 	if h < 0 {
 		return nil, nil, ErrNoCostColumns
 	}
-	out := map[string]domain.Money{}
+	out, seen := map[string]domain.Money{}, map[string]int{}
 	var probs []Problem
 	for i := h + 1; i < len(rows); i++ {
 		art, raw := strings.TrimSpace(cell(rows[i], ac)), strings.TrimSpace(cell(rows[i], cc))
 		if art == "" && raw == "" {
 			continue
 		}
-		m, why := costOf(art, raw)
+		m, why := costOf(art, raw, true)
 		if why != "" {
 			probs = append(probs, Problem{Row: i + 1, Reason: why})
 			continue
 		}
+		if prev, dup := seen[art]; dup {
+			probs = append(probs, Problem{Row: i + 1, Reason: fmt.Sprintf("артикул «%s» уже был в строке %d — взята эта строка", art, prev)})
+		}
+		seen[art] = i + 1
 		out[art] = m
 	}
 	return out, probs, nil
 }
 
-// costHeader finds the header row and its two columns; -1 — нет.
+// costHeader finds the header row and its two columns; -1 — нет. Из колонок
+// «артикул» берется артикул продавца: «Артикул Ozon» с ним не совпадет (ревью #598).
 func costHeader(rows [][]string) (row, art, cost int) {
 	for i, r := range rows {
 		art, cost = -1, -1
+		seller := false
 		for j, c := range r {
 			c = strings.ToLower(c)
 			switch {
-			case art < 0 && strings.Contains(c, "артикул"):
-				art = j
+			case strings.Contains(c, "артикул") && (art < 0 || !seller && strings.Contains(c, "продав")):
+				art, seller = j, strings.Contains(c, "продав")
 			case cost < 0 && strings.Contains(c, "себестоим"):
 				cost = j
 			}
@@ -119,17 +127,25 @@ func costHeader(rows [][]string) (row, art, cost int) {
 // ErrBadCost — себестоимость не число или меньше нуля.
 var ErrBadCost = errors.New("себестоимость не принята")
 
-// ParseCost reads one cost as a person types it: «1 250,50», «480 ₽».
+// ErrNoArticle — себестоимость без артикула.
+var ErrNoArticle = errors.New("нет артикула")
+
+// ParseCost reads one cost as a person types it: «1 250,50», «480 ₽». Строже
+// файла: доли копейки и «1e3» — опечатка, а не число Excel (ревью #598).
 func ParseCost(article, raw string) (domain.Money, error) {
-	m, why := costOf(article, strings.TrimSpace(raw))
+	if strings.TrimSpace(article) == "" {
+		return domain.Money{}, ErrNoArticle
+	}
+	m, why := costOf(article, strings.TrimSpace(raw), false)
 	if why != "" {
 		return domain.Money{}, fmt.Errorf("%w: %s", ErrBadCost, why)
 	}
 	return m, nil
 }
 
-// costOf reads one row's cost; why — почему строка не принята.
-func costOf(art, raw string) (domain.Money, string) {
+// costOf reads one cost; why — почему не принята. fromFile — число из Excel
+// с хвостом дробей округляется до копейки; у ввода руками — нет.
+func costOf(art, raw string, fromFile bool) (domain.Money, string) {
 	switch {
 	case art == "":
 		return domain.Money{}, "нет артикула"
@@ -137,6 +153,9 @@ func costOf(art, raw string) (domain.Money, string) {
 		return domain.Money{}, fmt.Sprintf("у «%s» нет себестоимости", art)
 	}
 	m, err := domain.ParseMoney(raw)
+	if err != nil && !fromFile {
+		return domain.Money{}, fmt.Sprintf("у «%s» себестоимость не число: «%s»", art, raw)
+	}
 	if err != nil { // число из Excel с хвостом дробей — до копейки
 		f, ferr := strconv.ParseFloat(strings.ReplaceAll(raw, ",", "."), 64)
 		if ferr != nil {

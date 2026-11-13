@@ -5720,6 +5720,7 @@ function shRender() {
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
   $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
   $("#sh-costs").hidden = !shOzon();
+  if (v && v.costsErr) mkErr("Себестоимость не прочитана, прибыль не посчитана: " + v.costsErr);
   if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = $("#sh-loss").hidden = true);
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
@@ -5806,7 +5807,9 @@ function shList() {
   const fold = (t) => t.toLowerCase().replace(/ё/g, "е"), q = fold(sh.q.trim()), ps = sh.v.products, k = sh.sort;
   return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q) || fold(ps[i].article || "").includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)) && (!sh.only || sh.only.has(ps[i].sku)))
     .sort((a, b) => (!k && sh.only ? sh.only.get(ps[a].sku) - sh.only.get(ps[b].sku) // совет: по его важности
-      : k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru") : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
+      : k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru")
+      : k === "profit" && (ps[a].profit == null || ps[b].profit == null) ? (ps[a].profit == null) - (ps[b].profit == null) // «—» — в конце при любом направлении (ревью #598)
+      : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
 }
 function shTable() {
   const ps = sh.v.products, list = shList();
@@ -5858,7 +5861,8 @@ function shMoneyCard(p) {
     line("Продажи", shRub(m.sales), "по цене продавца, с баллами за скидки") + line("Вознаграждение", shRub(m.commission), "комиссия Ozon") +
     line("Доставка", shRub(m.delivery), "логистика и обратная логистика") + line("Услуги", shRub(m.partners + m.other), "партнеры, эквайринг, упаковка, прочее") +
     line("На счет", shRub(m.total), "до рекламы: ее Ozon начисляет на магазин") + (m.hasCost ? line("Себестоимость", `${shRub(m.cost)} (${shRub(m.unitCost)} × ${fmt(m.units)})`, "себестоимость проданного") +
-    line("Прибыль", shRub(p.profit ?? m.total - m.cost), "на счет минус себестоимость; до рекламы и налогов") : "") : line("Деньги", "начислений по товару за период нет", "");
+    line("Прибыль", shRub(p.profit ?? m.total - m.cost), "на счет минус себестоимость; до рекламы и налогов") : "")
+    : line("Деньги", sh.v.economy && sh.v.economy.err ? "начисления не загрузились — причина в «Деньгах магазина»" : "начислений по товару за период нет", "");
   const cost = m.hasCost ? String(m.unitCost).replace(".", ",") : "";
   return `<h4 class="sh-money-h">Деньги товара</h4><dl>${rows}</dl>` + (p.article
     ? `<label class="sh-cost"${mkTip("Себестоимость штуки", "по артикулу продавца; хранится на этом Mac, у каждого кабинета своя; пусто — убрать")}>Себестоимость штуки <input data-sh-cost="${esc(p.article)}" inputmode="decimal" value="${esc(cost)}" placeholder="—"> ₽</label>`
@@ -5869,17 +5873,22 @@ $("#mk-shop").addEventListener("change", async (e) => {
   const inp = e.target.closest("[data-sh-cost]");
   if (!inp || !shOzon() || !native() || !native().MarketsSetCost) return;
   const art = inp.dataset.shCost, raw = inp.value.trim();
-  try { await native().MarketsSetCost(sh.v.path, art, raw); } catch (err) { mkErr("Себестоимость не сохранена: " + errText(err)); return; }
+  let unit = 0;
+  try { unit = await native().MarketsSetCost(sh.v.path, art, raw); } catch (err) { mkErr("Себестоимость не сохранена: " + errText(err)); return; }
   mkErr("");
-  const unit = raw ? Number(raw.replace(/\s|₽/g, "").replace(",", ".")) : 0;
-  for (const p of sh.v.products.filter((x) => x.article === art)) {
-    const m = (p.money ||= { units: 0, sales: 0, commission: 0, delivery: 0, partners: 0, other: 0, total: 0, unitCost: 0, hasCost: false, cost: 0 });
-    Object.assign(m, { unitCost: unit, hasCost: !!raw, cost: raw ? unit * m.units : 0 });
-    p.profit = raw && (m.units || m.total) ? m.total - m.cost : null;
+  shApplyCosts({ [art]: raw ? unit : null }); // сохраненное окном, а не свой разбор ввода (ревью #598)
+  toast("Себестоимость", raw ? ` · ${art}: ${shRub(unit)}` : ` · ${art}: убрана`);
+});
+// shApplyCosts пересчитывает прибыль на месте: артикул → рубли, null — убрать.
+function shApplyCosts(costs) {
+  for (const p of sh.v.products) {
+    if (!(p.article in costs)) continue;
+    const unit = costs[p.article], m = (p.money ||= { units: 0, sales: 0, commission: 0, delivery: 0, partners: 0, other: 0, total: 0, unitCost: 0, hasCost: false, cost: 0 });
+    Object.assign(m, { unitCost: unit ?? 0, hasCost: unit !== null, cost: unit !== null ? unit * Math.max(m.units, 0) : 0 });
+    p.profit = unit !== null && (m.units || m.total) ? m.total - m.cost : null;
   }
   shTable();
-  toast("Себестоимость", raw ? ` · ${art}: ${raw} ₽` : ` · ${art}: убрана`);
-});
+}
 $("#sh-costs").addEventListener("click", async () => {
   hideTip();
   if (!shOzon() || !native() || !native().MarketsImportCosts) return;
@@ -5890,7 +5899,7 @@ $("#sh-costs").addEventListener("click", async () => {
     const r = await native().MarketsImportCosts(sh.v.path, p);
     const bad = r.problems.length ? ` · не принято ${r.problems.length}: строка ${r.problems[0].row} — ${r.problems[0].reason}` : "";
     toast("Себестоимость", ` · принято ${fmt(r.read)} артикулов${bad}`, null, r.problems.length ? "bad" : "");
-    await shRead("ozon:" + sh.v.path); // прибыль по новой себестоимости
+    shApplyCosts(r.costs || {}); // на месте, без новой загрузки кабинета (ревью #598)
   } catch (err) { mkErr("Себестоимость не прочитана: " + errText(err)); }
 });
 $("#mk-shop").addEventListener("click", (e) => {

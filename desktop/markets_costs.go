@@ -63,17 +63,34 @@ func (f *folderSettings) writeCosts(st costStore) error {
 	return os.Rename(tmp, f.costsPath())
 }
 
-// ozonID checks that id is an Ozon cabinet of the window.
-func (f *folderSettings) ozonID(id string) error {
-	if c, ok := f.snapshot().cfg.Connection(id); !ok || c.Kind != desktopconfig.ConnOzon {
-		return errors.New("кабинета Ozon нет в «Подключениях»")
+// errNoOzon — кабинета с таким id нет среди подключений Ozon.
+var errNoOzon = errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
+
+// ozonCabinetConn returns the window's Ozon cabinet id: одна проверка для чтения
+// кабинета и его себестоимости (ревью #598).
+func (f *folderSettings) ozonCabinetConn(id string) (desktopconfig.Connection, error) {
+	c, ok := f.snapshot().cfg.Connection(id)
+	if !ok || c.Kind != desktopconfig.ConnOzon {
+		return c, errNoOzon
 	}
-	return nil
+	return c, nil
+}
+
+// dropCosts forgets a removed cabinet's costs: вновь добавленный не получит чужие.
+func (f *folderSettings) dropCosts(id string) error {
+	f.costMu.Lock()
+	defer f.costMu.Unlock()
+	st, err := f.readCosts()
+	if err != nil || st[id] == nil {
+		return err
+	}
+	delete(st, id)
+	return f.writeCosts(st)
 }
 
 // update changes cabinet id's costs under the lock.
 func (f *folderSettings) updateCosts(id string, change func(map[string]int64)) error {
-	if err := f.ozonID(id); err != nil {
+	if _, err := f.ozonCabinetConn(id); err != nil {
 		return err
 	}
 	f.costMu.Lock()
@@ -105,7 +122,10 @@ func (f *folderSettings) ImportCosts(id, path string) (costImport, error) {
 			m[a] = c.Kopecks()
 		}
 	})
-	out := costImport{Read: len(costs), Problems: []nicheProblem{}}
+	out := costImport{Read: len(costs), Problems: []nicheProblem{}, Costs: map[string]float64{}}
+	for a, c := range costs {
+		out.Costs[a] = float64(c.Kopecks()) / 100 // окно пересчитывает прибыль на месте, без новой загрузки кабинета
+	}
 	for _, p := range probs {
 		out.Problems = append(out.Problems, nicheProblem{Row: p.Row, Reason: p.Reason})
 	}
@@ -117,7 +137,7 @@ func (f *folderSettings) ImportCosts(id, path string) (costImport, error) {
 func (f *folderSettings) SetCost(id, article, value string) (float64, error) {
 	article = strings.TrimSpace(article)
 	if article == "" {
-		return 0, errors.New("нет артикула")
+		return 0, markets.ErrNoArticle
 	}
 	if strings.TrimSpace(value) == "" {
 		return 0, f.updateCosts(id, func(m map[string]int64) { delete(m, article) })
@@ -126,7 +146,7 @@ func (f *folderSettings) SetCost(id, article, value string) (float64, error) {
 	if err != nil {
 		return 0, err
 	}
-	return 0, f.updateCosts(id, func(m map[string]int64) { m[article] = c.Kopecks() })
+	return float64(c.Kopecks()) / 100, f.updateCosts(id, func(m map[string]int64) { m[article] = c.Kopecks() })
 }
 
 // costsOf returns cabinet id's costs by article.
