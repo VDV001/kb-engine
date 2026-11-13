@@ -286,6 +286,13 @@ func TestNichesMPStats(t *testing.T) {
 		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
 		t.Errorf("view = %+v", v)
 	}
+	// Путь, скопированный с вида «Одежда / Куртки», — тот же путь (живая проверка 13.11).
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), " Одежда / ", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || v.File != "MPStats · Одежда" {
+		t.Errorf("spaced path: %v, %q", err, v.File)
+	}
+	if got := mpstatsPath(" Одежда / Женская одежда /Пижамы женские/ "); got != "Одежда/Женская одежда/Пижамы женские" {
+		t.Errorf("mpstatsPath = %q", got)
+	}
 	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-11-12", "2026-10-14", time.Now()); err == nil {
 		t.Error("reversed period accepted")
 	}
