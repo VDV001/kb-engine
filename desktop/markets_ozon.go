@@ -431,7 +431,7 @@ func (f *folderSettings) ownSeries(ctx context.Context, base string, hc *http.Cl
 // forecastInputs reads the three series: две ниши файлами и свои — файлом или из кабинета.
 func (f *folderSettings) forecastInputs(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time) ([3]domain.DailySales, []forecastFile, error) {
 	var series [3]domain.DailySales
-	niche, files, err := readNiche(last, now)
+	niche, files, err := f.nicheSeries(ctx, hc, last, now, today)
 	if err != nil {
 		return series, nil, err
 	}
