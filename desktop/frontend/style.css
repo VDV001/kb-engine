@@ -1793,11 +1793,22 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-sel { height: 32px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; max-width: 220px; }
 .sh-advice { display: grid; gap: 8px; }
 .sh-advice h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--z-ink); }
-.sh-adv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); font-size: 13px; line-height: 1.5; color: var(--z-ink-2); }
-.sh-adv b { color: var(--z-ink); }
-.sh-adv .ex { grid-column: 1; font-size: 12px; color: var(--z-muted); }
-.sh-adv .btn { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
-.sh-adv[aria-current="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
+/* Совет — плашка со своим цветом спектра: рамка градиентом по всему контуру
+   (padding-box поверх border-box, как подсказки окна), легкая заливка от края,
+   значок и заголовок того же цвета. Цвет — по виду совета, не по порядку. */
+.sh-adv { --a: var(--z-sp4); --b: var(--z-sp5); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; border: 1px solid transparent; border-radius: var(--z-radius);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--a) 13%, var(--z-bg)), var(--z-bg) 55%) padding-box, linear-gradient(100deg, var(--a), var(--b) 60%, var(--z-rule-2)) border-box;
+  font-size: 13px; line-height: 1.5; color: var(--z-ink-2); transition: background .2s var(--z-ease); }
+.sh-adv[data-kind="refusals"] { --a: var(--z-sp3); --b: var(--z-sp2); }
+.sh-adv[data-kind="supply"] { --a: var(--z-sp1); --b: var(--z-sp2); }
+.sh-adv[data-kind="dead"] { --a: var(--z-sp4); --b: var(--z-sp5); }
+.sh-adv[data-kind="keep"] { --a: var(--z-sp6); --b: var(--z-sp5); }
+.sh-adv .ic { grid-row: 1 / span 2; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--a) 18%, transparent); }
+.sh-adv .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--a); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.sh-adv b { background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sh-adv .ex { grid-column: 2; font-size: 12px; color: var(--z-muted); }
+.sh-adv .btn { grid-column: 3; grid-row: 1 / span 2; white-space: nowrap; }
+.sh-adv[aria-current="true"] { background: linear-gradient(100deg, color-mix(in srgb, var(--a) 26%, var(--z-bg)), color-mix(in srgb, var(--b) 8%, var(--z-bg))) padding-box, linear-gradient(100deg, var(--a), var(--b)) border-box; }
 .sh-chip { font: 12px var(--z-font); padding: 5px 10px; border-radius: var(--z-radius); border: 1px solid var(--z-rule-2); background: var(--z-bg); color: var(--z-ink-2); cursor: pointer; }
 .sh-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); color: var(--z-ink); }
 .sh-chip b { color: var(--z-bad); font-weight: 700; margin-right: 4px; }

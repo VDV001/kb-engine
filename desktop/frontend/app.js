@@ -5905,6 +5905,13 @@ const SH_ADV = {
   dead: (a, n) => [`<b>Лежит без заказов</b>: ${fmt(n)} товаров, ${fmt(a.units)} шт за ${fmt(sh.v.periodDays)} дн.`, "акция или скидка, реклама на ходовые размеры или вывоз со склада, чтобы не платить за хранение"],
   keep: (a, n) => [`<b>Продается чисто</b>: ${fmt(n)} товаров с 10+ заказами, ${shOzon() ? "отказами до 20 % и отменами до 30 %" : "отменами до 30 % и без проблем с возвратами, рекламой и рейтингом"}`, "держите их в наличии во всех размерах — на них держится магазин"],
 };
+// Значок совета — в стиле значков окна (контур 24×24); цвет задает вид совета в style.css.
+const SH_ADV_ICON = {
+  refusals: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', // вернули при получении
+  supply: '<path d="M2 6h12v11H2z"/><path d="M14 10h4l4 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>', // довезти
+  dead: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', // лежит без заказов
+  keep: '<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>', // продается чисто
+};
 function shAdvice() {
   const v = sh.v, el = $("#sh-advice"), adv = (v.advice || []).filter((a) => SH_ADV[a.kind]);
   el.hidden = !adv.length;
@@ -5912,7 +5919,8 @@ function shAdvice() {
   el.innerHTML = adv.length ? "<h3>Советы</h3>" + adv.map((a) => {
     const [head, how] = SH_ADV[a.kind](a, a.skus.length), on = sh.adv === a.kind;
     const ex = [...new Set(a.skus.map(name))].slice(0, 3).join(", ");
-    return `<div class="sh-adv" aria-current="${on}"><div>${head} — ${esc(how)}</div><div class="ex">например: ${esc(ex)}</div>` +
+    const ic = SH_ADV_ICON[a.kind] ? `<span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24">${SH_ADV_ICON[a.kind]}</svg></span>` : "";
+    return `<div class="sh-adv" data-kind="${a.kind}" aria-current="${on}">${ic}<div>${head} — ${esc(how)}</div><div class="ex">например: ${esc(ex)}</div>` +
       `<button class="btn" type="button" data-sh-adv="${a.kind}"${mkTip(on ? "Все товары" : "Товары совета", on ? "вернуть все товары в таблицу" : "оставить в таблице только эти товары, по важности")}>${on ? "Все товары" : "Показать " + fmt(a.skus.length)}</button></div>`;
   }).join("") : "";
 }
