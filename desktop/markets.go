@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
@@ -36,11 +37,43 @@ type nicheColumn struct {
 	Index  int    `json:"index"`
 	Header string `json:"header"`
 	Field  string `json:"field"`
+	Month  int    `json:"month"` // 1-12 — продажи за месяц; 0 — не месяц
+	Year   int    `json:"year"`
 }
 
 type nicheRow struct {
-	Name   string             `json:"name"`
-	Values map[string]float64 `json:"values"`
+	Name    string             `json:"name"`
+	Values  map[string]float64 `json:"values"`
+	Months  []nicheMonth       `json:"months"`
+	Markets []string           `json:"markets"`
+	Score   nicheScore         `json:"score"`
+}
+
+type nicheMonth struct {
+	Label string  `json:"label"`
+	Value float64 `json:"value"`
+}
+
+// nicheScore — оценка 0-100 и ее части; Parts — вклад каждой части с весом,
+// чтобы подсказка объясняла число, а не повторяла его.
+type nicheScore struct {
+	Ok        bool        `json:"ok"`
+	Score     int         `json:"score"`
+	Missing   []string    `json:"missing"`
+	Parts     []scorePart `json:"parts"`
+	PerSeller float64     `json:"perSeller"`
+	Growth    string      `json:"growth"`
+	Crowded   bool        `json:"crowded"`
+	Peak      int         `json:"peak"` // 1-12; 0 — пика нет
+	InSeason  bool        `json:"inSeason"`
+	WeeksFrom int         `json:"weeksFrom"`
+	WeeksTo   int         `json:"weeksTo"`
+}
+
+type scorePart struct {
+	ID     string  `json:"id"`
+	Weight float64 `json:"weight"`
+	Value  float64 `json:"value"` // 0..1
 }
 
 type nicheProblem struct {
@@ -64,10 +97,10 @@ func (a *App) MarketsPickFile() (string, error) {
 
 // MarketsRead reads a niche export with the person's picks.
 func (a *App) MarketsRead(path string, picks []nichePick) (nicheTable, error) {
-	return readNicheFile(path, picks)
+	return readNicheFile(path, picks, time.Now())
 }
 
-func readNicheFile(path string, picks []nichePick) (nicheTable, error) {
+func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, error) {
 	rows, err := tablefile.Read(path)
 	if err != nil {
 		return nicheTable{}, err
