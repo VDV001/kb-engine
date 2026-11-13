@@ -15,6 +15,7 @@ import (
 type shopRow struct {
 	Name       string   `json:"name"`
 	SKU        string   `json:"sku"`
+	Article    string   `json:"article"`
 	Scheme     string   `json:"scheme"`
 	ABC        string   `json:"abc"`
 	PriceIndex string   `json:"priceIndex"`
@@ -23,9 +24,11 @@ type shopRow struct {
 	Delivered  float64  `json:"delivered"`
 	BoughtOut  float64  `json:"boughtOut"`
 	Cancelled  float64  `json:"cancelled"`
+	Refused    float64  `json:"refused"` // отказ при вручении, часть отмен (API Ozon)
 	Returned   float64  `json:"returned"`
 	Buyout     float64  `json:"buyout"`
 	Cancel     float64  `json:"cancel"`
+	Refuse     float64  `json:"refuse"`
 	Return     float64  `json:"return"`
 	AvgPrice   float64  `json:"avgPrice"`
 	DRR        float64  `json:"drr"`
@@ -50,18 +53,27 @@ type shopView struct {
 	Problems   []nicheProblem    `json:"problems"`
 	Hints      map[string]string `json:"hints"`
 	Counts     map[string]int    `json:"counts"` // товаров с каждой проблемой
+	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
+	Advice     []shopAdvice      `json:"advice"`
 }
 
 // MarketsShop reads the shop's Ozon product report.
 func (a *App) MarketsShop(path string) (shopView, error) { return readShopFile(path) }
 
+// shopAdvice — совет магазину: вид, SKU по важности, штук.
+type shopAdvice struct {
+	Kind  string   `json:"kind"`
+	SKUs  []string `json:"skus"`
+	Units float64  `json:"units"`
+}
+
 func share4(v float64) float64 { return math.Round(v*1e4) / 1e4 }
 
 func shopRowOf(p *domain.ShopProduct) shopRow {
 	d := p.Data()
-	r := shopRow{Name: d.Name, SKU: d.SKU, Scheme: d.Scheme, ABC: d.ABC, PriceIndex: d.PriceIndex, OrderedSum: d.OrderedSum,
-		Ordered: d.Ordered, Delivered: d.Delivered, BoughtOut: d.BoughtOut, Cancelled: d.Cancelled, Returned: d.Returned,
-		Buyout: share4(p.BuyoutRate()), Cancel: share4(p.CancelRate()), Return: share4(p.ReturnRate()),
+	r := shopRow{Name: d.Name, SKU: d.SKU, Article: d.Article, Scheme: d.Scheme, ABC: d.ABC, PriceIndex: d.PriceIndex, OrderedSum: d.OrderedSum,
+		Ordered: d.Ordered, Delivered: d.Delivered, BoughtOut: d.BoughtOut, Cancelled: d.Cancelled, Refused: d.Refused, Returned: d.Returned,
+		Buyout: share4(p.BuyoutRate()), Cancel: share4(p.CancelRate()), Refuse: share4(p.RefusedRate()), Return: share4(p.ReturnRate()),
 		AvgPrice: d.AvgPrice, DRR: d.DRR, Stock: d.Stock, SupplyQty: d.SupplyQty, Urgent: d.UrgentSupply,
 		DaysOut: d.DaysOut, DaysOutOf: d.DaysOutOf, PromoDays: d.PromoDays, Rating: d.Rating, Reviews: d.Reviews, Issues: []string{}}
 	for _, i := range p.Issues() {
@@ -79,8 +91,15 @@ func readShopFile(path string) (shopView, error) {
 	if err != nil {
 		return shopView{}, err
 	}
-	v := shopView{File: filepath.Base(path), Path: path, Period: rep.Period, PeriodDays: rep.PeriodDays,
-		Products: []shopRow{}, Problems: []nicheProblem{}, Hints: rep.Hints, Counts: map[string]int{}}
+	v := shopViewOf(rep)
+	v.File, v.Path = filepath.Base(path), path
+	return v, nil
+}
+
+// shopViewOf turns a report into the window's view, with advice.
+func shopViewOf(rep markets.OzonReport) shopView {
+	v := shopView{Period: rep.Period, PeriodDays: rep.PeriodDays,
+		Products: []shopRow{}, Problems: []nicheProblem{}, Hints: rep.Hints, Counts: map[string]int{}, Advice: adviceOf(rep.Products)}
 	if rep.Total != nil {
 		v.Total = shopRowOf(rep.Total)
 	}
@@ -94,5 +113,5 @@ func readShopFile(path string) (shopView, error) {
 	for _, p := range rep.Problems {
 		v.Problems = append(v.Problems, nicheProblem{Row: p.Row, Reason: p.Reason})
 	}
-	return v, nil
+	return v
 }

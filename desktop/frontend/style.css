@@ -1726,9 +1726,18 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-probs ul { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
 /* «Магазин» (#580): отчет Ozon «По товарам». */
 .mk-shop { display: flex; flex-direction: column; gap: 14px; }
-.mk-shop > .mk-kpis, .mk-shop > .sh-chips, .mk-shop > .mk-filters, .mk-shop > .mk-grid, .mk-shop > .mk-probs { margin: 0 18px; }
+.mk-shop > .mk-kpis, .mk-shop > .sh-advice, .mk-shop > .sh-chips, .mk-shop > .mk-filters, .mk-shop > .mk-grid, .mk-shop > .mk-probs { margin: 0 18px; }
 .mk-shop > .mk-lead { padding: 0 18px; }
 .sh-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+/* «Советы» (#580): что делать по магазину; кнопка показывает товары совета. */
+.mk-sel { height: 32px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; max-width: 220px; }
+.sh-advice { display: grid; gap: 8px; }
+.sh-advice h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--z-ink); }
+.sh-adv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); font-size: 13px; line-height: 1.5; color: var(--z-ink-2); }
+.sh-adv b { color: var(--z-ink); }
+.sh-adv .ex { grid-column: 1; font-size: 12px; color: var(--z-muted); }
+.sh-adv .btn { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
+.sh-adv[aria-current="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
 .sh-chip { font: 12px var(--z-font); padding: 5px 10px; border-radius: var(--z-radius); border: 1px solid var(--z-rule-2); background: var(--z-bg); color: var(--z-ink-2); cursor: pointer; }
 .sh-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); color: var(--z-ink); }
 .sh-chip b { color: var(--z-bad); font-weight: 700; margin-right: 4px; }

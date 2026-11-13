@@ -37,6 +37,7 @@ const (
 type ShopProductData struct {
 	Name, SKU, Article, Scheme, ABC, PriceIndex        string
 	Ordered, Delivered, BoughtOut, Cancelled, Returned float64
+	Refused                                            float64 // часть отмен: отказ при вручении (API Ozon)
 	OrderedSum, AvgPrice, DRR, Rating                  float64
 	Reviews, Stock, SupplyQty                          float64
 	DaysOut, DaysOutOf, PromoDays, PeriodDays          int
@@ -64,6 +65,8 @@ func (d ShopProductData) broken() string {
 		return "число меньше нуля"
 	case d.Ordered > 0 && (d.BoughtOut > d.Ordered || d.Cancelled > d.Ordered):
 		return "выкуплено или отменено больше, чем заказано"
+	case d.Refused < 0 || d.Refused > d.Cancelled:
+		return "отказов при вручении больше, чем отмен"
 	}
 	return d.outOfRange()
 }
@@ -124,3 +127,6 @@ func (p *ShopProduct) Issues() []ShopIssue {
 	}
 	return out
 }
+
+// RefusedRate is refused at pickup over ordered.
+func (p *ShopProduct) RefusedRate() float64 { return p.rate(p.d.Refused) }

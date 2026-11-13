@@ -53,6 +53,8 @@ func (f *folderSettings) Connections() []connRow {
 			rows = append(rows, f.googleConn(c))
 		case desktopconfig.ConnSpeech:
 			rows = append(rows, f.speechConn(c))
+		case desktopconfig.ConnOzon:
+			rows = append(rows, f.ozonConn(c))
 		}
 	}
 	return rows

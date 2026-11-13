@@ -54,3 +54,14 @@ func TestNewShopProduct(t *testing.T) {
 		}
 	}
 }
+
+func TestNewShopProduct_refused(t *testing.T) {
+	// Отказ при вручении — часть отмен (#580, API Ozon): больше отмен его быть не может.
+	if _, err := domain.NewShopProduct(domain.ShopProductData{Name: "Брюки", Ordered: 10, Cancelled: 3, Refused: 4}); !errors.Is(err, domain.ErrInvalidShopProduct) {
+		t.Errorf("refused over cancelled: err = %v", err)
+	}
+	p, err := domain.NewShopProduct(domain.ShopProductData{Name: "Брюки", Ordered: 10, Cancelled: 6, Refused: 5})
+	if err != nil || p.RefusedRate() != 0.5 {
+		t.Errorf("refused rate = %v (%v), want 0.5", p.RefusedRate(), err)
+	}
+}
