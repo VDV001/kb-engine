@@ -1668,13 +1668,12 @@ body:not(.no-mk-buttons):not([data-mka="none"]) .mk-view .btn.mk-main:not([aria-
 .mk-seg button + button { border-left: 1px solid var(--z-rule); }
 .mk-seg-l { font: 12px var(--z-font); color: var(--z-muted); padding: 7px 10px; align-self: center; border-right: 1px solid var(--z-rule); }
 .sh-progress { margin: 0 18px; font-size: 13px; color: var(--z-muted); }
-.sh-progress .indexing-bar { height: 3px; margin-bottom: 6px; max-width: 420px; }
-#sh-progress-bar { position: relative; }
-/* своя пробежка: sweep экрана индексации рассчитан на дорожку во весь экран и здесь почти все время за краем */
-#sh-progress-bar span { position: absolute; left: -30%; width: 30%; background: var(--z-accent); animation: sh-run 1.2s linear infinite; }
+/* своя полоса, не .indexing-bar: та рассчитана на экран индексации и ее тему */
+.sh-progress-bar { position: relative; height: 3px; margin-bottom: 6px; max-width: 420px; background: var(--z-rule); overflow: hidden; }
+.sh-progress-bar[hidden] { display: none; }
+.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: -30%; width: 30%; background: var(--z-accent); animation: sh-run 1.2s linear infinite; }
 @keyframes sh-run { to { left: 100%; } }
-.sh-progress .indexing-bar[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { #sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
 .mk-seg button[aria-pressed="true"] { color: var(--z-ink); background: var(--z-bg-3, var(--z-bg-2)); font-weight: 700; }
 .mk-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-ink-2); cursor: pointer; }
 .mk-check input { accent-color: color-mix(in srgb, var(--mk2) 70%, var(--z-ink)); width: 15px; height: 15px; }

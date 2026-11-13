@@ -1341,7 +1341,11 @@ $("#conn-list").addEventListener("click", async (e) => {
   } catch (err) { showError(errText(err)); }
   renderConnections();
 });
+// maskConnKeys прячет набранные ключи подключений: после «Добавить» (удачного
+// или нет), при сворачивании формы и закрытии настроек — открытым ключ не остается.
+function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret"]) maskKey(id); }
 $("#conn-add-speech").addEventListener("click", () => {
+  maskConnKeys();
   const f = $("#conn-speech");
   f.hidden = !f.hidden;
   $("#conn-add-speech").setAttribute("aria-expanded", String(!f.hidden));
@@ -1355,8 +1359,8 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Распознавание».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
-    maskKey("conn-s-key");
   } catch (err) { $("#conn-s-note").textContent = errText(err); }
+  maskConnKeys();
   renderConnections();
 });
 function showOzonForm() {
@@ -1367,6 +1371,7 @@ function showOzonForm() {
 }
 $("#mk-conn").addEventListener("click", async () => { hideTip(); await openSettings("conn"); showOzonForm(); });
 $("#conn-add-ozon").addEventListener("click", () => {
+  maskConnKeys();
   if (!$("#conn-ozon").hidden) { $("#conn-ozon").hidden = true; $("#conn-add-ozon").setAttribute("aria-expanded", "false"); return; }
   showOzonForm();
 });
@@ -1378,12 +1383,13 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
     $("#conn-o-note").textContent = "Добавлено: " + r.name + ". Загрузите его в «Маркеты → Магазин».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
-    maskKey("conn-o-key");
     $("#conn-o-share").checked = false;
   } catch (err) { $("#conn-o-note").textContent = errText(err); }
+  maskConnKeys();
   renderConnections();
 });
 $("#conn-add-google").addEventListener("click", () => {
+  maskConnKeys();
   const f = $("#conn-google");
   f.hidden = !f.hidden;
   $("#conn-add-google").setAttribute("aria-expanded", String(!f.hidden));
@@ -1400,7 +1406,6 @@ $("#conn-google").addEventListener("submit", async (e) => {
     $("#conn-g-note").textContent = "Подключено: " + r.name;
     toast("Подключено", ` · «${r.name}»`);
     $("#conn-g-secret").value = "";
-    maskKey("conn-g-secret");
     $("#conn-google").hidden = true;
     $("#conn-add-google").setAttribute("aria-expanded", "false");
   } catch (err) {
@@ -1431,6 +1436,7 @@ async function loadServerStates() {
 
 function closeSettings() {
   hideTip();
+  maskConnKeys();
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
   scrim.hidden = true;
@@ -1651,12 +1657,7 @@ panel.addEventListener("click", async (e) => {
   // нес путь файла, и этот обработчик искал элемент с id-путем и падал.
   const eye = e.target.closest("[data-eye]");
   if (eye) {
-    const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
-    inp.type = show ? "text" : "password";
-    eye.setAttribute("aria-pressed", String(show));
-    const what = eye.dataset.what || "токен";
-    eye.setAttribute("aria-label", show ? `Скрыть ${what}` : `Показать набранный ${what}`);
-    eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
+    setEye(eye.dataset.eye, $("#" + eye.dataset.eye).type === "password");
     return;
   }
   const b = e.target.closest("button");
@@ -2772,14 +2773,16 @@ document.addEventListener("click", (e) => {
   // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
   if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
 });
-// maskKey прячет набранный ключ обратно: при каждой загрузке и после «Добавить».
-function maskKey(id) {
+// setEye показывает или прячет набранное в поле id и подписывает его глаз.
+function setEye(id, show) {
   const eye = $(`[data-eye="${id}"]`), what = eye.dataset.what || "токен";
-  $("#" + id).type = "password";
-  eye.setAttribute("aria-pressed", "false");
-  eye.setAttribute("aria-label", "Показать набранный " + what);
-  eye.dataset.tip = "Показать " + what;
+  $("#" + id).type = show ? "text" : "password";
+  eye.setAttribute("aria-pressed", String(show));
+  eye.setAttribute("aria-label", show ? "Скрыть " + what : "Показать набранный " + what);
+  eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
 }
+// maskKey прячет набранный ключ обратно: при каждой загрузке настроек чата.
+const maskKey = (id) => setEye(id, false);
 async function loadChatSettings() {
   maskKey("chat-key");
   $("#chat-key-saved").hidden = true;
@@ -5722,7 +5725,7 @@ function shVal(k, p) {
     case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
-    case "rating": return p.reviews || p.rating ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
+    case "rating": return p.rating ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
     case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
     case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
     default: return fmt(Math.round(p[k] || 0));
@@ -5737,7 +5740,6 @@ async function shRead(src) {
   mkErr("");
   const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
   $("#sh-open").disabled = b.disabled = true;
-  if (oz) b.textContent = "Загружаю из Ozon…";
   const stop = shProgress(oz ? "Загружаю кабинет из Ozon: отправления за 90 дней и остатки" : "Читаю отчет");
   let done = "";
   try {
@@ -5747,7 +5749,7 @@ async function shRead(src) {
     if (oz && [...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
     done = `${oz ? "Загружено из Ozon" : "Отчет прочитан"}: товаров ${fmt(sh.v.products.length)}`;
   } catch (e) { mkErr((oz ? "Не загрузил кабинет: " : "Не прочитал отчет: ") + errText(e)); }
-  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; b.textContent = "Загрузить из Ozon"; stop(done); }
+  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; stop(done); }
   shRender();
 }
 // shProgress показывает бегущую полосу и секунды, пока идет загрузка; stop(итог)
@@ -5902,7 +5904,7 @@ function shTable() {
   const ps = sh.v.products, list = shList();
   if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
   const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
     list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
@@ -6009,7 +6011,7 @@ $("#mk-shop").addEventListener("click", (e) => {
     shTable(); return;
   }
   const tr = e.target.closest("[data-sh-n]");
-  if (tr) { sh.sel = +tr.dataset.shN; shTable(); }
+  if (tr && !e.target.closest("[data-open-url]")) { sh.sel = +tr.dataset.shN; shTable(); } // SKU-ссылка открывает Ozon, выбор не меняет
 });
 $("#sh-table").addEventListener("keydown", (e) => {
   const tr = e.target.closest("[data-sh-n]"); if (!tr) return;
