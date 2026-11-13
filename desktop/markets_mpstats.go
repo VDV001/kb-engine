@@ -217,9 +217,41 @@ func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, pat
 		}
 		return out
 	}
-	tb, err := markets.MPStatsNiches(path, sale(subs[0]), sale(subs[1]), int(d2.Sub(d1).Hours()/24)+1)
+	cur := sale(subs[0])
+	missed := topTen(ctx, cl, path, d1, d2, cur)
+	tb, err := markets.MPStatsNiches(path, cur, sale(subs[1]), int(d2.Sub(d1).Hours()/24)+1)
 	if err != nil {
 		return nicheTable{}, err
 	}
+	if missed > 0 {
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш MPStats не отдал продавцов: без доли топ-10 у них нет оценки", missed)})
+	}
 	return nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now), nil
+}
+
+// topTen fills the top-10 revenue of each niche: запрос на нишу, до четырех
+// сразу (около 5 с на нишу, замер 13.11); missed — сколько ниш без ответа.
+func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time.Time, ns []markets.NicheSale) (missed int) {
+	sem := make(chan struct{}, 4)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := range ns {
+		if ns[i].Revenue <= 0 {
+			continue
+		}
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			v, err := cl.TopSellersRevenue(ctx, parent+"/"+ns[i].Name, from, to, 10)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				missed++
+				return
+			}
+			ns[i].Top10Revenue = v
+		})
+	}
+	wg.Wait()
+	return missed
 }
