@@ -115,6 +115,16 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
+	// Начисления от отправлений не зависят: читаются параллельно (ревью #594).
+	type accrued struct {
+		acc []markets.OzonAccrual
+		err error
+	}
+	accCh := make(chan accrued, 1)
+	go func() {
+		acc, err := cl.Accruals(ctx, from, to)
+		accCh <- accrued{acc, err}
+	}()
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
@@ -129,12 +139,24 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	v := shopViewOf(rep)
 	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
-	acc, err := cl.Accruals(ctx, from, to)
-	v.Economy = economyOf(markets.OzonEconomy(acc))
-	if err != nil {
-		v.Economy = &economyView{Err: ozonErr(c.Name, err).Error()} // товары остаются: отказ — только в финансах
+	if r := <-accCh; r.err != nil {
+		v.Economy = &economyView{Err: economyErr(c.Name, r.err)} // товары остаются: отказ — только в финансах
+	} else {
+		v.Economy = economyOf(markets.OzonEconomy(r.acc))
 	}
 	return v, nil
+}
+
+// economyErr names a refusal of the accruals: тот же ключ только что прочитал
+// товары, поэтому 401/403 здесь — нет роли, а не неверный ключ (ревью #594).
+func economyErr(name string, err error) string {
+	switch {
+	case errors.Is(err, ozon.ErrUnauthorized):
+		return fmt.Sprintf("кабинет «%s»: Ozon не дает этому ключу начисления — нужен ключ с ролью «Финансы» (Ozon Seller → Настройки → Seller API)", name)
+	case errors.Is(err, ozon.ErrTooBig):
+		return fmt.Sprintf("кабинет «%s»: начислений за один день слишком много страниц — такой кабинет окно пока не читает", name)
+	}
+	return ozonErr(name, err).Error()
 }
 
 // economyOf turns the economy into rubles for the window.

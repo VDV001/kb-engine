@@ -5731,7 +5731,8 @@ function shEcon() {
   el.hidden = !e;
   if (!e) return void (el.innerHTML = "");
   if (e.err) return void (el.innerHTML = `<h3>Деньги магазина</h3><div class="note">Начисления не загрузились: ${esc(e.err)}</div>`);
-  const rub = (x) => fmt(Math.round(x)) + " ₽", pct = (x) => (e.sales ? ` <small>${shPct(Math.abs(x) / e.sales)}</small>` : "");
+  // Доля — только от положительных продаж; знак строки виден по сумме; Math.round(-0,4) — без «-0» (ревью #594).
+  const rub = (x) => fmt(Math.round(x) || 0) + " ₽", pct = (x) => (e.sales > 0 && Math.round(x) ? ` <small>${shPct(Math.abs(x) / e.sales)}</small>` : "");
   el.innerHTML = `<h3>Деньги магазина · ${esc(sh.v.period)}</h3><dl>` +
     SH_ECON.filter(([k]) => k !== "other" || e.other).map(([k, label, tip]) => `<div class="${k}"${mkTip(label, tip + " · по начислениям Ozon")}><dt>${label}</dt><dd>${rub(e[k])}${k === "sales" ? "" : pct(e[k])}</dd></div>`).join("") +
     `</dl><div class="note">как «Экономика магазина» в кабинете Ozon; доля — от продаж</div>`;

@@ -379,11 +379,19 @@ type amount struct {
 	Currency string `json:"currency"`
 }
 
+// absent — суммы нет вовсе (поле пропущено или null): часть не считается,
+// расхождение с итогом уйдет в строку разницы (ревью #594).
+func (a amount) absent() bool { return a.Amount == "" && a.Currency == "" }
+
 func (a amount) money() (domain.Money, error) {
 	if !strings.EqualFold(a.Currency, "RUB") {
 		return domain.Money{}, fmt.Errorf("%w: %q", ErrCurrency, a.Currency)
 	}
-	return domain.ParseMoney(a.Amount)
+	v := a.Amount
+	if whole, frac, ok := strings.Cut(v, "."); ok && len(frac) > 2 {
+		v = whole + "." + frac[:2] + strings.TrimRight(frac[2:], "0") // "-11.5000" — те же копейки; доли копейки — отказ
+	}
+	return domain.ParseMoney(v)
 }
 
 type feeJSON struct {
@@ -460,6 +468,9 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 	var out []markets.OzonAccrual
 	var sum domain.Money
 	for _, p := range a.parts() {
+		if p.v.absent() {
+			continue
+		}
 		m, err := p.v.money()
 		if err != nil {
 			return nil, err
