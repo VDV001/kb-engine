@@ -36,6 +36,9 @@ type Connection struct {
 	URL     string   `json:"url,omitempty"`     // адрес сервера (распознавание речи)
 	Model   string   `json:"model,omitempty"`   // имя модели на сервере
 	Enabled bool     `json:"enabled"`
+	// Share — человек разрешил давать данные подключения модели чата (кабинет
+	// Ozon: инструменты магазина, #580); по умолчанию нет.
+	Share bool `json:"share,omitempty"`
 }
 
 // CheckConnections validates the list: id есть и без повторов, подпись не

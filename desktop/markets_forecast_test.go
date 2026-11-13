@@ -111,7 +111,7 @@ func TestForecastOzon(t *testing.T) {
 	}))
 	defer srv.Close()
 	s, _, _ := newServerSettings(t)
-	row, err := s.AddOzon("Пижамы", "42", "k-1")
+	row, err := s.AddOzon("Пижамы", "42", "k-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}

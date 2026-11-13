@@ -1278,8 +1278,9 @@ async function renderConnections() {
   let rows = [];
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
   list.innerHTML = rows.map((r) => {
+    const share = r.kind === "ozon" ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? "модель чата видит цифры магазина, они уходят ее провайдеру; нажмите — запретить" : "модель чата цифр магазина не видит; нажмите — разрешить: названия товаров, заказы и продажи уйдут провайдеру модели")}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
     const acts = r.own
-      ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
+      ? `${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
       : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
     const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${r.kind === "ozon" ? "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет." : "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться."}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
@@ -1307,7 +1308,12 @@ $("#conn-list").addEventListener("click", async (e) => {
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
   try {
-    if (t) {
+    const sh = e.target.closest("[data-conn-share]");
+    if (sh) {
+      const on = sh.dataset.on === "true";
+      await native().SetOzonShare(sh.dataset.connShare, on);
+      toast(name, on ? " · чату разрешено" : " · чату запрещено", null, on ? "info" : "off");
+    } else if (t) {
       const on = t.dataset.on === "true";
       await native().SetConnectionEnabled(t.dataset.connToggle, on);
       toast(name, on ? " · включено" : " · выключено", null, on ? "info" : "off");
@@ -1351,10 +1357,11 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!native() || !native().AddOzonConnection) return void ($("#conn-o-note").textContent = "Подключения меняются в окне приложения.");
   try {
-    const r = await native().AddOzonConnection($("#conn-o-name").value, $("#conn-o-id").value, $("#conn-o-key").value);
+    const r = await native().AddOzonConnection($("#conn-o-name").value, $("#conn-o-id").value, $("#conn-o-key").value, $("#conn-o-share").checked);
     $("#conn-o-note").textContent = "Добавлено: " + r.name + ". Загрузите его в «Маркеты → Магазин».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
+    $("#conn-o-share").checked = false;
   } catch (err) { $("#conn-o-note").textContent = errText(err); }
   renderConnections();
 });

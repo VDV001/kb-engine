@@ -20,6 +20,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/llm"
+	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/adapter/usagejsonl"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
@@ -305,7 +306,8 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	attached = append(attached, linked...)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID)})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
+		Extras: shopExtras(d.settings, ozon.DefaultURL, nil, time.Now)})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}

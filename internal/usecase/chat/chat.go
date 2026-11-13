@@ -167,6 +167,8 @@ type Request struct {
 	// document (инструмент propose_version, #548): предложение уходит человеку
 	// на подтверждение; nil — инструмента нет.
 	ProposeVersion func(ctx context.Context, p VersionProposal) error
+	// Extras — инструменты модулей окна («Маркеты», #580) в режиме «модель ищет».
+	Extras []Extra
 }
 
 // Service answers questions.

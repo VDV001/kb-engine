@@ -42,13 +42,13 @@ func fakeOzon(t *testing.T) *httptest.Server {
 // «Магазин» читает его и дает советы.
 func TestMarketsOzon(t *testing.T) {
 	s, tok, _ := newServerSettings(t)
-	if _, err := s.AddOzon("FURIA", "abc", "k-1"); err == nil {
+	if _, err := s.AddOzon("FURIA", "abc", "k-1", false); err == nil {
 		t.Error("Client-Id of letters saved")
 	}
-	if _, err := s.AddOzon("FURIA", "42", " "); err == nil {
+	if _, err := s.AddOzon("FURIA", "42", " ", false); err == nil {
 		t.Error("empty key saved")
 	}
-	row, err := s.AddOzon(" FURIA ", " 42 ", " k-1 ")
+	row, err := s.AddOzon(" FURIA ", " 42 ", " k-1 ", false)
 	if err != nil {
 		t.Fatal(err)
 	}

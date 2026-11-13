@@ -196,3 +196,45 @@ func TestToolsMode_Remember(t *testing.T) {
 		t.Fatal("remember предложен без портрета")
 	}
 }
+
+// fakeExtra — инструменты модуля окна («Маркеты»): свои описания и ответы.
+type fakeExtra struct{ ran []string }
+
+func (f *fakeExtra) Prompt() string {
+	return "\nМагазин продавца — инструменты shop_*."
+}
+func (f *fakeExtra) Tools() []chat.Tool {
+	return []chat.Tool{{Name: "shop_summary", Description: "сводка магазина", Parameters: []byte(`{"type":"object","properties":{}}`)}}
+}
+func (f *fakeExtra) Exec(_ context.Context, name string, args []byte) (string, bool) {
+	if name != "shop_summary" {
+		return "", false
+	}
+	f.ran = append(f.ran, string(args))
+	return "заказано 10 шт", true
+}
+
+// Инструменты модуля (#580): модель видит их рядом с поиском, окно исполняет
+// их модулем; без модуля их нет.
+func TestToolsMode_Extra(t *testing.T) {
+	r := &fakeReader{docs: map[string]chat.Doc{}}
+	m := &scriptModel{replies: []chat.ModelReply{call("c1", "shop_summary", `{}`), {Content: "Заказано 10 шт."}}}
+	x := &fakeExtra{}
+	turn, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(r)).Respond(context.Background(),
+		chat.Request{Question: "как магазин?", Mode: chat.ModeTools, Extras: []chat.Extra{x}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if turn.Answer != "Заказано 10 шт." || len(x.ran) != 1 || x.ran[0] != "{}" {
+		t.Fatalf("turn %+v, ran %v", turn, x.ran)
+	}
+	if res := m.asked[1][len(m.asked[1])-1].Content; res != "заказано 10 шт" {
+		t.Errorf("tool result to the model = %q", res)
+	}
+	if !strings.Contains(m.asked[0][0].Content, "инструменты shop_*") {
+		t.Error("the module's rule is not in the system prompt")
+	}
+	if !slices.ContainsFunc(m.tools[0], func(x chat.Tool) bool { return x.Name == "shop_summary" }) {
+		t.Error("shop_summary not offered")
+	}
+}

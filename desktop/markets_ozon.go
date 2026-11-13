@@ -29,7 +29,7 @@ const ozonDays = 90
 const ozonTimeout = 5 * time.Minute
 
 // AddOzon saves an Ozon cabinet as a connection.
-func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
+func (f *folderSettings) AddOzon(name, clientID, key string, share bool) (connRow, error) {
 	name, clientID, key = strings.TrimSpace(name), strings.TrimSpace(clientID), strings.TrimSpace(key)
 	if clientID == "" || strings.IndexFunc(clientID, func(r rune) bool { return !unicode.IsDigit(r) }) >= 0 {
 		return connRow{}, errors.New("Client-Id — номер кабинета из цифр: Ozon Seller → Настройки → Seller API")
@@ -40,7 +40,7 @@ func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
 	if name == "" {
 		name = "Ozon " + clientID
 	}
-	conn := desktopconfig.Connection{ID: "ozon-" + randomString()[:8], Kind: desktopconfig.ConnOzon, Name: name, Account: clientID, Enabled: true}
+	conn := desktopconfig.Connection{ID: "ozon-" + randomString()[:8], Kind: desktopconfig.ConnOzon, Name: name, Account: clientID, Enabled: true, Share: share}
 	if err := desktopconfig.CheckConnections([]desktopconfig.Connection{conn}); err != nil {
 		return connRow{}, err
 	}
@@ -56,7 +56,10 @@ func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
 
 func (f *folderSettings) ozonConn(c desktopconfig.Connection) connRow {
 	r := connRow{ID: c.ID, Kind: "ozon", Name: c.Name, Detail: "Ozon Seller API, только чтение · Client-Id " + c.Account,
-		UsedBy: []string{"Маркеты → Магазин", "Маркеты → Прогноз"}, Section: "conn", Own: true, Enabled: c.Enabled}
+		UsedBy: []string{"Маркеты → Магазин", "Маркеты → Прогноз"}, Section: "conn", Own: true, Enabled: c.Enabled, Share: c.Share}
+	if c.Share {
+		r.UsedBy = append(r.UsedBy, "чат: цифры магазина уходят провайдеру модели")
+	}
 	_, err := f.tokens.Get(connKeyAccount(c.ID))
 	switch {
 	case !c.Enabled:
@@ -238,4 +241,20 @@ func (f *folderSettings) forecast(ctx context.Context, base string, hc *http.Cli
 		return forecastView{}, err
 	}
 	return forecastOf(series, files)
+}
+
+// SetOzonShare allows or forbids giving cabinet id's numbers to the chat model.
+func (f *folderSettings) SetOzonShare(id string, on bool) error {
+	found := false
+	err := f.updateConfig(func(cfg *desktopconfig.Config) {
+		for i, c := range cfg.Connections {
+			if c.ID == id && c.Kind == desktopconfig.ConnOzon {
+				cfg.Connections[i].Share, found = on, true
+			}
+		}
+	})
+	if err == nil && !found {
+		return errors.New("кабинета Ozon нет в «Подключениях»")
+	}
+	return err
 }
