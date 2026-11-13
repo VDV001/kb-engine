@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -10,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 // Инструменты магазина в чате (#580): только у кабинетов, которым человек
@@ -17,7 +17,7 @@ import (
 // человека, иначе первый; кабинет читается один раз за ход.
 func TestShopExtra(t *testing.T) {
 	s, _, _ := newServerSettings(t)
-	if x := shopExtras(s, "", nil, time.Now); x != nil {
+	if x := shopExtras(s, "", nil, time.Now, nil); x != nil {
 		t.Fatalf("no cabinets, extras = %v", x)
 	}
 	seen := map[string]int{}
@@ -38,7 +38,7 @@ func TestShopExtra(t *testing.T) {
 	if _, err := s.AddOzon("Брюки и худи", "1", "k-1", false); err != nil {
 		t.Fatal(err)
 	}
-	if x := shopExtras(s, srv.URL, srv.Client(), time.Now); x != nil {
+	if x := shopExtras(s, srv.URL, srv.Client(), time.Now, nil); x != nil {
 		t.Fatal("a cabinet without the person's consent went to the model")
 	}
 	a, _ := s.AddOzon("Брюки и худи", "1", "k-1", true)
@@ -49,7 +49,7 @@ func TestShopExtra(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }
-	x := shopExtras(s, srv.URL, srv.Client(), now)
+	x := shopExtras(s, srv.URL, srv.Client(), now, nil)
 	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 6 {
 		t.Fatalf("extras = %v", x)
 	}
@@ -104,7 +104,7 @@ func TestShopExtra(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fresh := shopExtras(s, srv.URL, srv.Client(), now)
+	fresh := shopExtras(s, srv.URL, srv.Client(), now, nil)
 	if fresh != nil {
 		t.Error("extras with every cabinet off")
 	}
@@ -136,7 +136,7 @@ func TestShopExtra_returnsRefused(t *testing.T) {
 	if _, err := s.AddOzon("Тест", "1", "k-1", true); err != nil {
 		t.Fatal(err)
 	}
-	x := shopExtras(s, srv.URL, srv.Client(), func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) })
+	x := shopExtras(s, srv.URL, srv.Client(), func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }, nil)
 	if out, _ := x[0].Exec(context.Background(), "shop_money", []byte(`{}`)); !strings.Contains(out, "на счет") {
 		t.Errorf("shop_money without returns: %q", out)
 	}
@@ -157,7 +157,7 @@ func TestShopExtra_describe(t *testing.T) {
 	if _, err := s.AddOzon("Платья", "2", "k-2", true); err != nil {
 		t.Fatal(err)
 	}
-	x := shopExtras(s, "", nil, time.Now)
+	x := shopExtras(s, "", nil, time.Now, nil)
 	tests := []struct{ tool, args, id, name, what string }{
 		{"shop_summary", ``, a.ID, "Ozon «Брюки и худи»", "сводка магазина"},
 		{"shop_sku", `{"q":"100_46","cabinet":"Платья"}`, "", "Ozon «Платья»", "карточка товара «100_46»"},

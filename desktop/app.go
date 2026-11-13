@@ -9,6 +9,7 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/machines"
 	"github.com/daniil/kb-engine/internal/usecase/portrait"
 
@@ -498,6 +499,7 @@ func (a *App) startup(ctx context.Context) {
 	// dispatch_async), куски показаны до возврата Ask — значит, раньше ответа.
 	if a.chat != nil {
 		a.chat.show = everyAtMost(50*time.Millisecond, time.Now, func(text string) { runtime.EventsEmit(ctx, "chat:delta", text) })
+		a.chat.step = func(u chat.Use) { runtime.EventsEmit(ctx, "chat:step", u) }
 		a.chat.memoryNew = func(n portraitNews) { runtime.EventsEmit(ctx, "portrait:new", n) }
 		a.chat.versionNew = func(p iterationView) { runtime.EventsEmit(ctx, "versions:proposal", p) }
 	}

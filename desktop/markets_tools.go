@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -93,14 +94,23 @@ type shopTurn struct {
 
 // shopExtras gives the chat the shop's tools of the shared cabinets; nil — нет.
 // Кабинет читается один раз за ход: экземпляр живет один ход.
-func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time.Time) []chat.Extra {
-	if len(sharedOzon(s.snapshot().cfg)) == 0 {
+// only — источники и подключения, выбранные в ряду «ищет в» этого чата;
+// пусто — все разрешенные.
+func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time.Time, only []string) []chat.Extra {
+	cabinets := func() []desktopconfig.Connection {
+		cs := sharedOzon(s.snapshot().cfg)
+		if len(only) == 0 {
+			return cs
+		}
+		return slices.DeleteFunc(cs, func(c desktopconfig.Connection) bool { return !slices.Contains(only, c.ID) })
+	}
+	if len(cabinets()) == 0 {
 		return nil
 	}
 	var mu sync.Mutex
 	turn := map[string]*shopTurn{}
 	get := func(ctx context.Context, cabinet string) (*shopTurn, error) {
-		c, err := pickCabinet(sharedOzon(s.snapshot().cfg), cabinet)
+		c, err := pickCabinet(cabinets(), cabinet)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +154,7 @@ func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time
 		defer mu.Unlock()
 		return t.d, t.moneyErr
 	}
-	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}, func() []desktopconfig.Connection { return sharedOzon(s.snapshot().cfg) }}}
+	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}, cabinets}}
 }
 
 // withMoney adds accruals and returns to the turn's data — те же 90 дней,

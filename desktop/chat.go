@@ -101,6 +101,8 @@ type chatMessage struct {
 	Role string   `json:"role"`
 	Text string   `json:"text"`
 	Docs []string `json:"docs,omitempty"` // ref документов ответа
+	// Uses — откуда ответ: документы, подключения, внешнее (отзыв 14.11).
+	Uses []chat.Use `json:"uses,omitempty"`
 }
 
 type chatDoc struct {
@@ -137,6 +139,8 @@ type chatDesk struct {
 	// show shows the answer while the model writes it (событие chat:delta);
 	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
 	show func(text string)
+	// step shows where the turn goes (событие chat:step); nil — без показа.
+	step func(chat.Use)
 	// attach reads one attached document by ref (attach.go); nil — только в окне.
 	attach func(ctx context.Context, ref string) (chat.Doc, error)
 	// versions — итерации документов для инструментов versions и open_version
@@ -298,6 +302,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		rec.ID, rec.Title = newChatID(), title(question)
 	}
 	explicit, auto := attachRefs(refs, question)
+	web := d.webSteps(append(slices.Clone(explicit), auto...))
 	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
 		return chatRecord{}, err
@@ -307,7 +312,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
-		Extras: shopExtras(d.settings, ozon.DefaultURL, nil, time.Now)})
+		Extras: shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), Step: d.step})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
@@ -320,7 +325,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	}
 	rec.Messages = append(rec.Messages,
 		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
-		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used})
+		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
 	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
 	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем
 	if err := d.save(rec); err != nil {
