@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -81,10 +82,7 @@ func TestReadNicheFile_refuses(t *testing.T) {
 }
 
 func TestKnownModules_haveMarkets(t *testing.T) {
-	for _, id := range knownModules {
-		if id == desktopconfig.ModuleMarkets {
-			return
-		}
+	if !slices.Contains(knownModules, desktopconfig.ModuleMarkets) {
+		t.Error("window does not know the markets module")
 	}
-	t.Error("window does not know the markets module")
 }
