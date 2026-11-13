@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -22,6 +23,8 @@ type nicheTable struct {
 	Path      string         `json:"path"`
 	File      string         `json:"file"`
 	HeaderRow int            `json:"headerRow"`
+	Period    int            `json:"periodDays"` // дней в выгрузке; 0 — не знаю
+	Items     int            `json:"items"`      // ниши собраны из товаров MPStats; 0 — выгрузка ниш
 	NeedName  bool           `json:"needName"`
 	Fields    []nicheField   `json:"fields"`
 	Columns   []nicheColumn  `json:"columns"`
@@ -106,21 +109,32 @@ func (a *App) MarketsRead(path string, picks []nichePick) (nicheTable, error) {
 	return readNicheFile(path, picks, time.Now())
 }
 
-func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, error) {
+// readNiches reads a niche export or builds niches from MPStats «Товары
+// категории»: тот csv весит сотни мегабайт и идет потоком мимо предела Read.
+func readNiches(path string, picks []nichePick) (markets.Table, error) {
+	if strings.EqualFold(filepath.Ext(path), ".csv") {
+		if tb, err := markets.ReadItems(tablefile.Rows(path)); !errors.Is(err, markets.ErrNotItems) {
+			return tb, err
+		}
+	}
 	rows, err := tablefile.Read(path)
 	if err != nil {
-		return nicheTable{}, err
+		return markets.Table{}, err
 	}
 	byIndex := make(map[int]domain.NicheColumn, len(picks))
 	for _, p := range picks {
 		byIndex[p.Index] = domain.NicheColumn(p.Field)
 	}
-	tb, err := markets.ReadNiches(rows, byIndex)
+	return markets.ReadNiches(rows, byIndex)
+}
+
+func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, error) {
+	tb, err := readNiches(path, picks)
 	needName := errors.Is(err, markets.ErrNoNameColumn)
 	if err != nil && !needName {
 		return nicheTable{}, err
 	}
-	out := nicheTable{Path: path, File: filepath.Base(path), HeaderRow: tb.HeaderRow, NeedName: needName,
+	out := nicheTable{Path: path, File: filepath.Base(path), HeaderRow: tb.HeaderRow, Period: tb.PeriodDays, Items: tb.Items, NeedName: needName,
 		Fields: []nicheField{}, Columns: []nicheColumn{}, Niches: []nicheRow{}, Problems: []nicheProblem{}}
 	for _, c := range domain.NicheColumns() {
 		out.Fields = append(out.Fields, nicheField{ID: string(c), Label: c.Label()})

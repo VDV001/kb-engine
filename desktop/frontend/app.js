@@ -5163,6 +5163,7 @@ function mkRenderCols() {
   $("#mk-cols").classList.toggle("ask", tb.needName);
   if (tb.needName) $("#mk-cols").open = true;
   $("#mk-cols-sum").textContent = tb.needName ? "Не нашел колонку с названием ниши: выберите ее ниже"
+    : tb.items ? `Товары категории MPStats: ниши собраны из ${fmt(tb.items)} товаров${tb.periodDays ? ` за ${fmt(tb.periodDays)} дн., продажи и выручка пересчитаны в месяц` : ", период не узнан: продаж в месяц нет"} · рост к году одна выгрузка не знает`
     : `Колонки файла: узнано ${known} из ${tb.columns.length}${months ? ` (месяцев ${months})` : ""} · заголовки в строке ${tb.headerRow}`;
   const opts = (sel) => `<option value=""${sel ? "" : " selected"}>не нужна</option>` +
     tb.fields.map((f) => `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc(f.label)}</option>`).join("");

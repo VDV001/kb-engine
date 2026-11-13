@@ -43,6 +43,7 @@ type Problem struct {
 type Table struct {
 	HeaderRow  int
 	PeriodDays int // за сколько дней выгрузка; 0 — не знаю
+	Items      int // ниши собраны из стольких товаров; 0 — выгрузка ниш
 	Columns    []Column
 	Niches     []*domain.Niche
 	Problems   []Problem

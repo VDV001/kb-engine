@@ -155,7 +155,7 @@ func TestRows_bigUTF8(t *testing.T) {
 	// #580): поток читает ее без предела Read. Буква на границе пробы
 	// разрезана пополам — это все еще UTF-8, а не Windows-1251.
 	path := filepath.Join(t.TempDir(), "товары.csv")
-	long := "x" + strings.Repeat("а", 40000)
+	long := "xy" + strings.Repeat("а", 40000)
 	body := "Ниша;Название\n" + strings.Repeat("Куртки;"+long+"\n", 1200) // ~96 МБ
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)

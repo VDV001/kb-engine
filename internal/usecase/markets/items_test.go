@@ -41,6 +41,9 @@ func TestReadItems(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadItems: %v", err)
 	}
+	if tb.Items != 4 {
+		t.Errorf("items = %d, want 4 read into niches", tb.Items)
+	}
 	if tb.PeriodDays != 92 {
 		t.Errorf("period = %d days, want 92 (Sales / Sales per day average)", tb.PeriodDays)
 	}
@@ -92,5 +95,19 @@ func TestReadItems_notItems(t *testing.T) {
 	seq = func(yield func([]string, error) bool) { _ = yield(itemsHeader, nil) && yield(nil, broken) }
 	if _, err := markets.ReadItems(seq); !errors.Is(err, broken) {
 		t.Errorf("read error: err = %v, want it passed through", err)
+	}
+}
+
+func TestReadItems_periodFromSteadySellers(t *testing.T) {
+	// «Sales per day average» округлен до сотых: у товара с одной продажей
+	// за 92 дня он 0,01, и деление дает 100 дней. Таких товаров в настоящей
+	// выгрузке большинство (#580), период решают товары с продажами каждый день.
+	rows := [][]string{{"1", "Куртка", "", "Продавец 1", "920", "920000", "10", "Куртки"}}
+	for i := range 3 {
+		rows = append(rows, []string{strconv.Itoa(i + 2), "Куртка", "", "Продавец 2", "1", "1000", "0,01", "Куртки"})
+	}
+	tb, err := markets.ReadItems(itemsRows(rows...))
+	if err != nil || tb.PeriodDays != 92 {
+		t.Errorf("period = %d (%v), want 92 from the steady seller", tb.PeriodDays, err)
 	}
 }
