@@ -1709,6 +1709,19 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-probs { font-size: 12px; color: var(--z-muted); }
 .mk-probs summary { cursor: pointer; }
 .mk-probs ul { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
+/* «Магазин» (#580): отчет Ozon «По товарам». */
+.mk-shop { display: flex; flex-direction: column; gap: 14px; }
+.mk-shop > .mk-kpis, .mk-shop > .sh-chips, .mk-shop > .mk-filters, .mk-shop > .mk-grid, .mk-shop > .mk-probs { margin: 0 18px; }
+.mk-shop > .mk-lead { padding: 0 18px; }
+.sh-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.sh-chip { font: 12px var(--z-font); padding: 5px 10px; border-radius: var(--z-radius); border: 1px solid var(--z-rule-2); background: var(--z-bg); color: var(--z-ink-2); cursor: pointer; }
+.sh-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); color: var(--z-ink); }
+.sh-chip b { color: var(--z-bad); font-weight: 700; margin-right: 4px; }
+.sh-tag { display: inline-block; font-size: 11px; padding: 1px 6px; margin: 1px 3px 1px 0; border-radius: 3px; background: var(--z-bad-wash); color: var(--z-bad); white-space: nowrap; }
+.sh-tag.stock { background: color-mix(in srgb, var(--z-sp2) 18%, transparent); color: color-mix(in srgb, var(--z-sp2) 70%, var(--z-ink)); }
+.mk-table .sku { display: block; font-size: 11px; color: var(--z-muted); }
+.mk-table .bad { color: var(--z-bad); }
+.mk-kpi .v.bad { color: var(--z-bad); }
 /* «Прогноз» (#580 шаг 2): три файла, итоги, график по дням. */
 .mk-fc { display: flex; flex-direction: column; gap: 14px; padding: 0 18px; }
 .mk-files { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

@@ -56,6 +56,9 @@ const headerScan = 10
 // Без колонки с названием возвращает колонки и ErrNoNameColumn — окно
 // спрашивает, какая из них ниша.
 func ReadNiches(rows [][]string, picks map[int]domain.NicheColumn) (Table, error) {
+	if isShopReport(rows) {
+		return Table{}, ErrShopReport
+	}
 	h := headerRow(rows)
 	if h < 0 {
 		return Table{}, ErrEmptyFile
