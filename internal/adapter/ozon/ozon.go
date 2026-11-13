@@ -5,7 +5,6 @@ package ozon
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -416,31 +415,25 @@ type accrualJSON struct {
 	NonItemFee *feeJSON `json:"non_item_fee"`
 }
 
-// rows splits one accrual into lines of day.
-func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
-	var out []markets.OzonAccrual
-	var bad error
-	add := func(sku int64, kind markets.AccrualKind, typeID int, v amount) {
-		m, err := v.money()
-		if err != nil {
-			bad = cmp.Or(bad, err)
-			return
-		}
-		s := ""
-		if sku != 0 {
-			s = strconv.FormatInt(sku, 10)
-		}
-		out = append(out, markets.OzonAccrual{Day: day, SKU: s, Kind: kind, TypeID: typeID, Amount: m})
-	}
+// part is one piece of an accrual before its amount is read.
+type part struct {
+	sku    int64
+	kind   markets.AccrualKind
+	typeID int
+	v      amount
+}
+
+// parts lists the accrual's pieces: продажа, вознаграждение и услуги.
+func (a accrualJSON) parts() []part {
+	var out []part
 	if a.Posting != nil {
 		for _, p := range a.Posting.Products {
-			if p.Commission != nil {
-				add(p.SKU, markets.AccrualSale, 0, p.Commission.SaleAmount)
-				add(p.SKU, markets.AccrualCommission, 0, p.Commission.Commission)
+			if c := p.Commission; c != nil {
+				out = append(out, part{p.SKU, markets.AccrualSale, 0, c.SaleAmount}, part{p.SKU, markets.AccrualCommission, 0, c.Commission})
 			}
 			if p.Delivery != nil {
 				for _, f := range p.Delivery.Services {
-					add(p.SKU, markets.AccrualService, f.TypeID, f.Accrued)
+					out = append(out, part{p.SKU, markets.AccrualService, f.TypeID, f.Accrued})
 				}
 			}
 		}
@@ -448,20 +441,35 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 	if a.ItemFees != nil {
 		for _, it := range a.ItemFees.Fees {
 			for _, f := range it.Fees {
-				add(it.SKU, markets.AccrualService, f.TypeID, f.Accrued)
+				out = append(out, part{it.SKU, markets.AccrualService, f.TypeID, f.Accrued})
 			}
 		}
 	}
-	if a.NonItemFee != nil {
-		add(0, markets.AccrualService, a.NonItemFee.TypeID, a.NonItemFee.Accrued)
+	if f := a.NonItemFee; f != nil {
+		out = append(out, part{0, markets.AccrualService, f.TypeID, f.Accrued})
 	}
+	return out
+}
+
+// rows splits one accrual into lines of day; разница итога и частей — строкой.
+func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 	total, err := a.Total.money()
-	if err = cmp.Or(bad, err); err != nil {
+	if err != nil {
 		return nil, err
 	}
+	var out []markets.OzonAccrual
 	var sum domain.Money
-	for _, r := range out {
-		sum = sum.Add(r.Amount)
+	for _, p := range a.parts() {
+		m, err := p.v.money()
+		if err != nil {
+			return nil, err
+		}
+		sku := ""
+		if p.sku != 0 {
+			sku = strconv.FormatInt(p.sku, 10)
+		}
+		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Kind: p.kind, TypeID: p.typeID, Amount: m})
+		sum = sum.Add(m)
 	}
 	if rest := total.Sub(sum); !rest.IsZero() {
 		out = append(out, markets.OzonAccrual{Day: day, Kind: markets.AccrualRest, Amount: rest})
