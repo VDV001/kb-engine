@@ -53,17 +53,17 @@ func fakeOzon(t *testing.T) *httptest.Server {
 // «Магазин» читает его и дает советы.
 func TestMarketsOzon(t *testing.T) {
 	s, tok, _ := newServerSettings(t)
-	if _, err := s.AddOzon("FURIA", "abc", "k-1", false); err == nil {
+	if _, err := s.AddOzon("Тестовый магазин", "abc", "k-1", false); err == nil {
 		t.Error("Client-Id of letters saved")
 	}
-	if _, err := s.AddOzon("FURIA", "42", " ", false); err == nil {
+	if _, err := s.AddOzon("Тестовый магазин", "42", " ", false); err == nil {
 		t.Error("empty key saved")
 	}
-	row, err := s.AddOzon(" FURIA ", " 42 ", " k-1 ", false)
+	row, err := s.AddOzon(" Тестовый магазин ", " 42 ", " k-1 ", false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Kind != "ozon" || row.Name != "FURIA" || !row.OK || !strings.Contains(row.Detail, "42") {
+	if row.Kind != "ozon" || row.Name != "Тестовый магазин" || !row.OK || !strings.Contains(row.Detail, "42") {
 		t.Errorf("row = %+v", row)
 	}
 	if tok.m[connKeyAccount(row.ID)] != "k-1" {
@@ -79,7 +79,7 @@ func TestMarketsOzon(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ozonShop: %v", err)
 	}
-	if v.Source != "ozon" || v.File != "Ozon · FURIA" || v.PeriodDays != 90 || v.Period != "15.08.2026 – 12.11.2026" || len(v.Products) != 2 {
+	if v.Source != "ozon" || v.File != "Ozon · Тестовый магазин" || v.PeriodDays != 90 || v.Period != "15.08.2026 – 12.11.2026" || len(v.Products) != 2 {
 		t.Fatalf("view = %+v", v)
 	}
 	if p := v.Products[0]; p.SKU != "11" || p.Article != "100_46" || p.Ordered != 16 || p.Refused != 7 || p.Refuse != 0.4375 || !p.Urgent {
@@ -110,7 +110,7 @@ func TestMarketsOzon(t *testing.T) {
 // «Экономики магазина»; отказ Ozon в финансах не прячет товары.
 func TestMarketsOzonEconomy(t *testing.T) {
 	s, _, _ := newServerSettings(t)
-	row, err := s.AddOzon("FURIA", "42", "k-1", false)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
