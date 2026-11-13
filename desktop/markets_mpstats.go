@@ -124,7 +124,7 @@ func mpstatsSpan(ctx context.Context, cl mpstats.Client, path string, from, to t
 // путь копируют с вида «Одежда / Куртки» (живая проверка 13.11).
 func mpstatsPath(p string) string {
 	var parts []string
-	for _, x := range strings.Split(p, "/") {
+	for x := range strings.SplitSeq(p, "/") {
 		if x = strings.TrimSpace(x); x != "" {
 			parts = append(parts, x)
 		}
