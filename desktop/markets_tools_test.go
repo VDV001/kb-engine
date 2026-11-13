@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -145,5 +146,34 @@ func TestShopExtra_returnsRefused(t *testing.T) {
 	_, _ = x[0].Exec(context.Background(), "shop_losses", []byte(`{}`))
 	if seen["/v1/returns/list"] != 1 || seen["/v1/finance/accrual/by-day"] != 90 {
 		t.Errorf("returns asked %d, accrual days %d: once per turn, failure included", seen["/v1/returns/list"], seen["/v1/finance/accrual/by-day"])
+	}
+}
+
+// Шаг чата называет кабинет и вопрос словами человека (отзыв 14.11): «Ozon
+// «Брюки»: карточка товара «100_46»», а не имя инструмента.
+func TestShopExtra_describe(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	a, _ := s.AddOzon("Брюки и худи", "1", "k-1", true)
+	if _, err := s.AddOzon("Платья", "2", "k-2", true); err != nil {
+		t.Fatal(err)
+	}
+	x := shopExtras(s, "", nil, time.Now)
+	tests := []struct{ tool, args, id, name, what string }{
+		{"shop_summary", ``, a.ID, "Ozon «Брюки и худи»", "сводка магазина"},
+		{"shop_sku", `{"q":"100_46","cabinet":"Платья"}`, "", "Ozon «Платья»", "карточка товара «100_46»"},
+		{"shop_money", `{}`, a.ID, "Ozon «Брюки и худи»", "деньги магазина"},
+		{"shop_top", `{"by":"ordered"}`, a.ID, "Ozon «Брюки и худи»", "топ товаров"},
+		{"shop_supply", `{}`, a.ID, "Ozon «Брюки и худи»", "что довезти"},
+		{"shop_losses", `{}`, a.ID, "Ozon «Брюки и худи»", "возможные пропажи"},
+		{"shop_sku", `{"q":"1","cabinet":"Нет такого"}`, "", "Ozon", "карточка товара «1»"},
+	}
+	for _, tt := range tests {
+		u, ok := x[0].Describe(tt.tool, []byte(tt.args))
+		if !ok || u.Kind != chat.UseConnection || u.Name != tt.name || u.What != tt.what || (tt.id != "" && u.ID != tt.id) {
+			t.Errorf("%s %s: %+v, %v", tt.tool, tt.args, u, ok)
+		}
+	}
+	if _, ok := x[0].Describe("search", nil); ok {
+		t.Error("search described by the shop")
 	}
 }
