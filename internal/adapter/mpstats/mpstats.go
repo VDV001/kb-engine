@@ -29,6 +29,7 @@ var (
 	ErrQuota        = errors.New("лимит запросов тарифа MPStats исчерпан")
 	ErrRedirect     = errors.New("перенаправление: ключ на другой адрес не уходит")
 	ErrTimeout      = errors.New("MPStats не ответил вовремя")
+	ErrDropped      = errors.New("MPStats оборвал соединение")
 )
 
 // maxBody — предел ответа: ряд по дням за год — десятки килобайт.
@@ -141,6 +142,10 @@ func (c Client) categorySpan(ctx context.Context, path string, from, to time.Tim
 	return out, nil
 }
 
+// retries — сколько раз повторить обрыв соединения, 502 и 504: MPStats под
+// нагрузкой рвет соединение (живая проверка 13.11); отказ ключа не повторяется.
+const retries = 2
+
 // get calls path with the token and decodes the answer into out.
 func (c Client) get(ctx context.Context, path string, q url.Values, out any) error {
 	base := strings.TrimRight(c.BaseURL, "/")
@@ -151,38 +156,53 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 	if len(q) > 0 {
 		target += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Mpstats-TOKEN", c.Token)
 	client := &http.Client{Timeout: 90 * time.Second} // часть ряда — до 15 с; запас на загруженный MPStats
 	if c.HTTP != nil {
 		cp := *c.HTTP
 		client = &cp
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect } // ключ — только на BaseURL
+	for try := 0; ; try++ {
+		data, err := c.once(ctx, client, target)
+		if err == nil {
+			return json.Unmarshal(data, out)
+		}
+		if !errors.Is(err, ErrDropped) && !errors.Is(err, ErrTimeout) || try == retries || ctx.Err() != nil {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(try+1) * time.Second):
+		}
+	}
+}
+
+// once makes one request; обрыв и 502/504 — ErrDropped/ErrTimeout, их повторяет get.
+func (c Client) once(ctx context.Context, client *http.Client, target string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Mpstats-TOKEN", c.Token)
 	resp, err := client.Do(req)
 	if err != nil {
-		// Адрес с путем ниши в тексте ошибки человеку не нужен (живая проверка 13.11).
+		// Адрес с путем ниши и сетевые подробности человеку не нужны (живая проверка 13.11).
 		var ue *url.Error
-		if errors.As(err, &ue) {
-			if ue.Timeout() {
-				return ErrTimeout
-			}
-			return ue.Err
+		switch {
+		case errors.As(err, &ue) && ue.Timeout():
+			return nil, ErrTimeout
+		case errors.Is(err, ErrRedirect), ctx.Err() != nil:
+			return nil, err
 		}
-		return err
+		return nil, ErrDropped
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return err
+		return nil, ErrDropped
 	}
-	if err := statusErr(resp.StatusCode); err != nil {
-		return err
-	}
-	return json.Unmarshal(data, out)
+	return data, statusErr(resp.StatusCode)
 }
 
 // safeForKey — ключ уходит только по https; http — лишь на этот Мак (тесты).
@@ -203,6 +223,9 @@ func statusErr(status int) error {
 	}
 	if status == http.StatusGatewayTimeout {
 		return ErrTimeout
+	}
+	if status == http.StatusBadGateway {
+		return ErrDropped
 	}
 	return fmt.Errorf("MPStats ответил %d", status)
 }

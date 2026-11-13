@@ -5315,11 +5315,20 @@ const mkYesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); re
 const mkDaysBack = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
 const mkIsMPS = () => !!(mk.tb && mk.tb.path && mk.tb.path.startsWith("mpstats:"));
 let mkMpsSeq = 0, mkCatsLoaded = false;
+// mkLoadCats fills the MPStats paths list once; strict — бросить ошибку наверх.
+async function mkLoadCats(strict) {
+  if (mkCatsLoaded || !native() || !native().MarketsMPStatsCategories) return;
+  try {
+    const paths = await native().MarketsMPStatsCategories();
+    $("#mk-mps-cats").innerHTML = paths.map((p) => `<option value="${esc(p)}">`).join("");
+    mkCatsLoaded = true;
+  } catch (e) { if (strict) throw e; }
+}
 async function mkReadMPS(path, from, to) {
   if (!native() || !native().MarketsNichesMPStats) return mkErr("Экран «Ниша» работает в окне приложения.");
   from = from || mkDaysBack(30); to = to || mkYesterday();
   const seq = ++mkMpsSeq;
-  mk.mps = { path: (path || "").trim().replace(/^\/+|\/+$/g, ""), from, to };
+  mk.mps = { path: (path || "").split("/").map((x) => x.trim()).filter(Boolean).join("/"), from, to }; // «A / B» → «A/B»
   mkErr("");
   $("#mk-mps-bar").hidden = false;
   mkMpsRender(true);
@@ -5353,9 +5362,7 @@ $("#mk-mps").addEventListener("click", async () => {
   focusSoon("#mk-mps-path");
   if (mkCatsLoaded) return;
   try {
-    const paths = await native().MarketsMPStatsCategories();
-    $("#mk-mps-cats").innerHTML = paths.map((p) => `<option value="${esc(p)}">`).join("");
-    mkCatsLoaded = true;
+    await mkLoadCats(true);
   } catch (e) {
     mkErr(errText(e));
     if (/подключения MPStats нет/.test(errText(e))) { await openSettings("conn"); $("#conn-mpstats").hidden = false; $("#conn-add-mpstats").setAttribute("aria-expanded", "true"); focusSoon("#conn-m-key"); }
@@ -5641,6 +5648,7 @@ $("#markets-view").addEventListener("click", (e) => {
   if (go) {
     hideTip();
     fc.niche = go.dataset.mkGoFc;
+    fc.nicheFromFile = !mkIsMPS(); // путь из файла MPStats может не узнать
     if (fc.paths[0].startsWith("mpstats:")) { // источник MPStats берет новую нишу, а не считает прежнюю (ревью #605)
       const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
       fc.paths[0] = fc.paths[1] = `mpstats:${id}|${fc.niche}`; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave();
@@ -5665,7 +5673,8 @@ function fcMPStatsSlot(i, title, hint, p, info) {
   const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете, MPStats отвечает до минуты" : "90 дней до вчера — загрузятся при расчете";
   return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
     `<span class="name">MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
-    (i === 0 ? `<input class="mk-q" id="fc-mps-path" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "полный путь категории Ozon, как в MPStats и в выгрузке «Товары категории»; проще — выбрать нишу во вкладке «Ниша» → «Прогноз по этой нише»")}>` : "") +
+    (i === 0 ? `<input class="mk-q" id="fc-mps-path" list="mk-mps-cats" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "путь категории, как в MPStats: начните печатать — окно подскажет. Имена ниш из выгрузки файлом у MPStats другие; надежнее — «Ниша → Из MPStats» → «Прогноз по этой нише»")}>` +
+      (fc.nicheFromFile ? `<span class="meta">ниша взята из выгрузки файлом — у MPStats путь может быть другим</span>` : "") : "") +
     `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
 }
 function fcRender() {
@@ -5691,6 +5700,7 @@ $("#mk-files").addEventListener("change", (e) => {
   if (e.target.id === "fc-mps-path") {
     if (fc.busy) { mkErr("Идет расчет — ниша сменится после него."); return fcRender(); } // поле вернется к считаемой нише
     const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+    fc.nicheFromFile = false;
     fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`;
     fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); return fcRender(); // сравнение с моделью — по прежней нише (ревью #605)
   }
@@ -5701,6 +5711,7 @@ $("#mk-files").addEventListener("click", async (e) => {
   if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick], [data-fc-mps]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
   if (e.target.closest("[data-fc-mps]")) {
     hideTip();
+    mkLoadCats(); // подсказки путей MPStats для поля ниши
     if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
     let rows = [];
     try { rows = ((await native().Connections()) || []).filter((c) => c.kind === "mpstats" && c.enabled); } catch (_) { /* нет подключений — откроем форму */ }

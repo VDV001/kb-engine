@@ -86,14 +86,13 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 	from, to := ozonWindow(today)
 	spans := [2][2]time.Time{{from.AddDate(-1, 0, 0), to.AddDate(-1, 0, mpstatsHorizon)}, {from, to}}
 	var files [2]forecastFile
-	var errs [2]error
-	var wg sync.WaitGroup
-	for i, sp := range spans { // ряды независимы: качаются сразу, а не друг за другом (ревью #605)
-		wg.Go(func() { series[i], files[i], errs[i] = mpstatsSpan(ctx, cl, path, sp[0], sp[1]) })
-	}
-	wg.Wait()
-	if err := cmp.Or(errs[0], errs[1]); err != nil {
-		return series, nil, err
+	// Ряды — по очереди: оба сразу — до 8 запросов, и MPStats рвал соединение
+	// (живая проверка 13.11); внутри ряда части и так идут по 4.
+	for i, sp := range spans {
+		var err error
+		if series[i], files[i], err = mpstatsSpan(ctx, cl, path, sp[0], sp[1]); err != nil {
+			return series, nil, err
+		}
 	}
 	f.mpstatsNiche.put(key, nicheEntry{at: time.Now(), series: series, files: files[:]})
 	return series, files[:], nil
@@ -115,15 +114,28 @@ func mpstatsSpan(ctx context.Context, cl mpstats.Client, path string, from, to t
 	}
 	got := s.Days()
 	if len(got) == 0 {
-		return domain.DailySales{}, forecastFile{}, fmt.Errorf("в MPStats нет продаж ниши «%s» за %s – %s: проверьте путь категории", path, from.Format("02.01.2006"), to.Format("02.01.2006"))
+		return domain.DailySales{}, forecastFile{}, fmt.Errorf("в MPStats нет продаж ниши «%s» за %s – %s: такого пути у MPStats нет — имена ниш из выгрузки файлом отличаются от категорий MPStats (например, «Пижамы женские», а не «Пижамы»). Надежнее всего: «Ниша → Из MPStats», найти нишу и нажать «Прогноз по этой нише»", path, from.Format("02.01.2006"), to.Format("02.01.2006"))
 	}
 	return s, forecastFile{File: "MPStats · " + path, Format: "mpstats", Days: len(got),
 		From: got[0].Day.Format("02.01.2006"), To: got[len(got)-1].Day.Format("02.01.2006")}, nil
 }
 
+// mpstatsPath cleans a category path: пробелы у частей и пустые части прочь —
+// путь копируют с вида «Одежда / Куртки» (живая проверка 13.11).
+func mpstatsPath(p string) string {
+	var parts []string
+	for _, x := range strings.Split(p, "/") {
+		if x = strings.TrimSpace(x); x != "" {
+			parts = append(parts, x)
+		}
+	}
+	return strings.Join(parts, "/")
+}
+
 // mpstatsSource resolves «<id>|<путь>» into a client with the saved key.
 func (f *folderSettings) mpstatsSource(src string, hc *http.Client) (mpstats.Client, string, error) {
 	id, path, _ := strings.Cut(src, "|")
+	path = mpstatsPath(path)
 	if strings.TrimSpace(path) == "" {
 		return mpstats.Client{}, "", errors.New("не выбрана ниша: путь категории Ozon, как в MPStats")
 	}
@@ -181,7 +193,7 @@ func (a *App) MarketsMPStatsCategories() ([]string, error) {
 
 // nichesMPStats reads the subcategories of path for the days and a year earlier.
 func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, path, from, to string, now time.Time) (nicheTable, error) {
-	path = strings.Trim(strings.TrimSpace(path), "/")
+	path = mpstatsPath(path)
 	if path == "" {
 		return nicheTable{}, errors.New("впишите категорию Ozon, например «Одежда/Мужская одежда»")
 	}

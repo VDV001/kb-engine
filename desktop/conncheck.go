@@ -113,6 +113,8 @@ func mpstatsMessage(err error) string {
 		return "лимит запросов тарифа MPStats исчерпан — дождитесь нового периода тарифа"
 	case errors.Is(err, mpstats.ErrTimeout):
 		return "MPStats не ответил вовремя — он бывает занят, попробуйте через минуту"
+	case errors.Is(err, mpstats.ErrDropped):
+		return "MPStats оборвал соединение и после повторов — он перегружен, попробуйте через минуту"
 	}
 	return "MPStats не ответил: " + err.Error()
 }
