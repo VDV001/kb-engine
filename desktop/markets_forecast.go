@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
 	"path/filepath"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/usecase/chat"
+	"github.com/daniil/kb-engine/internal/usecase/usage"
 
 	"github.com/daniil/kb-engine/internal/adapter/tablefile"
 	"github.com/daniil/kb-engine/internal/domain"
@@ -133,7 +137,57 @@ type modelForecastView struct {
 	Note   string       `json:"note"`
 }
 
-// ModelForecast asks the chat model for the forecast too.
+// ModelForecast asks the chat model for the forecast too (решение владельца
+// 13.11): рядом с формулой и с пометкой «перепроверьте». consent — человек
+// увидел, что суммы по неделям уйдут провайдеру модели; без него вызова нет.
 func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
-	return modelForecastView{}, nil
+	if !consent {
+		return modelForecastView{}, errors.New("суммы продаж по неделям уйдут провайдеру модели: подтвердите в окне")
+	}
+	var series [3]domain.DailySales
+	for i, f := range []struct{ path, what string }{{lastYear, "ниша, прошлый год"}, {nicheNow, "ниша, сейчас"}, {own, "свои продажи"}} {
+		s, _, err := readSales(f.path, f.what)
+		if err != nil {
+			return modelForecastView{}, err
+		}
+		series[i] = s
+	}
+	formula, err := domain.NewForecast(series[0], series[1], series[2])
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	c := d.config()
+	key, err := d.modelKey(c)
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+	defer cancel()
+	model := d.metered(d.model(c, key), c, usage.Fixed(domain.CallForecast), "")
+	reply, err := model.Complete(ctx, []chat.ModelMessage{
+		{Role: chat.RoleSystem, Content: markets.ForecastSystem},
+		{Role: chat.RoleUser, Content: markets.ForecastPrompt(series[0], series[1], series[2])},
+	}, nil)
+	if err != nil {
+		return modelForecastView{}, errors.New(chatError(err))
+	}
+	mf, err := markets.ParseModelForecast(reply.Content)
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	v := modelForecastView{Model: c.Model, Peak: mf.Peak.Format("2006-01-02"), Note: mf.Note}
+	for _, m := range mf.Months {
+		f, _, _ := formula.MonthTotal(m.Year, m.Month)
+		mm := modelMonth{Label: fmt.Sprintf("%s %d", monthNames[m.Month], m.Year), Model: math.Round(m.Value), Formula: math.Round(f)}
+		if f > 0 {
+			mm.Diff = math.Round((m.Value/f-1)*1000) / 1000
+		}
+		v.Months = append(v.Months, mm)
+	}
+	return v, nil
+}
+
+// MarketsModelForecast asks the chat model for the forecast next to the formula.
+func (a *App) MarketsModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
+	return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
 }
