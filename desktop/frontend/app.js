@@ -5694,7 +5694,7 @@ function shRender() {
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
   $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
-  if (!v) return void ($("#sh-advice").hidden = true);
+  if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = true);
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#sh-kpis").innerHTML =
@@ -5706,6 +5706,7 @@ function shRender() {
     kpi("Остаток", fmt(t.stock) + " шт", oz ? "к продаже сейчас" : t.daysOutOf ? `без остатка ${t.daysOut} из ${t.daysOutOf} дней` : "на конец периода", t.daysOut >= 7 ? "bad" : "", oz ? "штук на складах минус резерв, FBO и FBS вместе" : shHint("stock")) +
     (oz ? kpi("Срочно довезти", fmt(urgent), "товаров: запаса меньше чем на 2 недели", urgent ? "bad" : "", "товары, которых при нынешних продажах без отмен хватит меньше чем на две недели; сколько довезти на четыре — в карточке")
       : kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара"));
+  shEcon();
   shAdvice();
   $("#sh-chips").innerHTML = [["", "все товары", "показать все товары отчета"], ...Object.keys(SH_ISSUE).filter((k) => v.counts[k]).map((k) => [k, SH_ISSUE[k][0], SH_ISSUE[k][1]])]
     .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k && !sh.adv}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
@@ -5714,6 +5715,27 @@ function shRender() {
   $("#sh-probs").hidden = !p.length;
   $("#sh-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
   $("#sh-probs-list").innerHTML = p.map((x) => `<li>${x.row ? `строка ${x.row}: ` : ""}${esc(x.reason)}</li>`).join("");
+}
+// Деньги магазина (#580): строки «Экономики магазина» Ozon из начислений за тот же период.
+const SH_ECON = [
+  ["sales", "Продажи и возвраты", "по цене продавца, с баллами за скидки; возвраты — минусом"],
+  ["commission", "Вознаграждение Ozon", "комиссия за продажи"],
+  ["delivery", "Доставка", "логистика, обратная логистика отказов и возвратов, доставка до места выдачи силами Ozon"],
+  ["promotion", "Продвижение", "оплата за клик и продвижение товара"],
+  ["partners", "Услуги партнеров", "доставка до места выдачи, эквайринг, обработка возвратов, упаковка, временное размещение, звездные товары"],
+  ["other", "Остальное", "прочие статьи Ozon: перенос карточек, материалы, вывоз, утилизация, компенсации"],
+  ["total", "На счет", "все строки вместе: сколько начислено к выплате, до себестоимости товара"],
+];
+function shEcon() {
+  const e = sh.v.economy, el = $("#sh-econ");
+  el.hidden = !e;
+  if (!e) return void (el.innerHTML = "");
+  if (e.err) return void (el.innerHTML = `<h3>Деньги магазина</h3><div class="note">Начисления не загрузились: ${esc(e.err)}</div>`);
+  // Доля — только от положительных продаж; знак строки виден по сумме; Math.round(-0,4) — без «-0» (ревью #594).
+  const rub = (x) => fmt(Math.round(x) || 0) + " ₽", pct = (x) => (e.sales > 0 && Math.round(x) ? ` <small>${shPct(Math.abs(x) / e.sales)}</small>` : "");
+  el.innerHTML = `<h3>Деньги магазина · ${esc(sh.v.period)}</h3><dl>` +
+    SH_ECON.filter(([k]) => k !== "other" || e.other).map(([k, label, tip]) => `<div class="${k}"${mkTip(label, tip + " · по начислениям Ozon")}><dt>${label}</dt><dd>${rub(e[k])}${k === "sales" ? "" : pct(e[k])}</dd></div>`).join("") +
+    `</dl><div class="note">как «Экономика магазина» в кабинете Ozon; доля — от продаж</div>`;
 }
 // Советы (#580): домен решает, каким товарам какой совет; слова здесь.
 const SH_ADV = {

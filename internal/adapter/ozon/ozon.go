@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
@@ -324,4 +325,165 @@ func apiMessage(data []byte) string {
 	}
 	r := []rune(strings.TrimSpace(string(data)))
 	return string(r[:min(len(r), 200)]) // по буквам: байтовая обрезка режет кириллицу
+}
+
+// ErrCurrency — начисление не в рублях: валюты окно не смешивает.
+var ErrCurrency = errors.New("начисление не в рублях")
+
+// Accruals returns the cabinet's accruals by day, from to to inclusive
+// (/v1/finance/accrual/by-day; /v3/finance/transaction/* Ozon отключил 08.09.2026):
+// продажа, вознаграждение и каждая услуга — своей строкой. Итог Ozon, не равный
+// сумме частей, дополняется строкой разницы: на счет приходит итог.
+func (c Client) Accruals(ctx context.Context, from, to time.Time) ([]markets.OzonAccrual, error) {
+	var out []markets.OzonAccrual
+	first := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	last := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
+		lastID := ""
+		for page := 0; ; page++ {
+			if page == maxPages {
+				return nil, ErrTooBig
+			}
+			body := map[string]string{"date": day.Format(time.DateOnly)}
+			if lastID != "" {
+				body["last_id"] = lastID
+			}
+			var res accrualPage
+			if err := c.call(ctx, "/v1/finance/accrual/by-day", body, &res); err != nil {
+				return nil, fmt.Errorf("начисления за %s: %w", day.Format("02.01.2006"), err)
+			}
+			for _, a := range res.Accruals {
+				rows, err := a.rows(day)
+				if err != nil {
+					return nil, fmt.Errorf("начисление %d: %w", a.ID, err)
+				}
+				out = append(out, rows...)
+			}
+			if res.LastID == "" || res.LastID == lastID {
+				break
+			}
+			lastID = res.LastID
+		}
+	}
+	return out, nil
+}
+
+type accrualPage struct {
+	Accruals []accrualJSON `json:"accruals"`
+	LastID   string        `json:"last_id"`
+}
+
+// amount is Ozon's money: сумма строкой и валюта.
+type amount struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+// absent — суммы нет вовсе (поле пропущено или null): часть не считается,
+// расхождение с итогом уйдет в строку разницы (ревью #594).
+func (a amount) absent() bool { return a.Amount == "" && a.Currency == "" }
+
+func (a amount) money() (domain.Money, error) {
+	if !strings.EqualFold(a.Currency, "RUB") {
+		return domain.Money{}, fmt.Errorf("%w: %q", ErrCurrency, a.Currency)
+	}
+	v := a.Amount
+	if whole, frac, ok := strings.Cut(v, "."); ok && len(frac) > 2 {
+		v = whole + "." + frac[:2] + strings.TrimRight(frac[2:], "0") // "-11.5000" — те же копейки; доли копейки — отказ
+	}
+	return domain.ParseMoney(v)
+}
+
+type feeJSON struct {
+	TypeID  int    `json:"type_id"`
+	Accrued amount `json:"accrued"`
+}
+
+type accrualJSON struct {
+	ID      int64  `json:"accrual_id"`
+	Total   amount `json:"total_amount"`
+	Posting *struct {
+		Products []struct {
+			SKU      int64 `json:"sku"`
+			Delivery *struct {
+				Services []feeJSON `json:"services"`
+			} `json:"delivery"`
+			Commission *struct {
+				SaleAmount amount `json:"sale_amount"`
+				Commission amount `json:"commission"`
+			} `json:"commission"`
+		} `json:"products"`
+	} `json:"posting"`
+	ItemFees *struct {
+		Fees []struct {
+			SKU  int64     `json:"sku"`
+			Fees []feeJSON `json:"fees"`
+		} `json:"fees"`
+	} `json:"item_fees"`
+	NonItemFee *feeJSON `json:"non_item_fee"`
+}
+
+// part is one piece of an accrual before its amount is read.
+type part struct {
+	sku    int64
+	kind   markets.AccrualKind
+	typeID int
+	v      amount
+}
+
+// parts lists the accrual's pieces: продажа, вознаграждение и услуги.
+func (a accrualJSON) parts() []part {
+	var out []part
+	if a.Posting != nil {
+		for _, p := range a.Posting.Products {
+			if c := p.Commission; c != nil {
+				out = append(out, part{p.SKU, markets.AccrualSale, 0, c.SaleAmount}, part{p.SKU, markets.AccrualCommission, 0, c.Commission})
+			}
+			if p.Delivery != nil {
+				for _, f := range p.Delivery.Services {
+					out = append(out, part{p.SKU, markets.AccrualService, f.TypeID, f.Accrued})
+				}
+			}
+		}
+	}
+	if a.ItemFees != nil {
+		for _, it := range a.ItemFees.Fees {
+			for _, f := range it.Fees {
+				out = append(out, part{it.SKU, markets.AccrualService, f.TypeID, f.Accrued})
+			}
+		}
+	}
+	if f := a.NonItemFee; f != nil {
+		out = append(out, part{0, markets.AccrualService, f.TypeID, f.Accrued})
+	}
+	return out
+}
+
+// rows splits one accrual into lines of day; разница итога и частей — строкой.
+func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
+	total, err := a.Total.money()
+	if err != nil {
+		return nil, err
+	}
+	var out []markets.OzonAccrual
+	var sum domain.Money
+	for _, p := range a.parts() {
+		if p.v.absent() {
+			continue
+		}
+		m, err := p.v.money()
+		if err != nil {
+			return nil, err
+		}
+		sku := ""
+		if p.sku != 0 {
+			sku = strconv.FormatInt(p.sku, 10)
+		}
+		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Kind: p.kind, TypeID: p.typeID, Amount: m})
+		sum = sum.Add(m)
+	}
+	if rest := total.Sub(sum); !rest.IsZero() {
+		out = append(out, markets.OzonAccrual{Day: day, Kind: markets.AccrualRest, Amount: rest})
+	}
+	return out, nil
 }

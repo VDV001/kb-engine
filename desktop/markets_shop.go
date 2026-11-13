@@ -56,6 +56,20 @@ type shopView struct {
 	Counts     map[string]int    `json:"counts"` // товаров с каждой проблемой
 	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
 	Advice     []shopAdvice      `json:"advice"`
+	Economy    *economyView      `json:"economy"` // nil — у отчета-файла начислений нет
+}
+
+// economyView — деньги магазина строками «Экономики магазина» Ozon, в рублях;
+// Err — почему начислений нет, когда Ozon в них отказал (товары при этом есть).
+type economyView struct {
+	Sales      float64 `json:"sales"`
+	Commission float64 `json:"commission"`
+	Delivery   float64 `json:"delivery"`
+	Promotion  float64 `json:"promotion"`
+	Partners   float64 `json:"partners"`
+	Other      float64 `json:"other"`
+	Total      float64 `json:"total"`
+	Err        string  `json:"err"`
 }
 
 // MarketsShop reads the shop's Ozon product report.

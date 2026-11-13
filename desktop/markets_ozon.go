@@ -25,7 +25,8 @@ import (
 // аналитика Ozon.
 const ozonDays = 90
 
-// ozonTimeout — на чтение кабинета: 3 700 отправлений — около 40 страниц.
+// ozonTimeout — на чтение кабинета: 3 700 отправлений — около 40 страниц,
+// начисления — запрос на день, 90 дней — около 11 секунд (замер 13.11).
 const ozonTimeout = 5 * time.Minute
 
 // AddOzon saves an Ozon cabinet as a connection.
@@ -114,6 +115,16 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
+	// Начисления от отправлений не зависят: читаются параллельно (ревью #594).
+	type accrued struct {
+		acc []markets.OzonAccrual
+		err error
+	}
+	accCh := make(chan accrued, 1)
+	go func() {
+		acc, err := cl.Accruals(ctx, from, to)
+		accCh <- accrued{acc, err}
+	}()
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
@@ -128,7 +139,31 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	v := shopViewOf(rep)
 	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
+	if r := <-accCh; r.err != nil {
+		v.Economy = &economyView{Err: economyErr(c.Name, r.err)} // товары остаются: отказ — только в финансах
+	} else {
+		v.Economy = economyOf(markets.OzonEconomy(r.acc))
+	}
 	return v, nil
+}
+
+// economyErr names a refusal of the accruals: тот же ключ только что прочитал
+// товары, поэтому 401/403 здесь — нет роли, а не неверный ключ (ревью #594).
+func economyErr(name string, err error) string {
+	switch {
+	case errors.Is(err, ozon.ErrUnauthorized):
+		return fmt.Sprintf("кабинет «%s»: Ozon не дает этому ключу начисления — нужен ключ с ролью «Финансы» (Ozon Seller → Настройки → Seller API)", name)
+	case errors.Is(err, ozon.ErrTooBig):
+		return fmt.Sprintf("кабинет «%s»: начислений за один день слишком много страниц — такой кабинет окно пока не читает", name)
+	}
+	return ozonErr(name, err).Error()
+}
+
+// economyOf turns the economy into rubles for the window.
+func economyOf(e markets.ShopEconomy) *economyView {
+	rub := func(m domain.Money) float64 { return float64(m.Kopecks()) / 100 }
+	return &economyView{Sales: rub(e.Sales), Commission: rub(e.Commission), Delivery: rub(e.Delivery), Promotion: rub(e.Promotion),
+		Partners: rub(e.Partners), Other: rub(e.Other), Total: rub(e.Total)}
 }
 
 // ozonErr names an Ozon refusal in words.
