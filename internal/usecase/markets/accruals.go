@@ -24,6 +24,7 @@ type OzonAccrual struct {
 	Unit   string    // номер отправления у начисления по нему; "" — не по отправлению
 	Kind   AccrualKind
 	TypeID int // статья Ozon у услуги
+	Qty    int // штук товара в начислении; 0 — не по товару
 	Amount domain.Money
 }
 
