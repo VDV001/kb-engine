@@ -72,25 +72,28 @@ func readSales(path, what string) (domain.DailySales, forecastFile, error) {
 	if path == "" {
 		return domain.DailySales{}, forecastFile{}, fmt.Errorf("не выбран файл: %s", what)
 	}
-	if itemsExport(path) {
-		return domain.DailySales{}, forecastFile{}, fmt.Errorf("%s: %w", what, markets.ErrItemsNotDaily)
-	}
 	rows, err := tablefile.Read(path)
+	if errors.Is(err, tablefile.ErrTooBig) && itemsCSV(path) {
+		err = markets.ErrItemsNotDaily
+	}
 	if err != nil {
-		return domain.DailySales{}, forecastFile{}, fmt.Errorf("%s: %w", what, err)
+		return domain.DailySales{}, forecastFile{}, salesErr(what, err)
 	}
 	s, info, err := markets.ReadDaily(rows)
+	if errors.Is(err, markets.ErrNoDaily) && len(rows) > 0 && markets.IsItems(rows[0]) {
+		err = markets.ErrItemsNotDaily
+	}
 	if err != nil {
-		return domain.DailySales{}, forecastFile{}, fmt.Errorf("%s: %w", what, err)
+		return domain.DailySales{}, forecastFile{}, salesErr(what, err)
 	}
 	return s, forecastFile{File: filepath.Base(path), Format: string(info.Format), Products: info.Products, Days: info.Days,
 		From: info.From.Format("02.01.2006"), To: info.To.Format("02.01.2006")}, nil
 }
 
-// itemsExport reports whether a csv is MPStats «Товары категории» by its
-// first row: та выгрузка весит сотни МБ, и предел Read назвал бы размер, а
-// не настоящую причину (живая проверка 13.11).
-func itemsExport(path string) bool {
+// itemsCSV reports whether a csv is MPStats «Товары категории» by its first
+// row: та выгрузка весит сотни МБ, и предел Read назвал бы размер, а не
+// настоящую причину (живая проверка 13.11). Только csv: xlsx потоком не читается.
+func itemsCSV(path string) bool {
 	if !strings.EqualFold(filepath.Ext(path), ".csv") {
 		return false
 	}
@@ -98,6 +101,14 @@ func itemsExport(path string) bool {
 		return err == nil && markets.IsItems(row)
 	}
 	return false
+}
+
+// salesErr names the file; выгрузке товаров — что принести вместо нее.
+func salesErr(what string, err error) error {
+	if errors.Is(err, markets.ErrItemsNotDaily) {
+		return fmt.Errorf("%s: %w — нужна выгрузка продаж ниши по дням", what, err)
+	}
+	return fmt.Errorf("%s: %w", what, err)
 }
 
 // readNiche reads the two niche files: прошлый год и сейчас.
