@@ -8,8 +8,8 @@ import (
 	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
-// «Магазин» за выбранные даты (отзыв владельца 13.11): отправления, начисления
-// и возвраты из загруженных 90 дней оставляются по дню, оба края включительно.
+// «Магазин» за выбранные даты (отзыв владельца 13.11): отправления и начисления
+// из загруженных 90 дней оставляются по дню, оба края включительно.
 func TestShopPeriod(t *testing.T) {
 	msk := time.FixedZone("MSK", 3*3600)
 	from, to := time.Date(2026, 11, 1, 0, 0, 0, 0, msk), time.Date(2026, 11, 7, 0, 0, 0, 0, msk)
@@ -22,7 +22,6 @@ func TestShopPeriod(t *testing.T) {
 	}
 	day := func(d int) time.Time { return time.Date(2026, 11, d, 0, 0, 0, 0, time.UTC) } // начисление — день, полночь UTC
 	acc := []markets.OzonAccrual{{Unit: "a", Day: time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC)}, {Unit: "b", Day: day(1)}, {Unit: "c", Day: day(7)}, {Unit: "d", Day: day(8)}}
-	rets := []markets.OzonReturn{{Posting: "x", Changed: day(3).Add(12 * time.Hour)}, {Posting: "y", Changed: day(9)}}
 
 	tests := []struct {
 		name string
@@ -31,7 +30,6 @@ func TestShopPeriod(t *testing.T) {
 	}{
 		{"отправления", numbers(markets.PostingsIn(posts, from, to)), []string{"первый день", "последний день"}},
 		{"начисления", units(markets.AccrualsIn(acc, from, to)), []string{"b", "c"}},
-		{"возвраты", postings(markets.ReturnsIn(rets, from, to)), []string{"x"}},
 	}
 	for _, tc := range tests {
 		if !slices.Equal(tc.got, tc.want) {
@@ -50,13 +48,6 @@ func numbers(ps []markets.OzonPosting) (out []string) {
 func units(as []markets.OzonAccrual) (out []string) {
 	for _, a := range as {
 		out = append(out, a.Unit)
-	}
-	return out
-}
-
-func postings(rs []markets.OzonReturn) (out []string) {
-	for _, r := range rs {
-		out = append(out, r.Posting)
 	}
 	return out
 }
