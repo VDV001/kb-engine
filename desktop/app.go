@@ -501,9 +501,6 @@ func (a *App) startup(ctx context.Context) {
 		a.chat.memoryNew = func(n portraitNews) { runtime.EventsEmit(ctx, "portrait:new", n) }
 		a.chat.versionNew = func(p iterationView) { runtime.EventsEmit(ctx, "versions:proposal", p) }
 	}
-	if a.settings != nil {
-		a.settings.ozonStage = func(stage string) { runtime.EventsEmit(ctx, "markets:stage", stage) }
-	}
 	if a.listen != nil {
 		a.listen.emit = func(ev listenEvent) { runtime.EventsEmit(ctx, "dictation", ev) }
 	}

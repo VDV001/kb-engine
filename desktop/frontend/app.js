@@ -1398,6 +1398,7 @@ $("#conn-add-google").addEventListener("click", () => {
 $("#conn-google").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!native() || !native().ConnectGoogle) return void ($("#conn-g-note").textContent = "Подключение Google — в окне приложения.");
+  maskConnKeys(); // ожидание согласия — до 5 минут: секрет не висит открытым
   const go = $("#conn-g-go");
   go.disabled = true;
   $("#conn-g-note").textContent = "Жду согласия в браузере (до 5 минут)…";
@@ -5725,7 +5726,7 @@ function shVal(k, p) {
     case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
-    case "rating": return p.rating ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
+    case "rating": return (p.reviews || p.rating) && Number.isFinite(p.rating) ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
     case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
     case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
     default: return fmt(Math.round(p[k] || 0));
@@ -5741,10 +5742,11 @@ async function shRead(src) {
   const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
   $("#sh-open").disabled = b.disabled = true;
   const cab = oz && [...$("#sh-cab").options].find((o) => o.value === src.slice(5));
-  const stop = shProgress(oz ? `Загружаю кабинет${cab ? " «" + cab.textContent + "»" : ""} из Ozon` : "Читаю отчет", oz);
+  const load = ++shLoad.seq;
+  const stop = shProgress(oz ? `Загружаю кабинет${cab ? " «" + cab.textContent + "»" : ""} из Ozon` : "Читаю отчет", oz, load);
   let done = "";
   try {
-    sh.v = oz ? await native().MarketsOzon(src.slice(5)) : await native().MarketsShop(src);
+    sh.v = oz ? await native().MarketsOzon(src.slice(5), load) : await native().MarketsShop(src);
     Object.assign(sh, { sel: 0, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 });
     shSave();
     if (oz && [...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
@@ -5757,8 +5759,10 @@ async function shRead(src) {
 // загрузчик кабинета (markets_ozon.go). Начисления и возвраты читаются
 // параллельно с отправлениями, поэтому непройденные этапы все — «идет».
 const SH_STAGES = [["posts", "отправления за 90 дней"], ["stock", "остатки"], ["accruals", "начисления"], ["returns", "возвраты"]];
-const shLoad = { done: null }; // пройденные этапы, пока идет загрузка кабинета
-if (window.runtime) window.runtime.EventsOn("markets:stage", (s) => { if (shLoad.done) { shLoad.done.add(s); shStagesRender(); } });
+// shLoad: номер последней загрузки кабинета и ее пройденные этапы; событие
+// прежней загрузки (упала, а запоздавший список дочитался) не засчитывается.
+const shLoad = { seq: 0, cur: 0, done: null };
+if (window.runtime) window.runtime.EventsOn("markets:stage", (ev) => { if (shLoad.done && ev.load === shLoad.cur) { shLoad.done.add(ev.stage); shStagesRender(); } });
 function shStagesRender() {
   const d = shLoad.done;
   $("#sh-progress-fill").style.width = `${Math.max(4, (d.size / SH_STAGES.length) * 100)}%`;
@@ -5767,10 +5771,11 @@ function shStagesRender() {
 // shProgress показывает полосу, пока идет загрузка: у кабинета (staged) она
 // заполняется по этапам, у файла — бежит. stop(итог) убирает полосу и
 // оставляет итог со временем, пустой итог — прячет блок (ошибку называет mkErr).
-function shProgress(what, staged) {
+function shProgress(what, staged, load) {
   const box = $("#sh-progress"), bar = $("#sh-progress-bar"), st = $("#sh-stages"), t = $("#sh-progress-t"), t0 = Date.now();
   const tick = () => { t.textContent = `${what} · ${Math.round((Date.now() - t0) / 1000)} с`; };
   shLoad.done = staged ? new Set() : null;
+  shLoad.cur = load;
   box.classList.remove("done");
   box.classList.toggle("indet", !staged);
   box.hidden = bar.hidden = false;
@@ -5923,7 +5928,7 @@ function shTable() {
   const ps = sh.v.products, list = shList();
   if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
   const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating && p.rating < 4.5);
+  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && Number.isFinite(p.rating) && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
     list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + shCopyBtn(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +

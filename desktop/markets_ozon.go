@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // Кабинет Ozon — подключение окна (#580): Client-Id в config.json, ключ в
@@ -75,11 +76,20 @@ func (f *folderSettings) ozonConn(c desktopconfig.Connection) connRow {
 	return r
 }
 
-// MarketsOzon reads the shop from an Ozon cabinet for the last 90 days.
-func (a *App) MarketsOzon(id string) (shopView, error) {
+// shopStage — пройденный этап загрузки кабинета для полосы окна; load —
+// номер загрузки от окна: событие запоздавшей прежней загрузки окно отбросит.
+type shopStage struct {
+	Load  int    `json:"load"`
+	Stage string `json:"stage"`
+}
+
+// MarketsOzon reads the shop from an Ozon cabinet for the last 90 days; этапы
+// уходят окну событием «markets:stage» с номером load.
+func (a *App) MarketsOzon(id string, load int) (shopView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
 	defer cancel()
-	return a.settings.ozonShop(ctx, ozon.DefaultURL, nil, id, time.Now())
+	stage := func(s string) { runtime.EventsEmit(a.ctx, "markets:stage", shopStage{load, s}) }
+	return a.settings.ozonShop(ctx, ozon.DefaultURL, nil, id, time.Now(), stage)
 }
 
 // ozonCabinet returns the client of cabinet id with its key from the keychain.
@@ -109,16 +119,15 @@ func ozonWindow(now time.Time) (from, to time.Time) {
 }
 
 // ozonShop reads cabinet id through base: отправления за 90 дней и остатки сейчас.
-func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time) (shopView, error) {
+// stage узнает о каждом прочитанном списке; nil — не сообщать.
+func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time, stage func(string)) (shopView, error) {
 	cl, c, err := f.ozonCabinet(id, base, hc)
 	if err != nil {
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
-	stage := func(s string) {
-		if f.ozonStage != nil {
-			f.ozonStage(s)
-		}
+	if stage == nil {
+		stage = func(string) {}
 	}
 	fin := startFinance(ctx, cl, from, to, stage)
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
@@ -171,7 +180,7 @@ type finance struct {
 // startFinance reads accruals and returns in parallel, независимо от
 // отправлений и друг от друга (ревью #594, #595); wait — дождаться обоих.
 // Одна копия для окна и чата (ревью #597). done узнает о каждом прочитанном
-// списке («accruals», «returns»), с ошибкой или без; nil — не сообщать.
+// без ошибки списке («accruals», «returns»): отказу окно ✓ не рисует; nil — не сообщать.
 func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time, done func(string)) (wait func() finance) {
 	if done == nil {
 		done = func(string) {}
@@ -187,12 +196,16 @@ func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time, done 
 	accCh, retCh := make(chan accrued, 1), make(chan returned, 1)
 	go func() {
 		acc, err := cl.Accruals(ctx, from, to)
-		done("accruals")
+		if err == nil {
+			done("accruals")
+		}
 		accCh <- accrued{acc, err}
 	}()
 	go func() {
 		rets, err := cl.Returns(ctx, from, to)
-		done("returns")
+		if err == nil {
+			done("returns")
+		}
 		retCh <- returned{rets, err}
 	}()
 	return func() finance {
