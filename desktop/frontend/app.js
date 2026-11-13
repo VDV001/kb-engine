@@ -5694,7 +5694,7 @@ function shRender() {
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
   $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
-  if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = true);
+  if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = $("#sh-loss").hidden = true);
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#sh-kpis").innerHTML =
@@ -5707,6 +5707,7 @@ function shRender() {
     (oz ? kpi("Срочно довезти", fmt(urgent), "товаров: запаса меньше чем на 2 недели", urgent ? "bad" : "", "товары, которых при нынешних продажах без отмен хватит меньше чем на две недели; сколько довезти на четыре — в карточке")
       : kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара"));
   shEcon();
+  shLoss();
   shAdvice();
   $("#sh-chips").innerHTML = [["", "все товары", "показать все товары отчета"], ...Object.keys(SH_ISSUE).filter((k) => v.counts[k]).map((k) => [k, SH_ISSUE[k][0], SH_ISSUE[k][1]])]
     .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k && !sh.adv}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
@@ -5736,6 +5737,24 @@ function shEcon() {
   el.innerHTML = `<h3>Деньги магазина · ${esc(sh.v.period)}</h3><dl>` +
     SH_ECON.filter(([k]) => k !== "other" || e.other).map(([k, label, tip]) => `<div class="${k}"${mkTip(label, tip + " · по начислениям Ozon")}><dt>${label}</dt><dd>${rub(e[k])}${k === "sales" ? "" : pct(e[k])}</dd></div>`).join("") +
     `</dl><div class="note">как «Экономика магазина» в кабинете Ozon; доля — от продаж</div>`;
+}
+// Возможные пропажи (#580): вид — что случилось и что сделать в кабинете.
+const SH_LOSS = {
+  no_sale: ["Доставлено, продажи нет", "отправление доставлено больше двух недель назад, а продажи в начислениях нет — проверьте отправление в кабинете и, если денег нет, напишите в поддержку Ozon"],
+  write_off: ["Возврат списан", "Ozon списал невыкуп или возврат — проверьте, есть ли за него компенсация, иначе подайте претензию"],
+  utilized: ["Возврат утилизирован", "товар утилизирован — если вы не заказывали утилизацию, подайте претензию"],
+  lost: ["Возможно потерян", "Ozon пометил возврат «возможно потерян» — дождитесь компенсации или подайте претензию"],
+  stuck: ["Возврат застрял", "возврат больше двух недель без движения — спросите поддержку Ozon, где товар"],
+};
+function shLoss() {
+  const l = sh.v.losses, el = $("#sh-loss");
+  el.hidden = !l || (!l.err && !l.rows.length);
+  if (el.hidden) return void (el.innerHTML = "");
+  if (l.err) return void (el.innerHTML = `<div class="note">Пропажи не проверены: ${esc(l.err)}</div>`);
+  const sum = l.rows.reduce((a, r) => a + r.price, 0), kind = (k) => SH_LOSS[k] || [k, ""];
+  el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара</summary><div class="wrap"><table><tbody>` +
+    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${esc(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n">с ${esc(r.since)}</td></tr>`).join("") +
+    `</tbody></table></div><div class="note">компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, смотрите в отчете о компенсациях в разделе «Финансы» кабинета</div></details>`;
 }
 // Советы (#580): домен решает, каким товарам какой совет; слова здесь.
 const SH_ADV = {

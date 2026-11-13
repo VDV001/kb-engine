@@ -117,13 +117,17 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	from, to := ozonWindow(now)
 	// Начисления от отправлений не зависят: читаются параллельно (ревью #594).
 	type accrued struct {
-		acc []markets.OzonAccrual
-		err error
+		acc     []markets.OzonAccrual
+		rets    []markets.OzonReturn
+		err     error // начисления
+		retsErr error
 	}
 	accCh := make(chan accrued, 1)
 	go func() {
-		acc, err := cl.Accruals(ctx, from, to)
-		accCh <- accrued{acc, err}
+		var r accrued
+		r.acc, r.err = cl.Accruals(ctx, from, to)
+		r.rets, r.retsErr = cl.Returns(ctx, from, to)
+		accCh <- r
 	}()
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
@@ -139,12 +143,29 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	v := shopViewOf(rep)
 	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
-	if r := <-accCh; r.err != nil {
-		v.Economy = &economyView{Err: economyErr(c.Name, r.err)} // товары остаются: отказ — только в финансах
-	} else {
+	r := <-accCh
+	switch {
+	case r.err != nil:
+		why := economyErr(c.Name, r.err) // товары остаются: отказ — только в финансах
+		v.Economy = &economyView{Err: why}
+		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + why}
+	case r.retsErr != nil:
 		v.Economy = economyOf(markets.OzonEconomy(r.acc))
+		v.Losses = &lossesView{Err: "возвраты не загрузились: " + economyErr(c.Name, r.retsErr)}
+	default:
+		v.Economy = economyOf(markets.OzonEconomy(r.acc))
+		v.Losses = lossesOf(markets.OzonLosses(posts, r.acc, r.rets, now))
 	}
 	return v, nil
+}
+
+// lossesOf turns the losses into the window's rows.
+func lossesOf(ls []markets.ShopLoss) *lossesView {
+	v := &lossesView{Rows: []lossRow{}}
+	for _, l := range ls {
+		v.Rows = append(v.Rows, lossRow{Kind: string(l.Kind), Posting: l.Posting, SKU: l.SKU, Name: l.Name, Price: l.Price, Since: l.Since.Format("02.01.2006")})
+	}
+	return v
 }
 
 // economyErr names a refusal of the accruals: тот же ключ только что прочитал
