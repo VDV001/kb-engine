@@ -137,7 +137,10 @@ func TestClient_returns(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Filter struct {
-				Date struct{ TimeFrom, TimeTo string } `json:"logistic_return_date"`
+				Date struct {
+					TimeFrom string `json:"time_from"`
+					TimeTo   string `json:"time_to"`
+				} `json:"logistic_return_date"`
 			} `json:"filter"`
 			Limit  int   `json:"limit"`
 			LastID int64 `json:"last_id"`
