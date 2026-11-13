@@ -4090,7 +4090,7 @@ paintThemeBtn();
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
 const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut", feed: "bars", heat: "calls" }, feedSel: null, cal: null, calDay: null, money: null };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3" };
+const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3", forecast: "--z-sp6" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const stNum = (n) => Math.round(n).toLocaleString("ru-RU");
 const stTok = (n) => (n >= 1e6 ? (n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " млн" : n >= 1e3 ? (n / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " тыс" : stNum(n));
@@ -5215,6 +5215,7 @@ function mkSeasonLabel() {
   return `пик в ${MK_IN[m]}-${MK_IN[last]}`;
 }
 function mkRender() {
+  if ($('[data-mk-tab="niche"]').getAttribute("aria-selected") !== "true") return; // «Ниша» нарисуется при возвращении на вкладку
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
   $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
@@ -5350,7 +5351,7 @@ function mkRenderCard() {
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
-    `<div class="row"><button class="btn primary" type="button" aria-disabled="true"${mkTip("Прогноз — следующий шаг", "прогноз продаж этой ниши по месяцам и дата пика появятся с экраном «Прогноз»")}>Прогноз по этой нише</button>` +
+    `<div class="row"><button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
     `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
 }
 // mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
@@ -5424,6 +5425,269 @@ $("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb &
 $("#mk-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });
+// --- Маркеты → Прогноз (#580 шаг 2) -----------------------------------------------
+// Три файла, расчет формулой в Go (MarketsForecast), итоги, график по дням.
+// Окно помнит только пути — в localStorage, удобство одного Мака.
+const fc = { paths: ["", "", ""], v: null, niche: "", busy: false };
+const FC_KEY = "dvk.markets.forecast";
+const FC_SLOTS = [
+  ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики: продажи ниши по дням за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025"],
+  ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка за последние недели — например, сен-окт 2026"],
+  ["3 · Свои продажи", "Свои продажи", "отчет площадки или своя таблица: дата и количество за те же недели; позже — из подключения Ozon и Wildberries"],
+];
+const FC_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
+const fcDate = (s) => new Date(s + "T00:00:00");
+const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.getMonth()]}, ${FC_WD[d.getDay()]}`; };
+const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
+function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
+// mkTab переключает «Ниша» и «Прогноз»; «План» и «Подключения» — следующие шаги.
+function mkTab(id) {
+  for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
+  for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
+  if (id === "forecast") fcRender(); else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
+}
+$("#markets-view").addEventListener("click", (e) => {
+  const t = e.target.closest("[data-mk-tab]");
+  if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
+  const go = e.target.closest("[data-mk-go-fc]");
+  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); }
+});
+function fcRender() {
+  $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
+  $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
+    const p = fc.paths[i], info = fc.v && fc.v.files[i];
+    const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
+    return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
+      `<span class="name"${p ? mkTip("Файл", p) : ""}>${esc(p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(meta)}</span>` +
+      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p ? "Другой файл…" : "Выбрать файл…"}</button></div>`;
+  }).join("");
+  const v = fc.v;
+  $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
+  if (v) { fcKpis(v); fcChart(v); }
+}
+$("#mk-files").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-fc-pick]"); if (!b) return;
+  hideTip();
+  if (!native() || !native().MarketsPickFileTitled) return mkErr("Прогноз работает в окне приложения.");
+  let p = "";
+  try { p = await native().MarketsPickFileTitled(b.dataset.fcTitle); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
+  if (!p) return;
+  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+});
+$("#mk-fc-go").addEventListener("click", async () => {
+  hideTip();
+  if (fc.busy) return;
+  if (!native() || !native().MarketsForecast) return mkErr("Прогноз работает в окне приложения.");
+  const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
+  if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
+  mkErr(""); fc.busy = true; $("#mk-fc-go").textContent = "Считаю…";
+  try { fc.v = await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
+  fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
+  fcRender();
+});
+// «Посчитать моделью»: первое нажатие говорит, что уйдет провайдеру; второе — отправляет.
+fc.ask = false;
+$("#mk-fc-model").addEventListener("click", async () => {
+  hideTip();
+  if (fc.busy) return;
+  if (!native() || !native().MarketsModelForecast) return mkErr("Расчет моделью работает в окне приложения.");
+  const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
+  if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
+  const box = $("#mk-model");
+  if (!fc.ask) {
+    fc.ask = true;
+    box.hidden = false;
+    box.innerHTML = `<h4>Отправить модели?</h4><p class="warn">Модели чата уйдут только суммы продаж по неделям из трех файлов и их периоды — без названий товаров, продавцов и файлов. Это вызов модели за деньги, он появится в «Статистике» как «Прогноз продаж». Нажмите «Посчитать моделью» еще раз, чтобы отправить.</p>`;
+    $("#mk-fc-model").textContent = "Отправить модели";
+    return;
+  }
+  fc.ask = false; fc.busy = true; mkErr("");
+  $("#mk-fc-model").textContent = "Модель считает…";
+  box.innerHTML = '<p class="warn">Модель считает…</p>';
+  try { fcModel(await native().MarketsModelForecast(...fc.paths, true)); }
+  catch (err) { box.innerHTML = `<h4>Модель не посчитала</h4><p class="warn">${esc(errText(err))}</p>`; }
+  fc.busy = false; $("#mk-fc-model").textContent = "Посчитать моделью";
+});
+function fcModel(m) {
+  const pct = (x) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x * 100)) + " %";
+  $("#mk-model").innerHTML = `<h4${mkTip("Расчет модели", "модель " + m.model + " посчитала по тем же суммам по неделям; формула выше проверена тестами, модель — нет")}>Расчет модели ${esc(m.model)} — перепроверьте</h4>` +
+    `<p class="warn">Модель считает на глаз: ее числа нельзя проверить тестом, а формула выше проверена. Если расхождение больше 15 %, верьте формуле и спросите модель, почему она думает иначе.</p>` +
+    `<table><thead><tr><th>Месяц</th><th>модель</th><th>формула</th><th>расхождение</th></tr></thead><tbody>` +
+    m.months.map((x) => `<tr><td>${esc(x.label)}</td><td>${fmt(x.model)} шт</td><td>${x.formula ? fmt(x.formula) + " шт" : "—"}</td><td class="${Math.abs(x.diff) > 0.15 ? "far" : ""}">${x.formula ? pct(x.diff) : "нет в формуле"}</td></tr>`).join("") +
+    `</tbody></table><p>Пик по модели: <b>${esc(fcDay(m.peak))}</b>${fc.v ? ` · по формуле: ${esc(fcDay(fc.v.peak.day))}` : ""}</p>` +
+    (m.note ? `<p class="warn">Модель: ${esc(m.note)}</p>` : "");
+}
+function fcKpis(v) {
+  const pct = (x) => (x * 100).toFixed(1).replace(".", ",") + " %";
+  const months = v.months.map((m) => `<div class="mk-kpi"${mkTip(m.label + ", прогноз", "сумма прогноза по дням месяца; диапазон — из разброса прошлого года")}><div class="k">${esc(m.label[0].toUpperCase() + m.label.slice(1))}, прогноз</div>` +
+    `<div class="v">${fmt(m.value)} шт</div><div class="s">${fmt(m.lo)}–${fmt(m.hi)}</div></div>`).join("");
+  const g = v.growth, gs = (g > 0 ? "+" : g < 0 ? "−" : "") + Math.abs(Math.round(g * 100)) + " %";
+  $("#mk-kpis").innerHTML = months +
+    `<div class="mk-kpi"${mkTip("Пик продаж", "день с наибольшим прогнозом; рядом стоит проверить акции площадки")}><div class="k">Пик продаж</div><div class="v hl">${esc(fcDay(v.peak.day))}</div><div class="s">≈ ${fmt(Math.round(v.peak.value))} шт за день</div></div>` +
+    `<div class="mk-kpi"${mkTip("Ваша доля ниши", "Ваши продажи в штуках к продажам ниши за те же дни из файлов 2 и 3")}><div class="k">Ваша доля ниши</div><div class="v">${pct(v.share)}</div><div class="s">по штукам, ${esc(v.files[2].from)}–${esc(v.files[2].to)}</div></div>` +
+    `<div class="mk-kpi"${mkTip("Рост ниши", "продажи ниши сейчас к тем же дням прошлого года")}><div class="k">Рост ниши к году</div><div class="v">${gs}</div><div class="s">по файлам 1 и 2</div></div>`;
+}
+function fcChart(v) {
+  const W = 920, H = 240, padL = 40, padB = 22, padT = 18, n = v.days.length;
+  const top = Math.max(...v.days.map((d) => d.hi), ...v.lastYear.map((d) => d.value), 1);
+  const x = (i) => padL + (n > 1 ? (i * (W - padL - 8)) / (n - 1) : 0), y = (val) => padT + (H - padT - padB) * (1 - val / top);
+  const step = n > 1 ? (W - padL - 8) / (n - 1) : 0;
+  const pts = (arr, k) => arr.map((d, i) => `${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(" ");
+  const band = v.days.map((d, i) => `${x(i).toFixed(1)},${y(d.hi).toFixed(1)}`).join(" ") + " " + v.days.map((d, i) => `${x(i).toFixed(1)},${y(d.lo).toFixed(1)}`).reverse().join(" ");
+  const we = v.days.map((d, i) => { const wd = fcDate(d.day).getDay(); return wd === 0 || wd === 6 ? `<rect class="we" x="${(x(i) - step / 2).toFixed(1)}" y="${padT}" width="${step.toFixed(1)}" height="${H - padT - padB}"/>` : ""; }).join("");
+  const pi = v.days.findIndex((d) => d.day === v.peak.day);
+  const ticks = v.days.map((d, i) => { const dt = fcDate(d.day); return dt.getDate() === 1 || dt.getDate() % 7 === 1 ? `<text class="ax" x="${x(i).toFixed(1)}" y="${H - 6}" text-anchor="middle">${dt.getDate()} ${MON_GEN[dt.getMonth()].slice(0, 3)}</text>` : ""; }).join("");
+  const yt = [0, 0.5, 1].map((f) => `<text class="ax" x="${padL - 6}" y="${(y(top * f) + 3).toFixed(1)}" text-anchor="end">${fmt(Math.round(top * f))}</text>`).join("");
+  const hits = v.days.map((d, i) => `<rect class="hit" x="${(x(i) - step / 2).toFixed(1)}" y="${padT}" width="${Math.max(step, 2).toFixed(1)}" height="${H - padT - padB}"` +
+    `${mkTip(fcDay(d.day), `прогноз ${fmt(Math.round(d.value))} шт · диапазон ${fmt(Math.round(d.lo))}–${fmt(Math.round(d.hi))} · прошлый год в Вашем масштабе ${fmt(Math.round(v.lastYear[i].value))}`)}/>`).join("");
+  $("#mk-chart").innerHTML = `<h4>Продажи по дням, ${esc(v.months.map((m) => m.label).join(" — "))}</h4>` +
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Прогноз продаж по дням">${we}<polygon class="band" points="${band}"/>` +
+    `<polyline class="ly" points="${pts(v.lastYear, "value")}"/><polyline class="fc" points="${pts(v.days, "value")}"/>` +
+    (pi >= 0 ? `<circle class="pk" cx="${x(pi).toFixed(1)}" cy="${y(v.days[pi].value).toFixed(1)}" r="4"/><text class="pkl" x="${x(pi).toFixed(1)}" y="${(y(v.days[pi].value) - 9).toFixed(1)}" text-anchor="middle">пик</text>` : "") +
+    `${ticks}${yt}${hits}</svg>` +
+    `<div class="mk-legend"><span><i class="fc"></i>прогноз, штук</span><span><i class="band"></i>диапазон</span><span><i class="ly"></i>прошлый год, кривая ниши в Вашем масштабе</span><span>серым — выходные</span></div>`;
+}
+// --- Маркеты → Магазин (#580) ----------------------------------------------------
+// Отчет Ozon «По товарам» читает Go (MarketsShop): доли, проблемы и счет по ним
+// считает домен; окно показывает и объясняет. Помнит только путь — в localStorage.
+const sh = { v: null, q: "", issue: "", sort: "ordered", dir: -1, sel: 0, first: true };
+const SH_KEY = "dvk.markets.shop";
+const SH_ISSUE = {
+  cancels: ["отменяют больше половины", "отменили больше половины заказов: чаще всего товара нет на складе к сроку или долгая доставка"],
+  stock: ["кончается остаток", "Ozon советует срочно поставить или товара не было на складе неделю и больше из последних четырех"],
+  returns: ["много возвратов", "вернули больше 10 % заказов: смотрите размеры, фото и описание"],
+  ads: ["дорогая реклама", "ДРР больше 15 %: реклама съедает заметную часть выручки"],
+  rating: ["рейтинг ниже 4,5", "рейтинг ниже 4,5 при отзывах: читайте отзывы, что не нравится"],
+};
+// Колонки таблицы: [ключ, подпись, наше пояснение, поле подсказки Ozon].
+const SH_COLS = [
+  ["ordered", "Заказано", "заказано штук за период, включая отмены и возвраты", "ordered"],
+  ["buyout", "Выкуп", "выкуплено к заказанному: сколько дошло до покупателя и осталось у него", "boughtOut"],
+  ["cancel", "Отмены", "отменено к заказанному", "cancelled"],
+  ["return", "Возвраты", "возвращено к заказанному", "returned"],
+  ["stock", "Остаток", "штук на складах на конец периода", "stock"],
+  ["daysOut", "Без остатка", "дней без товара на складах из последних 28", "daysOut"],
+  ["avgPrice", "Цена", "средняя цена реализации, ₽", "avgPrice"],
+  ["drr", "ДРР", "доля расходов на рекламу в выручке", "drr"],
+  ["rating", "Рейтинг", "оценка товара на конец периода", "rating"],
+];
+const shPct = (x) => Math.round(x * 100) + " %";
+function shVal(k, p) {
+  switch (k) {
+    case "buyout": case "cancel": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
+    case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
+    case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
+    case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
+    default: return fmt(Math.round(p[k] || 0));
+  }
+}
+const shHint = (k) => { const c = SH_COLS.find((x) => x[0] === k); const oz = c && sh.v && sh.v.hints[c[3]]; return (c ? c[2] : "") + (oz ? " · Ozon: " + oz : ""); };
+function shSave() { try { localStorage.setItem(SH_KEY, sh.v.path); } catch (_) { /* окно просто не вспомнит отчет */ } }
+async function shRead(path) {
+  mkErr("");
+  try { sh.v = await native().MarketsShop(path); sh.sel = 0; shSave(); } catch (e) { mkErr("Не прочитал отчет: " + errText(e)); }
+  shRender();
+}
+async function openShop() {
+  shRender();
+  if (!sh.first) return;
+  sh.first = false;
+  let p = ""; try { p = localStorage.getItem(SH_KEY) || ""; } catch (_) { /* нет хранилища */ }
+  if (p && native() && native().MarketsShop) await shRead(p);
+}
+$("#sh-open").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsPickFileTitled) return mkErr("Магазин работает в окне приложения.");
+  let p = "";
+  try { p = await native().MarketsPickFileTitled("Отчет Ozon «По товарам»"); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
+  if (p) { sh.issue = ""; sh.q = ""; $("#sh-q").value = ""; await shRead(p); }
+});
+function shRender() {
+  const v = sh.v;
+  $("#sh-empty").hidden = !!v;
+  for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
+  $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
+  if (!v) return;
+  const t = v.total, urgent = v.products.filter((p) => p.urgent).length;
+  const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
+  $("#sh-kpis").innerHTML =
+    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн.`, "", shHint("ordered")) +
+    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт`, t.buyout < 0.5 ? "bad" : "", shHint("buyout")) +
+    kpi("Отмены", shPct(t.cancel), `отменено ${fmt(t.cancelled)} шт`, t.cancel > 0.5 ? "bad" : "", shHint("cancel")) +
+    kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return")) +
+    kpi("Остаток", fmt(t.stock) + " шт", t.daysOutOf ? `без остатка ${t.daysOut} из ${t.daysOutOf} дней` : "на конец периода", t.daysOut >= 7 ? "bad" : "", shHint("stock")) +
+    kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара");
+  $("#sh-chips").innerHTML = [["", "все товары", "показать все товары отчета"], ...Object.keys(SH_ISSUE).filter((k) => v.counts[k]).map((k) => [k, SH_ISSUE[k][0], SH_ISSUE[k][1]])]
+    .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
+  shTable();
+  const p = v.problems;
+  $("#sh-probs").hidden = !p.length;
+  $("#sh-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
+  $("#sh-probs-list").innerHTML = p.map((x) => `<li>строка ${x.row}: ${esc(x.reason)}</li>`).join("");
+}
+function shList() {
+  const fold = (t) => t.toLowerCase().replace(/ё/g, "е"), q = fold(sh.q.trim()), ps = sh.v.products, k = sh.sort;
+  return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)))
+    .sort((a, b) => (k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru") : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
+}
+function shTable() {
+  const ps = sh.v.products, list = shList();
+  if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
+  const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
+  const bad = (k, p) => (k === "cancel" && p.cancel > 0.5) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
+  $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${SH_COLS.map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+      SH_COLS.map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
+  $("#sh-none").hidden = list.length > 0;
+  shCard();
+}
+// shWhy — выводы по товару из тех же чисел, что в таблице.
+function shWhy(p) {
+  const out = [];
+  if (p.issues.includes("cancels")) out.push(`отменили ${shPct(p.cancel)} заказов (${fmt(p.cancelled)} из ${fmt(p.ordered)})${p.daysOut ? ` — и товара не было ${p.daysOut} из ${p.daysOutOf} дней: похоже, отменяют из-за нехватки` : ""}`);
+  if (p.urgent) out.push(`Ozon советует срочно поставить${p.supplyQty ? ` ${fmt(p.supplyQty)} шт` : ""}; остаток ${fmt(p.stock)} шт`);
+  else if (p.issues.includes("stock")) out.push(`товара не было ${p.daysOut} из ${p.daysOutOf} дней; остаток ${fmt(p.stock)} шт`);
+  if (p.issues.includes("returns")) out.push(`вернули ${shPct(p.return)} заказов: проверьте размерную сетку и фото`);
+  if (p.issues.includes("ads")) out.push(`реклама — ${shPct(p.drr)} выручки`);
+  if (p.issues.includes("rating")) out.push(`рейтинг ${String(p.rating).replace(".", ",")} при ${fmt(p.reviews)} отзывах`);
+  if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : "заказов за период не было");
+  return out;
+}
+function shCard() {
+  const p = sh.v.products[sh.sel];
+  if (!p) { $("#sh-card").innerHTML = ""; return; }
+  const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
+    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽`, shHint("ordered")], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
+    ["Выкуплено", `${fmt(p.boughtOut)} шт · ${shPct(p.buyout)}`, shHint("buyout")], ["Отменено", `${fmt(p.cancelled)} шт · ${shPct(p.cancel)}`, shHint("cancel")],
+    ["Возвращено", `${fmt(p.returned)} шт · ${shPct(p.return)}`, shHint("return")], ["Остаток", fmt(p.stock) + " шт", shHint("stock")],
+    ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
+    ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
+    `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+}
+$("#mk-shop").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-sh-issue]");
+  if (c) { hideTip(); sh.issue = c.dataset.shIssue; shRender(); return; }
+  const s = e.target.closest("[data-sh-sort]");
+  if (s) {
+    const k = s.dataset.shSort === "issues" ? "cancel" : s.dataset.shSort;
+    if (sh.sort === k) sh.dir = -sh.dir; else { sh.sort = k; sh.dir = k === "name" ? 1 : -1; }
+    shTable(); return;
+  }
+  const tr = e.target.closest("[data-sh-n]");
+  if (tr) { sh.sel = +tr.dataset.shN; shTable(); }
+});
+$("#sh-table").addEventListener("keydown", (e) => {
+  const tr = e.target.closest("[data-sh-n]"); if (!tr) return;
+  const sib = e.key === "ArrowDown" ? tr.nextElementSibling : e.key === "ArrowUp" ? tr.previousElementSibling : null;
+  if (!sib) return;
+  e.preventDefault(); sh.sel = +sib.dataset.shN; shTable();
+  const now = document.querySelector(`[data-sh-n="${sh.sel}"]`); if (now) now.focus();
+});
+$("#sh-q").addEventListener("input", (e) => { sh.q = e.target.value; if (sh.v) shTable(); });
+$("#sh-q").addEventListener("keydown", (e) => { if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; sh.q = ""; shTable(); } });
 // «Оформление → Маркеты» (accents.look mk-*): палитра, свои цвета, анимация,
 // вид графика и плотность строк. Владелец 13.11: гибкость, как у Артефактов.
 const MK_ANIMS = [["full", "перелив при наведении"], ["none", "без анимации"]];
