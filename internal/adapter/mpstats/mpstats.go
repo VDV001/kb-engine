@@ -206,3 +206,44 @@ func statusErr(status int) error {
 	}
 	return fmt.Errorf("MPStats ответил %d", status)
 }
+
+// currentCategory — строка итога самой категории в ответе подкатегорий: не ниша.
+const currentCategory = "Текущая категория"
+
+// Subcategory — ниша категории за период: продажи и выручка за весь период,
+// продавцы — с продажами.
+type Subcategory struct {
+	Name     string  `json:"name"`
+	Sales    float64 `json:"sales"`
+	Revenue  float64 `json:"revenue"`
+	Sellers  int     `json:"sellers_with_sells"`
+	AvgPrice float64 `json:"avg_price"`
+}
+
+// Subcategories returns the category's direct subcategories for days from..to.
+func (c Client) Subcategories(ctx context.Context, path string, from, to time.Time) ([]Subcategory, error) {
+	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
+	var rows []Subcategory
+	if err := c.get(ctx, "/api/oz/get/category/subcategories", q, &rows); err != nil {
+		return nil, err
+	}
+	return slices.DeleteFunc(rows, func(s Subcategory) bool { return s.Name == currentCategory }), nil
+}
+
+// Categories returns the paths of all Ozon categories, по алфавиту.
+func (c Client) Categories(ctx context.Context) ([]string, error) {
+	var rows []struct {
+		Path string `json:"path"`
+	}
+	if err := c.get(ctx, "/api/oz/get/categories", nil, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Path != "" {
+			out = append(out, r.Path)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
+}

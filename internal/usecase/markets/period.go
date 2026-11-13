@@ -1,6 +1,12 @@
 package markets
 
-import "time"
+import (
+	"cmp"
+	"slices"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/domain"
+)
 
 // Выбранные дни «Магазина» (#580): окно загружает кабинет за 90 дней один раз
 // и режет загруженное по дням, без новых запросов к Ozon. Оба края включительно.
@@ -30,4 +36,48 @@ func PostingsIn(posts []OzonPosting, from, to time.Time) []OzonPosting {
 // UTC), поэтому сравнивается его дата, а не мгновение в зоне окна.
 func AccrualsIn(acc []OzonAccrual, from, to time.Time) []OzonAccrual {
 	return inDays(acc, from, to, func(a OzonAccrual) (time.Time, bool) { return a.Day.UTC(), true })
+}
+
+// NicheSale — ниша категории из сервиса аналитики за период.
+type NicheSale struct {
+	Name           string
+	Sales, Revenue float64 // за весь период
+	Sellers        int     // с продажами
+}
+
+// MPStatsNiches builds niches of category parent from MPStats (#580): продажи
+// и выручка — в месяц, цена — выручка на штуку, рост — к тем же дням год
+// назад (prev), если тогда были продажи; имя — полный путь категории, по нему
+// «Прогноз» берет нишу из MPStats. Богатые сначала.
+func MPStatsNiches(parent string, cur, prev []NicheSale, days int) (Table, error) {
+	if days <= 0 {
+		return Table{}, ErrOzonPeriod
+	}
+	before := map[string]float64{}
+	for _, p := range prev {
+		before[p.Name] = p.Sales
+	}
+	sorted := slices.Clone(cur)
+	slices.SortStableFunc(sorted, func(a, b NicheSale) int { return cmp.Compare(b.Revenue, a.Revenue) })
+	tb := Table{PeriodDays: days}
+	for _, n := range sorted {
+		v := map[domain.NicheColumn]float64{
+			domain.NicheSales:   n.Sales / float64(days) * daysPerMonth,
+			domain.NicheRevenue: n.Revenue / float64(days) * daysPerMonth,
+			domain.NicheSellers: float64(n.Sellers),
+		}
+		if n.Sales > 0 {
+			v[domain.NichePrice] = n.Revenue / n.Sales
+		}
+		if b := before[n.Name]; b > 0 {
+			v[domain.NicheGrowth] = n.Sales/b - 1
+		}
+		ni, err := domain.NewNiche(parent+"/"+n.Name, v)
+		if err != nil {
+			tb.Problems = append(tb.Problems, Problem{Reason: n.Name + ": " + err.Error()})
+			continue
+		}
+		tb.Niches = append(tb.Niches, ni)
+	}
+	return tb, nil
 }
