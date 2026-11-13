@@ -5397,10 +5397,10 @@ function mkRender() {
   if ($('[data-mk-tab="niche"]').getAttribute("aria-selected") !== "true") return; // «Ниша» нарисуется при возвращении на вкладку
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
-  $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}${mkIsMPS() && mk.mps ? ` · ${mk.mps.from.split("-").reverse().join(".")} – ${mk.mps.to.split("-").reverse().join(".")}` : ""}` : "";
+  $("#mk-file").textContent = tb ? `${mkIsMPS() ? tb.file : "Выгрузка " + tb.file} · ${fmt(tb.niches.length)} ${plural(tb.niches.length, "ниша", "ниши", "ниш")}${mkIsMPS() && mk.mps ? ` · ${mk.mps.from.split("-").reverse().join(".")} – ${mk.mps.to.split("-").reverse().join(".")}` : ""}` : "";
   if (mkIsMPS()) $("#mk-mps-bar").hidden = false;
   $("#mk-file").dataset.tipB = tb ? `${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят` : "";
-  $("#mk-cols").hidden = !tb;
+  $("#mk-cols").hidden = !tb || mkIsMPS(); // у MPStats колонок файла нет
   $("#mk-body").hidden = !tb || tb.needName;
   if (!tb) return;
   mkRenderCols();
