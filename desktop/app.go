@@ -441,6 +441,9 @@ func (a *App) AddOzonConnection(name, clientID, key string, share bool) (connRow
 	return a.settings.AddOzon(name, clientID, key, share)
 }
 
+// SetOzonShare allows or forbids the chat model the cabinet's numbers.
+func (a *App) SetOzonShare(id string, on bool) error { return a.settings.SetOzonShare(id, on) }
+
 // SetConnectionEnabled turns a connection of the window on or off.
 func (a *App) SetConnectionEnabled(id string, on bool) error { return a.google.SetEnabled(id, on) }
 

@@ -53,7 +53,7 @@ func (ShopTools) Specs() []ShopToolSpec {
 	return []ShopToolSpec{
 		{"shop_summary", "Сводка магазина за период: заказано (с отменами), выкуплено на сумму, отмены, отказы при получении, остаток и советы — что довезти, что лежит, где отказываются.",
 			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"}}}`},
-		{"shop_top", "Топ товаров: лучшие или худшие по заказам, выкупу на сумму, отказам при получении или отменам. Худшие по заказам — среди тех, что есть на складе.",
+		{"shop_top", "Топ товаров по заказам, выкупу на сумму, отказам при получении или отменам. order: best — лучшие (больше заказов и выкупа, меньше отказов и отмен), worst — худшие (меньше заказов и выкупа — среди тех, что на складе; больше отказов и отмен); без order — самые заметные: больше всего заказов, выкупа, отказов или отмен.",
 			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"},"by":{"type":"string","enum":["ordered","bought","refused","cancelled"]},"order":{"type":"string","enum":["best","worst"]},"n":{"type":"integer","minimum":1,"maximum":20}},"required":["by"]}`},
 		{"shop_supply", "Что довезти: товары, которых при нынешних продажах без отмен хватит меньше чем на две недели, и сколько штук на четыре.",
 			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"}}}`},
@@ -107,6 +107,9 @@ func shopSummary(d ShopData, r OzonReport) string {
 	fmt.Fprintf(&b, "заказано %s шт на %s ₽ (с отменами)\n", num(t.Ordered), num(t.OrderedSum))
 	fmt.Fprintf(&b, "выкуплено %s шт на %s ₽ (по цене продажи, до комиссии)\n", num(t.BoughtOut), num(t.BoughtOutSum))
 	fmt.Fprintf(&b, "отменено %s шт (%s), из них отказ при получении %s шт; остаток %s шт\n", num(t.Cancelled), pct(t.Cancelled, t.Ordered), num(t.Refused), num(t.Stock))
+	if n := len(r.Problems); n > 0 {
+		fmt.Fprintf(&b, "не учтено товаров: %d (%s) — скажи человеку, что сводка без них\n", n, r.Problems[0].Reason)
+	}
 	names := map[domain.ShopAdviceKind]string{domain.AdviceRefusals: "отказываются при получении", domain.AdviceSupply: "довезти",
 		domain.AdviceDeadStock: "лежит без заказов", domain.AdviceKeep: "продается чисто"}
 	for _, a := range domain.AdviseShop(r.Products) {
@@ -119,26 +122,27 @@ func shopSummary(d ShopData, r OzonReport) string {
 	return b.String()
 }
 
+// topKeys — по чему строится топ.
+var topKeys = map[string]func(domain.ShopProductData) float64{
+	"ordered": func(d domain.ShopProductData) float64 { return d.Ordered }, "bought": func(d domain.ShopProductData) float64 { return d.BoughtOutSum },
+	"refused": func(d domain.ShopProductData) float64 { return d.Refused }, "cancelled": func(d domain.ShopProductData) float64 { return d.Cancelled },
+}
+
 func shopTop(r OzonReport, a shopArgs) string {
-	key := map[string]func(domain.ShopProductData) float64{
-		"ordered": func(d domain.ShopProductData) float64 { return d.Ordered }, "bought": func(d domain.ShopProductData) float64 { return d.BoughtOutSum },
-		"refused": func(d domain.ShopProductData) float64 { return d.Refused }, "cancelled": func(d domain.ShopProductData) float64 { return d.Cancelled },
-	}[a.By]
+	key := topKeys[a.By]
 	if key == nil {
 		return "by — одно из ordered, bought, refused, cancelled"
 	}
-	worst := a.Order == "worst"
-	var ps []domain.ShopProductData
-	for _, p := range r.Products {
-		if d := p.Data(); !worst || d.Stock > 0 {
-			ps = append(ps, d)
-		}
-	}
+	// Для отказов и отмен «худшие» — где их больше (ревью #593); без order —
+	// самые заметные, по убыванию.
+	bad := a.By == "refused" || a.By == "cancelled"
+	desc := a.Order == "" || (a.Order == "worst") == bad
+	ps := topCandidates(r, bad, desc)
 	slices.SortStableFunc(ps, func(x, y domain.ShopProductData) int {
-		if worst {
-			return cmp.Compare(key(x), key(y))
+		if desc {
+			return cmp.Compare(key(y), key(x))
 		}
-		return cmp.Compare(key(y), key(x))
+		return cmp.Compare(key(x), key(y))
 	})
 	n := a.N
 	if n <= 0 || n > maxTop {
@@ -152,6 +156,20 @@ func shopTop(r OzonReport, a shopArgs) string {
 		return "товаров нет"
 	}
 	return b.String()
+}
+
+// topCandidates: снизу по заказам — только то, что на складе; снизу по
+// отказам — только то, что заказывали.
+func topCandidates(r OzonReport, bad, desc bool) []domain.ShopProductData {
+	var ps []domain.ShopProductData
+	for _, p := range r.Products {
+		d := p.Data()
+		if !desc && ((!bad && d.Stock <= 0) || (bad && d.Ordered < 1)) {
+			continue
+		}
+		ps = append(ps, d)
+	}
+	return ps
 }
 
 func shopSupply(r OzonReport) string {
@@ -213,48 +231,80 @@ func weekStart(t time.Time, loc *time.Location) time.Time {
 	return day.AddDate(0, 0, -((int(day.Weekday()) + 6) % 7))
 }
 
-// weeks — продажи SKU по неделям с понедельника: без отмен, отменено, средняя цена.
+// weeks — заказы SKU по неделям с понедельника ВКЛЮЧАЯ отмены, из них
+// отменено, средняя цена: у свежих недель отмены еще не закрылись, и ряд «без
+// отмен» перекосил бы их против старых (как OzonDaily, ревью #593).
+// Неполная неделя на краю окна подписана числом дней — это не падение.
 func weeks(d ShopData, sku string) string {
-	type wk struct{ sold, canc, sum float64 }
-	by := map[time.Time]*wk{}
-	for _, p := range d.Posts {
-		for _, it := range p.Items {
-			if it.SKU != sku || p.At.IsZero() {
-				continue
-			}
-			k := weekStart(p.At, d.Loc)
-			w := by[k]
-			if w == nil {
-				w = &wk{}
-				by[k] = w
-			}
-			q := float64(it.Qty)
-			if p.Status == "cancelled" {
-				w.canc += q
-				continue
-			}
-			w.sold += q
-			w.sum += q * it.Price
-		}
-	}
+	by := weekCounts(d, sku)
 	var b strings.Builder
-	b.WriteString("  по неделям (без отмен · отменено · средняя цена):\n")
+	b.WriteString("  по неделям (заказано с отменами · из них отменено · средняя цена):\n")
 	first, last := weekStart(d.From, d.Loc), weekStart(d.To, d.Loc)
 	if earliest := last.AddDate(0, 0, -7*(skuWeeks-1)); first.Before(earliest) {
 		first = earliest
 	}
 	for w := first; !w.After(last); w = w.AddDate(0, 0, 7) {
 		x := by[w]
-		if x == nil {
-			x = &wk{}
-		}
 		price := "—"
-		if x.sold > 0 {
-			price = num(x.sum/x.sold) + " ₽"
+		if x.ordered > 0 {
+			price = num(x.sum/x.ordered) + " ₽"
 		}
-		fmt.Fprintf(&b, "  %s: %s шт · %s · %s\n", w.Format("02.01"), num(x.sold), num(x.canc), price)
+		part := ""
+		if n := partDays(w, d); n < 7 {
+			part = fmt.Sprintf(" (неполная, %d дн.)", n)
+		}
+		fmt.Fprintf(&b, "  %s: %s шт · %s · %s%s\n", w.Format("02.01"), num(x.ordered), num(x.canc), price, part)
 	}
 	return b.String()
+}
+
+// weekCount — заказы недели: штук с отменами, из них отменено, сумма.
+type weekCount struct{ ordered, canc, sum float64 }
+
+// weekCounts sums the SKU's orders by week within the window.
+func weekCounts(d ShopData, sku string) map[time.Time]weekCount {
+	from, to := dayOf(d.From, d.Loc), dayOf(d.To, d.Loc)
+	by := map[time.Time]weekCount{}
+	for _, p := range d.Posts {
+		if p.At.IsZero() {
+			continue
+		}
+		if day := dayOf(p.At, d.Loc); day.Before(from) || day.After(to) {
+			continue
+		}
+		for _, it := range p.Items {
+			if it.SKU != sku {
+				continue
+			}
+			k := weekStart(p.At, d.Loc)
+			w, q := by[k], float64(it.Qty)
+			w.ordered += q
+			w.sum += q * it.Price
+			if p.Status == "cancelled" {
+				w.canc += q
+			}
+			by[k] = w
+		}
+	}
+	return by
+}
+
+// dayOf — день t в часовом поясе loc, полночь.
+func dayOf(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
+}
+
+// partDays — сколько дней недели с понедельника w попало в окно.
+func partDays(w time.Time, d ShopData) int {
+	first, last := w, w.AddDate(0, 0, 6)
+	if from := dayOf(d.From, d.Loc); from.After(first) {
+		first = from
+	}
+	if to := dayOf(d.To, d.Loc); to.Before(last) {
+		last = to
+	}
+	return calendarDays(first, last)
 }
 
 func productLine(d domain.ShopProductData) string {

@@ -33,6 +33,8 @@ type connRow struct {
 	// в этом разделе. Остальные правятся там, где ими пользуются.
 	Own     bool `json:"own,omitempty"`
 	Enabled bool `json:"enabled,omitempty"`
+	// Share — данные подключения разрешено давать модели чата (кабинет Ozon).
+	Share bool `json:"share,omitempty"`
 }
 
 // Connections lists the window's accesses: модель чата, затем kb-серверы в
