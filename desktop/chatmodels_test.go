@@ -50,8 +50,8 @@ func TestModelChoices(t *testing.T) {
 	for _, m := range v.Recent {
 		recent = append(recent, m.ID)
 	}
-	// Последние по времени вызова, без повторов, не больше трех.
-	if want := []string{"google/gemini-3-flash", "anthropic/claude-haiku-5.5", "openai/gpt-5-mini"}; !slices.Equal(recent, want) {
+	// Текущая первой, дальше по времени вызова, без повторов, всего не больше трех.
+	if want := []string{"anthropic/claude-haiku-5.5", "google/gemini-3-flash", "openai/gpt-5-mini"}; !slices.Equal(recent, want) {
 		t.Errorf("recent = %v, want %v", recent, want)
 	}
 	all := []string{}
@@ -76,6 +76,17 @@ func TestModelChoices(t *testing.T) {
 				t.Errorf("unknown price must stay empty: %+v", m)
 			}
 		}
+	}
+
+	// Журнала еще нет: текущая модель все равно сверху, а не среди сотен.
+	fresh := modelChoices("anthropic/claude-sonnet-5.5", pricesURL, nil, gw, nil)
+	if len(fresh.Recent) != 1 || fresh.Recent[0].ID != "anthropic/claude-sonnet-5.5" || fresh.Recent[0].In != "3" {
+		t.Errorf("recent without journal = %+v, want the current model with its price", fresh.Recent)
+	}
+	// Текущая, которой давно не пользовались, — первой, последних всего три.
+	old := modelChoices("anthropic/claude-sonnet-5.5", pricesURL, calls[1:], gw, nil)
+	if len(old.Recent) != 3 || old.Recent[0].ID != "anthropic/claude-sonnet-5.5" {
+		t.Errorf("recent = %+v, want current first and three in all", old.Recent)
 	}
 
 	// Не шлюз Vercel: его список моделей к этому адресу не относится.
