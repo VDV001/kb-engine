@@ -7,6 +7,7 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
+	"iter"
 	"os"
 	"path/filepath"
 	"strings"
@@ -102,3 +103,6 @@ func delimiter(b []byte) rune {
 	}
 	return ','
 }
+
+// Rows is not written yet.
+func Rows(path string) iter.Seq2[[]string, error] { return func(func([]string, error) bool) {} }
