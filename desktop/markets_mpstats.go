@@ -37,22 +37,10 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 	if now != last {
 		return series, nil, errors.New("обе ниши — из MPStats: нажмите «Из MPStats» еще раз")
 	}
-	id, path, _ := strings.Cut(src, "|")
-	if strings.TrimSpace(path) == "" {
-		return series, nil, errors.New("не выбрана ниша: путь категории Ozon, как в MPStats")
-	}
-	c, ok := f.snapshot().cfg.Connection(id)
-	if !ok || c.Kind != desktopconfig.ConnMPStats {
-		return series, nil, errors.New("подключения MPStats нет — добавьте ключ в Настройках → Подключения")
-	}
-	if !c.Enabled {
-		return series, nil, fmt.Errorf("подключение «%s» выключено", c.Name)
-	}
-	key, err := f.tokens.Get(connKeyAccount(id))
+	cl, path, err := f.mpstatsSource(src, hc)
 	if err != nil {
-		return series, nil, errors.New("ключа MPStats нет в Связке ключей — добавьте его заново")
+		return series, nil, err
 	}
-	cl := mpstats.Client{BaseURL: f.mpstatsBase(), Token: key, HTTP: hc}
 	from, to := ozonWindow(today)
 	spans := [2][2]time.Time{{from.AddDate(-1, 0, 0), to.AddDate(-1, 0, mpstatsHorizon)}, {from, to}}
 	var files []forecastFile
@@ -76,4 +64,24 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 			From: got[0].Day.Format("02.01.2006"), To: got[len(got)-1].Day.Format("02.01.2006")})
 	}
 	return series, files, nil
+}
+
+// mpstatsSource resolves «<id>|<путь>» into a client with the saved key.
+func (f *folderSettings) mpstatsSource(src string, hc *http.Client) (mpstats.Client, string, error) {
+	id, path, _ := strings.Cut(src, "|")
+	if strings.TrimSpace(path) == "" {
+		return mpstats.Client{}, "", errors.New("не выбрана ниша: путь категории Ozon, как в MPStats")
+	}
+	c, ok := f.snapshot().cfg.Connection(id)
+	if !ok || c.Kind != desktopconfig.ConnMPStats {
+		return mpstats.Client{}, "", errors.New("подключения MPStats нет — добавьте ключ в Настройках → Подключения")
+	}
+	if !c.Enabled {
+		return mpstats.Client{}, "", fmt.Errorf("подключение «%s» выключено", c.Name)
+	}
+	key, err := f.tokens.Get(connKeyAccount(id))
+	if err != nil {
+		return mpstats.Client{}, "", errors.New("ключа MPStats нет в Связке ключей — добавьте его заново")
+	}
+	return mpstats.Client{BaseURL: f.mpstatsBase(), Token: key, HTTP: hc}, path, nil
 }
