@@ -267,6 +267,8 @@ func TestNichesMPStats(t *testing.T) {
 				return
 			}
 			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":1},{"name":"Куртки","sales":150,"revenue":3000,"sellers_with_sells":7},{"name":"Шарфы","sales":30,"revenue":300,"sellers_with_sells":2}]`))
+		case "/api/oz/get/category/sellers":
+			_, _ = w.Write([]byte(`[{"revenue":1500},{"revenue":100}]`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -280,7 +282,8 @@ func TestNichesMPStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 {
+	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
+		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
 		t.Errorf("view = %+v", v)
 	}
 	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-11-12", "2026-10-14", time.Now()); err == nil {
