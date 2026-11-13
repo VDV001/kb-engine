@@ -110,7 +110,11 @@ func shopSummary(d ShopData, r OzonReport) string {
 	names := map[domain.ShopAdviceKind]string{domain.AdviceRefusals: "отказываются при получении", domain.AdviceSupply: "довезти",
 		domain.AdviceDeadStock: "лежит без заказов", domain.AdviceKeep: "продается чисто"}
 	for _, a := range domain.AdviseShop(r.Products) {
-		fmt.Fprintf(&b, "совет — %s: %d товаров, %s шт\n", names[a.Kind], len(a.SKUs), num(a.Units))
+		units := ""
+		if a.Units > 0 { // у «продается чисто» штук нет
+			units = ", " + num(a.Units) + " шт"
+		}
+		fmt.Fprintf(&b, "совет — %s: %d товаров%s\n", names[a.Kind], len(a.SKUs), units)
 	}
 	return b.String()
 }
