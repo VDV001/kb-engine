@@ -1286,7 +1286,9 @@ $("#storage-list").addEventListener("click", async (e) => {
   } catch (err) { storageConfirm = null; showError(errText(err)); }
   renderStorage();
 });
-const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon" };
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon", mpstats: "MPStats" };
+// Итоги «Проверить» по id подключения: строка под подключением до перерисовки окна.
+const connChecks = {};
 let connConfirm = null;
 async function renderConnections() {
   const list = $("#conn-list");
@@ -1295,16 +1297,19 @@ async function renderConnections() {
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
   list.innerHTML = rows.map((r) => {
     const share = r.kind === "ozon" ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? "модель чата видит цифры магазина, они уходят ее провайдеру; нажмите — запретить" : "модель чата цифр магазина не видит; нажмите — разрешить: названия товаров, заказы и продажи уйдут провайдеру модели")}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
+    const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
     const acts = r.own
-      ? `${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
-      : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
+      ? `${chk}${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button>`
+      : `${chk}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
+    const ck = connChecks[r.id];
+    const ckLine = ck ? `<span class="conn-check${ck.busy ? "" : ck.ok ? " ok" : " bad"}" role="status">${ck.busy ? "проверяю…" : (ck.ok ? "✓ " : "✕ ") + esc(ck.note)}</span>` : "";
     const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${r.kind === "ozon" ? "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет." : "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться."}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
     <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
     <span class="st${r.ok ? " ok" : ""}">${esc(r.status)}</span>
     <span class="d">${esc(r.detail)} · использует: ${esc((r.usedBy || []).join(", "))}</span>
-    <span class="conn-acts">${acts}</span>${confirm}</li>`;
+    <span class="conn-acts">${acts}</span>${ckLine}${confirm}</li>`;
   }).join("");
 }
 async function openConnection(sec, id) {
@@ -1323,6 +1328,18 @@ $("#conn-list").addEventListener("click", async (e) => {
   if (b) return openConnection(b.dataset.goSec, b.dataset.goId);
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
+  const ck = e.target.closest("[data-conn-check]");
+  if (ck) {
+    const id = ck.dataset.connCheck;
+    hideTip();
+    connChecks[id] = { busy: true };
+    renderConnections();
+    let r;
+    try { r = await native().CheckConnection(id); } catch (err) { r = { ok: false, note: errText(err) }; }
+    connChecks[id] = r;
+    toast(r.ok ? "Проверено" : "Не прошла проверка", ` · «${name}»: ${r.note}`, null, r.ok ? "info" : "bad");
+    return renderConnections();
+  }
   try {
     const sh = e.target.closest("[data-conn-share]");
     if (sh) {
@@ -1338,12 +1355,37 @@ $("#conn-list").addEventListener("click", async (e) => {
     else if (e.target.closest("[data-conn-del-no]")) connConfirm = null;
     else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; toast("Удалено", ` · «${name}» и его ключ`, null, "del"); }
     else return;
-  } catch (err) { showError(errText(err)); }
+  } catch (err) { showError(errText(err)); toast("Не получилось", ` · «${name}»: ${errText(err)}`, null, "bad"); }
   renderConnections();
 });
 // maskConnKeys прячет набранные ключи подключений: после «Добавить» (удачного
 // или нет), при сворачивании формы и закрытии настроек — открытым ключ не остается.
-function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret"]) maskKey(id); }
+function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret", "conn-m-key"]) maskKey(id); }
+$("#conn-add-mpstats").addEventListener("click", () => {
+  maskConnKeys();
+  const f = $("#conn-mpstats");
+  f.hidden = !f.hidden;
+  $("#conn-add-mpstats").setAttribute("aria-expanded", String(!f.hidden));
+  if (!f.hidden) $("#conn-m-key").focus();
+});
+$("#conn-mpstats").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  maskConnKeys();
+  if (!native() || !native().AddMPStatsConnection) return void ($("#conn-m-note").textContent = "Подключения меняются в окне приложения.");
+  const go = $("#conn-m-go");
+  go.disabled = true;
+  $("#conn-m-note").textContent = "Проверяю ключ в MPStats…";
+  try {
+    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value);
+    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» возьмет нишу из MPStats.";
+    toast("Добавлено", ` · «${r.name}»: ключ MPStats принят`);
+    for (const id of ["#conn-m-name", "#conn-m-key"]) $(id).value = "";
+  } catch (err) {
+    $("#conn-m-note").textContent = errText(err);
+    toast("Не добавлено", " · " + errText(err), null, "bad");
+  } finally { go.disabled = false; }
+  renderConnections();
+});
 $("#conn-add-speech").addEventListener("click", () => {
   maskConnKeys();
   const f = $("#conn-speech");
@@ -1359,7 +1401,7 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Распознавание».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
-  } catch (err) { $("#conn-s-note").textContent = errText(err); }
+  } catch (err) { $("#conn-s-note").textContent = errText(err); toast("Не добавлено", ` · Сервер распознавания: ${errText(err)}`, null, "bad"); }
   maskConnKeys();
   renderConnections();
 });
@@ -1384,7 +1426,7 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
     $("#conn-o-share").checked = false;
-  } catch (err) { $("#conn-o-note").textContent = errText(err); }
+  } catch (err) { $("#conn-o-note").textContent = errText(err); toast("Не добавлено", ` · Кабинет Ozon: ${errText(err)}`, null, "bad"); }
   maskConnKeys();
   renderConnections();
 });
@@ -1411,6 +1453,7 @@ $("#conn-google").addEventListener("submit", async (e) => {
     $("#conn-add-google").setAttribute("aria-expanded", "false");
   } catch (err) {
     $("#conn-g-note").textContent = errText(err);
+    toast("Не подключено", ` · Google: ${errText(err)}`, null, "bad");
   } finally {
     go.disabled = false;
     renderConnections();

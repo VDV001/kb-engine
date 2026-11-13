@@ -805,6 +805,9 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
 .chat-model .key-field { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
+.conn-check { grid-column: 1 / -1; font-size: 12px; color: var(--z-muted); }
+.conn-check.ok { color: var(--z-ok); }
+.conn-check.bad { color: var(--z-bad); }
 .key-row { display: flex; gap: 6px; align-items: center; }
 .key-row input { flex: 1; min-width: 0; }
 .conn-google .key-row .reveal { align-self: stretch; width: 44px; height: auto; } /* поле подключений выше 30px: глаз в рост поля */
