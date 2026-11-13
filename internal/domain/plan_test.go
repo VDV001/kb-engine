@@ -88,8 +88,8 @@ func TestNewPlan_shortForPeak(t *testing.T) {
 
 // Провал — неделя, где спрос в день меньше 80 % среднего: скидка 10 %.
 func TestNewPlan_dip(t *testing.T) {
-	last, now, own := knownForecast(t)
-	last = series(t, day(2025, 9, 1), day(2025, 12, 31), func(d time.Time) float64 {
+	_, now, own := knownForecast(t)
+	last := series(t, day(2025, 9, 1), day(2025, 12, 31), func(d time.Time) float64 {
 		switch {
 		case d.Month() == time.December && d.Day() >= 14 && d.Day() <= 20:
 			return 100 // половина спроса — неделя 14-20.12.2026 (пн 14.12)
