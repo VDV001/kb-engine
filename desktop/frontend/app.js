@@ -5451,12 +5451,13 @@ $("#mk-q").addEventListener("keydown", (e) => {
 // --- Маркеты → Прогноз (#580 шаг 2) -----------------------------------------------
 // Три файла, расчет формулой в Go (MarketsForecast), итоги, график по дням.
 // Окно помнит только пути — в localStorage, удобство одного Мака.
-const fc = { paths: ["", "", ""], v: null, niche: "", busy: false };
+const fc = { paths: ["", "", ""], v: null, niche: "", busy: false, cabs: [] };
+const fcCabName = (id) => (fc.cabs.find((c) => c.id === id) || {}).name || "кабинет";
 const FC_KEY = "dvk.markets.forecast";
 const FC_SLOTS = [
   ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики: продажи ниши по дням за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025"],
   ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка за последние недели — например, сен-окт 2026"],
-  ["3 · Свои продажи", "Свои продажи", "отчет площадки или своя таблица: дата и количество за те же недели; позже — из подключения Ozon и Wildberries"],
+  ["3 · Свои продажи", "Свои продажи", "из кабинета Ozon по ключу (90 дней, без отмен) или отчет площадки и своя таблица: дата и количество за те же недели"],
 ];
 const FC_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 const fcDate = (s) => new Date(s + "T00:00:00");
@@ -5468,7 +5469,7 @@ function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths))
 function mkTab(id) {
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
-  if (id === "forecast") fcRender(); else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
+  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
@@ -5479,17 +5480,34 @@ $("#markets-view").addEventListener("click", (e) => {
 function fcRender() {
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
-    const p = fc.paths[i], info = fc.v && fc.v.files[i];
-    const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
+    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:");
+    const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to}${info.format === "ozon" ? " · заказы с отменами" : ""}${info.undated ? ` · без даты ${fmt(info.undated)}, не учтены` : ""} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
-      `<span class="name"${p ? mkTip("Файл", p) : ""}>${esc(p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(meta)}</span>` +
-      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p ? "Другой файл…" : "Выбрать файл…"}</button></div>`;
+      `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(p.slice(5)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
+      (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${"ozon:" + c.id === p ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
+      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
+      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` : "") + `</div>`;
   }).join("");
   const v = fc.v;
   $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
   if (v) { fcKpis(v); fcChart(v); }
 }
+$("#mk-files").addEventListener("change", (e) => {
+  if (e.target.id !== "fc-cab" || fc.busy) return;
+  fc.paths[2] = "ozon:" + e.target.value; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+});
 $("#mk-files").addEventListener("click", async (e) => {
+  if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
+  if (e.target.closest("#fc-ozon")) {
+    hideTip();
+    if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
+    const rows = await shCabinets();
+    fc.cabs = rows;
+    if (!rows.length) { await openSettings("conn"); return showOzonForm(); }
+    const cur = fc.paths[2].startsWith("ozon:") && rows.some((c) => "ozon:" + c.id === fc.paths[2]) ? fc.paths[2] : "ozon:" + rows[0].id;
+    fc.paths[2] = cur; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+    return;
+  }
   const b = e.target.closest("[data-fc-pick]"); if (!b) return;
   hideTip();
   if (!native() || !native().MarketsPickFileTitled) return mkErr("Прогноз работает в окне приложения.");
@@ -5673,8 +5691,8 @@ function shRender() {
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#sh-kpis").innerHTML =
-    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн.`, "", shHint("ordered")) +
-    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт`, t.buyout < 0.5 ? "bad" : "", shHint("buyout")) +
+    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн., с отменами`, "", shHint("ordered") + " · сумма заказов — не выручка: в нее входят отмены") +
+    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт${t.boughtSum ? ` на ${fmt(Math.round(t.boughtSum / 1e3))} тыс. ₽` : ""}`, t.buyout < 0.5 ? "bad" : "", shHint("buyout") + (t.boughtSum ? " · сумма — по цене продажи, до комиссии и логистики Ozon" : "")) +
     kpi("Отмены", shPct(t.cancel), `отменено ${fmt(t.cancelled)} шт`, t.cancel > 0.5 ? "bad" : "", shHint("cancel")) +
     (oz ? kpi("Отказ при получении", shPct(t.refuse), `отказались ${fmt(t.refused)} шт — часть отмен`, t.refuse >= SH_REFUSE ? "bad" : "", shHint("refuse"))
       : kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return"))) +
@@ -5745,13 +5763,14 @@ function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
   const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Артикул", p.article || "—", "артикул продавца: размер и цвет обычно в нем"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
-    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽`, shHint("ordered")], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
+    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽ с отменами`, shHint("ordered")],
+    ["Выкуплено на", p.boughtSum ? fmt(Math.round(p.boughtSum)) + " ₽" : "—", "по цене продажи, до комиссии и логистики Ozon"], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
     ["Выкуплено", `${fmt(p.boughtOut)} шт · ${shPct(p.buyout)}`, shHint("buyout")], ["Отменено", `${fmt(p.cancelled)} шт · ${shPct(p.cancel)}`, shHint("cancel")],
     ["Отказ при получении", `${fmt(p.refused)} шт · ${shPct(p.refuse)}`, shHint("refuse")],
     ["Возвращено", `${fmt(p.returned)} шт · ${shPct(p.return)}`, shHint("return")], ["Остаток", fmt(p.stock) + " шт", shHint("stock")],
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
-  const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении"];
+  const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
     `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }

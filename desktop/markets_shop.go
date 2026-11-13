@@ -20,6 +20,7 @@ type shopRow struct {
 	ABC        string   `json:"abc"`
 	PriceIndex string   `json:"priceIndex"`
 	OrderedSum float64  `json:"orderedSum"`
+	BoughtSum  float64  `json:"boughtSum"` // выкуплено на сумму; 0 — источник не знает
 	Ordered    float64  `json:"ordered"`
 	Delivered  float64  `json:"delivered"`
 	BoughtOut  float64  `json:"boughtOut"`
@@ -71,7 +72,7 @@ func share4(v float64) float64 { return math.Round(v*1e4) / 1e4 }
 
 func shopRowOf(p *domain.ShopProduct) shopRow {
 	d := p.Data()
-	r := shopRow{Name: d.Name, SKU: d.SKU, Article: d.Article, Scheme: d.Scheme, ABC: d.ABC, PriceIndex: d.PriceIndex, OrderedSum: d.OrderedSum,
+	r := shopRow{Name: d.Name, SKU: d.SKU, Article: d.Article, Scheme: d.Scheme, ABC: d.ABC, PriceIndex: d.PriceIndex, OrderedSum: d.OrderedSum, BoughtSum: d.BoughtOutSum,
 		Ordered: d.Ordered, Delivered: d.Delivered, BoughtOut: d.BoughtOut, Cancelled: d.Cancelled, Refused: d.Refused, Returned: d.Returned,
 		Buyout: share4(p.BuyoutRate()), Cancel: share4(p.CancelRate()), Refuse: share4(p.RefusedRate()), Return: share4(p.ReturnRate()),
 		AvgPrice: d.AvgPrice, DRR: d.DRR, Stock: d.Stock, SupplyQty: d.SupplyQty, Urgent: d.UrgentSupply,

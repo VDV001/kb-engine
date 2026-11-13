@@ -24,6 +24,7 @@ type OzonItem struct {
 // OzonPosting — отправление Ozon: схема FBO или FBS, статус и причина отмены.
 type OzonPosting struct {
 	Scheme, Status, CancelReason string
+	At                           time.Time // когда отправление ушло в обработку
 	Items                        []OzonItem
 }
 
@@ -90,6 +91,7 @@ func OzonShop(posts []OzonPosting, stock []OzonStock, from, to time.Time) (OzonR
 		total.Cancelled += d.Cancelled
 		total.Refused += d.Refused
 		total.OrderedSum += d.OrderedSum
+		total.BoughtOutSum += d.BoughtOutSum
 		total.Stock += d.Stock
 	}
 	slices.SortFunc(r.Products, func(a, b *domain.ShopProduct) int {
@@ -125,6 +127,7 @@ func (a *ozonAcc) add(p OzonPosting, it OzonItem) {
 	case "delivered":
 		a.d.Delivered += q
 		a.d.BoughtOut += q
+		a.d.BoughtOutSum += q * it.Price
 	}
 }
 
@@ -148,4 +151,40 @@ func (a *ozonAcc) finish(days int) domain.ShopProductData {
 func calendarDays(from, to time.Time) int {
 	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
+}
+
+// OzonDaily turns postings into own orders by day for the forecast (#580):
+// штуки ВКЛЮЧАЯ отмены — у свежих отправлений отмены еще не закрылись, и ряд
+// «без отмен» завышал бы новые дни против старых (ревью #592); по дню создания
+// в часовом поясе loc, дни from..to включительно; день без заказов — ноль.
+// undated — отправлений без даты: они не в ряду, окно говорит об этом.
+func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (s domain.DailySales, undated int, err error) {
+	key := func(t time.Time) time.Time {
+		t = t.In(loc)
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	first, last := key(from), key(to)
+	if last.Before(first) {
+		return domain.DailySales{}, 0, ErrOzonPeriod
+	}
+	byDay := map[time.Time]float64{}
+	for _, p := range posts {
+		if p.At.IsZero() {
+			undated++
+			continue
+		}
+		d := key(p.At)
+		if d.Before(first) || d.After(last) {
+			continue
+		}
+		for _, it := range p.Items {
+			byDay[d] += float64(it.Qty)
+		}
+	}
+	var days []domain.DaySales
+	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
+		days = append(days, domain.DaySales{Day: d, Value: byDay[d]})
+	}
+	s, err = domain.NewDailySales(days)
+	return s, undated, err
 }

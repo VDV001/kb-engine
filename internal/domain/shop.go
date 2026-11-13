@@ -39,6 +39,7 @@ type ShopProductData struct {
 	Ordered, Delivered, BoughtOut, Cancelled, Returned float64
 	Refused                                            float64 // часть отмен: отказ при вручении (API Ozon)
 	OrderedSum, AvgPrice, DRR, Rating                  float64
+	BoughtOutSum                                       float64 // выкуплено на сумму по цене продажи; 0 — источник не знает
 	Reviews, Stock, SupplyQty                          float64
 	DaysOut, DaysOutOf, PromoDays, PeriodDays          int
 	UrgentSupply                                       bool
@@ -61,7 +62,7 @@ func (d ShopProductData) broken() string {
 	switch {
 	case d.Name == "":
 		return "без названия"
-	case min(d.Ordered, d.Delivered, d.BoughtOut, d.Cancelled, d.Returned, d.OrderedSum, d.AvgPrice, d.Reviews, d.Stock, d.SupplyQty) < 0:
+	case min(d.Ordered, d.Delivered, d.BoughtOut, d.Cancelled, d.Returned, d.OrderedSum, d.BoughtOutSum, d.AvgPrice, d.Reviews, d.Stock, d.SupplyQty) < 0:
 		return "число меньше нуля"
 	case d.Ordered > 0 && (d.BoughtOut > d.Ordered || d.Cancelled > d.Ordered):
 		return "выкуплено или отменено больше, чем заказано"

@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/usage"
 
+	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/adapter/tablefile"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -24,6 +26,7 @@ type forecastFile struct {
 	Format   string `json:"format"`
 	Products int    `json:"products"`
 	Days     int    `json:"days"`
+	Undated  int    `json:"undated"` // отправлений кабинета без даты: не в ряду
 	From     string `json:"from"`
 	To       string `json:"to"`
 }
@@ -54,9 +57,12 @@ type forecastView struct {
 
 var monthNames = [...]string{"", "январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"}
 
-// MarketsForecast forecasts own sales from three files.
+// MarketsForecast forecasts own sales: две ниши файлами, свои — файлом или
+// «ozon:<id>» из кабинета.
 func (a *App) MarketsForecast(lastYear, nicheNow, own string) (forecastView, error) {
-	return forecastFiles(lastYear, nicheNow, own)
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	return a.settings.forecast(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, own, time.Now())
 }
 
 // round1 — штуки до десятых: хвосты float в окне не нужны.
@@ -78,17 +84,23 @@ func readSales(path, what string) (domain.DailySales, forecastFile, error) {
 		From: info.From.Format("02.01.2006"), To: info.To.Format("02.01.2006")}, nil
 }
 
-func forecastFiles(lastYear, nicheNow, own string) (forecastView, error) {
-	var series [3]domain.DailySales
-	v := forecastView{}
-	for i, f := range []struct{ path, what string }{{lastYear, "ниша, прошлый год"}, {nicheNow, "ниша, сейчас"}, {own, "свои продажи"}} {
+// readNiche reads the two niche files: прошлый год и сейчас.
+func readNiche(lastYear, nicheNow string) ([2]domain.DailySales, []forecastFile, error) {
+	var series [2]domain.DailySales
+	var files []forecastFile
+	for i, f := range []struct{ path, what string }{{lastYear, "ниша, прошлый год"}, {nicheNow, "ниша, сейчас"}} {
 		s, info, err := readSales(f.path, f.what)
 		if err != nil {
-			return forecastView{}, err
+			return series, nil, err
 		}
-		series[i] = s
-		v.Files = append(v.Files, info)
+		series[i], files = s, append(files, info)
 	}
+	return series, files, nil
+}
+
+// forecastOf builds the view from the three series: ниша прошлого года, ниша сейчас, свои.
+func forecastOf(series [3]domain.DailySales, files []forecastFile) (forecastView, error) {
+	v := forecastView{Files: files}
 	fc, err := domain.NewForecast(series[0], series[1], series[2])
 	if err != nil {
 		return forecastView{}, err
@@ -144,14 +156,25 @@ func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (
 	if !consent {
 		return modelForecastView{}, errors.New("суммы продаж по неделям уйдут провайдеру модели: подтвердите в окне")
 	}
-	var series [3]domain.DailySales
-	for i, f := range []struct{ path, what string }{{lastYear, "ниша, прошлый год"}, {nicheNow, "ниша, сейчас"}, {own, "свои продажи"}} {
-		s, _, err := readSales(f.path, f.what)
-		if err != nil {
-			return modelForecastView{}, err
-		}
-		series[i] = s
+	niche, _, err := readNiche(lastYear, nicheNow)
+	if err != nil {
+		return modelForecastView{}, err
 	}
+	s, _, err := readSales(own, "свои продажи")
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	return d.modelForecast([3]domain.DailySales{niche[0], niche[1], s})
+}
+
+// modelReady checks the chat model's key before the window goes to Ozon for data.
+func (d *chatDesk) modelReady() error {
+	_, err := d.modelKey(d.config())
+	return err
+}
+
+// modelForecast asks the model about the three series; согласие проверено выше.
+func (d *chatDesk) modelForecast(series [3]domain.DailySales) (modelForecastView, error) {
 	formula, err := domain.NewForecast(series[0], series[1], series[2])
 	if err != nil {
 		return modelForecastView{}, err
@@ -188,6 +211,19 @@ func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (
 }
 
 // MarketsModelForecast asks the chat model for the forecast next to the formula.
+// Свои продажи «ozon:<id>» — из кабинета; согласие спрашивается до похода в Ozon.
 func (a *App) MarketsModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
-	return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
+	if !strings.HasPrefix(own, "ozon:") || !consent {
+		return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
+	}
+	if err := a.chat.modelReady(); err != nil { // без ключа модели в Ozon не ходим (ревью #592)
+		return modelForecastView{}, err
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	series, _, err := a.settings.forecastInputs(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, own, time.Now())
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	return a.chat.modelForecast(series)
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -55,7 +56,7 @@ func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
 
 func (f *folderSettings) ozonConn(c desktopconfig.Connection) connRow {
 	r := connRow{ID: c.ID, Kind: "ozon", Name: c.Name, Detail: "Ozon Seller API, только чтение · Client-Id " + c.Account,
-		UsedBy: []string{"Маркеты → Магазин"}, Section: "conn", Own: true, Enabled: c.Enabled}
+		UsedBy: []string{"Маркеты → Магазин", "Маркеты → Прогноз"}, Section: "conn", Own: true, Enabled: c.Enabled}
 	_, err := f.tokens.Get(connKeyAccount(c.ID))
 	switch {
 	case !c.Enabled:
@@ -77,28 +78,40 @@ func (a *App) MarketsOzon(id string) (shopView, error) {
 	return a.settings.ozonShop(ctx, ozon.DefaultURL, nil, id, time.Now())
 }
 
-// ozonShop reads cabinet id through base: отправления за 90 дней до
-// вчерашнего дня включительно (сегодняшние еще идут) и остатки сейчас.
-func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time) (shopView, error) {
+// ozonCabinet returns the client of cabinet id with its key from the keychain.
+func (f *folderSettings) ozonCabinet(id, base string, hc *http.Client) (ozon.Client, desktopconfig.Connection, error) {
 	c, ok := f.snapshot().cfg.Connection(id)
 	if !ok || c.Kind != desktopconfig.ConnOzon {
-		return shopView{}, errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
+		return ozon.Client{}, c, errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
 	}
 	if !c.Enabled {
-		return shopView{}, fmt.Errorf("подключение «%s» выключено", c.Name)
+		return ozon.Client{}, c, fmt.Errorf("подключение «%s» выключено", c.Name)
 	}
 	key, err := f.tokens.Get(connKeyAccount(id))
 	if err != nil {
 		if errors.Is(err, keychain.ErrNotFound) {
-			return shopView{}, fmt.Errorf("ключа кабинета «%s» нет в Связке ключей — добавьте кабинет заново", c.Name)
+			return ozon.Client{}, c, fmt.Errorf("ключа кабинета «%s» нет в Связке ключей — добавьте кабинет заново", c.Name)
 		}
-		return shopView{}, keychainNote2(err)
+		return ozon.Client{}, c, keychainNote2(err)
 	}
-	cl := ozon.Client{BaseURL: base, ClientID: c.Account, Key: key, HTTP: hc}
-	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	to := day.AddDate(0, 0, -1)
-	from := to.AddDate(0, 0, -(ozonDays - 1))
-	posts, err := cl.Postings(ctx, from, to)
+	return ozon.Client{BaseURL: base, ClientID: c.Account, Key: key, HTTP: hc}, c, nil
+}
+
+// ozonWindow — 90 дней до вчерашнего включительно: сегодняшние отправления еще идут.
+func ozonWindow(now time.Time) (from, to time.Time) {
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	to = day.AddDate(0, 0, -1)
+	return to.AddDate(0, 0, -(ozonDays - 1)), to
+}
+
+// ozonShop reads cabinet id through base: отправления за 90 дней и остатки сейчас.
+func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time) (shopView, error) {
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return shopView{}, err
+	}
+	from, to := ozonWindow(now)
+	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
 	}
@@ -137,4 +150,92 @@ func adviceOf(ps []*domain.ShopProduct) []shopAdvice {
 		out = append(out, shopAdvice{Kind: string(a.Kind), SKUs: a.SKUs, Units: a.Units})
 	}
 	return out
+}
+
+// ozonPostTTL — сколько отправления кабинета живут в памяти окна: формула,
+// модель и чат за один разговор не читают кабинет заново (ревью #592).
+// ponytail: память процесса, без сброса по событию; потолок — заказ за последние
+// 10 минут не виден в прогнозе; путь — история кабинета на Маке (#580, 3b).
+const ozonPostTTL = 10 * time.Minute
+
+// ozonPostCache keeps the last postings of each cabinet.
+type ozonPostCache struct {
+	mu sync.Mutex
+	m  map[string]ozonPostEntry
+}
+
+type ozonPostEntry struct {
+	from, to time.Time
+	at       time.Time
+	posts    []markets.OzonPosting
+}
+
+// get returns the postings of cabinet id for [from, to]; fresh — мимо памяти.
+func (c *ozonPostCache) get(ctx context.Context, cl ozon.Client, id string, from, to time.Time, fresh bool) ([]markets.OzonPosting, error) {
+	c.mu.Lock()
+	e, ok := c.m[id]
+	c.mu.Unlock()
+	if ok && !fresh && e.from.Equal(from) && e.to.Equal(to) && time.Since(e.at) < ozonPostTTL {
+		return e.posts, nil
+	}
+	posts, err := cl.Postings(ctx, from, to)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	if c.m == nil {
+		c.m = map[string]ozonPostEntry{}
+	}
+	c.m[id] = ozonPostEntry{from: from, to: to, at: time.Now(), posts: posts}
+	c.mu.Unlock()
+	return posts, nil
+}
+
+// ownSeries reads own orders: файл или «ozon:<id>» — заказы кабинета по дням
+// за 90 дней до вчера, включая отмены.
+func (f *folderSettings) ownSeries(ctx context.Context, base string, hc *http.Client, own string, today time.Time) (domain.DailySales, forecastFile, error) {
+	id, ok := strings.CutPrefix(own, "ozon:")
+	if !ok {
+		return readSales(own, "свои продажи")
+	}
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, err
+	}
+	from, to := ozonWindow(today)
+	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, false)
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, ozonErr(c.Name, err)
+	}
+	s, undated, err := markets.OzonDaily(posts, from, to, today.Location())
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, err
+	}
+	return s, forecastFile{File: "Ozon · " + c.Name, Format: "ozon", Days: len(s.Days()), Undated: undated,
+		From: from.Format("02.01.2006"), To: to.Format("02.01.2006")}, nil
+}
+
+// forecastInputs reads the three series: две ниши файлами и свои — файлом или из кабинета.
+func (f *folderSettings) forecastInputs(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time) ([3]domain.DailySales, []forecastFile, error) {
+	var series [3]domain.DailySales
+	niche, files, err := readNiche(last, now)
+	if err != nil {
+		return series, nil, err
+	}
+	series[0], series[1] = niche[0], niche[1]
+	s, info, err := f.ownSeries(ctx, base, hc, own, today)
+	if err != nil {
+		return series, nil, err
+	}
+	series[2] = s
+	return series, append(files, info), nil
+}
+
+// forecast is the formula's forecast from any source of own orders.
+func (f *folderSettings) forecast(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time) (forecastView, error) {
+	series, files, err := f.forecastInputs(ctx, base, hc, last, now, own, today)
+	if err != nil {
+		return forecastView{}, err
+	}
+	return forecastOf(series, files)
 }
