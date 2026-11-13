@@ -58,6 +58,15 @@ var returnLoss = map[string]LossKind{
 // или давно стоит в пути. Компенсации Ozon платит общей суммой без номера
 // отправления — оплачена ли пропажа, отсюда не видно.
 func OzonLosses(posts []OzonPosting, acc []OzonAccrual, rets []OzonReturn, now time.Time) []ShopLoss {
+	out := append(unsold(posts, acc, now), returnLosses(rets, now)...)
+	slices.SortStableFunc(out, func(a, b ShopLoss) int {
+		return cmp.Or(cmp.Compare(b.Price, a.Price), cmp.Compare(a.Posting, b.Posting))
+	})
+	return out
+}
+
+// unsold lists postings delivered lossAge ago with no sale in the accruals.
+func unsold(posts []OzonPosting, acc []OzonAccrual, now time.Time) []ShopLoss {
 	sold := map[string]bool{}
 	for _, a := range acc {
 		if a.Kind == AccrualSale && a.Unit != "" {
@@ -75,6 +84,13 @@ func OzonLosses(posts []OzonPosting, acc []OzonAccrual, rets []OzonReturn, now t
 		}
 		out = append(out, l)
 	}
+	return out
+}
+
+// returnLosses lists returns that did not come back: списан, утилизирован,
+// «возможно потерян» или lossAge без движения.
+func returnLosses(rets []OzonReturn, now time.Time) []ShopLoss {
+	var out []ShopLoss
 	for _, r := range rets {
 		k, ok := returnLoss[r.Status]
 		if !ok || (k == LossStuck && (r.Changed.IsZero() || now.Sub(r.Changed) < lossAge)) {
@@ -82,8 +98,5 @@ func OzonLosses(posts []OzonPosting, acc []OzonAccrual, rets []OzonReturn, now t
 		}
 		out = append(out, ShopLoss{Kind: k, Posting: r.Posting, SKU: r.SKU, Name: r.Name, Status: r.Status, Price: r.Price, Since: r.Changed})
 	}
-	slices.SortStableFunc(out, func(a, b ShopLoss) int {
-		return cmp.Or(cmp.Compare(b.Price, a.Price), cmp.Compare(a.Posting, b.Posting))
-	})
 	return out
 }
