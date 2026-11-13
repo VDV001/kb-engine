@@ -42,6 +42,31 @@ type shopRow struct {
 	Rating     float64  `json:"rating"`
 	Reviews    float64  `json:"reviews"`
 	Issues     []string `json:"issues"`
+	// Деньги товара из начислений кабинета (#580); nil — у отчета-файла их нет.
+	Money *rowMoney `json:"money"`
+	// OnAccount и Profit — для сортировки таблицы; Profit — только с себестоимостью.
+	OnAccount float64  `json:"onAccount"`
+	Profit    *float64 `json:"profit"`
+}
+
+// rowMoney — экономика товара за период до рекламы, в рублях.
+type rowMoney struct {
+	Units      int     `json:"units"` // продано штук за вычетом возвратов
+	Sales      float64 `json:"sales"`
+	Commission float64 `json:"commission"`
+	Delivery   float64 `json:"delivery"`
+	Partners   float64 `json:"partners"`
+	Other      float64 `json:"other"`
+	Total      float64 `json:"total"`
+	UnitCost   float64 `json:"unitCost"`
+	HasCost    bool    `json:"hasCost"`
+	Cost       float64 `json:"cost"`
+}
+
+// costImport — что прочитал файл себестоимости.
+type costImport struct {
+	Read     int            `json:"read"`
+	Problems []nicheProblem `json:"problems"`
 }
 
 type shopView struct {

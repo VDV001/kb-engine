@@ -116,6 +116,18 @@ func costHeader(rows [][]string) (row, art, cost int) {
 	return -1, -1, -1
 }
 
+// ErrBadCost — себестоимость не число или меньше нуля.
+var ErrBadCost = errors.New("себестоимость не принята")
+
+// ParseCost reads one cost as a person types it: «1 250,50», «480 ₽».
+func ParseCost(article, raw string) (domain.Money, error) {
+	m, why := costOf(article, strings.TrimSpace(raw))
+	if why != "" {
+		return domain.Money{}, fmt.Errorf("%w: %s", ErrBadCost, why)
+	}
+	return m, nil
+}
+
 // costOf reads one row's cost; why — почему строка не принята.
 func costOf(art, raw string) (domain.Money, string) {
 	switch {
