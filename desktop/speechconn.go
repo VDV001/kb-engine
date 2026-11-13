@@ -18,7 +18,7 @@ import (
 // хочу whisper подключить — должен смочь в интерфейсе»): адрес
 // OpenAI-совместимого /audio/transcriptions, модель, ключ — в Связке.
 
-func speechKeyAccount(id string) string { return "conn:" + id + ":key" }
+func connKeyAccount(id string) string { return "conn:" + id + ":key" }
 
 // AddSpeech saves a speech recognition server as a connection.
 func (f *folderSettings) AddSpeech(name, url, model, key string) (connRow, error) {
@@ -31,12 +31,12 @@ func (f *folderSettings) AddSpeech(name, url, model, key string) (connRow, error
 		return connRow{}, err
 	}
 	if key != "" {
-		if err := f.tokens.Set(speechKeyAccount(conn.ID), key); err != nil {
+		if err := f.tokens.Set(connKeyAccount(conn.ID), key); err != nil {
 			return connRow{}, fmt.Errorf("ключ не сохранен в Связке ключей: %w", err)
 		}
 	}
 	if err := f.updateConfig(func(cfg *desktopconfig.Config) { cfg.Connections = append(cfg.Connections, conn) }); err != nil {
-		_ = f.tokens.Delete(speechKeyAccount(conn.ID))
+		_ = f.tokens.Delete(connKeyAccount(conn.ID))
 		return connRow{}, err
 	}
 	return f.speechConn(conn), nil
@@ -48,7 +48,7 @@ func (f *folderSettings) speechConn(c desktopconfig.Connection) connRow {
 	if f.cfg.Chat.Listen == c.ID {
 		r.UsedBy = []string{"диктовка в чате"}
 	}
-	_, err := f.tokens.Get(speechKeyAccount(c.ID))
+	_, err := f.tokens.Get(connKeyAccount(c.ID))
 	switch {
 	case !c.Enabled:
 		r.Status = "выключено"
@@ -88,7 +88,7 @@ func (f *folderSettings) listenTranscriber() (transcriber, error) {
 	if !c.Enabled {
 		return nil, fmt.Errorf("подключение «%s» выключено", c.Name)
 	}
-	key, err := f.tokens.Get(speechKeyAccount(id))
+	key, err := f.tokens.Get(connKeyAccount(id))
 	if err != nil && !errors.Is(err, keychain.ErrNotFound) {
 		return nil, keychainNote2(err)
 	}

@@ -23,9 +23,11 @@ type shopRow struct {
 	Delivered  float64  `json:"delivered"`
 	BoughtOut  float64  `json:"boughtOut"`
 	Cancelled  float64  `json:"cancelled"`
+	Refused    float64  `json:"refused"` // отказ при вручении, часть отмен (API Ozon)
 	Returned   float64  `json:"returned"`
 	Buyout     float64  `json:"buyout"`
 	Cancel     float64  `json:"cancel"`
+	Refuse     float64  `json:"refuse"`
 	Return     float64  `json:"return"`
 	AvgPrice   float64  `json:"avgPrice"`
 	DRR        float64  `json:"drr"`
@@ -50,10 +52,19 @@ type shopView struct {
 	Problems   []nicheProblem    `json:"problems"`
 	Hints      map[string]string `json:"hints"`
 	Counts     map[string]int    `json:"counts"` // товаров с каждой проблемой
+	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
+	Advice     []shopAdvice      `json:"advice"`
 }
 
 // MarketsShop reads the shop's Ozon product report.
 func (a *App) MarketsShop(path string) (shopView, error) { return readShopFile(path) }
+
+// shopAdvice — совет магазину: вид, SKU по важности, штук.
+type shopAdvice struct {
+	Kind  string   `json:"kind"`
+	SKUs  []string `json:"skus"`
+	Units float64  `json:"units"`
+}
 
 func share4(v float64) float64 { return math.Round(v*1e4) / 1e4 }
 

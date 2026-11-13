@@ -217,7 +217,7 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
-	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id)), g.settings.tokens.Delete(speechKeyAccount(id))); err != nil {
+	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id)), g.settings.tokens.Delete(connKeyAccount(id))); err != nil {
 		return fmt.Errorf("подключение убрано, но вход не удален из Связки ключей — удалите записи «conn:%s» в «Связке ключей»: %w", id, err)
 	}
 	return nil
