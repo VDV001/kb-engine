@@ -49,7 +49,7 @@ func TestShopExtra(t *testing.T) {
 	}
 	now := func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }
 	x := shopExtras(s, srv.URL, srv.Client(), now)
-	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 4 {
+	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 6 {
 		t.Fatalf("extras = %v", x)
 	}
 	ask := func(args string) string {
@@ -76,6 +76,21 @@ func TestShopExtra(t *testing.T) {
 	}
 	if n := seen["k-1 /v4/product/info/stocks"]; n != 1 {
 		t.Errorf("stocks read %d times in one turn, want once", n)
+	}
+	// Деньги и пропажи: начисления за 90 дней читаются один раз за ход, и только по просьбе модели.
+	if n := seen["k-1 /v1/finance/accrual/by-day"]; n != 0 {
+		t.Errorf("accruals read %d times before shop_money was asked", n)
+	}
+	for _, tool := range []string{"shop_money", "shop_losses"} {
+		if out, ok := x[0].Exec(context.Background(), tool, []byte(`{}`)); !ok || !strings.Contains(out, "«Брюки и худи»") {
+			t.Errorf("%s: %q", tool, out)
+		}
+	}
+	if n := seen["k-1 /v1/finance/accrual/by-day"]; n != 90 {
+		t.Errorf("accruals read %d days, want 90 once per turn", n)
+	}
+	if n := seen["k-1 /v1/returns/list"]; n != 1 {
+		t.Errorf("returns read %d times, want once per turn", n)
 	}
 	if _, ok := x[0].Exec(context.Background(), "search", []byte(`{}`)); ok {
 		t.Error("the shop answered a tool that is not its own")

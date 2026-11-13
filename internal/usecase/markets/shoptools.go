@@ -25,6 +25,11 @@ type ShopData struct {
 	Stock    []OzonStock
 	From, To time.Time
 	Loc      *time.Location // часовой пояс продавца: по нему дни и недели
+	// Деньги — только у загрузки Money: начисления — запрос на день, их не
+	// читают ради сводки.
+	Accruals []OzonAccrual
+	Returns  []OzonReturn
+	Now      time.Time // от него «две недели» пропаж
 }
 
 // ShopToolSpec — инструмент для модели: имя, описание, JSON-схема аргументов.
@@ -36,6 +41,8 @@ type ShopToolSpec struct{ Name, Description, Params string }
 type ShopTools struct {
 	// Load reads cabinet: имя кабинета словами человека, "" — первый подключенный.
 	Load func(ctx context.Context, cabinet string) (ShopData, error)
+	// Money reads the cabinet with accruals and returns; nil — денег в чате нет.
+	Money func(ctx context.Context, cabinet string) (ShopData, error)
 }
 
 // ShopToolsPrompt — правило для модели: откуда цифры и как о них говорить.
