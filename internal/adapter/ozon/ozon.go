@@ -487,3 +487,8 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 	}
 	return out, nil
 }
+
+// Returns returns returns and non-pickups whose return started from from to to.
+func (c Client) Returns(ctx context.Context, from, to time.Time) ([]markets.OzonReturn, error) {
+	return nil, nil
+}

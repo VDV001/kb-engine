@@ -21,6 +21,7 @@ const (
 type OzonAccrual struct {
 	Day    time.Time // день начисления, полночь UTC
 	SKU    string    // "" — начисление не по товару
+	Unit   string    // номер отправления у начисления по нему; "" — не по отправлению
 	Kind   AccrualKind
 	TypeID int // статья Ozon у услуги
 	Amount domain.Money
