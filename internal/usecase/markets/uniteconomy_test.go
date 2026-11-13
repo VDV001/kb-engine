@@ -72,3 +72,28 @@ func TestReadCosts(t *testing.T) {
 		t.Errorf("table without артикул/себестоимость: err = %v", err)
 	}
 }
+
+// Ревью #598: возвратов за период больше, чем продаж, — себестоимость не
+// уходит в минус и не раздувает прибыль; ввод руками строже файла; колонка
+// «артикул продавца» важнее «артикул Ozon»; повтор артикула назван.
+func TestUnitEconomy_review598(t *testing.T) {
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	es := markets.OzonSKUEconomy([]markets.OzonAccrual{{Day: day, SKU: "11", Unit: "p", Kind: markets.AccrualSale, Qty: 1, Amount: domain.NewMoney(-200000)}},
+		func(string) (domain.Money, bool) { return domain.NewMoney(40000), true })
+	if e := es[0]; e.Units != -1 || e.Cost() != (domain.Money{}) || e.Profit() != e.Total {
+		t.Errorf("returns only: units %d, cost %v, profit %v, total %v", e.Units, e.Cost(), e.Profit(), e.Total)
+	}
+	for _, raw := range []string{"10.005", "1e3", "0x1p10"} {
+		if _, err := markets.ParseCost("100_46", raw); !errors.Is(err, markets.ErrBadCost) {
+			t.Errorf("typed %q: err = %v, want ErrBadCost", raw, err)
+		}
+	}
+	got, probs, err := markets.ReadCosts([][]string{
+		{"Артикул Ozon", "Артикул продавца", "Себестоимость"},
+		{"3001", "100_46", "350"},
+		{"3002", "100_46", "360"},
+	})
+	if err != nil || got["100_46"] != domain.NewMoney(36000) || got["3001"] != (domain.Money{}) || len(probs) != 1 || probs[0].Row != 3 {
+		t.Errorf("costs = %v, problems %+v, err %v", got, probs, err)
+	}
+}

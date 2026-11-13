@@ -25,7 +25,7 @@ func (a *App) MarketsImportCosts(id, path string) (costImport, error) {
 }
 
 // MarketsSetCost sets one article's cost of cabinet id; "" — убрать.
-func (a *App) MarketsSetCost(id, article, value string) error {
+func (a *App) MarketsSetCost(id, article, value string) (float64, error) {
 	return a.settings.SetCost(id, article, value)
 }
 
@@ -112,20 +112,21 @@ func (f *folderSettings) ImportCosts(id, path string) (costImport, error) {
 	return out, err
 }
 
-// SetCost sets one article's cost of cabinet id; "" — убрать.
-func (f *folderSettings) SetCost(id, article, value string) error {
+// SetCost sets one article's cost of cabinet id; "" — убрать. Отдает
+// сохраненное в рублях: окно считает по нему, а не по своему разбору ввода.
+func (f *folderSettings) SetCost(id, article, value string) (float64, error) {
 	article = strings.TrimSpace(article)
 	if article == "" {
-		return errors.New("нет артикула")
+		return 0, errors.New("нет артикула")
 	}
 	if strings.TrimSpace(value) == "" {
-		return f.updateCosts(id, func(m map[string]int64) { delete(m, article) })
+		return 0, f.updateCosts(id, func(m map[string]int64) { delete(m, article) })
 	}
 	c, err := markets.ParseCost(article, value)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return f.updateCosts(id, func(m map[string]int64) { m[article] = c.Kopecks() })
+	return 0, f.updateCosts(id, func(m map[string]int64) { m[article] = c.Kopecks() })
 }
 
 // costsOf returns cabinet id's costs by article.

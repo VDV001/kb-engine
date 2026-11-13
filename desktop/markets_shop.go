@@ -65,8 +65,9 @@ type rowMoney struct {
 
 // costImport — что прочитал файл себестоимости.
 type costImport struct {
-	Read     int            `json:"read"`
-	Problems []nicheProblem `json:"problems"`
+	Read     int                `json:"read"`
+	Problems []nicheProblem     `json:"problems"`
+	Costs    map[string]float64 `json:"costs"` // принятые: артикул → рубли
 }
 
 type shopView struct {
@@ -81,8 +82,9 @@ type shopView struct {
 	Counts     map[string]int    `json:"counts"` // товаров с каждой проблемой
 	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
 	Advice     []shopAdvice      `json:"advice"`
-	Economy    *economyView      `json:"economy"` // nil — у отчета-файла начислений нет
-	Losses     *lossesView       `json:"losses"`  // nil — у отчета-файла номеров отправлений нет
+	Economy    *economyView      `json:"economy"`  // nil — у отчета-файла начислений нет
+	Losses     *lossesView       `json:"losses"`   // nil — у отчета-файла номеров отправлений нет
+	CostsErr   string            `json:"costsErr"` // себестоимость не прочитана: товары есть, прибыли нет
 }
 
 // lossesView — возможные пропажи кабинета, крупные сначала; Err — почему не проверено.
