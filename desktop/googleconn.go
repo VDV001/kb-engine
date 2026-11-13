@@ -217,7 +217,7 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
-	g.settings.shopLoads.drop(id)                    // загруженный «Магазин» кабинета — тоже его данные (ревью #604)
+	g.settings.dropShopLoad(id)                      // загруженный «Магазин» кабинета — тоже его данные (ревью #604)
 	if err := g.settings.dropCosts(id); err != nil { // себестоимость кабинета Ozon — тоже его данные (ревью #598)
 		return fmt.Errorf("подключение убрано, но себестоимость кабинета осталась в costs.json: %w", err)
 	}

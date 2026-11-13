@@ -1,10 +1,14 @@
 package main
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -140,19 +144,37 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, ozonErr(c.Name, err)
 	}
 	stage("stock")
-	l := shopLoad{name: c.Name, from: from, to: to, now: now, posts: posts, stock: stock, fin: fin()}
+	fn := fin()
+	l := shopLoad{Name: c.Name, From: from, To: to, Now: now, At: time.Now(), Posts: posts, Stock: stock, Acc: fn.acc, Rets: fn.rets}
+	if fn.accErr != nil { // причины — словами сразу: сохраненная загрузка их уже не разберет
+		l.AccWhy = economyErr(c.Name, fn.accErr)
+	}
+	if fn.retErr != nil {
+		l.RetWhy = returnsErr(c.Name, fn.retErr)
+	}
 	f.shopLoads.put(id, l)
+	if err := f.saveShopLoad(id, l); err != nil {
+		v, verr := f.shopFor(id, l, from, to)
+		v.CostsErr = cmp.Or(v.CostsErr, "последняя загрузка не сохранена на этом Маке: "+err.Error())
+		return v, verr
+	}
 	return f.shopFor(id, l, from, to)
 }
 
 // shopLoad — кабинет, прочитанный за 90 дней: «Магазин» за выбранные дни
-// режется из него без новых запросов к Ozon.
+// режется из него без новых запросов к Ozon. Последняя загрузка лежит рядом с
+// настройками (shop/<id>.json): окно открывается ею, а не новой загрузкой
+// (отзыв владельца 13.11). Поля открыты для JSON.
 type shopLoad struct {
-	name          string
-	from, to, now time.Time
-	posts         []markets.OzonPosting
-	stock         []markets.OzonStock
-	fin           finance
+	Name           string
+	From, To, Now  time.Time
+	At             time.Time // когда загружено
+	Posts          []markets.OzonPosting
+	Stock          []markets.OzonStock
+	Acc            []markets.OzonAccrual `json:"-"` // на диск — SavedAcc: у domain.Money поля закрыты
+	SavedAcc       []savedAccrual        `json:"Acc"`
+	Rets           []markets.OzonReturn
+	AccWhy, RetWhy string // отказ в начислениях и возвратах словами; "" — прочитаны
 }
 
 // shopLoadCache keeps the last load of each cabinet.
@@ -196,11 +218,11 @@ func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
 		f.shopLoads.drop(id)
 		return shopView{}, err
 	}
-	l, ok := f.shopLoads.get(id)
+	l, ok := f.loadOf(id)
 	if !ok {
 		return shopView{}, errors.New("сначала загрузите кабинет: «Загрузить из Ozon»")
 	}
-	day := func(s string) (time.Time, error) { return time.ParseInLocation("2006-01-02", s, l.from.Location()) }
+	day := func(s string) (time.Time, error) { return time.ParseInLocation("2006-01-02", s, l.From.Location()) }
 	d1, err1 := day(from)
 	d2, err2 := day(to)
 	switch {
@@ -208,40 +230,39 @@ func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
 		return shopView{}, fmt.Errorf("даты периода не прочитаны: %q – %q", from, to)
 	case d2.Before(d1):
 		return shopView{}, markets.ErrOzonPeriod
-	case d1.Before(l.from) || d2.After(l.to):
-		return shopView{}, fmt.Errorf("загружены дни %s – %s: выберите период внутри них", l.from.Format("02.01.2006"), l.to.Format("02.01.2006"))
+	case d1.Before(l.From) || d2.After(l.To):
+		return shopView{}, fmt.Errorf("загружены дни %s – %s: выберите период внутри них", l.From.Format("02.01.2006"), l.To.Format("02.01.2006"))
 	}
 	return f.shopFor(id, l, d1, d2)
 }
 
 // shopFor builds the shop of load l for days from..to; все дни окна — как загружено.
 func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (shopView, error) {
-	whole := from.Equal(l.from) && to.Equal(l.to)
-	posts, acc := l.posts, l.fin.acc
+	whole := from.Equal(l.From) && to.Equal(l.To)
+	posts, acc := l.Posts, l.Acc
 	if !whole { // отправления без даты входят только во все дни
 		posts, acc = markets.PostingsIn(posts, from, to), markets.AccrualsIn(acc, from, to)
 	}
-	rep, err := markets.OzonShop(posts, l.stock, from, to)
+	rep, err := markets.OzonShop(posts, l.Stock, from, to)
 	if err != nil {
 		return shopView{}, err
 	}
 	v := shopViewOf(rep)
-	v.File, v.Path, v.Source = "Ozon · "+l.name, id, "ozon"
-	v.From, v.To, v.WindowFrom, v.WindowTo = from.Format(time.DateOnly), to.Format(time.DateOnly), l.from.Format(time.DateOnly), l.to.Format(time.DateOnly)
-	fn := l.fin
+	v.File, v.Path, v.Source = "Ozon · "+l.Name, id, "ozon"
+	v.From, v.To, v.WindowFrom, v.WindowTo = from.Format(time.DateOnly), to.Format(time.DateOnly), l.From.Format(time.DateOnly), l.To.Format(time.DateOnly)
+	v.LoadedAt = l.At.Format("02.01.2006 15:04")
 	switch {
-	case fn.accErr != nil:
-		why := economyErr(l.name, fn.accErr) // товары остаются: отказ — только в финансах
-		v.Economy = &economyView{Err: why}
-		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + why}
-	case fn.retErr != nil:
+	case l.AccWhy != "": // товары остаются: отказ — только в финансах
+		v.Economy = &economyView{Err: l.AccWhy}
+		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + l.AccWhy}
+	case l.RetWhy != "":
 		v.Economy = economyOf(markets.OzonEconomy(acc))
-		v.Losses = &lossesView{Err: returnsErr(l.name, fn.retErr)}
+		v.Losses = &lossesView{Err: l.RetWhy}
 	default:
 		v.Economy = economyOf(markets.OzonEconomy(acc))
 		// Пропажи — всегда за все загруженные дни: они по возрасту (14 дней), и в
 		// коротком периоде их не было бы никогда (ревью #604); окно так и пишет.
-		v.Losses = lossesOf(markets.OzonLosses(l.posts, fn.acc, fn.rets, l.now))
+		v.Losses = lossesOf(markets.OzonLosses(l.Posts, l.Acc, l.Rets, l.Now))
 	}
 	// Себестоимость видна и без начислений; испорченный costs.json — причина
 	// словами, а не пустой «Магазин» (ревью #598).
@@ -251,6 +272,86 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 	}
 	rowsWithMoney(&v, acc, costs)
 	return v, nil
+}
+
+// MarketsOzonLast shows the cabinet's last load without asking Ozon.
+func (a *App) MarketsOzonLast(id string) (shopView, error) { return a.settings.ozonShopLast(id) }
+
+// ozonShopLast is the last load of cabinet id: из памяти или с диска.
+func (f *folderSettings) ozonShopLast(id string) (shopView, error) {
+	if _, _, err := f.ozonCabinet(id, "", nil); err != nil {
+		return shopView{}, err
+	}
+	l, ok := f.loadOf(id)
+	if !ok {
+		return shopView{}, errors.New("кабинет еще не загружался: «Загрузить из Ozon»")
+	}
+	return f.shopFor(id, l, l.From, l.To)
+}
+
+// savedAccrual — начисление на диске: сумма копейками.
+type savedAccrual struct {
+	Day     time.Time
+	SKU     string
+	Unit    string
+	Kind    markets.AccrualKind
+	TypeID  int
+	Qty     int
+	Kopecks int64
+}
+
+// loadOf returns the last load of cabinet id: из памяти, иначе с диска.
+func (f *folderSettings) loadOf(id string) (shopLoad, bool) {
+	if l, ok := f.shopLoads.get(id); ok {
+		return l, true
+	}
+	b, err := os.ReadFile(f.shopLoadPath(id))
+	if err != nil {
+		return shopLoad{}, false
+	}
+	var l shopLoad
+	if json.Unmarshal(b, &l) != nil || l.From.IsZero() {
+		return shopLoad{}, false
+	}
+	for _, a := range l.SavedAcc {
+		l.Acc = append(l.Acc, markets.OzonAccrual{Day: a.Day, SKU: a.SKU, Unit: a.Unit, Kind: a.Kind, TypeID: a.TypeID, Qty: a.Qty, Amount: domain.NewMoney(a.Kopecks)})
+	}
+	l.SavedAcc = nil
+	f.shopLoads.put(id, l)
+	return l, true
+}
+
+// shopLoadPath — shop/<id>.json рядом с config.json; id — из настроек окна.
+func (f *folderSettings) shopLoadPath(id string) string {
+	return filepath.Join(filepath.Dir(f.path), "shop", filepath.Base(id)+".json")
+}
+
+// saveShopLoad writes the load atomically: данные продавца — только этому
+// пользователю Мака (0600), как costs.json.
+func (f *folderSettings) saveShopLoad(id string, l shopLoad) error {
+	l.SavedAcc = make([]savedAccrual, 0, len(l.Acc))
+	for _, a := range l.Acc {
+		l.SavedAcc = append(l.SavedAcc, savedAccrual{Day: a.Day, SKU: a.SKU, Unit: a.Unit, Kind: a.Kind, TypeID: a.TypeID, Qty: a.Qty, Kopecks: a.Amount.Kopecks()})
+	}
+	b, err := json.Marshal(l)
+	if err != nil {
+		return err
+	}
+	p := f.shopLoadPath(id)
+	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+		return err
+	}
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
+}
+
+// dropShopLoad forgets the cabinet's last load: и в памяти, и на диске.
+func (f *folderSettings) dropShopLoad(id string) {
+	f.shopLoads.drop(id)
+	_ = os.Remove(f.shopLoadPath(id)) // нет файла — нечего стирать
 }
 
 // finance — начисления и возвраты кабинета, у каждого своя ошибка: отказ в

@@ -91,6 +91,7 @@ type shopView struct {
 	To         string `json:"to"`
 	WindowFrom string `json:"windowFrom"`
 	WindowTo   string `json:"windowTo"`
+	LoadedAt   string `json:"loadedAt"` // когда кабинет загружен: ДД.ММ.ГГГГ ЧЧ:ММ; у файла пусто
 }
 
 // lossesView — возможные пропажи кабинета, крупные сначала; Err — почему не проверено.
