@@ -136,12 +136,20 @@ func TestRead_ArtifactsTabAddedOnce(t *testing.T) {
 			}
 		})
 	}
-	// Запись этой сборкой помечает набор: убранные «Артефакты» переживают запись и чтение.
+	// Набор, уже решенный в этой сборке (tabsV), переживает запись и чтение без «Артефактов».
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{code}}); err != nil {
+	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{code}, TabsV: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if got, err := desktopconfig.Read(path); err != nil || !slices.Equal(got.TabList(), []desktopconfig.Tab{code}) {
 		t.Errorf("after write: tabs = %+v, err %v", got.TabList(), err)
+	}
+	// Прежняя запись, дошедшая до Write мимо Read, переезжает там же, а не
+	// помечается решенной без «Артефактов» (ревью #596).
+	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{code}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := desktopconfig.Read(path); err != nil || !slices.Equal(got.TabList(), []desktopconfig.Tab{code, art}) {
+		t.Errorf("old config through Write: tabs = %+v, err %v", got.TabList(), err)
 	}
 }
