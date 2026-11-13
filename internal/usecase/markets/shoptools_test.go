@@ -117,7 +117,8 @@ func TestShopTools_partialWeekAndProblems(t *testing.T) {
 	if !strings.Contains(sum, "не учтено товаров: 1") {
 		t.Errorf("summary hides skipped products:\n%s", sum)
 	}
-	if strings.Contains(sum, "продается чисто") && strings.Contains(sum, "чисто: 0 товаров, 0 шт") {
-		t.Errorf("keep advice with units:\n%s", sum)
+	// У «продается чисто» штук нет: брюки — 14 заказов без отмен.
+	if !strings.Contains(sum, "совет — продается чисто: 1 товаров\n") {
+		t.Errorf("keep advice must come without units:\n%s", sum)
 	}
 }
