@@ -117,9 +117,7 @@ func toolsMessages(r Request) []ModelMessage {
 	if r.ProposeVersion != nil {
 		prompt += proposeVersionPrompt
 	}
-	for _, x := range r.Extras {
-		prompt += x.Prompt()
-	}
+	prompt += extrasPrompt(r.Extras)
 	msgs := []ModelMessage{{Role: RoleSystem, Content: withAbout(prompt, r.About)}}
 	for _, m := range r.History {
 		msgs = append(msgs, ModelMessage{Role: m.Role, Content: m.Text})
@@ -185,13 +183,27 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		}
 		return "предложено: ждет одобрения человека, в портрет без него не попадет"
 	default:
-		for _, x := range r.extras {
-			if out, ok := x.Exec(ctx, c.Name, []byte(c.Arguments)); ok {
-				return out
-			}
-		}
-		return "ошибка: неизвестный инструмент " + c.Name
+		return r.execExtra(ctx, c)
 	}
+}
+
+// execExtra runs a module's tool; ничей — неизвестный инструмент.
+func (r *toolRun) execExtra(ctx context.Context, c ToolCall) string {
+	for _, x := range r.extras {
+		if out, ok := x.Exec(ctx, c.Name, []byte(c.Arguments)); ok {
+			return out
+		}
+	}
+	return "ошибка: неизвестный инструмент " + c.Name
+}
+
+// extrasPrompt joins the modules' rules.
+func extrasPrompt(xs []Extra) string {
+	var b strings.Builder
+	for _, x := range xs {
+		b.WriteString(x.Prompt())
+	}
+	return b.String()
 }
 
 // execVersionTool runs the tools about the versions of documents.
