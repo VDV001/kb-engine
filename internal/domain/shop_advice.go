@@ -2,6 +2,7 @@ package domain
 
 import (
 	"cmp"
+	"math"
 	"slices"
 )
 
@@ -51,7 +52,7 @@ func AdviseShop(ps []*ShopProduct) []ShopAdvice {
 		{AdviceDeadStock, func(d ShopProductData, _ *ShopProduct) bool { return d.Ordered == 0 && d.Stock > 0 },
 			func(d ShopProductData) float64 { return d.Stock }, func(d ShopProductData) float64 { return d.Stock }},
 		{AdviceKeep, func(d ShopProductData, p *ShopProduct) bool {
-			return d.Ordered >= adviceMinOrders && p.RefusedRate() <= adviceKeepRefused && p.CancelRate() <= adviceKeepCancels
+			return d.Ordered >= adviceMinOrders && p.RefusedRate() <= adviceKeepRefused && p.CancelRate() <= adviceKeepCancels && clean(p)
 		}, func(ShopProductData) float64 { return 0 }, func(d ShopProductData) float64 { return d.Ordered }},
 	}
 	var out []ShopAdvice
@@ -76,5 +77,30 @@ func AdviseShop(ps []*ShopProduct) []ShopAdvice {
 	return out
 }
 
-// Supply is not written yet.
-func Supply(sold, stock float64, days int) (bool, float64) { return false, 0 }
+// Запас, при котором советуется довезти, и на сколько вперед.
+// ponytail: две и четыре недели — правило из практики, без сезона и сроков
+// поставки; потолок — пик сезона; путь — запас от «Маркеты → Прогноз».
+const (
+	supplyWarnDays = 14
+	supplyForDays  = 28
+	supplyMinSold  = 5 // продано меньше — темп случаен
+)
+
+// Supply says whether stock runs out within two weeks of sales and how much
+// to bring for four: sold — продано без отмен за days дней.
+func Supply(sold, stock float64, days int) (urgent bool, qty float64) {
+	if days <= 0 || sold < supplyMinSold {
+		return false, 0
+	}
+	perDay := sold / float64(days)
+	if stock >= perDay*supplyWarnDays {
+		return false, 0
+	}
+	return true, math.Ceil(perDay*supplyForDays - stock)
+}
+
+// clean — без проблем качества: отмены, возвраты, реклама, рейтинг. Кончается
+// остаток — не изъян товара, а повод его довезти.
+func clean(p *ShopProduct) bool {
+	return !slices.ContainsFunc(p.Issues(), func(i ShopIssue) bool { return i != IssueStock })
+}

@@ -28,7 +28,8 @@ var (
 	ErrUnauthorized = errors.New("Client-Id или ключ не приняты")
 	ErrInsecureURL  = errors.New("ключ Ozon уходит только по https")
 	ErrTooMany      = errors.New("слишком частые запросы")
-	ErrTooBig       = errors.New("отправлений больше 50 000 за период: возьмите период короче")
+	ErrTooBig       = errors.New("слишком много страниц ответа")
+	ErrRedirect     = errors.New("перенаправление: ключ на другой адрес не уходит")
 )
 
 // pageLimit — страница отправлений: больше 100 Ozon не отдает.
@@ -82,9 +83,7 @@ func (c Client) Postings(ctx context.Context, from, to time.Time) ([]markets.Ozo
 // Stocks returns stock to sell by SKU: на складах минус в резерве, FBO и FBS
 // вместе, с названием из карточки — у товара без заказов его больше негде взять.
 func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
-	var out []markets.OzonStock
-	var ids []int64
-	at := map[string]int{}
+	acc := stockAcc{at: map[string]int{}}
 	cursor := ""
 	for page := 0; ; page++ {
 		if page == maxPages {
@@ -95,32 +94,46 @@ func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
 		if err := c.call(ctx, "/v4/product/info/stocks", body, &res); err != nil {
 			return nil, fmt.Errorf("остатки: %w", err)
 		}
-		for _, it := range res.Items {
-			ids = append(ids, it.ProductID)
-			for _, s := range it.Stocks {
-				sku := strconv.FormatInt(s.SKU, 10)
-				i, ok := at[sku]
-				if !ok {
-					i = len(out)
-					at[sku] = i
-					out = append(out, markets.OzonStock{SKU: sku, Article: it.OfferID})
-				}
-				out[i].Qty += float64(s.Present - s.Reserved)
-			}
-		}
+		acc.add(res)
 		if res.Cursor == "" || res.Cursor == cursor || len(res.Items) == 0 {
 			break
 		}
 		cursor = res.Cursor
 	}
-	names, err := c.names(ctx, ids)
+	names, err := c.names(ctx, acc.ids)
 	if err != nil {
 		return nil, fmt.Errorf("карточки товаров: %w", err)
 	}
-	for i := range out {
-		out[i].Name = names[out[i].Article]
+	for i := range acc.out {
+		acc.out[i].Name = names[acc.out[i].Article]
 	}
-	return out, nil
+	return acc.out, nil
+}
+
+// stockAcc sums stock pages by SKU and keeps product ids for card names.
+type stockAcc struct {
+	out []markets.OzonStock
+	ids []int64
+	at  map[string]int
+}
+
+func (a *stockAcc) add(res stockPage) {
+	for _, it := range res.Items {
+		a.ids = append(a.ids, it.ProductID)
+		for _, s := range it.Stocks {
+			if s.SKU == 0 {
+				continue // товар еще без SKU на Ozon (модерация): не склеивать в один
+			}
+			sku := strconv.FormatInt(s.SKU, 10)
+			i, ok := a.at[sku]
+			if !ok {
+				i = len(a.out)
+				a.at[sku] = i
+				a.out = append(a.out, markets.OzonStock{SKU: sku, Article: it.OfferID})
+			}
+			a.out[i].Qty += float64(s.Present - s.Reserved)
+		}
+	}
 }
 
 // infoBatch — карточек за запрос: больше 1000 Ozon не принимает.
@@ -231,10 +244,14 @@ func (c Client) call(ctx context.Context, path string, body, out any) error {
 	if err != nil {
 		return err
 	}
-	client := c.HTTP
-	if client == nil {
-		client = &http.Client{Timeout: time.Minute}
+	client := &http.Client{Timeout: time.Minute}
+	if c.HTTP != nil {
+		cp := *c.HTTP
+		client = &cp
 	}
+	// Go повторяет свои заголовки (Api-Key, Client-Id) на хост перенаправления:
+	// ключ уходит только на BaseURL (ревью #590, как kbserver).
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect }
 	for try := 0; ; try++ {
 		status, data, err := c.post(ctx, client, base+path, raw)
 		if err != nil {
@@ -294,8 +311,6 @@ func apiMessage(data []byte) string {
 	if json.Unmarshal(data, &e) == nil && e.Message != "" {
 		return e.Message
 	}
-	return strings.TrimSpace(string(data[:min(len(data), 200)]))
+	r := []rune(strings.TrimSpace(string(data)))
+	return string(r[:min(len(r), 200)]) // по буквам: байтовая обрезка режет кириллицу
 }
-
-// ErrRedirect is not written yet.
-var ErrRedirect = errors.New("redirect")
