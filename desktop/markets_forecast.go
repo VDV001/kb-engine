@@ -118,3 +118,22 @@ func forecastFiles(lastYear, nicheNow, own string) (forecastView, error) {
 	}
 	return v, nil
 }
+
+type modelMonth struct {
+	Label   string  `json:"label"`
+	Model   float64 `json:"model"`
+	Formula float64 `json:"formula"`
+	Diff    float64 `json:"diff"` // модель к формуле: 0.1 — на 10 % больше
+}
+
+type modelForecastView struct {
+	Model  string       `json:"model"`
+	Months []modelMonth `json:"months"`
+	Peak   string       `json:"peak"`
+	Note   string       `json:"note"`
+}
+
+// ModelForecast asks the chat model for the forecast too.
+func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
+	return modelForecastView{}, nil
+}
