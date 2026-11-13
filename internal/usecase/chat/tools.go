@@ -150,6 +150,9 @@ func offeredTools(r Request) []Tool {
 
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
+	if strings.TrimSpace(c.Arguments) == "" {
+		c.Arguments = "{}" // без полей Haiku через шлюз шлет "" (shop_money, 14.11)
+	}
 	var args toolArgs
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
