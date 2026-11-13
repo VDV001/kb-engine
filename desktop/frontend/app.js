@@ -5828,12 +5828,57 @@ $("#sh-open").addEventListener("click", async () => {
   try { p = await native().MarketsPickFileTitled("Отчет Ozon «По товарам»"); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
   if (p) { sh.issue = ""; sh.q = ""; $("#sh-q").value = ""; await shRead(p); }
 });
+// shSourceLine — откуда данные одной строкой: «Кабинет FURIA (Ozon) · 15.08.2026 – 12.11.2026 · 547 товаров».
+function shSourceLine(v) {
+  const what = shOzon() ? `Кабинет ${(v.file || "").replace(/^Ozon · /, "")} (Ozon)` : `Отчет ${v.file || ""}`;
+  const n = (v.products || []).length;
+  return [what, v.period, `${fmt(n)} ${plural(n, "товар", "товара", "товаров")}`].filter((x) => x && !/undefined/.test(x)).join(" · ");
+}
+// Период «Магазина» (#580): кабинет загружается за 90 дней, дни режутся из
+// загруженного без запроса к Ozon. Быстрые кнопки — от последнего дня назад.
+const SH_PRESETS = [["all", "все 90 дн."], [30, "30 дн."], [7, "7 дн."], [1, "вчера"]];
+const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function shPresetRange(p, v) {
+  if (p === "all") return [v.windowFrom, v.windowTo];
+  const [y, m, d] = v.windowTo.split("-").map(Number), from = new Date(y, m - 1, d - (p - 1));
+  return [isoDay(from) < v.windowFrom ? v.windowFrom : isoDay(from), v.windowTo];
+}
+function shPeriodRender() {
+  const v = sh.v, on = !!(v && shOzon() && v.windowFrom);
+  $("#sh-period").hidden = !on;
+  if (!on) return;
+  $("#sh-presets").innerHTML = SH_PRESETS.map(([p, l]) => {
+    const [a, b] = shPresetRange(p, v), cur = a === v.from && b === v.to;
+    return `<button type="button" data-sh-preset="${p}" aria-pressed="${cur}"${mkTip(l, p === "all" ? "все загруженные дни кабинета" : p === 1 ? "только последний загруженный день" : `последние ${p} дней до вчера`)}>${l}</button>`;
+  }).join("");
+  for (const [id, val] of [["#sh-d1", v.from], ["#sh-d2", v.to]]) { const i = $(id); i.min = v.windowFrom; i.max = v.windowTo; i.value = val; }
+}
+async function shPeriod(from, to) {
+  if (sh.loading || !sh.v || !native().MarketsOzonPeriod) return;
+  mkErr("");
+  try {
+    const v = await native().MarketsOzonPeriod(sh.v.path, from, to);
+    sh.v = v;
+    sh.only = null; sh.adv = "";
+    if (sh.sel >= v.products.length) sh.sel = 0;
+  } catch (e) { mkErr("Период не применен: " + errText(e)); }
+  shRender();
+}
+$("#sh-presets").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sh-preset]");
+  if (!b || !sh.v) return;
+  hideTip();
+  const p = b.dataset.shPreset === "all" ? "all" : +b.dataset.shPreset;
+  shPeriod(...shPresetRange(p, sh.v));
+});
+for (const id of ["#sh-d1", "#sh-d2"]) $(id).addEventListener("change", () => { const a = $("#sh-d1").value, b = $("#sh-d2").value; if (a && b) shPeriod(a, b); });
 function shRender() {
   const v = sh.v;
   $("#sh-empty").hidden = !!v;
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
-  $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
+  $("#sh-file").textContent = v ? shSourceLine(v) : "";
+  shPeriodRender();
   $("#sh-costs").hidden = !shOzon();
   if (v && v.costsErr) mkErr("Себестоимость не прочитана, прибыль не посчитана: " + v.costsErr);
   if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = $("#sh-loss").hidden = true);

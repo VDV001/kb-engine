@@ -1644,6 +1644,14 @@ body:not(.no-mk-tab) .mk-tab[aria-selected="true"] { border-color: transparent; 
 .mk-lead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 18px; }
 .mk-badge { font-size: 12px; color: var(--z-sp2, var(--z-accent)); border: 1px dashed currentColor; border-radius: var(--z-radius); padding: 3px 8px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-badge:empty { display: none; }
+.sh-src { font-size: 13px; color: var(--z-ink-2); }
+.sh-src:empty { display: none; }
+.sh-period { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 18px; font-size: 13px; color: var(--z-muted); }
+.sh-period[hidden] { display: none; }
+.sh-period-l { color: var(--z-ink-2); }
+.sh-date { display: inline-flex; align-items: center; gap: 6px; }
+.sh-date input { font: 13px var(--z-font); color: var(--z-ink); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 5px 8px; color-scheme: dark light; }
+.sh-date input:focus-visible { outline: 1px solid var(--z-accent); outline-offset: 1px; }
 .mk-intro { margin: 0; flex: 1; min-width: 240px; font-size: 13px; color: var(--z-ink-2); }
 .mk-empty, .mk-err { margin: 0 18px; font-size: 13px; color: var(--z-muted); max-width: 80ch; }
 .mk-err { color: var(--z-bad); }
