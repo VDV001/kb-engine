@@ -170,6 +170,7 @@ func mergeShop(a, b domain.ShopProductData) domain.ShopProductData {
 	a.Returned += b.Returned
 	a.Refused += b.Refused
 	a.OrderedSum += b.OrderedSum
+	a.BoughtOutSum += b.BoughtOutSum
 	a.Stock = max(a.Stock, b.Stock)
 	a.SupplyQty += b.SupplyQty
 	a.Reviews += b.Reviews

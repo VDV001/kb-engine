@@ -91,6 +91,7 @@ func OzonShop(posts []OzonPosting, stock []OzonStock, from, to time.Time) (OzonR
 		total.Cancelled += d.Cancelled
 		total.Refused += d.Refused
 		total.OrderedSum += d.OrderedSum
+		total.BoughtOutSum += d.BoughtOutSum
 		total.Stock += d.Stock
 	}
 	slices.SortFunc(r.Products, func(a, b *domain.ShopProduct) int {
@@ -126,6 +127,7 @@ func (a *ozonAcc) add(p OzonPosting, it OzonItem) {
 	case "delivered":
 		a.d.Delivered += q
 		a.d.BoughtOut += q
+		a.d.BoughtOutSum += q * it.Price
 	}
 }
 

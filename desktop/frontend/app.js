@@ -5683,8 +5683,8 @@ function shRender() {
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#sh-kpis").innerHTML =
-    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн.`, "", shHint("ordered")) +
-    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт`, t.buyout < 0.5 ? "bad" : "", shHint("buyout")) +
+    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн., с отменами`, "", shHint("ordered") + " · сумма заказов — не выручка: в нее входят отмены") +
+    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт${t.boughtSum ? ` на ${fmt(Math.round(t.boughtSum / 1e3))} тыс. ₽` : ""}`, t.buyout < 0.5 ? "bad" : "", shHint("buyout") + (t.boughtSum ? " · сумма — по цене продажи, до комиссии и логистики Ozon" : "")) +
     kpi("Отмены", shPct(t.cancel), `отменено ${fmt(t.cancelled)} шт`, t.cancel > 0.5 ? "bad" : "", shHint("cancel")) +
     (oz ? kpi("Отказ при получении", shPct(t.refuse), `отказались ${fmt(t.refused)} шт — часть отмен`, t.refuse >= SH_REFUSE ? "bad" : "", shHint("refuse"))
       : kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return"))) +
@@ -5755,13 +5755,14 @@ function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
   const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Артикул", p.article || "—", "артикул продавца: размер и цвет обычно в нем"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
-    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽`, shHint("ordered")], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
+    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽ с отменами`, shHint("ordered")],
+    ["Выкуплено на", p.boughtSum ? fmt(Math.round(p.boughtSum)) + " ₽" : "—", "по цене продажи, до комиссии и логистики Ozon"], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
     ["Выкуплено", `${fmt(p.boughtOut)} шт · ${shPct(p.buyout)}`, shHint("buyout")], ["Отменено", `${fmt(p.cancelled)} шт · ${shPct(p.cancel)}`, shHint("cancel")],
     ["Отказ при получении", `${fmt(p.refused)} шт · ${shPct(p.refuse)}`, shHint("refuse")],
     ["Возвращено", `${fmt(p.returned)} шт · ${shPct(p.return)}`, shHint("return")], ["Остаток", fmt(p.stock) + " шт", shHint("stock")],
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
-  const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении"];
+  const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
     `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
