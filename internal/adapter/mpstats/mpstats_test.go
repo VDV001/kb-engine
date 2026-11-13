@@ -161,3 +161,24 @@ func TestCategories(t *testing.T) {
 		t.Errorf("paths = %v, %v; want sorted", paths, err)
 	}
 }
+
+// Выручка десяти крупнейших продавцов ниши — для доли топ-10 в оценке.
+func TestTopSellersRevenue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/oz/get/category/sellers" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var parts []string
+		for i := 1; i <= 12; i++ {
+			parts = append(parts, fmt.Sprintf(`{"supplierid":%d,"revenue":%d}`, i, i*10))
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(parts, ",") + "]"))
+	}))
+	t.Cleanup(srv.Close)
+	d := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	got, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.TopSellersRevenue(context.Background(), "x", d, d, 10)
+	if want := float64(30 + 40 + 50 + 60 + 70 + 80 + 90 + 100 + 110 + 120); err != nil || got != want {
+		t.Errorf("top 10 = %v, %v; want %v (the largest ten, whatever the order)", got, err, want)
+	}
+}
