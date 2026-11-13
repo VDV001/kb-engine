@@ -62,3 +62,16 @@ func TestOzonShop_badPeriod(t *testing.T) {
 		t.Error("period backwards read without error")
 	}
 }
+
+func TestOzonShop_daysAcrossDST(t *testing.T) {
+	// Окно — 90 календарных дней и тогда, когда в них переход на летнее время.
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	to := time.Date(2026, 4, 30, 0, 0, 0, 0, berlin)
+	r, err := markets.OzonShop(nil, nil, to.AddDate(0, 0, -89), to)
+	if err != nil || r.PeriodDays != 90 {
+		t.Errorf("days = %d (%v), want 90", r.PeriodDays, err)
+	}
+}

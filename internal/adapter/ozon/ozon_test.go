@@ -95,3 +95,37 @@ func TestClient_refused(t *testing.T) {
 		t.Errorf("http to a foreign host: err = %v, want ErrInsecureURL — the key goes only over https", err)
 	}
 }
+
+func TestClient_noRedirect(t *testing.T) {
+	// Перенаправление уводит ключ на чужой адрес: Go повторяет свои заголовки
+	// (Api-Key, Client-Id) на новый хост. Клиент Ozon перенаправлений не идет.
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Api-Key") != ""
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusFound)
+	}))
+	defer srv.Close()
+	c := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret"}
+	if _, err := c.Stocks(context.Background()); !errors.Is(err, ozon.ErrRedirect) {
+		t.Errorf("redirect: err = %v, want ErrRedirect", err)
+	}
+	if leaked {
+		t.Error("the key went to the redirect's host")
+	}
+}
+
+func TestClient_skipsSKUZero(t *testing.T) {
+	// Товар без SKU на Ozon (на модерации) приходит с sku 0: в один товар его не склеивать.
+	srv := fake(t, map[string][]string{
+		"/v4/product/info/stocks": {`{"cursor":"","items":[{"product_id":1,"offer_id":"a","stocks":[{"sku":0,"present":5}]},{"product_id":2,"offer_id":"b","stocks":[{"sku":0,"present":7}]},{"product_id":3,"offer_id":"c","stocks":[{"sku":33,"present":1}]}]}`},
+		"/v3/product/info/list":   {`{"items":[]}`},
+	})
+	defer srv.Close()
+	st, err := (ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}).Stocks(context.Background())
+	if err != nil || len(st) != 1 || st[0].SKU != "33" {
+		t.Errorf("stocks = %+v (%v), want only SKU 33", st, err)
+	}
+}

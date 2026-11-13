@@ -123,7 +123,7 @@ func ozonErr(name string, err error) error {
 	case errors.Is(err, ozon.ErrTooMany):
 		return errors.New("запросы слишком частые, Ozon просит подождать — загрузите снова через минуту")
 	case errors.Is(err, ozon.ErrTooBig):
-		return errors.New("отправлений за 90 дней больше 50 000 — такой кабинет окно пока не читает")
+		return fmt.Errorf("кабинет «%s» слишком большой для одного чтения (больше 50 000 отправлений одной схемы за 90 дней или 500 000 карточек) — такой окно пока не читает", name)
 	case errors.Is(err, context.DeadlineExceeded):
 		return errors.New("сервер Ozon не ответил за пять минут — загрузите снова")
 	}

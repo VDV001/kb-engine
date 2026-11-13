@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -34,15 +33,6 @@ type OzonStock struct {
 	Qty                float64
 }
 
-// Запас, при котором окно советует довезти, и на сколько вперед.
-// ponytail: две и четыре недели — правило из практики, без сезона и сроков
-// поставки; потолок — пик сезона; путь — запас от прогноза «Маркеты → Прогноз».
-const (
-	supplyWarnDays = 14
-	supplyForDays  = 28
-	supplyMinSold  = 5 // продано меньше — темп случаен
-)
-
 // refusedAtPickup — отказ при вручении в причине отмены Ozon.
 const refusedAtPickup = "отказался при вручении"
 
@@ -61,7 +51,7 @@ func OzonShop(posts []OzonPosting, stock []OzonStock, from, to time.Time) (OzonR
 	if to.Before(from) {
 		return OzonReport{}, ErrOzonPeriod
 	}
-	days := int(to.Sub(from).Hours()/24) + 1
+	days := calendarDays(from, to)
 	acc := map[string]*ozonAcc{}
 	get := func(sku, article string) *ozonAcc {
 		a := acc[sku]
@@ -149,12 +139,13 @@ func (a *ozonAcc) finish(days int) domain.ShopProductData {
 	if d.Ordered > 0 {
 		d.AvgPrice = d.OrderedSum / d.Ordered
 	}
-	if sold := d.Ordered - d.Cancelled; sold >= supplyMinSold {
-		perDay := sold / float64(days)
-		if d.Stock < perDay*supplyWarnDays {
-			d.UrgentSupply = true
-			d.SupplyQty = math.Ceil(perDay*supplyForDays - d.Stock)
-		}
-	}
+	d.UrgentSupply, d.SupplyQty = domain.Supply(d.Ordered-d.Cancelled, d.Stock, days)
 	return d
+}
+
+// calendarDays counts days from from to to inclusive by the calendar: разность
+// часов на переходе на летнее время дала бы на день меньше (ревью #590).
+func calendarDays(from, to time.Time) int {
+	day := func(t time.Time) time.Time { return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC) }
+	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }

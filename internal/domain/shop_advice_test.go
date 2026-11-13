@@ -58,3 +58,39 @@ func TestAdviseShop(t *testing.T) {
 		t.Error("empty shop got advice")
 	}
 }
+
+func TestAdviseShop_keepNeedsNoIssues(t *testing.T) {
+	// В отчете-файле отказов нет (0), зато есть возвраты, ДРР и рейтинг:
+	// «продается чисто» — только без проблем по ним.
+	ps := shop(t,
+		domain.ShopProductData{Name: "Возвращают", SKU: "1", Ordered: 20, BoughtOut: 8, Cancelled: 2, Returned: 10},
+		domain.ShopProductData{Name: "Дорогая реклама", SKU: "2", Ordered: 20, BoughtOut: 18, Cancelled: 2, DRR: 0.4},
+		domain.ShopProductData{Name: "Чисто", SKU: "3", Ordered: 20, BoughtOut: 18, Cancelled: 2},
+	)
+	for _, a := range domain.AdviseShop(ps) {
+		if a.Kind == domain.AdviceKeep && !slices.Equal(a.SKUs, []string{"3"}) {
+			t.Errorf("keep = %v, want only the clean one", a.SKUs)
+		}
+	}
+}
+
+func TestSupply(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		sold, stock float64
+		days        int
+		urgent      bool
+		qty         float64
+	}{
+		{"кончается", 6, 0, 90, true, 2},
+		{"хватает", 90, 30, 90, false, 0},
+		{"мало продаж — темп случаен", 4, 0, 90, false, 0},
+		{"нет периода", 10, 0, 0, false, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if u, q := domain.Supply(tc.sold, tc.stock, tc.days); u != tc.urgent || q != tc.qty {
+				t.Errorf("Supply = %v, %v; want %v, %v", u, q, tc.urgent, tc.qty)
+			}
+		})
+	}
+}
