@@ -90,17 +90,7 @@ func (t ShopTools) Run(ctx context.Context, name string, args []byte) (string, e
 		}
 	}
 	if name == "shop_money" || name == "shop_losses" {
-		if t.Money == nil {
-			return "деньги кабинета в чате недоступны — скажи человеку, что их видно в «Маркеты → Магазин»", nil
-		}
-		d, err := t.Money(ctx, a.Cabinet)
-		if err != nil {
-			return "", err
-		}
-		if name == "shop_money" {
-			return shopMoney(d), nil
-		}
-		return shopLosses(d), nil
+		return t.runMoney(ctx, name, a.Cabinet)
 	}
 	d, err := t.Load(ctx, a.Cabinet)
 	if err != nil {
@@ -337,6 +327,21 @@ func productLine(d domain.ShopProductData) string {
 }
 
 // num — целое с пробелом между тысячами: «102 000».
+// runMoney runs the tools that need accruals: своя загрузка, начисления дорогие.
+func (t ShopTools) runMoney(ctx context.Context, name, cabinet string) (string, error) {
+	if t.Money == nil {
+		return "деньги кабинета в чате недоступны — скажи человеку, что их видно в «Маркеты → Магазин»", nil
+	}
+	d, err := t.Money(ctx, cabinet)
+	if err != nil {
+		return "", err
+	}
+	if name == "shop_money" {
+		return shopMoney(d), nil
+	}
+	return shopLosses(d), nil
+}
+
 // shopMoney — строки «Экономики магазина» из начислений.
 func shopMoney(d ShopData) string {
 	e := OzonEconomy(d.Accruals)
