@@ -70,6 +70,13 @@ func (f *folderSettings) ozonConn(c desktopconfig.Connection) connRow {
 	return r
 }
 
+// MarketsForecastOzon forecasts with own sales from an Ozon cabinet.
+func (a *App) MarketsForecastOzon(lastYear, nicheNow, id string) (forecastView, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	return a.settings.forecastOzon(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, id, time.Now())
+}
+
 // MarketsOzon reads the shop from an Ozon cabinet for the last 90 days.
 func (a *App) MarketsOzon(id string) (shopView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
@@ -77,27 +84,39 @@ func (a *App) MarketsOzon(id string) (shopView, error) {
 	return a.settings.ozonShop(ctx, ozon.DefaultURL, nil, id, time.Now())
 }
 
-// ozonShop reads cabinet id through base: отправления за 90 дней до
-// вчерашнего дня включительно (сегодняшние еще идут) и остатки сейчас.
-func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time) (shopView, error) {
+// ozonCabinet returns the client of cabinet id with its key from the keychain.
+func (f *folderSettings) ozonCabinet(id, base string, hc *http.Client) (ozon.Client, desktopconfig.Connection, error) {
 	c, ok := f.snapshot().cfg.Connection(id)
 	if !ok || c.Kind != desktopconfig.ConnOzon {
-		return shopView{}, errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
+		return ozon.Client{}, c, errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
 	}
 	if !c.Enabled {
-		return shopView{}, fmt.Errorf("подключение «%s» выключено", c.Name)
+		return ozon.Client{}, c, fmt.Errorf("подключение «%s» выключено", c.Name)
 	}
 	key, err := f.tokens.Get(connKeyAccount(id))
 	if err != nil {
 		if errors.Is(err, keychain.ErrNotFound) {
-			return shopView{}, fmt.Errorf("ключа кабинета «%s» нет в Связке ключей — добавьте кабинет заново", c.Name)
+			return ozon.Client{}, c, fmt.Errorf("ключа кабинета «%s» нет в Связке ключей — добавьте кабинет заново", c.Name)
 		}
-		return shopView{}, keychainNote2(err)
+		return ozon.Client{}, c, keychainNote2(err)
 	}
-	cl := ozon.Client{BaseURL: base, ClientID: c.Account, Key: key, HTTP: hc}
-	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.Local)
-	to := day.AddDate(0, 0, -1)
-	from := to.AddDate(0, 0, -(ozonDays - 1))
+	return ozon.Client{BaseURL: base, ClientID: c.Account, Key: key, HTTP: hc}, c, nil
+}
+
+// ozonWindow — 90 дней до вчерашнего включительно: сегодняшние отправления еще идут.
+func ozonWindow(now time.Time) (from, to time.Time) {
+	day := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	to = day.AddDate(0, 0, -1)
+	return to.AddDate(0, 0, -(ozonDays - 1)), to
+}
+
+// ozonShop reads cabinet id through base: отправления за 90 дней и остатки сейчас.
+func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Client, id string, now time.Time) (shopView, error) {
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return shopView{}, err
+	}
+	from, to := ozonWindow(now)
 	posts, err := cl.Postings(ctx, from, to)
 	if err != nil {
 		return shopView{}, ozonErr(c.Name, err)
@@ -139,7 +158,40 @@ func adviceOf(ps []*domain.ShopProduct) []shopAdvice {
 	return out
 }
 
-// forecastOzon is not written yet.
+// forecastOzon forecasts with own sales from cabinet id instead of the third
+// file: штуки без отмен по дням за 90 дней до вчера.
 func (f *folderSettings) forecastOzon(ctx context.Context, base string, hc *http.Client, last, now, id string, today time.Time) (forecastView, error) {
-	return forecastView{}, nil
+	series, files, err := f.ozonForecastSeries(ctx, base, hc, last, now, id, today)
+	if err != nil {
+		return forecastView{}, err
+	}
+	return forecastOf(series, files)
+}
+
+// ozonForecastSeries reads the two niche files and own sales from cabinet id.
+func (f *folderSettings) ozonForecastSeries(ctx context.Context, base string, hc *http.Client, last, now, id string, today time.Time) ([3]domain.DailySales, []forecastFile, error) {
+	var series [3]domain.DailySales
+	var files []forecastFile
+	for i, x := range []struct{ path, what string }{{last, "ниша, прошлый год"}, {now, "ниша, сейчас"}} {
+		s, info, err := readSales(x.path, x.what)
+		if err != nil {
+			return series, nil, err
+		}
+		series[i], files = s, append(files, info)
+	}
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return series, nil, err
+	}
+	from, to := ozonWindow(today)
+	posts, err := cl.Postings(ctx, from, to)
+	if err != nil {
+		return series, nil, ozonErr(c.Name, err)
+	}
+	if series[2], err = markets.OzonDaily(posts, from, to, today.Location()); err != nil {
+		return series, nil, err
+	}
+	files = append(files, forecastFile{File: "Ozon · " + c.Name, Format: "ozon", Days: len(series[2].Days()),
+		From: from.Format("02.01.2006"), To: to.Format("02.01.2006")})
+	return series, files, nil
 }

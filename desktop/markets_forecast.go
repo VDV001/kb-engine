@@ -6,11 +6,13 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/usage"
 
+	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/adapter/tablefile"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -80,15 +82,20 @@ func readSales(path, what string) (domain.DailySales, forecastFile, error) {
 
 func forecastFiles(lastYear, nicheNow, own string) (forecastView, error) {
 	var series [3]domain.DailySales
-	v := forecastView{}
+	var files []forecastFile
 	for i, f := range []struct{ path, what string }{{lastYear, "ниша, прошлый год"}, {nicheNow, "ниша, сейчас"}, {own, "свои продажи"}} {
 		s, info, err := readSales(f.path, f.what)
 		if err != nil {
 			return forecastView{}, err
 		}
-		series[i] = s
-		v.Files = append(v.Files, info)
+		series[i], files = s, append(files, info)
 	}
+	return forecastOf(series, files)
+}
+
+// forecastOf builds the view from the three series: ниша прошлого года, ниша сейчас, свои.
+func forecastOf(series [3]domain.DailySales, files []forecastFile) (forecastView, error) {
+	v := forecastView{Files: files}
 	fc, err := domain.NewForecast(series[0], series[1], series[2])
 	if err != nil {
 		return forecastView{}, err
@@ -152,6 +159,11 @@ func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (
 		}
 		series[i] = s
 	}
+	return d.modelForecast(series)
+}
+
+// modelForecast asks the model about the three series; согласие проверено выше.
+func (d *chatDesk) modelForecast(series [3]domain.DailySales) (modelForecastView, error) {
 	formula, err := domain.NewForecast(series[0], series[1], series[2])
 	if err != nil {
 		return modelForecastView{}, err
@@ -188,6 +200,17 @@ func (d *chatDesk) ModelForecast(lastYear, nicheNow, own string, consent bool) (
 }
 
 // MarketsModelForecast asks the chat model for the forecast next to the formula.
+// Свои продажи «ozon:<id>» — из кабинета; согласие спрашивается до похода в Ozon.
 func (a *App) MarketsModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
-	return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
+	id, ok := strings.CutPrefix(own, "ozon:")
+	if !ok || !consent {
+		return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	series, _, err := a.settings.ozonForecastSeries(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, id, time.Now())
+	if err != nil {
+		return modelForecastView{}, err
+	}
+	return a.chat.modelForecast(series)
 }

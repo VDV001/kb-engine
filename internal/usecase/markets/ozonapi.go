@@ -151,7 +151,31 @@ func calendarDays(from, to time.Time) int {
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }
 
-// OzonDaily is not written yet.
+// OzonDaily turns postings into own sales by day for the forecast (#580):
+// штуки без отмен по дню отправления в часовом поясе loc, дни from..to
+// включительно; день без продаж — ноль, а не пропуск.
 func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (domain.DailySales, error) {
-	return domain.DailySales{}, nil
+	key := func(t time.Time) time.Time {
+		t = t.In(loc)
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
+	}
+	first, last := key(from), key(to)
+	if last.Before(first) {
+		return domain.DailySales{}, ErrOzonPeriod
+	}
+	byDay := map[time.Time]float64{}
+	for _, p := range posts {
+		d := key(p.At)
+		if p.Status == "cancelled" || p.At.IsZero() || d.Before(first) || d.After(last) {
+			continue
+		}
+		for _, it := range p.Items {
+			byDay[d] += float64(it.Qty)
+		}
+	}
+	var days []domain.DaySales
+	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
+		days = append(days, domain.DaySales{Day: d, Value: byDay[d]})
+	}
+	return domain.NewDailySales(days)
 }

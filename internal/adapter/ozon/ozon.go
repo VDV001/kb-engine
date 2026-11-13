@@ -168,7 +168,9 @@ type postingPage struct {
 }
 
 type postingJSON struct {
-	Status       string `json:"status"`
+	Status       string    `json:"status"`
+	InProcessAt  time.Time `json:"in_process_at"`
+	CreatedAt    time.Time `json:"created_at"`
 	Cancellation *struct {
 		Reason string `json:"cancel_reason"`
 	} `json:"cancellation"`
@@ -204,7 +206,10 @@ func (p *price) UnmarshalJSON(b []byte) error {
 }
 
 func (p postingJSON) posting(scheme string) markets.OzonPosting {
-	out := markets.OzonPosting{Scheme: scheme, Status: p.Status}
+	out := markets.OzonPosting{Scheme: scheme, Status: p.Status, At: p.InProcessAt}
+	if out.At.IsZero() {
+		out.At = p.CreatedAt
+	}
 	if p.Cancellation != nil {
 		out.CancelReason = p.Cancellation.Reason
 	}

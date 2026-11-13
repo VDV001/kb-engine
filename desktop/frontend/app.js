@@ -5456,7 +5456,7 @@ const FC_KEY = "dvk.markets.forecast";
 const FC_SLOTS = [
   ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики: продажи ниши по дням за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025"],
   ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка за последние недели — например, сен-окт 2026"],
-  ["3 · Свои продажи", "Свои продажи", "отчет площадки или своя таблица: дата и количество за те же недели; позже — из подключения Ozon и Wildberries"],
+  ["3 · Свои продажи", "Свои продажи", "из кабинета Ozon по ключу (90 дней, без отмен) или отчет площадки и своя таблица: дата и количество за те же недели"],
 ];
 const FC_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
 const fcDate = (s) => new Date(s + "T00:00:00");
@@ -5479,17 +5479,27 @@ $("#markets-view").addEventListener("click", (e) => {
 function fcRender() {
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
-    const p = fc.paths[i], info = fc.v && fc.v.files[i];
+    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:");
     const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
-      `<span class="name"${p ? mkTip("Файл", p) : ""}>${esc(p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(meta)}</span>` +
-      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p ? "Другой файл…" : "Выбрать файл…"}</button></div>`;
+      `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? (info ? info.file : "кабинет Ozon") : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "загрузится при расчете" : meta)}</span>` +
+      `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
+      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` : "") + `</div>`;
   }).join("");
   const v = fc.v;
   $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
   if (v) { fcKpis(v); fcChart(v); }
 }
 $("#mk-files").addEventListener("click", async (e) => {
+  if (e.target.closest("#fc-ozon")) {
+    hideTip();
+    if (!native() || !native().MarketsForecastOzon) return mkErr("Прогноз работает в окне приложения.");
+    const rows = await shCabinets();
+    if (!rows.length) { await openSettings("conn"); return showOzonForm(); }
+    const id = rows.length > 1 ? $("#sh-cab").value : rows[0].id; // кабинет — тот, что выбран в «Магазине»
+    fc.paths[2] = "ozon:" + id; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+    return;
+  }
   const b = e.target.closest("[data-fc-pick]"); if (!b) return;
   hideTip();
   if (!native() || !native().MarketsPickFileTitled) return mkErr("Прогноз работает в окне приложения.");
@@ -5505,7 +5515,7 @@ $("#mk-fc-go").addEventListener("click", async () => {
   const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
   if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
   mkErr(""); fc.busy = true; $("#mk-fc-go").textContent = "Считаю…";
-  try { fc.v = await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
+  try { fc.v = fc.paths[2].startsWith("ozon:") ? await native().MarketsForecastOzon(fc.paths[0], fc.paths[1], fc.paths[2].slice(5)) : await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
   fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
   fcRender();
 });
