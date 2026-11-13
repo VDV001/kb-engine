@@ -300,3 +300,18 @@ func TestToolsMode_StepsNameWhereTheTurnGoes(t *testing.T) {
 		t.Errorf("uses\n got %+v\nwant %+v", turn.Uses, wantUses)
 	}
 }
+
+// Модель называет, откуда цифры, и не выдумывает источник, которого у нее нет
+// (отзыв 14.11: человек должен понимать, где чат брал данные).
+func TestToolsMode_PromptAsksToNameWhereFrom(t *testing.T) {
+	m := &scriptModel{replies: []chat.ModelReply{{Content: "ответ"}}}
+	if _, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(&fakeReader{})).Answer(context.Background(), nil, "?", chat.ModeTools); err != nil {
+		t.Fatal(err)
+	}
+	p := m.asked[0][0].Content
+	for _, want := range []string{"откуда", "подключени", "интернет"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("system prompt lacks %q:\n%s", want, p)
+		}
+	}
+}
