@@ -4,7 +4,6 @@ import (
 	"context"
 	"math"
 	"net/http"
-	"path/filepath"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -43,6 +42,7 @@ type planView struct {
 	Profit       float64    `json:"profit"`
 	SupplyQty    float64    `json:"supplyQty"`
 	SupplyBy     string     `json:"supplyBy"`
+	SupplyLate   bool       `json:"supplyLate"` // срок прошел — везти сейчас
 	ShortForPeak bool       `json:"shortForPeak"`
 	Peak         string     `json:"peak"`
 }
@@ -82,14 +82,11 @@ func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client,
 	return v, nil
 }
 
-// planExcel writes the plan to path.
-func (f *folderSettings) planExcel(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time, in planInput, path string) error {
-	p, err := f.buildPlan(ctx, base, hc, last, now, own, today, in)
-	if err != nil {
-		return err
-	}
-	return planxlsx.Write(path, p)
-}
+// planExcel writes the last built plan to path.
+func (f *folderSettings) planExcel(path string) error { return nil }
+
+// xlsxPath adds .xlsx when the name has no such extension.
+func xlsxPath(p string) string { return p }
 
 // MarketsPlan builds the plan from the forecast's three sources.
 func (a *App) MarketsPlan(lastYear, nicheNow, own string, in planInput) (planView, error) {
@@ -98,17 +95,14 @@ func (a *App) MarketsPlan(lastYear, nicheNow, own string, in planInput) (planVie
 	return a.settings.plan(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, own, time.Now(), in)
 }
 
-// MarketsPlanExcel asks where to save and writes the plan; "" — человек отменил.
-func (a *App) MarketsPlanExcel(lastYear, nicheNow, own string, in planInput) (string, error) {
+// MarketsPlanExcel asks where to save and writes the plan on screen; "" — отменил.
+// Ввод не нужен: пишется построенный план, а не пересчитанный (ревью #599).
+func (a *App) MarketsPlanExcel() (string, error) {
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Сохранить план", DefaultFilename: "План продаж " + time.Now().Format("2006-01-02") + ".xlsx",
 		Filters: []runtime.FileFilter{{DisplayName: "Excel", Pattern: "*.xlsx"}}})
 	if err != nil || path == "" {
 		return "", err
 	}
-	if filepath.Ext(path) != ".xlsx" {
-		path += ".xlsx"
-	}
-	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
-	defer cancel()
-	return path, a.settings.planExcel(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, own, time.Now(), in, path)
+	path = xlsxPath(path)
+	return path, a.settings.planExcel(path)
 }

@@ -2,6 +2,7 @@ package planxlsx_test
 
 import (
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -64,8 +65,15 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("days sheet: %d rows, want %d", len(days), len(p.Days())+1)
 	}
 	// Продано на первой неделе — число в ячейке, а не текст.
-	if typ, _ := f.GetCellType("По неделям", "D2"); typ != excelize.CellTypeNumber && typ != excelize.CellTypeUnset {
-		t.Errorf("sell cell type = %v, want a number", typ)
+	// Числа — числами, даты — датами: Excel сортирует и строит по ним графики (ревью #599).
+	for _, c := range []struct{ sheet, cell string }{{"По неделям", "D2"}, {"По неделям", "A2"}, {"По дням", "A2"}} {
+		raw, _ := f.GetCellValue(c.sheet, c.cell, excelize.Options{RawCellValue: true})
+		if _, err := strconv.ParseFloat(raw, 64); err != nil {
+			t.Errorf("%s!%s = %q, want a number in the cell (date serial or count)", c.sheet, c.cell, raw)
+		}
+	}
+	if v, _ := f.GetCellValue("По дням", "A2"); v != "01.11.2026" {
+		t.Errorf("day shown as %q, want 01.11.2026", v)
 	}
 	// Прогноз 20 шт/день (прошлый год ×2, рост 1, доля 10 %); первая неделя —
 	// одно воскресенье 01.11: продать 20.

@@ -142,3 +142,42 @@ func TestNewPlan_refuses(t *testing.T) {
 		t.Errorf("empty forecast: err = %v", err)
 	}
 }
+
+// Ревью #599: план — с сегодня, срок поставки в прошлом назван, нулевой прогноз — отказ.
+func TestNewPlan_fromToday(t *testing.T) {
+	f := knownPlanForecast(t)
+	// Сегодня 13.11: 1-12.11 уже прошли (12 дней × 30 + 60 сверху за 11.11 = 420 шт
+	// спроса не в плане). Остаток 1 000 на сегодня: 13-30.11 — 540, 1-15.12 — 450,
+	// итого 990 к 15.12, 16.12 кончается. Довезти 1 890 − 420 − 1 000 = 470 к 06.12.
+	p, err := domain.NewPlan(f, domain.PlanInput{Stock: 1000, Cost: 500, Price: 2000, Commission: 0.4, Logistics: 0.1, LeadDays: 10, From: day(2026, 11, 13)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := p.Days(); len(d) != 49 || !d[0].Day.Equal(day(2026, 11, 13)) {
+		t.Errorf("days = %d from %v; want 49 from 13.11", len(d), d[0].Day)
+	}
+	if qty, by := p.Supply(); math.Abs(qty-470) > 1e-6 || !by.Equal(day(2026, 12, 6)) || p.SupplyLate() {
+		t.Errorf("supply %v by %v late %v; want 470 by 06.12, not late", qty, by, p.SupplyLate())
+	}
+	// Остаток 200 на 01.11 — кончится 07.11, везти надо было к 28.10: срок прошел.
+	late, err := domain.NewPlan(f, domain.PlanInput{Stock: 200, Cost: 500, Price: 2000, Commission: 0.4, Logistics: 0.1, LeadDays: 10, From: day(2026, 11, 1)})
+	if err != nil || !late.SupplyLate() {
+		t.Errorf("supply by 28.10 when today is 01.11: late = %v, err %v", late.SupplyLate(), err)
+	}
+	// Сегодня после конца прогноза — плана нет.
+	if _, err := domain.NewPlan(f, domain.PlanInput{Stock: 1, Cost: 1, Price: 100, From: day(2027, 1, 5)}); !errors.Is(err, domain.ErrInvalidPlan) {
+		t.Errorf("today after the forecast: err = %v", err)
+	}
+}
+
+func TestNewPlan_zeroForecast(t *testing.T) {
+	last, now, _ := knownForecast(t)
+	own := series(t, day(2026, 9, 1), day(2026, 10, 31), func(time.Time) float64 { return 0 })
+	f, err := domain.NewForecast(last, now, own)
+	if err != nil {
+		t.Skipf("forecast refuses zero own sales itself: %v", err)
+	}
+	if _, err := domain.NewPlan(f, domain.PlanInput{Stock: 1, Cost: 1, Price: 100}); !errors.Is(err, domain.ErrInvalidPlan) {
+		t.Errorf("zero forecast: err = %v, want ErrInvalidPlan (пика нет)", err)
+	}
+}

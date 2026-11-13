@@ -16,6 +16,9 @@ type PlanInput struct {
 	Stock, Cost, Price    float64
 	Commission, Logistics float64
 	LeadDays              int
+	// From — сегодня: остаток — на сегодня, прошедшие дни прогноза уже
+	// проданы; ноль — с первого дня прогноза (ревью #599).
+	From time.Time
 }
 
 // PlanDay — день плана: спрос прогноза, сколько продать, остаток на конец, цена.
@@ -183,6 +186,9 @@ func (p Plan) Supply() (qty float64, by time.Time) {
 
 // Peak is the forecast's peak day.
 func (p Plan) Peak() time.Time { return p.peak }
+
+// SupplyLate — срок поставки уже прошел: везти сейчас.
+func (p Plan) SupplyLate() bool { return false }
 
 // ShortForPeak — остаток кончится раньше дня пика или в него.
 func (p Plan) ShortForPeak() bool { return !p.out.IsZero() && !p.out.After(p.peak) }
