@@ -108,6 +108,8 @@ func mpstatsMessage(err error) string {
 		return "ключ MPStats не принят: скопируйте его заново в MPStats → Профиль → API"
 	case errors.Is(err, mpstats.ErrQuota):
 		return "лимит запросов тарифа MPStats исчерпан — дождитесь нового периода тарифа"
+	case errors.Is(err, mpstats.ErrTimeout):
+		return "MPStats не ответил вовремя — он бывает занят, попробуйте через минуту"
 	}
 	return "MPStats не ответил: " + err.Error()
 }

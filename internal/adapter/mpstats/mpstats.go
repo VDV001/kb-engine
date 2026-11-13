@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
@@ -26,6 +27,7 @@ var (
 	ErrInsecureURL  = errors.New("ключ MPStats уходит только по https")
 	ErrQuota        = errors.New("лимит запросов тарифа MPStats исчерпан")
 	ErrRedirect     = errors.New("перенаправление: ключ на другой адрес не уходит")
+	ErrTimeout      = errors.New("MPStats не ответил вовремя")
 )
 
 // maxBody — предел ответа: ряд по дням за год — десятки килобайт.
@@ -56,8 +58,59 @@ type DaySales struct {
 	Sales float64
 }
 
-// CategoryByDay returns the Ozon category's sales for days from..to, старые сначала.
+// chunkDays — дней в одном запросе: 210 дней за раз MPStats не успевает (504
+// через 60 с), 30 дней — 8,5 с (замер 13.11). parallel — частей сразу.
+const (
+	chunkDays = 31
+	parallel  = 4
+)
+
+// CategoryByDay returns the Ozon category's sales for days from..to, старые
+// сначала; долгий ряд — частями по chunkDays, до parallel частей сразу.
 func (c Client) CategoryByDay(ctx context.Context, path string, from, to time.Time) ([]DaySales, error) {
+	var spans [][2]time.Time
+	for d := from; !d.After(to); d = d.AddDate(0, 0, chunkDays) {
+		spans = append(spans, [2]time.Time{d, minTime(d.AddDate(0, 0, chunkDays-1), to)})
+	}
+	parts := make([][]DaySales, len(spans))
+	errs := make([]error, len(spans))
+	sem := make(chan struct{}, parallel)
+	var wg sync.WaitGroup
+	for i, sp := range spans {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			parts[i], errs[i] = c.categorySpan(ctx, path, sp[0], sp[1])
+		})
+	}
+	wg.Wait()
+	if err := firstErr(errs); err != nil {
+		return nil, err
+	}
+	out := slices.Concat(parts...)
+	slices.SortFunc(out, func(a, b DaySales) int { return a.Day.Compare(b.Day) })
+	return out, nil
+}
+
+func minTime(a, b time.Time) time.Time {
+	if a.Before(b) {
+		return a
+	}
+	return b
+}
+
+// firstErr — первая ошибка частей: человеку одна причина, а не семь одинаковых.
+func firstErr(errs []error) error {
+	for _, e := range errs {
+		if e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+// categorySpan asks one part of the range.
+func (c Client) categorySpan(ctx context.Context, path string, from, to time.Time) ([]DaySales, error) {
 	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}, "groupBy": {"day"}}
 	var rows []struct {
 		Period string  `json:"period"`
@@ -74,7 +127,6 @@ func (c Client) CategoryByDay(ctx context.Context, path string, from, to time.Ti
 		}
 		out = append(out, DaySales{Day: d, Sales: r.Sales})
 	}
-	slices.SortFunc(out, func(a, b DaySales) int { return a.Day.Compare(b.Day) })
 	return out, nil
 }
 
@@ -93,7 +145,7 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 		return err
 	}
 	req.Header.Set("X-Mpstats-TOKEN", c.Token)
-	client := &http.Client{Timeout: time.Minute}
+	client := &http.Client{Timeout: 90 * time.Second} // часть ряда — до 15 с; запас на загруженный MPStats
 	if c.HTTP != nil {
 		cp := *c.HTTP
 		client = &cp
@@ -101,6 +153,14 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect } // ключ — только на BaseURL
 	resp, err := client.Do(req)
 	if err != nil {
+		// Адрес с путем ниши в тексте ошибки человеку не нужен (живая проверка 13.11).
+		var ue *url.Error
+		if errors.As(err, &ue) {
+			if ue.Timeout() {
+				return ErrTimeout
+			}
+			return ue.Err
+		}
 		return err
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -129,6 +189,9 @@ func statusErr(status int) error {
 		return ErrUnauthorized
 	case http.StatusTooManyRequests:
 		return ErrQuota
+	}
+	if status == http.StatusGatewayTimeout {
+		return ErrTimeout
 	}
 	return fmt.Errorf("MPStats ответил %d", status)
 }

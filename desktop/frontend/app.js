@@ -5566,29 +5566,61 @@ $("#markets-view").addEventListener("click", (e) => {
     else plan.scrollIntoView({ block: "start" });
   }
 });
+// Ниша из MPStats (#580): обе ниши — одним источником «mpstats:<id>|<путь>»;
+// путь — ниша из «Ниши» («Прогноз по этой нише») или вписанный вручную.
+const fcMpsPath = (p) => p.slice(p.indexOf("|") + 1);
+function fcMPStatsSlot(i, title, hint, p, info) {
+  const path = fcMpsPath(p);
+  const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете" : "90 дней до вчера — загрузятся при расчете";
+  return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
+    `<span class="name">MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
+    (i === 0 ? `<input class="mk-q" id="fc-mps-path" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "полный путь категории Ozon, как в MPStats и в выгрузке «Товары категории»; проще — выбрать нишу во вкладке «Ниша» → «Прогноз по этой нише»")}>` : "") +
+    `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
+}
 function fcRender() {
   $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
   if (!fc.v) plRender(null);
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
-    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:");
+    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:"), mps = p.startsWith("mpstats:");
+    if (mps) return fcMPStatsSlot(i, title, hint, p, info);
     const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to}${info.format === "ozon" ? " · заказы с отменами" : ""}${info.undated ? ` · без даты ${fmt(info.undated)}, не учтены` : ""} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
       `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(p.slice(5)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
       (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${"ozon:" + c.id === p ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
       `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
-      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` : "") + `</div>`;
+      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` :
+        `<button class="btn" type="button" data-fc-mps${mkTip("Из MPStats", "продажи ниши по дням по ключу MPStats — сразу для прошлого года и сейчас, без выгрузки; ключ — в Настройках → Подключения")}>Из MPStats</button>`) + `</div>`;
   }).join("");
   const v = fc.v;
   $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
   if (v) { fcKpis(v); fcChart(v); }
 }
 $("#mk-files").addEventListener("change", (e) => {
+  if (e.target.id === "fc-mps-path" && !fc.busy) {
+    const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+    fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`; fc.v = null; fcSave(); return fcRender();
+  }
   if (e.target.id !== "fc-cab" || fc.busy) return;
   fc.paths[2] = "ozon:" + e.target.value; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
 });
 $("#mk-files").addEventListener("click", async (e) => {
-  if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
+  if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick], [data-fc-mps]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
+  if (e.target.closest("[data-fc-mps]")) {
+    hideTip();
+    if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
+    let rows = [];
+    try { rows = ((await native().Connections()) || []).filter((c) => c.kind === "mpstats" && c.enabled); } catch (_) { /* нет подключений — откроем форму */ }
+    if (!rows.length) {
+      await openSettings("conn");
+      $("#conn-mpstats").hidden = false; $("#conn-add-mpstats").setAttribute("aria-expanded", "true");
+      return focusSoon("#conn-m-key");
+    }
+    const src = `mpstats:${rows[0].id}|${fc.niche || ""}`;
+    fc.paths[0] = fc.paths[1] = src; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+    if (!fc.niche) focusSoon("#fc-mps-path");
+    return;
+  }
   if (e.target.closest("#fc-ozon")) {
     hideTip();
     if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
@@ -5605,7 +5637,9 @@ $("#mk-files").addEventListener("click", async (e) => {
   let p = "";
   try { p = await native().MarketsPickFileTitled(b.dataset.fcTitle); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
   if (!p) return;
-  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+  const i = +b.dataset.fcPick;
+  if (i < 2 && fc.paths[1 - i].startsWith("mpstats:")) fc.paths[1 - i] = ""; // ниши — обе файлами или обе из MPStats
+  fc.paths[i] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
 });
 $("#mk-fc-go").addEventListener("click", async () => {
   hideTip();
