@@ -121,7 +121,7 @@ func (x mpstatsExtra) run(ctx context.Context, name string, a mpstatsArgs) (stri
 // categories finds the paths holding every word of q.
 func (x mpstatsExtra) categories(ctx context.Context, q string) (string, error) {
 	var words []string // FoldName вырезает пробелы: слова — до свертки
-	for _, w := range strings.Fields(q) {
+	for w := range strings.FieldsSeq(q) {
 		words = append(words, domain.FoldName(w))
 	}
 	if len(words) == 0 {
