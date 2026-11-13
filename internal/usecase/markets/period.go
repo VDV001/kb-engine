@@ -43,6 +43,7 @@ type NicheSale struct {
 	Name           string
 	Sales, Revenue float64 // за весь период
 	Sellers        int     // с продажами
+	Top10Revenue   float64 // выручка десяти крупнейших продавцов; 0 — не знаю
 }
 
 // MPStatsNiches builds niches of category parent from MPStats (#580): продажи
@@ -71,6 +72,9 @@ func MPStatsNiches(parent string, cur, prev []NicheSale, days int) (Table, error
 		}
 		if b := before[n.Name]; b > 0 {
 			v[domain.NicheGrowth] = n.Sales/b - 1
+		}
+		if n.Top10Revenue > 0 && n.Revenue > 0 {
+			v[domain.NicheTop10] = min(1, n.Top10Revenue/n.Revenue)
 		}
 		ni, err := domain.NewNiche(parent+"/"+n.Name, v)
 		if err != nil {
