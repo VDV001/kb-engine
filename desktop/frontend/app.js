@@ -390,15 +390,19 @@ const TYPE_TIP = {
 };
 const TYPE_NAME = { kb: "база", doc: "док", code: "код", image: "картинки" };
 // Экраны окна среди вкладок поиска (desktopconfig.TabView): двигаются и убираются,
-// как вкладки по типу (решение владельца 13.11); ключ — имя экрана, как раньше.
-const VIEW_NAME = { artifacts: "артефакты" };
-const VIEW_TIP = { artifacts: "Документы из папок и их версии: у каждой написано, что в нее добавили" };
+// как вкладки по типу (решение владельца 13.11). Одно описание на экран (ревью #596).
+const SCREEN_TABS = {
+  artifacts: { short: "артефакты", tip: "Документы из папок и их версии: у каждой написано, что в нее добавили", title: "#art-title" },
+};
 state.tabs = DEFAULT_TABS;
 // Ключ вкладки — вид и значение (desktopconfig.Tab.Key), а не номер: после
 // удаления или перестановки активной иначе стала бы соседняя. Вкладку
 // неизвестного вида (ее записала новая сборка) окно хранит, но не показывает.
+// Исключение — экран: его ключ голое имя («artifacts»), как до 13.11, на нем
+// держится весь код экрана; Go пишет view:artifacts только в config.json.
+// Имена экранов не совпадают с all, search и module:* — их набор закрыт (tabViews).
 const tabKey = (t) => (t.kind === "view" ? t.value : t.kind + ":" + t.value);
-const visibleTab = (t) => (t.kind === "type" && TYPE_NAME[t.value] !== undefined) || (t.kind === "view" && VIEW_NAME[t.value] !== undefined) || t.kind === "source";
+const visibleTab = (t) => (t.kind === "type" && TYPE_NAME[t.value] !== undefined) || (t.kind === "view" && SCREEN_TABS[t.value] !== undefined) || t.kind === "source";
 const kbItem = (e) => ({ type: "kb", e });
 const fileItem = (f) => ({ type: "file", f });
 const tabItems = (t, kb, files) =>
@@ -446,7 +450,7 @@ function itemsOf(key, kb, files) {
 const sourceOf = (t) => state.known.find((x) => x.id === t.value);
 function tabTip(t) {
   if (t.kind === "type") return TYPE_TIP[t.value] || "";
-  if (t.kind === "view") return VIEW_TIP[t.value] || "";
+  if (t.kind === "view") return SCREEN_TABS[t.value]?.tip || "";
   const s = sourceOf(t);
   return s ? `Записи и файлы источника ${label(s)}` : "Источника больше нет в списке — вкладка пуста";
 }
@@ -480,6 +484,11 @@ const closeHdrPop = () => {
   document.querySelectorAll(".hdr-more-btn, .hdr-switch-btn").forEach((b) => b.setAttribute("aria-expanded", "false"));
 };
 function renderTabs() {
+  // Переименованный экран — тем же именем и в заголовке экрана (ревью #596).
+  for (const [v, d] of Object.entries(SCREEN_TABS)) {
+    const t = state.tabs.find((x) => x.kind === "view" && x.value === v), h = $(d.title);
+    if (h) h.textContent = t ? t.name : DEFAULT_TABS.find((x) => x.kind === "view" && x.value === v).name;
+  }
   const nav = $("#tabs"), ink = nav.querySelector(".tab-ink"), chips = $("#chips"), bar = $(".bar"), L = hdrLook();
   nav.querySelectorAll(":scope > :not(.tab-ink)").forEach((x) => x.remove());
   bar.querySelectorAll(".hdr-more").forEach((x) => x.remove());
@@ -1930,7 +1939,7 @@ function renderTabSettings() {
   const what = (t) => {
     if (!visibleTab(t)) return `<span class="what gone">из новой версии окна</span>`;
     if (t.kind === "type") return `<span class="what">тип · ${esc(TYPE_NAME[t.value])}</span>`;
-    if (t.kind === "view") return `<span class="what">экран · ${esc(VIEW_NAME[t.value])}</span>`;
+    if (t.kind === "view") return `<span class="what">экран · ${esc(SCREEN_TABS[t.value].short)}</span>`;
     const src = sourceOf(t);
     return src ? `<span class="what">источник · ${esc(label(src))}</span>` : `<span class="what gone">источник убран</span>`;
   };
@@ -1944,8 +1953,8 @@ function renderTabSettings() {
         <button data-tab-down="${i}" aria-label="Ниже" ${editable && i < n - 1 ? "" : "disabled"}>↓</button>
         <button class="del" data-tab-del="${i}" aria-label="Убрать вкладку ${esc(t.name)}" ${editable ? "" : "disabled"}>✕</button>
       </span></li>`).join("");
-  // «По типу…» — и типы выдачи, и экраны («Артефакты»), которых нет в наборе.
-  const types = [...Object.keys(TYPE_NAME).map((v) => ["type", v, TYPE_NAME[v]]), ...Object.keys(VIEW_NAME).map((v) => ["view", v, VIEW_NAME[v]])]
+  // «По типу…» — и типы выдачи, и экраны («Артефакты» — экраном, ревью #596), которых нет в наборе.
+  const types = [...Object.keys(TYPE_NAME).map((v) => ["type", v, TYPE_NAME[v]]), ...Object.keys(SCREEN_TABS).map((v) => ["view", v, "экран «" + DEFAULT_TABS.find((t) => t.kind === "view" && t.value === v).name + "»"])]
     .filter(([k, v]) => !state.tabs.some((t) => t.kind === k && t.value === v));
   $("#tab-add-type").innerHTML = `<option value="">по типу…</option>` + types.map(([k, v, n]) => `<option value="${k}:${v}">${esc(n)}</option>`).join("");
   const srcs = state.known.filter((x) => !state.tabs.some((t) => t.kind === "source" && t.value === x.id));

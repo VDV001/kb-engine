@@ -65,7 +65,7 @@ func TestRead_TabsRoundTripAndBadDropped(t *testing.T) {
 		{Name: "Работа", Kind: desktopconfig.TabBySource, Value: "folder-1"},
 		{Name: "Код", Kind: desktopconfig.TabByType, Value: "code"},
 	}
-	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: tabs}); err != nil {
+	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: tabs, TabsV: desktopconfig.TabsVersion}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := desktopconfig.Read(path)
@@ -97,7 +97,7 @@ func TestRead_TabsRoundTripAndBadDropped(t *testing.T) {
 // вернуло бы набор по умолчанию вопреки выбору человека.
 func TestWrite_EmptyTabsStayEmpty(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.json")
-	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{}}); err != nil {
+	if err := desktopconfig.Write(path, desktopconfig.Config{Tabs: []desktopconfig.Tab{}, TabsV: desktopconfig.TabsVersion}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := desktopconfig.Read(path)
