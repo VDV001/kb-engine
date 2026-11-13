@@ -60,8 +60,8 @@ func TestNewPlan_knownAnswer(t *testing.T) {
 	if peak == nil || !peak.From.Equal(day(2026, 11, 9)) || !near(peak.Price, 2200) || !near(peak.Sell, 270) || !near(peak.Profit, 162000) {
 		t.Errorf("peak week = %+v", peak)
 	}
-	if short == nil || !short.From.Equal(day(2026, 11, 30)) || !near(short.Sell, 40) || !near(short.StockEnd, 0) {
-		t.Errorf("first short week = %+v; want 30.11 with 40 sold (30 + 10)", short)
+	if short == nil || !short.From.Equal(day(2026, 11, 30)) || !near(short.Sell, 70) || !near(short.StockEnd, 0) {
+		t.Errorf("first short week = %+v; want 30.11 with 70 sold (30 + 30 + 10)", short)
 	}
 	if len(ws) == 0 {
 		t.Fatal("no weeks")
