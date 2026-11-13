@@ -90,8 +90,13 @@ type nichePick struct {
 
 // MarketsPickFile asks for a niche export; "" — передумали.
 func (a *App) MarketsPickFile() (string, error) {
+	return a.MarketsPickFileTitled("Выгрузка ниш из сервиса аналитики")
+}
+
+// MarketsPickFileTitled asks for an xlsx or csv with the dialog's title.
+func (a *App) MarketsPickFileTitled(title string) (string, error) {
 	return runtime.OpenFileDialog(a.ctx, runtime.OpenDialogOptions{
-		Title:   "Выгрузка ниш из сервиса аналитики",
+		Title:   title,
 		Filters: []runtime.FileFilter{{DisplayName: "Таблицы (xlsx, csv)", Pattern: "*.xlsx;*.csv"}},
 	})
 }
