@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -48,6 +49,15 @@ func (x shopExtra) Exec(ctx context.Context, name string, args []byte) (string, 
 // errNoCabinet — подходящего кабинета нет.
 var errNoCabinet = errors.New("нет кабинета")
 
+// shopTurn — кабинет в одном ходе чата: клиент, данные и деньги, если их просили.
+type shopTurn struct {
+	c        desktopconfig.Connection
+	cl       ozon.Client
+	d        markets.ShopData
+	money    bool  // начисления и возвраты уже читались в этом ходе
+	moneyErr error // их неудача — тоже до конца хода (ревью #597)
+}
+
 // shopExtras gives the chat the shop's tools of the shared cabinets; nil — нет.
 // Кабинет читается один раз за ход: экземпляр живет один ход.
 func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time.Time) []chat.Extra {
@@ -55,82 +65,97 @@ func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time
 		return nil
 	}
 	var mu sync.Mutex
-	turn := map[string]markets.ShopData{}
-	load := func(ctx context.Context, cabinet string) (markets.ShopData, error) {
+	turn := map[string]*shopTurn{}
+	get := func(ctx context.Context, cabinet string) (*shopTurn, error) {
 		c, err := pickCabinet(sharedOzon(s.snapshot().cfg), cabinet)
 		if err != nil {
-			return markets.ShopData{}, err
+			return nil, err
 		}
 		mu.Lock()
-		d, ok := turn[c.ID]
+		t, ok := turn[c.ID]
 		mu.Unlock()
 		if ok {
-			return d, nil
+			return t, nil
 		}
-		if d, err = readShop(ctx, s, base, hc, c, now()); err != nil {
-			return markets.ShopData{}, err
+		t = &shopTurn{c: c}
+		if t.cl, t.d, err = readShop(ctx, s, base, hc, c, now()); err != nil {
+			return nil, err
 		}
 		mu.Lock()
-		turn[c.ID] = d
+		turn[c.ID] = t
 		mu.Unlock()
-		return d, nil
+		return t, nil
 	}
-	full := map[string]markets.ShopData{} // с начислениями и возвратами: только по просьбе модели, раз за ход
-	money := func(ctx context.Context, cabinet string) (markets.ShopData, error) {
-		d, err := load(ctx, cabinet)
+	load := func(ctx context.Context, cabinet string) (markets.ShopData, error) {
+		t, err := get(ctx, cabinet)
 		if err != nil {
 			return markets.ShopData{}, err
 		}
-		c, _ := pickCabinet(sharedOzon(s.snapshot().cfg), cabinet) // load уже нашел его
-		mu.Lock()
-		f, ok := full[c.ID]
-		mu.Unlock()
-		if ok {
-			return f, nil
-		}
-		if d, err = readMoney(ctx, s, base, hc, c, d, now()); err != nil {
+		return t.d, nil
+	}
+	money := func(ctx context.Context, cabinet string) (markets.ShopData, error) {
+		t, err := get(ctx, cabinet) // тот же кабинет и клиент, что у сводки (ревью #597)
+		if err != nil {
 			return markets.ShopData{}, err
 		}
 		mu.Lock()
-		full[c.ID] = d
+		done := t.money
 		mu.Unlock()
-		return d, nil
+		if !done {
+			d, err := withMoney(ctx, t, now())
+			mu.Lock()
+			t.d, t.moneyErr, t.money = d, err, true
+			mu.Unlock()
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		return t.d, t.moneyErr
 	}
 	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}}}
 }
 
-// readMoney adds the cabinet's accruals and returns to d — те же 90 дней.
-func readMoney(ctx context.Context, s *folderSettings, base string, hc *http.Client, c desktopconfig.Connection, d markets.ShopData, now time.Time) (markets.ShopData, error) {
-	cl, _, err := s.ozonCabinet(c.ID, base, hc)
-	if err != nil {
-		return markets.ShopData{}, err
+// withMoney adds accruals and returns to the turn's data — те же 90 дней,
+// параллельно, как в окне. Без возвратов деньги отвечают, пропажи называют причину.
+func withMoney(ctx context.Context, t *shopTurn, now time.Time) (markets.ShopData, error) {
+	d := t.d
+	fn := startFinance(ctx, t.cl, d.From, d.To)()
+	if fn.accErr != nil {
+		return t.d, chatMoneyErr(t.c.Name, fn.accErr, economyErr)
 	}
-	if d.Accruals, err = cl.Accruals(ctx, d.From, d.To); err != nil {
-		return markets.ShopData{}, errors.New(economyErr(c.Name, err))
+	d.Accruals, d.Now = fn.acc, now
+	if fn.retErr != nil {
+		d.ReturnsErr = chatMoneyErr(t.c.Name, fn.retErr, returnsErr)
+	} else {
+		d.Returns = fn.rets
 	}
-	if d.Returns, err = cl.Returns(ctx, d.From, d.To); err != nil {
-		return markets.ShopData{}, errors.New(returnsErr(c.Name, err))
-	}
-	d.Now = now
 	return d, nil
 }
 
+// chatMoneyErr — отказ в начислениях или возвратах словами для модели: таймаут —
+// словами чата, без кнопки «Загрузить» (ревью #597).
+func chatMoneyErr(name string, err error, words func(string, error) string) error {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return chatOzonErr(name, err)
+	}
+	return errors.New(words(name, err))
+}
+
 // readShop reads cabinet c: отправления из 10-минутной памяти, остатки свежие.
-func readShop(ctx context.Context, s *folderSettings, base string, hc *http.Client, c desktopconfig.Connection, t time.Time) (markets.ShopData, error) {
+func readShop(ctx context.Context, s *folderSettings, base string, hc *http.Client, c desktopconfig.Connection, t time.Time) (ozon.Client, markets.ShopData, error) {
 	cl, _, err := s.ozonCabinet(c.ID, base, hc)
 	if err != nil {
-		return markets.ShopData{}, err
+		return ozon.Client{}, markets.ShopData{}, err
 	}
 	from, to := ozonWindow(t)
 	posts, err := s.ozonPosts.get(ctx, cl, c.ID, from, to, false)
 	if err != nil {
-		return markets.ShopData{}, chatOzonErr(c.Name, err)
+		return ozon.Client{}, markets.ShopData{}, chatOzonErr(c.Name, err)
 	}
 	stock, err := cl.Stocks(ctx)
 	if err != nil {
-		return markets.ShopData{}, chatOzonErr(c.Name, err)
+		return ozon.Client{}, markets.ShopData{}, chatOzonErr(c.Name, err)
 	}
-	return markets.ShopData{Name: c.Name, Posts: posts, Stock: stock, From: from, To: to, Loc: t.Location()}, nil
+	return cl, markets.ShopData{Name: c.Name, Posts: posts, Stock: stock, From: from, To: to, Loc: t.Location()}, nil
 }
 
 // chatOzonErr — отказ Ozon словами для модели: в чате нет кнопки «Загрузить».

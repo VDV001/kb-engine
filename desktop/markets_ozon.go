@@ -115,8 +115,49 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
-	// Начисления и возвраты от отправлений и друг от друга не зависят: читаются
-	// параллельно (ревью #594, #595).
+	fin := startFinance(ctx, cl, from, to)
+	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
+	if err != nil {
+		return shopView{}, ozonErr(c.Name, err)
+	}
+	stock, err := cl.Stocks(ctx)
+	if err != nil {
+		return shopView{}, ozonErr(c.Name, err)
+	}
+	rep, err := markets.OzonShop(posts, stock, from, to)
+	if err != nil {
+		return shopView{}, err
+	}
+	v := shopViewOf(rep)
+	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
+	fn := fin()
+	switch {
+	case fn.accErr != nil:
+		why := economyErr(c.Name, fn.accErr) // товары остаются: отказ — только в финансах
+		v.Economy = &economyView{Err: why}
+		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + why}
+	case fn.retErr != nil:
+		v.Economy = economyOf(markets.OzonEconomy(fn.acc))
+		v.Losses = &lossesView{Err: returnsErr(c.Name, fn.retErr)}
+	default:
+		v.Economy = economyOf(markets.OzonEconomy(fn.acc))
+		v.Losses = lossesOf(markets.OzonLosses(posts, fn.acc, fn.rets, now))
+	}
+	return v, nil
+}
+
+// finance — начисления и возвраты кабинета, у каждого своя ошибка: отказ в
+// одном не прячет другое.
+type finance struct {
+	acc            []markets.OzonAccrual
+	rets           []markets.OzonReturn
+	accErr, retErr error
+}
+
+// startFinance reads accruals and returns in parallel, независимо от
+// отправлений и друг от друга (ревью #594, #595); wait — дождаться обоих.
+// Одна копия для окна и чата (ревью #597).
+func startFinance(ctx context.Context, cl ozon.Client, from, to time.Time) (wait func() finance) {
 	type accrued struct {
 		acc []markets.OzonAccrual
 		err error
@@ -134,34 +175,10 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		rets, err := cl.Returns(ctx, from, to)
 		retCh <- returned{rets, err}
 	}()
-	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
-	if err != nil {
-		return shopView{}, ozonErr(c.Name, err)
+	return func() finance {
+		a, r := <-accCh, <-retCh
+		return finance{acc: a.acc, accErr: a.err, rets: r.rets, retErr: r.err}
 	}
-	stock, err := cl.Stocks(ctx)
-	if err != nil {
-		return shopView{}, ozonErr(c.Name, err)
-	}
-	rep, err := markets.OzonShop(posts, stock, from, to)
-	if err != nil {
-		return shopView{}, err
-	}
-	v := shopViewOf(rep)
-	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
-	a, r := <-accCh, <-retCh
-	switch {
-	case a.err != nil:
-		why := economyErr(c.Name, a.err) // товары остаются: отказ — только в финансах
-		v.Economy = &economyView{Err: why}
-		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + why}
-	case r.err != nil:
-		v.Economy = economyOf(markets.OzonEconomy(a.acc))
-		v.Losses = &lossesView{Err: returnsErr(c.Name, r.err)}
-	default:
-		v.Economy = economyOf(markets.OzonEconomy(a.acc))
-		v.Losses = lossesOf(markets.OzonLosses(posts, a.acc, r.rets, now))
-	}
-	return v, nil
 }
 
 // returnsErr names a refusal of the returns list (ревью #595: не словами начислений).

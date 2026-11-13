@@ -329,7 +329,6 @@ func productLine(d domain.ShopProductData) string {
 		d.Name, d.Article, d.SKU, num(d.Ordered), pct(d.BoughtOut, d.Ordered), pct(d.Refused, d.Ordered), pct(d.Cancelled, d.Ordered), num(d.Stock), num(d.BoughtOutSum))
 }
 
-// num — целое с пробелом между тысячами: «102 000».
 // runMoney runs the tools that need accruals: своя загрузка, начисления дорогие.
 func (t ShopTools) runMoney(ctx context.Context, name, cabinet string) (string, error) {
 	if t.Money == nil {
@@ -390,6 +389,9 @@ func shopLosses(d ShopData) string {
 		sum += l.Price
 	}
 	var b strings.Builder
+	if d.ReturnsErr != nil { // без возвратов — только «доставлено, продажи нет» (ревью #597)
+		fmt.Fprintf(&b, "возвраты не проверены: %v — ниже только доставленное без продажи\n", d.ReturnsErr)
+	}
 	fmt.Fprintf(&b, "Кабинет «%s», %s – %s: возможные пропажи: %d на %s ₽ по цене товара\n", d.Name, d.From.Format("02.01.2006"), d.To.Format("02.01.2006"), len(ls), num(sum))
 	for i, l := range ls {
 		if i == maxLosses {
@@ -406,6 +408,7 @@ func shopLosses(d ShopData) string {
 	return b.String()
 }
 
+// num — целое с пробелом между тысячами: «102 000».
 func num(v float64) string {
 	s := strconv.FormatInt(int64(math.Round(v)), 10)
 	neg := strings.HasPrefix(s, "-")
