@@ -1741,6 +1741,19 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .sh-econ dd small { font-size: 12px; font-weight: 400; color: var(--z-muted); margin-left: 6px; }
 .sh-econ .total dd { color: var(--z-ok); }
 .sh-econ .note { font-size: 12px; color: var(--z-muted); }
+/* «План продаж» (#580): ввод, итог и недели под прогнозом. */
+.mk-plan { display: grid; gap: 10px; margin: 0 18px; padding-top: 12px; border-top: 1px solid var(--z-rule-2); }
+.mk-plan h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--z-ink); }
+.mk-plan-in { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.mk-plan-in label { display: grid; gap: 3px; font-size: 12px; color: var(--z-muted); }
+.mk-plan-in input { width: 110px; height: 30px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; text-align: right; }
+.mk-plan-wrap { overflow-x: auto; }
+.mk-plan-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mk-plan-table th, .mk-plan-table td { padding: 5px 8px; border-top: 1px solid var(--z-rule-2); text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--z-ink-2); }
+.mk-plan-table th:first-child, .mk-plan-table td:first-child, .mk-plan-table td.m { text-align: left; }
+.mk-plan-table th { color: var(--z-muted); font-weight: 500; }
+.mk-plan-table tr.peak td { color: var(--z-ink); font-weight: 600; }
+.mk-plan-table td.bad { color: var(--z-bad); }
 /* Деньги товара в карточке (#580). */
 .sh-money-h { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--z-ink); }
 .sh-cost { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--z-ink-2); }

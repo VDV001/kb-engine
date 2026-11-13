@@ -230,6 +230,23 @@
         <div class="mk-kpis" id="mk-kpis" hidden></div>
         <div class="mk-chart" id="mk-chart" hidden></div>
         <div class="mk-how" id="mk-fc-how" hidden><b>Как посчитано.</b> Из файла 1 берется форма сезона: как продажи ниши по дням после этого периода в прошлом году соотносились с тем же периодом, что сейчас в файле 2. Из файла 2 — сколько ниша продает сейчас; отсюда рост к прошлому году. Из своих продаж — Ваша доля в нише по штукам за те же дни. Прогноз = продажи ниши сейчас × форма сезона × Ваша доля. Диапазон — насколько прошлый год прыгал вокруг своей средней за неделю. Пик — день с наибольшим прогнозом.</div>
+        <section class="mk-plan" id="mk-plan" aria-label="План продаж" hidden>
+          <h3>План продаж</h3>
+          <p class="mk-intro">Сколько продавать по неделям по этому прогнозу: чтобы остатка хватило и прибыль была наибольшей, и сколько довезти к какой дате.</p>
+          <div class="mk-plan-in">
+            <label data-tip="Остаток" data-tip-b="штук этого товара на складах сейчас">Остаток, шт <input id="pl-stock" inputmode="decimal"></label>
+            <label data-tip="Себестоимость" data-tip-b="за штуку, ₽">Себестоимость, ₽ <input id="pl-cost" inputmode="decimal"></label>
+            <label data-tip="Цена" data-tip-b="цена продавца за штуку, ₽; на неделе пика план ставит +10 %, в провал −10 %">Цена, ₽ <input id="pl-price" inputmode="decimal"></label>
+            <label data-tip="Комиссия" data-tip-b="вознаграждение Ozon, % цены; у кабинета — в «Магазин» → «Деньги магазина»">Комиссия, % <input id="pl-comm" inputmode="decimal" value="40"></label>
+            <label data-tip="Логистика" data-tip-b="доставка и услуги, % цены; у кабинета — в «Деньгах магазина»">Логистика, % <input id="pl-log" inputmode="decimal" value="10"></label>
+            <label data-tip="Срок поставки" data-tip-b="за сколько дней до нехватки везти товар">Поставка, дней <input id="pl-lead" inputmode="numeric" value="10"></label>
+            <button class="btn mk-main" type="button" id="pl-go">Построить план</button>
+            <button class="btn" type="button" id="pl-xlsx" disabled data-tip="Скачать Excel" data-tip-b="листы «По неделям» и «По дням»; открывается в Excel и Numbers">Скачать Excel</button>
+          </div>
+          <div class="mk-kpis" id="pl-kpis" hidden></div>
+          <div class="mk-plan-wrap"><table class="mk-plan-table" id="pl-table" hidden></table></div>
+          <p class="mk-how" id="pl-how" hidden><b>Как посчитано.</b> Продать в день — сколько даст прогноз, но не больше остатка. Прибыль штуки — цена × (1 − комиссия − логистика) − себестоимость. На неделе пика цена +10 %, в провал (спрос в день ниже 80 % среднего) −10 %; как цена меняет спрос, план не знает. Довезти — недостающее к спросу, к дню, когда остаток кончится, минус срок поставки.</p>
+        </section>
       </div>
     </section>
 

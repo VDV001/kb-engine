@@ -132,3 +132,65 @@ func TestForecastOzon(t *testing.T) {
 		t.Errorf("connection used by = %v, want the forecast too", s.Connections()[len(s.Connections())-1].UsedBy)
 	}
 }
+
+// «План» (#580): тот же прогноз по трем файлам и ввод человека в процентах;
+// известный ответ — как в domain.TestNewPlan_knownAnswer.
+func TestPlanFiles(t *testing.T) {
+	at := func(y int, m time.Month, d int) time.Time { return time.Date(y, m, d, 0, 0, 0, 0, time.UTC) }
+	last := longCSV(t, "прошлый.csv", at(2025, 9, 1), at(2025, 12, 31), func(d time.Time) int {
+		switch {
+		case d.Equal(at(2025, 11, 11)):
+			return 600
+		case d.Month() >= time.November:
+			return 200
+		}
+		return 100
+	})
+	now := longCSV(t, "сейчас.csv", at(2026, 9, 1), at(2026, 10, 31), func(time.Time) int { return 150 })
+	own := longCSV(t, "свои.csv", at(2026, 9, 1), at(2026, 10, 31), func(time.Time) int { return 15 })
+	in := planInput{Stock: 1000, Cost: 500, Price: 2000, Commission: 40, Logistics: 10, LeadDays: 10}
+	s := &folderSettings{}
+	today := at(2026, 11, 1) // остаток — на сегодня; известный ответ — с первого дня прогноза
+	// Excel до плана — отказ словами, а не пустой файл.
+	if err := s.planExcel(filepath.Join(t.TempDir(), "x.xlsx")); err == nil {
+		t.Error("excel without a plan written")
+	}
+	v, err := s.plan(context.Background(), "", nil, last, now, own, today, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Sell != 1000 || v.Profit != 527000 || v.SupplyQty != 890 || v.SupplyBy != "22.11.2026" || v.SupplyLate || v.ShortForPeak || v.Peak != "11.11.2026" {
+		t.Errorf("plan = %+v", v)
+	}
+	var peak *planWeek
+	for i := range v.Weeks {
+		if v.Weeks[i].Peak {
+			peak = &v.Weeks[i]
+		}
+	}
+	if len(v.Weeks) != 10 || peak == nil || peak.From != "09.11.2026" || peak.Price != 2200 {
+		t.Errorf("weeks = %d, peak = %+v", len(v.Weeks), peak)
+	}
+	// Excel — ровно тот план, что на экране: файлы после расчета не перечитываются (ревью #599).
+	if err := os.Remove(own); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "план.xlsx")
+	if err := s.planExcel(path); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := os.Stat(path); err != nil || st.Size() == 0 {
+		t.Errorf("excel = %v, %v", st, err)
+	}
+	if got := xlsxPath("/tmp/план.XLSX"); got != "/tmp/план.XLSX" {
+		t.Errorf("xlsxPath keeps .XLSX: %q", got)
+	}
+	if got := xlsxPath("/tmp/план"); got != "/tmp/план.xlsx" {
+		t.Errorf("xlsxPath adds .xlsx: %q", got)
+	}
+	own = longCSV(t, "свои.csv", at(2026, 9, 1), at(2026, 10, 31), func(time.Time) int { return 15 })
+	// Ввод в процентах проверяется доменом: 70 % + 30 % — вся цена.
+	if _, err := s.plan(context.Background(), "", nil, last, now, own, today, planInput{Stock: 1, Cost: 1, Price: 100, Commission: 70, Logistics: 30}); !errors.Is(err, domain.ErrInvalidPlan) {
+		t.Errorf("commission + logistics = 100 %%: err = %v", err)
+	}
+}

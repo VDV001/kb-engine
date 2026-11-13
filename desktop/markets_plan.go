@@ -1,0 +1,139 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"math"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+
+	"github.com/daniil/kb-engine/internal/adapter/ozon"
+	"github.com/daniil/kb-engine/internal/adapter/planxlsx"
+	"github.com/daniil/kb-engine/internal/domain"
+)
+
+// planInput — ввод «Плана» в окне: комиссия и логистика в процентах.
+type planInput struct {
+	Stock      float64 `json:"stock"`
+	Cost       float64 `json:"cost"`
+	Price      float64 `json:"price"`
+	Commission float64 `json:"commission"`
+	Logistics  float64 `json:"logistics"`
+	LeadDays   int     `json:"leadDays"`
+}
+
+type planWeek struct {
+	From     string  `json:"from"`
+	Days     int     `json:"days"`
+	Demand   float64 `json:"demand"`
+	Sell     float64 `json:"sell"`
+	StockEnd float64 `json:"stockEnd"`
+	Price    float64 `json:"price"`
+	Profit   float64 `json:"profit"`
+	Peak     bool    `json:"peak"`
+	Dip      bool    `json:"dip"`
+	Short    bool    `json:"short"`
+}
+
+type planView struct {
+	Weeks        []planWeek `json:"weeks"`
+	Sell         float64    `json:"sell"`
+	Profit       float64    `json:"profit"`
+	SupplyQty    float64    `json:"supplyQty"`
+	SupplyBy     string     `json:"supplyBy"`
+	SupplyLate   bool       `json:"supplyLate"` // срок прошел — везти сейчас
+	ShortForPeak bool       `json:"shortForPeak"`
+	Peak         string     `json:"peak"`
+}
+
+// buildPlan forecasts from the three sources and plans from the forecast.
+func (f *folderSettings) buildPlan(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time, in planInput) (domain.Plan, error) {
+	series, _, err := f.forecastInputs(ctx, base, hc, last, now, own, today)
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	fc, err := domain.NewForecast(series[0], series[1], series[2])
+	if err != nil {
+		return domain.Plan{}, err
+	}
+	day := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, time.UTC) // дни прогноза — полночь UTC
+	return domain.NewPlan(fc, domain.PlanInput{Stock: in.Stock, Cost: in.Cost, Price: in.Price,
+		Commission: in.Commission / 100, Logistics: in.Logistics / 100, LeadDays: in.LeadDays, From: day})
+}
+
+// plan builds the «План» view: недели, итог, поставка.
+func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client, last, now, own string, today time.Time, in planInput) (planView, error) {
+	p, err := f.buildPlan(ctx, base, hc, last, now, own, today, in)
+	if err != nil {
+		return planView{}, err
+	}
+	r := func(x float64) float64 { return math.Round(x) }
+	f.planMu.Lock()
+	f.lastPlan = &p // «Скачать Excel» пишет ровно этот план (ревью #599)
+	f.planMu.Unlock()
+	v := planView{Weeks: []planWeek{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate()}
+	qty, by := p.Supply()
+	v.SupplyQty = r(qty)
+	if !by.IsZero() {
+		v.SupplyBy = by.Format("02.01.2006")
+	}
+	for _, w := range p.Weeks() {
+		v.Weeks = append(v.Weeks, planWeek{From: w.From.Format("02.01.2006"), Days: w.Days, Demand: r(w.Demand), Sell: r(w.Sell), StockEnd: r(w.StockEnd),
+			Price: r(w.Price), Profit: r(w.Profit), Peak: w.Peak, Dip: w.Dip, Short: w.Short})
+	}
+	v.Peak = p.Peak().Format("02.01.2006")
+	return v, nil
+}
+
+// errNoPlan — Excel просят до плана.
+var errNoPlan = errors.New("сначала постройте план")
+
+// planExcel writes the last built plan to path.
+func (f *folderSettings) planExcel(path string) error {
+	f.planMu.Lock()
+	p := f.lastPlan
+	f.planMu.Unlock()
+	if p == nil {
+		return errNoPlan
+	}
+	return planxlsx.Write(path, *p)
+}
+
+// xlsxPath adds .xlsx when the name has no such extension, в любом регистре.
+func xlsxPath(p string) string {
+	if strings.EqualFold(filepath.Ext(p), ".xlsx") {
+		return p
+	}
+	return p + ".xlsx"
+}
+
+// MarketsPlan builds the plan from the forecast's three sources.
+func (a *App) MarketsPlan(lastYear, nicheNow, own string, in planInput) (planView, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	return a.settings.plan(ctx, ozon.DefaultURL, nil, lastYear, nicheNow, own, time.Now(), in)
+}
+
+// MarketsPlanExcel asks where to save and writes the plan on screen; "" — отменил.
+// Ввод не нужен: пишется построенный план, а не пересчитанный (ревью #599).
+func (a *App) MarketsPlanExcel() (string, error) {
+	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{Title: "Сохранить план", DefaultFilename: "План продаж " + time.Now().Format("2006-01-02") + ".xlsx",
+		Filters: []runtime.FileFilter{{DisplayName: "Excel", Pattern: "*.xlsx"}}})
+	if err != nil || path == "" {
+		return "", err
+	}
+	if full := xlsxPath(path); full != path {
+		// Диалог подтвердил имя без расширения: чужой файл с .xlsx молча не затираем (ревью #599).
+		if _, err := os.Stat(full); err == nil {
+			return "", fmt.Errorf("файл %s уже есть — выберите другое имя", filepath.Base(full))
+		}
+		path = full
+	}
+	return path, a.settings.planExcel(path)
+}
