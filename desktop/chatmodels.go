@@ -57,11 +57,16 @@ func modelChoices(current, chatURL string, calls []domain.ModelCall, gw, own map
 		return modelChoice{ID: id}
 	}
 	ids := map[string]bool{}
-	for i, m := range usedModels(calls) {
+	used := usedModels(calls)
+	for _, m := range used {
 		ids[m] = true
-		if i < recentModels {
-			v.Recent = append(v.Recent, choice(m))
-		}
+	}
+	// Текущая — первой: ею пользуются сейчас, даже если журнал пуст.
+	if current != "" {
+		used = append([]string{current}, slices.DeleteFunc(used, func(m string) bool { return m == current })...)
+	}
+	for _, m := range used[:min(len(used), recentModels)] {
+		v.Recent = append(v.Recent, choice(m))
 	}
 	if current != "" {
 		ids[current] = true
