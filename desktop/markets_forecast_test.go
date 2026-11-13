@@ -16,6 +16,11 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// forecastFiles — прогноз по трем файлам тем же путем, что в окне.
+func forecastFiles(lastYear, nicheNow, own string) (forecastView, error) {
+	return (&folderSettings{}).forecast(context.Background(), "", nil, lastYear, nicheNow, own, time.Now())
+}
+
 // longCSV пишет продажи по дням длинным файлом: дата;количество.
 func longCSV(t *testing.T, name string, from, to time.Time, f func(time.Time) int) string {
 	t.Helper()

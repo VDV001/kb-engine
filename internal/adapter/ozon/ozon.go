@@ -168,9 +168,9 @@ type postingPage struct {
 }
 
 type postingJSON struct {
-	Status       string    `json:"status"`
-	InProcessAt  time.Time `json:"in_process_at"`
-	CreatedAt    time.Time `json:"created_at"`
+	Status       string `json:"status"`
+	InProcessAt  string `json:"in_process_at"`
+	CreatedAt    string `json:"created_at"`
 	Cancellation *struct {
 		Reason string `json:"cancel_reason"`
 	} `json:"cancellation"`
@@ -206,9 +206,15 @@ func (p *price) UnmarshalJSON(b []byte) error {
 }
 
 func (p postingJSON) posting(scheme string) markets.OzonPosting {
-	out := markets.OzonPosting{Scheme: scheme, Status: p.Status, At: p.InProcessAt}
-	if out.At.IsZero() {
-		out.At = p.CreatedAt
+	// День — по дате создания: по ней Ozon отбирает период (since/to), и края
+	// окна не теряются (ревью #592). Пустая или чужая дата — без даты, а не
+	// сломанная страница: «Магазину» даты не нужны, «Прогноз» их сосчитает.
+	out := markets.OzonPosting{Scheme: scheme, Status: p.Status}
+	for _, s := range []string{p.CreatedAt, p.InProcessAt} {
+		if t, err := time.Parse(time.RFC3339, s); err == nil {
+			out.At = t
+			break
+		}
 	}
 	if p.Cancellation != nil {
 		out.CancelReason = p.Cancellation.Reason
