@@ -57,6 +57,23 @@ type shopView struct {
 	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
 	Advice     []shopAdvice      `json:"advice"`
 	Economy    *economyView      `json:"economy"` // nil — у отчета-файла начислений нет
+	Losses     *lossesView       `json:"losses"`  // nil — у отчета-файла номеров отправлений нет
+}
+
+// lossesView — возможные пропажи кабинета, крупные сначала; Err — почему не проверено.
+type lossesView struct {
+	Rows []lossRow `json:"rows"`
+	Err  string    `json:"err"`
+}
+
+// lossRow — что проверить в кабинете Ozon.
+type lossRow struct {
+	Kind    string  `json:"kind"`
+	Posting string  `json:"posting"`
+	SKU     string  `json:"sku"`
+	Name    string  `json:"name"`
+	Price   float64 `json:"price"`
+	Since   string  `json:"since"` // ДД.ММ.ГГГГ
 }
 
 // economyView — деньги магазина строками «Экономики магазина» Ozon, в рублях;

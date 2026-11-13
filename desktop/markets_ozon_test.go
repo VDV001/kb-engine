@@ -39,6 +39,11 @@ func fakeOzon(t *testing.T) *httptest.Server {
 					`"commission":{"sale_amount":{"amount":"1200","currency":"RUB"},"commission":{"amount":"-576","currency":"RUB"}}}]}}`
 			}
 			_, _ = w.Write([]byte(`{"accruals":[` + acc + `],"last_id":""}`))
+		case "/v1/returns/list":
+			// Один невыкуп Ozon списал месяц назад, второй вернулся на склад.
+			_, _ = w.Write([]byte(`{"has_next":false,"returns":[` +
+				`{"id":1,"type":"Cancellation","posting_number":"2-1","product":{"sku":33,"name":"Пижама тестовая","price":{"currency_code":"RUB","price":2000}},"visual":{"status":{"sys_name":"WriteOff"},"change_moment":"2026-10-10T10:00:00Z"}},` +
+				`{"id":2,"type":"Cancellation","posting_number":"2-2","product":{"sku":11,"name":"Брюки тестовые","price":{"currency_code":"RUB","price":1000}},"visual":{"status":{"sys_name":"ReturnedToOzon"},"change_moment":"2026-10-11T10:00:00Z"}}]}`))
 		case "/v4/product/info/stocks":
 			_, _ = w.Write([]byte(`{"cursor":"","items":[{"product_id":901,"offer_id":"100_46","stocks":[{"type":"fbo","present":0,"reserved":0,"sku":11}]},{"product_id":903,"offer_id":"300_M","stocks":[{"type":"fbo","present":40,"reserved":0,"sku":33}]}]}`))
 		default:
@@ -124,6 +129,10 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	if v.Economy == nil || *v.Economy != want {
 		t.Errorf("economy = %+v, want %+v", v.Economy, want)
 	}
+	// Пропажи: списанный невыкуп — проверить; вернувшийся на склад — нет.
+	if l := v.Losses; l == nil || l.Err != "" || len(l.Rows) != 1 || l.Rows[0] != (lossRow{Kind: "write_off", Posting: "2-1", SKU: "33", Name: "Пижама тестовая", Price: 2000, Since: "10.10.2026"}) {
+		t.Errorf("losses = %+v", v.Losses)
+	}
 
 	// Ключ без доступа к финансам: товары есть, у экономики — слова Ozon, без ключа.
 	finance := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -142,5 +151,22 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	// Тот же ключ только что прочитал товары: отказ в финансах — нет роли, а не неверный ключ (ревью #594).
 	if e := v.Economy; len(v.Products) != 2 || e == nil || !strings.Contains(e.Err, "Финансы") || strings.Contains(e.Err, "не принял") || strings.Contains(e.Err, "k-1") || e.Total != 0 {
 		t.Errorf("refused finance: products %d, economy %+v", len(v.Products), v.Economy)
+	}
+	// Начисления есть, возвраты закрыты: причина — про возвраты, а не про «Финансы» начислений (ревью #595).
+	noReturns := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/returns/list" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		srv.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer noReturns.Close()
+	if v, err := s.ozonShop(context.Background(), noReturns.URL, noReturns.Client(), row.ID, now); err != nil || v.Losses == nil ||
+		!strings.Contains(v.Losses.Err, "возврат") || strings.Contains(v.Losses.Err, "начислени") || v.Economy == nil || v.Economy.Total != 462.5 {
+		t.Errorf("returns refused: err %v, losses %+v, economy %+v", err, v.Losses, v.Economy)
+	}
+	// Без начислений «доставлено без продажи» не проверить: окно говорит об этом, а не молчит.
+	if l := v.Losses; l == nil || !strings.Contains(l.Err, "начислени") {
+		t.Errorf("losses without accruals = %+v, want the reason", v.Losses)
 	}
 }

@@ -23,6 +23,7 @@ type OzonItem struct {
 
 // OzonPosting — отправление Ozon: схема FBO или FBS, статус и причина отмены.
 type OzonPosting struct {
+	Number                       string // номер отправления: по нему начисления и возвраты
 	Scheme, Status, CancelReason string
 	At                           time.Time // когда отправление ушло в обработку
 	Items                        []OzonItem

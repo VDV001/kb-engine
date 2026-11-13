@@ -115,15 +115,24 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return shopView{}, err
 	}
 	from, to := ozonWindow(now)
-	// Начисления от отправлений не зависят: читаются параллельно (ревью #594).
+	// Начисления и возвраты от отправлений и друг от друга не зависят: читаются
+	// параллельно (ревью #594, #595).
 	type accrued struct {
 		acc []markets.OzonAccrual
 		err error
 	}
-	accCh := make(chan accrued, 1)
+	type returned struct {
+		rets []markets.OzonReturn
+		err  error
+	}
+	accCh, retCh := make(chan accrued, 1), make(chan returned, 1)
 	go func() {
 		acc, err := cl.Accruals(ctx, from, to)
 		accCh <- accrued{acc, err}
+	}()
+	go func() {
+		rets, err := cl.Returns(ctx, from, to)
+		retCh <- returned{rets, err}
 	}()
 	posts, err := f.ozonPosts.get(ctx, cl, id, from, to, true) // «Загрузить» — всегда свежие
 	if err != nil {
@@ -139,12 +148,44 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	v := shopViewOf(rep)
 	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
-	if r := <-accCh; r.err != nil {
-		v.Economy = &economyView{Err: economyErr(c.Name, r.err)} // товары остаются: отказ — только в финансах
-	} else {
-		v.Economy = economyOf(markets.OzonEconomy(r.acc))
+	a, r := <-accCh, <-retCh
+	switch {
+	case a.err != nil:
+		why := economyErr(c.Name, a.err) // товары остаются: отказ — только в финансах
+		v.Economy = &economyView{Err: why}
+		v.Losses = &lossesView{Err: "без начислений не проверить, начислена ли продажа: " + why}
+	case r.err != nil:
+		v.Economy = economyOf(markets.OzonEconomy(a.acc))
+		v.Losses = &lossesView{Err: returnsErr(c.Name, r.err)}
+	default:
+		v.Economy = economyOf(markets.OzonEconomy(a.acc))
+		v.Losses = lossesOf(markets.OzonLosses(posts, a.acc, r.rets, now))
 	}
 	return v, nil
+}
+
+// returnsErr names a refusal of the returns list (ревью #595: не словами начислений).
+func returnsErr(name string, err error) string {
+	switch {
+	case errors.Is(err, ozon.ErrUnauthorized):
+		return fmt.Sprintf("кабинет «%s»: Ozon не дает этому ключу список возвратов — нужен ключ с доступом к возвратам (Ozon Seller → Настройки → Seller API)", name)
+	case errors.Is(err, ozon.ErrTooBig):
+		return fmt.Sprintf("кабинет «%s»: возвратов за 90 дней слишком много страниц — такой кабинет окно пока не читает", name)
+	}
+	return "возвраты не загрузились: " + ozonErr(name, err).Error()
+}
+
+// lossesOf turns the losses into the window's rows.
+func lossesOf(ls []markets.ShopLoss) *lossesView {
+	v := &lossesView{Rows: []lossRow{}}
+	for _, l := range ls {
+		r := lossRow{Kind: string(l.Kind), Posting: l.Posting, SKU: l.SKU, Name: l.Name, Price: l.Price}
+		if !l.Since.IsZero() {
+			r.Since = l.Since.Format("02.01.2006") // без даты статуса — без дня, а не «01.01.0001» (ревью #595)
+		}
+		v.Rows = append(v.Rows, r)
+	}
+	return v
 }
 
 // economyErr names a refusal of the accruals: тот же ключ только что прочитал

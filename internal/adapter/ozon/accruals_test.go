@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -76,13 +77,14 @@ func TestClient_accruals(t *testing.T) {
 	}
 	k := func(kop int64) domain.Money { return domain.NewMoney(kop) }
 	d1, d2 := from, from.AddDate(0, 0, 1)
+	// Номер отправления — у начислений по отправлению и по товару; у рекламы его нет.
 	want := []markets.OzonAccrual{
-		{Day: d1, SKU: "11", Kind: markets.AccrualSale, Amount: k(120000)},
-		{Day: d1, SKU: "11", Kind: markets.AccrualCommission, Amount: k(-57600)},
-		{Day: d1, SKU: "11", Kind: markets.AccrualService, TypeID: 32, Amount: k(-15000)},
-		{Day: d1, SKU: "11", Kind: markets.AccrualService, TypeID: 29, Amount: k(-1150)},
-		{Day: d1, SKU: "11", Kind: markets.AccrualService, TypeID: 38, Amount: k(-500)},
-		{Day: d1, SKU: "11", Kind: markets.AccrualService, TypeID: 39, Amount: k(-1000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualSale, Amount: k(120000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualCommission, Amount: k(-57600)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 32, Amount: k(-15000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 29, Amount: k(-1150)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 38, Amount: k(-500)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 39, Amount: k(-1000)},
 		{Day: d2, Kind: markets.AccrualService, TypeID: 41, Amount: k(-70040)},
 		{Day: d2, Kind: markets.AccrualRest, Amount: k(-5)},
 	}
@@ -126,5 +128,50 @@ func TestClient_accrualsRefusesOtherCurrency(t *testing.T) {
 	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
 	if _, err := c.Accruals(context.Background(), day, day); err == nil {
 		t.Error("an accrual in USD must be refused, not summed with rubles")
+	}
+}
+
+func TestClient_returns(t *testing.T) {
+	// Как /v1/returns/list: страницы по last_id (id последнего), has_next, цена объектом.
+	var asked []int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Filter struct {
+				Date struct {
+					TimeFrom string `json:"time_from"`
+					TimeTo   string `json:"time_to"`
+				} `json:"logistic_return_date"`
+			} `json:"filter"`
+			Limit  int   `json:"limit"`
+			LastID int64 `json:"last_id"`
+		}
+		if r.URL.Path != "/v1/returns/list" || json.NewDecoder(r.Body).Decode(&body) != nil || body.Limit > 500 || body.Filter.Date.TimeFrom == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		asked = append(asked, body.LastID)
+		ret := func(id int64, n, st, changed string) string {
+			return `{"id":` + strconv.FormatInt(id, 10) + `,"type":"Cancellation","schema":"Fbs","posting_number":"` + n + `","product":{"sku":22,"name":"Пижама тестовая","price":{"currency_code":"RUB","price":2000},"quantity":2},` +
+				`"visual":{"status":{"id":1,"display_name":"…","sys_name":"` + st + `"},"change_moment":"` + changed + `"}}`
+		}
+		if body.LastID == 0 {
+			_, _ = w.Write([]byte(`{"returns":[` + ret(101, "2-1", "WriteOff", "2026-10-01T10:00:00Z") + `],"has_next":true}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"returns":[` + ret(102, "2-2", "ReturnedToOzon", "2026-10-02T10:00:00Z") + `],"has_next":false}`))
+	}))
+	defer srv.Close()
+	c := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}
+	from := time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC)
+	rets, err := c.Returns(context.Background(), from, from.AddDate(0, 0, 89))
+	if err != nil {
+		t.Fatalf("Returns: %v", err)
+	}
+	if !slices.Equal(asked, []int64{0, 101}) {
+		t.Errorf("asked last_id %v, want [0 101]", asked)
+	}
+	want := markets.OzonReturn{Posting: "2-1", SKU: "22", Name: "Пижама тестовая", Type: "Cancellation", Scheme: "Fbs", Status: "WriteOff", Changed: time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC), Qty: 2, Price: 2000}
+	if len(rets) != 2 || rets[0] != want || rets[1].Status != "ReturnedToOzon" {
+		t.Errorf("returns = %+v", rets)
 	}
 }

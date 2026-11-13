@@ -169,6 +169,7 @@ type postingPage struct {
 }
 
 type postingJSON struct {
+	Number       string `json:"posting_number"`
 	Status       string `json:"status"`
 	InProcessAt  string `json:"in_process_at"`
 	CreatedAt    string `json:"created_at"`
@@ -210,7 +211,7 @@ func (p postingJSON) posting(scheme string) markets.OzonPosting {
 	// День — по дате создания: по ней Ozon отбирает период (since/to), и края
 	// окна не теряются (ревью #592). Пустая или чужая дата — без даты, а не
 	// сломанная страница: «Магазину» даты не нужны, «Прогноз» их сосчитает.
-	out := markets.OzonPosting{Scheme: scheme, Status: p.Status}
+	out := markets.OzonPosting{Number: p.Number, Scheme: scheme, Status: p.Status}
 	for _, s := range []string{p.CreatedAt, p.InProcessAt} {
 		if t, err := time.Parse(time.RFC3339, s); err == nil {
 			out.At = t
@@ -400,9 +401,11 @@ type feeJSON struct {
 }
 
 type accrualJSON struct {
-	ID      int64  `json:"accrual_id"`
-	Total   amount `json:"total_amount"`
-	Posting *struct {
+	ID       int64  `json:"accrual_id"`
+	Unit     string `json:"unit_number"`
+	Category string `json:"accrued_category"`
+	Total    amount `json:"total_amount"`
+	Posting  *struct {
 		Products []struct {
 			SKU      int64 `json:"sku"`
 			Delivery *struct {
@@ -465,6 +468,10 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 	if err != nil {
 		return nil, err
 	}
+	unit := "" // у NON_ITEM в unit_number — номер кампании или документа, не отправления
+	if a.Category == "POSTING" || a.Category == "ITEM" {
+		unit = a.Unit
+	}
 	var out []markets.OzonAccrual
 	var sum domain.Money
 	for _, p := range a.parts() {
@@ -479,11 +486,77 @@ func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
 		if p.sku != 0 {
 			sku = strconv.FormatInt(p.sku, 10)
 		}
-		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Kind: p.kind, TypeID: p.typeID, Amount: m})
+		out = append(out, markets.OzonAccrual{Day: day, SKU: sku, Unit: unit, Kind: p.kind, TypeID: p.typeID, Amount: m})
 		sum = sum.Add(m)
 	}
 	if rest := total.Sub(sum); !rest.IsZero() {
-		out = append(out, markets.OzonAccrual{Day: day, Kind: markets.AccrualRest, Amount: rest})
+		out = append(out, markets.OzonAccrual{Day: day, Unit: unit, Kind: markets.AccrualRest, Amount: rest})
 	}
 	return out, nil
+}
+
+// returnsLimit — возвратов за запрос: больше 500 Ozon не отдает.
+const returnsLimit = 500
+
+// Returns returns returns and non-pickups whose return started from the start
+// of from to the end of to (/v1/returns/list, страницы по id последнего).
+func (c Client) Returns(ctx context.Context, from, to time.Time) ([]markets.OzonReturn, error) {
+	var out []markets.OzonReturn
+	var lastID int64
+	for page := 0; ; page++ {
+		if page == maxPages {
+			return nil, ErrTooBig
+		}
+		body := map[string]any{"limit": returnsLimit, "last_id": lastID, "filter": map[string]any{"logistic_return_date": map[string]string{
+			"time_from": from.UTC().Format(time.RFC3339), "time_to": to.UTC().Add(24*time.Hour - time.Second).Format(time.RFC3339)}}}
+		var res returnPage
+		if err := c.call(ctx, "/v1/returns/list", body, &res); err != nil {
+			return nil, fmt.Errorf("возвраты: %w", err)
+		}
+		for _, r := range res.Returns {
+			out = append(out, r.ret())
+		}
+		if !res.HasNext || len(res.Returns) == 0 || res.Returns[len(res.Returns)-1].ID == lastID {
+			break
+		}
+		lastID = res.Returns[len(res.Returns)-1].ID
+	}
+	return out, nil
+}
+
+type returnPage struct {
+	Returns []returnJSON `json:"returns"`
+	HasNext bool         `json:"has_next"`
+}
+
+type returnJSON struct {
+	ID      int64  `json:"id"`
+	Type    string `json:"type"`
+	Schema  string `json:"schema"`
+	Posting string `json:"posting_number"`
+	Product struct {
+		SKU      int64  `json:"sku"`
+		Name     string `json:"name"`
+		Quantity int    `json:"quantity"`
+		Price    struct {
+			Currency string  `json:"currency_code"`
+			Price    float64 `json:"price"`
+		} `json:"price"`
+	} `json:"product"`
+	Visual struct {
+		Status struct {
+			SysName string `json:"sys_name"`
+		} `json:"status"`
+		Changed string `json:"change_moment"`
+	} `json:"visual"`
+}
+
+func (r returnJSON) ret() markets.OzonReturn {
+	out := markets.OzonReturn{Posting: r.Posting, SKU: strconv.FormatInt(r.Product.SKU, 10), Name: r.Product.Name, Type: r.Type, Scheme: r.Schema,
+		Status: r.Visual.Status.SysName, Qty: r.Product.Quantity}
+	if strings.EqualFold(r.Product.Price.Currency, "RUB") {
+		out.Price = r.Product.Price.Price // другая валюта — без цены: валюты окно не смешивает
+	}
+	out.Changed, _ = time.Parse(time.RFC3339, r.Visual.Changed) // без даты — нулевое время: «застрял» не скажем
+	return out
 }
