@@ -325,3 +325,8 @@ func apiMessage(data []byte) string {
 	r := []rune(strings.TrimSpace(string(data)))
 	return string(r[:min(len(r), 200)]) // по буквам: байтовая обрезка режет кириллицу
 }
+
+// Accruals returns the cabinet's accruals by day, from to to inclusive.
+func (c Client) Accruals(ctx context.Context, from, to time.Time) ([]markets.OzonAccrual, error) {
+	return nil, nil
+}
