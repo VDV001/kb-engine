@@ -86,3 +86,22 @@ func TestMPStatsExtra(t *testing.T) {
 		t.Error("shop tool run by MPStats")
 	}
 }
+
+// Разрешение чату видно в «Подключениях» и в ряду «ищет в» (живая проверка
+// 14.11: MPStats отвечал в чате, а плашка оставалась «запрещено»).
+func TestMPStatsShareInRow(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	srv := fakeMPStatsChat(t)
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "Ниши", "m-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetOzonShare(row.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range s.Connections() {
+		if r.ID == row.ID && !r.Share {
+			t.Errorf("row = %+v; want share", r)
+		}
+	}
+}
