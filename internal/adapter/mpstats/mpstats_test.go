@@ -182,3 +182,31 @@ func TestTopSellersRevenue(t *testing.T) {
 		t.Errorf("top 10 = %v, %v; want %v (the largest ten, whatever the order)", got, err, want)
 	}
 }
+
+// Обрыв соединения и 504 у MPStats повторяются (живая проверка 13.11:
+// «connection reset by peer» при расчете моделью); отказ ключа — нет.
+func TestRetriesTransient(t *testing.T) {
+	var mu sync.Mutex
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		n++
+		k := n
+		mu.Unlock()
+		if k == 1 {
+			hj, _ := w.(http.Hijacker)
+			conn, _, _ := hj.Hijack()
+			_ = conn.Close() // обрыв без ответа
+			return
+		}
+		if k == 2 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		_, _ = w.Write([]byte(`{"available":1,"use":0}`))
+	}))
+	t.Cleanup(srv.Close)
+	if l, err := (mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}).Limits(context.Background()); err != nil || l.Available != 1 {
+		t.Errorf("after a reset and a 504: %+v, %v", l, err)
+	}
+}
