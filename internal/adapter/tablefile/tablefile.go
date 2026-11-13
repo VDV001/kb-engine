@@ -60,8 +60,7 @@ func readXLSX(path string) ([][]string, error) {
 }
 
 // readCSV reads a csv in UTF-8 (BOM is dropped) or Windows-1251, as Russian
-// services and Excel save it. Разделитель — по первой строке: табуляция,
-// точка с запятой, иначе запятая.
+// services and Excel save it.
 func readCSV(path string) ([][]string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -73,15 +72,33 @@ func readCSV(path string) ([][]string, error) {
 			return nil, err
 		}
 	}
-	first, _, _ := bytes.Cut(b, []byte("\n"))
 	r := csv.NewReader(bytes.NewReader(b))
-	switch {
-	case bytes.ContainsRune(first, '\t'):
-		r.Comma = '\t'
-	case bytes.ContainsRune(first, ';'):
-		r.Comma = ';'
-	}
+	r.Comma = delimiter(b)
 	r.FieldsPerRecord = -1 // у строк итога и заголовка отчета колонок меньше
 	r.LazyQuotes = true
 	return r.ReadAll()
+}
+
+// sniffLines — сколько строк сверху смотреть, решая разделитель: над таблицей
+// бывает название отчета без разделителей (живая проверка #580).
+const sniffLines = 10
+
+// delimiter picks the separator by the first lines: табуляция, точка с
+// запятой, иначе запятая. Запятая в тексте не решает: она есть и в названиях.
+func delimiter(b []byte) rune {
+	var tab, semi bool
+	for i, line := range bytes.SplitN(b, []byte("\n"), sniffLines+1) {
+		if i == sniffLines {
+			break
+		}
+		tab = tab || bytes.ContainsRune(line, '\t')
+		semi = semi || bytes.ContainsRune(line, ';')
+	}
+	switch {
+	case tab:
+		return '\t'
+	case semi:
+		return ';'
+	}
+	return ','
 }
