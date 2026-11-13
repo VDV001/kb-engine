@@ -71,8 +71,8 @@ func share4(v float64) float64 { return math.Round(v*1e4) / 1e4 }
 func shopRowOf(p *domain.ShopProduct) shopRow {
 	d := p.Data()
 	r := shopRow{Name: d.Name, SKU: d.SKU, Scheme: d.Scheme, ABC: d.ABC, PriceIndex: d.PriceIndex, OrderedSum: d.OrderedSum,
-		Ordered: d.Ordered, Delivered: d.Delivered, BoughtOut: d.BoughtOut, Cancelled: d.Cancelled, Returned: d.Returned,
-		Buyout: share4(p.BuyoutRate()), Cancel: share4(p.CancelRate()), Return: share4(p.ReturnRate()),
+		Ordered: d.Ordered, Delivered: d.Delivered, BoughtOut: d.BoughtOut, Cancelled: d.Cancelled, Refused: d.Refused, Returned: d.Returned,
+		Buyout: share4(p.BuyoutRate()), Cancel: share4(p.CancelRate()), Refuse: share4(p.RefusedRate()), Return: share4(p.ReturnRate()),
 		AvgPrice: d.AvgPrice, DRR: d.DRR, Stock: d.Stock, SupplyQty: d.SupplyQty, Urgent: d.UrgentSupply,
 		DaysOut: d.DaysOut, DaysOutOf: d.DaysOutOf, PromoDays: d.PromoDays, Rating: d.Rating, Reviews: d.Reviews, Issues: []string{}}
 	for _, i := range p.Issues() {
@@ -90,8 +90,15 @@ func readShopFile(path string) (shopView, error) {
 	if err != nil {
 		return shopView{}, err
 	}
-	v := shopView{File: filepath.Base(path), Path: path, Period: rep.Period, PeriodDays: rep.PeriodDays,
-		Products: []shopRow{}, Problems: []nicheProblem{}, Hints: rep.Hints, Counts: map[string]int{}}
+	v := shopViewOf(rep)
+	v.File, v.Path = filepath.Base(path), path
+	return v, nil
+}
+
+// shopViewOf turns a report into the window's view, with advice.
+func shopViewOf(rep markets.OzonReport) shopView {
+	v := shopView{Period: rep.Period, PeriodDays: rep.PeriodDays,
+		Products: []shopRow{}, Problems: []nicheProblem{}, Hints: rep.Hints, Counts: map[string]int{}, Advice: adviceOf(rep.Products)}
 	if rep.Total != nil {
 		v.Total = shopRowOf(rep.Total)
 	}
@@ -105,5 +112,5 @@ func readShopFile(path string) (shopView, error) {
 	for _, p := range rep.Problems {
 		v.Problems = append(v.Problems, nicheProblem{Row: p.Row, Reason: p.Reason})
 	}
-	return v, nil
+	return v
 }

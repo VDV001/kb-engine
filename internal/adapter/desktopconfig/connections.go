@@ -20,6 +20,8 @@ const (
 	// ConnSpeech — сервер распознавания речи, OpenAI-совместимый
 	// /audio/transcriptions (whisper.cpp, faster-whisper, OpenAI).
 	ConnSpeech ConnKind = "speech"
+	// ConnOzon — кабинет Ozon Seller API: Account — Client-Id, ключ в Связке.
+	ConnOzon ConnKind = "ozon"
 )
 
 // ErrConnections — список подключений не подходит.
