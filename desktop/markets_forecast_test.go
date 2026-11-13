@@ -194,3 +194,30 @@ func TestPlanFiles(t *testing.T) {
 		t.Errorf("commission + logistics = 100 %%: err = %v", err)
 	}
 }
+
+// Выгрузка MPStats «Товары категории» вместо ниши по дням (живая проверка
+// 13.11): окно говорило «файл больше 50 МБ», а дело не в размере — в файле
+// итог за период по товарам, продаж по дням нет ни в большом, ни в малом.
+func TestForecastItemsExport(t *testing.T) {
+	at := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.UTC) }
+	now := longCSV(t, "сейчас.csv", at(9, 1), at(10, 31), func(time.Time) int { return 150 })
+	own := longCSV(t, "свои.csv", at(9, 1), at(10, 31), func(time.Time) int { return 15 })
+	items := `"SKU";"Name";"Seller";"Sales, pcs";"Revenue, ₽";"Sales per day average";"Detection date";"Niche Name"
+"1";"Куртка";"Продавец";"30";"90000";"1";"22.07.2025";"Одежда/Куртки"
+`
+	for _, size := range []int64{0, 51 << 20} {
+		p := filepath.Join(t.TempDir(), "oz_items.csv")
+		if err := os.WriteFile(p, []byte(items), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if size > 0 {
+			if err := os.Truncate(p, size); err != nil { // разреженный: 51 МБ без записи
+				t.Fatal(err)
+			}
+		}
+		_, err := forecastFiles(p, now, own)
+		if err == nil || !strings.Contains(err.Error(), "ниша, прошлый год") || !strings.Contains(err.Error(), "Товары категории") {
+			t.Errorf("size %d: err = %v, want the items export named", size, err)
+		}
+	}
+}
