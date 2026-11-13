@@ -5571,7 +5571,7 @@ $("#markets-view").addEventListener("click", (e) => {
 const fcMpsPath = (p) => p.slice(p.indexOf("|") + 1);
 function fcMPStatsSlot(i, title, hint, p, info) {
   const path = fcMpsPath(p);
-  const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете" : "90 дней до вчера — загрузятся при расчете";
+  const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете, MPStats отвечает до минуты" : "90 дней до вчера — загрузятся при расчете";
   return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
     `<span class="name">MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
     (i === 0 ? `<input class="mk-q" id="fc-mps-path" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "полный путь категории Ozon, как в MPStats и в выгрузке «Товары категории»; проще — выбрать нишу во вкладке «Ниша» → «Прогноз по этой нише»")}>` : "") +
