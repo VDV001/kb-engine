@@ -855,7 +855,10 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 /* Ряд источников над полем (решение владельца 06.11): в чем ищет этот чат и
    что с подключением. Щелчок — источник для этого чата вкл/выкл; не влезло —
    «еще N» с выбором. */
-.chat-srcs { display: flex; gap: 6px; align-items: center; padding: 0 2px 6px; position: relative; flex-wrap: nowrap; overflow: visible; }
+.chat-srcs { display: flex; gap: 6px 12px; align-items: center; padding: 0 2px 6px; position: relative; flex-wrap: wrap; overflow: visible; }
+/* Группа — источники или подключения: не помещается — плашки переносятся, а не сжимаются до «Oz…»; многоточие — только у плашки шире строки. */
+.chat-srcs-grp { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; min-width: 0; max-width: 100%; }
+.chat-srcs-grp .chat-src { min-width: 0; flex: 0 1 auto; }
 .chat-srcs .lbl { color: var(--z-faint); font: 11px var(--z-font); white-space: nowrap; }
 .chat-src { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--z-rule-2); border-radius: 11px; padding: 1px 9px; background: none; color: var(--z-muted); font: 11px var(--z-font); cursor: pointer; white-space: nowrap; max-width: 180px; }
 .chat-src .t { overflow: hidden; text-overflow: ellipsis; }

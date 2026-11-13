@@ -2827,9 +2827,11 @@ function renderChatSources() {
   const max = 6; // больше — в «еще N»: ряд не переносится
   const shown = list.slice(0, max), rest = list.slice(max);
   const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
-  row.innerHTML = (list.length ? `<span class="lbl">ищет в</span>` + shown.map(chip).join("") : "") +
-    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
-    (conns.length || locked.length ? `<span class="lbl">спрашивает</span>` + conns.map(connChip).join("") + locked.map(lockChip).join("") : "") +
+  // Две группы (отзыв 14.11: в узком окне подключения уходили за край): не
+  // помещаются рядом — «спрашивает» переносится второй строкой, плашки сжимаются.
+  row.innerHTML = (list.length ? `<span class="chat-srcs-grp"><span class="lbl">ищет в</span>` + shown.map(chip).join("") +
+    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") + `</span>` : "") +
+    (conns.length || locked.length ? `<span class="chat-srcs-grp"><span class="lbl">спрашивает</span>` + conns.map(connChip).join("") + locked.map(lockChip).join("") + `</span>` : "") +
     (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
     (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
   dropStaleTip();
