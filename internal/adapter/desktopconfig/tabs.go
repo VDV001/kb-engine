@@ -18,6 +18,8 @@ const (
 	TabByType TabKind = "type"
 	// TabBySource — по источнику: Value — id источника из Sources.
 	TabBySource TabKind = "source"
+	// TabView — экран окна среди вкладок поиска: Value — его имя (artifacts).
+	TabView TabKind = "view"
 )
 
 // ErrTab — у вкладки нет имени, неизвестен вид или тип, нет id источника.
