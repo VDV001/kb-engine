@@ -5991,7 +5991,26 @@ async function openShop() {
   sh.first = false;
   let p = ""; try { p = localStorage.getItem(SH_KEY) || ""; } catch (_) { /* нет хранилища */ }
   if (native() && native().Connections) await shCabinets();
+  // Кабинет — последней загрузкой с этого Мака, без похода в Ozon (отзыв
+  // владельца 13.11); не загружался ни разу — грузим, как раньше.
+  if (p.startsWith("ozon:") && native() && native().MarketsOzonLast) {
+    try {
+      sh.v = await native().MarketsOzonLast(p.slice(5));
+      Object.assign(sh, { sel: 0, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 });
+      if ([...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
+      shLastLine();
+      return shRender();
+    } catch (_) { /* последней загрузки нет — загрузим */ }
+  }
   if (p && native() && native().MarketsShop) await shRead(p);
+}
+// shLastLine — строка «последняя загрузка …» над плитками: что на экране и как обновить.
+function shLastLine() {
+  const box = $("#sh-progress");
+  if (!sh.v || !sh.v.loadedAt) return;
+  box.hidden = false; box.classList.add("done"); box.classList.remove("indet");
+  $("#sh-progress-bar").hidden = $("#sh-stages").hidden = true;
+  $("#sh-progress-t").textContent = `Последняя загрузка из Ozon: ${sh.v.loadedAt} · обновить — «Загрузить из Ozon»`;
 }
 $("#sh-ozon").addEventListener("click", async () => {
   hideTip();
