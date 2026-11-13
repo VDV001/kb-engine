@@ -2803,7 +2803,9 @@ function chatSrcBad(id) {
 function renderChatSources() {
   const row = $("#chat-srcs");
   const all = chatSources(), list = all.filter((s) => !s.conn);
-  const conns = all.filter((s) => s.conn), locked = chatState.conns.filter((c) => !c.share);
+  // «Окно ищет» (локальная модель): инструментов нет — подключения чат не спрашивает вовсе.
+  const tools = !chatState.settings || chatState.settings.effectiveMode === "tools";
+  const conns = tools ? all.filter((s) => s.conn) : [], locked = tools ? chatState.conns.filter((c) => !c.share) : chatState.conns;
   row.hidden = !all.length && !locked.length;
   if (row.hidden) return;
   const hue = chatHues();
@@ -2817,8 +2819,11 @@ function renderChatSources() {
     return `<button type="button" class="chat-src conn" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
       data-tip="${esc(connLabel(s.conn))}" data-tip-b="${esc((on ? "подключение: внешний сервис по Вашему ключу, чат спрашивает его, его данные уходят провайдеру модели · щелчок — убрать из этого чата" : "этот чат его не спрашивает · щелчок — вернуть"))}"><i></i><span class="t">${esc(connLabel(s.conn))}</span></button>`;
   };
-  const lockChip = (c) => `<button type="button" class="chat-src conn locked" data-chat-conn-off="${esc(c.id)}" aria-disabled="true"
-      data-tip="${esc(connLabel(c))}: чату запрещено" data-tip-b="модель не видит его данных · щелчок — «Подключения», там «Чату: разрешить»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`;
+  const lockChip = (c) => tools
+    ? `<button type="button" class="chat-src conn locked" data-chat-conn-off="${esc(c.id)}" aria-disabled="true"
+      data-tip="${esc(connLabel(c))}: чату запрещено" data-tip-b="модель не видит его данных · щелчок — «Подключения», там «Чату: разрешить»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`
+    : `<button type="button" class="chat-src conn locked" data-chat-mode-off aria-disabled="true"
+      data-tip="${esc(connLabel(c))}: чат не спрашивает" data-tip-b="окно само ищет документы и отдает их модели, подключения так не спрашиваются · щелчок — «Чат и модель», режим «модель ищет»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`;
   const max = 6; // больше — в «еще N»: ряд не переносится
   const shown = list.slice(0, max), rest = list.slice(max);
   const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
@@ -2841,6 +2846,7 @@ $("#chat-srcs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-chat-src]");
   if (b) return toggleChatSrc(b.dataset.chatSrc);
   if (e.target.closest("[data-chat-conn-off]")) return openSettings("conn");
+  if (e.target.closest("[data-chat-mode-off]")) return openSettings("chat");
   if (e.target.closest("[data-chat-src-all]")) { chatState.only = null; return renderChatSources(); }
   if (e.target.closest("[data-chat-more]")) { chatState.moreOpen = !chatState.moreOpen; renderChatSources(); }
 });
@@ -3763,6 +3769,9 @@ async function saveChatPart(patch, head, rest) {
   try {
     await native().SetChatSettings(next, "");
     chatState.settings = { ...s, ...patch };
+    // Режим «кто ищет» считает окно: сменились режим или модель — спросить заново (ряд «ищет в»).
+    if ("mode" in patch || "url" in patch || "model" in patch) chatState.settings = await native().ChatSettings().catch(() => chatState.settings);
+    renderChatSources();
     toast(head, rest, () => saveChatPart(before, "Вернул", " · как было"));
     // Где лежит портрет поменялось (и при «Вернуть» тоже) — портрет с нового места.
     if ("memoryDir" in patch || "memoryServer" in patch) await loadPortrait();
