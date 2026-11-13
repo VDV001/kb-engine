@@ -81,7 +81,8 @@ func unsold(posts []OzonPosting, acc []OzonAccrual, now time.Time) []ShopLoss {
 		if last[p.Number].After(since) {
 			since = last[p.Number]
 		}
-		if p.Status != "delivered" || p.At.IsZero() || now.Sub(since) < lossAge || sold[p.Number] {
+		// Без номера с начислениями не сверить — не пропажа, а «не знаем».
+		if p.Number == "" || p.Status != "delivered" || p.At.IsZero() || now.Sub(since) < lossAge || sold[p.Number] {
 			continue
 		}
 		for _, it := range p.Items {

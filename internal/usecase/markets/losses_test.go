@@ -99,3 +99,13 @@ func TestOzonLosses_rowsByItemAndQuantity(t *testing.T) {
 		t.Errorf("losses = %+v\nwant %+v", got, want)
 	}
 }
+
+// Отправление без номера с начислениями не сверить: это «не знаем», а не
+// «продажи нет» (поведение из #597, тест дописан после — backfill).
+func TestOzonLosses_noNumberIsNotLoss(t *testing.T) {
+	now := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
+	p := markets.OzonPosting{Status: "delivered", At: now.AddDate(0, 0, -30), Items: []markets.OzonItem{{SKU: "11", Qty: 1, Price: 1500}}}
+	if got := markets.OzonLosses([]markets.OzonPosting{p}, nil, nil, now); len(got) != 0 {
+		t.Errorf("losses = %+v, want none for a posting without number", got)
+	}
+}

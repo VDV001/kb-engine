@@ -49,7 +49,7 @@ func TestShopExtra(t *testing.T) {
 	}
 	now := func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }
 	x := shopExtras(s, srv.URL, srv.Client(), now)
-	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 4 {
+	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 6 {
 		t.Fatalf("extras = %v", x)
 	}
 	ask := func(args string) string {
@@ -77,6 +77,21 @@ func TestShopExtra(t *testing.T) {
 	if n := seen["k-1 /v4/product/info/stocks"]; n != 1 {
 		t.Errorf("stocks read %d times in one turn, want once", n)
 	}
+	// Деньги и пропажи: начисления за 90 дней читаются один раз за ход, и только по просьбе модели.
+	if n := seen["k-1 /v1/finance/accrual/by-day"]; n != 0 {
+		t.Errorf("accruals read %d times before shop_money was asked", n)
+	}
+	for _, tool := range []string{"shop_money", "shop_losses"} {
+		if out, ok := x[0].Exec(context.Background(), tool, []byte(`{}`)); !ok || !strings.Contains(out, "«Брюки и худи»") {
+			t.Errorf("%s: %q", tool, out)
+		}
+	}
+	if n := seen["k-1 /v1/finance/accrual/by-day"]; n != 90 {
+		t.Errorf("accruals read %d days, want 90 once per turn", n)
+	}
+	if n := seen["k-1 /v1/returns/list"]; n != 1 {
+		t.Errorf("returns read %d times, want once per turn", n)
+	}
 	if _, ok := x[0].Exec(context.Background(), "search", []byte(`{}`)); ok {
 		t.Error("the shop answered a tool that is not its own")
 	}
@@ -96,4 +111,39 @@ func TestShopExtra(t *testing.T) {
 		t.Errorf("cabinets gone mid-turn: %q", out)
 	}
 	_ = a
+}
+
+// Ключ без доступа к возвратам: shop_money отвечает деньгами, shop_losses —
+// причиной; неудача помнится до конца хода, Ozon не спрашивают заново (ревью #597).
+func TestShopExtra_returnsRefused(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	seen := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen[r.URL.Path]++
+		switch r.URL.Path {
+		case "/v1/returns/list":
+			w.WriteHeader(http.StatusForbidden)
+		case "/v1/finance/accrual/by-day":
+			_, _ = w.Write([]byte(`{"accruals":[],"last_id":""}`))
+		case "/v4/product/info/stocks":
+			_, _ = w.Write([]byte(`{"cursor":"","items":[]}`))
+		default:
+			_, _ = w.Write([]byte(`{"has_next":false,"postings":[],"items":[]}`))
+		}
+	}))
+	defer srv.Close()
+	if _, err := s.AddOzon("Тест", "1", "k-1", true); err != nil {
+		t.Fatal(err)
+	}
+	x := shopExtras(s, srv.URL, srv.Client(), func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) })
+	if out, _ := x[0].Exec(context.Background(), "shop_money", []byte(`{}`)); !strings.Contains(out, "на счет") {
+		t.Errorf("shop_money without returns: %q", out)
+	}
+	if out, _ := x[0].Exec(context.Background(), "shop_losses", []byte(`{}`)); !strings.Contains(out, "возврат") || strings.Contains(out, "на счет") {
+		t.Errorf("shop_losses without returns: %q", out)
+	}
+	_, _ = x[0].Exec(context.Background(), "shop_losses", []byte(`{}`))
+	if seen["/v1/returns/list"] != 1 || seen["/v1/finance/accrual/by-day"] != 90 {
+		t.Errorf("returns asked %d, accrual days %d: once per turn, failure included", seen["/v1/returns/list"], seen["/v1/finance/accrual/by-day"])
+	}
 }

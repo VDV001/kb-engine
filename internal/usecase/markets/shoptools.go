@@ -25,6 +25,14 @@ type ShopData struct {
 	Stock    []OzonStock
 	From, To time.Time
 	Loc      *time.Location // часовой пояс продавца: по нему дни и недели
+	// Деньги — только у загрузки Money: начисления — запрос на день, их не
+	// читают ради сводки.
+	Accruals []OzonAccrual
+	Returns  []OzonReturn
+	// ReturnsErr — почему возвратов нет (у ключа нет к ним доступа): деньги
+	// отвечают, пропажи называют причину (ревью #597).
+	ReturnsErr error
+	Now        time.Time // от него «две недели» пропаж
 }
 
 // ShopToolSpec — инструмент для модели: имя, описание, JSON-схема аргументов.
@@ -36,11 +44,13 @@ type ShopToolSpec struct{ Name, Description, Params string }
 type ShopTools struct {
 	// Load reads cabinet: имя кабинета словами человека, "" — первый подключенный.
 	Load func(ctx context.Context, cabinet string) (ShopData, error)
+	// Money reads the cabinet with accruals and returns; nil — денег в чате нет.
+	Money func(ctx context.Context, cabinet string) (ShopData, error)
 }
 
 // ShopToolsPrompt — правило для модели: откуда цифры и как о них говорить.
 const ShopToolsPrompt = `
-У человека подключен кабинет продавца Ozon. О его магазине (продажи, отмены, отказы, остатки, что довезти, почему упали продажи товара) спрашивай инструменты shop_*, а не угадывай. Сумма заказов включает отмены — это не выручка; выкуплено — по цене продажи, до комиссии и логистики Ozon. Называй период и товары с артикулом. Кабинетов несколько — передай cabinet (имя, как его назвал человек), иначе берется первый, и сводка называет его.`
+У человека подключен кабинет продавца Ozon. О его магазине (продажи, отмены, отказы, остатки, что довезти, почему упали продажи товара) спрашивай инструменты shop_*, а не угадывай. Сумма заказов включает отмены — это не выручка; выкуплено — по цене продажи, до комиссии и логистики Ozon. Сколько пришло на счет и куда ушли деньги — shop_money; «на счет» — до себестоимости товара, это не прибыль. Где могли потеряться деньги — shop_losses. Называй период и товары с артикулом. Кабинетов несколько — передай cabinet (имя, как его назвал человек), иначе берется первый, и сводка называет его.`
 
 // maxTop — сколько товаров отдает топ.
 const maxTop = 20
@@ -59,6 +69,10 @@ func (ShopTools) Specs() []ShopToolSpec {
 			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"}}}`},
 		{"shop_sku", "Карточка товара по названию, артикулу или SKU: заказы, выкуп, отмены, отказы, остаток и продажи по неделям с ценой — чтобы понять, почему продажи упали или выросли.",
 			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"},"q":{"type":"string","description":"название, артикул или SKU"}},"required":["q"]}`},
+		{"shop_money", "Деньги магазина за период теми же строками, что «Экономика магазина» в кабинете Ozon: продажи и возвраты, вознаграждение Ozon, доставка, продвижение, услуги партнеров, остальное и сколько начислено на счет — до себестоимости товара.",
+			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"}}}`},
+		{"shop_losses", "Возможные пропажи: доставлено давно, а продажа не начислена; возврат списан, утилизирован, «возможно потерян», застрял или ждет продавца — с номером отправления, товаром и ценой, чтобы проверить в кабинете.",
+			`{"type":"object","properties":{"cabinet":{"type":"string","description":"имя кабинета, если их несколько"}}}`},
 	}
 }
 
@@ -77,6 +91,9 @@ func (t ShopTools) Run(ctx context.Context, name string, args []byte) (string, e
 		if err := json.Unmarshal(args, &a); err != nil {
 			return "аргументы не разобраны: " + err.Error(), nil
 		}
+	}
+	if name == "shop_money" || name == "shop_losses" {
+		return t.runMoney(ctx, name, a.Cabinet)
 	}
 	d, err := t.Load(ctx, a.Cabinet)
 	if err != nil {
@@ -310,6 +327,85 @@ func partDays(w time.Time, d ShopData) int {
 func productLine(d domain.ShopProductData) string {
 	return fmt.Sprintf("%s · %s · SKU %s · заказано %s · выкуп %s · отказ %s · отмены %s · остаток %s · выкуплено на %s ₽",
 		d.Name, d.Article, d.SKU, num(d.Ordered), pct(d.BoughtOut, d.Ordered), pct(d.Refused, d.Ordered), pct(d.Cancelled, d.Ordered), num(d.Stock), num(d.BoughtOutSum))
+}
+
+// runMoney runs the tools that need accruals: своя загрузка, начисления дорогие.
+func (t ShopTools) runMoney(ctx context.Context, name, cabinet string) (string, error) {
+	if t.Money == nil {
+		return "деньги кабинета в чате недоступны — скажи человеку, что их видно в «Маркеты → Магазин»", nil
+	}
+	d, err := t.Money(ctx, cabinet)
+	if err != nil {
+		return "", err
+	}
+	if name == "shop_money" {
+		return shopMoney(d), nil
+	}
+	return shopLosses(d), nil
+}
+
+// shopMoney — строки «Экономики магазина» из начислений.
+func shopMoney(d ShopData) string {
+	e := OzonEconomy(d.Accruals)
+	rub := func(m domain.Money) float64 { return float64(m.Kopecks()) / 100 }
+	sales := rub(e.Sales)
+	var b strings.Builder
+	fmt.Fprintf(&b, "Кабинет «%s», начисления %s – %s\n", d.Name, d.From.Format("02.01.2006"), d.To.Format("02.01.2006"))
+	fmt.Fprintf(&b, "продажи и возвраты %s ₽ (по цене продавца, с баллами за скидки)\n", num(sales))
+	for _, l := range []struct {
+		name string
+		m    domain.Money
+	}{{"вознаграждение Ozon", e.Commission}, {"доставка", e.Delivery}, {"продвижение", e.Promotion}, {"услуги партнеров", e.Partners}, {"остальное", e.Other}} {
+		if !l.m.IsZero() {
+			fmt.Fprintf(&b, "%s %s ₽ (%s)\n", l.name, num(rub(l.m)), pct(math.Abs(rub(l.m)), sales))
+		}
+	}
+	fmt.Fprintf(&b, "на счет %s ₽ — начислено к выплате, до себестоимости товара; доля — от продаж\n", num(rub(e.Total)))
+	return b.String()
+}
+
+// lossWords — вид пропажи словами и что сделать.
+var lossWords = map[LossKind]string{
+	LossNoSale:   "доставлено, продажи нет — проверить отправление, при необходимости написать в поддержку Ozon",
+	LossWriteOff: "возврат списан — проверить компенсацию, иначе претензия",
+	LossUtilized: "возврат утилизирован — если утилизацию не заказывали, претензия",
+	LossLost:     "возможно потерян — ждать компенсацию или претензия",
+	LossStuck:    "возврат застрял — спросить поддержку, где товар",
+	LossPickup:   "возврат FBS ждет в пункте — забрать",
+}
+
+// maxLosses — сколько пропаж отдает модели инструмент.
+const maxLosses = 20
+
+// shopLosses — возможные пропажи, крупные сначала.
+func shopLosses(d ShopData) string {
+	now := d.Now
+	if now.IsZero() {
+		now = d.To.AddDate(0, 0, 1)
+	}
+	ls := OzonLosses(d.Posts, d.Accruals, d.Returns, now)
+	sum := 0.0
+	for _, l := range ls {
+		sum += l.Price
+	}
+	var b strings.Builder
+	if d.ReturnsErr != nil { // без возвратов — только «доставлено, продажи нет» (ревью #597)
+		fmt.Fprintf(&b, "возвраты не проверены: %v — ниже только доставленное без продажи\n", d.ReturnsErr)
+	}
+	fmt.Fprintf(&b, "Кабинет «%s», %s – %s: возможные пропажи: %d на %s ₽ по цене товара\n", d.Name, d.From.Format("02.01.2006"), d.To.Format("02.01.2006"), len(ls), num(sum))
+	for i, l := range ls {
+		if i == maxLosses {
+			fmt.Fprintf(&b, "и еще %d — полный список в «Маркеты → Магазин»\n", len(ls)-maxLosses)
+			break
+		}
+		since := ""
+		if !l.Since.IsZero() {
+			since = ", с " + l.Since.Format("02.01")
+		}
+		fmt.Fprintf(&b, "- %s: %s (SKU %s), отправление %s, %s ₽%s\n", lossWords[l.Kind], l.Name, l.SKU, l.Posting, num(l.Price), since)
+	}
+	b.WriteString("компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, видно только в отчете о компенсациях кабинета\n")
+	return b.String()
 }
 
 // num — целое с пробелом между тысячами: «102 000».

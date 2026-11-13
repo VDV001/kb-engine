@@ -2,10 +2,12 @@ package markets_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
@@ -46,8 +48,8 @@ func run(t *testing.T, name, args string) string {
 
 func TestShopTools(t *testing.T) {
 	specs := markets.ShopTools{}.Specs()
-	if len(specs) != 4 {
-		t.Fatalf("specs = %d, want summary, top, supply, sku", len(specs))
+	if len(specs) != 6 {
+		t.Fatalf("specs = %d, want summary, top, supply, sku, money, losses", len(specs))
 	}
 	for _, s := range specs {
 		if !strings.HasPrefix(s.Name, "shop_") || s.Description == "" || !strings.HasPrefix(s.Params, "{") {
@@ -120,5 +122,65 @@ func TestShopTools_partialWeekAndProblems(t *testing.T) {
 	// У «продается чисто» штук нет: брюки — 14 заказов без отмен.
 	if !strings.Contains(sum, "совет — продается чисто: 1 товаров\n") {
 		t.Errorf("keep advice must come without units:\n%s", sum)
+	}
+}
+
+// Деньги и пропажи в чате (#580): те же строки, что «Деньги магазина» и
+// «Проверить» в окне; читаются отдельной загрузкой — начисления дорогие.
+func TestShopTools_moneyAndLosses(t *testing.T) {
+	d := shopData()
+	d.Now = d.To.AddDate(0, 0, 1)
+	day := d.From.AddDate(0, 0, 3)
+	rub := func(r int64) domain.Money { return domain.NewMoney(r * 100) }
+	d.Accruals = []markets.OzonAccrual{
+		{Day: day, SKU: "11", Unit: "p-1", Kind: markets.AccrualSale, Amount: rub(10000)},
+		{Day: day, SKU: "11", Unit: "p-1", Kind: markets.AccrualCommission, Amount: rub(-4000)},
+		{Day: day, SKU: "11", Unit: "p-1", Kind: markets.AccrualService, TypeID: 32, Amount: rub(-1000)},
+		{Day: day, Kind: markets.AccrualService, TypeID: 41, Amount: rub(-500)},
+	}
+	d.Returns = []markets.OzonReturn{{Posting: "r-1", SKU: "22", Name: "Худи тестовое", Status: "WriteOff", Changed: day, Price: 5000}}
+	loads, moneys := 0, 0
+	tools := markets.ShopTools{
+		Load:  func(context.Context, string) (markets.ShopData, error) { loads++; return shopData(), nil },
+		Money: func(context.Context, string) (markets.ShopData, error) { moneys++; return d, nil },
+	}
+	money, err := tools.Run(context.Background(), "shop_money", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Тест", "продажи и возвраты 10 000 ₽", "вознаграждение Ozon -4 000 ₽ (40 %)", "доставка -1 000 ₽", "продвижение -500 ₽", "на счет 4 500 ₽", "до себестоимости"} {
+		if !strings.Contains(money, want) {
+			t.Errorf("money misses %q:\n%s", want, money)
+		}
+	}
+	losses, err := tools.Run(context.Background(), "shop_losses", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"возможные пропажи: 1 на 5 000 ₽", "возврат списан", "Худи тестовое", "r-1", "компенсац"} {
+		if !strings.Contains(losses, want) {
+			t.Errorf("losses misses %q:\n%s", want, losses)
+		}
+	}
+	if loads != 0 || moneys != 2 {
+		t.Errorf("loads %d, moneys %d: деньги читаются своей загрузкой", loads, moneys)
+	}
+	// Без загрузки денег — ответ модели словами, а не паника.
+	out, err := markets.ShopTools{Load: tools.Load}.Run(context.Background(), "shop_money", []byte(`{}`))
+	if err != nil || !strings.Contains(out, "недоступн") {
+		t.Errorf("no money loader: %q, %v", out, err)
+	}
+}
+
+// Возвраты закрыты, начисления есть: деньги отвечают, пропажи называют причину (ревью #597).
+func TestShopTools_returnsUnavailable(t *testing.T) {
+	d := shopData()
+	d.ReturnsErr = errors.New("нет доступа к возвратам")
+	tools := markets.ShopTools{Money: func(context.Context, string) (markets.ShopData, error) { return d, nil }}
+	if out, err := tools.Run(context.Background(), "shop_money", []byte(`{}`)); err != nil || !strings.Contains(out, "на счет") {
+		t.Errorf("money without returns: %q, %v", out, err)
+	}
+	if out, err := tools.Run(context.Background(), "shop_losses", []byte(`{}`)); err != nil || !strings.Contains(out, "нет доступа к возвратам") {
+		t.Errorf("losses without returns: %q, %v", out, err)
 	}
 }
