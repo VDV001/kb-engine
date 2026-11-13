@@ -16,6 +16,10 @@ import (
 // ErrNotItems — файл не выгрузка товаров категории.
 var ErrNotItems = errors.New("это не выгрузка товаров категории")
 
+// ErrItemsNotDaily — выгрузку товаров категории принесли туда, где нужны
+// продажи по дням: в ней итог за период по товарам.
+var ErrItemsNotDaily = errors.New("это выгрузка MPStats «Товары категории»: в ней итог за период по товарам, а не продажи по дням — нужна выгрузка продаж ниши по дням")
+
 // itemColumns — колонки выгрузки MPStats «Товары категории» после FoldName.
 // Совпадение точное: «Sales per comment, pcs» — не продажи.
 var itemColumns = map[string]string{
@@ -81,6 +85,9 @@ func ReadItems(rows iter.Seq2[[]string, error]) (Table, error) {
 	}
 	return rd.table(), nil
 }
+
+// IsItems reports whether a header row is MPStats «Товары категории».
+func IsItems(header []string) bool { return itemsHeader(header) != nil }
 
 // itemsHeader finds the columns; nil — это не выгрузка товаров.
 func itemsHeader(row []string) map[string]int {

@@ -72,6 +72,9 @@ func readSales(path, what string) (domain.DailySales, forecastFile, error) {
 	if path == "" {
 		return domain.DailySales{}, forecastFile{}, fmt.Errorf("не выбран файл: %s", what)
 	}
+	if itemsExport(path) {
+		return domain.DailySales{}, forecastFile{}, fmt.Errorf("%s: %w", what, markets.ErrItemsNotDaily)
+	}
 	rows, err := tablefile.Read(path)
 	if err != nil {
 		return domain.DailySales{}, forecastFile{}, fmt.Errorf("%s: %w", what, err)
@@ -82,6 +85,19 @@ func readSales(path, what string) (domain.DailySales, forecastFile, error) {
 	}
 	return s, forecastFile{File: filepath.Base(path), Format: string(info.Format), Products: info.Products, Days: info.Days,
 		From: info.From.Format("02.01.2006"), To: info.To.Format("02.01.2006")}, nil
+}
+
+// itemsExport reports whether a csv is MPStats «Товары категории» by its
+// first row: та выгрузка весит сотни МБ, и предел Read назвал бы размер, а
+// не настоящую причину (живая проверка 13.11).
+func itemsExport(path string) bool {
+	if !strings.EqualFold(filepath.Ext(path), ".csv") {
+		return false
+	}
+	for row, err := range tablefile.Rows(path) {
+		return err == nil && markets.IsItems(row)
+	}
+	return false
 }
 
 // readNiche reads the two niche files: прошлый год и сейчас.
