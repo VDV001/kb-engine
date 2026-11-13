@@ -98,6 +98,10 @@ func start() {
             if e.domain == "kAFAssistantErrorDomain" && (e.code == 1110 || e.code == 216) {
                 emit(["text": "", "final": true]); exit(0)
             }
+            // Диктовка выключена в macOS: Apple Speech без нее не распознает даже на устройстве.
+            if e.domain == "kLSRErrorDomain" && e.code == 201 {
+                fail("macOS не дает распознавать речь: включите Системные настройки → Клавиатура → Диктовка или выберите «Облако» в Чат и модель → Распознавание", 5)
+            }
             fail("распознавание остановилось: \(e.localizedDescription)", 5)
         }
     }
