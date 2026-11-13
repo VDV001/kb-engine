@@ -22,7 +22,7 @@ import (
 // только признак, что они есть.
 type connRow struct {
 	ID      string   `json:"id"`
-	Kind    string   `json:"kind"` // model | kbserver | google | speech
+	Kind    string   `json:"kind"` // model | kbserver | google | speech | ozon | mpstats
 	Name    string   `json:"name"`
 	Detail  string   `json:"detail"`
 	Status  string   `json:"status"`
@@ -57,6 +57,8 @@ func (f *folderSettings) Connections() []connRow {
 			rows = append(rows, f.speechConn(c))
 		case desktopconfig.ConnOzon:
 			rows = append(rows, f.ozonConn(c))
+		case desktopconfig.ConnMPStats:
+			rows = append(rows, f.mpstatsConn(c))
 		}
 	}
 	return rows

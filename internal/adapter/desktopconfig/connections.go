@@ -22,6 +22,8 @@ const (
 	ConnSpeech ConnKind = "speech"
 	// ConnOzon — кабинет Ozon Seller API: Account — Client-Id, ключ в Связке.
 	ConnOzon ConnKind = "ozon"
+	// ConnMPStats — ключ API MPStats: аналитика ниш, ключ в Связке.
+	ConnMPStats ConnKind = "mpstats"
 )
 
 // ErrConnections — список подключений не подходит.
