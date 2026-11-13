@@ -89,7 +89,7 @@ func (f *folderSettings) addMPStats(ctx context.Context, ep checkEndpoints, name
 
 func (f *folderSettings) mpstatsConn(c desktopconfig.Connection) connRow {
 	r := connRow{ID: c.ID, Kind: "mpstats", Name: c.Name, Detail: "аналитика ниш Ozon по ключу API, только чтение",
-		UsedBy: []string{"Маркеты → Прогноз: ниша по дням"}, Section: "conn", Own: true, Enabled: c.Enabled}
+		UsedBy: []string{"Маркеты → Прогноз: ниша по дням"}, Section: "conn", Own: true, Enabled: c.Enabled, Share: c.Share}
 	_, err := f.tokens.Get(connKeyAccount(c.ID))
 	switch {
 	case !c.Enabled:

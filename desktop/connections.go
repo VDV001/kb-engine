@@ -33,7 +33,7 @@ type connRow struct {
 	// в этом разделе. Остальные правятся там, где ими пользуются.
 	Own     bool `json:"own,omitempty"`
 	Enabled bool `json:"enabled,omitempty"`
-	// Share — данные подключения разрешено давать модели чата (кабинет Ozon).
+	// Share — данные подключения разрешено давать модели чата (кабинет Ozon, MPStats).
 	Share bool `json:"share,omitempty"`
 }
 
