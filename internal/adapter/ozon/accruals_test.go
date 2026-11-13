@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -70,7 +71,7 @@ func TestClient_accruals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Accruals: %v", err)
 	}
-	if want := []string{"2026-09-01/", "2026-09-01/1", "2026-09-02/", "2026-09-03/"}; len(asked) != len(want) || asked[0] != want[0] || asked[1] != want[1] || asked[2] != want[2] || asked[3] != want[3] {
+	if want := []string{"2026-09-01/", "2026-09-01/1", "2026-09-02/", "2026-09-03/"}; !slices.Equal(asked, want) {
 		t.Errorf("asked = %v, want %v: every day, every page by last_id", asked, want)
 	}
 	k := func(kop int64) domain.Money { return domain.NewMoney(kop) }
@@ -85,13 +86,32 @@ func TestClient_accruals(t *testing.T) {
 		{Day: d2, Kind: markets.AccrualService, TypeID: 41, Amount: k(-70040)},
 		{Day: d2, Kind: markets.AccrualRest, Amount: k(-5)},
 	}
-	if len(acc) != len(want) {
-		t.Fatalf("accruals = %+v\nwant %+v", acc, want)
+	if !slices.Equal(acc, want) {
+		t.Errorf("accruals = %+v\nwant %+v", acc, want)
 	}
-	for i := range want {
-		if acc[i] != want[i] {
-			t.Errorf("accrual %d = %+v, want %+v", i, acc[i], want[i])
-		}
+}
+
+func TestClient_accrualsToleratesMissingPartsAndZeroPadding(t *testing.T) {
+	// Нет поля вознаграждения и услуга с accrued:null — часть без суммы, а не
+	// отказ за все 90 дней; лишние нули дроби ("-11.5000") — те же копейки.
+	const odd = `{"accrual_id":7,"date":"2026-09-01","total_amount":{"amount":"1188.5000","currency":"RUB"},"accrued_category":"POSTING",
+		"posting":{"products":[{"sku":11,"commission":{"sale_amount":{"amount":"1200.00","currency":"RUB"}},
+			"delivery":{"services":[{"type_id":29,"accrued":{"amount":"-11.5000","currency":"RUB"}},{"type_id":32,"accrued":null}]}}]}}`
+	var asked []string
+	srv := accrualServer(t, map[string][]string{"2026-09-01": {`{"accruals":[` + odd + `],"last_id":""}`}}, &asked)
+	defer srv.Close()
+	c := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}
+	day := time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)
+	acc, err := c.Accruals(context.Background(), day, day)
+	if err != nil {
+		t.Fatalf("Accruals: %v", err)
+	}
+	want := []markets.OzonAccrual{
+		{Day: day, SKU: "11", Kind: markets.AccrualSale, Amount: domain.NewMoney(120000)},
+		{Day: day, SKU: "11", Kind: markets.AccrualService, TypeID: 29, Amount: domain.NewMoney(-1150)},
+	}
+	if !slices.Equal(acc, want) {
+		t.Errorf("accruals = %+v\nwant %+v", acc, want)
 	}
 }
 

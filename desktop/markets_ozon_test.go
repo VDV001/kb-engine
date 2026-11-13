@@ -139,7 +139,8 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ozonShop without finance: %v", err)
 	}
-	if len(v.Products) != 2 || v.Economy == nil || !strings.Contains(v.Economy.Err, "не принял") || strings.Contains(v.Economy.Err, "k-1") || v.Economy.Total != 0 {
+	// Тот же ключ только что прочитал товары: отказ в финансах — нет роли, а не неверный ключ (ревью #594).
+	if e := v.Economy; len(v.Products) != 2 || e == nil || !strings.Contains(e.Err, "Финансы") || strings.Contains(e.Err, "не принял") || strings.Contains(e.Err, "k-1") || e.Total != 0 {
 		t.Errorf("refused finance: products %d, economy %+v", len(v.Products), v.Economy)
 	}
 }
