@@ -32,7 +32,57 @@ type ShopEconomy struct {
 	Sales, Commission, Delivery, Promotion, Partners, Other, Total domain.Money
 }
 
-// OzonEconomy sums accruals into the cabinet's lines.
+// economyGroup — строка «Экономики магазина», в которую идет статья Ozon.
+type economyGroup int
+
+const (
+	groupOther economyGroup = iota
+	groupDelivery
+	groupPromotion
+	groupPartners
+)
+
+// ozonGroups раскладывает статьи (/v1/finance/accrual/types) по строкам кабинета.
+// Сверено до рубля с «Экономикой магазина» настоящего кабинета за два месяца
+// (13.11.2026); статья не из списка — в «Остальном», на счет она идет все равно.
+// ponytail: «Звездные товары» (74) в услугах партнеров подтверждены одним месяцем;
+// потолок — новая статья Ozon уходит в «Остальное»; путь — сверка по новым экранам.
+var ozonGroups = map[int]economyGroup{
+	32: groupDelivery,  // логистика
+	59: groupDelivery,  // обратная логистика
+	98: groupDelivery,  // доставка до места выдачи силами Ozon
+	41: groupPromotion, // оплата за клик
+	54: groupPromotion, // продвижение товара
+	29: groupPartners,  // доставка до места выдачи
+	1:  groupPartners,  // эквайринг
+	45: groupPartners,  // обработка возвратов, отмен и невыкупов партнерами
+	39: groupPartners,  // упаковка товара партнерами
+	79: groupPartners,  // временное размещение товара партнерами
+	74: groupPartners,  // звездные товары
+}
+
+// OzonEconomy sums accruals into the cabinet's lines; Total — все строки.
 func OzonEconomy(acc []OzonAccrual) ShopEconomy {
-	return ShopEconomy{}
+	var e ShopEconomy
+	for _, a := range acc {
+		line := &e.Other
+		switch a.Kind {
+		case AccrualSale:
+			line = &e.Sales
+		case AccrualCommission:
+			line = &e.Commission
+		case AccrualService:
+			switch ozonGroups[a.TypeID] {
+			case groupDelivery:
+				line = &e.Delivery
+			case groupPromotion:
+				line = &e.Promotion
+			case groupPartners:
+				line = &e.Partners
+			}
+		}
+		*line = line.Add(a.Amount)
+		e.Total = e.Total.Add(a.Amount)
+	}
+	return e
 }

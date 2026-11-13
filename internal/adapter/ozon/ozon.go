@@ -5,6 +5,7 @@ package ozon
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
+	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
@@ -326,7 +328,143 @@ func apiMessage(data []byte) string {
 	return string(r[:min(len(r), 200)]) // по буквам: байтовая обрезка режет кириллицу
 }
 
-// Accruals returns the cabinet's accruals by day, from to to inclusive.
+// ErrCurrency — начисление не в рублях: валюты окно не смешивает.
+var ErrCurrency = errors.New("начисление не в рублях")
+
+// Accruals returns the cabinet's accruals by day, from to to inclusive
+// (/v1/finance/accrual/by-day; /v3/finance/transaction/* Ozon отключил 08.09.2026):
+// продажа, вознаграждение и каждая услуга — своей строкой. Итог Ozon, не равный
+// сумме частей, дополняется строкой разницы: на счет приходит итог.
 func (c Client) Accruals(ctx context.Context, from, to time.Time) ([]markets.OzonAccrual, error) {
-	return nil, nil
+	var out []markets.OzonAccrual
+	first := time.Date(from.Year(), from.Month(), from.Day(), 0, 0, 0, 0, time.UTC)
+	last := time.Date(to.Year(), to.Month(), to.Day(), 0, 0, 0, 0, time.UTC)
+	for day := first; !day.After(last); day = day.AddDate(0, 0, 1) {
+		lastID := ""
+		for page := 0; ; page++ {
+			if page == maxPages {
+				return nil, ErrTooBig
+			}
+			body := map[string]string{"date": day.Format(time.DateOnly)}
+			if lastID != "" {
+				body["last_id"] = lastID
+			}
+			var res accrualPage
+			if err := c.call(ctx, "/v1/finance/accrual/by-day", body, &res); err != nil {
+				return nil, fmt.Errorf("начисления за %s: %w", day.Format("02.01.2006"), err)
+			}
+			for _, a := range res.Accruals {
+				rows, err := a.rows(day)
+				if err != nil {
+					return nil, fmt.Errorf("начисление %d: %w", a.ID, err)
+				}
+				out = append(out, rows...)
+			}
+			if res.LastID == "" || res.LastID == lastID {
+				break
+			}
+			lastID = res.LastID
+		}
+	}
+	return out, nil
+}
+
+type accrualPage struct {
+	Accruals []accrualJSON `json:"accruals"`
+	LastID   string        `json:"last_id"`
+}
+
+// amount is Ozon's money: сумма строкой и валюта.
+type amount struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
+
+func (a amount) money() (domain.Money, error) {
+	if !strings.EqualFold(a.Currency, "RUB") {
+		return domain.Money{}, fmt.Errorf("%w: %q", ErrCurrency, a.Currency)
+	}
+	return domain.ParseMoney(a.Amount)
+}
+
+type feeJSON struct {
+	TypeID  int    `json:"type_id"`
+	Accrued amount `json:"accrued"`
+}
+
+type accrualJSON struct {
+	ID      int64  `json:"accrual_id"`
+	Total   amount `json:"total_amount"`
+	Posting *struct {
+		Products []struct {
+			SKU      int64 `json:"sku"`
+			Delivery *struct {
+				Services []feeJSON `json:"services"`
+			} `json:"delivery"`
+			Commission *struct {
+				SaleAmount amount `json:"sale_amount"`
+				Commission amount `json:"commission"`
+			} `json:"commission"`
+		} `json:"products"`
+	} `json:"posting"`
+	ItemFees *struct {
+		Fees []struct {
+			SKU  int64     `json:"sku"`
+			Fees []feeJSON `json:"fees"`
+		} `json:"fees"`
+	} `json:"item_fees"`
+	NonItemFee *feeJSON `json:"non_item_fee"`
+}
+
+// rows splits one accrual into lines of day.
+func (a accrualJSON) rows(day time.Time) ([]markets.OzonAccrual, error) {
+	var out []markets.OzonAccrual
+	var bad error
+	add := func(sku int64, kind markets.AccrualKind, typeID int, v amount) {
+		m, err := v.money()
+		if err != nil {
+			bad = cmp.Or(bad, err)
+			return
+		}
+		s := ""
+		if sku != 0 {
+			s = strconv.FormatInt(sku, 10)
+		}
+		out = append(out, markets.OzonAccrual{Day: day, SKU: s, Kind: kind, TypeID: typeID, Amount: m})
+	}
+	if a.Posting != nil {
+		for _, p := range a.Posting.Products {
+			if p.Commission != nil {
+				add(p.SKU, markets.AccrualSale, 0, p.Commission.SaleAmount)
+				add(p.SKU, markets.AccrualCommission, 0, p.Commission.Commission)
+			}
+			if p.Delivery != nil {
+				for _, f := range p.Delivery.Services {
+					add(p.SKU, markets.AccrualService, f.TypeID, f.Accrued)
+				}
+			}
+		}
+	}
+	if a.ItemFees != nil {
+		for _, it := range a.ItemFees.Fees {
+			for _, f := range it.Fees {
+				add(it.SKU, markets.AccrualService, f.TypeID, f.Accrued)
+			}
+		}
+	}
+	if a.NonItemFee != nil {
+		add(0, markets.AccrualService, a.NonItemFee.TypeID, a.NonItemFee.Accrued)
+	}
+	total, err := a.Total.money()
+	if err = cmp.Or(bad, err); err != nil {
+		return nil, err
+	}
+	var sum domain.Money
+	for _, r := range out {
+		sum = sum.Add(r.Amount)
+	}
+	if rest := total.Sub(sum); !rest.IsZero() {
+		out = append(out, markets.OzonAccrual{Day: day, Kind: markets.AccrualRest, Amount: rest})
+	}
+	return out, nil
 }
