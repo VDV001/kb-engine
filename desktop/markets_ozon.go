@@ -84,9 +84,9 @@ func (a *App) MarketsOzon(id string) (shopView, error) {
 
 // ozonCabinet returns the client of cabinet id with its key from the keychain.
 func (f *folderSettings) ozonCabinet(id, base string, hc *http.Client) (ozon.Client, desktopconfig.Connection, error) {
-	c, ok := f.snapshot().cfg.Connection(id)
-	if !ok || c.Kind != desktopconfig.ConnOzon {
-		return ozon.Client{}, c, errors.New("кабинета Ozon нет в «Подключениях» — добавьте его")
+	c, err := f.ozonCabinetConn(id)
+	if err != nil {
+		return ozon.Client{}, c, err
 	}
 	if !c.Enabled {
 		return ozon.Client{}, c, fmt.Errorf("подключение «%s» выключено", c.Name)
@@ -143,6 +143,13 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		v.Economy = economyOf(markets.OzonEconomy(fn.acc))
 		v.Losses = lossesOf(markets.OzonLosses(posts, fn.acc, fn.rets, now))
 	}
+	// Себестоимость видна и без начислений; испорченный costs.json — причина
+	// словами, а не пустой «Магазин» (ревью #598).
+	costs, err := f.costsOf(id)
+	if err != nil {
+		v.CostsErr = err.Error()
+	}
+	rowsWithMoney(&v, fn.acc, costs)
 	return v, nil
 }
 

@@ -217,6 +217,9 @@ func (g *googleDesk) Remove(id string) error {
 	g.mu.Lock()
 	delete(g.access, id)
 	g.mu.Unlock()
+	if err := g.settings.dropCosts(id); err != nil { // себестоимость кабинета Ozon — тоже его данные (ревью #598)
+		return fmt.Errorf("подключение убрано, но себестоимость кабинета осталась в costs.json: %w", err)
+	}
 	if err := errors.Join(g.settings.tokens.Delete(refreshAccount(id)), g.settings.tokens.Delete(clientAccount(id)), g.settings.tokens.Delete(connKeyAccount(id))); err != nil {
 		return fmt.Errorf("подключение убрано, но вход не удален из Связки ключей — удалите записи «conn:%s» в «Связке ключей»: %w", id, err)
 	}
