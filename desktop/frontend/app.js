@@ -5828,6 +5828,8 @@ $("#sh-open").addEventListener("click", async () => {
   try { p = await native().MarketsPickFileTitled("Отчет Ozon «По товарам»"); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
   if (p) { sh.issue = ""; sh.q = ""; $("#sh-q").value = ""; await shRead(p); }
 });
+// shPart — показана часть загруженных дней.
+const shPart = () => !!(sh.v && sh.v.windowFrom && (sh.v.from !== sh.v.windowFrom || sh.v.to !== sh.v.windowTo));
 // shSourceLine — откуда данные одной строкой: «Кабинет FURIA (Ozon) · 15.08.2026 – 12.11.2026 · 547 товаров».
 function shSourceLine(v) {
   const what = shOzon() ? `Кабинет ${(v.file || "").replace(/^Ozon · /, "")} (Ozon)` : `Отчет ${v.file || ""}`;
@@ -5837,6 +5839,8 @@ function shSourceLine(v) {
 // Период «Магазина» (#580): кабинет загружается за 90 дней, дни режутся из
 // загруженного без запроса к Ozon. Быстрые кнопки — от последнего дня назад.
 const SH_PRESETS = [["all", "все 90 дн."], [30, "30 дн."], [7, "7 дн."], [1, "вчера"]];
+// shYesterday: «вчера» — только если загружено сегодня; иначе последний день — датой (ревью #604).
+const shYesterday = (v) => { const d = new Date(); d.setDate(d.getDate() - 1); return isoDay(d) === v.windowTo; };
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 function shPresetRange(p, v) {
   if (p === "all") return [v.windowFrom, v.windowTo];
@@ -5849,19 +5853,26 @@ function shPeriodRender() {
   if (!on) return;
   $("#sh-presets").innerHTML = SH_PRESETS.map(([p, l]) => {
     const [a, b] = shPresetRange(p, v), cur = a === v.from && b === v.to;
-    return `<button type="button" data-sh-preset="${p}" aria-pressed="${cur}"${mkTip(l, p === "all" ? "все загруженные дни кабинета" : p === 1 ? "только последний загруженный день" : `последние ${p} дней до вчера`)}>${l}</button>`;
+    const label = p === 1 && !shYesterday(v) ? v.windowTo.split("-").reverse().slice(0, 2).join(".") : l;
+    return `<button type="button" data-sh-preset="${p}" aria-pressed="${cur}"${mkTip(label, p === "all" ? "все загруженные дни кабинета" : p === 1 ? "последний загруженный день; загрузите кабинет снова, чтобы увидеть свежие" : `последние ${p} дней загруженного`)}>${label}</button>`;
   }).join("");
-  for (const [id, val] of [["#sh-d1", v.from], ["#sh-d2", v.to]]) { const i = $(id); i.min = v.windowFrom; i.max = v.windowTo; i.value = val; }
+  // Поле, в которое сейчас вводят, не перезаписываем: набор даты с клавиатуры не сбивается (ревью #604).
+  for (const [id, val] of [["#sh-d1", v.from], ["#sh-d2", v.to]]) { const i = $(id); i.min = v.windowFrom; i.max = v.windowTo; if (document.activeElement !== i) i.value = val; }
 }
+// shPeriod: ответ устаревшего запроса (щелкнули второй период, сменили кабинет)
+// отбрасывается по номеру; выбранный товар держится по SKU, а не по строке (ревью #604).
+let shPeriodSeq = 0;
 async function shPeriod(from, to) {
   if (sh.loading || !sh.v || !native().MarketsOzonPeriod) return;
+  const seq = ++shPeriodSeq, path = sh.v.path, sku = (sh.v.products[sh.sel] || {}).sku;
   mkErr("");
   try {
-    const v = await native().MarketsOzonPeriod(sh.v.path, from, to);
+    const v = await native().MarketsOzonPeriod(path, from, to);
+    if (seq !== shPeriodSeq || !sh.v || sh.v.path !== path) return;
     sh.v = v;
     sh.only = null; sh.adv = "";
-    if (sh.sel >= v.products.length) sh.sel = 0;
-  } catch (e) { mkErr("Период не применен: " + errText(e)); }
+    sh.sel = Math.max(0, v.products.findIndex((p) => p.sku === sku));
+  } catch (e) { if (seq === shPeriodSeq) mkErr("Период не применен: " + errText(e)); }
   shRender();
 }
 $("#sh-presets").addEventListener("click", (e) => {
@@ -5871,7 +5882,16 @@ $("#sh-presets").addEventListener("click", (e) => {
   const p = b.dataset.shPreset === "all" ? "all" : +b.dataset.shPreset;
   shPeriod(...shPresetRange(p, sh.v));
 });
-for (const id of ["#sh-d1", "#sh-d2"]) $(id).addEventListener("change", () => { const a = $("#sh-d1").value, b = $("#sh-d2").value; if (a && b) shPeriod(a, b); });
+// Дата применяется, когда она целиком внутри загруженных дней: «0002-11-10» на
+// полпути набора года — не повод для запроса и ошибки (ревью #604).
+let shDateTimer = 0;
+for (const id of ["#sh-d1", "#sh-d2"]) $(id).addEventListener("change", () => {
+  clearTimeout(shDateTimer);
+  shDateTimer = setTimeout(() => {
+    const a = $("#sh-d1"), b = $("#sh-d2"), ok = (i) => i.value && i.value >= i.min && i.value <= i.max;
+    if (ok(a) && ok(b)) shPeriod(a.value, b.value);
+  }, 500);
+});
 function shRender() {
   const v = sh.v;
   $("#sh-empty").hidden = !!v;
@@ -5923,7 +5943,7 @@ function shEcon() {
   const rub = (x) => fmt(Math.round(x) || 0) + " ₽", pct = (x) => (e.sales > 0 && Math.round(x) ? ` <small>${shPct(Math.abs(x) / e.sales)}</small>` : "");
   el.innerHTML = `<h3>Деньги магазина · ${esc(sh.v.period)}</h3><dl>` +
     SH_ECON.filter(([k]) => k !== "other" || e.other).map(([k, label, tip]) => `<div class="${k}"${mkTip(label, tip + " · по начислениям Ozon")}><dt>${label}</dt><dd>${rub(e[k])}${k === "sales" ? "" : pct(e[k])}</dd></div>`).join("") +
-    `</dl><div class="note">как «Экономика магазина» в кабинете Ozon; доля — от продаж</div>`;
+    `</dl><div class="note">как «Экономика магазина» в кабинете Ozon; доля — от продаж${shPart() ? "; по дню начисления, а заказы в таблице — по дню заказа: продажа заказа прошлого периода попадает сюда" : ""}</div>`;
 }
 // Возможные пропажи (#580): вид — что случилось и что сделать в кабинете.
 const SH_LOSS = {
@@ -5940,7 +5960,7 @@ function shLoss() {
   if (el.hidden) return void (el.innerHTML = "");
   if (l.err) return void (el.innerHTML = `<div class="note">Пропажи не проверены: ${esc(l.err)}</div>`);
   const sum = l.rows.reduce((a, r) => a + r.price, 0), kind = (k) => SH_LOSS[k] || [k, ""];
-  el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара</summary><div class="wrap"><table><tbody>` +
+  el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара${shPart() ? " · за все загруженные дни: пропажа видна через 14 дней" : ""}</summary><div class="wrap"><table><tbody>` +
     l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${shOzonSKU(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
     `</tbody></table></div><div class="note">компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, смотрите в отчете о компенсациях в разделе «Финансы» кабинета</div></details>`;
 }

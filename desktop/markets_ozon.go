@@ -172,6 +172,12 @@ func (c *shopLoadCache) put(id string, l shopLoad) {
 	c.m[id] = l
 }
 
+func (c *shopLoadCache) drop(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	delete(c.m, id)
+}
+
 func (c *shopLoadCache) get(id string) (shopLoad, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -186,6 +192,10 @@ func (a *App) MarketsOzonPeriod(id, from, to string) (shopView, error) {
 
 // ozonShopPeriod cuts the last load of cabinet id to days from..to.
 func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
+	if _, _, err := f.ozonCabinet(id, "", nil); err != nil { // выключенный или удаленный кабинет из памяти не показываем (ревью #604)
+		f.shopLoads.drop(id)
+		return shopView{}, err
+	}
 	l, ok := f.shopLoads.get(id)
 	if !ok {
 		return shopView{}, errors.New("сначала загрузите кабинет: «Загрузить из Ozon»")
@@ -197,7 +207,7 @@ func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
 	case err1 != nil || err2 != nil:
 		return shopView{}, fmt.Errorf("даты периода не прочитаны: %q – %q", from, to)
 	case d2.Before(d1):
-		return shopView{}, errors.New("конец периода раньше начала")
+		return shopView{}, markets.ErrOzonPeriod
 	case d1.Before(l.from) || d2.After(l.to):
 		return shopView{}, fmt.Errorf("загружены дни %s – %s: выберите период внутри них", l.from.Format("02.01.2006"), l.to.Format("02.01.2006"))
 	}
@@ -207,9 +217,9 @@ func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
 // shopFor builds the shop of load l for days from..to; все дни окна — как загружено.
 func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (shopView, error) {
 	whole := from.Equal(l.from) && to.Equal(l.to)
-	posts, acc, rets := l.posts, l.fin.acc, l.fin.rets
+	posts, acc := l.posts, l.fin.acc
 	if !whole { // отправления без даты входят только во все дни
-		posts, acc, rets = markets.PostingsIn(posts, from, to), markets.AccrualsIn(acc, from, to), markets.ReturnsIn(rets, from, to)
+		posts, acc = markets.PostingsIn(posts, from, to), markets.AccrualsIn(acc, from, to)
 	}
 	rep, err := markets.OzonShop(posts, l.stock, from, to)
 	if err != nil {
@@ -229,8 +239,9 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 		v.Losses = &lossesView{Err: returnsErr(l.name, fn.retErr)}
 	default:
 		v.Economy = economyOf(markets.OzonEconomy(acc))
-		// Продажу ищем во всех начислениях: она приходит позже доставки.
-		v.Losses = lossesOf(markets.OzonLosses(posts, fn.acc, rets, l.now))
+		// Пропажи — всегда за все загруженные дни: они по возрасту (14 дней), и в
+		// коротком периоде их не было бы никогда (ревью #604); окно так и пишет.
+		v.Losses = lossesOf(markets.OzonLosses(l.posts, fn.acc, fn.rets, l.now))
 	}
 	// Себестоимость видна и без начислений; испорченный costs.json — причина
 	// словами, а не пустой «Магазин» (ревью #598).
