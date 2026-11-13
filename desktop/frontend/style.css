@@ -1728,9 +1728,19 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-probs ul { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
 /* «Магазин» (#580): отчет Ozon «По товарам». */
 .mk-shop { display: flex; flex-direction: column; gap: 14px; }
-.mk-shop > .mk-kpis, .mk-shop > .sh-advice, .mk-shop > .sh-chips, .mk-shop > .mk-filters, .mk-shop > .mk-grid, .mk-shop > .mk-probs { margin: 0 18px; }
+.mk-shop > .mk-kpis, .mk-shop > .sh-econ, .mk-shop > .sh-advice, .mk-shop > .sh-chips, .mk-shop > .mk-filters, .mk-shop > .mk-grid, .mk-shop > .mk-probs { margin: 0 18px; }
 .mk-shop > .mk-lead { padding: 0 18px; }
 .sh-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+/* «Деньги магазина» (#580): строки «Экономики магазина» Ozon из начислений. */
+.sh-econ { display: grid; gap: 8px; }
+.sh-econ h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--z-ink); }
+.sh-econ dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; margin: 0; }
+.sh-econ dl > div { padding: 8px 12px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); }
+.sh-econ dt { font-size: 12px; color: var(--z-muted); }
+.sh-econ dd { margin: 2px 0 0; font-size: 15px; font-weight: 600; color: var(--z-ink); font-variant-numeric: tabular-nums; }
+.sh-econ dd small { font-size: 12px; font-weight: 400; color: var(--z-muted); margin-left: 6px; }
+.sh-econ .total dd { color: var(--z-ok); }
+.sh-econ .note { font-size: 12px; color: var(--z-muted); }
 /* «Советы» (#580): что делать по магазину; кнопка показывает товары совета. */
 .mk-sel { height: 32px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; max-width: 220px; }
 .sh-advice { display: grid; gap: 8px; }

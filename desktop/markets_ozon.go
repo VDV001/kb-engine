@@ -25,7 +25,8 @@ import (
 // аналитика Ozon.
 const ozonDays = 90
 
-// ozonTimeout — на чтение кабинета: 3 700 отправлений — около 40 страниц.
+// ozonTimeout — на чтение кабинета: 3 700 отправлений — около 40 страниц,
+// начисления — запрос на день, 90 дней — около 11 секунд (замер 13.11).
 const ozonTimeout = 5 * time.Minute
 
 // AddOzon saves an Ozon cabinet as a connection.
@@ -128,7 +129,19 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	}
 	v := shopViewOf(rep)
 	v.File, v.Path, v.Source = "Ozon · "+c.Name, id, "ozon"
+	acc, err := cl.Accruals(ctx, from, to)
+	v.Economy = economyOf(markets.OzonEconomy(acc))
+	if err != nil {
+		v.Economy = &economyView{Err: ozonErr(c.Name, err).Error()} // товары остаются: отказ — только в финансах
+	}
 	return v, nil
+}
+
+// economyOf turns the economy into rubles for the window.
+func economyOf(e markets.ShopEconomy) *economyView {
+	rub := func(m domain.Money) float64 { return float64(m.Kopecks()) / 100 }
+	return &economyView{Sales: rub(e.Sales), Commission: rub(e.Commission), Delivery: rub(e.Delivery), Promotion: rub(e.Promotion),
+		Partners: rub(e.Partners), Other: rub(e.Other), Total: rub(e.Total)}
 }
 
 // ozonErr names an Ozon refusal in words.
