@@ -859,6 +859,9 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 /* Плашки не сжимаются: что не влезло, окно уносит в «еще N» (renderChatSources). */
 .chat-srcs > .chat-src, .chat-srcs > .chat-srcs-reset { flex: none; }
 .chat-srcs.squeeze > .chat-src:not(.more) { flex: 0 1 auto; min-width: 0; }
+.chat-srcs.squeeze > .chat-src.conn { flex-shrink: 0; } /* подключение читается целиком — сжимается источник */
+/* Совсем узко — подписи уходят: место именам; вид различает значок (круг — источник, квадрат — подключение). */
+.chat-srcs.squeeze > .lbl { display: none; }
 .chat-srcs-more label.off { color: var(--z-faint); }
 .chat-srcs-more .hd { color: var(--z-faint); font: 11px var(--z-font); padding: 6px 6px 2px; }
 .chat-srcs .lbl { color: var(--z-faint); font: 11px var(--z-font); white-space: nowrap; }
