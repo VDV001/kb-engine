@@ -1,8 +1,10 @@
 package markets
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -112,7 +114,87 @@ func ReadOzonProducts(rows [][]string) (OzonReport, error) {
 			r.Problems = append(r.Problems, Problem{Row: i + 1, Reason: err.Error()})
 		}
 	}
-	return r, nil
+	return r, r.mergeSKUs()
+}
+
+// mergeSKUs glues the rows of one SKU: Ozon делит товар по категории, бренду
+// и схеме (настоящий отчет #580: 48 строк на 12 SKU). Штуки и суммы
+// складываются — на настоящем отчете их сумма сходится с итогом Ozon;
+// срочность и дни без остатка — худшее, рейтинг — по отзывам, ДРР — по сумме
+// заказов. Товар без SKU не склеивается.
+//
+// ponytail: остаток — наибольший из строк. Сумма строк на настоящем отчете
+// дала 1 293 при итоге Ozon 572, наибольший — 725, первая строка — 509: правило
+// Ozon по одному файлу не выводится. Потолок — остаток SKU приблизительный;
+// путь — сверить с остатком того же кабинета по API (Stocks), когда будет ключ.
+func (r *OzonReport) mergeSKUs() error {
+	at := map[string]int{}
+	var out []domain.ShopProductData
+	for _, p := range r.Products {
+		d := p.Data()
+		i, seen := at[d.SKU]
+		if d.SKU == "" || !seen {
+			at[d.SKU] = len(out)
+			out = append(out, d)
+			continue
+		}
+		out[i] = mergeShop(out[i], d)
+	}
+	if len(out) == len(r.Products) {
+		return nil
+	}
+	r.Products = r.Products[:0]
+	for _, d := range out {
+		p, err := domain.NewShopProduct(d)
+		if err != nil {
+			return err
+		}
+		r.Products = append(r.Products, p)
+	}
+	return nil
+}
+
+func mergeShop(a, b domain.ShopProductData) domain.ShopProductData {
+	weighted := func(x, wx, y, wy float64) float64 {
+		if wx+wy == 0 {
+			return max(x, y)
+		}
+		return (x*wx + y*wy) / (wx + wy)
+	}
+	a.Rating = weighted(a.Rating, a.Reviews, b.Rating, b.Reviews)
+	a.DRR = weighted(a.DRR, a.OrderedSum, b.DRR, b.OrderedSum)
+	a.Ordered += b.Ordered
+	a.Delivered += b.Delivered
+	a.BoughtOut += b.BoughtOut
+	a.Cancelled += b.Cancelled
+	a.Returned += b.Returned
+	a.Refused += b.Refused
+	a.OrderedSum += b.OrderedSum
+	a.Stock = max(a.Stock, b.Stock)
+	a.SupplyQty += b.SupplyQty
+	a.Reviews += b.Reviews
+	a.UrgentSupply = a.UrgentSupply || b.UrgentSupply
+	a.DaysOut, a.DaysOutOf = max(a.DaysOut, b.DaysOut), max(a.DaysOutOf, b.DaysOutOf)
+	a.PromoDays, a.PeriodDays = max(a.PromoDays, b.PromoDays), max(a.PeriodDays, b.PeriodDays)
+	if a.Ordered > 0 {
+		a.AvgPrice = a.OrderedSum / a.Ordered
+	}
+	a.Scheme = joinSchemes(a.Scheme, b.Scheme)
+	a.ABC = cmp.Or(min(a.ABC, b.ABC), a.ABC, b.ABC) // A лучше B: берем лучшую непустую
+	a.Name, a.Article, a.PriceIndex = cmp.Or(a.Name, b.Name), cmp.Or(a.Article, b.Article), cmp.Or(a.PriceIndex, b.PriceIndex)
+	return a
+}
+
+// joinSchemes unites «FBS, FBO» and «FBS» into «FBO, FBS».
+func joinSchemes(a, b string) string {
+	var all []string
+	for s := range strings.SplitSeq(a+","+b, ",") {
+		if s = strings.TrimSpace(s); s != "" && !slices.Contains(all, s) {
+			all = append(all, s)
+		}
+	}
+	slices.Sort(all)
+	return strings.Join(all, ", ")
 }
 
 // add reads one product row; «Итого и среднее» — итог отчета.
