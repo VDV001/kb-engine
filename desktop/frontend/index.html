@@ -160,6 +160,49 @@
         <div class="hp-main" id="hp-main" aria-live="polite"></div>
       </div>
     </section>
+    <!-- «Маркеты» (#580): экран «Ниша» по макету владельца 12.11 — выгрузка ниш из сервиса аналитики -->
+    <section class="mk-view" id="markets-view" hidden>
+      <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs>
+        <linearGradient id="mk-grad" x1="0" x2="1" y1="0" y2="0"><stop offset="0" style="stop-color:var(--mk1)"/><stop offset=".5" style="stop-color:var(--mk2)"/><stop offset="1" style="stop-color:var(--mk3)"/></linearGradient>
+        <linearGradient id="mk-grad-a" x1="0" x2="0" y1="0" y2="1"><stop offset="0" style="stop-color:var(--mk2);stop-opacity:.35"/><stop offset="1" style="stop-color:var(--mk2);stop-opacity:0"/></linearGradient>
+      </defs></svg>
+      <div class="mk-bar">
+        <span class="mk-prompt" data-tip="dvk markets" data-tip-b="модуль окна: ниши, прогноз и план продаж на Wildberries и Ozon"><b>$</b> dvk markets</span>
+        <h2 class="mk-title">Маркеты</h2>
+        <nav class="mk-tabs" role="tablist" aria-label="Разделы Маркетов">
+          <button class="mk-tab" type="button" role="tab" aria-selected="true" data-tip="Ниша" data-tip-b="выбор ниши на ближайший сезон по выгрузке сервиса аналитики">Ниша</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="Прогноз — следующий шаг" data-tip-b="продажи ниши по месяцам вперед и дата пика: по трем файлам — конкуренты прошлого года, конкуренты сейчас, свои продажи">Прогноз</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="План — следующий шаг" data-tip-b="сколько везти и по какой цене по неделям, с выгрузкой в Excel">План</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="Подключения — следующий шаг" data-tip-b="свои продажи и остатки из Wildberries и Ozon по токену, без ручных файлов">Подключения</button>
+        </nav>
+      </div>
+      <div class="mk-lead">
+        <span class="mk-badge" id="mk-file" data-tip="Файл выгрузки" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
+        <p class="mk-intro">Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. Данные ниш — из выгрузки сервиса аналитики.</p>
+        <button class="btn mk-main" type="button" id="mk-open" data-tip="Открыть выгрузку" data-tip-b="xlsx или csv из MPStats и похожих сервисов; колонки окно узнает по заголовкам, а что не узнает — спросит">Открыть выгрузку…</button>
+      </div>
+      <p class="mk-empty" id="mk-empty">Откройте выгрузку ниш — файл xlsx или csv. Узнаются колонки: ниша, маркетплейс, продажи, выручка, продавцы, средняя цена, рост к году, доля топ-10 и продажи по месяцам. Чем больше колонок, тем полнее оценка и сезон.</p>
+      <p class="mk-err" id="mk-err" role="alert" hidden></p>
+      <details class="mk-cols" id="mk-cols" hidden>
+        <summary id="mk-cols-sum" data-tip="Колонки файла" data-tip-b="что окно узнало в каждой колонке; поменяйте, если узнало не так, или выберите для неузнанной"></summary>
+        <div class="mk-cols-b" id="mk-cols-b"></div>
+      </details>
+      <div class="mk-body" id="mk-body" hidden>
+        <div class="mk-filters">
+          <input class="mk-q" id="mk-q" type="search" placeholder="Найти нишу: куртки, термобелье…" aria-label="Найти нишу" autocomplete="off" spellcheck="false" data-tip="Поиск ниши" data-tip-b="по части названия; Esc — очистить">
+          <div class="mk-seg" id="mk-mp" role="group" aria-label="Маркетплейс"></div>
+          <div class="mk-seg" id="mk-sort" role="group" aria-label="Сортировка"></div>
+          <label class="mk-check" id="mk-season-l"><input type="checkbox" id="mk-season"><span id="mk-season-t"></span></label>
+        </div>
+        <div class="mk-grid">
+          <div class="mk-scroll"><table class="mk-table" id="mk-table"></table><p class="mk-none" id="mk-none" hidden>Под фильтр ниш нет: снимите отметку сезона или измените поиск.</p></div>
+          <aside class="mk-card" id="mk-card" aria-live="polite"></aside>
+        </div>
+        <div class="mk-cmp" id="mk-cmp" hidden></div>
+        <div class="mk-how" id="mk-how"><b>Как считается оценка.</b> 0-100: рост спроса к прошлому году (40%), выручка на одного продавца по сравнению с лучшей нишей файла (30%), доля выручки у топ-10 — чем меньше, тем легче войти (20%), пик сезона в этом месяце или двух следующих (10%). Если в файле нет продаж по месяцам, часть сезона выпадает, а веса остальных делятся заново. Это подсказка, а не решение.</div>
+        <details class="mk-probs" id="mk-probs" hidden><summary id="mk-probs-sum" data-tip="Непрочитанные строки" data-tip-b="строки файла, которые окно не взяло в таблицу, с номером и причиной"></summary><ul id="mk-probs-list"></ul></details>
+      </div>
+    </section>
 
     <!-- Статистика (решение владельца 07.11): вызовы модели из журнала окна.
          Пульт и Журнал ведут друг в друга; сверху — откуда пришли. -->
@@ -317,6 +360,8 @@
     <div class="look-access" id="look-health" data-view="look"></div>
     <h3 class="look-h" data-view="look">Артефакты</h3>
     <div class="look-access" id="look-artifacts" data-view="look"></div>
+    <h3 class="look-h" data-view="look">Маркеты</h3>
+    <div class="look-access" id="look-markets" data-view="look"></div>
     <h3 class="look-h" data-view="look">Доступы</h3>
     <div class="look-access" id="look-access" data-view="look"></div>
 

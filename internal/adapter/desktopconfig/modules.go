@@ -30,6 +30,8 @@ const (
 	ModuleBrowser ModuleID = "browser"
 	// ModuleHelp — справка: команды движка и клавиши окна с поиском по задаче.
 	ModuleHelp ModuleID = "help"
+	// ModuleMarkets — маркеты: ниши, прогноз и план продаж на WB и Ozon (#580).
+	ModuleMarkets ModuleID = "markets"
 )
 
 // Ошибки списка модулей от окна; вызывающие проверяют errors.Is.
