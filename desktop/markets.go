@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -120,19 +121,48 @@ func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, e
 		out.Fields = append(out.Fields, nicheField{ID: string(c), Label: c.Label()})
 	}
 	for _, c := range tb.Columns {
-		out.Columns = append(out.Columns, nicheColumn{Index: c.Index, Header: c.Header, Field: string(c.Field)})
+		out.Columns = append(out.Columns, nicheColumn{Index: c.Index, Header: c.Header, Field: string(c.Field), Month: int(c.Month), Year: c.Year})
 	}
-	for _, n := range tb.Niches {
-		row := nicheRow{Name: n.Name(), Values: map[string]float64{}}
-		for _, c := range domain.NicheColumns() {
-			if v, ok := n.Value(c); ok {
-				row.Values[string(c)] = v
-			}
-		}
-		out.Niches = append(out.Niches, row)
+	scores := domain.ScoreNiches(tb.Niches, now)
+	for i, n := range tb.Niches {
+		out.Niches = append(out.Niches, nicheRowOf(n, scores[i]))
 	}
 	for _, p := range tb.Problems {
 		out.Problems = append(out.Problems, nicheProblem{Row: p.Row, Reason: p.Reason})
 	}
 	return out, nil
+}
+
+// monthShort — подписи месяцев в графике сезона.
+var monthShort = [...]string{"", "янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"}
+
+func nicheRowOf(n *domain.Niche, sc domain.NicheScore) nicheRow {
+	row := nicheRow{Name: n.Name(), Values: map[string]float64{}, Months: []nicheMonth{}, Markets: []string{}}
+	for _, c := range domain.NicheColumns() {
+		if v, ok := n.Value(c); ok {
+			row.Values[string(c)] = v
+		}
+	}
+	for _, m := range n.Months() {
+		label := monthShort[m.Month]
+		if m.Year > 0 {
+			label += " " + strconv.Itoa(m.Year)
+		}
+		row.Months = append(row.Months, nicheMonth{Label: label, Value: m.Value})
+	}
+	for _, m := range n.Marketplaces() {
+		row.Markets = append(row.Markets, string(m))
+	}
+	row.Score = nicheScore{Ok: sc.Ok, Score: sc.Score, Missing: []string{}, Parts: []scorePart{}, PerSeller: sc.PerSeller,
+		Growth: string(sc.Growth), Crowded: sc.Crowded, InSeason: sc.InSeason, WeeksFrom: sc.WeeksFrom, WeeksTo: sc.WeeksTo}
+	if sc.HasPeak {
+		row.Score.Peak = int(sc.Peak)
+	}
+	for _, m := range sc.Missing {
+		row.Score.Missing = append(row.Score.Missing, string(m))
+	}
+	for _, p := range sc.Parts {
+		row.Score.Parts = append(row.Score.Parts, scorePart{ID: string(p.Part), Weight: p.Weight, Value: p.Value})
+	}
+	return row
 }

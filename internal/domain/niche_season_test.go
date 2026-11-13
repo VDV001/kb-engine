@@ -169,6 +169,15 @@ func TestScoreNiches(t *testing.T) {
 	if !n.Ok || n.HasPeak || !slices.Contains(n.Missing, domain.NicheMissingMonths) || n.Growth != domain.GrowthFast || n.Crowded != true {
 		t.Errorf("no months = %+v; score without the season part, months named missing", n)
 	}
+	for i, sc := range got[:3] {
+		sum := 0.0
+		for _, p := range sc.Parts {
+			sum += p.Weight
+		}
+		if want := []int{4, 4, 3}[i]; len(sc.Parts) != want || sum < 0.999 || sum > 1.001 {
+			t.Errorf("%d: parts = %+v; want %d parts with weights summing to 1", i, sc.Parts, want)
+		}
+	}
 	b := got[3]
 	if b.Ok || len(b.Missing) == 0 {
 		t.Errorf("bare = %+v; no score, missing named", b)
