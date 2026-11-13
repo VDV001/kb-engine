@@ -170,3 +170,82 @@ func TestForecastMPStats(t *testing.T) {
 		t.Errorf("unknown niche: %v", err)
 	}
 }
+
+// «Проверить» зеленое только на настоящий ответ: 404, 429 и перенаправление —
+// не «сервер отвечает»; ключа нет в Связке — так и сказано (ревью #605).
+func TestCheckConnection_honest(t *testing.T) {
+	s, tok, _ := newServerSettings(t)
+	for _, tc := range []struct {
+		status int
+		note   string
+	}{{http.StatusNotFound, "путь"}, {http.StatusTooManyRequests, "занят"}, {http.StatusFound, "путь"}} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if tc.status == http.StatusFound {
+				w.Header().Set("Location", "/elsewhere")
+			}
+			w.WriteHeader(tc.status)
+		}))
+		row, err := s.AddSpeech("whisper", srv.URL, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := s.checkConn(context.Background(), row.ID, checkEndpoints{HTTP: srv.Client()}); got.OK || !strings.Contains(got.Note, tc.note) {
+			t.Errorf("status %d: %+v, want not ok with %q", tc.status, got, tc.note)
+		}
+		srv.Close()
+	}
+	oz, err := s.AddOzon("Магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delete(tok.m, connKeyAccount(oz.ID))
+	if got := s.checkConn(context.Background(), oz.ID, checkEndpoints{}); got.OK || !strings.Contains(got.Note, "нет в Связке") {
+		t.Errorf("missing key: %+v", got)
+	}
+}
+
+// Ряд MPStats за те же дни берется из памяти: «Посчитать», «Посчитать
+// моделью» и пересчет со сменой своего файла не тратят тариф заново (ревью
+// #605). Ниша «сейчас» из MPStats при файле прошлого года — понятный отказ.
+func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/user/report_api_limit" {
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+			return
+		}
+		mu.Lock()
+		n++
+		mu.Unlock()
+		q := r.URL.Query()
+		d1, _ := time.Parse(time.DateOnly, q.Get("d1"))
+		d2, _ := time.Parse(time.DateOnly, q.Get("d2"))
+		var parts []string
+		for d := d1; !d.After(d2); d = d.AddDate(0, 0, 1) {
+			parts = append(parts, fmt.Sprintf(`{"period":%q,"sales":100}`, d.Format(time.DateOnly)))
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(parts, ",") + "]"))
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := time.Date(2026, 11, 13, 15, 0, 0, 0, time.UTC)
+	own := longCSV(t, "свои.csv", time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC), func(time.Time) int { return 10 })
+	src := "mpstats:" + row.ID + "|Одежда/Куртки"
+	for range 2 {
+		if _, err := s.forecast(context.Background(), "", srv.Client(), src, src, own, today); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n != 10 {
+		t.Errorf("%d requests for two forecasts, want 10 (7 + 3, once)", n)
+	}
+	if _, err := s.forecast(context.Background(), "", srv.Client(), own, src, own, today); err == nil || !strings.Contains(err.Error(), "обе ниши") {
+		t.Errorf("file + MPStats: %v", err)
+	}
+}

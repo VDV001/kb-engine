@@ -102,3 +102,25 @@ func TestCategoryByDay_chunks(t *testing.T) {
 		t.Errorf("days = %d, first %v, last %v", len(days), days[0], days[len(days)-1])
 	}
 }
+
+// Первая отказавшая часть отменяет остальные: отозванный ключ или исчерпанный
+// лимит не тратит тариф на семь запросов ради одной ошибки (ревью #605).
+func TestCategoryByDay_stopsOnFirstError(t *testing.T) {
+	var mu sync.Mutex
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		n++
+		mu.Unlock()
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	t.Cleanup(srv.Close)
+	c := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}
+	from := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := c.CategoryByDay(context.Background(), "x", from, from.AddDate(0, 0, 209)); !errors.Is(err, mpstats.ErrQuota) {
+		t.Fatalf("err = %v, want ErrQuota", err)
+	}
+	if n > 4 {
+		t.Errorf("%d requests after the first refusal, want at most the first round of 4", n)
+	}
+}
