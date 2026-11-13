@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/daniil/kb-engine/internal/domain"
@@ -28,6 +29,8 @@ type Column struct {
 	Index  int
 	Header string
 	Field  domain.NicheColumn
+	Month  time.Month // продажи за месяц; 0 — не месяц
+	Year   int
 }
 
 // Problem — строка, которую не прочитали, и почему; Row — номер строки файла с 1.

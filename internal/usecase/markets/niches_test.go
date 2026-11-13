@@ -4,6 +4,7 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -158,5 +159,41 @@ func TestReadNiches_empty(t *testing.T) {
 		if _, err := markets.ReadNiches(rows, nil); !errors.Is(err, markets.ErrEmptyFile) {
 			t.Errorf("rows %q: err = %v, want ErrEmptyFile", rows, err)
 		}
+	}
+}
+
+func TestReadNiches_monthsAndMarketplaces(t *testing.T) {
+	rows := [][]string{
+		{"Ниша", "Маркетплейс", "Продажи", "ноя 2025", "дек 2025", "янв 2026", "фев 2026", "мар 2026", "апр 2026"},
+		{"Куртки", "WB, Ozon", "182000", "9 000", "12 000", "5 000", "3 000", "", "1 000"},
+		{"Варежки", "озон", "58000", "", "", "", "", "", ""},
+		{"Гирлянды", "Авито", "230000", "1", "2", "3", "4", "5", "6"},
+	}
+	tb, err := markets.ReadNiches(rows, nil)
+	if err != nil {
+		t.Fatalf("ReadNiches: %v", err)
+	}
+	if c := tb.Columns[3]; c.Month != time.November || c.Year != 2025 || c.Field != "" {
+		t.Errorf("month column = %+v", c)
+	}
+	if tb.Columns[1].Field != domain.NicheMarketplace {
+		t.Errorf("marketplace column = %+v", tb.Columns[1])
+	}
+	if len(tb.Niches) != 2 {
+		t.Fatalf("Niches = %d, want 2 (Авито — проблема)", len(tb.Niches))
+	}
+	j := tb.Niches[0]
+	if got := j.Marketplaces(); len(got) != 2 {
+		t.Errorf("marketplaces = %v", got)
+	}
+	ms := j.Months()
+	if len(ms) != 5 || ms[0].Month != time.November || ms[0].Value != 9000 || ms[4].Month != time.April {
+		t.Errorf("months = %+v; пустая ячейка — месяца нет", ms)
+	}
+	if len(tb.Niches[1].Months()) != 0 {
+		t.Errorf("months without values = %+v", tb.Niches[1].Months())
+	}
+	if len(tb.Problems) != 1 || tb.Problems[0].Row != 4 {
+		t.Errorf("Problems = %+v, want row 4", tb.Problems)
 	}
 }
