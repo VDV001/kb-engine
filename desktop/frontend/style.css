@@ -1676,8 +1676,9 @@ body:not(.no-mk-buttons):not([data-mka="none"]) .mk-view .btn.mk-main:not([aria-
 .sh-progress-bar { position: relative; height: 6px; margin-top: 12px; border-radius: 3px; background: var(--z-rule); overflow: hidden; }
 .sh-progress-bar[hidden] { display: none; }
 /* заливка по пройденным этапам и блик по ней: видно, что загрузка жива и между событиями */
-.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: 0; width: 4%; border-radius: 3px; background: linear-gradient(90deg, var(--z-accent), var(--z-accent-hi)); transition: width .45s var(--z-ease); overflow: hidden; }
-.sh-progress-bar span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff59, transparent); transform: translateX(-100%); animation: sh-shine 1.3s linear infinite; }
+.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: 0; width: 4%; border-radius: 3px; background: var(--z-accent); transition: width .45s var(--z-ease); overflow: hidden; }
+body:not(.no-mk-load) .sh-progress-bar span { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); }
+body:not(.no-mk-load) .sh-progress-bar span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff59, transparent); transform: translateX(-100%); animation: sh-shine 1.3s linear infinite; }
 @keyframes sh-shine { to { transform: translateX(100%); } }
 /* у файла этапов нет — отрезок бежит */
 .sh-progress.indet .sh-progress-bar span { width: 30%; left: -30%; transition: none; animation: sh-run 1.2s linear infinite; }
@@ -1796,19 +1797,21 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 /* Совет — плашка со своим цветом спектра: рамка градиентом по всему контуру
    (padding-box поверх border-box, как подсказки окна), легкая заливка от края,
    значок и заголовок того же цвета. Цвет — по виду совета, не по порядку. */
-.sh-adv { --a: var(--z-sp4); --b: var(--z-sp5); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; border: 1px solid transparent; border-radius: var(--z-radius);
-  background: linear-gradient(100deg, color-mix(in srgb, var(--a) 13%, var(--z-bg)), var(--z-bg) 55%) padding-box, linear-gradient(100deg, var(--a), var(--b) 60%, var(--z-rule-2)) border-box;
+.sh-adv { --a: var(--z-sp4); --b: var(--z-sp5); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg);
   font-size: 13px; line-height: 1.5; color: var(--z-ink-2); transition: background .2s var(--z-ease); }
+body:not(.no-mk-advice) .sh-adv { border-color: transparent; background: linear-gradient(100deg, color-mix(in srgb, var(--a) 13%, var(--z-bg)), var(--z-bg) 55%) padding-box, linear-gradient(100deg, var(--a), var(--b) 60%, var(--z-rule-2)) border-box; }
 .sh-adv[data-kind="refusals"] { --a: var(--z-sp3); --b: var(--z-sp2); }
 .sh-adv[data-kind="supply"] { --a: var(--z-sp1); --b: var(--z-sp2); }
 .sh-adv[data-kind="dead"] { --a: var(--z-sp4); --b: var(--z-sp5); }
 .sh-adv[data-kind="keep"] { --a: var(--z-sp6); --b: var(--z-sp5); }
 .sh-adv .ic { grid-row: 1 / span 2; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--a) 18%, transparent); }
 .sh-adv .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--a); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.sh-adv b { background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sh-adv b { color: var(--z-ink); }
+body:not(.no-mk-advice) .sh-adv b { background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .sh-adv .ex { grid-column: 2; font-size: 12px; color: var(--z-muted); }
 .sh-adv .btn { grid-column: 3; grid-row: 1 / span 2; white-space: nowrap; }
-.sh-adv[aria-current="true"] { background: linear-gradient(100deg, color-mix(in srgb, var(--a) 26%, var(--z-bg)), color-mix(in srgb, var(--b) 8%, var(--z-bg))) padding-box, linear-gradient(100deg, var(--a), var(--b)) border-box; }
+.sh-adv[aria-current="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
+body:not(.no-mk-advice) .sh-adv[aria-current="true"] { border-color: transparent; background: linear-gradient(100deg, color-mix(in srgb, var(--a) 26%, var(--z-bg)), color-mix(in srgb, var(--b) 8%, var(--z-bg))) padding-box, linear-gradient(100deg, var(--a), var(--b)) border-box; }
 .sh-chip { font: 12px var(--z-font); padding: 5px 10px; border-radius: var(--z-radius); border: 1px solid var(--z-rule-2); background: var(--z-bg); color: var(--z-ink-2); cursor: pointer; }
 .sh-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); color: var(--z-ink); }
 .sh-chip b { color: var(--z-bad); font-weight: 700; margin-right: 4px; }
