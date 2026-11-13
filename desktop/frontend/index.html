@@ -172,9 +172,9 @@
         <nav class="mk-tabs" role="tablist" aria-label="Разделы Маркетов">
           <button class="mk-tab" type="button" role="tab" aria-selected="true" data-mk-tab="niche" data-tip="Ниша" data-tip-b="выбор ниши на ближайший сезон по выгрузке сервиса аналитики">Ниша</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="forecast" data-tip="Прогноз" data-tip-b="сколько Вы продадите по дням и когда пик: по трем файлам — ниша прошлого года, ниша сейчас, свои продажи">Прогноз</button>
-          <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="shop" data-tip="Магазин" data-tip-b="Ваш магазин по отчету Ozon «По товарам»: выкуп, отмены, остатки и что не так с каждым товаром">Магазин</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="shop" data-tip="Магазин" data-tip-b="Ваш магазин из кабинета Ozon по ключу или по отчету «По товарам»: выкуп, отмены, остатки, советы и что не так с каждым товаром">Магазин</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="План — следующий шаг" data-tip-b="сколько везти и по какой цене по неделям, с выгрузкой в Excel">План</button>
-          <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="Подключения — следующий шаг" data-tip-b="свои продажи и остатки из Wildberries и Ozon по токену, без ручных файлов">Подключения</button>
+          <button class="mk-tab" type="button" id="mk-conn" data-tip="Подключения" data-tip-b="кабинеты Ozon по ключу — в Настройках → Подключения; Wildberries — следующий шаг">Подключения</button>
         </nav>
       </div>
       <div class="mk-lead" data-mk-pane="niche">
@@ -205,12 +205,14 @@
       </div>
       <div class="mk-shop" id="mk-shop" data-mk-pane="shop" hidden>
         <div class="mk-lead"><span class="mk-badge" id="sh-file" data-tip="Отчет магазина" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
-          <p class="mk-intro">Ваш магазин по отчету Ozon «Аналитика → По товарам»: что заказали, что выкупили, где отмены и где кончается товар.</p>
-          <button class="btn mk-main" type="button" id="sh-open" data-tip="Открыть отчет Ozon" data-tip-b="кабинет Ozon → Аналитика → По товарам → скачать xlsx; окно узнает отчет само">Открыть отчет Ozon…</button></div>
-        <p class="mk-empty" id="sh-empty">Откройте отчет Ozon «По товарам» (xlsx из кабинета: Аналитика → По товарам). Окно покажет выкуп, отмены, остатки и проблемы по каждому товару; пояснения Ozon к колонкам — в подсказках.</p>
+          <p class="mk-intro">Ваш магазин: из кабинета Ozon по ключу или из отчета «Аналитика → По товарам». Что заказали, что выкупили, где отмены и отказы и где кончается товар, и что с этим делать.</p>
+          <button class="btn mk-main" type="button" id="sh-open" data-tip="Открыть отчет Ozon" data-tip-b="кабинет Ozon → Аналитика → По товарам → скачать xlsx; окно узнает отчет само">Открыть отчет Ozon…</button>
+          <select class="mk-sel" id="sh-cab" aria-label="Кабинет Ozon" hidden data-tip="Кабинет Ozon" data-tip-b="какой кабинет загрузить; добавляются в Настройках → Подключения"></select><button class="btn mk-main" type="button" id="sh-ozon" data-tip="Загрузить из Ozon" data-tip-b="кабинет по ключу Seller API, только чтение: отправления за 90 дней и остатки сейчас; ключ лежит в Связке ключей и уходит только в Ozon">Загрузить из Ozon</button></div>
+        <p class="mk-empty" id="sh-empty">Загрузите кабинет Ozon по ключу Seller API (добавляется в Настройках → Подключения, только чтение) или откройте отчет «По товарам» (xlsx из кабинета: Аналитика → По товарам). Окно покажет выкуп, отмены и отказы при получении, остатки, проблемы по каждому товару и советы.</p>
         <div class="mk-kpis" id="sh-kpis" hidden></div>
+        <section class="sh-advice" id="sh-advice" aria-label="Советы" hidden></section>
         <div class="sh-chips" id="sh-chips" hidden></div>
-        <div class="mk-filters" id="sh-filters" hidden><input class="mk-q" id="sh-q" type="search" placeholder="Найти товар или SKU" aria-label="Найти товар" autocomplete="off" spellcheck="false" data-tip="Поиск товара" data-tip-b="по названию или SKU; Esc — очистить"></div>
+        <div class="mk-filters" id="sh-filters" hidden><input class="mk-q" id="sh-q" type="search" placeholder="Найти товар, артикул или SKU" aria-label="Найти товар" autocomplete="off" spellcheck="false" data-tip="Поиск товара" data-tip-b="по названию, артикулу или SKU; Esc — очистить"></div>
         <div class="mk-grid" id="sh-grid" hidden>
           <div class="mk-scroll"><table class="mk-table" id="sh-table"></table><p class="mk-none" id="sh-none" hidden>Под фильтр товаров нет.</p></div>
           <aside class="mk-card" id="sh-card" aria-live="polite"></aside>
@@ -262,7 +264,7 @@
           <input class="chat-find" id="chat-find" placeholder="Найти чат…" aria-label="Найти чат" autocomplete="off" spellcheck="false" hidden>
           <div class="chat-rec">Недавние</div>
           <ul class="chat-list" id="chat-list"></ul>
-          <button class="chat-nav" id="chat-model-btn" data-tip="Настройки чата" data-tip-b="адрес и ключ модели, кто ищет документы, голос, микрофон и распознавание; быстро сменить модель — чип под полем вопроса"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/></svg>Настройки чата</button>
+          <button class="chat-nav" id="chat-model-btn" data-tip="Настройки чата" data-tip-b="адрес и ключ модели, кто ищет документы, голос, микрофон и распознавание; быстро сменить модель — чип под полем вопроса"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="9" height="8" rx="1.5"/><path d="M8 2v2.5M6 8h.01M10 8h.01M6.5 10.5h3"/></svg>Настройки чата</button>
         </div>
       </aside>
       <div class="chat-grip" id="chat-grip-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="Ширина колонки чатов" tabindex="0" data-tip="Тяните · двойной щелчок — обычная ширина"></div>
@@ -400,7 +402,7 @@
     <ul class="conn-list" id="conn-list" data-view="conn"></ul>
     <div class="conn-add" data-view="conn">
       <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
-      <button class="btn" type="button" id="conn-add-speech" aria-expanded="false">+ Распознавание речи</button></div>
+      <button class="btn" type="button" id="conn-add-speech" aria-expanded="false">+ Распознавание речи</button><button class="btn" type="button" id="conn-add-ozon" aria-expanded="false">+ Кабинет Ozon</button></div>
       <form class="conn-google" id="conn-speech" hidden>
         <p class="muted">Свой сервер распознавания вместо Apple Speech: whisper.cpp (<code>whisper-server</code>), faster-whisper или OpenAI — любой с OpenAI-совместимым <code>/audio/transcriptions</code>. Окно отдает ему запись диктовки. <code>whisper-server</code> запускайте с <code>--inference-path /v1/audio/transcriptions</code>.</p>
         <label>Название<input id="conn-s-name" placeholder="whisper.cpp на этом Маке" autocomplete="off" spellcheck="false"></label>
@@ -409,6 +411,14 @@
         <label>Ключ, если нужен<input id="conn-s-key" type="password" autocomplete="off" spellcheck="false"></label>
         <button class="btn primary" type="submit">Добавить</button>
         <p class="muted" id="conn-s-note" role="status"></p>
+      </form>
+      <form class="conn-google" id="conn-ozon" hidden>
+        <p class="muted">Кабинет Ozon для «Маркеты → Магазин». Ключ — в кабинете Ozon Seller → Настройки → Seller API; окну хватает прав на чтение, ничего в кабинете оно не меняет. Окно хранит ключ в Связке ключей и отправляет его только в Ozon.</p>
+        <label>Название<input id="conn-o-name" placeholder="Мой магазин" autocomplete="off" spellcheck="false"></label>
+        <label>Client-Id<input id="conn-o-id" inputmode="numeric" placeholder="номер кабинета, только цифры" autocomplete="off" spellcheck="false"></label>
+        <label>API-ключ<input id="conn-o-key" type="password" autocomplete="off" spellcheck="false"></label>
+        <button class="btn primary" type="submit">Добавить</button>
+        <p class="muted" id="conn-o-note" role="status"></p>
       </form>
       <form class="conn-google" id="conn-google" hidden>
         <p class="muted">Окно попросит у Google только чтение Диска. Нужен свой клиент OAuth — один раз, около трех минут:</p>

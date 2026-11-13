@@ -1270,7 +1270,7 @@ $("#storage-list").addEventListener("click", async (e) => {
   } catch (err) { storageConfirm = null; showError(errText(err)); }
   renderStorage();
 });
-const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи" };
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon" };
 let connConfirm = null;
 async function renderConnections() {
   const list = $("#conn-list");
@@ -1281,7 +1281,7 @@ async function renderConnections() {
     const acts = r.own
       ? `<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
       : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
-    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.
+    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${r.kind === "ozon" ? "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет." : "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться."}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
     <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
@@ -1334,6 +1334,28 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
   } catch (err) { $("#conn-s-note").textContent = errText(err); }
+  renderConnections();
+});
+function showOzonForm() {
+  const f = $("#conn-ozon");
+  f.hidden = false;
+  $("#conn-add-ozon").setAttribute("aria-expanded", "true");
+  focusSoon("#conn-o-id");
+}
+$("#mk-conn").addEventListener("click", async () => { hideTip(); await openSettings("conn"); showOzonForm(); });
+$("#conn-add-ozon").addEventListener("click", () => {
+  if (!$("#conn-ozon").hidden) { $("#conn-ozon").hidden = true; $("#conn-add-ozon").setAttribute("aria-expanded", "false"); return; }
+  showOzonForm();
+});
+$("#conn-ozon").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!native() || !native().AddOzonConnection) return void ($("#conn-o-note").textContent = "Подключения меняются в окне приложения.");
+  try {
+    const r = await native().AddOzonConnection($("#conn-o-name").value, $("#conn-o-id").value, $("#conn-o-key").value);
+    $("#conn-o-note").textContent = "Добавлено: " + r.name + ". Загрузите его в «Маркеты → Магазин».";
+    toast("Добавлено", ` · «${r.name}»`);
+    for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
+  } catch (err) { $("#conn-o-note").textContent = errText(err); }
   renderConnections();
 });
 $("#conn-add-google").addEventListener("click", () => {
@@ -5552,11 +5574,11 @@ function fcChart(v) {
 // --- Маркеты → Магазин (#580) ----------------------------------------------------
 // Отчет Ozon «По товарам» читает Go (MarketsShop): доли, проблемы и счет по ним
 // считает домен; окно показывает и объясняет. Помнит только путь — в localStorage.
-const sh = { v: null, q: "", issue: "", sort: "ordered", dir: -1, sel: 0, first: true };
+const sh = { v: null, q: "", issue: "", sort: "ordered", dir: -1, sel: 0, first: true, only: null, adv: "" };
 const SH_KEY = "dvk.markets.shop";
 const SH_ISSUE = {
   cancels: ["отменяют больше половины", "отменили больше половины заказов: чаще всего товара нет на складе к сроку или долгая доставка"],
-  stock: ["кончается остаток", "Ozon советует срочно поставить или товара не было на складе неделю и больше из последних четырех"],
+  stock: ["кончается остаток", "Ozon советует срочно поставить, товара не было на складе неделю и больше из последних четырех или запаса меньше чем на две недели продаж"],
   returns: ["много возвратов", "вернули больше 10 % заказов: смотрите размеры, фото и описание"],
   ads: ["дорогая реклама", "ДРР больше 15 %: реклама съедает заметную часть выручки"],
   rating: ["рейтинг ниже 4,5", "рейтинг ниже 4,5 при отзывах: читайте отзывы, что не нравится"],
@@ -5566,6 +5588,7 @@ const SH_COLS = [
   ["ordered", "Заказано", "заказано штук за период, включая отмены и возвраты", "ordered"],
   ["buyout", "Выкуп", "выкуплено к заказанному: сколько дошло до покупателя и осталось у него", "boughtOut"],
   ["cancel", "Отмены", "отменено к заказанному", "cancelled"],
+  ["refuse", "Отказ", "отказались при получении — часть отмен; Ozon пишет «товар не подошел»: чаще всего размер или посадка", "refused"],
   ["return", "Возвраты", "возвращено к заказанному", "returned"],
   ["stock", "Остаток", "штук на складах на конец периода", "stock"],
   ["daysOut", "Без остатка", "дней без товара на складах из последних 28", "daysOut"],
@@ -5574,9 +5597,12 @@ const SH_COLS = [
   ["rating", "Рейтинг", "оценка товара на конец периода", "rating"],
 ];
 const shPct = (x) => Math.round(x * 100) + " %";
+const shOzon = () => sh.v && sh.v.source === "ozon";
+// shCols — колонки, что есть у источника: у кабинета по API нет возвратов, ДРР, рейтинга и дней без остатка, у отчета — отказов.
+const shCols = () => SH_COLS.filter(([k]) => (shOzon() ? !["return", "daysOut", "drr", "rating"].includes(k) : k !== "refuse"));
 function shVal(k, p) {
   switch (k) {
-    case "buyout": case "cancel": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
+    case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
     case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
@@ -5584,19 +5610,46 @@ function shVal(k, p) {
   }
 }
 const shHint = (k) => { const c = SH_COLS.find((x) => x[0] === k); const oz = c && sh.v && sh.v.hints[c[3]]; return (c ? c[2] : "") + (oz ? " · Ozon: " + oz : ""); };
-function shSave() { try { localStorage.setItem(SH_KEY, sh.v.path); } catch (_) { /* окно просто не вспомнит отчет */ } }
-async function shRead(path) {
+// Источник помнится строкой: путь к отчету или «ozon:<id подключения>».
+function shSave() { try { localStorage.setItem(SH_KEY, (shOzon() ? "ozon:" : "") + sh.v.path); } catch (_) { /* окно просто не вспомнит отчет */ } }
+async function shRead(src) {
   mkErr("");
-  try { sh.v = await native().MarketsShop(path); sh.sel = 0; shSave(); } catch (e) { mkErr("Не прочитал отчет: " + errText(e)); }
+  const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
+  if (oz) { b.disabled = true; b.textContent = "Загружаю из Ozon…"; }
+  try {
+    sh.v = oz ? await native().MarketsOzon(src.slice(5)) : await native().MarketsShop(src);
+    Object.assign(sh, { sel: 0, only: null, adv: "" });
+    shSave();
+  } catch (e) { mkErr((oz ? "Не загрузил кабинет: " : "Не прочитал отчет: ") + errText(e)); }
+  finally { b.disabled = false; b.textContent = "Загрузить из Ozon"; }
   shRender();
+}
+// shCabinets — включенные кабинеты Ozon; выбор виден, когда их больше одного.
+async function shCabinets() {
+  let rows = [];
+  try { rows = ((await native().Connections()) || []).filter((c) => c.kind === "ozon" && c.enabled); } catch (_) { /* нет подключений — кнопка ведет их добавить */ }
+  const sel = $("#sh-cab"), cur = sel.value;
+  sel.innerHTML = rows.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join("");
+  if (rows.some((c) => c.id === cur)) sel.value = cur;
+  sel.hidden = rows.length < 2;
+  return rows;
 }
 async function openShop() {
   shRender();
   if (!sh.first) return;
   sh.first = false;
   let p = ""; try { p = localStorage.getItem(SH_KEY) || ""; } catch (_) { /* нет хранилища */ }
+  if (native() && native().Connections) await shCabinets();
   if (p && native() && native().MarketsShop) await shRead(p);
 }
+$("#sh-ozon").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsOzon) return mkErr("Магазин работает в окне приложения.");
+  const rows = await shCabinets();
+  if (!rows.length) { await openSettings("conn"); return showOzonForm(); }
+  sh.issue = ""; sh.q = ""; $("#sh-q").value = "";
+  await shRead("ozon:" + (rows.length > 1 ? $("#sh-cab").value : rows[0].id));
+});
 $("#sh-open").addEventListener("click", async () => {
   hideTip();
   if (!native() || !native().MarketsPickFileTitled) return mkErr("Магазин работает в окне приложения.");
@@ -5608,69 +5661,104 @@ function shRender() {
   const v = sh.v;
   $("#sh-empty").hidden = !!v;
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
+  $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
   $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
-  if (!v) return;
-  const t = v.total, urgent = v.products.filter((p) => p.urgent).length;
+  if (!v) return void ($("#sh-advice").hidden = true);
+  const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
   $("#sh-kpis").innerHTML =
     kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн.`, "", shHint("ordered")) +
     kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт`, t.buyout < 0.5 ? "bad" : "", shHint("buyout")) +
     kpi("Отмены", shPct(t.cancel), `отменено ${fmt(t.cancelled)} шт`, t.cancel > 0.5 ? "bad" : "", shHint("cancel")) +
-    kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return")) +
-    kpi("Остаток", fmt(t.stock) + " шт", t.daysOutOf ? `без остатка ${t.daysOut} из ${t.daysOutOf} дней` : "на конец периода", t.daysOut >= 7 ? "bad" : "", shHint("stock")) +
-    kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара");
+    (oz ? kpi("Отказ при получении", shPct(t.refuse), `отказались ${fmt(t.refused)} шт — часть отмен`, t.refuse > 0.3 ? "bad" : "", shHint("refuse"))
+      : kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return"))) +
+    kpi("Остаток", fmt(t.stock) + " шт", oz ? "к продаже сейчас" : t.daysOutOf ? `без остатка ${t.daysOut} из ${t.daysOutOf} дней` : "на конец периода", t.daysOut >= 7 ? "bad" : "", oz ? "штук на складах минус резерв, FBO и FBS вместе" : shHint("stock")) +
+    (oz ? kpi("Срочно довезти", fmt(urgent), "товаров: запаса меньше чем на 2 недели", urgent ? "bad" : "", "товары, которых при нынешних продажах без отмен хватит меньше чем на две недели; сколько довезти на четыре — в карточке")
+      : kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара"));
+  shAdvice();
   $("#sh-chips").innerHTML = [["", "все товары", "показать все товары отчета"], ...Object.keys(SH_ISSUE).filter((k) => v.counts[k]).map((k) => [k, SH_ISSUE[k][0], SH_ISSUE[k][1]])]
-    .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
+    .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k && !sh.adv}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
   shTable();
   const p = v.problems;
   $("#sh-probs").hidden = !p.length;
   $("#sh-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
-  $("#sh-probs-list").innerHTML = p.map((x) => `<li>строка ${x.row}: ${esc(x.reason)}</li>`).join("");
+  $("#sh-probs-list").innerHTML = p.map((x) => `<li>${x.row ? `строка ${x.row}: ` : ""}${esc(x.reason)}</li>`).join("");
+}
+// Советы (#580): домен решает, каким товарам какой совет; слова здесь.
+const SH_ADV = {
+  refusals: (a, n) => [`<b>Отказываются при получении</b>: ${fmt(a.units)} шт у ${fmt(n)} товаров`, "чаще всего не подходит размер или посадка: проверьте замеры изделия в карточке, таблицу размеров и фото на модели с ростом и размером, почитайте отзывы и вопросы"],
+  supply: (a, n) => (shOzon() ? [`<b>Довезти</b>: ${fmt(n)} товаров кончатся меньше чем через две недели`, `на четыре недели нужно около ${fmt(a.units)} шт; считано по продажам без отмен`]
+    : [`<b>Поставить</b>: Ozon советует срочно поставить ${fmt(n)} товаров`, `всего ${fmt(a.units)} шт по рекомендации Ozon`]),
+  dead: (a, n) => [`<b>Лежит без заказов</b>: ${fmt(n)} товаров, ${fmt(a.units)} шт за ${fmt(sh.v.periodDays)} дн.`, "акция или скидка, реклама на ходовые размеры или вывоз со склада, чтобы не платить за хранение"],
+  keep: (a, n) => [`<b>Продается чисто</b>: ${fmt(n)} товаров с 10+ заказами, отказами до 20 % и отменами до 30 %`, "держите их в наличии во всех размерах — на них держится магазин"],
+};
+function shAdvice() {
+  const v = sh.v, el = $("#sh-advice"), adv = (v.advice || []).filter((a) => SH_ADV[a.kind]);
+  el.hidden = !adv.length;
+  const name = (sku) => (v.products.find((p) => p.sku === sku) || {}).name || sku;
+  el.innerHTML = adv.length ? "<h3>Советы</h3>" + adv.map((a) => {
+    const [head, how] = SH_ADV[a.kind](a, a.skus.length), on = sh.adv === a.kind;
+    const ex = [...new Set(a.skus.map(name))].slice(0, 3).join(", ");
+    return `<div class="sh-adv" aria-current="${on}"><div>${head} — ${esc(how)}</div><div class="ex">например: ${esc(ex)}</div>` +
+      `<button class="btn" type="button" data-sh-adv="${a.kind}"${mkTip(on ? "Все товары" : "Товары совета", on ? "вернуть все товары в таблицу" : "оставить в таблице только эти товары, по важности")}>${on ? "Все товары" : "Показать " + fmt(a.skus.length)}</button></div>`;
+  }).join("") : "";
 }
 function shList() {
   const fold = (t) => t.toLowerCase().replace(/ё/g, "е"), q = fold(sh.q.trim()), ps = sh.v.products, k = sh.sort;
-  return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)))
-    .sort((a, b) => (k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru") : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
+  return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q) || fold(ps[i].article || "").includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)) && (!sh.only || sh.only.has(ps[i].sku)))
+    .sort((a, b) => (!k && sh.only ? sh.only.get(ps[a].sku) - sh.only.get(ps[b].sku) // совет: по его важности
+      : k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru") : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
 }
 function shTable() {
   const ps = sh.v.products, list = shList();
   if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
   const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const bad = (k, p) => (k === "cancel" && p.cancel > 0.5) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const bad = (k, p) => (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse > 0.4) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
-  $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${SH_COLS.map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
-    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
-      SH_COLS.map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
+  $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+      shCols().map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
   $("#sh-none").hidden = list.length > 0;
   shCard();
 }
 // shWhy — выводы по товару из тех же чисел, что в таблице.
 function shWhy(p) {
   const out = [];
-  if (p.issues.includes("cancels")) out.push(`отменили ${shPct(p.cancel)} заказов (${fmt(p.cancelled)} из ${fmt(p.ordered)})${p.daysOut ? ` — и товара не было ${p.daysOut} из ${p.daysOutOf} дней: похоже, отменяют из-за нехватки` : ""}`);
-  if (p.urgent) out.push(`Ozon советует срочно поставить${p.supplyQty ? ` ${fmt(p.supplyQty)} шт` : ""}; остаток ${fmt(p.stock)} шт`);
+  if (p.refused && p.refused * 2 >= p.cancelled && p.refuse >= 0.2) out.push(`при получении отказались ${fmt(p.refused)} из ${fmt(p.ordered)} (${shPct(p.refuse)}): чаще всего не подошел размер или посадка — проверьте замеры, таблицу размеров и фото`);
+  else if (p.issues.includes("cancels")) out.push(`отменили ${shPct(p.cancel)} заказов (${fmt(p.cancelled)} из ${fmt(p.ordered)})${p.daysOut ? ` — и товара не было ${p.daysOut} из ${p.daysOutOf} дней: похоже, отменяют из-за нехватки` : ""}`);
+  if (p.urgent && shOzon()) out.push(`запаса меньше чем на две недели: остаток ${fmt(p.stock)} шт, на четыре недели довезти ${fmt(p.supplyQty)} шт`);
+  else if (p.urgent) out.push(`Ozon советует срочно поставить${p.supplyQty ? ` ${fmt(p.supplyQty)} шт` : ""}; остаток ${fmt(p.stock)} шт`);
   else if (p.issues.includes("stock")) out.push(`товара не было ${p.daysOut} из ${p.daysOutOf} дней; остаток ${fmt(p.stock)} шт`);
   if (p.issues.includes("returns")) out.push(`вернули ${shPct(p.return)} заказов: проверьте размерную сетку и фото`);
   if (p.issues.includes("ads")) out.push(`реклама — ${shPct(p.drr)} выручки`);
   if (p.issues.includes("rating")) out.push(`рейтинг ${String(p.rating).replace(".", ",")} при ${fmt(p.reviews)} отзывах`);
-  if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : "заказов за период не было");
+  if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : p.stock ? `заказов за период не было, лежит ${fmt(p.stock)} шт: акция, реклама или вывоз со склада` : "заказов за период не было");
   return out;
 }
 function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
-  const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
+  const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Артикул", p.article || "—", "артикул продавца: размер и цвет обычно в нем"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
     ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽`, shHint("ordered")], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
     ["Выкуплено", `${fmt(p.boughtOut)} шт · ${shPct(p.buyout)}`, shHint("buyout")], ["Отменено", `${fmt(p.cancelled)} шт · ${shPct(p.cancel)}`, shHint("cancel")],
+    ["Отказ при получении", `${fmt(p.refused)} шт · ${shPct(p.refuse)}`, shHint("refuse")],
     ["Возвращено", `${fmt(p.returned)} шт · ${shPct(p.return)}`, shHint("return")], ["Остаток", fmt(p.stock) + " шт", shHint("stock")],
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
-  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
+  const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении"];
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
     `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 $("#mk-shop").addEventListener("click", (e) => {
   const c = e.target.closest("[data-sh-issue]");
-  if (c) { hideTip(); sh.issue = c.dataset.shIssue; shRender(); return; }
+  if (c) { hideTip(); Object.assign(sh, { issue: c.dataset.shIssue, only: null, adv: "" }); shRender(); return; }
+  const adv = e.target.closest("[data-sh-adv]");
+  if (adv) {
+    hideTip();
+    const a = (sh.v.advice || []).find((x) => x.kind === adv.dataset.shAdv), on = sh.adv === adv.dataset.shAdv;
+    Object.assign(sh, on || !a ? { only: null, adv: "", sort: "ordered", dir: -1 } : { only: new Map(a.skus.map((k, i) => [k, i])), adv: a.kind, issue: "", sort: "", sel: -1 });
+    shRender(); return;
+  }
   const s = e.target.closest("[data-sh-sort]");
   if (s) {
     const k = s.dataset.shSort === "issues" ? "cancel" : s.dataset.shSort;

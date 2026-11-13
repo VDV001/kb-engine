@@ -34,7 +34,7 @@ func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
 		return connRow{}, errors.New("Client-Id — номер кабинета из цифр: Ozon Seller → Настройки → Seller API")
 	}
 	if key == "" {
-		return connRow{}, errors.New("нужен API-ключ: Ozon Seller → Настройки → Seller API → Сгенерировать ключ")
+		return connRow{}, errors.New("нужен API-ключ: Ozon Seller → Настройки → Seller API")
 	}
 	if name == "" {
 		name = "Ozon " + clientID

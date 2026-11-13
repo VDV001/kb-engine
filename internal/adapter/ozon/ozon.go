@@ -79,9 +79,11 @@ func (c Client) Postings(ctx context.Context, from, to time.Time) ([]markets.Ozo
 	return out, nil
 }
 
-// Stocks returns stock to sell by SKU: на складах минус в резерве, FBO и FBS вместе.
+// Stocks returns stock to sell by SKU: на складах минус в резерве, FBO и FBS
+// вместе, с названием из карточки — у товара без заказов его больше негде взять.
 func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
 	var out []markets.OzonStock
+	var ids []int64
 	at := map[string]int{}
 	cursor := ""
 	for page := 0; ; page++ {
@@ -94,6 +96,7 @@ func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
 			return nil, fmt.Errorf("остатки: %w", err)
 		}
 		for _, it := range res.Items {
+			ids = append(ids, it.ProductID)
 			for _, s := range it.Stocks {
 				sku := strconv.FormatInt(s.SKU, 10)
 				i, ok := at[sku]
@@ -106,10 +109,43 @@ func (c Client) Stocks(ctx context.Context) ([]markets.OzonStock, error) {
 			}
 		}
 		if res.Cursor == "" || res.Cursor == cursor || len(res.Items) == 0 {
-			return out, nil
+			break
 		}
 		cursor = res.Cursor
 	}
+	names, err := c.names(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("карточки товаров: %w", err)
+	}
+	for i := range out {
+		out[i].Name = names[out[i].Article]
+	}
+	return out, nil
+}
+
+// infoBatch — карточек за запрос: больше 1000 Ozon не принимает.
+const infoBatch = 1000
+
+// names returns card names by offer_id.
+func (c Client) names(ctx context.Context, ids []int64) (map[string]string, error) {
+	out := map[string]string{}
+	for len(ids) > 0 {
+		n := min(len(ids), infoBatch)
+		var res struct {
+			Items []struct {
+				OfferID string `json:"offer_id"`
+				Name    string `json:"name"`
+			} `json:"items"`
+		}
+		if err := c.call(ctx, "/v3/product/info/list", map[string]any{"product_id": ids[:n]}, &res); err != nil {
+			return nil, err
+		}
+		for _, it := range res.Items {
+			out[it.OfferID] = it.Name
+		}
+		ids = ids[n:]
+	}
+	return out, nil
 }
 
 type postingPage struct {
@@ -168,8 +204,9 @@ func (p postingJSON) posting(scheme string) markets.OzonPosting {
 type stockPage struct {
 	Cursor string `json:"cursor"`
 	Items  []struct {
-		OfferID string `json:"offer_id"`
-		Stocks  []struct {
+		ProductID int64  `json:"product_id"`
+		OfferID   string `json:"offer_id"`
+		Stocks    []struct {
 			SKU      int64 `json:"sku"`
 			Present  int   `json:"present"`
 			Reserved int   `json:"reserved"`

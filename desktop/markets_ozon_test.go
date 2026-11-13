@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -23,10 +24,12 @@ func fakeOzon(t *testing.T) *httptest.Server {
 			posts := strings.Repeat(`{"status":"delivered","products":[`+item+`]},`, 9) +
 				strings.Repeat(`{"status":"cancelled","cancellation":{"cancel_reason":"Покупатель отказался при вручении: товар не подошел"},"products":[`+item+`]},`, 7)
 			_, _ = w.Write([]byte(`{"has_next":false,"cursor":"","postings":[` + strings.TrimSuffix(posts, ",") + `]}`))
+		case "/v3/product/info/list":
+			_, _ = w.Write([]byte(`{"items":[{"id":901,"offer_id":"100_46","name":"Брюки тестовые"},{"id":903,"offer_id":"300_M","name":"Пижама тестовая"}]}`))
 		case "/v4/posting/fbs/list":
 			_, _ = w.Write([]byte(`{"has_next":false,"cursor":"","postings":[]}`))
 		case "/v4/product/info/stocks":
-			_, _ = w.Write([]byte(`{"cursor":"","items":[{"offer_id":"100_46","stocks":[{"type":"fbo","present":0,"reserved":0,"sku":11}]},{"offer_id":"300_M","stocks":[{"type":"fbo","present":40,"reserved":0,"sku":33}]}]}`))
+			_, _ = w.Write([]byte(`{"cursor":"","items":[{"product_id":901,"offer_id":"100_46","stocks":[{"type":"fbo","present":0,"reserved":0,"sku":11}]},{"product_id":903,"offer_id":"300_M","stocks":[{"type":"fbo","present":40,"reserved":0,"sku":33}]}]}`))
 		default:
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -68,7 +71,7 @@ func TestMarketsOzon(t *testing.T) {
 	if v.Source != "ozon" || v.File != "Ozon · FURIA" || v.PeriodDays != 90 || v.Period != "15.08.2026 – 12.11.2026" || len(v.Products) != 2 {
 		t.Fatalf("view = %+v", v)
 	}
-	if p := v.Products[0]; p.SKU != "11" || p.Ordered != 16 || p.Refused != 7 || p.Refuse != 0.4375 || !p.Urgent {
+	if p := v.Products[0]; p.SKU != "11" || p.Article != "100_46" || p.Ordered != 16 || p.Refused != 7 || p.Refuse != 0.4375 || !p.Urgent {
 		t.Errorf("trousers = %+v", p)
 	}
 	kinds := []string{}
@@ -79,9 +82,13 @@ func TestMarketsOzon(t *testing.T) {
 		t.Errorf("advice = %+v", v.Advice)
 	}
 
-	tok.m[connKeyAccount(row.ID)] = "wrong"
-	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now); err == nil || !strings.Contains(err.Error(), "не принял") {
-		t.Errorf("wrong key: err = %v, want words about the key", err)
+	// Ключ не уходит ни в данные экрана, ни в текст ошибки (#580: ключи — не в логи и не модели).
+	if raw, _ := json.Marshal(v); strings.Contains(string(raw), "k-1") {
+		t.Error("the view carries the key")
+	}
+	tok.m[connKeyAccount(row.ID)] = "wrong-secret"
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now); err == nil || !strings.Contains(err.Error(), "не принял") || strings.Contains(err.Error(), "wrong-secret") {
+		t.Errorf("wrong key: err = %v, want words about the key and not the key itself", err)
 	}
 	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), "нет-такого", now); err == nil {
 		t.Error("unknown connection read")

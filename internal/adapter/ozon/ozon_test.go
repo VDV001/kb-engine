@@ -51,10 +51,12 @@ func TestClient_postingsAndStocks(t *testing.T) {
 			`{"has_next":false,"cursor":"","postings":[{"status":"cancelled","cancellation":{"cancel_reason":"Покупатель отказался при вручении: товар не подошел"},"products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":2,"price":{"amount":"990.50","currency":"RUB"}}]}]}`,
 		},
 		// FBS у старых версий API пишет цену строкой; другая валюта — без цены, валюты не смешиваются.
-		"/v4/posting/fbs/list": {`{"has_next":false,"cursor":"","postings":[{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":"500.00"}]},{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":{"amount":"7","currency":"USD"}}]}]}`},
+		// Названия — из карточек: у товара без заказов их больше негде взять.
+		"/v3/product/info/list": {`{"items":[{"id":901,"offer_id":"100_46","name":"Брюки"},{"id":902,"offer_id":"200_L","name":"Футболка"}]}`},
+		"/v4/posting/fbs/list":  {`{"has_next":false,"cursor":"","postings":[{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":"500.00"}]},{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":{"amount":"7","currency":"USD"}}]}]}`},
 		"/v4/product/info/stocks": {
-			`{"cursor":"1","total":2,"items":[{"offer_id":"100_46","stocks":[{"type":"fbo","present":5,"reserved":1,"sku":11},{"type":"fbs","present":2,"reserved":0,"sku":11}]}]}`,
-			`{"cursor":"","total":2,"items":[{"offer_id":"200_L","stocks":[{"type":"fbo","present":3,"reserved":0,"sku":22}]}]}`,
+			`{"cursor":"1","total":2,"items":[{"product_id":901,"offer_id":"100_46","stocks":[{"type":"fbo","present":5,"reserved":1,"sku":11},{"type":"fbs","present":2,"reserved":0,"sku":11}]}]}`,
+			`{"cursor":"","total":2,"items":[{"product_id":902,"offer_id":"200_L","stocks":[{"type":"fbo","present":3,"reserved":0,"sku":22}]}]}`,
 		},
 	})
 	defer srv.Close()
@@ -77,7 +79,7 @@ func TestClient_postingsAndStocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stocks: %v", err)
 	}
-	if len(stocks) != 2 || stocks[0].SKU != "11" || stocks[0].Qty != 6 || stocks[1].Article != "200_L" {
+	if len(stocks) != 2 || stocks[0].SKU != "11" || stocks[0].Qty != 6 || stocks[1].Article != "200_L" || stocks[1].Name != "Футболка" {
 		t.Errorf("stocks = %+v; want present minus reserved summed by sku", stocks)
 	}
 }

@@ -30,8 +30,8 @@ type OzonPosting struct {
 
 // OzonStock — остаток товара на складах, штук к продаже.
 type OzonStock struct {
-	SKU, Article string
-	Qty          float64
+	SKU, Article, Name string
+	Qty                float64
 }
 
 // Запас, при котором окно советует довезти, и на сколько вперед.
@@ -78,7 +78,11 @@ func OzonShop(posts []OzonPosting, stock []OzonStock, from, to time.Time) (OzonR
 		}
 	}
 	for _, s := range stock {
-		get(s.SKU, s.Article).d.Stock += max(s.Qty, 0)
+		a := get(s.SKU, s.Article)
+		a.d.Stock += max(s.Qty, 0)
+		if a.d.Name == "" {
+			a.d.Name = s.Name // у товара без заказов название — из карточки
+		}
 	}
 	r := OzonReport{Period: from.Format("02.01.2006") + " – " + to.Format("02.01.2006"), PeriodDays: days, Hints: map[string]string{}}
 	total := domain.ShopProductData{Name: "Итого и среднее", PeriodDays: days}
