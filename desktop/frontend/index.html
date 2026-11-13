@@ -194,7 +194,7 @@
           <input class="chat-find" id="chat-find" placeholder="Найти чат…" aria-label="Найти чат" autocomplete="off" spellcheck="false" hidden>
           <div class="chat-rec">Недавние</div>
           <ul class="chat-list" id="chat-list"></ul>
-          <button class="chat-nav" id="chat-model-btn" data-tip="Модель" data-tip-b="настройки: адрес, имя модели, ключ и кто ищет документы"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="4.5" width="9" height="8" rx="1.5"/><path d="M8 2v2.5M6 8h.01M10 8h.01M6.5 10.5h3"/></svg>Модель</button>
+          <button class="chat-nav" id="chat-model-btn" data-tip="Настройки чата" data-tip-b="адрес и ключ модели, кто ищет документы, голос, микрофон и распознавание; быстро сменить модель — чип под полем вопроса"><svg class="ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2"/><path d="M8 1.8v1.7M8 12.5v1.7M1.8 8h1.7M12.5 8h1.7M3.6 3.6l1.2 1.2M11.2 11.2l1.2 1.2M3.6 12.4l1.2-1.2M11.2 4.8l1.2-1.2"/></svg>Настройки чата</button>
         </div>
       </aside>
       <div class="chat-grip" id="chat-grip-l" data-side="l" role="separator" aria-orientation="vertical" aria-label="Ширина колонки чатов" tabindex="0" data-tip="Тяните · двойной щелчок — обычная ширина"></div>
@@ -211,10 +211,11 @@
             <div class="chat-attached" id="chat-attached" hidden></div>
             <div class="chat-offer" id="chat-offer" role="status" hidden></div>
             <div class="chat-ctx-pop" id="chat-ctx-pop" role="dialog" aria-label="Заполнение контекста" hidden></div>
+            <div class="chat-mdl-pop" id="chat-mdl-pop" role="dialog" aria-label="Модель чата" hidden></div>
             <textarea id="chat-q" rows="1" placeholder="Спросите о своих документах…" aria-label="Вопрос"></textarea>
             <div class="chat-box-row">
               <button class="chat-tool" type="button" id="chat-attach" aria-label="Приложить к вопросу" aria-haspopup="menu" aria-expanded="false" data-tip="Приложить к вопросу" data-tip-b="файл с диска, найденное или ссылку"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M3 8h10"/></svg></button>
-              <button class="chat-model-chip" type="button" id="chat-model-chip" data-tip="Модель" data-tip-b="нажмите, чтобы сменить модель или ключ"></button>
+              <button class="chat-model-chip" type="button" id="chat-model-chip" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat-mdl-pop" data-tip="Модель чата" data-tip-b="нажмите — быстро сменить модель; адрес, ключ и остальное — в «Настройки чата» слева"></button>
               <button class="chat-ctx-ring" type="button" id="chat-ctx-ring" aria-haspopup="dialog" aria-expanded="false" aria-controls="chat-ctx-pop" hidden></button>
               <span class="chat-spacer"></span>
               <span class="chat-idle" id="chat-idle">
