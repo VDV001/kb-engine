@@ -5740,7 +5740,8 @@ async function shRead(src) {
   mkErr("");
   const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
   $("#sh-open").disabled = b.disabled = true;
-  const stop = shProgress(oz ? "Загружаю кабинет из Ozon: отправления за 90 дней и остатки" : "Читаю отчет");
+  const cab = oz && [...$("#sh-cab").options].find((o) => o.value === src.slice(5));
+  const stop = shProgress(oz ? `Загружаю кабинет${cab ? " «" + cab.textContent + "»" : ""} из Ozon` : "Читаю отчет", oz);
   let done = "";
   try {
     sh.v = oz ? await native().MarketsOzon(src.slice(5)) : await native().MarketsShop(src);
@@ -5752,18 +5753,36 @@ async function shRead(src) {
   finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; stop(done); }
   shRender();
 }
-// shProgress показывает бегущую полосу и секунды, пока идет загрузка; stop(итог)
-// убирает полосу и оставляет итог со временем, пустой итог — прячет строку
-// (ошибку называет mkErr).
-function shProgress(what) {
-  const box = $("#sh-progress"), bar = $("#sh-progress-bar"), t = $("#sh-progress-t"), t0 = Date.now();
-  const tick = () => { t.textContent = `${what}… ${Math.round((Date.now() - t0) / 1000)} с`; };
+// Этапы «Загрузить из Ozon» в порядке полосы; события «markets:stage» шлет
+// загрузчик кабинета (markets_ozon.go). Начисления и возвраты читаются
+// параллельно с отправлениями, поэтому непройденные этапы все — «идет».
+const SH_STAGES = [["posts", "отправления за 90 дней"], ["stock", "остатки"], ["accruals", "начисления"], ["returns", "возвраты"]];
+const shLoad = { done: null }; // пройденные этапы, пока идет загрузка кабинета
+if (window.runtime) window.runtime.EventsOn("markets:stage", (s) => { if (shLoad.done) { shLoad.done.add(s); shStagesRender(); } });
+function shStagesRender() {
+  const d = shLoad.done;
+  $("#sh-progress-fill").style.width = `${Math.max(4, (d.size / SH_STAGES.length) * 100)}%`;
+  $("#sh-stages").innerHTML = SH_STAGES.map(([k, l]) => `<li class="${d.has(k) ? "ok" : ""}">${d.has(k) ? "✓" : "…"} ${l}</li>`).join("");
+}
+// shProgress показывает полосу, пока идет загрузка: у кабинета (staged) она
+// заполняется по этапам, у файла — бежит. stop(итог) убирает полосу и
+// оставляет итог со временем, пустой итог — прячет блок (ошибку называет mkErr).
+function shProgress(what, staged) {
+  const box = $("#sh-progress"), bar = $("#sh-progress-bar"), st = $("#sh-stages"), t = $("#sh-progress-t"), t0 = Date.now();
+  const tick = () => { t.textContent = `${what} · ${Math.round((Date.now() - t0) / 1000)} с`; };
+  shLoad.done = staged ? new Set() : null;
+  box.classList.remove("done");
+  box.classList.toggle("indet", !staged);
   box.hidden = bar.hidden = false;
+  st.hidden = !staged;
+  if (staged) shStagesRender();
   tick();
   const timer = setInterval(tick, 1000);
   return (done) => {
     clearInterval(timer);
-    bar.hidden = true;
+    shLoad.done = null;
+    bar.hidden = st.hidden = true;
+    box.classList.add("done");
     box.hidden = !done;
     t.textContent = done ? `✓ ${done} · ${new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}` : "";
   };
@@ -5907,7 +5926,7 @@ function shTable() {
   const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
-    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + shCopyBtn(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
       shCols().map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
   $("#sh-none").hidden = list.length > 0;
   shCard();
@@ -5929,6 +5948,18 @@ function shWhy(p) {
 // shOzonSKU — SKU ссылкой на страницу товара на ozon.ru; не число — просто текст.
 const shOzonSKU = (sku) => /^\d+$/.test(sku || "")
   ? `<button type="button" class="lnk" data-open-url="https://www.ozon.ru/product/${sku}/"${mkTip("Открыть на Ozon", "страница товара на ozon.ru в браузере")}>${sku} ↗</button>` : esc(sku || "—");
+// shCopyBtn — значок «скопировать» у артикула продавца: его ищут в кабинете и в своих таблицах.
+const COPY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>`;
+const shCopyBtn = (text) => `<button type="button" class="sh-copy" data-sh-copy="${esc(text)}" aria-label="Скопировать артикул"${mkTip("Скопировать артикул", text)}>${COPY_ICON}</button>`;
+async function shCopy(btn) {
+  const text = btn.dataset.shCopy;
+  try {
+    if (window.runtime && window.runtime.ClipboardSetText) { if (!(await window.runtime.ClipboardSetText(text))) throw new Error("буфер"); }
+    else await navigator.clipboard.writeText(text);
+    toast("Скопировано", ` · ${text}`);
+  } catch { toast("Не скопировал", " · выделите артикул и нажмите ⌘C", null, "off"); }
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-sh-copy]"); if (b) { hideTip(); shCopy(b); } });
 function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
@@ -5941,7 +5972,7 @@ function shCard() {
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
-  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : esc(v)}</dd>`).join("")}</dl>` +
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
     shMoneyCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.
@@ -6011,7 +6042,7 @@ $("#mk-shop").addEventListener("click", (e) => {
     shTable(); return;
   }
   const tr = e.target.closest("[data-sh-n]");
-  if (tr && !e.target.closest("[data-open-url]")) { sh.sel = +tr.dataset.shN; shTable(); } // SKU-ссылка открывает Ozon, выбор не меняет
+  if (tr && !e.target.closest("[data-open-url], [data-sh-copy]")) { sh.sel = +tr.dataset.shN; shTable(); } // ссылка и копирование не меняют выбор
 });
 $("#sh-table").addEventListener("keydown", (e) => {
   const tr = e.target.closest("[data-sh-n]"); if (!tr) return;

@@ -1667,13 +1667,25 @@ body:not(.no-mk-buttons):not([data-mka="none"]) .mk-view .btn.mk-main:not([aria-
 .mk-seg button { font: 13px var(--z-font); color: var(--z-muted); background: var(--z-bg); border: 0; padding: 7px 14px; cursor: pointer; }
 .mk-seg button + button { border-left: 1px solid var(--z-rule); }
 .mk-seg-l { font: 12px var(--z-font); color: var(--z-muted); padding: 7px 10px; align-self: center; border-right: 1px solid var(--z-rule); }
-.sh-progress { margin: 0 18px; font-size: 13px; color: var(--z-muted); }
-/* своя полоса, не .indexing-bar: та рассчитана на экран индексации и ее тему */
-.sh-progress-bar { position: relative; height: 3px; margin-bottom: 6px; max-width: 420px; background: var(--z-rule); overflow: hidden; }
+.sh-copy { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; vertical-align: -5px; background: none; border: 0; border-radius: var(--z-radius); color: var(--z-muted); cursor: pointer; }
+.sh-copy:hover, .sh-copy:focus-visible { color: var(--z-accent); outline: none; }
+.sh-copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.sh-progress { margin: 0 18px; padding: 16px 20px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); text-align: center; font-size: 13px; color: var(--z-muted); }
+.sh-progress.done { padding: 0; border-color: transparent; background: none; }
+.sh-progress-t { color: var(--z-ink); font-variant-numeric: tabular-nums; }
+.sh-progress-bar { position: relative; height: 6px; margin-top: 12px; border-radius: 3px; background: var(--z-rule); overflow: hidden; }
 .sh-progress-bar[hidden] { display: none; }
-.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: -30%; width: 30%; background: var(--z-accent); animation: sh-run 1.2s linear infinite; }
+/* заливка по пройденным этапам и блик по ней: видно, что загрузка жива и между событиями */
+.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: 0; width: 4%; border-radius: 3px; background: linear-gradient(90deg, var(--z-accent), var(--z-accent-hi)); transition: width .45s var(--z-ease); overflow: hidden; }
+.sh-progress-bar span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff59, transparent); transform: translateX(-100%); animation: sh-shine 1.3s linear infinite; }
+@keyframes sh-shine { to { transform: translateX(100%); } }
+/* у файла этапов нет — отрезок бежит */
+.sh-progress.indet .sh-progress-bar span { width: 30%; left: -30%; transition: none; animation: sh-run 1.2s linear infinite; }
 @keyframes sh-run { to { left: 100%; } }
-@media (prefers-reduced-motion: reduce) { .sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
+.sh-stages { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 22px; margin: 12px 0 0; padding: 0; list-style: none; }
+.sh-stages[hidden] { display: none; }
+.sh-stages li.ok { color: var(--z-ok); }
+@media (prefers-reduced-motion: reduce) { .sh-progress-bar span::after { animation: none; } .sh-progress.indet .sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
 .mk-seg button[aria-pressed="true"] { color: var(--z-ink); background: var(--z-bg-3, var(--z-bg-2)); font-weight: 700; }
 .mk-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-ink-2); cursor: pointer; }
 .mk-check input { accent-color: color-mix(in srgb, var(--mk2) 70%, var(--z-ink)); width: 15px; height: 15px; }
