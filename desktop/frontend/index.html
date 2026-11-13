@@ -160,6 +160,24 @@
         <div class="hp-main" id="hp-main" aria-live="polite"></div>
       </div>
     </section>
+    <!-- «Маркеты» (#580): экран «Ниша» — выгрузка ниш из сервиса аналитики -->
+    <section class="mk-view" id="markets-view" hidden>
+      <div class="mk-bar"><h2 class="mk-title">Ниша</h2><span class="mk-file" id="mk-file"></span><button class="btn" type="button" id="mk-open">Открыть выгрузку…</button></div>
+      <p class="mk-empty" id="mk-empty">Откройте выгрузку ниш из сервиса аналитики (MPStats и похожих) — файл xlsx или csv. Окно узнает колонки по заголовкам, а что не узнает — спросит. Файл остается на месте: окно его только читает.</p>
+      <p class="mk-err" id="mk-err" role="alert" hidden></p>
+      <details class="mk-cols" id="mk-cols" hidden>
+        <summary id="mk-cols-sum"></summary>
+        <div class="mk-cols-b" id="mk-cols-b"></div>
+      </details>
+      <div class="mk-body" id="mk-body" hidden>
+        <input class="mk-q" id="mk-q" type="search" placeholder="Найти нишу" aria-label="Найти нишу" autocomplete="off" spellcheck="false">
+        <div class="mk-grid">
+          <div class="mk-scroll"><table class="mk-table" id="mk-table"></table><p class="mk-none" id="mk-none" hidden>Под поиск ниш нет.</p></div>
+          <aside class="mk-card" id="mk-card" aria-live="polite"></aside>
+        </div>
+        <details class="mk-probs" id="mk-probs" hidden><summary id="mk-probs-sum"></summary><ul id="mk-probs-list"></ul></details>
+      </div>
+    </section>
 
     <!-- Статистика (решение владельца 07.11): вызовы модели из журнала окна.
          Пульт и Журнал ведут друг в друга; сверху — откуда пришли. -->

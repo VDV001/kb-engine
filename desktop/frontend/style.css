@@ -1601,3 +1601,47 @@ body:not(.no-art-pick) .ver-pick input { accent-color: color-mix(in srgb, var(--
 .ver-line.del { background: var(--z-bad-wash); border-left-color: var(--z-bad); }
 .ver-path, .ver-dup { color: var(--z-muted); font-size: 11px; overflow-wrap: anywhere; grid-column: 2; }
 .ver-dup::before { content: "дубль: "; }
+
+/* --- Маркеты (#580): экран «Ниша» ------------------------------------------------- */
+.app.module-open .mk-view:not([hidden]) { display: flex; }
+.mk-view { flex-direction: column; gap: 12px; min-height: 0; margin-top: 16px; padding: 0 0 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); overflow: hidden; }
+.mk-bar { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--z-rule); background: var(--z-bg); }
+.mk-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--z-ink); }
+.mk-file { margin-left: auto; color: var(--z-muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-empty, .mk-err { margin: 0 18px; font-size: 13px; color: var(--z-muted); max-width: 70ch; }
+.mk-err { color: var(--z-bad); }
+.mk-cols { margin: 0 18px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-cols summary { cursor: pointer; padding: 8px 12px; font-size: 12px; color: var(--z-ink-2); }
+.mk-cols.ask summary { color: var(--z-bad); }
+.mk-cols-b { display: grid; grid-template-columns: minmax(0, max-content) minmax(0, 220px); gap: 6px 12px; align-items: center; padding: 4px 12px 12px; font-size: 12px; }
+.mk-cols-b select { height: 28px; font: 12px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; min-width: 0; }
+.mk-cols-b .unk { color: var(--z-muted); }
+.mk-body { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; padding: 0 18px; }
+.mk-q { max-width: 360px; height: 32px; padding: 0 10px; font: 13px var(--z-font); color: var(--z-ink); background: var(--z-bg); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); outline: 0; }
+.mk-q:focus { border-color: var(--z-accent); }
+.mk-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 12px; min-height: 0; flex: 1; }
+.mk-scroll { min-height: 0; overflow: auto; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mk-table th { position: sticky; top: 0; background: var(--z-bg); text-align: left; font-weight: 400; color: var(--z-muted); padding: 0; border-bottom: 1px solid var(--z-rule); }
+.mk-table th button { all: unset; display: block; width: 100%; box-sizing: border-box; padding: 8px 10px; cursor: pointer; white-space: nowrap; }
+.mk-table th button:focus-visible { outline: 1px solid var(--z-accent); }
+.mk-table th[aria-sort] button { color: var(--z-ink); }
+.mk-table td { padding: 7px 10px; border-bottom: 1px solid var(--z-rule); color: var(--z-ink); }
+.mk-table .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mk-table th.n button { text-align: right; }
+.mk-table tbody tr { cursor: pointer; }
+.mk-table tbody tr:hover { background: var(--z-bg-2); }
+.mk-table tbody tr[aria-selected="true"] { background: var(--z-accent-wash); }
+.mk-table .up { color: var(--z-ok); }
+.mk-table .down { color: var(--z-bad); }
+.mk-none { margin: 12px; font-size: 12px; color: var(--z-muted); }
+.mk-card { min-height: 0; overflow: auto; padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); font-size: 12px; }
+.mk-card h3 { margin: 0 0 10px; font-size: 14px; color: var(--z-ink); overflow-wrap: anywhere; }
+.mk-card dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 12px; margin: 0; }
+.mk-card dt { color: var(--z-muted); }
+.mk-card dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; color: var(--z-ink); }
+.mk-card .how { margin: 10px 0 0; color: var(--z-faint); }
+.mk-probs { font-size: 12px; color: var(--z-muted); }
+.mk-probs summary { cursor: pointer; }
+.mk-probs ul { margin: 6px 0 0; padding-left: 18px; max-height: 120px; overflow: auto; }
+@media (max-width: 760px) { .mk-grid { grid-template-columns: minmax(0, 1fr); } }

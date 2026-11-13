@@ -415,6 +415,8 @@ const MODULES = {
     icon: '<path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4M17.6 6.5a3 3 0 0 0 .4-1.4M6 5.1a3 3 0 0 0 .4 1.4M3.5 10.9a4 4 0 0 1 .6-.4M19.9 10.5a4 4 0 0 1 .6.4M6 18a4 4 0 0 1-2-.5M20 17.5a4 4 0 0 1-2 .5"/>' },
   browser: { name: "Браузер", what: "обычный браузер этого Mac во вкладке: страницу смотрите и кликаете вы; включается кнопкой над страницей (из терминала — kbengine browser serve)", src: "/browser/",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M4 12h16M12 4c2.5 2.3 3.7 5 3.7 8s-1.2 5.7-3.7 8c-2.5-2.3-3.7-5-3.7-8S9.5 6.3 12 4Z"/>' },
+  markets: { name: "Маркеты", what: "ниши Wildberries и Ozon из выгрузки сервиса аналитики: продажи, выручка, продавцы, рост", view: "markets",
+    icon: '<path d="M5.5 8h13l-1.1 11a1.5 1.5 0 0 1-1.5 1.4H8.1a1.5 1.5 0 0 1-1.5-1.4z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/>' },
   help: { name: "Справка", what: "команды движка и клавиши окна — поиск по задаче, копирование в один клик", view: "help",
     icon: '<circle cx="12" cy="12" r="8"/><path d="M9.6 9.6a2.5 2.5 0 1 1 3.4 2.3c-.6.3-1 .8-1 1.5v.6M12 16.8v.2"/>' },
 };
@@ -2320,12 +2322,14 @@ function showModule(id) {
   $("#memory-view").hidden = !mod || mod.view !== "memory";
   const helpWasOpen = !$("#help-view").hidden; // render() зовет showModule часто: не сбивать фокус и выбор
   $("#help-view").hidden = !mod || mod.view !== "help";
+  $("#markets-view").hidden = !mod || mod.view !== "markets";
   if (!mod || mod.view !== "access") acLeave();
   if (mod && mod.view === "chat") openChatView();
   else if (mod && mod.view === "stats") openStats();
   else if (mod && mod.view === "access") openAccess();
   else if (mod && mod.view === "memory") { if (!mmWasOpen) openMemory(); }
   else if (mod && mod.view === "help") { if (!helpWasOpen) openHelp(); }
+  else if (mod && mod.view === "markets") openMarkets();
   else if (mod) {
     $("#fin-src").hidden = id !== "finances";
     renderFinSrc();
@@ -5056,6 +5060,140 @@ document.addEventListener("keydown", (e) => {
   if ($("#help-view").hidden || settingsOpen()) return;
   const typing = e.target.closest && e.target.closest("input, textarea, [contenteditable]");
   if ((e.key === "/" && !typing) || ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k")) { e.preventDefault(); $("#hp-q").focus(); $("#hp-q").select(); }
+});
+
+// --- Маркеты (#580): экран «Ниша» ------------------------------------------------
+// Выгрузку читает Go (MarketsRead) при открытии и при каждом выборе колонки;
+// окно помнит только путь и выбор колонок — в localStorage, удобство одного Мака.
+const mk = { tb: null, picks: [], q: "", sort: "", dir: -1, sel: 0, first: true };
+const MK_KEY = "dvk.markets.niche";
+function mkSave() { try { localStorage.setItem(MK_KEY, JSON.stringify({ path: mk.tb.path, picks: mk.picks })); } catch (_) { /* без хранилища окно просто не вспомнит файл */ } }
+function mkLoad() { try { return JSON.parse(localStorage.getItem(MK_KEY) || "null"); } catch (_) { return null; } }
+const mkLabel = (id) => (id === "name" ? "Ниша" : ((mk.tb.fields.find((f) => f.id === id) || {}).label || id));
+function mkVal(id, v) {
+  if (v === undefined) return "—";
+  if (id === "growth") return (v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(Math.round(v * 100)) + " %";
+  if (id === "top10") return Math.round(v * 100) + " %";
+  const s = fmt(Math.round(v));
+  return id === "revenue" || id === "price" ? s + " ₽" : s;
+}
+function mkErr(t) { $("#mk-err").textContent = t; $("#mk-err").hidden = !t; }
+async function mkRead(path, picks) {
+  mkErr("");
+  try {
+    mk.tb = await native().MarketsRead(path, picks);
+    mk.picks = picks;
+    mkSave();
+  } catch (e) { mkErr("Не прочитал файл: " + errText(e)); }
+  mkRender();
+}
+async function openMarkets() {
+  if (!mk.first) return;
+  mk.first = false;
+  if (!native() || !native().MarketsRead) return mkErr("Экран «Ниша» работает в окне приложения.");
+  const last = mkLoad();
+  if (last && last.path) await mkRead(last.path, last.picks || []);
+}
+$("#mk-open").addEventListener("click", async () => {
+  if (!native() || !native().MarketsPickFile) return mkErr("Экран «Ниша» работает в окне приложения.");
+  let p = "";
+  try { p = await native().MarketsPickFile(); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
+  if (!p) return;
+  mk.sel = 0; mk.sort = ""; mk.q = ""; $("#mk-q").value = "";
+  await mkRead(p, []);
+});
+function mkRender() {
+  const tb = mk.tb;
+  $("#mk-empty").hidden = !!tb;
+  $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
+  $("#mk-file").title = tb ? tb.path : "";
+  $("#mk-cols").hidden = !tb;
+  $("#mk-body").hidden = !tb || tb.needName;
+  if (!tb) return;
+  mkRenderCols();
+  if (!tb.needName) { mkRenderTable(); mkRenderProbs(); }
+}
+// mkRenderCols: колонки файла и что в них; без колонки ниши — вопрос раскрыт.
+function mkRenderCols() {
+  const tb = mk.tb, known = tb.columns.filter((c) => c.field).length;
+  $("#mk-cols").classList.toggle("ask", tb.needName);
+  if (tb.needName) $("#mk-cols").open = true;
+  $("#mk-cols-sum").textContent = tb.needName ? "Не нашел колонку с названием ниши: выберите ее ниже"
+    : `Колонки файла: узнано ${known} из ${tb.columns.length} · заголовки в строке ${tb.headerRow}`;
+  const opts = (sel) => `<option value=""${sel ? "" : " selected"}>не нужна</option>` +
+    tb.fields.map((f) => `<option value="${esc(f.id)}"${f.id === sel ? " selected" : ""}>${esc(f.label)}</option>`).join("");
+  $("#mk-cols-b").innerHTML = tb.columns.map((c) => `<label for="mk-c${c.index}" class="${c.field ? "" : "unk"}">${esc(c.header || "колонка " + (c.index + 1))}</label>` +
+    `<select id="mk-c${c.index}" data-mk-col="${c.index}">${opts(c.field)}</select>`).join("");
+}
+$("#mk-cols-b").addEventListener("change", (e) => {
+  const s = e.target.closest("[data-mk-col]");
+  if (!s || !mk.tb) return;
+  const i = +s.dataset.mkCol;
+  mkRead(mk.tb.path, [...mk.picks.filter((p) => p.index !== i), { index: i, field: s.value }]);
+});
+// mkShown: величины, которые есть хоть у одной ниши, в порядке колонок.
+const mkShown = () => mk.tb.fields.map((f) => f.id).filter((id) => id !== "name" && mk.tb.niches.some((n) => n.values[id] !== undefined));
+// mkList: номера ниш под поиском в порядке сортировки; ниша без величины — внизу.
+function mkList() {
+  const fold = (t) => t.toLowerCase().replace(/ё/g, "е");
+  const q = fold(mk.q.trim()), key = mk.sort, ns = mk.tb.niches;
+  return ns.map((_, i) => i).filter((i) => !q || fold(ns[i].name).includes(q)).sort((x, y) => {
+    if (key === "name") return mk.dir * ns[x].name.localeCompare(ns[y].name, "ru");
+    const a = ns[x].values[key], b = ns[y].values[key];
+    if (a === undefined || b === undefined) return (a === undefined) - (b === undefined);
+    return mk.dir * (a - b);
+  });
+}
+function mkRenderTable() {
+  const shown = mkShown(), ns = mk.tb.niches;
+  if (mk.sort !== "name" && !shown.includes(mk.sort)) { mk.sort = shown.includes("sales") ? "sales" : shown[0] || "name"; mk.dir = mk.sort === "name" ? 1 : -1; }
+  const list = mkList();
+  if (!list.includes(mk.sel)) mk.sel = list.length ? list[0] : -1;
+  const th = (id, cls) => `<th class="${cls}"${mk.sort === id ? ` aria-sort="${mk.dir > 0 ? "ascending" : "descending"}"` : ""}>` +
+    `<button type="button" data-mk-sort="${id}">${esc(mkLabel(id))}${mk.sort === id ? (mk.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
+  const td = (id, v) => `<td class="n${id === "growth" && v > 0 ? " up" : id === "growth" && v < 0 ? " down" : ""}">${mkVal(id, v)}</td>`;
+  $("#mk-table").innerHTML = `<thead><tr>${th("name", "")}${shown.map((id) => th(id, "n")).join("")}</tr></thead><tbody>` +
+    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td>${esc(ns[i].name)}</td>${shown.map((id) => td(id, ns[i].values[id])).join("")}</tr>`).join("") + "</tbody>";
+  $("#mk-none").hidden = list.length > 0;
+  mkRenderCard();
+}
+function mkRenderCard() {
+  const n = mk.tb.niches[mk.sel];
+  if (!n) { $("#mk-card").innerHTML = ""; return; }
+  const rows = mk.tb.fields.filter((f) => f.id !== "name" && n.values[f.id] !== undefined).map((f) => `<dt>${esc(f.label)}</dt><dd>${mkVal(f.id, n.values[f.id])}</dd>`);
+  $("#mk-card").innerHTML = `<h3>${esc(n.name)}</h3><dl>${rows.join("")}</dl><p class="how">Числа — как в выгрузке; прогноз и план по нише — следующим шагом.</p>`;
+}
+function mkRenderProbs() {
+  const p = mk.tb.problems;
+  $("#mk-probs").hidden = !p.length;
+  $("#mk-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
+  $("#mk-probs-list").innerHTML = p.map((x) => `<li>строка ${x.row}: ${esc(x.reason)}</li>`).join("");
+}
+$("#mk-table").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mk-sort]");
+  if (b) {
+    const id = b.dataset.mkSort;
+    if (mk.sort === id) mk.dir = -mk.dir; else { mk.sort = id; mk.dir = id === "name" ? 1 : -1; }
+    mkRenderTable();
+    const again = document.querySelector(`[data-mk-sort="${id}"]`); if (again) again.focus();
+    return;
+  }
+  const tr = e.target.closest("[data-mk-n]");
+  if (tr) { mk.sel = +tr.dataset.mkN; mkRenderTable(); }
+});
+$("#mk-table").addEventListener("keydown", (e) => {
+  const tr = e.target.closest("[data-mk-n]");
+  if (!tr) return;
+  const sib = e.key === "ArrowDown" ? tr.nextElementSibling : e.key === "ArrowUp" ? tr.previousElementSibling : e.key === "Enter" ? tr : null;
+  if (!sib) return;
+  e.preventDefault();
+  mk.sel = +sib.dataset.mkN;
+  mkRenderTable();
+  const now = document.querySelector(`[data-mk-n="${mk.sel}"]`); if (now) now.focus();
+});
+$("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb && !mk.tb.needName) mkRenderTable(); });
+$("#mk-q").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });
 
 
