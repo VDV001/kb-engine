@@ -5146,7 +5146,7 @@ function mkSeasonLabel() {
   return `пик в ${MK_IN[m]}-${MK_IN[last]}`;
 }
 function mkRender() {
-  if ($('[data-mk-tab="forecast"]').getAttribute("aria-selected") === "true") return; // «Ниша» нарисуется при возвращении на вкладку
+  if ($('[data-mk-tab="niche"]').getAttribute("aria-selected") !== "true") return; // «Ниша» нарисуется при возвращении на вкладку
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
   $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
@@ -5376,7 +5376,7 @@ function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths))
 function mkTab(id) {
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
-  if (id === "forecast") fcRender(); else mkRender(); // «Ниша» сама решает, что из нее видно
+  if (id === "forecast") fcRender(); else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
@@ -5479,6 +5479,146 @@ function fcChart(v) {
     `${ticks}${yt}${hits}</svg>` +
     `<div class="mk-legend"><span><i class="fc"></i>прогноз, штук</span><span><i class="band"></i>диапазон</span><span><i class="ly"></i>прошлый год, кривая ниши в Вашем масштабе</span><span>серым — выходные</span></div>`;
 }
+// --- Маркеты → Магазин (#580) ----------------------------------------------------
+// Отчет Ozon «По товарам» читает Go (MarketsShop): доли, проблемы и счет по ним
+// считает домен; окно показывает и объясняет. Помнит только путь — в localStorage.
+const sh = { v: null, q: "", issue: "", sort: "ordered", dir: -1, sel: 0, first: true };
+const SH_KEY = "dvk.markets.shop";
+const SH_ISSUE = {
+  cancels: ["отменяют больше половины", "отменили больше половины заказов: чаще всего товара нет на складе к сроку или долгая доставка"],
+  stock: ["кончается остаток", "Ozon советует срочно поставить или товара не было на складе неделю и больше из последних четырех"],
+  returns: ["много возвратов", "вернули больше 10 % заказов: смотрите размеры, фото и описание"],
+  ads: ["дорогая реклама", "ДРР больше 15 %: реклама съедает заметную часть выручки"],
+  rating: ["рейтинг ниже 4,5", "рейтинг ниже 4,5 при отзывах: читайте отзывы, что не нравится"],
+};
+// Колонки таблицы: [ключ, подпись, наше пояснение, поле подсказки Ozon].
+const SH_COLS = [
+  ["ordered", "Заказано", "заказано штук за период, включая отмены и возвраты", "ordered"],
+  ["buyout", "Выкуп", "выкуплено к заказанному: сколько дошло до покупателя и осталось у него", "boughtOut"],
+  ["cancel", "Отмены", "отменено к заказанному", "cancelled"],
+  ["return", "Возвраты", "возвращено к заказанному", "returned"],
+  ["stock", "Остаток", "штук на складах на конец периода", "stock"],
+  ["daysOut", "Без остатка", "дней без товара на складах из последних 28", "daysOut"],
+  ["avgPrice", "Цена", "средняя цена реализации, ₽", "avgPrice"],
+  ["drr", "ДРР", "доля расходов на рекламу в выручке", "drr"],
+  ["rating", "Рейтинг", "оценка товара на конец периода", "rating"],
+];
+const shPct = (x) => Math.round(x * 100) + " %";
+function shVal(k, p) {
+  switch (k) {
+    case "buyout": case "cancel": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
+    case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
+    case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
+    case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
+    default: return fmt(Math.round(p[k] || 0));
+  }
+}
+const shHint = (k) => { const c = SH_COLS.find((x) => x[0] === k); const oz = c && sh.v && sh.v.hints[c[3]]; return (c ? c[2] : "") + (oz ? " · Ozon: " + oz : ""); };
+function shSave() { try { localStorage.setItem(SH_KEY, sh.v.path); } catch (_) { /* окно просто не вспомнит отчет */ } }
+async function shRead(path) {
+  mkErr("");
+  try { sh.v = await native().MarketsShop(path); sh.sel = 0; shSave(); } catch (e) { mkErr("Не прочитал отчет: " + errText(e)); }
+  shRender();
+}
+async function openShop() {
+  shRender();
+  if (!sh.first) return;
+  sh.first = false;
+  let p = ""; try { p = localStorage.getItem(SH_KEY) || ""; } catch (_) { /* нет хранилища */ }
+  if (p && native() && native().MarketsShop) await shRead(p);
+}
+$("#sh-open").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsPickFileTitled) return mkErr("Магазин работает в окне приложения.");
+  let p = "";
+  try { p = await native().MarketsPickFileTitled("Отчет Ozon «По товарам»"); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
+  if (p) { sh.issue = ""; sh.q = ""; $("#sh-q").value = ""; await shRead(p); }
+});
+function shRender() {
+  const v = sh.v;
+  $("#sh-empty").hidden = !!v;
+  for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
+  $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
+  if (!v) return;
+  const t = v.total, urgent = v.products.filter((p) => p.urgent).length;
+  const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
+  $("#sh-kpis").innerHTML =
+    kpi("Заказано", fmt(t.ordered) + " шт", `на ${fmt(Math.round(t.orderedSum / 1e3))} тыс. ₽ за ${v.periodDays || "—"} дн.`, "", shHint("ordered")) +
+    kpi("Выкуп", shPct(t.buyout), `выкуплено ${fmt(t.boughtOut)} шт`, t.buyout < 0.5 ? "bad" : "", shHint("buyout")) +
+    kpi("Отмены", shPct(t.cancel), `отменено ${fmt(t.cancelled)} шт`, t.cancel > 0.5 ? "bad" : "", shHint("cancel")) +
+    kpi("Возвраты", shPct(t.return), `возвращено ${fmt(t.returned)} шт`, t.return > 0.1 ? "bad" : "", shHint("return")) +
+    kpi("Остаток", fmt(t.stock) + " шт", t.daysOutOf ? `без остатка ${t.daysOut} из ${t.daysOutOf} дней` : "на конец периода", t.daysOut >= 7 ? "bad" : "", shHint("stock")) +
+    kpi("Срочно поставить", fmt(urgent), "товаров по рекомендации Ozon", urgent ? "bad" : "", "сколько товаров Ozon пометил «Срочно поставить»; сколько штук — в карточке товара");
+  $("#sh-chips").innerHTML = [["", "все товары", "показать все товары отчета"], ...Object.keys(SH_ISSUE).filter((k) => v.counts[k]).map((k) => [k, SH_ISSUE[k][0], SH_ISSUE[k][1]])]
+    .map(([k, n, tip]) => `<button class="sh-chip" type="button" data-sh-issue="${k}" aria-pressed="${sh.issue === k}"${mkTip(n, tip + " · нажмите — только такие товары")}>${k ? `<b>${v.counts[k]}</b>` : ""}${esc(n)}</button>`).join("");
+  shTable();
+  const p = v.problems;
+  $("#sh-probs").hidden = !p.length;
+  $("#sh-probs-sum").textContent = `Не прочитано строк: ${p.length}`;
+  $("#sh-probs-list").innerHTML = p.map((x) => `<li>строка ${x.row}: ${esc(x.reason)}</li>`).join("");
+}
+function shList() {
+  const fold = (t) => t.toLowerCase().replace(/ё/g, "е"), q = fold(sh.q.trim()), ps = sh.v.products, k = sh.sort;
+  return ps.map((_, i) => i).filter((i) => (!q || fold(ps[i].name).includes(q) || ps[i].sku.includes(q)) && (!sh.issue || ps[i].issues.includes(sh.issue)))
+    .sort((a, b) => (k === "name" ? sh.dir * ps[a].name.localeCompare(ps[b].name, "ru") : sh.dir * ((ps[a][k] || 0) - (ps[b][k] || 0))));
+}
+function shTable() {
+  const ps = sh.v.products, list = shList();
+  if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
+  const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
+  const bad = (k, p) => (k === "cancel" && p.cancel > 0.5) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
+  $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${SH_COLS.map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+      SH_COLS.map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
+  $("#sh-none").hidden = list.length > 0;
+  shCard();
+}
+// shWhy — выводы по товару из тех же чисел, что в таблице.
+function shWhy(p) {
+  const out = [];
+  if (p.issues.includes("cancels")) out.push(`отменили ${shPct(p.cancel)} заказов (${fmt(p.cancelled)} из ${fmt(p.ordered)})${p.daysOut ? ` — и товара не было ${p.daysOut} из ${p.daysOutOf} дней: похоже, отменяют из-за нехватки` : ""}`);
+  if (p.urgent) out.push(`Ozon советует срочно поставить${p.supplyQty ? ` ${fmt(p.supplyQty)} шт` : ""}; остаток ${fmt(p.stock)} шт`);
+  else if (p.issues.includes("stock")) out.push(`товара не было ${p.daysOut} из ${p.daysOutOf} дней; остаток ${fmt(p.stock)} шт`);
+  if (p.issues.includes("returns")) out.push(`вернули ${shPct(p.return)} заказов: проверьте размерную сетку и фото`);
+  if (p.issues.includes("ads")) out.push(`реклама — ${shPct(p.drr)} выручки`);
+  if (p.issues.includes("rating")) out.push(`рейтинг ${String(p.rating).replace(".", ",")} при ${fmt(p.reviews)} отзывах`);
+  if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : "заказов за период не было");
+  return out;
+}
+function shCard() {
+  const p = sh.v.products[sh.sel];
+  if (!p) { $("#sh-card").innerHTML = ""; return; }
+  const rows = [["SKU", p.sku || "—", "номер товара на Ozon"], ["Схема", p.scheme || "—", "FBO — со склада Ozon, FBS — со своего"], ["ABC по сумме", p.abc || "—", sh.v.hints.abc || "A — 80 % заказов, B — 15 %, C — 5 %"],
+    ["Заказано", `${fmt(p.ordered)} шт на ${fmt(Math.round(p.orderedSum))} ₽`, shHint("ordered")], ["Доставлено", fmt(p.delivered) + " шт", sh.v.hints.delivered || ""],
+    ["Выкуплено", `${fmt(p.boughtOut)} шт · ${shPct(p.buyout)}`, shHint("buyout")], ["Отменено", `${fmt(p.cancelled)} шт · ${shPct(p.cancel)}`, shHint("cancel")],
+    ["Возвращено", `${fmt(p.returned)} шт · ${shPct(p.return)}`, shHint("return")], ["Остаток", fmt(p.stock) + " шт", shHint("stock")],
+    ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
+    ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
+    `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+}
+$("#mk-shop").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-sh-issue]");
+  if (c) { hideTip(); sh.issue = c.dataset.shIssue; shRender(); return; }
+  const s = e.target.closest("[data-sh-sort]");
+  if (s) {
+    const k = s.dataset.shSort === "issues" ? "cancel" : s.dataset.shSort;
+    if (sh.sort === k) sh.dir = -sh.dir; else { sh.sort = k; sh.dir = k === "name" ? 1 : -1; }
+    shTable(); return;
+  }
+  const tr = e.target.closest("[data-sh-n]");
+  if (tr) { sh.sel = +tr.dataset.shN; shTable(); }
+});
+$("#sh-table").addEventListener("keydown", (e) => {
+  const tr = e.target.closest("[data-sh-n]"); if (!tr) return;
+  const sib = e.key === "ArrowDown" ? tr.nextElementSibling : e.key === "ArrowUp" ? tr.previousElementSibling : null;
+  if (!sib) return;
+  e.preventDefault(); sh.sel = +sib.dataset.shN; shTable();
+  const now = document.querySelector(`[data-sh-n="${sh.sel}"]`); if (now) now.focus();
+});
+$("#sh-q").addEventListener("input", (e) => { sh.q = e.target.value; if (sh.v) shTable(); });
+$("#sh-q").addEventListener("keydown", (e) => { if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; sh.q = ""; shTable(); } });
 // «Оформление → Маркеты» (accents.look mk-*): палитра, свои цвета, анимация,
 // вид графика и плотность строк. Владелец 13.11: гибкость, как у Артефактов.
 const MK_ANIMS = [["full", "перелив при наведении"], ["none", "без анимации"]];

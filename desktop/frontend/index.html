@@ -172,6 +172,7 @@
         <nav class="mk-tabs" role="tablist" aria-label="Разделы Маркетов">
           <button class="mk-tab" type="button" role="tab" aria-selected="true" data-mk-tab="niche" data-tip="Ниша" data-tip-b="выбор ниши на ближайший сезон по выгрузке сервиса аналитики">Ниша</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="forecast" data-tip="Прогноз" data-tip-b="сколько Вы продадите по дням и когда пик: по трем файлам — ниша прошлого года, ниша сейчас, свои продажи">Прогноз</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="shop" data-tip="Магазин" data-tip-b="Ваш магазин по отчету Ozon «По товарам»: выкуп, отмены, остатки и что не так с каждым товаром">Магазин</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="План — следующий шаг" data-tip-b="сколько везти и по какой цене по неделям, с выгрузкой в Excel">План</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" aria-disabled="true" data-tip="Подключения — следующий шаг" data-tip-b="свои продажи и остатки из Wildberries и Ozon по токену, без ручных файлов">Подключения</button>
         </nav>
@@ -201,6 +202,20 @@
         <div class="mk-cmp" id="mk-cmp" hidden></div>
         <div class="mk-how" id="mk-how"><b>Как считается оценка.</b> 0-100: рост спроса к прошлому году (40%), выручка на одного продавца по сравнению с лучшей нишей файла (30%), доля выручки у топ-10 — чем меньше, тем легче войти (20%), пик сезона в этом месяце или двух следующих (10%). Если в файле нет продаж по месяцам, часть сезона выпадает, а веса остальных делятся заново. Это подсказка, а не решение.</div>
         <details class="mk-probs" id="mk-probs" hidden><summary id="mk-probs-sum" data-tip="Непрочитанные строки" data-tip-b="строки файла, которые окно не взяло в таблицу, с номером и причиной"></summary><ul id="mk-probs-list"></ul></details>
+      </div>
+      <div class="mk-shop" id="mk-shop" data-mk-pane="shop" hidden>
+        <div class="mk-lead"><span class="mk-badge" id="sh-file" data-tip="Отчет магазина" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
+          <p class="mk-intro">Ваш магазин по отчету Ozon «Аналитика → По товарам»: что заказали, что выкупили, где отмены и где кончается товар.</p>
+          <button class="btn mk-main" type="button" id="sh-open" data-tip="Открыть отчет Ozon" data-tip-b="кабинет Ozon → Аналитика → По товарам → скачать xlsx; окно узнает отчет само">Открыть отчет Ozon…</button></div>
+        <p class="mk-empty" id="sh-empty">Откройте отчет Ozon «По товарам» (xlsx из кабинета: Аналитика → По товарам). Окно покажет выкуп, отмены, остатки и проблемы по каждому товару; пояснения Ozon к колонкам — в подсказках.</p>
+        <div class="mk-kpis" id="sh-kpis" hidden></div>
+        <div class="sh-chips" id="sh-chips" hidden></div>
+        <div class="mk-filters" id="sh-filters" hidden><input class="mk-q" id="sh-q" type="search" placeholder="Найти товар или SKU" aria-label="Найти товар" autocomplete="off" spellcheck="false" data-tip="Поиск товара" data-tip-b="по названию или SKU; Esc — очистить"></div>
+        <div class="mk-grid" id="sh-grid" hidden>
+          <div class="mk-scroll"><table class="mk-table" id="sh-table"></table><p class="mk-none" id="sh-none" hidden>Под фильтр товаров нет.</p></div>
+          <aside class="mk-card" id="sh-card" aria-live="polite"></aside>
+        </div>
+        <details class="mk-probs" id="sh-probs" hidden><summary id="sh-probs-sum"></summary><ul id="sh-probs-list"></ul></details>
       </div>
       <div class="mk-fc" id="mk-fc" data-mk-pane="forecast" hidden>
         <p class="mk-intro" id="mk-fc-intro">Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.</p>
