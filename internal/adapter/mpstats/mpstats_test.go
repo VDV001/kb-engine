@@ -3,8 +3,12 @@ package mpstats_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -63,5 +67,38 @@ func TestCategoryByDay(t *testing.T) {
 	}
 	if len(days) != 3 || !days[0].Day.Equal(time.Date(2025, 11, 1, 0, 0, 0, 0, time.UTC)) || days[2].Sales != 22034 || days[1].Sales != 15000.5 {
 		t.Errorf("days = %+v; want three days oldest first", days)
+	}
+}
+
+// Долгий ряд — частями по 31 дню (живой замер 13.11: 210 дней за раз —
+// 504 через 60 с у MPStats, 30 дней — 8,5 с), склеенными по порядку.
+func TestCategoryByDay_chunks(t *testing.T) {
+	var mu sync.Mutex
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		mu.Lock()
+		asked = append(asked, q.Get("d1")+"…"+q.Get("d2"))
+		mu.Unlock()
+		d1, _ := time.Parse(time.DateOnly, q.Get("d1"))
+		d2, _ := time.Parse(time.DateOnly, q.Get("d2"))
+		var parts []string
+		for d := d1; !d.After(d2); d = d.AddDate(0, 0, 1) {
+			parts = append(parts, fmt.Sprintf(`{"period":%q,"sales":%d}`, d.Format(time.DateOnly), d.YearDay()))
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(parts, ",") + "]"))
+	}))
+	t.Cleanup(srv.Close)
+	from := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	days, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.CategoryByDay(context.Background(), "x", from, from.AddDate(0, 0, 69))
+	if err != nil {
+		t.Fatal(err)
+	}
+	slices.Sort(asked)
+	if want := []string{"2025-01-01…2025-01-31", "2025-02-01…2025-03-03", "2025-03-04…2025-03-11"}; !slices.Equal(asked, want) {
+		t.Errorf("asked %v, want %v", asked, want)
+	}
+	if len(days) != 70 || days[0].Sales != 1 || days[69].Sales != 70 {
+		t.Errorf("days = %d, first %v, last %v", len(days), days[0], days[len(days)-1])
 	}
 }
