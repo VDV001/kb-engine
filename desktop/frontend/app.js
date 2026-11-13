@@ -4021,7 +4021,7 @@ paintThemeBtn();
 // назначение, модель, ошибки → Журнал с фильтром; сверху — откуда пришли.
 const st = { screen: "pulse", days: 30, data: null, seq: 0, f: {}, open: null, from: null, hist: [], modes: { tokens: "area", share: "donut", feed: "bars", heat: "calls" }, feedSel: null, cal: null, calDay: null, money: null };
 const ST_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
-const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3" };
+const ST_COLORS = { answer: "--z-sp4", search: "--z-sp5", extract: "--z-sp1", compress: "--z-sp2", listen: "--z-src-teal", speak: "--z-src-violet", describe: "--z-sp3", forecast: "--z-sp6" };
 const stCss = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
 const stNum = (n) => Math.round(n).toLocaleString("ru-RU");
 const stTok = (n) => (n >= 1e6 ? (n / 1e6).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " млн" : n >= 1e3 ? (n / 1e3).toLocaleString("ru-RU", { maximumFractionDigits: 1 }) + " тыс" : stNum(n));
@@ -5404,7 +5404,7 @@ $("#mk-files").addEventListener("click", async (e) => {
   let p = "";
   try { p = await native().MarketsPickFileTitled(b.dataset.fcTitle); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
   if (!p) return;
-  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fcSave(); fcRender();
+  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
 });
 $("#mk-fc-go").addEventListener("click", async () => {
   hideTip();
@@ -5417,6 +5417,38 @@ $("#mk-fc-go").addEventListener("click", async () => {
   fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
   fcRender();
 });
+// «Посчитать моделью»: первое нажатие говорит, что уйдет провайдеру; второе — отправляет.
+fc.ask = false;
+$("#mk-fc-model").addEventListener("click", async () => {
+  hideTip();
+  if (fc.busy) return;
+  if (!native() || !native().MarketsModelForecast) return mkErr("Расчет моделью работает в окне приложения.");
+  const miss = FC_SLOTS.filter((_, i) => !fc.paths[i]).map((s) => s[1]);
+  if (miss.length) return mkErr("Выберите файлы: " + miss.join(", ") + ".");
+  const box = $("#mk-model");
+  if (!fc.ask) {
+    fc.ask = true;
+    box.hidden = false;
+    box.innerHTML = `<h4>Отправить модели?</h4><p class="warn">Модели чата уйдут только суммы продаж по неделям из трех файлов и их периоды — без названий товаров, продавцов и файлов. Это вызов модели за деньги, он появится в «Статистике» как «Прогноз продаж». Нажмите «Посчитать моделью» еще раз, чтобы отправить.</p>`;
+    $("#mk-fc-model").textContent = "Отправить модели";
+    return;
+  }
+  fc.ask = false; fc.busy = true; mkErr("");
+  $("#mk-fc-model").textContent = "Модель считает…";
+  box.innerHTML = '<p class="warn">Модель считает…</p>';
+  try { fcModel(await native().MarketsModelForecast(...fc.paths, true)); }
+  catch (err) { box.innerHTML = `<h4>Модель не посчитала</h4><p class="warn">${esc(errText(err))}</p>`; }
+  fc.busy = false; $("#mk-fc-model").textContent = "Посчитать моделью";
+});
+function fcModel(m) {
+  const pct = (x) => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x * 100)) + " %";
+  $("#mk-model").innerHTML = `<h4${mkTip("Расчет модели", "модель " + m.model + " посчитала по тем же суммам по неделям; формула выше проверена тестами, модель — нет")}>Расчет модели ${esc(m.model)} — перепроверьте</h4>` +
+    `<p class="warn">Модель считает на глаз: ее числа нельзя проверить тестом, а формула выше проверена. Если расхождение больше 15 %, верьте формуле и спросите модель, почему она думает иначе.</p>` +
+    `<table><thead><tr><th>Месяц</th><th>модель</th><th>формула</th><th>расхождение</th></tr></thead><tbody>` +
+    m.months.map((x) => `<tr><td>${esc(x.label)}</td><td>${fmt(x.model)} шт</td><td>${x.formula ? fmt(x.formula) + " шт" : "—"}</td><td class="${Math.abs(x.diff) > 0.15 ? "far" : ""}">${x.formula ? pct(x.diff) : "нет в формуле"}</td></tr>`).join("") +
+    `</tbody></table><p>Пик по модели: <b>${esc(fcDay(m.peak))}</b>${fc.v ? ` · по формуле: ${esc(fcDay(fc.v.peak.day))}` : ""}</p>` +
+    (m.note ? `<p class="warn">Модель: ${esc(m.note)}</p>` : "");
+}
 function fcKpis(v) {
   const pct = (x) => (x * 100).toFixed(1).replace(".", ",") + " %";
   const months = v.months.map((m) => `<div class="mk-kpi"${mkTip(m.label + ", прогноз", "сумма прогноза по дням месяца; диапазон — из разброса прошлого года")}><div class="k">${esc(m.label[0].toUpperCase() + m.label.slice(1))}, прогноз</div>` +

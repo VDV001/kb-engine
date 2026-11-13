@@ -1721,6 +1721,14 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-file .btn { align-self: flex-start; }
 .mk-fc-run { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .mk-fc-note { font-size: 12px; color: var(--z-muted); }
+.mk-model { padding: 12px 14px; border: 1px solid var(--z-rule-2); border-left: 3px solid var(--z-lvl-warn, #e8925a); border-radius: var(--z-radius); background: var(--z-bg); font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.mk-model h4 { margin: 0; font-size: 13px; color: var(--z-ink); }
+.mk-model .warn { color: var(--z-ink-2); }
+.mk-model table { border-collapse: collapse; width: 100%; max-width: 560px; }
+.mk-model th, .mk-model td { padding: 5px 10px; border-bottom: 1px solid var(--z-rule); text-align: right; font-variant-numeric: tabular-nums; }
+.mk-model th:first-child, .mk-model td:first-child { text-align: left; }
+.mk-model th { color: var(--z-muted); font-weight: 400; }
+.mk-model .far { color: var(--z-bad); }
 .mk-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
 .mk-kpi { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
 .mk-kpi .k { font-size: 12px; color: var(--z-muted); }
