@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -21,8 +22,40 @@ import (
 // кабинетов, которым человек разрешил давать цифры модели (Share, ревью #593):
 // названия товаров и продажи уходят провайдеру модели.
 
-// shopExtra adapts markets.ShopTools to the chat.
-type shopExtra struct{ tools markets.ShopTools }
+// shopExtra adapts markets.ShopTools to the chat; cabinets — разрешенные
+// чату кабинеты: шаг называет кабинет по имени.
+type shopExtra struct {
+	tools    markets.ShopTools
+	cabinets func() []desktopconfig.Connection
+}
+
+// shopWhat — что спрашивает инструмент, словами человека.
+var shopWhat = map[string]string{
+	"shop_summary": "сводка магазина",
+	"shop_top":     "топ товаров",
+	"shop_supply":  "что довезти",
+	"shop_sku":     "карточка товара",
+	"shop_money":   "деньги магазина",
+	"shop_losses":  "возможные пропажи",
+}
+
+// Describe names the cabinet and the question of a shop tool.
+func (x shopExtra) Describe(name string, args []byte) (chat.Use, bool) {
+	what, ok := shopWhat[name]
+	if !ok {
+		return chat.Use{}, false
+	}
+	var a struct{ Cabinet, Q string }
+	_ = json.Unmarshal(args, &a) // испорченные аргументы — шаг без кабинета, отказ скажет Exec
+	if q := strings.TrimSpace(a.Q); q != "" {
+		what += " «" + q + "»"
+	}
+	u := chat.Use{Kind: chat.UseConnection, Name: "Ozon", What: what}
+	if c, err := pickCabinet(x.cabinets(), a.Cabinet); err == nil {
+		u.ID, u.Name = c.ID, "Ozon «"+c.Name+"»"
+	}
+	return u, true
+}
 
 func (shopExtra) Prompt() string { return markets.ShopToolsPrompt }
 
@@ -111,7 +144,7 @@ func shopExtras(s *folderSettings, base string, hc *http.Client, now func() time
 		defer mu.Unlock()
 		return t.d, t.moneyErr
 	}
-	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}}}
+	return []chat.Extra{shopExtra{markets.ShopTools{Load: load, Money: money}, func() []desktopconfig.Connection { return sharedOzon(s.snapshot().cfg) }}}
 }
 
 // withMoney adds accruals and returns to the turn's data — те же 90 дней,
