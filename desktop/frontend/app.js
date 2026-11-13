@@ -5504,6 +5504,8 @@ $("#markets-view").addEventListener("click", (e) => {
   if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); }
 });
 function fcRender() {
+  $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
+  if (!fc.v) plRender(null);
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
     const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:");
@@ -5552,6 +5554,50 @@ $("#mk-fc-go").addEventListener("click", async () => {
   try { fc.v = await native().MarketsForecast(...fc.paths); } catch (err) { fc.v = null; mkErr("Прогноз не посчитан: " + errText(err)); }
   fc.busy = false; $("#mk-fc-go").textContent = "Посчитать прогноз";
   fcRender();
+});
+// «План продаж» (#580): по тем же трем источникам, что прогноз, и вводу человека.
+const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "comm", "log", "lead"];
+try { const v = JSON.parse(localStorage.getItem(PL_KEY) || "null"); if (v) for (const k of PL_IN) if (v[k] !== undefined) $("#pl-" + k).value = v[k]; } catch (_) { /* без хранилища — значения по умолчанию */ }
+const plNum = (k) => Number(String($("#pl-" + k).value).replace(/\s|₽|%/g, "").replace(",", "."));
+function plInput() {
+  try { localStorage.setItem(PL_KEY, JSON.stringify(Object.fromEntries(PL_IN.map((k) => [k, $("#pl-" + k).value])))); } catch (_) { /* окно просто не вспомнит ввод */ }
+  const bad = PL_IN.filter((k) => !Number.isFinite(plNum(k)) || String($("#pl-" + k).value).trim() === "");
+  if (bad.length) return null;
+  return { stock: plNum("stock"), cost: plNum("cost"), price: plNum("price"), commission: plNum("comm"), logistics: plNum("log"), leadDays: Math.round(plNum("lead")) };
+}
+function plRender(v) {
+  const has = !!v;
+  for (const id of ["#pl-kpis", "#pl-table", "#pl-how"]) $(id).hidden = !has;
+  $("#pl-xlsx").disabled = !has;
+  if (!has) return;
+  const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
+  $("#pl-kpis").innerHTML = kpi("Продать", fmt(v.sell) + " шт", `за ${fmt(v.weeks.length)} недель прогноза`, "", "сколько продать за период, не больше остатка") +
+    kpi("Прибыль по плану", fmt(v.profit) + " ₽", "до рекламы и налогов", v.profit < 0 ? "bad" : "", "сумма прибыли по дням плана") +
+    (v.supplyQty ? kpi("Довезти", fmt(v.supplyQty) + " шт", "к " + v.supplyBy, "bad", "недостающее к спросу; дата — когда остаток кончится, минус срок поставки")
+      : kpi("Довезти", "не нужно", "остатка хватает на весь прогноз", "", "")) +
+    kpi("Пик", v.peak, v.shortForPeak ? "остатка не хватит на пик" : "остатка на пик хватает", v.shortForPeak ? "bad" : "", "день с наибольшим прогнозом");
+  const marks = (w) => [w.peak && "пик", w.dip && "провал", w.short && "не хватит остатка"].filter(Boolean).join(", ");
+  $("#pl-table").innerHTML = `<thead><tr><th>Неделя с</th><th>Спрос</th><th>Продать</th><th>Остаток</th><th>Цена</th><th>Прибыль</th><th>Пометки</th></tr></thead><tbody>` +
+    v.weeks.map((w) => `<tr class="${w.peak ? "peak" : ""}"><td>${esc(w.from)}${w.days < 7 ? ` <span class="muted">(${w.days} дн.)</span>` : ""}</td><td>${fmt(w.demand)}</td><td>${fmt(w.sell)}</td>` +
+      `<td${w.short ? ' class="bad"' : ""}>${fmt(w.stockEnd)}</td><td>${fmt(w.price)} ₽</td><td${w.profit < 0 ? ' class="bad"' : ""}>${fmt(w.profit)} ₽</td><td class="m">${esc(marks(w))}</td></tr>`).join("") + "</tbody>";
+}
+$("#pl-go").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsPlan) return mkErr("План работает в окне приложения.");
+  const inp = plInput();
+  if (!inp) return mkErr("Заполните все поля плана числами.");
+  mkErr(""); $("#pl-go").textContent = "Строю…";
+  try { plRender(await native().MarketsPlan(...fc.paths, inp)); } catch (err) { plRender(null); mkErr("План не построен: " + errText(err)); }
+  $("#pl-go").textContent = "Построить план";
+});
+$("#pl-xlsx").addEventListener("click", async () => {
+  hideTip();
+  const inp = plInput();
+  if (!inp || !native() || !native().MarketsPlanExcel) return;
+  try {
+    const path = await native().MarketsPlanExcel(...fc.paths, inp);
+    if (path) toast("План сохранен", " · " + path.split("/").pop());
+  } catch (err) { mkErr("Excel не сохранен: " + errText(err)); }
 });
 // «Посчитать моделью»: первое нажатие говорит, что уйдет провайдеру; второе — отправляет.
 fc.ask = false;
