@@ -47,10 +47,11 @@ func fake(t *testing.T, pages map[string][]string) *httptest.Server {
 func TestClient_postingsAndStocks(t *testing.T) {
 	srv := fake(t, map[string][]string{
 		"/v3/posting/fbo/list": {
-			`{"has_next":true,"cursor":"1","postings":[{"status":"delivered","products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":1,"price":"1000.0000"}]}]}`,
-			`{"has_next":false,"cursor":"","postings":[{"status":"cancelled","cancellation":{"cancel_reason":"Покупатель отказался при вручении: товар не подошел"},"products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":2,"price":"990.50"}]}]}`,
+			`{"has_next":true,"cursor":"1","postings":[{"status":"delivered","products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":1,"price":{"amount":"1000","currency":"RUB"}}]}]}`,
+			`{"has_next":false,"cursor":"","postings":[{"status":"cancelled","cancellation":{"cancel_reason":"Покупатель отказался при вручении: товар не подошел"},"products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":2,"price":{"amount":"990.50","currency":"RUB"}}]}]}`,
 		},
-		"/v4/posting/fbs/list": {`{"has_next":false,"cursor":"","postings":[]}`},
+		// FBS у старых версий API пишет цену строкой; другая валюта — без цены, валюты не смешиваются.
+		"/v4/posting/fbs/list": {`{"has_next":false,"cursor":"","postings":[{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":"500.00"}]},{"status":"delivered","products":[{"sku":22,"offer_id":"200_L","name":"Футболка","quantity":1,"price":{"amount":"7","currency":"USD"}}]}]}`},
 		"/v4/product/info/stocks": {
 			`{"cursor":"1","total":2,"items":[{"offer_id":"100_46","stocks":[{"type":"fbo","present":5,"reserved":1,"sku":11},{"type":"fbs","present":2,"reserved":0,"sku":11}]}]}`,
 			`{"cursor":"","total":2,"items":[{"offer_id":"200_L","stocks":[{"type":"fbo","present":3,"reserved":0,"sku":22}]}]}`,
@@ -63,7 +64,10 @@ func TestClient_postingsAndStocks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Postings: %v", err)
 	}
-	if len(posts) != 2 || posts[0].Scheme != "FBO" || posts[1].Status != "cancelled" || !strings.Contains(posts[1].CancelReason, "не подошел") {
+	if len(posts) != 4 || posts[2].Scheme != "FBS" || posts[2].Items[0].Price != 500 || posts[3].Items[0].Price != 0 {
+		t.Errorf("FBS prices = %+v; want 500 from a string and none for USD", posts[2:])
+	}
+	if len(posts) != 4 || posts[0].Scheme != "FBO" || posts[1].Status != "cancelled" || !strings.Contains(posts[1].CancelReason, "не подошел") {
 		t.Fatalf("posts = %+v", posts)
 	}
 	if it := posts[1].Items[0]; it.SKU != "11" || it.Article != "100_46" || it.Qty != 2 || it.Price != 990.5 {
