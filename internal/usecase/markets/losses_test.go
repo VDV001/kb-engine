@@ -46,7 +46,7 @@ func TestOzonLosses(t *testing.T) {
 		{"только сторно продажи — продажи нет (ревью #595)", []markets.OzonPosting{post("1-7", "delivered", old)}, []markets.OzonAccrual{sale("1-7", -150000)}, nil, []markets.LossKind{markets.LossNoSale}},
 		{"возврат FBS ждет в пункте — забрать, а не искать (ревью #595)", nil, nil,
 			[]markets.OzonReturn{{Posting: "2-9", Scheme: "Fbs", Status: "ArrivedAtReturnPlace", Changed: old, Price: 2000}, {Posting: "2-10", Scheme: "Fbo", Status: "ArrivedAtReturnPlace", Changed: old, Price: 2000}},
-			[]markets.LossKind{markets.LossPickup, markets.LossStuck}},
+			[]markets.LossKind{markets.LossStuck, markets.LossPickup}}, // равная цена — по номеру: "2-10" < "2-9"
 		{"вернулся на склад или продавцу — не пропажа", nil, nil, []markets.OzonReturn{ret("2-7", "ReturnedToOzon", old), ret("2-8", "ReceivedBySeller", old)}, nil},
 	}
 	for _, tt := range tests {

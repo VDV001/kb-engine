@@ -5745,6 +5745,7 @@ const SH_LOSS = {
   utilized: ["Возврат утилизирован", "товар утилизирован — если вы не заказывали утилизацию, подайте претензию"],
   lost: ["Возможно потерян", "Ozon пометил возврат «возможно потерян» — дождитесь компенсации или подайте претензию"],
   stuck: ["Возврат застрял", "возврат больше двух недель без движения — спросите поддержку Ozon, где товар"],
+  pickup: ["Заберите возврат", "возврат FBS больше двух недель ждет вас в пункте выдачи — заберите его, пока не начали брать за хранение или не утилизировали"],
 };
 function shLoss() {
   const l = sh.v.losses, el = $("#sh-loss");
@@ -5753,7 +5754,7 @@ function shLoss() {
   if (l.err) return void (el.innerHTML = `<div class="note">Пропажи не проверены: ${esc(l.err)}</div>`);
   const sum = l.rows.reduce((a, r) => a + r.price, 0), kind = (k) => SH_LOSS[k] || [k, ""];
   el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара</summary><div class="wrap"><table><tbody>` +
-    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${esc(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n">с ${esc(r.since)}</td></tr>`).join("") +
+    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${esc(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
     `</tbody></table></div><div class="note">компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, смотрите в отчете о компенсациях в разделе «Финансы» кабинета</div></details>`;
 }
 // Советы (#580): домен решает, каким товарам какой совет; слова здесь.

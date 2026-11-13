@@ -3,6 +3,7 @@ package markets
 import (
 	"cmp"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -68,24 +69,35 @@ func OzonLosses(posts []OzonPosting, acc []OzonAccrual, rets []OzonReturn, now t
 	return out
 }
 
-// unsold lists postings delivered lossAge ago with no sale in the accruals.
+// unsold lists postings delivered with no positive sale in the accruals: строка
+// на товар. Даты доставки в API нет — возраст считается от последнего начисления
+// по отправлению (логистику Ozon начисляет при отгрузке и доставке), а без них —
+// от создания (ревью #595).
 func unsold(posts []OzonPosting, acc []OzonAccrual, now time.Time) []ShopLoss {
-	sold := map[string]bool{}
+	sold, last := map[string]bool{}, map[string]time.Time{}
 	for _, a := range acc {
-		if a.Kind == AccrualSale && a.Unit != "" {
-			sold[a.Unit] = true
+		if a.Unit == "" {
+			continue
+		}
+		if a.Kind == AccrualSale && a.Amount.Kopecks() > 0 {
+			sold[a.Unit] = true // одно сторно без продажи — не продажа
+		}
+		if a.Day.After(last[a.Unit]) {
+			last[a.Unit] = a.Day
 		}
 	}
 	var out []ShopLoss
 	for _, p := range posts {
-		if p.Status != "delivered" || p.At.IsZero() || now.Sub(p.At) < lossAge || sold[p.Number] || len(p.Items) == 0 {
+		since := p.At
+		if last[p.Number].After(since) {
+			since = last[p.Number]
+		}
+		if p.Status != "delivered" || p.At.IsZero() || now.Sub(since) < lossAge || sold[p.Number] {
 			continue
 		}
-		l := ShopLoss{Kind: LossNoSale, Posting: p.Number, SKU: p.Items[0].SKU, Name: p.Items[0].Name, Status: p.Status, Since: p.At}
 		for _, it := range p.Items {
-			l.Price += float64(it.Qty) * it.Price
+			out = append(out, ShopLoss{Kind: LossNoSale, Posting: p.Number, SKU: it.SKU, Name: it.Name, Status: p.Status, Price: float64(it.Qty) * it.Price, Since: since})
 		}
-		out = append(out, l)
 	}
 	return out
 }
@@ -99,7 +111,10 @@ func returnLosses(rets []OzonReturn, now time.Time) []ShopLoss {
 		if !ok || (k == LossStuck && (r.Changed.IsZero() || now.Sub(r.Changed) < lossAge)) {
 			continue
 		}
-		out = append(out, ShopLoss{Kind: k, Posting: r.Posting, SKU: r.SKU, Name: r.Name, Status: r.Status, Price: r.Price, Since: r.Changed})
+		if r.Status == "ArrivedAtReturnPlace" && strings.EqualFold(r.Scheme, "fbs") {
+			k = LossPickup // FBS забирает продавец: ждет его, а не потерян (ревью #595)
+		}
+		out = append(out, ShopLoss{Kind: k, Posting: r.Posting, SKU: r.SKU, Name: r.Name, Status: r.Status, Price: float64(max(r.Qty, 1)) * r.Price, Since: r.Changed})
 	}
 	return out
 }

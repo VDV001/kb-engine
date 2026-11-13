@@ -532,11 +532,13 @@ type returnPage struct {
 type returnJSON struct {
 	ID      int64  `json:"id"`
 	Type    string `json:"type"`
+	Schema  string `json:"schema"`
 	Posting string `json:"posting_number"`
 	Product struct {
-		SKU   int64  `json:"sku"`
-		Name  string `json:"name"`
-		Price struct {
+		SKU      int64  `json:"sku"`
+		Name     string `json:"name"`
+		Quantity int    `json:"quantity"`
+		Price    struct {
 			Currency string  `json:"currency_code"`
 			Price    float64 `json:"price"`
 		} `json:"price"`
@@ -550,7 +552,8 @@ type returnJSON struct {
 }
 
 func (r returnJSON) ret() markets.OzonReturn {
-	out := markets.OzonReturn{Posting: r.Posting, SKU: strconv.FormatInt(r.Product.SKU, 10), Name: r.Product.Name, Type: r.Type, Status: r.Visual.Status.SysName}
+	out := markets.OzonReturn{Posting: r.Posting, SKU: strconv.FormatInt(r.Product.SKU, 10), Name: r.Product.Name, Type: r.Type, Scheme: r.Schema,
+		Status: r.Visual.Status.SysName, Qty: r.Product.Quantity}
 	if strings.EqualFold(r.Product.Price.Currency, "RUB") {
 		out.Price = r.Product.Price.Price // другая валюта — без цены: валюты окно не смешивает
 	}
