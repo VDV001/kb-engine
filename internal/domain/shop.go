@@ -130,3 +130,24 @@ func (p *ShopProduct) Issues() []ShopIssue {
 
 // RefusedRate is refused at pickup over ordered.
 func (p *ShopProduct) RefusedRate() float64 { return p.rate(p.d.Refused) }
+
+// ShopAdviceKind is not written yet.
+type ShopAdviceKind string
+
+// Советы.
+const (
+	AdviceRefusals  ShopAdviceKind = "refusals"
+	AdviceSupply    ShopAdviceKind = "supply"
+	AdviceDeadStock ShopAdviceKind = "dead"
+	AdviceKeep      ShopAdviceKind = "keep"
+)
+
+// ShopAdvice is not written yet.
+type ShopAdvice struct {
+	Kind  ShopAdviceKind
+	SKUs  []string
+	Units float64
+}
+
+// AdviseShop is not written yet.
+func AdviseShop(ps []*ShopProduct) []ShopAdvice { return nil }
