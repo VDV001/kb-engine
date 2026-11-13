@@ -46,6 +46,7 @@ func (f *folderSettings) SetTabs(list []desktopconfig.Tab) error {
 	}
 	next := f.cfg
 	next.Tabs = append([]desktopconfig.Tab{}, list...) // не nil: пустой список — выбор «только Все»
+	next.TabsV = desktopconfig.TabsVersion             // набор решил человек: убранные «Артефакты» не вернутся
 	// Под замком config.json, как SetSources и SetModules.
 	return filelock.With(f.path, func() error {
 		if err := desktopconfig.Write(f.path, next); err != nil {
