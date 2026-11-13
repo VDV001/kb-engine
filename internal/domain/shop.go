@@ -39,6 +39,7 @@ type ShopProductData struct {
 	Ordered, Delivered, BoughtOut, Cancelled, Returned float64
 	Refused                                            float64 // часть отмен: отказ при вручении (API Ozon)
 	OrderedSum, AvgPrice, DRR, Rating                  float64
+	BoughtOutSum                                       float64 // выкуплено на сумму по цене продажи; 0 — источник не знает
 	Reviews, Stock, SupplyQty                          float64
 	DaysOut, DaysOutOf, PromoDays, PeriodDays          int
 	UrgentSupply                                       bool

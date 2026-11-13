@@ -51,7 +51,11 @@ func TestOzonShop(t *testing.T) {
 	if d := r.Products[3].Data(); d.Name != "400_S" {
 		t.Errorf("no orders, no card = %+v; the article names it", d)
 	}
-	if tot := r.Total.Data(); tot.Ordered != 10 || tot.Cancelled != 2 || tot.Refused != 1 || tot.Stock != 36 || tot.OrderedSum != 9000 {
+	// Сумма заказов — с отменами; выкуплено на сумму — только доставленное (не выручка «по заказам»).
+	if a.BoughtOutSum != 6000 {
+		t.Errorf("trousers bought out for %v, want 6000 (6 delivered, not the 2 cancelled)", a.BoughtOutSum)
+	}
+	if tot := r.Total.Data(); tot.Ordered != 10 || tot.Cancelled != 2 || tot.Refused != 1 || tot.Stock != 36 || tot.OrderedSum != 9000 || tot.BoughtOutSum != 6000 {
 		t.Errorf("total = %+v", tot)
 	}
 }
