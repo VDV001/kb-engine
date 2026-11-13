@@ -437,8 +437,8 @@ func (a *App) AddSpeechConnection(name, url, model, key string) (connRow, error)
 }
 
 // AddOzonConnection saves an Ozon cabinet: Client-Id и ключ Seller API.
-func (a *App) AddOzonConnection(name, clientID, key string) (connRow, error) {
-	return a.settings.AddOzon(name, clientID, key)
+func (a *App) AddOzonConnection(name, clientID, key string, share bool) (connRow, error) {
+	return a.settings.AddOzon(name, clientID, key, share)
 }
 
 // SetConnectionEnabled turns a connection of the window on or off.

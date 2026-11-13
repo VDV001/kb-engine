@@ -60,9 +60,12 @@ func TestShopTools(t *testing.T) {
 			t.Errorf("summary misses %q:\n%s", want, sum)
 		}
 	}
-	top := run(t, "shop_top", `{"by":"refused","n":1}`)
-	if !strings.Contains(top, "Худи тестовое") || strings.Contains(top, "Брюки") {
-		t.Errorf("top by refusals:\n%s", top)
+	// «Худшие по отказам» — где отказов больше всего (ревью #593).
+	for _, order := range []string{"worst", ""} {
+		top := run(t, "shop_top", `{"by":"refused","order":"`+order+`","n":1}`)
+		if !strings.Contains(top, "Худи тестовое") || strings.Contains(top, "Брюки") {
+			t.Errorf("top by refusals, order %q:\n%s", order, top)
+		}
 	}
 	worst := run(t, "shop_top", `{"by":"ordered","order":"worst","n":1}`)
 	if !strings.Contains(worst, "Пижама тестовая") {
@@ -74,7 +77,8 @@ func TestShopTools(t *testing.T) {
 	}
 	sku := run(t, "shop_sku", `{"q":"брюки"}`)
 	// По неделям видно, почему упали продажи: остаток кончился на третьей.
-	for _, want := range []string{"Брюки тестовые", "по неделям", "19.10", "7 шт", "02.11", "0 шт", "остаток 0"} {
+	// Заказы — с отменами, как в «Прогнозе» (ревью #593).
+	for _, want := range []string{"Брюки тестовые", "по неделям", "заказано с отменами", "19.10", "7 шт", "02.11", "0 шт", "остаток 0"} {
 		if !strings.Contains(sku, want) {
 			t.Errorf("sku misses %q:\n%s", want, sku)
 		}
@@ -93,5 +97,27 @@ func TestShopTools_unknownAndLoadError(t *testing.T) {
 	}
 	if _, err := (markets.ShopTools{}).Run(context.Background(), "shop_nope", []byte(`{}`)); err == nil {
 		t.Error("unknown tool ran")
+	}
+}
+
+func TestShopTools_partialWeekAndProblems(t *testing.T) {
+	// Окно кончается в среду: последняя неделя неполная и так подписана, а
+	// не выглядит падением (ревью #593). Товар без названия — назван в сводке.
+	d := shopData()
+	d.To = d.From.AddDate(0, 0, 16) // среда третьей недели
+	d.Stock = append(d.Stock, markets.OzonStock{SKU: "44", Qty: 3})
+	tools := markets.ShopTools{Load: func(context.Context, string) (markets.ShopData, error) { return d, nil }}
+	// Худи заказывают через день: на неделе с 02.11 до среды — 2 заказа, и
+	// заказы после конца окна в нее не попадают.
+	sku, _ := tools.Run(context.Background(), "shop_sku", []byte(`{"q":"худи"}`))
+	if !strings.Contains(sku, "02.11: 2 шт") || !strings.Contains(sku, "неполная, 3 дн.") {
+		t.Errorf("partial week:\n%s", sku)
+	}
+	sum, _ := tools.Run(context.Background(), "shop_summary", []byte(`{}`))
+	if !strings.Contains(sum, "не учтено товаров: 1") {
+		t.Errorf("summary hides skipped products:\n%s", sum)
+	}
+	if strings.Contains(sum, "продается чисто") && strings.Contains(sum, "чисто: 0 товаров, 0 шт") {
+		t.Errorf("keep advice with units:\n%s", sum)
 	}
 }

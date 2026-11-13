@@ -29,7 +29,7 @@ const ozonDays = 90
 const ozonTimeout = 5 * time.Minute
 
 // AddOzon saves an Ozon cabinet as a connection.
-func (f *folderSettings) AddOzon(name, clientID, key string) (connRow, error) {
+func (f *folderSettings) AddOzon(name, clientID, key string, share bool) (connRow, error) {
 	name, clientID, key = strings.TrimSpace(name), strings.TrimSpace(clientID), strings.TrimSpace(key)
 	if clientID == "" || strings.IndexFunc(clientID, func(r rune) bool { return !unicode.IsDigit(r) }) >= 0 {
 		return connRow{}, errors.New("Client-Id — номер кабинета из цифр: Ozon Seller → Настройки → Seller API")
