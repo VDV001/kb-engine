@@ -153,22 +153,28 @@ func calendarDays(from, to time.Time) int {
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }
 
-// OzonDaily turns postings into own sales by day for the forecast (#580):
-// штуки без отмен по дню отправления в часовом поясе loc, дни from..to
-// включительно; день без продаж — ноль, а не пропуск.
-func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (domain.DailySales, error) {
+// OzonDaily turns postings into own orders by day for the forecast (#580):
+// штуки ВКЛЮЧАЯ отмены — у свежих отправлений отмены еще не закрылись, и ряд
+// «без отмен» завышал бы новые дни против старых (ревью #592); по дню создания
+// в часовом поясе loc, дни from..to включительно; день без заказов — ноль.
+// undated — отправлений без даты: они не в ряду, окно говорит об этом.
+func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (s domain.DailySales, undated int, err error) {
 	key := func(t time.Time) time.Time {
 		t = t.In(loc)
 		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC)
 	}
 	first, last := key(from), key(to)
 	if last.Before(first) {
-		return domain.DailySales{}, ErrOzonPeriod
+		return domain.DailySales{}, 0, ErrOzonPeriod
 	}
 	byDay := map[time.Time]float64{}
 	for _, p := range posts {
+		if p.At.IsZero() {
+			undated++
+			continue
+		}
 		d := key(p.At)
-		if p.Status == "cancelled" || p.At.IsZero() || d.Before(first) || d.After(last) {
+		if d.Before(first) || d.After(last) {
 			continue
 		}
 		for _, it := range p.Items {
@@ -179,5 +185,6 @@ func OzonDaily(posts []OzonPosting, from, to time.Time, loc *time.Location) (dom
 	for d := first; !d.After(last); d = d.AddDate(0, 0, 1) {
 		days = append(days, domain.DaySales{Day: d, Value: byDay[d]})
 	}
-	return domain.NewDailySales(days)
+	s, err = domain.NewDailySales(days)
+	return s, undated, err
 }

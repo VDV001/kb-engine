@@ -47,7 +47,7 @@ func fake(t *testing.T, pages map[string][]string) *httptest.Server {
 func TestClient_postingsAndStocks(t *testing.T) {
 	srv := fake(t, map[string][]string{
 		"/v3/posting/fbo/list": {
-			`{"has_next":true,"cursor":"1","postings":[{"status":"delivered","in_process_at":"2026-11-10T21:30:00Z","products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":1,"price":{"amount":"1000","currency":"RUB"}}]}]}`,
+			`{"has_next":true,"cursor":"1","postings":[{"status":"delivered","created_at":"2026-11-10T21:30:00Z","in_process_at":"","products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":1,"price":{"amount":"1000","currency":"RUB"}}]}]}`,
 			`{"has_next":false,"cursor":"","postings":[{"status":"cancelled","cancellation":{"cancel_reason":"Покупатель отказался при вручении: товар не подошел"},"products":[{"sku":11,"offer_id":"100_46","name":"Брюки","quantity":2,"price":{"amount":"990.50","currency":"RUB"}}]}]}`,
 		},
 		// FBS у старых версий API пишет цену строкой; другая валюта — без цены, валюты не смешиваются.
@@ -73,7 +73,7 @@ func TestClient_postingsAndStocks(t *testing.T) {
 		t.Fatalf("posts = %+v", posts)
 	}
 	if !posts[0].At.Equal(time.Date(2026, 11, 10, 21, 30, 0, 0, time.UTC)) {
-		t.Errorf("posting time = %v, want in_process_at", posts[0].At)
+		t.Errorf("posting time = %v, want created_at; an empty in_process_at must not break the page", posts[0].At)
 	}
 	if it := posts[1].Items[0]; it.SKU != "11" || it.Article != "100_46" || it.Qty != 2 || it.Price != 990.5 {
 		t.Errorf("item = %+v", it)
