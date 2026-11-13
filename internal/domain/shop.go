@@ -37,6 +37,7 @@ const (
 type ShopProductData struct {
 	Name, SKU, Article, Scheme, ABC, PriceIndex        string
 	Ordered, Delivered, BoughtOut, Cancelled, Returned float64
+	Refused                                            float64 // часть отмен: отказ при вручении (API Ozon)
 	OrderedSum, AvgPrice, DRR, Rating                  float64
 	Reviews, Stock, SupplyQty                          float64
 	DaysOut, DaysOutOf, PromoDays, PeriodDays          int
@@ -124,3 +125,6 @@ func (p *ShopProduct) Issues() []ShopIssue {
 	}
 	return out
 }
+
+// RefusedRate is not written yet.
+func (p *ShopProduct) RefusedRate() float64 { return 0 }
