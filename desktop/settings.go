@@ -59,6 +59,7 @@ type sourcesView struct {
 type folderSettings struct {
 	browserTok browserTokenCache // токен «Браузера», пока файл не изменился (browserproxy.go)
 	ozonPosts  ozonPostCache     // отправления кабинетов Ozon на 10 минут (markets_ozon.go)
+	costMu     sync.Mutex        // costs.json: себестоимость кабинетов (markets_costs.go)
 	// speechCalls keeps cloud dictation calls for the statistics (#493); nil — не считать.
 	speechCalls usage.Recorder
 	// mountShare подключает сетевую папку по адресу (share.go); nil — не подключает.

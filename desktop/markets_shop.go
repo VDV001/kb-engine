@@ -42,6 +42,32 @@ type shopRow struct {
 	Rating     float64  `json:"rating"`
 	Reviews    float64  `json:"reviews"`
 	Issues     []string `json:"issues"`
+	// Деньги товара из начислений кабинета (#580); nil — у отчета-файла их нет.
+	Money *rowMoney `json:"money"`
+	// OnAccount и Profit — для сортировки таблицы; Profit — только с себестоимостью.
+	OnAccount float64  `json:"onAccount"`
+	Profit    *float64 `json:"profit"`
+}
+
+// rowMoney — экономика товара за период до рекламы, в рублях.
+type rowMoney struct {
+	Units      int     `json:"units"` // продано штук за вычетом возвратов
+	Sales      float64 `json:"sales"`
+	Commission float64 `json:"commission"`
+	Delivery   float64 `json:"delivery"`
+	Partners   float64 `json:"partners"`
+	Other      float64 `json:"other"`
+	Total      float64 `json:"total"`
+	UnitCost   float64 `json:"unitCost"`
+	HasCost    bool    `json:"hasCost"`
+	Cost       float64 `json:"cost"`
+}
+
+// costImport — что прочитал файл себестоимости.
+type costImport struct {
+	Read     int                `json:"read"`
+	Problems []nicheProblem     `json:"problems"`
+	Costs    map[string]float64 `json:"costs"` // принятые: артикул → рубли
 }
 
 type shopView struct {
@@ -56,8 +82,9 @@ type shopView struct {
 	Counts     map[string]int    `json:"counts"` // товаров с каждой проблемой
 	Source     string            `json:"source"` // "" — файл отчета, "ozon" — кабинет по API
 	Advice     []shopAdvice      `json:"advice"`
-	Economy    *economyView      `json:"economy"` // nil — у отчета-файла начислений нет
-	Losses     *lossesView       `json:"losses"`  // nil — у отчета-файла номеров отправлений нет
+	Economy    *economyView      `json:"economy"`  // nil — у отчета-файла начислений нет
+	Losses     *lossesView       `json:"losses"`   // nil — у отчета-файла номеров отправлений нет
+	CostsErr   string            `json:"costsErr"` // себестоимость не прочитана: товары есть, прибыли нет
 }
 
 // lossesView — возможные пропажи кабинета, крупные сначала; Err — почему не проверено.

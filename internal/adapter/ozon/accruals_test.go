@@ -79,12 +79,12 @@ func TestClient_accruals(t *testing.T) {
 	d1, d2 := from, from.AddDate(0, 0, 1)
 	// Номер отправления — у начислений по отправлению и по товару; у рекламы его нет.
 	want := []markets.OzonAccrual{
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualSale, Amount: k(120000)},
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualCommission, Amount: k(-57600)},
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 32, Amount: k(-15000)},
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 29, Amount: k(-1150)},
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 38, Amount: k(-500)},
-		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 39, Amount: k(-1000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualSale, Qty: 1, Amount: k(120000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualCommission, Qty: 1, Amount: k(-57600)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 32, Qty: 1, Amount: k(-15000)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 29, Qty: 1, Amount: k(-1150)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 38, Qty: 1, Amount: k(-500)},
+		{Day: d1, SKU: "11", Unit: "1-1-1", Kind: markets.AccrualService, TypeID: 39, Qty: 1, Amount: k(-1000)},
 		{Day: d2, Kind: markets.AccrualService, TypeID: 41, Amount: k(-70040)},
 		{Day: d2, Kind: markets.AccrualRest, Amount: k(-5)},
 	}
