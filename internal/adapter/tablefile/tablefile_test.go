@@ -97,3 +97,20 @@ func TestRead_refuses(t *testing.T) {
 func equal(a, b [][]string) bool {
 	return slices.EqualFunc(a, b, func(x, y []string) bool { return slices.Equal(x, y) })
 }
+
+func TestRead_csvTitleLineFirst(t *testing.T) {
+	// Над таблицей — название отчета без разделителей (живая проверка #580):
+	// разделитель решается по строкам таблицы, а не по первой строке файла.
+	path := filepath.Join(t.TempDir(), "товары.csv")
+	body := "Товары ниши «Куртки» по дням, пример\nАртикул;Название;01.11.2025\n101;Куртка А, синяя;10\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := tablefile.Read(path)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if len(got) != 3 || len(got[1]) != 3 || got[2][1] != "Куртка А, синяя" {
+		t.Errorf("rows = %q, want the table split by semicolons", got)
+	}
+}
