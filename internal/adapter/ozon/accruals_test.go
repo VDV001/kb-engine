@@ -151,7 +151,7 @@ func TestClient_returns(t *testing.T) {
 		}
 		asked = append(asked, body.LastID)
 		ret := func(id int64, n, st, changed string) string {
-			return `{"id":` + strconv.FormatInt(id, 10) + `,"type":"Cancellation","posting_number":"` + n + `","product":{"sku":22,"name":"Пижама тестовая","price":{"currency_code":"RUB","price":2000}},` +
+			return `{"id":` + strconv.FormatInt(id, 10) + `,"type":"Cancellation","schema":"Fbs","posting_number":"` + n + `","product":{"sku":22,"name":"Пижама тестовая","price":{"currency_code":"RUB","price":2000},"quantity":2},` +
 				`"visual":{"status":{"id":1,"display_name":"…","sys_name":"` + st + `"},"change_moment":"` + changed + `"}}`
 		}
 		if body.LastID == 0 {
@@ -170,7 +170,7 @@ func TestClient_returns(t *testing.T) {
 	if !slices.Equal(asked, []int64{0, 101}) {
 		t.Errorf("asked last_id %v, want [0 101]", asked)
 	}
-	want := markets.OzonReturn{Posting: "2-1", SKU: "22", Name: "Пижама тестовая", Type: "Cancellation", Status: "WriteOff", Changed: time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC), Price: 2000}
+	want := markets.OzonReturn{Posting: "2-1", SKU: "22", Name: "Пижама тестовая", Type: "Cancellation", Scheme: "Fbs", Status: "WriteOff", Changed: time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC), Qty: 2, Price: 2000}
 	if len(rets) != 2 || rets[0] != want || rets[1].Status != "ReturnedToOzon" {
 		t.Errorf("returns = %+v", rets)
 	}

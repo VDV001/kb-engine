@@ -152,6 +152,19 @@ func TestMarketsOzonEconomy(t *testing.T) {
 	if e := v.Economy; len(v.Products) != 2 || e == nil || !strings.Contains(e.Err, "Финансы") || strings.Contains(e.Err, "не принял") || strings.Contains(e.Err, "k-1") || e.Total != 0 {
 		t.Errorf("refused finance: products %d, economy %+v", len(v.Products), v.Economy)
 	}
+	// Начисления есть, возвраты закрыты: причина — про возвраты, а не про «Финансы» начислений (ревью #595).
+	noReturns := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/returns/list" {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		srv.Config.Handler.ServeHTTP(w, r)
+	}))
+	defer noReturns.Close()
+	if v, err := s.ozonShop(context.Background(), noReturns.URL, noReturns.Client(), row.ID, now); err != nil || v.Losses == nil ||
+		!strings.Contains(v.Losses.Err, "возврат") || strings.Contains(v.Losses.Err, "начислени") || v.Economy == nil || v.Economy.Total != 462.5 {
+		t.Errorf("returns refused: err %v, losses %+v, economy %+v", err, v.Losses, v.Economy)
+	}
 	// Без начислений «доставлено без продажи» не проверить: окно говорит об этом, а не молчит.
 	if l := v.Losses; l == nil || !strings.Contains(l.Err, "начислени") {
 		t.Errorf("losses without accruals = %+v, want the reason", v.Losses)

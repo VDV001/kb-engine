@@ -10,9 +10,11 @@ import (
 type OzonReturn struct {
 	Posting, SKU, Name string
 	Type               string    // Cancellation — невыкуп, ClientReturn — возврат после покупки
+	Scheme             string    // Fbo или Fbs: возврат FBS продавец забирает сам
 	Status             string    // visual.status.sys_name: ReturnedToOzon, WriteOff, …
 	Changed            time.Time // когда статус сменился
-	Price              float64
+	Qty                int       // штук; 0 — Ozon не сказал, считается за одну
+	Price              float64   // за штуку
 }
 
 // LossKind — почему отправление или возврат стоит проверить.
@@ -25,6 +27,7 @@ const (
 	LossUtilized LossKind = "utilized"  // возврат утилизирован
 	LossLost     LossKind = "lost"      // Ozon пометил возврат «возможно потерян»
 	LossStuck    LossKind = "stuck"     // возврат давно без движения
+	LossPickup   LossKind = "pickup"    // возврат FBS давно ждет продавца в пункте
 )
 
 // ShopLoss — что проверить: отправление, товар, цена и с какого дня.
