@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -112,7 +112,8 @@ func TestCheckConnection(t *testing.T) {
 // те же дни годом раньше и 120 дней после них.
 func TestForecastMPStats(t *testing.T) {
 	s, _, _ := newServerSettings(t)
-	var asked []string
+	var mu sync.Mutex
+	asked := map[string]bool{} // запрошенные дни: ряд идет частями, параллельно
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("X-Mpstats-TOKEN") != "m-1" {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -127,9 +128,13 @@ func TestForecastMPStats(t *testing.T) {
 			_, _ = w.Write([]byte(`[]`))
 			return
 		}
-		asked = append(asked, q.Get("d1")+"…"+q.Get("d2"))
 		d1, _ := time.Parse(time.DateOnly, q.Get("d1"))
 		d2, _ := time.Parse(time.DateOnly, q.Get("d2"))
+		mu.Lock()
+		for d := d1; !d.After(d2); d = d.AddDate(0, 0, 1) {
+			asked[d.Format(time.DateOnly)] = true
+		}
+		mu.Unlock()
 		var b strings.Builder
 		b.WriteString("[")
 		for d := d1; !d.After(d2); d = d.AddDate(0, 0, 1) {
@@ -154,8 +159,9 @@ func TestForecastMPStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("forecast: %v", err)
 	}
-	if want := []string{"2025-08-15…2026-03-12", "2026-08-15…2026-11-12"}; !slices.Equal(asked, want) {
-		t.Errorf("asked %v, want %v", asked, want)
+	// Прошлый год — 15.08.2025…12.03.2026 (210 дней), сейчас — 15.08…12.11.2026 (90).
+	if len(asked) != 210+90 || !asked["2025-08-15"] || !asked["2026-03-12"] || asked["2026-03-13"] || !asked["2026-08-15"] || !asked["2026-11-12"] || asked["2026-11-13"] {
+		t.Errorf("asked %d days", len(asked))
 	}
 	if len(v.Files) != 3 || !strings.Contains(v.Files[0].File, "MPStats") || v.Files[1].Days != 90 || len(v.Days) == 0 || v.Share != 0.1 {
 		t.Errorf("files %+v, days %d, share %v", v.Files, len(v.Days), v.Share)
