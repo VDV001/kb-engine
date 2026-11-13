@@ -210,3 +210,14 @@ func TestRetriesTransient(t *testing.T) {
 		t.Errorf("after a reset and a 504: %+v, %v", l, err)
 	}
 }
+
+// Нет сети — так и сказано, без повторов и без адреса запроса (ревью #606).
+func TestNoNetworkNamed(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	base := srv.URL
+	srv.Close() // порт закрыт: соединение отвергнуто
+	_, err := mpstats.Client{BaseURL: base, Token: "t"}.Limits(context.Background())
+	if err == nil || errors.Is(err, mpstats.ErrDropped) || strings.Contains(err.Error(), "report_api_limit") {
+		t.Errorf("err = %v; want the network reason without the URL, not «оборвал»", err)
+	}
+}
