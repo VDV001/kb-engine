@@ -120,6 +120,8 @@ func TestCategoryByDay_stopsOnFirstError(t *testing.T) {
 	if _, err := c.CategoryByDay(context.Background(), "x", from, from.AddDate(0, 0, 209)); !errors.Is(err, mpstats.ErrQuota) {
 		t.Fatalf("err = %v, want ErrQuota", err)
 	}
+	mu.Lock() // отмененные части сервер еще может дослушивать
+	defer mu.Unlock()
 	if n > 4 {
 		t.Errorf("%d requests after the first refusal, want at most the first round of 4", n)
 	}
