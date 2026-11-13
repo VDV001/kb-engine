@@ -5639,18 +5639,24 @@ const SH_COLS = [
   ["avgPrice", "Цена", "средняя цена реализации, ₽", "avgPrice"],
   ["drr", "ДРР", "доля расходов на рекламу в выручке", "drr"],
   ["rating", "Рейтинг", "оценка товара на конец периода", "rating"],
+  ["onAccount", "На счет", "начислено за товар за период: продажи минус вознаграждение, доставка и услуги Ozon; до рекламы и себестоимости", "onAccount"],
+  ["profit", "Прибыль", "на счет минус себестоимость проданного; до рекламы и налогов; «—» — себестоимость не задана", "profit"],
 ];
 const shPct = (x) => Math.round(x * 100) + " %";
 const shOzon = () => sh.v && sh.v.source === "ozon";
 const SH_REFUSE = 0.4; // как adviceRefusals в домене: «40 % и больше»
 // shCols — колонки, что есть у источника: у кабинета по API нет возвратов, ДРР, рейтинга и дней без остатка, у отчета — отказов.
-const shCols = () => SH_COLS.filter(([k]) => (shOzon() ? !["return", "daysOut", "drr", "rating"].includes(k) : k !== "refuse"));
+// Деньги товара (на счет, прибыль) — только у кабинета: их дают начисления.
+const shCols = () => SH_COLS.filter(([k]) => (shOzon() ? !["return", "daysOut", "drr", "rating"].includes(k) : !["refuse", "onAccount", "profit"].includes(k)));
+const shRub = (x) => fmt(Math.round(x) || 0) + " ₽";
 function shVal(k, p) {
   switch (k) {
     case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
     case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
+    case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
+    case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
     default: return fmt(Math.round(p[k] || 0));
   }
 }
@@ -5713,6 +5719,7 @@ function shRender() {
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
   $("#sh-file").textContent = v ? `${v.file} · ${v.period} · товаров ${fmt(v.products.length)}` : "";
+  $("#sh-costs").hidden = !shOzon();
   if (!v) return void ($("#sh-advice").hidden = $("#sh-econ").hidden = $("#sh-loss").hidden = true);
   const t = v.total, urgent = v.products.filter((p) => p.urgent).length, oz = shOzon();
   const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
@@ -5805,7 +5812,7 @@ function shTable() {
   const ps = sh.v.products, list = shList();
   if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
   const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const bad = (k, p) => (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
     list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
@@ -5840,8 +5847,52 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
-    `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
+// Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.
+function shMoneyCard(p) {
+  if (!shOzon()) return "";
+  const m = p.money || { units: 0, total: 0, unitCost: 0, hasCost: false, cost: 0 };
+  const line = (k, v, t) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(v)}</dd>`;
+  const rows = p.money && (m.units || m.total) ? line("Продано", `${fmt(m.units)} шт за вычетом возвратов`, "по начислениям Ozon за период") +
+    line("Продажи", shRub(m.sales), "по цене продавца, с баллами за скидки") + line("Вознаграждение", shRub(m.commission), "комиссия Ozon") +
+    line("Доставка", shRub(m.delivery), "логистика и обратная логистика") + line("Услуги", shRub(m.partners + m.other), "партнеры, эквайринг, упаковка, прочее") +
+    line("На счет", shRub(m.total), "до рекламы: ее Ozon начисляет на магазин") + (m.hasCost ? line("Себестоимость", `${shRub(m.cost)} (${shRub(m.unitCost)} × ${fmt(m.units)})`, "себестоимость проданного") +
+    line("Прибыль", shRub(p.profit ?? m.total - m.cost), "на счет минус себестоимость; до рекламы и налогов") : "") : line("Деньги", "начислений по товару за период нет", "");
+  const cost = m.hasCost ? String(m.unitCost).replace(".", ",") : "";
+  return `<h4 class="sh-money-h">Деньги товара</h4><dl>${rows}</dl>` + (p.article
+    ? `<label class="sh-cost"${mkTip("Себестоимость штуки", "по артикулу продавца; хранится на этом Mac, у каждого кабинета своя; пусто — убрать")}>Себестоимость штуки <input data-sh-cost="${esc(p.article)}" inputmode="decimal" value="${esc(cost)}" placeholder="—"> ₽</label>`
+    : `<div class="note">у товара нет артикула — себестоимость не задать</div>`);
+}
+// Себестоимость из карточки: сохраняется по Enter или уходу из поля, прибыль пересчитывается на месте.
+$("#mk-shop").addEventListener("change", async (e) => {
+  const inp = e.target.closest("[data-sh-cost]");
+  if (!inp || !shOzon() || !native() || !native().MarketsSetCost) return;
+  const art = inp.dataset.shCost, raw = inp.value.trim();
+  try { await native().MarketsSetCost(sh.v.path, art, raw); } catch (err) { mkErr("Себестоимость не сохранена: " + errText(err)); return; }
+  mkErr("");
+  const unit = raw ? Number(raw.replace(/\s|₽/g, "").replace(",", ".")) : 0;
+  for (const p of sh.v.products.filter((x) => x.article === art)) {
+    const m = (p.money ||= { units: 0, sales: 0, commission: 0, delivery: 0, partners: 0, other: 0, total: 0, unitCost: 0, hasCost: false, cost: 0 });
+    Object.assign(m, { unitCost: unit, hasCost: !!raw, cost: raw ? unit * m.units : 0 });
+    p.profit = raw && (m.units || m.total) ? m.total - m.cost : null;
+  }
+  shTable();
+  toast("Себестоимость", raw ? ` · ${art}: ${raw} ₽` : ` · ${art}: убрана`);
+});
+$("#sh-costs").addEventListener("click", async () => {
+  hideTip();
+  if (!shOzon() || !native() || !native().MarketsImportCosts) return;
+  let p = "";
+  try { p = await native().MarketsPickFileTitled("Себестоимость: колонки «Артикул» и «Себестоимость»"); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
+  if (!p) return;
+  try {
+    const r = await native().MarketsImportCosts(sh.v.path, p);
+    const bad = r.problems.length ? ` · не принято ${r.problems.length}: строка ${r.problems[0].row} — ${r.problems[0].reason}` : "";
+    toast("Себестоимость", ` · принято ${fmt(r.read)} артикулов${bad}`, null, r.problems.length ? "bad" : "");
+    await shRead("ozon:" + sh.v.path); // прибыль по новой себестоимости
+  } catch (err) { mkErr("Себестоимость не прочитана: " + errText(err)); }
+});
 $("#mk-shop").addEventListener("click", (e) => {
   const c = e.target.closest("[data-sh-issue]");
   if (c) { hideTip(); Object.assign(sh, { issue: c.dataset.shIssue, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 }); shRender(); return; }

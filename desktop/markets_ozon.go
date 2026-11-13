@@ -143,6 +143,13 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		v.Economy = economyOf(markets.OzonEconomy(fn.acc))
 		v.Losses = lossesOf(markets.OzonLosses(posts, fn.acc, fn.rets, now))
 	}
+	if fn.accErr == nil {
+		costs, err := f.costsOf(id)
+		if err != nil {
+			return shopView{}, err
+		}
+		rowsWithMoney(&v, fn.acc, costs)
+	}
 	return v, nil
 }
 
