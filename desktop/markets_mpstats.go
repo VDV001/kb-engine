@@ -139,6 +139,10 @@ func (f *folderSettings) mpstatsSource(src string, hc *http.Client) (mpstats.Cli
 	if strings.TrimSpace(path) == "" {
 		return mpstats.Client{}, "", errors.New("не выбрана ниша: путь категории Ozon, как в MPStats")
 	}
+	if _, ok := f.snapshot().cfg.Connection(id); !ok { // запомненное подключение удалили — берем нынешнее
+		cl, err := f.mpstatsConnClient(hc)
+		return cl, path, err
+	}
 	cl, err := f.mpstatsByID(id, hc)
 	return cl, path, err
 }
