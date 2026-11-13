@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -71,44 +72,32 @@ func ReadNiches(rows [][]string, picks map[int]domain.NicheColumn) (Table, error
 		return tb, ErrNoNameColumn
 	}
 
-	type parsed struct {
-		row    int
-		name   string
-		values map[domain.NicheColumn]float64
-	}
-	var read []parsed
+	var read []parsedRow
 	percent := map[domain.NicheColumn]bool{} // колонка долей записана процентами
 	for i := h + 1; i < len(rows); i++ {
 		name := strings.TrimSpace(cell(rows[i], nameAt))
 		if name == "" || isTotal(name) {
 			continue
 		}
-		p := parsed{row: i + 1, name: name, values: map[domain.NicheColumn]float64{}}
-		bad := ""
-		for _, c := range cols {
-			if c.Field == "" || c.Field == domain.NicheName {
-				continue
-			}
-			raw := cell(rows[i], c.Index)
-			v, pct, empty, err := parseNumber(raw)
-			if err != nil {
-				bad = fmt.Sprintf("«%s»: %v «%s»", c.Header, ErrNotANumber, strings.TrimSpace(raw))
-				break
-			}
-			if empty {
-				continue
-			}
-			p.values[c.Field] = v
-			if isShare(c.Field) && (pct || math.Abs(v) > 1) {
-				percent[c.Field] = true
-			}
-		}
-		if bad != "" {
-			tb.Problems = append(tb.Problems, Problem{Row: p.row, Reason: bad})
+		p, pct, err := readRow(rows[i], cols)
+		if err != nil {
+			tb.Problems = append(tb.Problems, Problem{Row: i + 1, Reason: err.Error()})
 			continue
 		}
+		p.row, p.name = i+1, name
 		read = append(read, p)
+		for _, f := range pct {
+			percent[f] = true
+		}
 	}
+	tb.addNiches(read, percent)
+	slices.SortStableFunc(tb.Problems, func(a, b Problem) int { return a.Row - b.Row })
+	return tb, nil
+}
+
+// addNiches turns read rows into niches: колонки долей, записанные
+// процентами, делятся на 100; нарушившая правила строка — в Problems.
+func (tb *Table) addNiches(read []parsedRow, percent map[domain.NicheColumn]bool) {
 	for _, p := range read {
 		for f := range percent {
 			if v, ok := p.values[f]; ok {
@@ -122,7 +111,38 @@ func ReadNiches(rows [][]string, picks map[int]domain.NicheColumn) (Table, error
 		}
 		tb.Niches = append(tb.Niches, n)
 	}
-	return tb, nil
+}
+
+type parsedRow struct {
+	row    int
+	name   string
+	values map[domain.NicheColumn]float64
+}
+
+// readRow reads the numbers of one row and names the share columns written in
+// percent; ошибка называет колонку и ячейку. Непрочитанная строка масштаб
+// колонки не решает.
+func readRow(row []string, cols []Column) (parsedRow, []domain.NicheColumn, error) {
+	p := parsedRow{values: map[domain.NicheColumn]float64{}}
+	var pctCols []domain.NicheColumn
+	for _, c := range cols {
+		if c.Field == "" || c.Field == domain.NicheName {
+			continue
+		}
+		raw := cell(row, c.Index)
+		v, pct, empty, err := parseNumber(raw)
+		if err != nil {
+			return p, nil, fmt.Errorf("«%s»: %w «%s»", c.Header, ErrNotANumber, strings.TrimSpace(raw))
+		}
+		if empty {
+			continue
+		}
+		p.values[c.Field] = v
+		if isShare(c.Field) && (pct || math.Abs(v) > 1) {
+			pctCols = append(pctCols, c.Field)
+		}
+	}
+	return p, pctCols, nil
 }
 
 // headerRow finds the header: первая строка сверху, где узнаны хотя бы две
@@ -222,7 +242,20 @@ func isShare(f domain.NicheColumn) bool { return f == domain.NicheGrowth || f ==
 // русских выгрузках. Потолок — файл с английскими тысячами «1,234»; путь —
 // выбор разделителя в окне, когда такой файл придет.
 func parseNumber(raw string) (v float64, percent, empty bool, err error) {
-	s := strings.Map(func(r rune) rune {
+	s, percent := cleanNumber(raw)
+	if s == "" || s == "-" || s == "—" {
+		return 0, false, true, nil
+	}
+	v, err = strconv.ParseFloat(decimalPoint(s), 64)
+	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
+		return 0, false, false, ErrNotANumber
+	}
+	return v, percent, false, nil
+}
+
+// cleanNumber drops spaces, units and the percent sign; минусы — к «-».
+func cleanNumber(raw string) (s string, percent bool) {
+	s = strings.Map(func(r rune) rune {
 		if unicode.IsSpace(r) {
 			return -1
 		}
@@ -238,27 +271,24 @@ func parseNumber(raw string) (v float64, percent, empty bool, err error) {
 		percent = true
 		s = strings.ReplaceAll(s, "%", "")
 	}
-	if s == "" || s == "-" || s == "—" {
-		return 0, false, true, nil
-	}
+	return s, percent
+}
+
+// decimalPoint leaves one dot for the fraction and drops thousands separators.
+func decimalPoint(s string) string {
 	dot, comma := strings.LastIndex(s, "."), strings.LastIndex(s, ",")
 	switch {
 	case dot >= 0 && comma >= 0: // последний знак — дробный, другой — тысячи
 		if dot > comma {
-			s = strings.ReplaceAll(s, ",", "")
-		} else {
-			s = strings.ReplaceAll(strings.ReplaceAll(s, ".", ""), ",", ".")
+			return strings.ReplaceAll(s, ",", "")
 		}
+		return strings.ReplaceAll(strings.ReplaceAll(s, ".", ""), ",", ".")
 	case strings.Count(s, ",") > 1:
-		s = strings.ReplaceAll(s, ",", "")
+		return strings.ReplaceAll(s, ",", "")
 	case comma >= 0:
-		s = strings.ReplaceAll(s, ",", ".")
+		return strings.ReplaceAll(s, ",", ".")
 	case strings.Count(s, ".") > 1:
-		s = strings.ReplaceAll(s, ".", "")
+		return strings.ReplaceAll(s, ".", "")
 	}
-	v, err = strconv.ParseFloat(s, 64)
-	if err != nil || math.IsNaN(v) || math.IsInf(v, 0) {
-		return 0, false, false, ErrNotANumber
-	}
-	return v, percent, false, nil
+	return s
 }
