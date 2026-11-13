@@ -64,6 +64,13 @@ func (d ShopProductData) broken() string {
 		return "число меньше нуля"
 	case d.Ordered > 0 && (d.BoughtOut > d.Ordered || d.Cancelled > d.Ordered):
 		return "выкуплено или отменено больше, чем заказано"
+	}
+	return d.outOfRange()
+}
+
+// outOfRange names a share or a score outside its scale; "" — все в шкале.
+func (d ShopProductData) outOfRange() string {
+	switch {
 	case d.Rating < 0 || d.Rating > 5:
 		return "рейтинг вне 0-5"
 	case d.DRR < 0 || d.DRR > 1:
