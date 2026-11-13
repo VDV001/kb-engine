@@ -296,3 +296,6 @@ func apiMessage(data []byte) string {
 	}
 	return strings.TrimSpace(string(data[:min(len(data), 200)]))
 }
+
+// ErrRedirect is not written yet.
+var ErrRedirect = errors.New("redirect")

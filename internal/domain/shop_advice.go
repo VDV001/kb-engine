@@ -75,3 +75,6 @@ func AdviseShop(ps []*ShopProduct) []ShopAdvice {
 	}
 	return out
 }
+
+// Supply is not written yet.
+func Supply(sold, stock float64, days int) (bool, float64) { return false, 0 }
