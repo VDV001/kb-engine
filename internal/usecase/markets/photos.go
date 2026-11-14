@@ -41,20 +41,27 @@ type PhotoCheck struct {
 // встречаются товары с ровными продажами без отзывов (замер 14.11).
 const photoLeaderComments = 10
 
+// photoLeadersOf — топ n по выручке среди товаров с отзывами, один на
+// продавца: топ бывает одним продавцом в вариантах (живая проверка #608).
+func photoLeadersOf(ps []NicheProduct, n int) []NicheProduct {
+	cand := slices.Clone(ps)
+	slices.SortStableFunc(cand, func(a, b NicheProduct) int { return cmp.Compare(b.Revenue, a.Revenue) })
+	var out []NicheProduct
+	sellers := map[string]bool{}
+	for _, p := range cand {
+		if len(out) == n || p.Comments < photoLeaderComments || p.Rating <= 0 || p.Seller != "" && sellers[p.Seller] {
+			continue
+		}
+		sellers[p.Seller] = true
+		out = append(out, p)
+	}
+	return out
+}
+
 // CheckPhotos compares the card's photos with the niche leaders (#608):
 // топ n по выручке среди товаров с отзывами и рейтингом.
 func CheckPhotos(card PhotoCard, ps []NicheProduct, n int) PhotoCheck {
-	var out PhotoCheck
-	cand := slices.Clone(ps)
-	slices.SortStableFunc(cand, func(a, b NicheProduct) int { return cmp.Compare(b.Revenue, a.Revenue) })
-	sellers := map[string]bool{}
-	for _, p := range cand {
-		if len(out.Leaders) == n || p.Comments < photoLeaderComments || p.Rating <= 0 || p.Seller != "" && sellers[p.Seller] {
-			continue // один на продавца: топ бывает одним продавцом в вариантах (живая проверка #608)
-		}
-		sellers[p.Seller] = true
-		out.Leaders = append(out.Leaders, p)
-	}
+	out := PhotoCheck{Leaders: photoLeadersOf(ps, n)}
 	if len(out.Leaders) == 0 {
 		return out
 	}
