@@ -17,8 +17,10 @@ type NicheProduct struct {
 	Photo            string
 }
 
-// PhotoCard — что есть у своей карточки: фото, видео, рич-контент.
+// PhotoCard — своя карточка: SKU и продавец (их нет среди лидеров), фото, видео, рич-контент.
 type PhotoCard struct {
+	SKU         int64
+	Seller      string
 	Photos      int
 	Video, Rich bool
 }
@@ -43,13 +45,16 @@ const photoLeaderComments = 10
 
 // photoLeadersOf — топ n по выручке среди товаров с отзывами, один на
 // продавца: топ бывает одним продавцом в вариантах (живая проверка #608).
-func photoLeadersOf(ps []NicheProduct, n int) []NicheProduct {
+func photoLeadersOf(card PhotoCard, ps []NicheProduct, n int) []NicheProduct {
 	cand := slices.Clone(ps)
 	slices.SortStableFunc(cand, func(a, b NicheProduct) int { return cmp.Compare(b.Revenue, a.Revenue) })
 	var out []NicheProduct
-	sellers := map[string]bool{}
+	sellers := map[string]bool{card.Seller: card.Seller != ""} // свой продавец — не лидер (ревью #627)
 	for _, p := range cand {
-		if len(out) == n || p.Comments < photoLeaderComments || p.Rating <= 0 || p.Seller != "" && sellers[p.Seller] {
+		if len(out) == n {
+			break
+		}
+		if p.SKU == card.SKU || p.Comments < photoLeaderComments || p.Rating <= 0 || p.Seller != "" && sellers[p.Seller] {
 			continue
 		}
 		sellers[p.Seller] = true
@@ -61,7 +66,7 @@ func photoLeadersOf(ps []NicheProduct, n int) []NicheProduct {
 // CheckPhotos compares the card's photos with the niche leaders (#608):
 // топ n по выручке среди товаров с отзывами и рейтингом.
 func CheckPhotos(card PhotoCard, ps []NicheProduct, n int) PhotoCheck {
-	out := PhotoCheck{Leaders: photoLeadersOf(ps, n)}
+	out := PhotoCheck{Leaders: photoLeadersOf(card, ps, n)}
 	if len(out.Leaders) == 0 {
 		return out
 	}
