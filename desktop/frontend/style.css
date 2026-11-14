@@ -1857,6 +1857,7 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-plan-table td.bad { color: var(--z-bad); }
 /* Деньги товара в карточке (#580). */
 .sh-money-h { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--z-ink); }
+.sh-title-h { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--z-ink-2); }
 .sh-cost { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--z-ink-2); }
 .sh-cost input { width: 90px; height: 26px; font: 12px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; text-align: right; }
 /* «Возможные пропажи» (#580): что сверить в кабинете Ozon. */
