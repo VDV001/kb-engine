@@ -6078,6 +6078,7 @@ function plPickRender() {
   const shown = items.slice(0, PL_PICK_MAX);
   $("#pl-pick-list").innerHTML = shown.map((it) => `<label class="mk-pl-pick-row"><input type="checkbox" value="${esc(it.sku)}"${pl.pick.has(it.sku) ? " checked" : ""}><span class="nm">${esc(it.name || it.article || it.sku)}</span><span class="ar">${esc(it.article || "")}</span><span class="n">${fmt(Math.max(it.qty, 0))} шт</span></label>`).join("") ||
     `<p class="mk-fc-note">Ничего не нашлось${q ? ` по «${esc(q)}»` : ""}.</p>`;
+  $("#pl-pick-more").hidden = items.length <= PL_PICK_MAX;
   $("#pl-pick-more").textContent = items.length > PL_PICK_MAX ? `Показаны ${fmt(PL_PICK_MAX)} из ${fmt(items.length)} по остатку — уточните поиск.` : "";
   $("#pl-pick-n").textContent = pl.pick.size ? `выбрано ${fmt(pl.pick.size)}` : "не выбрано — весь кабинет";
 }
