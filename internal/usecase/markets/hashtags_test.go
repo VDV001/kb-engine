@@ -106,7 +106,15 @@ func TestCheckHashtags_colorAndStopWords(t *testing.T) {
 
 // Советы показываются по числу запросов, как подписаны (живая проверка #610).
 func TestCheckHashtags_addByDemand(t *testing.T) {
-	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Queries: titleNiche, Forms: titleForms})
+	niche := []markets.NicheQuery{ // вес (частота × товаров) и частота идут в разном порядке
+		{Text: "футболка женская", Count: 100_000, Items: 800},
+		{Text: "футболка женская хлопок", Count: 1_000, Items: 900},
+		{Text: "футболка женская оверсайз", Count: 5_000, Items: 10},
+	}
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: "#футболка_женская", Queries: niche, Forms: titleForms})
+	if len(got.Add) != 2 {
+		t.Fatalf("add %+v, want 2", got.Add)
+	}
 	for i := 1; i < len(got.Add); i++ {
 		if got.Add[i].Demand > got.Add[i-1].Demand {
 			t.Fatalf("add %+v: not by demand", got.Add)
