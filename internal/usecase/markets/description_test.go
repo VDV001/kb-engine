@@ -103,3 +103,24 @@ func TestCheckDescription_review(t *testing.T) {
 		})
 	}
 }
+
+// Ревью #627: оттенки («темные») остаются цветом для «Названия» — их
+// исключает только сверка описания; подпись расхождения — без пустых мест.
+func TestDescription_shadesAndLabel(t *testing.T) {
+	tc := markets.CheckTitle(markets.TitleInput{Title: "Футболка женская темные", Queries: titleNiche, Forms: titleForms})
+	for _, w := range tc.Words {
+		if w.Word == "темные" && w.Why != markets.WhyAttribute {
+			t.Errorf("темные in the title: %+v, want an attribute", w)
+		}
+	}
+	got := markets.CheckDescription(markets.DescriptionInput{Title: "Костюм спортивный женский", Gender: "Женский",
+		Description: "Мужской костюм для мальчиков."})
+	for _, m := range got.Mismatch {
+		if m.Card != "женский" {
+			t.Errorf("label %q, want «женский» once", m.Card)
+		}
+	}
+	if len(got.Mismatch) != 2 {
+		t.Errorf("mismatch %+v, want мужской and мальчиков", got.Mismatch)
+	}
+}
