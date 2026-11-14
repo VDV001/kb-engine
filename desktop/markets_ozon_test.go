@@ -316,14 +316,36 @@ func TestOzonPlanStock(t *testing.T) {
 		t.Fatal(err)
 	}
 	srv := fakeOzon(t)
-	v, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), row.ID)
+	v, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), row.ID, nil)
 	if err != nil {
 		t.Fatalf("ozonPlanStock: %v", err)
 	}
 	if v.Qty != 40 || v.Products != 2 || v.InStock != 1 || v.Name != "Тестовый магазин" {
 		t.Errorf("stock = %+v, want 40 шт: 2 товара, 1 с остатком", v)
 	}
-	if _, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), "нет-такого"); err == nil {
+	// Список для выбора товаров — весь кабинет при любом выборе, с названиями из карточек.
+	if len(v.Items) != 2 || v.Items[1] != (planStockItem{SKU: "33", Article: "300_M", Name: "Пижама тестовая", Qty: 40}) {
+		t.Errorf("items = %+v", v.Items)
+	}
+	// Выбранные товары: остаток только их (решение владельца 14.11 — план по нише).
+	for _, tc := range []struct {
+		skus          []string
+		qty           float64
+		products, has int
+	}{
+		{[]string{"33"}, 40, 1, 1},
+		{[]string{"11"}, 0, 1, 0},
+		{[]string{"11", "33", "99"}, 40, 2, 1}, // SKU, которого в кабинете нет, не считается
+	} {
+		v, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), row.ID, tc.skus)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if v.Qty != tc.qty || v.Products != tc.products || v.InStock != tc.has || len(v.Items) != 2 {
+			t.Errorf("skus %v: stock = %+v, want %v шт, %d товаров, %d с остатком", tc.skus, v, tc.qty, tc.products, tc.has)
+		}
+	}
+	if _, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), "нет-такого", nil); err == nil {
 		t.Error("unknown connection read")
 	}
 }

@@ -132,6 +132,25 @@ func TestForecastOzon(t *testing.T) {
 	if !slices.Contains(s.Connections()[len(s.Connections())-1].UsedBy, "Маркеты → Прогноз") {
 		t.Errorf("connection used by = %v, want the forecast too", s.Connections()[len(s.Connections())-1].UsedBy)
 	}
+
+	// Выбранные товары едут в источнике: «ozon:<id>#SKU,SKU» — свои продажи только их.
+	v, err = s.forecast(context.Background(), srv.URL, srv.Client(), last, now, "ozon:"+row.ID+"#11", time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("forecast #11: %v", err)
+	}
+	if v.Share != 0.2 || v.Files[2].Products != 1 {
+		t.Errorf("#11: share = %v, products = %d; want 0.2 and 1", v.Share, v.Files[2].Products)
+	}
+	v, err = s.forecast(context.Background(), srv.URL, srv.Client(), last, now, "ozon:"+row.ID+"#99", time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatalf("forecast #99: %v", err)
+	}
+	if v.Share != 0 || v.Files[2].Products != 1 {
+		t.Errorf("#99: share = %v, want 0 — у выбранного товара заказов нет", v.Share)
+	}
+	if _, err := s.forecast(context.Background(), srv.URL, srv.Client(), last, now, "ozon:"+row.ID+"#", time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)); err == nil {
+		t.Error("an empty selection read as the whole cabinet; it must be refused")
+	}
 }
 
 // «План» (#580): тот же прогноз по трем файлам и ввод человека в процентах;
