@@ -254,3 +254,41 @@ func TestNichesMPStatsSeasonReusesTable(t *testing.T) {
 		t.Errorf("season table lost the first show: %+v", v.Niches)
 	}
 }
+
+// Верхняя категория без подкатегорий — сама ниша; топ-10 спрашивается по ее
+// пути без «/» в начале, как и сезон (ревью 14.11: молча пустая доля).
+func TestNichesMPStatsTopLeafPath(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	var sellers []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":90,"revenue":5000,"sellers_with_sells":4}]`))
+		case "/api/oz/get/category/sellers":
+			mu.Lock()
+			sellers = append(sellers, r.URL.Query().Get("path"))
+			mu.Unlock()
+			_, _ = w.Write([]byte(`[{"revenue":1500}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Книги", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sellers) != 1 || sellers[0] != "Книги" {
+		t.Errorf("top-10 asked for %q, want [Книги]", sellers)
+	}
+	if len(v.Niches) != 1 || v.Niches[0].Name != "Книги" {
+		t.Errorf("niches = %+v", v.Niches)
+	}
+}
