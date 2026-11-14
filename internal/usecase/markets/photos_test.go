@@ -54,3 +54,17 @@ func TestCheckPhotos_oneLeaderPerSeller(t *testing.T) {
 		t.Errorf("leaders %+v, want one per seller", got.Leaders)
 	}
 }
+
+// Ревью #627: свой товар и свой продавец — не лидеры: карточка не
+// сравнивается сама с собой.
+func TestCheckPhotos_notSelf(t *testing.T) {
+	ps := []markets.NicheProduct{
+		{SKU: 7, Seller: "Свой", Revenue: 9, Comments: 50, Rating: 5, Photos: 6},
+		{SKU: 8, Seller: "Свой", Revenue: 8, Comments: 50, Rating: 5, Photos: 6},
+		{SKU: 3, Seller: "Другой", Revenue: 7, Comments: 50, Rating: 5, Photos: 9},
+	}
+	got := markets.CheckPhotos(markets.PhotoCard{SKU: 7, Seller: "Свой", Photos: 6}, ps, 10)
+	if len(got.Leaders) != 1 || got.Leaders[0].SKU != 3 {
+		t.Errorf("leaders %+v, want only the other seller", got.Leaders)
+	}
+}
