@@ -22,6 +22,7 @@ var purposeTitles = map[domain.CallPurpose]string{
 	domain.CallListen: "Распознавание речи", domain.CallSpeak: "Облачный голос",
 	domain.CallDescribe: "Описание версий",
 	domain.CallForecast: "Прогноз продаж",
+	domain.CallCardText: "Описание карточки",
 }
 
 // maxStatsDays bounds the period: экран предлагает 7, 30 и 90 дней.
