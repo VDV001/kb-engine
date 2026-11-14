@@ -152,12 +152,14 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	if fn.retErr != nil {
 		l.RetWhy = returnsErr(c.Name, fn.retErr)
 	}
-	if saved, ok := f.loadOf(id); ok { // история: дни раньше 90-дневного окна Ozon остаются (#614)
-		h := markets.MergeShop(saved.history(), markets.ShopHistory{From: l.From, To: l.To, Posts: l.Posts, Acc: l.Acc, Rets: l.Rets,
-			AccFailed: fn.accErr != nil, RetFailed: fn.retErr != nil})
-		l.From, l.Posts, l.Acc, l.Rets, l.Gaps = h.From, h.Posts, h.Acc, h.Rets, h.Gaps
+	l = f.withHistory(id, l, fn)
+	if fn.accErr != nil || fn.retErr != nil {
+		// Не прочитались начисления или возвраты — в историю не пишем: дни без
+		// них легли бы туда молча (ревью #618); прежняя история остается.
+		v, err := f.shopFor(id, l, from, to)
+		v.CostsErr = strings.TrimPrefix(v.CostsErr+"; история не обновлена на этом Маке: Ozon не отдал начисления или возвраты — загрузите еще раз", "; ")
+		return v, err
 	}
-	from = l.From
 	f.shopLoads.put(id, l)
 	if err := f.saveShopLoad(id, l); err != nil {
 		v, verr := f.shopFor(id, l, from, to)
@@ -165,6 +167,20 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 		return v, verr
 	}
 	return f.shopFor(id, l, from, to)
+}
+
+// withHistory adds the saved history of cabinet id to the fresh load l: дни
+// раньше 90-дневного окна Ozon остаются (#614). Старая загрузка с отказом в
+// начислениях или возвратах не сливается — в ней дыра.
+func (f *folderSettings) withHistory(id string, l shopLoad, fn finance) shopLoad {
+	saved, ok := f.loadOf(id)
+	if !ok || saved.AccWhy != "" || saved.RetWhy != "" {
+		return l
+	}
+	h := markets.MergeShop(saved.history(), markets.ShopHistory{From: l.From, To: l.To, Posts: l.Posts, Acc: l.Acc, Rets: l.Rets,
+		AccFailed: fn.accErr != nil, RetFailed: fn.retErr != nil})
+	l.From, l.Posts, l.Acc, l.Rets, l.Gaps = h.From, h.Posts, h.Acc, h.Rets, h.Gaps
+	return l
 }
 
 // shopLoad — история кабинета: Ozon отдает 90 дней, а каждая загрузка
@@ -190,9 +206,7 @@ func (l shopLoad) history() markets.ShopHistory {
 	return markets.ShopHistory{From: l.From, To: l.To, Posts: l.Posts, Acc: l.Acc, Rets: l.Rets, Gaps: l.Gaps}
 }
 
-// shopLoadCache keeps the last load of each cabinet.
-// ponytail: память процесса без срока; потолок — после перезапуска окна период
-// недоступен до «Загрузить из Ozon»; путь — история кабинета на Маке (#580, 3b).
+// shopLoadCache keeps the history of each cabinet in memory; на диске — shop/<id>.json.
 type shopLoadCache struct {
 	mu sync.Mutex
 	m  map[string]shopLoad
@@ -249,6 +263,15 @@ func (f *folderSettings) ozonShopPeriod(id, from, to string) (shopView, error) {
 	return f.shopFor(id, l, d1, d2)
 }
 
+// lastDays is the first of Ozon's 90 days in history l: показ по умолчанию и
+// пропажи — за них, средние в день не размываются старыми днями (ревью #618).
+func lastDays(l shopLoad) time.Time {
+	if d := l.To.AddDate(0, 0, 1-ozonDays); d.After(l.From) {
+		return d
+	}
+	return l.From
+}
+
 // shopFor builds the shop of load l for days from..to; все дни окна — как загружено.
 func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (shopView, error) {
 	whole := from.Equal(l.From) && to.Equal(l.To)
@@ -278,9 +301,11 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 		v.Losses = &lossesView{Err: l.RetWhy}
 	default:
 		v.Economy = economyOf(markets.OzonEconomy(acc))
-		// Пропажи — всегда за все загруженные дни: они по возрасту (14 дней), и в
-		// коротком периоде их не было бы никогда (ревью #604); окно так и пишет.
-		v.Losses = lossesOf(markets.OzonLosses(l.Posts, l.Acc, l.Rets, l.Now))
+		// Пропажи — всегда за последние 90 дней: они по возрасту (14 дней), и в
+		// коротком периоде их не было бы никогда (ревью #604); а старые дни
+		// истории дали бы ложные «не начислено» (ревью #618). Без даты — входят.
+		recent := append(markets.PostingsIn(l.Posts, lastDays(l), l.To), slices.DeleteFunc(slices.Clone(l.Posts), func(p markets.OzonPosting) bool { return !p.At.IsZero() })...)
+		v.Losses = lossesOf(markets.OzonLosses(recent, l.Acc, l.Rets, l.Now))
 	}
 	// Себестоимость видна и без начислений; испорченный costs.json — причина
 	// словами, а не пустой «Магазин» (ревью #598).
@@ -295,7 +320,8 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 // MarketsOzonLast shows the cabinet's last load without asking Ozon.
 func (a *App) MarketsOzonLast(id string) (shopView, error) { return a.settings.ozonShopLast(id) }
 
-// ozonShopLast is the last load of cabinet id: из памяти или с диска.
+// ozonShopLast is the last load of cabinet id: из памяти или с диска;
+// показ — последние 90 дней, вся история — кнопкой «всё с …» (ревью #618).
 func (f *folderSettings) ozonShopLast(id string) (shopView, error) {
 	if _, _, err := f.ozonCabinet(id, "", nil); err != nil {
 		return shopView{}, err
@@ -304,7 +330,7 @@ func (f *folderSettings) ozonShopLast(id string) (shopView, error) {
 	if !ok {
 		return shopView{}, errors.New("кабинет еще не загружался: «Загрузить из Ozon»")
 	}
-	return f.shopFor(id, l, l.From, l.To)
+	return f.shopFor(id, l, lastDays(l), l.To)
 }
 
 // savedAccrual — начисление на диске: сумма копейками.
@@ -346,6 +372,9 @@ func (f *folderSettings) shopLoadPath(id string) string {
 
 // saveShopLoad writes the load atomically: данные продавца — только этому
 // пользователю Мака (0600), как costs.json.
+// ponytail: история пишется и читается целиком; потолок — около 20 МБ в год на
+// кабинет при ~40 отправлениях в день (замер 14.11: 4,4 МБ за 90 дней); путь —
+// файлы по месяцам, дописывать только текущий.
 func (f *folderSettings) saveShopLoad(id string, l shopLoad) error {
 	l.SavedAcc = make([]savedAccrual, 0, len(l.Acc))
 	for _, a := range l.Acc {

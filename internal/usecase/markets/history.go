@@ -22,8 +22,9 @@ type DayRange struct{ From, To time.Time }
 
 // MergeShop adds a fresh load to the saved history: дни свежего окна — из
 // новой загрузки (статусы и начисления там новее), раньше его — из
-// сохраненной; разрыв между загрузками — пропуск. Возвраты Ozon отдает по дате
-// логистики, а не по дню отправления, поэтому они сливаются по ключу.
+// сохраненной; номер отправления из свежей — только свежий; разрыв между
+// загрузками — пропуск. Возвраты не копятся: своего id у них нет, старые
+// статусы зависали бы, а нужны они пропажам за последние 90 дней (ревью #618).
 func MergeShop(saved, fresh ShopHistory) ShopHistory {
 	out := fresh
 	out.Posts, out.Acc, out.Rets = slices.Clone(fresh.Posts), slices.Clone(fresh.Acc), slices.Clone(fresh.Rets)
@@ -43,7 +44,12 @@ func MergeShop(saved, fresh ShopHistory) ShopHistory {
 		keep = saved.To
 	}
 	out.From = saved.From
-	out.Posts = append(PostingsIn(saved.Posts, saved.From, keep), fresh.Posts...)
+	fresher := make(map[string]bool, len(fresh.Posts))
+	for _, p := range fresh.Posts {
+		fresher[p.Number] = p.Number != ""
+	}
+	old := slices.DeleteFunc(PostingsIn(saved.Posts, saved.From, keep), func(p OzonPosting) bool { return fresher[p.Number] })
+	out.Posts = append(old, fresh.Posts...)
 	if fresh.AccFailed {
 		out.Acc = slices.Clone(saved.Acc)
 	} else {
@@ -51,35 +57,10 @@ func MergeShop(saved, fresh ShopHistory) ShopHistory {
 	}
 	if fresh.RetFailed {
 		out.Rets = slices.Clone(saved.Rets)
-	} else {
-		out.Rets = mergeReturns(saved.Rets, fresh.Rets)
 	}
 	out.Gaps = slices.Clone(saved.Gaps)
 	if saved.To.Before(keepTo) {
 		out.Gaps = append(out.Gaps, DayRange{From: saved.To.AddDate(0, 0, 1), To: keepTo})
-	}
-	return out
-}
-
-// mergeReturns keeps saved returns with the fresh status of the same return.
-func mergeReturns(saved, fresh []OzonReturn) []OzonReturn {
-	key := func(r OzonReturn) string { return r.Posting + "|" + r.SKU + "|" + r.Type }
-	at := make(map[string]int, len(fresh))
-	for i, r := range fresh {
-		at[key(r)] = i
-	}
-	out := make([]OzonReturn, 0, len(saved)+len(fresh))
-	used := make([]bool, len(fresh))
-	for _, r := range saved {
-		if i, ok := at[key(r)]; ok {
-			r, used[i] = fresh[i], true
-		}
-		out = append(out, r)
-	}
-	for i, r := range fresh {
-		if !used[i] {
-			out = append(out, r)
-		}
 	}
 	return out
 }
