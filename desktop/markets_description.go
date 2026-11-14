@@ -43,10 +43,11 @@ type descriptionDraft struct {
 }
 
 // MarketsDescription checks the description of card sku in Ozon cabinet cab.
-func (a *App) MarketsDescription(cab, sku string) (descriptionView, error) {
+// fresh — «Проверить еще раз»: перечитать нишу из MPStats.
+func (a *App) MarketsDescription(cab, sku string, fresh bool) (descriptionView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
 	defer cancel()
-	return a.settings.descriptionCheck(ctx, nil, ozon.DefaultURL, cab, sku)
+	return a.settings.descriptionCheck(ctx, nil, ozon.DefaultURL, cab, sku, fresh)
 }
 
 // MarketsDescriptionDraft asks the chat model for a new description; consent —
@@ -60,7 +61,7 @@ func (a *App) MarketsDescriptionDraft(cab, sku string, consent bool) (descriptio
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
 	defer cancel()
-	in, _, err := a.settings.descriptionInput(ctx, nil, ozon.DefaultURL, cab, sku)
+	in, _, err := a.settings.descriptionInput(ctx, nil, ozon.DefaultURL, cab, sku, false) // ниша — из проверки описания
 	if err != nil {
 		return descriptionDraft{}, err
 	}
@@ -71,7 +72,7 @@ var errNoDraftConsent = errors.New("новое описание пишет мо�
 
 // descriptionInput reads the card from the cabinet and its niche from MPStats
 // (общая с «Названием» и «Хештегами», 10 минут в памяти).
-func (f *folderSettings) descriptionInput(ctx context.Context, hc *http.Client, base, cab, sku string) (markets.DescriptionInput, cardNiche, error) {
+func (f *folderSettings) descriptionInput(ctx context.Context, hc *http.Client, base, cab, sku string, fresh bool) (markets.DescriptionInput, cardNiche, error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
 		return markets.DescriptionInput{}, cardNiche{}, errors.New("описание проверяется у товара Ozon с числовым SKU")
@@ -91,7 +92,7 @@ func (f *folderSettings) descriptionInput(ctx context.Context, hc *http.Client, 
 	if err != nil {
 		return markets.DescriptionInput{}, cardNiche{}, err
 	}
-	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id)
+	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id, fresh)
 	if err != nil {
 		return markets.DescriptionInput{}, cardNiche{}, err
 	}
@@ -100,8 +101,8 @@ func (f *folderSettings) descriptionInput(ctx context.Context, hc *http.Client, 
 }
 
 // descriptionCheck checks the description by the card and the niche, без модели.
-func (f *folderSettings) descriptionCheck(ctx context.Context, hc *http.Client, base, cab, sku string) (descriptionView, error) {
-	in, n, err := f.descriptionInput(ctx, hc, base, cab, sku)
+func (f *folderSettings) descriptionCheck(ctx context.Context, hc *http.Client, base, cab, sku string, fresh bool) (descriptionView, error) {
+	in, n, err := f.descriptionInput(ctx, hc, base, cab, sku, fresh)
 	if err != nil {
 		return descriptionView{}, err
 	}

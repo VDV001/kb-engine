@@ -34,7 +34,7 @@ func TestDescriptionView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := s.descriptionCheck(context.Background(), mp.Client(), oz.URL, row.ID, "1234567")
+	v, err := s.descriptionCheck(context.Background(), mp.Client(), oz.URL, row.ID, "1234567", false)
 	if err != nil {
 		t.Fatal(err)
 	}
