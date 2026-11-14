@@ -1389,10 +1389,11 @@ $("#conn-mpstats").addEventListener("submit", async (e) => {
   go.disabled = true;
   $("#conn-m-note").textContent = "Проверяю ключ в MPStats…";
   try {
-    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value);
-    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» возьмет нишу из MPStats.";
+    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value, $("#conn-m-share").checked);
+    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» и «Ниша» возьмут данные из MPStats" + (r.share ? ", чат — тоже." : ".");
     toast("Добавлено", ` · «${r.name}»: ключ MPStats принят`);
     for (const id of ["#conn-m-name", "#conn-m-key"]) $(id).value = "";
+    $("#conn-m-share").checked = false;
   } catch (err) {
     $("#conn-m-note").textContent = errText(err);
     toast("Не добавлено", " · " + errText(err), null, "bad");
@@ -5519,7 +5520,8 @@ function mkRender() {
   if (mkIsMPS()) $("#mk-mps-bar").hidden = false;
   // Откуда ниши — ярлыком и словами (отзыв владельца 13.11: «непонятно, откуда»).
   srcTag("#mk-src-tag", !tb ? "" : mkIsMPS() ? "mps" : "file");
-  $("#mk-intro").textContent = "Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. " + (!tb
+  // Шапка — одна строка (отзыв 14.11), остальное в подсказке.
+  $("#mk-intro").dataset.tipB = "где спрос растет, а продавцов немного. " + (!tb
     ? "Ниши — из выгрузки файлом («Открыть выгрузку…») или из MPStats по ключу («Из MPStats»)."
     : mkIsMPS() ? "Сейчас ниши — из MPStats по ключу, за выбранные дни; файл — «Открыть выгрузку…»." : "Сейчас ниши — из выгрузки файлом; из MPStats по ключу — «Из MPStats».");
   $("#mk-file").dataset.tipB = !tb ? "" : mkIsMPS()
