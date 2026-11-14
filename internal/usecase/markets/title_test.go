@@ -160,3 +160,20 @@ func TestCheckTitle_noQueries(t *testing.T) {
 		t.Errorf("%+v, want nothing to judge by", got)
 	}
 }
+
+// Формы MPStats неполные и для долей ниши (ревью #621): «футболки» в названии —
+// то же слово, что «футболка» в запросах, а не редкое слово к удалению.
+func TestCheckTitle_titleWordInAnotherForm(t *testing.T) {
+	forms := []markets.WordForms{{Word: "футболка", Forms: []string{"футболка"}}, {Word: "женская", Forms: []string{"женская"}}}
+	got := markets.CheckTitle(markets.TitleInput{Title: "Футболки женские оверсайз", Queries: titleNiche, Forms: forms})
+	for _, w := range got.Remove {
+		if w.Word == "футболки" || w.Word == "женские" {
+			t.Errorf("remove %+v: a main word in another form", got.Remove)
+		}
+	}
+	for _, w := range got.Add {
+		if w.Why == markets.WhyMain {
+			t.Errorf("add %+v: the main word is in the title in another form", w)
+		}
+	}
+}
