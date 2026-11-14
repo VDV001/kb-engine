@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,10 +50,11 @@ type titleView struct {
 }
 
 // MarketsTitle checks the title of Ozon card sku against its niche's queries in MPStats.
-func (a *App) MarketsTitle(sku, title string) (titleView, error) {
+// fresh — «Проверить еще раз»: перечитать нишу из MPStats, а не из памяти.
+func (a *App) MarketsTitle(sku, title string, fresh bool) (titleView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute) // карточка, потом ниша — до 90 с каждая с повтором (ревью #621)
 	defer cancel()
-	return a.settings.titleCheck(ctx, nil, sku, title)
+	return a.settings.titleCheck(ctx, nil, sku, title, fresh)
 }
 
 // mcpBase — адрес MCP MPStats: в окне настоящий, в тестах — поддельный.
@@ -65,7 +67,7 @@ func (f *folderSettings) mcpBase() string {
 
 // titleCheck reads sku's niche from its MPStats card, then the niche's queries
 // with its brands and the card's own queries at once: четыре запроса тарифа на проверку.
-func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, title string) (titleView, error) {
+func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, title string, fresh bool) (titleView, error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
 		return titleView{}, errors.New("название проверяется у товара Ozon с числовым SKU")
@@ -77,7 +79,7 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 	if err != nil {
 		return titleView{}, err
 	}
-	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id)
+	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id, fresh)
 	if err != nil {
 		return titleView{}, err
 	}
@@ -115,73 +117,120 @@ type cardNiche struct {
 	ownErr, brandErr error
 }
 
-// cardNiches keeps a card's niche by «подключение|SKU» for mpstatsTTL: «Название»
-// и «Хештеги» одного товара тратят тариф один раз (4 запроса).
-type cardNiches struct {
+// ttlMap keeps values for mpstatsTTL and drops stale ones on every put, чтобы
+// память не росла с каждым открытым товаром (ревью #625).
+// ponytail: в markets_mpstats.go еще три таких же кэша без чистки; потолок —
+// они растут за жизнь окна, апгрейд — перевести их на ttlMap.
+type ttlMap[V any] struct {
 	mu sync.Mutex
-	m  map[string]cardNicheEntry
+	m  map[string]ttlEntry[V]
 }
 
-type cardNicheEntry struct {
+type ttlEntry[V any] struct {
 	at time.Time
-	v  cardNiche
+	v  V
 }
 
-func (c *cardNiches) get(k string, now time.Time) (cardNiche, bool) {
+func (c *ttlMap[V]) get(k string, now time.Time) (V, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	e, ok := c.m[k]
 	return e.v, ok && now.Sub(e.at) < mpstatsTTL
 }
 
-func (c *cardNiches) put(k string, v cardNiche, now time.Time) {
+func (c *ttlMap[V]) put(k string, v V, now time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.m == nil {
-		c.m = map[string]cardNicheEntry{}
+		c.m = map[string]ttlEntry[V]{}
 	}
-	c.m[k] = cardNicheEntry{at: now, v: v}
+	maps.DeleteFunc(c.m, func(_ string, e ttlEntry[V]) bool { return now.Sub(e.at) >= mpstatsTTL })
+	c.m[k] = ttlEntry[V]{at: now, v: v}
 }
 
-// readCardNiche reads sku's niche from its MPStats card, then the niche's
-// queries with its brands and the card's own queries at once; полный ответ
-// хранится mpstatsTTL, ответ с пропуском — нет: в следующий раз дочитается.
-func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, connID, token string, id int64) (cardNiche, error) {
-	key := connID + "|" + strconv.FormatInt(id, 10)
-	if v, ok := f.cardNiches.get(key, time.Now()); ok {
-		return v, nil
-	}
+// cardPart — карточка товара в MPStats и свои запросы: по «подключение|SKU».
+type cardPart struct {
+	card   mpstats.Card
+	own    []markets.OwnQuery
+	ownErr error
+}
+
+// nichePart — запросы, словоформы и бренды ниши: по «подключение|путь», общие
+// для всех товаров ниши (ревью #625: 40 футболок — один отчет).
+type nichePart struct {
+	qs       []markets.NicheQuery
+	ws       []markets.WordForms
+	brands   []string
+	brandErr error
+}
+
+// readCardNiche reads sku's card and, at once, its own queries and its niche;
+// fresh — перечитать («Проверить еще раз»). Хранится только прочитанное
+// целиком: пустой ответ («брендов нет», «запросов товара нет») — не сбой.
+func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, connID, token string, id int64, fresh bool) (cardNiche, error) {
+	now := time.Now()
+	ck := connID + "|" + strconv.FormatInt(id, 10)
 	m := mpstats.MCP{URL: f.mcpBase(), Token: token, HTTP: hc}
-	card, err := readTitleCard(ctx, m, id)
-	if err != nil {
+	cp, haveCard := f.cardParts.get(ck, now)
+	if !haveCard || fresh {
+		card, err := readTitleCard(ctx, m, id)
+		if err != nil {
+			return cardNiche{}, err
+		}
+		cp = cardPart{card: card}
+	}
+	nk := connID + "|" + cp.card.Niche
+	np, haveNiche := f.nicheParts.get(nk, now)
+	if !haveNiche || fresh {
+		np = nichePart{}
+	}
+	if err := readParts(ctx, m, id, &cp, &np, !haveCard || fresh, !haveNiche || fresh); err != nil {
 		return cardNiche{}, err
 	}
-	n := cardNiche{card: card}
+	if cp.ownErr == nil {
+		f.cardParts.put(ck, cp, now)
+	}
+	if np.brandErr == nil {
+		f.nicheParts.put(nk, np, now)
+	}
+	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: cp.own, brands: np.brands, ownErr: cp.ownErr, brandErr: np.brandErr}, nil
+}
+
+// readParts reads at once what is missing: свои запросы товара (own) и
+// запросы с брендами ниши (niche). Пустой ответ — не сбой: «брендов нет».
+func readParts(ctx context.Context, m mpstats.MCP, id int64, cp *cardPart, np *nichePart, own, niche bool) error {
 	var nicheErr error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
-	wg.Go(func() {
-		if n.qs, n.ws, nicheErr = m.NicheQueries(ctx, card.Niche); stopsAll(nicheErr) {
-			cancel()
-		}
-	})
-	wg.Go(func() { n.own, n.ownErr = m.CardQueries(ctx, id) })
-	wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
-		bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
-		defer bcancel()
-		if n.brands, n.brandErr = m.NicheBrands(bctx, card.Niche); stopsAll(n.brandErr) {
-			cancel()
-		}
-	})
+	if own {
+		wg.Go(func() { cp.own, cp.ownErr = m.CardQueries(ctx, id) })
+	}
+	if niche {
+		wg.Go(func() {
+			if np.qs, np.ws, nicheErr = m.NicheQueries(ctx, cp.card.Niche); stopsAll(nicheErr) {
+				cancel()
+			}
+		})
+		wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
+			bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
+			defer bcancel()
+			if np.brands, np.brandErr = m.NicheBrands(bctx, cp.card.Niche); stopsAll(np.brandErr) {
+				cancel()
+			}
+		})
+	}
 	wg.Wait()
 	if nicheErr != nil {
-		return cardNiche{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
+		return errors.New("запросы ниши «" + cp.card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
 	}
-	if (n.ownErr == nil || errors.Is(n.ownErr, mpstats.ErrNotFound)) && n.brandErr == nil {
-		f.cardNiches.put(key, n, time.Now())
+	if errors.Is(cp.ownErr, mpstats.ErrNotFound) {
+		cp.own, cp.ownErr = nil, nil // товар не находят ни по одному запросу
 	}
-	return n, nil
+	if errors.Is(np.brandErr, mpstats.ErrNotFound) {
+		np.brands, np.brandErr = nil, nil // у ниши нет брендов
+	}
+	return nil
 }
 
 // readTitleCard reads sku's MPStats card; без ниши проверять не по чему.

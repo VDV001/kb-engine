@@ -158,3 +158,26 @@ func TestClient_card(t *testing.T) {
 		t.Errorf("no card: %v, want ErrNoCard", err)
 	}
 }
+
+// Ревью #625: запрос — по SKU со всеми видимостями; хештегов в нескольких
+// значениях — все, через пробел.
+func TestClient_cardRequestAndValues(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Filter struct {
+				SKU        []string `json:"sku"`
+				Visibility string   `json:"visibility"`
+			} `json:"filter"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Filter.SKU) != 1 || body.Filter.SKU[0] != "1234567" || body.Filter.Visibility != "ALL" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":[{"name":"Ф","attributes":[{"id":23171,"values":[{"value":"#а_б"},{"value":"#в"}]}]}]}`))
+	}))
+	defer srv.Close()
+	c, err := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}.Card(context.Background(), "1234567")
+	if err != nil || c.Hashtags != "#а_б #в" {
+		t.Fatalf("card %+v, %v", c, err)
+	}
+}

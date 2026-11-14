@@ -35,7 +35,7 @@ func TestHashtagsView(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	v, err := s.hashtagsCheck(ctx, mp.Client(), oz.URL, row.ID, "1234567")
+	v, err := s.hashtagsCheck(ctx, mp.Client(), oz.URL, row.ID, "1234567", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,13 +50,13 @@ func TestHashtagsView(t *testing.T) {
 		t.Errorf("add %+v", v.Add)
 	}
 	before := mcpCalls.Load()
-	if _, err := s.titleCheck(ctx, mp.Client(), "1234567", "Футболка женская"); err != nil {
+	if _, err := s.titleCheck(ctx, mp.Client(), "1234567", "Футболка женская", false); err != nil {
 		t.Fatal(err)
 	}
 	if got := mcpCalls.Load(); got != before {
 		t.Errorf("title check after hashtags asked MPStats %d more times, want the niche from memory", got-before)
 	}
-	if _, err := s.hashtagsCheck(ctx, mp.Client(), oz.URL, row.ID, "x"); err == nil || !strings.Contains(err.Error(), "SKU") {
+	if _, err := s.hashtagsCheck(ctx, mp.Client(), oz.URL, row.ID, "x", false); err == nil || !strings.Contains(err.Error(), "SKU") {
 		t.Errorf("bad sku: %v", err)
 	}
 }
@@ -68,4 +68,45 @@ func countCalls(h http.Handler, n *atomic.Int32) http.Handler {
 		}
 		h.ServeHTTP(w, r)
 	})
+}
+
+// Ревью #625: ниша хранится по пути, а не по SKU — второй товар той же ниши
+// не читает ее заново; «Проверить еще раз» (fresh) перечитывает; «брендов нет»
+// — не сбой, и такая ниша тоже хранится.
+func TestCardNicheCache(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var category atomic.Int32
+	srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		switch {
+		case name == "ozon_sku" && a["report"] == "full":
+			return titleCard, false
+		case name == "ozon_sku":
+			return `[]`, false
+		case a["report"] == "brands":
+			category.Add(1)
+			return "", false // MPStats: брендов нет — пустой ответ
+		default:
+			category.Add(1)
+			return titleNicheJSON, false
+		}
+	})
+	s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, sku := range []string{"1234567", "7654321"} {
+		if _, err := s.titleCheck(ctx, srv.Client(), sku, "Футболка женская", false); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := category.Load(); got != 2 {
+		t.Errorf("niche reports asked %d times for two items of one niche, want 2 (queries and brands once)", got)
+	}
+	if _, err := s.titleCheck(ctx, srv.Client(), "1234567", "Футболка женская", true); err != nil {
+		t.Fatal(err)
+	}
+	if got := category.Load(); got != 4 {
+		t.Errorf("fresh check asked the niche %d times in all, want 4", got)
+	}
 }

@@ -40,15 +40,16 @@ type hashtagsView struct {
 }
 
 // MarketsHashtags checks the hashtags of card sku in Ozon cabinet cab.
-func (a *App) MarketsHashtags(cab, sku string) (hashtagsView, error) {
+// fresh — «Проверить еще раз»: перечитать нишу из MPStats.
+func (a *App) MarketsHashtags(cab, sku string, fresh bool) (hashtagsView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
 	defer cancel()
-	return a.settings.hashtagsCheck(ctx, nil, ozon.DefaultURL, cab, sku)
+	return a.settings.hashtagsCheck(ctx, nil, ozon.DefaultURL, cab, sku, fresh)
 }
 
 // hashtagsCheck reads the card's hashtags from the cabinet and its niche from
 // MPStats (из памяти, если «Название» уже читало) and judges them.
-func (f *folderSettings) hashtagsCheck(ctx context.Context, hc *http.Client, base, cab, sku string) (hashtagsView, error) {
+func (f *folderSettings) hashtagsCheck(ctx context.Context, hc *http.Client, base, cab, sku string, fresh bool) (hashtagsView, error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
 		return hashtagsView{}, errors.New("хештеги проверяются у товара Ozon с числовым SKU")
@@ -68,7 +69,7 @@ func (f *folderSettings) hashtagsCheck(ctx context.Context, hc *http.Client, bas
 	if err != nil {
 		return hashtagsView{}, err
 	}
-	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id)
+	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id, fresh)
 	if err != nil {
 		return hashtagsView{}, err
 	}

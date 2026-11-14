@@ -67,15 +67,15 @@ func TestCheckHashtags(t *testing.T) {
 	}
 }
 
-// Больше 30 хештегов — Ozon не примет; добавлять нечего сверх предела.
+// Больше 30 хештегов — Ozon не примет, это названо; советы считаются после уборки.
 func TestCheckHashtags_tooMany(t *testing.T) {
 	var tags strings.Builder
 	for i := range 31 {
 		tags.WriteString(" #тег" + string(rune('а'+i)))
 	}
 	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: tags.String(), Queries: titleNiche, Forms: titleForms})
-	if !got.TooMany || len(got.Add) != 0 {
-		t.Errorf("too many %v add %d, want true and nothing to add", got.TooMany, len(got.Add))
+	if !got.TooMany || len(got.Remove) != 31 || len(got.Add) == 0 { // все 31 без спроса — к уборке, место для советов есть (ревью #625)
+		t.Errorf("too many %v remove %d add %d", got.TooMany, len(got.Remove), len(got.Add))
 	}
 }
 
@@ -119,5 +119,34 @@ func TestCheckHashtags_addByDemand(t *testing.T) {
 		if got.Add[i].Demand > got.Add[i-1].Demand {
 			t.Fatalf("add %+v: not by demand", got.Add)
 		}
+	}
+}
+
+// Ревью #625: отбракованный хештег не делает правильный «дублем»; пол — по
+// группам (девочки и детское — одна аудитория); место для советов — после
+// уборки; хештеги без слов не дубли друг друга.
+func TestCheckHashtags_review(t *testing.T) {
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: "#футболка-женская #футболка_женская #2024 #2025", Queries: titleNiche, Forms: titleForms})
+	if r, _ := hashtagRow(got.Tags, "#футболка_женская"); r.Why != markets.TagOK {
+		t.Errorf("valid tag after a bad one: %+v", r)
+	}
+	if r, _ := hashtagRow(got.Tags, "#2025"); r.Why == markets.TagDuplicate {
+		t.Errorf("#2025 is not a duplicate of #2024: %+v", r)
+	}
+	kids := markets.CheckHashtags(markets.HashtagInput{Title: "Платье для девочек", Hashtags: "#платье_детское #платье_мужское",
+		Queries: []markets.NicheQuery{{Text: "платье детское", Count: 1000, Items: 100}, {Text: "платье мужское", Count: 10, Items: 1}}})
+	if r, _ := hashtagRow(kids.Tags, "#платье_детское"); r.Why == markets.TagOffTopic {
+		t.Errorf("детское for girls: %+v", r)
+	}
+	if r, _ := hashtagRow(kids.Tags, "#платье_мужское"); r.Why != markets.TagOffTopic {
+		t.Errorf("мужское for girls: %+v", r)
+	}
+	var junk strings.Builder
+	for i := range 30 {
+		junk.WriteString(" #х" + string(rune('а'+i)) + "-")
+	}
+	full := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: junk.String(), Queries: titleNiche, Forms: titleForms})
+	if len(full.Add) == 0 {
+		t.Error("30 broken tags leave no room for advice, but they are to remove")
 	}
 }
