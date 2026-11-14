@@ -41,9 +41,10 @@ func AccrualsIn(acc []OzonAccrual, from, to time.Time) []OzonAccrual {
 // NicheSale — ниша категории из сервиса аналитики за период.
 type NicheSale struct {
 	Name           string
-	Sales, Revenue float64 // за весь период
-	Sellers        int     // с продажами
-	Top10Revenue   float64 // выручка десяти крупнейших продавцов; 0 — не знаю
+	Sales, Revenue float64             // за весь период
+	Sellers        int                 // с продажами
+	Top10Revenue   float64             // выручка десяти крупнейших продавцов; 0 — не знаю
+	Months         []domain.MonthSales // продажи по месяцам для сезона; пусто — не знаю
 }
 
 // MPStatsNiches builds niches of category parent from MPStats (#580): продажи
@@ -77,6 +78,9 @@ func MPStatsNiches(parent string, cur, prev []NicheSale, days int) (Table, error
 			v[domain.NicheTop10] = min(1, n.Top10Revenue/n.Revenue)
 		}
 		ni, err := domain.NewNiche(parent+"/"+n.Name, v)
+		if err == nil && len(n.Months) > 0 {
+			ni, err = ni.WithMonths(n.Months)
+		}
 		if err != nil {
 			tb.Problems = append(tb.Problems, Problem{Reason: n.Name + ": " + err.Error()})
 			continue
