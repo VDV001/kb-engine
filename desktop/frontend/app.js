@@ -5768,12 +5768,12 @@ const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.g
 const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
 function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
-// mkTab переключает «Ниша», «Прогноз» и «Магазин»; «План» живет под прогнозом.
+// mkTab переключает «Ниша», «Прогноз», «Магазин» и «План» (отдельная страница, отзыв 14.11).
 function mkTab(id) {
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
   $("#mk-mps-bar").hidden = id !== "niche" || !(mk.mpsOpen || mkIsMPS()); // панель MPStats — по своему состоянию
-  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
+  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else if (id === "plan") plPage(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
@@ -5792,14 +5792,6 @@ $("#markets-view").addEventListener("click", (e) => {
     mkTab("forecast");
     return;
   }
-  // «План» строится по прогнозу: вкладка ведет к блоку под ним, а без прогноза — к его кнопке.
-  if (e.target.closest("#mk-plan-tab")) {
-    hideTip();
-    mkTab("forecast");
-    const plan = $("#mk-plan");
-    if (plan.hidden) { mkErr("План строится по прогнозу: выберите три источника и нажмите «Посчитать прогноз» — блок плана появится под ним."); $("#mk-fc-go").scrollIntoView({ block: "center" }); }
-    else plan.scrollIntoView({ block: "start" });
-  }
 });
 // Ниша из MPStats (#580): обе ниши — одним источником «mpstats:<id>|<путь>»;
 // путь — ниша из «Ниши» («Прогноз по этой нише») или вписанный вручную.
@@ -5814,7 +5806,6 @@ function fcMPStatsSlot(i, title, hint, p, info) {
     `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
 }
 function fcRender() {
-  $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
   if (!fc.v) plRender(null);
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
@@ -5895,8 +5886,13 @@ $("#mk-fc-go").addEventListener("click", async () => {
   fcRender();
 });
 // «План продаж» (#580): по тем же трем источникам, что прогноз, и вводу человека.
-const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "comm", "log", "lead"];
-try { const v = JSON.parse(localStorage.getItem(PL_KEY) || "null"); if (v) for (const k of PL_IN) if (v[k] !== undefined) $("#pl-" + k).value = v[k]; } catch (_) { /* без хранилища — значения по умолчанию */ }
+const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "fee", "lead"];
+try {
+  const v = JSON.parse(localStorage.getItem(PL_KEY) || "null");
+  if (v && v.fee === undefined && v.comm !== undefined) v.fee = String(Number(String(v.comm).replace(",", ".")) + Number(String(v.log || 0).replace(",", "."))); // прежние «Комиссия» и «Логистика» — одним полем, как в макете
+  if (v) for (const k of PL_IN) if (v[k] !== undefined && v[k] !== "NaN") $("#pl-" + k).value = v[k];
+} catch (_) { /* без хранилища — значения по умолчанию */ }
+const pl = { v: null, days: false, price: 0, lead: 10 };
 // Число как пишет человек: «1 500», «1.500» (точка — тысячи), «1500,5», «−5» (ревью #599).
 function plNum(k) {
   let t = String($("#pl-" + k).value).replace(/[\s\u00a0₽%]/g, "").replace(/\u2212/g, "-");
@@ -5907,23 +5903,65 @@ function plInput() {
   try { localStorage.setItem(PL_KEY, JSON.stringify(Object.fromEntries(PL_IN.map((k) => [k, $("#pl-" + k).value])))); } catch (_) { /* окно просто не вспомнит ввод */ }
   const bad = PL_IN.filter((k) => !Number.isFinite(plNum(k)) || String($("#pl-" + k).value).trim() === "");
   if (bad.length) return null;
-  return { stock: plNum("stock"), cost: plNum("cost"), price: plNum("price"), commission: plNum("comm"), logistics: plNum("log"), leadDays: Math.round(plNum("lead")) };
+  return { stock: plNum("stock"), cost: plNum("cost"), price: plNum("price"), commission: plNum("fee"), logistics: 0, leadDays: Math.round(plNum("lead")) };
 }
+// plSrc names the forecast's sources in words: ниша и свои продажи.
+function plSrc() {
+  const base = (p) => p.split("/").pop();
+  const [last, now, own] = fc.paths;
+  const niche = last.startsWith("mpstats:") ? `ниша «${base(fcMpsPath(last))}» из MPStats` : last && now ? `ниша: файлы «${base(last)}» и «${base(now)}»` : "";
+  const cab = own.startsWith("ozon:") && (fc.cabs || []).find((c) => "ozon:" + c.id === own);
+  const mine = own.startsWith("ozon:") ? `свои продажи: кабинет ${cab ? cab.name : "Ozon"}` : own ? `свои продажи: «${base(own)}»` : "";
+  return [niche, mine].filter(Boolean).join(" · ");
+}
+// plPage shows the «План» page: без трех источников — путь к «Прогнозу».
+function plPage() {
+  const ready = fc.paths.every(Boolean);
+  $("#pl-none").hidden = ready;
+  $("#pl-in").hidden = !ready;
+  $("#pl-src").textContent = ready ? "По прогнозу: " + plSrc() : "";
+  if (pl.key !== fc.paths.join("|")) pl.v = null; // источники «Прогноза» сменились — прежний план не про них
+  plRender(ready ? pl.v : null);
+}
+const PL_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const plDate = (s) => { const [d, m, y] = s.split(".").map(Number); return new Date(y, m - 1, d); };
+const plShort = (d) => `${d.getDate()} ${PL_MON[d.getMonth()]}`;
+function plWeekLabel(w) { const a = plDate(w.from), b = new Date(a); b.setDate(a.getDate() + w.days - 1); return `${plShort(a)} – ${plShort(b)}`; }
 function plRender(v) {
   const has = !!v;
-  for (const id of ["#pl-kpis", "#pl-table", "#pl-how"]) $(id).hidden = !has;
-  $("#pl-xlsx").disabled = !has;
+  for (const id of ["#pl-kpis", "#pl-warn", "#pl-wrap", "#pl-acts", "#pl-how"]) $(id).hidden = !has;
   if (!has) return;
-  const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
-  $("#pl-kpis").innerHTML = kpi("Продать", fmt(v.sell) + " шт", `за ${fmt(v.weeks.length)} недель прогноза`, "", "сколько продать за период, не больше остатка") +
-    kpi("Прибыль по плану", fmt(v.profit) + " ₽", "до рекламы и налогов", v.profit < 0 ? "bad" : "", "сумма прибыли по дням плана") +
-    (v.supplyQty ? kpi("Довезти", fmt(v.supplyQty) + " шт", v.supplyLate ? `срок прошел (${v.supplyBy}) — везти сейчас` : "к " + v.supplyBy, "bad", "недостающее к спросу; дата — когда остаток кончится, минус срок поставки")
-      : kpi("Довезти", "не нужно", "остатка хватает на весь прогноз", "", "")) +
-    kpi("Пик", v.peak, v.shortForPeak ? "остатка не хватит на пик" : "остатка на пик хватает", v.shortForPeak ? "bad" : "", "день с наибольшим прогнозом");
-  const marks = (w) => [w.peak && "пик", w.dip && "провал", w.short && "не хватит остатка"].filter(Boolean).join(", ");
-  $("#pl-table").innerHTML = `<thead><tr><th>Неделя с</th><th>Спрос</th><th>Продать</th><th>Остаток</th><th>Цена</th><th>Прибыль</th><th>Пометки</th></tr></thead><tbody>` +
-    v.weeks.map((w) => `<tr class="${w.peak ? "peak" : ""}"><td>${esc(w.from)}${w.days < 7 ? ` <span class="muted">(${w.days} дн.)</span>` : ""}</td><td>${fmt(w.demand)}</td><td>${fmt(w.sell)}</td>` +
-      `<td${w.short ? ' class="bad"' : ""}>${fmt(w.stockEnd)}</td><td>${fmt(w.price)} ₽</td><td${w.profit < 0 ? ' class="bad"' : ""}>${fmt(w.profit)} ₽</td><td class="m">${esc(marks(w))}</td></tr>`).join("") + "</tbody>";
+  const kpi = (k, val, sub, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${sub}</div></div>`;
+  const nw = v.weeks.length;
+  $("#pl-kpis").innerHTML = kpi(`Продать за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")}`, fmt(v.sell), "штук по плану, не больше остатка", "", "сумма плана продаж по дням") +
+    kpi("Прибыль по плану", fmt(v.profit) + " ₽", "после комиссии и себестоимости", v.profit < 0 ? "bad" : "", "до рекламы и налогов") +
+    (v.supplyQty ? kpi(v.shortForPeak ? "Довезти до пика" : "Довезти", fmt(v.supplyQty) + " шт", v.supplyLate ? `срок прошел (${v.supplyBy}) — везти сейчас` : `успеть до ${plShort(plDate(v.supplyBy))}: поставка идет ~${pl.lead} дн.`, v.supplyLate ? "bad" : "hl", "недостающее к спросу; дата — когда кончится остаток, минус срок поставки")
+      : kpi("Довезти", "не нужно", `остатка хватает, пик ${plShort(plDate(v.peak))}`, "", ""));
+  // Одно предупреждение словами вместо пометки в каждой строке (отзыв 14.11: «непонятно»).
+  const peak = plShort(plDate(v.peak));
+  $("#pl-warn").className = "mk-pl-warn" + (v.out ? " bad" : "");
+  $("#pl-warn").innerHTML = v.out
+    ? `<b>Остатка не хватит${v.shortForPeak ? " на пик" : ""}.</b> ${fmt(v.stock)} шт хватит до ${plShort(plDate(v.out))}, а спрос за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")} ≈ ${fmt(v.demand)} шт. Довезите ${fmt(v.supplyQty)} шт ${v.supplyLate ? "как можно скорее: срок поставки уже прошел" : "до " + plShort(plDate(v.supplyBy))}${v.shortForPeak ? `, иначе неделя пика (${peak}) пройдет без товара` : ""}.`
+    : `<b>Остатка хватает.</b> ${fmt(v.stock)} шт покрывают спрос ≈ ${fmt(v.demand)} шт за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")}; пик — ${peak}.`;
+  const pct = (w) => Math.round(Math.abs(w.price / pl.price - 1) * 100);
+  let shortSeen = false;
+  const pills = (w) => {
+    const out = [];
+    if (w.peak) out.push(`<span class="mk-pill peak">пик: цена +${pct(w)}%</span>`);
+    if (w.dip) out.push(`<span class="mk-pill low">провал: скидка ${pct(w)}%</span>`);
+    if (w.short && !shortSeen) { shortSeen = true; out.push(`<span class="mk-pill low">кончается остаток</span>`); }
+    return out.join("");
+  };
+  const n = (x) => `<td class="n">${x}</td>`;
+  $("#pl-days").setAttribute("aria-pressed", String(pl.days));
+  $("#pl-days").textContent = pl.days ? "План по неделям" : "План по дням";
+  if (pl.days) {
+    $("#pl-table").innerHTML = `<thead><tr><th>День</th><th class="n">Спрос, прогноз</th><th class="n">План продаж</th><th class="n">Остаток на конец</th><th class="n">Цена</th><th class="n">Прибыль</th></tr></thead><tbody>` +
+      v.days.map((d) => `<tr class="${d.sell === 0 && d.demand > 0 ? "out" : ""}${d.day === v.peak ? " pk" : ""}"><td>${esc(plShort(plDate(d.day)))}</td>${n(fmt(d.demand))}${n(fmt(d.sell))}${n(fmt(d.stockEnd))}${n(fmt(d.price) + " ₽")}${n(fmt(d.profit) + " ₽")}</tr>`).join("") + "</tbody>";
+    return;
+  }
+  $("#pl-table").innerHTML = `<thead><tr><th>Неделя</th><th class="n">Спрос, прогноз</th><th class="n">План продаж</th><th class="n">Остаток на конец</th><th class="n">Цена</th><th class="n">Прибыль</th><th></th></tr></thead><tbody>` +
+    v.weeks.map((w) => `<tr class="${w.peak ? "pk" : ""}${w.sell === 0 && w.demand > 0 ? " out" : ""}"${w.sell === 0 && w.demand > 0 ? mkTip("Без товара", "остаток кончился раньше этой недели: продавать нечего") : ""}><td>${esc(plWeekLabel(w))}</td>${n(fmt(w.demand))}${n(fmt(w.sell))}${n(fmt(w.stockEnd))}${n(fmt(w.price) + " ₽")}${n(fmt(w.profit) + " ₽")}<td class="m">${pills(w)}</td></tr>`).join("") + "</tbody>";
 }
 $("#pl-go").addEventListener("click", async () => {
   hideTip();
@@ -5931,12 +5969,13 @@ $("#pl-go").addEventListener("click", async () => {
   const inp = plInput();
   if (!inp) return mkErr("Заполните все поля плана числами.");
   mkErr(""); $("#pl-go").textContent = "Строю…";
-  try { plRender(await native().MarketsPlan(...fc.paths, inp)); } catch (err) { plRender(null); mkErr("План не построен: " + errText(err)); }
+  try { pl.v = await native().MarketsPlan(...fc.paths, inp); pl.key = fc.paths.join("|"); pl.price = inp.price; pl.lead = inp.leadDays; plRender(pl.v); $("#pl-xlsx").disabled = false; } catch (err) { pl.v = null; plRender(null); mkErr("План не построен: " + errText(err)); }
   // ввод с этого момента — тот, по которому построен план
-  $("#pl-go").textContent = "Построить план";
+  $("#pl-go").textContent = "Пересчитать план";
 });
 // Правка ввода после расчета — Excel гаснет до нового «Построить план»: файл не разойдется с таблицей.
-$("#mk-plan").addEventListener("input", (e) => { if (e.target.matches("input")) $("#pl-xlsx").disabled = true; });
+$("#mk-pl").addEventListener("input", (e) => { if (e.target.matches("input")) $("#pl-xlsx").disabled = true; });
+$("#pl-days").addEventListener("click", () => { hideTip(); pl.days = !pl.days; plRender(pl.v); });
 $("#pl-xlsx").addEventListener("click", async () => {
   hideTip();
   if (!native() || !native().MarketsPlanExcel) return;
