@@ -1943,3 +1943,25 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .mk-paths .hd { color: var(--z-muted); margin-bottom: 2px; }
 .mk-paths .lnk { text-align: left; justify-self: start; }
 #mk-mps-path::placeholder { color: var(--z-faint); font-style: italic; }
+
+/* «Подключения» «Маркетов» по макету (отзыв 14.11); подключенная карточка — градиентная рамка модуля. */
+.mk-cn { display: grid; gap: 14px; padding: 14px 18px; }
+.mk-cn-intro { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); font-size: 13px; color: var(--z-ink-2); }
+.mk-cn-intro b { color: var(--z-ink); }
+.mk-cn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.mk-cn-card { display: grid; gap: 8px; align-content: start; padding: 14px 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-cn-card.on { border-color: transparent; background: linear-gradient(var(--z-bg), var(--z-bg)) padding-box, linear-gradient(100deg, var(--mk1), var(--mk2), var(--mk3)) border-box; }
+.mk-cn-card h4 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--z-ink); }
+.mk-cn-card .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--z-faint); flex: none; }
+.mk-cn-card .dot.ok { background: var(--z-ok, #6cc28a); }
+.mk-cn-card .dot.file { background: var(--mk1); }
+.mk-cn-card .d { margin: 0; font-size: 12px; color: var(--z-muted); }
+.mk-cn-st { font-size: 11px; font-weight: 500; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; color: var(--z-ink-2); }
+.mk-cn-st.ok { border-color: color-mix(in srgb, var(--z-ok, #6cc28a) 60%, var(--z-rule)); }
+.mk-cn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-cn-chip { font-size: 12px; padding: 2px 8px; border-radius: var(--z-radius); border: 1px solid color-mix(in srgb, var(--mk2) 60%, var(--z-rule)); background: color-mix(in srgb, var(--mk2) 10%, var(--z-bg-2)); color: var(--z-ink); }
+.mk-cn-chip.off { border-color: var(--z-rule-2); background: none; color: var(--z-muted); }
+.mk-cn-last { margin: 0; font-size: 12px; color: var(--z-ink-2); }
+.mk-cn-last.ok { color: var(--z-ok, #6cc28a); }
+.mk-cn-last.bad { color: var(--z-bad); }
+.mk-cn-acts { display: flex; flex-wrap: wrap; gap: 8px; }
