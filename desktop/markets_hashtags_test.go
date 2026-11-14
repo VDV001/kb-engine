@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // fakeOzonCard answers /v4/product/info/attributes like Ozon Seller API (замер 15.11).
@@ -108,5 +109,50 @@ func TestCardNicheCache(t *testing.T) {
 	}
 	if got := category.Load(); got != 4 {
 		t.Errorf("fresh check asked the niche %d times in all, want 4", got)
+	}
+}
+
+// Ревью #627: память ниши не продлевается чтением из нее — через 10 минут
+// после настоящего чтения ниша читается заново.
+func TestCardNicheCache_notSliding(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var calls atomic.Int32
+	srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		if name == "ozon_sku" && a["report"] == "full" {
+			return titleCard, false
+		}
+		if name == "ozon_category" && a["report"] == "keywords" {
+			calls.Add(1)
+			return titleNicheJSON, false
+		}
+		if a["report"] == "brands" {
+			return `{"data":[]}`, false
+		}
+		return `[]`, false
+	})
+	s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := s.titleCheck(ctx, srv.Client(), "1234567", "Футболка женская", false); err != nil {
+		t.Fatal(err)
+	}
+	for k, e := range s.nicheParts.m { // отмотать время настоящего чтения на 9 минут
+		e.at = e.at.Add(-9 * time.Minute)
+		s.nicheParts.m[k] = e
+	}
+	if _, err := s.titleCheck(ctx, srv.Client(), "1234567", "Футболка женская", false); err != nil {
+		t.Fatal(err)
+	}
+	for k, e := range s.nicheParts.m { // еще 2 минуты: прошло 11 с настоящего чтения
+		e.at = e.at.Add(-2 * time.Minute)
+		s.nicheParts.m[k] = e
+	}
+	if _, err := s.titleCheck(ctx, srv.Client(), "1234567", "Футболка женская", false); err != nil {
+		t.Fatal(err)
+	}
+	if calls.Load() != 2 {
+		t.Errorf("niche read %d times, want 2: the memory must not slide", calls.Load())
 	}
 }
