@@ -5428,7 +5428,11 @@ async function mkLoadCats(strict) {
     mkCatsLoaded = true;
   } catch (e) { if (strict) throw e; }
 }
-async function mkReadMPS(path, from, to, days) {
+// mkLeaves — конечные категории MPStats (ниш внутри нет): «Внутрь» у них не
+// показывается; узнаются при первом заходе (живая проверка 14.11).
+const mkLeaves = new Set();
+// inside — «Внутрь»: у конечной ниши таблица остается, а окно говорит, что внутри пусто.
+async function mkReadMPS(path, from, to, days, inside) {
   if (!native() || !native().MarketsNichesMPStats) return mkErr("Экран «Ниша» работает в окне приложения.");
   if (!from) days = 30;
   from = from || mkDaysBack(30); to = to || mkYesterday();
@@ -5436,15 +5440,26 @@ async function mkReadMPS(path, from, to, days) {
   mk.mps = { path: (path || "").split("/").map((x) => x.trim()).filter(Boolean).join("/"), from, to, days }; // «A / B» → «A/B»
   mkErr("");
   $("#mk-mps-bar").hidden = false;
+  mk.busy = inside ? mk.mps.path : "";
   mkMpsRender(true);
+  if (inside) mkRender(); // кнопка «загружаю…», таблица приглушена
   try {
     const tb = await native().MarketsNichesMPStats(mk.mps.path, from, to);
     if (seq !== mkMpsSeq) return;
+    mk.busy = "";
+    if (tb.leaf) mkLeaves.add(mk.mps.path);
+    if (tb.leaf && inside && prev.tb) {
+      mk.mps = prev.mps;
+      toast("Внутри ниш нет", ` · «${path.split("/").pop()}» — конечная категория MPStats`, null, "info");
+      mkMpsRender(false); mkRender();
+      return;
+    }
     Object.assign(mk, { tb, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
     $("#mk-q").value = "";
     mkSave();
   } catch (e) {
     if (seq !== mkMpsSeq) return;
+    mk.busy = "";
     // Отказ: панель — к тому, что на экране (ревью #606); таблица из файла под
     // ошибкой MPStats читалась бы как ответ MPStats (живая проверка 13.11) — убираем.
     if (prev.tb && prev.tb.path && prev.tb.path.startsWith("mpstats:")) mk.mps = prev.mps;
@@ -5529,6 +5544,7 @@ function mkRender() {
     : `${$("#mk-file").textContent} · ${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят`;
   $("#mk-cols").hidden = !tb || mkIsMPS(); // у MPStats колонок файла нет
   $("#mk-body").hidden = !tb || tb.needName;
+  $("#mk-body").classList.toggle("busy", !!mk.busy);
   if (!tb) return;
   mkRenderCols();
   if (!tb.needName) { mkRenderFilters(); mkRenderTable(); mkRenderCmp(); mkRenderProbs(); }
@@ -5661,7 +5677,7 @@ function mkRenderCard() {
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
-    `<div class="row">${mkIsMPS() ? `<button class="btn" type="button" data-mk-in="${esc(n.name)}"${mkTip("Внутрь", "ниши внутри этой: ее подкатегории за те же дни")}>Внутрь</button>` : ""}<button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
+    `<div class="row">${mkIsMPS() && !mkLeaves.has(n.name) && !(mk.tb.leaf && mk.tb.niches.length === 1) ? `<button class="btn" type="button" data-mk-in="${esc(n.name)}"${mk.busy === n.name ? " disabled" : ""}${mkTip("Внутрь", "ниши внутри этой: ее подкатегории за те же дни; MPStats отвечает до 20 секунд")}>${mk.busy === n.name ? "загружаю…" : "Внутрь"}</button>` : ""}<button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
     `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
 }
 // mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
@@ -5763,7 +5779,7 @@ $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
   const inn = e.target.closest("[data-mk-in]");
-  if (inn) { hideTip(); const m = mk.mps || {}; return void mkReadMPS(inn.dataset.mkIn, m.from, m.to, m.days); }
+  if (inn) { hideTip(); const m = mk.mps || {}; return void mkReadMPS(inn.dataset.mkIn, m.from, m.to, m.days, true); }
   const go = e.target.closest("[data-mk-go-fc]");
   if (go) {
     hideTip();

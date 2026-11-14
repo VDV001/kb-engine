@@ -1670,7 +1670,7 @@ body:not(.no-mk-tab) .mk-tab[aria-selected="true"] { border-color: transparent; 
 .mk-lead-txt { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
 .mk-lead-txt .mk-intro { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--z-ink); }
 .mk-lead-src { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.mk-lead-src .sh-src { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-lead-src .sh-src { min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-lead-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mk-badge { font-size: 12px; color: var(--z-sp2, var(--z-accent)); border: 1px dashed currentColor; border-radius: var(--z-radius); padding: 3px 8px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-badge:empty { display: none; }
@@ -1920,3 +1920,6 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 @media (max-width: 900px) { .mk-files { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .mk-view .btn.mk-main:hover { animation: none !important; } }
 @media (max-width: 900px) { .mk-grid { grid-template-columns: minmax(0, 1fr); } .mk-tabs { margin-left: 0; } }
+
+/* «Внутрь» ждет MPStats (до 20 с, живая проверка 14.11): таблица приглушена, кнопка — «загружаю…». */
+.mk-body.busy .mk-scroll { opacity: .45; pointer-events: none; transition: opacity .2s; }
