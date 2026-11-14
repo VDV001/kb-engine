@@ -98,7 +98,7 @@ const titleCard = `{"name":"Футболка 1 шт","niche":{"name":"Одежд
 // советы — по запросам этой ниши, свои запросы товара — довод «оставить».
 func TestTitleCheckView(t *testing.T) {
 	s, srv := titleSettings(t, false, titleCard)
-	v, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка оверсайз сиреневая PRIMER")
+	v, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка оверсайз сиреневая PRIMER", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestTitleCheckView(t *testing.T) {
 // Свои запросы товара не прочитались — оценка по нише остается, окно говорит, чего нет.
 func TestTitleCheckView_ownQueriesFail(t *testing.T) {
 	s, srv := titleSettings(t, true, titleCard)
-	v, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская")
+	v, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская", false)
 	if err != nil || v.Main != "футболка женская" || !strings.Contains(v.Note, "сервис занят") || !strings.Contains(v.Note, "бренд") {
 		t.Fatalf("view %+v, %v: the niche check stays, the note names the miss", v, err)
 	}
@@ -140,7 +140,7 @@ func TestTitleCheckView_refusals(t *testing.T) {
 		{"1234567", " ", "название"},
 		{"1234567", "Футболка", "ниши"},
 	} {
-		if _, err := s.titleCheck(ctx, srv.Client(), c.sku, c.title); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := s.titleCheck(ctx, srv.Client(), c.sku, c.title, false); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%q %q: %v, want an error about %s", c.sku, c.title, err, c.want)
 		}
 	}
@@ -162,7 +162,7 @@ func TestTitleCheckView_emptyNiche(t *testing.T) {
 	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская"); err == nil || !strings.Contains(err.Error(), "нет запросов") {
+	if _, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская", false); err == nil || !strings.Contains(err.Error(), "нет запросов") {
 		t.Errorf("empty niche: %v, want «нет запросов»", err)
 	}
 }
