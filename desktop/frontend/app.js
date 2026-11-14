@@ -6673,7 +6673,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -6711,6 +6711,44 @@ function shTitleCard(p) {
   }
   return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;
 }
+// «Описание» в карточке (#611): сверка с полом и цветом карточки и словами
+// ниши — правилом; новое описание — моделью окна, только по кнопке.
+const shDescs = new Map(); // кабинет|SKU → { busy, draftBusy, v, draft, err }
+const shDescKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
+function shDescCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shDescs.get(shDescKey(p)) || {}, btn = `<button class="btn" type="button" data-sh-desc="${esc(p.sku)}"${t.busy ? " disabled" : ""}${mkTip("Проверить описание", "описание из кабинета Ozon против пола и цвета карточки и запросов ниши MPStats; без модели")}>${t.busy ? "Читаю Ozon и MPStats…" : t.v ? "Проверить еще раз" : "Проверить описание"}</button>`;
+  let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
+  if (t.v) {
+    const v = t.v, kind = { gender: "пол", color: "цвет" };
+    body += (v.empty ? `<div class="note">У карточки нет описания.</div>` : `<div class="note">Описание — ${fmt(v.length)} знаков; главный запрос ниши «${esc(v.main)}».</div>`) +
+      (v.mismatch.length ? `<div class="sh-title-h">Не совпадает с товаром</div><ul>${v.mismatch.map((m) => `<li><b>${esc(m.found)}</b> — ${kind[m.kind] || m.kind} в описании, а у товара: ${esc(m.card)}</li>`).join("")}</ul>` : (v.empty ? "" : `<div class="note">С полом и цветом карточки описание не спорит.</div>`)) +
+      (v.missing.length ? `<div class="sh-title-h">Нет в описании</div><ul>${v.missing.map((w) => `<li><b>${esc(w.word)}</b> — ${w.why === "main" ? `слово главного запроса «${esc(v.main)}»` : `${shTitlePct(w.share)} спроса запросов «${esc(v.main)}»`}</li>`).join("")}</ul>` : "") +
+      (v.note ? `<div class="note">${esc(v.note)}</div>` : "") +
+      `<button class="btn" type="button" data-sh-draft="${esc(p.sku)}"${t.draftBusy ? " disabled" : ""}${mkTip("Предложить новое описание", "пишет модель окна из «Чат и модель»: название, пол, цвет, текущее описание и слова ниши уйдут ее провайдеру; расход — в «Статистике»")}>${t.draftBusy ? "Модель пишет…" : t.draft ? "Предложить еще раз" : "Предложить новое — моделью окна"}</button>`;
+    if (t.draft) body += `<div class="sh-title-h">Новое описание <button type="button" class="lnk" data-sh-copy="${esc(t.draft.text)}"${mkTip("Скопировать", "вставить в «Аннотацию» в кабинете Ozon; перед вставкой прочитайте — модель могла ошибиться")}>скопировать</button></div><div class="sh-desc-draft">${esc(t.draft.text)}</div><div class="note">Написала модель ${esc(t.draft.model)}: прочитайте перед вставкой.</div>`;
+    if (t.draftErr) body += `<div class="note">${esc(t.draftErr)}</div>`;
+  }
+  return `<h4 class="sh-money-h">Описание</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-desc], [data-sh-draft]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shDesc || b.dataset.shDraft;
+  if (!p || p.sku !== sku) return;
+  const key = shDescKey(p), t = shDescs.get(key) || {};
+  if (!native() || !native().MarketsDescription) { shDescs.set(key, { err: "Проверка описания работает в окне приложения." }); return shCard(); }
+  if (b.dataset.shDraft) { // кнопка с явной подписью «моделью окна» — согласие отдать текст провайдеру
+    shDescs.set(key, { ...t, draftBusy: true, draftErr: "" }); shCard();
+    try { shDescs.set(key, { ...shDescs.get(key), draftBusy: false, draft: await native().MarketsDescriptionDraft(sh.v.path, sku, true) }); }
+    catch (err) { shDescs.set(key, { ...shDescs.get(key), draftBusy: false, draftErr: "Описание не написано: " + errText(err) }); }
+  } else {
+    shDescs.set(key, { busy: true }); shCard();
+    try { shDescs.set(key, { v: await native().MarketsDescription(sh.v.path, sku, !!t.v) }); } catch (err) { shDescs.set(key, { err: "Описание не проверено: " + errText(err) }); }
+  }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
 // «Хештеги» в карточке (#610): хештеги из кабинета Ozon против запросов ниши MPStats.
 const shTags = new Map(); // кабинет|SKU → { busy } | { v } | { err }
 const shTagsKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
