@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // NicheQuery — поисковый запрос ниши из сервиса аналитики: частота за период
@@ -98,18 +100,22 @@ func CheckTitle(in TitleInput) TitleCheck {
 	need := groupsOf(main.Text, j.group)
 	out.Related = j.count(in.Queries, need)
 	have, classes := j.judge(in.Title, &out)
+	out.NicheBrands = len(j.niche)
 	for _, g := range need {
-		if !have[g] {
-			out.Add = append(out.Add, TitleWord{Word: g, Share: j.share(g), Why: WhyMain})
-			have[g] = true
+		if have[g] {
+			continue
 		}
+		have[g] = true
+		if j.nicheBrand(g) { // главный запрос тоже бывает с брендом (ревью #624)
+			out.Dropped = append(out.Dropped, TitleWord{Word: g, Share: j.share(g), Why: WhyNicheBrand})
+			continue
+		}
+		out.Add = append(out.Add, TitleWord{Word: g, Share: j.share(g), Why: WhyMain})
 	}
-	brands := nicheBrands(in.NicheBrands, j.brand)
-	out.NicheBrands = len(brands.names)
 	often := 0
 	for _, w := range j.often(have, classes) {
 		switch {
-		case brands.words[w.Word]:
+		case j.nicheBrand(w.Word):
 			w.Why = WhyNicheBrand
 			out.Dropped = append(out.Dropped, w)
 		case often < titleAddMax: // предел — частым словам, слова главного сверх него (живая проверка #623)
@@ -140,12 +146,16 @@ type titleJudge struct {
 	sum   map[string]float64
 	total float64
 	own   map[string]OwnQuery // по слову запросов ниши и по основе слова
-	brand map[string]bool
+	brand map[string]bool     // слова своего бренда и продавца
+	forms map[string]int      // сколько форм у слова запросов ниши: склоняется — не бренд
+	niche map[string]bool     // однословные бренды ниши латиницей, кроме своих
 }
 
 func newTitleJudge(in TitleInput) *titleJudge {
-	j := &titleJudge{form: map[string]string{}, stem: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{}}
+	j := &titleJudge{form: map[string]string{}, stem: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{},
+		forms: map[string]int{}, niche: map[string]bool{}}
 	for _, f := range in.Forms {
+		j.forms[foldWord(f.Word)] = len(f.Forms)
 		for _, w := range f.Forms {
 			if _, ok := j.form[foldWord(w)]; !ok {
 				j.form[foldWord(w)] = foldWord(f.Word)
@@ -164,12 +174,42 @@ func newTitleJudge(in TitleInput) *titleJudge {
 			}
 		}
 	}
-	for _, b := range in.Brands {
+	j.brands(in.Brands, in.NicheBrands)
+	return j
+}
+
+// brands fills own brand words and the niche's foreign single-word brands.
+func (j *titleJudge) brands(own, niche []string) {
+	whole := map[string]bool{}
+	for _, b := range own {
 		for _, t := range wordsOf(b) {
 			j.brand[t] = true
 		}
+		whole[strings.Join(wordsOf(b), " ")] = true
 	}
-	return j
+	for _, n := range niche {
+		// Только однословные: слова многословного («Love Republic») — обычные
+		// слова запросов; свой бренд сравнивается целым именем (ревью #624).
+		if ws := wordsOf(n); len(ws) == 1 && !whole[ws[0]] {
+			j.niche[latinOf(ws[0])] = true
+		}
+	}
+}
+
+// nicheBrand: слово запросов — бренд ниши. Сравнение латиницей («зара» → zara);
+// слово, которое в запросах склоняется («топ, топы»), — обычное, а не бренд «Top».
+// ponytail: несклоняемое обычное слово, совпавшее с брендом («спорт» и «Sport»),
+// уйдет в «Не советуем» — оно видно там, а не спрятано; апгрейд — словарь брендов.
+func (j *titleJudge) nicheBrand(g string) bool {
+	return j.forms[g] < 2 && !j.brand[g] && j.niche[latinOf(g)]
+}
+
+// latinOf — слово латиницей: кириллица через domain.Translit (одна таблица на движок).
+func latinOf(w string) string {
+	if isLatin(w) {
+		return w
+	}
+	return domain.Translit(w)
 }
 
 // group — слово запросов ниши, к которому относится словоформа tok.
@@ -221,6 +261,9 @@ func (j *titleJudge) judge(title string, out *TitleCheck) (have, classes map[str
 			q, found = j.own["~"+wordStem(tok)]
 		}
 		switch {
+		case j.nicheBrand(g): // чужой бренд в названии — риск снятия карточки, даже частый (ревью #624)
+			w.Why = WhyNicheBrand
+			out.Remove = append(out.Remove, w)
 		case w.Share >= titleRareShare:
 			w.Why = WhyKeep
 		case j.brand[tok]:
@@ -253,47 +296,9 @@ func (j *titleJudge) often(have, classes map[string]bool) []TitleWord {
 	return out
 }
 
-// brandSet — бренды ниши: названия и слова, по которым их узнают в запросах.
-type brandSet struct {
-	names map[string]bool
-	words map[string]bool
-}
-
-// nicheBrands collects the niche's brands but own ones: слово бренда как есть
-// и латиница кириллицей («zara» → «зара»), у многословного — латинские слова от трех букв.
-func nicheBrands(names []string, own map[string]bool) brandSet {
-	b := brandSet{names: map[string]bool{}, words: map[string]bool{}}
-	for _, n := range names {
-		ws := wordsOf(n)
-		if len(ws) == 0 || foldWord(strings.TrimSpace(n)) == "бренд не указан" || slices.ContainsFunc(ws, func(w string) bool { return own[w] }) {
-			continue
-		}
-		b.names[strings.Join(ws, " ")] = true
-		for _, w := range ws {
-			if len(ws) > 1 && (!isLatin(w) || utf8.RuneCountInString(w) < 3) {
-				continue
-			}
-			b.words[w] = true
-			if isLatin(w) {
-				b.words[translit(w)] = true
-			}
-		}
-	}
-	return b
-}
-
 func isLatin(w string) bool {
 	return strings.IndexFunc(w, func(r rune) bool { return r > unicode.MaxASCII }) < 0 && strings.IndexFunc(w, unicode.IsLetter) >= 0
 }
-
-// ponytail: побуквенная транслитерация ловит «zara» → «зара», «skims» → «скимс»,
-// но не произношение («nike» → «нике», а в запросах «найк»); потолок — эта
-// таблица, апгрейд — словарь брендов с русскими написаниями.
-var latinToCyr = strings.NewReplacer("sch", "щ", "sh", "ш", "ch", "ч", "zh", "ж", "kh", "х", "ts", "ц", "yu", "ю", "ya", "я", "yo", "е",
-	"a", "а", "b", "б", "c", "к", "d", "д", "e", "е", "f", "ф", "g", "г", "h", "х", "i", "и", "j", "дж", "k", "к", "l", "л", "m", "м",
-	"n", "н", "o", "о", "p", "п", "q", "к", "r", "р", "s", "с", "t", "т", "u", "у", "v", "в", "w", "в", "x", "кс", "y", "и", "z", "з")
-
-func translit(w string) string { return latinToCyr.Replace(w) }
 
 // titleStop — служебные слова: по ним не судят.
 var titleStop = map[string]bool{"для": true, "без": true, "или": true, "под": true, "над": true, "при": true, "про": true, "шт": true,
