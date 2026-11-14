@@ -6673,8 +6673,52 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
+// «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
+// убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
+const shTitles = new Map(); // sku → { busy } | { v } | { err }
+const shTitlePct = (x) => (x > 0 && x < 0.001 ? "меньше 0,1" : (Math.round(x * 1000) / 10).toString().replace(".", ",")) + " %";
+function shTitleWhy(w, v) {
+  const main = `«${v.main}»`;
+  return {
+    keep: `${shTitlePct(w.share)} спроса запросов ${main}`,
+    main: `слово главного запроса ${main}, а в названии его нет`,
+    often: `${shTitlePct(w.share)} спроса запросов ${main} — добавьте, если это про Ваш товар`,
+    rare: `в запросах ${main} почти не встречается: ${shTitlePct(w.share)} спроса`,
+    brand: "бренд или продавец товара — оставить",
+    attr: "цвет или пол — свойство товара, оставить, хоть его и редко ищут",
+    own: `товар уже находят по запросу «${w.query}»${w.position ? `, позиция ${fmt(w.position)}` : ""} — оставить`,
+  }[w.why] || "";
+}
+function shTitleCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shTitles.get(p.sku), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера; три запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
+  let body = "";
+  if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
+  if (t && t.v) {
+    const v = t.v, li = (w) => `<li><b>${esc(w.word)}</b> — ${esc(shTitleWhy(w, v))}</li>`;
+    body = `<dl><dt${mkTip("Главный запрос", "запрос ниши, по которому чаще всего ищут и в выдаче больше всего товаров ниши: частота × товаров")}>Главный запрос</dt><dd>«${esc(v.main)}» · ${fmt(v.mainCount)} запросов за 30 дней, ${fmt(v.mainItems)} товаров ниши в выдаче</dd>` +
+      `<dt${mkTip("Ниша", "ниша товара в MPStats, по его карточке")}>Ниша</dt><dd>${esc(v.niche)}</dd>` +
+      `<dt${mkTip("Выводы по", "доли слов — по запросам со всеми словами главного")}>Выводы по</dt><dd>${fmt(v.related)} из ${fmt(v.total)} ${plural(v.total, "запроса", "запросов", "запросов")} ниши</dd></dl>` +
+      (v.add.length ? `<div class="sh-title-h">Добавить</div><ul>${v.add.map(li).join("")}</ul>` : "") +
+      (v.remove.length ? `<div class="sh-title-h">Убрать</div><ul>${v.remove.map(li).join("")}</ul>` : "") +
+      (!v.add.length && !v.remove.length ? `<div class="note">Добавить и убрать нечего: слова названия есть в запросах ниши.</div>` : "") +
+      `<div class="sh-title-h">Слова названия</div><ul>${v.words.filter((w) => w.why !== "rare").map(li).join("")}</ul>` + (v.note ? `<div class="note">${esc(v.note)}</div>` : "");
+  }
+  return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-title]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shTitle;
+  if (!p || p.sku !== sku) return;
+  if (!native() || !native().MarketsTitle) { shTitles.set(sku, { err: "Проверка названия работает в окне приложения." }); return shCard(); }
+  shTitles.set(sku, { busy: true }); shCard();
+  try { shTitles.set(sku, { v: await native().MarketsTitle(sku, p.name) }); } catch (err) { shTitles.set(sku, { err: "Название не проверено: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard(); // товар сменили, пока читали — ответ дождется его
+});
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.
 function shMoneyCard(p) {
   if (!shOzon()) return "";
