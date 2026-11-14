@@ -105,22 +105,6 @@ func (f *folderSettings) photosCheck(ctx context.Context, hc *http.Client, base,
 	return v, nil
 }
 
-// ozonCard reads card id of cabinet cab: нет товара — понятная причина.
-func (f *folderSettings) ozonCard(ctx context.Context, hc *http.Client, base, cab string, id int64) (ozon.Card, error) {
-	oc, _, err := f.ozonCabinet(cab, base, hc)
-	if err != nil {
-		return ozon.Card{}, err
-	}
-	card, err := oc.Card(ctx, strconv.FormatInt(id, 10))
-	if errors.Is(err, ozon.ErrNoCard) {
-		return ozon.Card{}, errors.New("товара с этим SKU нет в кабинете — загрузите «Магазин» заново")
-	}
-	if err != nil {
-		return ozon.Card{}, ozonErr("Ozon", err)
-	}
-	return card, nil
-}
-
 // leaderPhotos fills the leaders' main photos, до четырех запросов сразу:
 // не прочитанное фото — пустое, сравнение остается.
 func leaderPhotos(ctx context.Context, m mpstats.MCP, ls []markets.NicheProduct) {
