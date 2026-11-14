@@ -12,7 +12,11 @@ import (
 // фото — из MPStats; советы — правилом.
 func TestPhotosView(t *testing.T) {
 	s, _, _ := newServerSettings(t)
+	var nicheCalls int
 	mp := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		if name == "ozon_category" && a["report"] != "products" || name == "ozon_sku" && a["report"] == "keywords" {
+			nicheCalls++ // фото не нужны запросы ниши, бренды и свои запросы (ревью #627)
+		}
 		switch {
 		case name == "ozon_category" && a["report"] == "products":
 			return `{"data":[{"id":2,"name":"Лидер","revenue":5000,"rating":4.8,"comments":300,"picscount":9,"hasvideo":1},` +
@@ -45,6 +49,12 @@ func TestPhotosView(t *testing.T) {
 	}
 	if len(v.Own) != 2 || v.OwnVideo || len(v.Leaders) != 2 || v.Leaders[0].Photo != "https://ir.ozone.ru/2.jpg" || v.Median != 8 {
 		t.Fatalf("view %+v", v)
+	}
+	if nicheCalls != 0 {
+		t.Errorf("photos asked %d niche reports, want only the card, products and photos", nicheCalls)
+	}
+	if v.OwnCount != 5 {
+		t.Errorf("own count %d, want MPStats photo.count — the leaders' source", v.OwnCount)
 	}
 	kinds := map[string]bool{}
 	for _, a := range v.Advice {
