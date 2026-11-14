@@ -179,8 +179,12 @@ func (c Client) Card(ctx context.Context, sku string) (Card, error) {
 			continue
 		}
 		switch a.ID {
-		case attrHashtags:
-			out.Hashtags = a.Values[0].Value
+		case attrHashtags: // хештеги бывают и одной строкой, и по значению на каждый (ревью #625)
+			vs := make([]string, 0, len(a.Values))
+			for _, v := range a.Values {
+				vs = append(vs, v.Value)
+			}
+			out.Hashtags = strings.Join(vs, " ")
 		case attrAnnotation:
 			out.Annotation = a.Values[0].Value
 		case attrRich:
