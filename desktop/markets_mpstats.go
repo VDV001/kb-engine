@@ -124,13 +124,13 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 		return series, nil, errors.New("обе ниши — из MPStats или обе файлами: нажмите «Из MPStats» еще раз или выберите оба файла")
 	}
 	src := strings.TrimPrefix(last, "mpstats:")
-	key := src + "|" + today.Format(time.DateOnly)
-	if e, ok := f.mpstatsNiche.get(key, time.Now()); ok {
-		return e.series, e.files, nil
-	}
-	cl, path, err := f.mpstatsSource(src, hc)
+	cl, path, err := f.mpstatsSource(src, hc) // до кэша: выключенное или удаленное подключение не отдает и запомненное (ревью 14.11)
 	if err != nil {
 		return series, nil, err
+	}
+	key := src + "|" + today.Format(time.DateOnly)
+	if e, ok := f.mpstatsNiche.get(key, today); ok {
+		return e.series, e.files, nil
 	}
 	from, to := ozonWindow(today)
 	spans := [2][2]time.Time{{from.AddDate(-1, 0, 0), to.AddDate(-1, 0, mpstatsHorizon)}, {from, to}}
@@ -143,7 +143,7 @@ func (f *folderSettings) nicheSeries(ctx context.Context, hc *http.Client, last,
 			return series, nil, err
 		}
 	}
-	f.mpstatsNiche.put(key, nicheEntry{at: time.Now(), series: series, files: files[:]})
+	f.mpstatsNiche.put(key, nicheEntry{at: today, series: series, files: files[:]})
 	return series, files[:], nil
 }
 
