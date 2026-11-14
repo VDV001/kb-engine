@@ -153,6 +153,7 @@ func (j *titleJudge) newHashtags(qs []NicheQuery, main NicheQuery, gender, color
 		seen[setKey(gs)] = true
 		out = append(out, HashtagRow{Tag: tag, Demand: demand(qs, gs, j.group), Why: TagNew})
 	}
+	slices.SortStableFunc(out, func(a, b HashtagRow) int { return cmp.Compare(b.Demand, a.Demand) }) // показ — по подписанному числу
 	return out
 }
 
