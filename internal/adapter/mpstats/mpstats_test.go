@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/mpstats"
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
 // fake answers like the MPStats API (живой ответ 13.11): ключ в X-Mpstats-TOKEN.
@@ -246,5 +247,28 @@ func TestCategoryMonths(t *testing.T) {
 	}
 	if len(ms) != 2 || !ms[0].Month.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) || ms[0].Sales != 339283.5 || ms[1].Sales != 434695 {
 		t.Errorf("months = %+v; want September then October", ms)
+	}
+}
+
+// Продавцы ниши для «Конкурентов» (#613): имя, товары, продажи, выручка, цена,
+// рейтинг — из того же /category/sellers, что и доля топ-10.
+func TestSellers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.URL.Path != "/api/oz/get/category/sellers" || q.Get("path") != "Одежда/Пижамы" || q.Get("d1") != "2026-10-15" || q.Get("d2") != "2026-11-13" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"supplier_id":7,"name":"Продавец А","items":120,"items_with_sells":90,"sales":1500,"revenue":1500000,"avg_price":1000.5,"rating":4.8,"comments":31.5,"graph":[1,2]}]`))
+	}))
+	t.Cleanup(srv.Close)
+	d1, d2 := time.Date(2026, 10, 15, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)
+	got, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Sellers(context.Background(), "Одежда/Пижамы", d1, d2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := markets.SellerStat{ID: 7, Name: "Продавец А", Items: 120, ItemsSold: 90, Sales: 1500, Revenue: 1500000, AvgPrice: 1000.5, Rating: 4.8, Comments: 31.5}
+	if len(got) != 1 || got[0] != want {
+		t.Errorf("sellers %+v, want %+v", got, want)
 	}
 }
