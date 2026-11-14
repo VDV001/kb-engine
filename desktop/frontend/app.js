@@ -6358,7 +6358,7 @@ function srcTag(sel, kind) {
 }
 // shPart — показана часть загруженных дней.
 const shPart = () => !!(sh.v && sh.v.windowFrom && (sh.v.from !== sh.v.windowFrom || sh.v.to !== sh.v.windowTo));
-// shSourceLine — откуда данные одной строкой: «Кабинет FURIA (Ozon) · 15.08.2026 – 12.11.2026 · 547 товаров».
+// shSourceLine — откуда данные одной строкой: «Кабинет Пример (Ozon) · 15.08.2026 – 12.11.2026 · 120 товаров».
 function shSourceLine(v) {
   const what = shOzon() ? `Кабинет ${(v.file || "").replace(/^Ozon · /, "")} (Ozon)` : `Отчет ${v.file || ""}`;
   const n = (v.products || []).length;
