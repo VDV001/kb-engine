@@ -17,6 +17,9 @@ import (
 var titleWhy = map[markets.TitleWhy]string{markets.WhyKeep: "keep", markets.WhyMain: "main", markets.WhyFrequent: "often",
 	markets.WhyRare: "rare", markets.WhyBrand: "brand", markets.WhyAttribute: "attr", markets.WhyOwn: "own", markets.WhyNicheBrand: "brand-niche"}
 
+// titleBrandsWait — сколько ждать отчет брендов ниши: обычно 7 с (замер 14.11).
+const titleBrandsWait = 30 * time.Second
+
 // titleWordRow — слово названия или совет; Share — доля спроса как 0,25.
 type titleWordRow struct {
 	Word     string  `json:"word"`
@@ -93,7 +96,13 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 		}
 	})
 	wg.Go(func() { own, ownErr = m.CardQueries(ctx, id) })
-	wg.Go(func() { brands, brandErr = m.NicheBrands(ctx, card.Niche) })
+	wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
+		bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
+		defer bcancel()
+		if brands, brandErr = m.NicheBrands(bctx, card.Niche); stopsAll(brandErr) {
+			cancel()
+		}
+	})
 	wg.Wait()
 	if nicheErr != nil {
 		return titleView{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))

@@ -6706,7 +6706,7 @@ function shTitleCard(p) {
       (v.add.length ? `<div class="sh-title-h">Добавить</div><ul>${v.add.map(li).join("")}</ul>` : "") +
       (v.dropped.length ? `<div class="sh-title-h"${mkTip("Не советуем", `частые слова ниши, которые MPStats знает как бренды; учтено брендов ниши: ${fmt(v.nicheBrands)}`)}>Не советуем</div><ul>${v.dropped.map(li).join("")}</ul>` : "") +
       (v.remove.length ? `<div class="sh-title-h">Убрать</div><ul>${v.remove.map(li).join("")}</ul>` : "") +
-      (!v.add.length && !v.remove.length ? `<div class="note">Добавить и убрать нечего: слова названия есть в запросах ниши.</div>` : "") +
+      (!v.add.length && !v.remove.length ? `<div class="note">${v.dropped.length ? "Добавить нечего, кроме брендов ниши, а их советовать нельзя; убирать нечего." : "Добавить и убрать нечего: слова названия есть в запросах ниши."}</div>` : "") +
       `<div class="sh-title-h">Слова названия</div><ul>${v.words.filter((w) => w.why !== "rare").map(li).join("")}</ul>` + (v.note ? `<div class="note">${esc(v.note)}</div>` : "");
   }
   return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;
