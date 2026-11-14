@@ -476,7 +476,7 @@ func seasons(ctx context.Context, cl mpstats.Client, parent string, now time.Tim
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			ms, err := cl.CategoryMonths(ctx, strings.TrimPrefix(parent+"/"+ns[i].Name, "/"), from, to)
+			ms, err := cl.CategoryMonths(ctx, childPath(parent, ns[i].Name), from, to)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -519,7 +519,7 @@ func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time
 		wg.Go(func() {
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			v, err := cl.TopSellersRevenue(ctx, parent+"/"+ns[i].Name, from, to, 10)
+			v, err := cl.TopSellersRevenue(ctx, childPath(parent, ns[i].Name), from, to, 10)
 			mu.Lock()
 			defer mu.Unlock()
 			if err == nil {
@@ -554,6 +554,10 @@ func mpstatsDays(from, to string) (d1, d2 time.Time, err error) {
 	}
 	return d1, d2, nil
 }
+
+// childPath is the MPStats path of niche name inside parent; у верхней
+// категории parent пустой — путь без «/» в начале (ревью 14.11).
+func childPath(parent, name string) string { return strings.TrimPrefix(parent+"/"+name, "/") }
 
 // leafAsNiche: у конечной ниши подкатегорий нет — в таблице она сама (живая
 // проверка 13.11, «Пижамы женские»); parent — путь, в котором она лежит.
