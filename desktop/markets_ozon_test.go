@@ -6,6 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -374,6 +377,18 @@ func TestOzonShopHistory(t *testing.T) {
 	if v.WindowFrom != "2026-08-01" || v.WindowTo != "2026-11-12" || len(v.Gaps) != 0 {
 		t.Errorf("window %s – %s, gaps %v; want 01.08 – 12.11 without gaps", v.WindowFrom, v.WindowTo, v.Gaps)
 	}
+	// Показ по умолчанию — 90 дней Ozon, как раньше: средние в день не
+	// размываются старыми днями; вся история — кнопкой (ревью #618).
+	if v.From != "2026-08-15" || v.To != "2026-11-12" {
+		t.Errorf("shown %s – %s, want Ozon's 90 days 15.08 – 12.11", v.From, v.To)
+	}
+	// Пропажи — только за 90 дней: старое отправление без начисления в истории
+	// не «продажа не начислена» (ревью #618).
+	for _, r := range v.Losses.Rows {
+		if r.Posting == "0-1" {
+			t.Errorf("a posting from the history is a loss: %+v", r)
+		}
+	}
 	s.shopLoads = shopLoadCache{} // как после перезапуска окна: история — с диска
 	p, err := s.ozonShopPeriod(row.ID, "2026-08-01", "2026-08-10")
 	if err != nil {
@@ -394,7 +409,55 @@ func TestOzonShopHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.WindowFrom != "2026-05-01" || len(v.Gaps) != 1 || v.Gaps[0] != "01.06.2026 – 14.08.2026" {
-		t.Errorf("window from %s, gaps %v; want 01.05 and the gap 01.06.2026 – 14.08.2026", v.WindowFrom, v.Gaps)
+	if v.WindowFrom != "2026-05-01" || len(v.Gaps) != 0 {
+		t.Errorf("window from %s, gaps %v in Ozon's 90 days; want 01.05 and none", v.WindowFrom, v.Gaps)
+	}
+	all, err := s.ozonShopPeriod(row.ID, "2026-05-01", "2026-11-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all.Gaps) != 1 || all.Gaps[0] != "01.06.2026 – 14.08.2026" {
+		t.Errorf("gaps of the whole history %v; want 01.06.2026 – 14.08.2026", all.Gaps)
+	}
+}
+
+// Загрузка, у которой не прочитались начисления, в историю не пишется (ревью
+// #618): иначе дни без начислений легли бы в нее молча; окно так и говорит.
+func TestOzonShopHistoryKeepsOnFailure(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok := fakeOzon(t)
+	target, _ := url.Parse(ok.URL)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/finance/accrual/by-day" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.Local) }
+	old := shopLoad{Name: "Тестовый магазин", From: day(8, 1), To: day(10, 31), Now: day(11, 1), At: day(11, 1)}
+	if err := s.saveShopLoad(row.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(s.shopLoadPath(row.ID))
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(s.shopLoadPath(row.ID)); string(after) != string(before) {
+		t.Error("a load with failed accruals rewrote the history")
+	}
+	if v.Economy == nil || v.Economy.Err == "" || !strings.Contains(v.CostsErr, "история не обновлена") {
+		t.Errorf("economy %+v, note %q; want the error and «история не обновлена»", v.Economy, v.CostsErr)
+	}
+	s.shopLoads = shopLoadCache{}
+	if l, _ := s.loadOf(row.ID); !l.To.Equal(day(10, 31)) {
+		t.Errorf("history to %v, want the saved 31.10", l.To)
 	}
 }

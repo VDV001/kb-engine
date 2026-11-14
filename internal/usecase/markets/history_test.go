@@ -1,6 +1,7 @@
 package markets_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -66,8 +67,10 @@ func TestMergeShop(t *testing.T) {
 	if n := accs(got); n != 100+250+300 {
 		t.Errorf("accruals %d kopecks, want 650: 15.08 kept, 20.08 from the fresh load", n)
 	}
-	if r := rets(got); r != "r1:ReturnedToOzon r2:WriteOff" {
-		t.Errorf("returns %q: the fresh status wins, the rest stay", r)
+	// Возвраты не копятся (ревью #618): у них нет своего id, а старые статусы
+	// зависали бы навсегда; они нужны пропажам, а те смотрят последние 90 дней.
+	if r := rets(got); r != "r1:ReturnedToOzon" {
+		t.Errorf("returns %q: the fresh list only", r)
 	}
 
 	t.Run("первая загрузка", func(t *testing.T) {
@@ -95,6 +98,14 @@ func TestMergeShop(t *testing.T) {
 		got := markets.MergeShop(saved, f)
 		if accs(got) != 300 || rets(got) != "r1:MovingToOzon r2:WriteOff" {
 			t.Errorf("accruals %d, returns %q: a failed read keeps what was saved", accs(got), rets(got))
+		}
+	})
+	t.Run("отправление на стыке окон — одно", func(t *testing.T) {
+		s := saved
+		s.Posts = append(slices.Clone(saved.Posts), markets.OzonPosting{Number: "new-13.11", At: at(8, 15), Status: "awaiting"})
+		got := markets.MergeShop(s, fresh)
+		if p := posts(got); p != "old-15.08:delivered both-20.08:delivered new-13.11:" {
+			t.Errorf("posts %q: a number from the fresh load is taken once, fresh", p)
 		}
 	})
 	t.Run("сохраненное не раньше свежего", func(t *testing.T) {
