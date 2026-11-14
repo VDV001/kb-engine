@@ -5799,7 +5799,7 @@ function mkPaths() {
   const hit = mk.cats.filter((p) => { const f = p.toLowerCase().replace(/ё/g, "е"); return words.every((w) => f.includes(w)); });
   box.hidden = false;
   box.innerHTML = `<div class="hd">Категории MPStats по «${esc(mk.q.trim())}»: ${fmt(hit.length)}</div>` +
-    (hit.length ? hit.slice(0, 40).map((p) => `<button type="button" class="lnk" data-mk-path="${esc(p)}"${mkTip(p, "ниши этого пути с цифрами MPStats за те же дни")}>${esc(p)}</button>`).join("") + (hit.length > 40 ? `<span class="muted">…и еще ${fmt(hit.length - 40)}: уточните слова</span>` : "") : `<span class="muted">путей с этими словами нет</span>`);
+    (hit.length ? hit.slice(0, 40).map((p) => `<button type="button" class="lnk" data-mk-path="${esc(p)}"${mkTip(p, "ниши этого пути с цифрами MPStats за те же дни")}>${esc(p)}</button>`).join("") + (hit.length > 40 ? `<span class="muted">…и еще ${fmt(hit.length - 40)}: уточните слова</span>` : "") : `<span class="muted">путей с этими словами нет: в списке MPStats бывают старые имена («Мужчинам», а не «Мужская одежда») — попробуйте другое слово или впишите путь в поле категории</span>`);
 }
 $("#mk-paths").addEventListener("click", (e) => {
   const b = e.target.closest("[data-mk-path]");
