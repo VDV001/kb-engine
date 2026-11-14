@@ -13,6 +13,7 @@ import (
 // сравнивают (#610): название, свои бренды, запросы ниши, свои запросы товара.
 type HashtagInput struct {
 	Title, Hashtags string
+	Gender, Color   string // характеристики карточки «Пол» и «Цвет» (ревью #626)
 	Brands          []string
 	Queries         []NicheQuery
 	Forms           []WordForms
@@ -73,12 +74,12 @@ func CheckHashtags(in HashtagInput) HashtagCheck {
 		qg[i] = groupsOf(q.Text, j.group)
 	}
 	gender, color := map[string]bool{}, map[string]bool{}
-	for _, t := range wordsOf(in.Title) {
+	for _, t := range wordsOf(in.Title + " " + in.Gender + " " + in.Color) { // и характеристики карточки (ревью #626)
 		switch wordClass(t) {
 		case "gender":
 			maps.Copy(gender, genderFamily(t))
 		case "color":
-			color[j.group(t)] = true
+			color[colorRoot(t)] = true
 		}
 	}
 	seen := map[string]bool{}
@@ -185,15 +186,16 @@ func (j *titleJudge) ownWith(gs []string) (OwnQuery, bool) {
 	return OwnQuery{}, false
 }
 
-// genderFamily — аудитории слова пола: «девочек» — и женская, и детская;
-// «унисекс» — все. Сравнение по аудитории, а не по слову (ревью #625).
+// genderFamily — аудитории слова пола: f — женская, m — мужская, k — детская;
+// «девочек» — f и k, «унисекс» — все.
 func genderFamily(w string) map[string]bool {
 	fam := map[string]bool{}
 	for _, f := range []struct {
 		root string
 		to   []string
-	}{{"женск", []string{"f"}}, {"девоч", []string{"f", "k"}}, {"девуш", []string{"f"}}, {"мужск", []string{"m"}}, {"мальчик", []string{"m", "k"}},
-		{"юнош", []string{"m"}}, {"детск", []string{"k"}}, {"подростк", []string{"k"}}, {"унисекс", []string{"f", "m", "k"}}} {
+	}{{"женск", []string{"f"}}, {"женщин", []string{"f"}}, {"девоч", []string{"f", "k"}}, {"девуш", []string{"f"}},
+		{"мужск", []string{"m"}}, {"мужчин", []string{"m"}}, {"мальчик", []string{"m", "k"}}, {"юнош", []string{"m"}},
+		{"детск", []string{"k"}}, {"подростк", []string{"k"}}, {"унисекс", []string{"f", "m", "k"}}} {
 		if strings.HasPrefix(w, f.root) {
 			for _, t := range f.to {
 				fam[t] = true
@@ -203,17 +205,27 @@ func genderFamily(w string) map[string]bool {
 	return fam
 }
 
-// otherGender: в хештеге аудитория, которой у товара нет.
-func otherGender(gs []string, gender map[string]bool) bool {
-	if len(gender) == 0 {
+// audienceClash: слово пола спорит с аудиторией товара. Пол указан у обоих —
+// спорит разный («девочек» и «Мальчики», хоть оба детские, ревью #626);
+// слово только детское, а товар взрослый — тоже спорит.
+func audienceClash(w string, card map[string]bool) bool {
+	wf := genderFamily(w)
+	if len(wf) == 0 || len(card) == 0 {
 		return false
 	}
-	for _, g := range gs {
-		if fam := genderFamily(g); len(fam) > 0 && !slices.ContainsFunc(slices.Collect(maps.Keys(fam)), func(f string) bool { return gender[f] }) {
-			return true
-		}
+	ws, cs := wf["f"] || wf["m"], card["f"] || card["m"]
+	switch {
+	case ws && cs:
+		return (!wf["f"] || !card["f"]) && (!wf["m"] || !card["m"])
+	case !ws:
+		return !card["k"]
 	}
 	return false
+}
+
+// otherGender: в хештеге аудитория, которой у товара нет.
+func otherGender(gs []string, gender map[string]bool) bool {
+	return slices.ContainsFunc(gs, func(g string) bool { return audienceClash(g, gender) })
 }
 
 // otherColor: у товара назван цвет, а в запросе другой (живая проверка #610).
@@ -221,7 +233,7 @@ func otherColor(gs []string, color map[string]bool) bool {
 	if len(color) == 0 {
 		return false
 	}
-	return slices.ContainsFunc(gs, func(g string) bool { return wordClass(g) == "color" && !color[g] })
+	return slices.ContainsFunc(gs, func(g string) bool { return wordClass(g) == "color" && !color[colorRoot(g)] })
 }
 
 func setKey(gs []string) string {

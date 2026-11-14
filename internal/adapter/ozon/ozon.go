@@ -145,11 +145,15 @@ const (
 	attrHashtags   = 23171 // «#Хештеги»
 	attrAnnotation = 4191  // «Аннотация» — описание товара
 	attrRich       = 11254 // «Rich-контент JSON»
+	attrGender     = 9163  // «Пол»
+	attrColor      = 10096 // «Цвет товара», значений бывает несколько
 )
 
-// Card — содержимое карточки: название, хештеги, описание и рич-контент.
+// Card — содержимое карточки: название, хештеги, описание, рич-контент,
+// пол и цвет (через запятую, если их несколько).
 type Card struct {
 	Name, Hashtags, Annotation, Rich string
+	Gender, Color                    string
 }
 
 // Card reads the content of card sku (#610, #611): только чтение.
@@ -189,6 +193,16 @@ func (c Client) Card(ctx context.Context, sku string) (Card, error) {
 			out.Annotation = a.Values[0].Value
 		case attrRich:
 			out.Rich = a.Values[0].Value
+		case attrGender, attrColor:
+			vs := make([]string, 0, len(a.Values))
+			for _, v := range a.Values {
+				vs = append(vs, v.Value)
+			}
+			if a.ID == attrGender {
+				out.Gender = strings.Join(vs, ", ")
+			} else {
+				out.Color = strings.Join(vs, ", ")
+			}
 		}
 	}
 	return out, nil

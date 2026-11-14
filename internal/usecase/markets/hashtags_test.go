@@ -150,3 +150,12 @@ func TestCheckHashtags_review(t *testing.T) {
 		t.Error("30 broken tags leave no room for advice, but they are to remove")
 	}
 }
+
+// Ревью #626: пол и цвет — и из характеристик карточки, а не только из названия.
+func TestCheckHashtags_cardAttrs(t *testing.T) {
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка оверсайз", Gender: "Мужской", Color: "черный",
+		Hashtags: "#футболка_женская", Queries: titleNiche, Forms: titleForms})
+	if r, _ := hashtagRow(got.Tags, "#футболка_женская"); r.Why != markets.TagOffTopic {
+		t.Errorf("women's tag on a men's card: %+v", r)
+	}
+}
