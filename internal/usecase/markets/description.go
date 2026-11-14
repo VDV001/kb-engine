@@ -6,6 +6,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 // DescriptionInput — описание карточки (аннотация Ozon) и то, с чем его
@@ -43,27 +44,8 @@ const descriptionMissingMax = 10
 func CheckDescription(in DescriptionInput) DescriptionCheck {
 	out := DescriptionCheck{Length: len([]rune(strings.TrimSpace(in.Description)))}
 	out.Empty = out.Length == 0
-	card := map[string]map[string]bool{"gender": {}, "color": {}} // пол — аудитории (f, m, k), цвет — основы слов
-	cardWords := map[string][]string{}
-	for _, t := range wordsOf(in.Title + " " + in.Gender + " " + in.Color) {
-		switch c := wordClass(t); c { // «Мужской», «черный» из характеристик — те же классы
-		case "gender":
-			maps.Copy(card[c], genderFamily(t))
-			cardWords[c] = append(cardWords[c], t)
-		case "color":
-			card[c][wordStem(t)] = true
-			cardWords[c] = append(cardWords[c], t)
-		}
-	}
-	seen := map[string]bool{}
-	for _, t := range wordsOf(in.Description) {
-		c := wordClass(t)
-		if c == "" || len(card[c]) == 0 || fits(c, t, card[c]) || seen[c+wordStem(t)] {
-			continue
-		}
-		seen[c+wordStem(t)] = true
-		out.Mismatch = append(out.Mismatch, DescriptionMismatch{Kind: c, Found: t, Card: strings.Join(slices.Compact(cardWords[c]), ", ")})
-	}
+	card, cardWords := cardClasses(in)
+	out.Mismatch = mismatches(in.Description, card, cardWords)
 	main, ok := mainQuery(in.Queries)
 	if !ok {
 		return out
@@ -77,6 +59,43 @@ func CheckDescription(in DescriptionInput) DescriptionCheck {
 		have[g] = true
 	}
 	out.Missing = j.missing(need, have, card)
+	return out
+}
+
+// cardClasses — аудитории (f, m, k) и корни цветов товара из названия и
+// характеристик, и сами слова — для подписи.
+func cardClasses(in DescriptionInput) (map[string]map[string]bool, map[string][]string) {
+	card := map[string]map[string]bool{"gender": {}, "color": {}}
+	words := map[string][]string{}
+	for _, t := range wordsOf(in.Title + " " + in.Gender + " " + in.Color) {
+		switch c := wordClass(t); c { // «Мужской», «черный» из характеристик — те же классы
+		case "gender":
+			maps.Copy(card[c], genderFamily(t))
+			words[c] = append(words[c], t)
+		case "color":
+			card[c][colorRoot(t)] = true
+			words[c] = append(words[c], t)
+		}
+	}
+	return card, words
+}
+
+// mismatches — слова описания, которые спорят с товаром, каждое один раз.
+func mismatches(desc string, card map[string]map[string]bool, words map[string][]string) []DescriptionMismatch {
+	var out []DescriptionMismatch
+	seen := map[string]bool{}
+	toks := strings.FieldsFunc(foldWord(desc), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	for i, t := range toks {
+		if i > 0 && (toks[i-1] == "не" || toks[i-1] == "без") { // «не мужская» — не расхождение (ревью #626)
+			continue
+		}
+		c := wordClass(t)
+		if c == "" || len(card[c]) == 0 || fits(c, t, card[c]) || seen[c+t] {
+			continue
+		}
+		seen[c+t] = true
+		out = append(out, DescriptionMismatch{Kind: c, Found: t, Card: strings.Join(slices.Compact(words[c]), ", ")})
+	}
 	return out
 }
 
@@ -107,9 +126,9 @@ func (j *titleJudge) missing(need []string, have map[string]bool, card map[strin
 // и детская), цвет по основе слова (живая проверка #611).
 func fits(class, w string, card map[string]bool) bool {
 	if class == "gender" {
-		return slices.ContainsFunc(slices.Collect(maps.Keys(genderFamily(w))), func(f string) bool { return card[f] })
+		return !audienceClash(w, card)
 	}
-	return card[wordStem(w)]
+	return card[colorRoot(w)]
 }
 
 // DescriptionSystem — роль модели для нового описания (#611).
