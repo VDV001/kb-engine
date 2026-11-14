@@ -187,10 +187,10 @@ func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, con
 	if err := readParts(ctx, m, id, &cp, &np, !haveCard || fresh, !haveNiche || fresh); err != nil {
 		return cardNiche{}, err
 	}
-	if cp.ownErr == nil {
+	if (!haveCard || fresh) && cp.ownErr == nil { // кладется только прочитанное: чтение из памяти срок не продлевает (ревью #627)
 		f.cardParts.put(ck, cp, now)
 	}
-	if np.brandErr == nil {
+	if (!haveNiche || fresh) && np.brandErr == nil {
 		f.nicheParts.put(nk, np, now)
 	}
 	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: cp.own, brands: np.brands, ownErr: cp.ownErr, brandErr: np.brandErr}, nil
