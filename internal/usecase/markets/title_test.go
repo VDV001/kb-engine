@@ -204,7 +204,7 @@ func TestCheckTitle_nicheBrands(t *testing.T) {
 	if slices.Contains(add, "zara") || slices.Contains(add, "скимс") || !slices.Contains(add, "primer") {
 		t.Errorf("add %v: no foreign brands, the own brand stays", add)
 	}
-	if got.NicheBrands != 3 {
-		t.Errorf("niche brands %d, want 3 (без «Бренд не указан»)", got.NicheBrands)
+	if got.NicheBrands != 2 {
+		t.Errorf("niche brands %d, want 2 (без «Бренд не указан» и своего)", got.NicheBrands)
 	}
 }

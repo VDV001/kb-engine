@@ -34,6 +34,8 @@ type TitleInput struct {
 	Queries []NicheQuery
 	Forms   []WordForms
 	Own     []OwnQuery
+	// NicheBrands — бренды ниши из сервиса аналитики: их не советуют (#623)
+	NicheBrands []string
 }
 
 // TitleWhy — почему слово оставить, добавить или убрать.
@@ -41,13 +43,14 @@ type TitleWhy int
 
 // Причины: оставить, добавить (Main, Frequent), убрать (Rare) и почему не убирать.
 const (
-	WhyKeep      TitleWhy = iota // частое в запросах главного
-	WhyMain                      // слово главного запроса, а в названии его нет
-	WhyFrequent                  // частое в запросах главного, а в названии его нет
-	WhyRare                      // в запросах главного почти не встречается
-	WhyBrand                     // бренд или продавец товара
-	WhyAttribute                 // цвет или пол: свойство товара, хоть и редкое
-	WhyOwn                       // редкое, но товар уже находят по запросу с ним
+	WhyKeep       TitleWhy = iota // частое в запросах главного
+	WhyMain                       // слово главного запроса, а в названии его нет
+	WhyFrequent                   // частое в запросах главного, а в названии его нет
+	WhyRare                       // в запросах главного почти не встречается
+	WhyBrand                      // бренд или продавец товара
+	WhyAttribute                  // цвет или пол: свойство товара, хоть и редкое
+	WhyOwn                        // редкое, но товар уже находят по запросу с ним
+	WhyNicheBrand                 // частое, но это бренд ниши: чужой бренд в названии — риск снятия карточки
 )
 
 // TitleWord — слово названия или совет; Share — доля спроса запросов главного
@@ -68,6 +71,8 @@ type TitleCheck struct {
 	Total, Related int
 	Words          []TitleWord
 	Add, Remove    []TitleWord
+	Dropped        []TitleWord // частые слова, не советуемые как бренды ниши
+	NicheBrands    int         // сколько брендов ниши учтено
 }
 
 const (
@@ -99,7 +104,18 @@ func CheckTitle(in TitleInput) TitleCheck {
 			have[g] = true
 		}
 	}
-	out.Add = append(out.Add, j.often(have, classes)...)
+	brands := nicheBrands(in.NicheBrands, j.brand)
+	out.NicheBrands = len(brands.names)
+	for _, w := range j.often(have, classes) {
+		if brands.words[w.Word] {
+			w.Why = WhyNicheBrand
+			out.Dropped = append(out.Dropped, w)
+			continue
+		}
+		if len(out.Add) < len(need)+titleAddMax {
+			out.Add = append(out.Add, w)
+		}
+	}
 	return out
 }
 
@@ -233,8 +249,50 @@ func (j *titleJudge) often(have, classes map[string]bool) []TitleWord {
 	slices.SortFunc(out, func(a, b TitleWord) int {
 		return cmp.Or(cmp.Compare(b.Share, a.Share), strings.Compare(a.Word, b.Word))
 	})
-	return out[:min(len(out), titleAddMax)]
+	return out
 }
+
+// brandSet — бренды ниши: названия и слова, по которым их узнают в запросах.
+type brandSet struct {
+	names map[string]bool
+	words map[string]bool
+}
+
+// nicheBrands collects the niche's brands but own ones: слово бренда как есть
+// и латиница кириллицей («zara» → «зара»), у многословного — латинские слова от трех букв.
+func nicheBrands(names []string, own map[string]bool) brandSet {
+	b := brandSet{names: map[string]bool{}, words: map[string]bool{}}
+	for _, n := range names {
+		ws := wordsOf(n)
+		if len(ws) == 0 || foldWord(strings.TrimSpace(n)) == "бренд не указан" || slices.ContainsFunc(ws, func(w string) bool { return own[w] }) {
+			continue
+		}
+		b.names[strings.Join(ws, " ")] = true
+		for _, w := range ws {
+			if len(ws) > 1 && (!isLatin(w) || utf8.RuneCountInString(w) < 3) {
+				continue
+			}
+			b.words[w] = true
+			if isLatin(w) {
+				b.words[translit(w)] = true
+			}
+		}
+	}
+	return b
+}
+
+func isLatin(w string) bool {
+	return strings.IndexFunc(w, func(r rune) bool { return r > unicode.MaxASCII }) < 0 && strings.IndexFunc(w, unicode.IsLetter) >= 0
+}
+
+// ponytail: побуквенная транслитерация ловит «zara» → «зара», «skims» → «скимс»,
+// но не произношение («nike» → «нике», а в запросах «найк»); потолок — эта
+// таблица, апгрейд — словарь брендов с русскими написаниями.
+var latinToCyr = strings.NewReplacer("sch", "щ", "sh", "ш", "ch", "ч", "zh", "ж", "kh", "х", "ts", "ц", "yu", "ю", "ya", "я", "yo", "е",
+	"a", "а", "b", "б", "c", "к", "d", "д", "e", "е", "f", "ф", "g", "г", "h", "х", "i", "и", "j", "дж", "k", "к", "l", "л", "m", "м",
+	"n", "н", "o", "о", "p", "п", "q", "к", "r", "р", "s", "с", "t", "т", "u", "у", "v", "в", "w", "в", "x", "кс", "y", "и", "z", "з")
+
+func translit(w string) string { return latinToCyr.Replace(w) }
 
 // titleStop — служебные слова: по ним не судят.
 var titleStop = map[string]bool{"для": true, "без": true, "или": true, "под": true, "над": true, "при": true, "про": true, "шт": true,
