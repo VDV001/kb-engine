@@ -252,6 +252,17 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	if _, err := s.forecast(context.Background(), "", srv.Client(), own, src, own, today); err == nil || !strings.Contains(err.Error(), "обе ниши") {
 		t.Errorf("file + MPStats: %v", err)
 	}
+	// Выключенное подключение не отдает и запомненное (ревью 14.11): как у кабинета Ozon.
+	if err := s.updateConfig(func(cfg *desktopconfig.Config) {
+		for i := range cfg.Connections {
+			cfg.Connections[i].Enabled = false
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.forecast(context.Background(), "", srv.Client(), src, src, own, today); err == nil || !strings.Contains(err.Error(), "выключено") {
+		t.Errorf("switched off MPStats: err = %v, want «выключено»", err)
+	}
 }
 
 // «Ниша → Из MPStats» (решение владельца 13.11): подкатегории выбранной
