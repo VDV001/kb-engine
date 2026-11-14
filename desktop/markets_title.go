@@ -45,7 +45,7 @@ type titleView struct {
 
 // MarketsTitle checks the title of Ozon card sku against its niche's queries in MPStats.
 func (a *App) MarketsTitle(sku, title string) (titleView, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, 2*time.Minute)
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute) // карточка, потом ниша — до 90 с каждая с повтором (ревью #621)
 	defer cancel()
 	return a.settings.titleCheck(ctx, nil, sku, title)
 }
@@ -95,6 +95,9 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 		return titleView{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
 	}
 	r := markets.CheckTitle(markets.TitleInput{Title: title, Brands: []string{card.Brand, card.Seller}, Queries: qs, Forms: ws, Own: own})
+	if r.Main.Text == "" { // пустой ответ — не «добавить и убрать нечего» (ревью #621)
+		return titleView{}, errors.New("у ниши «" + card.Niche + "» в MPStats нет запросов за 30 дней — проверить название не по чему")
+	}
 	v := titleView{SKU: strconv.FormatInt(id, 10), Title: title, Niche: card.Niche, Main: r.Main.Text, MainCount: r.Main.Count, MainItems: r.Main.Items,
 		Total: r.Total, Related: r.Related, Words: titleRows(r.Words), Add: titleRows(r.Add), Remove: titleRows(r.Remove)}
 	if ownErr != nil && !errors.Is(ownErr, mpstats.ErrNotFound) { // пусто — товар не находят ни по одному запросу, это не сбой

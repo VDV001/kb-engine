@@ -6677,14 +6677,15 @@ function shCard() {
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
-const shTitles = new Map(); // sku → { busy } | { v } | { err }
+const shTitles = new Map(); // кабинет|SKU|название → { busy } | { v } | { err }: переименовали или другой кабинет — проверка заново (ревью #621)
+const shTitleKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}|${p.name}`;
 const shTitlePct = (x) => (x > 0 && x < 0.001 ? "меньше 0,1" : (Math.round(x * 1000) / 10).toString().replace(".", ",")) + " %";
 function shTitleWhy(w, v) {
   const main = `«${v.main}»`;
   return {
     keep: `${shTitlePct(w.share)} спроса запросов ${main}`,
     main: `слово главного запроса ${main}, а в названии его нет`,
-    often: `${shTitlePct(w.share)} спроса запросов ${main} — добавьте, если это про Ваш товар`,
+    often: `${shTitlePct(w.share)} спроса запросов ${main} — добавьте, если это про Ваш товар${/[a-z]/.test(w.word) ? " и это не чужой бренд: за чужой бренд в названии Ozon снимает карточку" : ""}`,
     rare: `в запросах ${main} почти не встречается: ${shTitlePct(w.share)} спроса`,
     brand: "бренд или продавец товара — оставить",
     attr: "цвет или пол — свойство товара, оставить, хоть его и редко ищут",
@@ -6693,7 +6694,7 @@ function shTitleWhy(w, v) {
 }
 function shTitleCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
-  const t = shTitles.get(p.sku), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера; три запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
+  const t = shTitles.get(shTitleKey(p)), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера; три запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
   let body = "";
   if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
   if (t && t.v) {
@@ -6714,9 +6715,10 @@ document.addEventListener("click", async (e) => {
   hideTip();
   const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shTitle;
   if (!p || p.sku !== sku) return;
-  if (!native() || !native().MarketsTitle) { shTitles.set(sku, { err: "Проверка названия работает в окне приложения." }); return shCard(); }
-  shTitles.set(sku, { busy: true }); shCard();
-  try { shTitles.set(sku, { v: await native().MarketsTitle(sku, p.name) }); } catch (err) { shTitles.set(sku, { err: "Название не проверено: " + errText(err) }); }
+  const key = shTitleKey(p);
+  if (!native() || !native().MarketsTitle) { shTitles.set(key, { err: "Проверка названия работает в окне приложения." }); return shCard(); }
+  shTitles.set(key, { busy: true }); shCard();
+  try { shTitles.set(key, { v: await native().MarketsTitle(sku, p.name) }); } catch (err) { shTitles.set(key, { err: "Название не проверено: " + errText(err) }); }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard(); // товар сменили, пока читали — ответ дождется его
 });
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.
