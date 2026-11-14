@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -77,5 +79,38 @@ func TestShopExtra_onlyChosen(t *testing.T) {
 		if u, _ := x[0].Describe("shop_summary", nil); u.ID != tt.want {
 			t.Errorf("only %v: cabinet %+v", tt.only, u)
 		}
+	}
+}
+
+// Ссылка, которая не прочиталась, — не источник ответа (ревью 14.11): по ходу
+// окно показывает попытку, а «взято» под ответом — только прочитанные.
+func TestChat_AskUsesOnlyReadLinks(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	d.model = func(desktopconfig.Chat, string) chat.Model { return &searchModel{n: 1} }
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", Mode: desktopconfig.ChatModeTools}, ""); err != nil {
+		t.Fatal(err)
+	}
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		if strings.Contains(ref, "down.example") {
+			return chat.Doc{}, errors.New("нет ответа")
+		}
+		return chat.Doc{Ref: ref, Title: "ТЗ", Text: "текст"}, nil
+	}
+	var steps []chat.Use
+	d.step = func(u chat.Use) { steps = append(steps, u) }
+	c, err := d.Ask(askReq{Question: "сравни https://example.com/tz и https://down.example/tz"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(steps, func(u chat.Use) bool { return u.Name == "down.example" }) {
+		t.Errorf("steps %+v: the attempt to go out must be shown", steps)
+	}
+	saved, err := d.load(c.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []chat.Use{{Kind: chat.UseWeb, Name: "example.com", What: "ссылка из вопроса"}}
+	if got := saved.Messages[1].Uses; !slices.Equal(got, want) {
+		t.Errorf("saved uses %+v, want only the read link", got)
 	}
 }

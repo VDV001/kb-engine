@@ -302,13 +302,18 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		rec.ID, rec.Title = newChatID(), title(question)
 	}
 	explicit, auto := attachRefs(refs, question)
-	web := d.webSteps(append(slices.Clone(explicit), auto...))
+	d.webSteps(append(slices.Clone(explicit), auto...))
 	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
 		return chatRecord{}, err
 	}
 	linked, notes := d.readQuestionLinks(ctx, auto, maxAttached-len(attached))
 	attached = append(attached, linked...)
+	read := make([]string, 0, len(attached))
+	for _, doc := range attached {
+		read = append(read, doc.Ref)
+	}
+	web := webUses(read) // источник ответа — только прочитанная ссылка (ревью 14.11)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
 	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
