@@ -5887,13 +5887,50 @@ const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.g
 const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
 function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
-// mkTab переключает «Ниша», «Прогноз», «Магазин» и «План» (отдельная страница, отзыв 14.11).
+// «Конкуренты» (#613): топ продавцов ниши из MPStats и изменения к прошлому периоду.
+const rv = { seq: 0 };
+function rvPage() {
+  mkLoadCats(); // подсказки путей MPStats
+  const p = $("#rv-path");
+  if (!p.value) p.value = (mk.mps && mk.mps.path) || (fc.paths[0].startsWith("mpstats:") ? fcMpsPath(fc.paths[0]) : "");
+}
+const rvPct = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)} %`;
+function rvCh(x, title) {
+  if (!x) return "";
+  return `<span class="rv-ch ${x > 0 ? "up" : "dn"}"${mkTip(title, "к прошлому такому же периоду")}>${rvPct(x)}</span>`;
+}
+function rvRender(v) {
+  $("#rv-wrap").hidden = $("#rv-how").hidden = $("#rv-note").hidden = !v;
+  if (!v) return;
+  $("#rv-note").textContent = `${v.path} · ${v.period}, сравнение с ${v.prev}` + (v.note ? " · " + v.note : "");
+  const n = (x) => `<td class="n">${x}</td>`;
+  $("#rv-table").innerHTML = `<thead><tr><th>Продавец</th><th class="n">Доля ниши</th><th class="n">Продажи, шт</th><th class="n">Выручка</th><th class="n">Средняя цена</th><th class="n">Товаров</th><th class="n">Рейтинг</th></tr></thead><tbody>` +
+    (v.rows.length ? v.rows.map((r) => `<tr><td>${esc(r.name || "—")}${r.new ? ` <span class="mk-pill peak"${mkTip("Новый", "в прошлом периоде продавца в нише не было")}>новый</span>` : ""}</td>` +
+      n(`${Math.round(r.share * 100)} %`) + n(fmt(Math.round(r.sales)) + rvCh(r.salesChange, "Продажи")) + n(fmt(Math.round(r.revenue)) + " ₽") +
+      n(fmt(Math.round(r.avgPrice)) + " ₽" + rvCh(r.priceChange, "Средняя цена")) +
+      n(fmt(r.items) + (r.itemsAdded ? `<span class="rv-ch up"${mkTip("Новых товаров", "насколько выросло число товаров продавца в нише: новинки или новые размеры")}>+${fmt(r.itemsAdded)}</span>` : "")) +
+      n(r.rating ? r.rating.toFixed(1) : "—") + "</tr>").join("") : `<tr><td colspan="7">В нише за эти дни продаж нет.</td></tr>`) + "</tbody>";
+}
+$("#rv-go").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsCompetitors) return mkErr("Конкуренты работают в окне приложения.");
+  const path = $("#rv-path").value.trim();
+  if (!path) return mkErr("Впишите нишу: путь категории Ozon, как в MPStats.");
+  const seq = ++rv.seq;
+  mkErr(""); $("#rv-go").textContent = "Читаю MPStats…"; $("#rv-go").disabled = true;
+  try {
+    const v = await native().MarketsCompetitors(path, Number($("#rv-days").value));
+    if (seq === rv.seq) rvRender(v);
+  } catch (err) { if (seq === rv.seq) { rvRender(null); mkErr("Конкуренты не прочитаны: " + errText(err)); } }
+  $("#rv-go").textContent = "Показать"; $("#rv-go").disabled = false;
+});
+// mkTab переключает «Ниша», «Прогноз», «Магазин», «План» (отдельная страница, отзыв 14.11) и «Конкуренты».
 function mkTab(id) {
   mkErr(""); // сообщение одной вкладки не переезжает на другую (живая проверка 14.11)
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
   $("#mk-mps-bar").hidden = id !== "niche" || !(mk.mpsOpen || mkIsMPS()); // панель MPStats — по своему состоянию
-  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else if (id === "plan") plPage(); else if (id === "conn") cnRender(); else mkRender(); // «Ниша» сама решает, что из нее видно
+  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else if (id === "plan") plPage(); else if (id === "conn") cnRender(); else if (id === "rivals") rvPage(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");

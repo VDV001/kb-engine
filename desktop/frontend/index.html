@@ -174,6 +174,7 @@
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="forecast" data-tip="Прогноз" data-tip-b="сколько Вы продадите по дням и когда пик: по трем файлам — ниша прошлого года, ниша сейчас, свои продажи">Прогноз</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="shop" data-tip="Магазин" data-tip-b="Ваш магазин из кабинета Ozon по ключу или по отчету «По товарам»: выкуп, отмены, остатки, советы и что не так с каждым товаром">Магазин</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="plan" data-tip="План продаж" data-tip-b="сколько продать и довезти по неделям и по какой цене, с выгрузкой в Excel; строится по источникам «Прогноза»">План</button>
+          <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="rivals" data-tip="Конкуренты" data-tip-b="кто в нише продает больше всех и что у них изменилось к прошлому такому же периоду: продажи, цена, новые товары; по ключу MPStats">Конкуренты</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="conn" id="mk-conn" data-tip="Подключения" data-tip-b="кабинеты маркетплейсов и MPStats: что дает каждый ключ, когда был последний обмен, проверка">Подключения</button>
         </nav>
       </div>
@@ -237,6 +238,17 @@
         <div class="mk-kpis" id="mk-kpis" hidden></div>
         <div class="mk-chart" id="mk-chart" hidden></div>
         <div class="mk-how" id="mk-fc-how" hidden><b>Как посчитано.</b> Из файла 1 берется форма сезона: как продажи ниши по дням после этого периода в прошлом году соотносились с тем же периодом, что сейчас в файле 2. Из файла 2 — сколько ниша продает сейчас; отсюда рост к прошлому году. Из своих продаж — Ваша доля в нише по штукам за те же дни. Прогноз = продажи ниши сейчас × форма сезона × Ваша доля. Диапазон — насколько прошлый год прыгал вокруг своей средней за неделю. Пик — день с наибольшим прогнозом.</div>
+      </div>
+      <div class="mk-pl" id="mk-rv" data-mk-pane="rivals" hidden>
+        <p class="mk-intro" data-tip="Конкуренты ниши" data-tip-b="топ-20 продавцов по выручке из MPStats; изменения — к такому же числу дней перед выбранными">Конкуренты ниши: кто продает больше всех и что у них изменилось</p>
+        <div class="mk-plan-in">
+          <label data-tip="Ниша" data-tip-b="путь категории Ozon, как в MPStats; начните печатать — окно подскажет">Ниша в MPStats <input id="rv-path" class="rv-path" list="mk-mps-cats" placeholder="Одежда/Женщинам/…" autocomplete="off" spellcheck="false"></label>
+          <label data-tip="Период" data-tip-b="дней до вчера; сравнение — с таким же числом дней перед ними">Дней <select class="mk-sel" id="rv-days"><option value="7">7</option><option value="14">14</option><option value="30" selected>30</option><option value="60">60</option><option value="90">90</option></select></label>
+          <button class="btn mk-main" type="button" id="rv-go">Показать</button>
+        </div>
+        <p class="mk-fc-note" id="rv-note" hidden></p>
+        <div class="mk-plan-wrap" id="rv-wrap" hidden><table class="mk-plan-table" id="rv-table"></table></div>
+        <p class="mk-how" id="rv-how" hidden><b>Как посчитано.</b> Продавцы ниши и их продажи — из MPStats за выбранные дни до вчера; изменения — к такому же числу дней перед ними. «Новых товаров» — насколько выросло число товаров продавца в нише: новинки или новые размеры. «Новый» — в прошлом периоде продавца в нише не было.</p>
       </div>
       <div class="mk-cn" id="mk-cn" data-mk-pane="conn" hidden>
         <div class="mk-cn-intro"><b>Что дает ключ маркетплейса.</b> Через API Ozon и Wildberries приходят только Ваши данные: продажи, заказы, остатки, деньги. Продажи рынка и конкурентов дает MPStats по своему ключу или выгрузка файлом. Ключи хранятся в Связке ключей Мака и уходят только в свой сервис.</div>
