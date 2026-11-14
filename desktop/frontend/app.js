@@ -5896,7 +5896,7 @@ function rvPage() {
 }
 const rvPct = (x) => `${x > 0 ? "+" : x < 0 ? "−" : ""}${Math.round(Math.abs(x) * 100)} %`;
 function rvCh(x, title) {
-  if (!x) return "";
+  if (Math.round(Math.abs(x) * 100) === 0) return ""; // «±0 %» — не изменение
   return `<span class="rv-ch ${x > 0 ? "up" : "dn"}"${mkTip(title, "к прошлому такому же периоду")}>${rvPct(x)}</span>`;
 }
 function rvRender(v) {
