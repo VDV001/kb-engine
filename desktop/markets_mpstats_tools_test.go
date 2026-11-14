@@ -170,12 +170,14 @@ func TestNichesMPStatsSeason(t *testing.T) {
 // строка «Текущая категория», сейчас и год назад.
 func TestNichesMPStatsTop(t *testing.T) {
 	s, _, _ := newServerSettings(t)
+	cats := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		switch r.URL.Path {
 		case "/api/user/report_api_limit":
 			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
 		case "/api/oz/get/categories":
+			cats++
 			_, _ = w.Write([]byte(`[{"path":"Одежда/Брюки"},{"path":"Одежда/Куртки"},{"path":"Обувь/Кеды"}]`))
 		case "/api/oz/get/category/subcategories":
 			sales := map[string]int{"Одежда": 300, "Обувь": 100}[q.Get("path")]
@@ -198,5 +200,9 @@ func TestNichesMPStatsTop(t *testing.T) {
 	}
 	if v.File != "MPStats · все категории" || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда" || v.Niches[0].Values["growth"] != 1 || v.Niches[1].Name != "Обувь" {
 		t.Errorf("top = %+v", v)
+	}
+	// Повтор за те же дни — из памяти: 34 категории MPStats грузит 3-4 минуты (замер 14.11).
+	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 5, 0, 0, time.UTC)); err != nil || cats != 1 {
+		t.Errorf("second read: %v, categories asked %d times", err, cats)
 	}
 }
