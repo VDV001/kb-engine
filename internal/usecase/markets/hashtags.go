@@ -13,6 +13,7 @@ import (
 // сравнивают (#610): название, свои бренды, запросы ниши, свои запросы товара.
 type HashtagInput struct {
 	Title, Hashtags string
+	Gender, Color   string // характеристики карточки «Пол» и «Цвет» (ревью #626)
 	Brands          []string
 	Queries         []NicheQuery
 	Forms           []WordForms
