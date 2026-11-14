@@ -194,3 +194,19 @@ func TestMCP_tooLarge(t *testing.T) {
 		t.Errorf("too large: %v, want the size named", err)
 	}
 }
+
+// Бренды ниши (#623): ozon_category report=brands, имена из data.
+func TestMCP_nicheBrands(t *testing.T) {
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_category": func(a map[string]any) (string, bool) {
+			if a["path"] != "Одежда/Футболки" || a["report"] != "brands" {
+				return "wrong arguments", true
+			}
+			return `{"data":[{"name":"Бренд не указан","items":10},{"name":"Zara","items":3}],"summary":{}}`, false
+		},
+	})
+	got, err := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}.NicheBrands(context.Background(), "Одежда/Футболки")
+	if err != nil || len(got) != 2 || got[1] != "Zara" {
+		t.Fatalf("brands %v, %v", got, err)
+	}
+}
