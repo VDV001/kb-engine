@@ -204,5 +204,11 @@ func (p Plan) SupplyLate() bool {
 	return !by.IsZero() && by.Before(p.from)
 }
 
+// OutOfStock is the day the stock ran short of demand; ноль — хватило.
+func (p Plan) OutOfStock() time.Time { return p.out }
+
+// Demand is the forecast's demand over the plan, штук.
+func (p Plan) Demand() float64 { return p.demand }
+
 // ShortForPeak — остаток кончится раньше дня пика или в него.
 func (p Plan) ShortForPeak() bool { return !p.out.IsZero() && !p.out.After(p.peak) }

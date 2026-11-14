@@ -41,8 +41,22 @@ type planWeek struct {
 	Short    bool    `json:"short"`
 }
 
+// planDay — день плана для «План по дням».
+type planDay struct {
+	Day      string  `json:"day"`
+	Demand   float64 `json:"demand"`
+	Sell     float64 `json:"sell"`
+	StockEnd float64 `json:"stockEnd"`
+	Price    float64 `json:"price"`
+	Profit   float64 `json:"profit"`
+}
+
 type planView struct {
 	Weeks        []planWeek `json:"weeks"`
+	Days         []planDay  `json:"days"`
+	Demand       float64    `json:"demand"` // спрос прогноза за весь план
+	Stock        float64    `json:"stock"`
+	Out          string     `json:"out"` // день, когда остатка не хватит; пусто — хватит
 	Sell         float64    `json:"sell"`
 	Profit       float64    `json:"profit"`
 	SupplyQty    float64    `json:"supplyQty"`
@@ -77,7 +91,14 @@ func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client,
 	f.planMu.Lock()
 	f.lastPlan = &p // «Скачать Excel» пишет ровно этот план (ревью #599)
 	f.planMu.Unlock()
-	v := planView{Weeks: []planWeek{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate()}
+	v := planView{Weeks: []planWeek{}, Days: []planDay{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate(),
+		Demand: r(p.Demand()), Stock: in.Stock}
+	if out := p.OutOfStock(); !out.IsZero() {
+		v.Out = out.Format("02.01.2006")
+	}
+	for _, d := range p.Days() {
+		v.Days = append(v.Days, planDay{Day: d.Day.Format("02.01.2006"), Demand: r(d.Demand), Sell: r(d.Sell), StockEnd: r(d.StockEnd), Price: r(d.Price), Profit: r(d.Profit)})
+	}
 	qty, by := p.Supply()
 	v.SupplyQty = r(qty)
 	if !by.IsZero() {
