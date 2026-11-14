@@ -136,3 +136,31 @@ func TestTitleCheckView_refusals(t *testing.T) {
 		}
 	}
 }
+
+// У ниши нет запросов — это отказ с причиной, а не «добавить и убрать нечего» (ревью #621).
+func TestTitleCheckView_emptyNiche(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	srv := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		if name == "ozon_category" {
+			return `{"queries":[],"words":[]}`, false
+		}
+		if a["report"] == "full" {
+			return titleCard, false
+		}
+		return `[]`, false
+	})
+	s.mpstatsURL, s.mcpURL = srv.URL, srv.URL+"/mcp"
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская"); err == nil || !strings.Contains(err.Error(), "нет запросов") {
+		t.Errorf("empty niche: %v, want «нет запросов»", err)
+	}
+}
+
+// Истекший срок — по-русски, а не «context deadline exceeded» (ревью #621).
+func TestMPStatsMessage_deadline(t *testing.T) {
+	if m := mpstatsMessage(context.DeadlineExceeded); strings.Contains(m, "deadline") {
+		t.Errorf("message %q", m)
+	}
+}
