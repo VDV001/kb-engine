@@ -45,13 +45,16 @@ const photoLeaderComments = 10
 // топ n по выручке среди товаров с отзывами и рейтингом.
 func CheckPhotos(card PhotoCard, ps []NicheProduct, n int) PhotoCheck {
 	var out PhotoCheck
-	for _, p := range ps {
-		if p.Comments >= photoLeaderComments && p.Rating > 0 {
-			out.Leaders = append(out.Leaders, p)
+	cand := slices.Clone(ps)
+	slices.SortStableFunc(cand, func(a, b NicheProduct) int { return cmp.Compare(b.Revenue, a.Revenue) })
+	sellers := map[string]bool{}
+	for _, p := range cand {
+		if len(out.Leaders) == n || p.Comments < photoLeaderComments || p.Rating <= 0 || p.Seller != "" && sellers[p.Seller] {
+			continue // один на продавца: топ бывает одним продавцом в вариантах (живая проверка #608)
 		}
+		sellers[p.Seller] = true
+		out.Leaders = append(out.Leaders, p)
 	}
-	slices.SortStableFunc(out.Leaders, func(a, b NicheProduct) int { return cmp.Compare(b.Revenue, a.Revenue) })
-	out.Leaders = out.Leaders[:min(len(out.Leaders), n)]
 	if len(out.Leaders) == 0 {
 		return out
 	}
