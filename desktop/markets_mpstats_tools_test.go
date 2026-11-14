@@ -105,3 +105,22 @@ func TestMPStatsShareInRow(t *testing.T) {
 		}
 	}
 }
+
+// Разрешение чату ставится сразу при добавлении, как у кабинета Ozon (отзыв
+// 14.11: «в подключениях для mpstats тоже надо эту галочку»); по умолчанию нет.
+func TestAddMPStatsWithShare(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	srv := fakeMPStatsChat(t)
+	ep := checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}
+	on, err := s.addMPStats(context.Background(), ep, "С чатом", "m-1", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	off, err := s.addMPStats(context.Background(), ep, "Без чата", "m-2", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !on.Share || off.Share {
+		t.Errorf("share: on %v, off %v", on.Share, off.Share)
+	}
+}
