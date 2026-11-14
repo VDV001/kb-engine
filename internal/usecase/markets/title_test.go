@@ -139,6 +139,20 @@ func TestCheckTitle_shareAndProof(t *testing.T) {
 	}
 }
 
+// Словоформы MPStats неполные (живой замер 14.11: у «базовая» нет формы
+// «базовый»), поэтому свой запрос товара узнается и по основе слова.
+func TestCheckTitle_ownQueryOtherForm(t *testing.T) {
+	forms := []markets.WordForms{{Word: "базовая", Forms: []string{"базовая"}}, {Word: "женская", Forms: []string{"женская", "женские"}}}
+	got := markets.CheckTitle(markets.TitleInput{Title: "Футболка женская базовая", Queries: titleNiche, Forms: forms,
+		Own: []markets.OwnQuery{{Text: "базовый гардероб женский", Count: 47, Position: 9}}})
+	if b, _ := titleWord(got.Words, "базовая"); b.Why != markets.WhyOwn || b.Query != "базовый гардероб женский" {
+		t.Errorf("базовая %+v, want kept by the own query in another form", b)
+	}
+	if len(got.Remove) != 0 {
+		t.Errorf("remove %+v, want none", got.Remove)
+	}
+}
+
 // Без запросов ниши судить не по чему: ни главного, ни советов.
 func TestCheckTitle_noQueries(t *testing.T) {
 	got := markets.CheckTitle(markets.TitleInput{Title: "Футболка женская"})
