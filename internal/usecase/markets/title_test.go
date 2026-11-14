@@ -221,3 +221,40 @@ func TestCheckTitle_addCap(t *testing.T) {
 		t.Errorf("add %d words, want 5", len(got.Add))
 	}
 }
+
+// Ревью #624: бренд ниши — только однословное название, и слово, которое
+// склоняется в запросах («топ, топы»), — обычное слово, а не бренд; слово
+// главного запроса и слово названия проходят тот же фильтр.
+func TestCheckTitle_nicheBrandsReview(t *testing.T) {
+	niche := []markets.NicheQuery{
+		{Text: "футболка zara", Count: 100_000, Items: 800},
+		{Text: "футболка zara топ", Count: 9_000, Items: 300},
+		{Text: "футболка zara love", Count: 9_000, Items: 300},
+		{Text: "футболка zara хлопок", Count: 9_000, Items: 300},
+	}
+	forms := []markets.WordForms{{Word: "топ", Forms: []string{"топ", "топы"}}}
+	brands := []string{"Zara", "Top", "Love Republic"}
+	got := markets.CheckTitle(markets.TitleInput{Title: "Футболка", Queries: niche, Forms: forms, NicheBrands: brands})
+	var add, dropped []string
+	for _, w := range got.Add {
+		add = append(add, w.Word)
+	}
+	for _, w := range got.Dropped {
+		dropped = append(dropped, w.Word)
+	}
+	if !slices.Equal(dropped, []string{"zara"}) {
+		t.Errorf("dropped %v, want the main query's brand zara only", dropped)
+	}
+	for _, w := range []string{"топ", "love", "хлопок"} {
+		if !slices.Contains(add, w) {
+			t.Errorf("add %v lacks %q: an inflected word and a word of a multi-word brand are ordinary", add, w)
+		}
+	}
+	if got.NicheBrands != 2 {
+		t.Errorf("niche brands %d, want 2 single-word ones", got.NicheBrands)
+	}
+	in := markets.CheckTitle(markets.TitleInput{Title: "Футболка Zara", Queries: niche, Forms: forms, NicheBrands: brands})
+	if len(in.Remove) != 1 || in.Remove[0].Word != "zara" || in.Remove[0].Why != markets.WhyNicheBrand {
+		t.Errorf("remove %+v: a niche brand in the title is to remove", in.Remove)
+	}
+}
