@@ -298,13 +298,14 @@ func TestNichesMPStats(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
+	if v.Leaf || v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
 		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
 		t.Errorf("view = %+v", v)
 	}
 	// Конечная ниша без подкатегорий — в таблице она сама (живая проверка 13.11: «Пижамы женские»).
-	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" {
-		t.Errorf("leaf: %v, %+v", err, v.Niches)
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" || !v.Leaf {
+		// Leaf: «Внутрь» на конечной нише не меняет таблицу, а говорит, что внутри ниш нет (живая проверка 14.11).
+		t.Errorf("leaf: %v, %+v, leaf %v", err, v.Niches, v.Leaf)
 	}
 	// Путь, скопированный с вида «Одежда / Куртки», — тот же путь (живая проверка 13.11).
 	if v, err := s.nichesMPStats(context.Background(), srv.Client(), " Одежда / ", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || v.File != "MPStats · Одежда" {
