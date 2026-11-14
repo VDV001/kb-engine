@@ -54,16 +54,9 @@ func (f *folderSettings) hashtagsCheck(ctx context.Context, hc *http.Client, bas
 	if err != nil || id <= 0 {
 		return hashtagsView{}, errors.New("хештеги проверяются у товара Ozon с числовым SKU")
 	}
-	oc, _, err := f.ozonCabinet(cab, base, hc)
+	card, err := f.ozonCard(ctx, hc, base, cab, id)
 	if err != nil {
 		return hashtagsView{}, err
-	}
-	card, err := oc.Card(ctx, strconv.FormatInt(id, 10))
-	if errors.Is(err, ozon.ErrNoCard) {
-		return hashtagsView{}, errors.New("товара с этим SKU нет в кабинете — загрузите «Магазин» заново")
-	}
-	if err != nil {
-		return hashtagsView{}, ozonErr("Ozon", err)
 	}
 	cl, connID, err := f.mpstatsFirst(hc)
 	if err != nil {
@@ -73,13 +66,29 @@ func (f *folderSettings) hashtagsCheck(ctx context.Context, hc *http.Client, bas
 	if err != nil {
 		return hashtagsView{}, err
 	}
-	r := markets.CheckHashtags(markets.HashtagInput{Title: card.Name, Hashtags: card.Hashtags, Brands: []string{n.card.Brand, n.card.Seller},
+	r := markets.CheckHashtags(markets.HashtagInput{Title: card.Name, Gender: card.Gender, Color: card.Color, Hashtags: card.Hashtags, Brands: []string{n.card.Brand, n.card.Seller},
 		Queries: n.qs, Forms: n.ws, Own: n.own, NicheBrands: n.brands})
 	if r.Main.Text == "" {
 		return hashtagsView{}, errors.New("у ниши «" + n.card.Niche + "» в MPStats нет запросов за 30 дней — проверить хештеги не по чему")
 	}
 	return hashtagsView{SKU: strconv.FormatInt(id, 10), Niche: n.card.Niche, Main: r.Main.Text, Total: r.Total, Max: r.Ozon30, TooMany: r.TooMany,
 		Tags: hashtagRows(r.Tags), Remove: hashtagRows(r.Remove), Add: hashtagRows(r.Add), Note: titleNote(n.ownErr, n.brandErr)}, nil
+}
+
+// ozonCard reads card id of cabinet cab: нет товара — понятная причина.
+func (f *folderSettings) ozonCard(ctx context.Context, hc *http.Client, base, cab string, id int64) (ozon.Card, error) {
+	oc, _, err := f.ozonCabinet(cab, base, hc)
+	if err != nil {
+		return ozon.Card{}, err
+	}
+	card, err := oc.Card(ctx, strconv.FormatInt(id, 10))
+	if errors.Is(err, ozon.ErrNoCard) {
+		return ozon.Card{}, errors.New("товара с этим SKU нет в кабинете — загрузите «Магазин» заново")
+	}
+	if err != nil {
+		return ozon.Card{}, ozonErr("Ozon", err)
+	}
+	return card, nil
 }
 
 func hashtagRows(rs []markets.HashtagRow) []hashtagRow {

@@ -6717,7 +6717,7 @@ const shDescs = new Map(); // кабинет|SKU → { busy, draftBusy, v, draft
 const shDescKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
 function shDescCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
-  const t = shDescs.get(shDescKey(p)) || {}, btn = `<button class="btn" type="button" data-sh-desc="${esc(p.sku)}"${t.busy ? " disabled" : ""}${mkTip("Проверить описание", "описание из кабинета Ozon против пола и цвета карточки и запросов ниши MPStats; без модели")}>${t.busy ? "Читаю Ozon и MPStats…" : t.v ? "Проверить еще раз" : "Проверить описание"}</button>`;
+  const t = shDescs.get(shDescKey(p)) || {}, btn = `<button class="btn" type="button" data-sh-desc="${esc(p.sku)}"${t.busy || t.draftBusy ? " disabled" : ""}${mkTip("Проверить описание", "описание из кабинета Ozon против пола и цвета карточки и запросов ниши MPStats; без модели")}>${t.busy ? "Читаю Ozon и MPStats…" : t.v ? "Проверить еще раз" : "Проверить описание"}</button>`;
   let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
   if (t.v) {
     const v = t.v, kind = { gender: "пол", color: "цвет" };
@@ -6744,8 +6744,9 @@ document.addEventListener("click", async (e) => {
     try { shDescs.set(key, { ...shDescs.get(key), draftBusy: false, draft: await native().MarketsDescriptionDraft(sh.v.path, sku, true) }); }
     catch (err) { shDescs.set(key, { ...shDescs.get(key), draftBusy: false, draftErr: "Описание не написано: " + errText(err) }); }
   } else {
-    shDescs.set(key, { busy: true }); shCard();
-    try { shDescs.set(key, { v: await native().MarketsDescription(sh.v.path, sku, !!t.v) }); } catch (err) { shDescs.set(key, { err: "Описание не проверено: " + errText(err) }); }
+    if (t.draftBusy) return; // пока модель пишет, проверка не стирает оплаченный черновик (ревью #626)
+    shDescs.set(key, { busy: true, draft: t.draft }); shCard();
+    try { shDescs.set(key, { v: await native().MarketsDescription(sh.v.path, sku, !!t.v), draft: t.draft }); } catch (err) { shDescs.set(key, { err: "Описание не проверено: " + errText(err), draft: t.draft }); }
   }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
 });
