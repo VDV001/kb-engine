@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -147,6 +148,7 @@ const (
 	attrRich       = 11254 // «Rich-контент JSON»
 	attrGender     = 9163  // «Пол»
 	attrColor      = 10096 // «Цвет товара», значений бывает несколько
+	attrVideo      = 21841 // «Озон.Видео: ссылка» (сложный; 21845 — видеообложка)
 )
 
 // Card — содержимое карточки: название, хештеги, описание, рич-контент,
@@ -154,13 +156,23 @@ const (
 type Card struct {
 	Name, Hashtags, Annotation, Rich string
 	Gender, Color                    string
+	Photos                           []string // главное фото первым, без повторов
+	Video                            bool
 }
 
 // Card reads the content of card sku (#610, #611): только чтение.
 func (c Client) Card(ctx context.Context, sku string) (Card, error) {
 	var res struct {
 		Result []struct {
-			Name       string `json:"name"`
+			Name    string   `json:"name"`
+			Primary string   `json:"primary_image"`
+			Images  []string `json:"images"`
+			Complex []struct {
+				ID     int `json:"id"`
+				Values []struct {
+					Value string `json:"value"`
+				} `json:"values"`
+			} `json:"complex_attributes"`
 			Attributes []struct {
 				ID     int `json:"id"`
 				Values []struct {
@@ -178,34 +190,44 @@ func (c Client) Card(ctx context.Context, sku string) (Card, error) {
 	}
 	r := res.Result[0]
 	out := Card{Name: r.Name}
-	for _, a := range r.Attributes {
-		if len(a.Values) == 0 {
-			continue
-		}
-		switch a.ID {
-		case attrHashtags: // хештеги бывают и одной строкой, и по значению на каждый (ревью #625)
-			vs := make([]string, 0, len(a.Values))
-			for _, v := range a.Values {
-				vs = append(vs, v.Value)
-			}
-			out.Hashtags = strings.Join(vs, " ")
-		case attrAnnotation:
-			out.Annotation = a.Values[0].Value
-		case attrRich:
-			out.Rich = a.Values[0].Value
-		case attrGender, attrColor:
-			vs := make([]string, 0, len(a.Values))
-			for _, v := range a.Values {
-				vs = append(vs, v.Value)
-			}
-			if a.ID == attrGender {
-				out.Gender = strings.Join(vs, ", ")
-			} else {
-				out.Color = strings.Join(vs, ", ")
-			}
+	for _, u := range append([]string{r.Primary}, r.Images...) {
+		if u != "" && !slices.Contains(out.Photos, u) {
+			out.Photos = append(out.Photos, u)
 		}
 	}
+	for _, a := range r.Complex {
+		if a.ID == attrVideo && len(a.Values) > 0 && a.Values[0].Value != "" {
+			out.Video = true
+		}
+	}
+	for _, a := range r.Attributes {
+		vs := make([]string, 0, len(a.Values))
+		for _, v := range a.Values {
+			vs = append(vs, v.Value)
+		}
+		out.take(a.ID, vs)
+	}
 	return out, nil
+}
+
+// take puts the values of attribute id into the card: хештегов и цветов
+// бывает несколько значений, описание и рич-контент — одним.
+func (c *Card) take(id int, vs []string) {
+	if len(vs) == 0 {
+		return
+	}
+	switch id {
+	case attrHashtags: // хештеги бывают и одной строкой, и по значению на каждый (ревью #625)
+		c.Hashtags = strings.Join(vs, " ")
+	case attrAnnotation:
+		c.Annotation = vs[0]
+	case attrRich:
+		c.Rich = vs[0]
+	case attrGender:
+		c.Gender = strings.Join(vs, ", ")
+	case attrColor:
+		c.Color = strings.Join(vs, ", ")
+	}
 }
 
 // infoBatch — карточек за запрос: больше 1000 Ozon не принимает.

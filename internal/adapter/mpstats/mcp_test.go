@@ -210,3 +210,28 @@ func TestMCP_nicheBrands(t *testing.T) {
 		t.Fatalf("brands %v, %v", got, err)
 	}
 }
+
+// Товары ниши и главное фото карточки (#608): ozon_category report=products
+// и ozon_sku report=full (photo.count и photo.list[0].m — замер 14.11).
+func TestMCP_productsAndPhoto(t *testing.T) {
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_category": func(a map[string]any) (string, bool) {
+			if a["report"] != "products" || a["limit"] != float64(50) {
+				return "wrong arguments", true
+			}
+			return `{"total":2,"data":[{"id":11,"name":"Футболка","seller":"Продавец","revenue":1000,"final_price":900,"rating":4.8,"comments":120,"picscount":7,"hasvideo":1}]}`, false
+		},
+		"ozon_sku": func(map[string]any) (string, bool) {
+			return `{"niche":{"name":"Одежда/Футболки"},"photo":{"count":6,"list":[{"f":"https://ir.ozone.ru/f.jpg","t":"https://ir.ozone.ru/t.jpg","m":"https://ir.ozone.ru/m.jpg"}]}}`, false
+		},
+	})
+	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
+	ps, err := m.NicheProducts(context.Background(), "Одежда/Футболки", 50)
+	if err != nil || len(ps) != 1 || ps[0].SKU != 11 || ps[0].Photos != 7 || !ps[0].Video || ps[0].Comments != 120 || ps[0].Price != 900 {
+		t.Fatalf("products %+v, %v", ps, err)
+	}
+	c, err := m.Card(context.Background(), 11)
+	if err != nil || c.Photo != "https://ir.ozone.ru/m.jpg" || c.Photos != 6 {
+		t.Fatalf("card %+v, %v", c, err)
+	}
+}

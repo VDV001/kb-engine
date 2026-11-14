@@ -6673,7 +6673,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + shPhotosCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -6711,6 +6711,40 @@ function shTitleCard(p) {
   }
   return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;
 }
+// «Фото» в карточке (#608): свои фото и видео против лидеров ниши — правилом.
+const shPhotos = new Map(); // кабинет|SKU → { busy } | { v } | { err }
+const shPhotosKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
+const SH_PHOTO_ADV = {
+  photos: (a) => `фото ${fmt(a.have)}, у лидеров ниши — ${String(a.their).replace(".", ",")} в середине: добавьте ракурсы, детали ткани, посадку на модели, размерную сетку`,
+  video: (a) => `видео нет, а у ${Math.round(a.their * 100)} % лидеров есть: короткое видео на модели`,
+  rich: () => "рич-контента нет: лидеры MPStats его не показывает, но он поднимает карточку — блоки с фото и преимуществами",
+};
+function shPhotosCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shPhotos.get(shPhotosKey(p)) || {}, btn = `<button class="btn" type="button" data-sh-photos="${esc(p.sku)}"${t.busy ? " disabled" : ""}${mkTip("Сравнить фото с лидерами", "свои фото и видео — из кабинета Ozon; лидеры ниши (топ по выручке среди товаров с отзывами) и их главные фото — из MPStats, до 8 запросов тарифа (карточка, товары ниши, фото 6 лидеров); ниша — в памяти 10 минут")}>${t.busy ? "Читаю Ozon и MPStats…" : t.v ? "Сравнить еще раз" : "Сравнить фото с лидерами"}</button>`;
+  let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
+  if (t.v) {
+    const v = t.v, img = (u, alt) => u ? `<img src="${esc(u)}" alt="${esc(alt)}" loading="lazy">` : `<span class="sh-ph-none">фото не загружено</span>`;
+    body += `<div class="note">У карточки: фото ${fmt(v.ownCount)}, видео ${v.ownVideo ? "есть" : "нет"}, рич-контент ${v.ownRich ? "есть" : "нет"}.${v.leaders.length ? ` Лидеров ниши: ${fmt(v.leaders.length)}, фото у них в середине — ${String(v.median).replace(".", ",")}, с видео — ${Math.round(v.videoShare * 100)} %.` : " Лидеров с отзывами в нише MPStats не нашлось — сравнивать не с кем."}</div>` +
+      (v.advice.length ? `<div class="sh-title-h">Что добавить</div><ul>${v.advice.map((a) => `<li>${esc((SH_PHOTO_ADV[a.kind] || (() => a.kind))(a))}</li>`).join("")}</ul>` : (v.leaders.length ? `<div class="note">По числу фото и видео карточка не хуже лидеров.</div>` : "")) +
+      (v.own.length ? `<div class="sh-title-h">Ваши фото</div><div class="sh-ph-row">${v.own.map((u, i) => img(u, "фото " + (i + 1))).join("")}</div>` : "") +
+      (v.leaders.length ? `<div class="sh-title-h">Лидеры ниши</div><div class="sh-ph-grid">${v.leaders.map((l) => `<div class="sh-ph-lead">${img(l.photo, l.name)}<div class="nm">${esc(l.name)}</div><div class="n">${shRub(l.price)} · ★ ${String(l.rating).replace(".", ",")} · отзывов ${fmt(l.comments)}</div><div class="n">фото ${fmt(l.photos)}${l.video ? " · видео" : ""}</div></div>`).join("")}</div>` : "") +
+      `<div class="note">Красоту и смысл фото окно не оценивает — только число, видео и рич-контент; сами фото лидеров — для сравнения глазами.</div>`;
+  }
+  return `<h4 class="sh-money-h">Фото</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-photos]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shPhotos;
+  if (!p || p.sku !== sku) return;
+  const key = shPhotosKey(p), fresh = !!(shPhotos.get(key) || {}).v;
+  if (!native() || !native().MarketsPhotos) { shPhotos.set(key, { err: "Сравнение фото работает в окне приложения." }); return shCard(); }
+  shPhotos.set(key, { busy: true }); shCard();
+  try { shPhotos.set(key, { v: await native().MarketsPhotos(sh.v.path, sku, fresh) }); } catch (err) { shPhotos.set(key, { err: "Фото не сравнены: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
 // «Описание» в карточке (#611): сверка с полом и цветом карточки и словами
 // ниши — правилом; новое описание — моделью окна, только по кнопке.
 const shDescs = new Map(); // кабинет|SKU → { busy, draftBusy, v, draft, err }
