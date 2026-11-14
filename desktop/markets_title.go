@@ -187,13 +187,19 @@ func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, con
 	if err := readParts(ctx, m, id, &cp, &np, !haveCard || fresh, !haveNiche || fresh); err != nil {
 		return cardNiche{}, err
 	}
-	if cp.ownErr == nil {
+	f.keepParts(ck, nk, cp, np, !haveCard || fresh, !haveNiche || fresh, now)
+	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: cp.own, brands: np.brands, ownErr: cp.ownErr, brandErr: np.brandErr}, nil
+}
+
+// keepParts puts what was really read: чтение из памяти срок не продлевает
+// (ревью #627), прочитанное с пропуском не хранится — в следующий раз дочитается.
+func (f *folderSettings) keepParts(ck, nk string, cp cardPart, np nichePart, readCard, readNiche bool, now time.Time) {
+	if readCard && cp.ownErr == nil {
 		f.cardParts.put(ck, cp, now)
 	}
-	if np.brandErr == nil {
+	if readNiche && np.brandErr == nil {
 		f.nicheParts.put(nk, np, now)
 	}
-	return cardNiche{card: cp.card, qs: np.qs, ws: np.ws, own: cp.own, brands: np.brands, ownErr: cp.ownErr, brandErr: np.brandErr}, nil
 }
 
 // readParts reads at once what is missing: свои запросы товара (own) и
