@@ -5905,7 +5905,7 @@ function rvRender(v) {
   $("#rv-note").textContent = `${v.path} · ${v.period}, сравнение с ${v.prev}` + (v.note ? " · " + v.note : "");
   const n = (x) => `<td class="n">${x}</td>`;
   $("#rv-table").innerHTML = `<thead><tr><th>Продавец</th><th class="n">Доля ниши</th><th class="n">Продажи, шт</th><th class="n">Выручка</th><th class="n">Средняя цена</th><th class="n">Товаров</th><th class="n">Рейтинг</th></tr></thead><tbody>` +
-    (v.rows.length ? v.rows.map((r) => `<tr><td>${esc(r.name || "—")}${r.new ? ` <span class="mk-pill peak"${mkTip("Новый", "в прошлом периоде продавца в нише не было")}>новый</span>` : ""}</td>` +
+    (v.rows.length ? v.rows.map((r) => `<tr><td>${esc(r.name || "—")}${r.new ? ` <span class="mk-pill peak"${mkTip("Новый", "в прошлом периоде у продавца не было продаж в нише или его не было среди продавцов, которых отдает MPStats (до 200 крупнейших)")}>новый</span>` : ""}</td>` +
       n(`${Math.round(r.share * 100)} %`) + n(fmt(Math.round(r.sales)) + rvCh(r.salesChange, "Продажи")) + n(fmt(Math.round(r.revenue)) + " ₽") +
       n(fmt(Math.round(r.avgPrice)) + " ₽" + rvCh(r.priceChange, "Средняя цена")) +
       n(fmt(r.items) + (r.itemsAdded ? `<span class="rv-ch up"${mkTip("Новых товаров", "насколько выросло число товаров продавца в нише: новинки или новые размеры")}>+${fmt(r.itemsAdded)}</span>` : "")) +
@@ -5921,7 +5921,7 @@ $("#rv-go").addEventListener("click", async () => {
   try {
     const v = await native().MarketsCompetitors(path, Number($("#rv-days").value));
     if (seq === rv.seq) rvRender(v);
-  } catch (err) { if (seq === rv.seq) { rvRender(null); mkErr("Конкуренты не прочитаны: " + errText(err)); } }
+  } catch (err) { if (seq === rv.seq) { rvRender(null); if (!$("#mk-rv").hidden) mkErr("Конкуренты не прочитаны: " + errText(err)); } } // на чужую вкладку ошибка не переезжает (ревью #619)
   $("#rv-go").textContent = "Показать"; $("#rv-go").disabled = false;
 });
 // mkTab переключает «Ниша», «Прогноз», «Магазин», «План» (отдельная страница, отзыв 14.11) и «Конкуренты».

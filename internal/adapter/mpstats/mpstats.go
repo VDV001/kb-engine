@@ -347,16 +347,13 @@ func (c Client) Sellers(ctx context.Context, path string, from, to time.Time) ([
 // TopSellersRevenue sums the revenue of the n largest sellers of the category
 // for days from..to: для доли топ-n в оценке ниши.
 func (c Client) TopSellersRevenue(ctx context.Context, path string, from, to time.Time, n int) (float64, error) {
-	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
-	var rows []struct {
-		Revenue float64 `json:"revenue"`
-	}
-	if err := c.get(ctx, "/api/oz/get/category/sellers", q, &rows); err != nil {
+	sellers, err := c.Sellers(ctx, path, from, to)
+	if err != nil {
 		return 0, err
 	}
-	rev := make([]float64, 0, len(rows))
-	for _, r := range rows {
-		rev = append(rev, r.Revenue)
+	rev := make([]float64, 0, len(sellers))
+	for _, s := range sellers {
+		rev = append(rev, s.Revenue)
 	}
 	slices.SortFunc(rev, func(a, b float64) int { return cmp.Compare(b, a) })
 	var sum float64

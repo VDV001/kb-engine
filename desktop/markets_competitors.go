@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -56,17 +57,30 @@ func (f *folderSettings) competitors(ctx context.Context, hc *http.Client, path 
 	if err != nil {
 		return competitorsView{}, err
 	}
-	to := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC).AddDate(0, 0, -1)
+	to := dayOf(now).AddDate(0, 0, -1)
 	from := to.AddDate(0, 0, 1-days)
 	pTo, pFrom := from.AddDate(0, 0, -1), from.AddDate(0, 0, -days)
 	var cur, prev []markets.SellerStat
 	var curErr, prevErr error
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	var wg sync.WaitGroup
-	wg.Go(func() { cur, curErr = cl.Sellers(ctx, path, from, to) })
-	wg.Go(func() { prev, prevErr = cl.Sellers(ctx, path, pFrom, pTo) })
+	read := func(out *[]markets.SellerStat, e *error, d1, d2 time.Time) {
+		if *out, *e = cl.Sellers(ctx, path, d1, d2); stopsAll(*e) {
+			cancel() // лимит или отказ ключа — второй запрос бесполезен (ревью #619)
+		}
+	}
+	wg.Go(func() { read(&cur, &curErr, from, to) })
+	wg.Go(func() { read(&prev, &prevErr, pFrom, pTo) })
 	wg.Wait()
+	if curErr == nil && stopsAll(prevErr) {
+		curErr = prevErr
+	}
 	if curErr != nil {
 		return competitorsView{}, errors.New(mpstatsMessage(curErr))
+	}
+	if len(cur) == 0 { // путь, которого MPStats не знает, — не «продаж нет» (ревью #619)
+		return competitorsView{}, fmt.Errorf("в MPStats нет продавцов ниши «%s» за эти дни: такого пути у MPStats нет — имена ниш из выгрузки файлом отличаются от категорий MPStats; начните печатать путь — окно подскажет", path)
 	}
 	day := func(t time.Time) string { return t.Format("02.01.2006") }
 	v := competitorsView{Path: path, Period: day(from) + " – " + day(to), Prev: day(pFrom) + " – " + day(pTo), Rows: []competitorRow{}}
