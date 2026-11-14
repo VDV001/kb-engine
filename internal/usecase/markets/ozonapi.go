@@ -154,6 +154,28 @@ func calendarDays(from, to time.Time) int {
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }
 
+// OzonOnly keeps the items of skus in posts: «План» по товарам ниши; отправление
+// без выбранных товаров выпадает. Пустой skus — все отправления как есть.
+func OzonOnly(posts []OzonPosting, skus []string) []OzonPosting {
+	if len(skus) == 0 {
+		return posts
+	}
+	var out []OzonPosting
+	for _, p := range posts {
+		var items []OzonItem
+		for _, it := range p.Items {
+			if slices.Contains(skus, it.SKU) {
+				items = append(items, it)
+			}
+		}
+		if len(items) > 0 {
+			p.Items = items
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // OzonStockTotal sums stock to sell for the plan; резерв больше наличия у
 // одного товара не уменьшает остаток других. inStock — товаров с остатком.
 func OzonStockTotal(st []OzonStock) (qty float64, inStock int) {

@@ -1,6 +1,7 @@
 package markets_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -109,6 +110,41 @@ func TestOzonDaily(t *testing.T) {
 	}
 	if len(got) != 3 || got[0] != 4 || got[1] != 2 || got[2] != 0 {
 		t.Errorf("days = %v, want [4 2 0]", got)
+	}
+}
+
+func TestOzonOnly(t *testing.T) {
+	// «План» по товарам ниши (решение владельца 14.11): в отправлениях
+	// остаются только выбранные SKU; без выбора — весь кабинет.
+	a := markets.OzonItem{SKU: "1", Qty: 2}
+	b := markets.OzonItem{SKU: "2", Qty: 5}
+	posts := []markets.OzonPosting{{Number: "n1", Items: []markets.OzonItem{a, b}}, {Number: "n2", Items: []markets.OzonItem{b}}}
+	for _, tc := range []struct {
+		name string
+		skus []string
+		want string // номер:SKU... через пробел
+	}{
+		{"без выбора — все", nil, "n1:1,2 n2:2"},
+		{"один SKU", []string{"1"}, "n1:1"},
+		{"оба", []string{"2", "1"}, "n1:1,2 n2:2"},
+		{"нет такого", []string{"9"}, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var got []string
+			for _, p := range markets.OzonOnly(posts, tc.skus) {
+				var s []string
+				for _, it := range p.Items {
+					s = append(s, it.SKU)
+				}
+				got = append(got, p.Number+":"+strings.Join(s, ","))
+			}
+			if strings.Join(got, " ") != tc.want {
+				t.Errorf("OzonOnly = %q, want %q", strings.Join(got, " "), tc.want)
+			}
+		})
+	}
+	if len(posts[0].Items) != 2 {
+		t.Error("OzonOnly changed the input")
 	}
 }
 

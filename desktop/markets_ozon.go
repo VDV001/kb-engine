@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -508,10 +509,38 @@ func (c *ozonPostCache) get(ctx context.Context, cl ozon.Client, id string, from
 	return posts, nil
 }
 
+// errNoSKUs — выбор товаров есть, но пустой: это не «весь кабинет».
+var errNoSKUs = errors.New("товары кабинета не выбраны")
+
+// ozonOwn parses own sales «ozon:<id>» or «ozon:<id>#SKU,SKU» — выбранные товары
+// едут в источнике, чтобы «Прогноз» и «План» считали по одному выбору.
+func ozonOwn(own string) (id string, skus []string, ok bool, err error) {
+	rest, ok := strings.CutPrefix(own, "ozon:")
+	if !ok {
+		return "", nil, false, nil
+	}
+	id, list, picked := strings.Cut(rest, "#")
+	if !picked {
+		return id, nil, true, nil
+	}
+	for sku := range strings.SplitSeq(list, ",") {
+		if sku = strings.TrimSpace(sku); sku != "" && !slices.Contains(skus, sku) {
+			skus = append(skus, sku)
+		}
+	}
+	if len(skus) == 0 {
+		return id, nil, true, errNoSKUs
+	}
+	return id, skus, true, nil
+}
+
 // ownSeries reads own orders: файл или «ozon:<id>» — заказы кабинета по дням
 // за 90 дней до вчера, включая отмены.
 func (f *folderSettings) ownSeries(ctx context.Context, base string, hc *http.Client, own string, today time.Time) (domain.DailySales, forecastFile, error) {
-	id, ok := strings.CutPrefix(own, "ozon:")
+	id, skus, ok, err := ozonOwn(own)
+	if err != nil {
+		return domain.DailySales{}, forecastFile{}, err
+	}
 	if !ok {
 		return readSales(own, "свои продажи")
 	}
@@ -524,11 +553,11 @@ func (f *folderSettings) ownSeries(ctx context.Context, base string, hc *http.Cl
 	if err != nil {
 		return domain.DailySales{}, forecastFile{}, ozonErr(c.Name, err)
 	}
-	s, undated, err := markets.OzonDaily(posts, from, to, today.Location())
+	s, undated, err := markets.OzonDaily(markets.OzonOnly(posts, skus), from, to, today.Location())
 	if err != nil {
 		return domain.DailySales{}, forecastFile{}, err
 	}
-	return s, forecastFile{File: "Ozon · " + c.Name, Format: "ozon", Days: len(s.Days()), Undated: undated,
+	return s, forecastFile{File: "Ozon · " + c.Name, Format: "ozon", Products: len(skus), Days: len(s.Days()), Undated: undated,
 		From: from.Format("02.01.2006"), To: to.Format("02.01.2006")}, nil
 }
 

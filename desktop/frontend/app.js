@@ -5870,6 +5870,11 @@ $("#mk-q").addEventListener("keydown", (e) => {
 // Окно помнит только пути — в localStorage, удобство одного Мака.
 const fc = { paths: ["", "", ""], v: null, niche: "", busy: false, cabs: [] };
 const fcCabName = (id) => (fc.cabs.find((c) => c.id === id) || {}).name || "кабинет";
+// Свои продажи из кабинета: «ozon:<id>» или «ozon:<id>#SKU,SKU» — выбранные товары
+// едут в источнике, и «Прогноз» с «Планом» считают по одному выбору.
+const fcCab = (p) => p.slice("ozon:".length).split("#")[0];
+const fcSkus = (p) => (p.split("#")[1] || "").split(",").filter(Boolean);
+const fcOwnOf = (id, skus) => "ozon:" + id + (skus.length ? "#" + skus.join(",") : "");
 const FC_KEY = "dvk.markets.forecast";
 const FC_SLOTS = [
   ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики с продажами ниши по дням (дата — колонкой или строкой) за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025. Не «Товары категории» MPStats: там итог за период по товару, дней нет"],
@@ -5929,8 +5934,8 @@ function fcRender() {
     const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to}${info.format === "ozon" ? " · заказы с отменами" : ""}${info.undated ? ` · без даты ${fmt(info.undated)}, не учтены` : ""} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
       (p ? srcTagHTML(oz ? "ozon" : "file") : "") +
-      `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(p.slice(5)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
-      (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${"ozon:" + c.id === p ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
+      `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(fcCab(p)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? (fcSkus(p).length ? `товаров ${fmt(fcSkus(p).length)} (выбраны в «Плане») · ` : "") + "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
+      (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${c.id === fcCab(p) ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
       `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
       (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` :
         `<button class="btn" type="button" data-fc-mps${mkTip("Из MPStats", "продажи ниши по дням по ключу MPStats — сразу для прошлого года и сейчас, без выгрузки; ключ — в Настройках → Подключения")}>Из MPStats</button>`) + `</div>`;
@@ -5974,7 +5979,7 @@ $("#mk-files").addEventListener("click", async (e) => {
     const rows = await shCabinets();
     fc.cabs = rows;
     if (!rows.length) { await openSettings("conn"); return showOzonForm(); }
-    const cur = fc.paths[2].startsWith("ozon:") && rows.some((c) => "ozon:" + c.id === fc.paths[2]) ? fc.paths[2] : "ozon:" + rows[0].id;
+    const cur = fc.paths[2].startsWith("ozon:") && rows.some((c) => c.id === fcCab(fc.paths[2])) ? fc.paths[2] : "ozon:" + rows[0].id;
     fc.paths[2] = cur; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
     return;
   }
@@ -6007,7 +6012,7 @@ try {
   if (v && v.fee === undefined && v.comm !== undefined) v.fee = String(Number(String(v.comm).replace(",", ".")) + Number(String(v.log || 0).replace(",", "."))); // прежние «Комиссия» и «Логистика» — одним полем, как в макете
   if (v) for (const k of PL_IN) if (v[k] !== undefined && v[k] !== "NaN") $("#pl-" + k).value = v[k];
 } catch (_) { /* без хранилища — значения по умолчанию */ }
-const pl = { v: null, days: false, price: 0, lead: 10, stockFor: "", cab: null };
+const pl = { v: null, days: false, price: 0, lead: 10, stockFor: "", cab: null, pick: new Set() };
 // Число как пишет человек: «1 500», «1.500» (точка — тысячи), «1500,5», «−5» (ревью #599).
 function plNum(k) {
   let t = String($("#pl-" + k).value).replace(/[\s\u00a0₽%]/g, "").replace(/\u2212/g, "-");
@@ -6025,8 +6030,9 @@ function plSrc() {
   const base = (p) => p.split("/").pop();
   const [last, now, own] = fc.paths;
   const niche = last.startsWith("mpstats:") ? `ниша «${base(fcMpsPath(last))}» из MPStats` : last && now ? `ниша: файлы «${base(last)}» и «${base(now)}»` : "";
-  const cab = own.startsWith("ozon:") && (fc.cabs || []).find((c) => "ozon:" + c.id === own);
-  const mine = own.startsWith("ozon:") ? `свои продажи: кабинет ${cab ? cab.name : "Ozon"}` : own ? `свои продажи: «${base(own)}»` : "";
+  const cab = own.startsWith("ozon:") && (fc.cabs || []).find((c) => c.id === fcCab(own));
+  const n = own.startsWith("ozon:") ? fcSkus(own).length : 0;
+  const mine = own.startsWith("ozon:") ? `свои продажи: кабинет ${cab ? cab.name : "Ozon"}, ${n ? `${fmt(n)} ${plural(n, "товар", "товара", "товаров")}` : "все товары"}` : own ? `свои продажи: «${base(own)}»` : "";
   return [niche, mine].filter(Boolean).join(" · ");
 }
 // plStockFill puts the cabinet's stock into «Остаток»: прогноз считается по
@@ -6036,14 +6042,16 @@ async function plStockFill() {
   pl.stockFor = own;
   if (!own.startsWith("ozon:") || !native() || !native().MarketsPlanStock) { $("#pl-stock-note").hidden = true; pl.cab = null; return; }
   $("#pl-stock-note").hidden = false;
-  $("#pl-stock-get").hidden = true;
+  $("#pl-stock-get").hidden = $("#pl-pick-open").hidden = true;
   $("#pl-stock-txt").textContent = "Читаю остаток из кабинета…";
   try {
-    const s = await native().MarketsPlanStock(own.slice("ozon:".length));
+    const s = await native().MarketsPlanStock(own);
     if (fc.paths[2] !== own) return; // источник сменили, пока читали
     pl.cab = s;
     if (plNum("stock") !== s.qty) { $("#pl-stock").value = String(s.qty); $("#pl-xlsx").disabled = true; }
-    $("#pl-stock-txt").textContent = `Остаток — из кабинета ${s.name}: ${fmt(s.qty)} шт по всем товарам (в наличии ${fmt(s.inStock)} из ${fmt(s.products)}), как и свои продажи в прогнозе. Поле можно поправить.`;
+    $("#pl-stock-txt").textContent = `Остаток — из кабинета ${s.name}: ${fmt(s.qty)} шт ${plWhat(own, s)}, как и свои продажи в прогнозе. Поле можно поправить.`;
+    $("#pl-pick-open").hidden = false;
+    $("#pl-pick-open").textContent = fcSkus(own).length ? `Товары: ${fmt(fcSkus(own).length)}` : "Выбрать товары";
   } catch (err) {
     if (fc.paths[2] !== own) return;
     pl.stockFor = ""; pl.cab = null; // при следующем открытии — еще раз
@@ -6053,8 +6061,50 @@ async function plStockFill() {
 }
 $("#pl-stock-get").addEventListener("click", () => { hideTip(); plStockFill(); });
 $("#pl-stock").addEventListener("input", () => {
-  if (pl.cab) $("#pl-stock-txt").textContent = `Остаток вписан руками; в кабинете ${pl.cab.name} — ${fmt(pl.cab.qty)} шт по всем товарам.`;
+  if (pl.cab) $("#pl-stock-txt").textContent = `Остаток вписан руками; в кабинете ${pl.cab.name} — ${fmt(pl.cab.qty)} шт ${plWhat(fc.paths[2], pl.cab)}.`;
 });
+// plWhat says what the stock is summed over: все товары или выбранные.
+function plWhat(own, s) {
+  const n = fcSkus(own).length;
+  return n ? `по ${fmt(n)} ${plural(n, "выбранному товару", "выбранным товарам", "выбранным товарам")} (в наличии ${fmt(s.inStock)} из ${fmt(s.products)})`
+    : `по всем товарам (в наличии ${fmt(s.inStock)} из ${fmt(s.products)})`;
+}
+// Выбор товаров «Плана» (решение владельца 14.11): план по нише — продажи и остаток только их.
+const PL_PICK_MAX = 200; // строк в списке; остальное — через поиск
+function plPickRender() {
+  const q = $("#pl-pick-q").value.trim().toLowerCase();
+  const items = ((pl.cab && pl.cab.items) || []).filter((it) => !q || [it.name, it.article, it.sku].some((x) => String(x || "").toLowerCase().includes(q)))
+    .sort((a, b) => b.qty - a.qty);
+  const shown = items.slice(0, PL_PICK_MAX);
+  $("#pl-pick-list").innerHTML = shown.map((it) => `<label class="mk-pl-pick-row"><input type="checkbox" value="${esc(it.sku)}"${pl.pick.has(it.sku) ? " checked" : ""}><span class="nm">${esc(it.name || it.article || it.sku)}</span><span class="ar">${esc(it.article || "")}</span><span class="n">${fmt(Math.max(it.qty, 0))} шт</span></label>`).join("") ||
+    `<p class="mk-fc-note">Ничего не нашлось${q ? ` по «${esc(q)}»` : ""}.</p>`;
+  $("#pl-pick-more").hidden = items.length <= PL_PICK_MAX;
+  $("#pl-pick-more").textContent = items.length > PL_PICK_MAX ? `Показаны ${fmt(PL_PICK_MAX)} из ${fmt(items.length)} по остатку — уточните поиск.` : "";
+  $("#pl-pick-n").textContent = pl.pick.size ? `выбрано ${fmt(pl.pick.size)}` : "не выбрано — весь кабинет";
+}
+$("#pl-pick-open").addEventListener("click", () => {
+  hideTip();
+  if (!pl.cab) return;
+  pl.pick = new Set(fcSkus(fc.paths[2]));
+  $("#pl-pick").hidden = false; $("#pl-pick-q").value = "";
+  plPickRender(); focusSoon("#pl-pick-q");
+});
+$("#pl-pick-q").addEventListener("input", plPickRender);
+$("#pl-pick-list").addEventListener("change", (e) => {
+  if (!e.target.matches("input[type=checkbox]")) return;
+  if (e.target.checked) pl.pick.add(e.target.value); else pl.pick.delete(e.target.value);
+  $("#pl-pick-n").textContent = pl.pick.size ? `выбрано ${fmt(pl.pick.size)}` : "не выбрано — весь кабинет";
+});
+function plPickApply(skus) {
+  if (fc.busy) return mkErr("Идет расчет прогноза — товары сменятся после него.");
+  $("#pl-pick").hidden = true;
+  fc.paths[2] = fcOwnOf(fcCab(fc.paths[2]), skus);
+  fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender(); // прогноз — по новому выбору
+  plPage(); // остаток перечитается, прежний план сброшен
+}
+$("#pl-pick-ok").addEventListener("click", () => { hideTip(); plPickApply([...pl.pick]); });
+$("#pl-pick-all").addEventListener("click", () => { hideTip(); plPickApply([]); });
+$("#pl-pick-cancel").addEventListener("click", () => { hideTip(); $("#pl-pick").hidden = true; });
 // plPage shows the «План» page: без трех источников — путь к «Прогнозу».
 function plPage() {
   const ready = fc.paths.every(Boolean);
@@ -6064,7 +6114,7 @@ function plPage() {
   if (pl.key !== fc.paths.join("|")) pl.v = null; // источники «Прогноза» сменились — прежний план не про них
   plRender(ready ? pl.v : null);
   if (ready && pl.stockFor !== fc.paths[2]) plStockFill();
-  if (!ready) $("#pl-stock-note").hidden = true;
+  if (!ready) $("#pl-stock-note").hidden = $("#pl-pick").hidden = true;
 }
 const PL_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const plDate = (s) => { const [d, m, y] = s.split(".").map(Number); return new Date(y, m - 1, d); };
