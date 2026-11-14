@@ -84,6 +84,10 @@ func TestNewPlan_shortForPeak(t *testing.T) {
 	if qty, by := p.Supply(); qty != 1690 || !by.Equal(day(2026, 10, 28)) {
 		t.Errorf("supply %v by %v; want 1690 by 28.10.2026", qty, by)
 	}
+	// Для одного предупреждения словами: когда кончится остаток и весь спрос.
+	if !p.OutOfStock().Equal(day(2026, 11, 7)) || p.Demand() != 1890 {
+		t.Errorf("out %v, demand %v; want 07.11.2026 and 1890", p.OutOfStock(), p.Demand())
+	}
 }
 
 // Провал — неделя, где спрос в день меньше 80 % среднего: скидка 10 %.
@@ -179,5 +183,28 @@ func TestNewPlan_zeroForecast(t *testing.T) {
 	}
 	if _, err := domain.NewPlan(f, domain.PlanInput{Stock: 1, Cost: 1, Price: 100}); !errors.Is(err, domain.ErrInvalidPlan) {
 		t.Errorf("zero forecast: err = %v, want ErrInvalidPlan (пика нет)", err)
+	}
+}
+
+// Штуки возят целыми (ревью 14.11): нехватка 0,3 шт — довезти 1, а не «0 шт»
+// рядом с предупреждением «остатка не хватит».
+func TestPlan_SupplyWholeUnits(t *testing.T) {
+	for _, tc := range []struct {
+		stock float64
+		want  float64
+	}{
+		{1889.7, 1},
+		{1889, 1},
+		{1000, 890},
+		{1890, 0},
+	} {
+		p, err := domain.NewPlan(knownPlanForecast(t), domain.PlanInput{Stock: tc.stock, Cost: 500, Price: 2000, Commission: 0.4, Logistics: 0.1, LeadDays: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		qty, _ := p.Supply()
+		if qty != tc.want || (qty > 0) != !p.OutOfStock().IsZero() {
+			t.Errorf("stock %v: supply %v, out %v; want %v and the warning only with a supply", tc.stock, qty, p.OutOfStock(), tc.want)
+		}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -170,6 +171,15 @@ func TestPlanFiles(t *testing.T) {
 	}
 	if len(v.Weeks) != 10 || peak == nil || peak.From != "09.11.2026" || peak.Price != 2200 {
 		t.Errorf("weeks = %d, peak = %+v", len(v.Weeks), peak)
+	}
+	// «План» отдельной страницей (отзыв 14.11): дни — для «План по дням», спрос
+	// всего и день, когда кончится остаток, — для одного предупреждения словами.
+	var demand float64
+	for _, d := range v.Days {
+		demand += d.Demand
+	}
+	if len(v.Days) == 0 || v.Days[0].Day != "01.11.2026" || v.Out != "02.12.2026" || v.Demand != math.Round(demand) || v.Stock != 1000 {
+		t.Errorf("days %d, first %+v, out %q, demand %v (sum %v), stock %v", len(v.Days), v.Days[0], v.Out, v.Demand, demand, v.Stock)
 	}
 	// Excel — ровно тот план, что на экране: файлы после расчета не перечитываются (ревью #599).
 	if err := os.Remove(own); err != nil {

@@ -33,16 +33,16 @@ func TestAddMPStats(t *testing.T) {
 	s, tok, _ := newServerSettings(t)
 	srv := fakeMPStats(t)
 	ep := checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}
-	if _, err := s.addMPStats(context.Background(), ep, "MPStats", " "); err == nil {
+	if _, err := s.addMPStats(context.Background(), ep, "MPStats", " ", false); err == nil {
 		t.Error("empty key saved")
 	}
-	if _, err := s.addMPStats(context.Background(), ep, "MPStats", "чужой"); err == nil || !strings.Contains(err.Error(), "не принят") {
+	if _, err := s.addMPStats(context.Background(), ep, "MPStats", "чужой", false); err == nil || !strings.Contains(err.Error(), "не принят") {
 		t.Errorf("wrong key: %v", err)
 	}
 	if len(s.snapshot().cfg.Connections) != 0 || len(tok.m) != 0 {
 		t.Fatalf("refused key left traces: %+v %v", s.snapshot().cfg.Connections, tok.m)
 	}
-	row, err := s.addMPStats(context.Background(), ep, " ", " m-1 ")
+	row, err := s.addMPStats(context.Background(), ep, " ", " m-1 ", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mpRow, err := s.addMPStats(context.Background(), ep, "MPStats", "m-1")
+	mpRow, err := s.addMPStats(context.Background(), ep, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestForecastMPStats(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,6 +251,17 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	}
 	if _, err := s.forecast(context.Background(), "", srv.Client(), own, src, own, today); err == nil || !strings.Contains(err.Error(), "обе ниши") {
 		t.Errorf("file + MPStats: %v", err)
+	}
+	// Выключенное подключение не отдает и запомненное (ревью 14.11): как у кабинета Ozon.
+	if err := s.updateConfig(func(cfg *desktopconfig.Config) {
+		for i := range cfg.Connections {
+			cfg.Connections[i].Enabled = false
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.forecast(context.Background(), "", srv.Client(), src, src, own, today); err == nil || !strings.Contains(err.Error(), "выключено") {
+		t.Errorf("switched off MPStats: err = %v, want «выключено»", err)
 	}
 }
 
@@ -291,20 +302,21 @@ func TestNichesMPStats(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1"); err != nil {
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
 		t.Fatal(err)
 	}
 	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
+	if v.Leaf || v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
 		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
 		t.Errorf("view = %+v", v)
 	}
 	// Конечная ниша без подкатегорий — в таблице она сама (живая проверка 13.11: «Пижамы женские»).
-	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" {
-		t.Errorf("leaf: %v, %+v", err, v.Niches)
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" || !v.Leaf {
+		// Leaf: «Внутрь» на конечной нише не меняет таблицу, а говорит, что внутри ниш нет (живая проверка 14.11).
+		t.Errorf("leaf: %v, %+v, leaf %v", err, v.Niches, v.Leaf)
 	}
 	// Путь, скопированный с вида «Одежда / Куртки», — тот же путь (живая проверка 13.11).
 	if v, err := s.nichesMPStats(context.Background(), srv.Client(), " Одежда / ", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || v.File != "MPStats · Одежда" {

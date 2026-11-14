@@ -306,3 +306,24 @@ func TestOzonShopLast(t *testing.T) {
 		t.Error("dropped load still read")
 	}
 }
+
+// «План» берет остаток из кабинета: прогноз считается по продажам всего
+// кабинета, поэтому и остаток — сумма по всем товарам (решение владельца 14.11).
+func TestOzonPlanStock(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeOzon(t)
+	v, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), row.ID)
+	if err != nil {
+		t.Fatalf("ozonPlanStock: %v", err)
+	}
+	if v.Qty != 40 || v.Products != 2 || v.InStock != 1 || v.Name != "Тестовый магазин" {
+		t.Errorf("stock = %+v, want 40 шт: 2 товара, 1 с остатком", v)
+	}
+	if _, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), "нет-такого"); err == nil {
+		t.Error("unknown connection read")
+	}
+}

@@ -16,6 +16,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/adapter/planxlsx"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
 // planInput — ввод «Плана» в окне: комиссия и логистика в процентах.
@@ -41,8 +42,22 @@ type planWeek struct {
 	Short    bool    `json:"short"`
 }
 
+// planDay — день плана для «План по дням».
+type planDay struct {
+	Day      string  `json:"day"`
+	Demand   float64 `json:"demand"`
+	Sell     float64 `json:"sell"`
+	StockEnd float64 `json:"stockEnd"`
+	Price    float64 `json:"price"`
+	Profit   float64 `json:"profit"`
+}
+
 type planView struct {
 	Weeks        []planWeek `json:"weeks"`
+	Days         []planDay  `json:"days"`
+	Demand       float64    `json:"demand"` // спрос прогноза за весь план
+	Stock        float64    `json:"stock"`
+	Out          string     `json:"out"` // день, когда остатка не хватит; пусто — хватит
 	Sell         float64    `json:"sell"`
 	Profit       float64    `json:"profit"`
 	SupplyQty    float64    `json:"supplyQty"`
@@ -77,7 +92,14 @@ func (f *folderSettings) plan(ctx context.Context, base string, hc *http.Client,
 	f.planMu.Lock()
 	f.lastPlan = &p // «Скачать Excel» пишет ровно этот план (ревью #599)
 	f.planMu.Unlock()
-	v := planView{Weeks: []planWeek{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate()}
+	v := planView{Weeks: []planWeek{}, Days: []planDay{}, Sell: r(p.Sell()), Profit: r(p.Profit()), ShortForPeak: p.ShortForPeak(), SupplyLate: p.SupplyLate(),
+		Demand: r(p.Demand()), Stock: in.Stock}
+	if out := p.OutOfStock(); !out.IsZero() {
+		v.Out = out.Format("02.01.2006")
+	}
+	for _, d := range p.Days() {
+		v.Days = append(v.Days, planDay{Day: d.Day.Format("02.01.2006"), Demand: r(d.Demand), Sell: r(d.Sell), StockEnd: r(d.StockEnd), Price: r(d.Price), Profit: r(d.Profit)})
+	}
 	qty, by := p.Supply()
 	v.SupplyQty = r(qty)
 	if !by.IsZero() {
@@ -111,6 +133,36 @@ func xlsxPath(p string) string {
 		return p
 	}
 	return p + ".xlsx"
+}
+
+// planStock — остаток кабинета для «Плана»: сумма по всем товарам, потому что
+// прогноз считается по продажам всего кабинета (решение владельца 14.11).
+type planStock struct {
+	Name     string  `json:"name"`
+	Qty      float64 `json:"qty"`
+	Products int     `json:"products"`
+	InStock  int     `json:"inStock"`
+}
+
+// ozonPlanStock reads the stock of cabinet id now.
+func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *http.Client, id string) (planStock, error) {
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return planStock{}, err
+	}
+	st, err := cl.Stocks(ctx)
+	if err != nil {
+		return planStock{}, ozonErr(c.Name, err)
+	}
+	qty, n := markets.OzonStockTotal(st)
+	return planStock{Name: c.Name, Qty: qty, Products: len(st), InStock: n}, nil
+}
+
+// MarketsPlanStock is the stock of Ozon cabinet id for the «План» field.
+func (a *App) MarketsPlanStock(id string) (planStock, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	return a.settings.ozonPlanStock(ctx, ozon.DefaultURL, nil, id)
 }
 
 // MarketsPlan builds the plan from the forecast's three sources.

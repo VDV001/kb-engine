@@ -154,6 +154,18 @@ func calendarDays(from, to time.Time) int {
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }
 
+// OzonStockTotal sums stock to sell for the plan; резерв больше наличия у
+// одного товара не уменьшает остаток других. inStock — товаров с остатком.
+func OzonStockTotal(st []OzonStock) (qty float64, inStock int) {
+	for _, s := range st {
+		if s.Qty > 0 {
+			qty += s.Qty
+			inStock++
+		}
+	}
+	return qty, inStock
+}
+
 // OzonDaily turns postings into own orders by day for the forecast (#580):
 // штуки ВКЛЮЧАЯ отмены — у свежих отправлений отмены еще не закрылись, и ряд
 // «без отмен» завышал бы новые дни против старых (ревью #592); по дню создания

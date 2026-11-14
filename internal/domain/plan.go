@@ -3,6 +3,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"time"
 )
@@ -186,13 +187,15 @@ func (p Plan) Profit() float64 {
 	return s
 }
 
-// Supply — сколько довезти и к какой дате: недостающее к спросу, к дню, когда
-// остаток кончится, минус срок поставки; ноль — остатка хватает.
+// Supply — сколько довезти и к какой дате: недостающее к спросу целыми штуками
+// (нехватка 0,3 шт — довезти 1, ревью 14.11), к дню, когда остаток кончится,
+// минус срок поставки; ноль — остатка хватает.
 func (p Plan) Supply() (qty float64, by time.Time) {
 	if p.out.IsZero() {
 		return 0, time.Time{}
 	}
-	return max(p.demand-p.stock, 0), p.out.AddDate(0, 0, -p.lead)
+	const eps = 1e-6 // хвост float от суммы дней не добавляет штуку
+	return max(math.Ceil(p.demand-p.stock-eps), 0), p.out.AddDate(0, 0, -p.lead)
 }
 
 // Peak is the forecast's peak day.
@@ -203,6 +206,12 @@ func (p Plan) SupplyLate() bool {
 	_, by := p.Supply()
 	return !by.IsZero() && by.Before(p.from)
 }
+
+// OutOfStock is the day the stock ran short of demand; ноль — хватило.
+func (p Plan) OutOfStock() time.Time { return p.out }
+
+// Demand is the forecast's demand over the plan, штук.
+func (p Plan) Demand() float64 { return p.demand }
 
 // ShortForPeak — остаток кончится раньше дня пика или в него.
 func (p Plan) ShortForPeak() bool { return !p.out.IsZero() && !p.out.After(p.peak) }

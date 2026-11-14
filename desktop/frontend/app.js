@@ -1389,10 +1389,11 @@ $("#conn-mpstats").addEventListener("submit", async (e) => {
   go.disabled = true;
   $("#conn-m-note").textContent = "Проверяю ключ в MPStats…";
   try {
-    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value);
-    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» возьмет нишу из MPStats.";
+    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value, $("#conn-m-share").checked);
+    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» и «Ниша» возьмут данные из MPStats" + (r.share ? ", чат — тоже." : ".");
     toast("Добавлено", ` · «${r.name}»: ключ MPStats принят`);
     for (const id of ["#conn-m-name", "#conn-m-key"]) $(id).value = "";
+    $("#conn-m-share").checked = false;
   } catch (err) {
     $("#conn-m-note").textContent = errText(err);
     toast("Не добавлено", " · " + errText(err), null, "bad");
@@ -1424,7 +1425,7 @@ function showOzonForm() {
   $("#conn-add-ozon").setAttribute("aria-expanded", "true");
   focusSoon("#conn-o-id");
 }
-$("#mk-conn").addEventListener("click", async () => { hideTip(); await openSettings("conn"); showOzonForm(); });
+$("#mk-cn-add").addEventListener("click", async () => { hideTip(); await openSettings("conn"); showOzonForm(); });
 $("#conn-add-ozon").addEventListener("click", () => {
   maskConnKeys();
   if (!$("#conn-ozon").hidden) { $("#conn-ozon").hidden = true; $("#conn-add-ozon").setAttribute("aria-expanded", "false"); return; }
@@ -5424,10 +5425,15 @@ async function mkLoadCats(strict) {
   try {
     const paths = await native().MarketsMPStatsCategories();
     $("#mk-mps-cats").innerHTML = paths.map((p) => `<option value="${esc(p)}">`).join("");
+    mk.cats = paths; // поиск над таблицей ищет и по всем путям MPStats
     mkCatsLoaded = true;
   } catch (e) { if (strict) throw e; }
 }
-async function mkReadMPS(path, from, to, days) {
+// mkLeaves — конечные категории MPStats (ниш внутри нет): «Внутрь» у них не
+// показывается; узнаются при первом заходе (живая проверка 14.11).
+const mkLeaves = new Set();
+// inside — «Внутрь»: у конечной ниши таблица остается, а окно говорит, что внутри пусто.
+async function mkReadMPS(path, from, to, days, inside) {
   if (!native() || !native().MarketsNichesMPStats) return mkErr("Экран «Ниша» работает в окне приложения.");
   if (!from) days = 30;
   from = from || mkDaysBack(30); to = to || mkYesterday();
@@ -5435,15 +5441,40 @@ async function mkReadMPS(path, from, to, days) {
   mk.mps = { path: (path || "").split("/").map((x) => x.trim()).filter(Boolean).join("/"), from, to, days }; // «A / B» → «A/B»
   mkErr("");
   $("#mk-mps-bar").hidden = false;
+  mk.busy = inside ? mk.mps.path : "";
   mkMpsRender(true);
+  if (inside) mkRender(); // кнопка «загружаю…», таблица приглушена
+  // Все категории: имена сразу из списка путей, цифры MPStats — следом (3-4 минуты, замер 14.11).
+  if (!mk.mps.path) {
+    await mkLoadCats();
+    if (seq !== mkMpsSeq) return;
+    const tops = [...new Set((mk.cats || []).map((p) => p.split("/")[0]).filter(Boolean))];
+    if (tops.length) {
+      Object.assign(mk, { tb: { path: "mpstats:", file: "MPStats · все категории · цифры загружаются, 3-4 минуты", fields: (mk.tb && mk.tb.fields) || [], columns: [], problems: [],
+        niches: tops.map((name) => ({ name, values: {}, months: [], markets: [], score: { ok: false, score: 0, missing: [], parts: [] } })) }, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
+      $("#mk-q").value = "";
+      mkRender();
+    }
+  }
   try {
     const tb = await native().MarketsNichesMPStats(mk.mps.path, from, to);
     if (seq !== mkMpsSeq) return;
+    mk.busy = "";
+    if (tb.leaf) mkLeaves.add(mk.mps.path);
+    if (tb.leaf && inside && prev.tb) {
+      mk.mps = prev.mps;
+      toast("Внутри ниш нет", ` · «${path.split("/").pop()}» — конечная категория MPStats`, null, "info");
+      mkMpsRender(false); mkRender();
+      return;
+    }
     Object.assign(mk, { tb, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
     $("#mk-q").value = "";
     mkSave();
+    mkLoadCats(); // пути MPStats — для поиска по всем категориям
+    mkSeasonLoad(seq, mk.mps.path, from, to);
   } catch (e) {
     if (seq !== mkMpsSeq) return;
+    mk.busy = "";
     // Отказ: панель — к тому, что на экране (ревью #606); таблица из файла под
     // ошибкой MPStats читалась бы как ответ MPStats (живая проверка 13.11) — убираем.
     if (prev.tb && prev.tb.path && prev.tb.path.startsWith("mpstats:")) mk.mps = prev.mps;
@@ -5452,15 +5483,36 @@ async function mkReadMPS(path, from, to, days) {
   }
   if (seq === mkMpsSeq) { mkMpsRender(false); mkRender(); }
 }
+// mkSeasonLoad — сезон ниш вторым вызовом (отзыв 14.11): таблица уже на
+// экране, месяцы MPStats отдает ≈ 13 с на нишу; выбор и фильтры остаются.
+async function mkSeasonLoad(seq, path, from, to) {
+  if (!native() || !native().MarketsNichesMPStatsSeason || !mk.tb || !mk.tb.niches.length || !path) return; // у верхних категорий сезон не грузится: 34 тяжелых запроса
+  mk.seasonBusy = true; mkMpsRender(false);
+  try {
+    const tb = await native().MarketsNichesMPStatsSeason(path, from, to);
+    if (seq !== mkMpsSeq) return;
+    const selName = mk.tb.niches[mk.sel] && mk.tb.niches[mk.sel].name;
+    const cmp = mk.cmp.map((i) => mk.tb.niches[i] && mk.tb.niches[i].name);
+    mk.tb = tb;
+    mk.sel = Math.max(0, tb.niches.findIndex((n) => n.name === selName));
+    mk.cmp = cmp.map((nm) => tb.niches.findIndex((n) => n.name === nm)).filter((i) => i >= 0);
+  } catch (e) {
+    if (seq !== mkMpsSeq) return;
+    toast("Сезон не загружен", " · " + errText(e), null, "bad");
+  }
+  if (seq !== mkMpsSeq) return;
+  mk.seasonBusy = false; mkMpsRender(false); mkRender();
+}
 function mkMpsRender(busy) {
   const m = mk.mps || { path: "", from: mkDaysBack(30), to: mkYesterday() };
   if (document.activeElement !== $("#mk-mps-path")) $("#mk-mps-path").value = m.path;
   const parts = m.path ? m.path.split("/") : [];
-  $("#mk-mps-crumbs").innerHTML = parts.map((p, i) => `<button type="button" class="lnk" data-mk-crumb="${esc(parts.slice(0, i + 1).join("/"))}"${mkTip("Подняться", "показать ниши этой категории")}>${esc(p)}</button>`).join(" / ") +
-    (busy ? ` <span class="muted">загружаю из MPStats…</span>` : "");
+  $("#mk-mps-crumbs").innerHTML = `<button type="button" class="lnk" data-mk-crumb=""${mkTip("Все категории", "верхние категории Ozon с цифрами MPStats; дальше — «Внутрь» или поиск")}>Все категории</button>` + (parts.length ? " / " : "") + parts.map((p, i) => `<button type="button" class="lnk" data-mk-crumb="${esc(parts.slice(0, i + 1).join("/"))}"${mkTip("Подняться", "показать ниши этой категории")}>${esc(p)}</button>`).join(" / ") +
+    (busy ? ` <span class="muted">загружаю из MPStats…</span>` : mk.seasonBusy ? ` <span class="muted">· сезон по месяцам загружается из MPStats, до минуты</span>` : "");
   $("#mk-mps-presets").innerHTML = MK_MPS_PRESETS.map(([n, l]) => `<button type="button" data-mk-days="${n}" aria-pressed="${m.to === mkYesterday() && m.from === mkDaysBack(n)}"${mkTip(l, `последние ${n} дней до вчера`)}>${l}</button>`).join("");
   for (const [id, v] of [["#mk-mps-d1", m.from], ["#mk-mps-d2", m.to]]) { const i = $(id); i.max = mkYesterday(); if (document.activeElement !== i) i.value = v; }
   $("#mk-mps-go").disabled = !!busy;
+  $("#mk-mps-go").textContent = $("#mk-mps-path").value.trim() ? "Показать" : "Показать все";
 }
 $("#mk-mps").addEventListener("click", async () => {
   hideTip();
@@ -5480,6 +5532,7 @@ $("#mk-mps").addEventListener("click", async () => {
   }
 });
 $("#mk-mps-go").addEventListener("click", () => { hideTip(); const m = mk.mps || {}; mkReadMPS($("#mk-mps-path").value, m.from, m.to, m.days); });
+$("#mk-mps-path").addEventListener("input", () => { $("#mk-mps-go").textContent = $("#mk-mps-path").value.trim() ? "Показать" : "Показать все"; });
 $("#mk-mps-path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#mk-mps-go").click(); } });
 $("#mk-mps-bar").addEventListener("click", (e) => {
   const c = e.target.closest("[data-mk-crumb]");
@@ -5519,7 +5572,8 @@ function mkRender() {
   if (mkIsMPS()) $("#mk-mps-bar").hidden = false;
   // Откуда ниши — ярлыком и словами (отзыв владельца 13.11: «непонятно, откуда»).
   srcTag("#mk-src-tag", !tb ? "" : mkIsMPS() ? "mps" : "file");
-  $("#mk-intro").textContent = "Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. " + (!tb
+  // Шапка — одна строка (отзыв 14.11), остальное в подсказке.
+  $("#mk-intro").dataset.tipB = "где спрос растет, а продавцов немного. " + (!tb
     ? "Ниши — из выгрузки файлом («Открыть выгрузку…») или из MPStats по ключу («Из MPStats»)."
     : mkIsMPS() ? "Сейчас ниши — из MPStats по ключу, за выбранные дни; файл — «Открыть выгрузку…»." : "Сейчас ниши — из выгрузки файлом; из MPStats по ключу — «Из MPStats».");
   $("#mk-file").dataset.tipB = !tb ? "" : mkIsMPS()
@@ -5527,6 +5581,7 @@ function mkRender() {
     : `${$("#mk-file").textContent} · ${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят`;
   $("#mk-cols").hidden = !tb || mkIsMPS(); // у MPStats колонок файла нет
   $("#mk-body").hidden = !tb || tb.needName;
+  $("#mk-body").classList.toggle("busy", !!mk.busy);
   if (!tb) return;
   mkRenderCols();
   if (!tb.needName) { mkRenderFilters(); mkRenderTable(); mkRenderCmp(); mkRenderProbs(); }
@@ -5610,6 +5665,65 @@ function mkSeasonTip(n) {
   return mkTip("Продажи по месяцам", `${mkRange(n)}${s.peak ? ` · пик в ${MK_IN[s.peak]}` + (s.inSeason ? " — скоро" : " — сейчас не сезон") : " · пик не найти: нужно хотя бы полгода"}`);
 }
 const MK_HEAD_TIP = { ...MK_TIP, season: "продажи ниши по месяцам; точка — пик", score: "0-100: рост, выручка на продавца, свобода от топ-10 и сезон; подробнее — наведите на число в строке" };
+// «Подключения» «Маркетов» по макету (отзыв 14.11): карточка на площадку —
+// что дает ключ (плашки), последний обмен, проверка и разрешение чату.
+const CN_OZON = ["продажи", "заказы", "остатки", "начисления", "возвраты"];
+const CN_MPS = ["ниши", "продажи по дням", "сезон по месяцам", "продавцы и топ-10"];
+const cnChecks = {};
+async function cnRender() {
+  const grid = $("#mk-cn-grid");
+  if (!native() || !native().Connections) { grid.innerHTML = `<p class="muted">Подключения видны в окне приложения.</p>`; return; }
+  const rows = ((await native().Connections().catch(() => [])) || []).filter((c) => c.kind === "ozon" || c.kind === "mpstats");
+  const last = {};
+  await Promise.all(rows.filter((c) => c.kind === "ozon").map(async (c) => { last[c.id] = native().MarketsOzonLast ? await native().MarketsOzonLast(c.id).catch(() => null) : null; }));
+  const chips = (list, off) => `<div class="mk-cn-chips">${list.map((x) => `<span class="mk-cn-chip${off ? " off" : ""}">${esc(x)}</span>`).join("")}</div>`;
+  const pill = (t, cls) => `<span class="mk-cn-st ${cls}">${esc(t)}</span>`;
+  const check = (c) => { const k = cnChecks[c.id]; return k ? `<p class="mk-cn-last ${k.busy ? "" : k.ok ? "ok" : "bad"}">${k.busy ? "проверяю…" : (k.ok ? "✓ " : "✕ ") + esc(k.note)}</p>` : ""; };
+  const acts = (c, extra) => `<div class="mk-cn-acts"><button class="btn" type="button" data-cn-check="${esc(c.id)}">Проверить</button><button class="btn" type="button" data-cn-share="${esc(c.id)}" data-on="${!c.share}"${mkTip(c.share ? "Чату разрешено" : "Чату запрещено", c.share ? "модель чата видит эти данные, они уходят ее провайдеру; нажмите — запретить" : "модель чата их не видит; нажмите — разрешить")}>${c.share ? "Чату: запретить" : "Чату: разрешить"}</button>${extra || ""}</div>`;
+  const card = (c) => {
+    const on = c.enabled && c.ok !== false;
+    if (c.kind === "ozon") {
+      const l = last[c.id];
+      return `<div class="mk-cn-card${on ? " on" : ""}"><h4><i class="dot ${on ? "ok" : ""}"></i>Ozon · ${esc(c.name)} ${pill(c.enabled ? "подключен" : "выключен", c.enabled ? "ok" : "")}</h4>
+        <p class="d">Client-Id и API-ключ с ролью «Только чтение»: окно ничего не меняет в кабинете</p>${chips(CN_OZON)}
+        <p class="mk-cn-last">${l && l.loadedAt ? `Последний обмен: ${esc(l.loadedAt)} · ${fmt((l.products || []).length)} товаров за 90 дней` : "Еще не загружался: «Магазин» → «Загрузить из Ozon»"}</p>${check(c)}
+        ${acts(c, `<button class="btn" type="button" data-cn-shop="${esc(c.id)}">Открыть «Магазин»</button>`)}</div>`;
+    }
+    return `<div class="mk-cn-card${on ? " on" : ""}"><h4><i class="dot ${on ? "ok" : ""}"></i>MPStats · ${esc(c.name)} ${pill(c.enabled ? "подключен" : "выключен", c.enabled ? "ok" : "")}</h4>
+      <p class="d">Аналитика рынка Ozon по ключу API: каждый запрос тратит лимит тарифа</p>${chips(CN_MPS)}${check(c)}${acts(c)}</div>`;
+  };
+  const hasOzon = rows.some((c) => c.kind === "ozon"), hasMps = rows.some((c) => c.kind === "mpstats");
+  grid.innerHTML = rows.map(card).join("") +
+    (hasOzon ? "" : `<div class="mk-cn-card"><h4><i class="dot"></i>Ozon ${pill("не подключен", "")}</h4><p class="d">Client-Id и API-ключ с ролью «Только чтение» из кабинета продавца</p>${chips(CN_OZON, true)}<div class="mk-cn-acts"><button class="btn mk-main" type="button" data-cn-add>Подключить</button></div></div>`) +
+    (hasMps ? "" : `<div class="mk-cn-card"><h4><i class="dot"></i>MPStats ${pill("не подключен", "")}</h4><p class="d">Ключ API MPStats: ниши и сезон без выгрузки файлом</p>${chips(CN_MPS, true)}<div class="mk-cn-acts"><button class="btn mk-main" type="button" data-cn-add>Подключить</button></div></div>`) +
+    `<div class="mk-cn-card"><h4><i class="dot"></i>Wildberries ${pill("ждет токен", "wait")}</h4><p class="d">Токен API с категориями «Статистика» и «Аналитика», только чтение; подключение — в работе (#600)</p>${chips(["продажи", "заказы", "остатки", "цены и скидки"], true)}</div>` +
+    `<div class="mk-cn-card"><h4><i class="dot"></i>Яндекс Маркет ${pill("позже", "wait")}</h4><p class="d">API-ключ кабинета; в первой версии не делаем</p>${chips(["продажи", "остатки"], true)}</div>` +
+    `<div class="mk-cn-card"><h4><i class="dot file"></i>Файлы аналитики ${pill("вручную", "file")}</h4><p class="d">Выгрузки MPStats и похожих сервисов (xlsx, csv): продажи ниши и конкурентов. Окно узнает колонки само и спросит, если не узнало.</p><div class="mk-cn-acts"><button class="btn" type="button" data-cn-file>Открыть выгрузку…</button></div></div>`;
+  dropStaleTip();
+}
+$("#mk-cn-grid").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  hideTip();
+  if ("cnAdd" in b.dataset) { await openSettings("conn"); return; }
+  if ("cnFile" in b.dataset) { mkTab("niche"); $("#mk-open").click(); return; }
+  if (b.dataset.cnShop) { mkTab("shop"); return; }
+  if (b.dataset.cnShare) {
+    try { await native().SetOzonShare(b.dataset.cnShare, b.dataset.on === "true"); } catch (err) { toast("Не изменено", " · " + errText(err), null, "bad"); }
+    return void cnRender();
+  }
+  if (b.dataset.cnCheck) {
+    const id = b.dataset.cnCheck;
+    cnChecks[id] = { busy: true }; cnRender();
+    try { const r = await native().CheckConnection(id); cnChecks[id] = { ok: r.ok, note: r.note }; } catch (err) { cnChecks[id] = { ok: false, note: errText(err) }; }
+    cnRender();
+  }
+});
+// mkShort — имя ниши без общего пути категории MPStats (как в макете); полностью — в подсказке.
+function mkShort(name) {
+  const p = mkIsMPS() && mk.mps && mk.mps.path;
+  return p && name.startsWith(p + "/") ? name.slice(p.length + 1) : name;
+}
 function mkRenderTable() {
   const shown = mkShown(), ns = mk.tb.niches;
   if (mk.sort !== "name" && !shown.includes(mk.sort)) { mk.sort = shown.includes("score") ? "score" : shown.includes("sales") ? "sales" : shown[0] || "name"; mk.dir = mk.sort === "name" ? 1 : -1; }
@@ -5624,7 +5738,7 @@ function mkRenderTable() {
     return `<td class="n${id === "growth" && v > 0 ? " up" : id === "growth" && v < 0 ? " down" : ""}">${mkVal(id, v)}</td>`;
   };
   $("#mk-table").innerHTML = `<thead><tr>${th("name", "")}${shown.map((id) => th(id, id === "season" ? "" : "n")).join("")}</tr></thead><tbody>` +
-    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td>${esc(ns[i].name)}</td>${shown.map((id) => td(ns[i], id)).join("")}</tr>`).join("") + "</tbody>";
+    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td title="${esc(ns[i].name)}">${esc(mkShort(ns[i].name))}</td>${shown.map((id) => td(ns[i], id)).join("")}</tr>`).join("") + "</tbody>";
   $("#mk-none").hidden = list.length > 0;
   for (const b of document.querySelectorAll("[data-mk-by]")) b.setAttribute("aria-pressed", String(b.dataset.mkBy === mk.sort));
   mkRenderCard();
@@ -5655,11 +5769,11 @@ function mkRenderCard() {
   if (v.price !== undefined) kv.push(["Средняя цена", mkVal("price", v.price), MK_TIP.price]);
   if (n.markets.length) kv.push(["Маркетплейсы", n.markets.map((m) => MK_MP[m]).join(", "), MK_TIP.marketplace]);
   const inCmp = mk.cmp.includes(mk.sel);
-  $("#mk-card").innerHTML = `<div class="mk-card-h"><h3>${esc(n.name)}</h3><span class="mk-sc ${mkLevel(s)}"${mkScoreTip(s)}>${s.ok ? s.score : "—"}</span></div>` +
+  $("#mk-card").innerHTML = `<div class="mk-card-h"><h3 title="${esc(n.name)}">${esc(mkShort(n.name))}</h3><span class="mk-sc ${mkLevel(s)}"${mkScoreTip(s)}>${s.ok ? s.score : "—"}</span></div>` +
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
-    `<div class="row">${mkIsMPS() ? `<button class="btn" type="button" data-mk-in="${esc(n.name)}"${mkTip("Внутрь", "ниши внутри этой: ее подкатегории за те же дни")}>Внутрь</button>` : ""}<button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
+    `<div class="row">${mkIsMPS() && !mkLeaves.has(n.name) && !(mk.tb.leaf && mk.tb.niches.length === 1) ? `<button class="btn" type="button" data-mk-in="${esc(n.name)}"${mk.busy === n.name ? " disabled" : ""}${mkTip("Внутрь", "ниши внутри этой: ее подкатегории за те же дни; MPStats отвечает до 20 секунд")}>${mk.busy === n.name ? "загружаю…" : "Внутрь"}</button>` : ""}<button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
     `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
 }
 // mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
@@ -5729,7 +5843,25 @@ $("#mk-table").addEventListener("keydown", (e) => {
   mkRenderTable();
   const now = document.querySelector(`[data-mk-n="${mk.sel}"]`); if (now) now.focus();
 });
-$("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb && !mk.tb.needName) mkRenderTable(); });
+$("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb && !mk.tb.needName) mkRenderTable(); mkPaths(); });
+// mkPaths — поиск ниши ищет и по всем 3 562 путям MPStats (отзыв 14.11: «загрузить
+// все, а потом отфильтровать»): щелчок — ниши этого пути с цифрами.
+function mkPaths() {
+  const box = $("#mk-paths"), q = (mk.q || "").trim().toLowerCase().replace(/ё/g, "е");
+  const words = q.split(/\s+/).filter(Boolean);
+  if (!mkIsMPS() || !words.length || !mk.cats) { box.hidden = true; return; }
+  const hit = mk.cats.filter((p) => { const f = p.toLowerCase().replace(/ё/g, "е"); return words.every((w) => f.includes(w)); });
+  box.hidden = false;
+  box.innerHTML = `<div class="hd">Категории MPStats по «${esc(mk.q.trim())}»: ${fmt(hit.length)}</div>` +
+    (hit.length ? hit.slice(0, 40).map((p) => `<button type="button" class="lnk" data-mk-path="${esc(p)}"${mkTip(p, "ниши этого пути с цифрами MPStats за те же дни")}>${esc(p)}</button>`).join("") + (hit.length > 40 ? `<span class="muted">…и еще ${fmt(hit.length - 40)}: уточните слова</span>` : "") : `<span class="muted">путей с этими словами нет: в списке MPStats бывают старые имена («Мужчинам», а не «Мужская одежда») — попробуйте другое слово или впишите путь в поле категории</span>`);
+}
+$("#mk-paths").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mk-path]");
+  if (!b) return;
+  hideTip(); const m = mk.mps || {};
+  mk.q = ""; $("#mk-q").value = ""; mkPaths();
+  mkReadMPS(b.dataset.mkPath, m.from, m.to, m.days);
+});
 $("#mk-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });
@@ -5750,18 +5882,19 @@ const fcDay = (s) => { const d = fcDate(s); return `${d.getDate()} ${MON_GEN[d.g
 const MON_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 try { const p = JSON.parse(localStorage.getItem(FC_KEY) || "null"); if (Array.isArray(p) && p.length === 3) fc.paths = p.map(String); } catch (_) { /* без хранилища — пустые поля */ }
 function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths)); } catch (_) { /* окно просто не вспомнит файлы */ } }
-// mkTab переключает «Ниша», «Прогноз» и «Магазин»; «План» живет под прогнозом.
+// mkTab переключает «Ниша», «Прогноз», «Магазин» и «План» (отдельная страница, отзыв 14.11).
 function mkTab(id) {
+  mkErr(""); // сообщение одной вкладки не переезжает на другую (живая проверка 14.11)
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
   $("#mk-mps-bar").hidden = id !== "niche" || !(mk.mpsOpen || mkIsMPS()); // панель MPStats — по своему состоянию
-  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
+  if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else if (id === "plan") plPage(); else if (id === "conn") cnRender(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
   const inn = e.target.closest("[data-mk-in]");
-  if (inn) { hideTip(); const m = mk.mps || {}; return void mkReadMPS(inn.dataset.mkIn, m.from, m.to, m.days); }
+  if (inn) { hideTip(); const m = mk.mps || {}; return void mkReadMPS(inn.dataset.mkIn, m.from, m.to, m.days, true); }
   const go = e.target.closest("[data-mk-go-fc]");
   if (go) {
     hideTip();
@@ -5773,14 +5906,6 @@ $("#markets-view").addEventListener("click", (e) => {
     }
     mkTab("forecast");
     return;
-  }
-  // «План» строится по прогнозу: вкладка ведет к блоку под ним, а без прогноза — к его кнопке.
-  if (e.target.closest("#mk-plan-tab")) {
-    hideTip();
-    mkTab("forecast");
-    const plan = $("#mk-plan");
-    if (plan.hidden) { mkErr("План строится по прогнозу: выберите три источника и нажмите «Посчитать прогноз» — блок плана появится под ним."); $("#mk-fc-go").scrollIntoView({ block: "center" }); }
-    else plan.scrollIntoView({ block: "start" });
   }
 });
 // Ниша из MPStats (#580): обе ниши — одним источником «mpstats:<id>|<путь>»;
@@ -5796,7 +5921,6 @@ function fcMPStatsSlot(i, title, hint, p, info) {
     `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
 }
 function fcRender() {
-  $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
   if (!fc.v) plRender(null);
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
@@ -5877,8 +6001,13 @@ $("#mk-fc-go").addEventListener("click", async () => {
   fcRender();
 });
 // «План продаж» (#580): по тем же трем источникам, что прогноз, и вводу человека.
-const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "comm", "log", "lead"];
-try { const v = JSON.parse(localStorage.getItem(PL_KEY) || "null"); if (v) for (const k of PL_IN) if (v[k] !== undefined) $("#pl-" + k).value = v[k]; } catch (_) { /* без хранилища — значения по умолчанию */ }
+const PL_KEY = "kb.markets.plan", PL_IN = ["stock", "cost", "price", "fee", "lead"];
+try {
+  const v = JSON.parse(localStorage.getItem(PL_KEY) || "null");
+  if (v && v.fee === undefined && v.comm !== undefined) v.fee = String(Number(String(v.comm).replace(",", ".")) + Number(String(v.log || 0).replace(",", "."))); // прежние «Комиссия» и «Логистика» — одним полем, как в макете
+  if (v) for (const k of PL_IN) if (v[k] !== undefined && v[k] !== "NaN") $("#pl-" + k).value = v[k];
+} catch (_) { /* без хранилища — значения по умолчанию */ }
+const pl = { v: null, days: false, price: 0, lead: 10, stockFor: "", cab: null };
 // Число как пишет человек: «1 500», «1.500» (точка — тысячи), «1500,5», «−5» (ревью #599).
 function plNum(k) {
   let t = String($("#pl-" + k).value).replace(/[\s\u00a0₽%]/g, "").replace(/\u2212/g, "-");
@@ -5889,23 +6018,93 @@ function plInput() {
   try { localStorage.setItem(PL_KEY, JSON.stringify(Object.fromEntries(PL_IN.map((k) => [k, $("#pl-" + k).value])))); } catch (_) { /* окно просто не вспомнит ввод */ }
   const bad = PL_IN.filter((k) => !Number.isFinite(plNum(k)) || String($("#pl-" + k).value).trim() === "");
   if (bad.length) return null;
-  return { stock: plNum("stock"), cost: plNum("cost"), price: plNum("price"), commission: plNum("comm"), logistics: plNum("log"), leadDays: Math.round(plNum("lead")) };
+  return { stock: plNum("stock"), cost: plNum("cost"), price: plNum("price"), commission: plNum("fee"), logistics: 0, leadDays: Math.round(plNum("lead")) };
 }
+// plSrc names the forecast's sources in words: ниша и свои продажи.
+function plSrc() {
+  const base = (p) => p.split("/").pop();
+  const [last, now, own] = fc.paths;
+  const niche = last.startsWith("mpstats:") ? `ниша «${base(fcMpsPath(last))}» из MPStats` : last && now ? `ниша: файлы «${base(last)}» и «${base(now)}»` : "";
+  const cab = own.startsWith("ozon:") && (fc.cabs || []).find((c) => "ozon:" + c.id === own);
+  const mine = own.startsWith("ozon:") ? `свои продажи: кабинет ${cab ? cab.name : "Ozon"}` : own ? `свои продажи: «${base(own)}»` : "";
+  return [niche, mine].filter(Boolean).join(" · ");
+}
+// plStockFill puts the cabinet's stock into «Остаток»: прогноз считается по
+// продажам всего кабинета, поэтому и остаток — сумма по всем товарам (решение 14.11).
+async function plStockFill() {
+  const own = fc.paths[2] || "";
+  pl.stockFor = own;
+  if (!own.startsWith("ozon:") || !native() || !native().MarketsPlanStock) { $("#pl-stock-note").hidden = true; pl.cab = null; return; }
+  $("#pl-stock-note").hidden = false;
+  $("#pl-stock-get").hidden = true;
+  $("#pl-stock-txt").textContent = "Читаю остаток из кабинета…";
+  try {
+    const s = await native().MarketsPlanStock(own.slice("ozon:".length));
+    if (fc.paths[2] !== own) return; // источник сменили, пока читали
+    pl.cab = s;
+    if (plNum("stock") !== s.qty) { $("#pl-stock").value = String(s.qty); $("#pl-xlsx").disabled = true; }
+    $("#pl-stock-txt").textContent = `Остаток — из кабинета ${s.name}: ${fmt(s.qty)} шт по всем товарам (в наличии ${fmt(s.inStock)} из ${fmt(s.products)}), как и свои продажи в прогнозе. Поле можно поправить.`;
+  } catch (err) {
+    if (fc.paths[2] !== own) return;
+    pl.stockFor = ""; pl.cab = null; // при следующем открытии — еще раз
+    $("#pl-stock-txt").textContent = "Остаток из кабинета не прочитан: " + errText(err) + ". Впишите руками.";
+  }
+  $("#pl-stock-get").hidden = false;
+}
+$("#pl-stock-get").addEventListener("click", () => { hideTip(); plStockFill(); });
+$("#pl-stock").addEventListener("input", () => {
+  if (pl.cab) $("#pl-stock-txt").textContent = `Остаток вписан руками; в кабинете ${pl.cab.name} — ${fmt(pl.cab.qty)} шт по всем товарам.`;
+});
+// plPage shows the «План» page: без трех источников — путь к «Прогнозу».
+function plPage() {
+  const ready = fc.paths.every(Boolean);
+  $("#pl-none").hidden = ready;
+  $("#pl-in").hidden = !ready;
+  $("#pl-src").textContent = ready ? "По прогнозу: " + plSrc() : "";
+  if (pl.key !== fc.paths.join("|")) pl.v = null; // источники «Прогноза» сменились — прежний план не про них
+  plRender(ready ? pl.v : null);
+  if (ready && pl.stockFor !== fc.paths[2]) plStockFill();
+  if (!ready) $("#pl-stock-note").hidden = true;
+}
+const PL_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+const plDate = (s) => { const [d, m, y] = s.split(".").map(Number); return new Date(y, m - 1, d); };
+const plShort = (d) => `${d.getDate()} ${PL_MON[d.getMonth()]}`;
+function plWeekLabel(w) { const a = plDate(w.from), b = new Date(a); b.setDate(a.getDate() + w.days - 1); return `${plShort(a)} – ${plShort(b)}`; }
 function plRender(v) {
   const has = !!v;
-  for (const id of ["#pl-kpis", "#pl-table", "#pl-how"]) $(id).hidden = !has;
-  $("#pl-xlsx").disabled = !has;
+  for (const id of ["#pl-kpis", "#pl-warn", "#pl-wrap", "#pl-acts", "#pl-how"]) $(id).hidden = !has;
   if (!has) return;
-  const kpi = (k, val, s, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${s}</div></div>`;
-  $("#pl-kpis").innerHTML = kpi("Продать", fmt(v.sell) + " шт", `за ${fmt(v.weeks.length)} недель прогноза`, "", "сколько продать за период, не больше остатка") +
-    kpi("Прибыль по плану", fmt(v.profit) + " ₽", "до рекламы и налогов", v.profit < 0 ? "bad" : "", "сумма прибыли по дням плана") +
-    (v.supplyQty ? kpi("Довезти", fmt(v.supplyQty) + " шт", v.supplyLate ? `срок прошел (${v.supplyBy}) — везти сейчас` : "к " + v.supplyBy, "bad", "недостающее к спросу; дата — когда остаток кончится, минус срок поставки")
-      : kpi("Довезти", "не нужно", "остатка хватает на весь прогноз", "", "")) +
-    kpi("Пик", v.peak, v.shortForPeak ? "остатка не хватит на пик" : "остатка на пик хватает", v.shortForPeak ? "bad" : "", "день с наибольшим прогнозом");
-  const marks = (w) => [w.peak && "пик", w.dip && "провал", w.short && "не хватит остатка"].filter(Boolean).join(", ");
-  $("#pl-table").innerHTML = `<thead><tr><th>Неделя с</th><th>Спрос</th><th>Продать</th><th>Остаток</th><th>Цена</th><th>Прибыль</th><th>Пометки</th></tr></thead><tbody>` +
-    v.weeks.map((w) => `<tr class="${w.peak ? "peak" : ""}"><td>${esc(w.from)}${w.days < 7 ? ` <span class="muted">(${w.days} дн.)</span>` : ""}</td><td>${fmt(w.demand)}</td><td>${fmt(w.sell)}</td>` +
-      `<td${w.short ? ' class="bad"' : ""}>${fmt(w.stockEnd)}</td><td>${fmt(w.price)} ₽</td><td${w.profit < 0 ? ' class="bad"' : ""}>${fmt(w.profit)} ₽</td><td class="m">${esc(marks(w))}</td></tr>`).join("") + "</tbody>";
+  const kpi = (k, val, sub, cls, tip) => `<div class="mk-kpi"${mkTip(k, tip)}><div class="k">${k}</div><div class="v${cls ? " " + cls : ""}">${val}</div><div class="s">${sub}</div></div>`;
+  const nw = v.weeks.length;
+  $("#pl-kpis").innerHTML = kpi(`Продать за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")}`, fmt(v.sell), "штук по плану, не больше остатка", "", "сумма плана продаж по дням") +
+    kpi("Прибыль по плану", fmt(v.profit) + " ₽", "после комиссии и себестоимости", v.profit < 0 ? "bad" : "", "до рекламы и налогов") +
+    (v.supplyQty ? kpi(v.shortForPeak ? "Довезти до пика" : "Довезти", fmt(v.supplyQty) + " шт", v.supplyLate ? `срок прошел (${v.supplyBy}) — везти сейчас` : `успеть до ${plShort(plDate(v.supplyBy))}: поставка идет ~${pl.lead} дн.`, v.supplyLate ? "bad" : "hl", "недостающее к спросу; дата — когда кончится остаток, минус срок поставки")
+      : kpi("Довезти", "не нужно", `остатка хватает, пик ${plShort(plDate(v.peak))}`, "", ""));
+  // Одно предупреждение словами вместо пометки в каждой строке (отзыв 14.11: «непонятно»).
+  const peak = plShort(plDate(v.peak));
+  $("#pl-warn").className = "mk-pl-warn" + (v.out ? " bad" : "");
+  $("#pl-warn").innerHTML = v.out
+    ? `<b>Остатка не хватит${v.shortForPeak ? " на пик" : ""}.</b> ${fmt(v.stock)} шт хватит до ${plShort(plDate(v.out))}, а спрос за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")} ≈ ${fmt(v.demand)} шт. Довезите ${fmt(v.supplyQty)} шт ${v.supplyLate ? "как можно скорее: срок поставки уже прошел" : "до " + plShort(plDate(v.supplyBy))}${v.shortForPeak ? `, иначе неделя пика (${peak}) пройдет без товара` : ""}.`
+    : `<b>Остатка хватает.</b> ${fmt(v.stock)} шт покрывают спрос ≈ ${fmt(v.demand)} шт за ${fmt(nw)} ${plural(nw, "неделю", "недели", "недель")}; пик — ${peak}.`;
+  const pct = (w) => Math.round(Math.abs(w.price / pl.price - 1) * 100);
+  let shortSeen = false;
+  const pills = (w) => {
+    const out = [];
+    if (w.peak) out.push(`<span class="mk-pill peak">пик: цена +${pct(w)}%</span>`);
+    if (w.dip) out.push(`<span class="mk-pill low">провал: скидка ${pct(w)}%</span>`);
+    if (w.short && !shortSeen) { shortSeen = true; out.push(`<span class="mk-pill low">кончается остаток</span>`); }
+    return out.join("");
+  };
+  const n = (x) => `<td class="n">${x}</td>`;
+  $("#pl-days").setAttribute("aria-pressed", String(pl.days));
+  $("#pl-days").textContent = pl.days ? "План по неделям" : "План по дням";
+  if (pl.days) {
+    $("#pl-table").innerHTML = `<thead><tr><th>День</th><th class="n">Спрос, прогноз</th><th class="n">План продаж</th><th class="n">Остаток на конец</th><th class="n">Цена</th><th class="n">Прибыль</th></tr></thead><tbody>` +
+      v.days.map((d) => `<tr class="${d.sell === 0 && d.demand > 0 ? "out" : ""}${d.day === v.peak ? " pk" : ""}"><td>${esc(plShort(plDate(d.day)))}</td>${n(fmt(d.demand))}${n(fmt(d.sell))}${n(fmt(d.stockEnd))}${n(fmt(d.price) + " ₽")}${n(fmt(d.profit) + " ₽")}</tr>`).join("") + "</tbody>";
+    return;
+  }
+  $("#pl-table").innerHTML = `<thead><tr><th>Неделя</th><th class="n">Спрос, прогноз</th><th class="n">План продаж</th><th class="n">Остаток на конец</th><th class="n">Цена</th><th class="n">Прибыль</th><th></th></tr></thead><tbody>` +
+    v.weeks.map((w) => `<tr class="${w.peak ? "pk" : ""}${w.sell === 0 && w.demand > 0 ? " out" : ""}"${w.sell === 0 && w.demand > 0 ? mkTip("Без товара", "остаток кончился раньше этой недели: продавать нечего") : ""}><td>${esc(plWeekLabel(w))}</td>${n(fmt(w.demand))}${n(fmt(w.sell))}${n(fmt(w.stockEnd))}${n(fmt(w.price) + " ₽")}${n(fmt(w.profit) + " ₽")}<td class="m">${pills(w)}</td></tr>`).join("") + "</tbody>";
 }
 $("#pl-go").addEventListener("click", async () => {
   hideTip();
@@ -5913,12 +6112,13 @@ $("#pl-go").addEventListener("click", async () => {
   const inp = plInput();
   if (!inp) return mkErr("Заполните все поля плана числами.");
   mkErr(""); $("#pl-go").textContent = "Строю…";
-  try { plRender(await native().MarketsPlan(...fc.paths, inp)); } catch (err) { plRender(null); mkErr("План не построен: " + errText(err)); }
+  try { pl.v = await native().MarketsPlan(...fc.paths, inp); pl.key = fc.paths.join("|"); pl.price = inp.price; pl.lead = inp.leadDays; plRender(pl.v); $("#pl-xlsx").disabled = false; } catch (err) { pl.v = null; plRender(null); mkErr("План не построен: " + errText(err)); }
   // ввод с этого момента — тот, по которому построен план
-  $("#pl-go").textContent = "Построить план";
+  $("#pl-go").textContent = "Пересчитать план";
 });
 // Правка ввода после расчета — Excel гаснет до нового «Построить план»: файл не разойдется с таблицей.
-$("#mk-plan").addEventListener("input", (e) => { if (e.target.matches("input")) $("#pl-xlsx").disabled = true; });
+$("#mk-pl").addEventListener("input", (e) => { if (e.target.matches("input")) $("#pl-xlsx").disabled = true; });
+$("#pl-days").addEventListener("click", () => { hideTip(); pl.days = !pl.days; plRender(pl.v); });
 $("#pl-xlsx").addEventListener("click", async () => {
   hideTip();
   if (!native() || !native().MarketsPlanExcel) return;

@@ -1666,6 +1666,12 @@ body:not(.no-mk-title) .mk-title { background: linear-gradient(90deg, var(--mk1)
 .mk-tab[aria-selected="true"] { color: var(--z-ink); border-color: var(--z-rule-2); background: var(--z-bg-2); }
 body:not(.no-mk-tab) .mk-tab[aria-selected="true"] { border-color: transparent; background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, linear-gradient(100deg, var(--mk1), var(--mk2), var(--mk3)) border-box; }
 .mk-lead { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 0 18px; }
+/* Шапка в две строки (отзыв 14.11): слева заголовок и под ним источник, оба в строку с многоточием; справа кнопки. */
+.mk-lead-txt { flex: 1 1 260px; min-width: 0; display: grid; gap: 4px; }
+.mk-lead-txt .mk-intro { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--z-ink); }
+.mk-lead-src { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.mk-lead-src .sh-src { min-width: 0; max-width: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-lead-acts { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mk-badge { font-size: 12px; color: var(--z-sp2, var(--z-accent)); border: 1px dashed currentColor; border-radius: var(--z-radius); padding: 3px 8px; max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mk-badge:empty { display: none; }
 .mk-mps { display: grid; gap: 10px; margin: 0 18px; padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
@@ -1811,8 +1817,22 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .sh-econ .total dd { color: var(--z-ok); }
 .sh-econ .note { font-size: 12px; color: var(--z-muted); }
 /* «План продаж» (#580): ввод, итог и недели под прогнозом. */
-.mk-plan { display: grid; gap: 10px; margin: 0 18px; padding-top: 12px; border-top: 1px solid var(--z-rule-2); }
-.mk-plan h3 { margin: 0; font-size: 14px; font-weight: 600; color: var(--z-ink); }
+/* «План» — отдельная страница по макету (отзыв 14.11). */
+.mk-pl { display: grid; gap: 14px; }
+.mk-pl > :not(.mk-lead) { margin: 0 18px; }
+.mk-pl-none { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--z-ink-2); font-size: 13px; }
+.mk-pl-none p { margin: 0; }
+.mk-pl-warn { padding: 10px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); font-size: 13px; color: var(--z-ink-2); }
+.mk-pl-warn b { color: var(--z-ink); }
+.mk-pl-warn.bad { border-color: color-mix(in srgb, var(--z-lvl-warn) 55%, var(--z-rule)); }
+.mk-pl-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mk-plan-wrap { border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 4px 12px; }
+.mk-plan-table td.n, .mk-plan-table th.n { text-align: right; }
+.mk-plan-table tr.pk td { background: color-mix(in srgb, var(--mk1) 10%, transparent); color: var(--z-ink); }
+.mk-plan-table tr.out td { color: var(--z-faint); }
+.mk-pill { display: inline-block; font-size: 11px; border-radius: var(--z-radius); padding: 0 6px; margin-right: 6px; border: 1px solid var(--z-rule-2); color: var(--z-ink-2); white-space: nowrap; }
+.mk-pill.peak { border-color: var(--mk1); color: var(--mk1); }
+.mk-pill.low { border-color: var(--z-lvl-warn); color: var(--z-lvl-warn); }
 .mk-plan-in { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
 .mk-plan-in label { display: grid; gap: 3px; font-size: 12px; color: var(--z-muted); }
 .mk-plan-in input { width: 110px; height: 30px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; text-align: right; }
@@ -1914,3 +1934,34 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 @media (max-width: 900px) { .mk-files { grid-template-columns: minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { .mk-view .btn.mk-main:hover { animation: none !important; } }
 @media (max-width: 900px) { .mk-grid { grid-template-columns: minmax(0, 1fr); } .mk-tabs { margin-left: 0; } }
+
+/* «Внутрь» ждет MPStats (до 20 с, живая проверка 14.11): таблица приглушена, кнопка — «загружаю…». */
+.mk-body.busy .mk-scroll { opacity: .45; pointer-events: none; transition: opacity .2s; }
+
+/* Поиск по всем путям MPStats под таблицей ниш (отзыв 14.11). */
+.mk-paths { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--z-rule-2); font-size: 12px; }
+.mk-paths .hd { color: var(--z-muted); margin-bottom: 2px; }
+.mk-paths .lnk { text-align: left; justify-self: start; }
+#mk-mps-path::placeholder { color: var(--z-faint); font-style: italic; }
+
+/* «Подключения» «Маркетов» по макету (отзыв 14.11); подключенная карточка — градиентная рамка модуля. */
+.mk-cn { display: grid; gap: 14px; padding: 14px 18px; }
+.mk-cn-intro { padding: 12px 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); font-size: 13px; color: var(--z-ink-2); }
+.mk-cn-intro b { color: var(--z-ink); }
+.mk-cn-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.mk-cn-card { display: grid; gap: 8px; align-content: start; padding: 14px 16px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); }
+.mk-cn-card.on { border-color: transparent; background: linear-gradient(var(--z-bg), var(--z-bg)) padding-box, linear-gradient(100deg, var(--mk1), var(--mk2), var(--mk3)) border-box; }
+.mk-cn-card h4 { margin: 0; display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--z-ink); }
+.mk-cn-card .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--z-faint); flex: none; }
+.mk-cn-card .dot.ok { background: var(--z-ok, #6cc28a); }
+.mk-cn-card .dot.file { background: var(--mk1); }
+.mk-cn-card .d { margin: 0; font-size: 12px; color: var(--z-muted); }
+.mk-cn-st { font-size: 11px; font-weight: 500; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 6px; color: var(--z-ink-2); }
+.mk-cn-st.ok { border-color: color-mix(in srgb, var(--z-ok, #6cc28a) 60%, var(--z-rule)); }
+.mk-cn-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.mk-cn-chip { font-size: 12px; padding: 2px 8px; border-radius: var(--z-radius); border: 1px solid color-mix(in srgb, var(--mk2) 60%, var(--z-rule)); background: color-mix(in srgb, var(--mk2) 10%, var(--z-bg-2)); color: var(--z-ink); }
+.mk-cn-chip.off { border-color: var(--z-rule-2); background: none; color: var(--z-muted); }
+.mk-cn-last { margin: 0; font-size: 12px; color: var(--z-ink-2); }
+.mk-cn-last.ok { color: var(--z-ok, #6cc28a); }
+.mk-cn-last.bad { color: var(--z-bad); }
+.mk-cn-acts { display: flex; flex-wrap: wrap; gap: 8px; }

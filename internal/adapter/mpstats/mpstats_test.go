@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"slices"
 	"strings"
 	"sync"
@@ -222,5 +223,28 @@ func TestNoNetworkNamed(t *testing.T) {
 	_, err := mpstats.Client{BaseURL: base, Token: "t"}.Limits(context.Background())
 	if err == nil || errors.Is(err, mpstats.ErrDropped) || strings.Contains(err.Error(), "report_api_limit") {
 		t.Errorf("err = %v; want the network reason without the URL, not «оборвал»", err)
+	}
+}
+
+// Сезон ниши — год по месяцам одним запросом groupBy=month (живой замер 14.11:
+// 12 месяцев за 13 с; по дням — 12 запросов). MPStats отдает новые сначала —
+// окно старые сначала.
+func TestCategoryMonths(t *testing.T) {
+	var asked url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.Query()
+		_, _ = w.Write([]byte(`[{"period":"2026-10-01","sales":434695},{"period":"2026-09-01","sales":339283.5}]`))
+	}))
+	t.Cleanup(srv.Close)
+	c := mpstats.Client{BaseURL: srv.URL, Token: "t-1", HTTP: srv.Client()}
+	ms, err := c.CategoryMonths(context.Background(), "Одежда/Пижамы", time.Date(2025, 11, 1, 0, 0, 0, 0, time.UTC), time.Date(2026, 10, 31, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if asked.Get("groupBy") != "month" || asked.Get("d1") != "2025-11-01" || asked.Get("path") != "Одежда/Пижамы" {
+		t.Errorf("asked %v", asked)
+	}
+	if len(ms) != 2 || !ms[0].Month.Equal(time.Date(2026, 9, 1, 0, 0, 0, 0, time.UTC)) || ms[0].Sales != 339283.5 || ms[1].Sales != 434695 {
+		t.Errorf("months = %+v; want September then October", ms)
 	}
 }

@@ -143,6 +143,35 @@ func (c Client) categorySpan(ctx context.Context, path string, from, to time.Tim
 	return out, nil
 }
 
+// MonthSales — продажи категории за месяц; Month — первое число, полночь UTC.
+type MonthSales struct {
+	Month time.Time
+	Sales float64
+}
+
+// CategoryMonths returns the category's sales by months from..to, старые
+// сначала: одним запросом groupBy=month (12 месяцев ≈ 13 с, замер 14.11).
+func (c Client) CategoryMonths(ctx context.Context, path string, from, to time.Time) ([]MonthSales, error) {
+	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}, "groupBy": {"month"}}
+	var rows []struct {
+		Period string  `json:"period"`
+		Sales  float64 `json:"sales"`
+	}
+	if err := c.get(ctx, "/api/oz/get/category/by_date", q, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]MonthSales, 0, len(rows))
+	for _, r := range rows {
+		m, err := time.Parse(time.DateOnly, r.Period)
+		if err != nil {
+			return nil, fmt.Errorf("MPStats: месяц %q не прочитан", r.Period)
+		}
+		out = append(out, MonthSales{Month: m, Sales: r.Sales})
+	}
+	slices.SortFunc(out, func(a, b MonthSales) int { return a.Month.Compare(b.Month) })
+	return out, nil
+}
+
 // retries — сколько раз повторить обрыв соединения, 502 и 504: MPStats под
 // нагрузкой рвет соединение (живая проверка 13.11); отказ ключа не повторяется.
 const retries = 2

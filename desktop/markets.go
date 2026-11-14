@@ -25,6 +25,7 @@ type nicheTable struct {
 	HeaderRow int            `json:"headerRow"`
 	Period    int            `json:"periodDays"` // дней в выгрузке; 0 — не знаю
 	Items     int            `json:"items"`      // ниши собраны из товаров MPStats; 0 — выгрузка ниш
+	Leaf      bool           `json:"leaf"`       // MPStats: у категории ниш внутри нет — в таблице она сама
 	NeedName  bool           `json:"needName"`
 	Fields    []nicheField   `json:"fields"`
 	Columns   []nicheColumn  `json:"columns"`

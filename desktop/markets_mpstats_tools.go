@@ -109,7 +109,7 @@ func (x mpstatsExtra) run(ctx context.Context, name string, a mpstatsArgs) (stri
 	}
 	to := dayOf(x.now()).AddDate(0, 0, -1)
 	if name == "mpstats_niche" {
-		tb, err := nichesWith(ctx, x.cl, path, to.AddDate(0, 0, 1-mpstatsChatDays), to, x.now())
+		tb, err := nichesWith(ctx, x.cl, path, to.AddDate(0, 0, 1-mpstatsChatDays), to, x.now(), false)
 		if err != nil {
 			return "", err
 		}
