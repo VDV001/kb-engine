@@ -155,18 +155,6 @@ type planStock struct {
 	Items    []planStockItem `json:"items"`
 }
 
-// stockTotal sums stock to sell; резерв больше наличия у одного товара
-// не уменьшает остаток других.
-func stockTotal(st []markets.OzonStock) (qty float64, inStock int) {
-	for _, s := range st {
-		if s.Qty > 0 {
-			qty += s.Qty
-			inStock++
-		}
-	}
-	return qty, inStock
-}
-
 // ozonPlanStock reads the stock of cabinet id now; skus — выбранные товары, nil — все.
 func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *http.Client, id string, skus []string) (planStock, error) {
 	cl, c, err := f.ozonCabinet(id, base, hc)
@@ -188,7 +176,7 @@ func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *htt
 			picked = append(picked, s)
 		}
 	}
-	v.Qty, v.InStock = stockTotal(picked)
+	v.Qty, v.InStock = markets.OzonStockTotal(picked)
 	v.Products = len(picked)
 	return v, nil
 }

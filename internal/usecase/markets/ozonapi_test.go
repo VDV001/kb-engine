@@ -147,3 +147,24 @@ func TestOzonOnly(t *testing.T) {
 		t.Error("OzonOnly changed the input")
 	}
 }
+
+// Резерв больше наличия не уменьшает остаток других товаров.
+func TestOzonStockTotal(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		in        []markets.OzonStock
+		qty       float64
+		withStock int
+	}{
+		{"пусто", nil, 0, 0},
+		{"два товара", []markets.OzonStock{{Qty: 5}, {Qty: 7}}, 12, 2},
+		{"резерв больше наличия", []markets.OzonStock{{Qty: -3}, {Qty: 10}}, 10, 1},
+		{"нулевой", []markets.OzonStock{{Qty: 0}, {Qty: 4}}, 4, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if q, n := markets.OzonStockTotal(tc.in); q != tc.qty || n != tc.withStock {
+				t.Errorf("OzonStockTotal = %v, %d; want %v, %d", q, n, tc.qty, tc.withStock)
+			}
+		})
+	}
+}

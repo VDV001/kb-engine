@@ -210,7 +210,7 @@ func (f *fakeExtra) Describe(name string, _ []byte) (chat.Use, bool) {
 	if name != "shop_summary" {
 		return chat.Use{}, false
 	}
-	return chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «FURIA»", What: "сводка магазина"}, true
+	return chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"}, true
 }
 func (f *fakeExtra) Exec(_ context.Context, name string, args []byte) (string, bool) {
 	if name != "shop_summary" {
@@ -285,8 +285,8 @@ func TestToolsMode_StepsNameWhereTheTurnGoes(t *testing.T) {
 	want := []chat.Use{
 		{Kind: chat.UseDocs, What: "ищет «срок поставки»"},
 		{Kind: chat.UseDocs, What: "читает kb:12"},
-		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «FURIA»", What: "сводка магазина"},
-		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «FURIA»", What: "сводка магазина"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
 	}
 	if !slices.Equal(steps, want) {
 		t.Errorf("steps\n got %+v\nwant %+v", steps, want)
@@ -294,7 +294,7 @@ func TestToolsMode_StepsNameWhereTheTurnGoes(t *testing.T) {
 	wantUses := []chat.Use{
 		{Kind: chat.UseDocs, What: "ищет «срок поставки»"},
 		{Kind: chat.UseDocs, What: "читает kb:12"},
-		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «FURIA»", What: "сводка магазина"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
 	}
 	if !slices.Equal(turn.Uses, wantUses) {
 		t.Errorf("uses\n got %+v\nwant %+v", turn.Uses, wantUses)
@@ -309,9 +309,9 @@ func TestToolsMode_PromptAsksToNameWhereFrom(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := strings.ToLower(m.asked[0][0].Content)
-	// «ссылк»: ссылки из вопроса окно прочло само — модель не должна говорить,
-	// что их не открывала (живая проверка 14.11).
-	for _, want := range []string{"откуда", "подключени", "интернет", "ссылки из вопроса"} {
+	// Ссылки из вопроса окно прочло само — модель не должна говорить, что их не
+	// открывала (живая проверка 14.11); а ту, что не открылась, не выдумывает (ревью 14.11).
+	for _, want := range []string{"откуда", "подключени", "интернет", "ссылок из вопроса", "не открылась"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("system prompt lacks %q:\n%s", want, p)
 		}

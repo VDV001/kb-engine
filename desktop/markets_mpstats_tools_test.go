@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -204,5 +205,162 @@ func TestNichesMPStatsTop(t *testing.T) {
 	// Повтор за те же дни — из памяти: 34 категории MPStats грузит 3-4 минуты (замер 14.11).
 	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 5, 0, 0, time.UTC)); err != nil || cats != 1 {
 		t.Errorf("second read: %v, categories asked %d times", err, cats)
+	}
+}
+
+// Догрузка сезона не повторяет запросы первого показа (ревью 14.11): подкатегории
+// за два года и топ-10 берутся из памяти, новые запросы — только месяцы.
+func TestNichesMPStatsSeasonReusesTable(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	asked := map[string]int{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		asked[r.URL.Path]++
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			_, _ = w.Write([]byte(`[{"name":"Брюки","sales":150,"revenue":3000,"sellers_with_sells":7}]`))
+		case "/api/oz/get/category/sellers":
+			_, _ = w.Write([]byte(`[{"revenue":1500}]`))
+		case "/api/oz/get/category/by_date":
+			_, _ = w.Write([]byte(`[{"period":"2026-10-01","sales":40}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-10-15", "2026-11-13", now); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStatsSeason(context.Background(), srv.Client(), "Одежда", "2026-10-15", "2026-11-13", now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := asked["/api/oz/get/category/subcategories"]; got != 2 {
+		t.Errorf("subcategories asked %d times, want 2 (now and a year ago, once)", got)
+	}
+	if got := asked["/api/oz/get/category/sellers"]; got != 1 {
+		t.Errorf("sellers asked %d times, want 1", got)
+	}
+	if len(v.Niches) != 1 || len(v.Niches[0].Months) != 1 || len(v.Problems) != 0 {
+		t.Errorf("season table lost the first show: %+v", v.Niches)
+	}
+}
+
+// Верхняя категория без подкатегорий — сама ниша; топ-10 спрашивается по ее
+// пути без «/» в начале, как и сезон (ревью 14.11: молча пустая доля).
+func TestNichesMPStatsTopLeafPath(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	var sellers []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":90,"revenue":5000,"sellers_with_sells":4}]`))
+		case "/api/oz/get/category/sellers":
+			mu.Lock()
+			sellers = append(sellers, r.URL.Query().Get("path"))
+			mu.Unlock()
+			_, _ = w.Write([]byte(`[{"revenue":1500}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Книги", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sellers) != 1 || sellers[0] != "Книги" {
+		t.Errorf("top-10 asked for %q, want [Книги]", sellers)
+	}
+	if len(v.Niches) != 1 || v.Niches[0].Name != "Книги" {
+		t.Errorf("niches = %+v", v.Niches)
+	}
+}
+
+// Исчерпанный лимит останавливает «Все категории» (ревью 14.11): после отказа
+// новые запросы не уходят — их не больше, чем идет одновременно.
+func TestNichesMPStatsTopStopsOnQuota(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	subs := 0
+	var paths []string
+	for i := range 10 {
+		paths = append(paths, fmt.Sprintf(`{"path":"Категория %d/Ниша"}`, i))
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/categories":
+			_, _ = w.Write([]byte("[" + strings.Join(paths, ",") + "]"))
+		case "/api/oz/get/category/subcategories":
+			mu.Lock()
+			subs++
+			mu.Unlock()
+			w.WriteHeader(http.StatusTooManyRequests)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC))
+	if err == nil || !strings.Contains(err.Error(), "лимит") {
+		t.Errorf("err = %v, want the quota in words", err)
+	}
+	if subs > 4 {
+		t.Errorf("%d requests after the quota ran out, want at most 4 in flight", subs)
+	}
+}
+
+// Год назад у категории не загрузился — окно так и пишет (ревью 14.11), как у ниш.
+func TestNichesMPStatsTopSaysNoGrowth(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/categories":
+			_, _ = w.Write([]byte(`[{"path":"Одежда/Брюки"}]`))
+		case "/api/oz/get/category/subcategories":
+			if r.URL.Query().Get("d1") == "2025-10-15" {
+				w.WriteHeader(http.StatusGatewayTimeout)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":300,"revenue":3000,"sellers_with_sells":5}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Problems) != 1 || !strings.Contains(v.Problems[0].Reason, "рост к году") {
+		t.Errorf("problems = %v, want one about the growth", v.Problems)
 	}
 }
