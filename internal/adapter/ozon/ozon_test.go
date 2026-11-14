@@ -135,3 +135,48 @@ func TestClient_skipsSKUZero(t *testing.T) {
 		t.Errorf("stocks = %+v (%v), want only SKU 33", st, err)
 	}
 }
+
+// Содержимое карточки по SKU (#610, #611): название, хештеги, аннотация и
+// рич-контент — атрибуты 4180, 23171, 4191 и 11254 (справочник Ozon, 15.11).
+func TestClient_card(t *testing.T) {
+	srv := fake(t, map[string][]string{"/v4/product/info/attributes": {
+		`{"result":[{"id":7,"name":"Футболка женская","attributes":[` +
+			`{"id":23171,"values":[{"value":"#футболка_женская #хлопок"}]},` +
+			`{"id":4191,"values":[{"value":"Мягкий хлопок."}]},` +
+			`{"id":11254,"values":[{"value":"{\"content\":[]}"}]},` +
+			`{"id":9163,"values":[{"value":"Женский"}]}]}]}`,
+	}})
+	defer srv.Close()
+	c, err := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}.Card(context.Background(), "1234567")
+	if err != nil || c.Name != "Футболка женская" || c.Hashtags != "#футболка_женская #хлопок" || c.Annotation != "Мягкий хлопок." || c.Rich != `{"content":[]}` {
+		t.Fatalf("card %+v, %v", c, err)
+	}
+	empty := fake(t, map[string][]string{"/v4/product/info/attributes": {`{"result":[]}`}})
+	defer empty.Close()
+	if _, err := (ozon.Client{BaseURL: empty.URL, ClientID: "42", Key: "secret", HTTP: empty.Client()}).Card(context.Background(), "1"); !errors.Is(err, ozon.ErrNoCard) {
+		t.Errorf("no card: %v, want ErrNoCard", err)
+	}
+}
+
+// Ревью #625: запрос — по SKU со всеми видимостями; хештегов в нескольких
+// значениях — все, через пробел.
+func TestClient_cardRequestAndValues(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Filter struct {
+				SKU        []string `json:"sku"`
+				Visibility string   `json:"visibility"`
+			} `json:"filter"`
+		}
+		if json.NewDecoder(r.Body).Decode(&body) != nil || len(body.Filter.SKU) != 1 || body.Filter.SKU[0] != "1234567" || body.Filter.Visibility != "ALL" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`{"result":[{"name":"Ф","attributes":[{"id":23171,"values":[{"value":"#а_б"},{"value":"#в"}]}]}]}`))
+	}))
+	defer srv.Close()
+	c, err := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}.Card(context.Background(), "1234567")
+	if err != nil || c.Hashtags != "#а_б #в" {
+		t.Fatalf("card %+v, %v", c, err)
+	}
+}

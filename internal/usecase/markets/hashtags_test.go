@@ -1,0 +1,152 @@
+package markets_test
+
+import (
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/markets"
+)
+
+func hashtagRow(rs []markets.HashtagRow, tag string) (markets.HashtagRow, bool) {
+	i := slices.IndexFunc(rs, func(r markets.HashtagRow) bool { return r.Tag == tag })
+	if i < 0 {
+		return markets.HashtagRow{}, false
+	}
+	return rs[i], true
+}
+
+// Хештеги карточки (#610): у каждого спрос по запросам ниши и причина, если
+// убрать; правила Ozon — «#», буквы и цифры, «_» между словами, до 30 символов,
+// не больше 30 штук, без брендов.
+func TestCheckHashtags(t *testing.T) {
+	niche := append([]markets.NicheQuery{
+		{Text: "футболка женская оверсайз", Count: 12_000, Items: 300},
+		{Text: "футболка мужская", Count: 110_000, Items: 50},
+	}, titleNiche...)
+	got := markets.CheckHashtags(markets.HashtagInput{
+		Title:    "Футболка женская сиреневая",
+		Hashtags: "#футболка_женская #женская_футболка #футболка_мужская #футболка-хлопок #zara_футболка #футболка_женская_с_очень_длинным_хвостом #лавандовая_футболка #футболка_женская_оверсайз",
+		Brands:   []string{"PRIMER"}, Queries: niche, Forms: titleForms, NicheBrands: []string{"Zara"},
+		Own: []markets.OwnQuery{{Text: "лавандовая футболка", Count: 50, Position: 8}},
+	})
+	cases := []struct {
+		tag string
+		why markets.HashtagWhy
+	}{
+		{"#футболка_женская", markets.TagOK},
+		{"#женская_футболка", markets.TagDuplicate},
+		{"#футболка_мужская", markets.TagOffTopic},
+		{"#футболка-хлопок", markets.TagFormat},
+		{"#zara_футболка", markets.TagBrand},
+		{"#футболка_женская_с_очень_длинным_хвостом", markets.TagLong},
+		{"#лавандовая_футболка", markets.TagOwn},
+		{"#футболка_женская_оверсайз", markets.TagOK},
+	}
+	for _, c := range cases {
+		r, ok := hashtagRow(got.Tags, c.tag)
+		if !ok || r.Why != c.why {
+			t.Errorf("%s: %+v (found %v), want why %v", c.tag, r, ok, c.why)
+		}
+	}
+	if r, _ := hashtagRow(got.Tags, "#футболка_женская"); r.Demand <= 110_000 {
+		t.Errorf("#футболка_женская demand %d: sum of queries with both words", r.Demand)
+	}
+	if r, _ := hashtagRow(got.Tags, "#лавандовая_футболка"); r.Query != "лавандовая футболка" || r.Position != 8 {
+		t.Errorf("own proof %+v", r)
+	}
+	if len(got.Remove) != 5 {
+		t.Errorf("remove %d: %+v, want format, long, duplicate, off topic, brand", len(got.Remove), got.Remove)
+	}
+	var add []string
+	for _, r := range got.Add {
+		add = append(add, r.Tag)
+	}
+	if !slices.Contains(add, "#футболка_женская_хлопок") || slices.Contains(add, "#футболка_мужская") || slices.Contains(add, "#футболка_женская_белая") {
+		t.Errorf("add %v: frequent niche queries not yet tagged, no other gender or color", add)
+	}
+}
+
+// Больше 30 хештегов — Ozon не примет, это названо; советы считаются после уборки.
+func TestCheckHashtags_tooMany(t *testing.T) {
+	var tags strings.Builder
+	for i := range 31 {
+		tags.WriteString(" #тег" + string(rune('а'+i)))
+	}
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: tags.String(), Queries: titleNiche, Forms: titleForms})
+	if !got.TooMany || len(got.Remove) != 31 || len(got.Add) == 0 { // все 31 без спроса — к уборке, место для советов есть (ревью #625)
+		t.Errorf("too many %v remove %d add %d", got.TooMany, len(got.Remove), len(got.Add))
+	}
+}
+
+// Пустые хештеги — все советы из ниши, без «убрать».
+func TestCheckHashtags_empty(t *testing.T) {
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Queries: titleNiche, Forms: titleForms})
+	if len(got.Tags) != 0 || len(got.Remove) != 0 || len(got.Add) == 0 || got.Main.Text != "футболка женская" {
+		t.Errorf("%+v", got)
+	}
+}
+
+// Живая проверка #610: сиреневой футболке не советуются другие цвета, а
+// хештег из запроса сохраняет служебные слова — «#футболка_для_спорта_женская».
+func TestCheckHashtags_colorAndStopWords(t *testing.T) {
+	niche := append(slices.Clone(titleNiche), markets.NicheQuery{Text: "футболка для спорта женская", Count: 8_000, Items: 300})
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская сиреневая", Hashtags: "#футболка_женская", Queries: niche, Forms: titleForms})
+	var add []string
+	for _, r := range got.Add {
+		add = append(add, r.Tag)
+	}
+	if slices.Contains(add, "#футболка_женская_белая") || slices.Contains(add, "#футболки_женские_черные") {
+		t.Errorf("add %v: another color", add)
+	}
+	if !slices.Contains(add, "#футболка_для_спорта_женская") {
+		t.Errorf("add %v: the tag keeps «для»", add)
+	}
+}
+
+// Советы показываются по числу запросов, как подписаны (живая проверка #610).
+func TestCheckHashtags_addByDemand(t *testing.T) {
+	niche := []markets.NicheQuery{ // вес (частота × товаров) и частота идут в разном порядке
+		{Text: "футболка женская", Count: 100_000, Items: 800},
+		{Text: "футболка женская хлопок", Count: 1_000, Items: 900},
+		{Text: "футболка женская оверсайз", Count: 5_000, Items: 10},
+	}
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: "#футболка_женская", Queries: niche, Forms: titleForms})
+	if len(got.Add) != 2 {
+		t.Fatalf("add %+v, want 2", got.Add)
+	}
+	for i := 1; i < len(got.Add); i++ {
+		if got.Add[i].Demand > got.Add[i-1].Demand {
+			t.Fatalf("add %+v: not by demand", got.Add)
+		}
+	}
+}
+
+// Ревью #625: отбракованный хештег не делает правильный «дублем»; пол — по
+// группам (девочки и детское — одна аудитория); место для советов — после
+// уборки; хештеги без слов не дубли друг друга.
+func TestCheckHashtags_review(t *testing.T) {
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: "#футболка-женская #футболка_женская #2024 #2025", Queries: titleNiche, Forms: titleForms})
+	if r, _ := hashtagRow(got.Tags, "#футболка_женская"); r.Why != markets.TagOK {
+		t.Errorf("valid tag after a bad one: %+v", r)
+	}
+	if r, _ := hashtagRow(got.Tags, "#2025"); r.Why == markets.TagDuplicate {
+		t.Errorf("#2025 is not a duplicate of #2024: %+v", r)
+	}
+	kids := markets.CheckHashtags(markets.HashtagInput{Title: "Платье для девочек", Hashtags: "#платье_детское #платье_мужское",
+		Queries: []markets.NicheQuery{{Text: "платье детское", Count: 1000, Items: 100}, {Text: "платье мужское", Count: 10, Items: 1}}})
+	if r, _ := hashtagRow(kids.Tags, "#платье_детское"); r.Why == markets.TagOffTopic {
+		t.Errorf("детское for girls: %+v", r)
+	}
+	if r, _ := hashtagRow(kids.Tags, "#платье_мужское"); r.Why != markets.TagOffTopic {
+		t.Errorf("мужское for girls: %+v", r)
+	}
+	var junk strings.Builder
+	for i := range 30 {
+		junk.WriteString(" #х" + string(rune('а'+i)) + "-")
+	}
+	full := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: junk.String(), Queries: titleNiche, Forms: titleForms})
+	if len(full.Add) == 0 {
+		t.Error("30 broken tags leave no room for advice, but they are to remove")
+	}
+}
