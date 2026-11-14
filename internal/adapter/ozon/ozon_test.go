@@ -181,3 +181,19 @@ func TestClient_cardRequestAndValues(t *testing.T) {
 		t.Fatalf("card %+v, %v", c, err)
 	}
 }
+
+// Фото и видео карточки (#608): главное фото и images без повторов, видео —
+// сложный атрибут 21841 «Озон.Видео: ссылка» (видеообложка 21845 — не видео).
+func TestClient_cardPhotos(t *testing.T) {
+	srv := fake(t, map[string][]string{"/v4/product/info/attributes": {
+		`{"result":[{"name":"Ф","primary_image":"https://ir.ozone.ru/p.jpg","images":["https://ir.ozone.ru/a.jpg","https://ir.ozone.ru/p.jpg"],` +
+			`"complex_attributes":[{"id":21845,"values":[{"value":"https://v.ozone.ru/cover.mp4"}]}],"attributes":[]}]}`,
+		`{"result":[{"name":"Ф","images":[],"complex_attributes":[{"id":21841,"values":[{"value":"https://v.ozone.ru/v.mp4"}]}],"attributes":[]}]}`,
+	}})
+	defer srv.Close()
+	cl := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}
+	c, err := cl.Card(context.Background(), "1")
+	if err != nil || len(c.Photos) != 2 || c.Photos[0] != "https://ir.ozone.ru/p.jpg" || c.Video {
+		t.Fatalf("card %+v, %v: primary first, no repeats, a cover is not a video", c, err)
+	}
+}
