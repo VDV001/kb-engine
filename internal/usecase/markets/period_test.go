@@ -82,3 +82,24 @@ func TestMPStatsNiches(t *testing.T) {
 		t.Error("a niche without sellers' revenue got a top-10 share")
 	}
 }
+
+// Сезон ниши из MPStats (отзыв 14.11: «тут есть сезонность и пики»): продажи
+// по месяцам ложатся в нишу — оценка учитывает пик, «Сезон» рисуется.
+func TestMPStatsNiches_months(t *testing.T) {
+	var ms []domain.MonthSales
+	for i := range 12 {
+		m := time.Month((10+i)%12 + 1) // ноябрь 2025 … октябрь 2026
+		y := 2025
+		if i >= 2 {
+			y = 2026
+		}
+		ms = append(ms, domain.MonthSales{Month: m, Year: y, Value: float64(100 + i)})
+	}
+	tb, err := markets.MPStatsNiches("Одежда", []markets.NicheSale{{Name: "Пижамы", Sales: 300, Revenue: 3000, Sellers: 3, Months: ms}, {Name: "Халаты", Sales: 30, Revenue: 300, Sellers: 1}}, nil, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(tb.Niches) != 2 || len(tb.Niches[0].Months()) != 12 || tb.Niches[0].Months()[0].Month != time.November || len(tb.Niches[1].Months()) != 0 {
+		t.Errorf("months: %d / %d", len(tb.Niches[0].Months()), len(tb.Niches[1].Months()))
+	}
+}
