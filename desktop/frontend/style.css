@@ -805,8 +805,9 @@ body:not(.no-fin-src) .fin-src-name { background: var(--sp-cool); -webkit-backgr
 .chat-model[hidden] { display: none; }
 .chat-model label { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
 .chat-model .key-field { display: grid; gap: 4px; font-size: 11px; color: var(--z-muted); }
-.chat-model .key-row { display: flex; gap: 6px; align-items: center; }
-.chat-model .key-row input { flex: 1; }
+.key-row { display: flex; gap: 6px; align-items: center; }
+.key-row input { flex: 1; min-width: 0; }
+.conn-google .key-row .reveal { align-self: stretch; width: 44px; height: auto; } /* поле подключений выше 30px: глаз в рост поля */
 .chat-model .key-saved { color: var(--z-ok); font-weight: 500; }
 .chat-model input, .chat-model select { font: 12px var(--z-font); padding: 5px 8px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); color: var(--z-ink); min-width: 0; }
 /* Разделы чата аккордеоном (#478): номер, название, справа выбранное. */
@@ -1665,6 +1666,27 @@ body:not(.no-mk-buttons):not([data-mka="none"]) .mk-view .btn.mk-main:not([aria-
 .mk-seg:empty { display: none; }
 .mk-seg button { font: 13px var(--z-font); color: var(--z-muted); background: var(--z-bg); border: 0; padding: 7px 14px; cursor: pointer; }
 .mk-seg button + button { border-left: 1px solid var(--z-rule); }
+.mk-seg-l { font: 12px var(--z-font); color: var(--z-muted); padding: 7px 10px; align-self: center; border-right: 1px solid var(--z-rule); }
+.sh-copy { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; vertical-align: -5px; background: none; border: 0; border-radius: var(--z-radius); color: var(--z-muted); cursor: pointer; }
+.sh-copy:hover, .sh-copy:focus-visible { color: var(--z-accent); outline: none; }
+.sh-copy svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.sh-progress { margin: 0 18px; padding: 16px 20px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg); text-align: center; font-size: 13px; color: var(--z-muted); }
+.sh-progress.done { padding: 0; border-color: transparent; background: none; }
+.sh-progress-t { color: var(--z-ink); font-variant-numeric: tabular-nums; }
+.sh-progress-bar { position: relative; height: 6px; margin-top: 12px; border-radius: 3px; background: var(--z-rule); overflow: hidden; }
+.sh-progress-bar[hidden] { display: none; }
+/* заливка по пройденным этапам и блик по ней: видно, что загрузка жива и между событиями */
+.sh-progress-bar span { position: absolute; top: 0; bottom: 0; left: 0; width: 4%; border-radius: 3px; background: var(--z-accent); transition: width .45s var(--z-ease); overflow: hidden; }
+body:not(.no-mk-load) .sh-progress-bar span { background: linear-gradient(90deg, var(--z-sp4), var(--z-sp5), var(--z-sp6)); }
+body:not(.no-mk-load) .sh-progress-bar span::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, #ffffff59, transparent); transform: translateX(-100%); animation: sh-shine 1.3s linear infinite; }
+@keyframes sh-shine { to { transform: translateX(100%); } }
+/* у файла этапов нет — отрезок бежит */
+.sh-progress.indet .sh-progress-bar span { width: 30%; left: -30%; transition: none; animation: sh-run 1.2s linear infinite; }
+@keyframes sh-run { to { left: 100%; } }
+.sh-stages { display: flex; justify-content: center; flex-wrap: wrap; gap: 6px 22px; margin: 12px 0 0; padding: 0; list-style: none; }
+.sh-stages[hidden] { display: none; }
+.sh-stages li.ok { color: var(--z-ok); }
+@media (prefers-reduced-motion: reduce) { .sh-progress-bar span::after { animation: none; } .sh-progress.indet .sh-progress-bar span { animation: none; left: 0; width: 100%; opacity: .5; } }
 .mk-seg button[aria-pressed="true"] { color: var(--z-ink); background: var(--z-bg-3, var(--z-bg-2)); font-weight: 700; }
 .mk-check { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--z-ink-2); cursor: pointer; }
 .mk-check input { accent-color: color-mix(in srgb, var(--mk2) 70%, var(--z-ink)); width: 15px; height: 15px; }
@@ -1772,11 +1794,24 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-sel { height: 32px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; max-width: 220px; }
 .sh-advice { display: grid; gap: 8px; }
 .sh-advice h3 { margin: 0; font-size: 13px; font-weight: 600; color: var(--z-ink); }
-.sh-adv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: start; padding: 10px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); font-size: 13px; line-height: 1.5; color: var(--z-ink-2); }
+/* Совет — плашка со своим цветом спектра: рамка градиентом по всему контуру
+   (padding-box поверх border-box, как подсказки окна), легкая заливка от края,
+   значок и заголовок того же цвета. Цвет — по виду совета, не по порядку. */
+.sh-adv { --a: var(--z-sp4); --b: var(--z-sp5); display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; padding: 12px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg);
+  font-size: 13px; line-height: 1.5; color: var(--z-ink-2); transition: background .2s var(--z-ease); }
+body:not(.no-mk-advice) .sh-adv { border-color: transparent; background: linear-gradient(100deg, color-mix(in srgb, var(--a) 13%, var(--z-bg)), var(--z-bg) 55%) padding-box, linear-gradient(100deg, var(--a), var(--b) 60%, var(--z-rule-2)) border-box; }
+.sh-adv[data-kind="refusals"] { --a: var(--z-sp3); --b: var(--z-sp2); }
+.sh-adv[data-kind="supply"] { --a: var(--z-sp1); --b: var(--z-sp2); }
+.sh-adv[data-kind="dead"] { --a: var(--z-sp4); --b: var(--z-sp5); }
+.sh-adv[data-kind="keep"] { --a: var(--z-sp6); --b: var(--z-sp5); }
+.sh-adv .ic { grid-row: 1 / span 2; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--a) 18%, transparent); }
+.sh-adv .ic svg { width: 20px; height: 20px; fill: none; stroke: var(--a); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .sh-adv b { color: var(--z-ink); }
-.sh-adv .ex { grid-column: 1; font-size: 12px; color: var(--z-muted); }
-.sh-adv .btn { grid-column: 2; grid-row: 1 / span 2; white-space: nowrap; }
+body:not(.no-mk-advice) .sh-adv b { background: linear-gradient(90deg, var(--a), var(--b)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sh-adv .ex { grid-column: 2; font-size: 12px; color: var(--z-muted); }
+.sh-adv .btn { grid-column: 3; grid-row: 1 / span 2; white-space: nowrap; }
 .sh-adv[aria-current="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); }
+body:not(.no-mk-advice) .sh-adv[aria-current="true"] { border-color: transparent; background: linear-gradient(100deg, color-mix(in srgb, var(--a) 26%, var(--z-bg)), color-mix(in srgb, var(--b) 8%, var(--z-bg))) padding-box, linear-gradient(100deg, var(--a), var(--b)) border-box; }
 .sh-chip { font: 12px var(--z-font); padding: 5px 10px; border-radius: var(--z-radius); border: 1px solid var(--z-rule-2); background: var(--z-bg); color: var(--z-ink-2); cursor: pointer; }
 .sh-chip[aria-pressed="true"] { border-color: var(--z-accent); background: var(--z-accent-wash); color: var(--z-ink); }
 .sh-chip b { color: var(--z-bad); font-weight: 700; margin-right: 4px; }

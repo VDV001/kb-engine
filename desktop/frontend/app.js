@@ -1341,7 +1341,11 @@ $("#conn-list").addEventListener("click", async (e) => {
   } catch (err) { showError(errText(err)); }
   renderConnections();
 });
+// maskConnKeys прячет набранные ключи подключений: после «Добавить» (удачного
+// или нет), при сворачивании формы и закрытии настроек — открытым ключ не остается.
+function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret"]) maskKey(id); }
 $("#conn-add-speech").addEventListener("click", () => {
+  maskConnKeys();
   const f = $("#conn-speech");
   f.hidden = !f.hidden;
   $("#conn-add-speech").setAttribute("aria-expanded", String(!f.hidden));
@@ -1356,6 +1360,7 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
   } catch (err) { $("#conn-s-note").textContent = errText(err); }
+  maskConnKeys();
   renderConnections();
 });
 function showOzonForm() {
@@ -1366,6 +1371,7 @@ function showOzonForm() {
 }
 $("#mk-conn").addEventListener("click", async () => { hideTip(); await openSettings("conn"); showOzonForm(); });
 $("#conn-add-ozon").addEventListener("click", () => {
+  maskConnKeys();
   if (!$("#conn-ozon").hidden) { $("#conn-ozon").hidden = true; $("#conn-add-ozon").setAttribute("aria-expanded", "false"); return; }
   showOzonForm();
 });
@@ -1379,9 +1385,11 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
     $("#conn-o-share").checked = false;
   } catch (err) { $("#conn-o-note").textContent = errText(err); }
+  maskConnKeys();
   renderConnections();
 });
 $("#conn-add-google").addEventListener("click", () => {
+  maskConnKeys();
   const f = $("#conn-google");
   f.hidden = !f.hidden;
   $("#conn-add-google").setAttribute("aria-expanded", String(!f.hidden));
@@ -1390,6 +1398,7 @@ $("#conn-add-google").addEventListener("click", () => {
 $("#conn-google").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!native() || !native().ConnectGoogle) return void ($("#conn-g-note").textContent = "Подключение Google — в окне приложения.");
+  maskConnKeys(); // ожидание согласия — до 5 минут: секрет не висит открытым
   const go = $("#conn-g-go");
   go.disabled = true;
   $("#conn-g-note").textContent = "Жду согласия в браузере (до 5 минут)…";
@@ -1428,6 +1437,7 @@ async function loadServerStates() {
 
 function closeSettings() {
   hideTip();
+  maskConnKeys();
   panel.classList.remove("open");
   panel.setAttribute("aria-hidden", "true");
   scrim.hidden = true;
@@ -1492,7 +1502,8 @@ function formOf(s, i) {
 // что вставил тот токен. Сохраненный токен окно из Связки на страницу не
 // достает: токен и данные подключений не текут из приложения.
 const EYE = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/><path class="eye-slash" d="M4 4l16 16"/></svg>`;
-$('[data-eye="chat-key"]').innerHTML = EYE; // глаз ключа модели — та же иконка, что у токенов
+// глаз ключей модели и подключений — та же иконка, что у токенов
+for (const b of document.querySelectorAll("button[data-eye]")) b.innerHTML = EYE;
 const tokenField = (id, saved) =>
   `<div class="field"><label for="${id}">токен</label><input id="${id}" type="password" autocomplete="off" spellcheck="false"
     placeholder="${saved ? "сохранен в Связке ключей — пусто, чтобы оставить" : "токен kbengine serve --token-file"}">
@@ -1647,12 +1658,7 @@ panel.addEventListener("click", async (e) => {
   // нес путь файла, и этот обработчик искал элемент с id-путем и падал.
   const eye = e.target.closest("[data-eye]");
   if (eye) {
-    const inp = $("#" + eye.dataset.eye), show = inp.type === "password";
-    inp.type = show ? "text" : "password";
-    eye.setAttribute("aria-pressed", String(show));
-    const what = eye.dataset.eye === "chat-key" ? "ключ" : "токен";
-    eye.setAttribute("aria-label", show ? `Скрыть ${what}` : `Показать набранный ${what}`);
-    eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
+    setEye(eye.dataset.eye, $("#" + eye.dataset.eye).type === "password");
     return;
   }
   const b = e.target.closest("button");
@@ -2136,6 +2142,8 @@ const ACCENTS = [
   ["mk-spark", "Маркеты: график сезона", "линия продаж по месяцам градиентом"],
   ["mk-row", "Маркеты: выбранная ниша", "черта градиентом у выбранной строки"],
   ["mk-buttons", "Маркеты: главные кнопки", "«Открыть выгрузку» и «Сравнить» рамкой градиента"],
+  ["mk-advice", "Маркеты: советы", "плашка совета цветом его вида: рамка градиентом, заливка и заголовок; без нее — тонкая рамка, цвет остается у значка"],
+  ["mk-load", "Маркеты: загрузка кабинета", "заливка полосы «Загрузить из Ozon» градиентом и блик по ней"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
 state.accents = { mode: "", off: [] }; // режим "" — твой выбор: все, кроме off
@@ -2768,16 +2776,18 @@ document.addEventListener("click", (e) => {
   // isConnected: щелчок внутри ряда перерисовал его, цель уже вне документа.
   if (chatState.moreOpen && e.target.isConnected && !e.target.closest("#chat-srcs")) { chatState.moreOpen = false; renderChatSources(); }
 });
-// maskChatKey прячет набранный ключ обратно: при каждой загрузке, даже неудачной.
-function maskChatKey() {
-  const eye = $('[data-eye="chat-key"]');
-  $("#chat-key").type = "password";
-  eye.setAttribute("aria-pressed", "false");
-  eye.setAttribute("aria-label", "Показать набранный ключ");
-  eye.dataset.tip = "Показать ключ";
+// setEye показывает или прячет набранное в поле id и подписывает его глаз.
+function setEye(id, show) {
+  const eye = $(`[data-eye="${id}"]`), what = eye.dataset.what || "токен";
+  $("#" + id).type = show ? "text" : "password";
+  eye.setAttribute("aria-pressed", String(show));
+  eye.setAttribute("aria-label", show ? "Скрыть " + what : "Показать набранный " + what);
+  eye.dataset.tip = `${show ? "Скрыть" : "Показать"} ${what}`;
 }
+// maskKey прячет набранный ключ обратно: при каждой загрузке настроек чата.
+const maskKey = (id) => setEye(id, false);
 async function loadChatSettings() {
-  maskChatKey();
+  maskKey("chat-key");
   $("#chat-key-saved").hidden = true;
   try { chatState.settings = await native().ChatSettings(); } catch (e) { chatState.settings = null; showChatNote("Настройки чата не прочитаны: " + errText(e)); return; }
   const s = chatState.settings;
@@ -5307,12 +5317,14 @@ function mkShown() {
 function mkRenderFilters() {
   const ns = mk.tb.niches, cols = mkShown();
   const mps = Object.keys(MK_MP).filter((m) => ns.some((n) => n.markets.includes(m)));
-  if (!mps.length) mk.mp = "all";
-  $("#mk-mp").innerHTML = mps.length ? [["all", "все", "ниши всех площадок"], ...mps.map((m) => [m, MK_MP[m], "только ниши, которые есть на " + MK_MP[m]])]
+  if (mps.length < 2) mk.mp = "all";
+  // Одна площадка или один порядок — выбирать не из чего: кнопка, которая
+  // ничего не меняет, читается как сломанная (отзыв владельца 13.11).
+  $("#mk-mp").innerHTML = mps.length > 1 ? [["all", "все", "ниши всех площадок"], ...mps.map((m) => [m, MK_MP[m], "только ниши, которые есть на " + MK_MP[m]])]
     .map(([v, n, t]) => `<button type="button" data-mk-mp="${v}" aria-pressed="${mk.mp === v}"${mkTip(n, t)}>${n}</button>`).join("") : "";
   const sorts = [["score", "по оценке", "сначала ниши с большей оценкой 0-100"], ["growth", "по росту", "сначала ниши, где спрос растет быстрее"], ["sales", "по продажам", "сначала ниши с большими продажами в штуках"]]
     .filter(([v]) => cols.includes(v));
-  $("#mk-sort").innerHTML = sorts.map(([v, n, t]) => `<button type="button" data-mk-by="${v}" aria-pressed="${mk.sort === v}"${mkTip(n, t)}>${n}</button>`).join("");
+  $("#mk-sort").innerHTML = sorts.length < 2 ? "" : `<span class="mk-seg-l">сортировка</span>` + sorts.map(([v, n, t]) => `<button type="button" data-mk-by="${v}" aria-pressed="${mk.sort === v}"${mkTip(n, t)}>${n}</button>`).join("");
   const hasSeason = ns.some((n) => n.score.peak);
   $("#mk-season-l").hidden = !hasSeason;
   if (!hasSeason) mk.season = false;
@@ -5481,8 +5493,8 @@ const fc = { paths: ["", "", ""], v: null, niche: "", busy: false, cabs: [] };
 const fcCabName = (id) => (fc.cabs.find((c) => c.id === id) || {}).name || "кабинет";
 const FC_KEY = "dvk.markets.forecast";
 const FC_SLOTS = [
-  ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики: продажи ниши по дням за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025"],
-  ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка за последние недели — например, сен-окт 2026"],
+  ["1 · Ниша, прошлый год", "Ниша, прошлый год", "выгрузка сервиса аналитики с продажами ниши по дням (дата — колонкой или строкой) за тот же период, что в файле 2, но год назад, и за месяцы после него — например, сен-дек 2025. Не «Товары категории» MPStats: там итог за период по товару, дней нет"],
+  ["2 · Ниша, сейчас", "Ниша, сейчас", "та же выгрузка продаж ниши по дням за последние недели — например, сен-окт 2026; «Товары категории» не подойдут"],
   ["3 · Свои продажи", "Свои продажи", "из кабинета Ozon по ключу (90 дней, без отмен) или отчет площадки и своя таблица: дата и количество за те же недели"],
 ];
 const FC_WD = ["вс", "пн", "вт", "ср", "чт", "пт", "сб"];
@@ -5716,7 +5728,7 @@ function shVal(k, p) {
     case "buyout": case "cancel": case "refuse": case "return": case "drr": return p.ordered || k === "drr" ? shPct(p[k]) : "—";
     case "daysOut": return p.daysOutOf ? `${p.daysOut} из ${p.daysOutOf}` : "—";
     case "avgPrice": return p.avgPrice ? fmt(Math.round(p.avgPrice)) + " ₽" : "—";
-    case "rating": return p.reviews || p.rating ? String(p.rating).replace(".", ",") : "—";
+    case "rating": return (p.reviews || p.rating) && Number.isFinite(p.rating) ? String(Math.round(p.rating * 100) / 100).replace(".", ",") : "—"; // отчет отдает 4,9340909…
     case "onAccount": return p.money && (p.money.units || p.money.total) ? shRub(p.onAccount) : "—";
     case "profit": return p.profit !== null && p.profit !== undefined ? shRub(p.profit) : "—";
     default: return fmt(Math.round(p[k] || 0));
@@ -5731,15 +5743,56 @@ async function shRead(src) {
   mkErr("");
   const oz = src.startsWith("ozon:"), b = $("#sh-ozon");
   $("#sh-open").disabled = b.disabled = true;
-  if (oz) b.textContent = "Загружаю из Ozon…";
+  const cab = oz && [...$("#sh-cab").options].find((o) => o.value === src.slice(5));
+  const load = ++shLoad.seq;
+  const stop = shProgress(oz ? `Загружаю кабинет${cab ? " «" + cab.textContent + "»" : ""} из Ozon` : "Читаю отчет", oz, load);
+  let done = "";
   try {
-    sh.v = oz ? await native().MarketsOzon(src.slice(5)) : await native().MarketsShop(src);
+    sh.v = oz ? await native().MarketsOzon(src.slice(5), load) : await native().MarketsShop(src);
     Object.assign(sh, { sel: 0, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 });
     shSave();
     if (oz && [...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
+    done = `${oz ? "Загружено из Ozon" : "Отчет прочитан"}: товаров ${fmt(sh.v.products.length)}`;
   } catch (e) { mkErr((oz ? "Не загрузил кабинет: " : "Не прочитал отчет: ") + errText(e)); }
-  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; b.textContent = "Загрузить из Ozon"; }
+  finally { sh.loading = false; $("#sh-open").disabled = b.disabled = false; stop(done); }
   shRender();
+}
+// Этапы «Загрузить из Ozon» в порядке полосы; события «markets:stage» шлет
+// загрузчик кабинета (markets_ozon.go). Начисления и возвраты читаются
+// параллельно с отправлениями, поэтому непройденные этапы все — «идет».
+const SH_STAGES = [["posts", "отправления за 90 дней"], ["stock", "остатки"], ["accruals", "начисления"], ["returns", "возвраты"]];
+// shLoad: номер последней загрузки кабинета и ее пройденные этапы; событие
+// прежней загрузки (упала, а запоздавший список дочитался) не засчитывается.
+const shLoad = { seq: 0, cur: 0, done: null };
+if (window.runtime) window.runtime.EventsOn("markets:stage", (ev) => { if (shLoad.done && ev.load === shLoad.cur) { shLoad.done.add(ev.stage); shStagesRender(); } });
+function shStagesRender() {
+  const d = shLoad.done;
+  $("#sh-progress-fill").style.width = `${Math.max(4, (d.size / SH_STAGES.length) * 100)}%`;
+  $("#sh-stages").innerHTML = SH_STAGES.map(([k, l]) => `<li class="${d.has(k) ? "ok" : ""}">${d.has(k) ? "✓" : "…"} ${l}</li>`).join("");
+}
+// shProgress показывает полосу, пока идет загрузка: у кабинета (staged) она
+// заполняется по этапам, у файла — бежит. stop(итог) убирает полосу и
+// оставляет итог со временем, пустой итог — прячет блок (ошибку называет mkErr).
+function shProgress(what, staged, load) {
+  const box = $("#sh-progress"), bar = $("#sh-progress-bar"), st = $("#sh-stages"), t = $("#sh-progress-t"), t0 = Date.now();
+  const tick = () => { t.textContent = `${what} · ${Math.round((Date.now() - t0) / 1000)} с`; };
+  shLoad.done = staged ? new Set() : null;
+  shLoad.cur = load;
+  box.classList.remove("done");
+  box.classList.toggle("indet", !staged);
+  box.hidden = bar.hidden = false;
+  st.hidden = !staged;
+  if (staged) shStagesRender();
+  tick();
+  const timer = setInterval(tick, 1000);
+  return (done) => {
+    clearInterval(timer);
+    shLoad.done = null;
+    bar.hidden = st.hidden = true;
+    box.classList.add("done");
+    box.hidden = !done;
+    t.textContent = done ? `✓ ${done} · ${new Date().toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" })}` : "";
+  };
 }
 // shCabinets — включенные кабинеты Ozon; выбор виден, когда их больше одного.
 async function shCabinets() {
@@ -5843,7 +5896,7 @@ function shLoss() {
   if (l.err) return void (el.innerHTML = `<div class="note">Пропажи не проверены: ${esc(l.err)}</div>`);
   const sum = l.rows.reduce((a, r) => a + r.price, 0), kind = (k) => SH_LOSS[k] || [k, ""];
   el.innerHTML = `<details><summary><b>Проверить: ${fmt(l.rows.length)}</b> — возможные пропажи на ${fmt(Math.round(sum))} ₽ по цене товара</summary><div class="wrap"><table><tbody>` +
-    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${esc(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
+    l.rows.map((r) => `<tr><td class="why"${mkTip(kind(r.kind)[0], kind(r.kind)[1])}>${esc(kind(r.kind)[0])}</td><td>${esc(r.name)}<br>отправление ${esc(r.posting)} · SKU ${shOzonSKU(r.sku)}</td><td class="n">${fmt(Math.round(r.price))} ₽</td><td class="n"${mkTip("Дата", "для «доставлено, продажи нет» — день последнего начисления по отправлению; для возврата — когда сменился его статус")}>${r.since ? "с " + esc(r.since) : "—"}</td></tr>`).join("") +
     `</tbody></table></div><div class="note">компенсации Ozon платит общей суммой без номера отправления — оплачена ли пропажа, смотрите в отчете о компенсациях в разделе «Финансы» кабинета</div></details>`;
 }
 // Советы (#580): домен решает, каким товарам какой совет; слова здесь.
@@ -5854,6 +5907,13 @@ const SH_ADV = {
   dead: (a, n) => [`<b>Лежит без заказов</b>: ${fmt(n)} товаров, ${fmt(a.units)} шт за ${fmt(sh.v.periodDays)} дн.`, "акция или скидка, реклама на ходовые размеры или вывоз со склада, чтобы не платить за хранение"],
   keep: (a, n) => [`<b>Продается чисто</b>: ${fmt(n)} товаров с 10+ заказами, ${shOzon() ? "отказами до 20 % и отменами до 30 %" : "отменами до 30 % и без проблем с возвратами, рекламой и рейтингом"}`, "держите их в наличии во всех размерах — на них держится магазин"],
 };
+// Значок совета — в стиле значков окна (контур 24×24); цвет задает вид совета в style.css.
+const SH_ADV_ICON = {
+  refusals: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>', // вернули при получении
+  supply: '<path d="M2 6h12v11H2z"/><path d="M14 10h4l4 4v3h-8"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/>', // довезти
+  dead: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', // лежит без заказов
+  keep: '<path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/>', // продается чисто
+};
 function shAdvice() {
   const v = sh.v, el = $("#sh-advice"), adv = (v.advice || []).filter((a) => SH_ADV[a.kind]);
   el.hidden = !adv.length;
@@ -5861,7 +5921,8 @@ function shAdvice() {
   el.innerHTML = adv.length ? "<h3>Советы</h3>" + adv.map((a) => {
     const [head, how] = SH_ADV[a.kind](a, a.skus.length), on = sh.adv === a.kind;
     const ex = [...new Set(a.skus.map(name))].slice(0, 3).join(", ");
-    return `<div class="sh-adv" aria-current="${on}"><div>${head} — ${esc(how)}</div><div class="ex">например: ${esc(ex)}</div>` +
+    const ic = SH_ADV_ICON[a.kind] ? `<span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24">${SH_ADV_ICON[a.kind]}</svg></span>` : "";
+    return `<div class="sh-adv" data-kind="${a.kind}" aria-current="${on}">${ic}<div>${head} — ${esc(how)}</div><div class="ex">например: ${esc(ex)}</div>` +
       `<button class="btn" type="button" data-sh-adv="${a.kind}"${mkTip(on ? "Все товары" : "Товары совета", on ? "вернуть все товары в таблицу" : "оставить в таблице только эти товары, по важности")}>${on ? "Все товары" : "Показать " + fmt(a.skus.length)}</button></div>`;
   }).join("") : "";
 }
@@ -5877,10 +5938,10 @@ function shTable() {
   const ps = sh.v.products, list = shList();
   if (!list.includes(sh.sel)) sh.sel = list.length ? list[0] : -1;
   const th = (k, label, cls, tip) => `<th class="${cls}"${sh.sort === k ? ` aria-sort="${sh.dir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sh-sort="${k}"${mkTip(label, tip + " · нажмите — сортировка")}>${label}${sh.sort === k ? (sh.dir > 0 ? " ↑" : " ↓") : ""}</button></th>`;
-  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && p.rating < 4.5);
+  const bad = (k, p) => (k === "profit" && p.profit < 0) || (k === "onAccount" && p.onAccount < 0) || (k === "cancel" && p.cancel > 0.5) || (k === "refuse" && p.refuse >= SH_REFUSE) || (k === "return" && p.return > 0.1) || (k === "drr" && p.drr > 0.15) || (k === "daysOut" && p.daysOut >= 7) || (k === "rating" && p.reviews && Number.isFinite(p.rating) && p.rating < 4.5);
   const tags = (p) => p.issues.map((i) => `<span class="sh-tag ${i}"${mkTip(SH_ISSUE[i][0], SH_ISSUE[i][1])}>${esc(SH_ISSUE[i][0])}</span>`).join("");
   $("#sh-table").innerHTML = `<thead><tr>${th("name", "Товар", "", "название и SKU")}${shCols().map(([k, l]) => th(k, l, "n", shHint(k))).join("")}${th("issues", "Что не так", "", "проблемы товара по порогам; пороги — в подсказках плашек выше")}</tr></thead><tbody>` +
-    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + " · " : ""}${esc(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
+    list.map((i) => { const p = ps[i]; return `<tr tabindex="0" data-sh-n="${i}" aria-selected="${i === sh.sel}"><td>${esc(p.name)}<span class="sku">${p.article ? esc(p.article) + shCopyBtn(p.article) + " · " : ""}${shOzonSKU(p.sku)}${p.scheme ? " · " + esc(p.scheme) : ""}</span></td>` +
       shCols().map(([k]) => `<td class="n${bad(k, p) ? " bad" : ""}">${shVal(k, p)}</td>`).join("") + `<td>${tags(p)}</td></tr>`; }).join("") + "</tbody>";
   $("#sh-none").hidden = list.length > 0;
   shCard();
@@ -5899,6 +5960,21 @@ function shWhy(p) {
   if (!out.length) out.push(p.ordered ? `выкуп ${shPct(p.buyout)}, явных проблем по порогам нет` : p.stock ? `заказов за период не было, лежит ${fmt(p.stock)} шт: акция, реклама или вывоз со склада` : "заказов за период не было");
   return out;
 }
+// shOzonSKU — SKU ссылкой на страницу товара на ozon.ru; не число — просто текст.
+const shOzonSKU = (sku) => /^\d+$/.test(sku || "")
+  ? `<button type="button" class="lnk" data-open-url="https://www.ozon.ru/product/${sku}/"${mkTip("Открыть на Ozon", "страница товара на ozon.ru в браузере")}>${sku} ↗</button>` : esc(sku || "—");
+// shCopyBtn — значок «скопировать» у артикула продавца: его ищут в кабинете и в своих таблицах.
+const COPY_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>`;
+const shCopyBtn = (text) => `<button type="button" class="sh-copy" data-sh-copy="${esc(text)}" aria-label="Скопировать артикул"${mkTip("Скопировать артикул", text)}>${COPY_ICON}</button>`;
+async function shCopy(btn) {
+  const text = btn.dataset.shCopy;
+  try {
+    if (window.runtime && window.runtime.ClipboardSetText) { if (!(await window.runtime.ClipboardSetText(text))) throw new Error("буфер"); }
+    else await navigator.clipboard.writeText(text);
+    toast("Скопировано", ` · ${text}`);
+  } catch { toast("Не скопировал", " · выделите артикул и нажмите ⌘C", null, "off"); }
+}
+document.addEventListener("click", (e) => { const b = e.target.closest("[data-sh-copy]"); if (b) { hideTip(); shCopy(b); } });
 function shCard() {
   const p = sh.v.products[sh.sel];
   if (!p) { $("#sh-card").innerHTML = ""; return; }
@@ -5911,7 +5987,7 @@ function shCard() {
     ["Цена", shVal("avgPrice", p), shHint("avgPrice")], ["Индекс цен", p.priceIndex || "—", sh.v.hints.priceIndex || ""], ["ДРР", shVal("drr", p), shHint("drr")],
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
-  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${esc(v)}</dd>`).join("")}</dl>` +
+  $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
     shMoneyCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.
@@ -5981,7 +6057,7 @@ $("#mk-shop").addEventListener("click", (e) => {
     shTable(); return;
   }
   const tr = e.target.closest("[data-sh-n]");
-  if (tr) { sh.sel = +tr.dataset.shN; shTable(); }
+  if (tr && !e.target.closest("[data-open-url], [data-sh-copy]")) { sh.sel = +tr.dataset.shN; shTable(); } // ссылка и копирование не меняют выбор
 });
 $("#sh-table").addEventListener("keydown", (e) => {
   const tr = e.target.closest("[data-sh-n]"); if (!tr) return;
