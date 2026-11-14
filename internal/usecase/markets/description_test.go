@@ -71,8 +71,35 @@ func TestDescriptionPrompt(t *testing.T) {
 // аудитория, не расхождение; «мужская» — расхождение.
 func TestCheckDescription_genderByAudience(t *testing.T) {
 	got := markets.CheckDescription(markets.DescriptionInput{Title: "Футболка женская", Gender: "Женский",
-		Description: "Подойдет для девочек и девушек. Не мужская модель.", Queries: titleNiche, Forms: titleForms})
+		Description: "Подойдет для девочек и девушек. Мужская модель тоже есть.", Queries: titleNiche, Forms: titleForms})
 	if len(got.Mismatch) != 1 || got.Mismatch[0].Found != "мужская" {
 		t.Errorf("mismatch %+v, want only мужская", got.Mismatch)
+	}
+}
+
+// Ревью #626: формы своего цвета («белой» при «белая») и оттенки («темное
+// время») — не расхождение; отрицание («не мужская») — тоже; пол из
+// характеристики «Мальчики» узнается, и девочки с мальчиками спорят, хотя оба детские.
+func TestCheckDescription_review(t *testing.T) {
+	cases := []struct {
+		name, title, gender, color, desc string
+		want                             []string
+	}{
+		{"формы своего цвета", "Футболка женская белая", "Женский", "белый", "Белая футболка, белой нитью, для светлых вечеров и темного времени.", nil},
+		{"отрицание", "Футболка женская", "Женский", "", "Не мужская модель, не черная.", nil},
+		{"мальчики против девочек", "Футболка детская", "Мальчики", "", "Футболка для девочек.", []string{"девочек"}},
+		{"женщин против мальчиков", "Футболка", "Мальчики", "", "Удобна для женщин.", []string{"женщин"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := markets.CheckDescription(markets.DescriptionInput{Title: c.title, Gender: c.gender, Color: c.color, Description: c.desc})
+			var found []string
+			for _, m := range got.Mismatch {
+				found = append(found, m.Found)
+			}
+			if !slices.Equal(found, c.want) {
+				t.Errorf("mismatch %v, want %v", found, c.want)
+			}
+		})
 	}
 }
