@@ -249,7 +249,9 @@ func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now
 	if missed > 0 {
 		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш нет доли топ-10 и оценки: %s", missed, why)})
 	}
-	return nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now), nil
+	v := nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now)
+	v.Leaf = parent != path // leafAsNiche подставила саму нишу
+	return v, nil
 }
 
 // topTen fills the top-10 revenue of each niche: запрос на нишу, до четырех
