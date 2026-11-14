@@ -40,3 +40,17 @@ func TestCheckPhotos(t *testing.T) {
 		t.Errorf("no real leaders — nothing to compare: %+v", none)
 	}
 }
+
+// Живая проверка #608: топ ниши бывает одним продавцом в вариантах — лидер
+// берется один на продавца, иначе сравнение — с одной карточкой.
+func TestCheckPhotos_oneLeaderPerSeller(t *testing.T) {
+	ps := []markets.NicheProduct{
+		{SKU: 1, Seller: "Один", Revenue: 9, Comments: 50, Rating: 5, Photos: 6},
+		{SKU: 2, Seller: "Один", Revenue: 8, Comments: 50, Rating: 5, Photos: 6},
+		{SKU: 3, Seller: "Другой", Revenue: 7, Comments: 50, Rating: 5, Photos: 9},
+	}
+	got := markets.CheckPhotos(markets.PhotoCard{Photos: 6}, ps, 10)
+	if len(got.Leaders) != 2 || got.Leaders[0].SKU != 1 || got.Leaders[1].SKU != 3 {
+		t.Errorf("leaders %+v, want one per seller", got.Leaders)
+	}
+}
