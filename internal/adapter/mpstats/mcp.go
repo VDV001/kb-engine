@@ -103,14 +103,31 @@ func (m MCP) NicheQueries(ctx context.Context, path string) ([]markets.NicheQuer
 	return qs, ws, nil
 }
 
-// call opens a session and calls tool with args; the tool's text JSON goes into out.
-// ponytail: сессия на каждый вызов — два лишних коротких запроса (initialize
-// квоту не тратит); потолок — частые вызовы подряд, апгрейд — держать сессию.
+// call calls tool with args, the tool's text JSON goes into out; обрыв и 502/504 повторяются.
+// ponytail: сессия на каждый вызов — три лишних коротких запроса (initialize,
+// уведомление, закрытие; квоту не тратят); потолок — частые вызовы подряд,
+// апгрейд — одна сессия на проверку.
 func (m MCP) call(ctx context.Context, tool string, args map[string]any, out any) error {
+	for try := 0; ; try++ {
+		err := m.callOnce(ctx, tool, args, out)
+		if !errors.Is(err, ErrDropped) || try == retries || ctx.Err() != nil { // занятый MPStats повторяется, как в REST (ревью #621)
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(try+1) * time.Second):
+		}
+	}
+}
+
+// callOnce opens a session, calls tool and closes the session.
+func (m MCP) callOnce(ctx context.Context, tool string, args map[string]any, out any) error {
 	s, err := m.open(ctx)
 	if err != nil {
 		return err
 	}
+	defer s.close()
 	body, _, err := s.post(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}})
 	if err != nil {
 		return err
@@ -164,6 +181,24 @@ func (m MCP) open(ctx context.Context) (*mcpSession, error) {
 	return s, nil
 }
 
+// close ends the session on the server (DELETE с Mcp-Session-Id): иначе сессии
+// копятся до таймаута сервера (ревью #621). Отказ закрытия проверку не портит.
+func (s *mcpSession) close() {
+	if s.sid == "" {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.ctx), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.target, nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Mcp-Session-Id", s.sid)
+	if resp, err := s.client.Do(req); err == nil {
+		_ = resp.Body.Close()
+	}
+}
+
 // post sends one JSON-RPC message; ответ 2xx — тело и заголовки, иначе причина.
 func (s *mcpSession) post(msg map[string]any) ([]byte, http.Header, error) {
 	msg["jsonrpc"] = "2.0"
@@ -188,9 +223,12 @@ func (s *mcpSession) post(msg map[string]any) ([]byte, http.Header, error) {
 	if resp.StatusCode/100 != 2 { // уведомление — 202
 		return nil, nil, statusErr(resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMCPBody))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMCPBody+1))
 	if err != nil {
 		return nil, nil, ErrDropped
+	}
+	if len(data) > maxMCPBody { // обрезанный ответ выглядел бы как «ответа нет» (ревью #621)
+		return nil, nil, fmt.Errorf("ответ MPStats больше %d МБ — окно его не читает", maxMCPBody>>20)
 	}
 	return data, resp.Header, nil
 }
@@ -209,6 +247,9 @@ func (a toolAnswer) decode(out any) error {
 		return ErrNotFound
 	}
 	text := a.Content[0].Text
+	if a.IsError && strings.Contains(text, "not_found") { // так MPStats называет незнакомый товар (описание ozon_sku)
+		return ErrNotFound
+	}
 	if a.IsError {
 		return fmt.Errorf("MPStats: %s", clip(text, 200))
 	}
