@@ -6695,7 +6695,7 @@ function shTitleWhy(w, v) {
 }
 function shTitleCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
-  const t = shTitles.get(shTitleKey(p)), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера, бренды ниши не советуются; четыре запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
+  const t = shTitles.get(shTitleKey(p)), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера, бренды ниши не советуются; до четырех запросов тарифа, ниша хранится 10 минут — «Проверить еще раз» перечитывает")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
   let body = "";
   if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
   if (t && t.v) {
@@ -6729,7 +6729,7 @@ function shTagWhy(r) {
 }
 function shTagsCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
-  const t = shTags.get(shTagsKey(p)), btn = `<button class="btn" type="button" data-sh-tags="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить хештеги", "хештеги карточки из кабинета Ozon против запросов ниши в MPStats; ниша — общая с «Названием», второй раз тариф не тратится")}>${t && t.busy ? "Читаю Ozon и MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить хештеги"}</button>`;
+  const t = shTags.get(shTagsKey(p)), btn = `<button class="btn" type="button" data-sh-tags="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить хештеги", "хештеги карточки из кабинета Ozon против запросов ниши в MPStats; ниша — общая с «Названием» и хранится 10 минут; «Проверить еще раз» перечитывает")}>${t && t.busy ? "Читаю Ozon и MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить хештеги"}</button>`;
   let body = "";
   if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
   if (t && t.v) {
@@ -6752,8 +6752,9 @@ document.addEventListener("click", async (e) => {
   if (!p || p.sku !== sku) return;
   const key = shTagsKey(p);
   if (!native() || !native().MarketsHashtags) { shTags.set(key, { err: "Проверка хештегов работает в окне приложения." }); return shCard(); }
+  const fresh = !!(shTags.get(key) || {}).v; // «Проверить еще раз» — мимо памяти
   shTags.set(key, { busy: true }); shCard();
-  try { shTags.set(key, { v: await native().MarketsHashtags(sh.v.path, sku) }); } catch (err) { shTags.set(key, { err: "Хештеги не проверены: " + errText(err) }); }
+  try { shTags.set(key, { v: await native().MarketsHashtags(sh.v.path, sku, fresh) }); } catch (err) { shTags.set(key, { err: "Хештеги не проверены: " + errText(err) }); }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
 });
 document.addEventListener("click", async (e) => {
@@ -6764,8 +6765,9 @@ document.addEventListener("click", async (e) => {
   if (!p || p.sku !== sku) return;
   const key = shTitleKey(p);
   if (!native() || !native().MarketsTitle) { shTitles.set(key, { err: "Проверка названия работает в окне приложения." }); return shCard(); }
+  const fresh = !!(shTitles.get(key) || {}).v; // «Проверить еще раз» — мимо памяти
   shTitles.set(key, { busy: true }); shCard();
-  try { shTitles.set(key, { v: await native().MarketsTitle(sku, p.name) }); } catch (err) { shTitles.set(key, { err: "Название не проверено: " + errText(err) }); }
+  try { shTitles.set(key, { v: await native().MarketsTitle(sku, p.name, fresh) }); } catch (err) { shTitles.set(key, { err: "Название не проверено: " + errText(err) }); }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard(); // товар сменили, пока читали — ответ дождется его
 });
 // Деньги товара в карточке (#580): строки начислений и себестоимость — поле, по артикулу.

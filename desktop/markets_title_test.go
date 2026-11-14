@@ -23,6 +23,10 @@ func titleMCP(t *testing.T, tool func(name string, args map[string]any) (string,
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		if r.Method == http.MethodDelete { // закрытие сессии — не вызов инструмента
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		var req struct {
 			ID     int    `json:"id"`
 			Method string `json:"method"`
