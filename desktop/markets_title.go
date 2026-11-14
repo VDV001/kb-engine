@@ -73,40 +73,15 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 	if strings.TrimSpace(title) == "" {
 		return titleView{}, errors.New("название товара пустое — проверять нечего")
 	}
-	cl, _, err := f.mpstatsFirst(hc)
+	cl, connID, err := f.mpstatsFirst(hc)
 	if err != nil {
 		return titleView{}, err
 	}
-	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}
-	card, err := readTitleCard(ctx, m, id)
+	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id)
 	if err != nil {
 		return titleView{}, err
 	}
-	var qs []markets.NicheQuery
-	var ws []markets.WordForms
-	var own []markets.OwnQuery
-	var brands []string
-	var nicheErr, ownErr, brandErr error
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		if qs, ws, nicheErr = m.NicheQueries(ctx, card.Niche); stopsAll(nicheErr) {
-			cancel()
-		}
-	})
-	wg.Go(func() { own, ownErr = m.CardQueries(ctx, id) })
-	wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
-		bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
-		defer bcancel()
-		if brands, brandErr = m.NicheBrands(bctx, card.Niche); stopsAll(brandErr) {
-			cancel()
-		}
-	})
-	wg.Wait()
-	if nicheErr != nil {
-		return titleView{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
-	}
+	card, qs, ws, own, brands, ownErr, brandErr := n.card, n.qs, n.ws, n.own, n.brands, n.ownErr, n.brandErr
 	r := markets.CheckTitle(markets.TitleInput{Title: title, Brands: []string{card.Brand, card.Seller}, Queries: qs, Forms: ws, Own: own, NicheBrands: brands})
 	if r.Main.Text == "" { // пустой ответ — не «добавить и убрать нечего» (ревью #621)
 		return titleView{}, errors.New("у ниши «" + card.Niche + "» в MPStats нет запросов за 30 дней — проверить название не по чему")
@@ -127,6 +102,86 @@ func titleNote(ownErr, brandErr error) string {
 		notes = append(notes, "бренды ниши не прочитаны, чужие бренды в «Добавить» не отсеяны — "+mpstatsMessage(brandErr))
 	}
 	return strings.Join(notes, "; ")
+}
+
+// cardNiche — ниша товара в MPStats с ее запросами и брендами и свои запросы
+// товара: общие для «Названия» и «Хештегов» (#610).
+type cardNiche struct {
+	card             mpstats.Card
+	qs               []markets.NicheQuery
+	ws               []markets.WordForms
+	own              []markets.OwnQuery
+	brands           []string
+	ownErr, brandErr error
+}
+
+// cardNiches keeps a card's niche by «подключение|SKU» for mpstatsTTL: «Название»
+// и «Хештеги» одного товара тратят тариф один раз (4 запроса).
+type cardNiches struct {
+	mu sync.Mutex
+	m  map[string]cardNicheEntry
+}
+
+type cardNicheEntry struct {
+	at time.Time
+	v  cardNiche
+}
+
+func (c *cardNiches) get(k string, now time.Time) (cardNiche, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[k]
+	return e.v, ok && now.Sub(e.at) < mpstatsTTL
+}
+
+func (c *cardNiches) put(k string, v cardNiche, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]cardNicheEntry{}
+	}
+	c.m[k] = cardNicheEntry{at: now, v: v}
+}
+
+// readCardNiche reads sku's niche from its MPStats card, then the niche's
+// queries with its brands and the card's own queries at once; полный ответ
+// хранится mpstatsTTL, ответ с пропуском — нет: в следующий раз дочитается.
+func (f *folderSettings) readCardNiche(ctx context.Context, hc *http.Client, connID, token string, id int64) (cardNiche, error) {
+	key := connID + "|" + strconv.FormatInt(id, 10)
+	if v, ok := f.cardNiches.get(key, time.Now()); ok {
+		return v, nil
+	}
+	m := mpstats.MCP{URL: f.mcpBase(), Token: token, HTTP: hc}
+	card, err := readTitleCard(ctx, m, id)
+	if err != nil {
+		return cardNiche{}, err
+	}
+	n := cardNiche{card: card}
+	var nicheErr error
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		if n.qs, n.ws, nicheErr = m.NicheQueries(ctx, card.Niche); stopsAll(nicheErr) {
+			cancel()
+		}
+	})
+	wg.Go(func() { n.own, n.ownErr = m.CardQueries(ctx, id) })
+	wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
+		bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
+		defer bcancel()
+		if n.brands, n.brandErr = m.NicheBrands(bctx, card.Niche); stopsAll(n.brandErr) {
+			cancel()
+		}
+	})
+	wg.Wait()
+	if nicheErr != nil {
+		return cardNiche{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
+	}
+	if (n.ownErr == nil || errors.Is(n.ownErr, mpstats.ErrNotFound)) && n.brandErr == nil {
+		f.cardNiches.put(key, n, time.Now())
+	}
+	return n, nil
 }
 
 // readTitleCard reads sku's MPStats card; без ниши проверять не по чему.

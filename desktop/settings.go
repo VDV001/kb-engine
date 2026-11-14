@@ -63,6 +63,7 @@ type folderSettings struct {
 	shopLoads    shopLoadCache     // последний загруженный «Магазин» кабинета — для выбранных дней
 	mpstatsURL   string            // API MPStats; "" — настоящий (markets_mpstats.go)
 	mcpURL       string            // MCP MPStats; "" — настоящий (markets_title.go)
+	cardNiches   cardNiches        // ниша товара MPStats на 10 минут (markets_title.go)
 	mpstatsNiche nicheCache        // ряды ниш MPStats на 10 минут (markets_mpstats.go)
 	mpstatsTop   topCache          // верхние категории MPStats на 10 минут (markets_mpstats.go)
 	mpstatsTable tableCache        // таблицы ниш MPStats без сезона на 10 минут (markets_mpstats.go)
