@@ -137,6 +137,59 @@ func (a *stockAcc) add(res stockPage) {
 	}
 }
 
+// ErrNoCard — товара с таким SKU в кабинете нет.
+var ErrNoCard = errors.New("товара с этим SKU в кабинете нет")
+
+// Атрибуты карточки (справочник Ozon, /v1/description-category/attribute, 15.11).
+const (
+	attrHashtags   = 23171 // «#Хештеги»
+	attrAnnotation = 4191  // «Аннотация» — описание товара
+	attrRich       = 11254 // «Rich-контент JSON»
+)
+
+// Card — содержимое карточки: название, хештеги, описание и рич-контент.
+type Card struct {
+	Name, Hashtags, Annotation, Rich string
+}
+
+// Card reads the content of card sku (#610, #611): только чтение.
+func (c Client) Card(ctx context.Context, sku string) (Card, error) {
+	var res struct {
+		Result []struct {
+			Name       string `json:"name"`
+			Attributes []struct {
+				ID     int `json:"id"`
+				Values []struct {
+					Value string `json:"value"`
+				} `json:"values"`
+			} `json:"attributes"`
+		} `json:"result"`
+	}
+	body := map[string]any{"filter": map[string]any{"sku": []string{sku}, "visibility": "ALL"}, "limit": 1}
+	if err := c.call(ctx, "/v4/product/info/attributes", body, &res); err != nil {
+		return Card{}, err
+	}
+	if len(res.Result) == 0 {
+		return Card{}, ErrNoCard
+	}
+	r := res.Result[0]
+	out := Card{Name: r.Name}
+	for _, a := range r.Attributes {
+		if len(a.Values) == 0 {
+			continue
+		}
+		switch a.ID {
+		case attrHashtags:
+			out.Hashtags = a.Values[0].Value
+		case attrAnnotation:
+			out.Annotation = a.Values[0].Value
+		case attrRich:
+			out.Rich = a.Values[0].Value
+		}
+	}
+	return out, nil
+}
+
 // infoBatch — карточек за запрос: больше 1000 Ozon не принимает.
 const infoBatch = 1000
 
