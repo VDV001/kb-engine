@@ -22,6 +22,13 @@ func fakeMCP(t *testing.T, tools map[string]func(args map[string]any) (text stri
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
+		if r.Method == http.MethodDelete { // закрытие сессии: tools["DELETE"] видит, какой
+			if fn, ok := tools["DELETE"]; ok {
+				fn(map[string]any{"session": r.Header.Get("Mcp-Session-Id")})
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		body, _ := io.ReadAll(r.Body)
 		var req struct {
 			ID     *int   `json:"id"`
@@ -60,6 +67,10 @@ func fakeMCP(t *testing.T, tools map[string]func(args map[string]any) (text stri
 			return
 		}
 		text, isErr := fn(req.Params.Arguments)
+		if text == "HTTP504" { // MPStats занят
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
 		content := []any{}
 		if text != "" {
 			content = append(content, map[string]any{"type": "text", "text": text})
@@ -117,8 +128,11 @@ func TestMCP_queries(t *testing.T) {
 func TestMCP_refusals(t *testing.T) {
 	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
 		"ozon_sku": func(a map[string]any) (string, bool) {
-			if a["sku"] == float64(1) {
+			switch a["sku"] {
+			case float64(1):
 				return "", false // MPStats не знает товара: пустой ответ
+			case float64(7):
+				return "Ошибка: сервис занят", true
 			}
 			return "Ошибка: sku not_found", true
 		},
@@ -131,11 +145,52 @@ func TestMCP_refusals(t *testing.T) {
 	if _, err := m.Card(ctx, 1); !errors.Is(err, mpstats.ErrNotFound) {
 		t.Errorf("empty answer: %v, want ErrNotFound", err)
 	}
-	_, err := m.Card(ctx, 5)
-	if err == nil || !strings.Contains(err.Error(), "not_found") || strings.Contains(err.Error(), "t-1") {
-		t.Errorf("tool error: %v, want its text and no token", err)
+	if _, err := m.Card(ctx, 5); !errors.Is(err, mpstats.ErrNotFound) {
+		t.Errorf("tool error not_found: %v, want ErrNotFound (ревью #621)", err)
+	}
+	_, err := m.Card(ctx, 7)
+	if err == nil || !strings.Contains(err.Error(), "сервис занят") || strings.Contains(err.Error(), "MPStats: MPStats") || strings.Contains(err.Error(), "t-1") {
+		t.Errorf("tool error: %v, want its text once and no token", err)
 	}
 	if _, err := (mpstats.MCP{URL: "http://mcp.example/mcp", Token: "t-1"}).Card(ctx, 5); !errors.Is(err, mpstats.ErrInsecureURL) {
 		t.Errorf("http: %v, want ErrInsecureURL (ключ — только по https)", err)
+	}
+}
+
+// Занятый MPStats (504) повторяется, как в REST; сессия закрывается после вызова (ревью #621).
+func TestMCP_retryAndClose(t *testing.T) {
+	var calls, closed int
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(map[string]any) (string, bool) {
+			if calls++; calls == 1 {
+				return "HTTP504", false
+			}
+			return `{"niche":{"name":"Одежда/Футболки"}}`, false
+		},
+		"DELETE": func(a map[string]any) (string, bool) {
+			if a["session"] == "s-1" {
+				closed++
+			}
+			return "", false
+		},
+	})
+	c, err := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}.Card(context.Background(), 5)
+	if err != nil || c.Niche != "Одежда/Футболки" || calls != 2 {
+		t.Fatalf("card %+v, %v after %d calls, want the 504 retried", c, err, calls)
+	}
+	if closed != 2 {
+		t.Errorf("closed %d sessions, want each of the 2 closed", closed)
+	}
+}
+
+// Ответ больше предела — так и сказано, а не «MPStats не прислал ответа» (ревью #621).
+func TestMCP_tooLarge(t *testing.T) {
+	big := `{"niche":{"name":"` + strings.Repeat("я", 9<<20) + `"}}`
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ozon_sku": func(map[string]any) (string, bool) { return big, false },
+	})
+	_, err := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}.Card(context.Background(), 5)
+	if err == nil || !strings.Contains(err.Error(), "МБ") {
+		t.Errorf("too large: %v, want the size named", err)
 	}
 }
