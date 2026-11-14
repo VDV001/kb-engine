@@ -119,6 +119,7 @@ func mainQuery(qs []NicheQuery) (NicheQuery, bool) {
 // titleJudge — словоформы, спрос слов в запросах главного, свои запросы товара и бренды.
 type titleJudge struct {
 	form  map[string]string
+	stem  map[string]string // основа формы → слово запросов ниши: формы MPStats неполные
 	sum   map[string]float64
 	total float64
 	own   map[string]OwnQuery // по слову запросов ниши и по основе слова
@@ -126,11 +127,14 @@ type titleJudge struct {
 }
 
 func newTitleJudge(in TitleInput) *titleJudge {
-	j := &titleJudge{form: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{}}
+	j := &titleJudge{form: map[string]string{}, stem: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{}}
 	for _, f := range in.Forms {
 		for _, w := range f.Forms {
 			if _, ok := j.form[foldWord(w)]; !ok {
 				j.form[foldWord(w)] = foldWord(f.Word)
+			}
+			if _, ok := j.stem[wordStem(foldWord(w))]; !ok {
+				j.stem[wordStem(foldWord(w))] = foldWord(f.Word)
 			}
 		}
 	}
@@ -154,6 +158,9 @@ func newTitleJudge(in TitleInput) *titleJudge {
 // group — слово запросов ниши, к которому относится словоформа tok.
 func (j *titleJudge) group(tok string) string {
 	if g, ok := j.form[tok]; ok {
+		return g
+	}
+	if g, ok := j.stem[wordStem(tok)]; ok { // «футболки» при одной форме «футболка» (ревью #621)
 		return g
 	}
 	return tok
@@ -280,10 +287,17 @@ var (
 	adjEndings  = []string{"ого", "его", "ый", "ий", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ую", "юю", "ых", "их", "ом", "ем"}
 )
 
-// wordStem — слово без окончания прилагательного, если основа не короче трех букв.
+// stemEndings — окончания прилагательных и существительных, длинные первыми.
+var stemEndings = []string{"ого", "его", "ами", "ями", "ый", "ий", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ую", "юю", "ых", "их", "ом", "ем",
+	"ов", "ев", "ей", "ам", "ям", "ах", "ях", "ы", "и", "а", "я", "у", "ю", "е", "о"}
+
+// wordStem — слово без окончания, если основа не короче четырех букв:
+// «футболки», «футболка» → «футболк»; короткие слова («белая») не режутся.
+// ponytail: грубая основа без словаря — редкие слова могут совпасть по основе;
+// потолок — сравнение форм; апгрейд — морфологический словарь.
 func wordStem(w string) string {
-	for _, e := range adjEndings {
-		if r, ok := strings.CutSuffix(w, e); ok && utf8.RuneCountInString(r) >= 3 {
+	for _, e := range stemEndings {
+		if r, ok := strings.CutSuffix(w, e); ok && utf8.RuneCountInString(r) >= 4 {
 			return r
 		}
 	}
