@@ -6673,7 +6673,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -6711,6 +6711,51 @@ function shTitleCard(p) {
   }
   return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;
 }
+// «Хештеги» в карточке (#610): хештеги из кабинета Ozon против запросов ниши MPStats.
+const shTags = new Map(); // кабинет|SKU → { busy } | { v } | { err }
+const shTagsKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
+function shTagWhy(r) {
+  return {
+    ok: `${fmt(r.demand)} запросов в месяц с этими словами`,
+    own: `в запросах ниши нет, но товар уже находят по «${r.query}»${r.position ? `, позиция ${fmt(r.position)}` : ""} — оставить`,
+    format: "не по правилам Ozon: начинается с #, только буквы и цифры, слова через _",
+    long: "длиннее 30 символов — Ozon не примет",
+    dup: "те же слова, что у хештега выше — дубль",
+    brand: "бренд — Ozon просит хештеги без брендов",
+    gender: "другой пол, чем у товара — не про товар",
+    nodemand: "в запросах ниши нет — спроса нет",
+    new: `${fmt(r.demand)} запросов в месяц — частый запрос ниши; добавьте, если это про Ваш товар`,
+  }[r.why] || "";
+}
+function shTagsCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shTags.get(shTagsKey(p)), btn = `<button class="btn" type="button" data-sh-tags="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить хештеги", "хештеги карточки из кабинета Ozon против запросов ниши в MPStats; ниша — общая с «Названием», второй раз тариф не тратится")}>${t && t.busy ? "Читаю Ozon и MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить хештеги"}</button>`;
+  let body = "";
+  if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
+  if (t && t.v) {
+    const v = t.v, li = (r) => `<li><b>${esc(r.tag)}</b> — ${esc(shTagWhy(r))}</li>`, keep = v.tags.filter((r) => r.why === "ok" || r.why === "own");
+    const copy = v.add.length ? `<button type="button" class="lnk" data-sh-copy="${esc(v.add.map((r) => r.tag).join(" "))}"${mkTip("Скопировать", "советы одной строкой через пробел — вставить в «#Хештеги» в кабинете")}>скопировать</button>` : "";
+    body = `<div class="note">Главный запрос ниши «${esc(v.main)}»; хештегов ${fmt(v.tags.length)} из ${fmt(v.max)}. Ozon советует в хештегах тренд, стиль или тематику — без брендов.</div>` +
+      (v.tooMany ? `<div class="note">Хештегов больше ${fmt(v.max)} — Ozon лишние не примет.</div>` : "") +
+      (v.remove.length ? `<div class="sh-title-h">Убрать</div><ul>${v.remove.map(li).join("")}</ul>` : "") +
+      (v.add.length ? `<div class="sh-title-h">Добавить ${copy}</div><ul>${v.add.map(li).join("")}</ul>` : "") +
+      (keep.length ? `<div class="sh-title-h">Оставить</div><ul>${keep.map(li).join("")}</ul>` : "") +
+      (!v.tags.length ? `<div class="note">У карточки нет хештегов.</div>` : "") + (v.note ? `<div class="note">${esc(v.note)}</div>` : "");
+  }
+  return `<h4 class="sh-money-h">Хештеги</h4>${btn}${body}`;
+}
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-tags]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.shTags;
+  if (!p || p.sku !== sku) return;
+  const key = shTagsKey(p);
+  if (!native() || !native().MarketsHashtags) { shTags.set(key, { err: "Проверка хештегов работает в окне приложения." }); return shCard(); }
+  shTags.set(key, { busy: true }); shCard();
+  try { shTags.set(key, { v: await native().MarketsHashtags(sh.v.path, sku) }); } catch (err) { shTags.set(key, { err: "Хештеги не проверены: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
 document.addEventListener("click", async (e) => {
   const b = e.target.closest("[data-sh-title]");
   if (!b) return;
