@@ -107,12 +107,37 @@ func (m MCP) NicheQueries(ctx context.Context, path string) ([]markets.NicheQuer
 // ponytail: сессия на каждый вызов — два лишних коротких запроса (initialize
 // квоту не тратит); потолок — частые вызовы подряд, апгрейд — держать сессию.
 func (m MCP) call(ctx context.Context, tool string, args map[string]any, out any) error {
+	s, err := m.open(ctx)
+	if err != nil {
+		return err
+	}
+	body, _, err := s.post(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}})
+	if err != nil {
+		return err
+	}
+	var res toolAnswer
+	if err := rpcResult(bytes.NewReader(body), 2, &res); err != nil {
+		return err
+	}
+	return res.decode(out)
+}
+
+// mcpSession — открытая сессия MCP: адрес с ключом и Mcp-Session-Id.
+type mcpSession struct {
+	ctx    context.Context
+	client *http.Client
+	target string
+	sid    string
+}
+
+// open checks the address, then initialize → Mcp-Session-Id → notifications/initialized.
+func (m MCP) open(ctx context.Context) (*mcpSession, error) {
 	if !safeForKey(m.URL) {
-		return ErrInsecureURL
+		return nil, ErrInsecureURL
 	}
 	u, err := url.Parse(m.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	q := u.Query()
 	q.Set("token", m.Token)
@@ -122,65 +147,69 @@ func (m MCP) call(ctx context.Context, tool string, args map[string]any, out any
 		cp := *m.HTTP
 		client = &cp
 	}
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect }
-	post := func(sid string, msg map[string]any) (*http.Response, error) {
-		msg["jsonrpc"] = "2.0"
-		b, _ := json.Marshal(msg)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), bytes.NewReader(b))
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Accept", "application/json, text/event-stream")
-		if sid != "" {
-			req.Header.Set("Mcp-Session-Id", sid)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return nil, transportErr(ctx, err)
-		}
-		return resp, nil
-	}
-	read := func(resp *http.Response, id int, out any) error {
-		defer func() { _ = resp.Body.Close() }()
-		if err := statusErr(resp.StatusCode); err != nil {
-			return err
-		}
-		return rpcResult(io.LimitReader(resp.Body, maxMCPBody), id, out)
-	}
-	resp, err := post("", map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect } // ключ — только на URL
+	s := &mcpSession{ctx: ctx, client: client, target: u.String()}
+	body, h, err := s.post(map[string]any{"id": 1, "method": "initialize", "params": map[string]any{
 		"protocolVersion": "2025-06-18", "capabilities": map[string]any{}, "clientInfo": map[string]any{"name": "kb-desktop", "version": "1"}}})
 	if err != nil {
-		return err
+		return nil, err
 	}
-	sid := resp.Header.Get("Mcp-Session-Id")
-	if err := read(resp, 1, &json.RawMessage{}); err != nil {
-		return err
+	if err := rpcResult(bytes.NewReader(body), 1, &json.RawMessage{}); err != nil {
+		return nil, err
 	}
-	if resp, err = post(sid, map[string]any{"method": "notifications/initialized"}); err != nil {
-		return err
+	s.sid = h.Get("Mcp-Session-Id")
+	if _, _, err := s.post(map[string]any{"method": "notifications/initialized"}); err != nil {
+		return nil, err
 	}
-	_ = resp.Body.Close()
-	if resp.StatusCode/100 != 2 {
-		return statusErr(resp.StatusCode)
+	return s, nil
+}
+
+// post sends one JSON-RPC message; ответ 2xx — тело и заголовки, иначе причина.
+func (s *mcpSession) post(msg map[string]any) ([]byte, http.Header, error) {
+	msg["jsonrpc"] = "2.0"
+	b, err := json.Marshal(msg)
+	if err != nil {
+		return nil, nil, err
 	}
-	if resp, err = post(sid, map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{"name": tool, "arguments": args}}); err != nil {
-		return err
+	req, err := http.NewRequestWithContext(s.ctx, http.MethodPost, s.target, bytes.NewReader(b))
+	if err != nil {
+		return nil, nil, err
 	}
-	var res struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-		IsError bool `json:"isError"`
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	if s.sid != "" {
+		req.Header.Set("Mcp-Session-Id", s.sid)
 	}
-	if err := read(resp, 2, &res); err != nil {
-		return err
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, nil, transportErr(s.ctx, err)
 	}
-	if len(res.Content) == 0 || strings.TrimSpace(res.Content[0].Text) == "" {
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 { // уведомление — 202
+		return nil, nil, statusErr(resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxMCPBody))
+	if err != nil {
+		return nil, nil, ErrDropped
+	}
+	return data, resp.Header, nil
+}
+
+// toolAnswer — результат tools/call: текст инструмента и признак ошибки.
+type toolAnswer struct {
+	Content []struct {
+		Text string `json:"text"`
+	} `json:"content"`
+	IsError bool `json:"isError"`
+}
+
+// decode puts the tool's JSON text into out; пусто — ErrNotFound, ошибка инструмента — ее текст.
+func (a toolAnswer) decode(out any) error {
+	if len(a.Content) == 0 || strings.TrimSpace(a.Content[0].Text) == "" {
 		return ErrNotFound
 	}
-	text := res.Content[0].Text
-	if res.IsError {
+	text := a.Content[0].Text
+	if a.IsError {
 		return fmt.Errorf("MPStats: %s", clip(text, 200))
 	}
 	if err := json.Unmarshal([]byte(text), out); err != nil {

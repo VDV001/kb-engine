@@ -39,6 +39,7 @@ type TitleInput struct {
 // TitleWhy — почему слово оставить, добавить или убрать.
 type TitleWhy int
 
+// Причины: оставить, добавить (Main, Frequent), убрать (Rare) и почему не убирать.
 const (
 	WhyKeep      TitleWhy = iota // частое в запросах главного
 	WhyMain                      // слово главного запроса, а в названии его нет
@@ -83,64 +84,104 @@ const (
 // «футболке женской».
 func CheckTitle(in TitleInput) TitleCheck {
 	out := TitleCheck{Total: len(in.Queries)}
-	form := make(map[string]string)
-	for _, f := range in.Forms {
-		for _, w := range f.Forms {
-			if _, ok := form[foldWord(w)]; !ok {
-				form[foldWord(w)] = foldWord(f.Word)
-			}
-		}
-	}
-	group := func(tok string) string {
-		if g, ok := form[tok]; ok {
-			return g
-		}
-		return tok
-	}
-	weight := func(q NicheQuery) float64 { return float64(q.Count) * float64(q.Items) }
-	var main NicheQuery
-	for _, q := range in.Queries {
-		if weight(q) > weight(main) {
-			main = q
-		}
-	}
-	if weight(main) <= 0 {
+	main, ok := mainQuery(in.Queries)
+	if !ok {
 		return out
 	}
 	out.Main = main
-	need := groupsOf(main.Text, group)
-	sum := make(map[string]float64)
-	var total float64
-	for _, q := range in.Queries {
-		gs := groupsOf(q.Text, group)
-		if !containsAll(gs, need) {
-			continue
-		}
-		out.Related++
-		total += weight(q)
-		for _, g := range gs {
-			sum[g] += weight(q)
+	j := newTitleJudge(in)
+	need := groupsOf(main.Text, j.group)
+	out.Related = j.count(in.Queries, need)
+	have, classes := j.judge(in.Title, &out)
+	for _, g := range need {
+		if !have[g] {
+			out.Add = append(out.Add, TitleWord{Word: g, Share: j.share(g), Why: WhyMain})
+			have[g] = true
 		}
 	}
-	share := func(g string) float64 { return sum[g] / total }
-	own := make(map[string]OwnQuery)
-	for _, q := range in.Own {
-		for _, g := range groupsOf(q.Text, group) {
-			if _, ok := own[g]; !ok {
-				own[g] = q
+	out.Add = append(out.Add, j.often(have, classes)...)
+	return out
+}
+
+func queryWeight(q NicheQuery) float64 { return float64(q.Count) * float64(q.Items) }
+
+// mainQuery — запрос с наибольшей частотой × товаров ниши; false — судить не по чему.
+func mainQuery(qs []NicheQuery) (NicheQuery, bool) {
+	var main NicheQuery
+	for _, q := range qs {
+		if queryWeight(q) > queryWeight(main) {
+			main = q
+		}
+	}
+	return main, queryWeight(main) > 0
+}
+
+// titleJudge — словоформы, спрос слов в запросах главного, свои запросы товара и бренды.
+type titleJudge struct {
+	form  map[string]string
+	sum   map[string]float64
+	total float64
+	own   map[string]OwnQuery
+	brand map[string]bool
+}
+
+func newTitleJudge(in TitleInput) *titleJudge {
+	j := &titleJudge{form: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{}}
+	for _, f := range in.Forms {
+		for _, w := range f.Forms {
+			if _, ok := j.form[foldWord(w)]; !ok {
+				j.form[foldWord(w)] = foldWord(f.Word)
 			}
 		}
 	}
-	brand := make(map[string]bool)
-	for _, b := range in.Brands {
-		for _, t := range wordsOf(b) {
-			brand[t] = true
+	for _, q := range in.Own {
+		for _, g := range groupsOf(q.Text, j.group) {
+			if _, ok := j.own[g]; !ok {
+				j.own[g] = q
+			}
 		}
 	}
-	have := make(map[string]bool)
-	classes := make(map[string]bool)
-	for _, tok := range wordsOf(in.Title) {
-		g := group(tok)
+	for _, b := range in.Brands {
+		for _, t := range wordsOf(b) {
+			j.brand[t] = true
+		}
+	}
+	return j
+}
+
+// group — слово запросов ниши, к которому относится словоформа tok.
+func (j *titleJudge) group(tok string) string {
+	if g, ok := j.form[tok]; ok {
+		return g
+	}
+	return tok
+}
+
+// count sums the demand of words over queries with all words need; возвращает, сколько таких запросов.
+func (j *titleJudge) count(qs []NicheQuery, need []string) int {
+	n := 0
+	for _, q := range qs {
+		gs := groupsOf(q.Text, j.group)
+		if !containsAll(gs, need) {
+			continue
+		}
+		n++
+		j.total += queryWeight(q)
+		for _, g := range gs {
+			j.sum[g] += queryWeight(q)
+		}
+	}
+	return n
+}
+
+func (j *titleJudge) share(g string) float64 { return j.sum[g] / j.total }
+
+// judge rates each word of title into out.Words and out.Remove; have — слова
+// названия, classes — названные цвет и пол.
+func (j *titleJudge) judge(title string, out *TitleCheck) (have, classes map[string]bool) {
+	have, classes = map[string]bool{}, map[string]bool{}
+	for _, tok := range wordsOf(title) {
+		g := j.group(tok)
 		if have[g] {
 			continue
 		}
@@ -148,12 +189,12 @@ func CheckTitle(in TitleInput) TitleCheck {
 		if c := wordClass(tok); c != "" {
 			classes[c] = true
 		}
-		w := TitleWord{Word: tok, Share: share(g)}
-		q, found := own[g]
+		w := TitleWord{Word: tok, Share: j.share(g)}
+		q, found := j.own[g]
 		switch {
 		case w.Share >= titleRareShare:
 			w.Why = WhyKeep
-		case brand[tok]:
+		case j.brand[tok]:
 			w.Why = WhyBrand
 		case wordClass(tok) != "":
 			w.Why = WhyAttribute
@@ -165,24 +206,22 @@ func CheckTitle(in TitleInput) TitleCheck {
 		}
 		out.Words = append(out.Words, w)
 	}
-	for _, g := range need {
-		if !have[g] {
-			out.Add = append(out.Add, TitleWord{Word: g, Share: share(g), Why: WhyMain})
-			have[g] = true
-		}
-	}
-	var often []TitleWord
-	for g := range sum {
-		if have[g] || share(g) < titleAddShare || classes[wordClass(g)] && wordClass(g) != "" {
+	return have, classes
+}
+
+// often — частые слова запросов главного, которых в названии нет, самые частые первыми.
+func (j *titleJudge) often(have, classes map[string]bool) []TitleWord {
+	var out []TitleWord
+	for g := range j.sum {
+		if c := wordClass(g); have[g] || j.share(g) < titleAddShare || c != "" && classes[c] {
 			continue // уже есть, редкое или другой цвет и пол к уже названным
 		}
-		often = append(often, TitleWord{Word: g, Share: share(g), Why: WhyFrequent})
+		out = append(out, TitleWord{Word: g, Share: j.share(g), Why: WhyFrequent})
 	}
-	slices.SortFunc(often, func(a, b TitleWord) int {
+	slices.SortFunc(out, func(a, b TitleWord) int {
 		return cmp.Or(cmp.Compare(b.Share, a.Share), strings.Compare(a.Word, b.Word))
 	})
-	out.Add = append(out.Add, often[:min(len(often), titleAddMax)]...)
-	return out
+	return out[:min(len(out), titleAddMax)]
 }
 
 // titleStop — служебные слова: по ним не судят.
