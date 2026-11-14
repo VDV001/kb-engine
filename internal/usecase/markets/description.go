@@ -3,6 +3,7 @@ package markets
 import (
 	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 )
@@ -42,10 +43,14 @@ const descriptionMissingMax = 10
 func CheckDescription(in DescriptionInput) DescriptionCheck {
 	out := DescriptionCheck{Length: len([]rune(strings.TrimSpace(in.Description)))}
 	out.Empty = out.Length == 0
-	card := map[string]map[string]bool{"gender": {}, "color": {}}
+	card := map[string]map[string]bool{"gender": {}, "color": {}} // пол — аудитории (f, m, k), цвет — основы слов
 	cardWords := map[string][]string{}
 	for _, t := range wordsOf(in.Title + " " + in.Gender + " " + in.Color) {
-		if c := wordClass(t); c != "" { // «Мужской», «черный» из характеристик — те же классы
+		switch c := wordClass(t); c { // «Мужской», «черный» из характеристик — те же классы
+		case "gender":
+			maps.Copy(card[c], genderFamily(t))
+			cardWords[c] = append(cardWords[c], t)
+		case "color":
 			card[c][wordStem(t)] = true
 			cardWords[c] = append(cardWords[c], t)
 		}
@@ -53,7 +58,7 @@ func CheckDescription(in DescriptionInput) DescriptionCheck {
 	seen := map[string]bool{}
 	for _, t := range wordsOf(in.Description) {
 		c := wordClass(t)
-		if c == "" || len(card[c]) == 0 || card[c][wordStem(t)] || seen[c+wordStem(t)] {
+		if c == "" || len(card[c]) == 0 || fits(c, t, card[c]) || seen[c+wordStem(t)] {
 			continue
 		}
 		seen[c+wordStem(t)] = true
@@ -81,7 +86,7 @@ func (j *titleJudge) missing(need []string, have map[string]bool, card map[strin
 	var out []TitleWord
 	for g := range j.sum {
 		c := wordClass(g)
-		if have[g] || j.nicheBrand(g) || j.brand[g] || c != "" && len(card[c]) > 0 && !card[c][wordStem(g)] {
+		if have[g] || j.nicheBrand(g) || j.brand[g] || c != "" && len(card[c]) > 0 && !fits(c, g, card[c]) {
 			continue
 		}
 		why := WhyFrequent
@@ -96,6 +101,15 @@ func (j *titleJudge) missing(need []string, have map[string]bool, card map[strin
 		return cmp.Or(cmp.Compare(a.Why, b.Why), cmp.Compare(b.Share, a.Share), strings.Compare(a.Word, b.Word)) // слова главного — первыми
 	})
 	return out[:min(len(out), descriptionMissingMax)]
+}
+
+// fits: слово класса подходит товару — пол по аудитории («девочек» — женская
+// и детская), цвет по основе слова (живая проверка #611).
+func fits(class, w string, card map[string]bool) bool {
+	if class == "gender" {
+		return slices.ContainsFunc(slices.Collect(maps.Keys(genderFamily(w))), func(f string) bool { return card[f] })
+	}
+	return card[wordStem(w)]
 }
 
 // DescriptionSystem — роль модели для нового описания (#611).
