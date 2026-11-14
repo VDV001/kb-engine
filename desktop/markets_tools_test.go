@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 )
 
 // Инструменты магазина в чате (#580): только у кабинетов, которым человек
@@ -16,7 +17,7 @@ import (
 // человека, иначе первый; кабинет читается один раз за ход.
 func TestShopExtra(t *testing.T) {
 	s, _, _ := newServerSettings(t)
-	if x := shopExtras(s, "", nil, time.Now); x != nil {
+	if x := shopExtras(s, "", nil, time.Now, nil); x != nil {
 		t.Fatalf("no cabinets, extras = %v", x)
 	}
 	seen := map[string]int{}
@@ -37,7 +38,7 @@ func TestShopExtra(t *testing.T) {
 	if _, err := s.AddOzon("Брюки и худи", "1", "k-1", false); err != nil {
 		t.Fatal(err)
 	}
-	if x := shopExtras(s, srv.URL, srv.Client(), time.Now); x != nil {
+	if x := shopExtras(s, srv.URL, srv.Client(), time.Now, nil); x != nil {
 		t.Fatal("a cabinet without the person's consent went to the model")
 	}
 	a, _ := s.AddOzon("Брюки и худи", "1", "k-1", true)
@@ -48,7 +49,7 @@ func TestShopExtra(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }
-	x := shopExtras(s, srv.URL, srv.Client(), now)
+	x := shopExtras(s, srv.URL, srv.Client(), now, nil)
 	if len(x) != 1 || !strings.Contains(x[0].Prompt(), "shop_") || len(x[0].Tools()) != 6 {
 		t.Fatalf("extras = %v", x)
 	}
@@ -103,7 +104,7 @@ func TestShopExtra(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	fresh := shopExtras(s, srv.URL, srv.Client(), now)
+	fresh := shopExtras(s, srv.URL, srv.Client(), now, nil)
 	if fresh != nil {
 		t.Error("extras with every cabinet off")
 	}
@@ -135,7 +136,7 @@ func TestShopExtra_returnsRefused(t *testing.T) {
 	if _, err := s.AddOzon("Тест", "1", "k-1", true); err != nil {
 		t.Fatal(err)
 	}
-	x := shopExtras(s, srv.URL, srv.Client(), func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) })
+	x := shopExtras(s, srv.URL, srv.Client(), func() time.Time { return time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC) }, nil)
 	if out, _ := x[0].Exec(context.Background(), "shop_money", []byte(`{}`)); !strings.Contains(out, "на счет") {
 		t.Errorf("shop_money without returns: %q", out)
 	}
@@ -145,5 +146,34 @@ func TestShopExtra_returnsRefused(t *testing.T) {
 	_, _ = x[0].Exec(context.Background(), "shop_losses", []byte(`{}`))
 	if seen["/v1/returns/list"] != 1 || seen["/v1/finance/accrual/by-day"] != 90 {
 		t.Errorf("returns asked %d, accrual days %d: once per turn, failure included", seen["/v1/returns/list"], seen["/v1/finance/accrual/by-day"])
+	}
+}
+
+// Шаг чата называет кабинет и вопрос словами человека (отзыв 14.11): «Ozon
+// «Брюки»: карточка товара «100_46»», а не имя инструмента.
+func TestShopExtra_describe(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	a, _ := s.AddOzon("Брюки и худи", "1", "k-1", true)
+	if _, err := s.AddOzon("Платья", "2", "k-2", true); err != nil {
+		t.Fatal(err)
+	}
+	x := shopExtras(s, "", nil, time.Now, nil)
+	tests := []struct{ tool, args, id, name, what string }{
+		{"shop_summary", ``, a.ID, "Ozon «Брюки и худи»", "сводка магазина"},
+		{"shop_sku", `{"q":"100_46","cabinet":"Платья"}`, "", "Ozon «Платья»", "карточка товара «100_46»"},
+		{"shop_money", `{}`, a.ID, "Ozon «Брюки и худи»", "деньги магазина"},
+		{"shop_top", `{"by":"ordered"}`, a.ID, "Ozon «Брюки и худи»", "топ товаров"},
+		{"shop_supply", `{}`, a.ID, "Ozon «Брюки и худи»", "что довезти"},
+		{"shop_losses", `{}`, a.ID, "Ozon «Брюки и худи»", "возможные пропажи"},
+		{"shop_sku", `{"q":"1","cabinet":"Нет такого"}`, "", "Ozon", "карточка товара «1»"},
+	}
+	for _, tt := range tests {
+		u, ok := x[0].Describe(tt.tool, []byte(tt.args))
+		if !ok || u.Kind != chat.UseConnection || u.Name != tt.name || u.What != tt.what || (tt.id != "" && u.ID != tt.id) {
+			t.Errorf("%s %s: %+v, %v", tt.tool, tt.args, u, ok)
+		}
+	}
+	if _, ok := x[0].Describe("search", nil); ok {
+		t.Error("search described by the shop")
 	}
 }

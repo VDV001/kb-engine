@@ -47,6 +47,36 @@ func attachRefs(refs []string, question string) (explicit, auto []string) {
 	return explicit, auto
 }
 
+// webSteps shows the links of the question as steps out of the window's
+// sources: ссылка — выход в интернет, человек видит попытку до ответа.
+func (d *chatDesk) webSteps(refs []string) {
+	if d.step == nil {
+		return
+	}
+	for _, u := range webUses(refs) {
+		d.step(u)
+	}
+}
+
+// webUses names the links among refs as sources «Интернет · host», без повторов.
+func webUses(refs []string) []chat.Use {
+	var out []chat.Use
+	for _, ref := range refs {
+		link, ok := strings.CutPrefix(ref, "url:")
+		if !ok {
+			continue
+		}
+		host := link
+		if u, err := url.Parse(link); err == nil && u.Host != "" {
+			host = u.Host
+		}
+		if u := (chat.Use{Kind: chat.UseWeb, Name: host, What: "ссылка из вопроса"}); !slices.Contains(out, u) {
+			out = append(out, u)
+		}
+	}
+	return out
+}
+
 // readQuestionLinks reads the links mentioned in the question. Ссылка лишь
 // упомянута («почему https://localhost не отвечает?»), поэтому не прочлась —
 // не повод останавливать вопрос: она называется в notes, вопрос идет дальше.

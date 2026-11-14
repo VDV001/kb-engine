@@ -557,18 +557,19 @@ func (f *folderSettings) forecast(ctx context.Context, base string, hc *http.Cli
 	return forecastOf(series, files)
 }
 
-// SetOzonShare allows or forbids giving cabinet id's numbers to the chat model.
+// SetOzonShare allows or forbids giving the data of connection id (кабинет
+// Ozon или MPStats) to the chat model.
 func (f *folderSettings) SetOzonShare(id string, on bool) error {
 	found := false
 	err := f.updateConfig(func(cfg *desktopconfig.Config) {
 		for i, c := range cfg.Connections {
-			if c.ID == id && c.Kind == desktopconfig.ConnOzon {
+			if c.ID == id && (c.Kind == desktopconfig.ConnOzon || c.Kind == desktopconfig.ConnMPStats) {
 				cfg.Connections[i].Share, found = on, true
 			}
 		}
 	})
 	if err == nil && !found {
-		return errors.New("кабинета Ozon нет в «Подключениях»")
+		return errors.New("подключения Ozon или MPStats нет в «Подключениях»")
 	}
 	return err
 }

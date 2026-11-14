@@ -20,7 +20,8 @@ const (
 
 const toolsPrompt = `Ты отвечаешь на вопросы человека по его документам: записям базы знаний и файлам.
 Ищи инструментом search и читай нужное инструментом read, сколько понадобится.
-Отвечай только по найденному и называй документы, на которые опираешься. Если ответа нет — так и скажи.
+Отвечай только по найденному и называй, откуда взято: документы, на которые опираешься, или подключение (кабинет Ozon, MPStats), из которого цифры. Если ответа нет — так и скажи.
+Сам ты в интернете не ищешь и других сервисов, кроме документов и подключений человека, у тебя нет: если для ответа нужен такой источник, скажи, какого не хватает, и не выдумывай за него. Текст ссылок из вопроса, которые окно смогло открыть, приложен (url:…) — отвечай по нему и называй источником ссылку; если текста ссылки нет среди приложенного, она не открылась: так и скажи и не выдумывай ее содержимое.
 Отвечай на языке вопроса.`
 
 // rememberPrompt is added when the person keeps a portrait.
@@ -59,6 +60,8 @@ type toolRun struct {
 	versions Versions
 	propose  func(ctx context.Context, p VersionProposal) error
 	extras   []Extra
+	step     func(Use)
+	uses     []Use
 }
 
 // answerWithTools lets the model search and read until it answers. После
@@ -69,7 +72,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 		return Turn{}, ErrNoReader
 	}
 	msgs := toolsMessages(r)
-	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions, propose: r.ProposeVersion, extras: r.Extras}
+	run := &toolRun{s: s, attached: r.Attached, remember: r.Remember, versions: r.Versions, propose: r.ProposeVersion, extras: r.Extras, step: r.Step}
 	offered := offeredTools(r)
 	for step := 0; ; step++ {
 		offer := offered
@@ -89,7 +92,7 @@ func (s *Service) answerWithTools(ctx context.Context, r Request) (Turn, error) 
 			if strings.TrimSpace(reply.Content) == "" {
 				return Turn{}, fmt.Errorf("%w: empty answer", ErrModel)
 			}
-			return Turn{Answer: reply.Content, Docs: run.docs(), PromptTokens: promptTokens(reply.Usage)}, nil
+			return Turn{Answer: reply.Content, Docs: run.docs(), PromptTokens: promptTokens(reply.Usage), Uses: run.uses}, nil
 		}
 		if r.Show != nil {
 			r.Show("") // «сейчас поищу» — не ответ
@@ -150,9 +153,13 @@ func offeredTools(r Request) []Tool {
 
 // exec runs one tool call; ошибка уходит модели текстом — ход продолжается.
 func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
+	c = withArgs(c)
 	var args toolArgs
 	if err := json.Unmarshal([]byte(c.Arguments), &args); err != nil {
 		return "ошибка: аргументы не разобраны: " + err.Error()
+	}
+	if u, ok := r.describe(c, args); ok {
+		r.note(u)
 	}
 	switch c.Name {
 	case "search":
@@ -184,6 +191,44 @@ func (r *toolRun) exec(ctx context.Context, c ToolCall) string {
 		return "предложено: ждет одобрения человека, в портрет без него не попадет"
 	default:
 		return r.execExtra(ctx, c)
+	}
+}
+
+// withArgs gives call c "{}" for empty arguments: без полей Haiku через шлюз
+// шлет "" (shop_money, 14.11).
+func withArgs(c ToolCall) ToolCall {
+	if strings.TrimSpace(c.Arguments) == "" {
+		c.Arguments = "{}"
+	}
+	return c
+}
+
+// describe names the step of call c: поиск и чтение — документы, инструмент
+// модуля — как скажет модуль; «запомнить» и неизвестное — не шаг за данными.
+func (r *toolRun) describe(c ToolCall, a toolArgs) (Use, bool) {
+	switch c.Name {
+	case "search":
+		return Use{Kind: UseDocs, What: "ищет «" + strings.TrimSpace(a.Q) + "»"}, true
+	case "read":
+		return Use{Kind: UseDocs, What: "читает " + a.Ref}, true
+	case "versions", "open_version":
+		return Use{Kind: UseDocs, What: "смотрит версии «" + strings.TrimSpace(a.Q) + "»"}, true
+	}
+	for _, x := range r.extras {
+		if u, ok := x.Describe(c.Name, []byte(c.Arguments)); ok {
+			return u, true
+		}
+	}
+	return Use{}, false
+}
+
+// note shows step u and keeps it among the turn's uses once.
+func (r *toolRun) note(u Use) {
+	if r.step != nil {
+		r.step(u)
+	}
+	if !slices.Contains(r.uses, u) {
+		r.uses = append(r.uses, u)
 	}
 }
 

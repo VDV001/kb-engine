@@ -1287,6 +1287,10 @@ $("#storage-list").addEventListener("click", async (e) => {
   renderStorage();
 });
 const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon", mpstats: "MPStats" };
+// CHAT_CONN — подключения, которые чат спрашивает (кабинет Ozon, MPStats): у них
+// кнопка «Чату» и плашка в ряду «ищет в».
+const CHAT_CONN = { ozon: "Ozon", mpstats: "MPStats" };
+function connLabel(c) { return `${CHAT_CONN[c.kind] || c.kind} · ${c.name || c.kind}`; }
 // Что случится после удаления — у каждого вида свое (ревью #605).
 const CONN_DEL_NOTE = {
   ozon: "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет.",
@@ -1302,8 +1306,10 @@ async function renderConnections() {
   if (!native() || !native().Connections) { list.innerHTML = `<li class="muted">Подключения видны в окне приложения.</li>`; return; }
   let rows = [];
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
+  setChatConns(rows); // ряд «ищет в» чата видит разрешение сразу
   list.innerHTML = rows.map((r) => {
-    const share = r.kind === "ozon" ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? "модель чата видит цифры магазина, они уходят ее провайдеру; нажмите — запретить" : "модель чата цифр магазина не видит; нажмите — разрешить: названия товаров, заказы и продажи уйдут провайдеру модели")}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
+    const what = r.kind === "mpstats" ? "цифры ниш и рынка из MPStats" : "цифры магазина";
+    const share = CHAT_CONN[r.kind] ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? `модель чата видит ${what}, они уходят ее провайдеру; нажмите — запретить` : `модель чата не видит ${what}; нажмите — разрешить: ${r.kind === "mpstats" ? "категории и продажи рынка" : "названия товаров, заказы и продажи"} уйдут провайдеру модели`)}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
     const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
     const acts = r.own
       ? `${chk}${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button>`
@@ -2735,7 +2741,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "" };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "", conns: [], steps: [] };
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
 const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
@@ -2748,6 +2754,7 @@ async function openChatView() {
     await loadChatSettings();
   }
   await loadPortrait(); // размер портрета — для предупреждения в начале нового чата
+  await loadChatConns();
   await renderChatList();
   renderChat();
   renderChatSources();
@@ -2778,7 +2785,16 @@ function openCostlyChat(id) {
 // Функции, а не const: строка статуса зовет renderChatSources раньше, чем
 // исполнится этот кусок файла.
 function chatHues() { return hues(state.known, (s) => s.id); }
-function chatSources() { return state.known.filter((s) => s.enabled); }
+function chatSources() { return [...state.known.filter((s) => s.enabled), ...chatState.conns.filter((c) => c.share).map((c) => ({ id: c.id, conn: c }))]; }
+// Подключения в ряду «ищет в» (отзыв 14.11): кабинеты Ozon и MPStats, что
+// включены в «Подключениях»; без разрешения чату — плашкой «запрещено».
+function setChatConns(rows) {
+  chatState.conns = (rows || []).filter((c) => CHAT_CONN[c.kind] && c.enabled);
+  if (!$("#chat-view").hidden) renderChatSources();
+}
+async function loadChatConns() {
+  if (native() && native().Connections) setChatConns(await native().Connections().catch(() => []));
+}
 function chatSrcOn(id) { return !chatState.only || chatState.only.includes(id); }
 function chatSrcBad(id) {
   const p = state.problems && (state.problems.problems || []).find((x) => x.source === id && !x.path && x.level === "error");
@@ -2786,23 +2802,73 @@ function chatSrcBad(id) {
 }
 function renderChatSources() {
   const row = $("#chat-srcs");
-  const list = chatSources();
-  row.hidden = !list.length;
-  if (!list.length) return;
+  const all = chatSources(), list = all.filter((s) => !s.conn);
+  // «Окно ищет» (локальная модель): инструментов нет — подключения чат не спрашивает вовсе.
+  const tools = !chatState.settings || chatState.settings.effectiveMode === "tools";
+  const conns = tools ? all.filter((s) => s.conn) : [], locked = tools ? chatState.conns.filter((c) => !c.share) : chatState.conns;
+  row.hidden = !all.length && !locked.length;
+  if (row.hidden) return;
   const hue = chatHues();
   const chip = (s) => {
     const bad = chatSrcBad(s.id), on = chatSrcOn(s.id);
     return `<button type="button" class="chat-src${bad ? " bad" : ""}" style="--c:var(${hue.get(s.id)})" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
       data-tip="${esc(label(s))}" data-tip-b="${esc(bad || (on ? "этот чат ищет здесь · щелчок — убрать" : "этот чат здесь не ищет · щелчок — вернуть"))}"${bad ? " data-tip-bad" : ""}><i></i><span class="t">${esc(label(s))}</span></button>`;
   };
-  const max = 6; // больше — в «еще N»: ряд не переносится
-  const shown = list.slice(0, max), rest = list.slice(max);
-  const restOn = rest.filter((s) => chatSrcOn(s.id)).length;
-  row.innerHTML = `<span class="lbl">ищет в</span>` + shown.map(chip).join("") +
-    (rest.length ? `<button type="button" class="chat-src" data-chat-more aria-expanded="${chatState.moreOpen}">еще ${rest.length}${chatState.only ? ` · ${restOn} вкл` : ""}</button>` : "") +
-    (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
-    (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more">${rest.map((s) => `<label style="--c:var(${hue.get(s.id)})"><input type="checkbox" data-chat-src-cb="${esc(s.id)}"${chatSrcOn(s.id) ? " checked" : ""}><i></i>${esc(label(s))}${chatSrcBad(s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`).join("")}</div>` : "");
+  const connChip = (s) => {
+    const on = chatSrcOn(s.id);
+    return `<button type="button" class="chat-src conn" data-chat-src="${esc(s.id)}" aria-pressed="${on}"
+      data-tip="${esc(connLabel(s.conn))}" data-tip-b="${esc((on ? "подключение: внешний сервис по Вашему ключу, чат спрашивает его, его данные уходят провайдеру модели · щелчок — убрать из этого чата" : "этот чат его не спрашивает · щелчок — вернуть"))}"><i></i><span class="t">${esc(connLabel(s.conn))}</span></button>`;
+  };
+  const lockChip = (c) => tools
+    ? `<button type="button" class="chat-src conn locked" data-chat-conn-off="${esc(c.id)}" aria-disabled="true"
+      data-tip="${esc(connLabel(c))}: чату запрещено" data-tip-b="модель не видит его данных · щелчок — «Подключения», там «Чату: разрешить»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`
+    : `<button type="button" class="chat-src conn locked" data-chat-mode-off aria-disabled="true"
+      data-tip="${esc(connLabel(c))}: чат не спрашивает" data-tip-b="окно само ищет документы и отдает их модели, подключения так не спрашиваются · щелчок — «Чат и модель», режим «модель ищет»"><i></i><span class="t">${esc(connLabel(c))}</span></button>`;
+  // Один ряд всегда (отзыв 14.11: перенос дал бы «этажи» при многих
+  // подключениях): что не показано, уходит за кнопку «еще N»; окошко по ней —
+  // все источники и подключения разделами, с переключателями.
+  const items = [...list.map((s) => ({ s, html: chip(s), conn: false })), ...conns.map((s) => ({ s, html: connChip(s), conn: true })), ...locked.map((c) => ({ lock: c, html: lockChip(c), conn: true }))];
+  const popRow = (it) => it.lock
+    ? `<label class="off"><input type="checkbox" disabled><i></i>${esc(connLabel(it.lock))} <button type="button" class="chat-srcs-reset" ${tools ? `data-chat-conn-off="${esc(it.lock.id)}">чату запрещено` : `data-chat-mode-off>не спрашивается`}</button></label>`
+    : `<label style="--c:var(${it.conn ? "--z-accent" : hue.get(it.s.id)})"><input type="checkbox" data-chat-src-cb="${esc(it.s.id)}"${chatSrcOn(it.s.id) ? " checked" : ""}><i></i>${esc(it.conn ? connLabel(it.s.conn) : label(it.s))}${chatSrcBad(it.s.id) ? ' <span class="muted">· ошибка</span>' : ""}</label>`;
+  // В ряду не больше двух источников и двух подключений (решение владельца
+  // 14.11); не влезает — по одному; остальное — за «еще N».
+  const docIdx = items.map((it, i) => (it.conn ? -1 : i)).filter((i) => i >= 0);
+  const connIdx = items.map((it, i) => (it.conn ? i : -1)).filter((i) => i >= 0);
+  // Два состояния, оба симметричны: по два — или по одному.
+  const levels = [[...docIdx.slice(2), ...connIdx.slice(2)], [...docIdx.slice(1), ...connIdx.slice(1)]];
+  const paint = (lv) => {
+    const hidden = new Set(levels[lv]);
+    const shown = items.filter((_, i) => !hidden.has(i)), rest = items.filter((_, i) => hidden.has(i));
+    const restOn = rest.filter((it) => !it.lock && chatSrcOn(it.s.id)).length;
+    const firstConn = shown.findIndex((it) => it.conn);
+    row.innerHTML = (list.length ? `<span class="lbl">ищет в</span>` : "") +
+      shown.map((it, i) => (i === firstConn ? `<span class="lbl">спрашивает</span>` : "") + it.html).join("") +
+      (rest.length ? `<button type="button" class="chat-src more" data-chat-more aria-expanded="${chatState.moreOpen}" data-tip="Все источники и подключения" data-tip-b="в ряд не влезли еще ${rest.length}${chatState.only ? `, из них включено ${restOn}` : ""} · щелчок — окошко со всеми, там включить или выключить">еще ${rest.length}</button>` : "") +
+      (chatState.only ? `<button type="button" class="chat-srcs-reset" data-chat-src-all>все</button>` : "") +
+      (chatState.moreOpen && rest.length ? `<div class="chat-srcs-more" role="group" aria-label="Где ищет этот чат">` +
+        (list.length ? `<div class="hd">Источники</div>` + items.filter((it) => !it.conn).map(popRow).join("") : "") +
+        (items.some((it) => it.conn) ? `<div class="hd">Подключения</div>` + items.filter((it) => it.conn).map(popRow).join("") : "") + `</div>` : "");
+  };
+  // Ширину знает только раскладка: убирать по плашке, пока последний элемент ряда выходит за край.
+  const over = () => {
+    const edge = row.getBoundingClientRect().right + 1;
+    return [...row.children].some((el) => !el.classList.contains("chat-srcs-more") && el.getBoundingClientRect().right > edge);
+  };
+  row.classList.remove("squeeze");
+  paint(0);
+  if (row.clientWidth > 0 && over()) paint(1);
+  // По одному и все равно узко — плашки сжимаются многоточием, ряд не пустеет.
+  if (row.clientWidth > 0 && over()) row.classList.add("squeeze");
   dropStaleTip();
+}
+// Окно сузили или расширили — пересчитать, сколько плашек влезает.
+if (window.ResizeObserver) {
+  let lastW = 0;
+  new ResizeObserver(([e]) => {
+    const w = Math.round(e.contentRect.width);
+    if (w !== lastW) { lastW = w; requestAnimationFrame(renderChatSources); }
+  }).observe($("#chat-srcs"));
 }
 function toggleChatSrc(id) {
   const all = chatSources().map((s) => s.id);
@@ -2815,6 +2881,8 @@ function toggleChatSrc(id) {
 $("#chat-srcs").addEventListener("click", (e) => {
   const b = e.target.closest("[data-chat-src]");
   if (b) return toggleChatSrc(b.dataset.chatSrc);
+  if (e.target.closest("[data-chat-conn-off]")) return openSettings("conn");
+  if (e.target.closest("[data-chat-mode-off]")) return openSettings("chat");
   if (e.target.closest("[data-chat-src-all]")) { chatState.only = null; return renderChatSources(); }
   if (e.target.closest("[data-chat-more]")) { chatState.moreOpen = !chatState.moreOpen; renderChatSources(); }
 });
@@ -3092,7 +3160,7 @@ function renderChat() {
     const folded = (c.compressed && c.compressed.folded) || 0;
     log.innerHTML = c.messages.map((m, i) => (m.role === "user"
       ? `<div class="msg user">${esc(m.text)}</div>`
-      : `<div class="msg bot">${answerHTML(m.text)}</div>`)
+      : `<div class="msg bot">${answerHTML(m.text)}${usesHTML(m.uses)}</div>`)
       + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
   if (c && !chatState.busy) log.insertAdjacentHTML("beforeend", memInChat() + verOffersInChat());
@@ -3124,9 +3192,33 @@ function paintPartial() {
   const log = $("#chat-log");
   const atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 80;
   el.classList.toggle("streaming", !!t);
-  el.innerHTML = t ? answerHTML(t) : `<span class="building"></span>ищу в документах и думаю…`;
+  el.innerHTML = t ? answerHTML(t) : chatState.steps.length ? stepsHTML(chatState.steps) : `<span class="building"></span>думаю…`;
   if (atBottom) log.scrollTop = log.scrollHeight; // не уводить, если человек листает вверх
 }
+// Шаги хода (chat:step, отзыв 14.11): куда чат ходит прямо сейчас — документы,
+// подключение или интернет; последний шаг — с полосой «идет».
+const useName = (u) => u.kind === "docs" ? "Документы" : u.kind === "web" ? "Интернет · " + u.name : u.name;
+function stepsHTML(steps) {
+  const last = steps.slice(-6);
+  return `<ul class="chat-steps">${last.map((u, i) => `<li class="k-${esc(u.kind)}">${i === last.length - 1 ? `<span class="building"></span>` : "✓ "}<b>${esc(useName(u))}</b>${u.what ? ": " + esc(u.what) : ""}${u.kind === "web" ? ` <span class="muted">· вне Ваших источников</span>` : ""}</li>`).join("")}</ul>`;
+}
+// usesHTML — откуда ответ, под ним: место один раз, что спрашивали — в подсказке.
+function usesHTML(uses) {
+  if (!uses || !uses.length) return "";
+  const by = new Map();
+  for (const u of uses) {
+    const k = u.kind + "|" + (u.kind === "docs" ? "" : u.id || u.name);
+    if (!by.has(k)) by.set(k, { u, what: [] });
+    if (u.what) by.get(k).what.push(u.what);
+  }
+  return `<div class="chat-uses"><span class="lbl">взято</span>${[...by.values()].map(({ u, what }) =>
+    `<span class="chat-use k-${esc(u.kind)}" data-tip="${esc(useName(u))}${u.kind === "web" ? " · вне Ваших источников" : u.kind === "connection" ? " · внешний сервис по Вашему ключу" : ""}" data-tip-b="${esc(what.join(" · "))}">${esc(useName(u))}</span>`).join("")}</div>`;
+}
+if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
+  if (!chatState.busy || !u) return;
+  chatState.steps.push(u);
+  if (!chatState.partial) paintPartial();
+});
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
   chatState.partial = t || "";
@@ -3206,6 +3298,7 @@ async function askChat() {
   if (canCompress() && !chatState.declined && askNeedsRoom(q)) { chatState.offerAsk = true; renderChat(); return; }
   chatState.busy = true;
   chatState.partial = "";
+  chatState.steps = [];
   $("#chat-send").disabled = true;
   // Вопрос виден сразу, до ответа.
   chatState.chat = chatState.chat ? { ...chatState.chat, messages: [...chatState.chat.messages, { role: "user", text: q }] } : { title: q, messages: [{ role: "user", text: q }], docs: [] };
@@ -3712,6 +3805,9 @@ async function saveChatPart(patch, head, rest) {
   try {
     await native().SetChatSettings(next, "");
     chatState.settings = { ...s, ...patch };
+    // Режим «кто ищет» считает окно: сменились режим или модель — спросить заново (ряд «ищет в»).
+    if ("mode" in patch || "url" in patch || "model" in patch) chatState.settings = await native().ChatSettings().catch(() => chatState.settings);
+    renderChatSources();
     toast(head, rest, () => saveChatPart(before, "Вернул", " · как было"));
     // Где лежит портрет поменялось (и при «Вернуть» тоже) — портрет с нового места.
     if ("memoryDir" in patch || "memoryServer" in patch) await loadPortrait();
@@ -6062,7 +6158,7 @@ function srcTag(sel, kind) {
 }
 // shPart — показана часть загруженных дней.
 const shPart = () => !!(sh.v && sh.v.windowFrom && (sh.v.from !== sh.v.windowFrom || sh.v.to !== sh.v.windowTo));
-// shSourceLine — откуда данные одной строкой: «Кабинет FURIA (Ozon) · 15.08.2026 – 12.11.2026 · 547 товаров».
+// shSourceLine — откуда данные одной строкой: «Кабинет Пример (Ozon) · 15.08.2026 – 12.11.2026 · 120 товаров».
 function shSourceLine(v) {
   const what = shOzon() ? `Кабинет ${(v.file || "").replace(/^Ozon · /, "")} (Ozon)` : `Отчет ${v.file || ""}`;
   const n = (v.products || []).length;

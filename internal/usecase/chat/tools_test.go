@@ -206,6 +206,12 @@ func (f *fakeExtra) Prompt() string {
 func (f *fakeExtra) Tools() []chat.Tool {
 	return []chat.Tool{{Name: "shop_summary", Description: "сводка магазина", Parameters: []byte(`{"type":"object","properties":{}}`)}}
 }
+func (f *fakeExtra) Describe(name string, _ []byte) (chat.Use, bool) {
+	if name != "shop_summary" {
+		return chat.Use{}, false
+	}
+	return chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"}, true
+}
 func (f *fakeExtra) Exec(_ context.Context, name string, args []byte) (string, bool) {
 	if name != "shop_summary" {
 		return "", false
@@ -236,5 +242,78 @@ func TestToolsMode_Extra(t *testing.T) {
 	}
 	if !slices.ContainsFunc(m.tools[0], func(x chat.Tool) bool { return x.Name == "shop_summary" }) {
 		t.Error("shop_summary not offered")
+	}
+}
+
+// Инструмент без обязательных полей модель зовет с пустыми аргументами:
+// через шлюз Haiku прислал "" к shop_money, и чат ответил «аргументы не
+// разобраны» вместо денег магазина (живой чат 14.11). Пусто — это «{}».
+func TestToolsMode_EmptyArgumentsAreNoArguments(t *testing.T) {
+	for _, args := range []string{"", "  ", "\n"} {
+		r := &fakeReader{docs: map[string]chat.Doc{}}
+		m := &scriptModel{replies: []chat.ModelReply{call("c1", "shop_summary", args), {Content: "Заказано 10 шт."}}}
+		x := &fakeExtra{}
+		if _, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(r)).Respond(context.Background(),
+			chat.Request{Question: "как магазин?", Mode: chat.ModeTools, Extras: []chat.Extra{x}}); err != nil {
+			t.Fatal(err)
+		}
+		if res := m.asked[1][len(m.asked[1])-1].Content; res != "заказано 10 шт" || len(x.ran) != 1 {
+			t.Errorf("args %q: tool result %q, ran %v", args, res, x.ran)
+		}
+	}
+}
+
+// Человек видит, куда ходит ход: каждый вызов — шаг со словами, где и что
+// (живой отзыв 14.11: «не видно, что он подтянул подключения»). Ход помнит,
+// откуда ответ, без повторов: документы, подключение.
+func TestToolsMode_StepsNameWhereTheTurnGoes(t *testing.T) {
+	r := &fakeReader{docs: map[string]chat.Doc{"kb:12": docs[0]}}
+	m := &scriptModel{replies: []chat.ModelReply{
+		call("c1", "search", `{"q":"срок поставки"}`),
+		call("c2", "read", `{"ref":"kb:12"}`),
+		call("c3", "shop_summary", `{}`),
+		call("c4", "shop_summary", `{}`),
+		{Content: "Ответ."},
+	}}
+	var steps []chat.Use
+	turn, err := chat.NewService(&fakeSearch{docs: docs}, m, chat.WithReader(r)).Respond(context.Background(),
+		chat.Request{Question: "как магазин?", Mode: chat.ModeTools, Extras: []chat.Extra{&fakeExtra{}},
+			Step: func(u chat.Use) { steps = append(steps, u) }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []chat.Use{
+		{Kind: chat.UseDocs, What: "ищет «срок поставки»"},
+		{Kind: chat.UseDocs, What: "читает kb:12"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
+	}
+	if !slices.Equal(steps, want) {
+		t.Errorf("steps\n got %+v\nwant %+v", steps, want)
+	}
+	wantUses := []chat.Use{
+		{Kind: chat.UseDocs, What: "ищет «срок поставки»"},
+		{Kind: chat.UseDocs, What: "читает kb:12"},
+		{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon «Пример»", What: "сводка магазина"},
+	}
+	if !slices.Equal(turn.Uses, wantUses) {
+		t.Errorf("uses\n got %+v\nwant %+v", turn.Uses, wantUses)
+	}
+}
+
+// Модель называет, откуда цифры, и не выдумывает источник, которого у нее нет
+// (отзыв 14.11: человек должен понимать, где чат брал данные).
+func TestToolsMode_PromptAsksToNameWhereFrom(t *testing.T) {
+	m := &scriptModel{replies: []chat.ModelReply{{Content: "ответ"}}}
+	if _, err := chat.NewService(&fakeSearch{}, m, chat.WithReader(&fakeReader{})).Answer(context.Background(), nil, "?", chat.ModeTools); err != nil {
+		t.Fatal(err)
+	}
+	p := strings.ToLower(m.asked[0][0].Content)
+	// Ссылки из вопроса окно прочло само — модель не должна говорить, что их не
+	// открывала (живая проверка 14.11); а ту, что не открылась, не выдумывает (ревью 14.11).
+	for _, want := range []string{"откуда", "подключени", "интернет", "ссылок из вопроса", "не открылась"} {
+		if !strings.Contains(p, want) {
+			t.Errorf("system prompt lacks %q:\n%s", want, p)
+		}
 	}
 }

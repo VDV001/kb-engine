@@ -122,6 +122,8 @@ type Turn struct {
 	// PromptTokens — сколько токенов провайдер насчитал в запросе последнего
 	// вызова модели: это заполнение контекста. 0 — счет не пришел (неизвестно).
 	PromptTokens int
+	// Uses — откуда ход брал данные, по порядку и без повторов (режим «модель ищет»).
+	Uses []Use
 }
 
 // promptTokens is the provider's count of the request, or 0 when it sent none.
@@ -169,6 +171,9 @@ type Request struct {
 	ProposeVersion func(ctx context.Context, p VersionProposal) error
 	// Extras — инструменты модулей окна («Маркеты», #580) в режиме «модель ищет».
 	Extras []Extra
+	// Step tells the window where the turn goes before each tool runs (отзыв
+	// 14.11: человек видит документы, подключения и внешнее); nil — без показа.
+	Step func(Use)
 }
 
 // Service answers questions.

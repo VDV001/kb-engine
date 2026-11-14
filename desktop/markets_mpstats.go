@@ -208,6 +208,11 @@ func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, pat
 	if err != nil {
 		return nicheTable{}, err
 	}
+	return nichesWith(ctx, cl, path, d1, d2, now)
+}
+
+// nichesWith reads the niches of path through client cl.
+func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now time.Time) (nicheTable, error) {
 	var subs [2][]mpstats.Subcategory
 	var self [2]mpstats.Subcategory
 	var errs [2]error
