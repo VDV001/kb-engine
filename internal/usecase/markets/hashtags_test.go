@@ -103,3 +103,13 @@ func TestCheckHashtags_colorAndStopWords(t *testing.T) {
 		t.Errorf("add %v: the tag keeps «для»", add)
 	}
 }
+
+// Советы показываются по числу запросов, как подписаны (живая проверка #610).
+func TestCheckHashtags_addByDemand(t *testing.T) {
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Queries: titleNiche, Forms: titleForms})
+	for i := 1; i < len(got.Add); i++ {
+		if got.Add[i].Demand > got.Add[i-1].Demand {
+			t.Fatalf("add %+v: not by demand", got.Add)
+		}
+	}
+}
