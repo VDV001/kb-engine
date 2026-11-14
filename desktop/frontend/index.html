@@ -178,9 +178,14 @@
         </nav>
       </div>
       <div class="mk-lead" data-mk-pane="niche">
-        <span class="mk-badge" id="mk-file" data-tip="Файл выгрузки" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
-        <p class="mk-intro">Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. Данные ниш — из выгрузки сервиса аналитики.</p>
-        <button class="btn mk-main" type="button" id="mk-open" data-tip="Открыть выгрузку" data-tip-b="xlsx или csv из MPStats и похожих сервисов; колонки окно узнает по заголовкам, а что не узнает — спросит">Открыть выгрузку…</button>
+        <span class="src-tag" id="mk-src-tag" hidden></span><span class="sh-src" id="mk-file" data-tip="Откуда ниши" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
+        <p class="mk-intro" id="mk-intro">Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. Ниши — из выгрузки файлом («Открыть выгрузку…») или из MPStats по ключу («Из MPStats»).</p>
+        <button class="btn mk-main" type="button" id="mk-open" data-tip="Открыть выгрузку" data-tip-b="xlsx или csv из MPStats и похожих сервисов; колонки окно узнает по заголовкам, а что не узнает — спросит">Открыть выгрузку…</button><button class="btn" type="button" id="mk-mps" data-tip="Из MPStats" data-tip-b="ниши категории Ozon по ключу MPStats за выбранные дни, с ростом к тем же дням год назад; ключ — в Настройках → Подключения">Из MPStats</button>
+      </div>
+      <div class="mk-mps" id="mk-mps-bar" data-mk-pane="niche" hidden>
+        <div class="mk-mps-row"><label class="mk-mps-cat">Категория <input id="mk-mps-path" list="mk-mps-cats" placeholder="Одежда/Мужская одежда" autocomplete="off" spellcheck="false" data-tip="Категория Ozon" data-tip-b="путь как в MPStats; начните печатать — окно подскажет; в таблице — ее подкатегории (ниши)"></label><datalist id="mk-mps-cats"></datalist><button class="btn mk-main" type="button" id="mk-mps-go" data-tip="Показать ниши" data-tip-b="подкатегории за выбранные дни и те же дни год назад — для роста к году">Показать</button></div>
+        <nav class="mk-mps-crumbs" id="mk-mps-crumbs" aria-label="Путь категории"></nav>
+        <div class="sh-period"><span class="sh-period-l">Период</span><div class="mk-seg" id="mk-mps-presets"></div><label class="sh-date">с <input type="date" id="mk-mps-d1" data-tip="Начало периода" data-tip-b="первый день, включительно"></label><label class="sh-date">по <input type="date" id="mk-mps-d2" data-tip="Конец периода" data-tip-b="последний день, включительно; данные MPStats — до вчера"></label></div>
       </div>
       <p class="mk-empty" id="mk-empty" data-mk-pane="niche">Откройте выгрузку ниш — файл xlsx или csv. Узнаются колонки: ниша, маркетплейс, продажи, выручка, продавцы, средняя цена, рост к году, доля топ-10 и продажи по месяцам. Чем больше колонок, тем полнее оценка и сезон.</p>
       <p class="mk-err" id="mk-err" role="alert" hidden></p>
@@ -204,7 +209,7 @@
         <details class="mk-probs" id="mk-probs" hidden><summary id="mk-probs-sum" data-tip="Непрочитанные строки" data-tip-b="строки файла, которые окно не взяло в таблицу, с номером и причиной"></summary><ul id="mk-probs-list"></ul></details>
       </div>
       <div class="mk-shop" id="mk-shop" data-mk-pane="shop" hidden>
-        <div class="mk-lead"><span class="sh-src" id="sh-file" data-tip="Откуда данные" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
+        <div class="mk-lead"><span class="src-tag" id="sh-src-tag" hidden></span><span class="sh-src" id="sh-file" data-tip="Откуда данные" data-tip-b="окно только читает файл и помнит путь; данные никуда не уходят"></span>
           <p class="mk-intro">Ваш магазин: из кабинета Ozon по ключу или из отчета «Аналитика → По товарам». Что заказали, что выкупили, где отмены и отказы и где кончается товар, и что с этим делать.</p>
           <button class="btn mk-main" type="button" id="sh-open" data-tip="Открыть отчет Ozon" data-tip-b="кабинет Ozon → Аналитика → По товарам → скачать xlsx; окно узнает отчет само">Открыть отчет Ozon…</button>
           <select class="mk-sel" id="sh-cab" aria-label="Кабинет Ozon" hidden data-tip="Кабинет Ozon" data-tip-b="какой кабинет загрузить; добавляются в Настройках → Подключения"></select><button class="btn" type="button" id="sh-costs" hidden data-tip="Себестоимость из файла" data-tip-b="xlsx или csv с колонками «Артикул» и «Себестоимость»; хранится на этом Mac, у кабинета своя; в карточке товара ее можно поправить">Себестоимость…</button><button class="btn mk-main" type="button" id="sh-ozon" data-tip="Загрузить из Ozon" data-tip-b="кабинет по ключу Seller API, только чтение: отправления за 90 дней и остатки сейчас; ключ лежит в Связке ключей и уходит только в Ozon">Загрузить из Ozon</button></div>

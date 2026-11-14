@@ -134,7 +134,14 @@ func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, e
 	if err != nil && !needName {
 		return nicheTable{}, err
 	}
-	out := nicheTable{Path: path, File: filepath.Base(path), HeaderRow: tb.HeaderRow, Period: tb.PeriodDays, Items: tb.Items, NeedName: needName,
+	out := nicheViewOf(tb, path, filepath.Base(path), now)
+	out.NeedName = needName
+	return out, nil
+}
+
+// nicheViewOf turns a niche table into the window's view: файл или MPStats.
+func nicheViewOf(tb markets.Table, path, file string, now time.Time) nicheTable {
+	out := nicheTable{Path: path, File: file, HeaderRow: tb.HeaderRow, Period: tb.PeriodDays, Items: tb.Items,
 		Fields: []nicheField{}, Columns: []nicheColumn{}, Niches: []nicheRow{}, Problems: []nicheProblem{}}
 	for _, c := range domain.NicheColumns() {
 		out.Fields = append(out.Fields, nicheField{ID: string(c), Label: c.Label()})
@@ -149,7 +156,7 @@ func readNicheFile(path string, picks []nichePick, now time.Time) (nicheTable, e
 	for _, p := range tb.Problems {
 		out.Problems = append(out.Problems, nicheProblem{Row: p.Row, Reason: p.Reason})
 	}
-	return out, nil
+	return out
 }
 
 // monthShort — подписи месяцев в графике сезона.

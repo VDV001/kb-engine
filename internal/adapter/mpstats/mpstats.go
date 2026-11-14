@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
@@ -29,6 +30,7 @@ var (
 	ErrQuota        = errors.New("лимит запросов тарифа MPStats исчерпан")
 	ErrRedirect     = errors.New("перенаправление: ключ на другой адрес не уходит")
 	ErrTimeout      = errors.New("MPStats не ответил вовремя")
+	ErrDropped      = errors.New("MPStats оборвал соединение")
 )
 
 // maxBody — предел ответа: ряд по дням за год — десятки килобайт.
@@ -141,6 +143,10 @@ func (c Client) categorySpan(ctx context.Context, path string, from, to time.Tim
 	return out, nil
 }
 
+// retries — сколько раз повторить обрыв соединения, 502 и 504: MPStats под
+// нагрузкой рвет соединение (живая проверка 13.11); отказ ключа не повторяется.
+const retries = 2
+
 // get calls path with the token and decodes the answer into out.
 func (c Client) get(ctx context.Context, path string, q url.Values, out any) error {
 	base := strings.TrimRight(c.BaseURL, "/")
@@ -151,38 +157,65 @@ func (c Client) get(ctx context.Context, path string, q url.Values, out any) err
 	if len(q) > 0 {
 		target += "?" + q.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("X-Mpstats-TOKEN", c.Token)
 	client := &http.Client{Timeout: 90 * time.Second} // часть ряда — до 15 с; запас на загруженный MPStats
 	if c.HTTP != nil {
 		cp := *c.HTTP
 		client = &cp
 	}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return ErrRedirect } // ключ — только на BaseURL
+	for try := 0; ; try++ {
+		data, err := c.once(ctx, client, target)
+		if err == nil {
+			return json.Unmarshal(data, out)
+		}
+		if !errors.Is(err, ErrDropped) || try == retries || ctx.Err() != nil { // таймаут клиента — 90 с, не повторяем (ревью #606)
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(try+1) * time.Second):
+		}
+	}
+}
+
+// transportErr names a failed request without its URL (адрес с путем ниши
+// человеку не нужен): обрыв — ErrDropped (его повторяют), таймаут — ErrTimeout,
+// нет сети, сертификат, отказ в соединении — своей причиной (ревью #606).
+func transportErr(ctx context.Context, err error) error {
+	var ue *url.Error
+	switch {
+	case ctx.Err() != nil:
+		return ctx.Err()
+	case errors.Is(err, ErrRedirect):
+		return ErrRedirect
+	case errors.As(err, &ue) && ue.Timeout():
+		return ErrTimeout
+	case errors.Is(err, syscall.ECONNRESET), errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return ErrDropped
+	case errors.As(err, &ue):
+		return ue.Err
+	}
+	return err
+}
+
+// once makes one request; обрыв и 502/504 — ErrDropped/ErrTimeout, их повторяет get.
+func (c Client) once(ctx context.Context, client *http.Client, target string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Mpstats-TOKEN", c.Token)
 	resp, err := client.Do(req)
 	if err != nil {
-		// Адрес с путем ниши в тексте ошибки человеку не нужен (живая проверка 13.11).
-		var ue *url.Error
-		if errors.As(err, &ue) {
-			if ue.Timeout() {
-				return ErrTimeout
-			}
-			return ue.Err
-		}
-		return err
+		return nil, transportErr(ctx, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBody))
 	if err != nil {
-		return err
+		return nil, ErrDropped
 	}
-	if err := statusErr(resp.StatusCode); err != nil {
-		return err
-	}
-	return json.Unmarshal(data, out)
+	return data, statusErr(resp.StatusCode)
 }
 
 // safeForKey — ключ уходит только по https; http — лишь на этот Мак (тесты).
@@ -201,8 +234,79 @@ func statusErr(status int) error {
 	case http.StatusTooManyRequests:
 		return ErrQuota
 	}
-	if status == http.StatusGatewayTimeout {
-		return ErrTimeout
+	if status == http.StatusGatewayTimeout || status == http.StatusBadGateway {
+		return ErrDropped // MPStats сам не дождался — повторяется, как обрыв
 	}
 	return fmt.Errorf("MPStats ответил %d", status)
+}
+
+// currentCategory — строка итога самой категории в ответе подкатегорий: не ниша.
+const currentCategory = "Текущая категория"
+
+// Subcategory — ниша категории за период: продажи и выручка за весь период,
+// продавцы — с продажами.
+type Subcategory struct {
+	Name     string  `json:"name"`
+	Sales    float64 `json:"sales"`
+	Revenue  float64 `json:"revenue"`
+	Sellers  int     `json:"sellers_with_sells"`
+	AvgPrice float64 `json:"avg_price"`
+}
+
+// Subcategories returns the category's direct subcategories for days from..to
+// and the category itself (self): у конечной ниши подкатегорий нет, есть она сама.
+func (c Client) Subcategories(ctx context.Context, path string, from, to time.Time) (subs []Subcategory, self Subcategory, err error) {
+	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
+	var rows []Subcategory
+	if err := c.get(ctx, "/api/oz/get/category/subcategories", q, &rows); err != nil {
+		return nil, Subcategory{}, err
+	}
+	for _, r := range rows {
+		if r.Name == currentCategory {
+			self = r
+		} else {
+			subs = append(subs, r)
+		}
+	}
+	return subs, self, nil
+}
+
+// Categories returns the paths of all Ozon categories, по алфавиту.
+func (c Client) Categories(ctx context.Context) ([]string, error) {
+	var rows []struct {
+		Path string `json:"path"`
+	}
+	if err := c.get(ctx, "/api/oz/get/categories", nil, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Path != "" {
+			out = append(out, r.Path)
+		}
+	}
+	slices.Sort(out)
+	return slices.Compact(out), nil
+}
+
+// TopSellersRevenue sums the revenue of the n largest sellers of the category
+// for days from..to: для доли топ-n в оценке ниши.
+func (c Client) TopSellersRevenue(ctx context.Context, path string, from, to time.Time, n int) (float64, error) {
+	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
+	var rows []struct {
+		Revenue float64 `json:"revenue"`
+	}
+	if err := c.get(ctx, "/api/oz/get/category/sellers", q, &rows); err != nil {
+		return 0, err
+	}
+	rev := make([]float64, 0, len(rows))
+	for _, r := range rows {
+		rev = append(rev, r.Revenue)
+	}
+	slices.SortFunc(rev, func(a, b float64) int { return cmp.Compare(b, a) })
+	var sum float64
+	for _, v := range rev[:min(n, len(rev))] {
+		sum += v
+	}
+	return sum, nil
 }

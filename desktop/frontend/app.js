@@ -5268,7 +5268,7 @@ const MK_TIP = {
   top10: "какую долю выручки забирают 10 крупнейших продавцов; больше 45 % — войти труднее",
   marketplace: "на каких площадках есть ниша",
 };
-function mkSave() { try { localStorage.setItem(MK_KEY, JSON.stringify({ path: mk.tb.path, picks: mk.picks })); } catch (_) { /* без хранилища окно просто не вспомнит файл */ } }
+function mkSave() { try { localStorage.setItem(MK_KEY, JSON.stringify({ path: mk.tb.path, picks: mk.picks, mps: mk.mps })); } catch (_) { /* без хранилища окно просто не вспомнит файл */ } }
 function mkLoad() { try { return JSON.parse(localStorage.getItem(MK_KEY) || "null"); } catch (_) { return null; } }
 const mkLabel = (id) => (id === "name" ? "Ниша" : id === "season" ? "Сезон" : id === "score" ? "Оценка" : ((mk.tb.fields.find((f) => f.id === id) || {}).label || id));
 const mkTip = (title, body) => ` data-tip="${esc(title)}" data-tip-b="${esc(body)}"`;
@@ -5305,15 +5305,108 @@ async function openMarkets() {
   mkRender();
   if (!native() || !native().MarketsRead) return mkErr("Экран «Ниша» работает в окне приложения.");
   const last = mkLoad();
+  // Ниши MPStats при запуске не качаются: это запросы тарифа (ревью #606). Панель —
+  // с прошлой категорией и тем же «последние N дней», загрузка — по «Показать».
+  if (last && last.mps && last.path && last.path.startsWith("mpstats:")) {
+    const d = last.mps.days;
+    mk.mps = { path: last.mps.path, from: d ? mkDaysBack(d) : last.mps.from, to: d ? mkYesterday() : last.mps.to, days: d };
+    mk.mpsOpen = true; $("#mk-mps-bar").hidden = false; mkMpsRender(false);
+    return mkErr("Ниши из MPStats: нажмите «Показать» — окно загрузит их за выбранные дни");
+  }
   if (last && last.path) await mkRead(last.path, last.picks || []);
 }
+// --- «Ниша → Из MPStats» (решение владельца 13.11): подкатегории категории за
+// выбранные дни и те же дни год назад; «Внутрь» и путь сверху — по дереву.
+const MK_MPS_PRESETS = [[30, "30 дн."], [90, "90 дн."], [180, "180 дн."], [365, "год"]];
+const mkYesterday = () => { const d = new Date(); d.setDate(d.getDate() - 1); return isoDay(d); };
+const mkDaysBack = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return isoDay(d); };
+const mkIsMPS = () => !!(mk.tb && mk.tb.path && mk.tb.path.startsWith("mpstats:"));
+let mkMpsSeq = 0, mkCatsLoaded = false;
+// mkLoadCats fills the MPStats paths list once; strict — бросить ошибку наверх.
+async function mkLoadCats(strict) {
+  if (mkCatsLoaded || !native() || !native().MarketsMPStatsCategories) return;
+  try {
+    const paths = await native().MarketsMPStatsCategories();
+    $("#mk-mps-cats").innerHTML = paths.map((p) => `<option value="${esc(p)}">`).join("");
+    mkCatsLoaded = true;
+  } catch (e) { if (strict) throw e; }
+}
+async function mkReadMPS(path, from, to, days) {
+  if (!native() || !native().MarketsNichesMPStats) return mkErr("Экран «Ниша» работает в окне приложения.");
+  if (!from) days = 30;
+  from = from || mkDaysBack(30); to = to || mkYesterday();
+  const seq = ++mkMpsSeq, prev = { mps: mk.mps, tb: mk.tb };
+  mk.mps = { path: (path || "").split("/").map((x) => x.trim()).filter(Boolean).join("/"), from, to, days }; // «A / B» → «A/B»
+  mkErr("");
+  $("#mk-mps-bar").hidden = false;
+  mkMpsRender(true);
+  try {
+    const tb = await native().MarketsNichesMPStats(mk.mps.path, from, to);
+    if (seq !== mkMpsSeq) return;
+    Object.assign(mk, { tb, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
+    $("#mk-q").value = "";
+    mkSave();
+  } catch (e) {
+    if (seq !== mkMpsSeq) return;
+    // Отказ: панель — к тому, что на экране (ревью #606); таблица из файла под
+    // ошибкой MPStats читалась бы как ответ MPStats (живая проверка 13.11) — убираем.
+    if (prev.tb && prev.tb.path && prev.tb.path.startsWith("mpstats:")) mk.mps = prev.mps;
+    else { mk.tb = null; mk.picks = []; }
+    mkErr("Ниши из MPStats не загружены: " + errText(e));
+  }
+  if (seq === mkMpsSeq) { mkMpsRender(false); mkRender(); }
+}
+function mkMpsRender(busy) {
+  const m = mk.mps || { path: "", from: mkDaysBack(30), to: mkYesterday() };
+  if (document.activeElement !== $("#mk-mps-path")) $("#mk-mps-path").value = m.path;
+  const parts = m.path ? m.path.split("/") : [];
+  $("#mk-mps-crumbs").innerHTML = parts.map((p, i) => `<button type="button" class="lnk" data-mk-crumb="${esc(parts.slice(0, i + 1).join("/"))}"${mkTip("Подняться", "показать ниши этой категории")}>${esc(p)}</button>`).join(" / ") +
+    (busy ? ` <span class="muted">загружаю из MPStats…</span>` : "");
+  $("#mk-mps-presets").innerHTML = MK_MPS_PRESETS.map(([n, l]) => `<button type="button" data-mk-days="${n}" aria-pressed="${m.to === mkYesterday() && m.from === mkDaysBack(n)}"${mkTip(l, `последние ${n} дней до вчера`)}>${l}</button>`).join("");
+  for (const [id, v] of [["#mk-mps-d1", m.from], ["#mk-mps-d2", m.to]]) { const i = $(id); i.max = mkYesterday(); if (document.activeElement !== i) i.value = v; }
+  $("#mk-mps-go").disabled = !!busy;
+}
+$("#mk-mps").addEventListener("click", async () => {
+  hideTip();
+  if (!native() || !native().MarketsMPStatsCategories) return mkErr("Экран «Ниша» работает в окне приложения.");
+  const bar = $("#mk-mps-bar");
+  mk.mpsOpen = mkIsMPS() || !mk.mpsOpen; // при нишах из MPStats панель остается
+  bar.hidden = !mk.mpsOpen;
+  mkMpsRender(false);
+  if (bar.hidden) return;
+  focusSoon("#mk-mps-path");
+  if (mkCatsLoaded) return;
+  try {
+    await mkLoadCats(true);
+  } catch (e) {
+    mkErr(errText(e));
+    if (/подключения MPStats нет/.test(errText(e))) { await openSettings("conn"); $("#conn-mpstats").hidden = false; $("#conn-add-mpstats").setAttribute("aria-expanded", "true"); focusSoon("#conn-m-key"); }
+  }
+});
+$("#mk-mps-go").addEventListener("click", () => { hideTip(); const m = mk.mps || {}; mkReadMPS($("#mk-mps-path").value, m.from, m.to, m.days); });
+$("#mk-mps-path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#mk-mps-go").click(); } });
+$("#mk-mps-bar").addEventListener("click", (e) => {
+  const c = e.target.closest("[data-mk-crumb]");
+  if (c) { hideTip(); const m = mk.mps || {}; return mkReadMPS(c.dataset.mkCrumb, m.from, m.to, m.days); }
+  const d = e.target.closest("[data-mk-days]");
+  if (d) { hideTip(); return mkReadMPS((mk.mps || {}).path || $("#mk-mps-path").value, mkDaysBack(+d.dataset.mkDays), mkYesterday(), +d.dataset.mkDays); }
+});
+let mkMpsDateT = 0;
+for (const id of ["#mk-mps-d1", "#mk-mps-d2"]) $(id).addEventListener("change", () => {
+  clearTimeout(mkMpsDateT);
+  mkMpsDateT = setTimeout(() => {
+    const a = $("#mk-mps-d1").value, b = $("#mk-mps-d2").value;
+    if (a && b && /^\d{4}-/.test(a) && a.slice(0, 2) === "20" && b <= mkYesterday()) mkReadMPS((mk.mps || {}).path || $("#mk-mps-path").value, a, b);
+  }, 500);
+});
 $("#mk-open").addEventListener("click", async () => {
   hideTip();
   if (!native() || !native().MarketsPickFile) return mkErr("Экран «Ниша» работает в окне приложения.");
   let p = "";
   try { p = await native().MarketsPickFile(); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
   if (!p) return;
-  Object.assign(mk, { sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
+  Object.assign(mk, { sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [], mps: null });
+  $("#mk-mps-bar").hidden = true; mk.mpsOpen = false; mkMpsSeq++; // файл вместо MPStats: запоздавший ответ MPStats не перетрет его
   $("#mk-q").value = "";
   await mkRead(p, []);
 });
@@ -5326,9 +5419,17 @@ function mkRender() {
   if ($('[data-mk-tab="niche"]').getAttribute("aria-selected") !== "true") return; // «Ниша» нарисуется при возвращении на вкладку
   const tb = mk.tb;
   $("#mk-empty").hidden = !!tb;
-  $("#mk-file").textContent = tb ? `${tb.file} · ниш ${fmt(tb.niches.length)}` : "";
-  $("#mk-file").dataset.tipB = tb ? `${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят` : "";
-  $("#mk-cols").hidden = !tb;
+  $("#mk-file").textContent = tb ? `${mkIsMPS() ? tb.file : "Выгрузка " + tb.file} · ${fmt(tb.niches.length)} ${plural(tb.niches.length, "ниша", "ниши", "ниш")}${mkIsMPS() && mk.mps ? ` · ${mk.mps.from.split("-").reverse().join(".")} – ${mk.mps.to.split("-").reverse().join(".")}` : ""}` : "";
+  if (mkIsMPS()) $("#mk-mps-bar").hidden = false;
+  // Откуда ниши — ярлыком и словами (отзыв владельца 13.11: «непонятно, откуда»).
+  srcTag("#mk-src-tag", !tb ? "" : mkIsMPS() ? "mps" : "file");
+  $("#mk-intro").textContent = "Выбор ниши на ближайший сезон: где спрос растет, а продавцов немного. " + (!tb
+    ? "Ниши — из выгрузки файлом («Открыть выгрузку…») или из MPStats по ключу («Из MPStats»)."
+    : mkIsMPS() ? "Сейчас ниши — из MPStats по ключу, за выбранные дни; файл — «Открыть выгрузку…»." : "Сейчас ниши — из выгрузки файлом; из MPStats по ключу — «Из MPStats».");
+  $("#mk-file").dataset.tipB = !tb ? "" : mkIsMPS()
+    ? `${$("#mk-file").textContent} · по ключу MPStats: категория и даты уходят в MPStats, ответ — в окно; каждый показ тратит запросы тарифа`
+    : `${$("#mk-file").textContent} · ${tb.path} · окно только читает файл и помнит путь; данные никуда не уходят`;
+  $("#mk-cols").hidden = !tb || mkIsMPS(); // у MPStats колонок файла нет
   $("#mk-body").hidden = !tb || tb.needName;
   if (!tb) return;
   mkRenderCols();
@@ -5462,7 +5563,7 @@ function mkRenderCard() {
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
-    `<div class="row"><button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
+    `<div class="row">${mkIsMPS() ? `<button class="btn" type="button" data-mk-in="${esc(n.name)}"${mkTip("Внутрь", "ниши внутри этой: ее подкатегории за те же дни")}>Внутрь</button>` : ""}<button class="btn primary" type="button" data-mk-go-fc="${esc(n.name)}"${mkTip("Прогноз по этой нише", "вкладка «Прогноз»: три файла по этой нише — прошлый год, сейчас и свои продажи")}>Прогноз по этой нише</button>` +
     `<button class="btn mk-main" type="button" data-mk-cmp="${mk.sel}" aria-pressed="${inCmp}"${mkTip(inCmp ? "Убрать из сравнения" : "Сравнить", "до трех ниш рядом по тем же цифрам; лучшее в строке — зеленым")}>${inCmp ? "Убрать из сравнения" : "Сравнить"}</button></div>`;
 }
 // mkRenderCmp — две-три ниши рядом; лучшее в строке подсвечено.
@@ -5557,15 +5658,19 @@ function fcSave() { try { localStorage.setItem(FC_KEY, JSON.stringify(fc.paths))
 function mkTab(id) {
   for (const t of document.querySelectorAll("[data-mk-tab]")) t.setAttribute("aria-selected", String(t.dataset.mkTab === id));
   for (const el of document.querySelectorAll('[data-mk-pane]')) el.hidden = el.dataset.mkPane !== id;
+  $("#mk-mps-bar").hidden = id !== "niche" || !(mk.mpsOpen || mkIsMPS()); // панель MPStats — по своему состоянию
   if (id === "forecast") { fcRender(); if (native() && native().Connections) shCabinets().then((r) => { fc.cabs = r; fcRender(); }); } else if (id === "shop") openShop(); else mkRender(); // «Ниша» сама решает, что из нее видно
 }
 $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
+  const inn = e.target.closest("[data-mk-in]");
+  if (inn) { hideTip(); const m = mk.mps || {}; return void mkReadMPS(inn.dataset.mkIn, m.from, m.to, m.days); }
   const go = e.target.closest("[data-mk-go-fc]");
   if (go) {
     hideTip();
     fc.niche = go.dataset.mkGoFc;
+    fc.nicheFromFile = !mkIsMPS(); // путь из файла MPStats может не узнать
     if (fc.paths[0].startsWith("mpstats:")) { // источник MPStats берет новую нишу, а не считает прежнюю (ревью #605)
       const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
       fc.paths[0] = fc.paths[1] = `mpstats:${id}|${fc.niche}`; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave();
@@ -5589,8 +5694,9 @@ function fcMPStatsSlot(i, title, hint, p, info) {
   const path = fcMpsPath(p);
   const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете, MPStats отвечает до минуты" : "90 дней до вчера — загрузятся при расчете";
   return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
-    `<span class="name">MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
-    (i === 0 ? `<input class="mk-q" id="fc-mps-path" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "полный путь категории Ozon, как в MPStats и в выгрузке «Товары категории»; проще — выбрать нишу во вкладке «Ниша» → «Прогноз по этой нише»")}>` : "") +
+    srcTagHTML("mps") + `<span class="name"${mkTip("Ниша в MPStats", path || "ниша не выбрана")}>MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
+    (i === 0 ? `<input class="mk-q" id="fc-mps-path" list="mk-mps-cats" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "путь категории, как в MPStats: начните печатать — окно подскажет. Имена ниш из выгрузки файлом у MPStats другие; надежнее — «Ниша → Из MPStats» → «Прогноз по этой нише»")}>` +
+      (fc.nicheFromFile ? `<span class="meta">ниша взята из выгрузки файлом — у MPStats путь может быть другим</span>` : "") : "") +
     `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
 }
 function fcRender() {
@@ -5602,6 +5708,7 @@ function fcRender() {
     if (mps) return fcMPStatsSlot(i, title, hint, p, info);
     const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to}${info.format === "ozon" ? " · заказы с отменами" : ""}${info.undated ? ` · без даты ${fmt(info.undated)}, не учтены` : ""} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
+      (p ? srcTagHTML(oz ? "ozon" : "file") : "") +
       `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(p.slice(5)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
       (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${"ozon:" + c.id === p ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
       `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
@@ -5616,6 +5723,7 @@ $("#mk-files").addEventListener("change", (e) => {
   if (e.target.id === "fc-mps-path") {
     if (fc.busy) { mkErr("Идет расчет — ниша сменится после него."); return fcRender(); } // поле вернется к считаемой нише
     const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+    fc.nicheFromFile = false;
     fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`;
     fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); return fcRender(); // сравнение с моделью — по прежней нише (ревью #605)
   }
@@ -5626,6 +5734,7 @@ $("#mk-files").addEventListener("click", async (e) => {
   if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick], [data-fc-mps]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
   if (e.target.closest("[data-fc-mps]")) {
     hideTip();
+    mkLoadCats(); // подсказки путей MPStats для поля ниши
     if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
     let rows = [];
     try { rows = ((await native().Connections()) || []).filter((c) => c.kind === "mpstats" && c.enabled); } catch (_) { /* нет подключений — откроем форму */ }
@@ -5905,7 +6014,26 @@ async function openShop() {
   sh.first = false;
   let p = ""; try { p = localStorage.getItem(SH_KEY) || ""; } catch (_) { /* нет хранилища */ }
   if (native() && native().Connections) await shCabinets();
+  // Кабинет — последней загрузкой с этого Мака, без похода в Ozon (отзыв
+  // владельца 13.11); не загружался ни разу — грузим, как раньше.
+  if (p.startsWith("ozon:") && native() && native().MarketsOzonLast) {
+    try {
+      sh.v = await native().MarketsOzonLast(p.slice(5));
+      Object.assign(sh, { sel: 0, only: null, adv: "" }, sh.sort ? {} : { sort: "ordered", dir: -1 });
+      if ([...$("#sh-cab").options].some((o) => o.value === sh.v.path)) $("#sh-cab").value = sh.v.path;
+      shLastLine();
+      return shRender();
+    } catch (_) { /* последней загрузки нет — загрузим */ }
+  }
   if (p && native() && native().MarketsShop) await shRead(p);
+}
+// shLastLine — строка «последняя загрузка …» над плитками: что на экране и как обновить.
+function shLastLine() {
+  const box = $("#sh-progress");
+  if (!sh.v || !sh.v.loadedAt) return;
+  box.hidden = false; box.classList.add("done"); box.classList.remove("indet");
+  $("#sh-progress-bar").hidden = $("#sh-stages").hidden = true;
+  $("#sh-progress-t").textContent = `Последняя загрузка из Ozon: ${sh.v.loadedAt} · обновить — «Загрузить из Ozon»`;
 }
 $("#sh-ozon").addEventListener("click", async () => {
   hideTip();
@@ -5923,6 +6051,15 @@ $("#sh-open").addEventListener("click", async () => {
   try { p = await native().MarketsPickFileTitled("Отчет Ozon «По товарам»"); } catch (e) { return mkErr("Файл не выбран: " + errText(e)); }
   if (p) { sh.issue = ""; sh.q = ""; $("#sh-q").value = ""; await shRead(p); }
 });
+// srcTag — ярлык источника данных: файл, MPStats или кабинет Ozon; "" — прячет.
+const SRC_TAGS = { file: ["Файл", "данные из файла с этого Мака: окно только читает его"], mps: ["MPStats", "данные из MPStats по ключу: запросы уходят в MPStats и тратят тариф"], ozon: ["Кабинет Ozon", "данные из кабинета по ключу Seller API, только чтение"] };
+const srcTagHTML = (kind) => `<span class="src-tag" data-kind="${kind}"${mkTip("Источник: " + SRC_TAGS[kind][0], SRC_TAGS[kind][1])}>${SRC_TAGS[kind][0]}</span>`;
+function srcTag(sel, kind) {
+  const el = $(sel), t = SRC_TAGS[kind];
+  el.hidden = !t;
+  if (!t) return;
+  el.textContent = t[0]; el.dataset.kind = kind; el.dataset.tip = "Источник: " + t[0]; el.dataset.tipB = t[1];
+}
 // shPart — показана часть загруженных дней.
 const shPart = () => !!(sh.v && sh.v.windowFrom && (sh.v.from !== sh.v.windowFrom || sh.v.to !== sh.v.windowTo));
 // shSourceLine — откуда данные одной строкой: «Кабинет FURIA (Ozon) · 15.08.2026 – 12.11.2026 · 547 товаров».
@@ -5992,7 +6129,9 @@ function shRender() {
   $("#sh-empty").hidden = !!v;
   for (const id of ["#sh-kpis", "#sh-chips", "#sh-filters", "#sh-grid"]) $(id).hidden = !v;
   $("#sh-file").dataset.tipB = shOzon() ? "кабинет по ключу Seller API, только чтение; ключ — в Связке ключей, данные никуда не уходят" : "окно только читает файл и помнит путь; данные никуда не уходят";
+  srcTag("#sh-src-tag", !v ? "" : shOzon() ? "ozon" : "file");
   $("#sh-file").textContent = v ? shSourceLine(v) : "";
+  if (v) $("#sh-file").dataset.tipB = shSourceLine(v) + " · " + $("#sh-file").dataset.tipB; // строка обрезана — полностью здесь
   shPeriodRender();
   $("#sh-costs").hidden = !shOzon();
   if (v && v.costsErr) mkErr("Себестоимость не прочитана, прибыль не посчитана: " + v.costsErr);

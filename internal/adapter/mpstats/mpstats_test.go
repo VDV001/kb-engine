@@ -126,3 +126,101 @@ func TestCategoryByDay_stopsOnFirstError(t *testing.T) {
 		t.Errorf("%d requests after the first refusal, want at most the first round of 4", n)
 	}
 }
+
+// Ниши категории за период (живой ответ 13.11): строка «Текущая категория» —
+// итог самой категории, не ниша; продавцы — с продажами.
+func TestSubcategories(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if r.URL.Path != "/api/oz/get/category/subcategories" || q.Get("path") != "Одежда" || q.Get("d1") != "2026-10-14" || q.Get("d2") != "2026-11-12" {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":10,"revenue":100,"sellers_with_sells":5},` +
+			`{"name":"Женская одежда","sales":6,"revenue":60,"sellers_with_sells":3,"avg_price":12},{"name":"Мужская одежда","sales":4,"revenue":40,"sellers_with_sells":2}]`))
+	}))
+	t.Cleanup(srv.Close)
+	subs, self, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Subcategories(context.Background(), "Одежда",
+		time.Date(2026, 10, 14, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if self.Sales != 10 || self.Sellers != 5 { // сама категория — для конечной ниши без подкатегорий
+		t.Errorf("self = %+v", self)
+	}
+	if len(subs) != 2 || subs[0].Name != "Женская одежда" || subs[0].Sales != 6 || subs[0].Revenue != 60 || subs[0].Sellers != 3 {
+		t.Errorf("subs = %+v", subs)
+	}
+}
+
+// Пути всех категорий Ozon — подсказки поля «Категория».
+func TestCategories(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"url":"/category/a","path":"Одежда/Женская одежда","name":"Женская одежда"},{"url":"/category/b","path":"Одежда","name":"Одежда"}]`))
+	}))
+	t.Cleanup(srv.Close)
+	paths, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.Categories(context.Background())
+	if err != nil || !slices.Equal(paths, []string{"Одежда", "Одежда/Женская одежда"}) {
+		t.Errorf("paths = %v, %v; want sorted", paths, err)
+	}
+}
+
+// Выручка десяти крупнейших продавцов ниши — для доли топ-10 в оценке.
+func TestTopSellersRevenue(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/oz/get/category/sellers" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var parts []string
+		for i := 1; i <= 12; i++ {
+			parts = append(parts, fmt.Sprintf(`{"supplierid":%d,"revenue":%d}`, i, i*10))
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(parts, ",") + "]"))
+	}))
+	t.Cleanup(srv.Close)
+	d := time.Date(2026, 11, 1, 0, 0, 0, 0, time.UTC)
+	got, err := mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}.TopSellersRevenue(context.Background(), "x", d, d, 10)
+	if want := float64(30 + 40 + 50 + 60 + 70 + 80 + 90 + 100 + 110 + 120); err != nil || got != want {
+		t.Errorf("top 10 = %v, %v; want %v (the largest ten, whatever the order)", got, err, want)
+	}
+}
+
+// Обрыв соединения и 504 у MPStats повторяются (живая проверка 13.11:
+// «connection reset by peer» при расчете моделью); отказ ключа — нет.
+func TestRetriesTransient(t *testing.T) {
+	var mu sync.Mutex
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		n++
+		k := n
+		mu.Unlock()
+		if k == 1 {
+			hj, _ := w.(http.Hijacker)
+			conn, _, _ := hj.Hijack()
+			_ = conn.Close() // обрыв без ответа
+			return
+		}
+		if k == 2 {
+			w.WriteHeader(http.StatusGatewayTimeout)
+			return
+		}
+		_, _ = w.Write([]byte(`{"available":1,"use":0}`))
+	}))
+	t.Cleanup(srv.Close)
+	if l, err := (mpstats.Client{BaseURL: srv.URL, Token: "t", HTTP: srv.Client()}).Limits(context.Background()); err != nil || l.Available != 1 {
+		t.Errorf("after a reset and a 504: %+v, %v", l, err)
+	}
+}
+
+// Нет сети — так и сказано, без повторов и без адреса запроса (ревью #606).
+func TestNoNetworkNamed(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	base := srv.URL
+	srv.Close() // порт закрыт: соединение отвергнуто
+	_, err := mpstats.Client{BaseURL: base, Token: "t"}.Limits(context.Background())
+	if err == nil || errors.Is(err, mpstats.ErrDropped) || strings.Contains(err.Error(), "report_api_limit") {
+		t.Errorf("err = %v; want the network reason without the URL, not «оборвал»", err)
+	}
+}

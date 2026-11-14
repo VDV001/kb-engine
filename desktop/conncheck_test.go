@@ -245,7 +245,89 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	if n != 10 {
 		t.Errorf("%d requests for two forecasts, want 10 (7 + 3, once)", n)
 	}
+	// Подключение в запомненном источнике удалили, а другое есть — берется оно (живая проверка 13.11).
+	if _, err := s.forecast(context.Background(), "", srv.Client(), "mpstats:старое|Одежда/Куртки", "mpstats:старое|Одежда/Куртки", own, today); err != nil {
+		t.Errorf("stale connection id: %v", err)
+	}
 	if _, err := s.forecast(context.Background(), "", srv.Client(), own, src, own, today); err == nil || !strings.Contains(err.Error(), "обе ниши") {
 		t.Errorf("file + MPStats: %v", err)
+	}
+}
+
+// «Ниша → Из MPStats» (решение владельца 13.11): подкатегории выбранной
+// категории за период и те же дни год назад — рост к году и оценка 0-100.
+func TestNichesMPStats(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	if _, err := s.nichesMPStats(context.Background(), nil, "Одежда", "2026-10-14", "2026-11-12", time.Now()); err == nil || !strings.Contains(err.Error(), "MPStats") {
+		t.Errorf("no connection: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			if r.URL.Query().Get("path") == "Одежда/Куртки" {
+				_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":150,"revenue":3000,"sellers_with_sells":7}]`))
+				return
+			}
+			if r.URL.Query().Get("d1") == "2025-08-14" { // год назад у MPStats данных нет
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			if r.URL.Query().Get("d1") == "2025-10-14" {
+				_, _ = w.Write([]byte(`[{"name":"Куртки","sales":100,"revenue":1000,"sellers_with_sells":5}]`))
+				return
+			}
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":1},{"name":"Куртки","sales":150,"revenue":3000,"sellers_with_sells":7},{"name":"Шарфы","sales":30,"revenue":300,"sellers_with_sells":2}]`))
+		case "/api/oz/get/category/sellers":
+			if r.URL.Query().Get("d1") == "2026-08-14" { // период «без года назад»: продавцов тоже нет
+				w.WriteHeader(http.StatusTooManyRequests)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"revenue":1500},{"revenue":100}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1"); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.File != "MPStats · Одежда" || v.Period != 30 || len(v.Niches) != 2 || v.Niches[0].Name != "Одежда/Куртки" || v.Niches[0].Values["growth"] != 0.5 ||
+		v.Niches[0].Values["top10"] != 1600.0/3000 || !v.Niches[0].Score.Ok {
+		t.Errorf("view = %+v", v)
+	}
+	// Конечная ниша без подкатегорий — в таблице она сама (живая проверка 13.11: «Пижамы женские»).
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда/Куртки", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || len(v.Niches) != 1 || v.Niches[0].Name != "Одежда/Куртки" {
+		t.Errorf("leaf: %v, %+v", err, v.Niches)
+	}
+	// Путь, скопированный с вида «Одежда / Куртки», — тот же путь (живая проверка 13.11).
+	if v, err := s.nichesMPStats(context.Background(), srv.Client(), " Одежда / ", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC)); err != nil || v.File != "MPStats · Одежда" {
+		t.Errorf("spaced path: %v, %q", err, v.File)
+	}
+	// Год назад не отдан — ниши без роста и с пояснением; исчерпанный лимит у
+	// продавцов назван причиной (ревью #606).
+	v2, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-08-14", "2026-09-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC))
+	if err != nil || len(v2.Niches) != 2 || v2.Niches[0].Values["growth"] != 0 {
+		t.Errorf("without last year: %v, %+v", err, v2.Niches)
+	}
+	var nb strings.Builder
+	for _, p := range v2.Problems {
+		nb.WriteString(p.Reason + " | ")
+	}
+	notes := nb.String()
+	if !strings.Contains(notes, "рост") || !strings.Contains(notes, "лимит") {
+		t.Errorf("problems = %q; want the growth and the quota named", notes)
+	}
+	if got := mpstatsPath(" Одежда / Женская одежда /Пижамы женские/ "); got != "Одежда/Женская одежда/Пижамы женские" {
+		t.Errorf("mpstatsPath = %q", got)
+	}
+	if _, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-11-12", "2026-10-14", time.Now()); err == nil {
+		t.Error("reversed period accepted")
 	}
 }
