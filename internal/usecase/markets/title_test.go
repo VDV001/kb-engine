@@ -208,3 +208,16 @@ func TestCheckTitle_nicheBrands(t *testing.T) {
 		t.Errorf("niche brands %d, want 2 (без «Бренд не указан» и своего)", got.NicheBrands)
 	}
 }
+
+// Частых слов в «добавить» — не больше пяти, сколько бы слов главного ни было в названии (живая проверка #623).
+func TestCheckTitle_addCap(t *testing.T) {
+	var niche []markets.NicheQuery
+	niche = append(niche, markets.NicheQuery{Text: "футболка женская", Count: 100_000, Items: 800})
+	for _, w := range []string{"хлопок", "принтом", "длинным", "спортивная", "новогодняя", "летняя", "домашняя"} {
+		niche = append(niche, markets.NicheQuery{Text: "футболка женская " + w, Count: 10_000, Items: 300})
+	}
+	got := markets.CheckTitle(markets.TitleInput{Title: "Футболка женская", Queries: niche})
+	if len(got.Add) != 5 {
+		t.Errorf("add %d words, want 5", len(got.Add))
+	}
+}
