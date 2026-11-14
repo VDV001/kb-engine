@@ -106,14 +106,15 @@ func CheckTitle(in TitleInput) TitleCheck {
 	}
 	brands := nicheBrands(in.NicheBrands, j.brand)
 	out.NicheBrands = len(brands.names)
+	often := 0
 	for _, w := range j.often(have, classes) {
-		if brands.words[w.Word] {
+		switch {
+		case brands.words[w.Word]:
 			w.Why = WhyNicheBrand
 			out.Dropped = append(out.Dropped, w)
-			continue
-		}
-		if len(out.Add) < len(need)+titleAddMax {
+		case often < titleAddMax: // предел — частым словам, слова главного сверх него (живая проверка #623)
 			out.Add = append(out.Add, w)
+			often++
 		}
 	}
 	return out
