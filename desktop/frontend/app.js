@@ -5686,7 +5686,7 @@ async function cnRender() {
       const l = last[c.id];
       return `<div class="mk-cn-card${on ? " on" : ""}"><h4><i class="dot ${on ? "ok" : ""}"></i>Ozon · ${esc(c.name)} ${pill(c.enabled ? "подключен" : "выключен", c.enabled ? "ok" : "")}</h4>
         <p class="d">Client-Id и API-ключ с ролью «Только чтение»: окно ничего не меняет в кабинете</p>${chips(CN_OZON)}
-        <p class="mk-cn-last">${l && l.loadedAt ? `Последний обмен: ${esc(l.loadedAt)} · ${fmt((l.products || []).length)} товаров за 90 дней` : "Еще не загружался: «Магазин» → «Загрузить из Ozon»"}</p>${check(c)}
+        <p class="mk-cn-last">${l && l.loadedAt ? `Последний обмен: ${esc(l.loadedAt)} · ${fmt((l.products || []).length)} товаров${l.windowFrom ? " с " + l.windowFrom.split("-").reverse().join(".") : ""}` : "Еще не загружался: «Магазин» → «Загрузить из Ozon»"}</p>${check(c)}
         ${acts(c, `<button class="btn" type="button" data-cn-shop="${esc(c.id)}">Открыть «Магазин»</button>`)}</div>`;
     }
     return `<div class="mk-cn-card${on ? " on" : ""}"><h4><i class="dot ${on ? "ok" : ""}"></i>MPStats · ${esc(c.name)} ${pill(c.enabled ? "подключен" : "выключен", c.enabled ? "ok" : "")}</h4>
@@ -6412,11 +6412,14 @@ const shPart = () => !!(sh.v && sh.v.windowFrom && (sh.v.from !== sh.v.windowFro
 function shSourceLine(v) {
   const what = shOzon() ? `Кабинет ${(v.file || "").replace(/^Ozon · /, "")} (Ozon)` : `Отчет ${v.file || ""}`;
   const n = (v.products || []).length;
-  return [what, v.period, `${fmt(n)} ${plural(n, "товар", "товара", "товаров")}`].filter((x) => x && !/undefined/.test(x)).join(" · ");
+  const gaps = (v.gaps || []).length ? "нет данных " + v.gaps.join(", ") : ""; // окно не загружалось дольше 90 дней (#614)
+  return [what, v.period, `${fmt(n)} ${plural(n, "товар", "товара", "товаров")}`, gaps].filter((x) => x && !/undefined/.test(x)).join(" · ");
 }
-// Период «Магазина» (#580): кабинет загружается за 90 дней, дни режутся из
-// загруженного без запроса к Ozon. Быстрые кнопки — от последнего дня назад.
-const SH_PRESETS = [["all", "все 90 дн."], [30, "30 дн."], [7, "7 дн."], [1, "вчера"]];
+// Период «Магазина» (#580): Ozon отдает 90 дней, каждая загрузка дописывается
+// к истории кабинета (#614), дни режутся из нее без запроса к Ozon. Быстрые
+// кнопки — от последнего дня назад; «90 дн.» — когда история длиннее.
+const SH_PRESETS = [["all", "всё"], [90, "90 дн."], [30, "30 дн."], [7, "7 дн."], [1, "вчера"]];
+const shDay = (iso) => iso.split("-").reverse().slice(0, 2).join(".");
 // shYesterday: «вчера» — только если загружено сегодня; иначе последний день — датой (ревью #604).
 const shYesterday = (v) => { const d = new Date(); d.setDate(d.getDate() - 1); return isoDay(d) === v.windowTo; };
 const isoDay = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -6429,10 +6432,10 @@ function shPeriodRender() {
   const v = sh.v, on = !!(v && shOzon() && v.windowFrom);
   $("#sh-period").hidden = !on;
   if (!on) return;
-  $("#sh-presets").innerHTML = SH_PRESETS.map(([p, l]) => {
+  $("#sh-presets").innerHTML = SH_PRESETS.filter(([p]) => p !== 90 || shPresetRange(90, v)[0] !== v.windowFrom).map(([p, l]) => {
     const [a, b] = shPresetRange(p, v), cur = a === v.from && b === v.to;
-    const label = p === 1 && !shYesterday(v) ? v.windowTo.split("-").reverse().slice(0, 2).join(".") : l;
-    return `<button type="button" data-sh-preset="${p}" aria-pressed="${cur}"${mkTip(label, p === "all" ? "все загруженные дни кабинета" : p === 1 ? "последний загруженный день; загрузите кабинет снова, чтобы увидеть свежие" : `последние ${p} дней загруженного`)}>${label}</button>`;
+    const label = p === "all" ? `всё с ${shDay(v.windowFrom)}` : p === 1 && !shYesterday(v) ? shDay(v.windowTo) : l;
+    return `<button type="button" data-sh-preset="${p}" aria-pressed="${cur}"${mkTip(label, p === "all" ? "вся история кабинета на этом Маке: каждая загрузка из Ozon дописывается к ней" : p === 1 ? "последний загруженный день; загрузите кабинет снова, чтобы увидеть свежие" : `последние ${p} дней истории`)}>${label}</button>`;
   }).join("");
   // Поле, в которое сейчас вводят, не перезаписываем: набор даты с клавиатуры не сбивается (ревью #604).
   for (const [id, val] of [["#sh-d1", v.from], ["#sh-d2", v.to]]) { const i = $(id); i.min = v.windowFrom; i.max = v.windowTo; if (document.activeElement !== i) i.value = val; }

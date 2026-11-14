@@ -379,8 +379,9 @@ func TestOzonShopHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("period before Ozon's 90 days: %v", err)
 	}
-	if len(p.Products) != 1 || p.Products[0].SKU != "77" || p.Products[0].Ordered != 3 {
-		t.Errorf("August products %+v, want the old one", p.Products)
+	// Товары с остатком видны в любом периоде; заказы августа — только у старого.
+	if i := slices.IndexFunc(p.Products, func(r shopRow) bool { return r.SKU == "77" }); i < 0 || p.Products[i].Ordered != 3 || p.PeriodDays != 10 {
+		t.Errorf("August: %d days, products %+v; want the old one with 3 orders", p.PeriodDays, p.Products)
 	}
 
 	// Окно не загружалось дольше 90 дней — дни между загрузками названы пропуском.

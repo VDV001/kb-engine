@@ -152,6 +152,12 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	if fn.retErr != nil {
 		l.RetWhy = returnsErr(c.Name, fn.retErr)
 	}
+	if saved, ok := f.loadOf(id); ok { // история: дни раньше 90-дневного окна Ozon остаются (#614)
+		h := markets.MergeShop(saved.history(), markets.ShopHistory{From: l.From, To: l.To, Posts: l.Posts, Acc: l.Acc, Rets: l.Rets,
+			AccFailed: fn.accErr != nil, RetFailed: fn.retErr != nil})
+		l.From, l.Posts, l.Acc, l.Rets, l.Gaps = h.From, h.Posts, h.Acc, h.Rets, h.Gaps
+	}
+	from = l.From
 	f.shopLoads.put(id, l)
 	if err := f.saveShopLoad(id, l); err != nil {
 		v, verr := f.shopFor(id, l, from, to)
@@ -161,10 +167,11 @@ func (f *folderSettings) ozonShop(ctx context.Context, base string, hc *http.Cli
 	return f.shopFor(id, l, from, to)
 }
 
-// shopLoad — кабинет, прочитанный за 90 дней: «Магазин» за выбранные дни
-// режется из него без новых запросов к Ozon. Последняя загрузка лежит рядом с
-// настройками (shop/<id>.json): окно открывается ею, а не новой загрузкой
-// (отзыв владельца 13.11). Поля открыты для JSON.
+// shopLoad — история кабинета: Ozon отдает 90 дней, а каждая загрузка
+// дописывается к сохраненной (#614), и «Магазин» за выбранные дни режется из
+// нее без новых запросов к Ozon. Лежит рядом с настройками (shop/<id>.json):
+// окно открывается ею, а не новой загрузкой (отзыв владельца 13.11). Поля
+// открыты для JSON.
 type shopLoad struct {
 	Name           string
 	From, To, Now  time.Time
@@ -174,7 +181,13 @@ type shopLoad struct {
 	Acc            []markets.OzonAccrual `json:"-"` // на диск — SavedAcc: у domain.Money поля закрыты
 	SavedAcc       []savedAccrual        `json:"Acc"`
 	Rets           []markets.OzonReturn
-	AccWhy, RetWhy string // отказ в начислениях и возвратах словами; "" — прочитаны
+	AccWhy, RetWhy string             // отказ в начислениях и возвратах словами; "" — прочитаны
+	Gaps           []markets.DayRange // дни без данных: окно не загружалось дольше 90 дней
+}
+
+// history is the load as a cabinet history for MergeShop.
+func (l shopLoad) history() markets.ShopHistory {
+	return markets.ShopHistory{From: l.From, To: l.To, Posts: l.Posts, Acc: l.Acc, Rets: l.Rets, Gaps: l.Gaps}
 }
 
 // shopLoadCache keeps the last load of each cabinet.
@@ -251,6 +264,11 @@ func (f *folderSettings) shopFor(id string, l shopLoad, from, to time.Time) (sho
 	v.File, v.Path, v.Source = "Ozon · "+l.Name, id, "ozon"
 	v.From, v.To, v.WindowFrom, v.WindowTo = from.Format(time.DateOnly), to.Format(time.DateOnly), l.From.Format(time.DateOnly), l.To.Format(time.DateOnly)
 	v.LoadedAt = l.At.Format("02.01.2006 15:04")
+	for _, g := range l.Gaps {
+		if !g.From.After(to) && !g.To.Before(from) {
+			v.Gaps = append(v.Gaps, g.From.Format("02.01.2006")+" – "+g.To.Format("02.01.2006"))
+		}
+	}
 	switch {
 	case l.AccWhy != "": // товары остаются: отказ — только в финансах
 		v.Economy = &economyView{Err: l.AccWhy}
