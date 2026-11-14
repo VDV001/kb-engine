@@ -397,17 +397,21 @@ func topCategories(ctx context.Context, cl mpstats.Client, d1, d2, now time.Time
 		return nicheTable{}, errors.New(mpstatsMessage(err))
 	}
 	tops := topNames(paths)
-	cur, prev, errs := topSales(ctx, cl, tops, d1, d2)
+	cur, prev, errs, prevErrs := topSales(ctx, cl, tops, d1, d2)
 	var got []markets.NicheSale
-	var missed int
-	var cause error
+	var missed, noPrev int
+	var cause, prevCause error
 	for i := range tops {
 		if errs[i] != nil {
 			missed++
-			cause = cmp.Or(cause, errs[i])
+			cause = realCause(cause, errs[i])
 			continue
 		}
 		got = append(got, cur[i])
+		if prevErrs[i] != nil {
+			noPrev++
+			prevCause = cmp.Or(prevCause, prevErrs[i])
+		}
 	}
 	if len(got) == 0 && cause != nil {
 		return nicheTable{}, errors.New(mpstatsMessage(cause))
@@ -418,6 +422,9 @@ func topCategories(ctx context.Context, cl mpstats.Client, d1, d2, now time.Time
 	}
 	if missed > 0 {
 		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("%d категорий не загружены: %s", missed, mpstatsMessage(cause))})
+	}
+	if noPrev > 0 {
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d категорий рост к году не посчитан: %s", noPrev, mpstatsMessage(prevCause))})
 	}
 	return nicheViewOf(tb, "mpstats:", "MPStats · все категории", now), nil
 }
@@ -436,8 +443,13 @@ func topNames(paths []string) []string {
 
 // topSales reads each top category's own row now and a year earlier, до
 // четырех категорий сразу; errs — отказ «сейчас» по каждой.
-func topSales(ctx context.Context, cl mpstats.Client, tops []string, d1, d2 time.Time) (cur, prev []markets.NicheSale, errs []error) {
-	cur, prev, errs = make([]markets.NicheSale, len(tops)), make([]markets.NicheSale, len(tops)), make([]error, len(tops))
+// errs — отказ «сейчас» по категории, prevErrs — год назад (тогда нет роста).
+// Исчерпанный лимит и отказ ключа останавливают остальные запросы (ревью 14.11).
+func topSales(ctx context.Context, cl mpstats.Client, tops []string, d1, d2 time.Time) (cur, prev []markets.NicheSale, errs, prevErrs []error) {
+	cur, prev = make([]markets.NicheSale, len(tops)), make([]markets.NicheSale, len(tops))
+	errs, prevErrs = make([]error, len(tops)), make([]error, len(tops))
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	sem := make(chan struct{}, 4)
 	var wg sync.WaitGroup
 	for i, top := range tops {
@@ -446,10 +458,15 @@ func topSales(ctx context.Context, cl mpstats.Client, tops []string, d1, d2 time
 			defer func() { <-sem }()
 			for k, out := range [][]markets.NicheSale{cur, prev} {
 				_, self, err := cl.Subcategories(ctx, top, d1.AddDate(-k, 0, 0), d2.AddDate(-k, 0, 0))
+				if stopsAll(err) {
+					cancel()
+				}
+				if err != nil && k == 0 {
+					errs[i] = err
+					return // без «сейчас» год назад не нужен
+				}
 				if err != nil {
-					if k == 0 {
-						errs[i] = err
-					}
+					prevErrs[i] = err
 					continue
 				}
 				out[i] = markets.NicheSale{Name: top, Sales: self.Sales, Revenue: self.Revenue, Sellers: self.Sellers}
@@ -457,7 +474,20 @@ func topSales(ctx context.Context, cl mpstats.Client, tops []string, d1, d2 time
 		})
 	}
 	wg.Wait()
-	return cur, prev, errs
+	return cur, prev, errs, prevErrs
+}
+
+// realCause keeps the first real reason: отмена — следствие остановки, а не причина.
+func realCause(cause, err error) error {
+	if cause == nil || (errors.Is(cause, context.Canceled) && !errors.Is(err, context.Canceled)) {
+		return err
+	}
+	return cause
+}
+
+// stopsAll: исчерпанный лимит и отказ ключа — остальные запросы бесполезны.
+func stopsAll(err error) bool {
+	return errors.Is(err, mpstats.ErrQuota) || errors.Is(err, mpstats.ErrUnauthorized)
 }
 
 // seasons fills each niche's sales by months: 12 полных месяцев до текущего,
@@ -481,11 +511,11 @@ func seasons(ctx context.Context, cl mpstats.Client, parent string, now time.Tim
 			defer mu.Unlock()
 			if err != nil {
 				missed++
+				if stopsAll(err) { // при любой прежней причине (ревью 14.11)
+					cancel()
+				}
 				if cause == nil && !errors.Is(err, context.Canceled) {
 					cause = err
-					if errors.Is(err, mpstats.ErrQuota) || errors.Is(err, mpstats.ErrUnauthorized) {
-						cancel()
-					}
 				}
 				return
 			}
@@ -527,12 +557,10 @@ func topTen(ctx context.Context, cl mpstats.Client, parent string, from, to time
 				return
 			}
 			missed++
-			if errors.Is(err, mpstats.ErrQuota) || errors.Is(err, mpstats.ErrUnauthorized) {
+			if stopsAll(err) {
 				cancel()
 			}
-			if cause == nil || (errors.Is(cause, context.Canceled) && !errors.Is(err, context.Canceled)) {
-				cause = err
-			}
+			cause = realCause(cause, err)
 		})
 	}
 	wg.Wait()
