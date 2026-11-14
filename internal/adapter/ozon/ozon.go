@@ -201,33 +201,33 @@ func (c Client) Card(ctx context.Context, sku string) (Card, error) {
 		}
 	}
 	for _, a := range r.Attributes {
-		if len(a.Values) == 0 {
-			continue
+		vs := make([]string, 0, len(a.Values))
+		for _, v := range a.Values {
+			vs = append(vs, v.Value)
 		}
-		switch a.ID {
-		case attrHashtags: // хештеги бывают и одной строкой, и по значению на каждый (ревью #625)
-			vs := make([]string, 0, len(a.Values))
-			for _, v := range a.Values {
-				vs = append(vs, v.Value)
-			}
-			out.Hashtags = strings.Join(vs, " ")
-		case attrAnnotation:
-			out.Annotation = a.Values[0].Value
-		case attrRich:
-			out.Rich = a.Values[0].Value
-		case attrGender, attrColor:
-			vs := make([]string, 0, len(a.Values))
-			for _, v := range a.Values {
-				vs = append(vs, v.Value)
-			}
-			if a.ID == attrGender {
-				out.Gender = strings.Join(vs, ", ")
-			} else {
-				out.Color = strings.Join(vs, ", ")
-			}
-		}
+		out.take(a.ID, vs)
 	}
 	return out, nil
+}
+
+// take puts the values of attribute id into the card: хештегов и цветов
+// бывает несколько значений, описание и рич-контент — одним.
+func (c *Card) take(id int, vs []string) {
+	if len(vs) == 0 {
+		return
+	}
+	switch id {
+	case attrHashtags: // хештеги бывают и одной строкой, и по значению на каждый (ревью #625)
+		c.Hashtags = strings.Join(vs, " ")
+	case attrAnnotation:
+		c.Annotation = vs[0]
+	case attrRich:
+		c.Rich = vs[0]
+	case attrGender:
+		c.Gender = strings.Join(vs, ", ")
+	case attrColor:
+		c.Color = strings.Join(vs, ", ")
+	}
 }
 
 // infoBatch — карточек за запрос: больше 1000 Ozon не принимает.
