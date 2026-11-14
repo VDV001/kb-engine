@@ -3,6 +3,7 @@ package markets
 import (
 	"cmp"
 	"slices"
+	"strconv"
 )
 
 // SellerStat — продавец ниши за период из сервиса аналитики.
@@ -17,7 +18,7 @@ type SellerStat struct {
 
 // CompetitorRow — продавец ниши и что у него изменилось к прошлому такому же
 // периоду: доли (−0,25 — минус 25 %), товаров прибавилось. New — в прошлом
-// периоде его в нише не было, изменений нет.
+// периоде у него в нише не было продаж (или его самого): изменений нет.
 type CompetitorRow struct {
 	SellerStat
 	Share                    float64 // доля выручки ниши за период
@@ -33,9 +34,9 @@ func Competitors(cur, prev []SellerStat, n int) []CompetitorRow {
 	for _, s := range cur {
 		total += s.Revenue
 	}
-	before := make(map[int64]SellerStat, len(prev))
+	before := make(map[string]SellerStat, len(prev))
 	for _, s := range prev {
-		before[s.ID] = s
+		before[sellerKey(s)] = s
 	}
 	top := slices.Clone(cur)
 	slices.SortStableFunc(top, func(a, b SellerStat) int { return cmp.Compare(b.Revenue, a.Revenue) })
@@ -45,12 +46,12 @@ func Competitors(cur, prev []SellerStat, n int) []CompetitorRow {
 		if total > 0 {
 			r.Share = s.Revenue / total
 		}
-		p, ok := before[s.ID]
+		p, ok := before[sellerKey(s)]
 		switch {
-		case !ok:
+		case !ok || p.Sales <= 0: // рост с нуля — как новичок, а не «без изменений» (ревью #619)
 			r.New = true
 		default:
-			r.SalesChange, r.PriceChange = change(p.Sales, s.Sales), change(p.AvgPrice, s.AvgPrice)
+			r.SalesChange, r.PriceChange = change(p.Sales, s.Sales), priceChange(p.AvgPrice, s.AvgPrice)
 			r.ItemsAdded = max(s.Items-p.Items, 0)
 		}
 		out = append(out, r)
@@ -64,4 +65,20 @@ func change(was, now float64) float64 {
 		return 0
 	}
 	return now/was - 1
+}
+
+// priceChange: без продаж средней цены нет — это не «−100 %» (ревью #619).
+func priceChange(was, now float64) float64 {
+	if now <= 0 {
+		return 0
+	}
+	return change(was, now)
+}
+
+// sellerKey — id продавца, а без него — имя: продавцы без id не склеиваются.
+func sellerKey(s SellerStat) string {
+	if s.ID != 0 {
+		return "id:" + strconv.FormatInt(s.ID, 10)
+	}
+	return "name:" + s.Name
 }
