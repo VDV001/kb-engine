@@ -177,3 +177,34 @@ func TestCheckTitle_titleWordInAnotherForm(t *testing.T) {
 		}
 	}
 }
+
+// Бренды ниши не советуются в «добавить», а называются отдельно (#623): в
+// запросах они бывают и латиницей, и кириллицей («zara» и «зара»).
+func TestCheckTitle_nicheBrands(t *testing.T) {
+	niche := append(slices.Clone(titleNiche),
+		markets.NicheQuery{Text: "футболка женская zara", Count: 9_000, Items: 300},
+		markets.NicheQuery{Text: "футболка женская скимс", Count: 9_000, Items: 300},
+		markets.NicheQuery{Text: "футболка женская primer", Count: 9_000, Items: 300})
+	got := markets.CheckTitle(markets.TitleInput{Title: "Футболка женская", Brands: []string{"PRIMER"}, Queries: niche, Forms: titleForms,
+		NicheBrands: []string{"Zara", "SKIMS", "PRIMER", "Бренд не указан"}})
+	var add, dropped []string
+	for _, w := range got.Add {
+		add = append(add, w.Word)
+	}
+	for _, w := range got.Dropped {
+		dropped = append(dropped, w.Word)
+		if w.Why != markets.WhyNicheBrand {
+			t.Errorf("dropped %+v: why %v", w, w.Why)
+		}
+	}
+	slices.Sort(dropped)
+	if !slices.Equal(dropped, []string{"zara", "скимс"}) {
+		t.Errorf("dropped %v, want zara and скимс (свой бренд — не чужой)", dropped)
+	}
+	if slices.Contains(add, "zara") || slices.Contains(add, "скимс") || !slices.Contains(add, "primer") {
+		t.Errorf("add %v: no foreign brands, the own brand stays", add)
+	}
+	if got.NicheBrands != 3 {
+		t.Errorf("niche brands %d, want 3 (без «Бренд не указан»)", got.NicheBrands)
+	}
+}
