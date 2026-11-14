@@ -235,7 +235,7 @@ func (a *App) MarketsNichesMPStats(path, from, to string) (nicheTable, error) {
 	if mpstatsPath(path) == "" {
 		wait = 6 * time.Minute // все категории: 34 верхних — около 70 запросов (замер 14.11: 3 минуты не хватило)
 	}
-	ctx, cancel := context.WithTimeout(a.ctx, wait)
+	ctx, cancel := a.nicheLoad.start(a.ctx, wait)
 	defer cancel()
 	return a.settings.nichesMPStats(ctx, nil, path, from, to, time.Now())
 }
@@ -258,9 +258,29 @@ func (a *App) MarketsMPStatsCategories() ([]string, error) {
 // MarketsNichesMPStatsSeason is MarketsNichesMPStats with each niche's year by
 // months — вторым вызовом: таблица видна сразу, сезон догружается (до минуты).
 func (a *App) MarketsNichesMPStatsSeason(path, from, to string) (nicheTable, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
+	ctx, cancel := a.nicheLoad.start(a.ctx, 4*time.Minute)
 	defer cancel()
 	return a.settings.nichesMPStatsSeason(ctx, nil, path, from, to, time.Now())
+}
+
+// onlyLatest keeps one running load: новая отменяет прежнюю — окно ее ответ
+// и так отбрасывает, а запросы MPStats шли бы до тайм-аута и тратили тариф
+// (ревью 14.11, №7). Нулевое значение готово к работе.
+type onlyLatest struct {
+	mu     sync.Mutex
+	cancel context.CancelFunc
+}
+
+// start cancels the running load and starts one under parent for at most d.
+func (o *onlyLatest) start(parent context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithTimeout(parent, d)
+	o.mu.Lock()
+	if o.cancel != nil {
+		o.cancel()
+	}
+	o.cancel = cancel
+	o.mu.Unlock()
+	return ctx, cancel
 }
 
 // nichesMPStats reads the subcategories of path for the days and a year earlier.
