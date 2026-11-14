@@ -144,11 +144,12 @@ func TestClient_card(t *testing.T) {
 			`{"id":23171,"values":[{"value":"#футболка_женская #хлопок"}]},` +
 			`{"id":4191,"values":[{"value":"Мягкий хлопок."}]},` +
 			`{"id":11254,"values":[{"value":"{\"content\":[]}"}]},` +
-			`{"id":9163,"values":[{"value":"Женский"}]}]}]}`,
+			`{"id":9163,"values":[{"value":"Женский"}]},` +
+			`{"id":10096,"values":[{"value":"лавандовый"},{"value":"белый"}]}]}]}`,
 	}})
 	defer srv.Close()
 	c, err := ozon.Client{BaseURL: srv.URL, ClientID: "42", Key: "secret", HTTP: srv.Client()}.Card(context.Background(), "1234567")
-	if err != nil || c.Name != "Футболка женская" || c.Hashtags != "#футболка_женская #хлопок" || c.Annotation != "Мягкий хлопок." || c.Rich != `{"content":[]}` {
+	if err != nil || c.Name != "Футболка женская" || c.Hashtags != "#футболка_женская #хлопок" || c.Annotation != "Мягкий хлопок." || c.Rich != `{"content":[]}` || c.Gender != "Женский" || c.Color != "лавандовый, белый" {
 		t.Fatalf("card %+v, %v", c, err)
 	}
 	empty := fake(t, map[string][]string{"/v4/product/info/attributes": {`{"result":[]}`}})
