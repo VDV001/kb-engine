@@ -44,7 +44,8 @@ type photoAdvice struct {
 type photosView struct {
 	SKU        string        `json:"sku"`
 	Niche      string        `json:"niche"`
-	Own        []string      `json:"own"`
+	Own        []string      `json:"own"`      // фото из кабинета — показать
+	OwnCount   int           `json:"ownCount"` // сколько фото для сравнения: из MPStats, как у лидеров
 	OwnVideo   bool          `json:"ownVideo"`
 	OwnRich    bool          `json:"ownRich"`
 	Leaders    []photoLeader `json:"leaders"`
@@ -75,22 +76,22 @@ func (f *folderSettings) photosCheck(ctx context.Context, hc *http.Client, base,
 	if err != nil {
 		return photosView{}, err
 	}
-	n, err := f.readCardNiche(ctx, hc, connID, cl.Token, id, fresh)
+	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}
+	mc, err := f.mpstatsCard(ctx, m, connID, id, fresh) // фото нужен только путь ниши: без запросов и брендов (ревью #627)
 	if err != nil {
 		return photosView{}, err
 	}
-	m := mpstats.MCP{URL: f.mcpBase(), Token: cl.Token, HTTP: hc}
-	key := connID + "|" + n.card.Niche
-	ps, ok := f.nicheProducts.get(key, time.Now())
-	if !ok || fresh {
-		if ps, err = m.NicheProducts(ctx, n.card.Niche, photoProducts); err != nil {
-			return photosView{}, errors.New("товары ниши «" + n.card.Niche + "» не прочитаны — " + mpstatsMessage(err))
-		}
-		f.nicheProducts.put(key, ps, time.Now())
+	ps, err := f.readNicheProducts(ctx, m, connID, mc.Niche, fresh)
+	if err != nil {
+		return photosView{}, err
 	}
-	c := markets.CheckPhotos(markets.PhotoCard{Photos: len(card.Photos), Video: card.Video, Rich: strings.TrimSpace(card.Rich) != ""}, ps, photoLeaders)
-	leaderPhotos(ctx, m, c.Leaders[:min(len(c.Leaders), photoLeaderShots)])
-	v := photosView{SKU: strconv.FormatInt(id, 10), Niche: n.card.Niche, Own: card.Photos, OwnVideo: card.Video, OwnRich: strings.TrimSpace(card.Rich) != "",
+	own := markets.PhotoCard{SKU: id, Seller: mc.Seller, Photos: mc.Photos, Video: card.Video, Rich: strings.TrimSpace(card.Rich) != ""}
+	if own.Photos == 0 { // MPStats не знает числа — считаем по кабинету
+		own.Photos = len(card.Photos)
+	}
+	c := markets.CheckPhotos(own, ps, photoLeaders)
+	leaderPhotos(ctx, m, c.Leaders)
+	v := photosView{SKU: strconv.FormatInt(id, 10), Niche: mc.Niche, Own: card.Photos, OwnCount: own.Photos, OwnVideo: own.Video, OwnRich: own.Rich,
 		Median: c.MedianPhotos, VideoShare: c.VideoShare, Leaders: []photoLeader{}, Advice: []photoAdvice{}}
 	if v.Own == nil {
 		v.Own = []string{}
@@ -103,6 +104,28 @@ func (f *folderSettings) photosCheck(ctx context.Context, hc *http.Client, base,
 		v.Advice = append(v.Advice, photoAdvice{Kind: a.Kind, Have: a.Have, Their: a.Their})
 	}
 	return v, nil
+}
+
+// mpstatsCard — карточка товара в MPStats: из памяти «Названия», иначе один запрос.
+func (f *folderSettings) mpstatsCard(ctx context.Context, m mpstats.MCP, connID string, id int64, fresh bool) (mpstats.Card, error) {
+	if cp, ok := f.cardParts.get(connID+"|"+strconv.FormatInt(id, 10), time.Now()); ok && !fresh {
+		return cp.card, nil
+	}
+	return readTitleCard(ctx, m, id)
+}
+
+// readNicheProducts — товары ниши из памяти или одним запросом.
+func (f *folderSettings) readNicheProducts(ctx context.Context, m mpstats.MCP, connID, niche string, fresh bool) ([]markets.NicheProduct, error) {
+	key := connID + "|" + niche
+	if ps, ok := f.nicheProducts.get(key, time.Now()); ok && !fresh {
+		return ps, nil
+	}
+	ps, err := m.NicheProducts(ctx, niche, photoProducts)
+	if err != nil {
+		return nil, errors.New("товары ниши «" + niche + "» не прочитаны — " + mpstatsMessage(err))
+	}
+	f.nicheProducts.put(key, ps, time.Now())
+	return ps, nil
 }
 
 // leaderPhotos fills the leaders' main photos, до четырех запросов сразу:
