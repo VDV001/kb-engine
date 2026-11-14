@@ -292,3 +292,75 @@ func TestNichesMPStatsTopLeafPath(t *testing.T) {
 		t.Errorf("niches = %+v", v.Niches)
 	}
 }
+
+// Исчерпанный лимит останавливает «Все категории» (ревью 14.11): после отказа
+// новые запросы не уходят — их не больше, чем идет одновременно.
+func TestNichesMPStatsTopStopsOnQuota(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var mu sync.Mutex
+	subs := 0
+	var paths []string
+	for i := range 10 {
+		paths = append(paths, fmt.Sprintf(`{"path":"Категория %d/Ниша"}`, i))
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/categories":
+			_, _ = w.Write([]byte("[" + strings.Join(paths, ",") + "]"))
+		case "/api/oz/get/category/subcategories":
+			mu.Lock()
+			subs++
+			mu.Unlock()
+			w.WriteHeader(http.StatusTooManyRequests)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC))
+	if err == nil || !strings.Contains(err.Error(), "лимит") {
+		t.Errorf("err = %v, want the quota in words", err)
+	}
+	if subs > 4 {
+		t.Errorf("%d requests after the quota ran out, want at most 4 in flight", subs)
+	}
+}
+
+// Год назад у категории не загрузился — окно так и пишет (ревью 14.11), как у ниш.
+func TestNichesMPStatsTopSaysNoGrowth(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/categories":
+			_, _ = w.Write([]byte(`[{"path":"Одежда/Брюки"}]`))
+		case "/api/oz/get/category/subcategories":
+			if r.URL.Query().Get("d1") == "2025-10-15" {
+				w.WriteHeader(http.StatusGatewayTimeout)
+				return
+			}
+			_, _ = w.Write([]byte(`[{"name":"Текущая категория","sales":300,"revenue":3000,"sellers_with_sells":5}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.nichesMPStats(context.Background(), srv.Client(), "", "2026-10-15", "2026-11-13", time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Problems) != 1 || !strings.Contains(v.Problems[0].Reason, "рост к году") {
+		t.Errorf("problems = %v, want one about the growth", v.Problems)
+	}
+}
