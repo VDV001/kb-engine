@@ -6007,7 +6007,7 @@ try {
   if (v && v.fee === undefined && v.comm !== undefined) v.fee = String(Number(String(v.comm).replace(",", ".")) + Number(String(v.log || 0).replace(",", "."))); // прежние «Комиссия» и «Логистика» — одним полем, как в макете
   if (v) for (const k of PL_IN) if (v[k] !== undefined && v[k] !== "NaN") $("#pl-" + k).value = v[k];
 } catch (_) { /* без хранилища — значения по умолчанию */ }
-const pl = { v: null, days: false, price: 0, lead: 10 };
+const pl = { v: null, days: false, price: 0, lead: 10, stockFor: "", cab: null };
 // Число как пишет человек: «1 500», «1.500» (точка — тысячи), «1500,5», «−5» (ревью #599).
 function plNum(k) {
   let t = String($("#pl-" + k).value).replace(/[\s\u00a0₽%]/g, "").replace(/\u2212/g, "-");
@@ -6029,6 +6029,32 @@ function plSrc() {
   const mine = own.startsWith("ozon:") ? `свои продажи: кабинет ${cab ? cab.name : "Ozon"}` : own ? `свои продажи: «${base(own)}»` : "";
   return [niche, mine].filter(Boolean).join(" · ");
 }
+// plStockFill puts the cabinet's stock into «Остаток»: прогноз считается по
+// продажам всего кабинета, поэтому и остаток — сумма по всем товарам (решение 14.11).
+async function plStockFill() {
+  const own = fc.paths[2] || "";
+  pl.stockFor = own;
+  if (!own.startsWith("ozon:") || !native() || !native().MarketsPlanStock) { $("#pl-stock-note").hidden = true; pl.cab = null; return; }
+  $("#pl-stock-note").hidden = false;
+  $("#pl-stock-get").hidden = true;
+  $("#pl-stock-txt").textContent = "Читаю остаток из кабинета…";
+  try {
+    const s = await native().MarketsPlanStock(own.slice("ozon:".length));
+    if (fc.paths[2] !== own) return; // источник сменили, пока читали
+    pl.cab = s;
+    if (plNum("stock") !== s.qty) { $("#pl-stock").value = String(s.qty); $("#pl-xlsx").disabled = true; }
+    $("#pl-stock-txt").textContent = `Остаток — из кабинета ${s.name}: ${fmt(s.qty)} шт по всем товарам (в наличии ${fmt(s.inStock)} из ${fmt(s.products)}), как и свои продажи в прогнозе. Поле можно поправить.`;
+  } catch (err) {
+    if (fc.paths[2] !== own) return;
+    pl.stockFor = ""; pl.cab = null; // при следующем открытии — еще раз
+    $("#pl-stock-txt").textContent = "Остаток из кабинета не прочитан: " + errText(err) + ". Впишите руками.";
+  }
+  $("#pl-stock-get").hidden = false;
+}
+$("#pl-stock-get").addEventListener("click", () => { hideTip(); plStockFill(); });
+$("#pl-stock").addEventListener("input", () => {
+  if (pl.cab) $("#pl-stock-txt").textContent = `Остаток вписан руками; в кабинете ${pl.cab.name} — ${fmt(pl.cab.qty)} шт по всем товарам.`;
+});
 // plPage shows the «План» page: без трех источников — путь к «Прогнозу».
 function plPage() {
   const ready = fc.paths.every(Boolean);
@@ -6037,6 +6063,8 @@ function plPage() {
   $("#pl-src").textContent = ready ? "По прогнозу: " + plSrc() : "";
   if (pl.key !== fc.paths.join("|")) pl.v = null; // источники «Прогноза» сменились — прежний план не про них
   plRender(ready ? pl.v : null);
+  if (ready && pl.stockFor !== fc.paths[2]) plStockFill();
+  if (!ready) $("#pl-stock-note").hidden = true;
 }
 const PL_MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
 const plDate = (s) => { const [d, m, y] = s.split(".").map(Number); return new Date(y, m - 1, d); };

@@ -16,6 +16,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/ozon"
 	"github.com/daniil/kb-engine/internal/adapter/planxlsx"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
 // planInput — ввод «Плана» в окне: комиссия и логистика в процентах.
@@ -132,6 +133,48 @@ func xlsxPath(p string) string {
 		return p
 	}
 	return p + ".xlsx"
+}
+
+// planStock — остаток кабинета для «Плана»: сумма по всем товарам, потому что
+// прогноз считается по продажам всего кабинета (решение владельца 14.11).
+type planStock struct {
+	Name     string  `json:"name"`
+	Qty      float64 `json:"qty"`
+	Products int     `json:"products"`
+	InStock  int     `json:"inStock"`
+}
+
+// stockTotal sums stock to sell; резерв больше наличия у одного товара
+// не уменьшает остаток других.
+func stockTotal(st []markets.OzonStock) (qty float64, inStock int) {
+	for _, s := range st {
+		if s.Qty > 0 {
+			qty += s.Qty
+			inStock++
+		}
+	}
+	return qty, inStock
+}
+
+// ozonPlanStock reads the stock of cabinet id now.
+func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *http.Client, id string) (planStock, error) {
+	cl, c, err := f.ozonCabinet(id, base, hc)
+	if err != nil {
+		return planStock{}, err
+	}
+	st, err := cl.Stocks(ctx)
+	if err != nil {
+		return planStock{}, ozonErr(c.Name, err)
+	}
+	qty, n := stockTotal(st)
+	return planStock{Name: c.Name, Qty: qty, Products: len(st), InStock: n}, nil
+}
+
+// MarketsPlanStock is the stock of Ozon cabinet id for the «План» field.
+func (a *App) MarketsPlanStock(id string) (planStock, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
+	defer cancel()
+	return a.settings.ozonPlanStock(ctx, ozon.DefaultURL, nil, id)
 }
 
 // MarketsPlan builds the plan from the forecast's three sources.

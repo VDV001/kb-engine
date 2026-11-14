@@ -248,13 +248,14 @@
           <div class="mk-lead-src"><span class="sh-src" id="pl-src" data-tip="По какому прогнозу" data-tip-b="источники вкладки «Прогноз»: ниша прошлый год и сейчас, свои продажи"></span></div></div></div>
         <div class="mk-pl-none" id="pl-none" hidden><p>План строится по прогнозу: выберите в «Прогнозе» три источника — нишу прошлый год, нишу сейчас и свои продажи.</p><button class="btn mk-main" type="button" data-mk-tab="forecast">Открыть «Прогноз»</button></div>
         <div class="mk-plan-in" id="pl-in">
-          <label data-tip="Остаток" data-tip-b="штук этого товара на складах сейчас">Остаток на складах, шт <input id="pl-stock" inputmode="decimal"></label>
+          <label data-tip="Остаток" data-tip-b="штук на складах сейчас; с кабинетом Ozon подставляется сам — сумма по всем товарам, как и свои продажи в прогнозе">Остаток на складах, шт <input id="pl-stock" inputmode="decimal"></label>
           <label data-tip="Себестоимость" data-tip-b="за штуку, ₽">Себестоимость, ₽ <input id="pl-cost" inputmode="decimal"></label>
           <label data-tip="Цена" data-tip-b="цена продавца за штуку, ₽; на неделе пика план ставит +10 %, в провал −10 %">Цена, ₽ <input id="pl-price" inputmode="decimal"></label>
           <label data-tip="Комиссия и логистика" data-tip-b="вознаграждение Ozon, доставка и услуги, % цены; у кабинета — в «Магазин» → «Деньги магазина»">Комиссия и логистика, % <input id="pl-fee" inputmode="decimal" value="50"></label>
           <label data-tip="Срок поставки" data-tip-b="сколько дней идет поставка до склада">Поставка, дней <input id="pl-lead" inputmode="numeric" value="10"></label>
           <button class="btn mk-main" type="button" id="pl-go">Пересчитать план</button>
         </div>
+        <p class="mk-fc-note" id="pl-stock-note" hidden><span id="pl-stock-txt"></span> <button class="btn" type="button" id="pl-stock-get" data-tip="Остаток из кабинета" data-tip-b="прочитать остаток кабинета заново и вписать в поле">Взять из кабинета</button></p>
         <div class="mk-kpis" id="pl-kpis" hidden></div>
         <div class="mk-pl-warn" id="pl-warn" role="status" hidden></div>
         <div class="mk-plan-wrap" id="pl-wrap" hidden><table class="mk-plan-table" id="pl-table"></table></div>
