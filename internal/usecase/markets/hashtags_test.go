@@ -2,6 +2,7 @@ package markets_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/daniil/kb-engine/internal/usecase/markets"
@@ -68,11 +69,11 @@ func TestCheckHashtags(t *testing.T) {
 
 // Больше 30 хештегов — Ozon не примет; добавлять нечего сверх предела.
 func TestCheckHashtags_tooMany(t *testing.T) {
-	tags := ""
+	var tags strings.Builder
 	for i := range 31 {
-		tags += " #тег" + string(rune('а'+i))
+		tags.WriteString(" #тег" + string(rune('а'+i)))
 	}
-	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: tags, Queries: titleNiche, Forms: titleForms})
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская", Hashtags: tags.String(), Queries: titleNiche, Forms: titleForms})
 	if !got.TooMany || len(got.Add) != 0 {
 		t.Errorf("too many %v add %d, want true and nothing to add", got.TooMany, len(got.Add))
 	}

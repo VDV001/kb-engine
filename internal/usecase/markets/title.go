@@ -141,14 +141,15 @@ func mainQuery(qs []NicheQuery) (NicheQuery, bool) {
 
 // titleJudge — словоформы, спрос слов в запросах главного, свои запросы товара и бренды.
 type titleJudge struct {
-	form  map[string]string
-	stem  map[string]string // основа формы → слово запросов ниши: формы MPStats неполные
-	sum   map[string]float64
-	total float64
-	own   map[string]OwnQuery // по слову запросов ниши и по основе слова
-	brand map[string]bool     // слова своего бренда и продавца
-	forms map[string]int      // сколько форм у слова запросов ниши: склоняется — не бренд
-	niche map[string]bool     // однословные бренды ниши латиницей, кроме своих
+	form    map[string]string
+	stem    map[string]string // основа формы → слово запросов ниши: формы MPStats неполные
+	sum     map[string]float64
+	total   float64
+	own     map[string]OwnQuery // по слову запросов ниши и по основе слова
+	brand   map[string]bool     // слова своего бренда и продавца
+	forms   map[string]int      // сколько форм у слова запросов ниши: склоняется — не бренд
+	niche   map[string]bool     // однословные бренды ниши латиницей, кроме своих
+	ownList []OwnQuery          // свои запросы товара по порядку (хештеги, #610)
 }
 
 func newTitleJudge(in TitleInput) *titleJudge {
@@ -165,6 +166,7 @@ func newTitleJudge(in TitleInput) *titleJudge {
 			}
 		}
 	}
+	j.ownList = in.Own
 	for _, q := range in.Own {
 		for _, t := range wordsOf(q.Text) {
 			for _, k := range []string{j.group(t), "~" + wordStem(t)} { // формы MPStats неполные: «базовый» ≠ «базовая» (замер 14.11)
