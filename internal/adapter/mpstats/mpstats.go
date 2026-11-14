@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/loopback"
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
 // DefaultURL — API MPStats; ключ — в заголовке X-Mpstats-TOKEN (живой ответ 13.11).
@@ -316,6 +317,31 @@ func (c Client) Categories(ctx context.Context) ([]string, error) {
 	}
 	slices.Sort(out)
 	return slices.Compact(out), nil
+}
+
+// Sellers returns the sellers of category path for days from..to (#613):
+// товары, продажи, выручка, средняя цена, рейтинг — для «Конкурентов».
+func (c Client) Sellers(ctx context.Context, path string, from, to time.Time) ([]markets.SellerStat, error) {
+	q := url.Values{"path": {path}, "d1": {from.Format(time.DateOnly)}, "d2": {to.Format(time.DateOnly)}}
+	var rows []struct {
+		ID       int64   `json:"supplier_id"`
+		Name     string  `json:"name"`
+		Items    int     `json:"items"`
+		Sold     int     `json:"items_with_sells"`
+		Sales    float64 `json:"sales"`
+		Revenue  float64 `json:"revenue"`
+		AvgPrice float64 `json:"avg_price"`
+		Rating   float64 `json:"rating"`
+		Comments float64 `json:"comments"`
+	}
+	if err := c.get(ctx, "/api/oz/get/category/sellers", q, &rows); err != nil {
+		return nil, err
+	}
+	out := make([]markets.SellerStat, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, markets.SellerStat{ID: r.ID, Name: r.Name, Items: r.Items, ItemsSold: r.Sold, Sales: r.Sales, Revenue: r.Revenue, AvgPrice: r.AvgPrice, Rating: r.Rating, Comments: r.Comments})
+	}
+	return out, nil
 }
 
 // TopSellersRevenue sums the revenue of the n largest sellers of the category
