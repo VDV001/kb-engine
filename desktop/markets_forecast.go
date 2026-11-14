@@ -238,9 +238,12 @@ func (d *chatDesk) modelForecast(series [3]domain.DailySales) (modelForecastView
 }
 
 // MarketsModelForecast asks the chat model for the forecast next to the formula.
-// Свои продажи «ozon:<id>» — из кабинета; согласие спрашивается до похода в Ozon.
+// Свои продажи «ozon:<id>» — из кабинета, ниша «mpstats:…» — из MPStats;
+// согласие спрашивается до похода в сеть.
 func (a *App) MarketsModelForecast(lastYear, nicheNow, own string, consent bool) (modelForecastView, error) {
-	if !strings.HasPrefix(own, "ozon:") || !consent {
+	// Кабинет Ozon или ниша из MPStats — сначала ключ модели, потом сеть (ревью #592).
+	net := strings.HasPrefix(own, "ozon:") || strings.HasPrefix(lastYear, "mpstats:") || strings.HasPrefix(nicheNow, "mpstats:")
+	if !net || !consent {
 		return a.chat.ModelForecast(lastYear, nicheNow, own, consent)
 	}
 	if err := a.chat.modelReady(); err != nil { // без ключа модели в Ozon не ходим (ревью #592)

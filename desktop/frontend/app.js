@@ -1286,7 +1286,16 @@ $("#storage-list").addEventListener("click", async (e) => {
   } catch (err) { storageConfirm = null; showError(errText(err)); }
   renderStorage();
 });
-const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon" };
+const CONN_KIND = { model: "модель", kbserver: "kb-сервер", google: "Google Диск", speech: "распознавание речи", ozon: "кабинет Ozon", mpstats: "MPStats" };
+// Что случится после удаления — у каждого вида свое (ревью #605).
+const CONN_DEL_NOTE = {
+  ozon: "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет.",
+  mpstats: "Ключ сотрется из Связки ключей, «Прогноз → Из MPStats» перестанет работать.",
+  speech: "Ключ сотрется из Связки ключей, диктовка вернется к Apple Speech.",
+  google: "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться.",
+};
+// Итоги «Проверить» по id подключения: строка под подключением до перерисовки окна.
+const connChecks = {};
 let connConfirm = null;
 async function renderConnections() {
   const list = $("#conn-list");
@@ -1295,16 +1304,19 @@ async function renderConnections() {
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<li class="muted">${esc(errText(e))}</li>`; return; }
   list.innerHTML = rows.map((r) => {
     const share = r.kind === "ozon" ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? "модель чата видит цифры магазина, они уходят ее провайдеру; нажмите — запретить" : "модель чата цифр магазина не видит; нажмите — разрешить: названия товаров, заказы и продажи уйдут провайдеру модели")}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
+    const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
     const acts = r.own
-      ? `${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}">${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}">Удалить</button>`
-      : `<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}">Изменить</button>`;
-    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${r.kind === "ozon" ? "Ключ сотрется из Связки ключей, «Магазин» перестанет загружать этот кабинет." : "Вход сотрется из Связки ключей, закрытые ссылки перестанут читаться."}
+      ? `${chk}${share}<button class="btn" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="btn" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button>`
+      : `${chk}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
+    const ck = connChecks[r.id];
+    const ckLine = ck ? `<span class="conn-check${ck.busy ? "" : ck.ok ? " ok" : " bad"}" role="status">${ck.busy ? "проверяю…" : (ck.ok ? "✓ " : "✕ ") + esc(ck.note)}</span>` : "";
+    const confirm = connConfirm === r.id ? `<span class="conn-confirm">Удалить «${esc(r.name)}»? ${CONN_DEL_NOTE[r.kind] || CONN_DEL_NOTE.google}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></span>` : "";
     return `<li class="${r.own && !r.enabled ? "off" : ""}">
     <span class="n">${esc(r.name)}<small>${esc(CONN_KIND[r.kind] || r.kind)}</small></span>
     <span class="st${r.ok ? " ok" : ""}">${esc(r.status)}</span>
     <span class="d">${esc(r.detail)} · использует: ${esc((r.usedBy || []).join(", "))}</span>
-    <span class="conn-acts">${acts}</span>${confirm}</li>`;
+    <span class="conn-acts">${acts}</span>${ckLine}${confirm}</li>`;
   }).join("");
 }
 async function openConnection(sec, id) {
@@ -1323,6 +1335,18 @@ $("#conn-list").addEventListener("click", async (e) => {
   if (b) return openConnection(b.dataset.goSec, b.dataset.goId);
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("li")?.querySelector(".n")?.firstChild?.textContent || "подключение";
+  const ck = e.target.closest("[data-conn-check]");
+  if (ck) {
+    const id = ck.dataset.connCheck;
+    hideTip();
+    connChecks[id] = { busy: true };
+    renderConnections();
+    let r;
+    try { r = await native().CheckConnection(id); } catch (err) { r = { ok: false, note: errText(err) }; }
+    connChecks[id] = r;
+    toast(r.ok ? "Проверено" : "Не прошла проверка", ` · «${name}»: ${r.note}`, null, r.ok ? "info" : "bad");
+    return renderConnections();
+  }
   try {
     const sh = e.target.closest("[data-conn-share]");
     if (sh) {
@@ -1338,12 +1362,37 @@ $("#conn-list").addEventListener("click", async (e) => {
     else if (e.target.closest("[data-conn-del-no]")) connConfirm = null;
     else if (e.target.closest("[data-conn-del-yes]")) { await native().RemoveConnection(e.target.closest("[data-conn-del-yes]").dataset.connDelYes); connConfirm = null; toast("Удалено", ` · «${name}» и его ключ`, null, "del"); }
     else return;
-  } catch (err) { showError(errText(err)); }
+  } catch (err) { showError(errText(err)); toast("Не получилось", ` · «${name}»: ${errText(err)}`, null, "bad"); }
   renderConnections();
 });
 // maskConnKeys прячет набранные ключи подключений: после «Добавить» (удачного
 // или нет), при сворачивании формы и закрытии настроек — открытым ключ не остается.
-function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret"]) maskKey(id); }
+function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret", "conn-m-key"]) maskKey(id); }
+$("#conn-add-mpstats").addEventListener("click", () => {
+  maskConnKeys();
+  const f = $("#conn-mpstats");
+  f.hidden = !f.hidden;
+  $("#conn-add-mpstats").setAttribute("aria-expanded", String(!f.hidden));
+  if (!f.hidden) $("#conn-m-key").focus();
+});
+$("#conn-mpstats").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  maskConnKeys();
+  if (!native() || !native().AddMPStatsConnection) return void ($("#conn-m-note").textContent = "Подключения меняются в окне приложения.");
+  const go = $("#conn-m-go");
+  go.disabled = true;
+  $("#conn-m-note").textContent = "Проверяю ключ в MPStats…";
+  try {
+    const r = await native().AddMPStatsConnection($("#conn-m-name").value, $("#conn-m-key").value);
+    $("#conn-m-note").textContent = "Ключ принят и сохранен: " + r.name + ". «Маркеты → Прогноз» возьмет нишу из MPStats.";
+    toast("Добавлено", ` · «${r.name}»: ключ MPStats принят`);
+    for (const id of ["#conn-m-name", "#conn-m-key"]) $(id).value = "";
+  } catch (err) {
+    $("#conn-m-note").textContent = errText(err);
+    toast("Не добавлено", " · " + errText(err), null, "bad");
+  } finally { go.disabled = false; }
+  renderConnections();
+});
 $("#conn-add-speech").addEventListener("click", () => {
   maskConnKeys();
   const f = $("#conn-speech");
@@ -1359,7 +1408,7 @@ $("#conn-speech").addEventListener("submit", async (e) => {
     $("#conn-s-note").textContent = "Добавлено: " + r.name + ". Выберите его в «Чат и модель → Распознавание».";
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-s-name", "#conn-s-url", "#conn-s-model", "#conn-s-key"]) $(id).value = "";
-  } catch (err) { $("#conn-s-note").textContent = errText(err); }
+  } catch (err) { $("#conn-s-note").textContent = errText(err); toast("Не добавлено", ` · Сервер распознавания: ${errText(err)}`, null, "bad"); }
   maskConnKeys();
   renderConnections();
 });
@@ -1384,7 +1433,7 @@ $("#conn-ozon").addEventListener("submit", async (e) => {
     toast("Добавлено", ` · «${r.name}»`);
     for (const id of ["#conn-o-name", "#conn-o-id", "#conn-o-key"]) $(id).value = "";
     $("#conn-o-share").checked = false;
-  } catch (err) { $("#conn-o-note").textContent = errText(err); }
+  } catch (err) { $("#conn-o-note").textContent = errText(err); toast("Не добавлено", ` · Кабинет Ozon: ${errText(err)}`, null, "bad"); }
   maskConnKeys();
   renderConnections();
 });
@@ -1411,6 +1460,7 @@ $("#conn-google").addEventListener("submit", async (e) => {
     $("#conn-add-google").setAttribute("aria-expanded", "false");
   } catch (err) {
     $("#conn-g-note").textContent = errText(err);
+    toast("Не подключено", ` · Google: ${errText(err)}`, null, "bad");
   } finally {
     go.disabled = false;
     renderConnections();
@@ -5513,7 +5563,16 @@ $("#markets-view").addEventListener("click", (e) => {
   const t = e.target.closest("[data-mk-tab]");
   if (t) { hideTip(); mkTab(t.dataset.mkTab); return; }
   const go = e.target.closest("[data-mk-go-fc]");
-  if (go) { hideTip(); fc.niche = go.dataset.mkGoFc; mkTab("forecast"); return; }
+  if (go) {
+    hideTip();
+    fc.niche = go.dataset.mkGoFc;
+    if (fc.paths[0].startsWith("mpstats:")) { // источник MPStats берет новую нишу, а не считает прежнюю (ревью #605)
+      const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+      fc.paths[0] = fc.paths[1] = `mpstats:${id}|${fc.niche}`; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave();
+    }
+    mkTab("forecast");
+    return;
+  }
   // «План» строится по прогнозу: вкладка ведет к блоку под ним, а без прогноза — к его кнопке.
   if (e.target.closest("#mk-plan-tab")) {
     hideTip();
@@ -5523,29 +5582,63 @@ $("#markets-view").addEventListener("click", (e) => {
     else plan.scrollIntoView({ block: "start" });
   }
 });
+// Ниша из MPStats (#580): обе ниши — одним источником «mpstats:<id>|<путь>»;
+// путь — ниша из «Ниши» («Прогноз по этой нише») или вписанный вручную.
+const fcMpsPath = (p) => p.slice(p.indexOf("|") + 1);
+function fcMPStatsSlot(i, title, hint, p, info) {
+  const path = fcMpsPath(p);
+  const meta = info ? `дней ${fmt(info.days)} · ${info.from}–${info.to} · прочитано` : i === 0 ? "те же дни годом раньше и 4 месяца после — загрузятся при расчете, MPStats отвечает до минуты" : "90 дней до вчера — загрузятся при расчете";
+  return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
+    `<span class="name">MPStats · ${esc(path || "ниша не выбрана")}</span><span class="meta">${esc(meta)}</span>` +
+    (i === 0 ? `<input class="mk-q" id="fc-mps-path" value="${esc(path)}" placeholder="Путь категории Ozon: Одежда/Мужская одежда/…" autocomplete="off" spellcheck="false"${mkTip("Ниша в MPStats", "полный путь категории Ozon, как в MPStats и в выгрузке «Товары категории»; проще — выбрать нишу во вкладке «Ниша» → «Прогноз по этой нише»")}>` : "") +
+    `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(FC_SLOTS[i][1])}"${mkTip("Выбрать файл", "вернуться к выгрузке файлом вместо MPStats")}>Файлом…</button></div>`;
+}
 function fcRender() {
   $("#mk-plan").hidden = !fc.v; // план — по посчитанному прогнозу
   if (!fc.v) plRender(null);
   $("#mk-fc-intro").textContent = (fc.niche ? `Ниша «${fc.niche}». ` : "") + "Прогноз Ваших продаж по дням: как продавала ниша в прошлом году, как продает сейчас и какая у Вас в ней доля.";
   $("#mk-files").innerHTML = FC_SLOTS.map(([title, dlg, hint], i) => {
-    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:");
+    const p = fc.paths[i], info = fc.v && fc.v.files[i], oz = p.startsWith("ozon:"), mps = p.startsWith("mpstats:");
+    if (mps) return fcMPStatsSlot(i, title, hint, p, info);
     const meta = info ? `${info.products ? `товаров ${fmt(info.products)} · ` : ""}дней ${fmt(info.days)} · ${info.from}–${info.to}${info.format === "ozon" ? " · заказы с отменами" : ""}${info.undated ? ` · без даты ${fmt(info.undated)}, не учтены` : ""} · прочитан` : p ? "выбран, прочитается при расчете" : "файл не выбран";
     return `<div class="mk-file${info ? " ok" : ""}"><h4${mkTip(title, hint)}>${esc(title)}</h4><span class="hint">${esc(hint)}</span>` +
       `<span class="name"${p && !oz ? mkTip("Файл", p) : ""}>${esc(oz ? "Ozon · " + fcCabName(p.slice(5)) : p ? p.split("/").pop() : "—")}</span><span class="meta">${esc(oz && !info ? "заказы по дням с отменами, загрузятся при расчете" : meta)}</span>` +
       (oz && fc.cabs.length > 1 ? `<select class="mk-sel" id="fc-cab" aria-label="Кабинет Ozon">${fc.cabs.map((c) => `<option value="${esc(c.id)}"${"ozon:" + c.id === p ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>` : "") +
       `<button class="btn" type="button" data-fc-pick="${i}" data-fc-title="${esc(dlg)}"${mkTip("Выбрать файл", "xlsx или csv: дни колонками (товары строками) или колонки «Дата» и «Количество»")}>${p && !oz ? "Другой файл…" : "Выбрать файл…"}</button>` +
-      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` : "") + `</div>`;
+      (i === 2 ? `<button class="btn" type="button" id="fc-ozon"${mkTip("Из кабинета Ozon", "свои продажи по дням за 90 дней до вчера, без отмен; кабинеты — в Настройках → Подключения")}>Из кабинета Ozon</button>` :
+        `<button class="btn" type="button" data-fc-mps${mkTip("Из MPStats", "продажи ниши по дням по ключу MPStats — сразу для прошлого года и сейчас, без выгрузки; ключ — в Настройках → Подключения")}>Из MPStats</button>`) + `</div>`;
   }).join("");
   const v = fc.v;
   $("#mk-kpis").hidden = $("#mk-chart").hidden = $("#mk-fc-how").hidden = !v;
   if (v) { fcKpis(v); fcChart(v); }
 }
 $("#mk-files").addEventListener("change", (e) => {
+  if (e.target.id === "fc-mps-path") {
+    if (fc.busy) { mkErr("Идет расчет — ниша сменится после него."); return fcRender(); } // поле вернется к считаемой нише
+    const id = fc.paths[0].slice(8, fc.paths[0].indexOf("|"));
+    fc.paths[0] = fc.paths[1] = `mpstats:${id}|${e.target.value.trim()}`;
+    fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); return fcRender(); // сравнение с моделью — по прежней нише (ревью #605)
+  }
   if (e.target.id !== "fc-cab" || fc.busy) return;
   fc.paths[2] = "ozon:" + e.target.value; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
 });
 $("#mk-files").addEventListener("click", async (e) => {
-  if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
+  if (fc.busy && e.target.closest("#fc-ozon, [data-fc-pick], [data-fc-mps]")) return mkErr("Идет расчет — источник сменится после него."); // ответ по старым входам лег бы рядом с новыми (ревью #592)
+  if (e.target.closest("[data-fc-mps]")) {
+    hideTip();
+    if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
+    let rows = [];
+    try { rows = ((await native().Connections()) || []).filter((c) => c.kind === "mpstats" && c.enabled); } catch (_) { /* нет подключений — откроем форму */ }
+    if (!rows.length) {
+      await openSettings("conn");
+      $("#conn-mpstats").hidden = false; $("#conn-add-mpstats").setAttribute("aria-expanded", "true");
+      return focusSoon("#conn-m-key");
+    }
+    const src = `mpstats:${rows[0].id}|${fc.niche || ""}`;
+    fc.paths[0] = fc.paths[1] = src; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+    if (!fc.niche) focusSoon("#fc-mps-path");
+    return;
+  }
   if (e.target.closest("#fc-ozon")) {
     hideTip();
     if (!native() || !native().Connections) return mkErr("Прогноз работает в окне приложения.");
@@ -5562,7 +5655,9 @@ $("#mk-files").addEventListener("click", async (e) => {
   let p = "";
   try { p = await native().MarketsPickFileTitled(b.dataset.fcTitle); } catch (err) { return mkErr("Файл не выбран: " + errText(err)); }
   if (!p) return;
-  fc.paths[+b.dataset.fcPick] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
+  const i = +b.dataset.fcPick;
+  if (i < 2 && fc.paths[1 - i].startsWith("mpstats:")) fc.paths[1 - i] = ""; // ниши — обе файлами или обе из MPStats
+  fc.paths[i] = p; fc.v = null; fc.ask = false; $("#mk-model").hidden = true; fcSave(); fcRender();
 });
 $("#mk-fc-go").addEventListener("click", async () => {
   hideTip();

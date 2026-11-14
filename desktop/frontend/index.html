@@ -422,22 +422,29 @@
     <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
     <ul class="conn-list" id="conn-list" data-view="conn"></ul>
     <div class="conn-add" data-view="conn">
-      <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false">+ Подключить Google</button>
-      <button class="btn" type="button" id="conn-add-speech" aria-expanded="false">+ Распознавание речи</button><button class="btn" type="button" id="conn-add-ozon" aria-expanded="false">+ Кабинет Ozon</button></div>
+      <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false" data-tip="Google Диск" data-tip-b="окно будет читать документы по ссылкам из чата; только чтение, вход хранится в Связке ключей">+ Подключить Google</button>
+      <button class="btn" type="button" id="conn-add-speech" aria-expanded="false" data-tip="Распознавание речи" data-tip-b="свой сервер для диктовки вместо Apple Speech: whisper.cpp, faster-whisper или OpenAI">+ Распознавание речи</button><button class="btn" type="button" id="conn-add-ozon" aria-expanded="false" data-tip="Кабинет Ozon" data-tip-b="ключ Seller API: «Маркеты» читают заказы, остатки и начисления; только чтение">+ Кабинет Ozon</button><button class="btn" type="button" id="conn-add-mpstats" aria-expanded="false" data-tip="MPStats" data-tip-b="ключ API MPStats: «Прогноз» берет продажи ниши по дням без выгрузки файлом">+ MPStats</button></div>
+      <form class="conn-google" id="conn-mpstats" hidden>
+        <p class="muted">Аналитика ниш MPStats для «Маркеты → Прогноз»: продажи ниши Ozon по дням за прошлый год и сейчас — без выгрузки файлом. Ключ — на сайте MPStats: Профиль → API (тариф с доступом к API). Окно проверит ключ, сохранит его в Связке ключей и отправит только в MPStats; каждый запрос тратит лимит тарифа.</p>
+        <label data-tip="Название" data-tip-b="как подключение будет называться в списке; можно оставить пустым — будет «MPStats»">Название<input id="conn-m-name" placeholder="MPStats" autocomplete="off" spellcheck="false"></label>
+        <label>Ключ API<span class="key-row"><input id="conn-m-key" type="password" autocomplete="off" spellcheck="false" data-tip="Ключ API MPStats" data-tip-b="MPStats → Профиль → API → скопировать ключ; меняется, если сменить пароль или нажать «Сменить ключ»"><button type="button" class="reveal" data-eye="conn-m-key" data-what="ключ" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
+        <button class="btn primary" type="submit" id="conn-m-go" data-tip="Проверить и добавить" data-tip-b="окно спросит MPStats, принят ли ключ, и только тогда сохранит его">Проверить и добавить</button>
+        <p class="muted" id="conn-m-note" role="status"></p>
+      </form>
       <form class="conn-google" id="conn-speech" hidden>
         <p class="muted">Свой сервер распознавания вместо Apple Speech: whisper.cpp (<code>whisper-server</code>), faster-whisper или OpenAI — любой с OpenAI-совместимым <code>/audio/transcriptions</code>. Окно отдает ему запись диктовки. <code>whisper-server</code> запускайте с <code>--inference-path /v1/audio/transcriptions</code>.</p>
-        <label>Название<input id="conn-s-name" placeholder="whisper.cpp на этом Маке" autocomplete="off" spellcheck="false"></label>
-        <label>Адрес<input id="conn-s-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off" spellcheck="false"></label>
-        <label>Модель<input id="conn-s-model" placeholder="whisper-1" autocomplete="off" spellcheck="false"></label>
-        <label>Ключ, если нужен<span class="key-row"><input id="conn-s-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-s-key" data-what="ключ" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
+        <label data-tip="Название" data-tip-b="как сервер будет называться в списке">Название<input id="conn-s-name" placeholder="whisper.cpp на этом Маке" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="Адрес сервера" data-tip-b="OpenAI-совместимый адрес до /v1: для whisper.cpp на этом Маке — http://127.0.0.1:8080/v1">Адрес<input id="conn-s-url" placeholder="http://127.0.0.1:8080/v1" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="Модель" data-tip-b="имя модели на сервере; для OpenAI — whisper-1, для whisper.cpp можно оставить пустым">Модель<input id="conn-s-model" placeholder="whisper-1" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="Ключ" data-tip-b="нужен облаку (OpenAI); свой сервер на этом Маке обычно без ключа">Ключ, если нужен<span class="key-row"><input id="conn-s-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-s-key" data-what="ключ" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
         <button class="btn primary" type="submit">Добавить</button>
         <p class="muted" id="conn-s-note" role="status"></p>
       </form>
       <form class="conn-google" id="conn-ozon" hidden>
         <p class="muted">Кабинет Ozon для «Маркеты → Магазин». Ключ — в кабинете Ozon Seller → Настройки → Seller API; окну хватает прав на чтение, ничего в кабинете оно не меняет. Окно хранит ключ в Связке ключей и отправляет его только в Ozon.</p>
-        <label>Название<input id="conn-o-name" placeholder="Мой магазин" autocomplete="off" spellcheck="false"></label>
-        <label>Client-Id<input id="conn-o-id" inputmode="numeric" placeholder="номер кабинета, только цифры" autocomplete="off" spellcheck="false"></label>
-        <label>API-ключ<span class="key-row"><input id="conn-o-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-o-key" data-what="ключ" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
+        <label data-tip="Название" data-tip-b="как кабинет будет называться в «Маркетах» и в списке">Название<input id="conn-o-name" placeholder="Мой магазин" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="Client-Id" data-tip-b="номер кабинета из цифр: Ozon Seller → Настройки → Seller API, рядом с ключом">Client-Id<input id="conn-o-id" inputmode="numeric" placeholder="номер кабинета, только цифры" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="API-ключ" data-tip-b="Ozon Seller → Настройки → Seller API → создать ключ; роли: только чтение (аналитика, финансы, товары)">API-ключ<span class="key-row"><input id="conn-o-key" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-o-key" data-what="ключ" aria-pressed="false" aria-label="Показать набранный ключ" data-tip="Показать ключ" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
         <label class="conn-check"><input id="conn-o-share" type="checkbox"> Давать цифры этого магазина модели чата: названия товаров, заказы и продажи уйдут провайдеру модели, когда Вы спросите о магазине</label>
         <button class="btn primary" type="submit">Добавить</button>
         <p class="muted" id="conn-o-note" role="status"></p>
@@ -449,8 +456,8 @@
           <li>На <button type="button" class="lnk" data-open-url="https://console.cloud.google.com/apis/credentials/consent">экране согласия</button> оставьте режим «Testing» и добавьте свой адрес в тестовые пользователи.</li>
           <li>В <button type="button" class="lnk" data-open-url="https://console.cloud.google.com/apis/credentials">Credentials</button> создайте OAuth client ID вида «Desktop app» и вставьте сюда его Client ID и Client secret.</li>
         </ol>
-        <label>Client ID<input id="conn-g-id" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
-        <label>Client secret<span class="key-row"><input id="conn-g-secret" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-g-secret" data-what="секрет" aria-pressed="false" aria-label="Показать набранный секрет" data-tip="Показать секрет" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
+        <label data-tip="Client ID" data-tip-b="из Google Cloud → Credentials → OAuth client ID вида «Desktop app»">Client ID<input id="conn-g-id" placeholder="….apps.googleusercontent.com" autocomplete="off" spellcheck="false"></label>
+        <label data-tip="Client secret" data-tip-b="там же, рядом с Client ID; хранится в Связке ключей">Client secret<span class="key-row"><input id="conn-g-secret" type="password" autocomplete="off" spellcheck="false"><button type="button" class="reveal" data-eye="conn-g-secret" data-what="секрет" aria-pressed="false" aria-label="Показать набранный секрет" data-tip="Показать секрет" data-tip-b="Только то, что набрано в поле; сохраненный остается в Связке"></button></span></label>
         <button class="btn primary" type="submit" id="conn-g-go">Подключить — откроется браузер</button>
         <p class="muted" id="conn-g-note" role="status"></p>
       </form>
