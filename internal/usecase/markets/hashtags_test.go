@@ -86,3 +86,20 @@ func TestCheckHashtags_empty(t *testing.T) {
 		t.Errorf("%+v", got)
 	}
 }
+
+// Живая проверка #610: сиреневой футболке не советуются другие цвета, а
+// хештег из запроса сохраняет служебные слова — «#футболка_для_спорта_женская».
+func TestCheckHashtags_colorAndStopWords(t *testing.T) {
+	niche := append(slices.Clone(titleNiche), markets.NicheQuery{Text: "футболка для спорта женская", Count: 8_000, Items: 300})
+	got := markets.CheckHashtags(markets.HashtagInput{Title: "Футболка женская сиреневая", Hashtags: "#футболка_женская", Queries: niche, Forms: titleForms})
+	var add []string
+	for _, r := range got.Add {
+		add = append(add, r.Tag)
+	}
+	if slices.Contains(add, "#футболка_женская_белая") || slices.Contains(add, "#футболки_женские_черные") {
+		t.Errorf("add %v: another color", add)
+	}
+	if !slices.Contains(add, "#футболка_для_спорта_женская") {
+		t.Errorf("add %v: the tag keeps «для»", add)
+	}
+}
