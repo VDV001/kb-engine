@@ -35,9 +35,12 @@ type MCP struct {
 	HTTP  *http.Client // nil — свой, с пределом в полторы минуты
 }
 
-// Card — карточка товара Ozon в MPStats: путь ниши, бренд и продавец.
+// Card — карточка товара Ozon в MPStats: путь ниши, бренд, продавец,
+// главное фото (250 px) и сколько фото всего.
 type Card struct {
 	Name, Niche, Brand, Seller string
+	Photo                      string
+	Photos                     int
 }
 
 // Card reads sku's card (ozon_sku report=full).
@@ -51,11 +54,21 @@ func (m MCP) Card(ctx context.Context, sku int64) (Card, error) {
 		Seller struct {
 			Name string `json:"name"`
 		} `json:"seller"`
+		Photo struct {
+			Count int `json:"count"`
+			List  []struct {
+				M string `json:"m"`
+			} `json:"list"`
+		} `json:"photo"`
 	}
 	if err := m.call(ctx, "ozon_sku", map[string]any{"sku": sku, "report": "full"}, &raw); err != nil {
 		return Card{}, err
 	}
-	return Card{Name: raw.Name, Niche: raw.Niche.Name, Brand: raw.Brand, Seller: raw.Seller.Name}, nil
+	c := Card{Name: raw.Name, Niche: raw.Niche.Name, Brand: raw.Brand, Seller: raw.Seller.Name, Photos: raw.Photo.Count}
+	if len(raw.Photo.List) > 0 {
+		c.Photo = raw.Photo.List[0].M
+	}
+	return c, nil
 }
 
 // CardQueries reads the queries sku is found by in 30 days to yesterday (ozon_sku report=keywords).
@@ -101,6 +114,33 @@ func (m MCP) NicheQueries(ctx context.Context, path string) ([]markets.NicheQuer
 		ws = append(ws, markets.WordForms{Word: w.Word, Forms: w.Forms})
 	}
 	return qs, ws, nil
+}
+
+// NicheProducts reads niche path's products by revenue in 30 days to
+// yesterday (ozon_category report=products, до 500 за вызов): фото, видео, отзывы.
+func (m MCP) NicheProducts(ctx context.Context, path string, limit int) ([]markets.NicheProduct, error) {
+	var raw struct {
+		Data []struct {
+			ID       int64   `json:"id"`
+			Name     string  `json:"name"`
+			Seller   string  `json:"seller"`
+			Revenue  float64 `json:"revenue"`
+			Price    float64 `json:"final_price"`
+			Rating   float64 `json:"rating"`
+			Comments int     `json:"comments"`
+			Pics     int     `json:"picscount"`
+			Video    int     `json:"hasvideo"`
+		} `json:"data"`
+	}
+	if err := m.call(ctx, "ozon_category", map[string]any{"path": path, "report": "products", "limit": limit}, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]markets.NicheProduct, 0, len(raw.Data))
+	for _, p := range raw.Data {
+		out = append(out, markets.NicheProduct{SKU: p.ID, Name: p.Name, Seller: p.Seller, Revenue: p.Revenue, Price: p.Price,
+			Rating: p.Rating, Comments: p.Comments, Photos: p.Pics, Video: p.Video > 0})
+	}
+	return out, nil
 }
 
 // NicheBrands reads niche path's brands in 30 days to yesterday (ozon_category
