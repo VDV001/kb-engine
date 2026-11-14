@@ -62,6 +62,7 @@ type folderSettings struct {
 	ozonPosts    ozonPostCache     // отправления кабинетов Ozon на 10 минут (markets_ozon.go)
 	shopLoads    shopLoadCache     // последний загруженный «Магазин» кабинета — для выбранных дней
 	mpstatsURL   string            // API MPStats; "" — настоящий (markets_mpstats.go)
+	mcpURL       string            // MCP MPStats; "" — настоящий (markets_title.go)
 	mpstatsNiche nicheCache        // ряды ниш MPStats на 10 минут (markets_mpstats.go)
 	mpstatsTop   topCache          // верхние категории MPStats на 10 минут (markets_mpstats.go)
 	mpstatsTable tableCache        // таблицы ниш MPStats без сезона на 10 минут (markets_mpstats.go)
