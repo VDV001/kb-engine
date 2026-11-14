@@ -67,16 +67,9 @@ func (f *folderSettings) photosCheck(ctx context.Context, hc *http.Client, base,
 	if err != nil || id <= 0 {
 		return photosView{}, errors.New("фото сравниваются у товара Ozon с числовым SKU")
 	}
-	oc, _, err := f.ozonCabinet(cab, base, hc)
+	card, err := f.ozonCard(ctx, hc, base, cab, id)
 	if err != nil {
 		return photosView{}, err
-	}
-	card, err := oc.Card(ctx, strconv.FormatInt(id, 10))
-	if errors.Is(err, ozon.ErrNoCard) {
-		return photosView{}, errors.New("товара с этим SKU нет в кабинете — загрузите «Магазин» заново")
-	}
-	if err != nil {
-		return photosView{}, ozonErr("Ozon", err)
 	}
 	cl, connID, err := f.mpstatsFirst(hc)
 	if err != nil {
@@ -110,6 +103,22 @@ func (f *folderSettings) photosCheck(ctx context.Context, hc *http.Client, base,
 		v.Advice = append(v.Advice, photoAdvice{Kind: a.Kind, Have: a.Have, Their: a.Their})
 	}
 	return v, nil
+}
+
+// ozonCard reads card id of cabinet cab: нет товара — понятная причина.
+func (f *folderSettings) ozonCard(ctx context.Context, hc *http.Client, base, cab string, id int64) (ozon.Card, error) {
+	oc, _, err := f.ozonCabinet(cab, base, hc)
+	if err != nil {
+		return ozon.Card{}, err
+	}
+	card, err := oc.Card(ctx, strconv.FormatInt(id, 10))
+	if errors.Is(err, ozon.ErrNoCard) {
+		return ozon.Card{}, errors.New("товара с этим SKU нет в кабинете — загрузите «Магазин» заново")
+	}
+	if err != nil {
+		return ozon.Card{}, ozonErr("Ozon", err)
+	}
+	return card, nil
 }
 
 // leaderPhotos fills the leaders' main photos, до четырех запросов сразу:

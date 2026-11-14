@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/daniil/kb-engine/internal/usecase/markets"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
