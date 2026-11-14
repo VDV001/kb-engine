@@ -306,3 +306,45 @@ func TestOzonShopLast(t *testing.T) {
 		t.Error("dropped load still read")
 	}
 }
+
+// «План» берет остаток из кабинета: прогноз считается по продажам всего
+// кабинета, поэтому и остаток — сумма по всем товарам (решение владельца 14.11).
+func TestOzonPlanStock(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeOzon(t)
+	v, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), row.ID)
+	if err != nil {
+		t.Fatalf("ozonPlanStock: %v", err)
+	}
+	if v.Qty != 40 || v.Products != 2 || v.InStock != 1 || v.Name != "Тестовый магазин" {
+		t.Errorf("stock = %+v, want 40 шт: 2 товара, 1 с остатком", v)
+	}
+	if _, err := s.ozonPlanStock(context.Background(), srv.URL, srv.Client(), "нет-такого"); err == nil {
+		t.Error("unknown connection read")
+	}
+}
+
+// Резерв больше наличия не уменьшает остаток других товаров.
+func TestStockTotal(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		in        []markets.OzonStock
+		qty       float64
+		withStock int
+	}{
+		{"пусто", nil, 0, 0},
+		{"два товара", []markets.OzonStock{{Qty: 5}, {Qty: 7}}, 12, 2},
+		{"резерв больше наличия", []markets.OzonStock{{Qty: -3}, {Qty: 10}}, 10, 1},
+		{"нулевой", []markets.OzonStock{{Qty: 0}, {Qty: 4}}, 4, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if q, n := stockTotal(tc.in); q != tc.qty || n != tc.withStock {
+				t.Errorf("stockTotal = %v, %d; want %v, %d", q, n, tc.qty, tc.withStock)
+			}
+		})
+	}
+}
