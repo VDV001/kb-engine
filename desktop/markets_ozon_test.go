@@ -349,3 +349,51 @@ func TestOzonPlanStock(t *testing.T) {
 		t.Error("unknown connection read")
 	}
 }
+
+// «Загрузить из Ozon» дописывает историю, а не затирает ее (#614): дни раньше
+// 90-дневного окна остаются с прошлых загрузок, период выбирается по всем;
+// разрыв между загрузками окно называет.
+func TestOzonShopHistory(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	day := func(m time.Month, d int) time.Time { return time.Date(2026, m, d, 0, 0, 0, 0, time.Local) }
+	old := shopLoad{Name: "Тестовый магазин", From: day(8, 1), To: day(8, 31), Now: day(9, 1), At: day(9, 1),
+		Posts: []markets.OzonPosting{{Number: "0-1", Status: "delivered", At: day(8, 5).Add(10 * time.Hour), Items: []markets.OzonItem{{SKU: "77", Article: "77_old", Name: "Старый товар", Qty: 3, Price: 500}}}}}
+	if err := s.saveShopLoad(row.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.WindowFrom != "2026-08-01" || v.WindowTo != "2026-11-12" || len(v.Gaps) != 0 {
+		t.Errorf("window %s – %s, gaps %v; want 01.08 – 12.11 without gaps", v.WindowFrom, v.WindowTo, v.Gaps)
+	}
+	s.shopLoads = shopLoadCache{} // как после перезапуска окна: история — с диска
+	p, err := s.ozonShopPeriod(row.ID, "2026-08-01", "2026-08-10")
+	if err != nil {
+		t.Fatalf("period before Ozon's 90 days: %v", err)
+	}
+	if len(p.Products) != 1 || p.Products[0].SKU != "77" || p.Products[0].Ordered != 3 {
+		t.Errorf("August products %+v, want the old one", p.Products)
+	}
+
+	// Окно не загружалось дольше 90 дней — дни между загрузками названы пропуском.
+	old.From, old.To = day(5, 1), day(5, 31)
+	if err := s.saveShopLoad(row.ID, old); err != nil {
+		t.Fatal(err)
+	}
+	s.shopLoads = shopLoadCache{}
+	v, err = s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.WindowFrom != "2026-05-01" || len(v.Gaps) != 1 || v.Gaps[0] != "01.06.2026 – 14.08.2026" {
+		t.Errorf("window from %s, gaps %v; want 01.05 and the gap 01.06.2026 – 14.08.2026", v.WindowFrom, v.Gaps)
+	}
+}
