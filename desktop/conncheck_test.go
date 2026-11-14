@@ -33,16 +33,16 @@ func TestAddMPStats(t *testing.T) {
 	s, tok, _ := newServerSettings(t)
 	srv := fakeMPStats(t)
 	ep := checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}
-	if _, err := s.addMPStats(context.Background(), ep, "MPStats", " "); err == nil {
+	if _, err := s.addMPStats(context.Background(), ep, "MPStats", " ", false); err == nil {
 		t.Error("empty key saved")
 	}
-	if _, err := s.addMPStats(context.Background(), ep, "MPStats", "чужой"); err == nil || !strings.Contains(err.Error(), "не принят") {
+	if _, err := s.addMPStats(context.Background(), ep, "MPStats", "чужой", false); err == nil || !strings.Contains(err.Error(), "не принят") {
 		t.Errorf("wrong key: %v", err)
 	}
 	if len(s.snapshot().cfg.Connections) != 0 || len(tok.m) != 0 {
 		t.Fatalf("refused key left traces: %+v %v", s.snapshot().cfg.Connections, tok.m)
 	}
-	row, err := s.addMPStats(context.Background(), ep, " ", " m-1 ")
+	row, err := s.addMPStats(context.Background(), ep, " ", " m-1 ", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestCheckConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mpRow, err := s.addMPStats(context.Background(), ep, "MPStats", "m-1")
+	mpRow, err := s.addMPStats(context.Background(), ep, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +148,7 @@ func TestForecastMPStats(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestForecastMPStats_cachedAndGuarded(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestNichesMPStats(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	s.mpstatsURL = srv.URL
-	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1"); err != nil {
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
 		t.Fatal(err)
 	}
 	v, err := s.nichesMPStats(context.Background(), srv.Client(), "Одежда", "2026-10-14", "2026-11-12", time.Date(2026, 11, 13, 0, 0, 0, 0, time.UTC))

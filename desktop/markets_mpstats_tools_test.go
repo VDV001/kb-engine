@@ -41,7 +41,7 @@ func TestMPStatsExtra(t *testing.T) {
 	srv := fakeMPStatsChat(t)
 	s.mpstatsURL = srv.URL
 	now := func() time.Time { return time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC) }
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "Ниши", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "Ниши", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestMPStatsExtra(t *testing.T) {
 func TestMPStatsShareInRow(t *testing.T) {
 	s, _, _ := newServerSettings(t)
 	srv := fakeMPStatsChat(t)
-	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "Ниши", "m-1")
+	row, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "Ниши", "m-1", false)
 	if err != nil {
 		t.Fatal(err)
 	}

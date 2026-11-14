@@ -43,10 +43,11 @@ func checked(note string) connCheck { return connCheck{OK: true, Note: note} }
 func failed(note string) connCheck  { return connCheck{Note: note} }
 
 // AddMPStatsConnection saves an MPStats key after a live check.
-func (a *App) AddMPStatsConnection(name, key string) (connRow, error) {
+// share — данные MPStats разрешено давать модели чата.
+func (a *App) AddMPStatsConnection(name, key string, share bool) (connRow, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, checkTimeout)
 	defer cancel()
-	return a.settings.addMPStats(ctx, liveEndpoints(), name, key)
+	return a.settings.addMPStats(ctx, liveEndpoints(), name, key, share)
 }
 
 // CheckConnection is the «Проверить» button of a connection row.
@@ -62,7 +63,7 @@ func (a *App) CheckConnection(id string) connCheck {
 	return a.settings.checkConn(ctx, id, liveEndpoints())
 }
 
-func (f *folderSettings) addMPStats(ctx context.Context, ep checkEndpoints, name, key string) (connRow, error) {
+func (f *folderSettings) addMPStats(ctx context.Context, ep checkEndpoints, name, key string, share bool) (connRow, error) {
 	name, key = strings.TrimSpace(name), strings.TrimSpace(key)
 	if key == "" {
 		return connRow{}, errors.New("нужен ключ API: MPStats → Профиль → API")
@@ -73,7 +74,7 @@ func (f *folderSettings) addMPStats(ctx context.Context, ep checkEndpoints, name
 	if _, err := (mpstats.Client{BaseURL: ep.MPStats, Token: key, HTTP: ep.HTTP}).Limits(ctx); err != nil {
 		return connRow{}, errors.New(mpstatsMessage(err))
 	}
-	conn := desktopconfig.Connection{ID: "mpstats-" + randomString()[:8], Kind: desktopconfig.ConnMPStats, Name: name, Enabled: true}
+	conn := desktopconfig.Connection{ID: "mpstats-" + randomString()[:8], Kind: desktopconfig.ConnMPStats, Name: name, Enabled: true, Share: share}
 	if err := desktopconfig.CheckConnections([]desktopconfig.Connection{conn}); err != nil {
 		return connRow{}, err
 	}
