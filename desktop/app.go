@@ -30,20 +30,21 @@ type fileChecker interface {
 // App is bound into the window: its exported methods are callable from the
 // page as window.go.main.App.<Method>.
 type App struct {
-	ctx      context.Context
-	files    fileChecker
-	settings *folderSettings
-	listen   *dictation  // диктовка в поле чата (listen.go)
-	voice    *speaker    // голос ответа в разговоре без рук (speak.go)
-	google   *googleDesk // подключения Google (googleconn.go)
-	index    *indexer
-	chat     *chatDesk // nil — чата нет (тесты без него)
-	access   *accessDesk
-	memory   *memoryDesk
-	browser  *browserDesk  // кнопки вкладки «Браузер»
-	storage  *storageDesk  // экран «Хранилище» (storage.go); nil — тесты без него
-	versions *versionsDesk // вкладка «Артефакты» (versions.go); nil — тесты без него
-	run      func(name string, args ...string) error
+	ctx       context.Context
+	files     fileChecker
+	settings  *folderSettings
+	listen    *dictation  // диктовка в поле чата (listen.go)
+	voice     *speaker    // голос ответа в разговоре без рук (speak.go)
+	google    *googleDesk // подключения Google (googleconn.go)
+	index     *indexer
+	chat      *chatDesk // nil — чата нет (тесты без него)
+	access    *accessDesk
+	memory    *memoryDesk
+	browser   *browserDesk  // кнопки вкладки «Браузер»
+	storage   *storageDesk  // экран «Хранилище» (storage.go); nil — тесты без него
+	versions  *versionsDesk // вкладка «Артефакты» (versions.go); nil — тесты без него
+	nicheLoad onlyLatest    // загрузка ниш MPStats: новая отменяет прежнюю (markets_mpstats.go)
+	run       func(name string, args ...string) error
 }
 
 func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
