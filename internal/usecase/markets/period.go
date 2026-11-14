@@ -77,7 +77,11 @@ func MPStatsNiches(parent string, cur, prev []NicheSale, days int) (Table, error
 		if n.Top10Revenue > 0 && n.Revenue > 0 {
 			v[domain.NicheTop10] = min(1, n.Top10Revenue/n.Revenue)
 		}
-		ni, err := domain.NewNiche(parent+"/"+n.Name, v)
+		name := n.Name // без parent — верхняя категория (весь Ozon, отзыв 14.11)
+		if parent != "" {
+			name = parent + "/" + n.Name
+		}
+		ni, err := domain.NewNiche(name, v)
 		if err == nil && len(n.Months) > 0 {
 			ni, err = ni.WithMonths(n.Months)
 		}

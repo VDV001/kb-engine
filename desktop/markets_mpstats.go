@@ -1,10 +1,12 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -214,9 +216,6 @@ func (f *folderSettings) nichesMPStatsSeason(ctx context.Context, hc *http.Clien
 
 func (f *folderSettings) nichesRead(ctx context.Context, hc *http.Client, path, from, to string, now time.Time, season bool) (nicheTable, error) {
 	path = mpstatsPath(path)
-	if path == "" {
-		return nicheTable{}, errors.New("впишите категорию Ozon, например «Одежда/Мужская одежда»")
-	}
 	d1, d2, err := mpstatsDays(from, to)
 	if err != nil {
 		return nicheTable{}, err
@@ -224,6 +223,9 @@ func (f *folderSettings) nichesRead(ctx context.Context, hc *http.Client, path, 
 	cl, err := f.mpstatsConnClient(hc)
 	if err != nil {
 		return nicheTable{}, err
+	}
+	if path == "" { // все категории: верхние с цифрами, дальше — «Внутрь»
+		return topCategories(ctx, cl, d1, d2, now)
 	}
 	return nichesWith(ctx, cl, path, d1, d2, now, season)
 }
@@ -277,6 +279,80 @@ func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now
 	v := nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now)
 	v.Leaf = parent != path // leafAsNiche подставила саму нишу
 	return v, nil
+}
+
+// topCategories is the top Ozon categories for days d1..d2 with growth to a
+// year earlier: у каждой — ее строка «Текущая категория»; запрос на категорию
+// и год, до четырех сразу (≈ 25 категорий, около минуты).
+// ponytail: верхние категории без доли топ-10 и сезона — их оценка частичная;
+// путь — догружать их, как у ниш, если понадобится.
+func topCategories(ctx context.Context, cl mpstats.Client, d1, d2, now time.Time) (nicheTable, error) {
+	paths, err := cl.Categories(ctx)
+	if err != nil {
+		return nicheTable{}, errors.New(mpstatsMessage(err))
+	}
+	tops := topNames(paths)
+	cur, prev, errs := topSales(ctx, cl, tops, d1, d2)
+	var got []markets.NicheSale
+	var missed int
+	var cause error
+	for i := range tops {
+		if errs[i] != nil {
+			missed++
+			cause = cmp.Or(cause, errs[i])
+			continue
+		}
+		got = append(got, cur[i])
+	}
+	if len(got) == 0 && cause != nil {
+		return nicheTable{}, errors.New(mpstatsMessage(cause))
+	}
+	tb, err := markets.MPStatsNiches("", got, prev, int(d2.Sub(d1).Hours()/24)+1)
+	if err != nil {
+		return nicheTable{}, err
+	}
+	if missed > 0 {
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("%d категорий не загружены: %s", missed, mpstatsMessage(cause))})
+	}
+	return nicheViewOf(tb, "mpstats:", "MPStats · все категории", now), nil
+}
+
+// topNames are the first segments of paths, по порядку, без повторов.
+func topNames(paths []string) []string {
+	var tops []string
+	for _, p := range paths {
+		top, _, _ := strings.Cut(p, "/")
+		if top != "" && !slices.Contains(tops, top) {
+			tops = append(tops, top)
+		}
+	}
+	return tops
+}
+
+// topSales reads each top category's own row now and a year earlier, до
+// четырех категорий сразу; errs — отказ «сейчас» по каждой.
+func topSales(ctx context.Context, cl mpstats.Client, tops []string, d1, d2 time.Time) (cur, prev []markets.NicheSale, errs []error) {
+	cur, prev, errs = make([]markets.NicheSale, len(tops)), make([]markets.NicheSale, len(tops)), make([]error, len(tops))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for i, top := range tops {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			for k, out := range [][]markets.NicheSale{cur, prev} {
+				_, self, err := cl.Subcategories(ctx, top, d1.AddDate(-k, 0, 0), d2.AddDate(-k, 0, 0))
+				if err != nil {
+					if k == 0 {
+						errs[i] = err
+					}
+					continue
+				}
+				out[i] = markets.NicheSale{Name: top, Sales: self.Sales, Revenue: self.Revenue, Sellers: self.Sellers}
+			}
+		})
+	}
+	wg.Wait()
+	return cur, prev, errs
 }
 
 // seasons fills each niche's sales by months: 12 полных месяцев до текущего,
