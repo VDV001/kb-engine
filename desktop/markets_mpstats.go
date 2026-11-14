@@ -194,8 +194,25 @@ func (a *App) MarketsMPStatsCategories() ([]string, error) {
 	return paths, nil
 }
 
+// MarketsNichesMPStatsSeason is MarketsNichesMPStats with each niche's year by
+// months — вторым вызовом: таблица видна сразу, сезон догружается (до минуты).
+func (a *App) MarketsNichesMPStatsSeason(path, from, to string) (nicheTable, error) {
+	ctx, cancel := context.WithTimeout(a.ctx, 4*time.Minute)
+	defer cancel()
+	return a.settings.nichesMPStatsSeason(ctx, nil, path, from, to, time.Now())
+}
+
 // nichesMPStats reads the subcategories of path for the days and a year earlier.
 func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, path, from, to string, now time.Time) (nicheTable, error) {
+	return f.nichesRead(ctx, hc, path, from, to, now, false)
+}
+
+// nichesMPStatsSeason is nichesMPStats with the niches' year by months.
+func (f *folderSettings) nichesMPStatsSeason(ctx context.Context, hc *http.Client, path, from, to string, now time.Time) (nicheTable, error) {
+	return f.nichesRead(ctx, hc, path, from, to, now, true)
+}
+
+func (f *folderSettings) nichesRead(ctx context.Context, hc *http.Client, path, from, to string, now time.Time, season bool) (nicheTable, error) {
 	path = mpstatsPath(path)
 	if path == "" {
 		return nicheTable{}, errors.New("впишите категорию Ozon, например «Одежда/Мужская одежда»")
@@ -208,11 +225,11 @@ func (f *folderSettings) nichesMPStats(ctx context.Context, hc *http.Client, pat
 	if err != nil {
 		return nicheTable{}, err
 	}
-	return nichesWith(ctx, cl, path, d1, d2, now)
+	return nichesWith(ctx, cl, path, d1, d2, now, season)
 }
 
 // nichesWith reads the niches of path through client cl.
-func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now time.Time) (nicheTable, error) {
+func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now time.Time, season bool) (nicheTable, error) {
 	var subs [2][]mpstats.Subcategory
 	var self [2]mpstats.Subcategory
 	var errs [2]error
@@ -239,6 +256,11 @@ func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now
 	}
 	cur := sale(subs[0])
 	missed, why := topTen(ctx, cl, parent, d1, d2, cur)
+	var noSeason int
+	var seasonWhy string
+	if season {
+		noSeason, seasonWhy = seasons(ctx, cl, parent, now, cur)
+	}
 	tb, err := markets.MPStatsNiches(parent, cur, sale(subs[1]), int(d2.Sub(d1).Hours()/24)+1)
 	if err != nil {
 		return nicheTable{}, err
@@ -249,9 +271,53 @@ func nichesWith(ctx context.Context, cl mpstats.Client, path string, d1, d2, now
 	if missed > 0 {
 		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш нет доли топ-10 и оценки: %s", missed, why)})
 	}
+	if noSeason > 0 {
+		tb.Problems = append(tb.Problems, markets.Problem{Reason: fmt.Sprintf("у %d ниш нет сезона: %s", noSeason, seasonWhy)})
+	}
 	v := nicheViewOf(tb, "mpstats:"+path, "MPStats · "+path, now)
 	v.Leaf = parent != path // leafAsNiche подставила саму нишу
 	return v, nil
+}
+
+// seasons fills each niche's sales by months: 12 полных месяцев до текущего,
+// запрос на нишу (≈ 13 с, замер 14.11), до четырех сразу; отказ ключа и лимит
+// останавливают остальные. missed — сколько ниш без сезона, why — причина.
+func seasons(ctx context.Context, cl mpstats.Client, parent string, now time.Time, ns []markets.NicheSale) (missed int, why string) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	first := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
+	from, to := first.AddDate(-1, 0, 0), first.AddDate(0, 0, -1)
+	sem := make(chan struct{}, 4)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var cause error
+	for i := range ns {
+		wg.Go(func() {
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			ms, err := cl.CategoryMonths(ctx, strings.TrimPrefix(parent+"/"+ns[i].Name, "/"), from, to)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				missed++
+				if cause == nil && !errors.Is(err, context.Canceled) {
+					cause = err
+					if errors.Is(err, mpstats.ErrQuota) || errors.Is(err, mpstats.ErrUnauthorized) {
+						cancel()
+					}
+				}
+				return
+			}
+			for _, m := range ms {
+				ns[i].Months = append(ns[i].Months, domain.MonthSales{Month: m.Month.Month(), Year: m.Month.Year(), Value: m.Sales})
+			}
+		})
+	}
+	wg.Wait()
+	if cause != nil {
+		why = mpstatsMessage(cause)
+	}
+	return missed, why
 }
 
 // topTen fills the top-10 revenue of each niche: запрос на нишу, до четырех
