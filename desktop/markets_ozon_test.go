@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -10,6 +11,9 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
+	"github.com/daniil/kb-engine/internal/usecase/markets"
 )
 
 // fakeOzon answers like Seller API: один кабинет, Client-Id 42, ключ k-1.
@@ -209,5 +213,57 @@ func TestOzonShopStages(t *testing.T) {
 		if !slices.Equal(got, tc.want) {
 			t.Errorf("%s: stages = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+// «Магазин» за выбранные даты (отзыв владельца 13.11): режется из загруженных
+// 90 дней без новых запросов; до загрузки, вне окна, задом наперед и у
+// выключенного кабинета — отказ. Пропажи — всегда за все дни: они по возрасту
+// (14 дней), и в коротком периоде их не было бы никогда (ревью #604).
+func TestOzonShopPeriod(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12"); err == nil {
+		t.Error("period before any load accepted")
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close() // дальше — только загруженное
+
+	v, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12")
+	if err != nil {
+		t.Fatalf("period: %v", err)
+	}
+	if v.Period != "10.11.2026 – 12.11.2026" || v.PeriodDays != 3 || v.Source != "ozon" || v.From != "2026-11-10" || v.WindowFrom != "2026-08-15" || v.WindowTo != "2026-11-12" {
+		t.Errorf("view = %q %d %q from %q window %q–%q", v.Period, v.PeriodDays, v.Source, v.From, v.WindowFrom, v.WindowTo)
+	}
+	if v.Economy == nil || v.Economy.Total != 462.5 {
+		t.Errorf("economy = %+v, want the 12.11 accrual only", v.Economy)
+	}
+	if v.Losses == nil || len(v.Losses.Rows) != 1 {
+		t.Errorf("losses = %+v; the October write-off stays: losses are for all loaded days", v.Losses)
+	}
+	if v, err := s.ozonShopPeriod(row.ID, "2026-10-01", "2026-10-31"); err != nil || v.Economy.Total != 0 || len(v.Losses.Rows) != 1 {
+		t.Errorf("October: err %v, economy %+v, losses %+v", err, v.Economy, v.Losses)
+	}
+	for _, bad := range [][2]string{{"2026-08-01", "2026-08-20"}, {"вчера", "2026-11-12"}} {
+		if _, err := s.ozonShopPeriod(row.ID, bad[0], bad[1]); err == nil {
+			t.Errorf("period %v accepted", bad)
+		}
+	}
+	if _, err := s.ozonShopPeriod(row.ID, "2026-11-12", "2026-11-10"); !errors.Is(err, markets.ErrOzonPeriod) {
+		t.Errorf("reversed: %v, want markets.ErrOzonPeriod", err)
+	}
+	if err := s.updateConfig(func(cfg *desktopconfig.Config) { cfg.Connections[0].Enabled = false }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ozonShopPeriod(row.ID, "2026-11-10", "2026-11-12"); err == nil {
+		t.Error("disabled cabinet still served from memory")
 	}
 }

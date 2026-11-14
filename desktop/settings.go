@@ -60,6 +60,7 @@ type sourcesView struct {
 type folderSettings struct {
 	browserTok browserTokenCache // токен «Браузера», пока файл не изменился (browserproxy.go)
 	ozonPosts  ozonPostCache     // отправления кабинетов Ozon на 10 минут (markets_ozon.go)
+	shopLoads  shopLoadCache     // последний загруженный «Магазин» кабинета — для выбранных дней
 	costMu     sync.Mutex        // costs.json: себестоимость кабинетов (markets_costs.go)
 	planMu     sync.Mutex        // последний построенный план (markets_plan.go)
 	lastPlan   *domain.Plan

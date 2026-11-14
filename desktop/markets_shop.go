@@ -85,6 +85,12 @@ type shopView struct {
 	Economy    *economyView      `json:"economy"`  // nil — у отчета-файла начислений нет
 	Losses     *lossesView       `json:"losses"`   // nil — у отчета-файла номеров отправлений нет
 	CostsErr   string            `json:"costsErr"` // себестоимость не прочитана: товары есть, прибыли нет
+	// From, To — показанные дни, WindowFrom, WindowTo — загруженные 90 дней
+	// кабинета (ГГГГ-ММ-ДД): в них окно выбирает период; у файла пусто.
+	From       string `json:"from"`
+	To         string `json:"to"`
+	WindowFrom string `json:"windowFrom"`
+	WindowTo   string `json:"windowTo"`
 }
 
 // lossesView — возможные пропажи кабинета, крупные сначала; Err — почему не проверено.
