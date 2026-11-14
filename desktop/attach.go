@@ -48,8 +48,18 @@ func attachRefs(refs []string, question string) (explicit, auto []string) {
 }
 
 // webSteps shows the links of the question as steps out of the window's
-// sources: ссылка — выход в интернет, человек видит это до ответа.
-func (d *chatDesk) webSteps(refs []string) []chat.Use {
+// sources: ссылка — выход в интернет, человек видит попытку до ответа.
+func (d *chatDesk) webSteps(refs []string) {
+	if d.step == nil {
+		return
+	}
+	for _, u := range webUses(refs) {
+		d.step(u)
+	}
+}
+
+// webUses names the links among refs as sources «Интернет · host», без повторов.
+func webUses(refs []string) []chat.Use {
 	var out []chat.Use
 	for _, ref := range refs {
 		link, ok := strings.CutPrefix(ref, "url:")
@@ -60,11 +70,7 @@ func (d *chatDesk) webSteps(refs []string) []chat.Use {
 		if u, err := url.Parse(link); err == nil && u.Host != "" {
 			host = u.Host
 		}
-		u := chat.Use{Kind: chat.UseWeb, Name: host, What: "ссылка из вопроса"}
-		if d.step != nil {
-			d.step(u)
-		}
-		if !slices.Contains(out, u) {
+		if u := (chat.Use{Kind: chat.UseWeb, Name: host, What: "ссылка из вопроса"}); !slices.Contains(out, u) {
 			out = append(out, u)
 		}
 	}
