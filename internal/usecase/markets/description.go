@@ -90,11 +90,26 @@ func mismatches(desc string, card map[string]map[string]bool, words map[string][
 			continue
 		}
 		c := wordClass(t)
-		if c == "" || len(card[c]) == 0 || fits(c, t, card[c]) || seen[c+t] {
-			continue
+		if c == "" || len(card[c]) == 0 || fits(c, t, card[c]) || seen[c+t] || c == "color" && shadeRoots[colorRoot(t)] {
+			continue // оттенок в прозе — «темное время», не цвет товара (ревью #626)
 		}
 		seen[c+t] = true
-		out = append(out, DescriptionMismatch{Kind: c, Found: t, Card: strings.Join(slices.Compact(words[c]), ", ")})
+		out = append(out, DescriptionMismatch{Kind: c, Found: t, Card: strings.Join(unique(words[c]), ", ")})
+	}
+	return out
+}
+
+// shadeRoots — оттенки: в названии это цвет, в описании — обычные слова.
+var shadeRoots = map[string]bool{"темн": true, "светл": true}
+
+// unique — слова без повторов в прежнем порядке; срез из словаря не меняется
+// (slices.Compact портил его на месте, ревью #627).
+func unique(ws []string) []string {
+	var out []string
+	for _, w := range ws {
+		if !slices.Contains(out, w) {
+			out = append(out, w)
+		}
 	}
 	return out
 }

@@ -6721,7 +6721,7 @@ function shDescCard(p) {
   let body = t.err ? `<div class="note">${esc(t.err)}</div>` : "";
   if (t.v) {
     const v = t.v, kind = { gender: "пол", color: "цвет" };
-    body += (v.empty ? `<div class="note">У карточки нет описания.</div>` : `<div class="note">Описание — ${fmt(v.length)} знаков; главный запрос ниши «${esc(v.main)}».</div>`) +
+    body += (v.empty ? `<div class="note">У карточки нет описания.</div>` : `<div class="note">Описание — ${fmt(v.length)} знаков${v.main ? `; главный запрос ниши «${esc(v.main)}»` : ""}.</div>`) +
       (v.mismatch.length ? `<div class="sh-title-h">Не совпадает с товаром</div><ul>${v.mismatch.map((m) => `<li><b>${esc(m.found)}</b> — ${kind[m.kind] || m.kind} в описании, а у товара: ${esc(m.card)}</li>`).join("")}</ul>` : (v.empty ? "" : `<div class="note">С полом и цветом карточки описание не спорит.</div>`)) +
       (v.missing.length ? `<div class="sh-title-h">Нет в описании</div><ul>${v.missing.map((w) => `<li><b>${esc(w.word)}</b> — ${w.why === "main" ? `слово главного запроса «${esc(v.main)}»` : `${shTitlePct(w.share)} спроса запросов «${esc(v.main)}»`}</li>`).join("")}</ul>` : "") +
       (v.note ? `<div class="note">${esc(v.note)}</div>` : "") +
