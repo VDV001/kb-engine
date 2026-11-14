@@ -1937,3 +1937,9 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 
 /* «Внутрь» ждет MPStats (до 20 с, живая проверка 14.11): таблица приглушена, кнопка — «загружаю…». */
 .mk-body.busy .mk-scroll { opacity: .45; pointer-events: none; transition: opacity .2s; }
+
+/* Поиск по всем путям MPStats под таблицей ниш (отзыв 14.11). */
+.mk-paths { display: grid; gap: 4px; padding: 10px 12px; border-top: 1px solid var(--z-rule-2); font-size: 12px; }
+.mk-paths .hd { color: var(--z-muted); margin-bottom: 2px; }
+.mk-paths .lnk { text-align: left; justify-self: start; }
+#mk-mps-path::placeholder { color: var(--z-faint); font-style: italic; }

@@ -5425,6 +5425,7 @@ async function mkLoadCats(strict) {
   try {
     const paths = await native().MarketsMPStatsCategories();
     $("#mk-mps-cats").innerHTML = paths.map((p) => `<option value="${esc(p)}">`).join("");
+    mk.cats = paths; // поиск над таблицей ищет и по всем путям MPStats
     mkCatsLoaded = true;
   } catch (e) { if (strict) throw e; }
 }
@@ -5443,6 +5444,18 @@ async function mkReadMPS(path, from, to, days, inside) {
   mk.busy = inside ? mk.mps.path : "";
   mkMpsRender(true);
   if (inside) mkRender(); // кнопка «загружаю…», таблица приглушена
+  // Все категории: имена сразу из списка путей, цифры MPStats — следом (3-4 минуты, замер 14.11).
+  if (!mk.mps.path) {
+    await mkLoadCats();
+    if (seq !== mkMpsSeq) return;
+    const tops = [...new Set((mk.cats || []).map((p) => p.split("/")[0]).filter(Boolean))];
+    if (tops.length) {
+      Object.assign(mk, { tb: { path: "mpstats:", file: "MPStats · все категории · цифры загружаются, 3-4 минуты", fields: (mk.tb && mk.tb.fields) || [], columns: [], problems: [],
+        niches: tops.map((name) => ({ name, values: {}, months: [], markets: [], score: { ok: false, score: 0, missing: [], parts: [] } })) }, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
+      $("#mk-q").value = "";
+      mkRender();
+    }
+  }
   try {
     const tb = await native().MarketsNichesMPStats(mk.mps.path, from, to);
     if (seq !== mkMpsSeq) return;
@@ -5457,6 +5470,8 @@ async function mkReadMPS(path, from, to, days, inside) {
     Object.assign(mk, { tb, picks: [], sel: 0, sort: "", q: "", mp: "all", season: false, cmp: [] });
     $("#mk-q").value = "";
     mkSave();
+    mkLoadCats(); // пути MPStats — для поиска по всем категориям
+    mkSeasonLoad(seq, mk.mps.path, from, to);
   } catch (e) {
     if (seq !== mkMpsSeq) return;
     mk.busy = "";
@@ -5468,15 +5483,36 @@ async function mkReadMPS(path, from, to, days, inside) {
   }
   if (seq === mkMpsSeq) { mkMpsRender(false); mkRender(); }
 }
+// mkSeasonLoad — сезон ниш вторым вызовом (отзыв 14.11): таблица уже на
+// экране, месяцы MPStats отдает ≈ 13 с на нишу; выбор и фильтры остаются.
+async function mkSeasonLoad(seq, path, from, to) {
+  if (!native() || !native().MarketsNichesMPStatsSeason || !mk.tb || !mk.tb.niches.length || !path) return; // у верхних категорий сезон не грузится: 34 тяжелых запроса
+  mk.seasonBusy = true; mkMpsRender(false);
+  try {
+    const tb = await native().MarketsNichesMPStatsSeason(path, from, to);
+    if (seq !== mkMpsSeq) return;
+    const selName = mk.tb.niches[mk.sel] && mk.tb.niches[mk.sel].name;
+    const cmp = mk.cmp.map((i) => mk.tb.niches[i] && mk.tb.niches[i].name);
+    mk.tb = tb;
+    mk.sel = Math.max(0, tb.niches.findIndex((n) => n.name === selName));
+    mk.cmp = cmp.map((nm) => tb.niches.findIndex((n) => n.name === nm)).filter((i) => i >= 0);
+  } catch (e) {
+    if (seq !== mkMpsSeq) return;
+    toast("Сезон не загружен", " · " + errText(e), null, "bad");
+  }
+  if (seq !== mkMpsSeq) return;
+  mk.seasonBusy = false; mkMpsRender(false); mkRender();
+}
 function mkMpsRender(busy) {
   const m = mk.mps || { path: "", from: mkDaysBack(30), to: mkYesterday() };
   if (document.activeElement !== $("#mk-mps-path")) $("#mk-mps-path").value = m.path;
   const parts = m.path ? m.path.split("/") : [];
-  $("#mk-mps-crumbs").innerHTML = parts.map((p, i) => `<button type="button" class="lnk" data-mk-crumb="${esc(parts.slice(0, i + 1).join("/"))}"${mkTip("Подняться", "показать ниши этой категории")}>${esc(p)}</button>`).join(" / ") +
-    (busy ? ` <span class="muted">загружаю из MPStats…</span>` : "");
+  $("#mk-mps-crumbs").innerHTML = `<button type="button" class="lnk" data-mk-crumb=""${mkTip("Все категории", "верхние категории Ozon с цифрами MPStats; дальше — «Внутрь» или поиск")}>Все категории</button>` + (parts.length ? " / " : "") + parts.map((p, i) => `<button type="button" class="lnk" data-mk-crumb="${esc(parts.slice(0, i + 1).join("/"))}"${mkTip("Подняться", "показать ниши этой категории")}>${esc(p)}</button>`).join(" / ") +
+    (busy ? ` <span class="muted">загружаю из MPStats…</span>` : mk.seasonBusy ? ` <span class="muted">· сезон по месяцам загружается из MPStats, до минуты</span>` : "");
   $("#mk-mps-presets").innerHTML = MK_MPS_PRESETS.map(([n, l]) => `<button type="button" data-mk-days="${n}" aria-pressed="${m.to === mkYesterday() && m.from === mkDaysBack(n)}"${mkTip(l, `последние ${n} дней до вчера`)}>${l}</button>`).join("");
   for (const [id, v] of [["#mk-mps-d1", m.from], ["#mk-mps-d2", m.to]]) { const i = $(id); i.max = mkYesterday(); if (document.activeElement !== i) i.value = v; }
   $("#mk-mps-go").disabled = !!busy;
+  $("#mk-mps-go").textContent = $("#mk-mps-path").value.trim() ? "Показать" : "Показать все";
 }
 $("#mk-mps").addEventListener("click", async () => {
   hideTip();
@@ -5496,6 +5532,7 @@ $("#mk-mps").addEventListener("click", async () => {
   }
 });
 $("#mk-mps-go").addEventListener("click", () => { hideTip(); const m = mk.mps || {}; mkReadMPS($("#mk-mps-path").value, m.from, m.to, m.days); });
+$("#mk-mps-path").addEventListener("input", () => { $("#mk-mps-go").textContent = $("#mk-mps-path").value.trim() ? "Показать" : "Показать все"; });
 $("#mk-mps-path").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#mk-mps-go").click(); } });
 $("#mk-mps-bar").addEventListener("click", (e) => {
   const c = e.target.closest("[data-mk-crumb]");
@@ -5628,6 +5665,11 @@ function mkSeasonTip(n) {
   return mkTip("Продажи по месяцам", `${mkRange(n)}${s.peak ? ` · пик в ${MK_IN[s.peak]}` + (s.inSeason ? " — скоро" : " — сейчас не сезон") : " · пик не найти: нужно хотя бы полгода"}`);
 }
 const MK_HEAD_TIP = { ...MK_TIP, season: "продажи ниши по месяцам; точка — пик", score: "0-100: рост, выручка на продавца, свобода от топ-10 и сезон; подробнее — наведите на число в строке" };
+// mkShort — имя ниши без общего пути категории MPStats (как в макете); полностью — в подсказке.
+function mkShort(name) {
+  const p = mkIsMPS() && mk.mps && mk.mps.path;
+  return p && name.startsWith(p + "/") ? name.slice(p.length + 1) : name;
+}
 function mkRenderTable() {
   const shown = mkShown(), ns = mk.tb.niches;
   if (mk.sort !== "name" && !shown.includes(mk.sort)) { mk.sort = shown.includes("score") ? "score" : shown.includes("sales") ? "sales" : shown[0] || "name"; mk.dir = mk.sort === "name" ? 1 : -1; }
@@ -5642,7 +5684,7 @@ function mkRenderTable() {
     return `<td class="n${id === "growth" && v > 0 ? " up" : id === "growth" && v < 0 ? " down" : ""}">${mkVal(id, v)}</td>`;
   };
   $("#mk-table").innerHTML = `<thead><tr>${th("name", "")}${shown.map((id) => th(id, id === "season" ? "" : "n")).join("")}</tr></thead><tbody>` +
-    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td>${esc(ns[i].name)}</td>${shown.map((id) => td(ns[i], id)).join("")}</tr>`).join("") + "</tbody>";
+    list.map((i) => `<tr tabindex="0" data-mk-n="${i}" aria-selected="${i === mk.sel}"><td title="${esc(ns[i].name)}">${esc(mkShort(ns[i].name))}</td>${shown.map((id) => td(ns[i], id)).join("")}</tr>`).join("") + "</tbody>";
   $("#mk-none").hidden = list.length > 0;
   for (const b of document.querySelectorAll("[data-mk-by]")) b.setAttribute("aria-pressed", String(b.dataset.mkBy === mk.sort));
   mkRenderCard();
@@ -5673,7 +5715,7 @@ function mkRenderCard() {
   if (v.price !== undefined) kv.push(["Средняя цена", mkVal("price", v.price), MK_TIP.price]);
   if (n.markets.length) kv.push(["Маркетплейсы", n.markets.map((m) => MK_MP[m]).join(", "), MK_TIP.marketplace]);
   const inCmp = mk.cmp.includes(mk.sel);
-  $("#mk-card").innerHTML = `<div class="mk-card-h"><h3>${esc(n.name)}</h3><span class="mk-sc ${mkLevel(s)}"${mkScoreTip(s)}>${s.ok ? s.score : "—"}</span></div>` +
+  $("#mk-card").innerHTML = `<div class="mk-card-h"><h3 title="${esc(n.name)}">${esc(mkShort(n.name))}</h3><span class="mk-sc ${mkLevel(s)}"${mkScoreTip(s)}>${s.ok ? s.score : "—"}</span></div>` +
     (n.months.length ? `<div${mkSeasonTip(n)}>${mkSpark(n.months, 300, 70)}</div><div class="cap">продажи по месяцам: ${esc(mkRange(n))}</div>` : "") +
     `<dl>${kv.map(([k, val, t]) => `<dt${mkTip(k, t)}>${k}</dt><dd>${esc(val)}</dd>`).join("")}</dl>` +
     `<ul>${mkWhy(n).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>` +
@@ -5747,7 +5789,25 @@ $("#mk-table").addEventListener("keydown", (e) => {
   mkRenderTable();
   const now = document.querySelector(`[data-mk-n="${mk.sel}"]`); if (now) now.focus();
 });
-$("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb && !mk.tb.needName) mkRenderTable(); });
+$("#mk-q").addEventListener("input", (e) => { mk.q = e.target.value; if (mk.tb && !mk.tb.needName) mkRenderTable(); mkPaths(); });
+// mkPaths — поиск ниши ищет и по всем 3 562 путям MPStats (отзыв 14.11: «загрузить
+// все, а потом отфильтровать»): щелчок — ниши этого пути с цифрами.
+function mkPaths() {
+  const box = $("#mk-paths"), q = (mk.q || "").trim().toLowerCase().replace(/ё/g, "е");
+  const words = q.split(/\s+/).filter(Boolean);
+  if (!mkIsMPS() || !words.length || !mk.cats) { box.hidden = true; return; }
+  const hit = mk.cats.filter((p) => { const f = p.toLowerCase().replace(/ё/g, "е"); return words.every((w) => f.includes(w)); });
+  box.hidden = false;
+  box.innerHTML = `<div class="hd">Категории MPStats по «${esc(mk.q.trim())}»: ${fmt(hit.length)}</div>` +
+    (hit.length ? hit.slice(0, 40).map((p) => `<button type="button" class="lnk" data-mk-path="${esc(p)}"${mkTip(p, "ниши этого пути с цифрами MPStats за те же дни")}>${esc(p)}</button>`).join("") + (hit.length > 40 ? `<span class="muted">…и еще ${fmt(hit.length - 40)}: уточните слова</span>` : "") : `<span class="muted">путей с этими словами нет</span>`);
+}
+$("#mk-paths").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mk-path]");
+  if (!b) return;
+  hideTip(); const m = mk.mps || {};
+  mk.q = ""; $("#mk-q").value = ""; mkPaths();
+  mkReadMPS(b.dataset.mkPath, m.from, m.to, m.days);
+});
 $("#mk-q").addEventListener("keydown", (e) => {
   if (e.key === "Escape" && e.target.value) { e.preventDefault(); e.stopPropagation(); e.target.value = ""; mk.q = ""; mkRenderTable(); }
 });

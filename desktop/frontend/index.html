@@ -183,7 +183,7 @@
         <div class="mk-lead-acts"><button class="btn mk-main" type="button" id="mk-open" data-tip="Открыть выгрузку" data-tip-b="xlsx или csv из MPStats и похожих сервисов; колонки окно узнает по заголовкам, а что не узнает — спросит">Открыть выгрузку…</button><button class="btn" type="button" id="mk-mps" data-tip="Из MPStats" data-tip-b="ниши категории Ozon по ключу MPStats за выбранные дни, с ростом к тем же дням год назад; ключ — в Настройках → Подключения">Из MPStats</button></div>
       </div>
       <div class="mk-mps" id="mk-mps-bar" data-mk-pane="niche" hidden>
-        <div class="mk-mps-row"><label class="mk-mps-cat">Категория <input id="mk-mps-path" list="mk-mps-cats" placeholder="Одежда/Мужская одежда" autocomplete="off" spellcheck="false" data-tip="Категория Ozon" data-tip-b="путь как в MPStats; начните печатать — окно подскажет; в таблице — ее подкатегории (ниши)"></label><datalist id="mk-mps-cats"></datalist><button class="btn mk-main" type="button" id="mk-mps-go" data-tip="Показать ниши" data-tip-b="подкатегории за выбранные дни и те же дни год назад — для роста к году">Показать</button></div>
+        <div class="mk-mps-row"><label class="mk-mps-cat">Категория <input id="mk-mps-path" list="mk-mps-cats" placeholder="пусто — все категории; или начните печатать: брюки…" autocomplete="off" spellcheck="false" data-tip="Категория Ozon" data-tip-b="путь как в MPStats; начните печатать — окно подскажет; в таблице — ее подкатегории (ниши)"></label><datalist id="mk-mps-cats"></datalist><button class="btn mk-main" type="button" id="mk-mps-go" data-tip="Показать ниши" data-tip-b="подкатегории за выбранные дни и те же дни год назад — для роста к году">Показать</button></div>
         <nav class="mk-mps-crumbs" id="mk-mps-crumbs" aria-label="Путь категории"></nav>
         <div class="sh-period"><span class="sh-period-l">Период</span><div class="mk-seg" id="mk-mps-presets"></div><label class="sh-date">с <input type="date" id="mk-mps-d1" data-tip="Начало периода" data-tip-b="первый день, включительно"></label><label class="sh-date">по <input type="date" id="mk-mps-d2" data-tip="Конец периода" data-tip-b="последний день, включительно; данные MPStats — до вчера"></label></div>
       </div>
@@ -201,7 +201,7 @@
           <label class="mk-check" id="mk-season-l"><input type="checkbox" id="mk-season"><span id="mk-season-t"></span></label>
         </div>
         <div class="mk-grid">
-          <div class="mk-scroll"><table class="mk-table" id="mk-table"></table><p class="mk-none" id="mk-none" hidden>Под фильтр ниш нет: снимите отметку сезона или измените поиск.</p></div>
+          <div class="mk-scroll"><table class="mk-table" id="mk-table"></table><p class="mk-none" id="mk-none" hidden>Под фильтр ниш нет: снимите отметку сезона или измените поиск.</p><div class="mk-paths" id="mk-paths" hidden></div></div>
           <aside class="mk-card" id="mk-card" aria-live="polite"></aside>
         </div>
         <div class="mk-cmp" id="mk-cmp" hidden></div>

@@ -197,7 +197,11 @@ func (f *folderSettings) mpstatsConnClient(hc *http.Client) (mpstats.Client, err
 
 // MarketsNichesMPStats shows the niches of category path for days from..to (ГГГГ-ММ-ДД).
 func (a *App) MarketsNichesMPStats(path, from, to string) (nicheTable, error) {
-	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Minute)
+	wait := 3 * time.Minute
+	if mpstatsPath(path) == "" {
+		wait = 6 * time.Minute // все категории: 34 верхних — около 70 запросов (замер 14.11: 3 минуты не хватило)
+	}
+	ctx, cancel := context.WithTimeout(a.ctx, wait)
 	defer cancel()
 	return a.settings.nichesMPStats(ctx, nil, path, from, to, time.Now())
 }
@@ -251,7 +255,7 @@ func (f *folderSettings) nichesRead(ctx context.Context, hc *http.Client, path, 
 			return v, nil
 		}
 		v, err := topCategories(ctx, cl, d1, d2, now)
-		if err == nil {
+		if err == nil && len(v.Problems) == 0 { // неполный (тайм-аут части категорий) не запоминаем
 			f.mpstatsTop.put(k, v, now)
 		}
 		return v, err
