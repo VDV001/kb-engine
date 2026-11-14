@@ -66,3 +66,13 @@ func TestDescriptionPrompt(t *testing.T) {
 		t.Error("system prompt must forbid made-up properties")
 	}
 }
+
+// Живая проверка #611: «для девочек» в описании женского товара — та же
+// аудитория, не расхождение; «мужская» — расхождение.
+func TestCheckDescription_genderByAudience(t *testing.T) {
+	got := markets.CheckDescription(markets.DescriptionInput{Title: "Футболка женская", Gender: "Женский",
+		Description: "Подойдет для девочек и девушек. Не мужская модель.", Queries: titleNiche, Forms: titleForms})
+	if len(got.Mismatch) != 1 || got.Mismatch[0].Found != "мужская" {
+		t.Errorf("mismatch %+v, want only мужская", got.Mismatch)
+	}
+}
