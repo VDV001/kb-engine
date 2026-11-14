@@ -43,6 +43,27 @@ type nicheEntry struct {
 	files  []forecastFile
 }
 
+// topCache keeps the top categories of one period for mpstatsTTL: 34
+// категории — около 70 запросов и 3-4 минуты (замер 14.11).
+type topCache struct {
+	mu  sync.Mutex
+	key string
+	at  time.Time
+	v   nicheTable
+}
+
+func (c *topCache) get(k string, now time.Time) (nicheTable, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.v, c.key == k && now.Sub(c.at) < mpstatsTTL
+}
+
+func (c *topCache) put(k string, v nicheTable, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.key, c.at, c.v = k, now, v
+}
+
 // nicheCache keeps MPStats niche series by «id|путь|сегодня».
 type nicheCache struct {
 	mu sync.Mutex
@@ -225,7 +246,15 @@ func (f *folderSettings) nichesRead(ctx context.Context, hc *http.Client, path, 
 		return nicheTable{}, err
 	}
 	if path == "" { // все категории: верхние с цифрами, дальше — «Внутрь»
-		return topCategories(ctx, cl, d1, d2, now)
+		k := d1.Format(time.DateOnly) + "|" + d2.Format(time.DateOnly)
+		if v, ok := f.mpstatsTop.get(k, now); ok {
+			return v, nil
+		}
+		v, err := topCategories(ctx, cl, d1, d2, now)
+		if err == nil {
+			f.mpstatsTop.put(k, v, now)
+		}
+		return v, err
 	}
 	return nichesWith(ctx, cl, path, d1, d2, now, season)
 }
