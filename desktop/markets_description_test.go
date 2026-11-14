@@ -67,3 +67,21 @@ func TestModelDescription(t *testing.T) {
 		t.Errorf("prompt:\n%s", prompt.String())
 	}
 }
+
+// Ревью #626: без MPStats пол и цвет все равно сверяются по карточке Ozon,
+// а про слова ниши сказано, что они не проверены.
+func TestDescriptionView_withoutMPStats(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	oz := fakeOzonDesc(t)
+	row, err := s.AddOzon("Магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v, err := s.descriptionCheck(context.Background(), oz.Client(), oz.URL, row.ID, "1234567", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Mismatch) != 2 || !strings.Contains(v.Note, "слова ниши не проверены") {
+		t.Errorf("view %+v", v)
+	}
+}
