@@ -67,10 +67,13 @@ func CheckHashtags(in HashtagInput) HashtagCheck {
 		out.Main = main
 	}
 	j := newTitleJudge(TitleInput{Title: in.Title, Brands: in.Brands, Queries: in.Queries, Forms: in.Forms, Own: in.Own, NicheBrands: in.NicheBrands})
-	gender := map[string]bool{}
+	gender, color := map[string]bool{}, map[string]bool{}
 	for _, t := range wordsOf(in.Title) {
-		if wordClass(t) == "gender" {
+		switch wordClass(t) {
+		case "gender":
 			gender[j.group(t)] = true
+		case "color":
+			color[j.group(t)] = true
 		}
 	}
 	seen := map[string]bool{}
@@ -84,7 +87,7 @@ func CheckHashtags(in HashtagInput) HashtagCheck {
 		}
 	}
 	if ok && !out.TooMany {
-		out.Add = j.newHashtags(in.Queries, main, gender, seen, min(hashtagAddMax, hashtagMax-len(tags)))
+		out.Add = j.newHashtags(in.Queries, main, gender, color, seen, min(hashtagAddMax, hashtagMax-len(tags)))
 	}
 	return out
 }
@@ -128,7 +131,8 @@ func (j *titleJudge) tagFault(tag, body string, hash bool, gs []string, gender m
 }
 
 // newHashtags — частые запросы со всеми словами главного, которых среди хештегов нет.
-func (j *titleJudge) newHashtags(qs []NicheQuery, main NicheQuery, gender, seen map[string]bool, n int) []HashtagRow {
+// Хештег — слова запроса как есть, со служебными («#футболка_для_спорта_женская»).
+func (j *titleJudge) newHashtags(qs []NicheQuery, main NicheQuery, gender, color, seen map[string]bool, n int) []HashtagRow {
 	if n <= 0 {
 		return nil
 	}
@@ -138,11 +142,11 @@ func (j *titleJudge) newHashtags(qs []NicheQuery, main NicheQuery, gender, seen 
 	var out []HashtagRow
 	for _, q := range cand {
 		gs := groupsOf(q.Text, j.group)
-		tag := "#" + strings.Join(wordsOf(q.Text), "_")
+		tag := "#" + strings.Join(strings.FieldsFunc(foldWord(q.Text), func(c rune) bool { return !unicode.IsLetter(c) && !unicode.IsDigit(c) }), "_")
 		if len(out) == n || !containsAll(gs, need) {
 			continue
 		}
-		if seen[setKey(gs)] || utf8.RuneCountInString(tag) > hashtagMax || otherGender(gs, gender) ||
+		if seen[setKey(gs)] || utf8.RuneCountInString(tag) > hashtagMax || otherGender(gs, gender) || otherColor(gs, color) ||
 			slices.ContainsFunc(gs, func(g string) bool { return j.brand[g] || j.nicheBrand(g) }) {
 			continue
 		}
@@ -188,6 +192,14 @@ func otherGender(gs []string, gender map[string]bool) bool {
 		}
 	}
 	return false
+}
+
+// otherColor: у товара назван цвет, а в запросе другой (живая проверка #610).
+func otherColor(gs []string, color map[string]bool) bool {
+	if len(color) == 0 {
+		return false
+	}
+	return slices.ContainsFunc(gs, func(g string) bool { return wordClass(g) == "color" && !color[g] })
 }
 
 func setKey(gs []string) string {

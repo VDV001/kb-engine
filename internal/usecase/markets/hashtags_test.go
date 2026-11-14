@@ -62,8 +62,8 @@ func TestCheckHashtags(t *testing.T) {
 	for _, r := range got.Add {
 		add = append(add, r.Tag)
 	}
-	if !slices.Contains(add, "#футболка_женская_белая") || !slices.Contains(add, "#футболка_женская_хлопок") || slices.Contains(add, "#футболка_мужская") {
-		t.Errorf("add %v: frequent niche queries not yet tagged, no other gender", add)
+	if !slices.Contains(add, "#футболка_женская_хлопок") || slices.Contains(add, "#футболка_мужская") || slices.Contains(add, "#футболка_женская_белая") {
+		t.Errorf("add %v: frequent niche queries not yet tagged, no other gender or color", add)
 	}
 }
 
