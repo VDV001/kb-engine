@@ -84,6 +84,10 @@ func TestNewPlan_shortForPeak(t *testing.T) {
 	if qty, by := p.Supply(); qty != 1690 || !by.Equal(day(2026, 10, 28)) {
 		t.Errorf("supply %v by %v; want 1690 by 28.10.2026", qty, by)
 	}
+	// Для одного предупреждения словами: когда кончится остаток и весь спрос.
+	if !p.OutOfStock().Equal(day(2026, 11, 7)) || p.Demand() != 1890 {
+		t.Errorf("out %v, demand %v; want 07.11.2026 and 1890", p.OutOfStock(), p.Demand())
+	}
 }
 
 // Провал — неделя, где спрос в день меньше 80 % среднего: скидка 10 %.
