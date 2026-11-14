@@ -6,6 +6,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/daniil/kb-engine/internal/domain"
 )
 
 // NicheQuery — поисковый запрос ниши из сервиса аналитики: частота за период
@@ -34,6 +36,8 @@ type TitleInput struct {
 	Queries []NicheQuery
 	Forms   []WordForms
 	Own     []OwnQuery
+	// NicheBrands — бренды ниши из сервиса аналитики: их не советуют (#623)
+	NicheBrands []string
 }
 
 // TitleWhy — почему слово оставить, добавить или убрать.
@@ -41,13 +45,14 @@ type TitleWhy int
 
 // Причины: оставить, добавить (Main, Frequent), убрать (Rare) и почему не убирать.
 const (
-	WhyKeep      TitleWhy = iota // частое в запросах главного
-	WhyMain                      // слово главного запроса, а в названии его нет
-	WhyFrequent                  // частое в запросах главного, а в названии его нет
-	WhyRare                      // в запросах главного почти не встречается
-	WhyBrand                     // бренд или продавец товара
-	WhyAttribute                 // цвет или пол: свойство товара, хоть и редкое
-	WhyOwn                       // редкое, но товар уже находят по запросу с ним
+	WhyKeep       TitleWhy = iota // частое в запросах главного
+	WhyMain                       // слово главного запроса, а в названии его нет
+	WhyFrequent                   // частое в запросах главного, а в названии его нет
+	WhyRare                       // в запросах главного почти не встречается
+	WhyBrand                      // бренд или продавец товара
+	WhyAttribute                  // цвет или пол: свойство товара, хоть и редкое
+	WhyOwn                        // редкое, но товар уже находят по запросу с ним
+	WhyNicheBrand                 // частое, но это бренд ниши: чужой бренд в названии — риск снятия карточки
 )
 
 // TitleWord — слово названия или совет; Share — доля спроса запросов главного
@@ -68,6 +73,8 @@ type TitleCheck struct {
 	Total, Related int
 	Words          []TitleWord
 	Add, Remove    []TitleWord
+	Dropped        []TitleWord // частые слова, не советуемые как бренды ниши
+	NicheBrands    int         // сколько брендов ниши учтено
 }
 
 const (
@@ -93,13 +100,29 @@ func CheckTitle(in TitleInput) TitleCheck {
 	need := groupsOf(main.Text, j.group)
 	out.Related = j.count(in.Queries, need)
 	have, classes := j.judge(in.Title, &out)
+	out.NicheBrands = len(j.niche)
 	for _, g := range need {
-		if !have[g] {
-			out.Add = append(out.Add, TitleWord{Word: g, Share: j.share(g), Why: WhyMain})
-			have[g] = true
+		if have[g] {
+			continue
+		}
+		have[g] = true
+		if j.nicheBrand(g) { // главный запрос тоже бывает с брендом (ревью #624)
+			out.Dropped = append(out.Dropped, TitleWord{Word: g, Share: j.share(g), Why: WhyNicheBrand})
+			continue
+		}
+		out.Add = append(out.Add, TitleWord{Word: g, Share: j.share(g), Why: WhyMain})
+	}
+	often := 0
+	for _, w := range j.often(have, classes) {
+		switch {
+		case j.nicheBrand(w.Word):
+			w.Why = WhyNicheBrand
+			out.Dropped = append(out.Dropped, w)
+		case often < titleAddMax: // предел — частым словам, слова главного сверх него (живая проверка #623)
+			out.Add = append(out.Add, w)
+			often++
 		}
 	}
-	out.Add = append(out.Add, j.often(have, classes)...)
 	return out
 }
 
@@ -123,12 +146,16 @@ type titleJudge struct {
 	sum   map[string]float64
 	total float64
 	own   map[string]OwnQuery // по слову запросов ниши и по основе слова
-	brand map[string]bool
+	brand map[string]bool     // слова своего бренда и продавца
+	forms map[string]int      // сколько форм у слова запросов ниши: склоняется — не бренд
+	niche map[string]bool     // однословные бренды ниши латиницей, кроме своих
 }
 
 func newTitleJudge(in TitleInput) *titleJudge {
-	j := &titleJudge{form: map[string]string{}, stem: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{}}
+	j := &titleJudge{form: map[string]string{}, stem: map[string]string{}, sum: map[string]float64{}, own: map[string]OwnQuery{}, brand: map[string]bool{},
+		forms: map[string]int{}, niche: map[string]bool{}}
 	for _, f := range in.Forms {
+		j.forms[foldWord(f.Word)] = len(f.Forms)
 		for _, w := range f.Forms {
 			if _, ok := j.form[foldWord(w)]; !ok {
 				j.form[foldWord(w)] = foldWord(f.Word)
@@ -147,12 +174,42 @@ func newTitleJudge(in TitleInput) *titleJudge {
 			}
 		}
 	}
-	for _, b := range in.Brands {
+	j.brands(in.Brands, in.NicheBrands)
+	return j
+}
+
+// brands fills own brand words and the niche's foreign single-word brands.
+func (j *titleJudge) brands(own, niche []string) {
+	whole := map[string]bool{}
+	for _, b := range own {
 		for _, t := range wordsOf(b) {
 			j.brand[t] = true
 		}
+		whole[strings.Join(wordsOf(b), " ")] = true
 	}
-	return j
+	for _, n := range niche {
+		// Только однословные: слова многословного («Love Republic») — обычные
+		// слова запросов; свой бренд сравнивается целым именем (ревью #624).
+		if ws := wordsOf(n); len(ws) == 1 && !whole[ws[0]] {
+			j.niche[latinOf(ws[0])] = true
+		}
+	}
+}
+
+// nicheBrand: слово запросов — бренд ниши. Сравнение латиницей («зара» → zara);
+// слово, которое в запросах склоняется («топ, топы»), — обычное, а не бренд «Top».
+// ponytail: несклоняемое обычное слово, совпавшее с брендом («спорт» и «Sport»),
+// уйдет в «Не советуем» — оно видно там, а не спрятано; апгрейд — словарь брендов.
+func (j *titleJudge) nicheBrand(g string) bool {
+	return j.forms[g] < 2 && !j.brand[g] && j.niche[latinOf(g)]
+}
+
+// latinOf — слово латиницей: кириллица через domain.Translit (одна таблица на движок).
+func latinOf(w string) string {
+	if isLatin(w) {
+		return w
+	}
+	return domain.Translit(w)
 }
 
 // group — слово запросов ниши, к которому относится словоформа tok.
@@ -204,6 +261,9 @@ func (j *titleJudge) judge(title string, out *TitleCheck) (have, classes map[str
 			q, found = j.own["~"+wordStem(tok)]
 		}
 		switch {
+		case j.nicheBrand(g): // чужой бренд в названии — риск снятия карточки, даже частый (ревью #624)
+			w.Why = WhyNicheBrand
+			out.Remove = append(out.Remove, w)
 		case w.Share >= titleRareShare:
 			w.Why = WhyKeep
 		case j.brand[tok]:
@@ -233,7 +293,11 @@ func (j *titleJudge) often(have, classes map[string]bool) []TitleWord {
 	slices.SortFunc(out, func(a, b TitleWord) int {
 		return cmp.Or(cmp.Compare(b.Share, a.Share), strings.Compare(a.Word, b.Word))
 	})
-	return out[:min(len(out), titleAddMax)]
+	return out
+}
+
+func isLatin(w string) bool {
+	return strings.IndexFunc(w, func(r rune) bool { return r > unicode.MaxASCII }) < 0 && strings.IndexFunc(w, unicode.IsLetter) >= 0
 }
 
 // titleStop — служебные слова: по ним не судят.

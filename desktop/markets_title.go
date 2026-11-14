@@ -15,7 +15,10 @@ import (
 
 // titleWhy — коды причин markets.TitleWhy для окна; слова причин — в app.js.
 var titleWhy = map[markets.TitleWhy]string{markets.WhyKeep: "keep", markets.WhyMain: "main", markets.WhyFrequent: "often",
-	markets.WhyRare: "rare", markets.WhyBrand: "brand", markets.WhyAttribute: "attr", markets.WhyOwn: "own"}
+	markets.WhyRare: "rare", markets.WhyBrand: "brand", markets.WhyAttribute: "attr", markets.WhyOwn: "own", markets.WhyNicheBrand: "brand-niche"}
+
+// titleBrandsWait — сколько ждать отчет брендов ниши: обычно 7 с (замер 14.11).
+const titleBrandsWait = 30 * time.Second
 
 // titleWordRow — слово названия или совет; Share — доля спроса как 0,25.
 type titleWordRow struct {
@@ -29,18 +32,20 @@ type titleWordRow struct {
 // titleView — оценка названия карточки (#607): главный запрос ниши и откуда он,
 // по скольким запросам выводы, слова названия, что добавить и что убрать.
 type titleView struct {
-	SKU       string         `json:"sku"`
-	Title     string         `json:"title"`
-	Niche     string         `json:"niche"`
-	Main      string         `json:"main"`
-	MainCount int            `json:"mainCount"`
-	MainItems int            `json:"mainItems"`
-	Total     int            `json:"total"`
-	Related   int            `json:"related"`
-	Words     []titleWordRow `json:"words"`
-	Add       []titleWordRow `json:"add"`
-	Remove    []titleWordRow `json:"remove"`
-	Note      string         `json:"note"` // свои запросы товара не прочитаны
+	SKU         string         `json:"sku"`
+	Title       string         `json:"title"`
+	Niche       string         `json:"niche"`
+	Main        string         `json:"main"`
+	MainCount   int            `json:"mainCount"`
+	MainItems   int            `json:"mainItems"`
+	Total       int            `json:"total"`
+	Related     int            `json:"related"`
+	Words       []titleWordRow `json:"words"`
+	Add         []titleWordRow `json:"add"`
+	Remove      []titleWordRow `json:"remove"`
+	Dropped     []titleWordRow `json:"dropped"`     // частые, но бренды ниши (#623)
+	NicheBrands int            `json:"nicheBrands"` // сколько брендов ниши учтено
+	Note        string         `json:"note"`        // свои запросы товара или бренды ниши не прочитаны
 }
 
 // MarketsTitle checks the title of Ozon card sku against its niche's queries in MPStats.
@@ -59,7 +64,7 @@ func (f *folderSettings) mcpBase() string {
 }
 
 // titleCheck reads sku's niche from its MPStats card, then the niche's queries
-// and the card's own queries at once: три запроса тарифа на проверку.
+// with its brands and the card's own queries at once: четыре запроса тарифа на проверку.
 func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, title string) (titleView, error) {
 	id, err := strconv.ParseInt(strings.TrimSpace(sku), 10, 64)
 	if err != nil || id <= 0 {
@@ -80,7 +85,8 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 	var qs []markets.NicheQuery
 	var ws []markets.WordForms
 	var own []markets.OwnQuery
-	var nicheErr, ownErr error
+	var brands []string
+	var nicheErr, ownErr, brandErr error
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wg sync.WaitGroup
@@ -90,20 +96,37 @@ func (f *folderSettings) titleCheck(ctx context.Context, hc *http.Client, sku, t
 		}
 	})
 	wg.Go(func() { own, ownErr = m.CardQueries(ctx, id) })
+	wg.Go(func() { // бренды — не главное: свой срок, чтобы занятый отчет не держал проверку (ревью #624)
+		bctx, bcancel := context.WithTimeout(ctx, titleBrandsWait)
+		defer bcancel()
+		if brands, brandErr = m.NicheBrands(bctx, card.Niche); stopsAll(brandErr) {
+			cancel()
+		}
+	})
 	wg.Wait()
 	if nicheErr != nil {
 		return titleView{}, errors.New("запросы ниши «" + card.Niche + "» не прочитаны — " + mpstatsMessage(nicheErr))
 	}
-	r := markets.CheckTitle(markets.TitleInput{Title: title, Brands: []string{card.Brand, card.Seller}, Queries: qs, Forms: ws, Own: own})
+	r := markets.CheckTitle(markets.TitleInput{Title: title, Brands: []string{card.Brand, card.Seller}, Queries: qs, Forms: ws, Own: own, NicheBrands: brands})
 	if r.Main.Text == "" { // пустой ответ — не «добавить и убрать нечего» (ревью #621)
 		return titleView{}, errors.New("у ниши «" + card.Niche + "» в MPStats нет запросов за 30 дней — проверить название не по чему")
 	}
 	v := titleView{SKU: strconv.FormatInt(id, 10), Title: title, Niche: card.Niche, Main: r.Main.Text, MainCount: r.Main.Count, MainItems: r.Main.Items,
-		Total: r.Total, Related: r.Related, Words: titleRows(r.Words), Add: titleRows(r.Add), Remove: titleRows(r.Remove)}
-	if ownErr != nil && !errors.Is(ownErr, mpstats.ErrNotFound) { // пусто — товар не находят ни по одному запросу, это не сбой
-		v.Note = "запросы самого товара не прочитаны — " + mpstatsMessage(ownErr)
-	}
+		Total: r.Total, Related: r.Related, Words: titleRows(r.Words), Add: titleRows(r.Add), Remove: titleRows(r.Remove),
+		Dropped: titleRows(r.Dropped), NicheBrands: r.NicheBrands, Note: titleNote(ownErr, brandErr)}
 	return v, nil
+}
+
+// titleNote names what was not read: проверка остается, но без этой части.
+func titleNote(ownErr, brandErr error) string {
+	var notes []string
+	if ownErr != nil && !errors.Is(ownErr, mpstats.ErrNotFound) { // пусто — товар не находят ни по одному запросу, это не сбой
+		notes = append(notes, "запросы самого товара не прочитаны — "+mpstatsMessage(ownErr))
+	}
+	if brandErr != nil && !errors.Is(brandErr, mpstats.ErrNotFound) {
+		notes = append(notes, "бренды ниши не прочитаны, чужие бренды в «Добавить» не отсеяны — "+mpstatsMessage(brandErr))
+	}
+	return strings.Join(notes, "; ")
 }
 
 // readTitleCard reads sku's MPStats card; без ниши проверять не по чему.

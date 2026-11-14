@@ -59,7 +59,8 @@ const titleNicheJSON = `{"queries":[` +
 	`{"word":"лонгслив женский","count":150000,"items_count":1},` +
 	`{"word":"футболка женская","count":110000,"items_count":780},` +
 	`{"word":"футболка женская хлопок","count":8000,"items_count":300},` +
-	`{"word":"футболка женская белая","count":9000,"items_count":300}],` +
+	`{"word":"футболка женская белая","count":9000,"items_count":300},` +
+	`{"word":"футболка женская zara","count":9000,"items_count":300}],` +
 	`"words":[{"word":"женская","words":["женская","женский"]}]}`
 
 func titleSettings(t *testing.T, ownErr bool, card string) (*folderSettings, *httptest.Server) {
@@ -76,6 +77,11 @@ func titleSettings(t *testing.T, ownErr bool, card string) (*folderSettings, *ht
 			return `[{"query":"футболка сиреневая","count":49,"avg_position":7}]`, false
 		case name == "ozon_category" && a["report"] == "keywords" && a["path"] == "Одежда/Футболки женские":
 			return titleNicheJSON, false
+		case name == "ozon_category" && a["report"] == "brands" && a["path"] == "Одежда/Футболки женские":
+			if ownErr {
+				return "Ошибка: сервис занят", true
+			}
+			return `{"data":[{"name":"Бренд не указан"},{"name":"Zara"}]}`, false
 		}
 		return "wrong call", true
 	})
@@ -96,7 +102,7 @@ func TestTitleCheckView(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v.Niche != "Одежда/Футболки женские" || v.Main != "футболка женская" || v.MainCount != 110000 || v.MainItems != 780 || v.Total != 4 || v.Related != 3 {
+	if v.Niche != "Одежда/Футболки женские" || v.Main != "футболка женская" || v.MainCount != 110000 || v.MainItems != 780 || v.Total != 5 || v.Related != 4 {
 		t.Fatalf("view %+v", v)
 	}
 	if len(v.Add) == 0 || v.Add[0].Word != "женская" || v.Add[0].Why != "main" {
@@ -112,13 +118,16 @@ func TestTitleCheckView(t *testing.T) {
 	if len(v.Remove) != 1 || v.Remove[0].Word != "оверсайз" || v.Note != "" {
 		t.Errorf("remove %+v note %q", v.Remove, v.Note)
 	}
+	if len(v.Dropped) != 1 || v.Dropped[0].Word != "zara" || v.Dropped[0].Why != "brand-niche" || v.NicheBrands != 1 {
+		t.Errorf("dropped %+v of %d brands: Zara is a niche brand (#623)", v.Dropped, v.NicheBrands)
+	}
 }
 
 // Свои запросы товара не прочитались — оценка по нише остается, окно говорит, чего нет.
 func TestTitleCheckView_ownQueriesFail(t *testing.T) {
 	s, srv := titleSettings(t, true, titleCard)
 	v, err := s.titleCheck(context.Background(), srv.Client(), "1234567", "Футболка женская")
-	if err != nil || v.Main != "футболка женская" || !strings.Contains(v.Note, "сервис занят") {
+	if err != nil || v.Main != "футболка женская" || !strings.Contains(v.Note, "сервис занят") || !strings.Contains(v.Note, "бренд") {
 		t.Fatalf("view %+v, %v: the niche check stays, the note names the miss", v, err)
 	}
 }

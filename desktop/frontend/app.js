@@ -6688,13 +6688,14 @@ function shTitleWhy(w, v) {
     often: `${shTitlePct(w.share)} спроса запросов ${main} — добавьте, если это про Ваш товар${/[a-z]/.test(w.word) ? " и это не чужой бренд: за чужой бренд в названии Ozon снимает карточку" : ""}`,
     rare: `в запросах ${main} почти не встречается: ${shTitlePct(w.share)} спроса`,
     brand: "бренд или продавец товара — оставить",
+    "brand-niche": `${shTitlePct(w.share)} спроса запросов ${main}, но это бренд ниши в MPStats — за чужой бренд в названии Ozon снимает карточку`,
     attr: "цвет или пол — свойство товара, оставить, хоть его и редко ищут",
     own: `товар уже находят по запросу «${w.query}»${w.position ? `, позиция ${fmt(w.position)}` : ""} — оставить`,
   }[w.why] || "";
 }
 function shTitleCard(p) {
   if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
-  const t = shTitles.get(shTitleKey(p)), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера; три запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
+  const t = shTitles.get(shTitleKey(p)), btn = `<button class="btn" type="button" data-sh-title="${esc(p.sku)}"${t && t.busy ? " disabled" : ""}${mkTip("Проверить название", "главный запрос ниши и слова названия — по запросам ниши в MPStats за 30 дней до вчера, бренды ниши не советуются; четыре запроса тарифа")}>${t && t.busy ? "Читаю MPStats…" : t && t.v ? "Проверить еще раз" : "Проверить название"}</button>`;
   let body = "";
   if (t && t.err) body = `<div class="note">${esc(t.err)}</div>`;
   if (t && t.v) {
@@ -6703,8 +6704,9 @@ function shTitleCard(p) {
       `<dt${mkTip("Ниша", "ниша товара в MPStats, по его карточке")}>Ниша</dt><dd>${esc(v.niche)}</dd>` +
       `<dt${mkTip("Выводы по", "доли слов — по запросам со всеми словами главного")}>Выводы по</dt><dd>${fmt(v.related)} из ${fmt(v.total)} ${plural(v.total, "запроса", "запросов", "запросов")} ниши</dd></dl>` +
       (v.add.length ? `<div class="sh-title-h">Добавить</div><ul>${v.add.map(li).join("")}</ul>` : "") +
+      (v.dropped.length ? `<div class="sh-title-h"${mkTip("Не советуем", `частые слова ниши, которые MPStats знает как бренды; учтено брендов ниши: ${fmt(v.nicheBrands)}`)}>Не советуем</div><ul>${v.dropped.map(li).join("")}</ul>` : "") +
       (v.remove.length ? `<div class="sh-title-h">Убрать</div><ul>${v.remove.map(li).join("")}</ul>` : "") +
-      (!v.add.length && !v.remove.length ? `<div class="note">Добавить и убрать нечего: слова названия есть в запросах ниши.</div>` : "") +
+      (!v.add.length && !v.remove.length ? `<div class="note">${v.dropped.length ? "Добавить нечего, кроме брендов ниши, а их советовать нельзя; убирать нечего." : "Добавить и убрать нечего: слова названия есть в запросах ниши."}</div>` : "") +
       `<div class="sh-title-h">Слова названия</div><ul>${v.words.filter((w) => w.why !== "rare").map(li).join("")}</ul>` + (v.note ? `<div class="note">${esc(v.note)}</div>` : "");
   }
   return `<h4 class="sh-money-h">Название</h4>${btn}${body}`;

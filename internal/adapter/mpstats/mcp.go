@@ -103,6 +103,24 @@ func (m MCP) NicheQueries(ctx context.Context, path string) ([]markets.NicheQuer
 	return qs, ws, nil
 }
 
+// NicheBrands reads niche path's brands in 30 days to yesterday (ozon_category
+// report=brands, до 200 по выручке, замер 14.11 — 7 с, 240 КБ).
+func (m MCP) NicheBrands(ctx context.Context, path string) ([]string, error) {
+	var raw struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := m.call(ctx, "ozon_category", map[string]any{"path": path, "report": "brands"}, &raw); err != nil {
+		return nil, err
+	}
+	out := make([]string, 0, len(raw.Data))
+	for _, b := range raw.Data {
+		out = append(out, b.Name)
+	}
+	return out, nil
+}
+
 // call calls tool with args, the tool's text JSON goes into out; обрыв и 502/504 повторяются.
 // ponytail: сессия на каждый вызов — три лишних коротких запроса (initialize,
 // уведомление, закрытие; квоту не тратят); потолок — частые вызовы подряд,
