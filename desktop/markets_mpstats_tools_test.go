@@ -124,3 +124,42 @@ func TestAddMPStatsWithShare(t *testing.T) {
 		t.Errorf("share: on %v, off %v", on.Share, off.Share)
 	}
 }
+
+// Сезон ниш MPStats догружается вторым вызовом: год по месяцам у каждой
+// ниши, 12 полных месяцев до текущего (живая проверка 14.11).
+func TestNichesMPStatsSeason(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		switch r.URL.Path {
+		case "/api/user/report_api_limit":
+			_, _ = w.Write([]byte(`{"available":10,"use":0}`))
+		case "/api/oz/get/category/subcategories":
+			_, _ = w.Write([]byte(`[{"name":"Брюки","sales":150,"revenue":3000,"sellers_with_sells":7}]`))
+		case "/api/oz/get/category/sellers":
+			_, _ = w.Write([]byte(`[{"revenue":1500}]`))
+		case "/api/oz/get/category/by_date":
+			asked = append(asked, q.Get("path")+" "+q.Get("groupBy")+" "+q.Get("d1")+"…"+q.Get("d2"))
+			_, _ = w.Write([]byte(`[{"period":"2026-10-01","sales":40},{"period":"2025-11-01","sales":90}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	s.mpstatsURL = srv.URL
+	if _, err := s.addMPStats(context.Background(), checkEndpoints{MPStats: srv.URL, HTTP: srv.Client()}, "MPStats", "m-1", false); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 11, 14, 12, 0, 0, 0, time.UTC)
+	v, err := s.nichesMPStatsSeason(context.Background(), srv.Client(), "Одежда", "2026-10-15", "2026-11-13", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(asked) != 1 || asked[0] != "Одежда/Брюки month 2025-11-01…2026-10-31" {
+		t.Errorf("asked %v", asked)
+	}
+	if len(v.Niches) != 1 || len(v.Niches[0].Months) != 2 || v.Niches[0].Months[0].Label != "ноя 2025" {
+		t.Errorf("niches = %+v", v.Niches)
+	}
+}
