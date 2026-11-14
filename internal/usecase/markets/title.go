@@ -121,7 +121,7 @@ type titleJudge struct {
 	form  map[string]string
 	sum   map[string]float64
 	total float64
-	own   map[string]OwnQuery
+	own   map[string]OwnQuery // по слову запросов ниши и по основе слова
 	brand map[string]bool
 }
 
@@ -135,9 +135,11 @@ func newTitleJudge(in TitleInput) *titleJudge {
 		}
 	}
 	for _, q := range in.Own {
-		for _, g := range groupsOf(q.Text, j.group) {
-			if _, ok := j.own[g]; !ok {
-				j.own[g] = q
+		for _, t := range wordsOf(q.Text) {
+			for _, k := range []string{j.group(t), "~" + wordStem(t)} { // формы MPStats неполные: «базовый» ≠ «базовая» (замер 14.11)
+				if _, ok := j.own[k]; !ok {
+					j.own[k] = q
+				}
 			}
 		}
 	}
@@ -191,6 +193,9 @@ func (j *titleJudge) judge(title string, out *TitleCheck) (have, classes map[str
 		}
 		w := TitleWord{Word: tok, Share: j.share(g)}
 		q, found := j.own[g]
+		if !found {
+			q, found = j.own["~"+wordStem(tok)]
+		}
 		switch {
 		case w.Share >= titleRareShare:
 			w.Why = WhyKeep
@@ -274,6 +279,16 @@ var (
 	genderWords = []string{"унисекс", "девочек", "девочки", "девочка", "мальчиков", "мальчика", "мальчик", "подростковая", "подростковый"}
 	adjEndings  = []string{"ого", "его", "ый", "ий", "ой", "ая", "яя", "ое", "ее", "ые", "ие", "ую", "юю", "ых", "их", "ом", "ем"}
 )
+
+// wordStem — слово без окончания прилагательного, если основа не короче трех букв.
+func wordStem(w string) string {
+	for _, e := range adjEndings {
+		if r, ok := strings.CutSuffix(w, e); ok && utf8.RuneCountInString(r) >= 3 {
+			return r
+		}
+	}
+	return w
+}
 
 // wordClass — «color», «gender» или "": у таких слов варианты исключают друг друга.
 func wordClass(w string) string {
