@@ -42,3 +42,36 @@ func TestCompetitors(t *testing.T) {
 		t.Errorf("empty niche: %v, want an empty list, not nil (JSON [])", rows)
 	}
 }
+
+// Ревью #619: цена без продаж — не «−100 %», рост с нуля виден, продавцы без
+// id не склеиваются.
+func TestCompetitorsEdges(t *testing.T) {
+	cur := []markets.SellerStat{
+		{ID: 1, Name: "Ожил", Sales: 1500, Revenue: 1_500_000, AvgPrice: 1000},
+		{ID: 2, Name: "Затих", Sales: 0, Revenue: 0, AvgPrice: 0, Items: 30},
+		{Name: "Без id А", Sales: 10, Revenue: 10_000, AvgPrice: 1000},
+		{Name: "Без id Б", Sales: 20, Revenue: 20_000, AvgPrice: 1000},
+	}
+	prev := []markets.SellerStat{
+		{ID: 1, Name: "Ожил", Sales: 0, AvgPrice: 0},
+		{ID: 2, Name: "Затих", Sales: 500, Revenue: 500_000, AvgPrice: 1000, Items: 30},
+		{Name: "Без id Б", Sales: 10, Revenue: 10_000, AvgPrice: 1000},
+	}
+	rows := markets.Competitors(cur, prev, 10)
+	by := map[string]markets.CompetitorRow{}
+	for _, r := range rows {
+		by[r.Name] = r
+	}
+	if r := by["Ожил"]; !r.New {
+		t.Errorf("Ожил %+v: from no sales to many — marked like a newcomer, not flat", r)
+	}
+	if r := by["Затих"]; r.PriceChange != 0 || r.SalesChange != -1 {
+		t.Errorf("Затих %+v: sales −100 %%, the price is unknown — no change, not −100 %%", r)
+	}
+	if r := by["Без id А"]; !r.New {
+		t.Errorf("Без id А %+v: not in the previous period by name", r)
+	}
+	if r := by["Без id Б"]; r.New || r.SalesChange != 1 {
+		t.Errorf("Без id Б %+v: matched by name, sales +100 %%", r)
+	}
+}
