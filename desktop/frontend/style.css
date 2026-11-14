@@ -1826,6 +1826,14 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .mk-pl-warn b { color: var(--z-ink); }
 .mk-pl-warn.bad { border-color: color-mix(in srgb, var(--z-lvl-warn) 55%, var(--z-rule)); }
 .mk-pl-acts { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.mk-pl-pick { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); }
+.mk-pl-pick-top { display: flex; align-items: center; gap: 12px; }
+.mk-pl-pick-top input { flex: 1; min-width: 0; height: 30px; font: 13px var(--z-font); background: var(--z-bg-2); color: var(--z-ink); border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); padding: 0 8px; }
+.mk-pl-pick-list { max-height: 280px; overflow: auto; display: grid; }
+.mk-pl-pick-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 4px 2px; font-size: 13px; color: var(--z-ink); border-bottom: 1px solid var(--z-rule); cursor: pointer; }
+.mk-pl-pick-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-pl-pick-row .ar { font-size: 12px; color: var(--z-muted); }
+.mk-pl-pick-row .n { font-variant-numeric: tabular-nums; color: var(--z-ink-2); }
 .mk-plan-wrap { border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 4px 12px; }
 .mk-plan-table td.n, .mk-plan-table th.n { text-align: right; }
 .mk-plan-table tr.pk td { background: color-mix(in srgb, var(--mk1) 10%, transparent); color: var(--z-ink); }

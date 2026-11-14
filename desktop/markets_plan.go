@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -135,13 +136,23 @@ func xlsxPath(p string) string {
 	return p + ".xlsx"
 }
 
-// planStock — остаток кабинета для «Плана»: сумма по всем товарам, потому что
-// прогноз считается по продажам всего кабинета (решение владельца 14.11).
+// planStockItem — товар кабинета в списке выбора «Плана».
+type planStockItem struct {
+	SKU     string  `json:"sku"`
+	Article string  `json:"article"`
+	Name    string  `json:"name"`
+	Qty     float64 `json:"qty"`
+}
+
+// planStock — остаток для «Плана»: по выбранным товарам или, без выбора, по
+// всему кабинету, как и свои продажи в прогнозе (решения владельца 14.11).
+// Items — весь кабинет при любом выборе: из него выбирают.
 type planStock struct {
-	Name     string  `json:"name"`
-	Qty      float64 `json:"qty"`
-	Products int     `json:"products"`
-	InStock  int     `json:"inStock"`
+	Name     string          `json:"name"`
+	Qty      float64         `json:"qty"`
+	Products int             `json:"products"`
+	InStock  int             `json:"inStock"`
+	Items    []planStockItem `json:"items"`
 }
 
 // stockTotal sums stock to sell; резерв больше наличия у одного товара
@@ -156,8 +167,8 @@ func stockTotal(st []markets.OzonStock) (qty float64, inStock int) {
 	return qty, inStock
 }
 
-// ozonPlanStock reads the stock of cabinet id now.
-func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *http.Client, id string) (planStock, error) {
+// ozonPlanStock reads the stock of cabinet id now; skus — выбранные товары, nil — все.
+func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *http.Client, id string, skus []string) (planStock, error) {
 	cl, c, err := f.ozonCabinet(id, base, hc)
 	if err != nil {
 		return planStock{}, err
@@ -166,15 +177,35 @@ func (f *folderSettings) ozonPlanStock(ctx context.Context, base string, hc *htt
 	if err != nil {
 		return planStock{}, ozonErr(c.Name, err)
 	}
-	qty, n := stockTotal(st)
-	return planStock{Name: c.Name, Qty: qty, Products: len(st), InStock: n}, nil
+	v := planStock{Name: c.Name, Items: make([]planStockItem, 0, len(st))}
+	picked := st
+	if len(skus) > 0 {
+		picked = nil
+	}
+	for _, s := range st {
+		v.Items = append(v.Items, planStockItem{SKU: s.SKU, Article: s.Article, Name: s.Name, Qty: s.Qty})
+		if len(skus) > 0 && slices.Contains(skus, s.SKU) {
+			picked = append(picked, s)
+		}
+	}
+	v.Qty, v.InStock = stockTotal(picked)
+	v.Products = len(picked)
+	return v, nil
 }
 
-// MarketsPlanStock is the stock of Ozon cabinet id for the «План» field.
-func (a *App) MarketsPlanStock(id string) (planStock, error) {
+// MarketsPlanStock is the stock of own sales source own («ozon:<id>» или
+// «ozon:<id>#SKU,SKU») for the «План» field.
+func (a *App) MarketsPlanStock(own string) (planStock, error) {
+	id, skus, ok, err := ozonOwn(own)
+	if err != nil {
+		return planStock{}, err
+	}
+	if !ok {
+		return planStock{}, errors.New("остаток подставляется только из кабинета Ozon")
+	}
 	ctx, cancel := context.WithTimeout(a.ctx, ozonTimeout)
 	defer cancel()
-	return a.settings.ozonPlanStock(ctx, ozon.DefaultURL, nil, id)
+	return a.settings.ozonPlanStock(ctx, ozon.DefaultURL, nil, id, skus)
 }
 
 // MarketsPlan builds the plan from the forecast's three sources.

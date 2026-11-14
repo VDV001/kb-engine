@@ -154,6 +154,28 @@ func calendarDays(from, to time.Time) int {
 	return int(day(to).Sub(day(from)).Hours()/24) + 1
 }
 
+// OzonOnly keeps the items of skus in posts: «План» по товарам ниши; отправление
+// без выбранных товаров выпадает. Пустой skus — все отправления как есть.
+func OzonOnly(posts []OzonPosting, skus []string) []OzonPosting {
+	if len(skus) == 0 {
+		return posts
+	}
+	var out []OzonPosting
+	for _, p := range posts {
+		var items []OzonItem
+		for _, it := range p.Items {
+			if slices.Contains(skus, it.SKU) {
+				items = append(items, it)
+			}
+		}
+		if len(items) > 0 {
+			p.Items = items
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 // OzonDaily turns postings into own orders by day for the forecast (#580):
 // штуки ВКЛЮЧАЯ отмены — у свежих отправлений отмены еще не закрылись, и ряд
 // «без отмен» завышал бы новые дни против старых (ревью #592); по дню создания
