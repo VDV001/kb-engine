@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	mrand "math/rand/v2"
 	"slices"
 	"sync"
 	"time"
@@ -56,9 +57,10 @@ type registryDTO struct {
 }
 
 type userDTO struct {
-	ID          string `json:"id"`
-	TokenSHA256 string `json:"token_sha256"`
-	Device      string `json:"device,omitempty"` // только в DevicesKey: телефон человека
+	ID          string     `json:"id"`
+	TokenSHA256 string     `json:"token_sha256"`
+	Device      string     `json:"device,omitempty"` // только в DevicesKey: телефон человека
+	At          *time.Time `json:"at,omitempty"`     // когда выпущен телефон
 }
 
 // Add registers id and returns its token. Вызывающий сохраняет токен один раз
@@ -119,15 +121,24 @@ func RevokeToken(ctx context.Context, s blob.Store, id domain.UserID, token stri
 	})
 }
 
-// Revoke removes id from the registry. База человека остается в хранилище:
-// отзыв закрывает вход, а не удаляет данные.
+// Revoke removes id from the registry and its phones. База человека остается в
+// хранилище: отзыв закрывает вход, а не удаляет данные. Телефоны уходят вместе
+// с ним: отозванного некому отвязать (ревью #630); сервер к тому же не пускает
+// телефон без живого хозяина.
 func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
-	return update(ctx, s, RegistryKey, func(r *registryDTO) error {
+	err := update(ctx, s, RegistryKey, func(r *registryDTO) error {
 		n := len(r.Users)
 		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		if len(r.Users) == n {
 			return fmt.Errorf("%w: %s", domain.ErrNoSuchUser, id)
 		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return update(ctx, s, DevicesKey, func(r *registryDTO) error {
+		r.Users = slices.DeleteFunc(r.Users, func(u userDTO) bool { return u.ID == id.String() })
 		return nil
 	})
 }
@@ -156,6 +167,7 @@ func update(ctx context.Context, s blob.Store, key string, change func(*registry
 		}
 		_, err = s.Put(ctx, key, append(data, '\n'), o.ETag)
 		if errors.Is(err, blob.ErrConflict) {
+			time.Sleep(mrand.N(10 * time.Millisecond)) // разойтись с соседним писателем, а не столкнуться снова (ревью #630)
 			continue
 		}
 		if err != nil {
@@ -206,6 +218,23 @@ func NewRegistry(ctx context.Context, s blob.Store, opts ...Option) *Registry {
 		o(r)
 	}
 	return r
+}
+
+// Has reports whether id is in the registry: телефон входит, только пока жив его хозяин (ревью #630).
+func (r *Registry) Has(id domain.UserID) bool {
+	return slices.ContainsFunc(r.current(), func(u knownUser) bool { return u.id == id })
+}
+
+// Invalidate makes the next Lookup re-read the registry: этот же процесс
+// только что его изменил — привязка и отвязка телефона действуют сразу.
+//
+// ponytail: сбрасывается кэш только этого экземпляра; другие экземпляры
+// Serverless Container узнают через RefreshEvery. Потолок — минута при
+// нескольких экземплярах (сейчас один); путь апгрейда — уведомления хранилища.
+func (r *Registry) Invalidate() {
+	r.mu.Lock()
+	r.checked = time.Time{}
+	r.mu.Unlock()
 }
 
 // Lookup returns the person whose token this is. Хэш токена сравнивается со

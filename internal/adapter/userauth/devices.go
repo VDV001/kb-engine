@@ -9,14 +9,26 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/mail"
 )
 
 // DevicesKey is where phones' tokens live (#622): отдельный реестр, чтобы
 // токен телефона не открывал базу и финансы — сервер пускает его только в ящик.
 const DevicesKey = "auth/devices.json"
+
+// MaxDevices bounds phones per person: реестр телефонов общий, и один человек
+// не должен раздувать его для всех (ревью #630).
+const MaxDevices = 10
+
+// Device is a paired phone.
+type Device struct {
+	Device string    `json:"device"`
+	At     time.Time `json:"at"`
+}
 
 // AddDevice registers a new phone of id and returns its name and token. Токен
 // отдается один раз — окну, которое показывает его в QR; на сервере только хэш.
@@ -30,8 +42,12 @@ func AddDevice(ctx context.Context, s blob.Store, id domain.UserID) (device, tok
 		return "", "", err
 	}
 	sum := sha256.Sum256([]byte(token))
+	at := time.Now().UTC().Truncate(time.Second)
 	err = update(ctx, s, DevicesKey, func(r *registryDTO) error {
-		r.Users = append(r.Users, userDTO{ID: id.String(), Device: device, TokenSHA256: hex.EncodeToString(sum[:])})
+		if n := len(slices.DeleteFunc(slices.Clone(r.Users), func(u userDTO) bool { return u.ID != id.String() })); n >= MaxDevices {
+			return fmt.Errorf("%w: %d of %d", domain.ErrMailTooManyPhones, n, MaxDevices)
+		}
+		r.Users = append(r.Users, userDTO{ID: id.String(), Device: device, TokenSHA256: hex.EncodeToString(sum[:]), At: &at})
 		return nil
 	})
 	if err != nil {
@@ -40,13 +56,17 @@ func AddDevice(ctx context.Context, s blob.Store, id domain.UserID) (device, tok
 	return device, token, nil
 }
 
-// Devices lists the phones of id.
-func Devices(ctx context.Context, s blob.Store, id domain.UserID) ([]string, error) {
-	var out []string
+// Devices lists the phones of id with their issue time.
+func Devices(ctx context.Context, s blob.Store, id domain.UserID) ([]Device, error) {
+	out := []Device{}
 	err := read(ctx, s, DevicesKey, func(r registryDTO) {
 		for _, u := range r.Users {
 			if u.ID == id.String() {
-				out = append(out, u.Device)
+				d := Device{Device: u.Device}
+				if u.At != nil {
+					d.At = *u.At
+				}
+				out = append(out, d)
 			}
 		}
 	})
@@ -91,8 +111,13 @@ func (p Phones) Add(ctx context.Context, id domain.UserID) (string, string, erro
 }
 
 // List lists the phones of id.
-func (p Phones) List(ctx context.Context, id domain.UserID) ([]string, error) {
-	return Devices(ctx, p.Store, id)
+func (p Phones) List(ctx context.Context, id domain.UserID) ([]mail.Phone, error) {
+	ds, err := Devices(ctx, p.Store, id)
+	out := make([]mail.Phone, 0, len(ds))
+	for _, d := range ds {
+		out = append(out, mail.Phone{Device: d.Device, At: d.At})
+	}
+	return out, err
 }
 
 // Revoke unpairs phone device of id.

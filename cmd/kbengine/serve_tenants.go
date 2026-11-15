@@ -30,14 +30,32 @@ import (
 // нет нигде, потому что чужого в обработчике нет.
 func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) http.Handler {
 	lw := &lockedWriter{w: stderr}
+	phones := userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey))
 	return &tenants{
 		ctx: ctx, store: store, stderr: lw,
 		reg:      userauth.NewRegistry(ctx, store),
-		phones:   userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey)),
+		phones:   phones,
 		handlers: map[domain.UserID]http.Handler{},
-		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
 			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
 	}
+}
+
+// freshPhones drops the phones registry cache after this process changed it:
+// привязанный телефон входит сразу, отвязанный сразу перестает (ревью #630).
+type freshPhones struct {
+	userauth.Phones
+	reg *userauth.Registry
+}
+
+func (p freshPhones) Add(ctx context.Context, id domain.UserID) (string, string, error) {
+	defer p.reg.Invalidate()
+	return p.Phones.Add(ctx, id)
+}
+
+func (p freshPhones) Revoke(ctx context.Context, id domain.UserID, device string) error {
+	defer p.reg.Invalidate()
+	return p.Phones.Revoke(ctx, id, device)
 }
 
 type tenants struct {
@@ -92,7 +110,7 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
 			return
 		}
-		if id, ok := t.phones.Lookup(tok); ok {
+		if id, ok := t.phones.Lookup(tok); ok && t.reg.Has(id) { // телефон входит, пока жив хозяин (ревью #630)
 			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailPhone)))
 			return
 		}

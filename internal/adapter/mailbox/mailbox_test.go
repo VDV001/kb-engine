@@ -112,7 +112,7 @@ func TestAppendKeepsByteBudget(t *testing.T) {
 	ctx := context.Background()
 	st, raw, id := setup(t)
 	st.MaxBytes = 300 << 10
-	big := strings.Repeat("я", domain.MaxMailSealed/2)
+	big := strings.Repeat("я", domain.MaxMailSealed/4) // 2 байта на букву: полпредела
 	for i := range 20 {
 		if _, err := st.Append(ctx, id, msg(t, "a", domain.MailPhone, big+string(rune('a'+i)))); err != nil {
 			t.Fatalf("append %d: %v", i, err)

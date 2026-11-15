@@ -15,20 +15,33 @@ import (
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/mail"
 )
 
 // DefaultKeep is how many last messages a log keeps.
-//
-// ponytail: журнал — один объект, и каждая запись перечитывает его целиком
-// (до 2000 × 64 КБ в худшем случае). Потолок — длинная история; путь апгрейда —
-// нарезка журнала по номерам.
 const DefaultKeep = 2000
+
+// DefaultMaxBytes is the byte budget of a log: старые строки уходят, пока журнал
+// не войдет в бюджет. Без него 767 сообщений по 64 КБ упирались в предел объекта
+// хранилища (64 МБ), и ящик заклинивало навсегда (ревью #630).
+//
+// ponytail: журнал — один объект, и каждый опрос читает его целиком (до 8 МБ).
+// Потолок — частый опрос длинной истории; путь апгрейда — GetIfChanged по ETag
+// на человека и нарезка журнала по номерам (до выкатки на прод).
+const DefaultMaxBytes = 8 << 20
+
+// DefaultPage bounds one answer of Since.
+const DefaultPage = 200
 
 // Store reads and appends the logs in Blob.
 type Store struct {
-	Blob blob.Store
-	Keep int // 0 — DefaultKeep
+	Blob     blob.Store
+	Keep     int // 0 — DefaultKeep
+	MaxBytes int // 0 — DefaultMaxBytes
 }
+
+// Page is mail.Page: First больше «после» + 1 — часть истории ушла из журнала.
+type Page = mail.Page
 
 type lineDTO struct {
 	Seq    int64     `json:"seq"`
@@ -42,33 +55,26 @@ func key(id domain.UserID) string { return "users/" + id.String() + "/mail/log.j
 
 // Append writes m under the next number and returns it with the number.
 func (s Store) Append(ctx context.Context, id domain.UserID, m domain.MailMessage) (domain.MailMessage, error) {
-	keep := s.Keep
+	keep, budget := s.Keep, s.MaxBytes
 	if keep <= 0 {
 		keep = DefaultKeep
 	}
+	if budget <= 0 {
+		budget = DefaultMaxBytes
+	}
 	var out domain.MailMessage
 	add := func(raw []byte) ([]byte, error) {
-		lines, err := decode(raw)
-		if err != nil {
-			return nil, err
-		}
-		var last int64
-		if len(lines) > 0 {
-			last = lines[len(lines)-1].Seq
-		}
-		out = m.WithSeq(last + 1)
-		lines = append(lines, lineDTO{Seq: out.Seq(), Chat: m.Chat(), From: string(m.From()), At: m.At().UTC(), Sealed: m.Sealed()})
-		if len(lines) > keep {
-			lines = lines[len(lines)-keep:]
-		}
-		return encode(lines)
+		doc, got, err := appendLine(raw, m, keep, budget)
+		out = got
+		return doc, err
 	}
 	first, err := add(nil)
 	if err != nil {
 		return domain.MailMessage{}, err
 	}
 	_, err = s.Blob.Put(ctx, key(id), first, "") // первый раз журнала нет: создаем
-	if errors.Is(err, blob.ErrConflict) {
+	// Создан кем-то или неизвестно, легла ли запись, — перечитать и решить заново.
+	if errors.Is(err, blob.ErrConflict) || errors.Is(err, blob.ErrTransient) {
 		err = blob.Update(ctx, s.Blob, key(id), add)
 	}
 	if err != nil {
@@ -77,35 +83,72 @@ func (s Store) Append(ctx context.Context, id domain.UserID, m domain.MailMessag
 	return out, nil
 }
 
-// Since returns the messages after number after, по всем чатам.
-func (s Store) Since(ctx context.Context, id domain.UserID, after int64) ([]domain.MailMessage, error) {
+// appendLine adds m to log raw and returns the new log and m with its number;
+// m уже в журнале — журнал как есть: повтор после сбоя хранилища или клиента
+// не дублирует, шифротекст с нонсом не повторяется (ревью #630).
+func appendLine(raw []byte, m domain.MailMessage, keep, budget int) ([]byte, domain.MailMessage, error) {
+	lines, err := decode(raw)
+	if err != nil {
+		return nil, domain.MailMessage{}, err
+	}
+	for _, l := range lines {
+		if l.Chat == m.Chat() && l.From == string(m.From()) && bytes.Equal(l.Sealed, m.Sealed()) {
+			return raw, m.WithSeq(l.Seq), nil
+		}
+	}
+	var last int64
+	if len(lines) > 0 {
+		last = lines[len(lines)-1].Seq
+	}
+	out := m.WithSeq(last + 1)
+	lines = append(lines, lineDTO{Seq: out.Seq(), Chat: m.Chat(), From: string(m.From()), At: m.At().UTC(), Sealed: m.Sealed()})
+	if len(lines) > keep {
+		lines = lines[len(lines)-keep:]
+	}
+	for { // бюджет байт: старое уходит, последнее остается всегда
+		doc, err := encode(lines)
+		if err != nil || len(doc) <= budget || len(lines) == 1 {
+			return doc, out, err
+		}
+		lines = lines[1:]
+	}
+}
+
+// Since returns up to limit messages after number after, по всем чатам; 0 — DefaultPage.
+func (s Store) Since(ctx context.Context, id domain.UserID, after int64, limit int) (Page, error) {
+	if limit <= 0 {
+		limit = DefaultPage
+	}
+	p := Page{Messages: []domain.MailMessage{}}
 	o, err := s.Blob.Get(ctx, key(id))
 	if errors.Is(err, blob.ErrNotFound) {
-		return []domain.MailMessage{}, nil
+		return p, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("mailbox: read: %w", err)
+		return Page{}, fmt.Errorf("mailbox: read: %w", err)
 	}
 	lines, err := decode(o.Data)
 	if err != nil {
-		return nil, err
+		return Page{}, err
 	}
-	out := []domain.MailMessage{}
+	if len(lines) > 0 {
+		p.First = lines[0].Seq
+	}
 	for _, l := range lines {
 		if l.Seq <= after {
 			continue
 		}
-		side, err := domain.ParseMailSide(l.From)
-		if err != nil {
-			return nil, fmt.Errorf("mailbox: line %d: %w", l.Seq, err)
+		if len(p.Messages) == limit {
+			p.More = true
+			break
 		}
-		m, err := domain.NewMailMessage(l.Chat, side, l.Sealed, l.At)
+		m, err := domain.RestoreMailMessage(l.Seq, l.Chat, domain.MailSide(l.From), l.Sealed, l.At)
 		if err != nil {
-			return nil, fmt.Errorf("mailbox: line %d: %w", l.Seq, err)
+			continue // строка не наша (сторона неизвестна) — не роняет ящик
 		}
-		out = append(out, m.WithSeq(l.Seq))
+		p.Messages = append(p.Messages, m)
 	}
-	return out, nil
+	return p, nil
 }
 
 func decode(raw []byte) ([]lineDTO, error) {

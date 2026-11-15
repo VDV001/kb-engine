@@ -9,16 +9,29 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
+// Page is a part of the log after a number.
+type Page struct {
+	Messages []domain.MailMessage
+	First    int64 // первый номер, что еще в журнале
+	More     bool  // есть еще после последнего
+}
+
+// Phone is a paired phone.
+type Phone struct {
+	Device string
+	At     time.Time
+}
+
 // Box is the log of sealed messages.
 type Box interface {
 	Append(ctx context.Context, id domain.UserID, m domain.MailMessage) (domain.MailMessage, error)
-	Since(ctx context.Context, id domain.UserID, after int64) ([]domain.MailMessage, error)
+	Since(ctx context.Context, id domain.UserID, after int64, limit int) (Page, error)
 }
 
 // Phones keeps the phones' tokens.
 type Phones interface {
 	Add(ctx context.Context, id domain.UserID) (device, token string, err error)
-	List(ctx context.Context, id domain.UserID) ([]string, error)
+	List(ctx context.Context, id domain.UserID) ([]Phone, error)
 	Revoke(ctx context.Context, id domain.UserID, device string) error
 }
 
@@ -38,9 +51,9 @@ func (s Service) Post(ctx context.Context, id domain.UserID, side domain.MailSid
 	return s.Box.Append(ctx, id, m)
 }
 
-// Since returns the messages after number after.
-func (s Service) Since(ctx context.Context, id domain.UserID, after int64) ([]domain.MailMessage, error) {
-	return s.Box.Since(ctx, id, after)
+// Since returns up to limit messages after number after; 0 — страница по умолчанию.
+func (s Service) Since(ctx context.Context, id domain.UserID, after int64, limit int) (Page, error) {
+	return s.Box.Since(ctx, id, after, limit)
 }
 
 // AddPhone issues a phone token; только компьютер.
@@ -52,7 +65,7 @@ func (s Service) AddPhone(ctx context.Context, id domain.UserID, side domain.Mai
 }
 
 // ListPhones lists the phones; только компьютер.
-func (s Service) ListPhones(ctx context.Context, id domain.UserID, side domain.MailSide) ([]string, error) {
+func (s Service) ListPhones(ctx context.Context, id domain.UserID, side domain.MailSide) ([]Phone, error) {
 	if side != domain.MailDesk {
 		return nil, domain.ErrMailDeskOnly
 	}

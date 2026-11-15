@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strconv"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mail"
 )
@@ -77,6 +77,10 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	case errors.Is(err, domain.ErrMailDeskOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, domain.ErrMailTooManyPhones):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, blob.ErrConflict):
+		http.Error(w, "the mailbox kept changing under the write; retry", http.StatusConflict)
 	case errors.Is(err, domain.ErrNoSuchUser):
 		http.Error(w, "no such phone", http.StatusNotFound)
 	default:
@@ -100,10 +104,15 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 		h.fail(w, err)
 		return
 	}
-	if list == nil {
-		list = []string{}
+	type phoneDTO struct {
+		Device string    `json:"device"`
+		At     time.Time `json:"at"`
 	}
-	writeJSONStatus(w, http.StatusOK, map[string][]string{"devices": list})
+	out := make([]phoneDTO, 0, len(list))
+	for _, p := range list {
+		out = append(out, phoneDTO{Device: p.Device, At: p.At})
+	}
+	writeJSONStatus(w, http.StatusOK, map[string][]phoneDTO{"devices": out})
 }
 
 func (h mailRoutes) revokePhone(w http.ResponseWriter, r *http.Request, c mailCaller) {
@@ -118,7 +127,12 @@ func (h mailRoutes) post(w http.ResponseWriter, r *http.Request, c mailCaller) {
 	var in struct {
 		Sealed []byte `json:"sealed"` // base64; поле from не читается: сторону называет токен
 	}
-	if err := json.NewDecoder(io.LimitReader(r.Body, maxMailBody)).Decode(&in); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxMailBody)).Decode(&in); err != nil {
+		var tooBig *http.MaxBytesError
+		if errors.As(err, &tooBig) {
+			http.Error(w, "body over the mailbox limit", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "body: {\"sealed\": base64}", http.StatusBadRequest)
 		return
 	}
@@ -140,16 +154,20 @@ func (h mailRoutes) since(w http.ResponseWriter, r *http.Request, c mailCaller) 
 		}
 		after = n
 	}
-	ms, err := h.svc.Since(r.Context(), c.id, after)
+	p, err := h.svc.Since(r.Context(), c.id, after, 0)
 	if err != nil {
 		h.fail(w, err)
 		return
 	}
-	out := make([]mailDTO, 0, len(ms))
-	for _, m := range ms {
+	out := make([]mailDTO, 0, len(p.Messages))
+	for _, m := range p.Messages {
 		out = append(out, mailDTO{Seq: m.Seq(), Chat: m.Chat(), From: string(m.From()), At: m.At(), Sealed: m.Sealed()})
 	}
-	writeJSONStatus(w, http.StatusOK, map[string][]mailDTO{"messages": out})
+	writeJSONStatus(w, http.StatusOK, struct {
+		Messages []mailDTO `json:"messages"`
+		First    int64     `json:"first"` // больше after+1 — часть истории ушла из журнала
+		More     bool      `json:"more"`
+	}{out, p.First, p.More})
 }
 
 func writeJSONStatus(w http.ResponseWriter, code int, v any) {

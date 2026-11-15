@@ -20,7 +20,12 @@ var (
 	// ErrMailDeskOnly — телефоны привязывает и отвязывает только компьютер:
 	// украденный телефон не выпустит себе второй токен и не отвяжет хозяина.
 	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")
+	// ErrMailTooManyPhones — у человека уже предельное число телефонов.
+	ErrMailTooManyPhones = errors.New("mail: too many phones")
 )
+
+// mailReserved — имена, занятые маршрутами ящика (/api/mail/devices).
+var mailReserved = map[string]bool{"devices": true}
 
 // MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
 // в ящик не кладутся.
@@ -60,7 +65,7 @@ type MailMessage struct {
 // Чат — строчные латинские буквы, цифры и дефис: его выбирает клиент, и он
 // не должен значить ничего, кроме имени.
 func NewMailMessage(chat string, from MailSide, sealed []byte, at time.Time) (MailMessage, error) {
-	if chat == "" || len(chat) > maxMailChat || slices.ContainsFunc([]rune(chat), func(r rune) bool {
+	if chat == "" || len(chat) > maxMailChat || mailReserved[chat] || slices.ContainsFunc([]rune(chat), func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-'
 	}) {
 		return MailMessage{}, fmt.Errorf("%w: %q", ErrMailChat, chat)
@@ -75,6 +80,16 @@ func NewMailMessage(chat string, from MailSide, sealed []byte, at time.Time) (Ma
 		return MailMessage{}, fmt.Errorf("%w: %d bytes, limit %d", ErrMailTooLarge, len(sealed), MaxMailSealed)
 	}
 	return MailMessage{chat: chat, from: from, sealed: slices.Clone(sealed), at: at}, nil
+}
+
+// RestoreMailMessage rebuilds a message already in the log: правила входа (чат,
+// размер) не перепроверяются — записанное по прежним правилам читается и после
+// их ужесточения, и одна старая строка не роняет весь ящик (ревью #630).
+func RestoreMailMessage(seq int64, chat string, from MailSide, sealed []byte, at time.Time) (MailMessage, error) {
+	if _, err := ParseMailSide(string(from)); err != nil {
+		return MailMessage{}, err
+	}
+	return MailMessage{seq: seq, chat: chat, from: from, sealed: sealed, at: at}, nil
 }
 
 // WithSeq is the message under its number in the log.
