@@ -269,6 +269,8 @@ func Describe(err error) string {
 		return "сервер перенаправил запрос, а kb не идет по редиректам с токеном — укажите конечный адрес (https://…)"
 	case errors.Is(err, ErrTooLarge):
 		return "выдача сервера больше 32 МБ — уточните запрос"
+	case errors.Is(err, ErrNoMailbox), errors.Is(err, ErrMailRefused), errors.Is(err, ErrNoSuchPhone):
+		return describeMail(err)
 	case errors.Is(err, ErrRejected):
 		return "kb-сервер отказал: " + strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrRejected.Error()+":")) + " — обновите окно или сервер до одной версии"
 	case errors.Is(err, ErrServerError):

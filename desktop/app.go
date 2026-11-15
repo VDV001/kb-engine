@@ -352,6 +352,16 @@ func (a *App) MemoryWho() (bool, error) {
 // Connections lists the window's accesses (раздел «Подключения»).
 func (a *App) Connections() []connRow { return a.settings.Connections() }
 
+// MailPairPhone pairs a phone with the kb server's mailbox (#622): QR без
+// токена и ключа текстом.
+func (a *App) MailPairPhone(id string) (phonePairing, error) { return a.settings.MailPairPhone(id) }
+
+// MailPhones lists the phones paired with the kb server's mailbox.
+func (a *App) MailPhones(id string) ([]phoneRow, error) { return a.settings.MailPhones(id) }
+
+// MailRevokePhone unpairs a phone from the kb server's mailbox.
+func (a *App) MailRevokePhone(id, device string) error { return a.settings.MailRevokePhone(id, device) }
+
 // StartDictation starts listening; текст приходит событием dictation. pause > 0
 // — разговор без рук: тишина pause секунд кончает вопрос.
 func (a *App) StartDictation(pause float64) error {
