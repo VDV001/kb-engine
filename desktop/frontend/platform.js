@@ -19,21 +19,43 @@ function hideWindow() {
 }
 
 // winKeys переводит подпись на Windows: ⌘ → Ctrl+, ⌥ → Alt+, ⇧ → Shift+
-// («⌘ ,» и «⌘,» дают одно «Ctrl+,»), «в Finder» → «в Проводнике».
-// Связку ключей и Touch ID не трогает: их подписи сменятся вместе с заменой.
+// («⌘ ,» и «⌘,» дают одно «Ctrl+,»), «в Finder» → «в Проводнике», Связка
+// ключей → Диспетчер учетных данных (keychain_windows.go), Мак → компьютер,
+// macOS → Windows. Падеж — по окончанию; \b с кириллицей не работает, отсюда
+// (?![а-яё]). Touch ID остается, пока на Windows нет Windows Hello.
+const MAC_CASE = { "": "компьютер", "а": "компьютера", "е": "компьютере", "у": "компьютеру", "ом": "компьютером" };
+const WIN_WORDS = [
+  [/⌘\s?/g, "Ctrl+"], [/⌥\s?/g, "Alt+"], [/⇧\s?/g, "Shift+"],
+  [/([вВ]) Finder/g, "$1 Проводнике"],
+  [/([кК]) Связке( ключей)?(?![а-яё])/g, "$1 Диспетчеру учетных данных"],
+  [/Связк[ау]( ключей)?( macOS)?(?![а-яё])/g, "Диспетчер учетных данных"],
+  [/Связки( ключей)?(?![а-яё])/g, "Диспетчера учетных данных"],
+  [/Связке( ключей)?(?![а-яё])/g, "Диспетчере учетных данных"],
+  [/(?<![А-Яа-яё])Мак(а|е|у|ом)?(?![а-яё])/g, (_, end) => MAC_CASE[end || ""]],
+  [/macOS/g, "Windows"],
+  // Связка — она, Диспетчер — он: глаголы, что стоят в окне после «Связка».
+  [/(Диспетчер учетных данных(?: Windows)?(?: не)? )(ответила|прочлась|отдала|заперта)(?![а-яё])/g,
+    (_, head, verb) => head + { "ответила": "ответил", "прочлась": "прочелся", "отдала": "отдал", "заперта": "заперт" }[verb]],
+];
 function winKeys(s) {
-  return s.replace(/⌘\s?/g, "Ctrl+").replace(/⌥\s?/g, "Alt+").replace(/⇧\s?/g, "Shift+").replace(/([вВ]) Finder/g, "$1 Проводнике");
+  for (const [re, to] of WIN_WORDS) s = s.replace(re, to);
+  return s;
 }
-const KEY_GLYPH = /[⌘⌥⇧]|[вВ] Finder/;
+const KEY_GLYPH = /[⌘⌥⇧]|[вВ] Finder|Связк|(?<![А-Яа-яё])Мак(а|е|у|ом)?(?![а-яё])|macOS/;
 const KEY_ATTRS = ["data-tip", "data-tip-k", "data-tip-b", "aria-label", "title", "placeholder"];
+// Здесь Ваши данные, а не подписи окна: «на этом Маке» в документе остается как есть.
+const CONTENT = "#results, #preview, #chat-log, #chat-list, #chat-docs-pane, #memory-view, #markets-view, #artifacts-view";
 
 function relabel(node) {
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  if (!el || el.nodeType !== Node.ELEMENT_NODE || el.closest(CONTENT)) return;
   if (node.nodeType === Node.TEXT_NODE) {
     if (KEY_GLYPH.test(node.data)) node.data = winKeys(node.data);
     return;
   }
-  if (node.nodeType !== Node.ELEMENT_NODE) return;
-  const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT);
+  const walk = document.createTreeWalker(node, NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT, {
+    acceptNode: (n) => (n.nodeType === Node.ELEMENT_NODE && n.matches(CONTENT) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT),
+  });
   for (let n = node; n; n = walk.nextNode()) {
     if (n.nodeType === Node.TEXT_NODE) {
       if (KEY_GLYPH.test(n.data)) n.data = winKeys(n.data);
