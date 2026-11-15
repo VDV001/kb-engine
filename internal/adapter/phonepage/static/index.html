@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c">
+<title>DVK</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="crypto.js">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<header class="top">
+  <button type="button" class="back" id="back" hidden aria-label="К чатам">‹</button>
+  <h1 id="title">DVK</h1>
+  <span class="desk" id="desk" role="status"></span>
+</header>
+
+<main>
+  <section id="unpaired" hidden>
+    <h2>Телефон не привязан</h2>
+    <p>Откройте окно DVK на компьютере: Настройки → Подключения → kb-сервер → «Телефоны» → «Подключить телефон», и наведите камеру на код.</p>
+    <p class="muted">Ключ переписки придет в коде и останется только на этом телефоне и компьютере: сервер видит одни шифротексты.</p>
+  </section>
+
+  <section id="chats" hidden>
+    <button type="button" class="btn primary" id="new-chat">Новый чат</button>
+    <ul class="list" id="chat-list"></ul>
+    <p class="muted" id="chats-empty">Чатов пока нет. Задачу выполнит компьютер с открытым окном DVK.</p>
+  </section>
+
+  <section id="chat" hidden>
+    <ol class="msgs" id="msgs"></ol>
+    <form class="ask" id="ask">
+      <textarea id="q" rows="2" placeholder="Вопрос или задача для DVK" required></textarea>
+      <button type="submit" class="btn primary" id="send">Отправить</button>
+    </form>
+  </section>
+
+  <p class="note" id="note" role="status" hidden></p>
+</main>
+</body>
+</html>

@@ -1,0 +1,40 @@
+/* Страница телефона DVK (#622): стиль окна — темный фон, рамки, моноширинный. */
+:root {
+  --bg: #0b0b0c; --bg-2: #141416; --rule: #2a2a2e; --ink: #ececee; --muted: #8b8b93;
+  --accent: #6aa0e0; --accent-ink: #0b0b0c; --bad: #e06a6a; --ok: #8fd0a0; --radius: 6px;
+  --font: ui-monospace, "JetBrains Mono", SFMono-Regular, Menlo, monospace;
+}
+@media (prefers-color-scheme: light) {
+  :root { --bg: #fbfbfa; --bg-2: #f1f1ef; --rule: #d9d9d6; --ink: #18181a; --muted: #6b6b70; --accent: #2f6db5; --accent-ink: #fff; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--font); }
+body { min-height: 100dvh; display: flex; flex-direction: column; padding-bottom: env(safe-area-inset-bottom); }
+[hidden] { display: none !important; }
+.top { position: sticky; top: 0; display: flex; align-items: center; gap: 10px; padding: calc(10px + env(safe-area-inset-top)) 16px 10px; background: var(--bg); border-bottom: 1px solid var(--rule); }
+.top h1 { flex: 1; margin: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.back { border: 0; background: none; color: var(--ink); font-size: 26px; line-height: 1; padding: 0 6px 0 0; }
+.desk { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.desk.on { color: var(--ok); }
+main { flex: 1; display: flex; flex-direction: column; padding: 16px; gap: 12px; }
+section { display: flex; flex-direction: column; gap: 12px; }
+h2 { margin: 0; font-size: 16px; }
+p { margin: 0; }
+.muted { color: var(--muted); font-size: 13px; }
+.btn { height: 40px; padding: 0 16px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; font-size: 14px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:disabled { opacity: .5; }
+.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.list button { width: 100%; text-align: left; display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--bg-2); color: var(--ink); font: inherit; }
+.list small { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#chat { flex: 1; }
+.msgs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; flex: 1; }
+.msgs li { max-width: 88%; padding: 8px 12px; border: 1px solid var(--rule); border-radius: var(--radius); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msgs li.me { align-self: flex-end; background: var(--bg-2); }
+.msgs li.desk { align-self: flex-start; }
+.msgs li.error { border-color: var(--bad); color: var(--bad); }
+.msgs li.wait { color: var(--muted); border-style: dashed; }
+.ask { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr auto; gap: 8px; padding-top: 8px; background: var(--bg); }
+.ask textarea { resize: none; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--bg-2); color: var(--ink); font: inherit; }
+.ask .btn { align-self: end; }
+.note { font-size: 13px; color: var(--bad); }
