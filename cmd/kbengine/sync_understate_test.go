@@ -7,8 +7,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/daniil/kb-engine/internal/adapter/balancestate"
 )
 
 // Синхронизация называет траты, которые занизят расчетный остаток.
@@ -78,20 +76,14 @@ func TestRun_finSyncSilentWhenNothingUnderstates(t *testing.T) {
 // confirmBalance записывает остаток счета через ту же команду, что и человек —
 // вместе с моментом подтверждения, который эта команда кладет рядом с книгой.
 //
-// Момент отодвигается на час назад намеренно. Команда ставит «сейчас», а тест
-// пишет трату следующей строкой, и обе укладываются в одну миллисекунду; момент
-// записи читается из ULID, у которого точность как раз миллисекунда, и трата
-// оказывается записанной «до» подтверждения на доли миллисекунды. У человека
-// между этими двумя действиями проходят минуты, и тест моделирует это, а не
-// скорость машины.
+// Момент не отодвигается: трата, записанная следующей строкой, ложится в ту же
+// миллисекунду, и это и есть проверка правила ничьей (#638) — раньше здесь
+// стоял сдвиг на час, который обходил эту ошибку.
 func confirmBalance(t *testing.T, book, bank, amount string) {
 	t.Helper()
 	var out, errb bytes.Buffer
 	if code := run([]string{"fin", "balance", "--from", book, "--bank", bank, "--amount", amount}, &out, &errb); code != 0 {
 		t.Fatalf("fin balance exit = %d, stderr = %s", code, errb.String())
-	}
-	if err := balancestate.Record(balancestate.PathNextTo(book), bank, time.Now().Add(-time.Hour)); err != nil {
-		t.Fatalf("Record: %v", err)
 	}
 }
 
