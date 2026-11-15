@@ -103,6 +103,9 @@ type folderSettings struct {
 	mailHTTP *http.Client
 	qr       func(text string) ([]byte, error)
 	mailMu   sync.Mutex // привязка и отвязка по одной: ключ чата рождается один
+	// mailGen растет при каждой привязке, отвязке и удалении ключа чата:
+	// работник ящика перечитывает Связку только тогда (mailworker.go).
+	mailGen atomic.Uint64
 	// lastServers — последний ответ ServerStates по id (под mu): по нему
 	// строка статуса считает проблемы серверов без сети и Связки ключей.
 	lastServers map[string]sourceRow

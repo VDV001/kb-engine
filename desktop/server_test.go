@@ -21,10 +21,11 @@ const srvToken = "k3Jx9_secret-token-0123456789abcdefXYZ"
 type fakeTokens struct {
 	m      map[string]string
 	fail   error
-	failOn string // отказ только для этой учетки
-	getErr error  // сбой чтения, отличный от «записи нет» (связка заперта)
-	touch  func() // зовется при каждой записи и удалении
-	delErr error  // отказ удаления
+	failOn string         // отказ только для этой учетки
+	getErr error          // сбой чтения, отличный от «записи нет» (связка заперта)
+	touch  func()         // зовется при каждой записи и удалении
+	delErr error          // отказ удаления
+	gets   map[string]int // счет чтений по учеткам; nil — не считать
 }
 
 func (f *fakeTokens) Set(acct, secret string) error {
@@ -39,6 +40,9 @@ func (f *fakeTokens) Set(acct, secret string) error {
 }
 
 func (f *fakeTokens) Get(acct string) (string, error) {
+	if f.gets != nil {
+		f.gets[acct]++
+	}
 	if f.getErr != nil {
 		return "", f.getErr
 	}
