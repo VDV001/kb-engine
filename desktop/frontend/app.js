@@ -580,7 +580,7 @@ document.addEventListener("click", (e) => { if (!e.target.closest(".hdr-more, .h
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".hdr-pop:not([hidden])")) { e.stopPropagation(); closeHdrPop(); } }, true);
 // ⌘1 — Поиск, ⌘2… — модули по порядку (подсказка каждой кнопки их называет).
 document.addEventListener("keydown", (e) => {
-  if (!e.metaKey || e.altKey || e.ctrlKey || !/^[1-9]$/.test(e.key) || settingsOpen()) return; // под открытыми настройками модуль не сменится незаметно
+  if (!modKey(e) || e.altKey || otherMod(e) || !/^[1-9]$/.test(e.key) || settingsOpen()) return; // под открытыми настройками модуль не сменится незаметно
   const key = navOrder()[+e.key - 1];
   if (!key) return;
   e.preventDefault();
@@ -827,11 +827,20 @@ function activate(it, reveal) {
   reveal ? revealFile(it.f.path) : openFile(it.f.path);
 }
 
+// Windows: глобальной клавиши нет (⌥Space держит menubar_darwin.m, а Alt+Space
+// в Windows — системное меню окна), Esc сворачивает окно, а не прячет.
+if (IS_WIN) {
+  const w = HELP.find((s) => s.id === "window");
+  w.lead = "Клавиши работают в окне.";
+  w.items = w.items.filter((i) => !i.k?.includes("⌥Space")); // у строки с путем конфига вместо k — cmd
+  for (const i of w.items) if (i.k?.[0] === "Esc") i.d = i.d.replace("спрятать окно", "свернуть окно");
+}
+
 function showEmpty() {
   $("#preview").innerHTML = `<div class="empty"><div class="prompt"><span class="dollar">$</span> cat README</div>
     <p>Поиск по базе знаний и файлам на этом компьютере.</p>
     <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
-    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить, еще раз — спрятать <b>⌥space</b> открыть</p></div>`;
+    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить, еще раз — ${IS_WIN ? "свернуть" : "спрятать <b>⌥space</b> открыть"}</p></div>`;
 }
 
 // --- Клавиатура ----------------------------------------------------------------
@@ -841,16 +850,16 @@ document.addEventListener("keydown", (e) => {
   // буквы уводили бы фокус в скрытое поле (ревью #509). Tab листает вкладки, как
   // везде; Esc прячет окно — скрытый запрос он не трогает.
   if ($("#app").classList.contains("module-open") && e.key !== "Tab") {
-    if (e.key === "Escape" && !e.defaultPrevented && window.runtime) window.runtime.Hide();
+    if (e.key === "Escape" && !e.defaultPrevented) hideWindow();
     return;
   }
   if (e.key === "ArrowDown") { e.preventDefault(); select(state.sel + 1); }
   else if (e.key === "ArrowUp") { e.preventDefault(); select(state.sel - 1); }
-  else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], e.metaKey); }
+  else if (e.key === "Enter") { e.preventDefault(); activate(state.items[state.sel], modKey(e)); }
   else if (e.key === "Escape") {
     // Первый Esc очищает запрос, второй прячет окно: kb живет в меню-баре.
     if ($("#q").value) { $("#q").value = ""; search(""); }
-    else if (window.runtime) window.runtime.Hide(); // как красная кнопка: фокус уходит туда, откуда звали
+    else hideWindow(); // как красная кнопка: фокус уходит туда, откуда звали
   }
   else if (e.key === "Tab") {
     e.preventDefault();
@@ -859,7 +868,7 @@ document.addEventListener("keydown", (e) => {
     state.sel = 0;
     render();
   }
-  else if (e.key.length === 1 && document.activeElement !== $("#q") && !e.metaKey) $("#q").focus();
+  else if (e.key.length === 1 && document.activeElement !== $("#q") && !modKey(e)) $("#q").focus();
 });
 
 window.addEventListener("resize", moveInk);
@@ -2114,7 +2123,7 @@ document.addEventListener("keydown", (e) => {
 // Esc закрывает панель раньше, чем очищает поиск; ⌘, открывает ее, как в любом приложении macOS.
 document.addEventListener("keydown", (e) => {
   if (settingsOpen() && e.key === "Escape") { e.stopImmediatePropagation(); closeSettings(); }
-  else if (e.metaKey && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings("sources"); }
+  else if (modKey(e) && e.key === ",") { e.preventDefault(); e.stopImmediatePropagation(); openSettings("sources"); }
 }, true);
 
 // --- Вкладки поиска в панели ----------------------------------------------------

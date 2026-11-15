@@ -1,14 +1,11 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net"
 	"net/url"
-	"os/exec"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -22,9 +19,6 @@ import (
 // shareRetry — не чаще этого пробовать одну шару: недоступная не дергается
 // на каждом тике.
 const shareRetry = 5 * time.Minute
-
-// mountTimeout — сколько ждать подключение (диалог пароля при первом входе).
-const mountTimeout = 2 * time.Minute
 
 // shareTries remembers when each share was last tried.
 type shareTries struct {
@@ -43,20 +37,6 @@ func (t *shareTries) due(addr string, now time.Time) bool {
 	}
 	t.last[addr] = now
 	return true
-}
-
-// mountCommand is the system command that mounts addr. Адрес проверен
-// ShareVolume: кавычек и обратной черты в нем нет.
-func mountCommand(addr string) *exec.Cmd {
-	return exec.Command("/usr/bin/osascript", "-e", `mount volume "`+addr+`"`)
-}
-
-func mountShareCmd(addr string) error {
-	ctx, cancel := context.WithTimeout(context.Background(), mountTimeout)
-	defer cancel()
-	cmd := mountCommand(addr)
-	run := exec.CommandContext(ctx, cmd.Path, cmd.Args[1:]...)
-	return run.Run()
 }
 
 // shareReachable reports whether the share's server answers on its port:
@@ -114,38 +94,6 @@ func (f *folderSettings) mountMissingShares() {
 
 // mountEntry is one mounted file system: откуда и куда.
 type mountEntry struct{ from, on string }
-
-// mntNoWait — MNT_NOWAIT из sys/mount.h: список без опроса каждой файловой
-// системы (отвалившаяся шара не держит ответ). В syscall для darwin константы нет.
-const mntNoWait = 2
-
-// systemMounts lists the mounted file systems (getfsstat).
-func systemMounts() []mountEntry {
-	n, err := syscall.Getfsstat(nil, mntNoWait)
-	if err != nil || n <= 0 {
-		return nil
-	}
-	buf := make([]syscall.Statfs_t, n)
-	if n, err = syscall.Getfsstat(buf, mntNoWait); err != nil {
-		return nil
-	}
-	out := make([]mountEntry, 0, n)
-	for _, st := range buf[:n] {
-		out = append(out, mountEntry{from: cString(st.Mntfromname[:]), on: cString(st.Mntonname[:])})
-	}
-	return out
-}
-
-func cString(b []int8) string {
-	s := make([]byte, 0, len(b))
-	for _, c := range b {
-		if c == 0 {
-			break
-		}
-		s = append(s, byte(c))
-	}
-	return string(s)
-}
 
 // mountPointOf finds where the share at addr is mounted: том в /Volumes, чей
 // источник — тот же сервер и та же папка. Занятое имя macOS подключает в

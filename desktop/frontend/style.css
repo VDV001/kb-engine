@@ -83,6 +83,29 @@ body {
 button { font-family: inherit; }
 
 .drag { position: fixed; inset: 0 0 auto 0; height: 34px; z-index: 5; }
+/* Windows (#622): «— ▢ ✕» в полосе над шапкой, где на Маке светофор, — справа.
+   Размер и тонкие знаки как у Windows 11; цвета окна, красный только у ✕. */
+.win-caps { position: fixed; top: 0; right: 0; z-index: 1000; /* над затемнением и панелями: светофор Мака тоже всегда доступен */ display: flex; height: 34px; }
+.win-caps button { width: 46px; height: 100%; display: grid; place-items: center; border: 0; background: none; color: var(--z-muted); cursor: default; }
+.win-caps svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+.win-caps button:hover { background: var(--z-bg-3); color: var(--z-ink); }
+.win-caps .close:hover { background: #c42b1c; color: #fff; }
+/* Полосы прокрутки: в WebView2 они системные, толстые и серые, а на Маке тонкие
+   и поверх содержимого. Тонкие и тихие везде; свои у выдачи и превью остаются. */
+/* Выпадающие списки: WebKit Мака рисует их скругленными с двойной стрелкой,
+   Chromium — квадратными с «v». Рисуем как на Маке. !important — у списков
+   свои правила с background сокращенной записью (#tab-add select и др.),
+   и они стерли бы стрелку. Сам открытый список остается системным. */
+:root[data-os="windows"] select {
+  appearance: none; border-radius: 5px;
+  padding-right: 24px !important;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 12' fill='none' stroke='%238a8a90' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1.5 4.5 4 2l2.5 2.5M1.5 7.5 4 10l2.5-2.5'/%3E%3C/svg%3E") !important;
+  background-repeat: no-repeat !important; background-position: right 8px center !important; background-size: 8px 12px !important;
+}
+:root[data-os="windows"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+:root[data-os="windows"] ::-webkit-scrollbar-track, :root[data-os="windows"] ::-webkit-scrollbar-corner { background: transparent; }
+:root[data-os="windows"] ::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--z-ink) 22%, transparent); border-radius: 4px; }
+:root[data-os="windows"] ::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--z-ink) 38%, transparent); }
 
 .app {
   height: 100%; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto auto auto 1fr; /* minmax(0): колонка не шире окна, иначе чат с двумя панелями не сжимается и правая панель уходит за край */
@@ -392,6 +415,8 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
   box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
   opacity: 0; pointer-events: none; transform: translateX(24px); transition: opacity .2s var(--z-ease), transform .35s var(--z-ease);
 }
+/* Windows: панель справа доходила бы до «— ▢ ✕» — начинается под их полосой. */
+:root[data-os="windows"] .settings { top: 40px; }
 .settings.open { opacity: 1; pointer-events: auto; transform: translateX(0); }
 .settings-nav { display: flex; flex-direction: column; gap: 1px; padding: 16px 8px; border-right: 1px solid var(--z-rule); background: var(--z-bg); overflow-y: auto; }
 .settings-nav button { display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 0; background: none; text-align: left; padding: 6px 10px; border-radius: var(--z-radius); color: var(--z-ink-2); font: 12px var(--z-font); cursor: pointer; }

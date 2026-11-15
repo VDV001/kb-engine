@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 	"github.com/wailsapp/wails/v2/pkg/options/mac"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 )
 
 //go:embed all:frontend
@@ -164,8 +166,12 @@ func run() error {
 			installMenuBar(tray{win: wailsWindow{ctx: ctx}, ctx: ctx})
 		},
 		// Красная кнопка прячет окно: вернуть его — ⌥Space, значок в Dock или в
-		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка.
-		HideWindowOnClose: true,
+		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка. На Windows
+		// значка в трее пока нет: спрятанное окно было бы не вернуть, крестик закрывает.
+		HideWindowOnClose: goruntime.GOOS == "darwin",
+		// Windows: без системного заголовка, «— ▢ ✕» рисует шапка окна
+		// (решение владельца 15.11: на Windows окно выглядит как на Маке).
+		Frameless: goruntime.GOOS == "windows",
 		// Меню WebKit по правому клику — только в сборке just desktop-inspect
 		// (inspector_devtools.go): Wails показывает его над полем ввода и
 		// выделением, в нем Inspect Element. Без меню тег devtools недоступен.
@@ -175,6 +181,11 @@ func run() error {
 			cancel()
 		},
 		Bind: []any{app},
+		Windows: &windows.Options{
+			Theme:            windows.SystemDefault,
+			BackdropType:     windows.None, // фон страницы, без Mica: на Маке стекла тоже нет
+			DisablePinchZoom: true,
+		},
 		Mac: &mac.Options{
 			TitleBar:   mac.TitleBarHiddenInset(),
 			Appearance: mac.NSAppearanceNameDarkAqua,
