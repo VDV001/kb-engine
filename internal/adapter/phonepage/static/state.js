@@ -15,6 +15,13 @@ export function repair(prev, pair, newSender) {
   return { pair, sender: newSender, counter: 0n, after: 0, seen: {}, chats: prev?.chats || {}, outbox: [] };
 }
 
+// rebinds tells whether pairing with keyId moves an already paired phone to
+// another key: такую привязку человек подтверждает сам — ссылку с чужим ключом
+// может прислать кто угодно (ревью безопасности #636).
+export function rebinds(prev, keyId) {
+  return false;
+}
+
 // take applies one message of the mailbox; o — открытое (null — чужое,
 // поддельное). Номер ящика двигается всегда; ответ — «чат изменился,
 // перерисовать».

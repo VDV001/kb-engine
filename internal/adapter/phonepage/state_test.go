@@ -115,6 +115,11 @@ let again = false;
 await s.single(async () => { again = true; })();
 want(again, "single runs again after a failure");
 
+// 8. Ревью безопасности #636: чужой ключ в ссылке — перепривязка с подтверждением.
+want(s.rebinds(prev, key2.keyId) === true, "a new key on a paired phone rebinds");
+want(s.rebinds(prev, key1.keyId) === false, "the same key is not a rebind");
+want(s.rebinds(null, key2.keyId) === false && s.rebinds({}, key2.keyId) === false, "first pairing is not a rebind");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

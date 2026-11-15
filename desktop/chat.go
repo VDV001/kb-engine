@@ -136,10 +136,13 @@ type chatDesk struct {
 	read     func(ctx context.Context, ref string) (chat.Doc, error)
 	// find is search without the read tool's memory, open reads a document
 	// found by it: поиск телефона не вытесняет выдачу модели окна (ревью #636).
-	find  func(ctx context.Context, q string, limit int) ([]chat.Doc, error)
-	open  func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
-	model func(c desktopconfig.Chat, key string) chat.Model
-	now   func() time.Time
+	find func(ctx context.Context, q string, limit int) ([]chat.Doc, error)
+	open func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
+	// openFound is open for the phone: ссылку из записи не скачивает (ревью
+	// безопасности #636) — только находку Диска его подключением.
+	openFound func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
+	model     func(c desktopconfig.Chat, key string) chat.Model
+	now       func() time.Time
 	// show shows the answer while the model writes it (событие chat:delta);
 	// nil — без показа. Вопрос один за раз, поэтому текст без id чата.
 	show func(text string)
@@ -684,6 +687,7 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		}
 		return doc, nil
 	}
+	d.openFound = d.open
 }
 
 // remember keeps the records of a search: модель читает только то, что видела.
