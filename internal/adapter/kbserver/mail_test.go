@@ -117,3 +117,31 @@ func TestClient_DescribeMailRefusals(t *testing.T) {
 		t.Errorf("no such phone: %q", d)
 	}
 }
+
+// Ящик: положить шифротекст в чат и забрать новое после номера — настоящим
+// обработчиком; сторону называет токен (здесь — компьютер).
+func TestClient_MailPostAndSince(t *testing.T) {
+	srv := mailKB(t)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	ctx := context.Background()
+	if p, err := c.MailSince(ctx, 0); err != nil || len(p.Messages) != 0 || p.More {
+		t.Fatalf("empty box: %+v, %v", p, err)
+	}
+	for i, body := range [][]byte{[]byte("sealed-1"), []byte("sealed-2")} {
+		seq, err := c.MailPost(ctx, "c-1", body)
+		if err != nil || seq != int64(i+1) {
+			t.Fatalf("post %d: seq %d, %v", i, seq, err)
+		}
+	}
+	p, err := c.MailSince(ctx, 1)
+	if err != nil || len(p.Messages) != 1 {
+		t.Fatalf("since 1: %+v, %v", p, err)
+	}
+	m := p.Messages[0]
+	if m.Seq != 2 || m.Chat != "c-1" || m.From != "desk" || string(m.Sealed) != "sealed-2" || m.At.IsZero() || p.First != 1 {
+		t.Errorf("message: %+v, first %d", m, p.First)
+	}
+	if _, err := c.MailPost(ctx, "Bad Chat", []byte("x")); !errors.Is(err, kbserver.ErrRejected) {
+		t.Errorf("bad chat: %v, want ErrRejected", err)
+	}
+}
