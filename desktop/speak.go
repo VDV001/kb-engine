@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -81,7 +82,7 @@ func (s *speaker) Speak(voice, text string) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.CreateTemp("", "dvk-voice-*.audio")
+	f, err := os.CreateTemp("", "dvk-voice-*"+audioExt(audio))
 	if err != nil {
 		return err
 	}
@@ -143,15 +144,6 @@ func (s *speaker) killLocked() {
 	}
 }
 
-func afplayCommand(path string) *exec.Cmd { return exec.Command("/usr/bin/afplay", path) }
-
-func sayCommand(voice string) *exec.Cmd {
-	if voice == "" {
-		return exec.Command("/usr/bin/say")
-	}
-	return exec.Command("/usr/bin/say", "-v", voice)
-}
-
 // Stop interrupts the reading, и облачный звук, который еще синтезируется.
 func (s *speaker) Stop() {
 	s.mu.Lock()
@@ -196,23 +188,6 @@ func englishVoiceIn(out, accent string) string {
 	return ""
 }
 
-func englishVoice(accent string) string {
-	out, err := exec.Command("/usr/bin/say", "-v", "?").Output()
-	if err != nil {
-		return ""
-	}
-	return englishVoiceIn(string(out), accent)
-}
-
-// russianVoices lists the Russian voices of this Mac.
-func russianVoices() []string {
-	out, err := exec.Command("/usr/bin/say", "-v", "?").Output()
-	if err != nil {
-		return nil
-	}
-	return parseVoices(string(out), "ru_")
-}
-
 // previewSample — пробная фраза голоса в настройках (#478).
 const previewSample = "Здравствуйте! Так я буду читать ответы."
 
@@ -225,8 +200,27 @@ func previewVoice(s *speaker, voices func() []string, voice string) error {
 	return s.Speak(voice, previewSample)
 }
 
-// voiceSettingsURL — раздел «Устной контент» Настроек macOS, где скачивают
-// голоса Premium и Enhanced.
-const voiceSettingsURL = "x-apple.systempreferences:com.apple.preference.universalaccess?SpokenContent"
+// audioExt names the cloud audio by its first bytes: проигрыватель Windows
+// выбирает разборщик по расширению, afplay Мака — по содержимому.
+func audioExt(b []byte) string {
+	switch {
+	case bytes.HasPrefix(b, []byte("RIFF")):
+		return ".wav"
+	case bytes.HasPrefix(b, []byte("OggS")):
+		return ".ogg"
+	case bytes.HasPrefix(b, []byte("ID3")), len(b) > 1 && b[0] == 0xFF && b[1]&0xE0 == 0xE0:
+		return ".mp3"
+	}
+	return ".audio"
+}
 
-func voiceSettingsCommand() *exec.Cmd { return exec.Command("/usr/bin/open", voiceSettingsURL) }
+// windowsVoices parses «имя<TAB>ru-RU» lines into names whose culture starts with prefix.
+func windowsVoices(out, prefix string) []string {
+	var names []string
+	for line := range strings.SplitSeq(strings.ReplaceAll(out, "\r", ""), "\n") {
+		if name, culture, ok := strings.Cut(line, "\t"); ok && strings.HasPrefix(culture, prefix) {
+			names = append(names, strings.TrimSpace(name))
+		}
+	}
+	return names
+}

@@ -3112,7 +3112,8 @@ function renderVoiceChoices() {
 const CLOUD_LISTEN = { "cloud:mini": ["Облако", "gpt-4o-mini-transcribe через Vercel AI Gateway: около 0,3 цента за минуту речи, лучше с терминами и английскими словами."], "cloud:best": ["Облако: gpt-4o (дороже)", "gpt-4o-transcribe через Vercel AI Gateway: около 0,6 цента за минуту, точнее на шуме и быстрой речи."] };
 function renderListenChoices() {
   const cur = $("#chat-listen").value, st = chatState.listenStatus || {}, conns = chatState.speechConns || [];
-  const all = [["", "Mac (бесплатно)", true], ...Object.entries(CLOUD_LISTEN).map(([v, [n]]) => [v, n, true]), ...conns.map((c) => [c.id, c.name, c.enabled])];
+  // На Windows своего распознавания нет (desktop/listenwin только пишет звук): Мак из списка уходит.
+  const all = [...(IS_WIN ? [] : [["", "Mac (бесплатно)", true]]), ...Object.entries(CLOUD_LISTEN).map(([v, [n]]) => [v, n, true]), ...conns.map((c) => [c.id, c.name, c.enabled])];
   if (cur && !all.some(([v]) => v === cur)) all.push([cur, "удаленный сервер", false]);
   $("#chat-listens").innerHTML = all.map(([v, n, on]) => `<button type="button" class="btn" data-listen="${esc(v)}" aria-pressed="${v === cur}" ${on ? "" : "disabled"}>${esc(n)}${on ? "" : "<small>выключено</small>"}</button>`).join("");
   const AUTH = { denied: "macOS запретил распознавание речи: Системные настройки → Конфиденциальность → Распознавание речи → DVK", restricted: "распознавание речи закрыто политикой Мака", notDetermined: "macOS спросит разрешение на микрофон и распознавание при первой диктовке" };
@@ -3120,6 +3121,7 @@ function renderListenChoices() {
   $("#chat-listen-note").textContent = CLOUD_LISTEN[cur] ? CLOUD_LISTEN[cur][1]
     : conn ? conn.name + ": запись диктовки уходит этому серверу."
     : !st.helper ? "Диктовка работает в собранном окне: нет помощника kb-listen."
+    : IS_WIN ? "На Windows речь распознает облако или свой сервер: выберите выше."
     : `Apple Speech на этом Маке${st.onDevice ? ", без сети: речь не уходит в Apple" : ", через сервер Apple"}.` + (AUTH[st.auth] ? " " + AUTH[st.auth] + "." : "");
 }
 const MIC_MODES = {
