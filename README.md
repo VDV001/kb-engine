@@ -334,11 +334,12 @@ just ci          # full gate (tidy + lint + race tests + coverage gate)
 
 ### Docker
 
-The image is a ~18.6 MB distroless/static binary with the dashboard embedded.
+The image is a ~20.4 MB distroless/static binary with the dashboard embedded.
 (Measured, not estimated: the uncompressed filesystem of the image, `docker export`
 of a container piped to `wc -c` — the same measure CI's `verify-claims` gate uses.
 It grew with the dashboard — the figure was ~9 MB while the SPA was a fraction of
-its current size — and by ~0.15 MB with file search, PR #371.)
+its current size — by ~0.15 MB with file search, PR #371, and to 20.4 MB with the
+phone mailbox and the phone page with its fonts, PR #636.)
 The catalog is runtime data, so mount it and pass `--catalog`:
 
 ```sh
