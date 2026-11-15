@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -264,10 +265,10 @@ func TestMailLimitsForgetIdle(t *testing.T) {
 	now := frozen(f)
 	tn := f.h.(*tenants)
 	for i := range 5000 {
-		tn.allowMail(strconv.Itoa(i))
+		tn.allowMail(mailKey{sum: sha256.Sum256([]byte(strconv.Itoa(i)))})
 	}
 	*now = now.Add(time.Hour)
-	tn.allowMail("fresh")
+	tn.allowMail(mailKey{poll: true})
 	if n := len(tn.limits); n > 1 {
 		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
 	}

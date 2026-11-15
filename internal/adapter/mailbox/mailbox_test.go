@@ -168,7 +168,8 @@ var textN atomic.Int64
 // randText — разный шифротекст на каждый вызов, как у настоящего AES-GCM с нонсом.
 func randText() string { return "x" + strconv.FormatInt(textN.Add(1), 10) }
 
-// countingStore counts the bytes the store hands out.
+// countingStore counts the bytes the store hands out to the mailbox — то, что
+// ушло бы по сети с S3. Чтение диска внутри blobfs оно не видит.
 type countingStore struct {
 	blob.Store
 	read atomic.Int64
@@ -186,7 +187,8 @@ func (c *countingStore) GetIfChanged(ctx context.Context, key, etag string) (blo
 	return o, err
 }
 
-// Опрос без нового не скачивает журнал: версия та же — ответ пустой (ревью #630, V2).
+// Опрос без нового не получает журнал от хранилища: версия та же — ответ
+// пустой (ревью #630, V2). Мерка — граница хранилища, а не диск blobfs.
 func TestSinceUnchangedReadsNothing(t *testing.T) {
 	ctx := context.Background()
 	_, raw, id := setup(t)

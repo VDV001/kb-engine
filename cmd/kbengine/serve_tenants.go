@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"math"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	gosync "sync" // имя sync в пакете main занято помощником теста `fin sync` (sync_test.go)
 	"time"
@@ -37,7 +41,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) htt
 		reg:      userauth.NewRegistry(ctx, store),
 		phones:   phones,
 		handlers: map[domain.UserID]http.Handler{},
-		limits:   map[string]*rate.Limiter{},
+		limits:   map[mailKey]*rate.Limiter{},
 		now:      time.Now,
 		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
 			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
@@ -70,8 +74,8 @@ type tenants struct {
 	mail   http.Handler
 
 	limitsMu gosync.Mutex
-	limits   map[string]*rate.Limiter // человек|сторона → предел частоты ящика
-	now      func() time.Time         // часы предела; тест их подменяет
+	limits   map[mailKey]*rate.Limiter // токен и вид запроса → предел частоты ящика
+	now      func() time.Time          // часы предела; тест их подменяет
 
 	mu       gosync.Mutex
 	handlers map[domain.UserID]http.Handler
@@ -121,8 +125,9 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 			side = domain.MailPhone
 		}
 		if ok {
-			if !t.allowMail(id.String() + "|" + string(side)) {
-				w.Header().Set("Retry-After", "10")
+			k := mailKey{sum: sha256.Sum256([]byte(tok)), poll: r.Method == http.MethodGet && r.URL.Path == "/api/mail"}
+			if wait, ok := t.allowMail(k); !ok {
+				w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
 				http.Error(w, "too many mailbox requests; poll every 10 s", http.StatusTooManyRequests)
 				return
 			}
@@ -134,25 +139,56 @@ func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "bearer token required", http.StatusUnauthorized)
 }
 
-// Предел частоты ящика на человека и сторону: опрос раз в 10 с и отправка —
-// с большим запасом; цикл сломанного или чужого клиента — 429 (ревью #630, V2).
+// Предел частоты ящика на токен (у каждого телефона свой) и вид запроса:
+// опрос и отправка не делят корзину — досылка очереди не глушит опрос (ревью #631).
+// Опрос: договорной темп раз в 10 с, предел вдвое чаще, сразу — 10 страниц
+// истории (2000 / DefaultPage) и запас. Отправка и телефоны: раз в секунду.
 //
 // ponytail: предел — в памяти экземпляра; при нескольких экземплярах он
-// умножается на их число. Путь апгрейда — предел в API Gateway.
-const (
-	mailRate  = rate.Limit(1) // запросов в секунду в среднем
-	mailBurst = 30
+// умножается на их число. Путь апгрейда — предел в API Gateway. Сломанный
+// клиент с after=0 все равно читает журнал целиком раз в 5 с (до 8 МБ) —
+// потолок снимет нарезка журнала (mailbox.DefaultMaxBytes).
+var (
+	mailPollRate = rate.Every(5 * time.Second)
+	mailSendRate = rate.Limit(1)
 )
 
-func (t *tenants) allowMail(key string) bool {
+const (
+	mailPollBurst = 12
+	mailSendBurst = 30
+	mailLimitsCap = 4096 // корзин сверх этого — повод выбросить простаивающие
+)
+
+type mailKey struct {
+	sum  [sha256.Size]byte // хэш токена: сам токен в памяти предела не держим
+	poll bool
+}
+
+// allowMail takes a token from the key's bucket or says how long to wait.
+func (t *tenants) allowMail(k mailKey) (time.Duration, bool) {
+	now := t.now()
 	t.limitsMu.Lock()
-	l, ok := t.limits[key]
+	if len(t.limits) >= mailLimitsCap {
+		// Полная корзина неотличима от новой — выбросить ее без потерь.
+		maps.DeleteFunc(t.limits, func(_ mailKey, l *rate.Limiter) bool {
+			return l.TokensAt(now) >= float64(l.Burst())
+		})
+	}
+	l, ok := t.limits[k]
 	if !ok {
-		l = rate.NewLimiter(mailRate, mailBurst)
-		t.limits[key] = l
+		l = rate.NewLimiter(mailSendRate, mailSendBurst)
+		if k.poll {
+			l = rate.NewLimiter(mailPollRate, mailPollBurst)
+		}
+		t.limits[k] = l
 	}
 	t.limitsMu.Unlock()
-	return l.AllowN(t.now(), 1)
+	res := l.ReserveN(now, 1)
+	if wait := res.DelayFrom(now); wait > 0 {
+		res.CancelAt(now)
+		return wait, false
+	}
+	return 0, true
 }
 
 // handlerFor returns the person's handler, building it on first use. Сборка
