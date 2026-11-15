@@ -68,6 +68,18 @@ func TestSealMatchesWebCrypto(t *testing.T) {
 	}
 }
 
+// Второй вектор — счетчик во все 8 байт: телефон на JS обязан писать его
+// BigInt (setBigUint64), младшие 32 бита (setUint32) совпали бы на счетчике 7.
+const goldenWide = "0162e400aa51525354555657580102030405060708a0a1a2a3a4a5a6a7a8a9aaab3799adaa957ed33db3e2576bd7c06f1f71b66ce2927efc6db417f0225e71"
+
+func TestSealWideCounterMatchesWebCrypto(t *testing.T) {
+	nonce := []byte{0xa0, 0xa1, 0xa2, 0xa3, 0xa4, 0xa5, 0xa6, 0xa7, 0xa8, 0xa9, 0xaa, 0xab}
+	got, err := mailcrypt.SealWithNonce(testKey(t), meta("c-1", domain.MailPhone, 0x0102030405060708), []byte("счетчик"), nonce)
+	if err != nil || hex.EncodeToString(got) != goldenWide {
+		t.Fatalf("sealed %x, %v\nwant %s", got, err, goldenWide)
+	}
+}
+
 func TestSealOpenRoundTrip(t *testing.T) {
 	k := testKey(t)
 	a, err := mailcrypt.Seal(k, meta("c-1", domain.MailDesk, 42), []byte("итог задачи"))
@@ -168,6 +180,11 @@ func TestSealValidatesMeta(t *testing.T) {
 	if _, err := mailcrypt.Seal(mailcrypt.Key{}, meta("c-1", domain.MailPhone, 1), []byte("x")); !errors.Is(err, mailcrypt.ErrFormat) {
 		t.Errorf("zero key: %v, want ErrFormat", err)
 	}
+	// Пустое сообщение запечатанным весит 49 байт, и проверка сервера «пусто» его
+	// бы пропустила: правило домена держит Seal (ревью #632).
+	if s, err := mailcrypt.Seal(k, meta("c-1", domain.MailPhone, 1), nil); !errors.Is(err, domain.ErrMailEmpty) || s != nil {
+		t.Errorf("empty text: %d bytes, %v; want ErrMailEmpty", len(s), err)
+	}
 }
 
 // Запечатанное укладывается в предел ящика, иначе сервер отбил бы его после шифрования.
@@ -195,7 +212,8 @@ func TestKeyEncoding(t *testing.T) {
 	if strings.ContainsAny(enc, "+/=") || len(enc) != 43 {
 		t.Errorf("key %q is not 43 chars of base64url without padding: breaks the QR fragment", enc)
 	}
-	for _, bad := range []string{"", "AAEC", enc + "AA", strings.Repeat("!", 43)} {
+	// Strict в stdlib пропускает \r и \n: телефон такого не примет, Go тоже не должен.
+	for _, bad := range []string{"", "AAEC", enc + "AA", strings.Repeat("!", 43), enc + "\n", enc[:20] + "\r\n" + enc[20:]} {
 		if _, err := mailcrypt.ParseKey(bad); !errors.Is(err, mailcrypt.ErrFormat) {
 			t.Errorf("ParseKey(%q): %v, want ErrFormat", bad, err)
 		}
@@ -221,8 +239,8 @@ func TestKeyIsNeverPrinted(t *testing.T) {
 			}
 		}
 	}
-	if b, err := json.Marshal(Exported{k}); err == nil {
-		t.Errorf("json.Marshal serialized the key: %s", b)
+	if b, err := json.Marshal(Exported{k}); !errors.Is(err, mailcrypt.ErrKeySerialized) {
+		t.Errorf("json.Marshal: %s, %v; want ErrKeySerialized", b, err)
 	}
 	var buf bytes.Buffer
 	slog.New(slog.NewJSONHandler(&buf, nil)).Info("x", "key", k, "holder", holder{k})
