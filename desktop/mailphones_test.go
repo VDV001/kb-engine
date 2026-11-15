@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -48,24 +47,20 @@ func newMailSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Serv
 		t.Fatal(err)
 	}
 	s.mailHTTP = srv.Client()
+	// QR здесь — сам текст: тесты привязки не зависят от CoreImage (ревью #633);
+	// настоящий QR проверяет qr_test.go.
+	s.qr = func(text string) ([]byte, error) { return []byte(text), nil }
 	return s, tok, srv
 }
 
 // pairURL reads the address the QR carries.
 func pairURL(t *testing.T, p phonePairing) string {
 	t.Helper()
-	if runtime.GOOS != "darwin" {
-		t.Skip("QR рисует CoreImage: только macOS")
-	}
-	png, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(p.QR, "data:image/png;base64,"))
+	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(p.QR, "data:image/png;base64,"))
 	if err != nil || !strings.HasPrefix(p.QR, "data:image/png;base64,") {
 		t.Fatalf("qr is not a PNG data URI: %.40s, %v", p.QR, err)
 	}
-	u, err := qrDecode(png)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return u
+	return string(raw)
 }
 
 // Привязка: ключ чата рождается в окне и живет в Связке ключей; QR несет адрес
@@ -190,5 +185,80 @@ func TestMailPhonesUnknownServer(t *testing.T) {
 	}
 	if len(tok.m) != before {
 		t.Error("keychain touched for an unknown server")
+	}
+}
+
+// Телефонов на сервере нет — ключ всегда новый, как бы ни ушли прежние:
+// отвязка, после которой список не прочитался, `users revoke`, другое окно,
+// другой сервер под тем же id (ревью #633). Испорченный ключ при нуле телефонов
+// тоже заменяется, а не запирает привязку.
+func TestMailPairPhoneNewKeyWithoutPhones(t *testing.T) {
+	s, tok, srv := newMailSettings(t)
+	a, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := tok.m[mailKeyAccount("srv1")]
+	c := kbserver.Client{URL: srv.URL, Token: srvToken, HTTP: srv.Client()}
+	if err := c.RevokePhone(t.Context(), a.Device); err != nil { // мимо окна: ключ в Связке остался
+		t.Fatal(err)
+	}
+	if _, err := s.MailPairPhone("srv1"); err != nil {
+		t.Fatal(err)
+	}
+	if tok.m[mailKeyAccount("srv1")] == first {
+		t.Error("no phones were left, yet the new phone got the old key")
+	}
+	for _, d := range mustPhones(t, s) {
+		_ = c.RevokePhone(t.Context(), d)
+	}
+	tok.m[mailKeyAccount("srv1")] = "garbage"
+	if _, err := s.MailPairPhone("srv1"); err != nil {
+		t.Errorf("a broken key with no phones locks pairing: %v", err)
+	}
+}
+
+func mustPhones(t *testing.T, s *folderSettings) []string {
+	t.Helper()
+	list, err := s.MailPhones("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, p := range list {
+		out = append(out, p.Device)
+	}
+	return out
+}
+
+// Источник убран из списка — его ключ чата уходит вместе с токеном.
+func TestMailKeyDroppedWithTheSource(t *testing.T) {
+	s, tok, _ := newMailSettings(t)
+	if _, err := s.MailPairPhone("srv1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSources(withFolder("~/notes"), nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tok.m[mailKeyAccount("srv1")]; ok {
+		t.Error("the chat key outlived its source")
+	}
+}
+
+// QR не рисуется на этой машине — отказ до ключа и до телефона на сервере.
+func TestMailPairPhoneWithoutQR(t *testing.T) {
+	s, tok, _ := newMailSettings(t)
+	s.qr = nil
+	was := qrAvailable
+	qrAvailable = func() bool { return false }
+	t.Cleanup(func() { qrAvailable = was })
+	if _, err := s.MailPairPhone("srv1"); err == nil {
+		t.Fatal("paired without a QR")
+	}
+	if _, ok := tok.m[mailKeyAccount("srv1")]; ok {
+		t.Error("key created for a QR that cannot be drawn")
+	}
+	if list := mustPhones(t, s); len(list) != 0 {
+		t.Errorf("phone created on the server: %v", list)
 	}
 }

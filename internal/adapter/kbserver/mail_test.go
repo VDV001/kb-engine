@@ -95,3 +95,25 @@ func TestClient_PhonesUnauthorized(t *testing.T) {
 		t.Errorf("add with a wrong token: %v", err)
 	}
 }
+
+// Отказ ящика — слова по делу: «отвяжите телефон», а не «обновите окно или
+// сервер до одной версии» (ревью #633).
+func TestClient_DescribeMailRefusals(t *testing.T) {
+	srv := mailKB(t)
+	c := kbserver.Client{URL: srv.URL, Token: token, HTTP: srv.Client()}
+	var err error
+	for range 20 {
+		if _, _, err = c.AddPhone(context.Background()); err != nil {
+			break
+		}
+	}
+	if !errors.Is(err, kbserver.ErrRejected) {
+		t.Fatalf("over the limit: %v, want ErrRejected", err)
+	}
+	if d := kbserver.Describe(err); !strings.Contains(d, "отвяжите") || strings.Contains(d, "версии") {
+		t.Errorf("too many phones: %q", d)
+	}
+	if d := kbserver.Describe(c.RevokePhone(context.Background(), "p-none")); !strings.Contains(d, "телефона нет") || strings.Contains(d, "версии") {
+		t.Errorf("no such phone: %q", d)
+	}
+}

@@ -7,6 +7,9 @@ var (
 	errQRUnreadable = errors.New("нарисованный QR не читается — привязка не показана")
 )
 
+// qrAvailable says whether this build draws QR; тест подменяет. Заготовка.
+var qrAvailable = func() bool { return true }
+
 // qrScale — точек экрана на модуль QR: адрес с токеном и ключом — версия 7-8
 // (45-49 модулей), картинка ~400 точек.
 const qrScale = 8
