@@ -41,6 +41,8 @@ var (
 	ErrWrongKey = errors.New("mailcrypt: sealed with another key")
 	// ErrNotAuthentic means: сообщение, чат, сторону, отправителя или счетчик правили.
 	ErrNotAuthentic = errors.New("mailcrypt: message is not authentic")
+	// ErrKeySerialized means: ключ попытались выдать в JSON.
+	ErrKeySerialized = errors.New("mailcrypt: the key is never serialized; use Encode on purpose")
 )
 
 const (
