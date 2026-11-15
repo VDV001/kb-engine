@@ -39,7 +39,7 @@ func TestDevices(t *testing.T) {
 		t.Error("the person's token passes as a phone")
 	}
 	list, err := userauth.Devices(ctx, s, owner)
-	if err != nil || len(list) != 2 {
+	if err != nil || len(list) != 2 || list[0].Device != dev {
 		t.Fatalf("Devices = %v, %v", list, err)
 	}
 	if err := userauth.RevokeDevice(ctx, s, owner, dev); err != nil {
@@ -58,5 +58,68 @@ func TestDevices(t *testing.T) {
 	}
 	if got, ok := fresh.Lookup(tok2); !ok || got != owner {
 		t.Error("the other phone lost access")
+	}
+}
+
+// Отзыв человека закрывает и его телефоны (ревью #630): иначе телефон, в том
+// числе украденный, читал бы ящик дальше, а отвязать его было бы нечем.
+func TestRevokePersonDropsPhones(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	if _, err := userauth.Add(ctx, s, owner); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := userauth.AddDevice(ctx, s, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.Revoke(ctx, s, owner); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := userauth.NewRegistry(ctx, s, userauth.WithKey(userauth.DevicesKey)).Lookup(tok); ok {
+		t.Error("the phone of a revoked person still enters")
+	}
+	if people := userauth.NewRegistry(ctx, s); people.Has(owner) {
+		t.Error("revoked person is still known")
+	}
+}
+
+// Не больше MaxDevices телефонов на человека: реестр общий для всех (ревью #630).
+func TestDevicesLimit(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	for i := range userauth.MaxDevices {
+		if _, _, err := userauth.AddDevice(ctx, s, owner); err != nil {
+			t.Fatalf("device %d: %v", i, err)
+		}
+	}
+	if _, _, err := userauth.AddDevice(ctx, s, owner); !errors.Is(err, domain.ErrMailTooManyPhones) {
+		t.Errorf("over the limit: %v", err)
+	}
+	list, _ := userauth.Devices(ctx, s, owner)
+	if len(list) != userauth.MaxDevices || list[0].At.IsZero() {
+		t.Errorf("list %d, first issued at %v; want the issue time", len(list), list[0].At)
+	}
+}
+
+// Invalidate: следующий Lookup читает реестр заново, а не ждет минуту.
+func TestRegistryInvalidate(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	r := userauth.NewRegistry(ctx, s, userauth.WithKey(userauth.DevicesKey))
+	r.Lookup("warm-up")
+	_, tok, err := userauth.AddDevice(ctx, s, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := r.Lookup(tok); ok {
+		t.Fatal("cache not warm: the test proves nothing")
+	}
+	r.Invalidate()
+	if _, ok := r.Lookup(tok); !ok {
+		t.Error("new phone unknown after Invalidate")
 	}
 }

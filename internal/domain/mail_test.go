@@ -63,3 +63,22 @@ func TestParseMailSide(t *testing.T) {
 		}
 	}
 }
+
+// «devices» — маршрут ящика, а не чат (ревью #630).
+func TestNewMailMessage_reservedChat(t *testing.T) {
+	if _, err := domain.NewMailMessage("devices", domain.MailDesk, []byte("x"), time.Unix(1, 0)); !errors.Is(err, domain.ErrMailChat) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+// Записанное раньше читается и после того, как правила ужесточат: одна старая
+// строка не роняет весь ящик (ревью #630).
+func TestRestoreMailMessage(t *testing.T) {
+	m, err := domain.RestoreMailMessage(5, "Old/Chat", domain.MailPhone, make([]byte, domain.MaxMailSealed+10), time.Unix(1, 0))
+	if err != nil || m.Seq() != 5 || m.Chat() != "Old/Chat" {
+		t.Fatalf("restore = %+v, %v", m, err)
+	}
+	if _, err := domain.RestoreMailMessage(1, "c", domain.MailSide("server"), []byte("x"), time.Unix(1, 0)); !errors.Is(err, domain.ErrMailSide) {
+		t.Errorf("unknown side restored: %v", err)
+	}
+}

@@ -4,9 +4,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/daniil/kb-engine/internal/adapter/blob"
+	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -135,4 +138,70 @@ func TestMailRefusals(t *testing.T) {
 	if rec := do(f.h, http.MethodGet, "/api/mail?after=x", "", f.tokA); rec.Code != http.StatusBadRequest {
 		t.Errorf("after=x: %d", rec.Code)
 	}
+}
+
+// Привязка и отвязка действуют сразу, без минуты кэша реестра (ревью #630).
+func TestMailPhonePairingIsImmediate(t *testing.T) {
+	f := newTenants(t)
+	_, first := addPhone(t, f, f.tokA)
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", first); rec.Code != http.StatusOK {
+		t.Fatalf("first phone: %d", rec.Code)
+	}
+	dev, second := addPhone(t, f, f.tokA) // реестр уже прочитан первым телефоном
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", second); rec.Code != http.StatusOK {
+		t.Errorf("a just paired phone: %d, want 200 at once", rec.Code)
+	}
+	if rec := do(f.h, http.MethodDelete, "/api/mail/devices/"+dev, "", f.tokA); rec.Code != http.StatusNoContent {
+		t.Fatal(rec.Code)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", second); rec.Code != http.StatusUnauthorized {
+		t.Errorf("an unpaired phone: %d, want 401 at once", rec.Code)
+	}
+}
+
+// Телефон человека, которого отозвали, в ящик не входит (ревью #630).
+func TestMailPhoneOfRevokedPerson(t *testing.T) {
+	f := newTenants(t)
+	_, phone := addPhone(t, f, f.tokA)
+	alpha, _ := domain.NewUserID("alpha")
+	if err := revokeOnlyPerson(t, f.store, alpha); err != nil {
+		t.Fatal(err)
+	}
+	f.h = tenantsHandler(t.Context(), f.store, &strings.Builder{})
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", phone); rec.Code != http.StatusUnauthorized {
+		t.Errorf("phone of a revoked person: %d, want 401", rec.Code)
+	}
+}
+
+// Тело больше предела — 413, а не «неверный формат» (ревью #630).
+func TestMailBodyTooLarge(t *testing.T) {
+	f := newTenants(t)
+	huge := base64.StdEncoding.EncodeToString(make([]byte, 3*domain.MaxMailSealed))
+	if rec := do(f.h, http.MethodPost, "/api/mail/c", `{"sealed":"`+huge+`"}`, f.tokA); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Errorf("huge body: %d, want 413", rec.Code)
+	}
+	if rec := do(f.h, http.MethodPost, "/api/mail/c", `{"sealed":"`+sealed+`","extra":1}`, f.tokA); rec.Code != http.StatusCreated {
+		t.Errorf("unknown field: %d; the old window may send «from», it is ignored", rec.Code)
+	}
+}
+
+// revokeOnlyPerson removes the person from the people registry only — так, как
+// сделал бы старый `users revoke` или правка реестра руками: телефоны остаются
+// в своем реестре, и сервер должен не пустить их сам.
+func revokeOnlyPerson(t *testing.T, s blob.Store, id domain.UserID) error {
+	t.Helper()
+	o, err := s.Get(t.Context(), userauth.RegistryKey)
+	if err != nil {
+		return err
+	}
+	var r struct {
+		Users []map[string]any `json:"users"`
+	}
+	if err := json.Unmarshal(o.Data, &r); err != nil {
+		return err
+	}
+	r.Users = slices.DeleteFunc(r.Users, func(u map[string]any) bool { return u["id"] == id.String() })
+	b, _ := json.Marshal(r)
+	_, err = s.Put(t.Context(), userauth.RegistryKey, b, o.ETag)
+	return err
 }
