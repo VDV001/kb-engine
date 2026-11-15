@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -23,8 +25,8 @@ func TestPhoneFinder(t *testing.T) {
 				{Ref: "kb:42", Title: "ООО «Альфа»: оплата", Source: "База знаний", Text: "отсрочка 30 дней"},
 			}, nil
 		},
-		func(_ context.Context, ref string) (chat.Doc, error) {
-			return chat.Doc{Ref: ref, Title: "Альфа.PDF", Text: "полный текст"}, nil
+		func(_ context.Context, doc chat.Doc) (chat.Doc, error) {
+			return chat.Doc{Ref: doc.Ref, Title: "Альфа.PDF", Text: "полный текст"}, nil
 		},
 	)
 	hits, err := f.Search(t.Context(), "альфа")
@@ -47,6 +49,35 @@ func TestPhoneFinder(t *testing.T) {
 	}
 	if _, err := f.Open(t.Context(), "file:/etc/passwd"); err == nil || !strings.Contains(err.Error(), "найдите") {
 		t.Fatalf("ref не из выдачи открыт: %v", err)
+	}
+}
+
+// Показанное забывается с самого старого, а не все сразу: выдача, которая
+// висит на телефоне, открывается и после десятков поисков (ревью #636).
+func TestPhoneFinderForgetsOldestFirst(t *testing.T) {
+	n := 0
+	f := newPhoneFinder(
+		func(context.Context, string, int) ([]chat.Doc, error) {
+			docs := make([]chat.Doc, phoneHits)
+			for i := range docs {
+				n++
+				docs[i] = chat.Doc{Ref: fmt.Sprintf("kb:%d", n), Title: "запись"}
+			}
+			return docs, nil
+		},
+		func(_ context.Context, doc chat.Doc) (chat.Doc, error) { return doc, nil },
+	)
+	for range 30 {
+		if _, err := f.Search(t.Context(), "q"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recent := fmt.Sprintf("kb:%d", 30*phoneHits-phoneShown+1) // самая старая из помнимых
+	if _, err := f.Open(t.Context(), recent); err != nil {
+		t.Fatalf("недавняя выдача не открылась: %v", err)
+	}
+	if _, err := f.Open(t.Context(), "kb:1"); !errors.Is(err, errNotShown) {
+		t.Fatalf("самая старая выдача: %v, want errNotShown", err)
 	}
 }
 

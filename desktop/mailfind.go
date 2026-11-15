@@ -27,13 +27,13 @@ var errNotShown = errors.New("этого документа нет в выдач
 // придуманный телефоном или чужим кодом, — отказ, как у модели (ревью #467).
 type phoneFinder struct {
 	search func(ctx context.Context, q string, limit int) ([]chat.Doc, error)
-	read   func(ctx context.Context, ref string) (chat.Doc, error)
+	open   func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
 	mu     sync.Mutex
-	shown  map[string]bool
+	shown  map[string]chat.Doc
 }
 
-func newPhoneFinder(search func(context.Context, string, int) ([]chat.Doc, error), read func(context.Context, string) (chat.Doc, error)) *phoneFinder {
-	return &phoneFinder{search: search, read: read, shown: map[string]bool{}}
+func newPhoneFinder(search func(context.Context, string, int) ([]chat.Doc, error), open func(context.Context, chat.Doc) (chat.Doc, error)) *phoneFinder {
+	return &phoneFinder{search: search, open: open, shown: map[string]chat.Doc{}}
 }
 
 func (f *phoneFinder) Search(ctx context.Context, q string) ([]mailrelay.Hit, error) {
@@ -48,10 +48,10 @@ func (f *phoneFinder) Search(ctx context.Context, q string) ([]mailrelay.Hit, er
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if len(f.shown) > phoneShown {
-		f.shown = map[string]bool{}
+		f.shown = map[string]chat.Doc{}
 	}
 	for _, d := range docs {
-		f.shown[d.Ref] = true
+		f.shown[d.Ref] = d
 		hits = append(hits, mailrelay.Hit{Ref: d.Ref, Kind: hitKind(d.Ref), Title: d.Title, Snippet: snippet(d.Text), Where: hitWhere(d)})
 	}
 	return hits, nil
@@ -59,12 +59,12 @@ func (f *phoneFinder) Search(ctx context.Context, q string) ([]mailrelay.Hit, er
 
 func (f *phoneFinder) Open(ctx context.Context, ref string) (mailrelay.Hit, error) {
 	f.mu.Lock()
-	ok := f.shown[ref]
+	found, ok := f.shown[ref]
 	f.mu.Unlock()
-	if !ok || f.read == nil {
+	if !ok || f.open == nil {
 		return mailrelay.Hit{}, errNotShown
 	}
-	d, err := f.read(ctx, ref)
+	d, err := f.open(ctx, found)
 	if err != nil {
 		return mailrelay.Hit{}, err
 	}

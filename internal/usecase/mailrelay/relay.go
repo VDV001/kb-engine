@@ -175,6 +175,9 @@ type Relay struct {
 	MaxText int
 	// Finder — поиск с телефона; nil — телефон получает отказ словами.
 	Finder Finder
+	// FindTimeout bounds one search or open (0 — без срока): работник ящика
+	// один на все серверы, зависший источник не держит его круг.
+	FindTimeout time.Duration
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers

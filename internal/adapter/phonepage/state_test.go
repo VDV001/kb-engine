@@ -87,6 +87,34 @@ want(s.mergeCounter(4n, "5") === 5n && s.mergeCounter(6n, "5") === 6n && s.merge
 const big = new Uint8Array(65536).map((_, i) => i * 7);
 want(s.unb64(s.b64(big)).every((b, i) => b === big[i]) && s.b64(u8(0xfb, 0xff)) === "+/8=", "base64 round trip of 64 KB");
 
+// 5. Ревью #636: поиск другого телефона того же ключа — не чат на этом телефоне.
+const st5 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {} };
+const theirs = "search-" + "03".repeat(8);
+const tq = { sender: u8(3, 3, 3, 3, 3, 3, 3, 3), counter: 1n, plain: enc({ kind: "search", text: "альфа" }) };
+const terr = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 1n, plain: enc({ kind: "error", text: "источник не ответил" }) };
+s.take(st5, { seq: 1, chat: theirs, from: "phone" }, tq);
+s.take(st5, { seq: 2, chat: theirs, from: "desk" }, terr);
+want(Object.keys(st5.chats).length === 0 && st5.after === 2, "another phone's search makes no chat here");
+// Ответ окна неизвестного вида — тоже не заводит чат.
+s.take(st5, { seq: 3, chat: "c9", from: "desk" }, { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 2n, plain: enc({ kind: "results", hits: [] }) });
+want(!st5.chats.c9, "an unknown kind makes no chat");
+
+// 6. Отказ открыть документ виден на экране документа, а не на вкладке поиска.
+const st6 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: {}, search: { q: "альфа", hits: [], opening: "file:a.pdf" }, doc: { title: "Альфа.pdf", text: "", ref: "file:a.pdf" } };
+s.take(st6, { seq: 1, chat: s.searchChat(st6), from: "desk" }, { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 1n, plain: enc({ kind: "error", text: "файл не читается" }) });
+want(st6.doc.error === "файл не читается" && !st6.search.opening && !st6.search.error, "open refusal lands on the document screen");
+
+// 7. single: второй вызов во время прогона не идет параллельно, но и не теряется.
+let running = 0, most = 0, runs = 0;
+const job = s.single(async () => { running++; most = Math.max(most, running); runs++; await new Promise((r) => setTimeout(r, 5)); running--; });
+await Promise.all([job(), job(), job()]);
+want(most === 1 && runs === 2, "single: one at a time, calls during a run fold into one more (most " + most + ", runs " + runs + ")");
+const failing = s.single(async () => { throw new Error("x"); });
+await failing().catch(() => {});
+let again = false;
+await s.single(async () => { again = true; })();
+want(again, "single runs again after a failure");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

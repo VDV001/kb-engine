@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +258,37 @@ func TestChatSources_FilesAndRead(t *testing.T) {
 		if _, err := d.read(context.Background(), bad); err == nil {
 			t.Errorf("read(%q) принят", bad)
 		}
+	}
+}
+
+// Поиски с телефона не вытесняют выдачу модели окна: запись, найденная чатом
+// окна, читается и после того, как телефон искал (ревью #636).
+func TestPhoneSearchKeepsWindowSeen(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "tz.md"), "Техническое задание: срок поставки 45 дней")
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "", extraction{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(t.Context())
+	waitIdle(t, x)
+	d, _, _, _ := newTestChatDesk(t)
+	d.useSources(x.files)
+	full := make([]chat.Doc, maxSeenEntries+1) // выдача окна у предела
+	for i := range full {
+		full[i] = chat.Doc{Ref: fmt.Sprintf("kb:base:%d", i), Title: "запись"}
+	}
+	d.remember(full)
+	f := newPhoneFinder(d.find, d.open)
+	hits, err := f.Search(t.Context(), "поставки")
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("поиск телефона: %+v, %v", hits, err)
+	}
+	if _, err := d.read(t.Context(), "kb:base:0"); err != nil {
+		t.Fatalf("выдача окна вытеснена поиском телефона: %v", err)
+	}
+	if doc, err := f.Open(t.Context(), hits[0].Ref); err != nil || !strings.Contains(doc.Text, "45 дней") {
+		t.Fatalf("телефон не открыл найденное: %+v, %v", doc, err)
 	}
 }
 

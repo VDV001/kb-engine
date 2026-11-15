@@ -97,6 +97,10 @@ export function asleep(st, now) {
   return st.lastDesk || newest;
 }
 
+// single runs fn one at a time: вызов во время прогона — еще один прогон
+// после, а не второй параллельно (ревью #636: два flush снимали чужой запрос).
+export const single = (fn) => fn;
+
 // mergeCounter takes the larger of this tab's counter and the stored one:
 // две вкладки (экран «Домой» и браузер) не откатывают счетчик друг другу.
 export function mergeCounter(mine, stored) {

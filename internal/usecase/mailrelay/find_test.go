@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
@@ -145,5 +147,79 @@ func TestAnswerSources(t *testing.T) {
 	got := payloads(t, b)
 	if len(got) != 1 || got[0].Kind != mailrelay.KindAnswer || len(got[0].Sources) != 2 || got[0].Sources[0].Name != "Ozon · Пример" {
 		t.Fatalf("ответ %+v", got)
+	}
+}
+
+// --- ревью #636
+
+// tightCrypto refuses text over limit, как настоящий mailcrypt над MaxPlain.
+type tightCrypto struct {
+	crypto
+	limit int
+}
+
+func (c tightCrypto) Seal(chat string, counter uint64, plain []byte) ([]byte, error) {
+	if len(plain) > c.limit {
+		return nil, fmt.Errorf("%w: %d bytes", domain.ErrMailTooLarge, len(plain))
+	}
+	return c.crypto.Seal(chat, counter, plain)
+}
+
+// textFinder opens every ref as text.
+type textFinder struct {
+	finder
+	text string
+}
+
+func (f *textFinder) Open(_ context.Context, ref string) (mailrelay.Hit, error) {
+	return mailrelay.Hit{Ref: ref, Kind: "xml", Title: "схема.xml", Text: f.text}, nil
+}
+
+// Текст, который JSON раздувает больше чем вдвое (< > & — по 6 байт), все равно
+// уходит телефону ответом, а не пропадает с ошибкой в журнале (ревью #636).
+func TestRelayFitsEscapedReply(t *testing.T) {
+	const limit = 600
+	b, s := &box{}, &store{}
+	b.phone("s1", "p", 1, mailrelay.Payload{Kind: mailrelay.KindOpen, Text: "file:схема.xml"})
+	r := newRelay(b, &asker{}, s)
+	r.Crypto = tightCrypto{limit: limit}
+	r.Finder = &textFinder{text: strings.Repeat("<a&b>", 400)}
+	r.MaxText = (limit - 64) / 2
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatalf("ответ не ушел: %v", err)
+	}
+	got := payloads(t, b)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindDoc || !strings.HasPrefix(got[0].Text, "<a&b>") || !strings.Contains(got[0].Text, "окне") {
+		t.Fatalf("ответы %+v", got)
+	}
+}
+
+// blockFinder hangs until the context ends, как подвисший источник.
+type blockFinder struct{ finder }
+
+func (blockFinder) Search(ctx context.Context, _ string) ([]mailrelay.Hit, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+// Подвисший поиск не держит работника: по сроку телефон получает отказ.
+func TestRelayFindHasDeadline(t *testing.T) {
+	b := &box{}
+	b.phone("s1", "p", 1, mailrelay.Payload{Kind: mailrelay.KindSearch, Text: "x"})
+	r := newRelay(b, &asker{}, &store{})
+	r.Finder = &blockFinder{}
+	r.FindTimeout = 20 * time.Millisecond
+	done := make(chan error, 1)
+	go func() { done <- r.Tick(t.Context()) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("поиск без срока держит работника")
+	}
+	if got := payloads(t, b); len(got) != 1 || got[0].Kind != mailrelay.KindError {
+		t.Fatalf("ответы %+v", got)
 	}
 }
