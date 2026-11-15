@@ -1986,3 +1986,18 @@ body:not(.no-mk-spark) .mk-legend i.fc { border-image: linear-gradient(90deg, va
 .mk-cn-last.ok { color: var(--z-ok, #6cc28a); }
 .mk-cn-last.bad { color: var(--z-bad); }
 .mk-cn-acts { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Настройки → Подключения карточками «Маркетов» (отзыв 15.11) */
+.settings .mk-cn-intro { margin: 0 0 12px; }
+body.no-conn-card .conn-grid .mk-cn-card.on { border-color: var(--z-rule-2); background: var(--z-bg); }
+.conn-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); margin-bottom: 14px; }
+.conn-grid .mk-cn-card h4 { flex-wrap: wrap; }
+.conn-grid .mk-cn-card h4 small { color: var(--z-muted); font-weight: 400; }
+.conn-grid .mk-cn-card.off h4, .conn-grid .mk-cn-card.off .d, .conn-grid .mk-cn-card.off .mk-cn-chips { opacity: .55; }
+.conn-grid .d { overflow-wrap: anywhere; }
+.conn-grid .conn-uses { font-size: 11px; }
+.conn-grid .d.clip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.conn-grid .conn-quiet { display: flex; gap: 14px; justify-content: flex-end; font-size: 12px; }
+.conn-grid .conn-quiet .lnk { color: var(--z-muted); }
+.conn-grid .conn-quiet .lnk:hover { color: var(--z-ink); }
+.conn-grid .conn-quiet .lnk.bad:hover { color: var(--z-bad); }
+.conn-grid .conn-confirm { margin: 0; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; font-size: 12px; color: var(--z-ink-2); }
