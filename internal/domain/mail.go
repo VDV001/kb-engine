@@ -1,0 +1,93 @@
+package domain
+
+import (
+	"errors"
+	"fmt"
+	"slices"
+	"time"
+)
+
+// Ящик чата с телефона (#622): телефон и компьютер дописывают сообщения в один
+// журнал на сервере. Сервер видит только шифротекст; что можно положить в ящик,
+// решает этот тип.
+
+// Ошибки сообщения ящика.
+var (
+	ErrMailChat     = errors.New("mail: invalid chat id")
+	ErrMailSide     = errors.New("mail: unknown side")
+	ErrMailEmpty    = errors.New("mail: empty message")
+	ErrMailTooLarge = errors.New("mail: message too large")
+)
+
+// MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
+// в ящик не кладутся.
+const MaxMailSealed = 64 << 10
+
+// maxMailChat bounds the chat id: он стоит в каждой записи журнала.
+const maxMailChat = 64
+
+// MailSide is who wrote a message: телефон или компьютер. Сторону называет
+// токен, которым пришел запрос, а не сам клиент.
+type MailSide string
+
+// Стороны ящика.
+const (
+	MailPhone MailSide = "phone"
+	MailDesk  MailSide = "desk"
+)
+
+// ParseMailSide validates s.
+func ParseMailSide(s string) (MailSide, error) {
+	if side := MailSide(s); side == MailPhone || side == MailDesk {
+		return side, nil
+	}
+	return "", fmt.Errorf("%w: %q", ErrMailSide, s)
+}
+
+// MailMessage is one sealed message of a chat.
+type MailMessage struct {
+	seq    int64
+	chat   string
+	from   MailSide
+	sealed []byte
+	at     time.Time
+}
+
+// NewMailMessage validates a message before it gets its number in the log.
+// Чат — строчные латинские буквы, цифры и дефис: его выбирает клиент, и он
+// не должен значить ничего, кроме имени.
+func NewMailMessage(chat string, from MailSide, sealed []byte, at time.Time) (MailMessage, error) {
+	if chat == "" || len(chat) > maxMailChat || slices.ContainsFunc([]rune(chat), func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-'
+	}) {
+		return MailMessage{}, fmt.Errorf("%w: %q", ErrMailChat, chat)
+	}
+	if _, err := ParseMailSide(string(from)); err != nil {
+		return MailMessage{}, err
+	}
+	switch {
+	case len(sealed) == 0:
+		return MailMessage{}, ErrMailEmpty
+	case len(sealed) > MaxMailSealed:
+		return MailMessage{}, fmt.Errorf("%w: %d bytes, limit %d", ErrMailTooLarge, len(sealed), MaxMailSealed)
+	}
+	return MailMessage{chat: chat, from: from, sealed: slices.Clone(sealed), at: at}, nil
+}
+
+// WithSeq is the message under its number in the log.
+func (m MailMessage) WithSeq(seq int64) MailMessage { m.seq = seq; return m }
+
+// Seq is the number in the log; 0 — еще не записано.
+func (m MailMessage) Seq() int64 { return m.seq }
+
+// Chat is the chat id.
+func (m MailMessage) Chat() string { return m.chat }
+
+// From is the side that wrote it.
+func (m MailMessage) From() MailSide { return m.from }
+
+// Sealed is the ciphertext.
+func (m MailMessage) Sealed() []byte { return slices.Clone(m.sealed) }
+
+// At is when the server took it.
+func (m MailMessage) At() time.Time { return m.at }
