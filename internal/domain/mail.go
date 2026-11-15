@@ -61,14 +61,21 @@ type MailMessage struct {
 	at     time.Time
 }
 
-// NewMailMessage validates a message before it gets its number in the log.
-// Чат — строчные латинские буквы, цифры и дефис: его выбирает клиент, и он
-// не должен значить ничего, кроме имени.
-func NewMailMessage(chat string, from MailSide, sealed []byte, at time.Time) (MailMessage, error) {
+// ValidateMailChat checks a chat id. Чат — строчные латинские буквы, цифры и
+// дефис: его выбирает клиент, и он не должен значить ничего, кроме имени.
+func ValidateMailChat(chat string) error {
 	if chat == "" || len(chat) > maxMailChat || mailReserved[chat] || slices.ContainsFunc([]rune(chat), func(r rune) bool {
 		return (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-'
 	}) {
-		return MailMessage{}, fmt.Errorf("%w: %q", ErrMailChat, chat)
+		return fmt.Errorf("%w: %q", ErrMailChat, chat)
+	}
+	return nil
+}
+
+// NewMailMessage validates a message before it gets its number in the log.
+func NewMailMessage(chat string, from MailSide, sealed []byte, at time.Time) (MailMessage, error) {
+	if err := ValidateMailChat(chat); err != nil {
+		return MailMessage{}, err
 	}
 	if _, err := ParseMailSide(string(from)); err != nil {
 		return MailMessage{}, err
