@@ -18,6 +18,9 @@ import (
 
 func qrSupported() bool { return true }
 
+// qrReadBack: на Маке нарисованный код читается обратно детектором Apple.
+const qrReadBack = true
+
 // qrEncode draws text with CoreImage (CIQRCodeGenerator, коррекция M): без
 // сторонних библиотек, решение владельца 15.11.
 func qrEncode(text string, scale int) ([]byte, error) {
