@@ -4,5 +4,5 @@ package main
 // кавычках после запятой. Целиком в кавычках ("/select,C:\a b\f.pdf"), как
 // экранирует exec, Проводник аргумент не узнает и открывает «Документы» (ревью #637).
 func explorerSelect(path string) string {
-	return `explorer "/select,` + path + `"`
+	return `explorer /select,"` + path + `"`
 }

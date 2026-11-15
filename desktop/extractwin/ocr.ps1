@@ -51,6 +51,9 @@ $pages = [Math]::Min($doc.PageCount, 30)
 for ($i = 0; $i -lt $pages; $i++) {
     $page = $doc.GetPage($i)
     $k = [Math]::Min(($max - 100) / $page.Size.Width, ($max - 100) / $page.Size.Height)
+    # Не больше 200 dpi (Size — в DIP, 96 на дюйм): этого OCR хватает, а в
+    # предел OCR лист A4 — ~7650×9900, около 300 МБ на страницу (ревью #637).
+    $k = [Math]::Min($k, 200 / 96)
     $o = [Windows.Data.Pdf.PdfPageRenderOptions]::new()
     $o.DestinationWidth = [uint32][Math]::Floor($page.Size.Width * $k)
     $o.DestinationHeight = [uint32][Math]::Floor($page.Size.Height * $k)

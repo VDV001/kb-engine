@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
 	"path/filepath"
 	"time"
 
@@ -50,7 +49,7 @@ type App struct {
 
 func newApp(files fileChecker, settings *folderSettings, index *indexer) *App {
 	return &App{files: files, settings: settings, index: index, run: func(name string, args ...string) error {
-		return exec.Command(name, args...).Run()
+		return command(name, args...).Run()
 	}}
 }
 

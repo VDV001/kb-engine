@@ -168,7 +168,8 @@ func run() error {
 		// Красная кнопка прячет окно: вернуть его — ⌥Space, значок в Dock или в
 		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка. На Windows
 		// так же: ✕ прячет в трей, Ctrl+Alt+Space и значок возвращают (menubar_windows.go).
-		HideWindowOnClose: true,
+		HideWindowOnClose:  true,
+		SingleInstanceLock: singleInstance(),
 		// Windows: без системного заголовка, «— ▢ ✕» рисует шапка окна
 		// (решение владельца 15.11: на Windows окно выглядит как на Маке).
 		Frameless: goruntime.GOOS == "windows",

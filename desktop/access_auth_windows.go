@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,7 +29,8 @@ var errNoWindowsSignIn = errors.New("у учетной записи Windows не
 
 // helloScript спрашивает Windows Hello через WinRT UserConsentVerifier. Причина
 // приходит переменной KB_REASON, а не текстом скрипта: кавычки в ней не
-// становятся кодом. Выход 0 — подтверждено, 1 — отказ, 3 — Hello не настроен.
+// становятся кодом. Выход 0 — подтверждено, 10 — отказ (helloExitDenied), 3 —
+// Hello не настроен; любой другой — сбой скрипта (access_hello.go).
 const helloScript = `$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Runtime.WindowsRuntime
 $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` + "`" + `1' })[0]
@@ -38,7 +40,7 @@ $a = Await ($v::CheckAvailabilityAsync()) ([Windows.Security.Credentials.UI.User
 if ($a -ne 'Available') { [Console]::Error.WriteLine("hello: $a"); exit 3 }
 $r = Await ($v::RequestVerificationAsync($env:KB_REASON)) ([Windows.Security.Credentials.UI.UserConsentVerificationResult])
 if ($r -eq 'Verified') { exit 0 }
-[Console]::Error.WriteLine("hello: $r"); exit 1
+[Console]::Error.WriteLine("hello: $r"); exit 10
 `
 
 // powershell — системный, по полному пути, а не первый в PATH.
@@ -53,16 +55,25 @@ func (winAuth) Check(reason string) error {
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
 	err := cmd.Run()
-	exit, exited := errors.AsType[*exec.ExitError](err)
-	switch {
-	case err == nil:
+	code := 0
+	if err != nil {
+		exit, exited := errors.AsType[*exec.ExitError](err)
+		if !exited {
+			return fmt.Errorf("проверка Windows Hello: %w", err) // PowerShell не запустился
+		}
+		code = exit.ExitCode()
+	}
+	switch helloAction(code) {
+	case helloOK:
 		return nil
-	case exited && exit.ExitCode() == 1:
+	case helloDenied:
 		return fmt.Errorf("%w: %s", errAuthDenied, strings.TrimSpace(stderr.String()))
-	case exited && exit.ExitCode() == 3:
-		return passwordCheck(reason) // Hello не настроен — пароль учетной записи
 	default:
-		return fmt.Errorf("проверка Windows Hello: %s: %w", strings.TrimSpace(stderr.String()), err)
+		// Hello не настроен или скрипт упал (сборка без WinRT, политика) — пароль учетной записи.
+		if code != 3 {
+			log.Printf("access: скрипт Windows Hello: код %d: %s", code, strings.TrimSpace(stderr.String()))
+		}
+		return passwordCheck(reason)
 	}
 }
 
@@ -245,8 +256,26 @@ func (winAuth) Copy(secret string) error {
 		}
 	}
 	seq, _, _ := clipboardSequence.Call()
+	clipSeq = seq
 	time.AfterFunc(clipHold, func() { clearClipIf(seq) })
 	return nil
+}
+
+// clipSeq — номер буфера с последним скопированным паролем (под clipMu).
+var clipSeq uintptr
+
+// clearClipOnExit стирает пароль при выходе из DVK раньше 30 с: таймер живет
+// в процессе окна, на Маке — в отдельном помощнике (ревью #637).
+//
+// ponytail: перезагрузка и снятие процесса таймер все равно обрывают. Путь —
+// отдельный помощник, как kb-auth на Маке.
+func clearClipOnExit() {
+	clipMu.Lock()
+	seq := clipSeq
+	clipMu.Unlock()
+	if seq != 0 {
+		clearClipIf(seq)
+	}
 }
 
 // clearClipIf стирает буфер, только если в нем все еще наш пароль: скопированное

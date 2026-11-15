@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"os/exec"
+	"strings"
+	"syscall"
 )
 
 // Команды открытия файла Windows. rundll32 вместо `cmd /c start`: путь идет
@@ -21,4 +23,15 @@ func revealResult(err error) error {
 		return nil
 	}
 	return err
+}
+
+// command builds the process of a window command. «Показать в Проводнике» —
+// своей строкой команды (explorerSelect): кавычки exec Проводник не понимает.
+func command(name string, args ...string) *exec.Cmd {
+	if p, ok := strings.CutPrefix(strings.Join(args, " "), "/select,"); name == "explorer" && len(args) == 1 && ok {
+		cmd := exec.Command(name)
+		cmd.SysProcAttr = &syscall.SysProcAttr{CmdLine: explorerSelect(p)}
+		return cmd
+	}
+	return exec.Command(name, args...)
 }

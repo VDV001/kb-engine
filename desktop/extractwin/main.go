@@ -20,10 +20,26 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"time"
 )
 
 //go:embed ocr.ps1
 var script string
+
+// staleAfter — копия старше уже не чья-то текущая: помощник живет не дольше
+// срока окна (2 мин).
+const staleAfter = time.Hour
+
+// sweepStale removes copies left by helpers killed before their defer ran:
+// снятый по сроку помощник не стирает свою копию личного документа (ревью #637).
+func sweepStale(dir string, now time.Time) {
+	old, _ := filepath.Glob(filepath.Join(dir, "kb-extract-*"))
+	for _, p := range old {
+		if fi, err := os.Stat(p); err == nil && now.Sub(fi.ModTime()) > staleAfter {
+			_ = os.Remove(p)
+		}
+	}
+}
 
 // maxInput — больше файл не копируется: окно таких и не шлет.
 const maxInput = 256 << 20
@@ -37,6 +53,8 @@ func run(args []string, in io.Reader, out, errOut io.Writer) int {
 		fmt.Fprintln(errOut, "usage: kb-extract - <pdf|png|jpg|…>")
 		return 2
 	}
+	dieTogether()
+	sweepStale(os.TempDir(), time.Now())
 	f, err := os.CreateTemp("", "kb-extract-*."+args[1])
 	if err != nil {
 		fmt.Fprintln(errOut, err)

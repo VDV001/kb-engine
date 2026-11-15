@@ -125,6 +125,8 @@ func startArgs(exe string, args ...string) error {
 
 // stopRunning closes the installed DVK before its files are removed.
 func stopRunning(exe string) {
-	_ = hidden(exec.Command("taskkill", "/F", "/IM", filepath.Base(exe))).Run()
+	// /T — с потомками: kbengine.exe кнопки «Браузер» иначе пережил бы окно и
+	// держал свой файл при удалении (ревью #637).
+	_ = hidden(exec.Command("taskkill", "/F", "/T", "/IM", filepath.Base(exe))).Run()
 	time.Sleep(500 * time.Millisecond)
 }

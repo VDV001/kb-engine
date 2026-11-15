@@ -76,6 +76,9 @@ func install() error {
 	if !confirm("Установка DVK "+version, "Установить DVK в "+dir+"?\n\nDVK будет запускаться при входе в Windows и жить в трее у часов: так окно отвечает телефону. Отключить — Параметры → Приложения → Автозагрузка."+note) {
 		return errCancelled
 	}
+	// Обновление поверх: DVK в трее держит kb.exe открытым, запись упала бы на
+	// каждом обновлении (ревью #637).
+	stopRunning(filepath.Join(dir, "kb.exe"))
 	if err := place(dir); err != nil {
 		return err
 	}

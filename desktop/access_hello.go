@@ -16,5 +16,12 @@ const helloExitDenied = 10
 // helloAction maps the exit code of the Hello script (ревью #637): сбой
 // скрипта — не отказ человека, а повод спросить пароль учетной записи.
 func helloAction(code int) helloStep {
-	return helloDenied
+	switch code {
+	case 0:
+		return helloOK
+	case helloExitDenied:
+		return helloDenied
+	default:
+		return helloPassword
+	}
 }

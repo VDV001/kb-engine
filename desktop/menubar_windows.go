@@ -6,13 +6,17 @@ import (
 	"runtime"
 	"syscall"
 	"unsafe"
+
+	"github.com/wailsapp/wails/v2/pkg/options"
 )
 
 // Трей и Ctrl+Alt+Space на Windows (#622, этап 5; решения владельца 15.11):
 // как меню-бар и ⌥Space на Маке. Крестик и Esc прячут окно, окно продолжает
-// отвечать телефону; выход — из меню значка. Без cgo: служебное окно без
-// видимой рамки (HWND_MESSAGE) получает и сообщения значка, и горячую клавишу
-// в своей петле на отдельном потоке ОС.
+// отвечать телефону; выход — из меню значка. Без cgo: скрытое окно верхнего
+// уровня получает сообщения значка, горячую клавишу и TaskbarCreated в своей
+// петле на отдельном потоке ОС. Не HWND_MESSAGE: такому окну не приходит
+// TaskbarCreated (значок пропал бы после перезапуска Проводника) и оно не
+// может стать передним — меню не закрывалось бы щелчком мимо (ревью #637).
 
 const (
 	wmApp       = 0x8000
@@ -22,6 +26,7 @@ const (
 	wmLButtonUp = 0x0202
 	wmRButtonUp = 0x0205
 	wmDestroy   = 0x0002
+	wmNull      = 0x0000
 
 	nimAdd    = 0
 	nimDelete = 2
@@ -64,8 +69,11 @@ var (
 	getForegroundWindow = user32.NewProc("GetForegroundWindow")
 	getWindowThreadPID  = user32.NewProc("GetWindowThreadProcessId")
 	getModuleHandle     = kernel32.NewProc("GetModuleHandleW")
+	registerWindowMsg   = user32.NewProc("RegisterWindowMessageW")
+	postMessage         = user32.NewProc("PostMessageW")
 	trayOf              tray
-	trayHwnd            uintptr
+	trayHwnd, trayInst  uintptr
+	taskbarCreated      uintptr // сообщение «Проводник перезапущен»: значок — заново
 )
 
 type wndClassEx struct {
@@ -96,6 +104,17 @@ type msg struct {
 	private        uint32
 }
 
+// singleInstance: второй запуск (ярлык в «Пуск» при DVK в трее) не заводит
+// второй трей и второго работника ящика, а показывает окно первого (ревью #637).
+// На Маке это делает LaunchServices.
+func singleInstance() *options.SingleInstanceLock {
+	return &options.SingleInstanceLock{UniqueId: "ru.daniilvdovin.dvk", OnSecondInstanceLaunch: func(options.SecondInstanceData) {
+		if trayOf.ctx != nil {
+			go trayOf.summon(false)
+		}
+	}}
+}
+
 // installMenuBar starts the tray thread: значок, меню, Ctrl+Alt+Space.
 func installMenuBar(t tray) {
 	trayOf = t
@@ -112,13 +131,16 @@ func trayLoop() {
 		log.Printf("tray: класс окна не зарегистрирован: %v", err)
 		return
 	}
-	const hwndMessage = ^uintptr(2) // HWND_MESSAGE = -3
-	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(cls)), 0, 0, 0, 0, 0, 0, hwndMessage, 0, inst, 0)
+	// Без WS_VISIBLE и без размера: окно не видно и не стоит на панели задач.
+	hwnd, _, err := createWindowEx.Call(0, uintptr(unsafe.Pointer(cls)), 0, 0, 0, 0, 0, 0, 0, 0, inst, 0)
 	if hwnd == 0 {
 		log.Printf("tray: служебное окно не создано: %v", err)
 		return
 	}
-	trayHwnd = hwnd
+	trayHwnd, trayInst = hwnd, inst
+	if name, err := syscall.UTF16PtrFromString("TaskbarCreated"); err == nil {
+		taskbarCreated, _, _ = registerWindowMsg.Call(uintptr(unsafe.Pointer(name)))
+	}
 	addTrayIcon(hwnd, inst)
 	if r, _, err := registerHotKey.Call(hwnd, hotkeyID, modControl|modAlt|modNoRepeat, vkSpace); r == 0 {
 		log.Printf("tray: Ctrl+Alt+Space не зарегистрирована (%v): ее заняла другая программа; окно открывается из трея", err)
@@ -151,8 +173,12 @@ func addTrayIcon(hwnd, inst uintptr) {
 	}
 }
 
-// removeMenuBar убирает значок при выходе: иначе в трее остается призрак до наведения.
-func removeMenuBar() { removeTrayIcon() }
+// removeMenuBar убирает значок при выходе: иначе в трее остается призрак до
+// наведения. Заодно стирает пароль из буфера, если 30 с еще не прошли.
+func removeMenuBar() {
+	removeTrayIcon()
+	clearClipOnExit()
+}
 
 func removeTrayIcon() {
 	nid := notifyIconData{hwnd: trayHwnd, id: 1}
@@ -161,6 +187,10 @@ func removeTrayIcon() {
 }
 
 func trayProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
+	if taskbarCreated != 0 && uintptr(message) == taskbarCreated {
+		addTrayIcon(hwnd, trayInst)
+		return 0
+	}
 	switch message {
 	case wmHotkey:
 		if wParam == hotkeyID {
@@ -199,6 +229,7 @@ func trayMenu(hwnd uintptr) {
 	// Без SetForegroundWindow меню не закрывается щелчком мимо (известное правило Windows).
 	setForegroundWindow.Call(hwnd) //nolint:errcheck
 	cmd, _, _ := trackPopupMenu.Call(menu, tpmReturnCmd|tpmRightButton, uintptr(pt.x), uintptr(pt.y), 0, hwnd, 0)
+	postMessage.Call(hwnd, wmNull, 0, 0) //nolint:errcheck // вторая половина того же правила (KB135788)
 	switch cmd {
 	case menuShow:
 		go trayOf.summon(false)

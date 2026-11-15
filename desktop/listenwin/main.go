@@ -112,6 +112,7 @@ func main() {
 type mic struct {
 	h     uintptr
 	hdrs  []uintptr
+	head  int // самый старый буфер в очереди драйвера
 	chunk []byte
 }
 
@@ -142,13 +143,18 @@ func openMic() *mic {
 
 // drain hands each filled buffer to take and gives it back to the driver,
 // пока запись идет (requeue).
+// drain takes the filled buffers in the driver's order: очередь — кольцо от
+// самого старого (head), а не номера 0..7, иначе после перестановки куски
+// записи шли бы не по порядку (ревью #637).
 func (m *mic) drain(requeue bool, take func([]byte)) {
-	for _, hp := range m.hdrs {
+	for range m.hdrs {
+		hp := m.hdrs[m.head]
 		var hd waveHdr
 		peek(hp, unsafe.Pointer(&hd), hdrSize)
 		if hd.flags&whdrDone == 0 {
-			continue
+			return
 		}
+		m.head = (m.head + 1) % len(m.hdrs)
 		n := int(hd.recorded)
 		peek(hd.data, unsafe.Pointer(&m.chunk[0]), n)
 		take(m.chunk[:n])
@@ -159,6 +165,14 @@ func (m *mic) drain(requeue bool, take func([]byte)) {
 			waveInAdd.Call(m.h, hp, hdrSize) //nolint:errcheck
 		}
 	}
+}
+
+// finish stops recording and takes the tail: waveInReset возвращает и
+// недописанный буфер — без этого терялся последний слог (ревью #637).
+func (m *mic) finish(take func([]byte)) {
+	waveInReset.Call(m.h) //nolint:errcheck
+	m.drain(false, take)
+	m.close()
 }
 
 func (m *mic) close() {
@@ -195,12 +209,12 @@ func record(path string, pause time.Duration) {
 			done = true
 		case <-time.After(20 * time.Millisecond):
 		}
-		m.drain(!done, take)
+		m.drain(true, take)
 		if pause > 0 && (spoke && time.Since(quietSince) > pause || !spoke && time.Since(began) > noSpeechLimit) {
 			done = true
 		}
 	}
-	m.close()
+	m.finish(take)
 	if err := os.WriteFile(path, wav(pcm.Bytes()), 0o600); err != nil {
 		fail("файл записи не записался: "+err.Error(), 4)
 	}
