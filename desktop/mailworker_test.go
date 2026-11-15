@@ -124,7 +124,7 @@ func TestMailWorkerAnswersThePhone(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := phoneReads(t, srv, key)
-	if len(calls) != 1 || calls[0] != (askCall{"", "привет"}) || len(got) != 1 || got[0] != (mailrelay.Payload{Kind: mailrelay.KindAnswer, Text: "ответ на привет"}) {
+	if len(calls) != 1 || calls[0] != (askCall{"", "привет"}) || len(got) != 1 || got[0].Kind != mailrelay.KindAnswer || got[0].Text != "ответ на привет" {
 		t.Fatalf("calls %+v, phone got %+v", calls, got)
 	}
 	phoneAsks(t, srv, key, "c-1", 2, "еще")
