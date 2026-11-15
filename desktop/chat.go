@@ -272,7 +272,11 @@ func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 // Ask answers r.Question in chat r.ID ("" — новый чат) with the attached refs
 // and the links of the question, searching only r.Sources when given, and
 // saves the chat.
-func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
+func (d *chatDesk) Ask(r askReq) (chatRecord, error) { return d.ask(r, d.show, d.step) }
+
+// ask runs a turn; show и step — куски ответа и шаги на страницу (nil — молча:
+// ход работника ящика не должен рисоваться в чате, открытом у человека).
+func (d *chatDesk) ask(r askReq, show func(string), step func(chat.Use)) (chatRecord, error) {
 	id, question, refs := r.ID, r.Question, r.Refs
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -302,7 +306,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		rec.ID, rec.Title = newChatID(), title(question)
 	}
 	explicit, auto := attachRefs(refs, question)
-	d.webSteps(append(slices.Clone(explicit), auto...))
+	webSteps(step, append(slices.Clone(explicit), auto...))
 	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
 		return chatRecord{}, err
@@ -316,8 +320,8 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	web := webUses(read) // источник ответа — только прочитанная ссылка (ревью 14.11)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
-		Extras: append(shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), mpstatsExtras(d.settings, nil, time.Now, r.Sources)...), Step: d.step})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
+		Extras: append(shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), mpstatsExtras(d.settings, nil, time.Now, r.Sources)...), Step: step})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
