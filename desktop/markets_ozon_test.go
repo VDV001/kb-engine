@@ -461,3 +461,31 @@ func TestOzonShopHistoryKeepsOnFailure(t *testing.T) {
 		t.Errorf("history to %v, want the saved 31.10", l.To)
 	}
 }
+
+// Карточка кабинета в «Подключениях» показывает последний обмен (отзыв 15.11):
+// без похода в Ozon и без всего «Магазина» через мост, и у выключенного кабинета тоже —
+// загрузка на диске от выключения не пропадает (ревью #628).
+func TestOzonLoadInfo(t *testing.T) {
+	s, _, _ := newServerSettings(t)
+	row, err := s.AddOzon("Тестовый магазин", "42", "k-1", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := s.ozonLoadInfo(row.ID); i.LoadedAt != "" {
+		t.Errorf("info before any load: %+v", i)
+	}
+	srv := fakeOzon(t)
+	now := time.Date(2026, 11, 13, 15, 0, 0, 0, time.Local)
+	if _, err := s.ozonShop(context.Background(), srv.URL, srv.Client(), row.ID, now, nil); err != nil {
+		t.Fatal(err)
+	}
+	srv.Close()
+	if err := s.updateConfig(func(cfg *desktopconfig.Config) { cfg.Connections[0].Enabled = false }); err != nil {
+		t.Fatal(err)
+	}
+	s.shopLoads = shopLoadCache{} // как после перезапуска окна
+	i := s.ozonLoadInfo(row.ID)
+	if i.LoadedAt == "" || i.Products != 2 || i.WindowFrom == "" {
+		t.Errorf("disabled cabinet info = %+v, want the saved load: 2 products", i)
+	}
+}

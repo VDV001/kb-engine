@@ -333,6 +333,30 @@ func (f *folderSettings) ozonShopLast(id string) (shopView, error) {
 	return f.shopFor(id, l, lastDays(l), l.To)
 }
 
+// ozonLoadInfo — последний обмен кабинета для карточки «Подключений»: когда,
+// сколько товаров, с какого дня. Без проверки ключа — у выключенного кабинета
+// загрузка на диске остается (ревью #628); через мост — три поля, а не «Магазин».
+type ozonLoadInfo struct {
+	LoadedAt   string `json:"loadedAt"`
+	Products   int    `json:"products"`
+	WindowFrom string `json:"windowFrom"`
+}
+
+// MarketsOzonLoadInfo is the last load of cabinet id for its Connections card; не загружался — пусто.
+func (a *App) MarketsOzonLoadInfo(id string) ozonLoadInfo { return a.settings.ozonLoadInfo(id) }
+
+func (f *folderSettings) ozonLoadInfo(id string) ozonLoadInfo {
+	l, ok := f.loadOf(id)
+	if !ok {
+		return ozonLoadInfo{}
+	}
+	v, err := f.shopFor(id, l, lastDays(l), l.To) // число товаров — как в «Магазине»
+	if err != nil {
+		return ozonLoadInfo{LoadedAt: l.At.Format("02.01.2006 15:04"), WindowFrom: l.From.Format(time.DateOnly)}
+	}
+	return ozonLoadInfo{LoadedAt: v.LoadedAt, Products: len(v.Products), WindowFrom: v.WindowFrom}
+}
+
 // savedAccrual — начисление на диске: сумма копейками.
 type savedAccrual struct {
 	Day     time.Time

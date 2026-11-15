@@ -175,8 +175,8 @@
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="shop" data-tip="Магазин" data-tip-b="Ваш магазин из кабинета Ozon по ключу или по отчету «По товарам»: выкуп, отмены, остатки, советы и что не так с каждым товаром">Магазин</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="plan" data-tip="План продаж" data-tip-b="сколько продать и довезти по неделям и по какой цене, с выгрузкой в Excel; строится по источникам «Прогноза»">План</button>
           <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="rivals" data-tip="Конкуренты" data-tip-b="кто в нише продает больше всех и что у них изменилось к прошлому такому же периоду: продажи, цена, новые товары; по ключу MPStats">Конкуренты</button>
-          <button class="mk-tab" type="button" role="tab" aria-selected="false" data-mk-tab="conn" id="mk-conn" data-tip="Подключения" data-tip-b="кабинеты маркетплейсов и MPStats: что дает каждый ключ, когда был последний обмен, проверка">Подключения</button>
         </nav>
+        <button class="mk-tab mk-conn-link" type="button" data-mk-conn id="mk-conn" data-tip="Подключения" data-tip-b="Настройки → Подключения: кабинеты маркетплейсов, MPStats и остальные ключи окна на одной странице">Подключения</button>
       </div>
       <div class="mk-lead" data-mk-pane="niche">
         <div class="mk-lead-txt"><p class="mk-intro" id="mk-intro" data-tip="Выбор ниши на ближайший сезон" data-tip-b="где спрос растет, а продавцов немного. Ниши — из выгрузки файлом («Открыть выгрузку…») или из MPStats по ключу («Из MPStats»)">Выбор ниши на ближайший сезон</p>
@@ -249,11 +249,6 @@
         <p class="mk-fc-note" id="rv-note" hidden></p>
         <div class="mk-plan-wrap" id="rv-wrap" hidden><table class="mk-plan-table" id="rv-table"></table></div>
         <p class="mk-how" id="rv-how" hidden><b>Как посчитано.</b> Продавцы ниши и их продажи — из MPStats за выбранные дни до вчера; изменения — к такому же числу дней перед ними. «Новых товаров» — насколько выросло число товаров продавца в нише: новинки или новые размеры. «Новый» — в прошлом периоде у продавца не было продаж в нише или его не было среди продавцов, которых отдает MPStats (до 200 крупнейших). Изменения меньше половины процента не показаны.</p>
-      </div>
-      <div class="mk-cn" id="mk-cn" data-mk-pane="conn" hidden>
-        <div class="mk-cn-intro"><b>Что дает ключ маркетплейса.</b> Через API Ozon и Wildberries приходят только Ваши данные: продажи, заказы, остатки, деньги. Продажи рынка и конкурентов дает MPStats по своему ключу или выгрузка файлом. Ключи хранятся в Связке ключей Мака и уходят только в свой сервис.</div>
-        <div class="mk-cn-grid" id="mk-cn-grid"></div>
-        <div class="mk-pl-acts"><button class="btn" type="button" id="mk-cn-add" data-tip="Добавить подключение" data-tip-b="Настройки → Подключения: кабинет Ozon или ключ MPStats">+ Добавить подключение</button></div>
       </div>
       <div class="mk-pl" id="mk-pl" data-mk-pane="plan" hidden>
         <div class="mk-lead"><div class="mk-lead-txt"><p class="mk-intro" data-tip="План продаж" data-tip-b="сколько ставить в продажу по неделям, чтобы прибыль была наибольшей при остатке и цене ниже; спрос — из прогноза по тем же источникам">План продаж по неделям: сколько ставить в продажу при остатке и цене</p>
@@ -449,8 +444,8 @@
     <ul class="conn-list storage-list" id="storage-list" data-view="storage"></ul>
 
 
-    <p class="muted" data-view="conn">Куда и с каким доступом ходит окно. Ключи и токены лежат в Связке ключей этого Мака и здесь не показываются. Правятся там, где ими пользуются.</p>
-    <ul class="conn-list" id="conn-list" data-view="conn"></ul>
+    <p class="mk-cn-intro" data-view="conn"><b>Куда и с каким доступом ходит окно.</b> Через API Ozon и Wildberries приходят только Ваши данные: продажи, заказы, остатки, деньги; продажи рынка и конкурентов дает MPStats по своему ключу или выгрузка файлом. Ключи и токены лежат в Связке ключей этого Мака, здесь не показываются и уходят только в свой сервис.</p>
+    <div class="mk-cn-grid conn-grid" id="conn-list" data-view="conn"></div>
     <div class="conn-add" data-view="conn">
       <div class="row"><button class="btn" type="button" id="conn-add-google" aria-expanded="false" data-tip="Google Диск" data-tip-b="окно будет читать документы по ссылкам из чата; только чтение, вход хранится в Связке ключей">+ Подключить Google</button>
       <button class="btn" type="button" id="conn-add-speech" aria-expanded="false" data-tip="Распознавание речи" data-tip-b="свой сервер для диктовки вместо Apple Speech: whisper.cpp, faster-whisper или OpenAI">+ Распознавание речи</button><button class="btn" type="button" id="conn-add-ozon" aria-expanded="false" data-tip="Кабинет Ozon" data-tip-b="ключ Seller API: «Маркеты» читают заказы, остатки и начисления; только чтение">+ Кабинет Ozon</button><button class="btn" type="button" id="conn-add-mpstats" aria-expanded="false" data-tip="MPStats" data-tip-b="ключ API MPStats: «Прогноз» берет продажи ниши по дням без выгрузки файлом">+ MPStats</button></div>
