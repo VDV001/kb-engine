@@ -138,7 +138,7 @@ func (c Client) mail(ctx context.Context, r mailReq, into any) error {
 	case r.want:
 	case http.StatusNotFound:
 		return cmp.Or(r.notFound, ErrNoMailbox)
-	case http.StatusBadRequest, http.StatusConflict:
+	case http.StatusBadRequest, http.StatusConflict, http.StatusRequestEntityTooLarge:
 		// Слова сервера: «too many phones» — человеку есть что сделать.
 		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
 	default:

@@ -272,11 +272,32 @@ func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 // Ask answers r.Question in chat r.ID ("" — новый чат) with the attached refs
 // and the links of the question, searching only r.Sources when given, and
 // saves the chat.
-func (d *chatDesk) Ask(r askReq) (chatRecord, error) { return d.ask(r, d.show, d.step) }
+func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
+	return d.ask(context.Background(), r, askOut{show: d.show, step: d.step})
+}
 
-// ask runs a turn; show и step — куски ответа и шаги на страницу (nil — молча:
-// ход работника ящика не должен рисоваться в чате, открытом у человека).
-func (d *chatDesk) ask(r askReq, show func(string), step func(chat.Use)) (chatRecord, error) {
+// dropAskedDrafts: вопрос ушел — черновик и этого чата, и «нового» (из него чат
+// родился) не нужен, если спросил человек; вопрос с телефона черновики окна не трогает.
+func (d *chatDesk) dropAskedDrafts(out askOut, id string) {
+	if out.worker {
+		return
+	}
+	_ = d.DropDraft("")
+	_ = d.DropDraft(id)
+}
+
+// askOut is where a turn shows itself. Ход работника ящика (#622) — тихий:
+// без кусков и шагов на страницу (у человека может быть открыт другой чат) и
+// без снятия черновиков — их набирает человек в окне (ревью #635).
+type askOut struct {
+	show   func(string)
+	step   func(chat.Use)
+	worker bool
+}
+
+// ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
+func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord, error) {
+	show, step := out.show, out.step
 	id, question, refs := r.ID, r.Question, r.Refs
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -297,7 +318,7 @@ func (d *chatDesk) ask(r askReq, show func(string), step func(chat.Use)) (chatRe
 	default:
 		return chatRecord{}, fmt.Errorf("портрет: режим %q", r.Portrait)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+	ctx, cancel := context.WithTimeout(parent, askTimeout)
 	defer cancel()
 	about, pnote := d.portraitFor(ctx, c, question, r.Portrait)
 	// id — до ответа: «запомнить» во время ответа и разбор после него
@@ -340,9 +361,7 @@ func (d *chatDesk) ask(r askReq, show func(string), step func(chat.Use)) (chatRe
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
-	// Вопрос ушел: черновик и этого чата, и «нового» (из него чат родился) не нужен.
-	_ = d.DropDraft("")
-	_ = d.DropDraft(rec.ID)
+	d.dropAskedDrafts(out, rec.ID)
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
 	rec.CanCompress = canCompress(rec)

@@ -39,13 +39,27 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
-	dir      string // где лежат mail-<id>.json
-	changed  func() // ответ записан в чат окна: странице перечитать список
+	dir      string            // где лежат mail-<id>.json
+	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
 	logf     func(string, ...any)
+	creds    map[string]mailCreds // только горутина работника
 }
 
+// mailCreds is what the worker read from the keychain for a server: ключ чата
+// и клиент с токеном. Связка — не каждые 10 с (два вызова security на сервер):
+// заново после привязки и отвязки в этом окне (mailGen) и раз в mailCredsTTL.
+type mailCreds struct {
+	key    mailcrypt.Key
+	client kbserver.Client
+	none   bool // ключа нет: телефоны не привязаны
+	gen    uint64
+	at     time.Time
+}
+
+const mailCredsTTL = 5 * time.Minute
+
 func newMailWorker(s *folderSettings, ask askFn, dir string) *mailWorker {
-	return &mailWorker{settings: s, ask: ask, dir: dir, changed: func() {}, logf: log.Printf}
+	return &mailWorker{settings: s, ask: ask, dir: dir, changed: func(string) {}, logf: log.Printf, creds: map[string]mailCreds{}}
 }
 
 // run ticks until ctx ends; круги не перекрываются — одна горутина.
@@ -88,35 +102,57 @@ func (w *mailWorker) servers() []string {
 	return ids
 }
 
-func (w *mailWorker) tickServer(ctx context.Context, id string) error {
+// credsFor returns the server's key and client, из памяти, пока Связка не менялась.
+func (w *mailWorker) credsFor(id string) (mailCreds, error) {
+	gen := w.settings.mailGen.Load()
+	if c, ok := w.creds[id]; ok && c.gen == gen && time.Since(c.at) < mailCredsTTL {
+		return c, nil
+	}
+	c := mailCreds{gen: gen, at: time.Now()}
 	stored, err := w.settings.tokens.Get(mailKeyAccount(id))
 	switch {
 	case errors.Is(err, keychain.ErrNotFound):
-		return nil // телефоны не привязаны: сервер не опрашивается
+		c.none = true // телефоны не привязаны: сервер не опрашивается
+		w.creds[id] = c
+		return c, nil
 	case err != nil:
-		return fmt.Errorf("связка ключей: %w", err)
+		return c, fmt.Errorf("связка ключей: %w", err)
 	}
-	key, err := mailcrypt.ParseKey(stored)
-	if err != nil {
-		return fmt.Errorf("ключ чата испорчен: %w", err)
+	if c.key, err = mailcrypt.ParseKey(stored); err != nil {
+		return c, fmt.Errorf("ключ чата испорчен: %w", err)
 	}
-	c, err := w.settings.mailClient(id)
-	if err != nil {
+	if c.client, err = w.settings.mailClient(id); err != nil {
+		return c, err
+	}
+	if c.client.HTTP == nil {
+		c.client.HTTP = mailWorkerHTTP
+	}
+	w.creds[id] = c
+	return c, nil
+}
+
+// mailMaxText — предел текста ответа: JSON-обертка и экранирование (кавычки,
+// переводы строк — до 2 байт на знак) не выводят шифротекст за предел ящика.
+const mailMaxText = (mailcrypt.MaxPlain - 64) / 2
+
+func (w *mailWorker) tickServer(ctx context.Context, id string) error {
+	c, err := w.credsFor(id)
+	if err != nil || c.none {
 		return err
-	}
-	if c.HTTP == nil {
-		c.HTTP = mailWorkerHTTP
 	}
 	file := &mailStateFile{path: filepath.Join(w.dir, "mail-"+url.PathEscape(id)+".json")}
 	sender, err := file.sender()
 	if err != nil {
 		return err
 	}
+	keyID := c.key.ID()
 	relay := mailrelay.Relay{
-		Box:    mailBox{c},
-		Crypto: mailSeal{key: key, sender: sender},
-		Asker:  askerFunc(w.askAndTell),
-		Store:  file,
+		Box:     mailBox{c.client},
+		Crypto:  mailSeal{key: c.key, sender: sender},
+		Asker:   askerFunc(w.askAndTell),
+		Store:   file,
+		KeyID:   hex.EncodeToString(keyID[:]),
+		MaxText: mailMaxText,
 	}
 	return relay.Tick(ctx)
 }
@@ -124,7 +160,7 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (string, string, error) {
 	id, answer, err := w.ask(ctx, chat, question)
 	if err == nil {
-		w.changed()
+		w.changed(id)
 	}
 	return id, answer, err
 }
@@ -138,11 +174,16 @@ func (f askerFunc) Ask(ctx context.Context, chat, question string) (string, stri
 // chatAsker runs a quiet turn in the window's chat: без кусков на страницу —
 // у человека может быть открыт другой чат. Чат окна удалили — новый: отказ
 // чтения случается до хода модели, повтор не платный.
+//
+// ponytail: ход идет под общим замком чатов окна — пока модель отвечает
+// телефону (до askTimeout), вопрос человека в окне ждет со своим «думаю».
+// Путь апгрейда — замок на чат, а не на все чаты.
 func chatAsker(d *chatDesk) askFn {
-	return func(_ context.Context, chat, question string) (string, string, error) {
-		rec, err := d.ask(askReq{ID: chat, Question: question}, nil, nil)
+	return func(ctx context.Context, chat, question string) (string, string, error) {
+		quiet := askOut{worker: true}
+		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
-			rec, err = d.ask(askReq{Question: question}, nil, nil)
+			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
 		}
 		if err != nil {
 			return "", "", err
@@ -165,13 +206,19 @@ func (b mailBox) Since(ctx context.Context, after int64) (mailrelay.Page, error)
 	}
 	out := mailrelay.Page{More: p.More}
 	for _, m := range p.Messages {
-		out.Messages = append(out.Messages, mailrelay.Message{Seq: m.Seq, Chat: m.Chat, From: domain.MailSide(m.From), Sealed: m.Sealed})
+		out.Messages = append(out.Messages, mailrelay.Message{Seq: m.Seq, Chat: m.Chat, From: domain.MailSide(m.From), At: m.At, Sealed: m.Sealed})
 	}
 	return out, nil
 }
 
+// Post marks a refusal for good (неверный чат, велико) as mailrelay.ErrRefused:
+// такой ответ уходит из исходящих, а не затыкает ящик (ревью #635).
 func (b mailBox) Post(ctx context.Context, chat string, sealed []byte) (int64, error) {
-	return b.c.MailPost(ctx, chat, sealed)
+	seq, err := b.c.MailPost(ctx, chat, sealed)
+	if errors.Is(err, kbserver.ErrRejected) {
+		return 0, fmt.Errorf("%w: %w", mailrelay.ErrRefused, err)
+	}
+	return seq, err
 }
 
 // mailSeal opens with the chat key and seals as the window's sender.
@@ -192,8 +239,12 @@ func (s mailSeal) Seal(chat string, counter uint64, plain []byte) ([]byte, error
 	return mailcrypt.Seal(s.key, mailcrypt.Meta{Chat: chat, From: domain.MailDesk, Sender: s.sender, Counter: counter}, plain)
 }
 
-// mailStateFile keeps the relay state and the window's sender id per server.
-type mailStateFile struct{ path string }
+// mailStateFile keeps the relay state and the window's sender id per server;
+// отправитель читается раз (sender), Save пишет файл, не перечитывая его.
+type mailStateFile struct {
+	path      string
+	senderHex string
+}
 
 type mailStateDTO struct {
 	Sender string          `json:"sender"` // hex 8 байт: отправитель окна в ящике
@@ -238,10 +289,12 @@ func (f *mailStateFile) sender() (mailcrypt.Sender, error) {
 	}
 	var s mailcrypt.Sender
 	if b, err := hex.DecodeString(d.Sender); err == nil && len(b) == len(s) {
+		f.senderHex = d.Sender
 		return mailcrypt.Sender(b), nil
 	}
 	s = mailcrypt.NewSender()
-	d.Sender = hex.EncodeToString(s[:])
+	f.senderHex = hex.EncodeToString(s[:])
+	d.Sender = f.senderHex
 	return s, f.write(d)
 }
 
@@ -251,10 +304,5 @@ func (f *mailStateFile) Load() (mailrelay.State, error) {
 }
 
 func (f *mailStateFile) Save(st mailrelay.State) error {
-	d, err := f.read()
-	if err != nil {
-		return err
-	}
-	d.State = st
-	return f.write(d)
+	return f.write(mailStateDTO{Sender: f.senderHex, State: st})
 }

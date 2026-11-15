@@ -271,6 +271,7 @@ func (f *folderSettings) dropMailKey(id string, dropped map[string]string) error
 	if err := f.tokens.Delete(mailKeyAccount(id)); err != nil {
 		return fmt.Errorf("ключ чата не удален из Связки ключей: %w", err)
 	}
+	f.mailGen.Add(1)
 	dropped[mailKeyAccount(id)] = key
 	return nil
 }

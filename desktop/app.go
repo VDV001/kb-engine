@@ -527,7 +527,7 @@ func (a *App) startup(ctx context.Context) {
 	// Работник ящика (#622): отвечает телефону, пока окно открыто.
 	if a.chat != nil && a.settings != nil {
 		w := newMailWorker(a.settings, chatAsker(a.chat), filepath.Dir(a.settings.path))
-		w.changed = func() { runtime.EventsEmit(ctx, "chats:changed") }
+		w.changed = func(chat string) { runtime.EventsEmit(ctx, "chats:changed", chat) }
 		go w.run(ctx)
 	}
 }
