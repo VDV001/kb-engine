@@ -1859,6 +1859,11 @@ body:not(.no-mk-score) .mk-sc.lo { background: linear-gradient(100deg, color-mix
 .sh-money-h { margin: 10px 0 4px; font-size: 12px; font-weight: 600; color: var(--z-ink); }
 .sh-title-h { margin: 8px 0 2px; font-size: 12px; font-weight: 600; color: var(--z-ink-2); }
 .sh-desc-draft { white-space: pre-wrap; font-size: 12px; line-height: 1.5; color: var(--z-ink); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 8px 10px; margin: 4px 0; }
+.sh-info-models { display: grid; gap: 4px; margin: 6px 0; font-size: 12px; color: var(--z-ink); }
+.sh-info-models label { display: flex; gap: 6px; align-items: center; }
+.sh-info-prompt { width: 100%; box-sizing: border-box; background: var(--z-bg-2); border: 1px solid var(--z-rule); border-radius: var(--z-radius); padding: 6px 8px; color: var(--z-ink); font: 12px/1.5 var(--z-font); resize: vertical; margin: 4px 0 8px; }
+.sh-info-out figure { margin: 0; display: grid; gap: 6px; justify-items: start; }
+.sh-info-out img { height: 240px !important; }
 .sh-ph-row { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; }
 .sh-ph-row img { height: 84px; width: auto; border-radius: var(--z-radius); border: 1px solid var(--z-rule); }
 .sh-ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 4px; }

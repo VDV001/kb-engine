@@ -6683,7 +6683,7 @@ function shCard() {
     ["Рейтинг", `${shVal("rating", p)} · отзывов ${fmt(p.reviews)}`, shHint("rating")]];
   const gone = shOzon() ? ["ABC по сумме", "Возвращено", "Индекс цен", "ДРР", "Рейтинг"] : ["Отказ при получении", "Выкуплено на"];
   $("#sh-card").innerHTML = `<div class="mk-card-h"><h3>${esc(p.name)}</h3></div><dl>${rows.filter((r) => !gone.includes(r[0])).map(([k, v, t]) => `<dt${t ? mkTip(k, t) : ""}>${k}</dt><dd>${k === "SKU" ? shOzonSKU(p.sku) : k === "Артикул" && p.article ? esc(v) + shCopyBtn(p.article) : esc(v)}</dd>`).join("")}</dl>` +
-    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + shPhotosCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
+    shMoneyCard(p) + shTitleCard(p) + shTagsCard(p) + shDescCard(p) + shPhotosCard(p) + shInfoCard(p) + `<ul>${shWhy(p).map((w) => `<li>${esc(w)}</li>`).join("")}</ul>`;
 }
 // «Название» в карточке (#607): главный запрос ниши MPStats и что добавить или
 // убрать; ответ хранится по SKU, чтобы перерисовка таблицы его не стирала.
@@ -6753,6 +6753,92 @@ document.addEventListener("click", async (e) => {
   if (!native() || !native().MarketsPhotos) { shPhotos.set(key, { err: "Сравнение фото работает в окне приложения." }); return shCard(); }
   shPhotos.set(key, { busy: true }); shCard();
   try { shPhotos.set(key, { v: await native().MarketsPhotos(sh.v.path, sku, fresh) }); } catch (err) { shPhotos.set(key, { err: "Фото не сравнены: " + errText(err) }); }
+  if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+});
+// «Инфографика» в карточке (#609): ИИ Студия MPStats рисует по заданию и главному
+// фото товара. Цены и баланс бесплатны; генерация платная — только кнопкой с ценой.
+const shInfo = new Map(); // кабинет|SKU → { offer, offerBusy, model, prompt, draftBusy, genBusy, job, err }
+const shInfoKey = (p) => `${(sh.v && sh.v.path) || ""}|${p.sku}`;
+function shInfoCard(p) {
+  if (!shOzon() || !/^\d+$/.test(p.sku || "")) return "";
+  const t = shInfo.get(shInfoKey(p)) || {}, sku = esc(p.sku);
+  let body = `<button class="btn" type="button" data-sh-info="offer" data-sku="${sku}"${t.offerBusy ? " disabled" : ""}${mkTip("Цены ИИ Студии", "баланс и цена картинки у трех моделей ИИ Студии MPStats; бесплатно, токены не тратятся")}>${t.offerBusy ? "Спрашиваю ИИ Студию…" : t.offer ? "Обновить цены" : "Показать цены ИИ Студии"}</button>`;
+  if (t.err) body += `<div class="note">${esc(t.err)}</div>`;
+  if (t.offer) {
+    const o = t.offer, cur = o.models.find((m) => m.slug === t.model) || o.models.find((m) => !m.err) || o.models[0];
+    body += `<div class="note">На балансе ИИ Студии: ${fmt(o.balance)} ${plural(o.balance, "токен", "токена", "токенов")}. Картинка — 3:4, как главное фото Ozon; товар берется с главного фото карточки.</div>` +
+      `<div class="sh-info-models" role="radiogroup" aria-label="Модель ИИ Студии">${o.models.map((m) => `<label${m.err ? mkTip("Цена не узнана", m.err) : ""}><input type="radio" name="sh-info-m" data-sh-info-model="${esc(m.slug)}"${m === cur ? " checked" : ""}${m.err ? " disabled" : ""}> ${esc(m.name)} — ${m.err ? "цена не узнана" : `${fmt(m.cost)} ${plural(m.cost, "токен", "токена", "токенов")}`}</label>`).join("")}</div>` +
+      `<div class="sh-title-h">Задание <button type="button" class="lnk" data-sh-info="draft" data-sku="${sku}"${t.draftBusy ? " disabled" : ""}${mkTip("Написать задание моделью окна", "пишет модель из «Чат и модель»: название, пол, цвет и описание карточки уйдут ее провайдеру; расход — в «Статистике»")}>${t.draftBusy ? "модель пишет…" : "написать моделью окна"}</button></div>` +
+      `<textarea class="sh-info-prompt" data-sh-info-prompt rows="5" placeholder="Что нарисовать: фон, 3–4 преимущества товара крупным текстом">${esc(t.prompt || "")}</textarea>`;
+    const cost = cur && !cur.err ? cur.cost : 0, short = cost > o.balance, empty = !(t.prompt || "").trim();
+    body += `<button class="btn mk-main" type="button" data-sh-info="gen" data-sku="${sku}"${t.genBusy || !cost || short || empty ? " disabled" : ""}${mkTip("Сгенерировать", `платно: ${fmt(cost)} ${plural(cost, "токен", "токена", "токенов")} спишется с баланса ИИ Студии MPStats; если цена изменится, окно остановится и покажет новую`)}>${t.genBusy ? "Запускаю…" : `Сгенерировать за ${fmt(cost)} ${plural(cost, "токен", "токена", "токенов")}`}</button>` +
+      (short ? `<div class="note">Токенов не хватает — пополните баланс ИИ Студии в MPStats.</div>` : empty ? `<div class="note">Сначала задание: напишите сами или попросите модель окна.</div>` : "");
+  }
+  const j = t.job;
+  if (j) {
+    if (!j.done) body += `<div class="note">Рисую… статус ИИ Студии: ${esc(j.status || "в очереди")}. Номер генерации ${esc(j.id)} — по нему результат найдется в ИИ Студии, если окно закрыть.</div>`;
+    else if (j.fail) body += `<div class="note">ИИ Студия не нарисовала: ${esc(j.fail)}.</div>`;
+    else body += `<div class="sh-title-h">Готово</div><div class="sh-ph-row sh-info-out">${j.images.map((u, i) => `<figure><img src="${esc(u)}" alt="инфографика ${i + 1}"><button class="btn" type="button" data-sh-info="save" data-sku="${sku}" data-url="${esc(u)}">Сохранить…</button></figure>`).join("")}</div>` +
+      `<div class="note">Перед загрузкой в Ozon проверьте текст на картинке: нейросеть могла исказить буквы.</div>`;
+  }
+  return `<h4 class="sh-money-h">Инфографика</h4>${body}`;
+}
+// shInfoPoll asks for the result every 5 s, up to 5 minutes; карточка перерисовывается, если она на экране.
+async function shInfoPoll(key, sku, id) {
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const t = shInfo.get(key);
+    if (!t || !t.job || t.job.id !== id) return;
+    try { t.job = await native().MarketsInfographicResult(id); } catch (err) { t.job = { ...t.job, status: "не прочитан: " + errText(err) }; }
+    if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
+    if (t.job.done) return;
+  }
+}
+document.addEventListener("input", (e) => {
+  if (!e.target.matches("[data-sh-info-prompt]")) return;
+  const p = sh.v && sh.v.products[sh.sel], t = p && shInfo.get(shInfoKey(p));
+  if (!t) return;
+  const was = !(t.prompt || "").trim();
+  t.prompt = e.target.value;
+  if (was !== !t.prompt.trim()) { const pos = e.target.selectionStart; shCard(); const ta = document.querySelector("[data-sh-info-prompt]"); if (ta) { ta.focus(); ta.setSelectionRange(pos, pos); } } // кнопка «Сгенерировать» оживает с первой буквы
+});
+document.addEventListener("change", (e) => {
+  const r = e.target.closest("[data-sh-info-model]");
+  const p = r && sh.v && sh.v.products[sh.sel], t = p && shInfo.get(shInfoKey(p));
+  if (t) { t.model = r.dataset.shInfoModel; shCard(); }
+});
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-sh-info]");
+  if (!b) return;
+  hideTip();
+  const p = sh.v && sh.v.products[sh.sel], sku = b.dataset.sku;
+  if (!p || p.sku !== sku) return;
+  const key = shInfoKey(p), t = shInfo.get(key) || {};
+  shInfo.set(key, t);
+  if (!native() || !native().MarketsInfographicOffer) { t.err = "Инфографика работает в окне приложения."; return shCard(); }
+  const act = b.dataset.shInfo;
+  if (act === "save") {
+    try { const path = await native().MarketsInfographicSave(b.dataset.url, sku); if (path) toast("Сохранено", " · " + path); } catch (err) { toast("Не сохранено", " · " + errText(err), null, "bad"); }
+    return;
+  }
+  t.err = "";
+  if (act === "offer") {
+    t.offerBusy = true; shCard();
+    try { t.offer = await native().MarketsInfographicOffer(); } catch (err) { t.err = "Цены не получены: " + errText(err); }
+    t.offerBusy = false;
+  } else if (act === "draft") { // кнопка с явной подписью «моделью окна» — согласие отдать карточку провайдеру
+    t.draftBusy = true; shCard();
+    try { t.prompt = (await native().MarketsInfographicDraft(sh.v.path, sku, true)).text; } catch (err) { t.err = "Задание не написано: " + errText(err); }
+    t.draftBusy = false;
+  } else if (act === "gen") {
+    const m = t.offer && (t.offer.models.find((x) => x.slug === t.model) || t.offer.models.find((x) => !x.err));
+    if (!m || t.genBusy) return;
+    t.genBusy = true; shCard();
+    try { t.job = await native().MarketsInfographicGenerate(sh.v.path, sku, m.slug, t.prompt || "", m.cost); shInfoPoll(key, sku, t.job.id); }
+    catch (err) { t.err = "Не запущено: " + errText(err); }
+    t.genBusy = false;
+    try { t.offer = { ...t.offer, balance: (await native().MarketsInfographicOffer()).balance }; } catch (_) { /* баланс обновится по «Обновить цены» */ }
+  }
   if (sh.v && sh.v.products[sh.sel] && sh.v.products[sh.sel].sku === sku) shCard();
 });
 // «Описание» в карточке (#611): сверка с полом и цветом карточки и словами

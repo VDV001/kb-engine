@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -14,7 +15,10 @@ func studioFake(t *testing.T, balance, cost int) (s *folderSettings, ozURL, cab 
 	t.Helper()
 	s, _, _ = newServerSettings(t)
 	calls, args = &[]string{}, map[string]map[string]any{}
+	var mu sync.Mutex // цены моделей спрашиваются сразу
 	mp := titleMCP(t, func(name string, a map[string]any) (string, bool) {
+		mu.Lock()
+		defer mu.Unlock()
 		*calls = append(*calls, name)
 		args[name] = a
 		switch name {

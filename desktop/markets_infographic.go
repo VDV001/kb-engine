@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
@@ -137,17 +138,23 @@ func (f *folderSettings) infographicOffer(ctx context.Context, hc *http.Client) 
 	if err != nil {
 		return studioOffer{}, err
 	}
-	bal, err := m.StudioBalance(ctx)
-	if err != nil {
-		return studioOffer{}, errors.New("баланс ИИ Студии не прочитан — " + mpstatsMessage(err))
+	o := studioOffer{Models: make([]studioModelView, len(mpstats.StudioModels))}
+	var balErr error
+	var wg sync.WaitGroup // баланс и цены — сразу, 4 запроса: MPStats держит до 4 (замер 13.11); подряд — 9,5 с (живая проверка 15.11)
+	wg.Go(func() { o.Balance, balErr = m.StudioBalance(ctx) })
+	for i, sm := range mpstats.StudioModels {
+		wg.Go(func() {
+			v := studioModelView{Slug: sm.Slug, Name: sm.Name}
+			var err error
+			if v.Cost, err = m.StudioEstimate(ctx, sm.Slug, sm.Params, nil); err != nil {
+				v.Err = mpstatsMessage(err)
+			}
+			o.Models[i] = v
+		})
 	}
-	o := studioOffer{Balance: bal}
-	for _, sm := range mpstats.StudioModels { // ponytail: три вызова подряд, ~3 с каждый (замер 15.11); потолок — длинный список моделей, апгрейд — параллельно до 4
-		v := studioModelView{Slug: sm.Slug, Name: sm.Name}
-		if v.Cost, err = m.StudioEstimate(ctx, sm.Slug, sm.Params, nil); err != nil {
-			v.Err = mpstatsMessage(err)
-		}
-		o.Models = append(o.Models, v)
+	wg.Wait()
+	if balErr != nil {
+		return studioOffer{}, errors.New("баланс ИИ Студии не прочитан — " + mpstatsMessage(balErr))
 	}
 	return o, nil
 }
