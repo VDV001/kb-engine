@@ -1,0 +1,194 @@
+package main
+
+import (
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"runtime"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/kbserver"
+	"github.com/daniil/kb-engine/internal/adapter/mailbox"
+	"github.com/daniil/kb-engine/internal/adapter/mailcrypt"
+	"github.com/daniil/kb-engine/internal/adapter/userauth"
+	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/mail"
+)
+
+// newMailSettings: окно с kb-сервером srv1, у которого настоящий ящик
+// (httpapi.MailHandler на blobfs, человек по токену — как serve --tenants).
+func newMailSettings(t *testing.T) (*folderSettings, *fakeTokens, *httptest.Server) {
+	t.Helper()
+	store, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := domain.NewUserID("alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+		func(string, ...any) {})
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get(kbserver.TokenHeader) != srvToken {
+			http.Error(w, "bearer token required", http.StatusUnauthorized)
+			return
+		}
+		h.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
+	}))
+	t.Cleanup(srv.Close)
+	s, tok, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("srv1", srv.URL, true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mailHTTP = srv.Client()
+	return s, tok, srv
+}
+
+// pairURL reads the address the QR carries.
+func pairURL(t *testing.T, p phonePairing) string {
+	t.Helper()
+	if runtime.GOOS != "darwin" {
+		t.Skip("QR рисует CoreImage: только macOS")
+	}
+	png, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(p.QR, "data:image/png;base64,"))
+	if err != nil || !strings.HasPrefix(p.QR, "data:image/png;base64,") {
+		t.Fatalf("qr is not a PNG data URI: %.40s, %v", p.QR, err)
+	}
+	u, err := qrDecode(png)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u
+}
+
+// Привязка: ключ чата рождается в окне и живет в Связке ключей; QR несет адрес
+// страницы телефона, токен телефона и ключ — во фрагменте «#», который браузер
+// на сервер не шлет. Вторая привязка — тот же ключ.
+func TestMailPairPhone(t *testing.T) {
+	s, tok, srv := newMailSettings(t)
+	p, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := tok.m[mailKeyAccount("srv1")]
+	if !ok {
+		t.Fatal("no chat key in the keychain")
+	}
+	key, err := mailcrypt.ParseKey(stored)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := pairURL(t, p)
+	prefix := srv.URL + "/m/#pair="
+	phoneTok, keyText, ok := strings.Cut(strings.TrimPrefix(u, prefix), ".")
+	if !strings.HasPrefix(u, prefix) || !ok || keyText != key.Encode() || phoneTok == "" || phoneTok == srvToken {
+		t.Fatalf("qr carries %q", u)
+	}
+	list, err := s.MailPhones("srv1")
+	if err != nil || len(list) != 1 || list[0].Device != p.Device || list[0].At == "" {
+		t.Fatalf("phones: %+v, %v", list, err)
+	}
+	// Ответ окну: ни токена телефона, ни ключа открытым текстом — только картинка.
+	if b, _ := json.Marshal(p); strings.Contains(string(b), phoneTok) || strings.Contains(string(b), keyText) {
+		t.Errorf("pairing answer leaks a secret: %.120s", b)
+	}
+	p2, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, k2, _ := strings.Cut(strings.TrimPrefix(pairURL(t, p2), prefix), "."); k2 != keyText {
+		t.Error("second phone got another key: the first would not read it")
+	}
+}
+
+// Отвязка: телефон больше не входит; последний отвязанный уносит ключ —
+// следующая привязка начнется с нового (у отвязанного старый остался).
+func TestMailRevokePhone(t *testing.T) {
+	s, tok, _ := newMailSettings(t)
+	a, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := s.MailPairPhone("srv1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := tok.m[mailKeyAccount("srv1")]
+	if list, err := s.MailPhones("srv1"); err != nil || len(list) != 2 || first == "" {
+		t.Fatalf("two phones paired: %+v, %v, key %t", list, err, first != "")
+	}
+	if err := s.MailRevokePhone("srv1", a.Device); err != nil {
+		t.Fatal(err)
+	}
+	if tok.m[mailKeyAccount("srv1")] != first {
+		t.Fatal("key gone while a phone is still paired")
+	}
+	if err := s.MailRevokePhone("srv1", b.Device); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := tok.m[mailKeyAccount("srv1")]; ok {
+		t.Error("last phone unpaired, the key stays: the unpaired phone could read the next one")
+	}
+	if list, err := s.MailPhones("srv1"); err != nil || len(list) != 0 {
+		t.Errorf("phones after revoke: %+v, %v", list, err)
+	}
+}
+
+// Откат знает, что создал: сбой после новой записи в Связке или на сервере не
+// оставляет ни ключа, ни токена телефона.
+func TestMailPairPhoneRollsBack(t *testing.T) {
+	t.Run("server refused", func(t *testing.T) {
+		s, tok, _ := newMailSettings(t)
+		tok.m["srv1"] = "wrong-token"
+		if _, err := s.MailPairPhone("srv1"); err == nil {
+			t.Fatal("paired with a wrong token")
+		}
+		if _, ok := tok.m[mailKeyAccount("srv1")]; ok {
+			t.Error("new key left in the keychain after the server refused")
+		}
+	})
+	t.Run("qr failed", func(t *testing.T) {
+		s, _, _ := newMailSettings(t)
+		s.qr = func(string) ([]byte, error) { return nil, errQRTooLong }
+		if _, err := s.MailPairPhone("srv1"); !errors.Is(err, errQRTooLong) {
+			t.Fatalf("pair: %v, want the QR error", err)
+		}
+		s.qr = nil
+		if list, err := s.MailPhones("srv1"); err != nil || len(list) != 0 {
+			t.Errorf("phone token left on the server: %+v, %v", list, err)
+		}
+	})
+	t.Run("old key kept", func(t *testing.T) {
+		s, tok, _ := newMailSettings(t)
+		if _, err := s.MailPairPhone("srv1"); err != nil {
+			t.Fatal(err)
+		}
+		key := tok.m[mailKeyAccount("srv1")]
+		s.qr = func(string) ([]byte, error) { return nil, errQRTooLong }
+		_, _ = s.MailPairPhone("srv1")
+		if tok.m[mailKeyAccount("srv1")] != key {
+			t.Error("rollback removed the key the first phone uses")
+		}
+	})
+}
+
+func TestMailPhonesUnknownServer(t *testing.T) {
+	s, tok, _ := newMailSettings(t)
+	before := len(tok.m)
+	if _, err := s.MailPairPhone("nope"); err == nil {
+		t.Error("paired a phone to a server that is not in the sources")
+	}
+	if _, err := s.MailPhones("nope"); err == nil {
+		t.Error("listed phones of an unknown server")
+	}
+	if len(tok.m) != before {
+		t.Error("keychain touched for an unknown server")
+	}
+}

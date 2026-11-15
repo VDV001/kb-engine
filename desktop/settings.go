@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
@@ -96,6 +97,10 @@ type folderSettings struct {
 	// tokens и probe — Связка ключей и опрос kb-сервера (servers.go).
 	tokens tokenStore
 	probe  probeFunc
+	// mailHTTP и qr — ящик телефонов на kb-сервере и рисование QR
+	// (mailphones.go); nil — настоящие: клиент с таймаутом и CoreImage.
+	mailHTTP *http.Client
+	qr       func(text string) ([]byte, error)
 	// lastServers — последний ответ ServerStates по id (под mu): по нему
 	// строка статуса считает проблемы серверов без сети и Связки ключей.
 	lastServers map[string]sourceRow
