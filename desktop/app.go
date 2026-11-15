@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
@@ -522,6 +523,12 @@ func (a *App) startup(ctx context.Context) {
 	}
 	if a.google != nil {
 		a.google.open = func(u string) { runtime.BrowserOpenURL(ctx, u) }
+	}
+	// Работник ящика (#622): отвечает телефону, пока окно открыто.
+	if a.chat != nil && a.settings != nil {
+		w := newMailWorker(a.settings, chatAsker(a.chat), filepath.Dir(a.settings.path))
+		w.changed = func() { runtime.EventsEmit(ctx, "chats:changed") }
+		go w.run(ctx)
 	}
 }
 

@@ -3345,6 +3345,8 @@ if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
   chatState.steps.push(u);
   if (!chatState.partial) paintPartial();
 });
+// Работник ящика ответил телефону в чате окна (#622): список чатов — свежий.
+if (window.runtime) window.runtime.EventsOn("chats:changed", () => renderChatList());
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
   chatState.partial = t || "";
