@@ -26,7 +26,8 @@ const other = s.repair(prev, { token: "new", ...key2 }, u8(7, 7, 7, 7, 7, 7, 7, 
 want(other.after === 0 && other.counter === 0n && other.sender[0] === 7 && Object.keys(other.seen).length === 0 && other.chats.c.msgs.length === 1, "repair with a new key resets the cursor, keeps chats");
 want(s.repair(null, { token: "t", ...key1 }, u8(7, 7, 7, 7, 7, 7, 7, 7)).after === 0, "first pairing");
 
-// 2. take: ответ окна — в чат и снимает «ждет»; повтор — мимо; свое — отмечает доставленным.
+// 2. take: ответ окна — в чат и снимает «ждет»; повтор — мимо; свое — отмечает
+// доставленным. take отвечает «чат изменился — перерисовать»; номер двигается всегда.
 const st = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "вопрос", counter: "1", sent: false }], pending: true, updated: 1 } } };
 const enc = (o) => new TextEncoder().encode(JSON.stringify(o));
 const desk = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 1n, plain: enc({ kind: "answer", text: "ответ" }) };
@@ -39,7 +40,7 @@ want(st.chats.c.msgs.length === 2 && st.chats.c.msgs[0].sent === true && st.afte
 const twin = { sender: u8(3, 3, 3, 3, 3, 3, 3, 3), counter: 1n, plain: enc({ kind: "question", text: "с другого" }) };
 s.take(st, { seq: 4, chat: "c", from: "phone", at: "2026-11-15T10:00:03Z" }, twin);
 want(st.chats.c.msgs.length === 3 && st.chats.c.pending === true, "another phone's question shows and waits");
-want(s.take(st, { seq: 5, chat: "c", from: "desk" }, null) === true && st.after === 5, "unreadable message only moves the cursor");
+want(s.take(st, { seq: 5, chat: "c", from: "desk" }, null) === false && st.after === 5, "unreadable message only moves the cursor");
 
 // 3. Счетчик двух вкладок: при записи — наибольший.
 want(s.mergeCounter(4n, "5") === 5n && s.mergeCounter(6n, "5") === 6n && s.mergeCounter(3n, undefined) === 3n, "counter merge takes the max");
