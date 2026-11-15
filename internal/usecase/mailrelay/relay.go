@@ -27,7 +27,6 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -197,6 +196,8 @@ type Relay struct {
 	// StepEvery — не чаще стольких шагов хода в ящик (0 — шаги не шлются):
 	// телефон опрашивает раз в 10 с, а у окна предел отправки раз в секунду.
 	StepEvery time.Duration
+	// Logf — журнал сбоев шагов хода (nil — молча).
+	Logf func(string, ...any)
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers
@@ -329,7 +330,9 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	var a Answer
 	var err error
 	if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
-		a, err = sa.AskStepped(ctx, st.Chats[chat], question, r.stepper(ctx, st, chat))
+		step, stop := r.stepper(ctx, st, chat)
+		a, err = sa.AskStepped(ctx, st.Chats[chat], question, step)
+		stop()
 	} else if sa, ok := r.Asker.(SourcedAsker); ok {
 		a, err = sa.AskSourced(ctx, st.Chats[chat], question)
 	} else {
@@ -342,35 +345,117 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
 }
 
-// maxStepText — столько байт «что спросили» уходит в шаге хода.
+// maxStepText — столько байт подписи шага уходит телефону.
 const maxStepText = 200
 
-// stepper posts the turn's steps to the phone, не чаще StepEvery: шаг — не
-// обещание, а показ хода, поэтому мимо исходящих — потерялся, итог все равно
-// придет. Счетчик окна записан до отправки: повтор номера телефон отверг бы.
-// Замок — на случай шагов из параллельных инструментов модели.
-func (r Relay) stepper(ctx context.Context, st *State, chat string) func(Step) {
-	var mu sync.Mutex
-	var last time.Time
-	return func(s Step) {
-		mu.Lock()
-		defer mu.Unlock()
-		now := r.now()
-		if !last.IsZero() && now.Sub(last) < r.StepEvery {
-			return
+// stepPostTimeout bounds one step's post: шаг — показ хода, медленный
+// kb-сервер не должен держать его дольше.
+const stepPostTimeout = 5 * time.Second
+
+// stepper posts the turn's steps from its own goroutine (ревью #641): ход
+// модели не ждет ящик, а из шагов внутри StepEvery уходит самый свежий —
+// телефон видит то же, что окно. Шаг — показ, а не обещание: мимо исходящих,
+// потерялся — итог все равно придет. Счетчик окна записывается до отправки.
+// stop ждет горутину: дальше состояние снова только у handle.
+//
+// ponytail: шаги остаются в журнале ящика на сервере навсегда, как и ответы;
+// новый ключ перечитывает их. Потолок — срок хранения ящика на сервере.
+func (r Relay) stepper(ctx context.Context, st *State, chat string) (step func(Step), stop func()) {
+	in := make(chan Step, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.stepLoop(ctx, in, st, chat)
+	}()
+	step = func(s Step) {
+		for {
+			select {
+			case in <- s:
+				return
+			default: // неотправленный вытесняется свежим
+				select {
+				case <-in:
+				default:
+				}
+			}
 		}
-		last = now
-		st.DeskCounter++
-		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: trim(s.Text, maxStepText)}}
-		if r.Store.Save(*st) != nil {
-			return
-		}
-		sealed, err := r.sealFitting(&out)
-		if err != nil {
-			return
-		}
-		_, _ = r.Box.Post(ctx, chat, sealed)
 	}
+	stop = func() {
+		cancel()
+		<-done
+	}
+	return step, stop
+}
+
+// stepLoop posts steps from in until ctx ends, не чаще StepEvery: после паузы
+// уходит самый свежий из пришедших за нее.
+func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat string) {
+	var last time.Time
+	for {
+		var s Step
+		select {
+		case <-ctx.Done():
+			return
+		case s = <-in:
+		}
+		if wait := r.StepEvery - r.now().Sub(last); !last.IsZero() && wait > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			select {
+			case s = <-in: // свежий за время ожидания
+			default:
+			}
+		}
+		began := r.now()
+		if r.postStep(ctx, st, chat, s) {
+			last = began
+		}
+	}
+}
+
+// postStep seals and posts one step; false — не ушел (причина в журнале).
+func (r Relay) postStep(ctx context.Context, st *State, chat string, s Step) bool {
+	st.DeskCounter++
+	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}}
+	if err := r.Store.Save(*st); err != nil {
+		r.logf("mailrelay: step: state: %v", err)
+		return false
+	}
+	sealed, err := r.sealFitting(&out)
+	if err != nil {
+		r.logf("mailrelay: step: %v", err)
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, stepPostTimeout)
+	defer cancel()
+	if _, err := r.Box.Post(ctx, chat, sealed); err != nil {
+		r.logf("mailrelay: step: post: %v", err)
+		return false
+	}
+	return true
+}
+
+func (r Relay) logf(format string, args ...any) {
+	if r.Logf != nil {
+		r.Logf(format, args...)
+	}
+}
+
+// clip cuts text to max bytes on a rune boundary with «…»: у шага нет «полностью
+// в окне» — это подпись, а не ответ.
+func clip(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit - len("…")
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:max(cut, 0)] + "…"
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека

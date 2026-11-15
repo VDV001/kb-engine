@@ -40,9 +40,8 @@ export function take(st, m, o) {
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
   if (m.from === "desk" && p.kind === "step") { // ход модели: показ, не сообщение (#622)
     const c = st.chats[m.chat];
-    if (!c?.pending) return false; // запоздавший шаг после ответа
-    const src = (p.sources || [])[0] || {};
-    c.step = { kind: src.kind || "", name: src.name || "", what: p.text || "" };
+    if (!c?.pending || !p.text) return false; // запоздавший шаг после ответа
+    c.step = p.text; // подпись — как в окне, ее строит окно
     return true;
   }
   const answer = m.from === "desk" && (p.kind === "answer" || p.kind === "error");

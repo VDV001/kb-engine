@@ -266,8 +266,8 @@ func (s *burst) AskStepped(ctx context.Context, chat, question string, step func
 	return s.AskSourced(ctx, chat, question)
 }
 
-// Шаги хода (ревью #641): отправка не задерживает ход модели, из шагов внутри
-// StepEvery уходит самый свежий — телефон видит то же, что окно; длинный шаг
+// Шаги хода (ревью #641): отправка не задерживает ход модели, последним уходит
+// самый свежий шаг — телефон видит то же, что окно; длинный шаг
 // обрезан простым «…», без обещания ответа «полностью — в окне».
 func TestRelaySendsTheLatestStepWithoutBlocking(t *testing.T) {
 	b, s := &slowBox{delay: 100 * time.Millisecond}, &store{}
@@ -286,10 +286,13 @@ func TestRelaySendsTheLatestStepWithoutBlocking(t *testing.T) {
 	for _, p := range got {
 		kinds = append(kinds, p.Kind)
 	}
-	if strings.Join(kinds, ",") != "step,step,answer" || got[0].Text != "Документы: сроки" {
+	// Шагов — от одного до трех (пачку горутина может застать целиком), но
+	// последним перед ответом уходит самый свежий.
+	n := len(got)
+	if n < 2 || n > 4 || got[n-1].Kind != mailrelay.KindAnswer || got[n-2].Kind != mailrelay.KindStep {
 		t.Fatalf("ящик: %v %+v", kinds, got)
 	}
-	last := got[1].Text
+	last := got[n-2].Text
 	if !strings.HasPrefix(last, "Документы: яя") || !strings.HasSuffix(last, "…") || strings.Contains(last, "окне") || len(last) > 210 {
 		t.Errorf("последний шаг: %q", last)
 	}

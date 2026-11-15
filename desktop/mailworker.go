@@ -160,6 +160,7 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 		// Шаги хода — не чаще раза в 3 с: телефон опрашивает раз в 10 с, а
 		// предел отправки окна — раз в секунду.
 		StepEvery: 3 * time.Second,
+		Logf:      w.logf,
 
 		FindTimeout: phoneFindTimeout,
 	}
@@ -197,30 +198,45 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 	return a.w.askAndTell(ctx, chat, question)
 }
 
-// AskStepped is AskSourced with the turn's steps for the phone (#622).
+// AskStepped is AskSourced with the turn's steps for the phone (#622); step
+// nil — без хода.
 func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	if a.w.answer == nil {
-		return a.AskSourced(ctx, id, question)
+		c, text, err := a.Ask(ctx, id, question)
+		return mailrelay.Answer{Chat: c, Text: text}, err
 	}
-	ans, err := a.w.answer(ctx, id, question, func(u chat.Use) {
-		step(mailrelay.Step{Text: u.Name + ": " + u.What})
-	})
+	var each func(chat.Use)
+	if step != nil {
+		each = func(u chat.Use) { step(mailrelay.Step{Text: stepLabel(u)}) }
+	}
+	ans, err := a.w.answer(ctx, id, question, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
 	return ans, err
 }
 
-func (a workerAsker) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
-	if a.w.answer == nil {
-		c, text, err := a.Ask(ctx, chat, question)
-		return mailrelay.Answer{Chat: c, Text: text}, err
+func (a workerAsker) AskSourced(ctx context.Context, id, question string) (mailrelay.Answer, error) {
+	return a.AskStepped(ctx, id, question, nil)
+}
+
+// stepLabel words a step as the window shows it (useName в frontend/app.js):
+// «Документы: …», «Интернет · … · вне Ваших источников», имя подключения.
+func stepLabel(u chat.Use) string {
+	name := u.Name
+	switch u.Kind {
+	case chat.UseDocs:
+		name = "Документы"
+	case chat.UseWeb:
+		name = "Интернет · " + u.Name
 	}
-	ans, err := a.w.answer(ctx, chat, question, nil)
-	if err == nil {
-		a.w.changed(ans.Chat)
+	if u.What != "" {
+		name += ": " + u.What
 	}
-	return ans, err
+	if u.Kind == chat.UseWeb {
+		name += " · вне Ваших источников"
+	}
+	return name
 }
 
 // chatAsker runs a quiet turn in the window's chat: без кусков на страницу —
