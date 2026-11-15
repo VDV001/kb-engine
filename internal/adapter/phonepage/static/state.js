@@ -67,3 +67,7 @@ export function b64(bytes) {
 export function unb64(text) {
   return Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 }
+
+export function searchChat() { return ""; }
+
+export function asleep() { return 0; }

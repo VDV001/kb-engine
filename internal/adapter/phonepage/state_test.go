@@ -42,6 +42,41 @@ s.take(st, { seq: 4, chat: "c", from: "phone", at: "2026-11-15T10:00:03Z" }, twi
 want(st.chats.c.msgs.length === 3 && st.chats.c.pending === true, "another phone's question shows and waits");
 want(s.take(st, { seq: 5, chat: "c", from: "desk" }, null) === false && st.after === 5, "unreadable message only moves the cursor");
 
+// 2б. Метки «взято» ответа окна — в сообщение (решение 15.11: ответ как в окне).
+const st2 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [], pending: true, updated: 1 } } };
+const withSrc = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 1n, plain: enc({ kind: "answer", text: "312", sources: [{ kind: "connection", name: "Ozon · Пример" }] }) };
+s.take(st2, { seq: 1, chat: "c", from: "desk", at: "2026-11-15T10:00:00Z" }, withSrc);
+want(st2.chats.c.msgs[0].sources?.[0]?.name === "Ozon · Пример", "answer keeps its sources");
+
+// 2в. Поиск идет служебным чатом ящика: выдача и документ — в st.search и st.doc,
+// в список чатов не попадают; ошибка снимает «ищет».
+const sc = s.searchChat(st2);
+want(typeof sc === "string" && sc.length >= 8 && sc === s.searchChat({ ...st2 }), "search chat is stable for the phone");
+st2.search = { q: "альфа", pending: true };
+const res = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 2n, plain: enc({ kind: "results", text: "альфа", hits: [{ ref: "file:a.pdf", kind: "pdf", title: "Альфа.pdf" }] }) };
+want(s.take(st2, { seq: 2, chat: sc, from: "desk", at: "2026-11-15T10:00:01Z" }, res) === true, "results change the state");
+want(st2.search.pending === false && st2.search.hits.length === 1 && st2.search.q === "альфа" && !st2.chats[sc], "results land in search, not in chats");
+const docp = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 3n, plain: enc({ kind: "doc", title: "Альфа.pdf", text: "текст", hits: [{ ref: "file:a.pdf", where: "Договоры" }] }) };
+s.take(st2, { seq: 3, chat: sc, from: "desk", at: "2026-11-15T10:00:02Z" }, docp);
+want(st2.doc?.title === "Альфа.pdf" && st2.doc.text === "текст" && st2.doc.ref === "file:a.pdf" && st2.doc.where === "Договоры", "doc lands in st.doc");
+st2.search.pending = true;
+const serr = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 4n, plain: enc({ kind: "error", text: "поиск не подключен" }) };
+s.take(st2, { seq: 4, chat: sc, from: "desk", at: "2026-11-15T10:00:03Z" }, serr);
+want(st2.search.pending === false && st2.search.error === "поиск не подключен", "search error shows and stops waiting");
+// Результаты старого запроса после нового — не подменяют новый.
+st2.search = { q: "новый", pending: true };
+const stale = { sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: 5n, plain: enc({ kind: "results", text: "старый", hits: [] }) };
+s.take(st2, { seq: 5, chat: sc, from: "desk", at: "2026-11-15T10:00:04Z" }, stale);
+want(st2.search.q === "новый" && st2.search.pending === true, "stale results do not replace the current query");
+
+// 2г. Компьютер «спит»: вопрос ждет дольше 45 с без вестей от окна.
+const t0 = Date.parse("2026-11-15T10:00:00Z");
+const idle = { lastDesk: t0 - 3_600_000, chats: { c: { pending: true, msgs: [{ who: "me", at: t0 }] } } };
+want(s.asleep(idle, t0 + 30_000) === 0, "30 s of waiting is not asleep");
+want(s.asleep(idle, t0 + 60_000) === t0 - 3_600_000, "60 s of waiting: asleep since the last word of the desk");
+want(s.asleep({ lastDesk: t0 + 50_000, chats: idle.chats }, t0 + 60_000) === 0, "desk spoke after the question: not asleep");
+want(s.asleep({ chats: {} }, t0) === 0, "nothing waits: not asleep");
+
 // 3. Счетчик двух вкладок: при записи — наибольший.
 want(s.mergeCounter(4n, "5") === 5n && s.mergeCounter(6n, "5") === 6n && s.mergeCounter(3n, undefined) === 3n, "counter merge takes the max");
 
