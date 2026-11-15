@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
+	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
 	"github.com/daniil/kb-engine/internal/adapter/kbserver"
 	"github.com/daniil/kb-engine/internal/adapter/mailbox"
@@ -146,5 +148,65 @@ func TestMailWorkerSkipsServersWithoutPhones(t *testing.T) {
 	}
 	if n := hits.Load(); n != 0 {
 		t.Errorf("polled a server without phones: %d requests", n)
+	}
+}
+
+// --- ревью #635
+
+// Ход с телефона не стирает черновик «нового чата», который человек набирает в окне.
+func TestMailWorkerKeepsTheDraft(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.SaveDraft("", "набираю в окне"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := chatAsker(d)(t.Context(), "", "с телефона"); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := d.Draft(""); got != "набираю в окне" {
+		t.Errorf("draft after a phone turn: %q", got)
+	}
+}
+
+// Связка ключей — не каждые 10 с: ключ и токен читаются раз, заново — после
+// привязки или отвязки телефона в этом окне.
+func TestMailWorkerReadsTheKeychainRarely(t *testing.T) {
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	tok.gets = map[string]int{}
+	w := newMailWorker(s, func(context.Context, string, string) (string, string, error) { return "w", "ok", nil }, t.TempDir())
+	for range 3 {
+		if err := w.tick(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n, m := tok.gets[mailKeyAccount("srv1")], tok.gets["srv1"]; n > 1 || m > 1 {
+		t.Errorf("3 ticks read the keychain: key %d, token %d times", n, m)
+	}
+	s.qr = func(text string) ([]byte, error) { return []byte(text), nil }
+	before := tok.gets[mailKeyAccount("srv1")]
+	if _, err := s.MailPairPhone("srv1"); err != nil {
+		t.Fatal(err)
+	}
+	_ = w.tick(t.Context())
+	if tok.gets[mailKeyAccount("srv1")] <= before { // без телефонов привязка ключ не читает, а заводит новый
+		t.Error("tick after pairing did not re-read the key")
+	}
+	_ = srv
+}
+
+// Отказ сервера насовсем (неверный чат, велико) — mailrelay.ErrRefused: такой
+// ответ уходит из исходящих, а не затыкает ящик.
+func TestMailBoxMarksRefusals(t *testing.T) {
+	_, _, srv, _ := newWorkerSettings(t)
+	b := mailBox{kbserver.Client{URL: srv.URL, Token: srvToken, HTTP: srv.Client()}}
+	if _, err := b.Post(t.Context(), "Bad Chat", []byte("x")); !errors.Is(err, mailrelay.ErrRefused) {
+		t.Errorf("bad chat: %v, want ErrRefused", err)
+	}
+	if _, err := b.Post(t.Context(), "c-1", make([]byte, domain.MaxMailSealed+1)); !errors.Is(err, mailrelay.ErrRefused) {
+		t.Errorf("too large: %v, want ErrRefused", err)
 	}
 }
