@@ -1056,7 +1056,7 @@ async function openSettings(view = "sources") {
     return;
   }
   if (view === "conn") {
-    await renderConnections();
+    await renderConnections(true);
     $("#close-settings").focus();
     return;
   }
@@ -1307,14 +1307,21 @@ let connConfirm = null;
 const CONN_HEAD = { ozon: "Ozon", mpstats: "MPStats" };
 const CONN_ABOUT = { ozon: "Client-Id и API-ключ с ролью «Только чтение»: окно ничего не меняет в кабинете", mpstats: "Аналитика рынка Ozon по ключу API: каждый запрос тратит лимит тарифа" };
 const CONN_GIVES = { ozon: ["продажи", "заказы", "остатки", "начисления", "возвраты"], mpstats: ["ниши", "продажи по дням", "сезон по месяцам", "продавцы и топ-10", "карточки товаров"] };
-async function renderConnections() {
-  const list = $("#conn-list");
+// connLast — последний обмен кабинетов: читается при открытии страницы, перерисовки после кнопок его не перечитывают (ревью #628).
+let connLast = {}, connSeq = 0;
+async function renderConnections(fresh) {
+  const list = $("#conn-list"), seq = ++connSeq;
   if (!native() || !native().Connections) { list.innerHTML = `<p class="muted">Подключения видны в окне приложения.</p>`; return; }
   let rows = [];
   try { rows = (await native().Connections()) || []; } catch (e) { list.innerHTML = `<p class="muted">${esc(errText(e))}</p>`; return; }
+  if (fresh && native().MarketsOzonLoadInfo) {
+    const next = {};
+    await Promise.all(rows.filter((r) => r.kind === "ozon").map(async (r) => { next[r.id] = await native().MarketsOzonLoadInfo(r.id).catch(() => null); }));
+    connLast = next;
+  }
+  if (seq !== connSeq) return; // пока ждали, началась перерисовка новее: старый снимок ее не затирает
   setChatConns(rows); // ряд «ищет в» чата видит разрешение сразу
-  const last = {};
-  await Promise.all(rows.filter((r) => r.kind === "ozon" && native().MarketsOzonLast).map(async (r) => { last[r.id] = await native().MarketsOzonLast(r.id).catch(() => null); }));
+  const last = connLast;
   const shop = tabKeys().includes("module:markets");
   const chips = (xs, off) => (xs.length ? `<div class="mk-cn-chips">${xs.map((x) => `<span class="mk-cn-chip${off ? " off" : ""}">${esc(x)}</span>`).join("")}</div>` : "");
   const pill = (t, cls) => `<span class="mk-cn-st ${cls}">${esc(t)}</span>`;
@@ -1323,20 +1330,20 @@ async function renderConnections() {
     const what = r.kind === "mpstats" ? "цифры ниш и рынка из MPStats" : "цифры магазина";
     const share = CHAT_CONN[r.kind] ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? `модель чата видит ${what}, они уходят ее провайдеру; нажмите — запретить` : `модель чата не видит ${what}; нажмите — разрешить: ${r.kind === "mpstats" ? "категории и продажи рынка" : "названия товаров, заказы и продажи"} уйдут провайдеру модели`)}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
     const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
-    const go = r.kind === "ozon" && shop ? `<button class="btn" data-conn-shop="${esc(r.id)}"${mkTip("Открыть «Магазин»", "«Маркеты» → «Магазин» с этим кабинетом")}>Открыть «Магазин»</button>` : "";
+    const go = r.kind === "ozon" && shop && r.enabled ? `<button class="btn" data-conn-shop="${esc(r.id)}"${mkTip("Открыть «Магазин»", "«Маркеты» → «Магазин» с этим кабинетом")}>Открыть «Магазин»</button>` : "";
     const acts = r.own
       ? `${chk}${share}${go}`
       : `${chk}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
     const ck = connChecks[r.id];
     const ckLine = ck ? `<p class="mk-cn-last conn-check${ck.busy ? "" : ck.ok ? " ok" : " bad"}" role="status">${ck.busy ? "проверяю…" : (ck.ok ? "✓ " : "✕ ") + esc(ck.note)}</p>` : "";
     const l = last[r.id];
-    const ex = r.kind !== "ozon" ? "" : `<p class="mk-cn-last">${l && l.loadedAt ? `Последний обмен: ${esc(l.loadedAt)} · ${fmt((l.products || []).length)} товаров${l.windowFrom ? " с " + l.windowFrom.split("-").reverse().join(".") : ""}` : "Еще не загружался: «Маркеты» → «Магазин» → «Загрузить из Ozon»"}</p>`;
+    const ex = r.kind !== "ozon" || !l ? "" : `<p class="mk-cn-last">${l.loadedAt ? `Последний обмен: ${esc(l.loadedAt)} · ${fmt(l.products)} ${plural(l.products, "товар", "товара", "товаров")}${l.windowFrom ? " с " + esc(l.windowFrom.split("-").reverse().join(".")) : ""}` : "Еще не загружался: «Маркеты» → «Магазин» → «Загрузить из Ozon»"}</p>`;
     const confirm = connConfirm === r.id ? `<p class="conn-confirm">Удалить «${esc(r.name)}»? ${CONN_DEL_NOTE[r.kind] || CONN_DEL_NOTE.google}
       <button class="btn" data-conn-del-yes="${esc(r.id)}">Удалить</button><button class="btn" data-conn-del-no>Отмена</button></p>` : "";
     return `<div class="mk-cn-card${on ? " on" : ""}${r.own && !r.enabled ? " off" : ""}" data-conn-name="${esc(r.name)}">
-    <h4><i class="dot ${on ? "ok" : ""}"></i>${CONN_HEAD[r.kind] ? `${CONN_HEAD[r.kind]} · ` : ""}${esc(r.name)}${CONN_HEAD[r.kind] ? "" : ` <small>${esc(CONN_KIND[r.kind] || r.kind)}</small>`} <span class="mk-cn-st ${r.ok ? "ok" : ""}"${mkTip(r.status, r.detail)}>${esc(!r.ok ? r.status : r.own && !r.enabled ? "выключен" : "подключен")}</span></h4>
+    <h4><i class="dot ${on ? "ok" : ""}"></i>${CONN_HEAD[r.kind] ? `${CONN_HEAD[r.kind]} · ` : ""}${esc(r.name)}${CONN_HEAD[r.kind] ? "" : ` <small>${esc(CONN_KIND[r.kind] || r.kind)}</small>`} <span class="mk-cn-st ${r.ok ? "ok" : ""}"${mkTip(r.status, r.detail)}>${esc(r.ok ? "подключен" : r.status)}</span></h4>
     <p class="d${CONN_ABOUT[r.kind] ? "" : " clip"}">${esc(CONN_ABOUT[r.kind] || r.detail)}</p>${chips(CONN_GIVES[r.kind] || [])}
-    <p class="d conn-uses clip">${CONN_ABOUT[r.kind] ? (r.detail.match(/Client-Id \S+/) || [""])[0].replace(/(.+)/, "$1 · ") : ""}использует: ${esc((r.usedBy || []).join(", ") || "—")}</p>${ex}${ckLine}
+    <p class="d conn-uses clip">${CONN_ABOUT[r.kind] && /Client-Id \S+/.test(r.detail) ? esc(r.detail.match(/Client-Id \S+/)[0]) + " · " : ""}использует: ${esc((r.usedBy || []).join(", ") || "—")}</p>${ex}${ckLine}
     <div class="mk-cn-acts">${acts}</div>${!r.own ? "" : `<div class="conn-quiet"><button class="lnk" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="lnk bad" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button></div>`}${confirm}</div>`;
   };
   const has = (k) => rows.some((r) => r.kind === k);
@@ -1347,15 +1354,29 @@ async function renderConnections() {
     stub("Wildberries", "ждет токен", "wait", "Токен API с категориями «Статистика» и «Аналитика», только чтение; подключение — в работе (#600)", ["продажи", "заказы", "остатки", "цены и скидки"]) +
     stub("Яндекс Маркет", "позже", "wait", "API-ключ кабинета; в первой версии не делаем", ["продажи", "остатки"]) +
     (shop ? stub("Файлы аналитики", "вручную", "file", "Выгрузки MPStats и похожих сервисов (xlsx, csv): продажи ниши и конкурентов. Окно узнает колонки само и спросит, если не узнало.", [], `<button class="btn" type="button" data-conn-file>Открыть выгрузку…</button>`) : "");
-  // Длинный адрес или список — одна строка с «…», целиком в подсказке (отзыв 15.11); короткой подсказка не нужна.
-  for (const el of list.querySelectorAll(".clip")) if (el.scrollWidth > el.clientWidth) Object.assign(el.dataset, { tip: el.classList.contains("conn-uses") ? "Использует" : "Адрес", tipB: el.textContent.trim() });
+  connClipTips();
   dropStaleTip();
 }
+// connClipTips: длинный адрес или список — одна строка с «…», целиком в подсказке (отзыв 15.11);
+// меряется при показе и при смене размера окна: скрытая страница ширины не имеет (ревью #628).
+function connClipTips() {
+  for (const el of document.querySelectorAll("#conn-list .clip")) {
+    if (el.scrollWidth > el.clientWidth) Object.assign(el.dataset, { tip: el.classList.contains("conn-uses") ? "Использует" : "Адрес", tipB: el.textContent.trim() });
+    else { delete el.dataset.tip; delete el.dataset.tipB; }
+  }
+}
+addEventListener("resize", () => { if (panel.dataset.view === "conn") connClipTips(); });
 // connMarkets closes the settings and opens «Маркеты» on tab.
 function connMarkets(tab) {
   closeSettings();
   pickTab("module:markets");
   mkTab(tab);
+}
+// connShop opens «Магазин» with cabinet id: «Магазин» открывается заново с этим кабинетом (ревью #628).
+function connShop(id) {
+  try { localStorage.setItem(SH_KEY, "ozon:" + id); } catch (_) { /* без хранилища откроется прежний */ }
+  sh.first = true;
+  connMarkets("shop");
 }
 async function openConnection(sec, id) {
   await openSettings(sec);
@@ -1373,10 +1394,11 @@ $("#conn-list").addEventListener("click", async (e) => {
   if (b) return openConnection(b.dataset.goSec, b.dataset.goId);
   const t = e.target.closest("[data-conn-toggle]");
   const name = e.target.closest("[data-conn-name]")?.dataset.connName || "подключение";
-  if (e.target.closest("[data-conn-shop]")) { hideTip(); return connMarkets("shop"); }
+  const cab = e.target.closest("[data-conn-shop]");
+  if (cab) { hideTip(); return connShop(cab.dataset.connShop); }
   if (e.target.closest("[data-conn-file]")) { hideTip(); connMarkets("niche"); return void $("#mk-open").click(); }
   const add = e.target.closest("[data-conn-add]");
-  if (add) { hideTip(); return void $(add.dataset.connAdd === "ozon" ? "#conn-add-ozon" : "#conn-add-mpstats").click(); }
+  if (add) { hideTip(); return void (add.dataset.connAdd === "ozon" ? showOzonForm() : showMPStatsForm()); }
   const ck = e.target.closest("[data-conn-check]");
   if (ck) {
     const id = ck.dataset.connCheck;
@@ -1410,6 +1432,12 @@ $("#conn-list").addEventListener("click", async (e) => {
 // maskConnKeys прячет набранные ключи подключений: после «Добавить» (удачного
 // или нет), при сворачивании формы и закрытии настроек — открытым ключ не остается.
 function maskConnKeys() { for (const id of ["conn-s-key", "conn-o-key", "conn-g-secret", "conn-m-key"]) maskKey(id); }
+// showMPStatsForm opens the MPStats form (не переключает: кнопка карточки только открывает, ревью #628).
+function showMPStatsForm() {
+  $("#conn-mpstats").hidden = false;
+  $("#conn-add-mpstats").setAttribute("aria-expanded", "true");
+  focusSoon("#conn-m-key");
+}
 $("#conn-add-mpstats").addEventListener("click", () => {
   maskConnKeys();
   const f = $("#conn-mpstats");
@@ -2235,7 +2263,6 @@ const ACCENTS = [
   ["mk-row", "Маркеты: выбранная ниша", "черта градиентом у выбранной строки"],
   ["mk-buttons", "Маркеты: главные кнопки", "«Открыть выгрузку» и «Сравнить» рамкой градиента"],
   ["mk-advice", "Маркеты: советы", "плашка совета цветом его вида: рамка градиентом, заливка и заголовок; без нее — тонкая рамка, цвет остается у значка"],
-  ["conn-card", "Подключения: карточка", "рамка градиентом у работающего подключения, цвета — из палитры «Маркетов» ниже; без нее — тонкая рамка и зеленая точка"],
   ["mk-load", "Маркеты: загрузка кабинета", "заливка полосы «Загрузить из Ozon» градиентом и блик по ней"],
 ];
 const ACCENT_IDS = ACCENTS.map((a) => a[0]);
