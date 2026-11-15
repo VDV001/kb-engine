@@ -7,15 +7,25 @@
 //
 // AAD = "kbmail\x00" + весь заголовок (33 байта) + чат + "\x00" + сторона.
 // Чат и сторону сервер видит открыто, но подменить их, как и любое поле
-// заголовка, не может: Open откажет. Id ключа — первые 4 байта
+// заголовка, не может: Open откажет — ErrNotAuthentic, а за правку версии и
+// id ключа — ErrFormat и ErrWrongKey. Id ключа — первые 4 байта
 // SHA-256("kbmail key id\x00" + ключ): получатель, у которого после смены
-// ключа остались старые, выбирает нужный, не перебирая (KeyIDOf).
+// ключа остались старые, выбирает нужный, не перебирая (KeyIDOf). ErrWrongKey
+// значит «ключа с этим id у меня нет», а не «ключ сменился»: id мог подменить
+// сервер, и повода менять ключ в этом нет.
+//
+// Счетчик пишется во все 8 байт big-endian: на JS — BigInt и setBigUint64
+// (второй контрольный вектор держит это). Нонс случайный: при потере
+// состояния телефон начнет счетчик заново, и нонс из счетчика повторился бы.
+// Предел случайного нонса — около 2^32 сообщений на ключ (NIST SP 800-38D).
 //
 // Отправитель — 8 случайных байт устройства, счетчик у каждого свой. Сам пакет
 // повторы не ловит: Open примет то же сообщение дважды. Пропуски и повторы
-// видит получатель, который помнит последний счетчик каждого отправителя в
-// чате (работник окна, этап 3 #622); до него сервер может повторить или
-// удержать сообщение, но не подделать и не прочесть.
+// видит получатель, который помнит последний счетчик по ключу (сторона,
+// отправитель) в чате (работник окна, этап 3 #622); до него сервер может
+// повторить или удержать сообщение, но не подделать и не прочесть. Отправителя
+// выбирает само устройство: держатель ключа может назваться чужим — защита
+// от сервера, не друг от друга.
 package mailcrypt
 
 import (
@@ -112,6 +122,10 @@ func newKey(raw [32]byte) Key {
 
 // ParseKey reads Encode's form.
 func ParseKey(s string) (Key, error) {
+	// Длина до разбора: Strict в stdlib пропускает \r и \n, а телефон их не примет.
+	if len(s) != keyTextLen {
+		return Key{}, fmt.Errorf("%w: key", ErrFormat)
+	}
 	b, err := base64.RawURLEncoding.Strict().DecodeString(s)
 	if err != nil || len(b) != 32 {
 		return Key{}, fmt.Errorf("%w: key", ErrFormat)
@@ -143,7 +157,10 @@ func (k Key) Equal(o Key) bool {
 	return subtle.ConstantTimeCompare(k.s().raw[:], o.s().raw[:]) == 1
 }
 
-const redacted = "mailcrypt.Key(…)"
+const (
+	redacted   = "mailcrypt.Key(…)"
+	keyTextLen = 43 // base64url 32 байт без «=»
+)
 
 // Format prints a placeholder for every verb: %v, %d, %x — ключа не видно.
 func (Key) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, redacted) }
@@ -152,9 +169,7 @@ func (Key) Format(f fmt.State, _ rune) { _, _ = io.WriteString(f, redacted) }
 func (Key) LogValue() slog.Value { return slog.StringValue(redacted) }
 
 // MarshalJSON refuses: ключ не уходит в JSON даже случайно.
-func (Key) MarshalJSON() ([]byte, error) {
-	return nil, errors.New("mailcrypt: the key is never serialized; use Encode on purpose")
-}
+func (Key) MarshalJSON() ([]byte, error) { return nil, ErrKeySerialized }
 
 // KeyIDOf reads which key sealed the message.
 func KeyIDOf(sealed []byte) (KeyID, error) {
@@ -190,6 +205,9 @@ func sealWithNonce(k Key, m Meta, plain, nonce []byte) ([]byte, error) {
 	}
 	if _, err := domain.ParseMailSide(string(m.From)); err != nil {
 		return nil, err
+	}
+	if len(plain) == 0 {
+		return nil, domain.ErrMailEmpty // запечатанным пустое весит 49 байт, и сервер бы его пропустил
 	}
 	if len(plain) > MaxPlain {
 		return nil, fmt.Errorf("%w: %d bytes of text, limit %d", domain.ErrMailTooLarge, len(plain), MaxPlain)
