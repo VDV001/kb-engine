@@ -112,10 +112,10 @@ type SourcedAsker interface {
 	AskSourced(ctx context.Context, chat, question string) (Answer, error)
 }
 
-// Step is one step of the model's turn: вид места (docs, connection, web),
-// имя для человека и что спросили.
+// Step is one step of the model's turn as the person reads it: «Документы:
+// поставки», «Ozon · кабинет: заказы» — подпись строит окно, как у себя.
 type Step struct {
-	Kind, Name, What string
+	Text string
 }
 
 // SteppedAsker is a SourcedAsker that also reports the turn's steps while it
@@ -361,8 +361,7 @@ func (r Relay) stepper(ctx context.Context, st *State, chat string) func(Step) {
 		}
 		last = now
 		st.DeskCounter++
-		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep,
-			Text: trim(s.What, maxStepText), Sources: []Source{{Kind: s.Kind, Name: s.Name}}}}
+		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: trim(s.Text, maxStepText)}}
 		if r.Store.Save(*st) != nil {
 			return
 		}

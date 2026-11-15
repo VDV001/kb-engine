@@ -111,23 +111,25 @@ func TestAnswerSources(t *testing.T) {
 	}
 }
 
-// Ход модели уходит телефону: шаг окна — вид, имя и что спросили (#622).
+// Ход модели уходит телефону подписью, как в окне (#622, ревью #641):
+// «Документы», «Интернет · … · вне Ваших источников», имя подключения.
 func TestWorkerAskerSteps(t *testing.T) {
 	w := &mailWorker{changed: func(string) {}}
-	w.answer = func(_ context.Context, id, _ string, step func(chat.Use)) (mailrelay.Answer, error) {
+	w.answer = func(_ context.Context, _, _ string, step func(chat.Use)) (mailrelay.Answer, error) {
 		if step != nil {
 			step(chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon · Пример", What: "заказы"})
 			step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
+			step(chat.Use{Kind: chat.UseWeb, Name: "example.org"})
 		}
 		return mailrelay.Answer{Chat: "w-1", Text: "312"}, nil
 	}
-	var got []mailrelay.Step
-	ans, err := workerAsker{w}.AskStepped(t.Context(), "", "заказы?", func(s mailrelay.Step) { got = append(got, s) })
+	var got []string
+	ans, err := workerAsker{w}.AskStepped(t.Context(), "", "заказы?", func(s mailrelay.Step) { got = append(got, s.Text) })
 	if err != nil || ans.Text != "312" {
 		t.Fatalf("ответ %+v, %v", ans, err)
 	}
-	want := []mailrelay.Step{{Kind: "connection", Name: "Ozon · Пример", What: "заказы"}, {Kind: "docs", What: "поставки"}}
-	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
-		t.Fatalf("шаги %+v", got)
+	want := []string{"Ozon · Пример: заказы", "Документы: поставки", "Интернет · example.org · вне Ваших источников"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("шаги %q", got)
 	}
 }

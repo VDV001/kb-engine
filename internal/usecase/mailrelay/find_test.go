@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -229,51 +230,67 @@ func TestRelayFindHasDeadline(t *testing.T) {
 	}
 }
 
-// stepper reports three steps of the turn, the clock moving between them.
-type stepper struct {
-	sourced
-	clock *time.Time
+// slowBox posts after a delay, как медленный kb-сервер.
+type slowBox struct {
+	mu    sync.Mutex
+	box   box
+	delay time.Duration
 }
 
-func (s *stepper) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
-	for _, d := range []time.Duration{0, time.Second, 4 * time.Second} {
-		*s.clock = s.clock.Add(d)
-		step(mailrelay.Step{Kind: "docs", What: "поставки"})
+func (b *slowBox) Since(ctx context.Context, after int64) (mailrelay.Page, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.box.Since(ctx, after)
+}
+
+func (b *slowBox) Post(ctx context.Context, chat string, sealed []byte) (int64, error) {
+	time.Sleep(b.delay)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.box.Post(ctx, chat, sealed)
+}
+
+// burst reports three steps at once, then thinks longer than StepEvery.
+type burst struct {
+	sourced
+	slowest time.Duration
+}
+
+func (s *burst) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	for _, text := range []string{"Документы: сроки", "Ozon · Пример: заказы", "Документы: " + strings.Repeat("я", 300)} {
+		began := time.Now()
+		step(mailrelay.Step{Text: text})
+		s.slowest = max(s.slowest, time.Since(began))
 	}
+	time.Sleep(150 * time.Millisecond)
 	return s.AskSourced(ctx, chat, question)
 }
 
-// Ход модели уходит телефону, пока она отвечает: шаги не чаще StepEvery, у
-// каждого свой счетчик окна, ответ — после них (#622).
-func TestRelaySendsSteps(t *testing.T) {
-	b, s := &box{}, &store{}
-	b.phone("c-1", "A", 1, q("сроки?"))
-	clock := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
-	r := newRelay(b, &asker{}, s)
-	r.Asker = &stepper{clock: &clock}
-	r.Now = func() time.Time { return clock }
-	r.StepEvery = 3 * time.Second
+// Шаги хода (ревью #641): отправка не задерживает ход модели, из шагов внутри
+// StepEvery уходит самый свежий — телефон видит то же, что окно; длинный шаг
+// обрезан простым «…», без обещания ответа «полностью — в окне».
+func TestRelaySendsTheLatestStepWithoutBlocking(t *testing.T) {
+	b, s := &slowBox{delay: 100 * time.Millisecond}, &store{}
+	b.box.phone("c-1", "A", 1, q("сроки?"))
+	a := &burst{}
+	r := newRelay(&b.box, &asker{}, s)
+	r.Box, r.Asker, r.StepEvery = b, a, 20*time.Millisecond
 	if err := r.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	got := payloads(t, b)
+	if a.slowest > 50*time.Millisecond {
+		t.Errorf("шаг ждал отправку %s: ход модели стоит на ящике", a.slowest)
+	}
+	got := payloads(t, &b.box)
 	var kinds []string
 	for _, p := range got {
 		kinds = append(kinds, p.Kind)
 	}
-	if strings.Join(kinds, ",") != "step,step,answer" || got[0].Text != "поставки" || len(got[0].Sources) != 1 || got[0].Sources[0].Kind != "docs" {
+	if strings.Join(kinds, ",") != "step,step,answer" || got[0].Text != "Документы: сроки" {
 		t.Fatalf("ящик: %v %+v", kinds, got)
 	}
-	seen := map[uint64]bool{}
-	for _, m := range b.msgs {
-		if m.From != domain.MailDesk {
-			continue
-		}
-		var f fakeSealed
-		_ = json.Unmarshal(m.Sealed, &f)
-		if seen[f.Counter] {
-			t.Fatalf("счетчик окна %d повторился", f.Counter)
-		}
-		seen[f.Counter] = true
+	last := got[1].Text
+	if !strings.HasPrefix(last, "Документы: яя") || !strings.HasSuffix(last, "…") || strings.Contains(last, "окне") || len(last) > 210 {
+		t.Errorf("последний шаг: %q", last)
 	}
 }

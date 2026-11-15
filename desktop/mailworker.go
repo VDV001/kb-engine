@@ -203,7 +203,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 		return a.AskSourced(ctx, id, question)
 	}
 	ans, err := a.w.answer(ctx, id, question, func(u chat.Use) {
-		step(mailrelay.Step{Kind: string(u.Kind), Name: u.Name, What: u.What})
+		step(mailrelay.Step{Text: u.Name + ": " + u.What})
 	})
 	if err == nil {
 		a.w.changed(ans.Chat)
