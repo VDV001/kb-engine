@@ -22,6 +22,12 @@ YC="${YC:-yc}"
 FOLDER="${FOLDER:-kb-engine}"
 BUCKET="${BUCKET:?BUCKET: имя бакета с базами людей}"
 TZ_NAME="${TZ_NAME:-Asia/Yekaterinburg}"
+# KB_ANDROID_APP — «пакет:отпечаток» приложения Android (печатает just android):
+# сервер отдает /.well-known/assetlinks.json, и DVK на Android открывается во весь
+# экран. Пусто — 404, приложение работает в окне Chrome. Отпечаток один: запятая
+# в значении разорвала бы --environment.
+KB_ANDROID_APP="${KB_ANDROID_APP:-}"
+[[ "$KB_ANDROID_APP" != *,* ]] || { echo "KB_ANDROID_APP: один отпечаток, без запятых" >&2; exit 2; }
 registry=kb-engine sa=kb-server key=kb-bucket container=kb-server
 say() { printf '%s\n' "$*" >&2; }
 die() { say "✘ $*"; exit 1; }
@@ -121,6 +127,13 @@ verify() {
     else
       say "· вход своим токеном не проверен: PROBE_TOKEN_FILE не задан"
     fi
+    # Страница телефона и подтверждение приложения Android — без токена (#622).
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "${url%/}/m/" || true)"
+    check "страница телефона /m/ — 200 (было $code)" '[[ "$code" == 200 ]]'
+    if [[ -n "$KB_ANDROID_APP" ]]; then
+      links="$(curl -s --max-time 30 "${url%/}/.well-known/assetlinks.json" || true)"
+      check "assetlinks.json называет ${KB_ANDROID_APP%%:*}" 'grep -q "\"${KB_ANDROID_APP%%:*}\"" <<<"$links"'
+    fi
   fi
   [[ "$ok" == 1 ]] || die "проверка не прошла"
   say "адрес сервера: $url"
@@ -191,7 +204,7 @@ y serverless container revision deploy --container-name "$container" \
   --memory 512MB --cores 1 --concurrency 8 --execution-timeout 30s \
   --zone-instances-limit 1 --zone-requests-limit 8 \
   --metadata-options aws-v1-http-endpoint=disabled,gce-http-endpoint=enabled \
-  --environment TZ="$TZ_NAME" \
+  --environment "TZ=$TZ_NAME${KB_ANDROID_APP:+,KB_ANDROID_APP=$KB_ANDROID_APP}" \
   --command /kbengine --args serve,--tenants,"s3://$BUCKET",--addr,0.0.0.0:8080,--allow-open >/dev/null
 # Вызов открыт: окно и kbengine-mcp ходят по HTTPS, а вход — личный токен
 # приложения (сервер хранит только SHA-256). Без токена — 401.
