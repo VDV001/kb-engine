@@ -626,30 +626,49 @@ const maxSeenEntries = 500
 // (каталоги и kb-серверы), файлы — индекс папок; файл читается через индекс,
 // то есть с той же проверкой, что «Открыть».
 func (d *chatDesk) useSources(files *filesearch.Service) {
-	d.search = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
+	// find — общая выдача без памяти инструмента read: entries — записи, их
+	// помнит чат окна, docs — записи и файлы вперемешку.
+	find := func(ctx context.Context, q string, limit int) (entries, docs []chat.Doc, err error) {
 		res := d.settings.SearchSources(ctx, q)
 		snap := d.settings.snapshot().cfg.WithSources()
-		entries := entryDocs(res)
-		d.remember(entries)
+		entries = entryDocs(res)
 		hits, err := files.Search(q, limit)
 		if err != nil && !errors.Is(err, filesearch.ErrNotBuilt) {
-			return nil, err
+			return nil, nil, err
 		}
-		return interleave(entries, fileDocs(hits, snap.Sources, d.settings.home), limit), nil
+		return entries, interleave(entries, fileDocs(hits, snap.Sources, d.settings.home), limit), nil
+	}
+	d.search = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
+		entries, docs, err := find(ctx, q, limit)
+		d.remember(entries)
+		return docs, err
+	}
+	d.find = func(ctx context.Context, q string, limit int) ([]chat.Doc, error) {
+		_, docs, err := find(ctx, q, limit)
+		return docs, err
 	}
 	d.read = func(ctx context.Context, ref string) (chat.Doc, error) {
-		if p, ok := strings.CutPrefix(ref, "file:"); ok {
-			text, err := files.Read(p)
-			if err != nil {
-				return chat.Doc{}, err
-			}
-			return chat.Doc{Ref: ref, Title: filepath.Base(p), Source: filepath.Dir(p), Text: text}, nil
+		if strings.HasPrefix(ref, "file:") {
+			return d.open(ctx, chat.Doc{Ref: ref})
 		}
 		d.seenMu.Lock()
 		doc, ok := d.seen[ref]
 		d.seenMu.Unlock()
 		if !ok {
 			return chat.Doc{}, fmt.Errorf("документа %q нет в выдаче поиска — найдите его сначала", ref)
+		}
+		return d.open(ctx, doc)
+	}
+	// open reads a document that came from a search: файл — через индекс (та
+	// же проверка, что «Открыть»), ссылка — подключением своего источника.
+	d.open = func(ctx context.Context, doc chat.Doc) (chat.Doc, error) {
+		ref := doc.Ref
+		if p, ok := strings.CutPrefix(ref, "file:"); ok {
+			text, err := files.Read(p)
+			if err != nil {
+				return chat.Doc{}, err
+			}
+			return chat.Doc{Ref: ref, Title: filepath.Base(p), Source: filepath.Dir(p), Text: text}, nil
 		}
 		// Ссылка — только пришедшая из поиска (находка Диска): ее текст читается
 		// через подключение. Ссылку, которую модель придумала сама (подсказка
@@ -665,8 +684,6 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		}
 		return doc, nil
 	}
-	d.find = d.search
-	d.open = func(ctx context.Context, doc chat.Doc) (chat.Doc, error) { return d.read(ctx, doc.Ref) }
 }
 
 // remember keeps the records of a search: модель читает только то, что видела.

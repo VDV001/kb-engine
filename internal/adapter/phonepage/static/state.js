@@ -30,11 +30,14 @@ export function take(st, m, o) {
   const at = Date.parse(m.at) || Date.now();
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
   if (m.chat === searchChat(st)) return found(st, m, p);
+  if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
+  const answer = m.from === "desk" && (p.kind === "answer" || p.kind === "error");
+  if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
-  if (m.from === "desk" && (p.kind === "answer" || p.kind === "error")) {
+  if (answer) {
     c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
     c.pending = false;
-  } else if (m.from === "phone" && p.kind === "question") {
+  } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
     if (sent) {
@@ -44,8 +47,6 @@ export function take(st, m, o) {
       c.msgs.push({ who: "me", text: p.text, at, sent: true }); // с другого телефона человека
       c.pending = true;
     }
-  } else {
-    return false;
   }
   c.updated = Date.now();
   return true;
@@ -70,8 +71,11 @@ function found(st, m, p) {
     const h = (p.hits || [])[0] || {};
     st.doc = { title: p.title || h.title || "", text: p.text || "", ref: h.ref || "", where: h.where || "" };
     s.opening = "";
+  } else if (p.kind === "error" && s.opening && st.doc) { // отказ открыть — на экране документа
+    st.doc.error = p.text;
+    s.opening = "";
   } else if (p.kind === "error") {
-    Object.assign(s, { pending: false, opening: "", error: p.text });
+    Object.assign(s, { pending: false, error: p.text });
   } else {
     return false;
   }
@@ -99,7 +103,16 @@ export function asleep(st, now) {
 
 // single runs fn one at a time: вызов во время прогона — еще один прогон
 // после, а не второй параллельно (ревью #636: два flush снимали чужой запрос).
-export const single = (fn) => fn;
+export function single(fn) {
+  let run = null, again = false;
+  return () => {
+    if (run) { again = true; return run; }
+    run = (async () => {
+      try { do { again = false; await fn(); } while (again); } finally { run = null; }
+    })();
+    return run;
+  };
+}
 
 // mergeCounter takes the larger of this tab's counter and the stored one:
 // две вкладки (экран «Домой» и браузер) не откатывают счетчик друг другу.

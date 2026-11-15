@@ -152,12 +152,26 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 		Box:     mailBox{c.client},
 		Crypto:  mailSeal{key: c.key, sender: sender},
 		Asker:   workerAsker{w},
-		Finder:  w.find,
+		Finder:  w.finder(),
 		Store:   file,
 		KeyID:   hex.EncodeToString(keyID[:]),
 		MaxText: mailMaxText,
+
+		FindTimeout: phoneFindTimeout,
 	}
 	return relay.Tick(ctx)
+}
+
+// phoneFindTimeout bounds one search or open for the phone: работник один на
+// все серверы, подвисший источник или огромный PDF не держат его круг.
+const phoneFindTimeout = time.Minute
+
+// finder is the phone's search, или отказ словами, если окно собрано без него.
+func (w *mailWorker) finder() mailrelay.Finder {
+	if w.find == nil {
+		return phoneSearchOff{}
+	}
+	return w.find
 }
 
 func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (string, string, error) {

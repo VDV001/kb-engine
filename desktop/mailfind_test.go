@@ -81,6 +81,19 @@ func TestPhoneFinderForgetsOldestFirst(t *testing.T) {
 	}
 }
 
+// Отказы телефону — словами окна: без поиска и по сроку relay (ревью #636).
+func TestPhoneFinderWords(t *testing.T) {
+	if _, err := (&mailWorker{}).finder().Search(t.Context(), "q"); !errors.Is(err, errPhoneSearchOff) {
+		t.Fatalf("окно без поиска: %v", err)
+	}
+	f := newPhoneFinder(func(ctx context.Context, _ string, _ int) ([]chat.Doc, error) { return nil, ctx.Err() }, nil)
+	ctx, cancel := context.WithTimeout(t.Context(), 0)
+	defer cancel()
+	if _, err := f.Search(ctx, "q"); !errors.Is(err, errPhoneSlow) {
+		t.Fatalf("по сроку: %v", err)
+	}
+}
+
 // Метки «взято» — из последнего ответа чата: подключения и документы, без повторов.
 func TestAnswerSources(t *testing.T) {
 	rec := chatRecord{

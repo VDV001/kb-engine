@@ -175,22 +175,27 @@ func (f *textFinder) Open(_ context.Context, ref string) (mailrelay.Hit, error) 
 	return mailrelay.Hit{Ref: ref, Kind: "xml", Title: "схема.xml", Text: f.text}, nil
 }
 
-// Текст, который JSON раздувает больше чем вдвое (< > & — по 6 байт), все равно
-// уходит телефону ответом, а не пропадает с ошибкой в журнале (ревью #636).
+// Текст, который JSON раздувает больше чем вдвое (< > & — по 6 байт,
+// управляющие знаки — тоже), все равно уходит телефону ответом, а не
+// пропадает с ошибкой в журнале (ревью #636).
 func TestRelayFitsEscapedReply(t *testing.T) {
 	const limit = 600
-	b, s := &box{}, &store{}
-	b.phone("s1", "p", 1, mailrelay.Payload{Kind: mailrelay.KindOpen, Text: "file:схема.xml"})
-	r := newRelay(b, &asker{}, s)
-	r.Crypto = tightCrypto{limit: limit}
-	r.Finder = &textFinder{text: strings.Repeat("<a&b>", 400)}
-	r.MaxText = (limit - 64) / 2
-	if err := r.Tick(t.Context()); err != nil {
-		t.Fatalf("ответ не ушел: %v", err)
-	}
-	got := payloads(t, b)
-	if len(got) != 1 || got[0].Kind != mailrelay.KindDoc || !strings.HasPrefix(got[0].Text, "<a&b>") || !strings.Contains(got[0].Text, "окне") {
-		t.Fatalf("ответы %+v", got)
+	for name, text := range map[string]string{"разметка": strings.Repeat("<a&b>", 400), "управляющие": strings.Repeat("\x01\x02", 1000)} {
+		t.Run(name, func(t *testing.T) {
+			b, s := &box{}, &store{}
+			b.phone("s1", "p", 1, mailrelay.Payload{Kind: mailrelay.KindOpen, Text: "file:схема.xml"})
+			r := newRelay(b, &asker{}, s)
+			r.Crypto = tightCrypto{limit: limit}
+			r.Finder = &textFinder{text: text}
+			r.MaxText = (limit - 64) / 2
+			if err := r.Tick(t.Context()); err != nil {
+				t.Fatalf("ответ не ушел: %v", err)
+			}
+			got := payloads(t, b)
+			if len(got) != 1 || got[0].Kind != mailrelay.KindDoc || !strings.HasPrefix(got[0].Text, text[:4]) || !strings.Contains(got[0].Text, "окне") {
+				t.Fatalf("ответы %+v", got)
+			}
+		})
 	}
 }
 

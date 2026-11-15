@@ -21,6 +21,7 @@
 package mailrelay
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -292,7 +293,7 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	st.DeskCounter++
 	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply}
 	var err error
-	if out.Sealed, err = r.seal(out); err != nil {
+	if out.Sealed, err = r.sealFitting(&out); err != nil {
 		return false, err
 	}
 	st.Outbox = append(st.Outbox, out)
@@ -318,13 +319,19 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
 }
 
-// errNoFinder — окно собрано без поиска для телефона.
-var errNoFinder = errors.New("поиск с телефона в этом окне не подключен")
+// ErrNoFinder — relay собран без поиска для телефона. Слова для человека
+// подставляет окно своим Finder; это — только на случай сборки без него.
+var ErrNoFinder = errors.New("mailrelay: no finder")
 
 // find runs search or open in the window's sources: модель не участвует.
 func (r Relay) find(ctx context.Context, req Payload) Payload {
 	if r.Finder == nil {
-		return Payload{Kind: KindError, Text: errNoFinder.Error()}
+		return Payload{Kind: KindError, Text: ErrNoFinder.Error()}
+	}
+	if r.FindTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, r.FindTimeout)
+		defer cancel()
 	}
 	if req.Kind == KindSearch {
 		hits, err := r.Finder.Search(ctx, req.Text)
@@ -355,11 +362,43 @@ func trim(text string, limit int) string {
 	return text[:max(cut, 0)] + trimNote
 }
 
+// sealFitting seals o, shrinking the reply until it fits the mailbox: предел
+// текста — оценка, а JSON раздувает управляющие знаки до 6 байт, и заголовок,
+// выдача и метки в нее не входят (ревью #636). Не влезший ответ пропал бы:
+// номер запроса уже записан, второй раз его не обработают.
+func (r Relay) sealFitting(o *Outgoing) ([]byte, error) {
+	for {
+		sealed, err := r.seal(*o)
+		if !errors.Is(err, domain.ErrMailTooLarge) || !shrink(&o.Payload) {
+			return sealed, err
+		}
+	}
+}
+
+// shrink makes p smaller by one step: текст вдвое, потом выдача вдвое, потом
+// без меток; false — уменьшать больше нечего.
+func shrink(p *Payload) bool {
+	switch {
+	case len(p.Text) > len(trimNote):
+		p.Text = trim(p.Text, max(len(p.Text)/2, len(trimNote)))
+	case len(p.Hits) > 1:
+		p.Hits = p.Hits[:len(p.Hits)/2]
+	case len(p.Sources) > 0:
+		p.Sources = nil
+	default:
+		return false
+	}
+	return true
+}
+
 func (r Relay) seal(o Outgoing) ([]byte, error) {
-	plain, err := json.Marshal(o.Payload)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false) // < > & как есть: \u003c втрое длиннее, а страница не HTML
+	if err := enc.Encode(o.Payload); err != nil {
 		return nil, fmt.Errorf("mailrelay: reply: %w", err)
 	}
+	plain := bytes.TrimSuffix(buf.Bytes(), []byte("\n"))
 	sealed, err := r.Crypto.Seal(o.Chat, o.Counter, plain)
 	if err != nil {
 		return nil, fmt.Errorf("mailrelay: seal: %w", err)

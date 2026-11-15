@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 
@@ -21,7 +22,31 @@ const (
 	phoneShown   = 500 // столько ref помнится для «открыть»
 )
 
-var errNotShown = errors.New("этого документа нет в выдаче телефона — найдите его снова")
+var (
+	errNotShown       = errors.New("этого документа нет в выдаче телефона — найдите его снова")
+	errPhoneSearchOff = errors.New("поиск с телефона в этом окне не подключен")
+	errPhoneNotReady  = errors.New("поиск окна еще не готов — повторите через минуту")
+	errPhoneSlow      = errors.New("компьютер искал слишком долго — повторите или уточните запрос")
+)
+
+// phoneSearchOff answers the phone when the window has no search for it.
+type phoneSearchOff struct{}
+
+func (phoneSearchOff) Search(context.Context, string) ([]mailrelay.Hit, error) {
+	return nil, errPhoneSearchOff
+}
+
+func (phoneSearchOff) Open(context.Context, string) (mailrelay.Hit, error) {
+	return mailrelay.Hit{}, errPhoneSearchOff
+}
+
+// slow words the deadline of the relay for the person.
+func slow(err error) error {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return errPhoneSlow
+	}
+	return err
+}
 
 // phoneFinder searches for the phone and opens only what it has shown: ref,
 // придуманный телефоном или чужим кодом, — отказ, как у модели (ревью #467).
@@ -30,6 +55,7 @@ type phoneFinder struct {
 	open   func(ctx context.Context, doc chat.Doc) (chat.Doc, error)
 	mu     sync.Mutex
 	shown  map[string]chat.Doc
+	order  []string // ref в порядке показа: забывается самое старое
 }
 
 func newPhoneFinder(search func(context.Context, string, int) ([]chat.Doc, error), open func(context.Context, chat.Doc) (chat.Doc, error)) *phoneFinder {
@@ -38,21 +64,26 @@ func newPhoneFinder(search func(context.Context, string, int) ([]chat.Doc, error
 
 func (f *phoneFinder) Search(ctx context.Context, q string) ([]mailrelay.Hit, error) {
 	if f.search == nil {
-		return nil, errors.New("поиск окна еще не готов — повторите через минуту")
+		return nil, errPhoneNotReady
 	}
 	docs, err := f.search(ctx, q, phoneHits)
 	if err != nil {
-		return nil, err
+		return nil, slow(err)
 	}
 	hits := make([]mailrelay.Hit, 0, len(docs))
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.shown) > phoneShown {
-		f.shown = map[string]chat.Doc{}
-	}
 	for _, d := range docs {
+		if _, ok := f.shown[d.Ref]; ok { // показан снова — снова самый свежий
+			f.order = slices.DeleteFunc(f.order, func(r string) bool { return r == d.Ref })
+		}
+		f.order = append(f.order, d.Ref)
 		f.shown[d.Ref] = d
 		hits = append(hits, mailrelay.Hit{Ref: d.Ref, Kind: hitKind(d.Ref), Title: d.Title, Snippet: snippet(d.Text), Where: hitWhere(d)})
+	}
+	for len(f.order) > phoneShown {
+		delete(f.shown, f.order[0])
+		f.order = f.order[1:]
 	}
 	return hits, nil
 }
@@ -66,7 +97,7 @@ func (f *phoneFinder) Open(ctx context.Context, ref string) (mailrelay.Hit, erro
 	}
 	d, err := f.open(ctx, found)
 	if err != nil {
-		return mailrelay.Hit{}, err
+		return mailrelay.Hit{}, slow(err)
 	}
 	return mailrelay.Hit{Ref: ref, Kind: hitKind(ref), Title: d.Title, Where: hitWhere(d), Text: d.Text}, nil
 }

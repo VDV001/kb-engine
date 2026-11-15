@@ -8,7 +8,7 @@
 // ponytail: без service worker — Chrome ставит страницу и так; push и работа
 // без сети — следующим шагом (iOS шлет push только странице с экрана «Домой»).
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -273,8 +273,9 @@ function paintDoc() {
   const d = st.doc, opening = st.search?.opening;
   $("title").textContent = opening ? "Открывает…" : d?.title || "Документ";
   $("doc-where").textContent = opening ? "Компьютер читает документ…" : d?.where ? "лежит в «" + d.where + "» на компьютере" : "";
-  $("doc-text").textContent = opening ? "" : d?.text || "";
-  $("doc-ask").hidden = !!opening || !d;
+  const err = !opening && d?.error;
+  $("doc-text").textContent = opening ? "" : err ? "Компьютер не открыл документ: " + err : d?.text || "";
+  $("doc-ask").hidden = !!opening || !d || !!err;
 }
 
 function paintDesk() {
@@ -327,7 +328,8 @@ async function ask(text) {
 }
 
 // flush posts the outbox in order; неотправленное остается до следующего опроса.
-async function flush() {
+// По одному: опрос и отправка не шлют и не снимают один запрос дважды (ревью #636).
+const flush = single(async () => {
   while (st?.outbox.length) {
     const o = st.outbox[0];
     const r = await api(API + "/" + o.chat, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sealed: o.sealed }) });
@@ -341,7 +343,7 @@ async function flush() {
     st.outbox.shift();
     await persist();
   }
-}
+});
 
 function unauth() {
   const e = new Error("unauth");
@@ -350,7 +352,9 @@ function unauth() {
 }
 
 // --- опрос: исходящие, потом новое из ящика по всем чатам
-async function poll() {
+// По одному: опрос во время опроса (вернулись на вкладку) — еще круг после, а
+// не вторая цепочка таймеров.
+const poll = single(async () => {
   clearTimeout(timer);
   let wait = POLL_MS, changed = false;
   try {
@@ -381,8 +385,10 @@ async function poll() {
   }
   show(false); // и без новостей: «спит» и «на связи» зависят от часов
   if (changed && ui.view === "chat") show(true);
-  if (st) timer = setTimeout(poll, wait);
-}
+  // Скрытая вкладка не опрашивает и не пишет: с ней делит состояние вкладка на
+  // экране (экран «Домой» и браузер), вернувшись, она перечитает его.
+  if (st && !document.hidden) timer = setTimeout(poll, wait);
+});
 
 // --- события
 function openChat(id) {
@@ -394,6 +400,7 @@ function openChat(id) {
 $("new-chat").addEventListener("click", () => {
   const id = hex(crypto.getRandomValues(new Uint8Array(8)));
   st.chats[id] = { title: "Новый чат", msgs: [], updated: Date.now() };
+  persist();
   openChat(id);
   $("q").focus();
 });
@@ -478,6 +485,7 @@ $("hits").addEventListener("click", async (e) => {
 $("doc-ask").addEventListener("click", () => {
   const id = hex(crypto.getRandomValues(new Uint8Array(8)));
   st.chats[id] = { title: st.doc.title, msgs: [], updated: Date.now() };
+  persist();
   ui.tab = "list";
   openChat(id);
   $("q").value = "По документу «" + st.doc.title + "»: ";
@@ -496,7 +504,20 @@ $("unpair").addEventListener("click", async () => {
   location.reload();
 });
 wide.addEventListener("change", () => show(false));
-document.addEventListener("visibilitychange", () => { if (!document.hidden && st) poll(); });
+// ponytail: «пишет только вкладка на экране» — две вкладки рядом (планшет,
+// два окна) все еще затирают друг другу чаты. Путь: слияние чатов и
+// исходящих при persist, как счетчика.
+document.addEventListener("visibilitychange", async () => {
+  if (document.hidden || !st) return;
+  try {
+    const s = await load("state"); // другая вкладка могла писать, пока эта была скрыта
+    if (s?.pair) st = { outbox: [], ...s, counter: mergeCounter(st.counter, s.counter) };
+  } catch (e) {
+    note("Хранилище браузера недоступно: " + e.message);
+  }
+  show(false);
+  poll();
+});
 // QR открыт, когда страница уже открыта: браузер меняет только фрагмент, без
 // загрузки — привязку разбираем здесь же, иначе ключ остался бы в адресе.
 addEventListener("hashchange", async () => {
