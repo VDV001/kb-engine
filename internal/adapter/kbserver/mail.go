@@ -95,3 +95,18 @@ func (c Client) mail(ctx context.Context, method, path string, want int, notFoun
 	}
 	return nil
 }
+
+// describeMail is Describe for the mailbox: отказы по делу, без общего совета
+// ErrRejected про версии (ревью #633).
+func describeMail(err error) string {
+	switch {
+	case errors.Is(err, ErrNoSuchPhone):
+		return "такого телефона нет: его уже отвязали — обновите список"
+	case errors.Is(err, ErrMailRefused) && strings.Contains(err.Error(), "too many phones"):
+		return "привязано наибольшее число телефонов — отвяжите ненужный"
+	case errors.Is(err, ErrMailRefused):
+		return "ящик kb-сервера отказал: " + strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrMailRefused.Error()+":")) + " — повторите"
+	default:
+		return "на kb-сервере нет ящика для телефона — нужен сервер с людьми (serve --tenants), обновленный до версии с ящиком"
+	}
+}
