@@ -58,6 +58,11 @@ desktop: web
     cp desktop/build/icon/menubar.png bin/kb.app/Contents/Resources/menubar.png
     touch bin/kb.app  # Finder и Dock перечитывают иконку по времени изменения пакета
 
+# DVK для Android (#622) — bin/android/DVK.apk, TWA над /m/ kb-сервера.
+# Запускать в своем Терминале: ключ подписи и пароль — в Связке ключей.
+android host="":
+    ./scripts/android-build.sh {{host}}
+
 # Окно с инспектором WebKit — bin/kb-inspect.app, не ставится (#505). Для
 # разбора, когда кнопка молчит: в kb.log консоли нет. В установленном окне
 # инспектора нет намеренно: консоль дала бы любому у незаблокированного Мака

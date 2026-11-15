@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0b0c" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DVK">
+<title>DVK</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preload" href="fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="style.css">
+<link rel="modulepreload" href="crypto.js">
+<link rel="modulepreload" href="state.js">
+<script type="module" src="app.js"></script>
+</head>
+<body>
+<!-- Знак DVK (desktop/frontend/index.html): мозг заливкой спектра окна. -->
+<svg width="0" height="0" class="defs" aria-hidden="true">
+  <defs>
+    <linearGradient id="spec" gradientUnits="userSpaceOnUse" x1="4" y1="0" x2="60" y2="0"><stop offset="0" class="sp1"/><stop offset=".22" class="sp2"/><stop offset=".42" class="sp3"/><stop offset=".6" class="sp4"/><stop offset=".8" class="sp5"/><stop offset="1" class="sp6"/></linearGradient>
+    <symbol id="dvk" viewBox="0 0 64 64">
+      <path class="lobe" d="M31 10C27 6.5 21 6.5 18 10C12.5 9 8.5 13.5 9.5 18.5C5.5 21 4.5 26.5 7.5 30.5C4.5 34.5 5.5 40.5 10 42.5C10.5 47.5 15.5 51.5 20.5 50C23.5 54 29 54 31 51Z"/>
+      <path class="cut" d="M24 14C20 15.5 19.5 20 23 22.5M13.5 22C18 22 20.5 26.5 17 29.5M11.5 35.5C16 33 21 35 21 39.5M27 26.5C22.5 28.5 23 33.5 27.5 34.5M17.5 45.5C20.5 42 26 42.5 27.5 46"/>
+      <path class="lobe" d="M33 10H40L46 12.5H50L54.5 18V23.5L58 28.5V35.5L55 40V44.5L50 49.5H44L38.5 52.5H33Z"/>
+      <path class="cut" d="M37 13H41C45 13 47.5 15.5 47.5 18.5C47.5 21.5 45 24 41 24H37ZM36.5 28 41.75 38 47 28M37.5 42V51V47L44 42L40 45.5L45.5 51"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- Привязка: QR из окна DVK открывает эту страницу с ключом во фрагменте. -->
+<section class="pair" id="unpaired" hidden>
+  <div class="hero"><svg class="mark big" aria-hidden="true"><use href="#dvk"/></svg><span class="wm">dvk</span><span class="sub">DANIIL VDOVIN KNOWLEDGE</span></div>
+  <ol class="steps">
+    <li>На компьютере откройте DVK: Настройки → Подключения → kb-сервер</li>
+    <li>В карточке «Телефоны» нажмите «Подключить телефон»</li>
+    <li>Наведите на код камеру телефона: страница откроется и привяжется сама</li>
+  </ol>
+  <p class="note">Ключ переписки остается на телефоне и компьютере. Сервер хранит только шифротекст.</p>
+</section>
+
+<div class="shell" id="shell" hidden>
+  <!-- Колонка списка: чаты или поиск. На планшете она слева, на телефоне — экран. -->
+  <aside class="side" id="side">
+    <header class="top">
+      <svg class="mark" aria-hidden="true"><use href="#dvk"/></svg>
+      <span class="word">dvk</span>
+      <button type="button" class="pc" id="desk" aria-label="Компьютер">компьютер</button>
+    </header>
+
+    <section class="pane" id="list-pane">
+      <button type="button" class="btn primary wide" id="new-chat">+ Новый чат</button>
+      <span class="eyebrow">Недавние</span>
+      <ul class="rows" id="chat-list"></ul>
+      <p class="muted" id="chats-empty">Чатов пока нет. Задачу выполнит компьютер с открытым окном DVK.</p>
+    </section>
+
+    <section class="pane" id="search-pane" hidden>
+      <form class="field" id="find" role="search">
+        <span class="d">$</span><span class="c">dvk find</span>
+        <input id="fq" type="search" placeholder="что ищем" autocomplete="off" enterkeyhint="search" aria-label="Поиск по базе и файлам">
+      </form>
+      <nav class="chips-row" id="kinds" aria-label="Вид найденного"></nav>
+      <ul class="rows res" id="hits"></ul>
+      <p class="muted" id="find-note">Ищет компьютер: база знаний, kb-серверы и папки окна DVK. Пароли «Доступов» сюда не попадают.</p>
+    </section>
+
+    <nav class="tabs" aria-label="Разделы">
+      <button type="button" data-tab="list" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z"/></svg>Чаты</button>
+      <button type="button" data-tab="search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/></svg>Поиск</button>
+    </nav>
+  </aside>
+
+  <!-- Колонка содержимого: чат, открытый документ, компьютер. -->
+  <main class="main" id="main">
+    <header class="top">
+      <button type="button" class="back" id="back" aria-label="Назад"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>Назад</span></button>
+      <h1 id="title">DVK</h1>
+      <button type="button" class="pc" id="desk-main" aria-label="Компьютер">компьютер</button>
+    </header>
+
+    <section class="view" id="chat" hidden>
+      <div class="banner" id="asleep" hidden></div>
+      <ol class="msgs" id="msgs"></ol>
+      <form class="cmp" id="ask">
+        <textarea id="q" rows="1" placeholder="Спросить о своих документах…" aria-label="Вопрос" enterkeyhint="send"></textarea>
+        <div class="bar"><span class="sp" id="ask-note">ответ считает компьютер · переписка зашифрована</span><button type="submit" class="send" id="send" aria-label="Отправить"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div>
+      </form>
+    </section>
+
+    <section class="view" id="doc" hidden>
+      <p class="muted" id="doc-where"></p>
+      <pre class="doc-text" id="doc-text"></pre>
+      <button type="button" class="btn wide" id="doc-ask">Спросить в чате по этому документу</button>
+    </section>
+
+    <section class="view" id="desk-view" hidden>
+      <div class="card">
+        <span class="eyebrow">Привязан</span>
+        <dl class="kv">
+          <dt>связь</dt><dd id="kv-link">—</dd>
+          <dt>сервер</dt><dd id="kv-server">—</dd>
+          <dt>ключ</dt><dd id="kv-key">—</dd>
+        </dl>
+      </div>
+      <div class="card">
+        <span class="eyebrow">На экран «Домой»</span>
+        <p class="muted">iPhone: Поделиться → «На экран Домой». Android: меню ⋮ → «Установить приложение».</p>
+      </div>
+      <button type="button" class="btn bad wide" id="unpair">Забыть привязку на этом телефоне</button>
+      <p class="muted">Отвязать телефон насовсем — в окне DVK: Настройки → Подключения → kb-сервер → «Телефоны».</p>
+    </section>
+
+    <section class="view empty-main" id="empty-main">
+      <svg class="mark big" aria-hidden="true"><use href="#dvk"/></svg>
+      <p class="muted">Выберите чат слева или начните новый.</p>
+    </section>
+  </main>
+</div>
+
+<p class="toast" id="note" role="status" hidden></p>
+</body>
+</html>
