@@ -17,6 +17,9 @@ var (
 	ErrMailSide     = errors.New("mail: unknown side")
 	ErrMailEmpty    = errors.New("mail: empty message")
 	ErrMailTooLarge = errors.New("mail: message too large")
+	// ErrMailDeskOnly — телефоны привязывает и отвязывает только компьютер:
+	// украденный телефон не выпустит себе второй токен и не отвяжет хозяина.
+	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")
 )
 
 // MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения

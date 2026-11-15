@@ -81,3 +81,21 @@ func read(ctx context.Context, s blob.Store, key string, use func(registryDTO)) 
 	use(r)
 	return nil
 }
+
+// Phones is the phones registry as the mailbox port.
+type Phones struct{ Store blob.Store }
+
+// Add issues a phone token of id.
+func (p Phones) Add(ctx context.Context, id domain.UserID) (string, string, error) {
+	return AddDevice(ctx, p.Store, id)
+}
+
+// List lists the phones of id.
+func (p Phones) List(ctx context.Context, id domain.UserID) ([]string, error) {
+	return Devices(ctx, p.Store, id)
+}
+
+// Revoke unpairs phone device of id.
+func (p Phones) Revoke(ctx context.Context, id domain.UserID, device string) error {
+	return RevokeDevice(ctx, p.Store, id, device)
+}
