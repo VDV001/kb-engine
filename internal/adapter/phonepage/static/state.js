@@ -82,17 +82,19 @@ function found(st, m, p) {
 // окно забирает ящик раз в 10 с, ход модели — еще десятки секунд.
 const sleepAfter = 45_000;
 
-// asleep returns since when the desk is silent, if a question waits longer than
-// sleepAfter without a word from it; 0 — не спит или ждать нечего.
+// asleep returns since when the desk is silent, if the newest waiting question
+// waits longer than sleepAfter without a word from it; 0 — не спит или ждать
+// нечего. Самый свежий, а не самый старый: старый вопрос, оставшийся без
+// ответа, иначе прятал бы сон навсегда — любой позднейший ответ «перекрыл» бы его.
 export function asleep(st, now) {
-  let oldest = 0;
+  let newest = 0;
   for (const c of Object.values(st.chats || {})) {
     if (!c.pending) continue;
     const q = [...c.msgs].reverse().find((x) => x.who === "me");
-    if (q && (!oldest || q.at < oldest)) oldest = q.at;
+    if (q && q.at > newest) newest = q.at;
   }
-  if (!oldest || now - oldest < sleepAfter || (st.lastDesk || 0) > oldest) return 0;
-  return st.lastDesk || oldest;
+  if (!newest || now - newest < sleepAfter || (st.lastDesk || 0) > newest) return 0;
+  return st.lastDesk || newest;
 }
 
 // mergeCounter takes the larger of this tab's counter and the stored one:

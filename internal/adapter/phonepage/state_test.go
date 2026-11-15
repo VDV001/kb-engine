@@ -76,6 +76,9 @@ want(s.asleep(idle, t0 + 30_000) === 0, "30 s of waiting is not asleep");
 want(s.asleep(idle, t0 + 60_000) === t0 - 3_600_000, "60 s of waiting: asleep since the last word of the desk");
 want(s.asleep({ lastDesk: t0 + 50_000, chats: idle.chats }, t0 + 60_000) === 0, "desk spoke after the question: not asleep");
 want(s.asleep({ chats: {} }, t0) === 0, "nothing waits: not asleep");
+// Старый вопрос, оставшийся без ответа, не прячет сон компьютера после нового.
+const stuck = { lastDesk: t0 - 600_000, chats: { old: { pending: true, msgs: [{ who: "me", at: t0 - 3_600_000 }] }, c: { pending: true, msgs: [{ who: "me", at: t0 }] } } };
+want(s.asleep(stuck, t0 + 60_000) === t0 - 600_000, "an old stuck question does not hide the sleep after a new one");
 
 // 3. Счетчик двух вкладок: при записи — наибольший.
 want(s.mergeCounter(4n, "5") === 5n && s.mergeCounter(6n, "5") === 6n && s.mergeCounter(3n, undefined) === 3n, "counter merge takes the max");
