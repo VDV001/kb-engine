@@ -64,7 +64,7 @@ func TestOpenRefusesTampering(t *testing.T) {
 	if err != nil || len(sealed) < 40 {
 		t.Fatalf("seal: %d bytes, %v", len(sealed), err)
 	}
-	other, _ := mailcrypt.NewKey()
+	other := mailcrypt.NewKey()
 	flip := func(i int) []byte { b := bytes.Clone(sealed); b[i] ^= 1; return b }
 	cases := []struct {
 		name   string
@@ -109,10 +109,7 @@ func TestSealRespectsMailboxLimit(t *testing.T) {
 }
 
 func TestKeyEncodingAndRedaction(t *testing.T) {
-	k, err := mailcrypt.NewKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	k := mailcrypt.NewKey()
 	enc := k.Encode()
 	back, err := mailcrypt.ParseKey(enc)
 	if err != nil || back != k {
