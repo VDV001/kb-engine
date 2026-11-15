@@ -622,7 +622,7 @@ func warnUnderstated(from string, recs []finance.Record, stdout io.Writer) {
 		return
 	}
 
-	fmt.Fprintf(stdout, "\n  записано после того, как баланс подтвердили, и датировано тем же днем:\n")
+	fmt.Fprintf(stdout, "\n  записано не раньше, чем баланс подтвердили, и датировано тем же днем:\n")
 	for _, h := range hits {
 		fmt.Fprintf(stdout, "    %s  %s  %s\n", h.tx.Amount(), h.bank, h.tx.Place())
 	}

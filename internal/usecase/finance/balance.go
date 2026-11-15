@@ -331,8 +331,9 @@ func receivedAfter(txs []domain.Transaction, bank string, confirmed time.Time) d
 	return total
 }
 
-// unseenBy answers whether tx happened after bank's balance was confirmed, so
-// the confirmed number does not include it yet.
+// unseenBy answers whether tx was recorded no earlier than bank's balance was
+// confirmed (с точностью ULID — миллисекунда, domain.RecordedSince), so the
+// confirmed number does not include it yet.
 func unseenBy(tx domain.Transaction, bank string, confirmed time.Time, confs Confirmations) bool {
 	day := domain.Day(confirmed)
 	switch {
