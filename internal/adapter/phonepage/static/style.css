@@ -34,6 +34,7 @@ p { margin: 0; }
 .msgs li.desk { align-self: flex-start; }
 .msgs li.error { border-color: var(--bad); color: var(--bad); }
 .msgs li.wait { color: var(--muted); border-style: dashed; }
+.msgs li.unsent { opacity: .6; } /* вопрос в исходящих: уйдет со следующим опросом */
 .ask { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr auto; gap: 8px; padding-top: 8px; background: var(--bg); }
 .ask textarea { resize: none; padding: 8px 10px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--bg-2); color: var(--ink); font: inherit; }
 .ask .btn { align-self: end; }
