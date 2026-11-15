@@ -2,8 +2,11 @@
 // забирает новое из ящика kb-сервера, открывает вопросы телефона, ведет ход
 // модели в своем чате и кладет зашифрованный ответ в тот же чат ящика.
 //
-// Внутри шифра — Payload в JSON: {"kind": "question" | "answer" | "error",
-// "text": "..."}; телефон пишет question, окно — answer или error.
+// Внутри шифра — Payload в JSON: {"kind": "...", "text": "...", ...}.
+// Телефон пишет question (вопрос модели), search (поиск по источникам окна) или
+// open (текст найденного по ref); окно отвечает answer (с sources — откуда
+// ответ), results (hits), doc (title и text) или error. Поиск и открытие идут
+// мимо модели — бесплатны и не тратят ее ход.
 //
 // Порядок ради одного правила — модель не запускается дважды на один вопрос
 // (каждый ход платный): номер сообщения сохраняется до хода модели, ответ —
@@ -238,32 +241,36 @@ func (r Relay) load() (State, error) {
 	return st, nil
 }
 
-// question returns the phone's question in m, или ok=false: свое, подделка,
-// повтор, чужой вид. Счетчик отправителя запоминается здесь же.
-func (r Relay) question(st *State, m Message) (string, bool) {
+// request returns the phone's request in m, или ok=false: свое, подделка,
+// повтор, чужой вид, пустой текст. Счетчик отправителя запоминается здесь же.
+func (r Relay) request(st *State, m Message) (Payload, bool) {
 	if m.From != domain.MailPhone || m.At.Before(st.Start) {
-		return "", false
+		return Payload{}, false
 	}
 	o, err := r.Crypto.Open(m.Chat, m.From, m.Sealed)
 	if err != nil {
-		return "", false // подделка или чужой ключ: не вопрос
+		return Payload{}, false // подделка или чужой ключ: не запрос
 	}
 	key := m.Chat + "|" + string(m.From) + "|" + o.Sender
 	if o.Counter <= st.Seen[key] {
-		return "", false // повтор или старое: сервер мог повторить
+		return Payload{}, false // повтор или старое: сервер мог повторить
 	}
 	st.Seen[key] = o.Counter
 	var p Payload
-	if json.Unmarshal(o.Plain, &p) != nil || p.Kind != KindQuestion || strings.TrimSpace(p.Text) == "" {
-		return "", false
+	if json.Unmarshal(o.Plain, &p) != nil || strings.TrimSpace(p.Text) == "" {
+		return Payload{}, false
 	}
-	return p.Text, true
+	switch p.Kind {
+	case KindQuestion, KindSearch, KindOpen:
+		return p, true
+	}
+	return Payload{}, false
 }
 
-// handle answers m if it is a question; sent — ответ ушел в ящик.
+// handle answers m if it is a request; sent — ответ ушел в ящик.
 func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	st.After = max(st.After, m.Seq)
-	text, ok := r.question(st, m)
+	req, ok := r.request(st, m)
 	if !ok {
 		return false, nil // запишется концом страницы
 	}
@@ -271,16 +278,17 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	if err := r.Store.Save(*st); err != nil {
 		return false, fmt.Errorf("mailrelay: state: %w", err)
 	}
-	chat, answer, err := r.Asker.Ask(ctx, st.Chats[m.Chat], text)
-	reply := Payload{Kind: KindAnswer, Text: answer}
-	if err != nil {
-		reply = Payload{Kind: KindError, Text: err.Error()}
-	} else {
-		st.Chats[m.Chat] = chat
+	var reply Payload
+	switch req.Kind {
+	case KindQuestion:
+		reply = r.ask(ctx, st, m.Chat, req.Text)
+	default:
+		reply = r.find(ctx, req)
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
 	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply}
+	var err error
 	if out.Sealed, err = r.seal(out); err != nil {
 		return false, err
 	}
@@ -289,6 +297,44 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		return false, fmt.Errorf("mailrelay: state: %w", err)
 	}
 	return true, r.flush(ctx, st)
+}
+
+// ask runs the model turn in the window's chat of this mailbox chat.
+func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payload {
+	var a Answer
+	var err error
+	if sa, ok := r.Asker.(SourcedAsker); ok {
+		a, err = sa.AskSourced(ctx, st.Chats[chat], question)
+	} else {
+		a.Chat, a.Text, err = r.Asker.Ask(ctx, st.Chats[chat], question)
+	}
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	st.Chats[chat] = a.Chat
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
+}
+
+// errNoFinder — окно собрано без поиска для телефона.
+var errNoFinder = errors.New("поиск с телефона в этом окне не подключен")
+
+// find runs search or open in the window's sources: модель не участвует.
+func (r Relay) find(ctx context.Context, req Payload) Payload {
+	if r.Finder == nil {
+		return Payload{Kind: KindError, Text: errNoFinder.Error()}
+	}
+	if req.Kind == KindSearch {
+		hits, err := r.Finder.Search(ctx, req.Text)
+		if err != nil {
+			return Payload{Kind: KindError, Text: err.Error()}
+		}
+		return Payload{Kind: KindResults, Text: req.Text, Hits: hits}
+	}
+	h, err := r.Finder.Open(ctx, req.Text)
+	if err != nil {
+		return Payload{Kind: KindError, Text: err.Error()}
+	}
+	return Payload{Kind: KindDoc, Title: h.Title, Text: h.Text, Hits: []Hit{{Ref: h.Ref, Kind: h.Kind, Title: h.Title, Where: h.Where}}}
 }
 
 // trimNote ends an answer cut to the mailbox limit.
