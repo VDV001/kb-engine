@@ -9,10 +9,7 @@ import (
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/ozon"
-	"github.com/daniil/kb-engine/internal/domain"
-	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/markets"
-	"github.com/daniil/kb-engine/internal/usecase/usage"
 )
 
 // descriptionMismatch — слово описания, которое спорит с товаром.
@@ -121,24 +118,5 @@ func (d *chatDesk) modelDescription(in markets.DescriptionInput, c markets.Descr
 	if !consent {
 		return descriptionDraft{}, errNoDraftConsent
 	}
-	cfg := d.config()
-	key, err := d.modelKey(cfg)
-	if err != nil {
-		return descriptionDraft{}, err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
-	defer cancel()
-	model := d.metered(d.model(cfg, key), cfg, usage.Fixed(domain.CallCardText), "")
-	reply, err := model.Complete(ctx, []chat.ModelMessage{
-		{Role: chat.RoleSystem, Content: markets.DescriptionSystem},
-		{Role: chat.RoleUser, Content: markets.DescriptionPrompt(in, c)},
-	}, nil)
-	if err != nil {
-		return descriptionDraft{}, errors.New(chatError(err))
-	}
-	text := strings.TrimSpace(reply.Content)
-	if text == "" {
-		return descriptionDraft{}, errors.New("модель вернула пустой текст — попробуйте еще раз")
-	}
-	return descriptionDraft{Text: text, Model: cfg.Model}, nil
+	return d.modelText(markets.DescriptionSystem, markets.DescriptionPrompt(in, c))
 }
