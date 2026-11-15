@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,8 +78,13 @@ func TestClient_PhonesWithoutMailbox(t *testing.T) {
 	if _, err := c.Phones(context.Background()); !errors.Is(err, kbserver.ErrNoMailbox) {
 		t.Errorf("phones: %v, want ErrNoMailbox", err)
 	}
-	if _, _, err := c.AddPhone(context.Background()); !errors.Is(err, kbserver.ErrNoMailbox) {
+	_, _, err := c.AddPhone(context.Background())
+	if !errors.Is(err, kbserver.ErrNoMailbox) {
 		t.Errorf("add: %v, want ErrNoMailbox", err)
+	}
+	// Слова — про ящик, а не «нет связи»: адрес и токен верные, сервер не тот.
+	if d := kbserver.Describe(err); !strings.Contains(d, "ящик") || strings.Contains(d, "нет связи") {
+		t.Errorf("Describe = %q, want it to name the mailbox", d)
 	}
 }
 
