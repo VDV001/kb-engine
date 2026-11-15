@@ -448,6 +448,7 @@ func TestAccountsThroughTheAPI(t *testing.T) {
 // Счет получения обязан существовать: иначе деньги молча пропали бы из
 // остатков — в том числе у человека, у которого счетов еще нет вовсе.
 func TestExchangeThroughTheAPI(t *testing.T) {
+	awayFromMidnight(t, "Asia/Yekaterinburg")
 	h, tok, _ := financeTenant(t)
 	post := func(body string) *httptest.ResponseRecorder {
 		return do(h, http.MethodPost, "/api/finances/transactions", body, tok)
@@ -494,5 +495,21 @@ func TestExchangeThroughTheAPI(t *testing.T) {
 	if len(out.Transactions) != 1 || out.Transactions[0].Received == nil ||
 		out.Transactions[0].Received.Currency != "USD" || out.Transactions[0].Received.Rate != "90.00" {
 		t.Errorf("the exchange as shown: %s", rec.Body.String())
+	}
+}
+
+// awayFromMidnight waits past midnight in tz when the test would straddle it:
+// подтверждение и запись в разные дни — другой случай, и тест упал бы не по
+// своей причине (ревью #639). Ждет не больше пары секунд.
+func awayFromMidnight(t *testing.T, tz string) {
+	t.Helper()
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().In(loc)
+	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, loc)
+	if left := next.Sub(now); left < 2*time.Second {
+		time.Sleep(left + 100*time.Millisecond)
 	}
 }

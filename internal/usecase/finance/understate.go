@@ -33,5 +33,5 @@ func MayUnderstate(tx domain.Transaction, acc domain.Account, confs Confirmation
 		return false
 	}
 	at, ok := domain.RecordedAt(tx.ID())
-	return ok && at.After(moment)
+	return ok && domain.RecordedSince(at, moment)
 }
