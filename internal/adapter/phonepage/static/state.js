@@ -27,10 +27,12 @@ export function take(st, m, o) {
   st.seen[key] = o.counter.toString();
   let p;
   try { p = JSON.parse(new TextDecoder().decode(o.plain)); } catch { return false; }
-  const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   const at = Date.parse(m.at) || Date.now();
+  if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
+  if (m.chat === searchChat(st)) return found(st, m, p);
+  const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (m.from === "desk" && (p.kind === "answer" || p.kind === "error")) {
-    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at });
+    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
     c.pending = false;
   } else if (m.from === "phone" && p.kind === "question") {
     const mine = who === hex(st.sender);
@@ -47,6 +49,50 @@ export function take(st, m, o) {
   }
   c.updated = Date.now();
   return true;
+}
+
+// searchChat is the mailbox chat of this phone's searches: выдача и документы
+// идут им и в список чатов не попадают. От отправителя — повторная привязка
+// тем же ключом сохраняет его.
+export function searchChat(st) {
+  return "search-" + hex(st.sender || []);
+}
+
+// found applies the desk's answer to a search: выдача, документ или отказ.
+// Выдача старого запроса не подменяет новый.
+function found(st, m, p) {
+  if (m.from !== "desk") return false; // свой запрос: на экране он уже есть
+  const s = (st.search ||= { q: "", hits: [] });
+  if (p.kind === "results") {
+    if (p.text !== s.q) return false;
+    Object.assign(s, { hits: p.hits || [], pending: false, error: "" });
+  } else if (p.kind === "doc") {
+    const h = (p.hits || [])[0] || {};
+    st.doc = { title: p.title || h.title || "", text: p.text || "", ref: h.ref || "", where: h.where || "" };
+    s.opening = "";
+  } else if (p.kind === "error") {
+    Object.assign(s, { pending: false, opening: "", error: p.text });
+  } else {
+    return false;
+  }
+  return true;
+}
+
+// sleepAfter — столько вопрос ждет, прежде чем телефон скажет «компьютер спит»:
+// окно забирает ящик раз в 10 с, ход модели — еще десятки секунд.
+const sleepAfter = 45_000;
+
+// asleep returns since when the desk is silent, if a question waits longer than
+// sleepAfter without a word from it; 0 — не спит или ждать нечего.
+export function asleep(st, now) {
+  let oldest = 0;
+  for (const c of Object.values(st.chats || {})) {
+    if (!c.pending) continue;
+    const q = [...c.msgs].reverse().find((x) => x.who === "me");
+    if (q && (!oldest || q.at < oldest)) oldest = q.at;
+  }
+  if (!oldest || now - oldest < sleepAfter || (st.lastDesk || 0) > oldest) return 0;
+  return st.lastDesk || oldest;
 }
 
 // mergeCounter takes the larger of this tab's counter and the stored one:
@@ -67,7 +113,3 @@ export function b64(bytes) {
 export function unb64(text) {
   return Uint8Array.from(atob(text), (ch) => ch.charCodeAt(0));
 }
-
-export function searchChat() { return ""; }
-
-export function asleep() { return 0; }
