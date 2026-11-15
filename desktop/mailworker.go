@@ -24,6 +24,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/keychain"
 	"github.com/daniil/kb-engine/internal/adapter/mailcrypt"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
@@ -182,8 +183,9 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 	return id, answer, err
 }
 
-// answerFn runs a model turn and tells where the answer came from.
-type answerFn func(ctx context.Context, chat, question string) (mailrelay.Answer, error)
+// answerFn runs a model turn and tells where the answer came from; step — ход
+// модели по мере ответа (nil — без хода).
+type answerFn func(ctx context.Context, chat, question string, step func(chat.Use)) (mailrelay.Answer, error)
 
 // workerAsker is the relay's model: с метками «взято», когда окно их знает.
 type workerAsker struct{ w *mailWorker }
@@ -192,12 +194,17 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 	return a.w.askAndTell(ctx, chat, question)
 }
 
+// AskStepped is AskSourced with the turn's steps for the phone (#622).
+func (a workerAsker) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	return a.AskSourced(ctx, chat, question)
+}
+
 func (a workerAsker) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, chat, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
 	}
-	ans, err := a.w.answer(ctx, chat, question)
+	ans, err := a.w.answer(ctx, chat, question, nil)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -214,14 +221,14 @@ func (a workerAsker) AskSourced(ctx context.Context, chat, question string) (mai
 func chatAsker(d *chatDesk) askFn {
 	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
-		a, err := answer(ctx, chat, question)
+		a, err := answer(ctx, chat, question, nil)
 		return a.Chat, a.Text, err
 	}
 }
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, _ func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {

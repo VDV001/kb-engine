@@ -79,6 +79,8 @@ const (
 	KindResults  = "results"
 	KindOpen     = "open"
 	KindDoc      = "doc"
+	// KindStep — ход модели: куда чат ходит сейчас (окно → телефон, #622).
+	KindStep = "step"
 )
 
 // Hit is one found document: Ref — чем телефон его откроет; Text — только у
@@ -107,6 +109,18 @@ type Answer struct {
 // SourcedAsker is an Asker that also tells where the answer came from.
 type SourcedAsker interface {
 	AskSourced(ctx context.Context, chat, question string) (Answer, error)
+}
+
+// Step is one step of the model's turn: вид места (docs, connection, web),
+// имя для человека и что спросили.
+type Step struct {
+	Kind, Name, What string
+}
+
+// SteppedAsker is a SourcedAsker that also reports the turn's steps while it
+// runs: телефон видит ход, а не только итог (#622).
+type SteppedAsker interface {
+	AskStepped(ctx context.Context, chat, question string, step func(Step)) (Answer, error)
 }
 
 // Finder searches the person's sources and opens a found document as text —
@@ -179,6 +193,9 @@ type Relay struct {
 	// FindTimeout bounds one search or open (0 — без срока): работник ящика
 	// один на все серверы, зависший источник не держит его круг.
 	FindTimeout time.Duration
+	// StepEvery — не чаще стольких шагов хода в ящик (0 — шаги не шлются):
+	// телефон опрашивает раз в 10 с, а у окна предел отправки раз в секунду.
+	StepEvery time.Duration
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers

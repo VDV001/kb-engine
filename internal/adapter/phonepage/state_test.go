@@ -120,6 +120,16 @@ want(s.rebinds(prev, key2.keyId) === true, "a new key on a paired phone rebinds"
 want(s.rebinds(prev, key1.keyId) === false, "the same key is not a rebind");
 want(s.rebinds(null, key2.keyId) === false && s.rebinds({}, key2.keyId) === false, "first pairing is not a rebind");
 
+// 9. Ход модели: шаг окна — под «Компьютер отвечает», ответ его убирает (#622).
+const st9 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "сроки?" }], pending: true, updated: 1 } } };
+const dk = (n, o) => ({ sender: u8(2, 2, 2, 2, 2, 2, 2, 2), counter: BigInt(n), plain: enc(o) });
+want(s.take(st9, { seq: 1, chat: "c", from: "desk" }, dk(1, { kind: "step", text: "поставки", sources: [{ kind: "docs", name: "" }] })) === true, "a step changes the chat");
+want(st9.chats.c.step?.what === "поставки" && st9.chats.c.step.kind === "docs" && st9.chats.c.msgs.length === 1 && st9.chats.c.pending, "a step shows, not as a message");
+s.take(st9, { seq: 2, chat: "c", from: "desk" }, dk(2, { kind: "answer", text: "30 дней" }));
+want(!st9.chats.c.step && st9.chats.c.msgs.length === 2, "the answer clears the step");
+s.take(st9, { seq: 3, chat: "c", from: "desk" }, dk(3, { kind: "step", text: "поздно" }));
+want(!st9.chats.c.step, "a late step after the answer does not show");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

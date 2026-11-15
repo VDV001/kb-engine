@@ -110,3 +110,24 @@ func TestAnswerSources(t *testing.T) {
 		t.Fatalf("метки %+v", got)
 	}
 }
+
+// Ход модели уходит телефону: шаг окна — вид, имя и что спросили (#622).
+func TestWorkerAskerSteps(t *testing.T) {
+	w := &mailWorker{changed: func(string) {}}
+	w.answer = func(_ context.Context, id, _ string, step func(chat.Use)) (mailrelay.Answer, error) {
+		if step != nil {
+			step(chat.Use{Kind: chat.UseConnection, ID: "ozon-1", Name: "Ozon · Пример", What: "заказы"})
+			step(chat.Use{Kind: chat.UseDocs, What: "поставки"})
+		}
+		return mailrelay.Answer{Chat: "w-1", Text: "312"}, nil
+	}
+	var got []mailrelay.Step
+	ans, err := workerAsker{w}.AskStepped(t.Context(), "", "заказы?", func(s mailrelay.Step) { got = append(got, s) })
+	if err != nil || ans.Text != "312" {
+		t.Fatalf("ответ %+v, %v", ans, err)
+	}
+	want := []mailrelay.Step{{Kind: "connection", Name: "Ozon · Пример", What: "заказы"}, {Kind: "docs", What: "поставки"}}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("шаги %+v", got)
+	}
+}

@@ -228,3 +228,52 @@ func TestRelayFindHasDeadline(t *testing.T) {
 		t.Fatalf("ответы %+v", got)
 	}
 }
+
+// stepper reports three steps of the turn, the clock moving between them.
+type stepper struct {
+	sourced
+	clock *time.Time
+}
+
+func (s *stepper) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	for _, d := range []time.Duration{0, time.Second, 4 * time.Second} {
+		*s.clock = s.clock.Add(d)
+		step(mailrelay.Step{Kind: "docs", What: "поставки"})
+	}
+	return s.AskSourced(ctx, chat, question)
+}
+
+// Ход модели уходит телефону, пока она отвечает: шаги не чаще StepEvery, у
+// каждого свой счетчик окна, ответ — после них (#622).
+func TestRelaySendsSteps(t *testing.T) {
+	b, s := &box{}, &store{}
+	b.phone("c-1", "A", 1, q("сроки?"))
+	clock := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	r := newRelay(b, &asker{}, s)
+	r.Asker = &stepper{clock: &clock}
+	r.Now = func() time.Time { return clock }
+	r.StepEvery = 3 * time.Second
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := payloads(t, b)
+	var kinds []string
+	for _, p := range got {
+		kinds = append(kinds, p.Kind)
+	}
+	if strings.Join(kinds, ",") != "step,step,answer" || got[0].Text != "поставки" || len(got[0].Sources) != 1 || got[0].Sources[0].Kind != "docs" {
+		t.Fatalf("ящик: %v %+v", kinds, got)
+	}
+	seen := map[uint64]bool{}
+	for _, m := range b.msgs {
+		if m.From != domain.MailDesk {
+			continue
+		}
+		var f fakeSealed
+		_ = json.Unmarshal(m.Sealed, &f)
+		if seen[f.Counter] {
+			t.Fatalf("счетчик окна %d повторился", f.Counter)
+		}
+		seen[f.Counter] = true
+	}
+}
