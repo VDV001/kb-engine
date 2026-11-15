@@ -55,18 +55,62 @@ type Opened struct {
 	Plain   []byte
 }
 
-// Payload is the text inside the seal.
+// Payload is the text inside the seal. Title, Hits и Sources — у ответов
+// окна: заголовок открытого документа, выдача поиска, откуда ответ модели.
 type Payload struct {
-	Kind string `json:"kind"`
-	Text string `json:"text"`
+	Kind    string   `json:"kind"`
+	Text    string   `json:"text"`
+	Title   string   `json:"title,omitempty"`
+	Hits    []Hit    `json:"hits,omitempty"`
+	Sources []Source `json:"sources,omitempty"`
 }
 
-// Kinds of payload.
+// Kinds of payload: телефон спрашивает question, ищет search, открывает
+// найденное open; окно отвечает answer, results, doc или error.
 const (
 	KindQuestion = "question"
 	KindAnswer   = "answer"
 	KindError    = "error"
+	KindSearch   = "search"
+	KindResults  = "results"
+	KindOpen     = "open"
+	KindDoc      = "doc"
 )
+
+// Hit is one found document: Ref — чем телефон его откроет; Text — только у
+// открытого.
+type Hit struct {
+	Ref     string `json:"ref"`
+	Kind    string `json:"kind,omitempty"`
+	Title   string `json:"title"`
+	Snippet string `json:"snippet,omitempty"`
+	Where   string `json:"where,omitempty"`
+	Text    string `json:"text,omitempty"`
+}
+
+// Source is where an answer came from — метка «взято» под ответом.
+type Source struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// Answer is a model turn with its sources.
+type Answer struct {
+	Chat, Text string
+	Sources    []Source
+}
+
+// SourcedAsker is an Asker that also tells where the answer came from.
+type SourcedAsker interface {
+	AskSourced(ctx context.Context, chat, question string) (Answer, error)
+}
+
+// Finder searches the person's sources and opens a found document as text —
+// для поиска с телефона. Пароли «Доступов» в нем не участвуют.
+type Finder interface {
+	Search(ctx context.Context, q string) ([]Hit, error)
+	Open(ctx context.Context, ref string) (Hit, error)
+}
 
 // Box is the person's mailbox on the kb server.
 type Box interface {
@@ -126,6 +170,8 @@ type Relay struct {
 	Now func() time.Time
 	// MaxText — предел текста ответа в байтах (0 — без предела).
 	MaxText int
+	// Finder — поиск с телефона; nil — телефон получает отказ словами.
+	Finder Finder
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers
