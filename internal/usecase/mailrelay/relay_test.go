@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
@@ -235,5 +237,135 @@ func TestRelayIgnoresUnknownPayloads(t *testing.T) {
 	}
 	if len(a.asked) != 0 || s.st.After != 2 {
 		t.Errorf("asked %q, after %d", a.asked, s.st.After)
+	}
+}
+
+// --- ревью #635
+
+// sealingCrypto seals with a fresh «нонс» every time, как настоящий AES-GCM.
+type sealingCrypto struct {
+	crypto
+	n int
+}
+
+func (c *sealingCrypto) Seal(chat string, counter uint64, plain []byte) ([]byte, error) {
+	c.n++
+	return json.Marshal(fakeSealed{Sender: fmt.Sprintf("desk-%d", c.n), Counter: counter, Plain: plain})
+}
+
+// attemptBox records every post attempt; первые fails попыток падают.
+type attemptBox struct {
+	box
+	attempts [][]byte
+	fails    []error
+}
+
+func (b *attemptBox) Post(ctx context.Context, chat string, sealed []byte) (int64, error) {
+	b.attempts = append(b.attempts, sealed)
+	if len(b.fails) > 0 {
+		err := b.fails[0]
+		b.fails = b.fails[1:]
+		return 0, err
+	}
+	return b.box.Post(ctx, chat, sealed)
+}
+
+// Повтор отправки — те же байты: сервер склеивает одинаковую строку, и ответ,
+// дошедший до сервера при потерянном ответе сервера, не задвоится.
+func TestRelayRetriesWithTheSameBytes(t *testing.T) {
+	b, a, s := &attemptBox{fails: []error{errors.New("таймаут")}}, &asker{}, &store{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := mailrelay.Relay{Box: b, Crypto: &sealingCrypto{}, Asker: a, Store: s}
+	if err := r.Tick(t.Context()); err == nil {
+		t.Fatal("post failure not reported")
+	}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(b.attempts) != 2 || string(b.attempts[0]) != string(b.attempts[1]) {
+		t.Errorf("retry sealed anew: %d attempts, same bytes %t", len(b.attempts), len(b.attempts) == 2 && string(b.attempts[0]) == string(b.attempts[1]))
+	}
+}
+
+// Сервер отказал насовсем (ErrRefused: велико, неверный чат) — ответ уходит
+// из исходящих, ящик не затыкается: следующий вопрос получает ответ.
+func TestRelayDropsRefusedReplies(t *testing.T) {
+	b, a, s := &attemptBox{fails: []error{fmt.Errorf("%w: 413", mailrelay.ErrRefused)}}, &asker{}, &store{}
+	b.phone("c-1", "A", 1, q("раз"))
+	r := newRelay(&b.box, a, s)
+	r.Box = b
+	_ = r.Tick(t.Context())
+	if len(s.st.Outbox) != 0 {
+		t.Fatalf("refused reply stays in the outbox: %+v", s.st.Outbox)
+	}
+	b.phone("c-1", "A", 2, q("два"))
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := replies(t, &b.box); len(got) != 1 || got[0] != "c-1|2|answer|ответ на два" {
+		t.Errorf("after a refusal: %q", got)
+	}
+}
+
+// Длинный ответ обрезается под предел ящика с пометкой, а не отбивается сервером.
+func TestRelayTrimsLongAnswers(t *testing.T) {
+	b, s := &box{}, &store{}
+	b.phone("c-1", "A", 1, q("длинно"))
+	r := newRelay(b, &asker{}, s)
+	r.Asker = longAsker(strings.Repeat("я", 500))
+	r.MaxText = 100
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := replies(t, b)
+	if len(got) != 1 {
+		t.Fatalf("replies %q", got)
+	}
+	text := strings.SplitN(got[0], "|", 4)[3]
+	if len(text) > 100 || !strings.Contains(text, "окне") {
+		t.Errorf("trimmed to %d bytes: %q", len(text), text)
+	}
+}
+
+type longAsker string
+
+func (l longAsker) Ask(context.Context, string, string) (string, string, error) {
+	return "w", string(l), nil
+}
+
+// Новое состояние (первая привязка, новый ключ, другой сервер под тем же id)
+// не отвечает на вопросы до своего начала: иначе — платный ход на каждый
+// старый вопрос журнала. Номер ящика при новом ключе начинается заново.
+func TestRelayFreshStateSkipsOldQuestions(t *testing.T) {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	b, a, s := &box{}, &asker{}, &store{st: mailrelay.State{After: 500, KeyID: "old", DeskCounter: 7}}
+	b.phone("c-1", "A", 1, q("до привязки"))
+	b.msgs[0].At = now.Add(-time.Hour)
+	b.phone("c-1", "A", 2, q("после"))
+	b.msgs[1].At = now.Add(time.Minute)
+	r := newRelay(b, a, s)
+	r.KeyID, r.Now = "new", func() time.Time { return now }
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"|после"}; !slices.Equal(a.asked, want) {
+		t.Errorf("asked %q, want %q", a.asked, want)
+	}
+	if s.st.KeyID != "new" || s.st.DeskCounter != 8 {
+		t.Errorf("state %+v: the desk counter must keep growing across keys", s.st)
+	}
+}
+
+// Страница без вопросов — одна запись состояния, а не по записи на сообщение.
+func TestRelaySavesOncePerQuietPage(t *testing.T) {
+	b, a, s := &box{}, &asker{}, &store{}
+	for i := range 20 {
+		b.phone("c-1", "A", uint64(i+1), mailrelay.Payload{Kind: "typing"})
+	}
+	if err := newRelay(b, a, s).Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.saves); n > 1 || s.st.After != 20 {
+		t.Errorf("%d saves for a page without questions, after %d", n, s.st.After)
 	}
 }

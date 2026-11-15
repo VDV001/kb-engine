@@ -15,8 +15,10 @@ package mailrelay
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -26,8 +28,13 @@ type Message struct {
 	Seq    int64
 	Chat   string
 	From   domain.MailSide
+	At     time.Time // время ящика: старше начала состояния — не вопрос
 	Sealed []byte
 }
+
+// ErrRefused marks a post the server refused for good (велико, неверный чат):
+// такой ответ уходит из исходящих, а не затыкает их.
+var ErrRefused = errors.New("mailrelay: refused by the server")
 
 // Page is a page of the mailbox after a number; More — за ней есть еще.
 type Page struct {
@@ -88,6 +95,8 @@ type State struct {
 	Seen        map[string]uint64 `json:"seen"`         // чат|сторона|отправитель → последний счетчик
 	Chats       map[string]string `json:"chats"`        // чат ящика → чат окна
 	Outbox      []Outgoing        `json:"outbox"`
+	KeyID       string            `json:"key_id"` // ключ, под который заведено состояние
+	Start       time.Time         `json:"start"`  // вопросы старше — не отвечаются
 }
 
 // Store keeps the state.
@@ -102,6 +111,12 @@ type Relay struct {
 	Crypto Crypto
 	Asker  Asker
 	Store  Store
+	// KeyID — текущий ключ чата: другой, чем у состояния, — состояние заново.
+	KeyID string
+	// Now — часы начала нового состояния; nil — time.Now.
+	Now func() time.Time
+	// MaxText — предел текста ответа в байтах (0 — без предела).
+	MaxText int
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers
