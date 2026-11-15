@@ -429,3 +429,20 @@ func TestCurrentBalance_negativeByDesignIsNotStaleConfirmation(t *testing.T) {
 		})
 	}
 }
+
+// Трата, записанная в ту же миллисекунду, что и подтверждение, вычитается.
+// Момент записи — из ULID, с точностью до миллисекунды, а момент подтверждения
+// хранится точнее: усеченный момент траты выходил раньше подтверждения, и трата
+// пропадала из расчета (#638, падал в CI на быстрой машине). Ничья — «не видел»:
+// расчет может только занижать.
+func TestCurrentBalance_countsAnExpenseRecordedInTheConfirmationMillisecond(t *testing.T) {
+	confirmed := time.Date(2026, 8, 4, 12, 20, 0, 500_000, time.UTC) // 0,5 мс внутри миллисекунды
+	accounts := []domain.Account{accountAt(t, "Сбербанк", "10000.00", "2026-08-04")}
+	recs := []domain.Transaction{expenseRecordedAt(t, "2026-08-04T12:20:00.0009Z", "2026-08-04", "Сбербанк", "9000.00")}
+
+	got := finance.CurrentBalances(accounts, recs, finance.Confirmations{"Сбербанк": confirmed})
+
+	if got[0].Current.String() != "1000.00" {
+		t.Errorf("остаток = %s, ожидалось 1000.00: трата той же миллисекунды не вычтена", got[0].Current)
+	}
+}
