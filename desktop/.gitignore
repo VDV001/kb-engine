@@ -1,0 +1,3 @@
+
+# ресурсы exe под Windows: собирает go run ./winres (just desktop-windows)
+rsrc_windows_amd64.syso

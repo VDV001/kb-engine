@@ -135,10 +135,9 @@ func trayLoop() {
 }
 
 func addTrayIcon(hwnd, inst uintptr) {
-	// Значок приложения из ресурсов exe (Wails кладет его под именем APP);
-	// нет — стандартный значок Windows.
-	app, _ := syscall.UTF16PtrFromString("APP")
-	icon, _, _ := loadIcon.Call(inst, uintptr(unsafe.Pointer(app)))
+	// Значок приложения из ресурсов exe — группа №3 (winres, как winc.AppIconID
+	// Wails); нет — стандартный значок Windows.
+	icon, _, _ := loadIcon.Call(inst, 3)
 	if icon == 0 {
 		icon, _, _ = loadIcon.Call(0, 32512) // IDI_APPLICATION
 	}

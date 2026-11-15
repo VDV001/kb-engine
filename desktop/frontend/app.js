@@ -833,6 +833,7 @@ if (IS_WIN) {
   const w = HELP.find((s) => s.id === "window");
   w.lead = "Клавиши работают в окне; Ctrl+Alt+Space — из любой программы.";
   for (const i of w.items) {
+    if (i.cmd?.startsWith("~/Library/Application Support/kb-desktop/")) i.cmd = i.cmd.replace("~/Library/Application Support/kb-desktop/", "%APPDATA%\\kb-desktop\\"); // appdir.Dir
     if (i.k?.includes("⌥Space")) { i.k = ["Ctrl+Alt+Space"]; i.d = "открыть или спрятать окно из любой программы; окно живет в трее у часов"; } // у строки с путем конфига вместо k — cmd
   }
 }

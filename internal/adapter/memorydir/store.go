@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/daniil/kb-engine/internal/adapter/appdir"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/memory"
 )
@@ -37,7 +38,7 @@ const (
 // DefaultPath — папка памяти по умолчанию: рядом с настройками окна, чтобы окно
 // и терминал видели одну память.
 func DefaultPath(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "dvk-memory")
+	return filepath.Join(appdir.Dir(home), "dvk-memory")
 }
 
 // Store — папка памяти: HOT.md, cold/ с INDEX.md, journal/ и pending/ (очередь одобрения).

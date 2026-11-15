@@ -14,6 +14,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+
+	"github.com/daniil/kb-engine/internal/adapter/appdir"
 )
 
 // Config — настройки приложения. Лежат в ~/Library/Application Support/
@@ -58,7 +60,7 @@ type Config struct {
 
 // Path is where the window keeps its config.
 func Path(home string) string {
-	return filepath.Join(home, "Library", "Application Support", "kb-desktop", "config.json")
+	return filepath.Join(appdir.Dir(home), "config.json")
 }
 
 // IndexPath is the file index snapshot next to the config: окно и MCP делят
