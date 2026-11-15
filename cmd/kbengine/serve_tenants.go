@@ -9,6 +9,7 @@ import (
 	"maps"
 	"math"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -44,7 +45,10 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) htt
 		handlers:  map[domain.UserID]http.Handler{},
 		limits:    map[mailKey]*rate.Limiter{},
 		phonePage: phonepage.Handler(),
-		now:       time.Now,
+		// Приложение Android (mobile/android): «пакет:отпечаток ключа» из окружения
+		// сервера; не задано — 404, как без приложения.
+		assetLinks: phonepage.AssetLinks(os.Getenv("KB_ANDROID_APP")),
+		now:        time.Now,
 		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
 			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
 	}
@@ -76,6 +80,8 @@ type tenants struct {
 	mail   http.Handler
 	// phonePage — страница телефона /m/ (#622).
 	phonePage http.Handler
+	// assetLinks — /.well-known/assetlinks.json приложения Android (#622).
+	assetLinks http.Handler
 
 	limitsMu gosync.Mutex
 	limits   map[mailKey]*rate.Limiter // токен и вид запроса → предел частоты ящика
@@ -90,6 +96,10 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// и ключ переписки приходят ей во фрагменте адреса QR.
 	if r.URL.Path == "/m" || strings.HasPrefix(r.URL.Path, "/m/") {
 		t.phonePage.ServeHTTP(w, r)
+		return
+	}
+	if r.URL.Path == "/.well-known/assetlinks.json" {
+		t.assetLinks.ServeHTTP(w, r)
 		return
 	}
 	if r.URL.Path == "/api/mail" || strings.HasPrefix(r.URL.Path, "/api/mail/") {
