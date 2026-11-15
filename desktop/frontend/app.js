@@ -1300,6 +1300,8 @@ const CONN_DEL_NOTE = {
 };
 // Итоги «Проверить» по id подключения: строка под подключением до перерисовки окна.
 const connChecks = {};
+// connPhones: раскрытая панель «Телефоны» у kb-сервера (#622) — id → { busy, err, list, qr }.
+const connPhones = {};
 let connConfirm = null;
 // Подключения — одна страница на все окно (отзыв 15.11): карточки по макету
 // «Маркетов» — что дает ключ (плашки), последний обмен, проверка, разрешение чату;
@@ -1331,9 +1333,10 @@ async function renderConnections(fresh) {
     const share = CHAT_CONN[r.kind] ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? `модель чата видит ${what}, они уходят ее провайдеру; нажмите — запретить` : `модель чата не видит ${what}; нажмите — разрешить: ${r.kind === "mpstats" ? "категории и продажи рынка" : "названия товаров, заказы и продажи"} уйдут провайдеру модели`)}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
     const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
     const go = r.kind === "ozon" && shop && r.enabled ? `<button class="btn" data-conn-shop="${esc(r.id)}"${mkTip("Открыть «Магазин»", "«Маркеты» → «Магазин» с этим кабинетом")}>Открыть «Магазин»</button>` : "";
+    const phones = r.kind === "kbserver" && r.ok ? `<button class="btn" data-conn-phones="${esc(r.id)}"${mkTip("Телефоны", "чат DVK с телефона через ящик этого kb-сервера: привязать QR-кодом, посмотреть, отвязать")}>Телефоны</button>` : "";
     const acts = r.own
       ? `${chk}${share}${go}`
-      : `${chk}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
+      : `${chk}${phones}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
     const ck = connChecks[r.id];
     const ckLine = ck ? `<p class="mk-cn-last conn-check${ck.busy ? "" : ck.ok ? " ok" : " bad"}" role="status">${ck.busy ? "проверяю…" : (ck.ok ? "✓ " : "✕ ") + esc(ck.note)}</p>` : "";
     const l = last[r.id];
@@ -1344,7 +1347,7 @@ async function renderConnections(fresh) {
     <h4><i class="dot ${on ? "ok" : ""}"></i>${CONN_HEAD[r.kind] ? `${CONN_HEAD[r.kind]} · ` : ""}${esc(r.name)}${CONN_HEAD[r.kind] ? "" : ` <small>${esc(CONN_KIND[r.kind] || r.kind)}</small>`} <span class="mk-cn-st ${r.ok ? "ok" : ""}"${mkTip(r.status, r.detail)}>${esc(r.ok ? "подключен" : r.status)}</span></h4>
     <p class="d${CONN_ABOUT[r.kind] ? "" : " clip"}">${esc(CONN_ABOUT[r.kind] || r.detail)}</p>${chips(CONN_GIVES[r.kind] || [])}
     <p class="d conn-uses clip">${CONN_ABOUT[r.kind] && /Client-Id \S+/.test(r.detail) ? esc(r.detail.match(/Client-Id \S+/)[0]) + " · " : ""}использует: ${esc((r.usedBy || []).join(", ") || "—")}</p>${ex}${ckLine}
-    <div class="mk-cn-acts">${acts}</div>${!r.own ? "" : `<div class="conn-quiet"><button class="lnk" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="lnk bad" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button></div>`}${confirm}</div>`;
+    <div class="mk-cn-acts">${acts}</div>${phonesPanel(r.id)}${!r.own ? "" : `<div class="conn-quiet"><button class="lnk" data-conn-toggle="${esc(r.id)}" data-on="${!r.enabled}"${mkTip(r.enabled ? "Выключить" : "Включить", r.enabled ? "окно перестанет ходить сюда; ключ останется в Связке ключей" : "окно снова будет пользоваться подключением")}>${r.enabled ? "Выключить" : "Включить"}</button><button class="lnk bad" data-conn-del="${esc(r.id)}"${mkTip("Удалить", "подключение и его ключ сотрутся из Связки ключей; спросим еще раз")}>Удалить</button></div>`}${confirm}</div>`;
   };
   const has = (k) => rows.some((r) => r.kind === k);
   const stub = (h, st, cls, d, xs, add) => `<div class="mk-cn-card"><h4><i class="dot ${cls === "file" ? "file" : ""}"></i>${h} ${pill(st, cls)}</h4><p class="d">${d}</p>${chips(xs, true)}${add ? `<div class="mk-cn-acts">${add}</div>` : ""}</div>`;
@@ -1356,6 +1359,25 @@ async function renderConnections(fresh) {
     (shop ? stub("Файлы аналитики", "вручную", "file", "Выгрузки MPStats и похожих сервисов (xlsx, csv): продажи ниши и конкурентов. Окно узнает колонки само и спросит, если не узнало.", [], `<button class="btn" type="button" data-conn-file>Открыть выгрузку…</button>`) : "");
   connClipTips();
   dropStaleTip();
+}
+// phonesPanel: телефоны kb-сервера (#622). QR — картинка от Go: токен телефона и
+// ключ чата в окно текстом не приходят.
+function phonesPanel(id) {
+  const p = connPhones[id];
+  if (!p) return "";
+  const rows = (p.list || []).map((x) => `<li><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small><button class="lnk bad" type="button" data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
+  return `<div class="conn-phones">
+    <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Страница для телефона — следующий этап (#622): сейчас код только привязывает телефон к ящику.</p>
+    ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
+    ${p.list ? (rows ? `<ul class="conn-phone-list">${rows}</ul>` : `<p class="d">Привязанных телефонов нет.</p>`) : ""}
+    ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button" data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}
+    <div class="mk-cn-acts"><button class="btn primary" type="button" data-phone-pair="${esc(id)}"${p.busy ? " disabled" : ""}>Подключить телефон</button><button class="lnk" type="button" data-phones-close="${esc(id)}">Свернуть</button></div>
+  </div>`;
+}
+async function loadPhones(id) {
+  try { connPhones[id] = { ...connPhones[id], list: (await native().MailPhones(id)) || [], err: "" }; } catch (err) { connPhones[id] = { ...connPhones[id], list: null, err: errText(err) }; }
+  if (connPhones[id]) connPhones[id].busy = "";
+  return renderConnections();
 }
 // connClipTips: длинный адрес или список — одна строка с «…», целиком в подсказке (отзыв 15.11);
 // меряется при показе и при смене размера окна: скрытая страница ширины не имеет (ревью #628).
@@ -1399,6 +1421,36 @@ $("#conn-list").addEventListener("click", async (e) => {
   if (e.target.closest("[data-conn-file]")) { hideTip(); connMarkets("niche"); return void $("#mk-open").click(); }
   const add = e.target.closest("[data-conn-add]");
   if (add) { hideTip(); return void (add.dataset.connAdd === "ozon" ? showOzonForm() : showMPStatsForm()); }
+  const ph = e.target.closest("[data-conn-phones]");
+  if (ph) {
+    const id = ph.dataset.connPhones;
+    hideTip();
+    if (connPhones[id]) { delete connPhones[id]; return renderConnections(); }
+    connPhones[id] = { busy: "читаю список телефонов…" };
+    renderConnections();
+    return loadPhones(id);
+  }
+  const close = e.target.closest("[data-phones-close]");
+  if (close) { delete connPhones[close.dataset.phonesClose]; return renderConnections(); }
+  const hide = e.target.closest("[data-phone-qr-hide]");
+  if (hide) { connPhones[hide.dataset.phoneQrHide].qr = ""; return renderConnections(); }
+  const pair = e.target.closest("[data-phone-pair]");
+  if (pair) {
+    const id = pair.dataset.phonePair;
+    connPhones[id] = { ...connPhones[id], busy: "привязываю телефон…", err: "", qr: "" };
+    renderConnections();
+    try { connPhones[id].qr = (await native().MailPairPhone(id)).qr; } catch (err) { connPhones[id].err = errText(err); }
+    return loadPhones(id);
+  }
+  const rv = e.target.closest("[data-phone-revoke]");
+  if (rv) {
+    const id = rv.dataset.phoneRevoke;
+    hideTip();
+    connPhones[id] = { ...connPhones[id], busy: "отвязываю…", err: "" };
+    renderConnections();
+    try { await native().MailRevokePhone(id, rv.dataset.device); toast("Телефон отвязан", ` · «${name}»`, null, "info"); } catch (err) { connPhones[id].err = errText(err); }
+    return loadPhones(id);
+  }
   const ck = e.target.closest("[data-conn-check]");
   if (ck) {
     const id = ck.dataset.connCheck;
