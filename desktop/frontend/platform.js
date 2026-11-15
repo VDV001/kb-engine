@@ -21,8 +21,8 @@ function hideWindow() {
 // winKeys переводит подпись на Windows: ⌘ → Ctrl+, ⌥ → Alt+, ⇧ → Shift+
 // («⌘ ,» и «⌘,» дают одно «Ctrl+,»), «в Finder» → «в Проводнике», Связка
 // ключей → Диспетчер учетных данных (keychain_windows.go), Мак → компьютер,
-// macOS → Windows. Падеж — по окончанию; \b с кириллицей не работает, отсюда
-// (?![а-яё]). Touch ID остается, пока на Windows нет Windows Hello.
+// macOS → Windows, Touch ID → Windows Hello (access_auth_windows.go). Падеж —
+// по окончанию; \b с кириллицей не работает, отсюда (?![а-яё]).
 const MAC_CASE = { "": "компьютер", "а": "компьютера", "е": "компьютере", "у": "компьютеру", "ом": "компьютером" };
 const WIN_WORDS = [
   [/⌘\s?/g, "Ctrl+"], [/⌥\s?/g, "Alt+"], [/⇧\s?/g, "Shift+"],
@@ -33,6 +33,7 @@ const WIN_WORDS = [
   [/Связке( ключей)?(?![а-яё])/g, "Диспетчере учетных данных"],
   [/(?<![А-Яа-яё])Мак(а|е|у|ом)?(?![а-яё])/g, (_, end) => MAC_CASE[end || ""]],
   [/macOS/g, "Windows"],
+  [/Touch ID/g, "Windows Hello"],
   // Связка — она, Диспетчер — он: глаголы, что стоят в окне после «Связка».
   [/(Диспетчер учетных данных(?: Windows)?(?: не)? )(ответила|прочлась|отдала|заперта)(?![а-яё])/g,
     (_, head, verb) => head + { "ответила": "ответил", "прочлась": "прочелся", "отдала": "отдал", "заперта": "заперт" }[verb]],
@@ -41,7 +42,7 @@ function winKeys(s) {
   for (const [re, to] of WIN_WORDS) s = s.replace(re, to);
   return s;
 }
-const KEY_GLYPH = /[⌘⌥⇧]|[вВ] Finder|Связк|(?<![А-Яа-яё])Мак(а|е|у|ом)?(?![а-яё])|macOS/;
+const KEY_GLYPH = /[⌘⌥⇧]|[вВ] Finder|Touch ID|Связк|(?<![А-Яа-яё])Мак(а|е|у|ом)?(?![а-яё])|macOS/;
 const KEY_ATTRS = ["data-tip", "data-tip-k", "data-tip-b", "aria-label", "title", "placeholder"];
 // Здесь Ваши данные, а не подписи окна: «на этом Маке» в документе остается как есть.
 const CONTENT = "#results, #preview, #chat-log, #chat-list, #chat-docs-pane, #memory-view, #markets-view, #artifacts-view";
