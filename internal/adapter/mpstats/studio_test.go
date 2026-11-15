@@ -2,19 +2,21 @@ package mpstats_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/mpstats"
 )
 
-// Ответы ИИ Студии — дословно из живого замера 15.11 (outputs/2026-11-15_ai-studio-shapes.md).
+// Форма ответов ИИ Студии — из живого замера 15.11; номера и числа выдуманы.
 
 func TestMCP_studioBalanceAndEstimate(t *testing.T) {
 	var got map[string]any
 	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
 		"ai_studio_balance": func(map[string]any) (string, bool) {
-			return `{"balance":19,"total_balance":20,"reserve":1}`, false
+			return `{"balance":7,"total_balance":9,"reserve":2}`, false
 		},
 		"ai_studio_estimate": func(a map[string]any) (string, bool) {
 			got = a
@@ -22,8 +24,8 @@ func TestMCP_studioBalanceAndEstimate(t *testing.T) {
 		},
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
-	if b, err := m.StudioBalance(context.Background()); err != nil || b != 19 {
-		t.Errorf("balance = %d, %v; want the available 19, not total 20", b, err)
+	if b, err := m.StudioBalance(context.Background()); err != nil || b != 7 {
+		t.Errorf("balance = %d, %v; want the available 7, not total 9", b, err)
 	}
 	cost, err := m.StudioEstimate(context.Background(), "nano-banana-pro", map[string]any{"aspectRatio": "3:4"}, []string{"ref-1"})
 	if err != nil || cost != 10 {
@@ -54,20 +56,20 @@ func TestMCP_studioUploadAndGenerate(t *testing.T) {
 			if a["model"] != "24ai_gen_image" || !strings.HasPrefix(a["image"].(string), "data:image/jpeg;base64,") || a["filename"] != "card.jpg" {
 				return "wrong arguments", true
 			}
-			return `{"id":"67d946d9-5280-4097-855f-72f1ca5b6d2b","category":"image","mimeType":"image/jpeg","size":82787,"width":416,"height":1200,"path":"https://images.24ai.tech/ai-studio/a/x.jpeg"}`, false
+			return `{"id":"ref-0001","category":"image","mimeType":"image/jpeg","size":1000,"width":100,"height":300,"path":"https://images.24ai.tech/ai-studio/a/x.jpeg"}`, false
 		},
 		"ai_studio_generate": func(a map[string]any) (string, bool) {
 			gen = a
-			return `{"chat_id":"989835e8-85f0-4a6c-ae92-b3ce59e3ec9d","message_id":"d3e33efe-af3d-4505-9e83-b654ed340d05","status":"IN_QUEUE","cost":1}`, false
+			return `{"chat_id":"chat-0001","message_id":"msg-0001","status":"IN_QUEUE","cost":1}`, false
 		},
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
 	id, err := m.StudioUpload(context.Background(), "24ai_gen_image", "data:image/jpeg;base64,AAAA", "card.jpg")
-	if err != nil || id != "67d946d9-5280-4097-855f-72f1ca5b6d2b" {
+	if err != nil || id != "ref-0001" {
 		t.Fatalf("upload = %q, %v", id, err)
 	}
 	j, err := m.StudioGenerate(context.Background(), "24ai_gen_image", "инфографика", 1, map[string]any{"resolution": "900x1200"}, []string{id})
-	if err != nil || j.MessageID != "d3e33efe-af3d-4505-9e83-b654ed340d05" || j.Status != "IN_QUEUE" || j.Cost != 1 || j.Done() {
+	if err != nil || j.MessageID != "msg-0001" || j.Status != "IN_QUEUE" || j.Cost != 1 || j.Done() {
 		t.Fatalf("generate = %+v, %v", j, err)
 	}
 	if gen["max_cost_tokens"] != float64(1) || gen["prompt"] != "инфографика" || gen["attachment_ids"].([]any)[0] != id {
@@ -96,7 +98,7 @@ func TestMCP_studioGenerateNotRetried(t *testing.T) {
 // поэтому отказ узнается по fail_reason при любом статусе.
 func TestMCP_studioResult(t *testing.T) {
 	answers := map[string]string{
-		"done":  `{"message_id":"done","chat_id":"c","model":"24ai_gen_image","status":"COMPLETED","attachments":[{"id":"5fd8","path":"https://images.24ai.tech/ai-studio/a/d3e3_6af9.jpeg","thumbnailPath":"https://images.24ai.tech/ai-studio/a/d3e3_6af9_thumbnail.webp","mimeType":"image/jpeg","size":79613,"category":"image","width":900,"height":1200,"duration":null}],"fail_reason":null,"fail_code":null}`,
+		"done":  `{"message_id":"done","chat_id":"c","model":"24ai_gen_image","status":"COMPLETED","attachments":[{"id":"a1","path":"https://images.24ai.tech/ai-studio/a/r1.jpeg","thumbnailPath":"https://images.24ai.tech/ai-studio/a/r1_thumbnail.webp","mimeType":"image/jpeg","size":1000,"category":"image","width":900,"height":1200,"duration":null}],"fail_reason":null,"fail_code":null}`,
 		"queue": `{"message_id":"queue","chat_id":"c","model":"24ai_gen_image","status":"IN_QUEUE","attachments":[],"fail_reason":null,"fail_code":null}`,
 		"fail":  `{"message_id":"fail","chat_id":"c","model":"24ai_gen_image","status":"ERROR","attachments":[],"fail_reason":"NSFW","fail_code":"moderation"}`,
 	}
@@ -105,7 +107,7 @@ func TestMCP_studioResult(t *testing.T) {
 	})
 	m := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}
 	j, err := m.StudioResult(context.Background(), "done")
-	if err != nil || !j.Done() || len(j.Images) != 1 || j.Images[0] != "https://images.24ai.tech/ai-studio/a/d3e3_6af9.jpeg" {
+	if err != nil || !j.Done() || len(j.Images) != 1 || j.Images[0] != "https://images.24ai.tech/ai-studio/a/r1.jpeg" {
 		t.Errorf("done = %+v, %v", j, err)
 	}
 	if j, err := m.StudioResult(context.Background(), "queue"); err != nil || j.Done() || len(j.Images) != 0 || j.Fail != "" {
@@ -113,5 +115,65 @@ func TestMCP_studioResult(t *testing.T) {
 	}
 	if j, err := m.StudioResult(context.Background(), "fail"); err != nil || !j.Done() || j.Fail != "NSFW" {
 		t.Errorf("fail = %+v, %v; want done with the reason", j, err)
+	}
+}
+
+// После отправки платного вызова любой сбой, кроме отказа инструмента, — «не знаем,
+// состоялась ли» (ревью #629): ответ 500, пустой ответ, обрыв по сроку.
+func TestMCP_studioGenerateUnsure(t *testing.T) {
+	for _, c := range []struct {
+		name, text string
+		isErr      bool
+		unsure     bool
+	}{
+		{"504", "HTTP504", false, true},
+		{"empty", "", false, true},
+		{"not json", "oops", false, true},
+		{"tool refusal", "Error calling tool 'ai_studio_generate': Недостаточно токенов", true, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+				"ai_studio_generate": func(map[string]any) (string, bool) { return c.text, c.isErr },
+			})
+			_, err := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}.StudioGenerate(context.Background(), "m", "p", 3, nil, nil)
+			if err == nil || errors.Is(err, mpstats.ErrStudioUnsure) != c.unsure {
+				t.Errorf("err = %v, unsure %v", err, c.unsure)
+			}
+		})
+	}
+}
+
+// Срок вышел, пока Студия думала: тоже «не знаем», а не «не запущено».
+func TestMCP_studioGenerateTimeout(t *testing.T) {
+	srv := fakeMCP(t, map[string]func(map[string]any) (string, bool){
+		"ai_studio_generate": func(map[string]any) (string, bool) {
+			time.Sleep(300 * time.Millisecond)
+			return `{"message_id":"x"}`, false
+		},
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	_, err := mpstats.MCP{URL: srv.URL, Token: "t-1", HTTP: srv.Client()}.StudioGenerate(ctx, "m", "p", 3, nil, nil)
+	if !errors.Is(err, mpstats.ErrStudioUnsure) {
+		t.Errorf("err = %v, want ErrStudioUnsure", err)
+	}
+}
+
+// Конечный статус без причины — тоже конец: опрос не крутится впустую (ревью #629).
+func TestStudioJob_done(t *testing.T) {
+	for _, c := range []struct {
+		j    mpstats.StudioJob
+		done bool
+	}{
+		{mpstats.StudioJob{Status: "COMPLETED"}, true},
+		{mpstats.StudioJob{Status: "FAILED"}, true},
+		{mpstats.StudioJob{Status: "CANCELLED"}, true},
+		{mpstats.StudioJob{Status: "IN_QUEUE"}, false},
+		{mpstats.StudioJob{Status: "IN_PROGRESS"}, false},
+		{mpstats.StudioJob{Status: "IN_QUEUE", Fail: "NSFW"}, true},
+	} {
+		if c.j.Done() != c.done {
+			t.Errorf("%+v.Done() = %v", c.j, !c.done)
+		}
 	}
 }

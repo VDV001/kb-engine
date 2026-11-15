@@ -110,7 +110,6 @@ func TestInfographicGenerate_refusals(t *testing.T) {
 		maxCost       int
 		want          string
 	}{
-		{"price rose", 19, 12, "nano-banana-pro", "p", 10, "12"},
 		{"no tokens", 2, 3, "seedream-5-lite", "p", 3, "токенов"},
 		{"unknown model", 19, 1, "24ai_gen_image", "p", 1, "модель"},
 		{"empty prompt", 19, 1, "nano-banana-2", "  ", 5, "задани"},
@@ -158,5 +157,46 @@ func TestStudioImageHost(t *testing.T) {
 		if got := imageHostOK(c.url, c.hosts); got != c.ok {
 			t.Errorf("imageHostOK(%q) = %v, want %v", c.url, got, c.ok)
 		}
+	}
+}
+
+// С фото цена выше показанной: без трат, окно узнает новую цену и показывает ее
+// на кнопке — следующий клик сходится (ревью #629: иначе модель нельзя запустить вовсе).
+func TestInfographicGenerate_repriced(t *testing.T) {
+	s, oz, cab, calls, _ := studioFake(t, 19, 12)
+	var seen string
+	j, err := s.infographicGenerate(context.Background(), nil, oz, cab, "1234567", "nano-banana-pro", "p", 10, fakeFetch(&seen))
+	if err != nil || j.Repriced != 12 || j.ID != "" {
+		t.Fatalf("job %+v, %v; want repriced 12 without a run", j, err)
+	}
+	for _, name := range *calls {
+		if name == "ai_studio_generate" {
+			t.Error("generation started")
+		}
+	}
+}
+
+// Редирект с разрешенного адреса на чужой — отказ, а не скачивание (ревью #629).
+func TestFetchImage_redirect(t *testing.T) {
+	evil := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(jpeg) }))
+	t.Cleanup(evil.Close)
+	good := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ok.jpg" {
+			_, _ = w.Write(jpeg)
+			return
+		}
+		http.Redirect(w, r, evil.URL+"/x.jpg", http.StatusFound)
+	}))
+	t.Cleanup(good.Close)
+	host := strings.TrimPrefix(good.URL, "https://")
+	host = host[:strings.LastIndex(host, ":")]
+	fetch := fetchImageVia(good.Client(), []string{host}, 1<<20, func(u string, hosts []string) bool {
+		return strings.HasPrefix(u, good.URL) // в тесте оба сервера на 127.0.0.1: «свой» — по порту
+	})
+	if _, err := fetch(context.Background(), good.URL+"/ok.jpg"); err != nil {
+		t.Fatalf("allowed: %v", err)
+	}
+	if _, err := fetch(context.Background(), good.URL+"/go"); err == nil {
+		t.Error("redirect to another host followed")
 	}
 }
