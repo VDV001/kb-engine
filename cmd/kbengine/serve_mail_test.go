@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
@@ -204,4 +207,69 @@ func revokeOnlyPerson(t *testing.T, s blob.Store, id domain.UserID) error {
 	b, _ := json.Marshal(r)
 	_, err = s.Put(t.Context(), userauth.RegistryKey, b, o.ETag)
 	return err
+}
+
+// frozen stops the limiter's clock; the returned pointer moves it.
+func frozen(f tenantFixture) *time.Time {
+	now := time.Date(2026, 11, 15, 12, 0, 0, 0, time.UTC)
+	f.h.(*tenants).now = func() time.Time { return now }
+	return &now
+}
+
+// Предел опроса: 12 подряд проходят (10 страниц истории и запас), 13-й — 429
+// с честным Retry-After. Отправка, другой телефон того же человека и сосед
+// предел опроса не делят (ревью #631).
+func TestMailRateLimit(t *testing.T) {
+	f := newTenants(t)
+	frozen(f)
+	_, phone := addPhone(t, f, f.tokA)
+	for i := range 12 {
+		if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokA); rec.Code != http.StatusOK {
+			t.Fatalf("poll %d: %d", i+1, rec.Code)
+		}
+	}
+	rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokA)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("poll 13: %d, want 429", rec.Code)
+	}
+	if got := rec.Header().Get("Retry-After"); got != "5" {
+		t.Errorf("Retry-After %q, want 5 (one poll per 5 s)", got)
+	}
+	if rec := do(f.h, http.MethodPost, "/api/mail/c-1", `{"sealed":"`+sealed+`"}`, f.tokA); rec.Code != http.StatusCreated {
+		t.Errorf("send limited by polls: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", phone); rec.Code != http.StatusOK {
+		t.Errorf("A's phone limited by A's desk: %d", rec.Code)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokB); rec.Code != http.StatusOK {
+		t.Errorf("B limited by A: %d", rec.Code)
+	}
+}
+
+// Опрос раз в 10 с — договорной темп клиента — не получает 429 никогда.
+func TestMailHonestPollIsNeverLimited(t *testing.T) {
+	f := newTenants(t)
+	now := frozen(f)
+	for i := range 100 {
+		*now = now.Add(10 * time.Second)
+		if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokA); rec.Code != http.StatusOK {
+			t.Fatalf("poll %d every 10 s: %d", i+1, rec.Code)
+		}
+	}
+}
+
+// Карта пределов не растет без конца: полные (простаивающие) корзины
+// выбрасываются — новая корзина начинается такой же полной (ревью #631).
+func TestMailLimitsForgetIdle(t *testing.T) {
+	f := newTenants(t)
+	now := frozen(f)
+	tn := f.h.(*tenants)
+	for i := range 5000 {
+		tn.allowMail(mailKey{sum: sha256.Sum256([]byte(strconv.Itoa(i)))})
+	}
+	*now = now.Add(time.Hour)
+	tn.allowMail(mailKey{poll: true})
+	if n := len(tn.limits); n > 1 {
+		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
+	}
 }

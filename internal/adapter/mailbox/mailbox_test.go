@@ -167,3 +167,54 @@ var textN atomic.Int64
 
 // randText — разный шифротекст на каждый вызов, как у настоящего AES-GCM с нонсом.
 func randText() string { return "x" + strconv.FormatInt(textN.Add(1), 10) }
+
+// countingStore counts the bytes the store hands out to the mailbox — то, что
+// ушло бы по сети с S3. Чтение диска внутри blobfs оно не видит.
+type countingStore struct {
+	blob.Store
+	read atomic.Int64
+}
+
+func (c *countingStore) Get(ctx context.Context, key string) (blob.Object, error) {
+	o, err := c.Store.Get(ctx, key)
+	c.read.Add(int64(len(o.Data)))
+	return o, err
+}
+
+func (c *countingStore) GetIfChanged(ctx context.Context, key, etag string) (blob.Object, error) {
+	o, err := c.Store.GetIfChanged(ctx, key, etag)
+	c.read.Add(int64(len(o.Data)))
+	return o, err
+}
+
+// Опрос без нового не получает журнал от хранилища: версия та же — ответ
+// пустой (ревью #630, V2). Мерка — граница хранилища, а не диск blobfs.
+func TestSinceUnchangedReadsNothing(t *testing.T) {
+	ctx := context.Background()
+	_, raw, id := setup(t)
+	cs := &countingStore{Store: raw}
+	st := mailbox.Store{Blob: cs, Seen: &mailbox.Seen{}}
+	for i := range 3 {
+		if _, err := st.Append(ctx, id, msg(t, "a", domain.MailPhone, randText()+string(rune('a'+i)))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	p, err := st.Since(ctx, id, 0, 0)
+	if err != nil || len(p.Messages) != 3 {
+		t.Fatalf("first read: %d, %v", len(p.Messages), err)
+	}
+	cs.read.Store(0)
+	p, err = st.Since(ctx, id, 3, 0)
+	if err != nil || len(p.Messages) != 0 || p.First != 1 {
+		t.Fatalf("unchanged: %+v, %v", p, err)
+	}
+	if n := cs.read.Load(); n != 0 {
+		t.Errorf("unchanged log read %d bytes, want 0", n)
+	}
+	if _, err := st.Append(ctx, id, msg(t, "a", domain.MailDesk, randText())); err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := st.Since(ctx, id, 3, 0); len(p.Messages) != 1 || p.Messages[0].Seq() != 4 {
+		t.Errorf("after a new message: %+v", p)
+	}
+}
