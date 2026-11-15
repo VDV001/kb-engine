@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/daniil/kb-engine/internal/domain"
 )
@@ -86,6 +87,9 @@ type Outgoing struct {
 	Chat    string  `json:"chat"`
 	Counter uint64  `json:"counter"`
 	Payload Payload `json:"payload"`
+	// Sealed — запечатано один раз: повтор отправки — те же байты, и сервер
+	// склеит строку, дошедшую при потерянном ответе (ревью #635).
+	Sealed []byte `json:"sealed"`
 }
 
 // State is what the relay remembers between ticks.
@@ -142,6 +146,9 @@ func (r Relay) Tick(ctx context.Context) error {
 			}
 			posted = posted || sent
 		}
+		if err := r.Store.Save(st); err != nil { // одна запись на страницу без вопросов
+			return fmt.Errorf("mailrelay: state: %w", err)
+		}
 		// Дочитать, если есть еще или окно само положило ответы: свои ответы
 		// сдвигают номер сразу, а не лишним запросом через круг. Пустой
 		// дочиток не нужен — опрос и так на пределе частоты ящика.
@@ -151,10 +158,25 @@ func (r Relay) Tick(ctx context.Context) error {
 	}
 }
 
+// startSlack — запас на расхождение часов окна и сервера: вопрос, заданный
+// сразу после привязки, не должен оказаться «старше начала».
+const startSlack = 2 * time.Minute
+
 func (r Relay) load() (State, error) {
 	st, err := r.Store.Load()
 	if err != nil {
 		return State{}, fmt.Errorf("mailrelay: state: %w", err)
+	}
+	if st.KeyID != r.KeyID {
+		// Новый ключ (первая привязка, отвязаны все, другой сервер под тем же id):
+		// номер ящика и счетчики — заново, вопросы до начала не отвечаются —
+		// иначе платный ход на каждый старый вопрос журнала. Счетчик окна
+		// растет дальше: телефон не примет его за повтор.
+		now := time.Now
+		if r.Now != nil {
+			now = r.Now
+		}
+		st = State{KeyID: r.KeyID, DeskCounter: st.DeskCounter, Start: now().Add(-startSlack)}
 	}
 	if st.Seen == nil {
 		st.Seen = map[string]uint64{}
@@ -168,7 +190,7 @@ func (r Relay) load() (State, error) {
 // question returns the phone's question in m, или ok=false: свое, подделка,
 // повтор, чужой вид. Счетчик отправителя запоминается здесь же.
 func (r Relay) question(st *State, m Message) (string, bool) {
-	if m.From != domain.MailPhone {
+	if m.From != domain.MailPhone || m.At.Before(st.Start) {
 		return "", false
 	}
 	o, err := r.Crypto.Open(m.Chat, m.From, m.Sealed)
@@ -191,12 +213,12 @@ func (r Relay) question(st *State, m Message) (string, bool) {
 func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	st.After = max(st.After, m.Seq)
 	text, ok := r.question(st, m)
+	if !ok {
+		return false, nil // запишется концом страницы
+	}
 	// Номер — до хода модели: сбой посреди хода не запустит ее второй раз.
 	if err := r.Store.Save(*st); err != nil {
 		return false, fmt.Errorf("mailrelay: state: %w", err)
-	}
-	if !ok {
-		return false, nil
 	}
 	chat, answer, err := r.Asker.Ask(ctx, st.Chats[m.Chat], text)
 	reply := Payload{Kind: KindAnswer, Text: answer}
@@ -205,27 +227,60 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	} else {
 		st.Chats[m.Chat] = chat
 	}
+	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	st.Outbox = append(st.Outbox, Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply})
+	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply}
+	if out.Sealed, err = r.seal(out); err != nil {
+		return false, err
+	}
+	st.Outbox = append(st.Outbox, out)
 	if err := r.Store.Save(*st); err != nil {
 		return false, fmt.Errorf("mailrelay: state: %w", err)
 	}
 	return true, r.flush(ctx, st)
 }
 
-// flush posts the outbox in order; неотправленное остается до следующего круга.
+// trimNote ends an answer cut to the mailbox limit.
+const trimNote = "\n… полностью — в окне DVK"
+
+// trim cuts text to max bytes on a rune boundary, с пометкой (0 — без предела).
+func trim(text string, limit int) string {
+	if limit <= 0 || len(text) <= limit {
+		return text
+	}
+	cut := limit - len(trimNote)
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:max(cut, 0)] + trimNote
+}
+
+func (r Relay) seal(o Outgoing) ([]byte, error) {
+	plain, err := json.Marshal(o.Payload)
+	if err != nil {
+		return nil, fmt.Errorf("mailrelay: reply: %w", err)
+	}
+	sealed, err := r.Crypto.Seal(o.Chat, o.Counter, plain)
+	if err != nil {
+		return nil, fmt.Errorf("mailrelay: seal: %w", err)
+	}
+	return sealed, nil
+}
+
+// flush posts the outbox in order; неотправленное остается до следующего
+// круга, отказанное насовсем (ErrRefused) — выбрасывается: иначе оно затыкает
+// ящик навсегда (ревью #635).
 func (r Relay) flush(ctx context.Context, st *State) error {
 	for len(st.Outbox) > 0 {
 		o := st.Outbox[0]
-		plain, err := json.Marshal(o.Payload)
-		if err != nil {
-			return fmt.Errorf("mailrelay: reply: %w", err)
+		if len(o.Sealed) == 0 { // состояние до запечатывания при постановке
+			var err error
+			if o.Sealed, err = r.seal(o); err != nil {
+				return err
+			}
 		}
-		sealed, err := r.Crypto.Seal(o.Chat, o.Counter, plain)
-		if err != nil {
-			return fmt.Errorf("mailrelay: seal: %w", err)
-		}
-		if _, err := r.Box.Post(ctx, o.Chat, sealed); err != nil {
+		_, err := r.Box.Post(ctx, o.Chat, o.Sealed)
+		if err != nil && !errors.Is(err, ErrRefused) {
 			return fmt.Errorf("mailrelay: post: %w", err)
 		}
 		st.Outbox = st.Outbox[1:]
