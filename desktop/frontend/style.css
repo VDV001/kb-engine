@@ -439,6 +439,10 @@ mark { background: var(--z-accent-wash); color: var(--z-ink); box-shadow: inset 
 .conn-google label.conn-check { grid-template-columns: auto 1fr; align-items: start; gap: 8px; color: var(--z-ink-2); line-height: 1.45; }
 .conn-google .conn-check input { margin: 2px 0 0; padding: 0; }
 .conn-steps { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+/* «Добавить голоса в macOS…» — кнопка под текстом, как выбор голоса выше, а не
+   ссылка в строке (отзыв 15.11: ссылка выглядела дешево). */
+.voice-add { display: grid; gap: 8px; justify-items: start; }
+.voice-add .muted { margin: 0; }
 .lnk { border: 0; background: none; padding: 0; color: var(--z-accent); text-decoration: underline; text-underline-offset: 2px; font: inherit; cursor: pointer; }
 .settings-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .settings h2 { margin: 6px 0 0; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
