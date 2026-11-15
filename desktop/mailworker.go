@@ -157,6 +157,9 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 		Store:   file,
 		KeyID:   hex.EncodeToString(keyID[:]),
 		MaxText: mailMaxText,
+		// Шаги хода — не чаще раза в 3 с: телефон опрашивает раз в 10 с, а
+		// предел отправки окна — раз в секунду.
+		StepEvery: 3 * time.Second,
 
 		FindTimeout: phoneFindTimeout,
 	}
@@ -195,8 +198,17 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 }
 
 // AskStepped is AskSourced with the turn's steps for the phone (#622).
-func (a workerAsker) AskStepped(ctx context.Context, chat, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
-	return a.AskSourced(ctx, chat, question)
+func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	if a.w.answer == nil {
+		return a.AskSourced(ctx, id, question)
+	}
+	ans, err := a.w.answer(ctx, id, question, func(u chat.Use) {
+		step(mailrelay.Step{Kind: string(u.Kind), Name: u.Name, What: u.What})
+	})
+	if err == nil {
+		a.w.changed(ans.Chat)
+	}
+	return ans, err
 }
 
 func (a workerAsker) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
@@ -228,8 +240,8 @@ func chatAsker(d *chatDesk) askFn {
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, _ func(chat.Use)) (mailrelay.Answer, error) {
-		quiet := askOut{worker: true}
+	return func(ctx context.Context, chat, question string, step func(chat.Use)) (mailrelay.Answer, error) {
+		quiet := askOut{worker: true, step: step}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
 			rec, err = d.ask(ctx, askReq{Question: question}, quiet)

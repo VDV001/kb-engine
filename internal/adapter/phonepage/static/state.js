@@ -38,12 +38,20 @@ export function take(st, m, o) {
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
+  if (m.from === "desk" && p.kind === "step") { // ход модели: показ, не сообщение (#622)
+    const c = st.chats[m.chat];
+    if (!c?.pending) return false; // запоздавший шаг после ответа
+    const src = (p.sources || [])[0] || {};
+    c.step = { kind: src.kind || "", name: src.name || "", what: p.text || "" };
+    return true;
+  }
   const answer = m.from === "desk" && (p.kind === "answer" || p.kind === "error");
   if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (answer) {
     c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
     c.pending = false;
+    delete c.step;
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());

@@ -184,3 +184,6 @@ body[data-view="chat"] .toast { bottom: calc(124px + env(safe-area-inset-bottom)
 }
 @media (max-width: 899px) { .empty-main { display: none !important; } }
 @media (prefers-reduced-motion: reduce) { .spin { animation: none; } }
+
+/* ход модели под «Компьютер отвечает» (#622) */
+.wait .step { margin-top: 4px; font-size: 12px; color: var(--z-faint); overflow-wrap: anywhere; }

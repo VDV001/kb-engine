@@ -27,6 +27,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -247,11 +248,7 @@ func (r Relay) load() (State, error) {
 		// номер ящика и счетчики — заново, вопросы до начала не отвечаются —
 		// иначе платный ход на каждый старый вопрос журнала. Счетчик окна
 		// растет дальше: телефон не примет его за повтор.
-		now := time.Now
-		if r.Now != nil {
-			now = r.Now
-		}
-		st = State{KeyID: r.KeyID, DeskCounter: st.DeskCounter, Start: now().Add(-startSlack)}
+		st = State{KeyID: r.KeyID, DeskCounter: st.DeskCounter, Start: r.now().Add(-startSlack)}
 	}
 	if st.Seen == nil {
 		st.Seen = map[string]uint64{}
@@ -320,11 +317,20 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	return true, r.flush(ctx, st)
 }
 
+func (r Relay) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
+}
+
 // ask runs the model turn in the window's chat of this mailbox chat.
 func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payload {
 	var a Answer
 	var err error
-	if sa, ok := r.Asker.(SourcedAsker); ok {
+	if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
+		a, err = sa.AskStepped(ctx, st.Chats[chat], question, r.stepper(ctx, st, chat))
+	} else if sa, ok := r.Asker.(SourcedAsker); ok {
 		a, err = sa.AskSourced(ctx, st.Chats[chat], question)
 	} else {
 		a.Chat, a.Text, err = r.Asker.Ask(ctx, st.Chats[chat], question)
@@ -334,6 +340,38 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	}
 	st.Chats[chat] = a.Chat
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
+}
+
+// maxStepText — столько байт «что спросили» уходит в шаге хода.
+const maxStepText = 200
+
+// stepper posts the turn's steps to the phone, не чаще StepEvery: шаг — не
+// обещание, а показ хода, поэтому мимо исходящих — потерялся, итог все равно
+// придет. Счетчик окна записан до отправки: повтор номера телефон отверг бы.
+// Замок — на случай шагов из параллельных инструментов модели.
+func (r Relay) stepper(ctx context.Context, st *State, chat string) func(Step) {
+	var mu sync.Mutex
+	var last time.Time
+	return func(s Step) {
+		mu.Lock()
+		defer mu.Unlock()
+		now := r.now()
+		if !last.IsZero() && now.Sub(last) < r.StepEvery {
+			return
+		}
+		last = now
+		st.DeskCounter++
+		out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep,
+			Text: trim(s.What, maxStepText), Sources: []Source{{Kind: s.Kind, Name: s.Name}}}}
+		if r.Store.Save(*st) != nil {
+			return
+		}
+		sealed, err := r.sealFitting(&out)
+		if err != nil {
+			return
+		}
+		_, _ = r.Box.Post(ctx, chat, sealed)
+	}
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека
