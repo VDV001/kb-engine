@@ -827,20 +827,21 @@ function activate(it, reveal) {
   reveal ? revealFile(it.f.path) : openFile(it.f.path);
 }
 
-// Windows: глобальной клавиши нет (⌥Space держит menubar_darwin.m, а Alt+Space
-// в Windows — системное меню окна), Esc сворачивает окно, а не прячет.
+// Windows: окно из любой программы — Ctrl+Alt+Space (menubar_windows.go), а не
+// ⌥Space: Alt+Space в Windows — системное меню окна.
 if (IS_WIN) {
   const w = HELP.find((s) => s.id === "window");
-  w.lead = "Клавиши работают в окне.";
-  w.items = w.items.filter((i) => !i.k?.includes("⌥Space")); // у строки с путем конфига вместо k — cmd
-  for (const i of w.items) if (i.k?.[0] === "Esc") i.d = i.d.replace("спрятать окно", "свернуть окно");
+  w.lead = "Клавиши работают в окне; Ctrl+Alt+Space — из любой программы.";
+  for (const i of w.items) {
+    if (i.k?.includes("⌥Space")) { i.k = ["Ctrl+Alt+Space"]; i.d = "открыть или спрятать окно из любой программы; окно живет в трее у часов"; } // у строки с путем конфига вместо k — cmd
+  }
 }
 
 function showEmpty() {
   $("#preview").innerHTML = `<div class="empty"><div class="prompt"><span class="dollar">$</span> cat README</div>
     <p>Поиск по базе знаний и файлам на этом компьютере.</p>
     <p class="muted">Слова ищутся во всех формах: договор, договора, договорами.</p>
-    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить, еще раз — ${IS_WIN ? "свернуть" : "спрятать <b>⌥space</b> открыть"}</p></div>`;
+    <p class="muted keys-line"><b>↑↓</b> выбор <b>↵</b> открыть <b>⌘↵</b> в Finder <b>⌘,</b> папки <b>esc</b> очистить, еще раз — спрятать <b>${IS_WIN ? "Ctrl+Alt+Space" : "⌥space"}</b> открыть</p></div>`;
 }
 
 // --- Клавиатура ----------------------------------------------------------------

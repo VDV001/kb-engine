@@ -10,12 +10,10 @@ const modKey = (e) => (IS_WIN ? e.ctrlKey : e.metaKey);
 // otherMod — та, что на этой платформе в сочетаниях окна не участвует.
 const otherMod = (e) => (IS_WIN ? e.metaKey : e.ctrlKey);
 
-// hideWindow — Esc и «спрятать»: на Маке окно уходит в меню-бар, на Windows
-// значка в трее пока нет, и спрятанное окно было бы не вернуть — сворачиваем.
+// hideWindow — Esc и «спрятать»: окно уходит в меню-бар Мака или в трей
+// Windows (menubar_windows.go) и продолжает отвечать телефону.
 function hideWindow() {
-  if (!window.runtime) return;
-  if (IS_WIN) window.runtime.WindowMinimise();
-  else window.runtime.Hide();
+  if (window.runtime) window.runtime.Hide();
 }
 
 // winKeys переводит подпись на Windows: ⌘ → Ctrl+, ⌥ → Alt+, ⇧ → Shift+
@@ -78,7 +76,7 @@ if (IS_WIN) {
       if (!b || !window.runtime) return;
       if (b.id === "win-min") window.runtime.WindowMinimise();
       else if (b.id === "win-max") window.runtime.WindowToggleMaximise();
-      else if (b.id === "win-close") window.runtime.Quit();
+      else if (b.id === "win-close") hideWindow(); // как красная кнопка Мака: в трей, выход — из меню значка
     });
     // Подписи строит и app.js по ходу работы (подсказки, справка, меню):
     // переводим и то, что есть, и все, что появится.

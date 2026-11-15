@@ -167,8 +167,8 @@ func run() error {
 		},
 		// Красная кнопка прячет окно: вернуть его — ⌥Space, значок в Dock или в
 		// меню-баре (menubar_darwin.m), выход — ⌘Q или из меню значка. На Windows
-		// значка в трее пока нет: спрятанное окно было бы не вернуть, крестик закрывает.
-		HideWindowOnClose: goruntime.GOOS == "darwin",
+		// так же: ✕ прячет в трей, Ctrl+Alt+Space и значок возвращают (menubar_windows.go).
+		HideWindowOnClose: true,
 		// Windows: без системного заголовка, «— ▢ ✕» рисует шапка окна
 		// (решение владельца 15.11: на Windows окно выглядит как на Маке).
 		Frameless: goruntime.GOOS == "windows",
@@ -178,6 +178,7 @@ func run() error {
 		EnableDefaultContextMenu: inspectable,
 		OnShutdown: func(context.Context) {
 			_ = browserHost.Stop() // сервер, запущенный кнопкой, не переживает окно
+			removeMenuBar()
 			cancel()
 		},
 		Bind: []any{app},
