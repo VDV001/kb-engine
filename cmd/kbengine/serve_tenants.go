@@ -18,6 +18,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mail"
+	"golang.org/x/time/rate"
 )
 
 // tenantsHandler serves several people from one store, each from their own
@@ -36,7 +37,8 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) htt
 		reg:      userauth.NewRegistry(ctx, store),
 		phones:   phones,
 		handlers: map[domain.UserID]http.Handler{},
-		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
+		limits:   map[string]*rate.Limiter{},
+		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
 			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
 	}
 }
@@ -65,6 +67,9 @@ type tenants struct {
 	reg    *userauth.Registry
 	phones *userauth.Registry // токены телефонов (#622): пускают только в ящик
 	mail   http.Handler
+
+	limitsMu gosync.Mutex
+	limits   map[string]*rate.Limiter // человек|сторона → предел частоты ящика
 
 	mu       gosync.Mutex
 	handlers map[domain.UserID]http.Handler
@@ -106,17 +111,46 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // компьютера, токен телефона — сторона телефона; сторону не выбирает клиент.
 func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
 	if tok, ok := httpapi.RequestToken(r); ok {
-		if id, ok := t.reg.Lookup(tok); ok {
-			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
-			return
+		side := domain.MailDesk
+		id, ok := t.reg.Lookup(tok)
+		if !ok {
+			id, ok = t.phones.Lookup(tok)
+			ok = ok && t.reg.Has(id) // телефон входит, пока жив хозяин (ревью #630)
+			side = domain.MailPhone
 		}
-		if id, ok := t.phones.Lookup(tok); ok && t.reg.Has(id) { // телефон входит, пока жив хозяин (ревью #630)
-			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailPhone)))
+		if ok {
+			if !t.allowMail(id.String() + "|" + string(side)) {
+				w.Header().Set("Retry-After", "10")
+				http.Error(w, "too many mailbox requests; poll every 10 s", http.StatusTooManyRequests)
+				return
+			}
+			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, side)))
 			return
 		}
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="kbengine"`)
 	http.Error(w, "bearer token required", http.StatusUnauthorized)
+}
+
+// Предел частоты ящика на человека и сторону: опрос раз в 10 с и отправка —
+// с большим запасом; цикл сломанного или чужого клиента — 429 (ревью #630, V2).
+//
+// ponytail: предел — в памяти экземпляра; при нескольких экземплярах он
+// умножается на их число. Путь апгрейда — предел в API Gateway.
+const (
+	mailRate  = rate.Limit(1) // запросов в секунду в среднем
+	mailBurst = 30
+)
+
+func (t *tenants) allowMail(key string) bool {
+	t.limitsMu.Lock()
+	l, ok := t.limits[key]
+	if !ok {
+		l = rate.NewLimiter(mailRate, mailBurst)
+		t.limits[key] = l
+	}
+	t.limitsMu.Unlock()
+	return l.Allow()
 }
 
 // handlerFor returns the person's handler, building it on first use. Сборка

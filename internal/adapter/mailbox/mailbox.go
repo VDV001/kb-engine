@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -36,8 +37,40 @@ const DefaultPage = 200
 // Store reads and appends the logs in Blob.
 type Store struct {
 	Blob     blob.Store
-	Keep     int // 0 — DefaultKeep
-	MaxBytes int // 0 — DefaultMaxBytes
+	Keep     int   // 0 — DefaultKeep
+	MaxBytes int   // 0 — DefaultMaxBytes
+	Seen     *Seen // nil — без кэша: каждый опрос читает журнал целиком
+}
+
+// Seen remembers the version of each log a poll has read: опрос без нового
+// спрашивает хранилище «изменился ли» и не скачивает журнал (ревью #630, V2).
+//
+// ponytail: память — на каждого, кто опрашивал, до перезапуска; потолок —
+// число людей сервера, путь апгрейда — выгрузка по давности.
+type Seen struct {
+	mu sync.Mutex
+	m  map[domain.UserID]seenLog
+}
+
+type seenLog struct {
+	etag        string
+	first, last int64
+}
+
+func (s *Seen) get(id domain.UserID) (seenLog, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, ok := s.m[id]
+	return l, ok
+}
+
+func (s *Seen) put(id domain.UserID, l seenLog) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m == nil {
+		s.m = map[domain.UserID]seenLog{}
+	}
+	s.m[id] = l
 }
 
 // Page is mail.Page: First больше «после» + 1 — часть истории ушла из журнала.
@@ -120,20 +153,11 @@ func (s Store) Since(ctx context.Context, id domain.UserID, after int64, limit i
 		limit = DefaultPage
 	}
 	p := Page{Messages: []domain.MailMessage{}}
-	o, err := s.Blob.Get(ctx, key(id))
-	if errors.Is(err, blob.ErrNotFound) {
-		return p, nil
-	}
-	if err != nil {
-		return Page{}, fmt.Errorf("mailbox: read: %w", err)
-	}
-	lines, err := decode(o.Data)
+	lines, first, err := s.read(ctx, id, after)
 	if err != nil {
 		return Page{}, err
 	}
-	if len(lines) > 0 {
-		p.First = lines[0].Seq
-	}
+	p.First = first
 	for _, l := range lines {
 		if l.Seq <= after {
 			continue
@@ -149,6 +173,36 @@ func (s Store) Since(ctx context.Context, id domain.UserID, after int64, limit i
 		p.Messages = append(p.Messages, m)
 	}
 	return p, nil
+}
+
+// read returns the log lines after a cache check: все прочитано и журнал не
+// изменился — строк нет, хранилище тела не отдает (ревью #630, V2).
+func (s Store) read(ctx context.Context, id domain.UserID, after int64) ([]lineDTO, int64, error) {
+	var etag string
+	var first int64
+	if s.Seen != nil {
+		if l, ok := s.Seen.get(id); ok && after >= l.last {
+			etag, first = l.etag, l.first
+		}
+	}
+	o, err := s.Blob.GetIfChanged(ctx, key(id), etag)
+	switch {
+	case errors.Is(err, blob.ErrNotModified):
+		return nil, first, nil
+	case errors.Is(err, blob.ErrNotFound):
+		return nil, 0, nil
+	case err != nil:
+		return nil, 0, fmt.Errorf("mailbox: read: %w", err)
+	}
+	lines, err := decode(o.Data)
+	if err != nil || len(lines) == 0 {
+		return lines, 0, err
+	}
+	first = lines[0].Seq
+	if s.Seen != nil {
+		s.Seen.put(id, seenLog{etag: o.ETag, first: first, last: lines[len(lines)-1].Seq})
+	}
+	return lines, first, nil
 }
 
 func decode(raw []byte) ([]lineDTO, error) {
