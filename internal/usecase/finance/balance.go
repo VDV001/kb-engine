@@ -349,7 +349,7 @@ func unseenBy(tx domain.Transaction, bank string, confirmed time.Time, confs Con
 	// подтверждения отвечать на него не умеет и потому оставлен запасным
 	// правилом, а не поводом выдумать момент.
 	if moment, known := confs.At(bank); known {
-		return at.After(moment)
+		return domain.RecordedSince(at, moment)
 	}
 	return !at.Before(endOfDay(confirmed))
 }
