@@ -67,11 +67,11 @@ func (c Client) mail(ctx context.Context, method, path string, want int, notFoun
 	if err != nil {
 		return err
 	}
-	switch code := resp.StatusCode; {
-	case code == want:
-	case code == http.StatusNotFound:
+	switch code := resp.StatusCode; code {
+	case want:
+	case http.StatusNotFound:
 		return notFound
-	case code == http.StatusBadRequest || code == http.StatusConflict:
+	case http.StatusBadRequest, http.StatusConflict:
 		// Слова сервера: «too many phones» — человеку есть что сделать.
 		return fmt.Errorf("%w: %s", ErrRejected, strings.TrimSpace(string(body)))
 	default:
