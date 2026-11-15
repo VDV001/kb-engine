@@ -273,3 +273,20 @@ func TestMailLimitsForgetIdle(t *testing.T) {
 		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
 	}
 }
+
+// Страница телефона — без токена (статика без данных), но только она: соседние
+// пути по-прежнему за токеном (#622, этап 4).
+func TestTenantsServeThePhonePage(t *testing.T) {
+	f := newTenants(t)
+	if rec := do(f.h, http.MethodGet, "/m/", "", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "app.js") {
+		t.Fatalf("/m/ without a token: %d %.80s", rec.Code, rec.Body.String())
+	}
+	if rec := do(f.h, http.MethodGet, "/m/crypto.js", "", ""); rec.Code != http.StatusOK {
+		t.Errorf("/m/crypto.js: %d", rec.Code)
+	}
+	for _, p := range []string{"/mail", "/m2/", "/api/mail"} {
+		if rec := do(f.h, http.MethodGet, p, "", ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without a token: %d, want 401", p, rec.Code)
+		}
+	}
+}
