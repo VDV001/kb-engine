@@ -107,3 +107,16 @@ func TestMayUnderstate_silentOnIncome(t *testing.T) {
 		t.Error("доход назван занижающим остаток")
 	}
 }
+
+// Трата той же миллисекунды, что и подтверждение, — «после» (#638): момент из
+// ULID усечен до миллисекунды, а момент подтверждения точнее, и без правила
+// ничьей такая трата выходила «до» и проходила молча.
+func TestMayUnderstate_sameMillisecondCountsAsAfter(t *testing.T) {
+	acc := accountAt(t, "Сбербанк", "1000.00", "2026-08-11")
+	confs := finance.Confirmations{"Сбербанк": time.Date(2026, 8, 11, 12, 20, 0, 500_000, time.UTC)}
+	tx := expenseRecordedAt(t, "2026-08-11T12:20:00.0009Z", "2026-08-11", "Сбербанк", "105.00")
+
+	if !finance.MayUnderstate(tx, acc, confs) {
+		t.Error("трата той же миллисекунды прошла молча")
+	}
+}

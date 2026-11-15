@@ -89,3 +89,22 @@ func TestRecordedAt_unknownIsEarlierThanAnyKnown(t *testing.T) {
 		t.Error("неизвестный момент обязан быть раньше любого известного")
 	}
 }
+
+// Сравнение — на точности ULID (миллисекунда), ничья — «после» (#638).
+func TestRecordedSince(t *testing.T) {
+	ms := time.Date(2026, 8, 4, 12, 20, 0, 0, time.UTC)
+	for name, c := range map[string]struct {
+		at, moment time.Time
+		want       bool
+	}{
+		"прошлая миллисекунда":                  {ms.Add(-time.Millisecond), ms.Add(500 * time.Microsecond), false},
+		"та же миллисекунда, момент внутри":     {ms, ms.Add(500 * time.Microsecond), true},
+		"та же миллисекунда, момент на границе": {ms, ms, true},
+		"момент в конце миллисекунды":           {ms, ms.Add(999_999 * time.Nanosecond), true},
+		"следующая миллисекунда":                {ms.Add(time.Millisecond), ms.Add(500 * time.Microsecond), true},
+	} {
+		if got := domain.RecordedSince(c.at, c.moment); got != c.want {
+			t.Errorf("%s: %t, want %t", name, got, c.want)
+		}
+	}
+}

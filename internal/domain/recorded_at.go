@@ -31,3 +31,13 @@ func RecordedAt(id string) (time.Time, bool) {
 	}
 	return ulid.Time(u.Time()), true
 }
+
+// RecordedSince answers whether a moment read by RecordedAt is not before the
+// millisecond of moment: трата за 0,4 мс до подтверждения в той же миллисекунде
+// тоже «после». ULID хранит миллисекунды, а момент подтверждения баланса — точнее:
+// строка той же миллисекунды усекается раньше него и выходила бы «до» (#638).
+// Сравнение — на точности ULID, ничья — «после»: расчет остатка может только
+// занижать.
+func RecordedSince(at, moment time.Time) bool {
+	return !at.Before(moment.Truncate(time.Millisecond))
+}
