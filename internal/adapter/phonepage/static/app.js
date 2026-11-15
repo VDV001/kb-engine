@@ -8,7 +8,7 @@
 // ponytail: без service worker — Chrome ставит страницу и так; push и работа
 // без сети — следующим шагом (iOS шлет push только странице с экрана «Домой»).
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -63,6 +63,11 @@ async function pairFromFragment() {
   history.replaceState(null, "", location.pathname); // ключ не остается в адресе и истории
   const k = await importKey(m[2]);
   const prev = await load("state");
+  // Ссылку с чужим ключом может прислать кто угодно: без «да» привязка прежняя.
+  if (rebinds(prev, k.keyId) && !confirm("Привязать телефон к другому компьютеру? Дальше вопросы и поиск уйдут туда, а не на компьютер, к которому телефон привязан сейчас.")) {
+    note("Привязка не изменилась.", false);
+    return false;
+  }
   st = repair(prev && { ...prev, counter: BigInt(prev.counter || "0") }, { token: m[1], key: k.key, keyId: k.keyId }, crypto.getRandomValues(new Uint8Array(8)));
   await persist();
   note("Телефон привязан. Задачи выполнит компьютер с открытым окном DVK.", false);

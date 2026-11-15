@@ -24,9 +24,10 @@ chmod 700 "$DIR"
 if [ ! -f "$KS" ]; then
   echo "Ключ подписи создается: $KS"
   PW="$(openssl rand -base64 32 | tr -d '/+=' | head -c 32)"
-  security add-generic-password -U -s "DVK android signing" -a release -w "$PW"
-  keytool -genkeypair -storetype PKCS12 -keystore "$KS" -alias dvk -keyalg RSA -keysize 3072 \
-    -validity 10000 -dname "CN=DVK, O=Daniil Vdovin, C=RU" -storepass "$PW" -keypass "$PW" >/dev/null
+  # Пароль — через stdin и окружение, не аргументом: аргументы видны в ps.
+  printf 'add-generic-password -U -s "DVK android signing" -a release -w "%s"\n' "$PW" | security -i >/dev/null
+  DVK_NEW_PW="$PW" keytool -genkeypair -storetype PKCS12 -keystore "$KS" -alias dvk -keyalg RSA -keysize 3072 \
+    -validity 10000 -dname "CN=DVK, O=Daniil Vdovin, C=RU" -storepass:env DVK_NEW_PW -keypass:env DVK_NEW_PW >/dev/null
   unset PW
 fi
 DVK_KEYSTORE_PASSWORD="$(security find-generic-password -s "DVK android signing" -a release -w)"
@@ -41,7 +42,7 @@ mkdir -p "$ROOT/bin/android"
 cp app/build/outputs/apk/release/app-release.apk "$ROOT/bin/android/DVK.apk"
 "$SDK/build-tools/35.0.0/apksigner" verify "$ROOT/bin/android/DVK.apk"
 
-FP="$(keytool -list -v -storetype PKCS12 -keystore "$KS" -storepass "$DVK_KEYSTORE_PASSWORD" | awk '/SHA256:/ {print $2; exit}')"
+FP="$(keytool -list -v -storetype PKCS12 -keystore "$KS" -storepass:env DVK_KEYSTORE_PASSWORD | awk '/SHA256:/ {print $2; exit}')"
 unset DVK_KEYSTORE_PASSWORD
 echo
 echo "Готово: bin/android/DVK.apk ($VERSION, сервер $HOST)"

@@ -662,9 +662,10 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 		}
 		return d.open(ctx, doc)
 	}
-	// open reads a document that came from a search: файл — через индекс (та
-	// же проверка, что «Открыть»), ссылка — подключением своего источника.
-	d.open = func(ctx context.Context, doc chat.Doc) (chat.Doc, error) {
+	// openDoc reads a document that came from a search: файл — через индекс (та
+	// же проверка, что «Открыть»), находка Диска — подключением своего
+	// источника; прочую ссылку скачивает только окно (web).
+	openDoc := func(ctx context.Context, doc chat.Doc, web bool) (chat.Doc, error) {
 		ref := doc.Ref
 		if p, ok := strings.CutPrefix(ref, "file:"); ok {
 			text, err := files.Read(p)
@@ -681,13 +682,17 @@ func (d *chatDesk) useSources(files *filesearch.Service) {
 			if conn := d.settings.driveConn(doc.SourceID); conn != "" && d.driveRead != nil {
 				return d.driveRead(ctx, conn, ref)
 			}
-			if d.attach != nil {
+			if web && d.attach != nil {
 				return d.attach(ctx, ref)
 			}
 		}
 		return doc, nil
 	}
-	d.openFound = d.open
+	d.open = func(ctx context.Context, doc chat.Doc) (chat.Doc, error) { return openDoc(ctx, doc, true) }
+	// Телефон ссылку из записи не скачивает: автор записи на общем kb-сервере
+	// иначе заставил бы Мак сходить во внутреннюю сеть или прочитать закрытый
+	// документ подключением владельца (ревью безопасности #636).
+	d.openFound = func(ctx context.Context, doc chat.Doc) (chat.Doc, error) { return openDoc(ctx, doc, false) }
 }
 
 // remember keeps the records of a search: модель читает только то, что видела.

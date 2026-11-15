@@ -19,7 +19,7 @@ export function repair(prev, pair, newSender) {
 // another key: такую привязку человек подтверждает сам — ссылку с чужим ключом
 // может прислать кто угодно (ревью безопасности #636).
 export function rebinds(prev, keyId) {
-  return false;
+  return !!prev?.pair && !sameKey(prev.pair.keyId, keyId);
 }
 
 // take applies one message of the mailbox; o — открытое (null — чужое,
