@@ -59,6 +59,8 @@ type studioJobView struct {
 	Cost   int      `json:"cost"`
 	Images []string `json:"images"`
 	Fail   string   `json:"fail"`
+	// Repriced — с фото цена выше согласованной: генерации нет, новая цена — на кнопку (ревью #629).
+	Repriced int `json:"repriced"`
 }
 
 // MarketsInfographicOffer shows the AI Studio balance and the models with their price.
@@ -86,13 +88,13 @@ func (a *App) MarketsInfographicDraft(cab, sku string, consent bool) (descriptio
 	return a.chat.modelText(markets.InfographicSystem, markets.InfographicPrompt(in))
 }
 
-var errNoInfographicConsent = errors.New("задание на картинку пишет модель окна: название, характеристики и описание карточки уйдут ее провайдеру — нужно согласие")
+var errNoInfographicConsent = errors.New("задание на картинку пишет модель окна: название, пол, цвет и описание карточки и главный запрос ниши уйдут ее провайдеру — нужно согласие")
 
 // MarketsInfographicGenerate starts a paid generation not dearer than maxCost tokens.
 func (a *App) MarketsInfographicGenerate(cab, sku, model, prompt string, maxCost int) (studioJobView, error) {
 	ctx, cancel := context.WithTimeout(a.ctx, 3*time.Minute)
 	defer cancel()
-	return a.settings.infographicGenerate(ctx, nil, ozon.DefaultURL, cab, sku, model, prompt, maxCost, fetchImage(nil, ozonImageHosts))
+	return a.settings.infographicGenerate(ctx, nil, ozon.DefaultURL, cab, sku, model, prompt, maxCost, fetchImage(ozonImageHosts, maxStudioImage))
 }
 
 // MarketsInfographicResult reads a started generation.
@@ -117,7 +119,7 @@ func (a *App) MarketsInfographicSave(u, sku string) (string, error) {
 	}
 	ctx, cancel := context.WithTimeout(a.ctx, time.Minute)
 	defer cancel()
-	b, err := fetchImage(nil, studioImageHosts)(ctx, u)
+	b, err := fetchImage(studioImageHosts, 30<<20)(ctx, u)
 	if err != nil {
 		return "", err
 	}
@@ -180,8 +182,8 @@ func (f *folderSettings) infographicGenerate(ctx context.Context, hc *http.Clien
 	if err != nil {
 		return studioJobView{}, errors.New("цена не узнана — " + mpstatsMessage(err))
 	}
-	if cost > maxCost { // согласие было на другую цену: без трат, человек увидит новую
-		return studioJobView{}, fmt.Errorf("цена стала %d токенов вместо %d — посмотрите и запустите снова", cost, maxCost)
+	if cost > maxCost { // согласие было на другую цену: без трат, новая — на кнопку
+		return studioJobView{Repriced: cost, Images: []string{}}, nil
 	}
 	bal, err := m.StudioBalance(ctx)
 	if err != nil {
@@ -190,7 +192,10 @@ func (f *folderSettings) infographicGenerate(ctx context.Context, hc *http.Clien
 	if bal < cost {
 		return studioJobView{}, fmt.Errorf("на балансе ИИ Студии %d токенов, нужно %d — пополните в MPStats", bal, cost)
 	}
-	j, err := m.StudioGenerate(ctx, sm.Slug, prompt, cost, sm.Params, []string{ref})
+	// Свой срок платному вызову: подготовка могла съесть общий, и задание ушло бы с обрывом (ревью #629).
+	gctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Minute)
+	defer cancel()
+	j, err := m.StudioGenerate(gctx, sm.Slug, prompt, cost, sm.Params, []string{ref})
 	if err != nil {
 		return studioJobView{}, err
 	}
@@ -257,19 +262,23 @@ func imageHostOK(raw string, hosts []string) bool {
 	return slices.ContainsFunc(hosts, func(d string) bool { return h == d || strings.HasSuffix(h, "."+d) })
 }
 
-// fetchImage downloads an image from hosts, не больше maxStudioImage (результат — до 30 МБ).
-func fetchImage(hc *http.Client, hosts []string) func(context.Context, string) ([]byte, error) {
-	limit := int64(maxStudioImage)
-	if slices.Equal(hosts, studioImageHosts) {
-		limit = 30 << 20
+// fetchImage downloads an image from hosts, не больше limit байт; редирект — тоже только на hosts.
+func fetchImage(hosts []string, limit int64) func(context.Context, string) ([]byte, error) {
+	return fetchImageVia(&http.Client{Timeout: time.Minute}, hosts, limit, imageHostOK)
+}
+
+// fetchImageVia — fetchImage с клиентом и проверкой адреса (тест подставляет свои).
+func fetchImageVia(hc *http.Client, hosts []string, limit int64, ok func(string, []string) bool) func(context.Context, string) ([]byte, error) {
+	c := *hc
+	c.CheckRedirect = func(r *http.Request, _ []*http.Request) error { // каждый адрес цепочки — с разрешенного хоста (ревью #629)
+		if !ok(r.URL.String(), hosts) {
+			return fmt.Errorf("картинка уводит на %s", r.URL.Hostname())
+		}
+		return nil
 	}
 	return func(ctx context.Context, u string) ([]byte, error) {
-		if !imageHostOK(u, hosts) {
+		if !ok(u, hosts) {
 			return nil, fmt.Errorf("картинка не с %s", strings.Join(hosts, ", "))
-		}
-		c := &http.Client{Timeout: time.Minute}
-		if hc != nil {
-			c = hc
 		}
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {

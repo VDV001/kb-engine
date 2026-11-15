@@ -1,6 +1,7 @@
 package mpstats
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -32,8 +33,11 @@ type StudioJob struct {
 	Fail                      string
 }
 
-// Done — генерация закончилась: картинками или отказом.
-func (j StudioJob) Done() bool { return j.Status == "COMPLETED" || j.Fail != "" }
+// studioRunning — статусы идущей генерации; остальные — конец (живьем видели IN_QUEUE и COMPLETED, 15.11).
+var studioRunning = map[string]bool{"": true, "IN_QUEUE": true, "QUEUED": true, "IN_PROGRESS": true, "PROCESSING": true, "PENDING": true, "RUNNING": true}
+
+// Done — генерация закончилась: картинками, отказом или незнакомым конечным статусом.
+func (j StudioJob) Done() bool { return j.Fail != "" || !studioRunning[j.Status] }
 
 // ErrStudioUnsure — запуск генерации оборвался: она могла состояться и списать токены.
 var ErrStudioUnsure = errors.New("ответ ИИ Студии не пришел, генерация могла состояться — не повторяйте, посмотрите историю в ИИ Студии MPStats")
@@ -72,21 +76,35 @@ func (m MCP) StudioUpload(ctx context.Context, model, dataURI, name string) (str
 }
 
 // StudioGenerate starts a paid generation not dearer than maxCost tokens. Один вызов
-// без повторов: обрыв — ErrStudioUnsure, а не новая генерация.
+// без повторов: сбой после отправки — ErrStudioUnsure, а не новая генерация.
 func (m MCP) StudioGenerate(ctx context.Context, model, prompt string, maxCost int, params map[string]any, refs []string) (StudioJob, error) {
 	args := studioArgs(model, params, refs)
 	args["prompt"], args["max_cost_tokens"] = prompt, maxCost
+	s, err := m.open(ctx) // до отправки задания сбой безопасен: ничего не запущено
+	if err != nil {
+		return StudioJob{}, err
+	}
+	defer s.close()
+	// Задание ушло: дальше любой сбой, кроме отказа инструмента, — «не знаем, состоялась ли» (ревью #629).
+	body, _, err := s.post(map[string]any{"id": 2, "method": "tools/call", "params": map[string]any{"name": "ai_studio_generate", "arguments": args}})
+	if err != nil {
+		return StudioJob{}, ErrStudioUnsure
+	}
+	var res toolAnswer
+	if rpcResult(bytes.NewReader(body), 2, &res) != nil {
+		return StudioJob{}, ErrStudioUnsure
+	}
+	if res.IsError && len(res.Content) > 0 { // Студия отказала до запуска: токены не списаны
+		return StudioJob{}, studioErr(res.decode(&struct{}{}))
+	}
 	var raw struct {
 		ChatID    string `json:"chat_id"`
 		MessageID string `json:"message_id"`
 		Status    string `json:"status"`
 		Cost      int    `json:"cost"`
 	}
-	if err := m.callOnce(ctx, "ai_studio_generate", args, &raw); err != nil {
-		if errors.Is(err, ErrDropped) {
-			return StudioJob{}, ErrStudioUnsure
-		}
-		return StudioJob{}, studioErr(err)
+	if res.decode(&raw) != nil || raw.MessageID == "" {
+		return StudioJob{}, ErrStudioUnsure
 	}
 	return StudioJob{MessageID: raw.MessageID, ChatID: raw.ChatID, Status: raw.Status, Cost: raw.Cost}, nil
 }
