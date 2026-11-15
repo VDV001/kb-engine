@@ -81,6 +81,11 @@ desktop-windows: web
     rm -f desktop/setupwin/rsrc_windows_amd64.syso
     @ls -lh bin/windows/DVK-Setup.exe
 
+# DVK для Android (#622) — bin/android/DVK.apk, TWA над /m/ kb-сервера.
+# Запускать в своем Терминале: ключ подписи и пароль — в Связке ключей.
+android host="":
+    ./scripts/android-build.sh {{host}}
+
 # Окно с инспектором WebKit — bin/kb-inspect.app, не ставится (#505). Для
 # разбора, когда кнопка молчит: в kb.log консоли нет. В установленном окне
 # инспектора нет намеренно: консоль дала бы любому у незаблокированного Мака

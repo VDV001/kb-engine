@@ -1,0 +1,55 @@
+plugins {
+    id "com.android.application"
+}
+
+// Адрес kb-сервера, где живет /m/: -PdvkHost=… при сборке, иначе облачный
+// сервер владельца (project-kb-server-yandex).
+def dvkHost = project.findProperty("dvkHost") ?: "bbaual33m234ntffk5a7.containers.yandexcloud.net"
+
+android {
+    namespace "ru.daniilvdovin.dvk"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "ru.daniilvdovin.dvk"
+        minSdk 23
+        targetSdk 35
+        versionCode Integer.parseInt(project.findProperty("dvkVersionCode") ?: "1")
+        versionName project.findProperty("dvkVersionName") ?: "0.1.0"
+        manifestPlaceholders = [
+            hostName  : dvkHost,
+            defaultUrl: "https://" + dvkHost + "/m/",
+        ]
+        resValue "string", "asset_statements",
+            "[{ \\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], \\\"target\\\": { \\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://" + dvkHost + "\\\" } }]"
+    }
+
+    // Ключ выпуска — вне репозитория, пароль из Связки ключей (scripts/android-build.sh).
+    signingConfigs {
+        release {
+            storeFile System.getenv("DVK_KEYSTORE") ? file(System.getenv("DVK_KEYSTORE")) : null
+            storePassword System.getenv("DVK_KEYSTORE_PASSWORD")
+            keyAlias "dvk"
+            keyPassword System.getenv("DVK_KEYSTORE_PASSWORD")
+            storeType "pkcs12"
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig System.getenv("DVK_KEYSTORE") ? signingConfigs.release : null
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    // Библиотека Google для TWA: запуск, проверка Digital Asset Links, запасной
+    // вариант без Chrome. Apache 2.0.
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+}

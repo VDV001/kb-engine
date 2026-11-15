@@ -39,6 +39,8 @@ type askFn func(ctx context.Context, chat, question string) (string, string, err
 type mailWorker struct {
 	settings *folderSettings
 	ask      askFn
+	answer   answerFn          // ход модели с метками «взято»; nil — ask без меток
+	find     mailrelay.Finder  // поиск с телефона; nil — отказ словами
 	dir      string            // где лежат mail-<id>.json
 	changed  func(chat string) // ответ записан в чат окна: странице перечитать список и чат
 	logf     func(string, ...any)
@@ -149,12 +151,27 @@ func (w *mailWorker) tickServer(ctx context.Context, id string) error {
 	relay := mailrelay.Relay{
 		Box:     mailBox{c.client},
 		Crypto:  mailSeal{key: c.key, sender: sender},
-		Asker:   askerFunc(w.askAndTell),
+		Asker:   workerAsker{w},
+		Finder:  w.finder(),
 		Store:   file,
 		KeyID:   hex.EncodeToString(keyID[:]),
 		MaxText: mailMaxText,
+
+		FindTimeout: phoneFindTimeout,
 	}
 	return relay.Tick(ctx)
+}
+
+// phoneFindTimeout bounds one search or open for the phone: работник один на
+// все серверы, подвисший источник или огромный PDF не держат его круг.
+const phoneFindTimeout = time.Minute
+
+// finder is the phone's search, или отказ словами, если окно собрано без него.
+func (w *mailWorker) finder() mailrelay.Finder {
+	if w.find == nil {
+		return phoneSearchOff{}
+	}
+	return w.find
 }
 
 func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (string, string, error) {
@@ -165,10 +182,26 @@ func (w *mailWorker) askAndTell(ctx context.Context, chat, question string) (str
 	return id, answer, err
 }
 
-type askerFunc askFn
+// answerFn runs a model turn and tells where the answer came from.
+type answerFn func(ctx context.Context, chat, question string) (mailrelay.Answer, error)
 
-func (f askerFunc) Ask(ctx context.Context, chat, question string) (string, string, error) {
-	return f(ctx, chat, question)
+// workerAsker is the relay's model: с метками «взято», когда окно их знает.
+type workerAsker struct{ w *mailWorker }
+
+func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, string, error) {
+	return a.w.askAndTell(ctx, chat, question)
+}
+
+func (a workerAsker) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
+	if a.w.answer == nil {
+		c, text, err := a.Ask(ctx, chat, question)
+		return mailrelay.Answer{Chat: c, Text: text}, err
+	}
+	ans, err := a.w.answer(ctx, chat, question)
+	if err == nil {
+		a.w.changed(ans.Chat)
+	}
+	return ans, err
 }
 
 // chatAsker runs a quiet turn in the window's chat: без кусков на страницу —
@@ -179,20 +212,29 @@ func (f askerFunc) Ask(ctx context.Context, chat, question string) (string, stri
 // телефону (до askTimeout), вопрос человека в окне ждет со своим «думаю».
 // Путь апгрейда — замок на чат, а не на все чаты.
 func chatAsker(d *chatDesk) askFn {
+	answer := chatAnswerer(d)
 	return func(ctx context.Context, chat, question string) (string, string, error) {
+		a, err := answer(ctx, chat, question)
+		return a.Chat, a.Text, err
+	}
+}
+
+// chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
+func chatAnswerer(d *chatDesk) answerFn {
+	return func(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
 			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
 		}
 		if err != nil {
-			return "", "", err
+			return mailrelay.Answer{}, err
 		}
-		answer := ""
+		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec)}
 		if n := len(rec.Messages); n > 0 {
-			answer = rec.Messages[n-1].Text
+			a.Text = rec.Messages[n-1].Text
 		}
-		return rec.ID, answer, nil
+		return a, nil
 	}
 }
 

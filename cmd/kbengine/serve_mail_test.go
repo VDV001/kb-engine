@@ -273,3 +273,34 @@ func TestMailLimitsForgetIdle(t *testing.T) {
 		t.Errorf("%d limiters kept after an idle hour, want only the fresh one", n)
 	}
 }
+
+// Страница телефона — без токена (статика без данных), но только она: соседние
+// пути по-прежнему за токеном (#622, этап 4).
+func TestTenantsServeThePhonePage(t *testing.T) {
+	f := newTenants(t)
+	if rec := do(f.h, http.MethodGet, "/m/", "", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "app.js") {
+		t.Fatalf("/m/ without a token: %d %.80s", rec.Code, rec.Body.String())
+	}
+	if rec := do(f.h, http.MethodGet, "/m/crypto.js", "", ""); rec.Code != http.StatusOK {
+		t.Errorf("/m/crypto.js: %d", rec.Code)
+	}
+	for _, p := range []string{"/mail", "/m2/", "/api/mail"} {
+		if rec := do(f.h, http.MethodGet, p, "", ""); rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s without a token: %d, want 401", p, rec.Code)
+		}
+	}
+}
+
+// assetlinks.json приложения Android — без токена, из KB_ANDROID_APP; не задано — 404.
+func TestTenantsServeAssetLinks(t *testing.T) {
+	fp := "D1:32:A9:ED:B6:87:63:E7:0A:97:F5:54:3D:DE:0F:27:AB:42:BE:21:B7:52:64:32:E8:B4:73:11:DD:24:EA:9E"
+	t.Setenv("KB_ANDROID_APP", "ru.daniilvdovin.dvk:"+fp)
+	f := newTenants(t)
+	if rec := do(f.h, http.MethodGet, "/.well-known/assetlinks.json", "", ""); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), fp) {
+		t.Fatalf("assetlinks: %d %.120s", rec.Code, rec.Body.String())
+	}
+	t.Setenv("KB_ANDROID_APP", "")
+	if rec := do(newTenants(t).h, http.MethodGet, "/.well-known/assetlinks.json", "", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("без KB_ANDROID_APP: %d", rec.Code)
+	}
+}

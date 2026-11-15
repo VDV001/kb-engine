@@ -1,0 +1,186 @@
+/* Страница телефона DVK (#622): язык окна DVK — токены --z-* из
+   desktop/frontend/style.css, JetBrains Mono, сетка точек, линии 1px, углы 3px,
+   спектр на знаке и подчеркиваниях. Макет: outputs/2026-11-15_dvk-devices-mockup.html.
+   Телефон — одна колонка, планшет от 900px — две (решение владельца 15.11). */
+@font-face { font-family: "JetBrains Mono"; src: url(fonts/JetBrainsMono-Regular.woff2) format("woff2"); font-weight: 400; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url(fonts/JetBrainsMono-Bold.woff2) format("woff2"); font-weight: 700; font-display: swap; }
+
+:root {
+  color-scheme: dark;
+  --z-bg: #0b0b0c; --z-bg-2: #111113; --z-bg-3: #161618;
+  --z-ink: #e6e6e6; --z-ink-2: #c4c4c6; --z-muted: #9a9a9c; --z-faint: #808084;
+  --z-rule: #232326; --z-rule-2: #54545a;
+  --z-accent: #5e8fd0; --z-accent-hi: #8fb2e3; --z-accent-ink: #0b0b0c; --z-accent-wash: #5e8fd024;
+  --z-ok: #8fc79a; --z-bad: #d98a8a; --z-warn: #e8b84a; --z-warn-wash: #e8b84a1f;
+  --z-sp1: #e8b84a; --z-sp2: #e8925a; --z-sp3: #e07070; --z-sp4: #5e8fd0; --z-sp5: #5fb0d8; --z-sp6: #8fc79a;
+  --z-teal: #5fc4b8; --z-violet: #a98fd8;
+  --z-dot: rgb(128 128 132 / .40);
+  --z-font: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --z-radius: 3px;
+  --sp-all: linear-gradient(90deg, var(--z-sp1), var(--z-sp2), var(--z-sp3), var(--z-sp4), var(--z-sp5), var(--z-sp6));
+  --sp-cool: linear-gradient(100deg, var(--z-sp4), var(--z-sp5), var(--z-sp6));
+  --top: 52px;
+}
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --z-bg: #fff; --z-bg-2: #f6f6f7; --z-bg-3: #ececee;
+    --z-ink: #17171a; --z-ink-2: #2f2f34; --z-muted: #55555a; --z-faint: #6e6e74;
+    --z-rule: #e2e2e5; --z-rule-2: #a8a8ae;
+    --z-accent: #2f6fd0; --z-accent-hi: #1f55a8; --z-accent-ink: #fff; --z-accent-wash: #2f6fd01a;
+    --z-ok: #1e7f45; --z-bad: #b3261e; --z-warn: #8a5d00; --z-warn-wash: #f0a5001f;
+    --z-dot: rgb(128 128 132 / .30);
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  background-color: var(--z-bg);
+  background-image: radial-gradient(circle at 1px 1px, var(--z-dot) 1px, transparent 1.5px);
+  background-size: 24px 24px;
+  color: var(--z-ink); font: 14px/1.55 var(--z-font);
+  -webkit-font-smoothing: antialiased; -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--z-accent); outline-offset: 2px; }
+.defs { position: absolute; }
+.muted { color: var(--z-muted); font-size: 12px; margin: 0; }
+.eyebrow { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--z-faint); }
+
+/* знак */
+.mark { width: 26px; height: 26px; flex: none; }
+.mark.big { width: 64px; height: 64px; }
+#dvk .lobe { fill: url(#spec); }
+#dvk .cut { fill: none; stroke: var(--z-bg); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.sp1 { stop-color: var(--z-sp1); } .sp2 { stop-color: var(--z-sp2); } .sp3 { stop-color: var(--z-sp3); }
+.sp4 { stop-color: var(--z-sp4); } .sp5 { stop-color: var(--z-sp5); } .sp6 { stop-color: var(--z-sp6); }
+
+/* кнопки и поля: 44px под палец */
+.btn { min-height: 44px; padding: 0 16px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg); display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.btn.primary { background: var(--z-accent); border-color: var(--z-accent); color: var(--z-accent-ink); font-weight: 700; }
+.btn.wide { width: 100%; }
+.btn.bad { color: var(--z-bad); border-color: color-mix(in srgb, var(--z-bad) 50%, transparent); }
+.btn:disabled { opacity: .5; }
+
+/* привязка */
+.pair { min-height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 22px; max-width: 460px; margin: 0 auto;
+  padding: calc(24px + env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left)); }
+.hero { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.wm { font-size: 28px; font-weight: 700; letter-spacing: .04em; background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.sub { font-size: 11px; color: var(--z-faint); letter-spacing: .12em; }
+.steps { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; counter-reset: s; font-size: 13px; color: var(--z-ink-2); }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 24px 1fr; gap: 10px; }
+.steps li::before { content: counter(s); width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--z-rule-2); border-radius: 50%; font-size: 11px; color: var(--z-muted); }
+.note { font-size: 12px; color: var(--z-faint); text-align: center; margin: 0; }
+
+/* каркас: телефон — один экран, side или main */
+.shell { height: 100%; display: flex; }
+.side, .main { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; }
+.shell[data-screen="main"] .side { display: none; }
+.shell[data-screen="side"] .main { display: none; }
+
+.top { position: sticky; top: 0; z-index: 2; flex: none; display: flex; align-items: center; gap: 10px;
+  min-height: calc(var(--top) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) max(16px, env(safe-area-inset-right)) 0 max(16px, env(safe-area-inset-left));
+  background: var(--z-bg); border-bottom: 1px solid var(--z-rule); }
+.word { flex: none; margin-right: auto; font-size: 18px; font-weight: 700; letter-spacing: .02em; background: var(--sp-all); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.top h1 { flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.back { display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin-left: -10px; padding: 0 6px; border: 0; background: none; color: var(--z-accent-hi); cursor: pointer; }
+.back svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* значок компьютера: зеленый — на связи, янтарь — спит */
+.pc { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border: 1px solid var(--z-rule-2); border-radius: 15px; background: none; font-size: 11px; color: var(--z-ink-2); white-space: nowrap; cursor: pointer; max-width: 58%; overflow: hidden; text-overflow: ellipsis; }
+.pc::before { content: ""; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--z-faint); }
+.pc.on::before { background: var(--z-ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--z-ok) 22%, transparent); }
+.pc.off::before { background: var(--z-warn); box-shadow: 0 0 0 3px var(--z-warn-wash); }
+
+.pane, .view { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; gap: 14px;
+  padding: 16px max(16px, env(safe-area-inset-right)) 16px max(16px, env(safe-area-inset-left)); }
+
+/* списки */
+.rows { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--z-rule); }
+.rows button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 12px 2px; border: 0; border-bottom: 1px solid var(--z-rule); background: none; text-align: left; cursor: pointer; min-width: 0; }
+.rows .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.rows .s { grid-column: 1 / -1; color: var(--z-muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rows .tm { color: var(--z-faint); font-size: 11px; }
+.rows .s.wait { color: var(--z-warn); }
+.rows button[aria-current="true"] { background: var(--z-bg-3); box-shadow: inset 2px 0 var(--z-accent); padding-left: 10px; }
+.res button { grid-template-columns: 56px 1fr; }
+.res .ty { grid-row: span 2; font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--z-teal); padding-top: 3px; overflow: hidden; text-overflow: ellipsis; }
+.res .ty.kb { color: var(--z-violet); }
+.res .s { grid-column: 2; }
+
+/* поиск */
+.field { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 12px; border: 1px solid var(--z-accent); border-radius: var(--z-radius); background: var(--z-bg-2); }
+.field .d { color: var(--z-sp4); } .field .c { color: var(--z-muted); white-space: nowrap; }
+.field input { flex: 1; min-width: 0; border: 0; background: none; color: var(--z-ink); font: inherit; font-size: 16px; outline: none; } /* 16px: iOS не увеличивает страницу при фокусе */
+.chips-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.chips-row button { min-height: 32px; padding: 0 10px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: none; color: var(--z-muted); font-size: 12px; cursor: pointer; }
+.chips-row button[aria-pressed="true"] { border-color: var(--z-accent); color: var(--z-ink); background: var(--z-accent-wash); }
+
+/* нижние разделы — только телефон */
+.tabs { flex: none; display: grid; grid-template-columns: 1fr 1fr; border-top: 1px solid var(--z-rule); background: var(--z-bg); padding-bottom: env(safe-area-inset-bottom); }
+.tabs button { min-height: 56px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border: 0; background: none; font-size: 11px; color: var(--z-faint); position: relative; cursor: pointer; }
+.tabs svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.tabs button[aria-current="page"] { color: var(--z-ink); }
+.tabs button[aria-current="page"]::before { content: ""; position: absolute; top: -1px; left: 30%; right: 30%; height: 2px; background: var(--sp-all); }
+
+/* чат */
+.msgs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 14px; flex: 1; }
+.msgs li { white-space: pre-wrap; overflow-wrap: anywhere; }
+.msgs .me { align-self: flex-end; max-width: 86%; padding: 10px 12px; border: 1px solid var(--z-accent); border-radius: var(--z-radius); }
+.msgs .me.unsent { border-style: dashed; border-color: var(--z-warn); }
+.msgs .me .meta { display: block; margin-top: 6px; color: var(--z-warn); font-size: 11px; }
+.msgs .desk { display: flex; flex-direction: column; gap: 8px; }
+.msgs .error { color: var(--z-bad); padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--z-bad) 50%, transparent); border-radius: var(--z-radius); }
+.msgs .wait { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border: 1px dashed var(--z-rule-2); border-radius: var(--z-radius); color: var(--z-muted); font-size: 12px; }
+.spin { width: 12px; height: 12px; flex: none; border-radius: 50%; border: 2px solid var(--z-rule-2); border-top-color: var(--z-accent); animation: spin 1s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 11px; }
+.chips .k { color: var(--z-faint); }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 0 9px; border: 1px solid color-mix(in srgb, var(--c) 55%, transparent); border-radius: 12px; color: var(--z-ink-2); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; --c: var(--z-sp4); }
+.chip::before { content: ""; flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--c); }
+.chip.doc { --c: var(--z-teal); }
+.chip.web { --c: var(--z-sp1); border-style: dashed; }
+.chip.docs { --c: var(--z-violet); }
+
+.banner { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--z-warn) 55%, transparent); background: var(--z-warn-wash); border-radius: var(--z-radius); font-size: 12px; }
+.banner b { color: var(--z-warn); }
+
+.cmp { position: sticky; bottom: 0; flex: none; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px 6px; margin: 0 -4px; border-radius: 4px; border: 1px solid transparent;
+  background: linear-gradient(var(--z-bg-2), var(--z-bg-2)) padding-box, var(--sp-cool) border-box; }
+.cmp textarea { resize: none; border: 0; background: none; color: var(--z-ink); font: inherit; font-size: 16px; line-height: 1.45; outline: none; max-height: 40vh; min-height: 24px; }
+.cmp .bar { display: flex; align-items: center; gap: 8px; }
+.cmp .sp { flex: 1; color: var(--z-faint); font-size: 11px; }
+.cmp .send { width: 44px; height: 40px; display: grid; place-items: center; border: 0; border-radius: var(--z-radius); background: var(--z-accent); color: var(--z-accent-ink); cursor: pointer; }
+.cmp .send:disabled { opacity: .5; }
+.cmp .send svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* документ и компьютер */
+.doc-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 13px; color: var(--z-ink-2); }
+.card { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--z-rule); border-radius: var(--z-radius); background: var(--z-bg-2); }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; font-size: 12px; }
+.kv dt { color: var(--z-faint); }
+.kv dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.kv .ok { color: var(--z-ok); } .kv .off { color: var(--z-warn); }
+.empty-main { align-items: center; justify-content: center; text-align: center; }
+
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 5; max-width: min(92vw, 520px); margin: 0;
+  padding: 10px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg-3); font-size: 12px; color: var(--z-bad); }
+.toast.ok { color: var(--z-ok); }
+/* в чате внизу поле ввода, а не вкладки: плашка над ним, иначе закрывает его */
+body[data-view="chat"] .toast { bottom: calc(124px + env(safe-area-inset-bottom)); }
+
+/* планшет: две колонки (решение владельца 15.11) */
+@media (min-width: 900px) {
+  .shell[data-screen] .side, .shell[data-screen] .main { display: flex; }
+  .side { flex: 0 0 340px; border-right: 1px solid var(--z-rule); background: var(--z-bg); }
+  .main .back, #desk-main { display: none; } /* на планшете значок компьютера — в колонке списка */
+  .main .view { padding-inline: max(40px, env(safe-area-inset-right)); }
+  .msgs .me, .msgs .desk, .doc-text, #doc-ask { max-width: 680px; }
+  .msgs .me { max-width: 560px; }
+}
+@media (max-width: 899px) { .empty-main { display: none !important; } }
+@media (prefers-reduced-motion: reduce) { .spin { animation: none; } }

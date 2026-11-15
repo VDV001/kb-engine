@@ -1,0 +1,20 @@
+// DVK для Android (#622; решение владельца 15.11: свой APK, полноэкранный TWA).
+// Приложение — Trusted Web Activity над страницей /m/ kb-сервера: Chrome
+// рисует страницу во весь экран, хранилище общее с Chrome — привязка QR
+// камерой работает и в приложении. Сборка: just android (scripts/android-build.sh).
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+rootProject.name = "dvk"
+include ":app"

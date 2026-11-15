@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -257,6 +258,58 @@ func TestChatSources_FilesAndRead(t *testing.T) {
 		if _, err := d.read(context.Background(), bad); err == nil {
 			t.Errorf("read(%q) принят", bad)
 		}
+	}
+}
+
+// Поиски с телефона не вытесняют выдачу модели окна: запись, найденная чатом
+// окна, читается и после того, как телефон искал (ревью #636).
+func TestPhoneSearchKeepsWindowSeen(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "tz.md"), "Техническое задание: срок поставки 45 дней")
+	_, x, err := newAPI(desktopconfig.Config{Roots: []string{root}}, "", extraction{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	x.start(t.Context())
+	waitIdle(t, x)
+	d, _, _, _ := newTestChatDesk(t)
+	d.useSources(x.files)
+	full := make([]chat.Doc, maxSeenEntries+1) // выдача окна у предела
+	for i := range full {
+		full[i] = chat.Doc{Ref: fmt.Sprintf("kb:base:%d", i), Title: "запись"}
+	}
+	d.remember(full)
+	f := newPhoneFinder(d.find, d.openFound)
+	hits, err := f.Search(t.Context(), "поставки")
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("поиск телефона: %+v, %v", hits, err)
+	}
+	if _, err := d.read(t.Context(), "kb:base:0"); err != nil {
+		t.Fatalf("выдача окна вытеснена поиском телефона: %v", err)
+	}
+	if doc, err := f.Open(t.Context(), hits[0].Ref); err != nil || !strings.Contains(doc.Text, "45 дней") {
+		t.Fatalf("телефон не открыл найденное: %+v, %v", doc, err)
+	}
+}
+
+// Ссылку из записи kb-сервера телефон не заставит Мак скачать (внутренняя
+// сеть, закрытый документ): открывается запись как найдена (ревью
+// безопасности #636). Окно, как и прежде, читает ссылку само.
+func TestPhoneOpenDoesNotFetchRecordLinks(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	d.useSources(nil)
+	var fetched []string
+	d.attach = func(_ context.Context, ref string) (chat.Doc, error) {
+		fetched = append(fetched, ref)
+		return chat.Doc{Ref: ref, Text: "страница роутера"}, nil
+	}
+	rec := chat.Doc{Ref: "url:http://192.168.1.1/admin", Title: "запись", Text: "Адрес: http://192.168.1.1/admin", SourceID: "team"}
+	got, err := d.openFound(t.Context(), rec)
+	if err != nil || len(fetched) != 0 || got.Text != rec.Text {
+		t.Fatalf("телефон скачал ссылку записи: %+v, %v, скачано %q", got, err, fetched)
+	}
+	if _, err := d.open(t.Context(), rec); err != nil || len(fetched) != 1 {
+		t.Fatalf("окно не читает ссылку: %v, скачано %q", err, fetched)
 	}
 }
 
