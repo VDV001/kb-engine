@@ -205,3 +205,24 @@ func revokeOnlyPerson(t *testing.T, s blob.Store, id domain.UserID) error {
 	_, err = s.Put(t.Context(), userauth.RegistryKey, b, o.ETag)
 	return err
 }
+
+// Частый опрос одного токена — 429, а соседу это не мешает (ревью #630, V2).
+func TestMailRateLimit(t *testing.T) {
+	f := newTenants(t)
+	limited := 0
+	for range 3 * mailBurst {
+		rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokA)
+		if rec.Code == http.StatusTooManyRequests {
+			limited++
+			if rec.Header().Get("Retry-After") == "" {
+				t.Fatal("429 without Retry-After")
+			}
+		}
+	}
+	if limited == 0 {
+		t.Fatalf("%d requests in a row, none limited", 3*mailBurst)
+	}
+	if rec := do(f.h, http.MethodGet, "/api/mail?after=0", "", f.tokB); rec.Code != http.StatusOK {
+		t.Errorf("B limited by A: %d", rec.Code)
+	}
+}
