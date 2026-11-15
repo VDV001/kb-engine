@@ -269,6 +269,12 @@ func Describe(err error) string {
 		return "сервер перенаправил запрос, а kb не идет по редиректам с токеном — укажите конечный адрес (https://…)"
 	case errors.Is(err, ErrTooLarge):
 		return "выдача сервера больше 32 МБ — уточните запрос"
+	case errors.Is(err, ErrNoSuchPhone):
+		return "такого телефона нет: его уже отвязали — обновите список"
+	case errors.Is(err, ErrMailRefused) && strings.Contains(err.Error(), "too many phones"):
+		return "привязано наибольшее число телефонов — отвяжите ненужный"
+	case errors.Is(err, ErrMailRefused):
+		return "ящик kb-сервера отказал: " + strings.TrimSpace(strings.TrimPrefix(err.Error(), ErrMailRefused.Error()+":")) + " — повторите"
 	case errors.Is(err, ErrNoMailbox):
 		return "на kb-сервере нет ящика для телефона — нужен сервер с людьми (serve --tenants), обновленный до версии с ящиком"
 	case errors.Is(err, ErrRejected):

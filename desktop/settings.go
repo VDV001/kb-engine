@@ -98,7 +98,8 @@ type folderSettings struct {
 	tokens tokenStore
 	probe  probeFunc
 	// mailHTTP и qr — ящик телефонов на kb-сервере и рисование QR
-	// (mailphones.go); nil — настоящие: клиент с таймаутом и CoreImage.
+	// (mailphones.go); nil — настоящие: клиент kbserver (срок задает контекст
+	// mailTimeout) и CoreImage.
 	mailHTTP *http.Client
 	qr       func(text string) ([]byte, error)
 	mailMu   sync.Mutex // привязка и отвязка по одной: ключ чата рождается один

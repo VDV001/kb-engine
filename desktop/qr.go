@@ -3,12 +3,13 @@ package main
 import "errors"
 
 var (
-	errQRTooLong    = errors.New("текст не помещается в QR")
-	errQRUnreadable = errors.New("нарисованный QR не читается — привязка не показана")
+	errQRUnsupported = errors.New("QR пока рисуется только на macOS: привяжите телефон с Мака")
+	errQRTooLong     = errors.New("текст не помещается в QR")
+	errQRUnreadable  = errors.New("нарисованный QR не читается — привязка не показана")
 )
 
-// qrAvailable says whether this build draws QR; тест подменяет. Заготовка.
-var qrAvailable = func() bool { return true }
+// qrAvailable says whether this build draws QR; тест подменяет.
+var qrAvailable = qrSupported
 
 // qrScale — точек экрана на модуль QR: адрес с токеном и ключом — версия 7-8
 // (45-49 модулей), картинка ~400 точек.

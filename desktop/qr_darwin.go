@@ -16,6 +16,8 @@ import (
 	"unsafe"
 )
 
+func qrSupported() bool { return true }
+
 // qrEncode draws text with CoreImage (CIQRCodeGenerator, коррекция M): без
 // сторонних библиотек, решение владельца 15.11.
 func qrEncode(text string, scale int) ([]byte, error) {

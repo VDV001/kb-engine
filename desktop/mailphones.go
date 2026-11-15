@@ -10,7 +10,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"net/http"
 	"strings"
 	"time"
 
@@ -44,29 +43,32 @@ func (f *folderSettings) mailClient(id string) (kbserver.Client, error) {
 	if url == "" {
 		return kbserver.Client{}, errMailNoServer
 	}
-	hc := f.mailHTTP
-	if hc == nil {
-		hc = &http.Client{}
-	}
-	return kbserver.Client{URL: url, Token: f.token(id), HTTP: hc}, nil
+	return kbserver.Client{URL: url, Token: f.token(id), HTTP: f.mailHTTP}, nil
 }
 
 func mailErr(err error) error { return humanErr{"kb-сервер: " + serverMessage(err), err} }
 
-// mailKey returns the chat key of server id, creating it on first pairing;
-// created — ключ новый, и откат обязан его убрать.
-func (f *folderSettings) mailKey(id string) (mailcrypt.Key, bool, error) {
+// mailKey returns the chat key for the next phone; created — ключ новый, и
+// откат обязан его убрать. Телефонов на сервере нет — ключ всегда новый,
+// как бы ни ушли прежние (отвязка без чтения списка, users revoke, другое окно,
+// другой сервер под тем же id): иначе новый телефон получил бы ключ, который
+// лежит в отвязанном (ревью #633). Испорченный ключ при нуле телефонов тоже
+// просто заменяется.
+func (f *folderSettings) mailKey(id string, phones int) (mailcrypt.Key, bool, error) {
 	acct := mailKeyAccount(id)
-	stored, err := f.tokens.Get(acct)
-	switch {
-	case err == nil:
+	if phones > 0 {
+		stored, err := f.tokens.Get(acct)
+		switch {
+		case errors.Is(err, keychain.ErrNotFound):
+			return mailcrypt.Key{}, false, errors.New("ключа чата нет в Связке ключей, а телефоны привязаны — отвяжите их и привяжите заново")
+		case err != nil:
+			return mailcrypt.Key{}, false, humanErr{keychainNote, err}
+		}
 		k, err := mailcrypt.ParseKey(stored)
 		if err != nil {
 			return mailcrypt.Key{}, false, fmt.Errorf("ключ чата в Связке ключей испорчен — отвяжите все телефоны и привяжите заново: %w", err)
 		}
 		return k, false, nil
-	case !errors.Is(err, keychain.ErrNotFound):
-		return mailcrypt.Key{}, false, humanErr{keychainNote, err}
 	}
 	k := mailcrypt.NewKey()
 	if err := f.tokens.Set(acct, k.Encode()); err != nil {
@@ -81,11 +83,24 @@ func (f *folderSettings) mailKey(id string) (mailcrypt.Key, bool, error) {
 func (f *folderSettings) MailPairPhone(id string) (phonePairing, error) {
 	f.mailMu.Lock() // две привязки разом не родят два ключа
 	defer f.mailMu.Unlock()
+	draw := f.qr
+	if draw == nil {
+		if !qrAvailable() {
+			return phonePairing{}, errQRUnsupported // до ключа и телефона: отказ известен заранее
+		}
+		draw = qrPNG
+	}
 	c, err := f.mailClient(id)
 	if err != nil {
 		return phonePairing{}, err
 	}
-	key, created, err := f.mailKey(id)
+	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
+	defer cancel()
+	have, err := c.Phones(ctx)
+	if err != nil {
+		return phonePairing{}, mailErr(err)
+	}
+	key, created, err := f.mailKey(id, len(have))
 	if err != nil {
 		return phonePairing{}, err
 	}
@@ -94,20 +109,20 @@ func (f *folderSettings) MailPairPhone(id string) (phonePairing, error) {
 			_ = f.tokens.Delete(mailKeyAccount(id))
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), mailTimeout)
-	defer cancel()
 	dev, tok, err := c.AddPhone(ctx)
 	if err != nil {
 		undoKey()
 		return phonePairing{}, mailErr(err)
 	}
-	draw := f.qr
-	if draw == nil {
-		draw = qrPNG
-	}
 	png, err := draw(strings.TrimRight(c.URL, "/") + "/m/#pair=" + tok + "." + key.Encode())
 	if err != nil {
-		_ = c.RevokePhone(ctx, dev) // токен, которого никто не увидит, не должен открывать ящик
+		// Токен, которого никто не увидит, не должен открывать ящик. Свой срок:
+		// AddPhone мог потратить почти весь общий (ревью #633).
+		undoCtx, undoCancel := context.WithTimeout(context.Background(), mailTimeout)
+		defer undoCancel()
+		if rerr := c.RevokePhone(undoCtx, dev); rerr != nil {
+			return phonePairing{}, humanErr{fmt.Sprintf("QR не нарисован, и телефон %s остался привязан — отвяжите его в списке", dev), errors.Join(err, rerr)}
+		}
 		undoKey()
 		return phonePairing{}, err
 	}

@@ -101,10 +101,10 @@ func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[
 	for _, s := range next.Sources {
 		urls[s.ID] = s.URL
 	}
-	dropped := map[string]string{}
+	dropped := map[string]string{} // учетка → секрет: токены и ключи чата
 	undo := func() {
-		for id, tok := range dropped {
-			_ = f.tokens.Set(id, tok)
+		for acct, secret := range dropped {
+			_ = f.tokens.Set(acct, secret)
 		}
 	}
 	for _, s := range prev.WithSources().Sources {
@@ -115,6 +115,10 @@ func (f *folderSettings) dropTokens(prev, next desktopconfig.Config, tokens map[
 		_, fresh := tokens[s.ID]
 		if kept && (url == s.URL || fresh) {
 			continue
+		}
+		if err := f.dropMailKey(s.ID, dropped); err != nil {
+			undo()
+			return nil, err
 		}
 		old, err := f.tokens.Get(s.ID)
 		switch {
@@ -254,6 +258,21 @@ func (f *folderSettings) savedURL(id string) string {
 		}
 	}
 	return ""
+}
+
+// dropMailKey removes the phone chat key (#622) of a server that leaves:
+// телефоны нового хоста не должны получить ключ, который лежит в телефонах
+// старого. Удаленное попадает в dropped — откат вернет.
+func (f *folderSettings) dropMailKey(id string, dropped map[string]string) error {
+	key, err := f.tokens.Get(mailKeyAccount(id))
+	if err != nil {
+		return nil //nolint:nilerr // нет ключа или Связка не прочлась — нечего убирать; привязка все равно возьмет новый при нуле телефонов
+	}
+	if err := f.tokens.Delete(mailKeyAccount(id)); err != nil {
+		return fmt.Errorf("ключ чата не удален из Связки ключей: %w", err)
+	}
+	dropped[mailKeyAccount(id)] = key
+	return nil
 }
 
 // keychainTokens is the production token store.

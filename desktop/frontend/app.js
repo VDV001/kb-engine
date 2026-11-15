@@ -1333,7 +1333,7 @@ async function renderConnections(fresh) {
     const share = CHAT_CONN[r.kind] ? `<button class="btn" data-conn-share="${esc(r.id)}" data-on="${!r.share}"${mkTip(r.share ? "Чату разрешено" : "Чату запрещено", r.share ? `модель чата видит ${what}, они уходят ее провайдеру; нажмите — запретить` : `модель чата не видит ${what}; нажмите — разрешить: ${r.kind === "mpstats" ? "категории и продажи рынка" : "названия товаров, заказы и продажи"} уйдут провайдеру модели`)}>${r.share ? "Чату: запретить" : "Чату: разрешить"}</button>` : "";
     const chk = `<button class="btn" data-conn-check="${esc(r.id)}"${mkTip("Проверить", "живой запрос туда, куда ходит подключение: принят ли ключ или вход, отвечает ли сервер")}>Проверить</button>`;
     const go = r.kind === "ozon" && shop && r.enabled ? `<button class="btn" data-conn-shop="${esc(r.id)}"${mkTip("Открыть «Магазин»", "«Маркеты» → «Магазин» с этим кабинетом")}>Открыть «Магазин»</button>` : "";
-    const phones = r.kind === "kbserver" && r.ok ? `<button class="btn" data-conn-phones="${esc(r.id)}"${mkTip("Телефоны", "чат DVK с телефона через ящик этого kb-сервера: привязать QR-кодом, посмотреть, отвязать")}>Телефоны</button>` : "";
+    const phones = r.kind === "kbserver" && r.ok ? `<button class="btn"${connPhones[r.id]?.busy ? " disabled" : ""} data-conn-phones="${esc(r.id)}"${mkTip("Телефоны", "чат DVK с телефона через ящик этого kb-сервера: привязать QR-кодом, посмотреть, отвязать")}>Телефоны</button>` : "";
     const acts = r.own
       ? `${chk}${share}${go}`
       : `${chk}${phones}<button class="btn" data-go-sec="${esc(r.section)}" data-go-id="${esc(r.id)}"${mkTip("Изменить", "открыть раздел, где подключение правится")}>Изменить</button>`;
@@ -1365,18 +1365,26 @@ async function renderConnections(fresh) {
 function phonesPanel(id) {
   const p = connPhones[id];
   if (!p) return "";
-  const rows = (p.list || []).map((x) => `<li><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small><button class="lnk bad" type="button" data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
+  const off = p.busy ? " disabled" : ""; // пока идет запрос, панель не трогают: второй щелчок — второй запрос (ревью #633)
+  const rows = (p.list || []).map((x) => `<li><div><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small></div><button class="lnk bad" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
   return `<div class="conn-phones">
     <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Страница для телефона — следующий этап (#622): сейчас код только привязывает телефон к ящику.</p>
     ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
     ${p.list ? (rows ? `<ul class="conn-phone-list">${rows}</ul>` : `<p class="d">Привязанных телефонов нет.</p>`) : ""}
-    ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button" data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}
-    <div class="mk-cn-acts"><button class="btn primary" type="button" data-phone-pair="${esc(id)}"${p.busy ? " disabled" : ""}>Подключить телефон</button><button class="lnk" type="button" data-phones-close="${esc(id)}">Свернуть</button></div>
+    ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button"${off} data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}
+    <div class="mk-cn-acts"><button class="btn primary" type="button"${off} data-phone-pair="${esc(id)}">Подключить телефон</button><button class="lnk" type="button"${off} data-phones-close="${esc(id)}">Свернуть</button></div>
   </div>`;
 }
+// loadPhones reads the list; ошибку действия, которое его вызвало (привязка,
+// отвязка), не стирает: ее сбрасывает только следующее действие (ревью #633).
 async function loadPhones(id) {
-  try { connPhones[id] = { ...connPhones[id], list: (await native().MailPhones(id)) || [], err: "" }; } catch (err) { connPhones[id] = { ...connPhones[id], list: null, err: errText(err) }; }
-  if (connPhones[id]) connPhones[id].busy = "";
+  let list = null, err = "";
+  try { list = (await native().MailPhones(id)) || []; } catch (e) { err = errText(e); }
+  const p = connPhones[id];
+  if (!p) return; // панель свернули, пока ждали
+  p.list = list ?? p.list;
+  p.err = p.err || err;
+  p.busy = "";
   return renderConnections();
 }
 // connClipTips: длинный адрес или список — одна строка с «…», целиком в подсказке (отзыв 15.11);
@@ -1439,7 +1447,9 @@ $("#conn-list").addEventListener("click", async (e) => {
     const id = pair.dataset.phonePair;
     connPhones[id] = { ...connPhones[id], busy: "привязываю телефон…", err: "", qr: "" };
     renderConnections();
-    try { connPhones[id].qr = (await native().MailPairPhone(id)).qr; } catch (err) { connPhones[id].err = errText(err); }
+    let qr = "", fail = "";
+    try { qr = (await native().MailPairPhone(id)).qr; } catch (err) { fail = errText(err); }
+    if (connPhones[id]) Object.assign(connPhones[id], { qr, err: fail });
     return loadPhones(id);
   }
   const rv = e.target.closest("[data-phone-revoke]");
@@ -1448,7 +1458,7 @@ $("#conn-list").addEventListener("click", async (e) => {
     hideTip();
     connPhones[id] = { ...connPhones[id], busy: "отвязываю…", err: "" };
     renderConnections();
-    try { await native().MailRevokePhone(id, rv.dataset.device); toast("Телефон отвязан", ` · «${name}»`, null, "info"); } catch (err) { connPhones[id].err = errText(err); }
+    try { await native().MailRevokePhone(id, rv.dataset.device); toast("Телефон отвязан", ` · «${name}»`, null, "info"); } catch (err) { if (connPhones[id]) connPhones[id].err = errText(err); }
     return loadPhones(id);
   }
   const ck = e.target.closest("[data-conn-check]");

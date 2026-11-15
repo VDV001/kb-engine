@@ -15,6 +15,13 @@ import (
 // людей (не serve --tenants) или сервер старше ящика. Адрес и токен верные.
 var ErrNoMailbox = errors.New("kbserver: no mailbox")
 
+// Отказы ящика по делу — обертки ErrRejected со своими словами в Describe:
+// общий совет ErrRejected «обновите до одной версии» здесь неверен (ревью #633).
+var (
+	ErrMailRefused = fmt.Errorf("%w: mailbox", ErrRejected)
+	ErrNoSuchPhone = fmt.Errorf("%w: no such phone", ErrRejected)
+)
+
 // Phone is a phone paired with the person's mailbox.
 type Phone struct {
 	Device string    `json:"device"`
@@ -49,7 +56,7 @@ func (c Client) Phones(ctx context.Context) ([]Phone, error) {
 func (c Client) RevokePhone(ctx context.Context, device string) error {
 	// 404 здесь — «такого телефона нет», а не «нет ящика»: путь ящика сервер знает.
 	return c.mail(ctx, http.MethodDelete, "/api/mail/devices/"+url.PathEscape(device), http.StatusNoContent,
-		fmt.Errorf("%w: no such phone", ErrRejected), nil)
+		ErrNoSuchPhone, nil)
 }
 
 // mail makes one mailbox request; want — код успеха, notFound — что значит 404.
@@ -73,7 +80,7 @@ func (c Client) mail(ctx context.Context, method, path string, want int, notFoun
 		return notFound
 	case http.StatusBadRequest, http.StatusConflict:
 		// Слова сервера: «too many phones» — человеку есть что сделать.
-		return fmt.Errorf("%w: %s", ErrRejected, strings.TrimSpace(string(body)))
+		return fmt.Errorf("%w: %s", ErrMailRefused, strings.TrimSpace(string(body)))
 	default:
 		if err := StatusErr(path, code); err != nil {
 			return err
