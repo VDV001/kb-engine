@@ -38,6 +38,7 @@ func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) htt
 		phones:   phones,
 		handlers: map[domain.UserID]http.Handler{},
 		limits:   map[string]*rate.Limiter{},
+		now:      time.Now,
 		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store, Seen: &mailbox.Seen{}}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
 			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
 	}
@@ -70,6 +71,7 @@ type tenants struct {
 
 	limitsMu gosync.Mutex
 	limits   map[string]*rate.Limiter // человек|сторона → предел частоты ящика
+	now      func() time.Time         // часы предела; тест их подменяет
 
 	mu       gosync.Mutex
 	handlers map[domain.UserID]http.Handler
@@ -150,7 +152,7 @@ func (t *tenants) allowMail(key string) bool {
 		t.limits[key] = l
 	}
 	t.limitsMu.Unlock()
-	return l.Allow()
+	return l.AllowN(t.now(), 1)
 }
 
 // handlerFor returns the person's handler, building it on first use. Сборка
