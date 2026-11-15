@@ -170,6 +170,8 @@ button { font: inherit; color: inherit; }
 .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(72px + env(safe-area-inset-bottom)); z-index: 5; max-width: min(92vw, 520px); margin: 0;
   padding: 10px 14px; border: 1px solid var(--z-rule-2); border-radius: var(--z-radius); background: var(--z-bg-3); font-size: 12px; color: var(--z-bad); }
 .toast.ok { color: var(--z-ok); }
+/* в чате внизу поле ввода, а не вкладки: плашка над ним, иначе закрывает его */
+body[data-view="chat"] .toast { bottom: calc(124px + env(safe-area-inset-bottom)); }
 
 /* планшет: две колонки (решение владельца 15.11) */
 @media (min-width: 900px) {

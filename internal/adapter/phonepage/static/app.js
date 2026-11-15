@@ -103,6 +103,7 @@ function show(follow) {
   if (ui.view === "chat" && !chat) ui.view = "";
   // Телефон — один экран: список или содержимое; планшет — оба (style.css).
   $("shell").dataset.screen = ui.view ? "main" : "side";
+  document.body.dataset.view = ui.view; // плашка ошибки над полем ввода чата (style.css)
   $("list-pane").hidden = ui.tab !== "list";
   $("search-pane").hidden = ui.tab !== "search";
   for (const b of document.querySelectorAll(".tabs [data-tab]")) {
