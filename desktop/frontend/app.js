@@ -1366,13 +1366,13 @@ function phonesPanel(id) {
   const p = connPhones[id];
   if (!p) return "";
   const off = p.busy ? " disabled" : ""; // пока идет запрос, панель не трогают: второй щелчок — второй запрос (ревью #633)
-  const rows = (p.list || []).map((x) => `<li><div><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small></div><button class="lnk bad" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
+  const rows = (p.list || []).map((x) => `<li><div><span>Телефон ${esc(x.device)}</span><small>привязан ${esc(x.at)}</small></div><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" data-device="${esc(x.device)}"${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button></li>`).join("");
   return `<div class="conn-phones">
     <p class="d">Чат с телефона: телефон пишет, задачу делает этот компьютер, переписка шифруется — ключ знают только окно и телефоны. Страница для телефона — следующий этап (#622): сейчас код только привязывает телефон к ящику.</p>
     ${p.err ? `<p class="conn-check bad" role="status">✕ ${esc(p.err)}</p>` : ""}${p.busy ? `<p class="conn-check" role="status">${esc(p.busy)}</p>` : ""}
     ${p.list ? (rows ? `<ul class="conn-phone-list">${rows}</ul>` : `<p class="d">Привязанных телефонов нет.</p>`) : ""}
     ${p.qr ? `<div class="conn-qr"><img src="${esc(p.qr)}" alt="QR-код привязки телефона"><p class="d">Наведите камеру телефона. В коде ключ чата: не показывайте его посторонним и скройте, когда телефон привязан.</p><button class="btn" type="button"${off} data-phone-qr-hide="${esc(id)}">Скрыть код</button></div>` : ""}
-    <div class="mk-cn-acts"><button class="btn primary" type="button"${off} data-phone-pair="${esc(id)}">Подключить телефон</button><button class="lnk" type="button"${off} data-phones-close="${esc(id)}">Свернуть</button></div>
+    <div class="mk-cn-acts"><button class="btn primary" type="button"${off} data-phone-pair="${esc(id)}">Подключить телефон</button><button class="btn" type="button"${off} data-phones-close="${esc(id)}">Свернуть</button></div>
   </div>`;
 }
 // loadPhones reads the list; ошибку действия, которое его вызвало (привязка,
