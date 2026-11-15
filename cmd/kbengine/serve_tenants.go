@@ -9,12 +9,15 @@ import (
 	"slices"
 	"strings"
 	gosync "sync" // имя sync в пакете main занято помощником теста `fin sync` (sync_test.go)
+	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/adapter/blob/blobfs"
 	"github.com/daniil/kb-engine/internal/adapter/httpapi"
+	"github.com/daniil/kb-engine/internal/adapter/mailbox"
 	"github.com/daniil/kb-engine/internal/adapter/userauth"
 	"github.com/daniil/kb-engine/internal/domain"
+	"github.com/daniil/kb-engine/internal/usecase/mail"
 )
 
 // tenantsHandler serves several people from one store, each from their own
@@ -26,11 +29,33 @@ import (
 // человека по токену и выбирает его обработчик. Фильтра «не показывать чужое»
 // нет нигде, потому что чужого в обработчике нет.
 func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) http.Handler {
+	lw := &lockedWriter{w: stderr}
+	phones := userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey))
 	return &tenants{
-		ctx: ctx, store: store, stderr: &lockedWriter{w: stderr},
+		ctx: ctx, store: store, stderr: lw,
 		reg:      userauth.NewRegistry(ctx, store),
+		phones:   phones,
 		handlers: map[domain.UserID]http.Handler{},
+		mail: httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: freshPhones{userauth.Phones{Store: store}, phones}, Now: time.Now},
+			func(f string, a ...any) { fmt.Fprintf(lw, "serve: "+f+"\n", a...) }),
 	}
+}
+
+// freshPhones drops the phones registry cache after this process changed it:
+// привязанный телефон входит сразу, отвязанный сразу перестает (ревью #630).
+type freshPhones struct {
+	userauth.Phones
+	reg *userauth.Registry
+}
+
+func (p freshPhones) Add(ctx context.Context, id domain.UserID) (string, string, error) {
+	defer p.reg.Invalidate()
+	return p.Phones.Add(ctx, id)
+}
+
+func (p freshPhones) Revoke(ctx context.Context, id domain.UserID, device string) error {
+	defer p.reg.Invalidate()
+	return p.Phones.Revoke(ctx, id, device)
 }
 
 type tenants struct {
@@ -38,12 +63,18 @@ type tenants struct {
 	store  blob.Store
 	stderr io.Writer
 	reg    *userauth.Registry
+	phones *userauth.Registry // токены телефонов (#622): пускают только в ящик
+	mail   http.Handler
 
 	mu       gosync.Mutex
 	handlers map[domain.UserID]http.Handler
 }
 
 func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/api/mail" || strings.HasPrefix(r.URL.Path, "/api/mail/") {
+		t.serveMail(w, r)
+		return
+	}
 	if tok, ok := httpapi.RequestToken(r); ok {
 		if id, ok := t.reg.Lookup(tok); ok {
 			h, err := t.handlerFor(id)
@@ -66,6 +97,23 @@ func (t *tenants) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/readyz":
 		_, _ = io.WriteString(w, "ready\n")
 		return
+	}
+	w.Header().Set("WWW-Authenticate", `Bearer realm="kbengine"`)
+	http.Error(w, "bearer token required", http.StatusUnauthorized)
+}
+
+// serveMail serves the phone chat mailbox (#622): токен человека — сторона
+// компьютера, токен телефона — сторона телефона; сторону не выбирает клиент.
+func (t *tenants) serveMail(w http.ResponseWriter, r *http.Request) {
+	if tok, ok := httpapi.RequestToken(r); ok {
+		if id, ok := t.reg.Lookup(tok); ok {
+			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailDesk)))
+			return
+		}
+		if id, ok := t.phones.Lookup(tok); ok && t.reg.Has(id) { // телефон входит, пока жив хозяин (ревью #630)
+			t.mail.ServeHTTP(w, r.WithContext(httpapi.WithMailCaller(r.Context(), id, domain.MailPhone)))
+			return
+		}
 	}
 	w.Header().Set("WWW-Authenticate", `Bearer realm="kbengine"`)
 	http.Error(w, "bearer token required", http.StatusUnauthorized)

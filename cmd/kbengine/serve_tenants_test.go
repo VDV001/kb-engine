@@ -30,6 +30,7 @@ const (
 type tenantFixture struct {
 	h          http.Handler
 	tokA, tokB string
+	store      blob.Store
 }
 
 // newTenants registers two people whose catalogs carry a marker each and
@@ -79,7 +80,7 @@ func newTenants(t *testing.T) tenantFixture {
 			t.Fatalf("fixture transaction: %d %s", rec.Code, rec.Body.String())
 		}
 	}
-	return tenantFixture{h: h, tokA: tokA, tokB: tokB}
+	return tenantFixture{h: h, tokA: tokA, tokB: tokB, store: s}
 }
 
 func get(h http.Handler, path, token string) *httptest.ResponseRecorder {
