@@ -49,12 +49,12 @@ func attachRefs(refs []string, question string) (explicit, auto []string) {
 
 // webSteps shows the links of the question as steps out of the window's
 // sources: ссылка — выход в интернет, человек видит попытку до ответа.
-func (d *chatDesk) webSteps(refs []string) {
-	if d.step == nil {
+func webSteps(step func(chat.Use), refs []string) {
+	if step == nil {
 		return
 	}
 	for _, u := range webUses(refs) {
-		d.step(u)
+		step(u)
 	}
 }
 

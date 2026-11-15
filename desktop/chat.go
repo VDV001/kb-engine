@@ -273,6 +273,31 @@ func (d *chatDesk) SetSettings(c desktopconfig.Chat, key string) error {
 // and the links of the question, searching only r.Sources when given, and
 // saves the chat.
 func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
+	return d.ask(context.Background(), r, askOut{show: d.show, step: d.step})
+}
+
+// dropAskedDrafts: вопрос ушел — черновик и этого чата, и «нового» (из него чат
+// родился) не нужен, если спросил человек; вопрос с телефона черновики окна не трогает.
+func (d *chatDesk) dropAskedDrafts(out askOut, id string) {
+	if out.worker {
+		return
+	}
+	_ = d.DropDraft("")
+	_ = d.DropDraft(id)
+}
+
+// askOut is where a turn shows itself. Ход работника ящика (#622) — тихий:
+// без кусков и шагов на страницу (у человека может быть открыт другой чат) и
+// без снятия черновиков — их набирает человек в окне (ревью #635).
+type askOut struct {
+	show   func(string)
+	step   func(chat.Use)
+	worker bool
+}
+
+// ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
+func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord, error) {
+	show, step := out.show, out.step
 	id, question, refs := r.ID, r.Question, r.Refs
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -293,7 +318,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	default:
 		return chatRecord{}, fmt.Errorf("портрет: режим %q", r.Portrait)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), askTimeout)
+	ctx, cancel := context.WithTimeout(parent, askTimeout)
 	defer cancel()
 	about, pnote := d.portraitFor(ctx, c, question, r.Portrait)
 	// id — до ответа: «запомнить» во время ответа и разбор после него
@@ -302,7 +327,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 		rec.ID, rec.Title = newChatID(), title(question)
 	}
 	explicit, auto := attachRefs(refs, question)
-	d.webSteps(append(slices.Clone(explicit), auto...))
+	webSteps(step, append(slices.Clone(explicit), auto...))
 	attached, err := d.readAttached(ctx, explicit)
 	if err != nil {
 		return chatRecord{}, err
@@ -316,8 +341,8 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	web := webUses(read) // источник ответа — только прочитанная ссылка (ревью 14.11)
 	model := d.model(c, key)
 	svc := chat.NewService(searcherFunc(scoped(d.search, r.Sources)), d.metered(model, c, usage.AnswerOrSearch, rec.ID), chat.WithReader(readerFunc(d.read)))
-	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: d.show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
-		Extras: append(shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), mpstatsExtras(d.settings, nil, time.Now, r.Sources)...), Step: d.step})
+	turn, err := svc.Respond(ctx, chat.Request{History: history(rec), Question: question, Mode: chatMode(c), Attached: attached, Show: show, About: about, Remember: d.rememberFor(c, rec.ID), Versions: d.versionsAccess(), ProposeVersion: d.proposeVersionFor(rec.ID),
+		Extras: append(shopExtras(d.settings, ozon.DefaultURL, nil, time.Now, r.Sources), mpstatsExtras(d.settings, nil, time.Now, r.Sources)...), Step: step})
 	if err != nil {
 		return chatRecord{}, errors.New(chatError(err))
 	}
@@ -336,9 +361,7 @@ func (d *chatDesk) Ask(r askReq) (chatRecord, error) {
 	if err := d.save(rec); err != nil {
 		return chatRecord{}, err
 	}
-	// Вопрос ушел: черновик и этого чата, и «нового» (из него чат родился) не нужен.
-	_ = d.DropDraft("")
-	_ = d.DropDraft(rec.ID)
+	d.dropAskedDrafts(out, rec.ID)
 	rec.Notes = notes // только в ответ странице: в файл чата не пишутся
 	rec.Portrait = pnote
 	rec.CanCompress = canCompress(rec)

@@ -3345,6 +3345,15 @@ if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
   chatState.steps.push(u);
   if (!chatState.partial) paintPartial();
 });
+// Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
+// открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не
+// трогаем: перерисовка затерла бы набранное имя (ревью #635).
+if (window.runtime) window.runtime.EventsOn("chats:changed", async (id) => {
+  if (!chatState.renaming) await renderChatList();
+  if (id && id === chatState.id && !chatState.busy) {
+    try { chatState.chat = await native().Chat(id); renderChat(); } catch { /* чат откроется заново при выборе */ }
+  }
+});
 if (window.runtime) window.runtime.EventsOn("chat:delta", (t) => {
   if (!chatState.busy) return;
   chatState.partial = t || "";

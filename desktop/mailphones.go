@@ -83,6 +83,7 @@ func (f *folderSettings) mailKey(id string, phones int) (mailcrypt.Key, bool, er
 func (f *folderSettings) MailPairPhone(id string) (phonePairing, error) {
 	f.mailMu.Lock() // две привязки разом не родят два ключа
 	defer f.mailMu.Unlock()
+	defer f.mailGen.Add(1) // работник ящика перечитает ключ
 	draw := f.qr
 	if draw == nil {
 		if !qrAvailable() {
@@ -158,6 +159,7 @@ func (f *folderSettings) MailPhones(id string) ([]phoneRow, error) {
 func (f *folderSettings) MailRevokePhone(id, device string) error {
 	f.mailMu.Lock()
 	defer f.mailMu.Unlock()
+	defer f.mailGen.Add(1)
 	c, err := f.mailClient(id)
 	if err != nil {
 		return err
