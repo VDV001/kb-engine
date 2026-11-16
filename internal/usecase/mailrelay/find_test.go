@@ -435,17 +435,16 @@ func TestRelayTellsThePhoneTheDesk(t *testing.T) {
 	}
 }
 
-// scopedAnswer answers with the chat's model and sources.
+// scopedAnswer answers with the chat's sources.
 type scopedAnswer struct{ asker }
 
 func (f *scopedAnswer) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
 	c, text, err := f.Ask(ctx, chat, question)
-	return mailrelay.Answer{Chat: c, Text: text, Model: "qwen3", Only: []string{"f-1"}}, err
+	return mailrelay.Answer{Chat: c, Text: text, Only: []string{"f-1"}}, err
 }
 
-// Ответ несет модель и источники чата окна (#647): телефон показывает, где
-// и чем чат ищет.
-func TestRelaySendsTheChatModelAndSources(t *testing.T) {
+// Ответ несет источники чата окна (#647): телефон показывает, где чат ищет.
+func TestRelaySendsTheChatSources(t *testing.T) {
 	b := &box{}
 	b.phone("c-1", "A", 1, q("сроки?"))
 	r := newRelay(b, &asker{}, &store{})
@@ -453,7 +452,7 @@ func TestRelaySendsTheChatModelAndSources(t *testing.T) {
 	if err := r.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := payloads(t, b); len(got) != 1 || got[0].Model != "qwen3" || strings.Join(got[0].Only, ",") != "f-1" {
+	if got := payloads(t, b); len(got) != 1 || strings.Join(got[0].Only, ",") != "f-1" {
 		t.Fatalf("answer %+v", got)
 	}
 }

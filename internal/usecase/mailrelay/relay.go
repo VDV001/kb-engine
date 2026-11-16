@@ -74,10 +74,9 @@ type Payload struct {
 	Context *ContextFill `json:"context,omitempty"`
 	// Facts — «Запомнить о Вас?» (#647): предложение окна или решение телефона.
 	Facts []Fact `json:"facts,omitempty"`
-	// Model и Only — модель и источники чата окна после хода (#647): телефон
-	// их показывает, менять — в окне; Only пусто — все.
-	Model string   `json:"model,omitempty"`
-	Only  []string `json:"only,omitempty"`
+	// Only — источники чата окна после хода (#647): телефон их показывает,
+	// менять — в окне; пусто — все.
+	Only []string `json:"only,omitempty"`
 	// Desk — состояние окна для телефона (#647), ответ на desk.
 	Desk *DeskState `json:"desk,omitempty"`
 }
@@ -194,9 +193,8 @@ type Answer struct {
 	Chat, Text string
 	Sources    []Source
 	Context    *ContextFill
-	// Model и Only — модель и источники чата после хода (#647); Only пусто — все.
-	Model string
-	Only  []string
+	// Only — источники чата после хода (#647); пусто — все.
+	Only []string
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
@@ -467,7 +465,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
-	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Model: a.Model, Only: a.Only}
+	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
 
 // minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
@@ -687,13 +685,8 @@ func clip(text string, limit int) string {
 
 // desk tells the phone the window's state (#647): модель и названия источников.
 func (r Relay) desk(ctx context.Context) Payload {
-	if r.FindTimeout > 0 { // тот же срок, что у поиска: работник один на все серверы
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, r.FindTimeout)
-		defer cancel()
-	}
 	if r.Desk == nil {
-		return Payload{Kind: KindError, Text: "окно этой версии не отдает телефону модель и источники"}
+		return Payload{Kind: KindError, Text: DeskUnsupported}
 	}
 	st, err := r.Desk.State(ctx)
 	if err != nil {

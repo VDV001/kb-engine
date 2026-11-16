@@ -199,17 +199,23 @@ func (w *mailWorker) useChat(d *chatDesk) {
 // явных прав.
 type phoneDesk struct{ settings *folderSettings }
 
-// State lists the enabled sources and the connections the person let the chat
-// ask («Чату: разрешить»): закрытое телефон не увидит.
+// State lists what the chat searches: включенные источники, которые окно
+// читает, и подключения, которые человек разрешил чату («Чату: разрешить»), —
+// только когда чат их спрашивает (режим инструментов): в режиме «окно ищет»
+// кабинет не спрашивается, и телефон его не называет (ревью #656).
 func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	d.settings.mu.Lock()
 	cfg := d.settings.cfg
 	d.settings.mu.Unlock()
-	st := mailrelay.DeskState{Model: cfg.Chat.WithDefaults().Model, Sources: []mailrelay.DeskSource{}}
+	c := cfg.Chat.WithDefaults()
+	st := mailrelay.DeskState{Model: c.Model, Sources: []mailrelay.DeskSource{}}
 	for _, s := range cfg.WithSources().Sources {
-		if s.Enabled {
+		if s.Enabled && searched(cfg, s) {
 			st.Sources = append(st.Sources, mailrelay.DeskSource{ID: s.ID, Name: sourceLabel(s)})
 		}
+	}
+	if chatMode(c) != chat.ModeTools {
+		return st, nil
 	}
 	for _, c := range cfg.Connections {
 		if name, ok := chatConnKinds[c.Kind]; ok && c.Enabled && c.Share {
@@ -217,6 +223,20 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 		}
 	}
 	return st, nil
+}
+
+// searched reports whether the window searches source s: вид, записанный
+// более новой сборкой, хранится и не читается; папка Диска — только с
+// включенным подключением Google.
+func searched(cfg desktopconfig.Config, s desktopconfig.Source) bool {
+	switch s.Kind {
+	case desktopconfig.KindFolder, desktopconfig.KindCatalog, desktopconfig.KindServer:
+		return true
+	case desktopconfig.KindGDrive:
+		g, ok := cfg.Connection(s.Conn)
+		return ok && g.Enabled
+	}
+	return false
 }
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
@@ -387,8 +407,8 @@ func chatAnswerer(d *chatDesk) answerFn {
 		if err != nil {
 			return mailrelay.Answer{}, err
 		}
-		// Модель и источники чата — телефону для показа (#647); источники пусто — все.
-		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Model: rec.Model, Only: rec.Sources}
+		// Источники чата — телефону для показа (#647); пусто — все.
+		a := mailrelay.Answer{Chat: rec.ID, Sources: answerSources(rec), Only: rec.Sources}
 		a.Context = (*mailrelay.ContextFill)(rec.Context) // круг контекста на телефоне (#647); та же форма
 		if n := len(rec.Messages); n > 0 {
 			a.Text = rec.Messages[n-1].Text

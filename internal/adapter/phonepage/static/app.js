@@ -577,10 +577,10 @@ function openChat(id) {
 }
 
 // askDesk asks the window for its model and sources (#647) — не чаще раза в
-// 5 минут: меняются редко, а каждый запрос — круг ящика. deskAsked — когда
-// спросили: старое окно desk не знает, и вопрос повторяется через тот же
-// срок, а не на каждое открытие чата.
-const DESK_EVERY = 5 * 60_000;
+// минуту: каждый запрос — круг ящика, а снятое «Чату: разрешить» должно уйти
+// с телефона скоро (ревью #656). deskAsked — когда спросили: старое окно desk
+// не знает, и вопрос повторяется через тот же срок, а не на каждое открытие.
+const DESK_EVERY = 60_000;
 async function askDesk() {
   const now = Date.now();
   if (now - (st.deskAsked || 0) < DESK_EVERY || (st.desk && now - (st.deskAt || 0) < DESK_EVERY)) return;
@@ -642,7 +642,7 @@ $("msgs").addEventListener("click", async (e) => { // «Запомнить о В
 });
 $("model").addEventListener("click", () => {
   const v = choiceView(st.chats[ui.chat] || {}, st.desk);
-  if (v) note("Модель чата: " + v.model + ". Сменить ее можно в окне DVK на компьютере.", false);
+  if (v) note("Модель: " + v.model + ". Сменить ее можно в окне DVK на компьютере.", false);
 });
 $("srcs").addEventListener("click", () => {
   const v = choiceView(st.chats[ui.chat] || {}, st.desk);

@@ -64,10 +64,7 @@ export function take(st, m, o) {
     // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
-    if (p.kind === "answer") { // модель и источники чата — от окна (#647); источников нет — все
-      if (p.model) c.model = p.model;
-      c.only = p.only?.length ? p.only : undefined;
-    }
+    if (p.kind === "answer") c.only = p.only?.length ? p.only : undefined; // источники чата — от окна (#647); нет — все
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -172,22 +169,25 @@ export function deskChat(st) {
 }
 
 // desked applies the window's state (#647). Отказ (окно без desk) — мимо:
-// модель и источники не показываются, повтор — через срок askDesk.
+// модель и источники не показываются, повтор — через срок askDesk. Не
+// сообщение: false — чат не прокручивается вниз, перерисовку дает опрос
+// (ревью #656).
 function desked(st, m, p) {
-  if (m.from !== "desk" || p.kind !== "desk") return false;
-  st.desk = p.desk || null;
-  st.deskAt = Date.now();
-  return true;
+  if (m.from === "desk" && p.kind === "desk") {
+    st.desk = p.desk || null;
+    st.deskAt = Date.now();
+  }
+  return false;
 }
 
 // choiceView is what the phone shows of chat c's model and sources (#647):
-// модель чата (до ответа — модель окна) и источники, которые окно знает;
-// источники не выбраны — все. Без состояния окна — нечего показать.
+// модель окна — она одна на все чаты (ревью #656), и источники чата, которые
+// окно знает; источники не выбраны — все. Без состояния окна — нечего показать.
 export function choiceView(c, desk) {
   if (!desk) return null;
   const all = desk.sources || [], only = Array.isArray(c.only) ? c.only : null;
   const shown = only ? all.filter((x) => only.includes(x.id)) : all;
-  return { model: c.model || desk.model || "", on: shown.length, total: all.length, names: shown.map((x) => x.name) };
+  return { model: desk.model || "", on: shown.length, total: all.length, names: shown.map((x) => x.name) };
 }
 
 // found applies the desk's answer to a search: выдача, документ или отказ.
