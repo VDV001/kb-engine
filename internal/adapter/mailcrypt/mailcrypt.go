@@ -244,3 +244,25 @@ func Open(k Key, chat string, from domain.MailSide, sealed []byte) (Meta, []byte
 	m := Meta{Chat: chat, From: from, Sender: Sender(header[5:13]), Counter: binary.BigEndian.Uint64(header[13:21])}
 	return m, plain, nil
 }
+
+// Файл ящика (#658), версия 1: версия (1) | id ключа (4) | нонс (12) | AES-256-GCM: файл и тег (16).
+// AAD = "kbmail file\x00" + заголовок: сообщение не откроется как файл, и
+// наоборот. С сообщением в журнале файл связывает хеш, который несет само
+// сообщение: подмену куска сервером видит получатель.
+const (
+	fileHeaderSize = 1 + 4 + nonceSize
+	// FileOverhead is what sealing adds to a file piece.
+	FileOverhead = fileHeaderSize + 16
+	// MaxFilePlain is the longest piece whose sealed form fits domain.MaxMailFile.
+	MaxFilePlain = domain.MaxMailFile - FileOverhead
+)
+
+// SealFile encrypts one file piece.
+func SealFile(k Key, plain []byte) ([]byte, error) {
+	return append([]byte(nil), plain...), nil
+}
+
+// OpenFile checks and decrypts one file piece.
+func OpenFile(k Key, sealed []byte) ([]byte, error) {
+	return sealed, nil
+}

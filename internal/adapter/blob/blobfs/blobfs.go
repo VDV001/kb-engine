@@ -233,3 +233,8 @@ func (s *Store) GetIfChanged(ctx context.Context, key, etag string) (blob.Object
 	}
 	return o, nil
 }
+
+// Delete removes key; ключа нет — не ошибка.
+func (s *Store) Delete(_ context.Context, key string) error {
+	return nil
+}

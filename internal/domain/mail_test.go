@@ -164,3 +164,29 @@ func TestRestoreMailMessage(t *testing.T) {
 		t.Errorf("unknown side restored: %v", err)
 	}
 }
+
+// Id файла ящика (#658) — ровно то, что выдает сервер: 32 строчные
+// шестнадцатеричные цифры; иное в ключ хранилища не попадет.
+func TestValidateMailFileID(t *testing.T) {
+	for _, c := range []struct {
+		name, id string
+		ok       bool
+	}{
+		{"server id", "0123456789abcdef0123456789abcdef", true},
+		{"empty", "", false},
+		{"short", strings.Repeat("a", 31), false},
+		{"long", strings.Repeat("a", 33), false},
+		{"upper", "0123456789ABCDEF0123456789abcdef", false},
+		{"not hex", strings.Repeat("g", 32), false},
+		{"path", "../../users/alpha/mail/log.jsonl", false},
+	} {
+		err := domain.ValidateMailFileID(c.id)
+		if (err == nil) != c.ok || (err != nil && !errors.Is(err, domain.ErrMailFile)) {
+			t.Errorf("%s: %v", c.name, err)
+		}
+	}
+	// Чат «files» занят маршрутом файлов: POST /api/mail/files — не сообщение.
+	if err := domain.ValidateMailChat("files"); !errors.Is(err, domain.ErrMailChat) {
+		t.Errorf("chat files: %v", err)
+	}
+}

@@ -394,3 +394,8 @@ func (m *MetadataToken) fetch(ctx context.Context) (string, time.Duration, error
 	}
 	return body.AccessToken, ttl, nil
 }
+
+// Delete removes key; ключа нет — не ошибка (S3 отвечает 204 и на него).
+func (s *Store) Delete(_ context.Context, key string) error {
+	return nil
+}

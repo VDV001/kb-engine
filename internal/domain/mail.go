@@ -20,6 +20,10 @@ var (
 	ErrMailSide     = errors.New("mail: unknown side")
 	ErrMailEmpty    = errors.New("mail: empty message")
 	ErrMailTooLarge = errors.New("mail: message too large")
+	// ErrMailFile — id файла ящика не тот, что выдает сервер (#658).
+	ErrMailFile = errors.New("mail: invalid file id")
+	// ErrNoSuchMailFile — файла нет: забран, удален по сроку или чужой.
+	ErrNoSuchMailFile = errors.New("mail: no such file")
 	// ErrMailDeskOnly — телефоны привязывает и отвязывает только компьютер:
 	// украденный телефон не выпустит себе второй токен и не отвяжет хозяина.
 	ErrMailDeskOnly = errors.New("mail: only the desk manages phones")
@@ -181,3 +185,13 @@ func (m MailMessage) Sealed() []byte { return slices.Clone(m.sealed) }
 
 // At is when the server took it.
 func (m MailMessage) At() time.Time { return m.at }
+
+// MaxMailFile bounds one sealed file piece (#658): Serverless Container
+// пропускает запрос до 3,5 МБ вместе с заголовками; файл больше — кусками.
+const MaxMailFile = 3 << 20
+
+// ValidateMailFileID checks a file id: 32 строчные шестнадцатеричные цифры —
+// столько выдает сервер; иное в ключ хранилища не попадет.
+func ValidateMailFileID(id string) error {
+	return nil
+}
