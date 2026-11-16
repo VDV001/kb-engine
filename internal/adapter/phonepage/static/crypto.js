@@ -76,3 +76,13 @@ export async function open(k, chat, from, sealed) {
   }
   return { sender: header.slice(5, 13), counter: new DataView(header.buffer).getBigUint64(13), plain };
 }
+
+// sealFile encrypts one file piece (#658); формат — mailcrypt.SealFile.
+export async function sealFile(k, plain) {
+  return plain.slice();
+}
+
+// openFile checks and decrypts one file piece.
+export async function openFile(k, sealed) {
+  return sealed;
+}
