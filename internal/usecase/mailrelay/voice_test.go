@@ -147,8 +147,20 @@ func TestRelayVoiceReview(t *testing.T) {
 		if err := r.Tick(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		if got := payloads(t, b); len(got) != 1 || got[0].Kind != mailrelay.KindHeard || got[0].Text != "" || len(n.calls) != 0 {
-			t.Fatalf("silent: %+v, notify %v", got, n.calls)
+		if got := payloads(t, b); len(got) != 1 || got[0].Kind != mailrelay.KindError || got[0].Text != mailrelay.VoiceSilent || len(n.calls) != 0 {
+			t.Fatalf("silent: %+v, notify %v — тишина вопроса — свой код, не «heard» диктовки", got, n.calls)
+		}
+	})
+	t.Run("model failure after hearing still pushes", func(t *testing.T) {
+		files := &voiceFiles{m: map[string][]byte{id1: []byte("sealed-wav")}}
+		b := &box{}
+		b.phone("c-1", "A", 1, voice(mailrelay.VoiceAsk, id1, []byte("sealed-wav")))
+		n := &notifier{b: b}
+		r := newRelay(b, &asker{fail: errors.New("нет ключа модели")}, &store{})
+		r.Files, r.Hear, r.Notifier = files, &hearer{}, n
+		_ = r.Tick(t.Context())
+		if got := payloads(t, b); len(got) != 1 || got[0].Kind != mailrelay.KindError || got[0].Heard != "срок поставки" || len(n.calls) != 1 {
+			t.Fatalf("model failure: %+v, notify %v — модель работала, ответ (отказ) ждут", got, n.calls)
 		}
 	})
 	t.Run("deleted before the model turn", func(t *testing.T) {

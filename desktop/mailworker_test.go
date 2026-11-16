@@ -514,8 +514,12 @@ func TestPhoneDeskSaysWhoHears(t *testing.T) {
 // временной папке: при старте голоса она убирается (ревью безопасности #660).
 func TestUseVoiceSweepsRecordings(t *testing.T) {
 	tmp := t.TempDir()
+	old := time.Now().Add(-time.Hour)
 	for _, n := range []string{"kb-phone-1.wav", "kb-listen-2.wav", "other.wav"} {
 		if err := os.WriteFile(filepath.Join(tmp, n), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(filepath.Join(tmp, n), old, old); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -523,5 +527,52 @@ func TestUseVoiceSweepsRecordings(t *testing.T) {
 	left, _ := os.ReadDir(tmp)
 	if len(left) != 1 || left[0].Name() != "other.wav" {
 		t.Errorf("left %v", left)
+	}
+}
+
+// Окно называет телефону слушателя, только когда распознавание сработает
+// (повторное ревью #660): выключенное подключение и запрет Apple Speech —
+// голоса нет, а не «распознает Ваш сервер» с отказом на каждую запись.
+func TestPhoneDeskHearsOnlyWhatWorks(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(d.settings, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	hear := func() string {
+		st, err := w.desk.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		return st.Hear
+	}
+	w.useVoice(&dictation{bin: fakeListen(t, `echo '{"auth":"denied","onDevice":true,"available":true}'`)})
+	if got := hear(); got != "" {
+		t.Errorf("Apple Speech denied: %q", got)
+	}
+	d.settings.mu.Lock()
+	d.settings.cfg.Chat.Listen = "speech-off"
+	d.settings.cfg.Connections = append(d.settings.cfg.Connections, desktopconfig.Connection{ID: "speech-off", Kind: desktopconfig.ConnSpeech, Name: "whisper", Enabled: false})
+	d.settings.mu.Unlock()
+	if got := hear(); got != "" {
+		t.Errorf("disabled speech server: %q", got)
+	}
+}
+
+// Уборка при старте трогает только старые записи: свежая — запись другого
+// окна (отладочная сборка рядом), ее удаление сломало бы чужую диктовку.
+func TestUseVoiceKeepsFreshRecordings(t *testing.T) {
+	tmp := t.TempDir()
+	fresh := filepath.Join(tmp, "kb-listen-live.wav")
+	if err := os.WriteFile(fresh, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newMailWorker(nil, nil, t.TempDir()).useVoice(&dictation{tmpDir: tmp})
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("a fresh recording was swept: %v", err)
 	}
 }

@@ -177,6 +177,8 @@ const (
 	VoiceGone = "gone"
 	// VoiceUnheard — код: распознавание не удалось; причина — в журнале окна.
 	VoiceUnheard = "unheard"
+	// VoiceSilent — код: в вопросе голосом не расслышано слов (тишина).
+	VoiceSilent = "silent"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
