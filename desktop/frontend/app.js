@@ -3243,6 +3243,15 @@ function renderChatCtx() {
   ring.hidden = false;
   ring.dataset.tone = tone;
   ring.setAttribute("aria-label", x.window ? `Контекст заполнен на ${Math.round(f * 100)}%: подробнее` : "Контекст: подробнее");
+  // Подсказка при наведении (отзыв 16.11): что значит число и что делать; подробности — щелчком.
+  Object.assign(ring.dataset, {
+    tip: x.unknown ? "Контекст чата: счета пока нет" : x.window ? `Контекст чата заполнен на ${Math.round(f * 100)}%` : "Контекст чата: размер окна модели не указан",
+    tipB: x.unknown ? "счет провайдера придет с ближайшим ответом · щелчок — подробнее"
+      : !x.window ? "окно не знает, сколько осталось · щелчок — указать размер"
+      : f >= 1 ? "запрос не помещается: часть разговора модель не видит · щелчок — сжать или новый чат"
+      : f >= CTX_HINT_AT ? "дальше ответы дороже и хуже · щелчок — сжать или новый чат"
+      : "сколько разговора модель видит в каждом ответе · щелчок — подробнее",
+  });
   ring.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * Math.min(1, f)} ${C}" transform="rotate(-90 10 10)"/></svg><span>${x.unknown ? "—" : x.window ? (x.est ? "~" : "") + Math.round(f * 100) + "%" : "?"}</span>`;
   if (!$("#chat-ctx-pop").hidden) fillChatCtx(x, f, tone);
 }
