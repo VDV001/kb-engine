@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,7 +48,7 @@ func newWorkerSettingsSeeing(t *testing.T, seen func(path string)) (*folderSetti
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Now: time.Now},
+	h := httpapi.MailHandler(mail.Service{Box: mailbox.Store{Blob: store}, Phones: userauth.Phones{Store: store}, Files: mailbox.Files{Blob: store, Del: store}, Now: time.Now},
 		func(string, ...any) {})
 	var hits atomic.Int64
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -422,5 +425,44 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 	}
 	if strings.Join(a.Only, ",") != "srv1" {
 		t.Errorf("the phone is told sources %v", a.Only)
+	}
+}
+
+// Голос телефона настоящим кругом (#648): запись лежит в файлах ящика,
+// сообщение называет ее хешем; окно забирает, расшифровывает ключом чата,
+// распознает (Apple Speech — kb-listen --file) и удаляет.
+func TestMailWorkerHearsThePhone(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("Apple Speech — только на Маке")
+	}
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	phone := kbserver.Client{URL: srv.URL, Token: phoneToken, HTTP: srv.Client()}
+	sealed, err := mailcrypt.SealFile(key, []byte("RIFF-wav"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := phone.MailFilePut(t.Context(), sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(sealed)
+	phoneSends(t, srv, key, "c-1", 1, mailrelay.Payload{Kind: mailrelay.KindVoice, Text: mailrelay.VoiceDictate,
+		File: &mailrelay.FileRef{ID: id, SHA256: hex.EncodeToString(sum[:]), Size: len(sealed)}})
+	w := newMailWorker(s, func(context.Context, string, string) (string, string, error) { return "w", "ok", nil }, t.TempDir())
+	w.useVoice(&dictation{tmpDir: t.TempDir(), bin: fakeListen(t, `prev=""; f=""
+for a; do [ "$prev" = "--file" ] && f="$a"; prev="$a"; done
+[ "$(cat "$f")" = "RIFF-wav" ] && echo '{"text":"срок поставки","final":true}' || echo '{"error":"не та запись"}'
+`)})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if len(got) != 1 || got[0].Kind != mailrelay.KindHeard || got[0].Text != "срок поставки" {
+		t.Fatalf("phone got %+v", got)
+	}
+	if _, err := phone.MailFileGet(t.Context(), id); !errors.Is(err, kbserver.ErrNoSuchMailFile) {
+		t.Errorf("the recording stays on the server: %v", err)
 	}
 }

@@ -49,6 +49,7 @@ type mailWorker struct {
 	turn     func(phoneTurn)    // ход по вопросу с телефона — странице (#646)
 	memory   mailrelay.Memory   // решения телефона по «Запомнить о Вас?» (#647); nil — отказ словами
 	desk     mailrelay.DeskInfo // модель и источники окна для телефона (#647); nil — отказ словами
+	hear     transcriber        // голос телефона (#648): запись → текст; nil — отказ кодом
 
 	notesMu sync.Mutex
 	notes   []mailrelay.Note // «Запомнить о Вас?» для телефонов: пишет разбор ответа, забирает круг
@@ -241,6 +242,10 @@ func searched(cfg desktopconfig.Config, s desktopconfig.Source) bool {
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
 var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
+
+// useVoice wires the phone's voice (#648): распознает то, что выбрано в «Чат и
+// модель → Слушает»; Apple Speech — помощником kb-listen --file, только на Маке.
+func (w *mailWorker) useVoice(listen *dictation) {}
 
 // phoneFindTimeout bounds one search or open for the phone: работник один на
 // все серверы, подвисший источник или огромный PDF не держат его круг.
