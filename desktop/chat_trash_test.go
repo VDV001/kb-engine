@@ -105,7 +105,7 @@ func TestChat_TrashRestoresAndForgets(t *testing.T) {
 // Название без невидимых знаков (ревью безопасности #662): разворот текста и
 // нулевая ширина подделывают вид названия в списке.
 func TestTitle_DropsInvisibleFormatChars(t *testing.T) {
-	if got := title("Пос‮тав​ки⁦"); got != "Поставки" {
+	if got := title("Пос\u202eтав\u200bки\u2066"); got != "Поставки" {
 		t.Fatalf("title = %q", got)
 	}
 }

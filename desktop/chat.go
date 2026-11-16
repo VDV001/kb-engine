@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/daniil/kb-engine/internal/adapter/desktopconfig"
 	"github.com/daniil/kb-engine/internal/adapter/filelock"
@@ -527,17 +528,22 @@ func (d *chatDesk) contextOf(rec chatRecord) *contextNote {
 	return &contextNote{Used: rec.ContextUsed, Window: d.config().ContextWindow}
 }
 
-// Delete removes a chat.
+// Delete moves a chat to the trash. Под замком чатов, как ход и
+// переименование: удаление с телефона посреди хода ждет его конца, иначе
+// сохранение хода вернуло бы чат (ревью #662).
 func (d *chatDesk) Delete(id string) error {
 	p, err := d.path(id)
 	if err != nil {
 		return err
 	}
-	_ = d.DropDraft(id) // черновик не переживает свой чат
-	d.dropChatProposals(id)
-	if err := os.Remove(p); err != nil {
+	d.mu.Lock()
+	err = d.toTrash(id, p)
+	d.mu.Unlock()
+	if err != nil {
 		return err
 	}
+	_ = d.DropDraft(id) // черновик не переживает свой чат
+	d.dropChatProposals(id)
 	if d.edited != nil {
 		d.edited(id, "", true) // и телефону (#649)
 	}
@@ -559,6 +565,10 @@ func (d *chatDesk) load(id string) (chatRecord, error) {
 	if err != nil {
 		return chatRecord{}, err
 	}
+	return d.loadFrom(p, id)
+}
+
+func (d *chatDesk) loadFrom(p, id string) (chatRecord, error) {
 	raw, err := os.ReadFile(p)
 	if err != nil {
 		return chatRecord{}, err
@@ -616,8 +626,16 @@ func newChatID() string {
 	return hex.EncodeToString(b[:])
 }
 
-// title is the chat title: первый вопрос, до 60 символов.
+// title is the chat title: первый вопрос, до 60 символов. Невидимые знаки
+// формата (разворот текста, нулевая ширина) — прочь: они подделывают вид
+// названия в списке (ревью безопасности #662).
 func title(q string) string {
+	q = strings.Map(func(c rune) rune {
+		if unicode.Is(unicode.Cf, c) {
+			return -1
+		}
+		return c
+	}, q)
 	r := []rune(strings.Join(strings.Fields(q), " "))
 	if len(r) > 60 {
 		return string(r[:59]) + "…"

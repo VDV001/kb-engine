@@ -364,6 +364,9 @@ type State struct {
 	// Offered — факты, предложенные телефону: чат ящика → id. Решение телефона
 	// принимается только по ним (#647).
 	Offered map[string][]string `json:"offered,omitempty"`
+	// Titles — название с телефона для чата, которого окно еще не знает: ляжет
+	// на чат окна после первого хода (ревью #662).
+	Titles map[string]string `json:"titles,omitempty"`
 }
 
 // Store keeps the state.
@@ -674,6 +677,7 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string, files 
 		return Payload{Kind: KindError, Text: err.Error()}
 	}
 	st.Chats[chat] = a.Chat
+	r.pendingTitle(ctx, st, chat)
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources, Context: a.Context, Only: a.Only}
 }
 
@@ -703,8 +707,9 @@ func (r Relay) offer(st *State) error {
 			continue
 		}
 		st.Outbox = append(st.Outbox, out)
-		if n.Payload.Kind == KindDelete { // окно удалило чат: связь забыть (#649)
+		if n.Payload.Kind == KindDelete { // окно удалило чат: связь и предложенное забыть (#649)
 			delete(st.Chats, chat)
+			delete(st.Offered, chat)
 		}
 		if st.Offered == nil {
 			st.Offered = map[string][]string{}
@@ -933,16 +938,27 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	return reply
 }
 
-// maxChatTitle bounds a title from the phone, в знаках.
-const maxChatTitle = 120
+// maxChatTitle bounds a title from the phone, в знаках: столько же держит
+// название окна (title в desktop), длиннее телефон не обещает (ревью #662).
+const maxChatTitle = 60
 
 // editChat renames or deletes the window's chat of a phone chat (#649): чат
 // один в двух местах. Окно чата еще не знает — подтверждение без правки;
 // удаленный — забывается, ответы туда не пойдут.
 func (r Relay) editChat(ctx context.Context, st *State, chat string, req Payload) Payload {
 	done := Payload{Kind: KindEdited, Text: req.Kind}
+	title := []rune(strings.TrimSpace(req.Text))
+	title = title[:min(len(title), maxChatTitle)]
 	id := st.Chats[chat]
-	if id == "" {
+	if id == "" { // окно чата еще не знает: название ждет первого хода
+		if req.Kind == KindRename {
+			if st.Titles == nil {
+				st.Titles = map[string]string{}
+			}
+			st.Titles[chat] = string(title)
+		} else {
+			delete(st.Titles, chat)
+		}
 		return done
 	}
 	if r.Chats == nil {
@@ -950,19 +966,32 @@ func (r Relay) editChat(ctx context.Context, st *State, chat string, req Payload
 	}
 	var err error
 	if req.Kind == KindRename {
-		title := []rune(strings.TrimSpace(req.Text))
-		err = r.Chats.RenameChat(ctx, id, string(title[:min(len(title), maxChatTitle)]))
+		err = r.Chats.RenameChat(ctx, id, string(title))
 	} else {
+		// Связь не забывается здесь: окно ответит заметкой об удалении, она
+		// дойдет до всех телефонов ключа и забудет связь в offer (ревью #662).
 		err = r.Chats.DeleteChat(ctx, id)
 	}
 	if err != nil {
 		r.logf("mailrelay: %s %s: %v", req.Kind, id, err)
 		return Payload{Kind: KindError, Text: ChatEditFailed}
 	}
-	if req.Kind == KindDelete {
-		delete(st.Chats, chat)
-	}
 	return done
+}
+
+// pendingTitle puts the phone's early title on the window's new chat.
+func (r Relay) pendingTitle(ctx context.Context, st *State, chat string) {
+	t, ok := st.Titles[chat]
+	if !ok {
+		return
+	}
+	delete(st.Titles, chat)
+	if r.Chats == nil {
+		return
+	}
+	if err := r.Chats.RenameChat(ctx, st.Chats[chat], t); err != nil {
+		r.logf("mailrelay: rename %s: %v", st.Chats[chat], err)
+	}
 }
 
 // desk tells the phone the window's state (#647): модель и названия источников.

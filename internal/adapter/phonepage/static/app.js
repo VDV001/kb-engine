@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open, sealFile, MAX_FILE_PLAIN } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote, attachRefusal, pieceBounds, forget } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -637,7 +637,7 @@ document.querySelector(".tabs").addEventListener("click", (e) => {
 // Один чат в двух местах (#649): правка — сразу на телефоне и уходит в окно.
 $("chat-rename").addEventListener("click", async () => {
   const id = ui.chat, c = st.chats[id];
-  const name = c && prompt("Новое название чата — и на телефоне, и в окне DVK на компьютере", c.title)?.trim().slice(0, 120);
+  const name = c && Array.from(prompt("Новое название чата — и на телефоне, и в окне DVK на компьютере", c.title)?.trim() || "").slice(0, 60).join(""); // 60 — как в окне; по знакам, не по половинкам эмодзи
   if (!name) return;
   c.title = name;
   await persist();
@@ -646,8 +646,8 @@ $("chat-rename").addEventListener("click", async () => {
 });
 $("chat-delete").addEventListener("click", async () => {
   const id = ui.chat, c = st.chats[id];
-  if (!c || !confirm("Удалить чат «" + c.title + "»? Он исчезнет и на телефоне, и в окне DVK на компьютере. Вернуть будет нельзя.")) return;
-  delete st.chats[id];
+  if (!c || !confirm("Удалить чат «" + c.title + "»? Он исчезнет и на телефоне, и в окне DVK на компьютере. В окне его можно вернуть из корзины в течение недели.")) return;
+  forget(st, id);
   ui.view = "";
   await persist();
   show(false);

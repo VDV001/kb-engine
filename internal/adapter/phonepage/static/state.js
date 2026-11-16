@@ -52,9 +52,10 @@ export function take(st, m, o) {
     c.step = p.text; // подпись — как в окне, ее строит окно
     return true;
   }
+  if (st.gone?.[m.chat]) return false; // удаленный чат: поздний ответ или отказ его не возвращают (ревью #662)
   if (m.from === "desk" && (p.kind === "rename" || p.kind === "delete" || p.kind === "edited")) { // один чат в двух местах (#649)
     if (p.kind === "edited" || !st.chats[m.chat]) return false; // подтверждение — правка уже на телефоне
-    if (p.kind === "delete") delete st.chats[m.chat];
+    if (p.kind === "delete") forget(st, m.chat);
     else st.chats[m.chat].title = p.text;
     return true;
   }
@@ -101,6 +102,17 @@ export function take(st, m, o) {
   }
   c.updated = Date.now();
   return true;
+}
+
+// forget deletes chat id on the phone (ревью #662): чат, его неотправленное из
+// исходящих (вопрос удаленного чата не стоит платного хода) и метка «удален» —
+// поздний ответ окна не заведет чат-призрак.
+// ponytail: метки «удален» копятся по одной на удаленный чат (16 байт id);
+// станут заметны — забывать старше месяца.
+export function forget(st, id) {
+  delete st.chats[id];
+  (st.gone ||= {})[id] = 1;
+  if (st.outbox) st.outbox = st.outbox.filter((o) => o.chat !== id);
 }
 
 // waitView is what the waiting question of chat c shows (#646).
