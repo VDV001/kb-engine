@@ -4193,12 +4193,13 @@ function memApprove(id, text) {
   const f = factById(id) || { title: "портрет" };
   memState.qedit = "";
   if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
-  return memDo(() => native().PortraitApprove(id, text || ""), "Запомнено", ` · в «${f.title}»`, () => memDo(() => native().PortraitRemove(id), "Вернул", " · не запоминаю"));
+  // Decide, а не Approve: решенный уже телефоном факт окно не перепишет (повторное ревью #655).
+  return memDo(() => native().PortraitDecide(id, true, text || ""), "Запомнено", ` · в «${f.title}»`, () => memDo(() => native().PortraitRemove(id), "Вернул", " · не запоминаю"));
 }
 function memReject(id) {
   if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
   memState.qedit = "";
-  return memDo(() => native().PortraitRemove(id), "Не запоминаю", " · и в портрет не кладу", null, "off");
+  return memDo(() => native().PortraitDecide(id, false, ""), "Не запоминаю", " · и в портрет не кладу", null, "off");
 }
 $("#mem-pick").addEventListener("click", async () => {
   if (!native() || !native().PickPortraitDir) return;

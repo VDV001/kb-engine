@@ -309,6 +309,8 @@ function chips(sources) {
 
 // MEM_ERR words the window's refusal codes (слова — здесь, ящик шлет коды).
 const MEM_ERR = {
+  stale: "Это предложение устарело — решите его в окне DVK или скройте карточку.",
+  failed: "Окно не смогло изменить портрет — попробуйте позже или решите в окне DVK.",
   bad: "Окно не разобрало решение — решите в окне DVK или скройте карточку.",
   unsupported: "Окно DVK на компьютере старой версии — решите там или обновите его.",
 };
@@ -345,7 +347,11 @@ function memCard(f) {
   acts.append(...(ui.memEdit === f.id
     ? [btn("Сохранить и запомнить", "yes", true), btn("Отмена", "cancel")]
     : [btn("Да", "yes", true), btn("Нет", "no"), btn("Изменить", "edit")]));
-  if (f.err) acts.append(btn("Скрыть", "hide")); // окно отказало — карточку можно убрать (ревью #655)
+  // Скрыть можно всегда: ответ окна может не прийти вовсе (старая сборка), а
+  // занятая карточка иначе висела бы вечно (повторное ревью #655).
+  const hide = btn("Скрыть", "hide");
+  hide.disabled = false;
+  acts.append(hide);
   li.append(head, text, acts);
   if (f.busy || f.err) {
     const n = document.createElement("span");
@@ -596,9 +602,10 @@ $("msgs").addEventListener("click", async (e) => { // «Запомнить о В
   if (!c) return;
   const id = b.dataset.fact, act = b.dataset.mem, f = c.remember?.find((x) => x.id === id);
   if (!f) return;
-  if (act === "edit" || act === "cancel") { Object.assign(ui, { memEdit: act === "edit" ? id : "", memDraft: null }); return show(); }
+  if (act === "edit" || act === "cancel") { document.activeElement?.blur?.(); Object.assign(ui, { memEdit: act === "edit" ? id : "", memDraft: null }); return show(); }
   if (act === "hide") { hideFact(c, id); await persist(); return show(); }
   const edited = act === "yes" && ui.memEdit === id ? document.querySelector(`[data-mem-text="${CSS.escape(id)}"]`)?.value.trim() : "";
+  document.activeElement?.blur?.(); // WebKit не уводит фокус с поля по нажатию кнопки: иначе перерисовка пропустится
   Object.assign(ui, { memEdit: "", memDraft: null });
   deciding(c, id);
   show();

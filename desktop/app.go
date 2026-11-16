@@ -258,6 +258,12 @@ func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(i
 // PortraitRemove forgets a fact.
 func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id) }
 
+// PortraitDecide decides a fact waiting for approval (карточка «Запомнить о
+// Вас?» окна): уже решенный, например телефоном, — «уже решен», окно его не тронет.
+func (a *App) PortraitDecide(id string, yes bool, text string) error {
+	return a.chat.PortraitDecide(context.Background(), id, yes, text)
+}
+
 // PortraitApprove lets a fact into the chat; text — правка перед одобрением.
 func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
 

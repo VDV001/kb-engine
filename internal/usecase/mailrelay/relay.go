@@ -505,7 +505,7 @@ func (r Relay) decide(ctx context.Context, st *State, chat string, req Payload) 
 	i := slices.Index(st.Offered[chat], f.ID)
 	switch {
 	case i < 0:
-		reply.Text = MemoryGone
+		reply.Text = MemoryStale
 	case r.Memory == nil:
 		reply.Text = MemoryUnsupported
 	default:
@@ -515,7 +515,8 @@ func (r Relay) decide(ctx context.Context, st *State, chat string, req Payload) 
 		case errors.Is(err, domain.ErrFactDecided), errors.Is(err, domain.ErrFactNotFound): // решен или забыт в окне
 			reply.Text = MemoryGone
 		case err != nil:
-			reply.Text = err.Error() // слова окна о сбое портрета; карточка остается
+			r.logf("mailrelay: memory %s: %v", f.ID, err) // причина — в журнал окна: в ней пути компьютера
+			reply.Text = MemoryFailed
 			return reply
 		default:
 			reply.Text = map[bool]string{true: MemorySaved, false: MemorySkipped}[yes]
