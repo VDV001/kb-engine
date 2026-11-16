@@ -101,6 +101,16 @@ const NotifyAnswer = `{"kind":"answer"}`
 // NotifyTimeout bounds one notify call for all phones together.
 const NotifyTimeout = 5 * time.Second
 
+// Files keeps the sealed file pieces of the mailbox (#658): голос и вложения
+// телефона идут мимо журнала — журнал один объект и переписывается целиком.
+type Files interface {
+	Put(ctx context.Context, id domain.UserID, file string, sealed []byte) error
+	// Get returns the piece; нет его или он чужой — domain.ErrNoSuchMailFile.
+	Get(ctx context.Context, id domain.UserID, file string) ([]byte, error)
+	// Delete removes the piece; нет его — не ошибка.
+	Delete(ctx context.Context, id domain.UserID, file string) error
+}
+
 // Service is the mailbox of the server.
 type Service struct {
 	Box    Box
@@ -108,8 +118,24 @@ type Service struct {
 	Subs   Subscriptions
 	Push   Pusher
 	Visits Visits
+	Files  Files // nil — файлов нет: errors.ErrUnsupported
 	Now    func() time.Time
 	Logf   func(string, ...any)
+}
+
+// PutFile keeps a sealed file piece of either side and returns its id.
+func (s Service) PutFile(ctx context.Context, id domain.UserID, side domain.MailSide, sealed []byte) (string, error) {
+	return "", errors.ErrUnsupported
+}
+
+// GetFile returns a piece of the person's mailbox.
+func (s Service) GetFile(ctx context.Context, id domain.UserID, file string) ([]byte, error) {
+	return nil, errors.ErrUnsupported
+}
+
+// DeleteFile removes a piece: получатель забрал его.
+func (s Service) DeleteFile(ctx context.Context, id domain.UserID, file string) error {
+	return errors.ErrUnsupported
 }
 
 // Post writes a message of side into chat.

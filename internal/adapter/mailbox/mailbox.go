@@ -237,3 +237,23 @@ func encode(lines []lineDTO) ([]byte, error) {
 	}
 	return b.Bytes(), nil
 }
+
+// Files keeps the mailbox's file pieces (#658), каждый отдельным объектом:
+// mailfiles/users/<id>/<file>. Общий префикс — под правило жизненного цикла
+// бакета: забытое удаляется по сроку.
+type Files struct {
+	Blob blob.Store
+	Del  blob.Deleter
+}
+
+func (f Files) Put(ctx context.Context, id domain.UserID, file string, sealed []byte) error {
+	return nil
+}
+
+func (f Files) Get(ctx context.Context, id domain.UserID, file string) ([]byte, error) {
+	return nil, domain.ErrNoSuchMailFile
+}
+
+func (f Files) Delete(ctx context.Context, id domain.UserID, file string) error {
+	return nil
+}

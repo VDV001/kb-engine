@@ -2,6 +2,7 @@ package mailbox_test
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"strings"
 	"sync"
@@ -216,5 +217,29 @@ func TestSinceUnchangedReadsNothing(t *testing.T) {
 	}
 	if p, _ := st.Since(ctx, id, 3, 0); len(p.Messages) != 1 || p.Messages[0].Seq() != 4 {
 		t.Errorf("after a new message: %+v", p)
+	}
+}
+
+// Кусок — только своему человеку (#658): чужой id у другого — «нет файла».
+func TestFilesArePerPerson(t *testing.T) {
+	s, err := blobfs.New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := mailbox.Files{Blob: s, Del: s}
+	alpha, _ := domain.NewUserID("alpha")
+	beta, _ := domain.NewUserID("beta")
+	const file = "0123456789abcdef0123456789abcdef"
+	if err := f.Put(t.Context(), alpha, file, []byte("sealed")); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := f.Get(t.Context(), alpha, file); err != nil || string(got) != "sealed" {
+		t.Fatalf("own: %q, %v", got, err)
+	}
+	if _, err := f.Get(t.Context(), beta, file); !errors.Is(err, domain.ErrNoSuchMailFile) {
+		t.Errorf("other person: %v", err)
+	}
+	if err := f.Put(t.Context(), alpha, file, []byte("again")); err == nil {
+		t.Error("a piece was overwritten under the same id")
 	}
 }

@@ -118,6 +118,24 @@ func (c Client) MailPost(ctx context.Context, chat string, sealed []byte) (int64
 	return out.Seq, nil
 }
 
+// ErrNoSuchMailFile — файла в ящике нет: забран, удален по сроку (#658).
+var ErrNoSuchMailFile = fmt.Errorf("%w: no such mailbox file", ErrRejected)
+
+// MailFilePut keeps a sealed file piece and returns its id (#658).
+func (c Client) MailFilePut(ctx context.Context, sealed []byte) (string, error) {
+	return "", ErrNoMailbox
+}
+
+// MailFileGet reads a sealed file piece.
+func (c Client) MailFileGet(ctx context.Context, id string) ([]byte, error) {
+	return nil, ErrNoMailbox
+}
+
+// MailFileDelete removes a piece the desk has taken.
+func (c Client) MailFileDelete(ctx context.Context, id string) error {
+	return ErrNoMailbox
+}
+
 // mailReq is one mailbox request: want — код успеха, notFound — что значит 404
 // (nil — ErrNoMailbox), limit — предел ответа (0 — maxBody).
 type mailReq struct {
