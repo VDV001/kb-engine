@@ -274,7 +274,7 @@ st20.chats.c.msgs.push({ who: "me", text: "🎤", voice: true, counter: "3" });
 st20.chats.c.pending = true;
 s.take(st20, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text: "30 дней", heard: "какой срок?" }));
 const q20 = st20.chats.c.msgs.find((x) => x.who === "me");
-want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say === "30 дней", "the voice question gets its words, the answer is to be read aloud");
+want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say?.text === "30 дней", "the voice question gets its words, the answer is to be read aloud");
 
 // 21. Ревью #660: тихий вопрос голосом снимает «ждет» и заглушку; коды отказа
 // голоса — словами; ответ читается вслух, только пока свежий; Apple через сеть

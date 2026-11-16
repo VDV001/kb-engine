@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open, sealFile } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted, deciding, hideFact, deskChat, choiceView , wavOf, voiceLimit, hearNote } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -622,87 +622,120 @@ for (const id of ["desk", "desk-main"]) {
 // куском до 90 с, зашифрован ключом чата, лежит в файлах ящика, сообщение
 // называет его хешем. Ответ на вопрос голосом читает голос телефона.
 
-const VOICE_MAX_MS = 90_000; // кусок до 3 МБ: 90 с WAV 16 кГц — 2,9 МБ
 const QUIET_MS = 1500; // вопрос голосом кончается тишиной
 const QUIET_LEVEL = 0.012; // как у kb-listen на Маке
-let rec = null; // { mode, stop } идущей записи
+const SAY_FRESH_MS = 60_000; // ответ старше минуты вслух не читается: человек мог уйти к людям
+let rec = null; // идущая запись: { mode, stop }; ставится до разрешения микрофона (ревью #660)
 
 const hexOf = (b) => [...b].map((x) => x.toString(16).padStart(2, "0")).join("");
 
 async function startVoice(mode) {
-  if (rec) { rec.stop(); return; } // второе нажатие — конец записи
-  const c = st.chats[ui.chat];
-  if (!c) return;
+  if (rec) { rec.stop(); return; } // второе нажатие — конец записи, и во время запроса разрешения тоже
+  const chat = ui.chat; // запись — этого чата, даже если человек ушел в другой (ревью #660)
+  if (!st.chats[chat]) return;
   if (mode === "ask" && "speechSynthesis" in window) speechSynthesis.speak(new SpeechSynthesisUtterance("")); // iOS: голос — только после нажатия
-  let stream;
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
-  } catch (e) {
-    note("Нет доступа к микрофону: " + e.message);
-    return;
-  }
-  const ac = new AudioContext(), src = ac.createMediaStreamSource(stream);
-  // ponytail: ScriptProcessorNode устарел, но есть и в Safari iOS, и в Chrome
-  // Android без отдельного файла ворклета. Потолок — его уберут из браузеров;
-  // путь — AudioWorklet.
-  const proc = ac.createScriptProcessor(4096, 1, 1), chunks = [];
+  // Звук — в самом нажатии: созданный после await контекст iOS держит спящим.
+  const ac = new AudioContext();
+  ac.resume().catch(() => {});
+  const chunks = [];
   const began = Date.now();
-  let spoke = false, quietAt = began, done = false;
-  const stop = async () => {
+  let spoke = false, quietAt = began, done = false, stream = null, src = null, proc = null, timer = 0;
+  const stop = async (send = true) => {
     if (done) return;
     done = true;
-    rec = null;
-    proc.disconnect();
-    src.disconnect();
-    stream.getTracks().forEach((t) => t.stop());
+    if (rec?.stop === stop) rec = null;
+    clearTimeout(timer);
+    removeEventListener("pagehide", away);
+    document.removeEventListener("visibilitychange", away);
+    proc?.disconnect();
+    src?.disconnect();
+    stream?.getTracks().forEach((t) => t.stop());
     const rate = ac.sampleRate;
-    await ac.close();
+    await ac.close().catch(() => {});
     show();
+    if (!send) return;
     if (!spoke) { note("Не слышно речи: запись не ушла.", false); return; }
     const all = new Float32Array(chunks.reduce((n, a) => n + a.length, 0));
     let at = 0;
     for (const a of chunks) { all.set(a, at); at += a.length; }
-    try { await sendVoice(c, mode, wavOf(all, rate)); } catch (err) { note("Голос не отправлен: " + err.message); }
+    try { await sendVoice(chat, mode, wavOf(all, rate)); } catch (err) { note(err.unauth ? "kb-сервер не пускает телефон: голос не ушел." : "Голос не отправлен: " + err.message); }
     show();
   };
+  const away = () => { if (document.hidden) stop(false); }; // ушел со страницы — микрофон закрывается, запись не уходит
+  rec = { mode, stop };
+  addEventListener("pagehide", away);
+  document.addEventListener("visibilitychange", away);
+  timer = setTimeout(() => stop(), voiceLimit(st.desk)); // и без звука в обработчике (ревью #660)
+  show();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    if (done) { stream.getTracks().forEach((t) => t.stop()); return; }
+    src = ac.createMediaStreamSource(stream);
+    // ponytail: ScriptProcessorNode устарел, но есть и в Safari iOS, и в Chrome
+    // Android без отдельного файла ворклета. Потолок — его уберут из браузеров;
+    // путь — AudioWorklet.
+    proc = ac.createScriptProcessor(4096, 1, 1);
+  } catch (e) {
+    note("Нет доступа к микрофону: " + e.message);
+    stop(false);
+    return;
+  }
   proc.onaudioprocess = (e) => {
     const x = e.inputBuffer.getChannelData(0);
     chunks.push(new Float32Array(x));
     let sum = 0;
     for (const v of x) sum += v * v;
     if (Math.sqrt(sum / x.length) > QUIET_LEVEL) { spoke = true; quietAt = Date.now(); }
-    if (Date.now() - began > VOICE_MAX_MS || (mode === "ask" && spoke && Date.now() - quietAt > QUIET_MS)) stop();
+    if (mode === "ask" && spoke && Date.now() - quietAt > QUIET_MS) stop();
   };
   src.connect(proc);
   proc.connect(ac.destination);
-  rec = { mode, stop };
-  show();
 }
 
-// sendVoice puts the recording into the mailbox files and names it in the chat.
-async function sendVoice(c, mode, wav) {
+// sendVoice puts the recording into the mailbox files and names it in chat:
+// три попытки — запись 90 с не пропадает от одного сбоя сети.
+async function sendVoice(chat, mode, wav) {
   const sealed = await sealFile(st.pair, wav);
-  const r = await api(API + "/files", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: sealed });
-  if (r.status === 501 || r.status === 404 || r.status === 400) throw new Error("kb-сервер старше голоса с телефона");
+  let r = null;
+  for (const wait of [0, 2000, 5000]) {
+    if (wait) await new Promise((ok) => setTimeout(ok, wait));
+    try { r = await api(API + "/files", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: sealed }); } catch { r = null; continue; }
+    if (r.status < 500 && r.status !== 429) break;
+  }
+  if (!r) throw new Error("нет связи с kb-сервером");
+  if (r.status === 401) throw unauth();
+  if (r.status === 501 || r.status === 404 || r.status === 400 || r.status === 415) throw new Error("kb-сервер старше голоса с телефона");
   if (r.status === 429) throw new Error("много записей подряд — подождите немного");
   if (!r.ok) throw new Error("kb-сервер ответил " + r.status);
   const { id } = await r.json();
   const file = { id, sha256: hexOf(new Uint8Array(await crypto.subtle.digest("SHA-256", sealed))), size: sealed.length };
-  await send(ui.chat, { kind: "voice", text: mode, file }, (counter) => {
+  const c = st.chats[chat];
+  await send(chat, { kind: "voice", text: mode, file }, (counter) => {
+    if (!c) return;
     if (mode === "ask") {
       asked(c, "🎤 вопрос голосом", counter, Date.now());
       c.msgs[c.msgs.length - 1].voice = true;
     } else {
-      c.listening = true;
+      c.listening = Date.now();
     }
   });
 }
 
+// localRussianVoice is a Russian voice of the device itself: сетевой голос
+// отправил бы текст ответа в Google или Apple (ревью #660).
+function localRussianVoice() {
+  return speechSynthesis.getVoices().find((v) => v.lang.toLowerCase().startsWith("ru") && v.localService);
+}
+
 // paintVoice shows the voice state and takes what the window heard.
 function paintVoice(c) {
+  const hear = st.desk?.hear || "";
+  $("mic").hidden = $("talk").hidden = !hear; // окно не слышит — кнопок нет
   $("mic").setAttribute("aria-pressed", String(rec?.mode === "dictate"));
   $("talk").setAttribute("aria-pressed", String(rec?.mode === "ask"));
-  $("ask-note").textContent = rec ? (rec.mode === "ask" ? "слушаю вопрос · пауза — конец" : "слушаю · нажмите еще раз, чтобы закончить")
+  const waitedTooLong = c?.listening && Date.now() - c.listening > 150_000;
+  if (waitedTooLong) { delete c.listening; note("Компьютер не ответил на голос: окно закрыто или старше голоса с телефона.", false); persist(); }
+  $("ask-note").textContent = rec ? (rec.mode === "ask" ? "слушаю вопрос · пауза — конец" : "слушаю · нажмите еще раз, чтобы закончить") + (hear ? " · " + hearNote(hear) : "")
     : c?.listening ? "компьютер распознает…" : "ответ считает компьютер · переписка зашифрована";
   if (!c) return;
   if (c.heard !== undefined) { // диктовка: текст — в поле, отправляет человек
@@ -712,13 +745,18 @@ function paintVoice(c) {
     delete c.heard;
     persist();
   }
-  if (c.say && "speechSynthesis" in window) { // ответ на вопрос голосом — голосом телефона
-    const u = new SpeechSynthesisUtterance(c.say);
-    u.lang = "ru-RU";
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
-  }
-  if (c.say) { delete c.say; persist(); }
+  if (!c.say) return;
+  const say = c.say;
+  delete c.say;
+  persist();
+  if (typeof say !== "object" || Date.now() - say.at > SAY_FRESH_MS || !("speechSynthesis" in window)) return;
+  const voice = localRussianVoice();
+  if (!voice) { note("На телефоне нет русского голоса без сети — ответ не прочитан вслух.", false); return; }
+  const u = new SpeechSynthesisUtterance(say.text);
+  u.voice = voice;
+  u.lang = voice.lang;
+  speechSynthesis.cancel();
+  speechSynthesis.speak(u);
 }
 
 $("mic").addEventListener("click", () => startVoice("dictate"));

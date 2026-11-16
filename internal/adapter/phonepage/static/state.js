@@ -55,15 +55,21 @@ export function take(st, m, o) {
   if (m.from === "desk" && p.kind === "heard") { // диктовка (#648): текст — в поле ввода чата
     const c = st.chats[m.chat];
     if (!c) return false;
-    c.heard = p.text || "";
     delete c.listening;
+    const q = c.msgs.findLastIndex((x) => x.who === "me" && x.voice);
+    if (q >= 0) { // тихий вопрос голосом: заглушка уходит, ждать нечего (ревью #660)
+      c.msgs.splice(q, 1);
+      c.pending = false;
+    }
+    c.heard = p.text || "";
     return true;
   }
   const answer = m.from === "desk" && (p.kind === "answer" || p.kind === "error");
   if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (answer) {
-    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
+    const text = p.kind === "error" ? VOICE_WORDS[p.text] || p.text : p.text;
+    c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [] });
     c.pending = false;
     delete c.step;
     delete c.accepted;
@@ -73,7 +79,7 @@ export function take(st, m, o) {
     if (p.heard) { // голосовой вопрос (#648): заглушка получает слова, ответ — читать вслух
       const q = [...c.msgs].reverse().find((x) => x.who === "me" && x.voice);
       if (q) { q.text = p.heard; delete q.voice; }
-      if (p.kind === "answer") c.say = p.text;
+      if (p.kind === "answer") c.say = { text: p.text, at: Date.now() }; // читать вслух — пока свежий
     }
     if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
     else if (p.kind === "answer") delete c.context;
@@ -333,10 +339,26 @@ export function wavOf(samples, rate) {
 }
 
 // voiceLimit is how long one recording may be (мс); hearNote says who hears it.
-export function voiceLimit() {
-  return 90_000;
+// Apple Speech через сеть берет запись до минуты: дальше конец пропал бы.
+export function voiceLimit(desk) {
+  return desk?.hear === "apple" ? 55_000 : 90_000;
 }
 
-export function hearNote() {
-  return "";
+const HEAR_NOTE = {
+  device: "распознает компьютер без сети",
+  apple: "распознает Apple через интернет",
+  cloud: "распознает облако из настроек окна",
+  server: "распознает Ваш сервер распознавания",
+};
+
+export function hearNote(hear) {
+  return HEAR_NOTE[hear] || "";
 }
+
+// VOICE_WORDS — коды отказа голоса (mailrelay.Voice*) словами человеку.
+const VOICE_WORDS = {
+  unsupported: "Окно DVK на компьютере старше голоса с телефона — обновите его.",
+  mismatch: "Запись подменили по дороге, компьютер ее не взял — скажите еще раз.",
+  gone: "Запись не дошла до компьютера — скажите еще раз.",
+  unheard: "Компьютер не смог распознать запись — проверьте «Слушает» в настройках окна.",
+};
