@@ -100,6 +100,10 @@ verify() {
   # Файлы ящика без срока копились бы без конца: окно может не забрать кусок.
   # Имена полей в ответе yc не закреплены — ищем префикс в любом правиле.
   check "файлы ящика (mailfiles/) удаляются по сроку" '[[ "$(jq -c "[.. | objects | select(.prefix? == \"mailfiles/\")] | length" <<<"$bucket")" -ge 1 ]]'
+  # Срок без префикса удалил бы весь бакет; правило версий на 30 дней обещано
+  # в README (ревью безопасности #659).
+  check "срок жизни объектов — только у test/ и mailfiles/" '[[ "$(jq -c "[(.lifecycle_rules // .lifecycleRules // [])[] | select((.expiration // null) != null) | select(((.filter.prefix // .prefix // \"\") | IN(\"test/\", \"mailfiles/\")) | not)] | length" <<<"$bucket")" == 0 ]]'
+  check "старые версии хранятся 30 дней" '[[ "$(jq -c "[.. | objects | select((.noncurrent_days? // .noncurrentDays? // empty | tostring) == \"30\")] | length" <<<"$bucket")" -ge 1 ]]'
   check "ACL бакета: только $sa, только чтение и запись" '[[ -n "$sid" && "$(jq -c --arg s "$sid" "[.acl.grants[]? | select(.grantee_id != \$s or (.permission | IN(\"PERMISSION_READ\", \"PERMISSION_WRITE\") | not))] | length" <<<"$bucket")" == 0 ]]'
   # Роли шире бакета (на каталог или облако) дали бы доступ к данным в обход
   # ACL. Владельцу облака они положены; сервисным аккаунтам — нет.
