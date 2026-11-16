@@ -75,7 +75,7 @@ func encrypt(sub domain.PushSubscription, plaintext []byte, as *ecdh.PrivateKey,
 	if err != nil {
 		// Домен проверил только форму: точка вне кривой видна лишь здесь. Такая
 		// подписка непригодна навсегда — ErrGone, чтобы ее стерли.
-		return nil, fmt.Errorf("%w: phone key: %v", ErrGone, err)
+		return nil, fmt.Errorf("%w: phone key: %w", ErrGone, err)
 	}
 	secret, err := as.ECDH(ua)
 	if err != nil {
