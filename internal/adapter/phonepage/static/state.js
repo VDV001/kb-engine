@@ -367,11 +367,15 @@ const VOICE_WORDS = {
 export const MAX_ATTACH = 10 << 20;
 
 // attachRefusal says why a file can't go; "" — может.
-export function attachRefusal() {
+export function attachRefusal(size) {
+  if (!size) return "Файл пустой — прикладывать нечего.";
+  if (size > MAX_ATTACH) return "Файл больше 10 МБ — так много телефон не передаст. Сожмите фото или приложите часть.";
   return "";
 }
 
 // pieceBounds cuts size bytes into pieces of at most max: [начало, конец).
-export function pieceBounds() {
-  return [];
+export function pieceBounds(size, max) {
+  const out = [];
+  for (let at = 0; at < size; at += max) out.push([at, Math.min(size, at + max)]);
+  return out;
 }
