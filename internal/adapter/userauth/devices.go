@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	mrand "math/rand/v2"
 	"slices"
 	"sync"
 	"time"
@@ -321,19 +320,27 @@ func (v *Visits) Visit(ctx context.Context, id domain.UserID, device, name strin
 	}
 	// Занято до записи: опрос того же телефона, пришедший, пока пишется этот,
 	// не пишет второй раз (ревью #652).
-	v.last[k] = seenDTO{Device: device, Name: name, At: at}
+	mine := seenDTO{Device: device, Name: name, At: at}
+	v.last[k] = mine
 	v.mu.Unlock()
 
 	wrote, err := v.write(ctx, id, seenDTO{Device: device, Name: name, At: at.UTC()})
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if err != nil {
-		if ok {
+		// Откатываем только свою отметку: соседний опрос с другим именем мог
+		// записаться, пока этот ждал, и его итог новее (ревью #652).
+		switch {
+		case v.last[k] != mine:
+		case ok:
 			v.last[k] = prev
-		} else {
+		default:
 			delete(v.last, k)
 		}
-		v.pause = at.Add(VisitRetry)
+		// Отмена или срок запроса телефона — не сбой бакета: пауза всем ни к чему.
+		if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+			v.pause = at.Add(VisitRetry)
+		}
 		return err
 	}
 	v.last[k] = wrote
@@ -354,7 +361,7 @@ func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (se
 		return entry, nil // отвязан, пока шел опрос: не дописываем обратно
 	}
 	name := entry.Name
-	err = updateSeen(ctx, v.Store, id, func(f *seenFileDTO) bool {
+	err = updateSeen(ctx, v.Store, id, func(f *seenFileDTO) error {
 		entry.Name, entry.Given = name, ""
 		for _, e := range f.Phones {
 			if e.Device == entry.Device {
@@ -363,7 +370,7 @@ func (v *Visits) write(ctx context.Context, id domain.UserID, entry seenDTO) (se
 		}
 		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return e.Device == entry.Device || !live(e.Device) })
 		f.Phones = append(f.Phones, entry)
-		return true
+		return nil
 	})
 	return entry, err
 }
@@ -375,15 +382,15 @@ func (v *Visits) Rename(ctx context.Context, id domain.UserID, device, name stri
 	if err := ownPhone(ctx, v.Store, id, device); err != nil {
 		return err
 	}
-	return updateSeen(ctx, v.Store, id, func(f *seenFileDTO) bool {
+	return updateSeen(ctx, v.Store, id, func(f *seenFileDTO) error {
 		for i := range f.Phones {
 			if f.Phones[i].Device == device {
 				f.Phones[i].Given = name
-				return true
+				return nil
 			}
 		}
 		f.Phones = append(f.Phones, seenDTO{Device: device, Given: name})
-		return true
+		return nil
 	})
 }
 
@@ -418,42 +425,19 @@ func readSeen(ctx context.Context, s blob.Store, id domain.UserID) (seenFileDTO,
 	return f, o.ETag, nil
 }
 
-// updateSeen is update for the visits file of id: change говорит, менял ли он
-// что-то, — нечего стирать, значит и писать нечего (файл не заводится зря).
-func updateSeen(ctx context.Context, s blob.Store, id domain.UserID, change func(*seenFileDTO) bool) error {
-	for range writeAttempts {
-		f, etag, err := readSeen(ctx, s, id)
-		if err != nil {
-			return err
-		}
-		if !change(&f) {
-			return nil
-		}
-		if f.Phones == nil {
-			f.Phones = []seenDTO{}
-		}
-		data, err := json.MarshalIndent(f, "", "  ")
-		if err != nil {
-			return err
-		}
-		_, err = s.Put(ctx, SeenKey(id), append(data, '\n'), etag)
-		if errors.Is(err, blob.ErrConflict) {
-			time.Sleep(mrand.N(10 * time.Millisecond))
-			continue
-		}
-		if err != nil {
-			return fmt.Errorf("userauth: write %s: %w", SeenKey(id), err)
-		}
-		return nil
-	}
-	return fmt.Errorf("userauth: %s kept changing under %d attempts: %w", SeenKey(id), writeAttempts, blob.ErrConflict)
+// updateSeen is update for the visits file of id, but a corrupt file reads as
+// empty (see readSeen); errUnchanged из change — писать нечего, файл не заводится зря.
+func updateSeen(ctx context.Context, s blob.Store, id domain.UserID, change func(*seenFileDTO) error) error {
+	return updateKey(ctx, s, SeenKey(id), true, change)
 }
 
 // clearSeen forgets the visits of id's phones that match.
 func clearSeen(ctx context.Context, s blob.Store, id domain.UserID, match func(device string) bool) error {
-	return updateSeen(ctx, s, id, func(f *seenFileDTO) bool {
+	return updateSeen(ctx, s, id, func(f *seenFileDTO) error {
 		n := len(f.Phones)
-		f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return match(e.Device) })
-		return len(f.Phones) != n
+		if f.Phones = slices.DeleteFunc(f.Phones, func(e seenDTO) bool { return match(e.Device) }); len(f.Phones) == n {
+			return errUnchanged
+		}
+		return nil
 	})
 }

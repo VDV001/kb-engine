@@ -1382,16 +1382,16 @@ function phonesPanel(id) {
     // «Переименовать»: Safari iPhone модель не сообщает — имя дает человек (владелец 16.11).
     const editing = p.renaming === x.device;
     const name = editing
-      ? `<input class="conn-phone-name" data-phone-name-in="${esc(id)}" data-esc-own ${dev}${off} maxlength="40" value="${esc(p.nameDraft ?? x.name ?? "")}" placeholder="Например: iPhone Анастасии" aria-label="Имя телефона"${mkTip("Имя телефона", "до 40 знаков, видно только в этом окне. Enter — сохранить, Esc — отмена")}>`
+      ? `<input class="conn-phone-name" data-phone-name-in="${esc(id)}" data-esc-own ${dev}${off} maxlength="40" value="${esc(p.nameDraft ?? x.name ?? "")}" placeholder="Например: iPhone Анастасии" aria-label="Имя телефона"${mkTip("Имя телефона", "до 40 знаков; хранится на kb-сервере и видно в окнах с этим токеном. Enter — сохранить, Esc — отмена")}>`
       : `<span${mkTip(x.name || "Телефон без имени", x.name ? "имя по браузеру телефона или данное вами; поменять — «Переименовать»" : "телефон еще не входил, и браузер его не назвал; дайте имя — «Переименовать»")}>${esc(x.name || "Телефон")}</span>`;
     const acts = editing
       ? `<button class="btn primary conn-phone-btn" type="button"${off} data-phone-rename-save="${esc(id)}" ${dev}${mkTip("Сохранить", "имя запишется на kb-сервер; следующие входы телефона его не перепишут")}>Сохранить</button><button class="btn conn-phone-btn" type="button"${off} data-phone-rename-cancel="${esc(id)}"${mkTip("Отмена", "оставить прежнее имя")}>Отмена</button>`
-      : `<button class="btn conn-phone-btn" type="button"${off} data-phone-rename="${esc(id)}" ${dev}${mkTip("Переименовать", "имя видно только в этом окне; входы телефона его не перепишут")}>Переименовать</button><button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" ${dev}${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button>`;
+      : `${x.seenUnknown ? "" : `<button class="btn conn-phone-btn" type="button"${off} data-phone-rename="${esc(id)}" ${dev}${mkTip("Переименовать", "имя хранится на kb-сервере и видно в окнах с этим токеном; входы телефона его не перепишут")}>Переименовать</button>`}<button class="btn conn-phone-off" type="button"${off} data-phone-revoke="${esc(id)}" ${dev}${mkTip("Отвязать", "токен телефона перестанет открывать ящик сразу; отвязан последний — ключ чата сотрется, следующий телефон получит новый")}>Отвязать</button>`;
     // Части строки не рвутся внутри («16.11.2026 12:01» целиком), перенос — между ними.
-    const seen = x.seen ? "заходил " + x.seen : x.seenUnknown ? "вход неизвестен: сервер не прочитал входы" : "ждет первого входа";
+    const seen = x.seen ? "заходил " + x.seen : x.seenUnknown ? "вход неизвестен" : "ждет первого входа";
     const meta = [seen, "привязан " + x.at].map((t) => `<span>${esc(t)}</span>`).join(" · ");
     const metaTip = x.seen ? mkTip("Последний вход", "когда телефон в последний раз открывал чат; сервер отмечает вход не чаще раза в 5 минут. «Привязан» — когда показали QR-код")
-      : x.seenUnknown ? mkTip("Вход неизвестен", "kb-сервер не прочитал записи о входах; телефон может работать — проверьте чат на нем")
+      : x.seenUnknown ? mkTip("Вход неизвестен", "kb-сервер старой версии или не прочитал записи о входах: телефон может работать — проверьте чат на нем. Имя и вход появятся после обновления сервера")
       : mkTip("Ждет первого входа", "QR-код показан, но телефон по нему еще не открыл чат. Не пригодился — «Отвязать»");
     return `<li><div class="conn-phone-who">${name}<small${metaTip}>${meta}</small></div><div class="conn-phone-acts">${acts}</div></li>`;
   }).join("");
@@ -1421,8 +1421,12 @@ function watchPairing(id, device, started) {
     try { list = (await native().MailPhones(id)) || []; } catch { /* сеть мигнула — следующий круг */ }
     if (!still()) return;
     const row = list?.find((x) => x.device === device);
+    if (list && !row) { // отвязали в другом окне или users revoke: ждать нечего, код не нужен (ревью #652)
+      Object.assign(connPhones[id], { list, qr: "", waitFor: "", done: "Код скрыт: эту привязку отвязали, пока код был на экране" });
+      return renderConnections();
+    }
     if (row?.seenUnknown) {
-      Object.assign(connPhones[id], { list, waitFor: "", done: "Окно не видит входа телефона: сервер не прочитал входы. Скройте код сами, когда телефон откроет чат" });
+      Object.assign(connPhones[id], { list, waitFor: "", done: "Окно не видит входа телефона: kb-сервер старой версии или не прочитал входы. Скройте код сами, когда телефон откроет чат" });
       return renderConnections();
     }
     if (!row?.seen) return watchPairing(id, device, started);
@@ -1448,7 +1452,9 @@ async function loadPhones(id) {
 async function savePhoneName(id, device) {
   const p = connPhones[id];
   if (!p) return;
-  const name = p.nameDraft ?? $("#conn-list [data-phone-name-in]")?.value ?? "";
+  // Поле своей панели: открыты могут быть «Телефоны» нескольких серверов (ревью #652).
+  const field = () => [...document.querySelectorAll("#conn-list [data-phone-name-in]")].find((el) => el.dataset.phoneNameIn === id);
+  const name = p.nameDraft ?? field()?.value ?? "";
   Object.assign(p, { busy: "сохраняю имя…", err: "", nameDraft: name });
   renderConnections();
   try {
@@ -1456,7 +1462,7 @@ async function savePhoneName(id, device) {
     Object.assign(p, { renaming: "", nameDraft: null });
   } catch (err) { p.err = errText(err); }
   await loadPhones(id);
-  if (p.renaming) $("#conn-list [data-phone-name-in]")?.focus();
+  if (p.renaming) field()?.focus();
 }
 $("#conn-list").addEventListener("input", (e) => {
   const input = e.target.closest("[data-phone-name-in]");
@@ -1466,7 +1472,7 @@ $("#conn-list").addEventListener("keydown", (e) => {
   const input = e.target.closest("[data-phone-name-in]");
   if (!input || input.disabled) return;
   const id = input.dataset.phoneNameIn;
-  if (e.key === "Enter") { e.preventDefault(); savePhoneName(id, input.dataset.device); }
+  if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); savePhoneName(id, input.dataset.device); } // isComposing: Enter подтверждает слово IME, а не имя
   else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); Object.assign(connPhones[id], { renaming: "", nameDraft: null }); renderConnections(); }
 });
 // connClipTips: длинный адрес или список — одна строка с «…», целиком в подсказке (отзыв 15.11);
@@ -1527,7 +1533,7 @@ $("#conn-list").addEventListener("click", async (e) => {
     hideTip();
     Object.assign(connPhones[ren.dataset.phoneRename], { renaming: ren.dataset.device, nameDraft: null, err: "" });
     await renderConnections(); // перерисовка асинхронная: поле появится только после нее
-    return $("#conn-list [data-phone-name-in]")?.select();
+    return [...document.querySelectorAll("#conn-list [data-phone-name-in]")].find((el) => el.dataset.phoneNameIn === ren.dataset.phoneRename)?.select();
   }
   const save = e.target.closest("[data-phone-rename-save]");
   if (save) return savePhoneName(save.dataset.phoneRenameSave, save.dataset.device);

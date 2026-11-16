@@ -62,7 +62,11 @@ const maxPhoneName = 40
 
 // IsPhoneModel accepts a model name from the browser: латиница, цифры, пробел,
 // - _ . и не длиннее maxPhoneName — значение пришло от клиента.
-func IsPhoneModel(m string) bool { return false }
+func IsPhoneModel(m string) bool {
+	return m != "" && len(m) <= maxPhoneName && !strings.ContainsFunc(m, func(r rune) bool {
+		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune(" -_.", r)
+	})
+}
 
 // genericPhoneNames are the names without a model; пустое — имени еще нет.
 var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: true, PhoneIPadOrMac: true, PhoneAndroid: true, PhoneWindows: true}
@@ -70,8 +74,9 @@ var genericPhoneNames = map[string]bool{"": true, PhoneIPhone: true, PhoneIPad: 
 // BetterPhoneName is the name to keep when a phone named prev comes in as next:
 // имя без модели не заменяет имя с моделью — Chrome шлет модель не в каждом
 // запросе, и «Samsung SM-S918B» не должен прыгать в «Android» (ревью #652).
+// Браузер, не назвавший себя вовсе, имени не стирает (ревью #652).
 func BetterPhoneName(prev, next string) string {
-	if genericPhoneNames[next] && !genericPhoneNames[prev] {
+	if next == "" || genericPhoneNames[next] && !genericPhoneNames[prev] {
 		return prev
 	}
 	return next

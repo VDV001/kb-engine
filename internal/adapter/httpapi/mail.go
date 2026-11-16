@@ -106,7 +106,10 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	case errors.Is(err, domain.ErrPushOff):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, domain.ErrBadPushSubscription), errors.Is(err, domain.ErrBadPhoneName):
+	case errors.Is(err, domain.ErrBadPhoneName):
+		// 422, а не 400: окно отличает «имя не подходит» от испорченного запроса (ревью #652).
+		http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+	case errors.Is(err, domain.ErrBadPushSubscription):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, domain.ErrMailDeskOnly), errors.Is(err, domain.ErrMailPhoneOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -142,12 +145,13 @@ func (h mailRoutes) listPhones(w http.ResponseWriter, r *http.Request, c mailCal
 		At     time.Time  `json:"at"`
 		Seen   *time.Time `json:"seen,omitempty"` // нет — телефон еще не входил
 		Name   string     `json:"name,omitempty"`
-		// SeenUnknown — входы не прочитались: нет seen не значит «не входил».
-		SeenUnknown bool `json:"seen_unknown,omitempty"`
+		// SeenKnown — входы прочитаны: нет seen значит «не входил». Сервер до
+		// #652 поля не шлет, и окно не путает его с «не входил» (ревью #652).
+		SeenKnown bool `json:"seen_known,omitempty"`
 	}
 	out := make([]phoneDTO, 0, len(list))
 	for _, p := range list {
-		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name, SeenUnknown: p.SeenUnknown}
+		d := phoneDTO{Device: p.Device, At: p.At, Name: p.Name, SeenKnown: !p.SeenUnknown}
 		if !p.Seen.IsZero() {
 			d.Seen = &p.Seen
 		}
@@ -299,7 +303,7 @@ func writeJSONStatus(w http.ResponseWriter, code int, v any) {
 // phoneName names a phone by its browser: модель из Client Hints (Chrome на
 // Android после Accept-CH страницы /m/), иначе устройство из User-Agent.
 func phoneName(userAgent, model string) string {
-	if m, err := strconv.Unquote(model); err == nil && plainModel(m) {
+	if m, err := strconv.Unquote(model); err == nil && domain.IsPhoneModel(m) {
 		return withBrand(m)
 	}
 	switch {
@@ -325,21 +329,10 @@ func androidName(userAgent string) string {
 	_, rest, _ := strings.Cut(userAgent, "Android")
 	_, m, _ := strings.Cut(rest, ";")
 	m, _, closed := strings.Cut(m, ")")
-	if m = strings.TrimSpace(m); closed && m != "K" && plainModel(m) {
+	if m = strings.TrimSpace(m); closed && m != "K" && domain.IsPhoneModel(m) {
 		return withBrand(m)
 	}
 	return domain.PhoneAndroid
-}
-
-// plainModel accepts a model name a person can read: буквы, цифры, пробел, - _ .
-// и не длиннее 40 — значение пришло от клиента и показывается в окне.
-func plainModel(m string) bool {
-	if m == "" || len(m) > 40 {
-		return false
-	}
-	return strings.IndexFunc(m, func(r rune) bool {
-		return (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') && !strings.ContainsRune(" -_.", r)
-	}) < 0
 }
 
 // withBrand names Samsung by its model prefix: «SM-S918B» → «Samsung SM-S918B».
