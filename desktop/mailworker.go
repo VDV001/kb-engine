@@ -184,7 +184,8 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 
 		FindTimeout: phoneFindTimeout,
 	}
-	if w.hear != nil { // без распознавания — отказ кодом, не интерфейс с nil внутри
+	relay.Open = mailOpener{c.key} // файлы с телефона (#650)
+	if w.hear != nil {             // без распознавания — отказ кодом, не интерфейс с nil внутри
 		relay.Hear = phoneHearer{key: c.key, hear: w.hear}
 	}
 	return relay.Tick(ctx)
@@ -314,6 +315,11 @@ func (f mailVoiceFiles) Delete(ctx context.Context, id string) error {
 	return f.c.MailFileDelete(ctx, id)
 }
 
+// mailOpener opens the phone's file pieces with the chat key (#650).
+type mailOpener struct{ key mailcrypt.Key }
+
+func (o mailOpener) OpenFile(sealed []byte) ([]byte, error) { return mailcrypt.OpenFile(o.key, sealed) }
+
 // phoneHearer opens the phone's recording with the chat key and hears it.
 type phoneHearer struct {
 	key  mailcrypt.Key
@@ -414,6 +420,11 @@ func (a workerAsker) Ask(ctx context.Context, chat, question string) (string, st
 // AskStepped is AskSourced with the turn's steps for the phone (#622); step
 // nil — без хода.
 func (a workerAsker) AskStepped(ctx context.Context, id, question string, step func(mailrelay.Step)) (mailrelay.Answer, error) {
+	return a.AskAttached(ctx, id, question, nil, step)
+}
+
+// AskAttached is AskStepped with the phone's files (#650).
+func (a workerAsker) AskAttached(ctx context.Context, id, question string, files []mailrelay.File, step func(mailrelay.Step)) (mailrelay.Answer, error) {
 	if a.w.answer == nil {
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
@@ -438,7 +449,7 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 			step(mailrelay.Step{Text: stepLabel(u)})
 		}
 	}
-	ans, err := a.w.answer(ctx, id, question, nil, began, each)
+	ans, err := a.w.answer(ctx, id, question, files, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -447,11 +458,6 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 
 func (a workerAsker) AskSourced(ctx context.Context, id, question string) (mailrelay.Answer, error) {
 	return a.AskStepped(ctx, id, question, nil)
-}
-
-// AskAttached is AskStepped with the phone's files (#650).
-func (a workerAsker) AskAttached(ctx context.Context, id, question string, _ []mailrelay.File, step func(mailrelay.Step)) (mailrelay.Answer, error) {
-	return a.AskStepped(ctx, id, question, step)
 }
 
 // stepLabel words a step as the window shows it (useName в frontend/app.js):
@@ -490,11 +496,20 @@ func chatAsker(d *chatDesk) askFn {
 
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
-	return func(ctx context.Context, chat, question string, _ []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
+	return func(ctx context.Context, chat, question string, files []mailrelay.File, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
 		quiet := askOut{worker: true, step: step, began: began}
-		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
+		req := askReq{ID: chat, Question: question}
+		for _, f := range files {
+			doc, err := d.phoneDoc(ctx, f)
+			if err != nil {
+				return mailrelay.Answer{}, err
+			}
+			req.docs = append(req.docs, doc)
+		}
+		rec, err := d.ask(ctx, req, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
-			rec, err = d.ask(ctx, askReq{Question: question}, quiet)
+			req.ID = ""
+			rec, err = d.ask(ctx, req, quiet)
 		}
 		if err != nil {
 			return mailrelay.Answer{}, err

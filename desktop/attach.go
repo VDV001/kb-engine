@@ -19,6 +19,7 @@ import (
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
 	"github.com/daniil/kb-engine/internal/usecase/filesearch"
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // Приложенное к вопросу (#436): «+» в поле чата — файл с диска, документ из
@@ -150,6 +151,7 @@ func attachErr(ref string, err error) error {
 // через индекс, файл вне их — с диска, ссылка — weblink, найденное — тем же
 // чтением, что у модели.
 func (d *chatDesk) useAttachments(files *filesearch.Service, ext extraction, web weblink.Client, gd *googleDesk) {
+	d.ext = ext
 	d.attach = func(ctx context.Context, ref string) (chat.Doc, error) {
 		if link, ok := strings.CutPrefix(ref, "url:"); ok {
 			return readLink(ctx, ext, web, gd, "", ref, link)
@@ -278,3 +280,22 @@ func extractBytes(ctx context.Context, ext extraction, raw []byte, kind string) 
 	}
 	return string(raw), nil
 }
+
+// phoneDoc reads a file attached on the phone (#650) так же, как «+» в окне:
+// PDF и картинки — помощником (Vision), docx, текст. Вид — по имени, без
+// расширения — по типу файла.
+func (d *chatDesk) phoneDoc(ctx context.Context, f mailrelay.File) (chat.Doc, error) {
+	kind := strings.TrimPrefix(strings.ToLower(filepath.Ext(f.Name)), ".")
+	if kind == "" {
+		kind = phoneKinds[f.Type]
+	}
+	text, err := extractBytes(ctx, d.ext, f.Data, kind)
+	if err != nil {
+		return chat.Doc{}, fmt.Errorf("%s: %w", f.Name, err)
+	}
+	return chat.Doc{Ref: "phone:" + f.Name, Title: f.Name, Source: "Телефон", Text: text}, nil
+}
+
+// phoneKinds names a file without an extension by its type.
+var phoneKinds = map[string]string{"application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/heic": "heic", "text/plain": "txt",
+	"application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx"}
