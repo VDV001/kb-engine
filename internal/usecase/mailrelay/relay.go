@@ -634,7 +634,8 @@ func (r Relay) dropFiles(ctx context.Context, ids ...string) {
 func (r Relay) ask(ctx context.Context, st *State, chat, question string, files []File) Payload {
 	var a Answer
 	var err error
-	if aa, ok := r.Asker.(AttachedAsker); ok && len(files) > 0 {
+	// Одна ветка для хода с шагами и с файлами (ревью #661): окно умеет оба.
+	if aa, ok := r.Asker.(AttachedAsker); ok && (len(files) > 0 || r.StepEvery > 0) {
 		var step func(Step)
 		stop := func() {}
 		if r.StepEvery > 0 {

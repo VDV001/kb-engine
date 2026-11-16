@@ -63,7 +63,8 @@ export function take(st, m, o) {
   if (!answer && !(m.from === "phone" && p.kind === "question")) return false; // чат не заводится
   const c = (st.chats[m.chat] ||= { title: "Чат", msgs: [], updated: 0 });
   if (answer) {
-    const text = p.kind === "error" ? VOICE_WORDS[p.text] || p.text : p.text;
+    const withFile = [...c.msgs].reverse().find((x) => x.who === "me")?.attach;
+    const text = p.kind === "error" ? (withFile && ATTACH_WORDS[p.text]) || VOICE_WORDS[p.text] || p.text : p.text;
     c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text, at, sources: p.sources || [] });
     c.pending = false;
     delete c.step;
@@ -352,6 +353,14 @@ export function hearNote(hear) {
   return HEAR_NOTE[hear] || "";
 }
 
+// ATTACH_WORDS — те же коды по вопросу с файлом (ревью #661): о файле, а не о голосе.
+const ATTACH_WORDS = {
+  unsupported: "Окно DVK на компьютере старше файлов с телефона — обновите его.",
+  mismatch: "Файл подменили по дороге, компьютер его не взял — приложите еще раз.",
+  gone: "Файл не дошел до компьютера — приложите еще раз.",
+  toolarge: "Файл больше 10 МБ — компьютер его не взял.",
+};
+
 // VOICE_WORDS — коды отказа голоса (mailrelay.Voice*) словами человеку.
 const VOICE_WORDS = {
   unsupported: "Окно DVK на компьютере старше голоса с телефона — обновите его.",
@@ -362,7 +371,7 @@ const VOICE_WORDS = {
 };
 
 // MAX_ATTACH — предел файла с телефона (#650, mailrelay.MaxAttachment).
-export const MAX_ATTACH = 10 << 20;
+export const MAX_ATTACH = 10485760; // 10 МБ; сверено тестом с Go
 
 // attachRefusal says why a file can't go; "" — может.
 export function attachRefusal(size) {
