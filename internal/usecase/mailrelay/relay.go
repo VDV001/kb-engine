@@ -512,7 +512,7 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	var reply Payload
 	switch req.Kind {
 	case KindQuestion:
-		reply = r.ask(ctx, st, m.Chat, req.Text)
+		reply = r.question(ctx, st, m.Chat, req)
 	case KindMemory:
 		reply = r.decide(ctx, st, m.Chat, req)
 	case KindDesk:
@@ -546,10 +546,100 @@ func (r Relay) now() time.Time {
 }
 
 // ask runs the model turn in the window's chat of this mailbox chat.
-func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payload {
+// question runs a phone question, with its file when attached (#650).
+func (r Relay) question(ctx context.Context, st *State, chat string, req Payload) Payload {
+	if req.Attach == nil {
+		return r.ask(ctx, st, chat, req.Text, nil)
+	}
+	if _, ok := r.Asker.(AttachedAsker); !ok {
+		return Payload{Kind: KindError, Text: DeskUnsupported}
+	}
+	files, code := r.attached(ctx, req.Attach)
+	if code != "" {
+		return Payload{Kind: KindError, Text: code}
+	}
+	return r.ask(ctx, st, chat, req.Text, files)
+}
+
+// maxAttachPieces bounds the pieces of one file: 10 МБ кусками по 3 МБ — 4.
+const maxAttachPieces = 5
+
+// attached fetches, checks and opens the pieces of the phone's file (#650):
+// каждый — id, размер и хеш из аутентичного сообщения до расшифровки, по
+// порядку сообщения; итог — длина из сообщения. Сошлось все — куски
+// удаляются; нет — остаются (их удалит правило бакета) и отказ кодом.
+func (r Relay) attached(ctx context.Context, att *Attachment) ([]File, string) {
+	if r.Files == nil || r.Open == nil {
+		return nil, DeskUnsupported
+	}
+	if att.Size > MaxAttachment || len(att.Pieces) > maxAttachPieces {
+		return nil, AttachTooLarge
+	}
+	data := make([]byte, 0, max(att.Size, 0))
+	ids := make([]string, 0, len(att.Pieces))
+	for _, p := range att.Pieces {
+		sealed, code := r.piece(ctx, p)
+		if code != "" {
+			return nil, code
+		}
+		plain, err := r.Open.OpenFile(sealed)
+		if err != nil {
+			r.logf("mailrelay: attach: open %s: %v", p.ID, err)
+			return nil, VoiceMismatch
+		}
+		if data = append(data, plain...); len(data) > att.Size {
+			return nil, VoiceMismatch
+		}
+		ids = append(ids, p.ID)
+	}
+	if len(data) != att.Size || len(ids) == 0 {
+		return nil, VoiceMismatch
+	}
+	r.dropFiles(ctx, ids...)
+	return []File{{Name: att.Name, Type: att.Type, Data: data}}, ""
+}
+
+// piece fetches one sealed piece and checks it against its reference.
+func (r Relay) piece(ctx context.Context, p FileRef) ([]byte, string) {
+	if domain.ValidateMailFileID(p.ID) != nil {
+		return nil, VoiceGone
+	}
+	sealed, err := r.Files.Get(ctx, p.ID)
+	if err != nil {
+		r.logf("mailrelay: file: get %s: %v", p.ID, err)
+		return nil, VoiceGone
+	}
+	sum := sha256.Sum256(sealed)
+	if len(sealed) != p.Size || hex.EncodeToString(sum[:]) != p.SHA256 {
+		return nil, VoiceMismatch
+	}
+	return sealed, ""
+}
+
+// dropFiles deletes pieces the window has taken, со своим сроком: закрытие
+// окна посреди хода не оставит их в бакете.
+func (r Relay) dropFiles(ctx context.Context, ids ...string) {
+	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	for _, id := range ids {
+		if err := r.Files.Delete(dctx, id); err != nil {
+			r.logf("mailrelay: file: delete %s: %v", id, err)
+		}
+	}
+}
+
+func (r Relay) ask(ctx context.Context, st *State, chat, question string, files []File) Payload {
 	var a Answer
 	var err error
-	if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
+	if aa, ok := r.Asker.(AttachedAsker); ok && len(files) > 0 {
+		var step func(Step)
+		stop := func() {}
+		if r.StepEvery > 0 {
+			step, stop = r.stepper(ctx, st, chat)
+		}
+		a, err = aa.AskAttached(ctx, st.Chats[chat], question, files, step)
+		stop()
+	} else if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
 		step, stop := r.stepper(ctx, st, chat)
 		a, err = sa.AskStepped(ctx, st.Chats[chat], question, step)
 		stop()
@@ -794,24 +884,11 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	if r.Files == nil || r.Hear == nil {
 		return Payload{Kind: KindError, Text: DeskUnsupported}
 	}
-	if domain.ValidateMailFileID(req.File.ID) != nil {
-		return Payload{Kind: KindError, Text: VoiceGone}
+	sealed, code := r.piece(ctx, *req.File)
+	if code != "" {
+		return Payload{Kind: KindError, Text: code}
 	}
-	sealed, err := r.Files.Get(ctx, req.File.ID)
-	if err != nil {
-		r.logf("mailrelay: voice: get %s: %v", req.File.ID, err)
-		return Payload{Kind: KindError, Text: VoiceGone}
-	}
-	sum := sha256.Sum256(sealed)
-	if len(sealed) != req.File.Size || hex.EncodeToString(sum[:]) != req.File.SHA256 {
-		return Payload{Kind: KindError, Text: VoiceMismatch}
-	}
-	// Свой срок, а не срок круга: закрытие окна посреди хода не оставит запись.
-	dctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	if err := r.Files.Delete(dctx, req.File.ID); err != nil {
-		r.logf("mailrelay: voice: delete %s: %v", req.File.ID, err)
-	}
-	cancel()
+	r.dropFiles(ctx, req.File.ID)
 	hctx, cancel := context.WithTimeout(ctx, cmp.Or(r.HearTimeout, DefaultHearTimeout))
 	text, err := r.Hear.Hear(hctx, sealed)
 	cancel()
@@ -823,7 +900,7 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	if req.Text != VoiceAsk || text == "" {
 		return Payload{Kind: KindHeard, Text: text}
 	}
-	reply := r.ask(ctx, st, chat, text)
+	reply := r.ask(ctx, st, chat, text, nil)
 	reply.Heard = text
 	return reply
 }
