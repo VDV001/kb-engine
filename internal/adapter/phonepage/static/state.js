@@ -159,6 +159,16 @@ export function searchChat(st) {
   return "search-" + hex(st.sender || []);
 }
 
+// deskChat is the mailbox chat of the window's state for this phone (#647).
+export function deskChat(st) {
+  return searchChat(st);
+}
+
+// choiceView is what the phone shows of chat c's model and sources.
+export function choiceView() {
+  return null;
+}
+
 // found applies the desk's answer to a search: выдача, документ или отказ.
 // Выдача старого запроса не подменяет новый.
 function found(st, m, p) {

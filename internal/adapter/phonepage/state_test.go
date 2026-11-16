@@ -233,6 +233,28 @@ want(st17.chats.c.remember.length === 1 && st17.chats.c.remember[0].id === "g3",
 const st17b = { ...st17, seen: {}, chats: {} };
 want(s.take(st17b, { seq: 5, chat: "x", from: "desk" }, dk14(5, offer)) === false && !st17b.chats.x, "an offer to a chat the phone does not know is dropped");
 
+// 18. Модель и источники чата (#647): телефон показывает, менять — в окне.
+// Состояние окна — своим служебным чатом: отказ на desk не становится
+// ошибкой поиска; desk другого телефона — мимо.
+const st18 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [], pending: true, updated: 1 } } };
+const desk18 = { model: "qwen3", sources: [{ id: "f-1", name: "notes" }, { id: "oz1", name: "Ozon · Пример", conn: true }] };
+const dc = s.deskChat(st18);
+want(dc !== s.searchChat(st18) && dc === s.deskChat({ ...st18 }), "the desk has its own stable chat");
+s.take(st18, { seq: 1, chat: dc, from: "desk" }, dk14(1, { kind: "error", text: "окно старое" }));
+want(!st18.search?.error && !st18.desk, "a desk refusal is not a search error");
+want(s.take(st18, { seq: 2, chat: dc, from: "desk" }, dk14(2, { kind: "desk", desk: desk18 })) === true && st18.desk?.model === "qwen3", "the desk state lands from its chat");
+want(s.take(st18, { seq: 3, chat: "desk-ffff", from: "desk" }, dk14(3, { kind: "desk", desk: { model: "x" } })) === false && st18.desk?.model === "qwen3", "another phone's desk chat is not ours");
+// Ответ окна говорит модель и источники чата; без источников — все.
+s.take(st18, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "answer", text: "ок", model: "llama3", only: ["f-1", "gone"] }));
+want(st18.chats.c.model === "llama3" && st18.chats.c.only?.join() === "f-1,gone", "the answer tells the chat's model and sources");
+const v18 = s.choiceView(st18.chats.c, st18.desk);
+want(v18?.model === "llama3" && v18.on === 1 && v18.total === 2 && v18.names.join() === "notes", "the view names known sources only");
+s.take(st18, { seq: 5, chat: "c", from: "desk" }, dk14(5, { kind: "answer", text: "ок", model: "qwen3" }));
+const all18 = s.choiceView(st18.chats.c, st18.desk);
+want(st18.chats.c.only === undefined && all18?.on === 2 && all18?.names.length === 2, "an answer without sources — all");
+want(s.choiceView({ msgs: [] }, st18.desk)?.model === "qwen3", "a chat without an answer — the window's model");
+want(s.choiceView(st18.chats.c, null) === null, "no desk state — nothing to show");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

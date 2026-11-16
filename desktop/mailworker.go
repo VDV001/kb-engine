@@ -180,6 +180,21 @@ func (w *mailWorker) tickServer(ctx context.Context, id string, notes []mailrela
 	return relay.Tick(ctx)
 }
 
+// useChat wires the worker to the window's chat: ход модели, поиск и
+// «новое — только в портрете». Здесь, а не в app.go: сборка проверяется тестом.
+func (w *mailWorker) useChat(d *chatDesk) {
+	w.answer = chatAnswerer(d)
+	w.find = newPhoneFinder(d.find, d.openFound) // ставит useSources в main до старта окна
+	w.quiet = func() bool { return d.config().MemoryQuiet }
+}
+
+// phoneDesk tells the phone the window's state (#647).
+type phoneDesk struct{ settings *folderSettings }
+
+func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
+	return mailrelay.DeskState{}, nil
+}
+
 // phoneFindTimeout bounds one search or open for the phone: работник один на
 // все серверы, подвисший источник или огромный PDF не держат его круг.
 const phoneFindTimeout = time.Minute
