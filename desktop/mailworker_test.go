@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -621,5 +622,52 @@ func TestUseVoiceKeepsFreshRecordings(t *testing.T) {
 	newMailWorker(nil, nil, t.TempDir()).useVoice(&dictation{tmpDir: tmp})
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("a fresh recording was swept: %v", err)
+	}
+}
+
+// Один чат в двух местах (#649), настоящим кругом: переименование и удаление
+// с телефона доходят до файла чата окна, правка в окне — до телефона.
+func TestMailWorkerEditsChatsBothWays(t *testing.T) {
+	s, tok, srv, _ := newWorkerSettings(t)
+	key := mailcrypt.NewKey()
+	tok.m[mailKeyAccount("srv1")] = key.Encode()
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	w := newMailWorker(s, chatAsker(d), t.TempDir())
+	w.useChat(d)
+	phoneAsks(t, srv, key, "c-1", 1, "сроки?")
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	list, err := d.List()
+	if err != nil || len(list) != 1 {
+		t.Fatalf("window chats %v, %v", list, err)
+	}
+	id := list[0].ID
+	if err := d.RenameChat(id, "Поставки в окне"); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := phoneReads(t, srv, key)
+	if last := got[len(got)-1]; last.Kind != mailrelay.KindRename || last.Text != "Поставки в окне" {
+		t.Fatalf("the phone got %+v — the window's rename did not reach it", last)
+	}
+	phoneSends(t, srv, key, "c-1", 2, mailrelay.Payload{Kind: mailrelay.KindRename, Text: "Поставки"})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if rec, err := d.load(id); err != nil || rec.Title != "Поставки" {
+		t.Fatalf("window title %q, %v", rec.Title, err)
+	}
+	phoneSends(t, srv, key, "c-1", 3, mailrelay.Payload{Kind: mailrelay.KindDelete, Text: "chat"})
+	if err := w.tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.load(id); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("the window chat survived the phone's delete: %v", err)
 	}
 }
