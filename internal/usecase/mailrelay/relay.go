@@ -222,8 +222,10 @@ const (
 	KindRename = "rename"
 	// KindDelete — чат удален (#649): телефон → окно и окно → телефон.
 	KindDelete = "delete"
-	// KindEdited — окно приняло переименование или удаление с телефона.
+	// KindEdited — окно приняло переименование или удаление с телефона (Text — вид).
 	KindEdited = "edited"
+	// ChatEditFailed — код: окно не смогло переименовать или удалить чат.
+	ChatEditFailed = "chaterr"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна
@@ -506,7 +508,7 @@ func (r Relay) request(st *State, m Message) (Payload, bool) {
 		return Payload{}, false
 	}
 	switch p.Kind {
-	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk:
+	case KindQuestion, KindSearch, KindOpen, KindMemory, KindDesk, KindRename, KindDelete:
 		return p, true
 	case KindVoice: // режим — только известный, запись — названа
 		return p, (p.Text == VoiceDictate || p.Text == VoiceAsk) && p.File != nil
@@ -533,6 +535,8 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 		reply = r.decide(ctx, st, m.Chat, req)
 	case KindDesk:
 		reply = r.desk(ctx)
+	case KindRename, KindDelete:
+		reply = r.editChat(ctx, st, m.Chat, req)
 	case KindVoice:
 		reply = r.voice(ctx, st, m.Chat, req)
 	default:
@@ -698,6 +702,9 @@ func (r Relay) offer(st *State) error {
 			continue
 		}
 		st.Outbox = append(st.Outbox, out)
+		if n.Payload.Kind == KindDelete { // окно удалило чат: связь забыть (#649)
+			delete(st.Chats, chat)
+		}
 		if st.Offered == nil {
 			st.Offered = map[string][]string{}
 		}
@@ -923,6 +930,38 @@ func (r Relay) voice(ctx context.Context, st *State, chat string, req Payload) P
 	reply := r.ask(ctx, st, chat, text, nil)
 	reply.Heard = text
 	return reply
+}
+
+// maxChatTitle bounds a title from the phone, в знаках.
+const maxChatTitle = 120
+
+// editChat renames or deletes the window's chat of a phone chat (#649): чат
+// один в двух местах. Окно чата еще не знает — подтверждение без правки;
+// удаленный — забывается, ответы туда не пойдут.
+func (r Relay) editChat(ctx context.Context, st *State, chat string, req Payload) Payload {
+	done := Payload{Kind: KindEdited, Text: req.Kind}
+	id := st.Chats[chat]
+	if id == "" {
+		return done
+	}
+	if r.Chats == nil {
+		return Payload{Kind: KindError, Text: DeskUnsupported}
+	}
+	var err error
+	if req.Kind == KindRename {
+		title := []rune(strings.TrimSpace(req.Text))
+		err = r.Chats.RenameChat(ctx, id, string(title[:min(len(title), maxChatTitle)]))
+	} else {
+		err = r.Chats.DeleteChat(ctx, id)
+	}
+	if err != nil {
+		r.logf("mailrelay: %s %s: %v", req.Kind, id, err)
+		return Payload{Kind: KindError, Text: ChatEditFailed}
+	}
+	if req.Kind == KindDelete {
+		delete(st.Chats, chat)
+	}
+	return done
 }
 
 // desk tells the phone the window's state (#647): модель и названия источников.
