@@ -23,6 +23,10 @@ var ErrFactExists = errors.New("fact already exists")
 // ErrFactNotFound — факта с таким id в портрете нет.
 var ErrFactNotFound = errors.New("fact not found")
 
+// ErrFactDecided — факт уже одобрен: решение «запомнить или нет» по нему не
+// принимается (решение с телефона, ревью безопасности #655).
+var ErrFactDecided = errors.New("fact already decided")
+
 // MaxFactRunes — потолок текста факта: факт — одна мысль, а не заметка.
 const MaxFactRunes = 300
 
@@ -195,6 +199,19 @@ func (p Portrait) index(id string) (int, error) {
 		return -1, fmt.Errorf("%w: %q", ErrFactNotFound, id)
 	}
 	return i, nil
+}
+
+// Waiting checks that fact id still waits for approval: решение «запомнить или
+// нет» принимается только по нему — одобренный ErrFactDecided.
+func (p Portrait) Waiting(id string) error {
+	i, err := p.index(id)
+	if err != nil {
+		return err
+	}
+	if p.facts[i].Approved() {
+		return fmt.Errorf("%w: %q", ErrFactDecided, id)
+	}
+	return nil
 }
 
 // Approve returns the portrait with the fact approved by the person.

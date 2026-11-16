@@ -258,6 +258,12 @@ func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(i
 // PortraitRemove forgets a fact.
 func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id) }
 
+// PortraitDecide decides a fact waiting for approval (карточка «Запомнить о
+// Вас?» окна): уже решенный, например телефоном, — «уже решен», окно его не тронет.
+func (a *App) PortraitDecide(id string, yes bool, text string) error {
+	return a.chat.PortraitDecide(context.Background(), id, yes, text)
+}
+
 // PortraitApprove lets a fact into the chat; text — правка перед одобрением.
 func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
 
@@ -535,6 +541,15 @@ func (a *App) startup(ctx context.Context) {
 		w.find = newPhoneFinder(a.chat.find, a.chat.openFound) // ставит useSources в main до старта окна
 		w.changed = func(chat string) { runtime.EventsEmit(ctx, "chats:changed", chat) }
 		w.turn = func(t phoneTurn) { runtime.EventsEmit(ctx, "phone:turn", t) }
+		// «Запомнить о Вас?» и на телефоне (#647): найденное в ответе — и странице,
+		// и в очередь работника; решение телефона — портретом окна.
+		pageNews := a.chat.memoryNew
+		a.chat.memoryNew = func(n portraitNews) { pageNews(n); w.remember(n) }
+		w.quiet = func() bool { return a.chat.config().MemoryQuiet }
+		w.memory = phoneMemory{decide: a.chat.PortraitDecide,
+			decided: func(id string, yes bool) {
+				runtime.EventsEmit(ctx, "portrait:decided", map[string]any{"id": id, "yes": yes})
+			}}
 		go w.run(ctx)
 	}
 }

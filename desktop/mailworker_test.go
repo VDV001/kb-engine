@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -267,5 +269,63 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
 	if len(got) == 0 || got[len(got)-1] != (phoneTurn{Chat: "w-1", Done: true}) {
 		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
+	}
+}
+
+// Факты из ответа ждут круга работника; второй раз их не отдают (#647).
+func TestMailWorkerQueuesFacts(t *testing.T) {
+	w := newMailWorker(nil, nil, t.TempDir())
+	w.remember(portraitNews{Chat: "w-1", Facts: []factView{{ID: "f1", Title: "Работа", Text: "Ведет закупки"}}})
+	w.remember(portraitNews{Chat: "w-2"})
+	got := w.Take()
+	if len(got) != 1 || got[0].Chat != "w-1" || got[0].Payload.Kind != mailrelay.KindRemember ||
+		len(got[0].Payload.Facts) != 1 || got[0].Payload.Facts[0] != (mailrelay.Fact{ID: "f1", Title: "Работа", Text: "Ведет закупки"}) {
+		t.Fatalf("notes %+v", got)
+	}
+	if again := w.Take(); len(again) != 0 {
+		t.Errorf("notes given twice: %+v", again)
+	}
+	// Не больше maxPhoneFacts за раз: одна пачка не раздувает сообщение ящика (ревью #655).
+	many := make([]factView, 15)
+	for i := range many {
+		many[i] = factView{ID: fmt.Sprintf("f%d", i), Text: "x"}
+	}
+	w.remember(portraitNews{Chat: "w-1", Facts: many})
+	if got := w.Take(); len(got) != 1 || len(got[0].Payload.Facts) != maxPhoneFacts {
+		t.Errorf("15 facts → %+v", got)
+	}
+	// «Новое — только в портрете» окна действует и на телефон (ревью #655).
+	w.quiet = func() bool { return true }
+	w.remember(portraitNews{Chat: "w-1", Facts: many[:1]})
+	if got := w.Take(); len(got) != 0 {
+		t.Errorf("memory quiet, the phone still gets %+v", got)
+	}
+}
+
+// Решение телефона — портретом окна через Decide (только ждущий одобрения
+// факт); странице — снять карточку; сбой — карточка остается (#647, ревью #655).
+func TestPhoneMemoryDecides(t *testing.T) {
+	var calls []string
+	fail := error(nil)
+	m := phoneMemory{
+		decide: func(ctx context.Context, id string, yes bool, text string) error {
+			if ctx == nil {
+				t.Error("decide without the worker's ctx")
+			}
+			calls = append(calls, fmt.Sprintf("decide %s %t %s", id, yes, text))
+			return fail
+		},
+		decided: func(id string, yes bool) { calls = append(calls, fmt.Sprintf("decided %s %t", id, yes)) },
+	}
+	if err := m.Decide(t.Context(), "f1", true, "Ведет закупки"); err != nil {
+		t.Fatal(err)
+	}
+	want := "decide f1 true Ведет закупки|decided f1 true"
+	if strings.Join(calls, "|") != want {
+		t.Fatalf("calls %v", calls)
+	}
+	calls, fail = nil, errors.New("портрет недоступен")
+	if err := m.Decide(t.Context(), "f3", false, ""); err == nil || len(calls) != 1 {
+		t.Fatalf("failed decide: %v, %v — the page must not drop its card", err, calls)
 	}
 }

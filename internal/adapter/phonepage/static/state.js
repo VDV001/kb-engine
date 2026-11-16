@@ -37,6 +37,7 @@ export function take(st, m, o) {
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
+  if (m.from === "desk" && (p.kind === "remember" || p.kind === "memory")) return remembered(st.chats[m.chat], p);
   if (m.from === "desk" && p.kind === "accepted") { // окно взяло вопрос (#646): показ, не сообщение
     const c = st.chats[m.chat];
     if (!c?.pending) return false; // запоздавшее после ответа
@@ -119,6 +120,36 @@ export function posted(st, o) {
   if (!o.counter) return;
   const m = st.chats[o.chat]?.msgs.find((x) => x.who === "me" && x.counter === o.counter);
   if (m) m.sent = true;
+}
+
+// remembered applies «Запомнить о Вас?» of the desk to chat c (#647):
+// предложение — карточки без дублей; итог — снять или оставить со словами.
+// Чат, которого телефон не знает, — мимо: пустой чат из одних карточек не нужен.
+function remembered(c, p) {
+  if (!c) return false;
+  const facts = p.facts || [];
+  if (p.kind === "remember") {
+    c.remember ||= [];
+    for (const f of facts) if (f.id && !c.remember.some((x) => x.id === f.id)) c.remember.push({ id: f.id, title: f.title || "", text: f.text || "" });
+    return facts.length > 0;
+  }
+  const f = c.remember?.find((x) => x.id === facts[0]?.id);
+  if (!f) return false;
+  if (p.text === "saved" || p.text === "skipped" || p.text === "gone") c.remember = c.remember.filter((x) => x !== f); // gone — решено или забыто в окне
+  else Object.assign(f, { busy: false, err: p.text || "окно не приняло решение" });
+  return true;
+}
+
+// hideFact drops the card of fact id on the phone: окно отказало, а карточка
+// не нужна (ревью #655).
+export function hideFact(c, id) {
+  if (c.remember) c.remember = c.remember.filter((x) => x.id !== id);
+}
+
+// deciding marks fact id of chat c sent for a decision (#647).
+export function deciding(c, id) {
+  const f = c.remember?.find((x) => x.id === id);
+  if (f) Object.assign(f, { busy: true, err: "" });
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы

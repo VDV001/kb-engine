@@ -4285,12 +4285,13 @@ function memApprove(id, text) {
   const f = factById(id) || { title: "портрет" };
   memState.qedit = "";
   if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
-  return memDo(() => native().PortraitApprove(id, text || ""), "Запомнено", ` · в «${f.title}»`, () => memDo(() => native().PortraitRemove(id), "Вернул", " · не запоминаю"));
+  // Decide, а не Approve: решенный уже телефоном факт окно не перепишет (повторное ревью #655).
+  return memDo(() => native().PortraitDecide(id, true, text || ""), "Запомнено", ` · в «${f.title}»`, () => memDo(() => native().PortraitRemove(id), "Вернул", " · не запоминаю"));
 }
 function memReject(id) {
   if (chatState.memNew) chatState.memNew.facts = chatState.memNew.facts.filter((x) => x.id !== id);
   memState.qedit = "";
-  return memDo(() => native().PortraitRemove(id), "Не запоминаю", " · и в портрет не кладу", null, "off");
+  return memDo(() => native().PortraitDecide(id, false, ""), "Не запоминаю", " · и в портрет не кладу", null, "off");
 }
 $("#mem-pick").addEventListener("click", async () => {
   if (!native() || !native().PickPortraitDir) return;
@@ -4354,6 +4355,16 @@ function memOffer(chat, facts) {
   n.facts = [...n.facts, ...facts.filter((f) => !n.facts.some((x) => x.id === f.id))];
   chatState.memNew = n;
 }
+// Решено на телефоне (#647): та же карточка в окне снимается, портрет — свежий.
+if (window.runtime) window.runtime.EventsOn("portrait:decided", (ev) => {
+  const n = chatState.memNew;
+  if (n && ev) {
+    n.facts = n.facts.filter((f) => f.id !== ev.id);
+    if (!n.facts.length) chatState.memNew = null;
+  }
+  if (ev && !undoFn) toast(ev.yes ? "Запомнено" : "Не запоминаю", " · решено на телефоне", null, "info");
+  loadPortrait().then(() => { if (!chatState.busy) renderChat(); });
+});
 if (window.runtime) window.runtime.EventsOn("portrait:new", (ev) => {
   if (!(chatState.settings || {}).memoryQuiet && ev && ev.facts && ev.facts.length) memOffer(ev.chat, ev.facts);
   loadPortrait().then(() => { if (!chatState.busy) renderChat(); });

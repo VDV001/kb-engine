@@ -208,6 +208,31 @@ st16.chats.c.accepted = true;
 want(/замолчал/.test(s.waitView(st16.chats.c, true).text) && !/отвечает/.test(s.waitView(st16.chats.c, true).text), "accepted but the desk went silent: " + s.waitView(st16.chats.c, true).text);
 want(s.waitView(st16.chats.c, false).text === "Компьютер принял · отвечает", "accepted and the desk alive");
 
+// 17. «Запомнить о Вас?» на телефоне (#647): предложение окна — карточки в
+// чате; повтор — без дубля; «запомнено»/«не запоминаю» снимает, отказ — остается со словами.
+const st17 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "desk", text: "ок" }], updated: 1 } } };
+const offer = { kind: "remember", text: "", facts: [{ id: "f1", title: "Работа", text: "Ведет закупки" }, { id: "f2", title: "Семья", text: "Двое детей" }] };
+want(s.take(st17, { seq: 1, chat: "c", from: "desk" }, dk14(1, offer)) === true && st17.chats.c.remember?.length === 2, "the offer shows as cards");
+s.take(st17, { seq: 2, chat: "c", from: "desk" }, dk14(2, offer));
+want(st17.chats.c.remember.length === 2 && st17.chats.c.msgs.length === 1, "a repeated offer is not doubled and is not a message");
+s.deciding(st17.chats.c, "f1");
+want(st17.chats.c.remember[0].busy === true, "a sent decision marks the card busy");
+s.take(st17, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "memory", text: "saved", facts: [{ id: "f1" }] }));
+want(st17.chats.c.remember.length === 1 && st17.chats.c.remember[0].id === "f2", "saved takes the card away");
+s.take(st17, { seq: 4, chat: "c", from: "desk" }, dk14(4, { kind: "memory", text: "портрет недоступен", facts: [{ id: "f2" }] }));
+want(st17.chats.c.remember[0].err === "портрет недоступен" && !st17.chats.c.remember[0].busy, "a refusal keeps the card with the words");
+// Ревью #655: «gone» (решено в окне, не предлагался) снимает карточку; другой
+// код — карточка остается с ним; «Скрыть» убирает карточку на телефоне.
+st17.chats.c.remember = [{ id: "g1", text: "a" }, { id: "g2", text: "b" }, { id: "g3", text: "c" }];
+s.take(st17, { seq: 10, chat: "c", from: "desk" }, dk14(10, { kind: "memory", text: "gone", facts: [{ id: "g1" }] }));
+want(!st17.chats.c.remember.some((x) => x.id === "g1"), "gone takes the card away");
+s.take(st17, { seq: 11, chat: "c", from: "desk" }, dk14(11, { kind: "memory", text: "bad", facts: [{ id: "g2" }] }));
+want(st17.chats.c.remember.find((x) => x.id === "g2")?.err === "bad", "another code stays on the card");
+s.hideFact(st17.chats.c, "g2");
+want(st17.chats.c.remember.length === 1 && st17.chats.c.remember[0].id === "g3", "hide takes the card away on the phone");
+const st17b = { ...st17, seen: {}, chats: {} };
+want(s.take(st17b, { seq: 5, chat: "x", from: "desk" }, dk14(5, offer)) === false && !st17b.chats.x, "an offer to a chat the phone does not know is dropped");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

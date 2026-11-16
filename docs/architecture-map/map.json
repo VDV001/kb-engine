@@ -4226,8 +4226,8 @@
           "from": "dom-portrait",
           "to": "uc-portrait",
           "call": "повтор текста в разделе — ErrFactExists",
-          "detail": "internal/domain/portrait.go:226 — Правка не может повторить другой факт раздела: такой портрет следующее чтение отвергло бы целиком",
-          "source": "internal/domain/portrait.go:226",
+          "detail": "internal/domain/portrait.go:243 — Правка не может повторить другой факт раздела: такой портрет следующее чтение отвергло бы целиком",
+          "source": "internal/domain/portrait.go:243",
           "symbol": "sameText",
           "unverified": false
         },
