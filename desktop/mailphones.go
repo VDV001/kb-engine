@@ -33,6 +33,8 @@ type phonePairing struct {
 type phoneRow struct {
 	Device string `json:"device"`
 	At     string `json:"at"` // «15.11.2026 12:40», местное время
+	Seen   string `json:"seen"`
+	Name   string `json:"name"`
 }
 
 // mailKeyAccount is the keychain account of the chat key of server id.

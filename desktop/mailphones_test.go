@@ -262,3 +262,28 @@ func TestMailPairPhoneWithoutQR(t *testing.T) {
 		t.Errorf("phone created on the server: %v", list)
 	}
 }
+
+// В списке телефонов окно показывает имя по браузеру и последний вход: так
+// видно, что телефон вошел по QR, и какой это телефон (владелец 16.11).
+func TestMailPhonesNameAndSeen(t *testing.T) {
+	seen := time.Date(2026, 11, 16, 9, 6, 0, 0, time.UTC)
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"devices":[{"device":"p-1","at":"2026-11-16T09:04:00Z","seen":"2026-11-16T09:06:00Z","name":"Samsung SM-S918B"},{"device":"p-2","at":"2026-11-16T09:05:00Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	s, _, _ := newServerSettings(t)
+	if err := s.SetSources(serverList("srv1", srv.URL, true), nil, map[string]string{"srv1": srvToken}); err != nil {
+		t.Fatal(err)
+	}
+	s.mailHTTP = srv.Client()
+	list, err := s.MailPhones("srv1")
+	if err != nil || len(list) != 2 {
+		t.Fatalf("phones: %+v, %v", list, err)
+	}
+	if list[0].Name != "Samsung SM-S918B" || list[0].Seen != seen.Local().Format("02.01.2006 15:04") {
+		t.Errorf("visited phone row %+v", list[0])
+	}
+	if list[1].Name != "" || list[1].Seen != "" {
+		t.Errorf("phone that never came in %+v", list[1])
+	}
+}
