@@ -344,8 +344,11 @@ want(typeof s.forget === "function", "forget is exported");
 if (typeof s.forget === "function") {
   const st26 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Сроки", msgs: [{ who: "me", text: "сроки?" }], pending: true, updated: 1 }, k: { title: "Другой", msgs: [], updated: 1 } },
     outbox: [{ chat: "c", sealed: "q", counter: "1" }, { chat: "k", sealed: "x", counter: "2" }] };
+  const ob = st26.outbox;
   s.forget(st26, "c");
-  want(!st26.chats.c && st26.outbox.length === 1 && st26.outbox[0].chat === "k", "forget drops the chat and its queued messages");
+  // Тот же массив (ревью #665): отправка держит его голову через await —
+  // новый массив снял бы чужое сообщение. Неотправленное помечено, не вынуто.
+  want(!st26.chats.c && st26.outbox === ob && st26.outbox.filter((o) => !o.drop).length === 1 && st26.outbox.find((o) => !o.drop).chat === "k", "forget marks the chat's queued messages in place");
   want(s.take(st26, { seq: 1, chat: "c", from: "desk", at: "2026-11-16T10:00:00Z" }, dk14(1, { kind: "answer", text: "ответ" })) === false && !st26.chats.c, "an answer does not bring a deleted chat back");
   want(s.take(st26, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "chaterr" })) === false && !st26.chats.c, "a refusal does not bring it back either");
   s.take(st26, { seq: 3, chat: "k", from: "desk" }, dk14(3, { kind: "delete", text: "chat" }));

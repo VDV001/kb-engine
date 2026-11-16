@@ -2,6 +2,8 @@ package mailrelay_test
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"unicode/utf8"
@@ -71,9 +73,9 @@ func TestRelayTellsThePhoneTheWindowsEdit(t *testing.T) {
 	}
 }
 
-// Удаление с телефона A доходит до телефона B (ревью #662): связь не
-// забывается до заметки окна, заметка уходит в чат ящика и забывает связь и
-// предложенные факты.
+// Удаление с телефона A доходит до телефона B (ревью #662, #665): удаление
+// уходит в чат ящика тем же кругом, без заметки окна (заметки теряются при
+// сбое круга), и забывает связь и предложенные факты.
 func TestRelayPhoneDeleteReachesOtherPhones(t *testing.T) {
 	b, e, s := &box{}, &chatEditor{}, &store{}
 	b.phone("c-1", "A", 1, q("привет"))
@@ -87,15 +89,8 @@ func TestRelayPhoneDeleteReachesOtherPhones(t *testing.T) {
 	if err := r.Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if s.st.Chats["c-1"] != "w-1" {
-		t.Fatal("связь забыта до заметки окна: телефон B удаления не получит")
-	}
-	r.Notes = []mailrelay.Note{{Chat: "w-1", Payload: mailrelay.Payload{Kind: mailrelay.KindDelete, Text: "chat"}}}
-	if err := r.Tick(t.Context()); err != nil {
-		t.Fatal(err)
-	}
 	got := payloads(t, b)
-	if last := got[len(got)-1]; last.Kind != mailrelay.KindDelete {
+	if !slices.ContainsFunc(got, func(p mailrelay.Payload) bool { return p.Kind == mailrelay.KindDelete }) {
 		t.Fatalf("телефоны получили %+v", got)
 	}
 	if _, ok := s.st.Chats["c-1"]; ok {
@@ -138,5 +133,40 @@ func TestRelayRenameKeepsTheWindowsLimit(t *testing.T) {
 	}
 	if len(e.renamed) != 1 || utf8.RuneCountInString(strings.TrimPrefix(e.renamed[0], "w-1=")) != 60 {
 		t.Fatalf("renamed %v", e.renamed)
+	}
+}
+
+// Вопрос, отправленный телефоном до удаления чата в окне, не заводит новый
+// чат окна и не тратит ход (ревью #665).
+func TestRelayDeletedChatQuestionIsNotAsked(t *testing.T) {
+	b, s, a := &box{}, &store{}, &asker{}
+	b.phone("c-1", "A", 1, q("привет"))
+	r := newRelay(b, a, s)
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	b.phone("c-1", "A", 2, q("еще"))
+	r.Notes = []mailrelay.Note{{Chat: "w-1", Payload: mailrelay.Payload{Kind: mailrelay.KindDelete, Text: "chat"}}}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.asked) != 1 {
+		t.Fatalf("удаленный чат получил ход: %v", a.asked)
+	}
+}
+
+// Названия для неизвестных чатов не копятся без предела (ревью #665).
+func TestRelayTitlesAreBounded(t *testing.T) {
+	b, e, s := &box{}, &chatEditor{}, &store{}
+	for i := range 80 {
+		b.phone(fmt.Sprintf("c-%d", i), "A", 1, mailrelay.Payload{Kind: mailrelay.KindRename, Text: "x"})
+	}
+	r := newRelay(b, &asker{}, s)
+	r.Chats = e
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s.st.Titles); n > 50 {
+		t.Fatalf("названий ждет %d", n)
 	}
 }

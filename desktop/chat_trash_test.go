@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -107,5 +109,72 @@ func TestChat_TrashRestoresAndForgets(t *testing.T) {
 func TestTitle_DropsInvisibleFormatChars(t *testing.T) {
 	if got := title("Пос\u202eтав\u200bки\u2066"); got != "Поставки" {
 		t.Fatalf("title = %q", got)
+	}
+}
+
+// Удаление и корзина не ждут хода в другом чате (ревью #665): ход держит
+// замок до трех минут, а удаляют другой чат.
+func TestChat_DeleteDoesNotWaitForAnotherTurn(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
+	a, err := d.Ask(askReq{Question: "a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := d.Ask(askReq{Question: "b"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := gateModel{entered: make(chan struct{}), release: make(chan struct{})}
+	d.model = func(desktopconfig.Chat, string) chat.Model { return g }
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	go func() { _, _ = d.ask(ctx, askReq{ID: a.ID, Question: "еще"}, askOut{}) }()
+	defer close(g.release)
+	<-g.entered
+	done := make(chan struct{})
+	go func() { _ = d.Delete(b.ID); _, _ = d.Trash(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("удаление другого чата ждет конца хода")
+	}
+}
+
+// Корзина называет чат по имени файла, по которому его вернут, а не по полю
+// внутри файла (ревью #665).
+func TestChat_TrashIDFromFileName(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := os.MkdirAll(d.trashDir(), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f := filepath.Join(d.trashDir(), "aaaaaaaaaaaaaaaa.json")
+	if err := os.WriteFile(f, []byte(`{"id":"bbbbbbbbbbbbbbbb","title":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	now := d.now()
+	_ = os.Chtimes(f, now, now)
+	if trash, _ := d.Trash(); len(trash) != 1 || trash[0].ID != "aaaaaaaaaaaaaaaa" {
+		t.Fatalf("корзина = %+v", trash)
+	}
+}
+
+// Просроченное стирается и без вкладки корзины: список чатов чистит ее
+// (ревью #665: обещание «неделю» не держалось без показа корзины).
+func TestChat_ListPurgesExpiredTrash(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	_ = d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "x"}, "")
+	c, err := d.Ask(askReq{Question: "q"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Delete(c.ID); err != nil {
+		t.Fatal(err)
+	}
+	start := d.now()
+	d.now = func() time.Time { return start.Add(trashKeep + time.Hour) }
+	_, _ = d.List()
+	if _, err := os.Stat(filepath.Join(d.trashDir(), c.ID+".json")); err == nil {
+		t.Fatal("просроченный чат лежит в корзине")
 	}
 }
