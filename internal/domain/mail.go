@@ -26,6 +26,8 @@ var (
 	ErrMailPhoneOnly = errors.New("mail: only a phone subscribes to push")
 	// ErrPushGone — сервис push забыл подписку (404, 410): ее пора удалить.
 	ErrPushGone = errors.New("push subscription is gone")
+	// ErrPushOff — push на этом сервере не настроен (нет контакта VAPID).
+	ErrPushOff = errors.New("push is not configured")
 )
 
 // mailReserved — имена, занятые маршрутами ящика (/api/mail/devices, /push, /notify).

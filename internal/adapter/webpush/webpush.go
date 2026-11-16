@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/daniil/kb-engine/internal/adapter/blob"
 	"github.com/daniil/kb-engine/internal/domain"
 )
 
@@ -217,3 +218,16 @@ func (s *Sender) Send(ctx context.Context, sub domain.PushSubscription, payload 
 		return fmt.Errorf("%w: %s", ErrRejected, strings.TrimSpace(resp.Status))
 	}
 }
+
+// VAPIDKey is where the server keeps its VAPID key (решение владельца 16.11):
+// бакет с KMS и доступом только kb-server, рядом с токенами телефонов.
+const VAPIDKey = "auth/vapid.json"
+
+// LoadVAPID reads the server's key from s, creating it on the first start.
+func LoadVAPID(ctx context.Context, s blob.Store, subject string) (*VAPID, error) {
+	return nil, errors.ErrUnsupported
+}
+
+// PublicKey is the server's key as the phone passes it to subscribe
+// (applicationServerKey): несжатая точка, base64url.
+func (v *VAPID) PublicKey() string { return "" }

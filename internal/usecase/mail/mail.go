@@ -53,11 +53,16 @@ type Subscriptions interface {
 // Pusher sends one push message; domain.ErrPushGone — подписки больше нет.
 type Pusher interface {
 	Send(ctx context.Context, sub domain.PushSubscription, payload []byte) error
+	// PublicKey is the server's VAPID key for the phone's subscribe call.
+	PublicKey(ctx context.Context) (string, error)
 }
 
 // NotifyAnswer is the push payload: вид события, без текста. Подпись рисует
 // телефон, сервер переписку не видит и в уведомление ее не кладет.
 const NotifyAnswer = `{"kind":"answer"}`
+
+// NotifyTimeout bounds one notify call for all phones together.
+const NotifyTimeout = 5 * time.Second
 
 // Service is the mailbox of the server.
 type Service struct {
@@ -164,4 +169,9 @@ func (s Service) logf(format string, args ...any) {
 	if s.Logf != nil {
 		s.Logf(format, args...)
 	}
+}
+
+// PushKey is the server's public VAPID key; push не настроен — ErrPushOff.
+func (s Service) PushKey(ctx context.Context) (string, error) {
+	return "", errors.ErrUnsupported
 }

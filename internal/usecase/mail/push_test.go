@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/daniil/kb-engine/internal/domain"
 	"github.com/daniil/kb-engine/internal/usecase/mail"
@@ -134,6 +135,50 @@ func TestNotify(t *testing.T) {
 	if _, ok := subs.subs["p-c"]; !ok {
 		t.Error("подписку удалили за временную ошибку")
 	}
+}
+
+func (f *fakePusher) PublicKey(context.Context) (string, error) { return "BKEY", nil }
+
+func TestPushKey(t *testing.T) {
+	if k, err := (mail.Service{Push: &fakePusher{}}).PushKey(context.Background()); k != "BKEY" || err != nil {
+		t.Fatalf("PushKey = %q, %v", k, err)
+	}
+	if _, err := (mail.Service{}).PushKey(context.Background()); !errors.Is(err, domain.ErrPushOff) {
+		t.Fatalf("без push: %v", err)
+	}
+	svc := mail.Service{Subs: &fakeSubs{subs: map[string]domain.PushSubscription{}}}
+	if _, err := svc.Notify(context.Background(), who, domain.MailDesk); !errors.Is(err, domain.ErrPushOff) {
+		t.Fatalf("Notify без push: %v", err)
+	}
+	if err := svc.SubscribePush(context.Background(), who, domain.MailPhone, "p-1", "https://fcm.googleapis.com/fcm/send/a", pushKey, pushAuth); !errors.Is(err, domain.ErrPushOff) {
+		t.Fatalf("SubscribePush без push: %v", err)
+	}
+}
+
+// Рассылка укладывается в срок, даже если вызывающий его не задал: в
+// Serverless Container запрос окна не должен висеть на медленном сервисе push.
+func TestNotify_Deadline(t *testing.T) {
+	subs := &fakeSubs{subs: map[string]domain.PushSubscription{"p-a": sub(t, "https://fcm.googleapis.com/fcm/send/a")}}
+	var left time.Duration
+	push := deadlinePusher{fakePusher: &fakePusher{}, left: &left}
+	if _, err := (mail.Service{Subs: subs, Push: push}).Notify(context.Background(), who, domain.MailDesk); err != nil {
+		t.Fatal(err)
+	}
+	if left <= 0 || left > mail.NotifyTimeout {
+		t.Fatalf("срок рассылки %v, want (0, %v]", left, mail.NotifyTimeout)
+	}
+}
+
+type deadlinePusher struct {
+	*fakePusher
+	left *time.Duration
+}
+
+func (d deadlinePusher) Send(ctx context.Context, sub domain.PushSubscription, payload []byte) error {
+	if dl, ok := ctx.Deadline(); ok {
+		*d.left = time.Until(dl)
+	}
+	return d.fakePusher.Send(ctx, sub, payload)
 }
 
 func TestNotify_NoPhones(t *testing.T) {

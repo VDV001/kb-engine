@@ -35,7 +35,21 @@ import (
 // одного нет ни одной ссылки на данные другого. Верхний слой только узнает
 // человека по токену и выбирает его обработчик. Фильтра «не показывать чужое»
 // нет нигде, потому что чужого в обработчике нет.
-func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer) http.Handler {
+// tenantOption configures tenantsHandler (tests).
+type tenantOption func(*pushConfig)
+
+// pushConfig is how the server reaches push services (#622).
+type pushConfig struct {
+	contact   string            // KB_PUSH_CONTACT: mailto: или https: для VAPID; пусто — push выключен
+	transport http.RoundTripper // nil — http.DefaultTransport
+}
+
+// withPush replaces the push contact and transport (tests).
+func withPush(contact string, rt http.RoundTripper) tenantOption {
+	return func(c *pushConfig) {}
+}
+
+func tenantsHandler(ctx context.Context, store blob.Store, stderr io.Writer, opts ...tenantOption) http.Handler {
 	lw := &lockedWriter{w: stderr}
 	phones := userauth.NewRegistry(ctx, store, userauth.WithKey(userauth.DevicesKey))
 	return &tenants{
