@@ -598,3 +598,27 @@ func TestChat_AskReportsContextFill(t *testing.T) {
 		t.Errorf("старый счет пережил ответ без счета: %+v", got.Context)
 	}
 }
+
+// Ход по вопросу с телефона называет свой чат до ответа модели, а вопрос в
+// истории помечен «с телефона» (#646).
+func TestChat_PhoneTurnBeginsFirst(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	began := ""
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", func(id string) { began = id }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if began == "" || began != a.Chat {
+		t.Fatalf("began %q, chat %q", began, a.Chat)
+	}
+	rec, err := d.Get(a.Chat)
+	if err != nil || len(rec.Messages) != 2 || rec.Messages[0].From != "phone" || rec.Messages[1].From != "" {
+		t.Fatalf("saved %+v, %v", rec.Messages, err)
+	}
+	if mine, err := d.Ask(askReq{ID: a.Chat, Question: "из окна"}); err != nil || mine.Messages[2].From != "" {
+		t.Fatalf("the window's own question: %+v, %v", mine.Messages, err)
+	}
+}

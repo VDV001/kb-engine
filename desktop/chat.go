@@ -103,6 +103,8 @@ type chatMessage struct {
 	Docs []string `json:"docs,omitempty"` // ref документов ответа
 	// Uses — откуда ответ: документы, подключения, внешнее (отзыв 14.11).
 	Uses []chat.Use `json:"uses,omitempty"`
+	// From — «phone»: вопрос задан с телефона (#646), окно так его и помечает.
+	From string `json:"from,omitempty"`
 }
 
 type chatDoc struct {
@@ -293,6 +295,24 @@ func (d *chatDesk) dropAskedDrafts(out askOut, id string) {
 	_ = d.DropDraft(id)
 }
 
+// startTurn names a new chat and tells out.began its id, до ответа модели.
+func startTurn(rec *chatRecord, question string, out askOut) {
+	if rec.ID == "" {
+		rec.ID, rec.Title = newChatID(), title(question)
+	}
+	if out.began != nil {
+		out.began(rec.ID)
+	}
+}
+
+// phoneFrom marks the question of a mailbox worker's turn: его задали с телефона.
+func phoneFrom(out askOut) string {
+	if out.worker {
+		return "phone"
+	}
+	return ""
+}
+
 // askOut is where a turn shows itself. Ход работника ящика (#622) — тихий:
 // без кусков и шагов на страницу (у человека может быть открыт другой чат) и
 // без снятия черновиков — их набирает человек в окне (ревью #635).
@@ -300,6 +320,9 @@ type askOut struct {
 	show   func(string)
 	step   func(chat.Use)
 	worker bool
+	// began — чат хода известен, модель еще не отвечала: окно показывает
+	// вопрос с телефона сразу (#646).
+	began func(id string)
 }
 
 // ask runs a turn; ctx — родитель срока хода: закрытие окна прерывает ход работника.
@@ -330,9 +353,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 	about, pnote := d.portraitFor(ctx, c, question, r.Portrait)
 	// id — до ответа: «запомнить» во время ответа и разбор после него
 	// называют странице свой чат, даже новый.
-	if rec.ID == "" {
-		rec.ID, rec.Title = newChatID(), title(question)
-	}
+	startTurn(&rec, question, out)
 	explicit, auto := attachRefs(refs, question)
 	webSteps(step, append(slices.Clone(explicit), auto...))
 	attached, err := d.readAttached(ctx, explicit)
@@ -361,7 +382,7 @@ func (d *chatDesk) ask(parent context.Context, r askReq, out askOut) (chatRecord
 		}
 	}
 	rec.Messages = append(rec.Messages,
-		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question)},
+		chatMessage{Role: string(chat.RoleUser), Text: strings.TrimSpace(question), From: phoneFrom(out)},
 		chatMessage{Role: string(chat.RoleAssistant), Text: turn.Answer, Docs: used, Uses: append(web, turn.Uses...)})
 	rec.Model, rec.Updated, rec.Sources = c.Model, d.now(), slices.Clone(r.Sources)
 	rec.ContextUsed = turn.PromptTokens // 0 — провайдер не прислал счет: старое число не показываем

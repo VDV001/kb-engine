@@ -5,7 +5,9 @@
 // Внутри шифра — Payload в JSON: {"kind": "...", "text": "...", ...}.
 // Телефон пишет question (вопрос модели), search (поиск по источникам окна) или
 // open (текст найденного по ref); окно отвечает answer (с sources — откуда
-// ответ), results (hits), doc (title и text) или error. Поиск и открытие идут
+// ответ), results (hits), doc (title и text) или error; пока модель думает —
+// accepted (взято в работу) и step (ход): оба — только при StepEvery > 0
+// (окно включает всегда), без шагов телефон ждет ответа словами «отправлено». Поиск и открытие идут
 // мимо модели — бесплатны и не тратят ее ход.
 //
 // Порядок ради одного правила — модель не запускается дважды на один вопрос
@@ -81,6 +83,8 @@ const (
 	KindDoc      = "doc"
 	// KindStep — ход модели: куда чат ходит сейчас (окно → телефон, #622).
 	KindStep = "step"
+	// KindAccepted — окно взяло вопрос в работу (#646): телефон пишет «компьютер принял».
+	KindAccepted = "accepted"
 )
 
 // Hit is one found document: Ref — чем телефон его откроет; Text — только у
@@ -354,6 +358,9 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
 }
 
+// minPostGap — предел частоты отправки окна в ящик (сервер: раз в секунду).
+const minPostGap = time.Second
+
 // maxStepText — столько байт подписи шага уходит телефону.
 const maxStepText = 200
 
@@ -401,6 +408,12 @@ func (r Relay) stepper(ctx context.Context, st *State, chat string) (step func(S
 // уходит самый свежий из пришедших за нее.
 func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat string) {
 	var last time.Time
+	// Первым — «компьютер принял» (#646): телефон видит, что вопрос взят, пока
+	// модель еще думает, а не только по первому шагу. Тем же пределом частоты.
+	// Первый шаг ждет после него только предел частоты ящика, а не весь StepEvery (ревью #653).
+	if began := r.now(); r.post(ctx, st, chat, Payload{Kind: KindAccepted}) {
+		last = began.Add(min(minPostGap, r.StepEvery) - r.StepEvery)
+	}
 	for {
 		var s Step
 		select {
@@ -420,29 +433,32 @@ func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat strin
 			}
 		}
 		began := r.now()
-		if r.postStep(ctx, st, chat, s) {
+		if r.post(ctx, st, chat, Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}) {
 			last = began
 		}
 	}
 }
 
-// postStep seals and posts one step; false — не ушел (причина в журнале).
-func (r Relay) postStep(ctx context.Context, st *State, chat string, s Step) bool {
+// post seals and posts one show of the turn (шаг, «принял»); false — не ушел
+// (причина в журнале).
+func (r Relay) post(ctx context.Context, st *State, chat string, p Payload) bool {
 	st.DeskCounter++
-	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}}
+	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: p}
 	if err := r.Store.Save(*st); err != nil {
-		r.logf("mailrelay: step: state: %v", err)
+		r.logf("mailrelay: %s: state: %v", p.Kind, err)
 		return false
 	}
 	sealed, err := r.sealFitting(&out)
 	if err != nil {
-		r.logf("mailrelay: step: %v", err)
+		r.logf("mailrelay: %s: %v", p.Kind, err)
 		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, stepPostTimeout)
 	defer cancel()
 	if _, err := r.Box.Post(ctx, chat, sealed); err != nil {
-		r.logf("mailrelay: step: post: %v", err)
+		if ctx.Err() == nil { // ход кончился раньше отправки — не сбой
+			r.logf("mailrelay: %s: post: %v", p.Kind, err)
+		}
 		return false
 	}
 	return true
