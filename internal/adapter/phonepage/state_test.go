@@ -276,6 +276,22 @@ s.take(st20, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text
 const q20 = st20.chats.c.msgs.find((x) => x.who === "me");
 want(q20.text === "какой срок?" && !q20.voice && st20.chats.c.say === "30 дней", "the voice question gets its words, the answer is to be read aloud");
 
+// 21. Ревью #660: тихий вопрос голосом снимает «ждет» и заглушку; коды отказа
+// голоса — словами; ответ читается вслух, только пока свежий; Apple через сеть
+// берет до минуты — запись короче; телефон говорит, кто слышит его голос.
+const st21 = { sender: u8(1, 1, 1, 1, 1, 1, 1, 1), after: 0, seen: {}, chats: { c: { title: "Чат", msgs: [{ who: "me", text: "🎤", voice: true }], pending: true, updated: 1 } } };
+s.take(st21, { seq: 1, chat: "c", from: "desk" }, dk14(1, { kind: "heard", text: "" }));
+want(!st21.chats.c.pending && !st21.chats.c.msgs.some((x) => x.voice), "a silent voice question stops waiting and loses its placeholder");
+s.take(st21, { seq: 2, chat: "c", from: "desk" }, dk14(2, { kind: "error", text: "unheard" }));
+const e21 = st21.chats.c.msgs.at(-1);
+want(e21.who === "error" && e21.text !== "unheard" && /распозна/.test(e21.text), "a voice refusal code is told in words");
+st21.chats.c.msgs.push({ who: "me", text: "🎤", voice: true });
+st21.chats.c.pending = true;
+s.take(st21, { seq: 3, chat: "c", from: "desk" }, dk14(3, { kind: "answer", text: "30 дней", heard: "срок?" }));
+want(st21.chats.c.say?.text === "30 дней" && st21.chats.c.say.at > 0, "the answer to be read aloud carries when it came");
+want(s.voiceLimit({ hear: "apple" }) < 60_000 && s.voiceLimit({ hear: "device" }) === 90_000, "Apple through the network takes under a minute");
+want(/без сети/.test(s.hearNote("device")) && /Apple/.test(s.hearNote("apple")) && /облак/.test(s.hearNote("cloud")) && s.hearNote("") === "", "who hears the voice, in words");
+
 console.log(fails.length ? fails.join("\n") : "ok");
 `
 

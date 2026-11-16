@@ -331,3 +331,12 @@ export function wavOf(samples, rate) {
   }
   return out;
 }
+
+// voiceLimit is how long one recording may be (мс); hearNote says who hears it.
+export function voiceLimit() {
+  return 90_000;
+}
+
+export function hearNote() {
+  return "";
+}
