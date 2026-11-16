@@ -79,6 +79,8 @@ const (
 	KindResults  = "results"
 	KindOpen     = "open"
 	KindDoc      = "doc"
+	// KindStep — ход модели: куда чат ходит сейчас (окно → телефон, #622).
+	KindStep = "step"
 )
 
 // Hit is one found document: Ref — чем телефон его откроет; Text — только у
@@ -107,6 +109,18 @@ type Answer struct {
 // SourcedAsker is an Asker that also tells where the answer came from.
 type SourcedAsker interface {
 	AskSourced(ctx context.Context, chat, question string) (Answer, error)
+}
+
+// Step is one step of the model's turn as the person reads it: «Документы:
+// поставки», «Ozon · кабинет: заказы» — подпись строит окно, как у себя.
+type Step struct {
+	Text string
+}
+
+// SteppedAsker is a SourcedAsker that also reports the turn's steps while it
+// runs: телефон видит ход, а не только итог (#622).
+type SteppedAsker interface {
+	AskStepped(ctx context.Context, chat, question string, step func(Step)) (Answer, error)
 }
 
 // Finder searches the person's sources and opens a found document as text —
@@ -179,6 +193,11 @@ type Relay struct {
 	// FindTimeout bounds one search or open (0 — без срока): работник ящика
 	// один на все серверы, зависший источник не держит его круг.
 	FindTimeout time.Duration
+	// StepEvery — не чаще стольких шагов хода в ящик (0 — шаги не шлются):
+	// телефон опрашивает раз в 10 с, а у окна предел отправки раз в секунду.
+	StepEvery time.Duration
+	// Logf — журнал сбоев шагов хода (nil — молча).
+	Logf func(string, ...any)
 }
 
 // Tick posts what is waiting, then reads the mailbox to the end and answers
@@ -230,11 +249,7 @@ func (r Relay) load() (State, error) {
 		// номер ящика и счетчики — заново, вопросы до начала не отвечаются —
 		// иначе платный ход на каждый старый вопрос журнала. Счетчик окна
 		// растет дальше: телефон не примет его за повтор.
-		now := time.Now
-		if r.Now != nil {
-			now = r.Now
-		}
-		st = State{KeyID: r.KeyID, DeskCounter: st.DeskCounter, Start: now().Add(-startSlack)}
+		st = State{KeyID: r.KeyID, DeskCounter: st.DeskCounter, Start: r.now().Add(-startSlack)}
 	}
 	if st.Seen == nil {
 		st.Seen = map[string]uint64{}
@@ -303,11 +318,22 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	return true, r.flush(ctx, st)
 }
 
+func (r Relay) now() time.Time {
+	if r.Now != nil {
+		return r.Now()
+	}
+	return time.Now()
+}
+
 // ask runs the model turn in the window's chat of this mailbox chat.
 func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payload {
 	var a Answer
 	var err error
-	if sa, ok := r.Asker.(SourcedAsker); ok {
+	if sa, ok := r.Asker.(SteppedAsker); ok && r.StepEvery > 0 {
+		step, stop := r.stepper(ctx, st, chat)
+		a, err = sa.AskStepped(ctx, st.Chats[chat], question, step)
+		stop()
+	} else if sa, ok := r.Asker.(SourcedAsker); ok {
 		a, err = sa.AskSourced(ctx, st.Chats[chat], question)
 	} else {
 		a.Chat, a.Text, err = r.Asker.Ask(ctx, st.Chats[chat], question)
@@ -317,6 +343,119 @@ func (r Relay) ask(ctx context.Context, st *State, chat, question string) Payloa
 	}
 	st.Chats[chat] = a.Chat
 	return Payload{Kind: KindAnswer, Text: a.Text, Sources: a.Sources}
+}
+
+// maxStepText — столько байт подписи шага уходит телефону.
+const maxStepText = 200
+
+// stepPostTimeout bounds one step's post: шаг — показ хода, медленный
+// kb-сервер не должен держать его дольше.
+const stepPostTimeout = 5 * time.Second
+
+// stepper posts the turn's steps from its own goroutine (ревью #641): ход
+// модели не ждет ящик, а из шагов внутри StepEvery уходит самый свежий —
+// телефон видит то же, что окно. Шаг — показ, а не обещание: мимо исходящих,
+// потерялся — итог все равно придет. Счетчик окна записывается до отправки.
+// stop ждет горутину: дальше состояние снова только у handle.
+//
+// ponytail: шаги остаются в журнале ящика на сервере навсегда, как и ответы;
+// новый ключ перечитывает их. Потолок — срок хранения ящика на сервере.
+func (r Relay) stepper(ctx context.Context, st *State, chat string) (step func(Step), stop func()) {
+	in := make(chan Step, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.stepLoop(ctx, in, st, chat)
+	}()
+	step = func(s Step) {
+		for {
+			select {
+			case in <- s:
+				return
+			default: // неотправленный вытесняется свежим
+				select {
+				case <-in:
+				default:
+				}
+			}
+		}
+	}
+	stop = func() {
+		cancel()
+		<-done
+	}
+	return step, stop
+}
+
+// stepLoop posts steps from in until ctx ends, не чаще StepEvery: после паузы
+// уходит самый свежий из пришедших за нее.
+func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat string) {
+	var last time.Time
+	for {
+		var s Step
+		select {
+		case <-ctx.Done():
+			return
+		case s = <-in:
+		}
+		if wait := r.StepEvery - r.now().Sub(last); !last.IsZero() && wait > 0 {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(wait):
+			}
+			select {
+			case s = <-in: // свежий за время ожидания
+			default:
+			}
+		}
+		began := r.now()
+		if r.postStep(ctx, st, chat, s) {
+			last = began
+		}
+	}
+}
+
+// postStep seals and posts one step; false — не ушел (причина в журнале).
+func (r Relay) postStep(ctx context.Context, st *State, chat string, s Step) bool {
+	st.DeskCounter++
+	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}}
+	if err := r.Store.Save(*st); err != nil {
+		r.logf("mailrelay: step: state: %v", err)
+		return false
+	}
+	sealed, err := r.sealFitting(&out)
+	if err != nil {
+		r.logf("mailrelay: step: %v", err)
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, stepPostTimeout)
+	defer cancel()
+	if _, err := r.Box.Post(ctx, chat, sealed); err != nil {
+		r.logf("mailrelay: step: post: %v", err)
+		return false
+	}
+	return true
+}
+
+func (r Relay) logf(format string, args ...any) {
+	if r.Logf != nil {
+		r.Logf(format, args...)
+	}
+}
+
+// clip cuts text to max bytes on a rune boundary with «…»: у шага нет «полностью
+// в окне» — это подпись, а не ответ.
+func clip(text string, limit int) string {
+	if len(text) <= limit {
+		return text
+	}
+	cut := limit - len("…")
+	for cut > 0 && !utf8.RuneStart(text[cut]) {
+		cut--
+	}
+	return text[:max(cut, 0)] + "…"
 }
 
 // ErrNoFinder — relay собран без поиска для телефона. Слова для человека

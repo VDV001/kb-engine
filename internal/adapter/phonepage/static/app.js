@@ -260,6 +260,12 @@ function paintChat(c, follow) {
     li.className = "wait";
     sp.className = "spin";
     li.append(sp, document.createTextNode("Компьютер отвечает: ответ придет, пока окно DVK открыто"));
+    if (typeof c.step === "string") { // ход модели подписью окна
+      const step = document.createElement("div");
+      step.className = "step";
+      step.textContent = c.step;
+      li.append(step);
+    }
     items.push(li);
   }
   $("msgs").replaceChildren(...items);
