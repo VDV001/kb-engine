@@ -2,12 +2,13 @@ package phonepage_test
 
 import (
 	"fmt"
-	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // stateCheck runs static/state.js in node: логика страницы без DOM и сети —
