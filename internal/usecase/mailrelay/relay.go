@@ -315,7 +315,7 @@ func (r Relay) handle(ctx context.Context, st *State, m Message) (bool, error) {
 	}
 	reply.Text = trim(reply.Text, r.MaxText)
 	st.DeskCounter++
-	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply}
+	out := Outgoing{Chat: m.Chat, Counter: st.DeskCounter, Payload: reply, Notify: req.Kind == KindQuestion}
 	var err error
 	if out.Sealed, err = r.sealFitting(&out); err != nil {
 		return false, err
@@ -574,6 +574,25 @@ func (r Relay) flush(ctx context.Context, st *State) error {
 		if err := r.Store.Save(*st); err != nil {
 			return fmt.Errorf("mailrelay: state: %w", err)
 		}
+		// После записи состояния: сбой посреди круга лучше потеряет одно
+		// уведомление, чем пришлет его дважды.
+		if o.Notify && err == nil {
+			r.notify(ctx)
+		}
 	}
 	return nil
+}
+
+// notifyTimeout bounds the push call: сервер сам укладывается в 5 с.
+const notifyTimeout = 10 * time.Second
+
+func (r Relay) notify(ctx context.Context) {
+	if r.Notifier == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, notifyTimeout)
+	defer cancel()
+	if err := r.Notifier.Notify(ctx); err != nil {
+		r.logf("mailrelay: notify: %v", err)
+	}
 }
