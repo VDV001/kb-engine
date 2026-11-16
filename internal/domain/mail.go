@@ -99,8 +99,8 @@ func BetterPhoneName(prev, next string) string {
 // /notify, /files).
 var mailReserved = map[string]bool{"devices": true, "push": true, "notify": true, "files": true}
 
-// MaxMailSealed bounds one sealed message: ход задачи и итог — текст, вложения
-// в ящик не кладутся.
+// MaxMailSealed bounds one sealed message: ход задачи и итог — текст; голос и
+// вложения идут файлами ящика (MaxMailFile), сообщение несет только ссылку.
 const MaxMailSealed = 64 << 10
 
 // maxMailChat bounds the chat id: он стоит в каждой записи журнала.

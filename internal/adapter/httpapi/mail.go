@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -125,8 +126,9 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, "no such phone", http.StatusNotFound)
 	case errors.Is(err, domain.ErrNoSuchMailFile):
 		http.Error(w, "no such file", http.StatusNotFound)
-	case errors.Is(err, errors.ErrUnsupported):
-		http.Error(w, "mailbox files are off on this server", http.StatusNotFound)
+	case errors.Is(err, domain.ErrMailFilesOff):
+		// 501, а не 404: окно отличит «у сервера нет файлов» от «кусок истек».
+		http.Error(w, err.Error(), http.StatusNotImplemented)
 	default:
 		h.logf("mail: %v", err) // причина — в журнал: в ней ключ хранилища
 		http.Error(w, "mailbox unavailable", http.StatusServiceUnavailable)
@@ -356,7 +358,7 @@ func withBrand(m string) string {
 func (h mailRoutes) putFile(w http.ResponseWriter, r *http.Request, c mailCaller) {
 	// Только байты: сообщение старого клиента в чат «files» (JSON) не ляжет
 	// файлом молча — до #658 этот адрес был чатом.
-	if r.Header.Get("Content-Type") != "application/octet-stream" {
+	if mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type")); err != nil || mt != "application/octet-stream" {
 		http.Error(w, "a file piece is application/octet-stream", http.StatusUnsupportedMediaType)
 		return
 	}

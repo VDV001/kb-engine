@@ -121,7 +121,7 @@ type Service struct {
 	Subs   Subscriptions
 	Push   Pusher
 	Visits Visits
-	Files  Files // nil — файлов нет: errors.ErrUnsupported
+	Files  Files // nil — файлов нет: domain.ErrMailFilesOff
 	Now    func() time.Time
 	Logf   func(string, ...any)
 }
@@ -138,12 +138,15 @@ func (s Service) PutFile(ctx context.Context, id domain.UserID, side domain.Mail
 	case len(sealed) > domain.MaxMailFile:
 		return "", fmt.Errorf("%w: %d bytes, limit %d", domain.ErrMailTooLarge, len(sealed), domain.MaxMailFile)
 	case s.Files == nil:
-		return "", errors.ErrUnsupported
+		return "", domain.ErrMailFilesOff
 	}
 	var raw [16]byte
 	_, _ = rand.Read(raw[:]) // с Go 1.24 Read не возвращает ошибку
 	file := hex.EncodeToString(raw[:])
-	return file, s.Files.Put(ctx, id, file, sealed)
+	if err := s.Files.Put(ctx, id, file, sealed); err != nil {
+		return "", err // id без записи — ссылка в никуда
+	}
+	return file, nil
 }
 
 // GetFile returns a piece of the person's mailbox.
@@ -167,7 +170,7 @@ func (s Service) fileCall(file string) error {
 		return err
 	}
 	if s.Files == nil {
-		return errors.ErrUnsupported
+		return domain.ErrMailFilesOff
 	}
 	return nil
 }

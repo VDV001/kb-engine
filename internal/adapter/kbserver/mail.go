@@ -132,10 +132,17 @@ var ErrNoSuchMailFile = fmt.Errorf("%w: no such mailbox file", ErrRejected)
 var ErrNoMailFiles = errors.New("kbserver: no mailbox files")
 
 // maxMailFile bounds the answer with a piece: domain.MaxMailFile и запас.
-const maxMailFile = 4 << 20
+const maxMailFile = domain.MaxMailFile + 1<<20
 
-// MailFilePut keeps a sealed file piece and returns its id (#658).
+// MailFilePut keeps a sealed file piece and returns its id (#658). Пустой и
+// сверх предела — отказ до запроса: мегабайты не уходят в сеть зря.
 func (c Client) MailFilePut(ctx context.Context, sealed []byte) (string, error) {
+	switch {
+	case len(sealed) == 0:
+		return "", fmt.Errorf("%w: %w", ErrMailRefused, domain.ErrMailEmpty)
+	case len(sealed) > domain.MaxMailFile:
+		return "", fmt.Errorf("%w: %w: %d bytes", ErrMailRefused, domain.ErrMailTooLarge, len(sealed))
+	}
 	var out struct {
 		ID string `json:"id"`
 	}
@@ -150,6 +157,9 @@ func (c Client) MailFilePut(ctx context.Context, sealed []byte) (string, error) 
 
 // MailFileGet reads a sealed file piece.
 func (c Client) MailFileGet(ctx context.Context, id string) ([]byte, error) {
+	if err := domain.ValidateMailFileID(id); err != nil { // «..» в адресе — опрос журнала
+		return nil, fmt.Errorf("%w: %w", ErrMailRefused, err)
+	}
 	var out []byte
 	err := c.mail(ctx, mailReq{method: http.MethodGet, path: "/api/mail/files/" + url.PathEscape(id), want: http.StatusOK,
 		notFound: ErrNoSuchMailFile, limit: maxMailFile}, &out)
@@ -158,6 +168,9 @@ func (c Client) MailFileGet(ctx context.Context, id string) ([]byte, error) {
 
 // MailFileDelete removes a piece the desk has taken; удаленный — не ошибка.
 func (c Client) MailFileDelete(ctx context.Context, id string) error {
+	if err := domain.ValidateMailFileID(id); err != nil {
+		return fmt.Errorf("%w: %w", ErrMailRefused, err)
+	}
 	return c.mail(ctx, mailReq{method: http.MethodDelete, path: "/api/mail/files/" + url.PathEscape(id), want: http.StatusNoContent, notFound: ErrNoSuchMailFile}, nil)
 }
 
@@ -181,6 +194,8 @@ func (r mailReq) refusal(code int, body []byte) error {
 		return nil
 	case http.StatusNotFound:
 		return cmp.Or(r.notFound, ErrNoMailbox)
+	case http.StatusNotImplemented: // ящик есть, файлов нет (#658)
+		return ErrNoMailFiles
 	case http.StatusUnprocessableEntity:
 		if r.unprocessable != nil {
 			return fmt.Errorf("%w: %s", r.unprocessable, strings.TrimSpace(string(body)))
