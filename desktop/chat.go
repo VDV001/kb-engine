@@ -243,7 +243,7 @@ func (d *chatDesk) turnModel(model string) (desktopconfig.Chat, string, error) {
 		if err != nil {
 			return c, "", err
 		}
-		if !slices.ContainsFunc(m.Recent, func(x modelChoice) bool { return x.ID == model }) {
+		if !slices.Contains(m, model) {
 			return c, "", fmt.Errorf("модели «%s» нет в списке окна — выберите из списка", model)
 		}
 		c.Model = model

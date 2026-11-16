@@ -257,7 +257,7 @@ func (m phoneMemory) Decide(ctx context.Context, id string, yes bool, text strin
 // phoneDesk tells the phone the window's state (#647).
 type phoneDesk struct {
 	settings *folderSettings
-	models   func() (modelsView, error)
+	models   func() ([]string, error) // нынешняя первой (phoneModels)
 }
 
 // Модели — нынешняя и взятые раньше, до phoneShownModels (весь список шлюза —
@@ -268,11 +268,9 @@ func (d phoneDesk) State(context.Context) (mailrelay.DeskState, error) {
 	if err != nil {
 		return mailrelay.DeskState{}, err
 	}
-	st := mailrelay.DeskState{Model: m.Current, Models: []string{}, Sources: []mailrelay.DeskSource{}}
-	for _, id := range append([]string{m.Current}, modelIDs(m.Recent)...) {
-		if id != "" && !slices.Contains(st.Models, id) && len(st.Models) < phoneShownModels {
-			st.Models = append(st.Models, id)
-		}
+	st := mailrelay.DeskState{Models: m[:min(len(m), phoneShownModels)], Sources: []mailrelay.DeskSource{}}
+	if len(m) > 0 {
+		st.Model = m[0]
 	}
 	st.Sources = phoneSources(d.settings)
 	return st, nil
@@ -324,14 +322,6 @@ const phoneShownModels = 10
 
 // chatConnKinds are the connections a chat can ask (CHAT_CONN в frontend/app.js).
 var chatConnKinds = map[desktopconfig.ConnKind]string{desktopconfig.ConnOzon: "Ozon", desktopconfig.ConnMPStats: "MPStats"}
-
-func modelIDs(xs []modelChoice) []string {
-	out := make([]string, 0, len(xs))
-	for _, x := range xs {
-		out = append(out, x.ID)
-	}
-	return out
-}
 
 // answerFn runs a model turn and tells where the answer came from; step — ход
 // модели по мере ответа (nil — без хода).

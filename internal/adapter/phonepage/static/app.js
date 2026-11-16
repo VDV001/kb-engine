@@ -674,7 +674,7 @@ $("pick").addEventListener("change", async (e) => { // выбор — этого
     ui.pick = "";
   } else {
     const on = [...$("pick").querySelectorAll('input[name="src"]:checked')].map((x) => x.value);
-    const r = pickSources((st.desk?.sources || []).map((x) => x.id), on);
+    const r = pickSources(on);
     if (!r.ok) { // как в окне: хотя бы один источник
       e.target.checked = true;
       note("Хотя бы один источник: иначе чату негде искать.", false);

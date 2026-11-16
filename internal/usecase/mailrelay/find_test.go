@@ -458,3 +458,26 @@ func TestRelayTellsThePhoneTheDesk(t *testing.T) {
 		t.Fatalf("no Desk: %+v", got)
 	}
 }
+
+// scopedAnswer answers with the chat's sources.
+type scopedAnswer struct{ asker }
+
+func (f *scopedAnswer) AskSourced(ctx context.Context, chat, question string) (mailrelay.Answer, error) {
+	c, text, err := f.Ask(ctx, chat, question)
+	return mailrelay.Answer{Chat: c, Text: text, Only: []string{"f-1"}}, err
+}
+
+// Ответ несет источники чата окна (ревью #656): галочки телефона показывают,
+// где чат ищет на самом деле, а не «все».
+func TestRelaySendsTheChatSources(t *testing.T) {
+	b := &box{}
+	b.phone("c-1", "A", 1, q("сроки?"))
+	r := newRelay(b, &asker{}, &store{})
+	r.Asker = &scopedAnswer{}
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b); len(got) != 1 || strings.Join(got[0].Only, ",") != "f-1" {
+		t.Fatalf("answer %+v", got)
+	}
+}

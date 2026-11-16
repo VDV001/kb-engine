@@ -106,19 +106,19 @@ func usedModels(calls []domain.ModelCall) []string {
 // ponytail: журнал читается целиком на каждый вопрос телефона со своей
 // моделью — на фоне хода модели это мелочь. Потолок: журнал в сотни тысяч
 // вызовов. Путь: держать список моделей по mtime журнала.
-func (d *chatDesk) phoneModels() (modelsView, error) {
+func (d *chatDesk) phoneModels() ([]string, error) {
 	c := d.config()
 	calls, err := d.usedCalls()
 	if err != nil {
-		return modelsView{}, err
+		return nil, err
 	}
-	v := modelsView{Current: c.Model, Recent: []modelChoice{}}
+	var out []string
 	for _, id := range append([]string{c.Model}, usedModels(calls)...) {
-		if id != "" && !slices.ContainsFunc(v.Recent, func(x modelChoice) bool { return x.ID == id }) {
-			v.Recent = append(v.Recent, modelChoice{ID: id})
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
 		}
 	}
-	return v, nil
+	return out, nil
 }
 
 // usedCalls reads the model journal; без журнала — пусто.

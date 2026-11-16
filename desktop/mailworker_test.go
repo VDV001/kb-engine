@@ -365,9 +365,7 @@ func TestPhoneDeskState(t *testing.T) {
 		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
 		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
 	s.mu.Unlock()
-	d := phoneDesk{settings: s, models: func() (modelsView, error) {
-		return modelsView{Current: "qwen3", Recent: []modelChoice{{ID: "qwen3"}, {ID: "llama3"}}}, nil
-	}}
+	d := phoneDesk{settings: s, models: func() ([]string, error) { return []string{"qwen3", "llama3"}, nil }}
 	st, err := d.State(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -509,5 +507,56 @@ func TestPhoneTurnDropsTheChatsStaleSources(t *testing.T) {
 	}
 	if got, _ := d.load(rec.ID); strings.Join(got.Sources, ",") != "srv1" {
 		t.Errorf("chat sources %v, want srv1", got.Sources)
+	}
+}
+
+// Ревью #656: вопрос с телефона без выбора не сворачивает выбор окна в «все»:
+// список окна, совпавший с нынешними источниками, остается списком — новый
+// источник в него не попадет.
+func TestPhoneTurnKeepsTheWindowsFullList(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	all := knownIDs(d.settings)
+	rec, err := d.Ask(askReq{Question: "сроки?", Sources: all})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), rec.ID, "еще?", mailrelay.Options{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := d.load(rec.ID)
+	if strings.Join(got.Sources, ",") != strings.Join(all, ",") {
+		t.Errorf("chat sources %v, want the window's list %v", got.Sources, all)
+	}
+	if strings.Join(a.Only, ",") != strings.Join(all, ",") {
+		t.Errorf("the phone is told %v, want the chat's sources", a.Only)
+	}
+}
+
+// Ревью #656: голос и распознавание пишут тот же журнал — их модели телефон
+// чату не выберет.
+func TestPhoneModelsAreChatModels(t *testing.T) {
+	d, _, _, _ := newTestChatDesk(t)
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	rec := &callsRec{}
+	for _, c := range []struct {
+		p domain.CallPurpose
+		m string
+	}{{domain.CallSpeak, "openai/tts-1-hd"}, {domain.CallListen, "openai/whisper-1"}, {domain.CallSearch, "llama3"}} {
+		call, _ := domain.NewModelCall(d.now().Add(-time.Hour), c.p, c.m, 10, 10, true, time.Second, time.Second, false)
+		rec.calls = append(rec.calls, call)
+	}
+	d.calls = rec
+	got, err := d.phoneModels()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(got, ",") != "qwen3,llama3" {
+		t.Errorf("phone models %v — voice models are not chat models", got)
 	}
 }

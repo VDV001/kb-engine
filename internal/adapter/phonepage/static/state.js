@@ -195,7 +195,7 @@ export function deskChat(st) {
 // pickSources turns the checked sources of a chat into its choice: ни одного —
 // нельзя, чату негде искать (как в окне); все — явным списком, окно читает его
 // как «все». Не выбирал вовсе (undefined) — источники чата окна (ревью #656).
-export function pickSources(all, on) {
+export function pickSources(on) {
   if (!on.length) return { ok: false };
   return { ok: true, only: on };
 }

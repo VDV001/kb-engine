@@ -192,6 +192,8 @@ type Answer struct {
 	Chat, Text string
 	Sources    []Source
 	Context    *ContextFill
+	// Only — источники чата окна после хода (#647); пусто — все.
+	Only []string
 }
 
 // SourcedAsker is an Asker that also tells where the answer came from.
