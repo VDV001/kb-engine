@@ -97,6 +97,9 @@ verify() {
   check "у ключа защита от удаления (без ключа данные не прочесть)" '[[ "$(jq -r ".deletion_protection // false" <<<"$keyj")" == true ]]'
   check "у бакета версии (перезапись и удаление можно откатить)" '[[ "$(jq -r ".versioning // empty" <<<"$bucket")" == VERSIONING_ENABLED ]]'
   check "анонимный доступ к бакету закрыт" '[[ "$(jq -c "(.anonymous_access_flags // {}) | [.read, .list, .config_read] | map(. == true) | any" <<<"$bucket")" == false ]]'
+  # Файлы ящика без срока копились бы без конца: окно может не забрать кусок.
+  # Имена полей в ответе yc не закреплены — ищем префикс в любом правиле.
+  check "файлы ящика (mailfiles/) удаляются по сроку" '[[ "$(jq -c "[.. | objects | select(.prefix? == \"mailfiles/\")] | length" <<<"$bucket")" -ge 1 ]]'
   check "ACL бакета: только $sa, только чтение и запись" '[[ -n "$sid" && "$(jq -c --arg s "$sid" "[.acl.grants[]? | select(.grantee_id != \$s or (.permission | IN(\"PERMISSION_READ\", \"PERMISSION_WRITE\") | not))] | length" <<<"$bucket")" == 0 ]]'
   # Роли шире бакета (на каталог или облако) дали бы доступ к данным в обход
   # ACL. Владельцу облака они положены; сервисным аккаунтам — нет.
@@ -184,6 +187,15 @@ bind kms symmetric-key "$kid" kms.keys.encrypterDecrypter "$sid"
   --public-read=false --public-list=false --public-config-read=false \
   --grants grant-type=grant-type-account,grantee-id="$sid",permission=permission-read \
   --grants grant-type=grant-type-account,grantee-id="$sid",permission=permission-write >/dev/null
+# Сроки жизни. --lifecycle-rules заменяет правила целиком, поэтому здесь все
+# (прежде ставились руками): старые версии — 30 дней; test/ — проба
+# TestLiveYandex, день; mailfiles/ — голос и вложения телефона (#658): окно
+# удаляет забранное само, забытое уходит через 2 дня, версии после удаления —
+# через день (из пересекающихся правил действует более короткий срок).
+"$YC" storage bucket update --name "$BUCKET" --lifecycle-rules "$(jq -cn '{lifecycleRules: [
+  {id: "versions", enabled: true, noncurrentExpiration: {noncurrentDays: "30"}},
+  {id: "test", enabled: true, filter: {prefix: "test/"}, expiration: {days: "1"}, noncurrentExpiration: {noncurrentDays: "1"}},
+  {id: "mailfiles", enabled: true, filter: {prefix: "mailfiles/"}, expiration: {days: "2"}, noncurrentExpiration: {noncurrentDays: "1"}}]}')" >/dev/null
 
 say "· реестр $registry и образ $rev"
 rid="$(idof container registry get --name "$registry")"
