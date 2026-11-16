@@ -15,6 +15,7 @@ import (
 	"github.com/daniil/kb-engine/internal/adapter/llm"
 	"github.com/daniil/kb-engine/internal/adapter/weblink"
 	"github.com/daniil/kb-engine/internal/usecase/chat"
+	"github.com/daniil/kb-engine/internal/usecase/mailrelay"
 )
 
 // echoModel answers «ответ N [1]» and remembers what it was asked.
@@ -620,5 +621,22 @@ func TestChat_PhoneTurnBeginsFirst(t *testing.T) {
 	}
 	if mine, err := d.Ask(askReq{ID: a.Chat, Question: "из окна"}); err != nil || mine.Messages[2].From != "" {
 		t.Fatalf("the window's own question: %+v, %v", mine.Messages, err)
+	}
+}
+
+// Ход с телефона отдает заполнение контекста чата — круг на телефоне (#647).
+func TestChat_PhoneTurnReportsContext(t *testing.T) {
+	d, m, _, _ := newTestChatDesk(t)
+	m.usage = chat.Usage{In: 6000, Out: 100, Counted: true}
+	if err := d.SetSettings(desktopconfig.Chat{URL: "http://127.0.0.1:11434/v1", Model: "qwen3", ContextWindow: 12000}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a, err := chatAnswerer(d)(t.Context(), "", "с телефона", nil, nil)
+	if err != nil || a.Context == nil || *a.Context != (mailrelay.ContextFill{Used: 6000, Window: 12000}) {
+		t.Fatalf("context %+v, %v", a.Context, err)
+	}
+	m.usage = chat.Usage{}
+	if a, err = chatAnswerer(d)(t.Context(), a.Chat, "еще", nil, nil); err != nil || a.Context != nil || a.Text == "" {
+		t.Errorf("no provider count — no ring: %+v, %v", a, err)
 	}
 }

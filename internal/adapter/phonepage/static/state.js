@@ -57,6 +57,10 @@ export function take(st, m, o) {
     c.pending = false;
     delete c.step;
     delete c.accepted;
+    // Без счета провайдера — без круга, как в окне; сбой хода круг не трогает:
+    // в окне он ничего не сохраняет и прежний счет остается (ревью #654).
+    if (p.context?.used > 0) c.context = { used: p.context.used, window: p.context.window || 0 };
+    else if (p.kind === "answer") delete c.context;
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -80,6 +84,23 @@ export function waitView(c, silent = false) {
   if (c.accepted) return { text: "Компьютер принял · отвечает", step: typeof c.step === "string" ? c.step : "" };
   const q = [...c.msgs].reverse().find((x) => x.who === "me");
   return { text: q && q.sent === false ? "Ждет отправки" : "Отправлено · ждет компьютер", step: "" };
+}
+
+// Пороги — как CTX_HINT_AT и CTX_WARN_AT окна (desktop/frontend/app.js).
+const CTX_HINT_AT = 0.5, CTX_WARN_AT = 0.8;
+
+// ctxView is the context ring of a chat (#647): x — заполнение из ответа,
+// talked — в чате уже был ответ. Счета нет: после разговора — «—», как в окне,
+// до него — круга нет. over — запрос уже не помещается в окно модели.
+//
+// ponytail: заполнение — снимок последнего ответа: сжатие чата и новый размер
+// окна модели в окне дойдут до телефона только со следующим ответом. Путь —
+// состояние окна в ящике (#647, выбор модели и источников).
+export function ctxView(x, talked = false) {
+  if (!(x?.used > 0)) return talked ? { text: "—", tone: "ok", fill: 0, unknown: true } : null;
+  if (!x.window) return { text: "?", tone: "ok", fill: 0 };
+  const f = x.used / x.window;
+  return { text: Math.round(f * 100) + "%", tone: f >= CTX_WARN_AT ? "bad" : f >= CTX_HINT_AT ? "warn" : "ok", fill: Math.min(1, f), over: f >= 1 };
 }
 
 // asked starts a new question in chat c (#646): его ожидание — с нуля.

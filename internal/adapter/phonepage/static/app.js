@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, asked, posted } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView, ctxView, asked, posted } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -307,7 +307,28 @@ function chips(sources) {
   return d;
 }
 
+// paintCtx draws the context ring of the open chat (#647); числа — только из ctxView.
+function paintCtx(c) {
+  const v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk")), b = $("ctx");
+  b.hidden = !v;
+  if (!v) return;
+  const R = 8, C = 2 * Math.PI * R;
+  b.dataset.tone = v.tone;
+  b.setAttribute("aria-label", v.unknown ? "Контекст чата: счета провайдера пока нет" : v.text === "?" ? "Контекст чата: размер окна модели не указан" : "Контекст чата заполнен на " + v.text);
+  b.innerHTML = `<svg viewBox="0 0 20 20" aria-hidden="true"><circle class="bg" cx="10" cy="10" r="${R}"/><circle class="fg" cx="10" cy="10" r="${R}" stroke-dasharray="${C * v.fill} ${C}" transform="rotate(-90 10 10)"/></svg><span>${v.text}</span>`;
+}
+
+// ctxNote is the words under the field after a tap on the ring: как подсказка окна.
+function ctxNote(v) {
+  if (v.unknown) return "Счета провайдера для этого чата пока нет — заполнение неизвестно. Он придет с ближайшим ответом.";
+  if (v.text === "?") return "Размер контекста модели не указан в окне DVK — заполнение неизвестно.";
+  if (v.over) return "Контекст переполнен: запрос не помещается в окно модели — часть разговора она не видит или провайдер откажет. Начните новый чат.";
+  if (v.tone === "ok") return "Контекст чата: " + v.text + " — места хватает.";
+  return (v.tone === "bad" ? "Контекст почти полон" : "Контекст наполовину полон") + ": дальше ответы дороже и хуже — начните новый чат.";
+}
+
 function paintChat(c, follow) {
+  paintCtx(c);
   const box = $("chat");
   const atBottom = box.scrollTop + box.clientHeight >= box.scrollHeight - 40;
   const items = c.msgs.map((m) => {
@@ -514,6 +535,10 @@ for (const id of ["desk", "desk-main"]) {
 $("q").addEventListener("input", () => { // поле растет с текстом до 40% экрана
   $("q").style.height = "auto";
   $("q").style.height = $("q").scrollHeight + "px";
+});
+$("ctx").addEventListener("click", () => { // нажатие на круг — что значит заполнение
+  const c = st.chats[ui.chat], v = ctxView(c?.context, !!c?.msgs.some((m) => m.who === "desk"));
+  if (v) note(ctxNote(v), false);
 });
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
