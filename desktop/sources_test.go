@@ -122,6 +122,9 @@ func TestSetSources_Rejects(t *testing.T) {
 		{"файла каталога нет", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, filepath.Join(h, "notes"), true), src("catalog-1", desktopconfig.KindCatalog, filepath.Join(h, "nope.json"), true)}
 		}, errBadCatalog},
+		{"kb-сервер дважды", func(h string) []desktopconfig.Source {
+			return []desktopconfig.Source{src("server-1", desktopconfig.KindServer, "https://kb.example", true), src("server-2", desktopconfig.KindServer, "https://kb.example/", true)}
+		}, desktopconfig.ErrSourceDup},
 		// Одна папка двумя записями попала бы в индекс и в MCP дважды.
 		{"одна папка дважды", func(h string) []desktopconfig.Source {
 			return []desktopconfig.Source{src("folder-1", desktopconfig.KindFolder, "~/notes", true), src("folder-2", desktopconfig.KindFolder, filepath.Join(h, "notes"), false)}

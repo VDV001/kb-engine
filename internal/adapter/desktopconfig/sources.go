@@ -168,6 +168,24 @@ func (c Config) Validate() error {
 	return nil
 }
 
+// CheckServers refuses a kb-server listed twice: двумя строками он искался бы
+// дважды. Только при сохранении, не в Validate: прежние сборки дубль
+// пропускали, и файл с ним должен читаться, а не ронять окно.
+func (c Config) CheckServers() error {
+	servers := map[string]bool{}
+	for _, s := range c.Sources {
+		if s.Kind != KindServer {
+			continue
+		}
+		key := strings.ToLower(strings.TrimRight(s.URL, "/"))
+		if servers[key] {
+			return fmt.Errorf("%w: %s", ErrSourceDup, s.URL)
+		}
+		servers[key] = true
+	}
+	return nil
+}
+
 // WithSources returns the config with sources filled in from the fields of the
 // shape before sources, if it has none — то же, что видят методы доступа.
 func (c Config) WithSources() Config {
