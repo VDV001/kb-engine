@@ -124,6 +124,9 @@ const (
 	KindAccepted = "accepted"
 	// KindDesk — телефон спрашивает состояние окна, окно отвечает им (#647, Desk).
 	KindDesk = "desk"
+	// DeskUnsupported — код отказа на desk (Text у KindError): окно собрано без
+	// Desk. Слова человеку — у телефона.
+	DeskUnsupported = "unsupported"
 	// KindRemember — окно предлагает запомнить факты о человеке (#647, Facts).
 	KindRemember = "remember"
 	// KindMemory — решение телефона по факту (Text yes/no, Facts[0]) и ответ окна

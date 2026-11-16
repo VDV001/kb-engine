@@ -368,21 +368,33 @@ func TestPhoneDeskState(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.mu.Lock()
-	s.cfg.Chat.Model = "qwen3"
+	s.cfg.Chat = desktopconfig.Chat{URL: "https://ai-gateway.vercel.sh/v1", Model: "qwen3", Mode: desktopconfig.ChatModeTools}
 	s.cfg.Connections = append(s.cfg.Connections,
 		desktopconfig.Connection{ID: "oz1", Kind: desktopconfig.ConnOzon, Name: "Пример", Enabled: true, Share: true},
 		desktopconfig.Connection{ID: "oz2", Kind: desktopconfig.ConnOzon, Name: "Закрытый", Enabled: true})
+	// Вид, записанный более новой сборкой, хранится и не читается: чат в нем не ищет (ревью #656).
+	s.cfg.Sources = append(s.cfg.Sources, desktopconfig.Source{ID: "x1", Kind: "future", Path: "/x", Enabled: true})
 	s.mu.Unlock()
-	st, err := phoneDesk{settings: s}.State(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	names := func() string {
+		st, err := phoneDesk{settings: s}.State(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, x := range st.Sources {
+			out = append(out, fmt.Sprintf("%s|%t", x.Name, x.Conn))
+		}
+		return st.Model + " " + strings.Join(out, ",")
 	}
-	var names []string
-	for _, x := range st.Sources {
-		names = append(names, fmt.Sprintf("%s|%t", x.Name, x.Conn))
+	if got := names(); got != "qwen3 notes|false,kb.example.ru|false,Ozon · Пример|true" {
+		t.Errorf("desk %q — закрытое чату подключение и нечитаемый источник телефону не показываются", got)
 	}
-	if st.Model != "qwen3" || strings.Join(names, ",") != "notes|false,kb.example.ru|false,Ozon · Пример|true" {
-		t.Errorf("desk %q %v — закрытое для чата подключение телефону не показывается", st.Model, names)
+	// Режим «окно ищет»: подключения чат не спрашивает — телефон их не называет (ревью #656).
+	s.mu.Lock()
+	s.cfg.Chat.Mode = desktopconfig.ChatModeContext
+	s.mu.Unlock()
+	if got := names(); got != "qwen3 notes|false,kb.example.ru|false" {
+		t.Errorf("context mode: %q", got)
 	}
 }
 
@@ -408,7 +420,7 @@ func TestPhoneTurnKeepsTheChatSources(t *testing.T) {
 	if strings.Join(got.Sources, ",") != "srv1" {
 		t.Errorf("chat sources %v after a phone turn, want srv1", got.Sources)
 	}
-	if a.Model != "qwen3" || strings.Join(a.Only, ",") != "srv1" {
-		t.Errorf("the phone is told model %q, sources %v", a.Model, a.Only)
+	if strings.Join(a.Only, ",") != "srv1" {
+		t.Errorf("the phone is told sources %v", a.Only)
 	}
 }

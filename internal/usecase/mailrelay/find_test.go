@@ -430,8 +430,8 @@ func TestRelayTellsThePhoneTheDesk(t *testing.T) {
 	if err := newRelay(b2, &asker{}, &store{}).Tick(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if got := payloads(t, b2); len(got) != 1 || got[0].Kind != mailrelay.KindError {
-		t.Fatalf("no desk: %+v", got)
+	if got := payloads(t, b2); len(got) != 1 || got[0].Kind != mailrelay.KindError || got[0].Text != mailrelay.DeskUnsupported {
+		t.Fatalf("no desk: %+v — код, а не слова: слова человеку — у телефона", got)
 	}
 }
 
