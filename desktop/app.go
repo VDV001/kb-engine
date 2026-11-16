@@ -258,6 +258,12 @@ func (a *App) PortraitEdit(id, text string) error { return a.chat.PortraitEdit(i
 // PortraitRemove forgets a fact.
 func (a *App) PortraitRemove(id string) error { return a.chat.PortraitRemove(id) }
 
+// PortraitDecide decides a fact waiting for approval (карточка «Запомнить о
+// Вас?» окна): уже решенный, например телефоном, — «уже решен», окно его не тронет.
+func (a *App) PortraitDecide(id string, yes bool, text string) error {
+	return a.chat.PortraitDecide(context.Background(), id, yes, text)
+}
+
 // PortraitApprove lets a fact into the chat; text — правка перед одобрением.
 func (a *App) PortraitApprove(id, text string) error { return a.chat.PortraitApprove(id, text) }
 
@@ -358,6 +364,11 @@ func (a *App) MailPairPhone(id string) (phonePairing, error) { return a.settings
 
 // MailPhones lists the phones paired with the kb server's mailbox.
 func (a *App) MailPhones(id string) ([]phoneRow, error) { return a.settings.MailPhones(id) }
+
+// MailRenamePhone names a phone of the kb server's mailbox.
+func (a *App) MailRenamePhone(id, device, name string) error {
+	return a.settings.MailRenamePhone(id, device, name)
+}
 
 // MailRevokePhone unpairs a phone from the kb server's mailbox.
 func (a *App) MailRevokePhone(id, device string) error { return a.settings.MailRevokePhone(id, device) }

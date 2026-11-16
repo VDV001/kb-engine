@@ -231,12 +231,12 @@ func (w *mailWorker) Take() []mailrelay.Note {
 // phoneMemory decides a fact from the phone with the window's portrait (#647):
 // «Да» — одобрить с текстом, «Нет» — убрать; decided — странице снять свою карточку.
 type phoneMemory struct {
-	decide  func(id string, yes bool, text string) error
+	decide  func(ctx context.Context, id string, yes bool, text string) error
 	decided func(id string, yes bool)
 }
 
-func (m phoneMemory) Decide(_ context.Context, id string, yes bool, text string) error {
-	if err := m.decide(id, yes, text); err != nil {
+func (m phoneMemory) Decide(ctx context.Context, id string, yes bool, text string) error {
+	if err := m.decide(ctx, id, yes, text); err != nil {
 		return err // карточка окна остается: решение не состоялось
 	}
 	m.decided(id, yes)

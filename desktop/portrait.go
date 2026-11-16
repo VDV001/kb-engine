@@ -253,8 +253,9 @@ func (d *chatDesk) PortraitRemove(id string) error {
 
 // PortraitDecide decides a fact waiting for approval from the phone (#647):
 // одобренный — ErrFactDecided, телефон его не тронет (ревью безопасности #655).
-func (d *chatDesk) PortraitDecide(id string, yes bool, text string) error {
-	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Decide(context.Background(), id, yes, text) }))
+// ctx — работника ящика: закрытие окна прерывает чтение портрета (повторное ревью #655).
+func (d *chatDesk) PortraitDecide(ctx context.Context, id string, yes bool, text string) error {
+	return portraitErr(d.withPortrait(nil, func(s *portrait.Service) error { return s.Decide(ctx, id, yes, text) }))
 }
 
 // PortraitApprove lets a fact into the chat; text — правка перед одобрением.

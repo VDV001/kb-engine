@@ -308,7 +308,10 @@ func TestPhoneMemoryDecides(t *testing.T) {
 	var calls []string
 	fail := error(nil)
 	m := phoneMemory{
-		decide: func(id string, yes bool, text string) error {
+		decide: func(ctx context.Context, id string, yes bool, text string) error {
+			if ctx == nil {
+				t.Error("decide without the worker's ctx")
+			}
 			calls = append(calls, fmt.Sprintf("decide %s %t %s", id, yes, text))
 			return fail
 		},

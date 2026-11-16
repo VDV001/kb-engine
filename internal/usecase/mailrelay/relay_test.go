@@ -421,7 +421,7 @@ func TestRelayDecidesOnlyOfferedFacts(t *testing.T) {
 	}
 	got := payloads(t, b)
 	if len(got) != 3 || got[0].Kind != mailrelay.KindMemory || got[0].Text != mailrelay.MemorySaved || got[0].Facts[0].ID != "f1" ||
-		got[1].Text != mailrelay.MemoryGone || got[1].Facts[0].ID != "f2" || got[2].Text != mailrelay.MemoryGone {
+		got[1].Text != mailrelay.MemoryStale || got[1].Facts[0].ID != "f2" || got[2].Text != mailrelay.MemoryStale {
 		t.Fatalf("replies %+v", got)
 	}
 	if len(s.st.Offered["c-1"]) != 0 {
@@ -487,5 +487,31 @@ func TestRelayOversizedOfferDoesNotStopTheTick(t *testing.T) {
 	}
 	if got := replies(t, b); len(got) != 1 || !strings.Contains(got[0], "answer|ответ на сроки?") {
 		t.Fatalf("mailbox %v", got)
+	}
+}
+
+// broken fails like an unreadable portrait folder.
+type broken struct{}
+
+func (broken) Decide(context.Context, string, bool, string) error {
+	return errors.New("open /Users/someone/portrait.json: permission denied")
+}
+
+// Сбой портрета — кодом failed, а не сырым текстом с путями компьютера;
+// факт остается предложенным (повторное ревью #655).
+func TestRelayDecisionFailureIsACode(t *testing.T) {
+	b := &box{}
+	s := &store{st: mailrelay.State{Chats: map[string]string{"c-1": "w-1"}, Offered: map[string][]string{"c-1": {"f1"}}}}
+	r := newRelay(b, &asker{}, s)
+	r.Memory = broken{}
+	b.phone("c-1", "A", 1, mailrelay.Payload{Kind: mailrelay.KindMemory, Text: mailrelay.MemoryYes, Facts: []mailrelay.Fact{{ID: "f1"}}})
+	if err := r.Tick(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if got := payloads(t, b); len(got) != 1 || got[0].Text != mailrelay.MemoryFailed {
+		t.Fatalf("reply %+v", got)
+	}
+	if o := s.st.Offered["c-1"]; len(o) != 1 {
+		t.Errorf("a failed decision dropped the offer: %v", o)
 	}
 }
