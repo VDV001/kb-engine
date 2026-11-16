@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/daniil/kb-engine/internal/adapter/blob"
@@ -20,13 +22,25 @@ import (
 type mailCallerKey struct{}
 
 type mailCaller struct {
-	id   domain.UserID
-	side domain.MailSide
+	id     domain.UserID
+	side   domain.MailSide
+	device string // телефон токена; у компьютера пусто
 }
 
 // WithMailCaller puts the person and the side of the token into ctx.
 func WithMailCaller(ctx context.Context, id domain.UserID, side domain.MailSide) context.Context {
 	return context.WithValue(ctx, mailCallerKey{}, mailCaller{id: id, side: side})
+}
+
+// WithMailDevice names the phone of the token (WithMailCaller уже в ctx):
+// подписка на push — этого телефона, а не того, что назван в теле.
+func WithMailDevice(ctx context.Context, device string) context.Context {
+	c, ok := ctx.Value(mailCallerKey{}).(mailCaller)
+	if !ok {
+		return ctx
+	}
+	c.device = device
+	return context.WithValue(ctx, mailCallerKey{}, c)
 }
 
 // maxMailBody bounds a request: шифротекст в base64 и поля JSON.
@@ -47,6 +61,10 @@ func MailHandler(svc mail.Service, logf func(string, ...any)) http.Handler {
 	mux.HandleFunc("POST /api/mail/devices", h.with(h.addPhone))
 	mux.HandleFunc("GET /api/mail/devices", h.with(h.listPhones))
 	mux.HandleFunc("DELETE /api/mail/devices/{device}", h.with(h.revokePhone))
+	mux.HandleFunc("GET /api/mail/push/key", h.with(h.pushKey))
+	mux.HandleFunc("PUT /api/mail/push", h.with(h.subscribe))
+	mux.HandleFunc("DELETE /api/mail/push", h.with(h.unsubscribe))
+	mux.HandleFunc("POST /api/mail/notify", h.with(h.notify))
 	mux.HandleFunc("POST /api/mail/{chat}", h.with(h.post))
 	mux.HandleFunc("GET /api/mail", h.with(h.since))
 	return mux
@@ -75,7 +93,11 @@ func (h mailRoutes) fail(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, domain.ErrMailTooLarge):
 		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
-	case errors.Is(err, domain.ErrMailDeskOnly):
+	case errors.Is(err, domain.ErrPushOff):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, domain.ErrBadPushSubscription):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, domain.ErrMailDeskOnly), errors.Is(err, domain.ErrMailPhoneOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, domain.ErrMailTooManyPhones):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -168,6 +190,66 @@ func (h mailRoutes) since(w http.ResponseWriter, r *http.Request, c mailCaller) 
 		First    int64     `json:"first"` // больше after+1 — часть истории ушла из журнала
 		More     bool      `json:"more"`
 	}{out, p.First, p.More})
+}
+
+// maxPushBody bounds a subscription: адрес до 2048 и два ключа.
+const maxPushBody = 4 << 10
+
+func (h mailRoutes) pushKey(w http.ResponseWriter, r *http.Request, _ mailCaller) {
+	k, err := h.svc.PushKey(r.Context())
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]string{"key": k})
+}
+
+// subscribe takes PushSubscription.toJSON() of the browser: ключи — base64url.
+func (h mailRoutes) subscribe(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	var in struct {
+		Endpoint string `json:"endpoint"`
+		Keys     struct {
+			P256dh string `json:"p256dh"`
+			Auth   string `json:"auth"`
+		} `json:"keys"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxPushBody)).Decode(&in); err != nil {
+		http.Error(w, `body: PushSubscription.toJSON()`, http.StatusBadRequest)
+		return
+	}
+	p256dh, err1 := decodeB64URL(in.Keys.P256dh)
+	auth, err2 := decodeB64URL(in.Keys.Auth)
+	if err1 != nil || err2 != nil {
+		http.Error(w, "keys: base64url", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.SubscribePush(r.Context(), c.id, c.side, c.device, in.Endpoint, p256dh, auth); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// decodeB64URL reads base64url with or without padding (браузеры шлют без).
+func decodeB64URL(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(strings.TrimRight(s, "="))
+}
+
+func (h mailRoutes) unsubscribe(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	if err := h.svc.UnsubscribePush(r.Context(), c.id, c.side, c.device); err != nil {
+		h.fail(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h mailRoutes) notify(w http.ResponseWriter, r *http.Request, c mailCaller) {
+	n, err := h.svc.Notify(r.Context(), c.id, c.side)
+	if err != nil {
+		h.fail(w, err)
+		return
+	}
+	writeJSONStatus(w, http.StatusOK, map[string]int{"sent": n})
 }
 
 func writeJSONStatus(w http.ResponseWriter, code int, v any) {

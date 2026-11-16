@@ -170,3 +170,21 @@ func describeMail(err error) string {
 		return "на kb-сервере нет ящика для телефона — нужен сервер с людьми (serve --tenants), обновленный до версии с ящиком"
 	}
 }
+
+// Notify asks the server to push the phones and returns how many got it;
+// push на сервере выключен — 0 без ошибки.
+func (c Client) Notify(ctx context.Context) (int, error) {
+	var out struct {
+		Sent int `json:"sent"`
+	}
+	err := c.mail(ctx, mailReq{method: http.MethodPost, path: "/api/mail/notify", want: http.StatusOK, notFound: errPushOff}, &out)
+	// 400 — сервер до push: он принимает notify за чат без тела. Это тоже
+	// «push выключен», а не сбой после каждого ответа (ревью #643).
+	if errors.Is(err, errPushOff) || errors.Is(err, ErrMailRefused) {
+		return 0, nil
+	}
+	return out.Sent, err
+}
+
+// errPushOff is 404 of notify: на сервере нет KB_PUSH_CONTACT.
+var errPushOff = errors.New("kbserver: push is off on the server")

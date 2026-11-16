@@ -64,10 +64,12 @@ func TestParseMailSide(t *testing.T) {
 	}
 }
 
-// «devices» — маршрут ящика, а не чат (ревью #630).
+// «devices», «push», «notify» — маршруты ящика, а не чаты (ревью #630, #622).
 func TestNewMailMessage_reservedChat(t *testing.T) {
-	if _, err := domain.NewMailMessage("devices", domain.MailDesk, []byte("x"), time.Unix(1, 0)); !errors.Is(err, domain.ErrMailChat) {
-		t.Errorf("err = %v", err)
+	for _, chat := range []string{"devices", "push", "notify"} {
+		if _, err := domain.NewMailMessage(chat, domain.MailDesk, []byte("x"), time.Unix(1, 0)); !errors.Is(err, domain.ErrMailChat) {
+			t.Errorf("%s: err = %v", chat, err)
+		}
 	}
 }
 

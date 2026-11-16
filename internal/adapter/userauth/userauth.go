@@ -145,9 +145,9 @@ func Revoke(ctx context.Context, s blob.Store, id domain.UserID) error {
 
 // update reads the registry, applies change and writes it back under the
 // version it read, retrying when someone else wrote in between.
-func update(ctx context.Context, s blob.Store, key string, change func(*registryDTO) error) error {
+func update[T any](ctx context.Context, s blob.Store, key string, change func(*T) error) error {
 	for range writeAttempts {
-		var r registryDTO
+		var r T
 		o, err := s.Get(ctx, key)
 		switch {
 		case errors.Is(err, blob.ErrNotFound):
@@ -198,8 +198,9 @@ type Registry struct {
 }
 
 type knownUser struct {
-	id  domain.UserID
-	sum []byte
+	id     domain.UserID
+	sum    []byte
+	device string // только в DevicesKey
 }
 
 // Option configures a Registry.
@@ -237,23 +238,28 @@ func (r *Registry) Invalidate() {
 	r.mu.Unlock()
 }
 
-// Lookup returns the person whose token this is. Хэш токена сравнивается со
-// всеми записями за постоянное время и без раннего выхода: время ответа не
-// выдает, на какой записи остановились.
-func (r *Registry) Lookup(token string) (domain.UserID, bool) {
-	var found domain.UserID
+// LookupDevice returns the person of the token and, in DevicesKey, the phone.
+// Хэш токена сравнивается со всеми записями за постоянное время и без раннего
+// выхода: время ответа не выдает, на какой записи остановились.
+func (r *Registry) LookupDevice(token string) (domain.UserID, string, bool) {
+	var found knownUser
 	if token == "" {
-		return found, false
+		return found.id, "", false
 	}
-	users := r.current()
 	sum := sha256.Sum256([]byte(token))
 	ok := false
-	for _, u := range users {
+	for _, u := range r.current() {
 		if subtle.ConstantTimeCompare(sum[:], u.sum) == 1 {
-			found, ok = u.id, true
+			found, ok = u, true
 		}
 	}
-	return found, ok
+	return found.id, found.device, ok
+}
+
+// Lookup returns the person whose token this is (LookupDevice без телефона).
+func (r *Registry) Lookup(token string) (domain.UserID, bool) {
+	id, _, ok := r.LookupDevice(token)
+	return id, ok
 }
 
 // current returns the known users, re-reading the registry once RefreshEvery
@@ -338,7 +344,7 @@ func decodeUsers(data []byte) ([]knownUser, error) {
 		if err != nil || len(sum) != sha256.Size {
 			return nil, fmt.Errorf("userauth: %s: bad token_sha256", u.ID)
 		}
-		users = append(users, knownUser{id: id, sum: sum})
+		users = append(users, knownUser{id: id, sum: sum, device: u.Device})
 	}
 	return users, nil
 }
