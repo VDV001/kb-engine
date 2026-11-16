@@ -78,3 +78,34 @@ func TestPush(t *testing.T) {
 		t.Fatalf("отвязанный телефон остался в рассылке: %+v", p)
 	}
 }
+
+// Стирание подписки при отвязке может не дойти (сбой хранилища между двумя
+// записями) — отвязанный телефон все равно не получает уведомлений.
+func TestPushes_skipsRevokedPhoneEvenIfClearFailed(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	owner := id(t, "owner")
+	if _, err := userauth.Add(ctx, s, owner); err != nil {
+		t.Fatal(err)
+	}
+	dev, _, _ := userauth.AddDevice(ctx, s, owner)
+	sub, _ := domain.NewPushSubscription("https://fcm.googleapis.com/fcm/send/a", append([]byte{4}, bytes.Repeat([]byte{7}, 64)...), bytes.Repeat([]byte{9}, 16))
+	if err := userauth.SetPush(ctx, s, owner, dev, sub); err != nil {
+		t.Fatal(err)
+	}
+	before, err := s.Get(ctx, userauth.PushKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := userauth.RevokeDevice(ctx, s, owner, dev); err != nil {
+		t.Fatal(err)
+	}
+	// Вернуть подписку, как если бы стирание не дошло.
+	now, _ := s.Get(ctx, userauth.PushKey)
+	if _, err := s.Put(ctx, userauth.PushKey, before.Data, now.ETag); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := userauth.Pushes(ctx, s, owner); err != nil || len(p) != 0 {
+		t.Fatalf("Pushes = %+v, %v", p, err)
+	}
+}
