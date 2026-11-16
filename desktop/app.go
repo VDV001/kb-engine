@@ -529,6 +529,7 @@ func (a *App) startup(ctx context.Context) {
 		w.answer = chatAnswerer(a.chat)
 		w.find = newPhoneFinder(a.chat.find, a.chat.openFound) // ставит useSources в main до старта окна
 		w.changed = func(chat string) { runtime.EventsEmit(ctx, "chats:changed", chat) }
+		w.turn = func(t phoneTurn) { runtime.EventsEmit(ctx, "phone:turn", t) }
 		go w.run(ctx)
 	}
 }

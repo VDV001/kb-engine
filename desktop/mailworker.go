@@ -217,11 +217,27 @@ func (a workerAsker) AskStepped(ctx context.Context, id, question string, step f
 		c, text, err := a.Ask(ctx, id, question)
 		return mailrelay.Answer{Chat: c, Text: text}, err
 	}
-	var each func(chat.Use)
-	if step != nil {
-		each = func(u chat.Use) { step(mailrelay.Step{Text: stepLabel(u)}) }
+	// Странице — ход по вопросу с телефона (#646): начало с чатом окна, шаги и
+	// конец, и при отказе модели — иначе «отвечает» в окне висело бы.
+	turnChat := ""
+	defer func() {
+		if turnChat != "" {
+			a.w.turn(phoneTurn{Chat: turnChat, Done: true})
+		}
+	}()
+	began := func(c string) {
+		turnChat = c
+		a.w.turn(phoneTurn{Chat: c, Question: question})
 	}
-	ans, err := a.w.answer(ctx, id, question, nil, each)
+	each := func(u chat.Use) {
+		if turnChat != "" {
+			a.w.turn(phoneTurn{Chat: turnChat, Step: &u})
+		}
+		if step != nil {
+			step(mailrelay.Step{Text: stepLabel(u)})
+		}
+	}
+	ans, err := a.w.answer(ctx, id, question, began, each)
 	if err == nil {
 		a.w.changed(ans.Chat)
 	}
@@ -269,7 +285,7 @@ func chatAsker(d *chatDesk) askFn {
 // chatAnswerer is chatAsker with the «взято» labels of the answer (answerSources).
 func chatAnswerer(d *chatDesk) answerFn {
 	return func(ctx context.Context, chat, question string, began func(string), step func(chat.Use)) (mailrelay.Answer, error) {
-		quiet := askOut{worker: true, step: step}
+		quiet := askOut{worker: true, step: step, began: began}
 		rec, err := d.ask(ctx, askReq{ID: chat, Question: question}, quiet)
 		if chat != "" && errors.Is(err, fs.ErrNotExist) {
 			rec, err = d.ask(ctx, askReq{Question: question}, quiet)

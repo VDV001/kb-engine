@@ -8,7 +8,7 @@
 // Service worker (sw.js) — только push: «компьютер ответил», когда страница
 // закрыта. Работы без сети нет — страница всегда свежая с сервера.
 import { importKey, seal, open } from "./crypto.js";
-import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor } from "./state.js";
+import { repair, take, mergeCounter, b64, unb64, searchChat, asleep, single, rebinds, pushView, sameKey, nextTheme, themeColor, waitView } from "./state.js";
 
 const POLL_MS = 10_000; // решение 15.11: короткий опрос раз в 10 с
 const UNAUTH_MS = 60_000; // 401: реже, но не сдаемся — сервер мог ошибиться ненадолго
@@ -211,7 +211,7 @@ function paintList() {
   $("chats-empty").hidden = ids.length > 0;
   $("chat-list").replaceChildren(...ids.map((id) => {
     const c = st.chats[id], last = c.msgs[c.msgs.length - 1];
-    const li = row({ chat: id }, [["t", c.title], ["tm", last ? when(last.at) : ""], [c.pending ? "s wait" : "s", c.pending ? "ждет компьютер…" : last ? last.text : ""]]);
+    const li = row({ chat: id }, [["t", c.title], ["tm", last ? when(last.at) : ""], [c.pending ? "s wait" : "s", c.pending ? waitView(c).text : last ? last.text : ""]]);
     if (ui.view === "chat" && ui.chat === id) li.firstChild.setAttribute("aria-current", "true");
     return li;
   }));
@@ -332,11 +332,12 @@ function paintChat(c, follow) {
     const li = document.createElement("li"), sp = document.createElement("span");
     li.className = "wait";
     sp.className = "spin";
-    li.append(sp, document.createTextNode("Компьютер отвечает: ответ придет, пока окно DVK открыто"));
-    if (typeof c.step === "string") { // ход модели подписью окна
+    const v = waitView(c); // отправлено → принял → шаг (#646)
+    li.append(sp, document.createTextNode(v.text));
+    if (v.step) { // ход модели подписью окна
       const step = document.createElement("div");
       step.className = "step";
-      step.textContent = c.step;
+      step.textContent = v.step;
       li.append(step);
     }
     items.push(li);

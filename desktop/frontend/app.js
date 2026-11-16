@@ -2878,7 +2878,7 @@ $("#problems-view").addEventListener("click", (e) => {
 // показывает и прячет колонку чатов и колонку документов целиком; край
 // колонки тянется и прилипает к удобным ширинам. Ответ ждется до 3 минут —
 // режим «модель ищет» делает несколько запросов к модели подряд.
-const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "", conns: [], steps: [] };
+const chatState = { id: "", chat: null, busy: false, partial: "", settings: null, opened: false, list: [], attached: [], only: null, moreOpen: false, voices: [], portraitMode: {}, over: null, memNew: null, verOffers: [], offerCost: false, openCost: "", conns: [], steps: [], phone: {} }; // phone: чат окна → ход по вопросу с телефона (#646)
 // memState — портрет «Что DVK помнит обо мне» (#479), как его отдало окно.
 const memState = { p: null, qedit: "", where: "", err: "" };
 async function openChatView() {
@@ -3298,7 +3298,7 @@ function renderChat() {
   } else {
     const folded = (c.compressed && c.compressed.folded) || 0;
     log.innerHTML = c.messages.map((m, i) => (m.role === "user"
-      ? `<div class="msg user">${esc(m.text)}</div>`
+      ? `<div class="msg user">${esc(m.text)}${m.from === "phone" ? phoneTag() : ""}</div>`
       : `<div class="msg bot">${answerHTML(m.text)}${usesHTML(m.uses)}</div>`)
       + (i === folded - 1 ? `<div class="chat-fold" role="separator">Выше сжато ${folded} сообщ.: модель видит конспект, а не их. Исходный разговор сохранен.</div>` : "")).join("");
   }
@@ -3306,6 +3306,9 @@ function renderChat() {
   if (chatState.busy) {
     log.insertAdjacentHTML("beforeend", `<div class="msg bot thinking" id="chat-partial"></div>`);
     paintPartial();
+  } else if (chatState.phone[chatState.id]) { // вопрос с телефона в этом чате: как свой, пока модель отвечает
+    const t = chatState.phone[chatState.id];
+    log.insertAdjacentHTML("beforeend", `<div class="msg user">${esc(t.question)}${phoneTag()}</div><div class="msg bot thinking">${t.steps.length ? stepsHTML(t.steps) : `<span class="building"></span>думаю…`}</div>`);
   }
   log.scrollTop = log.scrollHeight;
   const docs = (c && c.docs) || [];
@@ -3357,6 +3360,23 @@ if (window.runtime) window.runtime.EventsOn("chat:step", (u) => {
   if (!chatState.busy || !u) return;
   chatState.steps.push(u);
   if (!chatState.partial) paintPartial();
+});
+// Вопрос с телефона (#646): окно показывает его сразу, с пометкой и тем же
+// индикатором хода, что у своих вопросов; в другом чате — строкой внизу.
+// Функция, а не константа: mkTip объявлен ниже, при загрузке его еще нет.
+const phoneTag = () => `<span class="msg-from"${mkTip("С телефона", "вопрос задан на телефоне; ответ ушел и туда")}>с телефона</span>`;
+if (window.runtime) window.runtime.EventsOn("phone:turn", (t) => {
+  if (!t || !t.chat) return;
+  const here = t.chat === chatState.id;
+  if (t.question) {
+    chatState.phone[t.chat] = { question: t.question, steps: [] };
+    if (!here) toast("Вопрос с телефона", ` · «${t.question}» — отвечаю`, null, "info");
+  } else if (t.step && chatState.phone[t.chat]) {
+    chatState.phone[t.chat].steps.push(t.step);
+  } else if (t.done) {
+    delete chatState.phone[t.chat];
+  }
+  if (here && !chatState.busy) renderChat();
 });
 // Работник ящика ответил телефону в чате окна (#622): список чатов — свежий,
 // открытый чат с этим ходом — тоже. Пока человек переименовывает чат, список не

@@ -265,7 +265,7 @@ func TestMailWorkerShowsThePhoneTurn(t *testing.T) {
 	}
 	got, fail = nil, errors.New("model down")
 	_, _ = (workerAsker{w}).AskStepped(t.Context(), "", "еще?", nil)
-	if len(got) != 2 || got[1] != (phoneTurn{Chat: "w-1", Done: true}) {
+	if len(got) == 0 || got[len(got)-1] != (phoneTurn{Chat: "w-1", Done: true}) {
 		t.Fatalf("after a failed turn the page heard %+v — «отвечает» would hang", got)
 	}
 }

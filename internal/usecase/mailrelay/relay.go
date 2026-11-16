@@ -5,7 +5,8 @@
 // Внутри шифра — Payload в JSON: {"kind": "...", "text": "...", ...}.
 // Телефон пишет question (вопрос модели), search (поиск по источникам окна) или
 // open (текст найденного по ref); окно отвечает answer (с sources — откуда
-// ответ), results (hits), doc (title и text) или error. Поиск и открытие идут
+// ответ), results (hits), doc (title и text) или error; пока модель думает —
+// accepted (взято в работу) и step (ход). Поиск и открытие идут
 // мимо модели — бесплатны и не тратят ее ход.
 //
 // Порядок ради одного правила — модель не запускается дважды на один вопрос
@@ -403,6 +404,11 @@ func (r Relay) stepper(ctx context.Context, st *State, chat string) (step func(S
 // уходит самый свежий из пришедших за нее.
 func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat string) {
 	var last time.Time
+	// Первым — «компьютер принял» (#646): телефон видит, что вопрос взят, пока
+	// модель еще думает, а не только по первому шагу. Тем же пределом частоты.
+	if began := r.now(); r.post(ctx, st, chat, Payload{Kind: KindAccepted}) {
+		last = began
+	}
 	for {
 		var s Step
 		select {
@@ -422,29 +428,30 @@ func (r Relay) stepLoop(ctx context.Context, in chan Step, st *State, chat strin
 			}
 		}
 		began := r.now()
-		if r.postStep(ctx, st, chat, s) {
+		if r.post(ctx, st, chat, Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}) {
 			last = began
 		}
 	}
 }
 
-// postStep seals and posts one step; false — не ушел (причина в журнале).
-func (r Relay) postStep(ctx context.Context, st *State, chat string, s Step) bool {
+// post seals and posts one show of the turn (шаг, «принял»); false — не ушел
+// (причина в журнале).
+func (r Relay) post(ctx context.Context, st *State, chat string, p Payload) bool {
 	st.DeskCounter++
-	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: Payload{Kind: KindStep, Text: clip(s.Text, maxStepText)}}
+	out := Outgoing{Chat: chat, Counter: st.DeskCounter, Payload: p}
 	if err := r.Store.Save(*st); err != nil {
-		r.logf("mailrelay: step: state: %v", err)
+		r.logf("mailrelay: %s: state: %v", p.Kind, err)
 		return false
 	}
 	sealed, err := r.sealFitting(&out)
 	if err != nil {
-		r.logf("mailrelay: step: %v", err)
+		r.logf("mailrelay: %s: %v", p.Kind, err)
 		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, stepPostTimeout)
 	defer cancel()
 	if _, err := r.Box.Post(ctx, chat, sealed); err != nil {
-		r.logf("mailrelay: step: post: %v", err)
+		r.logf("mailrelay: %s: post: %v", p.Kind, err)
 		return false
 	}
 	return true

@@ -37,6 +37,12 @@ export function take(st, m, o) {
   if (m.from === "desk") st.lastDesk = Math.max(st.lastDesk || 0, at);
   if (m.chat === searchChat(st)) return found(st, m, p);
   if (m.chat.startsWith("search-")) return false; // поиск другого телефона того же ключа
+  if (m.from === "desk" && p.kind === "accepted") { // окно взяло вопрос (#646): показ, не сообщение
+    const c = st.chats[m.chat];
+    if (!c?.pending) return false; // запоздавшее после ответа
+    c.accepted = true;
+    return true;
+  }
   if (m.from === "desk" && p.kind === "step") { // ход модели: показ, не сообщение (#622)
     const c = st.chats[m.chat];
     if (!c?.pending || !p.text) return false; // запоздавший шаг после ответа
@@ -50,6 +56,7 @@ export function take(st, m, o) {
     c.msgs.push({ who: p.kind === "error" ? "error" : "desk", text: p.text, at, sources: p.sources || [] });
     c.pending = false;
     delete c.step;
+    delete c.accepted;
   } else {
     const mine = who === hex(st.sender);
     const sent = mine && c.msgs.find((x) => x.who === "me" && x.counter === o.counter.toString());
@@ -66,8 +73,11 @@ export function take(st, m, o) {
 }
 
 // waitView is what the waiting question of chat c shows (#646).
+// В очереди → отправлено → компьютер принял → шаг хода; ответ снимает ожидание.
 export function waitView(c) {
-  return { text: "", step: "" };
+  if (c.accepted) return { text: "Компьютер принял · отвечает", step: typeof c.step === "string" ? c.step : "" };
+  const q = [...c.msgs].reverse().find((x) => x.who === "me");
+  return { text: q && q.sent === false ? "Ждет отправки" : "Отправлено · ждет компьютер", step: "" };
 }
 
 // searchChat is the mailbox chat of this phone's searches: выдача и документы
